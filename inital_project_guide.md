@@ -257,7 +257,7 @@ The two top-level functions serve distinct use cases:
 
 ## Phase 4 — Modal Solver (SOL 103)
 
-### Step 14: Consistent Mass Matrix
+### Step 14: Consistent Mass Matrix ✅ COMPLETE
 
 **Objective:** Implement the 12×12 consistent mass matrix for a CBAR element and assemble the global mass matrix.
 
@@ -273,7 +273,7 @@ The two top-level functions serve distinct use cases:
 
 ---
 
-### Step 15: SOL 103 Eigenvalue Solve
+### Step 15: SOL 103 Eigenvalue Solve ✅ COMPLETE
 
 **Objective:** Solve the generalised eigenvalue problem and extract natural frequencies and mode shapes.
 
@@ -295,7 +295,7 @@ The two top-level functions serve distinct use cases:
 
 ---
 
-### Step 16: .f06 Output — SOL 103
+### Step 16: .f06 Output — SOL 103 ✅ COMPLETE
 
 **Objective:** Write SOL 103 results to .f06 format.
 

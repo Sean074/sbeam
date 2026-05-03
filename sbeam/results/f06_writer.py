@@ -1,9 +1,9 @@
-"""NASTRAN-style .f06 output writer for SOL 101 results."""
+"""NASTRAN-style .f06 output writer for SOL 101 and SOL 103 results."""
 
 from datetime import datetime
 
 from sbeam.model.bulk_data import BulkData
-from sbeam.results.results import Sol101Result
+from sbeam.results.results import Sol101Result, Sol103Result
 from sbeam.assembly.load_vector import build_grid_index
 
 
@@ -105,6 +105,74 @@ def write_f06_sol101(
             )
 
     lines.append("")
+    lines.append("                                       * * * END OF JOB * * *")
+    lines.append("")
+
+    with open(filepath, "w") as fh:
+        fh.write("\n".join(lines) + "\n")
+
+
+def write_f06_sol103(
+    filepath: str,
+    case_control,
+    bulk: BulkData,
+    result: Sol103Result,
+    subcase_id: int = 1,
+) -> None:
+    """Write NASTRAN-style .f06 file for SOL 103 normal modes results."""
+    grid_index = build_grid_index(bulk)
+    gids_sorted = sorted(bulk.grids.keys())
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    title = getattr(case_control, "title", "") or "sbeam SOL 103"
+
+    lines = []
+
+    # Header
+    lines.append(f"1                                                                           {'sbeam':>20}")
+    lines.append(f"                                          SOL 103 NORMAL MODES")
+    lines.append(f"                                          {title}")
+    lines.append(f"                                          DATE: {now}")
+    lines.append("")
+    lines.append(f"                           SUBCASE {subcase_id}")
+    lines.append("")
+
+    # Real Eigenvalue Table
+    lines.append("                                          R E A L   E I G E N V A L U E S")
+    lines.append("")
+    lines.append(
+        "   MODE NO.      EIGENVALUE            RADIANS             CYCLES             GENERALIZED MASS"
+    )
+
+    for i, (freq, lam) in enumerate(zip(result.frequencies_hz, result.eigenvalues), start=1):
+        omega = 2.0 * 3.141592653589793 * freq
+        lines.append(
+            f"{i:>10}  {_fmt(lam)}  {_fmt(omega)}  {_fmt(freq)}  {_fmt(1.0)}"
+        )
+
+    lines.append("")
+
+    # Mode shape tables
+    for mode_idx in range(result.mode_shapes.shape[1]):
+        freq = result.frequencies_hz[mode_idx]
+        lines.append(
+            f"                          E I G E N V E C T O R   NO. {mode_idx + 1}     FREQ = {freq:.6E} Hz"
+        )
+        lines.append("")
+        lines.append(
+            "      POINT ID.   TYPE          T1             T2             T3             R1             R2             R3"
+        )
+        phi = result.mode_shapes[:, mode_idx]
+        for gid in gids_sorted:
+            i = grid_index[gid]
+            base = 6 * i
+            lines.append(
+                f"{gid:>14}     G  "
+                f"{_fmt(phi[base])}{_fmt(phi[base+1])}{_fmt(phi[base+2])}"
+                f"{_fmt(phi[base+3])}{_fmt(phi[base+4])}{_fmt(phi[base+5])}"
+            )
+        lines.append("")
+
     lines.append("                                       * * * END OF JOB * * *")
     lines.append("")
 

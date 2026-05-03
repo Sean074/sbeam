@@ -39,3 +39,10 @@ class Sol101Result:
     reactions: dict = field(default_factory=dict)    # {gid: np.ndarray(6,)} SPC reaction forces
     bar_forces: dict = field(default_factory=dict)   # {eid: BarForce}
     bar_stresses: dict = field(default_factory=dict) # {eid: BarStress}
+
+
+@dataclass
+class Sol103Result:
+    frequencies_hz: np.ndarray  # shape (n_modes,) — natural frequencies in Hz
+    mode_shapes: np.ndarray     # shape (n_dofs, n_modes) — full global DOF mode shapes
+    eigenvalues: np.ndarray     # shape (n_modes,) — raw eigenvalues ω² [rad²/s²]
