@@ -51,28 +51,30 @@ Implemented in `geometry.py` using **Plotly** 3D scatter and line traces.
 **Public API:**
 
 ```python
-build_model_figure(bulk: BulkData, selected_gid=None, selected_eid=None) -> go.Figure
-build_deformed_figure(bulk, displacements, grid_index, scale=1.0) -> go.Figure
+build_model_figure(bulk: BulkData, selected_gid=None, selected_eid=None, load_sid=None) -> go.Figure
+build_deformed_figure(bulk, displacements, grid_index, scale=1.0, load_sid=None) -> go.Figure
 build_mode_figure(bulk, mode_shape, grid_index, scale=1.0, freq_hz=0.0, n_frames=20) -> go.Figure
 ```
 
 Builds Plotly 3D figures from BulkData. Contains no Streamlit imports — safe to call in unit tests.
 
-- `build_model_figure`: original (undeformed) model. `selected_gid` / `selected_eid` highlight the item in orange.
-- `build_deformed_figure`: undeformed ghost (grey) + deformed overlay (orange) for SOL 101 results.
+- `build_model_figure`: original (undeformed) model. `selected_gid` / `selected_eid` highlight the item in orange. Optional `load_sid` renders force/moment arrows.
+- `build_deformed_figure`: undeformed ghost (grey) + deformed overlay for SOL 101 results. Optional `load_sid` renders force/moment arrows.
 - `build_mode_figure`: undeformed ghost + animated mode shape with Plotly play/pause buttons for SOL 103.
 
 **Trace strategy:**
-- GRIDs: one `Scatter3d` with all nodes, `mode="markers+text"`. Selected GID shown in orange at size 10.
+- GRIDs: one `Scatter3d` with all nodes, `mode="markers+text"`. Selected GID: orange, size 10. Constrained GIDs (any SPC/SPC1/Grid.ps): red `#cc2222`, size 12, label includes DOF string (e.g. `G1\n123456`). Normal: dark grey `#333333`, size 6.
 - CBArs: one `Scatter3d` per PID (colour-coded), using `[x_A, x_B, None]` segment encoding. A second invisible midpoint-marker trace (`opacity=0`) carries per-element hover data (EID, PID, MID, A, I1, I2, J, L, PA, PB). Selected EID gets an additional trace in orange at width 8.
 - PLOTELs: one `Scatter3d` with `line.dash="dash"` to distinguish from CBArs.
 - Coordinate triad: three short line traces (X/Y/Z in R/G/B), length = max(10% bounding-box diagonal, 1.0).
+- Load arrows (`load_sid` provided): one `go.Cone` trace for FORCE loads (green `#22aa44`) and one for MOMENT loads (blue `#3366cc`). Arrow vectors are the actual force/moment vectors; `sizeref = max_magnitude / (0.15 × model_span)` so the largest arrow spans ~15% of the model. LOAD combination cards are expanded recursively.
 
 **Display items:**
-- GRID points: scatter markers labelled with GID.
+- GRID points: scatter markers labelled with GID; constrained nodes shown in red with DOF string.
 - CBAR elements: line traces between GA and GB nodes. Colour-coded by property (PID).
 - PLOTEL elements: dashed line traces (distinct colour/style from CBAR).
 - Coordinate triad at origin.
+- Force/moment arrows (when active subcase has a load set).
 
 **Interactions:**
 - Hover on grid: show GID, X, Y, Z, and any permanent SPC constraints.
@@ -146,6 +148,8 @@ The exported file is parseable by `parse_bdf()`. Multiple subcases can be define
 
 **Session state:**  `st.session_state.cc_subcases` holds the editable subcase list as a list of dicts. Reset to `None` on new file upload.
 
+**Subcase selector (sidebar):** When a run file (with case control) is loaded, an **Active subcase** dropdown appears in the sidebar. The selected subcase determines which load set is visualised as force/moment arrows in the 3D model view and on the deformed shape. The active subcase ID is stored in `st.session_state.selected_subcase_id`; initialised to the first subcase on upload.
+
 ---
 
 ## Post-Processing Pages
@@ -158,7 +162,7 @@ The exported file is parseable by `parse_bdf()`. Multiple subcases can be define
 
 ### SOL 101 — Deformed Shape Display
 
-`render_sol101_results(bulk, result)` in `results_view.py`:
+`render_sol101_results(bulk, result, load_sid=None)` in `results_view.py`:
 
 - Deformed shape overlay on undeformed ghost geometry (`build_deformed_figure`).
 - Scale factor slider: auto-initialised so max displacement = 10% of model span.
@@ -193,6 +197,7 @@ Streamlit session state keys used:
 | `bulk_data` | `BulkData \| None` | Parsed model |
 | `case_control` | `CaseControl \| None` | Active case control |
 | `cc_subcases` | `list[dict] \| None` | Editable subcase list in CC form |
+| `selected_subcase_id` | `int \| None` | Active subcase ID for load/force display |
 | `sol101_result` | `Sol101Result \| None` | SOL 101 results |
 | `sol103_result` | `Sol103Result \| None` | SOL 103 results |
 | `selected_gid` | `int \| None` | Currently selected grid (from sidebar inspector) |

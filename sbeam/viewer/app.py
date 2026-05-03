@@ -26,6 +26,7 @@ def _init_session_state() -> None:
         "selected_gid": None,
         "selected_eid": None,
         "cc_subcases": None,
+        "selected_subcase_id": None,
         "_parse_warnings": [],
         "_parse_error": None,
     }
@@ -72,6 +73,7 @@ def _handle_upload(uploaded) -> None:
         st.session_state.sol103_result = None
         st.session_state.selected_gid = None
         st.session_state.selected_eid = None
+        st.session_state.selected_subcase_id = cc.subcases[0].subcase_id if cc and cc.subcases else None
         st.session_state._parse_warnings = [str(w.message) for w in caught]
         st.session_state._parse_error = None
     except Exception as exc:
@@ -248,6 +250,17 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
             st.info("No constraints.")
 
 
+def _active_load_sid() -> Optional[int]:
+    cc = st.session_state.case_control
+    if cc is None or not cc.subcases:
+        return None
+    sel_id = st.session_state.selected_subcase_id
+    for sc in cc.subcases:
+        if sc.subcase_id == sel_id:
+            return sc.load_sid
+    return cc.subcases[0].load_sid
+
+
 def _run_analysis(bulk: BulkData) -> None:
     cc = st.session_state.case_control
     if cc is None:
@@ -293,6 +306,19 @@ def main() -> None:
 
         bulk: Optional[BulkData] = st.session_state.bulk_data
         if bulk is not None:
+            cc_sidebar = st.session_state.case_control
+            if cc_sidebar is not None and cc_sidebar.subcases:
+                st.divider()
+                sc_options = {
+                    f"Subcase {sc.subcase_id}: {sc.title or '—'}": sc
+                    for sc in cc_sidebar.subcases
+                }
+                sel_label = st.selectbox(
+                    "Active subcase",
+                    list(sc_options.keys()),
+                    key="subcase_selectbox",
+                )
+                st.session_state.selected_subcase_id = sc_options[sel_label].subcase_id
             st.divider()
             _show_gpwg(bulk)
             st.divider()
@@ -318,6 +344,7 @@ def main() -> None:
             bulk,
             selected_gid=st.session_state.selected_gid,
             selected_eid=st.session_state.selected_eid,
+            load_sid=_active_load_sid(),
         )
         st.plotly_chart(fig, use_container_width=True)
         _show_model_data_tabs(bulk)
@@ -331,7 +358,7 @@ def main() -> None:
             _run_analysis(bulk)
 
         if st.session_state.sol101_result is not None:
-            render_sol101_results(bulk, st.session_state.sol101_result)
+            render_sol101_results(bulk, st.session_state.sol101_result, load_sid=_active_load_sid())
 
         elif st.session_state.sol103_result is not None:
             render_sol103_results(bulk, st.session_state.sol103_result)

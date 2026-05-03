@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -16,7 +18,7 @@ from sbeam.viewer.geometry import build_deformed_figure, build_mode_figure
 # SOL 101 results display (Step 21)
 # ---------------------------------------------------------------------------
 
-def render_sol101_results(bulk: BulkData, result: Sol101Result) -> None:
+def render_sol101_results(bulk: BulkData, result: Sol101Result, load_sid: Optional[int] = None) -> None:
     """Display deformed shape, scale slider, and results tables for SOL 101."""
     grid_index = build_grid_index(bulk)
     gids_sorted = sorted(bulk.grids.keys())
@@ -46,7 +48,7 @@ def render_sol101_results(bulk: BulkData, result: Sol101Result) -> None:
         format="%.2g",
     )
 
-    fig = build_deformed_figure(bulk, result.displacements, grid_index, scale)
+    fig = build_deformed_figure(bulk, result.displacements, grid_index, scale, load_sid=load_sid)
     st.plotly_chart(fig, use_container_width=True)
 
     # Results tables

@@ -7,6 +7,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 from sbeam.model.bulk_data import BulkData
+from sbeam.model.load import Force, Moment
 
 _PID_COLORS = [
     "#1f77b4",
@@ -24,13 +25,17 @@ def build_model_figure(
     bulk: BulkData,
     selected_gid: Optional[int] = None,
     selected_eid: Optional[int] = None,
+    load_sid: Optional[int] = None,
 ) -> go.Figure:
     """Return a Plotly 3D figure for the given BulkData model."""
     fig = go.Figure()
-    _add_grid_trace(fig, bulk, selected_gid)
+    spc_map = _get_spc_map(bulk)
+    _add_grid_trace(fig, bulk, selected_gid, spc_map)
     _add_cbar_traces(fig, bulk, selected_eid)
     _add_plotel_trace(fig, bulk)
     _add_triad(fig, bulk)
+    if load_sid is not None:
+        _add_load_arrows(fig, bulk, load_sid)
     _apply_layout(fig)
     return fig
 
@@ -40,6 +45,7 @@ def build_deformed_figure(
     displacements: np.ndarray,
     grid_index: dict,
     scale: float = 1.0,
+    load_sid: Optional[int] = None,
 ) -> go.Figure:
     """3D figure showing undeformed ghost + deformed overlay for SOL 101."""
     fig = go.Figure()
@@ -52,14 +58,20 @@ def build_deformed_figure(
         line=dict(color="#ff7f0e", width=4),
         name="Deformed",
     ))
+    gids_sorted = sorted(bulk.grids.keys())
     gxs, gys, gzs = _grid_coord_lists(bulk, def_coords)
+    spc_map = _get_spc_map(bulk)
+    node_colors = ["#cc2222" if gid in spc_map else "#ff7f0e" for gid in gids_sorted]
+    node_sizes = [10 if gid in spc_map else 6 for gid in gids_sorted]
     fig.add_trace(go.Scatter3d(
         x=gxs, y=gys, z=gzs,
         mode="markers",
-        marker=dict(size=6, color="#ff7f0e"),
+        marker=dict(size=node_sizes, color=node_colors),
         name="Deformed GRIDs",
     ))
     _add_triad(fig, bulk)
+    if load_sid is not None:
+        _add_load_arrows(fig, bulk, load_sid)
     _apply_layout(fig)
     return fig
 
@@ -208,6 +220,109 @@ def _grid_coord_lists(bulk: BulkData, coords: dict) -> tuple:
 # Private helpers — original model traces
 # ---------------------------------------------------------------------------
 
+def _merge_dofs(spc_map: dict, gid: int, dof_str: str) -> None:
+    existing = set(spc_map.get(gid, ""))
+    spc_map[gid] = "".join(sorted(existing | set(dof_str.strip())))
+
+
+def _get_spc_map(bulk: BulkData) -> dict:
+    """Return {gid: sorted_dof_string} for every constrained grid."""
+    spc_map: dict = {}
+    for entries in bulk.spcs.values():
+        for spc in entries:
+            _merge_dofs(spc_map, spc.g1, spc.c1)
+            if spc.g2 is not None and spc.c2:
+                _merge_dofs(spc_map, spc.g2, spc.c2)
+    for entries in bulk.spc1s.values():
+        for spc1 in entries:
+            for gid in spc1.grids:
+                _merge_dofs(spc_map, gid, spc1.c)
+    for gid, grid in bulk.grids.items():
+        if grid.ps:
+            _merge_dofs(spc_map, gid, grid.ps)
+    return spc_map
+
+
+def _resolve_load_forces(bulk: BulkData, load_sid: int, eff_scale: float = 1.0) -> list:
+    """Recursively expand LOAD combinations; return [(Force|Moment, eff_scale)]."""
+    results = []
+    if load_sid in bulk.loads:
+        load = bulk.loads[load_sid]
+        for scale_i, sid_i in load.components:
+            results.extend(_resolve_load_forces(bulk, sid_i, eff_scale * load.s * scale_i))
+    else:
+        for f in bulk.forces.get(load_sid, []):
+            results.append((f, eff_scale))
+        for m in bulk.moments.get(load_sid, []):
+            results.append((m, eff_scale))
+    return results
+
+
+def _add_load_arrows(fig: go.Figure, bulk: BulkData, load_sid: int) -> None:
+    """Add Cone arrow traces for FORCE and MOMENT loads in the given load set."""
+    entries = _resolve_load_forces(bulk, load_sid)
+    if not entries:
+        return
+
+    force_items = [(e, s) for e, s in entries if isinstance(e, Force)]
+    moment_items = [(e, s) for e, s in entries if isinstance(e, Moment)]
+
+    if bulk.grids:
+        gc = [(g.x, g.y, g.z) for g in bulk.grids.values()]
+        span = max(max(c[i] for c in gc) - min(c[i] for c in gc) for i in range(3))
+        span = max(span, 1e-9)
+    else:
+        span = 1.0
+    arrow_len = span * 0.15
+
+    for items, color, label, val_fn in [
+        (force_items, "#22aa44", "Forces", lambda e, s: e.f * s),
+        (moment_items, "#3366cc", "Moments", lambda e, s: e.m * s),
+    ]:
+        if not items:
+            continue
+        vals = [val_fn(e, s) for e, s in items]
+        max_mag = max(abs(v) for v in vals) or 1.0
+        # Pre-scale so the largest arrow tip sits arrow_len from its node,
+        # keeping vectors in model coordinates (sizeref=1 is then correct).
+        scale = arrow_len / max_mag
+
+        xs, ys, zs, us, vs, ws, custom = [], [], [], [], [], [], []
+        for (entry, _), val in zip(items, vals):
+            grid = bulk.grids.get(entry.gid)
+            if grid is None:
+                continue
+            xs.append(grid.x)
+            ys.append(grid.y)
+            zs.append(grid.z)
+            us.append(entry.n1 * val * scale)
+            vs.append(entry.n2 * val * scale)
+            ws.append(entry.n3 * val * scale)
+            custom.append([entry.gid, f"{abs(val):.4g}"])
+
+        if not xs:
+            continue
+
+        entity = label[:-1]  # "Force" / "Moment"
+        hover = (
+            f"<b>{entity} GID %{{customdata[0]}}</b><br>"
+            "Magnitude: %{customdata[1]}"
+            "<extra></extra>"
+        )
+        fig.add_trace(go.Cone(
+            x=xs, y=ys, z=zs,
+            u=us, v=vs, w=ws,
+            sizemode="scaled",
+            sizeref=1,
+            anchor="tail",
+            colorscale=[[0, color], [1, color]],
+            showscale=False,
+            customdata=custom,
+            hovertemplate=hover,
+            name=label,
+        ))
+
+
 def _add_ghost_cbar_lines(fig: go.Figure, bulk: BulkData) -> None:
     if not bulk.cbars:
         return
@@ -233,6 +348,7 @@ def _add_grid_trace(
     fig: go.Figure,
     bulk: BulkData,
     selected_gid: Optional[int] = None,
+    spc_map: Optional[dict] = None,
 ) -> None:
     if not bulk.grids:
         return
@@ -240,10 +356,26 @@ def _add_grid_trace(
     x = [g.x for g in grids]
     y = [g.y for g in grids]
     z = [g.z for g in grids]
-    text = [str(g.gid) for g in grids]
     customdata = [[g.gid, g.ps or "—"] for g in grids]
-    colors = ["#ff8800" if g.gid == selected_gid else "#333333" for g in grids]
-    sizes = [10 if g.gid == selected_gid else 6 for g in grids]
+
+    colors = []
+    sizes = []
+    text = []
+    for g in grids:
+        if g.gid == selected_gid:
+            colors.append("#ff8800")
+            sizes.append(10)
+        elif spc_map and g.gid in spc_map:
+            colors.append("#cc2222")
+            sizes.append(12)
+        else:
+            colors.append("#333333")
+            sizes.append(6)
+        if spc_map and g.gid in spc_map:
+            text.append(f"{g.gid}\n{spc_map[g.gid]}")
+        else:
+            text.append(str(g.gid))
+
     hover = (
         "<b>GRID %{customdata[0]}</b><br>"
         "X: %{x:.4g}<br>"
