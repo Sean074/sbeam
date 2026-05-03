@@ -89,6 +89,7 @@ Builds Plotly 3D figures from BulkData. Contains no Streamlit imports — safe t
 - Zoom, pan, rotate (Plotly default 3D controls).
 - Reset view button.
 - Element/grid label toggle.
+- **Show applied forces** checkbox: hides/shows force and moment arrow traces. Defaults to on. When unchecked, `load_sid=None` is passed so no cone traces are added.
 
 ### 3. Model Properties Panel
 
@@ -177,6 +178,7 @@ The exported file is parseable by `parse_bdf()`. Multiple subcases can be define
 `render_sol101_results(bulk, result, load_sid=None)` in `results_view.py`:
 
 - Deformed shape overlay on undeformed ghost geometry (`build_deformed_figure`).
+- **Show applied forces** checkbox: hides/shows force/moment arrows on the deformed shape plot. Defaults to on.
 - Scale factor slider: auto-initialised so max displacement = 10% of model span.
 - Deformed grid positions: `X_def = X_orig + scale × [Tx, Ty, Tz]`.
 

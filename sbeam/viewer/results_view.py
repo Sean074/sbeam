@@ -48,7 +48,8 @@ def render_sol101_results(bulk: BulkData, result: Sol101Result, load_sid: Option
         format="%.2g",
     )
 
-    fig = build_deformed_figure(bulk, result.displacements, grid_index, scale, load_sid=load_sid)
+    show_forces = st.checkbox("Show applied forces", value=True, key="sol101_show_forces")
+    fig = build_deformed_figure(bulk, result.displacements, grid_index, scale, load_sid=load_sid if show_forces else None)
     st.plotly_chart(fig, use_container_width=True)
 
     # Results tables

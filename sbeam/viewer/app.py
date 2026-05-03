@@ -365,11 +365,12 @@ def main() -> None:
     with tab_model:
         _show_parse_summary(bulk)
         _show_warnings()
+        show_forces = st.checkbox("Show applied forces", value=True, key="model_show_forces")
         fig = build_model_figure(
             bulk,
             selected_gid=st.session_state.selected_gid,
             selected_eid=st.session_state.selected_eid,
-            load_sid=_active_load_sid(),
+            load_sid=_active_load_sid() if show_forces else None,
         )
         st.plotly_chart(fig, use_container_width=True)
         _show_model_data_tabs(bulk)
