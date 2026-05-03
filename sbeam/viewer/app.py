@@ -29,6 +29,7 @@ def _init_session_state() -> None:
         "selected_subcase_id": None,
         "_parse_warnings": [],
         "_parse_error": None,
+        "_uploaded_file_id": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -327,7 +328,10 @@ def main() -> None:
             key="file_uploader",
         )
         if uploaded is not None:
-            _handle_upload(uploaded)
+            file_id = (uploaded.name, uploaded.size)
+            if file_id != st.session_state._uploaded_file_id:
+                _handle_upload(uploaded)
+                st.session_state._uploaded_file_id = file_id
 
         bulk: Optional[BulkData] = st.session_state.bulk_data
         if bulk is not None:

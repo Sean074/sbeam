@@ -46,6 +46,7 @@ def render_sol101_results(bulk: BulkData, result: Sol101Result, load_sid: Option
         max_value=float(suggested * 10),
         value=float(suggested),
         format="%.2g",
+        key="sol101_deform_scale",
     )
 
     show_forces = st.checkbox("Show applied forces", value=True, key="sol101_show_forces")

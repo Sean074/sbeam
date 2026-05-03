@@ -218,6 +218,11 @@ Streamlit session state keys used:
 | `selected_eid` | `int \| None` | Currently selected element (from sidebar inspector) |
 | `_parse_warnings` | `list[str]` | Warnings from last file upload |
 | `_parse_error` | `str \| None` | Error message from last failed upload |
+| `sol101_deform_scale` | `float` | SOL 101 deformation scale slider value (widget key) |
+| `sol101_show_forces` | `bool` | SOL 101 show-forces checkbox state (widget key) |
+| `mode_scale` | `float` | SOL 103 mode shape scale slider value (widget key) |
+
+All interactive result widgets **must** carry a `key=` parameter so Streamlit persists their value across reruns. Without a key, each rerun resets the widget to its `value=` default.
 
 ---
 
