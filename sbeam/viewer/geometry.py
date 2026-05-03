@@ -52,7 +52,6 @@ def build_deformed_figure(
     """3D figure showing undeformed ghost + deformed overlay for SOL 101."""
     fig = go.Figure()
     _add_ghost_cbar_lines(fig, bulk)
-    _add_conm2_trace(fig, bulk)
     def_coords = _deformed_grid_coords(bulk, displacements, grid_index, scale)
     xs, ys, zs = _cbar_line_coords(bulk, def_coords)
     fig.add_trace(go.Scatter3d(
@@ -90,7 +89,6 @@ def build_mode_figure(
     """3D figure with animated cycling mode shape for SOL 103."""
     fig = go.Figure()
     _add_ghost_cbar_lines(fig, bulk)
-    _add_conm2_trace(fig, bulk)
 
     # Initial state: zero amplitude (undeformed positions)
     def_coords_0 = _mode_grid_coords(bulk, mode_shape, grid_index, 0.0)
