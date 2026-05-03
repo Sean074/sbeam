@@ -53,7 +53,7 @@ Phase 1 uses **Euler-Bernoulli beam theory** (shear deformation neglected). Each
 | Category | Cards |
 |----------|-------|
 | Geometry | `GRID` |
-| Elements | `CBAR`, `PLOTEL`, `RBE3` (visualisation only) |
+| Elements | `CBAR`, `PLOTEL`, `RBE3` (constraint interpolation; assembled via DOF transformation) |
 | Properties | `PBAR` (uniform cross-section: A, I1, I2, J, recovery points C/D/E/F) |
 | Material | `MAT1` (E, G, nu, rho) |
 | Mass | `CONM2` (scalar point mass only in phase 1) |

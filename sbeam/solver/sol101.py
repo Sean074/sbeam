@@ -13,6 +13,7 @@ from sbeam.assembly.stiffness import (
     element_stiffness_global,
 )
 from sbeam.assembly.load_vector import assemble_load_vector, build_grid_index
+from sbeam.assembly.rbe3 import build_rbe3_transformation
 from sbeam.results.results import BarForce, BarStress, Sol101Result
 
 
@@ -216,12 +217,25 @@ def run_sol101(bulk: BulkData, case_control) -> Sol101Result:
     # Load vector
     f = assemble_load_vector(bulk, load_sid)
 
-    # SPC enforcement
-    spc_dofs = get_spc_dofs(bulk, spc_sid, grid_index)
-    K_free, f_free, free_dofs = apply_spcs(K, f, spc_dofs)
-
-    # Solve
-    displacements = solve_static(K_free, f_free, free_dofs, n_dofs)
+    # RBE3 DOF transformation — eliminates dependent DOFs before SPC partitioning.
+    T, dep_dofs, red_dofs = build_rbe3_transformation(bulk, grid_index)
+    if dep_dofs:
+        K_orig = K.copy()
+        K = T.T @ K @ T
+        f = T.T @ f
+        dep_set = set(dep_dofs)
+        red_map = {g: i for i, g in enumerate(red_dofs)}
+        spc_dofs_full = get_spc_dofs(bulk, spc_sid, grid_index)
+        spc_dofs = [red_map[d] for d in spc_dofs_full if d not in dep_set]
+        K_free, f_free, free_dofs = apply_spcs(K, f, spc_dofs)
+        u_red = solve_static(K_free, f_free, free_dofs, len(red_dofs))
+        displacements = T @ u_red
+    else:
+        spc_dofs_full = get_spc_dofs(bulk, spc_sid, grid_index)
+        spc_dofs = spc_dofs_full
+        K_orig = K
+        K_free, f_free, free_dofs = apply_spcs(K, f, spc_dofs)
+        displacements = solve_static(K_free, f_free, free_dofs, n_dofs)
 
     # Recover bar forces and stresses
     bar_forces = {}
@@ -234,8 +248,8 @@ def run_sol101(bulk: BulkData, case_control) -> Sol101Result:
             cbar, bulk.grids, bulk.pbars, bulk.mat1s, displacements, grid_index
         )
 
-    # Recover reactions
-    reactions = recover_reactions(bulk, displacements, spc_dofs, K, grid_index)
+    # Recover reactions using original full-space K and full displacement vector.
+    reactions = recover_reactions(bulk, displacements, spc_dofs_full, K_orig, grid_index)
 
     return Sol101Result(
         displacements=displacements,

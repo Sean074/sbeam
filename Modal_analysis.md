@@ -46,14 +46,33 @@ CONM2 concentrated masses are added directly to the diagonal terms of the global
 
 ---
 
+## RBE3 Constraint Assembly
+
+RBE3 elements are applied as a DOF transformation (same approach as SOL 101 — see `Static_analysis.md`).
+
+**Insertion point in `run_sol103`** — after full assembly, before SPC partitioning:
+
+```
+K_red = Tᵀ K T
+M_red = Tᵀ M T
+spc_dofs mapped from full-space → reduced-space indices
+K_free, M_free partitioned from K_red, M_red
+phi_free solved (reduced space)
+phi_full = T @ phi_red   (phi_red is phi_free expanded to n_red DOFs)
+```
+
+Mode shapes in `full_phi` thus include the interpolated displacement at the dependent (REFGRID) grids.
+
+---
+
 ## Eigenvalue Solution
 
 ### Boundary Condition Application
 
 SPC constraints are applied by elimination (same as SOL 101):
 
-1. Identify constrained DOF indices from the active SPC set (if any — a free-free analysis has no SPC).
-2. Remove constrained rows/columns from both `K_global` and `M_global` to obtain `K_free` and `M_free`.
+1. Identify constrained DOF indices from the active SPC set (mapped to reduced-space indices when RBE3 is present).
+2. Remove constrained rows/columns from both `K_red` (or `K_global`) and `M_red` (or `M_global`) to obtain `K_free` and `M_free`.
 
 ### Solver
 

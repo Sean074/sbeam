@@ -4,7 +4,7 @@ from typing import Optional
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.grid import Grid
-from sbeam.model.element import Cbar, Plotel
+from sbeam.model.element import Cbar, Plotel, Rbe3
 from sbeam.model.property import Pbar
 from sbeam.model.material import Mat1
 from sbeam.model.mass import Conm2
@@ -132,7 +132,42 @@ def _handle_plotel(fields: list, bulk: BulkData) -> None:
     eid = _to_int(fields[1])
     g1  = _to_int(fields[2])
     g2  = _to_int(fields[3])
+    if g1 not in bulk.grids:
+        raise ValueError(f"PLOTEL {eid}: grid G1={g1} not found")
+    if g2 not in bulk.grids:
+        raise ValueError(f"PLOTEL {eid}: grid G2={g2} not found")
     bulk.plotels[eid] = Plotel(eid=eid, g1=g1, g2=g2)
+
+
+def _handle_rbe3(fields: list, conts: list, bulk: BulkData) -> None:
+    eid     = _to_int(fields[1])
+    # fields[2] is always blank on an RBE3 card
+    refgrid = _to_int(fields[3])
+    refc    = fields[4].strip()
+
+    all_fields = [f.strip() for f in fields[5:] if f.strip()]
+    for cont in conts:
+        all_fields += [f.strip() for f in cont[1:] if f.strip()]
+
+    wt_gc: list = []
+    k = 0
+    while k < len(all_fields):
+        wt = _to_float(all_fields[k]); k += 1
+        if k >= len(all_fields):
+            break
+        c = all_fields[k].strip(); k += 1
+        grids: list = []
+        while k < len(all_fields):
+            f = all_fields[k]
+            if '.' in f or 'e' in f.lower() or 'E' in f:
+                break  # next WT value (float)
+            try:
+                grids.append(int(f)); k += 1
+            except ValueError:
+                k += 1
+        wt_gc.append((wt, c, grids))
+
+    bulk.rbe3s[eid] = Rbe3(eid=eid, refgrid=refgrid, refc=refc, wt_gc=wt_gc)
 
 
 def _handle_conm2(fields: list, bulk: BulkData) -> None:
@@ -279,6 +314,20 @@ def parse_bulk_data(lines: list) -> BulkData:
             _handle_cbar(fields, cont, bulk)
         elif keyword == "PLOTEL":
             _handle_plotel(fields, bulk)
+        elif keyword == "RBE3":
+            conts: list = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_rbe3(fields, conts, bulk)
         elif keyword == "CONM2":
             _handle_conm2(fields, bulk)
         elif keyword == "SPC":

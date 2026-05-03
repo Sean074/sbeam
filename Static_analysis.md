@@ -65,15 +65,49 @@ Global DOF index for grid `i` (0-based), local DOF `d` (0–5): `idx = 6*i + d`
 
 ---
 
+## RBE3 Constraint Assembly
+
+RBE3 elements are applied as a **DOF transformation** before SPC partitioning. Implemented in `assembly/rbe3.py`.
+
+`build_rbe3_transformation(bulk, grid_index)` returns `(T, dep_dofs, red_dofs)`:
+- **T**: `np.ndarray` shape `(n_dof, n_red)` — maps reduced DOF space → full DOF space
+- **dep_dofs**: global DOF indices eliminated (one per constrained DOF of each REFGRID)
+- **red_dofs**: remaining DOF indices in ascending order
+
+For each dependent DOF `p` (REFGRID × DOF in REFC), row `p` of T is set to the weighted average of the corresponding independent grid DOFs:
+
+```
+T[p, q_i] = w_i / W    where W = Σ w_i
+```
+
+All other rows of T are identity. Dependent DOF columns are then removed: `T = T_full[:, red_dofs]`.
+
+**Insertion point in `run_sol101`** — between full assembly and SPC partitioning:
+
+```
+K_red = Tᵀ K T
+f_red = Tᵀ f
+spc_dofs mapped from full-space → reduced-space indices
+K_free, f_free partitioned from K_red, f_red
+u_red solved
+u_full = T @ u_red
+```
+
+Reactions are recovered using the **original** K and the recovered full-space `u_full`.
+
+If no RBE3 elements are present, T = I (identity), and the solver path is unchanged.
+
+---
+
 ## Boundary Condition Application
 
 SPC constraints are applied by the **penalty / elimination method** (elimination preferred):
 
-1. Identify all constrained DOF indices from the active SPC set.
-2. Remove the corresponding rows and columns from `K_global` to obtain `K_free`.
-3. Remove the corresponding entries from `f_global` to obtain `f_free`.
+1. Identify all constrained DOF indices from the active SPC set (mapped to reduced-space indices when RBE3 is present).
+2. Remove the corresponding rows and columns from `K_red` (or `K_global` if no RBE3) to obtain `K_free`.
+3. Remove the corresponding entries from `f_red` to obtain `f_free`.
 4. Solve: `K_free @ u_free = f_free`
-5. Reconstruct full `u_global` by inserting zeros at constrained DOF positions (enforced displacement = 0 in phase 1).
+5. Reconstruct full `u_global` by inserting zeros at constrained DOF positions, then applying `u_full = T @ u_red`.
 
 ---
 

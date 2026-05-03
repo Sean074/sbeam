@@ -71,7 +71,7 @@ def render_sol101_results(bulk: BulkData, result: Sol101Result, load_sid: Option
                 "Ry": d[base + 4],
                 "Rz": d[base + 5],
             })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True)
+        st.dataframe(pd.DataFrame(rows), width="stretch")
 
     with tab_rxn:
         if result.reactions:
@@ -83,7 +83,7 @@ def render_sol101_results(bulk: BulkData, result: Sol101Result, load_sid: Option
                     "Fx": r[0], "Fy": r[1], "Fz": r[2],
                     "Mx": r[3], "My": r[4], "Mz": r[5],
                 })
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+            st.dataframe(pd.DataFrame(rows), width="stretch")
         else:
             st.info("No SPC reactions.")
 
@@ -103,7 +103,7 @@ def render_sol101_results(bulk: BulkData, result: Sol101Result, load_sid: Option
                     "BM1_B": bf.bm1_b,
                     "BM2_B": bf.bm2_b,
                 })
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+            st.dataframe(pd.DataFrame(rows), width="stretch")
         else:
             st.info("No bar forces.")
 
@@ -124,7 +124,7 @@ def render_sol101_results(bulk: BulkData, result: Sol101Result, load_sid: Option
                     "SA_F": bs.sa_f,
                     "SB_F": bs.sb_f,
                 })
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+            st.dataframe(pd.DataFrame(rows), width="stretch")
         else:
             st.info("No bar stresses.")
 
@@ -145,7 +145,7 @@ def render_sol103_results(bulk: BulkData, result: Sol103Result) -> None:
     for i, (freq, lam) in enumerate(zip(result.frequencies_hz, result.eigenvalues), start=1):
         omega = 2.0 * np.pi * freq
         freq_rows.append({"Mode": i, "Freq (Hz)": freq, "ω (rad/s)": omega, "λ (ω²)": lam})
-    st.dataframe(pd.DataFrame(freq_rows), use_container_width=True)
+    st.dataframe(pd.DataFrame(freq_rows), width="stretch")
 
     st.subheader("Mode shape")
 

@@ -33,6 +33,7 @@ def build_model_figure(
     _add_grid_trace(fig, bulk, selected_gid, spc_map)
     _add_cbar_traces(fig, bulk, selected_eid)
     _add_plotel_trace(fig, bulk)
+    _add_rbe3_trace(fig, bulk)
     _add_triad(fig, bulk)
     if load_sid is not None:
         _add_load_arrows(fig, bulk, load_sid)
@@ -531,6 +532,35 @@ def _add_plotel_trace(fig: go.Figure, bulk: BulkData) -> None:
         mode="lines",
         line=dict(color="#aaaaaa", width=2, dash="dash"),
         name="PLOTEL",
+        hoverinfo="skip",
+    ))
+
+
+def _add_rbe3_trace(fig: go.Figure, bulk: BulkData) -> None:
+    if not bulk.rbe3s:
+        return
+    xs: list = []
+    ys: list = []
+    zs: list = []
+    for rbe3 in bulk.rbe3s.values():
+        if rbe3.refgrid not in bulk.grids:
+            continue
+        ref = bulk.grids[rbe3.refgrid]
+        for _wt, _c, gids in rbe3.wt_gc:
+            for gid in gids:
+                if gid not in bulk.grids:
+                    continue
+                g = bulk.grids[gid]
+                xs += [ref.x, g.x, None]
+                ys += [ref.y, g.y, None]
+                zs += [ref.z, g.z, None]
+    if not xs:
+        return
+    fig.add_trace(go.Scatter3d(
+        x=xs, y=ys, z=zs,
+        mode="lines",
+        line=dict(color="#cc2222", width=2, dash="dash"),
+        name="RBE3",
         hoverinfo="skip",
     ))
 

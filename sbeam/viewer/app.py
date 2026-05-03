@@ -93,20 +93,22 @@ def _show_parse_summary(bulk: BulkData) -> None:
     load_sets = len(set(list(bulk.forces) + list(bulk.moments) + list(bulk.loads)))
     spc_sets = len(set(list(bulk.spcs) + list(bulk.spc1s)))
     if cc is not None:
-        cols = st.columns(6)
+        cols = st.columns(7)
         cols[0].metric("SOL", cc.sol)
         cols[1].metric("Subcases", len(cc.subcases))
         cols[2].metric("Grids", len(bulk.grids))
         cols[3].metric("CBARs", len(bulk.cbars))
-        cols[4].metric("Load sets", load_sets)
-        cols[5].metric("SPC sets", spc_sets)
+        cols[4].metric("RBE3s", len(bulk.rbe3s))
+        cols[5].metric("Load sets", load_sets)
+        cols[6].metric("SPC sets", spc_sets)
     else:
-        cols = st.columns(5)
+        cols = st.columns(6)
         cols[0].metric("Grids", len(bulk.grids))
         cols[1].metric("CBARs", len(bulk.cbars))
-        cols[2].metric("Materials", len(bulk.mat1s))
-        cols[3].metric("Load sets", load_sets)
-        cols[4].metric("SPC sets", spc_sets)
+        cols[2].metric("RBE3s", len(bulk.rbe3s))
+        cols[3].metric("Materials", len(bulk.mat1s))
+        cols[4].metric("Load sets", load_sets)
+        cols[5].metric("SPC sets", spc_sets)
         st.caption("No case control loaded — define analysis via Case Control tab.")
 
 
@@ -170,6 +172,21 @@ def _show_item_inspector(bulk: BulkData) -> None:
             st.write(f"**A:** {pbar.A:.4g}  **I1:** {pbar.I1:.4g}  **I2:** {pbar.I2:.4g}  **J:** {pbar.J:.4g}")
         st.write(f"**PA:** {cbar.pa or '—'}  **PB:** {cbar.pb or '—'}")
 
+    if bulk.rbe3s:
+        st.markdown("")
+        rbe3_opts: list = [None] + sorted(bulk.rbe3s.keys())
+        selected_rbe3_eid = st.selectbox(
+            "Inspect RBE3",
+            rbe3_opts,
+            format_func=lambda e: "— none —" if e is None else f"EID {e}",
+            key="sel_rbe3_eid_box",
+        )
+        if selected_rbe3_eid is not None and selected_rbe3_eid in bulk.rbe3s:
+            rbe3 = bulk.rbe3s[selected_rbe3_eid]
+            st.write(f"**RefGrid:** {rbe3.refgrid}  **RefDOFs:** {rbe3.refc}")
+            for i, (weight, dofs, grids) in enumerate(rbe3.wt_gc):
+                st.write(f"**Group {i + 1}:** WT={weight}  DOFs={dofs}  Grids={grids}")
+
 
 def _grid_spc_info(bulk: BulkData, gid: int) -> str:
     parts = []
@@ -192,34 +209,42 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
     with tabs[0]:
         if bulk.grids:
             rows = [{"GID": g.gid, "X": g.x, "Y": g.y, "Z": g.z, "PS": g.ps or ""} for g in bulk.grids.values()]
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+            st.dataframe(pd.DataFrame(rows), width="stretch")
         else:
             st.info("No grids.")
 
     with tabs[1]:
-        rows = []
+        import math
+        cbar_rows = []
         for c in bulk.cbars.values():
             ga = bulk.grids.get(c.ga)
             gb = bulk.grids.get(c.gb)
-            import math
             L = math.sqrt((gb.x - ga.x) ** 2 + (gb.y - ga.y) ** 2 + (gb.z - ga.z) ** 2) if ga and gb else 0.0
-            rows.append({"EID": c.eid, "PID": c.pid, "GA": c.ga, "GB": c.gb, "L": f"{L:.4g}", "PA": c.pa or "", "PB": c.pb or ""})
-        if rows:
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+            cbar_rows.append({"EID": c.eid, "PID": c.pid, "GA": c.ga, "GB": c.gb, "L": f"{L:.4g}", "PA": c.pa or "", "PB": c.pb or ""})
+        if cbar_rows:
+            st.markdown("**CBAR elements**")
+            st.dataframe(pd.DataFrame(cbar_rows), width="stretch")
         else:
             st.info("No CBAR elements.")
+        if bulk.rbe3s:
+            st.markdown("**RBE3 elements**")
+            rbe3_rows = []
+            for r in bulk.rbe3s.values():
+                n_indep = sum(len(grids) for _, _, grids in r.wt_gc)
+                rbe3_rows.append({"EID": r.eid, "RefGrid": r.refgrid, "RefDOFs": r.refc, "Num Indep. Grids": n_indep})
+            st.dataframe(pd.DataFrame(rbe3_rows), width="stretch")
 
     with tabs[2]:
         if bulk.pbars:
             rows = [{"PID": p.pid, "MID": p.mid, "A": p.A, "I1": p.I1, "I2": p.I2, "J": p.J, "NSM": p.nsm} for p in bulk.pbars.values()]
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+            st.dataframe(pd.DataFrame(rows), width="stretch")
         else:
             st.info("No PBAR properties.")
 
     with tabs[3]:
         if bulk.mat1s:
             rows = [{"MID": m.mid, "E": m.E, "G": m.G, "nu": m.nu, "rho": m.rho} for m in bulk.mat1s.values()]
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+            st.dataframe(pd.DataFrame(rows), width="stretch")
         else:
             st.info("No MAT1 materials.")
 
@@ -232,7 +257,7 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
             for m in moments:
                 rows.append({"Type": "MOMENT", "SID": sid, "GID": m.gid, "Scale": m.m, "N1": m.n1, "N2": m.n2, "N3": m.n3})
         if rows:
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+            st.dataframe(pd.DataFrame(rows), width="stretch")
         else:
             st.info("No loads.")
 
@@ -245,7 +270,7 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
             for s in entries:
                 rows.append({"Type": "SPC", "SID": sid, "DOFs": s.c1, "Grids": str(s.g1)})
         if rows:
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+            st.dataframe(pd.DataFrame(rows), width="stretch")
         else:
             st.info("No constraints.")
 

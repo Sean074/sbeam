@@ -40,8 +40,8 @@ The viewer accepts two file types via the file uploader (`*.bdf` or `*.dat`). Fi
 | Run file (has `SOL`) | `parse_bdf()` | `bulk_data` and `case_control` both set |
 
 **Parse summary (shown after upload):**
-- Bulk-data load: grid count, CBAR count, material count, load sets, SPC sets; caption "No case control — define via Case Control tab."
-- Run file load: SOL type, subcase count, grid count, CBAR count, load sets, SPC sets.
+- Bulk-data load: grid count, CBAR count, RBE3 count, material count, load sets, SPC sets; caption "No case control — define via Case Control tab."
+- Run file load: SOL type, subcase count, grid count, CBAR count, RBE3 count, load sets, SPC sets.
 - Parser warnings (unrecognised cards) shown in an expandable section.
 
 ### 2. Model Display
@@ -66,6 +66,7 @@ Builds Plotly 3D figures from BulkData. Contains no Streamlit imports — safe t
 - GRIDs: split across two legend-visible `Scatter3d` traces. `"GRIDs"` (unconstrained): solid dark grey `#333333`, size 6. `"GRIDs (SPC)"` (constrained by any SPC/SPC1/Grid.ps): red fill `#cc2222` with grey outline `#888888` width 2, size 12, label includes DOF string (e.g. `G1\n123456`). Selected GRID: separate `showlegend=False` trace, orange `#ff8800`, size 10.
 - CBArs: one `Scatter3d` per PID (colour-coded), using `[x_A, x_B, None]` segment encoding. A second invisible midpoint-marker trace (`opacity=0`) carries per-element hover data (EID, PID, MID, A, I1, I2, J, L, PA, PB). Selected EID gets an additional trace in orange at width 8.
 - PLOTELs: one `Scatter3d` with `line.dash="dash"` to distinguish from CBArs.
+- RBE3s: one `Scatter3d` with `line.color="#cc2222"` (red) and `line.dash="dash"`. One segment per (refgrid → independent grid) connection across all `wt_gc` groups. `hoverinfo="skip"`.
 - Coordinate triad: three short line traces (X/Y/Z in R/G/B), length = max(10% bounding-box diagonal, 1.0).
 - Load arrows (`load_sid` provided): one `go.Cone` trace for FORCE loads (green `#22aa44`) and one for MOMENT loads (blue `#3366cc`), both `showlegend=False`. Arrow vectors are the actual force/moment vectors; `sizeref = max_magnitude / (0.15 × model_span)` so the largest arrow spans ~15% of the model. LOAD combination cards are expanded recursively.
 
@@ -73,6 +74,7 @@ Builds Plotly 3D figures from BulkData. Contains no Streamlit imports — safe t
 - GRID points: scatter markers labelled with GID; constrained nodes shown in red with DOF string.
 - CBAR elements: line traces between GA and GB nodes. Colour-coded by property (PID).
 - PLOTEL elements: dashed line traces (distinct colour/style from CBAR).
+- RBE3 elements: dashed red line traces from the dependent (reference) grid to each independent grid.
 - Coordinate triad at origin.
 - Force/moment arrows (when active subcase has a load set).
 
@@ -92,11 +94,21 @@ Builds Plotly 3D figures from BulkData. Contains no Streamlit imports — safe t
 
 Tabbed panel showing:
 - **Grids tab:** table of all GIDs, X, Y, Z, PS.
-- **Elements tab:** table of all CBARs, EID, GA, GB, PID, length.
+- **Elements tab:** table of all CBARs (EID, GA, GB, PID, length, PA, PB); followed by an RBE3 sub-table (EID, RefGrid, RefDOFs, Num Indep. Grids) shown only when RBE3 elements are present.
 - **Properties tab:** table of all PBARs, PID, MID, A, I1, I2, J.
 - **Materials tab:** table of all MAT1s, MID, E, G, nu, rho.
 - **Loads tab:** table of FORCE and MOMENT cards per load set.
 - **Constraints tab:** table of SPC constraints per set.
+
+### 4. Sidebar — Item Inspector
+
+Selectboxes in the sidebar allow inspecting individual cards:
+
+- **Inspect GRID:** shows X, Y, Z, PS, and active SPC constraints.
+- **Inspect CBAR:** shows EID, PID, MID, GA, GB, L, A, I1, I2, J, PA, PB.
+- **Inspect RBE3** (shown only when RBE3 elements are present): shows EID, RefGrid, RefDOFs (REFC), and per-group details (weight, DOF string, independent grid IDs).
+
+Selecting a GRID or CBAR also highlights it in the 3D view (orange). RBE3 inspection is read-only and does not affect the 3D selection highlight.
 
 ---
 

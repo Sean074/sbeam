@@ -203,9 +203,41 @@ PLOTEL, EID, G1, G2
 
 ### RBE3
 
-In phase 1, RBE3 is used only for interpolation of PLOTEL grid displacements for visualisation. It is **not** assembled into the structural stiffness matrix in phase 1.
+Rigid Body Element (interpolation type). Defines a dependent (reference) grid whose DOFs are constrained to be a weighted average of independent grid DOFs.
 
-Full structural RBE3 support (as a constraint equation / Lagrange multiplier) is planned for phase 2.
+```
+RBE3, EID, (blank), REFGRID, REFC, WT1, C1, G1,1, G1,2, ..., +
++,   WT2, C2, G2,1, G2,2, ...
+```
+
+| Field | Description |
+|-------|-------------|
+| EID | Element ID |
+| (blank) | Field 2 is always blank on RBE3 cards |
+| REFGRID | Dependent (reference) grid ID |
+| REFC | DOF string for the dependent grid (e.g. `"123456"`) |
+| WT_i | Weight for independent grid group i |
+| C_i | DOF string for independent grid group i |
+| G_i,j | Independent grid IDs in group i (one or more per continuation line) |
+
+**Constraint equation** — for each DOF `d` in `REFC`:
+
+```
+u_refgrid[d] = Σᵢ (wᵢ · u_i[d]) / Σᵢ wᵢ
+```
+
+where the sum is over independent grids in groups whose DOF string includes `d`.
+
+**Phase 1 assembly:** implemented as a DOF transformation matrix **T** (shape `n_dof × n_red`) built in `assembly/rbe3.py`. T is applied to K and M before SPC partitioning: `K_red = Tᵀ K T`, `M_red = Tᵀ M T`. After solving, full displacements and mode shapes are recovered via `u_full = T @ u_red`. Phase 2 may add Lagrange multiplier support.
+
+**`Rbe3` dataclass:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `eid` | `int` | Element ID |
+| `refgrid` | `int` | Dependent (reference) grid ID |
+| `refc` | `str` | DOF string for the dependent grid |
+| `wt_gc` | `list` | List of `(weight: float, dofs: str, grids: list[int])` tuples |
 
 ---
 
