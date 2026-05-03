@@ -337,7 +337,7 @@ The two top-level functions serve distinct use cases:
 
 ---
 
-### Step 18: Viewer — Model Interrogation Panel
+### Step 18: Viewer — Model Interrogation Panel ✅ COMPLETE
 
 **Objective:** Add tabbed properties panel and GPWG summary.
 
@@ -355,7 +355,7 @@ The two top-level functions serve distinct use cases:
 
 ---
 
-### Step 19: Viewer — Case Control UI and BDF Export
+### Step 19: Viewer — Case Control UI and BDF Export ✅ COMPLETE
 
 **Objective:** Build the case control form and BDF export capability.
 
@@ -370,7 +370,7 @@ The two top-level functions serve distinct use cases:
 
 ---
 
-### Step 20: Viewer — Run Analysis In-Process
+### Step 20: Viewer — Run Analysis In-Process ✅ COMPLETE
 
 **Objective:** Add a Run Analysis button that calls the solver directly from the viewer and loads results into session state.
 
@@ -384,7 +384,7 @@ The two top-level functions serve distinct use cases:
 
 ---
 
-### Step 21: Viewer — SOL 101 Results Display
+### Step 21: Viewer — SOL 101 Results Display ✅ COMPLETE
 
 **Objective:** Display deformed shape and results tables for SOL 101.
 
@@ -401,7 +401,7 @@ The two top-level functions serve distinct use cases:
 
 ---
 
-### Step 22: Viewer — SOL 103 Results Display
+### Step 22: Viewer — SOL 103 Results Display ✅ COMPLETE
 
 **Objective:** Display mode shapes for SOL 103 with mode selector and animation.
 

@@ -51,14 +51,20 @@ Implemented in `geometry.py` using **Plotly** 3D scatter and line traces.
 **Public API:**
 
 ```python
-build_model_figure(bulk: BulkData) -> go.Figure
+build_model_figure(bulk: BulkData, selected_gid=None, selected_eid=None) -> go.Figure
+build_deformed_figure(bulk, displacements, grid_index, scale=1.0) -> go.Figure
+build_mode_figure(bulk, mode_shape, grid_index, scale=1.0, freq_hz=0.0, n_frames=20) -> go.Figure
 ```
 
-Builds a Plotly 3D figure from a parsed `BulkData` object. Contains no Streamlit imports — safe to call in unit tests.
+Builds Plotly 3D figures from BulkData. Contains no Streamlit imports — safe to call in unit tests.
+
+- `build_model_figure`: original (undeformed) model. `selected_gid` / `selected_eid` highlight the item in orange.
+- `build_deformed_figure`: undeformed ghost (grey) + deformed overlay (orange) for SOL 101 results.
+- `build_mode_figure`: undeformed ghost + animated mode shape with Plotly play/pause buttons for SOL 103.
 
 **Trace strategy:**
-- GRIDs: one `Scatter3d` with all nodes, `mode="markers+text"`.
-- CBArs: one `Scatter3d` per PID (colour-coded), using `[x_A, x_B, None]` segment encoding. A second invisible midpoint-marker trace (`opacity=0`) carries per-element hover data (EID, PID, MID, A, I1, I2, J, L, PA, PB).
+- GRIDs: one `Scatter3d` with all nodes, `mode="markers+text"`. Selected GID shown in orange at size 10.
+- CBArs: one `Scatter3d` per PID (colour-coded), using `[x_A, x_B, None]` segment encoding. A second invisible midpoint-marker trace (`opacity=0`) carries per-element hover data (EID, PID, MID, A, I1, I2, J, L, PA, PB). Selected EID gets an additional trace in orange at width 8.
 - PLOTELs: one `Scatter3d` with `line.dash="dash"` to distinguish from CBArs.
 - Coordinate triad: three short line traces (X/Y/Z in R/G/B), length = max(10% bounding-box diagonal, 1.0).
 
@@ -120,23 +126,25 @@ Implemented in `case_control_ui.py`.
 | Output requests | Checkboxes | DISPLACEMENT, SPCFORCE, OLOAD, FORCE, STRESS |
 | Include file path | Text | Path to bulk data `*.dat` file |
 
-**Export button:** Generates and downloads a `*.bdf` case control file with:
+**Export button:** Generates and downloads a `*.bdf` case control file. Example format:
 ```
-SOL <sol>
-CEND
-TITLE = <title>
-SUBCASE <id>
-  LABEL = <label>
-  LOAD = <sid>
-  SPC = <sid>
-  DISPLACEMENT(PRINT) = ALL
-  ...
+SOL 101
+TITLE = My analysis
+SUBCASE 1
+  LOAD = 10
+  SPC = 20
+  DISPLACEMENT = ALL
+  SPCFORCE = ALL
+  FORCE = ALL
+  STRESS = ALL
+INCLUDE 'model.dat'
 BEGIN BULK
-INCLUDE '<bulk_data_file>'
 ENDDATA
 ```
 
-Multiple subcases can be defined and added to the list before export.
+The exported file is parseable by `parse_bdf()`. Multiple subcases can be defined and added before export. The `export_bdf_text(cc, include_path)` function in `case_control_ui.py` generates the text string independently of Streamlit (usable in tests).
+
+**Session state:**  `st.session_state.cc_subcases` holds the editable subcase list as a list of dicts. Reset to `None` on new file upload.
 
 ---
 
@@ -150,32 +158,29 @@ Multiple subcases can be defined and added to the list before export.
 
 ### SOL 101 — Deformed Shape Display
 
-In `results_view.py`:
+`render_sol101_results(bulk, result)` in `results_view.py`:
 
-- Deformed shape overlay on undeformed geometry.
-- Scale factor slider (default: auto-scaled to 10% of model bounding box).
-- Deformed grid positions: `X_def = X_orig + scale * [Tx, Ty, Tz]`.
-- PLOTEL elements deformed using interpolated displacements.
-- Colour bar showing displacement magnitude.
-- Toggle undeformed ghost model.
+- Deformed shape overlay on undeformed ghost geometry (`build_deformed_figure`).
+- Scale factor slider: auto-initialised so max displacement = 10% of model span.
+- Deformed grid positions: `X_def = X_orig + scale × [Tx, Ty, Tz]`.
 
-**Results tables (SOL 101):**
-- Nodal displacements: GID, T1, T2, T3, R1, R2, R3.
-- SPC reaction forces: GID, DOF, force value.
-- CBAR end forces: EID, end A (F1, F2, F3, M1, M2, M3), end B.
-- CBAR stresses: EID, point C, D, E, F (axial + bending).
+**Results tables (SOL 101)** — four sub-tabs:
+- **Displacements:** GID, Tx, Ty, Tz, Rx, Ry, Rz.
+- **Reactions:** GID, Fx, Fy, Fz, Mx, My, Mz.
+- **Bar Forces:** EID, Axial, Shear1, Shear2, Torque, BM1_A, BM2_A, BM1_B, BM2_B.
+- **Bar Stresses:** EID, Axial, SA_C/D/E/F, SB_C/D/E/F.
 
 ### SOL 103 — Mode Shape Display
 
-- Mode selector: dropdown or slider (mode 1 through ND).
-- Frequency displayed for selected mode (Hz and rad/s).
-- Animated mode shape: Plotly animation cycling through deformation from -max to +max.
-- Scale factor slider.
-- Modal mass fraction bar chart (per direction, per mode).
+`render_sol103_results(bulk, result)` in `results_view.py`:
 
-**Results table (SOL 103):**
-- Mode summary: mode number, frequency (Hz), frequency (rad/s), generalised mass.
-- Mode shape: GID, T1, T2, T3, R1, R2, R3.
+- Natural frequency table: mode, Hz, ω rad/s, eigenvalue λ.
+- Mode selector dropdown (shows mode number and frequency).
+- Mode shape scale slider: auto-initialised so max component = 20% of model span.
+- Animated mode shape using `build_mode_figure` with Plotly play/pause buttons cycling ±max amplitude at 20 frames.
+- Modal participation bar chart: effective translational mass fraction (Tx DOFs) per mode.
+
+**Session state:** `sol101_result` / `sol103_result` in session state; cleared on new file upload.
 
 ---
 
@@ -185,26 +190,27 @@ Streamlit session state keys used:
 
 | Key | Type | Content |
 |-----|------|---------|
-| `bulk_data` | `BulkData` | Parsed model |
-| `case_controls` | `list[SubcaseControl]` | Defined subcases |
-| `sol101_results` | `Sol101Result` | SOL 101 results |
-| `sol103_results` | `Sol103Result` | SOL 103 results |
-| `selected_gid` | `int \| None` | Currently selected grid |
-| `selected_eid` | `int \| None` | Currently selected element |
-| `deform_scale` | `float` | Deformed shape scale factor |
-| `active_mode` | `int` | Selected mode number (SOL 103) |
+| `bulk_data` | `BulkData \| None` | Parsed model |
+| `case_control` | `CaseControl \| None` | Active case control |
+| `cc_subcases` | `list[dict] \| None` | Editable subcase list in CC form |
+| `sol101_result` | `Sol101Result \| None` | SOL 101 results |
+| `sol103_result` | `Sol103Result \| None` | SOL 103 results |
+| `selected_gid` | `int \| None` | Currently selected grid (from sidebar inspector) |
+| `selected_eid` | `int \| None` | Currently selected element (from sidebar inspector) |
+| `_parse_warnings` | `list[str]` | Warnings from last file upload |
+| `_parse_error` | `str \| None` | Error message from last failed upload |
 
 ---
 
 ## Run Analysis from Viewer
 
-A **Run Analysis** button in the viewer can:
-1. Validate that a model is loaded and case control is defined.
-2. Call `solver/sol101.py` or `solver/sol103.py` directly (in-process).
-3. Display results immediately without requiring a separate CLI run.
-4. Optionally write the `.f06` output file.
+A **Run Analysis** button in the Results tab:
+1. Validates that a model and case control are loaded.
+2. Calls `run_sol101(bulk, cc)` or `run_sol103(bulk, cc)` directly in-process.
+3. Stores the result in `st.session_state.sol101_result` or `sol103_result`.
+4. Displays results immediately without requiring CLI.
 
-This avoids requiring the user to use the CLI for typical interactive workflows.
+Solver errors (e.g. singular K, no SPC defined) are caught and shown as a red Streamlit error banner.
 
 ---
 
