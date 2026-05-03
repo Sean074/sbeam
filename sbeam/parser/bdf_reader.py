@@ -175,7 +175,10 @@ def _handle_conm2(fields: list, bulk: BulkData) -> None:
     gid = _to_int(fields[2])
     cid = _to_int_opt(fields[3]) if len(fields) > 3 else 0
     m   = _to_float(fields[4]) if len(fields) > 4 else 0.0
-    bulk.conm2s[eid] = Conm2(eid=eid, gid=gid, cid=cid, m=m)
+    x1  = _to_float(fields[5]) if len(fields) > 5 else 0.0
+    x2  = _to_float(fields[6]) if len(fields) > 6 else 0.0
+    x3  = _to_float(fields[7]) if len(fields) > 7 else 0.0
+    bulk.conm2s[eid] = Conm2(eid=eid, gid=gid, cid=cid, m=m, x1=x1, x2=x2, x3=x3)
 
 
 def _handle_spc(fields: list, bulk: BulkData) -> None:

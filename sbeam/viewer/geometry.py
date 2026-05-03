@@ -34,6 +34,7 @@ def build_model_figure(
     _add_cbar_traces(fig, bulk, selected_eid)
     _add_plotel_trace(fig, bulk)
     _add_rbe3_trace(fig, bulk)
+    _add_conm2_trace(fig, bulk)
     _add_triad(fig, bulk)
     if load_sid is not None:
         _add_load_arrows(fig, bulk, load_sid)
@@ -51,6 +52,7 @@ def build_deformed_figure(
     """3D figure showing undeformed ghost + deformed overlay for SOL 101."""
     fig = go.Figure()
     _add_ghost_cbar_lines(fig, bulk)
+    _add_conm2_trace(fig, bulk)
     def_coords = _deformed_grid_coords(bulk, displacements, grid_index, scale)
     xs, ys, zs = _cbar_line_coords(bulk, def_coords)
     fig.add_trace(go.Scatter3d(
@@ -88,6 +90,7 @@ def build_mode_figure(
     """3D figure with animated cycling mode shape for SOL 103."""
     fig = go.Figure()
     _add_ghost_cbar_lines(fig, bulk)
+    _add_conm2_trace(fig, bulk)
 
     # Initial state: zero amplitude (undeformed positions)
     def_coords_0 = _mode_grid_coords(bulk, mode_shape, grid_index, 0.0)
@@ -563,6 +566,69 @@ def _add_rbe3_trace(fig: go.Figure, bulk: BulkData) -> None:
         name="RBE3",
         hoverinfo="skip",
     ))
+
+
+def _add_conm2_trace(fig: go.Figure, bulk: BulkData) -> None:
+    if not bulk.conm2s:
+        return
+
+    cg_xs: list = []
+    cg_ys: list = []
+    cg_zs: list = []
+    customdata: list = []
+    off_xs: list = []
+    off_ys: list = []
+    off_zs: list = []
+
+    for conm2 in bulk.conm2s.values():
+        grid = bulk.grids.get(conm2.gid)
+        if grid is None:
+            continue
+        cgx = grid.x + conm2.x1
+        cgy = grid.y + conm2.x2
+        cgz = grid.z + conm2.x3
+        cg_xs.append(cgx)
+        cg_ys.append(cgy)
+        cg_zs.append(cgz)
+        customdata.append([conm2.eid, conm2.gid, f"{conm2.m:.4g}"])
+        if conm2.x1 != 0.0 or conm2.x2 != 0.0 or conm2.x3 != 0.0:
+            off_xs += [grid.x, cgx, None]
+            off_ys += [grid.y, cgy, None]
+            off_zs += [grid.z, cgz, None]
+
+    if not cg_xs:
+        return
+
+    hover = (
+        "<b>CONM2 %{customdata[0]}</b><br>"
+        "GID: %{customdata[1]}<br>"
+        "Mass: %{customdata[2]}"
+        "<extra></extra>"
+    )
+    fig.add_trace(go.Scatter3d(
+        x=cg_xs, y=cg_ys, z=cg_zs,
+        mode="markers",
+        marker=dict(
+            symbol="circle-open",
+            size=14,
+            color="white",
+            line=dict(color="#333333", width=2),
+        ),
+        customdata=customdata,
+        hovertemplate=hover,
+        name="CONM2",
+        legendgroup="conm2",
+    ))
+
+    if off_xs:
+        fig.add_trace(go.Scatter3d(
+            x=off_xs, y=off_ys, z=off_zs,
+            mode="lines",
+            line=dict(color="#333333", width=1),
+            hoverinfo="skip",
+            showlegend=False,
+            legendgroup="conm2",
+        ))
 
 
 def _add_triad(fig: go.Figure, bulk: BulkData) -> None:

@@ -94,22 +94,24 @@ def _show_parse_summary(bulk: BulkData) -> None:
     load_sets = len(set(list(bulk.forces) + list(bulk.moments) + list(bulk.loads)))
     spc_sets = len(set(list(bulk.spcs) + list(bulk.spc1s)))
     if cc is not None:
-        cols = st.columns(7)
+        cols = st.columns(8)
         cols[0].metric("SOL", cc.sol)
         cols[1].metric("Subcases", len(cc.subcases))
         cols[2].metric("Grids", len(bulk.grids))
         cols[3].metric("CBARs", len(bulk.cbars))
         cols[4].metric("RBE3s", len(bulk.rbe3s))
-        cols[5].metric("Load sets", load_sets)
-        cols[6].metric("SPC sets", spc_sets)
+        cols[5].metric("CONM2s", len(bulk.conm2s))
+        cols[6].metric("Load sets", load_sets)
+        cols[7].metric("SPC sets", spc_sets)
     else:
-        cols = st.columns(6)
+        cols = st.columns(7)
         cols[0].metric("Grids", len(bulk.grids))
         cols[1].metric("CBARs", len(bulk.cbars))
         cols[2].metric("RBE3s", len(bulk.rbe3s))
-        cols[3].metric("Materials", len(bulk.mat1s))
-        cols[4].metric("Load sets", load_sets)
-        cols[5].metric("SPC sets", spc_sets)
+        cols[3].metric("CONM2s", len(bulk.conm2s))
+        cols[4].metric("Materials", len(bulk.mat1s))
+        cols[5].metric("Load sets", load_sets)
+        cols[6].metric("SPC sets", spc_sets)
         st.caption("No case control loaded — define analysis via Case Control tab.")
 
 
@@ -234,6 +236,13 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
                 n_indep = sum(len(grids) for _, _, grids in r.wt_gc)
                 rbe3_rows.append({"EID": r.eid, "RefGrid": r.refgrid, "RefDOFs": r.refc, "Num Indep. Grids": n_indep})
             st.dataframe(pd.DataFrame(rbe3_rows), width="stretch")
+        if bulk.conm2s:
+            st.markdown("**CONM2 masses**")
+            conm2_rows = [
+                {"EID": c.eid, "GID": c.gid, "Mass": c.m, "X1": c.x1, "X2": c.x2, "X3": c.x3}
+                for c in bulk.conm2s.values()
+            ]
+            st.dataframe(pd.DataFrame(conm2_rows), width="stretch")
 
     with tabs[2]:
         if bulk.pbars:

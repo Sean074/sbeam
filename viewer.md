@@ -40,8 +40,8 @@ The viewer accepts two file types via the file uploader (`*.bdf` or `*.dat`). Fi
 | Run file (has `SOL`) | `parse_bdf()` | `bulk_data` and `case_control` both set |
 
 **Parse summary (shown after upload):**
-- Bulk-data load: grid count, CBAR count, RBE3 count, material count, load sets, SPC sets; caption "No case control — define via Case Control tab."
-- Run file load: SOL type, subcase count, grid count, CBAR count, RBE3 count, load sets, SPC sets.
+- Bulk-data load: grid count, CBAR count, RBE3 count, CONM2 count, material count, load sets, SPC sets; caption "No case control — define via Case Control tab."
+- Run file load: SOL type, subcase count, grid count, CBAR count, RBE3 count, CONM2 count, load sets, SPC sets.
 - Parser warnings (unrecognised cards) shown in an expandable section.
 
 ### 2. Model Display
@@ -67,6 +67,7 @@ Builds Plotly 3D figures from BulkData. Contains no Streamlit imports — safe t
 - CBArs: one `Scatter3d` per PID (colour-coded), using `[x_A, x_B, None]` segment encoding. A second invisible midpoint-marker trace (`opacity=0`) carries per-element hover data (EID, PID, MID, A, I1, I2, J, L, PA, PB). Selected EID gets an additional trace in orange at width 8.
 - PLOTELs: one `Scatter3d` with `line.dash="dash"` to distinguish from CBArs.
 - RBE3s: one `Scatter3d` with `line.color="#cc2222"` (red) and `line.dash="dash"`. One segment per (refgrid → independent grid) connection across all `wt_gc` groups. `hoverinfo="skip"`.
+- CONM2s: one `Scatter3d` marker trace per CONM2, plotted at the centre of gravity location. Style: open white circle, `marker.symbol="circle-open"`, `marker.color="white"`, `marker.line.color="#333333"` (dark grey outline), `marker.line.width=2`, `marker.size=14` (larger than both unconstrained GRID size 6 and SPC size 12). When the CONM2 has a non-zero offset (`X2` field), the CG is at `grid_position + offset`; an additional `Scatter3d` line segment traces from the grid reference point to the offset CG location, `line.color="#333333"`, `line.width=1`, `hoverinfo="skip"`. Hover text shows: `CONM2 EID\nGID, Mass`. Legend entry: `"CONM2"`.
 - Coordinate triad: three short line traces (X/Y/Z in R/G/B), length = max(10% bounding-box diagonal, 1.0).
 - Load arrows (`load_sid` provided): one `go.Cone` trace for FORCE loads (green `#22aa44`) and one for MOMENT loads (blue `#3366cc`), both `showlegend=False`. Arrow vectors are the actual force/moment vectors; `sizeref = max_magnitude / (0.15 × model_span)` so the largest arrow spans ~15% of the model. LOAD combination cards are expanded recursively.
 
@@ -75,6 +76,7 @@ Builds Plotly 3D figures from BulkData. Contains no Streamlit imports — safe t
 - CBAR elements: line traces between GA and GB nodes. Colour-coded by property (PID).
 - PLOTEL elements: dashed line traces (distinct colour/style from CBAR).
 - RBE3 elements: dashed red line traces from the dependent (reference) grid to each independent grid.
+- CONM2 masses: open white circle at the CG location; offset line from grid reference to CG when a non-zero offset is defined.
 - Coordinate triad at origin.
 - Force/moment arrows (when active subcase has a load set).
 
@@ -95,7 +97,7 @@ Builds Plotly 3D figures from BulkData. Contains no Streamlit imports — safe t
 
 Tabbed panel showing:
 - **Grids tab:** table of all GIDs, X, Y, Z, PS.
-- **Elements tab:** table of all CBARs (EID, GA, GB, PID, length, PA, PB); followed by an RBE3 sub-table (EID, RefGrid, RefDOFs, Num Indep. Grids) shown only when RBE3 elements are present.
+- **Elements tab:** table of all CBARs (EID, GA, GB, PID, length, PA, PB); followed by an RBE3 sub-table (EID, RefGrid, RefDOFs, Num Indep. Grids) shown only when RBE3 elements are present; followed by a CONM2 sub-table (EID, GID, Mass, X1, X2, X3) shown only when CONM2 entries are present.
 - **Properties tab:** table of all PBARs, PID, MID, A, I1, I2, J.
 - **Materials tab:** table of all MAT1s, MID, E, G, nu, rho.
 - **Loads tab:** table of FORCE and MOMENT cards per load set.

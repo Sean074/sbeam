@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.element import Cbar, Plotel
 from sbeam.model.grid import Grid
+from sbeam.model.mass import Conm2
 from sbeam.model.material import Mat1
 from sbeam.model.property import Pbar
 from sbeam.viewer.geometry import build_model_figure
@@ -117,6 +118,71 @@ def test_plotel_distinct_from_cbar(simple_bulk: BulkData) -> None:
 # ---------------------------------------------------------------------------
 # Multi-PID colour coding
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# CONM2 traces
+# ---------------------------------------------------------------------------
+
+def test_conm2_trace_present_when_masses_exist(simple_bulk: BulkData) -> None:
+    simple_bulk.conm2s[10] = Conm2(eid=10, gid=1, cid=0, m=5.0)
+    fig = build_model_figure(simple_bulk)
+    conm2_trace = next((t for t in fig.data if t.name == "CONM2"), None)
+    assert conm2_trace is not None
+
+
+def test_conm2_marker_at_grid_when_no_offset(simple_bulk: BulkData) -> None:
+    simple_bulk.conm2s[10] = Conm2(eid=10, gid=1, cid=0, m=5.0)
+    fig = build_model_figure(simple_bulk)
+    conm2_trace = next(t for t in fig.data if t.name == "CONM2")
+    assert conm2_trace.x[0] == pytest.approx(0.0)
+    assert conm2_trace.y[0] == pytest.approx(0.0)
+    assert conm2_trace.z[0] == pytest.approx(0.0)
+
+
+def test_conm2_marker_at_offset_cg(simple_bulk: BulkData) -> None:
+    simple_bulk.conm2s[10] = Conm2(eid=10, gid=1, cid=0, m=5.0, x1=0.1, x2=0.2, x3=0.3)
+    fig = build_model_figure(simple_bulk)
+    conm2_trace = next(t for t in fig.data if t.name == "CONM2")
+    assert conm2_trace.x[0] == pytest.approx(0.1)
+    assert conm2_trace.y[0] == pytest.approx(0.2)
+    assert conm2_trace.z[0] == pytest.approx(0.3)
+
+
+def test_conm2_offset_line_trace_present_when_offset(simple_bulk: BulkData) -> None:
+    simple_bulk.conm2s[10] = Conm2(eid=10, gid=1, cid=0, m=5.0, x1=0.1, x2=0.0, x3=0.0)
+    fig = build_model_figure(simple_bulk)
+    offset_traces = [t for t in fig.data if getattr(t, "legendgroup", None) == "conm2" and t.name != "CONM2"]
+    assert len(offset_traces) == 1
+
+
+def test_conm2_no_offset_line_trace_when_no_offset(simple_bulk: BulkData) -> None:
+    simple_bulk.conm2s[10] = Conm2(eid=10, gid=1, cid=0, m=5.0)
+    fig = build_model_figure(simple_bulk)
+    offset_traces = [t for t in fig.data if getattr(t, "legendgroup", None) == "conm2" and t.name != "CONM2"]
+    assert len(offset_traces) == 0
+
+
+def test_conm2_marker_style(simple_bulk: BulkData) -> None:
+    simple_bulk.conm2s[10] = Conm2(eid=10, gid=1, cid=0, m=5.0)
+    fig = build_model_figure(simple_bulk)
+    conm2_trace = next(t for t in fig.data if t.name == "CONM2")
+    assert conm2_trace.marker.symbol == "circle-open"
+    assert conm2_trace.marker.size == 14
+
+
+def test_conm2_hover_contains_eid(simple_bulk: BulkData) -> None:
+    simple_bulk.conm2s[10] = Conm2(eid=10, gid=1, cid=0, m=5.0)
+    fig = build_model_figure(simple_bulk)
+    conm2_trace = next(t for t in fig.data if t.name == "CONM2")
+    assert "CONM2" in conm2_trace.hovertemplate
+    assert conm2_trace.customdata[0][0] == 10  # EID
+
+
+def test_conm2_absent_from_figure_when_no_masses(simple_bulk: BulkData) -> None:
+    fig = build_model_figure(simple_bulk)
+    conm2_trace = next((t for t in fig.data if t.name == "CONM2"), None)
+    assert conm2_trace is None
+
 
 def test_two_pids_produce_two_cbar_traces() -> None:
     bulk = BulkData()
