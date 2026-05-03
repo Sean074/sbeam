@@ -18,6 +18,17 @@ dependencies = [
 where = ["."]
 include = ["sbeam*"]
 
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E702",  # semicolons in matrix assignments — intentional paired style
+    "E501",  # NASTRAN fixed-width format strings make a hard line limit impractical
+    "E741",  # I, A, L, E are standard FEA/structural engineering variable names
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

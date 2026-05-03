@@ -30,7 +30,7 @@ def write_f06_sol101(
 
     # ---- Header ----
     lines.append(f"1                                                                           {'sbeam':>20}")
-    lines.append(f"                                          SOL 101 STATIC ANALYSIS")
+    lines.append("                                          SOL 101 STATIC ANALYSIS")
     lines.append(f"                                          {title}")
     lines.append(f"                                          DATE: {now}")
     lines.append("")
@@ -130,7 +130,7 @@ def write_f06_sol103(
 
     # Header
     lines.append(f"1                                                                           {'sbeam':>20}")
-    lines.append(f"                                          SOL 103 NORMAL MODES")
+    lines.append("                                          SOL 103 NORMAL MODES")
     lines.append(f"                                          {title}")
     lines.append(f"                                          DATE: {now}")
     lines.append("")

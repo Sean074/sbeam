@@ -10,7 +10,6 @@ from sbeam.assembly.stiffness import (
     apply_spcs,
     local_stiffness,
     transform_matrix,
-    element_stiffness_global,
 )
 from sbeam.assembly.load_vector import assemble_load_vector, build_grid_index
 from sbeam.assembly.rbe3 import build_rbe3_transformation

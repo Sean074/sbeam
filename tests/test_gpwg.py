@@ -8,7 +8,7 @@ from sbeam.model.property import Pbar
 from sbeam.model.material import Mat1
 from sbeam.model.mass import Conm2
 from sbeam.model.bulk_data import BulkData
-from sbeam.gpwg import compute_gpwg, GpwgResult
+from sbeam.gpwg import compute_gpwg
 
 
 # ---------------------------------------------------------------------------

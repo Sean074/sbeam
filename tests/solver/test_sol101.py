@@ -1,6 +1,5 @@
 """Tests for Step 10: SOL 101 solve and displacement recovery."""
 
-import math
 import numpy as np
 import pytest
 

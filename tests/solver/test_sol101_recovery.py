@@ -1,6 +1,5 @@
 """Tests for Step 11: SOL 101 post-processing (forces, stresses, reactions)."""
 
-import numpy as np
 import pytest
 
 from sbeam.model.grid import Grid
@@ -13,17 +12,7 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.parser.case_control import CaseControl, SubcaseControl
 from sbeam.solver.sol101 import (
     run_sol101,
-    recover_bar_forces,
-    recover_bar_stresses,
-    recover_reactions,
 )
-from sbeam.assembly.stiffness import (
-    assemble_global_stiffness,
-    get_spc_dofs,
-    apply_spcs,
-)
-from sbeam.assembly.load_vector import assemble_load_vector, build_grid_index
-from sbeam.solver.sol101 import solve_static
 
 
 # ---------------------------------------------------------------------------

@@ -1,12 +1,5 @@
 from dataclasses import dataclass, field
 
-from sbeam.model.grid import Grid
-from sbeam.model.element import Cbar, Plotel, Rbe3
-from sbeam.model.property import Pbar
-from sbeam.model.material import Mat1
-from sbeam.model.load import Force, Moment, Load, Eigrl
-from sbeam.model.constraint import Spc, Spc1
-from sbeam.model.mass import Conm2
 
 
 @dataclass

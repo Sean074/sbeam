@@ -11,7 +11,6 @@ from sbeam.model.grid import Grid
 from sbeam.model.bulk_data import BulkData
 from sbeam.assembly.stiffness import (
     local_stiffness,
-    transform_matrix,
     element_stiffness_global,
     assemble_global_stiffness,
 )

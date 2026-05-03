@@ -4,7 +4,6 @@ import os
 import re
 import tempfile
 import pytest
-import numpy as np
 
 from sbeam.model.grid import Grid
 from sbeam.model.element import Cbar

@@ -10,7 +10,7 @@ from sbeam.model.material import Mat1
 from sbeam.model.mass import Conm2
 from sbeam.model.load import Force, Moment, Load, Eigrl
 from sbeam.model.constraint import Spc, Spc1
-from sbeam.parser.case_control import parse_case_control, CaseControl
+from sbeam.parser.case_control import parse_case_control
 
 _IGNORED_KEYWORDS = frozenset({"BEGIN", "BEGINBULK", "ENDDATA"})
 _MAX_CBARS = 200
@@ -382,7 +382,7 @@ def parse_bulk_file(filepath: str) -> BulkData:
             bulk_start = i + 1
             break
 
-    return parse_bulk_data([l.rstrip("\n") for l in lines[bulk_start:]])
+    return parse_bulk_data([line.rstrip("\n") for line in lines[bulk_start:]])
 
 
 def parse_bdf(filepath: str) -> tuple:
@@ -414,7 +414,7 @@ def parse_bdf(filepath: str) -> tuple:
         cc_lines = lines[:begin_bulk_idx]
         bulk_lines = lines[begin_bulk_idx + 1:]
 
-    cc = parse_case_control([l.rstrip("\n") for l in cc_lines])
+    cc = parse_case_control([line.rstrip("\n") for line in cc_lines])
 
     if cc.include is not None:
         base_dir = os.path.dirname(os.path.abspath(filepath))
@@ -427,5 +427,5 @@ def parse_bdf(filepath: str) -> tuple:
         with open(include_path, "r") as fh:
             bulk_lines = fh.readlines()
 
-    bulk = parse_bulk_data([l.rstrip("\n") for l in bulk_lines])
+    bulk = parse_bulk_data([line.rstrip("\n") for line in bulk_lines])
     return cc, bulk

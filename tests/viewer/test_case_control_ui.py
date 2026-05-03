@@ -1,7 +1,5 @@
 """Tests for Step 19: Case Control UI — BDF export round-trip."""
 
-import pytest
-
 from sbeam.parser.case_control import CaseControl, SubcaseControl, parse_case_control
 from sbeam.viewer.case_control_ui import export_bdf_text
 

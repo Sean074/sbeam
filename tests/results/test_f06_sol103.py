@@ -4,7 +4,6 @@ import os
 import tempfile
 import re
 
-import numpy as np
 import pytest
 
 from sbeam.model.grid import Grid

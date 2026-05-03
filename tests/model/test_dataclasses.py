@@ -1,6 +1,5 @@
 """Tests for Step 2: BDF card dataclasses."""
 
-import pytest
 
 from sbeam.model.grid import Grid
 from sbeam.model.element import Cbar, Plotel, Rbe3
