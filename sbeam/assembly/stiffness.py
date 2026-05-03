@@ -110,6 +110,25 @@ def transform_matrix(cbar: Cbar, grids: dict) -> np.ndarray:
     return T
 
 
+def apply_pin_releases(K: np.ndarray, pa: str, pb: str) -> np.ndarray:
+    """Return a copy of local 12×12 K with released DOF rows/columns zeroed.
+
+    PA/PB are strings of DOF codes 1–6 to release at end A / end B.
+    Code d at end A → local DOF index d-1 (0-based, indices 0–5).
+    Code d at end B → local DOF index d-1+6 (indices 6–11).
+    """
+    K = K.copy()
+    for c in (pa or ""):
+        d = int(c) - 1          # end-A local DOF index (0-based)
+        K[d, :] = 0.0
+        K[:, d] = 0.0
+    for c in (pb or ""):
+        d = int(c) - 1 + 6      # end-B local DOF index (0-based)
+        K[d, :] = 0.0
+        K[:, d] = 0.0
+    return K
+
+
 def element_stiffness_global(
     cbar: Cbar,
     grids: dict,
@@ -127,6 +146,8 @@ def element_stiffness_global(
     L = np.linalg.norm(gb_pos - ga_pos)
 
     K_local = local_stiffness(pbar, mat1, L)
+    if cbar.pa or cbar.pb:
+        K_local = apply_pin_releases(K_local, cbar.pa or "", cbar.pb or "")
     T = transform_matrix(cbar, grids)
 
     return T.T @ K_local @ T

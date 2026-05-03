@@ -79,10 +79,27 @@ SPC constraints are applied by the **penalty / elimination method** (elimination
 
 ## Pin Releases (PA, PB)
 
-Pin releases on a CBAR element free specified DOFs at end A or end B before the element stiffness is assembled. Implementation:
+Pin releases on a CBAR element free specified DOFs at end A (PA) or end B (PB) before the element stiffness contributes to global assembly.
 
-- For each released DOF, zero the corresponding row and column of the 12×12 local stiffness matrix before transformation and assembly.
-- A released DOF means the element provides no stiffness contribution in that direction at that end.
+**Implementation** (`apply_pin_releases(K_local, pa, pb)` in `assembly/stiffness.py`):
+- For each DOF code `d` in PA: zero row and column `d-1` (0-based) of the 12×12 local K.
+- For each DOF code `d` in PB: zero row and column `d-1+6` (0-based) of the 12×12 local K.
+- Pin releases are applied after `local_stiffness()` and before the coordinate transformation.
+
+**DOF code mapping (1-based):**
+
+| Code | Local DOF | Meaning |
+|------|-----------|---------|
+| 1 | 0 (A), 6 (B) | Axial force (Tx) |
+| 2 | 1, 7 | Shear (Ty) |
+| 3 | 2, 8 | Shear (Tz) |
+| 4 | 3, 9 | Torsion (Rx) |
+| 5 | 4, 10 | Bending moment (Ry) |
+| 6 | 5, 11 | Bending moment (Rz) |
+
+**Typical use:** PA=PB="456" releases torsion and both bending moments at both ends, making the element behave as a pure truss member (only transmits axial and transverse shear). When combined with SPC constraints that fix rotational DOFs at all free joints, the element provides exactly the truss stiffness matrix.
+
+**Note:** Released DOFs that are not otherwise constrained (by SPC or connected elements) will produce zero-stiffness rows in the global K, causing a singular matrix. Always SPC rotational DOFs at all free joints when using PA=PB="456" truss members.
 
 ---
 
