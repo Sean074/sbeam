@@ -65,10 +65,26 @@ def build_deformed_figure(
     spc_map = _get_spc_map(bulk)
     node_colors = ["#cc2222" if gid in spc_map else "#ff7f0e" for gid in gids_sorted]
     node_sizes = [10 if gid in spc_map else 6 for gid in gids_sorted]
+    node_customdata = [
+        [gid,
+         float(displacements[6 * grid_index[gid]]),
+         float(displacements[6 * grid_index[gid] + 1]),
+         float(displacements[6 * grid_index[gid] + 2])]
+        for gid in gids_sorted
+    ]
+    node_hover = (
+        "<b>GRID %{customdata[0]}</b><br>"
+        "Tx: %{customdata[1]:.4g}<br>"
+        "Ty: %{customdata[2]:.4g}<br>"
+        "Tz: %{customdata[3]:.4g}"
+        "<extra></extra>"
+    )
     fig.add_trace(go.Scatter3d(
         x=gxs, y=gys, z=gzs,
         mode="markers",
         marker=dict(size=node_sizes, color=node_colors),
+        customdata=node_customdata,
+        hovertemplate=node_hover,
         name="Deformed GRIDs",
     ))
     _add_triad(fig, bulk)

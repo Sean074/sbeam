@@ -31,8 +31,13 @@ Do this as part of the same session that implements the step — never batch com
 
 ## Development Phases
 
-- **Phase 1 (current):** SOL 101 (static) and SOL 103 (normal modes)
+- **Phase 1 (complete):** SOL 101 (static) and SOL 103 (normal modes)
 - **Phase 2:** SOL 108 (frequency response), 109 (transient), 111 (modal freq), 112 (modal transient)
+- **Future (see `inital_project_guide.md` Phase 7):** distributed loads, local coordinate systems, Timoshenko shear, enforced displacements, buckling (SOL 105), results export
+
+## Project Backlog
+
+`inital_project_guide.md` is the authoritative backlog. It lists known bugs, Phase 2 steps, and future development ideas. **Do not delete it.** When a new development step is added, follow the same step format used for Phase 1–6.
 
 ## Tech Stack
 
@@ -80,7 +85,7 @@ sbeam/
 ├── main.py
 ├── parser/         # bdf_reader.py, case_control.py
 ├── model/          # grid.py, element.py, property.py, material.py, load.py, constraint.py, mass.py
-├── assembly/       # stiffness.py, mass_matrix.py
+├── assembly/       # stiffness.py, mass_matrix.py, rbe3.py
 ├── solver/         # sol101.py, sol103.py
 ├── results/        # results.py, f06_writer.py
 ├── gpwg.py         # Mass and CG (GPWG)

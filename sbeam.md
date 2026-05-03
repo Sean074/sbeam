@@ -24,7 +24,8 @@ sbeam/
 │   └── mass.py           # Conm2 dataclass
 ├── assembly/
 │   ├── stiffness.py      # Global stiffness matrix assembly
-│   └── mass_matrix.py    # Global consistent mass matrix assembly
+│   ├── mass_matrix.py    # Global consistent mass matrix assembly
+│   └── rbe3.py           # RBE3 DOF transformation matrix
 ├── solver/
 │   ├── sol101.py         # Static analysis
 │   └── sol103.py         # Normal modes
@@ -170,6 +171,6 @@ All verification cases use consistent model parameters: E=2.0×10¹¹ Pa, ρ=785
 
 | Phase | SOL | Status |
 |-------|-----|--------|
-| 1 | 101 Static | In development |
-| 1 | 103 Normal modes | In development |
+| 1 | 101 Static | Complete |
+| 1 | 103 Normal modes | Complete |
 | 2 | 108/109/111/112 | Planned |
