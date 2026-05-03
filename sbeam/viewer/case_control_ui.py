@@ -77,7 +77,7 @@ def render_case_control_panel(bulk: Optional[BulkData]) -> None:
         st.markdown("**Subcases**")
 
         # Initialise editable subcase list from session state or existing cc
-        if "cc_subcases" not in st.session_state:
+        if not st.session_state.get("cc_subcases"):
             if cc and cc.subcases:
                 st.session_state.cc_subcases = [
                     {
