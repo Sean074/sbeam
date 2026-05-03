@@ -139,7 +139,7 @@ The two top-level functions serve distinct use cases:
 
 ## Phase 3 — Static Solver (SOL 101)
 
-### Step 7: Element Stiffness Matrix
+### Step 7: Element Stiffness Matrix ✅ COMPLETE
 
 **Objective:** Implement the 12×12 Euler-Bernoulli local element stiffness matrix and the coordinate transformation matrix for a CBAR element.
 
@@ -156,7 +156,7 @@ The two top-level functions serve distinct use cases:
 
 ---
 
-### Step 8: Global Stiffness Assembly
+### Step 8: Global Stiffness Assembly ✅ COMPLETE
 
 **Objective:** Assemble the global stiffness matrix from all CBAR elements.
 
@@ -171,7 +171,7 @@ The two top-level functions serve distinct use cases:
 
 ---
 
-### Step 9: Load Vector and SPC Assembly
+### Step 9: Load Vector and SPC Assembly ✅ COMPLETE
 
 **Objective:** Assemble the global load vector from FORCE/MOMENT/LOAD cards and apply SPC constraints by DOF elimination.
 
@@ -188,7 +188,7 @@ The two top-level functions serve distinct use cases:
 
 ---
 
-### Step 10: SOL 101 Solve and Displacement Recovery
+### Step 10: SOL 101 Solve and Displacement Recovery ✅ COMPLETE
 
 **Objective:** Solve `K_free u_free = f_free`, reconstruct full displacement vector.
 
@@ -206,7 +206,7 @@ The two top-level functions serve distinct use cases:
 
 ---
 
-### Step 11: SOL 101 Post-Processing
+### Step 11: SOL 101 Post-Processing ✅ COMPLETE
 
 **Objective:** Recover CBAR end forces/moments and stresses, and SPC reaction forces.
 
@@ -225,7 +225,7 @@ The two top-level functions serve distinct use cases:
 
 ---
 
-### Step 12: .f06 Output — SOL 101
+### Step 12: .f06 Output — SOL 101 ✅ COMPLETE
 
 **Objective:** Write SOL 101 results to a NASTRAN-style `.f06` text file.
 
@@ -240,7 +240,7 @@ The two top-level functions serve distinct use cases:
 
 ---
 
-### Step 13: GPWG — Mass and CG
+### Step 13: GPWG — Mass and CG ✅ COMPLETE
 
 **Objective:** Compute total structural mass and centre of gravity from the BulkData.
 
