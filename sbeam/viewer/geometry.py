@@ -320,6 +320,7 @@ def _add_load_arrows(fig: go.Figure, bulk: BulkData, load_sid: int) -> None:
             customdata=custom,
             hovertemplate=hover,
             name=label,
+            showlegend=False,
         ))
 
 
@@ -353,28 +354,6 @@ def _add_grid_trace(
     if not bulk.grids:
         return
     grids = list(bulk.grids.values())
-    x = [g.x for g in grids]
-    y = [g.y for g in grids]
-    z = [g.z for g in grids]
-    customdata = [[g.gid, g.ps or "—"] for g in grids]
-
-    colors = []
-    sizes = []
-    text = []
-    for g in grids:
-        if g.gid == selected_gid:
-            colors.append("#ff8800")
-            sizes.append(10)
-        elif spc_map and g.gid in spc_map:
-            colors.append("#cc2222")
-            sizes.append(12)
-        else:
-            colors.append("#333333")
-            sizes.append(6)
-        if spc_map and g.gid in spc_map:
-            text.append(f"{g.gid}\n{spc_map[g.gid]}")
-        else:
-            text.append(str(g.gid))
 
     hover = (
         "<b>GRID %{customdata[0]}</b><br>"
@@ -384,17 +363,61 @@ def _add_grid_trace(
         "PS: %{customdata[1]}"
         "<extra></extra>"
     )
-    fig.add_trace(go.Scatter3d(
-        x=x, y=y, z=z,
-        mode="markers+text",
-        marker=dict(size=sizes, color=colors),
-        text=text,
-        textposition="top center",
-        textfont=dict(size=10),
-        customdata=customdata,
-        hovertemplate=hover,
-        name="GRIDs",
-    ))
+
+    # Unconstrained GRIDs (grey solid circle)
+    free_grids = [g for g in grids if g.gid != selected_gid and not (spc_map and g.gid in spc_map)]
+    if free_grids:
+        fig.add_trace(go.Scatter3d(
+            x=[g.x for g in free_grids],
+            y=[g.y for g in free_grids],
+            z=[g.z for g in free_grids],
+            mode="markers+text",
+            marker=dict(size=6, color="#333333"),
+            text=[str(g.gid) for g in free_grids],
+            textposition="top center",
+            textfont=dict(size=10),
+            customdata=[[g.gid, g.ps or "—"] for g in free_grids],
+            hovertemplate=hover,
+            name="GRIDs",
+        ))
+
+    # SPC-constrained GRIDs (grey outline, red fill)
+    spc_grids = [g for g in grids if g.gid != selected_gid and spc_map and g.gid in spc_map]
+    if spc_grids:
+        fig.add_trace(go.Scatter3d(
+            x=[g.x for g in spc_grids],
+            y=[g.y for g in spc_grids],
+            z=[g.z for g in spc_grids],
+            mode="markers+text",
+            marker=dict(
+                size=12,
+                color="#cc2222",
+                line=dict(color="#888888", width=2),
+            ),
+            text=[f"{g.gid}\n{spc_map[g.gid]}" for g in spc_grids],
+            textposition="top center",
+            textfont=dict(size=10),
+            customdata=[[g.gid, g.ps or "—"] for g in spc_grids],
+            hovertemplate=hover,
+            name="GRIDs (SPC)",
+        ))
+
+    # Selected GRID (orange, on top of either group)
+    if selected_gid is not None and selected_gid in bulk.grids:
+        sg = bulk.grids[selected_gid]
+        label = f"{sg.gid}\n{spc_map[sg.gid]}" if spc_map and sg.gid in spc_map else str(sg.gid)
+        fig.add_trace(go.Scatter3d(
+            x=[sg.x], y=[sg.y], z=[sg.z],
+            mode="markers+text",
+            marker=dict(size=10, color="#ff8800"),
+            text=[label],
+            textposition="top center",
+            textfont=dict(size=10),
+            customdata=[[sg.gid, sg.ps or "—"]],
+            hovertemplate=hover,
+            name="Selected GRID",
+            showlegend=False,
+        ))
 
 
 def _add_cbar_traces(

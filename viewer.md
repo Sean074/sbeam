@@ -63,11 +63,11 @@ Builds Plotly 3D figures from BulkData. Contains no Streamlit imports — safe t
 - `build_mode_figure`: undeformed ghost + animated mode shape with Plotly play/pause buttons for SOL 103.
 
 **Trace strategy:**
-- GRIDs: one `Scatter3d` with all nodes, `mode="markers+text"`. Selected GID: orange, size 10. Constrained GIDs (any SPC/SPC1/Grid.ps): red `#cc2222`, size 12, label includes DOF string (e.g. `G1\n123456`). Normal: dark grey `#333333`, size 6.
+- GRIDs: split across two legend-visible `Scatter3d` traces. `"GRIDs"` (unconstrained): solid dark grey `#333333`, size 6. `"GRIDs (SPC)"` (constrained by any SPC/SPC1/Grid.ps): red fill `#cc2222` with grey outline `#888888` width 2, size 12, label includes DOF string (e.g. `G1\n123456`). Selected GRID: separate `showlegend=False` trace, orange `#ff8800`, size 10.
 - CBArs: one `Scatter3d` per PID (colour-coded), using `[x_A, x_B, None]` segment encoding. A second invisible midpoint-marker trace (`opacity=0`) carries per-element hover data (EID, PID, MID, A, I1, I2, J, L, PA, PB). Selected EID gets an additional trace in orange at width 8.
 - PLOTELs: one `Scatter3d` with `line.dash="dash"` to distinguish from CBArs.
 - Coordinate triad: three short line traces (X/Y/Z in R/G/B), length = max(10% bounding-box diagonal, 1.0).
-- Load arrows (`load_sid` provided): one `go.Cone` trace for FORCE loads (green `#22aa44`) and one for MOMENT loads (blue `#3366cc`). Arrow vectors are the actual force/moment vectors; `sizeref = max_magnitude / (0.15 × model_span)` so the largest arrow spans ~15% of the model. LOAD combination cards are expanded recursively.
+- Load arrows (`load_sid` provided): one `go.Cone` trace for FORCE loads (green `#22aa44`) and one for MOMENT loads (blue `#3366cc`), both `showlegend=False`. Arrow vectors are the actual force/moment vectors; `sizeref = max_magnitude / (0.15 × model_span)` so the largest arrow spans ~15% of the model. LOAD combination cards are expanded recursively.
 
 **Display items:**
 - GRID points: scatter markers labelled with GID; constrained nodes shown in red with DOF string.
