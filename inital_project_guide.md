@@ -675,7 +675,8 @@ loading are standard structural assessment scenarios.
 
 ---
 
-#### Step 35: CONM2 — Offset and Inertia Tensor ✅ COMPLETE
+#### 
+
 
 **Objective:** Full CONM2 support with offset vector and 3×3 inertia tensor.
 
