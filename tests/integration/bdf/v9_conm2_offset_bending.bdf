@@ -1,0 +1,45 @@
+$ V9: Coupled bending — CONM2 axial offset (x1) + CM inertia (i22)
+$ Massless 1-element cantilever. Free tip DOFs: Tz(3) and Ry(5) only.
+$ CONM2: m=2.0, x1=0.5 (axial offset), i22=0.1 (CM inertia about Y)
+$
+$ Reduced 2x2 system at [Tz_B, Ry_B]:
+$   K = [[12, 6], [6, 4]]  (EI1/L^3 scaling, I1=1, L=1, E=1)
+$   M = [[2.0, -1.0], [-1.0, 0.6]]  (m=2, d=0.5, i22=0.1)
+$ Characteristic: 0.2*omega^4 - 27.2*omega^2 + 12 = 0
+$   -> f1 ~= 0.10588 Hz,  f2 ~= 1.8531 Hz
+SOL 103
+
+SUBCASE 1
+  TITLE = CONM2 offset bending
+  SPC = 1
+  METHOD = 20
+
+BEGIN BULK
+
+$ EIGRL: extract 2 modes, MASS normalisation
+EIGRL, 20, , , 2, , , , MASS
+
+$ Nodes
+GRID, 1, , 0.0, 0.0, 0.0
+GRID, 2, , 1.0, 0.0, 0.0
+
+$ E=1.0, G=0.5, nu=0.0, rho=0.0 (massless beam)
+MAT1, 1, 1.0, 0.5, 0.0, 0.0
+
+$ I1=1.0 drives bending in local XY = global XZ (with v=[0,0,1])
+$ I2=0, J=0 (bending in XY and torsion DOFs all SPCed)
+PBAR, 1, 1, 0.01, 1.0, 0.0, 0.0
+
+$ CBAR along X, v-vector in Z  ->  local Y = global Z
+CBAR, 1, 1, 1, 2, 0.0, 0.0, 1.0
+
+$ Fix all 6 DOFs at node 1
+SPC1, 1, 123456, 1
+$ Fix Tx(1), Ty(2), Rx(4), Rz(6) at node 2  ->  leaves Tz(3) and Ry(5) free
+SPC1, 1, 1246, 2
+
+$ CONM2: m=2.0, x1=0.5, i22=0.1
+$ Free-field order: EID, GID, CID, M, X1, X2, X3, I11, I21, I22
+CONM2, 1, 2, 0, 2.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.1
+
+ENDDATA

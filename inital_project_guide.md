@@ -456,6 +456,8 @@ The two top-level functions serve distinct use cases:
 | V5 | Cantilever | 103 | f₁ = (1.8751²/2π)√(EI/ρAL⁴) | < 1% |
 | V6 | Free-free beam | 103 | First 6 modes < 1e-4 Hz | — |
 | V7 | Simply supported | 103 | f₁ = (π²/2πL²)√(EI/ρA) | < 1% |
+| V8 | Massless CBAR + CONM2 i11 | 103 | f = √(GJ/L·I11)/(2π) | < 1% |
+| V9 | Massless CBAR + CONM2 x1 offset + i22 | 103 | Coupled 2-DOF f₁, f₂ | < 1% |
 
 ---
 
@@ -673,7 +675,7 @@ loading are standard structural assessment scenarios.
 
 ---
 
-#### Step 35: CONM2 — Offset and Inertia Tensor
+#### Step 35: CONM2 — Offset and Inertia Tensor ✅ COMPLETE
 
 **Objective:** Full CONM2 support with offset vector and 3×3 inertia tensor.
 

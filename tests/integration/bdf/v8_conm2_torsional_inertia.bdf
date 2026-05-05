@@ -1,0 +1,39 @@
+$ V8: Torsional mode driven by CONM2 CM inertia (i11)
+$ Massless 1-element cantilever. Only Rx free at tip.
+$ Analytical: k_tor = GJ/L = 1.0*2.0/1.0 = 2.0; I_eff = i11 = 2.0
+$             omega = sqrt(2/2) = 1.0 rad/s  ->  f = 1/(2*pi) ~= 0.15915 Hz
+SOL 103
+
+SUBCASE 1
+  TITLE = CONM2 torsional inertia
+  SPC = 1
+  METHOD = 20
+
+BEGIN BULK
+
+$ EIGRL: extract 1 mode, MASS normalisation
+EIGRL, 20, , , 1, , , , MASS
+
+$ Nodes
+GRID, 1, , 0.0, 0.0, 0.0
+GRID, 2, , 1.0, 0.0, 0.0
+
+$ E=2.0, G=1.0, nu=0.0, rho=0.0 (massless beam; only torsion matters)
+MAT1, 1, 2.0, 1.0, 0.0, 0.0
+
+$ A=0.01 (dummy), I1/I2 small (bending DOFs are SPCed), J=2.0 (torsional constant)
+PBAR, 1, 1, 0.01, 0.001, 0.001, 2.0
+
+$ CBAR along X, v-vector in Z
+CBAR, 1, 1, 1, 2, 0.0, 0.0, 1.0
+
+$ Fix all 6 DOFs at node 1
+SPC1, 1, 123456, 1
+$ Fix all DOFs EXCEPT Rx (DOF 4) at node 2: fix DOFs 1,2,3,5,6
+SPC1, 1, 12356, 2
+
+$ CONM2: m=0.001 (tiny translational mass; SPCed DOFs), i11=2.0 (torsional inertia)
+$ Free-field order: EID, GID, CID, M, X1, X2, X3, I11
+CONM2, 1, 2, 0, 0.001, 0.0, 0.0, 0.0, 2.0
+
+ENDDATA

@@ -137,3 +137,58 @@ class TestV7SimplySupported:
         result = run_sol103(bulk, cc)
         expected = (math.pi**2 / (2 * math.pi * L**2)) * math.sqrt(E * I / (rho * A))
         assert result.frequencies_hz[0] == pytest.approx(expected, rel=0.01)
+
+
+# V8/V9 model parameters (massless beam, unit stiffness)
+G_V8 = 1.0
+J_V8 = 2.0
+L_V8 = 1.0
+I11_V8 = 2.0
+
+E_V9 = 1.0
+I1_V9 = 1.0
+L_V9 = 1.0
+M_V9 = 2.0
+D_V9 = 0.5   # x1 axial offset
+I22_V9 = 0.1
+
+
+# ---------------------------------------------------------------------------
+# V8: CONM2 torsional inertia  f = sqrt(GJ/(L·I11)) / (2π)  (< 1%)
+# ---------------------------------------------------------------------------
+
+class TestV8Conm2TorsionalInertia:
+    def test_torsional_frequency(self):
+        cc, bulk = parse_bdf(BDF_DIR / "v8_conm2_torsional_inertia.bdf")
+        result = run_sol103(bulk, cc)
+        expected = math.sqrt(G_V8 * J_V8 / (L_V8 * I11_V8)) / (2 * math.pi)
+        assert result.frequencies_hz[0] == pytest.approx(expected, rel=0.01)
+
+
+# ---------------------------------------------------------------------------
+# V9: CONM2 axial offset — coupled bending, parallel-axis theorem  (< 1%)
+# ---------------------------------------------------------------------------
+
+class TestV9Conm2OffsetBending:
+    @staticmethod
+    def _analytical_freqs():
+        from scipy.linalg import eigh as sp_eigh
+        K = np.array([[12 * E_V9 * I1_V9 / L_V9**3, 6 * E_V9 * I1_V9 / L_V9**2],
+                      [6 * E_V9 * I1_V9 / L_V9**2, 4 * E_V9 * I1_V9 / L_V9]])
+        m_rr = M_V9 * D_V9**2 + I22_V9
+        m_tr = -M_V9 * D_V9
+        M = np.array([[M_V9, m_tr], [m_tr, m_rr]])
+        vals, _ = sp_eigh(K, M)
+        return np.sqrt(np.clip(vals, 0, None)) / (2 * math.pi)
+
+    def test_first_frequency(self):
+        cc, bulk = parse_bdf(BDF_DIR / "v9_conm2_offset_bending.bdf")
+        result = run_sol103(bulk, cc)
+        expected = self._analytical_freqs()
+        assert result.frequencies_hz[0] == pytest.approx(expected[0], rel=0.01)
+
+    def test_second_frequency(self):
+        cc, bulk = parse_bdf(BDF_DIR / "v9_conm2_offset_bending.bdf")
+        result = run_sol103(bulk, cc)
+        expected = self._analytical_freqs()
+        assert result.frequencies_hz[1] == pytest.approx(expected[1], rel=0.01)
