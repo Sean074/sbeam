@@ -519,14 +519,16 @@ Step 1  (setup)
 
 These items represent defects and incomplete scope within Phase 1. Resolve before starting Phase 2.
 
+**Recommended fix order: B3 → B1 → B4 (close as doc-only)**
+
 #### Known Bugs
 
 | ID | Area | Description |
 |----|------|-------------|
-| B1 | Viewer — Case Control UI | Case control BDF export produces incorrect output in some configurations. Root cause not yet diagnosed; likely a Streamlit form interaction issue where subcase field values are not captured before the "Apply" button is processed. Reproduce by defining a multi-subcase case control, modifying SID dropdowns, then exporting; verify the exported BDF round-trips through `parse_bdf()` correctly. |
+| B1 | Viewer — Case Control UI | Case control BDF export produces incorrect output in some configurations. Root cause: Streamlit form reads widget values from `st.session_state.cc_subcases` at Submit time, but widget values (selectbox, checkbox) may not have been committed to that list yet. **Fix:** at Submit time, read values directly from widget keys (`st.session_state[f"sc_load_{idx}"]`, etc.) rather than from the pre-existing session state list. **Acceptance:** define a multi-subcase case control, modify SID dropdowns, export BDF, parse back through `parse_bdf()`, assert round-trip equality. |
 | B2 ✅ | Viewer — Results display | **FIXED.** Deformed-node trace in `build_deformed_figure` now carries `customdata=[gid, Tx, Ty, Tz]` and a `hovertemplate` showing raw physical displacements. Hover no longer shows scaled coordinates. |
-| B3 | Solver — Multi-subcase | Both `run_sol101` and `run_sol103` silently use only `case_control.subcases[0]`. If a case control file defines more than one subcase, only the first is solved. The viewer "Run Analysis" button has no loop. Fix: loop over all subcases and return a list of results (or a dict keyed by subcase ID); update the viewer to display a subcase selector and per-subcase results. |
-| B4 | Viewer — f06 import | `viewer.md` documents a post-processing path that accepts an uploaded `.f06` file and populates results from it. This is not implemented — `app.py` only stores results from in-process analysis runs. Decision needed: either implement `.f06` parsing and viewer import, or remove the description from `viewer.md`. |
+| B3 | Solver — Multi-subcase | **Highest priority — correctness bug.** Both `run_sol101` and `run_sol103` silently use only `case_control.subcases[0]`. **Fix:** change both functions to accept a single `SubcaseControl` argument; update `_run_analysis` in `viewer/app.py` to loop over all subcases and collect `dict[subcase_id, Sol101Result]` / `dict[subcase_id, Sol103Result]`; update session state and viewer (`results_view.py`) to show a subcase selector with per-subcase results. **Acceptance:** define a 2-subcase SOL 101 case; both subcases appear in the results dropdown with independent, correct displacement values. |
+| B4 | Viewer — f06 import | **Resolve by closing (doc-only).** `viewer.md` documents a post-processing path that accepts an uploaded `.f06` file and populates results from it. This feature was never implemented and is out of scope for Phase 1. **Resolution:** remove the f06 import description from `viewer.md`; the "NASTRAN f06 import" item already exists in the Future Development table below and will be addressed there. No code changes required. |
 
 ---
 
@@ -700,6 +702,70 @@ or more dependent grids with fully rigid (or DOF-selective) coupling.
 
 **Why this matters:** rigid connections between beam axes are needed for aircraft frame joints,
 eccentrically attached stiffeners, and building column–beam rigid connections.
+
+---
+
+#### Step 37: CBUSH — Spring and Damper Element
+
+**Objective:** Implement the `CBUSH` generalised spring-damper element and its associated
+`PBUSH` property card, enabling stiffness connections in up to 6 independent DOFs.
+
+**Scope (Phase 2):**
+- `CBUSH` card: EID, PID, GA, GB (blank = grounded at GA), X1/X2/X3 orientation vector.
+  - CID=0 (global system) only — user coordinate systems deferred to Step 32.
+  - Offset fields (S, OCID, S1–S3) not supported in Phase 2.
+- `PBUSH` card: PID, K1–K6 stiffness values (any may be 0/blank). Viscous damping B1–B6
+  deferred to the dynamic solvers (SOL 108/109).
+- Stiffness matrix: 6×6 diagonal local matrix `diag(K1, K2, K3, K4, K5, K6)`. For a
+  two-node element, assembled into a 12×12 element matrix:
+  ```
+  K_e = [ K_local  -K_local ]
+        [-K_local   K_local ]
+  ```
+  For a grounded element (GB blank), 6×6 at GA only. Transformed to global via
+  `T^T @ K_e @ T` using the same rotation-matrix approach as CBAR.
+- Element X-axis = unit vector GA→GB (non-coincident nodes). The X1/X2/X3 vector defines
+  the XZ-plane (equivalent to the CBAR v-vector). Coincident nodes require X1/X2/X3.
+- CBUSH is massless; CONM2 remains the mass source.
+- Works in SOL 101 and SOL 103.
+
+**Deliverables:**
+- `model/element.py` — `Cbush` dataclass (eid, pid, ga, gb, x).
+- `model/property.py` — `Pbush` dataclass (pid, k[6]).
+- `model/bulk_data.py` — add `cbushs: dict[int, Cbush]` and `pbushs: dict[int, Pbush]`.
+- `parser/bdf_reader.py` — `CBUSH` and `PBUSH` card handlers; raise `ValueError` if PID or
+  GA references a non-existent card; raise `ValueError` if nodes are coincident and no
+  orientation vector or CID is provided.
+- `assembly/stiffness.py` — `cbush_stiffness_global(cbush, grids, pbushs)`;
+  extend `assemble_global_stiffness` to include CBUSH contributions.
+- `solver/sol101.py` — `recover_cbush_forces(bulk, u_full)` returning `dict[eid, np.ndarray(6)]`
+  (element local forces F1–F3, M1–M3).
+- `results/results.py` — add `cbush_forces: dict[int, np.ndarray]` to `Sol101Result`.
+- `results/f06_writer.py` — "CBUSH ELEMENT FORCES" table section in SOL 101 output.
+- `viewer/geometry.py` — render CBUSH as a zigzag (spring-coil) polyline between GA and GB,
+  visually distinct from CBAR and PLOTEL; hover shows EID, GA, GB, K1–K6.
+- `viewer/app.py` — add PBUSH table in the Properties data tab.
+- `tests/assembly/test_cbush.py`, `tests/parser/test_cbush.py`.
+- `CLAUDE.md` supported cards table — add CBUSH and PBUSH rows.
+
+**Test / Acceptance:**
+- Single CBUSH, K1 only (axial), SPC at GA: applied force F at GB → displacement = F/K1 ± 0.01%.
+- Single CBUSH, K4 only (torsional): applied moment M at GB → rotation = M/K4 ± 0.01%.
+- Grounded CBUSH (GB blank): single grid spring to ground; stiffness assembled to GA DOFs only.
+- CBUSH at 45° to global X-axis: stiffness in global frame matches hand-transformed result.
+- Mixed model — CBAR cantilever with CBUSH at mid-span support: tip deflection matches
+  analytical two-spring-in-series solution ± 0.1%.
+- Unknown PID raises `ValueError`. Coincident nodes with no orientation raises `ValueError`.
+
+**Why this matters:** CBUSH is the most commonly used spring element in NASTRAN models.
+It is required for fasteners, bolt patterns, structural joints, bushing connections, landing
+gear, and any connection where translational and rotational stiffness must be specified
+independently. Without CBUSH, structural connections can only be modelled using artificially
+stiff CBAR stubs, which distort mode shapes and static deflections.
+
+**Reference:**
+- https://www.stressebook.com/spring-elements-in-nastran/
+- Altair HyperWorks: CBUSH and PBUSH bulk data card definitions.
 
 ---
 
