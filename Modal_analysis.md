@@ -33,7 +33,7 @@ Each CBAR element contributes a 12×12 local consistent mass matrix `[m_e]` base
 - Translational inertia: `rho * A * L` terms distributed via cubic Hermite shape functions
 - Rotational inertia: second-order terms (can be optionally included or excluded)
 
-CONM2 concentrated masses are added directly to the diagonal terms of the global mass matrix at the corresponding DOF positions.
+CONM2 concentrated masses contribute a full 6×6 symmetric block to the global mass matrix at the referenced grid's DOFs: translational mass `m·I₃`, offset-induced translation-rotation coupling `−m·skew(r)`, and rotational inertia from the parallel axis theorem plus the CM inertia tensor (I11–I33). For zero offset and no inertia tensor, only the translational diagonal is affected.
 
 ---
 
@@ -42,7 +42,7 @@ CONM2 concentrated masses are added directly to the diagonal terms of the global
 1. Initialise `M_global` as a `(6N × 6N)` zero matrix.
 2. For each CBAR element: compute local consistent mass matrix `[m_e]` and transform to global coordinates using the same `[T]` as used for the stiffness matrix.
 3. Scatter into `M_global` at DOF positions of GA and GB.
-4. For each CONM2: add mass value `M` to the three translational diagonal terms (DOFs Tx, Ty, Tz) of the referenced grid.
+4. For each CONM2: assemble the full 6×6 symmetric mass block into `M_global` at the referenced grid's DOF base. Block includes: `m·I₃` (translational), `−m·skew(r)` / `m·skew(r)ᵀ` (coupling, non-zero only when offset r ≠ 0), and `I_cm + m·(|r|²·I₃ − r·rᵀ)` (rotational, parallel axis + CM inertia).
 
 ---
 

@@ -100,6 +100,26 @@ class TestGpwgWithConm2:
         assert result.cg_x == pytest.approx(2.0, rel=1e-10)
 
 
+class TestGpwgConm2Offset:
+    def test_cg_uses_offset_position(self):
+        """CONM2 with non-zero offset: CG should be at grid + offset, not at grid."""
+        bulk = BulkData()
+        bulk.grids[1] = Grid(gid=1, x=0.0, y=0.0, z=0.0)
+        bulk.conm2s[1] = Conm2(eid=1, gid=1, cid=0, m=10.0, x1=1.0, x2=2.0, x3=3.0)
+        result = compute_gpwg(bulk)
+        assert result.total_mass == pytest.approx(10.0)
+        assert result.cg_x == pytest.approx(1.0)
+        assert result.cg_y == pytest.approx(2.0)
+        assert result.cg_z == pytest.approx(3.0)
+
+    def test_cg_offset_shifts_correctly_with_beam(self):
+        """CONM2 offset shifts CG beyond grid location even when beam mass present."""
+        bulk = make_one_element_bulk(L=1.0, rho=0.0, A=0.0)  # massless beam
+        bulk.conm2s[1] = Conm2(eid=1, gid=1, cid=0, m=10.0, x1=5.0)
+        result = compute_gpwg(bulk)
+        assert result.cg_x == pytest.approx(5.0)
+
+
 class TestGpwgZeroDensity:
     def test_zero_density_zero_mass(self):
         bulk = make_one_element_bulk(rho=0.0)

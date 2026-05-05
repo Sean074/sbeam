@@ -189,3 +189,50 @@ class TestConm2:
         assert c.gid == 2
         assert c.cid == 0
         assert c.m == pytest.approx(50.0)
+
+    def test_conm2_default_inertia_zero(self, mixed):
+        c = mixed.conm2s[20]
+        assert c.i11 == pytest.approx(0.0)
+        assert c.i22 == pytest.approx(0.0)
+        assert c.i33 == pytest.approx(0.0)
+
+    def test_conm2_inertia_free_field(self):
+        """Inertia tensor fields parsed correctly from free-field (all on one line)."""
+        lines = [
+            "GRID, 1, , 0.0, 0.0, 0.0",
+            "CONM2, 5, 1, 0, 10.0, 0.0, 0.0, 0.0, 1.1, 2.2, 3.3, 4.4, 5.5, 6.6",
+        ]
+        bulk = parse_bulk_data(lines)
+        c = bulk.conm2s[5]
+        assert c.i11 == pytest.approx(1.1)
+        assert c.i21 == pytest.approx(2.2)
+        assert c.i22 == pytest.approx(3.3)
+        assert c.i31 == pytest.approx(4.4)
+        assert c.i32 == pytest.approx(5.5)
+        assert c.i33 == pytest.approx(6.6)
+
+    def test_conm2_inertia_fixed_field_continuation(self):
+        """Inertia tensor fields parsed from fixed-field continuation line."""
+        # GRID in free-field; CONM2 + continuation in fixed-field (8-char columns)
+        lines = [
+            "GRID, 1, , 0.0, 0.0, 0.0",
+            "CONM2   30      1       0       10.0    0.0     0.0     0.0",
+            "+       1.1     2.2     3.3     4.4     5.5     6.6",
+        ]
+        bulk = parse_bulk_data(lines)
+        c = bulk.conm2s[30]
+        assert c.i11 == pytest.approx(1.1)
+        assert c.i21 == pytest.approx(2.2)
+        assert c.i22 == pytest.approx(3.3)
+        assert c.i31 == pytest.approx(4.4)
+        assert c.i32 == pytest.approx(5.5)
+        assert c.i33 == pytest.approx(6.6)
+
+    def test_conm2_nonzero_cid_warns(self):
+        """CID != 0 triggers a UserWarning."""
+        lines = [
+            "GRID, 1, , 0.0, 0.0, 0.0",
+            "CONM2, 1, 1, 5, 10.0",
+        ]
+        with pytest.warns(UserWarning, match="CID=5"):
+            parse_bulk_data(lines)

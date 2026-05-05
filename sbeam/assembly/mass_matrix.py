@@ -82,8 +82,10 @@ def element_mass_global(
 def assemble_global_mass(bulk: BulkData) -> np.ndarray:
     """Assemble the (6N x 6N) global consistent mass matrix.
 
-    Includes CBAR element contributions and CONM2 point masses
-    (translational DOFs only for CONM2).
+    Includes CBAR element contributions and CONM2 point masses.
+    CONM2 contributes the full 6x6 symmetric block: translational mass,
+    offset-induced translation-rotation coupling, parallel-axis rotational
+    inertia, and CM inertia tensor (I11-I33).
     """
     grid_index = {gid: i for i, gid in enumerate(sorted(bulk.grids.keys()))}
     n = 6 * len(grid_index)
@@ -103,12 +105,45 @@ def assemble_global_mass(bulk: BulkData) -> np.ndarray:
             for j_local, j_global in enumerate(dofs):
                 M_global[i_global, j_global] += M_e[i_local, j_local]
 
-    # CONM2 point masses added to translational DOFs (Tx, Ty, Tz) only
     for conm2 in bulk.conm2s.values():
         if conm2.gid not in grid_index:
             continue
-        i = grid_index[conm2.gid]
-        for d in range(3):
-            M_global[6 * i + d, 6 * i + d] += conm2.m
+        idx = grid_index[conm2.gid]
+        base = 6 * idx
+        m = conm2.m
+        r = np.array([conm2.x1, conm2.x2, conm2.x3])
+
+        # Translational 3x3: m*I3
+        M_global[base, base] += m
+        M_global[base + 1, base + 1] += m
+        M_global[base + 2, base + 2] += m
+
+        # Off-diagonal coupling and parallel-axis rotational inertia (offset terms)
+        if conm2.x1 != 0.0 or conm2.x2 != 0.0 or conm2.x3 != 0.0:
+            # M_tr = -m * tilde(r), placed at rows [Tx,Ty,Tz], cols [Rx,Ry,Rz]
+            # tilde(r) = [[0,-r2,r1],[r2,0,-r0],[-r1,r0,0]]
+            M_tr = -m * np.array([
+                [0.0,   -r[2],  r[1]],
+                [r[2],   0.0,  -r[0]],
+                [-r[1],  r[0],  0.0],
+            ])
+            M_global[base:base+3, base+3:base+6] += M_tr
+            M_global[base+3:base+6, base:base+3] += M_tr.T
+
+            # M_rr (parallel axis) = m * (|r|^2 * I3 - r*r^T)
+            M_global[base+3:base+6, base+3:base+6] += (
+                m * (np.dot(r, r) * np.eye(3) - np.outer(r, r))
+            )
+
+        # CM inertia tensor (zero by default; symmetric by construction)
+        M_global[base+3, base+3] += conm2.i11
+        M_global[base+3, base+4] += conm2.i21
+        M_global[base+4, base+3] += conm2.i21
+        M_global[base+4, base+4] += conm2.i22
+        M_global[base+3, base+5] += conm2.i31
+        M_global[base+5, base+3] += conm2.i31
+        M_global[base+4, base+5] += conm2.i32
+        M_global[base+5, base+4] += conm2.i32
+        M_global[base+5, base+5] += conm2.i33
 
     return M_global

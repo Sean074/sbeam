@@ -18,7 +18,7 @@ def compute_gpwg(bulk: BulkData) -> GpwgResult:
     """Compute total mass and centre of gravity from CBAR elements and CONM2 masses.
 
     CBAR mass = (rho * A + nsm) * L, distributed at element midpoint.
-    CONM2 mass = Conm2.m at grid location.
+    CONM2 mass = Conm2.m at grid location + offset (x1, x2, x3).
     """
     mass_contributions = []  # list of (mass, x, y, z)
 
@@ -50,7 +50,7 @@ def compute_gpwg(bulk: BulkData) -> GpwgResult:
         grid = bulk.grids.get(conm2.gid)
         if grid is None:
             continue
-        mass_contributions.append((conm2.m, grid.x, grid.y, grid.z))
+        mass_contributions.append((conm2.m, grid.x + conm2.x1, grid.y + conm2.x2, grid.z + conm2.x3))
 
     total_mass = sum(m for m, _, _, _ in mass_contributions)
 

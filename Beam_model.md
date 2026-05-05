@@ -103,10 +103,11 @@ MAT1, MID, E, G, NU, RHO, A, TREF, GE
 
 ### CONM2
 
-Concentrated mass element. Phase 1 supports scalar point mass only.
+Concentrated mass element. Supports translational mass, offset vector, and inertia tensor.
 
 ```
-CONM2, EID, GID, CID, M
+CONM2, EID, GID, CID, M, X1, X2, X3
++,     I11, I21, I22, I31, I32, I33
 ```
 
 | Field | Description |
@@ -115,8 +116,18 @@ CONM2, EID, GID, CID, M
 | GID | Grid point ID where mass is applied |
 | CID | Coordinate system ID (must be 0 in phase 1) |
 | M | Mass value |
+| X1, X2, X3 | Offset vector from grid to centre of mass (optional; default 0) |
+| I11, I21, I22, I31, I32, I33 | Inertia tensor at CM in CID frame (optional, second line; default 0) |
 
-**Phase 2:** offset vector (X1, X2, X3) and inertia tensor (I11, I21, I22, I31, I32, I33).
+**Mass matrix contribution:** Full 6×6 symmetric block at the grid's DOFs:
+
+- Translational 3×3: `m·I₃`
+- Coupling 3×3 (non-zero when offset ≠ 0): `−m·skew(r)` / `m·skew(r)ᵀ`
+- Rotational 3×3: `I_cm + m·(|r|²·I₃ − r·rᵀ)` (parallel axis theorem + CM inertia)
+
+**CID constraint:** CID must be 0. Non-zero CID triggers a `UserWarning` and is treated as 0.
+
+**Card format:** Inertia fields may appear on a continuation line (fixed-field) or as fields 8–13 on the same line (free-field).
 
 ---
 

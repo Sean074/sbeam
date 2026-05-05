@@ -136,7 +136,7 @@ class TestAssembleGlobalMass:
         assert np.all(eigvals > -1e-10)
 
     def test_conm2_added_to_correct_dofs(self):
-        """CONM2 mass at tip grid adds to translational DOF diagonals only."""
+        """Zero-offset CONM2 adds mass to translational DOF diagonals only."""
         bulk_no = _one_element_bulk()
         M_no = assemble_global_mass(bulk_no)
 
@@ -150,7 +150,48 @@ class TestAssembleGlobalMass:
             diff = M_with[6 * tip_idx + d, 6 * tip_idx + d] - M_no[6 * tip_idx + d, 6 * tip_idx + d]
             assert diff == pytest.approx(10.0, rel=1e-10)
 
-        # Rotational DOFs unchanged
+        # Rotational DOFs unchanged when offset is zero
         for d in range(3, 6):
             diff = M_with[6 * tip_idx + d, 6 * tip_idx + d] - M_no[6 * tip_idx + d, 6 * tip_idx + d]
             assert diff == pytest.approx(0.0, abs=1e-12)
+
+    def test_conm2_offset_z_coupling_terms(self):
+        """CONM2 with z-offset produces translation-rotation coupling in mass matrix."""
+        bulk = BulkData()
+        bulk.grids = {1: Grid(gid=1, x=0.0, y=0.0, z=0.0)}
+        m, d = 5.0, 2.0  # mass = 5, offset z = 2
+        bulk.conm2s = {1: Conm2(eid=1, gid=1, cid=0, m=m, x3=d)}
+        M = assemble_global_mass(bulk)
+
+        # Translational diagonal: m on Tx, Ty, Tz
+        for k in range(3):
+            assert M[k, k] == pytest.approx(m)
+
+        # Coupling: Tx-Ry = -m*tilde(r)[0,1] → tilde([0,0,d])[0,1] = -d → M[0,4] = m*d
+        # More precisely: M_tr = -m*tilde(r), tilde([0,0,d]) = [[0,-d,0],[d,0,0],[0,0,0]]
+        # M_tr = -m*[[0,-d,0],[d,0,0],[0,0,0]] = [[0,m*d,0],[-m*d,0,0],[0,0,0]]
+        assert M[0, 4] == pytest.approx(m * d)   # Tx-Ry
+        assert M[1, 3] == pytest.approx(-m * d)  # Ty-Rx
+        assert M[4, 0] == pytest.approx(m * d)   # Ry-Tx  (symmetric)
+        assert M[3, 1] == pytest.approx(-m * d)  # Rx-Ty  (symmetric)
+
+        # Parallel-axis rotational: Rx = m*d^2, Ry = m*d^2, Rz = 0
+        assert M[3, 3] == pytest.approx(m * d**2)  # Rx
+        assert M[4, 4] == pytest.approx(m * d**2)  # Ry
+        assert M[5, 5] == pytest.approx(0.0, abs=1e-12)  # Rz (no z² term)
+
+        # Matrix is symmetric
+        assert np.allclose(M, M.T, atol=1e-14)
+
+    def test_conm2_inertia_tensor(self):
+        """CONM2 with zero offset but non-zero I33 adds only to Rz DOF diagonal."""
+        bulk = BulkData()
+        bulk.grids = {1: Grid(gid=1, x=0.0, y=0.0, z=0.0)}
+        I33_val = 7.5
+        bulk.conm2s = {1: Conm2(eid=1, gid=1, cid=0, m=1.0, i33=I33_val)}
+        M = assemble_global_mass(bulk)
+
+        assert M[5, 5] == pytest.approx(I33_val)   # Rz gets I33
+        assert M[3, 3] == pytest.approx(0.0, abs=1e-14)  # Rx unchanged
+        assert M[4, 4] == pytest.approx(0.0, abs=1e-14)  # Ry unchanged
+        assert np.allclose(M, M.T, atol=1e-14)

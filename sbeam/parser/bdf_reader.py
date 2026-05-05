@@ -170,7 +170,7 @@ def _handle_rbe3(fields: list, conts: list, bulk: BulkData) -> None:
     bulk.rbe3s[eid] = Rbe3(eid=eid, refgrid=refgrid, refc=refc, wt_gc=wt_gc)
 
 
-def _handle_conm2(fields: list, bulk: BulkData) -> None:
+def _handle_conm2(fields: list, cont, bulk: BulkData) -> None:
     eid = _to_int(fields[1])
     gid = _to_int(fields[2])
     cid = _to_int_opt(fields[3]) if len(fields) > 3 else 0
@@ -178,7 +178,28 @@ def _handle_conm2(fields: list, bulk: BulkData) -> None:
     x1  = _to_float(fields[5]) if len(fields) > 5 else 0.0
     x2  = _to_float(fields[6]) if len(fields) > 6 else 0.0
     x3  = _to_float(fields[7]) if len(fields) > 7 else 0.0
-    bulk.conm2s[eid] = Conm2(eid=eid, gid=gid, cid=cid, m=m, x1=x1, x2=x2, x3=x3)
+
+    if cid != 0:
+        warnings.warn(
+            f"CONM2 {eid}: CID={cid} ignored — non-zero coordinate systems not supported; global frame assumed",
+            UserWarning, stacklevel=2,
+        )
+
+    # Inertia tensor: fields 8-13 in free-field, or continuation line fields 1-6 in fixed-field
+    def _gi(n: int) -> float:
+        if len(fields) > n and fields[n].strip():
+            return _to_float(fields[n])
+        if cont is not None:
+            k = n - 7  # fields[8] → cont[1], ..., fields[13] → cont[6]
+            if len(cont) > k:
+                return _to_float(cont[k])
+        return 0.0
+
+    bulk.conm2s[eid] = Conm2(
+        eid=eid, gid=gid, cid=cid, m=m, x1=x1, x2=x2, x3=x3,
+        i11=_gi(8), i21=_gi(9), i22=_gi(10),
+        i31=_gi(11), i32=_gi(12), i33=_gi(13),
+    )
 
 
 def _handle_spc(fields: list, bulk: BulkData) -> None:
@@ -332,7 +353,7 @@ def parse_bulk_data(lines: list) -> BulkData:
                     break
             _handle_rbe3(fields, conts, bulk)
         elif keyword == "CONM2":
-            _handle_conm2(fields, bulk)
+            _handle_conm2(fields, cont, bulk)
         elif keyword == "SPC":
             _handle_spc(fields, bulk)
         elif keyword == "SPC1":
