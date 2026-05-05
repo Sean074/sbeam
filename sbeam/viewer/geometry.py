@@ -52,6 +52,8 @@ def build_deformed_figure(
     """3D figure showing undeformed ghost + deformed overlay for SOL 101."""
     fig = go.Figure()
     _add_ghost_cbar_lines(fig, bulk)
+    _add_ghost_plotel_lines(fig, bulk)
+    _add_ghost_rbe3_lines(fig, bulk)
     def_coords = _deformed_grid_coords(bulk, displacements, grid_index, scale)
     xs, ys, zs = _cbar_line_coords(bulk, def_coords)
     fig.add_trace(go.Scatter3d(
@@ -87,6 +89,24 @@ def build_deformed_figure(
         hovertemplate=node_hover,
         name="Deformed GRIDs",
     ))
+    pxs, pys, pzs = _plotel_line_coords(bulk, def_coords)
+    if pxs:
+        fig.add_trace(go.Scatter3d(
+            x=pxs, y=pys, z=pzs,
+            mode="lines",
+            line=dict(color="#aaaaaa", width=2, dash="dash"),
+            name="PLOTEL",
+            hoverinfo="skip",
+        ))
+    rxs, rys, rzs = _rbe3_line_coords(bulk, def_coords)
+    if rxs:
+        fig.add_trace(go.Scatter3d(
+            x=rxs, y=rys, z=rzs,
+            mode="lines",
+            line=dict(color="#cc2222", width=2, dash="dash"),
+            name="RBE3",
+            hoverinfo="skip",
+        ))
     _add_triad(fig, bulk)
     if load_sid is not None:
         _add_load_arrows(fig, bulk, load_sid)
@@ -104,25 +124,43 @@ def build_mode_figure(
 ) -> go.Figure:
     """3D figure with animated cycling mode shape for SOL 103."""
     fig = go.Figure()
-    _add_ghost_cbar_lines(fig, bulk)
+    _add_ghost_cbar_lines(fig, bulk)    # trace 0
+    _add_ghost_plotel_lines(fig, bulk)  # trace 1
+    _add_ghost_rbe3_lines(fig, bulk)    # trace 2
 
     # Initial state: zero amplitude (undeformed positions)
     def_coords_0 = _mode_grid_coords(bulk, mode_shape, grid_index, 0.0)
     xs0, ys0, zs0 = _cbar_line_coords(bulk, def_coords_0)
     gxs0, gys0, gzs0 = _grid_coord_lists(bulk, def_coords_0)
+    pxs0, pys0, pzs0 = _plotel_line_coords(bulk, def_coords_0)
+    rxs0, rys0, rzs0 = _rbe3_line_coords(bulk, def_coords_0)
 
-    fig.add_trace(go.Scatter3d(  # trace index 1 — deformed lines
+    fig.add_trace(go.Scatter3d(  # trace 3 — deformed CBAR lines
         x=xs0, y=ys0, z=zs0,
         mode="lines",
         line=dict(color="#ff7f0e", width=4),
         name="Mode shape",
     ))
-    fig.add_trace(go.Scatter3d(  # trace index 2 — deformed nodes
+    fig.add_trace(go.Scatter3d(  # trace 4 — deformed nodes
         x=gxs0, y=gys0, z=gzs0,
         mode="markers",
         marker=dict(size=6, color="#ff7f0e"),
         name="Mode GRIDs",
         showlegend=False,
+    ))
+    fig.add_trace(go.Scatter3d(  # trace 5 — deformed PLOTEL lines
+        x=pxs0, y=pys0, z=pzs0,
+        mode="lines",
+        line=dict(color="#aaaaaa", width=2, dash="dash"),
+        name="PLOTEL",
+        hoverinfo="skip",
+    ))
+    fig.add_trace(go.Scatter3d(  # trace 6 — deformed RBE3 lines
+        x=rxs0, y=rys0, z=rzs0,
+        mode="lines",
+        line=dict(color="#cc2222", width=2, dash="dash"),
+        name="RBE3",
+        hoverinfo="skip",
     ))
 
     _add_triad(fig, bulk)
@@ -134,13 +172,17 @@ def build_mode_figure(
         def_coords = _mode_grid_coords(bulk, mode_shape, grid_index, amp)
         xs, ys, zs = _cbar_line_coords(bulk, def_coords)
         gxs, gys, gzs = _grid_coord_lists(bulk, def_coords)
+        pxs, pys, pzs = _plotel_line_coords(bulk, def_coords)
+        rxs, rys, rzs = _rbe3_line_coords(bulk, def_coords)
         frames.append(go.Frame(
             name=str(i),
             data=[
                 go.Scatter3d(x=xs, y=ys, z=zs),
                 go.Scatter3d(x=gxs, y=gys, z=gzs),
+                go.Scatter3d(x=pxs, y=pys, z=pzs),
+                go.Scatter3d(x=rxs, y=rys, z=rzs),
             ],
-            traces=[1, 2],
+            traces=[3, 4, 5, 6],
         ))
     fig.frames = frames
 
@@ -231,6 +273,42 @@ def _grid_coord_lists(bulk: BulkData, coords: dict) -> tuple:
     xs = [coords[gid][0] for gid in gids]
     ys = [coords[gid][1] for gid in gids]
     zs = [coords[gid][2] for gid in gids]
+    return xs, ys, zs
+
+
+def _plotel_line_coords(bulk: BulkData, coords: dict) -> tuple:
+    """Return (xs, ys, zs) lists for PLOTEL lines using given grid coords."""
+    xs: list = []
+    ys: list = []
+    zs: list = []
+    for plotel in bulk.plotels.values():
+        if plotel.g1 not in coords or plotel.g2 not in coords:
+            continue
+        x1, y1, z1 = coords[plotel.g1]
+        x2, y2, z2 = coords[plotel.g2]
+        xs += [x1, x2, None]
+        ys += [y1, y2, None]
+        zs += [z1, z2, None]
+    return xs, ys, zs
+
+
+def _rbe3_line_coords(bulk: BulkData, coords: dict) -> tuple:
+    """Return (xs, ys, zs) lists for RBE3 lines (refgrid to each independent grid)."""
+    xs: list = []
+    ys: list = []
+    zs: list = []
+    for rbe3 in bulk.rbe3s.values():
+        if rbe3.refgrid not in coords:
+            continue
+        xr, yr, zr = coords[rbe3.refgrid]
+        for _wt, _c, gids in rbe3.wt_gc:
+            for gid in gids:
+                if gid not in coords:
+                    continue
+                xg, yg, zg = coords[gid]
+                xs += [xr, xg, None]
+                ys += [yr, yg, None]
+                zs += [zr, zg, None]
     return xs, ys, zs
 
 
@@ -359,6 +437,62 @@ def _add_ghost_cbar_lines(fig: go.Figure, bulk: BulkData) -> None:
         mode="lines",
         line=dict(color="#cccccc", width=2),
         name="Undeformed",
+        opacity=0.5,
+    ))
+
+
+def _add_ghost_plotel_lines(fig: go.Figure, bulk: BulkData) -> None:
+    if not bulk.plotels:
+        return
+    xs: list = []
+    ys: list = []
+    zs: list = []
+    for plotel in bulk.plotels.values():
+        if plotel.g1 not in bulk.grids or plotel.g2 not in bulk.grids:
+            continue
+        g1 = bulk.grids[plotel.g1]
+        g2 = bulk.grids[plotel.g2]
+        xs += [g1.x, g2.x, None]
+        ys += [g1.y, g2.y, None]
+        zs += [g1.z, g2.z, None]
+    if not xs:
+        return
+    fig.add_trace(go.Scatter3d(
+        x=xs, y=ys, z=zs,
+        mode="lines",
+        line=dict(color="#aaaaaa", width=2, dash="dash"),
+        name="PLOTEL (undeformed)",
+        hoverinfo="skip",
+        opacity=0.5,
+    ))
+
+
+def _add_ghost_rbe3_lines(fig: go.Figure, bulk: BulkData) -> None:
+    if not bulk.rbe3s:
+        return
+    xs: list = []
+    ys: list = []
+    zs: list = []
+    for rbe3 in bulk.rbe3s.values():
+        if rbe3.refgrid not in bulk.grids:
+            continue
+        ref = bulk.grids[rbe3.refgrid]
+        for _wt, _c, gids in rbe3.wt_gc:
+            for gid in gids:
+                if gid not in bulk.grids:
+                    continue
+                g = bulk.grids[gid]
+                xs += [ref.x, g.x, None]
+                ys += [ref.y, g.y, None]
+                zs += [ref.z, g.z, None]
+    if not xs:
+        return
+    fig.add_trace(go.Scatter3d(
+        x=xs, y=ys, z=zs,
+        mode="lines",
+        line=dict(color="#cc2222", width=2, dash="dash"),
+        name="RBE3 (undeformed)",
+        hoverinfo="skip",
         opacity=0.5,
     ))
 

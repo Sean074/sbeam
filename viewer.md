@@ -59,8 +59,8 @@ build_mode_figure(bulk, mode_shape, grid_index, scale=1.0, freq_hz=0.0, n_frames
 Builds Plotly 3D figures from BulkData. Contains no Streamlit imports — safe to call in unit tests.
 
 - `build_model_figure`: original (undeformed) model. `selected_gid` / `selected_eid` highlight the item in orange. Optional `load_sid` renders force/moment arrows.
-- `build_deformed_figure`: undeformed ghost (grey) + deformed overlay for SOL 101 results. Optional `load_sid` renders force/moment arrows.
-- `build_mode_figure`: undeformed ghost + animated mode shape with Plotly play/pause buttons for SOL 103.
+- `build_deformed_figure`: undeformed ghost (grey, semi-transparent) + deformed overlay for SOL 101 results. Ghost includes CBAR, PLOTEL (grey dashed), and RBE3 (red dashed). Deformed overlay includes CBAR lines (orange), grid nodes, PLOTEL (grey dashed), and RBE3 (red dashed) — all displaced with the solution. Optional `load_sid` renders force/moment arrows.
+- `build_mode_figure`: undeformed ghost (CBAR grey, PLOTEL grey dashed, RBE3 red dashed, all semi-transparent) + animated mode shape with Plotly play/pause buttons for SOL 103. The animated traces (CBAR, grids, PLOTEL, RBE3) cycle through mode shape amplitudes using `scale * sin(2π i/n_frames)`. Animation frames update trace indices [3, 4, 5, 6] (CBAR lines, grid nodes, PLOTEL, RBE3).
 
 **Trace strategy:**
 - GRIDs: split across two legend-visible `Scatter3d` traces. `"GRIDs"` (unconstrained): solid dark grey `#333333`, size 6. `"GRIDs (SPC)"` (constrained by any SPC/SPC1/Grid.ps): red fill `#cc2222` with grey outline `#888888` width 2, size 12, label includes DOF string (e.g. `G1\n123456`). Selected GRID: separate `showlegend=False` trace, orange `#ff8800`, size 10.
