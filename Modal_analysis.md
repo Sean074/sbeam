@@ -93,6 +93,14 @@ Frequency filtering: if V1/V2 are specified on EIGRL, only return modes with `V1
 
 ---
 
+## Zero-Density Beams with CONM2
+
+When `rho = 0` and a CONM2 provides point mass without rotational inertia (I11–I33 all zero), only the three translational DOFs at the mass node receive non-zero diagonal entries in `M`. All rotational DOFs at the mass node, and all DOFs at non-CONM2 nodes, are zero — making `M` singular. `scipy.linalg.eigh` requires a positive-definite `b` matrix and raises `LinAlgError` without correction.
+
+**Fix (applied in `solve_modes`):** Tikhonov regularisation adds `max_mass × 1e-12` to the diagonal of any zero-mass DOF before calling `eigh`. Artificial modes introduced by these DOFs appear at frequencies far above 10⁶ Hz and never contaminate the first `nd` physical results.
+
+---
+
 ## Free-Free Models
 
 If no SPC constraints are applied, the model is free-free. The first 6 eigenvalues should be zero (or near-zero within numerical tolerance, typically < 1e-6 Hz). These are rigid body modes. They are retained in the output but flagged as rigid body modes.

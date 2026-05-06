@@ -125,6 +125,8 @@ CONM2, EID, GID, CID, M, X1, X2, X3
 - Coupling 3×3 (non-zero when offset ≠ 0): `−m·skew(r)` / `m·skew(r)ᵀ`
 - Rotational 3×3: `I_cm + m·(|r|²·I₃ − r·rᵀ)` (parallel axis theorem + CM inertia)
 
+**Zero offset / zero inertia tensor:** When X1=X2=X3=0 and I11–I33 are omitted or zero, CONM2 contributes only the translational 3×3 block (`m·I₃`). Rotational DOFs at the mass node receive no mass contribution. Combined with `rho=0` on MAT1, this makes the global mass matrix singular — see `Modal_analysis.md` for how SOL 103 handles this via regularisation.
+
 **CID constraint:** CID must be 0. Non-zero CID triggers a `UserWarning` and is treated as 0.
 
 **Card format:** Inertia fields may appear on a continuation line (fixed-field) or as fields 8–13 on the same line (free-field).

@@ -192,3 +192,30 @@ class TestV9Conm2OffsetBending:
         result = run_sol103(bulk, cc)
         expected = self._analytical_freqs()
         assert result.frequencies_hz[1] == pytest.approx(expected[1], rel=0.01)
+
+
+# ---------------------------------------------------------------------------
+# V10: CONM2 tip mass on zero-density cantilever — f = sqrt(3EI/mL^3) / (2pi)
+# Verifies Tikhonov regularisation of singular mass matrix (rho=0, no CONM2 inertia)
+# ---------------------------------------------------------------------------
+
+E_V10 = 70.0e9
+I1_V10 = (0.02 ** 4) / 12
+L_V10 = 1.0
+M_V10 = 1.0
+
+
+class TestV10Conm2ZeroDensity:
+    def test_no_linalg_error(self):
+        import scipy.linalg
+        cc, bulk = parse_bdf(BDF_DIR / "v10_conm2_zero_density.bdf")
+        try:
+            run_sol103(bulk, cc)
+        except scipy.linalg.LinAlgError as exc:
+            pytest.fail(f"LinAlgError raised for zero-density CONM2 model: {exc}")
+
+    def test_bending_frequency(self):
+        cc, bulk = parse_bdf(BDF_DIR / "v10_conm2_zero_density.bdf")
+        result = run_sol103(bulk, cc)
+        expected = math.sqrt(3 * E_V10 * I1_V10 / (M_V10 * L_V10 ** 3)) / (2 * math.pi)
+        assert result.frequencies_hz[0] == pytest.approx(expected, rel=0.01)

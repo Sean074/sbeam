@@ -27,7 +27,19 @@ def solve_modes(
 
     # scipy.linalg.eigh solves K x = lambda M x, returning eigenvalues in ascending order.
     # With b=M_free the returned eigenvectors are M-normalised: phi^T M phi = I.
-    eigenvalues, eigenvectors = scipy.linalg.eigh(K_free, b=M_free)
+    # When rho=0 and CONM2 has no rotational inertia, zero-mass DOFs make M singular.
+    # Tikhonov regularisation adds a tiny mass to those DOFs only; artificial modes
+    # appear at >> 1e6 Hz and never contaminate the first nd physical results.
+    diag_M = np.diag(M_free)
+    zero_mass = diag_M == 0.0
+    if zero_mass.any():
+        nonzero_vals = diag_M[~zero_mass]
+        eps_m = (nonzero_vals.max() if nonzero_vals.size else 1.0) * 1e-12
+        M_solve = M_free.copy()
+        M_solve[np.diag_indices_from(M_solve)] = np.where(zero_mass, eps_m, diag_M)
+        eigenvalues, eigenvectors = scipy.linalg.eigh(K_free, b=M_solve)
+    else:
+        eigenvalues, eigenvectors = scipy.linalg.eigh(K_free, b=M_free)
 
     eigenvalues = eigenvalues[:nd]
     eigenvectors = eigenvectors[:, :nd]

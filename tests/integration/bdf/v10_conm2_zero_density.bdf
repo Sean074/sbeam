@@ -1,0 +1,54 @@
+$ V10: Massless cantilever with CONM2 tip mass (zero beam density)
+$ Analytical bending: f1 = (1/2pi)*sqrt(3*E*I/m*L^3) ~= 8.42 Hz
+$ Square 20mm section: A=4e-4, I=1.333e-8, E=70e9, m=1.0 kg, L=1.0 m
+SOL 103
+
+SUBCASE 1
+  TITLE = CONM2 zero-density cantilever
+  SPC = 1
+  METHOD = 10
+
+BEGIN BULK
+
+$ EIGRL: extract 5 modes, MASS normalisation
+EIGRL, 10, , , 5, , , , MASS
+
+$ Nodes along X from 0.0 to 1.0 (10 elements)
+GRID, 1,  , 0.0, 0.0, 0.0
+GRID, 2,  , 0.1, 0.0, 0.0
+GRID, 3,  , 0.2, 0.0, 0.0
+GRID, 4,  , 0.3, 0.0, 0.0
+GRID, 5,  , 0.4, 0.0, 0.0
+GRID, 6,  , 0.5, 0.0, 0.0
+GRID, 7,  , 0.6, 0.0, 0.0
+GRID, 8,  , 0.7, 0.0, 0.0
+GRID, 9,  , 0.8, 0.0, 0.0
+GRID, 10, , 0.9, 0.0, 0.0
+GRID, 11, , 1.0, 0.0, 0.0
+
+$ Aluminium: E=70e9, G=26.3e9, nu=0.33, rho=0.0 (zero density — all mass from CONM2)
+MAT1, 1, 70.0E9, 26.3E9, 0.33, 0.0
+
+$ 20mm x 20mm solid square section
+$ A=4e-4, I1=I2=(0.02^4)/12=1.333e-8, J=0.1406*0.02^4=2.25e-9
+PBAR, 1, 1, 4.0E-4, 1.333E-8, 1.333E-8, 2.25E-9
+
+$ 10 CBAR elements along X, v-vector in Z
+CBAR, 1,  1, 1,  2,  0.0, 0.0, 1.0
+CBAR, 2,  1, 2,  3,  0.0, 0.0, 1.0
+CBAR, 3,  1, 3,  4,  0.0, 0.0, 1.0
+CBAR, 4,  1, 4,  5,  0.0, 0.0, 1.0
+CBAR, 5,  1, 5,  6,  0.0, 0.0, 1.0
+CBAR, 6,  1, 6,  7,  0.0, 0.0, 1.0
+CBAR, 7,  1, 7,  8,  0.0, 0.0, 1.0
+CBAR, 8,  1, 8,  9,  0.0, 0.0, 1.0
+CBAR, 9,  1, 9,  10, 0.0, 0.0, 1.0
+CBAR, 10, 1, 10, 11, 0.0, 0.0, 1.0
+
+$ Fix all 6 DOFs at root (node 1)
+SPC1, 1, 123456, 1
+
+$ CONM2: 1.0 kg at tip (node 11), no offset, no inertia tensor
+CONM2, 1, 11, 0, 1.0
+
+ENDDATA
