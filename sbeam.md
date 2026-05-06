@@ -15,17 +15,19 @@ sbeam/
 │   ├── bdf_reader.py     # Bulk data section parser → BulkData object
 │   └── case_control.py   # Case control section parser → CaseControl object
 ├── model/
-│   ├── grid.py           # Grid dataclass
-│   ├── element.py        # Cbar, Plotel, Rbe3, Rbe2 dataclasses
-│   ├── property.py       # Pbar dataclass
-│   ├── material.py       # Mat1 dataclass
-│   ├── load.py           # Force, Moment, Load dataclasses
-│   ├── constraint.py     # Spc, Spc1 dataclasses
-│   └── mass.py           # Conm2 dataclass
+│   ├── grid.py               # Grid dataclass (includes cp, cd fields)
+│   ├── element.py            # Cbar, Plotel, Rbe3, Rbe2 dataclasses
+│   ├── property.py           # Pbar dataclass
+│   ├── material.py           # Mat1 dataclass
+│   ├── load.py               # Force, Moment, Load dataclasses
+│   ├── constraint.py         # Spc, Spc1 dataclasses
+│   ├── mass.py               # Conm2 dataclass
+│   └── coordinate_system.py  # Cord2r dataclass
 ├── assembly/
-│   ├── stiffness.py      # Global stiffness matrix assembly
-│   ├── mass_matrix.py    # Global consistent mass matrix assembly
-│   └── rbe3.py           # RBE3 and RBE2 DOF transformation matrix
+│   ├── stiffness.py          # Global stiffness matrix assembly
+│   ├── mass_matrix.py        # Global consistent mass matrix assembly
+│   ├── rbe3.py               # RBE3 and RBE2 DOF transformation matrix
+│   └── coord_transform.py    # CORD2R rotation matrices; input/output transforms
 ├── solver/
 │   ├── sol101.py         # Static analysis
 │   └── sol103.py         # Normal modes

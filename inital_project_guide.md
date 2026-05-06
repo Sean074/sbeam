@@ -633,19 +633,42 @@ models. It is also used for aircraft 1g manoeuvre load cases and qualification t
 
 ---
 
-#### Step 32: Local Coordinate Systems (CID ≠ 0)
+#### Step 32: Local Coordinate Systems — CORD2R ✅ COMPLETE
 
-**Objective:** Support user-defined rectangular coordinate systems for grid input and load
-application.
+**Objective:** Support user-defined rectangular coordinate systems for grid input, load
+application, CONM2 offset/inertia, and results output. Only `CORD2R` is implemented.
+All internal computations remain in global CID 0; coordinate transforms apply at the
+input and output boundaries.
 
-**Scope:**
-- `CORD2R` card (rectangular coordinate system defined by three points).
-- `GRID` CP and CD fields — transform input coordinates and output results to/from local CID.
-- `FORCE` / `MOMENT` CID field — apply loads in a local system.
-- Coordinate system manager in the parser.
+**Deliverables:**
+- `model/coordinate_system.py` — `Cord2r` dataclass (`cid`, `rid`, `a`, `b`, `c`).
+- `model/bulk_data.py` — `cord2rs: dict[int, Cord2r]` field added.
+- `model/grid.py` — `cp: int` and `cd: int` fields added (default 0).
+- `assembly/coord_transform.py` — `build_transform(cid, cord2rs) → R (3×3)`, `to_global`, `to_local`, `resolve_grid_positions(bulk)`.
+- `parser/bdf_reader.py` — `CORD2R` handler (continuation required); `GRID` now reads CP and CD; `_is_continuation` updated to also accept unnamed (blank first-field) continuations; `resolve_grid_positions` called after all cards are parsed.
+- `assembly/load_vector.py` — FORCE/MOMENT direction vectors rotated from CID → global before assembly.
+- `assembly/mass_matrix.py` — CONM2 offset vector and inertia tensor rotated from CID → global before assembly (`R @ r`, `R @ I @ Rᵀ`).
+- `results/f06_writer.py` — nodal displacements/reactions and mode shapes rotated from global into each grid's CD frame before output.
+- `tests/parser/test_cord2r.py`, `tests/assembly/test_coord_transform.py`, `tests/integration/test_coord_systems.py` (V-CS1 – V-CS5).
 
-**Why this matters:** needed for angled frames, grid-based building models, and inclined
-support conditions where local orientations differ from global.
+**Verification cases:**
+
+| ID | Description | Check |
+|----|-------------|-------|
+| V-CS1 | Cantilever grids defined in 90°-rotated CP, tip load global | Tip deflection matches all-global model ± 0.1% |
+| V-CS2 | FORCE applied in rotated CID | Load vector DOFs match equivalent global FORCE |
+| V-CS3 | Grid CD ≠ 0 (90°-rotated) | Displacement output in CD frame matches hand-rotated global values |
+| V-CS4 | Two chained CORD2R systems | Grid position in global matches analytical result |
+| V-CS5 | 10-element cantilever defined in rotated CP | f₁ matches same model in global frame ± 1% |
+
+**Scope — out of scope:**
+- CORD2C, CORD2S, CORD1R (not implemented)
+- CBAR orientation vector: already specified in global (CID 0) frame per NASTRAN convention — no change
+- CBUSH CID: deferred to Step 37; will import `build_transform` from `coord_transform.py`
+
+**Why this matters:** angled frames, inclined supports, building models with non-global
+orientations all require local coordinate systems. Without CORD2R, every model must be
+constructed with geometry aligned to global axes.
 
 ---
 

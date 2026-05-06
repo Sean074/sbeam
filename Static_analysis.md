@@ -59,8 +59,8 @@ Global DOF index for grid `i` (0-based), local DOF `d` (0–5): `idx = 6*i + d`
 ## Load Vector Assembly
 
 1. Initialise `f_global` as a `(6N,)` zero vector.
-2. For each FORCE card in the active load set: apply `F × [N1, N2, N3]` to DOFs 0–2 of the referenced grid.
-3. For each MOMENT card: apply `M × [N1, N2, N3]` to DOFs 3–5 of the referenced grid.
+2. For each FORCE card in the active load set: rotate the direction vector `[N1, N2, N3]` from the card's CID into global CID 0 (no-op if CID=0), then apply `F × n_global` to DOFs 0–2 of the referenced grid.
+3. For each MOMENT card: rotate the direction vector from CID into global, then apply `M × n_global` to DOFs 3–5 of the referenced grid.
 4. If a LOAD combination card is active, scale each component set and superpose.
 
 ---

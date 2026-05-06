@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 
 
-
 @dataclass
 class BulkData:
     grids: dict = field(default_factory=dict)     # {gid: Grid}
@@ -18,3 +17,4 @@ class BulkData:
     moments: dict = field(default_factory=dict)   # {sid: list[Moment]}
     loads: dict = field(default_factory=dict)     # {sid: Load}
     eigrls: dict = field(default_factory=dict)    # {sid: Eigrl}
+    cord2rs: dict = field(default_factory=dict)   # {cid: Cord2r}

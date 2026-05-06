@@ -26,9 +26,9 @@ ENDDATA
 # Fixed-field format: each field is 8 characters wide
 # keyword(8) | field2(8) | field3(8) | ...
 _FIXED_FIELD = [
-    #        GID             CP              X               Y               Z
-    "GRID           1               0.0       0.0       0.0",
-    "GRID           2               1.0       0.0       0.0",
+    # Proper 8-char NASTRAN fixed-field: keyword(8)|GID(8)|CP(8)|X(8)|Y(8)|Z(8)|CD(8)|PS(8)
+    "GRID           1             0.0     0.0     0.0",
+    "GRID           2             1.0     0.0     0.0",
     # PID            MID             A               I1              I2              J
     "PBAR          10     100     1.0     2.0     3.0     4.0",
     # MID            E               G               NU              RHO

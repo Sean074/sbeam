@@ -3,6 +3,7 @@ import warnings
 from typing import Optional
 
 from sbeam.model.bulk_data import BulkData
+from sbeam.model.coordinate_system import Cord2r
 from sbeam.model.grid import Grid
 from sbeam.model.element import Cbar, Plotel, Rbe3, Rbe2
 from sbeam.model.property import Pbar
@@ -54,7 +55,14 @@ def _to_int_or_none(s: str) -> Optional[int]:
 
 
 def _is_continuation(fields: list) -> bool:
-    return bool(fields) and fields[0].startswith("+")
+    if not fields:
+        return False
+    if fields[0].startswith("+"):
+        return True
+    # Unnamed continuation: blank first field with subsequent non-blank content
+    if not fields[0].strip() and any(f.strip() for f in fields[1:]):
+        return True
+    return False
 
 
 def _validate_dof(c: str, context: str) -> None:
@@ -62,15 +70,47 @@ def _validate_dof(c: str, context: str) -> None:
         raise ValueError(f"{context}: invalid DOF string '{c}'")
 
 
+def _handle_cord2r(fields: list, cont, bulk: BulkData) -> None:
+    cid = _to_int(fields[1])
+    rid = _to_int_opt(fields[2]) if len(fields) > 2 else 0
+    a1  = _to_float(fields[3]) if len(fields) > 3 else 0.0
+    a2  = _to_float(fields[4]) if len(fields) > 4 else 0.0
+    a3  = _to_float(fields[5]) if len(fields) > 5 else 0.0
+    b1  = _to_float(fields[6]) if len(fields) > 6 else 0.0
+    b2  = _to_float(fields[7]) if len(fields) > 7 else 0.0
+    b3  = _to_float(fields[8]) if len(fields) > 8 else 0.0
+
+    if cont is None:
+        raise ValueError(f"CORD2R {cid}: continuation line required (C1 C2 C3 missing)")
+
+    c1  = _to_float(cont[1]) if len(cont) > 1 else 0.0
+    c2  = _to_float(cont[2]) if len(cont) > 2 else 0.0
+    c3  = _to_float(cont[3]) if len(cont) > 3 else 0.0
+
+    if cid <= 0:
+        raise ValueError(f"CORD2R CID must be > 0, got {cid}")
+    if cid in bulk.cord2rs:
+        raise ValueError(f"Duplicate coordinate system CID {cid}")
+
+    bulk.cord2rs[cid] = Cord2r(
+        cid=cid, rid=rid,
+        a=(a1, a2, a3),
+        b=(b1, b2, b3),
+        c=(c1, c2, c3),
+    )
+
+
 def _handle_grid(fields: list, bulk: BulkData) -> None:
     gid = _to_int(fields[1])
     if gid in bulk.grids:
         raise ValueError(f"Duplicate GID {gid}")
-    x = _to_float(fields[3]) if len(fields) > 3 else 0.0
-    y = _to_float(fields[4]) if len(fields) > 4 else 0.0
-    z = _to_float(fields[5]) if len(fields) > 5 else 0.0
-    ps = fields[7] if len(fields) > 7 else ""
-    bulk.grids[gid] = Grid(gid=gid, x=x, y=y, z=z, ps=ps)
+    cp  = _to_int_opt(fields[2]) if len(fields) > 2 else 0
+    x   = _to_float(fields[3]) if len(fields) > 3 else 0.0
+    y   = _to_float(fields[4]) if len(fields) > 4 else 0.0
+    z   = _to_float(fields[5]) if len(fields) > 5 else 0.0
+    cd  = _to_int_opt(fields[6]) if len(fields) > 6 else 0
+    ps  = fields[7].strip() if len(fields) > 7 else ""
+    bulk.grids[gid] = Grid(gid=gid, x=x, y=y, z=z, ps=ps, cp=cp, cd=cd)
 
 
 def _handle_pbar(fields: list, cont, bulk: BulkData) -> None:
@@ -202,12 +242,6 @@ def _handle_conm2(fields: list, cont, bulk: BulkData) -> None:
     x1  = _to_float(fields[5]) if len(fields) > 5 else 0.0
     x2  = _to_float(fields[6]) if len(fields) > 6 else 0.0
     x3  = _to_float(fields[7]) if len(fields) > 7 else 0.0
-
-    if cid != 0:
-        warnings.warn(
-            f"CONM2 {eid}: CID={cid} ignored — non-zero coordinate systems not supported; global frame assumed",
-            UserWarning, stacklevel=2,
-        )
 
     # Inertia tensor: fields 8-13 in free-field, or continuation line fields 1-6 in fixed-field
     def _gi(n: int) -> float:
@@ -352,7 +386,9 @@ def parse_bulk_data(lines: list) -> BulkData:
             if _is_continuation(nf):
                 cont = nf
 
-        if keyword == "GRID":
+        if keyword == "CORD2R":
+            _handle_cord2r(fields, cont, bulk)
+        elif keyword == "GRID":
             _handle_grid(fields, bulk)
         elif keyword == "PBAR":
             _handle_pbar(fields, cont, bulk)
@@ -416,6 +452,10 @@ def parse_bulk_data(lines: list) -> BulkData:
                 raise ValueError(
                     f"LOAD {load_sid}: component SID {comp_sid} not found in FORCE or MOMENT sets"
                 )
+
+    # Resolve all grid positions from their CP system into global CID 0
+    from sbeam.assembly.coord_transform import resolve_grid_positions
+    resolve_grid_positions(bulk)
 
     return bulk
 

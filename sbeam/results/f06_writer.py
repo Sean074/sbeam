@@ -2,9 +2,12 @@
 
 from datetime import datetime
 
+import numpy as np
+
 from sbeam.model.bulk_data import BulkData
 from sbeam.results.results import Sol101Result, Sol103Result
 from sbeam.assembly.load_vector import build_grid_index
+from sbeam.assembly.coord_transform import build_transform
 
 
 def _fmt(val: float) -> str:
@@ -46,14 +49,15 @@ def write_f06_sol101(
     for gid in gids_sorted:
         i = grid_index[gid]
         base = 6 * i
-        tx = result.displacements[base + 0]
-        ty = result.displacements[base + 1]
-        tz = result.displacements[base + 2]
-        rx = result.displacements[base + 3]
-        ry = result.displacements[base + 4]
-        rz = result.displacements[base + 5]
+        t = result.displacements[base:base+3]
+        r = result.displacements[base+3:base+6]
+        cd = bulk.grids[gid].cd
+        if cd != 0 and cd in bulk.cord2rs:
+            R = build_transform(cd, bulk.cord2rs)
+            t = R.T @ t
+            r = R.T @ r
         lines.append(
-            f"{gid:>14}     G  {_fmt(tx)}{_fmt(ty)}{_fmt(tz)}{_fmt(rx)}{_fmt(ry)}{_fmt(rz)}"
+            f"{gid:>14}     G  {_fmt(t[0])}{_fmt(t[1])}{_fmt(t[2])}{_fmt(r[0])}{_fmt(r[1])}{_fmt(r[2])}"
         )
 
     lines.append("")
@@ -166,10 +170,17 @@ def write_f06_sol103(
         for gid in gids_sorted:
             i = grid_index[gid]
             base = 6 * i
+            t = phi[base:base+3]
+            r = phi[base+3:base+6]
+            cd = bulk.grids[gid].cd
+            if cd != 0 and cd in bulk.cord2rs:
+                R = build_transform(cd, bulk.cord2rs)
+                t = R.T @ t
+                r = R.T @ r
             lines.append(
                 f"{gid:>14}     G  "
-                f"{_fmt(phi[base])}{_fmt(phi[base+1])}{_fmt(phi[base+2])}"
-                f"{_fmt(phi[base+3])}{_fmt(phi[base+4])}{_fmt(phi[base+5])}"
+                f"{_fmt(t[0])}{_fmt(t[1])}{_fmt(t[2])}"
+                f"{_fmt(r[0])}{_fmt(r[1])}{_fmt(r[2])}"
             )
         lines.append("")
 

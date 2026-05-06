@@ -7,6 +7,7 @@ from sbeam.model.property import Pbar
 from sbeam.model.material import Mat1
 from sbeam.model.bulk_data import BulkData
 from sbeam.assembly.stiffness import transform_matrix
+from sbeam.assembly.coord_transform import build_transform
 
 
 def local_mass(pbar: Pbar, mat1: Mat1, L: float) -> np.ndarray:
@@ -111,17 +112,29 @@ def assemble_global_mass(bulk: BulkData) -> np.ndarray:
         idx = grid_index[conm2.gid]
         base = 6 * idx
         m = conm2.m
-        r = np.array([conm2.x1, conm2.x2, conm2.x3])
+
+        # Offset vector and inertia tensor in CONM2 CID frame
+        r_cid = np.array([conm2.x1, conm2.x2, conm2.x3])
+        I_cid = np.array([
+            [conm2.i11, conm2.i21, conm2.i31],
+            [conm2.i21, conm2.i22, conm2.i32],
+            [conm2.i31, conm2.i32, conm2.i33],
+        ])
+
+        # Rotate to global frame when CID != 0
+        if conm2.cid != 0:
+            R = build_transform(conm2.cid, bulk.cord2rs)
+            r = R @ r_cid
+            I = R @ I_cid @ R.T
+        else:
+            r = r_cid
+            I = I_cid
 
         # Translational 3x3: m*I3
-        M_global[base, base] += m
-        M_global[base + 1, base + 1] += m
-        M_global[base + 2, base + 2] += m
+        M_global[base:base+3, base:base+3] += m * np.eye(3)
 
         # Off-diagonal coupling and parallel-axis rotational inertia (offset terms)
-        if conm2.x1 != 0.0 or conm2.x2 != 0.0 or conm2.x3 != 0.0:
-            # M_tr = -m * tilde(r), placed at rows [Tx,Ty,Tz], cols [Rx,Ry,Rz]
-            # tilde(r) = [[0,-r2,r1],[r2,0,-r0],[-r1,r0,0]]
+        if np.linalg.norm(r) > 0.0:
             M_tr = -m * np.array([
                 [0.0,   -r[2],  r[1]],
                 [r[2],   0.0,  -r[0]],
@@ -129,21 +142,11 @@ def assemble_global_mass(bulk: BulkData) -> np.ndarray:
             ])
             M_global[base:base+3, base+3:base+6] += M_tr
             M_global[base+3:base+6, base:base+3] += M_tr.T
-
-            # M_rr (parallel axis) = m * (|r|^2 * I3 - r*r^T)
             M_global[base+3:base+6, base+3:base+6] += (
                 m * (np.dot(r, r) * np.eye(3) - np.outer(r, r))
             )
 
-        # CM inertia tensor (zero by default; symmetric by construction)
-        M_global[base+3, base+3] += conm2.i11
-        M_global[base+3, base+4] += conm2.i21
-        M_global[base+4, base+3] += conm2.i21
-        M_global[base+4, base+4] += conm2.i22
-        M_global[base+3, base+5] += conm2.i31
-        M_global[base+5, base+3] += conm2.i31
-        M_global[base+4, base+5] += conm2.i32
-        M_global[base+5, base+4] += conm2.i32
-        M_global[base+5, base+5] += conm2.i33
+        # CM inertia tensor in global frame
+        M_global[base+3:base+6, base+3:base+6] += I
 
     return M_global

@@ -57,11 +57,12 @@ Phase 1 uses **Euler-Bernoulli beam theory** (shear deformation neglected). Each
 
 | Category | Cards |
 |----------|-------|
-| Geometry | `GRID` |
+| Coordinate systems | `CORD2R` (rectangular system; defined by three points A, B, C; supports chained RID references) |
+| Geometry | `GRID` (CP = input system; CD = output system for results) |
 | Elements | `CBAR`, `PLOTEL`, `RBE3` (constraint interpolation; DOF transformation), `RBE2` (rigid body; DOF transformation) |
 | Properties | `PBAR` (uniform cross-section: A, I1, I2, J, recovery points C/D/E/F) |
 | Material | `MAT1` (E, G, nu, rho) |
-| Mass | `CONM2` (scalar point mass only in phase 1) |
+| Mass | `CONM2` (point mass; offset vector and inertia tensor in CID frame) |
 | Constraints | `SPC`, `SPC1` (DOFs 1–6: Tx Ty Tz Rx Ry Rz) |
 | Loads | `FORCE`, `MOMENT`, `LOAD` (linear combination) |
 | Eigenvalue | `EIGRL` (SOL 103: modes, frequency range, normalization) |
@@ -73,7 +74,8 @@ Phase 1 uses **Euler-Bernoulli beam theory** (shear deformation neglected). Each
 ## Key Constraints
 
 - Maximum **200 CBAR elements** (keeps matrices small enough for direct inversion — no sparse solvers)
-- **Global coordinate system CID 0 only** (phase 1)
+- **CORD2R rectangular coordinate systems supported** (Step 32); CORD2C/CORD2S/CORD1R not supported
+- All internal computations in global CID 0; CORD2R used for input (GRID CP, FORCE/MOMENT/CONM2 CID) and output (GRID CD) transforms only
 - Uniform cross-section elements only (no tapered beams in phase 1)
 - Euler-Bernoulli only (no Timoshenko shear in phase 1)
 - Units are user-defined and must be consistent throughout the model

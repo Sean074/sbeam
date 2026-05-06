@@ -6,11 +6,41 @@ The `sbeam` data model represents a NASTRAN-format beam structure. All data orig
 
 ---
 
-## BDF Card Definitions (Phase 1)
+## BDF Card Definitions
+
+### CORD2R
+
+Defines a rectangular (Cartesian) coordinate system by three points.
+
+```
+CORD2R, CID, RID, A1, A2, A3, B1, B2, B3
++,      C1, C2, C3
+```
+
+| Field | Description |
+|-------|-------------|
+| CID | Coordinate system ID (integer > 0, unique) |
+| RID | Reference coordinate system ID (0 = global; or another CORD2R CID) |
+| A1–A3 | Origin of the new system, expressed in RID frame |
+| B1–B3 | Point on the local Z-axis, expressed in RID frame |
+| C1–C3 | Point in the local XZ-plane, expressed in RID frame |
+
+The three orthonormal axes are derived as:
+- **Local Z** = normalise(B − A)
+- **Local X** = normalise((C − A) − ((C−A)·Ẑ)Ẑ) (Gram-Schmidt)
+- **Local Y** = Ẑ × X̂ (right-handed)
+
+The continuation line carrying C1–C3 is required. A, B, C must be non-collinear; CID must be unique and > 0.
+
+Chained systems (`RID > 0`) are supported; cycles raise a `ValueError`.
+
+Only rectangular systems (CORD2R) are supported. CORD2C, CORD2S, CORD1R are not implemented.
+
+---
 
 ### GRID
 
-Defines a grid point (node) in the global Cartesian coordinate system.
+Defines a grid point (node).
 
 ```
 GRID, GID, CP, X1, X2, X3, CD, PS, SEID
@@ -19,13 +49,13 @@ GRID, GID, CP, X1, X2, X3, CD, PS, SEID
 | Field | Description |
 |-------|-------------|
 | GID | Grid ID (integer, unique) |
-| CP | Input coordinate system (must be 0 in phase 1) |
-| X1, X2, X3 | X, Y, Z coordinates |
-| CD | Output coordinate system (must be 0 in phase 1) |
+| CP | Input coordinate system: coordinates X1/X2/X3 are given in this system (0 = global) |
+| X1, X2, X3 | Coordinates in the CP system |
+| CD | Output coordinate system: nodal results (displacements, reactions) are reported in this system |
 | PS | Permanent SPC DOFs (optional) |
 | SEID | Superelement ID (not used; must be blank) |
 
-**Phase 1 constraint:** CP and CD must be 0 or blank.
+After parsing, `resolve_grid_positions()` transforms all grid positions from their CP system into global CID 0 in-place. The `cd` field is preserved for output transformation.
 
 ---
 

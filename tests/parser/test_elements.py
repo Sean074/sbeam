@@ -228,11 +228,14 @@ class TestConm2:
         assert c.i32 == pytest.approx(5.5)
         assert c.i33 == pytest.approx(6.6)
 
-    def test_conm2_nonzero_cid_warns(self):
-        """CID != 0 triggers a UserWarning."""
+    def test_conm2_nonzero_cid_stored(self):
+        """CID != 0 is stored without warning (CORD2R now supported)."""
         lines = [
             "GRID, 1, , 0.0, 0.0, 0.0",
             "CONM2, 1, 1, 5, 10.0",
         ]
-        with pytest.warns(UserWarning, match="CID=5"):
-            parse_bulk_data(lines)
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            bulk = parse_bulk_data(lines)
+        assert bulk.conm2s[1].cid == 5
