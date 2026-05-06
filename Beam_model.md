@@ -312,6 +312,16 @@ u_GMi[d] = u_GN[d]
 
 **Viewer:** rendered as solid red lines (`#cc2222`, width=2) from GN to each GM — distinguishable from RBE3 dashed lines.
 
+**Attaching CONM2 via RBE2 (Lesson-16 pattern):** The standard approach is to place the CONM2 on the **independent (GN) node**. The RBE2 kinematically couples all dependent nodes to GN, so the concentrated mass inertia is carried into the reduced system when the congruence transformation `M_red = Tᵀ M T` is applied. This is the correct model for discrete equipment masses (motors, payloads, fuel) attached to the structure.
+
+Example (`sample/beam_vib.bdf`):
+```
+RBE2,  20, 7, 123456, 6     $ GN=7 (independent), GM=[6] (dependent)
+CONM2, 30, 7, 0, 100000.0   $ mass on node 7 = independent node ✓
+```
+
+Placing a CONM2 on an RBE2 **dependent (GM) node** is implicitly handled by the same congruence transformation and is mathematically valid, but this configuration is untested in sbeam — verify results against a closed-form or independent model if used.
+
 **`Rbe2` dataclass:**
 
 | Field | Type | Description |

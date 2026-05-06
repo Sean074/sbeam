@@ -196,6 +196,18 @@ Output sections written to `results.f06`:
 - Tolerance: < 1% relative error.
 - **Cross-check:** same analytical frequency as V8 (I_eff=2.0 via offset equals i11=2.0 directly).
 
+### Note — RBE2 and CONM2
+
+Unlike RBE3 (which uses weighted DOF-by-DOF interpolation), RBE2 enforces true rigid-body kinematic coupling. The correct place for a CONM2 representing tip equipment or payload mass is on the **independent (GN) node** of the RBE2. The assembly pipeline applies `M_red = Tᵀ M T` after full-space assembly, which correctly projects the concentrated mass and any offset inertia into the reduced system.
+
+Example (`sample/beam_vib.bdf`):
+```
+RBE2,  20, 7, 123456, 6     $ GN=7 (independent), GM=[6] (dependent)
+CONM2, 30, 7, 0, 100000.0   $ mass on node 7 = independent node ✓
+```
+
+Placing a CONM2 on an RBE2 **dependent (GM) node** is implicitly handled by the same congruence transformation and is mathematically valid, but this configuration is untested. Contrast this with the RBE3 limitation below: for RBE2, the kinematic constraint is exact, so mass at GN is always correctly transferred.
+
 ### Note — RBE3 and Offset Mass
 
 Placing a CONM2 at an RBE3-dependent node does **not** correctly transfer torsional inertia from an offset mass. The RBE3 transformation in sbeam uses DOF-by-DOF interpolation (`u_dep = u_indep` for each DOF independently) and does not include rigid-body offset kinematics. As a result, the translational mass at the dependent node maps only to the same translational DOFs on the independent node, with no torsional coupling.
