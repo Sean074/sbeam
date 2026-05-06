@@ -164,15 +164,26 @@ Tests mirror the `sbeam/` module structure under `tests/`. Each assembly, solver
 | V5 | `v5_cantilever_modal.bdf` | 103 | f₁ = (1.8751²/2π)√(EI/ρAL⁴) | < 1% |
 | V6 | `v6_free_free_modal.bdf` | 103 | First 6 modes < 0.1 Hz (rigid body) | — |
 | V7 | `v7_simply_supported_modal.bdf` | 103 | f₁ = (π²/2πL²)√(EI/ρA) | < 1% |
+| V8 | `v8_conm2_torsional_inertia.bdf` | 103 | f = √(GJ/L·I₁₁)/(2π) | < 1% |
+| V9 | `v9_conm2_offset_bending.bdf` | 103 | Coupled 2-DOF f₁, f₂ (CONM2 axial offset) | < 1% |
+| V10 | `v10_conm2_zero_density.bdf` | 103 | f = √(3EI/mL³)/(2π) (tip mass, zero density) | < 1% |
+| V11 | `v11_cantilever_torsion_sol101.bdf` | 101 | θ_x = T·L/(G·J) | < 0.1% |
+| V12 | `v12_conm2_offset_torsion_sol103.bdf` | 103 | f = √(GJ/L·m·d²)/(2π) (transverse offset) | < 1% |
+| V13 | `v13_rbe2_rigid_coupling.bdf` | 101 | Tip deflection = PL³/3EI via RBE2 coupling | < 0.1% |
 
-All verification cases use consistent model parameters: E=2.0×10¹¹ Pa, ρ=7850 kg/m³, A=0.05 m², I=8.333×10⁻⁴ m⁴, L=1.0 m, 10 CBAR elements.
+V1–V7 use: E=2.0×10¹¹ Pa, ρ=7850 kg/m³, A=0.05 m², I=8.333×10⁻⁴ m⁴, L=1.0 m, 10 CBAR elements. V8–V13 use unit stiffness values defined in their BDF files; see `tests/integration/test_verification.py` for exact parameters.
 
 ---
 
 ## Version and Phase
 
-| Phase | SOL | Status |
-|-------|-----|--------|
-| 1 | 101 Static | Complete |
-| 1 | 103 Normal modes | Complete |
-| 2 | 108/109/111/112 | Planned |
+| Phase | Capability | Status |
+|-------|------------|--------|
+| 1 | SOL 101 Static analysis | Complete |
+| 1 | SOL 103 Normal modes | Complete |
+| 1 | BDF cards: CORD2R, GRID, CBAR, PBAR, MAT1, SPC/SPC1, FORCE, MOMENT, LOAD, PLOTEL, CONM2, EIGRL | Complete |
+| 2 | BDF cards: RBE2, RBE3, CBUSH, PBUSH | Complete |
+| 2 | SOL 108 Direct frequency response | Planned |
+| 2 | SOL 109 Direct transient response | Planned |
+| 2 | SOL 111 Modal frequency response | Planned |
+| 2 | SOL 112 Modal transient response | Planned |

@@ -144,7 +144,7 @@ CONM2, EID, GID, CID, M, X1, X2, X3
 |-------|-------------|
 | EID | Element ID |
 | GID | Grid point ID where mass is applied |
-| CID | Coordinate system ID (must be 0 in phase 1) |
+| CID | Coordinate system ID for offset vector and inertia tensor (references CORD2R; 0 = global) |
 | M | Mass value |
 | X1, X2, X3 | Offset vector from grid to centre of mass (optional; default 0) |
 | I11, I21, I22, I31, I32, I33 | Inertia tensor at CM in CID frame (optional, second line; default 0) |
@@ -157,7 +157,7 @@ CONM2, EID, GID, CID, M, X1, X2, X3
 
 **Zero offset / zero inertia tensor:** When X1=X2=X3=0 and I11–I33 are omitted or zero, CONM2 contributes only the translational 3×3 block (`m·I₃`). Rotational DOFs at the mass node receive no mass contribution. Combined with `rho=0` on MAT1, this makes the global mass matrix singular — see `Modal_analysis.md` for how SOL 103 handles this via regularisation.
 
-**CID constraint:** CID must be 0. Non-zero CID triggers a `UserWarning` and is treated as 0.
+**CID support:** When CID references a CORD2R system, the offset vector `r` and inertia tensor are rotated from the CID frame into global CID 0 before assembly (`R @ r`, `R @ I @ Rᵀ`). CID=0 is a no-op.
 
 **Card format:** Inertia fields may appear on a continuation line (fixed-field) or as fields 8–13 on the same line (free-field).
 
@@ -197,7 +197,7 @@ FORCE, SID, GID, CID, F, N1, N2, N3
 |-------|-------------|
 | SID | Load set ID |
 | GID | Grid point ID |
-| CID | Coordinate system (0 in phase 1) |
+| CID | Coordinate system for direction vector (references CORD2R; 0 = global) |
 | F | Scale factor |
 | N1,N2,N3 | Direction cosines (force vector = F × [N1, N2, N3]) |
 
@@ -211,7 +211,7 @@ Concentrated moment at a grid point.
 MOMENT, SID, GID, CID, M, N1, N2, N3
 ```
 
-Same field structure as FORCE; M is the scale factor and N1–N3 are the moment direction cosines.
+Same field structure as FORCE; M is the scale factor, N1–N3 are the moment direction cosines, and CID references a CORD2R system (0 = global).
 
 ---
 
@@ -323,6 +323,56 @@ u_GMi[d] = u_GN[d]
 
 ---
 
+### PBUSH
+
+Generalised spring-damper property. Referenced by CBUSH.
+
+```
+PBUSH, PID, K, K1, K2, K3, K4, K5, K6
+```
+
+| Field | Description |
+|-------|-------------|
+| PID | Property ID (integer, unique) |
+| K | Literal keyword "K" (identifies the stiffness field group) |
+| K1–K6 | Stiffness values for DOFs 1–6 (Tx, Ty, Tz, Rx, Ry, Rz); blank or 0 = no stiffness in that DOF |
+
+**Phase 2 scope:** Viscous damping (B1–B6) is not supported; a card with the "B" keyword raises `ValueError`. K1–K6 provide diagonal stiffness; off-diagonal coupling is not supported.
+
+---
+
+### CBUSH
+
+Two-node generalised spring-damper element. Adds diagonal stiffness in up to 6 DOFs.
+
+```
+CBUSH, EID, PID, GA, GB, (S), (CID)
++,     X1, X2, X3
+```
+
+| Field | Description |
+|-------|-------------|
+| EID | Element ID (integer, unique) |
+| PID | Property ID → references PBUSH |
+| GA | Node A grid ID |
+| GB | Node B grid ID (blank = grounded element; stiffness applied to GA DOFs only) |
+| S | Spring location ratio (not used; field is read and ignored) |
+| CID | Orientation coordinate system (must be 0 or blank — user CID deferred to Phase 3) |
+| X1, X2, X3 | Orientation vector (continuation line); defines the XZ-plane, same convention as CBAR. Required when nodes are coincident. |
+
+**Element stiffness:** Diagonal 6×6 local matrix `diag(K1…K6)`. For a two-node element, assembled into a 12×12 matrix:
+```
+K_e = [ K_local  -K_local ]
+      [-K_local   K_local ]
+```
+For a grounded element (GB blank), only the 6×6 block at GA is assembled. The local matrix is transformed to global via `Tᵀ K_e T` using the same rotation-matrix approach as CBAR.
+
+**CBUSH is massless.** Use CONM2 to add mass at connection points.
+
+**Viewer:** rendered as a zigzag (spring-coil) polyline between GA and GB, distinct from CBAR and PLOTEL traces.
+
+---
+
 ### EIGRL
 
 Real eigenvalue extraction parameters for SOL 103.
@@ -349,9 +399,12 @@ The parser produces a `BulkData` dataclass containing:
 class BulkData:
     grids: dict[int, Grid]
     cbars: dict[int, Cbar]
+    cbushs: dict[int, Cbush]
     plotels: dict[int, Plotel]
     rbe3s: dict[int, Rbe3]
+    rbe2s: dict[int, Rbe2]
     pbars: dict[int, Pbar]
+    pbushs: dict[int, Pbush]
     mat1s: dict[int, Mat1]
     conm2s: dict[int, Conm2]
     spcs: dict[int, list[Spc]]
@@ -360,9 +413,10 @@ class BulkData:
     moments: dict[int, list[Moment]]
     loads: dict[int, Load]
     eigrls: dict[int, Eigrl]
+    cord2rs: dict[int, Cord2r]
 ```
 
-All dictionaries are keyed by the card's primary ID (GID, EID, SID, etc.).
+All dictionaries are keyed by the card's primary ID (GID, EID, PID, SID, CID, etc.).
 
 ---
 
@@ -371,8 +425,10 @@ All dictionaries are keyed by the card's primary ID (GID, EID, SID, etc.).
 | Quantity | Limit | Reason |
 |----------|-------|--------|
 | CBAR elements | 200 | Direct matrix inversion (no sparse solver) |
-| Coordinate systems | CID 0 only (phase 1) | Simplify coordinate transforms |
-| Tapered sections | Not supported (phase 1) | PBAR is uniform only |
+| Coordinate systems | CORD2R only (rectangular) | CORD2C, CORD2S, CORD1R not implemented |
+| Tapered sections | Not supported | PBAR is uniform cross-section only |
+| CBAR offsets | Not supported | W1A/W2A/etc. offset fields are ignored |
+| CBUSH CID | 0 only | User-defined CID deferred to Phase 3 |
 
 ---
 
@@ -423,12 +479,12 @@ Accepts a list of BDF text lines (bulk data section only). Supports:
 - **Inline `$` comments** — everything from `$` to end of line is ignored
 - **Continuation lines** — lines whose first field starts with `+`; consumed by the preceding card handler (e.g. PBAR recovery points)
 
-Cards recognised: `GRID`, `PBAR`, `MAT1`, `CBAR`, `PLOTEL`, `CONM2`, `SPC`, `SPC1`, `FORCE`, `MOMENT`, `LOAD`, `EIGRL`.
+Cards recognised: `CORD2R`, `GRID`, `PBAR`, `PBUSH`, `MAT1`, `CBAR`, `CBUSH`, `PLOTEL`, `CONM2`, `RBE3`, `RBE2`, `SPC`, `SPC1`, `FORCE`, `MOMENT`, `LOAD`, `EIGRL`.
 Structural markers `BEGIN BULK` / `ENDDATA` are silently skipped.
 All other keywords issue `warnings.warn(…, UserWarning)` and are skipped.
 Duplicate GID raises `ValueError`.
 
-**Ordering constraint:** PBAR and MAT1 must appear before the CBAR elements that reference them.
+**Ordering constraints:** PBAR and MAT1 must appear before the CBAR elements that reference them. PBUSH must appear before the CBUSH elements that reference it. CORD2R cards may appear in any order relative to each other; cycles in `RID` references raise `ValueError`.
 
 **CBAR cross-reference validation** (at parse time):
 - `GA` or `GB` not in `bulk.grids` → `ValueError`

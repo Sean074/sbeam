@@ -173,9 +173,7 @@ The exported file is parseable by `parse_bdf()`. Multiple subcases can be define
 
 ### Results Load
 
-- File uploader or automatic detection: accepts `*.f06` results file.
-- Parses results into `Results` object; stores in session state.
-- Displays available subcases and SOL type.
+Results are produced in-process by clicking **Run Analysis** in the Results tab (see [Run Analysis from Viewer](#run-analysis-from-viewer)). After a successful run, the result is stored in session state and the display updates automatically.
 
 ### SOL 101 — Deformed Shape Display
 
