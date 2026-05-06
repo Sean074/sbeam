@@ -4,6 +4,8 @@
 
 `sbeam` (Simple Beam FEA) is a lightweight Python finite element analysis program for beam structures. It reads NASTRAN-format BDF input, solves SOL 101 (static) and SOL 103 (normal modes) analyses, and provides a Streamlit/Plotly viewer for pre- and post-processing.
 
+**See also:** [`docs/card_definition.md`](card_definition.md) — BDF card reference (field definitions, variable names, examples for all supported cards).
+
 ---
 
 ## Project Structure

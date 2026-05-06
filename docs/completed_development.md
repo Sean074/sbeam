@@ -502,3 +502,18 @@ Step 1  (setup)
                                 └─ Step 24 (integration verification)
                                      └─ Step 25 (documentation finalisation)
 ```
+
+---
+
+## Documentation: BDF Card Reference
+
+**Objective:** Provide a single, fast-lookup reference for all implemented BDF input cards — field layout, variable names and types, defaults, and a minimal example per card.
+
+**Deliverables:**
+- `docs/card_definition.md` — 17 bulk data cards (CORD2R, GRID, MAT1, PBAR, PBUSH, CBAR, CBUSH, PLOTEL, RBE2, RBE3, CONM2, SPC, SPC1, FORCE, MOMENT, LOAD, EIGRL) plus all case control keywords.
+- `docs/sbeam.md` — added reference link to `docs/card_definition.md` in the Purpose section.
+
+**Key decisions:**
+- Organised as: file structure → format rules → case control → bulk data cards (in category order: coordinate systems, geometry, materials, properties, elements, constraints, loads, eigenvalue).
+- Each card entry follows a consistent template: format line, fields table (field / variable / type / description / default), then a BDF example.
+- Phase-1/2 limitations and unsupported fields noted in a consolidated Constraints table at the end of the document.
