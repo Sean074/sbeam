@@ -15,29 +15,13 @@ Completed steps are recorded in `docs/completed_development.md`.
 These items are defects and incomplete scope within Phase 1. Resolve before starting Phase 2
 dynamic-response work.
 
-**Recommended fix order: B1 → B4 (close as doc-only)**
+**Recommended fix order: B4 (close as doc-only)**
 
 ### Open Bugs
 
 | ID | Area | Status |
 |----|------|--------|
-| B1 | Viewer — Case Control UI | Open |
 | B4 | Viewer — f06 import | Close as doc-only |
-
----
-
-#### B1: Viewer — Case Control UI Export
-
-**Description:** Case control BDF export produces incorrect output in some configurations.
-
-**Root cause:** Streamlit form reads widget values from `st.session_state.cc_subcases` at Submit
-time, but widget values (selectbox, checkbox) may not have been committed to that list yet.
-
-**Fix:** At Submit time, read values directly from widget keys
-(`st.session_state[f"sc_load_{idx}"]`, etc.) rather than from the pre-existing session state list.
-
-**Acceptance:** Define a multi-subcase case control, modify SID dropdowns, export BDF, parse back
-through `parse_bdf()`, assert round-trip equality.
 
 ---
 

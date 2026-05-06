@@ -417,6 +417,30 @@ The two top-level functions serve distinct use cases:
 
 ## Resolved Defects
 
+### B1: Viewer — Case Control UI Export ✅ FIXED
+
+**Root cause:** The case control panel uses `st.form()`. On form submission Streamlit
+commits widget values to `st.session_state[widget_key]`, then reruns the script. During
+the rerun the render loop re-renders each subcase widget with `value=sc_data["field"]`
+(the OLD value from `cc_subcases`). In some Streamlit versions this `value=` argument
+overwrites the just-committed session state, so the widget returns the old value and
+writes it back into `cc_subcases`. The `if submitted:` block then reads the stale values.
+
+**Fix (`sbeam/viewer/case_control_ui.py`):** Changed the `if submitted:` block to
+enumerate `cc_subcases` and read every subcase field directly from
+`st.session_state.get(widget_key, fallback)` instead of from the `cc_subcases` dict.
+`st.session_state[widget_key]` is guaranteed to hold the committed value after form
+submission regardless of any render-loop overwrites. The global `sol`, `title`, and
+`include_path` widgets (no `key=`) are unaffected and continue to use their direct
+return values.
+
+**Acceptance test:** `tests/viewer/test_case_control_ui.py::TestMultiSubcaseRoundTrip`
+— builds a 2-subcase SOL 101 `CaseControl` with distinct per-subcase `load_sid`,
+`spcforce`, `force`, and `stress` values; exports via `export_bdf_text`; parses back
+via `parse_case_control`; asserts all fields on both subcases match exactly.
+
+---
+
 ### B3: Solver — Multi-Subcase ✅ FIXED
 
 **Objective:** Both `run_sol101` and `run_sol103` silently used only `case_control.subcases[0]`. Fixed to support any number of subcases.

@@ -136,3 +136,73 @@ class TestRoundTrip:
         cc = _make_sol101_cc()
         text = export_bdf_text(cc)
         assert "METHOD" not in text
+
+
+class TestMultiSubcaseRoundTrip:
+    """B1 acceptance: 2-subcase export → parse round-trip with distinct per-subcase fields."""
+
+    def _make_two_subcase_cc(self) -> CaseControl:
+        return CaseControl(
+            sol=101,
+            title="Two subcase test",
+            subcases=[
+                SubcaseControl(
+                    subcase_id=1,
+                    load_sid=10,
+                    spc_sid=1,
+                    displacement=True,
+                    spcforce=True,
+                    force=True,
+                    stress=False,
+                ),
+                SubcaseControl(
+                    subcase_id=2,
+                    load_sid=20,
+                    spc_sid=1,
+                    displacement=True,
+                    spcforce=False,
+                    force=False,
+                    stress=True,
+                ),
+            ],
+            include="model.dat",
+        )
+
+    def test_both_subcases_in_text(self):
+        cc = self._make_two_subcase_cc()
+        text = export_bdf_text(cc)
+        assert "SUBCASE 1" in text
+        assert "SUBCASE 2" in text
+
+    def test_distinct_load_sids_in_text(self):
+        cc = self._make_two_subcase_cc()
+        text = export_bdf_text(cc)
+        assert "LOAD = 10" in text
+        assert "LOAD = 20" in text
+
+    def test_two_subcase_round_trip(self):
+        """Both subcases survive export → parse with correct, independent field values."""
+        cc = self._make_two_subcase_cc()
+        text = export_bdf_text(cc, include_path="model.dat")
+        cc2 = parse_case_control(text.splitlines())
+
+        assert cc2.sol == 101
+        assert len(cc2.subcases) == 2
+
+        sc1, sc2 = cc2.subcases[0], cc2.subcases[1]
+
+        assert sc1.subcase_id == 1
+        assert sc1.load_sid == 10
+        assert sc1.spc_sid == 1
+        assert sc1.displacement is True
+        assert sc1.spcforce is True
+        assert sc1.force is True
+        assert sc1.stress is False
+
+        assert sc2.subcase_id == 2
+        assert sc2.load_sid == 20
+        assert sc2.spc_sid == 1
+        assert sc2.displacement is True
+        assert sc2.spcforce is False
+        assert sc2.force is False
+        assert sc2.stress is True

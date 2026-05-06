@@ -155,20 +155,23 @@ def render_case_control_panel(bulk: Optional[BulkData]) -> None:
         st.rerun()
 
     if submitted:
+        # Read directly from widget session state keys — guaranteed to hold the
+        # committed values after form submission, regardless of what cc_subcases
+        # may have been overwritten with during the render loop rerun.
         subcases = [
             SubcaseControl(
                 subcase_id=s["id"],
-                title=s["title"],
-                load_sid=s["load_sid"],
-                spc_sid=s["spc_sid"],
-                method_sid=s["method_sid"],
-                displacement=s["displacement"],
-                spcforce=s["spcforce"],
-                oload=s["oload"],
-                force=s["force"],
-                stress=s["stress"],
+                title=st.session_state.get(f"sc_title_{idx}", s["title"]),
+                load_sid=st.session_state.get(f"sc_load_{idx}", s["load_sid"]),
+                spc_sid=st.session_state.get(f"sc_spc_{idx}", s["spc_sid"]),
+                method_sid=st.session_state.get(f"sc_method_{idx}") if sol == 103 else None,
+                displacement=st.session_state.get(f"sc_disp_{idx}", s["displacement"]),
+                spcforce=st.session_state.get(f"sc_spcf_{idx}", s["spcforce"]),
+                oload=st.session_state.get(f"sc_oload_{idx}", s["oload"]),
+                force=st.session_state.get(f"sc_force_{idx}", s["force"]),
+                stress=st.session_state.get(f"sc_stress_{idx}", s["stress"]),
             )
-            for s in st.session_state.cc_subcases
+            for idx, s in enumerate(st.session_state.cc_subcases)
         ]
         st.session_state.case_control = CaseControl(
             sol=sol,
