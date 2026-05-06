@@ -464,6 +464,18 @@ Deformed-node trace in `build_deformed_figure` now carries `customdata=[gid, Tx,
 
 ---
 
+### B4: Viewer — f06 Import ✅ CLOSED (Doc-Only)
+
+**Description:** `docs/viewer.md` was reported to describe a post-processing upload path for
+`.f06` files — a feature that was never implemented and is out of scope for Phase 1.
+
+**Resolution:** Confirmed that `docs/viewer.md` contains no f06 import documentation. The
+text was either removed in an earlier session or never formally written into the doc. No code
+changes required. The "NASTRAN f06 import" item remains in the Future Development table in
+`development_plan_bugs_todo.md` and will be addressed in Phase 3+.
+
+---
+
 ## Dependency Map
 
 ```

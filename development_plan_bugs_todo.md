@@ -12,28 +12,7 @@ Completed steps are recorded in `docs/completed_development.md`.
 
 ## Phase 1 Cleanup
 
-These items are defects and incomplete scope within Phase 1. Resolve before starting Phase 2
-dynamic-response work.
-
-**Recommended fix order: B4 (close as doc-only)**
-
-### Open Bugs
-
-| ID | Area | Status |
-|----|------|--------|
-| B4 | Viewer — f06 import | Close as doc-only |
-
----
-
-#### B4: Viewer — f06 Import (Close as Doc-Only)
-
-**Description:** `docs/viewer.md` documents a post-processing path that accepts an uploaded `.f06`
-file and populates results from it. This feature was never implemented and is out of scope for
-Phase 1.
-
-**Resolution:** Remove the f06 import description from `docs/viewer.md`. The "NASTRAN f06 import"
-item already exists in the Future Development table below and will be addressed there. No code
-changes required.
+All Phase 1 bugs (B1–B4) are resolved. See `docs/completed_development.md` under Resolved Defects.
 
 ---
 
