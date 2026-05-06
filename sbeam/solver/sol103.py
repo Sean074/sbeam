@@ -4,6 +4,7 @@ import numpy as np
 import scipy.linalg
 
 from sbeam.model.bulk_data import BulkData
+from sbeam.parser.case_control import SubcaseControl
 from sbeam.assembly.stiffness import assemble_global_stiffness, get_spc_dofs, apply_spcs
 from sbeam.assembly.mass_matrix import assemble_global_mass
 from sbeam.assembly.load_vector import build_grid_index
@@ -56,8 +57,8 @@ def solve_modes(
     return freqs_hz, eigenvectors
 
 
-def run_sol103(bulk: BulkData, case_control) -> Sol103Result:
-    """Run SOL 103 normal modes analysis (first subcase).
+def run_sol103(bulk: BulkData, subcase: SubcaseControl) -> Sol103Result:
+    """Run SOL 103 normal modes analysis for a single subcase.
 
     Returns a Sol103Result with frequencies, full-DOF mode shapes, and eigenvalues.
     """
@@ -67,7 +68,6 @@ def run_sol103(bulk: BulkData, case_control) -> Sol103Result:
     K = assemble_global_stiffness(bulk)
     M = assemble_global_mass(bulk)
 
-    subcase = case_control.subcases[0]
     spc_sid = subcase.spc_sid
     method_sid = subcase.method_sid
 

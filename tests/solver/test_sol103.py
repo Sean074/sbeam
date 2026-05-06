@@ -73,19 +73,19 @@ def _make_spc1(sid, dofs, grids):
 class TestCantileverFrequency:
     def test_first_mode_within_1pct(self):
         bulk, cc = _cantilever_cc()
-        result = run_sol103(bulk, cc)
+        result = run_sol103(bulk, cc.subcases[0])
         assert result.frequencies_hz[0] == pytest.approx(F1_CANTILEVER, rel=0.01)
 
     def test_mode_shapes_shape(self):
         bulk, cc = _cantilever_cc()
-        result = run_sol103(bulk, cc)
+        result = run_sol103(bulk, cc.subcases[0])
         n_dofs = 6 * (N_ELEM + 1)
         n_modes = len(result.frequencies_hz)
         assert result.mode_shapes.shape == (n_dofs, n_modes)
 
     def test_eigenvalues_positive(self):
         bulk, cc = _cantilever_cc()
-        result = run_sol103(bulk, cc)
+        result = run_sol103(bulk, cc.subcases[0])
         assert np.all(result.eigenvalues >= -1e-6)
 
     def test_mass_normalisation(self):
@@ -117,7 +117,7 @@ class TestFreeFreeBeam:
             sol=103,
             subcases=[SubcaseControl(subcase_id=1, spc_sid=None, method_sid=20)],
         )
-        result = run_sol103(bulk, cc)
+        result = run_sol103(bulk, cc.subcases[0])
         # Rigid body modes should be < 0.1 Hz; elastic first mode is >1000 Hz for free-free
         assert np.all(result.frequencies_hz[:6] < 0.1)
 
@@ -129,7 +129,7 @@ class TestFreeFreeBeam:
             sol=103,
             subcases=[SubcaseControl(subcase_id=1, spc_sid=None, method_sid=20)],
         )
-        result = run_sol103(bulk, cc)
+        result = run_sol103(bulk, cc.subcases[0])
         assert result.frequencies_hz[6] > 1.0
 
 
@@ -148,7 +148,7 @@ class TestSimplySupportedFrequency:
             sol=103,
             subcases=[SubcaseControl(subcase_id=1, spc_sid=10, method_sid=20)],
         )
-        result = run_sol103(bulk, cc)
+        result = run_sol103(bulk, cc.subcases[0])
         assert result.frequencies_hz[0] == pytest.approx(F1_SS, rel=0.01)
 
 
@@ -162,7 +162,7 @@ class TestMaxNormalisation:
             sol=103,
             subcases=[SubcaseControl(subcase_id=1, spc_sid=10, method_sid=20)],
         )
-        result = run_sol103(bulk, cc)
+        result = run_sol103(bulk, cc.subcases[0])
         for mode in range(result.mode_shapes.shape[1]):
             phi = result.mode_shapes[:, mode]
             # max over free DOFs

@@ -18,8 +18,23 @@ from sbeam.viewer.geometry import build_deformed_figure, build_mode_figure
 # SOL 101 results display (Step 21)
 # ---------------------------------------------------------------------------
 
-def render_sol101_results(bulk: BulkData, result: Sol101Result, load_sid: Optional[int] = None) -> None:
+def render_sol101_results(bulk: BulkData, results: dict) -> None:
     """Display deformed shape, scale slider, and results tables for SOL 101."""
+    subcase_ids = sorted(results.keys())
+    if len(subcase_ids) > 1:
+        sel_id = st.selectbox("Subcase", subcase_ids, key="results_sc_sel")
+    else:
+        sel_id = subcase_ids[0]
+    result = results[sel_id]
+
+    cc = st.session_state.get("case_control")
+    load_sid: Optional[int] = None
+    if cc is not None:
+        for sc in cc.subcases:
+            if sc.subcase_id == sel_id:
+                load_sid = sc.load_sid
+                break
+
     grid_index = build_grid_index(bulk)
     gids_sorted = sorted(bulk.grids.keys())
 
@@ -153,8 +168,15 @@ def render_sol101_results(bulk: BulkData, result: Sol101Result, load_sid: Option
 # SOL 103 results display (Step 22)
 # ---------------------------------------------------------------------------
 
-def render_sol103_results(bulk: BulkData, result: Sol103Result) -> None:
+def render_sol103_results(bulk: BulkData, results: dict) -> None:
     """Display mode shapes and frequency table for SOL 103."""
+    subcase_ids = sorted(results.keys())
+    if len(subcase_ids) > 1:
+        sel_id = st.selectbox("Subcase", subcase_ids, key="results_sc_sel")
+    else:
+        sel_id = subcase_ids[0]
+    result = results[sel_id]
+
     grid_index = build_grid_index(bulk)
     n_modes = len(result.frequencies_hz)
 

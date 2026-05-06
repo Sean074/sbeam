@@ -234,7 +234,7 @@ class TestTrussAnalytical:
             sol=101,
             subcases=[SubcaseControl(subcase_id=1, spc_sid=10, load_sid=20)],
         )
-        result = run_sol101(bulk, cc)
+        result = run_sol101(bulk, cc.subcases[0])
 
         # Node 3 is the third grid in sorted order (GIDs 1,2,3 → index 2)
         # Ty at node 3 = global DOF 6*2+1 = 13
@@ -250,7 +250,7 @@ class TestTrussAnalytical:
             sol=101,
             subcases=[SubcaseControl(subcase_id=1, spc_sid=10, load_sid=20)],
         )
-        result = run_sol101(bulk, cc)
+        result = run_sol101(bulk, cc.subcases[0])
         tx_node3 = result.displacements[6 * 2 + 0]
         assert tx_node3 == pytest.approx(0.0, abs=1e-12)
 
@@ -270,7 +270,7 @@ class TestTrussAnalytical:
             sol=101,
             subcases=[SubcaseControl(subcase_id=1, spc_sid=10, load_sid=20)],
         )
-        result_rigid = run_sol101(bulk, cc)
+        result_rigid = run_sol101(bulk, cc.subcases[0])
         ty_rigid = result_rigid.displacements[6 * 2 + 1]
 
         analytical_truss = -(1.0 * np.sqrt(2)) / (E * A)

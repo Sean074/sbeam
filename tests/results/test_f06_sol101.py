@@ -46,7 +46,7 @@ def make_cantilever():
         subcases=[SubcaseControl(subcase_id=1, load_sid=10, spc_sid=1,
                                  displacement=True, spcforce=True, force=True, stress=True)],
     )
-    result = run_sol101(bulk, cc)
+    result = run_sol101(bulk, cc.subcases[0])
     return bulk, cc, result
 
 

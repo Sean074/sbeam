@@ -344,18 +344,23 @@ def _run_analysis(bulk: BulkData) -> None:
     try:
         if cc.sol == 101:
             from sbeam.solver.sol101 import run_sol101
+            results: dict = {}
             with st.spinner("Running SOL 101…"):
-                result = run_sol101(bulk, cc)
-            st.session_state.sol101_result = result
+                for sc in cc.subcases:
+                    results[sc.subcase_id] = run_sol101(bulk, sc)
+            st.session_state.sol101_result = results
             st.session_state.sol103_result = None
-            st.success("SOL 101 complete.")
+            st.success(f"SOL 101 complete — {len(results)} subcase(s).")
         elif cc.sol == 103:
             from sbeam.solver.sol103 import run_sol103
+            results = {}
             with st.spinner("Running SOL 103…"):
-                result = run_sol103(bulk, cc)
-            st.session_state.sol103_result = result
+                for sc in cc.subcases:
+                    results[sc.subcase_id] = run_sol103(bulk, sc)
+            st.session_state.sol103_result = results
             st.session_state.sol101_result = None
-            st.success(f"SOL 103 complete — {len(result.frequencies_hz)} modes extracted.")
+            n = next(iter(results.values())).frequencies_hz.shape[0]
+            st.success(f"SOL 103 complete — {n} modes, {len(results)} subcase(s).")
         else:
             st.error(f"SOL {cc.sol} is not supported.")
     except Exception as exc:
@@ -436,7 +441,7 @@ def main() -> None:
             _run_analysis(bulk)
 
         if st.session_state.sol101_result is not None:
-            render_sol101_results(bulk, st.session_state.sol101_result, load_sid=_active_load_sid())
+            render_sol101_results(bulk, st.session_state.sol101_result)
 
         elif st.session_state.sol103_result is not None:
             render_sol103_results(bulk, st.session_state.sol103_result)

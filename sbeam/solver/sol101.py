@@ -4,6 +4,7 @@ import numpy as np
 import scipy.linalg
 
 from sbeam.model.bulk_data import BulkData
+from sbeam.parser.case_control import SubcaseControl
 from sbeam.assembly.stiffness import (
     assemble_global_stiffness,
     get_spc_dofs,
@@ -228,19 +229,14 @@ def recover_reactions(bulk: BulkData, displacements: np.ndarray, spc_dofs: list,
     return reactions
 
 
-def run_sol101(bulk: BulkData, case_control) -> Sol101Result:
-    """Run SOL 101 static analysis and return results.
-
-    Assumes single subcase (first subcase in case_control.subcases).
-    """
+def run_sol101(bulk: BulkData, subcase: SubcaseControl) -> Sol101Result:
+    """Run SOL 101 static analysis for a single subcase and return results."""
     grid_index = build_grid_index(bulk)
     n_dofs = 6 * len(grid_index)
 
     # Assemble global stiffness
     K = assemble_global_stiffness(bulk)
 
-    # Use first subcase
-    subcase = case_control.subcases[0]
     load_sid = subcase.load_sid
     spc_sid = subcase.spc_sid
 

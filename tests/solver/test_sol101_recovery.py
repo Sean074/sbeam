@@ -51,7 +51,7 @@ def _run_cantilever():
         sol=101,
         subcases=[SubcaseControl(subcase_id=1, load_sid=10, spc_sid=1)],
     )
-    return run_sol101(bulk, cc), bulk
+    return run_sol101(bulk, cc.subcases[0]), bulk
 
 
 # ---------------------------------------------------------------------------

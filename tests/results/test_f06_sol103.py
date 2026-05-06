@@ -40,7 +40,7 @@ def cantilever_result():
         title="Test cantilever modal",
         subcases=[SubcaseControl(subcase_id=1, spc_sid=10, method_sid=20)],
     )
-    result = run_sol103(bulk, cc)
+    result = run_sol103(bulk, cc.subcases[0])
     return bulk, cc, result
 
 

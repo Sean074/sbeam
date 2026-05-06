@@ -139,7 +139,7 @@ class TestCbushAxialSolver:
         cc = CaseControl(sol=101, subcases=[sc])
 
         from sbeam.solver.sol101 import run_sol101
-        result = run_sol101(bulk, cc)
+        result = run_sol101(bulk, cc.subcases[0])
         return result
 
     def test_axial_displacement(self):
@@ -158,7 +158,7 @@ class TestCbushAxialSolver:
         from sbeam.assembly.load_vector import build_grid_index
         sc = SubcaseControl(subcase_id=1, load_sid=2, spc_sid=1)
         cc = CaseControl(sol=101, subcases=[sc])
-        result = run_sol101(bulk, cc)
+        result = run_sol101(bulk, cc.subcases[0])
         gi = build_grid_index(bulk)
         tx2 = result.displacements[6 * gi[2]]
         assert tx2 == pytest.approx(F / K1, rel=1e-4)
@@ -196,7 +196,7 @@ class TestCbushTorsionalSolver:
 
         from sbeam.solver.sol101 import run_sol101
         from sbeam.assembly.load_vector import build_grid_index
-        result = run_sol101(bulk, cc)
+        result = run_sol101(bulk, cc.subcases[0])
         gi = build_grid_index(bulk)
         i2 = gi[2]
         rx2 = result.displacements[6 * i2 + 3]
@@ -224,7 +224,7 @@ class TestCbushGroundedSolver:
 
         from sbeam.solver.sol101 import run_sol101
         from sbeam.assembly.load_vector import build_grid_index
-        result = run_sol101(bulk, cc)
+        result = run_sol101(bulk, cc.subcases[0])
         gi = build_grid_index(bulk)
         i1 = gi[1]
         tx1 = result.displacements[6 * i1]
@@ -277,7 +277,7 @@ class TestCbushMixed:
 
         from sbeam.solver.sol101 import run_sol101
         from sbeam.assembly.load_vector import build_grid_index
-        result = run_sol101(bulk, cc)
+        result = run_sol101(bulk, cc.subcases[0])
         gi = build_grid_index(bulk)
 
         # Free cantilever tip deflection: PL^3/3EI with L=2
