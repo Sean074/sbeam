@@ -16,7 +16,7 @@ sbeam/
 │   └── case_control.py   # Case control section parser → CaseControl object
 ├── model/
 │   ├── grid.py           # Grid dataclass
-│   ├── element.py        # Cbar, Plotel, Rbe3 dataclasses
+│   ├── element.py        # Cbar, Plotel, Rbe3, Rbe2 dataclasses
 │   ├── property.py       # Pbar dataclass
 │   ├── material.py       # Mat1 dataclass
 │   ├── load.py           # Force, Moment, Load dataclasses
@@ -25,7 +25,7 @@ sbeam/
 ├── assembly/
 │   ├── stiffness.py      # Global stiffness matrix assembly
 │   ├── mass_matrix.py    # Global consistent mass matrix assembly
-│   └── rbe3.py           # RBE3 DOF transformation matrix
+│   └── rbe3.py           # RBE3 and RBE2 DOF transformation matrix
 ├── solver/
 │   ├── sol101.py         # Static analysis
 │   └── sol103.py         # Normal modes

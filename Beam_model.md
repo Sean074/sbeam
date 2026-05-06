@@ -254,6 +254,45 @@ where the sum is over independent grids in groups whose DOF string includes `d`.
 
 ---
 
+### RBE2
+
+Rigid Body Element (rigid type). Constrains a set of dependent grids to move identically to a single independent grid for a specified set of DOFs.
+
+```
+RBE2, EID, GN, CM, GM1, GM2, GM3, GM4, GM5, GM6
++,   GM7, GM8, ...
+```
+
+| Field | Description |
+|-------|-------------|
+| EID | Element ID |
+| GN | Independent grid ID |
+| CM | Coupled DOF string (e.g. `"123456"`) |
+| GM1… | Dependent grid IDs (first line and continuation lines) |
+
+**Constraint equation** — for each dependent grid GMi and each DOF `d` in `CM`:
+
+```
+u_GMi[d] = u_GN[d]
+```
+
+**Phase 1 scope:** no rigid arm eccentricity. All DOFs are coupled directly without offset vector computation.
+
+**Phase 1 assembly:** implemented in `assembly/rbe3.py` within `build_rbe3_transformation`, using the same T-matrix approach as RBE3. For each dependent DOF, the corresponding row of `T_full` is set to `[0, …, 1, …, 0]` with the `1` at the column of the independent DOF. After applying all RBE2 and RBE3 constraints, the transformation matrix `T` (shape `n_dof × n_red`) is applied before SPC partitioning.
+
+**Viewer:** rendered as solid red lines (`#cc2222`, width=2) from GN to each GM — distinguishable from RBE3 dashed lines.
+
+**`Rbe2` dataclass:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `eid` | `int` | Element ID |
+| `gn` | `int` | Independent grid ID |
+| `cm` | `str` | Coupled DOF string |
+| `gm` | `list[int]` | Dependent grid IDs |
+
+---
+
 ### EIGRL
 
 Real eigenvalue extraction parameters for SOL 103.

@@ -94,24 +94,26 @@ def _show_parse_summary(bulk: BulkData) -> None:
     load_sets = len(set(list(bulk.forces) + list(bulk.moments) + list(bulk.loads)))
     spc_sets = len(set(list(bulk.spcs) + list(bulk.spc1s)))
     if cc is not None:
-        cols = st.columns(8)
+        cols = st.columns(9)
         cols[0].metric("SOL", cc.sol)
         cols[1].metric("Subcases", len(cc.subcases))
         cols[2].metric("Grids", len(bulk.grids))
         cols[3].metric("CBARs", len(bulk.cbars))
         cols[4].metric("RBE3s", len(bulk.rbe3s))
-        cols[5].metric("CONM2s", len(bulk.conm2s))
-        cols[6].metric("Load sets", load_sets)
-        cols[7].metric("SPC sets", spc_sets)
+        cols[5].metric("RBE2s", len(bulk.rbe2s))
+        cols[6].metric("CONM2s", len(bulk.conm2s))
+        cols[7].metric("Load sets", load_sets)
+        cols[8].metric("SPC sets", spc_sets)
     else:
-        cols = st.columns(7)
+        cols = st.columns(8)
         cols[0].metric("Grids", len(bulk.grids))
         cols[1].metric("CBARs", len(bulk.cbars))
         cols[2].metric("RBE3s", len(bulk.rbe3s))
-        cols[3].metric("CONM2s", len(bulk.conm2s))
-        cols[4].metric("Materials", len(bulk.mat1s))
-        cols[5].metric("Load sets", load_sets)
-        cols[6].metric("SPC sets", spc_sets)
+        cols[3].metric("RBE2s", len(bulk.rbe2s))
+        cols[4].metric("CONM2s", len(bulk.conm2s))
+        cols[5].metric("Materials", len(bulk.mat1s))
+        cols[6].metric("Load sets", load_sets)
+        cols[7].metric("SPC sets", spc_sets)
         st.caption("No case control loaded — define analysis via Case Control tab.")
 
 
@@ -190,6 +192,20 @@ def _show_item_inspector(bulk: BulkData) -> None:
             for i, (weight, dofs, grids) in enumerate(rbe3.wt_gc):
                 st.write(f"**Group {i + 1}:** WT={weight}  DOFs={dofs}  Grids={grids}")
 
+    if bulk.rbe2s:
+        st.markdown("")
+        rbe2_opts: list = [None] + sorted(bulk.rbe2s.keys())
+        selected_rbe2_eid = st.selectbox(
+            "Inspect RBE2",
+            rbe2_opts,
+            format_func=lambda e: "— none —" if e is None else f"EID {e}",
+            key="sel_rbe2_eid_box",
+        )
+        if selected_rbe2_eid is not None and selected_rbe2_eid in bulk.rbe2s:
+            rbe2 = bulk.rbe2s[selected_rbe2_eid]
+            st.write(f"**IndepGrid (GN):** {rbe2.gn}  **CoupledDOFs (CM):** {rbe2.cm}")
+            st.write(f"**Dependent Grids (GM):** {rbe2.gm}")
+
 
 def _grid_spc_info(bulk: BulkData, gid: int) -> str:
     parts = []
@@ -236,6 +252,13 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
                 n_indep = sum(len(grids) for _, _, grids in r.wt_gc)
                 rbe3_rows.append({"EID": r.eid, "RefGrid": r.refgrid, "RefDOFs": r.refc, "Num Indep. Grids": n_indep})
             st.dataframe(pd.DataFrame(rbe3_rows), width="stretch")
+        if bulk.rbe2s:
+            st.markdown("**RBE2 elements**")
+            rbe2_rows = [
+                {"EID": r.eid, "GN (indep)": r.gn, "CM (DOFs)": r.cm, "Num Dep. Grids": len(r.gm)}
+                for r in bulk.rbe2s.values()
+            ]
+            st.dataframe(pd.DataFrame(rbe2_rows), width="stretch")
         if bulk.conm2s:
             st.markdown("**CONM2 masses**")
             conm2_rows = [

@@ -1,4 +1,4 @@
-"""Step 24: End-to-end integration verification tests (V1–V7).
+"""Step 24: End-to-end integration verification tests (V1–V13).
 
 Each test reads a BDF file through parse_bdf, runs the solver, and checks
 the result against a closed-form analytical value.
@@ -260,3 +260,38 @@ class TestV12Conm2OffsetTorsionSol103:
         I_eff = M_V12 * D_V12 ** 2
         expected = math.sqrt(G_V12 * J_V12 / (L_V12 * I_eff)) / (2 * math.pi)
         assert result.frequencies_hz[0] == pytest.approx(expected, rel=0.01)
+
+
+# ---------------------------------------------------------------------------
+# V13: SOL 101 RBE2 rigid coupling
+#      1-element cantilever + coincident grid coupled via RBE2
+#      Force at dependent grid → tip deflection = PL^3/3EI;  u[GM] == u[GN]
+# ---------------------------------------------------------------------------
+
+E_V13 = 2.0e11
+I_V13 = 8.333e-4
+L_V13 = 1.0
+P_V13 = 1000.0
+
+
+class TestV13Rbe2RigidCoupling:
+    @pytest.fixture(scope="class")
+    def result_and_gi(self):
+        cc, bulk = parse_bdf(BDF_DIR / "v13_rbe2_rigid_coupling.bdf")
+        result = run_sol101(bulk, cc)
+        grid_index = build_grid_index(bulk)
+        return result, grid_index
+
+    def test_gid2_tip_deflection(self, result_and_gi):
+        """Ty at CBAR tip (GID 2) matches cantilever formula PL^3/3EI."""
+        result, gi = result_and_gi
+        ty = result.displacements[6 * gi[2] + 1]
+        expected = P_V13 * L_V13 ** 3 / (3 * E_V13 * I_V13)
+        assert ty == pytest.approx(expected, rel=1e-3)
+
+    def test_gid3_equals_gid2(self, result_and_gi):
+        """RBE2 constraint: all DOFs of GID 3 (dependent) == GID 2 (independent)."""
+        result, gi = result_and_gi
+        u2 = result.displacements[6 * gi[2]: 6 * gi[2] + 6]
+        u3 = result.displacements[6 * gi[3]: 6 * gi[3] + 6]
+        np.testing.assert_allclose(u3, u2, atol=1e-12)

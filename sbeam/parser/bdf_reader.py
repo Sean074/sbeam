@@ -4,7 +4,7 @@ from typing import Optional
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.grid import Grid
-from sbeam.model.element import Cbar, Plotel, Rbe3
+from sbeam.model.element import Cbar, Plotel, Rbe3, Rbe2
 from sbeam.model.property import Pbar
 from sbeam.model.material import Mat1
 from sbeam.model.mass import Conm2
@@ -168,6 +168,30 @@ def _handle_rbe3(fields: list, conts: list, bulk: BulkData) -> None:
         wt_gc.append((wt, c, grids))
 
     bulk.rbe3s[eid] = Rbe3(eid=eid, refgrid=refgrid, refc=refc, wt_gc=wt_gc)
+
+
+def _handle_rbe2(fields: list, conts: list, bulk: BulkData) -> None:
+    eid = _to_int(fields[1])
+    gn  = _to_int(fields[2])
+    cm  = fields[3].strip()
+    _validate_dof(cm, f"RBE2 {eid}")
+
+    gm: list = []
+    for f in fields[4:]:
+        if f.strip():
+            gm.append(_to_int(f))
+    for cont in conts:
+        for f in cont[1:]:
+            if f.strip():
+                gm.append(_to_int(f))
+
+    if gn not in bulk.grids:
+        raise ValueError(f"RBE2 {eid}: independent grid GN={gn} not found")
+    for dep_gid in gm:
+        if dep_gid not in bulk.grids:
+            raise ValueError(f"RBE2 {eid}: dependent grid GM={dep_gid} not found")
+
+    bulk.rbe2s[eid] = Rbe2(eid=eid, gn=gn, cm=cm, gm=gm)
 
 
 def _handle_conm2(fields: list, cont, bulk: BulkData) -> None:
@@ -352,6 +376,20 @@ def parse_bulk_data(lines: list) -> BulkData:
                 else:
                     break
             _handle_rbe3(fields, conts, bulk)
+        elif keyword == "RBE2":
+            conts2: list = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    conts2.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_rbe2(fields, conts2, bulk)
         elif keyword == "CONM2":
             _handle_conm2(fields, cont, bulk)
         elif keyword == "SPC":

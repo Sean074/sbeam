@@ -1,0 +1,33 @@
+$ V13: RBE2 rigid coupling
+$ 1 CBAR element, L=1.0 m, fixed at GID 1, CBAR tip at GID 2
+$ GID 3 is coincident with GID 2, RBE2-coupled (GID 2=GN, GID 3=GM, CM=123456)
+$ Force 1000 N in +Y applied at GID 3 (the dependent grid)
+$ Expected: Ty[GID2] = PL^3/3EI; u[GID3] = u[GID2] exactly
+$
+SOL 101
+$
+SUBCASE 1
+  TITLE = RBE2 Rigid Coupling
+  SPC = 1
+  LOAD = 10
+  DISPLACEMENT = ALL
+$
+BEGIN BULK
+$
+GRID, 1, , 0.0, 0.0, 0.0
+GRID, 2, , 1.0, 0.0, 0.0
+GRID, 3, , 1.0, 0.0, 0.0
+$
+MAT1, 1, 2.0e11, 7.692e10, 0.3, 7850.0
+$
+PBAR, 1, 1, 0.05, 8.333e-4, 8.333e-4, 1.406e-3
+$
+CBAR, 1, 1, 1, 2, 0.0, 1.0, 0.0
+$
+RBE2, 1, 2, 123456, 3
+$
+SPC1, 1, 123456, 1
+$
+FORCE, 10, 3, 0, 1000.0, 0.0, 1.0, 0.0
+$
+ENDDATA

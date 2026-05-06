@@ -8,6 +8,7 @@ class BulkData:
     cbars: dict = field(default_factory=dict)     # {eid: Cbar}
     plotels: dict = field(default_factory=dict)   # {eid: Plotel}
     rbe3s: dict = field(default_factory=dict)     # {eid: Rbe3}
+    rbe2s: dict = field(default_factory=dict)     # {eid: Rbe2}
     pbars: dict = field(default_factory=dict)     # {pid: Pbar}
     mat1s: dict = field(default_factory=dict)     # {mid: Mat1}
     conm2s: dict = field(default_factory=dict)    # {eid: Conm2}

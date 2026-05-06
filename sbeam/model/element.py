@@ -28,3 +28,11 @@ class Rbe3:
     refgrid: int  # Reference (dependent) grid ID
     refc: str     # Reference grid DOF string
     wt_gc: list = field(default_factory=list)  # list of (weight, dofs, [grid_ids])
+
+
+@dataclass
+class Rbe2:
+    eid: int
+    gn: int       # Independent grid
+    cm: str       # Coupled DOF string (e.g. "123456")
+    gm: list = field(default_factory=list)  # Dependent grid IDs

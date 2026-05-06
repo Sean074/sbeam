@@ -47,7 +47,7 @@ CBAR, 4, 1, 4, 5, 0.0, 1.0, 0.0
 CBAR, 5, 1, 5, 6, 0.0, 1.0, 0.0
 $
 PLOTEL, 10, 5, 7
-RBE3, 20, , 7, 123456, 1.0, 123456, 6
+RBE2, 20, 7, 123456, 6
 $
 $ ----------------------------------------------------------- CONSTRAINTS
 $ SPC1, SID, C,      G1
@@ -57,11 +57,11 @@ $
 $ --------------------------------------------------------------- POINT MASS
 $ CONM2, EID, GID, CID, M
 $ 100 kg concentrated mass at node 7 (tip, connected to node 6 via RBE3)
-CONM2, 30, 6, 0, 100000.0
+CONM2, 30, 7, 0, 100000.0
 $
 $ --------------------------------------------------------- EIGENVALUE METHOD
 $ EIGRL, SID, V1, V2, ND, MSGLVL, MAXSET, SHFSCL, NORM
 $ Extract first 5 modes, MASS normalisation
-EIGRL, 20, , , 5, , , , MASS
+EIGRL, 20, , , 10, , , , MASS
 $
 ENDDATA
