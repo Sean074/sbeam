@@ -54,8 +54,8 @@ def render_sol101_results(bulk: BulkData, result: Sol101Result, load_sid: Option
     st.plotly_chart(fig, use_container_width=True)
 
     # Results tables
-    tab_disp, tab_rxn, tab_force, tab_stress = st.tabs(
-        ["Displacements", "Reactions", "Bar Forces", "Bar Stresses"]
+    tab_disp, tab_rxn, tab_force, tab_stress, tab_cbush = st.tabs(
+        ["Displacements", "Reactions", "Bar Forces", "Bar Stresses", "CBUSH Forces"]
     )
 
     with tab_disp:
@@ -129,6 +129,24 @@ def render_sol101_results(bulk: BulkData, result: Sol101Result, load_sid: Option
             st.dataframe(pd.DataFrame(rows), width="stretch")
         else:
             st.info("No bar stresses.")
+
+    with tab_cbush:
+        if result.cbush_forces:
+            rows = []
+            for eid in sorted(result.cbush_forces.keys()):
+                f = result.cbush_forces[eid]
+                rows.append({
+                    "EID": eid,
+                    "F1 (global)": f[0],
+                    "F2 (global)": f[1],
+                    "F3 (global)": f[2],
+                    "M1 (global)": f[3],
+                    "M2 (global)": f[4],
+                    "M3 (global)": f[5],
+                })
+            st.dataframe(pd.DataFrame(rows), width="stretch")
+        else:
+            st.info("No CBUSH forces.")
 
 
 # ---------------------------------------------------------------------------

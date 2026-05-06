@@ -94,26 +94,28 @@ def _show_parse_summary(bulk: BulkData) -> None:
     load_sets = len(set(list(bulk.forces) + list(bulk.moments) + list(bulk.loads)))
     spc_sets = len(set(list(bulk.spcs) + list(bulk.spc1s)))
     if cc is not None:
-        cols = st.columns(9)
+        cols = st.columns(10)
         cols[0].metric("SOL", cc.sol)
         cols[1].metric("Subcases", len(cc.subcases))
         cols[2].metric("Grids", len(bulk.grids))
         cols[3].metric("CBARs", len(bulk.cbars))
-        cols[4].metric("RBE3s", len(bulk.rbe3s))
-        cols[5].metric("RBE2s", len(bulk.rbe2s))
-        cols[6].metric("CONM2s", len(bulk.conm2s))
-        cols[7].metric("Load sets", load_sets)
-        cols[8].metric("SPC sets", spc_sets)
+        cols[4].metric("CBUSHs", len(bulk.cbushs))
+        cols[5].metric("RBE3s", len(bulk.rbe3s))
+        cols[6].metric("RBE2s", len(bulk.rbe2s))
+        cols[7].metric("CONM2s", len(bulk.conm2s))
+        cols[8].metric("Load sets", load_sets)
+        cols[9].metric("SPC sets", spc_sets)
     else:
-        cols = st.columns(8)
+        cols = st.columns(9)
         cols[0].metric("Grids", len(bulk.grids))
         cols[1].metric("CBARs", len(bulk.cbars))
-        cols[2].metric("RBE3s", len(bulk.rbe3s))
-        cols[3].metric("RBE2s", len(bulk.rbe2s))
-        cols[4].metric("CONM2s", len(bulk.conm2s))
-        cols[5].metric("Materials", len(bulk.mat1s))
-        cols[6].metric("Load sets", load_sets)
-        cols[7].metric("SPC sets", spc_sets)
+        cols[2].metric("CBUSHs", len(bulk.cbushs))
+        cols[3].metric("RBE3s", len(bulk.rbe3s))
+        cols[4].metric("RBE2s", len(bulk.rbe2s))
+        cols[5].metric("CONM2s", len(bulk.conm2s))
+        cols[6].metric("Materials", len(bulk.mat1s))
+        cols[7].metric("Load sets", load_sets)
+        cols[8].metric("SPC sets", spc_sets)
         st.caption("No case control loaded — define analysis via Case Control tab.")
 
 
@@ -259,6 +261,13 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
                 for r in bulk.rbe2s.values()
             ]
             st.dataframe(pd.DataFrame(rbe2_rows), width="stretch")
+        if bulk.cbushs:
+            st.markdown("**CBUSH elements**")
+            cbush_rows = [
+                {"EID": c.eid, "PID": c.pid, "GA": c.ga, "GB": c.gb if c.gb is not None else "GND"}
+                for c in bulk.cbushs.values()
+            ]
+            st.dataframe(pd.DataFrame(cbush_rows), width="stretch")
         if bulk.conm2s:
             st.markdown("**CONM2 masses**")
             conm2_rows = [
@@ -273,6 +282,13 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
             st.dataframe(pd.DataFrame(rows), width="stretch")
         else:
             st.info("No PBAR properties.")
+        if bulk.pbushs:
+            st.markdown("**PBUSH properties**")
+            pbush_rows = [
+                {"PID": p.pid, "K1": p.k1, "K2": p.k2, "K3": p.k3, "K4": p.k4, "K5": p.k5, "K6": p.k6}
+                for p in bulk.pbushs.values()
+            ]
+            st.dataframe(pd.DataFrame(pbush_rows), width="stretch")
 
     with tabs[3]:
         if bulk.mat1s:

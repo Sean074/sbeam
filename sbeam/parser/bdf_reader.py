@@ -5,8 +5,8 @@ from typing import Optional
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.coordinate_system import Cord2r
 from sbeam.model.grid import Grid
-from sbeam.model.element import Cbar, Plotel, Rbe3, Rbe2
-from sbeam.model.property import Pbar
+from sbeam.model.element import Cbar, Plotel, Rbe3, Rbe2, Cbush
+from sbeam.model.property import Pbar, Pbush
 from sbeam.model.material import Mat1
 from sbeam.model.mass import Conm2
 from sbeam.model.load import Force, Moment, Load, Eigrl
@@ -328,6 +328,58 @@ def _handle_load(fields: list, cont, bulk: BulkData) -> None:
     bulk.loads[sid] = Load(sid=sid, s=s, components=components)
 
 
+def _handle_pbush(fields: list, bulk: BulkData) -> None:
+    pid = _to_int(fields[1])
+    if pid in bulk.pbushs:
+        raise ValueError(f"Duplicate PBUSH PID {pid}")
+    # Field layout: PBUSH, PID, K, K1, K2, K3, K4, K5, K6
+    # fields[2] is the literal "K" keyword; K values start at fields[3]
+    if len(fields) > 2 and fields[2].strip().upper() == "B":
+        raise ValueError(f"PBUSH {pid}: B (damping) keyword not supported in Phase 2")
+    k1 = _to_float(fields[3]) if len(fields) > 3 else 0.0
+    k2 = _to_float(fields[4]) if len(fields) > 4 else 0.0
+    k3 = _to_float(fields[5]) if len(fields) > 5 else 0.0
+    k4 = _to_float(fields[6]) if len(fields) > 6 else 0.0
+    k5 = _to_float(fields[7]) if len(fields) > 7 else 0.0
+    k6 = _to_float(fields[8]) if len(fields) > 8 else 0.0
+    bulk.pbushs[pid] = Pbush(pid=pid, k1=k1, k2=k2, k3=k3, k4=k4, k5=k5, k6=k6)
+
+
+def _handle_cbush(fields: list, cont, bulk: BulkData) -> None:
+    eid = _to_int(fields[1])
+    pid = _to_int(fields[2])
+    ga  = _to_int(fields[3])
+    gb  = _to_int_or_none(fields[4]) if len(fields) > 4 else None
+    # fields[5] = S (spring location ratio) — ignored
+    # fields[6] = CID — must be 0 or blank
+    if len(fields) > 6 and fields[6].strip():
+        cid_val = fields[6].strip()
+        if cid_val not in ("0",):
+            try:
+                if int(cid_val) != 0:
+                    raise ValueError(f"CBUSH {eid}: CID={cid_val} not supported; only CID=0 is implemented")
+            except ValueError as exc:
+                if "not supported" in str(exc):
+                    raise
+    # Orientation vector from continuation line
+    x1 = x2 = x3 = 0.0
+    if cont is not None:
+        x1 = _to_float(cont[1]) if len(cont) > 1 else 0.0
+        x2 = _to_float(cont[2]) if len(cont) > 2 else 0.0
+        x3 = _to_float(cont[3]) if len(cont) > 3 else 0.0
+
+    if ga not in bulk.grids:
+        raise ValueError(f"CBUSH {eid}: grid GA={ga} not found")
+    if gb is not None and gb not in bulk.grids:
+        raise ValueError(f"CBUSH {eid}: grid GB={gb} not found")
+    if ga == gb:
+        raise ValueError(f"CBUSH {eid}: GA and GB must be different grids")
+    if pid not in bulk.pbushs:
+        raise ValueError(f"CBUSH {eid}: property PID={pid} not found (PBUSH must precede CBUSH)")
+
+    bulk.cbushs[eid] = Cbush(eid=eid, pid=pid, ga=ga, gb=gb, x1=x1, x2=x2, x3=x3)
+
+
 def _handle_eigrl(fields: list, bulk: BulkData) -> None:
     sid  = _to_int(fields[1])
     v1   = _to_float_or_none(fields[2]) if len(fields) > 2 else None
@@ -394,6 +446,10 @@ def parse_bulk_data(lines: list) -> BulkData:
             _handle_pbar(fields, cont, bulk)
         elif keyword == "MAT1":
             _handle_mat1(fields, bulk)
+        elif keyword == "PBUSH":
+            _handle_pbush(fields, bulk)
+        elif keyword == "CBUSH":
+            _handle_cbush(fields, cont, bulk)
         elif keyword == "CBAR":
             _handle_cbar(fields, cont, bulk)
         elif keyword == "PLOTEL":

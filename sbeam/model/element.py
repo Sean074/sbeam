@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 @dataclass
@@ -36,3 +37,14 @@ class Rbe2:
     gn: int       # Independent grid
     cm: str       # Coupled DOF string (e.g. "123456")
     gm: list = field(default_factory=list)  # Dependent grid IDs
+
+
+@dataclass
+class Cbush:
+    eid: int
+    pid: int
+    ga: int            # End A grid ID
+    gb: Optional[int]  # End B grid ID; None = grounded at GA
+    x1: float = 0.0   # Orientation vector (XZ-plane definition, same role as CBAR)
+    x2: float = 0.0
+    x3: float = 0.0

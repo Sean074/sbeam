@@ -109,6 +109,23 @@ def write_f06_sol101(
             )
 
     lines.append("")
+
+    # ---- CBUSH FORCES section ----
+    if result.cbush_forces:
+        lines.append("                                F O R C E S   I N   C B U S H   E L E M E N T S        ( C B U S H )")
+        lines.append("")
+        lines.append(
+            "      ELEMENT ID.       F1             F2             F3             M1             M2             M3"
+        )
+        for eid in sorted(bulk.cbushs.keys()):
+            if eid in result.cbush_forces:
+                f = result.cbush_forces[eid]
+                lines.append(
+                    f"{eid:>14}"
+                    f"  {_fmt(f[0])}{_fmt(f[1])}{_fmt(f[2])}{_fmt(f[3])}{_fmt(f[4])}{_fmt(f[5])}"
+                )
+        lines.append("")
+
     lines.append("                                       * * * END OF JOB * * *")
     lines.append("")
 

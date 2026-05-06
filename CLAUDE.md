@@ -59,8 +59,8 @@ Phase 1 uses **Euler-Bernoulli beam theory** (shear deformation neglected). Each
 |----------|-------|
 | Coordinate systems | `CORD2R` (rectangular system; defined by three points A, B, C; supports chained RID references) |
 | Geometry | `GRID` (CP = input system; CD = output system for results) |
-| Elements | `CBAR`, `PLOTEL`, `RBE3` (constraint interpolation; DOF transformation), `RBE2` (rigid body; DOF transformation) |
-| Properties | `PBAR` (uniform cross-section: A, I1, I2, J, recovery points C/D/E/F) |
+| Elements | `CBAR`, `PLOTEL`, `RBE3` (constraint interpolation; DOF transformation), `RBE2` (rigid body; DOF transformation), `CBUSH` (two-node and grounded spring-damper; CID=0; offsets not supported) |
+| Properties | `PBAR` (uniform cross-section: A, I1, I2, J, recovery points C/D/E/F), `PBUSH` (K1–K6 diagonal stiffness; B1–B6 damping deferred to dynamic solvers) |
 | Material | `MAT1` (E, G, nu, rho) |
 | Mass | `CONM2` (point mass; offset vector and inertia tensor in CID frame) |
 | Constraints | `SPC`, `SPC1` (DOFs 1–6: Tx Ty Tz Rx Ry Rz) |
@@ -110,7 +110,7 @@ Mass and CG computation is called **GPWG** (Grid Point Weight Generator), not "O
 
 ## Results Output
 
-- **SOL 101:** nodal displacements, SPC reactions, applied load echo, CBAR end forces/moments, CBAR stresses at recovery points
+- **SOL 101:** nodal displacements, SPC reactions, applied load echo, CBAR end forces/moments, CBAR stresses at recovery points, CBUSH element forces (global coordinates)
 - **SOL 103:** natural frequencies (Hz and rad/s), normalised mode shapes, modal mass fractions
 
 ## Verification Test Cases

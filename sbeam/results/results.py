@@ -36,9 +36,11 @@ class BarStress:
 @dataclass
 class Sol101Result:
     displacements: np.ndarray         # Full displacement vector (n_dofs,)
-    reactions: dict = field(default_factory=dict)    # {gid: np.ndarray(6,)} SPC reaction forces
-    bar_forces: dict = field(default_factory=dict)   # {eid: BarForce}
-    bar_stresses: dict = field(default_factory=dict) # {eid: BarStress}
+    reactions: dict = field(default_factory=dict)      # {gid: np.ndarray(6,)} SPC reaction forces
+    bar_forces: dict = field(default_factory=dict)     # {eid: BarForce}
+    bar_stresses: dict = field(default_factory=dict)   # {eid: BarStress}
+    # Note: cbush_forces are in global coordinates (unlike bar_forces which are local)
+    cbush_forces: dict = field(default_factory=dict)   # {eid: np.ndarray(6,)} forces at GB (or GA for grounded)
 
 
 @dataclass

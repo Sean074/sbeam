@@ -734,7 +734,7 @@ eccentrically attached stiffeners, and building column–beam rigid connections.
 
 ---
 
-#### Step 37: CBUSH — Spring and Damper Element
+#### Step 37: CBUSH — Spring and Damper Element ✅ COMPLETE
 
 **Objective:** Implement the `CBUSH` generalised spring-damper element and its associated
 `PBUSH` property card, enabling stiffness connections in up to 6 independent DOFs.

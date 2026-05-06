@@ -19,3 +19,14 @@ class Pbar:
     e2: float = 0.0
     f1: float = 0.0
     f2: float = 0.0
+
+
+@dataclass
+class Pbush:
+    pid: int
+    k1: float = 0.0  # Translational stiffness along local x
+    k2: float = 0.0  # Translational stiffness along local y
+    k3: float = 0.0  # Translational stiffness along local z
+    k4: float = 0.0  # Rotational stiffness about local x (torsional)
+    k5: float = 0.0  # Rotational stiffness about local y
+    k6: float = 0.0  # Rotational stiffness about local z

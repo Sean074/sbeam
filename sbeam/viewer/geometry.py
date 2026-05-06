@@ -32,6 +32,7 @@ def build_model_figure(
     spc_map = _get_spc_map(bulk)
     _add_grid_trace(fig, bulk, selected_gid, spc_map)
     _add_cbar_traces(fig, bulk, selected_eid)
+    _add_cbush_traces(fig, bulk)
     _add_plotel_trace(fig, bulk)
     _add_rbe3_trace(fig, bulk)
     _add_rbe2_trace(fig, bulk)
@@ -56,6 +57,7 @@ def build_deformed_figure(
     _add_ghost_plotel_lines(fig, bulk)
     _add_ghost_rbe3_lines(fig, bulk)
     _add_ghost_rbe2_lines(fig, bulk)
+    _add_ghost_cbush_lines(fig, bulk)
     def_coords = _deformed_grid_coords(bulk, displacements, grid_index, scale)
     xs, ys, zs = _cbar_line_coords(bulk, def_coords)
     fig.add_trace(go.Scatter3d(
@@ -139,6 +141,7 @@ def build_mode_figure(
     _add_ghost_plotel_lines(fig, bulk)  # trace 1
     _add_ghost_rbe3_lines(fig, bulk)    # trace 2
     _add_ghost_rbe2_lines(fig, bulk)    # trace 3
+    _add_ghost_cbush_lines(fig, bulk)   # trace 4 (inserted; downstream traces shift)
 
     # Initial state: zero amplitude (undeformed positions)
     def_coords_0 = _mode_grid_coords(bulk, mode_shape, grid_index, 0.0)
@@ -148,34 +151,34 @@ def build_mode_figure(
     rxs0, rys0, rzs0 = _rbe3_line_coords(bulk, def_coords_0)
     r2xs0, r2ys0, r2zs0 = _rbe2_line_coords(bulk, def_coords_0)
 
-    fig.add_trace(go.Scatter3d(  # trace 4 — deformed CBAR lines
+    fig.add_trace(go.Scatter3d(  # trace 5 — deformed CBAR lines
         x=xs0, y=ys0, z=zs0,
         mode="lines",
         line=dict(color="#ff7f0e", width=4),
         name="Mode shape",
     ))
-    fig.add_trace(go.Scatter3d(  # trace 5 — deformed nodes
+    fig.add_trace(go.Scatter3d(  # trace 6 — deformed nodes
         x=gxs0, y=gys0, z=gzs0,
         mode="markers",
         marker=dict(size=6, color="#ff7f0e"),
         name="Mode GRIDs",
         showlegend=False,
     ))
-    fig.add_trace(go.Scatter3d(  # trace 6 — deformed PLOTEL lines
+    fig.add_trace(go.Scatter3d(  # trace 7 — deformed PLOTEL lines
         x=pxs0, y=pys0, z=pzs0,
         mode="lines",
         line=dict(color="#aaaaaa", width=2, dash="dash"),
         name="PLOTEL",
         hoverinfo="skip",
     ))
-    fig.add_trace(go.Scatter3d(  # trace 7 — deformed RBE3 lines
+    fig.add_trace(go.Scatter3d(  # trace 8 — deformed RBE3 lines
         x=rxs0, y=rys0, z=rzs0,
         mode="lines",
         line=dict(color="#cc2222", width=2, dash="dash"),
         name="RBE3",
         hoverinfo="skip",
     ))
-    fig.add_trace(go.Scatter3d(  # trace 8 — deformed RBE2 lines
+    fig.add_trace(go.Scatter3d(  # trace 9 — deformed RBE2 lines
         x=r2xs0, y=r2ys0, z=r2zs0,
         mode="lines",
         line=dict(color="#cc2222", width=2),
@@ -204,7 +207,7 @@ def build_mode_figure(
                 go.Scatter3d(x=rxs, y=rys, z=rzs),
                 go.Scatter3d(x=r2xs, y=r2ys, z=r2zs),
             ],
-            traces=[4, 5, 6, 7, 8],
+            traces=[5, 6, 7, 8, 9],
         ))
     fig.frames = frames
 
@@ -459,6 +462,178 @@ def _add_load_arrows(fig: go.Figure, bulk: BulkData, load_sid: int) -> None:
             name=label,
             showlegend=False,
         ))
+
+
+def _cbush_zigzag_coords(
+    ax: float, ay: float, az: float,
+    bx: float, by: float, bz: float,
+) -> tuple:
+    """Return (xs, ys, zs) for a zigzag spring polyline between points A and B."""
+    vx, vy, vz = bx - ax, by - ay, bz - az
+    L = math.sqrt(vx * vx + vy * vy + vz * vz)
+    if L < 1e-12:
+        return [ax, bx], [ay, by], [az, bz]
+
+    # Unit vector along element
+    ux, uy, uz = vx / L, vy / L, vz / L
+
+    # Perpendicular vector (for zigzag amplitude)
+    if abs(ux) < 0.9:
+        px, py, pz = 0.0, -uz, uy
+    else:
+        px, py, pz = uz, 0.0, -ux
+    pn = math.sqrt(px * px + py * py + pz * pz)
+    px, py, pz = px / pn, py / pn, pz / pn
+
+    amp = L * 0.08  # zigzag amplitude
+    n_teeth = 6
+    # Parametric points: start straight, zigzag in middle, end straight
+    ts = [0.0, 0.15]
+    sides = []
+    for k in range(n_teeth):
+        t = 0.15 + (k + 0.5) / n_teeth * 0.70
+        side = amp * (1 if k % 2 == 0 else -1)
+        ts.append(t)
+        sides.append(side)
+    ts.append(0.85)
+    ts.append(1.0)
+    sides = [0.0, 0.0] + sides + [0.0, 0.0]
+
+    xs = [ax + t * vx + s * px for t, s in zip(ts, sides)]
+    ys = [ay + t * vy + s * py for t, s in zip(ts, sides)]
+    zs = [az + t * vz + s * pz for t, s in zip(ts, sides)]
+    return xs, ys, zs
+
+
+def _add_cbush_traces(fig: go.Figure, bulk: BulkData) -> None:
+    """Add CBUSH spring elements as zigzag polylines (purple)."""
+    if not bulk.cbushs:
+        return
+
+    _CBUSH_COLOR = "#9467bd"
+
+    xs: list = []
+    ys: list = []
+    zs: list = []
+    mx: list = []
+    my: list = []
+    mz: list = []
+    customdata: list = []
+
+    for cbush in bulk.cbushs.values():
+        ga = bulk.grids.get(cbush.ga)
+        if ga is None:
+            continue
+        if cbush.gb is not None:
+            gb = bulk.grids.get(cbush.gb)
+            if gb is None:
+                continue
+            zx, zy, zz = _cbush_zigzag_coords(ga.x, ga.y, ga.z, gb.x, gb.y, gb.z)
+            xs += zx + [None]
+            ys += zy + [None]
+            zs += zz + [None]
+            mid = ((ga.x + gb.x) / 2, (ga.y + gb.y) / 2, (ga.z + gb.z) / 2)
+            gb_label = cbush.gb
+        else:
+            # Grounded: draw a short stub from GA toward the orientation vector
+            ox, oy, oz = cbush.x1, cbush.x2, cbush.x3
+            on = math.sqrt(ox * ox + oy * oy + oz * oz)
+            stub = 0.5
+            if on > 1e-12:
+                ox, oy, oz = ox / on * stub, oy / on * stub, oz / on * stub
+            else:
+                oz = stub
+            zx, zy, zz = _cbush_zigzag_coords(
+                ga.x, ga.y, ga.z,
+                ga.x + ox, ga.y + oy, ga.z + oz,
+            )
+            xs += zx + [None]
+            ys += zy + [None]
+            zs += zz + [None]
+            mid = (ga.x + ox / 2, ga.y + oy / 2, ga.z + oz / 2)
+            gb_label = "GND"
+
+        pbush = bulk.pbushs.get(cbush.pid)
+        mx.append(mid[0])
+        my.append(mid[1])
+        mz.append(mid[2])
+        customdata.append([
+            cbush.eid, cbush.pid, cbush.ga, gb_label,
+            f"{pbush.k1:.4g}" if pbush else "—",
+            f"{pbush.k2:.4g}" if pbush else "—",
+            f"{pbush.k3:.4g}" if pbush else "—",
+            f"{pbush.k4:.4g}" if pbush else "—",
+            f"{pbush.k5:.4g}" if pbush else "—",
+            f"{pbush.k6:.4g}" if pbush else "—",
+        ])
+
+    if xs:
+        fig.add_trace(go.Scatter3d(
+            x=xs, y=ys, z=zs,
+            mode="lines",
+            line=dict(color=_CBUSH_COLOR, width=3),
+            hoverinfo="skip",
+            name="CBUSH",
+        ))
+
+    if mx:
+        hover = (
+            "<b>CBUSH %{customdata[0]}</b><br>"
+            "PID: %{customdata[1]},  GA: %{customdata[2]},  GB: %{customdata[3]}<br>"
+            "K1: %{customdata[4]},  K2: %{customdata[5]},  K3: %{customdata[6]}<br>"
+            "K4: %{customdata[7]},  K5: %{customdata[8]},  K6: %{customdata[9]}"
+            "<extra></extra>"
+        )
+        fig.add_trace(go.Scatter3d(
+            x=mx, y=my, z=mz,
+            mode="markers",
+            marker=dict(size=8, opacity=0, color="#ffffff"),
+            customdata=customdata,
+            hovertemplate=hover,
+            name="CBUSH hover",
+            showlegend=False,
+        ))
+
+
+def _add_ghost_cbush_lines(fig: go.Figure, bulk: BulkData) -> None:
+    """Add undeformed CBUSH ghost lines (straight, grey) for deformed/mode figures."""
+    if not bulk.cbushs:
+        return
+    xs: list = []
+    ys: list = []
+    zs: list = []
+    for cbush in bulk.cbushs.values():
+        ga = bulk.grids.get(cbush.ga)
+        if ga is None:
+            continue
+        if cbush.gb is not None:
+            gb = bulk.grids.get(cbush.gb)
+            if gb is None:
+                continue
+            xs += [ga.x, gb.x, None]
+            ys += [ga.y, gb.y, None]
+            zs += [ga.z, gb.z, None]
+        else:
+            ox, oy, oz = cbush.x1, cbush.x2, cbush.x3
+            on = math.sqrt(ox * ox + oy * oy + oz * oz)
+            stub = 0.5
+            if on > 1e-12:
+                ox, oy, oz = ox / on * stub, oy / on * stub, oz / on * stub
+            else:
+                oz = stub
+            xs += [ga.x, ga.x + ox, None]
+            ys += [ga.y, ga.y + oy, None]
+            zs += [ga.z, ga.z + oz, None]
+    if not xs:
+        return
+    fig.add_trace(go.Scatter3d(
+        x=xs, y=ys, z=zs,
+        mode="lines",
+        line=dict(color="#9467bd", width=2),
+        name="CBUSH (undeformed)",
+        hoverinfo="skip",
+        opacity=0.5,
+    ))
 
 
 def _add_ghost_cbar_lines(fig: go.Figure, bulk: BulkData) -> None:

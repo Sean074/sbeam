@@ -3,8 +3,8 @@
 import numpy as np
 from scipy.linalg import block_diag
 
-from sbeam.model.element import Cbar
-from sbeam.model.property import Pbar
+from sbeam.model.element import Cbar, Cbush
+from sbeam.model.property import Pbar, Pbush
 from sbeam.model.material import Mat1
 from sbeam.model.bulk_data import BulkData
 
@@ -154,7 +154,7 @@ def element_stiffness_global(
 
 
 def assemble_global_stiffness(bulk: BulkData) -> np.ndarray:
-    """Assemble the (6N x 6N) global stiffness matrix from all CBAR elements."""
+    """Assemble the (6N x 6N) global stiffness matrix from all CBAR and CBUSH elements."""
     grid_index = {gid: i for i, gid in enumerate(sorted(bulk.grids.keys()))}
     n = 6 * len(grid_index)
     K_global = np.zeros((n, n))
@@ -173,7 +173,100 @@ def assemble_global_stiffness(bulk: BulkData) -> np.ndarray:
             for j_local, j_global in enumerate(dofs):
                 K_global[i_global, j_global] += K_e[i_local, j_local]
 
+    for cbush in bulk.cbushs.values():
+        K_e = cbush_stiffness_global(cbush, bulk.grids, bulk.pbushs)
+        ia = grid_index[cbush.ga]
+        dofs_a = [6 * ia + d for d in range(6)]
+
+        if cbush.gb is not None:
+            ib = grid_index[cbush.gb]
+            dofs_b = [6 * ib + d for d in range(6)]
+            dofs = dofs_a + dofs_b
+        else:
+            dofs = dofs_a
+
+        for i_local, i_global in enumerate(dofs):
+            for j_local, j_global in enumerate(dofs):
+                K_global[i_global, j_global] += K_e[i_local, j_local]
+
     return K_global
+
+
+def cbush_local_stiffness(pbush: Pbush) -> np.ndarray:
+    """6×6 diagonal local stiffness matrix for a CBUSH element."""
+    return np.diag([pbush.k1, pbush.k2, pbush.k3, pbush.k4, pbush.k5, pbush.k6])
+
+
+def cbush_transform_matrix(cbush: Cbush, grids: dict) -> np.ndarray:
+    """3×3 rotation matrix R for a CBUSH element.
+
+    Rows are local axes expressed in the global frame.
+    When gb is None (grounded), the orientation vector (x1/x2/x3) defines the
+    local x-axis direction directly. When gb is set, e_x = GA→GB unit vector.
+    """
+    if cbush.gb is not None:
+        ga = grids[cbush.ga]
+        gb = grids[cbush.gb]
+        dx = np.array([gb.x - ga.x, gb.y - ga.y, gb.z - ga.z], dtype=float)
+        L = np.linalg.norm(dx)
+        if L < 1e-12:
+            raise ValueError(
+                f"CBUSH {cbush.eid}: nodes GA and GB are coincident; X1/X2/X3 orientation is required"
+            )
+        e_x = dx / L
+    else:
+        # Grounded: use the orientation vector as the local x-axis
+        e_x_raw = np.array([cbush.x1, cbush.x2, cbush.x3], dtype=float)
+        norm_ex = np.linalg.norm(e_x_raw)
+        if norm_ex < 1e-12:
+            e_x = np.array([1.0, 0.0, 0.0])
+        else:
+            e_x = e_x_raw / norm_ex
+
+    # Orientation vector defines the XZ-plane (same role as CBAR v-vector)
+    v = np.array([cbush.x1, cbush.x2, cbush.x3], dtype=float)
+    v_perp = v - np.dot(v, e_x) * e_x
+    norm_v = np.linalg.norm(v_perp)
+
+    if norm_v < 1e-12:
+        # Default: try global Y; fall back to global Z if parallel to e_x
+        for candidate in ([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]):
+            vc = np.array(candidate)
+            vp = vc - np.dot(vc, e_x) * e_x
+            if np.linalg.norm(vp) > 1e-12:
+                v_perp = vp
+                norm_v = np.linalg.norm(v_perp)
+                break
+        else:
+            raise ValueError(
+                f"CBUSH {cbush.eid}: cannot determine local y-axis — element axis is degenerate"
+            )
+
+    e_y = v_perp / norm_v
+    e_z = np.cross(e_x, e_y)
+    return np.array([e_x, e_y, e_z])
+
+
+def cbush_stiffness_global(cbush: Cbush, grids: dict, pbushs: dict) -> np.ndarray:
+    """Global stiffness contribution for a CBUSH element.
+
+    Returns a 12×12 array for two-node elements or a 6×6 array for grounded
+    (GB=None) elements. The assembly loop must branch on cbush.gb to scatter
+    the correct shape into the global matrix.
+    """
+    pbush = pbushs[cbush.pid]
+    K6 = cbush_local_stiffness(pbush)
+    R = cbush_transform_matrix(cbush, grids)
+    T6 = block_diag(R, R)  # 6×6: two blocks for translational + rotational DOFs
+
+    if cbush.gb is not None:
+        # Two-node: assemble symmetric 12×12 spring-pair matrix then transform
+        K12_local = np.block([[K6, -K6], [-K6, K6]])
+        T12 = block_diag(R, R, R, R)
+        return T12.T @ K12_local @ T12
+    else:
+        # Grounded: only GA contributes — 6×6
+        return T6.T @ K6 @ T6
 
 
 def get_spc_dofs(bulk: BulkData, spc_sid: int, grid_index: dict) -> list:

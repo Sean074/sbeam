@@ -10,9 +10,11 @@ from sbeam.assembly.stiffness import (
     apply_spcs,
     local_stiffness,
     transform_matrix,
+    cbush_stiffness_global,
 )
 from sbeam.assembly.load_vector import assemble_load_vector, build_grid_index
 from sbeam.assembly.rbe3 import build_rbe3_transformation
+from sbeam.model.element import Cbush
 from sbeam.results.results import BarForce, BarStress, Sol101Result
 
 
@@ -164,6 +166,35 @@ def recover_bar_stresses(cbar, grids, pbars, mat1s, displacements, grid_index) -
     )
 
 
+def recover_cbush_forces(
+    cbush: Cbush,
+    grids: dict,
+    pbushs: dict,
+    displacements: np.ndarray,
+    grid_index: dict,
+) -> np.ndarray:
+    """Return 6-vector of spring forces in global coordinates for a CBUSH element.
+
+    Returns forces at GB for two-node elements, or forces at GA for grounded elements.
+    Note: forces are in global coordinates, unlike CBAR bar_forces which are in local coords.
+    """
+    ia = grid_index[cbush.ga]
+    dofs_a = [6 * ia + d for d in range(6)]
+
+    if cbush.gb is not None:
+        ib = grid_index[cbush.gb]
+        dofs_b = [6 * ib + d for d in range(6)]
+        dofs = dofs_a + dofs_b
+        u_e = displacements[dofs]
+        K_e = cbush_stiffness_global(cbush, grids, pbushs)  # 12×12
+        f_e = K_e @ u_e
+        return f_e[6:12]  # forces at GB end
+    else:
+        u_a = displacements[dofs_a]
+        K_e = cbush_stiffness_global(cbush, grids, pbushs)  # 6×6
+        return K_e @ u_a
+
+
 def recover_reactions(bulk: BulkData, displacements: np.ndarray, spc_dofs: list, K: np.ndarray, grid_index: dict) -> dict:
     """Compute SPC reaction forces.
 
@@ -247,6 +278,13 @@ def run_sol101(bulk: BulkData, case_control) -> Sol101Result:
             cbar, bulk.grids, bulk.pbars, bulk.mat1s, displacements, grid_index
         )
 
+    # Recover CBUSH forces
+    cbush_forces = {}
+    for cbush in bulk.cbushs.values():
+        cbush_forces[cbush.eid] = recover_cbush_forces(
+            cbush, bulk.grids, bulk.pbushs, displacements, grid_index
+        )
+
     # Recover reactions using original full-space K and full displacement vector.
     reactions = recover_reactions(bulk, displacements, spc_dofs_full, K_orig, grid_index)
 
@@ -255,4 +293,5 @@ def run_sol101(bulk: BulkData, case_control) -> Sol101Result:
         reactions=reactions,
         bar_forces=bar_forces,
         bar_stresses=bar_stresses,
+        cbush_forces=cbush_forces,
     )
