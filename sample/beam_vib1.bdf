@@ -28,7 +28,7 @@ $
 $ --------------------------------------------------------------- MATERIAL
 $ MAT1, MID, E,      G,        NU,  RHO
 $ Steel: E=200 GPa, G=E/(2(1+nu))=76.92 GPa, nu=0.3, rho=7850 kg/m^3
-MAT1, 1, 2.0e11, 7.692e10, 0.3, 0.0
+MAT1, 1, 2.0e11, 7.692e10, 0.3, 7850.0
 $
 $ ------------------------------------------------------------- PROPERTIES
 $ PBAR, PID, MID, A,   I1,       I2,       J,        NSM
@@ -57,7 +57,7 @@ $
 $ --------------------------------------------------------------- POINT MASS
 $ CONM2, EID, GID, CID, M
 $ 100 kg concentrated mass at node 7 (tip, connected to node 6 via RBE3)
-CONM2, 30, 6, 0, 100000.0
+CONM2, 30, 7, 0, 10000.0
 $
 $ --------------------------------------------------------- EIGENVALUE METHOD
 $ EIGRL, SID, V1, V2, ND, MSGLVL, MAXSET, SHFSCL, NORM

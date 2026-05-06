@@ -179,6 +179,29 @@ Output sections written to `results.f06`:
   ```
 - Tolerance: < 1% relative error.
 
+### Case 4 — CONM2 Torsional Inertia (V8)
+
+- Configuration: massless cantilever, only Rx DOF free at tip. CONM2 with `i11` specified directly.
+- Analytical: `f = sqrt(G·J / (L·i11)) / (2π)`
+- BDF: `tests/integration/bdf/v8_conm2_torsional_inertia.bdf`
+- Tolerance: < 1% relative error.
+
+### Case 5 — CONM2 Transverse-Offset Torsional Mode (V12)
+
+- Configuration: massless cantilever, only Rx DOF free at tip. CONM2 at tip with `x2=d` (transverse offset). No `i11`.
+- Torsional inertia comes from the parallel-axis theorem: `I_eff = m·d²`.
+- Analytical: `f = sqrt(G·J / (L·m·d²)) / (2π)`
+- BDF: `tests/integration/bdf/v12_conm2_offset_torsion_sol103.bdf`
+- Parameters: G=1.0, J=2.0, L=1.0, m=2.0, d=1.0 → I_eff=2.0, f≈0.15915 Hz
+- Tolerance: < 1% relative error.
+- **Cross-check:** same analytical frequency as V8 (I_eff=2.0 via offset equals i11=2.0 directly).
+
+### Note — RBE3 and Offset Mass
+
+Placing a CONM2 at an RBE3-dependent node does **not** correctly transfer torsional inertia from an offset mass. The RBE3 transformation in sbeam uses DOF-by-DOF interpolation (`u_dep = u_indep` for each DOF independently) and does not include rigid-body offset kinematics. As a result, the translational mass at the dependent node maps only to the same translational DOFs on the independent node, with no torsional coupling.
+
+**Correct approach for offset mass:** specify the CG offset directly in the CONM2 `X1/X2/X3` fields at the beam-tip node. The CONM2 assembly applies the parallel-axis theorem automatically, giving `M[Rx,Rx] += m·(X2²+X3²)` torsional inertia.
+
 ---
 
 ## Solver Module: `solver/sol103.py`

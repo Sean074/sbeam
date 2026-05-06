@@ -219,3 +219,44 @@ class TestV10Conm2ZeroDensity:
         result = run_sol103(bulk, cc)
         expected = math.sqrt(3 * E_V10 * I1_V10 / (M_V10 * L_V10 ** 3)) / (2 * math.pi)
         assert result.frequencies_hz[0] == pytest.approx(expected, rel=0.01)
+
+
+# V11/V12 model parameters (unit stiffness, massless beam)
+G_V11 = 1.0
+J_V11 = 2.0
+L_V11 = 1.0
+T_V11 = 4.0
+
+G_V12 = 1.0
+J_V12 = 2.0
+L_V12 = 1.0
+M_V12 = 2.0
+D_V12 = 1.0
+
+
+# ---------------------------------------------------------------------------
+# V11: SOL 101 cantilever torsion  theta_x = T*L/(G*J)  (< 0.1%)
+# ---------------------------------------------------------------------------
+
+class TestV11CantileverTorsionSol101:
+    def test_torsional_rotation(self):
+        cc, bulk = parse_bdf(BDF_DIR / "v11_cantilever_torsion_sol101.bdf")
+        result = run_sol101(bulk, cc)
+        grid_index = build_grid_index(bulk)
+        node2_rx = result.displacements[6 * grid_index[2] + 3]
+        expected = T_V11 * L_V11 / (G_V11 * J_V11)
+        assert node2_rx == pytest.approx(expected, rel=1e-3)
+
+
+# ---------------------------------------------------------------------------
+# V12: SOL 103 torsional mode via CONM2 transverse offset
+#      I_eff = m*d^2 (parallel-axis),  f = sqrt(GJ/(L*m*d^2)) / (2pi)  (< 1%)
+# ---------------------------------------------------------------------------
+
+class TestV12Conm2OffsetTorsionSol103:
+    def test_torsional_frequency(self):
+        cc, bulk = parse_bdf(BDF_DIR / "v12_conm2_offset_torsion_sol103.bdf")
+        result = run_sol103(bulk, cc)
+        I_eff = M_V12 * D_V12 ** 2
+        expected = math.sqrt(G_V12 * J_V12 / (L_V12 * I_eff)) / (2 * math.pi)
+        assert result.frequencies_hz[0] == pytest.approx(expected, rel=0.01)

@@ -1,0 +1,42 @@
+$ V12: SOL 103 cantilever torsional mode via CONM2 transverse offset
+$ 1 CBAR element, L=1.0, rho=0 (massless beam).
+$ Only Rx DOF free at tip; CONM2 at node 2 with y-offset d=1.0.
+$ Parallel-axis inertia: I_eff = m*d^2 = 2.0*1.0^2 = 2.0
+$ Torsional stiffness: k_T = G*J/L = 1.0*2.0/1.0 = 2.0
+$ Analytical: f = sqrt(k_T/I_eff)/(2*pi) = sqrt(2/2)/(2*pi) = 1/(2*pi) ~= 0.15915 Hz
+SOL 103
+
+SUBCASE 1
+  TITLE = CONM2 Offset Torsional Mode
+  SPC = 1
+  METHOD = 20
+
+BEGIN BULK
+
+$ EIGRL: extract 1 mode, MASS normalisation
+EIGRL, 20, , , 1, , , , MASS
+
+$ Nodes
+GRID, 1, , 0.0, 0.0, 0.0
+GRID, 2, , 1.0, 0.0, 0.0
+
+$ E=2.0, G=1.0, nu=0.0, rho=0.0 (massless beam)
+MAT1, 1, 2.0, 1.0, 0.0, 0.0
+
+$ A=0.01 (dummy), I1/I2 small (bending DOFs are SPCed), J=2.0
+PBAR, 1, 1, 0.01, 0.001, 0.001, 2.0
+
+$ CBAR along X, v-vector in Y
+CBAR, 1, 1, 1, 2, 0.0, 1.0, 0.0
+
+$ Fix all 6 DOFs at node 1
+SPC1, 1, 123456, 1
+$ Fix all DOFs except Rx (DOF 4) at node 2: fix 1,2,3,5,6
+SPC1, 1, 12356, 2
+
+$ CONM2: m=2.0, x2=1.0 (y-offset d=1.0). i11=0 (default).
+$ Parallel-axis theorem gives I_torsional = m*d^2 = 2.0
+$ CONM2, EID, GID, CID, M, X1, X2, X3
+CONM2, 1, 2, 0, 2.0, 0.0, 1.0, 0.0
+
+ENDDATA

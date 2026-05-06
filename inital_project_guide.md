@@ -456,8 +456,11 @@ The two top-level functions serve distinct use cases:
 | V5 | Cantilever | 103 | f₁ = (1.8751²/2π)√(EI/ρAL⁴) | < 1% |
 | V6 | Free-free beam | 103 | First 6 modes < 1e-4 Hz | — |
 | V7 | Simply supported | 103 | f₁ = (π²/2πL²)√(EI/ρA) | < 1% |
-| V8 | Massless CBAR + CONM2 i11 | 103 | f = √(GJ/L·I11)/(2π) | < 1% |
-| V9 | Massless CBAR + CONM2 x1 offset + i22 | 103 | Coupled 2-DOF f₁, f₂ | < 1% |
+| V8  | Massless CBAR + CONM2 i11 | 103 | f = √(GJ/L·I11)/(2π) | < 1% |
+| V9  | Massless CBAR + CONM2 x1 offset + i22 | 103 | Coupled 2-DOF f₁, f₂ | < 1% |
+| V10 | Zero-density cantilever + tip CONM2 | 103 | f = √(3EI/mL³)/(2π) | < 1% |
+| V11 | Cantilever tip torque | 101 | θ_x = T·L/(G·J) | < 0.1% |
+| V12 | Massless CBAR + CONM2 transverse offset | 103 | f = √(GJ/L·m·d²)/(2π) | < 1% |
 
 ---
 

@@ -209,6 +209,14 @@ Output sections written to `results.f06`:
 
 - Verifies reaction forces sum to total applied load.
 
+### Case 4 — Cantilever, Tip Torque (V11)
+
+- Configuration: fixed end at x=0, free end at x=L, tip torque T about global x-axis (MOMENT N1=1).
+- Expected tip torsional rotation: `θ_x = T·L / (G·J)`
+- BDF: `tests/integration/bdf/v11_cantilever_torsion_sol101.bdf`
+- Parameters: G=1.0, J=2.0, L=1.0, T=4.0 → expected θ_x = 2.0 rad
+- Tolerance: < 0.1% relative error.
+
 ---
 
 ## Solver Module: `solver/sol101.py`
