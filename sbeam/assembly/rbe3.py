@@ -1,4 +1,4 @@
-"""RBE3 constraint transformation matrix."""
+"""RBE3/RBE2/RBAR constraint transformation matrix."""
 
 import numpy as np
 
@@ -6,18 +6,18 @@ from sbeam.model.bulk_data import BulkData
 
 
 def build_rbe3_transformation(bulk: BulkData, grid_index: dict) -> tuple:
-    """Build the RBE3/RBE2 DOF transformation matrix T.
+    """Build the RBE3/RBE2/RBAR DOF transformation matrix T.
 
     Returns (T, dep_dofs, red_dofs) where:
       T        : np.ndarray shape (n_dof, n_red) — maps reduced → full DOF space
-      dep_dofs : list[int] — global DOF indices eliminated by RBE3 or RBE2
+      dep_dofs : list[int] — global DOF indices eliminated by RBE3, RBE2, or RBAR
       red_dofs : list[int] — remaining DOF indices in ascending order
 
-    If no RBE3 or RBE2 elements are present, returns (eye(n_dof), [], list(range(n_dof))).
+    If no RBE3, RBE2, or RBAR elements are present, returns (eye(n_dof), [], list(range(n_dof))).
     """
     n_dof = 6 * len(grid_index)
 
-    if not bulk.rbe3s and not bulk.rbe2s:
+    if not bulk.rbe3s and not bulk.rbe2s and not bulk.rbars:
         return np.eye(n_dof), [], list(range(n_dof))
 
     # Start from identity; rows for dependent DOFs will be overwritten.
@@ -82,6 +82,45 @@ def build_rbe3_transformation(bulk: BulkData, grid_index: dict) -> tuple:
             if (6 * indep_idx + d) in dep_set:
                 raise ValueError(
                     f"RBE2 {rbe2.eid}: GN={rbe2.gn} DOF {d_char} is a dependent DOF "
+                    f"of another constraint element"
+                )
+
+    # RBAR: all 6 DOFs at GB depend on GA via rigid body kinematics.
+    # u_B = R @ u_A where R encodes the lever-arm effect of the offset d = r_GB - r_GA.
+    for rbar in bulk.rbars.values():
+        if rbar.ga not in grid_index or rbar.gb not in grid_index:
+            continue
+        ga_idx = grid_index[rbar.ga]
+        gb_idx = grid_index[rbar.gb]
+        ga_g = bulk.grids[rbar.ga]
+        gb_g = bulk.grids[rbar.gb]
+        dx = gb_g.x - ga_g.x
+        dy = gb_g.y - ga_g.y
+        dz = gb_g.z - ga_g.z
+        R = np.array([
+            [1, 0, 0,   0,  dz, -dy],
+            [0, 1, 0, -dz,   0,  dx],
+            [0, 0, 1,  dy, -dx,   0],
+            [0, 0, 0,   1,   0,   0],
+            [0, 0, 0,   0,   1,   0],
+            [0, 0, 0,   0,   0,   1],
+        ], dtype=float)
+        for d in range(6):
+            dep_dof = 6 * gb_idx + d
+            T_full[dep_dof, :] = 0.0
+            for k in range(6):
+                T_full[dep_dof, 6 * ga_idx + k] = R[d, k]
+            dep_set.add(dep_dof)
+
+    # GA of an RBAR must not be a dependent DOF of another constraint element.
+    for rbar in bulk.rbars.values():
+        if rbar.ga not in grid_index:
+            continue
+        ga_idx = grid_index[rbar.ga]
+        for d in range(6):
+            if (6 * ga_idx + d) in dep_set:
+                raise ValueError(
+                    f"RBAR {rbar.eid}: GA={rbar.ga} DOF {d+1} is a dependent DOF "
                     f"of another constraint element"
                 )
 

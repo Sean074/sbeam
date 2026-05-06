@@ -415,6 +415,37 @@ The two top-level functions serve distinct use cases:
 
 ---
 
+### Step 38: RBAR — Rigid Bar Element ✅ COMPLETE
+
+**Objective:** Support the `RBAR` rigid bar element, which connects two grid points (GA, GB) with full rigid body kinematics — including the lever-arm effect from the offset vector between grids.
+
+**Scope:**
+- `RBAR` card: EID, GA (independent end), GB (dependent end), CNA, CNB, CMA, CMB.
+- Phase 1 scope: CNA=`"123456"` / CNB=blank only (all 6 DOFs at GA independent, all 6 at GB dependent). Non-default CNA/CNB raises `ValueError`.
+- Rigid body kinematics: GB DOFs computed from GA DOFs via the 6×6 matrix R where translations at GB include the lever-arm contribution `θ_GA × d` (d = r_GB − r_GA).
+- Distinction from RBE2: RBE2 copies DOFs 1:1 (no lever arm). RBAR couples translations and rotations geometrically; reduces to RBE2 when d=(0,0,0).
+- Works in SOL 101 and SOL 103 without changes to the solvers.
+- Viewer: RBAR rendered as solid purple lines (`#9467bd`, width=3) from GA to GB.
+
+**Deliverables:**
+- `model/element.py` — `Rbar` dataclass (eid, ga, gb, cna, cnb).
+- `model/bulk_data.py` — `rbars: dict` field.
+- `parser/bdf_reader.py` — `_handle_rbar()` handler; RBAR dispatch branch; `Rbar` added to import.
+- `assembly/rbe3.py` — `build_rbe3_transformation()` extended with RBAR block (R matrix) and GA-in-dep-set validation.
+- `viewer/geometry.py` — `_rbar_line_coords()`, `_add_rbar_trace()`, `_add_ghost_rbar_lines()` added; all three figure builders updated; mode figure trace numbering updated to include RBAR ghost (trace 5) and deformed RBAR (trace 11).
+- `tests/parser/test_rbar.py` — parsing tests (fixed-field, free-field, defaults, validation).
+- `tests/assembly/test_rbar.py` — transformation tests including lever-arm correctness test.
+- `tests/integration/bdf/v14_rbar_zero_offset.bdf` — cantilever + zero-offset RBAR integration BDF.
+- `tests/integration/test_verification.py` — `TestV14RbarZeroOffset` class.
+- `docs/Beam_model.md`, `docs/card_definition.md`, `docs/sbeam.md` — updated.
+
+**Test / Acceptance:**
+- V14: zero-offset RBAR — Ty[GID2] matches PL³/3EI; u[GID3] == u[GID2] exactly ✓
+- Lever-arm unit test: GA at origin, GB at (L,0,0), θ_Ay=1.0 → u_Bz = −L (non-zero, correct) ✓
+- RBE2 coexistence, GA-in-dep-set validation, R-matrix all-entries check ✓
+
+---
+
 ## Resolved Defects
 
 ### B1: Viewer — Case Control UI Export ✅ FIXED

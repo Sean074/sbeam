@@ -3,7 +3,7 @@
 This file is the authoritative backlog for all open bugs, in-progress work, and planned
 development. It is updated as part of every session that completes a step — never deferred.
 
-When a backlog item is promoted to a formal step, give it a step number continuing from Step 37
+When a backlog item is promoted to a formal step, give it a step number continuing from Step 39
 and apply the same step format (Objective, Deliverables, Test/Acceptance).
 
 Completed steps are recorded in `docs/completed_development.md`.

@@ -40,6 +40,15 @@ class Rbe2:
 
 
 @dataclass
+class Rbar:
+    eid: int
+    ga: int         # End A grid (independent)
+    gb: int         # End B grid (dependent)
+    cna: str = "123456"  # Independent DOFs at GA
+    cnb: str = ""        # Independent DOFs at GB (Phase 1: must be blank)
+
+
+@dataclass
 class Cbush:
     eid: int
     pid: int

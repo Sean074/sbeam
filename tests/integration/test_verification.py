@@ -1,4 +1,4 @@
-"""Step 24: End-to-end integration verification tests (V1–V13).
+"""Step 24: End-to-end integration verification tests (V1–V14).
 
 Each test reads a BDF file through parse_bdf, runs the solver, and checks
 the result against a closed-form analytical value.
@@ -356,6 +356,39 @@ class TestV13Rbe2RigidCoupling:
 
     def test_gid3_equals_gid2(self, result_and_gi):
         """RBE2 constraint: all DOFs of GID 3 (dependent) == GID 2 (independent)."""
+        result, gi = result_and_gi
+        u2 = result.displacements[6 * gi[2]: 6 * gi[2] + 6]
+        u3 = result.displacements[6 * gi[3]: 6 * gi[3] + 6]
+        np.testing.assert_allclose(u3, u2, atol=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# V14 — RBAR zero-offset rigid coupling (Step 37)
+# ---------------------------------------------------------------------------
+
+E_V14 = 2.0e11
+I_V14 = 8.333e-4
+L_V14 = 1.0
+P_V14 = 1000.0
+
+
+class TestV14RbarZeroOffset:
+    @pytest.fixture(scope="class")
+    def result_and_gi(self):
+        cc, bulk = parse_bdf(BDF_DIR / "v14_rbar_zero_offset.bdf")
+        result = run_sol101(bulk, cc.subcases[0])
+        grid_index = build_grid_index(bulk)
+        return result, grid_index
+
+    def test_gid2_tip_deflection(self, result_and_gi):
+        """Ty at CBAR tip (GID 2) matches cantilever formula PL^3/3EI."""
+        result, gi = result_and_gi
+        ty = result.displacements[6 * gi[2] + 1]
+        expected = P_V14 * L_V14 ** 3 / (3 * E_V14 * I_V14)
+        assert ty == pytest.approx(expected, rel=1e-3)
+
+    def test_gid3_equals_gid2(self, result_and_gi):
+        """RBAR zero-offset constraint: all DOFs of GID 3 (dependent) == GID 2 (independent)."""
         result, gi = result_and_gi
         u2 = result.displacements[6 * gi[2]: 6 * gi[2] + 6]
         u3 = result.displacements[6 * gi[3]: 6 * gi[3] + 6]

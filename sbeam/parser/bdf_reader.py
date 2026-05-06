@@ -5,7 +5,7 @@ from typing import Optional
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.coordinate_system import Cord2r
 from sbeam.model.grid import Grid
-from sbeam.model.element import Cbar, Plotel, Rbe3, Rbe2, Cbush
+from sbeam.model.element import Cbar, Plotel, Rbe3, Rbe2, Cbush, Rbar
 from sbeam.model.property import Pbar, Pbush
 from sbeam.model.material import Mat1
 from sbeam.model.mass import Conm2
@@ -232,6 +232,30 @@ def _handle_rbe2(fields: list, conts: list, bulk: BulkData) -> None:
             raise ValueError(f"RBE2 {eid}: dependent grid GM={dep_gid} not found")
 
     bulk.rbe2s[eid] = Rbe2(eid=eid, gn=gn, cm=cm, gm=gm)
+
+
+def _handle_rbar(fields: list, bulk: BulkData) -> None:
+    eid = _to_int(fields[1])
+    ga  = _to_int(fields[2])
+    gb  = _to_int(fields[3])
+    cna = fields[4].strip() if len(fields) > 4 and fields[4].strip() else "123456"
+    cnb = fields[5].strip() if len(fields) > 5 and fields[5].strip() else ""
+
+    if cna != "123456" or cnb not in ("", "0"):
+        raise ValueError(
+            f"RBAR {eid}: only CNA=123456/CNB=blank supported in Phase 1 "
+            f"(got CNA={cna!r}, CNB={cnb!r})"
+        )
+    if ga not in bulk.grids:
+        raise ValueError(f"RBAR {eid}: grid GA={ga} not found")
+    if gb not in bulk.grids:
+        raise ValueError(f"RBAR {eid}: grid GB={gb} not found")
+    if ga == gb:
+        raise ValueError(f"RBAR {eid}: GA and GB must be different grids")
+    if eid in bulk.rbars:
+        raise ValueError(f"Duplicate RBAR EID {eid}")
+
+    bulk.rbars[eid] = Rbar(eid=eid, ga=ga, gb=gb, cna=cna, cnb=cnb)
 
 
 def _handle_conm2(fields: list, cont, bulk: BulkData) -> None:
@@ -482,6 +506,8 @@ def parse_bulk_data(lines: list) -> BulkData:
                 else:
                     break
             _handle_rbe2(fields, conts2, bulk)
+        elif keyword == "RBAR":
+            _handle_rbar(fields, bulk)
         elif keyword == "CONM2":
             _handle_conm2(fields, cont, bulk)
         elif keyword == "SPC":

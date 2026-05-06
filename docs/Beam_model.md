@@ -333,6 +333,57 @@ Placing a CONM2 on an RBE2 **dependent (GM) node** is implicitly handled by the 
 
 ---
 
+### RBAR
+
+Rigid Bar element. Connects two independent grids (GA, GB) with full rigid body kinematics — translations and rotations are coupled with the lever-arm effect of the offset vector between the two grids.
+
+```
+RBAR, EID, GA, GB, CNA, CNB, CMA, CMB
+```
+
+| Field | Description |
+|-------|-------------|
+| EID | Element ID (integer, unique) |
+| GA | End A grid ID (independent by default) |
+| GB | End B grid ID (dependent by default) |
+| CNA | Independent DOF components at GA (default `"123456"`) |
+| CNB | Independent DOF components at GB (default blank — none) |
+| CMA | Dependent DOF components at GA (auto-computed; field may be blank) |
+| CMB | Dependent DOF components at GB (auto-computed; field may be blank) |
+
+**Phase 1 scope:** Only the default case is supported — `CNA="123456"` (all 6 DOFs at GA independent) and `CNB=""` (blank, all 6 DOFs at GB dependent). Non-default combinations raise `ValueError`. CMA and CMB are parsed but not stored; they are always the complement of CNA/CNB.
+
+**Constraint equations** — all 6 DOFs at GB are determined by the rigid body kinematics matrix R:
+
+```
+[u_Bx]   [1  0  0   0   dz  -dy] [u_Ax]
+[u_By] = [0  1  0  -dz   0   dx] [u_Ay]
+[u_Bz]   [0  0  1   dy  -dx   0] [u_Az]
+[θ_Bx]   [0  0  0   1    0   0] [θ_Ax]
+[θ_By]   [0  0  0   0    1   0] [θ_Ay]
+[θ_Bz]   [0  0  0   0    0   1] [θ_Az]
+```
+
+where **d** = (dx, dy, dz) = r_GB − r_GA in global coordinates (CID 0).
+
+**Distinction from RBE2:** RBE2 copies each DOF directly (`u_dep[d] = u_indep[d]`). RBAR computes translations at GB from both translations and rotations at GA, capturing the lever-arm effect. When `d = (0,0,0)` (coincident grids), R reduces to the identity and RBAR is equivalent to a full-DOF RBE2.
+
+**Assembly:** implemented in `assembly/rbe3.py` within `build_rbe3_transformation()`. For each RBAR, 6 rows of `T_full` (corresponding to GB's DOFs) are filled with the R matrix evaluated at the grid offset. The resulting T matrix is applied identically in SOL 101 and SOL 103.
+
+**Viewer:** rendered as solid purple lines (`#9467bd`, width=3) from GA to GB.
+
+**`Rbar` dataclass:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `eid` | `int` | — | Element ID |
+| `ga` | `int` | — | End A grid (independent) |
+| `gb` | `int` | — | End B grid (dependent) |
+| `cna` | `str` | `"123456"` | Independent DOFs at GA |
+| `cnb` | `str` | `""` | Independent DOFs at GB |
+
+---
+
 ### PBUSH
 
 Generalised spring-damper property. Referenced by CBUSH.

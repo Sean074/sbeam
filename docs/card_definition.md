@@ -380,6 +380,52 @@ RBE2, 2, 1, 123456, 3, 4, 5
 
 ---
 
+### RBAR — Rigid Bar Element
+
+Defines a rigid bar between two grids. All 6 DOFs at GB depend on GA via rigid body kinematics (includes lever-arm effect from the offset vector).
+
+**Format:**
+```
+RBAR, EID, GA, GB, CNA, CNB, CMA, CMB
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| EID | `eid` | int | Element ID (unique) | required |
+| GA | `ga` | int | End A grid (independent) | required |
+| GB | `gb` | int | End B grid (dependent) | required |
+| CNA | `cna` | str | Independent DOF components at GA | `"123456"` |
+| CNB | `cnb` | str | Independent DOF components at GB | `""` (blank) |
+| CMA | — | — | Dependent DOF components at GA (auto-computed; stored in BDF, not in dataclass) | blank |
+| CMB | — | — | Dependent DOF components at GB (auto-computed; stored in BDF, not in dataclass) | blank |
+
+**Phase 1 constraint:** CNA=`"123456"`, CNB=blank only. Non-default combinations raise `ValueError`.
+
+**Constraint equations:**
+
+```
+u_Bx = u_Ax +  dz·θ_Ay - dy·θ_Az
+u_By = u_Ay - dz·θ_Ax  + dx·θ_Az
+u_Bz = u_Az + dy·θ_Ax  - dx·θ_Ay
+θ_Bx = θ_Ax
+θ_By = θ_Ay
+θ_Bz = θ_Az
+```
+
+where `d = (dx, dy, dz) = r_GB − r_GA` in global coordinates.
+
+**Example:**
+```
+$ GB=3 rigidly follows GA=2 with full rigid body kinematics (grids may be offset)
+RBAR, 1, 2, 3
+$ Same, with explicit default fields
+RBAR, 1, 2, 3, 123456, , ,
+```
+
+---
+
 ### RBE3 — Rigid Body Element (Interpolation Constraint)
 
 Constrains a dependent (reference) grid to the weighted average motion of independent grids.

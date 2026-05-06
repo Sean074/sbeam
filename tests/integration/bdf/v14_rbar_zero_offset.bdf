@@ -1,0 +1,34 @@
+$ V14: RBAR zero-offset coupling
+$ 1 CBAR element, L=1.0 m, fixed at GID 1, CBAR tip at GID 2
+$ GID 3 is coincident with GID 2; RBAR connects GA=2 (independent) to GB=3 (dependent)
+$ Force 1000 N in +Y applied at GID 3 (the dependent grid)
+$ With d=(0,0,0), R=identity so u[GID3] = u[GID2] exactly
+$ Expected: Ty[GID2] = PL^3/3EI (same as bare cantilever and V13)
+$
+SOL 101
+$
+SUBCASE 1
+  TITLE = RBAR Zero-Offset Coupling
+  SPC = 1
+  LOAD = 10
+  DISPLACEMENT = ALL
+$
+BEGIN BULK
+$
+GRID, 1, , 0.0, 0.0, 0.0
+GRID, 2, , 1.0, 0.0, 0.0
+GRID, 3, , 1.0, 0.0, 0.0
+$
+MAT1, 1, 2.0e11, 7.692e10, 0.3, 7850.0
+$
+PBAR, 1, 1, 0.05, 8.333e-4, 8.333e-4, 1.406e-3
+$
+CBAR, 1, 1, 1, 2, 0.0, 1.0, 0.0
+$
+RBAR, 1, 2, 3
+$
+SPC1, 1, 123456, 1
+$
+FORCE, 10, 3, 0, 1000.0, 0.0, 1.0, 0.0
+$
+ENDDATA
