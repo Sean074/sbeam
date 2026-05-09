@@ -6,7 +6,7 @@ from sbeam.model.element import Cbar
 from sbeam.model.property import Pbar
 from sbeam.model.material import Mat1
 from sbeam.model.bulk_data import BulkData
-from sbeam.assembly.stiffness import transform_matrix
+from sbeam.assembly.stiffness import transform_matrix, _node_dofs
 from sbeam.assembly.coord_transform import build_transform
 
 
@@ -95,12 +95,7 @@ def assemble_global_mass(bulk: BulkData) -> np.ndarray:
     for cbar in bulk.cbars.values():
         M_e = element_mass_global(cbar, bulk.grids, bulk.pbars, bulk.mat1s)
 
-        ia = grid_index[cbar.ga]
-        ib = grid_index[cbar.gb]
-
-        dofs_a = [6 * ia + d for d in range(6)]
-        dofs_b = [6 * ib + d for d in range(6)]
-        dofs = dofs_a + dofs_b
+        dofs = _node_dofs(cbar.ga, grid_index) + _node_dofs(cbar.gb, grid_index)
 
         for i_local, i_global in enumerate(dofs):
             for j_local, j_global in enumerate(dofs):

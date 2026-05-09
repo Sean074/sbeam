@@ -9,6 +9,12 @@ from sbeam.model.material import Mat1
 from sbeam.model.bulk_data import BulkData
 
 
+def _node_dofs(gid: int, grid_index: dict) -> list:
+    """Return the 6 global DOF indices for a grid point."""
+    i = grid_index[gid]
+    return [6 * i + d for d in range(6)]
+
+
 def local_stiffness(pbar: Pbar, mat1: Mat1, L: float) -> np.ndarray:
     """12x12 Euler-Bernoulli local element stiffness matrix.
 
@@ -85,6 +91,8 @@ def transform_matrix(cbar: Cbar, grids: dict) -> np.ndarray:
     # Local x-axis
     dx = gb_pos - ga_pos
     L = np.linalg.norm(dx)
+    if L < 1e-12:
+        raise ValueError(f"CBAR {cbar.eid}: nodes GA={cbar.ga} and GB={cbar.gb} are coincident")
     e_x = dx / L
 
     # Orientation vector v (nominally in local y direction)
@@ -162,12 +170,7 @@ def assemble_global_stiffness(bulk: BulkData) -> np.ndarray:
     for cbar in bulk.cbars.values():
         K_e = element_stiffness_global(cbar, bulk.grids, bulk.pbars, bulk.mat1s)
 
-        ia = grid_index[cbar.ga]
-        ib = grid_index[cbar.gb]
-
-        dofs_a = [6 * ia + d for d in range(6)]
-        dofs_b = [6 * ib + d for d in range(6)]
-        dofs = dofs_a + dofs_b
+        dofs = _node_dofs(cbar.ga, grid_index) + _node_dofs(cbar.gb, grid_index)
 
         for i_local, i_global in enumerate(dofs):
             for j_local, j_global in enumerate(dofs):
@@ -175,15 +178,8 @@ def assemble_global_stiffness(bulk: BulkData) -> np.ndarray:
 
     for cbush in bulk.cbushs.values():
         K_e = cbush_stiffness_global(cbush, bulk.grids, bulk.pbushs)
-        ia = grid_index[cbush.ga]
-        dofs_a = [6 * ia + d for d in range(6)]
-
-        if cbush.gb is not None:
-            ib = grid_index[cbush.gb]
-            dofs_b = [6 * ib + d for d in range(6)]
-            dofs = dofs_a + dofs_b
-        else:
-            dofs = dofs_a
+        dofs_a = _node_dofs(cbush.ga, grid_index)
+        dofs = dofs_a + _node_dofs(cbush.gb, grid_index) if cbush.gb is not None else dofs_a
 
         for i_local, i_global in enumerate(dofs):
             for j_local, j_global in enumerate(dofs):

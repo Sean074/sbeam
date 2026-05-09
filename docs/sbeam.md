@@ -48,7 +48,7 @@ sbeam/
 
 ## Coding Standards
 
-- Python 3.10+
+- Python 3.9+
 - Type hints on all function signatures.
 - Dataclasses (`@dataclass`) for all BDF card data objects.
 - All physical arrays are `numpy.ndarray`. Matrix indices follow DOF ordering: [Tx, Ty, Tz, Rx, Ry, Rz] per node.

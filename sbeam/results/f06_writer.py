@@ -15,6 +15,16 @@ def _fmt(val: float) -> str:
     return f"{val:13.6E}"
 
 
+def _transform_to_cd(t: np.ndarray, r: np.ndarray, gid: int, bulk: BulkData):
+    """Rotate translation/rotation vectors into the grid's output (CD) coordinate frame."""
+    cd = bulk.grids[gid].cd
+    if cd != 0 and cd in bulk.cord2rs:
+        R = build_transform(cd, bulk.cord2rs)
+        t = R.T @ t
+        r = R.T @ r
+    return t, r
+
+
 def write_f06_sol101(
     filepath: str,
     case_control,
@@ -51,11 +61,7 @@ def write_f06_sol101(
         base = 6 * i
         t = result.displacements[base:base+3]
         r = result.displacements[base+3:base+6]
-        cd = bulk.grids[gid].cd
-        if cd != 0 and cd in bulk.cord2rs:
-            R = build_transform(cd, bulk.cord2rs)
-            t = R.T @ t
-            r = R.T @ r
+        t, r = _transform_to_cd(t, r, gid, bulk)
         lines.append(
             f"{gid:>14}     G  {_fmt(t[0])}{_fmt(t[1])}{_fmt(t[2])}{_fmt(r[0])}{_fmt(r[1])}{_fmt(r[2])}"
         )
@@ -189,11 +195,7 @@ def write_f06_sol103(
             base = 6 * i
             t = phi[base:base+3]
             r = phi[base+3:base+6]
-            cd = bulk.grids[gid].cd
-            if cd != 0 and cd in bulk.cord2rs:
-                R = build_transform(cd, bulk.cord2rs)
-                t = R.T @ t
-                r = R.T @ r
+            t, r = _transform_to_cd(t, r, gid, bulk)
             lines.append(
                 f"{gid:>14}     G  "
                 f"{_fmt(t[0])}{_fmt(t[1])}{_fmt(t[2])}"

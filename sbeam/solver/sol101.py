@@ -134,36 +134,33 @@ def recover_bar_stresses(cbar, grids, pbars, mat1s, displacements, grid_index) -
     my_b = f_local[10]
     mz_b = f_local[11]
 
-    # Recovery point C
-    sa_c = _stress_at_point(fx_a, mz_a, my_a, pbar.c1, pbar.c2, A, I1, I2)
-    sb_c = _stress_at_point(fx_b, mz_b, my_b, pbar.c1, pbar.c2, A, I1, I2)
+    recovery_pts = {
+        "C": (pbar.c1, pbar.c2),
+        "D": (pbar.d1, pbar.d2),
+        "E": (pbar.e1, pbar.e2),
+        "F": (pbar.f1, pbar.f2),
+    }
+    stresses = {
+        pt: (
+            _stress_at_point(fx_a, mz_a, my_a, y, z, A, I1, I2),
+            _stress_at_point(fx_b, mz_b, my_b, y, z, A, I1, I2),
+        )
+        for pt, (y, z) in recovery_pts.items()
+    }
 
-    # Recovery point D
-    sa_d = _stress_at_point(fx_a, mz_a, my_a, pbar.d1, pbar.d2, A, I1, I2)
-    sb_d = _stress_at_point(fx_b, mz_b, my_b, pbar.d1, pbar.d2, A, I1, I2)
-
-    # Recovery point E
-    sa_e = _stress_at_point(fx_a, mz_a, my_a, pbar.e1, pbar.e2, A, I1, I2)
-    sb_e = _stress_at_point(fx_b, mz_b, my_b, pbar.e1, pbar.e2, A, I1, I2)
-
-    # Recovery point F
-    sa_f = _stress_at_point(fx_a, mz_a, my_a, pbar.f1, pbar.f2, A, I1, I2)
-    sb_f = _stress_at_point(fx_b, mz_b, my_b, pbar.f1, pbar.f2, A, I1, I2)
-
-    # Axial stress (pure axial, no bending contribution)
     axial_stress = fx_b / A if A > 0 else 0.0
 
     return BarStress(
         eid=cbar.eid,
         axial=axial_stress,
-        sa=sa_c,
-        sb=sb_c,
-        sa_d=sa_d,
-        sb_d=sb_d,
-        sa_e=sa_e,
-        sb_e=sb_e,
-        sa_f=sa_f,
-        sb_f=sb_f,
+        sa=stresses["C"][0],
+        sb=stresses["C"][1],
+        sa_d=stresses["D"][0],
+        sb_d=stresses["D"][1],
+        sa_e=stresses["E"][0],
+        sb_e=stresses["E"][1],
+        sa_f=stresses["F"][0],
+        sb_f=stresses["F"][1],
     )
 
 

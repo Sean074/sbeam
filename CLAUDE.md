@@ -58,7 +58,7 @@ Phase 1 uses **Euler-Bernoulli beam theory** (shear deformation neglected). Each
 |----------|-------|
 | Coordinate systems | `CORD2R` (rectangular system; defined by three points A, B, C; supports chained RID references) |
 | Geometry | `GRID` (CP = input system; CD = output system for results) |
-| Elements | `CBAR`, `PLOTEL`, `RBE3` (constraint interpolation; DOF transformation), `RBE2` (rigid body; DOF transformation), `CBUSH` (two-node and grounded spring-damper; CID=0; offsets not supported) |
+| Elements | `CBAR`, `PLOTEL`, `RBE3` (constraint interpolation; DOF transformation), `RBE2` (rigid body; DOF transformation), `RBAR` (rigid bar; kinematic coupling with lever-arm), `CBUSH` (two-node and grounded spring-damper; CID=0; offsets not supported) |
 | Properties | `PBAR` (uniform cross-section: A, I1, I2, J, recovery points C/D/E/F), `PBUSH` (K1–K6 diagonal stiffness; B1–B6 damping deferred to dynamic solvers) |
 | Material | `MAT1` (E, G, nu, rho) |
 | Mass | `CONM2` (point mass; offset vector and inertia tensor in CID frame) |

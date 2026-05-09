@@ -536,6 +536,39 @@ Step 1  (setup)
 
 ---
 
+## Code & Documentation Review (2026-05-09)
+
+**Objective:** Full pass over the codebase and documentation to identify and fix bugs, documentation drift, redundant code, and readability issues.
+
+**Deliverables:**
+
+*Documentation fixes (Group A):*
+- `CLAUDE.md` — Added `RBAR` (rigid bar; kinematic coupling with lever-arm) to the supported elements table; it was fully implemented (Step 38) but missing from the reference.
+- `docs/sbeam.md` — Corrected Python version requirement from 3.10+ to 3.9+ (matching `pyproject.toml` and `README.md`).
+- `docs/viewer.md` — Updated `build_deformed_figure` and `build_mode_figure` descriptions to include CBUSH and RBAR in ghost element lists; corrected animation trace indices from `[4,5,6,7,8]` to `[6,7,8,9,10,11]` and added RBAR to the animated trace list.
+
+*Bug fix (Group B):*
+- `sbeam/assembly/stiffness.py` — Added zero-length guard for CBAR `transform_matrix`: raises `ValueError` when GA and GB are coincident (matching the existing guard in CBUSH at line 221).
+
+*Simplifications (Group C):*
+- `sbeam/solver/sol103.py` — Replaced two double nested `for` loops that scattered eigenvectors into `phi_red`/`full_phi` with NumPy fancy indexing (`phi[free_dofs, :] = phi_free`).
+- `sbeam/solver/sol101.py` — Replaced four repeated `_stress_at_point()` call-pairs for PBAR recovery points C/D/E/F with a loop over a `{name: (y, z)}` dict.
+- `sbeam/results/f06_writer.py` — Extracted the repeated output-coordinate-frame (CD) transform block into a `_transform_to_cd(t, r, gid, bulk)` helper and replaced both call sites.
+
+*Readability / maintenance (Group D):*
+- `sbeam/assembly/stiffness.py` + `mass_matrix.py` — Extracted the repeated 6-DOF index construction into `_node_dofs(gid, grid_index) -> list`; replaced five call sites across the two files.
+- `tests/viewer/conftest.py` (new) — Moved the `two_node_bulk` and `simple_bulk` pytest fixtures into a shared `conftest.py`; removed local definitions from `test_geometry.py` and `test_deformed_geometry.py`.
+
+**Test/Acceptance:**
+- All 424 tests pass after changes (`python -m pytest`).
+
+**Key decisions:**
+- The `parse_bulk_data` refactor (long elif chain) was evaluated but excluded: the conventional BDF-card dispatch pattern is well understood and refactoring to a registry dict would add indirection for no correctness gain.
+- Type annotation improvements were noted but deferred to a dedicated pass (large scope, no correctness impact).
+- The flagged `sol101.py:207` SPC DOF deduplication was verified as **not a bug**: `enumerate(spc_dofs_unique)` pairs `local_idx` and `global_dof` consistently regardless of set ordering.
+
+---
+
 ## Documentation: BDF Card Reference
 
 **Objective:** Provide a single, fast-lookup reference for all implemented BDF input cards — field layout, variable names and types, defaults, and a minimal example per card.

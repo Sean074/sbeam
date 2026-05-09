@@ -91,9 +91,7 @@ def run_sol103(bulk: BulkData, subcase: SubcaseControl) -> Sol103Result:
         freqs_hz, phi_free = solve_modes(K_free, M_free, eigrl)
         n_modes = len(freqs_hz)
         phi_red = np.zeros((n_red, n_modes))
-        for mode in range(n_modes):
-            for local_idx, global_dof in enumerate(free_dofs):
-                phi_red[global_dof, mode] = phi_free[local_idx, mode]
+        phi_red[free_dofs, :] = phi_free
         full_phi = T @ phi_red
     else:
         spc_dofs = get_spc_dofs(bulk, spc_sid, grid_index)
@@ -102,9 +100,7 @@ def run_sol103(bulk: BulkData, subcase: SubcaseControl) -> Sol103Result:
         freqs_hz, phi_free = solve_modes(K_free, M_free, eigrl)
         n_modes = len(freqs_hz)
         full_phi = np.zeros((n_dofs, n_modes))
-        for mode in range(n_modes):
-            for local_idx, global_dof in enumerate(free_dofs):
-                full_phi[global_dof, mode] = phi_free[local_idx, mode]
+        full_phi[free_dofs, :] = phi_free
 
     eigenvalues = (2.0 * np.pi * freqs_hz) ** 2
 
