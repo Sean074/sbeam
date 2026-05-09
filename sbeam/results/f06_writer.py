@@ -25,14 +25,13 @@ def _transform_to_cd(t: np.ndarray, r: np.ndarray, gid: int, bulk: BulkData):
     return t, r
 
 
-def write_f06_sol101(
-    filepath: str,
+def _build_f06_sol101_text(
     case_control,
     bulk: BulkData,
     result: Sol101Result,
     subcase_id: int = 1,
-) -> None:
-    """Write NASTRAN-style .f06 file for SOL 101 results."""
+) -> str:
+    """Return a complete SOL 101 .f06 block as a string."""
     grid_index = build_grid_index(bulk)
     gids_sorted = sorted(bulk.grids.keys())
 
@@ -135,18 +134,16 @@ def write_f06_sol101(
     lines.append("                                       * * * END OF JOB * * *")
     lines.append("")
 
-    with open(filepath, "w") as fh:
-        fh.write("\n".join(lines) + "\n")
+    return "\n".join(lines) + "\n"
 
 
-def write_f06_sol103(
-    filepath: str,
+def _build_f06_sol103_text(
     case_control,
     bulk: BulkData,
     result: Sol103Result,
     subcase_id: int = 1,
-) -> None:
-    """Write NASTRAN-style .f06 file for SOL 103 normal modes results."""
+) -> str:
+    """Return a complete SOL 103 .f06 block as a string."""
     grid_index = build_grid_index(bulk)
     gids_sorted = sorted(bulk.grids.keys())
 
@@ -206,5 +203,28 @@ def write_f06_sol103(
     lines.append("                                       * * * END OF JOB * * *")
     lines.append("")
 
+    return "\n".join(lines) + "\n"
+
+
+def write_f06_sol101(
+    filepath: str,
+    case_control,
+    bulk: BulkData,
+    result: Sol101Result,
+    subcase_id: int = 1,
+) -> None:
+    """Write NASTRAN-style .f06 file for SOL 101 results."""
     with open(filepath, "w") as fh:
-        fh.write("\n".join(lines) + "\n")
+        fh.write(_build_f06_sol101_text(case_control, bulk, result, subcase_id))
+
+
+def write_f06_sol103(
+    filepath: str,
+    case_control,
+    bulk: BulkData,
+    result: Sol103Result,
+    subcase_id: int = 1,
+) -> None:
+    """Write NASTRAN-style .f06 file for SOL 103 normal modes results."""
+    with open(filepath, "w") as fh:
+        fh.write(_build_f06_sol103_text(case_control, bulk, result, subcase_id))

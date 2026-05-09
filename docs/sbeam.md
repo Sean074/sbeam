@@ -124,10 +124,14 @@ Detection is automatic: the viewer scans uploaded file content for a `SOL` state
 ### CLI (secondary — batch/automation)
 
 ```
-python main.py run.bdf
+python -m sbeam run.bdf
+# or, after pip install:
+sbeam run.bdf
 ```
 
-Reads a run file (case control required), determines SOL, runs analysis, writes `run.f06`. Implemented last as a thin wrapper around the solver; the viewer handles all typical interactive workflows.
+Reads a run file (case control required), determines SOL, runs analysis, and writes `run.f06` **to the same directory as the input file**. Supports SOL 101 and SOL 103; multiple subcases are written sequentially to a single `.f06` file.
+
+Exit codes: 0 on success; 1 on parse or solver error (message printed to stderr). Omitting the argument prints usage and exits with code 2.
 
 ---
 

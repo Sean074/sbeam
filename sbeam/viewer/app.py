@@ -4,6 +4,7 @@ import os
 import re
 import tempfile
 import warnings
+from pathlib import Path
 from typing import Optional
 
 import pandas as pd
@@ -30,6 +31,7 @@ def _init_session_state() -> None:
         "_parse_warnings": [],
         "_parse_error": None,
         "_uploaded_file_id": None,
+        "_uploaded_filename": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -69,6 +71,7 @@ def _handle_upload(uploaded) -> None:
 
         st.session_state.bulk_data = bulk
         st.session_state.case_control = cc
+        st.session_state._uploaded_filename = uploaded.name
         st.session_state.cc_subcases = None   # reset subcase editor
         st.session_state.sol101_result = None
         st.session_state.sol103_result = None
@@ -367,6 +370,54 @@ def _run_analysis(bulk: BulkData) -> None:
         st.error(f"Solver error: {exc}")
 
 
+def _render_f06_export(bulk: BulkData) -> None:
+    """Show f06 export controls after a successful analysis."""
+    from sbeam.results.f06_writer import _build_f06_sol101_text, _build_f06_sol103_text
+
+    cc = st.session_state.case_control
+    sol101 = st.session_state.sol101_result
+    sol103 = st.session_state.sol103_result
+    if cc is None or (sol101 is None and sol103 is None):
+        return
+
+    uploaded_name = st.session_state._uploaded_filename or "results.bdf"
+    default_path = str(Path(os.getcwd()) / Path(uploaded_name).with_suffix(".f06").name)
+
+    st.divider()
+    st.subheader("Export F06")
+
+    # Build combined f06 text for all subcases
+    parts = []
+    if sol101 is not None:
+        for sc_id, result in sorted(sol101.items()):
+            parts.append(_build_f06_sol101_text(cc, bulk, result, sc_id))
+    else:
+        for sc_id, result in sorted(sol103.items()):
+            parts.append(_build_f06_sol103_text(cc, bulk, result, sc_id))
+    f06_text = "".join(parts)
+
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        out_path = st.text_input("Output path", value=default_path, key="f06_out_path")
+    with col2:
+        st.markdown("&nbsp;", unsafe_allow_html=True)
+        if st.button("Write F06", key="write_f06_btn"):
+            try:
+                Path(out_path).write_text(f06_text, encoding="utf-8")
+                st.success(f"Written: {out_path}")
+            except Exception as exc:
+                st.error(f"Write failed: {exc}")
+
+    stem = Path(uploaded_name).with_suffix(".f06").name
+    st.download_button(
+        label="Download F06",
+        data=f06_text,
+        file_name=stem,
+        mime="text/plain",
+        key="download_f06_btn",
+    )
+
+
 def main() -> None:
     st.set_page_config(page_title="sbeam", layout="wide")
     st.title("sbeam — Simple Beam FEA")
@@ -442,9 +493,11 @@ def main() -> None:
 
         if st.session_state.sol101_result is not None:
             render_sol101_results(bulk, st.session_state.sol101_result)
+            _render_f06_export(bulk)
 
         elif st.session_state.sol103_result is not None:
             render_sol103_results(bulk, st.session_state.sol103_result)
+            _render_f06_export(bulk)
 
         else:
             cc = st.session_state.case_control
