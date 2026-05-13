@@ -72,6 +72,7 @@ $ ----------------------------------------------------------- CONSTRAINTS
 $ SPC1, SID, C,      G
 $ Encastre at node 1 — all 6 DOFs fixed
 SPC1, 1, 123456, 1
+SPC1, 1, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2
 $
 $ --------------------------------------------------------- EIGENVALUE METHOD
 $ EIGRL, SID, V1, V2, ND, MSGLVL, MAXSET, SHFSCL, NORM

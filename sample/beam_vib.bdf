@@ -1,6 +1,6 @@
 
 $ Simple cantilever beam — SOL 103 normal modes with point mass
-$ Based on sample/simple_beam.bdf (10 m, 5 CBAR elements, 6 nodes + node 7)
+$ Based on sample/simple_beam.bdf (10 m, 5 CBAR elements, 6 nodes)
 $ Steel, solid square cross-section, A = 0.1 m^2 (side = 0.31623 m)
 $ Fixed (encastre) at node 1 (x=0), free at node 6 (x=10)
 $ CONM2: 100 kg point mass at node 7 (connected to node 6 via RBE3)
@@ -23,7 +23,6 @@ GRID, 3, , 4.0,  0.0, 0.0
 GRID, 4, , 6.0,  0.0, 0.0
 GRID, 5, , 8.0,  0.0, 0.0
 GRID, 6, , 10.0, 0.0, 0.0
-GRID, 7, , 10.0, 1.0, 0.0
 $
 $ --------------------------------------------------------------- MATERIAL
 $ MAT1, MID, E,      G,        NU,  RHO
@@ -46,8 +45,6 @@ CBAR, 3, 1, 3, 4, 0.0, 1.0, 0.0
 CBAR, 4, 1, 4, 5, 0.0, 1.0, 0.0
 CBAR, 5, 1, 5, 6, 0.0, 1.0, 0.0
 $
-PLOTEL, 10, 5, 7
-RBE2, 20, 6, 123456, 7
 $
 $ ----------------------------------------------------------- CONSTRAINTS
 $ SPC1, SID, C,      G1
@@ -57,11 +54,11 @@ $
 $ --------------------------------------------------------------- POINT MASS
 $ CONM2, EID, GID, CID, M
 $ 100 kg concentrated mass at node 7 (tip, connected to node 6 via RBE3)
-CONM2, 30, 7, 0, 100000.0
+CONM2, 30, 6, 0, 100000.0
 $
 $ --------------------------------------------------------- EIGENVALUE METHOD
 $ EIGRL, SID, V1, V2, ND, MSGLVL, MAXSET, SHFSCL, NORM
 $ Extract first 5 modes, MASS normalisation
-EIGRL, 20, , , 10, , , , MASS
+EIGRL, 20, , , 5, , , , MASS
 $
 ENDDATA

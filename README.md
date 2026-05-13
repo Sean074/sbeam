@@ -62,9 +62,9 @@ pytest
 
 | Category | Cards |
 |---|---|
-| Geometry | `GRID` |
-| Elements | `CBAR`, `PLOTEL`, `RBE3` |
-| Properties | `PBAR` |
+| Geometry | `GRID`, `CORD2R`|
+| Elements | `CBAR`, `CBUSH`, `PLOTEL`, `RBE2`, `RBE3`, `RBAR` |
+| Properties | `PBAR`, `PBUSH` |
 | Material | `MAT1` |
 | Mass | `CONM2` |
 | Constraints | `SPC`, `SPC1` |
