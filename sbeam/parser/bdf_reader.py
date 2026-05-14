@@ -9,7 +9,7 @@ from sbeam.model.element import Cbar, Plotel, Rbe3, Rbe2, Cbush, Rbar
 from sbeam.model.property import Pbar, Pbush
 from sbeam.model.material import Mat1
 from sbeam.model.mass import Conm2
-from sbeam.model.load import Force, Moment, Load, Eigrl
+from sbeam.model.load import Force, Moment, Load, Grav, Eigrl
 from sbeam.model.constraint import Spc, Spc1
 from sbeam.parser.case_control import parse_case_control
 
@@ -404,6 +404,20 @@ def _handle_cbush(fields: list, cont, bulk: BulkData) -> None:
     bulk.cbushs[eid] = Cbush(eid=eid, pid=pid, ga=ga, gb=gb, x1=x1, x2=x2, x3=x3)
 
 
+def _handle_grav(fields: list, bulk: BulkData) -> None:
+    sid = _to_int(fields[1])
+    cid = _to_int_opt(fields[2]) if len(fields) > 2 else 0
+    g   = _to_float(fields[3]) if len(fields) > 3 else 0.0
+    n1  = _to_float(fields[4]) if len(fields) > 4 else 0.0
+    n2  = _to_float(fields[5]) if len(fields) > 5 else 0.0
+    n3  = _to_float(fields[6]) if len(fields) > 6 else 0.0
+    if cid != 0:
+        raise ValueError(f"GRAV {sid}: CID={cid} not supported in Phase 1 (only CID=0)")
+    if sid in bulk.gravs:
+        raise ValueError(f"Duplicate GRAV SID {sid}")
+    bulk.gravs[sid] = Grav(sid=sid, cid=cid, g=g, n1=n1, n2=n2, n3=n3)
+
+
 def _handle_eigrl(fields: list, bulk: BulkData) -> None:
     sid  = _to_int(fields[1])
     v1   = _to_float_or_none(fields[2]) if len(fields) > 2 else None
@@ -520,6 +534,8 @@ def parse_bulk_data(lines: list) -> BulkData:
             _handle_moment(fields, bulk)
         elif keyword == "LOAD":
             _handle_load(fields, cont, bulk)
+        elif keyword == "GRAV":
+            _handle_grav(fields, bulk)
         elif keyword == "EIGRL":
             _handle_eigrl(fields, bulk)
         else:
@@ -530,9 +546,11 @@ def parse_bulk_data(lines: list) -> BulkData:
     # Validate LOAD component references after all cards are parsed
     for load_sid, load in bulk.loads.items():
         for _, comp_sid in load.components:
-            if comp_sid not in bulk.forces and comp_sid not in bulk.moments:
+            if (comp_sid not in bulk.forces
+                    and comp_sid not in bulk.moments
+                    and comp_sid not in bulk.gravs):
                 raise ValueError(
-                    f"LOAD {load_sid}: component SID {comp_sid} not found in FORCE or MOMENT sets"
+                    f"LOAD {load_sid}: component SID {comp_sid} not found in FORCE, MOMENT, or GRAV sets"
                 )
 
     # Resolve all grid positions from their CP system into global CID 0

@@ -190,6 +190,7 @@ V1–V7 use: E=2.0×10¹¹ Pa, ρ=7850 kg/m³, A=0.05 m², I=8.333×10⁻⁴ m�
 | 1 | SOL 103 Normal modes | Complete |
 | 1 | BDF cards: CORD2R, GRID, CBAR, PBAR, MAT1, SPC/SPC1, FORCE, MOMENT, LOAD, PLOTEL, CONM2, EIGRL | Complete |
 | 2 | BDF cards: RBE2, RBE3, CBUSH, PBUSH, RBAR | Complete |
+| 2 | BDF card: GRAV (gravity body load; CID=0; f = M×a via consistent mass matrix) | Complete |
 | 2 | SOL 108 Direct frequency response | Planned |
 | 2 | SOL 109 Direct transient response | Planned |
 | 2 | SOL 111 Modal frequency response | Planned |

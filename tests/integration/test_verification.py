@@ -393,3 +393,98 @@ class TestV14RbarZeroOffset:
         u2 = result.displacements[6 * gi[2]: 6 * gi[2] + 6]
         u3 = result.displacements[6 * gi[3]: 6 * gi[3] + 6]
         np.testing.assert_allclose(u3, u2, atol=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# V15 — GRAV: simply supported beam, CBAR mass only (Step 31)
+# ---------------------------------------------------------------------------
+
+# rho=7850, A=0.05, L=1.0, g=9.81
+_V15_MASS  = 7850.0 * 0.05 * 1.0   # 392.5 kg
+_V15_WEIGHT = _V15_MASS * 9.81      # 3849.225 N
+
+
+class TestV15GravSimplySupported:
+    @pytest.fixture(scope="class")
+    def result(self):
+        cc, bulk = parse_bdf(BDF_DIR / "v15_grav_simply_supported.bdf")
+        return run_sol101(bulk, cc.subcases[0])
+
+    def test_reaction_sum_equals_total_weight(self, result):
+        """Sum of Ty reactions at both supports equals total CBAR weight."""
+        r1  = result.reactions.get(1,  np.zeros(6))[1]
+        r11 = result.reactions.get(11, np.zeros(6))[1]
+        assert r1 + r11 == pytest.approx(_V15_WEIGHT, rel=1e-4)
+
+    def test_reactions_symmetric(self, result):
+        """Uniform beam under uniform gravity: each support carries half the weight."""
+        r1  = result.reactions.get(1,  np.zeros(6))[1]
+        r11 = result.reactions.get(11, np.zeros(6))[1]
+        assert r1 == pytest.approx(_V15_WEIGHT / 2.0, rel=1e-4)
+        assert r11 == pytest.approx(_V15_WEIGHT / 2.0, rel=1e-4)
+
+
+# ---------------------------------------------------------------------------
+# V16 — GRAV: simply supported beam, CBAR mass + CONM2 (Step 31)
+# ---------------------------------------------------------------------------
+
+# CONM2 m=50.0 at midspan (node 6)
+_V16_MASS   = _V15_MASS + 50.0      # 442.5 kg
+_V16_WEIGHT = _V16_MASS * 9.81      # 4340.925 N
+
+
+class TestV16GravWithConm2:
+    @pytest.fixture(scope="class")
+    def result(self):
+        cc, bulk = parse_bdf(BDF_DIR / "v16_grav_with_conm2.bdf")
+        return run_sol101(bulk, cc.subcases[0])
+
+    def test_reaction_sum_equals_total_weight(self, result):
+        """Sum of Ty reactions equals CBAR weight + CONM2 weight."""
+        r1  = result.reactions.get(1,  np.zeros(6))[1]
+        r11 = result.reactions.get(11, np.zeros(6))[1]
+        assert r1 + r11 == pytest.approx(_V16_WEIGHT, rel=1e-4)
+
+    def test_reactions_symmetric(self, result):
+        """CONM2 at midspan: each support carries half the total weight."""
+        r1  = result.reactions.get(1,  np.zeros(6))[1]
+        r11 = result.reactions.get(11, np.zeros(6))[1]
+        assert r1 == pytest.approx(_V16_WEIGHT / 2.0, rel=1e-4)
+        assert r11 == pytest.approx(_V16_WEIGHT / 2.0, rel=1e-4)
+
+    def test_conm2_contribution(self, result):
+        """Total weight exceeds CBAR-only weight by CONM2 mass * g."""
+        r1  = result.reactions.get(1,  np.zeros(6))[1]
+        r11 = result.reactions.get(11, np.zeros(6))[1]
+        total = r1 + r11
+        assert total == pytest.approx(_V15_WEIGHT + 50.0 * 9.81, rel=1e-4)
+
+
+# ---------------------------------------------------------------------------
+# V17 — GRAV + FORCE combined via LOAD card (Step 31)
+# ---------------------------------------------------------------------------
+
+# GRAV total = 392.5 * 9.81 = 3849.225 N in -Y
+# FORCE = 1000 N in +Y at midspan
+# Net -Y = 3849.225 - 1000 = 2849.225 N
+_V17_NET_LOAD = _V15_WEIGHT - 1000.0   # 2849.225 N
+
+
+class TestV17GravPlusForce:
+    @pytest.fixture(scope="class")
+    def result(self):
+        cc, bulk = parse_bdf(BDF_DIR / "v17_grav_plus_force.bdf")
+        return run_sol101(bulk, cc.subcases[0])
+
+    def test_reaction_sum_equals_net_load(self, result):
+        """Sum of Ty reactions equals net load (gravity minus upward force)."""
+        r1  = result.reactions.get(1,  np.zeros(6))[1]
+        r11 = result.reactions.get(11, np.zeros(6))[1]
+        assert r1 + r11 == pytest.approx(_V17_NET_LOAD, rel=1e-4)
+
+    def test_reactions_symmetric(self, result):
+        """Symmetric loading: each support carries half the net load."""
+        r1  = result.reactions.get(1,  np.zeros(6))[1]
+        r11 = result.reactions.get(11, np.zeros(6))[1]
+        assert r1 == pytest.approx(_V17_NET_LOAD / 2.0, rel=1e-4)
+        assert r11 == pytest.approx(_V17_NET_LOAD / 2.0, rel=1e-4)

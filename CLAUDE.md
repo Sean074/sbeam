@@ -63,7 +63,7 @@ Phase 1 uses **Euler-Bernoulli beam theory** (shear deformation neglected). Each
 | Material | `MAT1` (E, G, nu, rho) |
 | Mass | `CONM2` (point mass; offset vector and inertia tensor in CID frame) |
 | Constraints | `SPC`, `SPC1` (DOFs 1–6: Tx Ty Tz Rx Ry Rz) |
-| Loads | `FORCE`, `MOMENT`, `LOAD` (linear combination) |
+| Loads | `FORCE`, `MOMENT`, `LOAD` (linear combination), `GRAV` (body acceleration; CID=0 only; f = M×a) |
 | Eigenvalue | `EIGRL` (SOL 103: modes, frequency range, normalization) |
 
 ### Case Control Cards (Phase 1)

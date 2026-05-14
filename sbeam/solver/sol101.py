@@ -193,8 +193,19 @@ def recover_cbush_forces(
         return K_e @ u_a
 
 
-def recover_reactions(bulk: BulkData, displacements: np.ndarray, spc_dofs: list, K: np.ndarray, grid_index: dict) -> dict:
+def recover_reactions(
+    bulk: BulkData,
+    displacements: np.ndarray,
+    spc_dofs: list,
+    K: np.ndarray,
+    grid_index: dict,
+    f_applied: np.ndarray = None,
+) -> dict:
     """Compute SPC reaction forces.
+
+    R_c = K[spc,:] @ u - f_applied[spc].  The f_applied term is zero for
+    FORCE/MOMENT loads (all forces at free DOFs) but non-zero for body loads
+    such as GRAV where gravity acts on the mass at constrained nodes too.
 
     Returns {gid: np.ndarray(6,)} for grids with constrained DOFs.
     """
@@ -203,8 +214,9 @@ def recover_reactions(bulk: BulkData, displacements: np.ndarray, spc_dofs: list,
 
     spc_dofs_unique = list(set(spc_dofs))
 
-    # Reaction = K[constrained_dofs, :] @ u
     reactions_vec = K[spc_dofs_unique, :] @ displacements
+    if f_applied is not None:
+        reactions_vec = reactions_vec - f_applied[spc_dofs_unique]
 
     # Build reverse map: global_dof -> gid
     dof_to_gid = {}
@@ -237,8 +249,9 @@ def run_sol101(bulk: BulkData, subcase: SubcaseControl) -> Sol101Result:
     load_sid = subcase.load_sid
     spc_sid = subcase.spc_sid
 
-    # Load vector
+    # Load vector (saved before RBE3 transform for reaction correction)
     f = assemble_load_vector(bulk, load_sid)
+    f_full = f.copy()
 
     # RBE3 DOF transformation — eliminates dependent DOFs before SPC partitioning.
     T, dep_dofs, red_dofs = build_rbe3_transformation(bulk, grid_index)
@@ -278,8 +291,9 @@ def run_sol101(bulk: BulkData, subcase: SubcaseControl) -> Sol101Result:
             cbush, bulk.grids, bulk.pbushs, displacements, grid_index
         )
 
-    # Recover reactions using original full-space K and full displacement vector.
-    reactions = recover_reactions(bulk, displacements, spc_dofs_full, K_orig, grid_index)
+    # Recover reactions: R = K[spc,:] @ u - f[spc].
+    # The f_full subtraction handles body loads (GRAV) that act at constrained DOFs.
+    reactions = recover_reactions(bulk, displacements, spc_dofs_full, K_orig, grid_index, f_full)
 
     return Sol101Result(
         displacements=displacements,

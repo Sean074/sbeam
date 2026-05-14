@@ -232,6 +232,39 @@ LOAD, SID, S, S1, L1, S2, L2, ...
 
 Applied load = S × (S1×L1 + S2×L2 + ...)
 
+Component SIDs (`L1`, `L2`, …) may reference FORCE, MOMENT, or GRAV sets.
+
+---
+
+### GRAV
+
+Body acceleration load. Applies a uniform inertial load to all mass-bearing DOFs using the assembled consistent mass matrix.
+
+```
+GRAV, SID, CID, G, N1, N2, N3
+```
+
+| Field | Description |
+|-------|-------------|
+| SID | Load set ID |
+| CID | Coordinate system for the direction vector (Phase 1: CID=0 only) |
+| G | Acceleration magnitude (units/s²) |
+| N1, N2, N3 | Unit direction vector of the acceleration in CID frame |
+
+**Method:** The gravity load vector is computed as:
+
+```
+f_grav = [M_global] × {a_field}
+```
+
+where `{a_field}` has `G × [N1, N2, N3]` at every translational DOF and zero at rotational DOFs. This uses the assembled consistent mass matrix, so both CBAR distributed mass and CONM2 point masses are naturally included.
+
+**Reaction recovery:** Reaction forces are computed as `R = K[spc,:] @ u - f_applied[spc]`. The `f_applied[spc]` term corrects for gravity forces that act at constrained (SPC'd) DOFs and would otherwise cause reactions to undercount the total weight.
+
+**LOAD combination:** GRAV SIDs can appear as components in a LOAD card, mixed freely with FORCE and MOMENT SIDs.
+
+**Phase 1 constraint:** CID must be 0 (global). CID ≠ 0 raises a parse error.
+
 ---
 
 ### PLOTEL

@@ -97,22 +97,6 @@ most common beam load in bridge, building, and wing models.
 
 ---
 
-### Step 31: Gravity and Inertial Body Loads (GRAV)
-
-**Objective:** Apply a body acceleration load to all mass-bearing DOFs, enabling self-weight
-analysis without manually computing and applying nodal forces.
-
-**Scope:**
-- `GRAV` card: SID, CID (phase 2: CID=0 only), N1/N2/N3 acceleration vector, G (magnitude in units/s²).
-- Applied load = mass × acceleration, assembled from CBAR element distributed mass and CONM2 masses.
-- GRAV can be combined with FORCE/MOMENT sets via a `LOAD` combination card.
-- `.f06` output: echo GRAV card in applied-load section.
-- Viewer: display gravity arrow in model view when GRAV is the active load.
-
-**Verification:** 1g vertical load on a simply-supported beam; reactions = total structural mass × g.
-
----
-
 ### Step 33: Timoshenko Shear Correction (PBAR K1/K2)
 
 **Objective:** Include transverse shear deformation for stocky beam members.

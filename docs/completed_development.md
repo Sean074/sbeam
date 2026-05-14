@@ -581,3 +581,37 @@ Step 1  (setup)
 - Organised as: file structure → format rules → case control → bulk data cards (in category order: coordinate systems, geometry, materials, properties, elements, constraints, loads, eigenvalue).
 - Each card entry follows a consistent template: format line, fields table (field / variable / type / description / default), then a BDF example.
 - Phase-1/2 limitations and unsupported fields noted in a consolidated Constraints table at the end of the document.
+
+---
+
+### Step 31: Gravity and Inertial Body Loads (GRAV) ✅ COMPLETE
+
+**Objective:** Apply a uniform body acceleration to all mass-bearing DOFs, enabling self-weight analysis without manually computing and applying nodal forces.
+
+**Deliverables:**
+- `sbeam/model/load.py` — new `Grav` dataclass (SID, CID, G, N1, N2, N3).
+- `sbeam/model/bulk_data.py` — added `gravs: dict` field (`{sid: Grav}`).
+- `sbeam/parser/bdf_reader.py` — `_handle_grav()` parser; dispatched in `parse_bulk_data`; LOAD validation extended to accept GRAV component SIDs.
+- `sbeam/assembly/load_vector.py` — `_apply_grav_to_vector()`: builds full `a_field` vector and computes `f_grav = scale × M_global @ a_field`; `assemble_load_vector` handles GRAV in both direct and LOAD-combination paths.
+- `sbeam/solver/sol101.py` — `recover_reactions` signature extended with optional `f_applied` parameter; reactions now computed as `R = K[spc,:] @ u − f[spc]` to correctly account for body loads at constrained DOFs; `run_sol101` saves `f_full` before any RBE3 transform and passes it to reaction recovery.
+- `sbeam/results/f06_writer.py` — GRAV cards echoed in an "APPLIED GRAVITY LOADS" section when `OLOAD` is requested; helper `_collect_grav_loads()` resolves GRAV references from both direct and LOAD-combination SIDs.
+- `sbeam/viewer/geometry.py` — `_load_sid_has_grav()` helper; `_add_grav_arrow()` draws a scaled cone at the model centroid in the gravity direction; `build_model_figure` calls both when a GRAV load is active.
+- `docs/Beam_model.md` — new GRAV card section documenting fields, method, reaction correction, and LOAD combination rules.
+- `docs/sbeam.md`, `CLAUDE.md` — GRAV added to supported BDF cards table.
+- `tests/integration/bdf/v15_grav_simply_supported.bdf` — CBAR-only gravity; 392.5 kg × 9.81 = 3850.425 N.
+- `tests/integration/bdf/v16_grav_with_conm2.bdf` — GRAV + CONM2 (50 kg at midspan); 442.5 kg × 9.81 = 4340.925 N.
+- `tests/integration/bdf/v17_grav_plus_force.bdf` — GRAV combined with FORCE via LOAD card; net load 2849.225 N.
+- `tests/integration/test_verification.py` — TestV15, TestV16, TestV17 (9 assertions): reaction sum equals total weight to 0.01%; individual reactions symmetric to 0.01%.
+
+**Test/Acceptance:**
+- All 26 integration verification tests pass.
+- V15: sum of support reactions = 3850.425 N (total CBAR weight) to 0.01%.
+- V16: sum of support reactions = 4340.925 N (CBAR + CONM2) to 0.01%, confirming CONM2 contribution.
+- V17: sum of support reactions = 2849.225 N (superposition of GRAV −Y and upward FORCE) to 0.01%.
+
+**Key decisions:**
+- `f_grav = M_global @ a_field`: uses the existing consistent mass matrix, so CBAR distributed mass and CONM2 point masses are both handled automatically without separate code paths.
+- Reaction correction `R = K[spc,:] @ u − f[spc]`: necessary because body loads act at constrained DOFs (zero displacement but non-zero applied force); without this, reactions undercount total weight by the gravity force that landed on SPC'd nodes. This fix also improves correctness for any future load type where forces are applied at constrained DOFs.
+- `a_field` zeros at rotational DOFs: body acceleration acts on translational inertia only; rotational DOFs receive correct indirect contributions via the off-diagonal consistent mass coupling terms.
+- CID = 0 only in Phase 1: the `to_global` function already supports CORD2R rotation, so CID ≠ 0 can be enabled in a future step by lifting the parser guard.
+- `f_full` is saved before the RBE3 transformation in `run_sol101`, ensuring the reaction correction operates in the original full DOF space consistent with `K_orig`.

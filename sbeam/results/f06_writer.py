@@ -5,6 +5,7 @@ from datetime import datetime
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
+from sbeam.model.load import Grav
 from sbeam.results.results import Sol101Result, Sol103Result
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.assembly.coord_transform import build_transform
@@ -23,6 +24,18 @@ def _transform_to_cd(t: np.ndarray, r: np.ndarray, gid: int, bulk: BulkData):
         t = R.T @ t
         r = R.T @ r
     return t, r
+
+
+def _collect_grav_loads(bulk: BulkData, load_sid: int) -> list:
+    """Return list of Grav objects referenced by load_sid (direct or via LOAD card)."""
+    gravs = []
+    if load_sid in bulk.gravs:
+        gravs.append(bulk.gravs[load_sid])
+    elif load_sid in bulk.loads:
+        for _, sid_i in bulk.loads[load_sid].components:
+            if sid_i in bulk.gravs:
+                gravs.append(bulk.gravs[sid_i])
+    return gravs
 
 
 def _build_f06_sol101_text(
@@ -49,6 +62,26 @@ def _build_f06_sol101_text(
 
     lines.append(f"                           SUBCASE {subcase_id}")
     lines.append("")
+
+    # ---- GRAV applied loads echo (when oload requested and GRAV present) ----
+    _subcase_obj = None
+    if hasattr(case_control, "subcases"):
+        for sc in case_control.subcases:
+            if sc.subcase_id == subcase_id:
+                _subcase_obj = sc
+                break
+    if _subcase_obj is not None and _subcase_obj.oload and _subcase_obj.load_sid is not None:
+        grav_loads = _collect_grav_loads(bulk, _subcase_obj.load_sid)
+        if grav_loads:
+            lines.append("                               A P P L I E D   G R A V I T Y   L O A D S")
+            lines.append("")
+            lines.append("      SID        CID              G              N1             N2             N3")
+            for grav in grav_loads:
+                lines.append(
+                    f"{grav.sid:>10}{grav.cid:>10}"
+                    f"  {_fmt(grav.g)}{_fmt(grav.n1)}{_fmt(grav.n2)}{_fmt(grav.n3)}"
+                )
+            lines.append("")
 
     # ---- DISPLACEMENT section ----
     lines.append("                                         D I S P L A C E M E N T   V E C T O R")

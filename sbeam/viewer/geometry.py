@@ -41,6 +41,8 @@ def build_model_figure(
     _add_triad(fig, bulk)
     if load_sid is not None:
         _add_load_arrows(fig, bulk, load_sid)
+        for grav in _load_sid_has_grav(bulk, load_sid):
+            _add_grav_arrow(fig, bulk, grav)
     _apply_layout(fig)
     return fig
 
@@ -419,6 +421,60 @@ def _get_spc_map(bulk: BulkData) -> dict:
         if grid.ps:
             _merge_dofs(spc_map, gid, grid.ps)
     return spc_map
+
+
+def _load_sid_has_grav(bulk: BulkData, load_sid: int) -> list:
+    """Return list of Grav objects referenced by load_sid (direct or via LOAD card)."""
+    if load_sid in bulk.gravs:
+        return [bulk.gravs[load_sid]]
+    if load_sid in bulk.loads:
+        gravs = []
+        for _, sid_i in bulk.loads[load_sid].components:
+            if sid_i in bulk.gravs:
+                gravs.append(bulk.gravs[sid_i])
+        return gravs
+    return []
+
+
+def _add_grav_arrow(fig: go.Figure, bulk: BulkData, grav) -> None:
+    """Add a single cone arrow showing the GRAV acceleration direction."""
+    if not bulk.grids:
+        return
+
+    gc = [(g.x, g.y, g.z) for g in bulk.grids.values()]
+    cx = sum(p[0] for p in gc) / len(gc)
+    cy = sum(p[1] for p in gc) / len(gc)
+    cz = sum(p[2] for p in gc) / len(gc)
+    span = max(
+        max(p[i] for p in gc) - min(p[i] for p in gc) for i in range(3)
+    )
+    span = max(span, 1e-9)
+    arrow_len = span * 0.25
+
+    mag = math.sqrt(grav.n1 ** 2 + grav.n2 ** 2 + grav.n3 ** 2)
+    mag = mag if mag > 1e-12 else 1.0
+    u = grav.n1 / mag * arrow_len
+    v = grav.n2 / mag * arrow_len
+    w = grav.n3 / mag * arrow_len
+
+    fig.add_trace(go.Cone(
+        x=[cx], y=[cy], z=[cz],
+        u=[u], v=[v], w=[w],
+        sizemode="scaled",
+        sizeref=1,
+        anchor="tail",
+        colorscale=[[0, "#e67e00"], [1, "#e67e00"]],
+        showscale=False,
+        customdata=[[grav.sid, grav.g]],
+        hovertemplate=(
+            "<b>GRAV SID %{customdata[0]}</b><br>"
+            "G = %{customdata[1]:.4g}<br>"
+            f"Direction: [{grav.n1:.3g}, {grav.n2:.3g}, {grav.n3:.3g}]"
+            "<extra></extra>"
+        ),
+        name="GRAV",
+        showlegend=False,
+    ))
 
 
 def _resolve_load_forces(bulk: BulkData, load_sid: int, eff_scale: float = 1.0) -> list:

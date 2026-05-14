@@ -32,6 +32,16 @@ class Load:
 
 
 @dataclass
+class Grav:
+    sid: int
+    cid: int    # Coordinate system ID (Phase 1: CID=0 only)
+    g: float    # Acceleration magnitude
+    n1: float   # Direction vector X (in CID frame)
+    n2: float   # Direction vector Y
+    n3: float   # Direction vector Z
+
+
+@dataclass
 class Eigrl:
     sid: int
     v1: Optional[float] = None  # Lower frequency bound (Hz)

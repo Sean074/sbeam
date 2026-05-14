@@ -1,0 +1,67 @@
+$ V17: Simply supported beam, GRAV + FORCE combined via LOAD card
+$ 10 CBAR elements, L=1.0 m, rho=7850, A=0.05
+$ GRAV SID=20: 9.81 m/s^2 in -Y  → total gravity = 392.5*9.81 = 3849.225 N in -Y
+$ FORCE SID=30: 1000 N in +Y at midspan (node 6)
+$ LOAD SID=10: s=1.0, combines SID 20 and SID 30
+$ Net -Y load = 3849.225 - 1000 = 2849.225 N
+$ Expected: sum of Y-reactions = 2849.225 N; each reaction = 1424.6125 N (symmetry)
+$ Units: SI (m, N, kg, Pa)
+$
+SOL 101
+$
+SUBCASE 1
+  TITLE = GRAV plus FORCE superposition
+  SPC = 1
+  LOAD = 10
+  DISPLACEMENT = ALL
+  SPCFORCE = ALL
+  OLOAD = ALL
+$
+BEGIN BULK
+$
+$ ------------------------------------------------------------------ NODES
+GRID, 1,  , 0.0, 0.0, 0.0
+GRID, 2,  , 0.1, 0.0, 0.0
+GRID, 3,  , 0.2, 0.0, 0.0
+GRID, 4,  , 0.3, 0.0, 0.0
+GRID, 5,  , 0.4, 0.0, 0.0
+GRID, 6,  , 0.5, 0.0, 0.0
+GRID, 7,  , 0.6, 0.0, 0.0
+GRID, 8,  , 0.7, 0.0, 0.0
+GRID, 9,  , 0.8, 0.0, 0.0
+GRID, 10, , 0.9, 0.0, 0.0
+GRID, 11, , 1.0, 0.0, 0.0
+$
+$ --------------------------------------------------------------- MATERIAL
+MAT1, 1, 2.0e11, 7.692e10, 0.3, 7850.0
+$
+$ ------------------------------------------------------------- PROPERTIES
+PBAR, 1, 1, 0.05, 8.333e-4, 8.333e-4, 1.406e-3
+$
+$ --------------------------------------------------------------- ELEMENTS
+CBAR, 1,  1, 1,  2,  0.0, 1.0, 0.0
+CBAR, 2,  1, 2,  3,  0.0, 1.0, 0.0
+CBAR, 3,  1, 3,  4,  0.0, 1.0, 0.0
+CBAR, 4,  1, 4,  5,  0.0, 1.0, 0.0
+CBAR, 5,  1, 5,  6,  0.0, 1.0, 0.0
+CBAR, 6,  1, 6,  7,  0.0, 1.0, 0.0
+CBAR, 7,  1, 7,  8,  0.0, 1.0, 0.0
+CBAR, 8,  1, 8,  9,  0.0, 1.0, 0.0
+CBAR, 9,  1, 9,  10, 0.0, 1.0, 0.0
+CBAR, 10, 1, 10, 11, 0.0, 1.0, 0.0
+$
+$ ----------------------------------------------------------- CONSTRAINTS
+$ Left pin:    fix Tx Ty Tz Rx
+SPC1, 1, 1234, 1
+$ Right roller: fix Ty Tz Rx
+SPC1, 1, 234, 11
+$
+$ ------------------------------------------------------------------ LOADS
+$ Combined load: 1.0 * (1.0*GRAV_SID20 + 1.0*FORCE_SID30)
+LOAD, 10, 1.0, 1.0, 20, 1.0, 30
+$ GRAV: 1g in -Y
+GRAV, 20, 0, 9.81, 0.0, -1.0, 0.0
+$ Midspan upward force
+FORCE, 30, 6, 0, 1000.0, 0.0, 1.0, 0.0
+$
+ENDDATA

@@ -19,5 +19,6 @@ class BulkData:
     forces: dict = field(default_factory=dict)    # {sid: list[Force]}
     moments: dict = field(default_factory=dict)   # {sid: list[Moment]}
     loads: dict = field(default_factory=dict)     # {sid: Load}
+    gravs: dict = field(default_factory=dict)     # {sid: Grav}
     eigrls: dict = field(default_factory=dict)    # {sid: Eigrl}
     cord2rs: dict = field(default_factory=dict)   # {cid: Cord2r}
