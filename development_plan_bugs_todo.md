@@ -126,20 +126,6 @@ loading are standard structural assessment scenarios.
 
 ---
 
-### Step 35: CONM2 Offset and Inertia Tensor
-
-**Objective:** Full CONM2 support with offset vector and 3×3 inertia tensor.
-
-**Scope:**
-- `CONM2` X1/X2/X3 offset fields and I11/I21/I22/I31/I32/I33 inertia terms.
-- Offset mass contributes to both translational and rotational DOFs via the parallel-axis theorem.
-- Verification: off-axis point mass eigenfrequency compared to analytical value.
-
-**Why this matters:** payload/fuel mass in aircraft stick models is almost never located
-exactly at a grid point.
-
----
-
 ## Future Development (Phase 3+)
 
 These items are lower priority or require significant new infrastructure.

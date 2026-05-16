@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
+from sbeam.assembly.coord_transform import build_transform
 
 
 @dataclass
@@ -50,7 +51,13 @@ def compute_gpwg(bulk: BulkData) -> GpwgResult:
         grid = bulk.grids.get(conm2.gid)
         if grid is None:
             continue
-        mass_contributions.append((conm2.m, grid.x + conm2.x1, grid.y + conm2.x2, grid.z + conm2.x3))
+        r_cid = np.array([conm2.x1, conm2.x2, conm2.x3])
+        if conm2.cid != 0:
+            R = build_transform(conm2.cid, bulk.cord2rs)
+            r = R @ r_cid
+        else:
+            r = r_cid
+        mass_contributions.append((conm2.m, grid.x + r[0], grid.y + r[1], grid.z + r[2]))
 
     total_mass = sum(m for m, _, _, _ in mass_contributions)
 

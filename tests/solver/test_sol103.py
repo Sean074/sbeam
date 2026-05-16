@@ -7,6 +7,7 @@ from sbeam.model.grid import Grid
 from sbeam.model.element import Cbar
 from sbeam.model.property import Pbar
 from sbeam.model.material import Mat1
+from sbeam.model.mass import Conm2
 from sbeam.model.load import Eigrl
 from sbeam.model.bulk_data import BulkData
 from sbeam.parser.case_control import CaseControl, SubcaseControl
@@ -150,6 +151,73 @@ class TestSimplySupportedFrequency:
         )
         result = run_sol103(bulk, cc.subcases[0])
         assert result.frequencies_hz[0] == pytest.approx(F1_SS, rel=0.01)
+
+
+class TestConm2FrequencyVerification:
+    """Step 35 verification: off-axis CONM2 eigenfrequency matches analytical value.
+
+    Model: massless single-element cantilever, length L=1.0.
+    Root (GID 1): SPC 123456.
+    Tip  (GID 2): SPC 12345 → only Rz (DOF 6) is free.
+
+    With Ty_tip also fixed by SPC, the stiffness for the isolated Rz DOF is
+    the direct diagonal entry from the beam stiffness matrix:
+        K_Rz = K[Rz_B, Rz_B] = 4EI/L
+
+    Mass for Rz:
+        M_Rz = i33 + m * x1²    (CM inertia + parallel-axis for x-offset)
+
+    Expected frequency:
+        f = (1/2π) * sqrt(4EI / (M_Rz * L))
+    """
+
+    _E = 2.0e11
+    _G = 7.692e10
+    _I = 8.333e-4
+    _L = 1.0
+
+    def _bulk(self, conm2: Conm2) -> BulkData:
+        bulk = BulkData()
+        bulk.grids[1] = Grid(gid=1, x=0.0, y=0.0, z=0.0)
+        bulk.grids[2] = Grid(gid=2, x=self._L, y=0.0, z=0.0)
+        bulk.mat1s[100] = Mat1(mid=100, E=self._E, G=self._G, nu=0.3, rho=0.0)
+        bulk.pbars[10] = Pbar(pid=10, mid=100, A=1e-3, I1=self._I, I2=self._I, J=1e-3)
+        bulk.cbars[1] = Cbar(eid=1, pid=10, ga=1, gb=2, x1=0.0, x2=1.0, x3=0.0)
+        bulk.eigrls[20] = Eigrl(sid=20, nd=1, norm="MASS")
+        bulk.spc1s[10] = [
+            _make_spc1(10, "123456", [1]),
+            _make_spc1(10, "12345", [2]),   # tip: only Rz (DOF 6) free
+        ]
+        bulk.conm2s[1] = conm2
+        return bulk
+
+    def _run(self, conm2: Conm2) -> float:
+        bulk = self._bulk(conm2)
+        cc = CaseControl(
+            sol=103,
+            subcases=[SubcaseControl(subcase_id=1, spc_sid=10, method_sid=20)],
+        )
+        result = run_sol103(bulk, cc.subcases[0])
+        return result.frequencies_hz[0]
+
+    def test_cm_inertia_rotational_frequency(self):
+        """CONM2 i33 alone: f = (1/2π) * sqrt(4EI / (J * L))."""
+        J_cm = 5.0
+        f = self._run(Conm2(eid=1, gid=2, cid=0, m=0.0, i33=J_cm))
+        f_expected = (1.0 / (2 * np.pi)) * np.sqrt(4 * self._E * self._I / (J_cm * self._L))
+        assert f == pytest.approx(f_expected, rel=0.01)
+
+    def test_offset_parallel_axis_lowers_frequency(self):
+        """x-offset adds m*d² to Rz inertia: f = (1/2π) * sqrt(4EI / ((J + m*d²) * L))."""
+        J_cm = 5.0
+        m = 10.0
+        d = 0.5   # x1 offset along beam axis
+        f_no_offset = self._run(Conm2(eid=1, gid=2, cid=0, m=m, i33=J_cm))
+        f_with_offset = self._run(Conm2(eid=1, gid=2, cid=0, m=m, i33=J_cm, x1=d))
+        J_total = J_cm + m * d ** 2
+        f_expected = (1.0 / (2 * np.pi)) * np.sqrt(4 * self._E * self._I / (J_total * self._L))
+        assert f_with_offset == pytest.approx(f_expected, rel=0.01)
+        assert f_with_offset < f_no_offset
 
 
 class TestMaxNormalisation:

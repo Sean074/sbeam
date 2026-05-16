@@ -120,6 +120,24 @@ class TestGpwgConm2Offset:
         assert result.cg_x == pytest.approx(5.0)
 
 
+class TestGpwgConm2OffsetCid:
+    def test_cid_transform_applied_to_offset(self):
+        """CONM2 with non-zero CID: offset must be rotated from CID frame to global."""
+        from sbeam.model.coordinate_system import Cord2r
+        bulk = BulkData()
+        bulk.grids[1] = Grid(gid=1, x=0.0, y=0.0, z=0.0)
+        # CORD2R: A at origin, B on global Z → local Z = global Z;
+        # C on global Y → local X = global Y (90° rotation about Z).
+        bulk.cord2rs[1] = Cord2r(cid=1, rid=0, a=(0.0, 0.0, 0.0), b=(0.0, 0.0, 1.0), c=(0.0, 1.0, 0.0))
+        # x1=3.0 in local frame = 3.0 in global Y direction
+        bulk.conm2s[1] = Conm2(eid=1, gid=1, cid=1, m=10.0, x1=3.0)
+        result = compute_gpwg(bulk)
+        assert result.total_mass == pytest.approx(10.0)
+        assert result.cg_x == pytest.approx(0.0, abs=1e-10)
+        assert result.cg_y == pytest.approx(3.0, rel=1e-10)
+        assert result.cg_z == pytest.approx(0.0, abs=1e-10)
+
+
 class TestGpwgZeroDensity:
     def test_zero_density_zero_mass(self):
         bulk = make_one_element_bulk(rho=0.0)

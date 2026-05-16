@@ -615,3 +615,30 @@ Step 1  (setup)
 - `a_field` zeros at rotational DOFs: body acceleration acts on translational inertia only; rotational DOFs receive correct indirect contributions via the off-diagonal consistent mass coupling terms.
 - CID = 0 only in Phase 1: the `to_global` function already supports CORD2R rotation, so CID ≠ 0 can be enabled in a future step by lifting the parser guard.
 - `f_full` is saved before the RBE3 transformation in `run_sol101`, ensuring the reaction correction operates in the original full DOF space consistent with `K_orig`.
+
+---
+
+### Step 35: CONM2 Offset and Inertia Tensor ✅ COMPLETE
+
+**Objective:** Full CONM2 support with offset vector (X1/X2/X3) and 3×3 inertia tensor (I11–I33), including CID-frame transforms via the parallel-axis theorem.
+
+**Deliverables:**
+- `sbeam/assembly/mass_matrix.py` — already implemented in a prior session: full 6×6 coupled CONM2 block including translational mass, coupling skew matrix (M_tr = −m·[r×]), parallel-axis rotational inertia (m·(|r|²I₃ − r⊗r)), CM inertia tensor (I₁₁–I₃₃), and CID→global rotation (R @ I_cid @ Rᵀ). No changes required.
+- `sbeam/model/mass.py`, `sbeam/parser/bdf_reader.py` — already complete: all 13 CONM2 fields stored and parsed. No changes required.
+- `sbeam/gpwg.py` — bug fix: CONM2 offset was added to the grid position directly without rotating from the CID frame. Fixed by importing `build_transform` and applying `R @ r_cid` when `conm2.cid ≠ 0`.
+- `sbeam/viewer/geometry.py` (`_add_conm2_trace`) — same bug fix: CG marker and offset line now use the transformed offset vector. Also replaced the raw component comparison with `np.linalg.norm(r) > 0` for robustness.
+- `tests/test_gpwg.py` — new class `TestGpwgConm2OffsetCid`: verifies that a CONM2 with CID referencing a 90°-rotated CORD2R correctly maps a local-x offset to a global-y CG displacement.
+- `tests/solver/test_sol103.py` — new class `TestConm2FrequencyVerification` (2 tests):
+  - `test_cm_inertia_rotational_frequency`: massless cantilever + tip CONM2 with i33=5 kg·m², Rz-only free DOF; verifies f = (1/2π)·√(4EI/(J·L)) to 1%.
+  - `test_offset_parallel_axis_lowers_frequency`: same + x-offset d=0.5 m; verifies f = (1/2π)·√(4EI/((J+m·d²)·L)) to 1% and that f < f_no_offset.
+
+**Test/Acceptance:**
+- All 36 tests in `tests/test_gpwg.py`, `tests/assembly/test_mass.py`, and `tests/solver/test_sol103.py` pass.
+- GPWG CID test: CORD2R with local-x = global-y → CONM2 x1=3 correctly yields CG_y=3.0, CG_x=CG_z=0.
+- SOL 103 frequency test 1: f = 1837.7 Hz matches analytical 4EI/(J·L) formula to <0.01%.
+- SOL 103 frequency test 2: f = 1500.5 Hz (J_total = 7.5) matches analytical formula to <0.01%; confirmed lower than no-offset case.
+
+**Key decisions:**
+- The core solver (mass matrix assembly) was already complete from prior work; Step 35 closes the two peripheral bugs and adds the missing end-to-end eigenfrequency verification.
+- Verification model uses a massless single-element cantilever with tip SPC "12345" (Tx, Ty, Tz, Rx, Ry fixed), leaving only Rz free. The isolated 1-DOF stiffness for Rz is the direct diagonal entry K[Rz_B, Rz_B] = 4EI/L (not the Schur-complement EI/L which applies when Ty is also free).
+- `np.linalg.norm(r) > 0` in the viewer replaces the three individual component checks, ensuring the offset line is drawn correctly when the CID transform rotates a non-zero vector into a component that was originally zero.

@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.load import Force, Moment
+from sbeam.assembly.coord_transform import build_transform
 
 _PID_COLORS = [
     "#1f77b4",
@@ -1149,14 +1150,20 @@ def _add_conm2_trace(fig: go.Figure, bulk: BulkData) -> None:
         grid = bulk.grids.get(conm2.gid)
         if grid is None:
             continue
-        cgx = grid.x + conm2.x1
-        cgy = grid.y + conm2.x2
-        cgz = grid.z + conm2.x3
+        r_cid = np.array([conm2.x1, conm2.x2, conm2.x3])
+        if conm2.cid != 0:
+            R = build_transform(conm2.cid, bulk.cord2rs)
+            r = R @ r_cid
+        else:
+            r = r_cid
+        cgx = grid.x + r[0]
+        cgy = grid.y + r[1]
+        cgz = grid.z + r[2]
         cg_xs.append(cgx)
         cg_ys.append(cgy)
         cg_zs.append(cgz)
         customdata.append([conm2.eid, conm2.gid, f"{conm2.m:.4g}"])
-        if conm2.x1 != 0.0 or conm2.x2 != 0.0 or conm2.x3 != 0.0:
+        if np.linalg.norm(r) > 0.0:
             off_xs += [grid.x, cgx, None]
             off_ys += [grid.y, cgy, None]
             off_zs += [grid.z, cgz, None]
