@@ -180,51 +180,93 @@ def render_sol103_results(bulk: BulkData, results: dict) -> None:
     grid_index = build_grid_index(bulk)
     n_modes = len(result.frequencies_hz)
 
-    st.subheader("Natural frequencies")
+    _CAMERA_PRESETS = {
+        "Isometric": dict(eye=dict(x=1.5, y=1.5, z=1.5)),
+        "+X view": dict(eye=dict(x=2.5, y=0.0, z=0.2)),
+        "-X view": dict(eye=dict(x=-2.5, y=0.0, z=0.2)),
+        "+Y view": dict(eye=dict(x=0.0, y=2.5, z=0.2)),
+        "-Y view": dict(eye=dict(x=0.0, y=-2.5, z=0.2)),
+        "+Z view (top)": dict(eye=dict(x=0.0, y=0.0, z=2.5)),
+        "-Z view (bottom)": dict(eye=dict(x=0.0, y=0.0, z=-2.5)),
+        "XZ plane": dict(eye=dict(x=0.0, y=2.5, z=0.5)),
+        "YZ plane": dict(eye=dict(x=2.5, y=0.0, z=0.5)),
+    }
 
-    # Frequency summary table
-    freq_rows = []
-    for i, (freq, lam) in enumerate(zip(result.frequencies_hz, result.eigenvalues), start=1):
-        omega = 2.0 * np.pi * freq
-        freq_rows.append({"Mode": i, "Freq (Hz)": freq, "ω (rad/s)": omega, "λ (ω²)": lam})
-    st.dataframe(pd.DataFrame(freq_rows), width="stretch")
+    ctrl_col, plot_col = st.columns([3, 7])
 
-    st.subheader("Mode shape")
+    with ctrl_col:
+        st.subheader("Mode shape")
 
-    mode_labels = [f"Mode {i + 1}  —  {result.frequencies_hz[i]:.4g} Hz" for i in range(n_modes)]
-    mode_sel = st.selectbox("Select mode", range(n_modes), format_func=lambda i: mode_labels[i])
+        mode_labels = [f"Mode {i + 1}  —  {result.frequencies_hz[i]:.4g} Hz" for i in range(n_modes)]
+        mode_sel = st.selectbox("Select mode", range(n_modes), format_func=lambda i: mode_labels[i], key="mode_sel")
 
-    freq = result.frequencies_hz[mode_sel]
-    phi = result.mode_shapes[:, mode_sel]
-    max_comp = float(np.max(np.abs(phi))) if phi.size else 1.0
-    if max_comp == 0.0:
-        max_comp = 1.0
+        freq = result.frequencies_hz[mode_sel]
+        phi = result.mode_shapes[:, mode_sel]
+        max_comp = float(np.max(np.abs(phi))) if phi.size else 1.0
+        if max_comp == 0.0:
+            max_comp = 1.0
 
-    if bulk.grids:
-        coords = [(g.x, g.y, g.z) for g in bulk.grids.values()]
-        span = max(
-            max(c[i] for c in coords) - min(c[i] for c in coords)
-            for i in range(3)
+        if bulk.grids:
+            coords = [(g.x, g.y, g.z) for g in bulk.grids.values()]
+            span = max(
+                max(c[i] for c in coords) - min(c[i] for c in coords)
+                for i in range(3)
+            )
+            span = span if span > 0 else 1.0
+        else:
+            span = 1.0
+        suggested = span * 0.2 / max_comp
+
+        scale = st.slider(
+            "Scale",
+            min_value=0.0,
+            max_value=float(suggested * 10),
+            value=float(suggested),
+            format="%.2g",
+            key="mode_scale",
         )
-        span = span if span > 0 else 1.0
-    else:
-        span = 1.0
-    suggested = span * 0.2 / max_comp
-    scale = st.slider(
-        "Mode shape scale",
-        min_value=0.0,
-        max_value=float(suggested * 10),
-        value=float(suggested),
-        format="%.2g",
-        key="mode_scale",
+        phase_pct = st.slider(
+            "Phase (°)  (90°=+max, 270°=−max)",
+            min_value=0,
+            max_value=360,
+            value=90,
+            key="mode_phase",
+        )
+        view_sel = st.selectbox(
+            "Camera",
+            list(_CAMERA_PRESETS.keys()),
+            key="mode_camera_preset",
+        )
+        chart_height = st.slider(
+            "Height (px)",
+            min_value=400,
+            max_value=1400,
+            value=580,
+            step=50,
+            key="mode_chart_height",
+        )
+
+        # Frequency table in collapsible section
+        freq_rows = []
+        for i, (f, lam) in enumerate(zip(result.frequencies_hz, result.eigenvalues), start=1):
+            omega = 2.0 * np.pi * f
+            freq_rows.append({"Mode": i, "Freq (Hz)": f, "ω (rad/s)": omega, "λ (ω²)": lam})
+        with st.expander("Natural frequencies", expanded=False):
+            st.dataframe(pd.DataFrame(freq_rows), width="stretch")
+
+        with st.expander("Modal participation", expanded=False):
+            _render_modal_mass_chart(bulk, result, grid_index)
+
+    camera = _CAMERA_PRESETS[view_sel]
+    fig = build_mode_figure(
+        bulk, phi, grid_index,
+        scale=scale, freq_hz=freq,
+        camera=camera, height=chart_height,
+        phase=phase_pct / 360.0,
     )
 
-    fig = build_mode_figure(bulk, phi, grid_index, scale=scale, freq_hz=freq)
-    st.plotly_chart(fig, use_container_width=True)
-
-    # Modal mass fractions (translational DOFs)
-    st.subheader("Modal participation")
-    _render_modal_mass_chart(bulk, result, grid_index)
+    with plot_col:
+        st.plotly_chart(fig, use_container_width=True)
 
 
 def _render_modal_mass_chart(

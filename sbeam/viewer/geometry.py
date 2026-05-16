@@ -146,123 +146,122 @@ def build_mode_figure(
     grid_index: dict,
     scale: float = 1.0,
     freq_hz: float = 0.0,
-    n_frames: int = 20,
+    camera: Optional[dict] = None,
+    height: int = 600,
+    phase: float = 0.25,
 ) -> go.Figure:
-    """3D figure with animated cycling mode shape for SOL 103."""
+    """Static 3D figure showing mode shape at a given phase for SOL 103.
+
+    phase is 0.0–1.0 representing one full cycle; 0.25 = +max amplitude,
+    0.75 = -max amplitude. The figure axes are locked to the ±scale extent
+    so the view does not rescale as the user scrubs through phases.
+    """
+    amplitude = scale * math.sin(2.0 * math.pi * phase)
+
     fig = go.Figure()
-    _add_ghost_cbar_lines(fig, bulk)    # trace 0
-    _add_ghost_plotel_lines(fig, bulk)  # trace 1
-    _add_ghost_rbe3_lines(fig, bulk)    # trace 2
-    _add_ghost_rbe2_lines(fig, bulk)    # trace 3
-    _add_ghost_cbush_lines(fig, bulk)   # trace 4
-    _add_ghost_rbar_lines(fig, bulk)    # trace 5
+    _add_ghost_cbar_lines(fig, bulk)
+    _add_ghost_plotel_lines(fig, bulk)
+    _add_ghost_rbe3_lines(fig, bulk)
+    _add_ghost_rbe2_lines(fig, bulk)
+    _add_ghost_cbush_lines(fig, bulk)
+    _add_ghost_rbar_lines(fig, bulk)
 
-    # Initial state: zero amplitude (undeformed positions)
-    def_coords_0 = _mode_grid_coords(bulk, mode_shape, grid_index, 0.0)
-    xs0, ys0, zs0 = _cbar_line_coords(bulk, def_coords_0)
-    gxs0, gys0, gzs0 = _grid_coord_lists(bulk, def_coords_0)
-    pxs0, pys0, pzs0 = _plotel_line_coords(bulk, def_coords_0)
-    rxs0, rys0, rzs0 = _rbe3_line_coords(bulk, def_coords_0)
-    r2xs0, r2ys0, r2zs0 = _rbe2_line_coords(bulk, def_coords_0)
-    rbxs0, rbys0, rbzs0 = _rbar_line_coords(bulk, def_coords_0)
+    def_coords = _mode_grid_coords(bulk, mode_shape, grid_index, amplitude)
+    xs, ys, zs = _cbar_line_coords(bulk, def_coords)
+    gxs, gys, gzs = _grid_coord_lists(bulk, def_coords)
+    pxs, pys, pzs = _plotel_line_coords(bulk, def_coords)
+    rxs, rys, rzs = _rbe3_line_coords(bulk, def_coords)
+    r2xs, r2ys, r2zs = _rbe2_line_coords(bulk, def_coords)
+    rbxs, rbys, rbzs = _rbar_line_coords(bulk, def_coords)
 
-    fig.add_trace(go.Scatter3d(  # trace 6 — deformed CBAR lines
-        x=xs0, y=ys0, z=zs0,
+    fig.add_trace(go.Scatter3d(
+        x=xs, y=ys, z=zs,
         mode="lines",
         line=dict(color="#ff7f0e", width=4),
         name="Mode shape",
     ))
-    fig.add_trace(go.Scatter3d(  # trace 7 — deformed nodes
-        x=gxs0, y=gys0, z=gzs0,
+    fig.add_trace(go.Scatter3d(
+        x=gxs, y=gys, z=gzs,
         mode="markers",
         marker=dict(size=6, color="#ff7f0e"),
         name="Mode GRIDs",
         showlegend=False,
     ))
-    fig.add_trace(go.Scatter3d(  # trace 8 — deformed PLOTEL lines
-        x=pxs0, y=pys0, z=pzs0,
-        mode="lines",
-        line=dict(color="#aaaaaa", width=2, dash="dash"),
-        name="PLOTEL",
-        hoverinfo="skip",
-    ))
-    fig.add_trace(go.Scatter3d(  # trace 9 — deformed RBE3 lines
-        x=rxs0, y=rys0, z=rzs0,
-        mode="lines",
-        line=dict(color="#cc2222", width=2, dash="dash"),
-        name="RBE3",
-        hoverinfo="skip",
-    ))
-    fig.add_trace(go.Scatter3d(  # trace 10 — deformed RBE2 lines
-        x=r2xs0, y=r2ys0, z=r2zs0,
-        mode="lines",
-        line=dict(color="#cc2222", width=2),
-        name="RBE2",
-        hoverinfo="skip",
-    ))
-    fig.add_trace(go.Scatter3d(  # trace 11 — deformed RBAR lines
-        x=rbxs0, y=rbys0, z=rbzs0,
-        mode="lines",
-        line=dict(color="#9467bd", width=2),
-        name="RBAR",
-        hoverinfo="skip",
-    ))
+    if pxs:
+        fig.add_trace(go.Scatter3d(
+            x=pxs, y=pys, z=pzs,
+            mode="lines",
+            line=dict(color="#aaaaaa", width=2, dash="dash"),
+            name="PLOTEL",
+            hoverinfo="skip",
+        ))
+    if rxs:
+        fig.add_trace(go.Scatter3d(
+            x=rxs, y=rys, z=rzs,
+            mode="lines",
+            line=dict(color="#cc2222", width=2, dash="dash"),
+            name="RBE3",
+            hoverinfo="skip",
+        ))
+    if r2xs:
+        fig.add_trace(go.Scatter3d(
+            x=r2xs, y=r2ys, z=r2zs,
+            mode="lines",
+            line=dict(color="#cc2222", width=2),
+            name="RBE2",
+            hoverinfo="skip",
+        ))
+    if rbxs:
+        fig.add_trace(go.Scatter3d(
+            x=rbxs, y=rbys, z=rbzs,
+            mode="lines",
+            line=dict(color="#9467bd", width=2),
+            name="RBAR",
+            hoverinfo="skip",
+        ))
 
     _add_triad(fig, bulk)
 
-    # Animation frames
-    frames = []
-    for i in range(n_frames):
-        amp = scale * math.sin(2.0 * math.pi * i / n_frames)
-        def_coords = _mode_grid_coords(bulk, mode_shape, grid_index, amp)
-        xs, ys, zs = _cbar_line_coords(bulk, def_coords)
-        gxs, gys, gzs = _grid_coord_lists(bulk, def_coords)
-        pxs, pys, pzs = _plotel_line_coords(bulk, def_coords)
-        rxs, rys, rzs = _rbe3_line_coords(bulk, def_coords)
-        r2xs, r2ys, r2zs = _rbe2_line_coords(bulk, def_coords)
-        rbxs, rbys, rbzs = _rbar_line_coords(bulk, def_coords)
-        frames.append(go.Frame(
-            name=str(i),
-            data=[
-                go.Scatter3d(x=xs, y=ys, z=zs),
-                go.Scatter3d(x=gxs, y=gys, z=gzs),
-                go.Scatter3d(x=pxs, y=pys, z=pzs),
-                go.Scatter3d(x=rxs, y=rys, z=rzs),
-                go.Scatter3d(x=r2xs, y=r2ys, z=r2zs),
-                go.Scatter3d(x=rbxs, y=rbys, z=rbzs),
-            ],
-            traces=[6, 7, 8, 9, 10, 11],
-        ))
-    fig.frames = frames
-
-    fig.update_layout(
-        title=f"f = {freq_hz:.4g} Hz",
-        updatemenus=[dict(
-            type="buttons",
-            showactive=False,
-            y=0.02, x=0.1, xanchor="right",
-            buttons=[
-                dict(
-                    label="▶",
-                    method="animate",
-                    args=[None, {"frame": {"duration": 50, "redraw": True},
-                                 "fromcurrent": True, "loop": True}],
-                ),
-                dict(
-                    label="⏸",
-                    method="animate",
-                    args=[[None], {"frame": {"duration": 0}, "mode": "immediate"}],
-                ),
-            ],
-        )],
-    )
-    _apply_layout(fig)
+    scene_range = _compute_mode_scene_range(bulk, mode_shape, grid_index, scale)
+    fig.update_layout(title=f"f = {freq_hz:.4g} Hz")
+    _apply_layout(fig, camera=camera, height=height, scene_range=scene_range)
     return fig
 
 
 # ---------------------------------------------------------------------------
 # Private helpers — coordinate utilities
 # ---------------------------------------------------------------------------
+
+def _compute_mode_scene_range(
+    bulk: BulkData,
+    mode_shape: np.ndarray,
+    grid_index: dict,
+    scale: float,
+) -> dict:
+    """Return padded {x, y, z} axis ranges covering all animation frames."""
+    all_x: list = []
+    all_y: list = []
+    all_z: list = []
+    for amp in (0.0, scale, -scale):
+        coords = _mode_grid_coords(bulk, mode_shape, grid_index, amp)
+        for x, y, z in coords.values():
+            all_x.append(x)
+            all_y.append(y)
+            all_z.append(z)
+    if not all_x:
+        return {}
+    pad = 0.15
+    result: dict = {}
+    for label, vals in (("x", all_x), ("y", all_y), ("z", all_z)):
+        lo, hi = min(vals), max(vals)
+        span = hi - lo
+        if span < 1e-10:
+            margin = max(abs((lo + hi) / 2) * 0.2, 0.5)
+        else:
+            margin = span * pad
+        result[label] = [lo - margin, hi + margin]
+    return result
+
 
 def _deformed_grid_coords(
     bulk: BulkData,
@@ -1225,15 +1224,32 @@ def _add_triad(fig: go.Figure, bulk: BulkData) -> None:
         ))
 
 
-def _apply_layout(fig: go.Figure) -> None:
+def _apply_layout(
+    fig: go.Figure,
+    camera: Optional[dict] = None,
+    height: int = 600,
+    scene_range: Optional[dict] = None,
+) -> None:
+    scene: dict = dict(
+        aspectmode="data",
+        xaxis_title="X",
+        yaxis_title="Y",
+        zaxis_title="Z",
+    )
+    if scene_range:
+        scene["xaxis"] = dict(title="X", range=scene_range["x"], autorange=False)
+        scene["yaxis"] = dict(title="Y", range=scene_range["y"], autorange=False)
+        scene["zaxis"] = dict(title="Z", range=scene_range["z"], autorange=False)
+    _proj = dict(type="orthographic")
+    if camera:
+        cam = dict(camera)
+        cam["projection"] = _proj
+    else:
+        cam = dict(projection=_proj)
+    scene["camera"] = cam
     fig.update_layout(
-        scene=dict(
-            aspectmode="data",
-            xaxis_title="X",
-            yaxis_title="Y",
-            zaxis_title="Z",
-        ),
+        scene=scene,
         legend=dict(orientation="v", x=0.01, y=0.99),
         margin=dict(l=0, r=0, t=30, b=0),
-        height=600,
+        height=height,
     )

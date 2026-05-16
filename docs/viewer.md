@@ -53,14 +53,14 @@ Implemented in `geometry.py` using **Plotly** 3D scatter and line traces.
 ```python
 build_model_figure(bulk: BulkData, selected_gid=None, selected_eid=None, load_sid=None) -> go.Figure
 build_deformed_figure(bulk, displacements, grid_index, scale=1.0, load_sid=None) -> go.Figure
-build_mode_figure(bulk, mode_shape, grid_index, scale=1.0, freq_hz=0.0, n_frames=20) -> go.Figure
+build_mode_figure(bulk, mode_shape, grid_index, scale=1.0, freq_hz=0.0, camera=None, height=600, phase=0.25) -> go.Figure
 ```
 
 Builds Plotly 3D figures from BulkData. Contains no Streamlit imports — safe to call in unit tests.
 
 - `build_model_figure`: original (undeformed) model. `selected_gid` / `selected_eid` highlight the item in orange. Optional `load_sid` renders force/moment arrows.
 - `build_deformed_figure`: undeformed ghost (grey, semi-transparent) + deformed overlay for SOL 101 results. Ghost includes CBAR, PLOTEL (grey dashed), RBE3 (red dashed), RBE2 (red solid, opacity 0.5), CBUSH (zigzag grey), and RBAR (solid grey). Deformed overlay includes CBAR lines (orange), grid nodes, PLOTEL (grey dashed), RBE3 (red dashed), RBE2 (red solid), and RBAR — all displaced with the solution. Optional `load_sid` renders force/moment arrows.
-- `build_mode_figure`: undeformed ghost (CBAR grey, PLOTEL grey dashed, RBE3 red dashed, RBE2 red solid, CBUSH zigzag grey, RBAR solid grey, all semi-transparent) + animated mode shape with Plotly play/pause buttons for SOL 103. The animated traces (CBAR, grids, PLOTEL, RBE3, RBE2, RBAR) cycle through mode shape amplitudes using `scale * sin(2π i/n_frames)`. Ghost traces occupy indices 0–5 (CBAR, PLOTEL, RBE3, RBE2, CBUSH, RBAR); animation frames update deformed trace indices [6, 7, 8, 9, 10, 11] (CBAR lines, grid nodes, PLOTEL, RBE3, RBE2, RBAR).
+- `build_mode_figure`: undeformed ghost (CBAR grey, PLOTEL grey dashed, RBE3 red dashed, RBE2 red solid, CBUSH zigzag grey, RBAR solid grey, all semi-transparent) + static mode shape for SOL 103. `phase` (0.0–1.0) controls amplitude as `scale * sin(2π × phase)` — 0.25 = +max, 0.75 = −max. Optional `camera` (Plotly camera dict) sets the initial view orientation. Optional `height` (px) sets the chart height. Scene axis ranges are locked to the ±`scale` amplitude extent with 15% padding via `autorange=False` so the view does not shift as the user scrubs the phase slider.
 
 **Trace strategy:**
 - GRIDs: split across two legend-visible `Scatter3d` traces. `"GRIDs"` (unconstrained): solid dark grey `#333333`, size 6. `"GRIDs (SPC)"` (constrained by any SPC/SPC1/Grid.ps): red fill `#cc2222` with grey outline `#888888` width 2, size 12, label includes DOF string (e.g. `G1\n123456`). Selected GRID: separate `showlegend=False` trace, orange `#ff8800`, size 10.
@@ -80,6 +80,9 @@ Builds Plotly 3D figures from BulkData. Contains no Streamlit imports — safe t
 - CONM2 masses: open white circle at the CG location; offset line from grid reference to CG when a non-zero offset is defined.
 - Coordinate triad at origin.
 - Force/moment arrows (when active subcase has a load set).
+
+**Scene layout (`_apply_layout`):**
+All three figure types use `_apply_layout`, which sets `scene.aspectmode = "data"` (preserves physical proportions) and `scene.camera.projection.type = "orthographic"` (eliminates perspective foreshortening). Mode shape figures additionally receive explicit locked axis ranges via `autorange=False`.
 
 **Interactions:**
 - Hover on grid: show GID, X, Y, Z, and any permanent SPC constraints.
@@ -194,11 +197,19 @@ Results are produced in-process by clicking **Run Analysis** in the Results tab 
 
 `render_sol103_results(bulk, result)` in `results_view.py`:
 
-- Natural frequency table: mode, Hz, ω rad/s, eigenvalue λ.
+Two-column layout — all controls in the left column (30%), 3D plot in the right column (70%). Everything fits on a single screen without scrolling.
+
+**Left column controls:**
 - Mode selector dropdown (shows mode number and frequency).
-- Mode shape scale slider: auto-initialised so max component = 20% of model span.
-- Animated mode shape using `build_mode_figure` with Plotly play/pause buttons cycling ±max amplitude at 20 frames.
-- Modal participation bar chart: effective translational mass fraction (Tx DOFs) per mode.
+- **Scale** slider: auto-initialised so max component = 20% of model span.
+- **Phase (°)** slider (0–360°, default 90° = +max amplitude, 270° = −max amplitude). Scrub to step through the mode shape cycle. `amplitude = scale × sin(2π × phase/360)`.
+- **Camera** dropdown: Isometric (default), ±X view, ±Y view, +Z view (top), -Z view (bottom), XZ plane, YZ plane. Sets the initial camera orientation; user can still rotate interactively.
+- **Height (px)** slider: 400–1400 px, default 580.
+- **Natural frequencies** collapsible expander: table of mode, Hz, ω rad/s, eigenvalue λ.
+- **Modal participation** collapsible expander: bar chart of effective translational mass fraction (Tx DOFs) per mode.
+
+**Right column:**
+- Static 3D mode shape figure built by `build_mode_figure`. Axis ranges locked to ±scale extent (`autorange=False`) so the view does not rescale as phase changes.
 
 **Session state:** `sol101_result` / `sol103_result` in session state; cleared on new file upload.
 
@@ -222,7 +233,11 @@ Streamlit session state keys used:
 | `_parse_error` | `str \| None` | Error message from last failed upload |
 | `sol101_deform_scale` | `float` | SOL 101 deformation scale slider value (widget key) |
 | `sol101_show_forces` | `bool` | SOL 101 show-forces checkbox state (widget key) |
+| `mode_sel` | `int` | SOL 103 selected mode index (widget key) |
 | `mode_scale` | `float` | SOL 103 mode shape scale slider value (widget key) |
+| `mode_phase` | `int` | SOL 103 phase in degrees (0–360) slider value (widget key) |
+| `mode_camera_preset` | `str` | SOL 103 camera preset selection (widget key) |
+| `mode_chart_height` | `int` | SOL 103 chart height px slider value (widget key) |
 
 All interactive result widgets **must** carry a `key=` parameter so Streamlit persists their value across reruns. Without a key, each rerun resets the widget to its `value=` default.
 
