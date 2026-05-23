@@ -134,21 +134,62 @@ Displayed as a summary table in the viewer. No input required; computed directly
 
 Implemented in `case_control_ui.py`.
 
-**Form fields:**
+### Page layout (top to bottom)
 
-| Field | Input Type | Description |
-|-------|-----------|-------------|
-| SOL | Dropdown | 101 or 103 |
-| TITLE | Text | Model title string |
-| SUBCASE ID | Integer | Subcase number |
-| Subcase label | Text | Optional label |
-| LOAD | Dropdown | Select from available load set SIDs |
-| SPC | Dropdown | Select from available SPC set SIDs |
-| METHOD (SOL 103) | Dropdown | Select EIGRL SID |
-| Output requests | Checkboxes | DISPLACEMENT, SPCFORCE, OLOAD, FORCE, STRESS |
-| Include file path | Text | Path to bulk data `*.dat` file |
+**Loaded BDF preview (outside form):** When a run file (with case control) is uploaded, a
+collapsible `st.expander` ("Loaded BDF — Executive & Case Control") shows the re-serialised
+text of the parsed case control. This is the immutable snapshot stored at upload time
+(`_loaded_from_file_cc` in session state) and is not affected by edits in the form below.
+When a geometry-only (bulk-data) file is loaded, an info banner reads "No case control found
+in the loaded file — define one below."
 
-**Export button:** Generates and downloads a `*.bdf` case control file. Example format:
+**Executive Control:** Two-column row — SOL dropdown (left, narrow) and Title text input
+(right, wide). SOL options display descriptive labels:
+
+| SOL value | Label |
+|-----------|-------|
+| 101 | `101 — Static` |
+| 103 | `103 — Normal Modes` |
+
+Extending to Phase 2 SOLs (108, 109, 111, 112) requires only adding entries to `_SOL_LABELS`
+and `_SOL_OUTPUT_FIELDS` in `case_control_ui.py`.
+
+**Subcases:** One `st.expander` per subcase. Expander label shows the subcase ID and title
+(if set). Within each subcase:
+
+| Field | Layout | Condition |
+|-------|--------|-----------|
+| Subcase title | Full-width text input | Always |
+| LOAD SID | Left column selectbox | Always |
+| SPC SID | Right column selectbox | Always |
+| METHOD (EIGRL) SID | Full-width selectbox | SOL 103 only |
+| Output requests | One checkbox per field, equal columns | SOL defined in `_SOL_OUTPUT_FIELDS` |
+| Auto-output info | Info banner | SOLs not in `_SOL_OUTPUT_FIELDS` (e.g. SOL 103) |
+
+Output request checkboxes per SOL:
+- **SOL 101:** DISPLACEMENT, SPCFORCE, OLOAD, FORCE, STRESS
+- **SOL 103:** No checkboxes — info message: "All modal results … output automatically."
+
+**Advanced expander (collapsed by default):** Contains the INCLUDE path text input
+(path to the bulk-data `*.dat` file). Defaults to `model.dat` or the path parsed from
+the loaded run file.
+
+**Action row (bottom of form):**
+```
+[+ Add subcase]  [− Remove last]  [          ]  [Apply ▶]
+```
+All three are `form_submit_button` widgets so they submit without triggering intermediate
+reruns. Add/Remove handlers run after the form closes and call `st.rerun()`.
+
+**Export (below form, only when case control is applied):**
+- Download BDF button — triggers browser download of `run.bdf`.
+- Collapsible "Preview BDF" expander — shows the full case control text in a code block.
+
+### BDF export
+
+`export_bdf_text(cc: CaseControl, include_path: str) -> str` in `case_control_ui.py`
+serialises a `CaseControl` object to a parseable BDF string. Example output:
+
 ```
 SOL 101
 TITLE = My analysis
@@ -164,9 +205,13 @@ BEGIN BULK
 ENDDATA
 ```
 
-The exported file is parseable by `parse_bdf()`. Multiple subcases can be defined and added before export. The `export_bdf_text(cc, include_path)` function in `case_control_ui.py` generates the text string independently of Streamlit (usable in tests).
+The function has no Streamlit dependency and is usable in tests.
 
-**Session state:**  `st.session_state.cc_subcases` holds the editable subcase list as a list of dicts. Reset to `None` on new file upload.
+### Smart defaults for new case control
+
+When a geometry-only file is loaded (no existing case control), the first subcase is
+pre-populated with the first available LOAD SID and first available SPC SID from the bulk
+data, so the user can click Apply immediately without any manual selection.
 
 **Subcase selector (sidebar):** When a run file (with case control) is loaded, an **Active subcase** dropdown appears in the sidebar. The selected subcase determines which load set is visualised as force/moment arrows in the 3D model view and on the deformed shape. The active subcase ID is stored in `st.session_state.selected_subcase_id`; initialised to the first subcase on upload.
 
@@ -222,7 +267,8 @@ Streamlit session state keys used:
 | Key | Type | Content |
 |-----|------|---------|
 | `bulk_data` | `BulkData \| None` | Parsed model |
-| `case_control` | `CaseControl \| None` | Active case control |
+| `case_control` | `CaseControl \| None` | Active case control (may be edited) |
+| `_loaded_from_file_cc` | `CaseControl \| None` | Immutable snapshot of CC parsed from file; shown in "Loaded BDF" expander; `None` for bulk-data-only uploads |
 | `cc_subcases` | `list[dict] \| None` | Editable subcase list in CC form |
 | `selected_subcase_id` | `int \| None` | Active subcase ID for load/force display |
 | `sol101_result` | `Sol101Result \| None` | SOL 101 results |

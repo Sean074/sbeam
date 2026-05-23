@@ -22,6 +22,7 @@ def _init_session_state() -> None:
     defaults: dict = {
         "bulk_data": None,
         "case_control": None,
+        "_loaded_from_file_cc": None,
         "sol101_result": None,
         "sol103_result": None,
         "selected_gid": None,
@@ -71,6 +72,7 @@ def _handle_upload(uploaded) -> None:
 
         st.session_state.bulk_data = bulk
         st.session_state.case_control = cc
+        st.session_state._loaded_from_file_cc = cc
         st.session_state._uploaded_filename = uploaded.name
         st.session_state.cc_subcases = None   # reset subcase editor
         st.session_state.sol101_result = None

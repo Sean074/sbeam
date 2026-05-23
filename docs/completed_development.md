@@ -642,3 +642,42 @@ Step 1  (setup)
 - The core solver (mass matrix assembly) was already complete from prior work; Step 35 closes the two peripheral bugs and adds the missing end-to-end eigenfrequency verification.
 - Verification model uses a massless single-element cantilever with tip SPC "12345" (Tx, Ty, Tz, Rx, Ry fixed), leaving only Rz free. The isolated 1-DOF stiffness for Rz is the direct diagonal entry K[Rz_B, Rz_B] = 4EI/L (not the Schur-complement EI/L which applies when Ty is also free).
 - `np.linalg.norm(r) > 0` in the viewer replaces the three individual component checks, ensuring the offset line is drawn correctly when the CID transform rotates a non-zero vector into a component that was originally zero.
+
+---
+
+### Step 39: Viewer — Case Control UI Redesign ✅ COMPLETE
+
+**Objective:** Restructure the Case Control tab so it has clear sections, shows what was loaded
+from the file, filters output requests per SOL, and is extensible for Phase 2 SOLs.
+
+**Deliverables:**
+- `sbeam/viewer/case_control_ui.py` — full redesign of `render_case_control_panel`:
+  - `_SOL_LABELS` dict: human-readable SOL labels (`101 — Static`, `103 — Normal Modes`); Phase 2 SOLs added here.
+  - `_SOL_OUTPUT_FIELDS` dict: maps SOL → list of output request field names; SOLs absent show no checkboxes.
+  - `_OUTPUT_LABELS` dict: maps field name → BDF token string.
+  - **Loaded BDF expander** (outside form): shows the re-serialised CC parsed from the uploaded file; shows an info banner when no CC was in the file.
+  - **Executive Control** section: SOL selectbox (with descriptive label) and Title text input in a `[1, 3]` column layout.
+  - **Subcases** section: per-subcase expanders with LOAD/SPC in two columns; METHOD (EIGRL) for SOL 103 only; output checkboxes only for SOLs in `_SOL_OUTPUT_FIELDS`; SOL 103 shows "output automatic" info.
+  - **Advanced** expander (collapsed): INCLUDE path text input.
+  - **Action row**: `+ Add subcase`, `− Remove last`, `Apply` all as `form_submit_button` on one row.
+  - **Export section** (below form): Download BDF button + collapsible BDF preview.
+  - New-CC default: first available LOAD and SPC SIDs pre-populated when no CC exists.
+- `sbeam/viewer/app.py`:
+  - `_init_session_state`: added `"_loaded_from_file_cc": None` key.
+  - `_handle_upload`: added `st.session_state._loaded_from_file_cc = cc` to store the immutable file snapshot.
+- `docs/viewer.md` — Case Control UI section rewritten; `_loaded_from_file_cc` added to Session State table.
+
+**Test/Acceptance:**
+- Geometry-only file upload: "No case control found…" banner; first available LOAD/SPC SIDs pre-selected.
+- Run-file upload: "Loaded BDF" expander shows the parsed CC text; editor initialises from parsed values; editing and Apply does not change the loaded snapshot.
+- SOL 101: 5 output checkboxes present; METHOD (EIGRL) absent.
+- SOL 103: output checkboxes replaced by "output automatic" info; METHOD (EIGRL) selectbox present.
+- Add / Remove subcase: entries added/removed; existing field values preserved.
+- Download BDF: exported file round-trips through `parse_bdf()` without error.
+- INCLUDE path: Advanced expander collapsed by default; change reflected in BDF preview.
+
+**Key decisions:**
+- `_loaded_from_file_cc` stored as a separate session state key (not derived from `case_control`) so the "loaded" view is never overwritten by editor changes.
+- `_SOL_OUTPUT_FIELDS` dict (SOL → field list) is the single extension point for Phase 2: adding SOL 108 requires one dict entry; no conditionals in the render loop.
+- INCLUDE path moved to a collapsed "Advanced" expander: users rarely change it; keeping it visible was visual noise.
+- Output flags for SOLs not in `_SOL_OUTPUT_FIELDS` are forced to `False` during render so the `SubcaseControl` object never carries stale output flags from a prior SOL selection.
