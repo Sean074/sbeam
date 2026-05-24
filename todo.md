@@ -1,6 +1,6 @@
 # sbeam — Beta Readiness Todo
 
-sbeam has stronger error handling andtest coverage than smodal at equivalent stage; the primary gaps are Phase 2 capability and infrastructure.
+sbeam has stronger error handling and test coverage than smodal at equivalent stage; the primary gaps are Phase 2 model enhancements, Phase 3 dynamic solvers, and supporting infrastructure.
 
 
 ## Rules
@@ -27,19 +27,7 @@ fallback results.
 
 ## MAJOR — Must fix or document before beta
 
-Phase 2 — Dynamic Solvers (full scope in `development_plan_bugs_todo.md`):
-
-- **[S26] Step 26: SOL 108 — Direct Frequency Response** — `([K] - ω²[M]){U} = {F(ω)}`; DLOAD /
-  RLOAD1 / RLOAD2; FREQ / FREQ1; structural damping (MAT1 GE); FRF plot in viewer.
-
-- **[S27] Step 27: SOL 109 — Direct Transient Response** — Newmark-β integration; TLOAD1 /
-  TLOAD2; TSTEP; time-history plot in viewer.
-
-- **[S28] Step 28: SOL 111 — Modal Frequency Response** — modal superposition on SOL 103 basis;
-  TABDMP1 modal damping; more efficient than SOL 108 for many-DOF models.
-
-- **[S29] Step 29: SOL 112 — Modal Transient Response** — modal superposition transient;
-  Newmark-β in modal coordinates; same output requests as SOL 109.
+No open MAJOR items.
 
 ---
 
@@ -66,6 +54,20 @@ Documentation and robustness (concurrent with Phase 2):
 ---
 
 ## NIT — Optional / next cleanup PR
+
+Phase 3 — Dynamic Solvers (full scope in `development_plan_bugs_todo.md`):
+
+- **[S26] Step 26: SOL 108 — Direct Frequency Response** — `([K] - ω²[M]){U} = {F(ω)}`; DLOAD /
+  RLOAD1 / RLOAD2; FREQ / FREQ1; structural damping (MAT1 GE); FRF plot in viewer.
+
+- **[S27] Step 27: SOL 109 — Direct Transient Response** — Newmark-β integration; TLOAD1 /
+  TLOAD2; TSTEP; time-history plot in viewer.
+
+- **[S28] Step 28: SOL 111 — Modal Frequency Response** — modal superposition on SOL 103 basis;
+  TABDMP1 modal damping; more efficient than SOL 108 for many-DOF models.
+
+- **[S29] Step 29: SOL 112 — Modal Transient Response** — modal superposition transient;
+  Newmark-β in modal coordinates; same output requests as SOL 109.
 
 Future Phase 3+ items (full descriptions in `development_plan_bugs_todo.md`):
 

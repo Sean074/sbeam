@@ -31,12 +31,13 @@ Never batch these updates or defer them to a later session. When resolving a bug
 ## Development Phases
 
 - **Phase 1 (complete):** SOL 101 (static) and SOL 103 (normal modes) — see `docs/completed_development.md`
-- **Phase 2:** SOL 108 (frequency response), 109 (transient), 111 (modal freq), 112 (modal transient) — see `development_plan_bugs_todo.md`
+- **Phase 2:** Model enhancements — see `development_plan_bugs_todo.md`
+- **Phase 3:** SOL 108 (frequency response), 109 (transient), 111 (modal freq), 112 (modal transient) — see `development_plan_bugs_todo.md`
 - **Future:** distributed loads, Timoshenko shear, enforced displacements, buckling (SOL 105), results export — see `development_plan_bugs_todo.md`
 
 ## Project Backlog
 
-`development_plan_bugs_todo.md` is the authoritative backlog. It lists open bugs, Phase 2 steps, and future development ideas. When a new development step is added, follow the same step format used in `docs/completed_development.md`.
+`development_plan_bugs_todo.md` is the authoritative backlog. It lists open bugs, Phase 2 and Phase 3 steps, and future development ideas. When a new development step is added, follow the same step format used in `docs/completed_development.md`.
 
 ## Tech Stack
 

@@ -16,10 +16,20 @@ All Phase 1 bugs (B1–B4) are resolved. See `docs/completed_development.md` und
 
 ---
 
-## Phase 2 — Dynamic Response Solvers
+## Phase 2 — Model Enhancements
 
-Phase 2 adds frequency- and time-domain response to the existing static and modal capability.
-All Phase 2 solvers build on the Phase 1 stiffness, mass, and modal results infrastructure.
+These items extend BDF card support and solver capability. They are independent of the dynamic
+response solvers and can be tackled in any order.
+
+---
+
+
+---
+
+## Phase 3 — Dynamic Response Solvers
+
+Phase 3 adds frequency- and time-domain response to the existing static and modal capability.
+All Phase 3 solvers build on the Phase 1 stiffness, mass, and modal results infrastructure.
 
 ---
 
@@ -73,16 +83,6 @@ numerical time integration.
 - Newmark-β integration in modal coordinates.
 - More efficient than SOL 109 for lightly damped structures.
 - Same output requests as SOL 109.
-
----
-
-## Phase 2 — Model Enhancements
-
-These items extend BDF card support and solver capability. They are independent of the dynamic
-response solvers and can be tackled in any order.
-
----
-
 
 ---
 
