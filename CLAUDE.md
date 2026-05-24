@@ -72,7 +72,7 @@ Phase 1 uses **Euler-Bernoulli beam theory** (shear deformation neglected). Each
 
 ## Key Constraints
 
-- Maximum **200 CBAR elements** (keeps matrices small enough for direct inversion — no sparse solvers)
+- No hard CBAR element limit — sparse solver used for all models; memory and compute time are the practical constraint
 - **CORD2R rectangular coordinate systems supported** (Step 32); CORD2C/CORD2S/CORD1R not supported
 - All internal computations in global CID 0; CORD2R used for input (GRID CP, FORCE/MOMENT/CONM2 CID) and output (GRID CD) transforms only
 - Uniform cross-section elements only (no tapered beams in phase 1)

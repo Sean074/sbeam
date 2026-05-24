@@ -2,6 +2,8 @@
 
 import numpy as np
 import scipy.linalg
+import scipy.sparse
+import scipy.sparse.linalg
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.parser.case_control import SubcaseControl
@@ -19,33 +21,35 @@ from sbeam.model.element import Cbush
 from sbeam.results.results import BarForce, BarStress, Sol101Result
 
 
-def solve_static(
-    K_free: np.ndarray,
-    f_free: np.ndarray,
-    free_dofs: list,
-    n_dofs: int,
-) -> np.ndarray:
+def solve_static(K_free, f_free: np.ndarray, free_dofs: list, n_dofs: int) -> np.ndarray:
     """Solve K_free @ u_free = f_free and return full displacement vector.
 
+    K_free may be a sparse CSR matrix (normal path) or a dense ndarray (RBE3
+    branch, where T.T @ K_csr @ T produces dense via NumPy's @ operator).
     Raises ValueError if the stiffness matrix is singular or ill-conditioned.
     """
-    # Check condition number to detect singular/near-singular systems
-    try:
-        cond = np.linalg.cond(K_free)
-    except Exception:
-        cond = np.inf
-
-    if cond > 1e15:
-        raise ValueError(
-            "Singular stiffness matrix: model may have unconstrained DOFs"
-        )
-
-    try:
-        u_free = scipy.linalg.solve(K_free, f_free)
-    except scipy.linalg.LinAlgError:
-        raise ValueError(
-            "Singular stiffness matrix: model may have unconstrained DOFs"
-        )
+    if scipy.sparse.issparse(K_free):
+        u_free = scipy.sparse.linalg.spsolve(K_free.tocsc(), f_free)
+        if not np.all(np.isfinite(u_free)):
+            raise ValueError(
+                "Singular stiffness matrix: model may have unconstrained DOFs"
+            )
+    else:
+        # Dense path: used when RBE3 transformation collapses K to dense
+        try:
+            cond = np.linalg.cond(K_free)
+        except Exception:
+            cond = np.inf
+        if cond > 1e15:
+            raise ValueError(
+                "Singular stiffness matrix: model may have unconstrained DOFs"
+            )
+        try:
+            u_free = scipy.linalg.solve(K_free, f_free)
+        except scipy.linalg.LinAlgError:
+            raise ValueError(
+                "Singular stiffness matrix: model may have unconstrained DOFs"
+            )
 
     u = np.zeros(n_dofs)
     for local_idx, global_dof in enumerate(free_dofs):
@@ -254,9 +258,11 @@ def run_sol101(bulk: BulkData, subcase: SubcaseControl) -> Sol101Result:
     f_full = f.copy()
 
     # RBE3 DOF transformation — eliminates dependent DOFs before SPC partitioning.
+    # Note: T is dense; T.T @ K_csr @ T produces a dense ndarray (NumPy @ semantics).
+    # solve_static dispatches to the dense path for the resulting K.
     T, dep_dofs, red_dofs = build_rbe3_transformation(bulk, grid_index)
     if dep_dofs:
-        K_orig = K.copy()
+        K_orig = K.copy()   # sparse copy; used by recover_reactions before T transform
         K = T.T @ K @ T
         f = T.T @ f
         dep_set = set(dep_dofs)

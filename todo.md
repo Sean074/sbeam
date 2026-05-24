@@ -58,8 +58,8 @@ Phase 2 Model Enhancements (full scope in `development_plan_bugs_todo.md`):
 
 Documentation and robustness (concurrent with Phase 2):
 
-- **[DOC1] README "Known Limitations" section** — max 200 CBAR elements, no Timoshenko (Phase 1),
-  no sparse solver, no buckling, CORD2R only. Makes constraints visible to first-time users.
+- **[DOC1] README "Known Limitations" section** — no Timoshenko (Phase 1),
+  no buckling, CORD2R only. Makes constraints visible to first-time users.
 
 - **[DOC2] Tutorial worked example in `docs/Methods.ipynb`** — run a model end-to-end against the
   bundled sample BDF and verify identified results against analytical truth. Currently the notebook
@@ -75,7 +75,6 @@ Documentation and robustness (concurrent with Phase 2):
 
 Future Phase 3+ items (full descriptions in `development_plan_bugs_todo.md`):
 
-- Sparse solver (remove 200-element ceiling)
 - Results export CSV/Excel
 - SOL 105 Buckling
 - PBARL (standard cross-section shapes)

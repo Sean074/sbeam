@@ -213,12 +213,12 @@ class TestGlobalStiffnessShape:
 class TestGlobalStiffnessProperties:
     def test_symmetric(self):
         bulk = _make_one_element_bulk()
-        K = assemble_global_stiffness(bulk)
+        K = assemble_global_stiffness(bulk).toarray()
         assert K == pytest.approx(K.T, abs=1e-8)
 
     def test_psd(self):
         bulk = _make_one_element_bulk()
-        K = assemble_global_stiffness(bulk)
+        K = assemble_global_stiffness(bulk).toarray()
         eigenvalues = np.linalg.eigvalsh(K)
         # Unconstrained element: 6 rigid body modes near zero; allow small floating-point noise
         assert np.all(eigenvalues >= -1e-6), \
@@ -235,7 +235,7 @@ class TestGlobalStiffnessDOFPlacement:
         bulk.mat1s[1] = Mat1(mid=1, E=E, G=7.7e10, nu=0.3, rho=7850)
         bulk.pbars[10] = Pbar(pid=10, mid=1, A=A, I1=8.333e-4, I2=8.333e-4, J=1.406e-3)
 
-        K = assemble_global_stiffness(bulk)
+        K = assemble_global_stiffness(bulk).toarray()
         ea_l = -E * A / L
         assert K[0, 6] == pytest.approx(ea_l, rel=1e-8)
         assert K[6, 0] == pytest.approx(ea_l, rel=1e-8)

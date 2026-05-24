@@ -99,7 +99,7 @@ class TestCantileverFrequency:
         M = assemble_global_mass(bulk)
         spc_dofs = get_spc_dofs(bulk, 10, grid_index)
         K_free, _, free_dofs = apply_spcs(K, np.zeros(n_dofs), spc_dofs)
-        M_free = M[np.ix_(free_dofs, free_dofs)]
+        M_free = M[free_dofs, :][:, free_dofs]
 
         eigrl = bulk.eigrls[20]
         _, phi_free = solve_modes(K_free, M_free, eigrl)

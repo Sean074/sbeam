@@ -518,7 +518,7 @@ All dictionaries are keyed by the card's primary ID (GID, EID, PID, SID, CID, et
 
 | Quantity | Limit | Reason |
 |----------|-------|--------|
-| CBAR elements | 200 | Direct matrix inversion (no sparse solver) |
+| CBAR elements | No hard limit | Sparse solver used; memory and compute time are the practical constraint |
 | Coordinate systems | CORD2R only (rectangular) | CORD2C, CORD2S, CORD1R not implemented |
 | Tapered sections | Not supported | PBAR is uniform cross-section only |
 | CBAR offsets | Not supported | W1A/W2A/etc. offset fields are ignored |
@@ -583,8 +583,6 @@ Duplicate GID raises `ValueError`.
 **CBAR cross-reference validation** (at parse time):
 - `GA` or `GB` not in `bulk.grids` → `ValueError`
 - `PID` not in `bulk.pbars` → `ValueError`
-- More than 200 CBAR elements → `ValueError`
-
 **DOF string validation** (SPC and SPC1 cards):
 - Any character outside `1–6` (including `"0"`) → `ValueError`
 
@@ -601,4 +599,4 @@ A valid model must satisfy:
 - No duplicate GIDs, EIDs, PIDs, MIDs.
 - No zero-length CBAR elements.
 - At least one SPC set defined (SOL 101).
-- Total CBAR count ≤ 200.
+- No hard CBAR element limit (sparse solver); memory and runtime are the practical constraint.

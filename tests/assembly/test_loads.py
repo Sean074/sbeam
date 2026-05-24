@@ -159,6 +159,7 @@ class TestApplySpcs:
         spc_dofs = get_spc_dofs(bulk, spc_sid=1, grid_index=grid_index)
         K_free, f_free, free_dofs = apply_spcs(K, np.zeros(12), spc_dofs)
 
-        eigenvalues = np.linalg.eigvalsh(K_free)
+        K_arr = K_free.toarray() if hasattr(K_free, "toarray") else K_free
+        eigenvalues = np.linalg.eigvalsh(K_arr)
         assert np.all(eigenvalues > 0), \
             f"K_free not positive definite. Min eigenvalue: {eigenvalues.min()}"

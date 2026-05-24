@@ -1,6 +1,7 @@
 """Element and global stiffness matrix assembly for Euler-Bernoulli beam elements."""
 
 import numpy as np
+import scipy.sparse
 from scipy.linalg import block_diag
 
 from sbeam.model.element import Cbar, Cbush
@@ -161,31 +162,33 @@ def element_stiffness_global(
     return T.T @ K_local @ T
 
 
-def assemble_global_stiffness(bulk: BulkData) -> np.ndarray:
+def assemble_global_stiffness(bulk: BulkData) -> scipy.sparse.csr_matrix:
     """Assemble the (6N x 6N) global stiffness matrix from all CBAR and CBUSH elements."""
     grid_index = {gid: i for i, gid in enumerate(sorted(bulk.grids.keys()))}
     n = 6 * len(grid_index)
-    K_global = np.zeros((n, n))
+    rows, cols, data = [], [], []
 
     for cbar in bulk.cbars.values():
         K_e = element_stiffness_global(cbar, bulk.grids, bulk.pbars, bulk.mat1s)
-
         dofs = _node_dofs(cbar.ga, grid_index) + _node_dofs(cbar.gb, grid_index)
-
-        for i_local, i_global in enumerate(dofs):
-            for j_local, j_global in enumerate(dofs):
-                K_global[i_global, j_global] += K_e[i_local, j_local]
+        ii, jj = np.meshgrid(dofs, dofs, indexing="ij")
+        rows.extend(ii.ravel())
+        cols.extend(jj.ravel())
+        data.extend(K_e.ravel())
 
     for cbush in bulk.cbushs.values():
         K_e = cbush_stiffness_global(cbush, bulk.grids, bulk.pbushs)
         dofs_a = _node_dofs(cbush.ga, grid_index)
         dofs = dofs_a + _node_dofs(cbush.gb, grid_index) if cbush.gb is not None else dofs_a
+        ii, jj = np.meshgrid(dofs, dofs, indexing="ij")
+        rows.extend(ii.ravel())
+        cols.extend(jj.ravel())
+        data.extend(K_e.ravel())
 
-        for i_local, i_global in enumerate(dofs):
-            for j_local, j_global in enumerate(dofs):
-                K_global[i_global, j_global] += K_e[i_local, j_local]
-
-    return K_global
+    return scipy.sparse.coo_matrix(
+        (np.array(data, dtype=float), (np.array(rows), np.array(cols))),
+        shape=(n, n),
+    ).tocsr()
 
 
 def cbush_local_stiffness(pbush: Pbush) -> np.ndarray:
@@ -303,17 +306,17 @@ def get_spc_dofs(bulk: BulkData, spc_sid: int, grid_index: dict) -> list:
     return spc_dofs
 
 
-def apply_spcs(
-    K: np.ndarray,
-    f: np.ndarray,
-    spc_dofs: list,
-) -> tuple:
+def apply_spcs(K, f: np.ndarray, spc_dofs: list) -> tuple:
     """Partition K and f to free DOFs only.
 
-    Returns (K_free, f_free, free_dofs).
+    Returns (K_free, f_free, free_dofs). K may be a dense ndarray or a sparse
+    CSR matrix; the returned K_free matches the input type.
     """
     constrained = set(spc_dofs)
     free_dofs = [i for i in range(K.shape[0]) if i not in constrained]
-    K_free = K[np.ix_(free_dofs, free_dofs)]
+    if scipy.sparse.issparse(K):
+        K_free = K[free_dofs, :][:, free_dofs]
+    else:
+        K_free = K[np.ix_(free_dofs, free_dofs)]
     f_free = f[free_dofs]
     return K_free, f_free, free_dofs

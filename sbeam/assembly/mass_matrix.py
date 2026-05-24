@@ -1,6 +1,7 @@
 """Consistent mass matrix assembly for Euler-Bernoulli beam elements."""
 
 import numpy as np
+import scipy.sparse
 
 from sbeam.model.element import Cbar
 from sbeam.model.property import Pbar
@@ -80,7 +81,7 @@ def element_mass_global(
     return T.T @ M_local @ T
 
 
-def assemble_global_mass(bulk: BulkData) -> np.ndarray:
+def assemble_global_mass(bulk: BulkData) -> scipy.sparse.csr_matrix:
     """Assemble the (6N x 6N) global consistent mass matrix.
 
     Includes CBAR element contributions and CONM2 point masses.
@@ -90,16 +91,15 @@ def assemble_global_mass(bulk: BulkData) -> np.ndarray:
     """
     grid_index = {gid: i for i, gid in enumerate(sorted(bulk.grids.keys()))}
     n = 6 * len(grid_index)
-    M_global = np.zeros((n, n))
+    rows, cols, data = [], [], []
 
     for cbar in bulk.cbars.values():
         M_e = element_mass_global(cbar, bulk.grids, bulk.pbars, bulk.mat1s)
-
         dofs = _node_dofs(cbar.ga, grid_index) + _node_dofs(cbar.gb, grid_index)
-
-        for i_local, i_global in enumerate(dofs):
-            for j_local, j_global in enumerate(dofs):
-                M_global[i_global, j_global] += M_e[i_local, j_local]
+        ii, jj = np.meshgrid(dofs, dofs, indexing="ij")
+        rows.extend(ii.ravel())
+        cols.extend(jj.ravel())
+        data.extend(M_e.ravel())
 
     for conm2 in bulk.conm2s.values():
         if conm2.gid not in grid_index:
@@ -125,23 +125,27 @@ def assemble_global_mass(bulk: BulkData) -> np.ndarray:
             r = r_cid
             I = I_cid
 
-        # Translational 3x3: m*I3
-        M_global[base:base+3, base:base+3] += m * np.eye(3)
-
-        # Off-diagonal coupling and parallel-axis rotational inertia (offset terms)
+        # Build the 6×6 CONM2 block then scatter via COO
+        M_c = np.zeros((6, 6))
+        M_c[:3, :3] += m * np.eye(3)
         if np.linalg.norm(r) > 0.0:
             M_tr = -m * np.array([
                 [0.0,   -r[2],  r[1]],
                 [r[2],   0.0,  -r[0]],
                 [-r[1],  r[0],  0.0],
             ])
-            M_global[base:base+3, base+3:base+6] += M_tr
-            M_global[base+3:base+6, base:base+3] += M_tr.T
-            M_global[base+3:base+6, base+3:base+6] += (
-                m * (np.dot(r, r) * np.eye(3) - np.outer(r, r))
-            )
+            M_c[:3, 3:] += M_tr
+            M_c[3:, :3] += M_tr.T
+            M_c[3:, 3:] += m * (np.dot(r, r) * np.eye(3) - np.outer(r, r))
+        M_c[3:, 3:] += I
 
-        # CM inertia tensor in global frame
-        M_global[base+3:base+6, base+3:base+6] += I
+        dofs = list(range(base, base + 6))
+        ii, jj = np.meshgrid(dofs, dofs, indexing="ij")
+        rows.extend(ii.ravel())
+        cols.extend(jj.ravel())
+        data.extend(M_c.ravel())
 
-    return M_global
+    return scipy.sparse.coo_matrix(
+        (np.array(data, dtype=float), (np.array(rows), np.array(cols))),
+        shape=(n, n),
+    ).tocsr()

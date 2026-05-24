@@ -84,7 +84,6 @@ completes a step — never deferred.
 - Parse a cantilever model BDF (5 CBAR elements); verify EIDs, GA/GB, PID, orientation vector, and pin flags.
 - CBAR referencing a non-existent GRID raises `ValueError`.
 - CBAR referencing a non-existent PID raises `ValueError`.
-- More than 200 CBAR elements raises `ValueError`.
 
 ---
 
@@ -685,6 +684,49 @@ from the file, filters output requests per SOL, and is extensible for Phase 2 SO
 ---
 
 ## Infrastructure
+
+### SPARSE: Sparse Solver — Remove 200-Element Ceiling ✅ COMPLETE
+
+**Objective:** Replace dense matrix assembly and dense linear solvers with `scipy.sparse`
+throughout, removing the arbitrary 200-CBAR ceiling and scaling to large models.
+
+**Deliverables:**
+- `sbeam/assembly/stiffness.py` — `assemble_global_stiffness` now builds global K via COO
+  (row/col/data lists) and returns `scipy.sparse.csr_matrix`; `apply_spcs` uses CSR
+  row-then-column slicing for sparse K, `np.ix_` for dense K (RBE3 branch)
+- `sbeam/assembly/mass_matrix.py` — `assemble_global_mass` same COO→CSR pattern; CONM2
+  6×6 block assembled into COO lists rather than dense sub-matrix slices
+- `sbeam/solver/sol101.py` — `solve_static` dispatches: sparse K → `spsolve(K.tocsc(), f)`
+  with post-solve `np.all(np.isfinite(...))` guard; dense K (RBE3 branch) → existing
+  condition-number + `scipy.linalg.solve` path unchanged
+- `sbeam/solver/sol103.py` — `solve_modes` split into `_solve_modes_dense` /
+  `_solve_modes_sparse` / `_postprocess_modes`; sparse path uses `eigsh(K, k, M, sigma=0)`
+  with `ArpackNoConvergence` → dense fallback; dense path selected when `n_free ≤ 1200`,
+  `force_dense=True` (free-free models), or `nd ≥ n`; `run_sol103` passes
+  `force_dense = (spc_sid is None)` and uses `M[free_dofs, :][:, free_dofs]` slicing
+- `sbeam/parser/bdf_reader.py` — `_MAX_CBARS = 200` constant and enforcement check deleted
+- `tests/parser/test_elements.py` — `test_201_cbars_raises` test deleted
+- `tests/assembly/test_mass.py`, `tests/assembly/test_stiffness.py`,
+  `tests/assembly/test_loads.py`, `tests/solver/test_sol103.py` — `.toarray()` added where
+  tests treat the assembled sparse matrix as a dense array
+
+**Test/Acceptance:**
+- All 436 tests pass: `pytest tests/ -q` → 436 passed
+- All 14 verification tests (V1–V14) pass unchanged — all use models below the 1200-DOF
+  dense threshold, exercising the dense path with zero regression
+- Parser no longer rejects a 201-element model
+
+**Key decisions:**
+- Dense threshold `_DENSE_THRESHOLD = 1200` (200 × 6 DOFs) ensures zero regression for all
+  previously valid models; only models with >200 elements use `eigsh`
+- Free-free models (no SPC) force the dense path because `eigsh` with `sigma=0` shift-invert
+  cannot factorise a singular K; `force_dense = (spc_sid is None)` in `run_sol103`
+- RBE3 branch: `T.T @ K_csr @ T` produces a dense ndarray (NumPy `@` semantics); the dense
+  paths in `solve_static` and `solve_modes` handle it transparently
+- `spsolve` does not always raise on singular K — post-solve `np.all(np.isfinite(u_free))` is
+  the primary singularity guard
+
+---
 
 ### CI1: GitHub Actions CI Pipeline ✅ COMPLETE
 

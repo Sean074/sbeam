@@ -148,18 +148,6 @@ class TestCbarValidation:
         with pytest.raises(ValueError, match="PID=99"):
             parse_bulk_data(lines)
 
-    def test_201_cbars_raises(self):
-        lines = []
-        for i in range(1, 203):    # 202 grids for 201 elements
-            lines.append(f"GRID, {i}, , {float(i - 1)}, 0.0, 0.0")
-        lines.append("PBAR, 1, 1, 0.1, 8.333e-4, 8.333e-4, 1.406e-3")
-        lines.append("MAT1, 1, 2.0e11, 7.692e10, 0.3, 7850.0")
-        for i in range(1, 202):    # 201 CBAR elements — one over the limit
-            lines.append(f"CBAR, {i}, 1, {i}, {i + 1}, 0.0, 1.0, 0.0")
-        with pytest.raises(ValueError, match="200"):
-            parse_bulk_data(lines)
-
-
 # ---------------------------------------------------------------------------
 # PLOTEL
 # ---------------------------------------------------------------------------

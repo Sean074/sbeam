@@ -108,12 +108,12 @@ class TestAssembleGlobalMass:
 
     def test_symmetry(self):
         bulk = _one_element_bulk()
-        M = assemble_global_mass(bulk)
+        M = assemble_global_mass(bulk).toarray()
         assert np.allclose(M, M.T, atol=1e-12)
 
     def test_psd(self):
         bulk = _one_element_bulk()
-        M = assemble_global_mass(bulk)
+        M = assemble_global_mass(bulk).toarray()
         eigvals = np.linalg.eigvalsh(M)
         assert np.all(eigvals >= -1e-10)
 
@@ -131,18 +131,18 @@ class TestAssembleGlobalMass:
         }
         bulk.pbars = {10: _pbar}
         bulk.mat1s = {100: _mat1}
-        M = assemble_global_mass(bulk)
+        M = assemble_global_mass(bulk).toarray()
         eigvals = np.linalg.eigvalsh(M)
         assert np.all(eigvals > -1e-10)
 
     def test_conm2_added_to_correct_dofs(self):
         """Zero-offset CONM2 adds mass to translational DOF diagonals only."""
         bulk_no = _one_element_bulk()
-        M_no = assemble_global_mass(bulk_no)
+        M_no = assemble_global_mass(bulk_no).toarray()
 
         bulk_with = _one_element_bulk()
         bulk_with.conm2s = {1: Conm2(eid=99, gid=2, cid=0, m=10.0)}
-        M_with = assemble_global_mass(bulk_with)
+        M_with = assemble_global_mass(bulk_with).toarray()
 
         # Grid 2 is index 1 (sorted: GID 1→index0, GID 2→index1)
         tip_idx = 1
@@ -161,7 +161,7 @@ class TestAssembleGlobalMass:
         bulk.grids = {1: Grid(gid=1, x=0.0, y=0.0, z=0.0)}
         m, d = 5.0, 2.0  # mass = 5, offset z = 2
         bulk.conm2s = {1: Conm2(eid=1, gid=1, cid=0, m=m, x3=d)}
-        M = assemble_global_mass(bulk)
+        M = assemble_global_mass(bulk).toarray()
 
         # Translational diagonal: m on Tx, Ty, Tz
         for k in range(3):
@@ -189,7 +189,7 @@ class TestAssembleGlobalMass:
         bulk.grids = {1: Grid(gid=1, x=0.0, y=0.0, z=0.0)}
         I33_val = 7.5
         bulk.conm2s = {1: Conm2(eid=1, gid=1, cid=0, m=1.0, i33=I33_val)}
-        M = assemble_global_mass(bulk)
+        M = assemble_global_mass(bulk).toarray()
 
         assert M[5, 5] == pytest.approx(I33_val)   # Rz gets I33
         assert M[3, 3] == pytest.approx(0.0, abs=1e-14)  # Rx unchanged

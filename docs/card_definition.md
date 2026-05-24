@@ -713,7 +713,6 @@ DOF strings (used in SPC, SPC1, RBE2, RBE3, CBAR pin releases) are digit sequenc
 
 | Card | Constraint |
 |------|-----------|
-| CBAR | Maximum 200 elements |
 | CBAR | Offsets (W1A/W2A) not supported |
 | CBUSH | CID must be `0` or blank |
 | CBUSH | Damping (PBUSH `B` keyword) deferred to Phase 3 |

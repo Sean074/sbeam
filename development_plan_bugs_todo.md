@@ -133,7 +133,6 @@ These items are lower priority or require significant new infrastructure.
 | Item | Description | Prerequisite |
 |------|-------------|--------------|
 | SOL 105 — Buckling | Solve `([K] + λ[K_G]){φ} = 0` for critical load factor; requires geometric stiffness matrix assembled from SOL 101 axial forces | SOL 101 complete |
-| Sparse solver | Replace `numpy.linalg.solve` with `scipy.sparse.linalg.spsolve`; removes the 200-element ceiling | None |
 | Results export (CSV/Excel) | Download displacement, force, stress tables from the viewer as spreadsheets | Viewer complete |
 | Load case envelope | Post-processing: display max/min results across all subcases in a single table; requires B3 (multi-subcase) to be fixed first | B3 fix |
 | PBARL | Define PBAR cross-section by standard shape (ROD, BAR, BOX, I, L, T, …) with auto-computed A, I, J | Parser |

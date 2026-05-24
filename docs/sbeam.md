@@ -99,7 +99,6 @@ Results are output in the same units as input. The `.f06` header should echo any
 | Unrecognised BDF card | `warnings.warn` + skip; list skipped cards in output |
 | Missing referenced ID (GRID, PID, MID) | `ValueError` with card type and offending ID |
 | Zero-length element | `ValueError` with element ID |
-| More than 200 CBAR elements | `ValueError` with count |
 | No SPC constraints (SOL 101) | `ValueError`: "Model has no SPC constraints" |
 
 ---

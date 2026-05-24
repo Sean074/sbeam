@@ -80,7 +80,6 @@ pytest
 
 ## Limitations (Phase 1)
 
-- Maximum 200 CBAR elements
 - Global coordinate system (CID 0) only
 - Uniform cross-section elements (no tapered beams)
 - Euler-Bernoulli beam theory (shear deformation neglected)

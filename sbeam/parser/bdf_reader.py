@@ -14,7 +14,6 @@ from sbeam.model.constraint import Spc, Spc1
 from sbeam.parser.case_control import parse_case_control
 
 _IGNORED_KEYWORDS = frozenset({"BEGIN", "BEGINBULK", "ENDDATA"})
-_MAX_CBARS = 200
 
 
 def _split_free_field(line: str) -> list:
@@ -161,9 +160,6 @@ def _handle_cbar(fields: list, cont, bulk: BulkData) -> None:
         raise ValueError(f"CBAR {eid}: grid GB={gb} not found")
     if pid not in bulk.pbars:
         raise ValueError(f"CBAR {eid}: property PID={pid} not found")
-    if len(bulk.cbars) >= _MAX_CBARS:
-        raise ValueError(f"CBAR count exceeds maximum of {_MAX_CBARS}")
-
     bulk.cbars[eid] = Cbar(eid=eid, pid=pid, ga=ga, gb=gb,
                            x1=x1, x2=x2, x3=x3, offt=offt, pa=pa, pb=pb)
 

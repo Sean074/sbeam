@@ -86,8 +86,8 @@ models in NASTRAN BDF input format.
 - `INCLUDE` statement for separating bulk data from case control.
 - `parse_bdf(filepath)` — reads a full run file (case control + bulk data via INCLUDE).
 - `parse_bulk_file(filepath)` — reads a bulk-data-only `.dat` or `.bdf` file.
-- Validation: duplicate GIDs, missing PIDs/GIDs, invalid DOF strings, >200 CBAR elements
-  all raise `ValueError`; unknown cards issue a warning and are skipped.
+- Validation: duplicate GIDs, missing PIDs/GIDs, invalid DOF strings all raise `ValueError`;
+  unknown cards issue a warning and are skipped.
 
 **SOL 101 — Static Analysis**
 - 12×12 Euler-Bernoulli local element stiffness matrix with coordinate transformation.
