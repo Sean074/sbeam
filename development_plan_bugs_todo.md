@@ -83,46 +83,6 @@ response solvers and can be tackled in any order.
 
 ---
 
-### Step 30: Distributed Loads (PLOAD1)
-
-**Objective:** Apply linearly-varying or uniform distributed loads along CBAR elements.
-
-**Scope:**
-- `PLOAD1` card: EID, load type (FX/FY/FZ/MX/MY/MZ in local or global), scale, x1/p1, x2/p2.
-- Equivalent nodal load vector via integration of the distributed load against shape functions.
-- Viewer: distributed load visualisation along element (hatching or shaded arrow strip).
-
-**Why this matters:** uniform distributed loads (self-weight, wind pressure, snow) are the
-most common beam load in bridge, building, and wing models.
-
----
-
-### Step 33: Timoshenko Shear Correction (PBAR K1/K2)
-
-**Objective:** Include transverse shear deformation for stocky beam members.
-
-**Scope:**
-- `PBAR` K1 and K2 fields (shear area factors).
-- Modified stiffness matrix: Timoshenko beam with shear parameter `φ = 12EI/(κAGL²)`.
-- Falls back to Euler-Bernoulli when K1=K2=0 (or blank).
-- Verification: short cantilever (L/d = 2) with known Timoshenko tip deflection.
-
-**Why this matters:** important for short, deep members common in bridges and building frames.
-Euler-Bernoulli overestimates stiffness significantly when L/d < 10.
-
----
-
-### Step 34: Non-Zero Enforced Displacements
-
-**Objective:** Support prescribed non-zero displacements at SPC-constrained DOFs.
-
-**Scope:**
-- `SPC` D1/D2 fields (currently must be 0 in Phase 1).
-- Modify load vector assembly: move non-zero SPC terms to RHS before partitioning.
-- Verification: beam with prescribed end rotation reproducing known deflection shape.
-
-**Why this matters:** foundation settlement, support yielding, and displacement-controlled
-loading are standard structural assessment scenarios.
 
 ---
 
@@ -132,6 +92,8 @@ These items are lower priority or require significant new infrastructure.
 
 | Item | Description | Prerequisite |
 |------|-------------|--------------|
+| PLOAD1 — Distributed Loads | Equivalent nodal load vector for linearly-varying / uniform loads along CBAR; viewer load visualisation. Deferred because VAL1 pre-solve validator must warn on unsupported cards before silent-drop risk is acceptable | VAL1 complete |
+| Timoshenko Shear (PBAR K1/K2) | Modified stiffness with shear parameter φ = 12EI/(κAGL²); falls back to Euler-Bernoulli when K1=K2=0. Deferred because Euler-Bernoulli is the documented Phase 1 assumption; K1/K2 ignored silently, which is correct for slender beams | Parser update |
 | SOL 105 — Buckling | Solve `([K] + λ[K_G]){φ} = 0` for critical load factor; requires geometric stiffness matrix assembled from SOL 101 axial forces | SOL 101 complete |
 | Results export (CSV/Excel) | Download displacement, force, stress tables from the viewer as spreadsheets | Viewer complete |
 | Load case envelope | Post-processing: display max/min results across all subcases in a single table; requires B3 (multi-subcase) to be fixed first | B3 fix |

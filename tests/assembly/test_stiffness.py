@@ -13,7 +13,9 @@ from sbeam.assembly.stiffness import (
     local_stiffness,
     element_stiffness_global,
     assemble_global_stiffness,
+    check_spc_enforced_displacements,
 )
+from sbeam.model.constraint import Spc
 
 
 # ---------------------------------------------------------------------------
@@ -239,3 +241,37 @@ class TestGlobalStiffnessDOFPlacement:
         ea_l = -E * A / L
         assert K[0, 6] == pytest.approx(ea_l, rel=1e-8)
         assert K[6, 0] == pytest.approx(ea_l, rel=1e-8)
+
+
+# ---------------------------------------------------------------------------
+# check_spc_enforced_displacements
+# ---------------------------------------------------------------------------
+
+class TestCheckSpcEnforcedDisplacements:
+    def _bulk_with_spc(self, d1=0.0, d2=0.0):
+        bulk = BulkData()
+        bulk.spcs[1] = [Spc(sid=1, g1=101, c1="3", d1=d1, g2=102, c2="3", d2=d2)]
+        return bulk
+
+    def test_zero_displacements_passes(self):
+        bulk = self._bulk_with_spc(d1=0.0, d2=0.0)
+        check_spc_enforced_displacements(bulk, spc_sid=1)  # must not raise
+
+    def test_nonzero_d1_raises(self):
+        bulk = self._bulk_with_spc(d1=0.005)
+        with pytest.raises(ValueError, match="Non-zero enforced displacements"):
+            check_spc_enforced_displacements(bulk, spc_sid=1)
+
+    def test_nonzero_d2_raises(self):
+        bulk = self._bulk_with_spc(d2=-0.001)
+        with pytest.raises(ValueError, match="Non-zero enforced displacements"):
+            check_spc_enforced_displacements(bulk, spc_sid=1)
+
+    def test_error_message_contains_grid_and_sid(self):
+        bulk = self._bulk_with_spc(d1=0.002)
+        with pytest.raises(ValueError, match="GRID=101"):
+            check_spc_enforced_displacements(bulk, spc_sid=1)
+
+    def test_unknown_spc_sid_passes(self):
+        bulk = self._bulk_with_spc(d1=0.005)
+        check_spc_enforced_displacements(bulk, spc_sid=99)  # SID 99 not in bulk — no raise

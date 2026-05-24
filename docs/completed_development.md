@@ -795,3 +795,35 @@ throughout, removing the arbitrary 200-CBAR ceiling and scaling to large models.
 - Branch coverage enabled (`branch = true`) to catch untested conditional paths, not just untested lines
 - `sol103.py` RBE3 path test uses a simple kinematic constraint (one dep_dof from `Rbe3` on an interior node) rather than a physics-meaningful RBE3 model — sufficient to exercise the matrix transformation branch without complicating the fixture
 - Ubuntu-only matrix: no platform-specific code exists; macOS/Windows runners not justified at this stage
+
+---
+
+### Step 34: Non-Zero SPC Enforced Displacement Validation Guard ✅ COMPLETE
+
+**Objective:** Prevent silent incorrect results when a BDF contains non-zero enforced
+displacements (SPC D1/D2 fields non-zero). Full enforcement (RHS partitioning) is deferred
+to Phase 3; this step closes the confirmed silent-failure path with a minimal guard.
+
+**Background:** `Spc.d1` / `Spc.d2` are parsed and stored but `apply_spcs` ignores them,
+treating all constrained DOFs as zero-displacement. A model with prescribed non-zero
+displacements would run successfully and return plausible-looking but wrong results.
+
+**Deliverables:**
+- `sbeam/assembly/stiffness.py` — `check_spc_enforced_displacements(bulk, spc_sid)`: iterates
+  the active SPC set; raises `ValueError` with SID, grid, component, and value if any D≠0.
+- `sbeam/solver/sol101.py` — calls guard immediately after `spc_sid = subcase.spc_sid`.
+- `sbeam/solver/sol103.py` — calls guard when `spc_sid is not None`.
+- `tests/assembly/test_stiffness.py` — `TestCheckSpcEnforcedDisplacements`: 5 cases covering
+  zero-displacement pass, nonzero d1 raises, nonzero d2 raises, error message content, and
+  unknown SID pass.
+
+**Test/Acceptance:**
+- 441 tests pass, 0 failures.
+- `check_spc_enforced_displacements` with D=0 does not raise.
+- `check_spc_enforced_displacements` with D≠0 raises `ValueError` containing "Non-zero enforced displacements" and the offending grid ID.
+- `run_sol101` and `run_sol103` both invoke the guard before solving.
+
+**Key decisions:**
+- Guard lives in `stiffness.py` alongside `get_spc_dofs` and `apply_spcs` — the natural home for SPC constraint utilities.
+- SOL 103 guard is conditional on `spc_sid is not None` (free-free models have no SPC).
+- Full enforcement (move non-zero SPC terms to RHS before partitioning) remains deferred as `S34-full` in the Phase 3+ table.

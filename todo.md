@@ -47,14 +47,6 @@ Phase 2 — Dynamic Solvers (full scope in `development_plan_bugs_todo.md`):
 
 Phase 2 Model Enhancements (full scope in `development_plan_bugs_todo.md`):
 
-- **[S30] Step 30: PLOAD1 — Distributed Loads** — linearly-varying / uniform loads along CBAR;
-  equivalent nodal load vector; viewer distributed-load visualisation.
-
-- **[S33] Step 33: Timoshenko Shear Correction (PBAR K1/K2)** — shear parameter
-  `φ = 12EI/(κAGL²)`; falls back to Euler-Bernoulli when K1=K2=0.
-
-- **[S34] Step 34: Non-Zero Enforced Displacements** — SPC D1/D2 fields; move non-zero terms to
-  RHS before partitioning.
 
 Documentation and robustness (concurrent with Phase 2):
 
@@ -66,8 +58,10 @@ Documentation and robustness (concurrent with Phase 2):
   is reference theory only; a tutorial path is missing (same gap flagged in smodal review).
 
 - **[VAL1] Viewer pre-solve input validation** — before running SOL 101/103, warn if: zero-length
-  elements detected, no SPC defined, unsupported cards present, inconsistent units flag. Show
-  inline `st.warning` rather than crashing in the solver. Analogous to smodal M-3.
+  elements detected, no SPC defined, **unsupported cards present (e.g. PLOAD1)**, inconsistent
+  units flag. Show inline `st.warning` rather than crashing in the solver. Analogous to smodal
+  M-3. **Required before S30 can be safely deferred — without this, PLOAD1 loads are silently
+  dropped with no user-visible error.**
 
 ---
 
@@ -83,3 +77,13 @@ Future Phase 3+ items (full descriptions in `development_plan_bugs_todo.md`):
 - Sample model library
 - Parametric sweep
 - f06 results comparison (two-file diff)
+- **[S30] PLOAD1 Distributed Loads** — equivalent nodal load vector for linearly-varying /
+  uniform distributed loads along CBAR; viewer distributed-load visualisation. *(Deferred:
+  unsupported cards are a documented limitation; VAL1 must warn on PLOAD1 before this is safe.)*
+- **[S33] Timoshenko Shear Correction (PBAR K1/K2)** — shear parameter `φ = 12EI/(κAGL²)`;
+  falls back to Euler-Bernoulli when K1=K2=0. *(Deferred: Euler-Bernoulli is documented as
+  the Phase 1 assumption; K1/K2 fields are silently ignored, which is correct behaviour for
+  the slender-beam target use case.)*
+- **[S34-full] Non-Zero Enforced Displacement Enforcement** — move non-zero SPC D1/D2 terms to
+  RHS before partitioning. *(Deferred: full enforcement; beta only requires the validation
+  guard above.)*

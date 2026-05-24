@@ -306,6 +306,26 @@ def get_spc_dofs(bulk: BulkData, spc_sid: int, grid_index: dict) -> list:
     return spc_dofs
 
 
+def check_spc_enforced_displacements(bulk: BulkData, spc_sid: int) -> None:
+    """Raise ValueError if any SPC in the active set specifies a non-zero enforced displacement.
+
+    Non-zero D fields are parsed and stored but never applied to the RHS (Phase 1 limitation).
+    Failing loudly here prevents silent wrong results.
+    """
+    violations = []
+    for spc in bulk.spcs.get(spc_sid, []):
+        if spc.d1 != 0.0:
+            violations.append(f"SPC SID={spc.sid} GRID={spc.g1} C={spc.c1} D={spc.d1}")
+        if spc.g2 is not None and spc.d2 != 0.0:
+            violations.append(f"SPC SID={spc.sid} GRID={spc.g2} C={spc.c2} D={spc.d2}")
+    if violations:
+        detail = "; ".join(violations)
+        raise ValueError(
+            f"Non-zero enforced displacements are not supported in Phase 1 ({detail}). "
+            "Set all SPC D fields to 0 or blank."
+        )
+
+
 def apply_spcs(K, f: np.ndarray, spc_dofs: list) -> tuple:
     """Partition K and f to free DOFs only.
 

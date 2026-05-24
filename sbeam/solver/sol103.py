@@ -9,7 +9,12 @@ import scipy.sparse.linalg
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.parser.case_control import SubcaseControl
-from sbeam.assembly.stiffness import assemble_global_stiffness, get_spc_dofs, apply_spcs
+from sbeam.assembly.stiffness import (
+    assemble_global_stiffness,
+    get_spc_dofs,
+    apply_spcs,
+    check_spc_enforced_displacements,
+)
 from sbeam.assembly.mass_matrix import assemble_global_mass
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.assembly.rbe3 import build_rbe3_transformation
@@ -131,6 +136,9 @@ def run_sol103(bulk: BulkData, subcase: SubcaseControl) -> Sol103Result:
 
     spc_sid = subcase.spc_sid
     method_sid = subcase.method_sid
+
+    if spc_sid is not None:
+        check_spc_enforced_displacements(bulk, spc_sid)
 
     if method_sid is None:
         raise ValueError("SOL 103 subcase requires a METHOD (EIGRL) card")

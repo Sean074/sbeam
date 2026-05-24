@@ -11,6 +11,7 @@ from sbeam.assembly.stiffness import (
     assemble_global_stiffness,
     get_spc_dofs,
     apply_spcs,
+    check_spc_enforced_displacements,
     local_stiffness,
     transform_matrix,
     cbush_stiffness_global,
@@ -252,6 +253,8 @@ def run_sol101(bulk: BulkData, subcase: SubcaseControl) -> Sol101Result:
 
     load_sid = subcase.load_sid
     spc_sid = subcase.spc_sid
+
+    check_spc_enforced_displacements(bulk, spc_sid)
 
     # Load vector (saved before RBE3 transform for reaction correction)
     f = assemble_load_vector(bulk, load_sid)
