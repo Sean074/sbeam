@@ -29,12 +29,6 @@ fallback results.
 
 Infrastructure (do before Phase 2 starts):
 
-- **[TEST1] Streamlit AppTest integration tests** — existing viewer tests are unit tests of
-  pure helper functions; no test exercises the full session-state flow. Add one `AppTest`-based
-  end-to-end test per major tab (geometry load → GPWG → SOL 101 run → results view; geometry
-  load → SOL 103 run → modal results view) using the bundled sample BDF. Analogous to smodal
-  Roadmap B1; catches broad-except-class bugs that unit tests miss.
-
 - **[CHGLOG] Write CHANGELOG.md** — document all Phase 1 completed steps in user-facing form
   (v0.1.0 series). smodal's CHANGELOG was cited as best practice in the maturity review.
 

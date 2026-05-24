@@ -319,4 +319,34 @@ Multiple subcases are written sequentially into a single `.f06` file. The f06 te
 
 - Parse errors and warnings are shown as Streamlit warning/error banners.
 - Solver errors (singular matrix, etc.) are shown with the error message in a red banner.
+
+---
+
+## Testing
+
+Integration tests for the viewer live in `tests/viewer/test_apptest_integration.py` and use Streamlit's `AppTest` framework.
+
+**Covered flows:**
+
+| Test | Flow |
+|------|------|
+| `test_flow_a_sol101_render_and_run` | Injected geometry → GPWG sidebar → SOL 101 run → deformed-shape UI |
+| `test_flow_b_sol103_render_and_run` | Injected geometry → SOL 103 run → mode-shape UI |
+
+**State injection pattern.** Tests do not simulate the file-upload widget (fragile with the temp-file-based parser). Instead, `BulkData` and `CaseControl` are pre-parsed from integration BDF files in module-scoped fixtures (`cantilever_sol101_parsed`, `cantilever_sol103_parsed` in `tests/viewer/conftest.py`), then written directly into `at.session_state` after the first `at.run()`. This replicates exactly what `_handle_upload` sets.
+
+**Three-step run protocol:**
+1. `at.run()` — cold start (shows upload prompt, initialises all session state keys via `_init_session_state`).
+2. Write `at.session_state[...]` — inject parsed `bulk_data`, `case_control`, and associated flags.
+3. `at.run()` — render with injected state (GPWG, tabs, Model tab content).
+4. Click "Run Analysis" via `next(b for b in at.button if b.label == "Run Analysis").click()`.
+5. `at.run(timeout=...)` — verify solver completes and results UI renders.
+
+**Entry point.** `AppTest.from_function(_sbeam_app)` is used (not `from_file`) where `_sbeam_app` is a local wrapper that imports and calls `main`. This avoids the `NameError` that occurs when `from_function` serializes a function whose imports come from the module scope.
+
+**Run the tests:**
+
+```
+pytest tests/viewer/test_apptest_integration.py -v
+```
 - Skipped BDF cards are listed in an expandable "Warnings" section.

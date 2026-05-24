@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from sbeam.model.bulk_data import BulkData
@@ -5,6 +7,9 @@ from sbeam.model.element import Cbar, Plotel
 from sbeam.model.grid import Grid
 from sbeam.model.material import Mat1
 from sbeam.model.property import Pbar
+from sbeam.parser.bdf_reader import parse_bdf
+
+_BDF_DIR = Path(__file__).parent.parent / "integration" / "bdf"
 
 
 @pytest.fixture
@@ -24,3 +29,15 @@ def simple_bulk(two_node_bulk: BulkData) -> BulkData:
     """two_node_bulk plus a PLOTEL connecting the same two grids."""
     two_node_bulk.plotels[2] = Plotel(eid=2, g1=1, g2=2)
     return two_node_bulk
+
+
+@pytest.fixture(scope="module")
+def cantilever_sol101_parsed():
+    """Parse v1_v2_cantilever.bdf once — returns (CaseControl, BulkData)."""
+    return parse_bdf(_BDF_DIR / "v1_v2_cantilever.bdf")
+
+
+@pytest.fixture(scope="module")
+def cantilever_sol103_parsed():
+    """Parse v5_cantilever_modal.bdf once — returns (CaseControl, BulkData)."""
+    return parse_bdf(_BDF_DIR / "v5_cantilever_modal.bdf")

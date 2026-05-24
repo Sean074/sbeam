@@ -708,6 +708,29 @@ from the file, filters output requests per SOL, and is extensible for Phase 2 SO
 
 ---
 
+### TEST1: AppTest Integration Tests ✅ COMPLETE
+
+**Objective:** Add one `AppTest`-based end-to-end test per major viewer flow so that broad-except-class bugs in the rendering code are caught — bugs that unit tests of pure helper functions cannot reach.
+
+**Deliverables:**
+- `tests/viewer/conftest.py` — two module-scoped fixtures (`cantilever_sol101_parsed`, `cantilever_sol103_parsed`) that pre-parse integration BDF files once per session
+- `tests/viewer/test_apptest_integration.py` — two AppTest integration tests:
+  - `test_flow_a_sol101_render_and_run`: geometry load → GPWG renders → SOL 101 run → deformed-shape UI renders (deformation scale slider, F06 export button)
+  - `test_flow_b_sol103_render_and_run`: geometry load → SOL 103 run → modal results UI renders (mode selector, scale slider, F06 export button)
+- `docs/viewer.md` — Testing section added describing the AppTest pattern, state injection protocol, and three-step run idiom
+
+**Test/Acceptance:**
+- Both tests pass: `pytest tests/viewer/test_apptest_integration.py -v` → 2 passed
+- `assert not at.exception` and `assert not at.error` confirm no rendering exceptions or solver failures in either flow
+- Session state assertions confirm `sol101_result` / `sol103_result` are populated and the opposing result is None after each run
+
+**Key decisions:**
+- State injection via `at.session_state[...]` (not file-upload widget simulation): the viewer's `_handle_upload` writes to a temp file before parsing; simulating the upload widget in AppTest would require AppTest to manage that temp file, which is fragile. Pre-parsing and injecting state directly is equivalent and more reliable.
+- `AppTest.from_function(_sbeam_app)` used (not `from_file` or `from_function(main)`): `from_function` serializes only the function source without its module's imports. A local wrapper `_sbeam_app` containing `from sbeam.viewer.app import main; main()` makes the temp script self-contained — `main()` still resolves `st` from `sbeam.viewer.app.__globals__`.
+- BDFs used: `tests/integration/bdf/v1_v2_cantilever.bdf` (SOL 101) and `tests/integration/bdf/v5_cantilever_modal.bdf` (SOL 103) — already verified against closed-form solutions in V1–V7.
+
+---
+
 ### CI2: pytest-cov Coverage Measurement ✅ COMPLETE
 
 **Objective:** Establish measurable, enforced coverage reporting for `solver/`, `assembly/`, and `parser/`, with explicit viewer coverage visibility, before Phase 2 begins.
