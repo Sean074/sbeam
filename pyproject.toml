@@ -32,6 +32,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "pytest-cov",
     "ruff",
 ]
 
@@ -57,3 +58,12 @@ ignore = [
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+addopts = "--cov=sbeam --cov-report=term-missing"
+
+[tool.coverage.run]
+branch = true
+source = ["sbeam"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true

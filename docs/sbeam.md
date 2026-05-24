@@ -180,6 +180,22 @@ Tests mirror the `sbeam/` module structure under `tests/`. Each assembly, solver
 
 V1–V7 use: E=2.0×10¹¹ Pa, ρ=7850 kg/m³, A=0.05 m², I=8.333×10⁻⁴ m⁴, L=1.0 m, 10 CBAR elements. V8–V14 use unit stiffness values defined in their BDF files; see `tests/integration/test_verification.py` for exact parameters.
 
+### Coverage
+
+Every `pytest` run automatically emits a per-file branch-coverage table (configured via `addopts` in `pyproject.toml`). No extra flags needed:
+
+```
+pytest
+```
+
+To enforce the ≥85% floor on the three gated modules (`solver/`, `assembly/`, `parser/`) explicitly — use this command for CI gates or pre-merge checks:
+
+```
+pytest --cov=sbeam/solver --cov=sbeam/assembly --cov=sbeam/parser --cov-fail-under=85
+```
+
+`viewer/` coverage is included in the default report for visibility but is **not** subject to the 85% floor — it requires Streamlit `AppTest` integration tests (TEST1) to reach a meaningful level.
+
 ---
 
 ## Version and Phase

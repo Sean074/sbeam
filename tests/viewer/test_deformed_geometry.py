@@ -63,15 +63,6 @@ class TestBuildModeFigure:
         fig = build_mode_figure(two_node_bulk, mode_shape, grid_index, scale=0.1, freq_hz=100.0)
         assert isinstance(fig, go.Figure)
 
-    def test_has_frames(self, two_node_bulk):
-        grid_index = build_grid_index(two_node_bulk)
-        mode_shape = np.zeros(12)
-        mode_shape[7] = 1.0
-        n_frames = 8
-        fig = build_mode_figure(two_node_bulk, mode_shape, grid_index,
-                                scale=0.1, freq_hz=50.0, n_frames=n_frames)
-        assert len(fig.frames) == n_frames
-
     def test_has_ghost_trace(self, two_node_bulk):
         grid_index = build_grid_index(two_node_bulk)
         mode_shape = np.zeros(12)

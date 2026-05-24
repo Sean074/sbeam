@@ -705,4 +705,28 @@ from the file, filters output requests per SOL, and is extensible for Phase 2 SO
 - Built-in `cache: "pip"` on `actions/setup-python@v5` instead of a manual `actions/cache` step — simpler and equally effective
 - `STREAMLIT_SERVER_HEADLESS=true` env var suppresses the streamlit first-run email prompt in the headless CI environment
 - Ruff moved to `[dev]` optional dep rather than `requirements.txt` to keep runtime and dev deps cleanly separated; CI installs via `pip install -e .[dev]`
+
+---
+
+### CI2: pytest-cov Coverage Measurement ✅ COMPLETE
+
+**Objective:** Establish measurable, enforced coverage reporting for `solver/`, `assembly/`, and `parser/`, with explicit viewer coverage visibility, before Phase 2 begins.
+
+**Deliverables:**
+- `pyproject.toml` — added `pytest-cov` to `[project.optional-dependencies] dev`
+- `pyproject.toml` — added `addopts = "--cov=sbeam --cov-report=term-missing"` to `[tool.pytest.ini_options]`
+- `pyproject.toml` — added `[tool.coverage.run]` (`branch = true`, `source = ["sbeam"]`) and `[tool.coverage.report]` (`show_missing = true`, `skip_empty = true`)
+- `tests/solver/test_sol103.py` — two new test classes: `TestSol103Errors` (missing METHOD raises `ValueError`, line 74–75) and `TestSol103WithRbe3` (RBE3 dep_dofs branch, lines 82–95); `sol103.py` coverage raised from 77% → 99%
+- `tests/viewer/test_deformed_geometry.py` — removed stale `test_has_frames` test (`build_mode_figure` no longer accepts `n_frames`)
+- `docs/sbeam.md` — added "Coverage" subsection documenting the two commands and the 85% floor
+
+**Test/Acceptance:**
+- 435 tests pass, 0 failures
+- Coverage baseline at merge: `solver/` ≥ 94%, `assembly/` ≥ 87%, `parser/` ≥ 88%; viewer explicitly reported (0–43%, TEST1 target)
+- Gate command `pytest --cov=sbeam/solver --cov=sbeam/assembly --cov=sbeam/parser --cov-fail-under=85` exits 0
+
+**Key decisions:**
+- `fail_under` is not placed in `addopts` (which would gate the full run including viewer); instead the 85% floor is a separate explicit command so viewer's low coverage doesn't block `pytest` during Phase 2 development
+- Branch coverage enabled (`branch = true`) to catch untested conditional paths, not just untested lines
+- `sol103.py` RBE3 path test uses a simple kinematic constraint (one dep_dof from `Rbe3` on an interior node) rather than a physics-meaningful RBE3 model — sufficient to exercise the matrix transformation branch without complicating the fixture
 - Ubuntu-only matrix: no platform-specific code exists; macOS/Windows runners not justified at this stage

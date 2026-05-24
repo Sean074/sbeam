@@ -29,10 +29,6 @@ fallback results.
 
 Infrastructure (do before Phase 2 starts):
 
-- **[CI2] pytest-cov coverage measurement** — add `pytest-cov` to `pyproject.toml` dev
-  dependencies; report `solver/`, `assembly/`, `parser/` separately; establish ≥85% floor for
-  those modules; report `viewer/` coverage explicitly.
-
 - **[TEST1] Streamlit AppTest integration tests** — existing viewer tests are unit tests of
   pure helper functions; no test exercises the full session-state flow. Add one `AppTest`-based
   end-to-end test per major tab (geometry load → GPWG → SOL 101 run → results view; geometry

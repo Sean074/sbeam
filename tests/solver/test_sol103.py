@@ -14,6 +14,7 @@ from sbeam.parser.case_control import CaseControl, SubcaseControl
 from sbeam.assembly.stiffness import assemble_global_stiffness, get_spc_dofs, apply_spcs
 from sbeam.assembly.mass_matrix import assemble_global_mass
 from sbeam.assembly.load_vector import build_grid_index
+from sbeam.model.element import Rbe3
 from sbeam.solver.sol103 import solve_modes, run_sol103
 
 
@@ -218,6 +219,33 @@ class TestConm2FrequencyVerification:
         f_expected = (1.0 / (2 * np.pi)) * np.sqrt(4 * self._E * self._I / (J_total * self._L))
         assert f_with_offset == pytest.approx(f_expected, rel=0.01)
         assert f_with_offset < f_no_offset
+
+
+class TestSol103Errors:
+    def test_missing_method_raises(self):
+        """method_sid=None must raise ValueError (no EIGRL card)."""
+        bulk, _ = _cantilever_cc()
+        sc = SubcaseControl(subcase_id=1, spc_sid=10, method_sid=None)
+        with pytest.raises(ValueError, match="METHOD"):
+            run_sol103(bulk, sc)
+
+
+class TestSol103WithRbe3:
+    def test_rbe3_path_executes(self):
+        """Exercises the dep_dofs branch (lines 82-95) in run_sol103."""
+        bulk = _make_bulk()
+        # RBE3: GID 2 Ty depends on GID 3 Ty — creates one dep_dof
+        bulk.rbe3s[99] = Rbe3(eid=99, refgrid=2, refc="2", wt_gc=[(1.0, "2", [3])])
+        bulk.eigrls[20] = Eigrl(sid=20, nd=3, norm="MASS")
+        bulk.spc1s[10] = [_make_spc1(10, "123456", [1])]
+        cc = CaseControl(
+            sol=103,
+            subcases=[SubcaseControl(subcase_id=1, spc_sid=10, method_sid=20)],
+        )
+        result = run_sol103(bulk, cc.subcases[0])
+        assert len(result.frequencies_hz) == 3
+        assert result.frequencies_hz[0] > 0.0
+        assert result.mode_shapes.shape[0] == 6 * (N_ELEM + 1)
 
 
 class TestMaxNormalisation:
