@@ -681,3 +681,28 @@ from the file, filters output requests per SOL, and is extensible for Phase 2 SO
 - `_SOL_OUTPUT_FIELDS` dict (SOL → field list) is the single extension point for Phase 2: adding SOL 108 requires one dict entry; no conditionals in the render loop.
 - INCLUDE path moved to a collapsed "Advanced" expander: users rarely change it; keeping it visible was visual noise.
 - Output flags for SOLs not in `_SOL_OUTPUT_FIELDS` are forced to `False` during render so the `SubcaseControl` object never carries stale output flags from a prior SOL selection.
+
+---
+
+## Infrastructure
+
+### CI1: GitHub Actions CI Pipeline ✅ COMPLETE
+
+**Objective:** Run `pytest` and `ruff` lint on every push and pull request to `main`, catching regressions automatically before Phase 2 begins.
+
+**Deliverables:**
+- `.github/workflows/ci.yml` — triggers on push/PR to `main`; matrix: Python 3.9, 3.11, 3.12; `ubuntu-latest`
+- `pyproject.toml` — added `[project.optional-dependencies] dev = [pytest, ruff]`
+- `requirements.txt` — removed `ruff` (now dev-only); runtime deps unchanged
+
+**Test/Acceptance:**
+- `pip install -e .[dev]` installs all runtime and dev dependencies
+- `pytest -q --tb=short` runs 434 tests (433 pass; 1 pre-existing `build_mode_figure` signature failure surfaced by CI)
+- Workflow triggers on push/PR; lint step (`ruff check sbeam/`) and test step are separate jobs in the Actions summary
+
+**Key decisions:**
+- `fail-fast: false` so all three Python versions run to completion even if one fails, giving a complete compatibility picture
+- Built-in `cache: "pip"` on `actions/setup-python@v5` instead of a manual `actions/cache` step — simpler and equally effective
+- `STREAMLIT_SERVER_HEADLESS=true` env var suppresses the streamlit first-run email prompt in the headless CI environment
+- Ruff moved to `[dev]` optional dep rather than `requirements.txt` to keep runtime and dev deps cleanly separated; CI installs via `pip install -e .[dev]`
+- Ubuntu-only matrix: no platform-specific code exists; macOS/Windows runners not justified at this stage

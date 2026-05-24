@@ -29,6 +29,12 @@ dependencies = [
     "streamlit",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+]
+
 [project.scripts]
 sbeam = "sbeam.main:main"
 
