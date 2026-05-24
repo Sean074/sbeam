@@ -2,6 +2,8 @@
 
 A Python finite element analysis tool for beam structures using NASTRAN BDF input format. Supports static analysis (SOL 101) and normal modes (SOL 103) via Euler-Bernoulli beam theory.
 
+**License:** MIT (see [LICENSE](LICENSE)) — free to use, modify, and redistribute, including commercially.
+
 ## Requirements
 
 - Python 3.9+
@@ -82,3 +84,21 @@ pytest
 - Global coordinate system (CID 0) only
 - Uniform cross-section elements (no tapered beams)
 - Euler-Bernoulli beam theory (shear deformation neglected)
+
+## Author
+
+Sean O'Meara — <sean.c.omeara74@gmail.com>
+
+Bug reports and pull requests are welcome via the GitHub issue tracker.
+
+## Disclaimer
+
+`sbeam` implements standard, well-published finite element methods (Euler-Bernoulli beam theory, consistent mass matrix, direct stiffness assembly) using established numerical libraries. It is intended as an educational and exploratory engineering tool.
+
+Results are **not certified** for safety-critical or regulated structural design. The implementation uses simplified assumptions (uniform cross-sections, no shear deformation, global coordinate frame, dense direct solver). Verify any results against an established commercial solver and competent engineering judgement before relying on them for design decisions.
+
+The software is provided "as is", without warranty of any kind. See the [LICENSE](LICENSE) file for the full disclaimer of liability.
+
+## License
+
+Released under the [MIT License](LICENSE). Copyright (c) 2026 Sean O'Meara.
