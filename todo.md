@@ -29,9 +29,6 @@ fallback results.
 
 Infrastructure (do before Phase 2 starts):
 
-- **[CHGLOG] Write CHANGELOG.md** — document all Phase 1 completed steps in user-facing form
-  (v0.1.0 series). smodal's CHANGELOG was cited as best practice in the maturity review.
-
 - **[VER] Version strategy** — `0.1.0` is correct for Phase 1. Plan: bump to `0.2.0` on Phase 2
   completion; update `pyproject.toml` classifier from `Alpha` to `Beta` at that point.
 
