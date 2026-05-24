@@ -211,3 +211,7 @@ pytest --cov=sbeam/solver --cov=sbeam/assembly --cov=sbeam/parser --cov-fail-und
 | 2 | SOL 109 Direct transient response | Planned |
 | 2 | SOL 111 Modal frequency response | Planned |
 | 2 | SOL 112 Modal transient response | Planned |
+
+**Version strategy:** `pyproject.toml` version is `0.1.0` and classifier is `3 - Alpha` for Phase 1.
+On Phase 2 completion (SOL 108/109/111/112 all passing), bump to `0.2.0` and change the classifier
+to `4 - Beta`.

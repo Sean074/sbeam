@@ -27,11 +27,6 @@ fallback results.
 
 ## MAJOR — Must fix or document before beta
 
-Infrastructure (do before Phase 2 starts):
-
-- **[VER] Version strategy** — `0.1.0` is correct for Phase 1. Plan: bump to `0.2.0` on Phase 2
-  completion; update `pyproject.toml` classifier from `Alpha` to `Beta` at that point.
-
 Phase 2 — Dynamic Solvers (full scope in `development_plan_bugs_todo.md`):
 
 - **[S26] Step 26: SOL 108 — Direct Frequency Response** — `([K] - ω²[M]){U} = {F(ω)}`; DLOAD /
