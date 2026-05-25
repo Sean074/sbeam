@@ -827,3 +827,21 @@ displacements would run successfully and return plausible-looking but wrong resu
 - Guard lives in `stiffness.py` alongside `get_spc_dofs` and `apply_spcs` — the natural home for SPC constraint utilities.
 - SOL 103 guard is conditional on `spc_sid is not None` (free-free models have no SPC).
 - Full enforcement (move non-zero SPC terms to RHS before partitioning) remains deferred as `S34-full` in the Phase 3+ table.
+
+---
+
+### R1: RBE2 Lever-Arm Not Implemented ✅ FIXED
+
+**Root cause:** The RBE2 transformation in `assembly/rbe3.py` set `T_full[dep_dof, indep_dof] = 1.0` — a direct DOF copy that is only correct for coincident grids. For offset grids, rigid-body kinematics requires `u_GM[d] = R[d,:] @ u_GN` where R is the 6×6 lever-arm matrix. The only existing test (V13) used coincident grids, so the defect was never triggered.
+
+**Fix (`sbeam/assembly/rbe3.py`):** Replaced the single `1.0` entry with the full R-matrix row, matching the RBAR block already in the same function:
+```
+R = [I₃   S(d)ᵀ]   where S(d) is the skew-symmetric matrix of d = r_GM − r_GN
+    [0      I₃  ]
+```
+For zero offset R = I, so coincident RBE2 behaviour is unchanged.
+
+**Acceptance test:**
+- `tests/assembly/test_rbe2.py::TestRbe2LeverArm` — unit tests for R matrix rows (X, Y, Z offsets; partial CM; zero offset)
+- `tests/integration/test_verification.py::TestV18Rbe2LeverArm` — cantilever with eccentric RBE2 (a=0.5), verifies u_y(GM) = 6.5e-6 m vs analytical, and u_GM = R @ u_GN to 1e-14 tolerance
+- 450 tests pass, 0 failures.

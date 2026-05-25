@@ -339,9 +339,18 @@ RBE2, EID, GN, CM, GM1, GM2, GM3, GM4, GM5, GM6
 u_GMi[d] = u_GN[d]
 ```
 
-**Phase 1 scope:** no rigid arm eccentricity. All DOFs are coupled directly without offset vector computation.
+**Assembly:** implemented in `assembly/rbe3.py` within `build_rbe3_transformation` using the same T-matrix approach as RBAR. For each GM grid the offset vector `d = r_GM − r_GN` is computed and the 6×6 rigid-body kinematics matrix R is built:
 
-**Phase 1 assembly:** implemented in `assembly/rbe3.py` within `build_rbe3_transformation`, using the same T-matrix approach as RBE3. For each dependent DOF, the corresponding row of `T_full` is set to `[0, …, 1, …, 0]` with the `1` at the column of the independent DOF. After applying all RBE2 and RBE3 constraints, the transformation matrix `T` (shape `n_dof × n_red`) is applied before SPC partitioning.
+```
+R = [ I₃  S(d)ᵀ ]
+    [ 0    I₃   ]
+
+where S(d) = [  0,  dz, −dy ]
+             [−dz,   0,  dx ]
+             [ dy, −dx,   0 ]
+```
+
+For each DOF `d` in CM, row `d` of R is written into `T_full` at GN's columns: `u_GM[d] = R[d,:] @ u_GN`. When `d = (0,0,0)` R is the identity and the result is the same as a direct-copy constraint. After applying all RBE2, RBE3, and RBAR constraints the transformation matrix `T` (shape `n_dof × n_red`) is applied before SPC partitioning.
 
 **Viewer:** rendered as solid red lines (`#cc2222`, width=2) from GN to each GM — distinguishable from RBE3 dashed lines.
 
@@ -399,7 +408,7 @@ RBAR, EID, GA, GB, CNA, CNB, CMA, CMB
 
 where **d** = (dx, dy, dz) = r_GB − r_GA in global coordinates (CID 0).
 
-**Distinction from RBE2:** RBE2 copies each DOF directly (`u_dep[d] = u_indep[d]`). RBAR computes translations at GB from both translations and rotations at GA, capturing the lever-arm effect. When `d = (0,0,0)` (coincident grids), R reduces to the identity and RBAR is equivalent to a full-DOF RBE2.
+**Distinction from RBE2:** Both RBAR and RBE2 use the same 6×6 rigid-body R matrix. The difference is scope: RBAR always constrains all 6 DOFs at GB; RBE2 constrains only the DOFs listed in CM and supports multiple dependent grids. When `d = (0,0,0)` (coincident grids), R is the identity and both elements produce an equivalent result.
 
 **Assembly:** implemented in `assembly/rbe3.py` within `build_rbe3_transformation()`. For each RBAR, 6 rows of `T_full` (corresponding to GB's DOFs) are filled with the R matrix evaluated at the grid offset. The resulting T matrix is applied identically in SOL 101 and SOL 103.
 

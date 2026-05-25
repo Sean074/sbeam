@@ -55,21 +55,36 @@ def build_rbe3_transformation(bulk: BulkData, grid_index: dict) -> tuple:
 
             dep_set.add(p)
 
-    # RBE2: each dependent grid DOF is set equal to the independent grid DOF.
+    # RBE2: dependent grid DOFs follow GN via rigid-body kinematics (lever-arm).
+    # u_GM[d] = R[d, :] @ u_GN  where R encodes the offset r_GM - r_GN.
+    # When the offset is zero R reduces to identity, recovering the direct-copy case.
     for rbe2 in bulk.rbe2s.values():
         if rbe2.gn not in grid_index:
             continue
         indep_idx = grid_index[rbe2.gn]
+        gn_g = bulk.grids[rbe2.gn]
         for gm_id in rbe2.gm:
             if gm_id not in grid_index:
                 continue
             dep_idx = grid_index[gm_id]
+            gm_g = bulk.grids[gm_id]
+            dx = gm_g.x - gn_g.x
+            dy = gm_g.y - gn_g.y
+            dz = gm_g.z - gn_g.z
+            R = np.array([
+                [1, 0, 0,   0,  dz, -dy],
+                [0, 1, 0, -dz,   0,  dx],
+                [0, 0, 1,  dy, -dx,   0],
+                [0, 0, 0,   1,   0,   0],
+                [0, 0, 0,   0,   1,   0],
+                [0, 0, 0,   0,   0,   1],
+            ], dtype=float)
             for d_char in str(rbe2.cm):
                 d = int(d_char) - 1
-                dep_dof   = 6 * dep_idx   + d
-                indep_dof = 6 * indep_idx + d
+                dep_dof = 6 * dep_idx + d
                 T_full[dep_dof, :] = 0.0
-                T_full[dep_dof, indep_dof] = 1.0
+                for k in range(6):
+                    T_full[dep_dof, 6 * indep_idx + k] = R[d, k]
                 dep_set.add(dep_dof)
 
     # GN of an RBE2 must not itself be a dependent DOF of another constraint element.

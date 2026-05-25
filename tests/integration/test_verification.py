@@ -1,4 +1,4 @@
-"""Step 24: End-to-end integration verification tests (V1–V14).
+"""Step 24: End-to-end integration verification tests (V1–V18).
 
 Each test reads a BDF file through parse_bdf, runs the solver, and checks
 the result against a closed-form analytical value.
@@ -488,3 +488,68 @@ class TestV17GravPlusForce:
         r11 = result.reactions.get(11, np.zeros(6))[1]
         assert r1 == pytest.approx(_V17_NET_LOAD / 2.0, rel=1e-4)
         assert r11 == pytest.approx(_V17_NET_LOAD / 2.0, rel=1e-4)
+
+
+# ---------------------------------------------------------------------------
+# V18 — RBE2 lever-arm: eccentric load through offset GM grid
+# ---------------------------------------------------------------------------
+# Cantilever: CBAR from grid 1 (fixed) to grid 2 (free, GN). Grid 3 (GM) is
+# offset a=0.5 in X from GN. Force P in +Y at GM transfers to GN as force P
+# plus moment M_z = a*P, giving analytically:
+#
+#   EI = E * I = 2e11 * 8.333e-4 = 1.6666e8
+#   u_y(GN) = P*L^3/(3*EI) + a*P*L^2/(2*EI) = 3.5e-6 m
+#   θ_z(GN) = P*L^2/(2*EI) + a*P*L/(EI)    = 6.0e-6 rad
+#   u_y(GM) = u_y(GN) + a*θ_z(GN)           = 6.5e-6 m  [lever-arm]
+#
+# With the old direct-copy implementation: u_y(GM) = u_y(GN) = 3.5e-6 (wrong).
+
+_E_V18  = 2.0e11
+_I_V18  = 8.333e-4
+_L_V18  = 1.0
+_P_V18  = 1000.0
+_A_V18  = 0.5   # X offset of GM from GN
+_EI_V18 = _E_V18 * _I_V18
+
+_UY_GN_V18 = (_P_V18 * _L_V18**3 / (3 * _EI_V18)
+              + _A_V18 * _P_V18 * _L_V18**2 / (2 * _EI_V18))
+_TZ_GN_V18 = (_P_V18 * _L_V18**2 / (2 * _EI_V18)
+              + _A_V18 * _P_V18 * _L_V18 / _EI_V18)
+_UY_GM_V18 = _UY_GN_V18 + _A_V18 * _TZ_GN_V18
+
+
+class TestV18Rbe2LeverArm:
+    @pytest.fixture(scope="class")
+    def result_and_gi(self):
+        cc, bulk = parse_bdf(BDF_DIR / "v18_rbe2_offset.bdf")
+        result = run_sol101(bulk, cc.subcases[0])
+        gi = build_grid_index(bulk)
+        return result, gi, bulk
+
+    def test_gn_tip_deflection(self, result_and_gi):
+        """u_y at GN (grid 2) matches cantilever formula with eccentric load."""
+        result, gi, _ = result_and_gi
+        u_y = result.displacements[6 * gi[2] + 1]
+        assert u_y == pytest.approx(_UY_GN_V18, rel=1e-3)
+
+    def test_gm_offset_deflection(self, result_and_gi):
+        """u_y at GM (grid 3) includes lever-arm: u_y(GN) + a*θ_z(GN)."""
+        result, gi, _ = result_and_gi
+        u_y = result.displacements[6 * gi[3] + 1]
+        assert u_y == pytest.approx(_UY_GM_V18, rel=1e-3)
+
+    def test_gm_equals_R_times_gn(self, result_and_gi):
+        """All 6 DOFs at GM satisfy u_GM = R @ u_GN (rigid-body kinematics)."""
+        result, gi, _ = result_and_gi
+        u_gn = result.displacements[6 * gi[2]: 6 * gi[2] + 6]
+        u_gm = result.displacements[6 * gi[3]: 6 * gi[3] + 6]
+        dx = _A_V18
+        R = np.array([
+            [1, 0, 0, 0, 0, 0],
+            [0, 1, 0, 0, 0, dx],
+            [0, 0, 1, 0, -dx, 0],
+            [0, 0, 0, 1, 0, 0],
+            [0, 0, 0, 0, 1, 0],
+            [0, 0, 0, 0, 0, 1],
+        ])
+        np.testing.assert_allclose(u_gm, R @ u_gn, atol=1e-14)
