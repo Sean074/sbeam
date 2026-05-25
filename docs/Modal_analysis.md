@@ -85,6 +85,8 @@ eigenvalues, eigenvectors = scipy.linalg.eigh(K_free, M_free)
 Natural circular frequencies: `omega = sqrt(max(eigenvalue, 0))`  
 Natural frequencies: `f = omega / (2 * pi)`
 
+**Negative-eigenvalue diagnostic:** if any eigenvalue is below `−1.0 rad²/s²` after solving, a `UserWarning` is emitted listing the count and suggesting the model may have a mechanism or missing constraint. Values between `−1.0` and `0` (typical numerical noise for near-zero rigid-body modes) are clipped silently.
+
 The number of modes returned is the lesser of:
 - `ND` from the EIGRL card
 - Number of free DOFs

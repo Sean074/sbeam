@@ -1,5 +1,7 @@
 """Tests for Step 15: SOL 103 eigenvalue solver."""
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -15,7 +17,7 @@ from sbeam.assembly.stiffness import assemble_global_stiffness, get_spc_dofs, ap
 from sbeam.assembly.mass_matrix import assemble_global_mass
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.model.element import Rbe3
-from sbeam.solver.sol103 import solve_modes, run_sol103
+from sbeam.solver.sol103 import solve_modes, run_sol103, _postprocess_modes, _NEG_EIGENVALUE_TOL
 
 
 # ---- Model parameters -------------------------------------------------------
@@ -264,3 +266,31 @@ class TestMaxNormalisation:
             # max over free DOFs
             max_abs = np.max(np.abs(phi))
             assert max_abs == pytest.approx(1.0, abs=1e-10)
+
+
+class TestNegativeEigenvalueWarning:
+    def test_significantly_negative_eigenvalue_warns(self):
+        """Eigenvalue well below threshold triggers a UserWarning."""
+        eigenvalues = np.array([-50.0, 100.0, 400.0])
+        eigenvectors = np.eye(3)
+        with pytest.warns(UserWarning, match="mechanism"):
+            freqs, _ = _postprocess_modes(eigenvalues, eigenvectors, "MASS")
+        assert freqs[0] == pytest.approx(0.0)
+        assert freqs[1] == pytest.approx(np.sqrt(100.0) / (2.0 * np.pi))
+
+    def test_negative_eigenvalue_count_in_message(self):
+        """Warning message reports the correct count of offending eigenvalues."""
+        eigenvalues = np.array([-10.0, -5.0, 200.0])
+        eigenvectors = np.eye(3)
+        with pytest.warns(UserWarning, match="2 eigenvalue"):
+            _postprocess_modes(eigenvalues, eigenvectors, "MASS")
+
+    def test_small_noise_below_threshold_no_warning(self):
+        """Eigenvalues between _NEG_EIGENVALUE_TOL and 0 are clipped silently."""
+        eigenvalues = np.array([_NEG_EIGENVALUE_TOL + 0.5, 0.0, 100.0])
+        eigenvectors = np.eye(3)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            freqs, _ = _postprocess_modes(eigenvalues, eigenvectors, "MASS")
+        assert freqs[0] == pytest.approx(0.0)
+        assert freqs[1] == pytest.approx(0.0)

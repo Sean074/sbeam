@@ -22,6 +22,7 @@ from sbeam.results.results import Sol103Result
 
 
 _DENSE_THRESHOLD = 1200  # n_free <= this → use dense eigh (200 elements × 6 DOFs)
+_NEG_EIGENVALUE_TOL = -1.0  # rad²/s²; eigenvalues below this suggest a mechanism
 
 
 def solve_modes(K_free, M_free, eigrl, force_dense: bool = False) -> tuple:
@@ -114,6 +115,14 @@ def _solve_modes_sparse(K_csr, M_csr, nd: int, n: int, norm: str) -> tuple:
 
 def _postprocess_modes(eigenvalues: np.ndarray, eigenvectors: np.ndarray, norm: str) -> tuple:
     """Convert eigenvalues to Hz and apply MAX normalisation if requested."""
+    neg_mask = eigenvalues < _NEG_EIGENVALUE_TOL
+    if neg_mask.any():
+        n_neg = int(neg_mask.sum())
+        warnings.warn(
+            f"{n_neg} eigenvalue(s) below {_NEG_EIGENVALUE_TOL} rad²/s² before clipping; "
+            "model may have a mechanism or missing constraint — check SPC cards and connectivity.",
+            stacklevel=2,
+        )
     freqs_hz = np.sqrt(np.maximum(eigenvalues, 0.0)) / (2.0 * np.pi)
     if norm == "MAX":
         for i in range(eigenvectors.shape[1]):

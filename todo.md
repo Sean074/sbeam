@@ -36,10 +36,6 @@ Items from the 2026-05-24 code review. Full detail in `development_plan_bugs_tod
 
 From the 2026-05-24 code review:
 
-- **[R2] Negative eigenvalues silently clipped** (`solver/sol103.py:117`) — `np.maximum(λ, 0)`
-  clips negative eigenvalues without any warning. Models with mechanisms return 0 Hz modes
-  instead of a diagnostic. Add `warnings.warn` if any λ < −tol before clipping.
-
 - **[R3] Duplicate PBAR / MAT1 / LOAD SIDs silently overwrite** (`parser/bdf_reader.py:130,
   142, 348`) — GRID raises on duplicates; PBAR/MAT1/LOAD do not. Add the same guard for
   consistency.
