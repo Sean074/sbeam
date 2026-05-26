@@ -1,5 +1,7 @@
 """Load vector assembly for FEA."""
 
+from typing import Optional
+
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
@@ -41,14 +43,24 @@ def _apply_moments_to_vector(
 
 
 def _apply_grav_to_vector(
-    grav: Grav, bulk: BulkData, f_vec: np.ndarray, grid_index: dict, scale: float = 1.0
+    grav: Grav,
+    bulk: BulkData,
+    f_vec: np.ndarray,
+    grid_index: dict,
+    scale: float = 1.0,
+    M: Optional[np.ndarray] = None,
 ) -> None:
     """Add gravity body-force contribution to f_vec in-place.
 
     f_grav = scale * M_global @ a_field, where a_field has G*[N1,N2,N3] at every
     translational DOF triplet and zero at rotational DOFs.
+
+    M is the pre-assembled global mass matrix; if None it is assembled here (single-GRAV
+    fast-path, avoids the import in the common case where the caller pre-assembles it).
     """
-    from sbeam.assembly.mass_matrix import assemble_global_mass
+    if M is None:
+        from sbeam.assembly.mass_matrix import assemble_global_mass
+        M = assemble_global_mass(bulk)
 
     a_global = to_global(
         np.array([grav.n1, grav.n2, grav.n3]), grav.cid, bulk.cord2rs
@@ -61,7 +73,6 @@ def _apply_grav_to_vector(
         a_field[6 * i + 1] = a_global[1]
         a_field[6 * i + 2] = a_global[2]
 
-    M = assemble_global_mass(bulk)
     f_vec += scale * (M @ a_field)
 
 
@@ -90,6 +101,20 @@ def assemble_load_vector(bulk: BulkData, load_sid: int) -> np.ndarray:
     f_vec = np.zeros(n)
     cord2rs = bulk.cord2rs
 
+    # Pre-assemble mass matrix once if any GRAV loads are present.
+    grav_sids_needed = set()
+    if load_sid in bulk.loads:
+        for (_, sid_i) in bulk.loads[load_sid].components:
+            if sid_i in bulk.gravs:
+                grav_sids_needed.add(sid_i)
+    elif load_sid in bulk.gravs:
+        grav_sids_needed.add(load_sid)
+
+    M = None
+    if grav_sids_needed:
+        from sbeam.assembly.mass_matrix import assemble_global_mass
+        M = assemble_global_mass(bulk)
+
     if load_sid in bulk.loads:
         # LOAD card: f = s * sum(scale_i * load_sid_i)
         load = bulk.loads[load_sid]
@@ -101,7 +126,7 @@ def assemble_load_vector(bulk: BulkData, load_sid: int) -> np.ndarray:
             if sid_i in bulk.moments:
                 _apply_moments_to_vector(f_vec, bulk.moments[sid_i], grid_index, cord2rs, scale=combined_scale)
             if sid_i in bulk.gravs:
-                _apply_grav_to_vector(bulk.gravs[sid_i], bulk, f_vec, grid_index, scale=combined_scale)
+                _apply_grav_to_vector(bulk.gravs[sid_i], bulk, f_vec, grid_index, scale=combined_scale, M=M)
     else:
         # Direct FORCE, MOMENT, or GRAV SID
         if load_sid in bulk.forces:
@@ -109,6 +134,6 @@ def assemble_load_vector(bulk: BulkData, load_sid: int) -> np.ndarray:
         if load_sid in bulk.moments:
             _apply_moments_to_vector(f_vec, bulk.moments[load_sid], grid_index, cord2rs)
         if load_sid in bulk.gravs:
-            _apply_grav_to_vector(bulk.gravs[load_sid], bulk, f_vec, grid_index)
+            _apply_grav_to_vector(bulk.gravs[load_sid], bulk, f_vec, grid_index, M=M)
 
     return f_vec

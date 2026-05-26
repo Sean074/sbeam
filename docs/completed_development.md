@@ -912,3 +912,15 @@ calls. `f_local[0]` is no longer read in `recover_bar_stresses`.
 **Acceptance test:**
 - `tests/assembly/test_loads.py::TestAssembleLoadVector::test_unknown_load_sid_raises` — calls `assemble_load_vector` with a SID (99) not present in any bulk dict; asserts `ValueError` is raised with a message matching `"Load SID 99 not found"`.
 - 464 tests pass, 0 failures.
+
+---
+
+### R7: GRAV Assembles Global Mass Matrix on Every Call ✅ FIXED
+
+**Root cause:** `_apply_grav_to_vector` in `sbeam/assembly/load_vector.py` called `assemble_global_mass(bulk)` unconditionally on each invocation. A `LOAD` card combining two GRAV SIDs caused the full O(n_elements) mass assembly to run twice; n GRAV components → n assemblies.
+
+**Fix (`sbeam/assembly/load_vector.py`):**
+- `assemble_load_vector` now scans for any GRAV SIDs that will be applied (from the LOAD card components or from a direct GRAV SID) and pre-assembles the mass matrix once, before the loop. The resulting `M` is passed into each `_apply_grav_to_vector` call.
+- `_apply_grav_to_vector` gains an optional `M` parameter (default `None`). When `None`, it assembles `M` itself — preserving correct behaviour for any direct caller that does not pre-assemble.
+
+**Acceptance test:** No new test required — existing GRAV tests in `tests/assembly/test_loads.py` and `tests/integration/test_verification.py` exercise the same code path and continue to pass. 464 tests pass, 0 failures.

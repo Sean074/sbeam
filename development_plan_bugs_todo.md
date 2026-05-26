@@ -16,21 +16,6 @@ Critical design review performed against `docs/code_review.md`. All 441 tests pa
 
 ---
 
-### [MINOR] R7 — GRAV assembles mass matrix on every call (performance)
-
-**File:** `sbeam/assembly/load_vector.py:64`
-
-```
-[MINOR] assembly/load_vector.py:64 — _apply_grav_to_vector calls assemble_global_mass(bulk)
-        on every invocation.  A LOAD card combining two GRAV SIDs assembles mass twice.
-WHY:    Assembly is O(n_elements) and for large models with multiple GRAV components is
-        unnecessarily repeated.
-FIX:    Accept an optional pre-assembled M argument or cache the assembled mass at the
-        call site in assemble_load_vector before iterating over LOAD components.
-```
-
----
-
 ### [MINOR] R8 — Sparse eigsh path (n > 1,200 DOFs) has no test coverage
 
 **File:** `sbeam/solver/sol103.py:84–112`
@@ -109,6 +94,7 @@ FIX:  Add a smoke test that calls main.main() with a known BDF path and checks t
 | O4 | ~~Fix end-A axial stress sign (R4) — change `fx_a` to `-f_local[0]` or `f_local[6]`~~ **DONE** | Trivial | Medium |
 | O5 | ~~Extend f06 stress to D/E/F points (R5) — loop over recovery point dict~~ **DONE** | Small | Medium |
 | O6 | ~~Warn on missing load SID (R6) — raise ValueError early in assemble_load_vector~~ **DONE** | Trivial | Medium |
+| O6 | ~~Cache GRAV mass matrix at call site (R7) — pre-assemble once in assemble_load_vector~~ **DONE** | Small | Low |
 | O7 | Test sparse eigsh path (R8) — patch threshold in pytest | Small | Medium |
 
 ---

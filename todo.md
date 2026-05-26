@@ -36,11 +36,6 @@ Items from the 2026-05-24 code review. Full detail in `development_plan_bugs_tod
 
 From the 2026-05-24 code review:
 
-- **[R7] GRAV re-assembles mass matrix per call** (`assembly/load_vector.py:64`) — each call to
-  `_apply_grav_to_vector` calls `assemble_global_mass(bulk)`. For LOAD cards with multiple GRAV
-  components this is called n_grav times. Cache the assembled M at the `assemble_load_vector`
-  call site.
-
 - **[R8] Sparse eigsh path untested** (`solver/sol103.py:84–112`) — `_DENSE_THRESHOLD=1200`
   means all test models use the dense path. The sigma=0 ARPACK path has zero coverage. Add a
   test that patches the threshold or uses a large enough synthetic model to exercise the sparse
