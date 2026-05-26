@@ -78,11 +78,29 @@ pytest
 - **SOL 101** — Linear statics: nodal displacements, SPC reactions, CBAR end forces/moments, stress recovery
 - **SOL 103** — Normal modes: natural frequencies (Hz and rad/s), normalised mode shapes, modal mass fractions
 
-## Limitations (Phase 1)
+## Known Limitations
 
-- Global coordinate system (CID 0) only
-- Uniform cross-section elements (no tapered beams)
-- Euler-Bernoulli beam theory (shear deformation neglected)
+### Beam theory
+- **Euler-Bernoulli only** — Timoshenko shear correction (PBAR K1/K2) is not applied. K1/K2 fields are parsed but silently ignored, which is the correct assumption for slender beams where shear deformation is negligible.
+- **Uniform cross-section only** — tapered beams are not supported. `PBARL` (standard shape library) is not supported; cross-section properties must be entered directly via `PBAR`.
+
+### Coordinate systems
+- **`CORD2R` only** — `CORD2C`, `CORD2S`, and `CORD1R` are not supported.
+- **`GRAV` requires CID=0** — a non-zero CID on a `GRAV` card raises a parse error.
+
+### Elements
+- **`RBE3` simplified** — uses same-DOF weighted averaging; rotation-to-translation lever-arm coupling across an offset is not applied. Use `RBAR` for kinematically exact rigid connections when grid offsets are present.
+- **`CBUSH` requires CID=0** — element offsets are not supported.
+
+### Loads
+- **`PLOAD1` not supported** — distributed beam loads are not implemented. A `PLOAD1` card in the BDF is currently silently dropped with no user-visible warning. Do not use `PLOAD1`; a pre-solve validator warning is planned for a future release.
+
+### Solvers
+- **SOL 101 and SOL 103 only** — frequency response (SOL 108 / SOL 111), transient response (SOL 109 / SOL 112), and buckling (SOL 105) are not yet implemented.
+
+### General
+- No hard element count limit; memory and compute time are the practical constraints.
+- Results are not certified for safety-critical or regulated structural design — see the Disclaimer below.
 
 ## Author
 

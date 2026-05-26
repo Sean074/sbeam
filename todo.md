@@ -38,10 +38,6 @@ From the 2026-05-24 code review:
 
 Pre-existing MINOR items:
 
-- **[DOC1] README "Known Limitations" section** — no Timoshenko (Phase 1), no buckling, CORD2R
-  only, RBE2 lever-arm limitation (pending R1 resolution). Makes constraints visible to first-time
-  users.
-
 - **[DOC2] Tutorial worked example in `docs/Methods.ipynb`** — run a model end-to-end against the
   bundled sample BDF and verify identified results against analytical truth. Currently the notebook
   is reference theory only.
