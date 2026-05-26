@@ -504,6 +504,26 @@ text was either removed in an earlier session or never formally written into the
 changes required. The "NASTRAN f06 import" item remains in the Future Development table in
 `development_plan_bugs_todo.md` and will be addressed in Phase 3+.
 
+### DOC2: Methods.ipynb — End-to-End Tutorial Section ✅ COMPLETE
+
+**Objective:** Add Section 10 to `docs/Methods.ipynb` demonstrating an end-to-end run of the
+`sbeam` solver against bundled sample BDFs and comparing results to closed-form analytical truth.
+The notebook was previously reference theory only.
+
+**Changes made:**
+- `docs/Methods.ipynb` — added 8 cells forming Section 10 (Worked Example):
+  - 10.1 SOL 101: parse `sample/val_cantilever_static.bdf`, run `run_sol101`, compare tip
+    deflection Tz at node 11 to δ = PL³/3EI = 2.0001 mm (error < 0.0001%); verify SPC
+    reaction Fz = 1000.0 N (error 0.0000%).
+  - 10.2 SOL 103: parse `sample/val_cantilever_modes.bdf`, run `run_sol103`, compare f₁
+    to (β₁²/2π)√(EI/ρAL⁴) = 2.5784 Hz (error < 0.001%).
+  - 10.3 Summary table with actual vs analytical values and error bounds.
+  - `sys.path` injection so the notebook runs from either `docs/` or repo root.
+  - `assert` guards so failures are visible rather than silent.
+
+**Acceptance:** All three assertions pass with zero failures. Results match closed-form to the
+precision limits documented in Sections 5 and 9 of the notebook.
+
 ---
 
 ## Dependency Map

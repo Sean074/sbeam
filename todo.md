@@ -38,10 +38,6 @@ From the 2026-05-24 code review:
 
 Pre-existing MINOR items:
 
-- **[DOC2] Tutorial worked example in `docs/Methods.ipynb`** — run a model end-to-end against the
-  bundled sample BDF and verify identified results against analytical truth. Currently the notebook
-  is reference theory only.
-
 - **[VAL1] Viewer pre-solve input validation** — before running SOL 101/103, warn if: zero-length
   elements detected, no SPC defined, **unsupported cards present (e.g. PLOAD1)**, inconsistent
   units flag. Show inline `st.warning` rather than crashing in the solver. **Required before S30
