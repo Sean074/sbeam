@@ -12,73 +12,7 @@ Completed steps are recorded in `docs/completed_development.md`.
 
 ## Code Review — 2026-05-24
 
-Critical design review performed against `docs/code_review.md`. All 441 tests pass. Findings below.
-
----
-
-### [MINOR] R2 — Negative eigenvalues silently clipped to 0 Hz
-
-**File:** `sbeam/solver/sol103.py:117`
-
-```
-[MINOR] solver/sol103.py:117 — np.maximum(eigenvalues, 0.0) clips negative λ without warning.
-WHY:    A negative eigenvalue indicates a non-positive-definite reduced K — typically an
-        unconstrained mechanism (model error). Silently returning 0 Hz masks the defect.
-        The review standard states: "do not silently take abs(λ)".
-FIX:    Before clipping, check: if np.any(eigenvalues < -tol): warnings.warn(...)
-        with the number and magnitude of negative eigenvalues.
-```
-
----
-
-### [MINOR] R3 — Duplicate PBAR, MAT1, LOAD SIDs silently overwrite
-
-**Files:** `sbeam/parser/bdf_reader.py:130, 142, 348`
-
-```
-[MINOR] parser/bdf_reader.py:130,142,348 — _handle_pbar, _handle_mat1, _handle_load
-        overwrite bulk dicts without checking for duplicate IDs.
-WHY:    GRID raises ValueError on duplicate GID (line 104); CORD2R, PBUSH, RBAR do too.
-        PBAR, MAT1, LOAD, CONM2 are inconsistently unguarded — silent overwrite changes
-        the model without any user-visible signal.
-FIX:    Add `if pid in bulk.pbars: raise ValueError(...)` before each assignment,
-        mirroring the existing duplicate-GRID guard.
-```
-
----
-
-### [MINOR] R4 — Axial stress sign wrong at end A for combined axial+bending
-
-**File:** `sbeam/solver/sol101.py:149`
-
-```
-[MINOR] solver/sol101.py:149 — _stress_at_point called with fx_a = f_local[0] for end A.
-WHY:    f_local[0] is the force the element exerts on node A in the local +x direction.
-        For tension (u_B > 0, u_A = 0): f_local[0] = −EA/L·u_B < 0 and
-        f_local[6] = +EA/L·u_B > 0.  The internal axial force P = f_local[6] = −f_local[0].
-        Using f_local[0] directly gives σ = f_local[0]/A = −P/A — wrong sign at end A.
-        Pure bending (no axial) is unaffected; all current verification tests are bending-only.
-FIX:    Use P = f_local[6] (or equivalently −f_local[0]) as the axial resultant
-        when computing stress at BOTH ends. Rename the parameter in _stress_at_point
-        to `axial_resultant` to remove the ambiguity.
-```
-
----
-
-### [MINOR] R5 — f06 BAR STRESSES writes only recovery point C; D/E/F omitted
-
-**File:** `sbeam/results/f06_writer.py:140–148`
-
-```
-[MINOR] results/f06_writer.py:140 — f06 stress table header says "SA(END-A) SB(END-B)"
-        and writes only bs.sa and bs.sb (C recovery point). bs.sa_d/sb_d/sa_e/sb_e/sa_f/sb_f
-        are computed in recover_bar_stresses but never appear in the output.
-WHY:    Users who define PBAR D/E/F recovery points get no output for those points,
-        with no warning that they are absent.
-FIX:    Extend the f06 block to a multi-line format that lists all four PBAR recovery
-        points (C/D/E/F) for each end, or at minimum emit all four points on separate
-        rows in the existing table.
-```
+Critical design review performed against `docs/code_review.md`. All 441 tests passed at review time; 463 pass as of 2026-05-25 (R2–R5 fixes). Findings below; resolved items removed.
 
 ---
 
@@ -186,10 +120,10 @@ FIX:  Add a smoke test that calls main.main() with a known BDF path and checks t
 | ID | Opportunity | Effort | Value |
 |----|-------------|--------|-------|
 | O1 | ~~Fix RBE2 lever arm (R1) — reuse the RBAR R matrix already in the same function~~ **DONE** | Small | High |
-| O2 | Add negative-eigenvalue warning (R2) — one `warnings.warn` call | Trivial | Medium |
-| O3 | Add PBAR/MAT1/LOAD duplicate guards (R3) — three `if id in dict` checks | Trivial | Medium |
-| O4 | Fix end-A axial stress sign (R4) — change `fx_a` to `-f_local[0]` or `f_local[6]` | Trivial | Medium |
-| O5 | Extend f06 stress to D/E/F points (R5) — loop over recovery point dict | Small | Medium |
+| O2 | ~~Add negative-eigenvalue warning (R2) — one `warnings.warn` call~~ **DONE** | Trivial | Medium |
+| O3 | ~~Add PBAR/MAT1/LOAD duplicate guards (R3) — three `if id in dict` checks~~ **DONE** | Trivial | Medium |
+| O4 | ~~Fix end-A axial stress sign (R4) — change `fx_a` to `-f_local[0]` or `f_local[6]`~~ **DONE** | Trivial | Medium |
+| O5 | ~~Extend f06 stress to D/E/F points (R5) — loop over recovery point dict~~ **DONE** | Small | Medium |
 | O6 | Warn on missing load SID (R6) — one `warnings.warn` call after assembly | Trivial | Medium |
 | O7 | Test sparse eigsh path (R8) — patch threshold in pytest | Small | Medium |
 

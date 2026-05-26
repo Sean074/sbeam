@@ -846,6 +846,31 @@ For zero offset R = I, so coincident RBE2 behaviour is unchanged.
 - `tests/integration/test_verification.py::TestV18Rbe2LeverArm` — cantilever with eccentric RBE2 (a=0.5), verifies u_y(GM) = 6.5e-6 m vs analytical, and u_GM = R @ u_GN to 1e-14 tolerance
 - 450 tests pass, 0 failures.
 
+### R2: Negative Eigenvalues Silently Clipped to 0 Hz ✅ FIXED
+
+**Root cause:** `_postprocess_modes` in `sbeam/solver/sol103.py` called `np.maximum(eigenvalues, 0.0)` before computing frequencies. A negative eigenvalue (indicating a non-positive-definite reduced K — typically an unconstrained mechanism) was silently zeroed with no diagnostic.
+
+**Fix (`sbeam/solver/sol103.py`):** Added a `_NEG_EIGENVALUE_TOL = -1.0` threshold and a `warnings.warn` before the clip: if any eigenvalue is below the tolerance, the count and magnitude are reported. The clip itself is retained so frequencies remain real.
+
+**Acceptance test:**
+- `tests/solver/test_sol103.py::TestNegativeEigenvalueWarning` — synthetic K/M with a planted negative eigenvalue; asserts `warnings.warn` fires with the expected count and that the returned frequency is 0 Hz.
+- 463 tests pass, 0 failures.
+
+---
+
+### R3: Duplicate PBAR, MAT1, LOAD SIDs Silently Overwrote ✅ FIXED
+
+**Root cause:** `_handle_pbar`, `_handle_mat1`, and `_handle_load` in `sbeam/parser/bdf_reader.py` assigned directly to the bulk dicts without checking for duplicate IDs. `GRID` and `CORD2R` already raised `ValueError` on collision; `PBAR`, `MAT1`, and `LOAD` did not, so a re-declared card silently replaced the first without any user-visible signal.
+
+**Fix (`sbeam/parser/bdf_reader.py`):** Added `if pid in bulk.pbars: raise ValueError(...)` before the `PBAR` assignment (line 117), and equivalent guards for `MAT1` (line 140) and `LOAD` (line 343), mirroring the existing duplicate-GRID pattern.
+
+**Acceptance test:**
+- `tests/parser/test_geometry.py::TestDuplicatePbar`, `TestDuplicateMat1` — assert `ValueError` is raised on re-declaration.
+- `tests/parser/test_loads.py::TestDuplicateLoad` — same for `LOAD` SID collision.
+- 463 tests pass, 0 failures.
+
+---
+
 ### R4: Axial Stress Sign Wrong at End A for Combined Axial+Bending ✅ FIXED
 
 **Root cause:** `recover_bar_stresses` in `sbeam/solver/sol101.py` passed `f_local[0]` (Fx at end
@@ -863,3 +888,15 @@ calls. `f_local[0]` is no longer read in `recover_bar_stresses`.
   with transverse tip load P and axial tension F. Verifies that the axial contribution at end A
   is `+F/A` (not `-F/A`) by diffing combined vs bending-only result; also checks end B stress = F/A.
 - 458 tests pass, 0 failures.
+
+---
+
+### R5: f06 BAR STRESSES Wrote Only Recovery Point C; D/E/F Omitted ✅ FIXED
+
+**Root cause:** `write_sol101_f06` in `sbeam/results/f06_writer.py` wrote only `bs.sa` and `bs.sb` (the C recovery point). The D/E/F attributes (`sa_d`, `sb_d`, `sa_e`, `sb_e`, `sa_f`, `sb_f`) were computed by `recover_bar_stresses` but never emitted to the f06, with no warning that they were absent.
+
+**Fix (`sbeam/results/f06_writer.py`):** Replaced the single-line stress output with a loop over the `_stress_pts` table `[("C", "sa", "sb", "c1", "c2"), ("D", …), ("E", …), ("F", …)]`. Each point is only written if the corresponding PBAR recovery-point coordinates are non-zero, matching the NASTRAN convention of omitting undefined points.
+
+**Acceptance test:**
+- `tests/results/test_f06_sol101.py::TestF06RecoveryPoints` — PBAR with all four C/D/E/F recovery points; verifies all four rows appear in the f06 stress block with correct stress values; also verifies that a PBAR with only C defined omits D/E/F rows.
+- 463 tests pass, 0 failures.
