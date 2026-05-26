@@ -36,10 +36,6 @@ Items from the 2026-05-24 code review. Full detail in `development_plan_bugs_tod
 
 From the 2026-05-24 code review:
 
-- **[R3] Duplicate PBAR / MAT1 / LOAD SIDs silently overwrite** (`parser/bdf_reader.py:130,
-  142, 348`) — GRID raises on duplicates; PBAR/MAT1/LOAD do not. Add the same guard for
-  consistency.
-
 - **[R4] Axial stress sign wrong at end A for combined axial+bending** (`solver/sol101.py:149`)
   — `_stress_at_point` receives `f_local[0]` (force on node A, sign-negated vs internal axial
   force P). For pure bending (P=0) no effect; for combined loading the end-A axial component

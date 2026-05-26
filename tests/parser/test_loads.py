@@ -177,3 +177,13 @@ class TestValidation:
         ]
         with pytest.raises(ValueError, match="999"):
             parse_bulk_data(lines)
+
+
+class TestDuplicateLOADSID:
+    def test_duplicate_load_sid_raises(self):
+        lines = [
+            "LOAD, 100, 1.0, 1.0, 10",
+            "LOAD, 100, 2.0, 1.0, 20",
+        ]
+        with pytest.raises(ValueError, match="Duplicate LOAD SID 100"):
+            parse_bulk_data(lines)

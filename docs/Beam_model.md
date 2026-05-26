@@ -585,7 +585,7 @@ Accepts a list of BDF text lines (bulk data section only). Supports:
 Cards recognised: `CORD2R`, `GRID`, `PBAR`, `PBUSH`, `MAT1`, `CBAR`, `CBUSH`, `PLOTEL`, `CONM2`, `RBE3`, `RBE2`, `SPC`, `SPC1`, `FORCE`, `MOMENT`, `LOAD`, `EIGRL`.
 Structural markers `BEGIN BULK` / `ENDDATA` are silently skipped.
 All other keywords issue `warnings.warn(…, UserWarning)` and are skipped.
-Duplicate GID raises `ValueError`.
+Duplicate GID, PID (PBAR), MID (MAT1), or LOAD SID raises `ValueError`.
 
 **Ordering constraints:** PBAR and MAT1 must appear before the CBAR elements that reference them. PBUSH must appear before the CBUSH elements that reference it. CORD2R cards may appear in any order relative to each other; cycles in `RID` references raise `ValueError`.
 
@@ -605,7 +605,7 @@ Duplicate GID raises `ValueError`.
 A valid model must satisfy:
 - Every CBAR references an existing PBAR (by PID) and two existing GRIDs.
 - Every PBAR references an existing MAT1 (by MID).
-- No duplicate GIDs, EIDs, PIDs, MIDs.
+- No duplicate GIDs, EIDs, PIDs, MIDs, or LOAD SIDs.
 - No zero-length CBAR elements.
 - At least one SPC set defined (SOL 101).
 - No hard CBAR element limit (sparse solver); memory and runtime are the practical constraint.

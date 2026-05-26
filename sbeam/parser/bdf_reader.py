@@ -114,6 +114,8 @@ def _handle_grid(fields: list, bulk: BulkData) -> None:
 
 def _handle_pbar(fields: list, cont, bulk: BulkData) -> None:
     pid = _to_int(fields[1])
+    if pid in bulk.pbars:
+        raise ValueError(f"Duplicate PID {pid}")
     mid = _to_int(fields[2])
     A   = _to_float(fields[3])
     I1  = _to_float(fields[4]) if len(fields) > 4 else 0.0
@@ -135,6 +137,8 @@ def _handle_pbar(fields: list, cont, bulk: BulkData) -> None:
 
 def _handle_mat1(fields: list, bulk: BulkData) -> None:
     mid = _to_int(fields[1])
+    if mid in bulk.mat1s:
+        raise ValueError(f"Duplicate MID {mid}")
     E   = _to_float(fields[2])
     G   = _to_float(fields[3]) if len(fields) > 3 else 0.0
     nu  = _to_float(fields[4]) if len(fields) > 4 else 0.0
@@ -336,6 +340,8 @@ def _handle_moment(fields: list, bulk: BulkData) -> None:
 
 def _handle_load(fields: list, cont, bulk: BulkData) -> None:
     sid = _to_int(fields[1])
+    if sid in bulk.loads:
+        raise ValueError(f"Duplicate LOAD SID {sid}")
     s   = _to_float(fields[2])
     raw = list(fields[3:])
     if cont is not None:

@@ -179,6 +179,26 @@ class TestDuplicateGID:
             parse_bulk_data(lines)
 
 
+class TestDuplicatePID:
+    def test_duplicate_pid_raises(self):
+        lines = [
+            "PBAR, 1, 1, 0.01",
+            "PBAR, 1, 1, 0.02",
+        ]
+        with pytest.raises(ValueError, match="Duplicate PID 1"):
+            parse_bulk_data(lines)
+
+
+class TestDuplicateMID:
+    def test_duplicate_mid_raises(self):
+        lines = [
+            "MAT1, 1, 2.0e11, 7.692e10, 0.3, 7850.0",
+            "MAT1, 1, 1.0e11, 0.0, 0.3, 0.0",
+        ]
+        with pytest.raises(ValueError, match="Duplicate MID 1"):
+            parse_bulk_data(lines)
+
+
 class TestUnknownCard:
     def test_unknown_card_warns(self):
         lines = [
