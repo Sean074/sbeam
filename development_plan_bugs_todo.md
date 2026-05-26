@@ -12,23 +12,7 @@ Completed steps are recorded in `docs/completed_development.md`.
 
 ## Code Review — 2026-05-24
 
-Critical design review performed against `docs/code_review.md`. All 441 tests passed at review time; 463 pass as of 2026-05-25 (R2–R5 fixes). Findings below; resolved items removed.
-
----
-
-### [MINOR] R6 — Unknown load SID returns zero load vector without warning
-
-**File:** `sbeam/assembly/load_vector.py:68`
-
-```
-[MINOR] assembly/load_vector.py:68 — if load_sid is not in bulk.loads, bulk.forces,
-        bulk.moments, or bulk.gravs, assemble_load_vector silently returns a zero vector.
-WHY:    A typo in the case control LOAD SID will produce a zero-load solution with no
-        diagnostic. The solver then reports "successful" with trivially zero displacements.
-FIX:    After the if/else, check `if not np.any(f_vec):` and whether load_sid was
-        actually found in any load dict; emit warnings.warn if no loads contributed.
-        Better: validate load_sid exists before assembly and raise ValueError early.
-```
+Critical design review performed against `docs/code_review.md`. All 441 tests passed at review time; 464 pass as of 2026-05-25 (R2–R6 fixes). Findings below; resolved items removed.
 
 ---
 
@@ -124,7 +108,7 @@ FIX:  Add a smoke test that calls main.main() with a known BDF path and checks t
 | O3 | ~~Add PBAR/MAT1/LOAD duplicate guards (R3) — three `if id in dict` checks~~ **DONE** | Trivial | Medium |
 | O4 | ~~Fix end-A axial stress sign (R4) — change `fx_a` to `-f_local[0]` or `f_local[6]`~~ **DONE** | Trivial | Medium |
 | O5 | ~~Extend f06 stress to D/E/F points (R5) — loop over recovery point dict~~ **DONE** | Small | Medium |
-| O6 | Warn on missing load SID (R6) — one `warnings.warn` call after assembly | Trivial | Medium |
+| O6 | ~~Warn on missing load SID (R6) — raise ValueError early in assemble_load_vector~~ **DONE** | Trivial | Medium |
 | O7 | Test sparse eigsh path (R8) — patch threshold in pytest | Small | Medium |
 
 ---

@@ -900,3 +900,15 @@ calls. `f_local[0]` is no longer read in `recover_bar_stresses`.
 **Acceptance test:**
 - `tests/results/test_f06_sol101.py::TestF06RecoveryPoints` — PBAR with all four C/D/E/F recovery points; verifies all four rows appear in the f06 stress block with correct stress values; also verifies that a PBAR with only C defined omits D/E/F rows.
 - 463 tests pass, 0 failures.
+
+---
+
+### R6: Unknown Load SID Returns Silent Zero Vector ✅ FIXED
+
+**Root cause:** `assemble_load_vector` in `sbeam/assembly/load_vector.py` checked `bulk.loads`, `bulk.forces`, `bulk.moments`, and `bulk.gravs` sequentially in an if/else chain. If `load_sid` was absent from all four dicts, the function returned an all-zero vector with no diagnostic. A typo in the case control `LOAD` SID therefore produced a "successful" solve with trivially zero displacements.
+
+**Fix (`sbeam/assembly/load_vector.py`):** Added an early guard at the top of `assemble_load_vector` that raises `ValueError` with a descriptive message if `load_sid` is absent from every load dictionary, before any vector allocation or assembly occurs.
+
+**Acceptance test:**
+- `tests/assembly/test_loads.py::TestAssembleLoadVector::test_unknown_load_sid_raises` — calls `assemble_load_vector` with a SID (99) not present in any bulk dict; asserts `ValueError` is raised with a message matching `"Load SID 99 not found"`.
+- 464 tests pass, 0 failures.

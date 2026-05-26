@@ -71,7 +71,20 @@ def assemble_load_vector(bulk: BulkData, load_sid: int) -> np.ndarray:
     Handles:
       - Direct FORCE / MOMENT SIDs
       - LOAD card (linear combination of other FORCE/MOMENT SIDs)
+
+    Raises ValueError if load_sid is not found in any load dictionary.
     """
+    if (
+        load_sid not in bulk.loads
+        and load_sid not in bulk.forces
+        and load_sid not in bulk.moments
+        and load_sid not in bulk.gravs
+    ):
+        raise ValueError(
+            f"Load SID {load_sid} not found in LOAD, FORCE, MOMENT, or GRAV bulk data. "
+            "Check the LOAD case control entry."
+        )
+
     grid_index = build_grid_index(bulk)
     n = 6 * len(grid_index)
     f_vec = np.zeros(n)

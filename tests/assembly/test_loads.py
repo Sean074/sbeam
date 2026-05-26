@@ -97,6 +97,15 @@ class TestAssembleLoadVector:
         # Rz at grid 2: dof 6*1+5 = 11
         assert f_vec[11] == pytest.approx(200.0)
 
+    def test_unknown_load_sid_raises(self):
+        """Missing load SID must raise ValueError, not silently return zeros."""
+        bulk = BulkData()
+        bulk.grids[1] = Grid(gid=1, x=0.0, y=0.0, z=0.0)
+        bulk.forces[10] = [Force(sid=10, gid=1, cid=0, f=1000.0, n1=1.0, n2=0.0, n3=0.0)]
+
+        with pytest.raises(ValueError, match="Load SID 99 not found"):
+            assemble_load_vector(bulk, load_sid=99)
+
 
 # ---------------------------------------------------------------------------
 # Step 9 tests — get_spc_dofs
