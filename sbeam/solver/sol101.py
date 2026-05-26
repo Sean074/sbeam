@@ -129,13 +129,11 @@ def recover_bar_stresses(cbar, grids, pbars, mat1s, displacements, grid_index) -
     I1 = pbar.I1
     I2 = pbar.I2
 
-    # End A: f_local[0]=Fx_A, f_local[4]=My_A, f_local[5]=Mz_A
-    # End B: f_local[6]=Fx_B, f_local[10]=My_B, f_local[11]=Mz_B
-    fx_a = f_local[0]
+    # f_local[6] = Fx at end B = internal axial force P, tension-positive.
+    # f_local[0] = Fx at end A is sign-negated (reaction) — do not use for stress.
+    p_axial = f_local[6]
     my_a = f_local[4]
     mz_a = f_local[5]
-
-    fx_b = f_local[6]
     my_b = f_local[10]
     mz_b = f_local[11]
 
@@ -147,13 +145,13 @@ def recover_bar_stresses(cbar, grids, pbars, mat1s, displacements, grid_index) -
     }
     stresses = {
         pt: (
-            _stress_at_point(fx_a, mz_a, my_a, y, z, A, I1, I2),
-            _stress_at_point(fx_b, mz_b, my_b, y, z, A, I1, I2),
+            _stress_at_point(p_axial, mz_a, my_a, y, z, A, I1, I2),
+            _stress_at_point(p_axial, mz_b, my_b, y, z, A, I1, I2),
         )
         for pt, (y, z) in recovery_pts.items()
     }
 
-    axial_stress = fx_b / A if A > 0 else 0.0
+    axial_stress = p_axial / A if A > 0 else 0.0
 
     return BarStress(
         eid=cbar.eid,

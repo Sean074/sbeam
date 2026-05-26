@@ -126,6 +126,42 @@ class TestBarStressRecovery:
         assert abs(bs.sb) < abs(bs.sa)
 
 
+F_AXIAL = 5000.0  # tension force in X at tip
+
+
+def _run_cantilever_combined():
+    """Cantilever with both transverse (Y) and axial (X) tip loads."""
+    bulk = make_cantilever_bulk()
+    # Add axial tension load (separate SID so we can combine via LOAD, or just add to same SID)
+    bulk.forces[10].append(Force(sid=10, gid=2, cid=0, f=F_AXIAL, n1=1.0, n2=0.0, n3=0.0))
+    cc = CaseControl(
+        sol=101,
+        subcases=[SubcaseControl(subcase_id=1, load_sid=10, spc_sid=1)],
+    )
+    return run_sol101(bulk, cc.subcases[0])
+
+
+class TestBarStressCombinedLoading:
+    """R4 regression: axial stress at end A must use P (tension-positive), not Fx_A (negated)."""
+
+    def setup_method(self):
+        self.result_combined = _run_cantilever_combined()
+        self.result_bending, _ = _run_cantilever()
+
+    def test_end_a_axial_contribution_is_positive(self):
+        """Adding axial tension F shifts end-A stress by +F/A (not -F/A)."""
+        sa_combined = self.result_combined.bar_stresses[1].sa
+        sa_bending = self.result_bending.bar_stresses[1].sa
+        axial_contribution = sa_combined - sa_bending
+        assert axial_contribution == pytest.approx(F_AXIAL / A, rel=1e-3)
+
+    def test_end_b_axial_only(self):
+        """End B has zero moment → stress = F/A only."""
+        bs = self.result_combined.bar_stresses[1]
+        expected_sb = F_AXIAL / A
+        assert bs.sb == pytest.approx(expected_sb, rel=1e-3)
+
+
 class TestRunSol101:
     def test_returns_sol101result(self):
         from sbeam.results.results import Sol101Result

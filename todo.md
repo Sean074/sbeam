@@ -36,11 +36,6 @@ Items from the 2026-05-24 code review. Full detail in `development_plan_bugs_tod
 
 From the 2026-05-24 code review:
 
-- **[R4] Axial stress sign wrong at end A for combined axial+bending** (`solver/sol101.py:149`)
-  — `_stress_at_point` receives `f_local[0]` (force on node A, sign-negated vs internal axial
-  force P). For pure bending (P=0) no effect; for combined loading the end-A axial component
-  has the wrong sign. Fix: use `f_local[6]` (= P, tension positive) at both ends.
-
 - **[R5] f06 BAR STRESSES output omits D/E/F recovery points** (`results/f06_writer.py:140`)
   — solver computes all four PBAR recovery points (C/D/E/F) but the f06 writer only outputs
   the C point. Extend the stress block to emit all non-zero recovery points.

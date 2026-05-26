@@ -170,10 +170,15 @@ For each element:
 For each recovery point (C, D, E, F) on the PBAR:
 
 ```
-sigma = F1/A  ±  M2 * z / I1  ±  M3 * y / I2
+sigma = P/A  +  Mz * y / I1  -  My * z / I2
 ```
 
 Where y and z are the recovery point coordinates from the PBAR card. Torsional shear stress is not computed in phase 1.
+
+**Axial sign convention:** The internal axial force P is taken from `f_local[6]` (Fx at end B,
+tension-positive). This value is the same at both ends A and B for a prismatic element with no
+intermediate axial loads. `f_local[0]` (Fx at end A) is the nodal reaction and has the opposite
+sign; it must not be used for stress recovery.
 
 ---
 

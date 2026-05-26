@@ -845,3 +845,21 @@ For zero offset R = I, so coincident RBE2 behaviour is unchanged.
 - `tests/assembly/test_rbe2.py::TestRbe2LeverArm` — unit tests for R matrix rows (X, Y, Z offsets; partial CM; zero offset)
 - `tests/integration/test_verification.py::TestV18Rbe2LeverArm` — cantilever with eccentric RBE2 (a=0.5), verifies u_y(GM) = 6.5e-6 m vs analytical, and u_GM = R @ u_GN to 1e-14 tolerance
 - 450 tests pass, 0 failures.
+
+### R4: Axial Stress Sign Wrong at End A for Combined Axial+Bending ✅ FIXED
+
+**Root cause:** `recover_bar_stresses` in `sbeam/solver/sol101.py` passed `f_local[0]` (Fx at end
+A) as the axial force to `_stress_at_point` for the end A stress calculation. `f_local[0]` is the
+nodal reaction at end A, which is sign-negated relative to the internal axial force P. For pure
+bending (P = 0) this has no effect, but for combined axial + bending the end A axial term was
+computed as `-P/A` instead of `+P/A`.
+
+**Fix (`sbeam/solver/sol101.py`):** Introduced `p_axial = f_local[6]` (Fx at end B, tension-
+positive, equal to internal P for a prismatic element) and used it for both end A and end B stress
+calls. `f_local[0]` is no longer read in `recover_bar_stresses`.
+
+**Acceptance test:**
+- `tests/solver/test_sol101_recovery.py::TestBarStressCombinedLoading` — one-element cantilever
+  with transverse tip load P and axial tension F. Verifies that the axial contribution at end A
+  is `+F/A` (not `-F/A`) by diffing combined vs bending-only result; also checks end B stress = F/A.
+- 458 tests pass, 0 failures.
