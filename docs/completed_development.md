@@ -973,3 +973,47 @@ calls. `f_local[0]` is no longer read in `recover_bar_stresses`.
 - `test_missing_bdf_exits` — passes a non-existent path; asserts `SystemExit` is raised with `"file not found"` in the message.
 
 **Acceptance test:** `tests/test_main.py::TestMainCLI` — 3 tests, all pass. 471 tests pass, 0 failures. `main.py` coverage: 85%.
+
+---
+
+### VAL1: Viewer Pre-Solve Input Validation ✅ COMPLETE
+
+**Objective:** Display `st.warning` banners in the Results tab before the user clicks Run Analysis,
+surfacing model issues that would cause a silent wrong result or an opaque solver crash.
+This also unblocks S30 (PLOAD1 distributed loads), which required a user-visible warning for
+silently-dropped load cards before implementation was safe.
+
+**Deliverables:**
+- `_get_pre_solve_warnings(bulk, cc, parse_warnings) -> list[str]` in `sbeam/viewer/app.py` — pure
+  function (no Streamlit dependency) returning one message per issue found.
+- `_show_pre_solve_warnings(bulk, cc)` wrapper renders each message as `st.warning`.
+- Called in the Results tab immediately above the Run Analysis button.
+- `tests/viewer/test_pre_solve_validation.py` — 16 unit tests covering all checks.
+- `docs/viewer.md` updated with the "Pre-Solve Validation (VAL1)" section.
+
+**Checks performed:**
+
+| Check | Logic |
+|-------|-------|
+| Zero-length CBAR | `sqrt((xB−xA)² + …) == 0.0` for any element |
+| No SPC (SOL 101) | `bulk.spcs` and `bulk.spc1s` both empty; SOL 101 or no CC |
+| No SPC (SOL 103) | Same; warns user of free-free interpretation |
+| SPC SID missing | `sc.spc_sid` not in `bulk.spcs` or `bulk.spc1s` |
+| Unsupported load card | Parser warning string contains a known load card name (PLOAD1, PLOAD2, PLOAD4, RFORCE, DLOAD, TLOAD1/2, RLOAD1/2, ACCEL, ACCEL1, SLOAD) |
+| Zero density (SOL 103) | Any `mat1.rho == 0.0`; SOL 103 context |
+| E-value range | `max(E) / min(E) > 1000` across all MAT1 entries |
+
+**Key decisions:**
+- `_get_pre_solve_warnings` accepts `parse_warnings` as a parameter rather than reading from
+  `st.session_state`, making it unit-testable without a Streamlit session.
+- Warnings are advisory — they do not block the Run Analysis button. The solver's own error
+  handling is the hard stop; VAL1 just surfaces the issue earlier.
+- The PLOAD1 check is parser-warning-based: if the parser emits "Unknown BDF card 'PLOAD1' —
+  skipped", the validator surfaces it. This means the check is automatic for any unsupported
+  load card without needing a dedicated parser hook.
+- For the units heuristic, a 1000× E-value ratio was chosen as a threshold that avoids false
+  positives for common multi-material models (e.g. steel/aluminium ≈ 3×) while catching obvious
+  SI/imperial mix (e.g. 200 GPa vs 30,000 psi ≈ 7000×).
+
+**Acceptance test:** `tests/viewer/test_pre_solve_validation.py` — 16 tests, all pass.
+487 total tests pass, 0 failures.

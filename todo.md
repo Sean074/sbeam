@@ -32,18 +32,6 @@ Items from the 2026-05-24 code review. Full detail in `development_plan_bugs_tod
 
 ---
 
-## MINOR — Fix in this or next PR
-
-From the 2026-05-24 code review:
-
-Pre-existing MINOR items:
-
-- **[VAL1] Viewer pre-solve input validation** — before running SOL 101/103, warn if: zero-length
-  elements detected, no SPC defined, **unsupported cards present (e.g. PLOAD1)**, inconsistent
-  units flag. Show inline `st.warning` rather than crashing in the solver. **Required before S30
-  can be safely deferred — without this, PLOAD1 loads are silently dropped with no user-visible
-  error.**
-
 ---
 
 ## NIT — Optional / next cleanup PR
@@ -81,7 +69,7 @@ Future Phase 3+ items (full descriptions in `development_plan_bugs_todo.md`):
 - Sample model library
 - Parametric sweep
 - f06 results comparison (two-file diff)
-- **[S30] PLOAD1 Distributed Loads** — *(Deferred: VAL1 must warn on PLOAD1 before this is safe.)*
+- **[S30] PLOAD1 Distributed Loads** — *(VAL1 complete: viewer now warns when PLOAD1 cards are present. S30 can be implemented.)*
 - **[S33] Timoshenko Shear Correction (PBAR K1/K2)** — *(Deferred: Euler-Bernoulli is the Phase 1
   assumption; K1/K2 silently ignored, correct for slender beams.)*
 - **[S34-full] Non-Zero Enforced Displacement Enforcement** — *(Deferred: full enforcement; beta

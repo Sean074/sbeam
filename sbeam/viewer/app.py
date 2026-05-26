@@ -329,6 +329,109 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
             st.info("No constraints.")
 
 
+def _get_pre_solve_warnings(
+    bulk: BulkData, cc, parse_warnings: list
+) -> list:
+    """Return pre-solve validation warning strings.
+
+    Checks performed:
+    - Zero-length CBAR elements (singular stiffness matrix).
+    - No SPC/SPC1 constraints (unconstrained model; bad for SOL 101).
+    - SPC SID referenced in case control but absent from bulk.
+    - Unsupported load cards present (e.g. PLOAD1), silently dropped by parser.
+    - MAT1 rho=0 for SOL 103 (mass matrix will be zero → unreliable frequencies).
+    - E-value range >1000x across materials (possible unit inconsistency).
+    """
+    import math
+
+    msgs: list = []
+
+    # 1. Zero-length CBAR elements
+    zero_eids = []
+    for eid, cbar in bulk.cbars.items():
+        ga = bulk.grids.get(cbar.ga)
+        gb = bulk.grids.get(cbar.gb)
+        if ga and gb:
+            L = math.sqrt(
+                (gb.x - ga.x) ** 2 + (gb.y - ga.y) ** 2 + (gb.z - ga.z) ** 2
+            )
+            if L == 0.0:
+                zero_eids.append(eid)
+    if zero_eids:
+        msgs.append(
+            f"Zero-length CBAR element(s) detected: EID {zero_eids}. "
+            "These produce a singular stiffness matrix and will cause the solver to fail."
+        )
+
+    # 2. SPC coverage
+    has_any_spc = bool(bulk.spcs) or bool(bulk.spc1s)
+    if not has_any_spc:
+        if cc is None or cc.sol == 101:
+            msgs.append(
+                "No SPC or SPC1 constraints are defined. "
+                "An unconstrained model has a singular stiffness matrix; SOL 101 will fail."
+            )
+        else:
+            msgs.append(
+                "No SPC or SPC1 constraints are defined. "
+                "For SOL 103 this is valid (free-free analysis); "
+                "the first 6 modes will be near-zero rigid-body modes."
+            )
+    elif cc is not None:
+        for sc in cc.subcases:
+            if sc.spc_sid is not None:
+                if sc.spc_sid not in bulk.spcs and sc.spc_sid not in bulk.spc1s:
+                    msgs.append(
+                        f"Subcase {sc.subcase_id}: SPC SID {sc.spc_sid} is referenced "
+                        "in case control but not found in bulk data."
+                    )
+
+    # 3. Unsupported load cards present (captured as parser warnings)
+    _UNSUPPORTED_LOAD_CARDS = frozenset({
+        "PLOAD", "PLOAD1", "PLOAD2", "PLOAD4",
+        "RFORCE", "DLOAD", "TLOAD1", "TLOAD2",
+        "RLOAD1", "RLOAD2", "ACCEL", "ACCEL1", "SLOAD",
+    })
+    found_unsupported: set = set()
+    for msg in parse_warnings:
+        for card in _UNSUPPORTED_LOAD_CARDS:
+            if card in msg:
+                found_unsupported.add(card)
+    if found_unsupported:
+        card_list = ", ".join(sorted(found_unsupported))
+        msgs.append(
+            f"Unsupported load card(s) present: {card_list}. "
+            "These were ignored during parsing and do not contribute to the load vector."
+        )
+
+    # 4. Zero density for SOL 103
+    if cc is not None and cc.sol == 103:
+        zero_rho_mids = [m.mid for m in bulk.mat1s.values() if m.rho == 0.0]
+        if zero_rho_mids:
+            msgs.append(
+                f"SOL 103: MAT1 MID={zero_rho_mids} have zero density (rho=0). "
+                "The mass matrix will be zero for those elements, producing unreliable frequencies."
+            )
+
+    # 5. Units consistency heuristic
+    e_vals = [m.E for m in bulk.mat1s.values() if m.E > 0.0]
+    if len(e_vals) >= 2:
+        ratio = max(e_vals) / min(e_vals)
+        if ratio > 1000.0:
+            msgs.append(
+                f"Possible unit inconsistency: MAT1 Young's modulus (E) values span a "
+                f"{ratio:.0f}× range across materials. "
+                "Verify all inputs use the same consistent unit system."
+            )
+
+    return msgs
+
+
+def _show_pre_solve_warnings(bulk: BulkData, cc) -> None:
+    for msg in _get_pre_solve_warnings(bulk, cc, st.session_state._parse_warnings):
+        st.warning(msg)
+
+
 def _active_load_sid() -> Optional[int]:
     cc = st.session_state.case_control
     if cc is None or not cc.subcases:
@@ -490,6 +593,8 @@ def main() -> None:
 
     with tab_results:
         st.subheader("Analysis")
+        cc_for_val = st.session_state.case_control
+        _show_pre_solve_warnings(bulk, cc_for_val)
         if st.button("Run Analysis", type="primary"):
             _run_analysis(bulk)
 

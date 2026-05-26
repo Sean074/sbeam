@@ -289,6 +289,30 @@ All interactive result widgets **must** carry a `key=` parameter so Streamlit pe
 
 ---
 
+## Pre-Solve Validation (VAL1)
+
+Before the **Run Analysis** button in the Results tab, `_show_pre_solve_warnings(bulk, cc)` runs
+`_get_pre_solve_warnings(bulk, cc, parse_warnings)` and displays each issue as a yellow
+`st.warning` banner. The user can still run the solver; warnings do not block execution.
+
+**Checks performed:**
+
+| Check | Trigger | Impact |
+|-------|---------|--------|
+| Zero-length CBAR | `L = 0` for any element | Singular stiffness matrix → solver fails |
+| No SPC (SOL 101) | `bulk.spcs` and `bulk.spc1s` both empty, SOL 101 | Unconstrained model → singular K |
+| No SPC (SOL 103) | Same but SOL 103 | Valid for free-free; warns first 6 modes ~0 Hz |
+| SPC SID missing | `sc.spc_sid` not in bulk | Subcase references non-existent constraint set |
+| Unsupported load card | Parser warning contains PLOAD1 / PLOAD2 / PLOAD4 / RFORCE / DLOAD / TLOAD1 / TLOAD2 / RLOAD1 / RLOAD2 / ACCEL / ACCEL1 / SLOAD | Card silently dropped; load vector incomplete |
+| Zero density (SOL 103) | `mat1.rho == 0` for any material, SOL 103 | Mass matrix zero → unreliable frequencies |
+| E-value range | `max(E) / min(E) > 1000` across materials | Possible unit system mismatch |
+
+`_get_pre_solve_warnings` takes `parse_warnings` as an explicit parameter (not session state)
+so it is testable without a running Streamlit session. Unit tests live in
+`tests/viewer/test_pre_solve_validation.py`.
+
+---
+
 ## Run Analysis from Viewer
 
 A **Run Analysis** button in the Results tab:
@@ -324,7 +348,12 @@ Multiple subcases are written sequentially into a single `.f06` file. The f06 te
 
 ## Testing
 
-Integration tests for the viewer live in `tests/viewer/test_apptest_integration.py` and use Streamlit's `AppTest` framework.
+**Pre-solve validation unit tests** live in `tests/viewer/test_pre_solve_validation.py`.
+They call `_get_pre_solve_warnings` directly (no Streamlit session required) and cover all
+five checks: zero-length CBAR, SPC coverage, unsupported load cards, zero density, E-value
+range heuristic.
+
+**Integration tests** for the viewer live in `tests/viewer/test_apptest_integration.py` and use Streamlit's `AppTest` framework.
 
 **Covered flows:**
 
