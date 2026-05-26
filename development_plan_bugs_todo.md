@@ -16,23 +16,6 @@ Critical design review performed against `docs/code_review.md`. All 441 tests pa
 
 ---
 
-### [MINOR] R8 — Sparse eigsh path (n > 1,200 DOFs) has no test coverage
-
-**File:** `sbeam/solver/sol103.py:84–112`
-
-```
-[MINOR] solver/sol103.py:84 — _solve_modes_sparse is unreachable in all current tests
-        because _DENSE_THRESHOLD=1200 exceeds every test model size.
-WHY:    The sigma=0 shift-invert path, ArpackNoConvergence fallback, and sparse Tikhonov
-        regularisation are all untested.  A regression in ARPACK version or SciPy update
-        could break large-model runs silently.
-FIX:    Add a unit test that patches _DENSE_THRESHOLD to 0 (or builds a 2-element model
-        with n_free > 0) and forces the sparse path, verifying the same frequency result
-        as the dense path.
-```
-
----
-
 ### [NIT] R9 — `_DENSE_THRESHOLD` is a bare magic number
 
 **File:** `sbeam/solver/sol103.py:24`
@@ -79,7 +62,7 @@ FIX:  Add a smoke test that calls main.main() with a known BDF path and checks t
 | Q1 | SPC reaction f06 output: NASTRAN outputs SPCFORCE in the global (CID 0) frame, not the CD displacement frame. Current code matches this convention (no CD transform on reactions). Verify intentional. | Low | Open |
 | Q2 | CBUSH with coincident GA/GB raises ValueError, but only at assembly not at parse time — parser (bdf_reader.py:396) does check. OK for Phase 1. | Low | Resolved |
 | Q3 | GRAV CID restriction (only CID=0 supported, parser raises): acceptable for Phase 1 but not documented in "Known Limitations". | Low | Open |
-| Q4 | Sparse eigsh path (#R8) — untested. Risk: SciPy ARPACK update breaks large-model runs silently. | Medium | Open |
+| Q4 | Sparse eigsh path (#R8) — untested. Risk: SciPy ARPACK update breaks large-model runs silently. | Medium | Resolved |
 | Q5 | Does RBE2 non-coincident lever arm affect any shipped example BDFs? All test BDFs use coincident grids — need to verify sample models. | High | Open |
 
 ---
@@ -95,7 +78,7 @@ FIX:  Add a smoke test that calls main.main() with a known BDF path and checks t
 | O5 | ~~Extend f06 stress to D/E/F points (R5) — loop over recovery point dict~~ **DONE** | Small | Medium |
 | O6 | ~~Warn on missing load SID (R6) — raise ValueError early in assemble_load_vector~~ **DONE** | Trivial | Medium |
 | O6 | ~~Cache GRAV mass matrix at call site (R7) — pre-assemble once in assemble_load_vector~~ **DONE** | Small | Low |
-| O7 | Test sparse eigsh path (R8) — patch threshold in pytest | Small | Medium |
+| O7 | ~~Test sparse eigsh path (R8) — patch threshold in pytest~~ **DONE** | Small | Medium |
 
 ---
 

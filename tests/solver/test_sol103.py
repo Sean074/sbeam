@@ -17,7 +17,16 @@ from sbeam.assembly.stiffness import assemble_global_stiffness, get_spc_dofs, ap
 from sbeam.assembly.mass_matrix import assemble_global_mass
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.model.element import Rbe3
-from sbeam.solver.sol103 import solve_modes, run_sol103, _postprocess_modes, _NEG_EIGENVALUE_TOL
+import scipy.sparse.linalg
+
+from sbeam.solver.sol103 import (
+    solve_modes,
+    run_sol103,
+    _postprocess_modes,
+    _solve_modes_dense,
+    _solve_modes_sparse,
+    _NEG_EIGENVALUE_TOL,
+)
 
 
 # ---- Model parameters -------------------------------------------------------
@@ -294,3 +303,85 @@ class TestNegativeEigenvalueWarning:
             freqs, _ = _postprocess_modes(eigenvalues, eigenvectors, "MASS")
         assert freqs[0] == pytest.approx(0.0)
         assert freqs[1] == pytest.approx(0.0)
+
+
+class TestSparseEigshPath:
+    """R8: Cover _solve_modes_sparse (eigsh σ=0, Tikhonov, ArpackNoConvergence fallback).
+
+    _DENSE_THRESHOLD is patched to 0 so every model with at least one free DOF
+    takes the sparse branch regardless of its size.
+    """
+
+    def test_sparse_frequencies_match_dense(self, monkeypatch):
+        """Sparse eigsh frequencies are within 1e-6 relative of dense eigh on the same K/M."""
+        import sbeam.solver.sol103 as sol103_mod
+
+        bulk, cc = _cantilever_cc()
+        grid_index = build_grid_index(bulk)
+        n_dofs = 6 * len(grid_index)
+        K = assemble_global_stiffness(bulk)
+        M = assemble_global_mass(bulk)
+        spc_dofs = get_spc_dofs(bulk, 10, grid_index)
+        K_free, _, free_dofs = apply_spcs(K, np.zeros(n_dofs), spc_dofs)
+        M_free = M[free_dofs, :][:, free_dofs]
+        eigrl = bulk.eigrls[20]
+
+        freqs_dense, _ = _solve_modes_dense(
+            K_free.toarray(), M_free.toarray(), eigrl.nd, eigrl.norm
+        )
+
+        monkeypatch.setattr(sol103_mod, "_DENSE_THRESHOLD", 0)
+        freqs_sparse, _ = solve_modes(K_free, M_free, eigrl)
+
+        assert freqs_sparse == pytest.approx(freqs_dense, rel=1e-6)
+
+    def test_sparse_cantilever_analytical_frequency(self, monkeypatch):
+        """Sparse path via run_sol103: cantilever first mode within 1% of analytical."""
+        import sbeam.solver.sol103 as sol103_mod
+
+        monkeypatch.setattr(sol103_mod, "_DENSE_THRESHOLD", 0)
+        bulk, cc = _cantilever_cc()
+        result = run_sol103(bulk, cc.subcases[0])
+        assert result.frequencies_hz[0] == pytest.approx(F1_CANTILEVER, rel=0.01)
+
+    def test_sparse_tikhonov_zero_mass_dofs(self, monkeypatch):
+        """Sparse Tikhonov path: rho=0 beam + CONM2 leaves most M diagonals at zero."""
+        import sbeam.solver.sol103 as sol103_mod
+
+        monkeypatch.setattr(sol103_mod, "_DENSE_THRESHOLD", 0)
+
+        bulk = _make_bulk()
+        bulk.mat1s[100] = Mat1(mid=100, E=E, G=G, nu=0.3, rho=0.0)
+        bulk.conm2s[1] = Conm2(eid=1, gid=N_ELEM + 1, cid=0, m=10.0)
+        bulk.eigrls[20] = Eigrl(sid=20, nd=2, norm="MASS")
+        bulk.spc1s[10] = [_make_spc1(10, "123456", [1])]
+        cc = CaseControl(
+            sol=103,
+            subcases=[SubcaseControl(subcase_id=1, spc_sid=10, method_sid=20)],
+        )
+        result = run_sol103(bulk, cc.subcases[0])
+        assert result.frequencies_hz[0] > 0.0
+
+    def test_sparse_arpack_no_convergence_falls_back_to_dense(self, monkeypatch):
+        """ArpackNoConvergence triggers a UserWarning and falls back to dense eigh."""
+        bulk, cc = _cantilever_cc()
+        grid_index = build_grid_index(bulk)
+        n_dofs = 6 * len(grid_index)
+        K = assemble_global_stiffness(bulk)
+        M = assemble_global_mass(bulk)
+        spc_dofs = get_spc_dofs(bulk, 10, grid_index)
+        K_free, _, free_dofs = apply_spcs(K, np.zeros(n_dofs), spc_dofs)
+        M_free = M[free_dofs, :][:, free_dofs]
+        eigrl = bulk.eigrls[20]
+        n = K_free.shape[0]
+
+        def _raise_arpack(*_args, **_kwargs):
+            raise scipy.sparse.linalg.ArpackNoConvergence("test", np.array([]), np.array([]))
+
+        monkeypatch.setattr(scipy.sparse.linalg, "eigsh", _raise_arpack)
+
+        with pytest.warns(UserWarning, match="eigsh failed"):
+            freqs, _ = _solve_modes_sparse(K_free, M_free, eigrl.nd, n, eigrl.norm)
+
+        assert len(freqs) > 0
+        assert freqs[0] == pytest.approx(F1_CANTILEVER, rel=0.01)

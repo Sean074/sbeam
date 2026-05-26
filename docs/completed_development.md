@@ -924,3 +924,18 @@ calls. `f_local[0]` is no longer read in `recover_bar_stresses`.
 - `_apply_grav_to_vector` gains an optional `M` parameter (default `None`). When `None`, it assembles `M` itself — preserving correct behaviour for any direct caller that does not pre-assemble.
 
 **Acceptance test:** No new test required — existing GRAV tests in `tests/assembly/test_loads.py` and `tests/integration/test_verification.py` exercise the same code path and continue to pass. 464 tests pass, 0 failures.
+
+---
+
+### R8: Sparse eigsh Path Untested ✅ FIXED
+
+**Root cause:** `_DENSE_THRESHOLD = 1200` in `sbeam/solver/sol103.py` exceeds the free-DOF count of every test model (largest is a 10-element cantilever with ~60 free DOFs). As a result `_solve_modes_sparse` — including its sigma=0 shift-invert call, the Tikhonov regularisation for zero-mass DOFs, and the `ArpackNoConvergence` fallback — had 0% test coverage.
+
+**Fix (`tests/solver/test_sol103.py`):** Added `TestSparseEigshPath` (4 tests) that patch `sbeam.solver.sol103._DENSE_THRESHOLD` to 0 via `monkeypatch.setattr`, forcing every model onto the sparse path regardless of size:
+
+- `test_sparse_frequencies_match_dense` — assembles K/M for the 10-element cantilever, runs both `_solve_modes_dense` and `solve_modes` (sparse path), asserts frequencies agree within 1e-6 relative.
+- `test_sparse_cantilever_analytical_frequency` — exercises the full `run_sol103` call-chain with the patched threshold; asserts first mode is within 1% of the Euler-Bernoulli analytical value.
+- `test_sparse_tikhonov_zero_mass_dofs` — uses `rho=0` beam + tip `CONM2`; most M diagonals are zero, exercising the sparse Tikhonov regularisation branch.
+- `test_sparse_arpack_no_convergence_falls_back_to_dense` — monkeypatches `scipy.sparse.linalg.eigsh` to raise `ArpackNoConvergence`; asserts a `UserWarning` matching `"eigsh failed"` is issued and the fallback result is still analytically correct.
+
+**Acceptance test:** `tests/solver/test_sol103.py::TestSparseEigshPath` — 4 tests, all pass. 468 tests pass, 0 failures. `sol103.py` coverage: 99%.

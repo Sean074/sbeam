@@ -36,11 +36,6 @@ Items from the 2026-05-24 code review. Full detail in `development_plan_bugs_tod
 
 From the 2026-05-24 code review:
 
-- **[R8] Sparse eigsh path untested** (`solver/sol103.py:84–112`) — `_DENSE_THRESHOLD=1200`
-  means all test models use the dense path. The sigma=0 ARPACK path has zero coverage. Add a
-  test that patches the threshold or uses a large enough synthetic model to exercise the sparse
-  branch.
-
 Pre-existing MINOR items:
 
 - **[DOC1] README "Known Limitations" section** — no Timoshenko (Phase 1), no buckling, CORD2R
