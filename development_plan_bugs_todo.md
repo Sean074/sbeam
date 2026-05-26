@@ -43,18 +43,6 @@ FIX:  Document the limitation in rbe3.py and in docs/Beam_model.md:
 
 ---
 
-### [NIT] R11 — `main.py` CLI untested (0% coverage)
-
-**File:** `sbeam/main.py`
-
-```
-[NIT] main.py:3–48 — CLI entry point at 0% coverage; no test exercises it end-to-end.
-FIX:  Add a smoke test that calls main.main() with a known BDF path and checks that
-      a .f06 file is produced without error.
-```
-
----
-
 ## Open Questions / Risks
 
 | ID | Question / Risk | Severity | Status |

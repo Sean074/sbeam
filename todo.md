@@ -65,9 +65,6 @@ From the 2026-05-24 code review:
   note and `docs/Beam_model.md` entry: "same-DOF weighted averaging; rotation-to-translation
   coupling across an offset is not applied; use RBAR for kinematically exact rigid connections."
 
-- **[R11] `main.py` CLI at 0% coverage** — add a smoke test that calls `main.main()` with a known
-  BDF and checks that an f06 is produced.
-
 Phase 3 — Dynamic Solvers (full scope in `development_plan_bugs_todo.md`):
 
 - **[S26] Step 26: SOL 108 — Direct Frequency Response** — `([K] - ω²[M]){U} = {F(ω)}`; DLOAD /

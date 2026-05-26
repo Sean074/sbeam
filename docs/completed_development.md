@@ -939,3 +939,17 @@ calls. `f_local[0]` is no longer read in `recover_bar_stresses`.
 - `test_sparse_arpack_no_convergence_falls_back_to_dense` — monkeypatches `scipy.sparse.linalg.eigsh` to raise `ArpackNoConvergence`; asserts a `UserWarning` matching `"eigsh failed"` is issued and the fallback result is still analytically correct.
 
 **Acceptance test:** `tests/solver/test_sol103.py::TestSparseEigshPath` — 4 tests, all pass. 468 tests pass, 0 failures. `sol103.py` coverage: 99%.
+
+---
+
+### R11: `main.py` CLI Untested (0% Coverage) ✅ FIXED
+
+**Root cause:** `sbeam/main.py` (the argparse CLI entry point) had zero test coverage. No test called `main.main()`, so parse-error handling, the SOL 101/103 dispatch, and the f06 write-out were completely uncovered.
+
+**Fix (`tests/test_main.py`):** Created a new top-level test file with `TestMainCLI` (3 tests). Each test patches `sys.argv` via `monkeypatch.setattr` and calls `main_mod.main()` directly, using `tmp_path` for isolated f06 output:
+
+- `test_sol101_produces_f06` — copies `tests/integration/bdf/v1_v2_cantilever.bdf` to `tmp_path`, runs `main.main()`, asserts the `.f06` file exists and is non-empty.
+- `test_sol103_produces_f06` — same with `v5_cantilever_modal.bdf` (SOL 103 path).
+- `test_missing_bdf_exits` — passes a non-existent path; asserts `SystemExit` is raised with `"file not found"` in the message.
+
+**Acceptance test:** `tests/test_main.py::TestMainCLI` — 3 tests, all pass. 471 tests pass, 0 failures. `main.py` coverage: 85%.
