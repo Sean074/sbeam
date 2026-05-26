@@ -136,15 +136,36 @@ def _build_f06_sol101_text(
     lines.append("                                 S T R E S S E S   I N   B A R   E L E M E N T S        ( C B A R )")
     lines.append("")
     lines.append(
-        "      ELEMENT ID.    AXIAL          SA(END-A)      SB(END-B)"
+        "      ELEMENT ID.    AXIAL          PT      SA(END-A)      SB(END-B)"
     )
 
+    _stress_pts = [
+        ("C", "sa",   "sb",   "c1", "c2"),
+        ("D", "sa_d", "sb_d", "d1", "d2"),
+        ("E", "sa_e", "sb_e", "e1", "e2"),
+        ("F", "sa_f", "sb_f", "f1", "f2"),
+    ]
+
     for eid in sorted(bulk.cbars.keys()):
-        if eid in result.bar_stresses:
-            bs = result.bar_stresses[eid]
-            lines.append(
-                f"{eid:>14}  {_fmt(bs.axial)}{_fmt(bs.sa)}{_fmt(bs.sb)}"
-            )
+        if eid not in result.bar_stresses:
+            continue
+        bs = result.bar_stresses[eid]
+        pbar = bulk.pbars[bulk.cbars[eid].pid]
+        first = True
+        for pt, sa_attr, sb_attr, y_attr, z_attr in _stress_pts:
+            if getattr(pbar, y_attr) == 0.0 and getattr(pbar, z_attr) == 0.0:
+                continue
+            sa = getattr(bs, sa_attr)
+            sb = getattr(bs, sb_attr)
+            if first:
+                lines.append(
+                    f"{eid:>14}  {_fmt(bs.axial)}    {pt}  {_fmt(sa)}{_fmt(sb)}"
+                )
+                first = False
+            else:
+                lines.append(
+                    f"{'':>14}  {'':13}    {pt}  {_fmt(sa)}{_fmt(sb)}"
+                )
 
     lines.append("")
 

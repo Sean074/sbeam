@@ -191,7 +191,17 @@ Output sections written to `results.f06`:
 3. **Nodal Displacements** — GID, T1, T2, T3, R1, R2, R3 per subcase
 4. **SPC Reaction Forces** — GID, DOF, value per constrained DOF
 5. **CBAR Forces** — EID, end A forces/moments, end B forces/moments
-6. **CBAR Stresses** — EID, point C/D/E/F axial + bending stress
+6. **CBAR Stresses** — multi-row per element: one row per defined recovery point (those with non-zero PBAR coordinates). First row includes EID and axial stress; subsequent rows continue with point label and stresses only.
+
+   ```
+         ELEMENT ID.    AXIAL          PT      SA(END-A)      SB(END-B)
+                  1   1.234567E+01     C    1.234567E+01   1.234567E+01
+                                       D   -1.234567E+01  -1.234567E+01
+                                       E    5.000000E+00   5.000000E+00
+                                       F   -5.000000E+00  -5.000000E+00
+   ```
+
+   Recovery points with zero (y, z) coordinates in the PBAR card are omitted.
 
 ---
 

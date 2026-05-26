@@ -36,10 +36,6 @@ Items from the 2026-05-24 code review. Full detail in `development_plan_bugs_tod
 
 From the 2026-05-24 code review:
 
-- **[R5] f06 BAR STRESSES output omits D/E/F recovery points** (`results/f06_writer.py:140`)
-  — solver computes all four PBAR recovery points (C/D/E/F) but the f06 writer only outputs
-  the C point. Extend the stress block to emit all non-zero recovery points.
-
 - **[R6] Unknown load SID returns silent zero vector** (`assembly/load_vector.py:68`) — if the
   LOAD SID from case control doesn't exist in any bulk dict, the returned vector is all-zeros
   with no warning. Add a `warnings.warn` or early `ValueError`.
