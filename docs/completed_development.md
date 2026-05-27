@@ -494,6 +494,19 @@ Deformed-node trace in `build_deformed_figure` now carries `customdata=[gid, Tx,
 
 ---
 
+### Q5: RBE2 Non-Coincident Lever-Arm ✅ RESOLVED
+
+**Question:** Does the RBE2 lever-arm affect any shipped example BDFs? All test BDFs were believed to use coincident grids.
+
+**Resolution (2026-05-26):** Investigation confirmed that the implementation in `assembly/rbe3.py:76-86` already computes the offset vector `d = r_GM - r_GN` and constructs the full 6×6 rigid-body transformation matrix R for every RBE2 element, correctly coupling rotations at GN into translations at offset GM. V18 (`v18_rbe2_offset.bdf`) exercises a non-coincident RBE2 with GM offset 0.5 m in X from GN and contains three analytical assertions:
+- `test_gn_tip_deflection`: u_y at GN matches the eccentric-load cantilever formula (0.1% tolerance).
+- `test_gm_offset_deflection`: u_y at GM includes the lever-arm contribution `a × θ_z(GN)` (0.1% tolerance).
+- `test_gm_equals_R_times_gn`: all 6 DOFs at GM satisfy `u_GM = R @ u_GN` to machine precision.
+
+All three pass. No shipped BDFs outside `tests/` exist, so no existing models are at risk. Q5 is closed with no code changes required.
+
+---
+
 ### B4: Viewer — f06 Import ✅ CLOSED (Doc-Only)
 
 **Description:** `docs/viewer.md` was reported to describe a post-processing upload path for

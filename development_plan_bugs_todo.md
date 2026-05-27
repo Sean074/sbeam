@@ -189,7 +189,7 @@ be captured."
 | Q2 | CBUSH with coincident GA/GB raises ValueError, but only at assembly not at parse time — parser (bdf_reader.py:396) does check. OK for Phase 1. | Low | Resolved |
 | Q3 | GRAV CID restriction (only CID=0 supported, parser raises): acceptable for Phase 1 but not documented in "Known Limitations". | Low | Open |
 | Q4 | Sparse eigsh path (#R8) — untested. Risk: SciPy ARPACK update breaks large-model runs silently. | Medium | Resolved |
-| Q5 | Does RBE2 non-coincident lever arm affect any shipped example BDFs? All test BDFs use coincident grids — need to verify sample models. | High | Open |
+| Q5 | Does RBE2 non-coincident lever arm affect any shipped example BDFs? All test BDFs use coincident grids — need to verify sample models. | High | Resolved — V18 covers offset RBE2 with 3 analytical assertions; implementation confirmed correct. |
 
 ---
 
