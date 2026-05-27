@@ -10,6 +10,158 @@ Completed steps are recorded in `docs/completed_development.md`.
 
 ---
 
+## Code Review — 2026-05-25
+
+Critical design review performed against `docs/code_review.md`. 15 findings (0 CRITICAL, 4 MAJOR, 7 MINOR, 4 NIT). New items are R12–R22; R9/R10 carry forward. All prior R1–R8 and R11 confirmed resolved. R12 resolved 2026-05-26.
+
+---
+
+### [MAJOR] R13 — EIGRL V1/V2 frequency bounds parsed but never applied
+
+**File:** `sbeam/solver/sol103.py:28–57`
+
+```
+[MAJOR] sol103.py:28–57 — EIGRL V1/V2 are parsed and stored in the Eigrl dataclass but
+        solve_modes never reads them; all ND modes are returned regardless of V1/V2.
+WHY:    docs/Modal_analysis.md (line 94) documents frequency filtering as implemented.
+        Users specifying V1/V2 receive unexpected out-of-range modes with no warning.
+FIX:    After computing freqs_hz in _postprocess_modes, apply:
+          mask = np.ones(len(freqs_hz), dtype=bool)
+          if eigrl.v1 is not None: mask &= freqs_hz >= eigrl.v1
+          if eigrl.v2 is not None: mask &= freqs_hz <= eigrl.v2
+        Return only masked modes. OR update Modal_analysis.md to document V1/V2 as
+        unimplemented and emit UserWarning if they are set.
+```
+
+---
+
+### [MAJOR] R14 — MAT1 G silently set to 0 when only E and nu are supplied
+
+**File:** `sbeam/parser/bdf_reader.py:138–146`
+
+```
+[MAJOR] bdf_reader.py:138–146 — When the G field is blank, Mat1.g is stored as 0.0;
+        G is never derived from E/(2*(1+nu)).
+WHY:    NASTRAN specifies G = E/(2*(1+nu)) when G is blank and nu is provided. G=0 silently
+        zeroes torsional stiffness (GJ/L → 0) for every CBAR element, producing wrong
+        results with no error or warning.
+FIX:    In _handle_mat1, after reading E/G/nu:
+          if g == 0.0 and nu != 0.0 and E != 0.0:
+              g = E / (2.0 * (1.0 + nu))
+        before constructing the Mat1 object. Add a test for this case.
+```
+
+---
+
+### [MAJOR] R15 — SPC1 reads only one continuation line; extra grids silently dropped
+
+**File:** `sbeam/parser/bdf_reader.py:303–312`
+
+```
+[MAJOR] bdf_reader.py:303–312 — _handle_spc1 reads a single optional continuation;
+        an SPC1 constraining >6 grids in fixed-field format (needing 2+ continuations)
+        silently drops all grids on the second continuation line onward.
+WHY:    Dropped constraints leave DOFs unconstrained, producing a singular or incorrect
+        stiffness matrix with no error.
+FIX:    Apply the same multi-continuation loop used for RBE2/RBE3:
+          k = i + 1
+          while k < len(processed) and processed[k][0] in ('+', '*'):
+              grids += processed[k][1:]
+              k += 1
+```
+
+---
+
+### [MINOR] R16 — `docs/sbeam.md` module table omits `assembly/load_vector.py`; verification table missing V15–V18
+
+**File:** `docs/sbeam.md:28–44`, `docs/sbeam.md:163–178`
+
+```
+[MINOR] docs/sbeam.md — load_vector.py is absent from the module structure table.
+        Verification cases V15 (GRAV+CBAR mass), V16 (GRAV+CONM2), V17 (GRAV+FORCE via LOAD),
+        and V18 (RBE2 lever-arm) exist in test_verification.py but are undocumented.
+FIX:    Add load_vector.py row to the assembly/ block; add V15–V18 rows to the
+        verification table.
+```
+
+---
+
+### [MINOR] R17 — `docs/Beam_model.md:585` "Cards recognised" omits GRAV and RBAR
+
+**File:** `docs/Beam_model.md:585`
+
+```
+[MINOR] docs/Beam_model.md:585 — The recognised-cards summary line omits GRAV and RBAR,
+        both of which are fully implemented and tested.
+FIX:    Add GRAV and RBAR to the comma-separated list on that line.
+```
+
+---
+
+### [MINOR] R18 — `docs/Static_analysis.md` "Solver Module" section references stale signatures; omits CBUSH, RBAR, GRAV
+
+**File:** `docs/Static_analysis.md:237–256`
+
+```
+[MINOR] docs/Static_analysis.md:237–256 — assemble_load_vector is shown as living in
+        sol101.py (it is in assembly/load_vector.py); function signatures are stale;
+        CBUSH, RBAR, and GRAV are not mentioned in any verification case.
+FIX:    Update module reference, signatures, and add verification cases for GRAV and RBAR.
+```
+
+---
+
+### [MINOR] R19 — No integration test for RBAR with non-zero offset
+
+**File:** `tests/`
+
+```
+[MINOR] tests/ — V14 covers only the zero-offset RBAR (identity R-matrix); no end-to-end
+        BDF + solver test exercises the lever-arm kinematics with a non-coincident RBAR.
+FIX:    Add v_rbar_offset.bdf and a corresponding integration test asserting the expected
+        lever-arm deflection.
+```
+
+---
+
+### [MINOR] R20 — No integration test for CBUSH spring element
+
+**File:** `tests/`
+
+```
+[MINOR] tests/ — Only unit tests in test_cbush.py cover the stiffness matrix; no BDF + solver
+        path test verifies that a known CBUSH stiffness produces the correct reaction force.
+FIX:    Add a simple grounded- or two-node-CBUSH BDF file and a test checking
+        force = K * displacement.
+```
+
+---
+
+### [NIT] R21 — `check_spc_enforced_displacements` called unconditionally when `spc_sid` may be `None`
+
+**File:** `sbeam/solver/sol101.py:252–255`
+
+```
+[NIT] sol101.py:252–255 — check_spc_enforced_displacements is called even when spc_sid is None.
+      bulk.spcs.get(None, []) returns [] safely, so no crash, but the intent is unclear.
+FIX:  Add "if spc_sid is not None:" guard before the call.
+```
+
+---
+
+### [NIT] R22 — `main.py` imports private (underscore-prefixed) functions from `f06_writer`
+
+**File:** `sbeam/main.py:8`
+
+```
+[NIT] main.py:8 — _build_f06_sol101_text and _build_f06_sol103_text are imported by their
+      private names. Any rename in f06_writer.py silently breaks the import.
+FIX:  Drop leading underscores from both function names in f06_writer.py, or add public
+      aliases there.
+```
+
+---
+
 ## Code Review — 2026-05-24
 
 Critical design review performed against `docs/code_review.md`. All 441 tests passed at review time; 464 pass as of 2026-05-25 (R2–R6 fixes). Findings below; resolved items removed.

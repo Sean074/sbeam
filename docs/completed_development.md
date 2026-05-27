@@ -1017,3 +1017,31 @@ silently-dropped load cards before implementation was safe.
 
 **Acceptance test:** `tests/viewer/test_pre_solve_validation.py` — 16 tests, all pass.
 487 total tests pass, 0 failures.
+
+---
+
+### R12: `run_sol101` crashes with confusing error when subcase has no LOAD card ✅ FIXED
+
+**Root cause:** `run_sol101` called `assemble_load_vector(bulk, load_sid)` unconditionally even
+when `subcase.load_sid is None` (no LOAD card in the subcase). `assemble_load_vector` then
+raised `ValueError: "Load SID None not found in LOAD, FORCE, MOMENT, or GRAV bulk data"` — a
+confusing message that does not tell the user a LOAD card is simply absent.
+
+**Fix (`sbeam/solver/sol101.py`):** Guard added before calling `assemble_load_vector`:
+
+```python
+if load_sid is None:
+    f = np.zeros(n_dofs)
+else:
+    f = assemble_load_vector(bulk, load_sid)
+```
+
+A subcase with no LOAD card is valid: zero applied loads produce zero displacements and zero
+SPC reactions. This matches NASTRAN behaviour.
+
+**Test (`tests/integration/test_verification.py::TestR12NoLoadSid`):** Two tests added:
+- `test_no_load_sid_returns_zero_displacements` — all displacements are 0.
+- `test_no_load_sid_returns_zero_reactions` — all SPC reaction vectors are 0.
+
+**Acceptance test:** 489 total tests pass, 0 failures.
+

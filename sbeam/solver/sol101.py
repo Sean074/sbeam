@@ -255,7 +255,10 @@ def run_sol101(bulk: BulkData, subcase: SubcaseControl) -> Sol101Result:
     check_spc_enforced_displacements(bulk, spc_sid)
 
     # Load vector (saved before RBE3 transform for reaction correction)
-    f = assemble_load_vector(bulk, load_sid)
+    if load_sid is None:
+        f = np.zeros(n_dofs)
+    else:
+        f = assemble_load_vector(bulk, load_sid)
     f_full = f.copy()
 
     # RBE3 DOF transformation — eliminates dependent DOFs before SPC partitioning.

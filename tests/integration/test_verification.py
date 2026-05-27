@@ -553,3 +553,43 @@ class TestV18Rbe2LeverArm:
             [0, 0, 0, 0, 0, 1],
         ])
         np.testing.assert_allclose(u_gm, R @ u_gn, atol=1e-14)
+
+
+# ---------------------------------------------------------------------------
+# R12: run_sol101 with load_sid=None — no LOAD card → zero displacements
+# ---------------------------------------------------------------------------
+
+class TestR12NoLoadSid:
+    """Subcase with no LOAD card (load_sid=None) must produce zero displacements."""
+
+    def _make_model(self):
+        from sbeam.model.grid import Grid
+        from sbeam.model.element import Cbar
+        from sbeam.model.property import Pbar
+        from sbeam.model.material import Mat1
+        from sbeam.model.constraint import Spc1
+        from sbeam.model.bulk_data import BulkData
+        from sbeam.parser.case_control import SubcaseControl
+
+        bulk = BulkData()
+        bulk.grids[1] = Grid(gid=1, x=0.0, y=0.0, z=0.0)
+        bulk.grids[2] = Grid(gid=2, x=1.0, y=0.0, z=0.0)
+        G = 2e11 / (2 * (1 + 0.3))
+        bulk.mat1s[1] = Mat1(mid=1, E=2e11, G=G, nu=0.3, rho=7850.0)
+        bulk.pbars[10] = Pbar(pid=10, mid=1, A=0.05, I1=8.333e-4, I2=8.333e-4,
+                              J=1.666e-3)
+        bulk.cbars[1] = Cbar(eid=1, pid=10, ga=1, gb=2, x1=0.0, x2=1.0, x3=0.0)
+        bulk.spc1s[1] = [Spc1(sid=1, c="123456", grids=[1])]
+        subcase = SubcaseControl(subcase_id=1, spc_sid=1, load_sid=None)
+        return bulk, subcase
+
+    def test_no_load_sid_returns_zero_displacements(self):
+        bulk, subcase = self._make_model()
+        result = run_sol101(bulk, subcase)
+        np.testing.assert_array_equal(result.displacements, 0.0)
+
+    def test_no_load_sid_returns_zero_reactions(self):
+        bulk, subcase = self._make_model()
+        result = run_sol101(bulk, subcase)
+        for vec in result.reactions.values():
+            np.testing.assert_array_equal(vec, 0.0)

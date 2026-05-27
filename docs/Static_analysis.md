@@ -239,18 +239,24 @@ Output sections written to `results.f06`:
 Key functions:
 
 ```python
-def run_sol101(bulk: BulkData, case: SubcaseControl) -> Sol101Result:
+def run_sol101(bulk: BulkData, subcase: SubcaseControl) -> Sol101Result:
     ...
 
-def assemble_stiffness(bulk: BulkData) -> np.ndarray:
+# assembly/stiffness.py
+def assemble_global_stiffness(bulk: BulkData) -> scipy.sparse.csr_matrix:
     ...
 
+def apply_spcs(K, f, spc_dofs: list[int]) -> tuple:
+    ...
+
+# assembly/load_vector.py
 def assemble_load_vector(bulk: BulkData, load_sid: int) -> np.ndarray:
     ...
 
-def apply_spcs(K: np.ndarray, f: np.ndarray, spc_dofs: list[int]) -> tuple[np.ndarray, np.ndarray, list[int]]:
-    ...
-
+# results/results.py
 def recover_bar_forces(bulk: BulkData, u: np.ndarray) -> dict[int, BarForces]:
     ...
 ```
+
+`run_sol101` accepts `subcase.load_sid = None` as a valid zero-load subcase;
+all displacements and reactions will be zero.

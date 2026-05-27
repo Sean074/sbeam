@@ -28,13 +28,35 @@ no silent `pass` in exception handlers, no fabricated fallback results.
 
 ## MAJOR — Must fix or document before beta
 
-Items from the 2026-05-24 code review. Full detail in `development_plan_bugs_todo.md`.
+From the 2026-05-25 code review. Full detail in `development_plan_bugs_todo.md`.
 
----
+- **[R13] EIGRL V1/V2 frequency filtering not implemented** (`solver/sol103.py:28–57`) —
+  parsed and stored but never applied; `docs/Modal_analysis.md` documents it as working.
+  Fix: apply V1/V2 mask in `_postprocess_modes`, OR update the doc and emit a `UserWarning`.
+
+- **[R14] MAT1 G=0 when only E and nu supplied** (`parser/bdf_reader.py:138–146`) —
+  NASTRAN derives `G = E/(2*(1+nu))` when G is blank; sbeam stores 0.0, silently zeroing
+  torsional stiffness for every CBAR.
+  Fix: compute `g = E / (2.0 * (1.0 + nu))` in `_handle_mat1` when g is 0.0 and nu ≠ 0.
+
+- **[R15] SPC1 multi-continuation grids silently dropped** (`parser/bdf_reader.py:303–312`) —
+  only one continuation line read; an SPC1 with >6 grids drops constraints silently, making
+  the stiffness matrix under-constrained.
+  Fix: apply the same multi-continuation loop used for RBE2/RBE3.
 
 ---
 
 ## NIT — Optional / next cleanup PR
+
+From the 2026-05-25 code review:
+
+- **[R21] `check_spc_enforced_displacements` unconditional** (`solver/sol101.py:252–255`) —
+  called even when `spc_sid` is `None`; works by accident (`dict.get(None, [])` returns `[]`).
+  Fix: add `if spc_sid is not None:` guard.
+
+- **[R22] Private function imports in `main.py`** (`main.py:8`) — `_build_f06_sol101_text` and
+  `_build_f06_sol103_text` accessed by leading-underscore private names. Drop underscores in
+  `f06_writer.py` or add public aliases.
 
 From the 2026-05-24 code review:
 
