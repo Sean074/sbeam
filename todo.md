@@ -1,8 +1,8 @@
 # sbeam — Beta Readiness Todo
 
-sbeam has stronger error handling and test coverage than smodal at equivalent stage. All 441
-tests pass. The primary gaps identified in the 2026-05-24 code review are listed below by severity.
-Full review findings are in `development_plan_bugs_todo.md` (items R1–R11).
+sbeam has stronger error handling and test coverage than smodal at equivalent stage.
+493 tests pass (as of 2026-05-26). The primary gaps identified across the code reviews
+are listed below by severity. Full review findings are in `development_plan_bugs_todo.md`.
 
 ## Rules
 - Remove each item from this file **immediately** when it is complete.
@@ -11,58 +11,92 @@ Full review findings are in `development_plan_bugs_todo.md` (items R1–R11).
 
 ---
 
-## USER IDENTIFIED CRITICAL - Must fix
+## CRITICAL — Block merge / release
 
-No silent-failure bugs equivalent to smodal C-1/C-2/C-3 found. The review confirms no
-CRITICAL items. Error handling in `main.py`, `sol101.py`, and `bdf_reader.py` is clean —
-no silent `pass` in exception handlers, no fabricated fallback results.
+### [C-1] SOL 103 generalized mass hard-coded to `1.0` (`results/f06_writer.py:228`)
+
+For `norm=MASS` eigenvectors are M-orthonormal so 1.0 is correct. For `norm=MAX`
+(peak-component normalisation) the actual generalised mass is `phi^T @ M @ phi`, which is
+not 1.0. Any downstream tool that reads the GENERALIZED MASS column under `norm=MAX` receives
+a fabricated value with no warning.
+
+**Fix:** Pass the reduced mass matrix into `_build_f06_sol103_text`; compute per-mode
+`phi_i.T @ M_red @ phi_i`. Add a regression test asserting `gen_mass == approx(1.0)` for
+`norm=MASS` and `!= 1.0` for at least one mode under `norm=MAX`.
 
 ---
 
-## USER IDENTIFIED NICE TO HAVE MINOR - Potential future addition
+## MINOR — Fix before beta release
 
-- **[DEPLOY] Deploy to Streamlit Community Cloud** — smodal has a live public deploy; provides
-  shareability and a live demo for contributors.
+### [R16] `docs/sbeam.md` module table and verification table out of date
 
----
+- Module structure table omits `assembly/load_vector.py`.
+- Verification case table ends at V14; tests V15–V18 (GRAV, RBE2 lever-arm) exist and pass
+  but are undocumented.
 
-## MAJOR — Must fix or document before beta
+**Fix:** Add `load_vector.py` row to the assembly block; add V15–V18 rows to the
+verification table.
 
-From the 2026-05-25 code review. Full detail in `development_plan_bugs_todo.md`.
+### [R17] `docs/Beam_model.md:587` "Cards recognised" omits GRAV and RBAR
+
+Both cards are fully implemented and tested. The summary line omits them.
+
+**Fix:** Add GRAV and RBAR to the comma-separated recognised-cards list.
+
+### [R18] `docs/Static_analysis.md:237–256` stale module reference and missing verification cases
+
+`assemble_load_vector` is shown as living in `sol101.py`; it lives in
+`assembly/load_vector.py`. CBUSH, RBAR, and GRAV verification cases are not mentioned.
+
+**Fix:** Correct module reference; add V11, V15–V18 as relevant verification examples.
+
+### [R19] No integration test for RBAR with non-zero offset
+
+V14 covers zero-offset RBAR only. The lever-arm R-matrix is not exercised end-to-end.
+
+**Fix:** Add `tests/integration/bdf/v19_rbar_offset.bdf` and corresponding test in
+`test_verification.py` asserting the lever-arm deflection formula.
+
+### [R20] No integration test for CBUSH grounded spring through solver
+
+`test_cbush.py` covers the stiffness matrix in isolation; no BDF + SOL 101 path test
+verifies that a known CBUSH K produces the correct reaction force.
+
+**Fix:** Add `tests/integration/bdf/v20_cbush_grounded_spring.bdf` and integration test
+asserting `F = K × u`.
 
 ---
 
 ## NIT — Optional / next cleanup PR
 
-From the 2026-05-25 code review:
+### [R21] `check_spc_enforced_displacements` unconditional (`solver/sol101.py:255`)
 
-- **[R21] `check_spc_enforced_displacements` unconditional** (`solver/sol101.py:252–255`) —
-  called even when `spc_sid` is `None`; works by accident (`dict.get(None, [])` returns `[]`).
-  Fix: add `if spc_sid is not None:` guard.
+Called even when `spc_sid` is `None`; works safely by accident (`dict.get(None, [])`
+returns `[]`). Intent is unclear.
 
-- **[R22] Private function imports in `main.py`** (`main.py:8`) — `_build_f06_sol101_text` and
-  `_build_f06_sol103_text` accessed by leading-underscore private names. Drop underscores in
-  `f06_writer.py` or add public aliases.
+**Fix:** Add `if spc_sid is not None:` guard.
 
-From the 2026-05-24 code review:
+### [R22] Private function imports in `main.py` (`main.py:8`)
 
-- **[R9] `_DENSE_THRESHOLD` magic number** (`solver/sol103.py:24`) — add a comment or rename to
-  make the `200 elements × 6 DOFs` basis explicit.
+`_build_f06_sol101_text` and `_build_f06_sol103_text` are imported by leading-underscore
+private names. A rename in `f06_writer.py` silently breaks the entry point.
 
+**Fix:** Drop underscores in `f06_writer.py` (promote to public), or add public aliases.
 
-Phase 3 — Dynamic Solvers (full scope in `development_plan_bugs_todo.md`):
+---
 
-- **[S26] Step 26: SOL 108 — Direct Frequency Response** — `([K] - ω²[M]){U} = {F(ω)}`; DLOAD /
-  RLOAD1 / RLOAD2; FREQ / FREQ1; structural damping (MAT1 GE); FRF plot in viewer.
+## DEPLOY — Nice to have
 
-- **[S27] Step 27: SOL 109 — Direct Transient Response** — Newmark-β integration; TLOAD1 /
-  TLOAD2; TSTEP; time-history plot in viewer.
+- **[DEPLOY] Deploy to Streamlit Community Cloud** — provides a live demo URL for the README.
 
-- **[S28] Step 28: SOL 111 — Modal Frequency Response** — modal superposition on SOL 103 basis;
-  TABDMP1 modal damping; more efficient than SOL 108 for many-DOF models.
+---
 
-- **[S29] Step 29: SOL 112 — Modal Transient Response** — modal superposition transient;
-  Newmark-β in modal coordinates; same output requests as SOL 109.
+## Phase 3 — Dynamic Solvers (full scope in `development_plan_bugs_todo.md`)
+
+- **[S26] SOL 108 — Direct Frequency Response**
+- **[S27] SOL 109 — Direct Transient Response**
+- **[S28] SOL 111 — Modal Frequency Response**
+- **[S29] SOL 112 — Modal Transient Response**
 
 Future Phase 3+ items (full descriptions in `development_plan_bugs_todo.md`):
 
@@ -74,8 +108,6 @@ Future Phase 3+ items (full descriptions in `development_plan_bugs_todo.md`):
 - Sample model library
 - Parametric sweep
 - f06 results comparison (two-file diff)
-- **[S30] PLOAD1 Distributed Loads** — *(VAL1 complete: viewer now warns when PLOAD1 cards are present. S30 can be implemented.)*
-- **[S33] Timoshenko Shear Correction (PBAR K1/K2)** — *(Deferred: Euler-Bernoulli is the Phase 1
-  assumption; K1/K2 silently ignored, correct for slender beams.)*
-- **[S34-full] Non-Zero Enforced Displacement Enforcement** — *(Deferred: full enforcement; beta
-  only requires the VAL1 validation guard above.)*
+- **[S30] PLOAD1 Distributed Loads** — *(VAL1 complete: viewer warns on PLOAD1 cards. S30 can be implemented.)*
+- **[S33] Timoshenko Shear Correction (PBAR K1/K2)** — *(Deferred: K1/K2 ignored for slender beams.)*
+- **[S34-full] Non-Zero Enforced Displacement Enforcement** — *(Deferred: full enforcement post-beta.)*

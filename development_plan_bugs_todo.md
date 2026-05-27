@@ -10,6 +10,31 @@ Completed steps are recorded in `docs/completed_development.md`.
 
 ---
 
+## Code Review — 2026-05-26 (follow-up)
+
+Independent critical pass against `docs/code_review.md`. Status of all prior findings verified.
+493/493 tests pass. One CRITICAL (C-1) remains open. M-1 and R9 confirmed resolved; R10 confirmed resolved.
+New review found no additional CRITICAL or MAJOR issues.
+
+---
+
+### [CRITICAL] C-1 — `results/f06_writer.py:228` SOL 103 GENERALIZED MASS column hard-coded to `1.0`
+
+**File:** `sbeam/results/f06_writer.py:228`
+
+```
+[CRITICAL] f06_writer.py:228 — The GENERALIZED MASS column is always written as 1.0.
+WHY: For norm=MASS eigenvectors are M-orthonormal so 1.0 is correct. For norm=MAX
+     (peak-component normalisation) the generalised mass is phi^T @ M @ phi, which is not 1.0.
+     Any downstream tool that reads the f06 generalized-mass column for norm=MAX receives
+     a fabricated value with no warning.
+FIX: Pass the reduced mass matrix M_red into _build_f06_sol103_text and compute
+     phi_i.T @ M_red @ phi_i per mode. Add a SOL 103 regression test that asserts
+     gen_mass == approx(1.0) for norm=MASS and != 1.0 for at least one mode under norm=MAX.
+```
+
+---
+
 ## Code Review — 2026-05-25
 
 Critical design review performed against `docs/code_review.md`. 15 findings (0 CRITICAL, 4 MAJOR, 7 MINOR, 4 NIT). New items are R12–R22; R9/R10 carry forward. All prior R1–R8 and R11 confirmed resolved. R12 resolved 2026-05-26.
@@ -138,15 +163,11 @@ Critical design review performed against `docs/code_review.md`. All 441 tests pa
 
 ---
 
-### [NIT] R9 — `_DENSE_THRESHOLD` is a bare magic number
+### [NIT] R9 — `_DENSE_THRESHOLD` is a bare magic number ✅ RESOLVED
 
-**File:** `sbeam/solver/sol103.py:24`
-
-```
-[NIT] solver/sol103.py:24 — _DENSE_THRESHOLD = 1200 is undocumented.
-FIX:   Add a comment: # 200 elements × 6 DOFs/node (already exists as inline comment
-       in the conditional); or make the basis explicit in the constant name.
-```
+**Resolved 2026-05-26 (review confirmation):** `sol103.py:24` already carries the inline
+comment `# n_free <= this → use dense eigh (200 elements × 6 DOFs)`. The basis is
+explicit and the constant name is self-explanatory in context. No further change required.
 
 ---
 
