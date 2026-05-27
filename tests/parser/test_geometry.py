@@ -199,6 +199,22 @@ class TestDuplicateMID:
             parse_bulk_data(lines)
 
 
+class TestMat1GDerivation:
+    """R14: G derived from E and NU via isotropic relationship when G is blank."""
+
+    def test_g_derived_from_e_and_nu(self):
+        E, nu = 2.0e11, 0.3
+        lines = [f"MAT1, 1, {E}, , {nu}, 7850.0"]
+        bulk = parse_bulk_data(lines)
+        expected_G = E / (2.0 * (1.0 + nu))
+        assert bulk.mat1s[1].G == pytest.approx(expected_G)
+
+    def test_explicit_g_not_overridden(self):
+        lines = ["MAT1, 1, 2.0e11, 50.0e9, 0.3, 7850.0"]
+        bulk = parse_bulk_data(lines)
+        assert bulk.mat1s[1].G == pytest.approx(50.0e9)
+
+
 class TestUnknownCard:
     def test_unknown_card_warns(self):
         lines = [

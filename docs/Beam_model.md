@@ -120,14 +120,14 @@ MAT1, MID, E, G, NU, RHO, A, TREF, GE
 |-------|-------------|
 | MID | Material ID (integer, unique) |
 | E | Young's modulus |
-| G | Shear modulus (if blank, computed from E and NU) |
+| G | Shear modulus. **If blank or zero**, sbeam derives G automatically using the isotropic material relationship: `G = E / (2 × (1 + ν))`. If both G and NU are supplied, the provided G is used as-is. |
 | NU | Poisson's ratio |
 | RHO | Mass density |
 | A | Thermal expansion coefficient (phase 2) |
 | TREF | Reference temperature (phase 2) |
 | GE | Structural damping coefficient (phase 2) |
 
-**Phase 1:** E, G (or NU), and RHO are required. If both G and NU are provided, G takes precedence.
+**Phase 1:** E and RHO are required. G may be supplied directly or omitted — when G is blank, sbeam derives it from `G = E / (2 × (1 + ν))` (isotropic material relationship). If both G and NU are present, the supplied G takes precedence and NU is stored but not used for the G derivation.
 
 ---
 

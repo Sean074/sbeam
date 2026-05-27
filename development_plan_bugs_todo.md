@@ -24,21 +24,12 @@ V1/V2 filtering is not supported in Phase 1. V1/V2 filtering is deferred to a fu
 
 ---
 
-### [MAJOR] R14 — MAT1 G silently set to 0 when only E and nu are supplied
+### [MAJOR] R14 — MAT1 G silently set to 0 when only E and nu are supplied ✅ RESOLVED
 
-**File:** `sbeam/parser/bdf_reader.py:138–146`
-
-```
-[MAJOR] bdf_reader.py:138–146 — When the G field is blank, Mat1.g is stored as 0.0;
-        G is never derived from E/(2*(1+nu)).
-WHY:    NASTRAN specifies G = E/(2*(1+nu)) when G is blank and nu is provided. G=0 silently
-        zeroes torsional stiffness (GJ/L → 0) for every CBAR element, producing wrong
-        results with no error or warning.
-FIX:    In _handle_mat1, after reading E/G/nu:
-          if g == 0.0 and nu != 0.0 and E != 0.0:
-              g = E / (2.0 * (1.0 + nu))
-        before constructing the Mat1 object. Add a test for this case.
-```
+**Resolved 2026-05-26:** `_handle_mat1` now derives G from the isotropic material relationship
+`G = E / (2 × (1 + ν))` when G is blank and both E and NU are non-zero. Supplied G always
+takes precedence. `docs/Beam_model.md` updated to document this behaviour explicitly.
+Two new parser tests added (`TestMat1GDerivation`).
 
 ---
 

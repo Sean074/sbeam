@@ -1020,6 +1020,32 @@ silently-dropped load cards before implementation was safe.
 
 ---
 
+### R14: MAT1 G derived from isotropic relationship when G is blank ✅ FIXED
+
+**Root cause:** `_handle_mat1` stored `G = 0.0` when the G field was blank, silently zeroing
+torsional stiffness (`GJ/L → 0`) for every CBAR element. NASTRAN specifies
+`G = E / (2 × (1 + ν))` in this case.
+
+**Fix (`sbeam/parser/bdf_reader.py`):** After reading E, G, nu in `_handle_mat1`, added:
+
+```python
+# When G is not supplied, derive from the isotropic material relationship G = E / (2(1+ν))
+if G == 0.0 and nu != 0.0 and E != 0.0:
+    G = E / (2.0 * (1.0 + nu))
+```
+
+Supplied G always takes precedence; NU is stored but not used for the derivation when G is
+explicitly provided.
+
+**Fix (`docs/Beam_model.md`):** MAT1 table and Phase 1 note updated to explicitly document
+the isotropic derivation and the G-takes-precedence rule.
+
+**Tests (`tests/parser/test_geometry.py::TestMat1GDerivation`):** Two tests added:
+- `test_g_derived_from_e_and_nu` — blank G → `G ≈ E / (2(1 + ν))`.
+- `test_explicit_g_not_overridden` — supplied G=50 GPa → stored unchanged.
+
+---
+
 ### R13: EIGRL V1/V2 frequency bounds — documented as not implemented ✅ RESOLVED
 
 **Root cause:** `Eigrl.v1` and `Eigrl.v2` were parsed and stored but `solve_modes` never

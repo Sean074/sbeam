@@ -143,6 +143,9 @@ def _handle_mat1(fields: list, bulk: BulkData) -> None:
     G   = _to_float(fields[3]) if len(fields) > 3 else 0.0
     nu  = _to_float(fields[4]) if len(fields) > 4 else 0.0
     rho = _to_float(fields[5]) if len(fields) > 5 else 0.0
+    # When G is not supplied, derive from the isotropic material relationship G = E / (2(1+ν))
+    if G == 0.0 and nu != 0.0 and E != 0.0:
+        G = E / (2.0 * (1.0 + nu))
     bulk.mat1s[mid] = Mat1(mid=mid, E=E, G=G, nu=nu, rho=rho)
 
 

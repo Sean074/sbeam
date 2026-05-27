@@ -30,11 +30,6 @@ no silent `pass` in exception handlers, no fabricated fallback results.
 
 From the 2026-05-25 code review. Full detail in `development_plan_bugs_todo.md`.
 
-- **[R14] MAT1 G=0 when only E and nu supplied** (`parser/bdf_reader.py:138–146`) —
-  NASTRAN derives `G = E/(2*(1+nu))` when G is blank; sbeam stores 0.0, silently zeroing
-  torsional stiffness for every CBAR.
-  Fix: compute `g = E / (2.0 * (1.0 + nu))` in `_handle_mat1` when g is 0.0 and nu ≠ 0.
-
 - **[R15] SPC1 multi-continuation grids silently dropped** (`parser/bdf_reader.py:303–312`) —
   only one continuation line read; an SPC1 with >6 grids drops constraints silently, making
   the stiffness matrix under-constrained.
