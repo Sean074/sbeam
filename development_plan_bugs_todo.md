@@ -33,22 +33,12 @@ Two new parser tests added (`TestMat1GDerivation`).
 
 ---
 
-### [MAJOR] R15 — SPC1 reads only one continuation line; extra grids silently dropped
+### [MAJOR] R15 — SPC1 reads only one continuation line; extra grids silently dropped ✅ RESOLVED
 
-**File:** `sbeam/parser/bdf_reader.py:303–312`
-
-```
-[MAJOR] bdf_reader.py:303–312 — _handle_spc1 reads a single optional continuation;
-        an SPC1 constraining >6 grids in fixed-field format (needing 2+ continuations)
-        silently drops all grids on the second continuation line onward.
-WHY:    Dropped constraints leave DOFs unconstrained, producing a singular or incorrect
-        stiffness matrix with no error.
-FIX:    Apply the same multi-continuation loop used for RBE2/RBE3:
-          k = i + 1
-          while k < len(processed) and processed[k][0] in ('+', '*'):
-              grids += processed[k][1:]
-              k += 1
-```
+**Resolved 2026-05-26:** `_handle_spc1` now accepts a list of continuation lines and
+accumulates all grid IDs across all continuations, using the same multi-continuation loop
+pattern as RBE2/RBE3. Two new parser tests added (`TestSpc1MultiContinuation`).
+`docs/Beam_model.md` updated to document multi-continuation support for SPC1.
 
 ---
 

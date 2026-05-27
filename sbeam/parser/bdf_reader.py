@@ -303,12 +303,12 @@ def _handle_spc(fields: list, bulk: BulkData) -> None:
     bulk.spcs[sid].append(Spc(sid=sid, g1=g1, c1=c1, d1=d1, g2=g2, c2=c2, d2=d2))
 
 
-def _handle_spc1(fields: list, cont, bulk: BulkData) -> None:
+def _handle_spc1(fields: list, conts: list, bulk: BulkData) -> None:
     sid = _to_int(fields[1])
     c   = fields[2].strip()
     _validate_dof(c, f"SPC1 {sid}")
     grids = [_to_int(f) for f in fields[3:] if f.strip()]
-    if cont is not None:
+    for cont in conts:
         grids += [_to_int(f) for f in cont[1:] if f.strip()]
     if sid not in bulk.spc1s:
         bulk.spc1s[sid] = []
@@ -532,7 +532,19 @@ def parse_bulk_data(lines: list) -> BulkData:
         elif keyword == "SPC":
             _handle_spc(fields, bulk)
         elif keyword == "SPC1":
-            _handle_spc1(fields, cont, bulk)
+            spc1_conts: list = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    spc1_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_spc1(fields, spc1_conts, bulk)
         elif keyword == "FORCE":
             _handle_force(fields, bulk)
         elif keyword == "MOMENT":

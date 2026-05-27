@@ -1020,6 +1020,26 @@ silently-dropped load cards before implementation was safe.
 
 ---
 
+### R15: SPC1 multi-continuation grids silently dropped ✅ FIXED
+
+**Root cause:** `_handle_spc1` accepted a single optional `cont` (one look-ahead continuation
+line). An SPC1 card constraining more than 6 grids requires two or more continuation lines;
+only the first was consumed, dropping all subsequent grids silently. This left DOFs
+unconstrained, producing a singular or incorrect stiffness matrix with no error.
+
+**Fix (`sbeam/parser/bdf_reader.py`):**
+- `_handle_spc1` signature changed from `(fields, cont, bulk)` to `(fields, conts: list, bulk)`.
+  It now loops over all continuation lines: `for cont in conts: grids += ...`
+- Call site updated to collect all consecutive continuation lines via the same `while`-loop
+  pattern used for RBE2 and RBE3.
+
+**Tests (`tests/parser/test_loads.py`):** `TestSpc1MultiContinuation` — two tests verify that
+an SPC1 with 8 grids across one base line and one continuation line collects all 8 grid IDs.
+
+**Docs:** `docs/Beam_model.md` continuation-line note updated to mention SPC1 with >6 grids.
+
+---
+
 ### R14: MAT1 G derived from isotropic relationship when G is blank ✅ FIXED
 
 **Root cause:** `_handle_mat1` stored `G = 0.0` when the G field was blank, silently zeroing

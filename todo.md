@@ -30,11 +30,6 @@ no silent `pass` in exception handlers, no fabricated fallback results.
 
 From the 2026-05-25 code review. Full detail in `development_plan_bugs_todo.md`.
 
-- **[R15] SPC1 multi-continuation grids silently dropped** (`parser/bdf_reader.py:303–312`) —
-  only one continuation line read; an SPC1 with >6 grids drops constraints silently, making
-  the stiffness matrix under-constrained.
-  Fix: apply the same multi-continuation loop used for RBE2/RBE3.
-
 ---
 
 ## NIT — Optional / next cleanup PR

@@ -56,6 +56,34 @@ class TestSpc1:
         assert full.spc1s[1][0].grids == [1]
 
 
+_SPC1_MULTI_CONT = """\
+GRID, 1, , 0.0, 0.0, 0.0
+GRID, 2, , 1.0, 0.0, 0.0
+GRID, 3, , 2.0, 0.0, 0.0
+GRID, 4, , 3.0, 0.0, 0.0
+GRID, 5, , 4.0, 0.0, 0.0
+GRID, 6, , 5.0, 0.0, 0.0
+GRID, 7, , 6.0, 0.0, 0.0
+GRID, 8, , 7.0, 0.0, 0.0
+SPC1, 1, 123456, 1, 2, 3, 4, 5, 6
++, 7, 8
+""".splitlines()
+
+
+class TestSpc1MultiContinuation:
+    """SPC1 with >6 grids requiring two continuation lines."""
+
+    @pytest.fixture(scope="class")
+    def multi_bulk(self):
+        return parse_bulk_data(_SPC1_MULTI_CONT)
+
+    def test_all_grids_collected(self, multi_bulk):
+        assert multi_bulk.spc1s[1][0].grids == [1, 2, 3, 4, 5, 6, 7, 8]
+
+    def test_grid_count(self, multi_bulk):
+        assert len(multi_bulk.spc1s[1][0].grids) == 8
+
+
 # ---------------------------------------------------------------------------
 # SPC
 # ---------------------------------------------------------------------------

@@ -580,7 +580,7 @@ Accepts a list of BDF text lines (bulk data section only). Supports:
 - **Free-field format** — comma-separated fields (e.g. `GRID, 1, , 0.0, 0.0, 0.0`)
 - **Fixed-field format** — 8-character columns (standard NASTRAN small-field)
 - **Inline `$` comments** — everything from `$` to end of line is ignored
-- **Continuation lines** — lines whose first field starts with `+`; consumed by the preceding card handler (e.g. PBAR recovery points)
+- **Continuation lines** — lines whose first field starts with `+`; consumed by the preceding card handler (e.g. PBAR recovery points, SPC1 with >6 grids)
 
 Cards recognised: `CORD2R`, `GRID`, `PBAR`, `PBUSH`, `MAT1`, `CBAR`, `CBUSH`, `PLOTEL`, `CONM2`, `RBE3`, `RBE2`, `SPC`, `SPC1`, `FORCE`, `MOMENT`, `LOAD`, `EIGRL`.
 Structural markers `BEGIN BULK` / `ENDDATA` are silently skipped.
