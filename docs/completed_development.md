@@ -1066,6 +1066,23 @@ the isotropic derivation and the G-takes-precedence rule.
 
 ---
 
+### R10: RBE3 lever-arm simplification documented ✅ RESOLVED
+
+**Root cause:** `assembly/rbe3.py` implemented RBE3 as same-DOF weighted averaging with no
+rotation-to-translation coupling across an offset (lever-arm kinematics). This is a common
+simplified formulation and is correct in typical use, but was not documented anywhere —
+leaving no guidance for users who need kinematically exact rigid connections.
+
+**Fix (`sbeam/assembly/rbe3.py`):** Added a block comment before the RBE3 loop (line 27)
+explaining that rotation-to-translation coupling is not applied and that RBAR should be used
+when lever-arm kinematics are required.
+
+**Fix (`docs/Beam_model.md`):** Added a "Known limitation — same-DOF weighted averaging only"
+paragraph in the RBE3 section, directing users to RBAR for kinematically exact rigid
+connections with an offset.
+
+---
+
 ### R13: EIGRL V1/V2 frequency bounds — documented as not implemented ✅ RESOLVED
 
 **Root cause:** `Eigrl.v1` and `Eigrl.v2` were parsed and stored but `solve_modes` never

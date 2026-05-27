@@ -49,9 +49,6 @@ From the 2026-05-24 code review:
 - **[R9] `_DENSE_THRESHOLD` magic number** (`solver/sol103.py:24`) — add a comment or rename to
   make the `200 elements × 6 DOFs` basis explicit.
 
-- **[R10] RBE3 lever-arm simplification undocumented** (`assembly/rbe3.py:27`) — add a docstring
-  note and `docs/Beam_model.md` entry: "same-DOF weighted averaging; rotation-to-translation
-  coupling across an offset is not applied; use RBAR for kinematically exact rigid connections."
 
 Phase 3 — Dynamic Solvers (full scope in `development_plan_bugs_todo.md`):
 

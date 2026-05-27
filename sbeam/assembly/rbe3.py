@@ -24,6 +24,11 @@ def build_rbe3_transformation(bulk: BulkData, grid_index: dict) -> tuple:
     T_full = np.eye(n_dof)
     dep_set: set = set()
 
+    # RBE3 formulation: each dependent DOF is a weighted average of the *same-numbered* DOF
+    # at the independent grids.  Rotation-to-translation coupling across an offset (lever-arm
+    # kinematics) is NOT applied.  This is the common simplified formulation and is exact when
+    # the independent grids are collocated or the reference point moves rigidly with the
+    # independent set.  Use RBAR for kinematically exact rigid connections with an offset.
     for rbe3 in bulk.rbe3s.values():
         if rbe3.refgrid not in grid_index:
             continue

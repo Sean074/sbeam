@@ -150,18 +150,13 @@ FIX:   Add a comment: # 200 elements × 6 DOFs/node (already exists as inline co
 
 ---
 
-### [NIT] R10 — RBE3 lever-arm simplification undocumented
+### [NIT] R10 — RBE3 lever-arm simplification undocumented ✅ RESOLVED
 
-**File:** `sbeam/assembly/rbe3.py:27–55`
-
-```
-[NIT] assembly/rbe3.py:27 — RBE3 maps each reference DOF to a weighted average of the
-      same-numbered DOF at independent grids, with no rigid-body lever-arm coupling.
-      This is the common simplified formulation (not all codes include cross-DOF coupling).
-FIX:  Document the limitation in rbe3.py and in docs/Beam_model.md:
-      "RBE3 uses same-DOF weighted averaging; rotation-to-translation coupling across an
-      offset is not applied. Use RBAR for kinematically exact rigid connections."
-```
+**Resolved 2026-05-26:** Added a block comment in `assembly/rbe3.py` before the RBE3 loop
+explaining the same-DOF weighted-averaging formulation and its lever-arm limitation.
+`docs/Beam_model.md` updated with a "Known limitation" paragraph in the RBE3 section:
+"Use RBAR for kinematically exact rigid connections where the offset lever-arm effect must
+be captured."
 
 ---
 

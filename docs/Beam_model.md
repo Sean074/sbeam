@@ -306,6 +306,8 @@ where the sum is over independent grids in groups whose DOF string includes `d`.
 
 **Phase 1 assembly:** implemented as a DOF transformation matrix **T** (shape `n_dof × n_red`) built in `assembly/rbe3.py`. T is applied to K and M before SPC partitioning: `K_red = Tᵀ K T`, `M_red = Tᵀ M T`. After solving, full displacements and mode shapes are recovered via `u_full = T @ u_red`. Phase 2 may add Lagrange multiplier support.
 
+**Known limitation — same-DOF weighted averaging only:** For each dependent DOF `d`, the constraint is a weighted average of the *same-numbered* DOF at each independent grid. Rotation-to-translation coupling across an offset (lever-arm kinematics) is not applied. This is the common simplified RBE3 formulation; it is exact when the independent grids are collocated or the reference point moves rigidly with the independent set. Use **RBAR** for kinematically exact rigid connections where the offset lever-arm effect must be captured.
+
 **`Rbe3` dataclass:**
 
 | Field | Type | Description |
