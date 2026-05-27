@@ -39,6 +39,15 @@ def solve_modes(K_free, M_free, eigrl, force_dense: bool = False) -> tuple:
     nd = eigrl.nd if eigrl.nd is not None else n
     nd = min(nd, n)
 
+    if eigrl.v1 is not None or eigrl.v2 is not None:
+        warnings.warn(
+            "EIGRL V1/V2 frequency bounds are not supported in sbeam Phase 1; "
+            "all requested ND modes will be returned regardless of V1/V2. "
+            "Remove V1/V2 from the EIGRL card or use ND to limit the mode count.",
+            UserWarning,
+            stacklevel=2,
+        )
+
     # Use sparse eigsh only when the model is large enough to benefit and K is
     # well-conditioned (SPCs applied). Models at or below the old 200-element
     # limit always use the dense path for zero regression risk.

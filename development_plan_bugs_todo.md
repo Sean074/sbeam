@@ -16,22 +16,11 @@ Critical design review performed against `docs/code_review.md`. 15 findings (0 C
 
 ---
 
-### [MAJOR] R13 — EIGRL V1/V2 frequency bounds parsed but never applied
+### [MAJOR] R13 — EIGRL V1/V2 frequency bounds parsed but never applied ✅ RESOLVED
 
-**File:** `sbeam/solver/sol103.py:28–57`
-
-```
-[MAJOR] sol103.py:28–57 — EIGRL V1/V2 are parsed and stored in the Eigrl dataclass but
-        solve_modes never reads them; all ND modes are returned regardless of V1/V2.
-WHY:    docs/Modal_analysis.md (line 94) documents frequency filtering as implemented.
-        Users specifying V1/V2 receive unexpected out-of-range modes with no warning.
-FIX:    After computing freqs_hz in _postprocess_modes, apply:
-          mask = np.ones(len(freqs_hz), dtype=bool)
-          if eigrl.v1 is not None: mask &= freqs_hz >= eigrl.v1
-          if eigrl.v2 is not None: mask &= freqs_hz <= eigrl.v2
-        Return only masked modes. OR update Modal_analysis.md to document V1/V2 as
-        unimplemented and emit UserWarning if they are set.
-```
+**Resolved 2026-05-26:** Documented as not implemented. `solve_modes` now emits a
+`UserWarning` when V1 or V2 are set; `docs/Modal_analysis.md` corrected to state that
+V1/V2 filtering is not supported in Phase 1. V1/V2 filtering is deferred to a future phase.
 
 ---
 

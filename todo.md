@@ -30,10 +30,6 @@ no silent `pass` in exception handlers, no fabricated fallback results.
 
 From the 2026-05-25 code review. Full detail in `development_plan_bugs_todo.md`.
 
-- **[R13] EIGRL V1/V2 frequency filtering not implemented** (`solver/sol103.py:28–57`) —
-  parsed and stored but never applied; `docs/Modal_analysis.md` documents it as working.
-  Fix: apply V1/V2 mask in `_postprocess_modes`, OR update the doc and emit a `UserWarning`.
-
 - **[R14] MAT1 G=0 when only E and nu supplied** (`parser/bdf_reader.py:138–146`) —
   NASTRAN derives `G = E/(2*(1+nu))` when G is blank; sbeam stores 0.0, silently zeroing
   torsional stiffness for every CBAR.

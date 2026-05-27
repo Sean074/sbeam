@@ -91,7 +91,7 @@ The number of modes returned is the lesser of:
 - `ND` from the EIGRL card
 - Number of free DOFs
 
-Frequency filtering: if V1/V2 are specified on EIGRL, only return modes with `V1 <= f <= V2`.
+**V1/V2 frequency filtering is not implemented in sbeam Phase 1.** If V1 or V2 are present on the EIGRL card, sbeam emits a `UserWarning` and returns all ND modes regardless of the bounds. Use the ND field to limit the number of extracted modes.
 
 ---
 

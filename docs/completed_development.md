@@ -1020,6 +1020,28 @@ silently-dropped load cards before implementation was safe.
 
 ---
 
+### R13: EIGRL V1/V2 frequency bounds — documented as not implemented ✅ RESOLVED
+
+**Root cause:** `Eigrl.v1` and `Eigrl.v2` were parsed and stored but `solve_modes` never
+read them; all ND modes were returned regardless. `docs/Modal_analysis.md` incorrectly
+stated that frequency filtering was implemented.
+
+**Fix (`sbeam/solver/sol103.py`):** Added a `UserWarning` in `solve_modes` when either
+`eigrl.v1` or `eigrl.v2` is not `None`:
+
+```
+UserWarning: EIGRL V1/V2 frequency bounds are not supported in sbeam Phase 1;
+all requested ND modes will be returned regardless of V1/V2.
+Remove V1/V2 from the EIGRL card or use ND to limit the mode count.
+```
+
+**Fix (`docs/Modal_analysis.md`):** Line 94 corrected — now states that V1/V2 filtering
+is not implemented and directs users to use the ND field instead.
+
+V1/V2 filtering is deferred to a future phase.
+
+---
+
 ### R12: `run_sol101` crashes with confusing error when subcase has no LOAD card ✅ FIXED
 
 **Root cause:** `run_sol101` called `assemble_load_vector(bulk, load_sid)` unconditionally even
