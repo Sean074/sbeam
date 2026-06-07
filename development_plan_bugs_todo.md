@@ -119,19 +119,6 @@ FIX:    Add v_rbar_offset.bdf and a corresponding integration test asserting the
 
 ---
 
-### [MINOR] R20 — No integration test for CBUSH spring element
-
-**File:** `tests/`
-
-```
-[MINOR] tests/ — Only unit tests in test_cbush.py cover the stiffness matrix; no BDF + solver
-        path test verifies that a known CBUSH stiffness produces the correct reaction force.
-FIX:    Add a simple grounded- or two-node-CBUSH BDF file and a test checking
-        force = K * displacement.
-```
-
----
-
 ### [NIT] R21 — `check_spc_enforced_displacements` called unconditionally when `spc_sid` may be `None`
 
 **File:** `sbeam/solver/sol101.py:252–255`

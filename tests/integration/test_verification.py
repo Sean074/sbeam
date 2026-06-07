@@ -656,3 +656,34 @@ class TestR12NoLoadSid:
         result = run_sol101(bulk, subcase)
         for vec in result.reactions.values():
             np.testing.assert_array_equal(vec, 0.0)
+
+
+# ---------------------------------------------------------------------------
+# V20 — CBUSH grounded spring: u = F/K,  F_spring = K × u  (< 0.01%)
+# ---------------------------------------------------------------------------
+
+K_V20 = 5000.0
+F_V20 = 1000.0
+
+
+class TestV20CbushGroundedSpring:
+    @pytest.fixture(scope="class")
+    def result_and_gi(self):
+        cc, bulk = parse_bdf(BDF_DIR / "v20_cbush_grounded_spring.bdf")
+        result = run_sol101(bulk, cc.subcases[0])
+        gi = build_grid_index(bulk)
+        return result, gi
+
+    def test_displacement_equals_f_over_k(self, result_and_gi):
+        """Tx at grounded node equals F/K."""
+        result, gi = result_and_gi
+        tx = result.displacements[6 * gi[1]]
+        assert tx == pytest.approx(F_V20 / K_V20, rel=1e-4)
+
+    def test_cbush_force_equals_k_times_u(self, result_and_gi):
+        """CBUSH element force in X equals K × u = F."""
+        result, gi = result_and_gi
+        tx = result.displacements[6 * gi[1]]
+        assert 1 in result.cbush_forces
+        f_cbush = result.cbush_forces[1][0]
+        assert abs(f_cbush) == pytest.approx(K_V20 * tx, rel=1e-4)

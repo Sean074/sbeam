@@ -1166,3 +1166,17 @@ SPC reactions. This matches NASTRAN behaviour.
 
 **Acceptance test:** 497 total tests pass, 0 failures.
 
+---
+
+### R20: No integration test for CBUSH grounded spring through solver ✅ FIXED
+
+**Root cause:** `tests/assembly/test_cbush.py` covered the CBUSH stiffness matrix, transform, and solver behaviour only through programmatic model construction. No end-to-end BDF file path test existed to exercise the full `parse_bdf → run_sol101` pipeline for a CBUSH element.
+
+**Fix:**
+- `tests/integration/bdf/v20_cbush_grounded_spring.bdf` — single-node model: PBUSH K1=5000 N/m, grounded CBUSH, SPC1 releasing only Tx, FORCE 1000 N in +X.
+- `tests/integration/test_verification.py::TestV20CbushGroundedSpring` — two tests:
+  - `test_displacement_equals_f_over_k` — Tx at grounded node equals F/K = 0.2 m (rel ≤ 0.01%).
+  - `test_cbush_force_equals_k_times_u` — CBUSH element force in X equals K × u = F (rel ≤ 0.01%).
+
+**Acceptance test:** 502 total tests pass, 0 failures.
+

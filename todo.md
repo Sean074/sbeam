@@ -11,18 +11,6 @@ are listed below by severity. Full review findings are in `development_plan_bugs
 
 ---
 
-## MINOR — Fix before beta release
-
-### [R20] No integration test for CBUSH grounded spring through solver
-
-`test_cbush.py` covers the stiffness matrix in isolation; no BDF + SOL 101 path test
-verifies that a known CBUSH K produces the correct reaction force.
-
-**Fix:** Add `tests/integration/bdf/v20_cbush_grounded_spring.bdf` and integration test
-asserting `F = K × u`.
-
----
-
 ## NIT — Optional / next cleanup PR
 
 ### [R21] `check_spc_enforced_displacements` unconditional (`solver/sol101.py:255`)
