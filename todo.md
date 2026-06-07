@@ -13,28 +13,6 @@ are listed below by severity. Full review findings are in `development_plan_bugs
 
 ## MINOR — Fix before beta release
 
-### [R16] `docs/sbeam.md` module table and verification table out of date
-
-- Module structure table omits `assembly/load_vector.py`.
-- Verification case table ends at V14; tests V15–V18 (GRAV, RBE2 lever-arm) exist and pass
-  but are undocumented.
-
-**Fix:** Add `load_vector.py` row to the assembly block; add V15–V18 rows to the
-verification table.
-
-### [R17] `docs/Beam_model.md:587` "Cards recognised" omits GRAV and RBAR
-
-Both cards are fully implemented and tested. The summary line omits them.
-
-**Fix:** Add GRAV and RBAR to the comma-separated recognised-cards list.
-
-### [R18] `docs/Static_analysis.md:237–256` stale module reference and missing verification cases
-
-`assemble_load_vector` is shown as living in `sol101.py`; it lives in
-`assembly/load_vector.py`. CBUSH, RBAR, and GRAV verification cases are not mentioned.
-
-**Fix:** Correct module reference; add V11, V15–V18 as relevant verification examples.
-
 ### [R19] No integration test for RBAR with non-zero offset
 
 V14 covers zero-offset RBAR only. The lever-arm R-matrix is not exercised end-to-end.

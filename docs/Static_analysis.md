@@ -232,13 +232,54 @@ Output sections written to `results.f06`:
 - Parameters: G=1.0, J=2.0, L=1.0, T=4.0 → expected θ_x = 2.0 rad
 - Tolerance: < 0.1% relative error.
 
+### Case 5 — Cantilever + Zero-Offset RBAR (V14)
+
+- Configuration: cantilever with a zero-offset RBAR connecting GID2 (free tip) to GID3; GID3 carries the tip load.
+- Expected GID2 tip deflection: `δ = PL³ / 3EI` (RBAR with d=0 must be transparent).
+- Expected GID3 displacement = GID2 displacement exactly (rigid coupling, no lever arm).
+- BDF: `tests/integration/bdf/v14_rbar_zero_offset.bdf`
+- Tolerance: < 0.1% relative error; GID3 == GID2 to machine precision.
+
+### Case 6 — Gravity Load, Simply Supported Beam (V15)
+
+- Configuration: simply supported CBAR beam under uniform body acceleration (GRAV −Y); mass derived from CBAR distributed density.
+- Expected reaction sum: `ΣR = total_mass × g` (392.5 kg × 9.81 = 3850.425 N).
+- BDF: `tests/integration/bdf/v15_grav_simply_supported.bdf`
+- Tolerance: < 0.01% relative error; reactions symmetric to 0.01%.
+
+### Case 7 — Gravity Load with CONM2 (V16)
+
+- Configuration: same beam as V15 with an additional 50 kg CONM2 at mid-span.
+- Expected reaction sum: 442.5 kg × 9.81 = 4340.925 N (CBAR mass + CONM2 contribution).
+- BDF: `tests/integration/bdf/v16_grav_with_conm2.bdf`
+- Tolerance: < 0.01% relative error.
+
+### Case 8 — Gravity Combined with Nodal Force via LOAD (V17)
+
+- Configuration: GRAV −Y combined with an upward nodal FORCE via a LOAD card (superposition).
+- Expected reaction sum: 2849.225 N (net of gravity weight and upward force).
+- BDF: `tests/integration/bdf/v17_grav_plus_force.bdf`
+- Tolerance: < 0.01% relative error.
+
+### Case 9 — RBE2 with Eccentric Offset / Lever-Arm (V18)
+
+- Configuration: cantilever with a non-coincident RBE2; dependent node GM is offset 0.5 m in X from independent node GN.
+- Expected `u_y(GM)` matches analytical lever-arm formula to 0.1%; `u_GM = R × u_GN` to 1e-14 (rigid-body consistency).
+- BDF: `tests/integration/bdf/v18_rbe2_offset.bdf`
+- Tolerance: < 0.1% relative error on deflection; rigid-body consistency to 1e-14.
+
+### CBUSH — Unit-Level Stiffness Coverage
+
+CBUSH stiffness and force recovery are verified at unit level in `tests/assembly/test_cbush.py` (axial, torsional, grounded-spring, 45° orientation, and mixed-DOF cases). An end-to-end BDF + SOL 101 integration test (`v20_cbush_grounded_spring.bdf`) asserting `F = K × u` is tracked as R20.
+
 ---
 
-## Solver Module: `solver/sol101.py`
+## Key Modules
 
-Key functions:
+Key functions across the solver and assembly layers:
 
 ```python
+# solver/sol101.py
 def run_sol101(bulk: BulkData, subcase: SubcaseControl) -> Sol101Result:
     ...
 
