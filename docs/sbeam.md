@@ -17,17 +17,19 @@ sbeam/
 │   ├── bdf_reader.py     # Bulk data section parser → BulkData object
 │   └── case_control.py   # Case control section parser → CaseControl object
 ├── model/
+│   ├── bulk_data.py          # BulkData container dataclass
 │   ├── grid.py               # Grid dataclass (includes cp, cd fields)
 │   ├── element.py            # Cbar, Plotel, Rbe3, Rbe2, Rbar dataclasses
-│   ├── property.py           # Pbar dataclass
+│   ├── property.py           # Pbar, Pbush dataclasses
 │   ├── material.py           # Mat1 dataclass
-│   ├── load.py               # Force, Moment, Load dataclasses
+│   ├── load.py               # Force, Moment, Load, Grav dataclasses
 │   ├── constraint.py         # Spc, Spc1 dataclasses
 │   ├── mass.py               # Conm2 dataclass
 │   └── coordinate_system.py  # Cord2r dataclass
 ├── assembly/
 │   ├── stiffness.py          # Global stiffness matrix assembly
 │   ├── mass_matrix.py        # Global consistent mass matrix assembly
+│   ├── load_vector.py        # Load vector assembly (FORCE, MOMENT, GRAV)
 │   ├── rbe3.py               # RBE3, RBE2, and RBAR DOF transformation matrix
 │   └── coord_transform.py    # CORD2R rotation matrices; input/output transforms
 ├── solver/
@@ -176,8 +178,12 @@ Tests mirror the `sbeam/` module structure under `tests/`. Each assembly, solver
 | V12 | `v12_conm2_offset_torsion_sol103.bdf` | 103 | f = √(GJ/L·m·d²)/(2π) (transverse offset) | < 1% |
 | V13 | `v13_rbe2_rigid_coupling.bdf` | 101 | Tip deflection = PL³/3EI via RBE2 coupling | < 0.1% |
 | V14 | `v14_rbar_zero_offset.bdf` | 101 | Tip deflection = PL³/3EI via RBAR (zero-offset, R=identity) | < 0.1% |
+| V15 | `v15_grav_simply_supported.bdf` | 101 | Reactions sum to ρALg (CBAR mass only under GRAV) | < 0.01% |
+| V16 | `v16_grav_with_conm2.bdf` | 101 | Reactions sum to (ρAL + m_conm2)·g (CBAR mass + CONM2 under GRAV) | < 0.01% |
+| V17 | `v17_grav_plus_force.bdf` | 101 | Reactions sum to net load (GRAV + upward FORCE combined via LOAD card) | < 0.01% |
+| V18 | `v18_rbe2_offset.bdf` | 101 | u_y at GN/GM satisfy cantilever formula with eccentric load; u_GM = R·u_GN (RBE2 lever-arm) | < 0.1% |
 
-V1–V7 use: E=2.0×10¹¹ Pa, ρ=7850 kg/m³, A=0.05 m², I=8.333×10⁻⁴ m⁴, L=1.0 m, 10 CBAR elements. V8–V14 use unit stiffness values defined in their BDF files; see `tests/integration/test_verification.py` for exact parameters.
+V1–V7 use: E=2.0×10¹¹ Pa, ρ=7850 kg/m³, A=0.05 m², I=8.333×10⁻⁴ m⁴, L=1.0 m, 10 CBAR elements. V8–V18 use parameters defined in their BDF files; see `tests/integration/test_verification.py` for exact values.
 
 ### Coverage
 

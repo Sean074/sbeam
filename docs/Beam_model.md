@@ -508,6 +508,7 @@ class BulkData:
     plotels: dict[int, Plotel]
     rbe3s: dict[int, Rbe3]
     rbe2s: dict[int, Rbe2]
+    rbars: dict[int, Rbar]
     pbars: dict[int, Pbar]
     pbushs: dict[int, Pbush]
     mat1s: dict[int, Mat1]
@@ -517,6 +518,7 @@ class BulkData:
     forces: dict[int, list[Force]]
     moments: dict[int, list[Moment]]
     loads: dict[int, Load]
+    gravs: dict[int, Grav]
     eigrls: dict[int, Eigrl]
     cord2rs: dict[int, Cord2r]
 ```
@@ -584,7 +586,7 @@ Accepts a list of BDF text lines (bulk data section only). Supports:
 - **Inline `$` comments** — everything from `$` to end of line is ignored
 - **Continuation lines** — lines whose first field starts with `+`; consumed by the preceding card handler (e.g. PBAR recovery points, SPC1 with >6 grids)
 
-Cards recognised: `CORD2R`, `GRID`, `PBAR`, `PBUSH`, `MAT1`, `CBAR`, `CBUSH`, `PLOTEL`, `CONM2`, `RBE3`, `RBE2`, `SPC`, `SPC1`, `FORCE`, `MOMENT`, `LOAD`, `EIGRL`.
+Cards recognised: `CORD2R`, `GRID`, `PBAR`, `PBUSH`, `MAT1`, `CBAR`, `CBUSH`, `PLOTEL`, `CONM2`, `RBE3`, `RBE2`, `RBAR`, `SPC`, `SPC1`, `FORCE`, `MOMENT`, `LOAD`, `GRAV`, `EIGRL`.
 Structural markers `BEGIN BULK` / `ENDDATA` are silently skipped.
 All other keywords issue `warnings.warn(…, UserWarning)` and are skipped.
 Duplicate GID, PID (PBAR), MID (MAT1), or LOAD SID raises `ValueError`.

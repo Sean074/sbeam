@@ -648,7 +648,7 @@ LOAD, SID, S, S1, L1, S2, L2, S3, L3, ...
 | SID | `sid` | int | Combined load set ID (referenced in case control) | required |
 | S | `s` | float | Overall scale factor | required |
 | S1, S2, … | (in `components`) | float | Scale factor for component load i | required |
-| L1, L2, … | (in `components`) | int | Load set ID for component load i (references FORCE/MOMENT SID) | required |
+| L1, L2, … | (in `components`) | int | Load set ID for component load i (references FORCE, MOMENT, or GRAV SID) | required |
 
 `components` is a list of `(scale: float, load_sid: int)` pairs. Applied load = `S × Σᵢ(Sᵢ × Loadᵢ)`.
 
@@ -656,6 +656,40 @@ LOAD, SID, S, S1, L1, S2, L2, S3, L3, ...
 ```
 $ Combine load sets 10 and 20 with factors 1.0 and 2.0, overall scale 1.0
 LOAD, 100, 1.0, 1.0, 10, 2.0, 20
+```
+
+---
+
+### GRAV — Gravity Body Load
+
+Applies a uniform body acceleration to all mass-bearing DOFs using the assembled consistent mass matrix.
+
+**Format:**
+```
+GRAV, SID, CID, G, N1, N2, N3
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| SID | `sid` | int | Load set ID (referenced by `LOAD` card or directly by `LOAD` in case control) | required |
+| CID | `cid` | int | Coordinate system for direction vector (`0` = global only in Phase 1–2) | `0` |
+| G | `g` | float | Acceleration magnitude (m/s² or consistent units) | required |
+| N1 | `n1` | float | Direction component 1 | required |
+| N2 | `n2` | float | Direction component 2 | required |
+| N3 | `n3` | float | Direction component 3 | required |
+
+The gravity load vector is computed as `f_grav = M_global × a_field`, where `a_field` has `G × [N1, N2, N3]` at every translational DOF and zero at rotational DOFs. Both CBAR distributed mass and CONM2 point masses contribute naturally through the assembled consistent mass matrix.
+
+GRAV SIDs may appear as component loads in a `LOAD` card, mixed freely with `FORCE` and `MOMENT` SIDs. CID ≠ 0 raises a parse error in Phase 1–2.
+
+**Example:**
+```
+$ Standard gravity in –Y (g = 9.81 m/s²), global frame
+GRAV, 1, 0, 9.81, 0.0, -1.0, 0.0
+$ Reference GRAV via LOAD card (combined with a point force)
+LOAD, 100, 1.0, 1.0, 1, 1.0, 10
 ```
 
 ---
@@ -720,5 +754,6 @@ DOF strings (used in SPC, SPC1, RBE2, RBE3, CBAR pin releases) are digit sequenc
 | CORD2R | CID must be > 0; chained RID references supported; cycles raise `ValueError` |
 | CORD2R | CORD2C/CORD2S/CORD1R not supported |
 | EIGRL | V1/V2 filtering applied in Hz |
+| GRAV | CID must be `0` (global frame only) in Phase 1–2 |
 | MAT1 | Thermal fields (A, TREF, GE) parsed but ignored in Phase 1–2 |
 | SPC | Enforced displacement D must be `0.0` in Phase 1–2 |
