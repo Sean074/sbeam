@@ -1,4 +1,4 @@
-"""Step 24: End-to-end integration verification tests (V1–V18).
+"""Step 24: End-to-end integration verification tests (V1–V19).
 
 Each test reads a BDF file through parse_bdf, runs the solver, and checks
 the result against a closed-form analytical value.
@@ -553,6 +553,69 @@ class TestV18Rbe2LeverArm:
             [0, 0, 0, 0, 0, 1],
         ])
         np.testing.assert_allclose(u_gm, R @ u_gn, atol=1e-14)
+
+
+# ---------------------------------------------------------------------------
+# V19 — RBAR lever-arm: non-zero offset (Step 38)
+# ---------------------------------------------------------------------------
+# Cantilever: CBAR from grid 1 (fixed) to grid 2 (GA, free tip). Grid 3 (GB)
+# is offset a=0.5 in X from GA. Force P in +Y at GB transfers to GA as force
+# P plus moment M_z = a*P, giving analytically:
+#
+#   EI = E * I = 2e11 * 8.333e-4 = 1.6666e8
+#   u_y(GA) = P*L^3/(3*EI) + a*P*L^2/(2*EI) = 3.5e-6 m
+#   θ_z(GA) = P*L^2/(2*EI) + a*P*L/(EI)    = 6.0e-6 rad
+#   u_y(GB) = u_y(GA) + a*θ_z(GA)           = 6.5e-6 m  [lever-arm]
+
+_E_V19  = 2.0e11
+_I_V19  = 8.333e-4
+_L_V19  = 1.0
+_P_V19  = 1000.0
+_A_V19  = 0.5   # X offset of GB from GA
+_EI_V19 = _E_V19 * _I_V19
+
+_UY_GA_V19 = (_P_V19 * _L_V19**3 / (3 * _EI_V19)
+              + _A_V19 * _P_V19 * _L_V19**2 / (2 * _EI_V19))
+_TZ_GA_V19 = (_P_V19 * _L_V19**2 / (2 * _EI_V19)
+              + _A_V19 * _P_V19 * _L_V19 / _EI_V19)
+_UY_GB_V19 = _UY_GA_V19 + _A_V19 * _TZ_GA_V19
+
+
+class TestV19RbarLeverArm:
+    @pytest.fixture(scope="class")
+    def result_and_gi(self):
+        cc, bulk = parse_bdf(BDF_DIR / "v19_rbar_offset.bdf")
+        result = run_sol101(bulk, cc.subcases[0])
+        gi = build_grid_index(bulk)
+        return result, gi
+
+    def test_ga_tip_deflection(self, result_and_gi):
+        """u_y at GA (grid 2) matches cantilever formula with lever-arm load transfer."""
+        result, gi = result_and_gi
+        u_y = result.displacements[6 * gi[2] + 1]
+        assert u_y == pytest.approx(_UY_GA_V19, rel=1e-3)
+
+    def test_gb_lever_arm_deflection(self, result_and_gi):
+        """u_y at GB (grid 3) includes lever-arm: u_y(GA) + a*θ_z(GA)."""
+        result, gi = result_and_gi
+        u_y = result.displacements[6 * gi[3] + 1]
+        assert u_y == pytest.approx(_UY_GB_V19, rel=1e-3)
+
+    def test_gb_equals_R_times_ga(self, result_and_gi):
+        """All 6 DOFs at GB satisfy u_GB = R @ u_GA (RBAR rigid-body kinematics)."""
+        result, gi = result_and_gi
+        u_ga = result.displacements[6 * gi[2]: 6 * gi[2] + 6]
+        u_gb = result.displacements[6 * gi[3]: 6 * gi[3] + 6]
+        dx = _A_V19
+        R = np.array([
+            [1, 0, 0, 0,   0,   0],
+            [0, 1, 0, 0,   0,  dx],
+            [0, 0, 1, 0, -dx,   0],
+            [0, 0, 0, 1,   0,   0],
+            [0, 0, 0, 0,   1,   0],
+            [0, 0, 0, 0,   0,   1],
+        ])
+        np.testing.assert_allclose(u_gb, R @ u_ga, atol=1e-14)
 
 
 # ---------------------------------------------------------------------------

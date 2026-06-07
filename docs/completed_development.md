@@ -435,11 +435,14 @@ The two top-level functions serve distinct use cases:
 - `tests/parser/test_rbar.py` — parsing tests (fixed-field, free-field, defaults, validation).
 - `tests/assembly/test_rbar.py` — transformation tests including lever-arm correctness test.
 - `tests/integration/bdf/v14_rbar_zero_offset.bdf` — cantilever + zero-offset RBAR integration BDF.
-- `tests/integration/test_verification.py` — `TestV14RbarZeroOffset` class.
+- `tests/integration/bdf/v19_rbar_offset.bdf` — cantilever + non-zero X-offset RBAR integration BDF (a=0.5 m).
+- `tests/integration/test_verification.py` — `TestV14RbarZeroOffset` and `TestV19RbarLeverArm` classes.
 - `docs/Beam_model.md`, `docs/card_definition.md`, `docs/sbeam.md` — updated.
+- `docs/Static_analysis.md` — Case 5b (V19) added to Verification Cases section.
 
 **Test / Acceptance:**
 - V14: zero-offset RBAR — Ty[GID2] matches PL³/3EI; u[GID3] == u[GID2] exactly ✓
+- V19: non-zero offset RBAR — u_y(GA) = 3.5×10⁻⁶ m; u_y(GB) = 6.5×10⁻⁶ m; u_GB = R @ u_GA to 1×10⁻¹⁴ ✓
 - Lever-arm unit test: GA at origin, GB at (L,0,0), θ_Ay=1.0 → u_Bz = −L (non-zero, correct) ✓
 - RBE2 coexistence, GA-in-dep-set validation, R-matrix all-entries check ✓
 

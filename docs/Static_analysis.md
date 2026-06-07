@@ -240,6 +240,15 @@ Output sections written to `results.f06`:
 - BDF: `tests/integration/bdf/v14_rbar_zero_offset.bdf`
 - Tolerance: < 0.1% relative error; GID3 == GID2 to machine precision.
 
+### Case 5b — RBAR Non-Zero Offset / Lever-Arm (V19)
+
+- Configuration: same cantilever; GA (GID 2) is the free CBAR tip, GB (GID 3) is offset a = 0.5 m in X. Force P in +Y at GB transfers to GA as F_y + M_z = a·P.
+- Expected GA tip deflection: `u_y(GA) = PL³/(3EI) + a·PL²/(2EI) = 3.5×10⁻⁶ m`
+- Expected GB deflection (lever-arm): `u_y(GB) = u_y(GA) + a·θ_z(GA) = 6.5×10⁻⁶ m`
+- Rigid-body consistency: `u_GB = R @ u_GA` to 1×10⁻¹⁴ (exercises the full R-matrix).
+- BDF: `tests/integration/bdf/v19_rbar_offset.bdf`
+- Tolerance: < 0.1% relative error on deflections.
+
 ### Case 6 — Gravity Load, Simply Supported Beam (V15)
 
 - Configuration: simply supported CBAR beam under uniform body acceleration (GRAV −Y); mass derived from CBAR distributed density.

@@ -13,13 +13,6 @@ are listed below by severity. Full review findings are in `development_plan_bugs
 
 ## MINOR — Fix before beta release
 
-### [R19] No integration test for RBAR with non-zero offset
-
-V14 covers zero-offset RBAR only. The lever-arm R-matrix is not exercised end-to-end.
-
-**Fix:** Add `tests/integration/bdf/v19_rbar_offset.bdf` and corresponding test in
-`test_verification.py` asserting the lever-arm deflection formula.
-
 ### [R20] No integration test for CBUSH grounded spring through solver
 
 `test_cbush.py` covers the stiffness matrix in isolation; no BDF + SOL 101 path test

@@ -1,0 +1,35 @@
+$ V19: RBAR non-zero X offset (lever-arm)
+$ GID 1: fixed. GID 2: CBAR tip at x=1.0 (GA, independent end of RBAR).
+$ GID 3: at x=1.5 — offset a=0.5 in X from GA (GB, dependent end).
+$ Force 1000 N in +Y at GID 3 transfers to GID 2 as F_y + M_z = a*F_y.
+$ Expected: u_y(GA) = PL^3/(3EI) + a*PL^2/(2EI) = 3.5e-6 m
+$           u_y(GB) = u_y(GA) + a*theta_z(GA)     = 6.5e-6 m
+$           u_GB = R @ u_GA to machine precision (lever-arm kinematics)
+$
+SOL 101
+$
+SUBCASE 1
+  TITLE = RBAR Lever-Arm Offset
+  SPC = 1
+  LOAD = 10
+  DISPLACEMENT = ALL
+$
+BEGIN BULK
+$
+GRID, 1, , 0.0, 0.0, 0.0
+GRID, 2, , 1.0, 0.0, 0.0
+GRID, 3, , 1.5, 0.0, 0.0
+$
+MAT1, 1, 2.0e11, 7.692e10, 0.3, 7850.0
+$
+PBAR, 1, 1, 0.05, 8.333e-4, 8.333e-4, 1.406e-3
+$
+CBAR, 1, 1, 1, 2, 0.0, 1.0, 0.0
+$
+RBAR, 1, 2, 3
+$
+SPC1, 1, 123456, 1
+$
+FORCE, 10, 3, 0, 1000.0, 0.0, 1.0, 0.0
+$
+ENDDATA
