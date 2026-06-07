@@ -183,6 +183,9 @@ def run_sol103(bulk: BulkData, subcase: SubcaseControl) -> Sol103Result:
         M_free = M[free_dofs, :][:, free_dofs]
         freqs_hz, phi_free = solve_modes(K_free, M_free, eigrl, force_dense=force_dense)
         n_modes = len(freqs_hz)
+        gen_masses = np.array([
+            float((M_free @ phi_free[:, i]) @ phi_free[:, i]) for i in range(n_modes)
+        ])
         phi_red = np.zeros((n_red, n_modes))
         phi_red[free_dofs, :] = phi_free
         full_phi = T @ phi_red
@@ -192,6 +195,9 @@ def run_sol103(bulk: BulkData, subcase: SubcaseControl) -> Sol103Result:
         M_free = M[free_dofs, :][:, free_dofs]
         freqs_hz, phi_free = solve_modes(K_free, M_free, eigrl, force_dense=force_dense)
         n_modes = len(freqs_hz)
+        gen_masses = np.array([
+            float((M_free @ phi_free[:, i]) @ phi_free[:, i]) for i in range(n_modes)
+        ])
         full_phi = np.zeros((n_dofs, n_modes))
         full_phi[free_dofs, :] = phi_free
 
@@ -201,4 +207,5 @@ def run_sol103(bulk: BulkData, subcase: SubcaseControl) -> Sol103Result:
         frequencies_hz=freqs_hz,
         mode_shapes=full_phi,
         eigenvalues=eigenvalues,
+        generalized_masses=gen_masses,
     )

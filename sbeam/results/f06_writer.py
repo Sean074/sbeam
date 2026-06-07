@@ -222,10 +222,12 @@ def _build_f06_sol103_text(
         "   MODE NO.      EIGENVALUE            RADIANS             CYCLES             GENERALIZED MASS"
     )
 
-    for i, (freq, lam) in enumerate(zip(result.frequencies_hz, result.eigenvalues), start=1):
+    for i, (freq, lam, gm) in enumerate(
+        zip(result.frequencies_hz, result.eigenvalues, result.generalized_masses), start=1
+    ):
         omega = 2.0 * 3.141592653589793 * freq
         lines.append(
-            f"{i:>10}  {_fmt(lam)}  {_fmt(omega)}  {_fmt(freq)}  {_fmt(1.0)}"
+            f"{i:>10}  {_fmt(lam)}  {_fmt(omega)}  {_fmt(freq)}  {_fmt(gm)}"
         )
 
     lines.append("")

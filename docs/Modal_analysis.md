@@ -119,13 +119,15 @@ Controlled by the `NORM` field of EIGRL:
 ```
 phi_norm = phi / sqrt(phi^T M_free phi)
 ```
-Modal mass = 1.0 for each mode.
+The returned eigenvectors are M-orthonormal: `phi_i^T M phi_j = delta_ij`. Generalised mass = 1.0 for every mode.
 
 **MAX normalisation:**
 ```
 phi_norm = phi / max(abs(phi))
 ```
-Maximum component of each mode shape = 1.0.
+Maximum component of each mode shape = 1.0. Generalised mass (`phi^T M phi`) is **not** 1.0 in general; its value depends on the mass distribution and mode shape.
+
+**Generalised mass in the f06:** The GENERALIZED MASS column of the Real Eigenvalue Table is computed as `phi_free_i^T M_free phi_free_i` using the unregularised `M_free`. For `norm=MASS` this evaluates to ≈ 1.0 (within numerical tolerance); for `norm=MAX` the actual physical value is written.
 
 ---
 

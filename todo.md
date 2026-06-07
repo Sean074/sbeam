@@ -11,21 +11,6 @@ are listed below by severity. Full review findings are in `development_plan_bugs
 
 ---
 
-## CRITICAL — Block merge / release
-
-### [C-1] SOL 103 generalized mass hard-coded to `1.0` (`results/f06_writer.py:228`)
-
-For `norm=MASS` eigenvectors are M-orthonormal so 1.0 is correct. For `norm=MAX`
-(peak-component normalisation) the actual generalised mass is `phi^T @ M @ phi`, which is
-not 1.0. Any downstream tool that reads the GENERALIZED MASS column under `norm=MAX` receives
-a fabricated value with no warning.
-
-**Fix:** Pass the reduced mass matrix into `_build_f06_sol103_text`; compute per-mode
-`phi_i.T @ M_red @ phi_i`. Add a regression test asserting `gen_mass == approx(1.0)` for
-`norm=MASS` and `!= 1.0` for at least one mode under `norm=MAX`.
-
----
-
 ## MINOR — Fix before beta release
 
 ### [R16] `docs/sbeam.md` module table and verification table out of date

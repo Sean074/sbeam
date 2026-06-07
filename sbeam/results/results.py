@@ -45,6 +45,7 @@ class Sol101Result:
 
 @dataclass
 class Sol103Result:
-    frequencies_hz: np.ndarray  # shape (n_modes,) — natural frequencies in Hz
-    mode_shapes: np.ndarray     # shape (n_dofs, n_modes) — full global DOF mode shapes
-    eigenvalues: np.ndarray     # shape (n_modes,) — raw eigenvalues ω² [rad²/s²]
+    frequencies_hz: np.ndarray      # shape (n_modes,) — natural frequencies in Hz
+    mode_shapes: np.ndarray         # shape (n_dofs, n_modes) — full global DOF mode shapes
+    eigenvalues: np.ndarray         # shape (n_modes,) — raw eigenvalues ω² [rad²/s²]
+    generalized_masses: np.ndarray  # shape (n_modes,) — phi_i^T M_free phi_i per mode
