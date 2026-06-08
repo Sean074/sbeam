@@ -1,0 +1,30 @@
+<svg viewBox="0 0 560 380" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ax" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+  </defs>
+  <style>
+    .lbl{fill:#1a1a1a;font-size:13.5px;}
+    .sub{fill:#555;font-size:12px;font-style:italic;}
+  </style>
+
+  <!-- axes -->
+  <line x1="70" y1="330" x2="520" y2="330" stroke="#333" stroke-width="1.8" marker-end="url(#ax)"/>
+  <line x1="70" y1="330" x2="70" y2="40"  stroke="#333" stroke-width="1.8" marker-end="url(#ax)"/>
+  <text class="lbl" x="300" y="366" text-anchor="middle">dynamic pressure  q = ½ρV²</text>
+  <text class="lbl" x="24" y="190" text-anchor="middle" transform="rotate(-90 24 190)">elastic twist amplification  θ/θ_rigid</text>
+
+  <!-- asymptote at q_div -->
+  <line x1="430" y1="330" x2="430" y2="50" stroke="#c0392b" stroke-width="1.6" stroke-dasharray="6 5"/>
+  <text class="sub" x="430" y="44" text-anchor="middle" fill="#c0392b">q_div</text>
+
+  <!-- amplification curve: 1/(1 - q/qdiv) -->
+  <path d="M70,305 C200,295 330,270 380,235 C415,205 428,150 430,70"
+        fill="none" stroke="#1f6feb" stroke-width="2.6"/>
+  <text class="sub" x="150" y="290" fill="#1f6feb">θ/θ_rigid = 1 / (1 − q/q_div)</text>
+
+  <!-- baseline -->
+  <line x1="70" y1="305" x2="430" y2="305" stroke="#9aa7b4" stroke-width="1" stroke-dasharray="3 4"/>
+  <text class="sub" x="80" y="300" fill="#777">rigid (q→0)</text>
+</svg>

@@ -1,0 +1,30 @@
+<svg viewBox="0 0 560 380" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ax2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+  </defs>
+  <style>
+    .lbl{fill:#1a1a1a;font-size:13.5px;}
+    .sub{fill:#555;font-size:12px;}
+  </style>
+
+  <!-- axes -->
+  <line x1="70" y1="320" x2="520" y2="320" stroke="#333" stroke-width="1.8" marker-end="url(#ax2)"/>
+  <line x1="70" y1="320" x2="70" y2="40"  stroke="#333" stroke-width="1.8" marker-end="url(#ax2)"/>
+  <text class="lbl" x="300" y="356" text-anchor="middle">number of retained modes  n</text>
+  <text class="lbl" x="26" y="180" text-anchor="middle" transform="rotate(-90 26 180)">recovered CBAR-load error</text>
+
+  <!-- mode-displacement: slow decay (dashed) -->
+  <path d="M90,70 C160,150 240,225 330,265 C400,292 470,300 505,303"
+        fill="none" stroke="#c0392b" stroke-width="2.4" stroke-dasharray="7 5"/>
+  <!-- mode-acceleration: fast decay (solid) -->
+  <path d="M90,90 C120,250 150,300 200,308 C300,316 430,318 505,318"
+        fill="none" stroke="#1f6feb" stroke-width="2.6"/>
+
+  <!-- legend -->
+  <line x1="300" y1="90" x2="338" y2="90" stroke="#c0392b" stroke-width="2.4" stroke-dasharray="7 5"/>
+  <text class="sub" x="346" y="94" fill="#c0392b">mode-displacement (slow)</text>
+  <line x1="300" y1="114" x2="338" y2="114" stroke="#1f6feb" stroke-width="2.6"/>
+  <text class="sub" x="346" y="118" fill="#1f6feb">mode-acceleration (fast)</text>
+</svg>

@@ -1,0 +1,51 @@
+<svg viewBox="0 0 820 360" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+  </defs>
+  <style>
+    .box{fill:#f4f7fb;stroke:#1f6feb;stroke-width:1.6;rx:8;}
+    .t{fill:#1a1a1a;font-size:15px;}
+    .ts{fill:#1a1a1a;font-size:13px;}
+    .lbl{fill:#555;font-size:12.5px;font-style:italic;}
+    .flow{stroke:#444;stroke-width:1.6;fill:none;}
+  </style>
+
+  <!-- boxes -->
+  <rect class="box" x="30"  y="30"  width="230" height="66" rx="8"/>
+  <rect class="box" x="560" y="30"  width="230" height="66" rx="8"/>
+  <rect class="box" x="560" y="264" width="230" height="66" rx="8"/>
+  <rect class="box" x="30"  y="264" width="230" height="66" rx="8"/>
+
+  <text class="t"  x="145" y="58"  text-anchor="middle">Elastic deflection</text>
+  <text class="ts" x="145" y="80"  text-anchor="middle">u_a   (structure: K_aa, M_aa)</text>
+
+  <text class="t"  x="675" y="52"  text-anchor="middle">Aero downwash</text>
+  <text class="ts" x="675" y="74"  text-anchor="middle">w = D_jk G_kg u_a + w_g</text>
+  <text class="ts" x="675" y="91"  text-anchor="middle">(spline + baseline incidence)</text>
+
+  <text class="t"  x="675" y="290" text-anchor="middle">Box pressures</text>
+  <text class="ts" x="675" y="312" text-anchor="middle">cp = (AJJ*)^-1 w</text>
+
+  <text class="t"  x="145" y="290" text-anchor="middle">Structural aero load</text>
+  <text class="ts" x="145" y="312" text-anchor="middle">f = q G_kg^T S_kj cp</text>
+
+  <!-- loop arrows (clockwise) -->
+  <path class="flow" d="M260,63 L556,63" marker-end="url(#ah)"/>
+  <text class="lbl" x="408" y="52" text-anchor="middle">G_kg  (displacement → slope)</text>
+
+  <path class="flow" d="M675,96 L675,260" marker-end="url(#ah)"/>
+  <text class="lbl" x="688" y="182" text-anchor="start">q · S_kj · (AJJ*)^-1</text>
+
+  <path class="flow" d="M560,297 L264,297" marker-end="url(#ah)"/>
+  <text class="lbl" x="408" y="288" text-anchor="middle">G_kgᵀ  (force transfer)</text>
+
+  <path class="flow" d="M145,264 L145,100" marker-end="url(#ah)"/>
+  <text class="lbl" x="132" y="182" text-anchor="end">adds to K_aa u_a</text>
+
+  <!-- centre caption -->
+  <rect x="300" y="150" width="220" height="60" rx="6" fill="#fff8e6" stroke="#d9a300" stroke-width="1.2"/>
+  <text x="410" y="176" text-anchor="middle" font-size="13.5" fill="#1a1a1a">(K_aa − q Q_aa) u_a =</text>
+  <text x="410" y="196" text-anchor="middle" font-size="13.5" fill="#1a1a1a">q Q_ax δ_x + q f_g + f_ext</text>
+</svg>

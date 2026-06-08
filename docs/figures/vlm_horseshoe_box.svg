@@ -1,0 +1,49 @@
+<svg viewBox="0 0 680 440" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/>
+    </marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1f6feb"/>
+    </marker>
+  </defs>
+  <style>
+    .lbl{fill:#1a1a1a;font-size:14px;}
+    .sub{fill:#555;font-size:12.5px;font-style:italic;}
+  </style>
+
+  <!-- freestream -->
+  <line x1="40" y1="60" x2="150" y2="60" stroke="#2e7d32" stroke-width="2.4" marker-end="url(#a1)"/>
+  <text class="lbl" x="40" y="48" fill="#2e7d32">U∞  (freestream, +x)</text>
+
+  <!-- trapezoidal panel (planform, flow left->right) -->
+  <polygon points="170,120 170,330 470,300 470,150" fill="#eef4fb" stroke="#1f6feb" stroke-width="1.8"/>
+  <text class="sub" x="320" y="245" text-anchor="middle">panel area  S_k</text>
+
+  <!-- leading edge label -->
+  <text class="sub" x="150" y="115" text-anchor="end">leading edge</text>
+  <text class="sub" x="486" y="150" text-anchor="start">trailing edge</text>
+
+  <!-- quarter-chord bound vortex -->
+  <line x1="245" y1="127.5" x2="245" y2="322.5" stroke="#c0392b" stroke-width="3"/>
+  <circle cx="245" cy="225" r="3.5" fill="#c0392b"/>
+  <text class="lbl" x="232" y="360" text-anchor="middle" fill="#c0392b">bound vortex  Γ_k</text>
+  <text class="sub" x="232" y="378" text-anchor="middle" fill="#c0392b">at ¼-chord</text>
+
+  <!-- trailing legs to infinity -->
+  <line x1="245" y1="127.5" x2="640" y2="120" stroke="#c0392b" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#ar)"/>
+  <line x1="245" y1="322.5" x2="640" y2="332" stroke="#c0392b" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#ar)"/>
+  <text class="sub" x="560" y="110" text-anchor="middle" fill="#c0392b">trailing legs → ∞</text>
+
+  <!-- collocation point at 3/4 chord -->
+  <circle cx="357" cy="223" r="5" fill="#1f6feb"/>
+  <text class="lbl" x="357" y="208" text-anchor="middle" fill="#1f6feb">collocation pt</text>
+  <text class="sub" x="357" y="420" text-anchor="middle" fill="#1f6feb">at ¾-chord — flow tangency imposed here</text>
+
+  <!-- normal / downwash arrow at collocation -->
+  <line x1="357" y1="223" x2="357" y2="150" stroke="#1f6feb" stroke-width="1.8" marker-end="url(#ab)"/>
+  <text class="sub" x="367" y="160" text-anchor="start" fill="#1f6feb">n_k , w_k</text>
+</svg>

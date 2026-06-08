@@ -1,0 +1,55 @@
+<svg viewBox="0 0 760 380" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="d1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1f6feb"/>
+    </marker>
+    <marker id="d2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/>
+    </marker>
+  </defs>
+  <style>
+    .lbl{fill:#1a1a1a;font-size:14px;}
+    .sub{fill:#555;font-size:12.5px;font-style:italic;}
+  </style>
+
+  <!-- aero mesh (k-set) -->
+  <text class="lbl" x="120" y="40" text-anchor="start">Aerodynamic boxes  (k-set)</text>
+  <g fill="#eef4fb" stroke="#1f6feb" stroke-width="1.4">
+    <rect x="120" y="55" width="80" height="40"/><rect x="200" y="55" width="80" height="40"/>
+    <rect x="280" y="55" width="80" height="40"/><rect x="360" y="55" width="80" height="40"/>
+    <rect x="440" y="55" width="80" height="40"/><rect x="520" y="55" width="80" height="40"/>
+    <rect x="120" y="95" width="80" height="40"/><rect x="200" y="95" width="80" height="40"/>
+    <rect x="280" y="95" width="80" height="40"/><rect x="360" y="95" width="80" height="40"/>
+    <rect x="440" y="95" width="80" height="40"/><rect x="520" y="95" width="80" height="40"/>
+  </g>
+
+  <!-- structural beam axis (g-set) -->
+  <line x1="120" y1="300" x2="600" y2="300" stroke="#333" stroke-width="2.6"/>
+  <g fill="#333">
+    <circle cx="160" cy="300" r="6"/><circle cx="270" cy="300" r="6"/>
+    <circle cx="380" cy="300" r="6"/><circle cx="490" cy="300" r="6"/><circle cx="560" cy="300" r="6"/>
+  </g>
+  <text class="lbl" x="120" y="335" text-anchor="start">Structural grids on beam axis  (g-set, 6 DOF each)</text>
+
+  <!-- dashed connectors -->
+  <g stroke="#9aa7b4" stroke-width="1" stroke-dasharray="4 4">
+    <line x1="160" y1="135" x2="160" y2="294"/>
+    <line x1="320" y1="135" x2="320" y2="294" opacity="0.0"/>
+    <line x1="270" y1="135" x2="270" y2="294"/>
+    <line x1="380" y1="135" x2="380" y2="294"/>
+    <line x1="490" y1="135" x2="490" y2="294"/>
+    <line x1="560" y1="135" x2="560" y2="294"/>
+  </g>
+
+  <!-- G_kg arrow (down) -->
+  <line x1="660" y1="120" x2="660" y2="290" stroke="#1f6feb" stroke-width="2.2" marker-end="url(#d1)"/>
+  <text class="sub" x="672" y="150" text-anchor="start" fill="#1f6feb">G_kg</text>
+  <text class="sub" x="672" y="168" text-anchor="start" fill="#1f6feb">displacement</text>
+  <text class="sub" x="672" y="184" text-anchor="start" fill="#1f6feb">&amp; slope → boxes</text>
+
+  <!-- G_kg^T arrow (up) -->
+  <line x1="90" y1="290" x2="90" y2="120" stroke="#c0392b" stroke-width="2.2" marker-end="url(#d2)"/>
+  <text class="sub" x="78" y="150" text-anchor="end" fill="#c0392b">G_kg^T</text>
+  <text class="sub" x="78" y="168" text-anchor="end" fill="#c0392b">box forces</text>
+  <text class="sub" x="78" y="184" text-anchor="end" fill="#c0392b">→ grid loads</text>
+</svg>
