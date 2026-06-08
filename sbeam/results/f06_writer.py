@@ -5,7 +5,6 @@ from datetime import datetime
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
-from sbeam.model.load import Grav
 from sbeam.results.results import Sol101Result, Sol103Result
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.assembly.coord_transform import build_transform

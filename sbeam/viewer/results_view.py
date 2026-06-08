@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from sbeam.model.bulk_data import BulkData
-from sbeam.results.results import Sol101Result, Sol103Result
+from sbeam.results.results import Sol103Result
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.viewer.geometry import build_deformed_figure, build_mode_figure
 
