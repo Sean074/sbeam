@@ -207,6 +207,10 @@ Steps 39–44 implement the steady vortex-lattice aerodynamic layer.
 
 ### Step 39: AEROS card ✅ COMPLETE — see `docs/completed_development.md`
 
+### Step 40: CAERO1/PAERO1/AEFACT parsing + panel.py box meshing ✅ COMPLETE — see `docs/completed_development.md`
+
+### Step 41: Steady VLM AIC `vlm.py` — symmetric + antisymmetric images ✅ COMPLETE — see `docs/completed_development.md`
+
 ---
 
 ## Phase 2 — Model Enhancements

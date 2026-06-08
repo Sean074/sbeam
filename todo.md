@@ -72,7 +72,7 @@ directly — off-by-half-box is a silent, fatal error.
 
 ---
 
-### [S41] Steady VLM AIC `vlm.py` — symmetric + antisymmetric images
+### [S41] ✅ Steady VLM AIC `vlm.py` — symmetric + antisymmetric images — COMPLETE
 
 **Files:**
 - `sbeam/aero/vlm.py` *(new)*

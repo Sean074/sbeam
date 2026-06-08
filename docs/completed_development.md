@@ -1279,3 +1279,64 @@ at ¾-chord (horseshoe-vortex convention, NASA SP-405).
 - Tapered planform (X12=4, X43=2): area = 12.0 (½(4+2)×4); colloc at ¾ of mean chord.
 - **560 tests pass, 0 skipped, 0 failures.**
 
+---
+
+### Step 41: Steady VLM AIC `vlm.py` — Symmetric + Antisymmetric Images ✅ COMPLETE
+
+**Objective:** Build the aerodynamic influence coefficient (AIC) matrix at k=0 using the
+horseshoe-vortex lattice method, solve the rigid-wing flow-tangency problem, and return
+lift and pitching-moment coefficients. Support XZ-plane symmetry (symmetric and antisymmetric
+images) for half-span models.
+
+**Deliverables:**
+- `sbeam/aero/vlm.py` *(new)* — four public functions:
+  - `biot_savart_seg(p, a, b) -> np.ndarray` — induced velocity at p from unit-strength
+    finite vortex segment a→b (Biot–Savart law; returns zero vector for degenerate inputs).
+  - `horseshoe_influence(colloc, box, parity=1) -> float` — single AIC entry; normalwash
+    (z-component, flat-wing convention) at `colloc` from unit horseshoe at `box`. Trailing
+    legs extend to `max(bound_a.x, bound_b.x) + 1000 × chord` (finite far-field cutoff).
+    For `parity=+1` (symmetric): image bound reversed (b_img → a_img) so root trailing
+    vortices cancel and the left-wing image produces same-sign lift. For `parity=-1`
+    (antisymmetric): image bound in same-reflection direction, root trailing doubles.
+  - `build_ajj(boxes, parity=1) -> np.ndarray` — n×n AIC matrix assembled from
+    `horseshoe_influence`; O(n²) loop.
+  - `solve_rigid_cl(boxes, alpha, parity=1) -> dict` — solves `A @ gamma = -alpha`,
+    computes Cp using individual box chord (= area / spanwise_width), and returns
+    `{cp, cl_section, CL, CM}`. CL set to 0.0 for parity=-1 (antisymmetric cancels).
+- `tests/aero/test_vlm.py` *(new)* — 22 tests across 5 classes:
+  - `TestBiotSavart` — known segment cross-check, degenerate cases, orthogonality.
+  - `TestSingleHorseshoe` — self-induced normalwash matches direct Biot-Savart sum;
+    parity ordering (symmetric reduces downwash, antisymmetric increases it).
+  - `TestBuildAjj` — shape, diagonal consistency.
+  - `TestRectangularWingCLa` — AR=5 half-span, 4×10 mesh: CLα within 10% of Prandtl
+    `2πAR/(AR+2)` (standard horseshoe VLM with uniform spacing converges to ~10% below
+    Prandtl for AR=5 — not a bug).
+  - `TestMeshRefinement` — CLα decreases monotonically as mesh refines (VLM converges
+    from above), both meshes within 10% of Prandtl.
+  - `TestAntisymmetric` — parity=-1: full-span CL = 0, section loads non-zero.
+
+**Key decisions:**
+- **Image direction for symmetric case**: the image horseshoe bound runs reversed (b_img→a_img,
+  i.e., from reflected-tip toward reflected-root in +y direction) so the left-wing vortex
+  produces the same lift sign as the right wing. Root trailing vortices (at y=0) cancel
+  between the direct and image horseshoes. The antisymmetric image uses the unreversed
+  direction (a_img→b_img), making root trailing vortices reinforce and giving CL_full = 0.
+- **Box chord vs. CAERO1 chord**: `AeroBox.chord` stores the CAERO1 macroelement chord
+  (not the individual VLM panel chord). The Cp formula uses the per-box chord computed as
+  `area / spanwise_width` to avoid an off-by-nchord factor in CL.
+- **VLM vs. Prandtl**: the standard horseshoe VLM with uniform spanwise spacing converges
+  to its own limit (~10% below Prandtl for AR=5). This is a known method characteristic,
+  not a bug. Tests use 10% tolerance accordingly. Convergence is from above (coarser meshes
+  give higher CLα).
+- CL for parity=-1 is returned as exactly 0.0; the `cl_section` dict still contains the
+  right-half section loads (non-zero, representing rolling moment).
+
+**Test / Acceptance (V-A1, V-A2):**
+- Biot–Savart: known segment matches closed-form; degenerate point returns [0,0,0].
+- Self-induced diagonal is negative (horseshoe creates downwash at its own collocation point).
+- Symmetric image (parity=+1) reduces normalwash magnitude vs. no-image (parity=0).
+- AR=5 half-span 4×10 mesh: CLα = 4.26 rad⁻¹ (within 10% of Prandtl 4.49).
+- 4×10 → 8×20 refinement: CLα decreases (4.26 → 4.11), monotone from above.
+- parity=-1 uniform incidence: CL = 0.0, section loads non-zero.
+- **582 tests pass, 0 skipped, 0 failures.**
+
