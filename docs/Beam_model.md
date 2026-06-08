@@ -495,6 +495,73 @@ EIGRL, SID, V1, V2, ND, MSGLVL, MAXSET, SHFSCL, NORM
 
 ---
 
+### AEFACT
+
+Defines a list of decimal fractions used for non-uniform span or chord spacing in aerodynamic panel meshing. Referenced by CAERO1 via LSPAN or LCHORD.
+
+```
+AEFACT, SID, D1, D2, D3, D4, D5, D6, D7
++,      D8, D9, ...
+```
+
+| Field | Description |
+|-------|-------------|
+| SID | Set ID (integer, unique; referenced by CAERO1 LSPAN/LCHORD) |
+| D1–DN | Decimal fractions (0.0 to 1.0); must start at 0.0 and end at 1.0 for span/chord use |
+
+Multiple continuation lines are supported for long fraction lists (up to NSPAN+1 or NCHORD+1 values).
+
+---
+
+### PAERO1
+
+Defines aerodynamic panel properties. Used as a stub in Phase A (no body support).
+
+```
+PAERO1, PID
+```
+
+| Field | Description |
+|-------|-------------|
+| PID | Property ID (integer, unique; referenced by CAERO1) |
+
+---
+
+### CAERO1
+
+Defines a flat trapezoidal lifting surface macroelement for panel aerodynamics (VLM/DLM). Meshed into NSPAN × NCHORD boxes by `mesh_caero1()` in `sbeam/aero/panel.py`.
+
+```
+CAERO1, EID, PID, CP, NSPAN, NCHORD, LSPAN, LCHORD, IGID
++,      X1, Y1, Z1, X12, X4, Y4, Z4, X43
+```
+
+| Field | Description |
+|-------|-------------|
+| EID | Element ID (integer, unique) |
+| PID | Property ID → references PAERO1 |
+| CP | Coordinate system for P1/P4 (0 = global; or CORD2R CID) |
+| NSPAN | Number of equal spanwise boxes (0 if LSPAN used) |
+| NCHORD | Number of equal chordwise boxes (0 if LCHORD used) |
+| LSPAN | AEFACT SID for non-uniform span breakpoints (0 if NSPAN used) |
+| LCHORD | AEFACT SID for non-uniform chord breakpoints (0 if NCHORD used) |
+| IGID | Interference group ID (ignored in Phase A) |
+| X1, Y1, Z1 | Root leading-edge point P1, in CP coordinate system |
+| X12 | Root chord length (in freestream +X direction) |
+| X4, Y4, Z4 | Tip leading-edge point P4, in CP coordinate system |
+| X43 | Tip chord length (in freestream +X direction) |
+
+Exactly one of NSPAN/LSPAN must be non-zero, and exactly one of NCHORD/LCHORD must be non-zero. An AEROS card must be present whenever CAERO1 cards appear.
+
+The continuation line carrying P1/X12/P4/X43 is required.
+
+Cross-reference validation (post-parse):
+- PID not in `bulk.paero1s` → `ValueError`
+- LSPAN or LCHORD not in `bulk.aefacts` → `ValueError`
+- CAERO1 present but no AEROS → `ValueError`
+
+---
+
 ## BulkData Object
 
 The parser produces a `BulkData` dataclass containing:
@@ -521,6 +588,10 @@ class BulkData:
     gravs: dict[int, Grav]
     eigrls: dict[int, Eigrl]
     cord2rs: dict[int, Cord2r]
+    aeros: Optional[Aeros]               # single AEROS card (or None)
+    caero1s: dict[int, Caero1]
+    paero1s: dict[int, Paero1]
+    aefacts: dict[int, Aefact]
 ```
 
 All dictionaries are keyed by the card's primary ID (GID, EID, PID, SID, CID, etc.).
@@ -586,7 +657,7 @@ Accepts a list of BDF text lines (bulk data section only). Supports:
 - **Inline `$` comments** — everything from `$` to end of line is ignored
 - **Continuation lines** — lines whose first field starts with `+`; consumed by the preceding card handler (e.g. PBAR recovery points, SPC1 with >6 grids)
 
-Cards recognised: `CORD2R`, `GRID`, `PBAR`, `PBUSH`, `MAT1`, `CBAR`, `CBUSH`, `PLOTEL`, `CONM2`, `RBE3`, `RBE2`, `RBAR`, `SPC`, `SPC1`, `FORCE`, `MOMENT`, `LOAD`, `GRAV`, `EIGRL`.
+Cards recognised: `CORD2R`, `GRID`, `PBAR`, `PBUSH`, `MAT1`, `CBAR`, `CBUSH`, `PLOTEL`, `CONM2`, `RBE3`, `RBE2`, `RBAR`, `SPC`, `SPC1`, `FORCE`, `MOMENT`, `LOAD`, `GRAV`, `EIGRL`, `AEROS`, `AEFACT`, `PAERO1`, `CAERO1`.
 Structural markers `BEGIN BULK` / `ENDDATA` are silently skipped.
 All other keywords issue `warnings.warn(…, UserWarning)` and are skipped.
 Duplicate GID, PID (PBAR), MID (MAT1), or LOAD SID raises `ValueError`.
@@ -601,6 +672,11 @@ Duplicate GID, PID (PBAR), MID (MAT1), or LOAD SID raises `ValueError`.
 
 **LOAD component validation** (post-parse, after all cards are read):
 - Component SID not found in `bulk.forces` or `bulk.moments` → `ValueError`
+
+**CAERO1 cross-reference validation** (post-parse, after all cards are read):
+- CAERO1 present but no AEROS → `ValueError`
+- PID not in `bulk.paero1s` → `ValueError`
+- LSPAN or LCHORD references a missing AEFACT SID → `ValueError`
 
 ---
 

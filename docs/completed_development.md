@@ -1222,3 +1222,60 @@ carries the aerodynamic reference geometry (`cref`, `bref`, `sref`) and symmetry
 - Post-parse CAERO1-without-AEROS guard is present; test activated in S40.
 - **521 tests pass, 1 skipped (CAERO1 placeholder), 0 failures.**
 
+---
+
+### Step 40: CAERO1/PAERO1/AEFACT Parsing + `panel.py` Box Meshing ✅ COMPLETE
+
+**Objective:** Parse aerodynamic panel cards (CAERO1, PAERO1, AEFACT) and mesh each
+CAERO1 macroelement into trapezoidal boxes with bound vortex at ¼-chord and collocation
+at ¾-chord (horseshoe-vortex convention, NASA SP-405).
+
+**Deliverables:**
+- `sbeam/model/aero.py` — added `Caero1`, `Paero1`, `Aefact` dataclasses.
+- `sbeam/model/bulk_data.py` — added `paero1s` and `aefacts` dicts; expanded import.
+- `sbeam/parser/bdf_reader.py` — `_handle_aefact()` (multi-continuation fraction list);
+  `_handle_paero1()` (stub); `_handle_caero1()` (single required continuation for
+  P1/X12/P4/X43); all three wired into the dispatcher. Post-parse cross-reference
+  validation for PID, LSPAN, LCHORD. Skipped test in `TestAerosValidation` activated.
+- `sbeam/aero/__init__.py` *(new)* — package init.
+- `sbeam/aero/panel.py` *(new)* — `AeroBox` dataclass (k, caero_eid, i_span, j_chord,
+  corners 4×3, colloc, bound_a, bound_b, area, normal, chord, span_frac) +
+  `mesh_caero1(caero, paero, aefacts, cord2rs, start_k=0) -> list[AeroBox]`. P1/P4
+  resolved via `_get_transform()` from `assembly/coord_transform.py`. Bound vortex and
+  collocation placed at ¼ and ¾ of the **box** chord (not the full panel chord), so
+  each box in a multi-chordwise model has an independent horseshoe position. Area from
+  cross-product of diagonals; normal forced to +Z half-space for flat panels.
+- `tests/aero/__init__.py` *(new)* — empty.
+- `tests/aero/test_panel.py` *(new)* — 17 geometric assertion tests covering: 1×1 box
+  (area, colloc at ¾c, bound vortex at ¼c, corners, normal, chord, span_frac), N×M
+  mesh (box count, total area, sequential k, per-box chord placement), non-uniform
+  AEFACT span spacing (strip count, proportional areas), tapered planform (trapezoid
+  area formula, colloc/bound placement at mean chord), `start_k` offset.
+- `tests/parser/test_aero.py` — removed `@pytest.mark.skip`; added `TestAefactRoundTrip`
+  (single-line, multi-continuation, duplicate error), `TestPaero1RoundTrip` (PID stored,
+  duplicate error), `TestCaero1RoundTrip` (NSPAN/NCHORD form, LSPAN form, AEFACT stored),
+  `TestCaero1Validation` (missing PAERO1, missing AEFACT, duplicate EID, both NSPAN and
+  LSPAN non-zero, missing continuation).
+- `docs/Beam_model.md` — added AEFACT, PAERO1, CAERO1 card entries; updated BulkData
+  listing; updated cards-recognised list; added CAERO1 cross-reference validation note.
+
+**Key decisions:**
+- Bound vortex and collocation placed at ¼/¾ of the **box** chord (not the global
+  panel chord). For a 1×1 model both conventions coincide, but for NCHORD > 1 each
+  chordwise row of boxes has independent horseshoe positions — which is required for a
+  full-matrix AIC.
+- CAERO1 cross-reference validation (PID, LSPAN, LCHORD) is deferred to post-parse so
+  AEFACT/PAERO1 cards may appear anywhere in the bulk data relative to CAERO1.
+- `_get_transform()` (not the rotation-only `to_global()`) is used for P1/P4 because
+  they are points, not vectors — the full origin + R @ v_local transform is needed.
+- Normal is forced to the +Z half-space so that flat XY-plane panels always have an
+  upward-pointing outward normal regardless of corner ordering.
+
+**Test / Acceptance (KA1):**
+- 1×1 rectangular box: area = 8.0 (chord=2 × span=4); colloc x = 1.5 (¾ × 2); bound_a
+  x = 0.5 (¼ × 2); normal = [0, 0, 1].
+- N×M mesh (4×10): 40 boxes; total area = 8.0; per-box bound/colloc x confirmed analytically.
+- AEFACT non-uniform span: 3-strip model, areas proportional to span fractions 0.3/0.3/0.4.
+- Tapered planform (X12=4, X43=2): area = 12.0 (½(4+2)×4); colloc at ¾ of mean chord.
+- **560 tests pass, 0 skipped, 0 failures.**
+

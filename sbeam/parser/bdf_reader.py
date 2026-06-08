@@ -11,7 +11,7 @@ from sbeam.model.material import Mat1
 from sbeam.model.mass import Conm2
 from sbeam.model.load import Force, Moment, Load, Grav, Eigrl
 from sbeam.model.constraint import Spc, Spc1
-from sbeam.model.aero import Aeros
+from sbeam.model.aero import Aeros, Caero1, Paero1, Aefact
 from sbeam.parser.case_control import parse_case_control
 
 _IGNORED_KEYWORDS = frozenset({"BEGIN", "BEGINBULK", "ENDDATA"})
@@ -440,6 +440,66 @@ def _handle_aeros(fields: list, bulk: BulkData) -> None:
     )
 
 
+def _handle_aefact(fields: list, conts: list, bulk: BulkData) -> None:
+    sid = _to_int(fields[1])
+    if sid in bulk.aefacts:
+        raise ValueError(f"Duplicate AEFACT SID {sid}")
+    data = [_to_float(f) for f in fields[2:] if f.strip()]
+    for cont in conts:
+        data += [_to_float(f) for f in cont[1:] if f.strip()]
+    bulk.aefacts[sid] = Aefact(sid=sid, data=data)
+
+
+def _handle_paero1(fields: list, bulk: BulkData) -> None:
+    pid = _to_int(fields[1])
+    if pid in bulk.paero1s:
+        raise ValueError(f"Duplicate PAERO1 PID {pid}")
+    bulk.paero1s[pid] = Paero1(pid=pid)
+
+
+def _handle_caero1(fields: list, cont, bulk: BulkData) -> None:
+    eid    = _to_int(fields[1])
+    pid    = _to_int(fields[2])
+    cp     = _to_int_opt(fields[3]) if len(fields) > 3 else 0
+    nspan  = _to_int_opt(fields[4]) if len(fields) > 4 else 0
+    nchord = _to_int_opt(fields[5]) if len(fields) > 5 else 0
+    lspan  = _to_int_opt(fields[6]) if len(fields) > 6 else 0
+    lchord = _to_int_opt(fields[7]) if len(fields) > 7 else 0
+    igid   = _to_int_opt(fields[8]) if len(fields) > 8 else 0
+
+    if cont is None:
+        raise ValueError(f"CAERO1 {eid}: continuation line required (P1/X12/P4/X43 missing)")
+
+    x1  = _to_float(cont[1]) if len(cont) > 1 else 0.0
+    y1  = _to_float(cont[2]) if len(cont) > 2 else 0.0
+    z1  = _to_float(cont[3]) if len(cont) > 3 else 0.0
+    x12 = _to_float(cont[4]) if len(cont) > 4 else 0.0
+    x4  = _to_float(cont[5]) if len(cont) > 5 else 0.0
+    y4  = _to_float(cont[6]) if len(cont) > 6 else 0.0
+    z4  = _to_float(cont[7]) if len(cont) > 7 else 0.0
+    x43 = _to_float(cont[8]) if len(cont) > 8 else 0.0
+
+    if nspan == 0 and lspan == 0:
+        raise ValueError(f"CAERO1 {eid}: exactly one of NSPAN or LSPAN must be non-zero")
+    if nspan != 0 and lspan != 0:
+        raise ValueError(f"CAERO1 {eid}: NSPAN and LSPAN cannot both be non-zero")
+    if nchord == 0 and lchord == 0:
+        raise ValueError(f"CAERO1 {eid}: exactly one of NCHORD or LCHORD must be non-zero")
+    if nchord != 0 and lchord != 0:
+        raise ValueError(f"CAERO1 {eid}: NCHORD and LCHORD cannot both be non-zero")
+    if eid in bulk.caero1s:
+        raise ValueError(f"Duplicate CAERO1 EID {eid}")
+
+    bulk.caero1s[eid] = Caero1(
+        eid=eid, pid=pid, cp=cp,
+        nspan=nspan, nchord=nchord,
+        lspan=lspan, lchord=lchord,
+        igid=igid,
+        p1=(x1, y1, z1), x12=x12,
+        p4=(x4, y4, z4), x43=x43,
+    )
+
+
 def _handle_eigrl(fields: list, bulk: BulkData) -> None:
     sid  = _to_int(fields[1])
     v1   = _to_float_or_none(fields[2]) if len(fields) > 2 else None
@@ -574,6 +634,24 @@ def parse_bulk_data(lines: list) -> BulkData:
             _handle_eigrl(fields, bulk)
         elif keyword == "AEROS":
             _handle_aeros(fields, bulk)
+        elif keyword == "AEFACT":
+            aefact_conts: list = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    aefact_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_aefact(fields, aefact_conts, bulk)
+        elif keyword == "PAERO1":
+            _handle_paero1(fields, bulk)
+        elif keyword == "CAERO1":
+            _handle_caero1(fields, cont, bulk)
         else:
             warnings.warn(f"Unknown BDF card '{keyword}' — skipped", UserWarning, stacklevel=2)
 
@@ -582,6 +660,15 @@ def parse_bulk_data(lines: list) -> BulkData:
     # CAERO1 cards require an AEROS card to provide reference geometry
     if bulk.caero1s and bulk.aeros is None:
         raise ValueError("CAERO1 card(s) present but no AEROS card found")
+
+    # Validate CAERO1 cross-references (deferred because AEFACT/PAERO1 may appear after CAERO1)
+    for eid, caero in bulk.caero1s.items():
+        if caero.pid not in bulk.paero1s:
+            raise ValueError(f"CAERO1 {eid}: PID={caero.pid} not found in PAERO1")
+        if caero.lspan and caero.lspan not in bulk.aefacts:
+            raise ValueError(f"CAERO1 {eid}: LSPAN={caero.lspan} not found in AEFACT")
+        if caero.lchord and caero.lchord not in bulk.aefacts:
+            raise ValueError(f"CAERO1 {eid}: LCHORD={caero.lchord} not found in AEFACT")
 
     # Validate LOAD component references after all cards are parsed
     for load_sid, load in bulk.loads.items():

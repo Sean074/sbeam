@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -10,3 +10,30 @@ class Aeros:
     sref:  float  # reference area
     symxz: int    # +1 = symmetric about XZ plane, -1 = antisymmetric, 0 = none
     symxy: int    # +1 = symmetric about XY plane, -1 = antisymmetric, 0 = none
+
+
+@dataclass
+class Caero1:
+    eid:    int
+    pid:    int          # → Paero1
+    cp:     int          # coordinate system for P1/P4 (default 0)
+    nspan:  int          # spanwise box divisions (0 when LSPAN used)
+    nchord: int          # chordwise box divisions (0 when LCHORD used)
+    lspan:  int          # AEFACT sid for span fractions (0 when NSPAN used)
+    lchord: int          # AEFACT sid for chord fractions (0 when NCHORD used)
+    igid:   int          # interference group ID (ignored in Phase A)
+    p1:     tuple        # (x, y, z) root leading-edge in CP frame
+    x12:    float        # root chord length
+    p4:     tuple        # (x, y, z) tip leading-edge in CP frame
+    x43:    float        # tip chord length
+
+
+@dataclass
+class Paero1:
+    pid: int             # property ID (stub — no body support in Phase A)
+
+
+@dataclass
+class Aefact:
+    sid:  int
+    data: list = field(default_factory=list)   # decimal fraction list (e.g. span/chord breakpoints)

@@ -121,17 +121,169 @@ AEROS, 0, 0, 5.0, 20.0, 100.0, 0, 0
         with pytest.raises(ValueError, match="Duplicate AEROS"):
             parse_bulk_data(lines)
 
-    @pytest.mark.skip(reason="Requires CAERO1 parser from S40")
     def test_missing_aeros_with_caero1_raises(self):
-        """CAERO1 present without AEROS must raise ValueError.
-
-        This test is activated in S40 when _handle_caero1 is wired into the reader.
-        The guard `if bulk.caero1s and bulk.aeros is None` is already in place in
-        parse_bulk_data — this test just needs CAERO1 to be parseable.
-        """
+        """CAERO1 present without AEROS must raise ValueError."""
         lines = """\
 CAERO1, 100, 1, , 4, 10, , , 1
 +, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0
 """.splitlines()
         with pytest.raises(ValueError, match="no AEROS card"):
+            parse_bulk_data(lines)
+
+
+# ---------------------------------------------------------------------------
+# AEFACT
+# ---------------------------------------------------------------------------
+
+_AEFACT_SIMPLE = """\
+AEFACT, 10, 0.0, 0.25, 0.5, 0.75, 1.0
+""".splitlines()
+
+_AEFACT_MULTI_CONT = """\
+AEFACT, 20, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6
++, 0.7, 0.8, 0.9, 1.0
+""".splitlines()
+
+
+class TestAefactRoundTrip:
+    def test_simple_single_line(self):
+        bulk = parse_bulk_data(_AEFACT_SIMPLE)
+        af = bulk.aefacts[10]
+        assert af.sid == 10
+        assert af.data == pytest.approx([0.0, 0.25, 0.5, 0.75, 1.0])
+
+    def test_multi_continuation(self):
+        bulk = parse_bulk_data(_AEFACT_MULTI_CONT)
+        af = bulk.aefacts[20]
+        assert af.sid == 20
+        assert len(af.data) == 11
+        assert af.data[0] == pytest.approx(0.0)
+        assert af.data[-1] == pytest.approx(1.0)
+
+    def test_duplicate_sid_raises(self):
+        lines = """\
+AEFACT, 10, 0.0, 1.0
+AEFACT, 10, 0.0, 0.5, 1.0
+""".splitlines()
+        with pytest.raises(ValueError, match="Duplicate AEFACT"):
+            parse_bulk_data(lines)
+
+
+# ---------------------------------------------------------------------------
+# PAERO1
+# ---------------------------------------------------------------------------
+
+class TestPaero1RoundTrip:
+    def test_pid_stored(self):
+        bulk = parse_bulk_data(["PAERO1, 1"])
+        assert 1 in bulk.paero1s
+        assert bulk.paero1s[1].pid == 1
+
+    def test_duplicate_pid_raises(self):
+        lines = "PAERO1, 1\nPAERO1, 1".splitlines()
+        with pytest.raises(ValueError, match="Duplicate PAERO1"):
+            parse_bulk_data(lines)
+
+
+# ---------------------------------------------------------------------------
+# CAERO1
+# ---------------------------------------------------------------------------
+
+_CAERO1_NSPAN = """\
+AEROS, 0, 0, 2.0, 4.0, 8.0, 1, 0
+PAERO1, 1
+CAERO1, 100, 1, , 4, 2, , , 0
++, 0.0, 0.0, 0.0, 2.0, 0.0, 4.0, 0.0, 2.0
+""".splitlines()
+
+_CAERO1_LSPAN = """\
+AEROS, 0, 0, 2.0, 4.0, 8.0, 0, 0
+PAERO1, 1
+AEFACT, 10, 0.0, 0.5, 1.0
+CAERO1, 200, 1, , 0, 1, 10, 0, 0
++, 0.0, 0.0, 0.0, 2.0, 0.0, 4.0, 0.0, 2.0
+""".splitlines()
+
+
+class TestCaero1RoundTrip:
+    def test_nspan_nchord_form(self):
+        bulk = parse_bulk_data(_CAERO1_NSPAN)
+        c = bulk.caero1s[100]
+        assert c.eid == 100
+        assert c.pid == 1
+        assert c.cp == 0
+        assert c.nspan == 4
+        assert c.nchord == 2
+        assert c.lspan == 0
+        assert c.lchord == 0
+        assert c.igid == 0
+        assert c.p1 == pytest.approx((0.0, 0.0, 0.0))
+        assert c.x12 == pytest.approx(2.0)
+        assert c.p4 == pytest.approx((0.0, 4.0, 0.0))
+        assert c.x43 == pytest.approx(2.0)
+
+    def test_lspan_form(self):
+        bulk = parse_bulk_data(_CAERO1_LSPAN)
+        c = bulk.caero1s[200]
+        assert c.nspan == 0
+        assert c.lspan == 10
+        assert c.nchord == 1
+        assert c.lchord == 0
+
+    def test_aefact_referenced_by_lspan_stored(self):
+        bulk = parse_bulk_data(_CAERO1_LSPAN)
+        assert 10 in bulk.aefacts
+        assert len(bulk.aefacts[10].data) == 3
+
+
+class TestCaero1Validation:
+    def test_missing_paero1_raises(self):
+        lines = """\
+AEROS, 0, 0, 2.0, 4.0, 8.0, 0, 0
+CAERO1, 100, 1, , 4, 2, , , 0
++, 0.0, 0.0, 0.0, 2.0, 0.0, 4.0, 0.0, 2.0
+""".splitlines()
+        with pytest.raises(ValueError, match="PID=1 not found in PAERO1"):
+            parse_bulk_data(lines)
+
+    def test_missing_aefact_lspan_raises(self):
+        lines = """\
+AEROS, 0, 0, 2.0, 4.0, 8.0, 0, 0
+PAERO1, 1
+CAERO1, 100, 1, , 0, 1, 99, 0, 0
++, 0.0, 0.0, 0.0, 2.0, 0.0, 4.0, 0.0, 2.0
+""".splitlines()
+        with pytest.raises(ValueError, match="LSPAN=99 not found in AEFACT"):
+            parse_bulk_data(lines)
+
+    def test_duplicate_eid_raises(self):
+        lines = """\
+AEROS, 0, 0, 2.0, 4.0, 8.0, 0, 0
+PAERO1, 1
+CAERO1, 100, 1, , 4, 1, , , 0
++, 0.0, 0.0, 0.0, 2.0, 0.0, 4.0, 0.0, 2.0
+CAERO1, 100, 1, , 4, 1, , , 0
++, 0.0, 0.0, 0.0, 2.0, 0.0, 4.0, 0.0, 2.0
+""".splitlines()
+        with pytest.raises(ValueError, match="Duplicate CAERO1"):
+            parse_bulk_data(lines)
+
+    def test_nspan_and_lspan_both_nonzero_raises(self):
+        lines = """\
+AEROS, 0, 0, 2.0, 4.0, 8.0, 0, 0
+PAERO1, 1
+AEFACT, 10, 0.0, 0.5, 1.0
+CAERO1, 100, 1, , 4, 1, 10, 0, 0
++, 0.0, 0.0, 0.0, 2.0, 0.0, 4.0, 0.0, 2.0
+""".splitlines()
+        with pytest.raises(ValueError, match="NSPAN and LSPAN cannot both be non-zero"):
+            parse_bulk_data(lines)
+
+    def test_missing_continuation_raises(self):
+        lines = """\
+AEROS, 0, 0, 2.0, 4.0, 8.0, 0, 0
+PAERO1, 1
+CAERO1, 100, 1, , 4, 1, , , 0
+""".splitlines()
+        with pytest.raises(ValueError, match="continuation line required"):
             parse_bulk_data(lines)

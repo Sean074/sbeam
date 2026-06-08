@@ -44,7 +44,7 @@ Each completed step must update `docs/completed_development.md` and
 
 ---
 
-### [S40] CAERO1/PAERO1/AEFACT parsing + `panel.py` box meshing
+### [S40] ✅ CAERO1/PAERO1/AEFACT parsing + `panel.py` box meshing — COMPLETE
 
 **Files:**
 - `sbeam/model/aero.py` — add `Caero1` (eid, pid, cp, nspan, nchord, lspan, lchord,
