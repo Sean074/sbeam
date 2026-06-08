@@ -1,4 +1,7 @@
 from dataclasses import dataclass, field
+from typing import Optional
+
+from .aero import Aeros
 
 
 @dataclass
@@ -22,3 +25,5 @@ class BulkData:
     gravs: dict = field(default_factory=dict)     # {sid: Grav}
     eigrls: dict = field(default_factory=dict)    # {sid: Eigrl}
     cord2rs: dict = field(default_factory=dict)   # {cid: Cord2r}
+    aeros: Optional[Aeros] = None                 # single AEROS card (reference geometry)
+    caero1s: dict = field(default_factory=dict)   # {eid: Caero1} — populated in S40

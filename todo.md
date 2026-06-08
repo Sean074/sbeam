@@ -44,23 +44,6 @@ Each completed step must update `docs/completed_development.md` and
 
 ---
 
-### [S39] AEROS card — reference geometry + symmetry flag
-
-**Files:**
-- `sbeam/model/aero.py` *(new)* — `Aeros` dataclass (`acsid`, `rcsid`, `cref`, `bref`,
-  `sref`, `symxz`, `symxy`)
-- `sbeam/model/bulk_data.py` — add `aeros: Optional[Aeros] = None`
-- `sbeam/parser/bdf_reader.py` — add `elif keyword == "AEROS":` + `_handle_aeros()`
-- `tests/parser/test_aero.py` *(new)* — round-trip, symmetry-flag storage,
-  duplicate-card `ValueError`, missing-AEROS-with-CAERO1 `ValueError`
-- `docs/Aeroelastics.md` *(new)* — top-level aeroelastics developer/user guide
-  (analogous to `docs/Static_analysis.md`); start with architecture overview + AEROS
-
-**Acceptance:** Parser round-trip passes; `ValueError` on duplicate AEROS; `ValueError`
-if any CAERO1 present without AEROS; `symxz` stored as `+1` (sym) / `-1` (antisym).
-
----
-
 ### [S40] CAERO1/PAERO1/AEFACT parsing + `panel.py` box meshing
 
 **Files:**

@@ -11,6 +11,7 @@ from sbeam.model.material import Mat1
 from sbeam.model.mass import Conm2
 from sbeam.model.load import Force, Moment, Load, Grav, Eigrl
 from sbeam.model.constraint import Spc, Spc1
+from sbeam.model.aero import Aeros
 from sbeam.parser.case_control import parse_case_control
 
 _IGNORED_KEYWORDS = frozenset({"BEGIN", "BEGINBULK", "ENDDATA"})
@@ -423,6 +424,22 @@ def _handle_grav(fields: list, bulk: BulkData) -> None:
     bulk.gravs[sid] = Grav(sid=sid, cid=cid, g=g, n1=n1, n2=n2, n3=n3)
 
 
+def _handle_aeros(fields: list, bulk: BulkData) -> None:
+    if bulk.aeros is not None:
+        raise ValueError("Duplicate AEROS card")
+    acsid = _to_int_opt(fields[1]) if len(fields) > 1 else 0
+    rcsid = _to_int_opt(fields[2]) if len(fields) > 2 else 0
+    cref  = _to_float(fields[3])   if len(fields) > 3 else 0.0
+    bref  = _to_float(fields[4])   if len(fields) > 4 else 0.0
+    sref  = _to_float(fields[5])   if len(fields) > 5 else 0.0
+    symxz = _to_int_opt(fields[6]) if len(fields) > 6 else 0
+    symxy = _to_int_opt(fields[7]) if len(fields) > 7 else 0
+    bulk.aeros = Aeros(
+        acsid=acsid, rcsid=rcsid, cref=cref, bref=bref,
+        sref=sref, symxz=symxz, symxy=symxy,
+    )
+
+
 def _handle_eigrl(fields: list, bulk: BulkData) -> None:
     sid  = _to_int(fields[1])
     v1   = _to_float_or_none(fields[2]) if len(fields) > 2 else None
@@ -555,10 +572,16 @@ def parse_bulk_data(lines: list) -> BulkData:
             _handle_grav(fields, bulk)
         elif keyword == "EIGRL":
             _handle_eigrl(fields, bulk)
+        elif keyword == "AEROS":
+            _handle_aeros(fields, bulk)
         else:
             warnings.warn(f"Unknown BDF card '{keyword}' — skipped", UserWarning, stacklevel=2)
 
         i += 1
+
+    # CAERO1 cards require an AEROS card to provide reference geometry
+    if bulk.caero1s and bulk.aeros is None:
+        raise ValueError("CAERO1 card(s) present but no AEROS card found")
 
     # Validate LOAD component references after all cards are parsed
     for load_sid, load in bulk.loads.items():

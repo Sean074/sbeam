@@ -1180,3 +1180,45 @@ SPC reactions. This matches NASTRAN behaviour.
 
 **Acceptance test:** 502 total tests pass, 0 failures.
 
+---
+
+## Phase A — Static Aeroelastics (VLM)
+
+### Step 39: AEROS Card — Reference Geometry + Symmetry Flag ✅ COMPLETE
+
+**Objective:** Add the AEROS BDF card to the parser and data model. The AEROS card
+carries the aerodynamic reference geometry (`cref`, `bref`, `sref`) and symmetry flags
+(`symxz`, `symxy`) required by every downstream VLM calculation (S40–S44).
+
+**Deliverables:**
+- `sbeam/model/aero.py` *(new)* — `Aeros` dataclass with 7 fields: `acsid`, `rcsid`,
+  `cref`, `bref`, `sref`, `symxz`, `symxy`.
+- `sbeam/model/bulk_data.py` — added `aeros: Optional[Aeros] = None` and preparatory
+  `caero1s: dict = field(default_factory=dict)` (needed for the post-parse guard).
+- `sbeam/parser/bdf_reader.py` — `_handle_aeros()` handler; `elif keyword == "AEROS":`
+  dispatch; post-parse guard `if bulk.caero1s and bulk.aeros is None: raise ValueError(...)`.
+- `tests/parser/test_aero.py` *(new)* — 20 tests (19 active, 1 skipped pending S40):
+  round-trip (free-field and fixed-field), default values, `symxz`/`symxy` storage
+  (`+1`, `-1`, `0`), duplicate-AEROS `ValueError`, placeholder for
+  missing-AEROS-with-CAERO1 `ValueError`.
+- `docs/Aeroelastics.md` *(new)* — top-level aeroelastics developer/user guide;
+  architecture overview, module map, supported card table, AEROS card format, symmetry
+  conventions, validation rules. Stub sections for S40–S43.
+
+**Key decisions:**
+- `symxz`/`symxy` stored as bare `int` (not an enum) to keep the dataclass simple and
+  consistent with other integer-coded BDF flags (`cd`, `cp`, `cid`).
+- `caero1s: dict` added to `BulkData` in S39 (not S40) so the post-parse validation
+  guard is fully in place before CAERO1 parsing exists. This prevents a latent gap
+  where the guard would be unreachable if added in S40.
+- Fixed-field AEROS test uses the exact 8-column layout (CREF at cols 25–32) to catch
+  off-by-one column errors.
+
+**Test / Acceptance:**
+- Parser round-trip passes (free-field and fixed-field).
+- `ValueError("Duplicate AEROS card")` on second AEROS card.
+- `symxz` / `symxy` stored correctly as `+1`, `-1`, and `0`.
+- Blank `acsid`, `rcsid`, `symxz`, `symxy` all default to `0`.
+- Post-parse CAERO1-without-AEROS guard is present; test activated in S40.
+- **521 tests pass, 1 skipped (CAERO1 placeholder), 0 failures.**
+

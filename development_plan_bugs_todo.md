@@ -201,6 +201,14 @@ All Phase 1 bugs (B1–B4) are resolved. See `docs/completed_development.md` und
 
 ---
 
+## Phase A — Static Aeroelastics (VLM)
+
+Steps 39–44 implement the steady vortex-lattice aerodynamic layer.
+
+### Step 39: AEROS card ✅ COMPLETE — see `docs/completed_development.md`
+
+---
+
 ## Phase 2 — Model Enhancements
 
 These items extend BDF card support and solver capability. They are independent of the dynamic
