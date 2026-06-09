@@ -495,6 +495,35 @@ EIGRL, SID, V1, V2, ND, MSGLVL, MAXSET, SHFSCL, NORM
 
 ---
 
+### AEROS
+
+Defines the aerodynamic reference geometry used to non-dimensionalise lift, drag, and moment coefficients, and the symmetry condition for the vortex lattice. One per model.
+
+```
+AEROS, ACSID, RCSID, CREF, BREF, SREF, SYMXZ, SYMXY
+```
+
+| Field | Description |
+|-------|-------------|
+| ACSID | Aerodynamic coordinate system (Phase A: 0 = basic frame only) |
+| RCSID | Reference coordinate system (Phase A: 0 = basic frame only) |
+| CREF | Reference chord (consistent model units) |
+| BREF | Reference span — full span, even for half-span symmetric models |
+| SREF | Reference area — full area |
+| SYMXZ | +1 = symmetric about XZ plane, −1 = antisymmetric, 0 = no symmetry |
+| SYMXY | +1 = symmetric about XY plane, −1 = antisymmetric, 0 = no symmetry |
+
+Symmetry conventions: `SYMXZ = +1` adds a mirror-image horseshoe vortex for each box
+(same circulation sign); `SYMXZ = -1` adds an opposing image (antisymmetric/rolling).
+`parity = SYMXZ` is passed through the entire Phase A pipeline.
+
+Validation: duplicate AEROS raises `ValueError`; CAERO1 present without AEROS raises
+`ValueError("CAERO1 card(s) present but no AEROS card found")`.
+
+Stored in `bulk.aeros: Optional[Aeros]`.
+
+---
+
 ### AEFACT
 
 Defines a list of decimal fractions used for non-uniform span or chord spacing in aerodynamic panel meshing. Referenced by CAERO1 via LSPAN or LCHORD.
@@ -562,6 +591,68 @@ Cross-reference validation (post-parse):
 
 ---
 
+### W2GJ — Baseline Normalwash Slopes
+
+Per-box dimensionless normalwash slopes (Δz/Δx) representing geometric incidence not
+captured by the VLM angle of attack. Added to computed downwash during the aeroelastic solve.
+
+```
+W2GJ, SID, CAERO_EID, D1, D2, D3, D4, D5, D6
++,    D7, D8, ...
+```
+
+| Field | Description |
+|-------|-------------|
+| SID | Set ID |
+| CAERO_EID | EID of the CAERO1 this normalwash applies to |
+| D1–DN | Normalwash slopes Δz/Δx, one per box in row-major order (span slowest, chord fastest) |
+
+Stored in `bulk.w2gjs: dict[int, W2gj]`.
+
+---
+
+### WKK — Diagonal AIC Correction
+
+Scales each row of the AIC matrix by a per-box diagonal weight.
+`AJJ* = diag(w) @ AJJ`; the caller inverts via `np.linalg.lstsq`.
+
+```
+WKK, SID, CAERO_EID, W1, W2, W3, W4, W5, W6
++,   W7, W8, ...
+```
+
+| Field | Description |
+|-------|-------------|
+| SID | Set ID |
+| CAERO_EID | EID of the CAERO1 this correction applies to |
+| W1–WN | Diagonal weight per box, row-major order |
+
+Stored in `bulk.wkks: dict[int, Wkk]`.
+
+---
+
+### AECORR — Force/Pressure AIC Correction
+
+Higher-fidelity AIC correction matching VLM to CFD or wind-tunnel target data.
+
+```
+AECORR, SID, METHOD, CAERO_EID, T1, T2, T3, T4, T5
++,      T6, T7, ...
+```
+
+| Field | Description |
+|-------|-------------|
+| SID | Set ID |
+| METHOD | `'WT1'` (per-strip lift matching) or `'WT2'` (per-box pressure matching); any other value raises `ValueError` |
+| CAERO_EID | EID of the CAERO1 this correction applies to |
+| T1–TN | WT2: target `cp` per box (row-major); WT1: target lift coefficient per span strip |
+
+Correction precedence in `build_aero_model()`: WKK → WT2 → WT1 → identity lstsq.
+
+Stored in `bulk.aecorrs: dict[int, Aecorr]`.
+
+---
+
 ## BulkData Object
 
 The parser produces a `BulkData` dataclass containing:
@@ -592,6 +683,9 @@ class BulkData:
     caero1s: dict[int, Caero1]
     paero1s: dict[int, Paero1]
     aefacts: dict[int, Aefact]
+    w2gjs: dict[int, W2gj]
+    wkks: dict[int, Wkk]
+    aecorrs: dict[int, Aecorr]
 ```
 
 All dictionaries are keyed by the card's primary ID (GID, EID, PID, SID, CID, etc.).
@@ -603,6 +697,13 @@ All dictionaries are keyed by the card's primary ID (GID, EID, PID, SID, CID, et
 | Quantity | Limit | Reason |
 |----------|-------|--------|
 | CBAR elements | No hard limit | Sparse solver used; memory and compute time are the practical constraint |
+| AEROS ACSID/RCSID | 0 only (Phase A) | Non-zero aerodynamic coordinate systems deferred |
+| AEROS | One per model | Duplicate raises `ValueError` |
+| CAERO1 NSPAN/LSPAN | Exactly one non-zero | Both zero or both non-zero raises `ValueError` |
+| CAERO1 NCHORD/LCHORD | Exactly one non-zero | Both zero or both non-zero raises `ValueError` |
+| CAERO1 IGID | Ignored in Phase A | Interference group support deferred |
+| PAERO1 | Phase A stub | Body element support deferred |
+| W2GJ/WKK/AECORR | One correction tier active | WKK overrides WT2/WT1 if all present |
 | Coordinate systems | CORD2R only (rectangular) | CORD2C, CORD2S, CORD1R not implemented |
 | Tapered sections | Not supported | PBAR is uniform cross-section only |
 | CBAR offsets | Not supported | W1A/W2A/etc. offset fields are ignored |

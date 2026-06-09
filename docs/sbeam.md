@@ -25,7 +25,8 @@ sbeam/
 │   ├── load.py               # Force, Moment, Load, Grav dataclasses
 │   ├── constraint.py         # Spc, Spc1 dataclasses
 │   ├── mass.py               # Conm2 dataclass
-│   └── coordinate_system.py  # Cord2r dataclass
+│   ├── coordinate_system.py  # Cord2r dataclass
+│   └── aero.py               # Aeros, Caero1, Paero1, Aefact, W2gj, Wkk, Aecorr dataclasses
 ├── assembly/
 │   ├── stiffness.py          # Global stiffness matrix assembly
 │   ├── mass_matrix.py        # Global consistent mass matrix assembly
@@ -39,6 +40,13 @@ sbeam/
 │   ├── results.py        # Results dataclass (displacements, forces, modes)
 │   └── f06_writer.py     # .f06-format text output
 ├── gpwg.py               # Mass and centre-of-gravity calculation
+├── aero/
+│   ├── __init__.py
+│   ├── panel.py          # AeroBox dataclass + mesh_caero1() trapezoidal box meshing
+│   ├── vlm.py            # Biot–Savart, horseshoe influence, build_ajj, solve_rigid_cl
+│   ├── integration.py    # build_skj, build_djk, build_wg integration matrices
+│   ├── corrections.py    # apply_wkk, apply_wt2, apply_wt1 AIC corrections
+│   └── aero_model.py     # AeroModel dataclass + build_aero_model() factory
 └── viewer/
     ├── app.py            # Streamlit app entry point
     ├── geometry.py       # 3D Plotly model display
@@ -216,6 +224,7 @@ pytest --cov=sbeam/solver --cov=sbeam/assembly --cov=sbeam/parser --cov-fail-und
 | 2 | SOL 109 Direct transient response | Planned |
 | 2 | SOL 111 Modal frequency response | Planned |
 | 2 | SOL 112 Modal transient response | Planned |
+| A | Steady VLM aeroelastics: AEROS/CAERO1/PAERO1/AEFACT/W2GJ/WKK/AECORR parsing; panel meshing; AIC matrix; integration matrices (Skj, Djk, wg); AIC corrections (Wkk, WT1, WT2) | In progress (S39–S43 complete) |
 
 **Version strategy:** `pyproject.toml` version is `0.1.0` and classifier is `3 - Alpha` for Phase 1.
 On Phase 2 completion (SOL 108/109/111/112 all passing), bump to `0.2.0` and change the classifier

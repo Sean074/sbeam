@@ -17,6 +17,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `docs/Beam_model.md` | Geometry and model definition (BDF cards, data model) |
 | `docs/Static_analysis.md` | SOL 101 static analysis solver |
 | `docs/Modal_analysis.md` | SOL 103 normal modes solver |
+| `docs/Aeroelastics.md` | Phase A VLM aeroelastics developer/user guide |
+| `docs/aeroelastics_theory.md` | Phase A theoretical reference (VLM, AIC corrections, structural coupling) |
 | `docs/Methods.ipynb` | Summary of analytical methods (Euler-Bernoulli theory, stiffness and mass matrix derivations) |
 
 ## Step Completion Requirement
@@ -33,6 +35,7 @@ Never batch these updates or defer them to a later session. When resolving a bug
 - **Phase 1 (complete):** SOL 101 (static) and SOL 103 (normal modes) — see `docs/completed_development.md`
 - **Phase 2:** Model enhancements — see `development_plan_bugs_todo.md`
 - **Phase 3:** SOL 108 (frequency response), 109 (transient), 111 (modal freq), 112 (modal transient) — see `development_plan_bugs_todo.md`
+- **Phase A (in progress):** Steady VLM aeroelastics (S39–S43 complete) — see `docs/Aeroelastics.md` and `development_plan_bugs_todo.md`
 - **Future:** distributed loads, Timoshenko shear, enforced displacements, buckling (SOL 105), results export — see `development_plan_bugs_todo.md`
 
 ## Project Backlog
@@ -86,11 +89,12 @@ Phase 1 uses **Euler-Bernoulli beam theory** (shear deformation neglected). Each
 sbeam/
 ├── main.py
 ├── parser/         # bdf_reader.py, case_control.py
-├── model/          # grid.py, element.py, property.py, material.py, load.py, constraint.py, mass.py
+├── model/          # grid.py, element.py, property.py, material.py, load.py, constraint.py, mass.py, aero.py
 ├── assembly/       # stiffness.py, mass_matrix.py, rbe3.py
 ├── solver/         # sol101.py, sol103.py
 ├── results/        # results.py, f06_writer.py
 ├── gpwg.py         # Mass and CG (GPWG)
+├── aero/           # panel.py, vlm.py, integration.py, corrections.py, aero_model.py
 └── viewer/         # app.py, geometry.py, results_view.py, case_control_ui.py
 ```
 

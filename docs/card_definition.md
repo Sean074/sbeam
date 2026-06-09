@@ -728,6 +728,235 @@ EIGRL, 30, 1.0, 100.0, , , , , MAX
 
 ---
 
+## Phase A — Aerodynamics
+
+### AEROS — Aerodynamic Reference Geometry
+
+Defines the reference quantities used to non-dimensionalise lift, drag, and moment
+coefficients, and the symmetry condition for the VLM.
+
+**Format:**
+```
+AEROS  ACSID  RCSID  CREF  BREF  SREF  SYMXZ  SYMXY
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| ACSID | `acsid` | int | Aerodynamic coordinate system (Phase A: must be 0) | `0` |
+| RCSID | `rcsid` | int | Reference coordinate system for rigid-body motion (Phase A: must be 0) | `0` |
+| CREF | `cref` | float | Reference chord (consistent model units) | required |
+| BREF | `bref` | float | Reference span — full span, even for half-span symmetric models | required |
+| SREF | `sref` | float | Reference area — full area | required |
+| SYMXZ | `symxz` | int | +1 symmetric about XZ plane, −1 antisymmetric, 0 no symmetry | `0` |
+| SYMXY | `symxy` | int | +1 symmetric about XY plane, −1 antisymmetric, 0 no symmetry | `0` |
+
+One AEROS card per model. A second card raises `ValueError("Duplicate AEROS card")`.
+CAERO1 cards without an AEROS card raise `ValueError("CAERO1 card(s) present but no AEROS card found")`.
+
+**Examples:**
+```
+$ Half-span symmetric wing: chord=2.0, span=10.0, area=20.0
+AEROS, 0, 0, 2.0, 10.0, 20.0, 1, 0
+$ Full-span antisymmetric (rolling) analysis
+AEROS, 0, 0, 2.0, 10.0, 20.0, -1, 0
+```
+
+---
+
+### PAERO1 — Aerodynamic Panel Properties (Phase A stub)
+
+Referenced by CAERO1. Phase A carries no body elements; the card is a placeholder.
+
+**Format:**
+```
+PAERO1  PID
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| PID | `pid` | int | Property ID (unique; referenced by CAERO1) | required |
+
+**Example:**
+```
+PAERO1, 1
+```
+
+---
+
+### AEFACT — Arbitrary Fraction List
+
+Defines non-uniform spanwise or chordwise breakpoints for CAERO1 meshing.
+
+**Format:**
+```
+AEFACT  SID  D1  D2  D3  D4  D5  D6  D7
++       D8   D9  ...
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| SID | `sid` | int | Set ID (unique; referenced by CAERO1 LSPAN or LCHORD) | required |
+| D1–DN | `data` | list[float] | Decimal fractions 0.0–1.0; must start at 0.0 and end at 1.0 | required |
+
+Multiple continuation lines are supported. The list must have NSPAN+1 or NCHORD+1 values.
+
+**Examples:**
+```
+$ Three equal strips (4 breakpoints including 0.0 and 1.0)
+AEFACT, 10, 0.0, 0.333, 0.667, 1.0
+$ Clustered leading-edge panels (8 chordwise breakpoints)
+AEFACT, 20, 0.0, 0.05, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0
+```
+
+---
+
+### CAERO1 — Aerodynamic Panel Macroelement
+
+Defines a flat trapezoidal lifting surface. Meshed into NSPAN×NCHORD boxes by
+`mesh_caero1()` in `sbeam/aero/panel.py`.
+
+**Format:**
+```
+CAERO1  EID  PID  CP  NSPAN  NCHORD  LSPAN  LCHORD  IGID
++       X1   Y1   Z1  X12    X4      Y4     Z4      X43
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| EID | `eid` | int | Element ID (unique) | required |
+| PID | `pid` | int | References PAERO1 | required |
+| CP | `cp` | int | Coordinate system for P1/P4 (0 = global; or CORD2R CID) | `0` |
+| NSPAN | `nspan` | int | Number of equal spanwise boxes (0 if LSPAN used) | `0` |
+| NCHORD | `nchord` | int | Number of equal chordwise boxes (0 if LCHORD used) | `0` |
+| LSPAN | `lspan` | int | AEFACT SID for non-uniform span breakpoints (0 if NSPAN used) | `0` |
+| LCHORD | `lchord` | int | AEFACT SID for non-uniform chord breakpoints (0 if NCHORD used) | `0` |
+| IGID | `igid` | int | Interference group ID (ignored in Phase A) | `0` |
+| X1, Y1, Z1 | `p1` | float×3 | Root leading-edge point, in CP coordinate system | required |
+| X12 | `x12` | float | Root chord length in freestream +X direction | required |
+| X4, Y4, Z4 | `p4` | float×3 | Tip leading-edge point, in CP coordinate system | required |
+| X43 | `x43` | float | Tip chord length in freestream +X direction | required |
+
+The continuation line (P1/X12/P4/X43) is required. Exactly one of NSPAN/LSPAN must be
+non-zero; exactly one of NCHORD/LCHORD must be non-zero.
+
+Cross-reference validation (post-parse): PID not in `bulk.paero1s` → `ValueError`;
+LSPAN/LCHORD not in `bulk.aefacts` → `ValueError`; CAERO1 present, no AEROS → `ValueError`.
+
+**Example:**
+```
+$ 4×10 half-span wing: root LE at origin, tip LE at y=5, chord=2
+CAERO1, 100, 1, 0, 4, 10, 0, 0, 0
++,      0.0, 0.0, 0.0, 2.0, 0.0, 5.0, 0.0, 2.0
+```
+
+---
+
+### W2GJ — Baseline Normalwash Slopes
+
+Per-box dimensionless normalwash slopes (Δz/Δx) that represent geometric incidence
+not captured by the VLM angle of attack. Added to the computed downwash during the
+aeroelastic solve.
+
+**Format:**
+```
+W2GJ  SID  CAERO_EID  D1  D2  D3  D4  D5  D6
++     D7   D8  ...
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| SID | `sid` | int | Set ID | required |
+| CAERO_EID | `caero_eid` | int | EID of the CAERO1 this normalwash applies to | required |
+| D1–DN | `data` | list[float] | Normalwash slopes Δz/Δx, one per box in row-major order | required |
+
+Row-major order: span index slowest, chord index fastest — matching `mesh_caero1()` box ordering.
+
+**Example:**
+```
+$ Uniform 2° twist (0.0349 rad) on a 4×2 panel (8 boxes)
+W2GJ, 5, 100, 0.0349, 0.0349, 0.0349, 0.0349, 0.0349, 0.0349
++,    0.0349, 0.0349
+```
+
+---
+
+### WKK — Diagonal AIC Correction
+
+Lowest-fidelity AIC correction: scales each row of the AIC matrix by a per-box
+weight. `AJJ* = diag(w) @ AJJ`.
+
+**Format:**
+```
+WKK  SID  CAERO_EID  W1  W2  W3  W4  W5  W6
++    W7   W8  ...
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| SID | `sid` | int | Set ID | required |
+| CAERO_EID | `caero_eid` | int | EID of the CAERO1 this correction applies to | required |
+| W1–WN | `data` | list[float] | Diagonal weight per box, row-major order | required |
+
+**Example:**
+```
+$ Uniform 10% uplift on a 4×2 panel (8 boxes)
+WKK, 10, 100, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1
++,   1.1, 1.1
+```
+
+---
+
+### AECORR — Force/Pressure AIC Correction
+
+Higher-fidelity AIC correction that matches VLM predictions to CFD or wind-tunnel
+target data at a reference condition. Two methods:
+
+- **WT2** (pressure matching): per-box `cp` targets.
+- **WT1** (force/moment matching): per-strip lift coefficient targets.
+
+**Format:**
+```
+AECORR  SID  METHOD  CAERO_EID  T1  T2  T3  T4  T5
++       T6   T7  ...
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| SID | `sid` | int | Set ID | required |
+| METHOD | `method` | str | `'WT1'` or `'WT2'`; any other value raises `ValueError` | required |
+| CAERO_EID | `caero_eid` | int | EID of the CAERO1 this correction applies to | required |
+| T1–TN | `target` | list[float] | WT2: target cp per box (row-major); WT1: target lift per strip | required |
+
+Reference normalwash for both methods: `w_ref = -ones(n)` (uniform unit incidence,
+same as `solve_rigid_cl` at `alpha=1`).
+
+**Examples:**
+```
+$ WT2: pressure-matching targets for an 8-box panel
+AECORR, 20, WT2, 100, 0.45, 0.30, 0.22, 0.18, 0.45, 0.30, 0.22, 0.18
+
+$ WT1: per-strip lift targets for a 4-strip half-span wing
+AECORR, 30, WT1, 100, 0.80, 0.75, 0.65, 0.50
+```
+
+**Correction precedence** in `build_aero_model()`: WKK → WT2 → WT1 → identity lstsq.
+
+---
+
 ## DOF Reference
 
 | DOF | Label | Physical meaning |
@@ -747,6 +976,13 @@ DOF strings (used in SPC, SPC1, RBE2, RBE3, CBAR pin releases) are digit sequenc
 
 | Card | Constraint |
 |------|-----------|
+| AECORR | METHOD must be `'WT1'` or `'WT2'`; any other value raises `ValueError` |
+| AECORR | `f_target` length (WT1) must equal number of distinct span strips in the CAERO1 |
+| AEROS | Only one per model; ACSID and RCSID must be `0` in Phase A |
+| AEROS | Required whenever CAERO1 cards are present |
+| CAERO1 | Exactly one of NSPAN/LSPAN must be non-zero |
+| CAERO1 | Exactly one of NCHORD/LCHORD must be non-zero |
+| CAERO1 | Requires PAERO1 reference; PID not in `bulk.paero1s` raises `ValueError` |
 | CBAR | Offsets (W1A/W2A) not supported |
 | CBUSH | CID must be `0` or blank |
 | CBUSH | Damping (PBUSH `B` keyword) deferred to Phase 3 |
@@ -756,4 +992,7 @@ DOF strings (used in SPC, SPC1, RBE2, RBE3, CBAR pin releases) are digit sequenc
 | EIGRL | V1/V2 filtering applied in Hz |
 | GRAV | CID must be `0` (global frame only) in Phase 1–2 |
 | MAT1 | Thermal fields (A, TREF, GE) parsed but ignored in Phase 1–2 |
+| PAERO1 | Phase A stub only; body interference support deferred |
 | SPC | Enforced displacement D must be `0.0` in Phase 1–2 |
+| W2GJ | Data length must equal NSPAN×NCHORD for the referenced CAERO1 |
+| WKK | Data length must equal NSPAN×NCHORD for the referenced CAERO1 |
