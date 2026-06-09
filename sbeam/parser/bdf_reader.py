@@ -11,7 +11,7 @@ from sbeam.model.material import Mat1
 from sbeam.model.mass import Conm2
 from sbeam.model.load import Force, Moment, Load, Grav, Eigrl
 from sbeam.model.constraint import Spc, Spc1
-from sbeam.model.aero import Aeros, Caero1, Paero1, Aefact, W2gj
+from sbeam.model.aero import Aeros, Caero1, Paero1, Aefact, W2gj, Wkk, Aecorr
 from sbeam.parser.case_control import parse_case_control
 
 _IGNORED_KEYWORDS = frozenset({"BEGIN", "BEGINBULK", "ENDDATA"})
@@ -461,6 +461,31 @@ def _handle_w2gj(fields: list, conts: list, bulk: BulkData) -> None:
     bulk.w2gjs[sid] = W2gj(sid=sid, caero_eid=caero_eid, data=data)
 
 
+def _handle_wkk(fields: list, conts: list, bulk: BulkData) -> None:
+    sid       = _to_int(fields[1])
+    caero_eid = _to_int(fields[2])
+    if sid in bulk.wkks:
+        raise ValueError(f"Duplicate WKK SID {sid}")
+    data = [_to_float(f) for f in fields[3:] if f.strip()]
+    for cont in conts:
+        data += [_to_float(f) for f in cont[1:] if f.strip()]
+    bulk.wkks[sid] = Wkk(sid=sid, caero_eid=caero_eid, data=data)
+
+
+def _handle_aecorr(fields: list, conts: list, bulk: BulkData) -> None:
+    sid       = _to_int(fields[1])
+    method    = fields[2].strip().upper() if len(fields) > 2 else ""
+    caero_eid = _to_int(fields[3]) if len(fields) > 3 else 0
+    if method not in ("WT1", "WT2"):
+        raise ValueError(f"AECORR {sid}: METHOD must be WT1 or WT2, got '{method}'")
+    if sid in bulk.aecorrs:
+        raise ValueError(f"Duplicate AECORR SID {sid}")
+    target = [_to_float(f) for f in fields[4:] if f.strip()]
+    for cont in conts:
+        target += [_to_float(f) for f in cont[1:] if f.strip()]
+    bulk.aecorrs[sid] = Aecorr(sid=sid, method=method, caero_eid=caero_eid, target=target)
+
+
 def _handle_paero1(fields: list, bulk: BulkData) -> None:
     pid = _to_int(fields[1])
     if pid in bulk.paero1s:
@@ -673,6 +698,34 @@ def parse_bulk_data(lines: list) -> BulkData:
                 else:
                     break
             _handle_w2gj(fields, w2gj_conts, bulk)
+        elif keyword == "WKK":
+            wkk_conts: list = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    wkk_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_wkk(fields, wkk_conts, bulk)
+        elif keyword == "AECORR":
+            aecorr_conts: list = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    aecorr_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_aecorr(fields, aecorr_conts, bulk)
         elif keyword == "PAERO1":
             _handle_paero1(fields, bulk)
         elif keyword == "CAERO1":

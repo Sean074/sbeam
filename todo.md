@@ -123,7 +123,7 @@ directly — off-by-half-box is a silent, fatal error.
 
 ---
 
-### [S43] AIC corrections (`corrections.py`) + `AeroModel` container
+### [S43] ✅ AIC corrections (`corrections.py`) + `AeroModel` container — COMPLETE
 
 **Files:**
 - `sbeam/model/aero.py` — add `Wkk` (sid, caero\_eid, data: list) and `Aecorr`

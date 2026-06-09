@@ -44,3 +44,18 @@ class W2gj:
     sid:       int
     caero_eid: int           # which CAERO1 element this applies to
     data: list = field(default_factory=list)   # dimensionless normalwash slopes (Δz/Δx), one per box
+
+
+@dataclass
+class Wkk:
+    sid:       int
+    caero_eid: int           # which CAERO1 element this applies to
+    data: list = field(default_factory=list)   # per-box diagonal weights (length = nspan × nchord)
+
+
+@dataclass
+class Aecorr:
+    sid:       int
+    method:    str           # 'WT1' (force/moment matching) or 'WT2' (pressure matching)
+    caero_eid: int           # which CAERO1 element this applies to
+    target: list = field(default_factory=list)  # per-box cp (WT2) or per-strip lift (WT1)

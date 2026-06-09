@@ -1391,3 +1391,70 @@ unsteady solver.
 - Partial W2GJ data (fewer values than boxes): remaining boxes stay zero.
 - **599 tests pass, 0 skipped, 0 failures.**
 
+---
+
+### Step 43: AIC Corrections (`corrections.py`) + `AeroModel` Container ✅ COMPLETE
+
+**Objective:** Add the three steady AIC correction tiers (Wkk, WT2, WT1) and package
+the entire aerodynamic model into a single `AeroModel` container for use by the
+downstream SOL 144 aeroelastic solver.
+
+**Deliverables:**
+- `sbeam/model/aero.py` — two new dataclasses:
+  - `Wkk(sid, caero_eid, data)` — diagonal multiplicative weight per box.
+  - `Aecorr(sid, method, caero_eid, target)` — pressure or force/moment correction
+    spec; `method ∈ {'WT1', 'WT2'}`.
+- `sbeam/model/bulk_data.py` — `wkks: dict` and `aecorrs: dict` fields added; imports
+  extended.
+- `sbeam/parser/bdf_reader.py` — two new handlers and dispatch entries:
+  - `_handle_wkk(fields, conts, bulk)` — same multi-continuation pattern as W2GJ.
+  - `_handle_aecorr(fields, conts, bulk)` — field 2 is the method string `'WT1'`/`'WT2'`;
+    raises `ValueError` for any other value.
+- `sbeam/aero/corrections.py` *(new)* — three correction functions:
+  - `apply_wkk(ajj, wkk_data) -> np.ndarray` — returns `AJJ* = diag(w) @ AJJ`.
+  - `apply_wt2(ajj, cp_target) -> np.ndarray` — returns corrected `AJJ*⁻¹` by
+    scaling `AJJ⁻¹` row-wise by `cp_target / cp_vlm_ref` (reference = unit incidence
+    `w_ref = −ones(n)`). Guard for near-zero `cp_vlm_ref` boxes keeps ratio = 1.
+  - `apply_wt1(ajj, boxes, f_target) -> np.ndarray` — returns corrected `AJJ*⁻¹` by
+    assigning a per-strip ratio `f_target_s / f_vlm_s` to every box in strip s
+    (strips defined by `box.i_span`). Both WT functions warn if `cond(AJJ) > 1e10`.
+- `sbeam/aero/aero_model.py` *(new)* — `AeroModel` dataclass (`boxes`, `ajj`,
+  `ajj_inv_corr`, `skj`, `djk`, `wg`, `parity`) and `build_aero_model(bulk, parity=1)`
+  factory. Correction precedence: Wkk → WT2 → WT1 → identity (lstsq of raw AJJ).
+- `tests/aero/test_corrections.py` *(new)* — 17 tests across 5 classes.
+
+**Key decisions:**
+- **Reference normalwash for WT1/WT2**: `w_ref = -np.ones(n)` (uniform unit incidence,
+  same rhs used by `solve_rigid_cl` for `alpha=1`). The `todo.md` spec did not include
+  `w_ref` in the function signatures; analysis showed that any implicit derivation of
+  `w_ref` from `cp_target` itself would yield a trivial identity correction. A fixed
+  reference state is the only formulation that (a) passes the round-trip tests and
+  (b) provides a useful correction for real CFD/WT data.
+- **Diagonal corrections only**: both WT1 and WT2 apply a per-box (WT2) or per-strip
+  (WT1) scalar factor to the rows of `AJJ⁻¹`. Full off-diagonal correction matrices
+  require multiple reference conditions and are reserved for a later phase.
+- **`apply_wkk` returns `AJJ*`** (not the inverse); the caller (`build_aero_model`)
+  inverts via lstsq. `apply_wt2` and `apply_wt1` return `AJJ*⁻¹` directly (they solve
+  internally). This asymmetry matches the specification in `todo.md`.
+- **`np.errstate`** used inside `apply_wt2` to suppress the numpy divide-by-zero
+  RuntimeWarning that arises from `np.where` evaluating both branches; the near-zero
+  guard then replaces invalid ratios with 1.0.
+- **WT1 `f_target` length**: must equal the number of distinct `i_span` values in
+  `boxes` (one scalar per span strip). A `ValueError` is raised on mismatch to avoid
+  silent wrong corrections.
+
+**Test / Acceptance (V-A3):**
+- No correction: `AJJ*⁻¹ @ AJJ ≈ I` to `abs=1e-10`.
+- Wkk non-unit (weight 1.5): `AJJ*` row 0 is `1.5 × AJJ` row 0, others unchanged.
+- WT2 round-trip: feed VLM cp at unit incidence as target → corrected cp reproduced to `rel=1e-8`.
+- WT2 scaled target: scaling target cp by 1.3 scales corrected output by 1.3 to `rel=1e-8`.
+- WT1 round-trip: feed VLM per-strip lift as target → corrected strip lift reproduced to `rel=1e-8`.
+- WT1 scaled target: scaling by 0.8 scales corrected strip output by 0.8 to `rel=1e-8`.
+- WT1 wrong `f_target` length: `ValueError` raised.
+- Conditioning: near-singular AJJ triggers `UserWarning` matching `"conditioned"` for both WT1 and WT2.
+- `build_aero_model` identity: `AJJ*⁻¹ @ AJJ ≈ I` with no correction card.
+- `build_aero_model` Wkk: `AJJ*⁻¹ @ (1.5 × AJJ) ≈ I` for uniform weight 1.5.
+- `build_aero_model` WT2 round-trip: corrected cp reproduces VLM cp.
+- Shape checks: `AJJ`, `AJJ*⁻¹` `(n, n)`; `Skj` `(3n, n)`; `Djk` `(n, n)`; `wg` `(n,)`.
+- **616 tests pass, 0 skipped, 0 failures.**
+
