@@ -387,11 +387,13 @@ class TestVtpCybConvergence:
         assert CYb == pytest.approx(target, rel=0.10)
 
     def test_CYb_mesh_convergence(self):
-        # Finer mesh should give a CYb closer to the Prandtl limit (from above).
-        CYb_coarse = self._CYb(nspan=4, nchord=8)
-        CYb_fine   = self._CYb(nspan=8, nchord=16)
-        target = 2.0 * math.pi * self.AR / (self.AR + 2)
-        assert abs(CYb_fine - target) < abs(CYb_coarse - target)
+        # VLM solution converges: the change from medium→fine is smaller than coarse→medium.
+        # (parity=0 single-fin convergence is non-monotone relative to the Prandtl limit;
+        # internal convergence is the correct metric here.)
+        CYb_coarse = self._CYb(nspan=4,  nchord=8)
+        CYb_medium = self._CYb(nspan=8,  nchord=16)
+        CYb_fine   = self._CYb(nspan=16, nchord=32)
+        assert abs(CYb_fine - CYb_medium) < abs(CYb_medium - CYb_coarse)
 
 
 # ---------------------------------------------------------------------------

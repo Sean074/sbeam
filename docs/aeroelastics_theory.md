@@ -163,10 +163,28 @@ $$
 \tag{5}
 $$
 
-Summing the bound segment and both trailing legs of box $j$ gives the induced velocity at
-collocation point $i$ as a linear function of $\Gamma_j$. Taking the component along the box
-normal $\hat{\mathbf n}_i$ defines the **aerodynamic influence coefficient** $a_{ij}$ — the
-normalwash at $i$ per unit circulation at $j$.
+Summing the bound segment and both trailing legs of box $j$ gives the induced velocity
+$\mathbf v_{ij}$ at collocation point $i$ as a linear function of $\Gamma_j$. The AIC entry is
+the **full dot product with the receiving panel's outward normal** (ZAERO Eq. 3.49a):
+
+$$
+a_{ij} = n_{xi}\,U_{ij} + n_{yi}\,V_{ij} + n_{zi}\,W_{ij}
+\tag{5a}
+$$
+
+where $(U_{ij}, V_{ij}, W_{ij})$ are the $x$, $y$, $z$ components of $\mathbf v_{ij}$. This
+general formulation correctly handles both horizontal surfaces (dominant $n_z$) and vertical
+surfaces such as the VTP (dominant $n_y$) with the same code path.
+
+**Bound vortex orientation**: to ensure a consistent sign convention across all surface
+types, the bound vortex direction is chosen so that the AIC diagonal entry is always
+negative (i.e., the self-induced normalwash is downwash for a horizontal panel, or
+an inward sidewash for a vertical panel). The condition
+$(b_k - a_k) \times \hat{\mathbf x} \cdot \hat{\mathbf n}_k < 0$
+is enforced per box; if violated the end-points $a_k$ and $b_k$ are swapped. For a
+horizontal wing (span in $+Y$, $\hat{\mathbf n} = +\hat{z}$) this is automatic; for a
+VTP (span in $+Z$, $\hat{\mathbf n} = +\hat{y}$) the bound vortex runs from the upper
+tip down to the root (high $Z$ to low $Z$).
 
 ### 2.3 The AIC matrix and the pressure solve
 
@@ -253,9 +271,24 @@ C_M = \frac{1}{q\,S_\text{ref}\,c_\text{ref}}\sum_k P_k\,(x_\text{ref}-x_k) .
 \tag{10}
 $$
 
-These rigid results — convergence of $C_{L\alpha}$ with mesh refinement toward the
-lifting-line limit $2\pi A\!R/(A\!R+2)$, and reproduction of SP-405 span-loading tables — are
-the standalone validation of Phase A, before any structure is attached.
+**Boundary condition — alpha and beta**: for small angles the freestream vector is
+$\mathbf U_\infty \approx U_\infty[1,\,\beta,\,\alpha]^{\mathsf T}$, so the right-hand side
+of the flow-tangency system is panel-by-panel (ZAERO Eq. 3.28):
+
+$$
+w_i = -\mathbf U_\infty \cdot \hat{\mathbf n}_i / U_\infty
+    \approx -(\alpha\,n_{zi} + \beta\,n_{yi}) .
+\tag{10a}
+$$
+
+Horizontal wing panels ($n_z \approx 1$, $n_y \approx 0$) load under $\alpha$; vertical
+fin panels ($n_y \approx 1$, $n_z \approx 0$) load under $\beta$. Setting $\beta = 0$
+leaves VTP boxes with $w_i = 0$, giving zero Cp — the correct result for a symmetric
+fin at zero sideslip.
+
+These rigid results — convergence of $C_{L\alpha}$ with mesh refinement, and decoupled
+$\alpha$/$\beta$ loading of horizontal and vertical surfaces — are the standalone
+validation of Phase A, before any structure is attached.
 
 ---
 

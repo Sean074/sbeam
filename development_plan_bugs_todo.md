@@ -217,6 +217,8 @@ Steps 39–44 implement the steady vortex-lattice aerodynamic layer.
 
 ### Step 44: Viewer — Aero Box Mesh + cp Overlay ✅ COMPLETE — see `docs/completed_development.md`
 
+### Step 45: VTP Cp Bugs + Sideslip Beta ✅ COMPLETE — see `docs/completed_development.md`
+
 ---
 
 ## Phase 2 — Model Enhancements

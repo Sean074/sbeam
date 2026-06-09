@@ -152,7 +152,7 @@ class AeroBox:
     bound_a: np.ndarray # (3,) bound vortex root endpoint at 1/4-chord
     bound_b: np.ndarray # (3,) bound vortex tip endpoint at 1/4-chord
     area: float         # Panel area (cross-product of diagonals)
-    normal: np.ndarray  # (3,) outward unit normal (forced to +Z half-space)
+    normal: np.ndarray  # (3,) outward unit normal (dominant-axis oriented: +Z or +Y)
     chord: float        # CAERO1 macroelement chord (not the individual box chord)
     span_frac: float    # Spanwise centroid position, 0.0 (root) to 1.0 (tip)
 ```
@@ -176,8 +176,14 @@ implementation details:
   (full origin + R @ v_local, not rotation-only).
 - Bound vortex and collocation points are placed at ¼ and ¾ of each **box** chord
   individually. For NCHORD > 1 each chordwise row has independent horseshoe positions.
-- Normal is forced to the +Z half-space so flat XY-plane panels always have an upward
-  outward normal regardless of corner ordering.
+- **Normal orientation**: the cross-product of box diagonals gives a raw normal; it is
+  flipped so the component with the largest absolute value is positive (+Z for horizontal
+  surfaces, +Y for vertical fins in the XZ plane).
+- **Bound vortex orientation**: the bound segment direction is chosen so that the AIC
+  self-influence (diagonal entry) is always negative — i.e., `(bound_b − bound_a) × x̂ · n̂ < 0`.
+  For VTP panels (span in +Z), this means the bound vortex runs top-to-bottom (high Z to
+  low Z). This is required for consistent sign conventions across horizontal and vertical
+  surfaces.
 - Non-uniform meshing: AEFACT fraction list defines NSPAN+1 or NCHORD+1 breakpoints;
   panels are sized proportionally to the fraction differences.
 
@@ -204,10 +210,13 @@ degenerate inputs (p on segment, or a ≈ b).
 Guards: `_DEGEN_TOL = 1e-14` for collinearity; `_FAR_FIELD_FACTOR = 1000.0` for the
 trailing-leg cutoff ratio.
 
-**`horseshoe_influence(colloc, box, parity=1) -> float`**
+**`horseshoe_influence(colloc, colloc_normal, box, parity=1) -> float`**
 
-Returns the normalwash (z-component of induced velocity) at `colloc` from a unit
-horseshoe at `box`. For half-span models a mirror image across the XZ plane is added:
+Returns the normalwash (induced velocity dotted with `colloc_normal`) at `colloc` from
+a unit horseshoe at `box` (ZAERO Eq. 3.49a: `NIC = n_x·UIC + n_y·VIC + n_z·WIC`).
+This general dot-product formulation supports arbitrary surface orientations — horizontal
+wings (n̂ ≈ +Z) and vertical fins (n̂ ≈ +Y) are treated consistently.
+For half-span models a mirror image across the XZ plane is added:
 
 | `parity` | Image direction | Effect |
 |----------|-----------------|--------|
@@ -221,22 +230,30 @@ Assembles the n×n aerodynamic influence coefficient (AIC) matrix. `A[i, j]` is 
 normalwash at collocation point `i` per unit circulation strength at horseshoe `j`.
 O(n²) loop over all panel pairs.
 
-**`solve_rigid_cl(boxes, alpha, parity=1) -> dict`**
+**`solve_rigid_cl(boxes, alpha, beta=0.0, parity=1) -> dict`**
 
-Solves the rigid-wing flow-tangency problem at angle of attack `alpha` (radians):
+Solves the rigid-wing flow-tangency problem at angle of attack `alpha` and sideslip
+`beta` (both in radians). Boundary condition per panel (ZAERO Eq. 3.28):
 
 ```
-A @ Γ = -α   (uniform incidence RHS)
+rhs[i] = -(V⃗ · n̂_i)  ≈ -(α·n_z[i] + β·n_y[i])   for small angles
+A @ Γ = rhs
 ```
+
+- Horizontal surfaces (n̂ ≈ +Z): loaded by `alpha`, negligible response to `beta`.
+- Vertical surfaces (n̂ ≈ +Y): loaded by `beta`, negligible response to `alpha`.
 
 Returns a dict:
 - `cp`: (n,) pressure coefficient per box — `2Γ / (V∞ × box_chord)`, V∞ = 1
-- `cl_section`: `{i_span: CL_strip}` — per-strip lift via Kutta–Joukowski
-- `CL`: full-span lift coefficient (0.0 for parity = -1)
+- `cl_section`: `{i_span: CL_strip}` — per-strip load coefficient via Kutta–Joukowski
+- `CL`: total normal-force coefficient (lift for wings; sideforce for fins)
 - `CM`: pitching moment about x = 0 (nose-up positive)
 
-Note: the VLM with uniform spanwise spacing converges to its own limit (~10% below
-Prandtl `2πAR/(AR+2)` for AR = 5). This is a known method characteristic, not a bug.
+Note: with `parity=0` (full-span single surface, no image vortex), the VLM solution
+converges to a limit ~5–10% below the Prandtl finite-span formula `2πAR/(AR+2)`. This
+is an intrinsic property of single-surface parity=0 VLM, not a bug. The convergence is
+non-monotone relative to the Prandtl target (overshoots at coarse meshes, then decreases
+as panels are added), but is internally consistent and converges to a stable VLM limit.
 
 ---
 
