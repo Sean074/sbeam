@@ -114,30 +114,30 @@ class TestSingleHorseshoe:
         v = (biot_savart_seg(p, a, b)
              + biot_savart_seg(p, b, far_b)
              + biot_savart_seg(p, far_a, a))
-        expected_w = float(v[2])   # z-component (flat wing)
+        expected_w = float(v[2])   # z-component (flat wing, normal=[0,0,1])
 
-        w = horseshoe_influence(box.colloc, box, parity=0)
+        w = horseshoe_influence(box.colloc, box.normal, box, parity=0)
         assert w == pytest.approx(expected_w, rel=1e-10)
 
     def test_parity_plus1_smaller_magnitude_than_no_image(self, box):
         # Symmetric image (reversed bound) acts as an upwash source for the
         # right-wing collocation point → net downwash is REDUCED relative to parity=0.
         # This is the mechanism that increases finite-wing CLa with symmetric image.
-        w0 = horseshoe_influence(box.colloc, box, parity=0)
-        w1 = horseshoe_influence(box.colloc, box, parity=1)
+        w0 = horseshoe_influence(box.colloc, box.normal, box, parity=0)
+        w1 = horseshoe_influence(box.colloc, box.normal, box, parity=1)
         assert abs(w1) < abs(w0)
 
     def test_parity_minus1_larger_magnitude_than_no_image(self, box):
         # Antisymmetric image (same-direction bound) adds downwash at the right-wing
         # collocation point → net downwash INCREASES relative to parity=0.
-        w0 = horseshoe_influence(box.colloc, box, parity=0)
-        wm = horseshoe_influence(box.colloc, box, parity=-1)
+        w0 = horseshoe_influence(box.colloc, box.normal, box, parity=0)
+        wm = horseshoe_influence(box.colloc, box.normal, box, parity=-1)
         assert abs(wm) > abs(w0)
 
     def test_self_induced_is_negative(self, box):
         # A horseshoe induces downwash (negative z-velocity) at its own
         # collocation point — the AIC diagonal must be negative.
-        w = horseshoe_influence(box.colloc, box, parity=1)
+        w = horseshoe_influence(box.colloc, box.normal, box, parity=1)
         assert w < 0.0
 
 
@@ -157,7 +157,7 @@ class TestBuildAjj:
     def test_diagonal_matches_horseshoe_influence(self, single_box):
         A = build_ajj(single_box, parity=1)
         box = single_box[0]
-        expected = horseshoe_influence(box.colloc, box, parity=1)
+        expected = horseshoe_influence(box.colloc, box.normal, box, parity=1)
         assert A[0, 0] == pytest.approx(expected, rel=1e-12)
 
     def test_shape_nxm(self):
@@ -274,3 +274,147 @@ class TestAntisymmetric:
 
     def test_cp_length(self, result):
         assert len(result["cp"]) == 40
+
+
+# ---------------------------------------------------------------------------
+# Helpers for vertical surface tests
+# ---------------------------------------------------------------------------
+
+def _vtp_panel(nspan: int = 4, nchord: int = 2) -> list:
+    """Flat-plate VTP in the XZ plane: span in +Z, chord in +X."""
+    caero = Caero1(
+        eid=10, pid=1, cp=0,
+        nspan=nspan, nchord=nchord,
+        lspan=0, lchord=0,
+        igid=0,
+        p1=(0.0, 0.0, 0.0), x12=1.0,
+        p4=(0.5, 0.0, 5.0), x43=1.0,
+    )
+    return mesh_caero1(caero, PAERO, NO_AEFACTS, NO_CORD2RS)
+
+
+# ---------------------------------------------------------------------------
+# VTP panel normal orientation
+# ---------------------------------------------------------------------------
+
+class TestVtpNormal:
+    def test_vtp_normal_is_plus_y(self):
+        boxes = _vtp_panel()
+        for box in boxes:
+            assert box.normal[1] == pytest.approx(1.0, abs=1e-10), (
+                f"VTP normal Y should be +1, got {box.normal}"
+            )
+
+    def test_vtp_normal_z_is_zero(self):
+        boxes = _vtp_panel()
+        for box in boxes:
+            assert abs(box.normal[2]) < 1e-10
+
+
+# ---------------------------------------------------------------------------
+# VTP aerodynamics — alpha loads nothing, beta loads the fin
+# ---------------------------------------------------------------------------
+
+class TestVtpAerodynamics:
+    NSPAN = 4
+    NCHORD = 2
+    ALPHA = 0.1   # rad
+    BETA  = 0.1   # rad
+
+    @pytest.fixture(scope="class")
+    def boxes(self):
+        return _vtp_panel(self.NSPAN, self.NCHORD)
+
+    def test_vtp_cp_zero_at_alpha_only(self, boxes):
+        # A vertical surface has zero normal component from alpha — Cp must be ≈0.
+        result = solve_rigid_cl(boxes, alpha=self.ALPHA, beta=0.0, parity=0)
+        assert np.allclose(result["cp"], 0.0, atol=1e-6), (
+            "VTP Cp should be ~0 for pure angle of attack"
+        )
+
+    def test_vtp_cp_nonzero_at_beta(self, boxes):
+        # A vertical surface must load under sideslip.
+        result = solve_rigid_cl(boxes, alpha=0.0, beta=self.BETA, parity=0)
+        assert np.any(np.abs(result["cp"]) > 0.1), (
+            "VTP Cp should be significant for non-zero sideslip"
+        )
+
+    def test_vtp_cl_positive_for_positive_beta(self, boxes):
+        # Positive sideslip → positive net sideforce coefficient.
+        result = solve_rigid_cl(boxes, alpha=0.0, beta=self.BETA, parity=0)
+        assert result["CL"] > 0.0
+
+    def test_vtp_cl_zero_at_alpha_only(self, boxes):
+        result = solve_rigid_cl(boxes, alpha=self.ALPHA, beta=0.0, parity=0)
+        assert abs(result["CL"]) < 1e-6
+
+
+# ---------------------------------------------------------------------------
+# VTP C_Yβ convergence toward Prandtl lifting-line limit
+# ---------------------------------------------------------------------------
+
+class TestVtpCybConvergence:
+    """VTP sideforce-curve slope C_Yβ should converge toward 2πAR/(AR+2).
+
+    AR is computed using the fin's height (Z-span) as the reference span.
+    Uses parity=0 (full-span single fin) since the fin is symmetric about Y=0.
+    """
+
+    CHORD = 1.0
+    HEIGHT = 5.0   # Z-span of the fin
+    BETA = 0.1
+
+    @property
+    def AR(self):
+        return self.HEIGHT ** 2 / (self.HEIGHT * self.CHORD)   # = HEIGHT / CHORD = 5
+
+    def _CYb(self, nspan: int, nchord: int) -> float:
+        caero = Caero1(
+            eid=10, pid=1, cp=0,
+            nspan=nspan, nchord=nchord,
+            lspan=0, lchord=0,
+            igid=0,
+            p1=(0.0, 0.0, 0.0), x12=self.CHORD,
+            p4=(0.0, 0.0, float(self.HEIGHT)), x43=self.CHORD,
+        )
+        boxes = mesh_caero1(caero, PAERO, NO_AEFACTS, NO_CORD2RS)
+        result = solve_rigid_cl(boxes, alpha=0.0, beta=self.BETA, parity=0)
+        return result["CL"] / self.BETA
+
+    def test_CYb_within_10_percent_of_prandtl(self):
+        target = 2.0 * math.pi * self.AR / (self.AR + 2)
+        CYb = self._CYb(nspan=6, nchord=12)
+        assert CYb == pytest.approx(target, rel=0.10)
+
+    def test_CYb_mesh_convergence(self):
+        # Finer mesh should give a CYb closer to the Prandtl limit (from above).
+        CYb_coarse = self._CYb(nspan=4, nchord=8)
+        CYb_fine   = self._CYb(nspan=8, nchord=16)
+        target = 2.0 * math.pi * self.AR / (self.AR + 2)
+        assert abs(CYb_fine - target) < abs(CYb_coarse - target)
+
+
+# ---------------------------------------------------------------------------
+# Regression: wing unaffected by beta, VTP unaffected by alpha (cross-check)
+# ---------------------------------------------------------------------------
+
+class TestAlphaBetaDecoupling:
+    """For ideal flat surfaces, alpha and beta are decoupled: a horizontal wing
+    should produce zero load at alpha=0, beta>0 and vice versa for a VTP."""
+
+    ALPHA = 0.1
+    BETA  = 0.1
+
+    def test_wing_zero_cp_at_beta_only(self):
+        boxes = _rect_wing(nspan=4, nchord=4, span=5.0, chord=1.0)
+        result = solve_rigid_cl(boxes, alpha=0.0, beta=self.BETA, parity=0)
+        assert np.allclose(result["cp"], 0.0, atol=1e-6), (
+            "Horizontal wing Cp should be ~0 for pure sideslip"
+        )
+
+    def test_vtp_zero_cp_at_alpha_only(self):
+        boxes = _vtp_panel(nspan=4, nchord=4)
+        result = solve_rigid_cl(boxes, alpha=self.ALPHA, beta=0.0, parity=0)
+        assert np.allclose(result["cp"], 0.0, atol=1e-6), (
+            "VTP Cp should be ~0 for pure angle of attack"
+        )

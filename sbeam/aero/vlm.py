@@ -20,7 +20,6 @@ from sbeam.aero.panel import AeroBox
 
 _FAR_FIELD_FACTOR = 1000.0   # trailing leg length = factor × box chord
 _DEGEN_TOL = 1e-14           # near-zero threshold for Biot-Savart guards
-_Z_HAT = np.array([0.0, 0.0, 1.0])
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +53,8 @@ def biot_savart_seg(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> np.ndarray:
 # Horseshoe influence — single AIC entry
 # ---------------------------------------------------------------------------
 
-def horseshoe_influence(colloc: np.ndarray, box: AeroBox, parity: int = 1) -> float:
+def horseshoe_influence(colloc: np.ndarray, colloc_normal: np.ndarray,
+                        box: AeroBox, parity: int = 1) -> float:
     """Normalwash at colloc from a unit-strength horseshoe vortex at box.
 
     The horseshoe consists of:
@@ -63,7 +63,8 @@ def horseshoe_influence(colloc: np.ndarray, box: AeroBox, parity: int = 1) -> fl
       • left trailing  far-field (+x) → bound_a
 
     When parity != 0 an XZ-mirror image is added (symmetric/antisymmetric).
-    Returns the z-component of induced velocity (flat-wing normalwash).
+    Returns the induced velocity projected onto colloc_normal (ZAERO Eq. 3.49a:
+    NIC = n_x·UIC + n_y·VIC + n_z·WIC — general non-planar formulation).
     """
     a = box.bound_a
     b = box.bound_b
@@ -74,7 +75,7 @@ def horseshoe_influence(colloc: np.ndarray, box: AeroBox, parity: int = 1) -> fl
     v = (biot_savart_seg(colloc, a, b)
          + biot_savart_seg(colloc, b, far_b)
          + biot_savart_seg(colloc, far_a, a))
-    w = float(np.dot(v, _Z_HAT))
+    w = float(np.dot(v, colloc_normal))
 
     if parity != 0:
         # Mirror about XZ plane: y → -y
@@ -95,7 +96,7 @@ def horseshoe_influence(colloc: np.ndarray, box: AeroBox, parity: int = 1) -> fl
             v_img = (biot_savart_seg(colloc, a_img, b_img)
                      + biot_savart_seg(colloc, b_img, far_bi)
                      + biot_savart_seg(colloc, far_ai, a_img))
-        w += float(np.dot(v_img, _Z_HAT))
+        w += float(np.dot(v_img, colloc_normal))
 
     return w
 
@@ -108,12 +109,14 @@ def build_ajj(boxes: list, parity: int = 1) -> np.ndarray:
     """Build the n_box × n_box aerodynamic influence coefficient matrix.
 
     A[i, j] = normalwash at colloc_i per unit circulation at horseshoe_j.
+    Uses the receiving panel's outward normal (ZAERO Eq. 3.49a), supporting
+    arbitrary surface orientations (horizontal wings, vertical fins, etc.).
     """
     n = len(boxes)
     A = np.zeros((n, n))
     for i, box_i in enumerate(boxes):
         for j, box_j in enumerate(boxes):
-            A[i, j] = horseshoe_influence(box_i.colloc, box_j, parity)
+            A[i, j] = horseshoe_influence(box_i.colloc, box_i.normal, box_j, parity)
     return A
 
 
@@ -121,13 +124,21 @@ def build_ajj(boxes: list, parity: int = 1) -> np.ndarray:
 # Rigid-wing solver
 # ---------------------------------------------------------------------------
 
-def solve_rigid_cl(boxes: list, alpha: float, parity: int = 1) -> dict:
-    """Solve flow-tangency for a rigid wing at angle of attack alpha (radians).
+def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
+                   parity: int = 1) -> dict:
+    """Solve flow-tangency for a rigid configuration at incidence alpha/beta (radians).
+
+    alpha  — angle of attack (rad); loads horizontal surfaces.
+    beta   — sideslip angle (rad); loads vertical surfaces (VTP/fins).
+
+    Boundary condition per panel (ZAERO Eq. 3.28):
+      rhs[i] = -(V⃗ · n̂_i)  with V⃗ ≈ [1, β, α] for small angles
+             = -(α·n_z[i] + β·n_y[i])
 
     Returns a dict with keys:
       cp          (n,) pressure coefficient per box  (ΔCp = 2Γ / (V∞ · chord_box))
-      cl_section  dict mapping i_span → section lift coefficient
-      CL          full-span lift coefficient
+      cl_section  dict mapping i_span → section load coefficient
+      CL          total normal-force coefficient (lift for wings; sideforce for fins)
       CM          pitching moment coefficient about x=0 (nose-up positive)
 
     ``parity`` controls the symmetry image (see module docstring).
@@ -136,8 +147,8 @@ def solve_rigid_cl(boxes: list, alpha: float, parity: int = 1) -> dict:
     n = len(boxes)
     A = build_ajj(boxes, parity)
 
-    # Flow-tangency: A @ gamma = -alpha (normalwash from inclined free-stream)
-    rhs = np.full(n, -alpha)
+    # Flow-tangency: rhs[i] = -(alpha*n_z + beta*n_y) per panel
+    rhs = np.array([-(alpha * b.normal[2] + beta * b.normal[1]) for b in boxes])
     gamma = np.linalg.solve(A, rhs)
 
     # Spanwise width of each box (used for Kutta-Joukowski lift)
@@ -153,10 +164,11 @@ def solve_rigid_cl(boxes: list, alpha: float, parity: int = 1) -> dict:
     # Pressure coefficient per box: ΔCp = 2Γ / (V∞ · chord_box), V∞ = 1
     cp = 2.0 * gamma / chord_box
 
-    # Reference geometry
+    # Reference geometry — use the widest extent across Y and Z to handle
+    # models that mix horizontal (Y-span) and vertical (Z-span) surfaces.
     S_ref = sum(b.area for b in boxes)
-    y_vals = [b.colloc[1] for b in boxes]
-    span_ref = max(y_vals) - min(y_vals) + dy.mean()
+    colloc_pts = np.array([b.colloc for b in boxes])
+    span_ref = float(np.max(np.ptp(colloc_pts[:, 1:], axis=0))) + dy.mean()
     if span_ref < _DEGEN_TOL:
         span_ref = 1.0
     c_ref = S_ref / span_ref

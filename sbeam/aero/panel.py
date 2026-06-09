@@ -127,10 +127,18 @@ def mesh_caero1(
                 )
             area = 0.5 * norm_len
 
-            # Outward normal; ensure it points in the +Z half-space for flat panels
+            # Outward normal: orient so the dominant component is positive.
+            # Horizontal surfaces (Z-dominant) point +Z; vertical (Y-dominant) point +Y.
             normal = cross / norm_len
-            if normal[2] < 0.0:
+            i_dom = int(np.argmax(np.abs(normal)))
+            if normal[i_dom] < 0.0:
                 normal = -normal
+
+            # Orient bound vortex so the AIC self-influence (diagonal) is negative,
+            # ensuring consistent sign convention for arbitrary surface orientations.
+            # Condition: (bound_b − bound_a) × x_hat · n̂ < 0.
+            if np.dot(np.cross(bound_b - bound_a, x_hat), normal) > 0.0:
+                bound_a, bound_b = bound_b, bound_a
 
             chord = 0.5 * (_chord_len(eta_lo) + _chord_len(eta_hi))
 
