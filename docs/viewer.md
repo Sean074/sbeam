@@ -23,7 +23,8 @@ viewer/
 ├── app.py              # Main Streamlit app; routing and session state
 ├── geometry.py         # 3D model display functions (Plotly)
 ├── results_view.py     # Results post-processing display
-└── case_control_ui.py  # Case control form and BDF export
+├── case_control_ui.py  # Case control form and BDF export
+└── aero_view.py        # Aero box mesh, cp colour map, section-load strip chart (S44)
 ```
 
 ---
@@ -107,7 +108,51 @@ Tabbed panel showing:
 - **Loads tab:** table of FORCE and MOMENT cards per load set.
 - **Constraints tab:** table of SPC constraints per set.
 
-### 4. Sidebar — Item Inspector
+### 4. Aero Tab (S44)
+
+Present only when `bulk.caero1s` is non-empty. Renders aerodynamic mesh visualisation and
+a rigid steady-state solve at a user-specified angle of attack.
+
+**Controls (left column):**
+- **AoA (°)** — `st.number_input`, default 3°, step 0.5°.
+- **Symmetry** — radio: Symmetric (+1), Antisymmetric (−1), Full-span (0).
+- **Compute Aero** — builds `AeroModel` (AIC matrix) and calls `solve_rigid_cl`; results
+  stored in `st.session_state["aero_model"]` and `st.session_state["aero_result"]`.
+- After compute: **CL**, **CM**, and **Boxes** count displayed as `st.metric`.
+
+**Figure (right column):**
+
+Built by `build_aero_box_figure` in `sbeam/viewer/aero_view.py`:
+
+```
+build_aero_box_figure(
+    bulk: BulkData,
+    aero_model: AeroModel,
+    cp: np.ndarray | None = None,
+    cl_section: dict | None = None,
+    cp_corr: np.ndarray | None = None,
+) -> go.Figure
+```
+
+The figure is a two-row subplot (`make_subplots`):
+- **Row 1 (75%)** — 3D scene: `_add_box_mesh` (Scatter3d wire-frame, grey) + optional
+  `_add_cp_contour` (Mesh3d triangulated quads, `colorscale="RdBu_r"`).
+- **Row 2 (25%)** — 2D xy: `_add_section_load_strip` (Bar chart of section CL vs
+  span fraction) + optional `_add_corrected_vs_inviscid` (two Scatter lines for inviscid
+  vs corrected spanwise mean cp, shown when `cp_corr` is provided).
+
+Before a Compute click the mesh-only figure is shown (no cp colour). After the solve,
+the full cp overlay and strip chart are rendered.
+
+**Session state keys:**
+| Key | Type | Description |
+|-----|------|-------------|
+| `aero_model` | `AeroModel \| None` | Built by `build_aero_model(bulk, parity)` |
+| `aero_result` | `dict \| None` | `{cp, cl_section, CL, CM}` from `solve_rigid_cl` |
+
+Both keys are reset to `None` on new file upload (same pattern as `sol101_result`).
+
+### 5. Sidebar — Item Inspector
 
 Selectboxes in the sidebar allow inspecting individual cards:
 
@@ -361,6 +406,7 @@ range heuristic.
 |------|------|
 | `test_flow_a_sol101_render_and_run` | Injected geometry → GPWG sidebar → SOL 101 run → deformed-shape UI |
 | `test_flow_b_sol103_render_and_run` | Injected geometry → SOL 103 run → mode-shape UI |
+| `test_apptest_aero_tab_no_exception` | Injected aero bulk → Aero tab renders without exception |
 
 **State injection pattern.** Tests do not simulate the file-upload widget (fragile with the temp-file-based parser). Instead, `BulkData` and `CaseControl` are pre-parsed from integration BDF files in module-scoped fixtures (`cantilever_sol101_parsed`, `cantilever_sol103_parsed` in `tests/viewer/conftest.py`), then written directly into `at.session_state` after the first `at.run()`. This replicates exactly what `_handle_upload` sets.
 

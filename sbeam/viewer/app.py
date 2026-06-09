@@ -10,12 +10,17 @@ from typing import Optional
 import pandas as pd
 import streamlit as st
 
+import numpy as np
+
 from sbeam.parser.bdf_reader import parse_bdf, parse_bulk_file
 from sbeam.model.bulk_data import BulkData
 from sbeam.gpwg import compute_gpwg
 from sbeam.viewer.geometry import build_model_figure
 from sbeam.viewer.case_control_ui import render_case_control_panel
 from sbeam.viewer.results_view import render_sol101_results, render_sol103_results
+from sbeam.viewer.aero_view import build_aero_box_figure
+from sbeam.aero.aero_model import build_aero_model
+from sbeam.aero.vlm import solve_rigid_cl
 
 
 def _init_session_state() -> None:
@@ -25,6 +30,8 @@ def _init_session_state() -> None:
         "_loaded_from_file_cc": None,
         "sol101_result": None,
         "sol103_result": None,
+        "aero_model": None,
+        "aero_result": None,
         "selected_gid": None,
         "selected_eid": None,
         "cc_subcases": None,
@@ -77,6 +84,8 @@ def _handle_upload(uploaded) -> None:
         st.session_state.cc_subcases = None   # reset subcase editor
         st.session_state.sol101_result = None
         st.session_state.sol103_result = None
+        st.session_state.aero_model = None
+        st.session_state.aero_result = None
         st.session_state.selected_gid = None
         st.session_state.selected_eid = None
         st.session_state.selected_subcase_id = cc.subcases[0].subcase_id if cc and cc.subcases else None
@@ -523,6 +532,47 @@ def _render_f06_export(bulk: BulkData) -> None:
     )
 
 
+def _render_aero_tab(bulk: BulkData) -> None:
+    col_ctrl, col_fig = st.columns([1, 3])
+
+    with col_ctrl:
+        alpha_deg = st.number_input("AoA (°)", value=3.0, step=0.5, key="aero_alpha")
+        parity_map = {
+            "Symmetric (+1)": 1,
+            "Antisymmetric (−1)": -1,
+            "Full-span (0)": 0,
+        }
+        parity_lbl = st.radio("Symmetry", list(parity_map.keys()), key="aero_parity")
+        parity = parity_map[parity_lbl]
+        compute_btn = st.button("Compute Aero", type="primary", key="aero_compute")
+
+    if compute_btn:
+        with st.spinner("Building AIC and solving…"):
+            aero_model = build_aero_model(bulk, parity=parity)
+            alpha_rad = np.radians(alpha_deg)
+            result = solve_rigid_cl(aero_model.boxes, alpha_rad, parity=parity)
+        st.session_state["aero_model"] = aero_model
+        st.session_state["aero_result"] = result
+
+    aero_model = st.session_state["aero_model"]
+    aero_result = st.session_state["aero_result"]
+
+    with col_ctrl:
+        if aero_result is not None:
+            st.metric("CL", f"{aero_result['CL']:.4f}")
+            st.metric("CM", f"{aero_result['CM']:.4f}")
+            st.metric("Boxes", len(aero_model.boxes))
+
+    with col_fig:
+        if aero_model is not None:
+            cp = aero_result["cp"] if aero_result is not None else None
+            cl_sec = aero_result["cl_section"] if aero_result is not None else None
+            fig = build_aero_box_figure(bulk, aero_model, cp=cp, cl_section=cl_sec)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Set parameters and press Compute Aero to visualise the panel mesh.")
+
+
 def main() -> None:
     st.set_page_config(page_title="sbeam", layout="wide")
     st.title("sbeam — Simple Beam FEA")
@@ -573,7 +623,14 @@ def main() -> None:
         return
 
     # --- Main tabs ---
-    tab_model, tab_cc, tab_results = st.tabs(["Model", "Case Control", "Results"])
+    _has_aero = bool(bulk.caero1s)
+    if _has_aero:
+        tab_model, tab_cc, tab_results, tab_aero = st.tabs(
+            ["Model", "Case Control", "Results", "Aero"]
+        )
+    else:
+        tab_model, tab_cc, tab_results = st.tabs(["Model", "Case Control", "Results"])
+        tab_aero = None
 
     with tab_model:
         _show_parse_summary(bulk)
@@ -612,6 +669,10 @@ def main() -> None:
                 st.info(f"Press Run Analysis to execute SOL {cc.sol}.")
             else:
                 st.info("Define a case control in the Case Control tab, then run the analysis.")
+
+    if tab_aero is not None:
+        with tab_aero:
+            _render_aero_tab(bulk)
 
 
 if __name__ == "__main__":

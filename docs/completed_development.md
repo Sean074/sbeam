@@ -1458,3 +1458,51 @@ downstream SOL 144 aeroelastic solver.
 - Shape checks: `AJJ`, `AJJ*⁻¹` `(n, n)`; `Skj` `(3n, n)`; `Djk` `(n, n)`; `wg` `(n,)`.
 - **616 tests pass, 0 skipped, 0 failures.**
 
+---
+
+### Step 44: Aero Viewer — Box Mesh + cp Overlay ✅ COMPLETE
+
+**Objective:** Add a visual layer for the Phase A VLM results: a new "Aero" tab in the
+Streamlit viewer showing the aerodynamic box mesh in 3D, per-panel cp colouring, and a
+spanwise section-CL strip chart.
+
+**Deliverables:**
+- `sbeam/viewer/aero_view.py` *(new)* — five functions:
+  - `build_aero_box_figure(bulk, aero_model, cp=None, cl_section=None, cp_corr=None) -> go.Figure`
+    — `make_subplots` figure with a 3D scene (row 1) and a 2D xy strip chart (row 2).
+  - `_add_box_mesh(fig, boxes)` — single `go.Scatter3d` wire-frame trace; each quad walked
+    as `[0,1,2,3,0, None]` (root-LE → tip-LE → tip-TE → root-TE → close).
+  - `_add_cp_contour(fig, boxes, cp)` — `go.Mesh3d` with triangulated quads; per-box cp
+    applied to all 4 vertices as `intensity`; `colorscale="RdBu_r"`.
+  - `_add_section_load_strip(fig, boxes, cl_section)` — `go.Bar` of spanwise fraction vs
+    section CL; span fraction taken from `box.span_frac` for each `i_span`.
+  - `_add_corrected_vs_inviscid(fig, boxes, cp_inv, cp_corr)` — two `go.Scatter` traces
+    (spanwise mean cp per strip) overlaid on the strip chart when AECORR is active.
+- `sbeam/viewer/app.py` — session state keys `"aero_model"` and `"aero_result"` added
+  (initialised to `None`; reset on new file upload). Tab list is conditionally extended to
+  four tabs when `bulk.caero1s` is non-empty; `_render_aero_tab(bulk)` renders controls
+  (AoA input, symmetry radio, Compute button), CL/CM metrics, and the figure.
+- `tests/viewer/test_aero_view.py` *(new)* — 4 tests: three figure-builder unit tests
+  (no cp, with cp+cl_section, with cp_corr overlay) and one AppTest smoke test asserting
+  no exception and "Compute Aero" button presence.
+
+**Key decisions:**
+- **`make_subplots` with mixed `scene`/`xy` types**: the 3D scene and 2D strip chart
+  share a single `go.Figure` as specified. `specs=[[{"type":"scene"}],[{"type":"xy"}]]`
+  with `row_heights=[0.75, 0.25]`.
+- **Conditional tab list**: `st.tabs(["Model","Case Control","Results","Aero"])` is
+  only created when `bulk.caero1s` is non-empty, avoiding an empty Aero tab for
+  structural-only models. `tab_aero = None` for models without aero cards.
+- **`build_aero_model` / `solve_rigid_cl` called inside the app** (not in the view
+  module) so the view module stays free of Streamlit imports and is fully testable
+  without a running Streamlit server.
+- **`cp_corr` overlay is optional** (`None` by default): it appears on the strip chart
+  only when an AECORR-corrected cp array is explicitly passed in.
+
+**Test / Acceptance (S44):**
+- `test_build_aero_box_figure_no_crash`: `isinstance(fig, go.Figure)` with mesh only.
+- `test_build_aero_box_figure_with_cp_no_crash`: figure builds with real cp + cl_section from `solve_rigid_cl`.
+- `test_build_aero_box_figure_with_corr_no_crash`: figure builds with synthetic cp_corr overlay.
+- `test_apptest_aero_tab_no_exception`: AppTest with 4×10 rectangular-wing bulk — no `at.exception`; "Compute Aero" button present.
+- **620 tests pass, 0 skipped, 0 failures.**
+

@@ -352,3 +352,52 @@ class AeroModel:
     wg: np.ndarray             # Baseline normalwash, shape (n,)
     parity: int                # +1 symmetric, -1 antisymmetric, 0 full-span
 ```
+
+---
+
+## Viewer — Aero Tab (S44)
+
+`sbeam/viewer/aero_view.py` provides Plotly figure builders for the aerodynamic mesh
+and pressure-coefficient visualisation. The Streamlit app (`app.py`) shows an "Aero"
+tab automatically when `bulk.caero1s` is non-empty.
+
+### Public API
+
+```python
+build_aero_box_figure(
+    bulk: BulkData,
+    aero_model: AeroModel,
+    cp: np.ndarray | None = None,
+    cl_section: dict | None = None,   # i_span → float, from solve_rigid_cl()
+    cp_corr: np.ndarray | None = None,
+) -> go.Figure
+```
+
+Returns a two-row subplot:
+- **Row 1 (75%)** — Plotly 3D scene with the aerodynamic box mesh (Scatter3d wire-frame)
+  and, when `cp` is provided, a triangulated Mesh3d panel coloured by cp (`colorscale="RdBu_r"`).
+- **Row 2 (25%)** — 2D bar chart of section CL vs span fraction. When `cp_corr` is also
+  provided, two Scatter lines are overlaid showing spanwise mean cp for inviscid vs corrected solutions.
+
+### Internal helpers
+
+| Function | Row | Description |
+|----------|-----|-------------|
+| `_add_box_mesh(fig, boxes)` | 1 | Single Scatter3d wire-frame; each quad closed as `[0,1,2,3,0,None]` |
+| `_add_cp_contour(fig, boxes, cp)` | 1 | Mesh3d triangulated quads; cp→vertex intensity |
+| `_add_section_load_strip(fig, boxes, cl_section)` | 2 | Bar chart of `i_span`→CL using `box.span_frac` |
+| `_add_corrected_vs_inviscid(fig, boxes, cp_inv, cp_corr)` | 2 | Two Scatter lines: spanwise mean cp per strip |
+| `_apply_aero_layout(fig)` | — | Orthographic camera, axis labels, subplot axis titles |
+
+### Typical usage in the viewer
+
+```python
+aero_model = build_aero_model(bulk, parity=1)
+result = solve_rigid_cl(aero_model.boxes, np.radians(3.0))
+fig = build_aero_box_figure(
+    bulk, aero_model,
+    cp=result["cp"],
+    cl_section=result["cl_section"],
+)
+st.plotly_chart(fig, use_container_width=True)
+```

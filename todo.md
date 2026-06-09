@@ -149,23 +149,6 @@ directly — off-by-half-box is a silent, fatal error.
 
 ---
 
-### [S44] Viewer — rigid aero box mesh + `cp` overlay *(optional, recommended)*
-
-**Files:**
-- `sbeam/viewer/aero_view.py` *(new)*
-  - `build_aero_box_figure(bulk, aero_model) -> go.Figure` — box mesh overlay on
-    structural geometry + per-box `cp` colour map + section-load strip chart
-  - `_add_box_mesh(fig, boxes)` — Plotly `Scatter3d` quads (4 corners + close)
-  - `_add_cp_contour(fig, boxes, cp)` — colour each box by its cp value
-  - `_add_corrected_vs_inviscid(fig, boxes, cp_inv, cp_corr)` — overlay when AECORR active
-- `sbeam/viewer/app.py` — add "Aero" tab / panel when `bulk.caero1s` is non-empty
-- `tests/viewer/test_aero_view.py` *(new)* — AppTest smoke test (no crash, no exception)
-
-**Acceptance:** `AppTest` renders without `at.exception` for a sample 4×10 rectangular-wing
-BDF; visual smoke-test only (no numerical values asserted).
-
----
-
 ## Phase 3 — Dynamic Solvers (full scope in `development_plan_bugs_todo.md`)
 
 - **[S26] SOL 108 — Direct Frequency Response**
