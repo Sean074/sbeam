@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .aero import Aeros, Caero1, Paero1, Aefact
+from .aero import Aeros, Caero1, Paero1, Aefact, W2gj
 
 
 @dataclass
@@ -29,3 +29,4 @@ class BulkData:
     caero1s: dict = field(default_factory=dict)   # {eid: Caero1}
     paero1s: dict = field(default_factory=dict)   # {pid: Paero1}
     aefacts: dict = field(default_factory=dict)   # {sid: Aefact}
+    w2gjs:  dict = field(default_factory=dict)   # {sid: W2gj}

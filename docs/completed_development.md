@@ -1340,3 +1340,54 @@ images) for half-span models.
 - parity=-1 uniform incidence: CL = 0.0, section loads non-zero.
 - **582 tests pass, 0 skipped, 0 failures.**
 
+---
+
+### Step 42: Integration matrices `Skj`, `Djk`, and baseline normalwash `w_g` ✅ COMPLETE
+
+**Objective:** Build the three aeroelastic integration quantities needed to bridge the VLM
+pressure solution to structural forces (`Skj`), to map structural deformation to aerodynamic
+normalwash (`Djk`), and to capture geometric incidence from the W2GJ BDF card (`w_g`). These
+form the foundation of the steady load path and will be reused unchanged by the Phase D DLM
+unsteady solver.
+
+**Deliverables:**
+- `sbeam/model/aero.py` — `W2gj` dataclass added: `sid`, `caero_eid`, `data: list`
+  (dimensionless normalwash slopes Δz/Δx, one per box, row-major order).
+- `sbeam/model/bulk_data.py` — `w2gjs: dict` field added (`{sid: W2gj}`).
+- `sbeam/parser/bdf_reader.py` — `_handle_w2gj()` added (multi-continuation accumulation,
+  same pattern as AEFACT); dispatch block added to main parse loop.
+- `sbeam/aero/integration.py` *(new)* — three public functions:
+  - `build_skj(boxes) -> np.ndarray` — shape `(3*n_box, n_box)`; column `j` maps `cp_j`
+    to resultant force vector `[Fx, Fy, Fz]` at box `j` via `area_j * normal_j`.
+  - `build_djk(boxes) -> np.ndarray` — shape `(n_box, n_box)`; returns `−I` (negative
+    identity) for rigid k=0: unit positive slope at colloc_j → normalwash −1 at box j.
+  - `build_wg(boxes, w2gjs, caero_eid) -> np.ndarray` — shape `(n_box,)`; fills from
+    matching W2GJ card in row-major order; returns zero vector if none present.
+- `tests/aero/test_integration.py` *(new)* — 13 tests across 3 classes.
+- `tests/parser/test_aero.py` — 4 W2GJ parser tests added to `TestW2gjParser`.
+
+**Key decisions:**
+- **Convention**: all normalwash quantities are dimensionless slope Δz/Δx. Documented at
+  module and function level in `integration.py`.
+- **Djk as −I at k=0**: the input is already a slope vector; the negative sign encodes that
+  nose-up slope (positive Δz/Δx) produces downward wash (negative normalwash contribution).
+  Phase D DLM will replace this matrix with the full unsteady kernel.
+- **build_wg row-major ordering**: W2GJ data is indexed by span slowest, chord fastest,
+  matching the ordering produced by `mesh_caero1`. The function filters by `caero_eid` and
+  inserts values at global box indices, leaving unspecified boxes at zero.
+- **T3 tip exclusion**: the linear-twist monotonicity test excludes the outermost span strip
+  because VLM always shows tip-vortex rolloff (reduced gamma at the tip regardless of local
+  incidence). This is physical, not a defect.
+
+**Test / Acceptance (V-A4):**
+- No W2GJ: `build_wg` returns zero vector.
+- Wrong `caero_eid`: `build_wg` returns zero vector.
+- Uniform W2GJ incidence α: `np.linalg.solve(Ajj, −w_g)` yields the same `cp` as
+  `solve_rigid_cl(boxes, α)` to `rtol=1e-10` (round-trip identity).
+- Linear twist (slopes ∝ strip index): interior section gammas increase monotonically
+  (tip excluded due to physical rolloff).
+- `build_djk` is exactly `−np.eye(n)`.
+- `build_skj` column j equals `area_j * normal_j`; `Skj @ cp` total Fz == direct loop sum.
+- Partial W2GJ data (fewer values than boxes): remaining boxes stay zero.
+- **599 tests pass, 0 skipped, 0 failures.**
+

@@ -287,3 +287,48 @@ CAERO1, 100, 1, , 4, 1, , , 0
 """.splitlines()
         with pytest.raises(ValueError, match="continuation line required"):
             parse_bulk_data(lines)
+
+
+# ---------------------------------------------------------------------------
+# W2GJ — per-box normalwash slopes
+# ---------------------------------------------------------------------------
+
+_W2GJ_BASE = """\
+AEROS, 0, 0, 2.0, 4.0, 8.0, 1, 0
+PAERO1, 1
+AEFACT, 10, 0.0, 0.5, 1.0
+CAERO1, 100, 1, , , 2, 10, , 0
++, 0.0, 0.0, 0.0, 2.0, 0.0, 4.0, 0.0, 2.0
+""".splitlines()
+
+
+class TestW2gjParser:
+    def test_single_line_round_trip(self):
+        lines = _W2GJ_BASE + "W2GJ, 1, 100, 0.1, 0.2, 0.1, 0.2".splitlines()
+        bulk = parse_bulk_data(lines)
+        assert 1 in bulk.w2gjs
+        w = bulk.w2gjs[1]
+        assert w.sid == 1
+        assert w.caero_eid == 100
+        assert w.data == pytest.approx([0.1, 0.2, 0.1, 0.2])
+
+    def test_multi_continuation_accumulates(self):
+        lines = _W2GJ_BASE + """\
+W2GJ, 2, 100, 0.1, 0.2
++, 0.3, 0.4
+""".splitlines()
+        bulk = parse_bulk_data(lines)
+        assert bulk.w2gjs[2].data == pytest.approx([0.1, 0.2, 0.3, 0.4])
+
+    def test_duplicate_sid_raises(self):
+        lines = _W2GJ_BASE + """\
+W2GJ, 3, 100, 0.1, 0.1, 0.1, 0.1
+W2GJ, 3, 100, 0.2, 0.2, 0.2, 0.2
+""".splitlines()
+        with pytest.raises(ValueError, match="Duplicate W2GJ SID"):
+            parse_bulk_data(lines)
+
+    def test_caero_eid_stored(self):
+        lines = _W2GJ_BASE + "W2GJ, 5, 100, 0.0, 0.0, 0.0, 0.0".splitlines()
+        bulk = parse_bulk_data(lines)
+        assert bulk.w2gjs[5].caero_eid == 100

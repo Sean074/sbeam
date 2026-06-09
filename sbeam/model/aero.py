@@ -37,3 +37,10 @@ class Paero1:
 class Aefact:
     sid:  int
     data: list = field(default_factory=list)   # decimal fraction list (e.g. span/chord breakpoints)
+
+
+@dataclass
+class W2gj:
+    sid:       int
+    caero_eid: int           # which CAERO1 element this applies to
+    data: list = field(default_factory=list)   # dimensionless normalwash slopes (Δz/Δx), one per box

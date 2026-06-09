@@ -96,7 +96,7 @@ directly — off-by-half-box is a silent, fatal error.
 
 ---
 
-### [S42] Integration matrices `Skj`, `Djk`, and baseline normalwash `w_g`
+### [S42] ✅ Integration matrices `Skj`, `Djk`, and baseline normalwash `w_g` — COMPLETE
 
 **Files:**
 - `sbeam/model/aero.py` — add `W2gj` dataclass: `sid`, `caero_eid`, `data: list`

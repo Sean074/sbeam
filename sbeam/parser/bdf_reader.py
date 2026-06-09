@@ -11,7 +11,7 @@ from sbeam.model.material import Mat1
 from sbeam.model.mass import Conm2
 from sbeam.model.load import Force, Moment, Load, Grav, Eigrl
 from sbeam.model.constraint import Spc, Spc1
-from sbeam.model.aero import Aeros, Caero1, Paero1, Aefact
+from sbeam.model.aero import Aeros, Caero1, Paero1, Aefact, W2gj
 from sbeam.parser.case_control import parse_case_control
 
 _IGNORED_KEYWORDS = frozenset({"BEGIN", "BEGINBULK", "ENDDATA"})
@@ -450,6 +450,17 @@ def _handle_aefact(fields: list, conts: list, bulk: BulkData) -> None:
     bulk.aefacts[sid] = Aefact(sid=sid, data=data)
 
 
+def _handle_w2gj(fields: list, conts: list, bulk: BulkData) -> None:
+    sid       = _to_int(fields[1])
+    caero_eid = _to_int(fields[2])
+    if sid in bulk.w2gjs:
+        raise ValueError(f"Duplicate W2GJ SID {sid}")
+    data = [_to_float(f) for f in fields[3:] if f.strip()]
+    for cont in conts:
+        data += [_to_float(f) for f in cont[1:] if f.strip()]
+    bulk.w2gjs[sid] = W2gj(sid=sid, caero_eid=caero_eid, data=data)
+
+
 def _handle_paero1(fields: list, bulk: BulkData) -> None:
     pid = _to_int(fields[1])
     if pid in bulk.paero1s:
@@ -648,6 +659,20 @@ def parse_bulk_data(lines: list) -> BulkData:
                 else:
                     break
             _handle_aefact(fields, aefact_conts, bulk)
+        elif keyword == "W2GJ":
+            w2gj_conts: list = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    w2gj_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_w2gj(fields, w2gj_conts, bulk)
         elif keyword == "PAERO1":
             _handle_paero1(fields, bulk)
         elif keyword == "CAERO1":
