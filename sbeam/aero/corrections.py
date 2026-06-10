@@ -38,10 +38,8 @@ def _check_conditioning(ajj: np.ndarray) -> None:
 
 
 def _solve_ajj(ajj: np.ndarray) -> np.ndarray:
-    """Compute AJJ⁻¹ stably via lstsq."""
-    n = ajj.shape[0]
-    inv, *_ = np.linalg.lstsq(ajj, np.eye(n), rcond=None)
-    return inv
+    """Compute AJJ⁻¹ via LU factorization (np.linalg.solve)."""
+    return np.linalg.solve(ajj, np.eye(ajj.shape[0]))
 
 
 def apply_wkk(ajj: np.ndarray, wkk_data: list) -> np.ndarray:

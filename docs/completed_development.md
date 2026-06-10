@@ -1617,3 +1617,43 @@ was discarded before `solve_rigid_cl` was called.
 - `TestVtpCybConvergence`: retested with `result["CY"]` — within 10% of Prandtl, internal
   convergence confirmed.
 - **653 tests pass, 0 failures.**
+
+---
+
+## Step 46 — Replace `lstsq` AIC inverse with LU factorization
+
+**Objective:** Eliminate SVD-based inversion of the square, full-rank AIC matrix.
+`np.linalg.lstsq` dominated build time (~25 s for the 1232-box `airplane_aero.bdf`
+model). Replacing it with `np.linalg.solve` (LU-based) reduces cost substantially.
+
+**Deliverables:**
+
+1. **`sbeam/aero/corrections.py`** — `_solve_ajj` rewritten to call
+   `np.linalg.solve(ajj, np.eye(n))` instead of `lstsq`. Docstring updated.
+
+2. **`sbeam/aero/aero_model.py`** — WKK branch (line 82) and no-correction branch
+   (line 90) converted to `np.linalg.solve`. `_check_conditioning` imported from
+   `corrections` and called in both branches so a degenerate AIC emits a `UserWarning`
+   before raising instead of silently returning a pseudo-inverse. Module and function
+   docstrings updated (`lstsq` → `solve`/`LU factorization`).
+
+3. **`tests/aero/test_corrections.py`** — `_ajj_and_inv` helper and
+   `TestBuildAeroModel.test_wt2_round_trip` updated to use `np.linalg.solve`.
+   Conditioning warning tests updated to use a well-conditioned but ill-conditioned
+   diagonal matrix (`cond ≈ 1e12`) instead of a zero matrix — `solve` correctly
+   raises `LinAlgError` on a truly singular input, so the tests now reflect the
+   intended behaviour.
+
+4. **`docs/Aeroelastics.md`** — Correction-precedence table and `apply_wkk` description
+   updated to reflect `np.linalg.solve` and the WKK conditioning guard.
+
+**Key decisions:**
+- `np.linalg.solve(A, I)` preferred over `scipy.linalg.lu_factor/lu_solve` — NumPy
+  is already a dependency and the explicit inverse is stored for repeated `A*⁻¹ @ w`
+  multiplies downstream; forming it once is the right trade-off.
+- Conditioning check added to WKK and no-correction branches to match the existing
+  guard already present in `apply_wt2` and `apply_wt1`.
+
+**Test / Acceptance:**
+- All 17 `test_corrections.py` tests pass.
+- **653 tests pass, 0 failures.**

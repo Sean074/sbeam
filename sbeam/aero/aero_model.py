@@ -7,8 +7,8 @@ Build order:
   4. Build Skj, Djk, and the baseline normalwash wg.
   5. Package everything into AeroModel.
 
-The corrected inverse AJJ*⁻¹ is stored directly so that the downstream SOL 144
-solve (A*⁻¹ @ w) never has to refactor the matrix.
+The corrected inverse AJJ*⁻¹ is stored directly (computed via LU factorization) so
+that the downstream SOL 144 solve (A*⁻¹ @ w) never has to refactor the matrix.
 """
 
 from dataclasses import dataclass
@@ -21,7 +21,7 @@ from sbeam.model.aero import Aeros
 from sbeam.aero.panel import AeroBox, mesh_caero1
 from sbeam.aero.vlm import build_ajj
 from sbeam.aero.integration import build_skj, build_djk, build_wg
-from sbeam.aero.corrections import apply_wkk, apply_wt2, apply_wt1
+from sbeam.aero.corrections import apply_wkk, apply_wt2, apply_wt1, _check_conditioning
 
 
 @dataclass
@@ -44,7 +44,7 @@ def build_aero_model(bulk: BulkData, parity: int = 1) -> AeroModel:
                               AJJ*⁻¹ computed via lstsq.
       2. AECORR WT2 present → pressure-matching correction (apply_wt2).
       3. AECORR WT1 present → force-matching correction (apply_wt1).
-      4. No correction       → AJJ*⁻¹ = lstsq(AJJ).
+      4. No correction       → AJJ*⁻¹ = solve(AJJ).
 
     When multiple CAERO1 elements are present, all boxes are concatenated into a
     single list and a single AIC is built for the combined surface.  Corrections
@@ -79,7 +79,8 @@ def build_aero_model(bulk: BulkData, parity: int = 1) -> AeroModel:
 
     if wkk_card is not None:
         ajj_star = apply_wkk(ajj, wkk_card.data)
-        ajj_inv_corr, *_ = np.linalg.lstsq(ajj_star, np.eye(n), rcond=None)
+        _check_conditioning(ajj_star)
+        ajj_inv_corr = np.linalg.solve(ajj_star, np.eye(n))
     elif wt2_card is not None:
         cp_target = np.asarray(wt2_card.target, dtype=float)
         ajj_inv_corr = apply_wt2(ajj, cp_target)
@@ -87,7 +88,8 @@ def build_aero_model(bulk: BulkData, parity: int = 1) -> AeroModel:
         f_target = np.asarray(wt1_card.target, dtype=float)
         ajj_inv_corr = apply_wt1(ajj, boxes, f_target)
     else:
-        ajj_inv_corr, *_ = np.linalg.lstsq(ajj, np.eye(n), rcond=None)
+        _check_conditioning(ajj)
+        ajj_inv_corr = np.linalg.solve(ajj, np.eye(n))
 
     skj = build_skj(boxes)
     djk = build_djk(boxes)

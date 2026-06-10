@@ -134,9 +134,7 @@ RESOLVED (samples): airplane_aero.bdf NSPAN 6/4/4 -> 38/31/16 (wing/HTP/VTP); al
         boxes now AR 0.64-1.63 (mean 0.99); verified parse/build/solve (CL_a~4.17/rad).
         AR computed by reusing mesh_caero1 corner geometry. val_vlm_rect_ar8.bdf already
         OK (AR~1 by construction). HA144A.bdf left faithful to the MSC deck (do not retune).
-OPEN (code): (a) add a pre-solve warning when any box AR is outside [0.5, 2.0]; (b) the
-        1232-box AIC uses np.linalg.lstsq for the inverse (~25 s) — switch to solve/LU for
-        the square full-rank AIC once box counts routinely reach the hundreds-thousands.
+OPEN (code): (a) add a pre-solve warning when any box AR is outside [0.5, 2.0].
 ```
 
 ---
@@ -362,31 +360,6 @@ Steps 39–44 implement the steady vortex-lattice aerodynamic layer.
 ### Step 44: Viewer — Aero Box Mesh + cp Overlay ✅ COMPLETE — see `docs/completed_development.md`
 
 ### Step 45: VTP Cp Bugs + Sideslip Beta ✅ COMPLETE — see `docs/completed_development.md`
-
-### Step 46: Replace `lstsq` AIC inverse with `solve`/LU factorization
-
-**Files:** `sbeam/aero/aero_model.py`
-
-```
-Objective: Cut AIC inversion cost. build_aero_model currently forms the corrected AIC
-        inverse via np.linalg.lstsq(ajj_star, np.eye(n)) in all four correction branches.
-        The AIC is square and full-rank, so lstsq (SVD-based, O(n^3) with a large constant)
-        is wasteful — it dominated runtime once box counts grew (~25 s for the 1232-box
-        airplane_aero.bdf after the A8 spanwise refinement).
-Deliverables:
-  - Replace lstsq with scipy.linalg.lu_factor / lu_solve (or np.linalg.solve against I)
-    to build ajj_inv_corr in the WKK and no-correction branches; confirm apply_wt2 /
-    apply_wt1 paths either reuse the factorization or are similarly converted.
-  - Prefer caching the LU factorization rather than forming the explicit inverse where the
-    downstream SOL 144 solve only needs A*^-1 @ w (avoids the O(n^3) inverse entirely).
-  - Add a near-singular guard (cond / factorization warning) so a degenerate AIC fails
-    loudly instead of returning a silent least-squares pseudo-solution.
-Test/Acceptance: CL / cp on val_vlm_rect_ar8.bdf and airplane_aero.bdf unchanged to
-        ~1e-10 vs the lstsq result; wall-clock on the 1232-box model materially reduced.
-Note: companion to A8 open item (b).
-```
-
----
 
 ## Phase 2 — Model Enhancements
 

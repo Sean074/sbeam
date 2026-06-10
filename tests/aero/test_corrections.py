@@ -46,7 +46,7 @@ def _rect_wing(nspan: int, nchord: int, span: float = 5.0, chord: float = 1.0) -
 
 def _ajj_and_inv(boxes):
     ajj = build_ajj(boxes, PARITY)
-    ajj_inv, *_ = np.linalg.lstsq(ajj, np.eye(len(boxes)), rcond=None)
+    ajj_inv = np.linalg.solve(ajj, np.eye(len(boxes)))
     return ajj, ajj_inv
 
 
@@ -144,10 +144,11 @@ class TestApplyWt2:
 
     def test_conditioning_warning(self):
         n = 4
-        singular_ajj = np.zeros((n, n))
+        # Diagonal matrix with cond ≈ 1e12 — ill-conditioned but invertible.
+        ill_cond_ajj = np.diag([1.0, 1.0, 1.0, 1e-12])
         cp_target = np.ones(n)
         with pytest.warns(UserWarning, match="conditioned"):
-            apply_wt2(singular_ajj, cp_target)
+            apply_wt2(ill_cond_ajj, cp_target)
 
 
 # ---------------------------------------------------------------------------
@@ -235,10 +236,11 @@ class TestApplyWt1:
         n = 4
         nspan = 2
         boxes = _rect_wing(nspan, 2)
-        singular_ajj = np.zeros((n, n))
+        # Diagonal matrix with cond ≈ 1e12 — ill-conditioned but invertible.
+        ill_cond_ajj = np.diag([1.0, 1.0, 1.0, 1e-12])
         f_target = np.ones(nspan)
         with pytest.warns(UserWarning, match="conditioned"):
-            apply_wt1(singular_ajj, boxes, f_target)
+            apply_wt1(ill_cond_ajj, boxes, f_target)
 
 
 # ---------------------------------------------------------------------------
@@ -298,7 +300,7 @@ class TestBuildAeroModel:
         # Compute VLM cp at unit incidence to use as WT2 target
         boxes = _rect_wing(nspan, nchord)
         ajj = build_ajj(boxes, PARITY)
-        ajj_inv, *_ = np.linalg.lstsq(ajj, np.eye(n), rcond=None)
+        ajj_inv = np.linalg.solve(ajj, np.eye(n))
         cp_vlm_ref = ajj_inv @ (-np.ones(n))
 
         bulk.aecorrs[20] = Aecorr(

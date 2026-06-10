@@ -317,10 +317,10 @@ Phase A provides three correction tiers to match VLM predictions to higher-fidel
 CFD or wind-tunnel data. The correction precedence in `build_aero_model()` is:
 
 ```
-WKK card present  →  apply_wkk  (caller inverts)
+WKK card present  →  apply_wkk  (caller inverts via np.linalg.solve)
 AECORR WT2 present →  apply_wt2  (returns AJJ*⁻¹)
 AECORR WT1 present →  apply_wt1  (returns AJJ*⁻¹)
-No correction      →  np.linalg.lstsq(AJJ)
+No correction      →  np.linalg.solve(AJJ, I)
 ```
 
 ### Card Formats
@@ -346,8 +346,8 @@ AECORR  SID  METHOD  CAERO_EID  T1  T2  T3  T4  T5
 ### `apply_wkk(ajj, wkk_data) -> np.ndarray`
 
 Returns `AJJ* = diag(w) @ AJJ`. The caller (`build_aero_model`) inverts via
-`np.linalg.lstsq`. Simplest correction; can absorb empirical scale factors or
-stall nonlinearity.
+`np.linalg.solve`. Simplest correction; can absorb empirical scale factors or
+stall nonlinearity. Issues a `UserWarning` if `cond(AJJ*) > 1e10`.
 
 ### `apply_wt2(ajj, cp_target) -> np.ndarray`
 
