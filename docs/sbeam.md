@@ -46,7 +46,8 @@ sbeam/
 │   ├── vlm.py            # Biot–Savart, horseshoe influence, build_ajj, solve_rigid_cl
 │   ├── integration.py    # build_skj, build_djk, build_wg integration matrices
 │   ├── corrections.py    # apply_wkk, apply_wt2, apply_wt1 AIC corrections
-│   └── aero_model.py     # AeroModel dataclass + build_aero_model() factory
+│   ├── aero_model.py     # AeroModel dataclass + build_aero_model() factory
+│   └── coupling.py       # build_qaa (flexible aero stiffness), build_fg, build_gaf (modal GAF Qhh)
 └── viewer/
     ├── app.py            # Streamlit app entry point
     ├── geometry.py       # 3D Plotly model display

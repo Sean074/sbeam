@@ -25,6 +25,7 @@ Results   (cp, cl_section, CL, CM, …)
 | `sbeam/aero/integration.py` | `Skj` force integration matrix, `Djk` downwash matrix, `wg` baseline normalwash |
 | `sbeam/aero/corrections.py` | `Wkk` diagonal correction, `WT1` force-match, `WT2` pressure-match |
 | `sbeam/aero/aero_model.py` | `AeroModel` container + `build_aero_model()` factory |
+| `sbeam/aero/coupling.py` | `build_qaa` flexible aero stiffness `Q_aa = G_dispᵀ S_kj (A_jj*)⁻¹ D_jk G_slope`; `build_fg` baseline aero load; `build_gaf` modal GAF `Q_hh = Φᵀ Q_aa Φ` |
 | `sbeam/viewer/aero_view.py` | Plotly box mesh, cp colour map, section-load strip chart |
 
 ---
