@@ -27,45 +27,17 @@ half-surfaces, parity=0; references documented in the header).
 
 ---
 
-### [MAJOR] A1 — VLM systematically under-predicts lift-curve slope (~3–8%), non-converging
+### [MAJOR] A1 — VLM "under-predicts" lift-curve slope ✅ RESOLVED (not a defect)
 
-**Files:** `sbeam/aero/vlm.py` (`build_ajj`, `horseshoe_influence`, `solve_rigid_cl`)
-
-```
-[MAJOR] Finite-AR lift slope runs 3–8% below analytical references and the error GROWS
-        with mesh refinement instead of vanishing.
-EVIDENCE: val_vlm_rect_ar8.bdf gives CL_α ≈ 4.56–4.63 /rad vs Polhamus ~4.91 (−6%),
-        rect lifting-line ~4.78 (−3%), elliptic LL bound 5.027 (−8%).
-        Decisive test — an ELLIPTIC planform, where lifting-line theory is exact
-        (CL_α = 2π/(1+2/AR)): VLM is 3–7% low at AR 6/8/10 and the deficit INCREASES as
-        nstrip 40→80. That rules out discretization; it is a systematic bias in the
-        induced-downwash physics (BC enforced at ¾-chord appears to over-predict trailing
-        downwash; magnitude is larger than a clean Weissinger scheme should show).
-        2D limit (AR→∞) is exact, so chordwise placement is fine — the error is in the
-        finite-span trailing system.
-FIX: Root-cause the trailing-vortex induced downwash. Validate against a published VLM
-        benchmark (Katz & Plotkin rectangular-wing table, or the Warren-12 planform:
-        CL_α=2.743, CM_α=−3.10). Add an elliptic-planform convergence regression test that
-        asserts CL_α → 2π/(1+2/AR) within tolerance — the current code fails this gate.
-```
-
-**UPDATE 2026-06-09 — reclassified from kernel-bug suspicion to verification item.**
-Spanwise-spacing convergence study run (`studies/a1_spanwise_spacing_study.py`; full
-results in `docs/a1_spanwise_spacing_study.md`). Findings:
-- **Spanwise spacing (uniform vs cosine) REFUTED as the cause** — identical to <0.2% at
-  every resolution on both the AVL-anchored tapered wing and the rectangular AR=8 wing.
-  The Hough/Lan cosine-spacing remedy does not apply.
-- The refinement drift is **convergent** (decrements halve each nspan doubling; Richardson
-  limit ≈4.56 /rad for the BYU wing), **purely spanwise-count driven**, and independent of
-  nchord (probe 1) and box aspect ratio (probe 2).
-- **At AVL's own 12×6 mesh sbeam matches AVL to 0.09%**; the rectangular converged value
-  (~4.60) sits below the lifting-LINE references (4.78–5.03) by the expected lifting-surface
-  amount. A1's original baseline (lifting-line upper bounds) was too high.
-- **Most consistent with "no defect."** The one remaining like-for-like check is an AVL /
-  VortexLattice.jl convergence sweep at nspan=6/12/24/48 on the BYU wing (external tool):
-  if AVL drifts the same way, close A1 as benign; if AVL plateaus at 4.667 while sbeam falls
-  to ~4.57, a genuine spanwise-count kernel bias remains. The CM moment-arm bug found during
-  this work is tracked and fixed separately as A9.
+**Resolved 2026-06-09 — benign.** Spanwise-spacing study (`studies/a1_spanwise_spacing_study.py`)
+refuted the spacing hypothesis (uniform ≡ cosine to <0.2%) and isolated the refinement drift
+to pure spanwise count (independent of nchord and box AR). The like-for-like peer-VLM check —
+**VortexLattice.jl** (AVL-validated) via `studies/byu_wing_sweep.jl` — then drifted down with
+refinement **identically** to sbeam (4.76→4.67→4.61→4.59), with a constant ~0.16% offset.
+A1's original "3–8% deficit" was an artifact of comparing to lifting-LINE upper bounds; sbeam's
+lift-surface CL_α is correct. Full data: `docs/a1_spanwise_spacing_study.md`; resolution note in
+`docs/completed_development.md` under "Resolved Defects (Phase A)". (CM moment-arm fix tracked
+separately as A9.)
 
 ---
 

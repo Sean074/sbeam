@@ -1569,6 +1569,50 @@ and implement sideslip angle β for non-zero sideforce loads.
 
 ---
 
+## Resolved Defects (Phase A) — A1: VLM "lift-curve-slope under-prediction" ✅ RESOLVED (not a defect)
+
+**Date resolved:** 2026-06-09
+
+**Original symptom:** finite-AR CL_α ran 3–8% below analytical references and the deficit
+appeared to GROW with spanwise refinement (nstrip 40→80), suggesting a trailing-vortex
+induced-downwash kernel bias.
+
+**Investigation (two stages):**
+
+1. **Spanwise-spacing study** (`studies/a1_spanwise_spacing_study.py`, results in
+   `docs/a1_spanwise_spacing_study.md`). Swept nspan with uniform vs cosine spanwise spacing
+   on the AVL-anchored tapered wing and the rectangular AR=8 wing, plus control probes:
+   - Uniform vs cosine spacing are **identical to < 0.2%** at every resolution → the
+     Hough/Lan spacing hypothesis is **refuted**.
+   - The drift is **convergent** (decrements halve each nspan doubling) and **purely
+     spanwise-count driven** — independent of nchord (probe 1) and box aspect ratio (probe 2).
+
+2. **Peer-VLM convergence comparison** (`studies/byu_wing_sweep.jl`, run in VortexLattice.jl —
+   BYU FLOW Lab, validated against AVL to < 0.1%):
+
+   | nspan | VLM.jl CL_α | sbeam CL_α | Δ (VLM−sbeam) |
+   |------:|------------:|-----------:|--------------:|
+   | 6  | 4.7621 | 4.7697 | −0.0076 |
+   | 12 | 4.6671 | 4.6746 | −0.0075 |
+   | 24 | 4.6142 | 4.6216 | −0.0074 |
+   | 48 | 4.5864 | ~4.59  | −0.0074 |
+
+   VortexLattice.jl drifts down with refinement **identically** to sbeam (4.76→4.67→4.61→4.59),
+   and the sbeam−peer offset is **constant at ~0.16%** — not a growing divergence. CM (post-A9)
+   and far-field CDi also track VLM.jl across the sweep.
+
+**Resolution:** A1 is **not a defect.** The refinement drift is ordinary convergent
+lifting-surface VLM mesh behaviour, reproduced identically by an AVL-validated peer code. The
+original "deficit" was an artifact of comparing against lifting-LINE upper bounds (`2π/(1+2/AR)`
+= 5.027, etc.), which finite-AR lifting-surface VLM correctly sits below. sbeam's CL_α matches
+VortexLattice.jl/AVL to ~0.16% at every resolution. No code change required.
+
+**Artifacts:** `studies/a1_spanwise_spacing_study.py`, `studies/byu_wing_sweep.jl`,
+`studies/byu_wing.avl` (AVL equivalent), `docs/a1_spanwise_spacing_study.md`,
+regression `tests/aero/test_val_byu_wing.py` (CL 0.16%, CM 0.25% vs AVL).
+
+---
+
 ## Resolved Defects (Phase A) — A9: Pitching-moment arm at ¾-chord instead of ¼-chord ✅ FIXED
 
 **Date resolved:** 2026-06-09
