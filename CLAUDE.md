@@ -30,12 +30,13 @@ ones that must track code changes:
 
 ## Step Completion Requirement
 
-**When a development step is completed, BOTH of the following files MUST be updated in the same session:**
+**HARD REQUIREMENT — When any backlog item, bug, NIT, or future design item is closed/resolved, ALL THREE of the following MUST be done in the same session. No exceptions.**
 
-1. **`docs/40_history/00_completed_development.md`** — add the completed step with its full step format (Objective, Deliverables, Test/Acceptance, key decisions).
-2. **`docs/30_future/00_backlog.md`** — remove or mark the step as complete; update the open bugs list if a defect was resolved.
+1. **`docs/30_future/00_backlog.md`** — **REMOVE** the item entirely. Do not leave it marked `✅ RESOLVED`; resolved items do not belong in the backlog.
+2. **`docs/40_history/00_completed_development.md`** — **ADD** the item with its full step format (Objective, Deliverables, Test/Acceptance, key decisions). For resolved bugs/NITs, add under "Resolved Defects".
+3. **`CHANGELOG.md`** — **ADD** an entry in the `[Unreleased]` section describing what was done.
 
-Never batch these updates or defer them to a later session. When resolving a bug (B1–B4), move the resolution note to `docs/40_history/00_completed_development.md` under "Resolved Defects" and remove it from `docs/30_future/00_backlog.md`.
+Never batch these updates or defer them to a later session. The backlog is for **open** items only — anything closed must be moved out immediately.
 
 ## Development Phases
 

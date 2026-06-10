@@ -27,32 +27,6 @@ half-surfaces, parity=0; references documented in the header).
 
 ---
 
-### [MAJOR] A1 — VLM "under-predicts" lift-curve slope ✅ RESOLVED (not a defect)
-
-**Resolved 2026-06-09 — benign.** Spanwise-spacing study (`studies/a1_spanwise_spacing_study.py`)
-refuted the spacing hypothesis (uniform ≡ cosine to <0.2%) and isolated the refinement drift
-to pure spanwise count (independent of nchord and box AR). The like-for-like peer-VLM check —
-**VortexLattice.jl** (AVL-validated) via `studies/byu_wing_sweep.jl` — then drifted down with
-refinement **identically** to sbeam (4.76→4.67→4.61→4.59), with a constant ~0.16% offset.
-A1's original "3–8% deficit" was an artifact of comparing to lifting-LINE upper bounds; sbeam's
-lift-surface CL_α is correct. Full data: `docs/20_theory/studies/a1_spanwise_spacing.md`; resolution note in
-`docs/40_history/00_completed_development.md` under "Resolved Defects (Phase A)". (CM moment-arm fix tracked
-separately as A9.)
-
----
-
-### [MAJOR] A2 — `solve_rigid_cl` ignores AEROS reference geometry; lumps all surfaces ✅ RESOLVED
-
-**Resolved 2026-06-09.** See `docs/40_history/00_completed_development.md` under "Resolved Defects (Phase A)".
-
----
-
-### [MINOR] A3 — Pitching moment referenced to x=0 with a heuristic c_ref ✅ RESOLVED
-
-**Resolved 2026-06-09.** Coupled fix with A2. See `docs/40_history/00_completed_development.md`.
-
----
-
 ### [MINOR] A4 — No subsonic compressibility (Prandtl–Glauert) correction
 
 **Files:** `sbeam/aero/vlm.py`, `sbeam/model/aero.py`
@@ -129,93 +103,9 @@ OPEN (code): (a) add a pre-solve warning when any box AR is outside [0.5, 2.0].
 
 ---
 
-### [NIT] A6 — No induced drag / Trefftz-plane post-processing
-
-**File:** `sbeam/aero/vlm.py`
-
-```
-[NIT] No induced drag (Trefftz-plane) is computed, so the standard independent VLM check
-      (elliptic-loading optimum / span efficiency e) is unavailable.
-FIX: Add a Trefftz-plane induced-drag computation; use CDi and e as an additional A1
-      validation cross-check.
-```
-
----
-
-### [MAJOR] A9 — Pitching moment computed about the ¾-chord collocation point ✅ RESOLVED
-
-**Resolved 2026-06-09.** Found via external-benchmark validation against BYU
-VortexLattice.jl / AVL (`sample/val_vlm_byu_wing.bdf`): CL matched to 0.16% but CM was ~2×.
-Root cause — `solve_rigid_cl` used `boxes[i].colloc[0]` (¾-chord) as the moment arm instead
-of the ¼-chord bound vortex where the Kutta–Joukowski force acts; the bias is `CL·(½·box_chord)/c_ref`
-and is mesh-dependent (vanishes as NCHORD→∞). Fixed by using the bound-vortex x; CM now
-−0.0209 vs AVL −0.02085 (0.25%). Distinct from A3 (reference point / c_ref). New regression
-`tests/aero/test_val_byu_wing.py`. See `docs/40_history/00_completed_development.md` under "Resolved Defects (Phase A)".
-
-**Note on A1:** this benchmark is an *independent peer-VLM* (AVL) cross-check, and sbeam's CL
-matched to 0.16% on an AR-7.5 tapered/swept wing. The A1 deficit was measured against
-*lifting-line* upper bounds (e.g. `2π/(1+2/AR)`), which finite-AR lifting-surface VLM
-legitimately sits a few percent below. A1 should be re-baselined against AVL on identical
-planforms before being treated as a kernel bug; the only clearly anomalous symptom remaining
-is the *growth* of the deficit with spanwise refinement (a spanwise-spacing convergence
-question — Hough 1973 / Lan 1974, NASA SP-405).
-
----
-
-## Code Review — 2026-05-26 (follow-up)
-
-Independent critical pass against `docs/10_standard/07_code_review_process.md`. Status of all prior findings verified.
-493/493 tests pass. One CRITICAL (C-1) remains open. M-1 and R9 confirmed resolved; R10 confirmed resolved.
-New review found no additional CRITICAL or MAJOR issues.
-
----
-
-### [CRITICAL] C-1 — `results/f06_writer.py:228` SOL 103 GENERALIZED MASS column hard-coded to `1.0`
-
-**File:** `sbeam/results/f06_writer.py:228`
-
-```
-[CRITICAL] f06_writer.py:228 — The GENERALIZED MASS column is always written as 1.0.
-WHY: For norm=MASS eigenvectors are M-orthonormal so 1.0 is correct. For norm=MAX
-     (peak-component normalisation) the generalised mass is phi^T @ M @ phi, which is not 1.0.
-     Any downstream tool that reads the f06 generalized-mass column for norm=MAX receives
-     a fabricated value with no warning.
-FIX: Pass the reduced mass matrix M_red into _build_f06_sol103_text and compute
-     phi_i.T @ M_red @ phi_i per mode. Add a SOL 103 regression test that asserts
-     gen_mass == approx(1.0) for norm=MASS and != 1.0 for at least one mode under norm=MAX.
-```
-
----
-
 ## Code Review — 2026-05-25
 
 Critical design review performed against `docs/10_standard/07_code_review_process.md`. 15 findings (0 CRITICAL, 4 MAJOR, 7 MINOR, 4 NIT). New items are R12–R22; R9/R10 carry forward. All prior R1–R8 and R11 confirmed resolved. R12 resolved 2026-05-26.
-
----
-
-### [MAJOR] R13 — EIGRL V1/V2 frequency bounds parsed but never applied ✅ RESOLVED
-
-**Resolved 2026-05-26:** Documented as not implemented. `solve_modes` now emits a
-`UserWarning` when V1 or V2 are set; `docs/10_standard/04_modal_analysis.md` corrected to state that
-V1/V2 filtering is not supported in Phase 1. V1/V2 filtering is deferred to a future phase.
-
----
-
-### [MAJOR] R14 — MAT1 G silently set to 0 when only E and nu are supplied ✅ RESOLVED
-
-**Resolved 2026-05-26:** `_handle_mat1` now derives G from the isotropic material relationship
-`G = E / (2 × (1 + ν))` when G is blank and both E and NU are non-zero. Supplied G always
-takes precedence. `docs/10_standard/01_beam_model.md` updated to document this behaviour explicitly.
-Two new parser tests added (`TestMat1GDerivation`).
-
----
-
-### [MAJOR] R15 — SPC1 reads only one continuation line; extra grids silently dropped ✅ RESOLVED
-
-**Resolved 2026-05-26:** `_handle_spc1` now accepts a list of continuation lines and
-accumulates all grid IDs across all continuations, using the same multi-continuation loop
-pattern as RBE2/RBE3. Two new parser tests added (`TestSpc1MultiContinuation`).
-`docs/10_standard/01_beam_model.md` updated to document multi-continuation support for SPC1.
 
 ---
 
@@ -296,54 +186,12 @@ FIX:  Drop leading underscores from both function names in f06_writer.py, or add
 
 ---
 
-## Code Review — 2026-05-24
-
-Critical design review performed against `docs/10_standard/07_code_review_process.md`. All 441 tests passed at review time; 464 pass as of 2026-05-25 (R2–R6 fixes). Findings below; resolved items removed.
-
----
-
-### [NIT] R9 — `_DENSE_THRESHOLD` is a bare magic number ✅ RESOLVED
-
-**Resolved 2026-05-26 (review confirmation):** `sol103.py:24` already carries the inline
-comment `# n_free <= this → use dense eigh (200 elements × 6 DOFs)`. The basis is
-explicit and the constant name is self-explanatory in context. No further change required.
-
----
-
-### [NIT] R10 — RBE3 lever-arm simplification undocumented ✅ RESOLVED
-
-**Resolved 2026-05-26:** Added a block comment in `assembly/rbe3.py` before the RBE3 loop
-explaining the same-DOF weighted-averaging formulation and its lever-arm limitation.
-`docs/10_standard/01_beam_model.md` updated with a "Known limitation" paragraph in the RBE3 section:
-"Use RBAR for kinematically exact rigid connections where the offset lever-arm effect must
-be captured."
-
----
-
 ## Open Questions / Risks
 
 | ID | Question / Risk | Severity | Status |
 |----|-----------------|----------|--------|
 | Q1 | SPC reaction f06 output: NASTRAN outputs SPCFORCE in the global (CID 0) frame, not the CD displacement frame. Current code matches this convention (no CD transform on reactions). Verify intentional. | Low | Open |
-| Q2 | CBUSH with coincident GA/GB raises ValueError, but only at assembly not at parse time — parser (bdf_reader.py:396) does check. OK for Phase 1. | Low | Resolved |
 | Q3 | GRAV CID restriction (only CID=0 supported, parser raises): acceptable for Phase 1 but not documented in "Known Limitations". | Low | Open |
-| Q4 | Sparse eigsh path (#R8) — untested. Risk: SciPy ARPACK update breaks large-model runs silently. | Medium | Resolved |
-| Q5 | Does RBE2 non-coincident lever arm affect any shipped example BDFs? All test BDFs use coincident grids — need to verify sample models. | High | Resolved — V18 covers offset RBE2 with 3 analytical assertions; implementation confirmed correct. |
-
----
-
-## Opportunities
-
-| ID | Opportunity | Effort | Value |
-|----|-------------|--------|-------|
-| O1 | ~~Fix RBE2 lever arm (R1) — reuse the RBAR R matrix already in the same function~~ **DONE** | Small | High |
-| O2 | ~~Add negative-eigenvalue warning (R2) — one `warnings.warn` call~~ **DONE** | Trivial | Medium |
-| O3 | ~~Add PBAR/MAT1/LOAD duplicate guards (R3) — three `if id in dict` checks~~ **DONE** | Trivial | Medium |
-| O4 | ~~Fix end-A axial stress sign (R4) — change `fx_a` to `-f_local[0]` or `f_local[6]`~~ **DONE** | Trivial | Medium |
-| O5 | ~~Extend f06 stress to D/E/F points (R5) — loop over recovery point dict~~ **DONE** | Small | Medium |
-| O6 | ~~Warn on missing load SID (R6) — raise ValueError early in assemble_load_vector~~ **DONE** | Trivial | Medium |
-| O6 | ~~Cache GRAV mass matrix at call site (R7) — pre-assemble once in assemble_load_vector~~ **DONE** | Small | Low |
-| O7 | ~~Test sparse eigsh path (R8) — patch threshold in pytest~~ **DONE** | Small | Medium |
 
 ---
 
@@ -355,23 +203,9 @@ All Phase 1 bugs (B1–B4) are resolved. See `docs/40_history/00_completed_devel
 
 ## Phase A — Static Aeroelastics (VLM)
 
-Steps 39–45 implement the steady vortex-lattice aerodynamic layer (all complete). Remaining
-open Phase A work is tracked under the code-review findings above: **A7** (cosine chordwise
-spacing helper + low-NCHORD warning) and **A8** (box aspect-ratio pre-solve warning).
-
-### Step 39: AEROS card ✅ COMPLETE — see `docs/40_history/00_completed_development.md`
-
-### Step 40: CAERO1/PAERO1/AEFACT parsing + panel.py box meshing ✅ COMPLETE — see `docs/40_history/00_completed_development.md`
-
-### Step 41: Steady VLM AIC `vlm.py` — symmetric + antisymmetric images ✅ COMPLETE — see `docs/40_history/00_completed_development.md`
-
-### Step 42: Integration matrices `Skj`, `Djk`, and baseline normalwash `w_g` ✅ COMPLETE — see `docs/40_history/00_completed_development.md`
-
-### Step 43: AIC Corrections (`corrections.py`) + `AeroModel` Container ✅ COMPLETE — see `docs/40_history/00_completed_development.md`
-
-### Step 44: Viewer — Aero Box Mesh + cp Overlay ✅ COMPLETE — see `docs/40_history/00_completed_development.md`
-
-### Step 45: VTP Cp Bugs + Sideslip Beta ✅ COMPLETE — see `docs/40_history/00_completed_development.md`
+Steps 39–46 are complete — see `docs/40_history/00_completed_development.md`. Open Phase A
+work: **A7** (cosine chordwise spacing helper + low-NCHORD warning) and **A8** (box
+aspect-ratio pre-solve warning).
 
 ## Phase 2 — Model Enhancements
 

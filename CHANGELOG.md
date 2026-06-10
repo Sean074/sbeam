@@ -13,6 +13,30 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Phase A — Steady VLM Aeroelastics (Steps 39–46)**
+- `AEROS` card — reference geometry (`cref`, `bref`, `sref`) and symmetry flags (`symxz`,
+  `symxy`); enforces CAERO1-without-AEROS validation at parse time.
+- `CAERO1`, `PAERO1`, `AEFACT`, `W2GJ` cards — aerodynamic panel definition, box meshing
+  (quarter-chord bound vortex / three-quarter-chord collocation), and geometric incidence input.
+- `sbeam/aero/vlm.py` — steady horseshoe VLM: Biot-Savart kernel, AIC matrix assembly,
+  symmetric (+1) and antisymmetric (-1) XZ-plane image vortices, `solve_rigid_cl` for
+  rigid-wing CL/CM/CDi/e at a given alpha/beta; `trefftz_cdi` for Trefftz-plane induced drag
+  coefficient (CDi) and Oswald span efficiency (e).
+- `sbeam/aero/integration.py` — integration matrices `Skj` (force recovery), `Djk`
+  (normalwash mapping), and baseline normalwash vector `w_g`.
+- `sbeam/aero/corrections.py` — AIC correction tiers: diagonal box weight (Wkk), pressure
+  correction (WT2), and strip force correction (WT1). LU-factored AIC inverse
+  (`np.linalg.solve`) replaces prior SVD (`np.linalg.lstsq`), reducing build time approx. 25x on
+  large panel models.
+- `sbeam/aero/aero_model.py` — `AeroModel` container; `build_aero_model` factory.
+- Sideslip angle beta: VTP/fin surfaces produce sideforce (CY) at non-zero beta; lift (CL/CM) and
+  sideforce (CY) separated by surface normal in `solve_rigid_cl` result dict.
+- Viewer Aero tab: 3D aerodynamic box mesh, per-panel Cp colour overlay, spanwise section-CL
+  strip chart, optional corrected vs inviscid Cp overlay.
+- `sample/val_vlm_rect_ar8.bdf` — rectangular AR=8 validation case.
+- `sample/val_vlm_byu_wing.bdf` — AVL-validated AR-7.5 tapered/swept benchmark; CL within
+  0.16%, CM within 0.25% of AVL.
+
 **BDF cards**
 - `CORD2R` — user-defined rectangular coordinate systems for grid input positions (CP),
   result output frames (CD), load directions, and CONM2 offset/inertia. Chained RID
@@ -60,6 +84,38 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
   removed. All internal cross-references updated.
 
 ### Fixed
+
+**Phase A fixes**
+- **A2/A3 — AEROS reference geometry and moment reference point:** `solve_rigid_cl` now
+  uses AEROS `sref`/`cref` for CL/CM normalisation; per-surface classification separates
+  lift surfaces (contribute to CL/CM) from sideforce surfaces (contribute to CY); moment
+  reference `xref` parameter added (default 0.0).
+- **A9 — CM moment arm corrected from three-quarter-chord to quarter-chord:** pitching-moment
+  arm changed from the three-quarter-chord collocation point to the quarter-chord bound-vortex
+  location where the Kutta-Joukowski force acts. Error was mesh-dependent (bias = CL * half-box-chord /
+  c_ref, vanishing as NCHORD tends to infinity). CM now matches AVL to 0.25% on the BYU AR-7.5 benchmark.
+- **A1 confirmed non-defect:** VLM lift-slope deficit (A1) validated against BYU
+  VortexLattice.jl (AVL-validated); sbeam tracks the peer code to a constant 0.16% offset at
+  every spanwise resolution. Deficit was an artefact of comparing to lifting-line upper bounds.
+
+**Code review fixes**
+- **C-1 — SOL 103 generalised mass hard-coded:** f06 GENERALIZED MASS column was always
+  written as `1.0`. Now computed as `phi^T M phi` per mode. Correct (1.0) for `norm=MASS`;
+  non-trivial for `norm=MAX`. `Sol103Result.generalized_masses` field added.
+- **R13 — EIGRL V1/V2 frequency bounds:** V1/V2 were parsed and stored but silently ignored.
+  `solve_modes` now emits a `UserWarning`; `docs/10_standard/04_modal_analysis.md` corrected to state
+  that V1/V2 filtering is not implemented; use the `ND` field to limit mode count.
+- **R14 — MAT1 G derived from isotropic relationship:** G was silently stored as 0.0 when
+  the G field was blank, zeroing torsional stiffness. Now derived as `G = E / (2(1+nu))` when
+  G is blank and both E and nu are non-zero. Supplied G always takes precedence.
+- **R15 — SPC1 multi-continuation grids:** only the first continuation line was consumed;
+  grids on subsequent lines were silently dropped. Now accumulates all continuation lines using
+  the same loop pattern as RBE2/RBE3.
+- **R10 — RBE3 lever-arm limitation documented:** block comment added in `assembly/rbe3.py`;
+  "Known limitation" paragraph added to `docs/10_standard/01_beam_model.md` directing users to RBAR for
+  kinematically exact rigid connections with offset.
+
+**Existing fixes (Phase 1 bugs)**
 - **Case control UI subcase export (B1):** Per-subcase field values (LOAD, SPC, output
   flags) now read from `st.session_state` after form submission, not from the pre-submission
   dict. Eliminates stale-value export when multiple subcases are defined.
@@ -69,12 +125,12 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
   a Subcase selector when more than one result is present.
 - **Deformed shape hover (B2):** Hover tooltip on deformed nodes now shows raw physical
   displacements (Tx, Ty, Tz) instead of scaled plot coordinates.
-- **CONM2 CG in GPWG and viewer:** CG marker and offset line for CONM2 with CID ≠ 0 now
-  correctly apply the CID→global rotation before adding the offset to the grid position.
+- **CONM2 CG in GPWG and viewer:** CG marker and offset line for CONM2 with CID not equal to 0 now
+  correctly apply the CID-to-global rotation before adding the offset to the grid position.
 - **CBAR zero-length guard:** `transform_matrix` raises `ValueError` when GA and GB are
   coincident, matching the existing guard for CBUSH.
 - **SPC reaction recovery with body loads (GRAV):** Reactions now computed as
-  `R = K[spc,:] @ u − f[spc]` so that forces applied at constrained DOFs (which contribute
+  `R = K[spc,:] @ u - f[spc]` so that forces applied at constrained DOFs (which contribute
   to equilibrium but produce zero displacement) are correctly included in the reaction sum.
 
 ---
