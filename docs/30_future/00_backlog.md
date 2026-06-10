@@ -196,6 +196,167 @@ Steps 39–46 are complete — see `docs/40_history/00_completed_development.md`
 work: **A7** (cosine chordwise spacing helper + low-NCHORD warning) and **A8** (box
 aspect-ratio pre-solve warning).
 
+---
+
+## Phase B — Structure ↔ Aero Splining
+
+Steps 45–49. Goal: `G_kg` matrix mapping structural g-set DOFs → aero box normalwash, and
+`G_kgᵀ` transferring box forces back to structural grids. Prerequisite for Phase C (SOL 144).
+
+---
+
+### Step 45 — SET1 + SPLINE2 parsing
+
+**Objective:** Parse `SET1` (grid lists) and `SPLINE2` (beam spline: `CAERO1` box range,
+`SET1` ref, spline coord `CID`, `DZ` smoothing, `DTOR` torsional ratio, `DTHX`/`DTHZ`
+rotation constraints, `USAGE`).
+
+**Scope/Deliverables:**
+- `Set1`/`Spline2` dataclasses in `model/aero.py`:
+  - `Set1`: `sid: int`, `grids: list[int]`
+  - `Spline2`: `eid`, `caero`, `id1`, `id2`, `setg`, `dz` (def 0.0), `dtor` (def 1.0),
+    `cid`, `dthx` (def 1.0), `dthz` (def 0.0), `usage` (def `"BOTH"`)
+- `_handle_set1` (Pattern B multi-continuation — same template as `RBE2`/`SPC1`) and
+  `_handle_spline2` (Pattern A single-continuation for DTHX/DTHZ/USAGE row) in
+  `parser/bdf_reader.py`
+- `BulkData` gains: `set1s`, `spline2s`, `attaches`, `spline0s`, `spline1s` (all
+  `field(default_factory=dict)`); stub dataclasses `Attach`, `Spline0`, `Spline1` added
+  here; `Spline1` handler raises `NotImplementedError`
+- Cross-reference validation at end of `parse_bulk_data`: `SPLINE2.setg` → `SET1`,
+  `SPLINE2.caero` → `CAERO1`, all `SET1` grid IDs → `GRID`; warn (don't error) if box
+  range `[ID1, ID2]` covers no known boxes
+- Box ID mapping: NASTRAN box ID = `CAERO1.EID + i_span × NCHORD + j_chord`; verify
+  this matches `panel.py` row-major ordering before proceeding to Step 46
+
+**Test/Acceptance:**
+- Round-trip `SET1` single line and multi-continuation (12 grids across two continuation lines)
+- Round-trip `SPLINE2` with defaults; with explicit continuation (`DTHX`, `DTHZ`, `USAGE`)
+- `ValueError` on `SPLINE2` referencing non-existent `SET1` SID
+- `ValueError` on `SPLINE2` referencing non-existent `CAERO1` EID
+
+**Key decisions/risks:**
+- Box ID mapping must match `panel.py` ordering exactly — assert in tests before Step 46
+  builds any matrix
+
+---
+
+### Step 46 — SPLINE2 beam-spline matrix (`spline.py`)
+
+**Objective:** Build the `G_kg` block for each `SPLINE2` using `CubicHermiteSpline`;
+assemble the full `G_kg` `(n_k × n_g)` matrix.
+
+**Scope/Deliverables:**
+- New file `sbeam/aero/spline.py`
+- `build_spline2_rows(spline2, bulk, boxes, grid_index)` — fills `G_kg` rows for the
+  covered boxes using `scipy.interpolate.CubicHermiteSpline`:
+  - Project `SET1` grids and box collocation points onto spline axis (CORD2R x-direction)
+  - Sort grids by axis coordinate (Hermite requires monotone knots)
+  - For each grid `i`: unit Tz impulse → `cs_tz.derivative()(t_j)` (bending slope at
+    boxes → downwash); unit Ry impulse → `cs_ry.derivative()(t_j)` (rotation → downwash);
+    unit Rx → `DTHX × cs_rx(t_j)` (torsion → incidence). Sign: downwash = −d(deflection)/dx
+  - DOF column indices: Tz = `6*idx+2`, Ry = `6*idx+4`, Rx = `6*idx+3`
+  - Extrapolation: natural cubic; warn if > 10% of span; warn if off-axis distance > 20%
+    of span (conditioning risk KB2)
+- `build_Gkg(bulk, boxes, grid_index) → np.ndarray (n_k, 6*n_g)`:
+  tracks per-box coverage (error on double-spline; warn on un-splined box);
+  calls SPLINE2 / ATTACH / SPLINE0 builders in order
+- `AeroModel` gains `gkg: Optional[np.ndarray] = None`; `build_aero_model` calls
+  `build_Gkg` when any spline cards are present
+
+**Test/Acceptance (V-B1 — gate: all three must pass to machine precision):**
+- **Rigid translation**: uniform `Tz=1, Ry=Rx=0` at all grids →
+  `G_kg @ u` ≈ 0 everywhere (< 1e-12); pure plunge produces no incidence change
+- **Rigid pitch**: uniform `Ry=1` → `G_kg @ u` = −1 everywhere (uniform downwash)
+- **Linear twist**: `Tz` linearly varying from 0 to tip, `Ry = const` slope →
+  `G_kg @ u` reproduces exact linear slope at all boxes (Hermite is exact for linear fields)
+- **Energy round-trip**: `G_kgᵀ @ (uniform unit pressure × area)` → total force/moment
+  matches direct pressure sum
+
+**Key decisions/risks (KA3, KB1, KB2):**
+- `CubicHermiteSpline`: Tz gives function values, Ry gives derivative conditions —
+  this is the Hermite (not natural-cubic) setup; both DOFs couple into the spline simultaneously
+- Rigid-body gate is the make-or-break test; fail here = garbage Phase C trim solutions
+
+---
+
+### Step 47 — ATTACH rigid-body spline + SPLINE0 zero-displacement
+
+**Objective:** Tie box groups rigidly to a master grid (`ATTACH`) and pin selected boxes
+(`SPLINE0`), reusing the RBE2 lever-arm kinematic machinery.
+
+**Scope/Deliverables:**
+- `Attach` dataclass: `eid`, `caero`, `id1`, `id2`, `grid` (master GRID ID), `cid` (def 0)
+- `Spline0` dataclass: `eid`, `caero`, `id1`, `id2`
+- Card format (sbeam-defined, ZAERO-inspired): `ATTACH, EID, CAERO, ID1, ID2, GRID, CID`;
+  `SPLINE0, EID, CAERO, ID1, ID2`
+- `_handle_attach` / `_handle_spline0` in `bdf_reader.py`
+- `build_attach_rows(attach, bulk, boxes, grid_index)` in `spline.py`: for each covered
+  box j, lever arm `r = box.colloc − master_grid_pos`; the G_kg row encodes the
+  rigid-body downwash contribution using the same R-matrix structure from `assembly/rbe3.py`:
+  `Gkg[j, col_Tz] = 0` (pure plunge → no incidence), `Gkg[j, col_Ry] = -1.0` (pitch →
+  downwash), `Gkg[j, col_Rx] = dthx` (torsion), plus streamwise-offset corrections via lever
+- `SPLINE0`: rows stay zero; boxes registered as covered (suppresses un-splined warning)
+
+**Test/Acceptance (V-B3 — machine precision gate):**
+- Rigid translation of master → zero downwash on all `ATTACH` boxes
+- Rigid pitch of master → uniform downwash = −Ry across all boxes
+- `SPLINE0` boxes: `G_kgᵀ @ (any pressure)` → zero force contribution
+- Force transfer: uniform pressure on `ATTACH` boxes → `G_kgᵀ @ F_normal` sums to
+  correct total force/moment at master grid (analytical lever-arm check)
+
+**Key decisions/risks (KB3):**
+- Import lever-arm R-matrix logic from `assembly/rbe3.py`; do not re-implement
+- "Splined more than once" check in `build_Gkg` catches any overlap with SPLINE2 coverage
+
+---
+
+### Step 48 — SPLINE1 surface spline (optional — deferrable)
+
+**Objective:** Harder–Desmarais Infinite-Plate Spline for general 2-D grid scatter.
+
+**Scope/Deliverables (deferred — Phase C does not require this):**
+- `Spline1` dataclass stub already added in Step 45
+- `_handle_spline1` raises `NotImplementedError("SPLINE1 not yet implemented; use SPLINE2")`
+- Full IPS kernel `r²ln r²` and `G_kg` rows: implement when a 2-D scatter case arises
+
+**Test/Acceptance (when implemented):** Reproduces rigid-body and linear fields exactly;
+matches a published IPS example (Harder & Desmarais 1972).
+
+---
+
+### Step 49 — Force transfer & coupled smoke test
+
+**Objective:** Wire `G_kgᵀ` force transfer and verify the full rigid-aero → structural
+load path end-to-end (no flexibility yet), including the baseline `w_g` load.
+
+**Scope/Deliverables:**
+- `compute_structural_loads(aero_model, grid_index, q, aoa) → np.ndarray (n_g,)` in
+  `aero_model.py`:
+  ```
+  normalwash = aoa × ones + w_g
+  cp         = ajj_inv_corr @ normalwash
+  F_normal   = q × area_per_box × cp          # scalar normal force per box (n,)
+  f_g        = gkg.T @ F_normal               # structural forces (n_g,)
+  ```
+  where `area_per_box = [box.area for box in boxes]` (virtual-work consistent projection
+  of the 3n Skj matrix down to scalar normal forces)
+- BDF integration test fixture `tests/integration/bdf/val_spline2_cantilever.bdf`:
+  cantilever beam (3–5 CBArs along y-axis) + single CAERO1 + SPLINE2; root SPC all DOFs
+- `tests/integration/test_phase_b.py`: runs `compute_structural_loads` at fixed AOA;
+  asserts total z-force ≈ total VLM lift (< 1% tolerance); pitching moment check
+
+**Test/Acceptance (V-B2):**
+- Rigid wing at fixed AOA: `sum(f_g[Tz_dofs])` ≈ `q × CL × sref` (< 1% tolerance)
+- Pitching moment about root ≈ VLM pitching moment centroid
+- With non-zero `w_g`: additional structural load matches `w_g` contribution in isolation
+
+**Key decisions/risks:**
+- `area_per_box` scalar projection is the virtual-work consistent force transfer; do not
+  use the full 3n Skj directly (that is for 3D force output only)
+- Viewer wiring (aero load overlay) is low-priority; Phase C is the primary consumer
+
+---
+
 ## Phase 2 — Model Enhancements
 
 These items extend BDF card support and solver capability. They are independent of the dynamic
