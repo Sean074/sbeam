@@ -584,6 +584,34 @@ rigid-body modes (zero-frequency) alongside the retained elastic modes, with ine
 carried by the rigid-body partition consistent with the `AESTAT` trim states. Divergence,
 Equation (21), reduces identically to $\Phi^{\mathsf T}K_{aa}\Phi\,\eta = q\,\Phi^{\mathsf T}Q_{aa}\Phi\,\eta$.
 
+**The generalised aerodynamic force (GAF) matrix.** The modal-projected aerodynamic term
+
+$$
+Q_{hh} \;\equiv\; \Phi^{\mathsf T}Q_{aa}\Phi
+\;=\; \Phi^{\mathsf T} G_{kg}^{\mathsf T} S_{kj}\big(A_{jj}^\ast\big)^{-1} D_{jk}\,G_{kg}\,\Phi
+\tag{22a}
+$$
+
+is the **steady ($k=0$) generalised aerodynamic force matrix** $Q_{hh}(0)$ — the aerodynamics
+expressed on the modal basis, of size (retained modes)$^2$ and independent of the aero mesh size.
+It is the object the flutter phase reuses: when Phase D replaces the real $A_{jj}$ with the complex
+Doublet-Lattice $A_{jj}(M,k)$, the *same* expression returns the frequency-dependent $Q_{hh}(M,k)$
+with no change to $S_{kj}$, $D_{jk}$, $G_{kg}$, or $\Phi$ (ZAERO Eq. 2.20; this is the matrix written
+$[Q_{hh}(ik)] = [\Phi]^{\mathsf T}[G]^{\mathsf T}[S_{kj}][\text{AIC}(ik)][G][\Phi]$ there).
+
+Note **where the correction enters**: the CFD/WT correction lives entirely in $A_{jj}^\ast$ (§3),
+*upstream* of the modal projection, and $Q_{hh}$ inherits it automatically. There is no separate
+correction applied to the GAF — and none should be. Once the aerodynamics are reduced to the modal
+basis, the per-box pressure field that $W_{kk}/W_{T1}/W_{T2}$ act on no longer exists, and the
+distributed-load recovery that $S_{kj}$ and $G_{kg}^{\mathsf T}$ provide is lost. Correcting the AIC
+is what keeps the recovered physical loads and the modal $Q_{hh}$ mutually consistent.
+
+**Caveat for the flutter handoff.** A steady correction baked into $A_{jj}^\ast$ supplies the correct
+*in-phase* pressure but not the *out-of-phase* pressure of the unsteady $Q_{hh}(M,k)$ (ZAERO §4,
+"Shortcoming of the AIC Correction Method"); recovering the latter is the separate ZTAW problem and
+is irrelevant at $k=0$. The steady $Q_{hh}(0)$ built here is therefore exact for trim, divergence, and
+static loads, and is an in-phase-only approximation if reused directly in flutter.
+
 ### 6.2 Static-load recovery — the mode-acceleration method
 
 Modal truncation has a well-known trap for *static* problems: recovering the deflection as

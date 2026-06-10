@@ -10,6 +10,170 @@ Completed steps are recorded in `docs/completed_development.md`.
 
 ---
 
+## Code Review — 2026-06-08 — Aerodynamics (Phase A: steady VLM)
+
+Technical-accuracy review of the implemented `sbeam/aero/` module (`panel.py`, `vlm.py`,
+`integration.py`, `corrections.py`, `aero_model.py`, `model/aero.py`, parser handlers).
+124 aero/parser tests pass. The VLM **core is structurally correct and internally
+consistent** — verified: Biot–Savart kernel matches the standard formula; ¼c bound / ¾c
+collocation placement correct; 2D limit CL_α → 6.273 ≈ 2π (0.16%); spanwise load symmetric
+to 1e-16 at pure α; the symmetry-image path (half parity=+1 vs full parity=0) matches to
+~1e-3; two independent lift integrations (Kutta–Joukowski Σγdy vs Σcp·A) agree exactly;
+far-field trailing-leg truncation (1000·chord) is converged; AIC well-conditioned (cond ≈ 12
+for AR=8, ≈ 38 for the airplane model). Findings A1–A6 below.
+
+New validation case added: `sample/val_vlm_rect_ar8.bdf` (rectangular AR=8 wing, two CAERO1
+half-surfaces, parity=0; references documented in the header).
+
+---
+
+### [MAJOR] A1 — VLM systematically under-predicts lift-curve slope (~3–8%), non-converging
+
+**Files:** `sbeam/aero/vlm.py` (`build_ajj`, `horseshoe_influence`, `solve_rigid_cl`)
+
+```
+[MAJOR] Finite-AR lift slope runs 3–8% below analytical references and the error GROWS
+        with mesh refinement instead of vanishing.
+EVIDENCE: val_vlm_rect_ar8.bdf gives CL_α ≈ 4.56–4.63 /rad vs Polhamus ~4.91 (−6%),
+        rect lifting-line ~4.78 (−3%), elliptic LL bound 5.027 (−8%).
+        Decisive test — an ELLIPTIC planform, where lifting-line theory is exact
+        (CL_α = 2π/(1+2/AR)): VLM is 3–7% low at AR 6/8/10 and the deficit INCREASES as
+        nstrip 40→80. That rules out discretization; it is a systematic bias in the
+        induced-downwash physics (BC enforced at ¾-chord appears to over-predict trailing
+        downwash; magnitude is larger than a clean Weissinger scheme should show).
+        2D limit (AR→∞) is exact, so chordwise placement is fine — the error is in the
+        finite-span trailing system.
+FIX: Root-cause the trailing-vortex induced downwash. Validate against a published VLM
+        benchmark (Katz & Plotkin rectangular-wing table, or the Warren-12 planform:
+        CL_α=2.743, CM_α=−3.10). Add an elliptic-planform convergence regression test that
+        asserts CL_α → 2π/(1+2/AR) within tolerance — the current code fails this gate.
+```
+
+---
+
+### [MAJOR] A2 — `solve_rigid_cl` ignores AEROS reference geometry; lumps all surfaces
+
+**File:** `sbeam/aero/vlm.py` (`solve_rigid_cl`, reference-geometry block ~lines 167–174)
+
+```
+[MAJOR] solve_rigid_cl recomputes its own S_ref (sum of ALL box areas), c_ref and span_ref
+        heuristically and never uses the parsed AEROS SREF/CREF/BREF.
+WHY: On airplane_aero.bdf this builds ONE AIC and ONE reference area spanning wing + HTP +
+        vertical tail, so the reported CL (0.139 @2°) mixes wing lift with VTP SIDEFORCE
+        over a polluted reference area — physically meaningless. There is no per-surface
+        coefficient breakdown. For a single isolated wing the heuristic happens to coincide
+        with SREF, masking the issue.
+FIX: Consume AEROS SREF/CREF/BREF for normalisation. Tag each box with its parent CAERO1 /
+        surface group and report per-surface CL/CM. Treat vertical surfaces (Y-normal) as
+        sideforce, not lift, in the totals.
+```
+
+---
+
+### [MINOR] A3 — Pitching moment referenced to x=0 with a heuristic c_ref
+
+**File:** `sbeam/aero/vlm.py` (`solve_rigid_cl`, CM computation ~lines 199–201)
+
+```
+[MINOR] CM is taken about x=0 and normalised by a heuristic c_ref (S_ref/span_ref), not
+        about a defined moment reference point (e.g. quarter-MAC) with CREF.
+FIX: Reference the moment to AEROS CREF and a user/derived moment reference point so CM is
+        comparable to standard stability data. (Couples with A2.)
+```
+
+---
+
+### [MINOR] A4 — No subsonic compressibility (Prandtl–Glauert) correction
+
+**Files:** `sbeam/aero/vlm.py`, `sbeam/model/aero.py`
+
+```
+[MINOR] "Subsonic" is in scope but Mach is never applied — no Prandtl–Glauert β=√(1−M²)
+        scaling of the AIC or the geometry. All results are effectively incompressible (M=0).
+FIX: Add a Mach input (TRIM/AEROS context) and apply the PG transformation. Document the
+        M=0 assumption until then.
+```
+
+---
+
+### [MINOR] A5 — Aero model is reachable only from the viewer; aero cards inert under the solver
+
+**Files:** `sbeam/aero/aero_model.py`, `sbeam/solver/`, `sbeam/main.py`
+
+```
+[MINOR] build_aero_model / solve_rigid_cl are called ONLY from viewer/app.py. No solver or
+        CLI path consumes the aero model; there is no SOL 144 (Phase C) and no spline
+        (Phase B). Therefore the aero cards in airplane_aero.bdf are inert under its declared
+        SOL 101, and any aero BDF must declare SOL 101/103 to clear case-control
+        (case_control.py rejects SOL 144). val_vlm_rect_ar8.bdf documents this workaround.
+FIX: Expected state until Phase B/C land. Track as the Phase B (spline) → Phase C (SOL 144)
+        wiring work; add SOL 144 to the case-control whitelist when Phase C starts.
+```
+
+---
+
+### [MINOR] A7 — Default chordwise box count too low; no cosine chordwise spacing
+
+**Files:** `sample/airplane_aero.bdf`, `sample/val_vlm_rect_ar8.bdf`, `sbeam/aero/panel.py`
+
+```
+[MINOR] Sample models used NCHORD=2 (airplane) / NCHORD=1 (rect val). Lift converges at
+        NCHORD=1 (1/4-3/4 rule is 2D-exact), but a chordwise convergence study showed the
+        PITCHING MOMENT is grossly under-resolved at low counts: CM shifts ~50% from
+        NCHORD 1->2, ~34% 2->4, and only settles to ~1-2% drift by NCHORD~8 (across 0/18/35
+        deg sweep). Chordwise loading/pressure are likewise unconverged.
+GUIDANCE: Steady VLM minimum NCHORD = 4; recommended 8 for converged moment/loading
+        (NASA SP-405 / DeJarnette NASA NTRS — cosine LE-concentrated chordwise spacing
+        reaches the same accuracy with fewer boxes). Phase D (DLM) is frequency-driven:
+        ~50 boxes per aerodynamic wavelength (Rodden/MSC), roughly 16*k_max boxes/chord. Thpugh this is typically not done with normal convergence at ~4 boxes per wavelength (Sean).
+RESOLVED (samples): both sample BDFs updated to NCHORD=8 with guidance comments; box
+        counts now 192 (airplane) and 320 (rect val); verified parse/build, CL unchanged.
+OPEN (code): mesh_caero1 supports only uniform chordwise spacing via NCHORD (cosine
+        requires hand-built LCHORD/AEFACT). Add a cosine-spacing helper / default, and a
+        pre-solve warning when NCHORD < 4 on any CAERO1.
+```
+
+---
+
+### [MINOR] A8 — Spanwise box count: aspect ratio must be O(1) (companion to A7)
+
+**Files:** `sample/airplane_aero.bdf`, `sbeam/aero/panel.py`
+
+```
+[MINOR] A7 fixes the chordwise count; the spanwise count (NSPAN) is the other half of box
+        sizing. airplane_aero.bdf shipped with NSPAN=6/4/4, giving box aspect ratios
+        (spanwise edge / streamwise edge) of 4-10 — boxes 4-10x longer spanwise than
+        chordwise. High-AR boxes degrade the VLM induced-downwash kernel and bias the
+        loading; they are also the prime suspect / stress case for the A1 lift-slope bias.
+GUIDANCE: Size NSPAN so each box AR is near 1.0; acceptable band 0.5-2.0 (standard VLM/DLM
+        practice, NASA SP-405; Rodden/MSC). NOTE the coupling with A7: raising NCHORD
+        shortens the chordwise box length, which forces NSPAN UP to keep AR~1. With
+        NCHORD=8 and meaningful chords this drives NSPAN high (tens of boxes/edge), so box
+        counts grow fast — size the two together, not independently.
+RESOLVED (samples): airplane_aero.bdf NSPAN 6/4/4 -> 38/31/16 (wing/HTP/VTP); all 1232
+        boxes now AR 0.64-1.63 (mean 0.99); verified parse/build/solve (CL_a~4.17/rad).
+        AR computed by reusing mesh_caero1 corner geometry. val_vlm_rect_ar8.bdf already
+        OK (AR~1 by construction). HA144A.bdf left faithful to the MSC deck (do not retune).
+OPEN (code): (a) add a pre-solve warning when any box AR is outside [0.5, 2.0]; (b) the
+        1232-box AIC uses np.linalg.lstsq for the inverse (~25 s) — switch to solve/LU for
+        the square full-rank AIC once box counts routinely reach the hundreds-thousands.
+```
+
+---
+
+### [NIT] A6 — No induced drag / Trefftz-plane post-processing
+
+**File:** `sbeam/aero/vlm.py`
+
+```
+[NIT] No induced drag (Trefftz-plane) is computed, so the standard independent VLM check
+      (elliptic-loading optimum / span efficiency e) is unavailable.
+FIX: Add a Trefftz-plane induced-drag computation; use CDi and e as an additional A1
+      validation cross-check.
+```
+
+---
+
 ## Code Review — 2026-05-26 (follow-up)
 
 Independent critical pass against `docs/code_review.md`. Status of all prior findings verified.
@@ -218,6 +382,29 @@ Steps 39–44 implement the steady vortex-lattice aerodynamic layer.
 ### Step 44: Viewer — Aero Box Mesh + cp Overlay ✅ COMPLETE — see `docs/completed_development.md`
 
 ### Step 45: VTP Cp Bugs + Sideslip Beta ✅ COMPLETE — see `docs/completed_development.md`
+
+### Step 46: Replace `lstsq` AIC inverse with `solve`/LU factorization
+
+**Files:** `sbeam/aero/aero_model.py`
+
+```
+Objective: Cut AIC inversion cost. build_aero_model currently forms the corrected AIC
+        inverse via np.linalg.lstsq(ajj_star, np.eye(n)) in all four correction branches.
+        The AIC is square and full-rank, so lstsq (SVD-based, O(n^3) with a large constant)
+        is wasteful — it dominated runtime once box counts grew (~25 s for the 1232-box
+        airplane_aero.bdf after the A8 spanwise refinement).
+Deliverables:
+  - Replace lstsq with scipy.linalg.lu_factor / lu_solve (or np.linalg.solve against I)
+    to build ajj_inv_corr in the WKK and no-correction branches; confirm apply_wt2 /
+    apply_wt1 paths either reuse the factorization or are similarly converted.
+  - Prefer caching the LU factorization rather than forming the explicit inverse where the
+    downstream SOL 144 solve only needs A*^-1 @ w (avoids the O(n^3) inverse entirely).
+  - Add a near-singular guard (cond / factorization warning) so a degenerate AIC fails
+    loudly instead of returning a silent least-squares pseudo-solution.
+Test/Acceptance: CL / cp on val_vlm_rect_ar8.bdf and airplane_aero.bdf unchanged to
+        ~1e-10 vs the lstsq result; wall-clock on the 1232-box model materially reduced.
+Note: companion to A8 open item (b).
+```
 
 ---
 

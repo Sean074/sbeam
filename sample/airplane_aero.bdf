@@ -131,35 +131,55 @@ $
 $ Aerodynamic panel property (Phase A stub — no fuselage body support)
 PAERO1, 10
 $
-$ ---- Wing starboard: 6 spanwise x 2 chordwise = 12 boxes
+$ Chordwise resolution: NCHORD = 8 on every surface.
+$   Steady VLM lift converges at NCHORD=1, but chordwise loading and pitching
+$   moment do not — CM is ~50% off at NCHORD=2 and only settles by NCHORD~8
+$   (verified by chordwise convergence study). Minimum recommended = 4; 8 used
+$   here for converged moments. Cosine chordwise spacing (LCHORD + AEFACT)
+$   would reach the same accuracy with fewer boxes — NASA SP-405. Phase D (DLM)
+$   will need more (Rodden/MSC).
+$
+$ Spanwise resolution: NSPAN sized so each box aspect ratio (spanwise edge /
+$   streamwise edge) is near 1.0 — target ~1, acceptable band 0.5-2.0. High-AR
+$   boxes degrade the VLM induced-downwash kernel and bias the loading; keeping
+$   AR ~ O(1) is standard VLM/DLM practice (NASA SP-405; Rodden/MSC). With
+$   NCHORD=8 and these chords the chordwise box length is short, so NSPAN must
+$   be correspondingly high to match it:
+$     Wing  NSPAN=38 -> box AR 0.64-1.63 (mean 0.99), 304 boxes/half
+$     HTP   NSPAN=31 -> box AR 0.70-1.47 (mean 1.00), 248 boxes/half
+$     VTP   NSPAN=16 -> box AR 0.67-1.46 (mean 0.97), 128 boxes
+$   Total 1232 boxes (was 192). Uniform spacing; AR varies root->tip with taper
+$   (root box has widest chord -> lowest AR, tip narrowest -> highest AR).
+$
+$ ---- Wing starboard: 38 spanwise x 8 chordwise = 304 boxes
 $ P1 = root LE (10.0,   0.0, 0.0), X12 = 4.0 m (root chord)
 $ P4 = tip  LE (14.0,  12.0, 0.0), X43 = 1.6 m (tip  chord)
-CAERO1, 100, 10, 0, 6, 2, 0, 0, 1
+CAERO1, 100, 10, 0, 38, 8, 0, 0, 1
 +, 10.0, 0.0, 0.0, 4.0, 14.0, 12.0, 0.0, 1.6
 $
-$ ---- Wing port: 6 spanwise x 2 chordwise = 12 boxes
+$ ---- Wing port: 38 spanwise x 8 chordwise = 304 boxes
 $ P1 = root LE (10.0,   0.0, 0.0), X12 = 4.0 m
 $ P4 = tip  LE (14.0, -12.0, 0.0), X43 = 1.6 m  (tip at negative Y)
-CAERO1, 150, 10, 0, 6, 2, 0, 0, 1
+CAERO1, 150, 10, 0, 38, 8, 0, 0, 1
 +, 10.0, 0.0, 0.0, 4.0, 14.0, -12.0, 0.0, 1.6
 $
-$ ---- HTP starboard: 4 spanwise x 2 chordwise = 8 boxes
+$ ---- HTP starboard: 31 spanwise x 8 chordwise = 248 boxes
 $ P1 = root LE (30.0, 0.0, 0.0), X12 = 2.0 m
 $ P4 = tip  LE (33.0, 5.0, 0.0), X43 = 1.0 m
-CAERO1, 200, 10, 0, 4, 2, 0, 0, 1
+CAERO1, 200, 10, 0, 31, 8, 0, 0, 1
 +, 30.0, 0.0, 0.0, 2.0, 33.0, 5.0, 0.0, 1.0
 $
-$ ---- HTP port: 4 spanwise x 2 chordwise = 8 boxes
+$ ---- HTP port: 31 spanwise x 8 chordwise = 248 boxes
 $ P1 = root LE (30.0,  0.0, 0.0), X12 = 2.0 m
 $ P4 = tip  LE (33.0, -5.0, 0.0), X43 = 1.0 m
-CAERO1, 250, 10, 0, 4, 2, 0, 0, 1
+CAERO1, 250, 10, 0, 31, 8, 0, 0, 1
 +, 30.0, 0.0, 0.0, 2.0, 33.0, -5.0, 0.0, 1.0
 $
-$ ---- VTP (full surface; "span" is Z from z=0 to z=5): 4 x 2 = 8 boxes
+$ ---- VTP (full surface; "span" is Z from z=0 to z=5): 16 x 8 = 128 boxes
 $ Lies in the XZ plane (y=0); no symmetry duplication with SYMXZ=0.
 $ P1 = root LE (29.0, 0.0, 0.0), X12 = 4.0 m
 $ P4 = tip  LE (32.5, 0.0, 5.0), X43 = 2.0 m
-CAERO1, 300, 10, 0, 4, 2, 0, 0, 1
+CAERO1, 300, 10, 0, 16, 8, 0, 0, 1
 +, 29.0, 0.0, 0.0, 4.0, 32.5, 0.0, 5.0, 2.0
 $
 ENDDATA
