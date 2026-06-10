@@ -51,35 +51,15 @@ FIX: Root-cause the trailing-vortex induced downwash. Validate against a publish
 
 ---
 
-### [MAJOR] A2 — `solve_rigid_cl` ignores AEROS reference geometry; lumps all surfaces
+### [MAJOR] A2 — `solve_rigid_cl` ignores AEROS reference geometry; lumps all surfaces ✅ RESOLVED
 
-**File:** `sbeam/aero/vlm.py` (`solve_rigid_cl`, reference-geometry block ~lines 167–174)
-
-```
-[MAJOR] solve_rigid_cl recomputes its own S_ref (sum of ALL box areas), c_ref and span_ref
-        heuristically and never uses the parsed AEROS SREF/CREF/BREF.
-WHY: On airplane_aero.bdf this builds ONE AIC and ONE reference area spanning wing + HTP +
-        vertical tail, so the reported CL (0.139 @2°) mixes wing lift with VTP SIDEFORCE
-        over a polluted reference area — physically meaningless. There is no per-surface
-        coefficient breakdown. For a single isolated wing the heuristic happens to coincide
-        with SREF, masking the issue.
-FIX: Consume AEROS SREF/CREF/BREF for normalisation. Tag each box with its parent CAERO1 /
-        surface group and report per-surface CL/CM. Treat vertical surfaces (Y-normal) as
-        sideforce, not lift, in the totals.
-```
+**Resolved 2026-06-09.** See `docs/completed_development.md` under "Resolved Defects (Phase A)".
 
 ---
 
-### [MINOR] A3 — Pitching moment referenced to x=0 with a heuristic c_ref
+### [MINOR] A3 — Pitching moment referenced to x=0 with a heuristic c_ref ✅ RESOLVED
 
-**File:** `sbeam/aero/vlm.py` (`solve_rigid_cl`, CM computation ~lines 199–201)
-
-```
-[MINOR] CM is taken about x=0 and normalised by a heuristic c_ref (S_ref/span_ref), not
-        about a defined moment reference point (e.g. quarter-MAC) with CREF.
-FIX: Reference the moment to AEROS CREF and a user/derived moment reference point so CM is
-        comparable to standard stability data. (Couples with A2.)
-```
+**Resolved 2026-06-09.** Coupled fix with A2. See `docs/completed_development.md`.
 
 ---
 

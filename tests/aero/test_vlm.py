@@ -13,7 +13,7 @@ import math
 import pytest
 import numpy as np
 
-from sbeam.model.aero import Caero1, Paero1
+from sbeam.model.aero import Aeros, Caero1, Paero1
 from sbeam.aero.panel import mesh_caero1
 from sbeam.aero.vlm import biot_savart_seg, horseshoe_influence, build_ajj, solve_rigid_cl
 
@@ -339,10 +339,10 @@ class TestVtpAerodynamics:
             "VTP Cp should be significant for non-zero sideslip"
         )
 
-    def test_vtp_cl_positive_for_positive_beta(self, boxes):
-        # Positive sideslip → positive net sideforce coefficient.
+    def test_vtp_cy_positive_for_positive_beta(self, boxes):
+        # Positive sideslip → positive net sideforce coefficient (CY, not CL).
         result = solve_rigid_cl(boxes, alpha=0.0, beta=self.BETA, parity=0)
-        assert result["CL"] > 0.0
+        assert result["CY"] > 0.0
 
     def test_vtp_cl_zero_at_alpha_only(self, boxes):
         result = solve_rigid_cl(boxes, alpha=self.ALPHA, beta=0.0, parity=0)
@@ -379,7 +379,7 @@ class TestVtpCybConvergence:
         )
         boxes = mesh_caero1(caero, PAERO, NO_AEFACTS, NO_CORD2RS)
         result = solve_rigid_cl(boxes, alpha=0.0, beta=self.BETA, parity=0)
-        return result["CL"] / self.BETA
+        return result["CY"] / self.BETA
 
     def test_CYb_within_10_percent_of_prandtl(self):
         target = 2.0 * math.pi * self.AR / (self.AR + 2)
@@ -420,3 +420,131 @@ class TestAlphaBetaDecoupling:
         assert np.allclose(result["cp"], 0.0, atol=1e-6), (
             "VTP Cp should be ~0 for pure angle of attack"
         )
+
+
+# ---------------------------------------------------------------------------
+# A2: AEROS reference geometry consumed by solve_rigid_cl
+# ---------------------------------------------------------------------------
+
+class TestAerosReferenceGeometry:
+    """CL and CM use aeros.sref and aeros.cref when the card is provided."""
+
+    CHORD = 1.0
+    HALF_SPAN = 2.5
+    ALPHA = 0.1
+
+    @pytest.fixture(scope="class")
+    def boxes(self):
+        return _rect_wing(nspan=4, nchord=4, span=self.HALF_SPAN, chord=self.CHORD)
+
+    def _aeros(self, sref, cref):
+        return Aeros(acsid=0, rcsid=0, cref=cref, bref=5.0, sref=sref, symxz=1, symxy=0)
+
+    def test_cl_scales_inversely_with_sref(self, boxes):
+        # Doubling sref should halve CL (same aerodynamic force, double reference area).
+        s_heuristic = sum(b.area for b in boxes)
+        r1 = solve_rigid_cl(boxes, self.ALPHA, parity=1, aeros=self._aeros(sref=s_heuristic,     cref=1.0))
+        r2 = solve_rigid_cl(boxes, self.ALPHA, parity=1, aeros=self._aeros(sref=s_heuristic * 2, cref=1.0))
+        assert r2["CL"] == pytest.approx(r1["CL"] / 2.0, rel=1e-10)
+
+    def test_cm_scales_inversely_with_cref(self, boxes):
+        # Doubling cref should halve CM (same moment, double reference chord in denominator).
+        s_ref = sum(b.area for b in boxes)
+        r1 = solve_rigid_cl(boxes, self.ALPHA, parity=1, aeros=self._aeros(sref=s_ref, cref=1.0))
+        r2 = solve_rigid_cl(boxes, self.ALPHA, parity=1, aeros=self._aeros(sref=s_ref, cref=2.0))
+        assert r2["CM"] == pytest.approx(r1["CM"] / 2.0, rel=1e-10)
+
+    def test_no_aeros_matches_heuristic(self, boxes):
+        # Without aeros the heuristic S_ref = sum(box areas) = half-span area.
+        s_heuristic = sum(b.area for b in boxes)
+        dy = [float(np.linalg.norm(b.bound_b - b.bound_a)) for b in boxes]
+        import numpy as _np
+        colloc_pts = _np.array([b.colloc for b in boxes])
+        span_ref = float(_np.max(_np.ptp(colloc_pts[:, 1:], axis=0))) + _np.mean(dy)
+        c_heuristic = s_heuristic / max(span_ref, 1e-14)
+
+        r_no_aeros = solve_rigid_cl(boxes, self.ALPHA, parity=1)
+        r_aeros    = solve_rigid_cl(boxes, self.ALPHA, parity=1,
+                                    aeros=self._aeros(sref=s_heuristic, cref=c_heuristic))
+        assert r_aeros["CL"] == pytest.approx(r_no_aeros["CL"], rel=1e-10)
+        assert r_aeros["CM"] == pytest.approx(r_no_aeros["CM"], rel=1e-10)
+
+
+# ---------------------------------------------------------------------------
+# A2: Per-surface classification and CL/CY separation
+# ---------------------------------------------------------------------------
+
+class TestPerSurfaceClassification:
+    """Horizontal boxes → lift surface (CL); vertical boxes → sideforce (CY)."""
+
+    def test_horizontal_wing_classified_as_lift(self):
+        boxes = _rect_wing(nspan=4, nchord=4, span=2.5, chord=1.0)
+        result = solve_rigid_cl(boxes, alpha=0.1, parity=1)
+        assert result["per_surface"][1]["surface_type"] == "lift"
+
+    def test_vtp_classified_as_sideforce(self):
+        boxes = _vtp_panel(nspan=4, nchord=4)
+        result = solve_rigid_cl(boxes, alpha=0.0, beta=0.1, parity=0)
+        assert result["per_surface"][10]["surface_type"] == "sideforce"
+
+    def test_vtp_contributes_to_cy_not_cl(self):
+        boxes = _vtp_panel(nspan=4, nchord=4)
+        result = solve_rigid_cl(boxes, alpha=0.0, beta=0.1, parity=0)
+        assert abs(result["CL"]) < 1e-10
+        assert result["CY"] > 0.0
+
+    def test_wing_contributes_to_cl_not_cy(self):
+        boxes = _rect_wing(nspan=4, nchord=4, span=2.5, chord=1.0)
+        result = solve_rigid_cl(boxes, alpha=0.1, parity=1)
+        assert result["CL"] > 0.0
+        assert abs(result["CY"]) < 1e-10
+
+    def test_per_surface_dict_has_required_keys(self):
+        boxes = _rect_wing(nspan=4, nchord=4, span=2.5, chord=1.0)
+        result = solve_rigid_cl(boxes, alpha=0.1, parity=1)
+        entry = result["per_surface"][1]
+        assert set(entry.keys()) >= {"surface_type", "CL", "CY", "CM"}
+
+    def test_per_surface_cl_sums_to_global_cl(self):
+        boxes = _rect_wing(nspan=4, nchord=4, span=2.5, chord=1.0)
+        result = solve_rigid_cl(boxes, alpha=0.1, parity=1)
+        total_cl = sum(v["CL"] for v in result["per_surface"].values())
+        assert total_cl == pytest.approx(result["CL"], rel=1e-10)
+
+
+# ---------------------------------------------------------------------------
+# A3: Moment reference point xref
+# ---------------------------------------------------------------------------
+
+class TestMomentXref:
+    """CM(xref2) = CM(xref1) + CL*(xref2 - xref1)/c_ref."""
+
+    CHORD = 1.0
+    HALF_SPAN = 2.5
+    ALPHA = 0.1
+
+    @pytest.fixture(scope="class")
+    def boxes(self):
+        return _rect_wing(nspan=4, nchord=8, span=self.HALF_SPAN, chord=self.CHORD)
+
+    @pytest.fixture(scope="class")
+    def aeros(self, boxes):
+        return Aeros(
+            acsid=0, rcsid=0,
+            cref=self.CHORD, bref=5.0,
+            sref=sum(b.area for b in boxes),
+            symxz=1, symxy=0,
+        )
+
+    def test_cm_shift_matches_cl_formula(self, boxes, aeros):
+        dx = 0.25
+        r0 = solve_rigid_cl(boxes, self.ALPHA, parity=1, aeros=aeros, xref=0.0)
+        r1 = solve_rigid_cl(boxes, self.ALPHA, parity=1, aeros=aeros, xref=dx)
+        # CM(xref+dx) = CM(xref) + CL*dx/c_ref
+        expected = r0["CM"] + r0["CL"] * dx / aeros.cref
+        assert r1["CM"] == pytest.approx(expected, rel=1e-8)
+
+    def test_default_xref_is_zero(self, boxes, aeros):
+        r_default = solve_rigid_cl(boxes, self.ALPHA, parity=1, aeros=aeros)
+        r_xref0   = solve_rigid_cl(boxes, self.ALPHA, parity=1, aeros=aeros, xref=0.0)
+        assert r_default["CM"] == pytest.approx(r_xref0["CM"], rel=1e-12)

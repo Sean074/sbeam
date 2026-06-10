@@ -10,9 +10,9 @@ BDF file
   ↓ parse_bulk_data()
 BulkData  (bulk.aeros, bulk.caero1s, bulk.paero1s, bulk.aefacts, ...)
   ↓ build_aero_model()
-AeroModel (boxes, ajj, skj, djk, wg, parity)
+AeroModel (boxes, ajj, skj, djk, wg, parity, aeros)
   ↓ solve_rigid_cl() / coupled aeroelastic solve (Phase B+)
-Results   (cp, cl_section, CL, CM, …)
+Results   (cp, cl_section, CL, CY, CM, per_surface, …)
 ```
 
 ### Module map
@@ -231,7 +231,7 @@ Assembles the n×n aerodynamic influence coefficient (AIC) matrix. `A[i, j]` is 
 normalwash at collocation point `i` per unit circulation strength at horseshoe `j`.
 O(n²) loop over all panel pairs.
 
-**`solve_rigid_cl(boxes, alpha, beta=0.0, parity=1) -> dict`**
+**`solve_rigid_cl(boxes, alpha, beta=0.0, parity=1, aeros=None, xref=0.0) -> dict`**
 
 Solves the rigid-wing flow-tangency problem at angle of attack `alpha` and sideslip
 `beta` (both in radians). Boundary condition per panel (ZAERO Eq. 3.28):
@@ -244,11 +244,27 @@ A @ Γ = rhs
 - Horizontal surfaces (n̂ ≈ +Z): loaded by `alpha`, negligible response to `beta`.
 - Vertical surfaces (n̂ ≈ +Y): loaded by `beta`, negligible response to `alpha`.
 
-Returns a dict:
+**Parameters:**
+- `aeros` — optional `Aeros` card; if provided `aeros.sref` is used as S_ref and
+  `aeros.cref` as the reference chord. Without it a heuristic S_ref = Σ(box areas)
+  and c_ref = S_ref/span_ref is used. Always pass `aero_model.aeros` in production.
+- `xref` — x-coordinate of the moment reference point in CID 0 (default 0.0, the
+  coordinate origin). Set to the quarter-MAC x-coordinate for a standard stability-axis
+  CM. The NASTRAN convention (AEROS RCSID = 0) corresponds to xref = 0.
+
+**Surface classification:** each CAERO1 surface is classified from its mean outward
+normal — `|n_z| ≥ |n_y|` → *lift* surface (contributes to CL and CM); `|n_y| > |n_z|`
+→ *sideforce* surface (contributes to CY). This ensures VTP sideforce is not added to
+wing CL on multi-surface models.
+
+**Returns a dict:**
 - `cp`: (n,) pressure coefficient per box — `2Γ / (V∞ × box_chord)`, V∞ = 1
-- `cl_section`: `{i_span: CL_strip}` — per-strip load coefficient via Kutta–Joukowski
-- `CL`: total normal-force coefficient (lift for wings; sideforce for fins)
-- `CM`: pitching moment about x = 0 (nose-up positive)
+- `cl_section`: `{i_span: CL_strip}` — per-strip coefficient via Kutta–Joukowski (all surfaces)
+- `CL`: total lift coefficient — lift surfaces only, normalised by S_ref
+- `CY`: total sideforce coefficient — sideforce surfaces only, normalised by S_ref
+- `CM`: pitching moment about `xref`, nose-up positive; lift surfaces only;
+  normalised by S_ref × c_ref
+- `per_surface`: `{caero_eid: {surface_type, CL, CY, CM}}` — per-CAERO1 coefficients
 
 Note: with `parity=0` (full-span single surface, no image vortex), the VLM solution
 converges to a limit ~5–10% below the Prandtl finite-span formula `2πAR/(AR+2)`. This

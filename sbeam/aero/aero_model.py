@@ -12,10 +12,12 @@ solve (A*⁻¹ @ w) never has to refactor the matrix.
 """
 
 from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
+from sbeam.model.aero import Aeros
 from sbeam.aero.panel import AeroBox, mesh_caero1
 from sbeam.aero.vlm import build_ajj
 from sbeam.aero.integration import build_skj, build_djk, build_wg
@@ -24,13 +26,14 @@ from sbeam.aero.corrections import apply_wkk, apply_wt2, apply_wt1
 
 @dataclass
 class AeroModel:
-    boxes:        list          # list[AeroBox] — all panels across all CAERO1 elements
-    ajj:          np.ndarray    # raw VLM AIC,  shape (n, n)
-    ajj_inv_corr: np.ndarray    # corrected A*⁻¹, shape (n, n)
-    skj:          np.ndarray    # force integration matrix, shape (3n, n)
-    djk:          np.ndarray    # deflection-to-downwash matrix, shape (n, n)
-    wg:           np.ndarray    # baseline normalwash vector, shape (n,)
-    parity:       int           # +1 symmetric / -1 antisymmetric / 0 full-span
+    boxes:        list                # list[AeroBox] — all panels across all CAERO1 elements
+    ajj:          np.ndarray          # raw VLM AIC,  shape (n, n)
+    ajj_inv_corr: np.ndarray          # corrected A*⁻¹, shape (n, n)
+    skj:          np.ndarray          # force integration matrix, shape (3n, n)
+    djk:          np.ndarray          # deflection-to-downwash matrix, shape (n, n)
+    wg:           np.ndarray          # baseline normalwash vector, shape (n,)
+    parity:       int                 # +1 symmetric / -1 antisymmetric / 0 full-span
+    aeros:        Optional[Aeros] = None  # AEROS reference geometry card (sref, cref, bref)
 
 
 def build_aero_model(bulk: BulkData, parity: int = 1) -> AeroModel:
@@ -102,4 +105,5 @@ def build_aero_model(bulk: BulkData, parity: int = 1) -> AeroModel:
         djk=djk,
         wg=wg,
         parity=parity,
+        aeros=bulk.aeros,
     )

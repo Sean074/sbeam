@@ -552,8 +552,11 @@ def _render_aero_tab(bulk: BulkData) -> None:
             aero_model = build_aero_model(bulk, parity=parity)
             alpha_rad = np.radians(alpha_deg)
             beta_rad  = np.radians(beta_deg)
-            result = solve_rigid_cl(aero_model.boxes, alpha_rad,
-                                    beta=beta_rad, parity=parity)
+            result = solve_rigid_cl(
+                aero_model.boxes, alpha_rad,
+                beta=beta_rad, parity=parity,
+                aeros=aero_model.aeros,
+            )
         st.session_state["aero_model"] = aero_model
         st.session_state["aero_result"] = result
 
@@ -563,8 +566,22 @@ def _render_aero_tab(bulk: BulkData) -> None:
     with col_ctrl:
         if aero_result is not None:
             st.metric("CL", f"{aero_result['CL']:.4f}")
+            st.metric("CY", f"{aero_result.get('CY', 0.0):.4f}")
             st.metric("CM", f"{aero_result['CM']:.4f}")
             st.metric("Boxes", len(aero_model.boxes))
+            per_surf = aero_result.get("per_surface", {})
+            if len(per_surf) > 1:
+                rows = []
+                for eid, info in sorted(per_surf.items()):
+                    if info["surface_type"] == "lift":
+                        rows.append({"EID": eid, "Type": "lift",
+                                     "CL": f"{info['CL']:.4f}", "CY": "—",
+                                     "CM": f"{info['CM']:.4f}"})
+                    else:
+                        rows.append({"EID": eid, "Type": "sideforce",
+                                     "CL": "—", "CY": f"{info['CY']:.4f}",
+                                     "CM": "—"})
+                st.table(rows)
 
     with col_fig:
         if aero_model is not None:

@@ -1566,3 +1566,54 @@ and implement sideslip angle β for non-zero sideforce loads.
 - `TestVtpCybConvergence::test_CYb_mesh_convergence`: internal convergence confirmed.
 - `TestAlphaBetaDecoupling::test_wing_zero_cp_at_beta_only`, `test_vtp_zero_cp_at_alpha_only`.
 - **32 tests pass, 0 failures.**
+
+---
+
+## Resolved Defects (Phase A) — A2 + A3: AEROS reference geometry + per-surface breakdown + moment reference ✅ FIXED
+
+**Date resolved:** 2026-06-09
+
+**Root cause (A2):** `solve_rigid_cl` in `sbeam/aero/vlm.py` (lines 167–174) recomputed
+S_ref, span_ref, and c_ref heuristically from the pooled box geometry and never used the
+parsed `AEROS` card. On multi-surface models (wing + HTP + VTP) this summed the area of
+all surfaces together and mixed VTP sideforce into the CL total — physically meaningless.
+
+**Root cause (A3):** CM was taken about x=0 with the heuristic c_ref, not about a defined
+moment reference point normalised by AEROS CREF.
+
+**Root cause (data loss):** `AeroModel` did not carry the `aeros` field, so `bulk.aeros`
+was discarded before `solve_rigid_cl` was called.
+
+**Fix:**
+
+1. **`sbeam/aero/aero_model.py`** — Added `aeros: Optional[Aeros] = None` field to
+   `AeroModel` dataclass; `build_aero_model` now stores `bulk.aeros` in the returned model.
+
+2. **`sbeam/aero/vlm.py`** — Updated `solve_rigid_cl` signature with two new optional
+   parameters: `aeros=None` (provides S_ref and c_ref from the AEROS card when present;
+   falls back to heuristic when None) and `xref=0.0` (moment reference x-coordinate in
+   CID 0; default preserves existing behaviour). Per-surface classification added: each
+   CAERO1 surface is classified by its mean outward normal — `|n_z| ≥ |n_y|` → "lift"
+   (contributes to CL/CM); `|n_y| > |n_z|` → "sideforce" (contributes to CY). Result
+   dict extended with `CY` and `per_surface` keys.
+
+3. **`sbeam/viewer/app.py`** — `solve_rigid_cl` call now passes `aeros=aero_model.aeros`;
+   viewer displays CY metric and a per-surface breakdown table for multi-surface models.
+
+4. **`tests/aero/test_vlm.py`** — Updated two VTP tests that checked `result["CL"]` for
+   sideforce to check `result["CY"]`. Added three new test classes: `TestAerosReferenceGeometry`
+   (CL and CM scale correctly with AEROS sref/cref), `TestPerSurfaceClassification` (surface
+   type, CL/CY separation, per-surface dict), `TestMomentXref` (CM shift formula).
+
+5. **`docs/Aeroelastics.md`** — Updated `solve_rigid_cl` signature and return dict
+   documentation; updated architecture overview to show `aeros` in `AeroModel`.
+
+**Test / Acceptance:**
+- `TestAerosReferenceGeometry`: CL inversely proportional to aeros.sref; CM inversely
+  proportional to aeros.cref; no-aeros result matches heuristic exactly.
+- `TestPerSurfaceClassification`: horizontal wing → "lift" surface in per_surface; VTP →
+  "sideforce" surface; VTP contributes to CY not CL; per-surface CL sums to global CL.
+- `TestMomentXref`: CM(xref+dx) = CM(xref) + CL*dx/c_ref (to rel=1e-8); default xref=0.
+- `TestVtpCybConvergence`: retested with `result["CY"]` — within 10% of Prandtl, internal
+  convergence confirmed.
+- **653 tests pass, 0 failures.**

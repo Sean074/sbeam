@@ -147,6 +147,127 @@ directly — off-by-half-box is a silent, fatal error.
 - Non-unit `Wkk` (1.5 on first box): that box's lift scales by 1.5, others unchanged
 - High-condition-number input triggers a `warnings.warn` (tested with `pytest.warns`)
 
+### [S44] ✅ Viewer — aero box mesh + cp overlay — COMPLETE
+
+### [S45] ✅ VTP Cp bugs + sideslip beta fix — COMPLETE
+
+---
+
+### [S46] Replace `lstsq` AIC inverse with LU factorization
+
+**Files:** `sbeam/aero/aero_model.py:79,87`; `sbeam/aero/corrections.py:40–44`
+
+Both `build_aero_model` and `corrections._solve_ajj` form the explicit AIC inverse via
+`np.linalg.lstsq(ajj, np.eye(n))`. The AIC is square and full-rank; lstsq (SVD-based)
+dominated runtime at ~25 s for the 1232-box airplane model.
+
+**Fix:**
+- Replace the `lstsq` calls in `aero_model.py:79` (WKK branch) and `:87` (no-correction
+  branch) with `np.linalg.solve(ajj_star, np.eye(n))` or `scipy.linalg.lu_factor/lu_solve`.
+- Update `corrections._solve_ajj` similarly.
+- Add a near-singular guard: `np.linalg.cond(ajj) > 1e10` → `UserWarning`.
+
+**Test/Acceptance:** CL / cp on `val_vlm_rect_ar8.bdf` and `airplane_aero.bdf` unchanged
+to ~1e-10 vs the lstsq result; wall-clock on the 1232-box model materially reduced.
+
+---
+
+### [A2+A3] ✅ AEROS reference geometry + per-surface breakdown + moment reference — COMPLETE
+
+**Files:** `sbeam/aero/vlm.py:167–174` (reference-geometry block), `vlm.py:199–201`
+(CM block), `sbeam/aero/vlm.py` (`solve_rigid_cl` signature)
+
+`solve_rigid_cl` recomputes S_ref, span_ref, c_ref heuristically and never uses the
+parsed `AEROS` card. On multi-surface models (wing + HTP + VTP) this mixes lift with VTP
+sideforce over a polluted reference area. CM is taken about x = 0, not the AEROS moment
+reference point.
+
+**Fix:**
+- Pass `aeros: Aeros` into `solve_rigid_cl`; use `aeros.sref`, `aeros.cref`, `aeros.bref`
+  for normalisation.
+- Tag each box with its parent CAERO1 EID. Classify surfaces by normal direction: Y-normal
+  → sideforce (CY), Z-normal → lift (CL). Report per-surface coefficient dict alongside
+  the total.
+- Reference CM about a moment reference point derived from AEROS (e.g. quarter-MAC from
+  `cref`), not x = 0.
+- Update `build_aero_model` to pass `bulk.aeros` through.
+
+**Test/Acceptance:** `airplane_aero.bdf`: wing/HTP CL and VTP CY reported as separate
+entries; VTP contribution does not appear in lift total; CM references the correct moment
+point (round-trip: cm_ref_point = 0 reproduces old value).
+
+---
+
+### [A1] VLM lift-slope systematic under-prediction — root-cause + fix
+
+**Files:** `sbeam/aero/vlm.py` (`horseshoe_influence` lines 56–101, `solve_rigid_cl`)
+
+CL_α is 3–8% below analytical references (Polhamus, lifting-line) and the deficit
+**grows** with mesh refinement on an elliptic planform — this rules out pure
+discretisation error and points to a systematic bias in the induced-downwash kernel
+(trailing system over-predicts downwash at ¾c).
+
+**Fix:**
+- Validate against Katz & Plotkin Table 12-x (rectangular wings, several AR) and the
+  Warren-12 planform (CL_α = 2.743, CM_α = −3.10).
+- Diagnose: compare single-strip limit (strip theory), check trailing-leg semi-infinite
+  start-point (should begin at ¼c, not at the leading edge), verify Biot-Savart trailing
+  kernel against closed-form.
+- Add an elliptic-planform convergence regression test asserting
+  `CL_α → 2π/(1+2/AR) ± 2%` for AR ∈ {6, 8, 10} — this test currently fails and is
+  the acceptance gate.
+
+---
+
+### [A7] Cosine chordwise spacing helper + NCHORD < 4 warning
+
+**Files:** `sbeam/aero/panel.py:67–71` (`mesh_caero1` chord-fraction block);
+`sbeam/aero/aero_model.py` (`build_aero_model` pre-solve checks)
+
+`mesh_caero1` only supports uniform chordwise spacing (linspace); cosine
+LE-concentrated spacing requires a hand-built LCHORD/AEFACT. No warning fires for low
+NCHORD, which produces unconverged pitching moments.
+
+**Fix:**
+- Add `cosine_chord_fractions(n: int) -> list[float]` helper in `panel.py` that returns
+  LE-concentrated cosine breakpoints (NASA SP-405 / DeJarnette), usable as an AEFACT list.
+- Emit `UserWarning` in `build_aero_model` when any CAERO1 has NCHORD < 4.
+
+**Test/Acceptance:** Warning fires for NCHORD = 2; cosine fractions sum to 1.0 and
+values are monotonically LE-concentrated vs uniform; CM convergence with NCHORD
+demonstrated in at least one integration test.
+
+---
+
+### [A8] Box aspect-ratio pre-solve warning
+
+**Files:** `sbeam/aero/aero_model.py` (`build_aero_model`) or `sbeam/aero/panel.py`
+
+After the A8 sample-model fix, box ARs are correct in the shipped BDFs, but no runtime
+warning exists to catch future user models with degenerate box sizing.
+
+**Fix:**
+- After meshing all CAERO1s, compute per-box AR = spanwise edge / chordwise edge.
+- Emit `UserWarning` listing the CAERO1 EID and box count where AR < 0.5 or AR > 2.0.
+
+**Test/Acceptance:** A test model with NSPAN=2/NCHORD=8 (high AR) triggers the warning;
+`airplane_aero.bdf` (mean AR ≈ 0.99) does not.
+
+---
+
+### [A4] Prandtl–Glauert compressibility correction — deferred
+
+All Phase A results are effectively incompressible (M = 0). Prandtl–Glauert scaling
+(`β = √(1−M²)`) is not applied. Document this limitation clearly in
+`docs/Aeroelastics.md` until Phase C TRIM brings a Mach number into scope.
+
+---
+
+### [A6] Trefftz-plane induced drag — future NIT
+
+No CDi or span-efficiency `e` is computed. Add a Trefftz-plane post-processing function
+to `vlm.py` as a future improvement to enable the standard elliptic-loading cross-check.
+
 ---
 
 ## Phase 3 — Dynamic Solvers (full scope in `development_plan_bugs_todo.md`)

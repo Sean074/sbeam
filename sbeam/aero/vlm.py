@@ -14,6 +14,8 @@ All coordinates in global CID 0. Freestream V∞ = 1 in +X direction.
 """
 
 import math
+from collections import defaultdict
+
 import numpy as np
 
 from sbeam.aero.panel import AeroBox
@@ -125,24 +127,37 @@ def build_ajj(boxes: list, parity: int = 1) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
-                   parity: int = 1) -> dict:
+                   parity: int = 1, aeros=None, xref: float = 0.0) -> dict:
     """Solve flow-tangency for a rigid configuration at incidence alpha/beta (radians).
 
     alpha  — angle of attack (rad); loads horizontal surfaces.
     beta   — sideslip angle (rad); loads vertical surfaces (VTP/fins).
+    aeros  — optional Aeros card; if provided, uses aeros.sref for S_ref and
+             aeros.cref for c_ref normalisation. If None, a heuristic reference
+             geometry is derived from the box mesh.
+    xref   — moment reference x-coordinate in CID 0 (default 0.0). CM is about
+             xref, normalised by S_ref × c_ref. Set to the quarter-MAC x-coordinate
+             for a stability-axis CM.
 
     Boundary condition per panel (ZAERO Eq. 3.28):
       rhs[i] = -(V⃗ · n̂_i)  with V⃗ ≈ [1, β, α] for small angles
              = -(α·n_z[i] + β·n_y[i])
 
+    Each CAERO1 surface is classified by its dominant outward normal:
+      |mean n_z| ≥ |mean n_y|  →  "lift"      (horizontal surface; contributes to CL/CM)
+      |mean n_y|  > |mean n_z|  →  "sideforce" (vertical surface; contributes to CY)
+
     Returns a dict with keys:
-      cp          (n,) pressure coefficient per box  (ΔCp = 2Γ / (V∞ · chord_box))
-      cl_section  dict mapping i_span → section load coefficient
-      CL          total normal-force coefficient (lift for wings; sideforce for fins)
-      CM          pitching moment coefficient about x=0 (nose-up positive)
+      cp            (n,) pressure coefficient per box  (ΔCp = 2Γ / (V∞ · chord_box))
+      cl_section    dict mapping i_span → section load coefficient (all surfaces)
+      CL            lift coefficient from horizontal (lift) surfaces
+      CY            sideforce coefficient from vertical (sideforce) surfaces
+      CM            pitching moment coefficient about xref, nose-up positive;
+                    lift surfaces only; normalised by S_ref × c_ref
+      per_surface   dict {caero_eid: {surface_type, CL, CY, CM}}
 
     ``parity`` controls the symmetry image (see module docstring).
-    For parity=-1 the left and right wings cancel and CL = 0 exactly.
+    For parity=-1 the left and right wings cancel and CL = CY = 0 exactly.
     """
     n = len(boxes)
     A = build_ajj(boxes, parity)
@@ -164,16 +179,40 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
     # Pressure coefficient per box: ΔCp = 2Γ / (V∞ · chord_box), V∞ = 1
     cp = 2.0 * gamma / chord_box
 
-    # Reference geometry — use the widest extent across Y and Z to handle
-    # models that mix horizontal (Y-span) and vertical (Z-span) surfaces.
-    S_ref = sum(b.area for b in boxes)
-    colloc_pts = np.array([b.colloc for b in boxes])
-    span_ref = float(np.max(np.ptp(colloc_pts[:, 1:], axis=0))) + dy.mean()
-    if span_ref < _DEGEN_TOL:
-        span_ref = 1.0
-    c_ref = S_ref / span_ref
+    # -----------------------------------------------------------------------
+    # Reference geometry
+    # -----------------------------------------------------------------------
+    if aeros is not None:
+        S_ref = float(aeros.sref)
+        c_ref = float(aeros.cref)
+    else:
+        # Heuristic: total area and mean chord derived from mesh extents
+        S_ref = sum(b.area for b in boxes)
+        colloc_pts = np.array([b.colloc for b in boxes])
+        span_ref = float(np.max(np.ptp(colloc_pts[:, 1:], axis=0))) + dy.mean()
+        if span_ref < _DEGEN_TOL:
+            span_ref = 1.0
+        c_ref = S_ref / span_ref
 
-    # Section CL: group by i_span, use Kutta-Joukowski per strip
+    # -----------------------------------------------------------------------
+    # Per-surface classification: horizontal (lift) vs vertical (sideforce)
+    # -----------------------------------------------------------------------
+    eid_to_indices: dict = defaultdict(list)
+    for i, box in enumerate(boxes):
+        eid_to_indices[box.caero_eid].append(i)
+
+    surfaces: dict = {}
+    for eid, idxs in eid_to_indices.items():
+        mean_abs_normal = np.abs([boxes[i].normal for i in idxs]).mean(axis=0)
+        stype = "lift" if mean_abs_normal[2] >= mean_abs_normal[1] else "sideforce"
+        surfaces[eid] = {"type": stype, "indices": idxs}
+
+    lift_indices = [i for s in surfaces.values() if s["type"] == "lift"  for i in s["indices"]]
+    sf_indices   = [i for s in surfaces.values() if s["type"] == "sideforce" for i in s["indices"]]
+
+    # -----------------------------------------------------------------------
+    # Section loads: group by i_span (all surfaces, for backward compatibility)
+    # -----------------------------------------------------------------------
     strips: dict = {}
     for i, box in enumerate(boxes):
         strips.setdefault(box.i_span, []).append(i)
@@ -186,18 +225,50 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
             chord_strip = 1.0
         cl_section[s] = 2.0 * sum(gamma[i] for i in idxs) / chord_strip
 
-    # Full-span lift: right-half lift via Kutta-Joukowski; left-half = parity × right
-    # CL = (1 + parity) × L_half / (0.5 × V² × S_full)
-    # For parity ∈ {0, 1}: simplifies to 2 × L_half / S_ref
-    # For parity = -1: left cancels right → CL = 0
-    L_half = float(np.dot(gamma, dy))
+    # -----------------------------------------------------------------------
+    # Global CL (lift surfaces), CY (sideforce surfaces), CM (lift, about xref)
+    # -----------------------------------------------------------------------
+    lift_idx = np.array(lift_indices, dtype=int)
+    sf_idx   = np.array(sf_indices,   dtype=int)
+
+    L_lift = float(np.dot(gamma[lift_idx], dy[lift_idx])) if len(lift_idx) else 0.0
+    L_sf   = float(np.dot(gamma[sf_idx],   dy[sf_idx]))   if len(sf_idx)   else 0.0
+
     if parity == -1:
-        CL = 0.0
+        CL = CY = 0.0
     else:
-        CL = 2.0 * L_half / S_ref
+        CL = 2.0 * L_lift / S_ref
+        CY = 2.0 * L_sf   / S_ref
 
-    # Pitching moment about x = 0 (nose-up positive)
-    CM = -sum(cp[i] * boxes[i].area * boxes[i].colloc[0]
-              for i in range(n)) / (S_ref * c_ref)
+    CM = (
+        -sum(cp[i] * boxes[i].area * (boxes[i].colloc[0] - xref) for i in lift_indices)
+        / (S_ref * c_ref)
+    ) if lift_indices else 0.0
 
-    return {"cp": cp, "cl_section": cl_section, "CL": float(CL), "CM": float(CM)}
+    # -----------------------------------------------------------------------
+    # Per-surface coefficients
+    # -----------------------------------------------------------------------
+    per_surface: dict = {}
+    for eid, sinfo in surfaces.items():
+        idxs = sinfo["indices"]
+        idx_arr = np.array(idxs, dtype=int)
+        L_eid = float(np.dot(gamma[idx_arr], dy[idx_arr]))
+        if sinfo["type"] == "lift":
+            cl_eid = (2.0 * L_eid / S_ref) if parity != -1 else 0.0
+            cm_eid = (
+                -sum(cp[i] * boxes[i].area * (boxes[i].colloc[0] - xref) for i in idxs)
+                / (S_ref * c_ref)
+            ) if S_ref * c_ref > _DEGEN_TOL else 0.0
+            per_surface[eid] = {"surface_type": "lift",      "CL": cl_eid, "CY": 0.0,    "CM": cm_eid}
+        else:
+            cy_eid = (2.0 * L_eid / S_ref) if parity != -1 else 0.0
+            per_surface[eid] = {"surface_type": "sideforce", "CL": 0.0,    "CY": cy_eid, "CM": 0.0}
+
+    return {
+        "cp":          cp,
+        "cl_section":  cl_section,
+        "CL":          float(CL),
+        "CY":          float(CY),
+        "CM":          float(CM),
+        "per_surface": per_surface,
+    }
