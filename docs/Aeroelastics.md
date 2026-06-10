@@ -263,7 +263,9 @@ wing CL on multi-surface models.
 - `CL`: total lift coefficient — lift surfaces only, normalised by S_ref
 - `CY`: total sideforce coefficient — sideforce surfaces only, normalised by S_ref
 - `CM`: pitching moment about `xref`, nose-up positive; lift surfaces only;
-  normalised by S_ref × c_ref
+  normalised by S_ref × c_ref. Each box load acts at its **¼-chord bound vortex**
+  (not the ¾-chord collocation point) — the physically correct moment arm.
+  Validated against AVL / VortexLattice.jl (`val_vlm_byu_wing`: CM −0.0209 vs −0.02085).
 - `per_surface`: `{caero_eid: {surface_type, CL, CY, CM}}` — per-CAERO1 coefficients
 
 Note: with `parity=0` (full-span single surface, no image vortex), the VLM solution

@@ -13,7 +13,7 @@ import math
 import pytest
 import numpy as np
 
-from sbeam.model.aero import Aeros, Caero1, Paero1
+from sbeam.model.aero import Aefact, Aeros, Caero1, Paero1
 from sbeam.aero.panel import mesh_caero1
 from sbeam.aero.vlm import biot_savart_seg, horseshoe_influence, build_ajj, solve_rigid_cl
 
@@ -548,3 +548,154 @@ class TestMomentXref:
         r_default = solve_rigid_cl(boxes, self.ALPHA, parity=1, aeros=aeros)
         r_xref0   = solve_rigid_cl(boxes, self.ALPHA, parity=1, aeros=aeros, xref=0.0)
         assert r_default["CM"] == pytest.approx(r_xref0["CM"], rel=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# A1 Diagnostics — root-cause investigation for lift-slope under-prediction
+# ---------------------------------------------------------------------------
+
+def _rect_wing_aefact(nspan: int, nchord: int, half_span: float = 4.0,
+                      chord: float = 1.0, cosine_span: bool = False) -> list:
+    """Rectangular half-span wing; optionally uses cosine spanwise spacing via LSPAN AEFACT."""
+    if not cosine_span:
+        caero = Caero1(
+            eid=1, pid=1, cp=0,
+            nspan=nspan, nchord=nchord, lspan=0, lchord=0, igid=0,
+            p1=(0.0, 0.0, 0.0), x12=float(chord),
+            p4=(0.0, float(half_span), 0.0), x43=float(chord),
+        )
+        return mesh_caero1(caero, PAERO, {}, {})
+    else:
+        # Cosine spacing: eta_k = 0.5*(1 - cos(pi*k/N))
+        eta = 0.5 * (1.0 - np.cos(np.pi * np.linspace(0.0, 1.0, nspan + 1)))
+        aefact = Aefact(sid=99, data=eta.tolist())
+        caero = Caero1(
+            eid=1, pid=1, cp=0,
+            nspan=0, nchord=nchord, lspan=99, lchord=0, igid=0,
+            p1=(0.0, 0.0, 0.0), x12=float(chord),
+            p4=(0.0, float(half_span), 0.0), x43=float(chord),
+        )
+        return mesh_caero1(caero, PAERO, {99: aefact}, {})
+
+
+def _elliptic_boxes(nspan: int, nchord: int = 1, AR: float = 8.0,
+                    cosine_span: bool = True) -> list:
+    """Approximate elliptic half-span planform built from N trapezoidal CAERO1 strips.
+
+    Chord at span fraction eta: c(eta) = c_root * sqrt(1 - eta^2).
+    S = pi/4 * b * c_root  (semi-ellipse), so c_root = 4*S/(pi*b).
+    With b = half_span and choosing S_ref = 1: c_root = 4/(pi * half_span).
+    AR = b_full^2 / S_full = (2*half_span)^2 / (pi/2 * half_span * c_root)
+       = 8*half_span / (pi*c_root)  →  c_root = 8*half_span / (pi*AR)  [full span AR]
+    """
+    half_span = 4.0
+    c_root = 8.0 * half_span / (math.pi * AR)
+
+    if cosine_span:
+        eta_bpts = 0.5 * (1.0 - np.cos(np.pi * np.linspace(0.0, 1.0, nspan + 1)))
+    else:
+        eta_bpts = np.linspace(0.0, 1.0, nspan + 1)
+
+    from sbeam.model.aero import Aefact
+    aefact = Aefact(sid=99, data=eta_bpts.tolist())
+
+    # Chord at each span breakpoint: c(eta) = c_root * sqrt(1 - eta^2)
+    # CAERO1 requires x12 and x43 (root and tip macroelement chord).
+    # We build one trapezoidal CAERO1 per strip using the LSPAN AEFACT.
+    caero = Caero1(
+        eid=1, pid=1, cp=0,
+        nspan=0, nchord=nchord, lspan=99, lchord=0, igid=0,
+        p1=(0.0, 0.0, 0.0), x12=float(c_root),
+        p4=(0.0, float(half_span), 0.0), x43=0.0,
+    )
+    boxes_raw = mesh_caero1(caero, PAERO, {99: aefact}, {})
+
+    # Re-build with correct per-strip chords: rescale each box's corners in X
+    # by c(eta_mid) / c_linear(eta_mid), then recompute bound/colloc.
+    # Simpler: build N separate CAERO1 elements, one per strip.
+    all_boxes = []
+    k = 0
+    for i in range(nspan):
+        eta_lo = float(eta_bpts[i])
+        eta_hi = float(eta_bpts[i + 1])
+        c_lo = float(c_root * math.sqrt(max(0.0, 1.0 - eta_lo ** 2)))
+        c_hi = float(c_root * math.sqrt(max(0.0, 1.0 - eta_hi ** 2)))
+        y_lo = eta_lo * half_span
+        y_hi = eta_hi * half_span
+
+        # Protect against zero-chord tip strip
+        if c_lo < 1e-6 and c_hi < 1e-6:
+            continue
+
+        strip_caero = Caero1(
+            eid=i + 1, pid=1, cp=0,
+            nspan=1, nchord=nchord, lspan=0, lchord=0, igid=0,
+            p1=(0.0, float(y_lo), 0.0), x12=float(c_lo),
+            p4=(0.0, float(y_hi), 0.0), x43=float(c_hi),
+        )
+        strip_boxes = mesh_caero1(strip_caero, PAERO, {}, {}, start_k=k)
+        all_boxes.extend(strip_boxes)
+        k += len(strip_boxes)
+
+    return all_boxes
+
+
+class TestClaConvergenceDiagnostic:
+    """D1–D4 diagnostic suite for A1 root-cause investigation.
+
+    Run with: pytest -k Diagnostic -s
+    These tests always pass — they print a convergence table.
+    """
+
+    ALPHA = 0.01
+
+    def _cla(self, boxes, parity=1):
+        return solve_rigid_cl(boxes, self.ALPHA, parity=parity)["CL"] / self.ALPHA
+
+    def test_D1_nchord_effect_rectangular_AR8(self, capsys):
+        """D1: does increasing nchord depress CLα for fixed nspan?"""
+        target = 2.0 * math.pi * 8 / (8 + 2)
+        print("\n[D1] Rectangular AR=8 half-span CLa vs nspan/nchord")
+        print(f"  Prandtl target = {target:.4f}")
+        for nspan in [4, 8, 16]:
+            for nchord in [1, 2, 4, 8]:
+                boxes = _rect_wing_aefact(nspan, nchord, half_span=4.0, chord=1.0)
+                cla = self._cla(boxes)
+                err_pct = 100.0 * (cla - target) / target
+                print(f"  nspan={nspan:2d} nchord={nchord}  CLa={cla:.4f}  err={err_pct:+.2f}%")
+        assert True
+
+    def test_D2_single_strip_vs_nchord(self, capsys):
+        """D2: single spanwise strip — CLα should equal 2π (strip theory) regardless of nchord."""
+        target_strip = 2.0 * math.pi
+        print("\n[D2] Single-strip (nspan=1) CLa vs nchord  (target=2π)")
+        for nchord in [1, 2, 4, 8, 16]:
+            boxes = _rect_wing_aefact(nspan=1, nchord=nchord, half_span=4.0, chord=1.0)
+            # parity=0: no image, single span strip
+            cla = self._cla(boxes, parity=0)
+            print(f"  nchord={nchord:2d}  CLa={cla:.4f}  (strip theory 2π≈{target_strip:.4f})")
+        assert True
+
+    def test_D3_cosine_vs_uniform_span_rectangular_AR8(self, capsys):
+        """D3: cosine spanwise spacing should give CLα closer to Prandtl than uniform."""
+        target = 2.0 * math.pi * 8 / (8 + 2)
+        print("\n[D3] Rectangular AR=8 uniform vs cosine span spacing (nchord=1)")
+        for nspan in [8, 16, 32]:
+            cla_uniform = self._cla(_rect_wing_aefact(nspan, 1, cosine_span=False))
+            cla_cosine  = self._cla(_rect_wing_aefact(nspan, 1, cosine_span=True))
+            print(f"  nspan={nspan:2d}  uniform CLa={cla_uniform:.4f} ({100*(cla_uniform-target)/target:+.2f}%)"
+                  f"   cosine CLa={cla_cosine:.4f} ({100*(cla_cosine-target)/target:+.2f}%)")
+        assert True
+
+    def test_D4_elliptic_planform_uniform_vs_cosine(self, capsys):
+        """D4: elliptic planform — cosine spacing should hit ±2% of Prandtl."""
+        print("\n[D4] Elliptic planform CLa vs AR and spacing (nchord=1)")
+        for AR in [6, 8, 10]:
+            target = 2.0 * math.pi * AR / (AR + 2)
+            for nspan, label in [(16, "uniform"), (16, "cosine")]:
+                cosine = (label == "cosine")
+                boxes = _elliptic_boxes(nspan=nspan, nchord=1, AR=AR, cosine_span=cosine)
+                cla = self._cla(boxes)
+                err_pct = 100.0 * (cla - target) / target
+                print(f"  AR={AR} {label:8s} nspan={nspan}  CLa={cla:.4f}  err={err_pct:+.2f}%")
+        assert True

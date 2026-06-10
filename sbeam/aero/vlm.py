@@ -153,7 +153,9 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
       CL            lift coefficient from horizontal (lift) surfaces
       CY            sideforce coefficient from vertical (sideforce) surfaces
       CM            pitching moment coefficient about xref, nose-up positive;
-                    lift surfaces only; normalised by S_ref × c_ref
+                    lift surfaces only; normalised by S_ref × c_ref. Each box
+                    load acts at its 1/4-chord bound vortex (not the 3/4-chord
+                    collocation point) — the physically correct moment arm.
       per_surface   dict {caero_eid: {surface_type, CL, CY, CM}}
 
     ``parity`` controls the symmetry image (see module docstring).
@@ -175,6 +177,14 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
         boxes[i].area / dy[i] if dy[i] > _DEGEN_TOL else 1.0
         for i in range(n)
     ])
+
+    # Quarter-chord (bound-vortex) x of each box: the point at which the
+    # Kutta-Joukowski force physically acts, and hence the correct moment arm
+    # for the pitching moment.  Using the 3/4-chord collocation point instead
+    # shifts every box load aft by half a box chord and inflates |CM| by
+    # CL·(½·box_chord)/c_ref — a mesh-dependent bias that vanishes only as
+    # NCHORD→∞.  Validated against AVL/VortexLattice.jl (val_vlm_byu_wing).
+    x_qc = np.array([0.5 * (boxes[i].bound_a[0] + boxes[i].bound_b[0]) for i in range(n)])
 
     # Pressure coefficient per box: ΔCp = 2Γ / (V∞ · chord_box), V∞ = 1
     cp = 2.0 * gamma / chord_box
@@ -241,7 +251,7 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
         CY = 2.0 * L_sf   / S_ref
 
     CM = (
-        -sum(cp[i] * boxes[i].area * (boxes[i].colloc[0] - xref) for i in lift_indices)
+        -sum(cp[i] * boxes[i].area * (x_qc[i] - xref) for i in lift_indices)
         / (S_ref * c_ref)
     ) if lift_indices else 0.0
 
@@ -256,7 +266,7 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
         if sinfo["type"] == "lift":
             cl_eid = (2.0 * L_eid / S_ref) if parity != -1 else 0.0
             cm_eid = (
-                -sum(cp[i] * boxes[i].area * (boxes[i].colloc[0] - xref) for i in idxs)
+                -sum(cp[i] * boxes[i].area * (x_qc[i] - xref) for i in idxs)
                 / (S_ref * c_ref)
             ) if S_ref * c_ref > _DEGEN_TOL else 0.0
             per_surface[eid] = {"surface_type": "lift",      "CL": cl_eid, "CY": 0.0,    "CM": cm_eid}

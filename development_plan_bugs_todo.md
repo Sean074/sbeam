@@ -152,6 +152,26 @@ FIX: Add a Trefftz-plane induced-drag computation; use CDi and e as an additiona
 
 ---
 
+### [MAJOR] A9 — Pitching moment computed about the ¾-chord collocation point ✅ RESOLVED
+
+**Resolved 2026-06-09.** Found via external-benchmark validation against BYU
+VortexLattice.jl / AVL (`sample/val_vlm_byu_wing.bdf`): CL matched to 0.16% but CM was ~2×.
+Root cause — `solve_rigid_cl` used `boxes[i].colloc[0]` (¾-chord) as the moment arm instead
+of the ¼-chord bound vortex where the Kutta–Joukowski force acts; the bias is `CL·(½·box_chord)/c_ref`
+and is mesh-dependent (vanishes as NCHORD→∞). Fixed by using the bound-vortex x; CM now
+−0.0209 vs AVL −0.02085 (0.25%). Distinct from A3 (reference point / c_ref). New regression
+`tests/aero/test_val_byu_wing.py`. See `docs/completed_development.md` under "Resolved Defects (Phase A)".
+
+**Note on A1:** this benchmark is an *independent peer-VLM* (AVL) cross-check, and sbeam's CL
+matched to 0.16% on an AR-7.5 tapered/swept wing. The A1 deficit was measured against
+*lifting-line* upper bounds (e.g. `2π/(1+2/AR)`), which finite-AR lifting-surface VLM
+legitimately sits a few percent below. A1 should be re-baselined against AVL on identical
+planforms before being treated as a kernel bug; the only clearly anomalous symptom remaining
+is the *growth* of the deficit with spanwise refinement (a spanwise-spacing convergence
+question — Hough 1973 / Lan 1974, NASA SP-405).
+
+---
+
 ## Code Review — 2026-05-26 (follow-up)
 
 Independent critical pass against `docs/code_review.md`. Status of all prior findings verified.

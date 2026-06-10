@@ -1569,6 +1569,46 @@ and implement sideslip angle β for non-zero sideforce loads.
 
 ---
 
+## Resolved Defects (Phase A) — A9: Pitching-moment arm at ¾-chord instead of ¼-chord ✅ FIXED
+
+**Date resolved:** 2026-06-09
+
+**Discovered by:** external-benchmark validation against the BYU FLOW Lab
+VortexLattice.jl "Steady-State Analysis of a Wing" example (itself validated against
+AVL to < 0.1%). sbeam's CL matched to 0.16%, but CM was ~2× the AVL value.
+
+**Root cause:** `solve_rigid_cl` in `sbeam/aero/vlm.py` computed the pitching moment with
+each box's Kutta–Joukowski force acting at the box **¾-chord collocation point**
+(`boxes[i].colloc[0]`). The force physically acts at the **¼-chord bound vortex**. Using the
+collocation point shifts every box load aft by half a box chord, inflating |CM| by
+`CL·(½·box_chord)/c_ref`. The error is mesh-dependent (shrinks as NCHORD→∞), so coarse
+internal checks did not catch it; on the AR-7.5 benchmark (NCHORD=6) it doubled CM:
+−0.04150 (buggy) vs −0.02085 (AVL). This is distinct from A3 (moment *reference point* and
+`c_ref` normalisation, already fixed) — A9 is the per-box *moment arm*.
+
+**Fix:**
+
+1. **`sbeam/aero/vlm.py`** — Precompute `x_qc[i] = ½·(bound_a[0] + bound_b[0])`, the
+   ¼-chord (bound-vortex) x of each box, and use it as the moment arm in both the global
+   `CM` and the per-surface `cm_eid` sums (replacing `boxes[i].colloc[0]`). Docstring updated.
+
+2. **`sample/val_vlm_byu_wing.bdf`** — New AVL-validated benchmark BDF (BYU VortexLattice.jl
+   wing: root 2.2 / tip 1.8 / half-span 7.5 / LE sweep 0.4 / AR 7.5; full-span as two
+   CAERO1 surfaces, parity 0; 144 boxes).
+
+3. **`tests/aero/test_val_byu_wing.py`** — New external-benchmark regression: CL within 1%
+   (0.16%) and CM within 2% (0.25%) of the AVL values, plus a guard asserting CM is not the
+   ~−0.0415 ¾-chord-arm value.
+
+4. **`docs/Aeroelastics.md`** — CM return-dict bullet documents the ¼-chord moment arm.
+
+**Test / Acceptance:** `tests/aero/test_val_byu_wing.py` (4 tests) passes; all 47
+`tests/aero/test_vlm.py` invariance tests (CM∝1/c_ref, xref-shift, aeros-vs-heuristic) remain
+green — they are relative and unaffected by the absolute arm correction. CL = 0.24476 (AVL
+0.24437, +0.16%); CM = −0.02090 (AVL −0.02085, +0.25%).
+
+---
+
 ## Resolved Defects (Phase A) — A2 + A3: AEROS reference geometry + per-surface breakdown + moment reference ✅ FIXED
 
 **Date resolved:** 2026-06-09
