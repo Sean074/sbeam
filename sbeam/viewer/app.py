@@ -556,6 +556,7 @@ def _render_aero_tab(bulk: BulkData) -> None:
                 aero_model.boxes, alpha_rad,
                 beta=beta_rad, parity=parity,
                 aeros=aero_model.aeros,
+                mach=aero_model.mach,
             )
         st.session_state["aero_model"] = aero_model
         st.session_state["aero_result"] = result

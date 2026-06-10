@@ -15,7 +15,10 @@ import numpy as np
 
 from sbeam.model.aero import Aefact, Aeros, Caero1, Paero1
 from sbeam.aero.panel import mesh_caero1
-from sbeam.aero.vlm import biot_savart_seg, horseshoe_influence, build_ajj, solve_rigid_cl
+from sbeam.aero.vlm import (
+    biot_savart_seg, horseshoe_influence, build_ajj, solve_rigid_cl,
+    prandtl_glauert_boxes,
+)
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -758,3 +761,60 @@ class TestTrefftzInducedDrag:
         boxes = _rect_wing(nspan=12, nchord=4, span=self.SPAN, chord=self.CHORD)
         r = solve_rigid_cl(boxes, alpha=0.0, parity=1)
         assert abs(r["CDi"]) < 1e-12
+
+
+# ---------------------------------------------------------------------------
+# Prandtl–Glauert / Göthert compressibility correction
+# ---------------------------------------------------------------------------
+
+class TestPrandtlGlauert:
+    """Tests for prandtl_glauert_boxes() and the mach= parameter of solve_rigid_cl."""
+
+    SPAN  = 5.0
+    CHORD = 1.0
+
+    def _wing(self, nspan: int = 10, nchord: int = 2) -> list:
+        return _rect_wing(nspan=nspan, nchord=nchord, span=self.SPAN, chord=self.CHORD)
+
+    def test_pg_boxes_identity_at_mach0(self):
+        boxes = self._wing()
+        result = prandtl_glauert_boxes(boxes, 0.0)
+        assert result is boxes
+
+    def test_pg_boxes_compress_y(self):
+        boxes = self._wing()
+        mach = 0.6
+        beta = math.sqrt(1.0 - mach ** 2)
+        pg = prandtl_glauert_boxes(boxes, mach)
+        # bound_a y-coordinate must be compressed by β
+        for orig, scaled in zip(boxes, pg):
+            assert scaled.bound_a[1] == pytest.approx(beta * orig.bound_a[1])
+            assert scaled.bound_b[1] == pytest.approx(beta * orig.bound_b[1])
+            assert scaled.colloc[1]  == pytest.approx(beta * orig.colloc[1])
+            # x-coordinate must be unchanged
+            assert scaled.bound_a[0] == pytest.approx(orig.bound_a[0])
+            # area scales by β
+            assert scaled.area == pytest.approx(beta * orig.area)
+            # normal direction preserved
+            np.testing.assert_allclose(scaled.normal, orig.normal, atol=1e-14)
+
+    def test_pg_correction_increases_cl(self):
+        # Prandtl–Glauert: CL_comp > CL_incomp for M > 0
+        boxes = self._wing(nspan=12, nchord=2)
+        alpha = math.radians(5.0)
+        mach  = 0.6
+        beta  = math.sqrt(1.0 - mach ** 2)
+        CL_0 = solve_rigid_cl(boxes, alpha, mach=0.0, parity=1)["CL"]
+        CL_m = solve_rigid_cl(boxes, alpha, mach=mach,  parity=1)["CL"]
+        assert CL_m > CL_0
+        # 3-D correction bounded between 1 and the 2-D limit 1/β
+        ratio = CL_m / CL_0
+        assert 1.0 < ratio < 1.0 / beta
+
+    def test_pg_mach_limit_capped(self):
+        # mach=0.995 must not raise and must return a finite CL
+        boxes = self._wing()
+        alpha = math.radians(3.0)
+        result = solve_rigid_cl(boxes, alpha, mach=0.995, parity=1)
+        assert math.isfinite(result["CL"])
+        assert result["CL"] > 0.0

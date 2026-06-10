@@ -123,6 +123,40 @@ def build_ajj(boxes: list, parity: int = 1) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
+# Prandtl–Glauert / Göthert compressibility correction
+# ---------------------------------------------------------------------------
+
+def prandtl_glauert_boxes(boxes: list, mach: float) -> list:
+    """Return copies of boxes with y,z scaled by β = √(1−M²) (Göthert compression).
+
+    The compressible AIC is built on the compressed geometry; the caller must
+    then scale the resulting AIC inverse by 1/β to recover physical pressures
+    (see §2.8 of docs/20_theory/01_aeroelastics_theory.md, Eq. 14).
+
+    Returns the original list unchanged when mach ≤ 0 (incompressible).
+    Mach is capped at 0.99 to avoid β → 0 singularity near M = 1.
+    """
+    if mach <= 0.0:
+        return boxes
+    beta = math.sqrt(1.0 - min(mach, 0.99) ** 2)
+    if abs(beta - 1.0) < 1e-10:
+        return boxes
+    from copy import copy
+    scale_yz = np.array([1.0, beta, beta])
+    scaled = []
+    for b in boxes:
+        s = copy(b)
+        s.bound_a = b.bound_a * scale_yz
+        s.bound_b = b.bound_b * scale_yz
+        s.colloc  = b.colloc  * scale_yz
+        s.corners = b.corners * scale_yz   # shape (4,3); broadcasts over rows
+        s.area    = b.area * beta
+        # unit normal direction is invariant under uniform y,z scaling
+        scaled.append(s)
+    return scaled
+
+
+# ---------------------------------------------------------------------------
 # Rigid-wing solver
 # ---------------------------------------------------------------------------
 
@@ -215,11 +249,14 @@ def trefftz_cdi(
 
 
 def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
-                   parity: int = 1, aeros=None, xref: float = 0.0) -> dict:
+                   parity: int = 1, aeros=None, xref: float = 0.0,
+                   mach: float = 0.0) -> dict:
     """Solve flow-tangency for a rigid configuration at incidence alpha/beta (radians).
 
     alpha  — angle of attack (rad); loads horizontal surfaces.
     beta   — sideslip angle (rad); loads vertical surfaces (VTP/fins).
+    mach   — freestream Mach number; Prandtl–Glauert / Göthert correction applied
+             when > 0 (see §2.8 of docs/20_theory/01_aeroelastics_theory.md).
     aeros  — optional Aeros card; if provided, uses aeros.sref for S_ref and
              aeros.cref for c_ref normalisation. If None, a heuristic reference
              geometry is derived from the box mesh.
@@ -252,11 +289,13 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
     For parity=-1 the left and right wings cancel and CL = CY = 0 exactly.
     """
     n = len(boxes)
-    A = build_ajj(boxes, parity)
+    beta_pg = math.sqrt(1.0 - min(mach, 0.99) ** 2) if mach > 0.0 else 1.0
+    A = build_ajj(prandtl_glauert_boxes(boxes, mach), parity)
 
     # Flow-tangency: rhs[i] = -(alpha*n_z + beta*n_y) per panel
     rhs = np.array([-(alpha * b.normal[2] + beta * b.normal[1]) for b in boxes])
     gamma = np.linalg.solve(A, rhs)
+    gamma /= beta_pg   # Göthert boundary-condition scaling (§2.8 Eq. 14)
 
     # Spanwise width of each box (used for Kutta-Joukowski lift)
     dy = np.array([float(np.linalg.norm(b.bound_b - b.bound_a)) for b in boxes])

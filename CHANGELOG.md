@@ -13,6 +13,16 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Phase A — Prandtl–Glauert compressibility correction (A4)**
+- `AEROS` card now accepts optional field 8 `MACH` (sbeam extension; default 0.0). Specifying
+  a Mach number triggers the Göthert similarity correction: panel y,z coordinates are
+  compressed by β = √(1−M²) before AIC assembly, and the inverted AIC is scaled by 1/β,
+  giving the correct subsonic compressible pressure distribution (§2.8 of theory doc, Eq. 14).
+  M = 0.0 gives bit-identical results to the incompressible solver; Mach is capped at 0.99.
+- `solve_rigid_cl` and `build_aero_model` both accept `mach=` and apply the correction.
+- 4 new tests in `TestPrandtlGlauert` verify identity at M=0, y-compression, CL increase
+  bounded by 1/β, and the M=0.99 cap.
+
 **Phase A — Steady VLM Aeroelastics (Steps 39–46)**
 - `AEROS` card — reference geometry (`cref`, `bref`, `sref`) and symmetry flags (`symxz`,
   `symxy`); enforces CAERO1-without-AEROS validation at parse time.

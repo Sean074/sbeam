@@ -27,17 +27,6 @@ half-surfaces, parity=0; references documented in the header).
 
 ---
 
-### [MINOR] A4 — No subsonic compressibility (Prandtl–Glauert) correction
-
-**Files:** `sbeam/aero/vlm.py`, `sbeam/model/aero.py`
-
-```
-[MINOR] "Subsonic" is in scope but Mach is never applied — no Prandtl–Glauert β=√(1−M²)
-        scaling of the AIC or the geometry. All results are effectively incompressible (M=0).
-FIX: Add a Mach input (TRIM/AEROS context) and apply the PG transformation. Document the
-        M=0 assumption until then.
-```
-
 ---
 
 ### [MINOR] A5 — Aero model is reachable only from the viewer; aero cards inert under the solver

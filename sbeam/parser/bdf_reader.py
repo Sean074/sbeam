@@ -434,9 +434,11 @@ def _handle_aeros(fields: list, bulk: BulkData) -> None:
     sref  = _to_float(fields[5])   if len(fields) > 5 else 0.0
     symxz = _to_int_opt(fields[6]) if len(fields) > 6 else 0
     symxy = _to_int_opt(fields[7]) if len(fields) > 7 else 0
+    # Field 8 is an sbeam extension; NASTRAN AEROS has no MACH field.
+    mach  = _to_float(fields[8])   if len(fields) > 8 else 0.0
     bulk.aeros = Aeros(
         acsid=acsid, rcsid=rcsid, cref=cref, bref=bref,
-        sref=sref, symxz=symxz, symxy=symxy,
+        sref=sref, symxz=symxz, symxy=symxy, mach=mach,
     )
 
 

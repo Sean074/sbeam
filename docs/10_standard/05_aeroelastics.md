@@ -399,24 +399,33 @@ class AeroModel:
 
 ---
 
-## Known Limitations
+## Implementation Notes
 
-### Prandtl–Glauert Compressibility Correction (deferred — Phase C)
+### Prandtl–Glauert / Göthert Compressibility Correction
 
-Phase A operates at M = 0 (incompressible). Prandtl–Glauert scaling is **not applied**:
+Subsonic compressibility is corrected via the **Göthert similarity rule** (see
+`docs/20_theory/01_aeroelastics_theory.md` §2.8). The implementation compresses
+the aerodynamic panel geometry in the spanwise and vertical directions by
+β = √(1 − M²) before building the AIC, then scales the inverted AIC by 1/β:
 
 ```
-CL_incomp = 2π α        →    CL_comp = CL_incomp / β,   β = √(1 − M²)
+Ajj_pg⁻¹ = (1/β) · Ajj(β · geometry)⁻¹
 ```
 
-All lift slopes, AIC matrices, and correction factors are computed and stored for
-M = 0 only. For low-speed applications (M < 0.3) the incompressible assumption
-introduces less than 5% error. At higher subsonic Mach numbers users must apply
-the correction manually by scaling CL results by `1/β`.
+**Input:** Mach is supplied via field 8 of the `AEROS` bulk-data card — an sbeam
+extension (`mach=0.0` default, incompressible). Example:
 
-This limitation will be lifted in Phase C (TRIM / flutter) when a Mach number enters
-the analysis scope. At that point `build_aero_model` will accept a `mach` argument and
-scale the AIC matrix before inversion.
+```
+AEROS, 0, 0, 2.0, 10.0, 20.0, 1, 0, 0.6
+```
+
+**Key design decisions:**
+- `skj`, `djk`, and `wg` are built from the **physical** (unscaled) boxes — only
+  the AIC computation uses the PG-compressed geometry.
+- Mach is capped at 0.99; no transonic or supersonic correction is applied.
+- M = 0.0 (default) gives bit-identical results to the pre-correction solver.
+- For M < 0.3 the correction is < 5% (within typical VLM modelling error); it can
+  be omitted for low-speed work.
 
 ---
 

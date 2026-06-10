@@ -51,6 +51,8 @@ throughout.
 | $\{f_g\}$ | structural load from the baseline incidence $w_g$ |
 | $\Phi$ | retained free-vibration mode matrix (SOL 103) |
 | $q_\text{div}$ | divergence dynamic pressure |
+| $M$ | freestream Mach number |
+| $\beta_{PG} = \sqrt{1-M^2}$ | Prandtl–Glauert compressibility factor |
 
 Subscripts follow the NASTRAN aero degree-of-freedom sets: $j$ = aerodynamic pressure
 (collocation) points, $k$ = aerodynamic box (load) points, $g$ = structural grid DOF,
@@ -122,8 +124,8 @@ $$
 \tag{3}
 $$
 
-with the disturbance vanishing far from the surface. (Subsonic compressibility enters through
-the Prandtl–Glauert scaling $x \to x/\beta$, $\beta=\sqrt{1-M^2}$; at $M=0$, $\beta=1$.) A thin
+with the disturbance vanishing far from the surface. (Subsonic compressibility is handled by
+the Göthert transformation — see §2.8.) A thin
 lifting surface is modelled not by its thickness but by a vortex sheet that supports a pressure
 jump. The physical condition is **flow tangency**: the total velocity normal to the surface is
 zero,
@@ -289,6 +291,87 @@ fin at zero sideslip.
 These rigid results — convergence of $C_{L\alpha}$ with mesh refinement, and decoupled
 $\alpha$/$\beta$ loading of horizontal and vertical surfaces — are the standalone
 validation of Phase A, before any structure is attached.
+
+---
+
+### 2.8 Prandtl–Glauert / Göthert subsonic compressibility correction
+
+The incompressible Biot–Savart VLM is exact only at $M=0$. For subsonic
+compressible flow the linearised velocity-potential equation is
+
+$$
+(1-M^2)\,\phi_{xx} + \phi_{yy} + \phi_{zz} = 0 .
+\tag{11}
+$$
+
+The **Göthert similarity rule** (NACA TM-1105, 1948) shows that (11) maps to
+the incompressible Laplace equation under the affine transformation
+
+$$
+\bar x = x,\quad \bar y = \beta_{PG}\,y,\quad \bar z = \beta_{PG}\,z,
+\qquad \beta_{PG} = \sqrt{1-M^2} .
+\tag{12}
+$$
+
+The physical wing (span $b$, chord $c$) maps to a **compressed** wing with span
+$\beta_{PG}\,b$ in the incompressible equivalent space. The flow-tangency
+boundary condition transforms to
+
+$$
+\left.\frac{\partial\phi}{\partial\bar z}\right|_{\bar z=0}
+= \frac{U_\infty\,\alpha}{\beta_{PG}} ,
+\tag{13}
+$$
+
+so the effective angle of attack in the compressed problem is $\alpha/\beta_{PG}$.
+The pressure coefficient is unchanged under the transformation
+($C_p = -2\,\phi_x/U_\infty$ in both spaces), so the **compressible** $C_p$ on
+the physical wing equals the **incompressible** $C_p$ on the compressed wing
+solved with the enhanced boundary condition.
+
+Combining, the corrected AIC inverse for the physical wing is
+
+$$
+\boxed{
+[A_{jj}]^{-1}_\text{PG}
+= \frac{1}{\beta_{PG}}\;[A_{jj}(\beta_{PG}\cdot\text{geom})]^{-1}
+}
+\tag{14}
+$$
+
+where $[A_{jj}(\beta_{PG}\cdot\text{geom})]$ is the AIC built on the
+compressed geometry ($y\to\beta_{PG}\,y$, $z\to\beta_{PG}\,z$) and the
+$1/\beta_{PG}$ factor accounts for the boundary-condition scaling in (13).
+
+**2-D limit check.** As $\mathrm{AR} \to\infty$ the compressed wing also has
+infinite AR, so $C_{L,\text{incomp}} = 2\pi\alpha$; after the $1/\beta_{PG}$
+prefactor, $C_{L,\text{comp}} = 2\pi\alpha/\beta_{PG}$ — the classical 2-D
+Prandtl–Glauert result. ✓
+
+**3-D finite wings.** The correction is bounded between $1$ and $1/\beta_{PG}$:
+for $M=0.6$ ($\beta_{PG}=0.8$) on an $\mathrm{AR}=8$ rectangular wing the ratio
+$C_L^{\text{comp}}/C_L^{\text{incomp}} \approx 1.18$ versus the 2-D limit
+$1/0.8=1.25$ — consistent with reduced 3-D compressibility enhancement. The span
+compression reduces the effective AR, which partially offsets the 2-D correction.
+
+**Unit-normal invariance.** Under the uniform $(\bar y, \bar z)$ scaling the
+panel edge tangent vectors scale by $\beta_{PG}$ identically in both lateral
+directions; the cross-product direction (the panel normal) is unchanged.
+`AeroBox.normal` is therefore **not** recomputed for the PG geometry.
+The area scales by $\beta_{PG}$, but the force-integration matrix $[S_{kj}]$ and
+the deflection–downwash matrix $[D_{jk}]$ are built from the **physical** (unscaled)
+boxes — the correction affects only the AIC, not the structural coupling geometry.
+
+**Validity.** The rule is linear and subsonic: $M < 1$ strictly, and accuracy
+degrades as $M \to 1$ where non-linear transonic effects dominate. sbeam caps
+the input at $M = 0.99$ ($\beta_{PG} \ge 0.14$) and does not apply any transonic
+or supersonic correction. For $M < 0.3$ the correction is $< 5\%$ (less than
+typical VLM modelling error) and can be omitted.
+
+**Input.** Mach is supplied via field 8 of the `AEROS` bulk-data card — an
+sbeam extension not present in NASTRAN (where Mach lives on the `TRIM` card).
+Default is $M = 0$ (incompressible, $\beta_{PG} = 1$), giving identical results
+to the uncorrected solver.
 
 ---
 
@@ -862,7 +945,9 @@ beam-element stiffness and mass derivations are in `docs/20_theory/00_beam_metho
 ## 9. Assumptions and limitations
 
 - **Subsonic, inviscid, linear** potential flow; no transonic shocks, no viscous/separated
-  flow except as captured through the CFD/WT correction.
+  flow except as captured through the CFD/WT correction. Prandtl–Glauert / Göthert
+  compressibility correction is applied for $0 \le M < 1$ via the `AEROS MACH` field (§2.8);
+  transonic and supersonic corrections are not implemented.
 - **Flat lifting surfaces only**; camber/twist/incidence enter through the $w_g$ boundary
   condition, not panel geometry. No interference/slender bodies.
 - **Steady ($k=0$)** aerodynamics and steady corrections for trim and divergence; **maneuver
@@ -884,6 +969,13 @@ beam-element stiffness and mass derivations are in `docs/20_theory/00_beam_metho
 - Margason, R. J., Lamar, J. E., *Vortex-Lattice FORTRAN Program for Estimating Subsonic
   Aerodynamic Characteristics of Complex Planforms*, NASA SP-405, 1976.
 - Katz, J., Plotkin, A., *Low-Speed Aerodynamics*, 2nd ed., Cambridge, 2001 (Ch. 12).
+
+**Subsonic compressibility**
+- Göthert, B., *Plane and Three-Dimensional Flow at High Subsonic Speeds (Application of
+  the Prandtl Rule)*, NACA TM-1105, 1948.
+- Anderson, J. D., *Modern Compressible Flow*, 3rd ed., McGraw-Hill, §9.3 (Prandtl–Glauert
+  rule) and §14.3 (Göthert's rule for 3-D lifting surfaces).
+- ZONA Technology, *ZAERO Theoretical Manual*, 3rd ed., §3 (subsonic ZONA6 AIC method).
 
 **AIC corrections (CFD / wind-tunnel matching)**
 - Pitt, D. M., Goodman, C. E. — downwash-weighting (pressure-matching) method.

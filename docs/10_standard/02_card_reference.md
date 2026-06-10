@@ -737,7 +737,7 @@ coefficients, and the symmetry condition for the VLM.
 
 **Format:**
 ```
-AEROS  ACSID  RCSID  CREF  BREF  SREF  SYMXZ  SYMXY
+AEROS  ACSID  RCSID  CREF  BREF  SREF  SYMXZ  SYMXY  [MACH]
 ```
 
 **Fields:**
@@ -751,14 +751,19 @@ AEROS  ACSID  RCSID  CREF  BREF  SREF  SYMXZ  SYMXY
 | SREF | `sref` | float | Reference area — full area | required |
 | SYMXZ | `symxz` | int | +1 symmetric about XZ plane, −1 antisymmetric, 0 no symmetry | `0` |
 | SYMXY | `symxy` | int | +1 symmetric about XY plane, −1 antisymmetric, 0 no symmetry | `0` |
+| MACH | `mach` | float | **sbeam extension** — freestream Mach number for Prandtl–Glauert / Göthert compressibility correction (§2.8 of theory doc). Omit or set to 0.0 for incompressible. Capped at 0.99; must be subsonic. | `0.0` |
+
+> **Note:** The MACH field (field 8) is an sbeam extension. The NASTRAN AEROS card has no MACH field; in MSC Nastran, Mach appears on the TRIM card (Phase C).
 
 One AEROS card per model. A second card raises `ValueError("Duplicate AEROS card")`.
 CAERO1 cards without an AEROS card raise `ValueError("CAERO1 card(s) present but no AEROS card found")`.
 
 **Examples:**
 ```
-$ Half-span symmetric wing: chord=2.0, span=10.0, area=20.0
+$ Half-span symmetric wing: chord=2.0, span=10.0, area=20.0 — incompressible
 AEROS, 0, 0, 2.0, 10.0, 20.0, 1, 0
+$ Same wing at M=0.6 (Prandtl–Glauert correction active)
+AEROS, 0, 0, 2.0, 10.0, 20.0, 1, 0, 0.6
 $ Full-span antisymmetric (rolling) analysis
 AEROS, 0, 0, 2.0, 10.0, 20.0, -1, 0
 ```

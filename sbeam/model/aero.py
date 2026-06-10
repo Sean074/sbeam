@@ -10,6 +10,7 @@ class Aeros:
     sref:  float  # reference area
     symxz: int    # +1 = symmetric about XZ plane, -1 = antisymmetric, 0 = none
     symxy: int    # +1 = symmetric about XY plane, -1 = antisymmetric, 0 = none
+    mach:  float = 0.0  # sbeam extension: Mach for Prandtl–Glauert correction (field 8)
 
 
 @dataclass

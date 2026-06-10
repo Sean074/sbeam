@@ -1748,24 +1748,44 @@ model). Replacing it with `np.linalg.solve` (LU-based) reduces cost substantiall
 
 ---
 
-## Phase A — A4: Prandtl–Glauert Compressibility Correction — Deferred and Documented ✅ COMPLETE
+## Phase A — A4: Prandtl–Glauert / Göthert Compressibility Correction ✅ COMPLETE
 
-**Date:** 2026-06-09
+**Date:** 2026-06-10
 
-**Objective:** Formally document that Phase A operates at M = 0 (incompressible) and that
-Prandtl–Glauert scaling (`β = √(1−M²)`) is not applied.
+**Objective:** Add subsonic compressibility correction to the VLM via the Göthert similarity
+rule: compress panel geometry by β = √(1−M²) before building the AIC, then scale the inverted
+AIC by 1/β. Expose Mach via an sbeam extension field on the AEROS card.
 
 **Deliverables:**
-- `docs/10_standard/05_aeroelastics.md` — new "Known Limitations" section added before the Viewer tab
-  section, documenting the M = 0 assumption, the error magnitude at M > 0.3, the manual
-  workaround (scale CL by `1/β`), and the planned Phase C hook for `build_aero_model`.
-- `todo.md` — A4 block removed.
+- `sbeam/model/aero.py` — `Aeros.mach: float = 0.0` field added (sbeam extension, field 8).
+- `sbeam/parser/bdf_reader.py` — `_handle_aeros()` parses optional field 8 as `mach`.
+- `sbeam/aero/vlm.py` — new `prandtl_glauert_boxes(boxes, mach)` helper; `solve_rigid_cl`
+  accepts `mach=` and applies PG before the AIC solve.
+- `sbeam/aero/aero_model.py` — `build_aero_model` applies PG boxes for AIC, scales
+  `ajj_inv_corr` by 1/β; `AeroModel.mach` field added.
+- `sbeam/viewer/app.py` — passes `mach=aero_model.mach` to `solve_rigid_cl`.
+- `tests/aero/test_vlm.py` — 4 new tests in `TestPrandtlGlauert` (identity at M=0, y
+  compression, CL increase bounded by 1/β, M=0.995 cap).
+- `docs/10_standard/02_card_reference.md` — AEROS MACH field documented.
+- `docs/10_standard/05_aeroelastics.md` — "Known Limitations / deferred" replaced with
+  "Implementation Notes" describing the Göthert approach.
+- `docs/20_theory/01_aeroelastics_theory.md` — new §2.8 deriving the Göthert transform
+  (Eq. 14); §2.1 cross-reference updated; §9 and §10 (references) updated.
+
+**Test/Acceptance:**
+- 128 aero tests pass (124 pre-existing + 4 new); M=0.0 gives bit-identical results to
+  the pre-correction solver.
+- `test_pg_correction_increases_cl`: CL at M=0.6 is greater than at M=0 and less than
+  the 2-D PG bound of 1/β, confirming physically correct 3-D correction.
 
 **Key decisions:**
-- No code change is needed or appropriate: the incompressible assumption is correct for all
-  current Phase A use cases (M < 0.3). A `mach` parameter wired into `build_aero_model`
-  will be the Phase C implementation hook; adding it now would be unused scaffolding.
-- Deferred to Phase C (TRIM / flutter) when a Mach number formally enters the analysis scope.
+- Göthert geometry compression (y,z by β) chosen over a simple 1/β AIC scaling: more
+  physically correct for 3-D planform effects and consistent with VortexLattice.jl /
+  ZAERO ZONA6 approach.
+- Mach placed on `AEROS` field 8 (sbeam extension) rather than a new TRIM card; TRIM is
+  deferred to Phase C. Default mach=0.0 keeps full backward compatibility.
+- β capped at 0.99 (not 1.0) to avoid division-by-zero near M=1.
+- `skj`, `djk`, `wg` built from physical (unscaled) boxes — only the AIC uses PG geometry.
 
 ---
 
