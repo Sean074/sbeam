@@ -29,8 +29,8 @@ Complete before reading a single line of diff:
 - [ ] Read the PR description / commit message — understand the *intent*, not just the change.
 - [ ] Read the relevant `docs/` file for every module touched (see table in CLAUDE.md).
 - [ ] Confirm the diff includes documentation updates (`docs/`) if code changed. Flag immediately if absent.
-- [ ] Check `development_plan_bugs_todo.md` — does this PR close a known bug, or introduce a pattern already flagged there?
-- [ ] Confirm `docs/completed_development.md` was updated if a step is marked complete.
+- [ ] Check `docs/30_future/00_backlog.md` — does this PR close a known bug, or introduce a pattern already flagged there?
+- [ ] Confirm `docs/40_history/00_completed_development.md` was updated if a step is marked complete.
 - [ ] Confirm tests exist for new or changed functions in `assembly/`, `solver/`, or `parser/`.
 - [ ] Identify any function whose signature or return shape changed in `assembly/` or `solver/` — these are high-blast-radius changes.
 
@@ -44,14 +44,14 @@ Complete before reading a single line of diff:
 
 Check:
 
-- `docs/sbeam.md` — any structural change to the module layout, workflow, or supported card set must be reflected.
-- `docs/Beam_model.md` — any new or removed BDF card, dataclass field, or data model change must appear here.
-- `docs/Static_analysis.md` — any change to SOL 101 assembly, load application, SPC enforcement, or results output must be reflected.
-- `docs/Modal_analysis.md` — any change to SOL 103 mass assembly, eigensolver call, or mode normalisation must be reflected.
-- `docs/viewer.md` — any UI control added, removed, or renamed must be reflected.
-- `docs/Methods.ipynb` — algorithm derivations must stay consistent with implemented formulations.
-- `docs/completed_development.md` — updated if a development step is completed.
-- `development_plan_bugs_todo.md` — updated if a bug is resolved or a step is closed.
+- `docs/10_standard/00_program_overview.md` — any structural change to the module layout, workflow, or supported card set must be reflected.
+- `docs/10_standard/01_beam_model.md` — any new or removed BDF card, dataclass field, or data model change must appear here.
+- `docs/10_standard/03_static_analysis.md` — any change to SOL 101 assembly, load application, SPC enforcement, or results output must be reflected.
+- `docs/10_standard/04_modal_analysis.md` — any change to SOL 103 mass assembly, eigensolver call, or mode normalisation must be reflected.
+- `docs/10_standard/06_viewer.md` — any UI control added, removed, or renamed must be reflected.
+- `docs/20_theory/00_beam_methods.ipynb` — algorithm derivations must stay consistent with implemented formulations.
+- `docs/40_history/00_completed_development.md` — updated if a development step is completed.
+- `docs/30_future/00_backlog.md` — updated if a bug is resolved or a step is closed.
 
 **Raise as CRITICAL** if documentation was not updated. Do not approve the PR until docs are in sync.
 
@@ -62,7 +62,7 @@ Check:
 The parser (`parser/bdf_reader.py`) is the model gateway. Errors here corrupt every downstream result.
 
 - [ ] Every supported card in CLAUDE.md has a corresponding parser branch. Any card not in the supported list must either raise a clear warning or be silently skipped — never silently accepted with wrong field counts.
-- [ ] Field indices are zero-based free-format or fixed 8-column NASTRAN format — verify the field-slicing logic matches the card definition in `docs/Beam_model.md`.
+- [ ] Field indices are zero-based free-format or fixed 8-column NASTRAN format — verify the field-slicing logic matches the card definition in `docs/10_standard/01_beam_model.md`.
 - [ ] Integer IDs (GID, EID, PID, MID, SID) are stored as `int`, not `str`. Mixed types break dictionary lookups silently.
 - [ ] `BulkData` container stores each card type in its dedicated dict/list — verify no card is appended to the wrong collection.
 - [ ] INCLUDE file resolution: confirm the parser resolves the path relative to the main BDF file, not the current working directory.
@@ -83,13 +83,13 @@ Assembly errors in `assembly/stiffness.py` and `assembly/mass_matrix.py` are the
 
 **Element Stiffness (CBAR / `assembly/stiffness.py`)**
 
-- [ ] The 12×12 local stiffness matrix follows Euler-Bernoulli beam theory (no shear terms). Verify against `docs/Methods.ipynb` for A, I1, I2, J coupling.
+- [ ] The 12×12 local stiffness matrix follows Euler-Bernoulli beam theory (no shear terms). Verify against `docs/20_theory/00_beam_methods.ipynb` for A, I1, I2, J coupling.
 - [ ] The transformation matrix T is 12×12 (block-diagonal of two 6×6 rotation matrices). Verify `K_global = T.T @ K_local @ T`.
 - [ ] Element length `L` is computed from grid coordinates **after** CORD2R transformation to CID 0 — not from raw BDF coordinates when `CP != 0`.
 
 **Consistent Mass Matrix (`assembly/mass_matrix.py`)**
 
-- [ ] Consistent mass uses the same shape functions as the stiffness. Verify the 12×12 element mass entries against the analytical form in `docs/Methods.ipynb`.
+- [ ] Consistent mass uses the same shape functions as the stiffness. Verify the 12×12 element mass entries against the analytical form in `docs/20_theory/00_beam_methods.ipynb`.
 - [ ] CONM2 offset vector must be expressed in CID 0 before adding the 6×6 offset inertia contribution. Verify the parallel-axis theorem application.
 - [ ] RBE3 does not add mass — it only distributes loads/DOFs. Confirm `mass_matrix.py` makes no mass contribution for RBE3 elements.
 
@@ -261,7 +261,7 @@ A PR may be approved **only** when:
 - [ ] `pytest tests/ -v` passes with no failures.
 - [ ] All four closed-form verification cases pass (cantilever static, simply-supported static, cantilever frequency, free-free modes).
 - [ ] All relevant `docs/` files are up to date.
-- [ ] `development_plan_bugs_todo.md` and `docs/completed_development.md` are consistent with the step status.
+- [ ] `docs/30_future/00_backlog.md` and `docs/40_history/00_completed_development.md` are consistent with the step status.
 
 ---
 
@@ -269,14 +269,14 @@ A PR may be approved **only** when:
 
 | Resource | Purpose |
 |---|---|
-| `docs/sbeam.md` | Overall program standard, developer and user guide |
-| `docs/Beam_model.md` | BDF card definitions and data model |
-| `docs/Static_analysis.md` | SOL 101 assembly, load application, and results |
-| `docs/Modal_analysis.md` | SOL 103 eigensolver and mode shape output |
-| `docs/viewer.md` | Streamlit viewer architecture |
-| `docs/Methods.ipynb` | Euler-Bernoulli stiffness and mass matrix derivations |
-| `docs/completed_development.md` | Record of completed steps and key decisions |
-| `development_plan_bugs_todo.md` | Open bugs and backlog |
+| `docs/10_standard/00_program_overview.md` | Overall program standard, developer and user guide |
+| `docs/10_standard/01_beam_model.md` | BDF card definitions and data model |
+| `docs/10_standard/03_static_analysis.md` | SOL 101 assembly, load application, and results |
+| `docs/10_standard/04_modal_analysis.md` | SOL 103 eigensolver and mode shape output |
+| `docs/10_standard/06_viewer.md` | Streamlit viewer architecture |
+| `docs/20_theory/00_beam_methods.ipynb` | Euler-Bernoulli stiffness and mass matrix derivations |
+| `docs/40_history/00_completed_development.md` | Record of completed steps and key decisions |
+| `docs/30_future/00_backlog.md` | Open bugs and backlog |
 | `CLAUDE.md` | Project conventions and documentation requirement |
 | NASA-CR-145949 | Beam element formulation reference |
 | https://www.sesamx.io/blog/beam_finite_element/ | Beam FE theory reference |

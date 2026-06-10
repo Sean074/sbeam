@@ -1,4 +1,4 @@
-# Aeroelastics.md — Phase A: Steady Vortex-Lattice Aeroelastics
+# Aeroelastics — Phase A: Steady Vortex-Lattice Aeroelastics
 
 ## Architecture Overview
 

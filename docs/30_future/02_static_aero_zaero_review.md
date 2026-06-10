@@ -1,6 +1,6 @@
 # Static Aero Plan — ZAERO Review & Ranked Development Goals
 
-Review of `static_aero_plan.md` (the sbeam SOL 144 / static-aeroelastic plan) against the
+Review of `docs/30_future/01_static_aero_plan.md` (the sbeam SOL 144 / static-aeroelastic plan) against the
 ZAERO 9.2 documentation (Theory, User's, Applications Vol. 1, Basic Training), filtered to
 the actual application context:
 
@@ -147,7 +147,7 @@ loads — expose them as a load-card export, not just an f06 block.
 ## Ranked development goals
 
 Ranked by **value to the stated application context (subsonic conventional aircraft, CFD/WT
-corrections) per unit of implementation risk.** "Step refs" point into `static_aero_plan.md`.
+corrections) per unit of implementation risk.** "Step refs" point into `docs/30_future/01_static_aero_plan.md`.
 
 | Rank | Goal | Why it ranks here | Touches | Effort |
 |---|---|---|---|---|

@@ -1,4 +1,4 @@
-# Static_analysis.md — SOL 101 Static Analysis
+# SOL 101 — Static Analysis
 
 ## Overview
 

@@ -1,0 +1,58 @@
+# sbeam Documentation — Index
+
+This directory is organised into four numbered sections by **document type**. Lower numbers
+are the day-to-day references; higher numbers are planning and historical record.
+
+| Section | Type | Contents |
+|---------|------|----------|
+| `10_standard/` | **Code standard** | Program, subsystem, and process guides — the authoritative description of how sbeam works *today*. Update these whenever code changes. |
+| `20_theory/` | **Theory, test cases & worked examples** | Analytical derivations and the validation/diagnostic studies behind them. |
+| `30_future/` | **Future development** | The backlog, plans, capability reviews, and design proposals for not-yet-implemented cards. |
+| `40_history/` | **Historic data & fixes** | The completed-step record, resolved defects, and archived one-off plans. |
+
+---
+
+## 10_standard — Code standard
+
+| File | Scope |
+|------|-------|
+| [`00_program_overview.md`](10_standard/00_program_overview.md) | Program code standard, developer and user guide |
+| [`01_beam_model.md`](10_standard/01_beam_model.md) | Geometry and model definition (data model, BDF cards) |
+| [`02_card_reference.md`](10_standard/02_card_reference.md) | BDF card field reference (all supported cards) |
+| [`03_static_analysis.md`](10_standard/03_static_analysis.md) | SOL 101 static analysis solver |
+| [`04_modal_analysis.md`](10_standard/04_modal_analysis.md) | SOL 103 normal modes solver |
+| [`05_aeroelastics.md`](10_standard/05_aeroelastics.md) | Phase A VLM aeroelastics developer/user guide |
+| [`06_viewer.md`](10_standard/06_viewer.md) | Streamlit/Plotly pre/post-processing viewer |
+| [`07_code_review_process.md`](10_standard/07_code_review_process.md) | Critical code-review process |
+| [`08_release_process.md`](10_standard/08_release_process.md) | Versioning and release process |
+
+## 20_theory — Theory, test cases & worked examples
+
+| File | Scope |
+|------|-------|
+| [`00_beam_methods.ipynb`](20_theory/00_beam_methods.ipynb) | Euler-Bernoulli theory; stiffness/mass matrix derivations; worked example |
+| [`01_aeroelastics_theory.md`](20_theory/01_aeroelastics_theory.md) | VLM, AIC corrections, splining, SOL 144 theory |
+| [`studies/a1_spanwise_spacing.md`](20_theory/studies/a1_spanwise_spacing.md) | VLM lift-slope spanwise-spacing convergence diagnostic |
+
+## 30_future — Future development
+
+| File | Scope |
+|------|-------|
+| [`00_backlog.md`](30_future/00_backlog.md) | **Authoritative backlog** — open bugs, code-review findings, Phase 2/3 steps, future ideas |
+| [`01_static_aero_plan.md`](30_future/01_static_aero_plan.md) | Static aeroelasticity development plan (Phases A–G) |
+| [`02_static_aero_zaero_review.md`](30_future/02_static_aero_zaero_review.md) | ZAERO capability review of the static-aero plan |
+| [`designs/amode_card.md`](30_future/designs/amode_card.md) | AMODE assumed-mode card — design proposal |
+| [`designs/rbmref_card.md`](30_future/designs/rbmref_card.md) | RBMREF rigid-body-mode reference card — design proposal |
+
+## 40_history — Historic data & fixes
+
+| File | Scope |
+|------|-------|
+| [`00_completed_development.md`](40_history/00_completed_development.md) | Authoritative record of completed steps, key decisions, and resolved defects |
+| [`archive/`](40_history/archive/) | Superseded one-off plans (e.g. the CONM2/SOL103 fix plan) |
+
+---
+
+> Root-level docs live outside `docs/`: [`../README.md`](../README.md) (user front page),
+> [`../CHANGELOG.md`](../CHANGELOG.md) (release notes), and [`../CLAUDE.md`](../CLAUDE.md)
+> (guidance for Claude Code). The `figures/` directory holds SVGs referenced by the theory docs.

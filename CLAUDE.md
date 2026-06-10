@@ -8,39 +8,46 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Documentation Requirement
 
-**When ANY code changes are made, the relevant project documentation files MUST be updated.** Each subsystem has a dedicated guide in `docs/`:
+**When ANY code changes are made, the relevant project documentation files MUST be updated.**
+
+`docs/` is organised into four numbered sections by document type. The map is
+`docs/00_INDEX.md` — start there. The code-standard guides (section `10_standard/`) are the
+ones that must track code changes:
 
 | File | Scope |
 |------|-------|
-| `docs/sbeam.md` | Overall program code standard, developer and user guide |
-| `docs/viewer.md` | Pre/post-processing viewer (Streamlit + Plotly) |
-| `docs/Beam_model.md` | Geometry and model definition (BDF cards, data model) |
-| `docs/Static_analysis.md` | SOL 101 static analysis solver |
-| `docs/Modal_analysis.md` | SOL 103 normal modes solver |
-| `docs/Aeroelastics.md` | Phase A VLM aeroelastics developer/user guide |
-| `docs/aeroelastics_theory.md` | Phase A theoretical reference (VLM, AIC corrections, structural coupling) |
-| `docs/Methods.ipynb` | Summary of analytical methods (Euler-Bernoulli theory, stiffness and mass matrix derivations) |
+| `docs/10_standard/00_program_overview.md` | Overall program code standard, developer and user guide |
+| `docs/10_standard/01_beam_model.md` | Geometry and model definition (BDF cards, data model) |
+| `docs/10_standard/02_card_reference.md` | BDF card field reference (all supported cards) |
+| `docs/10_standard/03_static_analysis.md` | SOL 101 static analysis solver |
+| `docs/10_standard/04_modal_analysis.md` | SOL 103 normal modes solver |
+| `docs/10_standard/05_aeroelastics.md` | Phase A VLM aeroelastics developer/user guide |
+| `docs/10_standard/06_viewer.md` | Pre/post-processing viewer (Streamlit + Plotly) |
+| `docs/10_standard/07_code_review_process.md` | Critical code-review process |
+| `docs/10_standard/08_release_process.md` | Versioning and release process |
+| `docs/20_theory/00_beam_methods.ipynb` | Analytical methods (Euler-Bernoulli theory, stiffness/mass matrix derivations) |
+| `docs/20_theory/01_aeroelastics_theory.md` | Phase A theoretical reference (VLM, AIC corrections, structural coupling) |
 
 ## Step Completion Requirement
 
 **When a development step is completed, BOTH of the following files MUST be updated in the same session:**
 
-1. **`docs/completed_development.md`** — add the completed step with its full step format (Objective, Deliverables, Test/Acceptance, key decisions).
-2. **`development_plan_bugs_todo.md`** — remove or mark the step as complete; update the open bugs list if a defect was resolved.
+1. **`docs/40_history/00_completed_development.md`** — add the completed step with its full step format (Objective, Deliverables, Test/Acceptance, key decisions).
+2. **`docs/30_future/00_backlog.md`** — remove or mark the step as complete; update the open bugs list if a defect was resolved.
 
-Never batch these updates or defer them to a later session. When resolving a bug (B1–B4), move the resolution note to `docs/completed_development.md` under "Resolved Defects" and remove it from `development_plan_bugs_todo.md`.
+Never batch these updates or defer them to a later session. When resolving a bug (B1–B4), move the resolution note to `docs/40_history/00_completed_development.md` under "Resolved Defects" and remove it from `docs/30_future/00_backlog.md`.
 
 ## Development Phases
 
-- **Phase 1 (complete):** SOL 101 (static) and SOL 103 (normal modes) — see `docs/completed_development.md`
-- **Phase 2:** Model enhancements — see `development_plan_bugs_todo.md`
-- **Phase 3:** SOL 108 (frequency response), 109 (transient), 111 (modal freq), 112 (modal transient) — see `development_plan_bugs_todo.md`
-- **Phase A (in progress):** Steady VLM aeroelastics (S39–S43 complete) — see `docs/Aeroelastics.md` and `development_plan_bugs_todo.md`
-- **Future:** distributed loads, Timoshenko shear, enforced displacements, buckling (SOL 105), results export — see `development_plan_bugs_todo.md`
+- **Phase 1 (complete):** SOL 101 (static) and SOL 103 (normal modes) — see `docs/40_history/00_completed_development.md`
+- **Phase 2:** Model enhancements — see `docs/30_future/00_backlog.md`
+- **Phase 3:** SOL 108 (frequency response), 109 (transient), 111 (modal freq), 112 (modal transient) — see `docs/30_future/00_backlog.md`
+- **Phase A (in progress):** Steady VLM aeroelastics (Steps 39–45 complete; A7/A8 open) — see `docs/10_standard/05_aeroelastics.md` and `docs/30_future/00_backlog.md`
+- **Future:** distributed loads, Timoshenko shear, enforced displacements, buckling (SOL 105), results export — see `docs/30_future/00_backlog.md`
 
 ## Project Backlog
 
-`development_plan_bugs_todo.md` is the authoritative backlog. It lists open bugs, Phase 2 and Phase 3 steps, and future development ideas. When a new development step is added, follow the same step format used in `docs/completed_development.md`.
+`docs/30_future/00_backlog.md` is the authoritative backlog. It lists open bugs, Phase 2 and Phase 3 steps, and future development ideas. When a new development step is added, follow the same step format used in `docs/40_history/00_completed_development.md`.
 
 ## Tech Stack
 

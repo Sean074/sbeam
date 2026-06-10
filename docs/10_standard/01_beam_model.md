@@ -1,4 +1,4 @@
-# Beam_model.md — Geometry and Model Definition
+# Beam Model — Geometry and Model Definition
 
 ## Overview
 
@@ -155,7 +155,7 @@ CONM2, EID, GID, CID, M, X1, X2, X3
 - Coupling 3×3 (non-zero when offset ≠ 0): `−m·skew(r)` / `m·skew(r)ᵀ`
 - Rotational 3×3: `I_cm + m·(|r|²·I₃ − r·rᵀ)` (parallel axis theorem + CM inertia)
 
-**Zero offset / zero inertia tensor:** When X1=X2=X3=0 and I11–I33 are omitted or zero, CONM2 contributes only the translational 3×3 block (`m·I₃`). Rotational DOFs at the mass node receive no mass contribution. Combined with `rho=0` on MAT1, this makes the global mass matrix singular — see `Modal_analysis.md` for how SOL 103 handles this via regularisation.
+**Zero offset / zero inertia tensor:** When X1=X2=X3=0 and I11–I33 are omitted or zero, CONM2 contributes only the translational 3×3 block (`m·I₃`). Rotational DOFs at the mass node receive no mass contribution. Combined with `rho=0` on MAT1, this makes the global mass matrix singular — see `docs/10_standard/04_modal_analysis.md` for how SOL 103 handles this via regularisation.
 
 **CID support:** When CID references a CORD2R system, the offset vector `r` and inertia tensor are rotated from the CID frame into global CID 0 before assembly (`R @ r`, `R @ I @ Rᵀ`). CID=0 is a no-op.
 

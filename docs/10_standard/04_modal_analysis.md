@@ -1,4 +1,4 @@
-# Modal_analysis.md — SOL 103 Normal Modes Analysis
+# SOL 103 — Normal Modes Analysis
 
 ## Overview
 
@@ -20,7 +20,7 @@ Natural frequency in Hz: `f = omega / (2 * pi)`
 
 ## Beam Theory
 
-Same Euler-Bernoulli assumptions as SOL 101 (see `Static_analysis.md`).
+Same Euler-Bernoulli assumptions as SOL 101 (see `docs/10_standard/03_static_analysis.md`).
 
 ---
 
@@ -48,7 +48,7 @@ CONM2 concentrated masses contribute a full 6×6 symmetric block to the global m
 
 ## RBE3 Constraint Assembly
 
-RBE3 elements are applied as a DOF transformation (same approach as SOL 101 — see `Static_analysis.md`).
+RBE3 elements are applied as a DOF transformation (same approach as SOL 101 — see `docs/10_standard/03_static_analysis.md`).
 
 **Insertion point in `run_sol103`** — after full assembly, before SPC partitioning:
 

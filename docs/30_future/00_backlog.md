@@ -6,7 +6,7 @@ development. It is updated as part of every session that completes a step — ne
 When a backlog item is promoted to a formal step, give it a step number continuing from Step 39
 and apply the same step format (Objective, Deliverables, Test/Acceptance).
 
-Completed steps are recorded in `docs/completed_development.md`.
+Completed steps are recorded in `docs/40_history/00_completed_development.md`.
 
 ---
 
@@ -35,21 +35,21 @@ to pure spanwise count (independent of nchord and box AR). The like-for-like pee
 **VortexLattice.jl** (AVL-validated) via `studies/byu_wing_sweep.jl` — then drifted down with
 refinement **identically** to sbeam (4.76→4.67→4.61→4.59), with a constant ~0.16% offset.
 A1's original "3–8% deficit" was an artifact of comparing to lifting-LINE upper bounds; sbeam's
-lift-surface CL_α is correct. Full data: `docs/a1_spanwise_spacing_study.md`; resolution note in
-`docs/completed_development.md` under "Resolved Defects (Phase A)". (CM moment-arm fix tracked
+lift-surface CL_α is correct. Full data: `docs/20_theory/studies/a1_spanwise_spacing.md`; resolution note in
+`docs/40_history/00_completed_development.md` under "Resolved Defects (Phase A)". (CM moment-arm fix tracked
 separately as A9.)
 
 ---
 
 ### [MAJOR] A2 — `solve_rigid_cl` ignores AEROS reference geometry; lumps all surfaces ✅ RESOLVED
 
-**Resolved 2026-06-09.** See `docs/completed_development.md` under "Resolved Defects (Phase A)".
+**Resolved 2026-06-09.** See `docs/40_history/00_completed_development.md` under "Resolved Defects (Phase A)".
 
 ---
 
 ### [MINOR] A3 — Pitching moment referenced to x=0 with a heuristic c_ref ✅ RESOLVED
 
-**Resolved 2026-06-09.** Coupled fix with A2. See `docs/completed_development.md`.
+**Resolved 2026-06-09.** Coupled fix with A2. See `docs/40_history/00_completed_development.md`.
 
 ---
 
@@ -150,7 +150,7 @@ Root cause — `solve_rigid_cl` used `boxes[i].colloc[0]` (¾-chord) as the mome
 of the ¼-chord bound vortex where the Kutta–Joukowski force acts; the bias is `CL·(½·box_chord)/c_ref`
 and is mesh-dependent (vanishes as NCHORD→∞). Fixed by using the bound-vortex x; CM now
 −0.0209 vs AVL −0.02085 (0.25%). Distinct from A3 (reference point / c_ref). New regression
-`tests/aero/test_val_byu_wing.py`. See `docs/completed_development.md` under "Resolved Defects (Phase A)".
+`tests/aero/test_val_byu_wing.py`. See `docs/40_history/00_completed_development.md` under "Resolved Defects (Phase A)".
 
 **Note on A1:** this benchmark is an *independent peer-VLM* (AVL) cross-check, and sbeam's CL
 matched to 0.16% on an AR-7.5 tapered/swept wing. The A1 deficit was measured against
@@ -164,7 +164,7 @@ question — Hough 1973 / Lan 1974, NASA SP-405).
 
 ## Code Review — 2026-05-26 (follow-up)
 
-Independent critical pass against `docs/code_review.md`. Status of all prior findings verified.
+Independent critical pass against `docs/10_standard/07_code_review_process.md`. Status of all prior findings verified.
 493/493 tests pass. One CRITICAL (C-1) remains open. M-1 and R9 confirmed resolved; R10 confirmed resolved.
 New review found no additional CRITICAL or MAJOR issues.
 
@@ -189,14 +189,14 @@ FIX: Pass the reduced mass matrix M_red into _build_f06_sol103_text and compute
 
 ## Code Review — 2026-05-25
 
-Critical design review performed against `docs/code_review.md`. 15 findings (0 CRITICAL, 4 MAJOR, 7 MINOR, 4 NIT). New items are R12–R22; R9/R10 carry forward. All prior R1–R8 and R11 confirmed resolved. R12 resolved 2026-05-26.
+Critical design review performed against `docs/10_standard/07_code_review_process.md`. 15 findings (0 CRITICAL, 4 MAJOR, 7 MINOR, 4 NIT). New items are R12–R22; R9/R10 carry forward. All prior R1–R8 and R11 confirmed resolved. R12 resolved 2026-05-26.
 
 ---
 
 ### [MAJOR] R13 — EIGRL V1/V2 frequency bounds parsed but never applied ✅ RESOLVED
 
 **Resolved 2026-05-26:** Documented as not implemented. `solve_modes` now emits a
-`UserWarning` when V1 or V2 are set; `docs/Modal_analysis.md` corrected to state that
+`UserWarning` when V1 or V2 are set; `docs/10_standard/04_modal_analysis.md` corrected to state that
 V1/V2 filtering is not supported in Phase 1. V1/V2 filtering is deferred to a future phase.
 
 ---
@@ -205,7 +205,7 @@ V1/V2 filtering is not supported in Phase 1. V1/V2 filtering is deferred to a fu
 
 **Resolved 2026-05-26:** `_handle_mat1` now derives G from the isotropic material relationship
 `G = E / (2 × (1 + ν))` when G is blank and both E and NU are non-zero. Supplied G always
-takes precedence. `docs/Beam_model.md` updated to document this behaviour explicitly.
+takes precedence. `docs/10_standard/01_beam_model.md` updated to document this behaviour explicitly.
 Two new parser tests added (`TestMat1GDerivation`).
 
 ---
@@ -215,16 +215,16 @@ Two new parser tests added (`TestMat1GDerivation`).
 **Resolved 2026-05-26:** `_handle_spc1` now accepts a list of continuation lines and
 accumulates all grid IDs across all continuations, using the same multi-continuation loop
 pattern as RBE2/RBE3. Two new parser tests added (`TestSpc1MultiContinuation`).
-`docs/Beam_model.md` updated to document multi-continuation support for SPC1.
+`docs/10_standard/01_beam_model.md` updated to document multi-continuation support for SPC1.
 
 ---
 
-### [MINOR] R16 — `docs/sbeam.md` module table omits `assembly/load_vector.py`; verification table missing V15–V18
+### [MINOR] R16 — `docs/10_standard/00_program_overview.md` module table omits `assembly/load_vector.py`; verification table missing V15–V18
 
-**File:** `docs/sbeam.md:28–44`, `docs/sbeam.md:163–178`
+**File:** `docs/10_standard/00_program_overview.md:28–44`, `docs/10_standard/00_program_overview.md:163–178`
 
 ```
-[MINOR] docs/sbeam.md — load_vector.py is absent from the module structure table.
+[MINOR] docs/10_standard/00_program_overview.md — load_vector.py is absent from the module structure table.
         Verification cases V15 (GRAV+CBAR mass), V16 (GRAV+CONM2), V17 (GRAV+FORCE via LOAD),
         and V18 (RBE2 lever-arm) exist in test_verification.py but are undocumented.
 FIX:    Add load_vector.py row to the assembly/ block; add V15–V18 rows to the
@@ -233,24 +233,24 @@ FIX:    Add load_vector.py row to the assembly/ block; add V15–V18 rows to the
 
 ---
 
-### [MINOR] R17 — `docs/Beam_model.md:585` "Cards recognised" omits GRAV and RBAR
+### [MINOR] R17 — `docs/10_standard/01_beam_model.md:585` "Cards recognised" omits GRAV and RBAR
 
-**File:** `docs/Beam_model.md:585`
+**File:** `docs/10_standard/01_beam_model.md:585`
 
 ```
-[MINOR] docs/Beam_model.md:585 — The recognised-cards summary line omits GRAV and RBAR,
+[MINOR] docs/10_standard/01_beam_model.md:585 — The recognised-cards summary line omits GRAV and RBAR,
         both of which are fully implemented and tested.
 FIX:    Add GRAV and RBAR to the comma-separated list on that line.
 ```
 
 ---
 
-### [MINOR] R18 — `docs/Static_analysis.md` "Solver Module" section references stale signatures; omits CBUSH, RBAR, GRAV
+### [MINOR] R18 — `docs/10_standard/03_static_analysis.md` "Solver Module" section references stale signatures; omits CBUSH, RBAR, GRAV
 
-**File:** `docs/Static_analysis.md:237–256`
+**File:** `docs/10_standard/03_static_analysis.md:237–256`
 
 ```
-[MINOR] docs/Static_analysis.md:237–256 — assemble_load_vector is shown as living in
+[MINOR] docs/10_standard/03_static_analysis.md:237–256 — assemble_load_vector is shown as living in
         sol101.py (it is in assembly/load_vector.py); function signatures are stale;
         CBUSH, RBAR, and GRAV are not mentioned in any verification case.
 FIX:    Update module reference, signatures, and add verification cases for GRAV and RBAR.
@@ -298,7 +298,7 @@ FIX:  Drop leading underscores from both function names in f06_writer.py, or add
 
 ## Code Review — 2026-05-24
 
-Critical design review performed against `docs/code_review.md`. All 441 tests passed at review time; 464 pass as of 2026-05-25 (R2–R6 fixes). Findings below; resolved items removed.
+Critical design review performed against `docs/10_standard/07_code_review_process.md`. All 441 tests passed at review time; 464 pass as of 2026-05-25 (R2–R6 fixes). Findings below; resolved items removed.
 
 ---
 
@@ -314,7 +314,7 @@ explicit and the constant name is self-explanatory in context. No further change
 
 **Resolved 2026-05-26:** Added a block comment in `assembly/rbe3.py` before the RBE3 loop
 explaining the same-DOF weighted-averaging formulation and its lever-arm limitation.
-`docs/Beam_model.md` updated with a "Known limitation" paragraph in the RBE3 section:
+`docs/10_standard/01_beam_model.md` updated with a "Known limitation" paragraph in the RBE3 section:
 "Use RBAR for kinematically exact rigid connections where the offset lever-arm effect must
 be captured."
 
@@ -349,27 +349,29 @@ be captured."
 
 ## Phase 1 Cleanup
 
-All Phase 1 bugs (B1–B4) are resolved. See `docs/completed_development.md` under Resolved Defects.
+All Phase 1 bugs (B1–B4) are resolved. See `docs/40_history/00_completed_development.md` under Resolved Defects.
 
 ---
 
 ## Phase A — Static Aeroelastics (VLM)
 
-Steps 39–44 implement the steady vortex-lattice aerodynamic layer.
+Steps 39–45 implement the steady vortex-lattice aerodynamic layer (all complete). Remaining
+open Phase A work is tracked under the code-review findings above: **A7** (cosine chordwise
+spacing helper + low-NCHORD warning) and **A8** (box aspect-ratio pre-solve warning).
 
-### Step 39: AEROS card ✅ COMPLETE — see `docs/completed_development.md`
+### Step 39: AEROS card ✅ COMPLETE — see `docs/40_history/00_completed_development.md`
 
-### Step 40: CAERO1/PAERO1/AEFACT parsing + panel.py box meshing ✅ COMPLETE — see `docs/completed_development.md`
+### Step 40: CAERO1/PAERO1/AEFACT parsing + panel.py box meshing ✅ COMPLETE — see `docs/40_history/00_completed_development.md`
 
-### Step 41: Steady VLM AIC `vlm.py` — symmetric + antisymmetric images ✅ COMPLETE — see `docs/completed_development.md`
+### Step 41: Steady VLM AIC `vlm.py` — symmetric + antisymmetric images ✅ COMPLETE — see `docs/40_history/00_completed_development.md`
 
-### Step 42: Integration matrices `Skj`, `Djk`, and baseline normalwash `w_g` ✅ COMPLETE — see `docs/completed_development.md`
+### Step 42: Integration matrices `Skj`, `Djk`, and baseline normalwash `w_g` ✅ COMPLETE — see `docs/40_history/00_completed_development.md`
 
-### Step 43: AIC Corrections (`corrections.py`) + `AeroModel` Container ✅ COMPLETE — see `docs/completed_development.md`
+### Step 43: AIC Corrections (`corrections.py`) + `AeroModel` Container ✅ COMPLETE — see `docs/40_history/00_completed_development.md`
 
-### Step 44: Viewer — Aero Box Mesh + cp Overlay ✅ COMPLETE — see `docs/completed_development.md`
+### Step 44: Viewer — Aero Box Mesh + cp Overlay ✅ COMPLETE — see `docs/40_history/00_completed_development.md`
 
-### Step 45: VTP Cp Bugs + Sideslip Beta ✅ COMPLETE — see `docs/completed_development.md`
+### Step 45: VTP Cp Bugs + Sideslip Beta ✅ COMPLETE — see `docs/40_history/00_completed_development.md`
 
 ## Phase 2 — Model Enhancements
 
@@ -460,3 +462,4 @@ These items are lower priority or require significant new infrastructure.
 | Model pre-solve validator | Interactive check before running: flag zero-length elements, missing SPC, unsupported cards, inconsistent units, unreferenced load/SPC SIDs — displayed as a warning panel in the viewer | Viewer complete |
 | Sample model library | Curated set of BDF example files (cantilever, simply supported, portal frame, 2D truss, airplane stick, multi-span bridge) bundled with the repository for tutorials and regression testing | Verification suite |
 | f06 results comparison | Load two f06 files side-by-side in the viewer; display difference tables and overlay deformed shapes for design-change comparison | NASTRAN f06 import |
+| Deploy to Streamlit Community Cloud | Provides a live demo URL for the README (nice-to-have) | Viewer complete |

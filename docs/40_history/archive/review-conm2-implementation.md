@@ -98,8 +98,8 @@ The square cross-section has equal I₁ = I₂, so modes 1 and 2 are degenerate 
 |------|--------|
 | `sbeam/solver/sol103.py` | Replace `eigh` call with regularised version (lines 28–30) |
 | `sample/cantilever_al_conm2.bdf` | **Create** new test BDF |
-| `Modal_analysis.md` | Add note: CONM2 with zero-density beam requires mass regularisation; zero-mass DOFs produce artificial high-frequency modes |
-| `Beam_model.md` | Add note: CONM2 contributes translational mass only; rotational inertia not supported in Phase 1 |
+| `docs/10_standard/04_modal_analysis.md` | Add note: CONM2 with zero-density beam requires mass regularisation; zero-mass DOFs produce artificial high-frequency modes |
+| `docs/10_standard/01_beam_model.md` | Add note: CONM2 contributes translational mass only; rotational inertia not supported in Phase 1 |
 
 ---
 

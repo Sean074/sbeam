@@ -4,6 +4,10 @@ This file is the authoritative record of all completed development steps, key de
 during implementation, and resolved defects. It is updated as part of every session that
 completes a step — never deferred.
 
+> **Note:** Documentation paths in the step records below have been updated to the current
+> `docs/` structure (reorganised 2026-06-10). A file recorded at the time as e.g. `docs/sbeam.md`
+> now lives at `docs/10_standard/00_program_overview.md`; see [`../00_INDEX.md`](../00_INDEX.md).
+
 ---
 
 ## Principles
@@ -24,7 +28,7 @@ completes a step — never deferred.
 **Objective:** Establish the directory structure, dependencies, and empty module files so all subsequent steps have a consistent layout to build into.
 
 **Deliverables:**
-- `sbeam/` directory tree matching `docs/sbeam.md` module structure (empty `__init__.py` files, placeholder modules)
+- `sbeam/` directory tree matching `docs/10_standard/00_program_overview.md` module structure (empty `__init__.py` files, placeholder modules)
 - `requirements.txt` (numpy, scipy, pandas, plotly, streamlit)
 - `tests/` directory mirroring `sbeam/` structure
 - `pytest.ini` or `pyproject.toml` test configuration
@@ -344,8 +348,8 @@ The two top-level functions serve distinct use cases:
 **Objective:** Ensure all documentation is current, consistent with the implemented code, and ready for handover.
 
 **Deliverables:**
-- `docs/Methods.ipynb` — analytical derivations for Euler-Bernoulli stiffness matrix, consistent mass matrix, coordinate transformation, eigenvalue solution.
-- Review and update `docs/sbeam.md`, `docs/Beam_model.md`, `docs/Static_analysis.md`, `docs/Modal_analysis.md`, `docs/viewer.md`.
+- `docs/20_theory/00_beam_methods.ipynb` — analytical derivations for Euler-Bernoulli stiffness matrix, consistent mass matrix, coordinate transformation, eigenvalue solution.
+- Review and update `docs/10_standard/00_program_overview.md`, `docs/10_standard/01_beam_model.md`, `docs/10_standard/03_static_analysis.md`, `docs/10_standard/04_modal_analysis.md`, `docs/10_standard/06_viewer.md`.
 
 ---
 
@@ -437,8 +441,8 @@ The two top-level functions serve distinct use cases:
 - `tests/integration/bdf/v14_rbar_zero_offset.bdf` — cantilever + zero-offset RBAR integration BDF.
 - `tests/integration/bdf/v19_rbar_offset.bdf` — cantilever + non-zero X-offset RBAR integration BDF (a=0.5 m).
 - `tests/integration/test_verification.py` — `TestV14RbarZeroOffset` and `TestV19RbarLeverArm` classes.
-- `docs/Beam_model.md`, `docs/card_definition.md`, `docs/sbeam.md` — updated.
-- `docs/Static_analysis.md` — Case 5b (V19) added to Verification Cases section.
+- `docs/10_standard/01_beam_model.md`, `docs/10_standard/02_card_reference.md`, `docs/10_standard/00_program_overview.md` — updated.
+- `docs/10_standard/03_static_analysis.md` — Case 5b (V19) added to Verification Cases section.
 
 **Test / Acceptance:**
 - V14: zero-offset RBAR — Ty[GID2] matches PL³/3EI; u[GID3] == u[GID2] exactly ✓
@@ -512,22 +516,22 @@ All three pass. No shipped BDFs outside `tests/` exist, so no existing models ar
 
 ### B4: Viewer — f06 Import ✅ CLOSED (Doc-Only)
 
-**Description:** `docs/viewer.md` was reported to describe a post-processing upload path for
+**Description:** `docs/10_standard/06_viewer.md` was reported to describe a post-processing upload path for
 `.f06` files — a feature that was never implemented and is out of scope for Phase 1.
 
-**Resolution:** Confirmed that `docs/viewer.md` contains no f06 import documentation. The
+**Resolution:** Confirmed that `docs/10_standard/06_viewer.md` contains no f06 import documentation. The
 text was either removed in an earlier session or never formally written into the doc. No code
 changes required. The "NASTRAN f06 import" item remains in the Future Development table in
-`development_plan_bugs_todo.md` and will be addressed in Phase 3+.
+`docs/30_future/00_backlog.md` and will be addressed in Phase 3+.
 
 ### DOC2: Methods.ipynb — End-to-End Tutorial Section ✅ COMPLETE
 
-**Objective:** Add Section 10 to `docs/Methods.ipynb` demonstrating an end-to-end run of the
+**Objective:** Add Section 10 to `docs/20_theory/00_beam_methods.ipynb` demonstrating an end-to-end run of the
 `sbeam` solver against bundled sample BDFs and comparing results to closed-form analytical truth.
 The notebook was previously reference theory only.
 
 **Changes made:**
-- `docs/Methods.ipynb` — added 8 cells forming Section 10 (Worked Example):
+- `docs/20_theory/00_beam_methods.ipynb` — added 8 cells forming Section 10 (Worked Example):
   - 10.1 SOL 101: parse `sample/val_cantilever_static.bdf`, run `run_sol101`, compare tip
     deflection Tz at node 11 to δ = PL³/3EI = 2.0001 mm (error < 0.0001%); verify SPC
     reaction Fz = 1000.0 N (error 0.0000%).
@@ -579,8 +583,8 @@ Step 1  (setup)
 
 *Documentation fixes (Group A):*
 - `CLAUDE.md` — Added `RBAR` (rigid bar; kinematic coupling with lever-arm) to the supported elements table; it was fully implemented (Step 38) but missing from the reference.
-- `docs/sbeam.md` — Corrected Python version requirement from 3.10+ to 3.9+ (matching `pyproject.toml` and `README.md`).
-- `docs/viewer.md` — Updated `build_deformed_figure` and `build_mode_figure` descriptions to include CBUSH and RBAR in ghost element lists; corrected animation trace indices from `[4,5,6,7,8]` to `[6,7,8,9,10,11]` and added RBAR to the animated trace list.
+- `docs/10_standard/00_program_overview.md` — Corrected Python version requirement from 3.10+ to 3.9+ (matching `pyproject.toml` and `README.md`).
+- `docs/10_standard/06_viewer.md` — Updated `build_deformed_figure` and `build_mode_figure` descriptions to include CBUSH and RBAR in ghost element lists; corrected animation trace indices from `[4,5,6,7,8]` to `[6,7,8,9,10,11]` and added RBAR to the animated trace list.
 
 *Bug fix (Group B):*
 - `sbeam/assembly/stiffness.py` — Added zero-length guard for CBAR `transform_matrix`: raises `ValueError` when GA and GB are coincident (matching the existing guard in CBUSH at line 221).
@@ -609,8 +613,8 @@ Step 1  (setup)
 **Objective:** Provide a single, fast-lookup reference for all implemented BDF input cards — field layout, variable names and types, defaults, and a minimal example per card.
 
 **Deliverables:**
-- `docs/card_definition.md` — 17 bulk data cards (CORD2R, GRID, MAT1, PBAR, PBUSH, CBAR, CBUSH, PLOTEL, RBE2, RBE3, CONM2, SPC, SPC1, FORCE, MOMENT, LOAD, EIGRL) plus all case control keywords.
-- `docs/sbeam.md` — added reference link to `docs/card_definition.md` in the Purpose section.
+- `docs/10_standard/02_card_reference.md` — 17 bulk data cards (CORD2R, GRID, MAT1, PBAR, PBUSH, CBAR, CBUSH, PLOTEL, RBE2, RBE3, CONM2, SPC, SPC1, FORCE, MOMENT, LOAD, EIGRL) plus all case control keywords.
+- `docs/10_standard/00_program_overview.md` — added reference link to `docs/10_standard/02_card_reference.md` in the Purpose section.
 
 **Key decisions:**
 - Organised as: file structure → format rules → case control → bulk data cards (in category order: coordinate systems, geometry, materials, properties, elements, constraints, loads, eigenvalue).
@@ -631,8 +635,8 @@ Step 1  (setup)
 - `sbeam/solver/sol101.py` — `recover_reactions` signature extended with optional `f_applied` parameter; reactions now computed as `R = K[spc,:] @ u − f[spc]` to correctly account for body loads at constrained DOFs; `run_sol101` saves `f_full` before any RBE3 transform and passes it to reaction recovery.
 - `sbeam/results/f06_writer.py` — GRAV cards echoed in an "APPLIED GRAVITY LOADS" section when `OLOAD` is requested; helper `_collect_grav_loads()` resolves GRAV references from both direct and LOAD-combination SIDs.
 - `sbeam/viewer/geometry.py` — `_load_sid_has_grav()` helper; `_add_grav_arrow()` draws a scaled cone at the model centroid in the gravity direction; `build_model_figure` calls both when a GRAV load is active.
-- `docs/Beam_model.md` — new GRAV card section documenting fields, method, reaction correction, and LOAD combination rules.
-- `docs/sbeam.md`, `CLAUDE.md` — GRAV added to supported BDF cards table.
+- `docs/10_standard/01_beam_model.md` — new GRAV card section documenting fields, method, reaction correction, and LOAD combination rules.
+- `docs/10_standard/00_program_overview.md`, `CLAUDE.md` — GRAV added to supported BDF cards table.
 - `tests/integration/bdf/v15_grav_simply_supported.bdf` — CBAR-only gravity; 392.5 kg × 9.81 = 3850.425 N.
 - `tests/integration/bdf/v16_grav_with_conm2.bdf` — GRAV + CONM2 (50 kg at midspan); 442.5 kg × 9.81 = 4340.925 N.
 - `tests/integration/bdf/v17_grav_plus_force.bdf` — GRAV combined with FORCE via LOAD card; net load 2849.225 N.
@@ -700,7 +704,7 @@ from the file, filters output requests per SOL, and is extensible for Phase 2 SO
 - `sbeam/viewer/app.py`:
   - `_init_session_state`: added `"_loaded_from_file_cc": None` key.
   - `_handle_upload`: added `st.session_state._loaded_from_file_cc = cc` to store the immutable file snapshot.
-- `docs/viewer.md` — Case Control UI section rewritten; `_loaded_from_file_cc` added to Session State table.
+- `docs/10_standard/06_viewer.md` — Case Control UI section rewritten; `_loaded_from_file_cc` added to Session State table.
 
 **Test/Acceptance:**
 - Geometry-only file upload: "No case control found…" banner; first available LOAD/SPC SIDs pre-selected.
@@ -795,7 +799,7 @@ throughout, removing the arbitrary 200-CBAR ceiling and scaling to large models.
 - `tests/viewer/test_apptest_integration.py` — two AppTest integration tests:
   - `test_flow_a_sol101_render_and_run`: geometry load → GPWG renders → SOL 101 run → deformed-shape UI renders (deformation scale slider, F06 export button)
   - `test_flow_b_sol103_render_and_run`: geometry load → SOL 103 run → modal results UI renders (mode selector, scale slider, F06 export button)
-- `docs/viewer.md` — Testing section added describing the AppTest pattern, state injection protocol, and three-step run idiom
+- `docs/10_standard/06_viewer.md` — Testing section added describing the AppTest pattern, state injection protocol, and three-step run idiom
 
 **Test/Acceptance:**
 - Both tests pass: `pytest tests/viewer/test_apptest_integration.py -v` → 2 passed
@@ -819,7 +823,7 @@ throughout, removing the arbitrary 200-CBAR ceiling and scaling to large models.
 - `pyproject.toml` — added `[tool.coverage.run]` (`branch = true`, `source = ["sbeam"]`) and `[tool.coverage.report]` (`show_missing = true`, `skip_empty = true`)
 - `tests/solver/test_sol103.py` — two new test classes: `TestSol103Errors` (missing METHOD raises `ValueError`, line 74–75) and `TestSol103WithRbe3` (RBE3 dep_dofs branch, lines 82–95); `sol103.py` coverage raised from 77% → 99%
 - `tests/viewer/test_deformed_geometry.py` — removed stale `test_has_frames` test (`build_mode_figure` no longer accepts `n_frames`)
-- `docs/sbeam.md` — added "Coverage" subsection documenting the two commands and the 85% floor
+- `docs/10_standard/00_program_overview.md` — added "Coverage" subsection documenting the two commands and the 85% floor
 
 **Test/Acceptance:**
 - 435 tests pass, 0 failures
@@ -1005,7 +1009,7 @@ silently-dropped load cards before implementation was safe.
 - `_show_pre_solve_warnings(bulk, cc)` wrapper renders each message as `st.warning`.
 - Called in the Results tab immediately above the Run Analysis button.
 - `tests/viewer/test_pre_solve_validation.py` — 16 unit tests covering all checks.
-- `docs/viewer.md` updated with the "Pre-Solve Validation (VAL1)" section.
+- `docs/10_standard/06_viewer.md` updated with the "Pre-Solve Validation (VAL1)" section.
 
 **Checks performed:**
 
@@ -1052,7 +1056,7 @@ unconstrained, producing a singular or incorrect stiffness matrix with no error.
 **Tests (`tests/parser/test_loads.py`):** `TestSpc1MultiContinuation` — two tests verify that
 an SPC1 with 8 grids across one base line and one continuation line collects all 8 grid IDs.
 
-**Docs:** `docs/Beam_model.md` continuation-line note updated to mention SPC1 with >6 grids.
+**Docs:** `docs/10_standard/01_beam_model.md` continuation-line note updated to mention SPC1 with >6 grids.
 
 ---
 
@@ -1073,7 +1077,7 @@ if G == 0.0 and nu != 0.0 and E != 0.0:
 Supplied G always takes precedence; NU is stored but not used for the derivation when G is
 explicitly provided.
 
-**Fix (`docs/Beam_model.md`):** MAT1 table and Phase 1 note updated to explicitly document
+**Fix (`docs/10_standard/01_beam_model.md`):** MAT1 table and Phase 1 note updated to explicitly document
 the isotropic derivation and the G-takes-precedence rule.
 
 **Tests (`tests/parser/test_geometry.py::TestMat1GDerivation`):** Two tests added:
@@ -1093,7 +1097,7 @@ leaving no guidance for users who need kinematically exact rigid connections.
 explaining that rotation-to-translation coupling is not applied and that RBAR should be used
 when lever-arm kinematics are required.
 
-**Fix (`docs/Beam_model.md`):** Added a "Known limitation — same-DOF weighted averaging only"
+**Fix (`docs/10_standard/01_beam_model.md`):** Added a "Known limitation — same-DOF weighted averaging only"
 paragraph in the RBE3 section, directing users to RBAR for kinematically exact rigid
 connections with an offset.
 
@@ -1102,7 +1106,7 @@ connections with an offset.
 ### R13: EIGRL V1/V2 frequency bounds — documented as not implemented ✅ RESOLVED
 
 **Root cause:** `Eigrl.v1` and `Eigrl.v2` were parsed and stored but `solve_modes` never
-read them; all ND modes were returned regardless. `docs/Modal_analysis.md` incorrectly
+read them; all ND modes were returned regardless. `docs/10_standard/04_modal_analysis.md` incorrectly
 stated that frequency filtering was implemented.
 
 **Fix (`sbeam/solver/sol103.py`):** Added a `UserWarning` in `solve_modes` when either
@@ -1114,7 +1118,7 @@ all requested ND modes will be returned regardless of V1/V2.
 Remove V1/V2 from the EIGRL card or use ND to limit the mode count.
 ```
 
-**Fix (`docs/Modal_analysis.md`):** Line 94 corrected — now states that V1/V2 filtering
+**Fix (`docs/10_standard/04_modal_analysis.md`):** Line 94 corrected — now states that V1/V2 filtering
 is not implemented and directs users to use the ND field instead.
 
 V1/V2 filtering is deferred to a future phase.
@@ -1156,7 +1160,7 @@ SPC reactions. This matches NASTRAN behaviour.
 - `sbeam/results/results.py` — added `generalized_masses: np.ndarray` field (shape `(n_modes,)`) to `Sol103Result`.
 - `sbeam/solver/sol103.py` — after each `solve_modes` call (both the RBE3 and non-RBE3 branches), computes `gen_masses[i] = float((M_free @ phi_free[:, i]) @ phi_free[:, i])` using the original unregularised `M_free`. Works for both sparse (non-RBE3) and dense (RBE3) mass matrices. Result stored in `Sol103Result.generalized_masses`.
 - `sbeam/results/f06_writer.py:228` — replaced hard-coded `_fmt(1.0)` with `_fmt(gm)` drawn from `result.generalized_masses`.
-- `docs/Modal_analysis.md` — updated Mode Shape Normalisation section to document that GENERALIZED MASS = `phi^T M phi` (1.0 only for `norm=MASS`).
+- `docs/10_standard/04_modal_analysis.md` — updated Mode Shape Normalisation section to document that GENERALIZED MASS = `phi^T M phi` (1.0 only for `norm=MASS`).
 
 **Tests added (`tests/results/test_f06_sol103.py::TestGeneralizedMass`):**
 - `test_norm_mass_all_unity` — all `result.generalized_masses ≈ 1.0 (abs=1e-8)` for `norm=MASS` cantilever.
@@ -1201,7 +1205,7 @@ carries the aerodynamic reference geometry (`cref`, `bref`, `sref`) and symmetry
   round-trip (free-field and fixed-field), default values, `symxz`/`symxy` storage
   (`+1`, `-1`, `0`), duplicate-AEROS `ValueError`, placeholder for
   missing-AEROS-with-CAERO1 `ValueError`.
-- `docs/Aeroelastics.md` *(new)* — top-level aeroelastics developer/user guide;
+- `docs/10_standard/05_aeroelastics.md` *(new)* — top-level aeroelastics developer/user guide;
   architecture overview, module map, supported card table, AEROS card format, symmetry
   conventions, validation rules. Stub sections for S40–S43.
 
@@ -1256,7 +1260,7 @@ at ¾-chord (horseshoe-vortex convention, NASA SP-405).
   duplicate error), `TestCaero1RoundTrip` (NSPAN/NCHORD form, LSPAN form, AEFACT stored),
   `TestCaero1Validation` (missing PAERO1, missing AEFACT, duplicate EID, both NSPAN and
   LSPAN non-zero, missing continuation).
-- `docs/Beam_model.md` — added AEFACT, PAERO1, CAERO1 card entries; updated BulkData
+- `docs/10_standard/01_beam_model.md` — added AEFACT, PAERO1, CAERO1 card entries; updated BulkData
   listing; updated cards-recognised list; added CAERO1 cross-reference validation note.
 
 **Key decisions:**
@@ -1580,7 +1584,7 @@ induced-downwash kernel bias.
 **Investigation (two stages):**
 
 1. **Spanwise-spacing study** (`studies/a1_spanwise_spacing_study.py`, results in
-   `docs/a1_spanwise_spacing_study.md`). Swept nspan with uniform vs cosine spanwise spacing
+   `docs/20_theory/studies/a1_spanwise_spacing.md`). Swept nspan with uniform vs cosine spanwise spacing
    on the AVL-anchored tapered wing and the rectangular AR=8 wing, plus control probes:
    - Uniform vs cosine spacing are **identical to < 0.2%** at every resolution → the
      Hough/Lan spacing hypothesis is **refuted**.
@@ -1608,7 +1612,7 @@ original "deficit" was an artifact of comparing against lifting-LINE upper bound
 VortexLattice.jl/AVL to ~0.16% at every resolution. No code change required.
 
 **Artifacts:** `studies/a1_spanwise_spacing_study.py`, `studies/byu_wing_sweep.jl`,
-`studies/byu_wing.avl` (AVL equivalent), `docs/a1_spanwise_spacing_study.md`,
+`studies/byu_wing.avl` (AVL equivalent), `docs/20_theory/studies/a1_spanwise_spacing.md`,
 regression `tests/aero/test_val_byu_wing.py` (CL 0.16%, CM 0.25% vs AVL).
 
 ---
@@ -1644,7 +1648,7 @@ internal checks did not catch it; on the AR-7.5 benchmark (NCHORD=6) it doubled 
    (0.16%) and CM within 2% (0.25%) of the AVL values, plus a guard asserting CM is not the
    ~−0.0415 ¾-chord-arm value.
 
-4. **`docs/Aeroelastics.md`** — CM return-dict bullet documents the ¼-chord moment arm.
+4. **`docs/10_standard/05_aeroelastics.md`** — CM return-dict bullet documents the ¼-chord moment arm.
 
 **Test / Acceptance:** `tests/aero/test_val_byu_wing.py` (4 tests) passes; all 47
 `tests/aero/test_vlm.py` invariance tests (CM∝1/c_ref, xref-shift, aeros-vs-heuristic) remain
@@ -1689,7 +1693,7 @@ was discarded before `solve_rigid_cl` was called.
    (CL and CM scale correctly with AEROS sref/cref), `TestPerSurfaceClassification` (surface
    type, CL/CY separation, per-surface dict), `TestMomentXref` (CM shift formula).
 
-5. **`docs/Aeroelastics.md`** — Updated `solve_rigid_cl` signature and return dict
+5. **`docs/10_standard/05_aeroelastics.md`** — Updated `solve_rigid_cl` signature and return dict
    documentation; updated architecture overview to show `aeros` in `AeroModel`.
 
 **Test / Acceptance:**
@@ -1728,7 +1732,7 @@ model). Replacing it with `np.linalg.solve` (LU-based) reduces cost substantiall
    raises `LinAlgError` on a truly singular input, so the tests now reflect the
    intended behaviour.
 
-4. **`docs/Aeroelastics.md`** — Correction-precedence table and `apply_wkk` description
+4. **`docs/10_standard/05_aeroelastics.md`** — Correction-precedence table and `apply_wkk` description
    updated to reflect `np.linalg.solve` and the WKK conditioning guard.
 
 **Key decisions:**
@@ -1752,7 +1756,7 @@ model). Replacing it with `np.linalg.solve` (LU-based) reduces cost substantiall
 Prandtl–Glauert scaling (`β = √(1−M²)`) is not applied.
 
 **Deliverables:**
-- `docs/Aeroelastics.md` — new "Known Limitations" section added before the Viewer tab
+- `docs/10_standard/05_aeroelastics.md` — new "Known Limitations" section added before the Viewer tab
   section, documenting the M = 0 assumption, the error magnitude at M > 0.3, the manual
   workaround (scale CL by `1/β`), and the planned Phase C hook for `build_aero_model`.
 - `todo.md` — A4 block removed.
@@ -1791,7 +1795,7 @@ circulation field, enabling the standard elliptic-loading cross-check
    - `test_cdi_scales_as_alpha_squared`: CDi(2α)/CDi(α) ≈ 4.0 within 1%
    - `test_cdi_zero_at_zero_alpha`: CDi < 1e-12 at α = 0
 
-3. **`docs/Aeroelastics.md`** — CDi and e entries added to the `solve_rigid_cl` return
+3. **`docs/10_standard/05_aeroelastics.md`** — CDi and e entries added to the `solve_rigid_cl` return
    dict documentation, including the normalisation formula and expected e range.
 
 **Key decisions:**

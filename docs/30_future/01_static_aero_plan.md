@@ -13,7 +13,7 @@ configuration**, with **aerodynamic corrections supplied from high-fidelity CFD 
 wind-tunnel test**. This context is reflected in the plan: the aerodynamic *correction layer*
 (force/moment and pressure matching, plus a baseline camber/twist/incidence downwash) is
 treated as a **first-class Phase A/C deliverable**, not an afterthought — see the
-`static_aero_plan_zaero_review.md` companion review for the rationale and the ZAERO
+`docs/30_future/02_static_aero_zaero_review.md` companion review for the rationale and the ZAERO
 cross-reference.
 
 Scope discipline (held across all phases):
@@ -35,7 +35,7 @@ Scope discipline (held across all phases):
 
 Step numbering continues from the backlog (next free number is **Step 39**), and every
 step follows the project step format (Objective · Scope/Deliverables · Test/Acceptance ·
-Key decisions/risks). On completion each step updates `docs/completed_development.md` and
+Key decisions/risks). On completion each step updates `docs/40_history/00_completed_development.md` and
 removes itself from this plan, per the project documentation rule in `CLAUDE.md`.
 
 ---
@@ -806,7 +806,7 @@ apparent-mass / Wagner-lag add-ons.
 
 ## Appendix — Mapping of the ZAERO review goals to steps
 
-The eight ranked goals from `static_aero_plan_zaero_review.md`, folded in:
+The eight ranked goals from `docs/30_future/02_static_aero_zaero_review.md`, folded in:
 
 | Review goal | Folded into |
 |---|---|

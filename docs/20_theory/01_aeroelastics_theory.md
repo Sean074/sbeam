@@ -1,7 +1,7 @@
 # sbeam — Aeroelastic Analysis: Theory
 
 **Scope of this document.** This is the theoretical reference for the static aeroelastic
-capability being added to `sbeam` (Phases A–C of `static_aero_plan.md`): steady
+capability being added to `sbeam` (Phases A–C of `docs/30_future/01_static_aero_plan.md`): steady
 vortex-lattice aerodynamics, aerodynamic corrections from CFD / wind-tunnel data,
 structure-to-aero splining, and the SOL 144 static aeroelastic solution (trim, flexible
 stability derivatives, divergence), including the modal-truncation reduced-order model. It also
@@ -14,8 +14,8 @@ only where the steady/quasi-steady theory feeds them.
 
 It is written to the level and in the notation of the *MSC/NX NASTRAN Aeroelastic Analysis
 User's Guide* (Rodden & Johnson) and the *ZAERO Theoretical Manual*, so that the symbols used
-in code and in `static_aero_plan.md` cross-reference directly. The structural theory
-(Euler–Bernoulli CBAR, consistent mass) is covered in `docs/Methods.ipynb` and only recapped
+in code and in `docs/30_future/01_static_aero_plan.md` cross-reference directly. The structural theory
+(Euler–Bernoulli CBAR, consistent mass) is covered in `docs/20_theory/00_beam_methods.ipynb` and only recapped
 here where the coupling needs it.
 
 **Conventions.** All aerodynamic geometry is resolved to the global basic coordinate system
@@ -66,7 +66,7 @@ changes the local incidence, which changes the aerodynamic load — a closed fee
 (Figure 1). When the elastic restoring stiffness can no longer balance the aerodynamic
 stiffening of that loop, the structure **diverges**.
 
-![Static aeroelastic feedback loop](figures/aeroelastic_feedback.svg)
+![Static aeroelastic feedback loop](../figures/aeroelastic_feedback.svg)
 
 *Figure 1 — The static aeroelastic feedback. Elastic deflection $u_a$ is splined to an aero
 downwash $w$; the aerodynamics return a pressure $c_p$ and box loads, which are splined back
@@ -149,7 +149,7 @@ not arbitrary — for a flat plate it makes the discrete vortex reproduce the ex
 the exact zero-lift condition (the classic "1/4–3/4 rule"); getting it wrong is the
 archetypal silent VLM error.
 
-![VLM horseshoe vortex on a box](figures/vlm_horseshoe_box.svg)
+![VLM horseshoe vortex on a box](../figures/vlm_horseshoe_box.svg)
 
 *Figure 2 — One aero box: bound vortex $\Gamma_k$ at the ¼-chord, trailing legs to downstream
 infinity, and the collocation point at the ¾-chord where flow tangency (Equation 4) is imposed.
@@ -371,7 +371,7 @@ The structural and aerodynamic meshes are independent: structural grids sit on t
 aero boxes tile the planform. A **spline** interpolates between them. Two transfers are needed
 and they must be **energy-consistent** with each other.
 
-![Structure–aero spline coupling](figures/spline_coupling.svg)
+![Structure–aero spline coupling](../figures/spline_coupling.svg)
 
 *Figure 3 — The spline maps structural grid motion down to aero box deflection/slope through
 $G_{kg}$, and maps aero box forces back up to structural grid loads through $G_{kg}^{\mathsf T}$.
@@ -550,7 +550,7 @@ unsymmetric, Equation (21) can return complex or negative eigenvalues that are n
 divergence; the selection rule is *smallest positive real*. The forcing terms ($f_g$, $Q_{ax}$)
 do **not** enter Equation (21) — divergence is a property of $K_{aa}$ and $Q_{aa}$ alone.
 
-![Divergence amplification](figures/divergence.svg)
+![Divergence amplification](../figures/divergence.svg)
 
 *Figure 4 — Elastic twist amplification $1/(1-q/q_\text{div})$ versus dynamic pressure. The
 deformation is finite and small at low $q$ and grows without bound as $q\to q_\text{div}$ — the
@@ -636,7 +636,7 @@ solve, so the correction is cheap). Equivalently, $\Phi$ is augmented with **res
 CBAR loads are then recovered from the corrected $u_a$. **Mode-acceleration recovery is
 required, not optional**, for static aeroelastic loads.
 
-![Modal load-recovery convergence](figures/modal_recovery.svg)
+![Modal load-recovery convergence](../figures/modal_recovery.svg)
 
 *Figure 5 — Recovered-load error versus number of retained modes. Mode-displacement recovery
 converges slowly; mode-acceleration recovery converges with very few modes — the demonstration
@@ -724,7 +724,7 @@ $$
 a spanwise dynamic-pressure asymmetry on the wing plus a sideslip on the vertical tail, giving
 the yaw-damping derivative $C_{n_r}$.
 
-![Rigid-body rates as a local incidence field](figures/maneuver_rates.svg)
+![Rigid-body rates as a local incidence field](../figures/maneuver_rates.svg)
 
 *Figure 6 — Rigid-body rates resolved into a local incidence/velocity field. Pitch rate gives a
 streamwise-linear $\Delta\alpha$ (a), roll rate an antisymmetric spanwise $\Delta\alpha$ (b),
@@ -855,7 +855,7 @@ The structure is the existing `sbeam` Euler–Bernoulli model: CBAR elements wit
 node), a consistent mass matrix, and the constraint/rigid-element transforms (`SPC`/`SPC1`,
 `RBE2`/`RBE3`/`RBAR`, `CBUSH`) already validated in Phase 1. The aeroelastic layer **does not
 modify** $K_{aa}$ or $M_{aa}$ — it only adds the $q\,Q_{aa}$ term and the aero forcing. The full
-beam-element stiffness and mass derivations are in `docs/Methods.ipynb`.
+beam-element stiffness and mass derivations are in `docs/20_theory/00_beam_methods.ipynb`.
 
 ---
 
@@ -918,6 +918,6 @@ beam-element stiffness and mass derivations are in `docs/Methods.ipynb`.
 
 ---
 
-*This document is the theory companion to `static_aero_plan.md` (development plan) and
-`static_aero_plan_zaero_review.md` (the ZAERO capability review). Symbols and matrix names are
+*This document is the theory companion to `docs/30_future/01_static_aero_plan.md` (development plan) and
+`docs/30_future/02_static_aero_zaero_review.md` (the ZAERO capability review). Symbols and matrix names are
 common across all three.*

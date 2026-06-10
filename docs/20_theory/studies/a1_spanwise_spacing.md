@@ -1,7 +1,7 @@
 # A1 Diagnostic — Spanwise-Spacing Convergence of the VLM Lift-Curve Slope
 
 **Date:** 2026-06-09
-**Script:** [`studies/a1_spanwise_spacing_study.py`](../studies/a1_spanwise_spacing_study.py)
+**Script:** [`studies/a1_spanwise_spacing_study.py`](../../../studies/a1_spanwise_spacing_study.py)
 **Bug:** A1 — "VLM under-predicts CL_α (3–8%) and the deficit grows with spanwise refinement."
 
 ## Question
@@ -92,7 +92,7 @@ mesh behaviour, and sbeam agrees with the AVL peer VLM at matched resolution.
 
 The like-for-like check was run with **VortexLattice.jl** (BYU FLOW Lab; validated
 against AVL to < 0.1%) at the same nspan sequence, nc=6, uniform spacing, via
-[`studies/byu_wing_sweep.jl`](../studies/byu_wing_sweep.jl). Results (2026-06-09):
+[`studies/byu_wing_sweep.jl`](../../../studies/byu_wing_sweep.jl). Results (2026-06-09):
 
 | nspan | VLM.jl CL | VLM.jl CL_α /rad | sbeam CL_α /rad | Δ (VLM−sbeam) | VLM.jl Cm | VLM.jl CDi |
 |------:|----------:|-----------------:|----------------:|--------------:|----------:|-----------:|

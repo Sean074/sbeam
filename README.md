@@ -52,6 +52,13 @@ The solver reads the case control file (`.bdf`), which uses `INCLUDE` to referen
 pytest
 ```
 
+## Documentation
+
+Full documentation lives in [`docs/`](docs/00_INDEX.md), organised into four sections:
+code standard (`10_standard/`), theory & worked examples (`20_theory/`), future development
+(`30_future/`), and historic record (`40_history/`). Start at the
+[documentation index](docs/00_INDEX.md).
+
 ## Workflow
 
 1. Define geometry in a `*.dat` bulk data file (GRID, CBAR, PBAR, MAT1, SPC, FORCE, etc.)

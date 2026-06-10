@@ -39,15 +39,15 @@ Complete all items before tagging. Each item is a hard gate — do not proceed p
 
 ### 3.1 Backlog and Documentation
 
-- [ ] `development_plan_bugs_todo.md` — all bugs listed for this release are marked resolved.
-- [ ] `docs/completed_development.md` — all steps included in this release are recorded with their full step format.
+- [ ] `docs/30_future/00_backlog.md` — all bugs listed for this release are marked resolved.
+- [ ] `docs/40_history/00_completed_development.md` — all steps included in this release are recorded with their full step format.
 - [ ] All `docs/` files are consistent with the code being released (no documentation drift).
 - [ ] `CHANGELOG.md` (or `CHNGLOG`) entry written for this version: summary of new features, bug fixes, and breaking changes.
 
 ### 3.2 Code Quality
 
-- [ ] No `[CRITICAL]` or `[MAJOR]` open findings from the most recent code review (see `docs/code_review.md`).
-- [ ] No TODO comments that are release-blocking (deferred-to-next-version TODOs are acceptable if logged in `development_plan_bugs_todo.md`).
+- [ ] No `[CRITICAL]` or `[MAJOR]` open findings from the most recent code review (see `docs/10_standard/07_code_review_process.md`).
+- [ ] No TODO comments that are release-blocking (deferred-to-next-version TODOs are acceptable if logged in `docs/30_future/00_backlog.md`).
 - [ ] All public functions in `assembly/`, `solver/`, `parser/`, and `model/` have type hints and docstrings.
 
 ### 3.3 Test Suite
@@ -60,7 +60,7 @@ pytest tests/ -v
 
 - [ ] Zero test failures.
 - [ ] Zero test errors (as distinct from assertion failures).
-- [ ] No tests marked `skip` or `xfail` without a documented reason in `development_plan_bugs_todo.md`.
+- [ ] No tests marked `skip` or `xfail` without a documented reason in `docs/30_future/00_backlog.md`.
 
 ### 3.4 Analytical Verification Cases
 
@@ -141,9 +141,9 @@ Create `docs/verification/vX.Y.Z.md` recording the numerical output of all four 
 
 ## 5. Post-Release Steps
 
-- [ ] Update `development_plan_bugs_todo.md` — remove any items resolved by this release; add any new bugs discovered during final testing.
-- [ ] Update `docs/completed_development.md` — confirm the release tag and date are noted under the relevant steps.
-- [ ] Open the next development cycle by identifying the next milestone in `development_plan_bugs_todo.md`.
+- [ ] Update `docs/30_future/00_backlog.md` — remove any items resolved by this release; add any new bugs discovered during final testing.
+- [ ] Update `docs/40_history/00_completed_development.md` — confirm the release tag and date are noted under the relevant steps.
+- [ ] Open the next development cycle by identifying the next milestone in `docs/30_future/00_backlog.md`.
 - [ ] If the release introduced any new BDF cards or solver types, update the supported card table in `CLAUDE.md`.
 
 ---
@@ -157,7 +157,7 @@ A hotfix is a `PATCH` release that corrects a critical defect in a released vers
 3. Run the full pre-release checklist (§3), focusing on the affected subsystem.
 4. Bump to `X.Y.Z+1`, update changelog, tag, and release.
 5. Merge the fix back to `main`: `git cherry-pick <fix-commit>` or `git merge hotfix/...`.
-6. Record the resolved bug in `docs/completed_development.md` under "Resolved Defects".
+6. Record the resolved bug in `docs/40_history/00_completed_development.md` under "Resolved Defects".
 
 ---
 

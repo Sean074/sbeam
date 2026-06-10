@@ -4,7 +4,7 @@
 **Target release:** Phase 1 (rigid rotating set) in `0.3.0`; Phase 2 (elastic rotating set) in `0.4.0`, **required prior to `1.0.0` production release**.
 **Owner:** Sean O'Meara
 **Reviewer:** —
-**Last updated:** 2026-05-26
+**Last updated:** 2026-06-10
 
 This document is the design proposal for a non-standard sbeam BDF card, `AMODE`, that lets the user introduce a generalized coordinate representing a rigid (Phase 1) or elastic (Phase 2) rotation of a set of grids about a CORD2R-defined hinge axis, against a user-supplied rotational stiffness `k`. The motivating use case is control-surface (aileron, elevator, rudder, flap, tab) modal behaviour for vehicle-level SOL 103 analysis feeding downstream loads / flutter tools.
 
@@ -201,15 +201,15 @@ The assumed-mode coordinate `q` has no *direct* inertia of its own; all inertia 
 | `sbeam/results/f06_writer.py` | Add "A S S U M E D   M O D E   P A R T I C I P A T I O N" table after the eigenvalue table. Columns: MODE NO., AMODE ID, q AMPLITUDE, % OF MODE NORM. |
 | `sbeam/viewer/geometry.py` | `_amode_grid_coords(...)` to compute the rotating-set displacements from `Φ_i · q` for visualisation. |
 | `sbeam/viewer/results_view.py` | Add an "AMODE Participation" panel under SOL 103 results showing the `Sol103Result.amode_participations` table. |
-| `docs/Beam_model.md` | Add AMODE and SET1 to the bulk-data card reference. |
-| `docs/card_definition.md` | Add full field-layout tables for AMODE and SET1. |
-| `docs/Modal_analysis.md` | Add a section explaining the augmented-system formulation and where AMODE inserts in `run_sol103`. |
+| `docs/10_standard/01_beam_model.md` | Add AMODE and SET1 to the bulk-data card reference. |
+| `docs/10_standard/02_card_reference.md` | Add full field-layout tables for AMODE and SET1. |
+| `docs/10_standard/04_modal_analysis.md` | Add a section explaining the augmented-system formulation and where AMODE inserts in `run_sol103`. |
 | `tests/parser/test_amode.py` | **New.** Card parse tests; validation rules; cycle detection. |
 | `tests/assembly/test_amode_transform.py` | **New.** Unit tests on `build_amode_transformation` — shape, dep/red split, Φ_i values. |
 | `tests/integration/test_verification.py` | **Extend** with V19–V23 (see Section 6). |
 | `tests/integration/bdf/v19_amode_rigid_hinge.bdf` etc. | **New** BDF files for V19–V23. |
 | `CHANGELOG.md` | `[Unreleased]` → `Added: AMODE card (Phase 1 — rigid hinge)`. |
-| `development_plan_bugs_todo.md` | Move the Phase 1 step to completed; add Phase 2 (Section 7) as a new step. |
+| `docs/30_future/00_backlog.md` | Move the Phase 1 step to completed; add Phase 2 (Section 7) as a new step. |
 
 ### 5.2 Order of operations in `run_sol103`
 
@@ -379,7 +379,7 @@ Shipping Phase 1 first lets the user community exercise the card UX and provides
   - Craig, Bampton, "Coupling of substructures for dynamic analysis", AIAA Journal Vol. 6 No. 7 (1968).
 - **In-project precedents:**
   - `assembly/rbe3.py` — the existing RBE2/RBE3/RBAR transformation builder is the structural template for `build_amode_transformation`.
-  - `docs/Modal_analysis.md` § "RBE3 Constraint Assembly" — the reduction-in-`run_sol103` insertion-point pattern.
+  - `docs/10_standard/04_modal_analysis.md` § "RBE3 Constraint Assembly" — the reduction-in-`run_sol103` insertion-point pattern.
   - `tests/integration/test_verification.py::TestV13Rbe2RigidCoupling` and `TestV18Rbe2LeverArm` — the test-anchor pattern that V19–V23 will follow.
 
 ---
@@ -392,7 +392,7 @@ Shipping Phase 1 first lets the user community exercise the card UX and provides
 - All V1–V18 pass unchanged.
 - `pytest --cov` shows ≥ 90% coverage on `sbeam/assembly/amode.py` and ≥ 85% on the AMODE branches of `sbeam/solver/sol103.py`.
 - A `sample/sample_amode_aileron.bdf` model exists demonstrating the card and producing a documented first-mode frequency.
-- `docs/Beam_model.md`, `docs/card_definition.md`, `docs/Modal_analysis.md`, `README.md` ("Supported BDF Cards" table) all updated.
+- `docs/10_standard/01_beam_model.md`, `docs/10_standard/02_card_reference.md`, `docs/10_standard/04_modal_analysis.md`, `README.md` ("Supported BDF Cards" table) all updated.
 - `CHANGELOG.md` `[Unreleased]` lists `AMODE (TYPE=HINGE)` under `### Added`.
 
 ### 11.2 Phase 2 (target `0.4.0`, blocker for `1.0.0`)
@@ -401,4 +401,4 @@ Shipping Phase 1 first lets the user community exercise the card UX and provides
 - All V1–V23 pass unchanged.
 - The Phase 1 `TYPE=HINGE` continues to behave bit-identically (rigid-rotating-set path preserved).
 - A `sample/sample_amode_aileron_elastic.bdf` demonstrates the elastic case with an internal aileron-bending mode visible in the output.
-- `docs/AMODE_design.md` (this document) updated to reflect any Phase 2 design changes from this proposal.
+- `docs/30_future/designs/amode_card.md` (this document) updated to reflect any Phase 2 design changes from this proposal.

@@ -47,8 +47,17 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 - `pytest-cov` coverage measurement with branch coverage; explicit 85% floor gate command
   for `solver/`, `assembly/`, and `parser/` modules.
 - AppTest end-to-end viewer tests covering the full SOL 101 and SOL 103 render+run flows.
-- `docs/card_definition.md` — field-level BDF card reference for all 17 implemented bulk
+- `docs/10_standard/02_card_reference.md` — field-level BDF card reference for all 17 implemented bulk
   data cards and all case control keywords.
+
+### Changed
+- **Documentation reorganised** into four numbered sections under `docs/` by document type:
+  `10_standard/` (code standard), `20_theory/` (theory & worked examples), `30_future/`
+  (backlog, plans, design proposals), and `40_history/` (completed-development record and
+  archive). Added `docs/00_INDEX.md` as the navigation entry point. The root planning files
+  (`development_plan_bugs_todo.md`, `static_aero_plan.md`, `static_aero_plan_zaero_review.md`)
+  moved into `docs/30_future/`; the redundant root `todo.md` was merged into the backlog and
+  removed. All internal cross-references updated.
 
 ### Fixed
 - **Case control UI subcase export (B1):** Per-subcase field values (LOAD, SPC, output
@@ -145,10 +154,10 @@ models in NASTRAN BDF input format.
 - `sample/simple_beam.dat` — 10 m steel cantilever, 5 CBAR elements, SI units.
 
 **Documentation**
-- `docs/sbeam.md` — developer and user guide; module structure; coding standards; testing.
-- `docs/Beam_model.md` — BDF card reference; data model.
-- `docs/Static_analysis.md` — SOL 101 algorithm; stiffness matrix derivation; load assembly.
-- `docs/Modal_analysis.md` — SOL 103 algorithm; mass matrix derivation; eigenvalue solution.
-- `docs/viewer.md` — viewer architecture; session state; Plotly figure structure.
-- `docs/Methods.ipynb` — Euler-Bernoulli theory; stiffness and mass matrix derivations;
+- `docs/10_standard/00_program_overview.md` — developer and user guide; module structure; coding standards; testing.
+- `docs/10_standard/01_beam_model.md` — BDF card reference; data model.
+- `docs/10_standard/03_static_analysis.md` — SOL 101 algorithm; stiffness matrix derivation; load assembly.
+- `docs/10_standard/04_modal_analysis.md` — SOL 103 algorithm; mass matrix derivation; eigenvalue solution.
+- `docs/10_standard/06_viewer.md` — viewer architecture; session state; Plotly figure structure.
+- `docs/20_theory/00_beam_methods.ipynb` — Euler-Bernoulli theory; stiffness and mass matrix derivations;
   coordinate transformation; eigenvalue solution.

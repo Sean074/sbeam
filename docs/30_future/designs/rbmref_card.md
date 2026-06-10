@@ -4,8 +4,8 @@
 **Target release:** `0.3.0` (alongside `AMODE` Phase 1).
 **Owner:** Sean O'Meara
 **Reviewer:** —
-**Last updated:** 2026-05-26
-**Related:** [`AMODE_design.md`](AMODE_design.md) — composes cleanly with this feature.
+**Last updated:** 2026-06-10
+**Related:** [`amode_card.md`](amode_card.md) — composes cleanly with this feature.
 
 This document is the design proposal for a non-standard sbeam BDF card, `RBMREF`, that rebases the 6 rigid-body modes produced by a free-free SOL 103 into a user-declared mechanical basis (surge / sway / heave / roll / pitch / yaw) at a CORD2R-defined reference point. The motivating use case is vehicle-level free-free modal analysis where the rigid-body modes must be expressed at a known aero reference (typically 25% MAC) in known body axes for downstream aero correction, flight-dynamics coupling, and loads-tool ingestion.
 
@@ -218,16 +218,16 @@ Use case: workflows that consume `Φᵀ M Φ = I` as a precondition (some modal-
 | `sbeam/results/results.py` | Extend `Sol103Result` with `rbm_metadata: Optional[RbmMetadata] = None`. New `@dataclass RbmMetadata(cid, norm, labels, gen_masses, inertia_tensor, cg_offset, ref_point_global)`. |
 | `sbeam/results/f06_writer.py` | Insert the "R I G I D   B O D Y   M O D E S" block before the eigenvalue table when `result.rbm_metadata is not None`. |
 | `sbeam/viewer/results_view.py` | Mode-selector labels for the first `NRBM` modes use SURGE/SWAY/HEAVE/ROLL/PITCH/YAW instead of "Mode 1, Mode 2, …" when `rbm_metadata` is present. |
-| `docs/Beam_model.md` | Add RBMREF under bulk cards. |
-| `docs/card_definition.md` | Add the RBMREF field table. |
-| `docs/Modal_analysis.md` | Add a "Rigid-body mode rebase" section describing the math and `NORM` options. |
+| `docs/10_standard/01_beam_model.md` | Add RBMREF under bulk cards. |
+| `docs/10_standard/02_card_reference.md` | Add the RBMREF field table. |
+| `docs/10_standard/04_modal_analysis.md` | Add a "Rigid-body mode rebase" section describing the math and `NORM` options. |
 | `README.md` | Add RBMREF to the "Supported BDF Cards" table. |
 | `tests/parser/test_rbmref.py` | **New.** Card parse tests; defaults; duplicate rejection; invalid NORM. |
 | `tests/solver/test_rbm_rebase.py` | **New.** Unit tests on `build_rbm_basis` — column shapes, label ordering, CORD2R rotation correctness. |
 | `tests/integration/test_verification.py` | **Extend** with V27–V32 (see Section 6). |
 | `tests/integration/bdf/v27_rbmref_identity.bdf` etc. | **New** BDF files for V27–V32. |
 | `CHANGELOG.md` | `[Unreleased]` → `Added: RBMREF card (rigid-body mode rebase for free-free SOL 103)`. |
-| `development_plan_bugs_todo.md` | Mark the RBMREF step as complete; document the V27–V32 acceptance gates. |
+| `docs/30_future/00_backlog.md` | Mark the RBMREF step as complete; document the V27–V32 acceptance gates. |
 
 ### 5.2 Order of operations in `run_sol103`
 
@@ -408,7 +408,7 @@ V1–V18 must pass identically after RBMREF is merged. A CI step running `pytest
 - **In-project precedents:**
   - `sbeam/gpwg.py` — the existing GPWG implementation; the inertia-tensor computation in RBMREF reuses the same parallel-axis logic over the full mass distribution.
   - `assembly/coord_transform.py` — `_get_transform(cid, cord2rs)` provides the `(P, R)` pair RBMREF needs to construct `B_target`.
-  - `docs/Modal_analysis.md` — the SOL 103 documentation pattern this design follows.
+  - `docs/10_standard/04_modal_analysis.md` — the SOL 103 documentation pattern this design follows.
 
 ---
 
@@ -419,6 +419,6 @@ V1–V18 must pass identically after RBMREF is merged. A CI step running `pytest
 - A constrained model with RBMREF declared raises `ValueError` cleanly at solve time, never silently produces a wrong rebase.
 - `pytest --cov` shows ≥ 90% coverage on `sbeam/solver/rbm_rebase.py` and ≥ 85% on the RBMREF branches of `sbeam/solver/sol103.py`.
 - A `sample/sample_rbmref_aircraft.bdf` model exists demonstrating the card on a representative free-free vehicle stick model with documented generalised masses for SURGE/SWAY/HEAVE/ROLL/PITCH/YAW.
-- `docs/Beam_model.md`, `docs/card_definition.md`, `docs/Modal_analysis.md`, `README.md` ("Supported BDF Cards" table) all updated.
+- `docs/10_standard/01_beam_model.md`, `docs/10_standard/02_card_reference.md`, `docs/10_standard/04_modal_analysis.md`, `README.md` ("Supported BDF Cards" table) all updated.
 - `CHANGELOG.md` `[Unreleased]` lists `RBMREF` under `### Added`.
 - A combined sample (`sample_rbmref_aircraft.bdf` extended with one AMODE control surface) demonstrates the V32 composition path end-to-end.

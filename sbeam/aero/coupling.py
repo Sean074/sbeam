@@ -6,7 +6,7 @@ It consumes an already-built ``AeroModel`` (raw AIC + correction + integration
 matrices) together with the two beam-spline transfer operators and produces the
 matrices the SOL 144 static-aeroelastic solve needs.
 
-Matrix chain (steady, k = 0), theory ``docs/aeroelastics_theory.md`` Eq. (2), (22a):
+Matrix chain (steady, k = 0), theory ``docs/20_theory/01_aeroelastics_theory.md`` Eq. (2), (22a):
 
     Q_aa = G_disp^T  S_kj  (A_jj*)^-1  D_jk  G_slope                         (n_g, n_g)
     f_g  = G_disp^T  S_kj  (A_jj*)^-1  w_g                                   (n_g,)
