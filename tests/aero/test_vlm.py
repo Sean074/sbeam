@@ -699,3 +699,62 @@ class TestClaConvergenceDiagnostic:
                 err_pct = 100.0 * (cla - target) / target
                 print(f"  AR={AR} {label:8s} nspan={nspan}  CLa={cla:.4f}  err={err_pct:+.2f}%")
         assert True
+
+
+# ---------------------------------------------------------------------------
+# A6 — Trefftz-plane induced drag
+# ---------------------------------------------------------------------------
+
+class TestTrefftzInducedDrag:
+    """Verify CDi and Oswald efficiency e from the Trefftz-plane post-processor.
+
+    Reference wing: rectangular half-span, AR=8 (span=8, chord=1, parity=+1).
+    """
+
+    SPAN  = 8.0
+    CHORD = 1.0
+    AR    = SPAN / CHORD      # = 8 (half-span; full-span AR = 2·SPAN/CHORD = 16
+                               # but the VLM half-span model uses S_ref = SPAN·CHORD
+                               # as its heuristic, so AR from b_ref²/S_ref = (2·SPAN)²/(SPAN·CHORD))
+    ALPHA = math.radians(5.0)
+
+    @pytest.fixture(scope="class")
+    def result(self):
+        boxes = _rect_wing(nspan=12, nchord=4, span=self.SPAN, chord=self.CHORD)
+        return solve_rigid_cl(boxes, alpha=self.ALPHA, parity=1)
+
+    @pytest.fixture(scope="class")
+    def result_2alpha(self):
+        boxes = _rect_wing(nspan=12, nchord=4, span=self.SPAN, chord=self.CHORD)
+        return solve_rigid_cl(boxes, alpha=2.0 * self.ALPHA, parity=1)
+
+    def test_keys_present(self, result):
+        assert "CDi" in result
+        assert "e" in result
+
+    def test_cdi_positive(self, result):
+        assert result["CDi"] > 0.0
+
+    def test_oswald_near_unity(self, result):
+        # Rectangular loading gives e slightly below 1; VLM typically 0.90–1.02
+        assert 0.85 < result["e"] < 1.05
+
+    def test_cdi_cl_identity(self, result):
+        # CDi = CL² / (π · AR · e) must hold to floating-point precision
+        CL  = result["CL"]
+        CDi = result["CDi"]
+        e   = result["e"]
+        # Physical AR: full-span² / full-area = (2·SPAN)² / (2·SPAN·CHORD)
+        AR = (2.0 * self.SPAN) / self.CHORD  # = 16
+        expected = CL ** 2 / (math.pi * AR * e)
+        assert CDi == pytest.approx(expected, rel=1e-9)
+
+    def test_cdi_scales_as_alpha_squared(self, result, result_2alpha):
+        # CDi ∝ α² (linear pressure distribution → quadratic drag)
+        ratio = result_2alpha["CDi"] / result["CDi"]
+        assert ratio == pytest.approx(4.0, rel=0.01)
+
+    def test_cdi_zero_at_zero_alpha(self):
+        boxes = _rect_wing(nspan=12, nchord=4, span=self.SPAN, chord=self.CHORD)
+        r = solve_rigid_cl(boxes, alpha=0.0, parity=1)
+        assert abs(r["CDi"]) < 1e-12

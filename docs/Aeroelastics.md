@@ -12,7 +12,7 @@ BulkData  (bulk.aeros, bulk.caero1s, bulk.paero1s, bulk.aefacts, ...)
   ↓ build_aero_model()
 AeroModel (boxes, ajj, skj, djk, wg, parity, aeros)
   ↓ solve_rigid_cl() / coupled aeroelastic solve (Phase B+)
-Results   (cp, cl_section, CL, CY, CM, per_surface, …)
+Results   (cp, cl_section, CL, CY, CM, CDi, e, per_surface, …)
 ```
 
 ### Module map
@@ -266,6 +266,14 @@ wing CL on multi-surface models.
   normalised by S_ref × c_ref. Each box load acts at its **¼-chord bound vortex**
   (not the ¾-chord collocation point) — the physically correct moment arm.
   Validated against AVL / VortexLattice.jl (`val_vlm_byu_wing`: CM −0.0209 vs −0.02085).
+- `CDi`: Trefftz-plane induced drag coefficient — lift surfaces only, normalised by
+  S_ref. Computed by `trefftz_cdi()` via the 2-D Biot-Savart far-field integral
+  (Katz & Plotkin Eq 12.17). For parity ≠ 0, mirror trailing vortices are included.
+  Zero for `parity = -1` (antisymmetric). Relation to CL:
+  `CDi = CL² / (π · AR · e)`.
+- `e`: Oswald span efficiency — `CL² / (π · AR · CDi)`. For an elliptically loaded
+  wing e = 1; a rectangular wing gives e ≈ 0.90–0.98 depending on AR and mesh.
+  `nan` when CDi ≈ 0 (zero-incidence, antisymmetric, or no lift surfaces).
 - `per_surface`: `{caero_eid: {surface_type, CL, CY, CM}}` — per-CAERO1 coefficients
 
 Note: with `parity=0` (full-span single surface, no image vortex), the VLM solution

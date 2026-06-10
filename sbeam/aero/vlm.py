@@ -126,6 +126,94 @@ def build_ajj(boxes: list, parity: int = 1) -> np.ndarray:
 # Rigid-wing solver
 # ---------------------------------------------------------------------------
 
+def trefftz_cdi(
+    boxes: list,
+    gamma: np.ndarray,
+    parity: int,
+    S_ref: float,
+    ar: float,
+) -> dict:
+    """Trefftz-plane induced drag coefficient and Oswald span efficiency.
+
+    Integrates the semi-infinite trailing-vortex wake in the far-field y-z
+    plane using the 2-D Biot-Savart kernel.  Only lift surfaces
+    (|n_z| ≥ |n_y|) contribute.  Mirror-image trailing vortices are included
+    for parity ≠ 0 using the same convention as horseshoe_influence:
+    the mirror of a direct trailing at (y_v, z_v) with strength s is placed
+    at (-y_v, z_v) with strength -parity·s.
+
+    S_ref must be consistent with the CL normalisation used by the caller
+    (= sum of modelled box areas for heuristic models).
+    ar is the physical aspect ratio (full-span²/full-area) and is computed
+    by the caller to avoid any ambiguity about half-vs-full-span reference.
+
+    Returns {"CDi": float, "e": float} where e is the Oswald efficiency.
+    """
+    lift_idxs = np.array(
+        [i for i, b in enumerate(boxes) if abs(b.normal[2]) >= abs(b.normal[1])],
+        dtype=int,
+    )
+    if len(lift_idxs) == 0 or S_ref < _DEGEN_TOL or ar < _DEGEN_TOL:
+        return {"CDi": 0.0, "e": float("nan")}
+
+    n = len(lift_idxs)
+    gamma_l = gamma[lift_idxs]
+    dy_l = np.array([
+        float(np.linalg.norm(boxes[ii].bound_b - boxes[ii].bound_a))
+        for ii in lift_idxs
+    ])
+
+    # Trefftz-plane induced downwash at each lift-box bound-vortex midpoint
+    w_tr = np.zeros(n)
+    _twopi_inv = 1.0 / (2.0 * math.pi)
+
+    for i, ii in enumerate(lift_idxs):
+        bi = boxes[ii]
+        y_i = 0.5 * (bi.bound_a[1] + bi.bound_b[1])
+        z_i = 0.5 * (bi.bound_a[2] + bi.bound_b[2])
+
+        for j, jj in enumerate(lift_idxs):
+            bj = boxes[jj]
+            Gj = gamma[jj]
+
+            # Direct trailing: +Gj at bound_b, -Gj at bound_a
+            for (y_v, z_v, sv) in (
+                (bj.bound_b[1], bj.bound_b[2],  Gj),
+                (bj.bound_a[1], bj.bound_a[2], -Gj),
+            ):
+                dy = y_i - y_v
+                dz = z_i - z_v
+                r2 = dy * dy + dz * dz
+                if r2 > _DEGEN_TOL:
+                    # u_z from 2-D vortex: -Γ/(2π) · (y - y_v) / r²
+                    w_tr[i] += -sv * _twopi_inv * dy / r2
+
+            # Mirror trailing vortices (parity ≠ 0)
+            if parity != 0:
+                for (y_v, z_v, sv) in (
+                    (-bj.bound_b[1], bj.bound_b[2], -parity * Gj),
+                    (-bj.bound_a[1], bj.bound_a[2],  parity * Gj),
+                ):
+                    dy = y_i - y_v
+                    dz = z_i - z_v
+                    r2 = dy * dy + dz * dz
+                    if r2 > _DEGEN_TOL:
+                        w_tr[i] += -sv * _twopi_inv * dy / r2
+
+    # Trefftz-plane formula: Di = ρ/2 · Σ Γ·w_T·Δy  (Katz & Plotkin Eq 12.17)
+    # With ρ=V∞=1 → q=0.5:  CDi = Di/(q·S_ref) = 2·(ρ/2·Σ)/S_ref = Σ/S_ref
+    # (The ρ/2 and 1/q=2 factors cancel; w_T uses the full 2-D kernel 1/(2π).)
+    Di = float(np.dot(gamma_l * w_tr, dy_l))
+    CDi = Di / S_ref
+
+    # CL from lift boxes (same normalisation as solve_rigid_cl: CL = 2·L/S_ref)
+    CL_l = 2.0 * float(np.dot(gamma_l, dy_l)) / S_ref
+
+    e = (CL_l * CL_l) / (math.pi * ar * CDi) if CDi > _DEGEN_TOL else float("nan")
+
+    return {"CDi": CDi, "e": e}
+
+
 def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
                    parity: int = 1, aeros=None, xref: float = 0.0) -> dict:
     """Solve flow-tangency for a rigid configuration at incidence alpha/beta (radians).
@@ -156,6 +244,8 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
                     lift surfaces only; normalised by S_ref × c_ref. Each box
                     load acts at its 1/4-chord bound vortex (not the 3/4-chord
                     collocation point) — the physically correct moment arm.
+      CDi           Trefftz-plane induced drag coefficient (lift surfaces only)
+      e             Oswald span efficiency: CDi = CL²/(π·AR·e)
       per_surface   dict {caero_eid: {surface_type, CL, CY, CM}}
 
     ``parity`` controls the symmetry image (see module docstring).
@@ -195,14 +285,39 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
     if aeros is not None:
         S_ref = float(aeros.sref)
         c_ref = float(aeros.cref)
+        # AEROS sref/bref refer to the full wing; AR is unambiguous.
+        _ar = float(aeros.bref) ** 2 / S_ref
     else:
-        # Heuristic: total area and mean chord derived from mesh extents
+        # Heuristic: total area and mean chord derived from mesh extents.
+        # For parity ≠ 0 the boxes cover only half the span, so S_ref here is
+        # the half-span area.  b_ref is the full span (2·max_y) and the physical
+        # AR = full_span² / full_area = (2·max_y)² / (2·S_ref_half).
         S_ref = sum(b.area for b in boxes)
         colloc_pts = np.array([b.colloc for b in boxes])
         span_ref = float(np.max(np.ptp(colloc_pts[:, 1:], axis=0))) + dy.mean()
         if span_ref < _DEGEN_TOL:
             span_ref = 1.0
         c_ref = S_ref / span_ref
+        lift_ys = [
+            max(b.bound_a[1], b.bound_b[1])
+            for b in boxes if abs(b.normal[2]) >= abs(b.normal[1])
+        ]
+        max_y = max(lift_ys) if lift_ys else 0.0
+        if parity != 0:
+            b_ref_full = 2.0 * max_y
+            S_ref_full = 2.0 * S_ref      # full-span area for AR only
+        else:
+            b_ref_full = span_ref
+            S_ref_full = S_ref
+        _ar = b_ref_full * b_ref_full / S_ref_full if S_ref_full > _DEGEN_TOL else 1.0
+
+    # -----------------------------------------------------------------------
+    # Trefftz-plane induced drag
+    # -----------------------------------------------------------------------
+    if parity == -1:
+        _cdi_result = {"CDi": 0.0, "e": float("nan")}
+    else:
+        _cdi_result = trefftz_cdi(boxes, gamma, parity, S_ref, _ar)
 
     # -----------------------------------------------------------------------
     # Per-surface classification: horizontal (lift) vs vertical (sideforce)
@@ -280,5 +395,7 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
         "CL":          float(CL),
         "CY":          float(CY),
         "CM":          float(CM),
+        "CDi":         _cdi_result["CDi"],
+        "e":           _cdi_result["e"],
         "per_surface": per_surface,
     }

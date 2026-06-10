@@ -1718,3 +1718,48 @@ Prandtl–Glauert scaling (`β = √(1−M²)`) is not applied.
   current Phase A use cases (M < 0.3). A `mach` parameter wired into `build_aero_model`
   will be the Phase C implementation hook; adding it now would be unused scaffolding.
 - Deferred to Phase C (TRIM / flutter) when a Mach number formally enters the analysis scope.
+
+---
+
+## Phase A — A6: Trefftz-Plane Induced Drag ✅ COMPLETE
+
+**Date:** 2026-06-09
+
+**Objective:** Add a Trefftz-plane post-processing function to `vlm.py` that computes
+the induced drag coefficient (CDi) and Oswald span efficiency (e) from the solved
+circulation field, enabling the standard elliptic-loading cross-check
+`CDi = CL² / (π · AR · e)`.
+
+**Deliverables:**
+1. **`sbeam/aero/vlm.py`** — new `trefftz_cdi(boxes, gamma, parity, S_ref, ar)` function.
+   Integrates the semi-infinite trailing-vortex wake in the far-field y-z plane using
+   the 2-D Biot-Savart kernel (Katz & Plotkin Eq 12.17).  Only lift surfaces
+   (`|n_z| ≥ |n_y|`) contribute.  Mirror trailing vortices are included for `parity ≠ 0`
+   using the same convention as `horseshoe_influence`: the mirror of a direct trailing at
+   `(y_v, z_v)` with strength `s` is placed at `(-y_v, z_v)` with strength `-parity·s`.
+   `solve_rigid_cl` calls `trefftz_cdi` and adds `"CDi"` and `"e"` to its return dict.
+
+2. **`tests/aero/test_vlm.py`** — new `TestTrefftzInducedDrag` class (6 tests):
+   - `test_keys_present`: CDi and e keys exist in the solve_rigid_cl return dict
+   - `test_cdi_positive`: CDi > 0 for α > 0
+   - `test_oswald_near_unity`: e ∈ (0.85, 1.05) for rectangular AR=16 wing
+   - `test_cdi_cl_identity`: CDi = CL²/(π·AR·e) to 1e-9 relative tolerance
+   - `test_cdi_scales_as_alpha_squared`: CDi(2α)/CDi(α) ≈ 4.0 within 1%
+   - `test_cdi_zero_at_zero_alpha`: CDi < 1e-12 at α = 0
+
+3. **`docs/Aeroelastics.md`** — CDi and e entries added to the `solve_rigid_cl` return
+   dict documentation, including the normalisation formula and expected e range.
+
+**Key decisions:**
+- `CDi = Σ Γ·w_T·Δy / S_ref` (no extra ×2): the Trefftz formula has a ρ/2 prefactor
+  that exactly cancels with the 1/q = 2 in the CDi normalisation, so w_T (full 2-D
+  Biot-Savart, factor 1/(2π)) is used without an additional factor.
+- For heuristic reference geometry (no AEROS card), the physical AR is computed as
+  `(2·max_y)² / (2·S_ref_half)` for half-span models to avoid the factor-of-2 error
+  that arises from using `b_ref² / S_ref_half` directly.
+- When AEROS is provided, `ar = bref² / sref` is unambiguous (AEROS always carries
+  full-wing geometry).
+- `parity = -1` (antisymmetric): CDi = 0.0, e = nan — consistent with CL = 0 convention.
+
+**Test / Acceptance:**
+- 6 new tests pass; full aero suite remains 124 passing, 0 failures.

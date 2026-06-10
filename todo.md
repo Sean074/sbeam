@@ -98,11 +98,6 @@ warning exists to catch future user models with degenerate box sizing.
 
 ---
 
-### [A6] Trefftz-plane induced drag — future NIT
-
-No CDi or span-efficiency `e` is computed. Add a Trefftz-plane post-processing function
-to `vlm.py` as a future improvement to enable the standard elliptic-loading cross-check.
-
 ---
 
 ## Phase 3 — Dynamic Solvers (full scope in `development_plan_bugs_todo.md`)

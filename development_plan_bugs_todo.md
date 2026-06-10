@@ -49,6 +49,24 @@ FIX: Root-cause the trailing-vortex induced downwash. Validate against a publish
         asserts CL_α → 2π/(1+2/AR) within tolerance — the current code fails this gate.
 ```
 
+**UPDATE 2026-06-09 — reclassified from kernel-bug suspicion to verification item.**
+Spanwise-spacing convergence study run (`studies/a1_spanwise_spacing_study.py`; full
+results in `docs/a1_spanwise_spacing_study.md`). Findings:
+- **Spanwise spacing (uniform vs cosine) REFUTED as the cause** — identical to <0.2% at
+  every resolution on both the AVL-anchored tapered wing and the rectangular AR=8 wing.
+  The Hough/Lan cosine-spacing remedy does not apply.
+- The refinement drift is **convergent** (decrements halve each nspan doubling; Richardson
+  limit ≈4.56 /rad for the BYU wing), **purely spanwise-count driven**, and independent of
+  nchord (probe 1) and box aspect ratio (probe 2).
+- **At AVL's own 12×6 mesh sbeam matches AVL to 0.09%**; the rectangular converged value
+  (~4.60) sits below the lifting-LINE references (4.78–5.03) by the expected lifting-surface
+  amount. A1's original baseline (lifting-line upper bounds) was too high.
+- **Most consistent with "no defect."** The one remaining like-for-like check is an AVL /
+  VortexLattice.jl convergence sweep at nspan=6/12/24/48 on the BYU wing (external tool):
+  if AVL drifts the same way, close A1 as benign; if AVL plateaus at 4.667 while sbeam falls
+  to ~4.57, a genuine spanwise-count kernel bias remains. The CM moment-arm bug found during
+  this work is tracked and fixed separately as A9.
+
 ---
 
 ### [MAJOR] A2 — `solve_rigid_cl` ignores AEROS reference geometry; lumps all surfaces ✅ RESOLVED
