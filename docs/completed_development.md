@@ -1697,3 +1697,24 @@ model). Replacing it with `np.linalg.solve` (LU-based) reduces cost substantiall
 **Test / Acceptance:**
 - All 17 `test_corrections.py` tests pass.
 - **653 tests pass, 0 failures.**
+
+---
+
+## Phase A — A4: Prandtl–Glauert Compressibility Correction — Deferred and Documented ✅ COMPLETE
+
+**Date:** 2026-06-09
+
+**Objective:** Formally document that Phase A operates at M = 0 (incompressible) and that
+Prandtl–Glauert scaling (`β = √(1−M²)`) is not applied.
+
+**Deliverables:**
+- `docs/Aeroelastics.md` — new "Known Limitations" section added before the Viewer tab
+  section, documenting the M = 0 assumption, the error magnitude at M > 0.3, the manual
+  workaround (scale CL by `1/β`), and the planned Phase C hook for `build_aero_model`.
+- `todo.md` — A4 block removed.
+
+**Key decisions:**
+- No code change is needed or appropriate: the incompressible assumption is correct for all
+  current Phase A use cases (M < 0.3). A `mach` parameter wired into `build_aero_model`
+  will be the Phase C implementation hook; adding it now would be unused scaffolding.
+- Deferred to Phase C (TRIM / flutter) when a Mach number formally enters the analysis scope.

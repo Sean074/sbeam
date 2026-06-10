@@ -98,14 +98,6 @@ warning exists to catch future user models with degenerate box sizing.
 
 ---
 
-### [A4] Prandtl–Glauert compressibility correction — deferred
-
-All Phase A results are effectively incompressible (M = 0). Prandtl–Glauert scaling
-(`β = √(1−M²)`) is not applied. Document this limitation clearly in
-`docs/Aeroelastics.md` until Phase C TRIM brings a Mach number into scope.
-
----
-
 ### [A6] Trefftz-plane induced drag — future NIT
 
 No CDi or span-efficiency `e` is computed. Add a Trefftz-plane post-processing function

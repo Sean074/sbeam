@@ -391,6 +391,27 @@ class AeroModel:
 
 ---
 
+## Known Limitations
+
+### Prandtl–Glauert Compressibility Correction (deferred — Phase C)
+
+Phase A operates at M = 0 (incompressible). Prandtl–Glauert scaling is **not applied**:
+
+```
+CL_incomp = 2π α        →    CL_comp = CL_incomp / β,   β = √(1 − M²)
+```
+
+All lift slopes, AIC matrices, and correction factors are computed and stored for
+M = 0 only. For low-speed applications (M < 0.3) the incompressible assumption
+introduces less than 5% error. At higher subsonic Mach numbers users must apply
+the correction manually by scaling CL results by `1/β`.
+
+This limitation will be lifted in Phase C (TRIM / flutter) when a Mach number enters
+the analysis scope. At that point `build_aero_model` will accept a `mach` argument and
+scale the AIC matrix before inversion.
+
+---
+
 ## Viewer — Aero Tab (S44)
 
 `sbeam/viewer/aero_view.py` provides Plotly figure builders for the aerodynamic mesh
