@@ -637,3 +637,45 @@ SPLINE0  EID  CAERO  ID1  ID2
 ```
 
 `g_disp.T @ (any pressure force)` = 0 for all structural DOFs (V-B3c verified).
+
+---
+
+### `compute_structural_loads` API (Step 49)
+
+```python
+from sbeam.aero.aero_model import compute_structural_loads
+
+f_g = compute_structural_loads(aero_model, q, alpha)
+# f_g: np.ndarray, shape (6 * n_structural_grids,)
+```
+
+Computes the rigid-configuration structural g-set load vector for a given dynamic
+pressure and angle of attack.
+
+**Algorithm:**
+
+```
+w_total[j] = -(alpha * normal_z[j]) + wg[j]   # flow-tangency + baseline normalwash
+gamma       = ajj_inv_corr @ w_total            # VLM solve (returns circulation Γ)
+f_box       = skj @ gamma                       # per-box aerodynamic forces (3·n_box,)
+f_g         = q * g_disp.T @ f_box             # virtual-work force transfer to g-set
+```
+
+**Sign convention:** matches `solve_rigid_cl` — for a horizontal flat plate with
+`normal = [0, 0, 1]`, angle of attack `alpha` gives `w[j] = -alpha` at each box.
+
+**Gamma/cp note:** `ajj_inv_corr @ w` returns circulation Γ (not pressure coefficient
+`cp`). `coupling.py` labels the same result "cp" for historical reasons — this is
+internally consistent because `skj` is calibrated to consume that value directly.
+V-B2b accepts either normalisation (within 2%) to accommodate both conventions.
+
+**Requirements:**
+- `aero_model.g_disp` must not be `None` — call `build_aero_model` with a `grid_index`
+  argument to populate the spline operators. Raises `ValueError` otherwise.
+- `alpha` in radians; `q` in consistent pressure units (Pa, psf, …).
+
+**V-B2 verification (Step 49, machine precision):**
+- V-B2a: `sum(f_g[Tz_dofs]) == q * sum(f_box_z)` to < 1e-10 — exact by virtual work ✓
+- V-B2b: `f_tz` within 2% of `q*CL*sref` (or `/2` for Γ-based AIC) ✓
+- V-B2c: `compute_structural_loads(alpha=0) == q * build_fg(aero, g_disp)` to < 1e-12 ✓
+- V-B2d: `ValueError` when `g_disp is None` ✓

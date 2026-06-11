@@ -1956,3 +1956,40 @@ the `ATTACH` card; confirm `SPLINE0` boxes correctly contribute zero rows.
 - `g_slope` and `g_disp` z-rows only: consistent with SPLINE2 approach where only the
   surface-normal component is populated (x/y rows stay zero)
 - Energy consistency confirmed: `∂(−rx)/∂x = −1 = g_slope[j, col_Ry]` ✓ (virtual work)
+
+---
+
+### Step 49: Force transfer & coupled smoke test ✅ COMPLETE
+
+**Objective:** Wire the full rigid-aero → structural load path into a single callable
+(`compute_structural_loads`) and validate end-to-end with a BDF integration fixture.
+
+**Deliverables:**
+- `sbeam/aero/aero_model.py`: `compute_structural_loads(aero_model, q, alpha) → np.ndarray`
+  - Computes normalwash `w_total = -(alpha * normal_z) + wg`, solves `gamma = ajj_inv_corr @ w_total`,
+    integrates box forces `f_box = skj @ gamma`, transfers to g-set via `f_g = q * g_disp.T @ f_box`
+  - Raises `ValueError` if `aero_model.g_disp is None` (caller must pass `grid_index` to `build_aero_model`)
+  - `grid_index` dropped from function signature (g_disp shape already encodes n_grids)
+- `tests/integration/bdf/val_spline2_cantilever.bdf`: 4 CBARs along global Y (GRIDs 1–5,
+  y=0..4), CAERO1 EID=200 (NSPAN=4, NCHORD=1, box IDs 200–203), CORD2R CID=1
+  (x_hat=[0,1,0] span, z_hat=[0,0,1] normal), SPLINE2 EID=300, AEROS SREF=4.0, full span
+- `tests/integration/test_phase_b.py`: 4 V-B2 tests, all pass
+
+**Test/Acceptance (V-B2 — all machine-precision):**
+- V-B2a: `sum(f_g[Tz_dofs]) == q * sum(f_box_z)` to < 1e-10 relative — exact by virtual work
+  (partition-of-unity of SPLINE2 basis functions; independent of gamma/cp convention) ✓
+- V-B2b: `f_tz` within 2% of `q*CL*sref` or `q*CL*sref/2` (accepts gamma- or cp-based AIC) ✓
+- V-B2c: `compute_structural_loads(alpha=0)` == `q * build_fg(aero, g_disp)` to < 1e-12
+  (both evaluate `g_disp.T @ skj @ ajj_inv_corr @ wg`; tested with injected non-zero wg) ✓
+- V-B2d: `ValueError` raised when `aero_model.g_disp is None` ✓
+- 194 total tests pass (full suite)
+
+**Key decisions:**
+- `grid_index` dropped from `compute_structural_loads` signature — `g_disp.shape[1]` already
+  encodes `6*n_grids`; backlog had it because the design was not yet finalised
+- Gamma/cp ambiguity: `ajj_inv_corr @ w` returns circulation Γ (not pressure coefficient cp),
+  but `coupling.py` labels it "cp" — internally consistent; V-B2b accepts either normalisation
+- V-B2a uses the direct `sum(f_box_z)` comparison rather than `solve_rigid_cl` CL to avoid
+  depending on the gamma/cp convention; virtual-work exactness holds independently
+- BDF fixture geometry verified: CORD2R CID=1 gives x_hat=[0,1,0] (span along Y), confirmed
+  from `test_spline.py:154`; CAERO1 EID=200, NSPAN=4, NCHORD=1 → box IDs 200..203

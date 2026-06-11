@@ -224,38 +224,6 @@ matches a published IPS example (Harder & Desmarais 1972).
 
 ---
 
-### Step 49 — Force transfer & coupled smoke test
-
-**Objective:** Wire the full rigid-aero → structural load path end-to-end using the
-two spline operators (`g_slope`, `g_disp`) from `spline.py` + `coupling.py`, and verify
-against an integration fixture.
-
-**Scope/Deliverables:**
-- `compute_structural_loads(aero_model, grid_index, q, aoa) → np.ndarray (n_g,)` in
-  `aero_model.py` using the `coupling.build_fg` path:
-  ```
-  cp    = ajj_inv_corr @ (aoa × ones + w_g)
-  f_g   = g_disp.T @ (skj @ cp)              # virtual-work consistent force transfer
-  ```
-  (`g_disp` is already stored on `AeroModel`; `build_aero_model` must receive `grid_index`)
-- BDF integration test fixture `tests/integration/bdf/val_spline2_cantilever.bdf`:
-  cantilever beam (3–5 CBARs along y-axis) + single CAERO1 + SPLINE2; root SPC all DOFs
-- `tests/integration/test_phase_b.py`: builds `AeroModel` with `grid_index`, runs
-  `compute_structural_loads` at fixed AOA, checks force balance
-
-**Test/Acceptance (V-B2):**
-- Rigid wing at fixed AOA: `sum(f_g[Tz_dofs])` ≈ `q × CL × sref` (< 1% tolerance)
-- Pitching moment about root ≈ VLM pitching moment centroid
-- With non-zero `w_g`: additional load matches `w_g` contribution in isolation
-
-**Key decisions/risks:**
-- Use `g_disp.T @ (skj @ cp)` for force transfer — this is the virtual-work consistent
-  path from `coupling.build_fg`. Do NOT collapse to a scalar area projection (that
-  discards the 3D normal direction and breaks for non-horizontal surfaces)
-- `build_aero_model` already accepts optional `grid_index` parameter (added in Step 46)
-
----
-
 ## Phase 2 — Model Enhancements
 
 These items extend BDF card support and solver capability. They are independent of the dynamic

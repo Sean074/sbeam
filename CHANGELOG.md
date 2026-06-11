@@ -13,6 +13,18 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Phase B — Force transfer & coupled smoke test (Step 49)**
+- `compute_structural_loads(aero_model, q, alpha)` added to `sbeam/aero/aero_model.py`:
+  wires the full rigid-aero → structural load path via
+  `w_total = -(alpha·normal_z) + wg`, `gamma = ajj_inv_corr @ w_total`,
+  `f_box = skj @ gamma`, `f_g = q * g_disp.T @ f_box`.
+  Raises `ValueError` if `g_disp is None` (caller must supply `grid_index` to `build_aero_model`).
+- BDF integration fixture `tests/integration/bdf/val_spline2_cantilever.bdf`:
+  4-CBAR cantilever, 4-box CAERO1, SPLINE2 via CORD2R CID=1, full-span AEROS.
+- `tests/integration/test_phase_b.py` (V-B2a–d): virtual-work force balance (< 1e-10),
+  CL magnitude plausibility (< 2%), alpha=0 agreement with `build_fg` (< 1e-12),
+  and `ValueError` guard. 194 total tests pass.
+
 **Phase B — ATTACH rigid-body spline (Step 47)**
 - `_build_attach_rows()` implemented in `sbeam/aero/spline.py`: rigid lever-arm coupling
   of a box group to a single master GRID via `ATTACH` card. Fills `g_slope`

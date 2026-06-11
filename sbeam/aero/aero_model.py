@@ -135,3 +135,45 @@ def build_aero_model(bulk: BulkData, parity: int = 1, grid_index: Optional[dict]
         g_slope=g_slope,
         g_disp=g_disp,
     )
+
+
+def compute_structural_loads(
+    aero_model: AeroModel,
+    q: float,
+    alpha: float,
+) -> np.ndarray:
+    """Compute structural g-set loads from rigid VLM at angle of attack alpha.
+
+    Combines AoA-driven normalwash with W2GJ baseline (wg), then transfers
+    aerodynamic box forces to structural DOFs via the virtual-work path:
+
+        w_total[j] = -(alpha * normal_z[j]) + wg[j]
+        gamma       = ajj_inv_corr @ w_total
+        f_box       = skj @ gamma
+        f_g         = q * g_disp.T @ f_box
+
+    Sign convention matches solve_rigid_cl: for a horizontal flat plate
+    (normal=[0,0,1]), AoA alpha gives normalwash = -alpha at each box.
+
+    Args:
+        aero_model: AeroModel with g_disp populated (build_aero_model called
+                    with a grid_index argument).
+        q:          Dynamic pressure (Pa or consistent units).
+        alpha:      Angle of attack (rad).
+
+    Returns:
+        f_g: np.ndarray, shape (6 * n_structural_grids,).
+
+    Raises:
+        ValueError: if aero_model.g_disp is None.
+    """
+    if aero_model.g_disp is None:
+        raise ValueError(
+            "compute_structural_loads: aero_model.g_disp is None; "
+            "pass grid_index to build_aero_model to populate the spline operators"
+        )
+    w_aoa   = np.array([-(alpha * b.normal[2]) for b in aero_model.boxes])
+    w_total = w_aoa + aero_model.wg
+    gamma   = aero_model.ajj_inv_corr @ w_total
+    f_box   = aero_model.skj @ gamma
+    return q * (aero_model.g_disp.T @ f_box)
