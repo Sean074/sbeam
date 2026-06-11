@@ -206,7 +206,7 @@ mapping structural DOFs → per-box 3-D displacement for virtual-work force tran
 These feed directly into `coupling.build_qaa` and `coupling.build_fg`.
 Prerequisite for Phase C (SOL 144).
 
-**Steps 45 and 46 are complete.** See `docs/40_history/00_completed_development.md`.
+**Steps 45, 46, 47, and 49 are complete.** Step 48 (SPLINE1) is deferred. See `docs/40_history/00_completed_development.md`.
 
 ---
 
@@ -221,6 +221,188 @@ Prerequisite for Phase C (SOL 144).
 
 **Test/Acceptance (when implemented):** Reproduces rigid-body and linear fields exactly;
 matches a published IPS example (Harder & Desmarais 1972).
+
+---
+
+## Phase C — SOL 144 Static Aeroelastics, Trim & Divergence
+
+**Goal:** Couple Phases A+B into the structural stiffness to solve the flexible static
+aeroelastic problem: trim (determined and over-determined), flexible stability/control
+derivatives, optional CFD/WT mean-flow injection, and divergence dynamic pressure.
+**Prerequisite:** Phases A and B complete (Steps 39–49).
+
+**Governing equation (g-set reduced to a-set after SPC):**
+
+```
+(K_aa − q · Q_aa) · u_a  =  q · Q_ax · δ_x  +  q · f_g  +  f_ext
+   where   Q_aa = G_kgᵀ · Skj · AJJ*⁻¹ · Djk · G_kg     (flexible increment)
+           Q_ax = rigid aero load sensitivity to trim variables δ_x
+           f_g  = G_kgᵀ · Skj · AJJ*⁻¹ · w_g            (baseline camber/twist/incidence + CFD/WT)
+```
+
+---
+
+### Step 51 — Trim card set parsing (AESTAT / AESURF / AELIST / TRIM / DIVERG / over-determined)
+
+**Objective:** Parse the static aeroelastic trim cards, including the over-determined-trim
+set, and the case-control selectors.
+
+**Scope/Deliverables:**
+- `Aestat`/`Aesurf`/`Aelist`/`Trim`/`Diverg` dataclasses + handlers in `model/aero.py`
+  and `bdf_reader.py`
+- `AESURF` references an `AELIST` of aero boxes forming the control surface; `TRIM` fixes
+  Mach, `q`, and the constrained trim variables
+- **Over-determined set (ZAERO-inspired, sbeam-defined):** `TRIMVAR` (per-variable bounds +
+  initial guess), `TRIMOBJ` (weighted objective function), `TRIMCON` (inequality constraints)
+- Recognise the full `AESTAT` rigid-body set: rates `ROLL`/`PITCH`/`YAW` and accelerations
+  `URDD2`–`URDD6` for balanced maneuver prescription
+- Case control `TRIM=`, `DIVERG=` selectors; `SubcaseControl` gains `trim_sid`, `diverg_sid`
+- Longitudinal/lateral DOF-count pre-solve validator (flags under-specified square
+  sub-system before the solve)
+
+**Test/Acceptance:** Round-trip each card; resolve control-surface box lists; error when a
+`TRIM` references undefined `AESTAT`/`AESURF` labels; the count validator flags an
+under-specified square sub-system.
+
+**Risk (KC2):** Determined system singular when longitudinal/lateral trim-variable counts
+don't match the DOF split — caught here with a clear diagnostic.
+
+---
+
+### Step 52 — SOL 144 trim solve + flexible derivatives (`sol144.py`)
+
+**Objective:** Solve the flexible trim problem (determined and over-determined) and recover
+stability/control derivatives.
+
+**Scope/Deliverables:**
+- `solver/sol144.py`: assemble the augmented trim system (structural equilibrium + trim
+  constraints + baseline `f_g` + inertia-relief load `f_inertial = −M_aa · a` from
+  prescribed maneuver accelerations)
+- **Determined case:** solve the square system directly
+- **Over-determined case:** solve by constrained minimization of the `TRIMOBJ` objective
+  subject to `TRIMCON` constraints and `TRIMVAR` bounds (least-squares core)
+- Recover `u_a`, the free trim variables, flexible `C_Lα`, `C_Mα`, control effectiveness,
+  and structural deflection + CBAR loads (reuse `recover_bar_forces`)
+- **Rate (damping) aero — quasi-steady `Ω×r` incidence (no DLM):** `ROLL`/`PITCH`/`YAW`
+  rate variables get aero load columns from the local incidence a rigid-body rate induces
+  via the steady VLM; pitch rate `Δα(x) = q·(x−x_ref)/V∞`; roll rate `Δα(y) = p·y/V∞`;
+  yaw rate adds spanwise and directional incidence — captures `C_mq`, `C_lp`, `C_nr`
+- Add SOL 144 to the case-control whitelist in `parser/case_control.py`
+
+**Test/Acceptance (V-C1):** Trim a forward-swept / straight wing and reproduce the MSC
+NASTRAN HA144A-class flexible-to-rigid derivative ratios; closed-form check vs Bisplinghoff
+analytical correction. **(V-C4)** An over-determined case (two control effectors, one
+equation) returns the objective-minimizing solution and satisfies the constraints.
+
+**Risk (KC2):** Covered by the Step 51 validator. **Risk (KC6):** Over-determined solution
+may be a local optimum — document initial-guess sensitivity (`TRIMVAR INITIAL`).
+
+---
+
+### Step 53 — Balanced maneuver loads & inertia relief
+
+**Objective:** Compute balanced static maneuver loads — symmetric pull-up/push-over at a
+load factor, steady roll, steady yaw/sideslip — and output the net (aero + inertial) load
+for downstream stress analysis.
+
+**Scope/Deliverables:**
+- Each maneuver point is a `TRIM` subcase with prescribed `AESTAT` accelerations/rates and
+  load factor
+- Assemble `f_inertial = −M_aa · a` by distributing the rigid-body acceleration field over
+  the structural mass (`M_aa`, `CONM2`, GPWG; `GRAV` for gravity); solve the trim (Step 52)
+  so that aero + inertial + gravity is in equilibrium in the body frame
+- Recover deflection + CBAR loads (mode-acceleration recovery when the modal ROM is active)
+- Steady rotary maneuvers draw their damping aero from the antisymmetric VLM (Step 41)
+- Standard maneuver-case presets: symmetric pull-up/push-over, steady roll, steady sideslip
+
+**Test/Acceptance (V-C5):** Symmetric pull-up at load factor `n_z` — net (aero + inertial)
+resultant equals `n_z · W` with zero residual force/moment in body frame; recovered CBAR
+loads scale linearly with `n_z`. A free-aircraft (SUPORT-referenced) case balances to ≈0
+net force/moment.
+
+**Risk (KC9):** Inertia-relief inconsistent with prescribed accelerations (gravity
+double-counted; lumped vs consistent mass) → net imbalance — assert force/moment closure
+per maneuver case.
+
+---
+
+### Step 54 — CFD / wind-tunnel steady-pressure injection (mean-flow trim)
+
+**Objective:** Allow the trim mean-flow aerodynamics to be supplied directly from CFD or
+wind-tunnel steady pressures, so the trim solution is a perturbation about the measured
+operating point.
+
+**Scope/Deliverables:**
+- `CHORDCP` card supplies a per-box steady `{cp}` (or per-strip load) at a stated reference
+  angle of attack; `Chordcp` dataclass + handler
+- `sol144.py` replaces the program-computed mean-flow rigid load with the injected
+  distribution, reusing the Step 43 pressure-/force-matching machinery; trim variables
+  then perturb about the injected state
+- Require the reference AOA on the `CHORDCP` card; document the operating-point bookkeeping
+
+**Test/Acceptance:** Injecting the program's own inviscid mean-flow reproduces the Step 52
+result (identity); injecting a scaled distribution shifts the trimmed AOA by the expected
+amount; total injected lift/moment matches the supplied integral.
+
+**Risk (KC7):** Operating-point/reference-AOA mismatch — validate and warn.
+
+---
+
+### Step 55 — Aeroelastic divergence (`DIVERG`)
+
+**Objective:** Solve `K_aa φ = q · Q_aa φ` for the lowest positive divergence dynamic
+pressure and mode shape.
+
+**Scope/Deliverables:**
+- `sol144.py`: generalised eigenvalue solve (reuse the dense path from `sol103.py`); filter
+  to the smallest positive real `q`; report `q_div` and `V_div` (given ρ)
+- Divergence depends only on `K_aa` and `Q_aa` (the `w_g`/`Q_ax` RHS does not enter the
+  eigenvalue)
+
+**Test/Acceptance (V-C2):** Goland wing and an idealised swept cantilever — `q_div` matches
+the published / closed-form Bisplinghoff value within a few %.
+
+**Risk (KC3):** Spurious negative/complex eigenvalues from the unsymmetric `Q_aa`; document
+the "smallest positive real" selection rule; test against Goland.
+
+---
+
+### Step 56 — SOL 144 f06 output + flight/maneuver-load export
+
+**Objective:** Write the static aeroelastic results to `.f06`, and export the trimmed loads
+as `FORCE`/`MOMENT` cards for downstream stress analysis.
+
+**Scope/Deliverables:**
+- New f06 blocks in `results/f06_writer.py`: TRIM VARIABLES, STABILITY DERIVATIVES,
+  AERODYNAMIC DIVERGENCE, AERODYNAMIC PRES/FORCES; reuse existing displacement and
+  CBAR-force blocks
+- `results/results.py`: new `Sol144Result` (trim variables, flexible stability/control
+  derivatives, divergence q, box pressures/forces, structural displacement, recovered CBAR
+  loads, grid flight-load vectors)
+- `SubcaseControl` output requests `AEROF` (aero box forces) and `APRES` (aero box
+  pressures)
+- **Load export:** grid loads as NASTRAN `FORCE`/`MOMENT` bulk-data cards per subcase; for
+  a plain trim this is `G_kgᵀ·q·P_k`; for a maneuver case (Step 53) this is the net (aero
+  + inertial) balanced load for downstream stress
+
+**Test/Acceptance:** Snapshot/regression test of the f06 text for a sample SOL 144 run;
+the exported `FORCE`/`MOMENT` set sums to the total trimmed lift/moment (plain trim) and to
+`n_z · W` with zero residual (maneuver case).
+
+---
+
+### Step 57 — Viewer: SOL 144 results
+
+**Objective:** Display trim solution, derivatives, divergence q, deflected shape, and box
+`cp` in the viewer.
+
+**Scope/Deliverables:**
+- Extend `viewer/aero_view.py` and `viewer/results_view.py`: trim & derivative tables,
+  flexible-vs-rigid overlay, `q_div` readout, injected-vs-computed mean-flow overlay when
+  `CHORDCP` is active
+
+**Test/Acceptance:** AppTest integration test loads a SOL 144 result and renders all panels
+without error.
 
 ---
 

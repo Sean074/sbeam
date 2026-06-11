@@ -56,7 +56,7 @@ def _cc_include_path(line: str) -> str:
 # Main parser
 # ---------------------------------------------------------------------------
 
-_SUPPORTED_SOLS = frozenset({101, 103})
+_SUPPORTED_SOLS = frozenset({101, 103, 144})
 
 
 def parse_case_control(lines: list) -> CaseControl:

@@ -679,3 +679,176 @@ V-B2b accepts either normalisation (within 2%) to accommodate both conventions.
 - V-B2b: `f_tz` within 2% of `q*CL*sref` (or `/2` for Γ-based AIC) ✓
 - V-B2c: `compute_structural_loads(alpha=0) == q * build_fg(aero, g_disp)` to < 1e-12 ✓
 - V-B2d: `ValueError` when `g_disp is None` ✓
+
+---
+
+## Phase C — SOL 144 Static Aeroelastics
+
+### Governing Equation
+
+The flexible static aeroelastic equilibrium on the SPC-free a-set:
+
+```
+(K_aa − q · Q_aa) · u_a  =  q · f_g  +  f_struct
+```
+
+where:
+- `K_aa` — structural stiffness reduced to the a-set (SPC + RBE3 applied)
+- `Q_aa` — flexible aerodynamic stiffness `G_dispᵀ S_kj (A_jj*)⁻¹ D_jk G_slope`
+- `f_g` — baseline aero load from camber/twist/incidence normalwash (from `build_fg`)
+- `f_struct` — structural load from the BDF `LOAD` set
+
+Step 50 solves this equation without trim variables (Steps 51–52 add trim card
+parsing and the full SOL 144 solve with `Q_ax·δ_x`).
+
+---
+
+### `coupling.py` — Phase C Coupling Functions
+
+Three pure linear-algebra functions in `sbeam/aero/coupling.py` implement the
+Phase C matrix chains. They operate on already-built AeroModel quantities.
+
+#### `build_qaa(aero, g_disp, g_slope) → np.ndarray`
+
+```
+Q_aa = G_disp^T  S_kj  (A_jj*)^-1  D_jk  G_slope    shape (n_g, n_g)
+```
+
+| Arg | Shape | Description |
+|-----|-------|-------------|
+| `aero` | — | AeroModel (provides `skj`, `ajj_inv_corr`, `djk`) |
+| `g_disp` | (3n_box, n_g) | Displacement spline from `build_g_spline` |
+| `g_slope` | (n_box, n_g) | Slope spline from `build_g_spline` |
+
+Returns the **g-set** Q_aa (dense, unsymmetric in general). Reduction to the
+a-set is done downstream in `sol144._build_qaa_aset`.
+
+#### `build_fg(aero, g_disp) → np.ndarray`
+
+```
+f_g = G_disp^T  S_kj  (A_jj*)^-1  w_g               shape (n_g,)
+```
+
+Baseline aero load from the `W2GJ` normalwash at zero elastic deflection.
+The trim/static RHS contribution is `q · f_g`.
+
+#### `build_gaf(qaa, phi) → np.ndarray`
+
+```
+Q_hh = Phi^T  Q_aa  Phi                              shape (n_modes, n_modes)
+```
+
+Modal generalized aerodynamic force (GAF) matrix. `phi` and `qaa` must be on
+the same DOF set. Used by the modal-truncation ROM in `sol144._solve_rom`.
+
+---
+
+### `sol144.py` — Step 50 Aeroelastic Static Solver
+
+**Module:** `sbeam/solver/sol144.py`
+
+#### Public entry point
+
+```python
+from sbeam.solver.sol144 import run_aeroelastic_static
+
+result = run_aeroelastic_static(
+    bulk,           # BulkData
+    subcase,        # SubcaseControl (uses spc_sid, load_sid, method_sid)
+    aero,           # AeroModel — must have g_slope and g_disp populated
+    q,              # float — dynamic pressure in consistent units
+    use_rom=False,  # bool — enable modal-truncation ROM with mode-acceleration
+    sol103_result=None,  # Optional[Sol103Result] — pre-computed modes for ROM
+)
+# result: Sol144Result
+```
+
+`aero` must be built with `build_aero_model(bulk, parity=..., grid_index=grid_index)`
+to populate the spline operators; raises `ValueError` otherwise.
+
+When `use_rom=True` and `sol103_result is None`, SOL 103 is run internally using
+`subcase.method_sid` (raises if `method_sid` is None).
+
+#### Private helpers
+
+| Function | Purpose |
+|----------|---------|
+| `_build_qaa_aset(bulk, aero, grid_index, spc_sid, f_g_full)` | Reduce g-set Q_aa and K_aa to the a-set via RBE3 + SPC partition |
+| `_solve_direct(K_aa, Q_aa, f_aa, q, free_dofs, n_dofs)` | Dense direct solve of `(K_aa − q·Q_aa)·u_a = f_aa` |
+| `_solve_rom(K_aa, Q_aa, f_aa, q, phi_free)` | Modal-truncation ROM solve |
+| `_mode_acceleration_recovery(K_aa, Q_aa, f_aa, q, phi_free, xi, k_aa_lu)` | Mode-acceleration correction |
+
+#### `_build_qaa_aset` algorithm
+
+Mirrors the RBE3 + SPC reduction in `sol101.py`, applied to the (K, Q, f) triple:
+
+```
+1. Q_gg = build_qaa(aero, aero.g_disp, aero.g_slope)    # (n_g, n_g) dense
+2. K_gg = assemble_global_stiffness(bulk)                  # (n_g, n_g) sparse CSR
+3. T, dep_dofs, red_dofs = build_rbe3_transformation(bulk, grid_index)
+4. If RBE3 present:
+     K_red = (T.T @ K_gg @ T).toarray()   # dense after NumPy @ semantics
+     Q_red = T.T @ Q_gg @ T
+5. Else:
+     K_red = K_gg.toarray()               # dense (Q_aa is dense; system is dense anyway)
+     Q_red = Q_gg
+6. Partition to free a-set (SPC) → K_aa, Q_aa of shape (n_a, n_a)
+7. free_dofs = g-set DOF indices for the a-set rows/cols
+```
+
+Rationale for always-dense K_aa: adding dense Q_aa to sparse K would require a
+mixed-format code path; converting K to dense at this point is consistent with
+the RBE3 dense-fallback precedent in `sol101.py` (Risk KC1 from the backlog).
+
+#### Mode-acceleration recovery
+
+For a truncated modal basis `Φ` (first `n_m` columns), the mode-displacement
+estimate `u_md = Φξ` leaves a static residual. The mode-acceleration correction
+applies the pure structural flexibility to that residual:
+
+```
+residual = f_aa - (K_aa - q·Q_aa) · Φξ
+u_a      = Φξ  +  K_aa⁻¹ · residual
+```
+
+`K_aa⁻¹ · residual` is computed cheaply via `lu_solve(k_aa_lu, residual)` where
+`k_aa_lu` is the LU factorization stored in `Sol144Result.k_aa_lu`. When all modes
+are retained the residual is zero and the correction vanishes identically.
+
+---
+
+### `Sol144Result` — Step 50 Result Dataclass
+
+```python
+@dataclass
+class Sol144Result:
+    displacements: np.ndarray          # (n_dofs,) full g-set; SPC DOFs zeroed
+    bar_forces: dict                   # {eid: BarForce}
+    bar_stresses: dict                 # {eid: BarStress}
+    q_aa: np.ndarray                   # (n_a, n_a) flexible aero stiffness on a-set
+    q: float                           # dynamic pressure used in this solve
+    free_dofs: list                    # a-set DOF indices into the g-set (len = n_a)
+    k_aa_lu: tuple                     # (lu, piv) from lu_factor(K_aa); reused by Step 52
+    modal_coords: Optional[np.ndarray] # (n_modes,) ξ; None when use_rom=False
+    phi_free: Optional[np.ndarray]     # (n_a, n_modes); None when use_rom=False
+    k_hh: Optional[np.ndarray]         # (n_modes, n_modes) Φᵀ K_aa Φ
+    q_hh: Optional[np.ndarray]         # (n_modes, n_modes) Φᵀ Q_aa Φ (modal GAF)
+```
+
+`k_aa_lu` is stored for Step 52 reuse: the pure structural stiffness factorization
+is needed for the mode-acceleration correction in each trim subcase without
+re-factorizing K_aa.
+
+---
+
+### V-C3 Acceptance Criteria (Step 50)
+
+All tests in `tests/aero/test_step50_qaa.py`:
+
+| ID | Test | Tolerance |
+|----|------|-----------|
+| V-C3-1 | `Q_aa.shape == (n_a, n_a)` and `K_aa.shape == (n_a, n_a)` | exact |
+| V-C3-2 | `run_aeroelastic_static(q=0)` displacements ≡ `run_sol101` | 1e-10 |
+| V-C3-3 | ROM (all modes) + mode-acceleration ≡ direct solve | 1e-6 |
+| V-C3-4 | At n_modes/4: MA CBAR root-moment error < MD error | MA < MD always |
+| V-C3-5 | `lu_solve(k_aa_lu, K_aa @ e1) ≈ e1` | 1e-10 |

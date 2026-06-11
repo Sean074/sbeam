@@ -1993,3 +1993,60 @@ the `ATTACH` card; confirm `SPLINE0` boxes correctly contribute zero rows.
   depending on the gamma/cp convention; virtual-work exactness holds independently
 - BDF fixture geometry verified: CORD2R CID=1 gives x_hat=[0,1,0] (span along Y), confirmed
   from `test_spline.py:154`; CAERO1 EID=200, NSPAN=4, NCHORD=1 → box IDs 200..203
+
+---
+
+## Phase C — SOL 144 Static Aeroelastics
+
+### Step 50: Aero stiffness assembly Q_aa + modal-truncation ROM ✅ COMPLETE
+
+**Objective:** Assemble the flexible aerodynamic stiffness `Q_aa` on the structural
+a-set and provide an optional modal-truncation reduced-order model (ROM) built on the
+SOL 103 free-vibration basis, with mode-acceleration load recovery.
+
+**Deliverables:**
+- `sbeam/solver/sol144.py` — new module:
+  - `_build_qaa_aset(bulk, aero, grid_index, spc_sid, f_g_full)`: reduces the g-set
+    `Q_aa = G_dispᵀ S_kj (A_jj*)⁻¹ D_jk G_slope` and `K_aa` to the SPC-free a-set
+    using the same RBE3-then-SPC reduction as `sol101.py`; always-dense output to
+    follow the RBE3 dense-fallback precedent (Risk KC1)
+  - `_solve_direct(K_aa, Q_aa, f_aa, q, free_dofs, n_dofs)`: dense direct solve of
+    `(K_aa − q·Q_aa)·u_a = f_aa`; stores `k_aa_lu = lu_factor(K_aa)` for later reuse
+  - `_solve_rom(K_aa, Q_aa, f_aa, q, phi_free)`: modal-truncation ROM using
+    `K_hh = Φᵀ K Φ` and `Q_hh = build_gaf(Q_aa, Φ)` (reuses `coupling.py`)
+  - `_mode_acceleration_recovery(K_aa, Q_aa, f_aa, q, phi_free, xi, k_aa_lu)`: corrects
+    mode-displacement with `u_a = Φξ + K_aa⁻¹(f_aa − (K_aa−q·Q_aa)Φξ)` via cheap
+    `lu_solve` on the already-factored K_aa
+  - `run_aeroelastic_static(bulk, subcase, aero, q, use_rom, sol103_result)`: public entry
+    point matching the `run_sol101`/`run_sol103` convention; recovers CBAR forces/stresses
+    via the existing `recover_bar_forces`/`recover_bar_stresses` functions unchanged
+- `sbeam/results/results.py`: `Sol144Result` dataclass (displacements, bar_forces,
+  bar_stresses, q_aa, q, free_dofs, k_aa_lu, modal_coords, phi_free, k_hh, q_hh)
+- `sbeam/parser/case_control.py`: added `144` to `_SUPPORTED_SOLS`
+- `tests/aero/test_step50_qaa.py`: 13 V-C3 tests, all pass
+- `docs/10_standard/05_aeroelastics.md`: Phase C section added (governing equation,
+  coupling.py API, sol144.py API, Sol144Result field table, V-C3 acceptance criteria)
+
+**Test/Acceptance (V-C3 — all pass, 708 total tests pass):**
+- V-C3-1: `Q_aa.shape == (n_a, n_a)` and `K_aa.shape == (n_a, n_a)`; n_a < n_g ✓
+- V-C3-2: `run_aeroelastic_static(q=0)` displacements and CBAR forces ≡ `run_sol101` to 1e-10 ✓
+- V-C3-3: ROM (all modes) + mode-acceleration ≡ direct solve to 1e-6 ✓
+- V-C3-4: Mode-acceleration converges faster than mode-displacement on CBAR root bending
+  moment (MA error < MD error at n_modes/4) ✓
+- V-C3-5: `lu_solve(k_aa_lu, K_aa @ e1) ≈ e1` to 1e-10 ✓
+
+**Key decisions:**
+- `_build_qaa_aset` lives in `sol144.py` (not `coupling.py` or `aero_model.py`) because
+  it requires structural infrastructure imports (`apply_spcs`, `build_rbe3_transformation`);
+  `coupling.py` is kept as a pure linear-algebra layer with no structural imports
+- K_aa and Q_aa are always dense after the a-set reduction: Q_aa is dense by construction;
+  adding a dense matrix to sparse K would require a mixed-format code path; always-dense
+  follows the RBE3 dense-fallback precedent in `sol101.py` (Risk KC1 addressed)
+- `k_aa_lu` is stored in `Sol144Result` so Step 52 can reuse the pure structural K
+  factorization for mode-acceleration in each trim subcase without re-factorizing
+- `f_g_full` optional parameter on `_build_qaa_aset` reduces the combined load
+  (structural + aero) alongside K and Q in one pass, avoiding a second index-mapping call
+- Mode-acceleration uses K_aa (pure structural stiffness), not K_eff, for the residual
+  correction — this is the standard mode-acceleration method (Herting 1985); the K_eff
+  residual `f − K_eff·u_md` is computed inside `_mode_acceleration_recovery`, then the
+  structural flexibility `K_aa⁻¹` is applied to it, recovering static load accuracy

@@ -13,6 +13,20 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Phase C — Aero stiffness assembly Q_aa + modal-truncation ROM (Step 50)**
+- `sbeam/solver/sol144.py` new module: `run_aeroelastic_static(bulk, subcase, aero, q,
+  use_rom, sol103_result)` solves `(K_aa − q·Q_aa)·u_a = q·f_g + f_struct`; recovers
+  CBAR forces/stresses. Private helpers: `_build_qaa_aset` (g-set → a-set reduction via
+  RBE3 + SPC, always-dense), `_solve_direct`, `_solve_rom` (modal-truncation ROM via
+  `coupling.build_gaf`), `_mode_acceleration_recovery` (corrects mode-displacement with
+  static flexibility residual using stored `k_aa_lu`).
+- `sbeam/results/results.py`: `Sol144Result` dataclass (displacements, bar_forces,
+  bar_stresses, q_aa, q, free_dofs, k_aa_lu, modal_coords, phi_free, k_hh, q_hh).
+- `sbeam/parser/case_control.py`: SOL 144 added to `_SUPPORTED_SOLS`.
+- `tests/aero/test_step50_qaa.py`: 13 V-C3 acceptance tests (all pass).
+- `docs/10_standard/05_aeroelastics.md`: Phase C section (governing equation, coupling.py
+  API, sol144.py API, Sol144Result fields, V-C3 acceptance criteria).
+
 **Phase B — Force transfer & coupled smoke test (Step 49)**
 - `compute_structural_loads(aero_model, q, alpha)` added to `sbeam/aero/aero_model.py`:
   wires the full rigid-aero → structural load path via

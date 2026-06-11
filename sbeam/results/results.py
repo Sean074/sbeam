@@ -1,6 +1,7 @@
 """Result data structures for sbeam FEA solver."""
 
 from dataclasses import dataclass, field
+from typing import Optional
 import numpy as np
 
 
@@ -49,3 +50,18 @@ class Sol103Result:
     mode_shapes: np.ndarray         # shape (n_dofs, n_modes) — full global DOF mode shapes
     eigenvalues: np.ndarray         # shape (n_modes,) — raw eigenvalues ω² [rad²/s²]
     generalized_masses: np.ndarray  # shape (n_modes,) — phi_i^T M_free phi_i per mode
+
+
+@dataclass
+class Sol144Result:
+    displacements: np.ndarray           # (n_dofs,) full g-set; SPC DOFs zeroed
+    bar_forces: dict                    # {eid: BarForce}
+    bar_stresses: dict                  # {eid: BarStress}
+    q_aa: np.ndarray                    # (n_a, n_a) dense aero stiffness on a-set
+    q: float                            # dynamic pressure used in this solve
+    free_dofs: list                     # a-set indices into g-set (length n_a)
+    k_aa_lu: tuple                      # (lu, piv) from lu_factor(K_aa); reusable by Step 52
+    modal_coords: Optional[np.ndarray] = None   # (n_modes,) ξ; None when ROM not used
+    phi_free: Optional[np.ndarray] = None       # (n_a, n_modes); None when ROM not used
+    k_hh: Optional[np.ndarray] = None           # (n_modes, n_modes) modal structural stiffness
+    q_hh: Optional[np.ndarray] = None           # (n_modes, n_modes) modal GAF matrix
