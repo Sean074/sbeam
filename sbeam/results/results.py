@@ -65,3 +65,24 @@ class Sol144Result:
     phi_free: Optional[np.ndarray] = None       # (n_a, n_modes); None when ROM not used
     k_hh: Optional[np.ndarray] = None           # (n_modes, n_modes) modal structural stiffness
     q_hh: Optional[np.ndarray] = None           # (n_modes, n_modes) modal GAF matrix
+
+
+@dataclass
+class Sol144TrimResult:
+    """Result of a SOL 144 static aeroelastic trim subcase."""
+    subcase_id: int
+    trim_sid: int
+    q: float                             # dynamic pressure
+    mach: float
+    trim_vars: dict                      # {label: value} — all labels (free + prescribed)
+    displacements: np.ndarray            # (n_dofs,) full g-set; SPC/SUPORT DOFs zeroed
+    bar_forces: dict                     # {eid: BarForce}
+    bar_stresses: dict                   # {eid: BarStress}
+    q_aa: np.ndarray                     # (n_a, n_a) aerodynamic stiffness on a-set
+    free_dofs: list                      # a-set indices into g-set (length n_a)
+    k_aa_lu: tuple                       # (lu, piv) for reuse by derivative solver
+    rigid_derivs: dict                   # {label: {'CZ','CMY','CX','CY'}}
+    restrained_derivs: dict              # {label: {'CZ','CMY'}}
+    box_gamma: Optional[np.ndarray] = None   # (n_box,) circulation strengths at trim
+    total_cl: float = 0.0                # total CL = Fz / (q * sref)
+    total_cm: float = 0.0               # total CMy / (q * sref * cref) about x_ref

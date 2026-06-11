@@ -1,4 +1,5 @@
 import os
+import re
 import warnings
 from typing import Optional
 
@@ -10,7 +11,7 @@ from sbeam.model.property import Pbar, Pbush
 from sbeam.model.material import Mat1
 from sbeam.model.mass import Conm2
 from sbeam.model.load import Force, Moment, Load, Grav, Eigrl
-from sbeam.model.constraint import Spc, Spc1
+from sbeam.model.constraint import Spc, Spc1, Suport
 from sbeam.model.aero import (
     Aeros, Caero1, Paero1, Aefact, W2gj, Wkk, Aecorr, Set1,
     Spline2, Attach, Spline0, Spline1,
@@ -34,9 +35,22 @@ def _split_line(line: str) -> list:
     return _split_free_field(line) if "," in line else _split_fixed_field(line)
 
 
+_NASTRAN_SCI = re.compile(r'([^eEdD+\-])([+-]\d+)$')
+
+
 def _to_float(s: str) -> float:
+    """Convert a BDF field string to float.
+
+    Handles NASTRAN short scientific notation (e.g. '1.44+9' → 1.44e9)
+    in addition to standard Python float literals.
+    """
     s = s.strip()
-    return float(s) if s else 0.0
+    if not s:
+        return 0.0
+    m = _NASTRAN_SCI.search(s)
+    if m:
+        s = s[:m.start(2)] + 'e' + s[m.start(2):]
+    return float(s)
 
 
 def _to_int(s: str) -> int:
@@ -635,11 +649,44 @@ def _handle_aesurf(fields: list, bulk: BulkData) -> None:
                                 cid2=cid2, alid2=alid2, eff=eff)
 
 
+def _expand_int_list_with_thru(tokens: list) -> list:
+    """Expand a token list that may contain THRU keywords into a flat integer list."""
+    result = []
+    k = 0
+    while k < len(tokens):
+        t = tokens[k].strip()
+        if not t:
+            k += 1
+            continue
+        if t.upper() == "THRU":
+            start = result[-1]
+            end = _to_int(tokens[k + 1])
+            result.extend(range(start + 1, end + 1))
+            k += 2
+        else:
+            result.append(_to_int(t))
+            k += 1
+    return result
+
+
+def _handle_suport(fields: list, bulk: BulkData) -> None:
+    """SUPORT card — pairs of GID/DOF starting at fields[1]."""
+    i = 1
+    while i + 1 < len(fields) and fields[i].strip():
+        gid  = _to_int(fields[i])
+        dofs = fields[i + 1].strip()
+        if not dofs:
+            raise ValueError(f"SUPORT: blank DOF string for GID {gid}")
+        bulk.supports.append(Suport(gid=gid, dofs=dofs))
+        i += 2
+
+
 def _handle_aelist(fields: list, conts: list, bulk: BulkData) -> None:
-    sid      = _to_int(fields[1])
-    elements = [_to_int(f) for f in fields[2:] if f.strip()]
+    sid    = _to_int(fields[1])
+    tokens = [f for f in fields[2:]]
     for cont in conts:
-        elements += [_to_int(f) for f in cont[1:] if f.strip()]
+        tokens += list(cont[1:])
+    elements = _expand_int_list_with_thru(tokens)
     if sid in bulk.aelists:
         raise ValueError(f"Duplicate AELIST SID {sid}")
     bulk.aelists[sid] = Aelist(sid=sid, elements=elements)
@@ -1001,6 +1048,8 @@ def parse_bulk_data(lines: list) -> BulkData:
             _handle_trimobj(fields, trimobj_conts, bulk)
         elif keyword == "TRIMCON":
             _handle_trimcon(fields, bulk)
+        elif keyword == "SUPORT":
+            _handle_suport(fields, bulk)
         else:
             warnings.warn(f"Unknown BDF card '{keyword}' — skipped", UserWarning, stacklevel=2)
 

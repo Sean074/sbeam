@@ -1,0 +1,178 @@
+$ HA144A — sbeam-native version
+$ Ref: MSC Nastran 2021.3 Aeroelastic Analysis User's Guide, Listing 7-1
+$
+$ Differences from original HA144A.bdf:
+$   Masses in slugs (divide lb by 32.174); PARAM WTMASS not needed
+$   URDD3 = -32.174 ft/s2 (physical acceleration; original uses AUNITS=-1/g)
+$   DMI WKK/W2GJ replaced by W2GJ native card (0.1 deg on 32 wing boxes)
+$   AELIST expanded (no THRU keyword)
+$   MACH=0.9 added to AEROS field 9 (sbeam extension, Prandtl-Glauert)
+$   SOL 144 two subcases (SC 1: q=40, SC 2: q=1200, both M=0.9)
+$
+$ Units: ft, lb, slug, s
+$
+SOL 144
+TITLE = HA144A sbeam
+SUBCASE 1
+  TRIM   = 1
+  SPC    = 1
+SUBCASE 2
+  TRIM   = 2
+  SPC    = 1
+BEGIN BULK
+$
+$ ============================================================
+$ REFERENCE GEOMETRY
+$   ACSID=1, RCSID=100, cref=10 ft, bref=40 ft, sref=200 ft2
+$   SYMXZ=1 (half-span model), field 9 = MACH=0.9 (sbeam extension)
+$ ============================================================
+AEROS, 1, 100, 10.0, 40.0, 200.0, 1, 0, 0.9
+$
+$ ============================================================
+$ COORDINATE SYSTEMS (identical to original)
+$ ============================================================
+$ CID 1 — canard hinge axis (origin at canard quarter-chord)
+CORD2R, 1, 0, 12.5, 0.0, 0.0, 12.5, 0.0, 10.0
++, 20.0, 0.0, 0.0
+$ CID 100 — stability axis (origin at GRID 90 = x=15 ft, z-down)
+CORD2R, 100, 0, 15.0, 0.0, 0.0, 15.0, 0.0, -10.0
++, 0.0, 0.0, 0.0
+$ CID 2 — wing spline axis (x-axis along elastic axis: sbeam x_hat convention)
+$ x_hat = (-0.5, 0.866, 0) = direction from root to tip along elastic axis
+$ C = origin + x_hat*10 = (30-5, 0+8.66025, 0) = (25, 8.66025, 0)
+CORD2R, 2, 0, 30.0, 0.0, 0.0, 30.0, 0.0, 10.0
++, 25.0, 8.66025, 0.0
+$
+$ ============================================================
+$ GRIDS (identical positions to original)
+$ ============================================================
+$ Fuselage (GRID 90 = reference/trim point at x=15 ft)
+GRID, 90,  , 15.0,     0.0,   0.0
+GRID, 97,  , 0.0,      0.0,   0.0
+GRID, 98,  , 10.0,     0.0,   0.0
+GRID, 99,  , 20.0,     0.0,   0.0
+GRID, 100, , 30.0,     0.0,   0.0
+$ Wing elastic axis (y=5 ft: 110 at 50% chord; y=15 ft: 120 at 50% chord)
+GRID, 111, , 24.61325, 5.0,   0.0
+GRID, 110, , 27.11325, 5.0,   0.0
+GRID, 112, , 29.61325, 5.0,   0.0
+GRID, 121, , 18.83975, 15.0,  0.0
+GRID, 120, , 21.33975, 15.0,  0.0
+GRID, 122, , 23.83975, 15.0,  0.0
+$
+$ ============================================================
+$ PROPERTIES AND MATERIALS
+$ ============================================================
+$ Fuselage beam (PBAR 100)
+PBAR, 100, 1, 2.0, 0.173611, 0.15, 0.5
++, 1.0, 1.0, 1.0, -1.0, -1.0, 1.0, -1.0, -1.0
+$ Wing beam (PBAR 101)
+PBAR, 101, 1, 1.5, 0.173611, 2.0, 0.462963
++, 0.5, 3.0, 0.5, -3.0, -0.5, 3.0, -0.5, -3.0
+$ Material (high modulus aluminium-like, no distributed mass)
+MAT1, 1, 1.44+9, 5.40+8
+$
+$ ============================================================
+$ STRUCTURAL ELEMENTS
+$ ============================================================
+$ Fuselage CBARs (orientation: z-direction = (0,0,1))
+CBAR, 101, 100, 97,  98,  0.0, 0.0, 1.0
+CBAR, 102, 100, 98,  90,  0.0, 0.0, 1.0
+CBAR, 100, 100, 90,  99,  0.0, 0.0, 1.0
+CBAR, 103, 100, 99,  100, 0.0, 0.0, 1.0
+$ Wing CBARs (orientation: z-direction = (0,0,1))
+CBAR, 110, 101, 100, 110, 0.0, 0.0, 1.0
+CBAR, 120, 101, 110, 120, 0.0, 0.0, 1.0
+$ Wing rigid bars (streamwise offsets from elastic axis to panel grids)
+RBAR, 111, 110, 111, 123456
+RBAR, 112, 110, 112, 123456
+RBAR, 121, 120, 121, 123456
+RBAR, 122, 120, 122, 123456
+$
+$ ============================================================
+$ POINT MASSES (slugs = lb / 32.174)
+$ ============================================================
+$ Fuselage: 1500 lb / 32.174 = 46.618 slug
+CONM2, 97,  97,  0, 46.618
+CONM2, 98,  98,  0, 46.618
+CONM2, 99,  99,  0, 46.618
+CONM2, 100, 100, 0, 46.618
+$ Wing fwd: 600 lb / 32.174 = 18.647 slug
+CONM2, 311, 111, 0, 18.647
+CONM2, 321, 121, 0, 18.647
+$ Wing aft: 400 lb / 32.174 = 12.431 slug
+CONM2, 312, 112, 0, 12.431
+CONM2, 322, 122, 0, 12.431
+$
+$ ============================================================
+$ CONSTRAINTS
+$ ============================================================
+$ Symmetric BCs at GRID 90 (DOFs 1,2,4,6 fixed; 3,5 are SUPORT free)
+SPC1, 1, 1246, 90
+$ Fuselage nodes: fix Ty(2), Rx(4), Rz(6) — symmetric BCs
+SPC1, 1, 246, 97, 98, 99, 100
+$ Free-body DOFs for trim: Tz(3) and Ry(5) at GRID 90
+SUPORT, 90, 35
+$
+$ ============================================================
+$ AERODYNAMIC PANELS
+$ ============================================================
+PAERO1, 1000
+$ Wing: 8 spanwise x 4 chordwise = 32 boxes (1100-1131)
+CAERO1, 1100, 1000, 0, 8, 4, 0, 0, 1
++, 25.0, 0.0, 0.0, 10.0, 13.45299, 20.0, 0.0, 10.0
+$ Canard: 2 spanwise x 4 chordwise = 8 boxes (1000-1007)
+CAERO1, 1000, 1000, 0, 2, 4, 0, 0, 1
++, 10.0, 0.0, 0.0, 10.0, 10.0, 5.0, 0.0, 10.0
+$
+$ ============================================================
+$ SPLINES
+$ ============================================================
+$ Wing spline (CID=2, DTHX=-1, DTHZ=-1 as in original)
+SPLINE2, 1601, 1100, 1100, 1131, 1100, 0.0, 1.0, 2
++, -1.0, -1.0
+$ Canard spline (CID=1, DTHX=1, DTHZ=-1 as in original)
+SPLINE2, 1501, 1000, 1000, 1007, 1000, 0.0, 1.0, 1
++, 1.0, -1.0
+$
+$ Structural grids used by splines
+SET1, 1100, 99, 100, 111, 112, 121, 122
+SET1, 1000, 98, 99
+$
+$ ============================================================
+$ AERODYNAMIC TRIM VARIABLES
+$ ============================================================
+AESTAT, 501, ANGLEA
+AESTAT, 502, PITCH
+AESTAT, 503, URDD3
+AESTAT, 504, URDD5
+$
+$ ============================================================
+$ CONTROL SURFACE (canard elevator — all 8 canard boxes)
+$ ============================================================
+AESURF, 505, ELEV, 1, 1000
+AELIST, 1000, 1000, 1001, 1002, 1003, 1004, 1005, 1006
++, 1007
+$
+$ ============================================================
+$ WING INCIDENCE: 0.1 deg = 0.001745 rad on all 32 wing boxes
+$ (W2GJ rows 1-32 all = 0.001745; canard has no incidence)
+$ ============================================================
+W2GJ, 1, 1100
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
+$
+$ ============================================================
+$ TRIM CARDS
+$ ============================================================
+$ SC 1: q=40 psf, M=0.9 — free: ANGLEA, ELEV; prescribed: rest
+$ URDD3 = -32.174 ft/s2 (physical 1g upward acceleration, vs -1.0 with AUNITS)
+TRIM, 1, 0.9, 40.0, PITCH, 0.0, URDD3, -32.174
++, URDD5, 0.0
+$ SC 2: q=1200 psf, M=0.9 — same trim condition, different dynamic pressure
+TRIM, 2, 0.9, 1200.0, PITCH, 0.0, URDD3, -32.174
++, URDD5, 0.0
+$
+ENDDATA

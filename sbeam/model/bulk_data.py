@@ -6,6 +6,7 @@ from .aero import (
     Spline2, Attach, Spline0, Spline1,
     Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
 )
+from .constraint import Suport
 
 
 @dataclass
@@ -49,3 +50,4 @@ class BulkData:
     trimvars: dict = field(default_factory=dict)   # {id: Trimvar}
     trimobjs: dict = field(default_factory=dict)   # {sid: Trimobj}
     trimcons: dict = field(default_factory=dict)   # {sid: list[Trimcon]}
+    supports: list = field(default_factory=list)   # list[Suport]
