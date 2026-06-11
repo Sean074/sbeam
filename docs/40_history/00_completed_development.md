@@ -2093,3 +2093,53 @@ logic is added; Step 51 is purely parsing infrastructure.
 - DOF-count diagnostic lives in `parse_bulk_data()` (not a separate validator module)
   because Step 51's scope is parsing only; the full trim-variable partition logic belongs
   in the Step 52 solver
+
+---
+
+## Resolved Defects (Phase A) — AE3: Kutta-Joukowski lift width uses segment LENGTH, not cross-flow projection ✅ FIXED
+
+**Objective:** Correct `dy` in `solve_rigid_cl` and `trefftz_cdi` so that the
+Kutta-Joukowski lift integral uses the **y-projection** of the bound-vortex segment,
+not its 3-D Euclidean length. The physical force is F⃗ = ρ V⃗∞ × Γ Δs⃗; for
+V⃗∞ = (1,0,0) the lift component scales with Δy, not ‖Δs⃗‖.
+
+**Deliverables:**
+
+- `sbeam/aero/vlm.py` — two occurrences of `dy` / `dy_l` changed from
+  `np.linalg.norm(bound_b - bound_a)` to
+  `sqrt((Δy)² + (Δz)²)` (projected cross-flow width; handles sweep and
+  dihedral; degrades to `Δy` for planar wings):
+  - `trefftz_cdi` — `dy_l` array (line ≈195)
+  - `solve_rigid_cl` — `dy` array (line ≈301); all downstream quantities
+    (`chord_box`, `cl_section`, `CL`, `CM`, `CDi`, `per_surface`) pick up the
+    fix automatically
+- `tests/aero/test_integration.py` — inline `dy` formula aligned to match production
+  (numerical result unchanged — test uses an unswept box)
+
+**Test/Acceptance:**
+
+```
+python -c "
+from sbeam.parser.bdf_reader import parse_bdf
+from sbeam.aero.aero_model import build_aero_model
+from sbeam.aero.vlm import solve_rigid_cl
+cc, bulk = parse_bdf('sample/ha144a_sbeam.bdf')
+aero = build_aero_model(bulk, parity=1)
+r = solve_rigid_cl(aero.boxes, 1.0, parity=1, aeros=bulk.aeros, xref=15.0, mach=0.9)
+print(r['CL'], r['CM'])
+"
+# Output: 5.07098  -2.87093
+# NASTRAN ref: CLα = 5.07097, CMα = -2.871
+```
+
+All 74 aero/integration/BYU tests pass (BYU wing is unswept — no numeric change).
+
+**Key decisions:**
+
+- Use `sqrt(Δy² + Δz²)` rather than `abs(Δy)` so that dihedral panels (Δz ≠ 0) are
+  handled correctly without a separate code path.
+- The fix is invisible to every existing test because all validation geometries
+  (2-D limit, AR=8 rectangle, BYU wing) are unswept. The HA144A swept wing is the
+  first model to expose this discrepancy.
+- `chord_box = area / dy` is derived from `dy`, so the chord correction (and hence
+  `cp`, `CM`, `cl_section`) is automatically fixed by the single change.

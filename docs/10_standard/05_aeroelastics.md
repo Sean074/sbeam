@@ -35,15 +35,15 @@ Results   (cp, cl_section, CL, CY, CM, CDi, e, per_surface, …)
 
 A design review against the MSC Nastran HA144A benchmark (Aeroelastic Analysis User's Guide
 Listing 7-2) found that while the VLM core (Biot–Savart kernel, symmetry image, Göthert PG)
-matches the NASTRAN rigid result to 4 significant figures once AE3 is corrected, the
-**integration, spline, and trim layers carry critical defects**. Until the AE items in
-`docs/30_future/00_backlog.md` (Code Review 2026-06-11) are closed:
+matches the NASTRAN rigid result to 4 significant figures (CLα = 5.0709 vs 5.07097, AE3
+resolved), but the **integration, spline, and trim layers carry critical defects**. Until
+the remaining AE items in `docs/30_future/00_backlog.md` (Code Review 2026-06-11) are closed:
 
 | ID | Defect | Affected results |
 |----|--------|------------------|
 | AE1 | Trim solve omits the `q·Q_aa` aeroelastic feedback term | All `run_sol144_trim` output |
 | AE2 | `skj`/coupling path consumes circulation Γ as if it were ΔCp (×chord_box/2 per box) | All coupled forces, `build_fg`, `build_qaa`, derivatives, `total_cl` |
-| AE3 | K-J lift width uses bound-segment length, not cross-flow projection | CL/CM/cp/CDi of any **swept** surface (+15.5% at 30° sweep) |
+| ~~AE3~~ | ~~K-J lift width uses bound-segment length, not cross-flow projection~~ | **RESOLVED** — `dy = sqrt(Δy²+Δz²)`; CLα = 5.0709 ✓ |
 | AE4 | SPLINE2 fails rigid-body kinematics on swept axes / offset grids (sweep projection, Hermite slope sign, DTHX semantics) | `g_slope`, `g_disp`, all coupled loads |
 | AE5 | URDD interpreted in basic frame (RCSID ignored) — HA144A trims to **−1g** | Trim solutions with inertial loads |
 | AE6 | Forces applied at ¾-chord collocation point, not ¼-chord bound vortex | Pitching/torsion moments of all coupled loads |
@@ -306,13 +306,11 @@ wing CL on multi-surface models.
   (not the ¾-chord collocation point) — the physically correct moment arm.
   Validated against AVL / VortexLattice.jl (`val_vlm_byu_wing`: CM −0.0209 vs −0.02085).
 
-  **⚠ AE3 (open):** the spanwise width `dy` used for the Kutta–Joukowski lift (and hence
-  `chord_box`, `cp`, `CM`, `cl_section`, and the Trefftz integral) is the bound-segment
-  *length* `‖bound_b − bound_a‖`, not its cross-flow projection. The K-J force is
-  `F⃗ = ρV⃗∞ × ΓΔs⃗`, which scales with the **y-projection** of the segment — for a swept
-  surface the current code overpredicts lift by 1/cosΛ (+15.5% on the 30°-swept HA144A
-  wing; with the projection applied, CLα = 5.0709 vs NASTRAN 5.07097). All validation
-  cases above are unswept and did not expose this. See backlog AE3.
+  **dy convention (AE3 resolved):** `dy = sqrt(Δy² + Δz²)` — the projected cross-flow
+  width of the bound-vortex segment. The K-J force is `F⃗ = ρV⃗∞ × ΓΔs⃗`; for
+  `V⃗∞ = (1,0,0)` the lift component scales with the **y-projection** of the segment, not
+  its 3-D length. The projection handles sweep and dihedral automatically. Verified:
+  HA144A (Λ = 30°) CLα = 5.0709 vs NASTRAN 5.07097; CMα = −2.871 vs NASTRAN −2.871.
 - `CDi`: Trefftz-plane induced drag coefficient — lift surfaces only, normalised by
   S_ref. Computed by `trefftz_cdi()` via the 2-D Biot-Savart far-field integral
   (Katz & Plotkin Eq 12.17). For parity ≠ 0, mirror trailing vortices are included.
@@ -1024,7 +1022,7 @@ Open defects, in fix order (full detail in `docs/30_future/00_backlog.md`, Code 
 
 | Order | ID | Defect |
 |-------|----|--------|
-| 1 | AE3 | K-J lift width not projected to cross-flow (swept surfaces +1/cosΛ) |
+| ~~1~~ | ~~AE3~~ | ~~K-J lift width not projected to cross-flow~~ — **RESOLVED** ✓ |
 | 2 | AE2 | Γ consumed as ΔCp throughout the coupled force path; `total_cl` divides by q twice |
 | 3 | AE4/AE6 | SPLINE2 swept-axis kinematics; forces applied at ¾-chord |
 | 4 | AE5/AE7 | URDD in basic frame (trims to −1g); no inertial trim columns `M·φr` |

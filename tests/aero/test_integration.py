@@ -143,7 +143,10 @@ class TestBuildWg:
         gamma_wg = np.linalg.solve(ajj, -wg)
 
         # Recover cp from gamma using the same formula as solve_rigid_cl
-        dy = np.array([np.linalg.norm(b.bound_b - b.bound_a) for b in boxes])
+        dy = np.array([
+            np.sqrt((b.bound_b[1] - b.bound_a[1])**2 + (b.bound_b[2] - b.bound_a[2])**2)
+            for b in boxes
+        ])
         chord_box = np.array([boxes[i].area / dy[i] for i in range(n)])
         cp_wg = 2.0 * gamma_wg / chord_box
 

@@ -33,6 +33,17 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
   rigid-body spline kinematics checks, force-transfer-point check, rigid-derivative
   cross-check against `solve_rigid_cl`.
 
+**AE3 — Fixed Kutta-Joukowski lift-width projection for swept wings**
+- `sbeam/aero/vlm.py`: `solve_rigid_cl` and `trefftz_cdi` now use the cross-flow projected
+  width `sqrt(Δy² + Δz²)` as the spanwise width `dy` of each bound-vortex segment, instead
+  of the 3-D Euclidean length `‖bound_b − bound_a‖`. This is required by the K-J theorem
+  (F = ρ V∞ × Γ Δs; lift scales with Δy, not ‖Δs‖). The fix also corrects `chord_box`,
+  `cl_section`, `CM`, `CDi`, and per-surface breakdowns, all of which derived from `dy`.
+- `tests/aero/test_integration.py`: aligned inline `dy` formula to match production code.
+- Verified: HA144A (Λ = 30°) rigid CLα = 5.07098 vs NASTRAN −CZα = 5.07097; CMα = −2.87093
+  vs NASTRAN −2.871. Previously CLα = 5.757 (×1/cos30° = 1.155 overprediction).
+  Unswept validation cases (BYU wing, AR=8 rectangle) are numerically unchanged.
+
 **Step 51 — Trim card set parsing (AESTAT / AESURF / AELIST / TRIM / DIVERG / over-determined)**
 - `sbeam/model/aero.py`: 8 new dataclasses — `Aestat`, `Aesurf`, `Aelist`, `Trim`, `Diverg`,
   `Trimvar`, `Trimobj`, `Trimcon`.

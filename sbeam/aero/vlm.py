@@ -193,7 +193,8 @@ def trefftz_cdi(
     n = len(lift_idxs)
     gamma_l = gamma[lift_idxs]
     dy_l = np.array([
-        float(np.linalg.norm(boxes[ii].bound_b - boxes[ii].bound_a))
+        float(math.sqrt((boxes[ii].bound_b[1] - boxes[ii].bound_a[1])**2
+                      + (boxes[ii].bound_b[2] - boxes[ii].bound_a[2])**2))
         for ii in lift_idxs
     ])
 
@@ -297,8 +298,15 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
     gamma = np.linalg.solve(A, rhs)
     gamma /= beta_pg   # Göthert boundary-condition scaling (§2.8 Eq. 14)
 
-    # Spanwise width of each box (used for Kutta-Joukowski lift)
-    dy = np.array([float(np.linalg.norm(b.bound_b - b.bound_a)) for b in boxes])
+    # Spanwise width of each box (used for Kutta-Joukowski lift).
+    # K-J: F⃗ = ρ V⃗∞ × Γ Δs⃗; for V⃗∞ = (1,0,0), lift scales with Δy, not ‖Δs⃗‖.
+    # Use the projected cross-flow width sqrt(Δy²+Δz²) so sweep and dihedral
+    # are handled correctly without changing any caller.
+    dy = np.array([
+        float(math.sqrt((b.bound_b[1] - b.bound_a[1])**2
+                      + (b.bound_b[2] - b.bound_a[2])**2))
+        for b in boxes
+    ])
 
     # Individual box chord = area / spanwise_width  (avoids relying on box.chord
     # which stores the CAERO1 macroelement chord, not the VLM panel chord)

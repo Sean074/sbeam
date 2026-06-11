@@ -28,9 +28,9 @@ geometric case is unswept and uncoupled; see AE13). Reproduction script:
 | Trim lift | +8 000 lb (=W) | −8 012 lb (trims to −1g) |
 | Rigid CZα (M=0.9) | −5.07097 | −6.339 (sol144 path) / −5.755 (rigid solver) |
 
-**Key positive:** with AE3 corrected (one line), the rigid solver gives CLα = 5.0709 vs NASTRAN
+**Key positive:** AE3 is resolved — the rigid solver gives CLα = 5.0709 vs NASTRAN
 5.07097 at the same 40-box mesh — the Biot–Savart kernel, symmetry image, and Göthert PG
-implementation are validated to 4 significant figures. All damage is in the integration,
+implementation are validated to 4 significant figures. Remaining damage is in the integration,
 spline, and trim layers.
 
 ---
@@ -74,25 +74,6 @@ FIX:    Define the j-set pressure unit ONCE — recommend ΔCp (NASTRAN/ZAERO co
         the corrected inverse rows by 2/chord_box at build time (or insert an explicit
         Γ→Cp diagonal), document on AeroModel, then delete the double-q in total_cl/total_cm
         and re-derive the WT1 target units. Add the unit-consistency gate from AE13.
-```
-
----
-
-### [CRITICAL] AE3 — Kutta-Joukowski lift width uses bound-segment LENGTH, not cross-flow projection
-
-**Files:** `sbeam/aero/vlm.py:301, 305, 195–198`
-
-```
-[CRITICAL] dy = ‖bound_b − bound_a‖. K-J force on a swept bound vortex is F⃗ = ρV⃗∞ × ΓΔs⃗ —
-        lift scales with the y-PROJECTION of the segment, not its length. The 30°-swept
-        HA144A wing overpredicts lift by 1/cos30° = 1.155. Measured: dividing only the wing
-        contribution by 1.1547 gives CLα = 4.4209 + 0.6501 (canard) = 5.0709 vs NASTRAN
-        5.07097. Same dy corrupts chord_box (= area/dy ⇒ Cp and CM: sbeam CMα −3.343 vs
-        NASTRAN −2.871), cl_section, and the Trefftz strip widths. Invisible to existing
-        validation because the 2-D limit, AR=8 rect wing, and BYU/AVL cases are all unswept.
-FIX:    Use the projected width (generally the vector x̂ × Δs⃗, so dihedral falls out
-        automatically) for dy, chord_box, cl_section, and trefftz_cdi. One-line core change;
-        re-baseline the documented CL/CM validation numbers.
 ```
 
 ---
@@ -295,7 +276,7 @@ FIX:    Add three permanent gates:
 Each step is independently verifiable against a number already measured
 (`studies/_review_ha144a_check.py`):
 
-1. **AE3** (lift-width projection) → rigid CLα = 5.071 vs NASTRAN −CZα 5.07097.
+1. ~~**AE3** (lift-width projection)~~ **RESOLVED** — rigid CLα = 5.0709 vs NASTRAN 5.07097 ✓
 2. **AE2** (define j-set unit Γ vs Cp once) → skj path matches the rigid solver exactly;
    total_cl ≈ −1.0 at SC1 trim; WT1 target units re-derived.
 3. **AE4 + AE6** (spline rework per ZAERO Theo §6.3 + ¼-chord force point) → V-AE2 gate
@@ -493,7 +474,7 @@ All Phase 1 bugs (B1–B4) are resolved. See `docs/40_history/00_completed_devel
 Steps 39–46 are complete — see `docs/40_history/00_completed_development.md`. Open Phase A
 work: **A7** (cosine chordwise spacing helper + low-NCHORD warning), **A8** (box
 aspect-ratio pre-solve warning), and from the 2026-06-11 review: **AE2** (Γ/Cp unit
-definition), **AE3** (swept K-J lift width), **AE9** (per-TRIM Mach), **AE12** (PG normals).
+definition), **AE9** (per-TRIM Mach), **AE12** (PG normals).
 
 ---
 
