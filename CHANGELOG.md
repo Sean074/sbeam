@@ -13,6 +13,21 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Step 51 — Trim card set parsing (AESTAT / AESURF / AELIST / TRIM / DIVERG / over-determined)**
+- `sbeam/model/aero.py`: 8 new dataclasses — `Aestat`, `Aesurf`, `Aelist`, `Trim`, `Diverg`,
+  `Trimvar`, `Trimobj`, `Trimcon`.
+- `sbeam/model/bulk_data.py`: 8 new dict fields (`aestats`, `aesurfs`, `aelists`, `trims`,
+  `divergs`, `trimvars`, `trimobjs`, `trimcons`).
+- `sbeam/parser/bdf_reader.py`: 8 new handlers; dispatch branches for all new keywords;
+  post-parse cross-reference validation (AESURF→AELIST, AELIST→CAERO1 box ranges, TRIM label
+  refs); DOF-count diagnostic warns on fully-prescribed or over-determined-without-objective TRIM.
+- `sbeam/parser/case_control.py`: `SubcaseControl` gains `trim_sid` and `diverg_sid`; parser
+  handles `TRIM=` and `DIVERG=` case-control keywords; error message updated to include SOL 144.
+- `docs/10_standard/02_card_reference.md`: field tables for AESTAT, AESURF, AELIST, TRIM,
+  DIVERG, TRIMVAR, TRIMOBJ, TRIMCON; `TRIM=`/`DIVERG=` added to case-control keyword table.
+- `docs/10_standard/05_aeroelastics.md`: updated supported-cards table; Step 51 section
+  (data model, cross-reference rules, DOF-count diagnostic, over-determined trim design).
+
 **Phase C — Aero stiffness assembly Q_aa + modal-truncation ROM (Step 50)**
 - `sbeam/solver/sol144.py` new module: `run_aeroelastic_static(bulk, subcase, aero, q,
   use_rom, sol103_result)` solves `(K_aa − q·Q_aa)·u_a = q·f_g + f_struct`; recovers

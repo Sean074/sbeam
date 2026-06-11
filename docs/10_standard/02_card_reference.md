@@ -42,12 +42,14 @@ Case control appears between the `SOL` line and `BEGIN BULK`. Keywords are not o
 
 | Keyword | Type | Description |
 |---------|------|-------------|
-| `SOL` | int | Solution type. `101` = static, `103` = normal modes |
+| `SOL` | int | Solution type. `101` = static, `103` = normal modes, `144` = static aeroelastic trim |
 | `TITLE` | str | Analysis title — echoed to `.f06` output |
 | `SUBCASE` | int | Opens a subcase block; all lines until the next `SUBCASE` belong to it |
 | `LOAD` | int | Load set ID (references `FORCE`/`MOMENT`/`LOAD` bulk cards) |
 | `SPC` | int | Constraint set ID (references `SPC`/`SPC1` bulk cards) |
 | `METHOD` | int | Eigenvalue method SID (references `EIGRL` bulk card; SOL 103 only) |
+| `TRIM` | int | Trim condition SID (references `TRIM` bulk card; SOL 144 only) |
+| `DIVERG` | int | Divergence condition SID (references `DIVERG` bulk card; SOL 144 only) |
 | `DISPLACEMENT` | — | Request nodal displacement output (`= ALL` or `= PRINT`) |
 | `SPCFORCE` | — | Request SPC reaction force output |
 | `OLOAD` | — | Request applied load echo output |
@@ -962,6 +964,237 @@ AECORR, 30, WT1, 100, 0.80, 0.75, 0.65, 0.50
 
 ---
 
+## Trim Card Set (SOL 144)
+
+The following cards define the static aeroelastic trim problem. They are parsed and
+cross-referenced by the BDF reader but are not yet consumed by a solver (solver deferred
+to Step 52+).
+
+---
+
+### AESTAT — Rigid-body aerodynamic extra point
+
+Defines a rigid-body trim DOF label. Each AESTAT card declares one label that can be
+prescribed or solved in a TRIM condition.
+
+**Standard labels:**
+
+| Label | Meaning |
+|-------|---------|
+| `ANGLEA` | Angle of attack α |
+| `SIDES` | Sideslip angle β |
+| `ROLL` | Roll rate p |
+| `PITCH` | Pitch rate q |
+| `YAW` | Yaw rate r |
+| `URDD2` | Lateral acceleration ÿ |
+| `URDD3` | Normal acceleration z̈ |
+| `URDD4` | Roll angular acceleration |
+| `URDD5` | Pitch angular acceleration |
+| `URDD6` | Yaw angular acceleration |
+
+**Format:**
+```
+AESTAT  ID  LABEL
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| ID | int | Unique identifier |
+| LABEL | str | Trim DOF label (see table above) |
+
+**Example:**
+```
+AESTAT, 100, ANGLEA
+AESTAT, 101, PITCH
+```
+
+---
+
+### AESURF — Aerodynamic control surface
+
+Defines a control surface by name, hinge-line coordinate system, and the AELIST of aero
+boxes that deflect with the surface.
+
+**Format:**
+```
+AESURF  ID  LABEL  CID1  ALID1  CID2  ALID2  EFF
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| ID | int | — | Unique identifier |
+| LABEL | str | — | Control surface name (e.g. `AILERON`) |
+| CID1 | int | — | Coordinate system defining the hinge axis (x-axis = hinge) |
+| ALID1 | int | — | AELIST SID listing boxes on this surface |
+| CID2 | int | 0 | Optional second hinge CID (0 = unused) |
+| ALID2 | int | 0 | Optional second AELIST SID (0 = unused) |
+| EFF | float | 1.0 | Control-surface effectiveness factor |
+
+**Example:**
+```
+AESURF, 200, AILERON, 10, 50
+```
+
+**Cross-reference:** ALID1 (and ALID2 if non-zero) must exist in AELIST.
+
+---
+
+### AELIST — Aerodynamic box ID list
+
+Lists the CAERO1 box IDs that form a control surface or other group.
+
+**Format:**
+```
+AELIST  SID  E1  E2  E3  ...
++       E9  E10  ...
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| SID | int | Set identifier |
+| E1, E2, … | int | CAERO1 box IDs (continuation lines allowed) |
+
+**Example:**
+```
+AELIST, 50, 1001, 1002, 1003, 1004
+```
+
+**Validation:** Every box ID must fall within the range `[CAERO1.EID, CAERO1.EID + NSPAN×NCHORD − 1]` of at least one CAERO1.
+
+---
+
+### TRIM — Static trim condition
+
+Specifies the Mach number, dynamic pressure, and prescribed values for a subset of trim
+variables. All remaining variables (AESTAT + AESURF labels not listed here) are free DOFs
+for the trim solver.
+
+**Format:**
+```
+TRIM  SID  MACH  Q  L1  UX1  L2  UX2  L3  UX3
++     L4   UX4   ...
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| SID | int | Unique identifier (referenced by case control `TRIM=`) |
+| MACH | float | Mach number |
+| Q | float | Dynamic pressure |
+| L1, UX1, … | str, float | Label/value pairs for prescribed variables (continuation OK) |
+
+**Example:**
+```
+TRIM, 10, 0.3, 1500.0, PITCH, 0.0, URDD3, -1.0
+```
+
+**Validation:**
+- Every label must be defined by an AESTAT or AESURF card.
+- Duplicate labels within one TRIM card raise `ValueError`.
+- DOF-count diagnostic: warns if all labels are prescribed (nothing to solve) or if the
+  system is over-determined and no TRIMOBJ card is present.
+
+---
+
+### DIVERG — Divergence speed analysis
+
+Specifies the number of divergence speed roots to find and the Mach values at which to
+evaluate the divergence eigenvalue problem.
+
+**Format:**
+```
+DIVERG  SID  NROOTS  M1  M2  M3  ...
++       M7   M8      ...
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| SID | int | Unique identifier (referenced by case control `DIVERG=`) |
+| NROOTS | int | Number of divergence roots to find |
+| M1, M2, … | float | Mach values (continuation lines allowed) |
+
+**Example:**
+```
+DIVERG, 20, 2, 0.4, 0.6, 0.8
+```
+
+---
+
+### TRIMVAR — Per-variable bounds (sbeam-defined, over-determined trim)
+
+When a trim problem has more free variables than equilibrium equations, TRIMVAR defines
+bounds and an initial guess for each variable so that the over-determined system can be
+solved as a constrained least-squares problem (minimising the TRIMOBJ objective).
+
+**Format:**
+```
+TRIMVAR  ID  LABEL  INIT  LB  UB
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| ID | int | — | Unique identifier |
+| LABEL | str | — | AESTAT or AESURF label this bound applies to |
+| INIT | float | 0.0 | Initial guess |
+| LB | float | −1×10³⁰ | Lower bound |
+| UB | float | +1×10³⁰ | Upper bound |
+
+**Example:**
+```
+TRIMVAR, 10, ANGLEA, 0.05, -0.3, 0.3
+TRIMVAR, 11, AILERON, 0.0, -0.5, 0.5
+```
+
+---
+
+### TRIMOBJ — Weighted objective function (sbeam-defined, over-determined trim)
+
+Defines the weighted least-squares objective for the over-determined trim solve.
+Label/weight pairs are summed: `J = Σ wᵢ·(xᵢ − x̄ᵢ)²`.
+
+**Format:**
+```
+TRIMOBJ  SID  L1  W1  L2  W2  L3  W3  L4  W4
++        L5   W5  ...
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| SID | int | Unique identifier |
+| L1, W1, … | str, float | Label/weight pairs (continuation lines allowed) |
+
+**Example:**
+```
+TRIMOBJ, 20, ANGLEA, 1.0, CL, 0.5
++        CM, 0.1
+```
+
+---
+
+### TRIMCON — Inequality constraint (sbeam-defined, over-determined trim)
+
+Adds a scalar inequality constraint to the over-determined trim optimisation.
+Multiple TRIMCON cards may share the same SID; they are collected as a list.
+
+**Format:**
+```
+TRIMCON  SID  LABEL  SENSE  RHS
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| SID | int | Constraint group identifier |
+| LABEL | str | Variable label to constrain |
+| SENSE | str | `LE` (≤) or `GE` (≥) |
+| RHS | float | Right-hand side of the inequality |
+
+**Example:**
+```
+TRIMCON, 30, CL, GE, 0.3
+TRIMCON, 31, CM, LE, 0.02
+```
+
+---
+
 ## DOF Reference
 
 | DOF | Label | Physical meaning |
@@ -1001,3 +1234,7 @@ DOF strings (used in SPC, SPC1, RBE2, RBE3, CBAR pin releases) are digit sequenc
 | SPC | Enforced displacement D must be `0.0` in Phase 1–2 |
 | W2GJ | Data length must equal NSPAN×NCHORD for the referenced CAERO1 |
 | WKK | Data length must equal NSPAN×NCHORD for the referenced CAERO1 |
+| AESURF | ALID1 (and ALID2 if non-zero) must exist in AELIST |
+| AELIST | All box IDs must fall within at least one CAERO1 range |
+| TRIM | Every label must be defined by AESTAT or AESURF; duplicate labels raise `ValueError` |
+| TRIMCON | SENSE must be `LE` or `GE`; any other value raises `ValueError` |

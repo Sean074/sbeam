@@ -113,3 +113,81 @@ class Spline1:
     setg:  int
     dz:    float
     cid:   int
+
+
+# ---------------------------------------------------------------------------
+# Static aeroelastic trim card set (Step 51 — parsing only; SOL 144 solver deferred)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Aestat:
+    """Rigid-body aerodynamic extra point (trim DOF label)."""
+    id:    int
+    label: str   # e.g. ANGLEA, PITCH, ROLL, YAW, SIDES, URDD2–URDD6
+
+
+@dataclass
+class Aesurf:
+    """Aerodynamic control surface definition."""
+    id:    int
+    label: str          # user-defined surface name (e.g. AILERON)
+    cid1:  int          # coordinate system for hinge line
+    alid1: int          # AELIST SID for boxes on this surface
+    cid2:  int   = 0    # optional second hinge CID
+    alid2: int   = 0    # optional second AELIST SID (0 = unused)
+    eff:   float = 1.0  # control-surface effectiveness (1.0 = full)
+
+
+@dataclass
+class Aelist:
+    """List of aerodynamic box IDs forming a control surface."""
+    sid:      int
+    elements: list = field(default_factory=list)   # list[int] of CAERO1 box IDs
+
+
+@dataclass
+class Trim:
+    """Static trim condition — prescribed values for a subset of trim variables."""
+    sid:  int
+    mach: float
+    q:    float          # dynamic pressure
+    vars: dict = field(default_factory=dict)   # {label: prescribed_value}
+
+
+@dataclass
+class Diverg:
+    """Divergence speed analysis parameters."""
+    sid:    int
+    nroots: int          # number of divergence roots to find
+    machs:  list = field(default_factory=list)   # list[float] of Mach values
+
+
+# ---------------------------------------------------------------------------
+# sbeam-defined over-determined trim cards (ZAERO-inspired)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Trimvar:
+    """Per-variable bounds and initial guess for over-determined trim optimisation."""
+    id:    int
+    label: str    # matching AESTAT or AESURF label
+    init:  float  # initial guess
+    lb:    float  # lower bound
+    ub:    float  # upper bound
+
+
+@dataclass
+class Trimobj:
+    """Weighted objective function for over-determined trim."""
+    sid:     int
+    labels:  list = field(default_factory=list)   # list[str]
+    weights: list = field(default_factory=list)   # list[float], parallel to labels
+
+
+@dataclass
+class Trimcon:
+    """Inequality constraint for over-determined trim."""
+    sid:   int
+    label: str    # variable label
+    sense: str    # "LE" (≤) or "GE" (≥)
+    rhs:   float  # constraint right-hand side

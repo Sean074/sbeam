@@ -1,7 +1,11 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .aero import Aeros, Caero1, Paero1, Aefact, W2gj, Wkk, Aecorr, Set1, Spline2, Attach, Spline0, Spline1
+from .aero import (
+    Aeros, Caero1, Paero1, Aefact, W2gj, Wkk, Aecorr, Set1,
+    Spline2, Attach, Spline0, Spline1,
+    Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
+)
 
 
 @dataclass
@@ -37,3 +41,11 @@ class BulkData:
     attaches: dict = field(default_factory=dict)   # {eid: Attach}
     spline0s: dict = field(default_factory=dict)   # {eid: Spline0}
     spline1s: dict = field(default_factory=dict)   # {eid: Spline1}
+    aestats:  dict = field(default_factory=dict)   # {id: Aestat}
+    aesurfs:  dict = field(default_factory=dict)   # {id: Aesurf}
+    aelists:  dict = field(default_factory=dict)   # {sid: Aelist}
+    trims:    dict = field(default_factory=dict)   # {sid: Trim}
+    divergs:  dict = field(default_factory=dict)   # {sid: Diverg}
+    trimvars: dict = field(default_factory=dict)   # {id: Trimvar}
+    trimobjs: dict = field(default_factory=dict)   # {sid: Trimobj}
+    trimcons: dict = field(default_factory=dict)   # {sid: list[Trimcon]}

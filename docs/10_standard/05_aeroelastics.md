@@ -19,7 +19,7 @@ Results   (cp, cl_section, CL, CY, CM, CDi, e, per_surface, …)
 
 | Module | Purpose |
 |--------|---------|
-| `sbeam/model/aero.py` | Dataclasses: `Aeros`, `Caero1`, `Paero1`, `Aefact`, `W2gj`, `Wkk`, `Aecorr`, `Set1`, `Spline2`, `Attach`, `Spline0`, `Spline1` |
+| `sbeam/model/aero.py` | Dataclasses: `Aeros`, `Caero1`, `Paero1`, `Aefact`, `W2gj`, `Wkk`, `Aecorr`, `Set1`, `Spline2`, `Attach`, `Spline0`, `Spline1`; trim set: `Aestat`, `Aesurf`, `Aelist`, `Trim`, `Diverg`, `Trimvar`, `Trimobj`, `Trimcon` |
 | `sbeam/aero/panel.py` | `AeroBox` dataclass + `mesh_caero1()` — trapezoidal box meshing, ¼c/¾c placement |
 | `sbeam/aero/vlm.py` | Biot–Savart segments, horseshoe influence, AIC matrix, rigid-AOA solve |
 | `sbeam/aero/integration.py` | `Skj` force integration matrix, `Djk` downwash matrix, `wg` baseline normalwash |
@@ -47,6 +47,14 @@ Results   (cp, cl_section, CL, CY, CM, CDi, e, per_surface, …)
 | `ATTACH` | Rigid attachment of box group to single master grid (Step 47, complete) | S45–47 |
 | `SPLINE0` | Zero-displacement constraint — box rows in g_slope/g_disp remain zero | S45–47 |
 | `SPLINE1` | Harder–Desmarais IPS surface spline (parse raises NotImplementedError; Step 48) | S45 |
+| `AESTAT` | Rigid-body trim DOF label (ANGLEA, PITCH, ROLL, YAW, URDD2–URDD6) | S51 |
+| `AESURF` | Aerodynamic control surface — hinge line + AELIST of active boxes | S51 |
+| `AELIST` | Ordered list of CAERO1 box IDs forming a control surface | S51 |
+| `TRIM` | Trim condition — Mach, q, and prescribed label/value pairs | S51 |
+| `DIVERG` | Divergence analysis parameters — NROOTS and Mach sweep | S51 |
+| `TRIMVAR` | Per-variable bounds + initial guess (sbeam-defined; over-determined trim) | S51 |
+| `TRIMOBJ` | Weighted objective function (sbeam-defined; over-determined trim) | S51 |
+| `TRIMCON` | Inequality constraint (sbeam-defined; over-determined trim) | S51 |
 
 ---
 
@@ -852,3 +860,70 @@ All tests in `tests/aero/test_step50_qaa.py`:
 | V-C3-3 | ROM (all modes) + mode-acceleration ≡ direct solve | 1e-6 |
 | V-C3-4 | At n_modes/4: MA CBAR root-moment error < MD error | MA < MD always |
 | V-C3-5 | `lu_solve(k_aa_lu, K_aa @ e1) ≈ e1` | 1e-10 |
+
+---
+
+## Step 51 — Trim Card Set Parsing
+
+Step 51 adds BDF-parsing support for the static aeroelastic trim card set. No solver is
+added; these cards are parsed, stored in `BulkData`, and cross-referenced so that the
+Step 52+ trim solver can consume them directly.
+
+### Data model
+
+All trim objects live in `sbeam/model/aero.py` and are stored in `BulkData` as:
+
+| `BulkData` field | Type | Key |
+|-----------------|------|-----|
+| `aestats` | `dict` | `{id: Aestat}` |
+| `aesurfs` | `dict` | `{id: Aesurf}` |
+| `aelists` | `dict` | `{sid: Aelist}` |
+| `trims` | `dict` | `{sid: Trim}` |
+| `divergs` | `dict` | `{sid: Diverg}` |
+| `trimvars` | `dict` | `{id: Trimvar}` |
+| `trimobjs` | `dict` | `{sid: Trimobj}` |
+| `trimcons` | `dict` | `{sid: list[Trimcon]}` |
+
+### Cross-reference validation (in `parse_bulk_data()`)
+
+1. **AESURF → AELIST**: `alid1` (and `alid2` if non-zero) must exist in `bulk.aelists`.
+2. **AELIST → CAERO1 box range**: every element ID must fall within
+   `[caero.eid, caero.eid + nspan×nchord − 1]` for at least one CAERO1.
+3. **TRIM label**: every key in `trim.vars` must be defined by an AESTAT or AESURF card.
+
+### DOF-count diagnostic
+
+After cross-reference validation, `parse_bulk_data()` emits `UserWarning` for degenerate
+trim conditions:
+
+- **Fully prescribed** (`len(free) == 0`): all trim variables have prescribed values — no
+  DOFs remain for the solver.
+- **Over-determined without objective** (`len(free) > len(prescribed)` and no TRIMOBJ
+  present): the system cannot be solved as a square system; a TRIMOBJ card is required to
+  specify the weighted least-squares objective.
+
+### Case control
+
+SOL 144 subcases may declare:
+
+```
+SOL 144
+SUBCASE 1
+  TRIM   = 10
+  DIVERG = 20
+```
+
+`SubcaseControl` gains `trim_sid` and `diverg_sid` fields (both `Optional[int]`, default `None`).
+
+### Over-determined trim (sbeam-defined cards)
+
+When the number of free trim variables exceeds the number of equilibrium equations,
+the problem is over-determined. sbeam uses three sbeam-defined cards to handle this:
+
+| Card | Role |
+|------|------|
+| `TRIMVAR` | Per-variable initial guess and bounds |
+| `TRIMOBJ` | Weighted least-squares objective `J = Σ wᵢ(xᵢ − x̄ᵢ)²` |
+| `TRIMCON` | Scalar inequality constraints (`LE` or `GE`) |
+
+These cards are parsed and stored but not yet consumed by a solver (deferred to Step 52+).

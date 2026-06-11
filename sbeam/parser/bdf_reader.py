@@ -11,7 +11,11 @@ from sbeam.model.material import Mat1
 from sbeam.model.mass import Conm2
 from sbeam.model.load import Force, Moment, Load, Grav, Eigrl
 from sbeam.model.constraint import Spc, Spc1
-from sbeam.model.aero import Aeros, Caero1, Paero1, Aefact, W2gj, Wkk, Aecorr, Set1, Spline2, Attach, Spline0, Spline1
+from sbeam.model.aero import (
+    Aeros, Caero1, Paero1, Aefact, W2gj, Wkk, Aecorr, Set1,
+    Spline2, Attach, Spline0, Spline1,
+    Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
+)
 from sbeam.parser.case_control import parse_case_control
 
 _IGNORED_KEYWORDS = frozenset({"BEGIN", "BEGINBULK", "ENDDATA"})
@@ -601,6 +605,122 @@ def _handle_spline1(fields: list, bulk: BulkData) -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Trim card set handlers (Step 51)
+# ---------------------------------------------------------------------------
+
+def _handle_aestat(fields: list, bulk: BulkData) -> None:
+    aid   = _to_int(fields[1])
+    label = fields[2].strip().upper() if len(fields) > 2 else ""
+    if not label:
+        raise ValueError(f"AESTAT {aid}: LABEL must not be blank")
+    if aid in bulk.aestats:
+        raise ValueError(f"Duplicate AESTAT ID {aid}")
+    bulk.aestats[aid] = Aestat(id=aid, label=label)
+
+
+def _handle_aesurf(fields: list, bulk: BulkData) -> None:
+    aid   = _to_int(fields[1])
+    label = fields[2].strip().upper() if len(fields) > 2 else ""
+    cid1  = _to_int(fields[3]) if len(fields) > 3 else 0
+    alid1 = _to_int(fields[4]) if len(fields) > 4 else 0
+    cid2  = _to_int_opt(fields[5]) if len(fields) > 5 and fields[5].strip() else 0
+    alid2 = _to_int_opt(fields[6]) if len(fields) > 6 and fields[6].strip() else 0
+    eff   = _to_float(fields[7]) if len(fields) > 7 and fields[7].strip() else 1.0
+    if not label:
+        raise ValueError(f"AESURF {aid}: LABEL must not be blank")
+    if aid in bulk.aesurfs:
+        raise ValueError(f"Duplicate AESURF ID {aid}")
+    bulk.aesurfs[aid] = Aesurf(id=aid, label=label, cid1=cid1, alid1=alid1,
+                                cid2=cid2, alid2=alid2, eff=eff)
+
+
+def _handle_aelist(fields: list, conts: list, bulk: BulkData) -> None:
+    sid      = _to_int(fields[1])
+    elements = [_to_int(f) for f in fields[2:] if f.strip()]
+    for cont in conts:
+        elements += [_to_int(f) for f in cont[1:] if f.strip()]
+    if sid in bulk.aelists:
+        raise ValueError(f"Duplicate AELIST SID {sid}")
+    bulk.aelists[sid] = Aelist(sid=sid, elements=elements)
+
+
+def _handle_trim(fields: list, conts: list, bulk: BulkData) -> None:
+    sid  = _to_int(fields[1])
+    mach = _to_float(fields[2]) if len(fields) > 2 else 0.0
+    q    = _to_float(fields[3]) if len(fields) > 3 else 0.0
+    if sid in bulk.trims:
+        raise ValueError(f"Duplicate TRIM SID {sid}")
+    # Collect alternating LABEL/VALUE pairs from remainder of base line + continuations
+    raw_pairs: list = list(fields[4:])
+    for cont in conts:
+        raw_pairs += list(cont[1:])
+    vars_: dict = {}
+    raw_pairs = [f for f in raw_pairs if f.strip()]
+    if len(raw_pairs) % 2 != 0:
+        raise ValueError(f"TRIM {sid}: odd number of LABEL/VALUE tokens — must be paired")
+    for i in range(0, len(raw_pairs), 2):
+        lbl = raw_pairs[i].strip().upper()
+        val = _to_float(raw_pairs[i + 1])
+        if lbl in vars_:
+            raise ValueError(f"TRIM {sid}: duplicate label '{lbl}'")
+        vars_[lbl] = val
+    bulk.trims[sid] = Trim(sid=sid, mach=mach, q=q, vars=vars_)
+
+
+def _handle_diverg(fields: list, conts: list, bulk: BulkData) -> None:
+    sid    = _to_int(fields[1])
+    nroots = _to_int(fields[2]) if len(fields) > 2 else 1
+    machs  = [_to_float(f) for f in fields[3:] if f.strip()]
+    for cont in conts:
+        machs += [_to_float(f) for f in cont[1:] if f.strip()]
+    if sid in bulk.divergs:
+        raise ValueError(f"Duplicate DIVERG SID {sid}")
+    bulk.divergs[sid] = Diverg(sid=sid, nroots=nroots, machs=machs)
+
+
+def _handle_trimvar(fields: list, bulk: BulkData) -> None:
+    vid   = _to_int(fields[1])
+    label = fields[2].strip().upper() if len(fields) > 2 else ""
+    init  = _to_float(fields[3]) if len(fields) > 3 else 0.0
+    lb    = _to_float(fields[4]) if len(fields) > 4 else -1.0e30
+    ub    = _to_float(fields[5]) if len(fields) > 5 else  1.0e30
+    if not label:
+        raise ValueError(f"TRIMVAR {vid}: LABEL must not be blank")
+    if vid in bulk.trimvars:
+        raise ValueError(f"Duplicate TRIMVAR ID {vid}")
+    bulk.trimvars[vid] = Trimvar(id=vid, label=label, init=init, lb=lb, ub=ub)
+
+
+def _handle_trimobj(fields: list, conts: list, bulk: BulkData) -> None:
+    sid = _to_int(fields[1])
+    if sid in bulk.trimobjs:
+        raise ValueError(f"Duplicate TRIMOBJ SID {sid}")
+    raw_pairs: list = list(fields[2:])
+    for cont in conts:
+        raw_pairs += list(cont[1:])
+    raw_pairs = [f for f in raw_pairs if f.strip()]
+    if len(raw_pairs) % 2 != 0:
+        raise ValueError(f"TRIMOBJ {sid}: odd number of LABEL/WEIGHT tokens — must be paired")
+    labels:  list = []
+    weights: list = []
+    for i in range(0, len(raw_pairs), 2):
+        labels.append(raw_pairs[i].strip().upper())
+        weights.append(_to_float(raw_pairs[i + 1]))
+    bulk.trimobjs[sid] = Trimobj(sid=sid, labels=labels, weights=weights)
+
+
+def _handle_trimcon(fields: list, bulk: BulkData) -> None:
+    sid   = _to_int(fields[1])
+    label = fields[2].strip().upper() if len(fields) > 2 else ""
+    sense = fields[3].strip().upper() if len(fields) > 3 else ""
+    rhs   = _to_float(fields[4]) if len(fields) > 4 else 0.0
+    if sense not in ("LE", "GE"):
+        raise ValueError(f"TRIMCON {sid}: SENSE must be LE or GE, got '{sense}'")
+    # Multiple TRIMCON cards share a SID — collect as list
+    bulk.trimcons.setdefault(sid, []).append(Trimcon(sid=sid, label=label, sense=sense, rhs=rhs))
+
+
 def _handle_eigrl(fields: list, bulk: BulkData) -> None:
     sid  = _to_int(fields[1])
     v1   = _to_float_or_none(fields[2]) if len(fields) > 2 else None
@@ -817,6 +937,70 @@ def parse_bulk_data(lines: list) -> BulkData:
             _handle_spline0(fields, bulk)
         elif keyword == "SPLINE1":
             _handle_spline1(fields, bulk)
+        elif keyword == "AESTAT":
+            _handle_aestat(fields, bulk)
+        elif keyword == "AESURF":
+            _handle_aesurf(fields, bulk)
+        elif keyword == "AELIST":
+            aelist_conts: list = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    aelist_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_aelist(fields, aelist_conts, bulk)
+        elif keyword == "TRIM":
+            trim_conts: list = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    trim_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_trim(fields, trim_conts, bulk)
+        elif keyword == "DIVERG":
+            diverg_conts: list = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    diverg_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_diverg(fields, diverg_conts, bulk)
+        elif keyword == "TRIMVAR":
+            _handle_trimvar(fields, bulk)
+        elif keyword == "TRIMOBJ":
+            trimobj_conts: list = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    trimobj_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_trimobj(fields, trimobj_conts, bulk)
+        elif keyword == "TRIMCON":
+            _handle_trimcon(fields, bulk)
         else:
             warnings.warn(f"Unknown BDF card '{keyword}' — skipped", UserWarning, stacklevel=2)
 
@@ -854,6 +1038,54 @@ def parse_bulk_data(lines: list) -> BulkData:
                     and comp_sid not in bulk.gravs):
                 raise ValueError(
                     f"LOAD {load_sid}: component SID {comp_sid} not found in FORCE, MOMENT, or GRAV sets"
+                )
+
+    # Validate AESURF → AELIST references
+    for aid, aesurf in bulk.aesurfs.items():
+        if aesurf.alid1 not in bulk.aelists:
+            raise ValueError(f"AESURF {aid}: ALID1={aesurf.alid1} not found in AELIST")
+        if aesurf.alid2 and aesurf.alid2 not in bulk.aelists:
+            raise ValueError(f"AESURF {aid}: ALID2={aesurf.alid2} not found in AELIST")
+
+    # Validate AELIST box IDs fall within declared CAERO1 ranges
+    if bulk.aelists and bulk.caero1s:
+        caero_ranges = [
+            range(c.eid, c.eid + c.nspan * c.nchord)
+            for c in bulk.caero1s.values()
+        ]
+        for sid, aelist in bulk.aelists.items():
+            for box_id in aelist.elements:
+                if not any(box_id in r for r in caero_ranges):
+                    raise ValueError(
+                        f"AELIST {sid}: box ID {box_id} not within any CAERO1 range"
+                    )
+
+    # Validate TRIM label cross-references and emit DOF-count diagnostics
+    all_trim_labels = (
+        {a.label for a in bulk.aestats.values()}
+        | {s.label for s in bulk.aesurfs.values()}
+    )
+    for sid, trim in bulk.trims.items():
+        for lbl in trim.vars:
+            if lbl not in all_trim_labels:
+                raise ValueError(
+                    f"TRIM {sid}: label '{lbl}' not defined in any AESTAT or AESURF card"
+                )
+        prescribed = set(trim.vars.keys())
+        free = all_trim_labels - prescribed
+        if len(free) == 0:
+            warnings.warn(
+                f"TRIM {sid}: all trim variables are prescribed — no DOFs remain to solve",
+                UserWarning, stacklevel=2,
+            )
+        elif len(free) > len(prescribed):
+            obj_sids = set(bulk.trimobjs.keys())
+            if not obj_sids:
+                warnings.warn(
+                    f"TRIM {sid}: over-determined ({len(free)} free vs {len(prescribed)} "
+                    "equations) but no TRIMOBJ card present — add TRIMOBJ to specify the "
+                    "weighted objective",
+                    UserWarning, stacklevel=2,
                 )
 
     # Resolve all grid positions from their CP system into global CID 0

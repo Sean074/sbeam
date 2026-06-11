@@ -2050,3 +2050,46 @@ SOL 103 free-vibration basis, with mode-acceleration load recovery.
   correction — this is the standard mode-acceleration method (Herting 1985); the K_eff
   residual `f − K_eff·u_md` is computed inside `_mode_acceleration_recovery`, then the
   structural flexibility `K_aa⁻¹` is applied to it, recovering static load accuracy
+
+---
+
+### Step 51 — Trim card set parsing (AESTAT / AESURF / AELIST / TRIM / DIVERG / over-determined)
+
+**Objective:** Add BDF-parsing support for the static aeroelastic trim card set so that the
+Step 52+ trim solver can consume fully validated trim objects from `BulkData`. No solver
+logic is added; Step 51 is purely parsing infrastructure.
+
+**Deliverables:**
+- `sbeam/model/aero.py` — 8 new dataclasses: `Aestat`, `Aesurf`, `Aelist`, `Trim`, `Diverg`,
+  `Trimvar`, `Trimobj`, `Trimcon`
+- `sbeam/model/bulk_data.py` — 8 new dict fields: `aestats`, `aesurfs`, `aelists`, `trims`,
+  `divergs`, `trimvars`, `trimobjs`, `trimcons`
+- `sbeam/parser/bdf_reader.py` — 8 new handlers; dispatch branches; post-parse cross-reference
+  validation (AESURF→AELIST, AELIST→CAERO1 box ranges, TRIM label refs); DOF-count diagnostic
+  (UserWarning on fully-prescribed or over-determined-without-objective cases)
+- `sbeam/parser/case_control.py` — `SubcaseControl` gains `trim_sid` and `diverg_sid`;
+  `parse_case_control()` handles `TRIM=` and `DIVERG=` keywords; error message updated to
+  list SOL 101, 103, and 144
+- `docs/10_standard/02_card_reference.md` — field tables for all 8 new cards + 2 case-control keywords
+- `docs/10_standard/05_aeroelastics.md` — updated supported-cards table; new "Step 51" section
+
+**Test/Acceptance:**
+- V-51-1: Round-trip AESTAT, AESURF, AELIST, TRIM, DIVERG, TRIMVAR, TRIMOBJ, TRIMCON — all
+  field values match declared input
+- V-51-2: TRIM referencing undefined AESTAT/AESURF label → `ValueError`
+- V-51-3: AESURF referencing undefined AELIST → `ValueError`
+- V-51-4: AELIST box ID outside all CAERO1 ranges → `ValueError`
+- V-51-5: Over-determined TRIM without TRIMOBJ → `UserWarning`
+- V-51-6: Case control `TRIM=10` assigned to `subcase.trim_sid == 10`
+- V-51-7: SOL 145 → `ValueError` with updated message listing 101, 103, 144
+
+**Key decisions:**
+- `Trim.vars` is a plain `dict[str, float]` (label→value) rather than parallel lists —
+  lookup by label is the dominant access pattern in the trim solver
+- `trimcons` is stored as `dict[sid: list[Trimcon]]` rather than `{id: Trimcon}` because
+  multiple inequality constraints naturally share a logical group SID
+- Over-determined warning fires only when TRIMOBJ is absent — if TRIMOBJ is present the
+  over-determined path is intentional and no warning is needed
+- DOF-count diagnostic lives in `parse_bulk_data()` (not a separate validator module)
+  because Step 51's scope is parsing only; the full trim-variable partition logic belongs
+  in the Step 52 solver

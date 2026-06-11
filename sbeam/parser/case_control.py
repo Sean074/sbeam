@@ -9,6 +9,8 @@ class SubcaseControl:
     load_sid: Optional[int] = None    # LOAD set ID
     spc_sid: Optional[int] = None     # SPC set ID
     method_sid: Optional[int] = None  # METHOD (EIGRL) SID for SOL 103
+    trim_sid: Optional[int] = None    # TRIM set ID for SOL 144
+    diverg_sid: Optional[int] = None  # DIVERG set ID for SOL 144
     displacement: bool = False        # Request DISPLACEMENT output
     spcforce: bool = False            # Request SPCFORCE output
     oload: bool = False               # Request OLOAD output
@@ -80,7 +82,7 @@ def parse_case_control(lines: list) -> CaseControl:
         if keyword == "SOL":
             sol = int(value)
             if sol not in _SUPPORTED_SOLS:
-                raise ValueError(f"SOL {sol} not supported in phase 1 (only 101 and 103)")
+                raise ValueError(f"SOL {sol} not supported (only SOL 101, 103, and 144 supported)")
 
         elif keyword == "TITLE":
             if current_sc is not None:
@@ -106,6 +108,10 @@ def parse_case_control(lines: list) -> CaseControl:
                 current_sc.spc_sid = int(value)
             elif keyword == "METHOD":
                 current_sc.method_sid = int(value)
+            elif keyword == "TRIM":
+                current_sc.trim_sid = int(value)
+            elif keyword == "DIVERG":
+                current_sc.diverg_sid = int(value)
             elif keyword == "DISPLACEMENT":
                 current_sc.displacement = True
             elif keyword == "SPCFORCE":

@@ -242,31 +242,6 @@ derivatives, optional CFD/WT mean-flow injection, and divergence dynamic pressur
 
 ---
 
-### Step 51 — Trim card set parsing (AESTAT / AESURF / AELIST / TRIM / DIVERG / over-determined)
-
-**Objective:** Parse the static aeroelastic trim cards, including the over-determined-trim
-set, and the case-control selectors.
-
-**Scope/Deliverables:**
-- `Aestat`/`Aesurf`/`Aelist`/`Trim`/`Diverg` dataclasses + handlers in `model/aero.py`
-  and `bdf_reader.py`
-- `AESURF` references an `AELIST` of aero boxes forming the control surface; `TRIM` fixes
-  Mach, `q`, and the constrained trim variables
-- **Over-determined set (ZAERO-inspired, sbeam-defined):** `TRIMVAR` (per-variable bounds +
-  initial guess), `TRIMOBJ` (weighted objective function), `TRIMCON` (inequality constraints)
-- Recognise the full `AESTAT` rigid-body set: rates `ROLL`/`PITCH`/`YAW` and accelerations
-  `URDD2`–`URDD6` for balanced maneuver prescription
-- Case control `TRIM=`, `DIVERG=` selectors; `SubcaseControl` gains `trim_sid`, `diverg_sid`
-- Longitudinal/lateral DOF-count pre-solve validator (flags under-specified square
-  sub-system before the solve)
-
-**Test/Acceptance:** Round-trip each card; resolve control-surface box lists; error when a
-`TRIM` references undefined `AESTAT`/`AESURF` labels; the count validator flags an
-under-specified square sub-system.
-
-**Risk (KC2):** Determined system singular when longitudinal/lateral trim-variable counts
-don't match the DOF split — caught here with a clear diagnostic.
-
 ---
 
 ### Step 52 — SOL 144 trim solve + flexible derivatives (`sol144.py`)
