@@ -10,6 +10,304 @@ Completed steps are recorded in `docs/40_history/00_completed_development.md`.
 
 ---
 
+## Code Review — 2026-06-11 — Aeroelastics critical design review (Phases A–C, HA144A benchmark)
+
+Critical design review of the full aeroelastic chain (`aero/`, `solver/sol144.py`) against the
+MSC Nastran HA144A benchmark (Aeroelastic Analysis User's Guide Listing 7-2 / Table 7-1) and the
+ZAERO 9.2 Theoretical Manual (trim: Ch. 12; splines: Ch. 6). All 207 aero/integration tests pass,
+yet the HA144A trim is grossly wrong — the validation suite has a systematic blind spot (every
+geometric case is unswept and uncoupled; see AE13). Reproduction script:
+`studies/_review_ha144a_check.py`.
+
+**Measured state (sample/ha144a_sbeam.bdf) vs NASTRAN reference:**
+
+| Quantity | NASTRAN | sbeam (2026-06-11) |
+|---|---|---|
+| SC1 (q=40): ANGLEA, ELEV | +0.169191, +0.492457 rad | −0.0980, −1.1974 rad |
+| SC2 (q=1200): ANGLEA, ELEV | +0.001373, +0.019325 rad | −0.00158, −0.0416 rad |
+| Trim lift | +8 000 lb (=W) | −8 012 lb (trims to −1g) |
+| Rigid CZα (M=0.9) | −5.07097 | −6.339 (sol144 path) / −5.755 (rigid solver) |
+
+**Key positive:** with AE3 corrected (one line), the rigid solver gives CLα = 5.0709 vs NASTRAN
+5.07097 at the same 40-box mesh — the Biot–Savart kernel, symmetry image, and Göthert PG
+implementation are validated to 4 significant figures. All damage is in the integration,
+spline, and trim layers.
+
+---
+
+### [CRITICAL] AE1 — Trim solver omits the aeroelastic feedback term `q·Q_aa·u`
+
+**Files:** `sbeam/solver/sol144.py:450–479, 730–739, 797`
+
+```
+[CRITICAL] _solve_trim_determined receives bare K_aa; Q_aa is assembled (line 734) but only
+        stored in the result. The trim solve is rigid-aerodynamics-on-flexible-structure with
+        no aeroelastic closure — contradicts the documented governing equation (this file,
+        Phase C header; theory doc Eq. 1) and ZAERO Theo Eq. 12.8. HA144A exists to test this:
+        restrained CZα moves −5.103 → −6.463 between q=40 and q=1200 (Table 7-1), a 27%
+        flexible increment sbeam structurally cannot produce. run_aeroelastic_static (Step 50)
+        already does this correctly (K_eff = K_aa − q·Q_aa, sol144.py:132).
+FIX:    Form K_eff = K_aa − q·Q_aa and run the existing Schur partition on K_eff (the
+        partition logic itself is sound and equivalent to MSC's r-set/l-set method).
+```
+
+---
+
+### [CRITICAL] AE2 — Unit inconsistency: AIC inverse returns circulation Γ, force path consumes it as Cp
+
+**Files:** `sbeam/aero/integration.py:13–25`, `sbeam/aero/coupling.py:100`, `sbeam/solver/sol144.py:707, 541–557, 850–860`, `sbeam/aero/corrections.py:119`
+
+```
+[CRITICAL] build_ajj is normalwash-per-unit-CIRCULATION, so ajj_inv_corr @ w = Γ, not ΔCp.
+        solve_rigid_cl converts correctly (cp = 2Γ/chord_box, vlm.py:319) but build_skj
+        computes F = area·n̂·input assuming Cp, and is fed raw Γ in build_fg, build_qaa,
+        Q_ax, _compute_rigid_derivs, _compute_aero_forces. Every coupled force is scaled by
+        chord_box/2 per box (×1.25 canard, ×1.083 wing on HA144A; measured CZα 6.339 via skj
+        path vs 5.755 via rigid solver). Per-box factor ⇒ also distorts load DISTRIBUTION on
+        any non-uniform mesh — cannot be absorbed globally. Casualties: apply_wt1 matches
+        Σarea·Γ against a physical strip-force target (same factor; WT2 escapes by ratio
+        cancellation); total_cl/total_cm divide by q twice (skj@Γ output is already per-q),
+        printing CL = −0.025 instead of ≈ −1.0 at trim. The "Gamma/cp note" in
+        05_aeroelastics.md §compute_structural_loads claimed skj was "calibrated" to consume
+        Γ — false; corrected 2026-06-11.
+FIX:    Define the j-set pressure unit ONCE — recommend ΔCp (NASTRAN/ZAERO convention): scale
+        the corrected inverse rows by 2/chord_box at build time (or insert an explicit
+        Γ→Cp diagonal), document on AeroModel, then delete the double-q in total_cl/total_cm
+        and re-derive the WT1 target units. Add the unit-consistency gate from AE13.
+```
+
+---
+
+### [CRITICAL] AE3 — Kutta-Joukowski lift width uses bound-segment LENGTH, not cross-flow projection
+
+**Files:** `sbeam/aero/vlm.py:301, 305, 195–198`
+
+```
+[CRITICAL] dy = ‖bound_b − bound_a‖. K-J force on a swept bound vortex is F⃗ = ρV⃗∞ × ΓΔs⃗ —
+        lift scales with the y-PROJECTION of the segment, not its length. The 30°-swept
+        HA144A wing overpredicts lift by 1/cos30° = 1.155. Measured: dividing only the wing
+        contribution by 1.1547 gives CLα = 4.4209 + 0.6501 (canard) = 5.0709 vs NASTRAN
+        5.07097. Same dy corrupts chord_box (= area/dy ⇒ Cp and CM: sbeam CMα −3.343 vs
+        NASTRAN −2.871), cl_section, and the Trefftz strip widths. Invisible to existing
+        validation because the 2-D limit, AR=8 rect wing, and BYU/AVL cases are all unswept.
+FIX:    Use the projected width (generally the vector x̂ × Δs⃗, so dihedral falls out
+        automatically) for dy, chord_box, cl_section, and trefftz_cdi. One-line core change;
+        re-baseline the documented CL/CM validation numbers.
+```
+
+---
+
+### [CRITICAL] AE4 — SPLINE2 kinematics fail rigid-body tests on swept/offset configurations
+
+**Files:** `sbeam/aero/spline.py:127–209`, `sbeam/model/aero.py` (Spline2), `sample/ha144a_sbeam.bdf`
+
+```
+[CRITICAL] Rigid pitch θ=1e-3 applied exactly (u_z = −θ(x−15), Ry = θ at every grid) through
+        the HA144A splines gives wing box incidence −0.0236…+0.0792 (should be uniformly
+        0.001 — up to 80× error); canard −2.97e-4…+1.95e-3; g_disp reproduces the rigid
+        displacement field with 0.15 ft error (vs 0.015 ft max true deflection); force
+        transfer is non-conservative in moment (unit pressure on wing box 1: bound vortex
+        x=24.90, collocation x=26.15, structural resultant lands at x=29.55).
+        Three root causes:
+        (a) NO SWEEP TRANSFORMATION — the spline-axis derivative d/ds is used directly as
+            the streamwise slope; for a swept axis ∂u_z/∂s ≠ ∂u_z/∂x. ZAERO beam spline
+            does this via the [Ts] direction-cosine chain rule (Theo Eqs. 6.43, 6.65–6.74,
+            esp. 6.73): bending slope and twist about the axis are projected onto the
+            freestream direction.
+        (b) HERMITE NODAL-SLOPE SIGN — the slope datum attached to rotation DOFs is ω·ŷ,
+            but the geometric slope along the axis is du_z/ds = −ω·ŷ (ŷ = ẑ×x̂); function
+            values and nodal slopes are mutually inconsistent for any rotated state, so the
+            cubic oscillates between nodes (visible even on the unswept canard spline).
+        (c) DTHX SEMANTICS — MSC SPLINE2 DTHX/DTHY are rotational ATTACHMENT FLEXIBILITIES
+            where −1.0 means "do not attach the rotational DOF". sbeam treats DTHX as a
+            signed gain, so HA144A's DTHX=−1 injects torsion coupling with an INVERTED sign
+            on top of the twist that should arrive through the fore/aft offset grids
+            111/112/121/122. Fatal for a forward-swept wing whose aeroelastic character is
+            bending–twist wash-in.
+FIX:    Rework per ZAERO Theo §6.3: interpolate deflection + twist along the axis, project
+        slopes to the streamwise direction with the CID direction cosines, fix the nodal
+        slope datum to du/ds = −ω·ŷ, and implement DTHX/DTHZ as attachment switches
+        (−1 = detached) — warn on any other non-default value until flexibility is modelled.
+        Gate: swept-spline rigid-body test from AE13.
+```
+
+---
+
+### [CRITICAL] AE5 — URDD frame/sign convention trims the aircraft to −1g
+
+**Files:** `sbeam/solver/sol144.py:348–401`, `sample/ha144a_sbeam.bdf` (TRIM cards + comments)
+
+```
+[CRITICAL] NASTRAN's URDD3 = −1.0 is expressed in the RCSID frame (CORD2R 100 = NACA body
+        frame, z DOWN, x forward; basic→reference transform diag(−1,1,−1)). sbeam ignores
+        RCSID orientation and interprets URDD3 in basic coordinates (z up); the sample deck
+        carried over the negative value with the comment "1g upward". Confirmed numerically:
+        total trim aero force = −8 012 lb (weight-equal DOWNWARD lift), ANGLEA negative.
+FIX:    Transform URDD/PITCH/rate trim variables through the RCSID frame (NASTRAN semantics)
+        — preferred — or declare basic-frame semantics, flip the sample to URDD3 = +32.174,
+        and document loudly. Either way add the trim-lift = +W closure assertion (AE13).
+```
+
+---
+
+### [MAJOR] AE6 — Aero loads applied at ¾-chord collocation point, not the ¼-chord bound vortex
+
+**Files:** `sbeam/aero/spline.py:129, 293`, `sbeam/solver/sol144.py:511, 546, 854`
+
+```
+[MAJOR] g_disp and ATTACH evaluate box displacement at box.colloc (¾-chord), and
+        _compute_aero_forces / _compute_rigid_derivs / total_cm use colloc[0] as the moment
+        arm — while vlm.py:310–316 documents exactly why this is wrong and fixes it for the
+        rigid CM only. At NCHORD=4 this is a half-box-chord (1.25 ft = 12.5% of c̄) aft bias
+        on every box load, compounding AE4's moment error. K-J loads act at the ¼-chord
+        bound vortex.
+FIX:    Evaluate g_disp (and the ATTACH lever) at the box force point — the bound-vortex
+        midpoint — and use x_qc for all sol144 moment arms. g_slope stays at the ¾-chord
+        collocation point (flow tangency). Re-verify force-transfer moment conservation
+        (resultant must land at x = 24.90 for the AE4 test case).
+```
+
+---
+
+### [MAJOR] AE7 — Trim system has no inertial coupling columns (M_ax); URDD transport terms missing
+
+**Files:** `sbeam/solver/sol144.py:348–401, 422–479, 752–757`
+
+```
+[MAJOR] NASTRAN/ZAERO couple the trim unknowns through the mass matrix ([Mgg][φr]{ür},
+        ZAERO Theo Eq. 12.6; trim partition [Mrr]{ür} = ([SR]+[Se]){a}, Eqs. 12.14/12.17).
+        sbeam's Schur system has only aerodynamic columns Q_ax, with URDD as a fixed RHS
+        load. Consequences: (a) a FREE URDD variable yields a singular Schur matrix (its
+        D_jx column is zero); (b) rotational URDD loads include only CONM2 spin inertia
+        I·ω̈ and omit the transport terms m·(ω̈×r) about the SUPORT point — URDD5 ≠ 0 would
+        produce essentially no pitch inertia from distributed masses; (c) the "will be
+        updated at trim" comment (sol144.py:756) is never honoured.
+FIX:    Build rigid-body modes φr about the SUPORT/reference point, assemble inertial
+        columns M_a·φr per URDD label, and place them in the trim matrix alongside Q_ax.
+```
+
+---
+
+### [MAJOR] AE8 — Stability-derivative formulation internally inconsistent and incomplete
+
+**Files:** `sbeam/solver/sol144.py:482–637`
+
+```
+[MAJOR] Restrained derivatives perturb via K_ll⁻¹ (no aero feedback in the re-solve) but
+        evaluate forces INCLUDING w_struct — a one-pass hybrid converging to neither
+        NASTRAN's restrained nor unrestrained columns. No unrestrained (mean-axis) set
+        exists. Moment convention (+ΣFz·(x−xref)) is opposite in sign to both
+        solve_rigid_cl.CM and NASTRAN Cm.
+FIX:    After AE1, restrained derivatives come out of the K_eff solve analytically — delete
+        the finite-difference machinery. Add the unrestrained set (mean-axis, ZAERO Eq.
+        12.14/12.15) and align the sign convention with the f06 reference (Cz = −CL,
+        nose-up-positive Cm about RCSID). Acceptance: HA144A Table 7-1 columns.
+```
+
+---
+
+### [MAJOR] AE9 — Mach is a property of the model, not the flight condition
+
+**Files:** `sbeam/aero/aero_model.py:77`, `sbeam/model/aero.py` (Aeros.mach), `sbeam/solver/sol144.py:673`
+
+```
+[MAJOR] The AIC is built once from AEROS.mach (an sbeam extension field) while TRIM.mach is
+        parsed and silently ignored. Two subcases at different Mach — standard SOL 144 usage
+        (HA144A's own third subcase is M=1.3) — are impossible, and a mismatch is not even
+        warned about.
+FIX:    Build (and cache) the AIC per TRIM Mach; retire the AEROS.mach extension field;
+        warn/error on AEROS-vs-TRIM Mach disagreement during the transition.
+```
+
+---
+
+### [MAJOR] AE10 — `parity` not wired from AEROS.SYMXZ; SOL 144 unreachable from main
+
+**Files:** `sbeam/aero/aero_model.py:44`, `sbeam/main.py`, `sbeam/parser/case_control.py`
+
+```
+[MAJOR] Every caller passes parity manually; nothing reads AEROS.symxz, so a wrong-parity
+        solve is silent. run_sol144_trim has no caller at all — the HA144A deck cannot run
+        end-to-end (overlaps A5 / Step 56, but the symxz wiring is independent and one line).
+FIX:    Default parity = aeros.symxz inside build_aero_model (explicit argument overrides);
+        wire SOL 144 dispatch in main.py as part of Step 56.
+```
+
+---
+
+### [MINOR] AE11 — D_jx YAW column duplicates ROLL; AESURF hinge geometry ignored
+
+**Files:** `sbeam/aero/integration.py:122–125, 130–143`, `sbeam/model/aero.py` (Aesurf.cid1)
+
+```
+[MINOR] YAW uses −(2/bref)·y_ctrl (same as ROLL); yaw rate on a vertical fin produces
+        sidewash ∝ (x − x_ref), not ∝ y. AESURF cid1 is parsed but the control downwash is
+        just −n_z·eff — no hinge-sweep projection, no rotation for non-spanwise hinges, no
+        hinge-moment output (NASTRAN prints hinge-moment derivatives for HA144A — free
+        validation data going unused).
+FIX:    Derive the control column from rotation about the actual hinge axis (cid1 y-axis);
+        add hinge-moment recovery; correct the YAW column for vertical surfaces.
+```
+
+---
+
+### [MINOR] AE12 — PG compression keeps original normals; SPLINE2 DTOR/DTHZ silently ignored
+
+**Files:** `sbeam/aero/vlm.py:144–156`, `sbeam/aero/spline.py`, `sbeam/parser/bdf_reader.py`
+
+```
+[MINOR] prandtl_glauert_boxes scales y,z but copies the un-recomputed normal — exact only
+        for planar surfaces; wrong for dihedral/out-of-plane panels (assert or document
+        planarity). Spline2.dtor and dthz are parsed but unused — silently accepting and
+        ignoring NASTRAN card fields is how the AE4(c) DTHX misinterpretation went unnoticed.
+FIX:    Recompute (or validate) normals under PG compression; warn when DTOR/DTHZ carry
+        non-default values that will be ignored.
+```
+
+---
+
+### [MINOR] AE13 — Validation gap: suite is green with AE1–AE6 present; no swept/coupled/benchmark gates
+
+**Files:** `tests/aero/`, `tests/integration/`, `sample/ha144a_sbeam.bdf`
+
+```
+[MINOR] 207 tests pass with every defect above present. Every geometric validation case is
+        unswept and uncoupled; the V-B1/V-B3 rigid-body gates never exercised a swept spline
+        axis or fore/aft offset grids; no dimensional-consistency check ties the coupled
+        force path back to the rigid solver.
+FIX:    Add three permanent gates:
+        (V-AE1) HA144A acceptance test — assert SC1 ANGLEA=+0.169191, ELEV=+0.492457 and
+                SC2 ANGLEA=+0.001373, ELEV=+0.019325 (loose tolerance first, tighten as
+                fixes land); assert trim lift = +8 000 lb; optionally Table 7-1 derivative
+                columns (rigid CZα −5.071, Cmα −2.871; restrained q=1200 CZα −6.463).
+        (V-AE2) Swept-spline rigid-body gate — rigid pitch/plunge/twist through the actual
+                HA144A CID-2 spline gives uniform incidence and exact displacement to 1e-12;
+                single-box force transfer preserves force AND moment (resultant at the box
+                force point).
+        (V-AE3) Unit-consistency gate — g_disp.T @ skj-path total force/moment equals the
+                Kutta-Joukowski resultants from solve_rigid_cl on the same model.
+```
+
+---
+
+### Correction plan — recommended fix order
+
+Each step is independently verifiable against a number already measured
+(`studies/_review_ha144a_check.py`):
+
+1. **AE3** (lift-width projection) → rigid CLα = 5.071 vs NASTRAN −CZα 5.07097.
+2. **AE2** (define j-set unit Γ vs Cp once) → skj path matches the rigid solver exactly;
+   total_cl ≈ −1.0 at SC1 trim; WT1 target units re-derived.
+3. **AE4 + AE6** (spline rework per ZAERO Theo §6.3 + ¼-chord force point) → V-AE2 gate
+   passes; box-force resultant lands at x = 24.90.
+4. **AE5 + AE7** (RCSID-frame URDD + mass-coupled trim columns) → trim lift = +8 000 lb.
+5. **AE1** (K_eff in the Schur solve) → SC1/SC2 ANGLEA/ELEV converge to the Listing 7-2
+   values; q=1200 exercises the flexible increment that is the point of HA144A.
+6. **AE8–AE10** (derivatives, per-TRIM Mach, wiring) → Table 7-1 derivative columns; then
+   close with the V-AE1/2/3 gates as permanent regression tests.
+
+---
+
 ## Code Review — 2026-06-08 — Aerodynamics (Phase A: steady VLM)
 
 Technical-accuracy review of the implemented `sbeam/aero/` module (`panel.py`, `vlm.py`,
@@ -193,8 +491,9 @@ All Phase 1 bugs (B1–B4) are resolved. See `docs/40_history/00_completed_devel
 ## Phase A — Static Aeroelastics (VLM)
 
 Steps 39–46 are complete — see `docs/40_history/00_completed_development.md`. Open Phase A
-work: **A7** (cosine chordwise spacing helper + low-NCHORD warning) and **A8** (box
-aspect-ratio pre-solve warning).
+work: **A7** (cosine chordwise spacing helper + low-NCHORD warning), **A8** (box
+aspect-ratio pre-solve warning), and from the 2026-06-11 review: **AE2** (Γ/Cp unit
+definition), **AE3** (swept K-J lift width), **AE9** (per-TRIM Mach), **AE12** (PG normals).
 
 ---
 
@@ -207,6 +506,11 @@ These feed directly into `coupling.build_qaa` and `coupling.build_fg`.
 Prerequisite for Phase C (SOL 144).
 
 **Steps 45, 46, 47, and 49 are complete.** Step 48 (SPLINE1) is deferred. See `docs/40_history/00_completed_development.md`.
+
+**⚠ 2026-06-11 review:** the SPLINE2 operators fail rigid-body kinematics on swept/offset
+configurations (**AE4**: sweep projection, Hermite slope sign, DTHX semantics) and apply
+forces at the ¾-chord collocation point (**AE6**). Both must be fixed before any Phase C
+result can be trusted on a swept surface.
 
 ---
 
@@ -245,6 +549,14 @@ derivatives, optional CFD/WT mean-flow injection, and divergence dynamic pressur
 ---
 
 ### Step 52 — SOL 144 trim solve + flexible derivatives (`sol144.py`)
+
+**Status (2026-06-11):** a determined-case trim solver (`run_sol144_trim`, Schur-complement
+partition over SUPORT DOFs) exists on the `aeroelastics` branch but carries critical defects
+from the 2026-06-11 review — **AE1** (no `q·Q_aa` feedback in the solve), **AE2** (Γ/Cp
+units), **AE5** (URDD frame trims to −1g), **AE6** (¾-chord moment arms), **AE7** (no
+inertial trim columns), **AE8** (derivative formulation). It fails the HA144A benchmark on
+both subcases. The over-determined case and rate-aero columns below remain unimplemented.
+Treat the AE correction plan as the prerequisite for closing this step.
 
 **Objective:** Solve the flexible trim problem (determined and over-determined) and recover
 stability/control derivatives.

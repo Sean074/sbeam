@@ -13,6 +13,26 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Critical design review — aeroelastics, HA144A benchmark (2026-06-11)**
+- Reviewed the full aeroelastic chain (`aero/`, `solver/sol144.py`) against MSC Nastran
+  HA144A (Aeroelastic Analysis User's Guide Listing 7-2 / Table 7-1) and the ZAERO 9.2
+  Theoretical Manual (trim Ch. 12, splines Ch. 6). Verified the VLM core (Biot–Savart
+  kernel, symmetry image, Göthert PG) matches the NASTRAN rigid CZα to 4 significant
+  figures once the swept lift-width defect is corrected; found 5 CRITICAL and 5 MAJOR
+  defects in the integration/spline/trim layers (trim currently fails HA144A on both
+  subcases and trims to −1g).
+- `docs/30_future/00_backlog.md`: new "Code Review — 2026-06-11" section with findings
+  AE1–AE13, measured-vs-reference table, and a 6-step correction plan with per-step
+  verification targets; Phase A/B and Step 52 entries annotated with their open AE items.
+- `docs/10_standard/05_aeroelastics.md`: "Known Defects" banner; corrected the false
+  "skj calibrated to consume Γ" claim (AE2); documented MSC vs sbeam SPLINE2 DTHX
+  semantics divergence (AE4c); swept-axis projection and Hermite slope-sign defects
+  (AE4a/b); ¼-vs-¾-chord force application caveat (AE6); swept K-J lift-width caveat on
+  the validated CL/CM claims (AE3); new Step 52 WIP status section for `run_sol144_trim`.
+- `studies/_review_ha144a_check.py`: reproduction script — HA144A trim both subcases,
+  rigid-body spline kinematics checks, force-transfer-point check, rigid-derivative
+  cross-check against `solve_rigid_cl`.
+
 **Step 51 — Trim card set parsing (AESTAT / AESURF / AELIST / TRIM / DIVERG / over-determined)**
 - `sbeam/model/aero.py`: 8 new dataclasses — `Aestat`, `Aesurf`, `Aelist`, `Trim`, `Diverg`,
   `Trimvar`, `Trimobj`, `Trimcon`.

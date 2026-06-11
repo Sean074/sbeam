@@ -31,6 +31,31 @@ Results   (cp, cl_section, CL, CY, CM, CDi, e, per_surface, …)
 
 ---
 
+## ⚠ Known Defects — Critical Design Review 2026-06-11 (HA144A benchmark)
+
+A design review against the MSC Nastran HA144A benchmark (Aeroelastic Analysis User's Guide
+Listing 7-2) found that while the VLM core (Biot–Savart kernel, symmetry image, Göthert PG)
+matches the NASTRAN rigid result to 4 significant figures once AE3 is corrected, the
+**integration, spline, and trim layers carry critical defects**. Until the AE items in
+`docs/30_future/00_backlog.md` (Code Review 2026-06-11) are closed:
+
+| ID | Defect | Affected results |
+|----|--------|------------------|
+| AE1 | Trim solve omits the `q·Q_aa` aeroelastic feedback term | All `run_sol144_trim` output |
+| AE2 | `skj`/coupling path consumes circulation Γ as if it were ΔCp (×chord_box/2 per box) | All coupled forces, `build_fg`, `build_qaa`, derivatives, `total_cl` |
+| AE3 | K-J lift width uses bound-segment length, not cross-flow projection | CL/CM/cp/CDi of any **swept** surface (+15.5% at 30° sweep) |
+| AE4 | SPLINE2 fails rigid-body kinematics on swept axes / offset grids (sweep projection, Hermite slope sign, DTHX semantics) | `g_slope`, `g_disp`, all coupled loads |
+| AE5 | URDD interpreted in basic frame (RCSID ignored) — HA144A trims to **−1g** | Trim solutions with inertial loads |
+| AE6 | Forces applied at ¾-chord collocation point, not ¼-chord bound vortex | Pitching/torsion moments of all coupled loads |
+| AE7–AE10 | No inertial trim columns; inconsistent derivative formulation; Mach fixed per model; parity unwired | Trim system generality |
+
+**Do not use SOL 144 trim results for anything until AE1–AE6 are resolved.** Rigid
+`solve_rigid_cl` results on **unswept** surfaces are unaffected. The sections below describe
+the *intended* design; passages known to diverge from the implementation carry an `⚠ AE#`
+marker. Reproduction script: `studies/_review_ha144a_check.py`.
+
+---
+
 ## Supported BDF Cards
 
 | Card | Purpose | Step |
@@ -280,6 +305,14 @@ wing CL on multi-surface models.
   normalised by S_ref × c_ref. Each box load acts at its **¼-chord bound vortex**
   (not the ¾-chord collocation point) — the physically correct moment arm.
   Validated against AVL / VortexLattice.jl (`val_vlm_byu_wing`: CM −0.0209 vs −0.02085).
+
+  **⚠ AE3 (open):** the spanwise width `dy` used for the Kutta–Joukowski lift (and hence
+  `chord_box`, `cp`, `CM`, `cl_section`, and the Trefftz integral) is the bound-segment
+  *length* `‖bound_b − bound_a‖`, not its cross-flow projection. The K-J force is
+  `F⃗ = ρV⃗∞ × ΓΔs⃗`, which scales with the **y-projection** of the segment — for a swept
+  surface the current code overpredicts lift by 1/cosΛ (+15.5% on the 30°-swept HA144A
+  wing; with the projection applied, CLα = 5.0709 vs NASTRAN 5.07097). All validation
+  cases above are unswept and did not expose this. See backlog AE3.
 - `CDi`: Trefftz-plane induced drag coefficient — lift surfaces only, normalised by
   S_ref. Computed by `trefftz_cdi()` via the 2-D Biot-Savart far-field integral
   (Katz & Plotkin Eq 12.17). For parity ≠ 0, mirror trailing vortices are included.
@@ -528,9 +561,17 @@ SPLINE2  EID  CAERO  ID1  ID2  SETG  DZ  DTOR  CID
 | DZ    | 0.0     | Smoothing parameter (0.0 = interpolating Hermite) |
 | DTOR  | 1.0     | Torsional/bending ratio (not used in Phase B matrix) |
 | CID   | 0       | CORD2R SID defining the spline axis |
-| DTHX  | 1.0     | Torsion (CID x-axis rotation) contribution scale |
+| DTHX  | 1.0     | Torsion (CID x-axis rotation) contribution scale — **⚠ AE4(c): diverges from MSC semantics, see below** |
 | DTHZ  | 0.0     | CID z-axis rotation contribution (not used in Phase B) |
 | USAGE | BOTH    | FORCE / DISP / BOTH (informational; not filtered in Phase B) |
+
+**⚠ AE4(c) — DTHX semantics (open):** in MSC Nastran, SPLINE2 DTHX/DTHY are rotational
+*attachment flexibilities*, where **−1.0 means "do not attach the rotational DOF to the
+spline"**. sbeam currently treats DTHX as a signed multiplicative gain on the torsion
+coupling, so a NASTRAN deck with `DTHX = −1` (e.g. HA144A's wing spline, which expects
+twist to arrive only through fore/aft offset grids) gets an **inverted spurious torsion
+contribution** instead of a detached one. Until AE4 is closed, sbeam and MSC interpret the
+same card differently — do not carry NASTRAN SPLINE2 values across unreviewed.
 
 **NASTRAN box ID convention** (must match `panel.py` row-major ordering):
 ```
@@ -563,6 +604,15 @@ derivative-value basis at node i (both built with `scipy.interpolate.CubicHermit
 **For CID = 0 (basic):** z_hat = [0,0,1], y_hat = [0,1,0], x_hat = [1,0,0], so only
 Tz (d=2), Ry (d=4), and Rx (d=3) contribute — the classic NASTRAN convention.
 
+**⚠ AE4(a)/(b) — projection defects (open):** the table above uses the spline-axis
+derivative `d/ds` directly as the *streamwise* slope. That is only valid when the spline
+axis is perpendicular to the freestream; for a **swept** axis `∂u_z/∂s ≠ ∂u_z/∂x` and the
+bending-slope/twist mix must be projected through the CID direction cosines (the chain rule
+of ZAERO Theo. Manual Eqs. 6.43, 6.65–6.74). In addition, the Hermite nodal-slope datum is
+taken as `ω·ŷ`, but the geometric slope along the axis is `du_z/ds = −ω·ŷ` (with
+`ŷ = ẑ×x̂`), so function values and nodal slopes are mutually inconsistent for any rotated
+state and the cubic oscillates between nodes. See backlog AE4.
+
 ### Rigid-body exactness (V-B1 gate)
 
 Two properties hold analytically and are verified numerically to < 1e-12:
@@ -575,6 +625,15 @@ Two properties hold analytically and are verified numerically to < 1e-12:
 
 These are the make-or-break tests for Phase C trim: a spline that fails these produces
 non-physical trim solutions.
+
+**⚠ AE4 — V-B1 is necessary but NOT sufficient (2026-06-11):** the two properties above
+cover rigid plunge and uniform twist only. The full rigid-body requirement — **rigid pitch
+through the actual spline geometry gives uniform incidence and the exact displacement
+field** — currently *fails* on swept-axis and offset-grid configurations: on the HA144A
+wing spline, rigid pitch θ = 10⁻³ produces box incidence ranging −0.024 to +0.079 (up to
+80× error), and the equivalent structural load of a single-box pressure lands 4.6 ft aft of
+the box force point (moment non-conservation). Root causes are AE4(a)–(c) above. The
+swept-spline gate V-AE2 (backlog AE13) replaces V-B1 as the make-or-break criterion.
 
 ### `build_g_spline` API
 
@@ -614,6 +673,13 @@ ATTACH  EID  CAERO  ID1  ID2  GRID  CID
 **Lever-arm kinematics (global CID 0):**
 
 For each covered box j with lever `r = box.colloc − master_pos = (rx, ry, rz)`:
+
+**⚠ AE6 (open):** the lever (and the SPLINE2 `g_disp` evaluation point) uses the ¾-chord
+collocation point. The Kutta–Joukowski load physically acts at the **¼-chord bound vortex**
+— the same correction already documented for `solve_rigid_cl.CM`. Until fixed, every
+coupled load is applied half a box chord aft (12.5% of c̄ at NCHORD = 4), biasing pitching
+and torsion moments. The displacement operator must move to the bound-vortex midpoint; the
+slope operator stays at the collocation point. See backlog AE6.
 
 ```
 g_slope[j, col_Tz] = 0.0    # plunge → zero slope
@@ -672,10 +738,16 @@ f_g         = q * g_disp.T @ f_box             # virtual-work force transfer to 
 **Sign convention:** matches `solve_rigid_cl` — for a horizontal flat plate with
 `normal = [0, 0, 1]`, angle of attack `alpha` gives `w[j] = -alpha` at each box.
 
-**Gamma/cp note:** `ajj_inv_corr @ w` returns circulation Γ (not pressure coefficient
-`cp`). `coupling.py` labels the same result "cp" for historical reasons — this is
-internally consistent because `skj` is calibrated to consume that value directly.
-V-B2b accepts either normalisation (within 2%) to accommodate both conventions.
+**⚠ AE2 — Gamma/cp unit defect (open):** `ajj_inv_corr @ w` returns circulation Γ (not
+pressure coefficient `cp`), but `skj` computes `F = area·n̂·input`, which is only correct
+for a ΔCp input. An earlier revision of this note claimed `skj` was "calibrated to consume
+Γ directly" — **that was wrong**: feeding Γ scales every box force by `chord_box/2`
+(measured +25% on the HA144A canard, +8.3% on its wing), distorts the load *distribution*
+on any non-uniform mesh, and propagates into `build_fg`, `build_qaa`, `Q_ax`, and all
+SOL 144 derivatives. The V-B2b "either normalisation within 2%" tolerance masked this. The
+fix (backlog AE2) defines the j-set unit as ΔCp once (scale the corrected inverse by
+`2/chord_box`) and adds the unit-consistency gate V-AE3 tying the coupled force path to the
+`solve_rigid_cl` Kutta–Joukowski resultants.
 
 **Requirements:**
 - `aero_model.g_disp` must not be `None` — call `build_aero_model` with a `grid_index`
@@ -927,3 +999,37 @@ the problem is over-determined. sbeam uses three sbeam-defined cards to handle t
 | `TRIMCON` | Scalar inequality constraints (`LE` or `GE`) |
 
 These cards are parsed and stored but not yet consumed by a solver (deferred to Step 52+).
+
+---
+
+## Step 52 — SOL 144 Trim Solver (WIP — ⚠ carries open critical defects)
+
+`solver/sol144.py:run_sol144_trim(bulk, subcase, aero)` implements the **determined** trim
+case (`n_free_labels == n_SUPORT_DOFs`) on the `aeroelastics` branch:
+
+1. Build `D_jx` (per-box normalwash per unit trim label: ANGLEA, SIDES, PITCH, ROLL/YAW,
+   URDD1–6, AESURF) and `Q_ax = G_dispᵀ S_kj A_jj*⁻¹ D_jx` on the g-set.
+2. Reduce `Q_ax`, `K`, and the RHS (baseline `q·f_g` + prescribed-variable aero + URDD
+   inertial load) to the a-set via the same RBE3 + SPC partition as SOL 101.
+3. Partition the a-set into l-set / r-set (SUPORT DOFs), set `u_r = 0`, and solve the
+   Schur-complement system for the free trim variables and `u_l`.
+4. Recover CBAR forces/stresses, rigid and "restrained" derivatives, total CL/CM, and
+   return a `Sol144TrimResult`.
+
+The Schur partition structure is sound (equivalent to the MSC r-set/l-set method), but the
+implementation **fails the HA144A benchmark on both subcases** (measured 2026-06-11:
+SC1 ANGLEA −0.098 vs +0.169191, ELEV −1.197 vs +0.492457; trim lift −8 012 lb vs +8 000 lb).
+Open defects, in fix order (full detail in `docs/30_future/00_backlog.md`, Code Review
+2026-06-11):
+
+| Order | ID | Defect |
+|-------|----|--------|
+| 1 | AE3 | K-J lift width not projected to cross-flow (swept surfaces +1/cosΛ) |
+| 2 | AE2 | Γ consumed as ΔCp throughout the coupled force path; `total_cl` divides by q twice |
+| 3 | AE4/AE6 | SPLINE2 swept-axis kinematics; forces applied at ¾-chord |
+| 4 | AE5/AE7 | URDD in basic frame (trims to −1g); no inertial trim columns `M·φr` |
+| 5 | AE1 | Solve uses bare `K_aa` — the `q·Q_aa` aeroelastic feedback never enters the trim system |
+| 6 | AE8–AE10 | Derivative formulation, per-TRIM Mach, parity/CLI wiring |
+
+Acceptance for closing Step 52 is the V-AE1 gate (backlog AE13): HA144A SC1/SC2 trim
+variables vs MSC Listing 7-2 and the Table 7-1 derivative columns.
