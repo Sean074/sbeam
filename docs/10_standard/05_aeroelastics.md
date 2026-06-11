@@ -42,14 +42,14 @@ the remaining AE items in `docs/30_future/00_backlog.md` (Code Review 2026-06-11
 | ID | Defect | Affected results |
 |----|--------|------------------|
 | AE1 | Trim solve omits the `q·Q_aa` aeroelastic feedback term | All `run_sol144_trim` output |
-| AE2 | `skj`/coupling path consumes circulation Γ as if it were ΔCp (×chord_box/2 per box) | All coupled forces, `build_fg`, `build_qaa`, derivatives, `total_cl` |
+| ~~AE2~~ | ~~`skj`/coupling path consumes circulation Γ as if it were ΔCp (×chord_box/2 per box)~~ | **RESOLVED** — `ajj_inv_corr` row-scaled by `2/chord_box` in `build_aero_model`; CZα = 5.071 via skj path ✓ |
 | ~~AE3~~ | ~~K-J lift width uses bound-segment length, not cross-flow projection~~ | **RESOLVED** — `dy = sqrt(Δy²+Δz²)`; CLα = 5.0709 ✓ |
 | AE4 | SPLINE2 fails rigid-body kinematics on swept axes / offset grids (sweep projection, Hermite slope sign, DTHX semantics) | `g_slope`, `g_disp`, all coupled loads |
 | AE5 | URDD interpreted in basic frame (RCSID ignored) — HA144A trims to **−1g** | Trim solutions with inertial loads |
 | AE6 | Forces applied at ¾-chord collocation point, not ¼-chord bound vortex | Pitching/torsion moments of all coupled loads |
 | AE7–AE10 | No inertial trim columns; inconsistent derivative formulation; Mach fixed per model; parity unwired | Trim system generality |
 
-**Do not use SOL 144 trim results for anything until AE1–AE6 are resolved.** Rigid
+**Do not use SOL 144 trim results for anything until AE1, AE4–AE7 are resolved.** Rigid
 `solve_rigid_cl` results on **unswept** surfaces are unaffected. The sections below describe
 the *intended* design; passages known to diverge from the implementation carry an `⚠ AE#`
 marker. Reproduction script: `studies/_review_ha144a_check.py`.
@@ -736,16 +736,12 @@ f_g         = q * g_disp.T @ f_box             # virtual-work force transfer to 
 **Sign convention:** matches `solve_rigid_cl` — for a horizontal flat plate with
 `normal = [0, 0, 1]`, angle of attack `alpha` gives `w[j] = -alpha` at each box.
 
-**⚠ AE2 — Gamma/cp unit defect (open):** `ajj_inv_corr @ w` returns circulation Γ (not
-pressure coefficient `cp`), but `skj` computes `F = area·n̂·input`, which is only correct
-for a ΔCp input. An earlier revision of this note claimed `skj` was "calibrated to consume
-Γ directly" — **that was wrong**: feeding Γ scales every box force by `chord_box/2`
-(measured +25% on the HA144A canard, +8.3% on its wing), distorts the load *distribution*
-on any non-uniform mesh, and propagates into `build_fg`, `build_qaa`, `Q_ax`, and all
-SOL 144 derivatives. The V-B2b "either normalisation within 2%" tolerance masked this. The
-fix (backlog AE2) defines the j-set unit as ΔCp once (scale the corrected inverse by
-`2/chord_box`) and adds the unit-consistency gate V-AE3 tying the coupled force path to the
-`solve_rigid_cl` Kutta–Joukowski resultants.
+**AE2 — Gamma/cp unit defect — RESOLVED (2026-06-11):** `ajj_inv_corr` is now
+row-scaled by `2/chord_box_j` in `build_aero_model` immediately after the Prandtl–Glauert
+step, so `ajj_inv_corr @ w` returns ΔCp (not Γ) and `skj`'s `F = area·n̂·Cp` is
+unit-consistent.  `total_cl/cm` in `run_sol144_trim` and `_compute_restrained_derivs` no
+longer divide by `q`.  Verification: CZα = 5.071 via skj path (target: `solve_rigid_cl`
+CLα = 5.0709 ✓); `total_cl` at SC1 trim = −1.001 ✓.  See `docs/40_history/00_completed_development.md`.
 
 **Requirements:**
 - `aero_model.g_disp` must not be `None` — call `build_aero_model` with a `grid_index`
@@ -1023,7 +1019,7 @@ Open defects, in fix order (full detail in `docs/30_future/00_backlog.md`, Code 
 | Order | ID | Defect |
 |-------|----|--------|
 | ~~1~~ | ~~AE3~~ | ~~K-J lift width not projected to cross-flow~~ — **RESOLVED** ✓ |
-| 2 | AE2 | Γ consumed as ΔCp throughout the coupled force path; `total_cl` divides by q twice |
+| ~~2~~ | ~~AE2~~ | ~~Γ consumed as ΔCp throughout the coupled force path; `total_cl` divides by q twice~~ — **RESOLVED** ✓ |
 | 3 | AE4/AE6 | SPLINE2 swept-axis kinematics; forces applied at ¾-chord |
 | 4 | AE5/AE7 | URDD in basic frame (trims to −1g); no inertial trim columns `M·φr` |
 | 5 | AE1 | Solve uses bare `K_aa` — the `q·Q_aa` aeroelastic feedback never enters the trim system |

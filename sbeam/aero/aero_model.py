@@ -106,6 +106,16 @@ def build_aero_model(bulk: BulkData, parity: int = 1, grid_index: Optional[dict]
     if beta_pg != 1.0:
         ajj_inv_corr /= beta_pg
 
+    # Convert ajj_inv_corr from Γ-units to ΔCp-units (K-J: Cp = 2Γ/chord).
+    # build_skj assumes Cp input; every downstream consumer is now unit-consistent.
+    _chord_degen = 1e-14
+    chord_box_arr = np.array([
+        b.area / max(math.sqrt((b.bound_b[1] - b.bound_a[1])**2
+                              + (b.bound_b[2] - b.bound_a[2])**2), _chord_degen)
+        for b in boxes          # physical boxes, not pg_boxes
+    ])
+    ajj_inv_corr *= (2.0 / chord_box_arr)[:, np.newaxis]
+
     # Integration matrices use physical (unscaled) boxes — structural coupling
     # geometry must match the physical planform, not the PG-compressed one.
     skj = build_skj(boxes)

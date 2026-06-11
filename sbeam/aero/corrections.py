@@ -78,14 +78,18 @@ def apply_wt2(ajj: np.ndarray, cp_target: np.ndarray) -> np.ndarray:
 
 
 def apply_wt1(ajj: np.ndarray, boxes: list[AeroBox], f_target: np.ndarray) -> np.ndarray:
-    """Force/moment-matching correction.  Returns corrected AJJ*⁻¹.
+    """Force/moment-matching correction.  Returns corrected AJJ*⁻¹ (Γ-unit output).
 
     Finds a diagonal scaling r — constant within each span strip — such that the
-    corrected A*⁻¹ = diag(r) @ AJJ⁻¹ reproduces the per-strip lift f_target when
-    applied to the unit-incidence reference normalwash w_ref = -ones(n):
+    corrected A*⁻¹ = diag(r) @ AJJ⁻¹ reproduces the per-strip physical lift/q
+    f_target when the caller subsequently applies the 2/chord Cp-conversion step
+    (build_aero_model does this).  f_target must be physical strip lift/q:
 
-        cp_vlm_ref  = AJJ⁻¹ @ w_ref
-        f_vlm_s     = sum(area_k * cp_vlm_ref_k)  for box k in strip s
+        f_target_s  = Σ_k area_k · Cp_k  for all k in strip s  (force per q)
+
+    Internally:
+        gamma_ref   = AJJ⁻¹ @ w_ref          (VLM circulation at unit incidence)
+        f_vlm_s     = Σ_k area_k · 2·gamma_ref_k / chord_k   (physical reference)
         ratio_s     = f_target_s / f_vlm_s
         r_k         = ratio_s  for all boxes k in strip s
 
@@ -95,11 +99,19 @@ def apply_wt1(ajj: np.ndarray, boxes: list[AeroBox], f_target: np.ndarray) -> np
 
     Warns if cond(AJJ) > 1e10.
     """
+    import math as _math
     _check_conditioning(ajj)
     n = ajj.shape[0]
     ajj_inv = _solve_ajj(ajj)
     w_ref = -np.ones(n)
-    cp_vlm_ref = ajj_inv @ w_ref
+    gamma_ref = ajj_inv @ w_ref
+
+    # Physical chord per box (same formula as solve_rigid_cl / build_aero_model)
+    chord_box = [
+        b.area / max(_math.sqrt((b.bound_b[1] - b.bound_a[1])**2
+                                + (b.bound_b[2] - b.bound_a[2])**2), 1e-14)
+        for b in boxes
+    ]
 
     # Group boxes by span strip
     strip_indices: dict[int, list[int]] = {}
@@ -116,7 +128,8 @@ def apply_wt1(ajj: np.ndarray, boxes: list[AeroBox], f_target: np.ndarray) -> np
     r = np.ones(n)
     for s_idx, i_span in enumerate(sorted_strips):
         idxs = strip_indices[i_span]
-        f_vlm_s = sum(boxes[k].area * cp_vlm_ref[k] for k in idxs)
+        # Physical strip lift/q reference: Σ area * Cp = Σ area * 2*Γ/chord
+        f_vlm_s = sum(boxes[k].area * 2.0 * gamma_ref[k] / chord_box[k] for k in idxs)
         if abs(f_vlm_s) > _RATIO_TOL:
             ratio_s = float(f_target[s_idx]) / f_vlm_s
             for k in idxs:

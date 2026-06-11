@@ -53,31 +53,6 @@ FIX:    Form K_eff = K_aa − q·Q_aa and run the existing Schur partition on K_
 
 ---
 
-### [CRITICAL] AE2 — Unit inconsistency: AIC inverse returns circulation Γ, force path consumes it as Cp
-
-**Files:** `sbeam/aero/integration.py:13–25`, `sbeam/aero/coupling.py:100`, `sbeam/solver/sol144.py:707, 541–557, 850–860`, `sbeam/aero/corrections.py:119`
-
-```
-[CRITICAL] build_ajj is normalwash-per-unit-CIRCULATION, so ajj_inv_corr @ w = Γ, not ΔCp.
-        solve_rigid_cl converts correctly (cp = 2Γ/chord_box, vlm.py:319) but build_skj
-        computes F = area·n̂·input assuming Cp, and is fed raw Γ in build_fg, build_qaa,
-        Q_ax, _compute_rigid_derivs, _compute_aero_forces. Every coupled force is scaled by
-        chord_box/2 per box (×1.25 canard, ×1.083 wing on HA144A; measured CZα 6.339 via skj
-        path vs 5.755 via rigid solver). Per-box factor ⇒ also distorts load DISTRIBUTION on
-        any non-uniform mesh — cannot be absorbed globally. Casualties: apply_wt1 matches
-        Σarea·Γ against a physical strip-force target (same factor; WT2 escapes by ratio
-        cancellation); total_cl/total_cm divide by q twice (skj@Γ output is already per-q),
-        printing CL = −0.025 instead of ≈ −1.0 at trim. The "Gamma/cp note" in
-        05_aeroelastics.md §compute_structural_loads claimed skj was "calibrated" to consume
-        Γ — false; corrected 2026-06-11.
-FIX:    Define the j-set pressure unit ONCE — recommend ΔCp (NASTRAN/ZAERO convention): scale
-        the corrected inverse rows by 2/chord_box at build time (or insert an explicit
-        Γ→Cp diagonal), document on AeroModel, then delete the double-q in total_cl/total_cm
-        and re-derive the WT1 target units. Add the unit-consistency gate from AE13.
-```
-
----
-
 ### [CRITICAL] AE4 — SPLINE2 kinematics fail rigid-body tests on swept/offset configurations
 
 **Files:** `sbeam/aero/spline.py:127–209`, `sbeam/model/aero.py` (Spline2), `sample/ha144a_sbeam.bdf`
@@ -277,8 +252,7 @@ Each step is independently verifiable against a number already measured
 (`studies/_review_ha144a_check.py`):
 
 1. ~~**AE3** (lift-width projection)~~ **RESOLVED** — rigid CLα = 5.0709 vs NASTRAN 5.07097 ✓
-2. **AE2** (define j-set unit Γ vs Cp once) → skj path matches the rigid solver exactly;
-   total_cl ≈ −1.0 at SC1 trim; WT1 target units re-derived.
+2. ~~**AE2** (j-set unit Γ vs Cp)~~ **RESOLVED** — skj-path CZα = 5.071 matches rigid solver ✓
 3. **AE4 + AE6** (spline rework per ZAERO Theo §6.3 + ¼-chord force point) → V-AE2 gate
    passes; box-force resultant lands at x = 24.90.
 4. **AE5 + AE7** (RCSID-frame URDD + mass-coupled trim columns) → trim lift = +8 000 lb.
@@ -473,8 +447,8 @@ All Phase 1 bugs (B1–B4) are resolved. See `docs/40_history/00_completed_devel
 
 Steps 39–46 are complete — see `docs/40_history/00_completed_development.md`. Open Phase A
 work: **A7** (cosine chordwise spacing helper + low-NCHORD warning), **A8** (box
-aspect-ratio pre-solve warning), and from the 2026-06-11 review: **AE2** (Γ/Cp unit
-definition), **AE9** (per-TRIM Mach), **AE12** (PG normals).
+aspect-ratio pre-solve warning), and from the 2026-06-11 review: **AE9** (per-TRIM Mach),
+**AE12** (PG normals).
 
 ---
 

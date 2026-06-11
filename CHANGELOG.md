@@ -33,6 +33,26 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
   rigid-body spline kinematics checks, force-transfer-point check, rigid-derivative
   cross-check against `solve_rigid_cl`.
 
+**AE2 — Fixed j-set pressure unit: `ajj_inv_corr` now returns ΔCp, not Γ**
+- `sbeam/aero/aero_model.py`: `build_aero_model` scales `ajj_inv_corr` rows by
+  `2/chord_box` (physical boxes) immediately after the Prandtl–Glauert step, so that
+  `ajj_inv_corr @ w` returns dimensionless ΔCp throughout. All downstream consumers
+  (`build_fg`, `build_qaa`, `Q_ax`, `_compute_rigid_derivs`, `_compute_aero_forces`)
+  are now unit-consistent with no caller changes.
+- `sbeam/aero/corrections.py`: `apply_wt1` reference strip force changed from
+  `Σ area·Γ` to `Σ area·2Γ/chord` (physical strip lift/q), so the WT1 correction ratio
+  is computed against the correct physical reference. `apply_wt2` unchanged (WT2 target
+  convention stays as VLM Γ — ratio cancellation makes it transparent).
+- `sbeam/solver/sol144.py`: `run_sol144_trim` `total_cl`/`total_cm` now divide by
+  `sref` (not `q·sref`) because `skj @ Cp` is force/q; `_compute_restrained_derivs`
+  CZ/CMY denominators likewise drop the spurious `q`.
+- `tests/aero/test_corrections.py`: 5 tests updated to assert against physical Cp
+  quantities (skj-path CL round-trip, WKK force ratio, WT2 Cp output, WT1 physical
+  strip-force round-trip and scaled variant).
+- Verified: HA144A rigid CZα (ANGLEA) via `_compute_rigid_derivs` = 5.071, matching
+  `solve_rigid_cl` CLα = 5.0709. Previously 6.339 (≈25% error). `total_cl` at SC1
+  trim = −1.001; lift = −8011 lb ≈ −W (sign fixed by AE5, still open).
+
 **AE3 — Fixed Kutta-Joukowski lift-width projection for swept wings**
 - `sbeam/aero/vlm.py`: `solve_rigid_cl` and `trefftz_cdi` now use the cross-flow projected
   width `sqrt(Δy² + Δz²)` as the spanwise width `dy` of each bound-vortex segment, instead

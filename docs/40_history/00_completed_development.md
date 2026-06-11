@@ -2096,6 +2096,61 @@ logic is added; Step 51 is purely parsing infrastructure.
 
 ---
 
+## Resolved Defects (Phase A) — AE2: j-set pressure unit undefined — AIC inverse fed as Γ to force path expecting ΔCp ✅ FIXED
+
+**Objective:** Define the j-set pressure unit once as ΔCp (NASTRAN/ZAERO convention) so
+that `ajj_inv_corr @ w` returns a dimensionless pressure coefficient throughout the
+coupled aeroelastic chain. Every force computed through `build_skj` (which expects ΔCp)
+was off by `chord_box / 2` per box; `total_cl`/`total_cm` also divided by `q` twice.
+
+**Deliverables:**
+
+- `sbeam/aero/aero_model.py` — `build_aero_model`: after the Göthert `/= beta_pg` step,
+  scale `ajj_inv_corr` rows by `2/chord_box` (physical boxes, same formula as
+  `solve_rigid_cl`). All downstream consumers (`build_fg`, `build_qaa`, `Q_ax`,
+  `_compute_rigid_derivs`, `_compute_aero_forces`) are automatically corrected.
+- `sbeam/aero/corrections.py` — `apply_wt1`: reference strip lift changed from
+  `Σ area·Γ` to `Σ area·2Γ/chord` (physical strip lift/q); function still returns
+  a Γ-unit inverse — `build_aero_model` applies the `2/chord` scaling on top.
+  `apply_wt2` unchanged (WT2 target stays as VLM Γ; ratio cancellation preserves
+  correctness).
+- `sbeam/solver/sol144.py` — `run_sol144_trim`: `total_cl = Fz_total / sref` (was
+  `/ (q·sref)`); `total_cm = My_total / (sref·cref)` (was `/ (q·sref·cref)`).
+  `_compute_restrained_derivs`: CZ/CMY denominators changed from `q·sref·DELTA` to
+  `sref·DELTA`.
+- `tests/aero/test_corrections.py`: 5 tests updated to assert against physical Cp
+  quantities — `test_no_correction_identity` (skj-path CL round-trip vs
+  `solve_rigid_cl`), `test_wkk_correction_applied` (force ratio 1/1.5),
+  `test_wt2_round_trip` (output = Cp_ref = 2Γ/chord, not Γ), and the two WT1
+  round-trip tests (f_target / f_corr expressed as physical strip lift/q).
+
+**Test/Acceptance:**
+
+```
+python studies/_review_ha144a_check.py
+# rigid derivs CZ/CMY — ANGLEA: (5.071, ...)   ← was (-6.339, ...)
+# total CL = -1.001   lift = -8011 lb            ← was -0.025 / near-zero
+# 708 tests pass
+```
+
+ANGLEA CZα = 5.071 matches `solve_rigid_cl` CLα = 5.0709 to 4 significant figures.
+`total_cl` sign is negative because AE5 (URDD frame) is still open; magnitude is correct.
+
+**Key decisions:**
+
+- Apply `2/chord` scaling in `build_aero_model` (not inside each correction function)
+  so the unit convention is enforced in one place regardless of which correction is active.
+- WT2 "escapes by ratio cancellation": when the WT2 target is in VLM Γ units and
+  `ajj_inv_corr` later gets the `2/chord` scaling, the output Cp correctly corresponds
+  to the target Γ. No change to `apply_wt2`.
+- WT1 target convention explicitly defined as physical strip lift/q (= Σ area·Cp per
+  strip), matching NASTRAN/ZAERO practice. The function returns a Γ-unit inverse;
+  `build_aero_model` converts to Cp.
+- `_compute_rigid_derivs` already had `Fz_sens / sref` (no `q`) — correct with Cp units,
+  no change required.
+
+---
+
 ## Resolved Defects (Phase A) — AE3: Kutta-Joukowski lift width uses segment LENGTH, not cross-flow projection ✅ FIXED
 
 **Objective:** Correct `dy` in `solve_rigid_cl` and `trefftz_cdi` so that the

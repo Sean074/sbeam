@@ -629,9 +629,10 @@ def _compute_restrained_derivs(
             delta_all_pert, all_labels, aero, D_jx, bulk, x_ref,
         )
 
+        # Fz/My from _compute_aero_forces are force/q; derivative = Δ(force/q)/(sref·Δ)
         rest_derivs[label] = {
-            'CZ':  (Fz_p - Fz0) / (q * sref * DELTA),
-            'CMY': (My_p - My0) / (q * sref * cref * DELTA),
+            'CZ':  (Fz_p - Fz0) / (sref * DELTA),
+            'CMY': (My_p - My0) / (sref * cref * DELTA),
         }
 
     return rest_derivs
@@ -856,8 +857,9 @@ def run_sol144_trim(
     ))
     sref = aeros.sref
     cref = aeros.cref
-    total_cl = Fz_total / (q_dyn * sref) if q_dyn > 0 else 0.0
-    total_cm = My_total / (q_dyn * sref * cref) if q_dyn > 0 else 0.0
+    # Fz_total and My_total are force/q (skj @ Cp); divide by area only, not q.
+    total_cl = Fz_total / sref if sref > 0 else 0.0
+    total_cm = My_total / (sref * cref) if sref * cref > 0 else 0.0
 
     k_aa_lu_trim = scipy.linalg.lu_factor(K_aa)
 

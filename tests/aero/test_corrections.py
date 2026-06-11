@@ -157,64 +157,76 @@ class TestApplyWt2:
 
 class TestApplyWt1:
     def test_round_trip_with_vlm_strip_loads(self):
-        """Feed VLM per-strip lift as target → corrected strip lift reproduced."""
+        """Feed physical VLM strip lift/q as target → corrected strip lift/q reproduced."""
         nspan, nchord = 4, 4
         boxes = _rect_wing(nspan, nchord)
         ajj, ajj_inv = _ajj_and_inv(boxes)
         n = len(boxes)
         w_ref = -np.ones(n)
-        cp_vlm_ref = ajj_inv @ w_ref
+        gamma_ref = ajj_inv @ w_ref
+        # Physical strip lift/q: Σ area * Cp = Σ area * 2*Γ/chord
+        dy = np.array([
+            np.sqrt((b.bound_b[1] - b.bound_a[1])**2 + (b.bound_b[2] - b.bound_a[2])**2)
+            for b in boxes
+        ])
+        chord_box = np.array([boxes[k].area / dy[k] for k in range(n)])
+        cp_ref = 2.0 * gamma_ref / chord_box
 
-        # Compute per-strip integrated lift (same formula as apply_wt1 internals)
         from collections import defaultdict
         strip_idxs: dict = defaultdict(list)
         for k, box in enumerate(boxes):
             strip_idxs[box.i_span].append(k)
         sorted_strips = sorted(strip_idxs)
-        f_vlm = np.array([
-            sum(boxes[k].area * cp_vlm_ref[k] for k in strip_idxs[s])
+        f_target = np.array([
+            sum(boxes[k].area * cp_ref[k] for k in strip_idxs[s])
             for s in sorted_strips
         ])
 
-        ajj_inv_corr = apply_wt1(ajj, boxes, f_vlm)
-        cp_corr = ajj_inv_corr @ w_ref
+        ajj_inv_corr = apply_wt1(ajj, boxes, f_target)   # Γ-unit output
+        gamma_corr = ajj_inv_corr @ w_ref
+        cp_corr = 2.0 * gamma_corr / chord_box            # convert to Cp
 
-        # Recompute corrected strip loads
+        # Corrected physical strip lift/q must reproduce f_target
         f_corr = np.array([
             sum(boxes[k].area * cp_corr[k] for k in strip_idxs[s])
             for s in sorted_strips
         ])
-
-        assert f_corr == pytest.approx(f_vlm, rel=1e-8)
+        assert f_corr == pytest.approx(f_target, rel=1e-8)
 
     def test_scaled_target_scales_strip_output(self):
-        """Scaling f_target by constant factor scales corrected strip loads by same factor."""
+        """Scaling f_target by constant factor scales corrected physical strip loads."""
         nspan, nchord = 3, 3
         boxes = _rect_wing(nspan, nchord)
         ajj, ajj_inv = _ajj_and_inv(boxes)
         n = len(boxes)
         w_ref = -np.ones(n)
-        cp_vlm_ref = ajj_inv @ w_ref
+        gamma_ref = ajj_inv @ w_ref
+        dy = np.array([
+            np.sqrt((b.bound_b[1] - b.bound_a[1])**2 + (b.bound_b[2] - b.bound_a[2])**2)
+            for b in boxes
+        ])
+        chord_box = np.array([boxes[k].area / dy[k] for k in range(n)])
+        cp_ref = 2.0 * gamma_ref / chord_box
 
         from collections import defaultdict
         strip_idxs: dict = defaultdict(list)
         for k, box in enumerate(boxes):
             strip_idxs[box.i_span].append(k)
         sorted_strips = sorted(strip_idxs)
-        f_vlm = np.array([
-            sum(boxes[k].area * cp_vlm_ref[k] for k in strip_idxs[s])
+        f_target = np.array([
+            sum(boxes[k].area * cp_ref[k] for k in strip_idxs[s])
             for s in sorted_strips
         ])
 
         scale = 0.8
-        ajj_inv_corr = apply_wt1(ajj, boxes, scale * f_vlm)
-        cp_corr = ajj_inv_corr @ w_ref
+        ajj_inv_corr = apply_wt1(ajj, boxes, scale * f_target)
+        gamma_corr = ajj_inv_corr @ w_ref
+        cp_corr = 2.0 * gamma_corr / chord_box
         f_corr = np.array([
             sum(boxes[k].area * cp_corr[k] for k in strip_idxs[s])
             for s in sorted_strips
         ])
-
-        assert f_corr == pytest.approx(scale * f_vlm, rel=1e-8)
+        assert f_corr == pytest.approx(scale * f_target, rel=1e-8)
 
     def test_wrong_f_target_length_raises(self):
         boxes = _rect_wing(3, 3)
@@ -263,23 +275,35 @@ def _rect_bulk(nspan: int, nchord: int) -> BulkData:
 
 class TestBuildAeroModel:
     def test_no_correction_identity(self):
+        """Without correction, skj-path total Fz at unit incidence matches solve_rigid_cl."""
         bulk = _rect_bulk(4, 4)
         model = build_aero_model(bulk, parity=PARITY)
         n = len(model.boxes)
-        assert model.ajj_inv_corr @ model.ajj == pytest.approx(np.eye(n), abs=1e-10)
+        w_ref = -np.ones(n)
+        # skj @ ajj_inv_corr @ w_ref gives force/q; CL = Fz/sref
+        fz_model = (model.skj @ (model.ajj_inv_corr @ w_ref))[2::3].sum()
+        cl_model = fz_model / bulk.aeros.sref
+        # Reference from rigid solver
+        r = solve_rigid_cl(model.boxes, alpha=1.0, parity=PARITY,
+                           aeros=bulk.aeros, xref=0.0)
+        assert cl_model == pytest.approx(r["CL"], rel=1e-8)
 
     def test_wkk_correction_applied(self):
-        """WKK card with weight 1.5 on every box: AJJ* = 1.5 × AJJ."""
+        """WKK = 1.5 on every box halves the corrected CL by factor 1.5 vs no-correction."""
         nspan, nchord = 2, 2
-        bulk = _rect_bulk(nspan, nchord)
+        bulk_base = _rect_bulk(nspan, nchord)
+        bulk_wkk  = _rect_bulk(nspan, nchord)
         n = nspan * nchord
-        bulk.wkks[10] = Wkk(sid=10, caero_eid=CAERO_EID, data=[1.5] * n)
+        bulk_wkk.wkks[10] = Wkk(sid=10, caero_eid=CAERO_EID, data=[1.5] * n)
 
-        model = build_aero_model(bulk, parity=PARITY)
+        model_base = build_aero_model(bulk_base, parity=PARITY)
+        model_wkk  = build_aero_model(bulk_wkk,  parity=PARITY)
 
-        # AJJ*⁻¹ @ AJJ* ≈ I
-        ajj_star = 1.5 * model.ajj
-        assert model.ajj_inv_corr @ ajj_star == pytest.approx(np.eye(n), abs=1e-8)
+        w_ref = -np.ones(n)
+        fz_base = (model_base.skj @ (model_base.ajj_inv_corr @ w_ref))[2::3].sum()
+        fz_wkk  = (model_wkk.skj  @ (model_wkk.ajj_inv_corr  @ w_ref))[2::3].sum()
+        # Uniform WKK=1.5: AJJ* = 1.5·AJJ → Γ* = Γ/1.5 → CL* = CL/1.5
+        assert fz_wkk == pytest.approx(fz_base / 1.5, rel=1e-8)
 
     def test_model_shapes(self):
         nspan, nchord = 3, 3
@@ -293,20 +317,28 @@ class TestBuildAeroModel:
         assert model.wg.shape        == (n,)
 
     def test_wt2_round_trip(self):
+        """WT2 target in Γ-units: output is the corresponding Cp = 2·Γ/chord."""
         nspan, nchord = 3, 3
         bulk = _rect_bulk(nspan, nchord)
         n = nspan * nchord
 
-        # Compute VLM cp at unit incidence to use as WT2 target
+        # WT2 target convention: VLM Γ at unit incidence
         boxes = _rect_wing(nspan, nchord)
         ajj = build_ajj(boxes, PARITY)
         ajj_inv = np.linalg.solve(ajj, np.eye(n))
-        cp_vlm_ref = ajj_inv @ (-np.ones(n))
+        gamma_ref = ajj_inv @ (-np.ones(n))     # Γ at unit incidence (WT2 target unit)
 
         bulk.aecorrs[20] = Aecorr(
             sid=20, method="WT2", caero_eid=CAERO_EID,
-            target=cp_vlm_ref.tolist(),
+            target=gamma_ref.tolist(),           # Γ-unit target (identity correction)
         )
         model = build_aero_model(bulk, parity=PARITY)
-        cp_corr = model.ajj_inv_corr @ (-np.ones(n))
-        assert cp_corr == pytest.approx(cp_vlm_ref, rel=1e-8)
+        # After AE2 fix ajj_inv_corr returns Cp; identity WT2 → Cp = 2·Γ/chord
+        cp_out = model.ajj_inv_corr @ (-np.ones(n))
+        dy = np.array([
+            np.sqrt((b.bound_b[1] - b.bound_a[1])**2 + (b.bound_b[2] - b.bound_a[2])**2)
+            for b in boxes
+        ])
+        chord_box = np.array([boxes[i].area / dy[i] for i in range(n)])
+        cp_expected = 2.0 * gamma_ref / chord_box
+        assert cp_out == pytest.approx(cp_expected, rel=1e-8)
