@@ -353,48 +353,44 @@ class TestRigidBodyGate:
             f"max |w| = {np.max(np.abs(downwash)):.2e}"
         )
 
-    def test_rigid_rx_pitch_uniform_downwash(self, spline_operators):
-        """Uniform Rx=1 (bending slope about X for this CID): uniform downwash = +1."""
-        # CID=1: y_hat=[-1,0,0], so Rx (dof=3, d=0 in rotation) has y_hat[0]=-1
-        # g_slope += -y_comp * d_slopes; for uniform slope=1: d_slopes=1 everywhere
-        # contribution = -(-1)*1 = +1 everywhere ✓
+    def test_rigid_ry_torsion_uniform_downwash(self, spline_operators):
+        """Uniform Ry=1 (rotation about span axis Y = torsion in CID frame): uniform downwash = 1.
+
+        CID=1: x_hat=[0,1,0], so Ry (dof=4, d=1 in rotation) has x_hat[1]=1.
+        Torsion contribution: dthx × x_comp × phi_f[i] = 1 × 1 × phi_f[i].
+        Partition of unity: Σ_i phi_f[i](s) = 1 for all s.
+        Therefore g_slope @ u_Ry = 1.0 everywhere to machine precision.
+        """
         g_slope, _, boxes, grid_index, bulk = spline_operators
-        u = self._u_g(grid_index, dof=3)
+        u = self._u_g(grid_index, dof=4)
         downwash = g_slope @ u
         assert np.allclose(downwash, 1.0, atol=1e-12), (
-            f"Rigid Rx pitch must give uniform downwash=1; "
-            f"values: {downwash}"
+            f"Rigid Ry torsion must give uniform downwash=1; values: {downwash}"
         )
 
-    def test_rigid_tz_exact_zero_no_slope(self, spline_operators):
-        """Tz only (no rotation): Hermite derivative of a constant is exactly 0."""
+    def test_uniform_tz_exactly_zero_slope(self, spline_operators):
+        """Uniform Tz=1 (tested separately from fixture to confirm column isolation).
+
+        The Hermite derivative of a piecewise-constant function is exactly 0.
+        This is the core rigid-body exactness property.
+        """
         g_slope, _, boxes, grid_index, bulk = spline_operators
-        # Also test with only grid 1 having Tz=1 (non-uniform — derivative not zero)
-        # Here test that ALL zero-rotation DOFs give EXACTLY zero for uniform Tz
         n_g = 6 * len(grid_index)
         u = np.zeros(n_g)
         for gi in grid_index.values():
-            u[6 * gi + 2] = 1.0   # Tz for all grids
-        # Check by verifying the Hermite is exactly constant (derivative = 0)
-        downwash = g_slope @ u
-        assert np.max(np.abs(downwash)) < 1e-12
+            u[6 * gi + 2] = 1.0
+        assert np.max(np.abs(g_slope @ u)) < 1e-12
 
-    def test_linear_tz_exact_slope(self, spline_operators):
-        """Linear Tz(y) field: Hermite reproduces exact linear field; slope is constant."""
-        # Tz = y at each grid; Rx = 0 (no slope condition)
-        # CubicHermiteSpline of a linear field (with zero slope conditions) is NOT exact
-        # because the zero-slope conditions over-constrain the slope at the endpoints.
-        # Instead this tests that the Hermite is at least C1 and gives a consistent result.
-        g_slope, g_disp, boxes, grid_index, bulk = spline_operators
+    def test_tz_and_ry_combined(self, spline_operators):
+        """Combined Tz=1 + Ry=1: slope = 0 (Tz) + 1 (Ry) = 1 everywhere."""
+        g_slope, _, boxes, grid_index, bulk = spline_operators
         n_g = 6 * len(grid_index)
         u = np.zeros(n_g)
-        for gid, gi in grid_index.items():
-            y = bulk.grids[gid].y
-            u[6 * gi + 2] = y     # Tz = y
-
-        # Result should be finite and reasonable (not testing exact value here)
+        for gi in grid_index.values():
+            u[6 * gi + 2] = 1.0  # Tz: contributes 0
+            u[6 * gi + 4] = 1.0  # Ry: contributes 1
         downwash = g_slope @ u
-        assert np.all(np.isfinite(downwash))
+        assert np.allclose(downwash, 1.0, atol=1e-12)
 
 
 # ---------------------------------------------------------------------------

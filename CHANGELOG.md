@@ -13,6 +13,37 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Phase B — Structure ↔ Aero Splining (Steps 45–46)**
+- `SET1` card parsed (Pattern B multi-continuation, same template as `SPC1`/`RBE2`);
+  `Set1` dataclass added to `model/aero.py` and `BulkData`.
+- `SPLINE2` card parsed (Pattern A with optional DTHX/DTHZ/USAGE continuation);
+  `Spline2` dataclass with full field set including defaults (DZ=0.0, DTOR=1.0,
+  DTHX=1.0, DTHZ=0.0, USAGE="BOTH"); cross-reference validation at end of
+  `parse_bulk_data` (SETG → SET1, CAERO → CAERO1, SET1 grids → GRID).
+- `Attach`, `Spline0`, `Spline1` stub dataclasses added; `SPLINE1` parser handler raises
+  `NotImplementedError`; `ATTACH` and `SPLINE0` parse to their dataclasses (builders in Step 47).
+- `BulkData` gains: `set1s`, `spline2s`, `attaches`, `spline0s`, `spline1s`.
+- New module `sbeam/aero/spline.py` — `build_g_spline(bulk, boxes, grid_index)`:
+  - Builds two CID-aware spline operators from SPLINE2 cards using `CubicHermiteSpline`
+  - `g_slope` (n_box × 6·n_grid): maps structural g-set DOFs → per-box streamwise incidence
+    for the VLM solve (consumed by `coupling.build_qaa`)
+  - `g_disp` (3·n_box × 6·n_grid): maps structural g-set DOFs → per-box 3-D displacement
+    for virtual-work force transfer back to structure (consumed by `coupling.build_fg`)
+  - CID-aware projections via x_hat/y_hat/z_hat from CORD2R: correct for any spline axis
+    orientation (standard NASTRAN SPLINE2 convention)
+  - Unit-impulse Hermite approach: column-by-column fill using scipy phi_f / phi_d basis
+    functions; exact for the cubic Hermite space
+  - Coverage tracking: error on doubly-splined box; UserWarning on un-splined box and
+    on >10% extrapolation beyond SET1 span range
+- `AeroModel` gains `g_slope` and `g_disp` optional fields; `build_aero_model` accepts
+  optional `grid_index` parameter and populates both operators when spline cards are present.
+- 15 new tests in `tests/aero/test_spline.py`:
+  - Parser round-trips and error cases for SET1 and SPLINE2
+  - Operator shape validation
+  - V-B1 rigid-body gate: uniform Tz → zero downwash (< 1e-12); uniform Ry → uniform
+    downwash = 1.0 (< 1e-12); both verify partition-of-unity property of Hermite bases
+  - Energy round-trip: `g_disp.T @ (Skj @ cp_unit)` Z-component equals total panel area
+
 **Phase A — Prandtl–Glauert compressibility correction (A4)**
 - `AEROS` card now accepts optional field 8 `MACH` (sbeam extension; default 0.0). Specifying
   a Mach number triggers the Göthert similarity correction: panel y,z coordinates are

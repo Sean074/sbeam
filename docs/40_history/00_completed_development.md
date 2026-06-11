@@ -1831,3 +1831,90 @@ circulation field, enabling the standard elliptic-loading cross-check
 
 **Test / Acceptance:**
 - 6 new tests pass; full aero suite remains 124 passing, 0 failures.
+
+---
+
+## Phase B — Structure ↔ Aero Splining
+
+### Step 45: SET1 + SPLINE2 parsing ✅ COMPLETE
+
+**Objective:** Parse `SET1` (structural grid lists) and `SPLINE2` (beam-spline card)
+from BDF input; add stub dataclasses for `Attach`, `Spline0`, `Spline1`; cross-reference
+validation.
+
+**Deliverables:**
+- `model/aero.py`: added `Set1`, `Spline2`, `Attach`, `Spline0`, `Spline1` dataclasses
+- `model/bulk_data.py`: added `set1s`, `spline2s`, `attaches`, `spline0s`, `spline1s` fields
+- `parser/bdf_reader.py`:
+  - `_handle_set1` (Pattern B multi-continuation, same template as RBE2/SPC1)
+  - `_handle_spline2` (Pattern A, optional single continuation for DTHX/DTHZ/USAGE)
+  - `_handle_attach`, `_handle_spline0` (single-line handlers)
+  - `_handle_spline1` raises `NotImplementedError`
+  - Dispatch entries for `SET1`, `SPLINE2`, `ATTACH`, `SPLINE0`, `SPLINE1`
+  - Cross-reference validation: SPLINE2.setg → SET1, SPLINE2.caero → CAERO1,
+    all SET1 grid IDs → GRID
+- SPLINE2 defaults: DZ=0.0, DTOR=1.0, DTHX=1.0, DTHZ=0.0, USAGE="BOTH"
+
+**Test/Acceptance:**
+- `tests/aero/test_spline.py::TestSet1Parse` — single-line, multi-continuation, duplicate error
+- `tests/aero/test_spline.py::TestSpline2Parse` — defaults, explicit continuation, missing SET1/CAERO1 errors
+- All 686 existing tests continue to pass
+
+**Key decisions:**
+- Box ID mapping verified: NASTRAN box ID = `CAERO1.EID + i_span × nchord + j_chord`,
+  matching `panel.py` row-major ordering (span slowest, chord fastest)
+- `Attach` and `Spline0` dataclasses added here (builders implemented in Step 47)
+- `Spline1` handler raises `NotImplementedError` immediately on parse (deferred to Step 48)
+
+---
+
+### Step 46: SPLINE2 beam-spline operators (`spline.py`) ✅ COMPLETE
+
+**Objective:** Build the two CID-aware spline operators from each `SPLINE2` card using
+`scipy.interpolate.CubicHermiteSpline`. Operators are added to `AeroModel` and feed
+directly into `coupling.build_qaa` / `coupling.build_fg`.
+
+**Deliverables:**
+- New file `sbeam/aero/spline.py`:
+  - `build_g_spline(bulk, boxes, grid_index) → (g_slope, g_disp)`:
+    - `g_slope`: shape `(n_box, 6·n_grid)` — maps structural DOFs → per-box streamwise incidence
+    - `g_disp`:  shape `(3·n_box, 6·n_grid)` — maps structural DOFs → per-box 3-D displacement
+  - `_build_spline2_block`: unit-impulse Hermite approach — for each structural node i,
+    builds two CubicHermiteSpline basis functions (function-value basis phi_f[i] and
+    derivative-value basis phi_d[i]) and fills g_slope/g_disp columns using CID-aware
+    projections via z_hat, y_hat, x_hat from the CORD2R CID
+  - `_register_spline0`: marks boxes as covered with zero rows (Step 47 placeholder)
+  - Per-box coverage tracker: errors on double-spline; warns on un-splined box; warns
+    on >10% extrapolation beyond SET1 span range
+- `model/aero.py` and `aero_model.py`: `AeroModel` gains `g_slope`, `g_disp` optional fields;
+  `build_aero_model` accepts optional `grid_index` parameter and calls `build_g_spline`
+
+**CID-aware DOF projections (key design):**
+- `x_hat = R_cid[:, 0]` (spline axis = span direction)
+- `y_hat = R_cid[:, 1]` (bending-slope axis; rotation projected here is the spanwise slope)
+- `z_hat = R_cid[:, 2]` (surface normal / deflection direction)
+- Translation DOF d: effective normal deflection = `z_hat[d]`; contributes to g_slope via
+  `-z_hat[d] × d(phi_f[i])/ds` and to g_disp via `z_hat[d] × phi_f[i](t_j) × z_hat`
+- Rotation DOF d: bending slope = `y_hat[d-3]`, contributes to g_slope via
+  `-y_hat[d-3] × d(phi_d[i])/ds` and to g_disp via `y_hat[d-3] × phi_d[i](t_j) × z_hat`
+- Rotation DOF d: torsion = `x_hat[d-3]`, contributes to g_slope via
+  `dthx × x_hat[d-3] × phi_f[i](t_j)` (no g_disp contribution)
+- For CID=0: z_hat=[0,0,1] → Tz only; y_hat=[0,1,0] → Ry only; x_hat=[1,0,0] → Rx only
+
+**Test/Acceptance (V-B1 — rigid-body gate passed):**
+- Rigid translation (uniform Tz=1): `g_slope @ u` = 0 everywhere to < 1e-12 ✓
+- Rigid torsion (uniform Ry=1 for span-along-Y): `g_slope @ u` = 1.0 everywhere to < 1e-12 ✓
+  (partition-of-unity: Σ phi_f[i](s) = 1 for all s)
+- Combined Tz=1 + Ry=1: `g_slope @ u` = 1.0 everywhere ✓
+- Energy round-trip: `g_disp.T @ (Skj @ cp_unit)` Z-component = total panel area ✓
+- Parser round-trip and shape tests pass; 686 total tests pass
+
+**Key decisions:**
+- Two operators (`g_slope` + `g_disp`) rather than single G_kg: avoids the "classic spline
+  bug" documented in `coupling.py`; `g_slope` drives the VLM solve, `g_disp` handles
+  virtual-work force transfer back to the structure
+- Unit-impulse Hermite approach: builds the matrix column-by-column using two scipy basis
+  functions per node (phi_f for function-value, phi_d for slope-value); no matrix inversion
+  needed; exact for the CubicHermiteSpline basis
+- Rigid-body gate verified: partition-of-unity (Σ phi_f = 1, Σ d(phi_d)/ds = 0 for uniform
+  slope field) holds analytically and is confirmed numerically to machine precision

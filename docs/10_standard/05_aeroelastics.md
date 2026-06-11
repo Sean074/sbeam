@@ -19,12 +19,13 @@ Results   (cp, cl_section, CL, CY, CM, CDi, e, per_surface, …)
 
 | Module | Purpose |
 |--------|---------|
-| `sbeam/model/aero.py` | Dataclasses for aero BDF cards (`Aeros`, `Caero1`, `Paero1`, `Aefact`, `W2gj`, `Wkk`, `Aecorr`) |
+| `sbeam/model/aero.py` | Dataclasses: `Aeros`, `Caero1`, `Paero1`, `Aefact`, `W2gj`, `Wkk`, `Aecorr`, `Set1`, `Spline2`, `Attach`, `Spline0`, `Spline1` |
 | `sbeam/aero/panel.py` | `AeroBox` dataclass + `mesh_caero1()` — trapezoidal box meshing, ¼c/¾c placement |
 | `sbeam/aero/vlm.py` | Biot–Savart segments, horseshoe influence, AIC matrix, rigid-AOA solve |
 | `sbeam/aero/integration.py` | `Skj` force integration matrix, `Djk` downwash matrix, `wg` baseline normalwash |
 | `sbeam/aero/corrections.py` | `Wkk` diagonal correction, `WT1` force-match, `WT2` pressure-match |
 | `sbeam/aero/aero_model.py` | `AeroModel` container + `build_aero_model()` factory |
+| `sbeam/aero/spline.py` | **Phase B** — `build_g_spline()`: builds `g_slope` (n_box×n_g) and `g_disp` (3n_box×n_g) from `SPLINE2` + `ATTACH` + `SPLINE0` cards |
 | `sbeam/aero/coupling.py` | `build_qaa` flexible aero stiffness `Q_aa = G_dispᵀ S_kj (A_jj*)⁻¹ D_jk G_slope`; `build_fg` baseline aero load; `build_gaf` modal GAF `Q_hh = Φᵀ Q_aa Φ` |
 | `sbeam/viewer/aero_view.py` | Plotly box mesh, cp colour map, section-load strip chart |
 
@@ -41,6 +42,11 @@ Results   (cp, cl_section, CL, CY, CM, CDi, e, per_surface, …)
 | `W2GJ` | Per-box baseline normalwash slopes | S42 |
 | `WKK` | Diagonal AIC correction multipliers | S43 |
 | `AECORR` | Force/pressure matching AIC corrections (WT1, WT2) | S43 |
+| `SET1` | List of structural grid IDs for spline input | S45 |
+| `SPLINE2` | Beam spline: links CAERO1 box range to SET1 grids via CubicHermite interpolation | S45–46 |
+| `ATTACH` | Rigid attachment of box group to single master grid (Step 47, parsed) | S45 |
+| `SPLINE0` | Zero-displacement constraint — box rows in g_slope/g_disp remain zero | S45 |
+| `SPLINE1` | Harder–Desmarais IPS surface spline (parse raises NotImplementedError; Step 48) | S45 |
 
 ---
 
@@ -475,3 +481,105 @@ fig = build_aero_box_figure(
 )
 st.plotly_chart(fig, use_container_width=True)
 ```
+
+---
+
+## Phase B — Structure ↔ Aero Splining
+
+### Overview
+
+Phase B implements the structural-to-aerodynamic spline operators required for the SOL 144
+static-aeroelastic trim solve (Phase C). Two separate operators are built:
+
+| Operator | Shape | Role |
+|----------|-------|------|
+| `g_slope` | `(n_box, 6·n_grid)` | Maps structural DOFs → per-box streamwise incidence (feeds `Djk` in VLM solve) |
+| `g_disp`  | `(3·n_box, 6·n_grid)` | Maps structural DOFs → 3-D box displacement (for virtual-work force transfer `Skjᵀ`) |
+
+These are the `G_slope` and `G_disp` operators in the coupling equation
+`Q_aa = G_dispᵀ Skj A_jj*⁻¹ Djk G_slope` (see `coupling.py`).
+
+### SPLINE2 — Beam Spline
+
+SPLINE2 uses a 1-D cubic Hermite spline along the spline axis (CID x-axis = span direction)
+to interpolate structural grid displacements to aero box collocation points.
+
+**Card format:**
+```
+SPLINE2  EID  CAERO  ID1  ID2  SETG  DZ  DTOR  CID
++        DTHX DTHZ        USAGE
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| EID   | —       | Element ID |
+| CAERO | —       | CAERO1 EID of the panel being splined |
+| ID1   | —       | First NASTRAN box ID in the range |
+| ID2   | —       | Last NASTRAN box ID in the range |
+| SETG  | —       | SET1 SID listing the structural grids |
+| DZ    | 0.0     | Smoothing parameter (0.0 = interpolating Hermite) |
+| DTOR  | 1.0     | Torsional/bending ratio (not used in Phase B matrix) |
+| CID   | 0       | CORD2R SID defining the spline axis |
+| DTHX  | 1.0     | Torsion (CID x-axis rotation) contribution scale |
+| DTHZ  | 0.0     | CID z-axis rotation contribution (not used in Phase B) |
+| USAGE | BOTH    | FORCE / DISP / BOTH (informational; not filtered in Phase B) |
+
+**NASTRAN box ID convention** (must match `panel.py` row-major ordering):
+```
+box_id = CAERO1.EID + i_span × n_chord_boxes + j_chord
+```
+
+### CID-aware DOF projection
+
+The SPLINE2 CID defines the spline coordinate frame. All structural DOFs are in global CID 0.
+The CID rotation matrix columns provide the projection vectors:
+
+```
+origin, R_cid = _get_transform(spline2.cid, cord2rs)
+x_hat = R_cid[:, 0]   # span / spline axis
+y_hat = R_cid[:, 1]   # bending-slope axis (d(normal)/ds)
+z_hat = R_cid[:, 2]   # surface normal / deflection direction
+```
+
+For each structural node i and global DOF d, the contributions are:
+
+| DOF type | g_slope contribution | g_disp contribution |
+|----------|---------------------|---------------------|
+| Translation d < 3 | `-z_hat[d] × d(phi_f[i])/ds` | `z_hat[d] × phi_f[i](t_j) × z_hat` |
+| Rotation (bending) d ≥ 3 | `-y_hat[d-3] × d(phi_d[i])/ds` | `y_hat[d-3] × phi_d[i](t_j) × z_hat` |
+| Rotation (torsion) d ≥ 3 | `+dthx × x_hat[d-3] × phi_f[i](t_j)` | zero |
+
+where `phi_f[i]` = Hermite function-value basis at node i and `phi_d[i]` = Hermite
+derivative-value basis at node i (both built with `scipy.interpolate.CubicHermiteSpline`).
+
+**For CID = 0 (basic):** z_hat = [0,0,1], y_hat = [0,1,0], x_hat = [1,0,0], so only
+Tz (d=2), Ry (d=4), and Rx (d=3) contribute — the classic NASTRAN convention.
+
+### Rigid-body exactness (V-B1 gate)
+
+Two properties hold analytically and are verified numerically to < 1e-12:
+
+1. **Partition of unity:** `Σ_i phi_f[i](s) = 1` for all s. Consequence: uniform "torsion"
+   displacement at all grids → uniform incidence at all boxes.
+
+2. **Zero derivative of constant:** `Σ_i d(phi_f[i])/ds = 0` for all s. Consequence:
+   uniform translational displacement (no slope) → zero downwash at all boxes.
+
+These are the make-or-break tests for Phase C trim: a spline that fails these produces
+non-physical trim solutions.
+
+### `build_g_spline` API
+
+```python
+from sbeam.aero.spline import build_g_spline
+
+g_slope, g_disp = build_g_spline(bulk, boxes, grid_index)
+# g_slope: np.ndarray (n_box, 6*n_grid)   or None if no spline cards
+# g_disp:  np.ndarray (3*n_box, 6*n_grid) or None if no spline cards
+```
+
+Raises `ValueError` if a box is covered by more than one spline or if a SET1 has < 2 grids.
+Issues `UserWarning` for un-splined boxes, >10% extrapolation, or empty box ranges.
+
+`AeroModel` stores the operators as `aero_model.g_slope` and `aero_model.g_disp` when
+`build_aero_model` is called with a `grid_index` dict.
