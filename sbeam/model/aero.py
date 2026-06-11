@@ -60,3 +60,56 @@ class Aecorr:
     method:    str           # 'WT1' (force/moment matching) or 'WT2' (pressure matching)
     caero_eid: int           # which CAERO1 element this applies to
     target: list = field(default_factory=list)  # per-box cp (WT2) or per-strip lift (WT1)
+
+
+@dataclass
+class Set1:
+    sid:   int
+    grids: list = field(default_factory=list)   # list[int] of structural grid IDs
+
+
+@dataclass
+class Spline2:
+    eid:   int    # element ID
+    caero: int    # CAERO1 EID of the panel being splined
+    id1:   int    # first NASTRAN box ID in the box range
+    id2:   int    # last NASTRAN box ID in the box range
+    setg:  int    # SET1 SID for the structural grids
+    dz:    float  # smoothing parameter (0.0 = interpolating)
+    dtor:  float  # torsional/bending ratio (default 1.0)
+    cid:   int    # CORD2R SID that defines the spline axis (CID x-axis = span)
+    dthx:  float  # torsion (Rx) contribution scale (default 1.0)
+    dthz:  float  # Rz contribution scale (default 0.0; unused in Phase B)
+    usage: str    # "FORCE", "DISP", or "BOTH" (default "BOTH")
+
+
+@dataclass
+class Attach:
+    """Rigid attachment of box group to a single master grid (sbeam extension)."""
+    eid:   int
+    caero: int    # CAERO1 EID
+    id1:   int    # first NASTRAN box ID
+    id2:   int    # last NASTRAN box ID
+    grid:  int    # master structural grid ID
+    cid:   int    # coordinate system (default 0)
+
+
+@dataclass
+class Spline0:
+    """Zero-displacement constraint — box rows in g_slope / g_disp remain zero."""
+    eid:   int
+    caero: int
+    id1:   int
+    id2:   int
+
+
+@dataclass
+class Spline1:
+    """Harder–Desmarais infinite-plate spline (IPS) — deferred to Phase C+."""
+    eid:   int
+    caero: int
+    id1:   int
+    id2:   int
+    setg:  int
+    dz:    float
+    cid:   int

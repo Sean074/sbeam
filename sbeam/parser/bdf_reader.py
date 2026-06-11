@@ -11,7 +11,7 @@ from sbeam.model.material import Mat1
 from sbeam.model.mass import Conm2
 from sbeam.model.load import Force, Moment, Load, Grav, Eigrl
 from sbeam.model.constraint import Spc, Spc1
-from sbeam.model.aero import Aeros, Caero1, Paero1, Aefact, W2gj, Wkk, Aecorr
+from sbeam.model.aero import Aeros, Caero1, Paero1, Aefact, W2gj, Wkk, Aecorr, Set1, Spline2, Attach, Spline0, Spline1
 from sbeam.parser.case_control import parse_case_control
 
 _IGNORED_KEYWORDS = frozenset({"BEGIN", "BEGINBULK", "ENDDATA"})
@@ -538,6 +538,69 @@ def _handle_caero1(fields: list, cont, bulk: BulkData) -> None:
     )
 
 
+def _handle_set1(fields: list, conts: list, bulk: BulkData) -> None:
+    sid   = _to_int(fields[1])
+    grids = [_to_int(f) for f in fields[2:] if f.strip()]
+    for cont in conts:
+        grids += [_to_int(f) for f in cont[1:] if f.strip()]
+    if sid in bulk.set1s:
+        raise ValueError(f"Duplicate SET1 SID {sid}")
+    bulk.set1s[sid] = Set1(sid=sid, grids=grids)
+
+
+def _handle_spline2(fields: list, cont, bulk: BulkData) -> None:
+    eid   = _to_int(fields[1])
+    caero = _to_int(fields[2])
+    id1   = _to_int(fields[3])
+    id2   = _to_int(fields[4])
+    setg  = _to_int(fields[5])
+    dz    = _to_float(fields[6]) if len(fields) > 6 and fields[6].strip() else 0.0
+    dtor  = _to_float(fields[7]) if len(fields) > 7 and fields[7].strip() else 1.0
+    cid   = _to_int_opt(fields[8]) if len(fields) > 8 else 0
+    dthx  = 1.0
+    dthz  = 0.0
+    usage = "BOTH"
+    if cont is not None:
+        dthx  = _to_float(cont[1]) if len(cont) > 1 and cont[1].strip() else 1.0
+        dthz  = _to_float(cont[2]) if len(cont) > 2 and cont[2].strip() else 0.0
+        usage = cont[4].strip() if len(cont) > 4 and cont[4].strip() else "BOTH"
+    if eid in bulk.spline2s:
+        raise ValueError(f"Duplicate SPLINE2 EID {eid}")
+    bulk.spline2s[eid] = Spline2(
+        eid=eid, caero=caero, id1=id1, id2=id2, setg=setg,
+        dz=dz, dtor=dtor, cid=cid, dthx=dthx, dthz=dthz, usage=usage,
+    )
+
+
+def _handle_attach(fields: list, bulk: BulkData) -> None:
+    eid   = _to_int(fields[1])
+    caero = _to_int(fields[2])
+    id1   = _to_int(fields[3])
+    id2   = _to_int(fields[4])
+    grid  = _to_int(fields[5])
+    cid   = _to_int_opt(fields[6]) if len(fields) > 6 else 0
+    if eid in bulk.attaches:
+        raise ValueError(f"Duplicate ATTACH EID {eid}")
+    bulk.attaches[eid] = Attach(eid=eid, caero=caero, id1=id1, id2=id2, grid=grid, cid=cid)
+
+
+def _handle_spline0(fields: list, bulk: BulkData) -> None:
+    eid   = _to_int(fields[1])
+    caero = _to_int(fields[2])
+    id1   = _to_int(fields[3])
+    id2   = _to_int(fields[4])
+    if eid in bulk.spline0s:
+        raise ValueError(f"Duplicate SPLINE0 EID {eid}")
+    bulk.spline0s[eid] = Spline0(eid=eid, caero=caero, id1=id1, id2=id2)
+
+
+def _handle_spline1(fields: list, bulk: BulkData) -> None:
+    raise NotImplementedError(
+        "SPLINE1 (Harder–Desmarais infinite-plate spline) is not yet implemented; "
+        "use SPLINE2 or ATTACH instead"
+    )
+
+
 def _handle_eigrl(fields: list, bulk: BulkData) -> None:
     sid  = _to_int(fields[1])
     v1   = _to_float_or_none(fields[2]) if len(fields) > 2 else None
@@ -732,6 +795,28 @@ def parse_bulk_data(lines: list) -> BulkData:
             _handle_paero1(fields, bulk)
         elif keyword == "CAERO1":
             _handle_caero1(fields, cont, bulk)
+        elif keyword == "SET1":
+            set1_conts: list = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    set1_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_set1(fields, set1_conts, bulk)
+        elif keyword == "SPLINE2":
+            _handle_spline2(fields, cont, bulk)
+        elif keyword == "ATTACH":
+            _handle_attach(fields, bulk)
+        elif keyword == "SPLINE0":
+            _handle_spline0(fields, bulk)
+        elif keyword == "SPLINE1":
+            _handle_spline1(fields, bulk)
         else:
             warnings.warn(f"Unknown BDF card '{keyword}' — skipped", UserWarning, stacklevel=2)
 
@@ -749,6 +834,17 @@ def parse_bulk_data(lines: list) -> BulkData:
             raise ValueError(f"CAERO1 {eid}: LSPAN={caero.lspan} not found in AEFACT")
         if caero.lchord and caero.lchord not in bulk.aefacts:
             raise ValueError(f"CAERO1 {eid}: LCHORD={caero.lchord} not found in AEFACT")
+
+    # Validate SPLINE2 cross-references (SET1 SID, CAERO1 EID, grid IDs)
+    for eid, sp in bulk.spline2s.items():
+        if sp.setg not in bulk.set1s:
+            raise ValueError(f"SPLINE2 {eid}: SETG={sp.setg} not found in SET1")
+        if sp.caero not in bulk.caero1s:
+            raise ValueError(f"SPLINE2 {eid}: CAERO={sp.caero} not found in CAERO1")
+    for sid, s1 in bulk.set1s.items():
+        for gid in s1.grids:
+            if gid not in bulk.grids:
+                raise ValueError(f"SET1 {sid}: grid ID {gid} not found in GRID")
 
     # Validate LOAD component references after all cards are parsed
     for load_sid, load in bulk.loads.items():

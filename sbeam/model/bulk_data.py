@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .aero import Aeros, Caero1, Paero1, Aefact, W2gj, Wkk, Aecorr
+from .aero import Aeros, Caero1, Paero1, Aefact, W2gj, Wkk, Aecorr, Set1, Spline2, Attach, Spline0, Spline1
 
 
 @dataclass
@@ -31,4 +31,9 @@ class BulkData:
     aefacts: dict = field(default_factory=dict)   # {sid: Aefact}
     w2gjs:   dict = field(default_factory=dict)   # {sid: W2gj}
     wkks:    dict = field(default_factory=dict)   # {sid: Wkk}
-    aecorrs: dict = field(default_factory=dict)   # {sid: Aecorr}
+    aecorrs:  dict = field(default_factory=dict)   # {sid: Aecorr}
+    set1s:    dict = field(default_factory=dict)   # {sid: Set1}
+    spline2s: dict = field(default_factory=dict)   # {eid: Spline2}
+    attaches: dict = field(default_factory=dict)   # {eid: Attach}
+    spline0s: dict = field(default_factory=dict)   # {eid: Spline0}
+    spline1s: dict = field(default_factory=dict)   # {eid: Spline1}

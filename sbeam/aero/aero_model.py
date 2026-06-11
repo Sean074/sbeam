@@ -23,6 +23,7 @@ from sbeam.aero.panel import AeroBox, mesh_caero1
 from sbeam.aero.vlm import build_ajj, prandtl_glauert_boxes
 from sbeam.aero.integration import build_skj, build_djk, build_wg
 from sbeam.aero.corrections import apply_wkk, apply_wt2, apply_wt1, _check_conditioning
+from sbeam.aero.spline import build_g_spline
 
 
 @dataclass
@@ -34,11 +35,13 @@ class AeroModel:
     djk:          np.ndarray          # deflection-to-downwash matrix, shape (n, n)
     wg:           np.ndarray          # baseline normalwash vector, shape (n,)
     parity:       int                 # +1 symmetric / -1 antisymmetric / 0 full-span
-    aeros:        Optional[Aeros] = None  # AEROS reference geometry card (sref, cref, bref)
-    mach:         float = 0.0         # Mach number used for Prandtl–Glauert correction
+    aeros:        Optional[Aeros] = None       # AEROS reference geometry card
+    mach:         float = 0.0                  # Mach number for Prandtl–Glauert
+    g_slope:      Optional[np.ndarray] = None  # slope spline, shape (n, 6*n_g)
+    g_disp:       Optional[np.ndarray] = None  # displacement spline, shape (3n, 6*n_g)
 
 
-def build_aero_model(bulk: BulkData, parity: int = 1) -> AeroModel:
+def build_aero_model(bulk: BulkData, parity: int = 1, grid_index: Optional[dict] = None) -> AeroModel:
     """Assemble the full AeroModel from parsed bulk data.
 
     Correction precedence (first match wins, per CAERO1 element):
@@ -113,6 +116,12 @@ def build_aero_model(bulk: BulkData, parity: int = 1) -> AeroModel:
     for eid in sorted(bulk.caero1s):
         wg += build_wg(boxes, bulk.w2gjs, eid)
 
+    # Build spline operators if spline cards are present and grid_index is provided
+    g_slope: Optional[np.ndarray] = None
+    g_disp:  Optional[np.ndarray] = None
+    if grid_index is not None and (bulk.spline2s or bulk.attaches or bulk.spline0s):
+        g_slope, g_disp = build_g_spline(bulk, boxes, grid_index)
+
     return AeroModel(
         boxes=boxes,
         ajj=ajj,
@@ -123,4 +132,6 @@ def build_aero_model(bulk: BulkData, parity: int = 1) -> AeroModel:
         parity=parity,
         aeros=bulk.aeros,
         mach=mach,
+        g_slope=g_slope,
+        g_disp=g_disp,
     )
