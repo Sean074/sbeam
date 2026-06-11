@@ -13,6 +13,17 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Phase B — ATTACH rigid-body spline (Step 47)**
+- `_build_attach_rows()` implemented in `sbeam/aero/spline.py`: rigid lever-arm coupling
+  of a box group to a single master GRID via `ATTACH` card. Fills `g_slope`
+  (`col_Rx = +1.0` torsion, `col_Ry = -1.0` pitch) and `g_disp` normal z-rows with
+  lever-arm cross-product `(ω×r)_z = Rx·ry − Ry·rx`.
+- ATTACH loop in `build_g_spline()` replaces Step 46 placeholder warning.
+- `NotImplementedError` raised for `CID ≠ 0`; `ValueError` for unknown master GRID.
+- V-B3 test class (4 tests) in `tests/aero/test_spline.py`: machine-precision rigid-body
+  gate (Tz→0, Ry→-1) and force-transfer lever-arm check (Fz/Mx/My vs analytical).
+  SPLINE0 zero-force and zero-slope verified alongside ATTACH. 20 total tests pass.
+
 **Phase B — Structure ↔ Aero Splining (Steps 45–46)**
 - `SET1` card parsed (Pattern B multi-continuation, same template as `SPC1`/`RBE2`);
   `Set1` dataclass added to `model/aero.py` and `BulkData`.

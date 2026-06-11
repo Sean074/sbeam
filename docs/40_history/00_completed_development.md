@@ -1918,3 +1918,41 @@ directly into `coupling.build_qaa` / `coupling.build_fg`.
   needed; exact for the CubicHermiteSpline basis
 - Rigid-body gate verified: partition-of-unity (Σ phi_f = 1, Σ d(phi_d)/ds = 0 for uniform
   slope field) holds analytically and is confirmed numerically to machine precision
+
+---
+
+### Step 47: ATTACH rigid-body spline + SPLINE0 zero-displacement ✅ COMPLETE
+
+**Objective:** Implement `_build_attach_rows()` in `sbeam/aero/spline.py` to give
+rigid-body coupling between a master structural GRID and a group of aero boxes via
+the `ATTACH` card; confirm `SPLINE0` boxes correctly contribute zero rows.
+
+**Deliverables:**
+- `sbeam/aero/spline.py`:
+  - `_build_attach_rows(attach, bulk, boxes, grid_index, id_to_k, covered, g_slope, g_disp)`:
+    rigid lever-arm kinematics in global CID 0; for each covered box gk with lever
+    `r = box.colloc − master_pos = (rx, ry, rz)`:
+    - `g_slope[gk, col_Rx] = +1.0` (torsion coupling)
+    - `g_slope[gk, col_Ry] = -1.0` (pitch → uniform downwash -1)
+    - `g_disp[3*gk+2, col_Tz] = 1.0`, `g_disp[3*gk+2, col_Rx] = ry`,
+      `g_disp[3*gk+2, col_Ry] = -rx` ((ω×r)_z = Rx·ry − Ry·rx)
+  - ATTACH loop replaces Step 46 placeholder warning in `build_g_spline()`
+  - `Attach` added to imports from `sbeam.model.aero`
+  - `NotImplementedError` for CID ≠ 0; `ValueError` for unknown master GRID
+- `tests/aero/test_spline.py`: `TestAttachRigidBodyGate` (V-B3a, V-B3b, V-B3d) and
+  `TestSpline0ZeroForce` (V-B3c ×2); 20 total tests pass
+
+**Test/Acceptance (V-B3 — machine-precision gate):**
+- V-B3a: Rigid Tz translation of master → zero downwash on all ATTACH boxes (< 1e-14) ✓
+- V-B3b: Rigid Ry pitch of master → uniform downwash = -1.0 (< 1e-14) ✓
+- V-B3c: SPLINE0 boxes → `g_disp.T @ any_pressure = 0` and `g_slope` all-zero (< 1e-14) ✓
+- V-B3d: Force transfer — uniform pressure → Fz/Mx/My at master matches analytical
+  lever-arm values (Fz=2.0, Mx=2.0, My=-1.5 for the 2-box fixture) (< 1e-12) ✓
+
+**Key decisions:**
+- Grid positions are already in global CID 0 after `resolve_grid_positions()` at parse
+  time; pattern lifted directly from `spline.py:142` (SPLINE2 structural grid access)
+- CID ≠ 0 raises `NotImplementedError` — no documented use case; can be relaxed in Phase C
+- `g_slope` and `g_disp` z-rows only: consistent with SPLINE2 approach where only the
+  surface-normal component is populated (x/y rows stay zero)
+- Energy consistency confirmed: `∂(−rx)/∂x = −1 = g_slope[j, col_Ry]` ✓ (virtual work)

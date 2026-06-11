@@ -210,37 +210,6 @@ Prerequisite for Phase C (SOL 144).
 
 ---
 
-### Step 47 — ATTACH rigid-body spline + SPLINE0 zero-displacement
-
-**Objective:** Tie box groups rigidly to a master grid (`ATTACH`) and pin selected boxes
-(`SPLINE0`), reusing the RBE2 lever-arm kinematic machinery.
-
-**Scope/Deliverables:**
-- `Attach` dataclass: `eid`, `caero`, `id1`, `id2`, `grid` (master GRID ID), `cid` (def 0)
-- `Spline0` dataclass: `eid`, `caero`, `id1`, `id2`
-- Card format (sbeam-defined, ZAERO-inspired): `ATTACH, EID, CAERO, ID1, ID2, GRID, CID`;
-  `SPLINE0, EID, CAERO, ID1, ID2`
-- `_handle_attach` / `_handle_spline0` in `bdf_reader.py`
-- `build_attach_rows(attach, bulk, boxes, grid_index)` in `spline.py`: for each covered
-  box j, lever arm `r = box.colloc − master_grid_pos`; the G_kg row encodes the
-  rigid-body downwash contribution using the same R-matrix structure from `assembly/rbe3.py`:
-  `Gkg[j, col_Tz] = 0` (pure plunge → no incidence), `Gkg[j, col_Ry] = -1.0` (pitch →
-  downwash), `Gkg[j, col_Rx] = dthx` (torsion), plus streamwise-offset corrections via lever
-- `SPLINE0`: rows stay zero; boxes registered as covered (suppresses un-splined warning)
-
-**Test/Acceptance (V-B3 — machine precision gate):**
-- Rigid translation of master → zero downwash on all `ATTACH` boxes
-- Rigid pitch of master → uniform downwash = −Ry across all boxes
-- `SPLINE0` boxes: `G_kgᵀ @ (any pressure)` → zero force contribution
-- Force transfer: uniform pressure on `ATTACH` boxes → `G_kgᵀ @ F_normal` sums to
-  correct total force/moment at master grid (analytical lever-arm check)
-
-**Key decisions/risks (KB3):**
-- Import lever-arm R-matrix logic from `assembly/rbe3.py`; do not re-implement
-- "Splined more than once" check in `build_Gkg` catches any overlap with SPLINE2 coverage
-
----
-
 ### Step 48 — SPLINE1 surface spline (optional — deferrable)
 
 **Objective:** Harder–Desmarais Infinite-Plate Spline for general 2-D grid scatter.

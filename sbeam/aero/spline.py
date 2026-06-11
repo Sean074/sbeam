@@ -38,7 +38,7 @@ import numpy as np
 from scipy.interpolate import CubicHermiteSpline
 
 from sbeam.model.bulk_data import BulkData
-from sbeam.model.aero import Spline2, Spline0
+from sbeam.model.aero import Spline2, Spline0, Attach
 from sbeam.aero.panel import AeroBox
 from sbeam.assembly.coord_transform import _get_transform
 
@@ -233,6 +233,79 @@ def _register_spline0(
         covered[gk] = True
 
 
+def _build_attach_rows(
+    attach: Attach,
+    bulk: BulkData,
+    boxes: list,
+    grid_index: dict,
+    id_to_k: dict,
+    covered: list,
+    g_slope: np.ndarray,
+    g_disp: np.ndarray,
+) -> None:
+    """Fill g_slope and g_disp rows for boxes rigidly attached to a master GRID.
+
+    Rigid-body kinematics (CID=0, global frame):
+      lever r = box.colloc − master_pos = (rx, ry, rz)
+
+    g_slope (downwash = −∂u_z/∂x):
+      Tz: zero (uniform plunge → zero slope)
+      Rx: +1.0 (torsion coupling, same semi-empirical role as dthx=1 in SPLINE2)
+      Ry: −1.0 (pitch → uniform slope −1)
+
+    g_disp (z-component of u_g + ω×r):
+      (ω×r)_z = Rx·ry − Ry·rx
+      col_Tz: +1.0, col_Rx: +ry, col_Ry: −rx
+
+    Energy consistency: ∂(−rx)/∂x = −1 = g_slope[j, col_Ry] ✓
+    """
+    if attach.cid != 0:
+        raise NotImplementedError(
+            f"ATTACH {attach.eid}: CID={attach.cid} != 0 not supported; use CID=0"
+        )
+    if attach.grid not in bulk.grids or attach.grid not in grid_index:
+        raise ValueError(
+            f"ATTACH {attach.eid}: master GRID {attach.grid} not found in structural model"
+        )
+
+    covered_gk = _covered_gk_for_range(attach.caero, attach.id1, attach.id2, boxes, id_to_k)
+    if not covered_gk:
+        warnings.warn(
+            f"ATTACH {attach.eid}: no boxes found in ID range "
+            f"[{attach.id1}, {attach.id2}] for CAERO1 {attach.caero}",
+            UserWarning,
+            stacklevel=3,
+        )
+        return
+
+    for gk in covered_gk:
+        if covered[gk]:
+            raise ValueError(
+                f"ATTACH {attach.eid}: box k={gk} is already covered by another spline"
+            )
+        covered[gk] = True
+
+    g = bulk.grids[attach.grid]
+    master_pos = np.array([g.x, g.y, g.z])
+    col_base = 6 * grid_index[attach.grid]
+    covered_arr = np.array(covered_gk, dtype=int)
+
+    collocs = np.array([boxes[gk].colloc for gk in covered_gk])
+    r = collocs - master_pos           # (n_cov, 3)
+    rx = r[:, 0]                       # streamwise lever
+    ry = r[:, 1]                       # spanwise lever
+
+    # g_slope: rigid-body downwash contributions
+    g_slope[covered_arr, col_base + 3] = 1.0    # Rx torsion
+    g_slope[covered_arr, col_base + 4] = -1.0   # Ry pitch
+
+    # g_disp: z-component of normal displacement only
+    row_z = 3 * covered_arr + 2
+    g_disp[row_z, col_base + 2] = 1.0   # Tz
+    g_disp[row_z, col_base + 3] = ry    # Rx: (ω×r)_z = ry
+    g_disp[row_z, col_base + 4] = -rx   # Ry: (ω×r)_z = −rx
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -274,14 +347,8 @@ def build_g_spline(
     for sp in bulk.spline2s.values():
         _build_spline2_block(sp, bulk, boxes, grid_index, id_to_k, covered, g_slope, g_disp)
 
-    # ATTACH (Step 47): not yet implemented — silently skip placeholder entries
-    if bulk.attaches:
-        warnings.warn(
-            "ATTACH cards present but not yet implemented (Step 47); "
-            "those boxes will have zero spline rows",
-            UserWarning,
-            stacklevel=2,
-        )
+    for attach in bulk.attaches.values():
+        _build_attach_rows(attach, bulk, boxes, grid_index, id_to_k, covered, g_slope, g_disp)
 
     for sp0 in bulk.spline0s.values():
         _register_spline0(sp0, boxes, id_to_k, covered)

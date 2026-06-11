@@ -32,7 +32,7 @@ import pytest
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.aero import (
-    Aeros, Caero1, Paero1, Set1, Spline2
+    Aeros, Caero1, Paero1, Set1, Spline2, Attach, Spline0
 )
 from sbeam.model.grid import Grid
 from sbeam.model.coordinate_system import Cord2r
@@ -426,4 +426,178 @@ class TestEnergyRoundTrip:
         # For this horizontal panel (normal=[0,0,1]), expected_fz = total area = 3.0
         assert abs(actual_fz - expected_fz) < 1e-10, (
             f"Virtual-work Z-force mismatch: got {actual_fz:.6f}, expected {expected_fz:.6f}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# V-B3: ATTACH rigid-body gate + SPLINE0 zero-force (machine-precision)
+# ---------------------------------------------------------------------------
+
+def _build_attach_bulk():
+    """Minimal BulkData for ATTACH tests.
+
+    Geometry:
+      GRID 1 at (0, 0, 0) — master structural grid
+      CAERO1 EID=200: span along Y (0..2), chord along X (0..1), 2span×1chord
+        Box 200: colloc ≈ (0.75, 0.5, 0),  lever r = (0.75, 0.5, 0)
+        Box 201: colloc ≈ (0.75, 1.5, 0),  lever r = (0.75, 1.5, 0)
+      ATTACH EID=300: covers boxes 200–201, master GRID=1, CID=0
+    """
+    bulk = BulkData()
+
+    bulk.grids[1] = Grid(gid=1, cp=0, x=0.0, y=0.0, z=0.0, cd=0)
+
+    bulk.aeros = Aeros(acsid=0, rcsid=0, cref=1.0, bref=2.0, sref=2.0, symxz=0, symxy=0)
+    bulk.paero1s[10] = Paero1(pid=10)
+
+    # Panel spans Y (P1→P4 direction), chord along X
+    bulk.caero1s[200] = Caero1(
+        eid=200, pid=10, cp=0, nspan=2, nchord=1,
+        lspan=0, lchord=0, igid=0,
+        p1=(0.0, 0.0, 0.0), x12=1.0,
+        p4=(0.0, 2.0, 0.0), x43=1.0,
+    )
+
+    bulk.attaches[300] = Attach(eid=300, caero=200, id1=200, id2=201, grid=1, cid=0)
+
+    return bulk
+
+
+def _build_spline0_bulk():
+    """Minimal BulkData for SPLINE0 zero-force test.
+
+    Same geometry as _build_attach_bulk() but using SPLINE0 instead of ATTACH.
+    GRID 1 exists only so grid_index is non-empty; SPLINE0 leaves all rows zero.
+    """
+    bulk = BulkData()
+    bulk.grids[1] = Grid(gid=1, cp=0, x=0.0, y=0.0, z=0.0, cd=0)
+
+    bulk.aeros = Aeros(acsid=0, rcsid=0, cref=1.0, bref=2.0, sref=2.0, symxz=0, symxy=0)
+    bulk.paero1s[10] = Paero1(pid=10)
+
+    bulk.caero1s[200] = Caero1(
+        eid=200, pid=10, cp=0, nspan=2, nchord=1,
+        lspan=0, lchord=0, igid=0,
+        p1=(0.0, 0.0, 0.0), x12=1.0,
+        p4=(0.0, 2.0, 0.0), x43=1.0,
+    )
+
+    bulk.spline0s[300] = Spline0(eid=300, caero=200, id1=200, id2=201)
+
+    return bulk
+
+
+@pytest.fixture(scope="module")
+def attach_operators():
+    """Build g_slope and g_disp for the ATTACH test geometry."""
+    from sbeam.aero.panel import mesh_caero1
+    bulk = _build_attach_bulk()
+    caero = bulk.caero1s[200]
+    boxes = mesh_caero1(caero, bulk.paero1s[10], bulk.aefacts, bulk.cord2rs, start_k=0)
+    grid_index = {1: 0}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        g_slope, g_disp = build_g_spline(bulk, boxes, grid_index)
+    return g_slope, g_disp, boxes, grid_index, bulk
+
+
+@pytest.fixture(scope="module")
+def spline0_operators():
+    """Build g_slope and g_disp for the SPLINE0 test geometry (all rows zero)."""
+    from sbeam.aero.panel import mesh_caero1
+    bulk = _build_spline0_bulk()
+    caero = bulk.caero1s[200]
+    boxes = mesh_caero1(caero, bulk.paero1s[10], bulk.aefacts, bulk.cord2rs, start_k=0)
+    grid_index = {1: 0}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        g_slope, g_disp = build_g_spline(bulk, boxes, grid_index)
+    return g_slope, g_disp, boxes, grid_index, bulk
+
+
+class TestAttachRigidBodyGate:
+    """V-B3: ATTACH lever-arm kinematics must hold to machine precision."""
+
+    def test_v_b3a_rigid_tz_zero_downwash(self, attach_operators):
+        """V-B3a: Rigid Tz translation → zero downwash (plunge has zero slope)."""
+        g_slope, _, boxes, grid_index, _ = attach_operators
+        n_g = 6 * len(grid_index)
+        u = np.zeros(n_g)
+        u[6 * 0 + 2] = 1.0  # Tz at grid index 0
+        downwash = g_slope @ u
+        assert np.allclose(downwash, 0.0, atol=1e-14), (
+            f"ATTACH rigid Tz must give zero downwash; max |w|={np.max(np.abs(downwash)):.2e}"
+        )
+
+    def test_v_b3b_rigid_ry_uniform_downwash(self, attach_operators):
+        """V-B3b: Rigid Ry pitch → uniform downwash = −1 at all ATTACH boxes."""
+        g_slope, _, boxes, grid_index, _ = attach_operators
+        n_g = 6 * len(grid_index)
+        u = np.zeros(n_g)
+        u[6 * 0 + 4] = 1.0  # Ry at grid index 0
+        downwash = g_slope @ u
+        assert np.allclose(downwash, -1.0, atol=1e-14), (
+            f"ATTACH rigid Ry pitch must give uniform downwash=−1; values: {downwash}"
+        )
+
+    def test_v_b3d_force_transfer_lever_arm(self, attach_operators):
+        """V-B3d: Force transfer — uniform pressure → correct Fz, Mx, My at master GRID.
+
+        For 2 boxes with area=1.0 each and colloc at y=0.5 and y=1.5 (rx≈0.75 both):
+          Fz = 2.0  (total lift)
+          Mx = ry0 + ry1 = 0.5 + 1.5 = 2.0  (roll moment)
+          My = −(rx0 + rx1) = −(0.75 + 0.75) = −1.5  (pitch moment)
+        """
+        from sbeam.aero.integration import build_skj
+        g_slope, g_disp, boxes, grid_index, _ = attach_operators
+        n_k = len(boxes)
+        skj = build_skj(boxes)
+
+        cp = np.ones(n_k)
+        force_vec = skj @ cp          # (3*n_k,) global force contributions
+        f_g = g_disp.T @ force_vec    # (n_g,) structural load at master DOFs
+
+        gi = 0  # grid index for GRID 1
+        col_base = 6 * gi
+        fz = f_g[col_base + 2]
+        mx = f_g[col_base + 3]
+        my = f_g[col_base + 4]
+
+        # Analytical lever-arm expectations
+        expected_fz = sum(box.area * box.normal[2] for box in boxes)
+        expected_mx = sum(
+            (box.colloc[1] - 0.0) * box.area * box.normal[2] for box in boxes
+        )  # ry * Fz per box
+        expected_my = -sum(
+            (box.colloc[0] - 0.0) * box.area * box.normal[2] for box in boxes
+        )  # −rx * Fz per box
+
+        assert abs(fz - expected_fz) < 1e-12, f"Fz mismatch: {fz:.6f} vs {expected_fz:.6f}"
+        assert abs(mx - expected_mx) < 1e-12, f"Mx mismatch: {mx:.6f} vs {expected_mx:.6f}"
+        assert abs(my - expected_my) < 1e-12, f"My mismatch: {my:.6f} vs {expected_my:.6f}"
+
+
+class TestSpline0ZeroForce:
+    """V-B3c: SPLINE0 rows remain zero — no structural force contribution."""
+
+    def test_v_b3c_zero_force_contribution(self, spline0_operators):
+        """SPLINE0 boxes: g_disp.T @ any_pressure_force = 0 for all structural DOFs."""
+        from sbeam.aero.integration import build_skj
+        _, g_disp, boxes, grid_index, _ = spline0_operators
+        n_k = len(boxes)
+        skj = build_skj(boxes)
+
+        cp = np.ones(n_k)
+        force_vec = skj @ cp
+        f_g = g_disp.T @ force_vec
+
+        assert np.allclose(f_g, 0.0, atol=1e-14), (
+            f"SPLINE0 must give zero structural force; max |f|={np.max(np.abs(f_g)):.2e}"
+        )
+
+    def test_v_b3c_g_slope_zero(self, spline0_operators):
+        """SPLINE0 boxes: g_slope rows are zero (no incidence coupling)."""
+        g_slope, _, boxes, grid_index, _ = spline0_operators
+        assert np.allclose(g_slope, 0.0, atol=1e-14), (
+            f"SPLINE0 g_slope must be all-zero; max |w|={np.max(np.abs(g_slope)):.2e}"
         )

@@ -44,8 +44,8 @@ Results   (cp, cl_section, CL, CY, CM, CDi, e, per_surface, …)
 | `AECORR` | Force/pressure matching AIC corrections (WT1, WT2) | S43 |
 | `SET1` | List of structural grid IDs for spline input | S45 |
 | `SPLINE2` | Beam spline: links CAERO1 box range to SET1 grids via CubicHermite interpolation | S45–46 |
-| `ATTACH` | Rigid attachment of box group to single master grid (Step 47, parsed) | S45 |
-| `SPLINE0` | Zero-displacement constraint — box rows in g_slope/g_disp remain zero | S45 |
+| `ATTACH` | Rigid attachment of box group to single master grid (Step 47, complete) | S45–47 |
+| `SPLINE0` | Zero-displacement constraint — box rows in g_slope/g_disp remain zero | S45–47 |
 | `SPLINE1` | Harder–Desmarais IPS surface spline (parse raises NotImplementedError; Step 48) | S45 |
 
 ---
@@ -583,3 +583,57 @@ Issues `UserWarning` for un-splined boxes, >10% extrapolation, or empty box rang
 
 `AeroModel` stores the operators as `aero_model.g_slope` and `aero_model.g_disp` when
 `build_aero_model` is called with a `grid_index` dict.
+
+### ATTACH — Rigid Attachment (Step 47)
+
+`ATTACH` rigidly couples a group of aero boxes to a single master structural GRID.
+It is an sbeam extension (ZAERO-inspired). All boxes in the covered ID range move
+as a rigid body with the master grid.
+
+**Card format:**
+```
+ATTACH  EID  CAERO  ID1  ID2  GRID  CID
+```
+
+| Field | Description |
+|-------|-------------|
+| EID | Element ID (unique) |
+| CAERO | CAERO1 EID of the panel |
+| ID1, ID2 | NASTRAN box ID range (inclusive) |
+| GRID | Master structural GRID ID |
+| CID | Coordinate system (must be 0; CID ≠ 0 raises `NotImplementedError`) |
+
+**Lever-arm kinematics (global CID 0):**
+
+For each covered box j with lever `r = box.colloc − master_pos = (rx, ry, rz)`:
+
+```
+g_slope[j, col_Tz] = 0.0    # plunge → zero slope
+g_slope[j, col_Rx] = +1.0   # torsion coupling
+g_slope[j, col_Ry] = -1.0   # pitch → uniform downwash -1
+
+g_disp[3j+2, col_Tz] = 1.0  # normal displacement from plunge
+g_disp[3j+2, col_Rx] = ry   # (ω×r)_z = Rx·ry
+g_disp[3j+2, col_Ry] = -rx  # (ω×r)_z = -Ry·rx
+```
+
+Energy consistency: `∂(-rx)/∂x = -1 = g_slope[j, col_Ry]` (virtual work ✓).
+
+**V-B3 rigid-body gate (machine precision):**
+- Tz translation → zero downwash (< 1e-14)
+- Ry pitch → uniform downwash -1.0 (< 1e-14)
+- Force transfer: `g_disp.T @ (skj @ cp)` gives correct Fz, Mx, My at master (< 1e-12)
+
+### SPLINE0 — Zero-Displacement Constraint (Step 47)
+
+`SPLINE0` registers a box range as "covered" without adding any structural coupling.
+All `g_slope` and `g_disp` rows for the covered boxes remain zero. Used to suppress
+un-splined warnings for boxes that are intentionally uncoupled (e.g. control surfaces
+or far-field boxes that do not deflect structurally).
+
+**Card format:**
+```
+SPLINE0  EID  CAERO  ID1  ID2
+```
+
+`g_disp.T @ (any pressure force)` = 0 for all structural DOFs (V-B3c verified).
