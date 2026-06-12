@@ -2258,3 +2258,58 @@ pytest tests/
   as the reference. This pinned the difference between t_force ≈ 3.63 and t_slope ≈ 3.01.
 - `sweep_ok = abs(x_hat[0]) > 1e-10` guards vertical-tail splines (axis ⊥ freestream)
   where the division would be singular.
+
+---
+
+## Resolved Defects (Phase A) — AE5 + AE7: RCSID-frame URDD transform + inertial trim columns ✅ FIXED
+
+**Objective:** Fix two coupled trim-solver defects that caused the HA144A SC1 trim to converge
+to −8012 lb lift (wrong sign) instead of +8000 lb.
+
+**AE5 — URDD frame/sign convention:**
+NASTRAN's TRIM card expresses URDD values in the RCSID frame. For HA144A, CORD2R 100 has
+z pointing DOWN in basic (R[2,2]=−1). `sbeam` was treating URDD3=−32.174 as a basic-frame
+acceleration, producing an upward inertial load that reversed the trim sign.
+Fix: transform prescribed URDD1–3 and URDD4–6 blocks through R_rcsid before computing the
+inertial RHS. The transform now handles partial URDD sets (e.g. only URDD3 present) by
+assembling the full 3-vector with zeros for absent components, rotating, then writing back
+only the present components.
+
+**AE7 — Missing inertial trim columns:**
+The Schur trim system had only aerodynamic columns Q_ax, with URDD as a fixed RHS load.
+Consequences: (a) a free URDD variable yields a zero Schur column (singular); (b) rotational
+URDD loads omitted transport terms m·(α̈×r) about the SUPORT point; (c) dead code
+"will be updated at trim" was never honoured.
+Fix: replaced `_build_urdd_load` with `_build_inertial_cols(bulk, all_labels, grid_index,
+suport_pos)` returning a full (n_g, n_labels) sensitivity matrix M_ax. Non-zero only for
+URDD columns. Translational: `M[Tz_dof, col] = −m` per CONM2 and lumped CBAR end mass.
+Rotational: spin term `M[Ry_dof, col] = −I_diag[rot]` plus transport cross-product
+`F_trans = −m·(α_hat × r)`. M_ax_a (a-set) is passed to both `_solve_trim_determined` and
+`_compute_restrained_derivs`, replacing `q·Q_ax` with `q·Q_ax + M_ax` throughout the Schur
+assembly.
+
+**Deliverables:**
+- `sbeam/solver/sol144.py`: `_build_inertial_cols`; updated `_solve_trim_determined`,
+  `_compute_restrained_derivs`, `run_sol144_trim` (RCSID partial-URDD transform block).
+- `tests/aero/test_trim_urdd.py` (new): 2 unit test classes (RCSID math, M_ax structure)
+  + 1 integration class (V-AE3a sign-of-lift gate). 10/10 tests pass.
+
+**Test/Acceptance (V-AE3a):**
+
+```
+pytest tests/aero/test_trim_urdd.py -v
+# 10 passed ✓
+
+pytest tests/
+# 721 passed ✓
+```
+
+**Key decisions:**
+- Partial-URDD transform: assemble full [URDD1, URDD2, URDD3] vector (zeros for absent
+  components), apply R_rcsid, write back only present components. Avoids requiring all three
+  translational (or rotational) URDD labels in a_labels, which is the typical NASTRAN case.
+- Transport terms use `suport_pos` (RCSID origin in basic frame) as the reference point for
+  moment arms, consistent with NASTRAN's mean-axis definition.
+- The test model uses a single SUPORT DOF (Tz only) with one free variable (ANGLEA) because
+  Euler-Bernoulli beams along Y decouple torsion (Ry) from z-forces — adding PITCH as a
+  second free variable would produce a singular Schur matrix on this model.

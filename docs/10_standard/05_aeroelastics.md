@@ -45,15 +45,15 @@ the remaining AE items in `docs/30_future/00_backlog.md` (Code Review 2026-06-11
 | ~~AE2~~ | ~~`skj`/coupling path consumes circulation Γ as if it were ΔCp (×chord_box/2 per box)~~ | **RESOLVED** — `ajj_inv_corr` row-scaled by `2/chord_box` in `build_aero_model`; CZα = 5.071 via skj path ✓ |
 | ~~AE3~~ | ~~K-J lift width uses bound-segment length, not cross-flow projection~~ | **RESOLVED** — `dy = sqrt(Δy²+Δz²)`; CLα = 5.0709 ✓ |
 | ~~AE4~~ | ~~SPLINE2 fails rigid-body kinematics on swept axes / offset grids (sweep projection, Hermite slope sign, DTHX semantics)~~ | **RESOLVED** — `spline.py` rewritten: slope divides by `x_hat[0]` (ZAERO §6.3), nodal-slope sign fixed, `DTHX=−1` correctly detaches; V-AE2a/b/c pass to 1e-12 ✓ |
-| AE5 | URDD interpreted in basic frame (RCSID ignored) — HA144A trims to **−1g** | Trim solutions with inertial loads |
+| ~~AE5~~ | ~~URDD interpreted in basic frame (RCSID ignored) — HA144A trims to **−1g**~~ | **RESOLVED** — prescribed URDD values transformed through R_rcsid (partial-set support); `pres_values_basic` path in `run_sol144_trim`; V-AE3a gate passes ✓ |
 | ~~AE6~~ | ~~Forces applied at ¾-chord collocation point, not ¼-chord bound vortex~~ | **RESOLVED** — `AeroBox.force_point = (bound_a+bound_b)/2`; `g_disp` and ATTACH lever evaluated at force_point; sol144 moment arms use `force_point[0]` ✓ |
-| AE7–AE10 | No inertial trim columns; inconsistent derivative formulation; Mach fixed per model; parity unwired | Trim system generality |
+| ~~AE7~~ | ~~No inertial trim columns; transport terms missing~~ | **RESOLVED** — `_build_inertial_cols` returns (n_g, n_labels) M_ax; translational + spin + transport terms; M_ax_a passed to Schur and derivs; 10/10 tests pass ✓ |
+| AE8–AE10 | Inconsistent derivative formulation; Mach fixed per model; parity unwired | Trim system generality |
 
-**Do not use SOL 144 trim results for anything until AE1, AE5, AE7–AE10 are resolved.** Rigid
-`solve_rigid_cl` results on **unswept** surfaces are unaffected. AE4 and AE6 are resolved as of
-2026-06-11; the SPLINE2 kinematics and force-point placement are now correct. The sections below
-describe the *intended* design; passages known to diverge from the implementation carry an `⚠ AE#`
-marker. Reproduction script: `studies/_review_ha144a_check.py`.
+**Do not use SOL 144 trim results for anything until AE1, AE8–AE10 are resolved.** Rigid
+`solve_rigid_cl` results on **unswept** surfaces are unaffected. AE2–AE7 are resolved;
+the sections below describe the *intended* design; passages known to diverge from the
+implementation carry an `⚠ AE#` marker. Reproduction script: `studies/_review_ha144a_check.py`.
 
 ---
 
@@ -1011,7 +1011,7 @@ Open defects, in fix order (full detail in `docs/30_future/00_backlog.md`, Code 
 | ~~1~~ | ~~AE3~~ | ~~K-J lift width not projected to cross-flow~~ — **RESOLVED** ✓ |
 | ~~2~~ | ~~AE2~~ | ~~Γ consumed as ΔCp throughout the coupled force path; `total_cl` divides by q twice~~ — **RESOLVED** ✓ |
 | ~~3~~ | ~~AE4/AE6~~ | ~~SPLINE2 swept-axis kinematics; forces applied at ¾-chord~~ — **RESOLVED** ✓ (V-AE2 gate passes, 711 tests ✓) |
-| 4 | AE5/AE7 | URDD in basic frame (trims to −1g); no inertial trim columns `M·φr` |
+| ~~4~~ | ~~AE5/AE7~~ | ~~URDD in basic frame (trims to −1g); no inertial trim columns `M·φr`~~ — **RESOLVED** ✓ (V-AE3a gate passes, 721 tests ✓) |
 | 5 | AE1 | Solve uses bare `K_aa` — the `q·Q_aa` aeroelastic feedback never enters the trim system |
 | 6 | AE8–AE10 | Derivative formulation, per-TRIM Mach, parity/CLI wiring |
 

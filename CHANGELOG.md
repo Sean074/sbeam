@@ -53,6 +53,23 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
   `solve_rigid_cl` CLα = 5.0709. Previously 6.339 (≈25% error). `total_cl` at SC1
   trim = −1.001; lift = −8011 lb ≈ −W (sign fixed by AE5, still open).
 
+**AE5 + AE7 — Fixed RCSID-frame URDD transform and inertial trim columns**
+- `sbeam/solver/sol144.py`: replaced `_build_urdd_load` with `_build_inertial_cols(bulk,
+  all_labels, grid_index, suport_pos)` returning a full (n_g, n_labels) inertial sensitivity
+  matrix M_ax (non-zero only for URDD columns). Translational URDD: `M[Tz_dof, col] = −m`
+  per CONM2 and lumped CBAR half-mass. Rotational URDD: spin term `M[Ry_dof] = −I_diag`
+  plus transport cross-product `F = −m·(α̂×r)` about `suport_pos`. M_ax_a (a-set) is now
+  passed to both `_solve_trim_determined` and `_compute_restrained_derivs`, replacing bare
+  `q·Q_ax` with `q·Q_ax + M_ax` throughout the Schur assembly.
+- RCSID transform block in `run_sol144_trim` now handles partial URDD sets (e.g. only URDD3
+  present without URDD1/2): assembles the full 3-vector with zeros for absent components,
+  applies R_rcsid, writes back only present components. Previously required all three of
+  URDD1/2/3 before applying the transform, causing the sign inversion to persist when only
+  URDD3 was in `all_labels`.
+- `tests/aero/test_trim_urdd.py` (new file): 10 tests — `TestUrddRcsidTransform` (2 unit),
+  `TestInertialCols` (5 unit), `TestTrimSignAe5` (3 integration). V-AE3a gate:
+  `total_cl > 0` for RCSID z-down 1g trim. All 10 pass; full suite 721 tests pass.
+
 **AE4 + AE6 — Fixed SPLINE2 swept-axis kinematics and ¼-chord force point**
 - `sbeam/aero/panel.py`: added `force_point` field to `AeroBox` — midpoint of the ¼-chord
   bound-vortex segment `(bound_a + bound_b) / 2`.

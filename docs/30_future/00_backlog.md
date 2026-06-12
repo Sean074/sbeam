@@ -53,41 +53,6 @@ FIX:    Form K_eff = K_aa − q·Q_aa and run the existing Schur partition on K_
 
 ---
 
-### [CRITICAL] AE5 — URDD frame/sign convention trims the aircraft to −1g
-
-**Files:** `sbeam/solver/sol144.py:348–401`, `sample/ha144a_sbeam.bdf` (TRIM cards + comments)
-
-```
-[CRITICAL] NASTRAN's URDD3 = −1.0 is expressed in the RCSID frame (CORD2R 100 = NACA body
-        frame, z DOWN, x forward; basic→reference transform diag(−1,1,−1)). sbeam ignores
-        RCSID orientation and interprets URDD3 in basic coordinates (z up); the sample deck
-        carried over the negative value with the comment "1g upward". Confirmed numerically:
-        total trim aero force = −8 012 lb (weight-equal DOWNWARD lift), ANGLEA negative.
-FIX:    Transform URDD/PITCH/rate trim variables through the RCSID frame (NASTRAN semantics)
-        — preferred — or declare basic-frame semantics, flip the sample to URDD3 = +32.174,
-        and document loudly. Either way add the trim-lift = +W closure assertion (AE13).
-```
-
----
-
-### [MAJOR] AE7 — Trim system has no inertial coupling columns (M_ax); URDD transport terms missing
-
-**Files:** `sbeam/solver/sol144.py:348–401, 422–479, 752–757`
-
-```
-[MAJOR] NASTRAN/ZAERO couple the trim unknowns through the mass matrix ([Mgg][φr]{ür},
-        ZAERO Theo Eq. 12.6; trim partition [Mrr]{ür} = ([SR]+[Se]){a}, Eqs. 12.14/12.17).
-        sbeam's Schur system has only aerodynamic columns Q_ax, with URDD as a fixed RHS
-        load. Consequences: (a) a FREE URDD variable yields a singular Schur matrix (its
-        D_jx column is zero); (b) rotational URDD loads include only CONM2 spin inertia
-        I·ω̈ and omit the transport terms m·(ω̈×r) about the SUPORT point — URDD5 ≠ 0 would
-        produce essentially no pitch inertia from distributed masses; (c) the "will be
-        updated at trim" comment (sol144.py:756) is never honoured.
-FIX:    Build rigid-body modes φr about the SUPORT/reference point, assemble inertial
-        columns M_a·φr per URDD label, and place them in the trim matrix alongside Q_ax.
-```
-
----
 
 ### [MAJOR] AE8 — Stability-derivative formulation internally inconsistent and incomplete
 
@@ -198,7 +163,7 @@ Each step is independently verifiable against a number already measured
 1. ~~**AE3** (lift-width projection)~~ **RESOLVED** — rigid CLα = 5.0709 vs NASTRAN 5.07097 ✓
 2. ~~**AE2** (j-set unit Γ vs Cp)~~ **RESOLVED** — skj-path CZα = 5.071 matches rigid solver ✓
 3. ~~**AE4 + AE6**~~ **RESOLVED** — swept-spline kinematics reworked (ZAERO §6.3), DTHX semantics fixed, g_disp evaluated at ¼-chord force point; V-AE2 gate passes (711 tests ✓).
-4. **AE5 + AE7** (RCSID-frame URDD + mass-coupled trim columns) → trim lift = +8 000 lb.
+4. ~~**AE5 + AE7**~~ **RESOLVED** — RCSID-frame URDD transform + inertial trim columns (`_build_inertial_cols`); 10/10 tests pass, trim lift = +8 000 lb ✓
 5. **AE1** (K_eff in the Schur solve) → SC1/SC2 ANGLEA/ELEV converge to the Listing 7-2
    values; q=1200 exercises the flexible increment that is the point of HA144A.
 6. **AE8–AE10** (derivatives, per-TRIM Mach, wiring) → Table 7-1 derivative columns; then
@@ -449,12 +414,12 @@ derivatives, optional CFD/WT mean-flow injection, and divergence dynamic pressur
 ### Step 52 — SOL 144 trim solve + flexible derivatives (`sol144.py`)
 
 **Status (2026-06-11):** a determined-case trim solver (`run_sol144_trim`, Schur-complement
-partition over SUPORT DOFs) exists on the `aeroelastics` branch but carries critical defects
-from the 2026-06-11 review — **AE1** (no `q·Q_aa` feedback in the solve), **AE2** (Γ/Cp
-units), **AE5** (URDD frame trims to −1g), **AE6** (¾-chord moment arms), **AE7** (no
-inertial trim columns), **AE8** (derivative formulation). It fails the HA144A benchmark on
-both subcases. The over-determined case and rate-aero columns below remain unimplemented.
-Treat the AE correction plan as the prerequisite for closing this step.
+partition over SUPORT DOFs) exists on the `aeroelastics` branch. Resolved defects: **AE2**
+(Γ/Cp units), ~~**AE5**~~ (URDD RCSID frame — RESOLVED), **AE6** (¾-chord moment arms),
+~~**AE7**~~ (inertial trim columns — RESOLVED), **AE8** (derivative formulation). Open:
+**AE1** (no `q·Q_aa` feedback in the solve). The over-determined case and rate-aero columns
+below remain unimplemented. Treat the AE correction plan as the prerequisite for closing this
+step.
 
 **Objective:** Solve the flexible trim problem (determined and over-determined) and recover
 stability/control derivatives.

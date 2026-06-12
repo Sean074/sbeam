@@ -345,35 +345,47 @@ def _compute_aset_data(bulk: BulkData, grid_index: dict, spc_sid) -> tuple:
     return T, dep_dofs, red_dofs, free_local, free_dofs
 
 
-def _build_urdd_load(bulk: BulkData, urdd_values: dict, grid_index: dict) -> np.ndarray:
-    """Inertial load vector f_inertial on the full g-set.
+def _build_inertial_cols(
+    bulk: BulkData,
+    all_labels: list,
+    grid_index: dict,
+    suport_pos: np.ndarray,
+) -> np.ndarray:
+    """Inertial sensitivity matrix M_ax on the full g-set — basic frame.
 
-    Convention: f_inertial[Ti_dof] = -m * URDD_i  (physical acceleration).
-    For URDD3 = -32.174 ft/s² (1g upward), f[Tz] = +m*g (upward load).
+    Returns (n_g, n_labels) where column k is dF/dURDD_k (force per unit
+    acceleration for URDD labels; zero for aerodynamic labels).  All values
+    are expressed in the basic CID 0 frame; RCSID-frame URDD values must be
+    transformed to basic before multiplying.
 
-    Only CONM2 point masses and CBAR distributed mass (if rho > 0) contribute.
+    Translational URDD (1-3): M[Tx/Ty/Tz dof, col] = -mass_i (CONM2 + CBAR).
+    Rotational URDD (4-6): M[Ry dof, col] = -I_diag (CONM2 spin term)
+        plus transport coupling: M[Tx/Ty/Tz dof, col] += -m_i * (α_hat × r_i)
+        where r_i = grid_pos_i - suport_pos and α_hat is the unit rotation axis.
+
+    Only CONM2 point masses and CBAR distributed mass (rho > 0) contribute.
     """
     n_g = 6 * len(grid_index)
-    f = np.zeros(n_g)
+    n_labels = len(all_labels)
+    M = np.zeros((n_g, n_labels))
 
-    urdd_to_dof = {'URDD1': 0, 'URDD2': 1, 'URDD3': 2,
-                   'URDD4': 3, 'URDD5': 4, 'URDD6': 5}
+    _urdd_trans = {'URDD1': 0, 'URDD2': 1, 'URDD3': 2}
+    _urdd_rot   = {'URDD4': 0, 'URDD5': 1, 'URDD6': 2}
 
-    for label, accel in urdd_values.items():
-        if accel == 0.0:
-            continue
+    # Unit rotation axes in basic frame for URDD4/5/6
+    _rot_axis = {0: np.array([1.0, 0.0, 0.0]),
+                 1: np.array([0.0, 1.0, 0.0]),
+                 2: np.array([0.0, 0.0, 1.0])}
+
+    for col, label in enumerate(all_labels):
         ul = label.upper()
-        if ul not in urdd_to_dof:
-            continue
-        dof_off = urdd_to_dof[ul]
 
-        if dof_off < 3:  # translational
+        if ul in _urdd_trans:
+            ax = _urdd_trans[ul]
             for conm2 in bulk.conm2s.values():
                 if conm2.gid not in grid_index:
                     continue
-                base = grid_index[conm2.gid] * 6
-                f[base + dof_off] -= conm2.m * accel
-
+                M[grid_index[conm2.gid] * 6 + ax, col] -= conm2.m
             for cbar in bulk.cbars.values():
                 pbar = bulk.pbars.get(cbar.pid)
                 mat = bulk.mat1s.get(pbar.mid) if pbar else None
@@ -381,24 +393,42 @@ def _build_urdd_load(bulk: BulkData, urdd_values: dict, grid_index: dict) -> np.
                     continue
                 ga = bulk.grids[cbar.ga]
                 gb = bulk.grids[cbar.gb]
-                dx, dy, dz = gb.x - ga.x, gb.y - ga.y, gb.z - ga.z
-                L = (dx**2 + dy**2 + dz**2) ** 0.5
+                L = ((gb.x - ga.x)**2 + (gb.y - ga.y)**2 + (gb.z - ga.z)**2) ** 0.5
                 m_half = 0.5 * mat.rho * pbar.A * L
-                f[grid_index[cbar.ga] * 6 + dof_off] -= m_half * accel
-                f[grid_index[cbar.gb] * 6 + dof_off] -= m_half * accel
-        else:
-            # Rotational URDD — CONM2 inertia contribution only
-            rot = dof_off - 3
+                M[grid_index[cbar.ga] * 6 + ax, col] -= m_half
+                M[grid_index[cbar.gb] * 6 + ax, col] -= m_half
+
+        elif ul in _urdd_rot:
+            rot = _urdd_rot[ul]
+            alpha_hat = _rot_axis[rot]
             for conm2 in bulk.conm2s.values():
                 if conm2.gid not in grid_index:
                     continue
+                gi = grid_index[conm2.gid]
+                base = gi * 6
+                # Spin inertia (diagonal only)
                 I_val = (conm2.i11, conm2.i22, conm2.i33)[rot]
-                if I_val == 0.0:
+                M[base + 3 + rot, col] -= I_val
+                # Transport term: F_trans = -m * (alpha_hat × r)
+                g = bulk.grids[conm2.gid]
+                r = np.array([g.x, g.y, g.z]) - suport_pos
+                f_transport = -conm2.m * np.cross(alpha_hat, r)
+                M[base:base + 3, col] += f_transport
+            for cbar in bulk.cbars.values():
+                pbar = bulk.pbars.get(cbar.pid)
+                mat = bulk.mat1s.get(pbar.mid) if pbar else None
+                if mat is None or mat.rho == 0.0:
                     continue
-                base = grid_index[conm2.gid] * 6
-                f[base + dof_off] -= I_val * accel
+                ga = bulk.grids[cbar.ga]
+                gb = bulk.grids[cbar.gb]
+                L = ((gb.x - ga.x)**2 + (gb.y - ga.y)**2 + (gb.z - ga.z)**2) ** 0.5
+                m_half = 0.5 * mat.rho * pbar.A * L
+                for gobj, gi in ((ga, grid_index[cbar.ga]), (gb, grid_index[cbar.gb])):
+                    r = np.array([gobj.x, gobj.y, gobj.z]) - suport_pos
+                    f_transport = -m_half * np.cross(alpha_hat, r)
+                    M[gi * 6: gi * 6 + 3, col] += f_transport
 
-    return f
+    return M
 
 
 def _get_suport_local(bulk: BulkData, free_dofs: list, grid_index: dict) -> list:
@@ -422,6 +452,7 @@ def _get_suport_local(bulk: BulkData, free_dofs: list, grid_index: dict) -> list
 def _solve_trim_determined(
     K_aa: np.ndarray,
     Q_ax_a: np.ndarray,
+    M_ax_a: np.ndarray,
     f_rhs_a: np.ndarray,
     q: float,
     suport_local: list,
@@ -430,14 +461,13 @@ def _solve_trim_determined(
     """Schur-complement trim solve for the determined case (n_free == n_suport).
 
     Partitions the a-set into l-set (non-SUPORT) and r-set (SUPORT).
-    With u_r = 0, the r-set equilibrium provides the trim equations:
+    With u_r = 0, the r-set equilibrium provides the trim equations.
 
-        K_rl @ u_l = q * Q_ax_r @ delta_free + f_rhs_r
-        K_ll @ u_l = q * Q_ax_l @ delta_free + f_rhs_l
+    C_ax = q * Q_ax_a + M_ax_a   (combined aero + inertial sensitivity)
 
     Substituting the l-set solution:
         Schur rhs  = K_rl @ K_ll^{-1} @ f_rhs_l - f_rhs_r
-        Schur lhs  = q*(K_rl @ K_ll^{-1} @ Q_ax_l - Q_ax_r)[:,free_label_cols]
+        Schur lhs  = K_rl @ K_ll^{-1} @ C_ax_l - C_ax_r
         Schur lhs @ delta_free = -Schur rhs
 
     Returns:
@@ -450,26 +480,28 @@ def _solve_trim_determined(
     K_ll = K_aa[np.ix_(l_idx, l_idx)]
     K_rl = K_aa[np.ix_(r_idx, l_idx)]
 
-    Q_ax_l = Q_ax_a[np.ix_(l_idx, free_label_cols)]  # (n_l, n_free)
-    Q_ax_r = Q_ax_a[np.ix_(r_idx, free_label_cols)]  # (n_r, n_free)
+    # Combined aero + inertial sensitivity for free columns only
+    C_ax_l = (q * Q_ax_a[np.ix_(l_idx, free_label_cols)]
+              + M_ax_a[np.ix_(l_idx, free_label_cols)])  # (n_l, n_free)
+    C_ax_r = (q * Q_ax_a[np.ix_(r_idx, free_label_cols)]
+              + M_ax_a[np.ix_(r_idx, free_label_cols)])  # (n_r, n_free)
 
     f_rhs_l = f_rhs_a[l_idx]
     f_rhs_r = f_rhs_a[r_idx]
 
     K_ll_lu = scipy.linalg.lu_factor(K_ll)
 
-    # K_ll^{-1} @ f_rhs_l and K_ll^{-1} @ Q_ax_l
     Kinv_f = scipy.linalg.lu_solve(K_ll_lu, f_rhs_l)            # (n_l,)
-    Kinv_Q = scipy.linalg.lu_solve(K_ll_lu, Q_ax_l)             # (n_l, n_free)
+    Kinv_C = scipy.linalg.lu_solve(K_ll_lu, C_ax_l)             # (n_l, n_free)
 
     # Trim equation: schur_A @ delta_free = schur_b
-    schur_A = q * (K_rl @ Kinv_Q - Q_ax_r)                      # (n_r, n_free)
+    schur_A = K_rl @ Kinv_C - C_ax_r                            # (n_r, n_free)
     schur_b = f_rhs_r - K_rl @ Kinv_f                           # (n_r,)
 
     delta_free_arr = scipy.linalg.solve(schur_A, schur_b)        # (n_free,)
 
     # Recover l-set displacements
-    u_l = scipy.linalg.lu_solve(K_ll_lu, q * Q_ax_l @ delta_free_arr + f_rhs_l)
+    u_l = scipy.linalg.lu_solve(K_ll_lu, C_ax_l @ delta_free_arr + f_rhs_l)
 
     # Assemble a-set displacement (u_r = 0)
     u_a = np.zeros(n_a)
@@ -563,6 +595,7 @@ def _compute_restrained_derivs(
     K_ll_lu: tuple,
     l_idx: list,
     Q_ax_a: np.ndarray,
+    M_ax_a: np.ndarray,
     all_labels: list,
     u_a_trim: np.ndarray,
     delta_all_trim: np.ndarray,
@@ -578,7 +611,9 @@ def _compute_restrained_derivs(
     """Elastic restrained stability derivatives via finite difference.
 
     For each label, perturbs by delta_perturbation, holds SUPORT DOFs at zero,
-    re-solves the l-set, and computes ΔFz and ΔMy.
+    re-solves the l-set, and computes ΔFz and ΔMy.  The perturbation uses the
+    combined aero + inertial sensitivity (q*Q_ax + M_ax) so URDD columns
+    correctly propagate inertial stiffness changes.
     """
     from sbeam.aero.integration import build_djk
 
@@ -586,11 +621,9 @@ def _compute_restrained_derivs(
     cref = bulk.aeros.cref
     djk  = build_djk(aero.boxes)
     n_a  = Q_ax_a.shape[0]
-    Q_ax_l = Q_ax_a[np.ix_(l_idx, list(range(len(all_labels))))]
-
-    # Nominal structural load on l-set used in l-set equation (without trim aero):
-    # u_l = K_ll^{-1} @ (q*Q_ax_l @ delta_full + f_rhs_l_base)
-    # Here we use the trim-point displacements as baseline.
+    # Combined sensitivity on l-set
+    C_ax_l = (q * Q_ax_a[np.ix_(l_idx, list(range(len(all_labels))))]
+              + M_ax_a[np.ix_(l_idx, list(range(len(all_labels))))])
 
     # Scatter trim displacement to full g-set
     u_full_trim = np.zeros(n_dofs)
@@ -607,11 +640,9 @@ def _compute_restrained_derivs(
     DELTA = delta_perturbation
 
     for col, label in enumerate(all_labels):
-        # Perturb the normalwash RHS by adding unit delta in this column
-        dw = q * Q_ax_l[:, col] * DELTA            # (n_l,)
-        u_l_pert_delta = scipy.linalg.lu_solve(K_ll_lu, dw)   # (n_l,)
+        dw = C_ax_l[:, col] * DELTA                             # (n_l,)
+        u_l_pert_delta = scipy.linalg.lu_solve(K_ll_lu, dw)    # (n_l,)
 
-        # Build perturbed a-set displacement
         u_a_pert = u_a_trim.copy()
         for li_idx, li in enumerate(l_idx):
             u_a_pert[li] += u_l_pert_delta[li_idx]
@@ -620,7 +651,6 @@ def _compute_restrained_derivs(
         for loc_i, g_dof in enumerate(free_dofs):
             u_full_pert[g_dof] = u_a_pert[loc_i]
 
-        # Perturbed trim variables
         delta_all_pert = delta_all_trim.copy()
         delta_all_pert[col] += DELTA
 
@@ -691,15 +721,18 @@ def run_sol144_trim(
     pres_labels   = [l for l in all_labels if l in prescribed_dict]
 
     # ------------------------------------------------------------------ #
-    # Reference geometry
+    # Reference geometry + RCSID rotation matrix for URDD transform
     # ------------------------------------------------------------------ #
     aeros = bulk.aeros
+    from sbeam.assembly.coord_transform import _get_transform
     if aeros.rcsid:
-        from sbeam.assembly.coord_transform import _get_transform
-        x_ref_pt, _ = _get_transform(aeros.rcsid, bulk.cord2rs)
-        x_ref = float(x_ref_pt[0])
+        x_ref_pt, R_rcsid = _get_transform(aeros.rcsid, bulk.cord2rs)
+        x_ref    = float(x_ref_pt[0])
+        suport_pos = x_ref_pt          # RCSID origin = moment reference
     else:
-        x_ref = 0.0
+        x_ref    = 0.0
+        R_rcsid  = np.eye(3)
+        suport_pos = np.zeros(3)
 
     # ------------------------------------------------------------------ #
     # Build D_jx and Q_ax on the g-set
@@ -745,19 +778,48 @@ def run_sol144_trim(
     from sbeam.aero.coupling import build_fg
     f_aero_g = q_dyn * build_fg(aero, aero.g_disp)   # (n_g,) baseline aero
 
-    # Contribution of prescribed trim variables to normalwash
+    # Aerodynamic contribution of prescribed trim variables (URDD cols = 0)
+    label_to_col = {l: i for i, l in enumerate(all_labels)}
     pres_values = np.array([prescribed_dict.get(l, 0.0) for l in all_labels])
     pres_aero_g = q_dyn * Q_ax_g @ pres_values       # (n_g,)
 
-    # Inertial load from prescribed URDD accelerations
-    urdd_dict = {l: prescribed_dict[l] for l in pres_labels if l.upper().startswith('URDD')}
-    # Also include URDD values from free labels (they could be free trim variables)
-    for l in free_labels:
-        if l.upper().startswith('URDD'):
-            urdd_dict[l] = 0.0  # initially zero; will be updated at trim
-    f_inertial_g = _build_urdd_load(bulk, urdd_dict, grid_index)  # (n_g,)
+    # Transform prescribed URDD values from RCSID frame to basic frame (AE5).
+    # pres_values_basic is used only for the inertial path; prescribed_dict
+    # is preserved in RCSID-frame form so trim_vars output matches the input card.
+    # Transform prescribed URDD values from RCSID frame to basic frame (AE5).
+    # Build the full 3-vector with zeros for absent components, rotate, then write
+    # back only the components that are actually present in all_labels.
+    pres_values_basic = pres_values.copy()
+    if aeros.rcsid:
+        _trans_lbls = ['URDD1', 'URDD2', 'URDD3']
+        _rot_lbls   = ['URDD4', 'URDD5', 'URDD6']
+        t_map = {l: label_to_col[l] for l in _trans_lbls if l in label_to_col}
+        r_map = {l: label_to_col[l] for l in _rot_lbls   if l in label_to_col}
+        if t_map:
+            u_trans = np.array([
+                pres_values_basic[label_to_col[l]] if l in label_to_col else 0.0
+                for l in _trans_lbls
+            ])
+            u_trans_basic = R_rcsid @ u_trans
+            for i, lbl in enumerate(_trans_lbls):
+                if lbl in t_map:
+                    pres_values_basic[t_map[lbl]] = u_trans_basic[i]
+        if r_map:
+            u_rot = np.array([
+                pres_values_basic[label_to_col[l]] if l in label_to_col else 0.0
+                for l in _rot_lbls
+            ])
+            u_rot_basic = R_rcsid @ u_rot
+            for i, lbl in enumerate(_rot_lbls):
+                if lbl in r_map:
+                    pres_values_basic[r_map[lbl]] = u_rot_basic[i]
 
-    f_rhs_g = f_aero_g + pres_aero_g + f_inertial_g  # (n_g,)
+    # Inertial sensitivity matrix (basic frame); prescribed inertial RHS (AE7).
+    # M_ax_g[:, col] = dF/dURDD_col; zero for non-URDD labels.
+    M_ax_g = _build_inertial_cols(bulk, all_labels, grid_index, suport_pos)
+    pres_inertial_g = M_ax_g @ pres_values_basic     # (n_g,) — free URDD entry = 0
+
+    f_rhs_g = f_aero_g + pres_aero_g + pres_inertial_g  # (n_g,)
 
     # Reduce f_rhs to a-set
     if dep_dofs:
@@ -765,6 +827,13 @@ def run_sol144_trim(
     else:
         f_rhs_red = f_rhs_g.copy()
     f_rhs_a = f_rhs_red[free_local]   # (n_a,)
+
+    # Reduce M_ax to a-set (same RBE3+SPC path as Q_ax)
+    if dep_dofs:
+        M_ax_red = T.T @ M_ax_g
+    else:
+        M_ax_red = M_ax_g
+    M_ax_a = M_ax_red[np.ix_(free_local, list(range(len(all_labels))))]  # (n_a, n_labels)
 
     # ------------------------------------------------------------------ #
     # SUPORT DOF indices in a-set
@@ -789,14 +858,13 @@ def run_sol144_trim(
     # ------------------------------------------------------------------ #
     # Map free labels to column indices in Q_ax_a
     # ------------------------------------------------------------------ #
-    label_to_col = {l: i for i, l in enumerate(all_labels)}
     free_label_cols = [label_to_col[l] for l in free_labels]
 
     # ------------------------------------------------------------------ #
     # Schur-complement trim solve
     # ------------------------------------------------------------------ #
     u_a, delta_free_arr, K_ll_lu, l_idx, r_idx = _solve_trim_determined(
-        K_aa, Q_ax_a, f_rhs_a, q_dyn, suport_local, free_label_cols
+        K_aa, Q_ax_a, M_ax_a, f_rhs_a, q_dyn, suport_local, free_label_cols
     )
 
     # ------------------------------------------------------------------ #
@@ -836,7 +904,7 @@ def run_sol144_trim(
     # Elastic restrained derivatives (finite difference, u_r = 0)
     # ------------------------------------------------------------------ #
     rest_derivs = _compute_restrained_derivs(
-        K_ll_lu, l_idx, Q_ax_a, all_labels,
+        K_ll_lu, l_idx, Q_ax_a, M_ax_a, all_labels,
         u_a, delta_all, aero, D_jx,
         free_dofs, bulk, x_ref, q_dyn, n_dofs,
     )
