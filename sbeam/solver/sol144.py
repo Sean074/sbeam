@@ -508,7 +508,7 @@ def _compute_aero_forces(
     Fz = f_box_vec[2::3].sum()                     # sum of z-components
     My = 0.0
     for j, box in enumerate(aero.boxes):
-        x_ctrl = box.colloc[0]
+        x_ctrl = box.force_point[0]
         My += f_box_vec[3 * j + 2] * (x_ctrl - x_ref)
 
     return Fz, My
@@ -543,7 +543,7 @@ def _compute_rigid_derivs(
 
         Fz_sens = f_box_vec[2::3].sum()
         My_sens = sum(
-            f_box_vec[3 * j + 2] * (aero.boxes[j].colloc[0] - x_ref)
+            f_box_vec[3 * j + 2] * (aero.boxes[j].force_point[0] - x_ref)
             for j in range(n_box)
         )
         Fz_x = f_box_vec[0::3].sum()
@@ -852,7 +852,7 @@ def run_sol144_trim(
     f_box_vec = aero.skj @ gamma
     Fz_total = float(f_box_vec[2::3].sum())
     My_total = float(sum(
-        f_box_vec[3 * j + 2] * (aero.boxes[j].colloc[0] - x_ref)
+        f_box_vec[3 * j + 2] * (aero.boxes[j].force_point[0] - x_ref)
         for j in range(len(aero.boxes))
     ))
     sref = aeros.sref

@@ -53,6 +53,25 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
   `solve_rigid_cl` CLα = 5.0709. Previously 6.339 (≈25% error). `total_cl` at SC1
   trim = −1.001; lift = −8011 lb ≈ −W (sign fixed by AE5, still open).
 
+**AE4 + AE6 — Fixed SPLINE2 swept-axis kinematics and ¼-chord force point**
+- `sbeam/aero/panel.py`: added `force_point` field to `AeroBox` — midpoint of the ¼-chord
+  bound-vortex segment `(bound_a + bound_b) / 2`.
+- `sbeam/aero/spline.py` (full rewrite of `_build_spline2_block`):
+  - AE4(a): slope projection now divides by `x_hat[0]` (ZAERO §6.3: `w = −(dh/ds)/x̂₀`).
+  - AE4(b): nodal-slope sign corrected: `(dh/ds)_i = −(ω·ŷ)_i`; bending g_slope gains
+    `+(y_comp/x0)·dψ/ds`, bending g_disp changes to `−y_comp·ẑ·ψ(t_force)`.
+  - AE4(c): `DTHX = −1.0` now correctly means "detach rotation DOF" (skip torsion
+    coupling); `DTHX = 1.0` attaches; other values warn and treat as detached.
+  - AE6: g_disp evaluated at `t_force = (force_point − origin)·x_hat` (¼-chord), not
+    `t_slope = (colloc − origin)·x_hat` (¾-chord); g_slope unchanged at colloc.
+  - `_build_attach_rows` lever arm changed from `box.colloc` to `box.force_point`.
+- `sbeam/solver/sol144.py`: three `colloc[0]` → `force_point[0]` in moment arms
+  (`_compute_aero_forces`, `_compute_rigid_derivs`, total CM loop).
+- `tests/aero/test_spline.py`: new `TestSweptSplineRigidBody` class (V-AE2a/b/c) passing
+  to 1e-12; `TestAttachRigidBodyGate.test_v_b3d_force_transfer_lever_arm` expected moment
+  arm updated to use `force_point` (¼-chord at 0.25 ft, not colloc at 0.75 ft).
+- All 711 tests pass.
+
 **AE3 — Fixed Kutta-Joukowski lift-width projection for swept wings**
 - `sbeam/aero/vlm.py`: `solve_rigid_cl` and `trefftz_cdi` now use the cross-flow projected
   width `sqrt(Δy² + Δz²)` as the spanwise width `dy` of each bound-vortex segment, instead

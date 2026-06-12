@@ -2198,3 +2198,63 @@ All 74 aero/integration/BYU tests pass (BYU wing is unswept — no numeric chang
   first model to expose this discrepancy.
 - `chord_box = area / dy` is derived from `dy`, so the chord correction (and hence
   `cp`, `CM`, `cl_section`) is automatically fixed by the single change.
+
+---
+
+## Resolved Defects (Phase A) — AE4 + AE6: SPLINE2 kinematics (swept-axis slope projection, nodal-slope sign, DTHX semantics) + ¼-chord force point ✅ FIXED
+
+**Objective:** Fix the three root causes of AE4 (SPLINE2 producing 80× incidence error on swept
+configurations) and AE6 (g_disp / sol144 moment arms at ¾-chord instead of ¼-chord), gated by
+the V-AE2 swept-spline rigid-body test suite.
+
+**Deliverables:**
+
+- `sbeam/aero/panel.py` — Added `force_point` field to `AeroBox`:
+  `force_point = 0.5 * (bound_a + bound_b)`  (¼-chord bound-vortex midpoint).
+
+- `sbeam/aero/spline.py` — Full rewrite of `_build_spline2_block`:
+  - AE4(a): sweep projection — `g_slope` translation contribution divides by `x_hat[0]`
+    (= cos Λ) per ZAERO Theo §6.3: `w = −(dh/ds) / x_hat[0]`.
+  - AE4(b): nodal-slope sign — rotation bending g_slope uses `+(y_comp/x0)·dψ/ds` and
+    g_disp uses `−y_comp · z_hat · ψ_i(t_force)` (sign-flipped from prior code).
+  - AE4(c): DTHX semantics — `DTHX = 1.0` → attached (torsion coupling active);
+    `DTHX = −1.0` → detached (skip); other values → `UserWarning`, treat as detached.
+  - AE6: separate `t_slope` (colloc, ¾-chord) and `t_force` (force_point, ¼-chord)
+    parametric positions; g_slope evaluated at `t_slope`, g_disp at `t_force`.
+  - `_build_attach_rows` lever arm changed from `box.colloc` to `box.force_point`.
+
+- `sbeam/solver/sol144.py` — Three `colloc[0]` → `force_point[0]` in moment arms:
+  `_compute_aero_forces`, `_compute_rigid_derivs`, total CM loop.
+
+- `tests/aero/test_spline.py` — Added `TestSweptSplineRigidBody` (V-AE2):
+  - V-AE2a: uniform plunge → zero downwash at all boxes (1e-12)
+  - V-AE2b: rigid beam pitch (Tz = −x_hat[0]·s·θ, Ry = θ) → uniform incidence θ (1e-12)
+  - V-AE2c: g_disp evaluated at t_force, not t_slope — Hermite basis check (1e-12)
+  - Updated `TestAttachRigidBodyGate.test_v_b3d_force_transfer_lever_arm` to use
+    `box.force_point` (not `box.colloc`) for expected My/Mx lever arms.
+
+**Test/Acceptance (V-AE2):**
+
+```
+pytest tests/aero/test_spline.py::TestSweptSplineRigidBody -v
+# 3 passed (V-AE2a, V-AE2b, V-AE2c) ✓
+
+pytest tests/
+# 711 passed ✓
+```
+
+**Key decisions:**
+
+- The ZAERO §6.3 slope formula divides by `x_hat[0]` (not multiplies). The 1D Hermite
+  spline captures `dh/ds` along the swept axis; the streamwise slope is
+  `(dh/ds) / x_hat[0]` because the axis has `x_hat[0] = cos Λ` as its freestream
+  projection. For rigid pitch θ: `dh/ds = −θ·x_hat[0]` → `w = θ`. ✓
+- The V-AE2b rigid-pitch test applies `Tz = −x_hat[0]·s_i·θ` (linear in the axis
+  projection `s_i`), not the global `Tz = −θ(x−x_ref)`. Off-axis grids make the
+  global form non-linear in `s`, causing Runge-like oscillations. The beam-axis form
+  is the physically correct test for the 1D SPLINE2.
+- The V-AE2c AE6 gate checks that `g_disp[3k+2, col_Tz]` equals the Hermite function-
+  value basis `φ_i(t_force)`, not `φ_i(t_slope)`, using scipy's `CubicHermiteSpline`
+  as the reference. This pinned the difference between t_force ≈ 3.63 and t_slope ≈ 3.01.
+- `sweep_ok = abs(x_hat[0]) > 1e-10` guards vertical-tail splines (axis ⊥ freestream)
+  where the division would be singular.

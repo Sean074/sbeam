@@ -53,42 +53,6 @@ FIX:    Form K_eff = K_aa − q·Q_aa and run the existing Schur partition on K_
 
 ---
 
-### [CRITICAL] AE4 — SPLINE2 kinematics fail rigid-body tests on swept/offset configurations
-
-**Files:** `sbeam/aero/spline.py:127–209`, `sbeam/model/aero.py` (Spline2), `sample/ha144a_sbeam.bdf`
-
-```
-[CRITICAL] Rigid pitch θ=1e-3 applied exactly (u_z = −θ(x−15), Ry = θ at every grid) through
-        the HA144A splines gives wing box incidence −0.0236…+0.0792 (should be uniformly
-        0.001 — up to 80× error); canard −2.97e-4…+1.95e-3; g_disp reproduces the rigid
-        displacement field with 0.15 ft error (vs 0.015 ft max true deflection); force
-        transfer is non-conservative in moment (unit pressure on wing box 1: bound vortex
-        x=24.90, collocation x=26.15, structural resultant lands at x=29.55).
-        Three root causes:
-        (a) NO SWEEP TRANSFORMATION — the spline-axis derivative d/ds is used directly as
-            the streamwise slope; for a swept axis ∂u_z/∂s ≠ ∂u_z/∂x. ZAERO beam spline
-            does this via the [Ts] direction-cosine chain rule (Theo Eqs. 6.43, 6.65–6.74,
-            esp. 6.73): bending slope and twist about the axis are projected onto the
-            freestream direction.
-        (b) HERMITE NODAL-SLOPE SIGN — the slope datum attached to rotation DOFs is ω·ŷ,
-            but the geometric slope along the axis is du_z/ds = −ω·ŷ (ŷ = ẑ×x̂); function
-            values and nodal slopes are mutually inconsistent for any rotated state, so the
-            cubic oscillates between nodes (visible even on the unswept canard spline).
-        (c) DTHX SEMANTICS — MSC SPLINE2 DTHX/DTHY are rotational ATTACHMENT FLEXIBILITIES
-            where −1.0 means "do not attach the rotational DOF". sbeam treats DTHX as a
-            signed gain, so HA144A's DTHX=−1 injects torsion coupling with an INVERTED sign
-            on top of the twist that should arrive through the fore/aft offset grids
-            111/112/121/122. Fatal for a forward-swept wing whose aeroelastic character is
-            bending–twist wash-in.
-FIX:    Rework per ZAERO Theo §6.3: interpolate deflection + twist along the axis, project
-        slopes to the streamwise direction with the CID direction cosines, fix the nodal
-        slope datum to du/ds = −ω·ŷ, and implement DTHX/DTHZ as attachment switches
-        (−1 = detached) — warn on any other non-default value until flexibility is modelled.
-        Gate: swept-spline rigid-body test from AE13.
-```
-
----
-
 ### [CRITICAL] AE5 — URDD frame/sign convention trims the aircraft to −1g
 
 **Files:** `sbeam/solver/sol144.py:348–401`, `sample/ha144a_sbeam.bdf` (TRIM cards + comments)
@@ -102,25 +66,6 @@ FIX:    Rework per ZAERO Theo §6.3: interpolate deflection + twist along the ax
 FIX:    Transform URDD/PITCH/rate trim variables through the RCSID frame (NASTRAN semantics)
         — preferred — or declare basic-frame semantics, flip the sample to URDD3 = +32.174,
         and document loudly. Either way add the trim-lift = +W closure assertion (AE13).
-```
-
----
-
-### [MAJOR] AE6 — Aero loads applied at ¾-chord collocation point, not the ¼-chord bound vortex
-
-**Files:** `sbeam/aero/spline.py:129, 293`, `sbeam/solver/sol144.py:511, 546, 854`
-
-```
-[MAJOR] g_disp and ATTACH evaluate box displacement at box.colloc (¾-chord), and
-        _compute_aero_forces / _compute_rigid_derivs / total_cm use colloc[0] as the moment
-        arm — while vlm.py:310–316 documents exactly why this is wrong and fixes it for the
-        rigid CM only. At NCHORD=4 this is a half-box-chord (1.25 ft = 12.5% of c̄) aft bias
-        on every box load, compounding AE4's moment error. K-J loads act at the ¼-chord
-        bound vortex.
-FIX:    Evaluate g_disp (and the ATTACH lever) at the box force point — the bound-vortex
-        midpoint — and use x_qc for all sol144 moment arms. g_slope stays at the ¾-chord
-        collocation point (flow tangency). Re-verify force-transfer moment conservation
-        (resultant must land at x = 24.90 for the AE4 test case).
 ```
 
 ---
@@ -236,10 +181,9 @@ FIX:    Add three permanent gates:
                 SC2 ANGLEA=+0.001373, ELEV=+0.019325 (loose tolerance first, tighten as
                 fixes land); assert trim lift = +8 000 lb; optionally Table 7-1 derivative
                 columns (rigid CZα −5.071, Cmα −2.871; restrained q=1200 CZα −6.463).
-        (V-AE2) Swept-spline rigid-body gate — rigid pitch/plunge/twist through the actual
-                HA144A CID-2 spline gives uniform incidence and exact displacement to 1e-12;
-                single-box force transfer preserves force AND moment (resultant at the box
-                force point).
+        (V-AE2) ~~Swept-spline rigid-body gate~~ **IMPLEMENTED** — 3 tests in
+                `tests/aero/test_spline.py::TestSweptSplineRigidBody` (plunge=0, beam pitch
+                =θ, g_disp at force_point). All pass to 1e-12.
         (V-AE3) Unit-consistency gate — g_disp.T @ skj-path total force/moment equals the
                 Kutta-Joukowski resultants from solve_rigid_cl on the same model.
 ```
@@ -253,8 +197,7 @@ Each step is independently verifiable against a number already measured
 
 1. ~~**AE3** (lift-width projection)~~ **RESOLVED** — rigid CLα = 5.0709 vs NASTRAN 5.07097 ✓
 2. ~~**AE2** (j-set unit Γ vs Cp)~~ **RESOLVED** — skj-path CZα = 5.071 matches rigid solver ✓
-3. **AE4 + AE6** (spline rework per ZAERO Theo §6.3 + ¼-chord force point) → V-AE2 gate
-   passes; box-force resultant lands at x = 24.90.
+3. ~~**AE4 + AE6**~~ **RESOLVED** — swept-spline kinematics reworked (ZAERO §6.3), DTHX semantics fixed, g_disp evaluated at ¼-chord force point; V-AE2 gate passes (711 tests ✓).
 4. **AE5 + AE7** (RCSID-frame URDD + mass-coupled trim columns) → trim lift = +8 000 lb.
 5. **AE1** (K_eff in the Schur solve) → SC1/SC2 ANGLEA/ELEV converge to the Listing 7-2
    values; q=1200 exercises the flexible increment that is the point of HA144A.

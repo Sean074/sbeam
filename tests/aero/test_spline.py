@@ -439,8 +439,8 @@ def _build_attach_bulk():
     Geometry:
       GRID 1 at (0, 0, 0) — master structural grid
       CAERO1 EID=200: span along Y (0..2), chord along X (0..1), 2span×1chord
-        Box 200: colloc ≈ (0.75, 0.5, 0),  lever r = (0.75, 0.5, 0)
-        Box 201: colloc ≈ (0.75, 1.5, 0),  lever r = (0.75, 1.5, 0)
+        Box 200: force_point ≈ (0.25, 0.5, 0),  lever r = (0.25, 0.5, 0)
+        Box 201: force_point ≈ (0.25, 1.5, 0),  lever r = (0.25, 1.5, 0)
       ATTACH EID=300: covers boxes 200–201, master GRID=1, CID=0
     """
     bulk = BulkData()
@@ -543,10 +543,10 @@ class TestAttachRigidBodyGate:
     def test_v_b3d_force_transfer_lever_arm(self, attach_operators):
         """V-B3d: Force transfer — uniform pressure → correct Fz, Mx, My at master GRID.
 
-        For 2 boxes with area=1.0 each and colloc at y=0.5 and y=1.5 (rx≈0.75 both):
+        For 2 boxes with area=1.0 each and force_point at y=0.5 and y=1.5 (rx=0.25 both):
           Fz = 2.0  (total lift)
           Mx = ry0 + ry1 = 0.5 + 1.5 = 2.0  (roll moment)
-          My = −(rx0 + rx1) = −(0.75 + 0.75) = −1.5  (pitch moment)
+          My = −(rx0 + rx1) = −(0.25 + 0.25) = −0.5  (pitch moment, lever at ¼-chord)
         """
         from sbeam.aero.integration import build_skj
         g_slope, g_disp, boxes, grid_index, _ = attach_operators
@@ -563,13 +563,13 @@ class TestAttachRigidBodyGate:
         mx = f_g[col_base + 3]
         my = f_g[col_base + 4]
 
-        # Analytical lever-arm expectations
+        # Lever arms use force_point (¼-chord midpoint), not colloc (¾-chord)
         expected_fz = sum(box.area * box.normal[2] for box in boxes)
         expected_mx = sum(
-            (box.colloc[1] - 0.0) * box.area * box.normal[2] for box in boxes
+            (box.force_point[1] - 0.0) * box.area * box.normal[2] for box in boxes
         )  # ry * Fz per box
         expected_my = -sum(
-            (box.colloc[0] - 0.0) * box.area * box.normal[2] for box in boxes
+            (box.force_point[0] - 0.0) * box.area * box.normal[2] for box in boxes
         )  # −rx * Fz per box
 
         assert abs(fz - expected_fz) < 1e-12, f"Fz mismatch: {fz:.6f} vs {expected_fz:.6f}"
@@ -600,4 +600,185 @@ class TestSpline0ZeroForce:
         g_slope, _, boxes, grid_index, _ = spline0_operators
         assert np.allclose(g_slope, 0.0, atol=1e-14), (
             f"SPLINE0 g_slope must be all-zero; max |w|={np.max(np.abs(g_slope)):.2e}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# V-AE2: Swept-spline rigid-body gate (HA144A CID-2 wing, DTHX=−1)
+# ---------------------------------------------------------------------------
+
+def _build_ha144a_wing_spline_bulk():
+    """HA144A CID-2 wing spline geometry for V-AE2 test.
+
+    Wing grids (SET1 1100): 99, 100, 111, 112, 121, 122
+    CAERO1 1100: 8-span × 4-chord
+    CID 2: x_hat=(−0.5,0.866,0), y_hat=(−0.866,−0.5,0), z_hat=(0,0,1)
+    SPLINE2 1601: CAERO=1100, SETG=1100, CID=2, DTHX=−1 (detached rotation)
+    """
+    bulk = BulkData()
+
+    # Wing structural grids (positions from HA144A)
+    wing_grids = {
+        99:  (20.0,     0.0,  0.0),
+        100: (30.0,     0.0,  0.0),
+        111: (24.61325, 5.0,  0.0),
+        112: (29.61325, 5.0,  0.0),
+        121: (18.83975, 15.0, 0.0),
+        122: (23.83975, 15.0, 0.0),
+    }
+    for gid, (x, y, z) in wing_grids.items():
+        bulk.grids[gid] = Grid(gid=gid, cp=0, x=x, y=y, z=z, cd=0)
+
+    # CID 2: A=(30,0,0), B=(30,0,10), C=(25,8.66025,0)
+    # Derived: x_hat=(−0.5,0.866,0), y_hat=(−0.866,−0.5,0), z_hat=(0,0,1)
+    bulk.cord2rs[2] = Cord2r(cid=2, rid=0,
+                              a=(30.0, 0.0, 0.0),
+                              b=(30.0, 0.0, 10.0),
+                              c=(25.0, 8.66025, 0.0))
+
+    bulk.aeros = Aeros(acsid=0, rcsid=0, cref=10.0, bref=40.0, sref=200.0,
+                       symxz=1, symxy=0)
+    bulk.paero1s[1000] = Paero1(pid=1000)
+
+    # CAERO1 1100: 8-span × 4-chord, chord=10 ft
+    bulk.caero1s[1100] = Caero1(
+        eid=1100, pid=1000, cp=0, nspan=8, nchord=4,
+        lspan=0, lchord=0, igid=1,
+        p1=(25.0,     0.0,  0.0), x12=10.0,
+        p4=(13.45299, 20.0, 0.0), x43=10.0,
+    )
+
+    bulk.set1s[1100] = Set1(sid=1100, grids=[99, 100, 111, 112, 121, 122])
+
+    # SPLINE2 1601: DTHX=−1 (detached — twist arrives through fore/aft offset grids)
+    bulk.spline2s[1601] = Spline2(
+        eid=1601, caero=1100, id1=1100, id2=1131, setg=1100,
+        dz=0.0, dtor=1.0, cid=2, dthx=-1.0, dthz=-1.0, usage="BOTH",
+    )
+
+    return bulk
+
+
+class TestSweptSplineRigidBody:
+    """V-AE2 gate — HA144A CID-2 swept wing spline.
+
+    AE4 fix verification: swept-axis slope projection and nodal-slope sign.
+    AE6 fix verification: force transfer moment conservation at ¼-chord.
+    """
+
+    @pytest.fixture(scope="class")
+    def vae2_ops(self):
+        """Build g_slope and g_disp for the HA144A CID-2 wing spline."""
+        from sbeam.aero.panel import mesh_caero1
+
+        bulk = _build_ha144a_wing_spline_bulk()
+        caero = bulk.caero1s[1100]
+        boxes = mesh_caero1(caero, bulk.paero1s[1000], bulk.aefacts, bulk.cord2rs, start_k=0)
+        gids_sorted = sorted(bulk.grids.keys())
+        grid_index = {gid: i for i, gid in enumerate(gids_sorted)}
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            g_slope, g_disp = build_g_spline(bulk, boxes, grid_index)
+        return g_slope, g_disp, boxes, grid_index, bulk
+
+    def test_vae2a_rigid_plunge_zero_downwash(self, vae2_ops):
+        """V-AE2a: Uniform Tz=1 at all wing grids → zero downwash at all boxes."""
+        g_slope, _, boxes, grid_index, _ = vae2_ops
+        n_g = 6 * len(grid_index)
+        u = np.zeros(n_g)
+        for gi in grid_index.values():
+            u[6 * gi + 2] = 1.0   # Tz = 1 at every grid
+        downwash = g_slope @ u
+        assert np.allclose(downwash, 0.0, atol=1e-12), (
+            f"V-AE2a: rigid plunge must give zero downwash; "
+            f"max |w| = {np.max(np.abs(downwash)):.3e}"
+        )
+
+    def test_vae2b_rigid_pitch_uniform_incidence(self, vae2_ops):
+        """V-AE2b: Rigid beam pitch → uniform incidence θ at all boxes.
+
+        For the 1D beam spline, the rigid pitch is defined along the spline axis:
+          Tz_i = −x_hat[0] · s_i · θ  (linear in s → exact Hermite reproduction)
+          Ry_i = θ  (nodal slope = −(θ·y_hat[1]) = 0.5θ = −x_hat[0]·θ)
+        Result: dh/ds = −x_hat[0]·θ everywhere → w = −(dh/ds)/x_hat[0] = θ.
+        """
+        from sbeam.assembly.coord_transform import _get_transform
+        g_slope, _, boxes, grid_index, bulk = vae2_ops
+        sp = bulk.spline2s[1601]
+        origin, R_cid = _get_transform(sp.cid, bulk.cord2rs)
+        x_hat = R_cid[:, 0]   # (−0.5, 0.866, 0) for CID-2
+        x0 = x_hat[0]          # −0.5
+
+        theta = 1e-3
+        n_g = 6 * len(grid_index)
+        u = np.zeros(n_g)
+        for gid, gi in grid_index.items():
+            g = bulk.grids[gid]
+            r = np.array([g.x, g.y, g.z])
+            s_i = float(np.dot(r - origin, x_hat))
+            u[6 * gi + 2] = -x0 * s_i * theta   # Tz = 0.5·s·θ (linear in s)
+            u[6 * gi + 4] = theta                 # Ry = θ
+
+        downwash = g_slope @ u
+        assert np.allclose(downwash, theta, atol=1e-12), (
+            f"V-AE2b: rigid beam pitch must give uniform downwash={theta}; "
+            f"range [{downwash.min():.4e}, {downwash.max():.4e}], "
+            f"max |err| = {np.max(np.abs(downwash - theta)):.3e}"
+        )
+
+    def test_vae2c_gdisp_uses_force_point(self, vae2_ops):
+        """V-AE2c: g_disp is evaluated at force_point (¼-chord), not at colloc (¾-chord).
+
+        Directly verifies AE6 fix: for the translation Tz DOF of the first sorted
+        grid, g_disp[3k+2, col_Tz] must equal the Hermite function-value basis
+        evaluated at t_force = (force_point − origin)·x_hat, NOT at
+        t_slope = (colloc − origin)·x_hat.
+        """
+        from scipy.interpolate import CubicHermiteSpline
+        from sbeam.assembly.coord_transform import _get_transform
+
+        g_slope, g_disp, boxes, grid_index, bulk = vae2_ops
+        sp = bulk.spline2s[1601]
+        origin, R_cid = _get_transform(sp.cid, bulk.cord2rs)
+        x_hat = R_cid[:, 0]
+        z_hat = R_cid[:, 2]
+
+        # Sorted grids — same ordering as _build_spline2_block
+        set1 = bulk.set1s[sp.setg]
+        s_gid = sorted(
+            (float(np.dot(np.array([bulk.grids[g].x, bulk.grids[g].y, bulk.grids[g].z]) - origin, x_hat)), g)
+            for g in set1.grids
+        )
+        s_sorted = np.array([s for s, _ in s_gid])
+        gids_sorted = [gid for _, gid in s_gid]
+
+        # Hermite function-value basis for the first grid (unit value at node 0)
+        n_s = len(s_sorted)
+        y_f = np.zeros(n_s); y_f[0] = 1.0
+        cs = CubicHermiteSpline(s_sorted, y_f, np.zeros(n_s))
+
+        box0 = boxes[0]
+        t_force = float(np.dot(box0.force_point - origin, x_hat))
+        t_slope = float(np.dot(box0.colloc     - origin, x_hat))
+
+        # Sanity: the two evaluation points must differ for the test to be meaningful
+        assert abs(t_force - t_slope) > 1e-3, (
+            f"V-AE2c: force_point and colloc must project to different t values; "
+            f"t_force={t_force:.4f}, t_slope={t_slope:.4f}"
+        )
+
+        gi_0 = grid_index[gids_sorted[0]]
+        col_tz = 6 * gi_0 + 2     # Tz DOF column for first sorted grid
+        k0 = box0.k
+
+        z_sq = float(z_hat[2] ** 2)   # = 1.0 for CID-2 (z_hat = (0,0,1))
+        expected_force = z_sq * float(cs(t_force))
+        expected_slope = z_sq * float(cs(t_slope))
+
+        actual = float(g_disp[3 * k0 + 2, col_tz])
+
+        assert abs(actual - expected_force) < 1e-12, (
+            f"V-AE2c: g_disp[Tz row, col_Tz_0] must equal Hermite φ_0(t_force)="
+            f"{expected_force:.8f}; got {actual:.8f} "
+            f"(old colloc value would be {expected_slope:.8f})"
         )

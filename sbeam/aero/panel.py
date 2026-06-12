@@ -22,9 +22,10 @@ class AeroBox:
     j_chord:    int           # chordwise index within parent CAERO1 (0-based)
     corners:    np.ndarray    # (4, 3): [root-LE, tip-LE, tip-TE, root-TE] in CID 0
     colloc:     np.ndarray    # (3,): 3/4-chord midspan collocation point
-    bound_a:    np.ndarray    # (3,): 1/4-chord bound vortex, root side
-    bound_b:    np.ndarray    # (3,): 1/4-chord bound vortex, tip side
-    area:       float
+    bound_a:     np.ndarray    # (3,): 1/4-chord bound vortex, root side
+    bound_b:     np.ndarray    # (3,): 1/4-chord bound vortex, tip side
+    force_point: np.ndarray    # (3,): 1/4-chord bound-vortex midpoint = (bound_a + bound_b)/2
+    area:        float
     normal:     np.ndarray    # (3,) outward unit normal
     chord:      float         # mean chord of the box
     span_frac:  float         # spanwise fraction at box mid-span [0, 1]
@@ -151,6 +152,7 @@ def mesh_caero1(
                 colloc=colloc,
                 bound_a=bound_a,
                 bound_b=bound_b,
+                force_point=0.5 * (bound_a + bound_b),
                 area=float(area),
                 normal=normal,
                 chord=float(chord),
