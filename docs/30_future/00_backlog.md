@@ -18,16 +18,16 @@ Order reflects what unblocks the most downstream work; close in sequence unless 
 | 2 | [AE1 Step C — `Q_aa` rigid-body null-space gate](#ae1-step-c--q_aa-rigid-body-null-space-gate) | CRITICAL | Open | Permanent regression for B's spline fix; prime suspect for the ELEV gap |
 | 3 | [AE1 Step F — Verify V-AE1d elastic trim](#ae1-step-f--verify-v-ae1d-elastic-trim) | CRITICAL | Open | Closes V-AE1 SC1/SC2 ANGLEA/ELEV |
 | 4 | [AE1 Step G — Analytic restrained derivatives](#ae1-step-g--analytic-restrained-derivatives) | CRITICAL | Open | Closes V-AE1e and AE8 |
-| 6 | [AE9 — Per-TRIM Mach (currently AEROS.mach only)](#major-ae9--mach-is-a-property-of-the-model-not-the-flight-condition) | MAJOR | Open | Multi-Mach subcases (HA144A's 3rd SC) |
-| 7 | [AE10 — Wire `parity` from `AEROS.SYMXZ`; SOL 144 CLI dispatch](#major-ae10--parity-not-wired-from-aerossymxz-sol-144-unreachable-from-main) | MAJOR | Open | End-to-end HA144A solve from main.py |
-| 8 | [AE11 — D_jx YAW column + AESURF hinge geometry](#minor-ae11--d_jx-yaw-column-duplicates-roll-aesurf-hinge-geometry-ignored) | MINOR | Open | Vertical-fin trim, hinge-moment derivs |
-| 9 | [AE12 — PG normals + SPLINE2 DTOR/DTHZ warnings](#minor-ae12--pg-compression-keeps-original-normals-spline2-dtordthz-silently-ignored) | MINOR | Open | Dihedral correctness; user-input safety |
-| 10 | [A7 — Cosine chordwise spacing helper + low-NCHORD warning](#minor-a7--default-chordwise-box-count-too-low-no-cosine-chordwise-spacing) | MINOR | Open (code) | Pitching-moment convergence |
-| 11 | [A8 — Box-AR pre-solve warning](#minor-a8--spanwise-box-count-aspect-ratio-must-be-o1-companion-to-a7) | MINOR | Open (code) | Lift-slope bias on high-AR boxes |
-| 12 | [R16–R19 docs + R21, R22 NITs](#minor-r16r19--documentation-gaps-and-r21r22-nits) | MINOR/NIT | Open | Code-standard documentation hygiene |
-| 13 | [Phase C Steps 53–57](#phase-c--sol-144-static-aeroelastics-steps-5357) | Planned | Blocked on AE1 | Maneuver loads, divergence, viewer |
-| 14 | [Monitor points & section loads — Phase 1 (static)](#monitor-points--section-loads--phase-1-static) | Planned | Blocked on AE1, AE10 | Structures-team loads handoff; precursor to dynamic gust loads at monitors |
-| 15 | [Phase 2 / Phase 3 / Future development](#phase-2--phase-3--future-development) | Planned | Optional | Long-tail capability |
+| 5 | [AE9 — Per-TRIM Mach (currently AEROS.mach only)](#major-ae9--mach-is-a-property-of-the-model-not-the-flight-condition) | MAJOR | Open | Multi-Mach subcases (HA144A's 3rd SC) |
+| 6 | [AE10 — Wire `parity` from `AEROS.SYMXZ`; SOL 144 CLI dispatch](#major-ae10--parity-not-wired-from-aerossymxz-sol-144-unreachable-from-main) | MAJOR | Open | End-to-end HA144A solve from main.py |
+| 7 | [AE11 — D_jx YAW column + AESURF hinge geometry](#minor-ae11--d_jx-yaw-column-duplicates-roll-aesurf-hinge-geometry-ignored) | MINOR | Open | Vertical-fin trim, hinge-moment derivs |
+| 8 | [AE12 — PG normals + SPLINE2 DTOR/DTHZ warnings](#minor-ae12--pg-compression-keeps-original-normals-spline2-dtordthz-silently-ignored) | MINOR | Open | Dihedral correctness; user-input safety |
+| 9 | [A7 — Cosine chordwise spacing helper + low-NCHORD warning](#minor-a7--default-chordwise-box-count-too-low-no-cosine-chordwise-spacing) | MINOR | Open (code) | Pitching-moment convergence |
+| 10 | [A8 — Box-AR pre-solve warning](#minor-a8--spanwise-box-count-aspect-ratio-must-be-o1-companion-to-a7) | MINOR | Open (code) | Lift-slope bias on high-AR boxes |
+| 11 | [R16–R19 docs + R21, R22 NITs](#minor-r16r19--documentation-gaps-and-r21r22-nits) | MINOR/NIT | Open | Code-standard documentation hygiene |
+| 12 | [Phase C Steps 53–57](#phase-c--sol-144-static-aeroelastics-steps-5357) | Planned | Blocked on AE1 | Maneuver loads, divergence, viewer |
+| 13 | [Monitor points & section loads — Phase 1 (static)](#monitor-points--section-loads--phase-1-static) | Planned | Blocked on AE1, AE10 | Structures-team loads handoff; precursor to dynamic gust loads at monitors |
+| 14 | [Phase 2 / Phase 3 / Future development](#phase-2--phase-3--future-development) | Planned | Optional | Long-tail capability |
 
 **Closed in this branch (full detail in CHANGELOG `[Unreleased]` and history):** AE2,
 AE3, AE4, AE5, AE6, AE7. AE1 Step A (parity + My sign, 2026-06-12). AE1 Step B (RBAR
