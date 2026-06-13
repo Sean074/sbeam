@@ -32,6 +32,22 @@ for a 0.107° miss).
 
 ### Added
 
+**AE1 Step C — `Q_aa` rigid-body null-space regression gate (2026-06-13)**
+
+A permanent guard that the rigid-body modes which do not load the aero lie in the null space of
+the flexible aero stiffness `Q_aa` (`Q_aa·u_rb ≈ 0`), so a future spline regression cannot
+silently re-contaminate `Q_aa`. Test-only; no production code changed.
+
+- **`tests/aero/test_spline.py::TestGlobalRigidBody`** extended with composed `Q_aa·u_rb`
+  null-space assertions (built via the real `build_aero_model` → `build_qaa` chain) on three
+  fixtures, each with a geometry-dependent null set: HA144A swept-planar (`{Tx,Ty,Tz,Rz}` < 1e-10,
+  `Rx` bounded < 1e-3 due to BDF coordinate rounding), a math-exact planar rect (`{Tx,Ty,Tz,Rx,Rz}`
+  < 1e-10), and a **new 30° dihedral fixture** with z≠0 grids and a tilted surface normal
+  (`{Tx,Ty,Tz,Rx}` < 1e-10).
+- Rigid pitch (and yaw on the dihedral wing, where it loads ∝ sin Γ) are asserted to LOAD as
+  positive discriminators, so the gate cannot pass on a degenerate all-zero `Q_aa`.
+- 18 new cases; verified to trip when a `g_slope` row is perturbed.
+
 **V-AE3 — independent unit-Cp force/moment cross-check (2026-06-13)**
 
 A discriminating validation gate that confirms the aerodynamic force/moment coupling path is

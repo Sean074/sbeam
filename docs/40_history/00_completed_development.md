@@ -2857,3 +2857,49 @@ Full aero suite green.
   artifact on a symmetric/planar deck (the trap AE8a documents).
 - Named `test_vae3_cross_check.py` to avoid collision with the unrelated "V-AE3a" trim-lift gate
   in `test_trim_urdd.py`.
+
+### Phase A/C — AE1 Step C: `Q_aa` rigid-body null-space regression gate ✅ COMPLETE (2026-06-13)
+
+**Objective:** Lock in the AE1 Step B spline fix with a permanent, cheap regression guard that
+asserts the rigid-body modes which do not load the aero lie in the null space of the flexible
+aero stiffness `Q_aa = G_disp^T·S_kj·(A_jj*)^-1·D_jk·G_slope`, i.e. `Q_aa·u_rb ≈ 0`. The property
+is already satisfied (measured `‖Q_aa·u_tz‖ ≈ 2e-14` on HA144A); this is a guard against a future
+spline regression silently re-contaminating `Q_aa` (as the old SET1-collinearity defect did), NOT
+a lead on the residual SC2 trim offset (that is MINOR AE8a). `TestGlobalRigidBody` previously gated
+only the FACTORS (`g_slope·u_rb`, `g_disp·u_rb`) and only on planar geometry; this closes two gaps —
+the COMPOSED `Q_aa` operator, and out-of-plane (z≠0) coverage.
+
+**Deliverables (test-only — no production code changed):**
+- **`tests/aero/test_spline.py::TestGlobalRigidBody`** extended with composed `Q_aa·u_rb`
+  null-space assertions, assembled via the real `build_aero_model` → `build_qaa` chain
+  (`sbeam/aero/coupling.py`) and the existing `_apply_rigid_body` basic-frame rigid-body basis:
+  - HA144A swept-planar: `{Tx,Ty,Tz,Rz}` null to `< 1e-10`; `Rx` gated BOUNDED (`< 1e-3`).
+  - Math-exact planar rect: `{Tx,Ty,Tz,Rx,Rz}` null to `< 1e-10`.
+  - **New 30° dihedral fixture** (`dihedral_wing_ops`) — CAERO, grids, and spline CID all tilted
+    about the streamwise x-axis; the only fixture with z≠0 grids and a non-vertical surface
+    normal: `{Tx,Ty,Tz,Rx}` null to `< 1e-10`.
+- **Positive discriminators:** rigid pitch (Ry) asserted to LOAD (`‖Q_aa·u_Ry‖∞ > 1`) on all three
+  fixtures, and rigid yaw (Rz) asserted to LOAD on the dihedral fixture — so the gate can never
+  pass trivially on a degenerate all-zero `Q_aa`.
+
+**Test/Acceptance:** `pytest tests/aero/test_spline.py -k RigidBody` → green (18 new `Q_aa` cases);
+full `tests/aero/` suite 254 passed. Manually verified the gate trips: perturbing one `g_slope`
+row by 1e-3 drives `‖Q_aa·u_tz‖` from 1.9e-14 to 0.48 (» 1e-10).
+
+**Key decisions / corrections to the backlog acceptance wording:**
+- **`val_vlm_rect_ar8.bdf` cannot be used** for this gate — it is a pure rigid-VLM validation deck
+  with no GRID/SET1/SPLINE2 cards, so `build_aero_model` returns `g_slope=None` and no `Q_aa`
+  exists. The backlog conflated it with the in-test math-exact rect fixture, which is the correct
+  machine-exact target.
+- **`< 1e-10` on HA144A holds only for the exactly-null modes** (Tx,Ty,Tz,Rz). HA144A's `Rx`
+  residual is `1.4e-4` — `g_slope·u_Rx ≈ 4.7e-7` (5-decimal BDF coordinate rounding on the swept
+  EA line) amplified by `‖Q_aa‖ ≈ 2.1e3`. It is gated BOUNDED (`< 1e-3`); the machine-precision
+  `Rx` null is proved on the math-exact rect and dihedral fixtures instead.
+- **A tilted dihedral surface, not just z-offset grids.** The SPLINE2 operator is independent of
+  grid-z (verified: g_slope/g_disp are byte-identical for z-offset grids), so z-offset grids would
+  only vary the rigid-body input, not the operator. Tilting the whole surface about x gives the
+  normal a y-component, which makes yaw (Rz) correctly LOAD the aero (`g_slope·u_Rz = sin Γ`) where
+  it is null for a planar wing — genuine out-of-plane coupling the planar fixtures cannot exercise,
+  while translations and roll (Rx) stay machine-precision null.
+- Assert against the actual rigid-body translation/rotation basis, never an arbitrary pitch field
+  (pitch legitimately loads the aero and is not a null-space member).

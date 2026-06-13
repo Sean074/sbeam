@@ -37,6 +37,7 @@ from sbeam.model.aero import (
 from sbeam.model.grid import Grid
 from sbeam.model.coordinate_system import Cord2r
 from sbeam.aero.aero_model import build_aero_model
+from sbeam.aero.coupling import build_qaa
 from sbeam.aero.spline import build_g_spline
 
 
@@ -1035,4 +1036,192 @@ class TestGlobalRigidBody:
         assert err < self.ATOL_RECT, (
             f"V-AE1b rect wing mode={mode}: g_slope·u_rb residual {err:.3e} "
             f"exceeds tol {self.ATOL_RECT:.0e}."
+        )
+
+    # ------------------------------------------------------------------ #
+    # Fixture 3: 30° dihedral wing — out-of-plane (z != 0) geometry
+    # ------------------------------------------------------------------ #
+    @pytest.fixture(scope="class")
+    def dihedral_wing_ops(self):
+        """30° dihedral wing — CAERO, grids, and spline CID all tilted about x.
+
+        The only fixture with z != 0 grids and a non-vertical surface normal.
+        Tilting the surface about the streamwise x-axis by Γ=30° gives the
+        normal a y-component, so a rigid YAW (Rz) now LOADS the aero
+        (g_slope·u_Rz = sin Γ) where it is null for a planar wing. Rigid
+        translations and ROLL (Rx) stay in the Q_aa null space. This is the
+        out-of-plane coupling the two planar fixtures cannot exercise.
+
+            span   ŝ = (0, cosΓ, sinΓ)
+            normal n̂ = (0, −sinΓ, cosΓ)
+        Spline CID 3: A=origin, B=A+n̂ (z-axis = normal), C=A+ŝ (xz-plane) →
+            x_hat = ŝ, z_hat = n̂, y_hat = (−1, 0, 0).
+        Math-exact: the spline is built from the same float coordinates the
+        analytic null space assumes, so the null residual is the FP floor.
+        """
+        from sbeam.aero.panel import mesh_caero1
+        from sbeam.model.aero import Aeros, Paero1, Caero1, Set1, Spline2
+
+        gamma = np.deg2rad(30.0)
+        c, s = float(np.cos(gamma)), float(np.sin(gamma))
+        span = np.array([0.0, c, s])
+
+        bulk = BulkData()
+        # EA grids along the tilted span axis (x = 0)
+        for i in range(5):
+            gid = 100 + i
+            p = 2.0 * i * span
+            bulk.grids[gid] = Grid(gid=gid, cp=0, x=0.0, y=p[1], z=p[2], cd=0)
+
+        bulk.aeros = Aeros(acsid=0, rcsid=0, cref=1.0, bref=8.0, sref=8.0,
+                           symxz=0, symxy=0)
+        bulk.paero1s[1000] = Paero1(pid=1000)
+        # CAERO leading edge at x=−0.25 (EA at ¼-chord), span swept into z
+        bulk.caero1s[1100] = Caero1(
+            eid=1100, pid=1000, cp=0, nspan=8, nchord=4,
+            lspan=0, lchord=0, igid=1,
+            p1=(-0.25, 0.0, 0.0), x12=1.0,
+            p4=(-0.25, 8.0 * c, 8.0 * s), x43=1.0,
+        )
+        bulk.set1s[1100] = Set1(sid=1100, grids=[100, 101, 102, 103, 104])
+        # CID 3: z-axis = tilted surface normal, x-axis = tilted span
+        bulk.cord2rs[3] = Cord2r(cid=3, rid=0,
+                                 a=(0.0, 0.0, 0.0),
+                                 b=(0.0, -s, c),
+                                 c=(0.0, c, s))
+        bulk.spline2s[1601] = Spline2(
+            eid=1601, caero=1100, id1=1100, id2=1131, setg=1100,
+            dz=0.0, dtor=1.0, cid=3, dthx=1.0, dthz=-1.0, usage="BOTH",
+        )
+        boxes = mesh_caero1(bulk.caero1s[1100], bulk.paero1s[1000], bulk.aefacts,
+                            bulk.cord2rs, start_k=0)
+        grid_index = {gid: i for i, gid in enumerate(sorted(bulk.grids))}
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            g_slope, g_disp = build_g_spline(bulk, boxes, grid_index)
+        # Reference point: mid-span on the tilted elastic axis
+        return g_slope, g_disp, boxes, grid_index, bulk, (0.0, 4.0 * c, 4.0 * s)
+
+    # ------------------------------------------------------------------ #
+    # Composed Q_aa rigid-body null-space gate (AE1 Step C)
+    # ------------------------------------------------------------------ #
+    #
+    # Q_aa = G_disp^T S_kj (A_jj*)^-1 D_jk G_slope is the flexible aero
+    # stiffness fed into K_eff = K_aa − q·Q_aa.  A rigid-body mode that does
+    # not load the aero must lie in its null space: Q_aa·u_rb ≈ 0.  The
+    # methods above gate the factors (g_slope, g_disp); these gate the
+    # COMPOSED operator end-to-end, the quantity the trim solver actually
+    # uses.  Per fixture the null set differs by geometry:
+    #   planar swept (HA144A) : {Tx,Ty,Tz,Rz} exact; Rx rounding-limited; Ry loads
+    #   planar rect           : {Tx,Ty,Tz,Rx,Rz} exact; Ry loads
+    #   30° dihedral          : {Tx,Ty,Tz,Rx} exact; Ry AND Rz load (out-of-plane)
+    # Pitch (Ry) — and yaw (Rz) on the dihedral wing — legitimately load the
+    # aero and serve as positive discriminators, so the gate can never pass
+    # trivially on an all-zero Q_aa.
+
+    ATOL_QAA = 1e-10        # machine-precision null-space residual
+
+    @staticmethod
+    def _build_qaa(ops):
+        """Assemble Q_aa for a fixture via the real build_aero_model chain.
+
+        Returns (Q_aa, bulk, grid_index, ref_point).
+        """
+        _g_slope, _g_disp, _boxes, grid_index, bulk, ref = ops
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            aero = build_aero_model(bulk, grid_index=grid_index)
+        Q_aa = build_qaa(aero, aero.g_disp, aero.g_slope)
+        return Q_aa, bulk, grid_index, ref
+
+    @staticmethod
+    def _qaa_residual(Q_aa, bulk, grid_index, mode, ref):
+        """‖Q_aa · u_rb‖∞ for a basic-frame rigid-body mode."""
+        u = _apply_rigid_body(bulk, grid_index, mode, ref_point=ref)
+        return float(np.max(np.abs(Q_aa @ u)))
+
+    @pytest.fixture(scope="class")
+    def ha144a_qaa(self, ha144a_wing_ops):
+        return self._build_qaa(ha144a_wing_ops)
+
+    @pytest.fixture(scope="class")
+    def rect_qaa(self, rect_wing_ops):
+        return self._build_qaa(rect_wing_ops)
+
+    @pytest.fixture(scope="class")
+    def dihedral_qaa(self, dihedral_wing_ops):
+        return self._build_qaa(dihedral_wing_ops)
+
+    # ---- null-space residuals (machine precision) -------------------- #
+
+    @pytest.mark.parametrize("mode", ["Tx", "Ty", "Tz", "Rz"])
+    def test_qaa_nullspace_ha144a(self, ha144a_qaa, mode):
+        """Swept-planar HA144A: translations and yaw lie in the Q_aa null space."""
+        Q_aa, bulk, gi, ref = ha144a_qaa
+        res = self._qaa_residual(Q_aa, bulk, gi, mode, ref)
+        assert res < self.ATOL_QAA, (
+            f"AE1 Step C HA144A mode={mode}: ‖Q_aa·u_rb‖∞ {res:.3e} "
+            f"exceeds null-space tol {self.ATOL_QAA:.0e}."
+        )
+
+    def test_qaa_ha144a_rx_bounded(self, ha144a_qaa):
+        """Rx on HA144A is null only to ~1e-4: g_slope·u_Rx is coordinate-
+        rounding limited (5-decimal BDF coords on the swept EA line) and
+        amplified by ‖Q_aa‖≈2.1e3 (measured 1.4e-4). Gate it BOUNDED so a
+        gross spline regression still trips; the machine-precision Rx null is
+        proved on the math-exact rect and dihedral fixtures instead."""
+        Q_aa, bulk, gi, ref = ha144a_qaa
+        res = self._qaa_residual(Q_aa, bulk, gi, "Rx", ref)
+        assert res < 1e-3, (
+            f"AE1 Step C HA144A Rx: ‖Q_aa·u_rb‖∞ {res:.3e} exceeds the "
+            f"coordinate-rounding bound 1e-3 (expected ~1.4e-4)."
+        )
+
+    @pytest.mark.parametrize("mode", ["Tx", "Ty", "Tz", "Rx", "Rz"])
+    def test_qaa_nullspace_rect(self, rect_qaa, mode):
+        """Planar rect (math-exact): translations, roll, and yaw all null."""
+        Q_aa, bulk, gi, ref = rect_qaa
+        res = self._qaa_residual(Q_aa, bulk, gi, mode, ref)
+        assert res < self.ATOL_QAA, (
+            f"AE1 Step C rect mode={mode}: ‖Q_aa·u_rb‖∞ {res:.3e} "
+            f"exceeds null-space tol {self.ATOL_QAA:.0e}."
+        )
+
+    @pytest.mark.parametrize("mode", ["Tx", "Ty", "Tz", "Rx"])
+    def test_qaa_nullspace_dihedral(self, dihedral_qaa, mode):
+        """30° dihedral (math-exact, z != 0): translations and roll null.
+
+        Yaw (Rz) is deliberately excluded — for a dihedral surface it LOADS
+        the aero (see test_qaa_dihedral_yaw_loads), which is the whole point
+        of this out-of-plane fixture."""
+        Q_aa, bulk, gi, ref = dihedral_qaa
+        res = self._qaa_residual(Q_aa, bulk, gi, mode, ref)
+        assert res < self.ATOL_QAA, (
+            f"AE1 Step C dihedral mode={mode}: ‖Q_aa·u_rb‖∞ {res:.3e} "
+            f"exceeds null-space tol {self.ATOL_QAA:.0e}."
+        )
+
+    # ---- positive discriminators (rigid modes that LOAD the aero) ---- #
+
+    @pytest.mark.parametrize("fixture_name", ["ha144a_qaa", "rect_qaa", "dihedral_qaa"])
+    def test_qaa_pitch_loads(self, request, fixture_name):
+        """Rigid pitch (Ry) is NOT a null-space member — it loads the aero on
+        every fixture, so a degenerate all-zero Q_aa cannot pass the gate."""
+        Q_aa, bulk, gi, ref = request.getfixturevalue(fixture_name)
+        res = self._qaa_residual(Q_aa, bulk, gi, "Ry", ref)
+        assert res > 1.0, (
+            f"AE1 Step C {fixture_name}: rigid pitch ‖Q_aa·u_Ry‖∞ {res:.3e} "
+            f"is suspiciously small — Q_aa may be degenerate."
+        )
+
+    def test_qaa_dihedral_yaw_loads(self, dihedral_qaa):
+        """Out-of-plane signature: on a 30° dihedral wing, rigid YAW (Rz)
+        loads the aero (g_slope·u_Rz = sin Γ = 0.5), unlike a planar wing
+        where it is null. Confirms the fixture exercises real out-of-plane
+        coupling rather than a relabelled planar case."""
+        Q_aa, bulk, gi, ref = dihedral_qaa
+        res = self._qaa_residual(Q_aa, bulk, gi, "Rz", ref)
+        assert res > 1.0, (
+            f"AE1 Step C dihedral yaw: ‖Q_aa·u_Rz‖∞ {res:.3e} is too small — "
+            f"the dihedral surface is not coupling yaw into the aero."
         )

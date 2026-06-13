@@ -26,14 +26,13 @@ downgraded to a MINOR optional root-cause of the ~0.1° common-mode.
 |--:|------|----------|--------|------------------|
 | 1 | [AE8b — Unrestrained (mean-axis) derivative formulation](#major-ae8b--unrestrained-mean-axis-derivative-formulation-known-wrong) | MAJOR | Open — known-wrong first attempt; large-signal, genuinely off | HA144A unrestrained derivative column; Phase C derivative deliverable |
 | 2 | [AE8a — q-invariant common-mode trim offset (~0.1°)](#minor-ae8a--q-invariant-common-mode-trim-offset) | MINOR | Open — within fitness tolerance (≤0.4% FS); optional root-cause at q=40 | Documents/removes a known ≤0.4% FS trim bias; NOT a blocker |
-| 3 | [AE1 Step C — `Q_aa` rigid-body null-space gate](#ae1-step-c--q_aa-rigid-body-null-space-gate) | MINOR | Open — land any time | Regression guard for B's spline fix — null space already 2e-14; NOT the trim lead |
-| 4 | [AE11 — D_jx YAW column + AESURF hinge geometry](#minor-ae11--d_jx-yaw-column-duplicates-roll-aesurf-hinge-geometry-ignored) | MINOR | Open | Vertical-fin trim, hinge-moment derivs (non-blocking for AE1) |
-| 5 | [AE12 — SPLINE2 DTOR/DTHZ warning (PG-normal half not a bug)](#minor-ae12--spline2-dtordthz-silently-ignored-pg-normal-half-misidentified) | MINOR | Open | User-input safety (PG-normal half re-diagnosed: not a bug) |
-| 6 | [A7 — Cosine chordwise spacing helper + low-NCHORD warning](#minor-a7--default-chordwise-box-count-too-low-no-cosine-chordwise-spacing) | MINOR | Open (code) | Pitching-moment convergence (sample decks already at NCHORD=8) |
-| 7 | [A8 — Box-AR pre-solve warning](#minor-a8--spanwise-box-count-aspect-ratio-must-be-o1-companion-to-a7) | MINOR | Open (code) | Lift-slope bias guard (sample decks already AR≈1) |
-| 8 | [Phase C Steps 53–55, 57](#phase-c--sol-144-static-aeroelastics-steps-5355-57) | Planned | Unblocked (AE1 Step F closed); AE1 Step C optional | Maneuver loads, DIVERG q-sweep, viewer |
-| 9 | [Monitor points & section loads — Phase 1 (static)](#monitor-points--section-loads--phase-1-static) | Planned | Unblocked (AE1 Step F closed) | Structures-team loads handoff; precursor to dynamic gust loads at monitors |
-| 10 | [Phase 2 / Phase 3 / Future development](#phase-2--phase-3--future-development) | Planned | Optional | Long-tail capability |
+| 3 | [AE11 — D_jx YAW column + AESURF hinge geometry](#minor-ae11--d_jx-yaw-column-duplicates-roll-aesurf-hinge-geometry-ignored) | MINOR | Open | Vertical-fin trim, hinge-moment derivs (non-blocking for AE1) |
+| 4 | [AE12 — SPLINE2 DTOR/DTHZ warning (PG-normal half not a bug)](#minor-ae12--spline2-dtordthz-silently-ignored-pg-normal-half-misidentified) | MINOR | Open | User-input safety (PG-normal half re-diagnosed: not a bug) |
+| 5 | [A7 — Cosine chordwise spacing helper + low-NCHORD warning](#minor-a7--default-chordwise-box-count-too-low-no-cosine-chordwise-spacing) | MINOR | Open (code) | Pitching-moment convergence (sample decks already at NCHORD=8) |
+| 6 | [A8 — Box-AR pre-solve warning](#minor-a8--spanwise-box-count-aspect-ratio-must-be-o1-companion-to-a7) | MINOR | Open (code) | Lift-slope bias guard (sample decks already AR≈1) |
+| 7 | [Phase C Steps 53–55, 57](#phase-c--sol-144-static-aeroelastics-steps-5355-57) | Planned | Unblocked (AE1 Step F closed) | Maneuver loads, DIVERG q-sweep, viewer |
+| 8 | [Monitor points & section loads — Phase 1 (static)](#monitor-points--section-loads--phase-1-static) | Planned | Unblocked (AE1 Step F closed) | Structures-team loads handoff; precursor to dynamic gust loads at monitors |
+| 9 | [Phase 2 / Phase 3 / Future development](#phase-2--phase-3--future-development) | Planned | Optional | Long-tail capability |
 
 **Closed in this branch (full detail in CHANGELOG `[Unreleased]` and `docs/40_history`):**
 AE2–AE7; AE9 (per-TRIM Mach AIC cache + supersonic guard); **AE10** (SOL 144 CLI dispatch from
@@ -95,32 +94,15 @@ the %-full-scale gate (2026-06-13).
 
 ---
 
-### AE1 Step C — `Q_aa` rigid-body null-space gate
-
-**MINOR — regression guard only. NOT the SC2 trim lead.** The property this gate asserts is
-**already satisfied**: measured `‖Q_aa · u_tz‖ = 2.2e-14` on HA144A. Keep it as a cheap
-permanent guard against a future spline regression, not as a lead on the trim error.
-
-With `g_slope`/`g_disp` from the SPLINE2 path correct, lock in the gain with a regression gate
-that asserts `Q_aa · u_rb ≈ 0` (rigid-body translation/rotation basis) to machine precision
-when the model is unconstrained, or matches an exact rigid-body ghost-force pattern when SPC
-is applied. Assert against the actual rigid-body translation/rotation basis (not an arbitrary
-pitch field, which legitimately loads the aero and is not a null-space member).
-
-**Acceptance:** `Q_aa · u_rb` residual < 1e-10 on HA144A, val_vlm_rect_ar8, and a **dihedral
-fixture (still to be added** — `TestGlobalRigidBody` currently covers swept-planar and
-rect-planar only, no out-of-plane z≠0 grids).
-
----
-
 ### V-AE1 gate (full acceptance — `test_ae1_fullspan.py`)
 
 The SC1/rigid sub-gates are closed by the half-span removal and Steps B/E/G; V-AE1d (SC2) is
 now closed under the %-full-scale gate (AE1 Step F, 2026-06-13).
 
-- **V-AE1b** (closed) — `Q_aa·u_rb`/`g_slope·u_rb`/`g_disp·u_rb` rigid-body null-space
-  residuals < 1e-10 on HA144A, val_vlm_rect_ar8. ✅ PASSING (`TestGlobalRigidBody`); the
-  dihedral (z≠0) fixture is the remaining gap, tracked on Step C.
+- **V-AE1b** (closed) — `g_slope·u_rb`/`g_disp·u_rb` rigid-body null-space residuals on
+  HA144A and a math-exact rect fixture. ✅ PASSING (`TestGlobalRigidBody`). The composed
+  `Q_aa·u_rb` null-space gate and the out-of-plane (z≠0) dihedral fixture were the
+  remaining gaps and are now closed by AE1 Step C (2026-06-13).
 - **V-AE1c / V-AE3** (closed 2026-06-13, `tests/aero/test_vae3_cross_check.py`) — an INDEPENDENT
   unit-Cp cross-check of the skj coupling-path total force AND moment against `solve_rigid_cl`
   resultants. Compares against `solve_rigid_cl` (which rebuilds its own AIC and K–J resultants),
@@ -510,7 +492,7 @@ derivatives, optional CFD/WT mean-flow injection, and divergence dynamic pressur
            f_g  = G_kgᵀ · Skj · AJJ*⁻¹ · w_g            (baseline camber/twist/incidence + CFD/WT)
 ```
 
-**Prerequisite:** AE1 acceptance closed (Step C regression guard remains open; A/B/D/E/F/G done). Step 52 (determined trim) exists on the
+**Prerequisite:** AE1 acceptance closed (Steps A–G done, including the Step C regression guard). Step 52 (determined trim) exists on the
 `aeroelastics` branch as `run_sol144_trim`; over-determined trim and rate-aero columns
 are unimplemented.
 
@@ -519,7 +501,7 @@ are unimplemented.
 ### Step 52 — SOL 144 trim solve + flexible derivatives (`sol144.py`)
 
 **Status (2026-06-12):** determined-case Schur trim solver exists. Resolved defects:
-AE2–AE7, AE9, and AE1 Steps A, B, D, E, F, G. Open: AE1 Step C (regression guard). Over-determined trim and
+AE2–AE7, AE9, and AE1 Steps A, B, C, D, E, F, G. Over-determined trim and
 rate-aero columns remain.
 
 **Objective:** Solve the flexible trim problem (determined and over-determined) and
