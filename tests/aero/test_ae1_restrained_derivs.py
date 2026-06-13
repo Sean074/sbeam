@@ -6,14 +6,22 @@ chain) instead of the prior one-pass finite-difference hybrid (AE8).  The trim
 problem is linear in each label, so the analytic columns equal the old FD columns
 to round-off — these tests lock both that equivalence and the physical targets:
 
-  * the rigid derivative columns are untouched (CZα = 5.071, CMα = −2.871);
+  * the rigid derivative columns are untouched (CZα = 5.071, CMα = −2.871) — the
+    full rigid longitudinal set is gated separately in test_ha144a_rigid_derivs.py;
   * the restrained CZα reproduces NASTRAN HA144A Table 7-1 (5.103 at q=40, the
     documented ~0.6 % flexible increment over the rigid value);
   * the analytic columns match the captured pre-rewrite FD baseline.
 
-The remaining Table 7-1 restrained columns (Cmα, Cmq, CZδe, Cmδe, …) and the
-documented high-q flexible increment require the MSC HA144A manual values; sourcing
-them is the completion of V-AE1e and remains tracked on AE8.
+Reference provenance — RESTRAINED vs UNRESTRAINED are distinct quantities, do not
+conflate them:
+  * The 5.103 target is the MSC/NASTRAN Aeroelastic Analysis User's Guide *Table 7-1
+    RESTRAINED* CZα (SUPORT held). This is what `_compute_restrained_derivs`
+    computes (Step G) and the only flexible column gated today.
+  * The ASTROS*/ZAERO Applications Manual (DTIC ADA370433, Table 3.1.1) tabulates
+    the *UNRESTRAINED* (mean-axis, free-flight) flexible column — a DIFFERENT number
+    (CZα = 5.127 at q=40, 7.772 at q=1200). sbeam does not yet compute the
+    unrestrained set; that is the open AE8 work. ADA370433 now SOURCES those
+    acceptance targets (recorded below) — they were previously "need the manual".
 """
 
 import warnings
@@ -32,7 +40,18 @@ BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbe
 # NASTRAN HA144A references (sbeam sign convention: CZ stored positive).
 RIGID_CZA = 5.07097      # rigid CZα (NASTRAN −5.07097)
 RIGID_CMA = -2.87093     # rigid CMα (NASTRAN −2.871)
-REST_CZA_Q40 = 5.103     # Table 7-1 restrained CZα at q=40 (0.6% flexible increment)
+REST_CZA_Q40 = 5.103     # MSC Table 7-1 RESTRAINED CZα at q=40 (0.6% flexible increment)
+
+# AE8 acceptance targets — UNRESTRAINED (mean-axis) longitudinal derivatives,
+# MSC/NASTRAN column of ADA370433 Table 3.1.1 (M=0.9). 1/rad. NOT gated yet:
+# sbeam computes only the restrained set; gate these when AE8 lands the mean-axis
+# (inertial-relief) derivative path. Distinct from the restrained values above.
+NASTRAN_UNRESTRAINED = {
+    40.0:   {"CZa": 5.127, "CMa": -2.907, "CZq": 12.158, "CMq": -10.007,
+             "CZde": 0.2520, "CMde": 0.5678},
+    1200.0: {"CZa": 7.772, "CMa": -4.557, "CZq": 16.100, "CMq": -12.499,
+             "CZde": 0.5219, "CMde": 0.3956},
+}
 
 # Captured pre-rewrite finite-difference baseline (q=40), for the FD≈analytic
 # regression — the rewrite must be behaviour-preserving.

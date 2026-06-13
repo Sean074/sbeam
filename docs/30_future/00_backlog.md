@@ -189,9 +189,16 @@ AE1 is tracked above; AE2/AE3/AE4/AE5/AE6/AE7 are resolved (see CHANGELOG).
             confirms restrained CZα = 5.112 vs Table 7-1 5.103 (q=40) within 1%.
 FIX:    Add the unrestrained mean-axis derivative set (ZAERO Eq. 12.14/12.15): transform to
         the mean (free-flight) axis with inertial relief so the rigid-body acceleration
-        balances the aero increment. Acceptance: HA144A Table 7-1 UNRESTRAINED columns within
-        1% (restrained columns already gated by V-AE1e). Completing V-AE1e (the remaining
-        restrained columns Cmα, Cmq, CZδe, Cmδe, …) needs the MSC manual values and rides here.
+        balances the aero increment. Acceptance: HA144A UNRESTRAINED columns within 1%.
+        TARGETS NOW SOURCED — ADA370433 Table 3.1.1 (M=0.9) gives the MSC/NASTRAN
+        unrestrained column, recorded as NASTRAN_UNRESTRAINED in
+        tests/aero/test_ae1_restrained_derivs.py: q=40 {CZα 5.127, CMα −2.907, CZq 12.158,
+        CMq −10.007, CZδe 0.2520, CMδe 0.5678}; q=1200 {CZα 7.772, CMα −4.557, CZq 16.100,
+        CMq −12.499, CZδe 0.5219, CMδe 0.3956}. (NOTE: these are UNRESTRAINED, distinct from
+        the MSC Table 7-1 RESTRAINED column gated by V-AE1e — do not conflate.) The full
+        RIGID column is now gated independently (tests/aero/test_ha144a_rigid_derivs.py vs
+        ADA370433). Completing V-AE1e's remaining RESTRAINED columns (Cmα, Cmq, CZδe, Cmδe)
+        still needs the MSC Table 7-1 values, not ADA370433, and rides here.
 SC2:    This item ALSO owns the SC2 (q=1200) high-q flexible-trim residual that keeps AE1
         Step F's SC2 value-gate xfailed (full-span: ANGLEA 0.003242 vs 0.001373; ELEV 0.017727
         vs 0.019325 — tests/aero/test_ae1_fullspan.py::TestVAE1dSC2). Closing Step G (restrained

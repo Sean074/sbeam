@@ -81,7 +81,12 @@ def test_distinct_subsonic_mach_gives_distinct_trim():
 
 
 def test_supersonic_trim_rejected():
-    """A supersonic TRIM Mach raises rather than silently clamping to 0.99."""
+    """A supersonic TRIM Mach raises rather than silently clamping to 0.99.
+
+    M=1.3 is the HA144A third flight condition in ADA370433 Table 3.1.2
+    (q=1151 psf, ZONA7) — out of scope for sbeam's steady subsonic VLM, so the
+    end-to-end trim path must reject it at the AE9 guard rather than solve it.
+    """
     bulk, _gi, aero = _load()
     bulk.trims[1].mach = 1.3
     subcase = SubcaseControl(subcase_id=1, spc_sid=1, trim_sid=1)
