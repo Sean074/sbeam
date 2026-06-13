@@ -43,6 +43,9 @@ are the day-to-day references; higher numbers are planning and historical record
 | [`02_static_aero_zaero_review.md`](30_future/02_static_aero_zaero_review.md) | ZAERO capability review of the static-aero plan |
 | [`designs/amode_card.md`](30_future/designs/amode_card.md) | AMODE assumed-mode card — design proposal |
 | [`designs/rbmref_card.md`](30_future/designs/rbmref_card.md) | RBMREF rigid-body-mode reference card — design proposal |
+| [`designs/dlm_rfa_flutter_gust.md`](30_future/designs/dlm_rfa_flutter_gust.md) | DLM / RFA flutter & gust (Phase D) — design proposal |
+| [`designs/matrix_gaf_export.md`](30_future/designs/matrix_gaf_export.md) | Matrix / GAF **export** (OUTPUT4 → FLAPS/ZAERO) — design proposal |
+| [`designs/matrix_reuse_store.md`](30_future/designs/matrix_reuse_store.md) | Matrix **reuse store** (precompute/save/reload K, M, aero; dual-mode SOL 144) — design proposal |
 
 ## 40_history — Historic data & fixes
 

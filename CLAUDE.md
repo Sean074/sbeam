@@ -99,8 +99,8 @@ sbeam/
 ├── parser/         # bdf_reader.py, case_control.py
 ├── model/          # grid.py, element.py, property.py, material.py, load.py, constraint.py, mass.py, aero.py
 ├── assembly/       # stiffness.py, mass_matrix.py, rbe3.py
-├── solver/         # sol101.py, sol103.py
-├── results/        # results.py, f06_writer.py
+├── solver/         # sol101.py, sol103.py, sol144.py (static aeroelastic trim)
+├── results/        # results.py, f06_writer.py, load_export.py
 ├── gpwg.py         # Mass and CG (GPWG)
 ├── aero/           # panel.py, vlm.py, integration.py, corrections.py, aero_model.py
 └── viewer/         # app.py, geometry.py, results_view.py, case_control_ui.py
@@ -124,6 +124,7 @@ Mass and CG computation is called **GPWG** (Grid Point Weight Generator), not "O
 
 - **SOL 101:** nodal displacements, SPC reactions, applied load echo, CBAR end forces/moments, CBAR stresses at recovery points, CBUSH element forces (global coordinates)
 - **SOL 103:** natural frequencies (Hz and rad/s), normalised mode shapes, modal mass fractions
+- **SOL 144** (static aeroelastic trim, Phase C): trim variables, rigid + elastic-restrained stability derivatives, total CL/CMY, critical divergence dynamic pressure, displacements/CBAR loads, and (on `AEROF`/`APRES` request) per-box ΔCp and forces. Also exports trimmed flight loads as `FORCE`/`MOMENT` cards (`<stem>.aero_loads.bdf`)
 
 ## Verification Test Cases
 

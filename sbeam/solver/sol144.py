@@ -750,6 +750,38 @@ def _compute_restrained_derivs(
     return rest_derivs
 
 
+def _divergence_dynamic_pressure(K_ll: np.ndarray, Q_ll: np.ndarray) -> Optional[float]:
+    """Critical static-aeroelastic divergence dynamic pressure (restrained l-set).
+
+    Divergence occurs when the effective stiffness ``K_ll - q*Q_ll`` first becomes
+    singular, i.e. ``K_ll x = q*Q_ll x``.  Rewriting as the standard eigenproblem
+    ``(K_ll^{-1} Q_ll) x = (1/q) x``, the eigenvalues are ``1/q``; the lowest
+    positive divergence pressure is the reciprocal of the largest positive real
+    eigenvalue.  The restrained l-set (SUPORT DOFs removed) is used because the
+    full a-set ``K_aa`` is singular for the free-flight SUPORT model.
+
+    This is the single critical divergence pressure derived from the trim
+    matrices.  A user-driven DIVERG-card q-sweep is a separate item (Step 55).
+
+    Returns:
+        Lowest positive divergence dynamic pressure, or None if the model does
+        not diverge (no positive real eigenvalue — e.g. a stiffening surface).
+    """
+    if K_ll.size == 0:
+        return None
+    try:
+        M = scipy.linalg.solve(K_ll, Q_ll)        # K_ll^{-1} Q_ll
+        eigvals = scipy.linalg.eigvals(M)
+    except Exception:
+        return None
+    # Keep eigenvalues that are real and positive (1/q must be a positive real).
+    real_pos = [ev.real for ev in eigvals
+                if abs(ev.imag) < 1e-8 * max(1.0, abs(ev.real)) and ev.real > 1e-12]
+    if not real_pos:
+        return None
+    return float(1.0 / max(real_pos))
+
+
 def run_sol144_trim(
     bulk: BulkData,
     subcase: SubcaseControl,
@@ -1040,6 +1072,29 @@ def run_sol144_trim(
     total_cl = Fz_total / sref if sref > 0 else 0.0
     total_cm = My_total / (sref * cref) if sref * cref > 0 else 0.0
 
+    # ------------------------------------------------------------------ #
+    # Step 56 — per-box pressures/forces, g-set flight loads, divergence q
+    # ------------------------------------------------------------------ #
+    # f_box_vec is in force/q units; the physical box force is q * f_box_vec.
+    # ΔCp is the normal-projected force per unit area in force/q units (so the
+    # box's z-normal flat-plate limit reduces to f_box_vec[3j+2] / area).
+    n_box = len(aero.boxes)
+    box_forces = np.empty((n_box, 3))
+    box_cp = np.empty(n_box)
+    for j, b in enumerate(aero.boxes):
+        f_j = f_box_vec[3 * j:3 * j + 3]
+        box_forces[j] = q_dyn * f_j
+        box_cp[j] = float(np.dot(f_j, b.normal) / b.area) if b.area > 0 else 0.0
+
+    # g-set aero flight-load vector for FORCE/MOMENT export (plain trim:
+    # G_disp^T · q · P_k).  Preserves net force/moment through the spline.
+    grid_loads = aero.g_disp.T @ (q_dyn * f_box_vec)
+
+    # Critical divergence dynamic pressure on the restrained l-set.
+    K_ll_div = K_aa[np.ix_(l_idx, l_idx)]
+    Q_ll_div = Q_aa[np.ix_(l_idx, l_idx)]
+    q_div = _divergence_dynamic_pressure(K_ll_div, Q_ll_div)
+
     k_aa_lu_trim = scipy.linalg.lu_factor(K_aa)
 
     return Sol144TrimResult(
@@ -1059,4 +1114,8 @@ def run_sol144_trim(
         box_gamma=gamma,
         total_cl=total_cl,
         total_cm=total_cm,
+        box_cp=box_cp,
+        box_forces=box_forces,
+        grid_loads=grid_loads,
+        q_div=q_div,
     )

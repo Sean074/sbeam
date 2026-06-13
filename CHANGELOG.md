@@ -11,6 +11,35 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Phase 2 completion.
 
+### Added
+
+**SOL 144 runs end-to-end from the CLI — f06 output + trimmed flight-load export (AE10 + Step 56, 2026-06-13)**
+
+`sbeam deck.bdf` now solves a SOL 144 static aeroelastic trim deck end-to-end. Previously
+`run_sol144_trim` had no production caller and the deck exited with "SOL 144 is not supported".
+
+- **CLI dispatch (AE10).** `main.py` gained a SOL 144 branch that builds the `AeroModel` +
+  `grid_index`, seeds an `AeroCache` shared across subcases (multi-Mach decks build each AIC
+  once), runs `run_sol144_trim` per TRIM subcase, and writes `<stem>.f06` plus
+  `<stem>.aero_loads.bdf`. `build_aero_model` rejects half-span (`SYMXZ≠0`) decks.
+- **SOL 144 f06 writer (Step 56).** New `build_f06_sol144_text` / `write_f06_sol144` with
+  TRIM VARIABLES, STABILITY DERIVATIVES (rigid + elastic restrained), AERODYNAMIC TOTALS
+  (CL/CMY), AERODYNAMIC DIVERGENCE, and an AERODYNAMIC BOX PRESSURES AND FORCES block gated on
+  the new `AEROF`/`APRES` case-control requests. The DISPLACEMENT / BAR FORCE / BAR STRESS
+  blocks were extracted into shared helpers reused by SOL 101 (its output is byte-identical).
+- **Trimmed flight-load export.** New `results/load_export.py` writes comma free-field
+  `FORCE`/`MOMENT` bulk cards per subcase from `Sol144TrimResult.grid_loads` (`g_disp^T·q·f_box`);
+  the set sums to the trimmed lift/moment (verified to 3.5e-9 on HA144A).
+- **Result enrichment + divergence.** `Sol144TrimResult` gained `box_cp`, `box_forces`,
+  `grid_loads`, and `q_div`. `sol144._divergence_dynamic_pressure` computes the single critical
+  divergence dynamic pressure on the restrained l-set.
+- **Case control.** `AEROF` / `APRES` output requests parsed onto `SubcaseControl`; stale
+  `parse_case_control` docstring corrected.
+- **Deferred (Step 56's own carve-outs):** maneuver-balanced (aero + inertial) load export →
+  Step 53; the `DIVERG`-card q-sweep + divergence mode shape → Step 55.
+- **Tests.** Full suite 792 passed, 2 xfailed: end-to-end CLI run, f06 block coverage with
+  AEROF/APRES gating, FORCE/MOMENT sum-to-lift + re-parse round-trip, SOL 144 case-control.
+
 ### Removed
 
 **Half-span / symmetry (AEROS SYMXZ/SYMXY) support removed — sbeam is full-span only (2026-06-12)**

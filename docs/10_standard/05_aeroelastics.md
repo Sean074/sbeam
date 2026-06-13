@@ -27,6 +27,9 @@ Results   (cp, cl_section, CL, CY, CM, CDi, e, per_surface, …)
 | `sbeam/aero/aero_model.py` | `AeroModel` container + `build_aero_model()` factory |
 | `sbeam/aero/spline.py` | **Phase B** — `build_g_spline()`: builds `g_slope` (n_box×n_g) and `g_disp` (3n_box×n_g) from `SPLINE2` + `ATTACH` + `SPLINE0` cards |
 | `sbeam/aero/coupling.py` | `build_qaa` flexible aero stiffness `Q_aa = G_dispᵀ S_kj (A_jj*)⁻¹ D_jk G_slope`; `build_fg` baseline aero load; `build_gaf` modal GAF `Q_hh = Φᵀ Q_aa Φ` |
+| `sbeam/solver/sol144.py` | `run_sol144_trim` (Schur trim solve, derivatives), `run_aeroelastic_static`, `AeroCache`, `_divergence_dynamic_pressure` |
+| `sbeam/results/f06_writer.py` | `build_f06_sol144_text` / `write_f06_sol144` — SOL 144 trim f06 blocks (shares displacement/CBAR helpers with SOL 101) |
+| `sbeam/results/load_export.py` | `write_aero_load_cards` — trimmed flight loads as `FORCE`/`MOMENT` bulk cards |
 | `sbeam/viewer/aero_view.py` | Plotly box mesh, cp colour map, section-load strip chart |
 
 ---
@@ -49,9 +52,10 @@ the remaining AE items in `docs/30_future/00_backlog.md` (Code Review 2026-06-11
 | ~~AE6~~ | ~~Forces applied at ¾-chord collocation point, not ¼-chord bound vortex~~ | **RESOLVED** — `AeroBox.force_point = (bound_a+bound_b)/2`; `g_disp` and ATTACH lever evaluated at force_point; sol144 moment arms use `force_point[0]` ✓ |
 | ~~AE7~~ | ~~No inertial trim columns; transport terms missing~~ | **RESOLVED** — `_build_inertial_cols` returns (n_g, n_labels) M_ax; translational + spin + transport terms; M_ax_a passed to Schur and derivs; 10/10 tests pass ✓ |
 | ~~AE9~~ | ~~Mach fixed per model (AEROS), TRIM Mach ignored; supersonic silently clamped~~ | **RESOLVED** — per-TRIM Mach via Mach-keyed `AeroCache`; AEROS fallback + mismatch warning; supersonic guard raises; `test_ae9_mach.py` ✓ |
-| AE8 / AE10 | AE8: unrestrained (mean-axis) derivative set still missing (restrained half closed analytically — Step G ✓); AE10: SOL 144 CLI dispatch | Trim system generality |
+| AE8 | Unrestrained (mean-axis) derivative set still missing (restrained half closed analytically — Step G ✓) | SC2 high-q flexible trim |
+| ~~AE10~~ | ~~SOL 144 unreachable from `main.py` — no CLI dispatch~~ | **RESOLVED** — `main.py` SOL 144 branch builds the AeroModel/AeroCache and runs `run_sol144_trim` per subcase; f06 + flight-load export written (Step 56). End-to-end `sbeam ha144a.bdf` runs ✓ |
 
-**Do not use SOL 144 trim results for anything until AE1, AE8–AE10 are resolved.** Rigid
+**Do not use SOL 144 trim results for anything until AE1 and AE8 are resolved.** Rigid
 `solve_rigid_cl` results on **unswept** surfaces are unaffected. AE2–AE7 are resolved;
 the sections below describe the *intended* design; passages known to diverge from the
 implementation carry an `⚠ AE#` marker. Reproduction script: `studies/_review_ha144a_check.py`.
@@ -488,6 +492,47 @@ rebuild). Multiple subsonic subcases at different Mach therefore trim correctly.
 - M = 0.0 (default) gives bit-identical results to the pre-correction solver.
 - For M < 0.3 the correction is < 5% (within typical VLM modelling error); it can
   be omitted for low-speed work.
+
+---
+
+## Running SOL 144 & Output (AE10 + Step 56)
+
+A SOL 144 deck runs end-to-end from the CLI:
+
+```
+sbeam ha144a.bdf
+# → Written: ha144a.f06
+# → Written: ha144a.aero_loads.bdf
+```
+
+**Dispatch (`main.py`, AE10).** Unlike the two-arg SOL 101/103 path, the SOL 144 branch
+builds `grid_index` and an `AeroModel` (`build_aero_model`, which rejects `SYMXZ≠0`
+half-span decks), seeds an `AeroCache` shared across subcases, and calls
+`run_sol144_trim(bulk, subcase, aero, aero_cache=cache)` per TRIM subcase.
+
+**f06 output (`build_f06_sol144_text` / `write_f06_sol144`).** Per subcase:
+
+| Block | Source |
+|-------|--------|
+| TRIM VARIABLES (free vs prescribed) | `result.trim_vars` + the TRIM card |
+| STABILITY DERIVATIVES (rigid + elastic restrained) | `result.rigid_derivs`, `result.restrained_derivs` |
+| AERODYNAMIC TOTALS (CL / CMY) | `result.total_cl`, `result.total_cm` |
+| AERODYNAMIC DIVERGENCE (`q_div`, `q/q_div`) | `result.q_div` (restrained l-set; see below) |
+| DISPLACEMENT / BAR FORCES / BAR STRESSES | shared helpers, reused from the SOL 101 writer |
+| AERODYNAMIC BOX PRESSURES AND FORCES | `result.box_cp`, `result.box_forces` — **only when the subcase requests `AEROF` or `APRES`** |
+
+**Divergence diagnostic.** `sol144._divergence_dynamic_pressure(K_ll, Q_ll)` returns the
+single critical divergence dynamic pressure — the reciprocal of the largest positive-real
+eigenvalue of `K_ll⁻¹ Q_ll` on the **restrained l-set** (the free-flight SUPORT `K_aa` is
+singular, so the full a-set is not used). `None` when the model does not diverge. The
+`DIVERG`-card q-sweep and divergence mode shape remain Step 55.
+
+**Flight-load export (`results/load_export.py`).** `write_aero_load_cards` writes
+`<stem>.aero_loads.bdf` — comma free-field `FORCE`/`MOMENT` cards (unit scale factor;
+direction components carry the physical load) from `result.grid_loads` (`g_disp^T·q·f_box`),
+one card block per subcase with `SID = subcase_id`. By spline force/moment conservation the
+set sums to the trimmed lift/moment. The **maneuver-balanced** (aero + inertial) export
+remains Step 53.
 
 ---
 

@@ -86,3 +86,8 @@ class Sol144TrimResult:
     box_gamma: Optional[np.ndarray] = None   # (n_box,) circulation strengths at trim
     total_cl: float = 0.0                # total CL = Fz / (q * sref)
     total_cm: float = 0.0               # total CMy / (q * sref * cref) about x_ref
+    # --- Step 56 outputs (f06 blocks, AEROF/APRES, flight-load export) ---
+    box_cp: Optional[np.ndarray] = None       # (n_box,) ΔCp per box at trim (normal-projected force/q / area)
+    box_forces: Optional[np.ndarray] = None   # (n_box, 3) physical aero force per box = q * (skj@gamma)
+    grid_loads: Optional[np.ndarray] = None   # (n_dofs,) g-set aero flight-load vector = g_disp^T (q * f_box)
+    q_div: Optional[float] = None             # critical divergence dynamic pressure (restrained l-set); None if none

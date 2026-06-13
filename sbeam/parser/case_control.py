@@ -16,6 +16,8 @@ class SubcaseControl:
     oload: bool = False               # Request OLOAD output
     force: bool = False               # Request FORCE output
     stress: bool = False              # Request STRESS output
+    aerof: bool = False               # Request AEROF output (SOL 144 aero box forces)
+    apres: bool = False               # Request APRES output (SOL 144 aero box pressures)
 
 
 @dataclass
@@ -64,7 +66,8 @@ _SUPPORTED_SOLS = frozenset({101, 103, 144})
 def parse_case_control(lines: list) -> CaseControl:
     """Parse case control lines (above BEGIN BULK) into a CaseControl object.
 
-    Raises ValueError if no SOL card is found or SOL value is not 101 or 103.
+    Raises ValueError if no SOL card is found or SOL value is not one of the
+    supported solutions (101, 103, 144).
     """
     sol = None
     title = ""
@@ -122,6 +125,10 @@ def parse_case_control(lines: list) -> CaseControl:
                 current_sc.force = True
             elif keyword == "STRESS":
                 current_sc.stress = True
+            elif keyword == "AEROF":
+                current_sc.aerof = True
+            elif keyword == "APRES":
+                current_sc.apres = True
 
     if current_sc is not None:
         subcases.append(current_sc)

@@ -202,6 +202,40 @@ class TestOutputRequests:
     def test_oload_defaults_false(self, cc_static):
         assert cc_static.subcases[0].oload is False
 
+    def test_aerof_defaults_false(self, cc_static):
+        assert cc_static.subcases[0].aerof is False
+
+    def test_apres_defaults_false(self, cc_static):
+        assert cc_static.subcases[0].apres is False
+
+
+# ---------------------------------------------------------------------------
+# SOL 144 case control (TRIM, AEROF, APRES)
+# ---------------------------------------------------------------------------
+
+class TestSol144CaseControl:
+    _SOL144_CC = [
+        "SOL 144",
+        "SUBCASE 1",
+        "  TRIM   = 1",
+        "  SPC    = 1",
+        "  AEROF  = ALL",
+        "  APRES  = ALL",
+        "BEGIN BULK",
+    ]
+
+    def test_sol_144_accepted(self):
+        assert parse_case_control(self._SOL144_CC).sol == 144
+
+    def test_trim_sid_parsed(self):
+        assert parse_case_control(self._SOL144_CC).subcases[0].trim_sid == 1
+
+    def test_aerof_true(self):
+        assert parse_case_control(self._SOL144_CC).subcases[0].aerof is True
+
+    def test_apres_true(self):
+        assert parse_case_control(self._SOL144_CC).subcases[0].apres is True
+
 
 # ---------------------------------------------------------------------------
 # METHOD (SOL 103)

@@ -2718,3 +2718,62 @@ suite green (223 passed, 2 xfailed).
 - AE8 stays open for the unrestrained (mean-axis / inertial-relief, ZAERO Eq 12.14/12.15)
   derivative set and the remaining Table 7-1 restrained columns (need the MSC manual values).
 - **Still open (unchanged by this work):** the SC2 (q=1200) flexible residual — AE8 / Step G.
+
+---
+
+### Phase C — AE10 + Step 56: SOL 144 CLI dispatch, f06 output & flight-load export ✅ COMPLETE (2026-06-13)
+
+**Objective:** Make SOL 144 reachable end-to-end from `main.py` (AE10) and write the static
+aeroelastic trim results to `.f06` plus a trimmed flight-load export (Step 56). Before this,
+`run_sol144_trim` had no production caller — `sbeam ha144a.bdf` exited with "SOL 144 is not
+supported" — and there was no f06 trim formatter.
+
+**Deliverables:**
+- **`sbeam/main.py` — SOL 144 branch (AE10):** unlike the two-arg SOL 101/103 pattern,
+  the branch builds `grid_index` (`build_grid_index`) and an `AeroModel`
+  (`build_aero_model`, which rejects `SYMXZ≠0`), seeds an `AeroCache` shared across subcases
+  so a multi-Mach deck builds each AIC once, and calls `run_sol144_trim` per subcase. Writes
+  `<stem>.f06` and `<stem>.aero_loads.bdf`.
+- **`sbeam/results/f06_writer.py` — `build_f06_sol144_text` / `write_f06_sol144`:** new SOL 144
+  block set — TRIM VARIABLES (free vs prescribed), STABILITY DERIVATIVES (rigid + elastic
+  restrained), AERODYNAMIC TOTALS (CL/CMY), AERODYNAMIC DIVERGENCE, and — gated on the
+  subcase's `AEROF`/`APRES` requests — an AERODYNAMIC BOX PRESSURES AND FORCES block. The
+  DISPLACEMENT / BAR FORCE / BAR STRESS blocks were factored into shared helpers
+  (`_displacement_block`, `_bar_forces_block`, `_bar_stresses_block`) reused by SOL 101 and 144
+  (SOL 101 output is byte-identical).
+- **`sbeam/results/results.py` — `Sol144TrimResult` enrichment:** added `box_cp`,
+  `box_forces` (physical, `q·skj@γ`), `grid_loads` (`g_disp^T·q·f_box`, the FORCE/MOMENT
+  export source), and `q_div`.
+- **`sbeam/solver/sol144.py`:** `run_sol144_trim` now populates the four new fields;
+  `_divergence_dynamic_pressure` computes the single critical divergence pressure on the
+  restrained l-set (`q_div = 1/max positive-real eig of K_ll⁻¹Q_ll`; `None` if non-diverging).
+- **`sbeam/results/load_export.py` (new):** `build_aero_load_cards_text` / `write_aero_load_cards`
+  emit comma free-field `FORCE`/`MOMENT` cards (unit scale, components carry the load) per
+  subcase; the set sums to the trimmed lift/moment.
+- **`sbeam/parser/case_control.py`:** `AEROF` / `APRES` output requests parsed onto
+  `SubcaseControl`; the stale `parse_case_control` docstring ("not 101 or 103") corrected.
+- **Tests:** `tests/test_main.py::test_sol144_produces_f06_and_loads` (end-to-end, AE10);
+  `tests/results/test_f06_sol144.py` (block presence + AEROF/APRES gating + one-row-per-box);
+  `tests/results/test_load_export.py` (FORCE Fz sum = `q·CL·sref` to 1e-6, re-parse round-trip);
+  `tests/parser/test_case_control.py::TestSol144CaseControl` (SOL 144 + TRIM + AEROF/APRES).
+
+**Test/Acceptance:** Full suite green (792 passed, 2 xfailed). On `ha144a_fullspan_sbeam.bdf`
+the exported FORCE Fz sum balances the trimmed lift to 3.5e-9 relative; `q_div ≈ 4034`
+(q=40 → q/q_div ≈ 0.0099).
+
+**Scope boundaries (Step 56 deferrals, held deliberately):**
+- **Maneuver-balanced (aero + inertial) load export** stays with **Step 53** — Step 56's own
+  text routes the maneuver case there; `run_sol144_trim` produces the determined plain trim,
+  so only the plain-trim grid loads are exported.
+- **`DIVERG`-card multi-q sweep + divergence mode shape** stays with **Step 55** — Step 56
+  delivers only the single critical `q_div` diagnostic from the trim matrices.
+
+**Key decisions:**
+- The f06 box block prints the global 1-based box index (no CAERO column) because the
+  box→CAERO map is not carried on `Sol144TrimResult`; keeping the writer signature
+  `(case_control, bulk, result, subcase_id)` identical to SOL 101/103 was preferred over
+  threading the AeroModel into the writer.
+- Divergence is computed on the **restrained l-set** (`K_ll`, `Q_ll`), not the full a-set:
+  the free-flight SUPORT `K_aa` is singular, so an a-set generalized eig would be ill-posed.
+- New result fields are optional with defaults, so existing `Sol144TrimResult` construction
+  and the Step 50 `Sol144Result` are unaffected.

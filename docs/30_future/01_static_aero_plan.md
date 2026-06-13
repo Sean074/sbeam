@@ -572,6 +572,11 @@ equations) via constrained minimization. **Divergence:** solve the eigenvalue pr
   the selection rule (smallest positive real).
 
 ### Step 56 — SOL 144 f06 output + flight/maneuver-load export
+- **DELIVERED 2026-06-13** (with AE10 CLI dispatch) for the **plain determined trim**: f06
+  blocks (TRIM VARIABLES, STABILITY DERIVATIVES, AERODYNAMIC TOTALS, AERODYNAMIC DIVERGENCE,
+  AEROF/APRES box block) + `FORCE`/`MOMENT` flight-load export summing to the trimmed lift.
+  The **maneuver-balanced** load export remains with Step 53; the `DIVERG`-card q-sweep with
+  Step 55. See `docs/40_history/00_completed_development.md`.
 - **Objective:** Write the static aeroelastic results to `.f06`, and export the trimmed loads
   as `FORCE`/`MOMENT` cards for downstream stress analysis.
 - **Scope:** New f06 blocks — TRIM VARIABLES, STABILITY DERIVATIVES, AERODYNAMIC DIVERGENCE,

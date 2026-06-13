@@ -13,25 +13,26 @@ step, give it a step number continuing from Step 39 and apply the same step form
 Order reflects what unblocks the most downstream work; close in sequence unless noted.
 **Lead = AE8 (item 1):** it is the only remaining blocker on the CRITICAL acceptance gate
 (Step F, item 2), which closes automatically when AE8's high-q flexible trim flips SC2 from
-xfail to XPASS. Suite is green as of 2026-06-12 (770 passed, 2 xfailed = the SC2 ANGLEA/ELEV
+xfail to XPASS. Suite is green as of 2026-06-13 (792 passed, 2 xfailed = the SC2 ANGLEA/ELEV
 value-gates).
 
 | # | Item | Severity | Status | What it unblocks |
 |--:|------|----------|--------|------------------|
 | 1 | [AE8 — Unrestrained (mean-axis) set + SC2 high-q flexible trim](#major-ae8--unrestrained-mean-axis-derivative-set-still-missing) | MAJOR | Open — **current lead** | Flips Step F's SC2 xfail→XPASS (closes the acceptance gate); Phase C accuracy. Restrained half already closed (Step G) |
 | 2 | [AE1 Step F — Verify V-AE1d elastic trim](#ae1-step-f--verify-v-ae1d-elastic-trim) | CRITICAL | Open — SC1 live/PASS, SC2 xfail; **no independent work, closes when AE8 lands** | Acceptance gate for AE1; gates Phase C and monitor loads |
-| 3 | [AE10 — SOL 144 CLI dispatch from `main.py`](#major-ae10--sol-144-unreachable-from-main) | MAJOR | Open | End-to-end HA144A solve from main.py; gates monitor points |
-| 4 | [AE1 Step C — `Q_aa` rigid-body null-space gate](#ae1-step-c--q_aa-rigid-body-null-space-gate) | MINOR | Open — land any time | Regression guard for B's spline fix — null space already 2e-14; NOT the trim lead |
-| 5 | [AE11 — D_jx YAW column + AESURF hinge geometry](#minor-ae11--d_jx-yaw-column-duplicates-roll-aesurf-hinge-geometry-ignored) | MINOR | Open | Vertical-fin trim, hinge-moment derivs (non-blocking for AE1) |
-| 6 | [AE12 — SPLINE2 DTOR/DTHZ warning (PG-normal half not a bug)](#minor-ae12--spline2-dtordthz-silently-ignored-pg-normal-half-misidentified) | MINOR | Open | User-input safety (PG-normal half re-diagnosed: not a bug) |
-| 7 | [A7 — Cosine chordwise spacing helper + low-NCHORD warning](#minor-a7--default-chordwise-box-count-too-low-no-cosine-chordwise-spacing) | MINOR | Open (code) | Pitching-moment convergence (sample decks already at NCHORD=8) |
-| 8 | [A8 — Box-AR pre-solve warning](#minor-a8--spanwise-box-count-aspect-ratio-must-be-o1-companion-to-a7) | MINOR | Open (code) | Lift-slope bias guard (sample decks already AR≈1) |
-| 9 | [Phase C Steps 53–57](#phase-c--sol-144-static-aeroelastics-steps-5357) | Planned | Blocked on AE1 (Steps C, F) | Maneuver loads, divergence, viewer |
-| 10 | [Monitor points & section loads — Phase 1 (static)](#monitor-points--section-loads--phase-1-static) | Planned | Blocked on AE1 Step F, AE10 | Structures-team loads handoff; precursor to dynamic gust loads at monitors |
-| 11 | [Phase 2 / Phase 3 / Future development](#phase-2--phase-3--future-development) | Planned | Optional | Long-tail capability |
+| 3 | [AE1 Step C — `Q_aa` rigid-body null-space gate](#ae1-step-c--q_aa-rigid-body-null-space-gate) | MINOR | Open — land any time | Regression guard for B's spline fix — null space already 2e-14; NOT the trim lead |
+| 4 | [AE11 — D_jx YAW column + AESURF hinge geometry](#minor-ae11--d_jx-yaw-column-duplicates-roll-aesurf-hinge-geometry-ignored) | MINOR | Open | Vertical-fin trim, hinge-moment derivs (non-blocking for AE1) |
+| 5 | [AE12 — SPLINE2 DTOR/DTHZ warning (PG-normal half not a bug)](#minor-ae12--spline2-dtordthz-silently-ignored-pg-normal-half-misidentified) | MINOR | Open | User-input safety (PG-normal half re-diagnosed: not a bug) |
+| 6 | [A7 — Cosine chordwise spacing helper + low-NCHORD warning](#minor-a7--default-chordwise-box-count-too-low-no-cosine-chordwise-spacing) | MINOR | Open (code) | Pitching-moment convergence (sample decks already at NCHORD=8) |
+| 7 | [A8 — Box-AR pre-solve warning](#minor-a8--spanwise-box-count-aspect-ratio-must-be-o1-companion-to-a7) | MINOR | Open (code) | Lift-slope bias guard (sample decks already AR≈1) |
+| 8 | [Phase C Steps 53–55, 57](#phase-c--sol-144-static-aeroelastics-steps-5355-57) | Planned | Blocked on AE1 (Steps C, F) | Maneuver loads, DIVERG q-sweep, viewer |
+| 9 | [Monitor points & section loads — Phase 1 (static)](#monitor-points--section-loads--phase-1-static) | Planned | Blocked on AE1 Step F | Structures-team loads handoff; precursor to dynamic gust loads at monitors |
+| 10 | [Phase 2 / Phase 3 / Future development](#phase-2--phase-3--future-development) | Planned | Optional | Long-tail capability |
 
 **Closed in this branch (full detail in CHANGELOG `[Unreleased]` and `docs/40_history`):**
-AE2–AE7; AE9 (per-TRIM Mach AIC cache + supersonic guard); R16–R22; and AE1 Steps **A**
+AE2–AE7; AE9 (per-TRIM Mach AIC cache + supersonic guard); **AE10** (SOL 144 CLI dispatch from
+`main.py`) and **Step 56** (SOL 144 f06 output + trimmed flight-load export, 2026-06-13);
+R16–R22; and AE1 Steps **A**
 (parity + My sign), **B** (RBAR expansion, EA-only SET1, spline math fix, V-AE1b), **D**
 (parity double-count **eliminated by removing half-span support, 2026-06-12** — sbeam is now
 full-span only; the `sym=2` factor and `parity` flag are gone, SC1 trims to NASTRAN on
@@ -202,26 +203,6 @@ SC2:    This item ALSO owns the SC2 (q=1200) high-q flexible-trim residual that 
 
 ---
 
-### [MAJOR] AE10 — SOL 144 unreachable from main
-
-**Files:** `sbeam/main.py`, `sbeam/parser/case_control.py`
-
-```
-[MAJOR] run_sol144_trim has no caller in main.py — the HA144A deck cannot run end-to-end.
-        NOTE: the old "case_control rejects SOL 144" claim is STALE — 144 is already
-        whitelisted (case_control.py:61) and trim_sid is parsed; the only remaining gate is
-        main.py dispatch.  (The original "wire parity from AEROS.SYMXZ" half of this item is
-        RESOLVED — half-span support was removed, so there is no parity flag to wire; see
-        the half-span deprecation in CHANGELOG / `docs/40_history`.)
-FIX:    main.py SOL 144 dispatch is NOT a mirror of the SOL 101/103 two-arg pattern —
-        run_sol144_trim needs a prebuilt AeroModel + grid_index, so main.py must build the
-        aero model (build_aero_model rejects SYMXZ≠0) and pass it in. Retarget this from
-        "Step 56 (f06 output)" to AE10/Step 52 — dispatch must precede f06. Test: an
-        end-to-end SOL 144 run through main.py (extend test_main.py).
-```
-
----
-
 ### [MINOR] AE11 — D_jx YAW column duplicates ROLL; AESURF hinge geometry ignored
 
 **Files:** `sbeam/aero/integration.py:122–125, 130–143`, `sbeam/model/aero.py`
@@ -318,15 +299,16 @@ FIX:    Three permanent gates planned; status today:
 **Files:** `sbeam/aero/aero_model.py`, `sbeam/solver/`, `sbeam/main.py`
 
 ```
-[MINOR] build_aero_model / solve_rigid_cl are called ONLY from viewer/app.py. No solver
-        or CLI path consumes the aero model under SOL 101/103. (STALE: the old line
+[MINOR] build_aero_model / solve_rigid_cl are called from viewer/app.py and (since AE10)
+        from main.py under SOL 144. No solver or CLI path consumes the aero model under
+        SOL 101/103 — expected, since those are non-aero solutions. (STALE: the old line
         "case_control.py rejects SOL 144" is no longer true — 144 is whitelisted at
-        case_control.py:61; the gate that blocks an end-to-end aero solve is now the
-        main.py dispatch, see AE10.) val_vlm_rect_ar8.bdf documents the SOL-101 workaround.
-FIX:    Expected state until Phase B/C land — keep the "expected-state" verdict. The
-        remaining gap is solely the main.py SOL 144 dispatch (overlaps AE10); the
-        "add SOL 144 to the case-control whitelist" action is already DONE — drop it. Also
-        fix the stale parse_case_control docstring at case_control.py:67 ("not 101 or 103").
+        case_control.py:61; and AE10 has landed the main.py SOL 144 dispatch, so the
+        end-to-end aero solve now runs from the CLI.) val_vlm_rect_ar8.bdf documents the
+        SOL-101 workaround.
+FIX:    Expected state for SOL 101/103 — keep the "expected-state" verdict. The end-to-end
+        SOL 144 dispatch gap is CLOSED (AE10). The stale parse_case_control docstring
+        ("not 101 or 103") was corrected when AE10 / Step 56 landed.
 ```
 
 ---
@@ -446,7 +428,7 @@ matches a published IPS example (Harder & Desmarais 1972).
 
 ---
 
-## Phase C — SOL 144 Static Aeroelastics, Steps 53–57
+## Phase C — SOL 144 Static Aeroelastics, Steps 53–55, 57
 
 Phase C wires Phases A + B into the structural stiffness to solve the flexible static
 aeroelastic problem: trim (determined and over-determined), flexible stability/control
@@ -558,11 +540,19 @@ the expected amount; total injected lift/moment matches the supplied integral.
 ### Step 55 — Aeroelastic divergence (`DIVERG`)
 
 **Objective:** Solve `K_aa φ = q · Q_aa φ` for the lowest positive divergence dynamic
-pressure and mode shape.
+pressure and mode shape, driven by a `DIVERG` case-control/bulk entry (multi-q sweep
+and the divergence eigenvector).
+
+**Already delivered (Step 56):** the *single* critical divergence dynamic pressure
+`q_div` is computed on the restrained l-set (`sol144._divergence_dynamic_pressure`) and
+emitted in the SOL 144 f06 AERODYNAMIC DIVERGENCE block. Step 55 remains for the
+`DIVERG`-card-driven q-sweep, the divergence mode shape, and `V_div`.
 
 **Scope/Deliverables:**
+- `DIVERG` card parsing + case-control hook; multi-q divergence sweep
 - `sol144.py`: generalised eigenvalue solve (reuse the dense path from `sol103.py`);
-  filter to the smallest positive real `q`; report `q_div` and `V_div` (given ρ)
+  filter to the smallest positive real `q`; report the divergence **mode shape** and
+  `V_div` (given ρ) in addition to the `q_div` already emitted
 - Divergence depends only on `K_aa` and `Q_aa` (the `w_g`/`Q_ax` RHS does not enter the
   eigenvalue)
 
@@ -571,30 +561,6 @@ matches the published / closed-form Bisplinghoff value within a few %.
 
 **Risk (KC3):** Spurious negative/complex eigenvalues from the unsymmetric `Q_aa`;
 document the "smallest positive real" selection rule; test against Goland.
-
----
-
-### Step 56 — SOL 144 f06 output + flight/maneuver-load export
-
-**Objective:** Write the static aeroelastic results to `.f06`, and export the trimmed
-loads as `FORCE`/`MOMENT` cards for downstream stress analysis.
-
-**Scope/Deliverables:**
-- New f06 blocks in `results/f06_writer.py`: TRIM VARIABLES, STABILITY DERIVATIVES,
-  AERODYNAMIC DIVERGENCE, AERODYNAMIC PRES/FORCES; reuse existing displacement and
-  CBAR-force blocks
-- `results/results.py`: new `Sol144Result` (trim variables, flexible stability/control
-  derivatives, divergence q, box pressures/forces, structural displacement, recovered
-  CBAR loads, grid flight-load vectors)
-- `SubcaseControl` output requests `AEROF` (aero box forces) and `APRES` (aero box
-  pressures)
-- **Load export:** grid loads as NASTRAN `FORCE`/`MOMENT` bulk-data cards per subcase;
-  for a plain trim this is `G_kgᵀ·q·P_k`; for a maneuver case (Step 53) this is the net
-  (aero + inertial) balanced load for downstream stress
-
-**Test/Acceptance:** Snapshot/regression test of the f06 text for a sample SOL 144 run;
-the exported `FORCE`/`MOMENT` set sums to the total trimmed lift/moment (plain trim) and
-to `n_z · W` with zero residual (maneuver case).
 
 ---
 
@@ -627,8 +593,9 @@ pass-through that avoids NASTRAN MONPNT3's known limitation with rigid-element l
 paths. This becomes the standard loads-team deliverable per trim case and is the
 foundation for the dynamic monitor extraction needed for CS-25.341 gust loads later.
 
-**Prerequisite:** AE1 Step F closed (V-AE1d green — wrong trim ⇒ wrong monitor loads),
-AE10 closed (SOL 144 reachable from `main.py`, parity wired from `AEROS.SYMXZ`).
+**Prerequisite:** AE1 Step F closed (V-AE1d green — wrong trim ⇒ wrong monitor loads).
+AE10 is closed (SOL 144 runs end-to-end from `main.py`; Step 56 emits the f06 + trimmed
+flight loads the monitor integration builds on).
 
 **Scope of Phase 1 (this entry):** Static `MONPNT1` + `MONPNT3` emulation only.
 Section-cut running-loads tables ({V, M, T} per spanwise station) tracked as Phase 2;
