@@ -15,8 +15,8 @@ completes a step — never deferred.
 Per-phase index. Within each phase, completed steps come first, then resolved defects in
 chronological order of when they were closed. Defect IDs prefixed with **A** (A1–A9) are
 Phase A VLM defects; **AE** (AE2–AE7) are 2026-06-11 review findings that span Phases
-A/B/C; **AE1 Step A / B** are the closed increments of the open AE1 trim convergence
-defect (see backlog for Steps C–G); **R** (R1–R22) are 2026-05-25 / earlier review NITs;
+A/B/C; **AE1 Step A / B / E** are the closed increments of the open AE1 trim convergence
+defect (see backlog for Steps C, D, F, G); **R** (R1–R22) are 2026-05-25 / earlier review NITs;
 **B** (B1–B4) are Phase 1 viewer bugs; **C-1** is the SOL 103 generalised-mass bug.
 
 - [Principles](#principles)
@@ -34,7 +34,7 @@ defect (see backlog for Steps C–G); **R** (R1–R22) are 2026-05-25 / earlier 
 - [Infrastructure](#infrastructure) — SPARSE, CI1, TEST1, CI2, Step 34, R-defects (R1–R15), C-1, R20, VAL1
 - [Phase A — Static Aeroelastics (VLM)](#phase-a--static-aeroelastics-vlm) — Steps 39–44; resolved defects A1, A9, A2+A3, S45, Step 46, A4, A6
 - [Phase B — Structure ↔ Aero Splining](#phase-b--structure--aero-splining) — Steps 45, 46, 47, 49
-- [Phase C — SOL 144 Static Aeroelastics](#phase-c--sol-144-static-aeroelastics) — Steps 50, 51; resolved AE1 Step A, AE1 Step B, AE2, AE3, AE4+AE6, AE5+AE7
+- [Phase C — SOL 144 Static Aeroelastics](#phase-c--sol-144-static-aeroelastics) — Steps 50, 51; resolved AE1 Step A, AE1 Step B, AE1 Step E, AE2, AE3, AE4+AE6, AE5+AE7
 
 ---
 
@@ -2292,6 +2292,67 @@ finite-difference restrained-derivative path) — addressed by AE1 Steps E and G
 
 **Files:** `sbeam/solver/sol144.py`, `sbeam/aero/spline.py`,
 `sample/ha144a_sbeam.bdf`, `tests/aero/test_spline.py`.
+
+---
+
+### Phase C — AE1 Step E: Moment-sign single-source helper + virtual-work consistency gate ✅ FIXED
+
+**Date resolved:** 2026-06-12. Fifth AE1 increment. Originally scoped (in the
+2026-06-11 review) as a sign fix for an assumed `My = +ΣFz·(x−x_ref)` defect in the
+Schur Ry SUPORT row. Investigation on the post-A/post-B branch found that scope to be
+**stale**: the gross moment sign had already been corrected in Step A, and the moment
+that actually drives the trim is sign- and magnitude-correct. Step E therefore became a
+DRY refactor plus a permanent regression gate, and corrected the project's diagnosis of
+the residual ANGLEA/ELEV error.
+
+**Objective:** (1) Single-source the nose-up-positive pitching-moment-arm convention so
+it cannot drift across the three trim-chain sites that hand-inlined it; (2) lock in, with
+a regression gate, that the `g_disp` virtual-work moment driving the Schur r-set row
+agrees with the direct box-moment formula; (3) re-diagnose and re-document the remaining
+trim error.
+
+**Key finding (re-diagnosis):** The trim r-set (Ry SUPORT) equilibrium is carried through
+the **g_disp virtual-work path**, not the explicit `My` formula — the direct aero moment
+lands on the SUPORT GRID's Ry DOF as exactly 0 and is transferred through the structure
+via `K_rl·K_ll⁻¹`. Measured on HA144A for a unit ANGLEA: the g_disp virtual-work moment
+about the SUPORT matches the direct `−ΣFz·(x_force−x_ref)` formula to ~5e-7 relative and
+Fz to 1e-13. A direct *rigid* 2×2 trim from the (correct) derivatives gives ELEV ≈ +0.795
+while the Schur *flexible* solve gives +0.245 — so the residual gap is the `q·Q_aa`
+flexible increment (Steps C/D), **not** a moment-sign error. The backlog's "the sign
+error currently halves ELEV" claim was wrong and has been corrected.
+
+**Deliverables:**
+
+- `sbeam/solver/sol144.py` — new `_pitch_moment(f_box_vec, boxes, x_ref)` helper: the
+  single source for `My = −ΣFz·(x_force − x_ref)` (nose-up positive, ¼-chord force
+  point per AE6). The three hand-inlined copies in `_compute_aero_forces`,
+  `_compute_rigid_derivs`, and the `run_sol144_trim` total-CM loop now call it (the
+  total-CM site keeps its `sym` parity factor at the call site). Behaviour-preserving:
+  HA144A trim numbers byte-identical before/after (SC1 ANGLEA=0.085951, ELEV=0.244584).
+- `sbeam/aero/vlm.py` — comment on `solve_rigid_cl.CM` cross-referencing the shared
+  `−Σ(...)·(x−xref)` convention with `sol144._pitch_moment` (pressure form vs force form;
+  kept as separate functions because they operate on different objects).
+- `tests/aero/test_ae1_step_e_moment.py` (new) — `TestStepEMomentConsistency`: for unit
+  ANGLEA and ELEV on HA144A, asserts (a) g_disp virtual-work Fz == direct Fz (1e-9),
+  (b) g_disp virtual-work moment about the SUPORT == `_pitch_moment` (1e-6 rel), and
+  (c) the ANGLEA pitching moment is nose-down (My < 0, absolute-sign anchor). 3 tests
+  pass; full aero+integration suite 252 → 249 pass + the 3 pre-existing `test_ae1_keff_trim`
+  value failures (unchanged — they are the Steps C/D/G flexible-increment gap, not noise).
+
+**Key decisions:**
+
+- Kept `solve_rigid_cl.CM` (pressure form) and `_pitch_moment` (force form) as separate
+  functions rather than forcing a shared util across the aero/solver boundary — they take
+  different inputs (cp+area vs the assembled force vector) and already agree numerically;
+  a shared comment is the lighter, lower-risk coupling.
+- The f06 STABILITY DERIVATIVES block named in the original Step E scope does not exist
+  yet (it is Step 56); a note was added there to use the `_pitch_moment` convention when
+  it is built, rather than adding a stub now.
+- The Step E moment gate is the *moment* leg of the Step D V-AE1c force check; Step D
+  should extend `TestStepEMomentConsistency` rather than fork a parallel gate.
+
+**Files:** `sbeam/solver/sol144.py`, `sbeam/aero/vlm.py`,
+`tests/aero/test_ae1_step_e_moment.py`.
 
 ---
 

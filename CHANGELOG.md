@@ -13,6 +13,32 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Fixed
 
+**AE1 Step E — Moment-sign single-source helper + virtual-work consistency gate (2026-06-12)**
+
+Closed the AE1 Step E increment and corrected its diagnosis. The gross pitching-moment
+sign was already fixed in Step A; investigation showed the moment that drives the Schur
+trim (the `g_disp` virtual-work path onto the SUPORT Ry DOF) was already sign- and
+magnitude-correct, so Step E became a DRY refactor plus a permanent regression gate.
+
+- `sbeam/solver/sol144.py`: new `_pitch_moment(f_box_vec, boxes, x_ref)` — single source
+  for the nose-up-positive moment-arm convention `My = −ΣFz·(x_force − x_ref)` (¼-chord
+  force point). Replaced the three hand-inlined copies in `_compute_aero_forces`,
+  `_compute_rigid_derivs`, and the `run_sol144_trim` total-CM loop (latter keeps its
+  `sym` parity factor at the call site). Behaviour-preserving — HA144A trim numbers are
+  byte-identical (SC1 ANGLEA=0.085951, ELEV=0.244584).
+- `sbeam/aero/vlm.py`: comment on `solve_rigid_cl.CM` cross-referencing the shared
+  `−Σ(...)·(x−xref)` convention with `sol144._pitch_moment` (pressure form vs force form).
+- `tests/aero/test_ae1_step_e_moment.py` (new): `TestStepEMomentConsistency` — for unit
+  ANGLEA/ELEV on HA144A, asserts g_disp virtual-work Fz == direct Fz (1e-9), virtual-work
+  moment about the SUPORT == `_pitch_moment` (1e-6 rel), and ANGLEA moment is nose-down.
+  3 tests pass.
+- **Re-diagnosis:** the residual SC1/SC2 ANGLEA/ELEV gap (e.g. ELEV 0.245 vs NASTRAN
+  0.492) is the flexible `q·Q_aa` increment, **not** a moment-sign error (a direct rigid
+  2×2 trim gives ELEV ≈ 0.795; the Schur flexible solve gives 0.245). The
+  `test_ae1_keff_trim.py` value tests remain failing pending Steps C/D/G. Backlog updated:
+  Step E removed, AE8 sign half marked resolved, action-plan/sequence/measured-state and
+  "What not to do" notes corrected to point the ANGLEA/ELEV gap at Steps C/D/G.
+
 **AE1 Step B — Spline kinematic correctness on swept SPLINE2 (B1–B4, 2026-06-12)**
 
 Resolved three independent defects that together prevented `g_slope`/`g_disp` from

@@ -541,6 +541,31 @@ def _solve_trim_determined(
     return u_a, delta_free_arr, K_ll_lu, l_idx, r_idx
 
 
+def _pitch_moment(f_box_vec: np.ndarray, boxes: list, x_ref: float) -> float:
+    """Nose-up-positive aerodynamic pitching moment about ``x_ref`` (AE1 Step E).
+
+    Single source for the moment-arm convention `My = −ΣFz·(x_force − x_ref)`
+    used throughout the trim chain.  The sign is nose-up positive, matching
+    `solve_rigid_cl.CM` (`vlm.py`) and NASTRAN's Cm convention.  Each box load
+    acts at its ¼-chord bound-vortex midpoint `box.force_point` (AE6), not the
+    ¾-chord collocation point.
+
+    Args:
+        f_box_vec: (3·n_box,) per-box force vector [Fx0, Fy0, Fz0, Fx1, …] in
+                   force/q units (skj @ Cp).
+        boxes:     AeroBox list (provides force_point[0] moment arms).
+        x_ref:     moment reference x-coordinate in basic CID 0 (RCSID origin).
+
+    Returns:
+        Pitching moment about x_ref (force/q · length units); multiply by the
+        parity factor at the call site for whole-airplane moment.
+    """
+    return -sum(
+        f_box_vec[3 * j + 2] * (boxes[j].force_point[0] - x_ref)
+        for j in range(len(boxes))
+    )
+
+
 def _compute_aero_forces(
     u_a_full: np.ndarray,
     delta_all: np.ndarray,
@@ -568,10 +593,7 @@ def _compute_aero_forces(
     f_box_vec = skj @ gamma                        # (3*n_box,) forces per box
 
     Fz = f_box_vec[2::3].sum()
-    My = 0.0
-    for j, box in enumerate(aero.boxes):
-        x_ctrl = box.force_point[0]
-        My -= f_box_vec[3 * j + 2] * (x_ctrl - x_ref)   # nose-up-positive
+    My = _pitch_moment(f_box_vec, aero.boxes, x_ref)   # nose-up-positive
 
     return Fz, My
 
@@ -604,10 +626,7 @@ def _compute_rigid_derivs(
         f_box_vec = aero.skj @ gamma                 # (3*n_box,)
 
         Fz_sens = f_box_vec[2::3].sum()
-        My_sens = -sum(                             # nose-up-positive
-            f_box_vec[3 * j + 2] * (aero.boxes[j].force_point[0] - x_ref)
-            for j in range(n_box)
-        )
+        My_sens = _pitch_moment(f_box_vec, aero.boxes, x_ref)   # nose-up-positive
         Fz_x = f_box_vec[0::3].sum()
         Fz_y = f_box_vec[1::3].sum()
 
@@ -956,10 +975,8 @@ def run_sol144_trim(
     gamma    = aero.ajj_inv_corr @ w_total
     f_box_vec = aero.skj @ gamma
     Fz_total = float(sym * f_box_vec[2::3].sum())
-    My_total = float(-sym * sum(                    # nose-up-positive; parity-scaled
-        f_box_vec[3 * j + 2] * (aero.boxes[j].force_point[0] - x_ref)
-        for j in range(len(aero.boxes))
-    ))
+    # nose-up-positive (single-source helper, AE1 Step E); parity-scaled to whole-airplane
+    My_total = float(sym * _pitch_moment(f_box_vec, aero.boxes, x_ref))
     sref = aeros.sref
     cref = aeros.cref
     # Fz_total and My_total are force/q (skj @ Cp); divide by area only, not q.

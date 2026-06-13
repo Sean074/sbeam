@@ -14,11 +14,10 @@ Order reflects what unblocks the most downstream work; close in sequence unless 
 
 | # | Item | Severity | Status | What it unblocks |
 |--:|------|----------|--------|------------------|
-| 1 | [AE1 Step E — Moment-sign reconciliation](#ae1-step-e--moment-sign-reconciliation) | CRITICAL | Open | AE1 Schur r-set equilibrium row |
-| 2 | [AE1 Step C — `Q_aa` rigid-body null-space gate](#ae1-step-c--q_aa-rigid-body-null-space-gate) | CRITICAL | Open | Permanent regression for B's spline fix |
-| 3 | [AE1 Step D — Parity audit in the trim balance](#ae1-step-d--parity-audit-in-the-trim-balance) | CRITICAL | Open | Hardens Step A's numeric parity fix |
-| 4 | [AE1 Step F — Verify V-AE1d elastic trim](#ae1-step-f--verify-v-ae1d-elastic-trim) | CRITICAL | Open | Closes V-AE1 SC1/SC2 ANGLEA/ELEV |
-| 5 | [AE1 Step G — Analytic restrained derivatives](#ae1-step-g--analytic-restrained-derivatives) | CRITICAL | Open | Closes V-AE1e and AE8 |
+| 1 | [AE1 Step D — Parity audit in the trim balance](#ae1-step-d--parity-audit-in-the-trim-balance) | CRITICAL | Open | Hardens Step A's parity fix; investigates the ANGLEA/ELEV gap |
+| 2 | [AE1 Step C — `Q_aa` rigid-body null-space gate](#ae1-step-c--q_aa-rigid-body-null-space-gate) | CRITICAL | Open | Permanent regression for B's spline fix; prime suspect for the ELEV gap |
+| 3 | [AE1 Step F — Verify V-AE1d elastic trim](#ae1-step-f--verify-v-ae1d-elastic-trim) | CRITICAL | Open | Closes V-AE1 SC1/SC2 ANGLEA/ELEV |
+| 4 | [AE1 Step G — Analytic restrained derivatives](#ae1-step-g--analytic-restrained-derivatives) | CRITICAL | Open | Closes V-AE1e and AE8 |
 | 6 | [AE9 — Per-TRIM Mach (currently AEROS.mach only)](#major-ae9--mach-is-a-property-of-the-model-not-the-flight-condition) | MAJOR | Open | Multi-Mach subcases (HA144A's 3rd SC) |
 | 7 | [AE10 — Wire `parity` from `AEROS.SYMXZ`; SOL 144 CLI dispatch](#major-ae10--parity-not-wired-from-aerossymxz-sol-144-unreachable-from-main) | MAJOR | Open | End-to-end HA144A solve from main.py |
 | 8 | [AE11 — D_jx YAW column + AESURF hinge geometry](#minor-ae11--d_jx-yaw-column-duplicates-roll-aesurf-hinge-geometry-ignored) | MINOR | Open | Vertical-fin trim, hinge-moment derivs |
@@ -27,12 +26,16 @@ Order reflects what unblocks the most downstream work; close in sequence unless 
 | 11 | [A8 — Box-AR pre-solve warning](#minor-a8--spanwise-box-count-aspect-ratio-must-be-o1-companion-to-a7) | MINOR | Open (code) | Lift-slope bias on high-AR boxes |
 | 12 | [R16–R19 docs + R21, R22 NITs](#minor-r16r19--documentation-gaps-and-r21r22-nits) | MINOR/NIT | Open | Code-standard documentation hygiene |
 | 13 | [Phase C Steps 53–57](#phase-c--sol-144-static-aeroelastics-steps-5357) | Planned | Blocked on AE1 | Maneuver loads, divergence, viewer |
-| 14 | [Phase 2 / Phase 3 / Future development](#phase-2--phase-3--future-development) | Planned | Optional | Long-tail capability |
+| 14 | [Monitor points & section loads — Phase 1 (static)](#monitor-points--section-loads--phase-1-static) | Planned | Blocked on AE1, AE10 | Structures-team loads handoff; precursor to dynamic gust loads at monitors |
+| 15 | [Phase 2 / Phase 3 / Future development](#phase-2--phase-3--future-development) | Planned | Optional | Long-tail capability |
 
 **Closed in this branch (full detail in CHANGELOG `[Unreleased]` and history):** AE2,
 AE3, AE4, AE5, AE6, AE7. AE1 Step A (parity + My sign, 2026-06-12). AE1 Step B (RBAR
 expansion, EA-only SET1, spline math fix, V-AE1b gate; 2026-06-12 — `g_slope`/`g_disp`
-now reproduce all 6 basic-frame rigid-body modes on the swept HA144A spline).
+now reproduce all 6 basic-frame rigid-body modes on the swept HA144A spline). AE1 Step E
+(moment-sign single-source helper `_pitch_moment` + VW-moment consistency gate,
+2026-06-12 — confirmed the trim moment sign was already correct post-A; **ANGLEA/ELEV gap
+is the flexible `q·Q_aa` increment, not a sign error** — reassigned to Steps C/D).
 
 ---
 
@@ -47,18 +50,25 @@ now reproduce all 6 basic-frame rigid-body modes on the swept HA144A spline).
 
 | Quantity | NASTRAN | sbeam | Status |
 |---|---:|---:|---|
-| SC1 (q=40) ANGLEA   | +0.169191 rad | +0.086 rad | 51% of target — Steps E/G remaining |
-| SC1 (q=40) ELEV     | +0.492457 rad | +0.245 rad | 50% of target — Steps E/G remaining |
-| SC2 (q=1200) ANGLEA | +0.001373 rad | +0.0019 rad | 140% — Steps E/G remaining |
-| SC2 (q=1200) ELEV   | +0.019325 rad | +0.0081 rad | 42% — Steps E/G remaining |
+| SC1 (q=40) ANGLEA   | +0.169191 rad | +0.086 rad | 51% of target — Steps C/D/G remaining |
+| SC1 (q=40) ELEV     | +0.492457 rad | +0.245 rad | 50% of target — Steps C/D/G remaining |
+| SC2 (q=1200) ANGLEA | +0.001373 rad | +0.0019 rad | 140% — Steps C/D/G remaining |
+| SC2 (q=1200) ELEV   | +0.019325 rad | +0.0081 rad | 42% — Steps C/D/G remaining |
 | SC1 trim lift       | +8 000 lb | +7 999.4 lb | ✓ |
 | Rigid CZα           | −5.071    | −5.071     | ✓ |
 | Wing incidence (rigid pitch θ=1e-3) | +1.000e-3 | +1.000e-3 ± 1e-10 | ✓ |
 
-The Schur algebra forms `K_eff = K_aa − q·Q_aa` correctly. With Steps A and B closed,
-`Q_aa` and the trim aero balance are no longer contaminated, lift balance is exact, and
-the spline reproduces global rigid-body modes. Remaining ANGLEA/ELEV error is driven by
-two independent defects, addressed by Steps C–G below.
+The Schur algebra forms `K_eff = K_aa − q·Q_aa` correctly. With Steps A, B and E closed,
+`Q_aa` and the trim aero balance are no longer contaminated, lift balance is exact, the
+spline reproduces global rigid-body modes, and the pitching-moment sign is confirmed
+correct end-to-end (Step E: the `g_disp` virtual-work moment driving the Schur r-set row
+matches the direct box-moment formula to ~1e-6 relative and `solve_rigid_cl.CMα`).
+
+**Diagnosis update (Step E, 2026-06-12):** the remaining ANGLEA/ELEV error is **not** a
+moment-sign defect. A direct *rigid* 2×2 trim from the (correct) derivatives gives
+ELEV ≈ +0.795; the Schur *flexible* solve gives +0.245. The gap is the `q·Q_aa` flexible
+increment being too large at q=40 — addressed by Steps C (null-space gate) and D (parity
+audit), not the moment column. Step G then closes the restrained-derivative half.
 
 ### Sequence at a glance
 
@@ -68,33 +78,14 @@ two independent defects, addressed by Steps C–G below.
 | B | RBAR slave-DOF expansion + EA-only SET1 + spline math fix (mult-bending, corrected torsion); V-AE1b gate | ✅ APPLIED 2026-06-12 — see CHANGELOG |
 | C | `Q_aa` rigid-body null-space regression gate | Open |
 | D | Parity audit (unit-Cp → SUPORT row vs `solve_rigid_cl`) | Open |
-| E | Moment-sign single-source helper (closes AE8 sign half) | Open |
+| E | Moment-sign single-source helper + VW-moment consistency gate (closes AE8 sign half) | ✅ APPLIED 2026-06-12 — see CHANGELOG |
 | F | V-AE1d elastic trim acceptance gate | Open |
 | G | Analytic restrained derivatives via Schur factorisation (closes AE8 deriv half) | Open |
 
-Steps C–G can be worked in parallel except F, which depends on E. Recommended order
-matches the action plan table: E (smallest, unblocks the moment row) → C (lock in B's
-gains) → D (parity audit; complements Step A) → F (acceptance) → G (post-F polish).
-
----
-
-### AE1 Step E — Moment-sign reconciliation
-
-**Couples to AE8 (sign half).**
-
-The pitching-moment column used by the Schur Ry SUPORT row is `My = +ΣFz·(x−x_ref)`
-(`sol144.py:546, :580, :925`). This is opposite-signed to both `solve_rigid_cl.CM` and
-NASTRAN's nose-up-positive Cm convention. With the wrong sign in front of every
-ELEV-effectiveness term, the Schur solve converges to the value that *would* balance a
-nose-up moment if the sign were correct.
-
-**Fix:** Adopt nose-up positive Cm about RCSID throughout the trim chain. Single-source
-the moment-arm formula `(x_ctrl − x_ref)·F_z` with the agreed sign in one helper. Apply
-in `_compute_aero_forces.My`, `_compute_rigid_derivs.CMY`, the Schur r-set row for the Ry
-SUPORT DOF, and the f06 STABILITY DERIVATIVES block.
-
-**Acceptance:** Post Step E the SC1 ELEV value moves from ≈+0.245 toward NASTRAN's
-+0.492 (the sign error currently halves it).
+Steps C, D, G can be worked in parallel; F (acceptance) depends on them. Recommended
+order: C (lock in B's gains) → D (parity audit; prime suspect for the ELEV gap) →
+G (analytic restrained derivs) → F (acceptance). Step E is closed — it confirmed the
+moment sign was already correct, so it does **not** move the ANGLEA/ELEV numbers.
 
 ---
 
@@ -129,9 +120,9 @@ for one unit-Cp injection.
 
 ### AE1 Step F — Verify V-AE1d elastic trim
 
-With A–E green, re-run the V-AE1 gate and tighten tolerances. SC1 and SC2 ANGLEA/ELEV
-must match Listing 7-2 to ≤ 1 %, and the q=40 → q=1200 ratio must reproduce the
-documented 27 % restrained-CZα flexible increment.
+With A–E and C, D, G green, re-run the V-AE1 gate and tighten tolerances. SC1 and SC2
+ANGLEA/ELEV must match Listing 7-2 to ≤ 1 %, and the q=40 → q=1200 ratio must reproduce
+the documented 27 % restrained-CZα flexible increment.
 
 **Acceptance:** V-AE1d — SC1 ANGLEA=+0.169191, ELEV=+0.492457; SC2 ANGLEA=+0.001373,
 ELEV=+0.019325; total lift = +8 000 lb; all within 1 %.
@@ -159,15 +150,19 @@ reproduced to ≤ 5 % relative error.
 - **V-AE1b** (Step B) — `Q_aa·u_rb`/`g_slope·u_rb`/`g_disp·u_rb` rigid-body null-space
   residuals < 1e-10 on HA144A, val_vlm_rect_ar8, dihedral fixture. ✅ PASSING.
 - **V-AE1c** (Step D) — skj-path SUPORT-row force = `solve_rigid_cl` lift to 1e-6 on a
-  unit-Cp injection.
+  unit-Cp injection. Step E added the companion *moment* leg of this check
+  (`tests/aero/test_ae1_step_e_moment.py`: VW moment about the SUPORT = direct
+  `_pitch_moment` to ~1e-6); Step D should extend that test class rather than fork a
+  parallel gate.
 - **V-AE1d** (Step F) — SC1/SC2 ANGLEA, ELEV, lift within 1 % of NASTRAN.
 - **V-AE1e** (Steps F + G) — Table 7-1 restrained derivative columns within 1 %; 27 %
   flexible increment within 5 %.
 
 ### What not to do
 
-- Do not pursue tighter tolerances on `test_ae1_keff_trim.py` until Step E lands —
-  current failure mode is a wrong matrix sign, not noise.
+- Do not pursue tighter tolerances on `test_ae1_keff_trim.py` until Steps C/D/G land —
+  Step E confirmed the moment sign is already correct, so the residual ANGLEA/ELEV gap is
+  the flexible `q·Q_aa` increment, not the moment column.
 - Do not re-tune HA144A bulk parameters (NSPAN/NCHORD, spline DTOR, RCSID) to fit V-AE1;
   rigid CLα already reproduces NASTRAN to 4 sig fig at the same mesh.
 - Do not delete the existing `K_eff = K_aa − q·Q_aa` line; AE1 is now about what feeds
@@ -192,11 +187,13 @@ AE1 is tracked above; AE2/AE3/AE4/AE5/AE6/AE7 are resolved (see CHANGELOG).
 [MAJOR] Restrained derivatives perturb via K_ll⁻¹ (no aero feedback in the re-solve) but
         evaluate forces INCLUDING w_struct — a one-pass hybrid converging to neither
         NASTRAN's restrained nor unrestrained columns. No unrestrained (mean-axis) set
-        exists. Moment convention (+ΣFz·(x−xref)) is opposite in sign to both
-        solve_rigid_cl.CM and NASTRAN Cm.
-FIX:    Sign half resolved by AE1 Step E. Derivative half resolved by AE1 Step G
-        (analytic restrained derivs out of K_eff). Add the unrestrained set (mean-axis,
-        ZAERO Eq. 12.14/12.15). Acceptance: HA144A Table 7-1 columns.
+        exists. (Moment convention was historically suspected wrong — RESOLVED by AE1
+        Step E: the nose-up-positive −ΣFz·(x−xref) convention is single-sourced in
+        sol144._pitch_moment and verified consistent with solve_rigid_cl.CM and the
+        g_disp virtual-work transfer.)
+FIX:    Sign half RESOLVED by AE1 Step E (2026-06-12). Derivative half resolved by AE1
+        Step G (analytic restrained derivs out of K_eff). Add the unrestrained set
+        (mean-axis, ZAERO Eq. 12.14/12.15). Acceptance: HA144A Table 7-1 columns.
 ```
 
 ---
@@ -279,7 +276,8 @@ FIX:    Recompute (or validate) normals under PG compression; warn when DTOR/DTH
 FIX:    Three permanent gates planned; status today:
         (V-AE1)  HA144A acceptance test — partial: sign/lift/increment tests pass; SC1
                  ANGLEA/ELEV and SC2 ELEV value tests still failing. Closes with AE1
-                 Steps E–G.
+                 Steps C/D/G (the gap is the flexible q·Q_aa increment, not the moment
+                 sign — Step E confirmed the latter is correct).
         (V-AE2)  Swept-spline rigid-body gate — IMPLEMENTED 2026-06-11 (3 tests in
                  TestSweptSplineRigidBody) and updated 2026-06-12 to use EA-only SET1
                  with DTHX=+1 alongside V-AE1b (`TestGlobalRigidBody`).
@@ -434,7 +432,7 @@ derivatives, optional CFD/WT mean-flow injection, and divergence dynamic pressur
            f_g  = G_kgᵀ · Skj · AJJ*⁻¹ · w_g            (baseline camber/twist/incidence + CFD/WT)
 ```
 
-**Prerequisite:** AE1 fully closed (Steps E–G). Step 52 (determined trim) exists on the
+**Prerequisite:** AE1 fully closed (Steps C, D, F, G). Step 52 (determined trim) exists on the
 `aeroelastics` branch as `run_sol144_trim`; over-determined trim and rate-aero columns
 are unimplemented.
 
@@ -443,8 +441,9 @@ are unimplemented.
 ### Step 52 — SOL 144 trim solve + flexible derivatives (`sol144.py`)
 
 **Status (2026-06-12):** determined-case Schur trim solver exists. Resolved defects:
-AE2, AE3, AE4, AE5, AE6, AE7, AE1 Steps A and B. Open: AE1 Steps C–G (closes AE8 sign
-and derivative halves). Over-determined trim and rate-aero columns remain.
+AE2, AE3, AE4, AE5, AE6, AE7, AE1 Steps A, B and E. Open: AE1 Steps C, D, F, G (E closed
+the AE8 sign half; G closes the derivative half). Over-determined trim and rate-aero
+columns remain.
 
 **Objective:** Solve the flexible trim problem (determined and over-determined) and
 recover stability/control derivatives.
@@ -582,6 +581,173 @@ box `cp` in the viewer.
 
 **Test/Acceptance:** AppTest integration test loads a SOL 144 result and renders all
 panels without error.
+
+---
+
+## Monitor points & section loads — Phase 1 (static)
+
+**Files (new/extended):** `sbeam/model/aero.py` (dataclasses), `sbeam/parser/bdf_reader.py`
+(handlers), `sbeam/results/monitor_points.py` (new — integration logic),
+`sbeam/solver/sol144.py` (call site after trim solve), `sbeam/results/f06_writer.py`
+(output block), `sbeam/results/results.py` (`Sol144Result.monitor_loads`).
+
+**Objective:** Emit integrated section loads for structures handoff from each SOL 144
+trim solution — replicating NASTRAN `MONPNT1` (aero-only) and `MONPNT3` (aero +
+inertia + reaction, splined to structural grids) semantics, with sbeam-native RBAR/RBE3
+pass-through that avoids NASTRAN MONPNT3's known limitation with rigid-element load
+paths. This becomes the standard loads-team deliverable per trim case and is the
+foundation for the dynamic monitor extraction needed for CS-25.341 gust loads later.
+
+**Prerequisite:** AE1 Step F closed (V-AE1d green — wrong trim ⇒ wrong monitor loads),
+AE10 closed (SOL 144 reachable from `main.py`, parity wired from `AEROS.SYMXZ`).
+
+**Scope of Phase 1 (this entry):** Static `MONPNT1` + `MONPNT3` emulation only.
+Section-cut running-loads tables ({V, M, T} per spanwise station) tracked as Phase 2;
+dynamic monitor extraction (CS-25.341(a) discrete gust, CS-25.341(b) continuous
+turbulence) tracked as Phase 3 — both pointers at the end of this section.
+
+### Sequence at a glance
+
+| Step | Description | Status |
+|------|-------------|--------|
+| MON1 | BDF parse: `MONPNT1`, `MONPNT3`, `AECOMP`, `AELIST` (SET1 already supported) | Open |
+| MON2 | `MONPNT1` aero-only integrated load over AECOMP/AELIST collection | Open |
+| MON3 | `MONPNT3` aero + inertia + reaction over SET1 grid collection, RBAR-expanded | Open |
+| MON4 | f06 `MONITOR POINT INTEGRATED LOADS` block + CSV + HDF5 per case | Open |
+| V-MON1 | HA144A SC1 cross-check — wing-root + full-wing MONPNT3 vs MSC NASTRAN | Open |
+
+MON1 is a prerequisite for MON2/MON3; MON2 and MON3 are independent. MON4 can be
+landed incrementally as MON2/MON3 come online. V-MON1 is the closing gate.
+
+---
+
+### MON1 — BDF parsing: `MONPNT1`, `MONPNT3`, `AECOMP`, `AELIST`
+
+Add `Monpnt1`, `Monpnt3`, `Aecomp`, `Aelist` dataclasses to `sbeam/model/aero.py`.
+Extend `parser/bdf_reader.py` with field-by-field handlers; SET1 handler already exists
+(reused by MONPNT3). `AECOMP` resolves to either an AELIST (box IDs) or a SET1 (grid
+IDs) — implement both lookup paths.
+
+**Acceptance:** Round-trip echo on a synthetic BDF containing one `MONPNT1` (wing
+aero-only, AECOMP→AELIST), two `MONPNT3` (wing root, HTP root; AECOMP→SET1), with one
+monitor in `CID 0` and one in a user-defined CORD2R; parsed fields exactly equal the
+input.
+
+---
+
+### MON2 — `MONPNT1`: aero-only integrated load
+
+Sum per-box aero `F`, `M` (already computed during SOL 144 trim — wing/HTP/VTP boxes
+in box CSYS) over the AECOMP/AELIST collection. Transform to the monitor reference
+point and `MONPNT1.cp` CSYS. Apply parity from `AEROS.SYMXZ` consistent with AE1
+Step A — same `sym` factor, single-source.
+
+**Acceptance:** Synthetic uniform-Cp rectangular wing — analytical `L = ½ρV²S·Cp` and
+moment about the reference vs `MONPNT1` integrated sum: agreement to 1e-8 relative.
+Symmetric-half model with `SYMXZ=1` doubles the sum vs. the full-model build of the
+same geometry.
+
+---
+
+### MON3 — `MONPNT3`: aero + inertia + reaction at structural grids
+
+Per-grid force tally over the user `SET1` collection:
+
+- **Aero contribution:** `(G_kgᵀ · q · P_k)_g` per grid `g`, where `G_kg` is the spline
+  matrix from Phase B and `P_k` is the trimmed box force. **RBAR/RBE3 pass-through uses
+  the same T matrix as AE1 Step B1's `_expand_to_g`** — load on a slave grid maps to
+  the master via the kinematic transform. This is where sbeam beats NASTRAN MONPNT3.
+- **Inertia contribution:** `(M_gg · ü_g)` from the prescribed rigid-body acceleration
+  field of the trim case. Zero by construction for the determined plain trim (Step 52);
+  becomes load-bearing once Step 53 maneuver trim lands. Phase 1 emits the inertia
+  column unconditionally — it's just zero in the steady case.
+- **Reaction contribution:** SPC reaction at the SUPORT grids only (avoid
+  double-counting — reaction is already in equilibrium with aero+inertia per the
+  Schur r-set row).
+
+Sum the three contributions over `SET1`, transform to `MONPNT3.cp` CSYS, apply parity.
+Output `Fx, Fy, Fz, Mx, My, Mz` plus a per-contribution breakdown (`Fz_aero`,
+`Fz_inertia`, `Fz_react`) for diagnostic use.
+
+**Acceptance:** HA144A SC1 trim — `MONPNT3` defined as `SET1 = {100, 110, 120}` (the
+full wing EA) returns `Fz = 8 000 lb · parity` within 1 %, and `My` matching the NASTRAN
+MONPNT3 output for the same SET1 within 1 %. Symmetric-half parity treated identically
+to AE1 Step A.
+
+---
+
+### MON4 — Output: f06 block + CSV + HDF5 per trim case
+
+- New f06 block `MONITOR POINT INTEGRATED LOADS` in `results/f06_writer.py` matching
+  the NASTRAN layout (header + one row per monitor per subcase: `LABEL`, `AXES`,
+  `COMP`, `CID`, `X/Y/Z`, six force/moment values).
+- **CSV per trim case:** one row per monitor; columns
+  `case, name, x_ref, y_ref, z_ref, cid, Fx, Fy, Fz, Mx, My, Mz` plus the diagnostic
+  `Fz_aero / Fz_inertia / Fz_react` breakdown.
+- **HDF5 hierarchical:** `/monitors/{name}/{case}` storing the six components plus
+  metadata (CSYS, reference point, parity factor, AECOMP/SET1 source IDs). Same file
+  the structures team will reuse for the Phase 3 time-domain extension.
+
+**Acceptance:** Snapshot test of the f06 block against a reference text file;
+CSV/HDF5 values identical to the f06 to 1e-12; HDF5 schema documented in
+`docs/10_standard/05_aeroelastics.md`.
+
+---
+
+### V-MON1 — HA144A cross-check (closing gate)
+
+Add two `MONPNT3` cards to `sample/ha144a_sbeam.bdf`:
+1. Wing-root cut — `SET1 = {100}` (inboard EA grid only).
+2. Full wing — `SET1 = {100, 110, 120}` (all three EA grids, matches the EA-only SET1
+   landed under AE1 Step B).
+
+Plus one `MONPNT1` summing the wing CAERO1 boxes (aero-only sanity check).
+
+**Acceptance:**
+
+- Full-wing `MONPNT3 Fz` = total trimmed lift · parity within 1 % (8 000 lb · sym).
+- Full-wing `MONPNT3 My` about the AERO ref point matches NASTRAN `MONPNT3` output
+  within 1 %.
+- Wing-root `MONPNT3 Fz / My` matches NASTRAN within 1 %.
+- `MONPNT1` aero-only sum equals the aero contribution of the full-wing `MONPNT3`
+  to 1e-8 (no inertia in determined trim).
+
+---
+
+### Open decisions before MON1 starts
+
+1. **Coordinate frames.** Support `CID = 0` (basic), `AEROS.RCSID` (aero), and
+   user-defined `CORD2R` from day 1 — no incremental rollout.
+2. **Inertia source.** For Phase 1, `ü` is taken from the trim case (zero for plain
+   trim, non-zero only when Step 53 maneuver lands). No external mass-distribution
+   overlay in Phase 1; defer the typical loads-workflow "fuel/payload sweep" to a
+   later add.
+3. **Parity.** Single-source via the same `sym` factor used in AE1 Step A. Annotate
+   the f06 output with `*whole-airplane*` when `SYMXZ = 1` so the structures team
+   doesn't double-up downstream.
+4. **AECOMP composition.** Both `AELIST` (box ID set) and `SET1` (grid ID set) lookup
+   paths required — used by `MONPNT1` and `MONPNT3` respectively in NASTRAN
+   convention.
+5. **Diagnostic breakdown.** Always emit `Fz_aero`, `Fz_inertia`, `Fz_react`
+   alongside the totals — cheap, and the only way to debug a wrong sum after the fact.
+
+---
+
+### Phase 2 (later) — Section-cut running loads
+
+The actual stress-team deliverable: per-station `{Vz, My, Mt}` tables along the wing,
+HTP, VTP. Cut convention: plane normal along the spline-axis `x̂` at user-specified
+stations (general normal as override). Builds directly on MON3's per-grid tally — a
+section cut is "sum the per-grid loads outboard of the cut plane, project to EA
+intercept". Lands after Phase 1 + the maneuver trim case (Step 53), so the inertia
+column is non-trivial.
+
+### Phase 3 (later) — Dynamic monitor extraction
+
+CS-25.341(a) discrete 1-cos gust (H = 30–350 ft sweep) and CS-25.341(b) continuous
+turbulence (von Kármán PSD → A·σ envelope) at each monitor, with correlated
+companion-load extraction for stress. Built on the same monitor data model as
+Phase 1. Lands with the SOL 146 / dynamic-response solvers (program Phase 3).
 
 ---
 

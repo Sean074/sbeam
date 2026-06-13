@@ -412,6 +412,10 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
         CL = 2.0 * L_lift / S_ref
         CY = 2.0 * L_sf   / S_ref
 
+    # Nose-up-positive pitching moment about xref.  Pressure form here
+    # (cp·area·arm); the equivalent force form (Fz·arm) lives in
+    # sol144._pitch_moment — the single source for the trim chain.  Both share
+    # this `−Σ(...)·(x − xref)` sign convention (AE1 Step E); keep them aligned.
     CM = (
         -sum(cp[i] * boxes[i].area * (x_qc[i] - xref) for i in lift_indices)
         / (S_ref * c_ref)
