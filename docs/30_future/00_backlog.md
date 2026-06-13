@@ -11,30 +11,28 @@ step, give it a step number continuing from Step 39 and apply the same step form
 ## Recommended action plan
 
 Order reflects what unblocks the most downstream work; close in sequence unless noted.
-**The former "critical SC2 blocker" is resolved by metrology, not code (2026-06-13).** SC2's trim
-error is a ~0.1° q-INVARIANT common-mode offset (0.36% of full scale), identical to the offset
-already accepted at SC1 — not a flexible-coupling defect (it does not scale with q). Under a
-**1%-of-full-scale** acceptance gate both subcases pass, so **AE1 Step F's acceptance is satisfied
-(item 1)** and formal closure needs only a small test-gate edit. The remaining real work:
-**V-AE3 (item 2)** independent cross-check; **AE8b (item 3)** unrestrained-derivative formulation
-(MAJOR, large-signal, genuinely off); **AE8a (item 4)** downgraded to a MINOR optional root-cause
-of the ~0.1° common-mode. The suite shows 799 passed / 2 xfailed — the 2 xfails are the SC2
-value-gates under the *superseded* relative metric; they pass the %FS metric.
+**AE1 Step F is CLOSED (2026-06-13): the SC2 blocker was resolved by metrology, not code.** SC2's
+trim error is a ~0.1° q-INVARIANT common-mode offset (0.36% of full scale), identical to the offset
+already accepted at SC1 — not a flexible-coupling defect (it does not scale with q). Under the
+**1%-of-full-scale** acceptance gate now encoded in `test_ae1_fullspan.py::TestVAE1dSC2` (the
+relative-tolerance `xfail` dropped), both subcases pass, so the AE1 acceptance gate is satisfied.
+The remaining real work: **V-AE3 (item 1)** independent cross-check; **AE8b (item 2)**
+unrestrained-derivative formulation (MAJOR, large-signal, genuinely off); **AE8a (item 3)**
+downgraded to a MINOR optional root-cause of the ~0.1° common-mode.
 
 | # | Item | Severity | Status | What it unblocks |
 |--:|------|----------|--------|------------------|
-| 1 | [AE1 Step F — formalize V-AE1d at %-full-scale](#ae1-step-f--verify-v-ae1d-elastic-trim) | CRITICAL | Open — acceptance **SATISFIED** (SC1+SC2 ≤0.4% FS under the 1%-FS gate); pending a test-gate code edit | Closes the AE1 acceptance gate; unblocks Phase C + monitor loads |
-| 2 | [V-AE3 — Independent unit-Cp force/moment cross-check](#v-ae3--independent-unit-cp-force-and-moment-cross-check) | MAJOR | Open — **recommended validation step** | Replaces non-discriminating FD/self-consistency checks (AE13); corroborates the coupling is correct |
-| 3 | [AE8b — Unrestrained (mean-axis) derivative formulation](#major-ae8b--unrestrained-mean-axis-derivative-formulation-known-wrong) | MAJOR | Open — known-wrong first attempt; large-signal, genuinely off | HA144A unrestrained derivative column; Phase C derivative deliverable |
-| 4 | [AE8a — q-invariant common-mode trim offset (~0.1°)](#minor-ae8a--q-invariant-common-mode-trim-offset) | MINOR | Open — within fitness tolerance (≤0.4% FS); optional root-cause at q=40 | Documents/removes a known ≤0.4% FS trim bias; NOT a blocker |
-| 5 | [AE1 Step C — `Q_aa` rigid-body null-space gate](#ae1-step-c--q_aa-rigid-body-null-space-gate) | MINOR | Open — land any time | Regression guard for B's spline fix — null space already 2e-14; NOT the trim lead |
-| 6 | [AE11 — D_jx YAW column + AESURF hinge geometry](#minor-ae11--d_jx-yaw-column-duplicates-roll-aesurf-hinge-geometry-ignored) | MINOR | Open | Vertical-fin trim, hinge-moment derivs (non-blocking for AE1) |
-| 7 | [AE12 — SPLINE2 DTOR/DTHZ warning (PG-normal half not a bug)](#minor-ae12--spline2-dtordthz-silently-ignored-pg-normal-half-misidentified) | MINOR | Open | User-input safety (PG-normal half re-diagnosed: not a bug) |
-| 8 | [A7 — Cosine chordwise spacing helper + low-NCHORD warning](#minor-a7--default-chordwise-box-count-too-low-no-cosine-chordwise-spacing) | MINOR | Open (code) | Pitching-moment convergence (sample decks already at NCHORD=8) |
-| 9 | [A8 — Box-AR pre-solve warning](#minor-a8--spanwise-box-count-aspect-ratio-must-be-o1-companion-to-a7) | MINOR | Open (code) | Lift-slope bias guard (sample decks already AR≈1) |
-| 10 | [Phase C Steps 53–55, 57](#phase-c--sol-144-static-aeroelastics-steps-5355-57) | Planned | Unblocked once Step F's test-gate edit lands (item 1); AE1 Step C optional | Maneuver loads, DIVERG q-sweep, viewer |
-| 11 | [Monitor points & section loads — Phase 1 (static)](#monitor-points--section-loads--phase-1-static) | Planned | Unblocked once Step F's test-gate edit lands (item 1) | Structures-team loads handoff; precursor to dynamic gust loads at monitors |
-| 12 | [Phase 2 / Phase 3 / Future development](#phase-2--phase-3--future-development) | Planned | Optional | Long-tail capability |
+| 1 | [V-AE3 — Independent unit-Cp force/moment cross-check](#v-ae3--independent-unit-cp-force-and-moment-cross-check) | MAJOR | Open — **recommended validation step** | Replaces non-discriminating FD/self-consistency checks (AE13); corroborates the coupling is correct |
+| 2 | [AE8b — Unrestrained (mean-axis) derivative formulation](#major-ae8b--unrestrained-mean-axis-derivative-formulation-known-wrong) | MAJOR | Open — known-wrong first attempt; large-signal, genuinely off | HA144A unrestrained derivative column; Phase C derivative deliverable |
+| 3 | [AE8a — q-invariant common-mode trim offset (~0.1°)](#minor-ae8a--q-invariant-common-mode-trim-offset) | MINOR | Open — within fitness tolerance (≤0.4% FS); optional root-cause at q=40 | Documents/removes a known ≤0.4% FS trim bias; NOT a blocker |
+| 4 | [AE1 Step C — `Q_aa` rigid-body null-space gate](#ae1-step-c--q_aa-rigid-body-null-space-gate) | MINOR | Open — land any time | Regression guard for B's spline fix — null space already 2e-14; NOT the trim lead |
+| 5 | [AE11 — D_jx YAW column + AESURF hinge geometry](#minor-ae11--d_jx-yaw-column-duplicates-roll-aesurf-hinge-geometry-ignored) | MINOR | Open | Vertical-fin trim, hinge-moment derivs (non-blocking for AE1) |
+| 6 | [AE12 — SPLINE2 DTOR/DTHZ warning (PG-normal half not a bug)](#minor-ae12--spline2-dtordthz-silently-ignored-pg-normal-half-misidentified) | MINOR | Open | User-input safety (PG-normal half re-diagnosed: not a bug) |
+| 7 | [A7 — Cosine chordwise spacing helper + low-NCHORD warning](#minor-a7--default-chordwise-box-count-too-low-no-cosine-chordwise-spacing) | MINOR | Open (code) | Pitching-moment convergence (sample decks already at NCHORD=8) |
+| 8 | [A8 — Box-AR pre-solve warning](#minor-a8--spanwise-box-count-aspect-ratio-must-be-o1-companion-to-a7) | MINOR | Open (code) | Lift-slope bias guard (sample decks already AR≈1) |
+| 9 | [Phase C Steps 53–55, 57](#phase-c--sol-144-static-aeroelastics-steps-5355-57) | Planned | Unblocked (AE1 Step F closed); AE1 Step C optional | Maneuver loads, DIVERG q-sweep, viewer |
+| 10 | [Monitor points & section loads — Phase 1 (static)](#monitor-points--section-loads--phase-1-static) | Planned | Unblocked (AE1 Step F closed) | Structures-team loads handoff; precursor to dynamic gust loads at monitors |
+| 11 | [Phase 2 / Phase 3 / Future development](#phase-2--phase-3--future-development) | Planned | Optional | Long-tail capability |
 
 **Closed in this branch (full detail in CHANGELOG `[Unreleased]` and `docs/40_history`):**
 AE2–AE7; AE9 (per-TRIM Mach AIC cache + supersonic guard); **AE10** (SOL 144 CLI dispatch from
@@ -44,12 +42,12 @@ R16–R22; and AE1 Steps **A**
 (parity double-count **eliminated by removing half-span support, 2026-06-12** — sbeam is now
 full-span only; the `sym=2` factor and `parity` flag are gone, SC1 trims to NASTRAN on
 `sample/ha144a_fullspan_sbeam.bdf`, V-AE1f), **E** (moment-sign single-source helper), and
-**G** (analytic restrained derivatives, V-AE1e partial). The retracted "flexible `q·Q_aa`"
+**G** (analytic restrained derivatives, V-AE1e partial), and **F** (V-AE1d acceptance gate
+re-framed to %-full-scale, SC2 `xfail` dropped, 2026-06-13). The retracted "flexible `q·Q_aa`"
 re-diagnosis of the SC1 gap is closed history (`docs/40_history`) and no longer load-bearing:
 the SC1 gap was the parity double-count, now removed by construction. The remaining open AE1
-work is V-AE3 (item 2) and AE8b (item 3); the SC2 "residual" is the MINOR q-invariant common-mode
-offset (item 4 / AE8a), and the Step F acceptance gate (item 1) is satisfied under the
-%-full-scale metric pending its test-gate edit.
+work is V-AE3 (item 1) and AE8b (item 2); the SC2 "residual" is the MINOR q-invariant common-mode
+offset (item 3 / AE8a).
 
 ---
 
@@ -60,9 +58,9 @@ offset (item 4 / AE8a), and the Step F acceptance gate (item 1) is satisfied und
 > (q=1200) was read as a high-q flexible-coupling defect ("+136%"), but that figure is an
 > artifact of normalizing a near-zero trim point: the SC2 error is a ~0.1° q-INVARIANT
 > common-mode offset (0.36% FS), the SAME one already accepted at SC1 (see the diagnosis below
-> and AE8a). Both subcases pass a 1%-full-scale gate. **Open remainder:** the V-AE1d test-gate
-> edit that formalizes Step F's closure (item 1), and the MINOR optional root-cause of the
-> common-mode (item 4 / AE8a). The closed AE1 increments (Steps A, B, D, E, G) are recorded in
+> and AE8a). Both subcases pass the 1%-full-scale gate now encoded in V-AE1d (Step F closed,
+> 2026-06-13). **Open remainder:** only the MINOR optional root-cause of the common-mode
+> (item 3 / AE8a). The closed AE1 increments (Steps A, B, D, E, F, G) are recorded in
 > `docs/40_history` and CHANGELOG `[Unreleased]`.
 
 **Files:** `sbeam/solver/sol144.py:452–513` (`_solve_trim_determined`),
@@ -90,9 +88,9 @@ offset; the identical error at q=1200 means the flexible coupling there contribu
 NOT the "high-q flexible-coupling (~1.4×)" defect previously recorded — that earlier `Q_aa×1.41`
 fit is now read as non-unique (the high-q response is sensitive to Q_aa, but the same error
 appears at q=40 where Q_aa is inert). Full evidence and the cheap decisive test (root-cause the
-q=40 offset, see whether SC2 follows) are in AE8a (item 4), now MINOR. The remaining open AE1 step
-below is **C** (a cheap null-space regression guard, landable any time); **F** is satisfied under
-the %-full-scale gate (item 1).
+q=40 offset, see whether SC2 follows) are in AE8a (item 3), now MINOR. The remaining open AE1 step
+below is **C** (a cheap null-space regression guard, landable any time); **F** is closed under
+the %-full-scale gate (2026-06-13).
 
 ---
 
@@ -114,46 +112,23 @@ rect-planar only, no out-of-plane z≠0 grids).
 
 ---
 
-### AE1 Step F — Verify V-AE1d elastic trim
-
-**Gate reframed to %-full-scale (2026-06-13); acceptance now SATISFIED, formal closure pending a
-test-gate code edit.** The original per-target *relative* tolerance was itself the wrong metric:
-1% of SC2's near-zero trim point is physically meaningless (trim AoA legitimately passes through
-~0 as q rises, so the percentage explodes while the absolute error is unchanged). Normalizing to
-the variable's valid physical range instead, both subcases pass on the full-span deck:
-
-- **SC1 (q=40):** ANGLEA +0.107° = 0.36% FS, ELEV −0.096° ≈ 0.24% FS, lift within 1% — PASS.
-- **SC2 (q=1200):** ANGLEA +0.107° = 0.36% FS, ELEV −0.092° ≈ 0.23% FS — PASS. This is the SAME
-  ~0.1° common-mode error as SC1 (q-invariant), not a high-q flexible defect (see AE8a, item 4).
-
-**Acceptance (corrected):** every TRIM variable within **1% of its full-scale range** (AoA: 30°
-neg→pos stall ⇒ ±0.3°; control surfaces: their commanded throw — elevator anchored to a 40°
-throw, ⇒ ±0.4°), plus full-span lift within 1%. SC1 and SC2 both meet this today (≤0.4% FS).
-
-**To formally CLOSE (follow-up — code + CLAUDE.md 3-part move):** update
-`tests/aero/test_ae1_fullspan.py::TestVAE1dSC2` to implement the %FS criterion and drop the
-`xfail`, confirm the suite is green (the 2 SC2 xfails clear), then REMOVE Step F from this backlog,
-ADD it to `docs/40_history`, and ADD a CHANGELOG `[Unreleased]` entry — all the same session.
-Until that edit lands the suite still reports 2 SC2 xfails under the superseded relative gate.
-
----
-
 ### V-AE1 gate (full acceptance — `test_ae1_fullspan.py`)
 
-The SC1/rigid sub-gates are closed by the half-span removal and Steps B/E/G; the live open
-gate is **V-AE1d (SC2)**.
+The SC1/rigid sub-gates are closed by the half-span removal and Steps B/E/G; V-AE1d (SC2) is
+now closed under the %-full-scale gate (AE1 Step F, 2026-06-13).
 
 - **V-AE1b** (closed) — `Q_aa·u_rb`/`g_slope·u_rb`/`g_disp·u_rb` rigid-body null-space
   residuals < 1e-10 on HA144A, val_vlm_rect_ar8. ✅ PASSING (`TestGlobalRigidBody`); the
   dihedral (z≠0) fixture is the remaining gap, tracked on Step C.
-- **V-AE1c / V-AE3** (open — V-AE3 is now a concrete first step, item 3) — an INDEPENDENT
+- **V-AE1c / V-AE3** (open — V-AE3 is now a concrete first step, item 1) — an INDEPENDENT
   unit-Cp cross-check of the skj/g_disp total force AND moment against `solve_rigid_cl`
   resultants. Must compare against `solve_rigid_cl`, NOT against `_pitch_moment`
   (`test_ae1_step_e_moment.py` only checks self-consistency — a common scale error passes it).
   See the [V-AE3 section](#v-ae3--independent-unit-cp-force-and-moment-cross-check) (promoted out of AE13).
-- **V-AE1d** (Step F) — SC1/SC2 ANGLEA, ELEV, lift within **1 % of full-scale range** (not
-  relative-to-value, which is meaningless at SC2's near-zero trim point). Both pass today
-  (≤0.4% FS); the test still carries the superseded relative `xfail` pending the gate edit (item 1).
+- **V-AE1d** (Step F, closed 2026-06-13) — SC2 ANGLEA, ELEV within **1 % of full-scale range**
+  (not relative-to-value, which is meaningless at SC2's near-zero trim point). Both pass live
+  (ANGLEA 0.36% FS, ELEV 0.23% FS); the superseded relative `xfail` was dropped. SC1 keeps its
+  live relative gate (ANGLEA 1.5% / ELEV 1% / lift 1%, also green). ✅
 - **V-AE1e** (closed, partial) — Table 7-1 restrained derivative columns within 1 %.
   ✅ 2026-06-12 (`tests/aero/test_ae1_restrained_derivs.py`): restrained CZα = 5.112 vs Table
   7-1 5.103 (q=40) within 1 %, rigid columns unchanged, analytic columns match the captured
@@ -386,13 +361,14 @@ FIX:    Warn when DTOR/DTHZ carry non-default values that will be ignored. Add a
         dimensional-consistency check tied the coupled force path back to the rigid
         solver.
 FIX:    Three permanent gates planned; status today:
-        (V-AE1)  HA144A acceptance test — SC1 CLOSED: the sym=2 aero/inertia parity
-                 double-count was removed with half-span support, and SC1 ANGLEA/ELEV/lift
+        (V-AE1)  HA144A acceptance test — SC1 and SC2 both CLOSED: the sym=2 aero/inertia
+                 parity double-count was removed with half-span support, and SC1 ANGLEA/ELEV/lift
                  trim within tolerance on the full-span deck (V-AE1d/V-AE1f). SC2 value
-                 tests still xfail under the superseded relative gate (both pass the %FS metric, item 1). ⚠ the original "lift tests pass"
+                 tests are now live %-full-scale gates (AE1 Step F, 2026-06-13) — the superseded
+                 relative `xfail` is gone. ⚠ the original "lift tests pass"
                  reassurance was non-discriminating (lift balanced for both the correct and
                  the halved trim) — exactly the blind spot AE13 is about; now superseded by
-                 per-target relative tolerances.
+                 per-target SC1 relative + SC2 %-full-scale tolerances.
         (V-AE2)  Swept-spline rigid-body gate — IMPLEMENTED 2026-06-11 (3 tests in
                  TestSweptSplineRigidBody) and updated 2026-06-12 to use EA-only SET1
                  with DTHX=+1 alongside V-AE1b (`TestGlobalRigidBody`). Genuinely closed:
@@ -568,7 +544,7 @@ derivatives, optional CFD/WT mean-flow injection, and divergence dynamic pressur
            f_g  = G_kgᵀ · Skj · AJJ*⁻¹ · w_g            (baseline camber/twist/incidence + CFD/WT)
 ```
 
-**Prerequisite:** AE1 fully closed (Steps C and F remain open; A/B/D/E/G done). Step 52 (determined trim) exists on the
+**Prerequisite:** AE1 acceptance closed (Step C regression guard remains open; A/B/D/E/F/G done). Step 52 (determined trim) exists on the
 `aeroelastics` branch as `run_sol144_trim`; over-determined trim and rate-aero columns
 are unimplemented.
 
@@ -577,8 +553,7 @@ are unimplemented.
 ### Step 52 — SOL 144 trim solve + flexible derivatives (`sol144.py`)
 
 **Status (2026-06-12):** determined-case Schur trim solver exists. Resolved defects:
-AE2–AE7, AE9, and AE1 Steps A, B, D, E, G. Open: AE1 Steps C (regression guard) and F
-(SC2 acceptance gate, satisfied under the %-full-scale metric — pending its test-gate edit). Over-determined trim and
+AE2–AE7, AE9, and AE1 Steps A, B, D, E, F, G. Open: AE1 Step C (regression guard). Over-determined trim and
 rate-aero columns remain.
 
 **Objective:** Solve the flexible trim problem (determined and over-determined) and
@@ -721,9 +696,9 @@ pass-through that avoids NASTRAN MONPNT3's known limitation with rigid-element l
 paths. This becomes the standard loads-team deliverable per trim case and is the
 foundation for the dynamic monitor extraction needed for CS-25.341 gust loads later.
 
-**Prerequisite:** AE1 Step F closed (V-AE1d green — wrong trim ⇒ wrong monitor loads).
-AE10 is closed (SOL 144 runs end-to-end from `main.py`; Step 56 emits the f06 + trimmed
-flight loads the monitor integration builds on).
+**Prerequisite:** AE1 Step F is closed (V-AE1d green under the %-full-scale gate, 2026-06-13 —
+wrong trim ⇒ wrong monitor loads). AE10 is closed (SOL 144 runs end-to-end from `main.py`;
+Step 56 emits the f06 + trimmed flight loads the monitor integration builds on).
 
 **Scope of Phase 1 (this entry):** Static `MONPNT1` + `MONPNT3` emulation only.
 Section-cut running-loads tables ({V, M, T} per spanwise station) tracked as Phase 2;

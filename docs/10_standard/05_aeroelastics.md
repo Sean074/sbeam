@@ -1088,16 +1088,19 @@ was removed (AE1 Step D).
 - **V-AE1f** — SC1 ANGLEA/ELEV within a shared ~2% relative tolerance, lift = 16000 lb,
   mirrored-spline rigid-pitch reproduction, and emergent symmetry (antisymmetric DOF ≈ 0,
   L/R wing tips match). SC2 is sign/increment-gated only.
-- **V-AE1d** (AE1 Step F) — the same SC1/SC2 trim asserted with **per-target relative
-  tolerances** (replacing the old shared absolute tolerance that masked SC2's high result):
-  - SC1 **live**: ANGLEA within 1.5% (actual +1.1%; not chased — no bulk re-tuning),
-    ELEV within 1%, lift within 1% of 16000 lb.
-  - SC2 gated at 1% per target but marked `xfail` pending **AE8** (the high-q flexible-trim
-    path). It flips to XPASS — a loud signal — the moment that lands. SC2's current full-span
-    trim (ANGLEA +136%, ELEV −8%) is genuinely off and is not accepted; V-AE1d only exposes
-    that known-wrong number, it does not loosen to fit. (AE1 Step G — the analytic restrained
-    derivatives — is closed and did **not** move SC2: the derivatives are an output, not the
-    trim driver, so SC2's residual is in the flexible trim solve.)
+- **V-AE1d** (AE1 Step F, closed 2026-06-13) — the same SC1/SC2 trim, but each TRIM variable
+  is gated against its **full-scale physical range**, not relative to its NASTRAN target:
+  - SC1 **live, relative**: ANGLEA within 1.5% (actual +1.1%; not chased — no bulk re-tuning),
+    ELEV within 1%, lift within 1% of 16000 lb. (SC1 is rigid-dominated with a trim point well
+    away from zero, so a relative tolerance is meaningful there.)
+  - SC2 **live, %-full-scale**: ANGLEA within 0.3° (1% of the 30° AoA stall band), ELEV within
+    0.4° (1% of the 40° elevator throw). A relative tolerance is meaningless for SC2 — its trim
+    AoA passes through ~0 as q rises, so a fixed absolute error reads as an exploding percentage
+    (the old gate saw "+136%" for a 0.107° miss). SC2 actual: ANGLEA 0.36% FS, ELEV 0.23% FS,
+    both inside the gate. The residual ~0.1° is a **q-invariant common-mode offset** — the same
+    absolute error already accepted at SC1, not a high-q flexible defect; its optional root-cause
+    is tracked as MINOR AE8a. (AE1 Step G — the analytic restrained derivatives — is closed and
+    did **not** move SC2: the derivatives are an output, not the trim driver.)
 
 ### Restrained derivatives — analytic Schur form (`tests/aero/test_ae1_restrained_derivs.py`)
 

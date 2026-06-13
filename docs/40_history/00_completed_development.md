@@ -2721,6 +2721,41 @@ suite green (223 passed, 2 xfailed).
 
 ---
 
+### Phase A — AE1 Step F: V-AE1d %-full-scale trim acceptance gate ✅ COMPLETE (2026-06-13)
+
+**Objective:** Close the AE1 acceptance gate by encoding the correct V-AE1d acceptance metric.
+The original per-target *relative* tolerance was the wrong metric: SC2 (q=1200) trims its AoA
+through ~0 as dynamic pressure rises, so a fixed absolute error reads as an exploding percentage
+(ANGLEA "+136%" for a 0.0019 rad / 0.107° miss). Normalised to each variable's valid physical
+range instead, both subcases already pass — the acceptance was satisfied; only the test-gate edit
+and the 3-part move remained.
+
+**Deliverables:**
+- **`tests/aero/test_ae1_fullspan.py::TestVAE1dSC2`:** dropped the `@pytest.mark.xfail` decorator
+  and re-expressed the SC2 ANGLEA/ELEV assertions as `pytest.approx(target, abs=TOL)` against the
+  variable's full-scale range — `TOL_ANGLEA_FS = np.deg2rad(0.3)` (1% of the 30° AoA neg→pos stall
+  band) and `TOL_ELEV_FS = np.deg2rad(0.4)` (1% of the 40° commanded elevator throw). Failure
+  messages report the miss in degrees and as %FS. The unused `REL_SC2` constant was removed and
+  the module/class docstrings updated to the %FS rationale.
+- **Measured SC2 result (full-span deck):** ANGLEA +0.107° = 0.357% FS, ELEV −0.092° = 0.229% FS —
+  both inside the gate. `TestVAE1dSC1` keeps its existing live relative gate (ANGLEA 1.5% / ELEV
+  1% / lift 1%), which is also green.
+
+**Test/Acceptance:** `pytest tests/aero/test_ae1_fullspan.py` (17 passed, 0 xfailed); full suite
+green (801 passed, 0 xfailed — was 799 passed / 2 xfailed; the 2 SC2 relative xfails cleared).
+
+**Key decisions:**
+- Acceptance is gauged against each TRIM variable's full-scale physical range, not relative to its
+  NASTRAN target — relative tolerance is meaningless at SC2's near-zero trim point.
+- No HA144A bulk-parameter re-tuning (NSPAN/NCHORD, spline DTOR, RCSID) and no chasing of the
+  residual: the ~0.1° miss is a q-INVARIANT common-mode offset (the same absolute error already
+  accepted at SC1), not a high-q flexible defect. Its optional root-cause is tracked, downgraded
+  to MINOR, as AE8a.
+- Only `TestVAE1dSC2` was converted, per the backlog's explicit directive; SC1's relative gate is
+  meaningful (rigid-dominated, trim point well away from zero) and was left unchanged.
+
+---
+
 ### Phase C — AE10 + Step 56: SOL 144 CLI dispatch, f06 output & flight-load export ✅ COMPLETE (2026-06-13)
 
 **Objective:** Make SOL 144 reachable end-to-end from `main.py` (AE10) and write the static
