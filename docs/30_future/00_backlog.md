@@ -36,7 +36,10 @@ now reproduce all 6 basic-frame rigid-body modes on the swept HA144A spline). AE
 2026-06-12 — confirmed the trim moment sign was already correct post-A). **NB (2026-06-12
 review correction): Step E's onward re-diagnosis — "ANGLEA/ELEV gap is the flexible `q·Q_aa`
 increment" — was itself WRONG. The gap is a `sym=2` aero/inertia parity double-count in the
-trim load path (see Step D and the Diagnosis section below), not flexibility.**
+trim load path (see Step D and the Diagnosis section below), not flexibility.** This is now
+backed by an explicit full-span model (`sample/ha144a_fullspan_sbeam.bdf`) and a permanent
+gate (`tests/aero/test_ae1_fullspan.py`, V-AE1f) that trims to NASTRAN at SC1 with no `sym`
+doubling — added 2026-06-12.
 
 ---
 
@@ -49,13 +52,14 @@ trim load path (see Step D and the Diagnosis section below), not flexibility.**
 
 **Current measured state (post Steps A + B, 2026-06-12):**
 
-| Quantity | NASTRAN | sbeam | Status |
+| Quantity | NASTRAN | sbeam (half) | Status |
 |---|---:|---:|---|
-| SC1 (q=40) ANGLEA   | +0.169191 rad | +0.086 rad | 51% of target — Steps C/D/G remaining |
-| SC1 (q=40) ELEV     | +0.492457 rad | +0.245 rad | 50% of target — Steps C/D/G remaining |
-| SC2 (q=1200) ANGLEA | +0.001373 rad | +0.0019 rad | 140% — Steps C/D/G remaining |
-| SC2 (q=1200) ELEV   | +0.019325 rad | +0.0081 rad | 42% — Steps C/D/G remaining |
-| SC1 trim lift       | +8 000 lb | +7 999.4 lb | ✓ |
+| SC1 (q=40) ANGLEA   | +0.169191 rad | +0.086 rad | ~50% — `sym=2` parity halving; **Step D** closes it |
+| SC1 (q=40) ELEV     | +0.492457 rad | +0.245 rad | ~50% — `sym=2` parity halving; **Step D** closes it |
+| SC2 (q=1200) ANGLEA | +0.001373 rad | +0.0019 rad | parity (Step D) **and** flexible residual (Step G/AE8) |
+| SC2 (q=1200) ELEV   | +0.019325 rad | +0.0081 rad | parity (Step D) **and** flexible residual (Step G/AE8) |
+| **SC1 FULL-SPAN** ANGLEA/ELEV | +0.169191 / +0.492457 | +0.1711 / +0.4908 | ✓ ground truth (parity=0/sym=1), V-AE1f |
+| SC1 trim lift (half) | +8 000 lb | +7 999.4 lb | ✓ (balances either way — non-discriminating) |
 | Rigid CZα           | −5.071    | −5.071     | ✓ |
 | Wing incidence (rigid pitch θ=1e-3) | +1.000e-3 | +1.000e-3 ± 1e-10 | ✓ |
 
@@ -156,7 +160,8 @@ match. (NOTE the `sym=1` outcome means the doubling should simply be dropped for
 `REFS`/per-side-mass convention; if a future deck genuinely needs whole-airplane reporting,
 scale aero AND inertia together — never one without the other.)
 
-**Full-span cross-check (`sample/ha144a_fullspan_sbeam.bdf`, added 2026-06-12):** an explicit
+**Full-span cross-check (`sample/ha144a_fullspan_sbeam.bdf` + permanent gate
+`tests/aero/test_ae1_fullspan.py` / V-AE1f, added 2026-06-12):** an explicit
 2× mirror (both wings/canards, SYMXZ=0, fuselage mass doubled → 16000 lb, CG_x=17.18 matched)
 is ground truth with NO symmetry trickery. It uses a single-point ground (`SPC1 1246` at the
 reference GRID 90 + `SUPORT 35`), NOT the half-model's centreline symmetry SPCs — so symmetry
@@ -235,6 +240,13 @@ relative tolerances.
 - **V-AE1d** (Step F) — SC1/SC2 ANGLEA, ELEV, lift within 1 % of NASTRAN (relative tol).
 - **V-AE1e** (Steps F + G) — Table 7-1 restrained derivative columns within 1 %; 27 %
   flexible increment within 5 %.
+- **V-AE1f** — full-span parity ground truth. ✅ IMPLEMENTED 2026-06-12
+  (`tests/aero/test_ae1_fullspan.py`, 8 tests): the explicit full-span model
+  (`sample/ha144a_fullspan_sbeam.bdf`, parity=0/`sym=1`) trims to SC1 within 2 % of NASTRAN
+  (ANGLEA 0.1711, ELEV 0.4908), lift = 16000 lb, mirrored splines reproduce rigid pitch, and
+  symmetry emerges (antisym DOF ≈ 0, L/R wing tips match). This locks the no-`sym`-doubling
+  path as ground truth so the half-model parity fix (Step D) can be checked against it. SC2 is
+  deliberately NOT gated (separate flexible residual — Step G / AE8).
 
 ### What not to do
 
