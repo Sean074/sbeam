@@ -32,6 +32,23 @@ for a 0.107° miss).
 
 ### Added
 
+**V-AE3 — independent unit-Cp force/moment cross-check (2026-06-13)**
+
+A discriminating validation gate that confirms the aerodynamic force/moment coupling path is
+independently correct, closing the AE13 blind spot where every aero gate was only self-consistent
+(a common scale error or factor-of-2 parity bug would pass).
+
+- **`tests/aero/test_vae3_cross_check.py` (new)** builds the box force/moment two ways on the same
+  model and asserts the totals agree to ≤1%: Path A is the SOL 144 coupling chain
+  `skj @ (ajj_inv_corr @ w)` (totals via `_pitch_moment`); Path B is `solve_rigid_cl`, which
+  rebuilds its own AIC and Kutta–Joukowski resultants in a separate module (`Fz = CL·S`,
+  `My = CM·S·c`). Parametrised over `ha144a_fullspan_sbeam.bdf` (M=0.9) and `val_vlm_rect_ar8.bdf`
+  (M=0).
+- Both paths are driven with the SAME alpha-only normalwash (W2GJ baseline excluded) and the SAME
+  effective Mach, so the comparison is apples-to-apples. The totals match to machine precision; a
+  parity proxy (halving `f_box`) fails the gate by ~2×, confirming it discriminates.
+- No new production code — reuses `_pitch_moment`, `build_djx`, and `solve_rigid_cl`.
+
 **SOL 144 runs end-to-end from the CLI — f06 output + trimmed flight-load export (AE10 + Step 56, 2026-06-13)**
 
 `sbeam deck.bdf` now solves a SOL 144 static aeroelastic trim deck end-to-end. Previously

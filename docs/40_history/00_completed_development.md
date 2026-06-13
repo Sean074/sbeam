@@ -2812,3 +2812,48 @@ the exported FORCE Fz sum balances the trimmed lift to 3.5e-9 relative; `q_div �
   the free-flight SUPORT `K_aa` is singular, so an a-set generalized eig would be ill-posed.
 - New result fields are optional with defaults, so existing `Sol144TrimResult` construction
   and the Step 50 `Sol144Result` are unaffected.
+
+---
+
+### Phase A/C — V-AE3: Independent unit-Cp force/moment cross-check ✅ COMPLETE (2026-06-13)
+
+**Objective:** Close the AE13 validation blind spot — the one that let 207 tests pass while the
+HA144A trim was grossly wrong — with a gate that confirms the force/moment coupling path is
+INDEPENDENTLY correct, not merely self-consistent. The nearby checks were all non-discriminating:
+the analytic==FD restrained-derivative check is vacuous on a linear system; `test_ae1_step_e_moment.py`
+checks `_pitch_moment` against itself (a common scale error passes); and
+`test_phase_b.py::test_tz_sum_vs_cl_magnitude`'s `min(err_full, err_half) < 0.02` structurally
+accepts both the correct lift and exactly half of it (it could not catch the `sym=2` parity bug).
+
+**Deliverables:**
+- **`tests/aero/test_vae3_cross_check.py` (new):** builds the box force/moment two independent
+  ways on the same model and asserts the totals agree to ≤1%, parametrised over
+  `sample/ha144a_fullspan_sbeam.bdf` (M=0.9) and `sample/val_vlm_rect_ar8.bdf` (M=0):
+  - **Path A (coupling)** — the SOL 144 chain `f_box = skj @ (ajj_inv_corr @ w)` with `w` the
+    `build_djx` ANGLEA column (`= −n_z`); totals via `_pitch_moment` (`sol144.py`).
+  - **Path B (independent)** — `solve_rigid_cl` (`sbeam/aero/vlm.py`), which rebuilds its own AIC
+    and Kutta–Joukowski resultants in a separate module; at unit q `Fz = CL·S_ref`,
+    `My = CM·S_ref·c_ref`.
+- Reuses `_pitch_moment`, `build_djx`, `solve_rigid_cl`, `build_grid_index`, and the
+  `_x_ref`/module-fixture pattern from `test_ae1_step_e_moment.py` — no new production code.
+
+**Test/Acceptance:** `pytest tests/aero/test_vae3_cross_check.py -v` → 4 passed. Path-A totals
+match the `solve_rigid_cl` resultants to machine precision on both decks (HA144A: Fz 2028.4, My
+−11484; rect_ar8: Fz 37.245, My −9.0267 — rel err ≤ 6e-16). A parity proxy (halving `f_box`)
+produces a 0.50 relative error, failing the 1% gate by ~2× — confirming the gate discriminates.
+Full aero suite green.
+
+**Key decisions:**
+- **Excitation matched, not approximated.** `solve_rigid_cl` uses `rhs = −α·n_z` with no W2GJ
+  baseline; HA144A has a W2GJ (`wg≠0`), so Path A is driven with the ANGLEA column ALONE
+  (excluding `aero.wg`). The system is linear, so `α = 1 rad` is exact, not small-angle.
+- **Mach matched.** Effective Mach = `bulk.aeros.mach` is passed to `solve_rigid_cl` so the β_pg
+  scaling is identical on both paths.
+- **Genuinely independent.** Neither target deck carries a WKK/AECORR correction, so
+  `build_aero_model` sets `ajj_inv_corr = solve(AJJ)` (scaled by `1/β_pg` then `2/chord` → ΔCp)
+  while `solve_rigid_cl` separately computes `gamma = solve(A, rhs)/β_pg` and `cp = 2γ/chord` —
+  same physics, separately coded — so a scale/parity error in either module fails the gate.
+- **Moment uses an absolute floor** (`0.01·|Fz_indep|·c_ref`) to avoid a near-zero-normalisation
+  artifact on a symmetric/planar deck (the trap AE8a documents).
+- Named `test_vae3_cross_check.py` to avoid collision with the unrelated "V-AE3a" trim-lift gate
+  in `test_trim_urdd.py`.

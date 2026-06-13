@@ -16,23 +16,24 @@ trim error is a ~0.1° q-INVARIANT common-mode offset (0.36% of full scale), ide
 already accepted at SC1 — not a flexible-coupling defect (it does not scale with q). Under the
 **1%-of-full-scale** acceptance gate now encoded in `test_ae1_fullspan.py::TestVAE1dSC2` (the
 relative-tolerance `xfail` dropped), both subcases pass, so the AE1 acceptance gate is satisfied.
-The remaining real work: **V-AE3 (item 1)** independent cross-check; **AE8b (item 2)**
-unrestrained-derivative formulation (MAJOR, large-signal, genuinely off); **AE8a (item 3)**
+V-AE3 (the independent unit-Cp force/moment cross-check) was CLOSED 2026-06-13
+(`tests/aero/test_vae3_cross_check.py`): the coupling-path Fz/My match the `solve_rigid_cl`
+resultants to machine precision on both target decks. The remaining real work: **AE8b (item 1)**
+unrestrained-derivative formulation (MAJOR, large-signal, genuinely off); **AE8a (item 2)**
 downgraded to a MINOR optional root-cause of the ~0.1° common-mode.
 
 | # | Item | Severity | Status | What it unblocks |
 |--:|------|----------|--------|------------------|
-| 1 | [V-AE3 — Independent unit-Cp force/moment cross-check](#v-ae3--independent-unit-cp-force-and-moment-cross-check) | MAJOR | Open — **recommended validation step** | Replaces non-discriminating FD/self-consistency checks (AE13); corroborates the coupling is correct |
-| 2 | [AE8b — Unrestrained (mean-axis) derivative formulation](#major-ae8b--unrestrained-mean-axis-derivative-formulation-known-wrong) | MAJOR | Open — known-wrong first attempt; large-signal, genuinely off | HA144A unrestrained derivative column; Phase C derivative deliverable |
-| 3 | [AE8a — q-invariant common-mode trim offset (~0.1°)](#minor-ae8a--q-invariant-common-mode-trim-offset) | MINOR | Open — within fitness tolerance (≤0.4% FS); optional root-cause at q=40 | Documents/removes a known ≤0.4% FS trim bias; NOT a blocker |
-| 4 | [AE1 Step C — `Q_aa` rigid-body null-space gate](#ae1-step-c--q_aa-rigid-body-null-space-gate) | MINOR | Open — land any time | Regression guard for B's spline fix — null space already 2e-14; NOT the trim lead |
-| 5 | [AE11 — D_jx YAW column + AESURF hinge geometry](#minor-ae11--d_jx-yaw-column-duplicates-roll-aesurf-hinge-geometry-ignored) | MINOR | Open | Vertical-fin trim, hinge-moment derivs (non-blocking for AE1) |
-| 6 | [AE12 — SPLINE2 DTOR/DTHZ warning (PG-normal half not a bug)](#minor-ae12--spline2-dtordthz-silently-ignored-pg-normal-half-misidentified) | MINOR | Open | User-input safety (PG-normal half re-diagnosed: not a bug) |
-| 7 | [A7 — Cosine chordwise spacing helper + low-NCHORD warning](#minor-a7--default-chordwise-box-count-too-low-no-cosine-chordwise-spacing) | MINOR | Open (code) | Pitching-moment convergence (sample decks already at NCHORD=8) |
-| 8 | [A8 — Box-AR pre-solve warning](#minor-a8--spanwise-box-count-aspect-ratio-must-be-o1-companion-to-a7) | MINOR | Open (code) | Lift-slope bias guard (sample decks already AR≈1) |
-| 9 | [Phase C Steps 53–55, 57](#phase-c--sol-144-static-aeroelastics-steps-5355-57) | Planned | Unblocked (AE1 Step F closed); AE1 Step C optional | Maneuver loads, DIVERG q-sweep, viewer |
-| 10 | [Monitor points & section loads — Phase 1 (static)](#monitor-points--section-loads--phase-1-static) | Planned | Unblocked (AE1 Step F closed) | Structures-team loads handoff; precursor to dynamic gust loads at monitors |
-| 11 | [Phase 2 / Phase 3 / Future development](#phase-2--phase-3--future-development) | Planned | Optional | Long-tail capability |
+| 1 | [AE8b — Unrestrained (mean-axis) derivative formulation](#major-ae8b--unrestrained-mean-axis-derivative-formulation-known-wrong) | MAJOR | Open — known-wrong first attempt; large-signal, genuinely off | HA144A unrestrained derivative column; Phase C derivative deliverable |
+| 2 | [AE8a — q-invariant common-mode trim offset (~0.1°)](#minor-ae8a--q-invariant-common-mode-trim-offset) | MINOR | Open — within fitness tolerance (≤0.4% FS); optional root-cause at q=40 | Documents/removes a known ≤0.4% FS trim bias; NOT a blocker |
+| 3 | [AE1 Step C — `Q_aa` rigid-body null-space gate](#ae1-step-c--q_aa-rigid-body-null-space-gate) | MINOR | Open — land any time | Regression guard for B's spline fix — null space already 2e-14; NOT the trim lead |
+| 4 | [AE11 — D_jx YAW column + AESURF hinge geometry](#minor-ae11--d_jx-yaw-column-duplicates-roll-aesurf-hinge-geometry-ignored) | MINOR | Open | Vertical-fin trim, hinge-moment derivs (non-blocking for AE1) |
+| 5 | [AE12 — SPLINE2 DTOR/DTHZ warning (PG-normal half not a bug)](#minor-ae12--spline2-dtordthz-silently-ignored-pg-normal-half-misidentified) | MINOR | Open | User-input safety (PG-normal half re-diagnosed: not a bug) |
+| 6 | [A7 — Cosine chordwise spacing helper + low-NCHORD warning](#minor-a7--default-chordwise-box-count-too-low-no-cosine-chordwise-spacing) | MINOR | Open (code) | Pitching-moment convergence (sample decks already at NCHORD=8) |
+| 7 | [A8 — Box-AR pre-solve warning](#minor-a8--spanwise-box-count-aspect-ratio-must-be-o1-companion-to-a7) | MINOR | Open (code) | Lift-slope bias guard (sample decks already AR≈1) |
+| 8 | [Phase C Steps 53–55, 57](#phase-c--sol-144-static-aeroelastics-steps-5355-57) | Planned | Unblocked (AE1 Step F closed); AE1 Step C optional | Maneuver loads, DIVERG q-sweep, viewer |
+| 9 | [Monitor points & section loads — Phase 1 (static)](#monitor-points--section-loads--phase-1-static) | Planned | Unblocked (AE1 Step F closed) | Structures-team loads handoff; precursor to dynamic gust loads at monitors |
+| 10 | [Phase 2 / Phase 3 / Future development](#phase-2--phase-3--future-development) | Planned | Optional | Long-tail capability |
 
 **Closed in this branch (full detail in CHANGELOG `[Unreleased]` and `docs/40_history`):**
 AE2–AE7; AE9 (per-TRIM Mach AIC cache + supersonic guard); **AE10** (SOL 144 CLI dispatch from
@@ -45,9 +46,9 @@ full-span only; the `sym=2` factor and `parity` flag are gone, SC1 trims to NAST
 **G** (analytic restrained derivatives, V-AE1e partial), and **F** (V-AE1d acceptance gate
 re-framed to %-full-scale, SC2 `xfail` dropped, 2026-06-13). The retracted "flexible `q·Q_aa`"
 re-diagnosis of the SC1 gap is closed history (`docs/40_history`) and no longer load-bearing:
-the SC1 gap was the parity double-count, now removed by construction. The remaining open AE1
-work is V-AE3 (item 1) and AE8b (item 2); the SC2 "residual" is the MINOR q-invariant common-mode
-offset (item 3 / AE8a).
+the SC1 gap was the parity double-count, now removed by construction. V-AE3 (the independent
+unit-Cp cross-check) is now CLOSED; the remaining open AE1 work is AE8b (item 1); the SC2
+"residual" is the MINOR q-invariant common-mode offset (item 2 / AE8a).
 
 ---
 
@@ -120,11 +121,13 @@ now closed under the %-full-scale gate (AE1 Step F, 2026-06-13).
 - **V-AE1b** (closed) — `Q_aa·u_rb`/`g_slope·u_rb`/`g_disp·u_rb` rigid-body null-space
   residuals < 1e-10 on HA144A, val_vlm_rect_ar8. ✅ PASSING (`TestGlobalRigidBody`); the
   dihedral (z≠0) fixture is the remaining gap, tracked on Step C.
-- **V-AE1c / V-AE3** (open — V-AE3 is now a concrete first step, item 1) — an INDEPENDENT
-  unit-Cp cross-check of the skj/g_disp total force AND moment against `solve_rigid_cl`
-  resultants. Must compare against `solve_rigid_cl`, NOT against `_pitch_moment`
-  (`test_ae1_step_e_moment.py` only checks self-consistency — a common scale error passes it).
-  See the [V-AE3 section](#v-ae3--independent-unit-cp-force-and-moment-cross-check) (promoted out of AE13).
+- **V-AE1c / V-AE3** (closed 2026-06-13, `tests/aero/test_vae3_cross_check.py`) — an INDEPENDENT
+  unit-Cp cross-check of the skj coupling-path total force AND moment against `solve_rigid_cl`
+  resultants. Compares against `solve_rigid_cl` (which rebuilds its own AIC and K–J resultants),
+  NOT against `_pitch_moment` (`test_ae1_step_e_moment.py` only checks self-consistency — a common
+  scale error passes it). Path-A Fz/My match the independent resultants to machine precision on
+  HA144A (full-span) and `val_vlm_rect_ar8`; the parity-proxy (half `f_box`) fails the 1% gate by
+  ~2×, confirming the gate discriminates. ✅
 - **V-AE1d** (Step F, closed 2026-06-13) — SC2 ANGLEA, ELEV within **1 % of full-scale range**
   (not relative-to-value, which is meaningless at SC2's near-zero trim point). Both pass live
   (ANGLEA 0.36% FS, ELEV 0.23% FS); the superseded relative `xfail` was dropped. SC1 keeps its
@@ -260,42 +263,6 @@ RIDES HERE: completing V-AE1e's remaining RESTRAINED columns (Cmα, Cmq, CZδe, 
 
 ---
 
-### V-AE3 — Independent unit-Cp force and moment cross-check
-
-**MAJOR — recommended validation step.** An independent confirmation that the force/moment
-coupling path is correct. It is cheap, has no physics-research dependency, and closes the
-validation blind spot that let 207 tests pass while the HA144A trim was grossly wrong (AE13). It
-also corroborates the revised SC2 diagnosis: if the coupling totals match the independent rigid
-resultants, the SC2 residual cannot be a coupling defect (consistent with the q-invariant
-common-mode finding, AE8a). Promoted out of AE13's sub-bullet to a concrete item (2026-06-13) at
-the senior-engineer review's recommendation.
-
-**The problem it fixes — several existing gates are NON-DISCRIMINATING:**
-- the analytic==FD restrained-derivative check is vacuous on a linear system;
-- `test_ae1_step_e_moment.py` checks `_pitch_moment` against itself (self-consistent — a common
-  scale error passes);
-- `test_phase_b.py::test_tz_sum_vs_cl_magnitude` uses `min(err_full, err_half) < 0.02`, which
-  structurally accepts BOTH the correct lift and exactly half of it (it could not catch the
-  sym=2 parity bug).
-
-None can confirm the coupling / force path is independently correct rather than merely
-self-consistent.
-
-**Deliverable.** A new test (e.g. `tests/aero/test_vae3_cross_check.py`) that builds the box
-force vector two ways on the same model — (a) the SOL 144 coupling path
-(`skj @ ajj_inv_corr @ w`, summed through `g_disp`), and (b) the Kutta–Joukowski resultants from
-`solve_rigid_cl` (`sbeam/aero/vlm.py`) — and asserts the TOTAL force AND total moment agree. It
-MUST be built from `solve_rigid_cl` (independent path), NOT as an extension of the `_pitch_moment`
-self-consistency class. Rename to avoid collision with the unrelated "V-AE3a" trim-lift gate in
-`test_trim_urdd.py`. Pairs with the open V-AE1c cross-check; together they close the
-INDEPENDENT-path half of AE13.
-
-**Acceptance.** On HA144A (full-span) and `val_vlm_rect_ar8`: the coupling-path total Fz and My
-equal the `solve_rigid_cl` resultants to ≤1% — tight enough that a factor-of-~1.4 or
-factor-of-2 (parity) discrepancy fails hard.
-
----
-
 ### [MINOR] AE11 — D_jx YAW column duplicates ROLL; AESURF hinge geometry ignored
 
 **Files:** `sbeam/aero/integration.py:122–125, 130–143`, `sbeam/model/aero.py`
@@ -373,16 +340,15 @@ FIX:    Three permanent gates planned; status today:
                  TestSweptSplineRigidBody) and updated 2026-06-12 to use EA-only SET1
                  with DTHX=+1 alongside V-AE1b (`TestGlobalRigidBody`). Genuinely closed:
                  exercises a 60°-swept axis + full 6-mode lever-arm rotation.
-        (V-AE3)  Unit-consistency gate — g_disp/skj-path total force AND moment equals the
-                 Kutta-Joukowski resultants from solve_rigid_cl on the same model. Open —
-                 PROMOTED 2026-06-13 to a concrete first step (item 3, recommended before AE8a);
-                 full deliverable + acceptance now live in the V-AE3 section above. NOTE: (a) rename to avoid collision with the
-                 UNRELATED "V-AE3a" trim-lift gate in test_trim_urdd.py; (b) it must be an
-                 INDEPENDENT path (build f via solve_rigid_cl, compare to skj/g_disp totals),
-                 NOT an extension of the Step E self-consistency class — and the nearest
-                 existing check (test_phase_b.py::test_tz_sum_vs_cl_magnitude) uses
-                 min(err_full,err_half)<0.02, which structurally accepts BOTH the correct
-                 lift and exactly half of it, so it cannot catch the factor-of-2 parity bug.
+        (V-AE3)  Unit-consistency gate — coupling-path (skj @ ajj_inv_corr) total force AND
+                 moment equals the Kutta-Joukowski resultants from solve_rigid_cl on the same
+                 model. CLOSED 2026-06-13 (tests/aero/test_vae3_cross_check.py): named to avoid
+                 collision with the UNRELATED "V-AE3a" trim-lift gate in test_trim_urdd.py; built
+                 as an INDEPENDENT path (solve_rigid_cl rebuilds its own AIC + K–J resultants),
+                 NOT an extension of the Step E self-consistency class. Fz/My agree to machine
+                 precision on HA144A and val_vlm_rect_ar8; the half-f_box parity proxy fails by
+                 ~2×, so unlike test_phase_b.py::test_tz_sum_vs_cl_magnitude (min(err_full,
+                 err_half)<0.02) it DOES catch the factor-of-2 parity bug.
         (V-AE1g) Rigid-derivative benchmark — CLOSED 2026-06-13 (test_ha144a_rigid_derivs.py):
                  the full rigid longitudinal column (CZα/CMα/CZq/CMq/CZδe/CMδe) gated within
                  0.5% of the independent ADA370433 Table 3.1.1 NASTRAN values — adds the

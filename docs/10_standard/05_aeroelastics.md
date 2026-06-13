@@ -1102,6 +1102,25 @@ was removed (AE1 Step D).
     is tracked as MINOR AE8a. (AE1 Step G — the analytic restrained derivatives — is closed and
     did **not** move SC2: the derivatives are an output, not the trim driver.)
 
+### Coupling-path cross-check — V-AE3 (`tests/aero/test_vae3_cross_check.py`)
+
+An INDEPENDENT confirmation that the force/moment coupling path is correct, closing the AE13
+blind spot where every aero gate was only self-consistent (a common scale error or factor-of-2
+parity bug would pass). The box force/moment is built two ways on the same model:
+
+- **Path A (coupling)** — the SOL 144 chain: `f_box = skj @ (ajj_inv_corr @ w)` with `w` the
+  `D_jx` ANGLEA column (`= −n_z`); totals via `_pitch_moment`.
+- **Path B (independent)** — `solve_rigid_cl` (`sbeam/aero/vlm.py`), which rebuilds its own AIC
+  and Kutta–Joukowski resultants in a separate module; at unit q `Fz = CL·S_ref`,
+  `My = CM·S_ref·c_ref`.
+
+Both paths are driven with the SAME alpha-only normalwash (W2GJ baseline `wg` excluded so the
+excitations match) and the SAME effective Mach (`bulk.aeros.mach`). On HA144A (full-span, M=0.9)
+and `val_vlm_rect_ar8` (planar, M=0) the Path-A totals match the `solve_rigid_cl` resultants to
+machine precision; a parity proxy (halving `f_box`) fails the 1% gate by ~2×, confirming the gate
+discriminates — unlike `test_phase_b.py::test_tz_sum_vs_cl_magnitude`'s
+`min(err_full, err_half) < 0.02`, which accepts both the correct lift and exactly half of it.
+
 ### Restrained derivatives — analytic Schur form (`tests/aero/test_ae1_restrained_derivs.py`)
 
 `_compute_restrained_derivs` returns the **exact analytic** restrained stability derivatives
