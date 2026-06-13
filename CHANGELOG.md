@@ -11,6 +11,53 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Phase 2 completion.
 
+### Fixed
+
+**AE1 Step B — Spline kinematic correctness on swept SPLINE2 (B1–B4, 2026-06-12)**
+
+Resolved three independent defects that together prevented `g_slope`/`g_disp` from
+reproducing global basic-frame rigid-body modes on a swept SPLINE2. The HA144A wing,
+under a global θ=1e-3 pitch about y, now returns uniform incidence +1.000e-3 (was
+[−9.45e-02, +4.53e-02]). All 18 `TestGlobalRigidBody` (V-AE1b) tests pass; the full
+non-V-AE1 suite holds at 238 passed.
+
+- **B1 — RBAR-expanded recovery in the trim path.** Added `_expand_to_g(u_a, T,
+  free_local, n_red)` to `sbeam/solver/sol144.py` and replaced the three
+  direct-index scatters in `run_sol144_trim` and `_compute_restrained_derivs`
+  (nominal + perturbed) with `displacements = T @ u_red`. RBAR slave DOFs now move
+  with their masters before `g_slope @ displacements` is evaluated. The
+  `_compute_restrained_derivs` signature changed from `(free_dofs, …, n_dofs)` to
+  `(T, free_local, n_red, …)`.
+- **B2 — Sample HA144A SET1 fixed to the elastic axis.**
+  `sample/ha144a_sbeam.bdf` SPLINE2 1601 SET1 changed from `{99, 100, 111, 112,
+  121, 122}` (fuselage centreline + RBAR-slave LE/TE stringers) to the EA-only
+  `{100, 110, 120}` (wing-CBAR endpoints); SPLINE2 DTHX flipped −1 → +1 (attached)
+  so torsion rides through the master Rx DOF with the corrected formula.
+- **B3 — SPLINE2 SET1 collinearity validator.** `sbeam/aero/spline.py
+  ::_build_spline2_block` now computes each SET1 grid's chord offset
+  `Δ_i = (r_i − origin)·ŷ_spline` and raises `ValueError` when
+  `max |Δ| > 5%` of the span range, naming the offending grids and their (x, y,
+  s, Δ). Prevents silent Q_aa contamination from future off-EA SET1 layouts.
+- **B3+ — Spline-math fix (multiplication-bending + corrected torsion).**
+  `_build_spline2_block` now uses `w = −x̂[0]·(dh/ds)` for the bending /
+  translation contribution (was `−(dh/ds)/x̂[0]`, self-consistent only on the
+  V-AE2b along-spline-axis kinematic). Torsion uses
+  `w_torsion = −ŷ[0]·x_comp·f_vals_slope` (was `x_comp·f_vals_slope`, correct
+  only for unswept splines). Added matching torsion contribution to `g_disp`:
+  `g_disp[3k+c] += x_comp·ζ_k·ẑ[c]·f_vals_force`. The `sweep_ok`
+  gate is removed (multiplication is well-defined at `x̂[0]=0`). With the new
+  formulas the attached (`DTHX=+1`) path reproduces all six basic-frame rigid-body
+  modes exactly on planar wings.
+- **B4 — V-AE1b gate added (`tests/aero/test_spline.py::TestGlobalRigidBody`).**
+  For each of `{Tx, Ty, Tz, Rx, Ry, Rz}` applied to *every* grid (with lever-arm
+  fill for rotations), asserts `g_slope·u_rb` and `g_disp·u_rb` (z-component at
+  every box force_point) against analytic expectations. Tolerances: 1e-5 on
+  HA144A (limited by 5-decimal coordinate input), 1e-12 on the math-exact
+  rectangular fixture.
+- The legacy V-AE2 swept-spline fixture was updated to the EA-only SET1 and
+  `DTHX=+1` to align with the corrected spline; V-AE2a/b/c remain green as unit
+  checks on the Hermite slope projection.
+
 ### Added
 
 **Critical design review — aeroelastics, HA144A benchmark (2026-06-11)**

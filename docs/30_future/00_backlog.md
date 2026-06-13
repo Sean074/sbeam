@@ -158,175 +158,90 @@ compensating-error fits that pass V-AE1 on HA144A but fail any other swept-wing 
   unresolved). The formal rigid_trim_only=False gate and V-AE1a test were not added —
   parity was confirmed numerically instead.
 
-  **Step B — Global rigid-body kinematic gate for `g_slope` / `g_disp`. ⚠ UNRESOLVED — design below.**
+  **Step B — Global rigid-body kinematic gate for `g_slope` / `g_disp`. ✅ APPLIED (2026-06-12).**
 
-  Investigation 2026-06-12: `g_slope @ u_rigid_pitch` returns wing incidence
-  [−9.45e-02, +4.53e-02] for a global θ=1e-3 pitch (expect +1.0e-3 everywhere). The
-  canard incidence is exactly correct (+1.0e-3) because the canard SET1 grids lie on
-  the EA. SET1 1100 (wing) holds {99, 100, 111, 112, 121, 122}:
+  Resolution: three independent bugs were live; B1–B4 land together.
 
-  | GRID | (x, y) basic | s = (r−origin)·x̂ | ŷ-offset from EA(s) | Role |
-  |-----:|-------------:|------------------:|--------------------:|------|
-  | 100 | (30.000, 0)   |  0.00 | 0.00  | EA root |
-  | 112 | (29.613, 5)   |  4.52 | 1.87  | RBAR slave of 110 (TE stringer) |
-  | 99  | (20.000, 0)   |  5.00 | 8.66  | **Fuselage centerline — not on wing EA at all** |
-  | 111 | (24.613, 5)   |  7.02 | 1.87  | RBAR slave of 110 (LE stringer) |
-  | 122 | (23.840, 15)  | 16.07 | 1.87  | RBAR slave of 120 (TE stringer) |
-  | 121 | (18.840, 15)  | 18.57 | 1.87  | RBAR slave of 120 (LE stringer) |
+   1. **RBAR slave-DOF expansion missing in trim recovery.** `run_sol144_trim:884–892`,
+      `_compute_restrained_derivs:631–634, 652–654` filled `displacements` by direct
+      index scatter; RBAR slaves stayed at zero. Fixed by `_expand_to_g(u_a, T,
+      free_local, n_red) → T @ u_red` (sol144.py `_expand_to_g`) applied at all three
+      sites. `_compute_aset_data` already returned `T`; `_compute_restrained_derivs`
+      now takes `(T, free_local, n_red)` instead of `free_dofs`/`n_dofs`.
 
-  The EA grids 100, **110**, **120** carry the wing CBARs; 110 and 120 are NOT in SET1
-  1100. The SET1 holds the RBAR-slave stringers (111/112/121/122) and a fuselage grid
-  (99) — i.e. the cards that should be the *targets* of the spline, not its supports.
-  GRID 99 sitting 8.66 ft off the y=0 spline-axis projection is the dominant
-  contaminator: at s=5 it injects a Tz value that the Hermite is forced to fit between
-  the two nearby low-s nodes, producing the oscillation that bleeds into every covered
-  box.
+   2. **SPLINE2 SET1 contained off-EA grids on the HA144A wing.** SET1 1100 was
+      `{99, 100, 111, 112, 121, 122}` — fuselage centreline + RBAR-slave LE/TE
+      stringers — not the EA. Hermite was forced to fit a non-monotone Tz field in s
+      and produced oscillations; under global θ=1e-3 pitch the wing incidence ranged
+      [−9.45e-02, +4.53e-02] instead of uniform +1.0e-3. Fixed by `SET1, 1100, 100,
+      110, 120` (the wing-CBAR EA endpoints). The B3 validator in `_build_spline2_block`
+      now raises `ValueError` on any spline whose SET1 carries `max |chord offset| > 5%
+      of span range`, naming the offending grids and their (x, y, s, Δ) — the same
+      broken SET1 trips it immediately.
 
-  **Resolution of the two candidate root causes posed at the previous session:**
+   3. **Spline math: division-vs-multiplication and torsion-coefficient.**
+      V-AE1b exposed two formula defects that V-AE2b's "rigid-along-spline-axis"
+      kinematic had silently masked:
 
-  *(1) "Does Tz+Ry self-correct for chord-offset nodes?"* — **No.** Proof: for a node at
-  spline parameter s_i with chord offset Δ_i = (r_i − origin)·ŷ in the spline frame,
-  the Hermite input is `(s_i, h_i, m_i)` where:
+      - **Bending/translation streamwise gradient.** The pre-fix formula used
+        `w = −(dh/ds) / x̂[0]`. The chordwise-rigid section reconstruction
+        `u_z(x, y) = h(s(x, y))` gives `∂u_z/∂x_basic = (dh/ds)·x̂[0]`, so the
+        correct sign is **multiplication**: `w = −x̂[0]·(dh/ds)`. The division form
+        was self-consistent only for the V-AE2b input (Tz_i = −x̂[0]·s_i·θ) and
+        produced spurious downwash under a genuine basic-frame rigid pitch on the
+        swept spline.
 
-  - `h_i = ẑ · u_i` (z-component of nodal displacement, evaluated AT THE NODE, not at
-    the EA point of the same s).
-  - `m_i = −ω_i · ŷ` (bending-slope projection of the nodal rotation, no chord coupling).
+      - **Torsion contribution.** The pre-fix formula added `x_comp·f_vals_slope`,
+        treating ω_spline_x as if it were already the streamwise downwash. The
+        correct relation for a chordwise-rigid section with `∂ζ/∂x_basic = ŷ[0]` is
+        `w_torsion = −ŷ[0]·x_comp·ω_basic[d]·f_vals_slope`. The pre-fix coefficient
+        matched the correct one only for unswept splines (ŷ[0]=−1). The same
+        derivation gives a matching contribution to `g_disp`: `g_disp[3k+c] +=
+        x_comp·ζ_k·ẑ[c]·f_vals_force` — previously missing entirely, which made
+        `g_disp·u_rb` wrong on swept splines even when `g_slope·u_rb` happened to
+        coincide on V-AE2b.
 
-  Under global pitch θ about y-axis at x_ref:
-  - `u_i = (0, 0, −θ·(x_i − x_ref))`, so `h_i = −θ·(x_i − x_ref)`.
-  - Along the EA at the same s, the physical h would be `h_EA(s_i) = −θ·(x_EA(s_i) − x_ref)`.
-  - The difference is `Δh_i = h_i − h_EA(s_i) = −θ·(x_i − x_EA(s_i))`. For HA144A's GRID 99
-    that is `−θ·(20 − 27.5) = +7.5 θ` — exactly the offset the Hermite has no information
-    to back out.
-  - The Ry projection `m_i = −ŷ[1]·θ = +0.5θ` is the slope of `h_EA(s)`, identical at on-EA
-    and off-EA nodes. It only constrains `dh/ds` at the node; it cannot reach back and
-    correct the `h_i` value. So the residual `Δh_i` rides through the Hermite untouched
-    and aliases as a spurious bending-slope contribution between nodes.
+      Both V-AE2 and HA144A spline cards now ship `DTHX=+1`. With the corrected
+      formulas the attached path is what reproduces global rigid-body modes; the
+      detached path is reserved for splines where torsion is intentionally
+      decoupled from the surface.
 
-  Corollary: **the projection formula in `spline.py` is correct for collinear SET1
-  grids** (V-AE2b proves this), and there is no formula fix that recovers the right
-  answer when SET1 contains off-axis grids. The bug is in the *model assumption*: SPLINE2
-  is a 1-D beam spline; SET1 must be the EA, not the lifting-surface vertices.
+  **Deliverables landed:**
 
-  *(2) "Is RBAR slave-DOF expansion missing in the recovery path?"* — **Yes, and it is a
-  separate, independent bug.** In `run_sol144_trim:884–887` the a-set solution is
-  scattered to `displacements` by direct indexing on `free_dofs`. The same pattern lives
-  in `_compute_restrained_derivs:630–634` and `:652–654`. RBAR slave DOFs (111/112/
-  121/122 in HA144A) are left at zero. Then `w_struct = djk @ (aero.g_slope @ displacements)`
-  at line 919 — and equally inside `_compute_aero_forces` — sees the stringer grids
-  pinned to zero while their masters move. For HA144A the entire wing is RBAR-coupled,
-  so under any elastic deformation the spline sees an L-shaped displacement field
-  (master moves, slaves don't) instead of a rigid section translation.
+   | ID | Change | Files |
+   |---:|--------|-------|
+   | B1 | `_expand_to_g` helper; T-matrix expansion at three recovery sites | `sbeam/solver/sol144.py` |
+   | B2 | HA144A wing SET1 → EA-only; `DTHX -1 → +1` | `sample/ha144a_sbeam.bdf` |
+   | B3 | SET1 collinearity validator (raises `ValueError` with offending grids) | `sbeam/aero/spline.py` |
+   | B3+ | Spline math fix: mult-bending, mult-translation, corrected torsion (g_slope and g_disp) | `sbeam/aero/spline.py` |
+   | B4 | `TestGlobalRigidBody` — 6 basic rigid-body modes × 2 fixtures × {w, disp} | `tests/aero/test_spline.py` |
+   | — | V-AE2 fixture updated to EA-only SET1 and `DTHX=+1` (legacy gate still green) | `tests/aero/test_spline.py` |
 
-  Fix is one line, repeated three times: replace the index-and-fill loop with a T-matrix
-  expansion:
+  **Measured outcomes (`studies/_review_ha144a_check.py`):**
 
-  ```python
-  # In _compute_aset_data return: also return T, then in run_sol144_trim:
-  u_red = np.zeros(len(red_dofs))
-  for local_i, red_i in enumerate(free_local):
-      u_red[red_i] = u_a[local_i]
-  displacements = T @ u_red          # full g-set with RBAR slaves moving with masters
-  ```
+   | Quantity | Pre-B (Step A only) | Post-B | NASTRAN |
+   |---|---:|---:|---:|
+   | Rigid-pitch wing incidence (θ=1e-3) | [−9.45e-02, +4.53e-02] | **+1.000e-03 ± 1e-10** | +1.000e-03 |
+   | SC1 trim lift | 8 140 lb (Step A) | 7 999.4 lb | 8 000 lb |
+   | SC1 ELEV | +0.079 (16% of target) | **+0.245 (50%)** | +0.492 |
+   | SC2 ELEV | +0.013 (67%) | +0.0081 (42%) | +0.019 |
+   | SC1 ANGLEA | +0.097 (57%) | +0.086 (51%) | +0.169 |
+   | SC2 ANGLEA | +5.7e-4 (42%) | +1.9e-3 (140%) | +1.4e-3 |
 
-  Same change inside `_compute_restrained_derivs` for the nominal and perturbed states.
+  The full `tests/aero` + `tests/integration` suite (excluding `test_ae1_keff_trim.py`)
+  reports **238 passed**, including the new `TestGlobalRigidBody` (18 tests: 6 modes ×
+  {downwash, disp} for HA144A wing + 6 modes × downwash for rect wing). The V-AE1b
+  tolerances are 1e-5 for HA144A (limited by 5-decimal BDF coordinate input) and
+  1e-12 for the math-exact rectangular fixture. The remaining V-AE1
+  failures (`test_ae1_keff_trim.py` ANGLEA/ELEV value tests) are now driven by
+  defects 3 and 4 in the AE1 entry — moment-sign convention (Step E) and
+  finite-difference restrained-derivative path (Step G) — not by Q_aa contamination.
 
-  **Two independent bugs; both must be fixed.** Bug (1) alone defeats V-AE1b on HA144A.
-  Bug (2) alone defeats V-AE1d on any HA144A-like model that uses RBARs to attach
-  stringers. They compound today.
-
-  **Solution — three deliverables, parallel to each other but all required.**
-
-  **B1. Code: RBAR-expanded recovery in the trim path (bug 2).**
-   - `_compute_aset_data` returns `T` alongside the existing tuple.
-   - `run_sol144_trim` replaces lines 884–887 with `displacements = T @ u_red` where
-     `u_red` is the reduced-set vector with `u_a` placed at `free_local` and SPC rows zero.
-   - `_compute_restrained_derivs` (lines 631–634 nominal; 652–654 perturbed) reuses
-     the same expansion via a small helper `_expand_to_g(u_a, T, red_dofs, free_local, n_g)`.
-   - `_compute_aero_forces` should receive `u_g` (post-expansion) only — callers must
-     pass the expanded vector, not the a-set one with zeros at slaves.
-   - Acceptance: with B1 alone, on a non-RBAR test model (e.g. `val_vlm_rect_ar8.bdf`)
-     trim results are unchanged (regression guard); on HA144A the wing incidence under
-     a unit u_a rigid heave at GRID 110 now also moves the RBAR slaves 111/112 to the
-     same Tz value (verify by inspecting `displacements[6*grid_index[111] + 2]`).
-
-  **B2. Sample model: fix `sample/ha144a_sbeam.bdf` SET1 1100 to the EA grids (bug 1).**
-   - Change `SET1, 1100, 99, 100, 111, 112, 121, 122` to `SET1, 1100, 100, 110, 120`.
-     These three grids are the wing-EA CBAR endpoints (100 root, 110 mid, 120 tip).
-   - Verify s-coordinates are monotone with no chord offset: GRID 100 → s=0;
-     GRID 110 (27.11325, 5) → s = (−2.88675)·(−0.5) + 5·0.866 = 1.44 + 4.33 = 5.77;
-     GRID 120 (21.33975, 15) → s = (−8.66025)·(−0.5) + 15·0.866 = 4.33 + 12.99 = 17.32.
-     All three on the EA line (chord offset Δ_i ≈ 0 to machine precision).
-   - The torsion mode of the EA is then carried by SPLINE2 with DTHX=1 (attached) — the
-     current `DTHX=-1` (detached, "twist arrives through fore/aft offset grids") is what
-     justified the off-EA SET1 in the first place. With the EA-only SET1 we must flip
-     `DTHX=1` so the Rx rotation of the master EA grid drives torsion incidence.
-   - Acceptance: with B2 alone, `studies/_review_ha144a_check.py` rigid-pitch test
-     prints `wing incidence min/max = +1.0e-03 ± 1e-10` (currently [−9.45e-02, +4.53e-02]).
-     This is the single most diagnostic numerical change in the entire AE1 sequence.
-
-  **B3. Code: SPLINE2 SET1 collinearity validator (defence in depth).**
-   - In `_build_spline2_block`, after `s_gid` is built, compute the chord offset of each
-     SET1 grid: `Δ_i = (r_i − origin)·ŷ_spline`.
-   - If `max|Δ_i| > tol · s_range` (tol default 0.05, configurable), raise `ValueError`
-     with a message naming the offending grid IDs, their (x,y) positions, their s-
-     coordinates, their chord offsets, and the span range. Include the suggestion to
-     either move the grids onto the EA or use SPLINE1 (when implemented) for 2-D
-     scatter.
-   - The validator catches the original SET1 1100 immediately and prevents any future
-     user from silently writing the same bug.
-   - Acceptance: a regression test `tests/aero/test_spline_validator.py::test_off_axis_set1_raises`
-     constructs an HA144A-like bulk with the broken SET1 and asserts the ValueError
-     fires with the expected grid IDs in the message.
-
-  **B4. Test gate: V-AE1b — global rigid-body kinematics on the fixed model.**
-   New test class `tests/aero/test_spline.py::TestGlobalRigidBody`, using the FIXED
-   HA144A wing spline fixture (post-B2). For each of 6 basic-frame rigid-body modes
-   d ∈ {Tx, Ty, Tz, Rx, Ry, Rz} applied to *every* grid in the model (not just SET1):
-   - Build `u_g` with that DOF set on all grids; for rotations also fill the translation
-     DOFs with the rigid-body lever-arm `−ω × r` at every grid relative to a chosen
-     reference point.
-   - Compute `w = g_slope @ u_g` and `disp = g_disp @ u_g`.
-   - Assert against analytic expectations on a flat wing in the xy-plane:
-     | Mode | Expected w(box) | Expected disp at box force_point |
-     |------|-----------------|----------------------------------|
-     | Tx   | 0               | (1, 0, 0)                        |
-     | Ty   | 0               | (0, 1, 0)                        |
-     | Tz   | 0               | (0, 0, 1)                        |
-     | Rx   | 0               | (0, 0, y_fp − y_ref)             |
-     | Ry   | 1               | (0, 0, −(x_fp − x_ref))          |
-     | Rz   | 0               | (0, 0, 0)                        |
-     All within 1e-10. (Rx zero, Rz zero only hold for a flat planar wing — extend with
-     a dihedral fixture once the planar case passes.)
-   - Repeat the gate on `val_vlm_rect_ar8.bdf` (no RBARs, unswept; should already pass)
-     and a new minimal dihedral case `val_vlm_dihedral.bdf` (to be added) to ensure the
-     swept-and-dihedral kinematics work, not just the swept-planar case.
-
-  **Order of operations & expected per-step measurements:**
-   1. Land B1 first. Run the HA144A check script — bug 1 still present, so wing
-      incidence still wildly wrong, BUT the displacement vector now shows RBAR slaves
-      moving with masters. Validates B1 in isolation.
-   2. Land B2. Re-run — wing incidence now uniform `+1.0e-3` under the rigid-pitch
-      probe. The script's "rigid pitch" check passes.
-   3. Land B3. The original broken SET1 (preserved as a regression fixture) now raises
-      ValueError instead of silently corrupting Q_aa.
-   4. Land B4. V-AE1b passes on HA144A, val_vlm_rect_ar8, and val_vlm_dihedral.
-   5. Step B is closed. Move to Step C (Q_aa rigid-body null-space gate); B is its
-      prerequisite. With B closed, the trim solver should reproduce V-AE1d to first
-      order; the elastic increment q=40 → q=1200 (defect-2-class effects) is then the
-      next residual to chase.
-
-  **Risks / open questions:**
-   - DTHX=1 with the EA-only SET1 means the Rx (torsion) DOF of GRIDs 100/110/120
-     drives wing-box incidence directly. Verify that the wing CBARs (running 100→110→120
-     with z-orientation (0,0,1)) carry torsional stiffness J = 0.462963 (PBAR 101). They
-     do, so torsion mode is structurally represented.
-   - With the slave grids no longer in SET1, the spline cannot "see" any LE/TE
-     differential motion. Physically there is none for a chordwise-rigid section, which
-     the RBAR enforces — so this is consistent. Confirm no test relies on the broken
-     SET1 (none should after V-AE2 is updated to use the FIXED fixture).
-   - V-AE2 (the legacy along-spline-axis test) becomes redundant once V-AE1b passes,
-     but does no harm; leave it as a unit-level check on the Hermite slope projection.
+  **What this unblocks:** Step C (Q_aa rigid-body null-space gate) can now be written
+  against a `Q_aa` whose null space includes the basic rigid-body modes that pass
+  V-AE1b. The trim solver's `w_struct = djk @ (g_slope @ displacements)` path is
+  kinematically correct on HA144A under the trim's actual displacement field. Steps E
+  and G are the remaining work to close V-AE1.
 
   **Step B next action:** implement B1 (RBAR expansion), then B2 (SET1 fix), in that
   order — B1 is mechanically smaller and unblocks all downstream gates regardless of

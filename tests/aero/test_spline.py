@@ -610,21 +610,32 @@ class TestSpline0ZeroForce:
 def _build_ha144a_wing_spline_bulk():
     """HA144A CID-2 wing spline geometry for V-AE2 test.
 
-    Wing grids (SET1 1100): 99, 100, 111, 112, 121, 122
-    CAERO1 1100: 8-span × 4-chord
-    CID 2: x_hat=(−0.5,0.866,0), y_hat=(−0.866,−0.5,0), z_hat=(0,0,1)
-    SPLINE2 1601: CAERO=1100, SETG=1100, CID=2, DTHX=−1 (detached rotation)
+    Wing grids: 100, 110, 120 are the elastic-axis CBAR endpoints (root, mid,
+    tip). 111/112/121/122 are RBAR-slaved LE/TE stringers and 99 is the
+    fuselage centreline; they live in the bulk so other tests can reference
+    them but are deliberately NOT in SET1 1100 — SPLINE2 is a 1-D beam spline
+    so its SET1 must lie along the EA (see AE1 Step B in the backlog and
+    spline.py SET1 collinearity check).
+
+    CAERO1 1100: 8-span × 4-chord.
+    CID 2: x_hat=(−0.5,0.866,0), y_hat=(−0.866,−0.5,0), z_hat=(0,0,1).
+    SPLINE2 1601: CAERO=1100, SETG=1100, CID=2, DTHX=+1 (attached: torsion
+    rides through master Rx now that LE/TE stringers are out of SET1).
     """
     bulk = BulkData()
 
-    # Wing structural grids (positions from HA144A)
+    # Wing structural grids (positions from HA144A). EA grids 100/110/120
+    # sit on the swept elastic axis from (30, 0) at 60° from x — verify
+    # collinearity: chord offset Δ = (r−origin)·ŷ_spline = 0 for all three.
     wing_grids = {
-        99:  (20.0,     0.0,  0.0),
-        100: (30.0,     0.0,  0.0),
-        111: (24.61325, 5.0,  0.0),
-        112: (29.61325, 5.0,  0.0),
-        121: (18.83975, 15.0, 0.0),
-        122: (23.83975, 15.0, 0.0),
+        99:  (20.00000, 0.0,  0.0),  # fuselage centreline
+        100: (30.00000, 0.0,  0.0),  # EA root
+        110: (27.11325, 5.0,  0.0),  # EA mid
+        111: (24.61325, 5.0,  0.0),  # LE stringer (RBAR slave of 110)
+        112: (29.61325, 5.0,  0.0),  # TE stringer (RBAR slave of 110)
+        120: (21.33975, 15.0, 0.0),  # EA tip
+        121: (18.83975, 15.0, 0.0),  # LE stringer (RBAR slave of 120)
+        122: (23.83975, 15.0, 0.0),  # TE stringer (RBAR slave of 120)
     }
     for gid, (x, y, z) in wing_grids.items():
         bulk.grids[gid] = Grid(gid=gid, cp=0, x=x, y=y, z=z, cd=0)
@@ -648,12 +659,18 @@ def _build_ha144a_wing_spline_bulk():
         p4=(13.45299, 20.0, 0.0), x43=10.0,
     )
 
-    bulk.set1s[1100] = Set1(sid=1100, grids=[99, 100, 111, 112, 121, 122])
+    # EA-only SET1: only grids on the swept elastic axis. The 1-D beam spline
+    # requires collinearity along x_hat; LE/TE stringers carry no spanwise
+    # bending information distinct from the EA grids and would alias as
+    # spurious slope under any chordwise-asymmetric deformation.
+    bulk.set1s[1100] = Set1(sid=1100, grids=[100, 110, 120])
 
-    # SPLINE2 1601: DTHX=−1 (detached — twist arrives through fore/aft offset grids)
+    # SPLINE2 1601: DTHX=+1 (attached). With the AE1 Step B spline-formula fix
+    # (multiplication-bending + corrected torsion), the attached path is what
+    # reproduces global basic-frame rigid-body modes on the swept spline.
     bulk.spline2s[1601] = Spline2(
         eid=1601, caero=1100, id1=1100, id2=1131, setg=1100,
-        dz=0.0, dtor=1.0, cid=2, dthx=-1.0, dthz=-1.0, usage="BOTH",
+        dz=0.0, dtor=1.0, cid=2, dthx=1.0, dthz=-1.0, usage="BOTH",
     )
 
     return bulk
@@ -781,4 +798,241 @@ class TestSweptSplineRigidBody:
             f"V-AE2c: g_disp[Tz row, col_Tz_0] must equal Hermite φ_0(t_force)="
             f"{expected_force:.8f}; got {actual:.8f} "
             f"(old colloc value would be {expected_slope:.8f})"
+        )
+
+
+# ---------------------------------------------------------------------------
+# V-AE1b: Global rigid-body kinematic gate
+# ---------------------------------------------------------------------------
+
+def _apply_rigid_body(
+    bulk: BulkData,
+    grid_index: dict,
+    mode: str,
+    ref_point=(0.0, 0.0, 0.0),
+) -> np.ndarray:
+    """Build a g-set displacement vector for a basic-frame rigid-body mode.
+
+    For translations the mode DOF is set to 1 at every grid (all other DOFs zero).
+    For rotations the nodal rotation ω = ê_d is set on every grid, and the
+    translation DOFs are filled with the lever-arm displacement ω × (r − ref).
+
+    Args:
+        bulk:       Bulk data with grid positions.
+        grid_index: {gid: i} mapping from build_grid_index.
+        mode:       One of 'Tx', 'Ty', 'Tz', 'Rx', 'Ry', 'Rz'.
+        ref_point:  Reference point for rotation lever arms (basic frame).
+
+    Returns:
+        u_g of shape (6 * n_grid,) with the requested rigid-body motion applied
+        uniformly to every grid. No structural reduction is performed; this is
+        the kinematic input that a correct spline must reproduce exactly.
+    """
+    n_g = 6 * len(grid_index)
+    u = np.zeros(n_g)
+    ref = np.asarray(ref_point, dtype=float)
+
+    trans = {'Tx': 0, 'Ty': 1, 'Tz': 2}
+    rot   = {'Rx': 0, 'Ry': 1, 'Rz': 2}
+
+    if mode in trans:
+        d = trans[mode]
+        for gi in grid_index.values():
+            u[6 * gi + d] = 1.0
+        return u
+
+    if mode in rot:
+        d = rot[mode]
+        omega = np.zeros(3)
+        omega[d] = 1.0
+        for gid, gi in grid_index.items():
+            g = bulk.grids[gid]
+            r = np.array([g.x, g.y, g.z]) - ref
+            u[6 * gi + 0:6 * gi + 3] = np.cross(omega, r)
+            u[6 * gi + 3:6 * gi + 6] = omega
+        return u
+
+    raise ValueError(f"Unknown rigid-body mode: {mode!r}")
+
+
+def _expected_planar_downwash(boxes, mode: str) -> np.ndarray:
+    """Analytic streamwise downwash w = −∂u_z/∂x_basic for a flat wing in xy-plane.
+
+    A flat planar wing in the basic xy-plane senses non-zero w only under a
+    basic-frame pitch about y (Ry). All other rigid-body modes produce zero
+    streamwise downwash because they neither tilt the surface in the streamwise
+    direction nor change u_z linearly with x.
+    """
+    n_box = len(boxes)
+    w = np.zeros(n_box)
+    if mode == 'Ry':
+        w[:] = 1.0
+    return w
+
+
+def _expected_planar_disp(boxes, mode: str, ref_point=(0.0, 0.0, 0.0)) -> np.ndarray:
+    """Analytic 3-D displacement at every box force_point for a flat wing.
+
+    Returns shape (3 * n_box,) with components interleaved as (ux, uy, uz, …)
+    per box, matching the layout of g_disp.
+    """
+    n_box = len(boxes)
+    disp = np.zeros(3 * n_box)
+    ref = np.asarray(ref_point, dtype=float)
+
+    if mode in ('Tx', 'Ty', 'Tz'):
+        d = {'Tx': 0, 'Ty': 1, 'Tz': 2}[mode]
+        for j in range(n_box):
+            disp[3 * j + d] = 1.0
+        return disp
+
+    if mode in ('Rx', 'Ry', 'Rz'):
+        d = {'Rx': 0, 'Ry': 1, 'Rz': 2}[mode]
+        omega = np.zeros(3)
+        omega[d] = 1.0
+        for j, box in enumerate(boxes):
+            r = np.asarray(box.force_point, dtype=float) - ref
+            disp[3 * j:3 * (j + 1)] = np.cross(omega, r)
+        return disp
+
+    raise ValueError(f"Unknown rigid-body mode: {mode!r}")
+
+
+class TestGlobalRigidBody:
+    """V-AE1b — Global rigid-body kinematic gate for `g_slope` / `g_disp`.
+
+    For each of the 6 basic-frame rigid-body modes applied to *every* grid (not
+    just SET1), assert that a correct spline reproduces the analytic
+    streamwise downwash and box-surface displacement field. The gate is the
+    only test that catches the SET1-collinearity defect that contaminated Q_aa
+    in the V-AE1 trim solve — V-AE2b passed by feeding a kinematic state
+    pre-projected onto the spline parameter, which is not the case the trim
+    solver actually produces.
+
+    Tolerance: 1e-5 for HA144A (the BDF coordinates are rounded to ~5 decimals
+    so the Hermite slope match is limited by grid-position precision, not the
+    spline math). 1e-12 for the math-exact rectangular fixture where the
+    floor is floating-point arithmetic. A correct spline on mathematically
+    exact input is exact to machine precision; on HA144A the residual is
+    dominated by 5-decimal coordinate rounding (the position difference
+    between e.g. GRID 110 at 27.11325 vs the math-exact 27.113248... is
+    ~3e-6, which propagates linearly to the slope mismatch).
+    """
+
+    ATOL_HA144A = 1e-5
+    ATOL_RECT   = 1e-12
+
+    # ------------------------------------------------------------------ #
+    # Fixture 1: HA144A swept wing (CID-2), EA-only SET1 (B2 fix)
+    # ------------------------------------------------------------------ #
+    @pytest.fixture(scope="class")
+    def ha144a_wing_ops(self):
+        from sbeam.aero.panel import mesh_caero1
+        bulk = _build_ha144a_wing_spline_bulk()
+        caero = bulk.caero1s[1100]
+        boxes = mesh_caero1(caero, bulk.paero1s[1000], bulk.aefacts, bulk.cord2rs, start_k=0)
+        gids_sorted = sorted(bulk.grids.keys())
+        grid_index = {gid: i for i, gid in enumerate(gids_sorted)}
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            g_slope, g_disp = build_g_spline(bulk, boxes, grid_index)
+        # Reference point for pitch lever-arm: HA144A trim reference x = 15
+        return g_slope, g_disp, boxes, grid_index, bulk, (15.0, 0.0, 0.0)
+
+    @pytest.mark.parametrize("mode", ["Tx", "Ty", "Tz", "Rx", "Ry", "Rz"])
+    def test_ha144a_wing_downwash(self, ha144a_wing_ops, mode):
+        """Swept wing g_slope reproduces the analytic streamwise downwash."""
+        g_slope, _, boxes, grid_index, bulk, ref = ha144a_wing_ops
+        u = _apply_rigid_body(bulk, grid_index, mode, ref_point=ref)
+        w = g_slope @ u
+        w_expected = _expected_planar_downwash(boxes, mode)
+        err = np.max(np.abs(w - w_expected))
+        assert err < self.ATOL_HA144A, (
+            f"V-AE1b HA144A wing mode={mode}: g_slope·u_rb residual {err:.3e} "
+            f"exceeds tol {self.ATOL_HA144A:.0e}; "
+            f"got range [{w.min():.4e}, {w.max():.4e}], expected uniform "
+            f"{w_expected[0] if len(w_expected) else 0.0}."
+        )
+
+    @pytest.mark.parametrize("mode", ["Tx", "Ty", "Tz", "Rx", "Ry", "Rz"])
+    def test_ha144a_wing_disp(self, ha144a_wing_ops, mode):
+        """Swept wing g_disp at each box force_point matches rigid-body kinematics."""
+        _, g_disp, boxes, grid_index, bulk, ref = ha144a_wing_ops
+        u = _apply_rigid_body(bulk, grid_index, mode, ref_point=ref)
+        disp = g_disp @ u
+        disp_expected = _expected_planar_disp(boxes, mode, ref_point=ref)
+        # g_disp ships only the z-row contribution today (a flat wing assumption);
+        # check the z-component, which is what the trim force transfer integrates.
+        z_actual   = disp[2::3]
+        z_expected = disp_expected[2::3]
+        err = np.max(np.abs(z_actual - z_expected))
+        assert err < self.ATOL_HA144A, (
+            f"V-AE1b HA144A wing mode={mode}: g_disp_z residual {err:.3e} "
+            f"exceeds tol {self.ATOL_HA144A:.0e}; "
+            f"got range [{z_actual.min():.4e}, {z_actual.max():.4e}], "
+            f"expected range [{z_expected.min():.4e}, {z_expected.max():.4e}]."
+        )
+
+    # ------------------------------------------------------------------ #
+    # Fixture 2: Unswept rectangular wing — regression guard (no RBARs)
+    # ------------------------------------------------------------------ #
+    @pytest.fixture(scope="class")
+    def rect_wing_ops(self):
+        """Rectangular unswept wing — math-exact grid positions, CID-3 spline.
+
+        Spline CID 3: A=(0,0,0), B=(0,0,1), C=(0,1,0) → x_hat=(0,1,0),
+        y_hat=(−1,0,0), z_hat=(0,0,1). EA grids at x=0 (on the spline axis,
+        chord offset = 0) from y=0 to y=8. Five-grid SET1 covers the span.
+
+        The unswept case must pass to machine precision; included as a
+        regression guard so a future swept-spline fix doesn't regress it.
+        """
+        from sbeam.aero.panel import mesh_caero1
+        from sbeam.model.aero import Aeros, Paero1, Caero1, Set1, Spline2
+
+        bulk = BulkData()
+        # EA grids on the spline axis (x = 0), exact integer y positions
+        for i in range(5):
+            gid = 100 + i
+            bulk.grids[gid] = Grid(gid=gid, cp=0, x=0.0, y=2.0 * i, z=0.0, cd=0)
+
+        bulk.aeros = Aeros(acsid=0, rcsid=0, cref=1.0, bref=8.0, sref=8.0,
+                           symxz=0, symxy=0)
+        bulk.paero1s[1000] = Paero1(pid=1000)
+        # CAERO1 leading edge at x=−0.25 so the EA (x=0) sits at ¼-chord
+        bulk.caero1s[1100] = Caero1(
+            eid=1100, pid=1000, cp=0, nspan=8, nchord=4,
+            lspan=0, lchord=0, igid=1,
+            p1=(-0.25, 0.0, 0.0), x12=1.0,
+            p4=(-0.25, 8.0, 0.0), x43=1.0,
+        )
+        bulk.set1s[1100] = Set1(sid=1100, grids=[100, 101, 102, 103, 104])
+        # CID 3: x_hat=(0,1,0) (spanwise), y_hat=(−1,0,0), z_hat=(0,0,1)
+        bulk.cord2rs[3] = Cord2r(cid=3, rid=0,
+                                  a=(0.0, 0.0, 0.0),
+                                  b=(0.0, 0.0, 1.0),
+                                  c=(0.0, 1.0, 0.0))
+        bulk.spline2s[1601] = Spline2(
+            eid=1601, caero=1100, id1=1100, id2=1131, setg=1100,
+            dz=0.0, dtor=1.0, cid=3, dthx=1.0, dthz=-1.0, usage="BOTH",
+        )
+        boxes = mesh_caero1(bulk.caero1s[1100], bulk.paero1s[1000], bulk.aefacts,
+                            bulk.cord2rs, start_k=0)
+        grid_index = {gid: i for i, gid in enumerate(sorted(bulk.grids))}
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            g_slope, g_disp = build_g_spline(bulk, boxes, grid_index)
+        return g_slope, g_disp, boxes, grid_index, bulk, (0.0, 4.0, 0.0)
+
+    @pytest.mark.parametrize("mode", ["Tx", "Ty", "Tz", "Rx", "Ry", "Rz"])
+    def test_rect_wing_downwash(self, rect_wing_ops, mode):
+        """Unswept rectangular wing g_slope reproduces the analytic downwash."""
+        g_slope, _, boxes, grid_index, bulk, ref = rect_wing_ops
+        u = _apply_rigid_body(bulk, grid_index, mode, ref_point=ref)
+        w = g_slope @ u
+        w_expected = _expected_planar_downwash(boxes, mode)
+        err = np.max(np.abs(w - w_expected))
+        assert err < self.ATOL_RECT, (
+            f"V-AE1b rect wing mode={mode}: g_slope·u_rb residual {err:.3e} "
+            f"exceeds tol {self.ATOL_RECT:.0e}."
         )

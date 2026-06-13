@@ -431,6 +431,34 @@ def _build_inertial_cols(
     return M
 
 
+def _expand_to_g(
+    u_a: np.ndarray,
+    T: np.ndarray,
+    free_local: list,
+    n_red: int,
+) -> np.ndarray:
+    """Expand an a-set displacement vector to the full g-set via the RBE3/RBAR T matrix.
+
+    The trim solver works on the a-set (post-SPC, post-RBAR). When the result is
+    fed back into `aero.g_slope @ u` or `_compute_aero_forces`, the RBAR slave
+    DOFs must move with their masters; a bare index scatter leaves the slaves at
+    zero and corrupts the structural normalwash on every RBAR-attached grid.
+
+    Args:
+        u_a:        (n_a,) a-set displacement.
+        T:          (n_g, n_red) RBE3/RBAR transformation from build_rbe3_transformation.
+        free_local: list of a-set indices in the reduced set (length n_a).
+        n_red:     number of reduced-set DOFs (T's column count).
+
+    Returns:
+        (n_g,) full g-set displacement with RBAR slaves driven by their masters.
+    """
+    u_red = np.zeros(n_red)
+    for local_i, red_i in enumerate(free_local):
+        u_red[red_i] = u_a[local_i]
+    return T @ u_red
+
+
 def _get_suport_local(bulk: BulkData, free_dofs: list, grid_index: dict) -> list:
     """Return local a-set indices corresponding to SUPORT DOFs.
 
@@ -603,11 +631,12 @@ def _compute_restrained_derivs(
     delta_all_trim: np.ndarray,
     aero: AeroModel,
     D_jx: np.ndarray,
-    free_dofs: list,
+    T: np.ndarray,
+    free_local: list,
+    n_red: int,
     bulk,
     x_ref: float,
     q: float,
-    n_dofs: int,
     delta_perturbation: float = 1e-4,
 ) -> dict:
     """Elastic restrained stability derivatives via finite difference.
@@ -616,6 +645,9 @@ def _compute_restrained_derivs(
     re-solves the l-set, and computes ΔFz and ΔMy.  The perturbation uses the
     combined aero + inertial sensitivity (q*Q_ax + M_ax) so URDD columns
     correctly propagate inertial stiffness changes.
+
+    AE1 Step B1: u_a is expanded to full g-set via the RBE3/RBAR T matrix so
+    slave DOFs move with their masters before evaluating aerodynamic forces.
     """
     from sbeam.aero.integration import build_djk
 
@@ -627,10 +659,8 @@ def _compute_restrained_derivs(
     C_ax_l = (q * Q_ax_a[np.ix_(l_idx, list(range(len(all_labels))))]
               + M_ax_a[np.ix_(l_idx, list(range(len(all_labels))))])
 
-    # Scatter trim displacement to full g-set
-    u_full_trim = np.zeros(n_dofs)
-    for loc_i, g_dof in enumerate(free_dofs):
-        u_full_trim[g_dof] = u_a_trim[loc_i]
+    # Expand trim displacement to full g-set (RBAR slaves move with masters)
+    u_full_trim = _expand_to_g(u_a_trim, T, free_local, n_red)
 
     # Compute nominal Fz, My at trim point
     Fz0, My0 = _compute_aero_forces(
@@ -649,9 +679,7 @@ def _compute_restrained_derivs(
         for li_idx, li in enumerate(l_idx):
             u_a_pert[li] += u_l_pert_delta[li_idx]
 
-        u_full_pert = np.zeros(n_dofs)
-        for loc_i, g_dof in enumerate(free_dofs):
-            u_full_pert[g_dof] = u_a_pert[loc_i]
+        u_full_pert = _expand_to_g(u_a_pert, T, free_local, n_red)
 
         delta_all_pert = delta_all_trim.copy()
         delta_all_pert[col] += DELTA
@@ -885,11 +913,12 @@ def run_sol144_trim(
     delta_all = np.array([trim_vars.get(l, 0.0) for l in all_labels])
 
     # ------------------------------------------------------------------ #
-    # Scatter a-set displacement to full g-set
+    # Expand a-set displacement to full g-set via RBAR/RBE3 T matrix.
+    # AE1 Step B1: RBAR slave DOFs must move with their masters before any
+    # downstream `g_slope @ u` or `_compute_aero_forces` call; a bare index
+    # scatter leaves them at zero and corrupts the structural normalwash.
     # ------------------------------------------------------------------ #
-    displacements = np.zeros(n_dofs)
-    for loc_i, g_dof in enumerate(free_dofs):
-        displacements[g_dof] = u_a[loc_i]
+    displacements = _expand_to_g(u_a, T, free_local, len(red_dofs))
 
     # ------------------------------------------------------------------ #
     # CBAR force / stress recovery
@@ -913,7 +942,8 @@ def run_sol144_trim(
     rest_derivs = _compute_restrained_derivs(
         K_ll_lu, l_idx, Q_ax_a, M_ax_a, all_labels,
         u_a, delta_all, aero, D_jx,
-        free_dofs, bulk, x_ref, q_dyn, n_dofs,
+        T, free_local, len(red_dofs),
+        bulk, x_ref, q_dyn,
     )
 
     # ------------------------------------------------------------------ #

@@ -128,15 +128,23 @@ $
 $ ============================================================
 $ SPLINES
 $ ============================================================
-$ Wing spline (CID=2, DTHX=-1, DTHZ=-1 as in original)
+$ Wing spline (CID=2). DTHX=+1 (attached): with the EA-only SET1 the torsion
+$ rides through master Rx; AE1 Step B fix to spline.py also requires the
+$ attached path to recover global rigid-body modes on a swept axis.
 SPLINE2, 1601, 1100, 1100, 1131, 1100, 0.0, 1.0, 2
-+, -1.0, -1.0
++, 1.0, -1.0
 $ Canard spline (CID=1, DTHX=1, DTHZ=-1 as in original)
 SPLINE2, 1501, 1000, 1000, 1007, 1000, 0.0, 1.0, 1
 +, 1.0, -1.0
 $
-$ Structural grids used by splines
-SET1, 1100, 99, 100, 111, 112, 121, 122
+$ Structural grids used by splines.
+$ Wing SET1 1100: elastic-axis grids only (100, 110, 120). SPLINE2 is a 1-D
+$ beam spline (cubic Hermite along x_hat); SET1 grids must be collinear along
+$ the spline axis or the validator in spline.py raises ValueError. LE/TE
+$ stringer grids 111/112/121/122 ride with their RBAR masters 110/120; the
+$ fuselage centre grid 99 is structurally distinct and never belonged in the
+$ wing spline (its inclusion was the dominant source of the V-AE1 trim error).
+SET1, 1100, 100, 110, 120
 SET1, 1000, 98, 99
 $
 $ ============================================================

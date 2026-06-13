@@ -149,7 +149,6 @@ def _build_spline2_block(
     z_hat = R_cid[:, 2]   # surface normal / deflection direction
 
     x0 = x_hat[0]   # freestream projection of spline axis (= cos Λ for swept wing)
-    sweep_ok = abs(x0) > 1e-10   # False for VTP-style axis ⊥ freestream
 
     # Identify covered boxes
     covered_gk = _covered_gk_for_range(sp.caero, sp.id1, sp.id2, boxes, id_to_k)
@@ -199,8 +198,45 @@ def _build_spline2_block(
     gids_sorted = [item[1] for item in s_gid]
     n_s = len(gids_sorted)
 
-    # Extrapolation warning (>10% of span range)
+    # --- SET1 collinearity check (AE1 Step B3) ---
+    # SPLINE2 is a 1-D beam spline: SET1 must lie along the spline axis. Off-axis
+    # grids carry a chordwise displacement at the same s that the Hermite cannot
+    # back out (proof: nodal slope projection m_i = −ω·ŷ only constrains dh/ds at
+    # the node, not h_i; chord-offset δh_i flows through and aliases as spurious
+    # bending). Detect and refuse rather than silently corrupting Q_aa.
     s_range = s_sorted[-1] - s_sorted[0]
+    if s_range > 1e-12:
+        offsets = []
+        for s_i, gid in s_gid:
+            g = bulk.grids[gid]
+            r = np.array([g.x, g.y, g.z]) - origin
+            delta_chord = float(np.dot(r, y_hat))
+            offsets.append((gid, g.x, g.y, g.z, s_i, delta_chord))
+        max_abs_offset = max(abs(o[5]) for o in offsets)
+        if max_abs_offset > 0.05 * s_range:
+            offenders = [o for o in offsets if abs(o[5]) > 0.05 * s_range]
+            lines = [
+                f"  GRID {o[0]} at (x={o[1]:.4f}, y={o[2]:.4f}, z={o[3]:.4f}): "
+                f"s={o[4]:.4f}, chord offset Δ={o[5]:+.4f}"
+                for o in offenders
+            ]
+            raise ValueError(
+                f"SPLINE2 {sp.eid}: SET1 {sp.setg} contains grids that are not "
+                f"collinear along the spline axis x̂={tuple(round(v, 6) for v in x_hat)}.\n"
+                f"  span range = {s_range:.4f}; tolerance = {0.05 * s_range:.4f} "
+                f"(5% of span range)\n"
+                f"  max |chord offset| = {max_abs_offset:.4f}\n"
+                f"Offending grids (chord offset Δ = (r−origin)·ŷ_spline):\n"
+                + "\n".join(lines)
+                + "\n"
+                "SPLINE2 is a 1-D beam spline; SET1 must lie along the elastic axis. "
+                "Either move the offending grids onto the EA, build an EA-only SET1 "
+                "(commonly the wing CBAR endpoints), or use SPLINE1 (IPS) for 2-D "
+                "grid scatter once it is available."
+            )
+
+    # Extrapolation warning (>10% of span range)
+    # NB: s_range is computed above for the collinearity check
     if s_range > 1e-12:
         for tj in t_slope:
             if tj < s_sorted[0] - 0.1 * s_range or tj > s_sorted[-1] + 0.1 * s_range:
@@ -256,11 +292,18 @@ def _build_spline2_block(
                 continue
             col = base + d
 
-            # g_slope: w = −(dh/ds)/x_hat[0]·(∂s/∂x) = −z_comp·x_hat[0]·(dφ_f/ds)
-            # → per ZAERO §6.3: w = −(dh/ds)/x_hat[0], nodal contribution:
-            #   −z_comp · dφ_f/ds / x_hat[0]  (AE4a sweep projection)
-            if sweep_ok:
-                g_slope[covered_arr, col] += -(z_comp / x0) * f_slopes_slope
+            # g_slope (AE1 Step B): chordwise-rigid section reconstruction gives
+            # u_z(x, y) = h(s(x, y)) along the spline axis. The streamwise
+            # downwash is w = −∂u_z/∂x_basic = −(dh/ds)·(∂s/∂x_basic).
+            # Since s = (r − origin)·x̂, ∂s/∂x_basic = x̂[0]. Therefore:
+            #
+            #     w = −x̂[0] · (dh/ds)
+            #
+            # Multiplication, not division — the previous (z_comp / x0) form was
+            # self-consistent only for the "rigid-along-spline-axis" kinematic
+            # (V-AE2b) and produced spurious downwash under genuine basic-frame
+            # rigid-body modes on a swept spline (V-AE1b).
+            g_slope[covered_arr, col] += -z_comp * x0 * f_slopes_slope
 
             # g_disp: evaluated at force_point (AE6); formula unchanged
             for comp in range(3):
@@ -273,23 +316,50 @@ def _build_spline2_block(
             x_comp = x_hat[d]   # spline-axis / torsion projection
 
             # --- Bending slope contribution ---
-            # Physical nodal slope: (dh/ds)_i = −y_comp · ω_i  (AE4b sign)
-            # w = −(dh/ds)/x_hat[0] = −(−y_comp·ω)/x_hat[0] = (y_comp/x_hat[0])·dφ_d/ds
+            # Physical nodal slope (AE4b sign): (dh/ds)_i = −y_comp · ω_i.
+            # AE1 Step B: streamwise downwash uses the multiplication form
+            # w = −x̂[0]·(dh/ds), so the nodal contribution becomes
+            #
+            #     g_slope += +y_comp · x̂[0] · (dφ_d/ds)
             if abs(y_comp) > 1e-15:
-                if sweep_ok:
-                    g_slope[covered_arr, col] += (y_comp / x0) * d_slopes_slope
+                g_slope[covered_arr, col] += y_comp * x0 * d_slopes_slope
 
                 # g_disp: h contribution = φ_d[i]·(dh/ds)_i = φ_d[i]·(−y_comp·ω)
-                # → g_disp entry = −y_comp · φ_d[i] · z_hat  (AE4b sign flip, AE6 force point)
+                # → g_disp entry = −y_comp · φ_d[i] · z_hat  (AE4b sign, AE6 force point)
                 for comp in range(3):
                     g_disp[3 * covered_arr + comp, col] += (
                         -y_comp * z_hat[comp] * d_vals_force
                     )
 
-            # --- Torsion contribution (incidence directly, no ∂/∂x involved) ---
-            # DTHX = 1: attached; DTHX = −1: detached (skip)
+            # --- Torsion contribution ---
+            # A section rotated about x̂_spline by θ_t produces u_z = θ_t · ζ
+            # at a chordwise point with offset ζ along ŷ_spline. The streamwise
+            # gradient is ∂u_z/∂x_basic = θ_t · y_hat[0] (since ∂ζ/∂x_basic =
+            # y_hat[0] for chordwise-rigid sections), so
+            #
+            #     w_torsion = −y_hat[0] · θ_t = −y_hat[0] · x_comp · ω_basic[d]
+            #
+            # AE1 Step B: previously this was just x_comp · f_vals_slope, which
+            # is correct only when y_hat[0] = −1 (unswept spline) and happened to
+            # match a swept case by accident. With the corrected formula and
+            # multiplication-bending above, the spline reproduces all 6 global
+            # basic-frame rigid-body modes exactly on planar (z = 0) wings.
+            # DTHX = 1: attached; DTHX = −1: detached (skip).
             if dthx_attached and abs(x_comp) > 1e-15:
-                g_slope[covered_arr, col] += x_comp * f_vals_slope
+                g_slope[covered_arr, col] += -y_hat[0] * x_comp * f_vals_slope
+
+                # g_disp: torsion adds u = θ_t · ζ · ẑ_spline at the box force
+                # point, distributed back to nodes through the same function-
+                # value Hermite basis used for translation. ζ_k is computed at
+                # the box force_point (AE6: ¼-chord).
+                zeta_force = np.array([
+                    float(np.dot(boxes[gk].force_point - origin, y_hat))
+                    for gk in covered_gk
+                ])
+                for comp in range(3):
+                    g_disp[3 * covered_arr + comp, col] += (
+                        x_comp * zeta_force * z_hat[comp] * f_vals_force
+                    )
 
 
 def _register_spline0(
