@@ -451,6 +451,7 @@ def _get_suport_local(bulk: BulkData, free_dofs: list, grid_index: dict) -> list
 
 def _solve_trim_determined(
     K_aa: np.ndarray,
+    Q_aa: np.ndarray,
     Q_ax_a: np.ndarray,
     M_ax_a: np.ndarray,
     f_rhs_a: np.ndarray,
@@ -460,7 +461,7 @@ def _solve_trim_determined(
 ) -> tuple:
     """Schur-complement trim solve for the determined case (n_free == n_suport).
 
-    Partitions the a-set into l-set (non-SUPORT) and r-set (SUPORT).
+    Partitions K_eff = K_aa - q*Q_aa into l-set (non-SUPORT) and r-set (SUPORT).
     With u_r = 0, the r-set equilibrium provides the trim equations.
 
     C_ax = q * Q_ax_a + M_ax_a   (combined aero + inertial sensitivity)
@@ -477,8 +478,9 @@ def _solve_trim_determined(
     r_idx = list(suport_local)
     l_idx = [i for i in range(n_a) if i not in set(r_idx)]
 
-    K_ll = K_aa[np.ix_(l_idx, l_idx)]
-    K_rl = K_aa[np.ix_(r_idx, l_idx)]
+    K_eff = K_aa - q * Q_aa
+    K_ll = K_eff[np.ix_(l_idx, l_idx)]
+    K_rl = K_eff[np.ix_(r_idx, l_idx)]
 
     # Combined aero + inertial sensitivity for free columns only
     C_ax_l = (q * Q_ax_a[np.ix_(l_idx, free_label_cols)]
@@ -537,11 +539,11 @@ def _compute_aero_forces(
     skj = aero.skj                                 # (3*n_box, n_box)
     f_box_vec = skj @ gamma                        # (3*n_box,) forces per box
 
-    Fz = f_box_vec[2::3].sum()                     # sum of z-components
+    Fz = f_box_vec[2::3].sum()
     My = 0.0
     for j, box in enumerate(aero.boxes):
         x_ctrl = box.force_point[0]
-        My += f_box_vec[3 * j + 2] * (x_ctrl - x_ref)
+        My -= f_box_vec[3 * j + 2] * (x_ctrl - x_ref)   # nose-up-positive
 
     return Fz, My
 
@@ -574,7 +576,7 @@ def _compute_rigid_derivs(
         f_box_vec = aero.skj @ gamma                 # (3*n_box,)
 
         Fz_sens = f_box_vec[2::3].sum()
-        My_sens = sum(
+        My_sens = -sum(                             # nose-up-positive
             f_box_vec[3 * j + 2] * (aero.boxes[j].force_point[0] - x_ref)
             for j in range(n_box)
         )
@@ -735,10 +737,15 @@ def run_sol144_trim(
         suport_pos = np.zeros(3)
 
     # ------------------------------------------------------------------ #
+    # Symmetry force-doubling factor (skj covers half-span for SYMXZ models)
+    # ------------------------------------------------------------------ #
+    sym = 2 if aero.parity != 0 else 1
+
+    # ------------------------------------------------------------------ #
     # Build D_jx and Q_ax on the g-set
     # ------------------------------------------------------------------ #
     D_jx = build_djx(aero.boxes, all_labels, bulk)       # (n_box, n_labels)
-    Q_ax_g = aero.g_disp.T @ aero.skj @ aero.ajj_inv_corr @ D_jx  # (n_g, n_labels)
+    Q_ax_g = sym * (aero.g_disp.T @ aero.skj @ aero.ajj_inv_corr @ D_jx)  # (n_g, n_labels)
 
     # ------------------------------------------------------------------ #
     # A-set partition (SPC + RBE3 reduction)
@@ -765,7 +772,7 @@ def run_sol144_trim(
 
     # Also compute Q_aa for storage in result (reuse existing helper)
     from sbeam.aero.coupling import build_qaa
-    Q_gg = build_qaa(aero, aero.g_disp, aero.g_slope)
+    Q_gg = sym * build_qaa(aero, aero.g_disp, aero.g_slope)
     if dep_dofs:
         Q_red_full = T.T @ Q_gg @ T
     else:
@@ -776,7 +783,7 @@ def run_sol144_trim(
     # Build combined RHS: q*f_g (baseline aero) + inertial load
     # ------------------------------------------------------------------ #
     from sbeam.aero.coupling import build_fg
-    f_aero_g = q_dyn * build_fg(aero, aero.g_disp)   # (n_g,) baseline aero
+    f_aero_g = q_dyn * sym * build_fg(aero, aero.g_disp)   # (n_g,) baseline aero; parity-scaled
 
     # Aerodynamic contribution of prescribed trim variables (URDD cols = 0)
     label_to_col = {l: i for i, l in enumerate(all_labels)}
@@ -864,7 +871,7 @@ def run_sol144_trim(
     # Schur-complement trim solve
     # ------------------------------------------------------------------ #
     u_a, delta_free_arr, K_ll_lu, l_idx, r_idx = _solve_trim_determined(
-        K_aa, Q_ax_a, M_ax_a, f_rhs_a, q_dyn, suport_local, free_label_cols
+        K_aa, Q_aa, Q_ax_a, M_ax_a, f_rhs_a, q_dyn, suport_local, free_label_cols
     )
 
     # ------------------------------------------------------------------ #
@@ -918,8 +925,8 @@ def run_sol144_trim(
     w_total  = w_struct + D_jx @ delta_all + aero.wg
     gamma    = aero.ajj_inv_corr @ w_total
     f_box_vec = aero.skj @ gamma
-    Fz_total = float(f_box_vec[2::3].sum())
-    My_total = float(sum(
+    Fz_total = float(sym * f_box_vec[2::3].sum())
+    My_total = float(-sym * sum(                    # nose-up-positive; parity-scaled
         f_box_vec[3 * j + 2] * (aero.boxes[j].force_point[0] - x_ref)
         for j in range(len(aero.boxes))
     ))
