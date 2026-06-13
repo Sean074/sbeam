@@ -344,6 +344,15 @@ Column `j`: `F_j = area_j × normal_j × cp_j` (three consecutive rows for Fx, F
 
 Usage: `F_vec = Skj @ cp_vec` → `[Fx_0, Fy_0, Fz_0, Fx_1, …]`
 
+**Non-planar (±Γ dihedral/anhedral) surfaces** are handled with no special case: the box normal
+comes straight from the z-bearing corner geometry in `mesh_caero1` (canted `(0, ∓sinΓ, cosΓ)`, not
+`(0,0,1)`), so a tilted panel's force carries a side component `Fy = Fz · n_y/n_z = ∓Fz·tanΓ`. Over
+a symmetric full-span build the `Fy` cancels. The whole VLM → spline → force → trim chain is gated
+out of the xy-plane for Γ = ±10° by **V-C-DIH** (`tests/aero/test_dihedral.py`): geometric normal,
+rigid `CL ≈ CL_planar·cosΓ`, symmetric `Fy`/roll/yaw cancellation, and a structured determined trim
+(`sample/val_dihedral_trim.bdf`). The full 3-component aerodynamic moment (roll/pitch/yaw) is
+available via `sol144.aero_moment_resultant`.
+
 ### `build_djk(boxes) -> np.ndarray`  — shape (n, n)
 
 Deflection-to-downwash matrix for steady (k = 0) analysis. Returns `−I` (negative

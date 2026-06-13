@@ -1,0 +1,43 @@
+$ =========================================================================
+$ val_vlm_anhedral.bdf — VLM validation case: rectangular wing, AR = 8, -10 deg anhedral
+$
+$ STEP 58 (V-C-DIH) test deck — out-of-plane (z != 0) lifting surface, MIRROR
+$ of val_vlm_dihedral.bdf with the tips canted DOWN (Gamma = -10 deg).
+$   Starboard tip LE lowered to (0, 4cosG, -4sinG); port tip to (0,-4cosG,-4sinG).
+$
+$   Gamma = -10 deg:  cos|G| = 0.98480775,  sin|G| = 0.17364818
+$   Semi-span ALONG the canted surface = 4.0 (panel area S = 8.0 unchanged).
+$
+$ EXPECTED (signed Gamma in the n = (0, -sinG, cosG) formula):
+$   Right-wing box normal  n = (0, +sin|G|, cos|G|); left wing (0, -sin|G|, cos|G|).
+$   Per box  Fy/Fz = -tan(G) = +tan|G| (starboard) — sign reversed vs dihedral.
+$   Side force Fy cancels over the full-span symmetric build (sum ~ 0).
+$   Vertical lift identical in magnitude to the +10deg dihedral deck (cos is even).
+$
+$ Coordinate system: X = freestream, Y = starboard, Z = up.  SYMXZ = 0.
+$ Pure rigid VLM — NO structural model, NO splines.
+$ =========================================================================
+$
+SOL 101
+$
+SUBCASE 1
+  TITLE = Rectangular AR=8 wing, -10deg anhedral — rigid VLM
+$
+BEGIN BULK
+$
+$ ----------------------------------------------------------- AERO REFERENCE
+$ ACSID RCSID  CREF  BREF  SREF  SYMXZ SYMXY
+AEROS,  0,  0,  1.0,  8.0,  8.0,  0,  0
+$
+PAERO1, 1
+$
+$ ---- Starboard half: root (0,0,0) -> tip (0, 3.93923099, -0.69459271)
+$ 20 spanwise x 8 chordwise = 160 boxes
+CAERO1, 100, 1, 0, 20, 8, 0, 0, 1
++, 0.0, 0.0, 0.0, 1.0, 0.0, 3.93923099, -0.69459271, 1.0
+$
+$ ---- Port half: root (0,0,0) -> tip (0, -3.93923099, -0.69459271)
+CAERO1, 150, 1, 0, 20, 8, 0, 0, 1
++, 0.0, 0.0, 0.0, 1.0, 0.0, -3.93923099, -0.69459271, 1.0
+$
+ENDDATA

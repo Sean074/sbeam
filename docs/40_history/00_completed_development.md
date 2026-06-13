@@ -2947,3 +2947,61 @@ URDD (inertial) columns.
 - **ROLL left as-is** — the backlog confirms it is correct for the main (horizontal) wing;
   generalising it to a normal-projected form was out of scope.
 - YAW remains latent (no caller passes it today), so the fix cannot regress any existing trim.
+
+---
+
+### Phase C — Step 58: Dihedral / anhedral (±Γ) correctness ✅ COMPLETE (2026-06-14)
+
+**Objective:** Guarantee the SOL 144 chain — VLM → spline → force integration → trim — is correct
+for non-planar lifting surfaces, for **both** positive dihedral (Γ>0) and anhedral (Γ<0). HA144A and
+`val_vlm_rect_ar8` are planar (z=0), so the entire validated chain was unexercised out of the
+xy-plane — a latent `(0,0,1)` normal or an Fz-only force resultant would pass every existing test
+and only bite on the first real wing (the AE13 validation-blind-spot class). FOUNDATIONAL for the
+remaining Phase C load chain (maneuver, monitor, lateral derivatives all inherit out-of-plane
+geometry).
+
+**Key finding — the architecture was already correct out of plane; this is a validation/lock-in
+step, not a rewrite.** `mesh_caero1` (`sbeam/aero/panel.py`) already derives each box normal from
+the actual z-bearing corner geometry via a cross-product (canted `(0, ∓sinΓ, cosΓ)`, not `(0,0,1)`);
+`build_skj` (`sbeam/aero/integration.py`) already emits the full 3-component resultant
+`F = area·normal·cp` (so a canted panel carries side force `Fy`); the force→g-set transfer
+(`g_disp`, shape `(3·n_box, n_g)`) and the `build_djx` `−n_z`/`−n_y` columns already carry the
+out-of-plane components; and the spline maps structure through the SPLINE2 CID axes. No production
+solver code needed changing.
+
+**Deliverables:**
+- **`sample/val_vlm_dihedral.bdf` / `sample/val_vlm_anhedral.bdf`** — rigid-VLM AR=8 rect wings
+  canted at Γ=±10° (tips at `(0, ±4cosΓ, ±4sinΓ)`), full-span for the symmetric `Fy` cancellation.
+- **`sample/val_dihedral_trim.bdf`** — a minimal structured symmetric dihedral wing: a flexible CBAR
+  spar per semi-span along the canted elastic axis, `SPLINE2` on a canted CORD2R (origin on the EA;
+  `z_hat` = surface normal), `CONM2` mass, `SUPORT` (Tz plunge) + `SPC1`, and a determined 1g plunge
+  trim (ANGLEA free, URDD3 = −9.81).
+- **`sbeam/solver/sol144.py::aero_moment_resultant` (new)** — full 3-component aerodynamic moment
+  `M = Σ (r_j − ref) × F_j` (roll/pitch/yaw) from `box_forces`/`force_point`; backs the lateral
+  acceptance and is reusable by future monitor-point integration. (`_pitch_moment` left as the
+  single-source pitch arm for the trim.)
+- **`tests/aero/test_dihedral.py` (V-C-DIH, 6 cases, parametrised ±10°).**
+
+**Test/Acceptance:** `pytest tests/aero/test_dihedral.py` → 6 passed; full `tests/aero/` +
+`tests/integration/` unchanged (no planar regression).
+- Box normal `n·(0, ∓sinΓ, cosΓ) = 1` per box (≤1e-12), `n_x ≈ 0`, both signs.
+- Per-box `Fy/Fz = n_y/n_z` (= ∓tanΓ) exact; total `Fy` cancels to ≤1e-10·|Fz| over the full-span
+  build; lift non-trivial.
+- Rigid `CL = CL_planar·cosΓ` within 1% (actual 0.27% at AR=8, via `solve_rigid_cl`'s K-J CL);
+  dihedral and anhedral give identical CL (cos is even); `CY ≈ 0`.
+- Structured trim closes out of plane: `|Fz_aero| = m·g = 98.1 N` (inertia-relief balance against
+  the 1g URDD3), residual `Fy`/roll `Mx`/yaw `Mz` all ≤1e-8·|Fz|; panels genuinely off-plane
+  (`max|z| > 0.1`).
+
+**Key decisions:**
+- **Scope: a minimal purpose-built symmetric dihedral wing** for the structured spline+trim gate
+  (user choice), not a full dihedral HA144A variant. Monitor-load coverage is out of scope (monitor
+  code does not exist yet); Step 58 instead guarantees the 3-component resultant monitors will
+  consume, via `aero_moment_resultant`.
+- **Two analytic relations both hold and were documented:** the K-J `CL` tracks `cosΓ` (matches the
+  backlog's "CL·cosΓ within 1%", 0.27% actual), while the `area·normal·cp` (skj) vertical force
+  tracks `cos²Γ` (incidence reduction × force projection); the per-box `Fy/Fz = n_y/n_z = ∓tanΓ` is
+  the exact geometric relation, replacing the backlog's small-angle `sinΓ` approximation.
+- **Trim sign is convention-free:** the validated invariant is the inertia-relief force/moment
+  balance and symmetric cancellation; the trimmed ANGLEA sign reflects the minimal single-DOF (Tz)
+  plunge support in the basic z-up frame (no RCSID/canard).

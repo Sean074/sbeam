@@ -598,6 +598,38 @@ def _pitch_moment(f_box_vec: np.ndarray, boxes: list, x_ref: float) -> float:
     )
 
 
+def aero_moment_resultant(
+    box_forces: np.ndarray, boxes: list, ref_point: np.ndarray
+) -> np.ndarray:
+    """Full 3-component aerodynamic moment about ``ref_point`` (Step 58).
+
+    ``M = Σ_j (r_j − ref) × F_j`` with ``r_j = box.force_point`` (¼-chord
+    bound-vortex midpoint) and ``F_j`` the per-box force.  Returns ``[Mx, My, Mz]``
+    — roll, pitch, yaw — in the same frame as ``box_forces``.
+
+    Unlike ``_pitch_moment`` (the single-source nose-up-positive *pitch* arm used
+    inside the trim), this is the complete resultant needed once lifting surfaces
+    leave the xy-plane: a canted panel carries a side force ``Fy`` that contributes
+    roll/yaw, and the moment arm has a non-zero ``z`` component.  Used by the
+    V-C-DIH dihedral gate to assert residual ``Fy``/roll/yaw ≈ 0 over a symmetric
+    build, and reusable by future monitor-point load integration.
+
+    Args:
+        box_forces: per-box force, shape ``(n_box, 3)`` ``[Fx, Fy, Fz]`` (any
+                    consistent force units).
+        boxes:      AeroBox list (provides ``force_point``).
+        ref_point:  (3,) moment reference in the same CID frame as the forces.
+
+    Returns:
+        (3,) ndarray ``[Mx, My, Mz]``.
+    """
+    ref = np.asarray(ref_point, dtype=float)
+    m = np.zeros(3)
+    for j, box in enumerate(boxes):
+        m += np.cross(box.force_point - ref, box_forces[j])
+    return m
+
+
 def _compute_aero_forces(
     u_a_full: np.ndarray,
     delta_all: np.ndarray,

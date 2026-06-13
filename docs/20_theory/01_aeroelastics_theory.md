@@ -215,7 +215,13 @@ $$
 $$
 
 This is exactly the ZAERO/Rodden form $\{L\}=q_\infty[A_w][\text{NIC}]^{-1}\{\text{BC}\}$
-specialised to flat wing boxes. The **substantial-derivative matrix** $[D_{jk}]$ supplies the
+specialised to flat wing boxes. Each column of $[S_{kj}]$ is the **full 3-component** resultant
+$\mathbf F_j = A_j\,c_{p,j}\,\hat{\mathbf n}_j$, with $\hat{\mathbf n}_j$ the geometric box normal —
+so on a **non-planar** (dihedral/anhedral) surface canted at $\Gamma$, the right-wing normal is
+$(0,-\sin\Gamma,\cos\Gamma)$ and the panel carries a side force $F_y=F_z\,n_y/n_z=\mp F_z\tan\Gamma$
+alongside its lift. The effective lift reduces by $\cos\Gamma$ (incidence projection) and the side
+force cancels over a symmetric build; both signs of $\Gamma$ are permanently gated by V-C-DIH (see
+§5/Step 58 in `docs/10_standard/05_aeroelastics.md`). The **substantial-derivative matrix** $[D_{jk}]$ supplies the
 other direction: it maps a box deflection and slope (the geometric boundary condition produced
 by structural motion) to the normalwash it induces,
 
@@ -968,6 +974,7 @@ beam-element stiffness and mass derivations are in `docs/20_theory/00_beam_metho
   transonic and supersonic corrections are not implemented.
 - **Flat lifting surfaces only**; camber/twist/incidence enter through the $w_g$ boundary
   condition, not panel geometry. No interference/slender bodies.
+- **Full span modles only, no symmetry**, does not add significnat capability with modern computing and added a lot of bugs
 - **Steady ($k=0$)** aerodynamics and steady corrections for trim and divergence; **maneuver
   loads are handled quasi-steadily** (rate-induced incidence, §7.2) with optional analytic
   quasi-unsteady corrections (§7.4–7.6). Full **3-D unsteady AIC** and the recovery of

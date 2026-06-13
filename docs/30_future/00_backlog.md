@@ -21,22 +21,26 @@ Steps A–G + the Step C null-space guard complete.
 
 | # | Item | Kind | Status | Why here / what it unblocks |
 |--:|------|------|--------|------------------------------|
-| 1 | [Step 58 — Dihedral / anhedral correctness (±Γ)](#step-58--dihedral--anhedral-correctness-positive-and-negative) | Validation + code | Open | **FOUNDATIONAL** — HA144A is planar (z=0); the whole VLM→spline→force→trim→monitor chain is currently unexercised out of the xy-plane. Real wings are non-planar; this must carry out-of-plane geometry + side force before maneuver/monitor loads can be trusted |
-| 2 | [Step 52 remainder — over-determined trim + ROLL/YAW rate columns](#step-52--sol-144-trim-solve--flexible-derivatives-sol144py) | Code | Open | Lateral / over-determined trim; `C_lp`, `C_nr`; precursor to roll/yaw maneuvers. (Dihedral effect `C_lβ` enters here.) |
-| 3 | [Step 53 — balanced maneuver loads & inertia relief](#step-53--balanced-maneuver-loads--inertia-relief) | Code | Open | The load-generating capability; non-zero inertia column feeds monitor loads |
-| 4 | [Monitor points MON1–MON4 / V-MON1](#monitor-points--section-loads--phase-1-static) | Code | Open | Structures-team loads handoff per trim case; needs trim (1–2), benefits from maneuver (3) |
-| 5 | [AE8b — unrestrained (mean-axis) derivative column](#major-ae8b--unrestrained-mean-axis-derivative-formulation-known-wrong) | Code | Open (known-wrong first attempt) | Completes the derivative deliverable; off the trim critical path — can run in parallel |
-| 6 | [Step 55 — DIVERG q-sweep + mode shape + V_div](#step-55--aeroelastic-divergence-diverg) | Code | Open (single `q_div` done) | `DIVERG`-card-driven sweep and the divergence eigenvector |
-| 7 | [Step 54 — CFD / wind-tunnel mean-flow injection](#step-54--cfd--wind-tunnel-steady-pressure-injection-mean-flow-trim) | Code | Open | Optional mean-flow enhancement; lower priority |
-| 8 | [Step 57 — Viewer: SOL 144 results (THE INTERFACE)](#step-57--viewer-sol-144-results) | Code | Open | **CLOSING ITEM** — surfaces trim, derivatives, `q_div`, deflected shape, box `cp`, monitor loads in the UI |
+| 1 | [Step 52 remainder — over-determined trim + ROLL/YAW rate columns](#step-52--sol-144-trim-solve--flexible-derivatives-sol144py) | Code | Open | Lateral / over-determined trim; `C_lp`, `C_nr`; precursor to roll/yaw maneuvers. (Dihedral effect `C_lβ` enters here.) |
+| 2 | [Step 53 — balanced maneuver loads & inertia relief](#step-53--balanced-maneuver-loads--inertia-relief) | Code | Open | The load-generating capability; non-zero inertia column feeds monitor loads |
+| 3 | [Monitor points MON1–MON4 / V-MON1](#monitor-points--section-loads--phase-1-static) | Code | Open | Structures-team loads handoff per trim case; needs trim (1–2), benefits from maneuver (3) |
+| 4 | [AE8b — unrestrained (mean-axis) derivative column](#major-ae8b--unrestrained-mean-axis-derivative-formulation-known-wrong) | Code | Open (known-wrong first attempt) | Completes the derivative deliverable; off the trim critical path — can run in parallel |
+| 5 | [Step 55 — DIVERG q-sweep + mode shape + V_div](#step-55--aeroelastic-divergence-diverg) | Code | Open (single `q_div` done) | `DIVERG`-card-driven sweep and the divergence eigenvector |
+| 6 | [Step 54 — CFD / wind-tunnel mean-flow injection](#step-54--cfd--wind-tunnel-steady-pressure-injection-mean-flow-trim) | Code | Open | Optional mean-flow enhancement; lower priority |
+| 7 | [Step 57 — Viewer: SOL 144 results (THE INTERFACE)](#step-57--viewer-sol-144-results) | Code | Open | **CLOSING ITEM** — surfaces trim, derivatives, `q_div`, deflected shape, box `cp`, monitor loads in the UI |
 
-**Dihedral runs through the whole roadmap, not just item 1.** Every load-bearing step carries an
-explicit ±Γ acceptance: force integration must split the box force into Fy (side force) + Fz on
-canted panels (Step 58; MON2/MON3); the rigid-body spline null-space is already gated on a z≠0
-dihedral fixture (V-AE1b / AE1 Step C); the lateral derivatives pick up the dihedral effect `C_lβ`
-once ROLL/YAW lands (Step 52); and the viewer must render the canted deflected geometry and box
-`cp` (Step 57). A latent `(0,0,1)` normal or an Fz-only resultant would pass every planar HA144A
-test and only bite on the first real aircraft — the AE13 validation-blind-spot class.
+**Step 58 (dihedral / anhedral ±Γ correctness) is CLOSED (2026-06-14)** — the
+VLM→spline→force→trim chain is now permanently gated out of the xy-plane by **V-C-DIH**
+(`tests/aero/test_dihedral.py`) for Γ = +10° AND −10°: geometric box normal `(0, ∓sinΓ, cosΓ)`,
+3-component force with side force `Fy`, rigid `CL ≈ CL_planar·cosΓ`, symmetric `Fy`/roll/yaw
+cancellation, and a structured determined trim (`sample/val_dihedral_trim.bdf`) that closes the
+inertia-relief balance out of plane. Key finding: the force/normal architecture was already
+3-component and geometry-driven, so no production rewrite was needed — only the ±Γ decks, the gate,
+and a reusable `aero_moment_resultant` helper. **Dihedral still rides the remaining steps:** the
+lateral derivatives pick up the dihedral effect `C_lβ` once ROLL/YAW lands (Step 52); monitor
+section loads must carry the now-validated `Fy`/`Fz` split (MON2/MON3); and the viewer must render
+the canted deflected geometry and box `cp` (Step 57). The V-C-DIH gate is the permanent regression
+guard against the `(0,0,1)`-normal / Fz-only-resultant blind spot.
 
 **Non-blocking polish (close opportunistically, off the critical path):** AE8a (MINOR — optional
 root-cause of the ~0.1° q-invariant common-mode trim offset, already ≤0.4% FS), AE12 (MINOR —
@@ -418,15 +422,16 @@ matches a published IPS example (Harder & Desmarais 1972).
 
 ---
 
-## Phase C — SOL 144 Static Aeroelastics (remaining: Step 52 rem., 53–55, 57, 58)
+## Phase C — SOL 144 Static Aeroelastics (remaining: Step 52 rem., 53–55, 57)
 
 Phase C wires Phases A + B into the structural stiffness to solve the flexible static
 aeroelastic problem: trim (determined and over-determined), flexible stability/control
 derivatives, optional CFD/WT mean-flow injection, and divergence dynamic pressure. The
 determined-trim core is done (see the closure roadmap at the top of this file); the steps below
-are the remaining work, in numeric order — execution order is set by the roadmap table, where
-**Step 58 (dihedral / anhedral) leads** because every downstream load deliverable inherits any
-out-of-plane geometry error.
+are the remaining work, in numeric order — execution order is set by the roadmap table.
+**Step 58 (dihedral / anhedral ±Γ correctness) is CLOSED (2026-06-14)** — the foundational
+out-of-plane gate the rest of the load chain inherits is now locked by V-C-DIH
+(`tests/aero/test_dihedral.py`); the steps below build on it.
 
 **Governing equation (g-set reduced to a-set after SPC):**
 
@@ -577,54 +582,6 @@ box `cp` in the viewer.
 **Test/Acceptance:** AppTest integration test loads a SOL 144 result and renders all panels
 without error, including a ±Γ dihedral deck (deflected shape shows the canted geometry, not a flat
 projection).
-
----
-
-### Step 58 — Dihedral / anhedral correctness (positive and negative)
-
-**Files:** `sbeam/aero/panel.py` (`mesh_caero1` — box corner geometry + control-point normals),
-`sbeam/aero/vlm.py` (AIC kernel, normalwash, box-force direction), `sbeam/aero/integration.py`
-(`build_wg` incidence; force resultants — Fy as well as Fz), `sbeam/aero/spline.py` (`G_kg`
-out-of-plane coupling), `sbeam/aero/coupling.py` (`build_fg`), `sbeam/solver/sol144.py` (trim
-force/moment closure, `_pitch_moment`); new `sample/val_vlm_dihedral.bdf` and
-`sample/val_vlm_anhedral.bdf`.
-
-**Objective:** Guarantee the full SOL 144 path — VLM → spline → force integration → trim →
-monitor loads — is correct for non-planar lifting surfaces with **both** positive dihedral (Γ>0)
-and negative dihedral / anhedral (Γ<0). HA144A is planar (z=0), so the entire validated chain is
-currently unexercised out of the xy-plane; a fully functioning SOL 144 must handle real wings.
-
-**Scope/Deliverables:**
-- **Geometry + base normal:** confirm `mesh_caero1` builds box corner geometry from the CAERO1
-  z-bearing corner points for ±Γ, and that each box control-point normal is the dihedral-rotated
-  `n = (0, −sinΓ, cosΓ)` on the right wing (mirror on the left), NOT `(0,0,1)`. (AE12 re-diagnosis
-  note: chord advances along x̂, so `n_x≈0` holds for any pure-dihedral box and the Prandtl-Glauert
-  normal copy stays exact — this step is about the BASE VLM normal, distinct from the PG one.)
-- **Lift direction + side force:** the box force acts along the box normal, so a canted panel
-  produces Fy (side force) in addition to Fz. Verify `integration.py` resultants and the
-  `sol144` force/moment closure carry the full 3-component force, and that effective lift scales
-  as `cosΓ`.
-- **Spline coupling:** `SPLINE2` `G_kg` must map structural deflection to box downwash with the EA
-  and boxes out of the xy-plane. The rigid-body null-space on a z≠0 dihedral fixture is already
-  gated (V-AE1b / AE1 Step C); extend to a rigid-**lift** check on the dihedral deck.
-- **Sign symmetry:** anhedral (Γ<0) is the mirror — Fy reverses sign; the full-span symmetric
-  build must still cancel Fy and trim identically to the equivalent planar wing in Fz to within the
-  `cosΓ` factor. (Once ROLL/YAW lands in Step 52, the dihedral effect `C_lβ` is the lateral payoff
-  of getting this right.)
-
-**Test/Acceptance (V-C-DIH — permanent gate, both signs):**
-- Box normals: `n·(0,−sinΓ,cosΓ) = 1` per box to machine precision, for Γ = +10° AND −10°.
-- A rectangular wing at fixed Γ=±10°: rigid `CL` matches the planar wing's `CL·cosΓ` within 1%;
-  the integrated side force `Fy` matches `½ρV²S·CL·sinΓ` per semi-span and cancels to ≈0
-  (≤1e-8 relative) over the full-span symmetric build.
-- Spline rigid-body null-space green on the z≠0 fixture (regression — V-AE1b) plus a rigid-lift
-  check on the dihedral deck.
-- A SOL 144 determined trim on a dihedral variant of the HA144A wing trims to the same lift
-  (16 000 lb) with zero residual Fy / roll-moment in the symmetric body frame.
-
-**Risk:** A latent `(0,0,1)` normal or a 2-D (Fz-only) force resultant passes every planar HA144A
-test and only bites on the first real cambered/dihedral aircraft — the AE13 validation-blind-spot
-class. The two ±Γ decks lock it permanently.
 
 ---
 

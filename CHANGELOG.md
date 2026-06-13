@@ -32,6 +32,25 @@ for a 0.107° miss).
 
 ### Added
 
+**Step 58 — dihedral / anhedral (±Γ) correctness gate (2026-06-14)**
+
+The SOL 144 chain (VLM → spline → force integration → trim) is now permanently validated OUT of
+the xy-plane, for both positive dihedral (Γ=+10°) and anhedral (Γ=−10°). Key finding: the
+force/normal architecture was already 3-component and geometry-driven (`mesh_caero1` derives the
+box normal from the z-bearing corners; `build_skj` emits `area·normal·cp`), so no production
+rewrite was needed — only validation decks, a permanent gate, and a reusable moment helper.
+
+- **`sample/val_vlm_dihedral.bdf`, `sample/val_vlm_anhedral.bdf`** — rigid-VLM rect wings canted at
+  Γ=±10°; **`sample/val_dihedral_trim.bdf`** — a minimal structured symmetric dihedral wing (spar +
+  SPLINE2 on a canted CID + mass + SUPORT) for a determined plunge trim out of plane.
+- **`sbeam/solver/sol144.py::aero_moment_resultant`** — full 3-component aerodynamic moment
+  `Σ (r_j − ref) × F_j` (roll/pitch/yaw), reusable by future monitor-point integration.
+- **`tests/aero/test_dihedral.py`** (V-C-DIH, 6 tests) — geometric box normal `(0, ∓sinΓ, cosΓ)`;
+  per-box `Fy/Fz = n_y/n_z` and symmetric `Fy` cancellation; rigid `CL ≈ CL_planar·cosΓ` (0.27% at
+  AR=8) with dihedral≡anhedral CL; and a structured trim that closes the inertia-relief balance
+  with residual `Fy`/roll/yaw ≈ 0. Guards permanently against the `(0,0,1)`-normal /
+  Fz-only-resultant blind spot.
+
 **AE11 — hinge-moment derivatives in SOL 144 (2026-06-13)**
 
 SOL 144 now recovers, per AESURF control surface, the hinge moment about its `cid1` hinge axis —
