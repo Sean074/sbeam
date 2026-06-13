@@ -497,7 +497,7 @@ EIGRL, SID, V1, V2, ND, MSGLVL, MAXSET, SHFSCL, NORM
 
 ### AEROS
 
-Defines the aerodynamic reference geometry used to non-dimensionalise lift, drag, and moment coefficients, and the symmetry condition for the vortex lattice. One per model.
+Defines the aerodynamic reference geometry used to non-dimensionalise lift, drag, and moment coefficients. One per model. sbeam is full-span only.
 
 ```
 AEROS, ACSID, RCSID, CREF, BREF, SREF, SYMXZ, SYMXY
@@ -508,14 +508,14 @@ AEROS, ACSID, RCSID, CREF, BREF, SREF, SYMXZ, SYMXY
 | ACSID | Aerodynamic coordinate system (Phase A: 0 = basic frame only) |
 | RCSID | Reference coordinate system (Phase A: 0 = basic frame only) |
 | CREF | Reference chord (consistent model units) |
-| BREF | Reference span — full span, even for half-span symmetric models |
+| BREF | Reference span — full span |
 | SREF | Reference area — full area |
-| SYMXZ | +1 = symmetric about XZ plane, −1 = antisymmetric, 0 = no symmetry |
-| SYMXY | +1 = symmetric about XY plane, −1 = antisymmetric, 0 = no symmetry |
+| SYMXZ | Parsed for NASTRAN compatibility; **must be 0** (half-span rejected) |
+| SYMXY | Parsed for NASTRAN compatibility; **must be 0** (half-span rejected) |
 
-Symmetry conventions: `SYMXZ = +1` adds a mirror-image horseshoe vortex for each box
-(same circulation sign); `SYMXZ = -1` adds an opposing image (antisymmetric/rolling).
-`parity = SYMXZ` is passed through the entire Phase A pipeline.
+Full-span only: every lifting surface is meshed in full. `SYMXZ`/`SYMXY` are parsed so
+legacy decks load, but `build_aero_model` raises `ValueError` for any non-zero value; use
+`sbeam.aero.mirror.mirror_halfspan()` to unfold a legacy half-span deck.
 
 Validation: duplicate AEROS raises `ValueError`; CAERO1 present without AEROS raises
 `ValueError("CAERO1 card(s) present but no AEROS card found")`.

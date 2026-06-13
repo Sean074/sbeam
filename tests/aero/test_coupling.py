@@ -40,7 +40,6 @@ def _synthetic_aero(n: int, seed: int = 0) -> AeroModel:
         skj=skj,
         djk=djk,
         wg=wg,
-        parity=1,
     )
 
 
@@ -165,7 +164,7 @@ def test_coupling_against_real_aero_model():
     bulk = BulkData()
     bulk.caero1s = {1: caero}
     bulk.paero1s = {1: Paero1(pid=1)}
-    aero = build_aero_model(bulk, parity=1)
+    aero = build_aero_model(bulk)
 
     n = len(aero.boxes)
     n_g, n_m = 7, 2

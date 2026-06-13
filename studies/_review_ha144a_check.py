@@ -12,7 +12,7 @@ from sbeam.solver.sol144 import run_sol144_trim
 
 np.set_printoptions(precision=5, suppress=True, linewidth=160)
 
-cc, bulk = parse_bdf("sample/ha144a_sbeam.bdf")
+cc, bulk = parse_bdf("sample/ha144a_fullspan_sbeam.bdf")
 grid_index = build_grid_index(bulk)
 
 print("=== Parse check ===")
@@ -25,9 +25,9 @@ print("subcases:", [(s.subcase_id, s.trim_sid, s.spc_sid) for s in cc.subcases])
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", UserWarning)
-    aero = build_aero_model(bulk, parity=bulk.aeros.symxz, grid_index=grid_index)
+    aero = build_aero_model(bulk, grid_index=grid_index)
 
-print("\nn boxes:", len(aero.boxes), "mach used:", aero.mach, "parity:", aero.parity)
+print("\nn boxes:", len(aero.boxes), "mach used:", aero.mach)
 
 # ---------------------------------------------------------------------------
 # Rigid-body spline kinematics checks

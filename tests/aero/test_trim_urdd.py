@@ -229,7 +229,7 @@ def trim_setup():
     grid_index = build_grid_index(bulk)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
-        aero = build_aero_model(bulk, parity=0, grid_index=grid_index)
+        aero = build_aero_model(bulk, grid_index=grid_index)
 
     subcase = SubcaseControl(subcase_id=1, spc_sid=1, trim_sid=1)
     return bulk, aero, subcase

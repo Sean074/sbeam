@@ -648,7 +648,7 @@ def _build_ha144a_wing_spline_bulk():
                               c=(25.0, 8.66025, 0.0))
 
     bulk.aeros = Aeros(acsid=0, rcsid=0, cref=10.0, bref=40.0, sref=200.0,
-                       symxz=1, symxy=0)
+                       symxz=0, symxy=0)
     bulk.paero1s[1000] = Paero1(pid=1000)
 
     # CAERO1 1100: 8-span × 4-chord, chord=10 ft

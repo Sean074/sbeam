@@ -21,7 +21,7 @@ from sbeam.viewer.aero_view import build_aero_box_figure
 def aero_bulk() -> BulkData:
     """Flat rectangular wing: 1 m chord × 4 m span, 4 spanwise × 10 chordwise boxes."""
     bulk = BulkData()
-    bulk.aeros = Aeros(acsid=0, rcsid=0, cref=1.0, bref=4.0, sref=4.0, symxz=1, symxy=0)
+    bulk.aeros = Aeros(acsid=0, rcsid=0, cref=1.0, bref=4.0, sref=4.0, symxz=0, symxy=0)
     bulk.caero1s[100] = Caero1(
         eid=100, pid=1, cp=0,
         nspan=4, nchord=10,

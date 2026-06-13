@@ -1,7 +1,7 @@
 """Step 49 V-B2 integration tests — force transfer & coupled smoke test.
 
 Uses val_spline2_cantilever.bdf: 4 CBARs along Y, 4-span×1-chord CAERO1,
-SPLINE2 via CORD2R CID=1, full span (parity=0).
+SPLINE2 via CORD2R CID=1, full span.
 """
 
 import dataclasses
@@ -29,7 +29,7 @@ def cantilever_aero():
     grid_index = build_grid_index(bulk)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
-        aero = build_aero_model(bulk, parity=0, grid_index=grid_index)
+        aero = build_aero_model(bulk, grid_index=grid_index)
     return aero, grid_index, bulk
 
 
@@ -70,7 +70,7 @@ class TestCLPlausibility:
         f_g = compute_structural_loads(aero, Q, ALPHA)
         f_tz = sum(f_g[6 * gi + 2] for gi in grid_index.values())
 
-        vlm = solve_rigid_cl(aero.boxes, ALPHA, parity=0, aeros=bulk.aeros)
+        vlm = solve_rigid_cl(aero.boxes, ALPHA, aeros=bulk.aeros)
         cl = vlm["CL"]
         expected_full = Q * cl * SREF
         expected_half = Q * cl * SREF / 2.0

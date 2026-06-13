@@ -34,15 +34,18 @@ class AeroModel:
     skj:          np.ndarray          # force integration matrix, shape (3n, n)
     djk:          np.ndarray          # deflection-to-downwash matrix, shape (n, n)
     wg:           np.ndarray          # baseline normalwash vector, shape (n,)
-    parity:       int                 # +1 symmetric / -1 antisymmetric / 0 full-span
     aeros:        Optional[Aeros] = None       # AEROS reference geometry card
     mach:         float = 0.0                  # Mach number for Prandtl–Glauert
     g_slope:      Optional[np.ndarray] = None  # slope spline, shape (n, 6*n_g)
     g_disp:       Optional[np.ndarray] = None  # displacement spline, shape (3n, 6*n_g)
 
 
-def build_aero_model(bulk: BulkData, parity: int = 1, grid_index: Optional[dict] = None) -> AeroModel:
+def build_aero_model(bulk: BulkData, grid_index: Optional[dict] = None) -> AeroModel:
     """Assemble the full AeroModel from parsed bulk data.
+
+    sbeam is full-span only.  A half-span / symmetry model (AEROS SYMXZ or
+    SYMXY non-zero) is rejected here — mirror it to a full-span deck first
+    (see sbeam.aero.mirror.mirror_halfspan).
 
     Correction precedence (first match wins, per CAERO1 element):
       1. WKK card present  → diagonal multiplicative: AJJ* = diag(wkk) @ AJJ,
@@ -59,6 +62,15 @@ def build_aero_model(bulk: BulkData, parity: int = 1, grid_index: Optional[dict]
     """
     if not bulk.caero1s:
         raise ValueError("build_aero_model: no CAERO1 elements found in bulk data")
+
+    if bulk.aeros is not None and (bulk.aeros.symxz != 0 or bulk.aeros.symxy != 0):
+        raise ValueError(
+            "build_aero_model: half-span / symmetry models are not supported "
+            f"(AEROS SYMXZ={bulk.aeros.symxz}, SYMXY={bulk.aeros.symxy}). "
+            "sbeam runs full-span only. Convert the deck with "
+            "sbeam.aero.mirror.mirror_halfspan(), or rebuild it full-span, "
+            "so that SYMXZ=SYMXY=0."
+        )
 
     # Mesh all CAERO1 elements in ascending EID order
     boxes: list[AeroBox] = []
@@ -79,7 +91,7 @@ def build_aero_model(bulk: BulkData, parity: int = 1, grid_index: Optional[dict]
     pg_boxes = prandtl_glauert_boxes(boxes, mach)
 
     # Build raw AIC on PG-compressed geometry
-    ajj = build_ajj(pg_boxes, parity)
+    ajj = build_ajj(pg_boxes)
 
     # Determine which correction applies — use the first CAERO1 EID as the key
     primary_eid = sorted(bulk.caero1s)[0]
@@ -139,7 +151,6 @@ def build_aero_model(bulk: BulkData, parity: int = 1, grid_index: Optional[dict]
         skj=skj,
         djk=djk,
         wg=wg,
-        parity=parity,
         aeros=bulk.aeros,
         mach=mach,
         g_slope=g_slope,

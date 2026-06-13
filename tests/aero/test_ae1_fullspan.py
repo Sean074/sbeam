@@ -1,22 +1,17 @@
-"""V-AE1f gate — full-span HA144A trim cross-check (parity ground truth).
+"""V-AE1f gate — full-span HA144A static-trim acceptance.
 
-`sample/ha144a_fullspan_sbeam.bdf` is an explicit full-span model (SYMXZ=0): both
-wings and both canards are meshed, the structure is mirrored, and the fuselage mass
-is doubled so the model is an exact 2x replica of the half-span ha144a_sbeam.bdf —
-same CL (W/S) and same CG_x (=17.18 ft). It therefore MUST trim to the same angles
-as NASTRAN Listing 7-2, with NO symmetry doubling (parity = AEROS.SYMXZ = 0 → sym=1).
+`sample/ha144a_fullspan_sbeam.bdf` is the HA144A trim model: an explicit
+full-span deck (SYMXZ=0) with both wings and both canards meshed, the structure
+mirrored, and the fuselage mass doubled so the whole airplane = 16000 lb. It is
+the sole HA144A trim gate since half-span support was removed (the old half-span
+deck + its `sym=2` doubling — the AE1 Step D double-count — are gone). With no
+`sym` factor anywhere, the aero and inertial loads are both whole-airplane and
+consistent, so SC1 (q=40, rigid-dominated) trims to NASTRAN Listing 7-2
+(ANGLEA=0.169191, ELEV=0.492457) within ~2%.
 
-Why this is a permanent regression gate (added with the AE1 parity re-diagnosis,
-2026-06-12): the half-span trim is currently wrong because `run_sol144_trim` doubles
-the aero load (`sym=2`) but not the inertial load. The full-span path has no `sym`
-factor to get wrong, so it is independent ground truth: at SC1 (q=40, rigid-
-dominated) it already matches NASTRAN to ~1%. Once the half-model parity fix lands,
-the half-model SC1 must agree with this full-span result. This gate locks the
-full-span path so a future change cannot silently break it.
-
-NOTE: only SC1 is gated. SC2 (q=1200) exercises the flexible q*Q_aa / restrained-
-derivative path, which is a SEPARATE still-open issue (AE1 Step G / AE8) — even the
-full-span ground truth misses NASTRAN at SC2, so it is deliberately NOT asserted here.
+SC2 (q=1200) exercises the flexible q*Q_aa / restrained-derivative path, a
+SEPARATE still-open issue (AE8): its exact ELEV is not value-gated, but its
+signs and the flexible aeroelastic increment (ANGLEA decreasing with q) are.
 """
 
 import warnings
@@ -48,7 +43,7 @@ def fullspan():
     grid_index = build_grid_index(bulk)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
-        aero = build_aero_model(bulk, parity=bulk.aeros.symxz, grid_index=grid_index)
+        aero = build_aero_model(bulk, grid_index=grid_index)
     return bulk, aero, grid_index
 
 
@@ -61,14 +56,23 @@ def result_sc1(fullspan):
         return run_sol144_trim(bulk, subcase, aero)
 
 
+@pytest.fixture(scope="module")
+def result_sc2(fullspan):
+    bulk, aero, _gi = fullspan
+    subcase = SubcaseControl(subcase_id=2, spc_sid=1, trim_sid=2)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return run_sol144_trim(bulk, subcase, aero)
+
+
 class TestFullSpanModel:
     """The full-span deck must be built with no symmetry doubling."""
 
-    def test_parity_is_zero(self, fullspan):
-        """SYMXZ=0 → parity=0 → sym=1 (no aero doubling on a full-span model)."""
-        bulk, aero, _gi = fullspan
+    def test_symxz_is_zero(self, fullspan):
+        """Full-span deck carries SYMXZ=SYMXY=0 — no symmetry doubling exists."""
+        bulk, _aero, _gi = fullspan
         assert bulk.aeros.symxz == 0
-        assert aero.parity == 0
+        assert bulk.aeros.symxy == 0
 
     def test_box_count_is_double(self, fullspan):
         """Full span has both wings + both canards = 2x the 40-box half model."""
@@ -149,3 +153,27 @@ class TestFullSpanSymmetry:
             f"wing tips not symmetric: right={tz_right:.6e} left={tz_left:.6e}"
         )
         assert abs(tz_right) > 1e-6, "wing-tip deflection ~0 — model may be over-constrained"
+
+
+class TestFullSpanTrimSC2:
+    """SC2 (q=1200): the exact ELEV is AE8-deferred (flexible/restrained-derivative
+    path), so it is not value-gated.  Signs and the flexible aeroelastic increment
+    (ANGLEA decreases from q=40 to q=1200 as the wing washes out) are robust and
+    gated here — this is the coverage previously held by the half-span trim test.
+    """
+
+    def test_anglea_positive(self, result_sc2):
+        assert result_sc2.trim_vars["ANGLEA"] > 0
+
+    def test_elev_positive(self, result_sc2):
+        assert result_sc2.trim_vars["ELEV"] > 0
+
+    def test_trim_lift_positive(self, result_sc2):
+        assert result_sc2.total_cl > 0
+
+    def test_flexible_increment(self, result_sc1, result_sc2):
+        a1 = result_sc1.trim_vars["ANGLEA"]
+        a2 = result_sc2.trim_vars["ANGLEA"]
+        assert a2 < a1, (
+            f"no aeroelastic stiffening: SC2 ANGLEA ({a2:.6f}) >= SC1 ({a1:.6f})"
+        )

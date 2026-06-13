@@ -749,25 +749,27 @@ AEROS  ACSID  RCSID  CREF  BREF  SREF  SYMXZ  SYMXY  [MACH]
 | ACSID | `acsid` | int | Aerodynamic coordinate system (Phase A: must be 0) | `0` |
 | RCSID | `rcsid` | int | Reference coordinate system for rigid-body motion (Phase A: must be 0) | `0` |
 | CREF | `cref` | float | Reference chord (consistent model units) | required |
-| BREF | `bref` | float | Reference span — full span, even for half-span symmetric models | required |
+| BREF | `bref` | float | Reference span — full span | required |
 | SREF | `sref` | float | Reference area — full area | required |
-| SYMXZ | `symxz` | int | +1 symmetric about XZ plane, −1 antisymmetric, 0 no symmetry | `0` |
-| SYMXY | `symxy` | int | +1 symmetric about XY plane, −1 antisymmetric, 0 no symmetry | `0` |
+| SYMXZ | `symxz` | int | Parsed for NASTRAN compatibility; **must be 0** — `build_aero_model` rejects non-zero (half-span) | `0` |
+| SYMXY | `symxy` | int | Parsed for NASTRAN compatibility; **must be 0** — `build_aero_model` rejects non-zero (half-span) | `0` |
 | MACH | `mach` | float | **sbeam extension** — freestream Mach number for Prandtl–Glauert / Göthert compressibility correction (§2.8 of theory doc). Omit or set to 0.0 for incompressible. Capped at 0.99; must be subsonic. | `0.0` |
 
 > **Note:** The MACH field (field 8) is an sbeam extension. The NASTRAN AEROS card has no MACH field; in MSC Nastran, Mach appears on the TRIM card (Phase C).
+
+> **Full-span only:** sbeam does not support half-span / symmetry models. `SYMXZ`/`SYMXY` are
+> parsed so legacy decks load, but `build_aero_model` raises `ValueError` for any non-zero
+> value. Unfold a legacy half-span deck with `sbeam.aero.mirror.mirror_halfspan()`.
 
 One AEROS card per model. A second card raises `ValueError("Duplicate AEROS card")`.
 CAERO1 cards without an AEROS card raise `ValueError("CAERO1 card(s) present but no AEROS card found")`.
 
 **Examples:**
 ```
-$ Half-span symmetric wing: chord=2.0, span=10.0, area=20.0 — incompressible
-AEROS, 0, 0, 2.0, 10.0, 20.0, 1, 0
+$ Full-span wing: chord=2.0, span=10.0, area=20.0 — incompressible
+AEROS, 0, 0, 2.0, 10.0, 20.0, 0, 0
 $ Same wing at M=0.6 (Prandtl–Glauert correction active)
-AEROS, 0, 0, 2.0, 10.0, 20.0, 1, 0, 0.6
-$ Full-span antisymmetric (rolling) analysis
-AEROS, 0, 0, 2.0, 10.0, 20.0, -1, 0
+AEROS, 0, 0, 2.0, 10.0, 20.0, 0, 0, 0.6
 ```
 
 ---
@@ -859,7 +861,7 @@ LSPAN/LCHORD not in `bulk.aefacts` → `ValueError`; CAERO1 present, no AEROS �
 
 **Example:**
 ```
-$ 4×10 half-span wing: root LE at origin, tip LE at y=5, chord=2
+$ 4×10 wing: root LE at origin, tip LE at y=5, chord=2
 CAERO1, 100, 1, 0, 4, 10, 0, 0, 0
 +,      0.0, 0.0, 0.0, 2.0, 0.0, 5.0, 0.0, 2.0
 ```
@@ -956,7 +958,7 @@ same as `solve_rigid_cl` at `alpha=1`).
 $ WT2: pressure-matching targets for an 8-box panel
 AECORR, 20, WT2, 100, 0.45, 0.30, 0.22, 0.18, 0.45, 0.30, 0.22, 0.18
 
-$ WT1: per-strip lift targets for a 4-strip half-span wing
+$ WT1: per-strip lift targets for a 4-strip wing
 AECORR, 30, WT1, 100, 0.80, 0.75, 0.65, 0.50
 ```
 

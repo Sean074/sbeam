@@ -247,19 +247,19 @@ an *additive* correction slot (§3): supplying a per-box incidence delta from CF
 wind-tunnel data is often better conditioned than a multiplicative correction, because it does
 not blow up where the local load is small.
 
-### 2.6 Symmetry
+### 2.6 Full-span modelling (no symmetry image)
 
-A symmetric configuration is modelled as a half-model. The influence of the opposite half is
-included by adding the contribution of each **image** horseshoe vortex reflected across the
-$x$–$z$ plane. Two parities are needed:
+sbeam models every configuration **full-span**: both sides of the $x$–$z$ plane are meshed
+explicitly. The half-model-with-image economy of classical codes (where the opposite half is
+represented by reflecting each horseshoe vortex across the plane, with a $\pm$ parity to select
+symmetric vs antisymmetric loading) is **not** used — it was a 1970s computational economy that
+modern hardware makes unnecessary, and removing it eliminates a whole class of half-vs-full-span
+reference and force-scaling bugs.
 
-- **Symmetric** loading — image circulation of the *same* sign; reproduces symmetric lift
-  (the case for longitudinal trim).
-- **Antisymmetric** loading — image circulation of *opposite* sign; produces zero net lift and
-  a pure rolling/yawing moment (the case for lateral-directional trim).
-
-Carrying both parities lets the half-model support asymmetric flight conditions without
-meshing the whole aircraft.
+Both symmetric (longitudinal) and antisymmetric (lateral-directional / rolling) flight
+conditions are therefore captured directly by the geometry and boundary conditions of the full
+model: an asymmetric load — e.g. a single deflected aileron, or a roll rate — produces an
+asymmetric circulation distribution naturally, with no image vortices and no parity flag.
 
 ### 2.7 Rigid coefficients
 
@@ -795,7 +795,8 @@ $$
 $$
 
 an *antisymmetric* spanwise incidence (the down-going wing gains incidence), giving the
-roll-damping derivative $C_{l_p}$ — and the reason the antisymmetric VLM image option matters;
+roll-damping derivative $C_{l_p}$ — captured directly by the full-span lattice (§2.6), since the
+left and right wings carry opposite incidence with no symmetry-image machinery;
 
 $$
 \text{yaw rate:}\quad \Delta U(y) = -\,r\,y \;\;(\text{wing}),

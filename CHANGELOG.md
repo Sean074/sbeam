@@ -11,6 +11,33 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Phase 2 completion.
 
+### Removed
+
+**Half-span / symmetry (AEROS SYMXZ/SYMXY) support removed — sbeam is full-span only (2026-06-12)**
+
+The half-span symmetry-image capability — a 1970s computational economy no longer needed —
+was removed. Every lifting surface is now meshed in full.
+
+- **VLM kernel simplified.** Removed the `parity` parameter and the XZ-mirror image logic from
+  `horseshoe_influence`, `build_ajj`, `trefftz_cdi`, and `solve_rigid_cl` (vlm.py), including the
+  symmetric/antisymmetric image-bound branches, the mirror trailing-vortex loop, the
+  `parity == -1` CL/CY/CDi special cases, and the half-vs-full-span reference-AR doubling
+  heuristic. `AeroModel.parity` and the `parity` argument of `build_aero_model` are gone.
+- **AE1 Step D fixed by construction.** Removing the `sym = 2` half-span force-doubling factor
+  from `run_sol144_trim` eliminates the aero/inertia parity double-count that halved the HA144A
+  trim. SC1 now trims to NASTRAN Listing 7-2 within ~2% on the full-span deck.
+- **SYMXZ guard + migration aid.** `build_aero_model` now raises if `AEROS SYMXZ`/`SYMXY` ≠ 0,
+  pointing at the new `sbeam.aero.mirror.mirror_halfspan()` utility, which unfolds a legacy
+  half-span deck (GRID/CBAR/CONM2/RBAR/RBE2/CAERO1) to full-span about the XZ plane. The AEROS
+  card still *parses* SYMXZ/SYMXY (the field layout is unchanged); only solving a non-zero model
+  is rejected.
+- **Viewer.** Removed the Symmetric/Antisymmetric/Full-span radio from the aero tab.
+- **Decks & tests.** Half-span `sample/ha144a_sbeam.bdf` and its gate `test_ae1_keff_trim.py`
+  removed; `sample/ha144a_fullspan_sbeam.bdf` + `test_ae1_fullspan.py` are now the sole HA144A
+  trim gate (SC1 value + SC2 sign/flexible-increment coverage folded in). All VLM tests rebuilt
+  on genuine full-span geometry; the antisymmetric and parity-image unit tests and the concluded
+  A1 convergence diagnostics were removed.
+
 ### Fixed
 
 **Backlog validation review — AE1 re-diagnosis corrected; R16–R22 closed (2026-06-12)**

@@ -14,12 +14,11 @@ Order reflects what unblocks the most downstream work; close in sequence unless 
 
 | # | Item | Severity | Status | What it unblocks |
 |--:|------|----------|--------|------------------|
-| 1 | [AE1 Step D — Fix the `sym=2` aero/inertia parity double-count](#ae1-step-d--parity-fix-in-the-trim-balance) | CRITICAL | Open | **Root cause** of the SC1/SC2 ANGLEA/ELEV ~50% halving; closes V-AE1d |
-| 2 | [AE1 Step F — Verify V-AE1d elastic trim](#ae1-step-f--verify-v-ae1d-elastic-trim) | CRITICAL | Open | Acceptance gate; goes green once Step D lands |
+| 2 | [AE1 Step F — Verify V-AE1d elastic trim](#ae1-step-f--verify-v-ae1d-elastic-trim) | CRITICAL | Open | Acceptance gate; SC1 green on full-span, SC2 pending AE8 |
 | 3 | [AE1 Step G — Analytic restrained derivatives](#ae1-step-g--analytic-restrained-derivatives) | MAJOR | Open | Closes AE8 derivative half (NOT on the trim critical path) |
 | 4 | [AE1 Step C — `Q_aa` rigid-body null-space gate](#ae1-step-c--q_aa-rigid-body-null-space-gate) | MINOR | Open | Regression guard for B's spline fix — null space already satisfied to 2e-14; NOT the ELEV lead |
 | 5 | [AE9 — Per-TRIM Mach (currently AEROS.mach only)](#major-ae9--mach-is-a-property-of-the-model-not-the-flight-condition) | MAJOR | Open | Subsonic multi-Mach subcases (HA144A SC3 is supersonic — out of scope) |
-| 6 | [AE10 — Wire `parity` from `AEROS.SYMXZ`; SOL 144 CLI dispatch](#major-ae10--parity-not-wired-from-aerossymxz-sol-144-unreachable-from-main) | MAJOR | Open | End-to-end HA144A solve from main.py |
+| 6 | [AE10 — SOL 144 CLI dispatch from `main.py`](#major-ae10--sol-144-unreachable-from-main) | MAJOR | Open | End-to-end HA144A solve from main.py |
 | 7 | [AE11 — D_jx YAW column + AESURF hinge geometry](#minor-ae11--d_jx-yaw-column-duplicates-roll-aesurf-hinge-geometry-ignored) | MINOR | Open | Vertical-fin trim, hinge-moment derivs |
 | 8 | [AE12 — SPLINE2 DTOR/DTHZ warning (PG-normal half not a bug)](#minor-ae12--spline2-dtordthz-silently-ignored-pg-normal-half-misidentified) | MINOR | Open | User-input safety (PG-normal half re-diagnosed: not a bug) |
 | 9 | [A7 — Cosine chordwise spacing helper + low-NCHORD warning](#minor-a7--default-chordwise-box-count-too-low-no-cosine-chordwise-spacing) | MINOR | Open (code) | Pitching-moment convergence |
@@ -29,7 +28,10 @@ Order reflects what unblocks the most downstream work; close in sequence unless 
 | 13 | [Phase 2 / Phase 3 / Future development](#phase-2--phase-3--future-development) | Planned | Optional | Long-tail capability |
 
 **Closed in this branch (full detail in CHANGELOG `[Unreleased]` and history):** AE2,
-AE3, AE4, AE5, AE6, AE7. AE1 Step A (parity + My sign, 2026-06-12). AE1 Step B (RBAR
+AE3, AE4, AE5, AE6, AE7. **AE1 Step D + AE10 parity wiring — RESOLVED by removing half-span
+support (2026-06-12): the `sym=2` aero/inertia double-count and the `parity` flag no longer
+exist; sbeam is full-span only, so aero and inertia are both whole-airplane with no scaling.
+SC1 trims to NASTRAN on `ha144a_fullspan_sbeam.bdf` (V-AE1f).** AE1 Step A (parity + My sign, 2026-06-12). AE1 Step B (RBAR
 expansion, EA-only SET1, spline math fix, V-AE1b gate; 2026-06-12 — `g_slope`/`g_disp`
 now reproduce all 6 basic-frame rigid-body modes on the swept HA144A spline). AE1 Step E
 (moment-sign single-source helper `_pitch_moment` + VW-moment consistency gate,
@@ -45,10 +47,16 @@ doubling — added 2026-06-12.
 
 ## Critical — AE1: Trim solver does not match HA144A Listing 7-2
 
+> **UPDATE 2026-06-12 — the parity half of this is RESOLVED.** Half-span support was removed,
+> deleting the `sym=2` aero/inertia double-count and the `parity` flag entirely. SC1 now trims
+> to NASTRAN on the full-span deck (V-AE1f). The `sym=2` / "sbeam (half)" discussion below is
+> retained as the recorded diagnosis; the half-span deck and its gate no longer exist. **Open
+> remainder:** the SC2 (q=1200) flexible residual (Step G / AE8) and the acceptance gate (Step F).
+
 **Files:** `sbeam/solver/sol144.py:452–513` (`_solve_trim_determined`),
 `sbeam/solver/sol144.py:673–953` (`run_sol144_trim`),
 `sbeam/solver/sol144.py:596–670` (`_compute_restrained_derivs`),
-`tests/aero/test_ae1_keff_trim.py` (V-AE1 gate).
+`tests/aero/test_ae1_fullspan.py` (V-AE1f gate).
 
 **Current measured state (post Steps A + B, 2026-06-12):**
 
@@ -103,16 +111,14 @@ that `parity` is overloaded (it also selects the AIC image vortices, so the fix 
 | A | Parity (`sym = 2` on symmetric half-models) + nose-up-positive My sign | ✅ APPLIED 2026-06-12 — ⚠ the `sym=2` half **introduced** the parity double-count now tracked in Step D |
 | B | RBAR slave-DOF expansion + EA-only SET1 + spline math fix (mult-bending, corrected torsion); V-AE1b gate | ✅ APPLIED 2026-06-12 — see CHANGELOG |
 | C | `Q_aa` rigid-body null-space regression gate | Open (MINOR — guard only; null space already clean to 2e-14) |
-| D | **Parity fix** — reconcile `sym` between the aero and inertial trim paths | Open (CRITICAL — root cause) |
+| D | **Parity fix** — reconcile `sym` between the aero and inertial trim paths | ✅ RESOLVED 2026-06-12 by removing half-span support — `sym` and `parity` deleted; full-span is whole-airplane, no scaling. SC1 green (V-AE1f). |
 | E | Moment-sign single-source helper + VW-moment consistency gate (closes AE8 sign half) | ✅ APPLIED 2026-06-12 — see CHANGELOG |
-| F | V-AE1d elastic trim acceptance gate | Open |
+| F | V-AE1d elastic trim acceptance gate | Open (SC1 green on full-span; SC2 pending AE8) |
 | G | Analytic restrained derivatives via Schur factorisation (closes AE8 deriv half) | Open (MAJOR — AE8, off the trim path) |
 
-Recommended order: **D (parity fix — the root cause) → F (acceptance)**. G closes AE8's
-derivative half and should land after D so the analytic `C_ax` it consumes is no longer
-doubled; C is a cheap regression guard that can land any time. Step E is closed (moment
-sign already correct). The earlier "C → D → G → F, C is the prime suspect" ordering rested
-on the retracted flexibility diagnosis and is superseded.
+Recommended order: **F (acceptance) → G**. Step D is closed (half-span removal eliminated the
+`sym=2` double-count). G closes AE8's derivative half; C is a cheap regression guard that can
+land any time. Step E is closed (moment sign already correct).
 
 ---
 
@@ -135,54 +141,19 @@ rect-planar only, no out-of-plane z≠0 grids).
 
 ---
 
-### AE1 Step D — Parity fix in the trim balance
+### AE1 Step D — Parity fix in the trim balance ✅ RESOLVED (2026-06-12)
 
-**CRITICAL — this is the AE1 root cause (confirmed by a full-span cross-check, see below).**
-`run_sol144_trim` computes `sym = 2 if aero.parity != 0 else 1` (sol144.py:789) and applies
-it to the aero terms (`f_aero_g` :833, `Q_ax_g` :795, `Q_aa` :822) but leaves the inertial
-`M_ax`/`pres_inertial_g` (:873–874) un-doubled. The force `sym=2` is wrong: the half-model's
-image-vortex AIC already produces the per-side load that balances the deck's full 8000 lb at
-the correct angle, so the doubling halves ANGLEA/ELEV.
+Resolved by **removing half-span / symmetry support** rather than reconciling the two `sym`
+legs. The `sym = 2 if aero.parity != 0 else 1` factor and the `parity` flag are gone from
+`run_sol144_trim` and the VLM (vlm.py / aero_model.py). With full-span-only models, aero and
+inertia are both whole-airplane and there is no scaling to get out of step — the double-count
+is impossible by construction. `ha144a_fullspan_sbeam.bdf` trims to **SC1 0.1711/0.4908
+(101%/100% of NASTRAN), lift 16000 lb** (V-AE1f, `tests/aero/test_ae1_fullspan.py`).
 
-**THE FIX IS SUBTLER THAN "use parity=0".** `parity` is OVERLOADED — it ALSO selects the
-symmetry image vortices in `build_ajj` (aero_model.py:82), which are CORRECT and REQUIRED.
-Passing `parity=0` to the half-model removes the images (wrong AIC) and makes the trim WORSE
-(ANGLEA 0.302, 178% of NASTRAN). The fix must DECOUPLE the two roles:
-
-- keep `parity=±1` for the AIC (symmetry images on); and
-- use `sym=1` for the trim force/load scaling (remove the `2 if parity!=0` doubling from
-  `f_aero_g`, `Q_ax_g`, `Q_aa`), so aero and inertial share one rule (`sym=1`).
-
-Verified: half-model with image AIC + `sym=1` → SC1 0.1727/0.4893 (102%/99% of NASTRAN);
-current code (image AIC + `sym=2`) → 0.0860/0.2446 (≈50%). Introduce a dedicated force-scale
-factor distinct from `aero.parity`; assert at trim entry that the aero and inertial scales
-match. (NOTE the `sym=1` outcome means the doubling should simply be dropped for the HA144A
-`REFS`/per-side-mass convention; if a future deck genuinely needs whole-airplane reporting,
-scale aero AND inertia together — never one without the other.)
-
-**Full-span cross-check (`sample/ha144a_fullspan_sbeam.bdf` + permanent gate
-`tests/aero/test_ae1_fullspan.py` / V-AE1f, added 2026-06-12):** an explicit
-2× mirror (both wings/canards, SYMXZ=0, fuselage mass doubled → 16000 lb, CG_x=17.18 matched)
-is ground truth with NO symmetry trickery. It uses a single-point ground (`SPC1 1246` at the
-reference GRID 90 + `SUPORT 35`), NOT the half-model's centreline symmetry SPCs — so symmetry
-EMERGES (antisymmetric centreline DOF = 1e-18, L/R wing tips identical to 1e-16) rather than
-being imposed, making it a genuinely independent check. It passes the rigid-pitch spline check
-and trims to **SC1 0.1711/0.4908 (101%/100% of NASTRAN), lift 16000 lb** — independently
-confirming the parity fix. *SC2 (q=1200) is a SEPARATE, still-open flexible issue:* the corrected half-model
-(0.0049) and the full-span (0.0032) both miss NASTRAN (0.0014), i.e. the `q·Q_aa`/restrained-
-derivative path (Step G / AE8) is genuinely imperfect at high q — the parity fix closes SC1
-but NOT SC2. (Caveat: the full-span shares one fuselage beam, so its SC2 structure is not a
-clean 2× of the half-model — SC2 full-vs-half is informative, not exact.)
-
-**Acceptance (rewritten — the old unit-Cp check would NOT catch this bug):** the prior
-"skj-path SUPORT-row force == `solve_rigid_cl` lift to 1e-6 for one unit-Cp injection"
-operates at the *un-symmetrised* transfer layer, where the existing Step E test already
-passes — the `sym=2` multiplier is applied later, in `run_sol144_trim`. Replace it with a
-**full-trim moment-balance** assertion: at the trimmed state, `sym·(aero My) + inertial My
-= 0` and `sym·(aero Fz) + inertial Fz = 0` about `x_ref` with the SAME `sym` on both legs,
-and SC1/SC2 ANGLEA/ELEV match Listing 7-2 to ≤1% (this is what actually trips the current
-bug). Keep the independent unit-Cp force/moment cross-check against `solve_rigid_cl` as the
-companion V-AE3 unit-consistency gate (see AE13).
+*SC2 (q=1200) remains a SEPARATE, still-open flexible issue:* the full-span SC2 ELEV (0.0032)
+still misses NASTRAN (0.0014), i.e. the `q·Q_aa` / restrained-derivative path (Step G / AE8)
+is imperfect at high q. The parity removal closes SC1 but NOT SC2. See `40_history` for the
+full record.
 
 ---
 
@@ -217,7 +188,7 @@ reproduced to ≤ 5 % relative error. (Depends on the Step D parity fix.)
 
 ---
 
-### V-AE1 gate (full acceptance, replaces `test_ae1_keff_trim.py` once landed)
+### V-AE1 gate (full acceptance — now `test_ae1_fullspan.py`, V-AE1f)
 
 **Two structural weaknesses in the current gate (2026-06-12 review):** (1) `test_trim_lift`
 is NON-discriminating — lift = 8000 lb for both `sym=1` and `sym=2`, so exact lift is NOT
@@ -323,26 +294,22 @@ FIX:    NOT a one-line edit at aero_model.py:77. (a) Thread per-TRIM Mach into A
 
 ---
 
-### [MAJOR] AE10 — `parity` not wired from `AEROS.SYMXZ`; SOL 144 unreachable from main
+### [MAJOR] AE10 — SOL 144 unreachable from main
 
-**Files:** `sbeam/aero/aero_model.py:44`, `sbeam/main.py`, `sbeam/parser/case_control.py`
+**Files:** `sbeam/main.py`, `sbeam/parser/case_control.py`
 
 ```
-[MAJOR] Every caller passes parity manually; nothing reads AEROS.symxz, so a
-        wrong-parity solve is silent (viewer/app.py:552 passes a UI radio defaulting to
-        Symmetric, so a SYMXZ=0 deck silently doubles). run_sol144_trim has no caller in
-        main.py — the HA144A deck cannot run end-to-end. NOTE: the old "case_control
-        rejects SOL 144" claim is STALE — 144 is already whitelisted (case_control.py:61)
-        and trim_sid is parsed; the only remaining gate is main.py dispatch.
-FIX:    (1) Default parity = aeros.symxz inside build_aero_model (explicit arg overrides;
-        Aeros.symxz and parity share the +1/−1/0 encoding, so this is clean — verified
-        zero regression on the current suite). Assert/warn at trim entry when the passed
-        parity disagrees with aeros.symxz. (2) main.py SOL 144 dispatch is NOT a mirror of
-        the SOL 101/103 two-arg pattern — run_sol144_trim needs a prebuilt AeroModel +
-        grid_index, so main.py must build the aero model (parity from AEROS.SYMXZ) and pass
-        it in. Retarget this from "Step 56 (f06 output)" to AE10/Step 52 — dispatch must
-        precede f06. Tests: a SYMXZ=0 deck built without explicit parity yields parity=0;
-        an end-to-end SOL 144 run through main.py (extend test_main.py).
+[MAJOR] run_sol144_trim has no caller in main.py — the HA144A deck cannot run end-to-end.
+        NOTE: the old "case_control rejects SOL 144" claim is STALE — 144 is already
+        whitelisted (case_control.py:61) and trim_sid is parsed; the only remaining gate is
+        main.py dispatch.  (The original "wire parity from AEROS.SYMXZ" half of this item is
+        RESOLVED — half-span support was removed, so there is no parity flag to wire; see
+        AE1 Step D / CHANGELOG.)
+FIX:    main.py SOL 144 dispatch is NOT a mirror of the SOL 101/103 two-arg pattern —
+        run_sol144_trim needs a prebuilt AeroModel + grid_index, so main.py must build the
+        aero model (build_aero_model rejects SYMXZ≠0) and pass it in. Retarget this from
+        "Step 56 (f06 output)" to AE10/Step 52 — dispatch must precede f06. Test: an
+        end-to-end SOL 144 run through main.py (extend test_main.py).
 ```
 
 ---
@@ -403,7 +370,7 @@ FIX:    Warn when DTOR/DTHZ carry non-default values that will be ignored. Add a
 
 ### [MINOR] AE13 — Validation gap: no swept/coupled/benchmark gates (partially closed)
 
-**Files:** `tests/aero/`, `tests/integration/`, `sample/ha144a_sbeam.bdf`
+**Files:** `tests/aero/`, `tests/integration/`, `sample/ha144a_fullspan_sbeam.bdf`
 
 ```
 [MINOR] 207 tests passed at review time with every defect above present. Every
@@ -849,7 +816,7 @@ CSV/HDF5 values identical to the f06 to 1e-12; HDF5 schema documented in
 
 ### V-MON1 — HA144A cross-check (closing gate)
 
-Add two `MONPNT3` cards to `sample/ha144a_sbeam.bdf`:
+Add two `MONPNT3` cards to `sample/ha144a_fullspan_sbeam.bdf`:
 1. Wing-root cut — `SET1 = {100}` (inboard EA grid only).
 2. Full wing — `SET1 = {100, 110, 120}` (all three EA grids, matches the EA-only SET1
    landed under AE1 Step B).

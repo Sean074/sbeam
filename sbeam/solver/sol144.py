@@ -557,8 +557,8 @@ def _pitch_moment(f_box_vec: np.ndarray, boxes: list, x_ref: float) -> float:
         x_ref:     moment reference x-coordinate in basic CID 0 (RCSID origin).
 
     Returns:
-        Pitching moment about x_ref (force/q · length units); multiply by the
-        parity factor at the call site for whole-airplane moment.
+        Pitching moment about x_ref (force/q · length units).  Full-span model,
+        so this is already the whole-airplane moment (no symmetry factor).
     """
     return -sum(
         f_box_vec[3 * j + 2] * (boxes[j].force_point[0] - x_ref)
@@ -784,15 +784,13 @@ def run_sol144_trim(
         suport_pos = np.zeros(3)
 
     # ------------------------------------------------------------------ #
-    # Symmetry force-doubling factor (skj covers half-span for SYMXZ models)
-    # ------------------------------------------------------------------ #
-    sym = 2 if aero.parity != 0 else 1
-
-    # ------------------------------------------------------------------ #
     # Build D_jx and Q_ax on the g-set
     # ------------------------------------------------------------------ #
+    # Full-span model: aero and inertia are both whole-airplane, so there is no
+    # symmetry force-doubling factor (the AE1 Step D `sym=2` double-count that
+    # halved the trim solution is gone with half-span support).
     D_jx = build_djx(aero.boxes, all_labels, bulk)       # (n_box, n_labels)
-    Q_ax_g = sym * (aero.g_disp.T @ aero.skj @ aero.ajj_inv_corr @ D_jx)  # (n_g, n_labels)
+    Q_ax_g = aero.g_disp.T @ aero.skj @ aero.ajj_inv_corr @ D_jx  # (n_g, n_labels)
 
     # ------------------------------------------------------------------ #
     # A-set partition (SPC + RBE3 reduction)
@@ -819,7 +817,7 @@ def run_sol144_trim(
 
     # Also compute Q_aa for storage in result (reuse existing helper)
     from sbeam.aero.coupling import build_qaa
-    Q_gg = sym * build_qaa(aero, aero.g_disp, aero.g_slope)
+    Q_gg = build_qaa(aero, aero.g_disp, aero.g_slope)
     if dep_dofs:
         Q_red_full = T.T @ Q_gg @ T
     else:
@@ -830,7 +828,7 @@ def run_sol144_trim(
     # Build combined RHS: q*f_g (baseline aero) + inertial load
     # ------------------------------------------------------------------ #
     from sbeam.aero.coupling import build_fg
-    f_aero_g = q_dyn * sym * build_fg(aero, aero.g_disp)   # (n_g,) baseline aero; parity-scaled
+    f_aero_g = q_dyn * build_fg(aero, aero.g_disp)   # (n_g,) baseline aero (whole-airplane)
 
     # Aerodynamic contribution of prescribed trim variables (URDD cols = 0)
     label_to_col = {l: i for i, l in enumerate(all_labels)}
@@ -974,9 +972,9 @@ def run_sol144_trim(
     w_total  = w_struct + D_jx @ delta_all + aero.wg
     gamma    = aero.ajj_inv_corr @ w_total
     f_box_vec = aero.skj @ gamma
-    Fz_total = float(sym * f_box_vec[2::3].sum())
-    # nose-up-positive (single-source helper, AE1 Step E); parity-scaled to whole-airplane
-    My_total = float(sym * _pitch_moment(f_box_vec, aero.boxes, x_ref))
+    Fz_total = float(f_box_vec[2::3].sum())
+    # nose-up-positive (single-source helper, AE1 Step E); whole-airplane (full-span)
+    My_total = float(_pitch_moment(f_box_vec, aero.boxes, x_ref))
     sref = aeros.sref
     cref = aeros.cref
     # Fz_total and My_total are force/q (skj @ Cp); divide by area only, not q.

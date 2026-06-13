@@ -10,7 +10,7 @@ BDF file
   ↓ parse_bulk_data()
 BulkData  (bulk.aeros, bulk.caero1s, bulk.paero1s, bulk.aefacts, ...)
   ↓ build_aero_model()
-AeroModel (boxes, ajj, skj, djk, wg, parity, aeros)
+AeroModel (boxes, ajj, skj, djk, wg, aeros)
   ↓ solve_rigid_cl() / coupled aeroelastic solve (Phase B+)
 Results   (cp, cl_section, CL, CY, CM, CDi, e, per_surface, …)
 ```
@@ -48,7 +48,7 @@ the remaining AE items in `docs/30_future/00_backlog.md` (Code Review 2026-06-11
 | ~~AE5~~ | ~~URDD interpreted in basic frame (RCSID ignored) — HA144A trims to **−1g**~~ | **RESOLVED** — prescribed URDD values transformed through R_rcsid (partial-set support); `pres_values_basic` path in `run_sol144_trim`; V-AE3a gate passes ✓ |
 | ~~AE6~~ | ~~Forces applied at ¾-chord collocation point, not ¼-chord bound vortex~~ | **RESOLVED** — `AeroBox.force_point = (bound_a+bound_b)/2`; `g_disp` and ATTACH lever evaluated at force_point; sol144 moment arms use `force_point[0]` ✓ |
 | ~~AE7~~ | ~~No inertial trim columns; transport terms missing~~ | **RESOLVED** — `_build_inertial_cols` returns (n_g, n_labels) M_ax; translational + spin + transport terms; M_ax_a passed to Schur and derivs; 10/10 tests pass ✓ |
-| AE8–AE10 | Inconsistent derivative formulation; Mach fixed per model; parity unwired | Trim system generality |
+| AE8–AE10 | Inconsistent derivative formulation; Mach fixed per model; SOL 144 CLI dispatch | Trim system generality |
 
 **Do not use SOL 144 trim results for anything until AE1, AE8–AE10 are resolved.** Rigid
 `solve_rigid_cl` results on **unswept** surfaces are unaffected. AE2–AE7 are resolved;
@@ -105,23 +105,32 @@ AEROS  ACSID  RCSID  CREF  BREF  SREF  SYMXZ  SYMXY
 | CREF | float | — | Reference chord length (consistent model units) |
 | BREF | float | — | Reference span (full span, even for symmetric models) |
 | SREF | float | — | Reference area (full area) |
-| SYMXZ | int | 0 | +1 = symmetric about XZ plane, −1 = antisymmetric, 0 = no symmetry |
-| SYMXY | int | 0 | +1 = symmetric about XY plane, −1 = antisymmetric, 0 = no symmetry |
+| SYMXZ | int | 0 | Parsed for NASTRAN compatibility; **must be 0** — non-zero (half-span) is rejected |
+| SYMXY | int | 0 | Parsed for NASTRAN compatibility; **must be 0** — non-zero (half-span) is rejected |
 
-### Symmetry conventions
+### Full-span only — no symmetry models
 
-- `SYMXZ = +1`: the model represents one semi-span; a mirror image is added across the
-  XZ plane with the same circulation sign (symmetric lift). The VLM AIC matrix adds a
-  positive mirror-image horseshoe for each box.
-- `SYMXZ = -1`: antisymmetric (rolling) condition; the mirror image has opposite
-  circulation sign. Net lift ≈ 0, rolling moment ≠ 0.
-- `SYMXZ = 0`: full-span model, no image vortices added.
+sbeam is **full-span only**. Every lifting surface must be meshed in full (both sides of the
+XZ plane); there is no symmetry-image / parity option. The `SYMXZ`/`SYMXY` fields are still
+*parsed* so legacy NASTRAN decks load, but `build_aero_model` rejects any model with
+`SYMXZ ≠ 0` or `SYMXY ≠ 0`:
 
-The parity value derived from `SYMXZ` is passed through the entire Phase A pipeline as
-`parity = +1` (sym) or `parity = -1` (antisym).
+```
+ValueError: build_aero_model: half-span / symmetry models are not supported
+            (AEROS SYMXZ=1, SYMXY=0). sbeam runs full-span only. Convert the deck
+            with sbeam.aero.mirror.mirror_halfspan(), or rebuild it full-span, so
+            that SYMXZ=SYMXY=0.
+```
+
+`mirror_halfspan(bulk)` (`sbeam/aero/mirror.py`) is a migration aid: it unfolds a half-span
+deck about the XZ plane (mirrors GRID/CBAR/CONM2/RBAR/RBE2/CAERO1, clears the symmetry flags)
+and raises `NotImplementedError` listing any cards — splines, control surfaces, W2GJ,
+constraints — whose correct full-span form needs manual rebuilding.
 
 ### Validation rules
 
+- **Half-span model**: `build_aero_model` raises `ValueError` if `AEROS SYMXZ ≠ 0` or
+  `SYMXY ≠ 0` (see above).
 - **Duplicate AEROS**: only one AEROS card is permitted per model. A second card raises
   `ValueError("Duplicate AEROS card")`.
 - **CAERO1 without AEROS**: if any CAERO1 cards are parsed and no AEROS card is present,
@@ -251,27 +260,21 @@ degenerate inputs (p on segment, or a ≈ b).
 Guards: `_DEGEN_TOL = 1e-14` for collinearity; `_FAR_FIELD_FACTOR = 1000.0` for the
 trailing-leg cutoff ratio.
 
-**`horseshoe_influence(colloc, colloc_normal, box, parity=1) -> float`**
+**`horseshoe_influence(colloc, colloc_normal, box) -> float`**
 
 Returns the normalwash (induced velocity dotted with `colloc_normal`) at `colloc` from
 a unit horseshoe at `box` (ZAERO Eq. 3.49a: `NIC = n_x·UIC + n_y·VIC + n_z·WIC`).
 This general dot-product formulation supports arbitrary surface orientations — horizontal
-wings (n̂ ≈ +Z) and vertical fins (n̂ ≈ +Y) are treated consistently.
-For half-span models a mirror image across the XZ plane is added:
+wings (n̂ ≈ +Z) and vertical fins (n̂ ≈ +Y) are treated consistently. Full-span only —
+no symmetry-image vortex (both sides of the XZ plane are meshed explicitly).
 
-| `parity` | Image direction | Effect |
-|----------|-----------------|--------|
-| `+1` (symmetric) | bound reversed: b_img → a_img | Root trailing legs cancel; left-wing produces same-sign lift |
-| `-1` (antisymmetric) | bound unreversed: a_img → b_img | Root trailing legs reinforce; full-span CL = 0 |
-| `0` | No image | Full-span model, no symmetry |
-
-**`build_ajj(boxes, parity=1) -> np.ndarray`**
+**`build_ajj(boxes) -> np.ndarray`**
 
 Assembles the n×n aerodynamic influence coefficient (AIC) matrix. `A[i, j]` is the
 normalwash at collocation point `i` per unit circulation strength at horseshoe `j`.
 O(n²) loop over all panel pairs.
 
-**`solve_rigid_cl(boxes, alpha, beta=0.0, parity=1, aeros=None, xref=0.0) -> dict`**
+**`solve_rigid_cl(boxes, alpha, beta=0.0, aeros=None, xref=0.0, mach=0.0) -> dict`**
 
 Solves the rigid-wing flow-tangency problem at angle of attack `alpha` and sideslip
 `beta` (both in radians). Boundary condition per panel (ZAERO Eq. 3.28):
@@ -314,19 +317,16 @@ wing CL on multi-surface models.
   HA144A (Λ = 30°) CLα = 5.0709 vs NASTRAN 5.07097; CMα = −2.871 vs NASTRAN −2.871.
 - `CDi`: Trefftz-plane induced drag coefficient — lift surfaces only, normalised by
   S_ref. Computed by `trefftz_cdi()` via the 2-D Biot-Savart far-field integral
-  (Katz & Plotkin Eq 12.17). For parity ≠ 0, mirror trailing vortices are included.
-  Zero for `parity = -1` (antisymmetric). Relation to CL:
-  `CDi = CL² / (π · AR · e)`.
+  (Katz & Plotkin Eq 12.17). Relation to CL: `CDi = CL² / (π · AR · e)`.
 - `e`: Oswald span efficiency — `CL² / (π · AR · CDi)`. For an elliptically loaded
   wing e = 1; a rectangular wing gives e ≈ 0.90–0.98 depending on AR and mesh.
-  `nan` when CDi ≈ 0 (zero-incidence, antisymmetric, or no lift surfaces).
+  `nan` when CDi ≈ 0 (zero-incidence or no lift surfaces).
 - `per_surface`: `{caero_eid: {surface_type, CL, CY, CM}}` — per-CAERO1 coefficients
 
-Note: with `parity=0` (full-span single surface, no image vortex), the VLM solution
-converges to a limit ~5–10% below the Prandtl finite-span formula `2πAR/(AR+2)`. This
-is an intrinsic property of single-surface parity=0 VLM, not a bug. The convergence is
-non-monotone relative to the Prandtl target (overshoots at coarse meshes, then decreases
-as panels are added), but is internally consistent and converges to a stable VLM limit.
+Note: the full-span VLM solution converges to a limit ~5–10% below the Prandtl finite-span
+formula `2πAR/(AR+2)`. This is an intrinsic property of the horseshoe VLM, not a bug. The
+convergence is non-monotone relative to the Prandtl target (overshoots at coarse meshes, then
+decreases as panels are added), but is internally consistent and converges to a stable limit.
 
 ---
 
@@ -421,15 +421,16 @@ scalar ratio `f_target_s / f_vlm_s`. All boxes in a strip share the same correct
 factor. `f_target` must have one value per distinct `i_span`; a `ValueError` is raised
 on length mismatch. Uses same `w_ref = -ones(n)` reference state as WT2.
 
-### `build_aero_model(bulk, parity=1) -> AeroModel`
+### `build_aero_model(bulk, grid_index=None) -> AeroModel`
 
 Factory function that orchestrates the full Phase A assembly pipeline:
 
-1. Mesh all CAERO1 elements in ascending EID order → concatenated `AeroBox` list
-2. Build raw AIC matrix via `build_ajj(boxes, parity)`
-3. Apply correction at highest available tier (WKK → WT2 → WT1 → identity)
-4. Build `Skj`, `Djk`, and `wg` integration quantities
-5. Package into `AeroModel` and return
+1. Reject half-span models — raise `ValueError` if `AEROS SYMXZ ≠ 0` or `SYMXY ≠ 0`
+2. Mesh all CAERO1 elements in ascending EID order → concatenated `AeroBox` list
+3. Build raw AIC matrix via `build_ajj(boxes)`
+4. Apply correction at highest available tier (WKK → WT2 → WT1 → identity)
+5. Build `Skj`, `Djk`, and `wg` integration quantities
+6. Package into `AeroModel` and return
 
 ```python
 @dataclass
@@ -440,7 +441,6 @@ class AeroModel:
     skj: np.ndarray            # Force integration, shape (3n, n)
     djk: np.ndarray            # Deflection-to-downwash, shape (n, n)
     wg: np.ndarray             # Baseline normalwash, shape (n,)
-    parity: int                # +1 symmetric, -1 antisymmetric, 0 full-span
 ```
 
 ---
@@ -512,7 +512,7 @@ Returns a two-row subplot:
 ### Typical usage in the viewer
 
 ```python
-aero_model = build_aero_model(bulk, parity=1)
+aero_model = build_aero_model(bulk)
 result = solve_rigid_cl(aero_model.boxes, np.radians(3.0))
 fig = build_aero_box_figure(
     bulk, aero_model,
@@ -827,7 +827,7 @@ result = run_aeroelastic_static(
 # result: Sol144Result
 ```
 
-`aero` must be built with `build_aero_model(bulk, parity=..., grid_index=grid_index)`
+`aero` must be built with `build_aero_model(bulk, grid_index=grid_index)`
 to populate the spline operators; raises `ValueError` otherwise.
 
 When `use_rom=True` and `sol103_result is None`, SOL 103 is run internally using
@@ -1013,7 +1013,7 @@ Open defects, in fix order (full detail in `docs/30_future/00_backlog.md`, Code 
 | ~~3~~ | ~~AE4/AE6~~ | ~~SPLINE2 swept-axis kinematics; forces applied at ¾-chord~~ — **RESOLVED** ✓ (V-AE2 gate passes, 711 tests ✓) |
 | ~~4~~ | ~~AE5/AE7~~ | ~~URDD in basic frame (trims to −1g); no inertial trim columns `M·φr`~~ — **RESOLVED** ✓ (V-AE3a gate passes, 721 tests ✓) |
 | 5 | AE1 | Solve uses bare `K_aa` — the `q·Q_aa` aeroelastic feedback never enters the trim system |
-| 6 | AE8–AE10 | Derivative formulation, per-TRIM Mach, parity/CLI wiring |
+| 6 | AE8–AE10 | Derivative formulation, per-TRIM Mach, SOL 144 CLI wiring |
 
 Acceptance for closing Step 52 is the V-AE1 gate (backlog AE13): HA144A SC1/SC2 trim
 variables vs MSC Listing 7-2 and the Table 7-1 derivative columns.

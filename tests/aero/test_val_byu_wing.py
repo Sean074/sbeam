@@ -40,8 +40,8 @@ XREF = 0.5               # moment reference x (rref = [0.5, 0, 0])
 def result():
     assert _BDF.is_file(), f"missing benchmark BDF: {_BDF}"
     _cc, bulk = parse_bdf(str(_BDF))
-    am = build_aero_model(bulk, parity=0)
-    return solve_rigid_cl(am.boxes, radians(ALPHA_DEG), parity=0,
+    am = build_aero_model(bulk)
+    return solve_rigid_cl(am.boxes, radians(ALPHA_DEG),
                           aeros=bulk.aeros, xref=XREF), am
 
 

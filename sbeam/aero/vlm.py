@@ -5,10 +5,9 @@ Horseshoe-vortex convention (NASA SP-405):
   - Collocation (flow-tangency) point at 3/4-chord midspan (AeroBox.colloc)
   - Trailing legs extend downstream in +X to a finite far-field cutoff
 
-Symmetry:
-  parity=+1  symmetric lift (mirror image adds same-sign contribution)
-  parity=-1  antisymmetric / roll (mirror image adds opposite-sign contribution)
-  parity=0   no image (full-span model, or unsymmetric geometry)
+Models are full-span: every lifting surface is meshed in full (both sides of
+the XZ plane).  sbeam does not support half-span / symmetry-image models — see
+the AEROS SYMXZ guard in aero_model.build_aero_model.
 
 All coordinates in global CID 0. Freestream V∞ = 1 in +X direction.
 """
@@ -56,7 +55,7 @@ def biot_savart_seg(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 def horseshoe_influence(colloc: np.ndarray, colloc_normal: np.ndarray,
-                        box: AeroBox, parity: int = 1) -> float:
+                        box: AeroBox) -> float:
     """Normalwash at colloc from a unit-strength horseshoe vortex at box.
 
     The horseshoe consists of:
@@ -64,7 +63,6 @@ def horseshoe_influence(colloc: np.ndarray, colloc_normal: np.ndarray,
       • right trailing bound_b → far-field (+x)
       • left trailing  far-field (+x) → bound_a
 
-    When parity != 0 an XZ-mirror image is added (symmetric/antisymmetric).
     Returns the induced velocity projected onto colloc_normal (ZAERO Eq. 3.49a:
     NIC = n_x·UIC + n_y·VIC + n_z·WIC — general non-planar formulation).
     """
@@ -77,37 +75,14 @@ def horseshoe_influence(colloc: np.ndarray, colloc_normal: np.ndarray,
     v = (biot_savart_seg(colloc, a, b)
          + biot_savart_seg(colloc, b, far_b)
          + biot_savart_seg(colloc, far_a, a))
-    w = float(np.dot(v, colloc_normal))
-
-    if parity != 0:
-        # Mirror about XZ plane: y → -y
-        a_img = np.array([a[0], -a[1], a[2]])
-        b_img = np.array([b[0], -b[1], b[2]])
-        far_ai = np.array([far_x, -a[1], a[2]])
-        far_bi = np.array([far_x, -b[1], b[2]])
-        if parity > 0:
-            # Symmetric: image bound reversed (b_img→a_img) so the left-wing
-            # vortex produces the same-sign lift as the right wing.
-            # The root trailing legs (y=0) cancel with the direct root trailing.
-            v_img = (biot_savart_seg(colloc, b_img, a_img)
-                     + biot_savart_seg(colloc, a_img, far_ai)
-                     + biot_savart_seg(colloc, far_bi, b_img))
-        else:
-            # Antisymmetric: image bound in same-reflection direction (a_img→b_img)
-            # so the left-wing vortex produces opposite-sign lift; root trailing doubles.
-            v_img = (biot_savart_seg(colloc, a_img, b_img)
-                     + biot_savart_seg(colloc, b_img, far_bi)
-                     + biot_savart_seg(colloc, far_ai, a_img))
-        w += float(np.dot(v_img, colloc_normal))
-
-    return w
+    return float(np.dot(v, colloc_normal))
 
 
 # ---------------------------------------------------------------------------
 # AIC matrix assembly
 # ---------------------------------------------------------------------------
 
-def build_ajj(boxes: list, parity: int = 1) -> np.ndarray:
+def build_ajj(boxes: list) -> np.ndarray:
     """Build the n_box × n_box aerodynamic influence coefficient matrix.
 
     A[i, j] = normalwash at colloc_i per unit circulation at horseshoe_j.
@@ -118,7 +93,7 @@ def build_ajj(boxes: list, parity: int = 1) -> np.ndarray:
     A = np.zeros((n, n))
     for i, box_i in enumerate(boxes):
         for j, box_j in enumerate(boxes):
-            A[i, j] = horseshoe_influence(box_i.colloc, box_i.normal, box_j, parity)
+            A[i, j] = horseshoe_influence(box_i.colloc, box_i.normal, box_j)
     return A
 
 
@@ -163,7 +138,6 @@ def prandtl_glauert_boxes(boxes: list, mach: float) -> list:
 def trefftz_cdi(
     boxes: list,
     gamma: np.ndarray,
-    parity: int,
     S_ref: float,
     ar: float,
 ) -> dict:
@@ -171,10 +145,7 @@ def trefftz_cdi(
 
     Integrates the semi-infinite trailing-vortex wake in the far-field y-z
     plane using the 2-D Biot-Savart kernel.  Only lift surfaces
-    (|n_z| ≥ |n_y|) contribute.  Mirror-image trailing vortices are included
-    for parity ≠ 0 using the same convention as horseshoe_influence:
-    the mirror of a direct trailing at (y_v, z_v) with strength s is placed
-    at (-y_v, z_v) with strength -parity·s.
+    (|n_z| ≥ |n_y|) contribute.
 
     S_ref must be consistent with the CL normalisation used by the caller
     (= sum of modelled box areas for heuristic models).
@@ -223,18 +194,6 @@ def trefftz_cdi(
                     # u_z from 2-D vortex: -Γ/(2π) · (y - y_v) / r²
                     w_tr[i] += -sv * _twopi_inv * dy / r2
 
-            # Mirror trailing vortices (parity ≠ 0)
-            if parity != 0:
-                for (y_v, z_v, sv) in (
-                    (-bj.bound_b[1], bj.bound_b[2], -parity * Gj),
-                    (-bj.bound_a[1], bj.bound_a[2],  parity * Gj),
-                ):
-                    dy = y_i - y_v
-                    dz = z_i - z_v
-                    r2 = dy * dy + dz * dz
-                    if r2 > _DEGEN_TOL:
-                        w_tr[i] += -sv * _twopi_inv * dy / r2
-
     # Trefftz-plane formula: Di = ρ/2 · Σ Γ·w_T·Δy  (Katz & Plotkin Eq 12.17)
     # With ρ=V∞=1 → q=0.5:  CDi = Di/(q·S_ref) = 2·(ρ/2·Σ)/S_ref = Σ/S_ref
     # (The ρ/2 and 1/q=2 factors cancel; w_T uses the full 2-D kernel 1/(2π).)
@@ -250,7 +209,7 @@ def trefftz_cdi(
 
 
 def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
-                   parity: int = 1, aeros=None, xref: float = 0.0,
+                   aeros=None, xref: float = 0.0,
                    mach: float = 0.0) -> dict:
     """Solve flow-tangency for a rigid configuration at incidence alpha/beta (radians).
 
@@ -286,12 +245,12 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
       e             Oswald span efficiency: CDi = CL²/(π·AR·e)
       per_surface   dict {caero_eid: {surface_type, CL, CY, CM}}
 
-    ``parity`` controls the symmetry image (see module docstring).
-    For parity=-1 the left and right wings cancel and CL = CY = 0 exactly.
+    Full-span model: every lifting surface is meshed in full, so CL/CY/CM are
+    whole-configuration coefficients with no symmetry factor.
     """
     n = len(boxes)
     beta_pg = math.sqrt(1.0 - min(mach, 0.99) ** 2) if mach > 0.0 else 1.0
-    A = build_ajj(prandtl_glauert_boxes(boxes, mach), parity)
+    A = build_ajj(prandtl_glauert_boxes(boxes, mach))
 
     # Flow-tangency: rhs[i] = -(alpha*n_z + beta*n_y) per panel
     rhs = np.array([-(alpha * b.normal[2] + beta * b.normal[1]) for b in boxes])
@@ -336,35 +295,20 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
         _ar = float(aeros.bref) ** 2 / S_ref
     else:
         # Heuristic: total area and mean chord derived from mesh extents.
-        # For parity ≠ 0 the boxes cover only half the span, so S_ref here is
-        # the half-span area.  b_ref is the full span (2·max_y) and the physical
-        # AR = full_span² / full_area = (2·max_y)² / (2·S_ref_half).
+        # Full-span model — S_ref is the whole modelled area and the span is the
+        # full tip-to-tip extent, so AR = span_ref² / S_ref is unambiguous.
         S_ref = sum(b.area for b in boxes)
         colloc_pts = np.array([b.colloc for b in boxes])
         span_ref = float(np.max(np.ptp(colloc_pts[:, 1:], axis=0))) + dy.mean()
         if span_ref < _DEGEN_TOL:
             span_ref = 1.0
         c_ref = S_ref / span_ref
-        lift_ys = [
-            max(b.bound_a[1], b.bound_b[1])
-            for b in boxes if abs(b.normal[2]) >= abs(b.normal[1])
-        ]
-        max_y = max(lift_ys) if lift_ys else 0.0
-        if parity != 0:
-            b_ref_full = 2.0 * max_y
-            S_ref_full = 2.0 * S_ref      # full-span area for AR only
-        else:
-            b_ref_full = span_ref
-            S_ref_full = S_ref
-        _ar = b_ref_full * b_ref_full / S_ref_full if S_ref_full > _DEGEN_TOL else 1.0
+        _ar = span_ref * span_ref / S_ref if S_ref > _DEGEN_TOL else 1.0
 
     # -----------------------------------------------------------------------
     # Trefftz-plane induced drag
     # -----------------------------------------------------------------------
-    if parity == -1:
-        _cdi_result = {"CDi": 0.0, "e": float("nan")}
-    else:
-        _cdi_result = trefftz_cdi(boxes, gamma, parity, S_ref, _ar)
+    _cdi_result = trefftz_cdi(boxes, gamma, S_ref, _ar)
 
     # -----------------------------------------------------------------------
     # Per-surface classification: horizontal (lift) vs vertical (sideforce)
@@ -406,11 +350,8 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
     L_lift = float(np.dot(gamma[lift_idx], dy[lift_idx])) if len(lift_idx) else 0.0
     L_sf   = float(np.dot(gamma[sf_idx],   dy[sf_idx]))   if len(sf_idx)   else 0.0
 
-    if parity == -1:
-        CL = CY = 0.0
-    else:
-        CL = 2.0 * L_lift / S_ref
-        CY = 2.0 * L_sf   / S_ref
+    CL = 2.0 * L_lift / S_ref
+    CY = 2.0 * L_sf   / S_ref
 
     # Nose-up-positive pitching moment about xref.  Pressure form here
     # (cp·area·arm); the equivalent force form (Fz·arm) lives in
@@ -430,14 +371,14 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
         idx_arr = np.array(idxs, dtype=int)
         L_eid = float(np.dot(gamma[idx_arr], dy[idx_arr]))
         if sinfo["type"] == "lift":
-            cl_eid = (2.0 * L_eid / S_ref) if parity != -1 else 0.0
+            cl_eid = 2.0 * L_eid / S_ref
             cm_eid = (
                 -sum(cp[i] * boxes[i].area * (x_qc[i] - xref) for i in idxs)
                 / (S_ref * c_ref)
             ) if S_ref * c_ref > _DEGEN_TOL else 0.0
             per_surface[eid] = {"surface_type": "lift",      "CL": cl_eid, "CY": 0.0,    "CM": cm_eid}
         else:
-            cy_eid = (2.0 * L_eid / S_ref) if parity != -1 else 0.0
+            cy_eid = 2.0 * L_eid / S_ref
             per_surface[eid] = {"surface_type": "sideforce", "CL": 0.0,    "CY": cy_eid, "CM": 0.0}
 
     return {

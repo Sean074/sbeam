@@ -538,23 +538,16 @@ def _render_aero_tab(bulk: BulkData) -> None:
     with col_ctrl:
         alpha_deg = st.number_input("AoA α (°)", value=3.0, step=0.5, key="aero_alpha")
         beta_deg  = st.number_input("Sideslip β (°)", value=0.0, step=0.5, key="aero_beta")
-        parity_map = {
-            "Symmetric (+1)": 1,
-            "Antisymmetric (−1)": -1,
-            "Full-span (0)": 0,
-        }
-        parity_lbl = st.radio("Symmetry", list(parity_map.keys()), key="aero_parity")
-        parity = parity_map[parity_lbl]
         compute_btn = st.button("Compute Aero", type="primary", key="aero_compute")
 
     if compute_btn:
         with st.spinner("Building AIC and solving…"):
-            aero_model = build_aero_model(bulk, parity=parity)
+            aero_model = build_aero_model(bulk)
             alpha_rad = np.radians(alpha_deg)
             beta_rad  = np.radians(beta_deg)
             result = solve_rigid_cl(
                 aero_model.boxes, alpha_rad,
-                beta=beta_rad, parity=parity,
+                beta=beta_rad,
                 aeros=aero_model.aeros,
                 mach=aero_model.mach,
             )

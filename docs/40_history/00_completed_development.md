@@ -2601,3 +2601,47 @@ pytest tests/
 - The test model uses a single SUPORT DOF (Tz only) with one free variable (ANGLEA) because
   Euler-Bernoulli beams along Y decouple torsion (Ry) from z-forces — adding PITCH as a
   second free variable would produce a singular Schur matrix on this model.
+
+---
+
+### Phase A — Half-span / symmetry (AEROS SYMXZ/SYMXY) deprecation ✅ COMPLETE (2026-06-12)
+
+**Objective:** Remove the half-span symmetry-image (`parity`) capability — a 1970s
+computational economy no longer used — and make sbeam full-span only. This also resolves
+**AE1 Step D** (the `sym=2` aero/inertia parity double-count that halved the HA144A trim) and
+the parity-wiring half of **AE10**, by construction.
+
+**Deliverables:**
+- **VLM kernel (`vlm.py`):** dropped the `parity` parameter and all XZ-mirror image logic from
+  `horseshoe_influence`, `build_ajj`, `trefftz_cdi`, `solve_rigid_cl` — including the
+  symmetric/antisymmetric image-bound branches, the mirror trailing-vortex loop, the
+  `parity == -1` CL/CY/CDi special cases, and the half-vs-full-span reference-AR doubling
+  heuristic (which collapses to `AR = span_ref²/S_ref`).
+- **`aero_model.py`:** removed `AeroModel.parity` and the `parity` arg of `build_aero_model`;
+  added a guard that raises `ValueError` when `AEROS SYMXZ ≠ 0` or `SYMXY ≠ 0`.
+- **`sol144.py`:** deleted `sym = 2 if aero.parity != 0 else 1` and its six applications
+  (`Q_ax_g`, `Q_gg`, `f_aero_g`, `Fz_total`, `My_total`). With full-span models aero and inertia
+  are both whole-airplane, so the AE1 Step D double-count is impossible.
+- **`viewer/app.py`:** removed the Symmetric/Antisymmetric/Full-span radio.
+- **`sbeam/aero/mirror.py` (new):** `mirror_halfspan(bulk)` migration aid that unfolds a
+  half-span deck about the XZ plane (GRID/CBAR/CONM2/RBAR/RBE2/CAERO1), clears the symmetry
+  flags, and raises `NotImplementedError` listing cards that need a manual full-span rebuild.
+- **Decks/tests:** removed half-span `sample/ha144a_sbeam.bdf` and its gate
+  `tests/aero/test_ae1_keff_trim.py`; `sample/ha144a_fullspan_sbeam.bdf` +
+  `tests/aero/test_ae1_fullspan.py` are the sole HA144A trim gate (SC1 value + SC2 sign/
+  flexible-increment). All VLM tests rebuilt on genuine full-span geometry; the antisymmetric
+  and parity-image unit tests and the concluded A1 convergence diagnostics were removed.
+- **AEROS card still parses `SYMXZ`/`SYMXY`** (field layout unchanged); only *solving* a
+  non-zero model is rejected.
+
+**Test/Acceptance:** full suite green (752 passed). The full-span HA144A trims to
+**SC1 ANGLEA 0.1711 / ELEV 0.4908 (101%/100% of NASTRAN Listing 7-2), lift 16000 lb** —
+the three previously-failing half-span trim-value tests are resolved by the parity removal.
+
+**Key decisions:**
+- Chose Option B (remove internals, keep a NASTRAN-compatible AEROS shell + reject non-zero
+  SYMXZ + `mirror_halfspan` aid) over hard removal, so legacy decks still parse and have a
+  documented migration path.
+- AE1 Step D is resolved by *eliminating* the `sym` factor rather than reconciling the two
+  legs: full-span ⇒ one whole-airplane scale everywhere, no factor to get out of step.
+- **Still open (unchanged by this work):** the SC2 (q=1200) flexible residual — AE8 / Step G.

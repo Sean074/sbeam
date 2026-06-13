@@ -51,7 +51,7 @@ def setup():
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
-        aero = build_aero_model(bulk, parity=0, grid_index=grid_index)
+        aero = build_aero_model(bulk, grid_index=grid_index)
 
     return bulk, aero, grid_index
 

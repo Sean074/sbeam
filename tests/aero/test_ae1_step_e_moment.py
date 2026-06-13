@@ -29,7 +29,7 @@ from sbeam.assembly.load_vector import build_grid_index
 from sbeam.assembly.coord_transform import _get_transform
 from sbeam.solver.sol144 import _pitch_moment
 
-BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_sbeam.bdf"
+BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
 
 
 @pytest.fixture(scope="module")
@@ -38,7 +38,7 @@ def ha144a():
     grid_index = build_grid_index(bulk)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
-        aero = build_aero_model(bulk, parity=bulk.aeros.symxz, grid_index=grid_index)
+        aero = build_aero_model(bulk, grid_index=grid_index)
     return bulk, aero, grid_index
 
 

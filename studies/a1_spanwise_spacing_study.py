@@ -68,7 +68,7 @@ def full_wing(root_c, tip_c, sweep, half_span, nspan, nchord, spacing):
 
 def cl_alpha(boxes, aeros, alpha_deg):
     a = radians(alpha_deg)
-    r = solve_rigid_cl(boxes, a, parity=0, aeros=aeros, xref=0.0)
+    r = solve_rigid_cl(boxes, a, aeros=aeros, xref=0.0)
     return r["CL"] / a
 
 

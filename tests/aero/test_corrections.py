@@ -31,7 +31,6 @@ PAERO = Paero1(pid=1)
 NO_AEFACTS = {}
 NO_CORD2RS = {}
 CAERO_EID = 1
-PARITY = 1
 
 
 def _rect_wing(nspan: int, nchord: int, span: float = 5.0, chord: float = 1.0) -> list:
@@ -45,7 +44,7 @@ def _rect_wing(nspan: int, nchord: int, span: float = 5.0, chord: float = 1.0) -
 
 
 def _ajj_and_inv(boxes):
-    ajj = build_ajj(boxes, PARITY)
+    ajj = build_ajj(boxes)
     ajj_inv = np.linalg.solve(ajj, np.eye(len(boxes)))
     return ajj, ajj_inv
 
@@ -96,7 +95,7 @@ class TestApplyWkk:
 
     def test_shape_preserved(self):
         boxes = _rect_wing(3, 3)
-        ajj = build_ajj(boxes, PARITY)
+        ajj = build_ajj(boxes)
         n = len(boxes)
         ajj_star = apply_wkk(ajj, [2.0] * n)
         assert ajj_star.shape == (n, n)
@@ -136,7 +135,7 @@ class TestApplyWt2:
 
     def test_shape(self):
         boxes = _rect_wing(2, 2)
-        ajj = build_ajj(boxes, PARITY)
+        ajj = build_ajj(boxes)
         n = len(boxes)
         cp_target = np.ones(n)
         result = apply_wt2(ajj, cp_target)
@@ -230,7 +229,7 @@ class TestApplyWt1:
 
     def test_wrong_f_target_length_raises(self):
         boxes = _rect_wing(3, 3)
-        ajj = build_ajj(boxes, PARITY)
+        ajj = build_ajj(boxes)
         # 3 span strips, but provide 5 targets
         with pytest.raises(ValueError, match="f_target length"):
             apply_wt1(ajj, boxes, np.ones(5))
@@ -238,7 +237,7 @@ class TestApplyWt1:
     def test_shape(self):
         nspan, nchord = 2, 2
         boxes = _rect_wing(nspan, nchord)
-        ajj = build_ajj(boxes, PARITY)
+        ajj = build_ajj(boxes)
         n = len(boxes)
         f_target = np.ones(nspan)
         result = apply_wt1(ajj, boxes, f_target)
@@ -262,7 +261,7 @@ class TestApplyWt1:
 def _rect_bulk(nspan: int, nchord: int) -> BulkData:
     from sbeam.model.aero import Aeros
     bulk = BulkData()
-    bulk.aeros = Aeros(acsid=0, rcsid=0, cref=1.0, bref=5.0, sref=5.0, symxz=1, symxy=0)
+    bulk.aeros = Aeros(acsid=0, rcsid=0, cref=1.0, bref=5.0, sref=5.0, symxz=0, symxy=0)
     bulk.paero1s[1] = Paero1(pid=1)
     bulk.caero1s[CAERO_EID] = Caero1(
         eid=CAERO_EID, pid=1, cp=0,
@@ -277,14 +276,14 @@ class TestBuildAeroModel:
     def test_no_correction_identity(self):
         """Without correction, skj-path total Fz at unit incidence matches solve_rigid_cl."""
         bulk = _rect_bulk(4, 4)
-        model = build_aero_model(bulk, parity=PARITY)
+        model = build_aero_model(bulk)
         n = len(model.boxes)
         w_ref = -np.ones(n)
         # skj @ ajj_inv_corr @ w_ref gives force/q; CL = Fz/sref
         fz_model = (model.skj @ (model.ajj_inv_corr @ w_ref))[2::3].sum()
         cl_model = fz_model / bulk.aeros.sref
         # Reference from rigid solver
-        r = solve_rigid_cl(model.boxes, alpha=1.0, parity=PARITY,
+        r = solve_rigid_cl(model.boxes, alpha=1.0,
                            aeros=bulk.aeros, xref=0.0)
         assert cl_model == pytest.approx(r["CL"], rel=1e-8)
 
@@ -296,8 +295,8 @@ class TestBuildAeroModel:
         n = nspan * nchord
         bulk_wkk.wkks[10] = Wkk(sid=10, caero_eid=CAERO_EID, data=[1.5] * n)
 
-        model_base = build_aero_model(bulk_base, parity=PARITY)
-        model_wkk  = build_aero_model(bulk_wkk,  parity=PARITY)
+        model_base = build_aero_model(bulk_base)
+        model_wkk  = build_aero_model(bulk_wkk)
 
         w_ref = -np.ones(n)
         fz_base = (model_base.skj @ (model_base.ajj_inv_corr @ w_ref))[2::3].sum()
@@ -324,7 +323,7 @@ class TestBuildAeroModel:
 
         # WT2 target convention: VLM Γ at unit incidence
         boxes = _rect_wing(nspan, nchord)
-        ajj = build_ajj(boxes, PARITY)
+        ajj = build_ajj(boxes)
         ajj_inv = np.linalg.solve(ajj, np.eye(n))
         gamma_ref = ajj_inv @ (-np.ones(n))     # Γ at unit incidence (WT2 target unit)
 
@@ -332,7 +331,7 @@ class TestBuildAeroModel:
             sid=20, method="WT2", caero_eid=CAERO_EID,
             target=gamma_ref.tolist(),           # Γ-unit target (identity correction)
         )
-        model = build_aero_model(bulk, parity=PARITY)
+        model = build_aero_model(bulk)
         # After AE2 fix ajj_inv_corr returns Cp; identity WT2 → Cp = 2·Γ/chord
         cp_out = model.ajj_inv_corr @ (-np.ones(n))
         dy = np.array([
