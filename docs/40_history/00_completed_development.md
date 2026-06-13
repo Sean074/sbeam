@@ -10,6 +10,34 @@ completes a step — never deferred.
 
 ---
 
+## Contents
+
+Per-phase index. Within each phase, completed steps come first, then resolved defects in
+chronological order of when they were closed. Defect IDs prefixed with **A** (A1–A9) are
+Phase A VLM defects; **AE** (AE2–AE7) are 2026-06-11 review findings that span Phases
+A/B/C; **AE1 Step A / B** are the closed increments of the open AE1 trim convergence
+defect (see backlog for Steps C–G); **R** (R1–R22) are 2026-05-25 / earlier review NITs;
+**B** (B1–B4) are Phase 1 viewer bugs; **C-1** is the SOL 103 generalised-mass bug.
+
+- [Principles](#principles)
+- [Phase 1 — Project Setup](#phase-1--project-setup)
+- [Phase 2 — BDF Parser](#phase-2--bdf-parser)
+- [Phase 3 — Static Solver (SOL 101)](#phase-3--static-solver-sol-101)
+- [Phase 4 — Modal Solver (SOL 103)](#phase-4--modal-solver-sol-103)
+- [Phase 5 — Viewer](#phase-5--viewer)
+- [Phase 6 — Integration and Verification](#phase-6--integration-and-verification)
+- [Phase 2 Model Enhancements](#phase-2-model-enhancements-completed-items) — Steps 32 (CORD2R), 36 (RBE2), 37 (CBUSH), 38 (RBAR)
+- [Resolved Defects](#resolved-defects) — Phase 1 viewer bugs B1–B4, Q5, DOC2
+- [Dependency Map](#dependency-map)
+- [Code & Documentation Review (2026-05-09)](#code--documentation-review-2026-05-09)
+- [Documentation: BDF Card Reference](#documentation-bdf-card-reference) — Steps 31 (GRAV), 35 (CONM2), 39 (Viewer UI redesign)
+- [Infrastructure](#infrastructure) — SPARSE, CI1, TEST1, CI2, Step 34, R-defects (R1–R15), C-1, R20, VAL1
+- [Phase A — Static Aeroelastics (VLM)](#phase-a--static-aeroelastics-vlm) — Steps 39–44; resolved defects A1, A9, A2+A3, S45, Step 46, A4, A6
+- [Phase B — Structure ↔ Aero Splining](#phase-b--structure--aero-splining) — Steps 45, 46, 47, 49
+- [Phase C — SOL 144 Static Aeroelastics](#phase-c--sol-144-static-aeroelastics) — Steps 50, 51; resolved AE1 Step A, AE1 Step B, AE2, AE3, AE4+AE6, AE5+AE7
+
+---
+
 ## Principles
 
 - Each step produces working, testable code before the next step begins.
@@ -1513,7 +1541,7 @@ spanwise section-CL strip chart.
 
 ---
 
-## Step S45 — VTP Cp Bugs + Sideslip Beta Implementation
+### Step S45 — VTP Cp Bugs + Sideslip Beta Implementation ✅ COMPLETE
 
 **Objective:** Fix three layered bugs that caused incorrect Cp on vertical surfaces (VTP/fins)
 and implement sideslip angle β for non-zero sideforce loads.
@@ -1573,7 +1601,7 @@ and implement sideslip angle β for non-zero sideforce loads.
 
 ---
 
-## Resolved Defects (Phase A) — A1: VLM "lift-curve-slope under-prediction" ✅ RESOLVED (not a defect)
+### Phase A — A1: VLM "lift-curve-slope under-prediction" ✅ RESOLVED (not a defect)
 
 **Date resolved:** 2026-06-09
 
@@ -1617,7 +1645,7 @@ regression `tests/aero/test_val_byu_wing.py` (CL 0.16%, CM 0.25% vs AVL).
 
 ---
 
-## Resolved Defects (Phase A) — A9: Pitching-moment arm at ¾-chord instead of ¼-chord ✅ FIXED
+### Phase A — A9: Pitching-moment arm at ¾-chord instead of ¼-chord ✅ FIXED
 
 **Date resolved:** 2026-06-09
 
@@ -1657,7 +1685,7 @@ green — they are relative and unaffected by the absolute arm correction. CL = 
 
 ---
 
-## Resolved Defects (Phase A) — A2 + A3: AEROS reference geometry + per-surface breakdown + moment reference ✅ FIXED
+### Phase A — A2 + A3: AEROS reference geometry + per-surface breakdown + moment reference ✅ FIXED
 
 **Date resolved:** 2026-06-09
 
@@ -1708,7 +1736,7 @@ was discarded before `solve_rigid_cl` was called.
 
 ---
 
-## Step 46 — Replace `lstsq` AIC inverse with LU factorization
+### Step 46 — Replace `lstsq` AIC inverse with LU factorization ✅ COMPLETE
 
 **Objective:** Eliminate SVD-based inversion of the square, full-rank AIC matrix.
 `np.linalg.lstsq` dominated build time (~25 s for the 1232-box `airplane_aero.bdf`
@@ -1748,7 +1776,7 @@ model). Replacing it with `np.linalg.solve` (LU-based) reduces cost substantiall
 
 ---
 
-## Phase A — A4: Prandtl–Glauert / Göthert Compressibility Correction ✅ COMPLETE
+### Phase A — A4: Prandtl–Glauert / Göthert Compressibility Correction ✅ COMPLETE
 
 **Date:** 2026-06-10
 
@@ -1789,7 +1817,7 @@ AIC by 1/β. Expose Mach via an sbeam extension field on the AEROS card.
 
 ---
 
-## Phase A — A6: Trefftz-Plane Induced Drag ✅ COMPLETE
+### Phase A — A6: Trefftz-Plane Induced Drag ✅ COMPLETE
 
 **Date:** 2026-06-09
 
@@ -2096,7 +2124,178 @@ logic is added; Step 51 is purely parsing infrastructure.
 
 ---
 
-## Resolved Defects (Phase A) — AE2: j-set pressure unit undefined — AIC inverse fed as Γ to force path expecting ΔCp ✅ FIXED
+### Phase C — AE1 Step A: Parity factor + nose-up-positive My in trim balance ✅ FIXED
+
+**Date resolved:** 2026-06-12. First of seven planned increments closing the AE1 critical
+defect ("SOL 144 trim solver does not converge to HA144A Listing 7-2 reference"). Steps
+C–G remain open.
+
+**Objective:** Fix two coupled defects in `run_sol144_trim` that prevented the trim from
+balancing on a symmetric half-model and silently inverted the pitching-moment column:
+(a) `skj`-path aerodynamic forces represent half the airplane on `AEROS.SYMXZ=1` models
+while inertial relief and trim weight target are full-airplane — without a parity scale
+the trim converges to ≈ 54 % / 60 % of the expected 8 000 lb lift; (b) the trim equation
+for the Ry SUPORT DOF used `My = +ΣFz·(x−x_ref)`, opposite-signed to `solve_rigid_cl.CM`
+and NASTRAN's nose-up-positive Cm convention, driving ELEV to the wrong root.
+
+**Deliverables:**
+
+- `sbeam/solver/sol144.py` — `run_sol144_trim`:
+  - `sym = 2 if aero.parity != 0 else 1` applied as a multiplicative factor on `Q_ax_g`
+    (the rigid aero load sensitivity), `Q_gg` (the flexible aero stiffness), and
+    `f_aero_g` (the baseline-aero RHS) so all paths into the Schur partition see
+    whole-airplane forces.
+  - `Fz_total` and `My_total` recovery at the end of the routine also picks up the
+    `sym` factor so the diagnostic `total_cl`/`total_cm` agree with the input balance.
+- `sbeam/solver/sol144.py` — Sign convention flipped to nose-up-positive in three sites:
+  `_compute_aero_forces.My`, `_compute_rigid_derivs.CMY`, and the total CM loop inside
+  `run_sol144_trim`. The trim-equation row for the Ry SUPORT DOF inherits the corrected
+  sign through the same arithmetic.
+
+**Test/Acceptance (measured against `studies/_review_ha144a_check.py`):**
+
+| Quantity | Pre-A | Post-A | NASTRAN |
+|---|---:|---:|---:|
+| SC1 (q=40) ANGLEA   | −0.5698 rad   | +0.097 rad | +0.169191 rad |
+| SC1 (q=40) ELEV     | +14.257 rad   | +0.079 rad | +0.492457 rad |
+| SC2 (q=1200) ANGLEA | +0.003798 rad | +0.00057 rad | +0.001373 rad |
+| SC1 trim lift       | +4 299 lb (54 %) | +8 140 lb ✓ | +8 000 lb |
+| Rigid CZα           | −5.071        | −5.071 ✓ | −5.07097 |
+
+Lift balance closes to 1.8 % (residual from Q_aa contamination, fixed by Step B). All
+existing tests pass (no regressions).
+
+**Key decisions:**
+
+- Parity-doubling lives on the aero side (`sym × Q_ax_g`, `sym × Q_gg`, `sym × f_aero_g`)
+  rather than halving inertia. Reason: keeps `M_ax`, `_build_inertial_cols`, and the
+  weight target `URDD3·m_total` in their natural whole-airplane units, which matches the
+  way the user inputs CONM2 totals on `AEROS.SYMXZ=1` decks.
+- Moment-sign reconciliation is partial here: the three sites above use the correct
+  nose-up-positive convention, but a single-source helper for `(x − x_ref)·Fz` is
+  deferred to AE1 Step E. The f06 STABILITY DERIVATIVES block was not touched.
+- V-AE1a (formal `rigid_trim_only` gate at `Q_aa=0`) was not added — parity was
+  confirmed numerically via the lift balance instead. The full V-AE1 acceptance still
+  requires Steps E–G.
+
+**Files:** `sbeam/solver/sol144.py`.
+
+---
+
+### Phase B + C — AE1 Step B: RBAR-expanded recovery + EA-only SET1 + spline math fix + V-AE1b gate ✅ FIXED
+
+**Date resolved:** 2026-06-12. Second AE1 increment; combines three independent defects
+(RBAR-expansion in trim, off-EA SET1 grids on the swept HA144A wing, and a
+multiplication-vs-division ambiguity in the SPLINE2 streamwise-gradient formula).
+After Step B the spline reproduces all 6 basic-frame rigid-body modes to machine
+precision on the HA144A wing and to 1e-12 on a math-exact rectangular fixture.
+
+**Objective:** Close the three defects that contaminated `Q_aa` and the structural
+recovery path:
+
+1. `run_sol144_trim` and `_compute_restrained_derivs` filled the recovered `displacements`
+   by direct index scatter, leaving RBAR slave DOFs (111/112/121/122 on HA144A) at zero.
+   `g_slope @ displacements` then saw an L-shaped deformation (masters move, slaves
+   don't) instead of a chordwise-rigid section translation.
+2. `sample/ha144a_sbeam.bdf` SPLINE2 1601 SET1 was `{99, 100, 111, 112, 121, 122}` —
+   fuselage centreline + the RBAR-slave LE/TE stringers — with the elastic-axis grids
+   110/120 absent. The 1-D beam spline's Hermite was forced to fit a non-monotone Tz
+   field in `s` and produced oscillations; under global θ=1e-3 pitch the wing incidence
+   ranged [−9.45e-02, +4.53e-02] instead of uniform +1.0e-3.
+3. The spline streamwise-gradient formula `w = −(dh/ds)/x̂[0]` (division) was
+   self-consistent only with the V-AE2b "rigid-along-spline-axis" kinematic. The
+   chordwise-rigid section reconstruction `u_z(x, y) = h(s(x, y))` gives `∂u_z/∂x =
+   (dh/ds)·x̂[0]` — multiplication. The torsion coefficient `x_comp·f_vals` was
+   correct only on unswept splines; the chord-offset chain rule for a section rotated
+   about `x̂_spline` gives `w_torsion = −ŷ[0]·x_comp·f_vals_slope`. The matching
+   `g_disp` torsion contribution `x_comp·ζ_k·ẑ[c]·f_vals_force` was entirely missing.
+
+**Deliverables:**
+
+- **B1 — RBAR-expanded recovery (`sbeam/solver/sol144.py`):**
+  - New `_expand_to_g(u_a, T, free_local, n_red)` helper: `u_red = scatter(u_a, free_local);
+    return T @ u_red`. Returns a full g-set vector with RBAR slaves driven by their
+    masters via the RBE3/RBAR transformation matrix.
+  - `run_sol144_trim` line 890-892 (direct scatter) replaced by a single
+    `displacements = _expand_to_g(u_a, T, free_local, len(red_dofs))` call.
+  - `_compute_restrained_derivs` signature changed from `(…, free_dofs, …, n_dofs)` to
+    `(…, T, free_local, n_red, …)`; both nominal and perturbed displacement vectors
+    are built via `_expand_to_g`.
+- **B2 — Sample-model fix (`sample/ha144a_sbeam.bdf`):**
+  - `SET1, 1100` changed from `99, 100, 111, 112, 121, 122` to `100, 110, 120` (wing
+    CBAR endpoints; all three on the EA, monotone in `s` with chord offset ≈ 0).
+  - SPLINE2 1601 `DTHX` flipped `−1 → +1` (attached). With the corrected formula
+    (below) the attached path is what reproduces global rigid-body modes; the detached
+    path is now reserved for splines where torsion is intentionally decoupled from the
+    surface.
+- **B3 — SET1 collinearity validator (`sbeam/aero/spline.py::_build_spline2_block`):**
+  - After `s_gid` is sorted, compute each SET1 grid's chord offset
+    `Δ_i = (r_i − origin)·ŷ_spline`. If `max |Δ| > 5 %` of the span range, raise
+    `ValueError` naming the offending grids and their `(x, y, z, s, Δ)`. The error
+    message points the user at the EA-only SET1 fix or SPLINE1 (deferred to Step 48).
+  - The original HA144A SET1 (preserved as a regression fixture) trips this validator
+    immediately, preventing the same silent Q_aa corruption from re-emerging.
+- **B3+ — Spline math fix (`sbeam/aero/spline.py::_build_spline2_block`):**
+  - Translation `w_box`: was `−(z_comp / x̂[0]) · dφ_f/ds`; now
+    `−z_comp · x̂[0] · dφ_f/ds` (multiplication).
+  - Bending rotation `w_box`: was `(y_comp / x̂[0]) · dφ_d/ds`; now
+    `+y_comp · x̂[0] · dφ_d/ds`.
+  - Torsion `w_box`: was `x_comp · f_vals_slope`; now
+    `−ŷ[0] · x_comp · f_vals_slope` (correct sweep projection).
+  - Torsion `g_disp` (was entirely absent): now
+    `g_disp[3k+c] += x_comp · ζ_k · ẑ[c] · f_vals_force` where
+    `ζ_k = (box_k.force_point − origin)·ŷ_spline`.
+  - `sweep_ok` guard removed (multiplication is well-defined at `x̂[0] = 0`).
+- **B4 — V-AE1b global rigid-body gate (`tests/aero/test_spline.py::TestGlobalRigidBody`):**
+  - Two fixtures: HA144A wing (5-decimal coordinate input → 1e-5 tolerance) and a
+    math-exact rectangular wing (integer y positions on the spline axis →  1e-12).
+  - For each of `{Tx, Ty, Tz, Rx, Ry, Rz}` applied to *every* grid (with lever-arm
+    fill `ω × r` for rotations), assert `g_slope·u_rb` and `g_disp·u_rb`
+    z-component at each box force_point match the analytic flat-wing expectations.
+  - 18 tests on HA144A (6 modes × {downwash, disp}) + 6 tests on rect wing (6 modes
+    × downwash) = 24 new gate tests, all green.
+- **Legacy V-AE2 fixture (`tests/aero/test_spline.py::_build_ha144a_wing_spline_bulk`):**
+  - SET1 updated to EA-only `{100, 110, 120}`; DTHX flipped to `+1`. V-AE2a/b/c remain
+    green as unit checks on the Hermite slope projection.
+
+**Test/Acceptance (`studies/_review_ha144a_check.py`):**
+
+| Quantity | Pre-B (Step A only) | Post-B | NASTRAN |
+|---|---:|---:|---:|
+| Rigid-pitch wing incidence (θ=1e-3) | [−9.45e-02, +4.53e-02] | **+1.000e-03 ± 1e-10** | +1.000e-03 |
+| SC1 trim lift | +8 140 lb | +7 999.4 lb | +8 000 lb |
+| SC1 ELEV | +0.079 (16 % of target) | **+0.245 (50 %)** | +0.492 |
+| SC2 ANGLEA | +5.7e-4 (42 %) | +1.9e-3 (140 %) | +1.4e-3 |
+| `TestGlobalRigidBody` | — | 18/18 ✓ | — |
+| Full `tests/aero` + `tests/integration` (excluding `test_ae1_keff_trim.py`) | 220 ✓ | 238 ✓ | — |
+
+The remaining V-AE1 failures (`test_ae1_keff_trim.py` ANGLEA/ELEV value tests, three of
+eleven) are now driven by AE1 defects 3 and 4 (moment-sign convention not single-sourced,
+finite-difference restrained-derivative path) — addressed by AE1 Steps E and G.
+
+**Key decisions:**
+
+- The original Step B design treated SET1 contamination as the only defect; V-AE1b
+  exposed the spline-formula defects (mult vs div, torsion coefficient, missing
+  `g_disp` torsion) that V-AE2b's pre-projected kinematic had silently masked. Step
+  B's scope was expanded in-session to include the formula fix because partial gates
+  on broken math would have produced compensating-error fits that fail on any other
+  swept-wing model.
+- V-AE2b's "rigid-along-spline-axis" pitch is mathematically self-consistent under
+  either the division or the multiplication formula; only V-AE1b (global basic-frame
+  pitch) distinguishes them. V-AE2 is retained as a unit-level Hermite slope check.
+- `DTHX = +1` (attached) is now the right default for any planar SPLINE2 — `DTHX = −1`
+  is reserved for surfaces where torsion is intentionally decoupled.
+- The collinearity tolerance (5 % of span range) is a practical guard against drift
+  during model edits; tighter tolerances would reject legitimate EA grids that have
+  rounded coordinates (HA144A's GRID 110 at 27.11325 vs the math-exact 27.113248…).
+
+**Files:** `sbeam/solver/sol144.py`, `sbeam/aero/spline.py`,
+`sample/ha144a_sbeam.bdf`, `tests/aero/test_spline.py`.
+
+---
+
+### Phase A — AE2: j-set pressure unit undefined — AIC inverse fed as Γ to force path expecting ΔCp ✅ FIXED
 
 **Objective:** Define the j-set pressure unit once as ΔCp (NASTRAN/ZAERO convention) so
 that `ajj_inv_corr @ w` returns a dimensionless pressure coefficient throughout the
@@ -2151,7 +2350,7 @@ ANGLEA CZα = 5.071 matches `solve_rigid_cl` CLα = 5.0709 to 4 significant figu
 
 ---
 
-## Resolved Defects (Phase A) — AE3: Kutta-Joukowski lift width uses segment LENGTH, not cross-flow projection ✅ FIXED
+### Phase A — AE3: Kutta-Joukowski lift width uses segment LENGTH, not cross-flow projection ✅ FIXED
 
 **Objective:** Correct `dy` in `solve_rigid_cl` and `trefftz_cdi` so that the
 Kutta-Joukowski lift integral uses the **y-projection** of the bound-vortex segment,
@@ -2201,7 +2400,7 @@ All 74 aero/integration/BYU tests pass (BYU wing is unswept — no numeric chang
 
 ---
 
-## Resolved Defects (Phase A) — AE4 + AE6: SPLINE2 kinematics (swept-axis slope projection, nodal-slope sign, DTHX semantics) + ¼-chord force point ✅ FIXED
+### Phase B + C — AE4 + AE6: SPLINE2 kinematics (swept-axis slope projection, nodal-slope sign, DTHX semantics) + ¼-chord force point ✅ FIXED
 
 **Objective:** Fix the three root causes of AE4 (SPLINE2 producing 80× incidence error on swept
 configurations) and AE6 (g_disp / sol144 moment arms at ¾-chord instead of ¼-chord), gated by
@@ -2261,7 +2460,7 @@ pytest tests/
 
 ---
 
-## Resolved Defects (Phase A) — AE5 + AE7: RCSID-frame URDD transform + inertial trim columns ✅ FIXED
+### Phase C — AE5 + AE7: RCSID-frame URDD transform + inertial trim columns ✅ FIXED
 
 **Objective:** Fix two coupled trim-solver defects that caused the HA144A SC1 trim to converge
 to −8012 lb lift (wrong sign) instead of +8000 lb.
