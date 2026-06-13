@@ -1052,14 +1052,17 @@ These cards are parsed and stored but not yet consumed by a solver (deferred to 
 `solver/sol144.py:run_sol144_trim(bulk, subcase, aero)` implements the **determined** trim
 case (`n_free_labels == n_SUPORT_DOFs`) on the `aeroelastics` branch:
 
-1. Build `D_jx` (per-box normalwash per unit trim label: ANGLEA, SIDES, PITCH, ROLL/YAW,
-   URDD1–6, AESURF) and `Q_ax = G_dispᵀ S_kj A_jj*⁻¹ D_jx` on the g-set.
+1. Build `D_jx` (per-box normalwash per unit trim label: ANGLEA `−n_z`, SIDES `−n_y`, PITCH
+   `−(2/cref)(x−x_ref)`, ROLL `−(2/bref)·y`, YAW `−(2/bref)(x−x_ref)·n_y` (vertical-surface
+   sidewash), URDD1–6 `0`, AESURF `−(ĥ × n)·x̂·eff` about the `cid1` hinge axis ĥ — reducing to
+   `−n_z·eff` for a spanwise hinge) and `Q_ax = G_dispᵀ S_kj A_jj*⁻¹ D_jx` on the g-set.
 2. Reduce `Q_ax`, `K`, and the RHS (baseline `q·f_g` + prescribed-variable aero + URDD
    inertial load) to the a-set via the same RBE3 + SPC partition as SOL 101.
 3. Partition the a-set into l-set / r-set (SUPORT DOFs), set `u_r = 0`, and solve the
    Schur-complement system for the free trim variables and `u_l`.
 4. Recover CBAR forces/stresses, rigid and (analytic) restrained derivatives, total CL/CM,
-   and return a `Sol144TrimResult`.
+   per-AESURF hinge-moment derivatives (`_compute_hinge_moments`, moment of the box forces about
+   each control's `cid1` hinge axis), and return a `Sol144TrimResult`.
 
 The Schur partition structure is sound (equivalent to the MSC r-set/l-set method), but the
 implementation **fails the HA144A benchmark on both subcases** (measured 2026-06-11:

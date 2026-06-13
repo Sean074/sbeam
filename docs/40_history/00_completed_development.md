@@ -2903,3 +2903,47 @@ row by 1e-3 drives `‖Q_aa·u_tz‖` from 1.9e-14 to 0.48 (» 1e-10).
   while translations and roll (Rx) stay machine-precision null.
 - Assert against the actual rigid-body translation/rotation basis, never an arbitrary pitch field
   (pitch legitimately loads the aero and is not a null-space member).
+
+### Phase A/C — AE11: D_jx YAW column + AESURF hinge geometry + hinge-moment recovery ✅ COMPLETE (2026-06-13)
+
+**Objective:** Fix two latent control/lateral-column defects in `build_djx` and add the
+hinge-moment output NASTRAN reports but sbeam lacked. (1) The YAW column duplicated ROLL
+(`−(2/bref)·y_ctrl`); yaw rate on a vertical fin is a sidewash `∝ (x − x_ref)`, not `∝ y`. (2) The
+AESURF control column was `−n_z·eff`, ignoring the parsed `Aesurf.cid1` hinge axis — exact only for
+a spanwise hinge, wrong for swept/non-spanwise ones. (3) No hinge-moment recovery. All MINOR and
+non-blocking for AE1 (HA144A trims use ANGLEA/PITCH/URDD3/ELEV, and its ELEV hinge is spanwise).
+
+**Deliverables:**
+- **`sbeam/aero/integration.py` (`build_djx`):** split the `("ROLL","YAW")` branch; YAW is now
+  `−(2/bref)·(x_ctrl − x_ref)·n_y` (sidewash projected on the box y-normal, so it loads vertical
+  surfaces and vanishes on z-normal panels). The AESURF branch resolves the hinge axis
+  `ĥ = R[:,1]` from `_get_transform(aesurf.cid1, …)` and sets the column to `−(ĥ × n)·x̂·eff`,
+  which reduces to `−n_z·eff` for `ĥ = ŷ`. Dropped the `eff if eff != 0.0 else 1.0` guard (the
+  parser already defaults a blank field to 1.0, so the guard wrongly overrode an explicit 0.0).
+- **`sbeam/solver/sol144.py::_compute_hinge_moments` (new):** per AESURF, the hinge moment
+  `HM = Σ_{j∈AELIST} [(r_j − o) × F_j]·ĥ` about the `cid1` origin/axis, with `r_j = box.force_point`;
+  returns `{label: {'total': HM/q at trim, <trim_label>: dHM/dδ}}`, the rigid columns built from
+  `skj @ (ajj_inv_corr @ D_jx[:,col])` exactly like `_compute_rigid_derivs`. Carried on the new
+  `Sol144TrimResult.hinge_moments` field (`results/results.py`) and printed in a new
+  **HINGE-MOMENT DERIVATIVES** `.f06` block (`results/f06_writer.py`, values scaled to the trim q).
+- **`tests/aero/test_ae11_hinge.py` (new, 6 cases):** YAW formula + fin-loads/wing-ignores +
+  YAW≠ROLL; HA144A spanwise-hinge no-regression (new column bit-identical to `−n_z·eff`); a
+  swept-hinge fixture (column = `−(ĥ × n)·x̂`, differs from naive `−n_z`); and a hinge-moment
+  self-consistency check (uniform-Cp flat surface vs the closed-form `−Σ area·Cp·(x_force − x_hinge)`).
+
+**Test/Acceptance:** `pytest tests/aero/test_ae11_hinge.py` → 6 passed; full `tests/aero/` 260
+passed, `tests/solver` + `tests/integration` + `tests/results` 120 passed. HA144A SC1 trim
+unchanged (ANGLEA 0.171052, ELEV 0.490775) and the ELEV column bit-identical, proving the
+hinge-axis generalisation did not perturb the spanwise case. The HINGE-MOMENT DERIVATIVES block
+renders on `sample/ha144a_fullspan_sbeam.bdf` with finite ELEV/ANGLEA/PITCH derivatives and zero
+URDD (inertial) columns.
+
+**Key decisions:**
+- **Spanwise-hinge reduction is the no-regression guarantee.** `ŷ × n = (n_z, 0, −n_x)`, so
+  `−(ŷ × n)·x̂ = −n_z`; CORD2R 1 on HA144A has its y-axis along global y, so ELEV is unchanged.
+- **Hinge moment validated by self-consistency, not external NASTRAN HMAERO data** (chosen scope):
+  the closed-form uniform-Cp resultant is independent of the recovery code, so it catches a
+  lever-arm/sign/axis error without needing the MSC manual figures.
+- **ROLL left as-is** — the backlog confirms it is correct for the main (horizontal) wing;
+  generalising it to a normal-projected form was out of scope.
+- YAW remains latent (no caller passes it today), so the fix cannot regress any existing trim.

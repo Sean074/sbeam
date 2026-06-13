@@ -672,6 +672,62 @@ def _compute_rigid_derivs(
     return rigid_derivs
 
 
+def _compute_hinge_moments(
+    aero: AeroModel,
+    D_jx: np.ndarray,
+    all_labels: list,
+    bulk,
+    f_box_trim: np.ndarray,
+) -> dict:
+    """Hinge-moment derivatives and trimmed hinge moment per AESURF control.
+
+    The hinge moment is the moment of the aero box forces on a surface's AELIST
+    boxes about its hinge axis ĥ (the cid1 y-axis) through the hinge origin o:
+
+        HM = Σ_{j∈AELIST} [(r_j − o) × F_j] · ĥ          (r_j = box force point)
+
+    Returns ``{label: {'total': HM_trim, <trim_label>: dHM/dδ, ...}}`` where each
+    ``dHM/dδ`` uses the rigid box forces from that label's normalwash column
+    alone (u_a = 0, force/q units), mirroring ``_compute_rigid_derivs``.  The
+    ``'total'`` entry uses the full trimmed box-force field ``f_box_trim``
+    (force/q units; multiply by q for the physical hinge moment).
+    """
+    from sbeam.assembly.coord_transform import _get_transform
+
+    # NASTRAN-box-ID → global-k index (same convention as build_djx)
+    id_to_k: dict = {}
+    for box in aero.boxes:
+        caero = bulk.caero1s[box.caero_eid]
+        nch = (caero.nchord if caero.nchord > 0
+               else len(bulk.aefacts[caero.lchord].data) - 1)
+        id_to_k[box.caero_eid + box.i_span * nch + box.j_chord] = box.k
+
+    hinge_moments: dict = {}
+    for aesurf in bulk.aesurfs.values():
+        aelist = bulk.aelists.get(aesurf.alid1)
+        if aelist is None:
+            continue
+        o, R = _get_transform(aesurf.cid1, bulk.cord2rs)
+        h_hat = R[:, 1]                                   # hinge axis = cid1 y-axis
+        ks = [id_to_k[bid] for bid in aelist.elements if bid in id_to_k]
+
+        def _hm(f_box, _ks=ks, _o=o, _h=h_hat):
+            total = 0.0
+            for k in _ks:
+                F = f_box[3 * k:3 * k + 3]
+                r = aero.boxes[k].force_point - _o
+                total += float(np.dot(np.cross(r, F), _h))
+            return total
+
+        entry = {'total': _hm(f_box_trim)}
+        for col, lbl in enumerate(all_labels):
+            f_box_col = aero.skj @ (aero.ajj_inv_corr @ D_jx[:, col])
+            entry[lbl] = _hm(f_box_col)
+        hinge_moments[aesurf.label.upper()] = entry
+
+    return hinge_moments
+
+
 def _compute_restrained_derivs(
     K_ll_lu: tuple,
     l_idx: list,
@@ -1073,6 +1129,11 @@ def run_sol144_trim(
     total_cm = My_total / (sref * cref) if sref * cref > 0 else 0.0
 
     # ------------------------------------------------------------------ #
+    # Hinge-moment derivatives + trimmed hinge moment per AESURF control
+    # ------------------------------------------------------------------ #
+    hinge_moments = _compute_hinge_moments(aero, D_jx, all_labels, bulk, f_box_vec)
+
+    # ------------------------------------------------------------------ #
     # Step 56 — per-box pressures/forces, g-set flight loads, divergence q
     # ------------------------------------------------------------------ #
     # f_box_vec is in force/q units; the physical box force is q * f_box_vec.
@@ -1118,4 +1179,5 @@ def run_sol144_trim(
         box_forces=box_forces,
         grid_loads=grid_loads,
         q_div=q_div,
+        hinge_moments=hinge_moments,
     )

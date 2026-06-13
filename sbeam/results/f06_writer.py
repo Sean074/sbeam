@@ -344,6 +344,21 @@ def _build_f06_sol144_text(
         )
     lines.append("")
 
+    # ---- HINGE-MOMENT DERIVATIVES (about each AESURF cid1 hinge axis) ----
+    if result.hinge_moments:
+        lines.append("                          H I N G E   M O M E N T   D E R I V A T I V E S")
+        lines.append("")
+        lines.append("      (moment about each control's cid1 hinge axis, at the trim dynamic pressure)")
+        lines.append("")
+        for surf in sorted(result.hinge_moments):
+            entry = result.hinge_moments[surf]
+            lines.append(f"      SURFACE: {surf}")
+            lines.append("        TRIM VARIABLE      d(HM)/d(VAR)")
+            for label in sorted(k for k in entry if k != "total"):
+                lines.append(f"        {label:<14}{_fmt(result.q * entry[label])}")
+            lines.append(f"        {'TOTAL (TRIM)':<14}{_fmt(result.q * entry['total'])}")
+            lines.append("")
+
     # ---- AERODYNAMIC TOTALS ----
     lines.append("                                     A E R O D Y N A M I C   T O T A L S")
     lines.append("")

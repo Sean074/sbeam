@@ -32,6 +32,18 @@ for a 0.107° miss).
 
 ### Added
 
+**AE11 — hinge-moment derivatives in SOL 144 (2026-06-13)**
+
+SOL 144 now recovers, per AESURF control surface, the hinge moment about its `cid1` hinge axis —
+both the trimmed value and the per-trim-variable derivatives `dHM/dδ`.
+
+- **`sbeam/solver/sol144.py::_compute_hinge_moments`** computes
+  `HM = Σ_{j∈AELIST} [(r_j − o) × F_j]·ĥ` from the box forces (rigid columns mirror
+  `_compute_rigid_derivs`); results carried on the new `Sol144TrimResult.hinge_moments` field and
+  printed in a **HINGE-MOMENT DERIVATIVES** block in the `.f06`.
+- Validated by an independent closed-form resultant (uniform-Cp flat surface) rather than external
+  NASTRAN data — `tests/aero/test_ae11_hinge.py`.
+
 **AE1 Step C — `Q_aa` rigid-body null-space regression gate (2026-06-13)**
 
 A permanent guard that the rigid-body modes which do not load the aero lie in the null space of
@@ -137,6 +149,21 @@ was removed. Every lifting surface is now meshed in full.
   A1 convergence diagnostics were removed.
 
 ### Fixed
+
+**AE11 — D_jx YAW column + AESURF hinge geometry (2026-06-13)**
+
+`build_djx` (`sbeam/aero/integration.py`) had two latent control/lateral-column defects, both
+fixed without changing any existing trim (HA144A uses only ANGLEA/PITCH/URDD3/ELEV, and its ELEV
+hinge is spanwise):
+
+- **YAW no longer duplicates ROLL.** The YAW column is now the vertical-surface sidewash
+  `−(2/bref)·(x_ctrl − x_ref)·n_y` (matching the `SIDES = −n_y` convention), which loads vertical
+  fins and vanishes on horizontal/z-normal panels, instead of the copied `−(2/bref)·y_ctrl`.
+- **AESURF control column uses the actual hinge axis.** The column is now `−(ĥ × n)·x̂·eff` about
+  the `cid1` hinge axis `ĥ` (its y-axis), resolved via `_get_transform`. For a spanwise hinge this
+  reduces *exactly* to the previous `−n_z·eff` (verified bit-identical on HA144A ELEV); only
+  swept/non-spanwise hinges change. Also dropped the `eff if eff != 0.0 else 1.0` guard so an
+  explicit `AESURF` `eff = 0.0` is honoured rather than silently promoted to 1.0.
 
 **Backlog validation review — AE1 re-diagnosis corrected; R16–R22 closed (2026-06-12)**
 

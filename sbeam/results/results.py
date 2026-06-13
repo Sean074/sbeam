@@ -91,3 +91,4 @@ class Sol144TrimResult:
     box_forces: Optional[np.ndarray] = None   # (n_box, 3) physical aero force per box = q * (skj@gamma)
     grid_loads: Optional[np.ndarray] = None   # (n_dofs,) g-set aero flight-load vector = g_disp^T (q * f_box)
     q_div: Optional[float] = None             # critical divergence dynamic pressure (restrained l-set); None if none
+    hinge_moments: Optional[dict] = None      # {AESURF label: {'total': HM/q at trim, <trim_label>: dHM/dδ}} about cid1 hinge axis

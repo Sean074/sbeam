@@ -75,9 +75,12 @@ def build_djx(boxes: list, trim_labels: list, bulk) -> np.ndarray:
     SIDES   -ny[j]  (for vertical surfaces)
     PITCH   -(2/cref)*(x_ctrl[j] - x_ref)
     ROLL    -(2/bref)*y_ctrl[j]
-    YAW     -(2/bref)*y_ctrl[j]  (side slip rate, for vertical panels)
+    YAW     -(2/bref)*(x_ctrl[j] - x_ref)*ny[j]  (yaw-rate sidewash on vertical
+            panels; vanishes on horizontal/z-normal panels)
     URDD1–6  0  (inertial — structural only, no direct aerodynamic effect)
-    AESURF  -nz[j]*eff for boxes in the AELIST, 0 elsewhere
+    AESURF  -(h_hat × n[j])·x_hat * eff for boxes in the AELIST, 0 elsewhere,
+            where h_hat is the hinge axis (cid1 y-axis); reduces to -nz[j]*eff
+            for a spanwise (global-y) hinge.
     """
     n_box    = len(boxes)
     n_labels = len(trim_labels)
@@ -119,25 +122,40 @@ def build_djx(boxes: list, trim_labels: list, bulk) -> np.ndarray:
                 x_ctrl = box.colloc[0]
                 djx[box.k, col] = -(2.0 / c_ref) * (x_ctrl - x_ref)
 
-        elif ul in ("ROLL", "YAW"):
+        elif ul == "ROLL":
             for box in boxes:
                 y_ctrl = box.colloc[1]
                 djx[box.k, col] = -(2.0 / b_ref) * y_ctrl
+
+        elif ul == "YAW":
+            # Yaw rate r about z induces lateral sidewash v_y = r*(x − x_ref),
+            # an effective local sideslip sensed only through the box y-normal
+            # (matching SIDES = −n_y).  Horizontal (z-normal) panels have n_y = 0
+            # and see no yaw-rate normalwash, so the column vanishes there;
+            # nondimensionalised by 2/bref like the other rate columns.
+            for box in boxes:
+                x_ctrl = box.colloc[0]
+                djx[box.k, col] = -(2.0 / b_ref) * (x_ctrl - x_ref) * box.normal[1]
 
         elif ul.startswith("URDD"):
             pass  # zero — no direct aerodynamic effect
 
         else:
-            # AESURF label: find the matching surface
+            # AESURF label: control deflection rotates the box about the hinge
+            # axis (cid1 y-axis).  The induced streamwise normalwash is
+            # −(h_hat × n)·x_hat; for a spanwise hinge (h_hat = global y) this is
+            # exactly −n_z, recovering the flat-plate flap result.
             for aesurf in bulk.aesurfs.values():
                 if aesurf.label.upper() != ul:
                     continue
-                eff    = aesurf.eff if aesurf.eff != 0.0 else 1.0
+                eff    = aesurf.eff
+                _o, R  = _get_transform(aesurf.cid1, bulk.cord2rs)
+                h_hat  = R[:, 1]                       # hinge axis = cid1 y-axis
                 aelist = bulk.aelists.get(aesurf.alid1)
                 if aelist is None:
                     continue
                 for bid in aelist.elements:
                     k = nastran_id_to_k.get(bid)
                     if k is not None:
-                        djx[k, col] = -boxes[k].normal[2] * eff
+                        djx[k, col] = -np.cross(h_hat, boxes[k].normal)[0] * eff
     return djx

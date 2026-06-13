@@ -26,13 +26,12 @@ downgraded to a MINOR optional root-cause of the ~0.1° common-mode.
 |--:|------|----------|--------|------------------|
 | 1 | [AE8b — Unrestrained (mean-axis) derivative formulation](#major-ae8b--unrestrained-mean-axis-derivative-formulation-known-wrong) | MAJOR | Open — known-wrong first attempt; large-signal, genuinely off | HA144A unrestrained derivative column; Phase C derivative deliverable |
 | 2 | [AE8a — q-invariant common-mode trim offset (~0.1°)](#minor-ae8a--q-invariant-common-mode-trim-offset) | MINOR | Open — within fitness tolerance (≤0.4% FS); optional root-cause at q=40 | Documents/removes a known ≤0.4% FS trim bias; NOT a blocker |
-| 3 | [AE11 — D_jx YAW column + AESURF hinge geometry](#minor-ae11--d_jx-yaw-column-duplicates-roll-aesurf-hinge-geometry-ignored) | MINOR | Open | Vertical-fin trim, hinge-moment derivs (non-blocking for AE1) |
-| 4 | [AE12 — SPLINE2 DTOR/DTHZ warning (PG-normal half not a bug)](#minor-ae12--spline2-dtordthz-silently-ignored-pg-normal-half-misidentified) | MINOR | Open | User-input safety (PG-normal half re-diagnosed: not a bug) |
-| 5 | [A7 — Cosine chordwise spacing helper + low-NCHORD warning](#minor-a7--default-chordwise-box-count-too-low-no-cosine-chordwise-spacing) | MINOR | Open (code) | Pitching-moment convergence (sample decks already at NCHORD=8) |
-| 6 | [A8 — Box-AR pre-solve warning](#minor-a8--spanwise-box-count-aspect-ratio-must-be-o1-companion-to-a7) | MINOR | Open (code) | Lift-slope bias guard (sample decks already AR≈1) |
-| 7 | [Phase C Steps 53–55, 57](#phase-c--sol-144-static-aeroelastics-steps-5355-57) | Planned | Unblocked (AE1 Step F closed) | Maneuver loads, DIVERG q-sweep, viewer |
-| 8 | [Monitor points & section loads — Phase 1 (static)](#monitor-points--section-loads--phase-1-static) | Planned | Unblocked (AE1 Step F closed) | Structures-team loads handoff; precursor to dynamic gust loads at monitors |
-| 9 | [Phase 2 / Phase 3 / Future development](#phase-2--phase-3--future-development) | Planned | Optional | Long-tail capability |
+| 3 | [AE12 — SPLINE2 DTOR/DTHZ warning (PG-normal half not a bug)](#minor-ae12--spline2-dtordthz-silently-ignored-pg-normal-half-misidentified) | MINOR | Open | User-input safety (PG-normal half re-diagnosed: not a bug) |
+| 4 | [A7 — Cosine chordwise spacing helper + low-NCHORD warning](#minor-a7--default-chordwise-box-count-too-low-no-cosine-chordwise-spacing) | MINOR | Open (code) | Pitching-moment convergence (sample decks already at NCHORD=8) |
+| 5 | [A8 — Box-AR pre-solve warning](#minor-a8--spanwise-box-count-aspect-ratio-must-be-o1-companion-to-a7) | MINOR | Open (code) | Lift-slope bias guard (sample decks already AR≈1) |
+| 6 | [Phase C Steps 53–55, 57](#phase-c--sol-144-static-aeroelastics-steps-5355-57) | Planned | Unblocked (AE1 Step F closed) | Maneuver loads, DIVERG q-sweep, viewer |
+| 7 | [Monitor points & section loads — Phase 1 (static)](#monitor-points--section-loads--phase-1-static) | Planned | Unblocked (AE1 Step F closed) | Structures-team loads handoff; precursor to dynamic gust loads at monitors |
+| 8 | [Phase 2 / Phase 3 / Future development](#phase-2--phase-3--future-development) | Planned | Optional | Long-tail capability |
 
 **Closed in this branch (full detail in CHANGELOG `[Unreleased]` and `docs/40_history`):**
 AE2–AE7; AE9 (per-TRIM Mach AIC cache + supersonic guard); **AE10** (SOL 144 CLI dispatch from
@@ -241,30 +240,6 @@ ACCEPTANCE (to CLOSE): HA144A UNRESTRAINED columns within 1% of NASTRAN_UNRESTRA
         RESTRAINED column gated by V-AE1e; do not conflate.)
 RIDES HERE: completing V-AE1e's remaining RESTRAINED columns (Cmα, Cmq, CZδe, Cmδe) needs the
         MSC Table 7-1 values (not ADA370433) and rides with AE8b.
-```
-
----
-
-### [MINOR] AE11 — D_jx YAW column duplicates ROLL; AESURF hinge geometry ignored
-
-**Files:** `sbeam/aero/integration.py:122–125, 130–143`, `sbeam/model/aero.py`
-(`Aesurf.cid1`)
-
-```
-[MINOR] YAW uses −(2/bref)·y_ctrl (same as ROLL); yaw rate on a vertical fin produces
-        sidewash ∝ (x − x_ref), not ∝ y. AESURF cid1 is parsed but the control downwash
-        is just −n_z·eff — no hinge-sweep projection, no rotation for non-spanwise
-        hinges, no hinge-moment output (NASTRAN prints hinge-moment derivatives for
-        HA144A — free validation data going unused).
-FIX:    Derive the control column from rotation about the actual hinge axis
-        (cid1 y-axis); add hinge-moment recovery; correct the YAW column for vertical
-        surfaces. Tests: (1) unit test that the YAW column = +(2/bref)·(x_ctrl−x_ref) on a
-        y-normal panel and ≈0 on a z-normal panel; (2) a swept-hinge AESURF fixture; (3)
-        HA144A ELEV hinge-moment cross-check vs the manual HMAERO block (free validation).
-NOTE:   Both defects are NON-blocking for AE1 — HA144A's ELEV hinge (CORD2R 1) is
-        spanwise, so the −n_z·eff approximation is exact for it; the cid1 omission only
-        bites swept/non-spanwise hinges. YAW is latent (no caller passes it). Verify the
-        `eff if eff!=0.0 else 1.0` default (integration.py:135) is intended (eff=0→1.0).
 ```
 
 ---

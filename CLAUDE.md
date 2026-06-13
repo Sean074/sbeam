@@ -124,7 +124,7 @@ Mass and CG computation is called **GPWG** (Grid Point Weight Generator), not "O
 
 - **SOL 101:** nodal displacements, SPC reactions, applied load echo, CBAR end forces/moments, CBAR stresses at recovery points, CBUSH element forces (global coordinates)
 - **SOL 103:** natural frequencies (Hz and rad/s), normalised mode shapes, modal mass fractions
-- **SOL 144** (static aeroelastic trim, Phase C): trim variables, rigid + elastic-restrained stability derivatives, total CL/CMY, critical divergence dynamic pressure, displacements/CBAR loads, and (on `AEROF`/`APRES` request) per-box ΔCp and forces. Also exports trimmed flight loads as `FORCE`/`MOMENT` cards (`<stem>.aero_loads.bdf`)
+- **SOL 144** (static aeroelastic trim, Phase C): trim variables, rigid + elastic-restrained stability derivatives, per-AESURF hinge-moment derivatives (about the `cid1` hinge axis), total CL/CMY, critical divergence dynamic pressure, displacements/CBAR loads, and (on `AEROF`/`APRES` request) per-box ΔCp and forces. Also exports trimmed flight loads as `FORCE`/`MOMENT` cards (`<stem>.aero_loads.bdf`)
 
 ## Verification Test Cases
 

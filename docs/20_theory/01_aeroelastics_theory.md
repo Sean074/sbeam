@@ -609,6 +609,23 @@ or $q\to0$ in the feedback). Their ratio — the *aeroelastic efficiency*
 $\big(\partial C_L/\partial\alpha\big)_\text{flex}\big/\big(\partial C_L/\partial\alpha\big)_\text{rigid}$
 — is the headline flexible-aircraft result and is what the HA144-class verification cases check.
 
+**Trim-variable normalwash columns.** Each column of $D_{jx}$ is the box normalwash per unit trim
+variable. Angle-of-attack and sideslip act through the box normal ($-n_z$, $-n_y$); the rate
+variables are their station-weighted analogues. Pitch rate gives $-(2/c_\text{ref})(x-x_\text{ref})$
+on a lifting surface; **yaw** rate produces a *sidewash* $\propto (x-x_\text{ref})$ sensed only by
+vertical surfaces, hence $-(2/b_\text{ref})(x-x_\text{ref})\,n_y$ — it vanishes on horizontal panels
+and is **not** the roll column $-(2/b_\text{ref})\,y$. A control deflection rotates the box about its
+hinge axis $\hat{\mathbf h}$ (the surface's hinge coordinate-system y-axis), giving the streamwise
+normalwash $-(\hat{\mathbf h}\times\mathbf n)\cdot\hat{\mathbf x}\,\cdot\text{eff}$, which reduces to
+the flat-plate flap result $-n_z\,\text{eff}$ when the hinge is spanwise ($\hat{\mathbf h}=\hat{\mathbf y}$).
+
+**Hinge moments.** The hinge moment of a control surface is the moment of its box forces about the
+hinge axis through the hinge origin $\mathbf o$,
+$\mathrm{HM}=\sum_{j\in\text{AELIST}}\big[(\mathbf r_j-\mathbf o)\times\mathbf F_j\big]\cdot\hat{\mathbf h}$,
+with $\mathbf r_j$ the box ¼-chord force point. Per trim variable, $\partial\mathrm{HM}/\partial\delta$
+uses the box forces from that variable's normalwash column alone — the control-column entry gives the
+restoring (control-effectiveness) hinge-moment derivative, the $\alpha$ column the floating tendency.
+
 ### 5.5 Divergence
 
 Divergence is the static instability where the aerodynamic softening exactly cancels the
