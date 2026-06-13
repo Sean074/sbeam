@@ -6,6 +6,7 @@ from .aero import (
     Spline2, Attach, Spline0, Spline1,
     Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
 )
+from .maneuver import Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads
 from .constraint import Suport
 
 
@@ -51,3 +52,10 @@ class BulkData:
     trimobjs: dict = field(default_factory=dict)   # {sid: Trimobj}
     trimcons: dict = field(default_factory=dict)   # {sid: list[Trimcon]}
     supports: list = field(default_factory=list)   # list[Suport]
+    # Phase G0 — ZAERO-style transient maneuver-loads cards
+    tabled1s: dict = field(default_factory=dict)   # {tid: Tabled1}
+    mldtimes: dict = field(default_factory=dict)   # {sid: Mldtime}
+    mldcomds: dict = field(default_factory=dict)   # {sid: Mldcomd}
+    mldprnts: dict = field(default_factory=dict)   # {sid: Mldprnt}
+    mldtrims: dict = field(default_factory=dict)   # {sid: Mldtrim}
+    mloads:   dict = field(default_factory=dict)   # {sid: Mloads}

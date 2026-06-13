@@ -12,6 +12,7 @@ class SubcaseControl:
     trim_sid: Optional[int] = None    # TRIM set ID for SOL 144
     trimobj_sid: Optional[int] = None # TRIMOBJ set ID (over-determined trim objective)
     diverg_sid: Optional[int] = None  # DIVERG set ID for SOL 144
+    mloads_sid: Optional[int] = None  # MLOADS set ID (Phase G0 transient maneuver loads)
     displacement: bool = False        # Request DISPLACEMENT output
     spcforce: bool = False            # Request SPCFORCE output
     oload: bool = False               # Request OLOAD output
@@ -118,6 +119,8 @@ def parse_case_control(lines: list) -> CaseControl:
                 current_sc.trimobj_sid = int(value)
             elif keyword == "DIVERG":
                 current_sc.diverg_sid = int(value)
+            elif keyword == "MLOADS":
+                current_sc.mloads_sid = int(value)
             elif keyword == "DISPLACEMENT":
                 current_sc.displacement = True
             elif keyword == "SPCFORCE":

@@ -44,6 +44,7 @@ Never batch these updates or defer them to a later session. The backlog is for *
 - **Phase 2:** Model enhancements — see `docs/30_future/00_backlog.md`
 - **Phase 3:** SOL 108 (frequency response), 109 (transient), 111 (modal freq), 112 (modal transient) — see `docs/30_future/00_backlog.md`
 - **Phase A (in progress):** Steady VLM aeroelastics (Steps 39–45 complete; A7/A8 open) — see `docs/10_standard/05_aeroelastics.md` and `docs/30_future/00_backlog.md`
+- **Phase G0 (in progress):** DLM-free quasi-steady transient maneuver loads — increment 1 complete (ZAERO `MLOADS` card set; Level-1 quasi-steady, open-loop; restrained l-set Newmark-β). Follow-ons (free-flight rigid-body coupling, modal ROM, unsteady corrections, closed-loop control) in `docs/30_future/00_backlog.md`
 - **Future:** distributed loads, Timoshenko shear, enforced displacements, buckling (SOL 105), results export — see `docs/30_future/00_backlog.md`
 
 ## Project Backlog
@@ -77,10 +78,11 @@ Phase 1 uses **Euler-Bernoulli beam theory** (shear deformation neglected). Each
 | Constraints | `SPC`, `SPC1` (DOFs 1–6: Tx Ty Tz Rx Ry Rz) |
 | Loads | `FORCE`, `MOMENT`, `LOAD` (linear combination), `GRAV` (body acceleration; CID=0 only; f = M×a) |
 | Eigenvalue | `EIGRL` (SOL 103: modes, frequency range, normalization) |
+| Transient maneuver (Phase G0) | `MLOADS` (driver), `MLDTRIM` (initial-condition TRIM sid), `MLDCOMD` (pilot command label → `TABLED1`), `MLDTIME` (t0/tend/dt/tout), `MLDPRNT` (ASCII output), `TABLED1` (tabular function) |
 
 ### Case Control Cards (Phase 1)
 
-`SOL`, `SUBCASE`, `LOAD`, `SPC`, `METHOD`, `DISPLACEMENT`, `SPCFORCE`, `OLOAD`, `FORCE`, `STRESS`, `BEGIN BULK`, `ENDDATA`
+`SOL`, `SUBCASE`, `LOAD`, `SPC`, `METHOD`, `TRIM`, `MLOADS` (Phase G0 transient maneuver), `DISPLACEMENT`, `SPCFORCE`, `OLOAD`, `FORCE`, `STRESS`, `BEGIN BULK`, `ENDDATA`
 
 ## Key Constraints
 
@@ -97,10 +99,10 @@ Phase 1 uses **Euler-Bernoulli beam theory** (shear deformation neglected). Each
 sbeam/
 ├── main.py
 ├── parser/         # bdf_reader.py, case_control.py
-├── model/          # grid.py, element.py, property.py, material.py, load.py, constraint.py, mass.py, aero.py
+├── model/          # grid.py, element.py, property.py, material.py, load.py, constraint.py, mass.py, aero.py, maneuver.py (ZAERO MLOADS cards), maneuver_presets.py
 ├── assembly/       # stiffness.py, mass_matrix.py, rbe3.py
-├── solver/         # sol101.py, sol103.py, sol144.py (static aeroelastic trim)
-├── results/        # results.py, f06_writer.py, load_export.py
+├── solver/         # sol101.py, sol103.py, sol144.py (static aeroelastic trim), maneuver_qs.py (Phase G0 transient maneuver loads)
+├── results/        # results.py, f06_writer.py, load_export.py, maneuver_output.py (Phase G0 time histories + critical-step export)
 ├── gpwg.py         # Mass and CG (GPWG)
 ├── aero/           # panel.py, vlm.py, integration.py, corrections.py, aero_model.py
 └── viewer/         # app.py, geometry.py, results_view.py, case_control_ui.py
@@ -125,6 +127,7 @@ Mass and CG computation is called **GPWG** (Grid Point Weight Generator), not "O
 - **SOL 101:** nodal displacements, SPC reactions, applied load echo, CBAR end forces/moments, CBAR stresses at recovery points, CBUSH element forces (global coordinates)
 - **SOL 103:** natural frequencies (Hz and rad/s), normalised mode shapes, modal mass fractions
 - **SOL 144** (static aeroelastic trim, Phase C): trim variables, rigid + elastic-restrained stability derivatives, per-AESURF hinge-moment derivatives (about the `cid1` hinge axis), total CL/CMY, critical divergence dynamic pressure, displacements/CBAR loads, and (on `AEROF`/`APRES` request) per-box ΔCp and forces. Exports trimmed aero flight loads as `FORCE`/`MOMENT` cards (`<stem>.aero_loads.bdf`). For balanced maneuvers (Step 53) it also emits the net (aero + inertial) maneuver load (`net_loads`/`inertial_loads`, with per-case force/moment closure) and exports it as `<stem>.maneuver_loads.bdf`
+- **SOL 144 transient maneuver loads** (Phase G0, DLM-free): a SOL 144 subcase with an `MLOADS = sid` request runs `solver/maneuver_qs.py` — a Level-1 quasi-steady, open-loop, restrained-l-set Newmark-β time integration seeded from a Step 53 trim (`MLDTRIM`). Per output time it recovers displacements, CBAR loads, instantaneous aero loads, and the net (aero + inertial) maneuver load. Writes an MLDPRNT ASCII time-history (`<stem>.mldprnt.txt`) and the critical-sample net-load `FORCE`/`MOMENT` export (`<stem>.maneuver_qs_loads.bdf`). ZAERO card set: `MLOADS`/`MLDTRIM`/`MLDCOMD`/`MLDTIME`/`MLDPRNT` + `TABLED1`.
 
 ## Verification Test Cases
 

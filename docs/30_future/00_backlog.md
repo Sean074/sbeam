@@ -534,6 +534,46 @@ projection).
 
 ---
 
+## Phase G0 — transient maneuver loads (DLM-free): follow-on increments
+
+**Increment 1 is CLOSED (2026-06-13)** — Level-1 quasi-steady (`Ω×r`), open-loop, restrained l-set
+Newmark-β integration of the ZAERO `MLOADS` card set (`MLOADS`/`MLDTRIM`/`MLDCOMD`/`MLDTIME`/
+`MLDPRNT` + `TABLED1`). See `docs/40_history/00_completed_development.md` (Phase G0 increment 1) and
+`solver/maneuver_qs.py`. The increments below build on it; all are **DLM-free** and gated only on
+Phase C. Full unsteady MLOADS (state-space / RFA / control law) remains Phase G (gated on the DLM).
+
+### G0-b — Free-flight rigid-body coupling (self-balancing maneuver)
+
+**Objective:** Instead of prescribing every trim variable open-loop, re-solve the **free** rigid-body
+trim variables (e.g. free `URDD`/`ANGLEA`) at each time step so the net (aero + inertial) load
+self-balances (closure ≈ 0) for an arbitrary commanded *control* history — the true free-flight
+maneuver. Couple the elastic l-set Newmark step to the SUPORT r-set equilibrium (the Step 53 Schur
+structure with the Newmark effective stiffness `K̂_ll = a0·M_ll + a1·C_ll + K_eff_ll`), determined
+case first; over-determined transient is a further follow-on.
+
+**Test/Acceptance:** commanding a single control (elevator) produces a balanced (closure ≈ 0)
+transient whose steady state equals a Step 53 trim with that control prescribed.
+
+### G0-c — Modal reduction (Level-1b)
+
+**Objective:** Reduce the l-set integration onto restrained mean-axis elastic modes
+(`scipy.linalg.eigh(K_ll, M_ll)` or `solve_modes` on the l-set) with mode-acceleration recovery, honouring `MLOADS NMODES`. Cheaper than the direct l-set solve for large models; exact identity to
+the direct solve when all modes are retained.
+
+### G0-d — Unsteady corrections (Levels 2–4)
+
+**Objective:** Layer the analytic unsteady terms onto the steady VLM forcing: (2) 2-D apparent
+(added) mass per strip (`πρb²`-type loads ∝ `α̇`/`ḧ`); (3) tail downwash-lag delay `τ = l_t/V`
+(the `C_mα̇` effect); (4) strip Wagner/Theodorsen lift-deficiency. Each is optional on top of the
+previous and extends validity beyond `k ≲ 0.05–0.1`.
+
+### G0-e — Closed-loop control layer (ASE bridge)
+
+**Objective:** Actuator/sensor/control-law models so commands close the loop (vs the increment-1
+prescribed control histories). Bridges to the full Phase G ASE system.
+
+---
+
 ## Monitor points & section loads — Phase 1 (static)
 
 **Files (new/extended):** `sbeam/model/aero.py` (dataclasses), `sbeam/parser/bdf_reader.py`

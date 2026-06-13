@@ -32,6 +32,7 @@ def main() -> None:
         sys.exit(f"Parse error: {exc}")
 
     sol144_results = None
+    maneuver_results = {}
     try:
         if cc.sol == 101:
             from sbeam.solver.sol101 import run_sol101
@@ -48,13 +49,21 @@ def main() -> None:
             from sbeam.aero.aero_model import build_aero_model
             from sbeam.assembly.load_vector import build_grid_index
             from sbeam.solver.sol144 import run_sol144_trim, AeroCache
+            from sbeam.solver.maneuver_qs import run_maneuver_qs
             grid_index = build_grid_index(bulk)
             aero = build_aero_model(bulk, grid_index=grid_index)
             cache = AeroCache(bulk, grid_index, seed=aero)
-            results = {
-                sc.subcase_id: run_sol144_trim(bulk, sc, aero, aero_cache=cache)
-                for sc in cc.subcases
-            }
+            # An MLOADS subcase runs the Phase G0 transient maneuver-loads solver;
+            # a plain TRIM subcase runs the Step 52/53 static trim.
+            results = {}
+            maneuver_results = {}
+            for sc in cc.subcases:
+                if sc.mloads_sid is not None:
+                    maneuver_results[sc.subcase_id] = run_maneuver_qs(
+                        bulk, sc, aero, aero_cache=cache)
+                else:
+                    results[sc.subcase_id] = run_sol144_trim(
+                        bulk, sc, aero, aero_cache=cache)
             build_text = build_f06_sol144_text
             sol144_results = results
         else:
@@ -70,7 +79,7 @@ def main() -> None:
 
     # SOL 144: also export the trimmed flight loads as FORCE/MOMENT cards for
     # downstream stress analysis (one card block per subcase, SID = subcase id).
-    if sol144_results is not None:
+    if sol144_results:
         from sbeam.results.load_export import (
             write_aero_load_cards, write_maneuver_load_cards,
         )
@@ -81,3 +90,12 @@ def main() -> None:
         man_path = bdf_path.with_suffix(".maneuver_loads.bdf")
         write_maneuver_load_cards(str(man_path), bulk, sol144_results)
         print(f"Written: {man_path}")
+
+    # Phase G0: transient maneuver-loads time histories (MLDPRNT) + critical-step
+    # net (aero + inertial) FORCE/MOMENT export.
+    if maneuver_results:
+        from sbeam.results.maneuver_output import write_maneuver_outputs
+        mldprnt_path, qs_loads_path = write_maneuver_outputs(
+            str(bdf_path.with_suffix("")), bulk, maneuver_results)
+        print(f"Written: {mldprnt_path}")
+        print(f"Written: {qs_loads_path}")

@@ -134,8 +134,9 @@ sbeam/solver/
 │                     #   CFD/WT steady-pressure injection, flexible derivatives, divergence
 ├── sol145.py         # ░ PLACEHOLDER Phase E ░ flutter (p-k); reuses SOL 103 modes + dlm.py
 ├── sol146.py         # ░ PLACEHOLDER Phase F ░ gust / random response; reuses SOL 111 + dlm.py
-├── maneuver_qs.py    # ░ PLACEHOLDER Phase G0 ░ quasi-steady transient maneuver loads — NO DLM:
-│                     #   Ω×r incidence + 2-D apparent mass + Wagner strip-lag; steady VLM + time integ.
+├── maneuver_qs.py    # Phase G0 increment 1 ✅ quasi-steady transient maneuver loads — NO DLM:
+│                     #   Level-1 Ω×r incidence; restrained l-set Newmark-β; steady VLM + time integ.
+│                     #   (apparent mass / Wagner / closed-loop = Level 1b–4 follow-ons)
 └── mloads.py         # ░ PLACEHOLDER Phase G ░ transient maneuver loads (state-space + control);
                       #   reuses SOL 103 modes + dlm.py (RFA) + the mode-acceleration recovery
 ```
@@ -636,6 +637,15 @@ promoted to numbered steps without waiting on Phases D–G.
 - **Cards:** `GUST`, `TABRND1`, `RANDPS`, frequency-set cards.
 
 ### Phase G0 — Quasi-steady transient maneuver loads  *(DLM-free; near-term, ahead of Phase G)*
+
+> **Increment 1 ✅ IMPLEMENTED (2026-06-13).** Level-1 quasi-steady `Ω×r`, open-loop, restrained
+> l-set Newmark-β integration of the ZAERO `MLOADS` card set (`MLOADS`/`MLDTRIM`/`MLDCOMD`/
+> `MLDTIME`/`MLDPRNT` + `TABLED1`). The Step 53 trim is the `MLDTRIM` initial condition; holding the
+> commanded state at the trim value reproduces the Step 53 balanced load to machine precision.
+> See `docs/40_history/00_completed_development.md` (Phase G0 increment 1). Increments 1b–4 below
+> (modal ROM, apparent mass, downwash lag, Wagner) and rigid-body re-balancing / closed-loop control
+> remain open in `docs/30_future/00_backlog.md`.
+
 - **Module:** `solver/maneuver_qs.py`. Time-integrate a pilot/control-command maneuver using
   **quasi-steady aerodynamics only** — no DLM, no RFA. The bridge between Step 53 (a single
   balanced instant) and the full unsteady MLOADS of Phase G: it produces transient load time

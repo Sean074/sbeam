@@ -17,6 +17,7 @@ from sbeam.model.aero import (
     Spline2, Attach, Spline0, Spline1,
     Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
 )
+from sbeam.model.maneuver import Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads
 from sbeam.parser.case_control import parse_case_control
 
 _IGNORED_KEYWORDS = frozenset({"BEGIN", "BEGINBULK", "ENDDATA"})
@@ -726,6 +727,112 @@ def _handle_diverg(fields: list, conts: list, bulk: BulkData) -> None:
     bulk.divergs[sid] = Diverg(sid=sid, nroots=nroots, machs=machs)
 
 
+# ---------------------------------------------------------------------------
+# Phase G0 — ZAERO-style transient maneuver-loads cards
+# ---------------------------------------------------------------------------
+
+def _handle_tabled1(fields: list, conts: list, bulk: BulkData) -> None:
+    """TABLED1 — tabular function: TID then (x, y) pairs terminated by ENDT."""
+    tid   = _to_int(fields[1])
+    xaxis = fields[2].strip().upper() if len(fields) > 2 and fields[2].strip() else "LINEAR"
+    yaxis = fields[3].strip().upper() if len(fields) > 3 and fields[3].strip() else "LINEAR"
+    if tid in bulk.tabled1s:
+        raise ValueError(f"Duplicate TABLED1 TID {tid}")
+    # Data pairs live entirely on the continuation line(s); fields[4:] of the
+    # base line are reserved/blank in the NASTRAN layout.
+    tokens: list = [f for f in fields[4:]]
+    for cont in conts:
+        tokens += list(cont[1:])
+    tokens = [t.strip() for t in tokens if t.strip()]
+    xs: list = []
+    ys: list = []
+    k = 0
+    while k < len(tokens):
+        if tokens[k].upper() == "ENDT":
+            break
+        if k + 1 >= len(tokens):
+            raise ValueError(f"TABLED1 {tid}: dangling abscissa with no ordinate")
+        xs.append(_to_float(tokens[k]))
+        ys.append(_to_float(tokens[k + 1]))
+        k += 2
+    if len(xs) < 2:
+        raise ValueError(f"TABLED1 {tid}: needs at least two (x, y) points")
+    if any(xs[i + 1] <= xs[i] for i in range(len(xs) - 1)):
+        raise ValueError(f"TABLED1 {tid}: abscissae must be strictly increasing")
+    bulk.tabled1s[tid] = Tabled1(tid=tid, xs=xs, ys=ys, xaxis=xaxis, yaxis=yaxis)
+
+
+def _handle_mldtime(fields: list, bulk: BulkData) -> None:
+    """MLDTIME — integration window: SID T0 TEND DT [TOUT]."""
+    sid  = _to_int(fields[1])
+    t0   = _to_float(fields[2]) if len(fields) > 2 else 0.0
+    tend = _to_float(fields[3]) if len(fields) > 3 else 0.0
+    dt   = _to_float(fields[4]) if len(fields) > 4 else 0.0
+    tout = _to_float(fields[5]) if len(fields) > 5 and fields[5].strip() else 0.0
+    if dt <= 0.0:
+        raise ValueError(f"MLDTIME {sid}: DT must be positive")
+    if tend <= t0:
+        raise ValueError(f"MLDTIME {sid}: TEND must exceed T0")
+    if sid in bulk.mldtimes:
+        raise ValueError(f"Duplicate MLDTIME SID {sid}")
+    bulk.mldtimes[sid] = Mldtime(sid=sid, t0=t0, tend=tend, dt=dt, tout=tout)
+
+
+def _handle_mldcomd(fields: list, conts: list, bulk: BulkData) -> None:
+    """MLDCOMD — pilot commands: SID then (LABEL, TABID) pairs."""
+    sid = _to_int(fields[1])
+    if sid in bulk.mldcomds:
+        raise ValueError(f"Duplicate MLDCOMD SID {sid}")
+    tokens: list = list(fields[2:])
+    for cont in conts:
+        tokens += list(cont[1:])
+    tokens = [t for t in tokens if t.strip()]
+    if len(tokens) % 2 != 0:
+        raise ValueError(f"MLDCOMD {sid}: odd number of LABEL/TABID tokens — must be paired")
+    commands: list = []
+    for i in range(0, len(tokens), 2):
+        label = tokens[i].strip().upper()
+        tabid = _to_int(tokens[i + 1])
+        commands.append((label, tabid))
+    bulk.mldcomds[sid] = Mldcomd(sid=sid, commands=commands)
+
+
+def _handle_mldprnt(fields: list, conts: list, bulk: BulkData) -> None:
+    """MLDPRNT — ASCII time-history output request: SID then optional item keywords."""
+    sid = _to_int(fields[1])
+    if sid in bulk.mldprnts:
+        raise ValueError(f"Duplicate MLDPRNT SID {sid}")
+    items: list = [f.strip().upper() for f in fields[2:] if f.strip()]
+    for cont in conts:
+        items += [f.strip().upper() for f in cont[1:] if f.strip()]
+    bulk.mldprnts[sid] = Mldprnt(sid=sid, items=items)
+
+
+def _handle_mldtrim(fields: list, bulk: BulkData) -> None:
+    """MLDTRIM — initial steady-state condition: SID TRIMID (a static TRIM sid)."""
+    sid      = _to_int(fields[1])
+    trim_sid = _to_int(fields[2])
+    if sid in bulk.mldtrims:
+        raise ValueError(f"Duplicate MLDTRIM SID {sid}")
+    bulk.mldtrims[sid] = Mldtrim(sid=sid, trim_sid=trim_sid)
+
+
+def _handle_mloads(fields: list, bulk: BulkData) -> None:
+    """MLOADS — transient driver: SID MLDTRIM MLDTIME [MLDCOMD] [MLDPRNT] [NMODES]."""
+    sid     = _to_int(fields[1])
+    mldtrim = _to_int(fields[2])
+    mldtime = _to_int(fields[3])
+    mldcomd = _to_int(fields[4]) if len(fields) > 4 and fields[4].strip() else 0
+    mldprnt = _to_int(fields[5]) if len(fields) > 5 and fields[5].strip() else 0
+    nmodes  = _to_int(fields[6]) if len(fields) > 6 and fields[6].strip() else 0
+    if sid in bulk.mloads:
+        raise ValueError(f"Duplicate MLOADS SID {sid}")
+    bulk.mloads[sid] = Mloads(
+        sid=sid, mldtrim=mldtrim, mldtime=mldtime,
+        mldcomd=mldcomd, mldprnt=mldprnt, nmodes=nmodes,
+    )
+
+
 def _handle_trimvar(fields: list, bulk: BulkData) -> None:
     vid   = _to_int(fields[1])
     label = fields[2].strip().upper() if len(fields) > 2 else ""
@@ -1050,6 +1157,54 @@ def parse_bulk_data(lines: list) -> BulkData:
             _handle_trimcon(fields, bulk)
         elif keyword == "SUPORT":
             _handle_suport(fields, bulk)
+        elif keyword == "TABLED1":
+            tabled1_conts: list = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    tabled1_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_tabled1(fields, tabled1_conts, bulk)
+        elif keyword == "MLDTIME":
+            _handle_mldtime(fields, bulk)
+        elif keyword == "MLDCOMD":
+            mldcomd_conts: list = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    mldcomd_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_mldcomd(fields, mldcomd_conts, bulk)
+        elif keyword == "MLDPRNT":
+            mldprnt_conts: list = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    mldprnt_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_mldprnt(fields, mldprnt_conts, bulk)
+        elif keyword == "MLDTRIM":
+            _handle_mldtrim(fields, bulk)
+        elif keyword == "MLOADS":
+            _handle_mloads(fields, bulk)
         else:
             warnings.warn(f"Unknown BDF card '{keyword}' — skipped", UserWarning, stacklevel=2)
 
@@ -1136,6 +1291,29 @@ def parse_bulk_data(lines: list) -> BulkData:
                     "weighted objective",
                     UserWarning, stacklevel=2,
                 )
+
+    # Validate ZAERO transient maneuver-loads (Phase G0) cross-references
+    for sid, mc in bulk.mldcomds.items():
+        for label, tabid in mc.commands:
+            if label not in all_trim_labels:
+                raise ValueError(
+                    f"MLDCOMD {sid}: command label '{label}' not defined in any "
+                    "AESTAT or AESURF card"
+                )
+            if tabid not in bulk.tabled1s:
+                raise ValueError(f"MLDCOMD {sid}: TABID {tabid} not found in TABLED1")
+    for sid, mt in bulk.mldtrims.items():
+        if mt.trim_sid not in bulk.trims:
+            raise ValueError(f"MLDTRIM {sid}: TRIMID {mt.trim_sid} not found in TRIM")
+    for sid, ml in bulk.mloads.items():
+        if ml.mldtrim not in bulk.mldtrims:
+            raise ValueError(f"MLOADS {sid}: MLDTRIM {ml.mldtrim} not found")
+        if ml.mldtime not in bulk.mldtimes:
+            raise ValueError(f"MLOADS {sid}: MLDTIME {ml.mldtime} not found")
+        if ml.mldcomd and ml.mldcomd not in bulk.mldcomds:
+            raise ValueError(f"MLOADS {sid}: MLDCOMD {ml.mldcomd} not found")
+        if ml.mldprnt and ml.mldprnt not in bulk.mldprnts:
+            raise ValueError(f"MLOADS {sid}: MLDPRNT {ml.mldprnt} not found")
 
     # Resolve all grid positions from their CP system into global CID 0
     from sbeam.assembly.coord_transform import resolve_grid_positions

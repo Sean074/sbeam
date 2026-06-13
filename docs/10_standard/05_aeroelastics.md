@@ -555,6 +555,40 @@ KC9). Recipes: symmetric pull-up/push-over (prescribe `URDD3`, `PITCH=0`), stead
 (prescribe `ROLL` rate, `URDD4=0`; aileron free), steady sideslip (prescribe `SIDES`, `YAW=0`;
 rudder free). Gated by **V-C5** (`tests/aero/test_maneuver_loads.py`).
 
+**Transient maneuver loads — Phase G0 increment 1 (DLM-free quasi-steady).** A SOL 144 subcase that
+carries an `MLOADS = sid` request runs `solver/maneuver_qs.py` instead of the static trim. It
+time-integrates the elastic response to a prescribed (open-loop) pilot-command history, starting
+from a Step 53 balanced trim as the initial condition, and recovers the net (aero + inertial)
+maneuver load at each output time.
+
+- **Cards (ZAERO `MLOADS` family, `sbeam/model/maneuver.py`):** `MLOADS` is the driver and
+  references `MLDTRIM` (the initial-condition `TRIM` sid), `MLDTIME` (`t0/tend/dt/tout`), `MLDCOMD`
+  (one or more `(label, TABLED1)` command pairs — any AESTAT/AESURF label; uncommanded labels hold
+  their trim value), and `MLDPRNT` (ASCII output request). `TABLED1` is the general tabular
+  time→value function (linear interpolation; held/constant extrapolation beyond the table, so a
+  command ramps to a deflection and then holds).
+- **Method:** like the trim, the SUPORT r-set is held at the mean axis (`u_r = 0`) and the elastic
+  l-set is integrated with Newmark-β (β=¼, γ=½):
+  `M_ll ü + C_ll u̇ + (K_ll − q·Q_ll) u = f_aero_l + q·Q_ax_l·δ(t) + M_ax_l·a(t)`. The steady VLM is
+  re-evaluated at the instantaneous deformation and trim-variable state each step (Level-1
+  quasi-steady, `Ω×r` rate columns); no DLM, no apparent mass, no lag. Holding the command at the
+  trim value reproduces the Step 53 balanced load to machine precision (the l-set is integrated
+  directly, so this identity is exact). The initial acceleration is taken as zero (the run starts at
+  static equilibrium), so a singular lumped `M_ll` is tolerated.
+- **Convention (increment 1):** open-loop *prescribed-kinematics* — every trim variable is prescribed
+  (commanded or held). The net load closes to ≈ 0 when the commanded histories form a consistent
+  (trimmed) set; the per-step closure residual otherwise equals the instantaneous rigid-body net
+  force. Re-solving the free rigid-body variables each step (free-flight self-balancing), modal
+  reduction (`NMODES`), unsteady corrections, and a closed-loop control layer are Phase G0 follow-ons.
+- **Output (`results/maneuver_output.py`):** an MLDPRNT ASCII time-history table
+  (`<stem>.mldprnt.txt`: time, commands, aero `Fz`/`My`, closure norms, peak net load) and the
+  critical-sample (peak |net force|) net-load `FORCE`/`MOMENT` export (`<stem>.maneuver_qs_loads.bdf`).
+- **Gates (`tests/aero/test_maneuver_cards.py`, `tests/aero/test_maneuver_qs.py`):** card round-trip +
+  validation; G0→Step 53 machine-precision identity; quasi-static settling to the new balanced trim
+  (closure → 0, lift = `n_z·W`); per-step closure bounded; MLDPRNT + critical-load export round-trips.
+- **Validity:** low reduced frequency `k = ω·c_ref/2V ≲ 0.05–0.1` (slow maneuvers); higher-rate inputs
+  need the Phase G0 unsteady corrections or the Phase D DLM.
+
 ---
 
 ## Viewer — Aero Tab (S44)

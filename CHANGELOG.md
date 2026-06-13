@@ -13,6 +13,34 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Phase G0 increment 1 — DLM-free quasi-steady transient maneuver loads (2026-06-13)**
+
+A ZAERO `MLOADS`-style **transient** maneuver-loads capability without the DLM: time-integrate the
+elastic airframe response to a prescribed (open-loop) pilot-command history from a Step 53
+balanced-trim initial condition, recovering the net (aero + inertial) maneuver loads per output time.
+
+- **ZAERO `MLOADS` card set** (`sbeam/model/maneuver.py`, `sbeam/parser/bdf_reader.py`,
+  `sbeam/parser/case_control.py`): `MLOADS` (driver), `MLDTRIM` (initial-condition TRIM sid),
+  `MLDCOMD` (command label → time history), `MLDTIME` (t0/tend/dt/tout), `MLDPRNT` (ASCII output),
+  and the general `TABLED1` tabular function (linear interp, held extrapolation). Selected by an
+  `MLOADS = sid` subcase entry under SOL 144; full cross-reference validation.
+- **Solver** (`sbeam/solver/maneuver_qs.py`): `run_maneuver_qs` — Level-1 quasi-steady (`Ω×r`),
+  open-loop, restrained l-set Newmark-β (β=¼, γ=½) integration of
+  `M_ll ü + C_ll u̇ + (K_ll − q·Q_ll) u = f_aero_l + q·Q_ax_l·δ(t) + M_ax_l·a(t)`. The steady VLM is
+  re-evaluated at the instantaneous deformation and trim-variable state each step; per-step recovery
+  of displacements, CBAR loads, aero box forces, net (aero + inertial) grid loads, and closure.
+  Directly integrates the l-set so the steady state equals the Step 53 static load exactly.
+- **Output** (`sbeam/results/maneuver_output.py`, `sbeam/main.py`): MLDPRNT ASCII time-history table
+  (`<stem>.mldprnt.txt`) and the critical-sample net-load FORCE/MOMENT export
+  (`<stem>.maneuver_qs_loads.bdf`).
+- **Tests:** `tests/aero/test_maneuver_cards.py` (13 — card round-trip + validation) and
+  `tests/aero/test_maneuver_qs.py` (7 — G0→Step 53 machine-precision identity, quasi-static settling
+  to the new balanced trim, per-step closure, MLDPRNT + critical-load export round-trips). Full suite
+  870 pass.
+- **Scope:** increment 1 is open-loop prescribed-kinematics; free-flight rigid-body re-balancing,
+  modal reduction (`NMODES`), unsteady corrections (apparent mass / downwash lag / Wagner), and the
+  closed-loop control layer are documented Phase G0 follow-ons (`docs/30_future/00_backlog.md`).
+
 **Step 53 — balanced maneuver loads & inertia relief (2026-06-14)**
 
 SOL 144 now emits the net (aero + inertial) grid load for each balanced static maneuver — the

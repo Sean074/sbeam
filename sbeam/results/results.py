@@ -97,3 +97,33 @@ class Sol144TrimResult:
     q_div: Optional[float] = None             # critical divergence dynamic pressure (restrained l-set); None if none
     hinge_moments: Optional[dict] = None      # {AESURF label: {'total': HM/q at trim, <trim_label>: dHM/dδ}} about cid1 hinge axis
     trim_mode: str = "determined"             # "determined" or "over-determined" (Step 52)
+
+
+@dataclass
+class ManeuverStep:
+    """One output sample of a Phase G0 transient maneuver run."""
+    t: float                              # sample time
+    trim_vars: dict                       # {label: value} — commanded/held δ(t) at this time
+    displacements: np.ndarray             # (n_dofs,) g-set; SPC/SUPORT DOFs zeroed
+    bar_forces: dict                      # {eid: BarForce}
+    grid_loads: np.ndarray                # (n_dofs,) g-set aero flight load at this instant
+    inertial_loads: np.ndarray            # (n_dofs,) g-set inertial load = M_ax · a_urdd(t)
+    net_loads: np.ndarray                 # (n_dofs,) net (aero + inertial) load — stress deliverable
+    closure: np.ndarray                   # (6,) body-frame resultant (Fx..Mz) of net_loads about the ref
+    Fz_aero: float = 0.0                  # instantaneous aero Fz (force/q · q) = lift
+    My_aero: float = 0.0                  # instantaneous aero pitching moment about x_ref
+
+
+@dataclass
+class ManeuverResult:
+    """Result of a Phase G0 (DLM-free quasi-steady) transient maneuver subcase."""
+    subcase_id: int
+    mloads_sid: int
+    trim_sid: int                         # initial-condition TRIM sid (via MLDTRIM)
+    q: float                              # dynamic pressure
+    mach: float
+    labels: list                          # all trim-variable labels (column order)
+    times: np.ndarray                     # (n_out,) output sample times
+    steps: list                           # list[ManeuverStep], one per output sample
+    crit_index: int                       # index into steps of the peak |net force| sample
+    mldprnt_items: list = field(default_factory=list)  # requested ASCII-print quantity keywords

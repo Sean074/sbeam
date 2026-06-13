@@ -889,6 +889,23 @@ $M_{ax}$ is built per unit URDD acceleration; the net load is `Sol144TrimResult.
 per-case force/moment closure (V-C5) and a `<stem>.maneuver_loads.bdf` export. Gravity is folded
 into the load factor ($\text{URDD3} = -n_z g$), so no separate body-force term enters the trim.
 
+*Implemented (Phase G0 increment 1, `solver/maneuver_qs.py`):* the **transient** counterpart
+time-integrates a prescribed (open-loop) pilot-command history from this balanced trim as the
+initial condition. The SUPORT r-set is held at the mean axis exactly as in §7.3 and the elastic
+l-set responds, governed by
+
+$$
+M_{ll}\,\ddot u_l + C_{ll}\,\dot u_l + (K_{ll} - q\,Q_{ll})\,u_l
+   = f^{\text{aero}}_l + q\,Q_{ax,l}\,\delta(t) + M_{ax,l}\,a(t),
+$$
+
+integrated with the unconditionally stable Newmark-$\beta$ average-acceleration scheme. The
+right-hand side is the steady VLM (§5, §7.2 rate columns) evaluated at the instantaneous
+deformation and trim-variable state $\delta(t)$ plus the inertia-relief forcing — no DLM, no
+apparent mass, no lag (those are the §7.4–7.6 follow-ons). Because the RHS equals the §7.3 trim
+RHS when $\delta(t)=\delta_{\text{trim}}$, the steady state of the integration reproduces the
+balanced maneuver load exactly. Validity is the same $k \lesssim 0.05$–$0.1$ limit of §7.7.
+
 ### 7.4 Apparent (added) mass — the non-circulatory loads
 
 When the motion is fast enough that acceleration matters, a thin airfoil carries
