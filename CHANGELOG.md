@@ -40,6 +40,23 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 - **Tests.** Full suite 792 passed, 2 xfailed: end-to-end CLI run, f06 block coverage with
   AEROF/APRES gating, FORCE/MOMENT sum-to-lift + re-parse round-trip, SOL 144 case-control.
 
+**HA144A stability-derivative validation against ADA370433 (2026-06-13)**
+
+Cross-checked the HA144A trim case against an independent source — the ASTROS*/ZAERO
+Applications Manual (DTIC ADA370433, §3.1, Table 3.1.1) — which reproduces the MSC/NASTRAN
+longitudinal derivatives.
+
+- **New gate `tests/aero/test_ha144a_rigid_derivs.py`:** the full rigid longitudinal column
+  (C_Zα, C_Mα, C_Zq, C_Mq, C_Zδe, C_Mδe) is now regression-guarded against the document's
+  NASTRAN rigid values. sbeam already computed all six to 4 sig figs; only C_Zα/C_Mα had been
+  gated. Suite now 799 passed, 2 xfailed.
+- **AE8 targets sourced:** the document's UNRESTRAINED (mean-axis) column is recorded as
+  `NASTRAN_UNRESTRAINED` in `test_ae1_restrained_derivs.py` for the open AE8 acceptance —
+  previously "needs the MSC manual". Clarified that this is distinct from the MSC Table 7-1
+  RESTRAINED column (5.103) that V-AE1e gates; the two must not be conflated.
+- **Scope-boundary link:** `test_supersonic_trim_rejected` annotated to cite the document's
+  M=1.3 / q=1151 third flight condition (out of scope for the steady subsonic VLM).
+
 ### Removed
 
 **Half-span / symmetry (AEROS SYMXZ/SYMXY) support removed — sbeam is full-span only (2026-06-12)**
