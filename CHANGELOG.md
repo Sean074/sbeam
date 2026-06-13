@@ -27,6 +27,17 @@ Full validation pass over `docs/30_future/00_backlog.md` against the MSC HA144A 
   parity fix, not Step C), Steps C/D/F/G, AE8, AE13 (V-AE1/V-AE3), and the V-AE1 acceptance.
   The actual `sym` code fix is left for a dedicated change (confirm the HA144A REFS
   convention first).
+- **Full-span cross-check added (`sample/ha144a_fullspan_sbeam.bdf`).** Explicit 2× mirror of
+  HA144A (both wings/canards, SYMXZ=0, fuselage mass doubled → 16000 lb, CG_x=17.18 matched).
+  Ground truth with no symmetry assumption: uses a single-point ground (`SPC1 1246` at GRID 90
+  + `SUPORT 35`) rather than the half-model's centreline symmetry SPCs, so symmetry EMERGES
+  (antisymmetric centreline DOF = 1e-18, L/R wing tips identical). Passes the rigid-pitch
+  spline check and trims to **SC1 0.1711/0.4908 (101%/100% of NASTRAN), lift 16000 lb**,
+  independently confirming the parity diagnosis. It also REFINED the fix: `parity` is overloaded (it also selects the AIC
+  symmetry image vortices, which are required), so the fix decouples the force-scale (`sym=1`)
+  from the AIC parity — NOT simply `parity=0` (which removes the images and gives 0.302).
+  Surfaced a SEPARATE, still-open flexible residual at SC2 (q=1200): corrected half (0.0049)
+  and full-span (0.0032) both miss NASTRAN (0.0014) — Step G / AE8 territory, not parity.
 - **Test-gate weaknesses documented:** `test_trim_lift` is non-discriminating (lift=8000 lb
   for both sym=1 and sym=2); SC2 ANGLEA passes at 140% of target under the shared
   `ATOL_ANGLEA=1e-3`. Flagged for per-target relative tolerances.

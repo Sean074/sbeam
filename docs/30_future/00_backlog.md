@@ -86,9 +86,11 @@ and inertia is not — producing the observed clean halving. Evidence:
 
 The lead is **Step D (parity)**. Step C (`q·Q_aa` null space) is already satisfied to 2e-14
 and is NOT the lead. Step G (analytic restrained derivs) closes AE8's derivative half but
-does not move the trim angles. Before changing `sym`, confirm the HA144A `REFS=200`
-convention (whole- vs half-airplane reference area) so aero and inertia share one parity
-rule — the evidence above points to `sym=1` being correct for this deck.
+does not move the trim angles. The `sym=1` conclusion is **independently confirmed by an
+explicit full-span model** (`sample/ha144a_fullspan_sbeam.bdf`), which trims to NASTRAN at
+SC1 with no symmetry assumption — see Step D for the cross-check and the important caveat
+that `parity` is overloaded (it also selects the AIC image vortices, so the fix is NOT simply
+`parity=0`). A separate flexible-side residual remains at SC2 (q=1200) — Step G / AE8.
 
 ### Sequence at a glance
 
@@ -131,20 +133,41 @@ rect-planar only, no out-of-plane z≠0 grids).
 
 ### AE1 Step D — Parity fix in the trim balance
 
-**CRITICAL — this is the AE1 root cause.** The trim load path applies `sym=2` to the aero
-terms (`f_aero_g` sol144.py:833, `Q_ax_g` :795, `Q_aa` :822) but leaves the inertial term
-`M_ax`/`pres_inertial_g` (:873–874) at the raw whole-deck mass (no `sym`). The two paths
-must share ONE parity rule. Evidence (Diagnosis section) shows `sym=1` on the aero path
-yields BOTH the correct trim (0.1727/0.4893 vs NASTRAN 0.169191/0.492457) and the correct
-8000 lb lift on this deck. Fix options:
+**CRITICAL — this is the AE1 root cause (confirmed by a full-span cross-check, see below).**
+`run_sol144_trim` computes `sym = 2 if aero.parity != 0 else 1` (sol144.py:789) and applies
+it to the aero terms (`f_aero_g` :833, `Q_ax_g` :795, `Q_aa` :822) but leaves the inertial
+`M_ax`/`pres_inertial_g` (:873–874) un-doubled. The force `sym=2` is wrong: the half-model's
+image-vortex AIC already produces the per-side load that balances the deck's full 8000 lb at
+the correct angle, so the doubling halves ANGLEA/ELEV.
 
-- (a) drop `sym=2` on the aero path — aero is already normalised by the whole-airplane
-  `REFS=200`, so the half-model boxes balance the whole-airplane weight at `sym=1`; or
-- (b) if `sym=2` whole-airplane aero is intended, apply the SAME doubling to the inertial
-  mass path AND halve the deck mass — verify against the HA144A `REFS` convention first.
+**THE FIX IS SUBTLER THAN "use parity=0".** `parity` is OVERLOADED — it ALSO selects the
+symmetry image vortices in `build_ajj` (aero_model.py:82), which are CORRECT and REQUIRED.
+Passing `parity=0` to the half-model removes the images (wrong AIC) and makes the trim WORSE
+(ANGLEA 0.302, 178% of NASTRAN). The fix must DECOUPLE the two roles:
 
-Document the chosen rule and assert at trim entry that the aero and inertial parity factors
-are consistent.
+- keep `parity=±1` for the AIC (symmetry images on); and
+- use `sym=1` for the trim force/load scaling (remove the `2 if parity!=0` doubling from
+  `f_aero_g`, `Q_ax_g`, `Q_aa`), so aero and inertial share one rule (`sym=1`).
+
+Verified: half-model with image AIC + `sym=1` → SC1 0.1727/0.4893 (102%/99% of NASTRAN);
+current code (image AIC + `sym=2`) → 0.0860/0.2446 (≈50%). Introduce a dedicated force-scale
+factor distinct from `aero.parity`; assert at trim entry that the aero and inertial scales
+match. (NOTE the `sym=1` outcome means the doubling should simply be dropped for the HA144A
+`REFS`/per-side-mass convention; if a future deck genuinely needs whole-airplane reporting,
+scale aero AND inertia together — never one without the other.)
+
+**Full-span cross-check (`sample/ha144a_fullspan_sbeam.bdf`, added 2026-06-12):** an explicit
+2× mirror (both wings/canards, SYMXZ=0, fuselage mass doubled → 16000 lb, CG_x=17.18 matched)
+is ground truth with NO symmetry trickery. It uses a single-point ground (`SPC1 1246` at the
+reference GRID 90 + `SUPORT 35`), NOT the half-model's centreline symmetry SPCs — so symmetry
+EMERGES (antisymmetric centreline DOF = 1e-18, L/R wing tips identical to 1e-16) rather than
+being imposed, making it a genuinely independent check. It passes the rigid-pitch spline check
+and trims to **SC1 0.1711/0.4908 (101%/100% of NASTRAN), lift 16000 lb** — independently
+confirming the parity fix. *SC2 (q=1200) is a SEPARATE, still-open flexible issue:* the corrected half-model
+(0.0049) and the full-span (0.0032) both miss NASTRAN (0.0014), i.e. the `q·Q_aa`/restrained-
+derivative path (Step G / AE8) is genuinely imperfect at high q — the parity fix closes SC1
+but NOT SC2. (Caveat: the full-span shares one fuselage beam, so its SC2 structure is not a
+clean 2× of the half-model — SC2 full-vs-half is informative, not exact.)
 
 **Acceptance (rewritten — the old unit-Cp check would NOT catch this bug):** the prior
 "skj-path SUPORT-row force == `solve_rigid_cl` lift to 1e-6 for one unit-Cp injection"

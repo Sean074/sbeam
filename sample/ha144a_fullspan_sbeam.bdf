@@ -1,0 +1,215 @@
+$ HA144A — FULL-SPAN sbeam version (parity cross-check for AE1)
+$ Ref: MSC Nastran 2021.3 Aeroelastic Analysis User's Guide, Listing 7-1
+$
+$ Purpose: an explicit full-span model — NO symmetry doubling — built as an
+$ EXACT 2x mirror of the half-span ha144a_sbeam.bdf:
+$   * both wings + both canards modelled explicitly (SYMXZ=0)
+$   * fuselage centreline CONM2 masses DOUBLED, wing masses MIRRORED, so the
+$     full model is a precise 2x replica: same CL (W/S), same CG_x (=17.18 ft).
+$ By symmetry it MUST trim to the SAME ANGLEA/ELEV as the half-span (and as
+$ NASTRAN Listing 7-2: ANGLEA=0.169191, ELEV=0.492457). Total weight = 16000 lb
+$ (= 2 x 8000); trimmed lift must equal 16000 lb with parity=0 (sym=1).
+$
+$ Units: ft, lb, slug, s
+$
+SOL 144
+TITLE = HA144A sbeam full-span
+SUBCASE 1
+  TRIM   = 1
+  SPC    = 1
+SUBCASE 2
+  TRIM   = 2
+  SPC    = 1
+BEGIN BULK
+$
+$ ============================================================
+$ REFERENCE GEOMETRY  (SYMXZ=0 full-span; sref=400 = full wing area)
+$ ============================================================
+AEROS, 1, 100, 10.0, 40.0, 400.0, 0, 0, 0.9
+$
+$ ============================================================
+$ COORDINATE SYSTEMS
+$ ============================================================
+$ CID 1 — canard hinge axis (shared by both canards; hinge y-axis spanwise)
+CORD2R, 1, 0, 12.5, 0.0, 0.0, 12.5, 0.0, 10.0
++, 20.0, 0.0, 0.0
+$ CID 100 — stability axis (origin at GRID 90 = x=15 ft, z-down)
+CORD2R, 100, 0, 15.0, 0.0, 0.0, 15.0, 0.0, -10.0
++, 0.0, 0.0, 0.0
+$ CID 2 — RIGHT wing spline axis (x_hat = (-0.5, +0.866, 0): root->tip +y)
+CORD2R, 2, 0, 30.0, 0.0, 0.0, 30.0, 0.0, 10.0
++, 25.0, 8.66025, 0.0
+$ CID 3 — LEFT wing spline axis (x_hat = (-0.5, -0.866, 0): root->tip -y)
+CORD2R, 3, 0, 30.0, 0.0, 0.0, 30.0, 0.0, 10.0
++, 25.0, -8.66025, 0.0
+$
+$ ============================================================
+$ GRIDS
+$ ============================================================
+$ Fuselage (GRID 90 = reference/trim point at x=15 ft)
+GRID, 90,  , 15.0,     0.0,   0.0
+GRID, 97,  , 0.0,      0.0,   0.0
+GRID, 98,  , 10.0,     0.0,   0.0
+GRID, 99,  , 20.0,     0.0,   0.0
+GRID, 100, , 30.0,     0.0,   0.0
+$ RIGHT wing elastic axis + stringers (y > 0)
+GRID, 111, , 24.61325, 5.0,   0.0
+GRID, 110, , 27.11325, 5.0,   0.0
+GRID, 112, , 29.61325, 5.0,   0.0
+GRID, 121, , 18.83975, 15.0,  0.0
+GRID, 120, , 21.33975, 15.0,  0.0
+GRID, 122, , 23.83975, 15.0,  0.0
+$ LEFT wing elastic axis + stringers (y < 0, mirror)
+GRID, 211, , 24.61325, -5.0,  0.0
+GRID, 210, , 27.11325, -5.0,  0.0
+GRID, 212, , 29.61325, -5.0,  0.0
+GRID, 221, , 18.83975, -15.0, 0.0
+GRID, 220, , 21.33975, -15.0, 0.0
+GRID, 222, , 23.83975, -15.0, 0.0
+$
+$ ============================================================
+$ PROPERTIES AND MATERIALS
+$ ============================================================
+PBAR, 100, 1, 2.0, 0.173611, 0.15, 0.5
++, 1.0, 1.0, 1.0, -1.0, -1.0, 1.0, -1.0, -1.0
+PBAR, 101, 1, 1.5, 0.173611, 2.0, 0.462963
++, 0.5, 3.0, 0.5, -3.0, -0.5, 3.0, -0.5, -3.0
+MAT1, 1, 1.44+9, 5.40+8
+$
+$ ============================================================
+$ STRUCTURAL ELEMENTS
+$ ============================================================
+$ Fuselage CBARs
+CBAR, 101, 100, 97,  98,  0.0, 0.0, 1.0
+CBAR, 102, 100, 98,  90,  0.0, 0.0, 1.0
+CBAR, 100, 100, 90,  99,  0.0, 0.0, 1.0
+CBAR, 103, 100, 99,  100, 0.0, 0.0, 1.0
+$ RIGHT wing CBARs + RBARs
+CBAR, 110, 101, 100, 110, 0.0, 0.0, 1.0
+CBAR, 120, 101, 110, 120, 0.0, 0.0, 1.0
+RBAR, 111, 110, 111, 123456
+RBAR, 112, 110, 112, 123456
+RBAR, 121, 120, 121, 123456
+RBAR, 122, 120, 122, 123456
+$ LEFT wing CBARs + RBARs (mirror; root at fuselage GRID 100)
+CBAR, 210, 101, 100, 210, 0.0, 0.0, 1.0
+CBAR, 220, 101, 210, 220, 0.0, 0.0, 1.0
+RBAR, 211, 210, 211, 123456
+RBAR, 212, 210, 212, 123456
+RBAR, 221, 220, 221, 123456
+RBAR, 222, 220, 222, 123456
+$
+$ ============================================================
+$ POINT MASSES (slugs).  Total = 16000 lb = 2 x 8000.
+$   Fuselage centreline masses DOUBLED (46.618 -> 93.236) so the full model is
+$   an exact 2x replica (preserves CG_x = 17.18 ft and CL = W/S).
+$ ============================================================
+$ Fuselage: 1500 lb -> doubled = 3000 lb each = 93.236 slug
+CONM2, 97,  97,  0, 93.236
+CONM2, 98,  98,  0, 93.236
+CONM2, 99,  99,  0, 93.236
+CONM2, 100, 100, 0, 93.236
+$ RIGHT wing fwd 600 lb (18.647 slug), aft 400 lb (12.431 slug)
+CONM2, 311, 111, 0, 18.647
+CONM2, 321, 121, 0, 18.647
+CONM2, 312, 112, 0, 12.431
+CONM2, 322, 122, 0, 12.431
+$ LEFT wing (mirror)
+CONM2, 411, 211, 0, 18.647
+CONM2, 421, 221, 0, 18.647
+CONM2, 412, 212, 0, 12.431
+CONM2, 422, 222, 0, 12.431
+$
+$ ============================================================
+$ CONSTRAINTS — FULL-SPAN single-point ground (NOT the half-model symmetry BC).
+$   A full-span model must NOT carry the half-model's centreline symmetry SPCs
+$   (Ty,Rx,Rz along 97-100): those ground fuselage torsion and give the wing
+$   roots a rigid wall instead of the real wing->fuselage->wing load path, and
+$   they bake the symmetry assumption into what is meant to be an independent
+$   check.  Instead pin the 4 non-trim rigid-body modes (Tx,Ty,Rx,Rz) at the
+$   single reference point GRID 90; SUPORT carries the 2 symmetric trim DOF
+$   (Tz,Ry).  Under symmetric loads the antisymmetric DOF come out ~0 with no
+$   SPC needed, so the structure deforms freely (both wings react through the
+$   fuselage, not against a rigid centreline).
+$ ============================================================
+SPC1, 1, 1246, 90
+SUPORT, 90, 35
+$
+$ ============================================================
+$ AERODYNAMIC PANELS  (CAERO1 EIDs sorted: 1000,1100,2000,2100)
+$ ============================================================
+PAERO1, 1000
+$ RIGHT wing: 8 span x 4 chord = 32 boxes (1100-1131)
+CAERO1, 1100, 1000, 0, 8, 4, 0, 0, 1
++, 25.0, 0.0, 0.0, 10.0, 13.45299, 20.0, 0.0, 10.0
+$ RIGHT canard: 2 span x 4 chord = 8 boxes (1000-1007)
+CAERO1, 1000, 1000, 0, 2, 4, 0, 0, 1
++, 10.0, 0.0, 0.0, 10.0, 10.0, 5.0, 0.0, 10.0
+$ LEFT wing: 8 span x 4 chord = 32 boxes (2100-2131); tip at y=-20
+CAERO1, 2100, 1000, 0, 8, 4, 0, 0, 1
++, 25.0, 0.0, 0.0, 10.0, 13.45299, -20.0, 0.0, 10.0
+$ LEFT canard: 2 span x 4 chord = 8 boxes (2000-2007); tip at y=-5
+CAERO1, 2000, 1000, 0, 2, 4, 0, 0, 1
++, 10.0, 0.0, 0.0, 10.0, 10.0, -5.0, 0.0, 10.0
+$
+$ ============================================================
+$ SPLINES
+$ ============================================================
+$ RIGHT wing spline (CID 2, swept +y axis)
+SPLINE2, 1601, 1100, 1100, 1131, 1100, 0.0, 1.0, 2
++, 1.0, -1.0
+$ RIGHT canard spline (CID 1)
+SPLINE2, 1501, 1000, 1000, 1007, 1000, 0.0, 1.0, 1
++, 1.0, -1.0
+$ LEFT wing spline (CID 3, swept -y axis)
+SPLINE2, 2601, 2100, 2100, 2131, 2100, 0.0, 1.0, 3
++, 1.0, -1.0
+$ LEFT canard spline (CID 1; shares centreline fuselage SET1)
+SPLINE2, 2501, 2000, 2000, 2007, 2000, 0.0, 1.0, 1
++, 1.0, -1.0
+$
+$ Spline structural grid sets (elastic-axis grids only; collinear along axis)
+SET1, 1100, 100, 110, 120
+SET1, 1000, 98, 99
+SET1, 2100, 100, 210, 220
+SET1, 2000, 98, 99
+$
+$ ============================================================
+$ AERODYNAMIC TRIM VARIABLES
+$ ============================================================
+AESTAT, 501, ANGLEA
+AESTAT, 502, PITCH
+AESTAT, 503, URDD3
+AESTAT, 504, URDD5
+$
+$ ============================================================
+$ CONTROL SURFACE — ELEV drives BOTH canards (all 16 canard boxes)
+$ ============================================================
+AESURF, 505, ELEV, 1, 1000
+AELIST, 1000, 1000, 1001, 1002, 1003, 1004, 1005, 1006
++, 1007, 2000, 2001, 2002, 2003, 2004, 2005, 2006
++, 2007
+$
+$ ============================================================
+$ WING INCIDENCE: 0.1 deg = 0.001745 rad on all wing boxes (both wings)
+$ ============================================================
+W2GJ, 1, 1100
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
+W2GJ, 2, 2100
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
+$
+$ ============================================================
+$ TRIM CARDS — q=40 (SC1) and q=1200 (SC2), both M=0.9, 1g (URDD3=-32.174)
+$ ============================================================
+TRIM, 1, 0.9, 40.0, PITCH, 0.0, URDD3, -32.174
++, URDD5, 0.0
+TRIM, 2, 0.9, 1200.0, PITCH, 0.0, URDD3, -32.174
++, URDD5, 0.0
+$
+ENDDATA
