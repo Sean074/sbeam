@@ -71,7 +71,13 @@ def main() -> None:
     # SOL 144: also export the trimmed flight loads as FORCE/MOMENT cards for
     # downstream stress analysis (one card block per subcase, SID = subcase id).
     if sol144_results is not None:
-        from sbeam.results.load_export import write_aero_load_cards
+        from sbeam.results.load_export import (
+            write_aero_load_cards, write_maneuver_load_cards,
+        )
         loads_path = bdf_path.with_suffix(".aero_loads.bdf")
         write_aero_load_cards(str(loads_path), bulk, sol144_results)
         print(f"Written: {loads_path}")
+        # Step 53: net (aero + inertial) balanced-maneuver loads for stress.
+        man_path = bdf_path.with_suffix(".maneuver_loads.bdf")
+        write_maneuver_load_cards(str(man_path), bulk, sol144_results)
+        print(f"Written: {man_path}")

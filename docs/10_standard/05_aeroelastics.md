@@ -540,8 +540,20 @@ singular, so the full a-set is not used). `None` when the model does not diverge
 `<stem>.aero_loads.bdf` — comma free-field `FORCE`/`MOMENT` cards (unit scale factor;
 direction components carry the physical load) from `result.grid_loads` (`g_disp^T·q·f_box`),
 one card block per subcase with `SID = subcase_id`. By spline force/moment conservation the
-set sums to the trimmed lift/moment. The **maneuver-balanced** (aero + inertial) export
-remains Step 53.
+set sums to the trimmed lift/moment.
+
+**Balanced maneuver loads & inertia relief (Step 53).** Each balanced maneuver is a `TRIM`
+subcase with prescribed `AESTAT` accelerations/rates — a load factor maps to `URDD3 = −n_z·g`
+(`sbeam/model/maneuver_presets.load_factor_to_urdd3`; gravity folded into the load factor,
+NASTRAN convention). After the trim solve the inertial g-set load `M_ax·a` (final trim URDD,
+prescribed + solved-free) is recovered as `result.inertial_loads` and added to the aero load to
+give `result.net_loads` — the net deliverable for stress and the non-zero inertia column for
+MONPNT3. `write_maneuver_load_cards` writes these as `<stem>.maneuver_loads.bdf`.
+`result.maneuver_closure` is the body-frame 6-resultant of the net load; for a free aircraft
+(SUPORT, no SPC) it must balance to ≈ 0 (a non-zero residual warns — gravity/mass-model guard,
+KC9). Recipes: symmetric pull-up/push-over (prescribe `URDD3`, `PITCH=0`), steady roll
+(prescribe `ROLL` rate, `URDD4=0`; aileron free), steady sideslip (prescribe `SIDES`, `YAW=0`;
+rudder free). Gated by **V-C5** (`tests/aero/test_maneuver_loads.py`).
 
 ---
 

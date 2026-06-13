@@ -11,6 +11,34 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Phase 2 completion.
 
+### Added
+
+**Step 53 — balanced maneuver loads & inertia relief (2026-06-14)**
+
+SOL 144 now emits the net (aero + inertial) grid load for each balanced static maneuver — the
+load-generating deliverable for downstream stress and the non-zero inertia column that monitor
+points (MON3) will consume.
+
+- **`Sol144TrimResult.net_loads` / `inertial_loads`** (`sbeam/results/results.py`,
+  `sbeam/solver/sol144.py`): `inertial_loads = M_ax · a_all` uses the final trim accelerations
+  (prescribed AND solved-free URDD), via the new shared helper `_urdd_rcsid_to_basic` (extracted
+  from the previously-inline prescribed RCSID→basic transform); `net_loads = grid_loads +
+  inertial_loads`. Both reduce to the aero-only / zero case for a 1g determined trim, so existing
+  results are unchanged.
+- **Closure gate (V-C5 / KC9):** `Sol144TrimResult.maneuver_closure` stores the body-frame
+  6-resultant of the net load (`_load_resultant`); a pure free aircraft (SUPORT, no SPC) with a
+  non-zero residual raises a `UserWarning` (gravity double-count / mass-model guard).
+- **Export:** `build_maneuver_load_cards_text` / `write_maneuver_load_cards`
+  (`sbeam/results/load_export.py`) write the net load as FORCE/MOMENT cards to
+  `<stem>.maneuver_loads.bdf` (CLI: `sbeam/main.py`). Per-grid emission factored into
+  `_emit_force_moment_cards`, shared with the aero-only export.
+- **Presets:** `sbeam/model/maneuver_presets.py` — `load_factor_to_urdd3(n_z, g) = −n_z·g` plus
+  documented TRIM recipes for pull-up/push-over, steady roll, steady sideslip. Gravity is folded
+  into the URDD load factor (NASTRAN convention); no separate `GRAV` term in SOL 144.
+- **Tests:** `tests/aero/test_maneuver_loads.py` (V-C5) — full-span HA144A symmetric pull-up:
+  net symmetric resultant ≈ 0, lift = `n_z·W`, exact `n_z`-linear `net_loads` + CBAR loads,
+  per-grid export round-trip. 850 tests pass.
+
 ### Changed
 
 **AE1 Step F closed — V-AE1d trim acceptance re-framed to %-full-scale (2026-06-13)**

@@ -884,6 +884,11 @@ of §5.3 and solving gives the **balanced maneuver loads**; the recovered net (a
 grid loads are the deliverable for stress. This is a purely static computation built on §5 — no
 time integration and no unsteady aero.
 
+*Implemented (Step 53, see `docs/10_standard/05_aeroelastics.md`):* the inertia-relief column
+$M_{ax}$ is built per unit URDD acceleration; the net load is `Sol144TrimResult.net_loads`, with
+per-case force/moment closure (V-C5) and a `<stem>.maneuver_loads.bdf` export. Gravity is folded
+into the load factor ($\text{URDD3} = -n_z g$), so no separate body-force term enters the trim.
+
 ### 7.4 Apparent (added) mass — the non-circulatory loads
 
 When the motion is fast enough that acceleration matters, a thin airfoil carries

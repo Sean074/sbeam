@@ -521,28 +521,28 @@ equations) via constrained minimization. **Divergence:** solve the eigenvalue pr
   Over-determined solution may be a local optimum; document the initial-guess sensitivity
   (`TRIMVAR INITIAL`). Sign conventions on control-surface incidence.
 
-### Step 53 — Balanced maneuver loads & inertia relief
+### Step 53 — Balanced maneuver loads & inertia relief ✅ CLOSED (2026-06-14)
 - **Objective:** Compute balanced *static* maneuver loads — symmetric pull-up / push-over at a
   load factor, steady roll, steady yaw/sideslip — and output the **net (aero + inertial)** load
   for downstream stress. This is the static "maneuver loads" analogue of ZAERO's TRIM-based
-  flight loads (as distinct from the transient MLOADS of Phase G).
-- **Scope:** Each maneuver point is a `TRIM` subcase with prescribed `AESTAT` accelerations /
-  rates and load factor. Assemble the **inertia-relief load** `f_inertial = −M_aa · a` by
-  distributing the rigid-body acceleration field over the structural mass (`M_aa`, `CONM2`,
-  GPWG; `GRAV` for the gravity component), solve the trim (Step 52) so that aero + inertial +
-  gravity is in equilibrium in the body frame, and recover deflection + CBAR loads
-  (mode-acceleration recovery when the modal ROM is active). Steady **rotary** maneuvers
-  (roll/yaw rate) draw their damping aero from the antisymmetric VLM (Step 41 antisymmetric
-  images). Provide standard maneuver-case presets (symmetric pull-up/push-over, steady roll,
-  steady sideslip).
-- **Test/Acceptance (validation V-C5):** Symmetric pull-up at load factor `n_z` — the net
-  (aero + inertial) resultant equals `n_z · W` with zero residual force/moment in the body
-  frame; recovered CBAR loads scale linearly with `n_z`. A free-aircraft (SUPORT-referenced)
-  case balances to ≈0 net force/moment.
-- **Risk (KC9):** Inertia-relief load inconsistent with the prescribed accelerations
-  (gravity double-counted; lumped vs consistent mass) → net imbalance. Gate: assert
-  force/moment closure per maneuver case. Free-aircraft maneuvers need a rigid-body reference
-  (SUPORT-like) consistent with the Step 50 modal basis.
+  flight loads (as distinct from the transient MLOADS of Phase G). It is also the `MLDTRIM`
+  steady-state initial condition for the Phase G0 transient maneuver-load run.
+- **Delivered:** Each maneuver point is a `TRIM` subcase with prescribed `AESTAT` accelerations /
+  rates and load factor. The **inertia-relief load** `f_inertial = M_ax · a` (built per unit URDD
+  by `_build_inertial_cols`, Step 52) is recovered with the **final** trim accelerations as
+  `Sol144TrimResult.inertial_loads`; `net_loads = grid_loads + inertial_loads`. Deflection + CBAR
+  loads recover via the existing path (mode-acceleration when the modal ROM is active). Steady
+  **rotary** maneuvers draw damping aero from the antisymmetric VLM (Step 41 / Step 52 rate
+  columns). Presets: `load_factor_to_urdd3` + documented pull-up/push-over, steady roll, steady
+  sideslip recipes. **Gravity is folded into the load factor** (`URDD3 = −n_z·g`, NASTRAN
+  convention) — no separate `GRAV` body-force term enters the trim.
+- **Test/Acceptance (V-C5, `tests/aero/test_maneuver_loads.py`):** full-span HA144A symmetric
+  pull-up — net symmetric resultant `Fz`/`My` ≈ 0 to machine precision, lift = `n_z·W`, exact
+  `n_z`-linear `net_loads` + CBAR loads, per-grid export round-trip. The free-aircraft balance is
+  guarded by the closure warning (fires only when no SPC DOFs are present).
+- **Risk (KC9) — closed:** `maneuver_closure` stores the per-case net resultant; the free-aircraft
+  imbalance warning catches a gravity double-count or lumped-vs-consistent mass mismatch. Gravity
+  folded into URDD removes the double-count path by construction.
 
 ### Step 54 — CFD / wind-tunnel steady-pressure injection (mean-flow trim)
 - **Objective:** Allow the trim mean-flow aerodynamics to be supplied directly from CFD or

@@ -90,6 +90,10 @@ class Sol144TrimResult:
     box_cp: Optional[np.ndarray] = None       # (n_box,) ΔCp per box at trim (normal-projected force/q / area)
     box_forces: Optional[np.ndarray] = None   # (n_box, 3) physical aero force per box = q * (skj@gamma)
     grid_loads: Optional[np.ndarray] = None   # (n_dofs,) g-set aero flight-load vector = g_disp^T (q * f_box)
+    # --- Step 53 outputs (balanced maneuver loads & inertia relief) ---
+    inertial_loads: Optional[np.ndarray] = None  # (n_dofs,) g-set inertial load = M_ax @ a_all (final trim URDD); feeds MONPNT3 inertia column
+    net_loads: Optional[np.ndarray] = None       # (n_dofs,) g-set net maneuver load = grid_loads + inertial_loads (the stress deliverable)
+    maneuver_closure: Optional[np.ndarray] = None  # (6,) body-frame resultant (Fx,Fy,Fz,Mx,My,Mz) of net_loads about the moment ref; ≈0 for a balanced free-aircraft maneuver (V-C5/KC9)
     q_div: Optional[float] = None             # critical divergence dynamic pressure (restrained l-set); None if none
     hinge_moments: Optional[dict] = None      # {AESURF label: {'total': HM/q at trim, <trim_label>: dHM/dδ}} about cid1 hinge axis
     trim_mode: str = "determined"             # "determined" or "over-determined" (Step 52)

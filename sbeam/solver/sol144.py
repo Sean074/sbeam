@@ -377,6 +377,55 @@ def _compute_aset_data(bulk: BulkData, grid_index: dict, spc_sid) -> tuple:
     return T, dep_dofs, red_dofs, free_local, free_dofs
 
 
+def _urdd_rcsid_to_basic(
+    vec: np.ndarray, label_to_col: dict, R_rcsid: np.ndarray, has_rcsid: bool
+) -> np.ndarray:
+    """Rotate the URDD translational/rotational triples of a label-ordered trim
+    vector from the RCSID frame into the basic CID 0 frame (AE5).
+
+    ``vec`` is ordered by ``all_labels``; ``label_to_col`` maps each label to its
+    index.  Non-URDD entries (aero labels) pass through unchanged.  Absent URDD
+    components are treated as zero in the rotation, then only the present ones are
+    written back.  Returns a copy; the input is not mutated.
+    """
+    out = vec.copy()
+    if not has_rcsid:
+        return out
+    for triple_lbls in (['URDD1', 'URDD2', 'URDD3'], ['URDD4', 'URDD5', 'URDD6']):
+        present = {l: label_to_col[l] for l in triple_lbls if l in label_to_col}
+        if not present:
+            continue
+        triple = np.array([
+            out[label_to_col[l]] if l in label_to_col else 0.0 for l in triple_lbls
+        ])
+        triple_basic = R_rcsid @ triple
+        for i, lbl in enumerate(triple_lbls):
+            if lbl in present:
+                out[present[lbl]] = triple_basic[i]
+    return out
+
+
+def _load_resultant(
+    loads_g: np.ndarray, bulk: BulkData, grid_index: dict, ref_pos: np.ndarray
+) -> np.ndarray:
+    """Body-frame 6-component resultant (Fx,Fy,Fz, Mx,My,Mz) of a g-set load
+    vector about ``ref_pos``, summed over all grids.
+
+    Moments are taken about the (undeformed) grid positions in the basic CID 0
+    frame — the small-deflection convention used throughout the trim path.
+    """
+    F = np.zeros(3)
+    M = np.zeros(3)
+    for gid, gi in grid_index.items():
+        f = loads_g[gi * 6: gi * 6 + 3]
+        m = loads_g[gi * 6 + 3: gi * 6 + 6]
+        g = bulk.grids[gid]
+        r = np.array([g.x, g.y, g.z]) - ref_pos
+        F += f
+        M += m + np.cross(r, f)
+    return np.concatenate([F, M])
+
+
 def _build_inertial_cols(
     bulk: BulkData,
     all_labels: list,
@@ -1214,33 +1263,9 @@ def run_sol144_trim(
     # Transform prescribed URDD values from RCSID frame to basic frame (AE5).
     # pres_values_basic is used only for the inertial path; prescribed_dict
     # is preserved in RCSID-frame form so trim_vars output matches the input card.
-    # Transform prescribed URDD values from RCSID frame to basic frame (AE5).
-    # Build the full 3-vector with zeros for absent components, rotate, then write
-    # back only the components that are actually present in all_labels.
-    pres_values_basic = pres_values.copy()
-    if aeros.rcsid:
-        _trans_lbls = ['URDD1', 'URDD2', 'URDD3']
-        _rot_lbls   = ['URDD4', 'URDD5', 'URDD6']
-        t_map = {l: label_to_col[l] for l in _trans_lbls if l in label_to_col}
-        r_map = {l: label_to_col[l] for l in _rot_lbls   if l in label_to_col}
-        if t_map:
-            u_trans = np.array([
-                pres_values_basic[label_to_col[l]] if l in label_to_col else 0.0
-                for l in _trans_lbls
-            ])
-            u_trans_basic = R_rcsid @ u_trans
-            for i, lbl in enumerate(_trans_lbls):
-                if lbl in t_map:
-                    pres_values_basic[t_map[lbl]] = u_trans_basic[i]
-        if r_map:
-            u_rot = np.array([
-                pres_values_basic[label_to_col[l]] if l in label_to_col else 0.0
-                for l in _rot_lbls
-            ])
-            u_rot_basic = R_rcsid @ u_rot
-            for i, lbl in enumerate(_rot_lbls):
-                if lbl in r_map:
-                    pres_values_basic[r_map[lbl]] = u_rot_basic[i]
+    pres_values_basic = _urdd_rcsid_to_basic(
+        pres_values, label_to_col, R_rcsid, bool(aeros.rcsid)
+    )
 
     # Inertial sensitivity matrix (basic frame); prescribed inertial RHS (AE7).
     # M_ax_g[:, col] = dF/dURDD_col; zero for non-URDD labels.
@@ -1396,6 +1421,44 @@ def run_sol144_trim(
     # G_disp^T · q · P_k).  Preserves net force/moment through the spline.
     grid_loads = aero.g_disp.T @ (q_dyn * f_box_vec)
 
+    # ------------------------------------------------------------------ #
+    # Step 53 — balanced maneuver loads & inertia relief.
+    # The inertial g-set load is M_ax · a using the FINAL trim accelerations
+    # (prescribed AND solved-free URDD), not just the prescribed ones — the
+    # free URDD already entered the displacement solve via the M_ax_a column.
+    # Net (aero + inertial) grid loads are the deliverable for stress and the
+    # non-zero inertia column consumed by MONPNT3 (MON3).  For a 1g determined
+    # trim with URDD≈0 these reduce to the aero-only / zero case.
+    # ------------------------------------------------------------------ #
+    delta_all_basic = _urdd_rcsid_to_basic(
+        delta_all, label_to_col, R_rcsid, bool(aeros.rcsid)
+    )
+    inertial_loads = M_ax_g @ delta_all_basic     # (n_g,)
+    net_loads = grid_loads + inertial_loads       # (n_g,)
+
+    # Force/moment closure (V-C5 / KC9): body-frame resultant of the net
+    # (aero + inertial) load about the moment reference.  For a true free
+    # aircraft (SUPORT, no SPC) this must balance to ≈ 0 — a non-zero residual
+    # flags a gravity double-count or a lumped-vs-consistent mass mismatch.  For
+    # an SPC'd (e.g. half-span) model the residual legitimately equals the
+    # constraint reaction, so the hard warning fires only in the free case; the
+    # residual is always stored for the per-case acceptance test.
+    maneuver_closure = _load_resultant(net_loads, bulk, grid_index, suport_pos)
+    spc_dofs_closure = get_spc_dofs(bulk, spc_sid, grid_index) if spc_sid else []
+    if len(spc_dofs_closure) == 0:
+        aero_res = _load_resultant(grid_loads, bulk, grid_index, suport_pos)
+        f_scale = max(np.linalg.norm(aero_res[:3]), 1.0)
+        m_scale = max(np.linalg.norm(aero_res[3:]), 1.0)
+        if (np.linalg.norm(maneuver_closure[:3]) > 1e-6 * f_scale or
+                np.linalg.norm(maneuver_closure[3:]) > 1e-6 * m_scale):
+            warnings.warn(
+                f"SOL 144 maneuver closure: free-aircraft net (aero+inertial) "
+                f"resultant is non-zero (F={maneuver_closure[:3]}, "
+                f"M={maneuver_closure[3:]}) — check inertia relief / load factor "
+                f"(KC9).",
+                UserWarning,
+            )
+
     # Critical divergence dynamic pressure on the restrained l-set.
     K_ll_div = K_aa[np.ix_(l_idx, l_idx)]
     Q_ll_div = Q_aa[np.ix_(l_idx, l_idx)]
@@ -1423,6 +1486,9 @@ def run_sol144_trim(
         box_cp=box_cp,
         box_forces=box_forces,
         grid_loads=grid_loads,
+        inertial_loads=inertial_loads,
+        net_loads=net_loads,
+        maneuver_closure=maneuver_closure,
         q_div=q_div,
         hinge_moments=hinge_moments,
         trim_mode=trim_mode,

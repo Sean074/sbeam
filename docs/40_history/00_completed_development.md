@@ -34,7 +34,7 @@ defect (see backlog for Steps C, D, F, G); **R** (R1–R22) are 2026-05-25 / ear
 - [Infrastructure](#infrastructure) — SPARSE, CI1, TEST1, CI2, Step 34, R-defects (R1–R15), C-1, R20, VAL1
 - [Phase A — Static Aeroelastics (VLM)](#phase-a--static-aeroelastics-vlm) — Steps 39–44; resolved defects A1, A9, A2+A3, S45, Step 46, A4, A6
 - [Phase B — Structure ↔ Aero Splining](#phase-b--structure--aero-splining) — Steps 45, 46, 47, 49
-- [Phase C — SOL 144 Static Aeroelastics](#phase-c--sol-144-static-aeroelastics) — Steps 50, 51, 52 (determined + over-determined trim, longitudinal + lateral derivatives), 56, 58; resolved AE1 Step A, AE1 Step B, AE1 Step E, AE2, AE3, AE4+AE6, AE5+AE7
+- [Phase C — SOL 144 Static Aeroelastics](#phase-c--sol-144-static-aeroelastics) — Steps 50, 51, 52 (determined + over-determined trim, longitudinal + lateral derivatives), 53 (balanced maneuver loads & inertia relief), 56, 58; resolved AE1 Step A, AE1 Step B, AE1 Step E, AE2, AE3, AE4+AE6, AE5+AE7
 
 ---
 
@@ -3058,3 +3058,52 @@ Schur trim solver. (Determined trim, AE2–AE7, AE9, AE1 Steps A–G, AE10/Step 
 - **Lateral derivatives validated standalone:** the rigid lateral columns are gated by building the
   aero model + `D_jx` + `_compute_rigid_derivs` directly (no SUPORT/trim needed) — a full balanced
   antisymmetric roll/yaw *maneuver* is Step 53, not Step 52.
+
+### Phase C — Step 53: Balanced maneuver loads & inertia relief ✅ COMPLETE (2026-06-14)
+
+**Objective:** Turn the SOL 144 trim into a load-generating capability — emit the net
+(aero + inertial) grid load for each balanced static maneuver (symmetric pull-up/push-over at a
+load factor, steady roll, steady sideslip) for downstream stress, and guarantee force/moment
+closure per maneuver case (KC9).
+
+**Context:** the inertia-relief math itself shipped with Step 52 — `_build_inertial_cols` builds
+the inertial sensitivity `M_ax` (force per unit URDD acceleration; CONM2 + CBAR mass, translation
++ rotation + transport), the trim RHS already carries `M_ax · a` for prescribed URDD, and the
+Schur solve carries free-URDD columns. Step 53 adds the **explicit net-load deliverable**, the
+**closure gate**, the **export**, and the **maneuver presets**.
+
+**Deliverables:**
+- **Net load on the result (`sbeam/solver/sol144.py`, `results/results.py`):** after the trim
+  solve, `inertial_loads = M_ax · a_all` uses the **final** trim accelerations (prescribed AND
+  solved-free URDD), transformed RCSID→basic by the new shared helper `_urdd_rcsid_to_basic`
+  (extracted from the previously-inline prescribed transform). `net_loads = grid_loads +
+  inertial_loads` is the stress deliverable; `inertial_loads` is the non-zero inertia column the
+  future MONPNT3 (MON3) consumes. Both default to the aero-only / zero case for a 1g determined
+  trim (URDD≈0), so existing results are unchanged.
+- **Closure gate (V-C5 / KC9):** `_load_resultant` reduces a g-set load to a body-frame
+  6-resultant; `maneuver_closure` stores the net (aero+inertial) resultant about the moment
+  reference. For a pure free aircraft (SUPORT, no SPC) a non-zero residual raises a `UserWarning`
+  (gravity double-count / lumped-vs-consistent mass guard); for an SPC'd model the residual
+  legitimately equals the constraint reaction and the warning is suppressed.
+- **Export (`results/load_export.py`, `main.py`):** `build_maneuver_load_cards_text` /
+  `write_maneuver_load_cards` emit the net load as FORCE/MOMENT cards to
+  `<stem>.maneuver_loads.bdf` (alongside the existing aero-only `<stem>.aero_loads.bdf`). The
+  per-grid emission loop was factored into `_emit_force_moment_cards`, shared with the aero export.
+- **Presets (`sbeam/model/maneuver_presets.py`):** `load_factor_to_urdd3(n_z, g) = −n_z·g`, plus
+  documented TRIM recipes for pull-up/push-over, steady roll, and steady sideslip. No new card.
+- **Gravity convention:** folded into the URDD load factor (NASTRAN; `URDD3 = −n_z·g`); no
+  separate `GRAV` body-force term in SOL 144. Single-sources the inertial path and matches the
+  existing AE5/AE7 URDD tests.
+
+**Test/Acceptance (V-C5, `tests/aero/test_maneuver_loads.py`):** on the full-span HA144A deck —
+which pins only the antisymmetric DOFs (SPC1 1246 on GRID 90) and SUPORTs the symmetric trim DOFs
+(35) — a symmetric pull-up gives (1) net symmetric resultant `Fz`, `My` ≈ 0 to machine precision,
+(2) trimmed aero lift = `n_z·W` (W = Σ CONM2 mass · g) to 1e-6, (3) `net_loads` and recovered
+CBAR loads scale **exactly** 2.5× from 1g→2.5g, and (4) per-grid round-trip of the exported
+maneuver FORCE cards. 5/5 green; full aero suite unchanged.
+
+**Key decisions:**
+- Inertial load uses the **final** trim URDD (not just prescribed) so a free load-factor variable
+  contributes to the recovered net load consistently with the displacement solve.
+- The free-aircraft closure warning keys on **absence of SPC DOFs**, not on the residual alone, so
+  half-span / antisymmetric-pinned models (whose residual is a real reaction) don't false-positive.

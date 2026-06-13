@@ -22,18 +22,24 @@ null-space guard complete. **Step 52 fully closed (2026-06-14).**
 
 | # | Item | Kind | Status | Why here / what it unblocks |
 |--:|------|------|--------|------------------------------|
-| 1 | [Step 53 — balanced maneuver loads & inertia relief](#step-53--balanced-maneuver-loads--inertia-relief) | Code | Open | The load-generating capability; non-zero inertia column feeds monitor loads |
-| 2 | [Monitor points MON1–MON4 / V-MON1](#monitor-points--section-loads--phase-1-static) | Code | Open | Structures-team loads handoff per trim case; needs trim, benefits from maneuver (1) |
-| 3 | [AE8b — unrestrained (mean-axis) derivative column](#major-ae8b--unrestrained-mean-axis-derivative-formulation-known-wrong) | Code | Open (known-wrong first attempt) | Completes the derivative deliverable; off the trim critical path — can run in parallel |
-| 4 | [Step 55 — DIVERG q-sweep + mode shape + V_div](#step-55--aeroelastic-divergence-diverg) | Code | Open (single `q_div` done) | `DIVERG`-card-driven sweep and the divergence eigenvector |
-| 5 | [Step 54 — CFD / wind-tunnel mean-flow injection](#step-54--cfd--wind-tunnel-steady-pressure-injection-mean-flow-trim) | Code | Open | Optional mean-flow enhancement; lower priority |
-| 6 | [Step 57 — Viewer: SOL 144 results (THE INTERFACE)](#step-57--viewer-sol-144-results) | Code | Open | **CLOSING ITEM** — surfaces trim, derivatives, `q_div`, deflected shape, box `cp`, monitor loads in the UI |
+| 1 | [Monitor points MON1–MON4 / V-MON1](#monitor-points--section-loads--phase-1-static) | Code | Open | Structures-team loads handoff per trim case; needs trim, consumes the Step 53 non-zero inertia column |
+| 2 | [AE8b — unrestrained (mean-axis) derivative column](#major-ae8b--unrestrained-mean-axis-derivative-formulation-known-wrong) | Code | Open (known-wrong first attempt) | Completes the derivative deliverable; off the trim critical path — can run in parallel |
+| 3 | [Step 55 — DIVERG q-sweep + mode shape + V_div](#step-55--aeroelastic-divergence-diverg) | Code | Open (single `q_div` done) | `DIVERG`-card-driven sweep and the divergence eigenvector |
+| 4 | [Step 54 — CFD / wind-tunnel mean-flow injection](#step-54--cfd--wind-tunnel-steady-pressure-injection-mean-flow-trim) | Code | Open | Optional mean-flow enhancement; lower priority |
+| 5 | [Step 57 — Viewer: SOL 144 results (THE INTERFACE)](#step-57--viewer-sol-144-results) | Code | Open | **CLOSING ITEM** — surfaces trim, derivatives, `q_div`, deflected shape, box `cp`, monitor loads in the UI |
 
 **Step 52 is now CLOSED (2026-06-14)** — over-determined (redundant-control) trim via null-space
 reduction + weighted-L2 TRIMOBJ/TRIMCON/TRIMVAR, and the ROLL/YAW/SIDES rate-aero **moment**
 derivatives `C_lp`, `C_nr`, and the dihedral effect `C_lβ`. Gates V-C4
 (`tests/aero/test_trim_overdetermined.py`) and V-LAT (`tests/aero/test_lateral_derivs.py`). Full
 detail in CHANGELOG `[Unreleased]` + `docs/40_history`.
+
+**Step 53 (balanced maneuver loads & inertia relief) is CLOSED (2026-06-14)** — the trim now
+emits the net (aero + inertial) grid load (`Sol144TrimResult.net_loads` / `inertial_loads`),
+exports it as `<stem>.maneuver_loads.bdf`, and asserts force/moment closure per maneuver case.
+Gated by **V-C5** (`tests/aero/test_maneuver_loads.py`): symmetric-pull-up closure ≈ 0, lift =
+`n_z·W`, and exact `n_z`-linear CBAR loads. The non-zero `inertial_loads` column is the input the
+monitor-point MON3 inertia contribution consumes. Full detail in CHANGELOG + `docs/40_history`.
 
 **Step 58 (dihedral / anhedral ±Γ correctness) is CLOSED (2026-06-14)** — the
 VLM→spline→force→trim chain is now permanently gated out of the xy-plane by **V-C-DIH**
@@ -458,35 +464,6 @@ Step 52 (determined **and** over-determined trim, longitudinal + lateral derivat
 
 ---
 
-### Step 53 — Balanced maneuver loads & inertia relief
-
-**Objective:** Compute balanced static maneuver loads — symmetric pull-up/push-over at a
-load factor, steady roll, steady yaw/sideslip — and output the net (aero + inertial)
-load for downstream stress analysis.
-
-**Scope/Deliverables:**
-- Each maneuver point is a `TRIM` subcase with prescribed `AESTAT`
-  accelerations/rates and load factor
-- Assemble `f_inertial = −M_aa · a` by distributing the rigid-body acceleration field
-  over the structural mass (`M_aa`, `CONM2`, GPWG; `GRAV` for gravity); solve the trim
-  (Step 52) so that aero + inertial + gravity is in equilibrium in the body frame
-- Recover deflection + CBAR loads (mode-acceleration recovery when the modal ROM is
-  active)
-- Steady rotary maneuvers draw their damping aero from the antisymmetric VLM (Step 41)
-- Standard maneuver-case presets: symmetric pull-up/push-over, steady roll, steady
-  sideslip
-
-**Test/Acceptance (V-C5):** Symmetric pull-up at load factor `n_z` — net
-(aero + inertial) resultant equals `n_z · W` with zero residual force/moment in body
-frame; recovered CBAR loads scale linearly with `n_z`. A free-aircraft
-(SUPORT-referenced) case balances to ≈ 0 net force/moment.
-
-**Risk (KC9):** Inertia-relief inconsistent with prescribed accelerations (gravity
-double-counted; lumped vs consistent mass) → net imbalance — assert force/moment closure
-per maneuver case.
-
----
-
 ### Step 54 — CFD / wind-tunnel steady-pressure injection (mean-flow trim)
 
 **Objective:** Allow the trim mean-flow aerodynamics to be supplied directly from CFD or
@@ -634,9 +611,10 @@ Per-grid force tally over the user `SET1` collection:
   the same T matrix as AE1 Step B1's `_expand_to_g`** — load on a slave grid maps to
   the master via the kinematic transform. This is where sbeam beats NASTRAN MONPNT3.
 - **Inertia contribution:** `(M_gg · ü_g)` from the prescribed rigid-body acceleration
-  field of the trim case. Zero by construction for the determined plain trim (Step 52);
-  becomes load-bearing once Step 53 maneuver trim lands. Phase 1 emits the inertia
-  column unconditionally — it's just zero in the steady case.
+  field of the trim case — available directly as `Sol144TrimResult.inertial_loads`
+  (Step 53, CLOSED). Zero by construction for the determined plain 1g trim; load-bearing
+  for a balanced maneuver (non-zero URDD). Phase 1 emits the inertia column
+  unconditionally — it's just zero in the steady case.
 - **Reaction contribution:** SPC reaction at the SUPORT grids only (avoid
   double-counting — reaction is already in equilibrium with aero+inertia per the
   Schur r-set row).
@@ -695,7 +673,8 @@ Plus one `MONPNT1` summing the wing CAERO1 boxes (aero-only sanity check).
 1. **Coordinate frames.** Support `CID = 0` (basic), `AEROS.RCSID` (aero), and
    user-defined `CORD2R` from day 1 — no incremental rollout.
 2. **Inertia source.** For Phase 1, `ü` is taken from the trim case (zero for plain
-   trim, non-zero only when Step 53 maneuver lands). No external mass-distribution
+   trim, non-zero for a balanced maneuver) — available directly as
+   `Sol144TrimResult.inertial_loads` (Step 53, closed). No external mass-distribution
    overlay in Phase 1; defer the typical loads-workflow "fuel/payload sweep" to a
    later add.
 3. **Parity.** Single-source via the same `sym` factor used in AE1 Step A. Annotate
