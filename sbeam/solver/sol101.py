@@ -252,7 +252,8 @@ def run_sol101(bulk: BulkData, subcase: SubcaseControl) -> Sol101Result:
     load_sid = subcase.load_sid
     spc_sid = subcase.spc_sid
 
-    check_spc_enforced_displacements(bulk, spc_sid)
+    if spc_sid is not None:
+        check_spc_enforced_displacements(bulk, spc_sid)
 
     # Load vector (saved before RBE3 transform for reaction correction)
     if load_sid is None:

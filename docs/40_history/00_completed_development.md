@@ -482,6 +482,34 @@ The two top-level functions serve distinct use cases:
 
 ## Resolved Defects
 
+### R16–R22: Documentation gaps + NITs (2026-06-12 backlog review) ✅ RESOLVED / removed
+
+Closed and removed from `docs/30_future/00_backlog.md` during the 2026-06-12 backlog
+validation review (validated against the MSC HA144A reference).
+
+- **R16** (program_overview.md — module table omits `load_vector.py`; verification table
+  missing V15–V18): valid gap at filing (2026-05-25); FIXED by the 2026-06-10 doc
+  restructure (`00_program_overview.md:33` row; V15–V18 at lines 190–193). Confirmed via git.
+- **R17** (beam_model.md "Cards recognised" omits GRAV/RBAR): MISIDENTIFIED — cited line 585
+  is a CAERO1 continuation note; the real summary line (`01_beam_model.md:761`) already
+  lists GRAV and RBAR. No edit required.
+- **R18** (static_analysis.md stale module ref + missing CBUSH/RBAR/GRAV verification): valid
+  gap at filing; FIXED by the 2026-06-07/06-10 restructure. One residual carried forward as
+  backlog **R23** (`03_static_analysis.md:307` `recover_bar_forces` signature mismatch).
+- **R19** (no non-coincident RBAR lever-arm integration test): MISIDENTIFIED — already
+  covered by `tests/integration/test_verification.py::TestV19RbarLeverArm` +
+  `tests/integration/bdf/v19_rbar_offset.bdf`.
+- **R21** (`check_spc_enforced_displacements` called with possibly-None `spc_sid`): FIXED —
+  `if spc_sid is not None:` guard at `sbeam/solver/sol101.py:255`.
+- **R22** (`main.py` imports `_build_f06_*` by private name): FIXED — added public aliases
+  `build_f06_sol101_text` / `build_f06_sol103_text` in `sbeam/results/f06_writer.py`;
+  updated `main.py` and `viewer/app.py` (both were private importers).
+
+**Acceptance:** `tests/solver/` + `tests/results/` pass (59) after the R21/R22 edits;
+`import sbeam.main` and the new public aliases verified.
+
+---
+
 ### B1: Viewer — Case Control UI Export ✅ FIXED
 
 **Root cause:** The case control panel uses `st.form()`. On form submission Streamlit

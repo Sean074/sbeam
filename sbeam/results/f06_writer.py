@@ -283,3 +283,10 @@ def write_f06_sol103(
     """Write NASTRAN-style .f06 file for SOL 103 normal modes results."""
     with open(filepath, "w") as fh:
         fh.write(_build_f06_sol103_text(case_control, bulk, result, subcase_id))
+
+
+# Public aliases (R22): callers that need the assembled f06 *text* (main.py CLI,
+# viewer) should import these, not the underscore-prefixed names — a rename of the
+# private builders would otherwise silently break those cross-module imports.
+build_f06_sol101_text = _build_f06_sol101_text
+build_f06_sol103_text = _build_f06_sol103_text

@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from sbeam.parser.bdf_reader import parse_bdf
-from sbeam.results.f06_writer import _build_f06_sol101_text, _build_f06_sol103_text
+from sbeam.results.f06_writer import build_f06_sol101_text, build_f06_sol103_text
 
 
 def main() -> None:
@@ -31,11 +31,11 @@ def main() -> None:
         if cc.sol == 101:
             from sbeam.solver.sol101 import run_sol101
             results = {sc.subcase_id: run_sol101(bulk, sc) for sc in cc.subcases}
-            build_text = _build_f06_sol101_text
+            build_text = build_f06_sol101_text
         elif cc.sol == 103:
             from sbeam.solver.sol103 import run_sol103
             results = {sc.subcase_id: run_sol103(bulk, sc) for sc in cc.subcases}
-            build_text = _build_f06_sol103_text
+            build_text = build_f06_sol103_text
         else:
             sys.exit(f"Error: SOL {cc.sol} is not supported")
     except Exception as exc:

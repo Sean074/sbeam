@@ -486,7 +486,7 @@ def _run_analysis(bulk: BulkData) -> None:
 
 def _render_f06_export(bulk: BulkData) -> None:
     """Show f06 export controls after a successful analysis."""
-    from sbeam.results.f06_writer import _build_f06_sol101_text, _build_f06_sol103_text
+    from sbeam.results.f06_writer import build_f06_sol101_text, build_f06_sol103_text
 
     cc = st.session_state.case_control
     sol101 = st.session_state.sol101_result
@@ -504,10 +504,10 @@ def _render_f06_export(bulk: BulkData) -> None:
     parts = []
     if sol101 is not None:
         for sc_id, result in sorted(sol101.items()):
-            parts.append(_build_f06_sol101_text(cc, bulk, result, sc_id))
+            parts.append(build_f06_sol101_text(cc, bulk, result, sc_id))
     else:
         for sc_id, result in sorted(sol103.items()):
-            parts.append(_build_f06_sol103_text(cc, bulk, result, sc_id))
+            parts.append(build_f06_sol103_text(cc, bulk, result, sc_id))
     f06_text = "".join(parts)
 
     col1, col2 = st.columns([3, 1])

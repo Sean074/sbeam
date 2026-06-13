@@ -14,28 +14,29 @@ Order reflects what unblocks the most downstream work; close in sequence unless 
 
 | # | Item | Severity | Status | What it unblocks |
 |--:|------|----------|--------|------------------|
-| 1 | [AE1 Step D — Parity audit in the trim balance](#ae1-step-d--parity-audit-in-the-trim-balance) | CRITICAL | Open | Hardens Step A's parity fix; investigates the ANGLEA/ELEV gap |
-| 2 | [AE1 Step C — `Q_aa` rigid-body null-space gate](#ae1-step-c--q_aa-rigid-body-null-space-gate) | CRITICAL | Open | Permanent regression for B's spline fix; prime suspect for the ELEV gap |
-| 3 | [AE1 Step F — Verify V-AE1d elastic trim](#ae1-step-f--verify-v-ae1d-elastic-trim) | CRITICAL | Open | Closes V-AE1 SC1/SC2 ANGLEA/ELEV |
-| 4 | [AE1 Step G — Analytic restrained derivatives](#ae1-step-g--analytic-restrained-derivatives) | CRITICAL | Open | Closes V-AE1e and AE8 |
-| 5 | [AE9 — Per-TRIM Mach (currently AEROS.mach only)](#major-ae9--mach-is-a-property-of-the-model-not-the-flight-condition) | MAJOR | Open | Multi-Mach subcases (HA144A's 3rd SC) |
+| 1 | [AE1 Step D — Fix the `sym=2` aero/inertia parity double-count](#ae1-step-d--parity-fix-in-the-trim-balance) | CRITICAL | Open | **Root cause** of the SC1/SC2 ANGLEA/ELEV ~50% halving; closes V-AE1d |
+| 2 | [AE1 Step F — Verify V-AE1d elastic trim](#ae1-step-f--verify-v-ae1d-elastic-trim) | CRITICAL | Open | Acceptance gate; goes green once Step D lands |
+| 3 | [AE1 Step G — Analytic restrained derivatives](#ae1-step-g--analytic-restrained-derivatives) | MAJOR | Open | Closes AE8 derivative half (NOT on the trim critical path) |
+| 4 | [AE1 Step C — `Q_aa` rigid-body null-space gate](#ae1-step-c--q_aa-rigid-body-null-space-gate) | MINOR | Open | Regression guard for B's spline fix — null space already satisfied to 2e-14; NOT the ELEV lead |
+| 5 | [AE9 — Per-TRIM Mach (currently AEROS.mach only)](#major-ae9--mach-is-a-property-of-the-model-not-the-flight-condition) | MAJOR | Open | Subsonic multi-Mach subcases (HA144A SC3 is supersonic — out of scope) |
 | 6 | [AE10 — Wire `parity` from `AEROS.SYMXZ`; SOL 144 CLI dispatch](#major-ae10--parity-not-wired-from-aerossymxz-sol-144-unreachable-from-main) | MAJOR | Open | End-to-end HA144A solve from main.py |
 | 7 | [AE11 — D_jx YAW column + AESURF hinge geometry](#minor-ae11--d_jx-yaw-column-duplicates-roll-aesurf-hinge-geometry-ignored) | MINOR | Open | Vertical-fin trim, hinge-moment derivs |
-| 8 | [AE12 — PG normals + SPLINE2 DTOR/DTHZ warnings](#minor-ae12--pg-compression-keeps-original-normals-spline2-dtordthz-silently-ignored) | MINOR | Open | Dihedral correctness; user-input safety |
+| 8 | [AE12 — SPLINE2 DTOR/DTHZ warning (PG-normal half not a bug)](#minor-ae12--spline2-dtordthz-silently-ignored-pg-normal-half-misidentified) | MINOR | Open | User-input safety (PG-normal half re-diagnosed: not a bug) |
 | 9 | [A7 — Cosine chordwise spacing helper + low-NCHORD warning](#minor-a7--default-chordwise-box-count-too-low-no-cosine-chordwise-spacing) | MINOR | Open (code) | Pitching-moment convergence |
 | 10 | [A8 — Box-AR pre-solve warning](#minor-a8--spanwise-box-count-aspect-ratio-must-be-o1-companion-to-a7) | MINOR | Open (code) | Lift-slope bias on high-AR boxes |
-| 11 | [R16–R19 docs + R21, R22 NITs](#minor-r16r19--documentation-gaps-and-r21r22-nits) | MINOR/NIT | Open | Code-standard documentation hygiene |
-| 12 | [Phase C Steps 53–57](#phase-c--sol-144-static-aeroelastics-steps-5357) | Planned | Blocked on AE1 | Maneuver loads, divergence, viewer |
-| 13 | [Monitor points & section loads — Phase 1 (static)](#monitor-points--section-loads--phase-1-static) | Planned | Blocked on AE1, AE10 | Structures-team loads handoff; precursor to dynamic gust loads at monitors |
-| 14 | [Phase 2 / Phase 3 / Future development](#phase-2--phase-3--future-development) | Planned | Optional | Long-tail capability |
+| 11 | [Phase C Steps 53–57](#phase-c--sol-144-static-aeroelastics-steps-5357) | Planned | Blocked on AE1 | Maneuver loads, divergence, viewer |
+| 12 | [Monitor points & section loads — Phase 1 (static)](#monitor-points--section-loads--phase-1-static) | Planned | Blocked on AE1, AE10 | Structures-team loads handoff; precursor to dynamic gust loads at monitors |
+| 13 | [Phase 2 / Phase 3 / Future development](#phase-2--phase-3--future-development) | Planned | Optional | Long-tail capability |
 
 **Closed in this branch (full detail in CHANGELOG `[Unreleased]` and history):** AE2,
 AE3, AE4, AE5, AE6, AE7. AE1 Step A (parity + My sign, 2026-06-12). AE1 Step B (RBAR
 expansion, EA-only SET1, spline math fix, V-AE1b gate; 2026-06-12 — `g_slope`/`g_disp`
 now reproduce all 6 basic-frame rigid-body modes on the swept HA144A spline). AE1 Step E
 (moment-sign single-source helper `_pitch_moment` + VW-moment consistency gate,
-2026-06-12 — confirmed the trim moment sign was already correct post-A; **ANGLEA/ELEV gap
-is the flexible `q·Q_aa` increment, not a sign error** — reassigned to Steps C/D).
+2026-06-12 — confirmed the trim moment sign was already correct post-A). **NB (2026-06-12
+review correction): Step E's onward re-diagnosis — "ANGLEA/ELEV gap is the flexible `q·Q_aa`
+increment" — was itself WRONG. The gap is a `sym=2` aero/inertia parity double-count in the
+trim load path (see Step D and the Diagnosis section below), not flexibility.**
 
 ---
 
@@ -59,79 +60,124 @@ is the flexible `q·Q_aa` increment, not a sign error** — reassigned to Steps 
 | Wing incidence (rigid pitch θ=1e-3) | +1.000e-3 | +1.000e-3 ± 1e-10 | ✓ |
 
 The Schur algebra forms `K_eff = K_aa − q·Q_aa` correctly. With Steps A, B and E closed,
-`Q_aa` and the trim aero balance are no longer contaminated, lift balance is exact, the
-spline reproduces global rigid-body modes, and the pitching-moment sign is confirmed
-correct end-to-end (Step E: the `g_disp` virtual-work moment driving the Schur r-set row
-matches the direct box-moment formula to ~1e-6 relative and `solve_rigid_cl.CMα`).
+the spline reproduces global rigid-body modes and the pitching-moment sign is confirmed
+correct end-to-end. **But the "lift balance is exact" reassurance is a red herring:** the
+SUPORT Tz force row re-scales ANGLEA/ELEV to hit 8000 lb regardless of any aero-vs-inertia
+parity mismatch, so exact lift does NOT prove the aero balance is uncontaminated — it
+passes for both `sym=1` and `sym=2`.
 
-**Diagnosis update (Step E, 2026-06-12):** the remaining ANGLEA/ELEV error is **not** a
-moment-sign defect. A direct *rigid* 2×2 trim from the (correct) derivatives gives
-ELEV ≈ +0.795; the Schur *flexible* solve gives +0.245. The gap is the `q·Q_aa` flexible
-increment being too large at q=40 — addressed by Steps C (null-space gate) and D (parity
-audit), not the moment column. Step G then closes the restrained-derivative half.
+**Diagnosis (CORRECTED — 2026-06-12 review):** the remaining ANGLEA/ELEV error is a
+**`sym=2` aero/inertia parity double-count**, not the flexible `q·Q_aa` increment. In
+`run_sol144_trim` the aero terms carry `sym=2` for the SYMXZ=1 half-model (`f_aero_g`
+sol144.py:833, `Q_ax_g` :795, `Q_aa` :822) but the inertial term `M_ax`/`pres_inertial_g`
+(:873–874) carries the raw whole-deck mass with no `sym`. The Tz force row balances either
+way (hence lift=8000 in both), but the Ry **moment** row mis-splits when aero is doubled
+and inertia is not — producing the observed clean halving. Evidence:
+
+- Running the solver: `sym=2` (current) → ANGLEA/ELEV = 0.0860/0.2446; forcing `sym=1` →
+  0.1727/0.4893 (NASTRAN 0.169191/0.492457), both with lift ≈ 7999 lb. Ratios 0.50/0.50.
+- Independent hand-trim with NASTRAN's own restrained q=40 derivatives + the inertial
+  pitching moment (weight at deck CG x≈17.18, 2.18 ft aft of GRID 90 x=15) → 0.1699/0.4916
+  ≈ NASTRAN. Omitting that inertial moment reproduces the bogus "rigid 0.795" baseline that
+  the old (flexibility) diagnosis leaned on.
+- Flexibility at q=40 is a 0.6% effect (Table 7-1: restrained CZα −5.103 vs rigid −5.071) —
+  physically incapable of a 50% trim error. The "27% flexible increment" is real but is a
+  q=40→q=1200 phenomenon (Step G / AE8), NOT the SC1/SC2 trim-angle gap.
+
+The lead is **Step D (parity)**. Step C (`q·Q_aa` null space) is already satisfied to 2e-14
+and is NOT the lead. Step G (analytic restrained derivs) closes AE8's derivative half but
+does not move the trim angles. Before changing `sym`, confirm the HA144A `REFS=200`
+convention (whole- vs half-airplane reference area) so aero and inertia share one parity
+rule — the evidence above points to `sym=1` being correct for this deck.
 
 ### Sequence at a glance
 
 | Step | Description | Status |
 |------|-------------|--------|
-| A | Parity (`sym = 2` on symmetric half-models) + nose-up-positive My sign | ✅ APPLIED 2026-06-12 — see CHANGELOG |
+| A | Parity (`sym = 2` on symmetric half-models) + nose-up-positive My sign | ✅ APPLIED 2026-06-12 — ⚠ the `sym=2` half **introduced** the parity double-count now tracked in Step D |
 | B | RBAR slave-DOF expansion + EA-only SET1 + spline math fix (mult-bending, corrected torsion); V-AE1b gate | ✅ APPLIED 2026-06-12 — see CHANGELOG |
-| C | `Q_aa` rigid-body null-space regression gate | Open |
-| D | Parity audit (unit-Cp → SUPORT row vs `solve_rigid_cl`) | Open |
+| C | `Q_aa` rigid-body null-space regression gate | Open (MINOR — guard only; null space already clean to 2e-14) |
+| D | **Parity fix** — reconcile `sym` between the aero and inertial trim paths | Open (CRITICAL — root cause) |
 | E | Moment-sign single-source helper + VW-moment consistency gate (closes AE8 sign half) | ✅ APPLIED 2026-06-12 — see CHANGELOG |
 | F | V-AE1d elastic trim acceptance gate | Open |
-| G | Analytic restrained derivatives via Schur factorisation (closes AE8 deriv half) | Open |
+| G | Analytic restrained derivatives via Schur factorisation (closes AE8 deriv half) | Open (MAJOR — AE8, off the trim path) |
 
-Steps C, D, G can be worked in parallel; F (acceptance) depends on them. Recommended
-order: C (lock in B's gains) → D (parity audit; prime suspect for the ELEV gap) →
-G (analytic restrained derivs) → F (acceptance). Step E is closed — it confirmed the
-moment sign was already correct, so it does **not** move the ANGLEA/ELEV numbers.
+Recommended order: **D (parity fix — the root cause) → F (acceptance)**. G closes AE8's
+derivative half and should land after D so the analytic `C_ax` it consumes is no longer
+doubled; C is a cheap regression guard that can land any time. Step E is closed (moment
+sign already correct). The earlier "C → D → G → F, C is the prime suspect" ordering rested
+on the retracted flexibility diagnosis and is superseded.
 
 ---
 
 ### AE1 Step C — `Q_aa` rigid-body null-space gate
 
-With `g_slope`/`g_disp` from Step B correct, lock in the gain with a regression gate
-that asserts `Q_aa · u_rb ≈ 0` (Tz and Ry global rigid-body) to machine precision when
-the model is unconstrained, or matches an exact rigid-body ghost-force pattern when SPC
-is applied. `Q_aa` losing its rigid-body null space would be the defining symptom of any
-future regression; this gate must pass for `K_eff = K_aa − q·Q_aa` to carry physical
-meaning.
+**MINOR — regression guard only. NOT the ELEV lead** (the retracted "prime suspect for the
+ELEV gap" framing is wrong; see the corrected Diagnosis above). The property this gate
+asserts is **already satisfied**: measured `‖Q_aa · u_tz‖ = 2.2e-14` on HA144A. Keep it as
+a cheap permanent guard against a future spline regression, not as a lead on the trim error.
 
-**Acceptance:** `Q_aa · u_rb` residual < 1e-10 on HA144A, val_vlm_rect_ar8, and the
-dihedral fixture introduced with V-AE1b.
+With `g_slope`/`g_disp` from Step B correct, lock in the gain with a regression gate
+that asserts `Q_aa · u_rb ≈ 0` (rigid-body translation/rotation basis) to machine precision
+when the model is unconstrained, or matches an exact rigid-body ghost-force pattern when SPC
+is applied. Assert against the actual rigid-body translation/rotation basis (not an arbitrary
+pitch field, which legitimately loads the aero and is not a null-space member).
+
+**Acceptance:** `Q_aa · u_rb` residual < 1e-10 on HA144A, val_vlm_rect_ar8, and a **dihedral
+fixture (still to be added** — `TestGlobalRigidBody` currently covers swept-planar and
+rect-planar only, no out-of-plane z≠0 grids).
 
 ---
 
-### AE1 Step D — Parity audit in the trim balance
+### AE1 Step D — Parity fix in the trim balance
 
-Trace one unit `Cp` on a wing box through `skj·Cp → g_disp^T·f_box → SUPORT row of
-f_rhs_r`. Compare against `solve_rigid_cl` applied to the same Cp distribution and
-reference point. They must agree numerically *including* the symmetry factor. Establish
-a single rule: either (a) `skj` carries the parity multiplier so all downstream paths
-see whole-airplane forces, or (b) inertial/weight inputs are halved on symmetric-half
-models. Document the choice in `aero/integration.py` and `aero/aero_model.py`; assert at
-trim entry.
+**CRITICAL — this is the AE1 root cause.** The trim load path applies `sym=2` to the aero
+terms (`f_aero_g` sol144.py:833, `Q_ax_g` :795, `Q_aa` :822) but leaves the inertial term
+`M_ax`/`pres_inertial_g` (:873–874) at the raw whole-deck mass (no `sym`). The two paths
+must share ONE parity rule. Evidence (Diagnosis section) shows `sym=1` on the aero path
+yields BOTH the correct trim (0.1727/0.4893 vs NASTRAN 0.169191/0.492457) and the correct
+8000 lb lift on this deck. Fix options:
 
-**Acceptance:** V-AE1c — skj-path SUPORT-row force equals `solve_rigid_cl` lift to 1e-6
-for one unit-Cp injection.
+- (a) drop `sym=2` on the aero path — aero is already normalised by the whole-airplane
+  `REFS=200`, so the half-model boxes balance the whole-airplane weight at `sym=1`; or
+- (b) if `sym=2` whole-airplane aero is intended, apply the SAME doubling to the inertial
+  mass path AND halve the deck mass — verify against the HA144A `REFS` convention first.
+
+Document the chosen rule and assert at trim entry that the aero and inertial parity factors
+are consistent.
+
+**Acceptance (rewritten — the old unit-Cp check would NOT catch this bug):** the prior
+"skj-path SUPORT-row force == `solve_rigid_cl` lift to 1e-6 for one unit-Cp injection"
+operates at the *un-symmetrised* transfer layer, where the existing Step E test already
+passes — the `sym=2` multiplier is applied later, in `run_sol144_trim`. Replace it with a
+**full-trim moment-balance** assertion: at the trimmed state, `sym·(aero My) + inertial My
+= 0` and `sym·(aero Fz) + inertial Fz = 0` about `x_ref` with the SAME `sym` on both legs,
+and SC1/SC2 ANGLEA/ELEV match Listing 7-2 to ≤1% (this is what actually trips the current
+bug). Keep the independent unit-Cp force/moment cross-check against `solve_rigid_cl` as the
+companion V-AE3 unit-consistency gate (see AE13).
 
 ---
 
 ### AE1 Step F — Verify V-AE1d elastic trim
 
-With A–E and C, D, G green, re-run the V-AE1 gate and tighten tolerances. SC1 and SC2
-ANGLEA/ELEV must match Listing 7-2 to ≤ 1 %, and the q=40 → q=1200 ratio must reproduce
-the documented 27 % restrained-CZα flexible increment.
+Depends on **Step D (parity fix) alone** for the SC1/SC2 ANGLEA/ELEV pass — NOT on C or G.
+(The q=40 → q=1200 27 % restrained-CZα increment leg additionally needs Step G's
+restrained-derivative work.) Re-run the V-AE1 gate with **per-target relative tolerances**
+— the current shared absolute `ATOL_ANGLEA=1e-3` masks SC2 ANGLEA's 40 %-high result (see
+the V-AE1 gate section).
 
 **Acceptance:** V-AE1d — SC1 ANGLEA=+0.169191, ELEV=+0.492457; SC2 ANGLEA=+0.001373,
-ELEV=+0.019325; total lift = +8 000 lb; all within 1 %.
+ELEV=+0.019325; total lift = +8 000 lb; all within 1 % (relative, per target).
 
 ---
 
 ### AE1 Step G — Analytic restrained derivatives
 
-**Closes AE8 derivative half.**
+**Closes AE8 derivative half. NOT on the trim critical path** — sbeam's rigid derivs
+already match NASTRAN to 4 sig fig and the trim is solved from `Q_ax` directly, so Step G
+does not move ANGLEA/ELEV. **Sequence it AFTER Step D:** the current FD restrained increment
+is ~2.2× too large largely because `C_ax_l` is built from the `sym=2`-contaminated `Q_ax_a`
+(sol144.py:678); the analytic form inherits the same contamination until the parity fix lands.
 
 Replace `_compute_restrained_derivs` finite-difference path with the analytic derivative
 from the Schur factorisation: `∂u_l/∂δ_free = K_ll^{−1}·C_ax_l`, then build the
@@ -139,30 +185,42 @@ derivative columns from `D_jx + D_jk·G_slope·∂u/∂δ`. Delete the FD machin
 
 **Acceptance:** V-AE1e — HA144A Table 7-1 restrained columns (CZα, Cmα, Cmq, …) within
 1 %; rigid columns unchanged; documented 27 % restrained-CZα flexible increment
-reproduced to ≤ 5 % relative error.
+reproduced to ≤ 5 % relative error. (Depends on the Step D parity fix.)
 
 ---
 
 ### V-AE1 gate (full acceptance, replaces `test_ae1_keff_trim.py` once landed)
 
-- **V-AE1a** (Step A) — Rigid trim (Q_aa=0): SC1 ANGLEA, ELEV, total lift within 1 % of
-  NASTRAN's rigid-case column.
+**Two structural weaknesses in the current gate (2026-06-12 review):** (1) `test_trim_lift`
+is NON-discriminating — lift = 8000 lb for both `sym=1` and `sym=2`, so exact lift is NOT
+evidence of a correct aero balance (the false comfort that hid the parity bug). (2)
+`ATOL_ANGLEA=1e-3` lets SC2 ANGLEA pass at 0.001924 vs 0.001373 (40 % high) — use per-target
+relative tolerances.
+
+- **V-AE1a** (implement EARLY) — Rigid trim (Q_aa=0): SC1 ANGLEA, ELEV, total lift within
+  1 % of NASTRAN's rigid-case column. **This is the cleanest discriminator for the parity
+  bug** — at Q_aa=0 the `sym` double-count still halves the deflection, so V-AE1a catches it
+  with flexibility removed as a confound. Build it before any flexible-increment work.
 - **V-AE1b** (Step B) — `Q_aa·u_rb`/`g_slope·u_rb`/`g_disp·u_rb` rigid-body null-space
   residuals < 1e-10 on HA144A, val_vlm_rect_ar8, dihedral fixture. ✅ PASSING.
-- **V-AE1c** (Step D) — skj-path SUPORT-row force = `solve_rigid_cl` lift to 1e-6 on a
-  unit-Cp injection. Step E added the companion *moment* leg of this check
-  (`tests/aero/test_ae1_step_e_moment.py`: VW moment about the SUPORT = direct
-  `_pitch_moment` to ~1e-6); Step D should extend that test class rather than fork a
-  parallel gate.
-- **V-AE1d** (Step F) — SC1/SC2 ANGLEA, ELEV, lift within 1 % of NASTRAN.
+- **V-AE1c** (Step D / V-AE3) — full-trim moment balance `sym·aero_My + inertial_My = 0`
+  (the parity-sensitive check), PLUS an INDEPENDENT unit-Cp cross-check of the skj/g_disp
+  total force AND moment against `solve_rigid_cl` resultants. **Do NOT** merely extend the
+  Step E class: `test_ae1_step_e_moment.py` only checks self-consistency (VW transfer of one
+  f_box vs `_pitch_moment` of the SAME f_box) — a common scale/parity error passes it. The
+  gate must compare against `solve_rigid_cl`, not against `_pitch_moment`.
+- **V-AE1d** (Step F) — SC1/SC2 ANGLEA, ELEV, lift within 1 % of NASTRAN (relative tol).
 - **V-AE1e** (Steps F + G) — Table 7-1 restrained derivative columns within 1 %; 27 %
   flexible increment within 5 %.
 
 ### What not to do
 
-- Do not pursue tighter tolerances on `test_ae1_keff_trim.py` until Steps C/D/G land —
-  Step E confirmed the moment sign is already correct, so the residual ANGLEA/ELEV gap is
-  the flexible `q·Q_aa` increment, not the moment column.
+- Do not chase the `q·Q_aa` flexible increment for the SC1/SC2 trim gap — it is a 0.6 %
+  effect at q=40 and cannot explain a 50 % error. The gap is the `sym=2` parity double-count
+  (Step D). DO land the SC2 ANGLEA relative-tolerance fix regardless — it only exposes an
+  already-known-wrong number, not a tightening-to-fit.
+- Do not cite "lift = 8000 lb / 7999.4 lb" as evidence the aero balance is correct — the Tz
+  force row hits 8000 lb for both the correct and the halved trim states.
 - Do not re-tune HA144A bulk parameters (NSPAN/NCHORD, spline DTOR, RCSID) to fit V-AE1;
   rigid CLα already reproduces NASTRAN to 4 sig fig at the same mesh.
 - Do not delete the existing `K_eff = K_aa − q·Q_aa` line; AE1 is now about what feeds
@@ -191,9 +249,13 @@ AE1 is tracked above; AE2/AE3/AE4/AE5/AE6/AE7 are resolved (see CHANGELOG).
         Step E: the nose-up-positive −ΣFz·(x−xref) convention is single-sourced in
         sol144._pitch_moment and verified consistent with solve_rigid_cl.CM and the
         g_disp virtual-work transfer.)
-FIX:    Sign half RESOLVED by AE1 Step E (2026-06-12). Derivative half resolved by AE1
-        Step G (analytic restrained derivs out of K_eff). Add the unrestrained set
-        (mean-axis, ZAERO Eq. 12.14/12.15). Acceptance: HA144A Table 7-1 columns.
+FIX:    Sign half RESOLVED by AE1 Step E (2026-06-12; CMα = −2.871 matches NASTRAN in sign
+        AND magnitude). Derivative half: fix the AE1 Step D parity double-count FIRST — it
+        inflates the FD restrained increment ~2.2× (C_ax_l built from the sym=2-contaminated
+        Q_ax_a, sol144.py:678), independent of the FD-vs-analytic choice — THEN apply AE1
+        Step G (analytic restrained derivs out of K_eff). Add the unrestrained set (mean-axis,
+        ZAERO Eq. 12.14/12.15). Acceptance: HA144A Table 7-1 restrained AND unrestrained
+        columns within 1 %.
 ```
 
 ---
@@ -205,11 +267,23 @@ FIX:    Sign half RESOLVED by AE1 Step E (2026-06-12). Derivative half resolved 
 
 ```
 [MAJOR] The AIC is built once from AEROS.mach (an sbeam extension field) while
-        TRIM.mach is parsed and silently ignored. Two subcases at different Mach —
-        standard SOL 144 usage (HA144A's own third subcase is M=1.3) — are impossible,
-        and a mismatch is not even warned about.
-FIX:    Build (and cache) the AIC per TRIM Mach; retire the AEROS.mach extension field;
-        warn/error on AEROS-vs-TRIM Mach disagreement during the transition.
+        TRIM.mach is parsed and silently ignored (confirmed: sol144.py:753 reads
+        trim_card.mach but only stores it at :992; it never rebuilds aero.ajj_inv_corr).
+        Multiple SUBSONIC subcases at different Mach — standard SOL 144 usage — are
+        impossible, and a mismatch is not even warned about.
+        NOTE: the motivating "HA144A 3rd subcase M=1.3" is SUPERSONIC (manual §7);
+        this steady subsonic VLM clamps M≤0.99 (vlm.py:137,141) and CANNOT solve it —
+        it needs ZONA51/piston theory the program lacks. Cite SC3 only as evidence that
+        multi-Mach SOL 144 is standard, not as a case this fix enables.
+FIX:    NOT a one-line edit at aero_model.py:77. (a) Thread per-TRIM Mach into AIC
+        construction; (b) cache AIC inverses keyed by Mach so the build-once fixture
+        pattern still works across subcases; (c) change the run_sol144_trim contract
+        (today it receives a prebuilt aero). KEEP AEROS.mach as the default/fallback and
+        WARN on AEROS-vs-TRIM disagreement (full retirement forces every deck/test to
+        migrate — Mach currently lives only on AEROS field 9 — for no benefit). Add a
+        SUPERSONIC GUARD that errors rather than silently clamping M≥1. Tests: (1)
+        AEROS.mach≠TRIM.mach warns; (2) two subsonic subcases at different Mach produce
+        different β-scaled AICs / different trim; (3) a supersonic TRIM Mach is rejected.
 ```
 
 ---
@@ -220,11 +294,20 @@ FIX:    Build (and cache) the AIC per TRIM Mach; retire the AEROS.mach extension
 
 ```
 [MAJOR] Every caller passes parity manually; nothing reads AEROS.symxz, so a
-        wrong-parity solve is silent. run_sol144_trim has no caller at all — the HA144A
-        deck cannot run end-to-end (overlaps A5 / Step 56, but the symxz wiring is
-        independent and one line).
-FIX:    Default parity = aeros.symxz inside build_aero_model (explicit argument
-        overrides); wire SOL 144 dispatch in main.py as part of Step 56.
+        wrong-parity solve is silent (viewer/app.py:552 passes a UI radio defaulting to
+        Symmetric, so a SYMXZ=0 deck silently doubles). run_sol144_trim has no caller in
+        main.py — the HA144A deck cannot run end-to-end. NOTE: the old "case_control
+        rejects SOL 144" claim is STALE — 144 is already whitelisted (case_control.py:61)
+        and trim_sid is parsed; the only remaining gate is main.py dispatch.
+FIX:    (1) Default parity = aeros.symxz inside build_aero_model (explicit arg overrides;
+        Aeros.symxz and parity share the +1/−1/0 encoding, so this is clean — verified
+        zero regression on the current suite). Assert/warn at trim entry when the passed
+        parity disagrees with aeros.symxz. (2) main.py SOL 144 dispatch is NOT a mirror of
+        the SOL 101/103 two-arg pattern — run_sol144_trim needs a prebuilt AeroModel +
+        grid_index, so main.py must build the aero model (parity from AEROS.SYMXZ) and pass
+        it in. Retarget this from "Step 56 (f06 output)" to AE10/Step 52 — dispatch must
+        precede f06. Tests: a SYMXZ=0 deck built without explicit parity yields parity=0;
+        an end-to-end SOL 144 run through main.py (extend test_main.py).
 ```
 
 ---
@@ -242,23 +325,43 @@ FIX:    Default parity = aeros.symxz inside build_aero_model (explicit argument
         HA144A — free validation data going unused).
 FIX:    Derive the control column from rotation about the actual hinge axis
         (cid1 y-axis); add hinge-moment recovery; correct the YAW column for vertical
-        surfaces.
+        surfaces. Tests: (1) unit test that the YAW column = +(2/bref)·(x_ctrl−x_ref) on a
+        y-normal panel and ≈0 on a z-normal panel; (2) a swept-hinge AESURF fixture; (3)
+        HA144A ELEV hinge-moment cross-check vs the manual HMAERO block (free validation).
+NOTE:   Both defects are NON-blocking for AE1 — HA144A's ELEV hinge (CORD2R 1) is
+        spanwise, so the −n_z·eff approximation is exact for it; the cid1 omission only
+        bites swept/non-spanwise hinges. YAW is latent (no caller passes it). Verify the
+        `eff if eff!=0.0 else 1.0` default (integration.py:135) is intended (eff=0→1.0).
 ```
 
 ---
 
-### [MINOR] AE12 — PG compression keeps original normals; SPLINE2 DTOR/DTHZ silently ignored
+### [MINOR] AE12 — SPLINE2 DTOR/DTHZ silently ignored (PG-normal half MISIDENTIFIED)
 
-**Files:** `sbeam/aero/vlm.py:144–156`, `sbeam/aero/spline.py`, `sbeam/parser/bdf_reader.py`
+**Files:** `sbeam/aero/spline.py`, `sbeam/parser/bdf_reader.py:576,583`, `sbeam/aero/vlm.py:144–156`
 
 ```
-[MINOR] prandtl_glauert_boxes scales y,z but copies the un-recomputed normal — exact
-        only for planar surfaces; wrong for dihedral/out-of-plane panels (assert or
-        document planarity). Spline2.dtor and dthz are parsed but unused — silently
-        accepting and ignoring NASTRAN card fields is how the AE4(c) DTHX
-        misinterpretation went unnoticed.
-FIX:    Recompute (or validate) normals under PG compression; warn when DTOR/DTHZ carry
-        non-default values that will be ignored.
+[MINOR — REAL] Spline2.dtor (default 1.0) and dthz (default 0.0) are parsed
+        (bdf_reader.py:576,583) and stored on Spline2 (model/aero.py:79,82) but NEVER
+        referenced in spline.py — silently accepted and ignored, the same failure class as
+        the AE4(c) DTHX misinterpretation. No warning fires when DTOR≠1.0 or DTHZ≠0.0.
+        (The existing V-AE2 fixture test_spline.py:673 already sets dthz=−1.0, so a warning
+        gate there would currently be silent — good evidence the omission is real.)
+FIX:    Warn when DTOR/DTHZ carry non-default values that will be ignored. Add a
+        parser/handler test asserting a UserWarning fires for DTOR≠1.0 and DTHZ≠0.0.
+
+[NOT A BUG — PG normals, re-diagnosed 2026-06-12] The original claim "prandtl_glauert_boxes
+        copies the un-recomputed normal — wrong for dihedral/out-of-plane panels" is WRONG.
+        Under S=diag(1,β,β) the normal DIRECTION changes only if n_x≠0; it is INVARIANT for
+        any n_x=0 panel, dihedral included. mesh_caero1 advances every box chord purely
+        along x̂=(1,0,0) (panel.py:78,90), forcing n_x=0 for ANY swept/tapered/dihedral
+        CAERO1 — so the normal-copy is EXACT over the entire current box space. Verified
+        numerically: a 30° dihedral panel → 0.0° normal change; a panel with geometric
+        incidence (n_x≠0) → ~0.94° at M=0.6. The real condition is n_x≈0, NOT planarity.
+        Latent (no current geometry triggers it). If hardened at all: `assert n_x≈0` (or
+        recompute only the n_x-bearing case), NOT "recompute for dihedral". Test should
+        pair an n_x≠0 panel (copied vs recomputed differ) with a dihedral panel (agree to
+        machine precision) to guard against a needless future "fix".
 ```
 
 ---
@@ -275,15 +378,24 @@ FIX:    Recompute (or validate) normals under PG compression; warn when DTOR/DTH
         solver.
 FIX:    Three permanent gates planned; status today:
         (V-AE1)  HA144A acceptance test — partial: sign/lift/increment tests pass; SC1
-                 ANGLEA/ELEV and SC2 ELEV value tests still failing. Closes with AE1
-                 Steps C/D/G (the gap is the flexible q·Q_aa increment, not the moment
-                 sign — Step E confirmed the latter is correct).
+                 ANGLEA/ELEV and SC2 ELEV value tests still failing. Closes with the AE1
+                 Step D PARITY fix (the gap is the sym=2 aero/inertia double-count, NOT the
+                 flexible q·Q_aa increment — the old diagnosis here was retracted; see AE1).
+                 ⚠ the "lift tests pass" reassurance is non-discriminating (lift=8000 lb for
+                 both sym=1 and sym=2) — exactly the blind spot AE13 is about.
         (V-AE2)  Swept-spline rigid-body gate — IMPLEMENTED 2026-06-11 (3 tests in
                  TestSweptSplineRigidBody) and updated 2026-06-12 to use EA-only SET1
-                 with DTHX=+1 alongside V-AE1b (`TestGlobalRigidBody`).
-        (V-AE3)  Unit-consistency gate — g_disp.T @ skj-path total force/moment equals
-                 the Kutta-Joukowski resultants from solve_rigid_cl on the same model.
-                 Open — schedule with AE1 Step D (closely related parity audit).
+                 with DTHX=+1 alongside V-AE1b (`TestGlobalRigidBody`). Genuinely closed:
+                 exercises a 60°-swept axis + full 6-mode lever-arm rotation.
+        (V-AE3)  Unit-consistency gate — g_disp/skj-path total force AND moment equals the
+                 Kutta-Joukowski resultants from solve_rigid_cl on the same model. Open —
+                 schedule with AE1 Step D. NOTE: (a) rename to avoid collision with the
+                 UNRELATED "V-AE3a" trim-lift gate in test_trim_urdd.py; (b) it must be an
+                 INDEPENDENT path (build f via solve_rigid_cl, compare to skj/g_disp totals),
+                 NOT an extension of the Step E self-consistency class — and the nearest
+                 existing check (test_phase_b.py::test_tz_sum_vs_cl_magnitude) uses
+                 min(err_full,err_half)<0.02, which structurally accepts BOTH the correct
+                 lift and exactly half of it, so it cannot catch the factor-of-2 parity bug.
 ```
 
 ---
@@ -296,14 +408,14 @@ FIX:    Three permanent gates planned; status today:
 
 ```
 [MINOR] build_aero_model / solve_rigid_cl are called ONLY from viewer/app.py. No solver
-        or CLI path consumes the aero model; there is no SOL 144 (Phase C) and no
-        spline (Phase B). Therefore the aero cards in airplane_aero.bdf are inert under
-        its declared SOL 101, and any aero BDF must declare SOL 101/103 to clear
-        case-control (case_control.py rejects SOL 144). val_vlm_rect_ar8.bdf documents
-        this workaround.
-FIX:    Expected state until Phase B/C land. Track as the Phase B (spline) → Phase C
-        (SOL 144) wiring work; add SOL 144 to the case-control whitelist when Phase C
-        starts. Overlaps AE10.
+        or CLI path consumes the aero model under SOL 101/103. (STALE: the old line
+        "case_control.py rejects SOL 144" is no longer true — 144 is whitelisted at
+        case_control.py:61; the gate that blocks an end-to-end aero solve is now the
+        main.py dispatch, see AE10.) val_vlm_rect_ar8.bdf documents the SOL-101 workaround.
+FIX:    Expected state until Phase B/C land — keep the "expected-state" verdict. The
+        remaining gap is solely the main.py SOL 144 dispatch (overlaps AE10); the
+        "add SOL 144 to the case-control whitelist" action is already DONE — drop it. Also
+        fix the stale parse_case_control docstring at case_control.py:67 ("not 101 or 103").
 ```
 
 ---
@@ -314,10 +426,14 @@ FIX:    Expected state until Phase B/C land. Track as the Phase B (spline) → P
 
 ```
 [MINOR] Sample models used NCHORD=2 (airplane) / NCHORD=1 (rect val). Lift converges at
-        NCHORD=1 (1/4-3/4 rule is 2D-exact), but a chordwise convergence study showed
-        the PITCHING MOMENT is grossly under-resolved at low counts: CM shifts ~50%
-        from NCHORD 1→2, ~34% 2→4, and only settles to ~1-2% drift by NCHORD~8 (across
-        0/18/35 deg sweep). Chordwise loading/pressure are likewise unconverged.
+        NCHORD=1 (1/4-3/4 rule is 2D-exact). Chordwise loading/pressure are under-resolved
+        at low NCHORD and benefit from refinement.
+        ⚠ NUMBERS RETRACTED (2026-06-12 review): the previously cited "CM shifts ~50%
+        NCHORD 1→2, ~34% 2→4" does NOT reproduce. Re-running solve_rigid_cl at NCHORD=
+        1,2,4,8,16 over 0/18/35° sweep gives ≤~1.9% CM shift 1→2 (worst case) — because each
+        box load already acts at its own ¼-chord (vlm.py:283-284), so chordwise CoP is
+        2D-correct at NCHORD=1 (val_vlm_rect_ar8.bdf:55 self-documents this). No checked-in
+        chordwise study exists. The guidance below stands on standards, not on those numbers.
 GUIDANCE: Steady VLM minimum NCHORD = 4; recommended 8 for converged moment/loading
         (NASA SP-405 / DeJarnette NASA NTRS — cosine LE-concentrated chordwise spacing
         reaches the same accuracy with fewer boxes). Phase D (DLM) is frequency-driven:
@@ -359,18 +475,20 @@ OPEN (code): add a pre-solve warning when any box AR is outside [0.5, 2.0].
 
 ---
 
-## Open findings — Documentation & NITs (2026-05-25 review)
+## Open findings — Documentation & NITs
 
-### [MINOR] R16–R19 — Documentation gaps; and R21, R22 NITs
+### [NIT] R23 — Stale `recover_bar_forces` signature in the static-analysis doc
 
-| ID | File | Issue | Fix |
-|----|------|-------|-----|
-| R16 | `docs/10_standard/00_program_overview.md:28–44, 163–178` | Module table omits `assembly/load_vector.py`; verification table missing V15–V18 (GRAV+CBAR, GRAV+CONM2, GRAV+FORCE via LOAD, RBE2 lever-arm). | Add `load_vector.py` row; add V15–V18 rows. |
-| R17 | `docs/10_standard/01_beam_model.md:585` | "Cards recognised" summary line omits GRAV and RBAR, both fully implemented and tested. | Add GRAV and RBAR to the comma-separated list. |
-| R18 | `docs/10_standard/03_static_analysis.md:237–256` | `assemble_load_vector` shown as living in `sol101.py` (now `assembly/load_vector.py`); function signatures stale; CBUSH, RBAR, GRAV not mentioned in any verification case. | Update module reference, signatures; add GRAV and RBAR verification cases. |
-| R19 | `tests/` | V14 covers only the zero-offset RBAR (identity R-matrix); no end-to-end BDF + solver test exercises the lever-arm kinematics with a non-coincident RBAR. | Add `v_rbar_offset.bdf` and a corresponding integration test asserting the expected lever-arm deflection. |
-| R21 | `sbeam/solver/sol101.py:252–255` | `check_spc_enforced_displacements` called unconditionally when `spc_sid` may be `None`. `bulk.spcs.get(None, [])` returns `[]` safely, so no crash, but the intent is unclear. | Add `if spc_sid is not None:` guard before the call. |
-| R22 | `sbeam/main.py:8` | `_build_f06_sol101_text` and `_build_f06_sol103_text` are imported by their private names. Any rename in `f06_writer.py` silently breaks the import. | Drop leading underscores from both function names in `f06_writer.py`, or add public aliases there. |
+`docs/10_standard/03_static_analysis.md:307` documents `recover_bar_forces(bulk, u) -> dict`,
+but the code is the per-element 6-arg form `recover_bar_forces(cbar, grids, pbars, mat1s,
+displacements, grid_index) -> BarForce` (sol101.py:91), called in a loop at sol101.py:290.
+Fix: correct the documented signature. (Surfaced 2026-06-12 while verifying R18.)
+
+*R16–R22 closed and removed 2026-06-12 (per CLAUDE.md backlog hygiene; detail in CHANGELOG /
+`docs/40_history/00_completed_development.md`): R16 & R18 were valid doc gaps at filing,
+fixed by the 2026-06-10 doc restructure; R17 & R19 were misidentified (already present —
+`01_beam_model.md:761` lists GRAV/RBAR; `TestV19RbarLeverArm` + `v19_rbar_offset.bdf`
+already exist); R21 (spc_sid guard) and R22 (public f06 text aliases) fixed in this session.*
 
 ---
 

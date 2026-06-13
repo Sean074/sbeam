@@ -13,6 +13,38 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Fixed
 
+**Backlog validation review — AE1 re-diagnosis corrected; R16–R22 closed (2026-06-12)**
+
+Full validation pass over `docs/30_future/00_backlog.md` against the MSC HA144A reference
+(Table 7-1 / Listing 7-2). No solver behaviour changed except the two NIT fixes below.
+
+- **AE1 root cause re-diagnosed (CRITICAL).** The SC1/SC2 ANGLEA/ELEV trim gap is a `sym=2`
+  aero/inertia parity double-count in `run_sol144_trim` (aero terms ×2 at
+  sol144.py:795/822/833; inertial `M_ax` at :873–874 not doubled), **not** the flexible
+  `q·Q_aa` increment. Forcing `sym=1` yields the correct trim (0.1727/0.4893 vs NASTRAN
+  0.169191/0.492457) and 8000 lb lift; flexibility at q=40 is a 0.6% effect (Table 7-1),
+  incapable of a 50% error. Rewrote the backlog Diagnosis, step sequence (lead = Step D
+  parity fix, not Step C), Steps C/D/F/G, AE8, AE13 (V-AE1/V-AE3), and the V-AE1 acceptance.
+  The actual `sym` code fix is left for a dedicated change (confirm the HA144A REFS
+  convention first).
+- **Test-gate weaknesses documented:** `test_trim_lift` is non-discriminating (lift=8000 lb
+  for both sym=1 and sym=2); SC2 ANGLEA passes at 140% of target under the shared
+  `ATOL_ANGLEA=1e-3`. Flagged for per-target relative tolerances.
+- **R21** fixed: `if spc_sid is not None:` guard before `check_spc_enforced_displacements`
+  (`sbeam/solver/sol101.py:255`).
+- **R22** fixed: public `build_f06_sol101_text` / `build_f06_sol103_text` aliases in
+  `sbeam/results/f06_writer.py`; `sbeam/main.py` and `sbeam/viewer/app.py` import the public
+  names instead of the private `_build_f06_*`.
+- **R16, R17, R18, R19 removed** from the backlog (R16/R18 fixed by the prior doc
+  restructure; R17/R19 misidentified — already present). New NIT **R23** logged for a
+  residual `recover_bar_forces` doc-signature mismatch (`03_static_analysis.md:307`).
+- **Backlog reframes** (still open, corrected): AE9 (subsonic multi-Mach; HA144A SC3 is
+  supersonic/out-of-scope; add a supersonic guard, not a one-line fix), AE10 (dispatch needs
+  a prebuilt AeroModel; case-control already whitelists SOL 144), AE11 (non-blocking for AE1;
+  YAW latent), AE12 (PG-normal half re-diagnosed as **not a bug** — exact for n_x=0 incl.
+  dihedral; DTOR/DTHZ-warning half kept), A5 (stale "case_control rejects SOL 144" claim),
+  A7 (CM-convergence numbers retracted — ~50%/34% do not reproduce; ≤~1.9% measured).
+
 **AE1 Step E — Moment-sign single-source helper + virtual-work consistency gate (2026-06-12)**
 
 Closed the AE1 Step E increment and corrected its diagnosis. The gross pitching-moment
