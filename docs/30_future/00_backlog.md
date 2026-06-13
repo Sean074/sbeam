@@ -11,23 +11,29 @@ step, give it a step number continuing from Step 39 and apply the same step form
 ## Phase C closure roadmap — to a fully functioning SOL 144 + interface
 
 Phase C (SOL 144 static aeroelastic trim) is the active program phase. **Done already** (see
-CHANGELOG `[Unreleased]` and `docs/40_history`): the determined-trim Schur solver, rigid +
-restrained stability/control derivatives, single critical divergence `q_div`, SOL 144 CLI
-dispatch, f06 output, and trimmed flight-load export (AE10 / Step 56); and the **AE1 acceptance
-gate is CLOSED** — both HA144A subcases trim within the %-full-scale gate (2026-06-13), AE1
-Steps A–G + the Step C null-space guard complete.
+CHANGELOG `[Unreleased]` and `docs/40_history`): the determined-trim Schur solver, **over-determined
+(redundant-control) trim**, rigid + restrained stability/control derivatives (longitudinal **and**
+lateral `C_lp`/`C_nr`/`C_lβ`), single critical divergence `q_div`, SOL 144 CLI dispatch, f06 output,
+and trimmed flight-load export (AE10 / Step 56); and the **AE1 acceptance gate is CLOSED** — both
+HA144A subcases trim within the %-full-scale gate (2026-06-13), AE1 Steps A–G + the Step C
+null-space guard complete. **Step 52 fully closed (2026-06-14).**
 
 **What remains to a fully functioning SOL 144 with a usable interface, in dependency order:**
 
 | # | Item | Kind | Status | Why here / what it unblocks |
 |--:|------|------|--------|------------------------------|
-| 1 | [Step 52 remainder — over-determined trim + ROLL/YAW rate columns](#step-52--sol-144-trim-solve--flexible-derivatives-sol144py) | Code | Open | Lateral / over-determined trim; `C_lp`, `C_nr`; precursor to roll/yaw maneuvers. (Dihedral effect `C_lβ` enters here.) |
-| 2 | [Step 53 — balanced maneuver loads & inertia relief](#step-53--balanced-maneuver-loads--inertia-relief) | Code | Open | The load-generating capability; non-zero inertia column feeds monitor loads |
-| 3 | [Monitor points MON1–MON4 / V-MON1](#monitor-points--section-loads--phase-1-static) | Code | Open | Structures-team loads handoff per trim case; needs trim (1–2), benefits from maneuver (3) |
-| 4 | [AE8b — unrestrained (mean-axis) derivative column](#major-ae8b--unrestrained-mean-axis-derivative-formulation-known-wrong) | Code | Open (known-wrong first attempt) | Completes the derivative deliverable; off the trim critical path — can run in parallel |
-| 5 | [Step 55 — DIVERG q-sweep + mode shape + V_div](#step-55--aeroelastic-divergence-diverg) | Code | Open (single `q_div` done) | `DIVERG`-card-driven sweep and the divergence eigenvector |
-| 6 | [Step 54 — CFD / wind-tunnel mean-flow injection](#step-54--cfd--wind-tunnel-steady-pressure-injection-mean-flow-trim) | Code | Open | Optional mean-flow enhancement; lower priority |
-| 7 | [Step 57 — Viewer: SOL 144 results (THE INTERFACE)](#step-57--viewer-sol-144-results) | Code | Open | **CLOSING ITEM** — surfaces trim, derivatives, `q_div`, deflected shape, box `cp`, monitor loads in the UI |
+| 1 | [Step 53 — balanced maneuver loads & inertia relief](#step-53--balanced-maneuver-loads--inertia-relief) | Code | Open | The load-generating capability; non-zero inertia column feeds monitor loads |
+| 2 | [Monitor points MON1–MON4 / V-MON1](#monitor-points--section-loads--phase-1-static) | Code | Open | Structures-team loads handoff per trim case; needs trim, benefits from maneuver (1) |
+| 3 | [AE8b — unrestrained (mean-axis) derivative column](#major-ae8b--unrestrained-mean-axis-derivative-formulation-known-wrong) | Code | Open (known-wrong first attempt) | Completes the derivative deliverable; off the trim critical path — can run in parallel |
+| 4 | [Step 55 — DIVERG q-sweep + mode shape + V_div](#step-55--aeroelastic-divergence-diverg) | Code | Open (single `q_div` done) | `DIVERG`-card-driven sweep and the divergence eigenvector |
+| 5 | [Step 54 — CFD / wind-tunnel mean-flow injection](#step-54--cfd--wind-tunnel-steady-pressure-injection-mean-flow-trim) | Code | Open | Optional mean-flow enhancement; lower priority |
+| 6 | [Step 57 — Viewer: SOL 144 results (THE INTERFACE)](#step-57--viewer-sol-144-results) | Code | Open | **CLOSING ITEM** — surfaces trim, derivatives, `q_div`, deflected shape, box `cp`, monitor loads in the UI |
+
+**Step 52 is now CLOSED (2026-06-14)** — over-determined (redundant-control) trim via null-space
+reduction + weighted-L2 TRIMOBJ/TRIMCON/TRIMVAR, and the ROLL/YAW/SIDES rate-aero **moment**
+derivatives `C_lp`, `C_nr`, and the dihedral effect `C_lβ`. Gates V-C4
+(`tests/aero/test_trim_overdetermined.py`) and V-LAT (`tests/aero/test_lateral_derivs.py`). Full
+detail in CHANGELOG `[Unreleased]` + `docs/40_history`.
 
 **Step 58 (dihedral / anhedral ±Γ correctness) is CLOSED (2026-06-14)** — the
 VLM→spline→force→trim chain is now permanently gated out of the xy-plane by **V-C-DIH**
@@ -37,8 +43,9 @@ cancellation, and a structured determined trim (`sample/val_dihedral_trim.bdf`) 
 inertia-relief balance out of plane. Key finding: the force/normal architecture was already
 3-component and geometry-driven, so no production rewrite was needed — only the ±Γ decks, the gate,
 and a reusable `aero_moment_resultant` helper. **Dihedral still rides the remaining steps:** the
-lateral derivatives pick up the dihedral effect `C_lβ` once ROLL/YAW lands (Step 52); monitor
-section loads must carry the now-validated `Fy`/`Fz` split (MON2/MON3); and the viewer must render
+lateral derivatives now carry the dihedral effect `C_lβ` (Step 52, closed — V-LAT gates the ±Γ
+`C_lβ` sign-flip); monitor section loads must carry the now-validated `Fy`/`Fz` split (MON2/MON3);
+and the viewer must render
 the canted deflected geometry and box `cp` (Step 57). The V-C-DIH gate is the permanent regression
 guard against the `(0,0,1)`-normal / Fz-only-resultant blind spot.
 
@@ -50,8 +57,9 @@ out of Phase C scope (bottom of file).
 
 **Closed in this branch (one line; full detail in CHANGELOG `[Unreleased]` + `docs/40_history`):**
 AE2–AE7; AE9 (per-TRIM Mach AIC cache + supersonic guard); AE10 + Step 56 (SOL 144 CLI / f06 /
-flight-load export); R16–R22; AE1 Steps A, B, C, D (half-span removed — full-span only), E, F, G;
-V-AE1b/c/e/f/g and V-AE2/V-AE3 acceptance gates. The retracted "flexible `q·Q_aa`" SC1 re-diagnosis
+flight-load export); **Step 52 (determined + over-determined trim, longitudinal + lateral
+derivatives — V-C4 / V-LAT)**; R16–R22; AE1 Steps A, B, C, D (half-span removed — full-span only),
+E, F, G; V-AE1b/c/e/f/g and V-AE2/V-AE3 acceptance gates. The retracted "flexible `q·Q_aa`" SC1 re-diagnosis
 is closed history and no longer load-bearing (the SC1 gap was the parity double-count, removed by
 construction).
 
@@ -422,13 +430,15 @@ matches a published IPS example (Harder & Desmarais 1972).
 
 ---
 
-## Phase C — SOL 144 Static Aeroelastics (remaining: Step 52 rem., 53–55, 57)
+## Phase C — SOL 144 Static Aeroelastics (remaining: 53–55, 57)
 
 Phase C wires Phases A + B into the structural stiffness to solve the flexible static
 aeroelastic problem: trim (determined and over-determined), flexible stability/control
 derivatives, optional CFD/WT mean-flow injection, and divergence dynamic pressure. The
-determined-trim core is done (see the closure roadmap at the top of this file); the steps below
-are the remaining work, in numeric order — execution order is set by the roadmap table.
+trim core (determined **and** over-determined) and the longitudinal + lateral derivatives
+are done — **Step 52 CLOSED 2026-06-14** (see the closure roadmap at the top of this file and
+`docs/40_history`); the steps below are the remaining work, in numeric order — execution order
+is set by the roadmap table.
 **Step 58 (dihedral / anhedral ±Γ correctness) is CLOSED (2026-06-14)** — the foundational
 out-of-plane gate the rest of the load chain inherits is now locked by V-C-DIH
 (`tests/aero/test_dihedral.py`); the steps below build on it.
@@ -442,47 +452,9 @@ out-of-plane gate the rest of the load chain inherits is now locked by V-C-DIH
            f_g  = G_kgᵀ · Skj · AJJ*⁻¹ · w_g            (baseline camber/twist/incidence + CFD/WT)
 ```
 
-**Prerequisite:** AE1 acceptance closed (Steps A–G done, including the Step C regression guard). Step 52 (determined trim) exists on the
-`aeroelastics` branch as `run_sol144_trim`; over-determined trim and rate-aero columns
-are unimplemented.
-
----
-
-### Step 52 — SOL 144 trim solve + flexible derivatives (`sol144.py`)
-
-**Status (2026-06-12):** determined-case Schur trim solver exists. Resolved defects:
-AE2–AE7, AE9, and AE1 Steps A, B, C, D, E, F, G. Over-determined trim and
-rate-aero columns remain.
-
-**Objective:** Solve the flexible trim problem (determined and over-determined) and
-recover stability/control derivatives.
-
-**Scope/Deliverables:**
-- `solver/sol144.py`: assemble the augmented trim system (structural equilibrium + trim
-  constraints + baseline `f_g` + inertia-relief load `f_inertial = −M_aa · a` from
-  prescribed maneuver accelerations)
-- **Determined case:** solve the square system directly
-- **Over-determined case:** solve by constrained minimization of the `TRIMOBJ` objective
-  subject to `TRIMCON` constraints and `TRIMVAR` bounds (least-squares core)
-- Recover `u_a`, the free trim variables, flexible `C_Lα`, `C_Mα`, control effectiveness,
-  and structural deflection + CBAR loads (reuse `recover_bar_forces`)
-- **Rate (damping) aero — quasi-steady `Ω×r` incidence (no DLM):** `ROLL`/`PITCH`/`YAW`
-  rate variables get aero load columns from the local incidence a rigid-body rate induces
-  via the steady VLM; pitch rate `Δα(x) = q·(x−x_ref)/V∞`; roll rate `Δα(y) = p·y/V∞`;
-  yaw rate adds spanwise and directional incidence — captures `C_mq`, `C_lp`, `C_nr`
-- ✅ SOL 144 case-control whitelist (`parser/case_control.py:61`), CLI dispatch, f06 output,
-  and FORCE/MOMENT flight-load export — **done (AE10 / Step 56, 2026-06-13)**; see
-  `docs/40_history`. (The PITCH rate-aero column already matches NASTRAN `C_Mq` rigid — see
-  `tests/aero/test_ha144a_rigid_derivs.py`; ROLL/YAW columns ride with over-determined trim.)
-
-**Test/Acceptance (V-C1):** Trim a forward-swept / straight wing and reproduce the MSC
-NASTRAN HA144A-class flexible-to-rigid derivative ratios; closed-form check vs
-Bisplinghoff analytical correction. **(V-C4)** An over-determined case (two control
-effectors, one equation) returns the objective-minimizing solution and satisfies the
-constraints.
-
-**Risk (KC6):** Over-determined solution may be a local optimum — document initial-guess
-sensitivity (`TRIMVAR INITIAL`).
+**Prerequisite:** AE1 acceptance closed (Steps A–G done, including the Step C regression guard).
+Step 52 (determined **and** over-determined trim, longitudinal + lateral derivatives) is **CLOSED
+2026-06-14** as `run_sol144_trim` — see `docs/40_history`. The steps below build on it.
 
 ---
 

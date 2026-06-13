@@ -322,6 +322,8 @@ def _build_f06_sol144_text(
     # ---- TRIM VARIABLES ----
     lines.append("                                          T R I M   V A R I A B L E S")
     lines.append("")
+    lines.append(f"      TRIM SOLUTION: {result.trim_mode.upper()}")
+    lines.append("")
     lines.append("      LABEL           TYPE             VALUE")
     for label in sorted(result.trim_vars.keys()):
         kind = "PRESCRIBED" if label.upper() in prescribed else "FREE"
@@ -341,6 +343,23 @@ def _build_f06_sol144_text(
             f"{_fmt(rg.get('CZ', 0.0))}{_fmt(rg.get('CMY', 0.0))}"
             f"{_fmt(rg.get('CX', 0.0))}{_fmt(rg.get('CY', 0.0))}"
             f"{_fmt(el.get('CZ', 0.0))}{_fmt(el.get('CMY', 0.0))}"
+        )
+    lines.append("")
+
+    # ---- LATERAL / DIRECTIONAL DERIVATIVES (roll/yaw moments, Step 52) ----
+    # CMX = rolling-moment coeff (C_lp from ROLL, C_lβ from SIDES); CMZ = yawing-
+    # moment coeff (C_nr from YAW).  Both about the AERO reference, /(S_ref·b_ref).
+    lines.append("                    L A T E R A L / D I R E C T I O N A L   D E R I V A T I V E S")
+    lines.append("")
+    lines.append("                          ------- RIGID -------    -- ELASTIC RESTRAINED --")
+    lines.append("      LABEL              CMX           CMZ            CMX           CMZ")
+    for label in sorted(result.trim_vars.keys()):
+        rg = result.rigid_derivs.get(label, {})
+        el = result.restrained_derivs.get(label, {})
+        lines.append(
+            f"      {label:<12}  "
+            f"{_fmt(rg.get('CMX', 0.0))}{_fmt(rg.get('CMZ', 0.0))}"
+            f"{_fmt(el.get('CMX', 0.0))}{_fmt(el.get('CMZ', 0.0))}"
         )
     lines.append("")
 

@@ -34,7 +34,7 @@ defect (see backlog for Steps C, D, F, G); **R** (R1–R22) are 2026-05-25 / ear
 - [Infrastructure](#infrastructure) — SPARSE, CI1, TEST1, CI2, Step 34, R-defects (R1–R15), C-1, R20, VAL1
 - [Phase A — Static Aeroelastics (VLM)](#phase-a--static-aeroelastics-vlm) — Steps 39–44; resolved defects A1, A9, A2+A3, S45, Step 46, A4, A6
 - [Phase B — Structure ↔ Aero Splining](#phase-b--structure--aero-splining) — Steps 45, 46, 47, 49
-- [Phase C — SOL 144 Static Aeroelastics](#phase-c--sol-144-static-aeroelastics) — Steps 50, 51; resolved AE1 Step A, AE1 Step B, AE1 Step E, AE2, AE3, AE4+AE6, AE5+AE7
+- [Phase C — SOL 144 Static Aeroelastics](#phase-c--sol-144-static-aeroelastics) — Steps 50, 51, 52 (determined + over-determined trim, longitudinal + lateral derivatives), 56, 58; resolved AE1 Step A, AE1 Step B, AE1 Step E, AE2, AE3, AE4+AE6, AE5+AE7
 
 ---
 
@@ -3005,3 +3005,56 @@ solver code needed changing.
 - **Trim sign is convention-free:** the validated invariant is the inertia-relief force/moment
   balance and symmetric cancellation; the trimmed ANGLEA sign reflects the minimal single-DOF (Tz)
   plunge support in the basic z-up frame (no RCSID/canard).
+
+### Phase C — Step 52 (remainder): over-determined trim + lateral rate derivatives ✅ COMPLETE (2026-06-14)
+
+**Objective:** Close the two remaining Step 52 deliverables — over-determined (redundant-control)
+trim and the lateral/directional rate-aero derivatives — on top of the already-shipped determined
+Schur trim solver. (Determined trim, AE2–AE7, AE9, AE1 Steps A–G, AE10/Step 56 were closed earlier.)
+
+**Deliverables:**
+- **Lateral / directional derivatives (`sbeam/solver/sol144.py`):** `_compute_rigid_derivs` and
+  `_compute_restrained_derivs` now emit the roll/yaw **moment** coefficients
+  `CMX = Mx/(S_ref·b_ref)` and `CMZ = Mz/(S_ref·b_ref)` alongside the longitudinal `CZ`/`CMY`,
+  using the full 3-component cross-product resultant `aero_moment_resultant` about the AERO
+  reference. These give the damping derivatives `C_lp = ∂CMX/∂ROLL`, `C_nr = ∂CMZ/∂YAW`, and the
+  dihedral effect `C_lβ = ∂CMX/∂SIDES`. The ROLL/YAW/SIDES quasi-steady normalwash columns already
+  existed in `build_djx`; this step added the moment recovery, threading `suport_pos`/`b_ref`
+  through both derivative helpers.
+- **Over-determined trim (`_solve_trim_overdetermined`):** dispatched from `run_sol144_trim` when
+  `n_free > n_suport`. The Schur build was refactored into `_build_trim_schur` (shared with the
+  determined path) + `_recover_u_a`. The equilibrium equality `schur_A·δ = schur_b` is eliminated
+  by a **null-space reduction** `δ = δ_p + N·z`; the redundancy coordinate `z` minimises the convex
+  weighted-L2 TRIMOBJ objective `Σ wᵢ·δᵢ²` subject to the TRIMCON inequalities and TRIMVAR bounds
+  (SLSQP on the small reduced problem).
+- **Case control + result + f06:** `SubcaseControl.trimobj_sid` (+ `TRIMOBJ = sid` parsing);
+  `Sol144TrimResult.trim_mode` ("determined"/"over-determined"); f06 gains a LATERAL/DIRECTIONAL
+  DERIVATIVES block (CMX/CMZ rigid + restrained) and a TRIM SOLUTION mode line.
+
+**Test/Acceptance:**
+- **V-C4** (`tests/aero/test_trim_overdetermined.py`, 5 cases): an over-determined HA144A (PITCH
+  left free, `min(PITCH²)` objective) reproduces the determined ANGLEA/ELEV with PITCH ≈ 0; a
+  TRIMCON `PITCH ≥ rhs` forces its bound active; the convex objective is initial-guess insensitive
+  (KC6); a missing TRIMOBJ is rejected.
+- **V-LAT** (`tests/aero/test_lateral_derivs.py`, 5 cases): roll-rate damping `|C_lp| ≈ 0.54` for
+  the AR=8 rect wing (inside the lifting-line/strip-theory band), clean ROLL↔Fz/My/Mz decoupling
+  on a planar wing, YAW/SIDES vanish without a vertical surface, and `C_lβ` flips sign between
+  `val_vlm_dihedral`/`val_vlm_anhedral` and is zero on the planar deck.
+- Full `tests/aero/` + `tests/results/` + case-control parser: 362 passed (no regression to the
+  validated longitudinal `test_ha144a_rigid_derivs` column).
+
+**Key decisions:**
+- **Objective = weighted-L2** (`Σ wᵢ·δᵢ²`, user-confirmed) rather than a linear (LP) objective —
+  convex, unique minimiser, robust.
+- **Null-space reduction over a direct SLSQP equality constraint:** the equilibrium rows carry
+  structural-force magnitudes O(10³) that swamp the O(0.1) trim variables; handed to SLSQP as an
+  equality the line search fails to converge (iteration-limit). Eliminating the equality by
+  construction yields a small, well-scaled QP.
+- **Lateral moment sign convention:** CMX/CMZ are the raw cross-product resultant in sbeam's
+  z-up / y-starboard aero frame (the V-C-DIH frame), so the damping derivatives carry that frame's
+  handedness, not a textbook z-down body-axis sign. The magnitudes and the ±Γ `C_lβ` symmetry are
+  the convention-independent content the gates assert; the full textbook body-axis sign mapping is
+  deferred (not needed by the consumers — monitor loads use `aero_moment_resultant` directly).
+- **Lateral derivatives validated standalone:** the rigid lateral columns are gated by building the
+  aero model + `D_jx` + `_compute_rigid_derivs` directly (no SUPORT/trim needed) — a full balanced
+  antisymmetric roll/yaw *maneuver* is Step 53, not Step 52.

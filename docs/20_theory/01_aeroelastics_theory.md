@@ -592,7 +592,13 @@ $$
   effectors). The solution minimises a user objective $\text{Obj}=\sum_i (C_{1i}F_i - S_{1i})^{e_{1i}}\!+\dots$
   over the trim functions $F_i$, subject to inequality constraints $G_i = (F_i-S_i)^{e_i}\lessgtr V_i$,
   with bounds and an initial guess on each variable. The square case is the special case with no
-  free objective. (This is the ZAERO `TRIMOBJ`/`TRIMCON`/`TRIMVAR` formulation.)
+  free objective. (This is the ZAERO `TRIMOBJ`/`TRIMCON`/`TRIMVAR` formulation.) *sbeam
+  implementation:* the equilibrium equations are eliminated by a null-space reduction
+  $\delta=\delta_p + N z$ ($N=\operatorname{null}(\text{schur}_A)$, so equilibrium holds for any
+  $z$); the redundancy coordinate $z$ then minimises the convex weighted-L2 objective
+  $J=\sum_i w_i\,\delta_i^2$ subject to the TRIMCON/TRIMVAR bounds (small, well-scaled SLSQP).
+  The null-space form keeps the stiff $O(10^3)$ structural-force equilibrium rows out of the
+  optimiser; convexity makes the optimum initial-guess insensitive.
 
 **CFD/WT mean-flow injection.** Optionally the program-computed mean-flow load is replaced by a
 supplied steady pressure/section-load distribution at a stated $\alpha_\text{ref}$ (§3.4): the
@@ -624,6 +630,16 @@ and is **not** the roll column $-(2/b_\text{ref})\,y$. A control deflection rota
 hinge axis $\hat{\mathbf h}$ (the surface's hinge coordinate-system y-axis), giving the streamwise
 normalwash $-(\hat{\mathbf h}\times\mathbf n)\cdot\hat{\mathbf x}\,\cdot\text{eff}$, which reduces to
 the flat-plate flap result $-n_z\,\text{eff}$ when the hinge is spanwise ($\hat{\mathbf h}=\hat{\mathbf y}$).
+
+**Lateral / directional moment derivatives.** The longitudinal derivatives use $C_Z=F_z/S_\text{ref}$
+and the nose-up pitch arm $C_{MY}=M_y/(S_\text{ref}c_\text{ref})$; the roll/yaw derivatives use the
+full 3-component cross-product resultant $\mathbf M=\sum_j(\mathbf r_j-\mathbf r_\text{ref})\times
+\mathbf F_j$ about the aero reference, giving $C_{MX}=M_x/(S_\text{ref}b_\text{ref})$ and
+$C_{MZ}=M_z/(S_\text{ref}b_\text{ref})$. From these: roll damping $C_{lp}=\partial C_{MX}/\partial p$,
+yaw damping $C_{nr}=\partial C_{MZ}/\partial r$, and the dihedral effect $C_{l\beta}=\partial C_{MX}
+/\partial\beta$ — the last being identically zero for a planar wing and non-zero (sign set by $\pm\Gamma$)
+once the box normals leave the $xy$-plane (§ dihedral). Because $\mathbf M$ carries the per-box side
+force $F_y$, these are correct for canted surfaces without a flat-plate projection.
 
 **Hinge moments.** The hinge moment of a control surface is the moment of its box forces about the
 hinge axis through the hinge origin $\mathbf o$,

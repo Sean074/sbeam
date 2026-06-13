@@ -32,6 +32,29 @@ for a 0.107° miss).
 
 ### Added
 
+**Step 52 (remainder) — over-determined trim + lateral rate derivatives (2026-06-14)**
+
+Closes the two remaining Step 52 deliverables on top of the existing determined Schur trim solver.
+
+- **Lateral / directional derivatives:** `_compute_rigid_derivs` / `_compute_restrained_derivs`
+  (`sbeam/solver/sol144.py`) now emit roll/yaw moment coefficients `CMX = Mx/(S_ref·b_ref)` and
+  `CMZ = Mz/(S_ref·b_ref)` (full 3-component cross-product resultant via `aero_moment_resultant`),
+  yielding the damping derivatives `C_lp` (ROLL), `C_nr` (YAW) and the dihedral effect `C_lβ`
+  (SIDES). The rate normalwash columns already existed in `build_djx`; this adds the moment
+  recovery. Gate: `tests/aero/test_lateral_derivs.py` (V-LAT) — `|C_lp| ≈ 0.54` for the AR=8 rect
+  wing, clean planar decoupling, and the ±Γ `C_lβ` sign-flip (zero on the planar deck).
+- **Over-determined (redundant-control) trim:** `run_sol144_trim` dispatches to
+  `_solve_trim_overdetermined` when `n_free > n_suport`. The equilibrium equality is eliminated by a
+  null-space reduction `δ = δ_p + N·z`; the redundancy coordinate minimises the convex weighted-L2
+  TRIMOBJ objective subject to TRIMCON inequalities and TRIMVAR bounds (SLSQP). The Schur build is
+  refactored into `_build_trim_schur` + `_recover_u_a`, shared with the determined path. Gate:
+  `tests/aero/test_trim_overdetermined.py` (V-C4) — `min(PITCH²)` reproduces the determined trim, a
+  TRIMCON forces its bound active, and the result is initial-guess insensitive.
+- **Plumbing:** `SubcaseControl.trimobj_sid` + `TRIMOBJ = sid` case-control parsing;
+  `Sol144TrimResult.trim_mode`; f06 LATERAL/DIRECTIONAL DERIVATIVES block + TRIM SOLUTION mode line.
+- Suite: 362 passed across `tests/aero/` + `tests/results/` + case-control parser (no regression to
+  the validated longitudinal derivative column).
+
 **Step 58 — dihedral / anhedral (±Γ) correctness gate (2026-06-14)**
 
 The SOL 144 chain (VLM → spline → force integration → trim) is now permanently validated OUT of

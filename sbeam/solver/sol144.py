@@ -509,7 +509,7 @@ def _get_suport_local(bulk: BulkData, free_dofs: list, grid_index: dict) -> list
     return suport_local
 
 
-def _solve_trim_determined(
+def _build_trim_schur(
     K_aa: np.ndarray,
     Q_aa: np.ndarray,
     Q_ax_a: np.ndarray,
@@ -519,20 +519,21 @@ def _solve_trim_determined(
     suport_local: list,
     free_label_cols: list,
 ) -> tuple:
-    """Schur-complement trim solve for the determined case (n_free == n_suport).
+    """Build the trim-equilibrium operator shared by the determined and
+    over-determined solves.
 
     Partitions K_eff = K_aa - q*Q_aa into l-set (non-SUPORT) and r-set (SUPORT).
-    With u_r = 0, the r-set equilibrium provides the trim equations.
+    With u_r = 0, the r-set equilibrium is the trim equation in the free trim
+    variables δ_free:
 
-    C_ax = q * Q_ax_a + M_ax_a   (combined aero + inertial sensitivity)
+        schur_A @ delta_free = schur_b
+        schur_A = K_rl @ K_ll^{-1} @ C_ax_l - C_ax_r          (n_r, n_free)
+        schur_b = f_rhs_r - K_rl @ K_ll^{-1} @ f_rhs_l        (n_r,)
 
-    Substituting the l-set solution:
-        Schur rhs  = K_rl @ K_ll^{-1} @ f_rhs_l - f_rhs_r
-        Schur lhs  = K_rl @ K_ll^{-1} @ C_ax_l - C_ax_r
-        Schur lhs @ delta_free = -Schur rhs
+    where C_ax = q*Q_ax_a + M_ax_a is the combined aero + inertial sensitivity.
 
     Returns:
-        (u_a, delta_free, K_ll_lu, l_idx, r_idx)
+        (schur_A, schur_b, K_ll_lu, l_idx, r_idx, C_ax_l, f_rhs_l)
     """
     n_a = K_aa.shape[0]
     r_idx = list(suport_local)
@@ -556,20 +557,195 @@ def _solve_trim_determined(
     Kinv_f = scipy.linalg.lu_solve(K_ll_lu, f_rhs_l)            # (n_l,)
     Kinv_C = scipy.linalg.lu_solve(K_ll_lu, C_ax_l)             # (n_l, n_free)
 
-    # Trim equation: schur_A @ delta_free = schur_b
     schur_A = K_rl @ Kinv_C - C_ax_r                            # (n_r, n_free)
     schur_b = f_rhs_r - K_rl @ Kinv_f                           # (n_r,)
 
-    delta_free_arr = scipy.linalg.solve(schur_A, schur_b)        # (n_free,)
+    return schur_A, schur_b, K_ll_lu, l_idx, r_idx, C_ax_l, f_rhs_l
 
-    # Recover l-set displacements
+
+def _recover_u_a(
+    K_ll_lu: tuple,
+    C_ax_l: np.ndarray,
+    f_rhs_l: np.ndarray,
+    delta_free_arr: np.ndarray,
+    l_idx: list,
+    n_a: int,
+) -> np.ndarray:
+    """Recover the a-set displacement from the trimmed free variables (u_r = 0)."""
     u_l = scipy.linalg.lu_solve(K_ll_lu, C_ax_l @ delta_free_arr + f_rhs_l)
-
-    # Assemble a-set displacement (u_r = 0)
     u_a = np.zeros(n_a)
     for li, val in zip(l_idx, u_l):
         u_a[li] = val
+    return u_a
 
+
+def _solve_trim_determined(
+    K_aa: np.ndarray,
+    Q_aa: np.ndarray,
+    Q_ax_a: np.ndarray,
+    M_ax_a: np.ndarray,
+    f_rhs_a: np.ndarray,
+    q: float,
+    suport_local: list,
+    free_label_cols: list,
+) -> tuple:
+    """Schur-complement trim solve for the determined case (n_free == n_suport).
+
+    Returns:
+        (u_a, delta_free, K_ll_lu, l_idx, r_idx)
+    """
+    n_a = K_aa.shape[0]
+    schur_A, schur_b, K_ll_lu, l_idx, r_idx, C_ax_l, f_rhs_l = _build_trim_schur(
+        K_aa, Q_aa, Q_ax_a, M_ax_a, f_rhs_a, q, suport_local, free_label_cols)
+
+    delta_free_arr = scipy.linalg.solve(schur_A, schur_b)        # (n_free,)
+
+    u_a = _recover_u_a(K_ll_lu, C_ax_l, f_rhs_l, delta_free_arr, l_idx, n_a)
+    return u_a, delta_free_arr, K_ll_lu, l_idx, r_idx
+
+
+def _solve_trim_overdetermined(
+    K_aa: np.ndarray,
+    Q_aa: np.ndarray,
+    Q_ax_a: np.ndarray,
+    M_ax_a: np.ndarray,
+    f_rhs_a: np.ndarray,
+    q: float,
+    suport_local: list,
+    free_labels: list,
+    free_label_cols: list,
+    trimobj,
+    trimcons: list,
+    trimvars: dict,
+) -> tuple:
+    """Over-determined trim solve (n_free > n_suport): redundant controls.
+
+    The trim equilibrium ``schur_A @ δ = schur_b`` is ``n_suport`` equations in
+    ``n_free`` unknowns (under-determined as an equality system).  The solution is
+    made unique by minimising the weighted-L2 ``TRIMOBJ`` objective
+
+        min_δ  Σ_k  w_k · δ_k²        (k over TRIMOBJ labels; w_k its weight)
+
+    subject to
+        * equality:   schur_A @ δ = schur_b          (trim equilibrium),
+        * inequality: TRIMCON  (δ_label ≤ rhs  or  δ_label ≥ rhs),
+        * bounds:     TRIMVAR  lb ≤ δ_label ≤ ub.
+
+    The equilibrium equality is eliminated by a **null-space reduction** rather
+    than handed to the optimiser as a stiff constraint: ``schur_A`` carries
+    structural-force magnitudes O(10³) that swamp the O(0.1) trim variables and
+    defeat SLSQP's line search.  Writing
+
+        δ = δ_p + N · z          (δ_p = least-norm equilibrium solution,
+                                  N = null(schur_A), so schur_A·δ ≡ schur_b)
+
+    turns the problem into a small, well-scaled convex QP in the redundancy
+    coordinate ``z`` with only the TRIMCON/TRIMVAR bounds (now linear in ``z``).
+    The convex objective makes the optimum initial-guess insensitive (KC6); the
+    TRIMVAR ``init`` only seeds the warm start.
+
+    Returns:
+        (u_a, delta_free, K_ll_lu, l_idx, r_idx)
+    """
+    import scipy.optimize
+
+    n_a = K_aa.shape[0]
+    n_free = len(free_labels)
+    schur_A, schur_b, K_ll_lu, l_idx, r_idx, C_ax_l, f_rhs_l = _build_trim_schur(
+        K_aa, Q_aa, Q_ax_a, M_ax_a, f_rhs_a, q, suport_local, free_label_cols)
+
+    label_to_idx = {lbl: i for i, lbl in enumerate(free_labels)}
+
+    # Weighted-L2 objective from TRIMOBJ (default weight 1.0 on every free var
+    # when no TRIMOBJ label matches, so the solve is always well-posed).
+    weights = np.ones(n_free)
+    if trimobj is not None and trimobj.labels:
+        w_obj = np.zeros(n_free)
+        matched = False
+        for lbl, w in zip(trimobj.labels, trimobj.weights):
+            if lbl in label_to_idx:
+                w_obj[label_to_idx[lbl]] = w
+                matched = True
+        if matched:
+            weights = w_obj
+
+    # Particular (least-norm) equilibrium solution and the null-space basis.
+    delta_p, *_ = np.linalg.lstsq(schur_A, schur_b, rcond=None)
+    _u, sv, vt = np.linalg.svd(schur_A)
+    tol = max(schur_A.shape) * np.finfo(float).eps * (sv[0] if sv.size else 0.0)
+    rank = int((sv > tol).sum())
+    N = vt[rank:].T.conj()                      # (n_free, n_free - rank)
+    nz = N.shape[1]
+
+    # TRIMVAR bounds and per-variable initial guess (defaults: unbounded, 0).
+    lb = np.full(n_free, -np.inf)
+    ub = np.full(n_free, np.inf)
+    delta_init = np.zeros(n_free)
+    for tv in (trimvars or {}).values():
+        if tv.label in label_to_idx:
+            i = label_to_idx[tv.label]
+            lb[i] = tv.lb
+            ub[i] = tv.ub
+            delta_init[i] = tv.init
+
+    if nz == 0:
+        # No redundancy left after the equilibrium constraint — δ is determined.
+        delta_free_arr = delta_p
+    else:
+        def objective(z):
+            d = delta_p + N @ z
+            return float(np.sum(weights * d * d))
+
+        def objective_grad(z):
+            d = delta_p + N @ z
+            return 2.0 * (N.T @ (weights * d))
+
+        constraints = []
+        # TRIMCON inequalities (linear in z).
+        for tc in (trimcons or []):
+            if tc.label not in label_to_idx:
+                continue
+            i = label_to_idx[tc.label]
+            if tc.sense == "LE":      # δ_i ≤ rhs  →  rhs − δ_i ≥ 0
+                constraints.append({
+                    'type': 'ineq',
+                    'fun': (lambda z, i=i, r=tc.rhs: r - (delta_p[i] + N[i] @ z)),
+                    'jac': (lambda z, i=i: -N[i]),
+                })
+            else:                     # GE: δ_i ≥ rhs  →  δ_i − rhs ≥ 0
+                constraints.append({
+                    'type': 'ineq',
+                    'fun': (lambda z, i=i, r=tc.rhs: (delta_p[i] + N[i] @ z) - r),
+                    'jac': (lambda z, i=i: N[i]),
+                })
+        # TRIMVAR bounds → linear inequalities in z.
+        for i in range(n_free):
+            if np.isfinite(ub[i]):
+                constraints.append({
+                    'type': 'ineq',
+                    'fun': (lambda z, i=i: ub[i] - (delta_p[i] + N[i] @ z)),
+                    'jac': (lambda z, i=i: -N[i]),
+                })
+            if np.isfinite(lb[i]):
+                constraints.append({
+                    'type': 'ineq',
+                    'fun': (lambda z, i=i: (delta_p[i] + N[i] @ z) - lb[i]),
+                    'jac': (lambda z, i=i: N[i]),
+                })
+
+        # Warm start: project the TRIMVAR init guess onto the redundancy space.
+        z0, *_ = np.linalg.lstsq(N, delta_init - delta_p, rcond=None)
+        res = scipy.optimize.minimize(
+            objective, z0, jac=objective_grad, method='SLSQP',
+            constraints=constraints, options={'ftol': 1e-14, 'maxiter': 500},
+        )
+        if not res.success:
+            raise ValueError(
+                "Over-determined trim could not satisfy the TRIMCON/TRIMVAR "
+                f"bounds: {res.message}")
+        delta_free_arr = delta_p + N @ res.x
+
+    u_a = _recover_u_a(K_ll_lu, C_ax_l, f_rhs_l, delta_free_arr, l_idx, n_a)
     return u_a, delta_free_arr, K_ll_lu, l_idx, r_idx
 
 
@@ -668,19 +844,29 @@ def _compute_rigid_derivs(
     all_labels: list,
     bulk,
     x_ref: float,
+    ref_pt: np.ndarray,
 ) -> dict:
     """Rigid aerodynamic stability and control derivatives.
 
-    For each label, computes the change in total Fz and My per unit label
+    For each label, computes the change in total force/moment per unit label
     value without any structural deformation (u_a = 0).
 
-    CZ = Fz / (q * sref),  dCZ/d(label) = dFz/(q * sref * d_label)
-    At unit q:  dCZ/d(label) = Fz_sensitivity / sref
+    Longitudinal (single-source nose-up-positive pitch arm, AE1 Step E):
+        CZ = Fz / S_ref,    CMY = My / (S_ref * c_ref)
+    Lateral/directional (full 3-component resultant about ``ref_pt``, Step 52):
+        CMX = Mx / (S_ref * b_ref)   — roll  (gives C_lp from ROLL, C_lβ from SIDES)
+        CMZ = Mz / (S_ref * b_ref)   — yaw   (gives C_nr from YAW)
+
+    ``CMX``/``CMZ`` use ``aero_moment_resultant`` so the roll/yaw moments carry
+    the side force ``Fy`` of any canted (±Γ dihedral) panel; on a planar wing
+    the roll column decouples cleanly from Fz/My (V-LAT gate).
     """
     sref = bulk.aeros.sref
     cref = bulk.aeros.cref
+    bref = bulk.aeros.bref
 
     n_box = len(aero.boxes)
+    boxes = aero.boxes
     rigid_derivs: dict = {}
 
     for col, label in enumerate(all_labels):
@@ -690,13 +876,17 @@ def _compute_rigid_derivs(
         f_box_vec = aero.skj @ gamma                 # (3*n_box,)
 
         Fz_sens = f_box_vec[2::3].sum()
-        My_sens = _pitch_moment(f_box_vec, aero.boxes, x_ref)   # nose-up-positive
+        My_sens = _pitch_moment(f_box_vec, boxes, x_ref)   # nose-up-positive
         Fz_x = f_box_vec[0::3].sum()
         Fz_y = f_box_vec[1::3].sum()
+        Mx, _My_xp, Mz = aero_moment_resultant(
+            f_box_vec.reshape(n_box, 3), boxes, ref_pt)
 
         rigid_derivs[label] = {
             'CZ':  Fz_sens / sref,
             'CMY': My_sens / (sref * cref),
+            'CMX': Mx / (sref * bref) if bref > 0 else 0.0,
+            'CMZ': Mz / (sref * bref) if bref > 0 else 0.0,
             'CX':  Fz_x / sref,
             'CY':  Fz_y / sref,
         }
@@ -776,6 +966,7 @@ def _compute_restrained_derivs(
     bulk,
     x_ref: float,
     q: float,
+    ref_pt: np.ndarray,
 ) -> dict:
     """Elastic restrained stability derivatives — exact analytic form (AE1 Step G).
 
@@ -805,8 +996,10 @@ def _compute_restrained_derivs(
 
     sref = bulk.aeros.sref
     cref = bulk.aeros.cref
+    bref = bulk.aeros.bref
     djk  = build_djk(aero.boxes)
     n_a  = Q_ax_a.shape[0]
+    n_box = len(aero.boxes)
     boxes = aero.boxes
 
     # Combined aero + inertial sensitivity on the l-set (one column per label).
@@ -830,9 +1023,13 @@ def _compute_restrained_derivs(
         dgamma = aero.ajj_inv_corr @ dw
         df_box = aero.skj @ dgamma                              # (3·n_box,) force/q
 
+        Mx, _My_xp, Mz = aero_moment_resultant(
+            df_box.reshape(n_box, 3), boxes, ref_pt)
         rest_derivs[label] = {
             'CZ':  df_box[2::3].sum() / sref,
             'CMY': _pitch_moment(df_box, boxes, x_ref) / (sref * cref),
+            'CMX': Mx / (sref * bref) if bref > 0 else 0.0,
+            'CMZ': Mz / (sref * bref) if bref > 0 else 0.0,
         }
 
     return rest_derivs
@@ -1073,11 +1270,7 @@ def run_sol144_trim(
     n_suport = len(suport_local)
     n_free   = len(free_labels)
 
-    if n_free > n_suport:
-        raise NotImplementedError(
-            f"Over-determined trim (n_free={n_free} > n_suport={n_suport}) "
-            "not yet implemented — add TRIMOBJ/TRIMCON or prescribe more variables."
-        )
+    over_determined = n_free > n_suport
     if n_free < n_suport:
         raise ValueError(
             f"Under-determined trim (n_free={n_free} < n_suport={n_suport}): "
@@ -1092,11 +1285,31 @@ def run_sol144_trim(
     free_label_cols = [label_to_col[l] for l in free_labels]
 
     # ------------------------------------------------------------------ #
-    # Schur-complement trim solve
+    # Schur-complement trim solve (determined or over-determined)
     # ------------------------------------------------------------------ #
-    u_a, delta_free_arr, K_ll_lu, l_idx, r_idx = _solve_trim_determined(
-        K_aa, Q_aa, Q_ax_a, M_ax_a, f_rhs_a, q_dyn, suport_local, free_label_cols
-    )
+    if over_determined:
+        # Resolve the TRIMOBJ/TRIMCON/TRIMVAR sets referenced by this subcase.
+        trimobj = bulk.trimobjs.get(subcase.trimobj_sid) if subcase.trimobj_sid else None
+        if trimobj is None and bulk.trimobjs:
+            # Fall back to a single defined TRIMOBJ when the subcase did not name one.
+            trimobj = next(iter(bulk.trimobjs.values())) if len(bulk.trimobjs) == 1 else None
+        if trimobj is None:
+            raise ValueError(
+                f"Over-determined trim (n_free={n_free} > n_suport={n_suport}) "
+                "requires a TRIMOBJ card to specify the weighted objective."
+            )
+        trimcons = []
+        for cons in bulk.trimcons.values():
+            trimcons.extend(cons)
+        u_a, delta_free_arr, K_ll_lu, l_idx, r_idx = _solve_trim_overdetermined(
+            K_aa, Q_aa, Q_ax_a, M_ax_a, f_rhs_a, q_dyn, suport_local,
+            free_labels, free_label_cols, trimobj, trimcons, bulk.trimvars,
+        )
+    else:
+        u_a, delta_free_arr, K_ll_lu, l_idx, r_idx = _solve_trim_determined(
+            K_aa, Q_aa, Q_ax_a, M_ax_a, f_rhs_a, q_dyn, suport_local, free_label_cols
+        )
+    trim_mode = "over-determined" if over_determined else "determined"
 
     # ------------------------------------------------------------------ #
     # Assemble full trim variable dict
@@ -1130,7 +1343,7 @@ def run_sol144_trim(
     # ------------------------------------------------------------------ #
     # Rigid derivatives (no structural deformation)
     # ------------------------------------------------------------------ #
-    rigid_derivs = _compute_rigid_derivs(aero, D_jx, all_labels, bulk, x_ref)
+    rigid_derivs = _compute_rigid_derivs(aero, D_jx, all_labels, bulk, x_ref, suport_pos)
 
     # ------------------------------------------------------------------ #
     # Elastic restrained derivatives (finite difference, u_r = 0)
@@ -1139,7 +1352,7 @@ def run_sol144_trim(
         K_ll_lu, l_idx, Q_ax_a, M_ax_a, all_labels,
         u_a, delta_all, aero, D_jx,
         T, free_local, len(red_dofs),
-        bulk, x_ref, q_dyn,
+        bulk, x_ref, q_dyn, suport_pos,
     )
 
     # ------------------------------------------------------------------ #
@@ -1212,4 +1425,5 @@ def run_sol144_trim(
         grid_loads=grid_loads,
         q_div=q_div,
         hinge_moments=hinge_moments,
+        trim_mode=trim_mode,
     )

@@ -1048,11 +1048,13 @@ the problem is over-determined. sbeam uses three sbeam-defined cards to handle t
 
 | Card | Role |
 |------|------|
-| `TRIMVAR` | Per-variable initial guess and bounds |
-| `TRIMOBJ` | Weighted least-squares objective `J = Σ wᵢ(xᵢ − x̄ᵢ)²` |
+| `TRIMVAR` | Per-variable initial guess and bounds (`lb`, `ub`) |
+| `TRIMOBJ` | Weighted-L2 objective `J = Σ wᵢ·δᵢ²` over the listed labels |
 | `TRIMCON` | Scalar inequality constraints (`LE` or `GE`) |
 
-These cards are parsed and stored but not yet consumed by a solver (deferred to Step 52+).
+These cards are consumed by `run_sol144_trim` when `n_free > n_suport` — see
+**Over-determined trim solve** below. The case-control `TRIMOBJ = sid` selects the objective
+for a subcase (`SubcaseControl.trimobj_sid`); a single defined `TRIMOBJ` is used by default.
 
 ---
 
@@ -1143,3 +1145,41 @@ prior finite-difference hybrid (AE8); because the trim is linear in δ the two a
 round-off. Gate V-AE1e (partial): rigid columns unchanged (CZα 5.071, CMα −2.871), restrained
 CZα 5.112 vs NASTRAN Table 7-1 5.103 (q=40) within 1%. The unrestrained (mean-axis) derivative
 set and the remaining Table 7-1 restrained columns are still open on **AE8**.
+
+### Lateral / directional rate derivatives — `C_lp`, `C_nr`, `C_lβ` (Step 52)
+
+`_compute_rigid_derivs` and `_compute_restrained_derivs` emit the roll/yaw **moment**
+coefficients alongside the longitudinal `CZ`/`CMY`:
+
+```
+CMX = Mx / (S_ref · b_ref)    rolling moment   → C_lp = ∂CMX/∂ROLL,  C_lβ = ∂CMX/∂SIDES
+CMZ = Mz / (S_ref · b_ref)    yawing moment    → C_nr = ∂CMZ/∂YAW
+```
+
+`Mx`, `Mz` are the full 3-component cross-product resultant `Σ(r_box − ref) × F_box`
+(`aero_moment_resultant`), about the AERO reference (`AEROS.RCSID` origin), so they carry the
+side force `Fy` of any canted (±Γ dihedral) panel — the dihedral effect `C_lβ` falls out of the
+Step 58 box normals automatically. The quasi-steady rate normalwash columns (ROLL, YAW) are
+built in `build_djx` (no DLM): roll rate `Δα(y) = p·y/V∞` and yaw-rate sidewash act through the
+local box geometry/normal. **Sign convention:** moments are in sbeam's z-up / y-starboard aero
+frame (the V-C-DIH frame), so the damping derivatives carry that frame's handedness rather than
+a textbook z-down body-axis sign; the magnitudes and the ±Γ `C_lβ` symmetry are the
+convention-independent content. Gate: `tests/aero/test_lateral_derivs.py` (V-LAT) — roll-rate
+damping magnitude in the lifting-line band, clean ROLL↔Fz/My/Mz decoupling on a planar wing,
+and the `C_lβ` sign-flip between `val_vlm_dihedral`/`val_vlm_anhedral` (zero on the planar deck).
+
+### Over-determined trim solve — redundant controls (Step 52)
+
+When `n_free > n_suport` (more free trim variables than equilibrium equations, e.g. redundant
+control effectors), `run_sol144_trim` dispatches to `_solve_trim_overdetermined`. The trim
+equilibrium `schur_A·δ = schur_b` (n_suport equations) is satisfied **by construction** through a
+null-space reduction `δ = δ_p + N·z` (δ_p = least-norm equilibrium solution, `N = null(schur_A)`);
+the redundancy coordinate `z` is then chosen by minimising the convex weighted-L2 TRIMOBJ
+objective `Σ wᵢ·δᵢ²` subject to the TRIMCON inequalities and TRIMVAR bounds (SLSQP on the small,
+well-scaled reduced problem). The null-space form avoids handing the optimiser the stiff
+equilibrium equality (whose rows carry structural-force magnitudes O(10³) that swamp the O(0.1)
+trim variables). Because the objective is convex the optimum is initial-guess insensitive (KC6);
+TRIMVAR `init` only seeds the warm start. `Sol144TrimResult.trim_mode` reports `"determined"` or
+`"over-determined"` and is echoed in the f06 TRIM VARIABLES block. Gate: V-C4
+(`tests/aero/test_trim_overdetermined.py`) — `min(PITCH²)` reproduces the determined ANGLEA/ELEV,
+a TRIMCON forces its bound active, and the result is start-point independent.

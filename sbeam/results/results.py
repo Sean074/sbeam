@@ -81,8 +81,8 @@ class Sol144TrimResult:
     q_aa: np.ndarray                     # (n_a, n_a) aerodynamic stiffness on a-set
     free_dofs: list                      # a-set indices into g-set (length n_a)
     k_aa_lu: tuple                       # (lu, piv) for reuse by derivative solver
-    rigid_derivs: dict                   # {label: {'CZ','CMY','CX','CY'}}
-    restrained_derivs: dict              # {label: {'CZ','CMY'}}
+    rigid_derivs: dict                   # {label: {'CZ','CMY','CMX','CMZ','CX','CY'}}
+    restrained_derivs: dict              # {label: {'CZ','CMY','CMX','CMZ'}}
     box_gamma: Optional[np.ndarray] = None   # (n_box,) circulation strengths at trim
     total_cl: float = 0.0                # total CL = Fz / (q * sref)
     total_cm: float = 0.0               # total CMy / (q * sref * cref) about x_ref
@@ -92,3 +92,4 @@ class Sol144TrimResult:
     grid_loads: Optional[np.ndarray] = None   # (n_dofs,) g-set aero flight-load vector = g_disp^T (q * f_box)
     q_div: Optional[float] = None             # critical divergence dynamic pressure (restrained l-set); None if none
     hinge_moments: Optional[dict] = None      # {AESURF label: {'total': HM/q at trim, <trim_label>: dHM/dδ}} about cid1 hinge axis
+    trim_mode: str = "determined"             # "determined" or "over-determined" (Step 52)
