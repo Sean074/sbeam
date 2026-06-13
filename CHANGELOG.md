@@ -156,6 +156,13 @@ non-V-AE1 suite holds at 238 passed.
 
 ### Added
 
+- **V-AE1d trim acceptance gate (AE1 Step F)** — added per-target relative-tolerance
+  trim assertions to `tests/aero/test_ae1_fullspan.py`, replacing the shared absolute
+  tolerance that masked SC2's high result. SC1 is gated live (ANGLEA ≤1.5%, ELEV ≤1%,
+  lift ≤1% of 16000 lb); SC2 is gated at 1% per target but marked `xfail` pending
+  AE8 / AE1 Step G (the flexible/restrained-derivative path). AE1 Step F remains open
+  until SC2 passes.
+
 **Critical design review — aeroelastics, HA144A benchmark (2026-06-11)**
 - Reviewed the full aeroelastic chain (`aero/`, `solver/sol144.py`) against MSC Nastran
   HA144A (Aeroelastic Analysis User's Guide Listing 7-2 / Table 7-1) and the ZAERO 9.2

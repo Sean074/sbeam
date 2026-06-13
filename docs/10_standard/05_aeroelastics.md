@@ -1017,3 +1017,21 @@ Open defects, in fix order (full detail in `docs/30_future/00_backlog.md`, Code 
 
 Acceptance for closing Step 52 is the V-AE1 gate (backlog AE13): HA144A SC1/SC2 trim
 variables vs MSC Listing 7-2 and the Table 7-1 derivative columns.
+
+### Trim acceptance gates — V-AE1f and V-AE1d (`tests/aero/test_ae1_fullspan.py`)
+
+The HA144A trim is gated on the full-span deck (`sample/ha144a_fullspan_sbeam.bdf`,
+SYMXZ=0, whole-airplane = 16000 lb) — the parity ground truth since half-span support
+was removed (AE1 Step D).
+
+- **V-AE1f** — SC1 ANGLEA/ELEV within a shared ~2% relative tolerance, lift = 16000 lb,
+  mirrored-spline rigid-pitch reproduction, and emergent symmetry (antisymmetric DOF ≈ 0,
+  L/R wing tips match). SC2 is sign/increment-gated only.
+- **V-AE1d** (AE1 Step F) — the same SC1/SC2 trim asserted with **per-target relative
+  tolerances** (replacing the old shared absolute tolerance that masked SC2's high result):
+  - SC1 **live**: ANGLEA within 1.5% (actual +1.1%; not chased — no bulk re-tuning),
+    ELEV within 1%, lift within 1% of 16000 lb.
+  - SC2 gated at 1% per target but marked `xfail` pending **AE8 / AE1 Step G** (the
+    flexible / restrained-derivative path). It flips to XPASS — a loud signal — the moment
+    Step G lands. SC2's current full-span trim (ANGLEA +136%, ELEV −8%) is genuinely off
+    and is not accepted; V-AE1d only exposes that known-wrong number, it does not loosen to fit.

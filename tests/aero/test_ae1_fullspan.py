@@ -12,6 +12,12 @@ consistent, so SC1 (q=40, rigid-dominated) trims to NASTRAN Listing 7-2
 SC2 (q=1200) exercises the flexible q*Q_aa / restrained-derivative path, a
 SEPARATE still-open issue (AE8): its exact ELEV is not value-gated, but its
 signs and the flexible aeroelastic increment (ANGLEA decreasing with q) are.
+
+V-AE1d (AE1 Step F) lives beside V-AE1f here: the same trim, asserted with
+per-target relative tolerances (replacing the shared absolute tolerance that
+masked SC2's high result). SC1 is gated live (ANGLEA 1.5%, ELEV 1%, lift 1%);
+SC2 is gated at 1% per target but marked xfail pending AE8 / AE1 Step G (the
+flexible/restrained-derivative path) — it flips to XPASS the moment G lands.
 """
 
 import warnings
@@ -32,6 +38,16 @@ BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbe
 SC1_ANGLEA = 0.169191   # rad
 SC1_ELEV   = 0.492457   # rad
 REL_TOL    = 0.02       # ~2% (full-span actual: ANGLEA ~1.1% high, ELEV ~0.3% low)
+
+# NASTRAN Listing 7-2 SC2 (q=1200) reference (xfail target — AE8 / AE1 Step G).
+SC2_ANGLEA = 0.001373   # rad
+SC2_ELEV   = 0.019325   # rad
+
+# V-AE1d per-target relative tolerances.
+REL_ANGLEA_SC1 = 0.015  # SC1 ANGLEA actual +1.1%; not chased (no bulk re-tuning)
+REL_ELEV_SC1   = 0.01   # SC1 ELEV actual -0.3%
+REL_SC2        = 0.01   # SC2 targets (xfail pending AE8 / AE1 Step G)
+LIFT_FULLSPAN  = 16000.0  # lb (whole-airplane weight)
 
 G_FT_S2 = 32.174        # standard gravity, ft/s^2
 
@@ -176,4 +192,49 @@ class TestFullSpanTrimSC2:
         a2 = result_sc2.trim_vars["ANGLEA"]
         assert a2 < a1, (
             f"no aeroelastic stiffening: SC2 ANGLEA ({a2:.6f}) >= SC1 ({a1:.6f})"
+        )
+
+
+class TestVAE1dSC1:
+    """V-AE1d (AE1 Step F) — SC1 trim vs NASTRAN Listing 7-2 with per-target
+    relative tolerances (ANGLEA 1.5%, ELEV 1%, lift 1%)."""
+
+    def test_anglea(self, result_sc1):
+        val = result_sc1.trim_vars["ANGLEA"]
+        assert val == pytest.approx(SC1_ANGLEA, rel=REL_ANGLEA_SC1), (
+            f"SC1 ANGLEA={val:.6f} not within {REL_ANGLEA_SC1:.1%} of {SC1_ANGLEA:.6f}"
+        )
+
+    def test_elev(self, result_sc1):
+        val = result_sc1.trim_vars["ELEV"]
+        assert val == pytest.approx(SC1_ELEV, rel=REL_ELEV_SC1), (
+            f"SC1 ELEV={val:.6f} not within {REL_ELEV_SC1:.1%} of {SC1_ELEV:.6f}"
+        )
+
+    def test_lift_balances_weight(self, result_sc1, fullspan):
+        bulk, _aero, _gi = fullspan
+        lift = result_sc1.q * result_sc1.total_cl * bulk.aeros.sref
+        assert lift == pytest.approx(LIFT_FULLSPAN, rel=0.01), (
+            f"SC1 lift={lift:.1f} lb does not balance {LIFT_FULLSPAN:.0f} lb"
+        )
+
+
+@pytest.mark.xfail(
+    reason="SC2 flexible/restrained-derivative path open — AE8 / AE1 Step G",
+    strict=False,
+)
+class TestVAE1dSC2:
+    """V-AE1d (AE1 Step F) — SC2 trim vs NASTRAN Listing 7-2 at 1% per target.
+    Marked xfail pending AE8 / AE1 Step G; flips to XPASS when G lands."""
+
+    def test_anglea(self, result_sc2):
+        val = result_sc2.trim_vars["ANGLEA"]
+        assert val == pytest.approx(SC2_ANGLEA, rel=REL_SC2), (
+            f"SC2 ANGLEA={val:.6f} not within {REL_SC2:.1%} of {SC2_ANGLEA:.6f}"
+        )
+
+    def test_elev(self, result_sc2):
+        val = result_sc2.trim_vars["ELEV"]
+        assert val == pytest.approx(SC2_ELEV, rel=REL_SC2), (
+            f"SC2 ELEV={val:.6f} not within {REL_SC2:.1%} of {SC2_ELEV:.6f}"
         )
