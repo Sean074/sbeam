@@ -15,9 +15,8 @@ Order reflects what unblocks the most downstream work; close in sequence unless 
 | # | Item | Severity | Status | What it unblocks |
 |--:|------|----------|--------|------------------|
 | 2 | [AE1 Step F — Verify V-AE1d elastic trim](#ae1-step-f--verify-v-ae1d-elastic-trim) | CRITICAL | Open | Acceptance gate; SC1 green on full-span, SC2 pending AE8 |
-| 3 | [AE1 Step G — Analytic restrained derivatives](#ae1-step-g--analytic-restrained-derivatives) | MAJOR | Open | Closes AE8 derivative half (NOT on the trim critical path) |
 | 4 | [AE1 Step C — `Q_aa` rigid-body null-space gate](#ae1-step-c--q_aa-rigid-body-null-space-gate) | MINOR | Open | Regression guard for B's spline fix — null space already satisfied to 2e-14; NOT the ELEV lead |
-| 5 | [AE9 — Per-TRIM Mach (currently AEROS.mach only)](#major-ae9--mach-is-a-property-of-the-model-not-the-flight-condition) | MAJOR | Open | Subsonic multi-Mach subcases (HA144A SC3 is supersonic — out of scope) |
+| 5 | [AE8 — Unrestrained (mean-axis) derivative set](#major-ae8--unrestrained-mean-axis-derivative-set-still-missing) | MAJOR | Open | Restrained half closed (analytic Step G); mean-axis set still missing |
 | 6 | [AE10 — SOL 144 CLI dispatch from `main.py`](#major-ae10--sol-144-unreachable-from-main) | MAJOR | Open | End-to-end HA144A solve from main.py |
 | 7 | [AE11 — D_jx YAW column + AESURF hinge geometry](#minor-ae11--d_jx-yaw-column-duplicates-roll-aesurf-hinge-geometry-ignored) | MINOR | Open | Vertical-fin trim, hinge-moment derivs |
 | 8 | [AE12 — SPLINE2 DTOR/DTHZ warning (PG-normal half not a bug)](#minor-ae12--spline2-dtordthz-silently-ignored-pg-normal-half-misidentified) | MINOR | Open | User-input safety (PG-normal half re-diagnosed: not a bug) |
@@ -113,12 +112,13 @@ that `parity` is overloaded (it also selects the AIC image vortices, so the fix 
 | C | `Q_aa` rigid-body null-space regression gate | Open (MINOR — guard only; null space already clean to 2e-14) |
 | D | **Parity fix** — reconcile `sym` between the aero and inertial trim paths | ✅ RESOLVED 2026-06-12 by removing half-span support — `sym` and `parity` deleted; full-span is whole-airplane, no scaling. SC1 green (V-AE1f). |
 | E | Moment-sign single-source helper + VW-moment consistency gate (closes AE8 sign half) | ✅ APPLIED 2026-06-12 — see CHANGELOG |
-| F | V-AE1d elastic trim acceptance gate | Open — gate IMPLEMENTED with per-target relative tolerances (`tests/aero/test_ae1_fullspan.py`); SC1 live (PASS), SC2 xfail-tracked pending AE8/Step G. Closes when SC2 passes. |
-| G | Analytic restrained derivatives via Schur factorisation (closes AE8 deriv half) | Open (MAJOR — AE8, off the trim path) |
+| F | V-AE1d elastic trim acceptance gate | Open — gate IMPLEMENTED with per-target relative tolerances (`tests/aero/test_ae1_fullspan.py`); SC1 live (PASS), SC2 xfail-tracked pending AE8. Closes when SC2 passes. |
+| G | Analytic restrained derivatives via Schur factorisation (closes AE8 deriv half) | ✅ RESOLVED 2026-06-12 — FD path replaced with exact analytic derivative (`_compute_restrained_derivs`); V-AE1e (partial) gate `tests/aero/test_ae1_restrained_derivs.py`. See CHANGELOG / history. |
 
-Recommended order: **F (acceptance) → G**. Step D is closed (half-span removal eliminated the
-`sym=2` double-count). G closes AE8's derivative half; C is a cheap regression guard that can
-land any time. Step E is closed (moment sign already correct).
+Recommended order: **F (acceptance)**, then AE8's remaining unrestrained (mean-axis) set.
+Step D is closed (half-span removal eliminated the `sym=2` double-count). Step G is closed
+(analytic restrained derivatives); C is a cheap regression guard that can land any time.
+Step E is closed (moment sign already correct).
 
 ---
 
@@ -151,9 +151,11 @@ is impossible by construction. `ha144a_fullspan_sbeam.bdf` trims to **SC1 0.1711
 (101%/100% of NASTRAN), lift 16000 lb** (V-AE1f, `tests/aero/test_ae1_fullspan.py`).
 
 *SC2 (q=1200) remains a SEPARATE, still-open flexible issue:* the full-span SC2 ELEV (0.0032)
-still misses NASTRAN (0.0014), i.e. the `q·Q_aa` / restrained-derivative path (Step G / AE8)
-is imperfect at high q. The parity removal closes SC1 but NOT SC2. See `40_history` for the
-full record.
+still misses NASTRAN (0.0014), i.e. the high-q `q·Q_aa` flexible-trim path is imperfect at
+high q (tracked on AE8). The parity removal closes SC1 but NOT SC2. **Note (2026-06-12):**
+closing AE1 Step G (analytic restrained derivatives) did NOT move SC2 — confirming the
+stability derivatives are an OUTPUT, not the trim driver; SC2's residual is in the trim
+solve itself, not the derivative recovery. See `40_history` for the full record.
 
 ---
 
@@ -167,36 +169,19 @@ result). On the full-span deck:
 - **SC1 — live, PASSING:** ANGLEA within 1.5% (actual 0.171052 vs 0.169191, +1.1% —
   accepted, not chased; no bulk re-tuning per "What not to do"), ELEV within 1%
   (0.490775 vs 0.492457, −0.3%), lift within 1% of 16000 lb.
-- **SC2 — `xfail`, pending AE8 / Step G:** ANGLEA/ELEV gated at 1% per target but marked
+- **SC2 — `xfail`, pending AE8:** ANGLEA/ELEV gated at 1% per target but marked
   `pytest.mark.xfail(strict=False)`. Current trim (ANGLEA 0.003242 vs 0.001373, +136%;
-  ELEV 0.017727 vs 0.019325, −8%) is genuinely off — the flexible/restrained-derivative
-  path is Step G's work. The xfail flips to XPASS when G lands; **that is the trigger to
-  close Step F** (remove from backlog, add to history, changelog).
+  ELEV 0.017727 vs 0.019325, −8%) is genuinely off — the high-q flexible-trim path. The
+  xfail flips to XPASS when that lands; **that is the trigger to close Step F** (remove from
+  backlog, add to history, changelog).
 
-NOTE: an earlier note here claimed SC2 depends on "Step D alone, NOT G" — that is retracted;
-the Step D resolution note and the measured +136% SC2 error confirm SC2 needs Step G/AE8.
+NOTE: an earlier note here claimed SC2 depends on "Step D alone, NOT G". Step G (analytic
+restrained derivatives) is now closed (2026-06-12) and did NOT move SC2 — so SC2's residual
+is in the flexible trim solve (AE8), not the derivative recovery.
 
 **Acceptance (to CLOSE):** V-AE1d — SC1 ANGLEA=+0.169191 (≤1.5%), ELEV=+0.492457 (≤1%);
 SC2 ANGLEA=+0.001373, ELEV=+0.019325 (≤1% each, currently xfail); full-span lift =
-+16 000 lb. SC1 is met today; SC2 closes with Step G.
-
----
-
-### AE1 Step G — Analytic restrained derivatives
-
-**Closes AE8 derivative half. NOT on the trim critical path** — sbeam's rigid derivs
-already match NASTRAN to 4 sig fig and the trim is solved from `Q_ax` directly, so Step G
-does not move ANGLEA/ELEV. **Sequence it AFTER Step D:** the current FD restrained increment
-is ~2.2× too large largely because `C_ax_l` is built from the `sym=2`-contaminated `Q_ax_a`
-(sol144.py:678); the analytic form inherits the same contamination until the parity fix lands.
-
-Replace `_compute_restrained_derivs` finite-difference path with the analytic derivative
-from the Schur factorisation: `∂u_l/∂δ_free = K_ll^{−1}·C_ax_l`, then build the
-derivative columns from `D_jx + D_jk·G_slope·∂u/∂δ`. Delete the FD machinery entirely.
-
-**Acceptance:** V-AE1e — HA144A Table 7-1 restrained columns (CZα, Cmα, Cmq, …) within
-1 %; rigid columns unchanged; documented 27 % restrained-CZα flexible increment
-reproduced to ≤ 5 % relative error. (Depends on the Step D parity fix.)
++16 000 lb. SC1 is met today; SC2 closes with the AE8 high-q flexible-trim work.
 
 ---
 
@@ -221,8 +206,11 @@ relative tolerances.
   f_box vs `_pitch_moment` of the SAME f_box) — a common scale/parity error passes it. The
   gate must compare against `solve_rigid_cl`, not against `_pitch_moment`.
 - **V-AE1d** (Step F) — SC1/SC2 ANGLEA, ELEV, lift within 1 % of NASTRAN (relative tol).
-- **V-AE1e** (Steps F + G) — Table 7-1 restrained derivative columns within 1 %; 27 %
-  flexible increment within 5 %.
+- **V-AE1e** (Step G) — Table 7-1 restrained derivative columns within 1 %. ✅ PARTIAL
+  2026-06-12 (`tests/aero/test_ae1_restrained_derivs.py`): restrained CZα = 5.112 vs Table
+  7-1 5.103 (q=40) within 1 %, rigid columns unchanged, analytic columns match the captured
+  FD baseline. The remaining Table 7-1 columns (Cmα, Cmq, CZδe, Cmδe, …) and the documented
+  high-q flexible increment need the MSC manual values — tracked on AE8.
 - **V-AE1f** — full-span parity ground truth. ✅ IMPLEMENTED 2026-06-12
   (`tests/aero/test_ae1_fullspan.py`, 8 tests): the explicit full-span model
   (`sample/ha144a_fullspan_sbeam.bdf`, parity=0/`sym=1`) trims to SC1 within 2 % of NASTRAN
@@ -255,53 +243,29 @@ AE1 is tracked above; AE2/AE3/AE4/AE5/AE6/AE7 are resolved (see CHANGELOG).
 
 ---
 
-### [MAJOR] AE8 — Stability-derivative formulation internally inconsistent and incomplete
+### [MAJOR] AE8 — Unrestrained (mean-axis) derivative set still missing
 
-**Files:** `sbeam/solver/sol144.py:482–637`
-
-```
-[MAJOR] Restrained derivatives perturb via K_ll⁻¹ (no aero feedback in the re-solve) but
-        evaluate forces INCLUDING w_struct — a one-pass hybrid converging to neither
-        NASTRAN's restrained nor unrestrained columns. No unrestrained (mean-axis) set
-        exists. (Moment convention was historically suspected wrong — RESOLVED by AE1
-        Step E: the nose-up-positive −ΣFz·(x−xref) convention is single-sourced in
-        sol144._pitch_moment and verified consistent with solve_rigid_cl.CM and the
-        g_disp virtual-work transfer.)
-FIX:    Sign half RESOLVED by AE1 Step E (2026-06-12; CMα = −2.871 matches NASTRAN in sign
-        AND magnitude). Derivative half: fix the AE1 Step D parity double-count FIRST — it
-        inflates the FD restrained increment ~2.2× (C_ax_l built from the sym=2-contaminated
-        Q_ax_a, sol144.py:678), independent of the FD-vs-analytic choice — THEN apply AE1
-        Step G (analytic restrained derivs out of K_eff). Add the unrestrained set (mean-axis,
-        ZAERO Eq. 12.14/12.15). Acceptance: HA144A Table 7-1 restrained AND unrestrained
-        columns within 1 %.
-```
-
----
-
-### [MAJOR] AE9 — Mach is a property of the model, not the flight condition
-
-**Files:** `sbeam/aero/aero_model.py:77`, `sbeam/model/aero.py` (Aeros.mach),
-`sbeam/solver/sol144.py:673`
+**Files:** `sbeam/solver/sol144.py` (`_compute_rigid_derivs`, `_compute_restrained_derivs`)
 
 ```
-[MAJOR] The AIC is built once from AEROS.mach (an sbeam extension field) while
-        TRIM.mach is parsed and silently ignored (confirmed: sol144.py:753 reads
-        trim_card.mach but only stores it at :992; it never rebuilds aero.ajj_inv_corr).
-        Multiple SUBSONIC subcases at different Mach — standard SOL 144 usage — are
-        impossible, and a mismatch is not even warned about.
-        NOTE: the motivating "HA144A 3rd subcase M=1.3" is SUPERSONIC (manual §7);
-        this steady subsonic VLM clamps M≤0.99 (vlm.py:137,141) and CANNOT solve it —
-        it needs ZONA51/piston theory the program lacks. Cite SC3 only as evidence that
-        multi-Mach SOL 144 is standard, not as a case this fix enables.
-FIX:    NOT a one-line edit at aero_model.py:77. (a) Thread per-TRIM Mach into AIC
-        construction; (b) cache AIC inverses keyed by Mach so the build-once fixture
-        pattern still works across subcases; (c) change the run_sol144_trim contract
-        (today it receives a prebuilt aero). KEEP AEROS.mach as the default/fallback and
-        WARN on AEROS-vs-TRIM disagreement (full retirement forces every deck/test to
-        migrate — Mach currently lives only on AEROS field 9 — for no benefit). Add a
-        SUPERSONIC GUARD that errors rather than silently clamping M≥1. Tests: (1)
-        AEROS.mach≠TRIM.mach warns; (2) two subsonic subcases at different Mach produce
-        different β-scaled AICs / different trim; (3) a supersonic TRIM Mach is rejected.
+[MAJOR] The stability-derivative chain now has consistent rigid and restrained columns
+        but no UNRESTRAINED (mean-axis / inertial-relief) set. NASTRAN HA144A Table 7-1
+        prints both restrained and unrestrained columns; sbeam can only reproduce the
+        restrained half.
+        RESOLVED HALVES (do not re-open):
+          - Sign half — AE1 Step E (2026-06-12): nose-up-positive −ΣFz·(x−xref) single-
+            sourced in sol144._pitch_moment; CMα = −2.871 matches NASTRAN.
+          - Parity precondition — AE1 Step D (2026-06-12): half-span removed, so the old
+            sym=2 contamination of C_ax_l is gone.
+          - Restrained derivative half — AE1 Step G (2026-06-12): _compute_restrained_derivs
+            replaced with the exact analytic Schur derivative (∂u_l/∂δ = K_ll⁻¹·C_ax_l →
+            linear normalwash/force chain); FD machinery deleted; V-AE1e (partial) gate
+            confirms restrained CZα = 5.112 vs Table 7-1 5.103 (q=40) within 1%.
+FIX:    Add the unrestrained mean-axis derivative set (ZAERO Eq. 12.14/12.15): transform to
+        the mean (free-flight) axis with inertial relief so the rigid-body acceleration
+        balances the aero increment. Acceptance: HA144A Table 7-1 UNRESTRAINED columns within
+        1% (restrained columns already gated by V-AE1e). Completing V-AE1e (the remaining
+        restrained columns Cmα, Cmq, CZδe, Cmδe, …) needs the MSC manual values and rides here.
 ```
 
 ---
@@ -519,8 +483,8 @@ already exist); R21 (spc_sid guard) and R22 (public f06 text aliases) fixed in t
 
 Steps 39–46 complete — see `docs/40_history/00_completed_development.md`. Open Phase A
 work: **A7** (cosine chordwise spacing helper + low-NCHORD warning), **A8** (box
-aspect-ratio pre-solve warning); and from the 2026-06-11 review: **AE9** (per-TRIM
-Mach), **AE12** (PG normals).
+aspect-ratio pre-solve warning); and from the 2026-06-11 review: **AE12** (PG normals).
+**AE9** (per-TRIM Mach) is closed (2026-06-12 — Mach-keyed AIC cache, supersonic guard).
 
 ---
 

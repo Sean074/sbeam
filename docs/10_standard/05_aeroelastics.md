@@ -48,7 +48,8 @@ the remaining AE items in `docs/30_future/00_backlog.md` (Code Review 2026-06-11
 | ~~AE5~~ | ~~URDD interpreted in basic frame (RCSID ignored) — HA144A trims to **−1g**~~ | **RESOLVED** — prescribed URDD values transformed through R_rcsid (partial-set support); `pres_values_basic` path in `run_sol144_trim`; V-AE3a gate passes ✓ |
 | ~~AE6~~ | ~~Forces applied at ¾-chord collocation point, not ¼-chord bound vortex~~ | **RESOLVED** — `AeroBox.force_point = (bound_a+bound_b)/2`; `g_disp` and ATTACH lever evaluated at force_point; sol144 moment arms use `force_point[0]` ✓ |
 | ~~AE7~~ | ~~No inertial trim columns; transport terms missing~~ | **RESOLVED** — `_build_inertial_cols` returns (n_g, n_labels) M_ax; translational + spin + transport terms; M_ax_a passed to Schur and derivs; 10/10 tests pass ✓ |
-| AE8–AE10 | Inconsistent derivative formulation; Mach fixed per model; SOL 144 CLI dispatch | Trim system generality |
+| ~~AE9~~ | ~~Mach fixed per model (AEROS), TRIM Mach ignored; supersonic silently clamped~~ | **RESOLVED** — per-TRIM Mach via Mach-keyed `AeroCache`; AEROS fallback + mismatch warning; supersonic guard raises; `test_ae9_mach.py` ✓ |
+| AE8 / AE10 | AE8: unrestrained (mean-axis) derivative set still missing (restrained half closed analytically — Step G ✓); AE10: SOL 144 CLI dispatch | Trim system generality |
 
 **Do not use SOL 144 trim results for anything until AE1, AE8–AE10 are resolved.** Rigid
 `solve_rigid_cl` results on **unswept** surfaces are unaffected. AE2–AE7 are resolved;
@@ -458,17 +459,32 @@ the aerodynamic panel geometry in the spanwise and vertical directions by
 Ajj_pg⁻¹ = (1/β) · Ajj(β · geometry)⁻¹
 ```
 
-**Input:** Mach is supplied via field 8 of the `AEROS` bulk-data card — an sbeam
-extension (`mach=0.0` default, incompressible). Example:
+**Input:** the flight Mach is a property of the **flight condition** — the `TRIM`
+card (AE9). `AEROS` field 8 still carries a Mach, used as the **default/fallback**
+when a TRIM card omits it; a genuine TRIM-vs-AEROS disagreement is warned about.
 
 ```
-AEROS, 0, 0, 2.0, 10.0, 20.0, 1, 0, 0.6
+AEROS, 0, 0, 2.0, 10.0, 20.0, 1, 0, 0.6   $ AEROS Mach 0.6 (fallback)
+TRIM,  1, 0.9, 40.0, ...                    $ this subcase flies at Mach 0.9
 ```
+
+**Per-TRIM Mach + AeroCache (AE9):** because the AIC depends on Mach, each TRIM
+subcase at a distinct Mach needs its own AIC. `build_aero_model(bulk, grid_index,
+mach=…)` takes a Mach override, and `sbeam.solver.sol144.AeroCache` memoizes one
+AeroModel per Mach so the build-once pattern still holds across subcases.
+`run_sol144_trim(bulk, subcase, aero, aero_cache=None)` resolves the TRIM Mach,
+seeds the cache with the prebuilt `aero`, and fetches/builds the AIC for that Mach
+(existing 3-arg callers are unchanged — their TRIM Mach matches AEROS, so no
+rebuild). Multiple subsonic subcases at different Mach therefore trim correctly.
 
 **Key design decisions:**
 - `skj`, `djk`, and `wg` are built from the **physical** (unscaled) boxes — only
   the AIC computation uses the PG-compressed geometry.
-- Mach is capped at 0.99; no transonic or supersonic correction is applied.
+- **Supersonic guard (AE9):** an effective Mach ≥ 1 raises `ValueError` in
+  `build_aero_model`, `prandtl_glauert_boxes`, and `solve_rigid_cl` — the steady
+  subsonic VLM cannot solve the transonic/supersonic regime (it needs ZONA51 /
+  piston theory). This replaces the previous silent `min(mach, 0.99)` clamp, which
+  would have returned a physically wrong answer.
 - M = 0.0 (default) gives bit-identical results to the pre-correction solver.
 - For M < 0.3 the correction is < 5% (within typical VLM modelling error); it can
   be omitted for low-speed work.
@@ -997,8 +1013,8 @@ case (`n_free_labels == n_SUPORT_DOFs`) on the `aeroelastics` branch:
    inertial load) to the a-set via the same RBE3 + SPC partition as SOL 101.
 3. Partition the a-set into l-set / r-set (SUPORT DOFs), set `u_r = 0`, and solve the
    Schur-complement system for the free trim variables and `u_l`.
-4. Recover CBAR forces/stresses, rigid and "restrained" derivatives, total CL/CM, and
-   return a `Sol144TrimResult`.
+4. Recover CBAR forces/stresses, rigid and (analytic) restrained derivatives, total CL/CM,
+   and return a `Sol144TrimResult`.
 
 The Schur partition structure is sound (equivalent to the MSC r-set/l-set method), but the
 implementation **fails the HA144A benchmark on both subcases** (measured 2026-06-11:
@@ -1013,7 +1029,7 @@ Open defects, in fix order (full detail in `docs/30_future/00_backlog.md`, Code 
 | ~~3~~ | ~~AE4/AE6~~ | ~~SPLINE2 swept-axis kinematics; forces applied at ¾-chord~~ — **RESOLVED** ✓ (V-AE2 gate passes, 711 tests ✓) |
 | ~~4~~ | ~~AE5/AE7~~ | ~~URDD in basic frame (trims to −1g); no inertial trim columns `M·φr`~~ — **RESOLVED** ✓ (V-AE3a gate passes, 721 tests ✓) |
 | 5 | AE1 | Solve uses bare `K_aa` — the `q·Q_aa` aeroelastic feedback never enters the trim system |
-| 6 | AE8–AE10 | Derivative formulation, per-TRIM Mach, SOL 144 CLI wiring |
+| 6 | AE8 | Unrestrained (mean-axis) derivative set still missing (restrained half closed by Step G; ~~per-TRIM Mach AE9~~ and ~~derivative FD AE8/Step G~~ resolved 2026-06-12; AE10 CLI wiring open) |
 
 Acceptance for closing Step 52 is the V-AE1 gate (backlog AE13): HA144A SC1/SC2 trim
 variables vs MSC Listing 7-2 and the Table 7-1 derivative columns.
@@ -1031,7 +1047,20 @@ was removed (AE1 Step D).
   tolerances** (replacing the old shared absolute tolerance that masked SC2's high result):
   - SC1 **live**: ANGLEA within 1.5% (actual +1.1%; not chased — no bulk re-tuning),
     ELEV within 1%, lift within 1% of 16000 lb.
-  - SC2 gated at 1% per target but marked `xfail` pending **AE8 / AE1 Step G** (the
-    flexible / restrained-derivative path). It flips to XPASS — a loud signal — the moment
-    Step G lands. SC2's current full-span trim (ANGLEA +136%, ELEV −8%) is genuinely off
-    and is not accepted; V-AE1d only exposes that known-wrong number, it does not loosen to fit.
+  - SC2 gated at 1% per target but marked `xfail` pending **AE8** (the high-q flexible-trim
+    path). It flips to XPASS — a loud signal — the moment that lands. SC2's current full-span
+    trim (ANGLEA +136%, ELEV −8%) is genuinely off and is not accepted; V-AE1d only exposes
+    that known-wrong number, it does not loosen to fit. (AE1 Step G — the analytic restrained
+    derivatives — is closed and did **not** move SC2: the derivatives are an output, not the
+    trim driver, so SC2's residual is in the flexible trim solve.)
+
+### Restrained derivatives — analytic Schur form (`tests/aero/test_ae1_restrained_derivs.py`)
+
+`_compute_restrained_derivs` returns the **exact analytic** restrained stability derivatives
+from the Schur factorisation (AE1 Step G): per label δ, `∂u_l/∂δ = K_ll⁻¹·C_ax_l` (K_ll
+already carries the `q·Q_aa` aero feedback), then the linear `∂w → ∂γ → ∂f_box` chain gives
+`CZ = Σ∂Fz/∂δ / S_ref` and `CMY = _pitch_moment(∂f_box)/(S_ref·c_ref)`. This replaced the
+prior finite-difference hybrid (AE8); because the trim is linear in δ the two agree to
+round-off. Gate V-AE1e (partial): rigid columns unchanged (CZα 5.071, CMα −2.871), restrained
+CZα 5.112 vs NASTRAN Table 7-1 5.103 (q=40) within 1%. The unrestrained (mean-axis) derivative
+set and the remaining Table 7-1 restrained columns are still open on **AE8**.

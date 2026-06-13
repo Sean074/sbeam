@@ -2644,4 +2644,77 @@ the three previously-failing half-span trim-value tests are resolved by the pari
   documented migration path.
 - AE1 Step D is resolved by *eliminating* the `sym` factor rather than reconciling the two
   legs: full-span ⇒ one whole-airplane scale everywhere, no factor to get out of step.
+
+---
+
+### Phase A — AE9: per-TRIM Mach (multi-Mach SOL 144) ✅ COMPLETE (2026-06-12)
+
+**Objective:** Make Mach a property of the *flight condition* (the TRIM card) rather than the
+*model* (`AEROS.mach`). Before this, the VLM AIC was built once from `AEROS.mach` and
+`TRIM.mach` was parsed but silently ignored, so multiple subsonic subcases at different Mach
+were impossible and a supersonic Mach was silently clamped to 0.99.
+
+**Deliverables:**
+- **`aero/aero_model.py`:** `build_aero_model` gained a `mach: Optional[float] = None`
+  override (effective Mach = override else `AEROS.mach`); the effective Mach is stored in
+  `AeroModel.mach`. A **supersonic guard** raises `ValueError` for effective Mach ≥ 1
+  (steady subsonic VLM cannot solve the transonic/supersonic regime).
+- **`aero/vlm.py`:** `prandtl_glauert_boxes` and `solve_rigid_cl` now raise on Mach ≥ 1
+  instead of the silent `min(mach, 0.99)` clamp — one consistent rejection wherever Mach
+  enters the steady build.
+- **`solver/sol144.py`:** new `AeroCache` (Mach-keyed, memoizes AeroModels via
+  `build_aero_model(..., mach=...)`). `run_sol144_trim` gained an optional `aero_cache`
+  argument; it resolves the flight Mach from the TRIM card (falling back to `AEROS.mach`
+  when unset), **warns** on a genuine TRIM-vs-AEROS disagreement, seeds a local cache with
+  the prebuilt `aero`, and fetches the AIC for the resolved Mach. Existing 3-arg callers are
+  unchanged (their TRIM Mach matches AEROS, so the seeded model is reused — no rebuild).
+
+**Test/Acceptance:** `tests/aero/test_ae9_mach.py` (7 tests): TRIM-vs-AEROS mismatch warns
+and uses the TRIM Mach; two subsonic subcases at different Mach trim to different ANGLEA;
+a supersonic TRIM Mach and a supersonic `build_aero_model` override both raise `ValueError`;
+the cache memoizes (same object per Mach, distinct β-scaled AIC across Mach). Full aero suite
+green (223 passed, 2 xfailed).
+
+**Key decisions:**
+- Kept `AEROS.mach` as the default/fallback and warn (rather than retire it) — Mach currently
+  lives only on `AEROS` field 9, so full retirement would force every deck/test to migrate
+  for no benefit.
+- Mach-keyed cache (not a contract that takes `bulk` and rebuilds unconditionally) preserves
+  the build-once fixture pattern and leaves all existing callers working unchanged.
+- Supersonic input errors rather than clamps: the result of a silent clamp would be a
+  physically wrong answer for a regime this solver cannot represent.
+
+---
+
+### Phase A — AE1 Step G: analytic restrained stability derivatives ✅ COMPLETE (2026-06-12)
+
+**Objective:** Replace the finite-difference restrained-derivative path (the AE8 one-pass
+hybrid that "converged to neither NASTRAN's restrained nor unrestrained column") with the
+exact analytic derivative from the Schur factorisation. Closes AE8's derivative half (the
+sign half was closed by AE1 Step E; the parity precondition by AE1 Step D).
+
+**Deliverables:**
+- **`solver/sol144.py` `_compute_restrained_derivs`:** rewritten to compute, per label
+  column, `∂u_l/∂δ = K_ll⁻¹·C_ax_l` (K_ll already carries the `q·Q_aa` aero feedback, so this
+  is the restrained, aero-coupled sensitivity), then the linear normalwash → circulation →
+  force chain: `∂w/∂δ = D_jx + D_jk·G_slope·∂u/∂δ`, `∂γ/∂δ = A_jj*⁻¹·∂w/∂δ`,
+  `∂f_box/∂δ = S_kj·∂γ/∂δ`, with `CZ = Σ∂Fz/∂δ / S_ref` and `CMY = _pitch_moment(...) /
+  (S_ref·c_ref)` (nose-up-positive, AE1 Step E). The FD machinery — `delta_perturbation`
+  parameter, nominal `Fz0/My0` evaluation, per-column perturbed re-solve — is deleted.
+- **`tests/aero/test_ae1_restrained_derivs.py` (new, V-AE1e partial):** rigid columns
+  unchanged (CZα 5.071, CMα −2.871); restrained CZα 5.112 vs NASTRAN Table 7-1 5.103 (q=40)
+  within 1%; analytic columns equal the captured pre-rewrite FD baseline to round-off.
+
+**Test/Acceptance:** `pytest tests/aero/test_ae1_restrained_derivs.py` (8 passed); full aero
+suite green (223 passed, 2 xfailed).
+
+**Key decisions:**
+- The trim is linear in each label, so the analytic derivative equals the old FD result to
+  round-off — the rewrite is behaviour-preserving and removes FD truncation/clarity risk
+  rather than changing numbers.
+- Confirmed (and recorded in the backlog) that closing Step G did **not** move the SC2 trim:
+  the stability derivatives are an output, not the trim driver, so SC2's residual lives in
+  the high-q flexible trim solve (AE8), not the derivative recovery.
+- AE8 stays open for the unrestrained (mean-axis / inertial-relief, ZAERO Eq 12.14/12.15)
+  derivative set and the remaining Table 7-1 restrained columns (need the MSC manual values).
 - **Still open (unchanged by this work):** the SC2 (q=1200) flexible residual — AE8 / Step G.

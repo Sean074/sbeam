@@ -109,11 +109,17 @@ def prandtl_glauert_boxes(boxes: list, mach: float) -> list:
     (see §2.8 of docs/20_theory/01_aeroelastics_theory.md, Eq. 14).
 
     Returns the original list unchanged when mach ≤ 0 (incompressible).
-    Mach is capped at 0.99 to avoid β → 0 singularity near M = 1.
+    An effective Mach ≥ 1 is rejected (AE9): the steady subsonic VLM cannot
+    solve the transonic/supersonic regime, so it errors rather than clamping.
     """
     if mach <= 0.0:
         return boxes
-    beta = math.sqrt(1.0 - min(mach, 0.99) ** 2)
+    if mach >= 1.0:
+        raise ValueError(
+            f"prandtl_glauert_boxes: Mach {mach} ≥ 1.0; steady subsonic VLM "
+            "cannot solve M ≥ 1 (needs ZONA51/piston theory)."
+        )
+    beta = math.sqrt(1.0 - mach ** 2)
     if abs(beta - 1.0) < 1e-10:
         return boxes
     from copy import copy
@@ -249,7 +255,9 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
     whole-configuration coefficients with no symmetry factor.
     """
     n = len(boxes)
-    beta_pg = math.sqrt(1.0 - min(mach, 0.99) ** 2) if mach > 0.0 else 1.0
+    # AE9: M ≥ 1 is rejected by prandtl_glauert_boxes on the next line (the
+    # steady subsonic VLM cannot solve it); no silent clamp.
+    beta_pg = math.sqrt(1.0 - mach ** 2) if 0.0 < mach < 1.0 else 1.0
     A = build_ajj(prandtl_glauert_boxes(boxes, mach))
 
     # Flow-tangency: rhs[i] = -(alpha*n_z + beta*n_y) per panel

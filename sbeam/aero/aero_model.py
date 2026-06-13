@@ -40,12 +40,23 @@ class AeroModel:
     g_disp:       Optional[np.ndarray] = None  # displacement spline, shape (3n, 6*n_g)
 
 
-def build_aero_model(bulk: BulkData, grid_index: Optional[dict] = None) -> AeroModel:
+def build_aero_model(
+    bulk: BulkData,
+    grid_index: Optional[dict] = None,
+    mach: Optional[float] = None,
+) -> AeroModel:
     """Assemble the full AeroModel from parsed bulk data.
 
     sbeam is full-span only.  A half-span / symmetry model (AEROS SYMXZ or
     SYMXY non-zero) is rejected here — mirror it to a full-span deck first
     (see sbeam.aero.mirror.mirror_halfspan).
+
+    Mach (AE9): the effective Mach is ``mach`` if given, otherwise ``AEROS.mach``
+    (field 9, an sbeam extension).  Callers running SOL 144 at a per-TRIM Mach
+    pass it explicitly so a single deck can be built at several flight Machs (see
+    ``sbeam.solver.sol144.AeroCache``).  The steady subsonic VLM cannot solve the
+    transonic/supersonic regime, so an effective Mach ≥ 1 is rejected here rather
+    than silently clamped.
 
     Correction precedence (first match wins, per CAERO1 element):
       1. WKK card present  → diagonal multiplicative: AJJ* = diag(wkk) @ AJJ,
@@ -86,8 +97,15 @@ def build_aero_model(bulk: BulkData, grid_index: Optional[dict] = None) -> AeroM
 
     # Prandtl–Glauert / Göthert compressibility correction (§2.8 Eq. 14):
     # compress box y,z by β = √(1-M²) before building AIC; scale AIC⁻¹ by 1/β.
-    mach = bulk.aeros.mach if bulk.aeros else 0.0
-    beta_pg = math.sqrt(1.0 - min(mach, 0.99) ** 2) if mach > 0.0 else 1.0
+    # AE9: effective Mach = explicit override (per-TRIM) or AEROS.mach fallback.
+    mach = mach if mach is not None else (bulk.aeros.mach if bulk.aeros else 0.0)
+    if mach >= 1.0:
+        raise ValueError(
+            f"build_aero_model: effective Mach {mach} ≥ 1.0; the steady subsonic "
+            "VLM cannot solve the transonic/supersonic regime (needs ZONA51/"
+            "piston theory). Use a subsonic Mach."
+        )
+    beta_pg = math.sqrt(1.0 - mach ** 2) if mach > 0.0 else 1.0
     pg_boxes = prandtl_glauert_boxes(boxes, mach)
 
     # Build raw AIC on PG-compressed geometry

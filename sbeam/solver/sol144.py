@@ -16,6 +16,7 @@ Public API:
     run_aeroelastic_static(bulk, subcase, aero, q, use_rom, sol103_result)
 """
 
+import warnings
 from typing import Optional
 
 import numpy as np
@@ -26,12 +27,43 @@ from sbeam.parser.case_control import SubcaseControl
 from sbeam.assembly.stiffness import assemble_global_stiffness, get_spc_dofs
 from sbeam.assembly.load_vector import assemble_load_vector, build_grid_index
 from sbeam.assembly.rbe3 import build_rbe3_transformation
-from sbeam.aero.aero_model import AeroModel
+from sbeam.aero.aero_model import AeroModel, build_aero_model
 from sbeam.aero.coupling import build_qaa, build_fg, build_gaf
 from sbeam.aero.integration import build_djx
 from sbeam.results.results import BarForce, BarStress, Sol144Result, Sol144TrimResult
 from sbeam.solver.sol101 import recover_bar_forces, recover_bar_stresses
 from sbeam.solver.sol103 import run_sol103
+
+
+class AeroCache:
+    """Mach-keyed cache of AeroModels for multi-Mach SOL 144 (AE9).
+
+    The VLM AIC depends on Mach (Prandtl–Glauert / Göthert β scaling), so each
+    TRIM subcase at a distinct Mach needs its own AeroModel.  Building the AIC is
+    the expensive step, so models are memoized by Mach (rounded to 6 dp) and the
+    build-once fixture pattern still holds across subcases at the same Mach.
+
+    The cache is seeded with a prebuilt AeroModel so existing callers that pass a
+    model built at ``AEROS.mach`` incur no rebuild when ``TRIM.mach`` matches.
+    """
+
+    _MACH_DP = 6
+
+    def __init__(self, bulk: BulkData, grid_index: dict, seed: Optional[AeroModel] = None):
+        self.bulk = bulk
+        self.grid_index = grid_index
+        self._cache: dict = {}
+        if seed is not None:
+            self._cache[round(float(seed.mach), self._MACH_DP)] = seed
+
+    def get(self, mach: float) -> AeroModel:
+        """Return the AeroModel for ``mach``, building and memoizing on a miss."""
+        key = round(float(mach), self._MACH_DP)
+        model = self._cache.get(key)
+        if model is None:
+            model = build_aero_model(self.bulk, grid_index=self.grid_index, mach=mach)
+            self._cache[key] = model
+        return model
 
 
 def _build_qaa_aset(
@@ -656,17 +688,30 @@ def _compute_restrained_derivs(
     bulk,
     x_ref: float,
     q: float,
-    delta_perturbation: float = 1e-4,
 ) -> dict:
-    """Elastic restrained stability derivatives via finite difference.
+    """Elastic restrained stability derivatives — exact analytic form (AE1 Step G).
 
-    For each label, perturbs by delta_perturbation, holds SUPORT DOFs at zero,
-    re-solves the l-set, and computes ΔFz and ΔMy.  The perturbation uses the
-    combined aero + inertial sensitivity (q*Q_ax + M_ax) so URDD columns
-    correctly propagate inertial stiffness changes.
+    Restrained means the SUPORT (r-set) DOFs are held at zero; the l-set responds
+    elastically.  The trim problem is linear in each label δ, so the derivative is
+    obtained directly from the Schur factorisation instead of by finite difference
+    (which the prior one-pass hybrid approximated and which converged to neither
+    NASTRAN's restrained nor unrestrained column — see AE8).
 
-    AE1 Step B1: u_a is expanded to full g-set via the RBE3/RBAR T matrix so
-    slave DOFs move with their masters before evaluating aerodynamic forces.
+    For label column ``col`` with combined aero + inertial sensitivity
+    ``C_ax_l = q·Q_ax_a + M_ax_a`` on the l-set:
+
+        ∂u_l/∂δ = K_ll⁻¹ · C_ax_l[:, col]        (K_ll already carries q·Q_aa,
+                                                   so this is the restrained,
+                                                   aero-coupled sensitivity)
+        ∂w/∂δ   = D_jx[:, col] + D_jk·G_slope·∂u/∂δ
+        ∂γ/∂δ   = A_jj*⁻¹ · ∂w/∂δ
+        ∂f_box/∂δ = S_kj · ∂γ/∂δ
+        CZ = Σ∂Fz/∂δ / S_ref,   CMY = ∂My/∂δ / (S_ref·c_ref)
+
+    My uses the nose-up-positive ``_pitch_moment`` convention (AE1 Step E).  Each
+    g-set displacement derivative is expanded through the RBE3/RBAR T matrix so
+    slave DOFs move with their masters (AE1 Step B1).  The result is exact (no FD
+    truncation) and the URDD/inertial columns are carried by M_ax_a.
     """
     from sbeam.aero.integration import build_djk
 
@@ -674,44 +719,32 @@ def _compute_restrained_derivs(
     cref = bulk.aeros.cref
     djk  = build_djk(aero.boxes)
     n_a  = Q_ax_a.shape[0]
-    # Combined sensitivity on l-set
+    boxes = aero.boxes
+
+    # Combined aero + inertial sensitivity on the l-set (one column per label).
     C_ax_l = (q * Q_ax_a[np.ix_(l_idx, list(range(len(all_labels))))]
               + M_ax_a[np.ix_(l_idx, list(range(len(all_labels))))])
 
-    # Expand trim displacement to full g-set (RBAR slaves move with masters)
-    u_full_trim = _expand_to_g(u_a_trim, T, free_local, n_red)
-
-    # Compute nominal Fz, My at trim point
-    Fz0, My0 = _compute_aero_forces(
-        u_full_trim,
-        delta_all_trim, all_labels, aero, D_jx, bulk, x_ref,
-    )
+    # ∂u_l/∂δ for every label at once: K_ll⁻¹ · C_ax_l  (n_l, n_labels)
+    du_l_all = scipy.linalg.lu_solve(K_ll_lu, C_ax_l)
 
     rest_derivs: dict = {}
-    DELTA = delta_perturbation
-
     for col, label in enumerate(all_labels):
-        dw = C_ax_l[:, col] * DELTA                             # (n_l,)
-        u_l_pert_delta = scipy.linalg.lu_solve(K_ll_lu, dw)    # (n_l,)
-
-        u_a_pert = u_a_trim.copy()
+        # Scatter the l-set sensitivity into a full a-set vector, then expand to
+        # the g-set so RBAR/RBE3 slaves follow their masters.
+        u_a_d = np.zeros(n_a)
         for li_idx, li in enumerate(l_idx):
-            u_a_pert[li] += u_l_pert_delta[li_idx]
+            u_a_d[li] = du_l_all[li_idx, col]
+        u_full_d = _expand_to_g(u_a_d, T, free_local, n_red)
 
-        u_full_pert = _expand_to_g(u_a_pert, T, free_local, n_red)
+        # Linear normalwash sensitivity: direct trim term + elastic feedback.
+        dw = D_jx[:, col] + djk @ (aero.g_slope @ u_full_d)
+        dgamma = aero.ajj_inv_corr @ dw
+        df_box = aero.skj @ dgamma                              # (3·n_box,) force/q
 
-        delta_all_pert = delta_all_trim.copy()
-        delta_all_pert[col] += DELTA
-
-        Fz_p, My_p = _compute_aero_forces(
-            u_full_pert,
-            delta_all_pert, all_labels, aero, D_jx, bulk, x_ref,
-        )
-
-        # Fz/My from _compute_aero_forces are force/q; derivative = Δ(force/q)/(sref·Δ)
         rest_derivs[label] = {
-            'CZ':  (Fz_p - Fz0) / (sref * DELTA),
-            'CMY': (My_p - My0) / (sref * cref * DELTA),
+            'CZ':  df_box[2::3].sum() / sref,
+            'CMY': _pitch_moment(df_box, boxes, x_ref) / (sref * cref),
         }
 
     return rest_derivs
@@ -721,6 +754,7 @@ def run_sol144_trim(
     bulk: BulkData,
     subcase: SubcaseControl,
     aero: AeroModel,
+    aero_cache: Optional["AeroCache"] = None,
 ) -> Sol144TrimResult:
     """SOL 144 static aeroelastic trim solve (Step 52).
 
@@ -729,9 +763,15 @@ def run_sol144_trim(
     supported; an over-determined case raises NotImplementedError.
 
     Args:
-        bulk:     Parsed BulkData — must include SUPORT and TRIM cards.
-        subcase:  SubcaseControl — uses spc_sid and trim_sid.
-        aero:     AeroModel with g_slope, g_disp, ajj_inv_corr, skj, wg populated.
+        bulk:       Parsed BulkData — must include SUPORT and TRIM cards.
+        subcase:    SubcaseControl — uses spc_sid and trim_sid.
+        aero:       AeroModel with g_slope, g_disp, ajj_inv_corr, skj, wg
+                    populated.  Used directly when its Mach matches the TRIM
+                    Mach; otherwise it seeds the AeroCache and the AIC is rebuilt
+                    at the TRIM Mach (AE9).
+        aero_cache: Optional AeroCache shared across subcases so multi-Mach runs
+                    build each AIC once.  When None, a local cache seeded with
+                    ``aero`` is created.
 
     Returns:
         Sol144TrimResult with trim variables, displacements, stability derivatives.
@@ -750,11 +790,30 @@ def run_sol144_trim(
 
     trim_card = bulk.trims[trim_sid]
     q_dyn  = trim_card.q
-    mach   = trim_card.mach
 
     grid_index = build_grid_index(bulk)
     n_dofs = 6 * len(grid_index)
     spc_sid = subcase.spc_sid
+
+    # ------------------------------------------------------------------ #
+    # Resolve the flight Mach for this subcase (AE9)
+    # ------------------------------------------------------------------ #
+    # The AIC is Mach-dependent (Prandtl–Glauert β scaling), so the flight Mach
+    # comes from the TRIM card.  AEROS.mach is the fallback when the TRIM field is
+    # unset (0.0); a genuine disagreement is warned about.  A supersonic Mach is
+    # rejected by build_aero_model / AeroCache (steady subsonic VLM only).
+    aeros_mach = bulk.aeros.mach if bulk.aeros else 0.0
+    mach = trim_card.mach if trim_card.mach else aeros_mach
+    if trim_card.mach and aeros_mach and abs(trim_card.mach - aeros_mach) > 1e-9:
+        warnings.warn(
+            f"run_sol144_trim: TRIM Mach {trim_card.mach} disagrees with AEROS "
+            f"Mach {aeros_mach}; using the TRIM Mach {trim_card.mach} for the AIC.",
+            UserWarning,
+        )
+
+    if aero_cache is None:
+        aero_cache = AeroCache(bulk, grid_index, seed=aero)
+    aero = aero_cache.get(mach)
 
     # ------------------------------------------------------------------ #
     # All labels (AESTAT + AESURF), sorted consistently

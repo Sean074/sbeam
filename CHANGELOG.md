@@ -156,6 +156,29 @@ non-V-AE1 suite holds at 238 passed.
 
 ### Added
 
+- **AE9 — per-TRIM Mach (multi-Mach SOL 144)** — the VLM AIC is now built at the flight
+  Mach of each TRIM subcase instead of once from `AEROS.mach`. `build_aero_model` gained a
+  `mach` override; a new Mach-keyed `AeroCache` (`sbeam/solver/sol144.py`) memoizes the AIC
+  per Mach so the build-once pattern still holds, and `run_sol144_trim` gained an optional
+  `aero_cache` argument (existing 3-arg callers are unchanged — the prebuilt model seeds the
+  cache). `AEROS.mach` is the fallback when the TRIM field is unset; a genuine TRIM-vs-AEROS
+  disagreement now warns. The previous *silent* M≤0.99 clamp is replaced by a **supersonic
+  guard**: an effective Mach ≥ 1 raises `ValueError` (steady subsonic VLM cannot solve it) in
+  `build_aero_model`, `prandtl_glauert_boxes`, and `solve_rigid_cl`. Tests:
+  `tests/aero/test_ae9_mach.py` (mismatch warns, distinct-Mach distinct trim, supersonic
+  rejected, cache memoization). Closes AE9.
+
+- **AE1 Step G — analytic restrained stability derivatives (closes AE8 derivative half)** —
+  `_compute_restrained_derivs` (`sbeam/solver/sol144.py`) now returns the exact analytic
+  derivative from the Schur factorisation (`∂u_l/∂δ = K_ll⁻¹·C_ax_l`, then the linear
+  normalwash → circulation → force chain), replacing the prior one-pass finite-difference
+  hybrid (AE8). The trim is linear in each label, so the analytic columns equal the old FD
+  columns to round-off; the FD machinery (`delta_perturbation`, nominal re-evaluation,
+  per-column perturbed solve) is deleted. Gate `tests/aero/test_ae1_restrained_derivs.py`
+  (V-AE1e, partial): rigid columns unchanged (CZα 5.071, CMα −2.871), restrained CZα 5.112
+  vs NASTRAN Table 7-1 5.103 (q=40) within 1%, analytic == captured FD baseline. AE8 stays
+  open for the remaining unrestrained (mean-axis) derivative set.
+
 - **V-AE1d trim acceptance gate (AE1 Step F)** — added per-target relative-tolerance
   trim assertions to `tests/aero/test_ae1_fullspan.py`, replacing the shared absolute
   tolerance that masked SC2's high result. SC1 is gated live (ANGLEA ≤1.5%, ELEV ≤1%,
