@@ -281,10 +281,14 @@ Assembles the n×n aerodynamic influence coefficient (AIC) matrix. `A[i, j]` is 
 normalwash at collocation point `i` per unit circulation strength at horseshoe `j`.
 O(n²) loop over all panel pairs.
 
-**`solve_rigid_cl(boxes, alpha, beta=0.0, aeros=None, xref=0.0, mach=0.0, wg=None) -> dict`**
+**`solve_rigid_cl(boxes, alpha, beta=0.0, aeros=None, xref=0.0, mach=0.0, wg=None, cp_operator=None) -> dict`**
 
 Solves the rigid-wing flow-tangency problem at angle of attack `alpha` and sideslip
-`beta` (both in radians). Boundary condition per panel (ZAERO Eq. 3.28):
+`beta` (both in radians). When `cp_operator` (the corrected ΔCp operator
+`AeroModel.ajj_inv_corr`) is supplied, `ΔCp = cp_operator @ rhs` directly — so any AIC
+correction (WKK / WT1 / WT2) and the baked-in Prandtl–Glauert factor are honoured (and
+`mach` is ignored); with no correction this is numerically identical to building and solving
+the raw AIC here. Boundary condition per panel (ZAERO Eq. 3.28):
 
 ```
 rhs[i] = -(V⃗ · n̂_i) + wg[i]  ≈ -(α·n_z[i] + β·n_y[i]) + wg[i]   for small angles
@@ -580,10 +584,13 @@ from `mach`.
 **Worked example.** `sample/cessna210_aero.bdf` + `sample/cessna210_section_data.csv` are a
 full-span 5-surface Cessna 210-like model (wing + HTP + VTP) with per-surface section data —
 a cambered, two-α-region wing, symmetric HTP, and a `BETA` VTP — exercised end-to-end by
-`tests/aero/test_cessna210_example.py`. ⚠ The viewer **Aero tab** (`solve_rigid_cl`) reflects
-only the `W2GJ` camber, **not** the `WT2` slope/a.c. correction (it re-solves the raw AIC
-rather than using `ajj_inv_corr`); the full correction is applied on the SOL 144 /
-`build_aero_model` path.
+`tests/aero/test_cessna210_example.py`.
+
+**Aero-tab visualisation.** The viewer Aero tab passes `cp_operator=ajj_inv_corr` to
+`solve_rigid_cl`, so the corrected CL / CM / cp / section loads (WKK / WT1 / WT2 **and** W2GJ)
+are shown directly — matching the SOL 144 operator. `viewer/aero_view.build_section_correction_figure`
+gives the spanwise preview (`cn_α(η)`, `cm0(η)`; input markers vs achieved-on-strips) for the
+section-correction page.
 
 ### `build_aero_model(bulk, grid_index=None) -> AeroModel`
 
@@ -767,13 +774,19 @@ maneuver load at each output time.
 and pressure-coefficient visualisation. The Streamlit app (`app.py`) shows an "Aero"
 tab automatically when `bulk.caero1s` is non-empty.
 
-The Aero tab's **Compute Aero** button solves `solve_rigid_cl(..., wg=aero_model.wg)`, so the
-**W2GJ baseline incidence (camber/twist/built-in incidence) is folded into the rigid solve**.
-Two decks that differ only by a W2GJ twist therefore produce different CL/CM/cp/section loads
-(e.g. the `sample/val_wing_taper_dihedral*.bdf` pair: a 0→−2° washout drops CL from 0.268 to
-0.186 at α = 3°). A caption appears when a non-zero `wg` is active. The mesh *geometry* is
-unchanged by twist (incidence, not shape), so the visible difference is in the cp colour map and
-the section-load strip chart, not the wire-frame.
+The Aero tab's **Compute Aero** button solves
+`solve_rigid_cl(..., wg=aero_model.wg, cp_operator=aero_model.ajj_inv_corr)`, so the solve runs on
+the **corrected** operator: both the **W2GJ baseline incidence** (camber/twist/built-in incidence)
+and any **AIC correction (WKK / WT1 / WT2)** are reflected in CL/CM/cp/section loads, matching the
+SOL 144 path. Two decks that differ only by a W2GJ twist produce different loads (e.g. the
+`sample/val_wing_taper_dihedral*.bdf` pair: a 0→−2° washout drops CL from 0.268 to 0.186 at
+α = 3°); a section force+moment correction likewise changes the lift-curve slope and a.c. Captions
+appear when a non-zero `wg` and/or a correction method are active. The mesh *geometry* is unchanged
+by twist/correction (incidence and pressure, not shape), so the visible difference is in the cp
+colour map and the section-load strip chart, not the wire-frame.
+
+`build_section_correction_figure(boxes, df, data_result, caero_eid)` provides the section-correction
+page's spanwise preview — `cn_α(η)` and `cm0(η)`, input markers vs achieved-on-strips.
 
 ### Public API
 

@@ -11,8 +11,6 @@ Covers:
   - build_aero_model: WKK correction wired end-to-end
 """
 
-import warnings
-
 import numpy as np
 import pytest
 
@@ -21,7 +19,7 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.aero.panel import mesh_caero1
 from sbeam.aero.vlm import build_ajj, solve_rigid_cl
 from sbeam.aero.corrections import apply_wkk, apply_wt2, apply_wt1
-from sbeam.aero.aero_model import AeroModel, build_aero_model
+from sbeam.aero.aero_model import build_aero_model
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -244,7 +242,6 @@ class TestApplyWt1:
         assert result.shape == (n, n)
 
     def test_conditioning_warning(self):
-        n = 4
         nspan = 2
         boxes = _rect_wing(nspan, 2)
         # Diagonal matrix with cond ≈ 1e12 — ill-conditioned but invertible.
@@ -341,3 +338,38 @@ class TestBuildAeroModel:
         chord_box = np.array([boxes[i].area / dy[i] for i in range(n)])
         cp_expected = 2.0 * gamma_ref / chord_box
         assert cp_out == pytest.approx(cp_expected, rel=1e-8)
+
+
+class TestSolveRigidClCorrectedOperator:
+    """solve_rigid_cl(cp_operator=...) — the Aero-tab corrected-operator path."""
+
+    def test_identity_when_no_correction(self):
+        """With no correction, the cp_operator path == the build-and-solve path."""
+        bulk = _rect_bulk(4, 4)
+        model = build_aero_model(bulk)
+        plain = solve_rigid_cl(model.boxes, alpha=0.05, aeros=bulk.aeros)
+        corr = solve_rigid_cl(model.boxes, alpha=0.05, aeros=bulk.aeros,
+                              cp_operator=model.ajj_inv_corr)
+        assert corr["CL"] == pytest.approx(plain["CL"], rel=1e-10)
+        assert corr["CM"] == pytest.approx(plain["CM"], rel=1e-10)
+        assert corr["cp"] == pytest.approx(plain["cp"], rel=1e-10)
+
+    def test_wkk_scales_cl(self):
+        """Uniform WKK=1.5 → corrected-operator CL is the uncorrected CL / 1.5."""
+        nspan, nchord = 3, 3
+        n = nspan * nchord
+        bulk = _rect_bulk(nspan, nchord)
+        model_base = build_aero_model(bulk)
+        cl_base = solve_rigid_cl(model_base.boxes, alpha=0.05, aeros=bulk.aeros,
+                                 cp_operator=model_base.ajj_inv_corr)["CL"]
+
+        bulk.wkks[10] = Wkk(sid=10, caero_eid=CAERO_EID, data=[1.5] * n)
+        model_wkk = build_aero_model(bulk)
+        cl_wkk = solve_rigid_cl(model_wkk.boxes, alpha=0.05, aeros=bulk.aeros,
+                                cp_operator=model_wkk.ajj_inv_corr)["CL"]
+        assert cl_wkk == pytest.approx(cl_base / 1.5, rel=1e-8)
+
+    def test_cp_operator_shape_validated(self):
+        boxes = _rect_wing(2, 2)
+        with pytest.raises(ValueError, match="cp_operator has shape"):
+            solve_rigid_cl(boxes, alpha=0.05, cp_operator=np.eye(3))

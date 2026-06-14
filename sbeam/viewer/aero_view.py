@@ -267,3 +267,75 @@ def _apply_aero_layout(fig: go.Figure) -> None:
     )
     fig.update_xaxes(title_text="Span fraction", row=2, col=1)
     fig.update_yaxes(title_text="CL section", row=2, col=1)
+
+
+def build_section_correction_figure(boxes, df, data_result, caero_eid):
+    """Spanwise section-correction preview for one CAERO1 surface.
+
+    Two stacked panels vs span fraction η: the section force-curve slope ``cn_α`` and
+    the zero-incidence section moment ``cm0``.  Each overlays the **user input**
+    (markers at the table η-stations of the selected region) with the **achieved**
+    correction recovered on the actual mesh strips (line), so interpolation and
+    end-clamping (extrapolation) are visible and the build can be eyeballed against
+    the data.
+
+    Args:
+        boxes:       whole-model AeroBox list (mesh order).
+        df:          the section-data table (DataFrame).
+        data_result: a ``section_data.MultiSectionDataBuildResult``.
+        caero_eid:   the CAERO1 to plot.
+    """
+    import math
+    from collections import defaultdict
+
+    groups: dict = defaultdict(list)
+    for k, b in enumerate(boxes):
+        if b.caero_eid == caero_eid:
+            groups[b.i_span].append(k)
+    strips = sorted(groups)
+    eta_s, area_s, chord_s = [], [], []
+    for s in strips:
+        idx = groups[s]
+        a = sum(boxes[k].area for k in idx)
+        b0 = boxes[idx[0]]
+        dy = math.hypot(b0.bound_b[1] - b0.bound_a[1], b0.bound_b[2] - b0.bound_a[2])
+        eta_s.append(float(b0.span_frac))
+        area_s.append(a)
+        chord_s.append(a / max(dy, 1e-14))
+    eta_s = np.asarray(eta_s); area_s = np.asarray(area_s); chord_s = np.asarray(chord_s)
+
+    diag = data_result.correction.per_surface[caero_eid]
+    rad2deg = 180.0 / np.pi
+    ach_cn = diag.achieved_f_slope / (rad2deg * area_s)      # back to per-deg slope
+    ach_cm0 = diag.achieved_m0 / (chord_s * area_s)          # back to section cm0
+
+    cond = data_result.conditions[caero_eid]
+    sel = df[(df["caero"] == caero_eid)
+             & np.isclose(df["mach"], cond.mach)
+             & np.isclose(df["a_lo"], cond.a_lo)
+             & np.isclose(df["a_hi"], cond.a_hi)].sort_values("eta")
+    eta_d = sel["eta"].to_numpy()
+
+    var = cond.var.lower()
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.10,
+        subplot_titles=(f"Section force slope cn_{var}  (CAERO {caero_eid}, {cond.var}, "
+                        f"region [{cond.a_lo:g}, {cond.a_hi:g}]°)",
+                        "Section zero-incidence moment cm0"),
+    )
+    fig.add_trace(go.Scatter(x=eta_d, y=sel["cn_a"].to_numpy(), mode="markers",
+                             name="input", marker=dict(size=10, symbol="x",
+                             color="#d62728")), row=1, col=1)
+    fig.add_trace(go.Scatter(x=eta_s, y=ach_cn, mode="lines+markers", name="achieved",
+                             line=dict(color="#1f77b4")), row=1, col=1)
+    fig.add_trace(go.Scatter(x=eta_d, y=sel["cm0"].to_numpy(), mode="markers",
+                             name="input cm0", marker=dict(size=10, symbol="x",
+                             color="#d62728"), showlegend=False), row=2, col=1)
+    fig.add_trace(go.Scatter(x=eta_s, y=ach_cm0, mode="lines+markers", name="achieved cm0",
+                             line=dict(color="#1f77b4"), showlegend=False), row=2, col=1)
+    fig.update_xaxes(title_text="span fraction η", row=2, col=1)
+    fig.update_yaxes(title_text="cn_α  [1/deg]", row=1, col=1)
+    fig.update_yaxes(title_text="cm0", row=2, col=1)
+    fig.update_layout(height=520, legend=dict(orientation="h", y=1.12),
+                      margin=dict(l=60, r=20, t=60, b=40))
+    return fig

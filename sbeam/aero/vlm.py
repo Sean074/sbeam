@@ -216,7 +216,7 @@ def trefftz_cdi(
 
 def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
                    aeros=None, xref: float = 0.0,
-                   mach: float = 0.0, wg=None) -> dict:
+                   mach: float = 0.0, wg=None, cp_operator=None) -> dict:
     """Solve flow-tangency for a rigid configuration at incidence alpha/beta (radians).
 
     alpha  — angle of attack (rad); loads horizontal surfaces.
@@ -241,6 +241,13 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
              and the end-to-end regression in
              tests/integration/test_wg_sign_convention.py, so the viewer Aero tab
              matches the SOL 144 baseline load.
+    cp_operator — optional (n, n) corrected ΔCp operator (``AeroModel.ajj_inv_corr``).
+             When given, ΔCp = cp_operator @ rhs directly instead of building and
+             solving the raw VLM AIC here — so any AIC correction (WKK / WT1 / WT2)
+             **and** the Prandtl–Glauert factor baked into ``ajj_inv_corr`` are
+             honoured (the SOL 144 path). ``mach`` is then ignored (β already baked
+             in). ``None`` (default) keeps the original build-and-solve behaviour;
+             with no correction the two paths are numerically identical.
 
     Boundary condition per panel (ZAERO Eq. 3.28):
       rhs[i] = -(V⃗ · n̂_i) + wg[i]  with V⃗ ≈ [1, β, α] for small angles
@@ -267,10 +274,6 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
     whole-configuration coefficients with no symmetry factor.
     """
     n = len(boxes)
-    # AE9: M ≥ 1 is rejected by prandtl_glauert_boxes on the next line (the
-    # steady subsonic VLM cannot solve it); no silent clamp.
-    beta_pg = math.sqrt(1.0 - mach ** 2) if 0.0 < mach < 1.0 else 1.0
-    A = build_ajj(prandtl_glauert_boxes(boxes, mach))
 
     # Baseline normalwash (W2GJ camber/twist/incidence); zero when not supplied.
     if wg is None:
@@ -287,8 +290,6 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
     # The +wg term matches the SOL 144 trim sign (w_total = w_trim + wg), so a
     # positive wg (downwash slope) reduces lift exactly as in the trim solver.
     rhs = np.array([-(alpha * b.normal[2] + beta * b.normal[1]) for b in boxes]) + wg_vec
-    gamma = np.linalg.solve(A, rhs)
-    gamma /= beta_pg   # Göthert boundary-condition scaling (§2.8 Eq. 14)
 
     # Spanwise width of each box (used for Kutta-Joukowski lift).
     # K-J: F⃗ = ρ V⃗∞ × Γ Δs⃗; for V⃗∞ = (1,0,0), lift scales with Δy, not ‖Δs⃗‖.
@@ -306,6 +307,26 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
         boxes[i].area / dy[i] if dy[i] > _DEGEN_TOL else 1.0
         for i in range(n)
     ])
+
+    # Circulation: either from a supplied corrected ΔCp operator (so WKK/WT1/WT2 and
+    # the Prandtl–Glauert factor baked into ajj_inv_corr are honoured — the SOL 144
+    # path), or by building and solving the raw VLM AIC here.
+    if cp_operator is not None:
+        cp_op = np.asarray(cp_operator, dtype=float)
+        if cp_op.shape != (n, n):
+            raise ValueError(
+                f"solve_rigid_cl: cp_operator has shape {cp_op.shape}, expected ({n}, {n})"
+            )
+        # ajj_inv_corr already maps normalwash → ΔCp (includes 2/chord, 1/β, correction).
+        cp_direct = cp_op @ rhs
+        gamma = cp_direct * chord_box / 2.0   # back out Γ for K-J lift / Trefftz
+    else:
+        # AE9: M ≥ 1 is rejected by prandtl_glauert_boxes (the steady subsonic VLM
+        # cannot solve it); no silent clamp.
+        beta_pg = math.sqrt(1.0 - mach ** 2) if 0.0 < mach < 1.0 else 1.0
+        A = build_ajj(prandtl_glauert_boxes(boxes, mach))
+        gamma = np.linalg.solve(A, rhs)
+        gamma /= beta_pg   # Göthert boundary-condition scaling (§2.8 Eq. 14)
 
     # Quarter-chord (bound-vortex) x of each box: the point at which the
     # Kutta-Joukowski force physically acts, and hence the correct moment arm

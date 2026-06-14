@@ -117,11 +117,13 @@ a rigid steady-state solve at a user-specified angle of attack.
 - **AoA (°)** — `st.number_input`, default 3°, step 0.5°.
 - **Symmetry** — radio: Symmetric (+1), Antisymmetric (−1), Full-span (0).
 - **Compute Aero** — builds `AeroModel` (AIC matrix) and calls
-  `solve_rigid_cl(..., wg=aero_model.wg)`; results stored in
-  `st.session_state["aero_model"]` and `st.session_state["aero_result"]`. The W2GJ
-  baseline incidence (camber/twist/built-in incidence) is folded into the solve, so decks
-  differing only by a W2GJ twist (e.g. the `sample/val_wing_taper_dihedral*.bdf` washout
-  pair) produce different CL/CM/cp/section loads. Positive `wg` reduces lift (SOL 144 sign).
+  `solve_rigid_cl(..., wg=aero_model.wg, cp_operator=aero_model.ajj_inv_corr)`; results stored in
+  `st.session_state["aero_model"]` and `st.session_state["aero_result"]`. The solve runs on the
+  **corrected** operator, so both the W2GJ baseline incidence (camber/twist/built-in incidence)
+  **and** any AIC correction (WKK / WT1 / WT2) are reflected in CL/CM/cp/section loads — matching
+  the SOL 144 path. Decks differing only by a W2GJ twist (e.g. `sample/val_wing_taper_dihedral*.bdf`)
+  or by a correction card produce different loads. Positive `wg` reduces lift (SOL 144 sign).
+  Captions flag an active `wg` and/or correction method.
 - **Show surface normals** — `st.checkbox` (`key="aero_show_normals"`, default off). When
   ticked, draws each box's outward unit normal (`AeroBox.normal`) as a green arrow rooted
   at its collocation point. Re-renders the cached `aero_model` instantly (no AIC recompute);

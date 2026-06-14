@@ -37,6 +37,25 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 - Docs: theory §3.5 (synthesis method) + §3.3 WT1 clarification; standard-doc section, module-map
   row, and clarified `apply_wt1` entry.
 
+**Viewer — Aero tab honours AIC corrections; section-correction preview plots (2026-06-14)**
+
+- `solve_rigid_cl` (`aero/vlm.py`) gains an optional `cp_operator` argument (the corrected
+  ΔCp operator `AeroModel.ajj_inv_corr`). When supplied, `ΔCp = cp_operator @ rhs` directly,
+  so any AIC correction (WKK / WT1 / WT2) **and** the baked-in Prandtl–Glauert factor are
+  honoured — the same operator SOL 144 uses. With no correction the result is numerically
+  identical to the prior build-and-solve path (verified). `mach` is then ignored (β baked in).
+- The viewer **Aero tab** (`viewer/app.py`) now passes `cp_operator=aero_model.ajj_inv_corr`, so
+  a deck with WKK/WT1/WT2 (e.g. the section force+moment correction) shows the corrected CL / CM /
+  cp / section loads — previously only the W2GJ camber was reflected. A caption flags which
+  correction method is active.
+- New `viewer/aero_view.build_section_correction_figure(boxes, df, data_result, caero_eid)`:
+  spanwise preview for the section-correction page — section force-slope `cn_α(η)` and zero-α
+  moment `cm0(η)`, overlaying the user input (markers at the table η-stations) with the achieved
+  correction recovered on the mesh strips (line), so interpolation/end-clamping is visible.
+- Tests: `test_corrections.py` `TestSolveRigidClCorrectedOperator` (identity with no correction;
+  WKK=1.5 scales CL by 1/1.5; shape guard); `test_cessna210_example.py` preview-figure trace +
+  achieved-vs-input check. Pre-existing lint debt in `test_corrections.py` cleaned up.
+
 **Sample — Cessna 210-like VLM aero model + section-correction example (2026-06-14)**
 
 - `sample/cessna210_aero.bdf`: a full-span, 5-surface VLM model (wing + HTP + VTP, both

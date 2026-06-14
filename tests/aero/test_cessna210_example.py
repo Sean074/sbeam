@@ -89,3 +89,17 @@ def test_correction_takes_effect_through_operator(model_and_data):
     # WT2 raises the lift slope toward the section value (wing 0.105 + tail) — well
     # above the uncorrected VLM (~0.091/deg).
     assert slope > 0.11
+
+
+def test_section_preview_figure(model_and_data):
+    from sbeam.viewer.aero_view import build_section_correction_figure
+    _bulk, model, df = model_and_data
+    res = sd.build_from_section_data_multi(
+        model.boxes, model.ajj, df, mach=0.0, incidence_deg=3.0,
+        sid_w2gj_base=9100, sid_aecorr_base=9200)
+    fig = build_section_correction_figure(model.boxes, df, res, caero_eid=100)
+    assert len(fig.data) == 4   # input cn, achieved cn, input cm0, achieved cm0
+    # achieved curves (traces 1, 3) reproduce the constant input section coefficients
+    # across the whole span (input covers η 0..1, so no extrapolation).
+    assert np.allclose(np.array(fig.data[1].y), 0.105, rtol=1e-6)
+    assert np.allclose(np.array(fig.data[3].y), -0.065, rtol=1e-6)

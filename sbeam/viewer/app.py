@@ -614,16 +614,18 @@ def _render_aero_tab(bulk: BulkData) -> None:
             aero_model = build_aero_model(bulk)
             alpha_rad = np.radians(alpha_deg)
             beta_rad  = np.radians(beta_deg)
-            # Fold the W2GJ baseline normalwash (camber/twist/built-in incidence)
-            # into the rigid solve, with the SOL 144 sign convention, so decks
-            # that differ only by W2GJ (e.g. a washout twist) produce visibly
-            # different CL / cp / section loads in the Aero tab.
+            # Solve on the CORRECTED operator (aero_model.ajj_inv_corr) so any AIC
+            # correction (WKK / WT1 / WT2) and Prandtl–Glauert show in the Aero tab,
+            # matching the SOL 144 path. The W2GJ baseline normalwash (camber/twist/
+            # built-in incidence) is folded into the RHS with the SOL 144 sign. With
+            # no correction card present this is numerically identical to the plain
+            # VLM solve, so unforced decks are unchanged.
             result = solve_rigid_cl(
                 aero_model.boxes, alpha_rad,
                 beta=beta_rad,
                 aeros=aero_model.aeros,
-                mach=aero_model.mach,
                 wg=aero_model.wg,
+                cp_operator=aero_model.ajj_inv_corr,
             )
         st.session_state["aero_model"] = aero_model
         st.session_state["aero_result"] = result
@@ -644,6 +646,13 @@ def _render_aero_tab(bulk: BulkData) -> None:
                 st.caption(
                     "ℹ️ W2GJ baseline incidence (camber/twist) folded into the "
                     "solve — CL/cp include the built-in twist."
+                )
+            if bulk.wkks or bulk.aecorrs:
+                methods = (["WKK"] if bulk.wkks else []) + \
+                    sorted({c.method for c in bulk.aecorrs.values()})
+                st.caption(
+                    f"ℹ️ AIC correction ({', '.join(methods)}) applied — CL/CM/cp "
+                    "reflect the corrected operator."
                 )
             per_surf = aero_result.get("per_surface", {})
             if len(per_surf) > 1:

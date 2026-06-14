@@ -2064,6 +2064,41 @@ be built and applied across all surfaces at once.
 
 ---
 
+### Step A-GUI: Aero tab honours AIC corrections + section-correction preview plots ✅ COMPLETE
+
+**Objective:** Make the viewer reflect the section force+moment correction. The Aero tab used
+`solve_rigid_cl`, which rebuilt the *raw* AIC and applied only W2GJ — so WKK/WT1/WT2 (and hence the
+whole correction) were invisible in the GUI. Also add spanwise preview plots for the
+section-correction page.
+
+**Deliverables:**
+1. **`sbeam/aero/vlm.py`** — `solve_rigid_cl` gains optional `cp_operator` (the corrected ΔCp
+   operator `AeroModel.ajj_inv_corr`): when supplied, `ΔCp = cp_operator @ rhs` directly, honouring
+   WKK/WT1/WT2 + the baked-in Prandtl–Glauert factor; `mach` then ignored. No-correction path is
+   numerically identical to before.
+2. **`sbeam/viewer/app.py`** — Aero tab passes `cp_operator=aero_model.ajj_inv_corr`; a caption
+   flags the active correction method.
+3. **`sbeam/viewer/aero_view.py`** — `build_section_correction_figure(boxes, df, data_result,
+   caero_eid)`: two-panel spanwise preview (`cn_α(η)`, `cm0(η)`) overlaying user input (markers at
+   table η-stations) vs achieved-on-strips (line), exposing interpolation/end-clamping.
+4. **Tests** — `test_corrections.py::TestSolveRigidClCorrectedOperator` (no-correction identity;
+   WKK=1.5 → CL/1.5; shape guard); `test_cessna210_example.py::test_section_preview_figure`
+   (trace count + achieved==input). Cleaned pre-existing lint in `test_corrections.py`.
+5. **Docs** — 05_aeroelastics.md (`solve_rigid_cl` signature, Aero-tab section, worked-example
+   note), 06_viewer.md.
+
+**Key decisions:**
+- The corrected operator is the single source of truth: rather than re-deriving corrections in the
+  rigid solver, `solve_rigid_cl` consumes `ajj_inv_corr` (which already carries WKK/WT1/WT2 and
+  1/β). Backward compatible — `cp_operator=None` keeps the build-and-solve path.
+- The Aero tab always passes `ajj_inv_corr`; with no correction card it equals the plain PG
+  operator, so uncorrected decks are unchanged to floating point.
+
+**Test / Acceptance:**
+- New tests pass; full aero + viewer suites green; ruff clean.
+
+---
+
 ## Phase B — Structure ↔ Aero Splining
 
 ### Step 45: SET1 + SPLINE2 parsing ✅ COMPLETE
