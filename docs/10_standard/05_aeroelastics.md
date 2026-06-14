@@ -23,7 +23,9 @@ Results   (cp, cl_section, CL, CY, CM, CDi, e, per_surface, …)
 | `sbeam/aero/panel.py` | `AeroBox` dataclass + `mesh_caero1()` — trapezoidal box meshing, ¼c/¾c placement |
 | `sbeam/aero/vlm.py` | Biot–Savart segments, horseshoe influence, AIC matrix, rigid-AOA solve |
 | `sbeam/aero/integration.py` | `Skj` force integration matrix, `Djk` downwash matrix, `wg` baseline normalwash |
-| `sbeam/aero/corrections.py` | `Wkk` diagonal correction, `WT1` force-match, `WT2` pressure-match |
+| `sbeam/aero/corrections.py` | `Wkk` diagonal correction, `WT1` per-strip force-match, `WT2` pressure-match |
+| `sbeam/aero/section_correction.py` | `build_section_correction()` — synthesise a `W2GJ`+`WT2` card pair matching section force **and** moment (slope + α=0 offset); `cards_to_bdf()` |
+| `sbeam/aero/section_data.py` | Spanwise section-coefficient table ingestion (tidy CSV) → strip targets → `build_section_correction`: `validate_section_data`, `available_conditions`, `template_dataframe`, `build_from_section_data`, `operating_region` |
 | `sbeam/aero/aero_model.py` | `AeroModel` container + `build_aero_model()` factory |
 | `sbeam/aero/spline.py` | **Phase B** — `build_g_spline()`: builds `g_slope` (n_box×n_g) and `g_disp` (3n_box×n_g) from `SPLINE2` + `ATTACH` + `SPLINE0` cards |
 | `sbeam/aero/coupling.py` | `build_qaa` flexible aero stiffness `Q_aa = G_dispᵀ S_kj (A_jj*)⁻¹ D_jk G_slope`; `build_fg` baseline aero load; `build_gaf` modal GAF `Q_hh = Φᵀ Q_aa Φ` |
@@ -446,10 +448,106 @@ Issues a `UserWarning` if `cond(AJJ) > 1e10`.
 
 ### `apply_wt1(ajj, boxes, f_target) -> np.ndarray`
 
-Force/moment-matching correction. Groups boxes by `i_span` and finds a per-strip
+Per-strip force-matching correction. Groups boxes by `i_span` and finds a per-strip
 scalar ratio `f_target_s / f_vlm_s`. All boxes in a strip share the same correction
 factor. `f_target` must have one value per distinct `i_span`; a `ValueError` is raised
 on length mismatch. Uses same `w_ref = -ones(n)` reference state as WT2.
+
+**Force only — does not move the section a.c.** Because the per-strip factor is uniform
+across the chord, the chordwise ΔCp *shape* is preserved (just rescaled), so the section
+centre of pressure / aerodynamic centre is unchanged and the section moment scales with
+the lift. `f_target` is the surface-normal force/q **per unit reference normalwash** —
+i.e. per rad of α (horizontal surface), per rad of β (vertical), per (α·cosΓ) (canted) —
+a lift-curve-slope quantity, **not** an absolute force at an operating incidence, and it
+produces zero load at α=0 (built-in incidence/camber must come from `W2GJ`). To match a
+section *moment* (a.c.) as well, use the section-correction synthesiser below.
+
+## Section force + moment correction synthesiser (`section_correction.py`)
+
+`sbeam/aero/section_correction.py` generates a **`W2GJ` + `WT2` card pair** that
+together reproduce a target section line — slope **and** zero-α offset of both force and
+pitching moment — with minimal change to the uncorrected chordwise distribution. It is
+the preprocessor implementation of "Option A": no solver or card-schema changes; it emits
+two already-supported cards that compose in the normal solve
+(`cp = corrected-A⁻¹ · (w_α + w_g)`).
+
+The four section targets split into two pairs, each handled by the mechanism that can do
+it without disturbing the other (theory §3.4–3.5):
+
+| Target pair | Meaning | Card |
+|-------------|---------|------|
+| `dF/dα`, `dM/dα` | force-curve slope **and** aerodynamic centre (α-driven chordwise shape) | **WT2** (per-box ratio) |
+| `F₀`, `M₀` | zero-α lift offset **and** camber pitching moment (load at α=0) | **W2GJ** (camber-line normalwash) |
+
+### `build_section_correction(boxes, ajj, *, f_slope, alpha_0, m_slope, m_0, caero_eid, sid_w2gj, sid_aecorr, moment_ref=None) -> SectionCorrectionResult`
+
+Per-strip target arrays (ascending `i_span`, same order as `apply_wt1`'s `f_target`):
+`f_slope` (dF/dα, force/q per rad), `alpha_0` (zero-force angle α₀ in rad, so
+`F₀ = −f_slope·α₀`), `m_slope` (dM/dα, nose-up + per rad), `m_0` (M at α=0, nose-up +).
+Pitching moment is nose-up positive about the per-strip `moment_ref` (default = strip
+¼-chord), matching `sol144._pitch_moment`. Returns a `SectionCorrectionResult` with the
+two cards (`.w2gj`, `.aecorr`), the raw `.r` / `.wg` arrays, the `.moment_ref` used, and
+per-strip achieved-vs-target diagnostics. `cards_to_bdf(result)` formats the pair as
+bulk-data text.
+
+**Algorithm.** The WT2 ratio is calibrated on `w_ref = −ones` and is therefore
+independent of `w_g`, so the build is one pass: (1) per strip, a uniform scale
+`r̄ = f_slope/f_slope_vlm` hits the force with **no shape change**, plus a minimum-norm
+per-box perturbation orthogonal to the force (`Σ δ·g0 = 0`) supplies only the moment/a.c.
+mismatch — when the target a.c. equals the VLM a.c. (pure slope scaling), `δ = 0` and the
+result degenerates exactly to the uniform WT1 scaling. (2) A two-mode camber line per
+strip (uniform incidence + chordwise-linear) is sized by a small global linear solve so
+the WT2-corrected operator reproduces `(F₀, M₀)` per strip exactly (accounting for
+inter-strip induction; WT2 also scales the camber load, which the ordering handles).
+
+**Constraints / guards.** Single CAERO1 only (matches the existing full-length WT2
+target path) — multi-surface raises. Each strip needs **NCHORD ≥ 2** (a moment needs two
+chordwise boxes) — raises otherwise. The emitted WT2 target is in Γ-units (the
+`apply_wt2` convention) and mirrors `apply_wt2`'s near-zero-reference guard so the card
+and the solver operator are identical. `ajj` must be calibrated at the correction Mach
+(pass the same compressed AIC the solver uses, or build at M=0).
+
+### Spanwise section-data input (`section_data.py`)
+
+The viewer drives `build_section_correction` from a user table of **section coefficients**.
+Section aerodynamics are a function of span, **Mach**, and incidence; the nonlinear α
+dependence is captured by **linearising into regions** (e.g. a pre-onset and a post-onset
+slope), each with its own coefficients and a validity range. The table is therefore a tidy
+("long") CSV — one row per surface × span-station × Mach × region:
+
+| column | meaning |
+|--------|---------|
+| `caero` | CAERO1 EID the row applies to |
+| `eta` | span fraction within that CAERO1 (0 root → 1 tip) |
+| `mach` | freestream Mach for this block |
+| `var` | incidence variable: `ALPHA` (lift surface) or `BETA` (vertical) |
+| `a_lo`, `a_hi` | region incidence validity range (deg) |
+| `cn_a` | section normal-force slope dC_n/d(var) **per degree** |
+| `a0` | zero-normal-force incidence (deg) |
+| `cm_a` | section moment slope dC_m/d(var) about `xref`, **per degree** |
+| `cm0` | section moment at zero incidence (nose-up +) |
+| `xref` | moment reference as a chord fraction (default 0.25) |
+
+Coefficients are **local-chord** normalised (airfoil-polar convention). For a strip of
+local chord `c`, area `A = c·dy`, the GUI converts to the builder's per-rad dimensional
+targets: `f_slope = cn_a·(180/π)·A`, `alpha_0 = a0·π/180`, `m_slope = cm_a·(180/π)·c·A`,
+`m_0 = cm0·c·A`, `moment_ref = LE_x + xref·c`. Spanwise values are interpolated from the
+table `eta` stations onto the actual mesh strip mid-spans (`AeroBox.span_frac`), clamped at
+the ends with an `extrapolated` flag.
+
+Functions: `validate_section_data(df)` (schema/typing checks); `available_conditions(df)`
+→ selectable `(caero, mach, region)` blocks; `template_dataframe(boxes, caero_eid, …)` →
+a starter table pre-filled with the strip `eta` stations (for `st.data_editor` / template
+download); `build_from_section_data(boxes, ajj, df, *, caero_eid, mach, region, sid_w2gj,
+sid_aecorr)` → `SectionDataBuildResult` (the correction + selected condition +
+extrapolation flag); `operating_region(df, caero, mach, incidence_deg)` → the region whose
+range contains a trim incidence.
+
+**v1 selection.** Mach is matched **exactly** against the table (no Mach interpolation),
+and a **single operating region** is built; the caller warns if the trimmed incidence falls
+outside `[a_lo, a_hi]`. Pass `ajj` as the **PG-consistent** AIC at the chosen Mach
+(`β·ajj_pg`, so the reference VLM solve matches the solver's 1/β-scaled operator; at M=0,
+`β=1`).
 
 ### `build_aero_model(bulk, grid_index=None) -> AeroModel`
 

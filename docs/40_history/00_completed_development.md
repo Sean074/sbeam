@@ -1938,6 +1938,92 @@ circulation field, enabling the standard elliptic-loading cross-check
 
 ---
 
+### Step A-SC: Section force + moment correction synthesiser (`section_correction.py`) ✅ COMPLETE
+
+**Objective:** Provide a way to match a target *section line* — slope **and** zero-α offset of
+both force and pitching moment — that `apply_wt1` cannot (it matches per-strip force only and
+cannot move the section aerodynamic centre). Do it with **minimal change to the uncorrected
+chordwise distribution** and **without** any solver or BDF-card-schema change (the chosen "Option
+A": a preprocessor that emits an ordinary `W2GJ` + `WT2` card pair).
+
+**Deliverables:**
+1. **`sbeam/aero/section_correction.py`** — `build_section_correction(boxes, ajj, *, f_slope,
+   alpha_0, m_slope, m_0, caero_eid, sid_w2gj, sid_aecorr, moment_ref=None)` returning a
+   `SectionCorrectionResult` (the `W2gj` + `Aecorr`/WT2 cards, the per-box `r`/`wg` arrays, the
+   per-strip `moment_ref`, and achieved-vs-target diagnostics). `cards_to_bdf()` formats the pair
+   as free-field bulk data.
+2. **`tests/aero/test_section_correction.py`** — 8 tests: identity targets → no-op (`r≈1`,
+   `wg≈0`); pure slope scaling → uniform per-strip `r` (degenerates to WT1) with `wg≈0`; full
+   `(slope, a.c., α₀, Cm0)` match reproduced in the diagnostics **and** end-to-end through
+   `build_aero_model` at α=0 and α=0.1; NCHORD<2 raises; multi-surface raises; length-mismatch
+   raises; `cards_to_bdf` round-trips through `parse_bulk_data`.
+3. **Docs** — theory `docs/20_theory/01_aeroelastics_theory.md` new §3.5 (synthesis method) plus a
+   §3.3 note correcting the WT1 "force/moment" overstatement; standard
+   `docs/10_standard/05_aeroelastics.md` new "Section force + moment correction synthesiser"
+   section, module-map row, and clarified `apply_wt1` entry.
+
+**Key decisions:**
+- **Decomposition.** The four section targets split into a *slope pair* (dF/dα, dM/dα → force
+  slope + a.c.) handled by per-box **WT2**, and an *offset pair* (F₀, M₀ → camber lift + camber
+  moment, the load at α=0) handled by the **W2GJ** camber-line normalwash. A multiplicative
+  correction yields nothing at α=0, so the offset *must* be W2GJ.
+- **One-pass / decoupled.** The WT2 ratio is calibrated on `w_ref=-ones` and is independent of
+  `w_g`, so WT2 is sized first, then W2GJ is sized through the WT2-corrected operator (which also
+  scales the camber load) — no iteration.
+- **Minimal change.** WT2 = uniform per-strip scale (no shape change) for the force + a
+  minimum-norm per-box perturbation orthogonal to the force for the moment/a.c. mismatch; it
+  collapses to the uniform WT1 scaling when the target a.c. equals the VLM a.c. W2GJ = lowest-order
+  two-mode camber (uniform incidence + chordwise-linear) per strip, sized by a small global linear
+  solve so per-strip (F₀, M₀) are reproduced exactly including inter-strip induction.
+- **Unit/guard consistency.** The emitted WT2 target is in Γ-units (the `apply_wt2` convention)
+  and mirrors `apply_wt2`'s near-zero-reference `r=1` guard, so the card and the solver operator
+  are identical. Single-CAERO1 only (matches the existing full-length WT2 target path); NCHORD≥2
+  per strip required (a moment needs two chordwise boxes). Nose-up-positive moment about the
+  per-strip ¼-chord (default), matching `sol144._pitch_moment`.
+
+**Test / Acceptance:**
+- 8 new tests pass; full aero suite 334 passing, 0 failures; ruff clean.
+
+---
+
+### Step A-SD: Spanwise section-data ingestion for the correction GUI (`section_data.py`) ✅ COMPLETE
+
+**Objective:** Feed `build_section_correction` (Step A-SC) from a user-authored table of *section
+coefficients* that vary with span, **Mach**, and a **linearised α/β region** (the standard way the
+nonlinear α dependence is captured — two or more linear fits, each with a validity range). Chosen
+input convention (user-selected): tidy CSV + in-GUI `st.data_editor`, non-dimensional per-degree
+coefficients about ¼-chord, and "v1" single-operating-region selection.
+
+**Deliverables:**
+1. **`sbeam/aero/section_data.py`** — tidy/long CSV schema (`caero, eta, mach, var, a_lo, a_hi,
+   cn_a, a0, cm_a, cm0, xref`) and: `validate_section_data`, `available_conditions`,
+   `template_dataframe` (seeds the editor/template with the actual strip η-stations),
+   `build_from_section_data` (interpolate onto strips → convert → build), `operating_region`.
+2. **`tests/aero/test_section_data.py`** — 12 tests: schema/var/range/numeric guards; condition
+   listing; force-slope and moment-offset coefficient-conversion correctness; end-to-end CL-slope
+   == section `cn_a` through `build_aero_model`; extrapolation flag; missing Mach/region raise;
+   operating-region containment.
+3. **Docs** — standard `docs/10_standard/05_aeroelastics.md` "Spanwise section-data input" section
+   + module-map row.
+
+**Key decisions:**
+- **Local-chord coefficients, per degree.** Section data follow the airfoil-polar convention
+  (normalised by local chord, not `cref`): `f_slope = cn_a·(180/π)·A`, `m_slope = cm_a·(180/π)·c·A`,
+  `m_0 = cm0·c·A`, `alpha_0 = a0·π/180`, `moment_ref = LE_x + xref·c` (strip area `A`, local chord
+  `c`). Nose-up-positive moment about the chord-fraction `xref` (default ¼c).
+- **Spanwise interpolation onto strips** via `AeroBox.span_frac`, clamped at the table ends with an
+  `extrapolated` flag (linear; PCHIP a possible later refinement).
+- **v1 selection:** Mach matched exactly (no Mach interpolation); one operating region built per
+  call, the caller warning if the trim incidence leaves `[a_lo, a_hi]`. Both deferred to follow-ons
+  (Mach interpolation; per-region card set keyed in `AeroCache` with trim-α re-selection).
+- **PG consistency:** the caller passes `β·ajj_pg` so the reference VLM solve matches the solver's
+  1/β-scaled operator at the chosen Mach.
+
+**Test / Acceptance:**
+- 12 new tests pass; full section-correction + section-data suite 20 passing; ruff clean.
+
+---
+
 ## Phase B — Structure ↔ Aero Splining
 
 ### Step 45: SET1 + SPLINE2 parsing ✅ COMPLETE

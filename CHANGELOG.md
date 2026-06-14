@@ -13,6 +13,51 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Aero — section force + moment correction synthesiser (2026-06-14)**
+
+- New `sbeam/aero/section_correction.py`: `build_section_correction(...)` generates a
+  **W2GJ + WT2 (AECORR) card pair** that reproduces a target *section line* per span strip —
+  force slope, moment slope (i.e. aerodynamic centre), zero-α lift offset (α₀/camber), and
+  zero-α pitching moment (Cm0) — with **minimal change** to the uncorrected chordwise load.
+  `cards_to_bdf()` formats the pair as bulk data. This fills the gap that `apply_wt1` (per-strip
+  force only, cannot move the a.c. or produce load at α=0) cannot.
+- Decomposition: the slope pair (dF/dα, dM/dα) → per-box **WT2** (reshapes the α-driven chordwise
+  load to set force slope + a.c.); the offset pair (F₀, M₀) → **W2GJ** camber line (the load at
+  α=0). The WT2 ratio is calibrated on the unit-incidence reference and is independent of `wg`, so
+  the build is one decoupled pass (WT2 first, then W2GJ through the corrected operator). WT2 is a
+  uniform per-strip scale (no shape change) plus a minimum-norm perturbation orthogonal to the
+  force for the a.c. mismatch — it degenerates exactly to the uniform WT1 scaling when the target
+  a.c. equals the VLM a.c.
+- Guards: single CAERO1 only (matches the existing full-length WT2 target path); NCHORD ≥ 2 per
+  strip (a moment needs two chordwise boxes). Emitted WT2 target is in Γ-units and mirrors
+  `apply_wt2`'s near-zero-reference guard, so the card and the solver operator are identical.
+- Tests: new `tests/aero/test_section_correction.py` (8 tests) — no-op identity; uniform-r pure
+  slope scaling; full (slope/a.c./α₀/Cm0) match verified both in the diagnostics and end-to-end
+  through `build_aero_model`; NCHORD<2 / multi-surface / length-mismatch guards; BDF round-trip.
+- Docs: theory §3.5 (synthesis method) + §3.3 WT1 clarification; standard-doc section, module-map
+  row, and clarified `apply_wt1` entry.
+
+**Aero — spanwise section-data ingestion for the correction GUI (2026-06-14)**
+
+- New `sbeam/aero/section_data.py`: turns a user table of **section coefficients** (a function
+  of span, Mach, and a linearised α/β region) into the per-strip dimensional targets and drives
+  `build_section_correction`. Tidy/long CSV schema (`caero, eta, mach, var, a_lo, a_hi, cn_a, a0,
+  cm_a, cm0, xref`); coefficients are local-chord normalised, per degree, moment about a chord
+  fraction `xref` (default ¼c). Functions: `validate_section_data`, `available_conditions`,
+  `template_dataframe` (seeds the `st.data_editor` / template download with the strip η stations),
+  `build_from_section_data`, `operating_region`.
+- Conversion: `f_slope = cn_a·(180/π)·A`, `alpha_0 = a0·π/180`, `m_slope = cm_a·(180/π)·c·A`,
+  `m_0 = cm0·c·A`, `moment_ref = LE_x + xref·c` (local chord `c`, strip area `A`). Spanwise values
+  are interpolated from the table η-stations onto the mesh strip mid-spans (`AeroBox.span_frac`),
+  clamped with an `extrapolated` flag.
+- v1 selection: Mach matched exactly (no Mach interpolation); a single operating region built per
+  call (the caller warns if the trim incidence leaves `[a_lo, a_hi]`). `ajj` must be the
+  PG-consistent AIC at the chosen Mach (`β·ajj_pg`).
+- Tests: new `tests/aero/test_section_data.py` (20 total with section_correction) — validation
+  guards, condition listing, force/moment coefficient-conversion correctness, end-to-end CL-slope
+  match through `build_aero_model`, extrapolation flag, Mach/region selection, operating-region
+  helper. Docs: standard-doc "Spanwise section-data input" section + module-map row.
+
 **Viewer — W2GJ baseline incidence folded into the Aero-tab rigid solve (2026-06-14)**
 
 - `solve_rigid_cl` (`aero/vlm.py`) gains an optional `wg` argument (the per-box baseline
@@ -176,6 +221,21 @@ points (MON3) will consume.
   per-grid export round-trip. 850 tests pass.
 
 ### Changed
+
+**Theory — force/moment conventions consolidated (2026-06-14)**
+
+- New §2.9 "Force and moment conventions (summary)" in
+  `docs/20_theory/01_aeroelastics_theory.md`, gathering the previously scattered conventions
+  (§2.4 force integration, §2.7 rigid coefficients, §5.4 moment derivatives) into one
+  reference. Pins down the three points that are easily conflated: the per-box force is along
+  the **panel surface normal** (`S_kj`), **not** the global/body-z axis and **not** the
+  wind-axis lift (`C_L`); each force acts at the **local box ¼-chord** (`box.force_point`),
+  which is what makes sweep/taper/dihedral arms correct; and moments are taken about a
+  **single aircraft reference** (`AEROS RCSID` origin ≈ CG / quarter-MAC), not each strip's
+  local ¼-chord — with the hinge-axis and `MONPNT1`/`MONPNT3` exceptions noted. Documents the
+  "dihedral enters twice" effect (cosΓ incidence projection plus the tilted force vector /
+  side force). Documentation only; no code change. Pointer added from the top "Conventions"
+  note.
 
 **W2GJ baseline-normalwash (wg) sign convention unified (2026-06-14)**
 

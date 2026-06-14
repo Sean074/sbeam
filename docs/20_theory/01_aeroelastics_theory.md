@@ -23,7 +23,7 @@ here where the coupling needs it.
 $x$-axis (flow in $+x$). The flow is subsonic, inviscid, irrotational, and linearised about a
 small mean incidence; lifting surfaces are flat (camber and twist enter as a prescribed
 boundary condition, not as panel geometry). Units are user-defined and must be consistent
-throughout.
+throughout. The force- and moment-direction and sign conventions are consolidated in §2.9.
 
 ---
 
@@ -394,6 +394,84 @@ to the uncorrected solver.
 
 ---
 
+### 2.9 Force and moment conventions (summary)
+
+This subsection gathers the force- and moment-direction conventions used throughout the aero
+load path (`sbeam/aero/integration.py`, `sbeam/aero/vlm.py`, `sbeam/solver/sol144.py`) into one
+place. It restates §2.4, §2.7 and §5.4 because the three questions *which way does a force point*,
+*where does it act*, and *what is a moment measured about* are the most common source of
+confusion — particularly on swept, tapered and dihedral surfaces.
+
+**Force direction — along the panel normal, not body-$z$ and not the wind axis.** Each box
+resultant is the column of $S_{kj}$ (Eq. 7):
+
+$$
+\mathbf F_j = q\,A_j\,\Delta c_{p,j}\,\hat{\mathbf n}_j ,
+$$
+
+with $\hat{\mathbf n}_j$ the **geometric box outward normal** (built from the corner
+cross-product and oriented so its dominant component is positive: horizontal panels $\to +\hat z$,
+vertical panels $\to +\hat y$). The force is therefore **normal to the panel surface** — it is
+**not** resolved onto the global/body $z$-axis, and it is **not** the wind-axis lift $C_L$ (force
+$\perp$ to the freestream). A flat linear-VLM panel carries *only* this surface-normal pressure:
+there is no leading-edge suction and no in-plane (chordwise) force.
+
+| Candidate force direction | Vector | Used by sbeam? |
+|---------------------------|--------|----------------|
+| Body / global $z$ | $\hat z$ (fixed) | ✗ |
+| **Surface normal** | $\hat{\mathbf n}_j$ (per panel) | **✓ — this is $S_{kj}$** |
+| Wind axis ($C_L$) | $\perp\,\mathbf U_\infty$ | ✗ (reporting coefficient only) |
+
+**Dihedral enters twice.** On a surface canted at dihedral $\Gamma$ the right-wing normal is
+$\hat{\mathbf n}=(0,-\sin\Gamma,\cos\Gamma)$, so (i) the boundary condition that sets the pressure
+*magnitude* sees only the vertical projection $w=-(\alpha\,n_z+\beta\,n_y)$ (Eq. 10a) — the
+effective incidence is reduced by $\cos\Gamma$; and (ii) the resulting force vector tilts off
+vertical, carrying a side force $F_y=F_z\,n_y/n_z=\mp F_z\tan\Gamma$ alongside the lift (§2.4).
+The side force cancels over a symmetric build; both signs of $\Gamma$ are gated by V-C-DIH
+(Step 58).
+
+**Where the force acts.** Each box force is applied at its **local quarter-chord** — the
+bound-vortex midpoint $\mathbf r_j=$ `box.force_point` (the Kutta–Joukowski application point,
+AE6), *not* the ¾-chord collocation point. Because every box carries its own swept / tapered /
+canted $\mathbf r_j$, the moment arm follows the real planform automatically.
+
+**Moment — application point vs. reference centre.** The aerodynamic moment is the cross-product
+resultant about a chosen reference $\mathbf r_\text{ref}$,
+
+$$
+\mathbf M = \sum_j (\mathbf r_j - \mathbf r_\text{ref})\times \mathbf F_j ,
+\qquad \mathbf r_j = \texttt{box.force\_point},
+$$
+
+and the two points must not be confused:
+
+- **Application point $\mathbf r_j$** — the *local* box quarter-chord, **per panel**. This is what
+  makes sweep, taper and dihedral correct; nothing surface-specific is done for them.
+- **Reference centre $\mathbf r_\text{ref}$** — a **single, aircraft-level point**: the `AEROS`
+  `RCSID` origin (the moment reference, conventionally the CG or the quarter-MAC). It is **not**
+  each strip's own local quarter-chord (`sol144.py`: `x_ref = RCSID-origin x`; `solve_rigid_cl`
+  takes the same `xref`).
+
+The nose-up-positive pitching moment is the single-source arm
+$M_y=-\sum_j F_{z,j}\,(x_j-x_\text{ref})$ (`_pitch_moment`, AE1 Step E), nondimensionalised
+$C_{MY}=M_y/(S_\text{ref}\,c_\text{ref})$. Roll and yaw use the full 3-component resultant above:
+$C_{MX}=M_x/(S_\text{ref}\,b_\text{ref})$, $C_{MZ}=M_z/(S_\text{ref}\,b_\text{ref})$. Because
+$\mathbf M$ carries the per-box side force $F_y$, these are correct for canted surfaces with **no**
+flat-plate projection (§5.4).
+
+**Two reference-centre exceptions.**
+- **Hinge moment** is taken about the control-surface hinge axis $\hat{\mathbf h}$ through the
+  hinge origin $\mathbf o$:
+  $\mathrm{HM}=\sum_{j\in\text{AELIST}}\big[(\mathbf r_j-\mathbf o)\times\mathbf F_j\big]\cdot\hat{\mathbf h}$ (§5.4).
+- **Monitor points** (`MONPNT1`/`MONPNT3`) integrate about the named component's *own* reference
+  location, not the aircraft moment reference.
+
+**Frames and units.** All force/moment geometry is in basic CID 0. Through the trim chain the box
+forces are carried per unit dynamic pressure (force/$q$ units, $\{P_k\}/q=S_{kj}\{c_p\}$); multiply
+by $q$ for physical loads. Exported `FORCE`/`MOMENT` cards are physical (post-$q$) loads in CID 0.
+
+---
+
 ## 3. Aerodynamic corrections — matching CFD / wind-tunnel data
 
 VLM is inviscid and linear: it knows nothing of airfoil thickness, viscosity, finite
@@ -453,6 +531,16 @@ where $[L]$ is the load-integration operator (pressures → section forces/momen
 most robust correction for a conventional wing, because spanwise lift/torque is exactly what
 wind-tunnel and CFD campaigns report most reliably.
 
+**sbeam implementation note.** The general $W_{T1}$ above can match a section *moment* as well
+as a force by letting the chordwise weighting vary. sbeam's `apply_wt1`, however, uses a single
+**per-strip scalar** (uniform across the chord), so it matches only the integrated section
+**force**: the chordwise $\Delta c_p$ shape is preserved, the section centre of pressure /
+aerodynamic centre is unchanged, and the load it produces is zero at $\alpha=0$ (its target is a
+slope, per unit reference normalwash — per rad of $\alpha$ on a horizontal surface, per rad of
+$\beta$ on a vertical one, per $\alpha\cos\Gamma$ on a surface canted at dihedral $\Gamma$). To
+match **force and moment together** sbeam uses the synthesiser of §3.5 ($W_{T2}$ for the
+slope/a.c. and $W_{2GJ}$ for the $\alpha=0$ offset), not a chordwise-varying $W_{T1}$.
+
 These match the ZAERO *Theoretical Manual* §4 forms (its Eqs. 4.55–4.58); $W_{kk}$ is the
 diagonal special case of $W_{T2}$.
 
@@ -464,6 +552,56 @@ mean-flow state at that incidence. When CFD/WT pressures are injected as the tri
 $\alpha_\text{ref}$**, not about the inviscid flat-plate state — the correct way to honour
 high-fidelity data end-to-end. The reference incidence must therefore travel with the
 correction data.
+
+### 3.5 Section force *and* moment from a section line ($W_{2GJ}+W_{T2}$ synthesis)
+
+Often the available data is not a $c_p$ map but a **section line**: per span strip the four
+numbers that define the linear section aerodynamics,
+
+$$
+F(\alpha) = \frac{dF}{d\alpha}\,\alpha + F_0,
+\qquad
+M(\alpha) = \frac{dM}{d\alpha}\,\alpha + M_0 ,
+\tag{13a}
+$$
+
+i.e. a force-curve slope $dF/d\alpha$, a moment slope $dM/d\alpha$ (equivalently the section
+aerodynamic centre), a zero-incidence force offset $F_0=-\,(dF/d\alpha)\,\alpha_0$ (camber lift),
+and a zero-incidence pitching moment $M_0$ (camber moment $C_{m0}$). Matching all four — with
+**minimal change to the uncorrected chordwise distribution** — requires two of the §3.1–3.3
+mechanisms working together, because no single one can do it (§3.3 note):
+
+- The **slope pair** $(dF/d\alpha,\,dM/d\alpha)$ is the response to the $\alpha$-driven
+  normalwash; setting the moment slope means moving the chordwise load (the a.c.), so it needs the
+  per-box reshaping of **$W_{T2}$**.
+- The **offset pair** $(F_0,\,M_0)$ is a load that exists at $\alpha=0$. A $W_{T1}/W_{T2}$
+  correction is multiplicative about the unit-incidence reference and yields *nothing* at
+  $\alpha=0$, so the offset must enter as a baseline **$W_{2GJ}$** camber-line normalwash (§2.5).
+
+The two compose exactly in the governing solve, $c_p=(A_{jj}^\ast)^{-1}(w_\alpha+w_g)$, with the
+correction in the operator and $w_g$ in the normalwash (§2, Eq. 6/9). Because the $W_{T2}$ ratio
+is calibrated on the unit-incidence reference $w_\text{ref}=-\mathbf 1$ and is therefore
+**independent of $w_g$**, the synthesis is a single pass: size $W_{T2}$ from the slope pair, then
+size $W_{2GJ}$ for the offset pair *through the corrected operator* (which also scales the camber
+load).
+
+**Minimal change.** Per strip a uniform scale $\bar r=(dF/d\alpha)_\text{tgt}/(dF/d\alpha)_\text{VLM}$
+hits the force with **no shape change**; a minimum-norm per-box perturbation $\delta$ orthogonal
+to the force ($\sum_k\delta_k\,g_{0,k}=0$, $g_0$ the per-box reference force) supplies *only* the
+moment/a.c. mismatch. When the target a.c. equals the VLM a.c. (pure slope scaling) $\delta=0$ and
+the result degenerates exactly to the uniform $W_{T1}$ scaling — the chordwise distribution is
+untouched. The $W_{2GJ}$ offset is the lowest-order camber that can set $(F_0,M_0)$: a two-mode
+line per strip (uniform incidence + chordwise-linear camber), sized by a small global linear solve
+so the corrected operator reproduces $(F_0,M_0)$ per strip exactly (inter-strip induction
+included).
+
+This is implemented as a preprocessor (`sbeam/aero/section_correction.py`,
+`build_section_correction`) that emits an ordinary $W_{2GJ}$ + $W_{T2}$ (`AECORR`) card pair — no
+solver or card-schema change. It targets a single CAERO1 (the existing $W_{T2}$ limitation) and
+requires $\mathrm{NCHORD}\ge 2$ per strip (a moment needs two chordwise boxes). The pitching
+moment is nose-up positive about the per-strip moment reference (default the strip $\tfrac14$-chord;
+§2.9), and the force targets follow the same per-unit-reference-normalwash convention as $W_{T1}$
+(§3.3 note).
 
 ---
 

@@ -105,7 +105,7 @@ sbeam/
 ├── solver/         # sol101.py, sol103.py, sol144.py (static aeroelastic trim), maneuver_qs.py (Phase G0 transient maneuver loads)
 ├── results/        # results.py, f06_writer.py, load_export.py, monitor_points.py (MONPNT1/MONPNT3 integrated section loads), maneuver_output.py (Phase G0 time histories + critical-step export)
 ├── gpwg.py         # Mass and CG (GPWG)
-├── aero/           # panel.py, vlm.py, integration.py, corrections.py, aero_model.py
+├── aero/           # panel.py, vlm.py, integration.py, corrections.py, section_correction.py (W2GJ+WT2 section force/moment synthesis), section_data.py (spanwise section-coefficient ingestion), aero_model.py
 └── viewer/         # app.py, geometry.py, results_view.py, case_control_ui.py
 ```
 
