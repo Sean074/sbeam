@@ -1,7 +1,14 @@
 """
 Aeroelastic integration matrices for steady VLM (Phase A, k=0).
 
-Convention: all downwash / normalwash quantities are dimensionless slope (Δz/Δx).
+Sign convention (see docs/20_theory/01_aeroelastics_theory.md §2.4):
+the assembled normalwash ``w`` (and the baseline ``w_g``) is a dimensionless
+downwash slope Δz/Δx (z up, x streamwise).  POSITIVE ``w``/``w_g`` is a local
+nose-down (washout) slope that REDUCES lift; a leading-edge-up incidence that
+increases lift is NEGATIVE.  The spline/AoA boundary condition is supplied as a
+nose-up-positive *incidence* and mapped to this normalwash by the negative sign
+in ``build_djk`` (-I) and the ANGLEA column (-n_z); ``w_g`` is already a
+normalwash and is added directly, with no extra negation.
 """
 
 import numpy as np
@@ -28,18 +35,25 @@ def build_skj(boxes: list[AeroBox]) -> np.ndarray:
 def build_djk(boxes: list[AeroBox]) -> np.ndarray:
     """Deflection-to-downwash matrix for rigid wing at k=0.  Shape: (n_box, n_box).
 
-    The input is a vector of dimensionless slopes (Δz/Δx) at each box collocation
-    point; the output is the normalwash at each collocation point.
+    The input is the per-box *incidence* (nose-up positive) that the spline
+    delivers from structural motion; the output is the normalwash at each
+    collocation point.
 
-    Returns negative identity: w_j = −slope_j (nose-up slope → downward wash).
-    Phase D DLM will replace this with the full unsteady kernel without changing
-    callers.
+    Returns negative identity: w_j = −incidence_j, so a nose-up incidence
+    (lift-increasing) becomes a negative normalwash.  This is the OPPOSITE sign
+    sense to a baseline ``w_g`` slope, which is supplied directly as a normalwash
+    (positive = washout = less lift; see ``build_wg``).  Phase D DLM will replace
+    this with the full unsteady kernel without changing callers.
     """
     return -np.eye(len(boxes))
 
 
 def build_wg(boxes: list[AeroBox], w2gjs: dict, caero_eid: int) -> np.ndarray:
     """Baseline normalwash vector from W2GJ card.  Shape: (n_box,).
+
+    The W2GJ values are dimensionless downwash slopes Δz/Δx added directly to the
+    assembled normalwash (no D_jk negation), so POSITIVE = local nose-down /
+    washout → LESS lift; NEGATIVE = leading-edge-up incidence → MORE lift.
 
     Returns a zero vector when no W2GJ card is present for *caero_eid*.
     W2GJ data is ordered row-major (span index varies slowest, chord fastest),

@@ -614,11 +614,16 @@ def _render_aero_tab(bulk: BulkData) -> None:
             aero_model = build_aero_model(bulk)
             alpha_rad = np.radians(alpha_deg)
             beta_rad  = np.radians(beta_deg)
+            # Fold the W2GJ baseline normalwash (camber/twist/built-in incidence)
+            # into the rigid solve, with the SOL 144 sign convention, so decks
+            # that differ only by W2GJ (e.g. a washout twist) produce visibly
+            # different CL / cp / section loads in the Aero tab.
             result = solve_rigid_cl(
                 aero_model.boxes, alpha_rad,
                 beta=beta_rad,
                 aeros=aero_model.aeros,
                 mach=aero_model.mach,
+                wg=aero_model.wg,
             )
         st.session_state["aero_model"] = aero_model
         st.session_state["aero_result"] = result
@@ -635,6 +640,11 @@ def _render_aero_tab(bulk: BulkData) -> None:
             st.metric("CY", f"{aero_result.get('CY', 0.0):.4f}")
             st.metric("CM", f"{aero_result['CM']:.4f}")
             st.metric("Boxes", len(aero_model.boxes))
+            if aero_model.wg is not None and np.any(aero_model.wg):
+                st.caption(
+                    "ℹ️ W2GJ baseline incidence (camber/twist) folded into the "
+                    "solve — CL/cp include the built-in twist."
+                )
             per_surf = aero_result.get("per_surface", {})
             if len(per_surf) > 1:
                 rows = []

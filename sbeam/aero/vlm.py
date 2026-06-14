@@ -216,7 +216,7 @@ def trefftz_cdi(
 
 def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
                    aeros=None, xref: float = 0.0,
-                   mach: float = 0.0) -> dict:
+                   mach: float = 0.0, wg=None) -> dict:
     """Solve flow-tangency for a rigid configuration at incidence alpha/beta (radians).
 
     alpha  — angle of attack (rad); loads horizontal surfaces.
@@ -229,10 +229,22 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
     xref   — moment reference x-coordinate in CID 0 (default 0.0). CM is about
              xref, normalised by S_ref × c_ref. Set to the quarter-MAC x-coordinate
              for a stability-axis CM.
+    wg     — optional (n,) baseline normalwash vector (W2GJ camber/twist/built-in
+             incidence), one value per box in mesh order; pass ``aero_model.wg``.
+             ``None`` (default) is equivalent to a zero vector — identical to the
+             pre-existing rigid-AoA behaviour.  Folded into the boundary condition
+             with the **canonical normalwash sign** (theory §2.4–2.5;
+             sbeam/solver/sol144.py ``w_total = w_trim + wg``): wg is the downwash
+             slope dz/dx, so a POSITIVE entry reduces lift (leading-edge-down /
+             washout) and a built-in leading-edge-up incidence is NEGATIVE.  This
+             is the single sign carried by the W2gj dataclass, the trim solver,
+             and the end-to-end regression in
+             tests/integration/test_wg_sign_convention.py, so the viewer Aero tab
+             matches the SOL 144 baseline load.
 
     Boundary condition per panel (ZAERO Eq. 3.28):
-      rhs[i] = -(V⃗ · n̂_i)  with V⃗ ≈ [1, β, α] for small angles
-             = -(α·n_z[i] + β·n_y[i])
+      rhs[i] = -(V⃗ · n̂_i) + wg[i]  with V⃗ ≈ [1, β, α] for small angles
+             = -(α·n_z[i] + β·n_y[i]) + wg[i]
 
     Each CAERO1 surface is classified by its dominant outward normal:
       |mean n_z| ≥ |mean n_y|  →  "lift"      (horizontal surface; contributes to CL/CM)
@@ -260,8 +272,21 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
     beta_pg = math.sqrt(1.0 - mach ** 2) if 0.0 < mach < 1.0 else 1.0
     A = build_ajj(prandtl_glauert_boxes(boxes, mach))
 
-    # Flow-tangency: rhs[i] = -(alpha*n_z + beta*n_y) per panel
-    rhs = np.array([-(alpha * b.normal[2] + beta * b.normal[1]) for b in boxes])
+    # Baseline normalwash (W2GJ camber/twist/incidence); zero when not supplied.
+    if wg is None:
+        wg_vec = np.zeros(n)
+    else:
+        wg_vec = np.asarray(wg, dtype=float)
+        if wg_vec.shape != (n,):
+            raise ValueError(
+                f"solve_rigid_cl: wg has shape {wg_vec.shape}, expected ({n},) "
+                f"(one baseline normalwash value per box)"
+            )
+
+    # Flow-tangency: rhs[i] = -(alpha*n_z + beta*n_y) + wg[i] per panel.
+    # The +wg term matches the SOL 144 trim sign (w_total = w_trim + wg), so a
+    # positive wg (downwash slope) reduces lift exactly as in the trim solver.
+    rhs = np.array([-(alpha * b.normal[2] + beta * b.normal[1]) for b in boxes]) + wg_vec
     gamma = np.linalg.solve(A, rhs)
     gamma /= beta_pg   # Göthert boundary-condition scaling (§2.8 Eq. 14)
 

@@ -36,7 +36,7 @@ throughout.
 | $\Gamma_k$ | bound circulation of aero box $k$ |
 | $c_{p}$, $\Delta c_p$ | pressure coefficient / lifting pressure coefficient on a box |
 | $w_j$ | dimensionless **normalwash** (downwash$/U_\infty$) at box $j$ from elastic deflection |
-| $w_g$ | dimensionless baseline normalwash (camber + twist + incidence + CFD/WT $\Delta\alpha$) |
+| $w_g$ | dimensionless baseline normalwash slope (camber + twist + incidence + CFD/WT $\Delta\alpha$); positive = washout = less lift (§2.5) |
 | $[A_{jj}]$ | aerodynamic influence coefficient (AIC): $\{w_j\}=[A_{jj}]\{c_p\}$ |
 | $[A_{jj}^\ast]$ | **corrected** AIC after $W_{kk}$, $W_{T1}$, or $W_{T2}$ |
 | $[S_{kj}]$ | integration matrix: box pressures → box normal forces (area weighting) |
@@ -233,25 +233,38 @@ $$
 At $k=0$ only the slope term survives ($w$ is the streamwise rate of change of the
 out-of-plane deflection); the unsteady plunge term $i k\,h$ is reserved for Phase D. **The
 governing convention** — fixed once and used everywhere ($D_{jk}$, $w_g$, $W_{kk}$, the spline)
-— is that $w$ is a **dimensionless slope** (normalwash $/U_\infty$), positive for a
-leading-edge-up incidence that increases lift.
+— is that $w$ is a **dimensionless normalwash** (downwash slope $\Delta z/\Delta x$, with $z$
+up and $x$ streamwise). **Positive $w$ is a downwash that *reduces* lift** (a local nose-down /
+washout slope); a leading-edge-up incidence, which *increases* lift, is therefore a **negative**
+$w$. The spline and the AoA boundary condition are supplied in the natural *incidence* sense
+(nose-up positive); the negative sign that turns incidence into the lift-increasing normalwash
+lives in $D_{jk}=-I$ (structural motion) and in the ANGLEA column $-n_z$ (rigid AoA). The
+baseline $w_g$ (§2.5) is instead given **directly as a normalwash slope** — added to $w$ without
+passing through $D_{jk}$ — so its positive sense is the opposite of a nose-up incidence: positive
+$w_g$ is washout and unloads the section.
 
 ### 2.5 Baseline incidence $w_g$ (camber, twist, built-in incidence)
 
 A real wing carries load even with *zero* elastic deflection, because of airfoil **camber**,
 geometric **twist/washout**, and root **incidence**. These appear as a prescribed normalwash
-that exists independently of structural motion:
+that exists independently of structural motion. Each contribution enters as its local **downwash
+slope** $\Delta z/\Delta x$ — the same convention as $w$ (§2.4) — so a nose-up-positive incidence
+or twist enters with a *minus* sign, while a camber surface slope (already a $\Delta z/\Delta x$)
+enters directly:
 
 $$
-w_g(j) = \underbrace{\alpha_0}_{\text{incidence}} + \underbrace{\theta_\text{tw}(y_j)}_{\text{twist}} + \underbrace{\frac{dz_c}{dx}\Big|_j}_{\text{camber slope}} + \underbrace{\Delta\alpha_j}_{\text{CFD/WT correction}} .
+w_g(j) = \underbrace{\frac{dz_c}{dx}\Big|_j}_{\text{camber slope}} - \underbrace{\alpha_0}_{\text{incidence}} - \underbrace{\theta_\text{tw}(y_j)}_{\text{twist}} - \underbrace{\Delta\alpha_j}_{\text{CFD/WT correction}} ,
 \tag{9}
 $$
 
-For a conventional configuration this baseline term carries most of the rigid spanwise load,
-so it must be modelled — it is the $w_g$ in Equations (1)–(2). The last term $\Delta\alpha_j$ is
-an *additive* correction slot (§3): supplying a per-box incidence delta from CFD or
-wind-tunnel data is often better conditioned than a multiplicative correction, because it does
-not blow up where the local load is small.
+where $\alpha_0$, $\theta_\text{tw}$ and $\Delta\alpha_j$ are the conventional nose-up-positive
+(lift-increasing) angles. The sign of $w_g$ is the normalwash sign of §2.4: **positive $w_g$ is
+washout (local nose-down) and *reduces* the section load**; a built-in leading-edge-up incidence
+($\alpha_0>0$) is therefore a negative $w_g$. For a conventional configuration this baseline term
+carries most of the rigid spanwise load, so it must be modelled — it is the $w_g$ in Equations
+(1)–(2). The last term $\Delta\alpha_j$ is an *additive* correction slot (§3): supplying a per-box
+incidence delta from CFD or wind-tunnel data is often better conditioned than a multiplicative
+correction, because it does not blow up where the local load is small.
 
 ### 2.6 Full-span modelling (no symmetry image)
 

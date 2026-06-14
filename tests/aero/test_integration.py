@@ -4,8 +4,10 @@ Covers:
   - build_skj shape and force-consistency round-trip (T4)
   - build_djk is negative identity at k=0
   - build_wg: zero when no W2GJ present (T1)
-  - build_wg: uniform W2GJ incidence reproduces S41 rigid-AOA cp (T2)
-  - build_wg: linear-twist W2GJ produces monotonically varying section loads (T3)
+  - build_wg: uniform W2GJ downwash slope reproduces S41 rigid-AOA cp via the
+    production combination, no -wg negation (T2)
+  - build_wg: linear built-in incidence (negative wg) → monotonically varying
+    section loads (T3)
   - build_wg: wrong caero_eid returns zeros
 """
 
@@ -131,16 +133,26 @@ class TestBuildWg:
         wg = build_wg(boxes, {1: w2gj}, CAERO_EID)
         np.testing.assert_array_equal(wg, 0.0)
 
-    # T2 — uniform W2GJ incidence reproduces rigid-AOA cp from S41
+    # T2 — a uniform W2GJ downwash slope reproduces the rigid-AOA cp from S41,
+    #      through the PRODUCTION combination (gamma = Ajj^-1 @ wg, no local
+    #      negation — exactly as sol144._compute_aero_forces / aero_model /
+    #      coupling combine wg).
     def test_uniform_w2gj_matches_rigid_cl(self, boxes):
-        """Solving A @ gamma = -wg with uniform wg=alpha must equal solve_rigid_cl."""
+        """wg = -alpha (the downwash slope of a nose-up AoA alpha) reproduces
+        solve_rigid_cl(alpha) when solved the way production does: gamma =
+        solve(Ajj, wg), with NO -wg negation.
+
+        A leading-edge-up incidence (more lift) is a NEGATIVE wg; a positive wg
+        would unload the section.  This pins the wg sign to the production path
+        (theory §2.4-2.5): positive wg = washout = less lift."""
         alpha = 0.1
         n = len(boxes)
-        w2gj = W2gj(sid=1, caero_eid=CAERO_EID, data=[alpha] * n)
+        # Nose-up incidence alpha => negative downwash slope.
+        w2gj = W2gj(sid=1, caero_eid=CAERO_EID, data=[-alpha] * n)
         wg = build_wg(boxes, {1: w2gj}, CAERO_EID)
 
         ajj = build_ajj(boxes)
-        gamma_wg = np.linalg.solve(ajj, -wg)
+        gamma_wg = np.linalg.solve(ajj, wg)   # production combination — no -wg
 
         # Recover cp from gamma using the same formula as solve_rigid_cl
         dy = np.array([
@@ -155,7 +167,13 @@ class TestBuildWg:
 
     # T3 — linear twist → section loads vary monotonically with span
     def test_linear_twist_monotonic_section_load(self):
-        """Linearly increasing strip incidence → monotonically increasing section CL (interior).
+        """Linearly increasing built-in incidence toward the tip → monotonically
+        increasing section CL (interior).
+
+        Built-in nose-up incidence growing toward the tip is an increasingly
+        NEGATIVE downwash slope wg (theory §2.5).  Solved as production does
+        (gamma = solve(Ajj, wg), no -wg), the section circulation grows toward
+        the tip.
 
         The outermost tip strip is excluded: VLM always shows tip-vortex rolloff
         that reduces circulation there regardless of incidence.
@@ -164,13 +182,13 @@ class TestBuildWg:
         boxes = _rect_wing(nspan=nspan, nchord=nchord, span=5.0, chord=1.0)
         n = len(boxes)
 
-        # Per-strip slopes: strip i gets incidence proportional to (i+1)
-        slopes = [0.02 * (box.i_span + 1) for box in boxes]
+        # Per-strip downwash slope: nose-up incidence ∝ (i+1) → negative wg ∝ (i+1)
+        slopes = [-0.02 * (box.i_span + 1) for box in boxes]
 
         w2gj = W2gj(sid=1, caero_eid=CAERO_EID, data=slopes)
         wg = build_wg(boxes, {1: w2gj}, CAERO_EID)
         ajj = build_ajj(boxes)
-        gamma = np.linalg.solve(ajj, -wg)
+        gamma = np.linalg.solve(ajj, wg)   # production combination — no -wg
 
         # Check interior strips (nchord=1 so strip index == box index).
         # Skip the last pair: tip rolloff physically reduces tip gamma below strip n-2.

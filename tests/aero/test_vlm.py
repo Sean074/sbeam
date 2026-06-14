@@ -210,6 +210,73 @@ class TestRectangularWingCLa:
 
 
 # ---------------------------------------------------------------------------
+# Baseline normalwash wg (W2GJ camber/twist) folded into the rigid solve
+# ---------------------------------------------------------------------------
+
+class TestBaselineNormalwashWg:
+    """solve_rigid_cl ``wg`` argument: SOL 144 sign, AoA equivalence, washout.
+
+    The viewer Aero tab now passes ``aero_model.wg`` so decks differing only by a
+    W2GJ baseline incidence (e.g. a washout twist) produce different CL/cp.
+    """
+
+    SPAN = 5.0
+    CHORD = 1.0
+    ALPHA = 0.05   # radians
+
+    def _boxes(self):
+        return _rect_wing(nspan=8, nchord=4, span=self.SPAN, chord=self.CHORD)
+
+    def test_none_matches_zero_vector(self):
+        """wg=None is identical to the pre-existing rigid-AoA behaviour."""
+        boxes = self._boxes()
+        r_none = solve_rigid_cl(boxes, self.ALPHA)
+        r_zero = solve_rigid_cl(boxes, self.ALPHA, wg=np.zeros(len(boxes)))
+        assert r_none["CL"] == pytest.approx(r_zero["CL"], abs=1e-14)
+        np.testing.assert_allclose(r_none["cp"], r_zero["cp"], atol=1e-14)
+
+    def test_wg_equivalent_to_angle_of_attack(self):
+        """A uniform AoA `a` equals wg = -a·n_z at alpha=0 (pins the SOL 144 sign).
+
+        rhs(alpha=a, wg=0)   = -(a·n_z)
+        rhs(alpha=0, wg=-a·n_z) = +wg = -(a·n_z)   → identical solution.
+        """
+        boxes = self._boxes()
+        nz = np.array([b.normal[2] for b in boxes])
+        r_aoa = solve_rigid_cl(boxes, self.ALPHA)
+        r_wg  = solve_rigid_cl(boxes, 0.0, wg=-self.ALPHA * nz)
+        assert r_wg["CL"] == pytest.approx(r_aoa["CL"], rel=1e-10)
+        np.testing.assert_allclose(r_wg["cp"], r_aoa["cp"], rtol=1e-10)
+
+    def test_positive_wg_reduces_lift(self):
+        """Positive wg (downwash slope) reduces CL — the SOL 144 convention."""
+        boxes = self._boxes()
+        base = solve_rigid_cl(boxes, self.ALPHA)["CL"]
+        wg = np.full(len(boxes), 0.01)            # uniform positive slope
+        reduced = solve_rigid_cl(boxes, self.ALPHA, wg=wg)["CL"]
+        assert reduced < base
+
+    def test_linear_washout_unloads_tip(self):
+        """Washout (wg growing root→tip) cuts total CL and unloads the tip more."""
+        boxes = self._boxes()
+        base = solve_rigid_cl(boxes, self.ALPHA)
+        # Washout: positive slope proportional to span fraction (0 root → max tip)
+        wg = np.array([0.04 * b.span_frac for b in boxes])
+        twisted = solve_rigid_cl(boxes, self.ALPHA, wg=wg)
+        assert twisted["CL"] < base["CL"]
+        # Per-strip lift ratio (twisted/base) must fall monotonically toward the tip
+        i_spans = sorted(base["cl_section"])
+        ratios = [twisted["cl_section"][i] / base["cl_section"][i] for i in i_spans]
+        for a, b in zip(ratios, ratios[1:]):
+            assert b < a + 1e-12
+
+    def test_wrong_shape_raises(self):
+        boxes = self._boxes()
+        with pytest.raises(ValueError):
+            solve_rigid_cl(boxes, self.ALPHA, wg=np.zeros(len(boxes) + 1))
+
+
+# ---------------------------------------------------------------------------
 # V-A2: Mesh refinement — monotone convergence of C_Lα
 # ---------------------------------------------------------------------------
 

@@ -44,7 +44,13 @@ class Aefact:
 class W2gj:
     sid:       int
     caero_eid: int           # which CAERO1 element this applies to
-    data: list = field(default_factory=list)   # dimensionless normalwash slopes (Δz/Δx), one per box
+    # Dimensionless baseline downwash slopes Δz/Δx (z up, x streamwise), one per
+    # box.  Added DIRECTLY to the assembled normalwash (NASTRAN W2GJ convention,
+    # not passed through D_jk), so the sign is the normalwash sign:
+    #   POSITIVE wg = surface sloping up aft = local nose-down / washout → LESS lift
+    #   NEGATIVE wg = leading-edge-up built-in incidence            → MORE lift
+    # See docs/20_theory/01_aeroelastics_theory.md §2.4–2.5 (Eq 9).
+    data: list = field(default_factory=list)
 
 
 @dataclass

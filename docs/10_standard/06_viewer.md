@@ -116,13 +116,18 @@ a rigid steady-state solve at a user-specified angle of attack.
 **Controls (left column):**
 - **AoA (°)** — `st.number_input`, default 3°, step 0.5°.
 - **Symmetry** — radio: Symmetric (+1), Antisymmetric (−1), Full-span (0).
-- **Compute Aero** — builds `AeroModel` (AIC matrix) and calls `solve_rigid_cl`; results
-  stored in `st.session_state["aero_model"]` and `st.session_state["aero_result"]`.
+- **Compute Aero** — builds `AeroModel` (AIC matrix) and calls
+  `solve_rigid_cl(..., wg=aero_model.wg)`; results stored in
+  `st.session_state["aero_model"]` and `st.session_state["aero_result"]`. The W2GJ
+  baseline incidence (camber/twist/built-in incidence) is folded into the solve, so decks
+  differing only by a W2GJ twist (e.g. the `sample/val_wing_taper_dihedral*.bdf` washout
+  pair) produce different CL/CM/cp/section loads. Positive `wg` reduces lift (SOL 144 sign).
 - **Show surface normals** — `st.checkbox` (`key="aero_show_normals"`, default off). When
   ticked, draws each box's outward unit normal (`AeroBox.normal`) as a green arrow rooted
   at its collocation point. Re-renders the cached `aero_model` instantly (no AIC recompute);
   arrows track the deflected mesh when `box_disp` is supplied.
-- After compute: **CL**, **CM**, and **Boxes** count displayed as `st.metric`.
+- After compute: **CL**, **CY**, **CM**, and **Boxes** count displayed as `st.metric`; a
+  caption flags when a non-zero W2GJ baseline incidence is active.
 
 **Figure (right column):**
 

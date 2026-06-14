@@ -13,6 +13,25 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Viewer — W2GJ baseline incidence folded into the Aero-tab rigid solve (2026-06-14)**
+
+- `solve_rigid_cl` (`aero/vlm.py`) gains an optional `wg` argument (the per-box baseline
+  normalwash from W2GJ — camber/twist/built-in incidence). It is added to the flow-tangency
+  RHS with the **SOL 144 sign convention** (`rhs = -(α·n_z + β·n_y) + wg`), so a positive
+  `wg` (downwash slope) reduces lift, matching the trim solver. `wg=None` (default) is a zero
+  vector — identical to the prior rigid-AoA behaviour, so all existing callers are unchanged.
+- The viewer Aero tab (`viewer/app.py`) now passes `aero_model.wg`, so decks that differ only
+  by a W2GJ twist produce visibly different CL/CM/cp/section loads. A caption flags when a
+  non-zero baseline incidence is active. Example: the new `sample/val_wing_taper_dihedral.bdf`
+  vs `sample/val_wing_taper_dihedral_twist.bdf` decks (5° dihedral, taper 0.8; the second adds a
+  linear 0→−2° washout) now read CL 0.268 → 0.186 at α = 3° in the Aero tab.
+- New verification `TestBaselineNormalwashWg` (`tests/aero/test_vlm.py`): `wg=None` ≡ zero
+  vector; the AoA-equivalence identity `solve_rigid_cl(α, wg=0) ≡ solve_rigid_cl(0, wg=-α·n_z)`
+  that pins the sign; positive `wg` reduces CL; linear washout unloads the tip monotonically;
+  shape-mismatch raises.
+- Sample decks added: `sample/val_wing_taper_dihedral.bdf` and
+  `sample/val_wing_taper_dihedral_twist.bdf`.
+
 **Viewer — Aero tab surface-normal toggle (2026-06-14)**
 
 - New **Show surface normals** checkbox on the Aero tab (`viewer/app.py`,
@@ -157,6 +176,24 @@ points (MON3) will consume.
   per-grid export round-trip. 850 tests pass.
 
 ### Changed
+
+**W2GJ baseline-normalwash (wg) sign convention unified (2026-06-14)**
+
+The wg sign is now a single canonical convention across docs, tests, and code, closing a
+latent inconsistency where a deck authored to the theory doc would have flown flipped aero
+loads under SOL 144. Canonical sign (theory §2.4–2.5, `model/aero.py` `W2gj`): wg is a
+dimensionless downwash slope Δz/Δx added directly to the assembled normalwash, so **positive
+wg = washout = less lift** and a leading-edge-up built-in incidence is **negative**.
+
+- Theory `docs/20_theory/01_aeroelastics_theory.md` §2.4/§2.5 and Eq 9 rewritten (incidence
+  and twist terms now carry a minus sign); `W2gj` dataclass and `aero/integration.py`
+  (`build_djk`, `build_wg`) docstrings document the sign and why it is opposite to the
+  D_jk-mapped incidence sense.
+- `tests/aero/test_integration.py` T2/T3 now drive the **production combination**
+  (`gamma = solve(Ajj, wg)`, no local `-wg`) with nose-up incidence as a negative wg.
+- New end-to-end regression `tests/integration/test_wg_sign_convention.py` pins the sign
+  through the real `compute_structural_loads` / `coupling.build_fg` load path on a splined
+  cantilever (positive wg → downward Tz; antisymmetric in wg; monotone in a wg sweep).
 
 **AE1 Step F closed — V-AE1d trim acceptance re-framed to %-full-scale (2026-06-13)**
 
@@ -336,6 +373,35 @@ was removed. Every lifting surface is now meshed in full.
   A1 convergence diagnostics were removed.
 
 ### Fixed
+
+**W2GJ baseline-normalwash (`wg`) sign convention unified across all layers (2026-06-14)**
+
+The `wg` sign was documented one way (theory doc / test T2: positive `wg` = +incidence =
+*more* lift) and computed the other way in every production solver (positive `wg` = downwash
+slope = *less* lift). A deck authored to the theory/test convention would have run with
+silently flipped aerodynamic loads under SOL 144. The production "downwash-slope" convention
+is now the single canonical one everywhere, validated end-to-end:
+
+- **Canonical convention:** `wg` (W2GJ) is a dimensionless downwash slope Δz/Δx added directly
+  to the assembled normalwash (NASTRAN W2GJ convention, *not* passed through `D_jk`). **Positive
+  `wg` = local nose-down / washout → less lift; negative `wg` = leading-edge-up built-in
+  incidence → more lift.** Production code (`sol144._compute_aero_forces`,
+  `aero_model.compute_structural_loads`, `coupling.build_fg`, `vlm.solve_rigid_cl`,
+  `maneuver_qs`) and `sample/val_wing_taper_dihedral_twist.bdf` already used this sign and are
+  unchanged.
+- **Docs corrected to match:** theory `01_aeroelastics_theory.md` §2.4 governing-convention
+  sentence (positive `w` *reduces* lift) and Eq 9 (incidence/twist terms now enter as negative
+  downwash slopes); the `w_g` nomenclature row; the `W2gj` dataclass comment
+  (`sbeam/model/aero.py`); `integration.py` module/`build_djk`/`build_wg` docstrings; and the
+  `05_aeroelastics.md` `build_djk` / `build_wg` / W2GJ-field reference.
+- **Tests aligned to the production chain:** `test_integration.py` T2 and T3 no longer apply a
+  local `-wg` negation — they solve `gamma = Ajj⁻¹ @ wg` exactly as the solvers do, with `wg`
+  carrying the canonical sign (a nose-up AoA reproduced by a *negative* `wg`).
+- **New end-to-end regression** (`tests/integration/test_wg_sign_convention.py`): drives the
+  real production load path (`compute_structural_loads` / `build_fg`) on a splined cantilever
+  and asserts positive `wg` unloads the wing, negative `wg` adds lift, total lift falls
+  monotonically as `wg` sweeps negative→positive, and at α = 0 a positive `wg` produces a net
+  downward load.
 
 **Code-review follow-ups — monitor parity, divergence robustness, cleanups (2026-06-13)**
 

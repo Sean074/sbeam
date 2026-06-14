@@ -279,13 +279,13 @@ Assembles the n×n aerodynamic influence coefficient (AIC) matrix. `A[i, j]` is 
 normalwash at collocation point `i` per unit circulation strength at horseshoe `j`.
 O(n²) loop over all panel pairs.
 
-**`solve_rigid_cl(boxes, alpha, beta=0.0, aeros=None, xref=0.0, mach=0.0) -> dict`**
+**`solve_rigid_cl(boxes, alpha, beta=0.0, aeros=None, xref=0.0, mach=0.0, wg=None) -> dict`**
 
 Solves the rigid-wing flow-tangency problem at angle of attack `alpha` and sideslip
 `beta` (both in radians). Boundary condition per panel (ZAERO Eq. 3.28):
 
 ```
-rhs[i] = -(V⃗ · n̂_i)  ≈ -(α·n_z[i] + β·n_y[i])   for small angles
+rhs[i] = -(V⃗ · n̂_i) + wg[i]  ≈ -(α·n_z[i] + β·n_y[i]) + wg[i]   for small angles
 A @ Γ = rhs
 ```
 
@@ -299,6 +299,17 @@ A @ Γ = rhs
 - `xref` — x-coordinate of the moment reference point in CID 0 (default 0.0, the
   coordinate origin). Set to the quarter-MAC x-coordinate for a standard stability-axis
   CM. The NASTRAN convention (AEROS RCSID = 0) corresponds to xref = 0.
+- `wg` — optional `(n,)` baseline normalwash (W2GJ camber/twist/built-in incidence),
+  one value per box; pass `aero_model.wg`. `None` (default) is a zero vector, identical
+  to the prior rigid-AoA behaviour. It is added to the RHS with the **canonical normalwash
+  sign** (`+wg`; theory §2.4–2.5): wg is the downwash slope dz/dx, so a *positive* entry
+  **reduces** lift (leading-edge-down / washout) and a built-in leading-edge-up incidence is
+  *negative* — the same single sign the trim solver uses (`sol144.py` `w_total = w_trim +
+  wg`) and the end-to-end `tests/integration/test_wg_sign_convention.py` pins. The viewer
+  Aero tab passes `aero_model.wg`, so a W2GJ twist deck (e.g.
+  `sample/val_wing_taper_dihedral_twist.bdf`) reads a lower CL than its un-twisted twin. The
+  AoA-equivalence identity `solve_rigid_cl(α, wg=0) ≡ solve_rigid_cl(0, wg=−α·n_z)` pins the
+  rigid-path sign (`TestBaselineNormalwashWg`).
 
 **Surface classification:** each CAERO1 surface is classified from its mean outward
 normal — `|n_z| ≥ |n_y|` → *lift* surface (contributes to CL and CM); `|n_y| > |n_z|`
@@ -356,15 +367,20 @@ available via `sol144.aero_moment_resultant`.
 ### `build_djk(boxes) -> np.ndarray`  — shape (n, n)
 
 Deflection-to-downwash matrix for steady (k = 0) analysis. Returns `−I` (negative
-identity): unit positive slope Δz/Δx at collocation point j produces normalwash `−1`
-at box j. Phase D DLM will replace this matrix with the full unsteady kernel without
+identity): the input is the per-box **incidence** (nose-up positive) delivered by the
+spline, and `w = −incidence`, so a nose-up incidence (lift-increasing) becomes a
+negative normalwash. This is the *opposite* sign sense to a baseline `wg` slope (see
+`build_wg`). Phase D DLM will replace this matrix with the full unsteady kernel without
 changing the caller interface.
 
 ### `build_wg(boxes, w2gjs, caero_eid) -> np.ndarray`  — shape (n,)
 
-Baseline normalwash vector from the W2GJ BDF card. Values are dimensionless slope
-Δz/Δx, one per box, in row-major order (span slowest, chord fastest). Returns a zero
-vector if no W2GJ card matches `caero_eid`.
+Baseline normalwash vector from the W2GJ BDF card. Values are dimensionless downwash
+slopes Δz/Δx, one per box, in row-major order (span slowest, chord fastest). They are
+added **directly** to the assembled normalwash (NASTRAN W2GJ convention — *not* passed
+through `Djk`), so **positive `wg` = local nose-down / washout → less lift**, and a
+leading-edge-up built-in incidence is a **negative** `wg`. Returns a zero vector if no
+W2GJ card matches `caero_eid`. See `docs/20_theory/01_aeroelastics_theory.md` §2.4–2.5.
 
 ### W2GJ Card Format
 
@@ -377,7 +393,7 @@ W2GJ  SID  CAERO_EID  D1  D2  D3  D4  D5  D6
 |-------|-------------|
 | SID | Set ID |
 | CAERO_EID | EID of the CAERO1 this normalwash applies to |
-| D1–DN | Dimensionless normalwash slopes Δz/Δx, one per box in row-major order |
+| D1–DN | Dimensionless downwash slopes Δz/Δx, one per box in row-major order. **Positive = local nose-down / washout → less lift**; a leading-edge-up incidence is negative. (e.g. linear washout root 0° → tip −2° grows from ~0 at the root to +0.035 rad at the tip — see `sample/val_wing_taper_dihedral_twist.bdf`.) |
 
 ---
 
@@ -617,6 +633,14 @@ maneuver load at each output time.
 and pressure-coefficient visualisation. The Streamlit app (`app.py`) shows an "Aero"
 tab automatically when `bulk.caero1s` is non-empty.
 
+The Aero tab's **Compute Aero** button solves `solve_rigid_cl(..., wg=aero_model.wg)`, so the
+**W2GJ baseline incidence (camber/twist/built-in incidence) is folded into the rigid solve**.
+Two decks that differ only by a W2GJ twist therefore produce different CL/CM/cp/section loads
+(e.g. the `sample/val_wing_taper_dihedral*.bdf` pair: a 0→−2° washout drops CL from 0.268 to
+0.186 at α = 3°). A caption appears when a non-zero `wg` is active. The mesh *geometry* is
+unchanged by twist (incidence, not shape), so the visible difference is in the cp colour map and
+the section-load strip chart, not the wire-frame.
+
 ### Public API
 
 ```python
@@ -649,7 +673,7 @@ Returns a two-row subplot:
 
 ```python
 aero_model = build_aero_model(bulk)
-result = solve_rigid_cl(aero_model.boxes, np.radians(3.0))
+result = solve_rigid_cl(aero_model.boxes, np.radians(3.0), wg=aero_model.wg)
 fig = build_aero_box_figure(
     bulk, aero_model,
     cp=result["cp"],
