@@ -778,6 +778,8 @@ def _handle_diverg(fields: list, conts: list, bulk: BulkData) -> None:
     # field 4 used only to map q_div -> V_div; leave blank/0.0 to omit V_div).
     sid    = _to_int(fields[1])
     nroots = _to_int(fields[2]) if len(fields) > 2 else 1
+    if nroots < 1:
+        raise ValueError(f"DIVERG {sid}: NROOTS must be >= 1, got {nroots}")
     rhoref = _to_float(fields[3]) if len(fields) > 3 and fields[3].strip() else 0.0
     machs  = [_to_float(f) for f in fields[4:] if f.strip()]
     for cont in conts:

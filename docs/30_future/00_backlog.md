@@ -538,6 +538,16 @@ prescribed control histories). Bridges to the full Phase G ASE system.
 > The two follow-on phases below remain open. HDF5 hierarchical export is a small deferred add
 > (the f06 block + per-case CSV shipped in Phase 1).
 
+### [MINOR] MON-SYM — Off-centerline monitors on SYMXZ half-span models
+
+A `SYMXZ ≠ 0` half-span build reconstructs the whole-airplane monitor load by mirroring about
+the xz plane (symmetric Fx/Fz/My double, antisymmetric Fy/Mx/Mz cancel — fixed 2026-06-13). That
+reconstruction is only valid for a monitor reference **on** the symmetry plane (`y ≈ 0`), so an
+off-centerline monitor on a half-span model is currently rejected with an error; a full-span
+model must be used for wing-station cuts. Lifting this would require integrating the mirror half
+about its own (reflected) reference point rather than the on-plane shortcut — deferred, low
+priority now that full-span is the default build.
+
 ### Phase 2 (later) — Section-cut running loads
 
 The actual stress-team deliverable: per-station `{Vz, My, Mt}` tables along the wing,

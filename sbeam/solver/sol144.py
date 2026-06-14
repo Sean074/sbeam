@@ -1127,9 +1127,9 @@ def _divergence_roots(
 
     Generalises ``_divergence_dynamic_pressure`` from the single critical q to a
     full sorted sweep: solves ``K_ll x = q*Q_ll x`` as the standard eigenproblem
-    ``(K_ll^{-1} Q_ll) x = (1/q) x`` (the dense path of ``sol103._solve_modes_dense``
-    reused on the restrained l-set), keeps the real-positive ``1/q`` eigenvalues,
-    and returns them ordered by ascending divergence pressure.
+    ``(K_ll^{-1} Q_ll) x = (1/q) x`` via a dense ``scipy.linalg.eig`` on the
+    restrained l-set, keeps the real-positive ``1/q`` eigenvalues, and returns
+    them ordered by ascending divergence pressure.
 
     Selection rule (Risk KC3): the unsymmetric ``Q_ll`` can produce spurious
     negative or complex eigenvalues; only real, strictly positive ``1/q`` are
@@ -1151,7 +1151,7 @@ def _divergence_roots(
         if abs(ev.imag) < 1e-8 * max(1.0, abs(ev.real)) and ev.real > 1e-12:
             roots.append((float(1.0 / ev.real), vec.real.copy()))
     roots.sort(key=lambda t: t[0])
-    return roots[:max(1, nroots)]
+    return roots[:nroots]
 
 
 def run_sol144_diverg(

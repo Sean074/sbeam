@@ -14,6 +14,10 @@ from sbeam.assembly.coord_transform import _get_transform
 from sbeam.aero.spline import _nchord_per_caero, _build_id_to_k
 from sbeam.results.results import MonitorLoad
 
+# A monitor must sit on the xz symmetry plane (y≈0) for the SYMXZ parity
+# reconstruction to integrate the mirror half about the correct reference point.
+_SYM_PLANE_TOL = 1e-6
+
 
 def _parity(bulk) -> float:
     """Symmetry doubling factor from AEROS.SYMXZ.
@@ -25,6 +29,33 @@ def _parity(bulk) -> float:
     if bulk.aeros is not None and bulk.aeros.symxz != 0:
         return 2.0
     return 1.0
+
+
+def _apply_symmetry(load6_basic: np.ndarray, par: float,
+                    ref_basic: np.ndarray, mon_name: str) -> np.ndarray:
+    """Reconstruct the whole-airplane [F, M] resultant for a half-span (SYMXZ) build.
+
+    For an xz-plane-symmetric model under symmetric loading the mirror half doubles
+    the symmetric components (Fx, Fz, My) and cancels the antisymmetric ones
+    (Fy, Mx, Mz) — so simply scaling all six by ``par`` would wrongly double the
+    antisymmetric load.  Valid only for a monitor reference on the symmetry plane
+    (y≈0): an off-plane reference would integrate the mirror load about the wrong
+    point, so that case is rejected (use a full-span model instead).
+    """
+    if par == 1.0:
+        return load6_basic
+    if abs(ref_basic[1]) > _SYM_PLANE_TOL:
+        raise ValueError(
+            f"Monitor {mon_name!r}: SYMXZ half-model parity reconstruction requires "
+            f"the monitor reference on the symmetry plane (y≈0), got y={ref_basic[1]:g}. "
+            f"Use a full-span model for off-centerline monitors."
+        )
+    out = np.zeros(6)
+    out[0] = par * load6_basic[0]   # Fx — symmetric
+    out[2] = par * load6_basic[2]   # Fz — symmetric
+    out[4] = par * load6_basic[4]   # My — symmetric
+    # Fy (1), Mx (3), Mz (5) are antisymmetric and cancel across the mirror.
+    return out
 
 
 def _monitor_frame(mon, bulk) -> tuple:
@@ -67,12 +98,11 @@ def integrate_monpnt1(mon, bulk, aero, box_forces: np.ndarray) -> MonitorLoad:
         F += f
         M += np.cross(r, f)
 
-    aero6 = _to_cp(np.concatenate([F, M]), R)
     par = _parity(bulk)
-    totals = par * aero6
+    aero6 = _to_cp(_apply_symmetry(np.concatenate([F, M]), par, ref_basic, mon.name), R)
     return MonitorLoad(
         name=mon.name, label=mon.label, mtype="MONPNT1", axes=mon.axes,
-        cid=mon.cp, ref=ref_basic, totals=totals, aero=par * aero6,
+        cid=mon.cp, ref=ref_basic, totals=aero6, aero=aero6,
         inertia=np.zeros(6), reaction=np.zeros(6),
         parity=par, whole_airplane=(par != 1.0), source_ids=list(aecomp.list_ids),
     )
@@ -124,9 +154,9 @@ def integrate_monpnt3(mon, bulk, grid_loads, inertial_loads, grid_index,
     react_b = _grid_resultant(react_g, gids, bulk, grid_index, ref_basic)
 
     par = _parity(bulk)
-    aero6 = par * _to_cp(aero_b, R)
-    inert6 = par * _to_cp(inert_b, R)
-    react6 = par * _to_cp(react_b, R)
+    aero6 = _to_cp(_apply_symmetry(aero_b, par, ref_basic, mon.name), R)
+    inert6 = _to_cp(_apply_symmetry(inert_b, par, ref_basic, mon.name), R)
+    react6 = _to_cp(_apply_symmetry(react_b, par, ref_basic, mon.name), R)
     totals = aero6 + inert6 + react6
     return MonitorLoad(
         name=mon.name, label=mon.label, mtype="MONPNT3", axes=mon.axes,

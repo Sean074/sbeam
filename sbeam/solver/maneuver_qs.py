@@ -220,7 +220,7 @@ def _force_l(ops: _Operators, delta_arr: np.ndarray) -> np.ndarray:
 
 
 def _recover_step(
-    ops: _Operators, bulk: BulkData, grid_index: dict, n_dofs: int,
+    ops: _Operators, bulk: BulkData, grid_index: dict,
     t: float, u_l: np.ndarray, delta_arr: np.ndarray, vals: dict,
 ) -> ManeuverStep:
     """Recover per-step displacements, CBAR loads, and net (aero+inertial) loads."""
@@ -321,7 +321,6 @@ def run_maneuver_qs(
 
     ops = _assemble_operators(bulk, subcase, aero, q)
     grid_index = build_grid_index(bulk)
-    n_dofs = 6 * len(grid_index)
 
     # Base δ held for any label the command set does not drive = the trim value.
     base_delta = {l: float(ic.trim_vars.get(l, 0.0)) for l in ops.all_labels}
@@ -369,7 +368,7 @@ def run_maneuver_qs(
 
     def _emit(t, u_l, delta_arr):
         step = _recover_step(
-            ops, bulk, grid_index, n_dofs, t, u_l, delta_arr, _vals_at(delta_arr))
+            ops, bulk, grid_index, t, u_l, delta_arr, _vals_at(delta_arr))
         steps.append(step)
         times.append(t)
 

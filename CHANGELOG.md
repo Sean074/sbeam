@@ -328,6 +328,24 @@ was removed. Every lifting surface is now meshed in full.
 
 ### Fixed
 
+**Code-review follow-ups — monitor parity, divergence robustness, cleanups (2026-06-13)**
+
+Findings from the critical design review of the SOL 144 divergence / maneuver / monitor work:
+
+- **MONPNT1/MONPNT3 SYMXZ parity reconstruction corrected** (`results/monitor_points.py`).
+  A half-span (`SYMXZ ≠ 0`) build previously doubled *all six* `[F, M]` components. Under
+  symmetric loading only the symmetric components (Fx, Fz, My) double across the xz mirror;
+  the antisymmetric ones (Fy, Mx, Mz) cancel. New `_apply_symmetry` applies this in the basic
+  frame before the cp-frame rotation, and rejects off-centerline monitors (`|y_ref| > 1e-6`)
+  on half-span models with a clear error (a full-span model is required there). The default
+  full-span path (`parity = 1`) is unchanged.
+- **DIVERG `NROOTS` validated at parse time** (`parser/bdf_reader.py`): `NROOTS < 1` now raises
+  a descriptive error instead of being silently coerced to 1 inside `_divergence_roots`
+  (`solver/sol144.py`, which now slices `roots[:nroots]` directly).
+- **Cleanups:** removed the unused `n_dofs` parameter from `maneuver_qs._recover_step`, and
+  corrected the `_divergence_roots` docstring (it calls `scipy.linalg.eig` directly, not
+  `sol103._solve_modes_dense`).
+
 **AE11 — D_jx YAW column + AESURF hinge geometry (2026-06-13)**
 
 `build_djx` (`sbeam/aero/integration.py`) had two latent control/lateral-column defects, both
