@@ -92,7 +92,7 @@ def test_rigid_derivative_table_shape_and_naming(aero_bulk):
     df_raw = rigid_derivative_table(aero_model, aero_bulk, naming="raw")
     assert isinstance(df_aero, pd.DataFrame)
     assert list(df_aero.index) == ["α", "β", "p", "q", "r"]
-    assert list(df_aero.columns) == ["CL", "CY", "Cl", "Cm", "Cn", "CX"]
+    assert list(df_aero.columns) == ["CZ", "CY", "Cl", "Cm", "Cn", "CX"]
     assert list(df_raw.index) == ["ANGLEA", "SIDES", "ROLL", "PITCH", "YAW"]
     assert list(df_raw.columns) == ["CZ", "CY", "CMX", "CMY", "CMZ", "CX"]
     # Toggle only relabels — the numbers are identical.
@@ -100,7 +100,12 @@ def test_rigid_derivative_table_shape_and_naming(aero_bulk):
 
 
 def test_rigid_derivative_table_clalpha_crosscheck(aero_bulk):
-    """ANGLEA→CL (per rad, Skj integration) matches the single-point CL/α (K-J)."""
+    """ANGLEA→CZ (per rad, Skj integration) matches the single-point CL/α (K-J).
+
+    The table column is the body-axis vertical-force coefficient CZ; at the α≈0
+    linearisation point it equals the wind-axis lift slope to first order, so it
+    cross-checks against ``solve_rigid_cl``'s ``CL`` (also a body-z vertical-force sum).
+    """
     aero_model = build_aero_model(aero_bulk)
     alpha = np.radians(3.0)
     res = solve_rigid_cl(
@@ -108,7 +113,7 @@ def test_rigid_derivative_table_clalpha_crosscheck(aero_bulk):
         cp_operator=aero_model.ajj_inv_corr,
     )
     df = rigid_derivative_table(aero_model, aero_bulk, naming="aero")
-    cla_table = df.loc["α", "CL"]
+    cla_table = df.loc["α", "CZ"]
     cla_pt = res["CL"] / alpha
     assert cla_table == pytest.approx(cla_pt, rel=1e-2)
     assert cla_table > 0.0

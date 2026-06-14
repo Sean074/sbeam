@@ -80,7 +80,7 @@ def build_aero_load_cards_text(
 
     lines = [
         f"$ SOL 144 trimmed aerodynamic flight loads — subcase {result.subcase_id}, SID {sid}",
-        f"$ TRIM={result.trim_sid}  Q={result.q:g}  MACH={result.mach:g}  CL={result.total_cl:.6f}",
+        f"$ TRIM={result.trim_sid}  Q={result.q:g}  MACH={result.mach:g}  CZ={result.total_cl:.6f}",
         "$ FORCE/MOMENT set sums to the total trimmed lift/moment (plain trim).",
     ]
     lines += _emit_force_moment_cards(result.grid_loads, bulk, grid_index, sid)
@@ -112,7 +112,7 @@ def build_maneuver_load_cards_text(
 
     lines = [
         f"$ SOL 144 balanced maneuver loads (aero + inertia relief) — subcase {result.subcase_id}, SID {sid}",
-        f"$ TRIM={result.trim_sid}  Q={result.q:g}  MACH={result.mach:g}  CL={result.total_cl:.6f}",
+        f"$ TRIM={result.trim_sid}  Q={result.q:g}  MACH={result.mach:g}  CZ={result.total_cl:.6f}",
         "$ FORCE/MOMENT set is the net (aero + inertial) maneuver load for stress (Step 53).",
     ]
     lines += _emit_force_moment_cards(result.net_loads, bulk, grid_index, sid)

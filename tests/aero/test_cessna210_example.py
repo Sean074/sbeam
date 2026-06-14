@@ -100,10 +100,11 @@ def test_rigid_derivative_table_and_span_figure(model_and_data):
     )
     bulk, model, _df = model_and_data
 
-    # Uncorrected deck: rigid CLα ≈ bare-VLM ~0.091/deg = ~5.2/rad.
+    # Uncorrected deck: rigid CZα ≈ bare-VLM ~0.091/deg = ~5.2/rad (body-axis CZ, the
+    # vertical-force column under both namings — wind-axis CL only at α≈0; see A-GUI2a).
     tab = rigid_derivative_table(model, bulk, naming="aero")
-    assert list(tab.columns) == ["CL", "CY", "Cl", "Cm", "Cn", "CX"]
-    assert tab.loc["α", "CL"] == pytest.approx(5.2, abs=0.6)
+    assert list(tab.columns) == ["CZ", "CY", "Cl", "Cm", "Cn", "CX"]
+    assert tab.loc["α", "CZ"] == pytest.approx(5.2, abs=0.6)
     assert tab.loc["α", "Cm"] < 0.0          # pitch-down with aft moment ref / tail
 
     # Span loading: one cn + one cm line per CAERO1 surface (5 surfaces → 10 traces).

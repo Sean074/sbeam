@@ -208,6 +208,29 @@ class TestRectangularWingCLa:
         for val in result["cl_section"].values():
             assert val > 0.0
 
+    # -- wind-axis CL/CD (genuine lift ⊥ U∞, drag ∥ U∞) ----------------------
+    def test_body_axis_cz_alias_equals_cl(self, result):
+        """CZ is the explicit body-axis alias of the legacy CL key (same value)."""
+        assert result["CZ"] == result["CL"]
+
+    def test_flat_wing_has_no_streamwise_force(self, result):
+        """A surface-normal-pressure VLM on a planar wing carries no body-x force."""
+        assert abs(result["CX"]) < 1e-9
+
+    def test_windaxis_cl_is_body_cz_rotated_through_alpha(self, result):
+        """CL_wind = CZ·cosα − CX·sinα, and < CZ at finite α (cosα < 1)."""
+        expected = (result["CZ"] * math.cos(self.ALPHA)
+                    - result["CX"] * math.sin(self.ALPHA))
+        assert result["CL_wind"] == pytest.approx(expected, rel=1e-12)
+        assert result["CL_wind"] < result["CZ"]        # wind-axis lift below body CZ
+        # With CX ≈ 0 the rotation reduces to the cosα factor.
+        assert result["CL_wind"] == pytest.approx(
+            result["CZ"] * math.cos(self.ALPHA), rel=1e-9)
+
+    def test_windaxis_cd_is_trefftz_cdi(self, result):
+        """Wind-axis drag is the Trefftz induced drag, not the near-field projection."""
+        assert result["CD_wind"] == result["CDi"]
+
 
 # ---------------------------------------------------------------------------
 # Baseline normalwash wg (W2GJ camber/twist) folded into the rigid solve

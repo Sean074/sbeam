@@ -352,9 +352,15 @@ def build_section_correction_figure(boxes, df, data_result, caero_eid):
     return fig
 
 
-# SOL 144 raw derivative keys → conventional aero column header.
+# SOL 144 raw derivative keys → conventional aero column header.  The vertical-force
+# coefficient stays "CZ" (body/global-z: the summed z-component of the surface-normal box
+# forces) and is deliberately NOT renamed to "CL".  CL is the wind-axis lift (force ⊥ to
+# U∞); it equals CZ only at α≈0 and is related by a rotation through angle of attack
+# (CL = CZ·cosα + CX·sinα).  This table carries no reference incidence, so a wind-axis CL
+# cannot be formed here — the column is unambiguously body-axis.  Moments map to the
+# conventional body-axis symbols Cl/Cm/Cn.
 _DERIV_COLS = ["CZ", "CY", "CMX", "CMY", "CMZ", "CX"]
-_DERIV_AERO_COLS = {"CZ": "CL", "CY": "CY", "CMX": "Cl",
+_DERIV_AERO_COLS = {"CZ": "CZ", "CY": "CY", "CMX": "Cl",
                     "CMY": "Cm", "CMZ": "Cn", "CX": "CX"}
 _DERIV_AERO_ROWS = {"ANGLEA": "α", "SIDES": "β", "ROLL": "p",
                     "PITCH": "q", "YAW": "r"}
@@ -373,8 +379,10 @@ def rigid_derivative_table(aero_model, bulk, naming: str = "aero"):
     per-radian / per-unit-label (matching SOL 144).
 
     ``naming="aero"`` relabels rows/columns with conventional symbols
-    (α, β, p, q, r; CL, CY, Cl, Cm, Cn, CX); ``naming="raw"`` keeps the SOL 144
-    names (ANGLEA…; CZ, CY, CMX, CMY, CMZ, CX) for a 1:1 f06 cross-check.
+    (α, β, p, q, r; CZ, CY, Cl, Cm, Cn, CX); ``naming="raw"`` keeps the SOL 144
+    names (ANGLEA…; CZ, CY, CMX, CMY, CMZ, CX) for a 1:1 f06 cross-check.  The
+    vertical-force column stays body-axis ``CZ`` (not wind-axis ``CL``; see
+    ``_DERIV_AERO_COLS``).
 
     Returns a ``pandas.DataFrame``, or ``None`` when no AEROS reference card is
     present (the coefficients have no reference geometry to normalise by).

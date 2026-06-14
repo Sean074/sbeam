@@ -359,12 +359,14 @@ def _render_sol144_trim(bulk: BulkData, result) -> None:
     """Trim variables, stability derivatives, q_div, hinge/monitor loads, deflected shape."""
     # ---- Trim summary metrics ----
     st.subheader("Trim solution")
-    cols = st.columns(5)
+    cols = st.columns(6)
     cols[0].metric("Dynamic pressure q", f"{result.q:.4g}")
     cols[1].metric("Mach", f"{result.mach:.4g}")
-    cols[2].metric("Total CL", f"{result.total_cl:.4f}")
-    cols[3].metric("Total CMy", f"{result.total_cm:.4f}")
-    cols[4].metric("Trim mode", result.trim_mode)
+    cols[2].metric("CZ (body)", f"{result.total_cl:.4f}")
+    cols[3].metric("CL (wind)",
+                   f"{getattr(result, 'total_cl_wind', result.total_cl):.4f}")
+    cols[4].metric("Total CMy", f"{result.total_cm:.4f}")
+    cols[5].metric("Trim mode", result.trim_mode)
 
     # ---- Trim variables ----
     trim_card = bulk.trims.get(result.trim_sid)

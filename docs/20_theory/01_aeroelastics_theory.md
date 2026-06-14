@@ -420,7 +420,17 @@ there is no leading-edge suction and no in-plane (chordwise) force.
 |---------------------------|--------|----------------|
 | Body / global $z$ | $\hat z$ (fixed) | ✗ |
 | **Surface normal** | $\hat{\mathbf n}_j$ (per panel) | **✓ — this is $S_{kj}$** |
-| Wind axis ($C_L$) | $\perp\,\mathbf U_\infty$ | ✗ (reporting coefficient only) |
+| Wind axis ($C_L$) | $\perp\,\mathbf U_\infty$ | ✗ for force *integration*; **reported** as `CL_wind`/`CD_wind` by rotating the body-axis resultant through $\alpha$ ($C_L=C_Z\cos\alpha-C_X\sin\alpha$; $C_D=C_{Di}$ Trefftz) |
+
+**Body vs wind axis for reporting.** The integrated coefficient summed on global-$z$ is the
+**body-axis** $C_Z$ (returned as `CL`/`CZ` by `solve_rigid_cl`, `total_cl` by SOL 144). The
+**wind-axis lift** $C_L$ — the force component perpendicular to $\mathbf U_\infty$ — is a distinct
+quantity obtained by rotating the body-axis resultant $(C_X,C_Z)$ through the angle of attack:
+$C_L=C_Z\cos\alpha-C_X\sin\alpha$ and $C_D=C_X\cos\alpha+C_Z\sin\alpha$. They coincide only at
+$\alpha\approx0$. Because a flat-panel VLM carries no leading-edge suction, the body-streamwise
+force $C_X\approx0$ and the near-field $C_D$ is unreliable, so the reported wind-axis drag is the
+far-field **Trefftz** $C_{Di}$ rather than the near-field projection. sbeam exposes both the
+body-axis ($C_Z$) and the genuine wind-axis ($C_L$, $C_D$) coefficients so neither is mislabelled.
 
 **Dihedral enters twice.** On a surface canted at dihedral $\Gamma$ the right-wing normal is
 $\hat{\mathbf n}=(0,-\sin\Gamma,\cos\Gamma)$, so (i) the boundary condition that sets the pressure

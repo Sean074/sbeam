@@ -260,15 +260,32 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
     Returns a dict with keys:
       cp            (n,) pressure coefficient per box  (ΔCp = 2Γ / (V∞ · chord_box))
       cl_section    dict mapping i_span → section load coefficient (all surfaces)
-      CL            lift coefficient from horizontal (lift) surfaces
+      CL            **body-axis** vertical-force coefficient from horizontal (lift)
+                    surfaces (≡ CZ; the force summed on global/body-z).  This is the
+                    historical key name; it is NOT the wind-axis lift.  Linear in α,
+                    so the α-linearity / AoA-equivalence / parallel-axis-CM identities
+                    are expressed in terms of it.
+      CZ            body-axis vertical-force coefficient (explicit alias of ``CL``)
+      CX            body-axis streamwise-force coefficient (≈ 0 — a surface-normal-
+                    pressure VLM carries no leading-edge suction, and incidence/
+                    camber/controls enter via normalwash, not geometric rotation)
+      CL_wind       **wind-axis** lift coefficient (force ⊥ to U∞): the body-axis
+                    resultant rotated through α, ``CL_wind = CZ·cosα − CX·sinα``.
+                    Equals CZ only at α ≈ 0; this is the genuine CL.
+      CD_wind       wind-axis (induced) drag coefficient = Trefftz ``CDi``.  NOT the
+                    near-field projection ``CX·cosα + CZ·sinα`` (a no-LE-suction
+                    flat-panel VLM gets that wrong); the Trefftz far-field value is
+                    the physically meaningful wind-axis drag.
       CY            sideforce coefficient from vertical (sideforce) surfaces
       CM            pitching moment coefficient about xref, nose-up positive;
                     lift surfaces only; normalised by S_ref × c_ref. Each box
                     load acts at its 1/4-chord bound vortex (not the 3/4-chord
                     collocation point) — the physically correct moment arm.
+                    (Pitch moment is invariant under the body→wind rotation about y.)
       CDi           Trefftz-plane induced drag coefficient (lift surfaces only)
-      e             Oswald span efficiency: CDi = CL²/(π·AR·e)
-      per_surface   dict {caero_eid: {surface_type, CL, CY, CM}}
+      e             Oswald span efficiency: CDi = CZ²/(π·AR·e)  (body-axis lift)
+      per_surface   dict {caero_eid: {surface_type, CL, CY, CM}} — per-surface
+                    ``CL`` is the body-axis (CZ) contribution of that surface.
 
     Full-span model: every lifting surface is meshed in full, so CL/CY/CM are
     whole-configuration coefficients with no symmetry factor.
@@ -404,8 +421,25 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
     L_lift = float(np.dot(gamma[lift_idx], dy[lift_idx])) if len(lift_idx) else 0.0
     L_sf   = float(np.dot(gamma[sf_idx],   dy[sf_idx]))   if len(sf_idx)   else 0.0
 
-    CL = 2.0 * L_lift / S_ref
+    CL = 2.0 * L_lift / S_ref      # body-axis vertical force (≡ CZ)
     CY = 2.0 * L_sf   / S_ref
+
+    # ------------------------------------------------------------------ #
+    # Wind-axis lift/drag (genuine CL/CD, ⊥ and ∥ to the freestream U∞).
+    # The body-axis resultant is (CX, CZ); rotating through the angle of
+    # attack gives CL_wind = CZ·cosα − CX·sinα.  CX = 2·Σ Γ·Δy·n_x / S_ref is
+    # the body-streamwise force — ≈ 0 here because the panels carry only
+    # surface-normal pressure (no leading-edge suction) and incidence/camber/
+    # controls enter through the normalwash rather than a geometric panel tilt,
+    # so for planar geometry CL_wind reduces to CZ·cosα.  The genuine wind-axis
+    # (induced) drag is the Trefftz CDi, not the unreliable near-field
+    # projection CX·cosα + CZ·sinα.  CL_wind = CZ only at α ≈ 0 (see §5.4 of
+    # docs/20_theory/01_aeroelastics_theory.md).
+    n_x = np.array([b.normal[0] for b in boxes])
+    CX = 2.0 * float(np.dot(gamma * dy, n_x)) / S_ref
+    ca, sa = math.cos(alpha), math.sin(alpha)
+    CL_wind = CL * ca - CX * sa
+    CD_wind = _cdi_result["CDi"]
 
     # Nose-up-positive pitching moment about xref.  Pressure form here
     # (cp·area·arm); the equivalent force form (Fz·arm) lives in
@@ -438,7 +472,11 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
     return {
         "cp":          cp,
         "cl_section":  cl_section,
-        "CL":          float(CL),
+        "CL":          float(CL),        # body-axis vertical force (≡ CZ; legacy key name)
+        "CZ":          float(CL),        # body-axis vertical force (explicit)
+        "CX":          float(CX),        # body-axis streamwise force (≈ 0, no LE suction)
+        "CL_wind":     float(CL_wind),   # wind-axis lift   = CZ·cosα − CX·sinα
+        "CD_wind":     float(CD_wind),   # wind-axis drag   = Trefftz CDi
         "CY":          float(CY),
         "CM":          float(CM),
         "CDi":         _cdi_result["CDi"],

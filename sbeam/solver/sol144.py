@@ -1536,13 +1536,27 @@ def run_sol144_trim(
     gamma    = aero.ajj_inv_corr @ w_total
     f_box_vec = aero.skj @ gamma
     Fz_total = float(f_box_vec[2::3].sum())
+    Fx_total = float(f_box_vec[0::3].sum())
     # nose-up-positive (single-source helper, AE1 Step E); whole-airplane (full-span)
     My_total = float(_pitch_moment(f_box_vec, aero.boxes, x_ref))
     sref = aeros.sref
     cref = aeros.cref
     # Fz_total and My_total are force/q (skj @ Cp); divide by area only, not q.
+    # total_cl/total_cx are BODY-axis (CZ along global-z, CX along streamwise-x);
+    # total_cl balances weight at trim and matches NASTRAN's body-axis convention.
     total_cl = Fz_total / sref if sref > 0 else 0.0
+    total_cx = Fx_total / sref if sref > 0 else 0.0
     total_cm = My_total / (sref * cref) if sref * cref > 0 else 0.0
+    # Wind-axis lift (genuine CL, ⊥ to U∞): rotate the body resultant through
+    # the trimmed angle of attack.  CL_wind = CZ·cosα − CX·sinα; equals CZ only
+    # at α ≈ 0 (see docs/20_theory/01_aeroelastics_theory.md §5.4).
+    alpha_trim = (
+        float(delta_all[all_labels.index("ANGLEA")])
+        if "ANGLEA" in all_labels else 0.0
+    )
+    total_cl_wind = float(
+        total_cl * np.cos(alpha_trim) - total_cx * np.sin(alpha_trim)
+    )
 
     # ------------------------------------------------------------------ #
     # Hinge-moment derivatives + trimmed hinge moment per AESURF control
@@ -1651,6 +1665,8 @@ def run_sol144_trim(
         box_gamma=gamma,
         total_cl=total_cl,
         total_cm=total_cm,
+        total_cx=total_cx,
+        total_cl_wind=total_cl_wind,
         box_cp=box_cp,
         box_forces=box_forces,
         grid_loads=grid_loads,

@@ -107,8 +107,10 @@ class Sol144TrimResult:
     rigid_derivs: dict                   # {label: {'CZ','CMY','CMX','CMZ','CX','CY'}}
     restrained_derivs: dict              # {label: {'CZ','CMY','CMX','CMZ'}}
     box_gamma: Optional[np.ndarray] = None   # (n_box,) circulation strengths at trim
-    total_cl: float = 0.0                # total CL = Fz / (q * sref)
+    total_cl: float = 0.0                # body-axis CZ = Fz / (q * sref) (balances weight at trim)
     total_cm: float = 0.0               # total CMy / (q * sref * cref) about x_ref
+    total_cx: float = 0.0                # body-axis CX = Fx / (q * sref) (streamwise, ≈0)
+    total_cl_wind: float = 0.0           # wind-axis lift = CZ·cosα − CX·sinα at trim α (genuine CL)
     # --- Step 56 outputs (f06 blocks, AEROF/APRES, flight-load export) ---
     box_cp: Optional[np.ndarray] = None       # (n_box,) ΔCp per box at trim (normal-projected force/q / area)
     box_forces: Optional[np.ndarray] = None   # (n_box, 3) physical aero force per box = q * (skj@gamma)

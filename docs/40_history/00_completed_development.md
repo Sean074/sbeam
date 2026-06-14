@@ -2147,6 +2147,116 @@ corrected solution was shown, and the span-load strip was a single bar series ke
 
 ---
 
+### Resolved Defect A-GUI2a: rigid S&C table mislabelled body-axis `CZ` as wind-axis `CL` ✅ RESOLVED (2026-06-14)
+
+**Symptom (user-reported):** in the Aero tab's "Rigid stability & control derivatives" table the
+**RAW** and **Aero** naming toggles produced identical numbers, yet the Aero toggle relabelled the
+vertical-force column `CZ` → `CL` — and `CL` (wind axis) is not the same quantity as `CZ` (body axis).
+
+**Diagnosis:** the integrated force is `f_box_vec = skj @ gamma`, summed on the global/body z-axis
+(`CZ = Fz/Sref`, `sol144._compute_rigid_derivs`). Per theory §5.4 this is explicitly *not* the
+wind-axis lift `C_L` (force ⊥ to U∞); `CL = CZ·cosα + CX·sinα`, equal only at α≈0. The toggle
+(`_DERIV_AERO_COLS` in `sbeam/viewer/aero_view.py`) performed a cosmetic relabel with no body→wind
+rotation (a test even pins `np.allclose(df_aero, df_raw)`), and the table carries no reference
+incidence from which a wind-axis `CL` could be formed. The internal inconsistency was visible in the
+header set itself — `CL` (wind symbol) alongside `CX` (body symbol). Numerically harmless for the
+α-row at the α≈0 linearisation point (CLα≈CZα, the difference being O(CX)≈0 in inviscid VLM), but a
+genuine terminology error that becomes material at nonzero reference α / with base axial force.
+
+**Fix:** the Aero naming keeps the body-axis symbol `CZ` for the vertical-force column (moments stay
+the conventional body-axis `Cl/Cm/Cn`); no wind-axis transform is invented. `app.py`'s Naming radio
+illustration switched to symbols that actually differ between modes (`Aero (α, Cm…)` ↔
+`Raw (ANGLEA, CMY…)`). `test_aero_view.py` (and `test_cessna210_example.py::test_rigid_derivative_table_and_span_figure`)
+expect the `CZ` header and cross-check `df.loc["α","CZ"]`;
+05_aeroelastics.md / 06_viewer.md note the column is body-axis `CZ`, not wind-axis `CL`.
+
+---
+
+### Step A-GUI2b: report genuine wind-axis CL/CD alongside body-axis CZ ✅ COMPLETE (2026-06-14)
+
+**Objective:** Follow-on to A-GUI2a. Rather than only relabelling the body-axis force as `CZ`,
+actually compute and report the **wind-axis** lift `CL` (⊥ to U∞) and drag `CD` (∥ to U∞) at the
+flight condition, so the Aero tab and f06 carry the genuine aerodynamic coefficients (not just a
+honestly-named body-axis number).
+
+**Deliverables:**
+1. **`sbeam/aero/vlm.py`** — `solve_rigid_cl` returns, additively: `CZ` (explicit body-axis alias
+   of legacy `CL`), `CX` (body streamwise = `2·Σ Γ·Δy·n_x / S_ref`), `CL_wind = CZ·cosα − CX·sinα`,
+   and `CD_wind = CDi` (Trefftz). The legacy `CL` key keeps its body-axis value so every existing
+   identity/validation test is untouched.
+2. **`sbeam/solver/sol144.py` + `results.py`** — trim path adds `total_cx` and `total_cl_wind`
+   (`= total_cl·cosα_trim − total_cx·sinα_trim`, α_trim = trimmed `ANGLEA`); `total_cl` unchanged
+   (body-axis CZ, balances weight).
+3. **Viewer / f06** — Aero tab shows CL (wind) / CD (induced) / CZ (body) / CY / CM with an
+   axis-convention caption; per-surface table labelled body-axis (CZ). SOL 144 trim summary shows
+   CZ (body) + CL (wind). f06 prints `TOTAL CZ (BODY)` and `TOTAL CL (WIND)`.
+4. **Tests/docs** — `test_vlm.py` wind-axis cases (CZ alias; CX≈0 on a planar wing;
+   `CL_wind = CZ·cosα − CX·sinα < CZ`; `CD_wind == CDi`). Theory §5.4, 05/06 standard docs updated.
+
+**Key decisions:**
+- **Additive, not a rename.** `result["CL"]` is used across the suite as the body-axis quantity in
+  exact identities (α-linearity `r2 == r1/2`, AoA-equivalence, parallel-axis CM, `Fz = CL·Sref`,
+  dihedral cosΓ). Changing its meaning would break correct body-axis physics; new keys avoid that.
+- **Wind-axis drag = Trefftz `CDi`, not the near-field projection.** A surface-normal-pressure VLM
+  has no leading-edge suction (so body `CX≈0`); the near-field `CX·cosα + CZ·sinα` over-predicts
+  induced drag. The far-field Trefftz value is the physically meaningful wind-axis drag.
+
+**Test / Acceptance:** focused suite (`test_vlm`, `test_f06_sol144`, `test_ae1_fullspan`,
+`tests/viewer/`) → 96 passed incl. 4 new wind-axis cases; broader aero/results/viewer/integration
+set → 222 passed (no regressions from the additive keys / f06 relabel).
+
+---
+
+### Step A-GUI3: Aero Correction tab — build correction cards from CFD/test section data ✅ COMPLETE
+
+**Objective:** Expose the (already built, already tested) section-data → correction-card pipeline
+as a viewer page. Previously `aero/section_data.py` + `aero/section_correction.py` (CSV ingestion,
+`build_from_section_data_multi`, `cards_to_bdf`) and `aero_view.build_section_correction_figure`
+existed but were unwired — there was no GUI to view experimental/CFD section lift & moment data,
+generate the W2GJ + AECORR(WT2) cards for a condition, and add them to the model so the existing
+Aero page runs the corrected solve.
+
+**Deliverables:**
+1. **`sbeam/viewer/aero_correction_view.py`** (new) — `render_aero_correction_tab(bulk)`:
+   - **CSV template/upload** — `_template_csv(aero_model)` concatenates `template_dataframe` over
+     all CAERO1s for a download; `st.file_uploader` → `section_data.validate_section_data`
+     (errors inline) → `aero_corr_df`. (Confirmed scope: CSV upload + template, no in-app grid.)
+   - **Condition** — `available_conditions` block list; a **Mach** selectbox + **operating
+     incidence** input; per-surface coverage via `operating_region`. **Build correction cards** →
+     `build_from_section_data_multi(aero_model.boxes, build_aero_model(bulk, mach=mach).ajj, df,
+     mach=, incidence_deg=, sid_w2gj_base=9001, sid_aecorr_base=9101)` → `aero_corr_result`.
+   - **Preview/diagnostics** — extrapolation/skip warnings; `build_section_correction_figure`
+     input-vs-achieved per surface + a per-strip achieved-targets table.
+   - **Apply / export** — `_apply_cards` injects each `(W2gj, Aecorr)` into `bulk.w2gjs` /
+     `bulk.aecorrs`, clearing the tool's own previously-injected SIDs (tracked in `aero_corr_sids`)
+     so a re-apply replaces rather than stacks, and nulls `aero_model`/`aero_result`/
+     `aero_result_unc`; `_warn_conflicts` flags a pre-existing WKK (WKK precedence shadows WT2) or a
+     non-generated WT2 on a corrected surface. **Download cards (.bdf)** via `cards_to_bdf`.
+2. **`sbeam/viewer/app.py`** — new **Aero Correction** tab (5th, when `bulk.caero1s`); imports the
+   renderer; adds + resets session keys `aero_corr_model`/`aero_corr_df`/`aero_corr_result`/
+   `aero_corr_sids`.
+3. **Tests** — new `tests/viewer/test_aero_correction_view.py` (5): template CSV schema round-trip;
+   build→inject→rebuild corrected CL reaches the prescribed section slope (π·α target, below the
+   finite-wing VLM slope); AppTest renders, Build button appears with a table, Apply injects cards
+   and a re-apply does not stack.
+4. **Docs** — 06_viewer.md ("Aero Correction Tab" section + module-map row + test table),
+   05_aeroelastics.md ("Aero Correction page" paragraph), CHANGELOG `[Unreleased]`.
+
+**Key decisions:**
+- A "condition" = one flight point (exact Mach + operating incidence) → `build_from_section_data_multi`
+  corrects every surface in one global build; matches the engine's v1 limits (no Mach interpolation,
+  one region per surface).
+- Persistence = inject into the in-session model (the Aero tab already keys off
+  `bulk.wkks`/`bulk.aecorrs`, so no further wiring) **and** a downloadable `.bdf` snippet — no
+  full-BDF writer needed.
+- Reserved SID bases (9001/9101) + per-session SID tracking so the tool owns and replaces its own
+  cards instead of accumulating duplicate WT2 on a surface.
+
+**Test / Acceptance:**
+- `tests/viewer/ tests/aero/` green (was 438; +5); ruff clean on changed files.
+
+---
+
 ## Phase B — Structure ↔ Aero Splining
 
 ### Step 45: SET1 + SPLINE2 parsing ✅ COMPLETE

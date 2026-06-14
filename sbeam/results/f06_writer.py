@@ -410,7 +410,13 @@ def _build_f06_sol144_text(
     # ---- AERODYNAMIC TOTALS ----
     lines.append("                                     A E R O D Y N A M I C   T O T A L S")
     lines.append("")
-    lines.append(f"      TOTAL CL = {_fmt(result.total_cl)}        TOTAL CMY = {_fmt(result.total_cm)}")
+    # CZ is the body-axis vertical-force coefficient (balances weight at trim);
+    # CL is the genuine wind-axis lift (⊥ to U∞) = CZ·cosα − CX·sinα at trim α.
+    lines.append(
+        f"      TOTAL CZ (BODY) = {_fmt(result.total_cl)}        "
+        f"TOTAL CL (WIND) = {_fmt(result.total_cl_wind)}"
+    )
+    lines.append(f"      TOTAL CMY = {_fmt(result.total_cm)}")
     lines.append("")
 
     # ---- AERODYNAMIC DIVERGENCE ----

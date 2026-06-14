@@ -12,7 +12,7 @@ BulkData  (bulk.aeros, bulk.caero1s, bulk.paero1s, bulk.aefacts, ...)
   ↓ build_aero_model()
 AeroModel (boxes, ajj, skj, djk, wg, aeros)
   ↓ solve_rigid_cl() / coupled aeroelastic solve (Phase B+)
-Results   (cp, cl_section, CL, CY, CM, CDi, e, per_surface, …)
+Results   (cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, CDi, e, per_surface, …)
 ```
 
 ### Module map
@@ -325,7 +325,20 @@ wing CL on multi-surface models.
 **Returns a dict:**
 - `cp`: (n,) pressure coefficient per box — `2Γ / (V∞ × box_chord)`, V∞ = 1
 - `cl_section`: `{i_span: CL_strip}` — per-strip coefficient via Kutta–Joukowski (all surfaces)
-- `CL`: total lift coefficient — lift surfaces only, normalised by S_ref
+- `CL`: **body-axis** vertical-force coefficient (≡ `CZ`) — lift surfaces only, normalised
+  by S_ref. This is the historical key name; it is the force summed on global/body-z, **not**
+  the wind-axis lift. It is linear in α, so the α-linearity / AoA-equivalence / parallel-axis-CM
+  identities are stated in terms of it.
+- `CZ`: body-axis vertical-force coefficient (explicit alias of `CL`)
+- `CX`: body-axis streamwise-force coefficient. ≈ 0 — a surface-normal-pressure VLM carries no
+  leading-edge suction, and incidence/camber/controls enter via normalwash (not a geometric
+  panel tilt), so the only body-x force comes from genuinely out-of-plane panels.
+- `CL_wind`: **wind-axis lift** coefficient (force ⊥ to U∞) — the genuine `CL`.
+  `CL_wind = CZ·cosα − CX·sinα`; equals `CZ` only at α ≈ 0 (theory §5.4). Reported in the
+  viewer Aero tab and (at the trim α) the SOL 144 f06 "AERODYNAMIC TOTALS".
+- `CD_wind`: **wind-axis drag** coefficient (force ∥ to U∞) = the Trefftz `CDi`. Deliberately
+  *not* the near-field projection `CX·cosα + CZ·sinα`, which a no-LE-suction flat-panel VLM
+  computes incorrectly; the Trefftz far-field induced drag is the meaningful wind-axis drag.
 - `CY`: total sideforce coefficient — sideforce surfaces only, normalised by S_ref
 - `CM`: pitching moment about `xref`, nose-up positive; lift surfaces only;
   normalised by S_ref × c_ref. Each box load acts at its **¼-chord bound vortex**
@@ -592,6 +605,19 @@ are shown directly — matching the SOL 144 operator. `viewer/aero_view.build_se
 gives the spanwise preview (`cn_α(η)`, `cm0(η)`; input markers vs achieved-on-strips) for the
 section-correction page.
 
+**Aero Correction page (`viewer/aero_correction_view.py`, A-GUI3).** The viewer exposes the
+above pipeline as a dedicated **Aero Correction** tab (right of **Aero**). The user downloads a
+mesh-seeded CSV template (`_template_csv` → `template_dataframe` per surface), fills it with the
+section coefficients, and uploads it (`validate_section_data`). Picking a **condition** —
+exact-match **Mach** + **operating incidence** — drives `build_from_section_data_multi` at reserved
+SID bases (`_W2GJ_BASE = 9001`, `_AECORR_BASE = 9101`), with `operating_region` showing the
+per-surface coverage. **Apply to model** injects the generated `(W2gj, Aecorr)` pairs into
+`bulk.w2gjs` / `bulk.aecorrs` (replacing the tool's own previously-injected SIDs, never stacking)
+so the existing Aero tab — which keys off `bulk.wkks`/`bulk.aecorrs` — runs the corrected solve;
+**Download cards (.bdf)** emits the same pairs via `cards_to_bdf`. Pre-existing **WKK** (which takes
+precedence over WT2 in `build_aero_model`) or a non-generated WT2 on a corrected surface are flagged
+as warnings.
+
 ### `build_aero_model(bulk, grid_index=None) -> AeroModel`
 
 Factory function that orchestrates the full Phase A assembly pipeline:
@@ -682,7 +708,7 @@ half-span decks), seeds an `AeroCache` shared across subcases, and calls
 |-------|--------|
 | TRIM VARIABLES (free vs prescribed) | `result.trim_vars` + the TRIM card |
 | STABILITY DERIVATIVES (rigid + elastic restrained) | `result.rigid_derivs`, `result.restrained_derivs` |
-| AERODYNAMIC TOTALS (CL / CMY) | `result.total_cl`, `result.total_cm` |
+| AERODYNAMIC TOTALS (CZ body / CL wind / CMY) | `result.total_cl` (body CZ), `result.total_cl_wind` (wind CL = CZ·cosα − CX·sinα at trim α), `result.total_cm` |
 | AERODYNAMIC DIVERGENCE (`q_div`, `q/q_div`) | `result.q_div` (restrained l-set; see below) |
 | DISPLACEMENT / BAR FORCES / BAR STRESSES | shared helpers, reused from the SOL 101 writer |
 | AERODYNAMIC BOX PRESSURES AND FORCES | `result.box_cp`, `result.box_forces` — **only when the subcase requests `AEROF` or `APRES`** |
@@ -798,7 +824,11 @@ When a correction card is present the tab also runs the **uncorrected** baseline
   (rigid, `u_a = 0`), so the table matches the SOL 144 f06 rigid derivatives exactly without a
   trim/structure solve. Rows: ANGLEA/SIDES/ROLL/PITCH/YAW + AESURF controls; columns: the six
   force/moment coefficients per radian/label. `naming` toggles conventional aero symbols
-  (CL/CY/Cl/Cm/Cn/CX) ↔ raw SOL 144 names (CZ/CY/CMX/CMY/CMZ/CX).
+  (CZ/CY/Cl/Cm/Cn/CX) ↔ raw SOL 144 names (CZ/CY/CMX/CMY/CMZ/CX). The vertical-force column
+  stays **body-axis `CZ`** (summed z-component of the surface-normal box forces) under both
+  namings — it is *not* relabelled to wind-axis `CL`. `CL` is the lift component ⊥ to U∞ and
+  equals `CZ` only at α≈0 (`CL = CZ·cosα + CX·sinα`); this table carries no reference
+  incidence, so a wind-axis `CL` is not formed here.
 
 `build_section_correction_figure(boxes, df, data_result, caero_eid)` provides the section-correction
 page's spanwise preview — `cn_α(η)` and `cm0(η)`, input markers vs achieved-on-strips.

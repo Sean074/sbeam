@@ -25,6 +25,7 @@ viewer/
 ├── results_view.py     # Results post-processing display
 ├── case_control_ui.py  # Case control form and BDF export
 └── aero_view.py        # Aero box mesh + cp colour map (S44); spline-deflected box overlay (S57); per-surface span-loading figure + rigid S&C derivative table (A-GUI2)
+└── aero_correction_view.py  # Aero Correction tab: CFD/test section data → W2GJ+AECORR(WT2) cards, injected into the model (A-GUI3)
 ```
 
 ---
@@ -127,7 +128,10 @@ a rigid steady-state solve at a user-specified angle of attack.
 - **Show surface normals** — `st.checkbox` (`key="aero_show_normals"`, default off). When
   ticked, draws each box's outward unit normal (`AeroBox.normal`) as a green arrow rooted
   at its collocation point. Re-renders the cached `aero_model` instantly (no AIC recompute).
-- After compute: **CL**, **CY**, **CM**, and **Boxes** count displayed as `st.metric`.
+- After compute: **CL (wind)**, **CD (induced)**, **CZ (body)**, **CY**, **CM**, and **Boxes**
+  count displayed as `st.metric`. CL/CD are wind-axis (⊥ / ∥ to U∞); CZ is the body-axis
+  vertical-force coefficient, `CL = CZ·cosα − CX·sinα` (equal only at α ≈ 0); CD is the Trefftz
+  induced drag (`CDi`). A caption restates the axis convention.
 
 **3D figure (right column):** built by `build_aero_box_figure(..., strip=False)` — a scene-only
 mesh: `_add_box_mesh` (Scatter3d wire-frame) + `_add_cp_contour` (Mesh3d quads, `RdBu_r`,
@@ -147,20 +151,70 @@ loading has its own full-width figure below.
   `_compute_rigid_derivs`, rigid `u_a = 0`) so the matrix matches the f06 rigid derivatives. Rows
   are α, β, roll p, pitch q, yaw r + every AESURF control; columns are the six force/moment
   coefficients per radian/label. A **Naming** radio (`key="aero_deriv_naming"`) toggles between
-  conventional aero symbols (CL, CY, Cl, Cm, Cn, CX) and the raw SOL 144 names
-  (CZ, CY, CMX, CMY, CMZ, CX). Hidden when no AEROS card is present.
-- **Per-surface coefficients** — the multi-surface CL/CY/CM breakdown table (when >1 surface).
+  conventional aero symbols (CZ, CY, Cl, Cm, Cn, CX) and the raw SOL 144 names
+  (CZ, CY, CMX, CMY, CMZ, CX). The vertical-force column is body-axis `CZ` under both namings —
+  not wind-axis `CL` (which equals `CZ` only at α≈0). Hidden when no AEROS card is present.
+- **Per-surface coefficients (body axis)** — the multi-surface CZ/CY/CM breakdown table (when
+  >1 surface). Per-surface contributions are body-axis (so they sum to the body-axis totals);
+  the whole-aircraft wind-axis `CL` is the rotated total shown in the metrics above.
 
 **Session state keys:**
 | Key | Type | Description |
 |-----|------|-------------|
 | `aero_model` | `AeroModel \| None` | Built by `build_aero_model(bulk)` |
-| `aero_result` | `dict \| None` | Corrected `{cp, cl_section, CL, CY, CM, per_surface, …}` from `solve_rigid_cl` |
+| `aero_result` | `dict \| None` | Corrected `{cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, per_surface, …}` from `solve_rigid_cl` |
 | `aero_result_unc` | `dict \| None` | Uncorrected baseline solve (only when a correction card is present), else `None` |
 
 All three keys are reset to `None` on new file upload (same pattern as `sol101_result`).
 
-### 5. Sidebar — Item Inspector
+### 5. Aero Correction Tab (A-GUI3)
+
+Present only when `bulk.caero1s` is non-empty (the tab immediately right of **Aero**).
+Implemented in `aero_correction_view.py` (`render_aero_correction_tab(bulk)`); a front end over
+`sbeam.aero.section_data` / `section_correction` that turns a table of **experimental / CFD section
+coefficients** into **W2GJ + AECORR(WT2)** correction cards for one flight **condition** (Mach +
+incidence) and injects them into the in-session model so the **Aero** tab runs the corrected solve.
+
+**Workflow (top to bottom):**
+1. **Section-data table** — **Download section-data template (CSV)** (`_template_csv`, one row per
+   span strip of every CAERO1, flat-plate defaults) and an expander documenting the schema, then an
+   **Upload section-data CSV** `st.file_uploader`. Uploads are run through
+   `section_data.validate_section_data` (errors shown inline) and stored in `aero_corr_df`. The
+   loaded table is echoed via `st.dataframe`. The tidy schema is
+   `caero, eta, mach, var, a_lo, a_hi, cn_a, a0, cm_a, cm0, xref` — local-chord-normalised
+   coefficients, slopes **per degree**, moment **nose-up +**.
+2. **Blocks in the table** — `available_conditions(df)` listed as a table (CAERO × Mach × region).
+3. **Build condition** — a **Mach** selectbox (the Mach values present) + an **operating incidence**
+   `st.number_input`. A per-surface status table resolves the region for each CAERO via
+   `operating_region` (covered ✓ / skipped ✗). **Build correction cards** calls
+   `build_from_section_data_multi(aero_model.boxes, build_aero_model(bulk, mach=mach).ajj, df, …)`
+   at reserved SID bases (`_W2GJ_BASE = 9001`, `_AECORR_BASE = 9101`), storing the result in
+   `aero_corr_result`.
+4. **Generated cards** — extrapolation / skipped-surface warnings, a per-surface input-vs-achieved
+   preview (`aero_view.build_section_correction_figure`) selected by a **Preview surface** box, and a
+   per-strip achieved-targets `st.dataframe` (`moment_ref_x, f_slope, m_slope, f0, m0`).
+5. **Apply / export** — **Apply to model** (`_apply_cards`) injects each `(W2gj, Aecorr)` into
+   `bulk.w2gjs` / `bulk.aecorrs`, **clearing any cards this tool injected on a prior build** (tracked
+   in `aero_corr_sids`) so re-applies replace rather than stack, then nulls `aero_model` /
+   `aero_result` / `aero_result_unc` so the Aero tab recomputes. `_warn_conflicts` flags a
+   pre-existing **WKK** on a corrected surface (WKK precedence in `build_aero_model` shadows WT2) or a
+   non-generated WT2 on the same surface. **Download cards (.bdf)** emits the bulk-data snippet via
+   `section_correction.cards_to_bdf` for external NASTRAN / persistence.
+
+v1 limits (inherited from the engine): exact-Mach match (no Mach interpolation); one operating
+region per surface (the region whose `[a_lo, a_hi]` contains the incidence).
+
+**Session state keys:**
+| Key | Type | Description |
+|-----|------|-------------|
+| `aero_corr_model` | `AeroModel \| None` | Cached `build_aero_model(bulk)` for template strips / box list |
+| `aero_corr_df` | `DataFrame \| None` | Validated section-data table from the CSV upload |
+| `aero_corr_result` | `MultiSectionDataBuildResult \| None` | Last build (cards + diagnostics) |
+| `aero_corr_sids` | `set[int]` | SIDs this tool last injected, so Apply can replace them |
+
+All four are reset on new file upload.
+
+### 6. Sidebar — Item Inspector
 
 Selectboxes in the sidebar allow inspecting individual cards:
 
@@ -462,6 +516,13 @@ range heuristic.
 | `test_flow_a_sol101_render_and_run` | Injected geometry → GPWG sidebar → SOL 101 run → deformed-shape UI |
 | `test_flow_b_sol103_render_and_run` | Injected geometry → SOL 103 run → mode-shape UI |
 | `test_apptest_aero_tab_no_exception` | Injected aero bulk → Aero tab renders without exception |
+| `test_apptest_correction_tab_renders` | Injected aero bulk → Aero Correction tab renders without exception |
+| `test_apptest_build_button_appears_with_table` | Section table in session → **Build correction cards** button present |
+| `test_apptest_apply_injects_without_stacking` | Click **Apply to model** → W2GJ/AECORR injected; re-apply replaces (one pair) |
+| `test_built_cards_change_corrected_solve` | Build → inject → rebuild: corrected CL hits the prescribed section slope |
+| `test_template_csv_roundtrips_schema` | `_template_csv` parses back to the section_data schema (one row per strip) |
+
+(The Aero Correction tests live in `tests/viewer/test_aero_correction_view.py`.)
 
 **State injection pattern.** Tests do not simulate the file-upload widget (fragile with the temp-file-based parser). Instead, `BulkData` and `CaseControl` are pre-parsed from integration BDF files in module-scoped fixtures (`cantilever_sol101_parsed`, `cantilever_sol103_parsed` in `tests/viewer/conftest.py`), then written directly into `at.session_state` after the first `at.run()`. This replicates exactly what `_handle_upload` sets.
 

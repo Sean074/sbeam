@@ -23,6 +23,7 @@ from sbeam.viewer.results_view import (
 from sbeam.viewer.aero_view import (
     build_aero_box_figure, build_span_loading_figure, rigid_derivative_table,
 )
+from sbeam.viewer.aero_correction_view import render_aero_correction_tab
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.vlm import solve_rigid_cl
 
@@ -41,6 +42,10 @@ def _init_session_state() -> None:
         "aero_model": None,
         "aero_result": None,
         "aero_result_unc": None,
+        "aero_corr_model": None,
+        "aero_corr_df": None,
+        "aero_corr_result": None,
+        "aero_corr_sids": set(),
         "selected_gid": None,
         "selected_eid": None,
         "cc_subcases": None,
@@ -100,6 +105,10 @@ def _handle_upload(uploaded) -> None:
         st.session_state.aero_model = None
         st.session_state.aero_result = None
         st.session_state.aero_result_unc = None
+        st.session_state.aero_corr_model = None
+        st.session_state.aero_corr_df = None
+        st.session_state.aero_corr_result = None
+        st.session_state.aero_corr_sids = set()
         st.session_state.selected_gid = None
         st.session_state.selected_eid = None
         st.session_state.selected_subcase_id = cc.subcases[0].subcase_id if cc and cc.subcases else None
@@ -656,10 +665,18 @@ def _render_aero_tab(bulk: BulkData) -> None:
             "Show surface normals", value=False, key="aero_show_normals"
         )
         if aero_result is not None:
-            st.metric("CL", f"{aero_result['CL']:.4f}")
+            st.metric("CL (wind)", f"{aero_result.get('CL_wind', aero_result['CL']):.4f}")
+            st.metric("CD (induced)",
+                      f"{aero_result.get('CD_wind', aero_result.get('CDi', 0.0)):.4f}")
+            st.metric("CZ (body)", f"{aero_result.get('CZ', aero_result['CL']):.4f}")
             st.metric("CY", f"{aero_result.get('CY', 0.0):.4f}")
             st.metric("CM", f"{aero_result['CM']:.4f}")
             st.metric("Boxes", len(aero_model.boxes))
+            st.caption(
+                "CL/CD are **wind-axis** (⊥ / ∥ to U∞); CZ is the **body-axis** "
+                "vertical-force coefficient. CL = CZ·cosα − CX·sinα (equal only at "
+                "α ≈ 0). CD is the Trefftz induced drag."
+            )
             if aero_model.wg is not None and np.any(aero_model.wg):
                 st.caption(
                     "ℹ️ W2GJ baseline incidence (camber/twist) folded into the "
@@ -704,7 +721,7 @@ def _render_aero_tab(bulk: BulkData) -> None:
         if bulk.aeros is not None:
             st.markdown("#### Rigid stability & control derivatives")
             naming_label = st.radio(
-                "Naming", ["Aero (CLα, Cm…)", "Raw (CZ, CMY…)"],
+                "Naming", ["Aero (α, Cm…)", "Raw (ANGLEA, CMY…)"],
                 horizontal=True, key="aero_deriv_naming",
             )
             naming = "aero" if naming_label.startswith("Aero") else "raw"
@@ -718,19 +735,21 @@ def _render_aero_tab(bulk: BulkData) -> None:
                     deriv_df.style.format("{:+.4f}"), use_container_width=True
                 )
 
-        # Per-surface coefficient breakdown (multi-surface decks).
+        # Per-surface coefficient breakdown (multi-surface decks).  Per-surface
+        # contributions are body-axis (CZ vertical / CY side), so they sum to the
+        # body-axis totals; the wind-axis CL above is the whole-aircraft rotation.
         per_surf = aero_result.get("per_surface", {})
         if len(per_surf) > 1:
-            st.markdown("#### Per-surface coefficients")
+            st.markdown("#### Per-surface coefficients (body axis)")
             rows = []
             for eid, info in sorted(per_surf.items()):
                 if info["surface_type"] == "lift":
                     rows.append({"EID": eid, "Type": "lift",
-                                 "CL": f"{info['CL']:.4f}", "CY": "—",
+                                 "CZ": f"{info['CL']:.4f}", "CY": "—",
                                  "CM": f"{info['CM']:.4f}"})
                 else:
                     rows.append({"EID": eid, "Type": "sideforce",
-                                 "CL": "—", "CY": f"{info['CY']:.4f}",
+                                 "CZ": "—", "CY": f"{info['CY']:.4f}",
                                  "CM": "—"})
             st.table(rows)
 
@@ -787,12 +806,13 @@ def main() -> None:
     # --- Main tabs ---
     _has_aero = bool(bulk.caero1s)
     if _has_aero:
-        tab_model, tab_cc, tab_results, tab_aero = st.tabs(
-            ["Model", "Case Control", "Results", "Aero"]
+        tab_model, tab_cc, tab_results, tab_aero, tab_aero_corr = st.tabs(
+            ["Model", "Case Control", "Results", "Aero", "Aero Correction"]
         )
     else:
         tab_model, tab_cc, tab_results = st.tabs(["Model", "Case Control", "Results"])
         tab_aero = None
+        tab_aero_corr = None
 
     with tab_model:
         _show_parse_summary(bulk)
@@ -846,6 +866,10 @@ def main() -> None:
     if tab_aero is not None:
         with tab_aero:
             _render_aero_tab(bulk)
+
+    if tab_aero_corr is not None:
+        with tab_aero_corr:
+            render_aero_correction_tab(bulk)
 
 
 if __name__ == "__main__":
