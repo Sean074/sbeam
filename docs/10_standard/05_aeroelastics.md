@@ -785,6 +785,21 @@ appear when a non-zero `wg` and/or a correction method are active. The mesh *geo
 by twist/correction (incidence and pressure, not shape), so the visible difference is in the cp
 colour map and the section-load strip chart, not the wire-frame.
 
+When a correction card is present the tab also runs the **uncorrected** baseline
+(`cp_operator=None, mach=aero_model.mach`) so it can be overlaid for comparison.
+
+**Full-width results below the 3D view (A-GUI2):**
+- `build_span_loading_figure(boxes, cp_corr, cp_unc=None, aeros=None)` — per-CAERO1 spanwise
+  section normal-force `cn(η)` and section moment `cm(η)` (about each strip's local ¼-chord,
+  nose-up +ve, same sign as `solve_rigid_cl`/`sol144._pitch_moment`). Boxes grouped by
+  `(caero_eid, i_span)` — one line per surface; corrected solid, uncorrected dashed.
+- `rigid_derivative_table(aero_model, bulk, naming)` — the full rigid stability & control
+  derivative matrix. Reuses `build_djx` (per-label normalwash) + `sol144._compute_rigid_derivs`
+  (rigid, `u_a = 0`), so the table matches the SOL 144 f06 rigid derivatives exactly without a
+  trim/structure solve. Rows: ANGLEA/SIDES/ROLL/PITCH/YAW + AESURF controls; columns: the six
+  force/moment coefficients per radian/label. `naming` toggles conventional aero symbols
+  (CL/CY/Cl/Cm/Cn/CX) ↔ raw SOL 144 names (CZ/CY/CMX/CMY/CMZ/CX).
+
 `build_section_correction_figure(boxes, df, data_result, caero_eid)` provides the section-correction
 page's spanwise preview — `cn_α(η)` and `cm0(η)`, input markers vs achieved-on-strips.
 
@@ -797,14 +812,19 @@ build_aero_box_figure(
     cp: np.ndarray | None = None,
     cl_section: dict | None = None,   # i_span → float, from solve_rigid_cl()
     cp_corr: np.ndarray | None = None,
+    box_disp: np.ndarray | None = None,
+    show_normals: bool = False,
+    strip: bool = True,               # False → scene-only (Aero tab)
 ) -> go.Figure
 ```
 
-Returns a two-row subplot:
+Returns a two-row subplot (or a scene-only figure when `strip=False`):
 - **Row 1 (75%)** — Plotly 3D scene with the aerodynamic box mesh (Scatter3d wire-frame)
   and, when `cp` is provided, a triangulated Mesh3d panel coloured by cp (`colorscale="RdBu_r"`).
-- **Row 2 (25%)** — 2D bar chart of section CL vs span fraction. When `cp_corr` is also
-  provided, two Scatter lines are overlaid showing spanwise mean cp for inviscid vs corrected solutions.
+- **Row 2 (25%)** — *(only when `strip=True`)* 2D bar chart of section CL vs span fraction. When
+  `cp_corr` is also provided, two Scatter lines overlay spanwise mean cp for inviscid vs corrected.
+  The Aero tab passes `strip=False` (span loading is its own full-width `build_span_loading_figure`);
+  the SOL 144 results view keeps the default.
 
 ### Internal helpers
 
@@ -812,21 +832,24 @@ Returns a two-row subplot:
 |----------|-----|-------------|
 | `_add_box_mesh(fig, boxes)` | 1 | Single Scatter3d wire-frame; each quad closed as `[0,1,2,3,0,None]` |
 | `_add_cp_contour(fig, boxes, cp)` | 1 | Mesh3d triangulated quads; cp→vertex intensity |
-| `_add_section_load_strip(fig, boxes, cl_section)` | 2 | Bar chart of `i_span`→CL using `box.span_frac` |
-| `_add_corrected_vs_inviscid(fig, boxes, cp_inv, cp_corr)` | 2 | Two Scatter lines: spanwise mean cp per strip |
-| `_apply_aero_layout(fig)` | — | Orthographic camera, axis labels, subplot axis titles |
+| `_add_section_load_strip(fig, boxes, cl_section)` | 2 | Bar chart of `i_span`→CL using `box.span_frac` (legacy strip; `strip=True` only) |
+| `_add_corrected_vs_inviscid(fig, boxes, cp_inv, cp_corr)` | 2 | Two Scatter lines: spanwise mean cp per strip (`strip=True` only) |
+| `_apply_aero_layout(fig, strip=True)` | — | Orthographic camera, axis labels; strip-axis titles only when `strip` |
+| `_strip_cn_cm(boxes, idx, cp)` | — | Per-strip section `cn` (area-weighted) and `cm` about local ¼-chord, for `build_span_loading_figure` |
 
 ### Typical usage in the viewer
 
 ```python
 aero_model = build_aero_model(bulk)
-result = solve_rigid_cl(aero_model.boxes, np.radians(3.0), wg=aero_model.wg)
-fig = build_aero_box_figure(
-    bulk, aero_model,
-    cp=result["cp"],
-    cl_section=result["cl_section"],
-)
+result = solve_rigid_cl(aero_model.boxes, np.radians(3.0),
+                        wg=aero_model.wg, cp_operator=aero_model.ajj_inv_corr)
+# 3D mesh + corrected cp (scene only — span loading is a separate figure)
+fig = build_aero_box_figure(bulk, aero_model, cp=result["cp"], strip=False)
 st.plotly_chart(fig, use_container_width=True)
+# Per-surface span loading + rigid S&C derivative table
+st.plotly_chart(build_span_loading_figure(aero_model.boxes, result["cp"]),
+                use_container_width=True)
+st.dataframe(rigid_derivative_table(aero_model, bulk, naming="aero"))
 ```
 
 ---

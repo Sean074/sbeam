@@ -20,7 +20,9 @@ from sbeam.viewer.case_control_ui import render_case_control_panel
 from sbeam.viewer.results_view import (
     render_sol101_results, render_sol103_results, render_sol144_results,
 )
-from sbeam.viewer.aero_view import build_aero_box_figure
+from sbeam.viewer.aero_view import (
+    build_aero_box_figure, build_span_loading_figure, rigid_derivative_table,
+)
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.vlm import solve_rigid_cl
 
@@ -38,6 +40,7 @@ def _init_session_state() -> None:
         "aero_model_144": None,
         "aero_model": None,
         "aero_result": None,
+        "aero_result_unc": None,
         "selected_gid": None,
         "selected_eid": None,
         "cc_subcases": None,
@@ -96,6 +99,7 @@ def _handle_upload(uploaded) -> None:
         st.session_state.aero_model_144 = None
         st.session_state.aero_model = None
         st.session_state.aero_result = None
+        st.session_state.aero_result_unc = None
         st.session_state.selected_gid = None
         st.session_state.selected_eid = None
         st.session_state.selected_subcase_id = cc.subcases[0].subcase_id if cc and cc.subcases else None
@@ -614,12 +618,10 @@ def _render_aero_tab(bulk: BulkData) -> None:
             aero_model = build_aero_model(bulk)
             alpha_rad = np.radians(alpha_deg)
             beta_rad  = np.radians(beta_deg)
-            # Solve on the CORRECTED operator (aero_model.ajj_inv_corr) so any AIC
-            # correction (WKK / WT1 / WT2) and Prandtl–Glauert show in the Aero tab,
-            # matching the SOL 144 path. The W2GJ baseline normalwash (camber/twist/
-            # built-in incidence) is folded into the RHS with the SOL 144 sign. With
-            # no correction card present this is numerically identical to the plain
-            # VLM solve, so unforced decks are unchanged.
+            # Corrected solve on aero_model.ajj_inv_corr — any AIC correction
+            # (WKK / WT1 / WT2) and Prandtl–Glauert are honoured, matching the
+            # SOL 144 path; the W2GJ baseline normalwash (camber/twist/built-in
+            # incidence) is folded into the RHS with the SOL 144 sign.
             result = solve_rigid_cl(
                 aero_model.boxes, alpha_rad,
                 beta=beta_rad,
@@ -627,11 +629,27 @@ def _render_aero_tab(bulk: BulkData) -> None:
                 wg=aero_model.wg,
                 cp_operator=aero_model.ajj_inv_corr,
             )
+            # Uncorrected baseline (raw VLM + Prandtl–Glauert at the same Mach and
+            # the same W2GJ wg) — only when a correction card is present, so there
+            # is something to overlay; otherwise the two solves coincide.
+            if bulk.wkks or bulk.aecorrs:
+                result_unc = solve_rigid_cl(
+                    aero_model.boxes, alpha_rad,
+                    beta=beta_rad,
+                    aeros=aero_model.aeros,
+                    wg=aero_model.wg,
+                    cp_operator=None,
+                    mach=aero_model.mach,
+                )
+            else:
+                result_unc = None
         st.session_state["aero_model"] = aero_model
         st.session_state["aero_result"] = result
+        st.session_state["aero_result_unc"] = result_unc
 
     aero_model = st.session_state["aero_model"]
     aero_result = st.session_state["aero_result"]
+    aero_result_unc = st.session_state["aero_result_unc"]
 
     with col_ctrl:
         show_normals = st.checkbox(
@@ -654,31 +672,67 @@ def _render_aero_tab(bulk: BulkData) -> None:
                     f"ℹ️ AIC correction ({', '.join(methods)}) applied — CL/CM/cp "
                     "reflect the corrected operator."
                 )
-            per_surf = aero_result.get("per_surface", {})
-            if len(per_surf) > 1:
-                rows = []
-                for eid, info in sorted(per_surf.items()):
-                    if info["surface_type"] == "lift":
-                        rows.append({"EID": eid, "Type": "lift",
-                                     "CL": f"{info['CL']:.4f}", "CY": "—",
-                                     "CM": f"{info['CM']:.4f}"})
-                    else:
-                        rows.append({"EID": eid, "Type": "sideforce",
-                                     "CL": "—", "CY": f"{info['CY']:.4f}",
-                                     "CM": "—"})
-                st.table(rows)
 
     with col_fig:
         if aero_model is not None:
             cp = aero_result["cp"] if aero_result is not None else None
-            cl_sec = aero_result["cl_section"] if aero_result is not None else None
             fig = build_aero_box_figure(
-                bulk, aero_model, cp=cp, cl_section=cl_sec,
-                show_normals=show_normals,
+                bulk, aero_model, cp=cp, show_normals=show_normals, strip=False,
             )
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Set parameters and press Compute Aero to visualise the panel mesh.")
+
+    # ---- Full-width results below the 3D view -------------------------------
+    if aero_result is not None and aero_model is not None:
+        st.markdown("#### Spanwise loading")
+        cp_unc = aero_result_unc["cp"] if aero_result_unc is not None else None
+        if cp_unc is not None:
+            st.caption(
+                "Solid = corrected · dashed = uncorrected VLM "
+                "(raw AIC + Prandtl–Glauert)."
+            )
+        st.plotly_chart(
+            build_span_loading_figure(
+                aero_model.boxes, aero_result["cp"], cp_unc=cp_unc,
+                aeros=aero_model.aeros,
+            ),
+            use_container_width=True,
+        )
+
+        # Rigid stability & control derivatives — all airplane rigid derivatives.
+        if bulk.aeros is not None:
+            st.markdown("#### Rigid stability & control derivatives")
+            naming_label = st.radio(
+                "Naming", ["Aero (CLα, Cm…)", "Raw (CZ, CMY…)"],
+                horizontal=True, key="aero_deriv_naming",
+            )
+            naming = "aero" if naming_label.startswith("Aero") else "raw"
+            deriv_df = rigid_derivative_table(aero_model, bulk, naming=naming)
+            if deriv_df is not None:
+                st.caption(
+                    "Per radian / per unit label, rigid (u_a = 0). Rows: "
+                    "α, β, roll p, pitch q, yaw r + AESURF controls."
+                )
+                st.dataframe(
+                    deriv_df.style.format("{:+.4f}"), use_container_width=True
+                )
+
+        # Per-surface coefficient breakdown (multi-surface decks).
+        per_surf = aero_result.get("per_surface", {})
+        if len(per_surf) > 1:
+            st.markdown("#### Per-surface coefficients")
+            rows = []
+            for eid, info in sorted(per_surf.items()):
+                if info["surface_type"] == "lift":
+                    rows.append({"EID": eid, "Type": "lift",
+                                 "CL": f"{info['CL']:.4f}", "CY": "—",
+                                 "CM": f"{info['CM']:.4f}"})
+                else:
+                    rows.append({"EID": eid, "Type": "sideforce",
+                                 "CL": "—", "CY": f"{info['CY']:.4f}",
+                                 "CM": "—"})
+            st.table(rows)
 
 
 def main() -> None:

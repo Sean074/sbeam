@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Optional
 
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -19,6 +20,7 @@ def build_aero_box_figure(
     cp_corr: Optional[np.ndarray] = None,
     box_disp: Optional[np.ndarray] = None,
     show_normals: bool = False,
+    strip: bool = True,
 ) -> go.Figure:
     """3D box mesh + optional cp colour map + section-load strip chart.
 
@@ -28,14 +30,22 @@ def build_aero_box_figure(
     with the deflected wing.  The jig (undeflected) wire-frame is always drawn too,
     so rigid-vs-flexible is legible.  Corners are z-bearing (canted ±Γ dihedral
     geometry from Step 58), so this never flattens to an xy-projection.
+
+    ``strip`` (default True) keeps the bottom section-load xy panel.  Set it False to
+    return a scene-only figure — the Aero tab renders span loading in a dedicated
+    full-width figure (``build_span_loading_figure``), so the empty strip would just
+    be visual noise there.
     """
-    fig = make_subplots(
-        rows=2,
-        cols=1,
-        specs=[[{"type": "scene"}], [{"type": "xy"}]],
-        row_heights=[0.75, 0.25],
-        vertical_spacing=0.05,
-    )
+    if strip:
+        fig = make_subplots(
+            rows=2,
+            cols=1,
+            specs=[[{"type": "scene"}], [{"type": "xy"}]],
+            row_heights=[0.75, 0.25],
+            vertical_spacing=0.05,
+        )
+    else:
+        fig = make_subplots(rows=1, cols=1, specs=[[{"type": "scene"}]])
     _add_box_mesh(fig, aero_model.boxes)
     if box_disp is not None:
         _add_box_mesh(
@@ -47,11 +57,11 @@ def build_aero_box_figure(
     cp_boxes_disp = box_disp if box_disp is not None else None
     if cp is not None:
         _add_cp_contour(fig, aero_model.boxes, cp, box_disp=cp_boxes_disp)
-    if cl_section is not None:
+    if strip and cl_section is not None:
         _add_section_load_strip(fig, aero_model.boxes, cl_section)
-    if cp is not None and cp_corr is not None:
+    if strip and cp is not None and cp_corr is not None:
         _add_corrected_vs_inviscid(fig, aero_model.boxes, cp, cp_corr)
-    _apply_aero_layout(fig)
+    _apply_aero_layout(fig, strip=strip)
     return fig
 
 
@@ -252,7 +262,7 @@ def _add_corrected_vs_inviscid(
     )
 
 
-def _apply_aero_layout(fig: go.Figure) -> None:
+def _apply_aero_layout(fig: go.Figure, strip: bool = True) -> None:
     fig.update_layout(
         scene=dict(
             aspectmode="data",
@@ -265,8 +275,9 @@ def _apply_aero_layout(fig: go.Figure) -> None:
         margin=dict(l=0, r=80, t=30, b=0),
         height=700,
     )
-    fig.update_xaxes(title_text="Span fraction", row=2, col=1)
-    fig.update_yaxes(title_text="CL section", row=2, col=1)
+    if strip:
+        fig.update_xaxes(title_text="Span fraction", row=2, col=1)
+        fig.update_yaxes(title_text="CL section", row=2, col=1)
 
 
 def build_section_correction_figure(boxes, df, data_result, caero_eid):
@@ -337,5 +348,162 @@ def build_section_correction_figure(boxes, df, data_result, caero_eid):
     fig.update_yaxes(title_text="cn_α  [1/deg]", row=1, col=1)
     fig.update_yaxes(title_text="cm0", row=2, col=1)
     fig.update_layout(height=520, legend=dict(orientation="h", y=1.12),
+                      margin=dict(l=60, r=20, t=60, b=40))
+    return fig
+
+
+# SOL 144 raw derivative keys → conventional aero column header.
+_DERIV_COLS = ["CZ", "CY", "CMX", "CMY", "CMZ", "CX"]
+_DERIV_AERO_COLS = {"CZ": "CL", "CY": "CY", "CMX": "Cl",
+                    "CMY": "Cm", "CMZ": "Cn", "CX": "CX"}
+_DERIV_AERO_ROWS = {"ANGLEA": "α", "SIDES": "β", "ROLL": "p",
+                    "PITCH": "q", "YAW": "r"}
+
+
+def rigid_derivative_table(aero_model, bulk, naming: str = "aero"):
+    """Full rigid aerodynamic stability & control derivative matrix for the Aero tab.
+
+    Reuses the SOL 144 machinery — ``build_djx`` (per-label normalwash columns) and
+    ``sol144._compute_rigid_derivs`` (force/moment integration with no structural
+    deformation, u_a = 0) — so the table matches the f06 rigid derivatives exactly
+    while needing only the aero model (no trim/structure solve).
+
+    Rows are the rigid-body labels ANGLEA/SIDES/ROLL/PITCH/YAW plus every AESURF
+    control in the deck; columns are the six force/moment coefficients, all
+    per-radian / per-unit-label (matching SOL 144).
+
+    ``naming="aero"`` relabels rows/columns with conventional symbols
+    (α, β, p, q, r; CL, CY, Cl, Cm, Cn, CX); ``naming="raw"`` keeps the SOL 144
+    names (ANGLEA…; CZ, CY, CMX, CMY, CMZ, CX) for a 1:1 f06 cross-check.
+
+    Returns a ``pandas.DataFrame``, or ``None`` when no AEROS reference card is
+    present (the coefficients have no reference geometry to normalise by).
+    """
+    if bulk.aeros is None:
+        return None
+
+    from sbeam.aero.integration import build_djx
+    from sbeam.solver.sol144 import _compute_rigid_derivs
+    from sbeam.assembly.coord_transform import _get_transform
+
+    labels = ["ANGLEA", "SIDES", "ROLL", "PITCH", "YAW"] + sorted(
+        s.label for s in bulk.aesurfs.values()
+    )
+    d_jx = build_djx(aero_model.boxes, labels, bulk)
+
+    aeros = bulk.aeros
+    if aeros.rcsid:
+        ref_pt, _R = _get_transform(aeros.rcsid, bulk.cord2rs)
+        x_ref = float(ref_pt[0])
+    else:
+        ref_pt = np.zeros(3)
+        x_ref = 0.0
+
+    derivs = _compute_rigid_derivs(aero_model, d_jx, labels, bulk, x_ref, ref_pt)
+
+    data = {col: [derivs[lbl][col] for lbl in labels] for col in _DERIV_COLS}
+    df = pd.DataFrame(data, index=labels)
+    if naming == "aero":
+        df = df.rename(index=_DERIV_AERO_ROWS, columns=_DERIV_AERO_COLS)
+    return df
+
+
+def _strip_cn_cm(boxes: list, idx: list, cp: np.ndarray) -> tuple:
+    """Section normal-force and quarter-chord moment coefficient for one strip.
+
+    cn = Σ(cp·area)/area_strip — area-weighted surface-normal force coefficient.
+    cm = −Σ cp·area·(x_qc − x_¼c)/(area_strip·chord_strip) about the strip's own
+    quarter-chord, nose-up positive (same arm/sign as vlm.solve_rigid_cl).
+    """
+    area = np.array([boxes[k].area for k in idx])
+    area_strip = float(area.sum())
+    b0 = boxes[idx[0]]
+    dy = float(np.hypot(b0.bound_b[1] - b0.bound_a[1],
+                        b0.bound_b[2] - b0.bound_a[2]))
+    chord_strip = area_strip / dy if dy > 1e-14 else 1.0
+    x_qc = np.array([0.5 * (boxes[k].bound_a[0] + boxes[k].bound_b[0]) for k in idx])
+    # Strip leading edge from the front (min j_chord) box: its 1/4-chord minus 1/4 box chord.
+    front = min(idx, key=lambda k: boxes[k].j_chord)
+    bf = boxes[front]
+    dy_f = float(np.hypot(bf.bound_b[1] - bf.bound_a[1],
+                          bf.bound_b[2] - bf.bound_a[2]))
+    chord_front = bf.area / dy_f if dy_f > 1e-14 else chord_strip
+    x_le = 0.5 * (bf.bound_a[0] + bf.bound_b[0]) - 0.25 * chord_front
+    x_ref_strip = x_le + 0.25 * chord_strip
+    cpv = cp[idx]
+    cn = float((cpv * area).sum() / area_strip) if area_strip > 1e-14 else 0.0
+    denom = area_strip * chord_strip
+    cm = (-float((cpv * area * (x_qc - x_ref_strip)).sum()) / denom
+          if denom > 1e-14 else 0.0)
+    return cn, cm
+
+
+def build_span_loading_figure(boxes, cp_corr, cp_unc=None, aeros=None) -> go.Figure:
+    """Per-surface spanwise normal-force and pitching-moment line plots.
+
+    Groups boxes by (caero_eid, i_span) so each CAERO1 surface gets its own
+    spanwise station list — fixing the single-surface / global-i_span merge of the
+    old bar strip.  Two stacked subplots (section cn(η), then section cm(η) about the
+    local quarter-chord); one line per surface.  ``cp_corr`` draws solid lines; when
+    ``cp_unc`` is given the uncorrected baseline is overlaid dashed in the same
+    colour, so corrections are legible strip-by-strip.  ``aeros`` is accepted for
+    signature symmetry; the section coefficients are chord-local and need no global
+    reference.
+    """
+    from collections import defaultdict
+
+    cp_corr = np.asarray(cp_corr, dtype=float)
+    cp_unc = None if cp_unc is None else np.asarray(cp_unc, dtype=float)
+
+    surf_strips: dict = defaultdict(lambda: defaultdict(list))
+    for k, b in enumerate(boxes):
+        surf_strips[b.caero_eid][b.i_span].append(k)
+
+    palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+               "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
+
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.10,
+        subplot_titles=("Section normal-force coefficient  cn(η)",
+                        "Section pitching-moment coefficient  cm(η)  "
+                        "(about local ¼-chord, nose-up +)"),
+    )
+
+    for s_i, eid in enumerate(sorted(surf_strips)):
+        color = palette[s_i % len(palette)]
+        strips = surf_strips[eid]
+        order = sorted(strips, key=lambda sp: boxes[strips[sp][0]].span_frac)
+        eta = [float(boxes[strips[sp][0]].span_frac) for sp in order]
+
+        cn_c, cm_c = [], []
+        for sp in order:
+            cn, cm = _strip_cn_cm(boxes, strips[sp], cp_corr)
+            cn_c.append(cn)
+            cm_c.append(cm)
+        fig.add_trace(go.Scatter(x=eta, y=cn_c, mode="lines+markers",
+                                 name=f"CAERO {eid}", legendgroup=str(eid),
+                                 line=dict(color=color)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=eta, y=cm_c, mode="lines+markers",
+                                 name=f"CAERO {eid}", legendgroup=str(eid),
+                                 line=dict(color=color), showlegend=False), row=2, col=1)
+
+        if cp_unc is not None:
+            cn_u, cm_u = [], []
+            for sp in order:
+                cn, cm = _strip_cn_cm(boxes, strips[sp], cp_unc)
+                cn_u.append(cn)
+                cm_u.append(cm)
+            fig.add_trace(go.Scatter(x=eta, y=cn_u, mode="lines",
+                                     name=f"CAERO {eid} (uncorr)", legendgroup=str(eid),
+                                     line=dict(color=color, dash="dash")), row=1, col=1)
+            fig.add_trace(go.Scatter(x=eta, y=cm_u, mode="lines",
+                                     name=f"CAERO {eid} (uncorr)", legendgroup=str(eid),
+                                     line=dict(color=color, dash="dash"),
+                                     showlegend=False), row=2, col=1)
+
+    fig.update_xaxes(title_text="span fraction η", row=2, col=1)
+    fig.update_yaxes(title_text="cn", row=1, col=1)
+    fig.update_yaxes(title_text="cm (¼-chord)", row=2, col=1)
+    fig.update_layout(height=560, legend=dict(orientation="h", y=1.12),
                       margin=dict(l=60, r=20, t=60, b=40))
     return fig

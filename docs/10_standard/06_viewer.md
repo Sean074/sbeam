@@ -24,7 +24,7 @@ viewer/
 ├── geometry.py         # 3D model display functions (Plotly)
 ├── results_view.py     # Results post-processing display
 ├── case_control_ui.py  # Case control form and BDF export
-└── aero_view.py        # Aero box mesh, cp colour map, section-load strip chart (S44); spline-deflected box overlay (S57)
+└── aero_view.py        # Aero box mesh + cp colour map (S44); spline-deflected box overlay (S57); per-surface span-loading figure + rigid S&C derivative table (A-GUI2)
 ```
 
 ---
@@ -114,57 +114,51 @@ Present only when `bulk.caero1s` is non-empty. Renders aerodynamic mesh visualis
 a rigid steady-state solve at a user-specified angle of attack.
 
 **Controls (left column):**
-- **AoA (°)** — `st.number_input`, default 3°, step 0.5°.
-- **Symmetry** — radio: Symmetric (+1), Antisymmetric (−1), Full-span (0).
+- **AoA α (°)** / **Sideslip β (°)** — `st.number_input`, defaults 3° / 0°, step 0.5°.
 - **Compute Aero** — builds `AeroModel` (AIC matrix) and calls
-  `solve_rigid_cl(..., wg=aero_model.wg, cp_operator=aero_model.ajj_inv_corr)`; results stored in
-  `st.session_state["aero_model"]` and `st.session_state["aero_result"]`. The solve runs on the
-  **corrected** operator, so both the W2GJ baseline incidence (camber/twist/built-in incidence)
-  **and** any AIC correction (WKK / WT1 / WT2) are reflected in CL/CM/cp/section loads — matching
-  the SOL 144 path. Decks differing only by a W2GJ twist (e.g. `sample/val_wing_taper_dihedral*.bdf`)
-  or by a correction card produce different loads. Positive `wg` reduces lift (SOL 144 sign).
-  Captions flag an active `wg` and/or correction method.
+  `solve_rigid_cl(..., wg=aero_model.wg, cp_operator=aero_model.ajj_inv_corr)` (the **corrected**
+  solve, stored in `aero_result`). When the deck carries a correction card (`bulk.wkks` or
+  `bulk.aecorrs`) it *also* runs the **uncorrected** baseline
+  `solve_rigid_cl(..., cp_operator=None, mach=aero_model.mach)` (same `wg`, raw VLM + Prandtl–Glauert)
+  and stores it in `aero_result_unc` for the span-load overlay. The corrected solve reflects both
+  the W2GJ baseline incidence (camber/twist/built-in incidence) **and** any AIC correction
+  (WKK / WT1 / WT2) in CL/CM/cp/section loads — matching the SOL 144 path. Positive `wg` reduces
+  lift (SOL 144 sign). Captions flag an active `wg` and/or correction method.
 - **Show surface normals** — `st.checkbox` (`key="aero_show_normals"`, default off). When
   ticked, draws each box's outward unit normal (`AeroBox.normal`) as a green arrow rooted
-  at its collocation point. Re-renders the cached `aero_model` instantly (no AIC recompute);
-  arrows track the deflected mesh when `box_disp` is supplied.
-- After compute: **CL**, **CY**, **CM**, and **Boxes** count displayed as `st.metric`; a
-  caption flags when a non-zero W2GJ baseline incidence is active.
+  at its collocation point. Re-renders the cached `aero_model` instantly (no AIC recompute).
+- After compute: **CL**, **CY**, **CM**, and **Boxes** count displayed as `st.metric`.
 
-**Figure (right column):**
+**3D figure (right column):** built by `build_aero_box_figure(..., strip=False)` — a scene-only
+mesh: `_add_box_mesh` (Scatter3d wire-frame) + `_add_cp_contour` (Mesh3d quads, `RdBu_r`,
+**corrected** cp) + optional `_add_normal_vectors`. The `strip=True` default (used by the SOL 144
+results view) keeps the legacy bottom xy panel; the Aero tab passes `strip=False` because span
+loading has its own full-width figure below.
 
-Built by `build_aero_box_figure` in `sbeam/viewer/aero_view.py`:
-
-```
-build_aero_box_figure(
-    bulk: BulkData,
-    aero_model: AeroModel,
-    cp: np.ndarray | None = None,
-    cl_section: dict | None = None,
-    cp_corr: np.ndarray | None = None,
-    box_disp: np.ndarray | None = None,
-    show_normals: bool = False,
-) -> go.Figure
-```
-
-The figure is a two-row subplot (`make_subplots`):
-- **Row 1 (75%)** — 3D scene: `_add_box_mesh` (Scatter3d wire-frame, grey) + optional
-  `_add_cp_contour` (Mesh3d triangulated quads, `colorscale="RdBu_r"`) + optional
-  `_add_normal_vectors` (green `go.Cone` surface-normal arrows, when `show_normals=True`).
-- **Row 2 (25%)** — 2D xy: `_add_section_load_strip` (Bar chart of section CL vs
-  span fraction) + optional `_add_corrected_vs_inviscid` (two Scatter lines for inviscid
-  vs corrected spanwise mean cp, shown when `cp_corr` is provided).
-
-Before a Compute click the mesh-only figure is shown (no cp colour). After the solve,
-the full cp overlay and strip chart are rendered.
+**Full-width results (below the columns), shown after a Compute:**
+- **Spanwise loading** — `build_span_loading_figure(boxes, cp_corr, cp_unc=..., aeros=...)`: two
+  stacked subplots, **one line per CAERO1 surface** — section normal-force coefficient `cn(η)` and
+  section pitching-moment coefficient `cm(η)` about each strip's **local ¼-chord** (nose-up +ve).
+  Boxes are grouped by `(caero_eid, i_span)` so multi-surface decks no longer merge strips that
+  share an `i_span`. Corrected = solid; when an uncorrected baseline exists it is overlaid dashed
+  in the same colour (caption flags it).
+- **Rigid stability & control derivatives** — `rigid_derivative_table(aero_model, bulk, naming)`
+  rendered full-width via `st.dataframe`. Reuses the SOL 144 machinery (`build_djx` +
+  `_compute_rigid_derivs`, rigid `u_a = 0`) so the matrix matches the f06 rigid derivatives. Rows
+  are α, β, roll p, pitch q, yaw r + every AESURF control; columns are the six force/moment
+  coefficients per radian/label. A **Naming** radio (`key="aero_deriv_naming"`) toggles between
+  conventional aero symbols (CL, CY, Cl, Cm, Cn, CX) and the raw SOL 144 names
+  (CZ, CY, CMX, CMY, CMZ, CX). Hidden when no AEROS card is present.
+- **Per-surface coefficients** — the multi-surface CL/CY/CM breakdown table (when >1 surface).
 
 **Session state keys:**
 | Key | Type | Description |
 |-----|------|-------------|
-| `aero_model` | `AeroModel \| None` | Built by `build_aero_model(bulk, parity)` |
-| `aero_result` | `dict \| None` | `{cp, cl_section, CL, CM}` from `solve_rigid_cl` |
+| `aero_model` | `AeroModel \| None` | Built by `build_aero_model(bulk)` |
+| `aero_result` | `dict \| None` | Corrected `{cp, cl_section, CL, CY, CM, per_surface, …}` from `solve_rigid_cl` |
+| `aero_result_unc` | `dict \| None` | Uncorrected baseline solve (only when a correction card is present), else `None` |
 
-Both keys are reset to `None` on new file upload (same pattern as `sol101_result`).
+All three keys are reset to `None` on new file upload (same pattern as `sol101_result`).
 
 ### 5. Sidebar — Item Inspector
 

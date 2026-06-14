@@ -56,6 +56,30 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
   WKK=1.5 scales CL by 1/1.5; shape guard); `test_cessna210_example.py` preview-figure trace +
   achieved-vs-input check. Pre-existing lint debt in `test_corrections.py` cleaned up.
 
+**Viewer — Aero tab: rigid S&C derivative table, uncorrected-vs-corrected span loading (2026-06-14)**
+
+- The Aero tab's coefficient output is now a **full-width** panel below the 3D view instead of
+  being crammed into the narrow control column.
+- New `viewer/aero_view.rigid_derivative_table(aero_model, bulk, naming)`: the **full rigid
+  stability & control derivative matrix** (rows ANGLEA/SIDES/ROLL/PITCH/YAW + AESURF controls;
+  columns the six force/moment coefficients per radian/label). Reuses the SOL 144 machinery
+  (`build_djx` + `_compute_rigid_derivs`, rigid `u_a = 0`) so it matches the f06 rigid derivatives
+  with no trim/structure solve. A **Naming** toggle switches conventional aero symbols
+  (CL/CY/Cl/Cm/Cn/CX) ↔ raw SOL 144 names (CZ/CY/CMX/CMY/CMZ/CX).
+- New `viewer/aero_view.build_span_loading_figure(boxes, cp_corr, cp_unc, aeros)`: per-CAERO1
+  spanwise **section normal force `cn(η)` and moment `cm(η)`** (about each strip's local ¼-chord),
+  as **line** plots — one line per surface, grouped by `(caero_eid, i_span)`. This fixes the old
+  single-bar strip that merged strips sharing an `i_span` across surfaces and showed force only.
+  When a correction card is present the **uncorrected** baseline is overlaid dashed.
+- `viewer/app.py` `_render_aero_tab`: also solves the uncorrected baseline
+  (`cp_operator=None, mach=aero_model.mach`) when a correction card exists (new `aero_result_unc`
+  session key); renders the span figure + derivative table + per-surface table full-width.
+- `build_aero_box_figure` gains `strip: bool = True`; the Aero tab passes `strip=False`
+  (scene-only). SOL 144 results view and existing crash tests use the default — unchanged.
+- Tests: `test_aero_view.py` (+6 — derivative-table shape/naming/cross-check/AESURF rows/None,
+  span figure single & multi-surface, scene-only figure); `test_cessna210_example.py` (+1 — rigid
+  CLα ≈ 5.2/rad and 5-surface span figure). Suite 429 → 437.
+
 **Sample — Cessna 210-like VLM aero model + section-correction example (2026-06-14)**
 
 - `sample/cessna210_aero.bdf`: a full-span, 5-surface VLM model (wing + HTP + VTP, both
@@ -69,9 +93,9 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
   multi build corrects all surfaces (wing per-strip slope reproduces cn_a, wing carries a camber
   moment, HTP does not); and through the corrected operator the WT2 slope (~0.091→>0.11 /deg) and
   the W2GJ camber (CL(0)>0.2) both take effect.
-- Note: the viewer **Aero tab** (`solve_rigid_cl`) reflects only the W2GJ camber, not the WT2
-  slope/a.c. correction (it does not use the corrected operator); the full correction shows in the
-  SOL 144 / `build_aero_model` path.
+- Note: with the Aero-tab corrected-operator wiring (above), the viewer now reflects the **full**
+  correction (W2GJ camber + WT2 slope/a.c.); load the deck plus the generated correction cards and
+  press Compute Aero to see the corrected CLα and span loading.
 
 **Aero — section force+moment correction extended to multi-surface (2026-06-14)**
 

@@ -91,6 +91,28 @@ def test_correction_takes_effect_through_operator(model_and_data):
     assert slope > 0.11
 
 
+def test_rigid_derivative_table_and_span_figure(model_and_data):
+    """Aero-tab rigid S&C table + 5-surface span loading on the worked example."""
+    import numpy as np
+    from sbeam.aero.vlm import solve_rigid_cl
+    from sbeam.viewer.aero_view import (
+        rigid_derivative_table, build_span_loading_figure,
+    )
+    bulk, model, _df = model_and_data
+
+    # Uncorrected deck: rigid CLα ≈ bare-VLM ~0.091/deg = ~5.2/rad.
+    tab = rigid_derivative_table(model, bulk, naming="aero")
+    assert list(tab.columns) == ["CL", "CY", "Cl", "Cm", "Cn", "CX"]
+    assert tab.loc["α", "CL"] == pytest.approx(5.2, abs=0.6)
+    assert tab.loc["α", "Cm"] < 0.0          # pitch-down with aft moment ref / tail
+
+    # Span loading: one cn + one cm line per CAERO1 surface (5 surfaces → 10 traces).
+    res = solve_rigid_cl(model.boxes, np.radians(3.0), aeros=model.aeros,
+                         cp_operator=model.ajj_inv_corr)
+    fig = build_span_loading_figure(model.boxes, res["cp"])
+    assert len(fig.data) == 2 * 5
+
+
 def test_section_preview_figure(model_and_data):
     from sbeam.viewer.aero_view import build_section_correction_figure
     _bulk, model, df = model_and_data

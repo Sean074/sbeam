@@ -5,16 +5,24 @@ BulkData; no numerical values asserted.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
+import pandas as pd
 import pytest
 import plotly.graph_objects as go
 from streamlit.testing.v1 import AppTest
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.aero import Aeros, Caero1, Paero1
-from sbeam.aero.aero_model import AeroModel, build_aero_model
+from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.vlm import solve_rigid_cl
-from sbeam.viewer.aero_view import build_aero_box_figure
+from sbeam.parser.bdf_reader import parse_bdf
+from sbeam.viewer.aero_view import (
+    build_aero_box_figure, build_span_loading_figure, rigid_derivative_table,
+)
+
+_SAMPLE = Path(__file__).parent.parent.parent / "sample"
 
 
 @pytest.fixture
@@ -67,6 +75,87 @@ def test_build_aero_box_figure_with_corr_no_crash(aero_bulk):
     assert isinstance(fig, go.Figure)
 
 
+def test_build_aero_box_figure_strip_false_no_crash(aero_bulk):
+    """Scene-only figure (strip=False) for the Aero tab does not raise."""
+    aero_model = build_aero_model(aero_bulk)
+    result = solve_rigid_cl(aero_model.boxes, np.radians(3.0))
+    fig = build_aero_box_figure(aero_bulk, aero_model, cp=result["cp"], strip=False)
+    assert isinstance(fig, go.Figure)
+
+
+# ---- rigid_derivative_table -------------------------------------------------
+
+def test_rigid_derivative_table_shape_and_naming(aero_bulk):
+    """Full S&C matrix: 5 rigid-body rows × 6 coefficient columns, both namings."""
+    aero_model = build_aero_model(aero_bulk)
+    df_aero = rigid_derivative_table(aero_model, aero_bulk, naming="aero")
+    df_raw = rigid_derivative_table(aero_model, aero_bulk, naming="raw")
+    assert isinstance(df_aero, pd.DataFrame)
+    assert list(df_aero.index) == ["α", "β", "p", "q", "r"]
+    assert list(df_aero.columns) == ["CL", "CY", "Cl", "Cm", "Cn", "CX"]
+    assert list(df_raw.index) == ["ANGLEA", "SIDES", "ROLL", "PITCH", "YAW"]
+    assert list(df_raw.columns) == ["CZ", "CY", "CMX", "CMY", "CMZ", "CX"]
+    # Toggle only relabels — the numbers are identical.
+    assert np.allclose(df_aero.to_numpy(), df_raw.to_numpy())
+
+
+def test_rigid_derivative_table_clalpha_crosscheck(aero_bulk):
+    """ANGLEA→CL (per rad, Skj integration) matches the single-point CL/α (K-J)."""
+    aero_model = build_aero_model(aero_bulk)
+    alpha = np.radians(3.0)
+    res = solve_rigid_cl(
+        aero_model.boxes, alpha, aeros=aero_model.aeros,
+        cp_operator=aero_model.ajj_inv_corr,
+    )
+    df = rigid_derivative_table(aero_model, aero_bulk, naming="aero")
+    cla_table = df.loc["α", "CL"]
+    cla_pt = res["CL"] / alpha
+    assert cla_table == pytest.approx(cla_pt, rel=1e-2)
+    assert cla_table > 0.0
+
+
+def test_rigid_derivative_table_none_without_aeros(aero_bulk):
+    """No AEROS reference → no normalisation → None."""
+    aero_model = build_aero_model(aero_bulk)
+    aero_bulk.aeros = None
+    assert rigid_derivative_table(aero_model, aero_bulk) is None
+
+
+def test_rigid_derivative_table_includes_aesurf_rows():
+    """AESURF control labels appear as rows below the rigid-body labels."""
+    _cc, bulk = parse_bdf(str(_SAMPLE / "ha144a_fullspan_sbeam.bdf"))
+    aero_model = build_aero_model(bulk)
+    df = rigid_derivative_table(aero_model, bulk, naming="raw")
+    assert df.index[:5].tolist() == ["ANGLEA", "SIDES", "ROLL", "PITCH", "YAW"]
+    assert "ELEV" in df.index.tolist()
+
+
+# ---- build_span_loading_figure ---------------------------------------------
+
+def test_build_span_loading_figure_single_surface(aero_bulk):
+    """One surface → cn + cm subplots = 2 traces; +uncorrected overlay = 4."""
+    aero_model = build_aero_model(aero_bulk)
+    res = solve_rigid_cl(aero_model.boxes, np.radians(3.0))
+    fig = build_span_loading_figure(aero_model.boxes, res["cp"])
+    assert isinstance(fig, go.Figure)
+    assert len(fig.data) == 2          # cn(η) + cm(η), one surface
+    fig2 = build_span_loading_figure(aero_model.boxes, res["cp"], cp_unc=res["cp"] * 0.9)
+    assert len(fig2.data) == 4         # corrected + uncorrected, two subplots
+
+
+def test_build_span_loading_figure_multi_surface():
+    """Each CAERO1 surface gets its own line in both subplots (no i_span merge)."""
+    _cc, bulk = parse_bdf(str(_SAMPLE / "ha144a_fullspan_sbeam.bdf"))
+    aero_model = build_aero_model(bulk)
+    res = solve_rigid_cl(
+        aero_model.boxes, np.radians(3.0), aeros=aero_model.aeros,
+        cp_operator=aero_model.ajj_inv_corr,
+    )
+    n_surf = len({b.caero_eid for b in aero_model.boxes})
+    fig = build_span_loading_figure(aero_model.boxes, res["cp"])
+    assert len(fig.data) == 2 * n_surf
+
+
 def _sbeam_app():
     from sbeam.viewer.app import main
     main()
@@ -100,3 +189,23 @@ def test_apptest_aero_tab_no_exception(aero_bulk):
 
     assert not at.exception, [str(e) for e in at.exception]
     assert any(b.label == "Compute Aero" for b in at.button)
+
+
+def test_apptest_aero_tab_renders_results(aero_bulk):
+    """AppTest: the full-width derivative table (Styler), naming radio, and span-load
+    figure render without exception when a precomputed aero result is in session."""
+    at = AppTest.from_function(_sbeam_app, default_timeout=60)
+    at.run()
+    _inject_aero_state(at, aero_bulk)
+    aero_model = build_aero_model(aero_bulk)
+    result = solve_rigid_cl(
+        aero_model.boxes, np.radians(3.0), aeros=aero_model.aeros,
+        wg=aero_model.wg, cp_operator=aero_model.ajj_inv_corr,
+    )
+    at.session_state["aero_model"] = aero_model
+    at.session_state["aero_result"] = result
+    at.session_state["aero_result_unc"] = None
+    at.run()
+
+    assert not at.exception, [str(e) for e in at.exception]
+    assert any(r.label == "Naming" for r in at.radio)

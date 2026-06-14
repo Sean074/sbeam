@@ -2099,6 +2099,54 @@ section-correction page.
 
 ---
 
+### Step A-GUI2: Aero tab — full rigid S&C derivative table, uncorrected-vs-corrected span loading ✅ COMPLETE
+
+**Objective:** Make the Aero tab's coefficient output a first-class, full-width panel. Previously
+the CL/CY/CM metrics + per-surface table were crammed into the narrow control column, only the
+corrected solution was shown, and the span-load strip was a single bar series keyed by a *global*
+`i_span` — which silently merged strips from different CAERO1 surfaces and showed force only.
+
+**Deliverables:**
+1. **`sbeam/viewer/aero_view.py`** —
+   - `rigid_derivative_table(aero_model, bulk, naming)`: the full rigid stability & control
+     derivative matrix (rows ANGLEA/SIDES/ROLL/PITCH/YAW + AESURF controls; columns the six
+     force/moment coefficients per radian/label). Reuses `build_djx` + `sol144._compute_rigid_derivs`
+     (rigid, `u_a = 0`) — matches the SOL 144 f06 derivatives with no trim/structure solve. `naming`
+     toggles conventional aero symbols (CL/CY/Cl/Cm/Cn/CX) ↔ raw SOL 144 names (CZ/CY/CMX/CMY/CMZ/CX).
+     Returns `None` when no AEROS card.
+   - `build_span_loading_figure(boxes, cp_corr, cp_unc=None, aeros=None)` + helper `_strip_cn_cm`:
+     per-surface spanwise section `cn(η)` (area-weighted normal force) and `cm(η)` about each strip's
+     **local ¼-chord** (nose-up +ve), grouped by `(caero_eid, i_span)` — one line per surface, two
+     subplots, corrected solid / uncorrected dashed.
+   - `build_aero_box_figure` gains `strip: bool = True`; `strip=False` returns a scene-only figure
+     (Aero tab) — the SOL 144 results view keeps the default, so it and the crash tests are unchanged.
+2. **`sbeam/viewer/app.py`** — `_render_aero_tab`: on Compute also solves the uncorrected baseline
+   (`cp_operator=None, mach=aero_model.mach`) when a correction card is present (new `aero_result_unc`
+   session key); the derivative table, span-loading figure, and per-surface table move to a
+   full-width section below the 3D view; a **Naming** radio drives `rigid_derivative_table`; the 3D
+   mesh is rendered `strip=False`.
+3. **Tests** — `test_aero_view.py`: derivative-table shape/naming (both modes same numbers),
+   `ANGLEA→CL` ≈ single-point CL/α cross-check, `None` without AEROS, AESURF rows present
+   (`ha144a_fullspan_sbeam.bdf`); span figure single- and multi-surface trace counts;
+   `build_aero_box_figure(strip=False)`. `test_cessna210_example.py`: rigid CLα ≈ 5.2/rad +
+   5-surface span figure.
+4. **Docs** — 06_viewer.md (Aero-tab rewrite, module-map row), 05_aeroelastics.md (Aero-tab section,
+   `build_aero_box_figure` signature, helper table, usage example).
+
+**Key decisions:**
+- Reuse the SOL 144 rigid-derivative path verbatim (`_compute_rigid_derivs`) rather than a separate
+  finite-difference set, so the Aero tab and the f06 cannot drift; the cross-check test pins
+  ANGLEA→CL to the single-point lift slope (agree to ~0.03 % on the Cessna deck).
+- Section moment about the **local ¼-chord** (not the airplane reference) so the span-load plot
+  validates WT2/W2GJ corrections strip-by-strip, consistent with the section-correction preview.
+- Uncorrected baseline uses `aero_model.mach` so Prandtl–Glauert matches the corrected operator; it
+  is only computed/overlaid when a correction card exists (otherwise the curves coincide).
+
+**Test / Acceptance:**
+- `tests/viewer/ tests/aero/` → 437 passed (was 429; +8); ruff clean on all changed files.
+
+---
+
 ## Phase B — Structure ↔ Aero Splining
 
 ### Step 45: SET1 + SPLINE2 parsing ✅ COMPLETE
