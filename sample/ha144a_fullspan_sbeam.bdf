@@ -175,6 +175,27 @@ SET1, 2100, 100, 210, 220
 SET1, 2000, 98, 99
 $
 $ ============================================================
+$ MONITOR POINTS (MON1-MON4 / V-MON1) — integrated section loads
+$ Reference point = AERO ref (RCSID/CORD2R 100 origin, x=15) in basic CID 0.
+$ ============================================================
+$ Wing-root cut: inboard EA grid only
+SET1, 1300, 100
+AECOMP, WINGROOT, SET1, 1300
+$ Full right-wing EA (reuse spline SET1 1100 = {100,110,120})
+AECOMP, WINGEA, SET1, 1100
+$ Whole-aircraft EA grids (every spline target grid)
+SET1, 1310, 98, 99, 100, 110, 120, 210, 220
+AECOMP, ALLGRID, SET1, 1310
+$ Whole-aircraft aero boxes (all 4 CAERO1 panels)
+AELIST, 1400, 1000, THRU, 1007, 1100, THRU, 1131, 2000, THRU, 2007, 2100, THRU, 2131
+AECOMP, ALLAERO, AELIST, 1400
+$ MONPNT3 section cuts (aero + inertia + reaction) and MONPNT1 aero-only:
+MONPNT3, MWINGRT, WING ROOT, 35, WINGROOT, 0, 15.0, 0.0, 0.0
+MONPNT3, MWINGEA, RIGHT WING, 35, WINGEA, 0, 15.0, 0.0, 0.0
+MONPNT3, MALLEA, WHOLE AIRCRAFT, 35, ALLGRID, 0, 15.0, 0.0, 0.0
+MONPNT1, MALLAR, AIRCRAFT AERO, 35, ALLAERO, 0, 15.0, 0.0, 0.0
+$
+$ ============================================================
 $ AERODYNAMIC TRIM VARIABLES
 $ ============================================================
 AESTAT, 501, ANGLEA

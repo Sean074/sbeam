@@ -80,6 +80,33 @@ def _bar_forces_block(lines: list, bulk: BulkData, bar_forces: dict) -> None:
     lines.append("")
 
 
+def _monitor_block(lines: list, monitor_loads: dict) -> None:
+    """Append a MONITOR POINT INTEGRATED LOADS block (MON4).
+
+    One header row of metadata per monitor (LABEL, TYPE, AXES, CID, reference
+    point) followed by the six integrated force/moment components in the
+    monitor's cp frame.  Annotated *WHOLE-AIRPLANE* when a symmetry parity factor
+    has been applied so downstream consumers do not double-count.
+    """
+    lines.append("                          M O N I T O R   P O I N T   I N T E G R A T E D   L O A D S")
+    lines.append("")
+    for name in sorted(monitor_loads.keys()):
+        ml = monitor_loads[name]
+        tag = "   *WHOLE-AIRPLANE*" if ml.whole_airplane else ""
+        lines.append(
+            f"      MONITOR {name:<8}  LABEL: {ml.label:<24}  {ml.mtype}"
+            f"   AXES = {ml.axes}   CID = {ml.cid}{tag}"
+        )
+        lines.append(
+            f"        REF POINT (BASIC):  X ={_fmt(ml.ref[0])}  Y ={_fmt(ml.ref[1])}"
+            f"  Z ={_fmt(ml.ref[2])}"
+        )
+        lines.append("              FX             FY             FZ             MX             MY             MZ")
+        lines.append("        " + "".join(_fmt(v) for v in ml.totals))
+        lines.append("")
+    lines.append("")
+
+
 def _bar_stresses_block(lines: list, bulk: BulkData, bar_stresses: dict) -> None:
     """Append a NASTRAN STRESSES IN BAR ELEMENTS (CBAR) block (shared by SOL 101 / 144)."""
     lines.append("                                 S T R E S S E S   I N   B A R   E L E M E N T S        ( C B A R )")
@@ -396,6 +423,10 @@ def _build_f06_sol144_text(
             f"        Q / Q-DIV = {_fmt(ratio)}"
         )
     lines.append("")
+
+    # ---- MONITOR POINT INTEGRATED LOADS (MON4) ----
+    if result.monitor_loads:
+        _monitor_block(lines, result.monitor_loads)
 
     # ---- Shared structural-response blocks ----
     _displacement_block(lines, result.displacements, bulk, grid_index, gids_sorted)

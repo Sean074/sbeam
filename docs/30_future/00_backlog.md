@@ -22,11 +22,17 @@ null-space guard complete. **Step 52 fully closed (2026-06-14).**
 
 | # | Item | Kind | Status | Why here / what it unblocks |
 |--:|------|------|--------|------------------------------|
-| 1 | [Monitor points MON1–MON4 / V-MON1](#monitor-points--section-loads--phase-1-static) | Code | Open | Structures-team loads handoff per trim case; needs trim, consumes the Step 53 non-zero inertia column |
-| 2 | [AE8b — unrestrained (mean-axis) derivative column](#major-ae8b--unrestrained-mean-axis-derivative-formulation-known-wrong) | Code | Open (known-wrong first attempt) | Completes the derivative deliverable; off the trim critical path — can run in parallel |
-| 3 | [Step 55 — DIVERG q-sweep + mode shape + V_div](#step-55--aeroelastic-divergence-diverg) | Code | Open (single `q_div` done) | `DIVERG`-card-driven sweep and the divergence eigenvector |
-| 4 | [Step 54 — CFD / wind-tunnel mean-flow injection](#step-54--cfd--wind-tunnel-steady-pressure-injection-mean-flow-trim) | Code | Open | Optional mean-flow enhancement; lower priority |
-| 5 | [Step 57 — Viewer: SOL 144 results (THE INTERFACE)](#step-57--viewer-sol-144-results) | Code | Open | **CLOSING ITEM** — surfaces trim, derivatives, `q_div`, deflected shape, box `cp`, monitor loads in the UI |
+| 1 | [AE8b — unrestrained (mean-axis) derivative column](#major-ae8b--unrestrained-mean-axis-derivative-formulation-known-wrong) | Code | Open (known-wrong first attempt) | Completes the derivative deliverable; off the trim critical path — can run in parallel |
+| 2 | [Step 55 — DIVERG q-sweep + mode shape + V_div](#step-55--aeroelastic-divergence-diverg) | Code | Open (single `q_div` done) | `DIVERG`-card-driven sweep and the divergence eigenvector |
+| 3 | [Step 54 — CFD / wind-tunnel mean-flow injection](#step-54--cfd--wind-tunnel-steady-pressure-injection-mean-flow-trim) | Code | Open | Optional mean-flow enhancement; lower priority |
+| 4 | [Step 57 — Viewer: SOL 144 results (THE INTERFACE)](#step-57--viewer-sol-144-results) | Code | Open | **CLOSING ITEM** — surfaces trim, derivatives, `q_div`, deflected shape, box `cp`, monitor loads in the UI |
+
+> **Monitor points MON1–MON4 / V-MON1 are CLOSED (2026-06-13)** — static `MONPNT1`
+> (aero-only) and `MONPNT3` (aero + inertia + reaction, splined to structural grids)
+> integrated section loads are emitted per SOL 144 trim subcase (f06 block + CSV).
+> See `docs/40_history`. Two follow-ons remain open below: **Section-cut running loads
+> (Phase 2)** and **Dynamic monitor extraction (Phase 3)**; HDF5 hierarchical export is a
+> small deferred add (f06 + CSV shipped).
 
 **Step 52 is now CLOSED (2026-06-14)** — over-determined (redundant-control) trim via null-space
 reduction + weighted-L2 TRIMOBJ/TRIMCON/TRIMVAR, and the ROLL/YAW/SIDES rate-aero **moment**
@@ -574,159 +580,12 @@ prescribed control histories). Bridges to the full Phase G ASE system.
 
 ---
 
-## Monitor points & section loads — Phase 1 (static)
+## Monitor points & section loads — follow-ons
 
-**Files (new/extended):** `sbeam/model/aero.py` (dataclasses), `sbeam/parser/bdf_reader.py`
-(handlers), `sbeam/results/monitor_points.py` (new — integration logic),
-`sbeam/solver/sol144.py` (call site after trim solve), `sbeam/results/f06_writer.py`
-(output block), `sbeam/results/results.py` (`Sol144Result.monitor_loads`).
-
-**Objective:** Emit integrated section loads for structures handoff from each SOL 144
-trim solution — replicating NASTRAN `MONPNT1` (aero-only) and `MONPNT3` (aero +
-inertia + reaction, splined to structural grids) semantics, with sbeam-native RBAR/RBE3
-pass-through that avoids NASTRAN MONPNT3's known limitation with rigid-element load
-paths. This becomes the standard loads-team deliverable per trim case and is the
-foundation for the dynamic monitor extraction needed for CS-25.341 gust loads later.
-
-**Prerequisite:** AE1 Step F is closed (V-AE1d green under the %-full-scale gate, 2026-06-13 —
-wrong trim ⇒ wrong monitor loads). AE10 is closed (SOL 144 runs end-to-end from `main.py`;
-Step 56 emits the f06 + trimmed flight loads the monitor integration builds on).
-
-**Scope of Phase 1 (this entry):** Static `MONPNT1` + `MONPNT3` emulation only.
-Section-cut running-loads tables ({V, M, T} per spanwise station) tracked as Phase 2;
-dynamic monitor extraction (CS-25.341(a) discrete gust, CS-25.341(b) continuous
-turbulence) tracked as Phase 3 — both pointers at the end of this section.
-
-### Sequence at a glance
-
-| Step | Description | Status |
-|------|-------------|--------|
-| MON1 | BDF parse: `MONPNT1`, `MONPNT3`, `AECOMP`, `AELIST` (SET1 already supported) | Open |
-| MON2 | `MONPNT1` aero-only integrated load over AECOMP/AELIST collection | Open |
-| MON3 | `MONPNT3` aero + inertia + reaction over SET1 grid collection, RBAR-expanded | Open |
-| MON4 | f06 `MONITOR POINT INTEGRATED LOADS` block + CSV + HDF5 per case | Open |
-| V-MON1 | HA144A SC1 cross-check — wing-root + full-wing MONPNT3 vs MSC NASTRAN | Open |
-
-MON1 is a prerequisite for MON2/MON3; MON2 and MON3 are independent. MON4 can be
-landed incrementally as MON2/MON3 come online. V-MON1 is the closing gate.
-
----
-
-### MON1 — BDF parsing: `MONPNT1`, `MONPNT3`, `AECOMP`, `AELIST`
-
-Add `Monpnt1`, `Monpnt3`, `Aecomp`, `Aelist` dataclasses to `sbeam/model/aero.py`.
-Extend `parser/bdf_reader.py` with field-by-field handlers; SET1 handler already exists
-(reused by MONPNT3). `AECOMP` resolves to either an AELIST (box IDs) or a SET1 (grid
-IDs) — implement both lookup paths.
-
-**Acceptance:** Round-trip echo on a synthetic BDF containing one `MONPNT1` (wing
-aero-only, AECOMP→AELIST), two `MONPNT3` (wing root, HTP root; AECOMP→SET1), with one
-monitor in `CID 0` and one in a user-defined CORD2R; parsed fields exactly equal the
-input.
-
----
-
-### MON2 — `MONPNT1`: aero-only integrated load
-
-Sum per-box aero `F`, `M` (already computed during SOL 144 trim — wing/HTP/VTP boxes
-in box CSYS) over the AECOMP/AELIST collection. Transform to the monitor reference
-point and `MONPNT1.cp` CSYS. Apply parity from `AEROS.SYMXZ` consistent with AE1
-Step A — same `sym` factor, single-source.
-
-**Acceptance:** Synthetic uniform-Cp rectangular wing — analytical `L = ½ρV²S·Cp` and
-moment about the reference vs `MONPNT1` integrated sum: agreement to 1e-8 relative.
-Symmetric-half model with `SYMXZ=1` doubles the sum vs. the full-model build of the
-same geometry. **Dihedral:** on a ±Γ deck (Step 58) the integrated `Fz` reduces by `cosΓ` and a
-non-zero `Fy` appears per semi-span (`∝ sinΓ`), cancelling over the full-span build — the monitor
-sum must carry the full 3-component force, not an Fz-only projection.
-
----
-
-### MON3 — `MONPNT3`: aero + inertia + reaction at structural grids
-
-Per-grid force tally over the user `SET1` collection:
-
-- **Aero contribution:** `(G_kgᵀ · q · P_k)_g` per grid `g`, where `G_kg` is the spline
-  matrix from Phase B and `P_k` is the trimmed box force. **RBAR/RBE3 pass-through uses
-  the same T matrix as AE1 Step B1's `_expand_to_g`** — load on a slave grid maps to
-  the master via the kinematic transform. This is where sbeam beats NASTRAN MONPNT3.
-- **Inertia contribution:** `(M_gg · ü_g)` from the prescribed rigid-body acceleration
-  field of the trim case — available directly as `Sol144TrimResult.inertial_loads`
-  (Step 53, CLOSED). Zero by construction for the determined plain 1g trim; load-bearing
-  for a balanced maneuver (non-zero URDD). Phase 1 emits the inertia column
-  unconditionally — it's just zero in the steady case.
-- **Reaction contribution:** SPC reaction at the SUPORT grids only (avoid
-  double-counting — reaction is already in equilibrium with aero+inertia per the
-  Schur r-set row).
-
-Sum the three contributions over `SET1`, transform to `MONPNT3.cp` CSYS, apply parity.
-Output `Fx, Fy, Fz, Mx, My, Mz` plus a per-contribution breakdown (`Fz_aero`,
-`Fz_inertia`, `Fz_react`) for diagnostic use.
-
-**Acceptance:** HA144A SC1 trim — `MONPNT3` defined as `SET1 = {100, 110, 120}` (the
-full wing EA) returns `Fz = 8 000 lb · parity` within 1 %, and `My` matching the NASTRAN
-MONPNT3 output for the same SET1 within 1 %. Symmetric-half parity treated identically
-to AE1 Step A.
-
----
-
-### MON4 — Output: f06 block + CSV + HDF5 per trim case
-
-- New f06 block `MONITOR POINT INTEGRATED LOADS` in `results/f06_writer.py` matching
-  the NASTRAN layout (header + one row per monitor per subcase: `LABEL`, `AXES`,
-  `COMP`, `CID`, `X/Y/Z`, six force/moment values).
-- **CSV per trim case:** one row per monitor; columns
-  `case, name, x_ref, y_ref, z_ref, cid, Fx, Fy, Fz, Mx, My, Mz` plus the diagnostic
-  `Fz_aero / Fz_inertia / Fz_react` breakdown.
-- **HDF5 hierarchical:** `/monitors/{name}/{case}` storing the six components plus
-  metadata (CSYS, reference point, parity factor, AECOMP/SET1 source IDs). Same file
-  the structures team will reuse for the Phase 3 time-domain extension.
-
-**Acceptance:** Snapshot test of the f06 block against a reference text file;
-CSV/HDF5 values identical to the f06 to 1e-12; HDF5 schema documented in
-`docs/10_standard/05_aeroelastics.md`.
-
----
-
-### V-MON1 — HA144A cross-check (closing gate)
-
-Add two `MONPNT3` cards to `sample/ha144a_fullspan_sbeam.bdf`:
-1. Wing-root cut — `SET1 = {100}` (inboard EA grid only).
-2. Full wing — `SET1 = {100, 110, 120}` (all three EA grids, matches the EA-only SET1
-   landed under AE1 Step B).
-
-Plus one `MONPNT1` summing the wing CAERO1 boxes (aero-only sanity check).
-
-**Acceptance:**
-
-- Full-wing `MONPNT3 Fz` = total trimmed lift · parity within 1 % (8 000 lb · sym).
-- Full-wing `MONPNT3 My` about the AERO ref point matches NASTRAN `MONPNT3` output
-  within 1 %.
-- Wing-root `MONPNT3 Fz / My` matches NASTRAN within 1 %.
-- `MONPNT1` aero-only sum equals the aero contribution of the full-wing `MONPNT3`
-  to 1e-8 (no inertia in determined trim).
-
----
-
-### Open decisions before MON1 starts
-
-1. **Coordinate frames.** Support `CID = 0` (basic), `AEROS.RCSID` (aero), and
-   user-defined `CORD2R` from day 1 — no incremental rollout.
-2. **Inertia source.** For Phase 1, `ü` is taken from the trim case (zero for plain
-   trim, non-zero for a balanced maneuver) — available directly as
-   `Sol144TrimResult.inertial_loads` (Step 53, closed). No external mass-distribution
-   overlay in Phase 1; defer the typical loads-workflow "fuel/payload sweep" to a
-   later add.
-3. **Parity.** Single-source via the same `sym` factor used in AE1 Step A. Annotate
-   the f06 output with `*whole-airplane*` when `SYMXZ = 1` so the structures team
-   doesn't double-up downstream.
-4. **AECOMP composition.** Both `AELIST` (box ID set) and `SET1` (grid ID set) lookup
-   paths required — used by `MONPNT1` and `MONPNT3` respectively in NASTRAN
-   convention.
-5. **Diagnostic breakdown.** Always emit `Fz_aero`, `Fz_inertia`, `Fz_react`
-   alongside the totals — cheap, and the only way to debug a wrong sum after the fact.
-
----
+> **Phase 1 (static `MONPNT1` + `MONPNT3` integrated section loads) is CLOSED (2026-06-13)** —
+> see `docs/40_history/00_completed_development.md` and `docs/10_standard/05_aeroelastics.md`.
+> The two follow-on phases below remain open. HDF5 hierarchical export is a small deferred add
+> (the f06 block + per-case CSV shipped in Phase 1).
 
 ### Phase 2 (later) — Section-cut running loads
 

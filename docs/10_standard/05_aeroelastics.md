@@ -1229,3 +1229,67 @@ TRIMVAR `init` only seeds the warm start. `Sol144TrimResult.trim_mode` reports `
 `"over-determined"` and is echoed in the f06 TRIM VARIABLES block. Gate: V-C4
 (`tests/aero/test_trim_overdetermined.py`) — `min(PITCH²)` reproduces the determined ANGLEA/ELEV,
 a TRIMCON forces its bound active, and the result is start-point independent.
+
+## Monitor Points — Integrated Section Loads (MON1–MON4)
+
+Static `MONPNT1` / `MONPNT3` integrated section loads are emitted per SOL 144 trim subcase for the
+structures/loads handoff. They sum the trimmed aerodynamic and inertial loads over a named
+collection of aero boxes (`MONPNT1`) or structural grids (`MONPNT3`) and report the six-component
+resultant `[Fx, Fy, Fz, Mx, My, Mz]` about a reference point, in a chosen coordinate frame.
+
+### Cards
+
+```
+$ Named collection: AELIST (box IDs) for MONPNT1, or SET1 (grid IDs) for MONPNT3
+AECOMP,  NAME, LISTTYPE, LISTID1, LISTID2, ...        $ LISTTYPE = AELIST | SET1
+$ Monitor point definition (single line):
+MONPNT1, NAME, LABEL, AXES, COMP, CP, X, Y, Z          $ aero-only
+MONPNT3, NAME, LABEL, AXES, COMP, CP, X, Y, Z          $ aero + inertia + reaction
+```
+
+- `COMP` is an `AECOMP` name. `MONPNT1` requires an `AELIST`-type AECOMP; `MONPNT3` a `SET1`-type.
+- `CP` is the CORD2R (or 0/basic) frame the loads are reported in; `X,Y,Z` is the reference point in
+  that frame. The reference is resolved to basic CID 0 for the moment summation, then the resultant
+  is rotated into `CP`.
+- `AXES` is carried through to the output for annotation (no component masking is applied in Phase 1).
+
+### Integration semantics (`sbeam/results/monitor_points.py`)
+
+- **`MONPNT1` (aero-only):** `F = Σ_k box_forces[k]`, `M = Σ_k (force_point[k] − ref) × box_forces[k]`
+  over the AELIST boxes (NASTRAN box ID → global box index via the spline `_build_id_to_k` map).
+  `box_forces` is the trimmed per-box physical force already on `Sol144TrimResult`.
+- **`MONPNT3` (aero + inertia + reaction):** per SET1 grid, sum the 6-DOF block from
+  `grid_loads` (aero, splined to grids — inherits RBE3/RBAR pass-through), `inertial_loads`
+  (inertia; zero for a plain trim, non-zero for a balanced maneuver / 1g gravity trim), and the
+  recovered SPC/SUPORT reaction (only for constrained grids inside the collection; balances the net
+  aero + inertial load via `sol101.recover_reactions`, R = K·u − f). Forces add directly; moments add
+  `m_grid + (r_grid − ref) × f_grid`.
+- **Parity:** a single `SYMXZ` factor (from the post-mirror `AEROS`) scales every component — 1.0 for
+  the normal full-span pipeline (mirror zeros SYMXZ), 2.0 with a `*WHOLE-AIRPLANE*` annotation if a
+  half model is fed directly. The full 3-component force is carried (no Fz-only projection), so
+  dihedral `Fy`/`Fz` splits survive.
+
+The results are attached as `Sol144TrimResult.monitor_loads = {name: MonitorLoad}`, where
+`MonitorLoad` carries `totals` plus the per-contribution `aero` / `inertia` / `reaction` 6-vectors.
+
+### Output (MON4)
+
+- **f06 block** `MONITOR POINT INTEGRATED LOADS` (`results/f06_writer.py`): one metadata row
+  (name, label, type, axes, cid, reference) + the six totals per monitor per subcase, annotated
+  `*WHOLE-AIRPLANE*` when parity ≠ 1.
+- **CSV** `<stem>.monitor_loads.csv` (`results/load_export.py`, written by `main.py`): one row per
+  monitor per subcase. Columns:
+  `case, name, type, label, axes, cid, x_ref, y_ref, z_ref, Fx, Fy, Fz, Mx, My, Mz,
+  Fz_aero, Fz_inertia, Fz_react, parity, whole_airplane`. The `Fz_*` diagnostic breakdown is the
+  fastest way to debug a wrong sum.
+- **HDF5** hierarchical export is a deferred follow-on (f06 + CSV shipped).
+
+### Validation
+
+`tests/aero/test_monitor_ha144a.py` (V-MON1) gates the chain on the full-span HA144A deck: the
+whole-aircraft `MONPNT1` aero resultant equals the whole-aircraft `MONPNT3` aero resultant by spline
+conservation (force to machine precision, moment to ~1e-6 relative — the spline rotational-row
+numerics), and the whole-aircraft `MONPNT3` aero Fz equals the trimmed 1g weight (~16000 lb) within
+1%. **Note:** the exact `MONPNT1`==`MONPNT3` equality holds only over a collection whose grids
+receive load *exclusively* from those boxes; a shared centreline root grid (right/left wing + canard)
+makes per-surface equality approximate, hence the whole-aircraft gate.

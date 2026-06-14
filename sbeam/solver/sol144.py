@@ -31,7 +31,8 @@ from sbeam.aero.aero_model import AeroModel, build_aero_model
 from sbeam.aero.coupling import build_qaa, build_fg, build_gaf
 from sbeam.aero.integration import build_djx
 from sbeam.results.results import BarForce, BarStress, Sol144Result, Sol144TrimResult
-from sbeam.solver.sol101 import recover_bar_forces, recover_bar_stresses
+from sbeam.results.monitor_points import compute_monitor_loads
+from sbeam.solver.sol101 import recover_bar_forces, recover_bar_stresses, recover_reactions
 from sbeam.solver.sol103 import run_sol103
 
 
@@ -1466,6 +1467,28 @@ def run_sol144_trim(
 
     k_aa_lu_trim = scipy.linalg.lu_factor(K_aa)
 
+    # ------------------------------------------------------------------ #
+    # MON2/MON3 — monitor-point integrated section loads.
+    # The reaction column needs the SPC/SUPORT reaction that balances the net
+    # (aero + inertial) load; recovered the same way as SOL 101 (R = K·u − f).
+    # ------------------------------------------------------------------ #
+    monitor_loads = None
+    if bulk.monpnt1s or bulk.monpnt3s:
+        reactions = {}
+        if bulk.monpnt3s:
+            constrained = list(get_spc_dofs(bulk, spc_sid, grid_index)) if spc_sid else []
+            for sup in bulk.supports:
+                if sup.gid in grid_index:
+                    base = grid_index[sup.gid] * 6
+                    constrained += [base + (int(ch) - 1) for ch in sup.dofs]
+            if constrained:
+                reactions = recover_reactions(
+                    bulk, displacements, constrained, K_gg, grid_index, net_loads
+                )
+        monitor_loads = compute_monitor_loads(
+            bulk, aero, box_forces, grid_loads, inertial_loads, grid_index, reactions
+        )
+
     return Sol144TrimResult(
         subcase_id=subcase.subcase_id,
         trim_sid=trim_sid,
@@ -1492,4 +1515,5 @@ def run_sol144_trim(
         q_div=q_div,
         hinge_moments=hinge_moments,
         trim_mode=trim_mode,
+        monitor_loads=monitor_loads,
     )

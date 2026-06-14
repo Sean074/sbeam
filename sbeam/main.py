@@ -81,7 +81,7 @@ def main() -> None:
     # downstream stress analysis (one card block per subcase, SID = subcase id).
     if sol144_results:
         from sbeam.results.load_export import (
-            write_aero_load_cards, write_maneuver_load_cards,
+            write_aero_load_cards, write_maneuver_load_cards, write_monitor_csv,
         )
         loads_path = bdf_path.with_suffix(".aero_loads.bdf")
         write_aero_load_cards(str(loads_path), bulk, sol144_results)
@@ -90,6 +90,11 @@ def main() -> None:
         man_path = bdf_path.with_suffix(".maneuver_loads.bdf")
         write_maneuver_load_cards(str(man_path), bulk, sol144_results)
         print(f"Written: {man_path}")
+        # MON4: monitor-point integrated section loads (one CSV across subcases).
+        if any(r.monitor_loads for r in sol144_results.values()):
+            mon_path = bdf_path.with_suffix(".monitor_loads.csv")
+            write_monitor_csv(str(mon_path), sol144_results)
+            print(f"Written: {mon_path}")
 
     # Phase G0: transient maneuver-loads time histories (MLDPRNT) + critical-step
     # net (aero + inertial) FORCE/MOMENT export.

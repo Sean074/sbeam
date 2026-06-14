@@ -79,6 +79,7 @@ Phase 1 uses **Euler-Bernoulli beam theory** (shear deformation neglected). Each
 | Loads | `FORCE`, `MOMENT`, `LOAD` (linear combination), `GRAV` (body acceleration; CID=0 only; f = M×a) |
 | Eigenvalue | `EIGRL` (SOL 103: modes, frequency range, normalization) |
 | Transient maneuver (Phase G0) | `MLOADS` (driver), `MLDTRIM` (initial-condition TRIM sid), `MLDCOMD` (pilot command label → `TABLED1`), `MLDTIME` (t0/tend/dt/tout), `MLDPRNT` (ASCII output), `TABLED1` (tabular function) |
+| Monitor points (SOL 144) | `MONPNT1` (aero-only integrated section load), `MONPNT3` (aero + inertia + reaction, splined to structural grids), `AECOMP` (named AELIST-box / SET1-grid collection) |
 
 ### Case Control Cards (Phase 1)
 
@@ -102,7 +103,7 @@ sbeam/
 ├── model/          # grid.py, element.py, property.py, material.py, load.py, constraint.py, mass.py, aero.py, maneuver.py (ZAERO MLOADS cards), maneuver_presets.py
 ├── assembly/       # stiffness.py, mass_matrix.py, rbe3.py
 ├── solver/         # sol101.py, sol103.py, sol144.py (static aeroelastic trim), maneuver_qs.py (Phase G0 transient maneuver loads)
-├── results/        # results.py, f06_writer.py, load_export.py, maneuver_output.py (Phase G0 time histories + critical-step export)
+├── results/        # results.py, f06_writer.py, load_export.py, monitor_points.py (MONPNT1/MONPNT3 integrated section loads), maneuver_output.py (Phase G0 time histories + critical-step export)
 ├── gpwg.py         # Mass and CG (GPWG)
 ├── aero/           # panel.py, vlm.py, integration.py, corrections.py, aero_model.py
 └── viewer/         # app.py, geometry.py, results_view.py, case_control_ui.py
@@ -126,7 +127,7 @@ Mass and CG computation is called **GPWG** (Grid Point Weight Generator), not "O
 
 - **SOL 101:** nodal displacements, SPC reactions, applied load echo, CBAR end forces/moments, CBAR stresses at recovery points, CBUSH element forces (global coordinates)
 - **SOL 103:** natural frequencies (Hz and rad/s), normalised mode shapes, modal mass fractions
-- **SOL 144** (static aeroelastic trim, Phase C): trim variables, rigid + elastic-restrained stability derivatives, per-AESURF hinge-moment derivatives (about the `cid1` hinge axis), total CL/CMY, critical divergence dynamic pressure, displacements/CBAR loads, and (on `AEROF`/`APRES` request) per-box ΔCp and forces. Exports trimmed aero flight loads as `FORCE`/`MOMENT` cards (`<stem>.aero_loads.bdf`). For balanced maneuvers (Step 53) it also emits the net (aero + inertial) maneuver load (`net_loads`/`inertial_loads`, with per-case force/moment closure) and exports it as `<stem>.maneuver_loads.bdf`
+- **SOL 144** (static aeroelastic trim, Phase C): trim variables, rigid + elastic-restrained stability derivatives, per-AESURF hinge-moment derivatives (about the `cid1` hinge axis), total CL/CMY, critical divergence dynamic pressure, displacements/CBAR loads, and (on `AEROF`/`APRES` request) per-box ΔCp and forces. Exports trimmed aero flight loads as `FORCE`/`MOMENT` cards (`<stem>.aero_loads.bdf`). For balanced maneuvers (Step 53) it also emits the net (aero + inertial) maneuver load (`net_loads`/`inertial_loads`, with per-case force/moment closure) and exports it as `<stem>.maneuver_loads.bdf`. With `MONPNT1`/`MONPNT3` cards present it emits a `MONITOR POINT INTEGRATED LOADS` f06 block and a per-run `<stem>.monitor_loads.csv` (aero-only / aero+inertia+reaction integrated section loads with an `Fz_aero/Fz_inertia/Fz_react` breakdown)
 - **SOL 144 transient maneuver loads** (Phase G0, DLM-free): a SOL 144 subcase with an `MLOADS = sid` request runs `solver/maneuver_qs.py` — a Level-1 quasi-steady, open-loop, restrained-l-set Newmark-β time integration seeded from a Step 53 trim (`MLDTRIM`). Per output time it recovers displacements, CBAR loads, instantaneous aero loads, and the net (aero + inertial) maneuver load. Writes an MLDPRNT ASCII time-history (`<stem>.mldprnt.txt`) and the critical-sample net-load `FORCE`/`MOMENT` export (`<stem>.maneuver_qs_loads.bdf`). ZAERO card set: `MLOADS`/`MLDTRIM`/`MLDCOMD`/`MLDTIME`/`MLDPRNT` + `TABLED1`.
 
 ## Verification Test Cases

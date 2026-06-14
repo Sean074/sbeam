@@ -3175,3 +3175,63 @@ acceleration is taken as exactly zero (the run starts at static equilibrium), so
   truncation-approximate rather than exact.
 - Gravity stays folded into the URDD load factor (consistent with Step 53); the `MLDTRIM` Step 53
   trim is the steady-state initial condition.
+
+## Monitor Points — Integrated Section Loads (Phase 1, static)
+
+### MON1–MON4 / V-MON1 — `MONPNT1` / `MONPNT3` integrated section loads ✅ COMPLETE (2026-06-13)
+
+**Objective:** Emit integrated section loads for the structures/loads handoff from each SOL 144 trim
+subcase — replicating NASTRAN `MONPNT1` (aero-only) and `MONPNT3` (aero + inertia + reaction, splined
+to structural grids), with sbeam-native RBE3/RBAR pass-through (the load already rides the splined
+g-set vectors, so the NASTRAN MONPNT3 rigid-element load-path limitation does not apply). Phase 1 is
+static emulation only; section-cut running loads and dynamic (gust) extraction remain backlog
+follow-ons.
+
+**Deliverables:**
+- **MON1 — BDF parsing (`sbeam/model/aero.py`, `sbeam/parser/bdf_reader.py`):** `Monpnt1`, `Monpnt3`,
+  `Aecomp` dataclasses + `BulkData` containers (`monpnt1s`, `monpnt3s`, `aecomps`); field-by-field
+  handlers and dispatch. `AECOMP` resolves to either an `AELIST` (box IDs, MONPNT1) or a `SET1`
+  (grid IDs, MONPNT3). Full cross-reference validation (AECOMP list exists, MONPNT `comp` resolves to
+  the correct list type, `cp` CORD2R exists). Card layout:
+  `MONPNT1/3, NAME, LABEL, AXES, COMP, CP, X, Y, Z`.
+- **MON2/MON3 — integration (`sbeam/results/monitor_points.py`, new):** `integrate_monpnt1` sums the
+  trimmed per-box `box_forces` over the AELIST collection (NASTRAN box-ID → k via
+  `spline._build_id_to_k`), with the 3-component moment about the monitor reference. `integrate_monpnt3`
+  sums the g-set `grid_loads` (aero), `inertial_loads` (inertia), and recovered SPC/SUPORT reaction
+  over the SET1 grids. Both transform the (F,M) resultant into the monitor `cp` frame and apply the
+  AEROS-`SYMXZ` parity factor (single-sourced; 1.0 for the full-span pipeline, 2.0 + `*WHOLE-AIRPLANE*`
+  annotation if a half-model is fed directly). **Key reuse:** the aero/inertia contributions are
+  summations of vectors already on `Sol144TrimResult` (`box_forces`, `grid_loads`, `inertial_loads`),
+  so no `G_kg` re-derivation; reaction reuses `sol101.recover_reactions` (R = K·u − f, balanced against
+  the net aero+inertial load). Call site is in `run_sol144_trim`; result carries
+  `Sol144TrimResult.monitor_loads = {name: MonitorLoad}`.
+- **MON4 — output (`sbeam/results/f06_writer.py`, `sbeam/results/load_export.py`, `sbeam/main.py`):**
+  a `MONITOR POINT INTEGRATED LOADS` f06 block (one metadata + values group per monitor per subcase)
+  and a per-run CSV (`<stem>.monitor_loads.csv`, one row per monitor per subcase: metadata, six totals,
+  and the diagnostic `Fz_aero/Fz_inertia/Fz_react` breakdown). HDF5 hierarchical export deferred.
+
+**Test/Acceptance:**
+- `tests/parser/test_monitor.py` (7) — round-trip echo of `MONPNT1`/`MONPNT3`/`AECOMP` incl. a CORD2R
+  monitor + validation rejections.
+- `tests/results/test_monitor_points.py` (7) — MONPNT1 uniform-Cp sum, 3-component carry-through,
+  parity doubling, cp-frame transform; MONPNT3 aero/inertia/reaction breakdown and collection-scoping.
+- `tests/results/test_monitor_output.py` (3) — f06 block render + CSV value/skip behaviour.
+- `tests/aero/test_monitor_ha144a.py` (V-MON1, 6) — whole-aircraft `MONPNT1` aero == `MONPNT3` aero
+  (spline conservation: force to ~1e-15 rel, moment to ~1e-6); whole-aircraft `MONPNT3` aero Fz =
+  trimmed 1g weight (~16000 lb) within 1%; breakdown sums to totals; section cuts finite/sign-correct;
+  live (non-zero) inertia column from the 1g gravity trim (URDD3 prescribed).
+- `sample/ha144a_fullspan_sbeam.bdf` carries the four monitor cards (wing-root, right-wing,
+  whole-aircraft MONPNT3 + whole-aircraft MONPNT1).
+
+**Key decisions:**
+- **Reuse stored g-set vectors over re-deriving `G_kg`** — the aero/inertia columns already exist on
+  the trim result, so MONPNT3 is a per-grid summation; equivalent result, far less code, and the
+  RBE3/RBAR pass-through is inherited from the spline that built `grid_loads`.
+- **Spline conservation is whole-aircraft, not per-surface** — `MONPNT1`(boxes) == `MONPNT3`(grids)
+  only over a collection whose grids receive load exclusively from those boxes; on HA144A the
+  centreline root grid is shared across the right/left wing and canard splines, so the exact equality
+  is gated on the whole-aircraft monitors. Force matches to machine precision; the moment carries the
+  spline rotational-row numerics (~1e-6 relative).
+- **Parity single-sourced from post-mirror `AEROS.SYMXZ`** — the solver runs full-span (mirror zeros
+  SYMXZ), so parity = 1 in the normal pipeline; the ×2 path + annotation is retained for direct
+  half-model input.

@@ -1197,6 +1197,67 @@ TRIMCON, 31, CM, LE, 0.02
 
 ---
 
+## Monitor Points (SOL 144)
+
+Integrated section-load output for the structures/loads handoff. See
+`docs/10_standard/05_aeroelastics.md` for the integration semantics.
+
+### AECOMP — Named box / grid collection
+
+Resolves a monitor's component name to either an AELIST box collection (for MONPNT1)
+or a SET1 grid collection (for MONPNT3). Continuations add more list IDs.
+
+**Format:**
+```
+AECOMP  NAME  LISTTYPE  LISTID1  LISTID2  ...
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| NAME | str | Component name (referenced by MONPNT1/MONPNT3 `COMP`) |
+| LISTTYPE | str | `AELIST` (box IDs) or `SET1` (grid IDs) |
+| LISTID1… | int | One or more AELIST SIDs or SET1 SIDs |
+
+**Cross-reference:** every list ID must exist in the matching AELIST/SET1 table.
+
+### MONPNT1 — Aero-only integrated load
+
+**Format (single line):**
+```
+MONPNT1  NAME  LABEL  AXES  COMP  CP  X  Y  Z
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| NAME | str | — | Monitor name |
+| LABEL | str | — | Descriptive label |
+| AXES | int | 0 | Component axes (e.g. 123456); echoed to output |
+| COMP | str | — | AECOMP name (must be `AELIST` type) |
+| CP | int | 0 | CORD2R (or 0) frame the loads are reported in |
+| X, Y, Z | float | 0.0 | Reference point in the CP frame |
+
+### MONPNT3 — Aero + inertia + reaction integrated load
+
+Same field layout as MONPNT1, but `COMP` must resolve to a `SET1`-type AECOMP; the
+load is summed over the structural grids (aero splined to grids + inertia + SPC/SUPORT
+reaction).
+
+**Format (single line):**
+```
+MONPNT3  NAME  LABEL  AXES  COMP  CP  X  Y  Z
+```
+
+**Cross-reference:** `COMP` must exist in AECOMP with the correct list type; `CP` (if
+non-zero) must exist in CORD2R.
+
+**Example:**
+```
+AECOMP,  WINGEA,  SET1,  1100
+MONPNT3, MWINGEA, RIGHT WING, 35, WINGEA, 0, 15.0, 0.0, 0.0
+```
+
+---
+
 ## DOF Reference
 
 | DOF | Label | Physical meaning |
@@ -1240,3 +1301,6 @@ DOF strings (used in SPC, SPC1, RBE2, RBE3, CBAR pin releases) are digit sequenc
 | AELIST | All box IDs must fall within at least one CAERO1 range |
 | TRIM | Every label must be defined by AESTAT or AESURF; duplicate labels raise `ValueError` |
 | TRIMCON | SENSE must be `LE` or `GE`; any other value raises `ValueError` |
+| AECOMP | LISTTYPE must be `AELIST` or `SET1`; every list ID must exist in that table |
+| MONPNT1 | COMP must exist in AECOMP as an `AELIST`-type collection; CP (if non-zero) must exist in CORD2R |
+| MONPNT3 | COMP must exist in AECOMP as a `SET1`-type collection; CP (if non-zero) must exist in CORD2R |

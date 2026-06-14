@@ -35,6 +35,29 @@ class BarStress:
 
 
 @dataclass
+class MonitorLoad:
+    """Integrated section load at a monitor point (MONPNT1 / MONPNT3).
+
+    Forces/moments are reported in the monitor's ``cp`` coordinate frame, summed
+    over the monitor's AECOMP collection and scaled by the symmetry ``parity``
+    factor (2.0 for a half-model with AEROS SYMXZ≠0, else 1.0).
+    """
+    name: str
+    label: str
+    mtype: str                      # 'MONPNT1' or 'MONPNT3'
+    axes: int
+    cid: int                        # cp coordinate frame the loads are reported in
+    ref: np.ndarray                 # (3,) reference point in basic CID 0
+    totals: np.ndarray              # (6,) Fx,Fy,Fz,Mx,My,Mz in cp frame
+    aero: np.ndarray = None         # (6,) aero contribution in cp frame
+    inertia: np.ndarray = None      # (6,) inertia contribution (MONPNT3; zero for plain trim)
+    reaction: np.ndarray = None     # (6,) SPC/SUPORT reaction contribution (MONPNT3)
+    parity: float = 1.0             # symmetry doubling factor applied to all components
+    whole_airplane: bool = False    # True when parity≠1 (annotate output to avoid double-up)
+    source_ids: list = field(default_factory=list)   # AELIST or SET1 SIDs
+
+
+@dataclass
 class Sol101Result:
     displacements: np.ndarray         # Full displacement vector (n_dofs,)
     reactions: dict = field(default_factory=dict)      # {gid: np.ndarray(6,)} SPC reaction forces
@@ -97,6 +120,7 @@ class Sol144TrimResult:
     q_div: Optional[float] = None             # critical divergence dynamic pressure (restrained l-set); None if none
     hinge_moments: Optional[dict] = None      # {AESURF label: {'total': HM/q at trim, <trim_label>: dHM/dδ}} about cid1 hinge axis
     trim_mode: str = "determined"             # "determined" or "over-determined" (Step 52)
+    monitor_loads: Optional[dict] = None      # {name: MonitorLoad} integrated section loads (MON1–MON3)
 
 
 @dataclass

@@ -191,3 +191,48 @@ class Trimcon:
     label: str    # variable label
     sense: str    # "LE" (≤) or "GE" (≥)
     rhs:   float  # constraint right-hand side
+
+
+# ---------------------------------------------------------------------------
+# Monitor points (MON1) — integrated section-load output cards
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Aecomp:
+    """Named collection of aerodynamic boxes (AELIST) or structural grids (SET1).
+
+    Referenced by MONPNT1 (listtype 'AELIST') and MONPNT3 (listtype 'SET1').
+    """
+    name:     str          # component name (referenced by MONPNT*.comp)
+    listtype: str          # 'AELIST' (box IDs) or 'SET1' (grid IDs)
+    list_ids: list = field(default_factory=list)   # list[int] of AELIST SIDs or SET1 SIDs
+
+
+@dataclass
+class Monpnt1:
+    """Aero-only integrated load monitor point (NASTRAN MONPNT1)."""
+    name:  str             # 8-char monitor name
+    label: str             # descriptive label
+    axes:  int             # component axes (e.g. 123456)
+    comp:  str             # AECOMP name (resolves to an AELIST box collection)
+    cp:    int             # CID of the reference point coordinates
+    x:     float           # reference point X in cp frame
+    y:     float           # reference point Y in cp frame
+    z:     float           # reference point Z in cp frame
+
+
+@dataclass
+class Monpnt3:
+    """Aero + inertia + reaction integrated load monitor point (NASTRAN MONPNT3).
+
+    Integrated over the structural grids resolved through ``comp`` (an AECOMP that
+    points at one or more SET1 grid collections).
+    """
+    name:  str             # 8-char monitor name
+    label: str             # descriptive label
+    axes:  int             # component axes (e.g. 123456)
+    comp:  str             # AECOMP name (resolves to a SET1 grid collection)
+    cp:    int             # CID of the reference point coordinates
+    x:     float           # reference point X in cp frame
+    y:     float           # reference point Y in cp frame
+    z:     float           # reference point Z in cp frame

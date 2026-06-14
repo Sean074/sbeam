@@ -16,6 +16,7 @@ from sbeam.model.aero import (
     Aeros, Caero1, Paero1, Aefact, W2gj, Wkk, Aecorr, Set1,
     Spline2, Attach, Spline0, Spline1,
     Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
+    Aecomp, Monpnt1, Monpnt3,
 )
 from sbeam.model.maneuver import Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads
 from sbeam.parser.case_control import parse_case_control
@@ -693,6 +694,62 @@ def _handle_aelist(fields: list, conts: list, bulk: BulkData) -> None:
     bulk.aelists[sid] = Aelist(sid=sid, elements=elements)
 
 
+def _handle_aecomp(fields: list, conts: list, bulk: BulkData) -> None:
+    """AECOMP NAME LISTTYPE LISTID1 LISTID2 ... (continuations add more list IDs).
+
+    LISTTYPE is 'AELIST' (box-ID collection, used by MONPNT1) or 'SET1'
+    (grid-ID collection, used by MONPNT3).
+    """
+    name     = fields[1].strip()
+    listtype = fields[2].strip().upper() if len(fields) > 2 else ""
+    if not name:
+        raise ValueError("AECOMP: NAME must not be blank")
+    if listtype not in ("AELIST", "SET1"):
+        raise ValueError(f"AECOMP {name}: LISTTYPE must be 'AELIST' or 'SET1', got '{listtype}'")
+    list_ids = [_to_int(f) for f in fields[3:] if f.strip()]
+    for cont in conts:
+        list_ids += [_to_int(f) for f in cont[1:] if f.strip()]
+    if name in bulk.aecomps:
+        raise ValueError(f"Duplicate AECOMP NAME {name}")
+    bulk.aecomps[name] = Aecomp(name=name, listtype=listtype, list_ids=list_ids)
+
+
+def _handle_monpnt1(fields: list, bulk: BulkData) -> None:
+    """MONPNT1 NAME LABEL AXES COMP CP X Y Z (aero-only integrated load)."""
+    name  = fields[1].strip()
+    label = fields[2].strip() if len(fields) > 2 else ""
+    axes  = _to_int(fields[3]) if len(fields) > 3 and fields[3].strip() else 0
+    comp  = fields[4].strip() if len(fields) > 4 else ""
+    cp    = _to_int_opt(fields[5]) if len(fields) > 5 else 0
+    x     = _to_float(fields[6]) if len(fields) > 6 and fields[6].strip() else 0.0
+    y     = _to_float(fields[7]) if len(fields) > 7 and fields[7].strip() else 0.0
+    z     = _to_float(fields[8]) if len(fields) > 8 and fields[8].strip() else 0.0
+    if not name:
+        raise ValueError("MONPNT1: NAME must not be blank")
+    if name in bulk.monpnt1s:
+        raise ValueError(f"Duplicate MONPNT1 NAME {name}")
+    bulk.monpnt1s[name] = Monpnt1(name=name, label=label, axes=axes, comp=comp,
+                                  cp=cp, x=x, y=y, z=z)
+
+
+def _handle_monpnt3(fields: list, bulk: BulkData) -> None:
+    """MONPNT3 NAME LABEL AXES COMP CP X Y Z (aero + inertia + reaction)."""
+    name  = fields[1].strip()
+    label = fields[2].strip() if len(fields) > 2 else ""
+    axes  = _to_int(fields[3]) if len(fields) > 3 and fields[3].strip() else 0
+    comp  = fields[4].strip() if len(fields) > 4 else ""
+    cp    = _to_int_opt(fields[5]) if len(fields) > 5 else 0
+    x     = _to_float(fields[6]) if len(fields) > 6 and fields[6].strip() else 0.0
+    y     = _to_float(fields[7]) if len(fields) > 7 and fields[7].strip() else 0.0
+    z     = _to_float(fields[8]) if len(fields) > 8 and fields[8].strip() else 0.0
+    if not name:
+        raise ValueError("MONPNT3: NAME must not be blank")
+    if name in bulk.monpnt3s:
+        raise ValueError(f"Duplicate MONPNT3 NAME {name}")
+    bulk.monpnt3s[name] = Monpnt3(name=name, label=label, axes=axes, comp=comp,
+                                  cp=cp, x=x, y=y, z=z)
+
+
 def _handle_trim(fields: list, conts: list, bulk: BulkData) -> None:
     sid  = _to_int(fields[1])
     mach = _to_float(fields[2]) if len(fields) > 2 else 0.0
@@ -1155,6 +1212,24 @@ def parse_bulk_data(lines: list) -> BulkData:
             _handle_trimobj(fields, trimobj_conts, bulk)
         elif keyword == "TRIMCON":
             _handle_trimcon(fields, bulk)
+        elif keyword == "AECOMP":
+            aecomp_conts: list = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    aecomp_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_aecomp(fields, aecomp_conts, bulk)
+        elif keyword == "MONPNT1":
+            _handle_monpnt1(fields, bulk)
+        elif keyword == "MONPNT3":
+            _handle_monpnt3(fields, bulk)
         elif keyword == "SUPORT":
             _handle_suport(fields, bulk)
         elif keyword == "TABLED1":
@@ -1263,6 +1338,33 @@ def parse_bulk_data(lines: list) -> BulkData:
                     raise ValueError(
                         f"AELIST {sid}: box ID {box_id} not within any CAERO1 range"
                     )
+
+    # Validate AECOMP list references and MONPNT1/MONPNT3 cross-references
+    for name, aecomp in bulk.aecomps.items():
+        target = bulk.aelists if aecomp.listtype == "AELIST" else bulk.set1s
+        for lid in aecomp.list_ids:
+            if lid not in target:
+                raise ValueError(
+                    f"AECOMP {name}: {aecomp.listtype} SID {lid} not found"
+                )
+    for name, mon in bulk.monpnt1s.items():
+        if mon.comp not in bulk.aecomps:
+            raise ValueError(f"MONPNT1 {name}: COMP '{mon.comp}' not found in AECOMP")
+        if bulk.aecomps[mon.comp].listtype != "AELIST":
+            raise ValueError(
+                f"MONPNT1 {name}: COMP '{mon.comp}' must reference an AELIST-type AECOMP"
+            )
+        if mon.cp and mon.cp not in bulk.cord2rs:
+            raise ValueError(f"MONPNT1 {name}: CP={mon.cp} not found in CORD2R")
+    for name, mon in bulk.monpnt3s.items():
+        if mon.comp not in bulk.aecomps:
+            raise ValueError(f"MONPNT3 {name}: COMP '{mon.comp}' not found in AECOMP")
+        if bulk.aecomps[mon.comp].listtype != "SET1":
+            raise ValueError(
+                f"MONPNT3 {name}: COMP '{mon.comp}' must reference a SET1-type AECOMP"
+            )
+        if mon.cp and mon.cp not in bulk.cord2rs:
+            raise ValueError(f"MONPNT3 {name}: CP={mon.cp} not found in CORD2R")
 
     # Validate TRIM label cross-references and emit DOF-count diagnostics
     all_trim_labels = (

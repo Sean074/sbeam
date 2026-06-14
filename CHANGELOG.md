@@ -13,6 +13,30 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Monitor points — `MONPNT1` / `MONPNT3` integrated section loads (2026-06-13)**
+
+Static integrated section loads for the structures/loads handoff from each SOL 144 trim subcase,
+replicating NASTRAN `MONPNT1` (aero-only) and `MONPNT3` (aero + inertia + reaction, splined to
+structural grids) with sbeam-native RBE3/RBAR pass-through.
+
+- **BDF parsing** (`sbeam/model/aero.py`, `sbeam/parser/bdf_reader.py`): `MONPNT1`, `MONPNT3`,
+  `AECOMP` cards (`AELIST` box-collection and `SET1` grid-collection lookup paths) with full
+  cross-reference validation. Card layout `MONPNT1/3, NAME, LABEL, AXES, COMP, CP, X, Y, Z`.
+- **Integration** (`sbeam/results/monitor_points.py`, new): `integrate_monpnt1` sums the trimmed
+  `box_forces` over the AELIST collection; `integrate_monpnt3` sums the g-set `grid_loads` (aero),
+  `inertial_loads` (inertia), and recovered SPC/SUPORT reaction over the SET1 grids. Both transform
+  to the monitor `cp` frame and apply the AEROS-`SYMXZ` parity factor (single-sourced; 1.0 full-span,
+  2.0 + `*WHOLE-AIRPLANE*` annotation for a direct half-model). Reuses vectors already on
+  `Sol144TrimResult` and `sol101.recover_reactions` (no `G_kg` re-derivation). Wired into
+  `run_sol144_trim`; carried as `Sol144TrimResult.monitor_loads`.
+- **Output** (`sbeam/results/f06_writer.py`, `sbeam/results/load_export.py`, `sbeam/main.py`): a
+  `MONITOR POINT INTEGRATED LOADS` f06 block and a per-run CSV (`<stem>.monitor_loads.csv`) with the
+  six totals plus the diagnostic `Fz_aero/Fz_inertia/Fz_react` breakdown. HDF5 export deferred.
+- **Tests:** `tests/parser/test_monitor.py` (7), `tests/results/test_monitor_points.py` (7),
+  `tests/results/test_monitor_output.py` (3), `tests/aero/test_monitor_ha144a.py` (V-MON1, 6 —
+  whole-aircraft `MONPNT1`==`MONPNT3` spline conservation, `MONPNT3` lift = 1g weight within 1%).
+  `sample/ha144a_fullspan_sbeam.bdf` carries the four monitor cards.
+
 **Phase G0 increment 1 — DLM-free quasi-steady transient maneuver loads (2026-06-13)**
 
 A ZAERO `MLOADS`-style **transient** maneuver-loads capability without the DLM: time-integrate the

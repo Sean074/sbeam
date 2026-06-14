@@ -15,6 +15,7 @@ form, but the set sums to the trimmed lift minus the inertia-relief reaction
 (i.e. the constraint reaction for the balanced maneuver).
 """
 
+import csv
 from typing import Optional
 
 import numpy as np
@@ -133,6 +134,43 @@ def write_aero_load_cards(filepath: str, bulk: BulkData, results: dict) -> None:
     ]
     with open(filepath, "w") as fh:
         fh.write("\n".join(blocks))
+
+
+_MONITOR_CSV_HEADER = [
+    "case", "name", "type", "label", "axes", "cid",
+    "x_ref", "y_ref", "z_ref",
+    "Fx", "Fy", "Fz", "Mx", "My", "Mz",
+    "Fz_aero", "Fz_inertia", "Fz_react",
+    "parity", "whole_airplane",
+]
+
+
+def write_monitor_csv(filepath: str, results: dict) -> None:
+    """Write monitor-point integrated loads for all trim subcases to one CSV (MON4).
+
+    One row per monitor per subcase: metadata, the six totals (cp frame), and the
+    diagnostic Fz aero/inertia/reaction breakdown.  Values mirror the f06
+    MONITOR POINT INTEGRATED LOADS block exactly.
+
+    Args:
+        filepath: Output ``*.monitor_loads.csv`` path.
+        results:  {subcase_id: Sol144TrimResult}.
+    """
+    with open(filepath, "w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(_MONITOR_CSV_HEADER)
+        for sc_id, result in results.items():
+            if not result.monitor_loads:
+                continue
+            for name in sorted(result.monitor_loads.keys()):
+                ml = result.monitor_loads[name]
+                writer.writerow([
+                    sc_id, ml.name, ml.mtype, ml.label, ml.axes, ml.cid,
+                    f"{ml.ref[0]:.6E}", f"{ml.ref[1]:.6E}", f"{ml.ref[2]:.6E}",
+                    *(f"{v:.6E}" for v in ml.totals),
+                    f"{ml.aero[2]:.6E}", f"{ml.inertia[2]:.6E}", f"{ml.reaction[2]:.6E}",
+                    f"{ml.parity:g}", int(ml.whole_airplane),
+                ])
 
 
 def write_maneuver_load_cards(filepath: str, bulk: BulkData, results: dict) -> None:
