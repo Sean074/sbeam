@@ -13,6 +13,29 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**SOL 144 — `DIVERG`-card divergence sweep, mode shape & V_div (Step 55, 2026-06-13)**
+
+A `DIVERG` case-control request now drives a full aeroelastic-divergence sweep, generalising
+the single critical `q_div` shipped with Step 56.
+
+- **Card (`sbeam/model/aero.py`, `sbeam/parser/bdf_reader.py`):** `DIVERG  SID  NROOTS  RHOREF
+  M1 M2 …` — `RHOREF` (sbeam extension, field 4) is the reference density for `V_div`
+  (default 0.0 ⇒ omitted); the Mach list moves to field 5+. The `DIVERG=` case-control hook
+  already existed.
+- **Solver (`sbeam/solver/sol144.py`):** new `run_sol144_diverg` solves the restrained-l-set
+  eigenproblem `K_ll φ = q·Q_ll φ` (`_divergence_roots`, dense generalised eig) for the lowest
+  `NROOTS` real-positive divergence pressures, sorted ascending, at each card Mach; returns the
+  g-set divergence **mode shapes** (max-abs normalised) and `V_div = √(2·q_div/ρ)`. Reuses the
+  trim a-set reduction and the multi-Mach `AeroCache`.
+- **Results / f06 (`results/results.py`, `results/f06_writer.py`):** `Sol144DivergResult`
+  (`DivergMachResult`/`DivergRoot`) and `build_f06_sol144_diverg_text` — per-Mach `AERODYNAMIC
+  DIVERGENCE` table (`Q-DIV`, `V-DIV`) plus a mode-shape block per root.
+- **CLI (`main.py`):** a SOL 144 subcase with `DIVERG=sid` runs the sweep (with trim when a
+  TRIM is also present, standalone otherwise) and appends its f06 block. No TRIM card required.
+- **Tests:** `tests/aero/test_step55_diverg.py` — closed-form eigen-core, machine-precision
+  agreement of the lowest sweep root with the validated single `q_div` on HA144A, `V_div`
+  mapping, mode-shape sizing/normalisation, multi-Mach compressibility, parser, and f06 block.
+
 **Monitor points — `MONPNT1` / `MONPNT3` integrated section loads (2026-06-13)**
 
 Static integrated section loads for the structures/loads handoff from each SOL 144 trim subcase,

@@ -124,6 +124,35 @@ class Sol144TrimResult:
 
 
 @dataclass
+class DivergRoot:
+    """One divergence root (Step 55)."""
+    q_div: float                          # divergence dynamic pressure (positive real root)
+    v_div: Optional[float] = None         # divergence speed = sqrt(2*q_div/rho); None when no RHOREF
+    mode_shape: Optional[np.ndarray] = None  # (n_dofs,) g-set divergence eigenvector (max-abs normalised)
+
+
+@dataclass
+class DivergMachResult:
+    """Divergence sweep results at a single Mach number (Step 55)."""
+    mach: float
+    roots: list                           # list[DivergRoot] sorted by ascending q_div
+
+
+@dataclass
+class Sol144DivergResult:
+    """Result of a SOL 144 DIVERG-card divergence sweep (Step 55).
+
+    Divergence depends only on K_aa and Q_aa (the w_g/Q_ax trim RHS does not
+    enter the eigenvalue), so this is solved independently of any TRIM card.
+    """
+    subcase_id: int
+    diverg_sid: int
+    nroots: int
+    rhoref: float                         # reference density for V_div (0.0 ⇒ V_div omitted)
+    mach_results: list                    # list[DivergMachResult]
+
+
+@dataclass
 class ManeuverStep:
     """One output sample of a Phase G0 transient maneuver run."""
     t: float                              # sample time

@@ -159,6 +159,7 @@ class Diverg:
     """Divergence speed analysis parameters."""
     sid:    int
     nroots: int          # number of divergence roots to find
+    rhoref: float = 0.0  # sbeam extension: reference density for V_div (0.0 ⇒ V_div omitted)
     machs:  list = field(default_factory=list)   # list[float] of Mach values
 
 

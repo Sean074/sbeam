@@ -2802,7 +2802,8 @@ the exported FORCE Fz sum balances the trimmed lift to 3.5e-9 relative; `q_div �
   text routes the maneuver case there; `run_sol144_trim` produces the determined plain trim,
   so only the plain-trim grid loads are exported.
 - **`DIVERG`-card multi-q sweep + divergence mode shape** stays with **Step 55** — Step 56
-  delivers only the single critical `q_div` diagnostic from the trim matrices.
+  delivers only the single critical `q_div` diagnostic from the trim matrices. *(Closed in
+  Step 55, 2026-06-13 — see below.)*
 
 **Key decisions:**
 - The f06 box block prints the global 1-based box index (no CAERO column) because the
@@ -2813,6 +2814,54 @@ the exported FORCE Fz sum balances the trimmed lift to 3.5e-9 relative; `q_div �
   the free-flight SUPORT `K_aa` is singular, so an a-set generalized eig would be ill-posed.
 - New result fields are optional with defaults, so existing `Sol144TrimResult` construction
   and the Step 50 `Sol144Result` are unaffected.
+
+---
+
+### Phase C — Step 55: DIVERG-card divergence sweep + mode shape + V_div ✅ COMPLETE (2026-06-13)
+
+**Objective:** Drive the static-aeroelastic divergence eigenproblem `K_ll φ = q·Q_ll φ`
+from a `DIVERG` case-control/bulk entry — returning the lowest `NROOTS` positive
+divergence dynamic pressures, their **mode shapes**, and (given a reference density)
+the divergence speeds `V_div`, at each Mach on the card. Generalises the single critical
+`q_div` already shipped with Step 56.
+
+**Deliverables:**
+- **Model (`model/aero.py`):** `Diverg` gains an sbeam-extension `rhoref` field (density
+  for `V_div`).
+- **Parser (`parser/bdf_reader._handle_diverg`):** `DIVERG  SID  NROOTS  RHOREF  M1 M2 …` —
+  `RHOREF` in field 4 (default 0.0 ⇒ no `V_div`), Mach list field 5+ with continuations.
+  The `diverg_sid` case-control hook already existed.
+- **Solver (`solver/sol144.py`):** `_divergence_roots(K_ll, Q_ll, nroots)` solves
+  `(K_ll⁻¹ Q_ll) x = (1/q) x` (dense generalised eig, mirroring `sol103._solve_modes_dense`),
+  keeps real-positive `1/q`, sorts ascending in `q`, truncates to `nroots`. `run_sol144_diverg`
+  reuses the trim path's a-set reduction (`_compute_aset_data`, `assemble_global_stiffness`,
+  `build_qaa`), partitions to the restrained l-set, sweeps the card's Machs via the existing
+  `AeroCache`, scatters each eigenvector to the g-set (`_expand_to_g`, max-abs normalised),
+  and maps `V_div = √(2·q_div/ρ)` when `rhoref > 0`.
+- **Results (`results/results.py`):** `Sol144DivergResult` → `DivergMachResult` → `DivergRoot`.
+- **f06 (`results/f06_writer.build_f06_sol144_diverg_text`):** per-Mach `AERODYNAMIC
+  DIVERGENCE` table (root no., `Q-DIV`, `V-DIV`) + a divergence mode-shape block per root.
+- **CLI (`main.py`):** a SOL 144 subcase with `DIVERG=sid` runs the sweep (alongside trim
+  when a TRIM is also present; standalone when not) and appends its f06 block.
+
+**Test/Acceptance (V-C2):** `tests/aero/test_step55_diverg.py` (14 tests) — the eigen-core
+matches a closed-form 2-DOF system (sorted roots, negative/complex filtering, `nroots`
+truncation, no-divergence ⇒ empty); on the full-span HA144A deck the sweep's lowest positive
+root **reproduces the validated single `q_div` to machine precision** (`rel<1e-9`), roots are
+sorted positive, `V_div=√(2q/ρ)` holds, mode shapes are g-set-sized and max-abs-normalised,
+and the multi-Mach sweep shows compressibility lowering `q_div`. Parser and f06-block tests
+included. Full suite green (583 passed in the aero/results/parser scope; no regressions).
+
+**Key decisions:**
+- Divergence is solved on the **restrained l-set** (same restraint as the single-`q_div`
+  path) because the free-flight SUPORT `K_aa` is singular; the sweep's lowest root therefore
+  coincides exactly with `_divergence_dynamic_pressure`, which is the primary correctness gate.
+- Selection rule (Risk KC3): only real, strictly positive `1/q` are physical — spurious
+  negative/complex eigenvalues of the unsymmetric `Q_ll` are discarded.
+- `RHOREF` lives on the DIVERG card (field 4) rather than a new `AERO` bulk card — the model
+  has no density anywhere, and this keeps the change local and the `V_div` mapping opt-in.
+- A DIVERG subcase needs no TRIM card (divergence depends only on `K_aa`/`Q_aa`), so the CLI
+  routes it independently of the trim solve.
 
 ---
 

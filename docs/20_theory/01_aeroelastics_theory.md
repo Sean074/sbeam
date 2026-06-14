@@ -672,6 +672,15 @@ unsymmetric, Equation (21) can return complex or negative eigenvalues that are n
 divergence; the selection rule is *smallest positive real*. The forcing terms ($f_g$, $Q_{ax}$)
 do **not** enter Equation (21) — divergence is a property of $K_{aa}$ and $Q_{aa}$ alone.
 
+For a free-flight (SUPORT) model the full a-set $K_{aa}$ is singular, so Equation (21) is
+solved on the **restrained l-set** (SUPORT DOFs removed): $K_{ll}\,\phi = q\,Q_{ll}\,\phi$.
+Rewritten as the standard problem $(K_{ll}^{-1}Q_{ll})\,x = (1/q)\,x$, the eigenvalues are
+$1/q$; the lowest $\texttt{NROOTS}$ divergence pressures are the reciprocals of the largest
+real-positive eigenvalues, taken in ascending $q$. This is the `DIVERG`-card sweep
+(`sol144.run_sol144_diverg` / `_divergence_roots`); each retained eigenvector $\phi$ is the
+divergence mode shape, expanded back to the g-set, and $V_\text{div}=\sqrt{2\,q_\text{div}/\rho}$
+when a reference density `RHOREF` is supplied.
+
 ![Divergence amplification](../figures/divergence.svg)
 
 *Figure 4 — Elastic twist amplification $1/(1-q/q_\text{div})$ versus dynamic pressure. The

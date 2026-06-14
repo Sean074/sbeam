@@ -23,9 +23,8 @@ null-space guard complete. **Step 52 fully closed (2026-06-14).**
 | # | Item | Kind | Status | Why here / what it unblocks |
 |--:|------|------|--------|------------------------------|
 | 1 | [AE8b — unrestrained (mean-axis) derivative column](#major-ae8b--unrestrained-mean-axis-derivative-formulation-known-wrong) | Code | Open (known-wrong first attempt) | Completes the derivative deliverable; off the trim critical path — can run in parallel |
-| 2 | [Step 55 — DIVERG q-sweep + mode shape + V_div](#step-55--aeroelastic-divergence-diverg) | Code | Open (single `q_div` done) | `DIVERG`-card-driven sweep and the divergence eigenvector |
-| 3 | [Step 54 — CFD / wind-tunnel mean-flow injection](#step-54--cfd--wind-tunnel-steady-pressure-injection-mean-flow-trim) | Code | Open | Optional mean-flow enhancement; lower priority |
-| 4 | [Step 57 — Viewer: SOL 144 results (THE INTERFACE)](#step-57--viewer-sol-144-results) | Code | Open | **CLOSING ITEM** — surfaces trim, derivatives, `q_div`, deflected shape, box `cp`, monitor loads in the UI |
+| 2 | [Step 54 — CFD / wind-tunnel mean-flow injection](#step-54--cfd--wind-tunnel-steady-pressure-injection-mean-flow-trim) | Code | Open | Optional mean-flow enhancement; lower priority |
+| 3 | [Step 57 — Viewer: SOL 144 results (THE INTERFACE)](#step-57--viewer-sol-144-results) | Code | Open | **CLOSING ITEM** — surfaces trim, derivatives, `q_div`, deflected shape, box `cp`, monitor loads in the UI |
 
 > **Monitor points MON1–MON4 / V-MON1 are CLOSED (2026-06-13)** — static `MONPNT1`
 > (aero-only) and `MONPNT3` (aero + inertia + reaction, splined to structural grids)
@@ -490,33 +489,6 @@ Step 52 result (identity); injecting a scaled distribution shifts the trimmed AO
 the expected amount; total injected lift/moment matches the supplied integral.
 
 **Risk (KC7):** Operating-point/reference-AOA mismatch — validate and warn.
-
----
-
-### Step 55 — Aeroelastic divergence (`DIVERG`)
-
-**Objective:** Solve `K_aa φ = q · Q_aa φ` for the lowest positive divergence dynamic
-pressure and mode shape, driven by a `DIVERG` case-control/bulk entry (multi-q sweep
-and the divergence eigenvector).
-
-**Already delivered (Step 56):** the *single* critical divergence dynamic pressure
-`q_div` is computed on the restrained l-set (`sol144._divergence_dynamic_pressure`) and
-emitted in the SOL 144 f06 AERODYNAMIC DIVERGENCE block. Step 55 remains for the
-`DIVERG`-card-driven q-sweep, the divergence mode shape, and `V_div`.
-
-**Scope/Deliverables:**
-- `DIVERG` card parsing + case-control hook; multi-q divergence sweep
-- `sol144.py`: generalised eigenvalue solve (reuse the dense path from `sol103.py`);
-  filter to the smallest positive real `q`; report the divergence **mode shape** and
-  `V_div` (given ρ) in addition to the `q_div` already emitted
-- Divergence depends only on `K_aa` and `Q_aa` (the `w_g`/`Q_ax` RHS does not enter the
-  eigenvalue)
-
-**Test/Acceptance (V-C2):** Goland wing and an idealised swept cantilever — `q_div`
-matches the published / closed-form Bisplinghoff value within a few %.
-
-**Risk (KC3):** Spurious negative/complex eigenvalues from the unsymmetric `Q_aa`;
-document the "smallest positive real" selection rule; test against Goland.
 
 ---
 

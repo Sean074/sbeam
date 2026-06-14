@@ -774,14 +774,17 @@ def _handle_trim(fields: list, conts: list, bulk: BulkData) -> None:
 
 
 def _handle_diverg(fields: list, conts: list, bulk: BulkData) -> None:
+    # DIVERG  SID  NROOTS  RHOREF  M1  M2  ...   (RHOREF is an sbeam extension in
+    # field 4 used only to map q_div -> V_div; leave blank/0.0 to omit V_div).
     sid    = _to_int(fields[1])
     nroots = _to_int(fields[2]) if len(fields) > 2 else 1
-    machs  = [_to_float(f) for f in fields[3:] if f.strip()]
+    rhoref = _to_float(fields[3]) if len(fields) > 3 and fields[3].strip() else 0.0
+    machs  = [_to_float(f) for f in fields[4:] if f.strip()]
     for cont in conts:
         machs += [_to_float(f) for f in cont[1:] if f.strip()]
     if sid in bulk.divergs:
         raise ValueError(f"Duplicate DIVERG SID {sid}")
-    bulk.divergs[sid] = Diverg(sid=sid, nroots=nroots, machs=machs)
+    bulk.divergs[sid] = Diverg(sid=sid, nroots=nroots, rhoref=rhoref, machs=machs)
 
 
 # ---------------------------------------------------------------------------

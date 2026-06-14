@@ -30,7 +30,10 @@ from sbeam.assembly.rbe3 import build_rbe3_transformation
 from sbeam.aero.aero_model import AeroModel, build_aero_model
 from sbeam.aero.coupling import build_qaa, build_fg, build_gaf
 from sbeam.aero.integration import build_djx
-from sbeam.results.results import BarForce, BarStress, Sol144Result, Sol144TrimResult
+from sbeam.results.results import (
+    BarForce, BarStress, Sol144Result, Sol144TrimResult,
+    Sol144DivergResult, DivergMachResult, DivergRoot,
+)
 from sbeam.results.monitor_points import compute_monitor_loads
 from sbeam.solver.sol101 import recover_bar_forces, recover_bar_stresses, recover_reactions
 from sbeam.solver.sol103 import run_sol103
@@ -1115,6 +1118,148 @@ def _divergence_dynamic_pressure(K_ll: np.ndarray, Q_ll: np.ndarray) -> Optional
     if not real_pos:
         return None
     return float(1.0 / max(real_pos))
+
+
+def _divergence_roots(
+    K_ll: np.ndarray, Q_ll: np.ndarray, nroots: int
+) -> list:
+    """Lowest ``nroots`` positive divergence roots and their eigenvectors.
+
+    Generalises ``_divergence_dynamic_pressure`` from the single critical q to a
+    full sorted sweep: solves ``K_ll x = q*Q_ll x`` as the standard eigenproblem
+    ``(K_ll^{-1} Q_ll) x = (1/q) x`` (the dense path of ``sol103._solve_modes_dense``
+    reused on the restrained l-set), keeps the real-positive ``1/q`` eigenvalues,
+    and returns them ordered by ascending divergence pressure.
+
+    Selection rule (Risk KC3): the unsymmetric ``Q_ll`` can produce spurious
+    negative or complex eigenvalues; only real, strictly positive ``1/q`` are
+    physical divergence roots, so those are filtered and the rest discarded.
+
+    Returns:
+        list of (q_div, eigvec_l) tuples, length <= nroots, sorted by q_div.
+        eigvec_l is the (n_l,) l-set divergence mode shape (real part).
+    """
+    if K_ll.size == 0:
+        return []
+    try:
+        M = scipy.linalg.solve(K_ll, Q_ll)        # K_ll^{-1} Q_ll
+        eigvals, eigvecs = scipy.linalg.eig(M)
+    except Exception:
+        return []
+    roots = []
+    for ev, vec in zip(eigvals, eigvecs.T):
+        if abs(ev.imag) < 1e-8 * max(1.0, abs(ev.real)) and ev.real > 1e-12:
+            roots.append((float(1.0 / ev.real), vec.real.copy()))
+    roots.sort(key=lambda t: t[0])
+    return roots[:max(1, nroots)]
+
+
+def run_sol144_diverg(
+    bulk: BulkData,
+    subcase: SubcaseControl,
+    aero: AeroModel,
+    aero_cache: Optional["AeroCache"] = None,
+) -> Sol144DivergResult:
+    """SOL 144 DIVERG-card aeroelastic divergence sweep (Step 55).
+
+    Solves the restrained-l-set divergence eigenproblem ``K_ll φ = q·Q_ll φ`` for
+    the lowest ``NROOTS`` positive divergence dynamic pressures and their mode
+    shapes, at each Mach listed on the ``DIVERG`` card.  Divergence depends only
+    on ``K_aa`` and ``Q_aa`` (no trim RHS), so no TRIM card is required.
+
+    With the sbeam-extension ``RHOREF`` density on the DIVERG card, each root is
+    mapped to a divergence speed ``V_div = sqrt(2·q_div/ρ)``.
+
+    Args:
+        bulk:       Parsed BulkData — must include a SUPORT card and the DIVERG
+                    card referenced by ``subcase.diverg_sid``.
+        subcase:    SubcaseControl with ``diverg_sid`` set.
+        aero:       Prebuilt AeroModel (seeds the AeroCache for the sweep Machs).
+        aero_cache: Optional shared AeroCache so multi-Mach sweeps build each AIC
+                    once.  When None a local cache seeded with ``aero`` is used.
+
+    Returns:
+        Sol144DivergResult with the per-Mach root/mode-shape sweep.
+
+    Raises:
+        ValueError if no SUPORT card or the DIVERG SID is not found.
+    """
+    if not bulk.supports:
+        raise ValueError("run_sol144_diverg: no SUPORT card found in model")
+
+    diverg_sid = subcase.diverg_sid
+    if diverg_sid is None or diverg_sid not in bulk.divergs:
+        raise ValueError(f"run_sol144_diverg: DIVERG SID {diverg_sid} not found")
+    diverg = bulk.divergs[diverg_sid]
+
+    grid_index = build_grid_index(bulk)
+    n_dofs = 6 * len(grid_index)
+    spc_sid = subcase.spc_sid
+
+    if aero_cache is None:
+        aero_cache = AeroCache(bulk, grid_index, seed=aero)
+
+    # Mach list: the DIVERG card's, else the seed/AEROS Mach (single point).
+    aeros_mach = bulk.aeros.mach if bulk.aeros else 0.0
+    machs = diverg.machs if diverg.machs else [aeros_mach]
+
+    # ------------------------------------------------------------------ #
+    # Mach-independent structural reduction: a-set partition + K_aa + l-set.
+    # ------------------------------------------------------------------ #
+    T, dep_dofs, red_dofs, free_local, free_dofs = _compute_aset_data(
+        bulk, grid_index, spc_sid
+    )
+    n_red = len(red_dofs)
+
+    K_gg = assemble_global_stiffness(bulk)
+    if dep_dofs:
+        K_red = T.T @ K_gg @ T
+        if hasattr(K_red, "toarray"):
+            K_red = K_red.toarray()
+    else:
+        K_red = K_gg.toarray()
+    K_aa = K_red[np.ix_(free_local, free_local)]
+
+    # Restrained l-set: drop SUPORT DOFs (full a-set K_aa is singular for the
+    # free-flight SUPORT model — same restraint the single-q path uses).
+    suport_local = _get_suport_local(bulk, free_dofs, grid_index)
+    r_idx = list(suport_local)
+    l_idx = [i for i in range(K_aa.shape[0]) if i not in set(r_idx)]
+    K_ll = K_aa[np.ix_(l_idx, l_idx)]
+
+    rho = diverg.rhoref
+
+    mach_results = []
+    for mach in machs:
+        aero_m = aero_cache.get(mach)
+        Q_gg = build_qaa(aero_m, aero_m.g_disp, aero_m.g_slope)
+        Q_red = T.T @ Q_gg @ T if dep_dofs else Q_gg
+        Q_aa = Q_red[np.ix_(free_local, free_local)]
+        Q_ll = Q_aa[np.ix_(l_idx, l_idx)]
+
+        roots = []
+        for q_div, vec_l in _divergence_roots(K_ll, Q_ll, diverg.nroots):
+            # Scatter l-set eigenvector to a-set, expand to g-set (RBAR/RBE3),
+            # then max-abs normalise for a readable mode-shape report.
+            u_a = np.zeros(K_aa.shape[0])
+            for li_idx, li in enumerate(l_idx):
+                u_a[li] = vec_l[li_idx]
+            mode_g = _expand_to_g(u_a, T, free_local, n_red)
+            peak = np.max(np.abs(mode_g))
+            if peak > 0.0:
+                mode_g = mode_g / peak
+            v_div = float(np.sqrt(2.0 * q_div / rho)) if rho > 0.0 else None
+            roots.append(DivergRoot(q_div=q_div, v_div=v_div, mode_shape=mode_g))
+
+        mach_results.append(DivergMachResult(mach=float(mach), roots=roots))
+
+    return Sol144DivergResult(
+        subcase_id=subcase.subcase_id,
+        diverg_sid=diverg_sid,
+        nroots=diverg.nroots,
+        rhoref=rho,
+        mach_results=mach_results,
+    )
 
 
 def run_sol144_trim(

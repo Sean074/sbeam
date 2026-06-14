@@ -27,7 +27,7 @@ Results   (cp, cl_section, CL, CY, CM, CDi, e, per_surface, …)
 | `sbeam/aero/aero_model.py` | `AeroModel` container + `build_aero_model()` factory |
 | `sbeam/aero/spline.py` | **Phase B** — `build_g_spline()`: builds `g_slope` (n_box×n_g) and `g_disp` (3n_box×n_g) from `SPLINE2` + `ATTACH` + `SPLINE0` cards |
 | `sbeam/aero/coupling.py` | `build_qaa` flexible aero stiffness `Q_aa = G_dispᵀ S_kj (A_jj*)⁻¹ D_jk G_slope`; `build_fg` baseline aero load; `build_gaf` modal GAF `Q_hh = Φᵀ Q_aa Φ` |
-| `sbeam/solver/sol144.py` | `run_sol144_trim` (Schur trim solve, derivatives), `run_aeroelastic_static`, `AeroCache`, `_divergence_dynamic_pressure` |
+| `sbeam/solver/sol144.py` | `run_sol144_trim` (Schur trim solve, derivatives), `run_sol144_diverg` (DIVERG-card divergence sweep + mode shape + V_div), `run_aeroelastic_static`, `AeroCache`, `_divergence_dynamic_pressure`, `_divergence_roots` |
 | `sbeam/results/f06_writer.py` | `build_f06_sol144_text` / `write_f06_sol144` — SOL 144 trim f06 blocks (shares displacement/CBAR helpers with SOL 101) |
 | `sbeam/results/load_export.py` | `write_aero_load_cards` — trimmed flight loads as `FORCE`/`MOMENT` bulk cards |
 | `sbeam/viewer/aero_view.py` | Plotly box mesh, cp colour map, section-load strip chart |
@@ -82,7 +82,7 @@ implementation carry an `⚠ AE#` marker. Reproduction script: `studies/_review_
 | `AESURF` | Aerodynamic control surface — hinge line + AELIST of active boxes | S51 |
 | `AELIST` | Ordered list of CAERO1 box IDs forming a control surface | S51 |
 | `TRIM` | Trim condition — Mach, q, and prescribed label/value pairs | S51 |
-| `DIVERG` | Divergence analysis parameters — NROOTS and Mach sweep | S51 |
+| `DIVERG` | Divergence analysis — NROOTS, RHOREF (V_div), and Mach sweep | S51 / S55 |
 | `TRIMVAR` | Per-variable bounds + initial guess (sbeam-defined; over-determined trim) | S51 |
 | `TRIMOBJ` | Weighted objective function (sbeam-defined; over-determined trim) | S51 |
 | `TRIMCON` | Inequality constraint (sbeam-defined; over-determined trim) | S51 |
@@ -533,8 +533,28 @@ half-span decks), seeds an `AeroCache` shared across subcases, and calls
 **Divergence diagnostic.** `sol144._divergence_dynamic_pressure(K_ll, Q_ll)` returns the
 single critical divergence dynamic pressure — the reciprocal of the largest positive-real
 eigenvalue of `K_ll⁻¹ Q_ll` on the **restrained l-set** (the free-flight SUPORT `K_aa` is
-singular, so the full a-set is not used). `None` when the model does not diverge. The
-`DIVERG`-card q-sweep and divergence mode shape remain Step 55.
+singular, so the full a-set is not used). `None` when the model does not diverge. It is
+emitted in every trim subcase's `AERODYNAMIC DIVERGENCE` block.
+
+**Divergence sweep (`DIVERG` card, Step 55).** A SOL 144 subcase with `DIVERG = sid`
+runs `sol144.run_sol144_diverg`, which solves the same restrained-l-set eigenproblem
+`K_ll φ = q·Q_ll φ` but returns the lowest `NROOTS` positive divergence pressures and
+their **mode shapes** at each Mach on the card:
+
+- `_divergence_roots(K_ll, Q_ll, nroots)` solves `(K_ll⁻¹ Q_ll) x = (1/q) x` (dense
+  generalised solve, mirroring `sol103._solve_modes_dense`), keeps only **real, strictly
+  positive** `1/q` (selection rule for the unsymmetric `Q_ll`; spurious negative/complex
+  roots are discarded), and sorts ascending in `q`. Its lowest root reproduces
+  `_divergence_dynamic_pressure` exactly.
+- Each l-set eigenvector is scattered to the a-set (SUPORT DOFs zero) and expanded to the
+  g-set via the RBE3/RBAR `T` matrix (`_expand_to_g`), then max-abs normalised for output.
+- With the `RHOREF` sbeam-extension density on the card, each root reports
+  `V_div = √(2·q_div/ρ)`.
+- The sweep depends only on `K_aa`/`Q_aa`, so a DIVERG subcase needs no TRIM card; a
+  subcase carrying both runs the trim and the sweep. Output: `Sol144DivergResult`
+  (`mach_results → DivergMachResult → DivergRoot`), rendered by
+  `f06_writer.build_f06_sol144_diverg_text` as a per-Mach `AERODYNAMIC DIVERGENCE` table
+  (root no., `Q-DIV`, `V-DIV`) plus a divergence mode-shape block per root.
 
 **Flight-load export (`results/load_export.py`).** `write_aero_load_cards` writes
 `<stem>.aero_loads.bdf` — comma free-field `FORCE`/`MOMENT` cards (unit scale factor;

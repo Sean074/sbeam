@@ -5,7 +5,9 @@ from datetime import datetime
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
-from sbeam.results.results import Sol101Result, Sol103Result, Sol144TrimResult
+from sbeam.results.results import (
+    Sol101Result, Sol103Result, Sol144TrimResult, Sol144DivergResult,
+)
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.assembly.coord_transform import build_transform
 
@@ -489,9 +491,79 @@ def write_f06_sol144(
         fh.write(_build_f06_sol144_text(case_control, bulk, result, subcase_id))
 
 
+def _build_f06_sol144_diverg_text(
+    case_control,
+    bulk: BulkData,
+    result: Sol144DivergResult,
+    subcase_id: int = 1,
+) -> str:
+    """Return a SOL 144 DIVERG-card divergence sweep .f06 block (Step 55).
+
+    One AERODYNAMIC DIVERGENCE table per Mach (root no., Q-DIV, V-DIV) followed by
+    the max-abs-normalised divergence mode shape for each root.
+    """
+    grid_index = build_grid_index(bulk)
+    gids_sorted = sorted(bulk.grids.keys())
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    title = getattr(case_control, "title", "") or "sbeam SOL 144"
+
+    lines = []
+    lines.append(f"1    {title}")
+    lines.append(f"     SOL 144 AEROELASTIC DIVERGENCE   SUBCASE {subcase_id}   {now}")
+    lines.append("")
+
+    has_v = result.rhoref > 0.0
+    for mr in result.mach_results:
+        lines.append(
+            "                                  A E R O D Y N A M I C   D I V E R G E N C E"
+        )
+        lines.append(f"      MACH = {_fmt(mr.mach)}        REF DENSITY (RHOREF) = {_fmt(result.rhoref)}")
+        lines.append("")
+        if not mr.roots:
+            lines.append("      NO DIVERGENCE FOUND (NO POSITIVE REAL ROOT)")
+            lines.append("")
+            continue
+        header = "      ROOT NO.        Q-DIV"
+        if has_v:
+            header += "          V-DIV"
+        lines.append(header)
+        for i, root in enumerate(mr.roots, start=1):
+            row = f"{i:>14}  {_fmt(root.q_div)}"
+            if has_v:
+                row += f"{_fmt(root.v_div)}"
+            lines.append(row)
+        lines.append("")
+
+        # Divergence mode shape(s) — max-abs normalised g-set eigenvector.
+        for i, root in enumerate(mr.roots, start=1):
+            if root.mode_shape is None:
+                continue
+            lines.append(
+                f"                        D I V E R G E N C E   M O D E   S H A P E   "
+                f"( ROOT {i}, Q-DIV = {_fmt(root.q_div)} )"
+            )
+            lines.append("")
+            lines.append(
+                "      POINT ID.   TYPE          T1             T2             T3             R1             R2             R3"
+            )
+            for gid in gids_sorted:
+                base = 6 * grid_index[gid]
+                t = root.mode_shape[base:base+3]
+                r = root.mode_shape[base+3:base+6]
+                t, r = _transform_to_cd(t, r, gid, bulk)
+                lines.append(
+                    f"{gid:>14}     G  {_fmt(t[0])}{_fmt(t[1])}{_fmt(t[2])}{_fmt(r[0])}{_fmt(r[1])}{_fmt(r[2])}"
+                )
+            lines.append("")
+
+    return "\n".join(lines) + "\n"
+
+
 # Public aliases (R22): callers that need the assembled f06 *text* (main.py CLI,
 # viewer) should import these, not the underscore-prefixed names — a rename of the
 # private builders would otherwise silently break those cross-module imports.
 build_f06_sol101_text = _build_f06_sol101_text
 build_f06_sol103_text = _build_f06_sol103_text
 build_f06_sol144_text = _build_f06_sol144_text
+build_f06_sol144_diverg_text = _build_f06_sol144_diverg_text

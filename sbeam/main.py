@@ -9,6 +9,7 @@ from sbeam.results.f06_writer import (
     build_f06_sol101_text,
     build_f06_sol103_text,
     build_f06_sol144_text,
+    build_f06_sol144_diverg_text,
 )
 
 
@@ -48,22 +49,32 @@ def main() -> None:
             # AeroCache across subcases so multi-Mach decks build each AIC once.
             from sbeam.aero.aero_model import build_aero_model
             from sbeam.assembly.load_vector import build_grid_index
-            from sbeam.solver.sol144 import run_sol144_trim, AeroCache
+            from sbeam.solver.sol144 import (
+                run_sol144_trim, run_sol144_diverg, AeroCache,
+            )
             from sbeam.solver.maneuver_qs import run_maneuver_qs
             grid_index = build_grid_index(bulk)
             aero = build_aero_model(bulk, grid_index=grid_index)
             cache = AeroCache(bulk, grid_index, seed=aero)
             # An MLOADS subcase runs the Phase G0 transient maneuver-loads solver;
+            # a DIVERG subcase runs the Step 55 divergence sweep (no TRIM needed);
             # a plain TRIM subcase runs the Step 52/53 static trim.
             results = {}
             maneuver_results = {}
+            diverg_results = {}
             for sc in cc.subcases:
                 if sc.mloads_sid is not None:
                     maneuver_results[sc.subcase_id] = run_maneuver_qs(
                         bulk, sc, aero, aero_cache=cache)
+                elif sc.diverg_sid is not None and sc.trim_sid is None:
+                    diverg_results[sc.subcase_id] = run_sol144_diverg(
+                        bulk, sc, aero, aero_cache=cache)
                 else:
                     results[sc.subcase_id] = run_sol144_trim(
                         bulk, sc, aero, aero_cache=cache)
+                    if sc.diverg_sid is not None:
+                        diverg_results[sc.subcase_id] = run_sol144_diverg(
+                            bulk, sc, aero, aero_cache=cache)
             build_text = build_f06_sol144_text
             sol144_results = results
         else:
@@ -74,6 +85,9 @@ def main() -> None:
     with open(f06_path, "w") as fh:
         for sc_id, result in results.items():
             fh.write(build_text(cc, bulk, result, sc_id))
+        if cc.sol == 144:
+            for sc_id, dresult in diverg_results.items():
+                fh.write(build_f06_sol144_diverg_text(cc, bulk, dresult, sc_id))
 
     print(f"Written: {f06_path}")
 

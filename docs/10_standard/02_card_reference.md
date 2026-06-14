@@ -1099,12 +1099,14 @@ TRIM, 10, 0.3, 1500.0, PITCH, 0.0, URDD3, -1.0
 
 ### DIVERG — Divergence speed analysis
 
-Specifies the number of divergence speed roots to find and the Mach values at which to
-evaluate the divergence eigenvalue problem.
+Specifies the number of divergence roots to find and the Mach values at which to
+evaluate the divergence eigenvalue problem (Step 55). For each Mach the solver returns
+the lowest `NROOTS` positive divergence dynamic pressures `q_div`, their mode shapes, and
+— when `RHOREF` is given — the divergence speeds `V_div = √(2·q_div/ρ)`.
 
 **Format:**
 ```
-DIVERG  SID  NROOTS  M1  M2  M3  ...
+DIVERG  SID  NROOTS  RHOREF  M1  M2  ...
 +       M7   M8      ...
 ```
 
@@ -1112,12 +1114,17 @@ DIVERG  SID  NROOTS  M1  M2  M3  ...
 |-------|------|-------------|
 | SID | int | Unique identifier (referenced by case control `DIVERG=`) |
 | NROOTS | int | Number of divergence roots to find |
-| M1, M2, … | float | Mach values (continuation lines allowed) |
+| RHOREF | float | **sbeam extension** (field 4): reference density used to map `q_div → V_div`. Leave blank/`0.0` to omit `V_div`. |
+| M1, M2, … | float | Mach values (field 5 onward; continuation lines allowed). When omitted the AEROS Mach is used as a single point. |
 
 **Example:**
 ```
-DIVERG, 20, 2, 0.4, 0.6, 0.8
+DIVERG, 20, 2, 1.225, 0.4, 0.6, 0.8
 ```
+
+> **Note** — `RHOREF` occupies field 4; the Mach list begins in field 5. A DIVERG
+> subcase does not require a TRIM card: divergence depends only on `K_aa` and `Q_aa`,
+> not on the trim right-hand side.
 
 ---
 
