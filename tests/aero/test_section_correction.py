@@ -21,6 +21,8 @@ from sbeam.aero.vlm import build_ajj
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.section_correction import (
     build_section_correction,
+    build_section_correction_multi,
+    SurfaceTargets,
     cards_to_bdf,
 )
 
@@ -238,6 +240,111 @@ class TestGuards:
                 m_slope=np.zeros(4), m_0=np.zeros(4),
                 caero_eid=CAERO_EID, sid_w2gj=1, sid_aecorr=2,
             )
+
+
+def _two_surface_parts():
+    """Wing (EID 1) + tail (EID 2), both horizontal, meshed into one box list."""
+    wing = Caero1(eid=1, pid=1, cp=0, nspan=4, nchord=3, lspan=0, lchord=0, igid=0,
+                  p1=(0.0, 0.0, 0.0), x12=1.0, p4=(0.0, 5.0, 0.0), x43=1.0)
+    tail = Caero1(eid=2, pid=1, cp=0, nspan=3, nchord=2, lspan=0, lchord=0, igid=0,
+                  p1=(4.0, 0.0, 0.0), x12=0.6, p4=(4.0, 2.0, 0.0), x43=0.6)
+    bw = mesh_caero1(wing, PAERO, {}, {}, start_k=0)
+    bt = mesh_caero1(tail, PAERO, {}, {}, start_k=len(bw))
+    return wing, tail, bw + bt
+
+
+def _two_surface_bulk(wing, tail):
+    bulk = BulkData()
+    bulk.aeros = Aeros(acsid=0, rcsid=0, cref=1.0, bref=10.0, sref=10.0, symxz=0, symxy=0)
+    bulk.paero1s[1] = Paero1(pid=1)
+    bulk.caero1s[1] = wing
+    bulk.caero1s[2] = tail
+    return bulk
+
+
+def _surface_lines(model, eid, x_mref, alpha):
+    boxes = model.boxes
+    cp = model.ajj_inv_corr @ (np.array([-(alpha * b.normal[2]) for b in boxes]) + model.wg)
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for k, b in enumerate(boxes):
+        if b.caero_eid == eid:
+            groups[b.i_span].append(k)
+    F, M = [], []
+    for s, sp in enumerate(sorted(groups)):
+        idx = np.array(groups[sp])
+        fbox = np.array([boxes[k].area for k in idx]) * cp[idx]
+        arm = np.array([boxes[k].force_point[0] for k in idx]) - x_mref[s]
+        F.append(fbox.sum()); M.append(-(fbox * arm).sum())
+    return np.array(F), np.array(M)
+
+
+class TestMultiSurface:
+    def test_two_surfaces_reproduced(self):
+        wing, tail, boxes = _two_surface_parts()
+        ajj = build_ajj(boxes)
+        tW = SurfaceTargets(1, f_slope=np.linspace(0.8, 0.95, 4),
+                            alpha_0=np.full(4, np.deg2rad(-2.0)),
+                            m_slope=np.linspace(-0.02, -0.04, 4), m_0=np.full(4, -0.025))
+        tT = SurfaceTargets(2, f_slope=np.linspace(0.4, 0.5, 3),
+                            alpha_0=np.full(3, np.deg2rad(1.0)),
+                            m_slope=np.full(3, -0.01), m_0=np.full(3, 0.005))
+        res = build_section_correction_multi(
+            boxes, ajj, [tW, tT], sid_w2gj_base=100, sid_aecorr_base=200)
+        assert set(res.cards) == {1, 2}
+
+        # Builder diagnostics reproduce both surfaces' targets.
+        for eid, t in [(1, tW), (2, tT)]:
+            d = res.per_surface[eid]
+            assert d.achieved_f_slope == pytest.approx(t.f_slope, rel=1e-8)
+            assert d.achieved_m_slope == pytest.approx(t.m_slope, rel=1e-8)
+            assert d.achieved_f0 == pytest.approx(-t.f_slope * t.alpha_0, rel=1e-8)
+            assert d.achieved_m0 == pytest.approx(t.m_0, rel=1e-8)
+
+        # End-to-end: insert all cards, build_aero_model (combines both WT2 + both W2GJ).
+        bulk = _two_surface_bulk(wing, tail)
+        for w2, ac in res.cards.values():
+            bulk.w2gjs[w2.sid] = w2
+            bulk.aecorrs[ac.sid] = ac
+        model = build_aero_model(bulk)
+        for eid, t in [(1, tW), (2, tT)]:
+            xref = res.per_surface[eid].moment_ref
+            F0, M0 = _surface_lines(model, eid, xref, 0.0)
+            assert F0 == pytest.approx(-t.f_slope * t.alpha_0, rel=1e-6, abs=1e-9)
+            assert M0 == pytest.approx(t.m_0, rel=1e-6, abs=1e-9)
+            a = 0.08
+            Fa, Ma = _surface_lines(model, eid, xref, a)
+            assert Fa == pytest.approx(t.f_slope * a - t.f_slope * t.alpha_0,
+                                       rel=1e-6, abs=1e-9)
+            assert Ma == pytest.approx(t.m_slope * a + t.m_0, rel=1e-6, abs=1e-9)
+
+    def test_partial_correction_leaves_other_surface_unchanged(self):
+        """Correcting only the wing → tail boxes keep r=1, wg=0."""
+        wing, tail, boxes = _two_surface_parts()
+        ajj = build_ajj(boxes)
+        tW = SurfaceTargets(1, f_slope=np.full(4, 0.9),
+                            alpha_0=np.zeros(4), m_slope=np.zeros(4), m_0=np.zeros(4))
+        res = build_section_correction_multi(
+            boxes, ajj, [tW], sid_w2gj_base=100, sid_aecorr_base=200)
+        assert set(res.cards) == {1}
+        tail_idx = [k for k, b in enumerate(boxes) if b.caero_eid == 2]
+        assert res.r[tail_idx] == pytest.approx(np.ones(len(tail_idx)), abs=1e-12)
+        assert res.wg[tail_idx] == pytest.approx(np.zeros(len(tail_idx)), abs=1e-12)
+
+    def test_cards_to_bdf_multi_round_trips(self):
+        from sbeam.parser.bdf_reader import parse_bulk_data
+        wing, tail, boxes = _two_surface_parts()
+        ajj = build_ajj(boxes)
+        tW = SurfaceTargets(1, f_slope=np.full(4, 0.9), alpha_0=np.full(4, np.deg2rad(-1.0)),
+                            m_slope=np.full(4, -0.02), m_0=np.full(4, -0.02))
+        tT = SurfaceTargets(2, f_slope=np.full(3, 0.45), alpha_0=np.zeros(3),
+                            m_slope=np.full(3, -0.01), m_0=np.zeros(3))
+        res = build_section_correction_multi(
+            boxes, ajj, [tW, tT], sid_w2gj_base=100, sid_aecorr_base=200)
+        bulk = parse_bulk_data(cards_to_bdf(res).splitlines())
+        assert set(bulk.w2gjs) == {100, 101}
+        assert set(bulk.aecorrs) == {200, 201}
+        assert {c.caero_eid for c in bulk.aecorrs.values()} == {1, 2}
 
 
 class TestBdfRoundTrip:

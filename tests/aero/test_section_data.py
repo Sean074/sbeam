@@ -178,6 +178,66 @@ class TestConversion:
 
 # --------------------------------------------------------------------------- selection
 
+def _two_surface_parts():
+    wing = Caero1(eid=1, pid=1, cp=0, nspan=4, nchord=3, lspan=0, lchord=0, igid=0,
+                  p1=(0.0, 0.0, 0.0), x12=1.0, p4=(0.0, 5.0, 0.0), x43=1.0)
+    tail = Caero1(eid=2, pid=1, cp=0, nspan=3, nchord=2, lspan=0, lchord=0, igid=0,
+                  p1=(4.0, 0.0, 0.0), x12=0.6, p4=(4.0, 2.0, 0.0), x43=0.6)
+    bw = mesh_caero1(wing, PAERO, {}, {}, start_k=0)
+    bt = mesh_caero1(tail, PAERO, {}, {}, start_k=len(bw))
+    return wing, tail, bw + bt
+
+
+def _const_rows(boxes, eid, cn_a, mach=0.0, a_lo=-2.0, a_hi=8.0,
+                a0=0.0, cm_a=0.0, cm0=0.0):
+    df = sd.template_dataframe(boxes, eid, mach=mach, a_lo=a_lo, a_hi=a_hi)
+    df["cn_a"] = cn_a; df["a0"] = a0; df["cm_a"] = cm_a; df["cm0"] = cm0
+    return df
+
+
+class TestMultiSurface:
+    def test_two_surfaces_built(self):
+        wing, tail, boxes = _two_surface_parts()
+        from sbeam.aero.vlm import build_ajj
+        ajj = build_ajj(boxes)
+        df = pd.concat([
+            _const_rows(boxes, 1, 0.10, cm0=-0.03),
+            _const_rows(boxes, 2, 0.09, a0=1.0),
+        ], ignore_index=True)
+
+        res = sd.build_from_section_data_multi(
+            boxes, ajj, df, mach=0.0, incidence_deg=3.0,
+            sid_w2gj_base=100, sid_aecorr_base=200)
+        assert set(res.correction.cards) == {1, 2}
+        assert set(res.conditions) == {1, 2}
+        # wing force-slope target reproduced (cn_a·180/π·area per strip)
+        from collections import defaultdict
+        groups = defaultdict(list)
+        for k, b in enumerate(boxes):
+            if b.caero_eid == 1:
+                groups[b.i_span].append(k)
+        area = np.array([sum(boxes[k].area for k in groups[s]) for s in sorted(groups)])
+        d = res.correction.per_surface[1]
+        assert d.achieved_f_slope == pytest.approx(0.10 * 180.0 / math.pi * area, rel=1e-8)
+
+    def test_region_selected_per_surface_and_skip(self):
+        wing, tail, boxes = _two_surface_parts()
+        from sbeam.aero.vlm import build_ajj
+        ajj = build_ajj(boxes)
+        # Wing has a region covering α=10; tail only covers low α → tail skipped at α=10.
+        df = pd.concat([
+            _const_rows(boxes, 1, 0.11, a_lo=-2.0, a_hi=6.0),
+            _const_rows(boxes, 1, 0.06, a_lo=6.0, a_hi=14.0),
+            _const_rows(boxes, 2, 0.09, a_lo=-2.0, a_hi=6.0),
+        ], ignore_index=True)
+        res = sd.build_from_section_data_multi(
+            boxes, ajj, df, mach=0.0, incidence_deg=10.0,
+            sid_w2gj_base=100, sid_aecorr_base=200)
+        assert set(res.correction.cards) == {1}
+        assert res.conditions[1].a_lo == 6.0 and res.conditions[1].a_hi == 14.0
+        assert any(eid == 2 for eid, _ in res.skipped)
+
+
 class TestSelection:
     def test_extrapolation_flag(self):
         """Strip η outside the table η-range → extrapolated=True."""

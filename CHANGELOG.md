@@ -37,6 +37,48 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 - Docs: theory §3.5 (synthesis method) + §3.3 WT1 clarification; standard-doc section, module-map
   row, and clarified `apply_wt1` entry.
 
+**Sample — Cessna 210-like VLM aero model + section-correction example (2026-06-14)**
+
+- `sample/cessna210_aero.bdf`: a full-span, 5-surface VLM model (wing + HTP + VTP, both
+  halves explicit; SI units) of a Cessna 210-like GA aircraft (span 11.2 m, MAC 1.47 m, area
+  16.24 m², 1.5° dihedral high wing), with a light coherent stick structure so it is a complete,
+  viewable SOL 101 deck. 324 boxes (NCHORD=6).
+- `sample/cessna210_section_data.csv`: per-surface section coefficients driving the multi-surface
+  W2GJ+WT2 correction — wing (NACA 64-415-like) with **two α-regions** (pre/post-onset), symmetric
+  HTP, and a `BETA` VTP. Demonstrates `section_data.build_from_section_data_multi`.
+- `tests/aero/test_cessna210_example.py` (3 tests): the deck meshes to 5 surfaces / 324 boxes; the
+  multi build corrects all surfaces (wing per-strip slope reproduces cn_a, wing carries a camber
+  moment, HTP does not); and through the corrected operator the WT2 slope (~0.091→>0.11 /deg) and
+  the W2GJ camber (CL(0)>0.2) both take effect.
+- Note: the viewer **Aero tab** (`solve_rigid_cl`) reflects only the W2GJ camber, not the WT2
+  slope/a.c. correction (it does not use the corrected operator); the full correction shows in the
+  SOL 144 / `build_aero_model` path.
+
+**Aero — section force+moment correction extended to multi-surface (2026-06-14)**
+
+- `section_correction.py` gains `build_section_correction_multi(boxes, ajj, targets, *,
+  sid_w2gj_base, sid_aecorr_base, beta=1.0)` — corrects any number of CAERO1 surfaces in one
+  global build, emitting a `W2GJ`+`WT2` card pair **per surface**. The AIC is global, so the WT2
+  ratio is a per-box vector (1 on uncorrected boxes) and the W2GJ camber offset is **one global
+  linear solve** over all corrected strips (camber on one surface induces load on the others).
+  `build_section_correction` is now a thin single-surface wrapper; `cards_to_bdf` accepts either
+  result. New `SurfaceTargets` / `MultiSectionCorrectionResult` / `SurfaceDiagnostics`.
+- `aero_model.build_aero_model`: the WT2 branch now **combines all `WT2` `AECORR` cards** into one
+  global Γ-unit target (each card fills its own surface's boxes; uncorrected surfaces default to
+  ratio 1) instead of using only the primary CAERO1's card. `W2GJ` was already accumulated per
+  surface; `WKK`/`WT1` still act on the primary CAERO1. Backward compatible: a single WT2 card on a
+  single-surface deck is unchanged.
+- **Prandtl–Glauert fix:** the builder now takes the raw `ajj_pg` plus an explicit `beta=√(1−M²)`
+  and applies 1/β only to the *physical* force, keeping the emitted WT2 target in pure Γ-units.
+  (The earlier "pass β·ajj_pg" convention double-counted β in the card at M>0; M=0 was unaffected.)
+- `section_data.py`: `build_from_section_data_multi(boxes, ajj, df, *, mach, incidence_deg, …)`
+  corrects every surface in the table at one flight point — per-surface region selection (the
+  region containing `incidence_deg`), surfaces with no containing region skipped (`.skipped`).
+  Strip geometry is now per-surface; β is derived internally from `mach` (pass the raw `ajj_pg`).
+- Tests: +5 (multi-surface engine end-to-end through `build_aero_model`; partial correction leaves
+  the other surface at r=1/wg=0; multi-card BDF round-trip; section-data multi build + per-surface
+  region selection/skip). Full aero suite 351 passing; ruff clean.
+
 **Aero — spanwise section-data ingestion for the correction GUI (2026-06-14)**
 
 - New `sbeam/aero/section_data.py`: turns a user table of **section coefficients** (a function

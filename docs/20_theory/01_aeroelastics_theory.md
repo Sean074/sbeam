@@ -596,12 +596,16 @@ so the corrected operator reproduces $(F_0,M_0)$ per strip exactly (inter-strip 
 included).
 
 This is implemented as a preprocessor (`sbeam/aero/section_correction.py`,
-`build_section_correction`) that emits an ordinary $W_{2GJ}$ + $W_{T2}$ (`AECORR`) card pair — no
-solver or card-schema change. It targets a single CAERO1 (the existing $W_{T2}$ limitation) and
-requires $\mathrm{NCHORD}\ge 2$ per strip (a moment needs two chordwise boxes). The pitching
-moment is nose-up positive about the per-strip moment reference (default the strip $\tfrac14$-chord;
-§2.9), and the force targets follow the same per-unit-reference-normalwash convention as $W_{T1}$
-(§3.3 note).
+`build_section_correction_multi`, with `build_section_correction` the single-surface wrapper) that
+emits an ordinary $W_{2GJ}$ + $W_{T2}$ (`AECORR`) card pair **per surface** — no solver or
+card-schema change. Because the AIC is global, multiple surfaces are corrected in **one** build: a
+per-box $W_{T2}$ ratio (unity on uncorrected boxes) and a **single global** camber-line solve over
+all corrected strips (a camber line on one surface induces load on the others). `build_aero_model`
+combines the per-surface $W_{T2}$ cards into one global $\Gamma$-target and already accumulates
+$W_{2GJ}$ per CAERO1. Each corrected strip requires $\mathrm{NCHORD}\ge 2$ (a moment needs two
+chordwise boxes). The pitching moment is nose-up positive about the per-strip moment reference
+(default the strip $\tfrac14$-chord; §2.9), and the force targets follow the same
+per-unit-reference-normalwash convention as $W_{T1}$ (§3.3 note).
 
 ---
 

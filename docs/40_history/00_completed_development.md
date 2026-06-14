@@ -2024,6 +2024,46 @@ coefficients about ¼-chord, and "v1" single-operating-region selection.
 
 ---
 
+### Step A-SM: Section force+moment correction extended to multi-surface ✅ COMPLETE
+
+**Objective:** Lift the single-CAERO1 restriction of Steps A-SC / A-SD so a deck with several
+lifting surfaces (wing + tail + fin …) can be corrected. The AIC is global, so the correction must
+be built and applied across all surfaces at once.
+
+**Deliverables:**
+1. **`sbeam/aero/section_correction.py`** — `build_section_correction_multi(boxes, ajj, targets, *,
+   sid_w2gj_base, sid_aecorr_base, beta=1.0)` engine taking a list of `SurfaceTargets`, returning a
+   `MultiSectionCorrectionResult` (`cards[eid] = (W2gj, Aecorr)`, global `r`/`wg`, per-surface
+   `SurfaceDiagnostics`). `build_section_correction` is now a single-surface wrapper; `cards_to_bdf`
+   accepts either result.
+2. **`sbeam/aero/aero_model.py`** — `build_aero_model` WT2 branch combines **all** `WT2` `AECORR`
+   cards into one global Γ-unit target (each card fills its CAERO1's boxes; uncorrected surfaces
+   default to ratio 1).
+3. **`sbeam/aero/section_data.py`** — `build_from_section_data_multi(…, mach, incidence_deg, …)`:
+   per-surface region selection at one flight point, global build, `.skipped` for surfaces with no
+   containing region. Per-surface strip geometry; β derived from `mach`.
+4. **Tests** — +5 (`test_section_correction.py`: multi-surface engine end-to-end through
+   `build_aero_model`, partial correction leaves other surface at r=1/wg=0, multi-card BDF
+   round-trip; `test_section_data.py`: multi build, per-surface region selection + skip).
+5. **Docs** — theory §3.5 multi-surface paragraph; standard-doc engine/precedence/section-data
+   updates + module-map rows.
+
+**Key decisions:**
+- **Global build, per-surface cards.** WT2 `r` is a global per-box vector (1 on uncorrected boxes);
+  the W2GJ camber offset is **one global linear solve** over all corrected strips (camber on one
+  surface induces load on the others). Cards are still emitted per CAERO1 (W2GJ and AECORR are
+  per-surface cards), and `build_aero_model` recombines them.
+- **PG correctness.** The builder takes the raw `ajj_pg` + explicit `beta=√(1−M²)` and applies 1/β
+  only to the physical force, leaving the WT2 card target in pure Γ-units — fixing a latent M>0
+  double-count in the earlier "β·ajj_pg" convention (M=0 unaffected).
+- **Backward compatible.** A single WT2 card on a single-surface deck reduces to the previous
+  behaviour exactly; `WKK`/`WT1` remain primary-CAERO1 only.
+
+**Test / Acceptance:**
+- 5 new tests pass; full aero suite 351 passing, 0 failures; ruff clean.
+
+---
+
 ## Phase B — Structure ↔ Aero Splining
 
 ### Step 45: SET1 + SPLINE2 parsing ✅ COMPLETE

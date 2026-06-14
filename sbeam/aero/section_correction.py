@@ -1,9 +1,9 @@
 """Section force + moment correction synthesis (Option A).
 
 Generate a **W2GJ** baseline-normalwash card *and* a **WT2** (AECORR) AIC-correction
-card that together reproduce a target *section* aerodynamic line — both the slope
-**and** the zero-incidence offset of force and pitching moment — while perturbing the
-uncorrected VLM chordwise load distribution as little as possible.
+card per lifting surface that together reproduce a target *section* aerodynamic line —
+both the slope **and** the zero-incidence offset of force and pitching moment — while
+perturbing the uncorrected VLM chordwise load distribution as little as possible.
 
 Why two cards
 -------------
@@ -12,56 +12,55 @@ A linear section is fully defined by four numbers per span strip:
     F(α) = (dF/dα)·α + F₀        M(α) = (dM/dα)·α + M₀
 
 These split into two pairs, each handled by the mechanism that can do it without
-disturbing the rest (see corrections.py and the turn-by-turn analysis in
-docs/20_theory/01_aeroelastics_theory.md §3):
+disturbing the other:
 
   * **slope pair** (dF/dα, dM/dα → force-curve slope *and* aerodynamic-centre):
     needs to reshape the α-driven chordwise load, so it is a per-box **WT2** ratio.
   * **offset pair** (F₀, M₀ → zero-α lift offset *and* camber pitching moment):
-    is a load that exists at α=0, so it is a baseline **W2GJ** normalwash (camber
-    line). A pure WT2/WT1 correction is multiplicative about the unit-incidence
-    reference and produces nothing at α=0, so the offset *must* come from W2GJ.
+    is a load that exists at α=0, so it is a baseline **W2GJ** normalwash (camber line).
 
-The two compose exactly in the existing solve: cp = (corrected A⁻¹)·(w_α + w_g),
-with the WT2 ratio in the operator and W2GJ added to the normalwash
-(aero_model.build_aero_model / compute_structural_loads).
+The two compose exactly in the existing solve: cp = (corrected A⁻¹)·(w_α + w_g), with the
+WT2 ratio in the operator and W2GJ added to the normalwash.
+
+Multi-surface
+-------------
+The AIC ``A_jj`` is global — every box, on every CAERO1, is aerodynamically coupled — so
+the correction is built once over the whole model and emitted as a **per-surface** card
+pair. The WT2 ratio ``r`` is per-box (a global diagonal whose entries are 1 on uncorrected
+boxes), and the W2GJ offset is solved **globally** across all corrected strips because a
+camber line on one surface induces load on the others. ``build_section_correction_multi``
+is the engine; ``build_section_correction`` is the single-surface convenience wrapper.
 
 Decoupling
 ----------
-The WT2 ratio is calibrated on the unit-incidence reference w_ref = -1 (the same
-reference apply_wt2/apply_wt1 use) and is therefore independent of w_g. So the build
-is one pass: size WT2 from the slope pair first, then size W2GJ for the offset pair
-*through the WT2-corrected operator* (which also scales the camber load).
+The WT2 ratio is calibrated on the unit-incidence reference w_ref = -1 and is therefore
+independent of w_g. So the build is one pass: size WT2 from the slope pair first (per strip,
+on the global reference circulation), then size W2GJ for the offset pair *through the
+WT2-corrected operator* (which also scales the camber load).
 
 Minimal change
 --------------
-  * WT2: per strip a uniform scale r̄ = (dF/dα)_target / (dF/dα)_VLM hits the force
-    with **no shape change**; a minimum-norm per-box perturbation δ (orthogonal to the
-    force, i.e. Σ δ_k·g0_k = 0) supplies only the moment/a.c. mismatch. When the target
-    a.c. equals the VLM a.c. (pure slope scaling) δ = 0 and the result degenerates to
-    the uniform WT1 scaling — i.e. the chordwise distribution is untouched.
-  * W2GJ: a two-mode camber line per strip (uniform incidence + chordwise-linear
-    camber) — the lowest-order shape that can set F₀ and M₀.
+  * WT2: per strip a uniform scale r̄ = (dF/dα)_target / (dF/dα)_VLM hits the force with
+    **no shape change**; a minimum-norm per-box perturbation δ orthogonal to the force
+    (Σ δ_k·g0_k = 0) supplies only the moment/a.c. mismatch. When the target a.c. equals the
+    VLM a.c. (pure slope scaling) δ = 0 and the result degenerates to the uniform WT1 scaling.
+  * W2GJ: a two-mode camber line per strip (uniform incidence + chordwise-linear camber).
 
 Conventions
 -----------
-All per-strip target arrays are ordered by ascending ``i_span`` (the same order as
-``apply_wt1``'s ``f_target``).  Force is the surface-normal force/q (``Σ area·Cp``;
-§2.9), i.e. *per unit reference normalwash* — exactly ``apply_wt1``'s convention:
-per rad of α for a horizontal surface, per rad of β for a vertical surface, per
-(α·cosΓ) for a surface canted at dihedral Γ.  Pitching moment is **nose-up positive**
-about the per-strip moment reference (default = strip ¼-chord), matching
-``sol144._pitch_moment``: M = −Σ Fₙ·(x − x_ref).
+Per-strip target arrays are ordered by ascending ``i_span`` within each surface. Force is
+the surface-normal force/q (``Σ area·Cp``; §2.9) per unit reference normalwash — exactly
+``apply_wt1``'s convention. Pitching moment is **nose-up positive** about the per-strip
+moment reference (default = strip ¼-chord), matching ``sol144._pitch_moment``.
 
-Single-surface only: like the existing WT2/WT1 path (apply_wt2 takes a full-length
-cp_target), this targets one CAERO1 whose boxes are the whole AIC.  The supplied
-``ajj`` must be calibrated at the correction Mach (pass the same compressed AIC the
-solver will use, or build at M=0).
+The supplied ``ajj`` and ``boxes`` must be the **whole model** (full AIC); pass the AIC
+calibrated at the correction Mach (the PG-consistent ``β·ajj_pg``, or M=0).
 """
 
 import math
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Optional
 
 import numpy as np
 
@@ -73,17 +72,48 @@ _COND_WARN = 1e10    # ill-conditioning warning threshold
 
 
 @dataclass
+class SurfaceTargets:
+    """Per-strip section targets for one CAERO1 (arrays length = that surface's strips)."""
+    caero_eid:  int
+    f_slope:    np.ndarray            # dF/dα  (force/q per rad)
+    alpha_0:    np.ndarray            # zero-force angle α₀ (rad); F₀ = −f_slope·α₀
+    m_slope:    np.ndarray            # dM/dα  (moment/q per rad, nose-up +)
+    m_0:        np.ndarray            # M at α=0 (moment/q, nose-up +)
+    moment_ref: Optional[np.ndarray] = None   # per-strip moment ref x; default ¼-chord
+
+
+@dataclass
+class SurfaceDiagnostics:
+    """Achieved-vs-target per-strip diagnostics for one surface."""
+    caero_eid:        int
+    moment_ref:       np.ndarray
+    achieved_f_slope: np.ndarray
+    achieved_m_slope: np.ndarray
+    achieved_f0:      np.ndarray
+    achieved_m0:      np.ndarray
+
+
+@dataclass
+class MultiSectionCorrectionResult:
+    """Per-surface cards + global operators + per-surface diagnostics."""
+    cards:       dict                 # {caero_eid: (W2gj, Aecorr)}
+    r:           np.ndarray           # global per-box WT2 multiplier (length n_box)
+    wg:          np.ndarray           # global per-box W2GJ normalwash (length n_box)
+    per_surface: dict = field(default_factory=dict)   # {caero_eid: SurfaceDiagnostics}
+
+
+@dataclass
 class SectionCorrectionResult:
-    """Generated cards plus per-strip diagnostics (achieved vs. target)."""
+    """Single-surface result (the wrapper return type); global r/wg restricted to it."""
     w2gj:             W2gj
     aecorr:           Aecorr
-    r:                np.ndarray   # per-box WT2 multiplier (length n_box)
-    wg:               np.ndarray   # per-box W2GJ normalwash  (length n_box)
-    moment_ref:       np.ndarray   # per-strip moment reference x used (length n_strip)
-    achieved_f_slope: np.ndarray   # per-strip dF/dα reproduced by the cards
-    achieved_m_slope: np.ndarray   # per-strip dM/dα reproduced (nose-up +)
-    achieved_f0:      np.ndarray   # per-strip F at α=0 reproduced
-    achieved_m0:      np.ndarray   # per-strip M at α=0 reproduced (nose-up +)
+    r:                np.ndarray
+    wg:               np.ndarray
+    moment_ref:       np.ndarray
+    achieved_f_slope: np.ndarray
+    achieved_m_slope: np.ndarray
+    achieved_f0:      np.ndarray
+    achieved_m0:      np.ndarray
 
 
 def _box_chord(box: AeroBox) -> float:
@@ -100,19 +130,196 @@ def _strip_quarter_chord_x(boxes: list, idxs: list) -> float:
     return le + 0.25 * (te - le)
 
 
-def _strip_groups(boxes: list) -> list:
-    """Ordered [(i_span, [box-index,...]), ...] for a single-CAERO1 box list."""
-    eids = {b.caero_eid for b in boxes}
-    if len(eids) != 1:
-        raise ValueError(
-            "build_section_correction: multiple CAERO1 surfaces present "
-            f"(eids={sorted(eids)}); this builder targets a single surface, "
-            "matching the existing WT2 path. Build per surface."
-        )
+def _surface_strips(boxes: list, caero_eid: int) -> list:
+    """Ordered [(i_span, [global box index,...]), ...] for one CAERO1."""
     groups: dict = {}
     for k, box in enumerate(boxes):
-        groups.setdefault(box.i_span, []).append(k)
+        if box.caero_eid == caero_eid:
+            groups.setdefault(box.i_span, []).append(k)
     return [(s, groups[s]) for s in sorted(groups)]
+
+
+def build_section_correction_multi(
+    boxes: list,
+    ajj: np.ndarray,
+    targets,
+    *,
+    sid_w2gj_base: int,
+    sid_aecorr_base: int,
+    beta: float = 1.0,
+) -> MultiSectionCorrectionResult:
+    """Synthesise a per-surface W2GJ + WT2 card pair for one or more surfaces at once.
+
+    Args:
+        boxes:   AeroBox list for the **whole model** (mesh order; full AIC).
+        ajj:     **raw PG AIC** ``ajj_pg = build_ajj(pg_boxes)`` (Γ-form), exactly as
+                 ``build_aero_model`` builds it at the correction Mach. Do *not* pre-scale
+                 by β — pass β separately.
+        targets: iterable of SurfaceTargets, one per CAERO1 to correct.
+        sid_w2gj_base / sid_aecorr_base: SIDs are assigned ``base + i`` in the order the
+                 surfaces appear in ``targets``.
+        beta:    Prandtl–Glauert factor √(1−M²) at the correction Mach. The physical
+                 force carries the solver's 1/β scaling, while the emitted WT2 target
+                 stays in pure Γ-units (what ``apply_wt2`` reconstructs from). β=1 at M=0.
+
+    Returns:
+        MultiSectionCorrectionResult with ``cards[eid] = (W2gj, Aecorr)``, the global
+        per-box ``r``/``wg``, and per-surface diagnostics.
+
+    Raises:
+        ValueError: unknown surface EID, per-surface length mismatch, a strip with < 2
+                    chordwise boxes, or a singular fit.
+    """
+    targets = list(targets)
+    n = len(boxes)
+    if ajj.shape != (n, n):
+        raise ValueError(
+            f"build_section_correction_multi: ajj is {ajj.shape}, expected ({n}, {n}) "
+            "— pass the whole-model AIC and box list"
+        )
+
+    cond = float(np.linalg.cond(ajj))
+    if cond > _COND_WARN:
+        warnings.warn(
+            f"AIC matrix is poorly conditioned (cond={cond:.2e}); "
+            "section-correction accuracy may be degraded",
+            UserWarning, stacklevel=2,
+        )
+
+    ajj_inv   = np.linalg.solve(ajj, np.eye(n))
+    gamma_ref = ajj_inv @ (-np.ones(n))          # PG circulation (Γ-units; no 1/β)
+    chord_box = np.array([_box_chord(b) for b in boxes])
+    area_box  = np.array([b.area for b in boxes])
+    x_box     = np.array([b.force_point[0] for b in boxes])
+    # Physical per-box reference force/q carries the solver's 1/β scaling.
+    g0        = area_box * 2.0 * gamma_ref / chord_box / beta
+
+    # ------------------------------------------------------------------ WT2 slope (per box)
+    r = np.ones(n)
+    surface_meta = []          # (target, strips, moment_ref_array)
+    for T in targets:
+        strips = _surface_strips(boxes, T.caero_eid)
+        if not strips:
+            raise ValueError(
+                f"build_section_correction: CAERO1 {T.caero_eid} has no boxes in the model"
+            )
+        n_strip = len(strips)
+        for name, arr in (("f_slope", T.f_slope), ("alpha_0", T.alpha_0),
+                          ("m_slope", T.m_slope), ("m_0", T.m_0)):
+            if np.asarray(arr).shape != (n_strip,):
+                raise ValueError(
+                    f"build_section_correction: CAERO1 {T.caero_eid} {name} has length "
+                    f"{np.asarray(arr).shape[0]}, expected one value per span strip "
+                    f"({n_strip})"
+                )
+        if T.moment_ref is None:
+            x_mref = np.array([_strip_quarter_chord_x(boxes, idxs) for _, idxs in strips])
+        else:
+            x_mref = np.asarray(T.moment_ref, dtype=float)
+            if x_mref.shape != (n_strip,):
+                raise ValueError(
+                    f"build_section_correction: CAERO1 {T.caero_eid} moment_ref has length "
+                    f"{x_mref.shape[0]}, expected one value per span strip ({n_strip})"
+                )
+        surface_meta.append((T, strips, x_mref))
+
+        for s, (i_span, idxs) in enumerate(strips):
+            if len(idxs) < 2:
+                raise ValueError(
+                    f"build_section_correction: CAERO1 {T.caero_eid} span strip "
+                    f"i_span={i_span} has {len(idxs)} chordwise box(es); matching a "
+                    "section moment needs NCHORD ≥ 2"
+                )
+            idx = np.array(idxs)
+            arm = x_box[idx] - x_mref[s]
+            a_k = g0[idx]
+            b_k = -g0[idx] * arm
+            F_vlm = float(a_k.sum())
+            M_vlm = float(b_k.sum())
+            if abs(F_vlm) > _RATIO_TOL:
+                rbar = float(T.f_slope[s]) / F_vlm
+            else:
+                warnings.warn(
+                    f"build_section_correction: CAERO1 {T.caero_eid} strip i_span={i_span} "
+                    "produces ≈0 reference force; cannot scale force slope, leaving r̄=1",
+                    UserWarning, stacklevel=2,
+                )
+                rbar = 1.0
+            A = np.column_stack((a_k, b_k))
+            gram = A.T @ A
+            rhs = np.array([0.0, float(T.m_slope[s]) - rbar * M_vlm])
+            try:
+                mu = np.linalg.solve(gram, rhs)
+            except np.linalg.LinAlgError:
+                raise ValueError(
+                    f"build_section_correction: singular force/moment fit on CAERO1 "
+                    f"{T.caero_eid} strip i_span={i_span} (chordwise boxes share an x?)"
+                )
+            r[idx] = rbar + A @ mu
+
+    tiny = np.abs(gamma_ref) <= _RATIO_TOL
+    r[tiny] = 1.0
+    cp_target = r * gamma_ref                     # Γ-units WT2 target (no 1/β)
+    # Physical ΔCp operator the solver uses: diag(2r/chord)·(1/β)·AJJ⁻¹.
+    b_op = (2.0 * r / chord_box / beta)[:, np.newaxis] * ajj_inv
+
+    # ----------------------------------------------------------------- W2GJ offset (global)
+    corrected = []   # (idx_array, arm, F0, M0)
+    for T, strips, x_mref in surface_meta:
+        for s, (_, idxs) in enumerate(strips):
+            idx = np.array(idxs)
+            arm = x_box[idx] - x_mref[s]
+            corrected.append((idx, arm,
+                              -float(T.f_slope[s]) * float(T.alpha_0[s]),
+                              float(T.m_0[s])))
+    n_cs = len(corrected)
+    P = np.zeros((n, 2 * n_cs))
+    sec = np.zeros((2 * n_cs, n))
+    t = np.zeros(2 * n_cs)
+    for j, (idx, arm, F0, M0) in enumerate(corrected):
+        c_s = float(np.mean(chord_box[idx]))
+        P[idx, 2 * j] = 1.0
+        P[idx, 2 * j + 1] = arm / max(c_s, 1e-14)
+        sec[2 * j,     idx] = area_box[idx]
+        sec[2 * j + 1, idx] = -area_box[idx] * arm
+        t[2 * j], t[2 * j + 1] = F0, M0
+
+    g_map = sec @ b_op @ P
+    if n_cs and (float(np.linalg.cond(g_map)) > 1e14):
+        p_vec, *_ = np.linalg.lstsq(g_map, t, rcond=None)
+    else:
+        p_vec = np.linalg.solve(g_map, t) if n_cs else np.zeros(0)
+    wg = P @ p_vec if n_cs else np.zeros(n)
+
+    # ----------------------------------------------------------- emit cards + diagnostics
+    cp_off = b_op @ wg
+    fbox_off = area_box * cp_off
+    cards: dict = {}
+    per_surface: dict = {}
+    for i, (T, strips, x_mref) in enumerate(surface_meta):
+        n_strip = len(strips)
+        af = np.zeros(n_strip); am = np.zeros(n_strip)
+        af0 = np.zeros(n_strip); am0 = np.zeros(n_strip)
+        for s, (_, idxs) in enumerate(strips):
+            idx = np.array(idxs)
+            arm = x_box[idx] - x_mref[s]
+            af[s]  = float((r[idx] * g0[idx]).sum())
+            am[s]  = float((-(r[idx] * g0[idx]) * arm).sum())
+            af0[s] = float(fbox_off[idx].sum())
+            am0[s] = float((-fbox_off[idx] * arm).sum())
+        surf_idx = [k for k, b in enumerate(boxes) if b.caero_eid == T.caero_eid]
+        w2 = W2gj(sid=sid_w2gj_base + i, caero_eid=T.caero_eid,
+                  data=wg[surf_idx].tolist())
+        ac = Aecorr(sid=sid_aecorr_base + i, method="WT2", caero_eid=T.caero_eid,
+                    target=cp_target[surf_idx].tolist())
+        cards[T.caero_eid] = (w2, ac)
+        per_surface[T.caero_eid] = SurfaceDiagnostics(
+            caero_eid=T.caero_eid, moment_ref=x_mref,
+            achieved_f_slope=af, achieved_m_slope=am,
+            achieved_f0=af0, achieved_m0=am0,
+        )
+
+    return MultiSectionCorrectionResult(cards=cards, r=r, wg=wg, per_surface=per_surface)
 
 
 def build_section_correction(
@@ -127,209 +334,73 @@ def build_section_correction(
     sid_w2gj: int,
     sid_aecorr: int,
     moment_ref=None,
+    beta: float = 1.0,
 ) -> SectionCorrectionResult:
-    """Synthesise W2GJ + WT2 cards reproducing per-strip section force AND moment.
+    """Single-surface convenience wrapper around ``build_section_correction_multi``.
 
-    Args:
-        boxes:      AeroBox list for one CAERO1, in mesh (row-major) order.
-        ajj:        raw VLM AIC for those boxes (Γ-form: Γ = AJJ⁻¹·w).
-        f_slope:    per-strip section normal-force slope dF/dα (force/q per rad).
-        alpha_0:    per-strip zero-normal-force angle α₀ (rad). F at α=0 is
-                    F₀ = −f_slope·α₀ (cambered section: α₀ ≠ 0).
-        m_slope:    per-strip pitch-moment slope dM/dα (moment/q per rad, nose-up +).
-        m_0:        per-strip pitch moment at α=0 (moment/q, nose-up +) — Cm0-like.
-        caero_eid:  CAERO1 EID the generated cards apply to.
-        sid_w2gj:   SID for the emitted W2GJ card.
-        sid_aecorr: SID for the emitted AECORR (WT2) card.
-        moment_ref: optional per-strip moment reference x (CID 0). Default =
-                    each strip's ¼-chord.
-
-    Returns:
-        SectionCorrectionResult with the two cards and achieved-vs-target diagnostics.
-
-    Raises:
-        ValueError: on multi-surface input, length mismatch, a strip with < 2
-                    chordwise boxes (a moment needs ≥ 2), or a singular fit.
+    Requires ``boxes`` to contain exactly one CAERO1 (the whole AIC). For multi-surface
+    models call ``build_section_correction_multi`` with one ``SurfaceTargets`` per surface.
+    ``beta`` is the Prandtl–Glauert factor at the correction Mach (see the multi engine).
     """
-    n = len(boxes)
-    strips = _strip_groups(boxes)
-    n_strip = len(strips)
-
-    f_slope = np.asarray(f_slope, dtype=float)
-    alpha_0 = np.asarray(alpha_0, dtype=float)
-    m_slope = np.asarray(m_slope, dtype=float)
-    m_0     = np.asarray(m_0,     dtype=float)
-    for name, arr in (("f_slope", f_slope), ("alpha_0", alpha_0),
-                      ("m_slope", m_slope), ("m_0", m_0)):
-        if arr.shape != (n_strip,):
-            raise ValueError(
-                f"build_section_correction: {name} has length {arr.shape[0]}, "
-                f"expected one value per span strip ({n_strip})"
-            )
-
-    if moment_ref is None:
-        x_mref = np.array([_strip_quarter_chord_x(boxes, idxs) for _, idxs in strips])
-    else:
-        x_mref = np.asarray(moment_ref, dtype=float)
-        if x_mref.shape != (n_strip,):
-            raise ValueError(
-                f"build_section_correction: moment_ref has length {x_mref.shape[0]}, "
-                f"expected one value per span strip ({n_strip})"
-            )
-
-    cond = float(np.linalg.cond(ajj))
-    if cond > _COND_WARN:
-        warnings.warn(
-            f"AIC matrix is poorly conditioned (cond={cond:.2e}); "
-            "section-correction accuracy may be degraded",
-            UserWarning, stacklevel=2,
+    eids = {b.caero_eid for b in boxes}
+    if len(eids) != 1:
+        raise ValueError(
+            "build_section_correction targets a single surface "
+            f"(boxes span CAERO1 {sorted(eids)}); use build_section_correction_multi "
+            "for multiple surfaces."
         )
-
-    ajj_inv   = np.linalg.solve(ajj, np.eye(n))
-    gamma_ref = ajj_inv @ (-np.ones(n))            # unit-incidence reference circulation
-    chord_box = np.array([_box_chord(b) for b in boxes])
-    area_box  = np.array([b.area for b in boxes])
-    x_box     = np.array([b.force_point[0] for b in boxes])   # box ¼-chord x (force pt)
-
-    # Per-box reference surface-normal force/q (= per-rad slope contribution).
-    g0 = area_box * 2.0 * gamma_ref / chord_box
-
-    # ------------------------------------------------------------------ WT2 slope
-    # Per strip: uniform scale for the force (no shape change) + minimum-norm
-    # perturbation orthogonal to the force for the a.c./moment mismatch.
-    r = np.ones(n)
-    f0_slope_vlm = np.zeros(n_strip)
-    m0_slope_vlm = np.zeros(n_strip)
-    for s, (_, idxs) in enumerate(strips):
-        if len(idxs) < 2:
-            raise ValueError(
-                f"build_section_correction: span strip i_span={strips[s][0]} has "
-                f"{len(idxs)} chordwise box(es); matching a section moment needs "
-                "NCHORD ≥ 2"
-            )
-        idx = np.array(idxs)
-        arm = x_box[idx] - x_mref[s]
-        a_k = g0[idx]                  # force coefficients
-        b_k = -g0[idx] * arm           # nose-up moment coefficients
-        F_vlm = float(a_k.sum())
-        M_vlm = float(b_k.sum())
-        f0_slope_vlm[s] = F_vlm
-        m0_slope_vlm[s] = M_vlm
-
-        if abs(F_vlm) > _RATIO_TOL:
-            rbar = float(f_slope[s]) / F_vlm
-        else:
-            warnings.warn(
-                f"build_section_correction: strip i_span={strips[s][0]} produces "
-                "≈0 reference force; cannot scale force slope, leaving r̄=1",
-                UserWarning, stacklevel=2,
-            )
-            rbar = 1.0
-
-        # δ minimises ‖δ‖ s.t. Σδ·a = 0 (force unchanged) and
-        #                       Σδ·b = m_slope − r̄·M_vlm (moment residual).
-        A = np.column_stack((a_k, b_k))             # (len(idx), 2)
-        gram = A.T @ A
-        rhs = np.array([0.0, float(m_slope[s]) - rbar * M_vlm])
-        try:
-            mu = np.linalg.solve(gram, rhs)
-        except np.linalg.LinAlgError:
-            raise ValueError(
-                f"build_section_correction: singular force/moment fit on strip "
-                f"i_span={strips[s][0]} (chordwise boxes share an x-station?)"
-            )
-        r[idx] = rbar + A @ mu
-
-    # Mirror apply_wt2's near-zero-reference guard so the emitted card and the
-    # operator used below are identical (apply_wt2 keeps r=1 where |Γ_ref|<tol).
-    tiny = np.abs(gamma_ref) <= _RATIO_TOL
-    r[tiny] = 1.0
-    cp_target = r * gamma_ref            # WT2 target is in Γ-units (apply_wt2 convention)
-
-    # ΔCp operator the solver will use: diag(2r/chord) · AJJ⁻¹  (== ajj_inv_corr).
-    b_op = (2.0 * r / chord_box)[:, np.newaxis] * ajj_inv
-
-    # ----------------------------------------------------------------- W2GJ offset
-    # Two-mode camber per strip: wg = a_s·1 + b_s·ξ  (ξ = (x − x_ref)/chord).
-    # Solve the (2·n_strip) linear system so the WT2-corrected operator reproduces
-    # (F₀, M₀) per strip exactly (global, accounts for inter-strip induction).
-    P = np.zeros((n, 2 * n_strip))
-    sec = np.zeros((2 * n_strip, n))     # rows: [F_s, M_s] interleaved per strip
-    f0_target = -f_slope * alpha_0
-    t = np.zeros(2 * n_strip)
-    for s, (_, idxs) in enumerate(strips):
-        idx = np.array(idxs)
-        arm = x_box[idx] - x_mref[s]
-        c_s = float(np.mean([chord_box[k] for k in idxs]))
-        P[idx, 2 * s] = 1.0
-        P[idx, 2 * s + 1] = arm / max(c_s, 1e-14)
-        sec[2 * s,     idx] = area_box[idx]          # section force row
-        sec[2 * s + 1, idx] = -area_box[idx] * arm   # section nose-up moment row
-        t[2 * s]     = f0_target[s]
-        t[2 * s + 1] = m_0[s]
-
-    g_map = sec @ b_op @ P               # (2 n_strip, 2 n_strip)
-    if abs(float(np.linalg.det(g_map))) < 1e-300 or float(np.linalg.cond(g_map)) > 1e14:
-        # Fall back to least squares rather than fail outright.
-        p_vec, *_ = np.linalg.lstsq(g_map, t, rcond=None)
-    else:
-        p_vec = np.linalg.solve(g_map, t)
-    wg = P @ p_vec
-
-    # ------------------------------------------------------------- diagnostics
-    cp_off = b_op @ wg                   # ΔCp at α=0 from the camber line
-    fbox_off = area_box * cp_off
-    ach_f_slope = np.zeros(n_strip)
-    ach_m_slope = np.zeros(n_strip)
-    ach_f0      = np.zeros(n_strip)
-    ach_m0      = np.zeros(n_strip)
-    for s, (_, idxs) in enumerate(strips):
-        idx = np.array(idxs)
-        arm = x_box[idx] - x_mref[s]
-        ach_f_slope[s] = float((r[idx] * g0[idx]).sum())
-        ach_m_slope[s] = float((-(r[idx] * g0[idx]) * arm).sum())
-        ach_f0[s]      = float(fbox_off[idx].sum())
-        ach_m0[s]      = float((-fbox_off[idx] * arm).sum())
-
-    w2gj_card   = W2gj(sid=sid_w2gj, caero_eid=caero_eid, data=wg.tolist())
-    aecorr_card = Aecorr(sid=sid_aecorr, method="WT2", caero_eid=caero_eid,
-                         target=cp_target.tolist())
-
+    if caero_eid not in eids:
+        raise ValueError(
+            f"build_section_correction: caero_eid {caero_eid} not in boxes {sorted(eids)}"
+        )
+    tgt = SurfaceTargets(
+        caero_eid=caero_eid,
+        f_slope=np.asarray(f_slope, dtype=float),
+        alpha_0=np.asarray(alpha_0, dtype=float),
+        m_slope=np.asarray(m_slope, dtype=float),
+        m_0=np.asarray(m_0, dtype=float),
+        moment_ref=None if moment_ref is None else np.asarray(moment_ref, dtype=float),
+    )
+    multi = build_section_correction_multi(
+        boxes, ajj, [tgt], sid_w2gj_base=sid_w2gj, sid_aecorr_base=sid_aecorr, beta=beta,
+    )
+    w2, ac = multi.cards[caero_eid]
+    d = multi.per_surface[caero_eid]
     return SectionCorrectionResult(
-        w2gj=w2gj_card,
-        aecorr=aecorr_card,
-        r=r,
-        wg=wg,
-        moment_ref=x_mref,
-        achieved_f_slope=ach_f_slope,
-        achieved_m_slope=ach_m_slope,
-        achieved_f0=ach_f0,
-        achieved_m0=ach_m0,
+        w2gj=w2, aecorr=ac, r=multi.r, wg=multi.wg, moment_ref=d.moment_ref,
+        achieved_f_slope=d.achieved_f_slope, achieved_m_slope=d.achieved_m_slope,
+        achieved_f0=d.achieved_f0, achieved_m0=d.achieved_m0,
     )
 
 
 def _card_lines(name: str, head: list, values: list) -> str:
     """Free-field BDF card text: head fields then 8 values/line, '+'-continued."""
     fields = [name] + [str(h) for h in head]
-    out, line = [], fields[:]
-    # first line carries head + up to (8 - len(head)) values
+    line = fields[:]
     first_cap = max(0, 8 - len(head))
     line += [f"{v:.6E}" for v in values[:first_cap]]
-    out.append(", ".join(line))
+    out = [", ".join(line)]
     rest = values[first_cap:]
     for i in range(0, len(rest), 8):
         out.append(", ".join(["+"] + [f"{v:.6E}" for v in rest[i:i + 8]]))
     return "\n".join(out)
 
 
-def cards_to_bdf(result: SectionCorrectionResult) -> str:
-    """Format the generated W2GJ + AECORR(WT2) cards as bulk-data text."""
-    w2 = result.w2gj
-    ac = result.aecorr
-    w2gj_txt = _card_lines("W2GJ", [w2.sid, w2.caero_eid], w2.data)
-    aecorr_txt = _card_lines("AECORR", [ac.sid, ac.method, ac.caero_eid], ac.target)
-    return (
-        "$ Section force+moment correction (W2GJ camber offset + WT2 slope/a.c.)\n"
-        f"{w2gj_txt}\n"
-        f"{aecorr_txt}\n"
-    )
+def _pair_to_bdf(w2: W2gj, ac: Aecorr) -> str:
+    return (f"{_card_lines('W2GJ', [w2.sid, w2.caero_eid], w2.data)}\n"
+            f"{_card_lines('AECORR', [ac.sid, ac.method, ac.caero_eid], ac.target)}\n")
+
+
+def cards_to_bdf(result) -> str:
+    """Format the generated W2GJ + AECORR(WT2) cards as bulk-data text.
+
+    Accepts a single-surface ``SectionCorrectionResult`` or a multi-surface
+    ``MultiSectionCorrectionResult`` (all surfaces concatenated).
+    """
+    header = "$ Section force+moment correction (W2GJ camber offset + WT2 slope/a.c.)\n"
+    if isinstance(result, MultiSectionCorrectionResult):
+        body = "".join(_pair_to_bdf(w2, ac)
+                       for _, (w2, ac) in sorted(result.cards.items()))
+    else:
+        body = _pair_to_bdf(result.w2gj, result.aecorr)
+    return header + body

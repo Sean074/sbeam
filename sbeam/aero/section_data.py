@@ -46,7 +46,10 @@ import pandas as pd
 
 from sbeam.aero.section_correction import (
     build_section_correction,
+    build_section_correction_multi,
+    SurfaceTargets,
     SectionCorrectionResult,
+    MultiSectionCorrectionResult,
 )
 
 COLUMNS = ["caero", "eta", "mach", "var", "a_lo", "a_hi",
@@ -131,12 +134,13 @@ def available_conditions(df: pd.DataFrame) -> list:
     return conds
 
 
-def _strip_geometry(boxes: list):
-    """Per-strip (sorted by i_span): η, area, local chord, leading-edge x."""
+def _strip_geometry(boxes: list, caero_eid: int):
+    """Per-strip (one CAERO1, sorted by i_span): η, area, local chord, leading-edge x."""
     from collections import defaultdict
     groups = defaultdict(list)
     for k, b in enumerate(boxes):
-        groups[b.i_span].append(k)
+        if b.caero_eid == caero_eid:
+            groups[b.i_span].append(k)
     strips = sorted(groups)
     eta, area, chord, le_x = [], [], [], []
     for s in strips:
@@ -151,11 +155,59 @@ def _strip_geometry(boxes: list):
     return (np.array(eta), np.array(area), np.array(chord), np.array(le_x))
 
 
+def _beta_pg(mach: float) -> float:
+    return math.sqrt(1.0 - mach * mach) if 0.0 < mach < 1.0 else 1.0
+
+
+def _select_block(data: pd.DataFrame, caero_eid: int, mach: float, region: tuple,
+                  mach_tol: float = 1e-6) -> pd.DataFrame:
+    a_lo, a_hi = float(region[0]), float(region[1])
+    sel = data[(data["caero"] == caero_eid)
+               & (np.abs(data["mach"] - mach) <= mach_tol)
+               & (np.abs(data["a_lo"] - a_lo) <= 1e-9)
+               & (np.abs(data["a_hi"] - a_hi) <= 1e-9)]
+    return sel.sort_values("eta")
+
+
+def _surface_targets(boxes: list, sel: pd.DataFrame, caero_eid: int):
+    """Interpolate a selected block onto a surface's strips and convert to targets.
+
+    Returns (SurfaceTargets, extrapolated, var).
+    """
+    eta_s, area_s, chord_s, le_x_s = _strip_geometry(boxes, caero_eid)
+    eta_d = sel["eta"].to_numpy()
+    extrapolated = bool(eta_s.min() < eta_d.min() - 1e-9
+                        or eta_s.max() > eta_d.max() + 1e-9)
+
+    def interp(col):
+        return np.interp(eta_s, eta_d, sel[col].to_numpy())  # clamps at the ends
+
+    cn_a, a0, cm_a, cm0, xref = (interp(c) for c in ("cn_a", "a0", "cm_a", "cm0", "xref"))
+    # Coefficients (local-chord normalised, per deg) → builder targets (per rad).
+    tgt = SurfaceTargets(
+        caero_eid=caero_eid,
+        f_slope=(cn_a * _RAD2DEG) * area_s,
+        alpha_0=a0 * _DEG2RAD,
+        m_slope=(cm_a * _RAD2DEG) * chord_s * area_s,
+        m_0=cm0 * chord_s * area_s,
+        moment_ref=le_x_s + xref * chord_s,
+    )
+    return tgt, extrapolated, str(sel["var"].iloc[0])
+
+
 @dataclass
 class SectionDataBuildResult:
     correction:  SectionCorrectionResult
     condition:   Condition
     extrapolated: bool          # any strip η outside the table's η-range (clamped)
+
+
+@dataclass
+class MultiSectionDataBuildResult:
+    correction:   MultiSectionCorrectionResult
+    conditions:   dict          # {caero_eid: Condition}
+    extrapolated: dict          # {caero_eid: bool}
+    skipped:      list          # [(caero_eid, reason), ...] surfaces with no usable region
 
 
 def build_from_section_data(
@@ -170,66 +222,95 @@ def build_from_section_data(
     sid_aecorr: int,
     mach_tol: float = 1e-6,
 ) -> SectionDataBuildResult:
-    """Interpolate the selected (caero, mach, region) block onto the mesh strips,
-    convert section coefficients to dimensional targets, and build the correction.
+    """Single-surface build: interpolate the selected (caero, mach, region) block onto the
+    mesh strips, convert section coefficients to targets, and build the correction.
 
     Args:
         boxes:    AeroBox list for one CAERO1 (mesh order) — the whole AIC.
-        ajj:      PG-consistent raw AIC at *mach* (pass ``β·ajj_pg`` so the reference
-                  VLM solve matches the solver's 1/β-scaled operator; at M=0, ``β=1``).
-        df:       section-data table (validated or raw).
+        ajj:      raw PG AIC ``ajj_pg`` at *mach* (e.g. ``build_aero_model(bulk, mach).ajj``).
+                  The Prandtl–Glauert 1/β factor is applied internally from *mach*.
         region:   (a_lo, a_hi) selecting the linearised incidence region.
-        mach_tol: tolerance for the exact-Mach row match.
 
     Returns:
         SectionDataBuildResult with the generated cards and an extrapolation flag.
     """
     data = validate_section_data(df)
     a_lo, a_hi = float(region[0]), float(region[1])
-    sel = data[(data["caero"] == caero_eid)
-               & (np.abs(data["mach"] - mach) <= mach_tol)
-               & (np.abs(data["a_lo"] - a_lo) <= 1e-9)
-               & (np.abs(data["a_hi"] - a_hi) <= 1e-9)]
+    sel = _select_block(data, caero_eid, mach, region, mach_tol)
     if sel.empty:
         raise ValueError(
             f"build_from_section_data: no rows for CAERO {caero_eid}, Mach {mach}, "
             f"region [{a_lo}, {a_hi}]. Available: "
             f"{[c.label for c in available_conditions(data)]}"
         )
-    sel = sel.sort_values("eta")
-    var = str(sel["var"].iloc[0])
-
-    eta_s, area_s, chord_s, le_x_s = _strip_geometry(boxes)
-
-    eta_d = sel["eta"].to_numpy()
-    extrapolated = bool(eta_s.min() < eta_d.min() - 1e-9
-                        or eta_s.max() > eta_d.max() + 1e-9)
-
-    def interp(col):
-        return np.interp(eta_s, eta_d, sel[col].to_numpy())  # clamps at the ends
-
-    cn_a = interp("cn_a")     # per deg
-    a0   = interp("a0")       # deg
-    cm_a = interp("cm_a")     # per deg
-    cm0  = interp("cm0")
-    xref = interp("xref")     # chord fraction
-
-    # Coefficients (local-chord normalised, per deg) → builder targets (per rad).
-    f_slope = (cn_a * _RAD2DEG) * area_s
-    alpha_0 = a0 * _DEG2RAD
-    m_slope = (cm_a * _RAD2DEG) * chord_s * area_s
-    m_0     = cm0 * chord_s * area_s
-    moment_ref = le_x_s + xref * chord_s
-
+    tgt, extrapolated, var = _surface_targets(boxes, sel, caero_eid)
     corr = build_section_correction(
         boxes, ajj,
-        f_slope=f_slope, alpha_0=alpha_0, m_slope=m_slope, m_0=m_0,
+        f_slope=tgt.f_slope, alpha_0=tgt.alpha_0, m_slope=tgt.m_slope, m_0=tgt.m_0,
         caero_eid=caero_eid, sid_w2gj=sid_w2gj, sid_aecorr=sid_aecorr,
-        moment_ref=moment_ref,
+        moment_ref=tgt.moment_ref, beta=_beta_pg(mach),
     )
     cond = Condition(caero_eid, float(mach), var, a_lo, a_hi, len(sel))
     return SectionDataBuildResult(correction=corr, condition=cond,
                                   extrapolated=extrapolated)
+
+
+def build_from_section_data_multi(
+    boxes: list,
+    ajj: np.ndarray,
+    df: pd.DataFrame,
+    *,
+    mach: float,
+    incidence_deg: float,
+    sid_w2gj_base: int,
+    sid_aecorr_base: int,
+    caeros=None,
+    mach_tol: float = 1e-6,
+) -> MultiSectionDataBuildResult:
+    """Multi-surface build at one flight point (Mach + operating incidence).
+
+    For every CAERO1 present in the table at *mach* (or the subset *caeros*), the region
+    whose range contains *incidence_deg* is selected (v1: one region per surface), its
+    block is interpolated onto that surface's strips and converted, and a single **global**
+    correction is built (one W2GJ + WT2 card pair per surface). Surfaces with no region
+    containing *incidence_deg* are skipped (reported in ``.skipped``).
+
+    Args:
+        boxes: whole-model AeroBox list (full AIC).
+        ajj:   raw PG AIC ``ajj_pg`` at *mach* (``build_aero_model(bulk, mach).ajj``);
+               the 1/β factor is applied internally from *mach*.
+    """
+    data = validate_section_data(df)
+    table_caeros = sorted(set(int(c) for c in data["caero"].unique()))
+    want = table_caeros if caeros is None else [int(c) for c in caeros]
+
+    targets, conditions, extrap, skipped = [], {}, {}, []
+    for eid in want:
+        region = operating_region(data, eid, mach, incidence_deg, mach_tol)
+        if region is None:
+            skipped.append((eid, f"no region contains α/β={incidence_deg}° at Mach {mach}"))
+            continue
+        sel = _select_block(data, eid, mach, region, mach_tol)
+        if sel.empty:
+            skipped.append((eid, "no rows at this Mach"))
+            continue
+        tgt, ex, var = _surface_targets(boxes, sel, eid)
+        targets.append(tgt)
+        conditions[eid] = Condition(eid, float(mach), var, region[0], region[1], len(sel))
+        extrap[eid] = ex
+
+    if not targets:
+        raise ValueError(
+            f"build_from_section_data_multi: no surfaces usable at Mach {mach}, "
+            f"incidence {incidence_deg}°. Skipped: {skipped}"
+        )
+
+    corr = build_section_correction_multi(
+        boxes, ajj, targets,
+        sid_w2gj_base=sid_w2gj_base, sid_aecorr_base=sid_aecorr_base, beta=_beta_pg(mach),
+    )
+    return MultiSectionDataBuildResult(correction=corr, conditions=conditions,
+                                       extrapolated=extrap, skipped=skipped)
 
 
 def operating_region(df: pd.DataFrame, caero_eid: int, mach: float,

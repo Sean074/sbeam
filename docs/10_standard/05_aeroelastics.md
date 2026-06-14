@@ -24,8 +24,8 @@ Results   (cp, cl_section, CL, CY, CM, CDi, e, per_surface, …)
 | `sbeam/aero/vlm.py` | Biot–Savart segments, horseshoe influence, AIC matrix, rigid-AOA solve |
 | `sbeam/aero/integration.py` | `Skj` force integration matrix, `Djk` downwash matrix, `wg` baseline normalwash |
 | `sbeam/aero/corrections.py` | `Wkk` diagonal correction, `WT1` per-strip force-match, `WT2` pressure-match |
-| `sbeam/aero/section_correction.py` | `build_section_correction()` — synthesise a `W2GJ`+`WT2` card pair matching section force **and** moment (slope + α=0 offset); `cards_to_bdf()` |
-| `sbeam/aero/section_data.py` | Spanwise section-coefficient table ingestion (tidy CSV) → strip targets → `build_section_correction`: `validate_section_data`, `available_conditions`, `template_dataframe`, `build_from_section_data`, `operating_region` |
+| `sbeam/aero/section_correction.py` | Synthesise a per-surface `W2GJ`+`WT2` card pair matching section force **and** moment (slope + α=0 offset): `build_section_correction_multi` (engine, all surfaces at once), `build_section_correction` (single-surface wrapper), `cards_to_bdf()` |
+| `sbeam/aero/section_data.py` | Spanwise section-coefficient table ingestion (tidy CSV) → strip targets → builder: `validate_section_data`, `available_conditions`, `template_dataframe`, `build_from_section_data` (single), `build_from_section_data_multi` (per-surface at one flight point), `operating_region` |
 | `sbeam/aero/aero_model.py` | `AeroModel` container + `build_aero_model()` factory |
 | `sbeam/aero/spline.py` | **Phase B** — `build_g_spline()`: builds `g_slope` (n_box×n_g) and `g_disp` (3n_box×n_g) from `SPLINE2` + `ATTACH` + `SPLINE0` cards |
 | `sbeam/aero/coupling.py` | `build_qaa` flexible aero stiffness `Q_aa = G_dispᵀ S_kj (A_jj*)⁻¹ D_jk G_slope`; `build_fg` baseline aero load; `build_gaf` modal GAF `Q_hh = Φᵀ Q_aa Φ` |
@@ -405,11 +405,18 @@ Phase A provides three correction tiers to match VLM predictions to higher-fidel
 CFD or wind-tunnel data. The correction precedence in `build_aero_model()` is:
 
 ```
-WKK card present  →  apply_wkk  (caller inverts via np.linalg.solve)
-AECORR WT2 present →  apply_wt2  (returns AJJ*⁻¹)
-AECORR WT1 present →  apply_wt1  (returns AJJ*⁻¹)
+WKK card present   →  apply_wkk  (caller inverts via np.linalg.solve; primary CAERO1)
+AECORR WT2 present →  apply_wt2  (returns AJJ*⁻¹) — ALL WT2 cards combined (multi-surface)
+AECORR WT1 present →  apply_wt1  (returns AJJ*⁻¹; primary CAERO1)
 No correction      →  np.linalg.solve(AJJ, I)
 ```
+
+**Multi-surface WT2.** When several CAERO1 surfaces each carry a `WT2` `AECORR`, they are
+combined into one global Γ-unit target: each card fills its own surface's boxes (row-major),
+and boxes on uncorrected surfaces default to the VLM reference circulation (ratio 1). `W2GJ`
+baseline normalwash is already accumulated per CAERO1, so the section force+moment correction
+(`section_correction.py`) works across the whole model. `WKK` and `WT1` still act on the
+primary CAERO1 only.
 
 ### Card Formats
 
@@ -479,33 +486,46 @@ it without disturbing the other (theory §3.4–3.5):
 | `dF/dα`, `dM/dα` | force-curve slope **and** aerodynamic centre (α-driven chordwise shape) | **WT2** (per-box ratio) |
 | `F₀`, `M₀` | zero-α lift offset **and** camber pitching moment (load at α=0) | **W2GJ** (camber-line normalwash) |
 
-### `build_section_correction(boxes, ajj, *, f_slope, alpha_0, m_slope, m_0, caero_eid, sid_w2gj, sid_aecorr, moment_ref=None) -> SectionCorrectionResult`
+### `build_section_correction_multi(boxes, ajj, targets, *, sid_w2gj_base, sid_aecorr_base, beta=1.0)`
 
-Per-strip target arrays (ascending `i_span`, same order as `apply_wt1`'s `f_target`):
-`f_slope` (dF/dα, force/q per rad), `alpha_0` (zero-force angle α₀ in rad, so
-`F₀ = −f_slope·α₀`), `m_slope` (dM/dα, nose-up + per rad), `m_0` (M at α=0, nose-up +).
-Pitching moment is nose-up positive about the per-strip `moment_ref` (default = strip
-¼-chord), matching `sol144._pitch_moment`. Returns a `SectionCorrectionResult` with the
-two cards (`.w2gj`, `.aecorr`), the raw `.r` / `.wg` arrays, the `.moment_ref` used, and
-per-strip achieved-vs-target diagnostics. `cards_to_bdf(result)` formats the pair as
-bulk-data text.
+The engine. `targets` is a list of `SurfaceTargets(caero_eid, f_slope, alpha_0, m_slope,
+m_0, moment_ref=None)` — one per CAERO1 to correct. Per-strip arrays are ascending
+`i_span` within each surface; `f_slope` (dF/dα, force/q per rad), `alpha_0` (α₀ rad,
+`F₀ = −f_slope·α₀`), `m_slope` (dM/dα, nose-up + per rad), `m_0` (M at α=0, nose-up +);
+moment nose-up positive about `moment_ref` (default strip ¼-chord). Returns a
+`MultiSectionCorrectionResult` with `cards[eid] = (W2gj, Aecorr)` (SIDs `base + i`), the
+**global** per-box `.r`/`.wg`, and per-surface diagnostics. `boxes`/`ajj` are the **whole
+model** (full AIC). `beta = √(1−M²)` carries the solver's Prandtl–Glauert 1/β factor on the
+*physical* force while the WT2 card target stays in pure Γ-units (pass the raw `ajj_pg` and
+`beta`, **not** `β·ajj_pg`).
 
-**Algorithm.** The WT2 ratio is calibrated on `w_ref = −ones` and is therefore
-independent of `w_g`, so the build is one pass: (1) per strip, a uniform scale
+### `build_section_correction(boxes, ajj, *, …, moment_ref=None, beta=1.0) -> SectionCorrectionResult`
+
+Single-surface convenience wrapper (requires `boxes` to contain exactly one CAERO1; raises
+otherwise). Returns the one surface's cards plus the (global == surface) `.r`/`.wg` and
+diagnostics. `cards_to_bdf(result)` formats the pair(s) as bulk-data text — it accepts both
+the single- and multi-surface result.
+
+**Algorithm.** The WT2 ratio is calibrated on `w_ref = −ones` and is therefore independent
+of `w_g`, so the build is one pass: (1) **per strip across all surfaces**, a uniform scale
 `r̄ = f_slope/f_slope_vlm` hits the force with **no shape change**, plus a minimum-norm
 per-box perturbation orthogonal to the force (`Σ δ·g0 = 0`) supplies only the moment/a.c.
 mismatch — when the target a.c. equals the VLM a.c. (pure slope scaling), `δ = 0` and the
-result degenerates exactly to the uniform WT1 scaling. (2) A two-mode camber line per
-strip (uniform incidence + chordwise-linear) is sized by a small global linear solve so
-the WT2-corrected operator reproduces `(F₀, M₀)` per strip exactly (accounting for
-inter-strip induction; WT2 also scales the camber load, which the ordering handles).
+result degenerates exactly to the uniform WT1 scaling. (2) A two-mode camber line per strip
+(uniform incidence + chordwise-linear) is sized by **one global linear solve over all
+corrected strips** so the WT2-corrected operator reproduces `(F₀, M₀)` per strip exactly
+(camber on one surface induces load on the others; the global solve captures it).
 
-**Constraints / guards.** Single CAERO1 only (matches the existing full-length WT2
-target path) — multi-surface raises. Each strip needs **NCHORD ≥ 2** (a moment needs two
-chordwise boxes) — raises otherwise. The emitted WT2 target is in Γ-units (the
-`apply_wt2` convention) and mirrors `apply_wt2`'s near-zero-reference guard so the card
-and the solver operator are identical. `ajj` must be calibrated at the correction Mach
-(pass the same compressed AIC the solver uses, or build at M=0).
+**Multi-surface.** The AIC is global, so the build is global: a per-box `r` (1 on
+uncorrected boxes) and a global camber solve, emitted as one card pair **per surface**. The
+solver combines them — see `build_aero_model` (multiple `WT2` cards → one global Γ-target;
+`W2GJ` already accumulated per CAERO1).
+
+**Constraints / guards.** Each corrected strip needs **NCHORD ≥ 2** (a moment needs two
+chordwise boxes) — raises otherwise. The emitted WT2 target is in Γ-units (the `apply_wt2`
+convention) and mirrors `apply_wt2`'s near-zero-reference guard so the card and the solver
+operator are identical. `ajj` is the raw `ajj_pg` at the correction Mach (with `beta`); at
+M=0, `beta=1`.
 
 ### Spanwise section-data input (`section_data.py`)
 
@@ -539,15 +559,31 @@ Functions: `validate_section_data(df)` (schema/typing checks); `available_condit
 → selectable `(caero, mach, region)` blocks; `template_dataframe(boxes, caero_eid, …)` →
 a starter table pre-filled with the strip `eta` stations (for `st.data_editor` / template
 download); `build_from_section_data(boxes, ajj, df, *, caero_eid, mach, region, sid_w2gj,
-sid_aecorr)` → `SectionDataBuildResult` (the correction + selected condition +
-extrapolation flag); `operating_region(df, caero, mach, incidence_deg)` → the region whose
-range contains a trim incidence.
+sid_aecorr)` → `SectionDataBuildResult` (single surface); **`build_from_section_data_multi(
+boxes, ajj, df, *, mach, incidence_deg, sid_w2gj_base, sid_aecorr_base, caeros=None)`** →
+`MultiSectionDataBuildResult` — corrects every surface in the table at one flight point;
+`operating_region(df, caero, mach, incidence_deg)` → the region whose range contains a trim
+incidence.
+
+**Multi-surface (`build_from_section_data_multi`).** Given a flight Mach **and** an
+operating incidence, it picks for each CAERO1 the region whose `[a_lo, a_hi]` contains that
+incidence (per-surface), interpolates and converts each, and builds **one global**
+correction emitting a card pair per surface. Surfaces with no containing region are skipped
+(listed in `.skipped`).
 
 **v1 selection.** Mach is matched **exactly** against the table (no Mach interpolation),
-and a **single operating region** is built; the caller warns if the trimmed incidence falls
-outside `[a_lo, a_hi]`. Pass `ajj` as the **PG-consistent** AIC at the chosen Mach
-(`β·ajj_pg`, so the reference VLM solve matches the solver's 1/β-scaled operator; at M=0,
-`β=1`).
+and a **single operating region** per surface is built; the caller warns if the trimmed
+incidence falls outside `[a_lo, a_hi]`. Pass `ajj` as the **raw** PG AIC at the chosen Mach
+(`build_aero_model(bulk, mach).ajj`); the Prandtl–Glauert 1/β factor is applied internally
+from `mach`.
+
+**Worked example.** `sample/cessna210_aero.bdf` + `sample/cessna210_section_data.csv` are a
+full-span 5-surface Cessna 210-like model (wing + HTP + VTP) with per-surface section data —
+a cambered, two-α-region wing, symmetric HTP, and a `BETA` VTP — exercised end-to-end by
+`tests/aero/test_cessna210_example.py`. ⚠ The viewer **Aero tab** (`solve_rigid_cl`) reflects
+only the `W2GJ` camber, **not** the `WT2` slope/a.c. correction (it re-solves the raw AIC
+rather than using `ajj_inv_corr`); the full correction is applied on the SOL 144 /
+`build_aero_model` path.
 
 ### `build_aero_model(bulk, grid_index=None) -> AeroModel`
 

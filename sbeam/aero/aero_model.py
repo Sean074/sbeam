@@ -58,18 +58,20 @@ def build_aero_model(
     transonic/supersonic regime, so an effective Mach ≥ 1 is rejected here rather
     than silently clamped.
 
-    Correction precedence (first match wins, per CAERO1 element):
+    Correction precedence (first match wins):
       1. WKK card present  → diagonal multiplicative: AJJ* = diag(wkk) @ AJJ,
-                              AJJ*⁻¹ computed via lstsq.
-      2. AECORR WT2 present → pressure-matching correction (apply_wt2).
-      3. AECORR WT1 present → force-matching correction (apply_wt1).
+                              AJJ*⁻¹ computed via lstsq (primary CAERO1 only).
+      2. AECORR WT2 present → pressure-matching correction (apply_wt2). **Multi-surface:**
+                              all WT2 cards are combined into one global Γ-unit target —
+                              each card fills its own CAERO1's boxes (row-major), boxes on
+                              uncorrected surfaces default to ratio 1.
+      3. AECORR WT1 present → force-matching correction (apply_wt1, primary CAERO1 only).
       4. No correction       → AJJ*⁻¹ = solve(AJJ).
 
-    When multiple CAERO1 elements are present, all boxes are concatenated into a
-    single list and a single AIC is built for the combined surface.  Corrections
-    are applied to the *global* AIC using the data from the correction card whose
-    caero_eid matches the first (or only) CAERO1 element found.  Multi-element
-    per-surface corrections are a Phase B concern.
+    When multiple CAERO1 elements are present, all boxes are concatenated into a single
+    list and a single AIC is built for the combined surface.  W2GJ (baseline normalwash)
+    is already accumulated per CAERO1, and WT2 corrections are now combined per surface;
+    WKK and WT1 still act on the primary CAERO1 only.
     """
     if not bulk.caero1s:
         raise ValueError("build_aero_model: no CAERO1 elements found in bulk data")
@@ -111,19 +113,31 @@ def build_aero_model(
     # Build raw AIC on PG-compressed geometry
     ajj = build_ajj(pg_boxes)
 
-    # Determine which correction applies — use the first CAERO1 EID as the key
+    # Determine which correction applies — WKK takes precedence, then WT2, then WT1.
     primary_eid = sorted(bulk.caero1s)[0]
 
     wkk_card  = next((c for c in bulk.wkks.values()   if c.caero_eid == primary_eid), None)
-    wt2_card  = next((c for c in bulk.aecorrs.values() if c.caero_eid == primary_eid and c.method == "WT2"), None)
+    wt2_cards = [c for c in bulk.aecorrs.values() if c.method == "WT2"]
     wt1_card  = next((c for c in bulk.aecorrs.values() if c.caero_eid == primary_eid and c.method == "WT1"), None)
 
     if wkk_card is not None:
         ajj_star = apply_wkk(ajj, wkk_card.data)
         _check_conditioning(ajj_star)
         ajj_inv_corr = np.linalg.solve(ajj_star, np.eye(n))
-    elif wt2_card is not None:
-        cp_target = np.asarray(wt2_card.target, dtype=float)
+    elif wt2_cards:
+        # Multi-surface WT2: assemble one global Γ-unit target. Boxes not covered by
+        # any WT2 card default to the VLM reference circulation (correction ratio = 1).
+        ajj_inv_raw = np.linalg.solve(ajj, np.eye(n))
+        cp_target = ajj_inv_raw @ (-np.ones(n))
+        for card in wt2_cards:
+            surf_idx = [k for k, b in enumerate(boxes) if b.caero_eid == card.caero_eid]
+            tgt = np.asarray(card.target, dtype=float)
+            if tgt.shape[0] != len(surf_idx):
+                raise ValueError(
+                    f"AECORR {card.sid} (WT2, CAERO {card.caero_eid}): target length "
+                    f"{tgt.shape[0]} != {len(surf_idx)} boxes on that surface"
+                )
+            cp_target[surf_idx] = tgt
         ajj_inv_corr = apply_wt2(ajj, cp_target)
     elif wt1_card is not None:
         f_target = np.asarray(wt1_card.target, dtype=float)
