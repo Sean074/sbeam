@@ -118,6 +118,10 @@ a rigid steady-state solve at a user-specified angle of attack.
 - **Symmetry** — radio: Symmetric (+1), Antisymmetric (−1), Full-span (0).
 - **Compute Aero** — builds `AeroModel` (AIC matrix) and calls `solve_rigid_cl`; results
   stored in `st.session_state["aero_model"]` and `st.session_state["aero_result"]`.
+- **Show surface normals** — `st.checkbox` (`key="aero_show_normals"`, default off). When
+  ticked, draws each box's outward unit normal (`AeroBox.normal`) as a green arrow rooted
+  at its collocation point. Re-renders the cached `aero_model` instantly (no AIC recompute);
+  arrows track the deflected mesh when `box_disp` is supplied.
 - After compute: **CL**, **CM**, and **Boxes** count displayed as `st.metric`.
 
 **Figure (right column):**
@@ -131,12 +135,15 @@ build_aero_box_figure(
     cp: np.ndarray | None = None,
     cl_section: dict | None = None,
     cp_corr: np.ndarray | None = None,
+    box_disp: np.ndarray | None = None,
+    show_normals: bool = False,
 ) -> go.Figure
 ```
 
 The figure is a two-row subplot (`make_subplots`):
 - **Row 1 (75%)** — 3D scene: `_add_box_mesh` (Scatter3d wire-frame, grey) + optional
-  `_add_cp_contour` (Mesh3d triangulated quads, `colorscale="RdBu_r"`).
+  `_add_cp_contour` (Mesh3d triangulated quads, `colorscale="RdBu_r"`) + optional
+  `_add_normal_vectors` (green `go.Cone` surface-normal arrows, when `show_normals=True`).
 - **Row 2 (25%)** — 2D xy: `_add_section_load_strip` (Bar chart of section CL vs
   span fraction) + optional `_add_corrected_vs_inviscid` (two Scatter lines for inviscid
   vs corrected spanwise mean cp, shown when `cp_corr` is provided).

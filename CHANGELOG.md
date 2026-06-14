@@ -13,6 +13,15 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Viewer — Aero tab surface-normal toggle (2026-06-14)**
+
+- New **Show surface normals** checkbox on the Aero tab (`viewer/app.py`,
+  `key="aero_show_normals"`). When enabled, `build_aero_box_figure` draws each aero box's
+  outward unit normal (`AeroBox.normal`) as a green `go.Cone` arrow rooted at its
+  collocation point, scaled to the median box chord, via the new `_add_normal_vectors`
+  helper in `viewer/aero_view.py`. Arrows track the deflected mesh when `box_disp` is
+  supplied, and toggling re-renders the cached `aero_model` without recomputing the AIC.
+
 **Viewer — SOL 144 results & Case Control rework (Step 57, 2026-06-13)**
 
 The viewer now runs and renders SOL 144 (static aeroelastic trim, divergence sweep, and

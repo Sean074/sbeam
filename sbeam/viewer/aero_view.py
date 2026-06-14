@@ -18,6 +18,7 @@ def build_aero_box_figure(
     cl_section: Optional[dict] = None,
     cp_corr: Optional[np.ndarray] = None,
     box_disp: Optional[np.ndarray] = None,
+    show_normals: bool = False,
 ) -> go.Figure:
     """3D box mesh + optional cp colour map + section-load strip chart.
 
@@ -41,6 +42,8 @@ def build_aero_box_figure(
             fig, aero_model.boxes, box_disp=box_disp,
             color="#ff7f0e", name="Deflected mesh",
         )
+    if show_normals:
+        _add_normal_vectors(fig, aero_model.boxes, box_disp=box_disp)
     cp_boxes_disp = box_disp if box_disp is not None else None
     if cp is not None:
         _add_cp_contour(fig, aero_model.boxes, cp, box_disp=cp_boxes_disp)
@@ -88,6 +91,60 @@ def _add_box_mesh(
             mode="lines",
             line=dict(color=color, width=1),
             name=name,
+        ),
+        row=1, col=1,
+    )
+
+
+def _add_normal_vectors(
+    fig: go.Figure,
+    boxes: list,
+    box_disp: Optional[np.ndarray] = None,
+) -> None:
+    """Outward surface-normal arrow at each box collocation point (single Cone trace)."""
+    if not boxes:
+        return
+    # Scale arrows to the median box chord so they are proportioned to the mesh.
+    scale = float(np.median([box.chord for box in boxes]))
+    xs: list = []
+    ys: list = []
+    zs: list = []
+    us: list = []
+    vs: list = []
+    ws: list = []
+    custom: list = []
+    for box in boxes:
+        base = box.colloc
+        if box_disp is not None:
+            base = base + box_disp[3 * box.k: 3 * box.k + 3]
+        n = box.normal
+        xs.append(float(base[0]))
+        ys.append(float(base[1]))
+        zs.append(float(base[2]))
+        us.append(float(n[0]) * scale)
+        vs.append(float(n[1]) * scale)
+        ws.append(float(n[2]) * scale)
+        custom.append([box.k, box.i_span, box.j_chord,
+                       float(n[0]), float(n[1]), float(n[2])])
+    hover = (
+        "<b>Box %{customdata[0]}</b><br>"
+        "i_span %{customdata[1]}, j_chord %{customdata[2]}<br>"
+        "n = (%{customdata[3]:.3f}, %{customdata[4]:.3f}, %{customdata[5]:.3f})"
+        "<extra></extra>"
+    )
+    fig.add_trace(
+        go.Cone(
+            x=xs, y=ys, z=zs,
+            u=us, v=vs, w=ws,
+            sizemode="scaled",
+            sizeref=1,
+            anchor="tail",
+            colorscale=[[0, "#2ca02c"], [1, "#2ca02c"]],
+            showscale=False,
+            customdata=custom,
+            hovertemplate=hover,
+            name="Surface normals",
+            showlegend=True,
         ),
         row=1, col=1,
     )

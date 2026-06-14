@@ -627,6 +627,9 @@ def _render_aero_tab(bulk: BulkData) -> None:
     aero_result = st.session_state["aero_result"]
 
     with col_ctrl:
+        show_normals = st.checkbox(
+            "Show surface normals", value=False, key="aero_show_normals"
+        )
         if aero_result is not None:
             st.metric("CL", f"{aero_result['CL']:.4f}")
             st.metric("CY", f"{aero_result.get('CY', 0.0):.4f}")
@@ -650,7 +653,10 @@ def _render_aero_tab(bulk: BulkData) -> None:
         if aero_model is not None:
             cp = aero_result["cp"] if aero_result is not None else None
             cl_sec = aero_result["cl_section"] if aero_result is not None else None
-            fig = build_aero_box_figure(bulk, aero_model, cp=cp, cl_section=cl_sec)
+            fig = build_aero_box_figure(
+                bulk, aero_model, cp=cp, cl_section=cl_sec,
+                show_normals=show_normals,
+            )
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Set parameters and press Compute Aero to visualise the panel mesh.")
