@@ -13,6 +13,39 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Viewer — SOL 144 results & Case Control rework (Step 57, 2026-06-13)**
+
+The viewer now runs and renders SOL 144 (static aeroelastic trim, divergence sweep, and
+Phase G0 transient maneuver loads) — the closing item that surfaces the full SOL 144 chain
+in the UI.
+
+- **Run wiring (`viewer/app.py`):** new `_run_sol144` mirrors the `main.py` routing — one
+  `AeroModel` + `AeroCache` shared across subcases, dispatching each subcase to
+  `run_sol144_trim` / `run_sol144_diverg` / `run_maneuver_qs`. New session keys
+  `sol144_result` / `sol144_diverg_result` / `maneuver_result` / `aero_model_144`; the
+  Results tab dispatches to the new renderer and the f06 export covers SOL 144 trim + diverg.
+  The pre-solve "no SPC" warning no longer misfires on SOL 144 (trim is SUPORT-restrained).
+- **Results view (`viewer/results_view.py`):** `render_sol144_results` — trim summary
+  metrics (q, Mach, CL, CMy, trim mode), trim-variable table (free/prescribed),
+  rigid-vs-elastic stability-derivative table, `q_div` readout, hinge-moment and
+  monitor-point integrated-load tables, maneuver-closure resultant, the DIVERG per-Mach
+  roots table, and the transient-maneuver time histories with a per-sample deflected shape.
+- **Canted, spline-deflected aero mesh (`viewer/aero_view.py`):** `build_aero_box_figure`
+  gains an optional `box_disp` arg that rigidly translates each box's corners by the
+  spline-interpolated structural displacement (`g_disp @ u_g`). The mesh is drawn from the
+  z-bearing box corners, so ±Γ dihedral geometry renders canted in 3-D, never flattened to
+  an xy-projection.
+- **Case Control page rework (`viewer/case_control_ui.py`):** the tab now leads with a
+  SOL-aware, read-only **Planned Analysis** summary (`summarize_case_control` +
+  `_SOL_SUMMARY` registry covering SOL 101/103/144 with a generic fallback) and a **Launch
+  Analysis** button (via an `on_launch` callback); the subcase editor is demoted behind an
+  "Edit case control" toggle. SOL 144 case control is read-only in the editor (launch-only).
+- **Tests:** `tests/viewer/test_apptest_integration.py::test_flow_c_sol144_render_and_run`
+  loads the ±Γ dihedral deck (`sample/val_dihedral_trim.bdf`), runs the trim, asserts all
+  panels render and the cached aero mesh is canted (box-corner z range > 0 — the
+  flattening-regression guard); `tests/viewer/test_case_control_summary.py` covers the
+  summary registry for SOL 101/103/144.
+
 **SOL 144 — `DIVERG`-card divergence sweep, mode shape & V_div (Step 55, 2026-06-13)**
 
 A `DIVERG` case-control request now drives a full aeroelastic-divergence sweep, generalising

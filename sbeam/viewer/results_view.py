@@ -12,6 +12,7 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.results.results import Sol103Result
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.viewer.geometry import build_deformed_figure, build_mode_figure
+from sbeam.viewer.aero_view import build_aero_box_figure
 
 
 # ---------------------------------------------------------------------------
@@ -307,3 +308,250 @@ def _render_modal_mass_chart(
         st.plotly_chart(fig, use_container_width=True)
     except Exception:
         st.caption("Modal mass fractions unavailable.")
+
+
+# ---------------------------------------------------------------------------
+# SOL 144 results display (Step 57)
+# ---------------------------------------------------------------------------
+
+def _model_span(bulk: BulkData) -> float:
+    """Largest model extent across X/Y/Z (used to scale deflection sliders)."""
+    if not bulk.grids:
+        return 1.0
+    coords = [(g.x, g.y, g.z) for g in bulk.grids.values()]
+    span = max(
+        max(c[i] for c in coords) - min(c[i] for c in coords)
+        for i in range(3)
+    )
+    return span if span > 0 else 1.0
+
+
+def render_sol144_results(
+    bulk: BulkData,
+    trim_results: Optional[dict] = None,
+    diverg_results: Optional[dict] = None,
+    maneuver_results: Optional[dict] = None,
+) -> None:
+    """Display SOL 144 trim / divergence / maneuver results (Step 57)."""
+    trim_results = trim_results or {}
+    diverg_results = diverg_results or {}
+    maneuver_results = maneuver_results or {}
+
+    sc_ids = sorted(set(trim_results) | set(diverg_results) | set(maneuver_results))
+    if not sc_ids:
+        st.info("No SOL 144 results to display.")
+        return
+
+    if len(sc_ids) > 1:
+        sel_id = st.selectbox("Subcase", sc_ids, key="sol144_sc_sel")
+    else:
+        sel_id = sc_ids[0]
+
+    if sel_id in trim_results:
+        _render_sol144_trim(bulk, trim_results[sel_id])
+    if sel_id in diverg_results:
+        _render_sol144_diverg(diverg_results[sel_id])
+    if sel_id in maneuver_results:
+        _render_sol144_maneuver(bulk, maneuver_results[sel_id])
+
+
+def _render_sol144_trim(bulk: BulkData, result) -> None:
+    """Trim variables, stability derivatives, q_div, hinge/monitor loads, deflected shape."""
+    # ---- Trim summary metrics ----
+    st.subheader("Trim solution")
+    cols = st.columns(5)
+    cols[0].metric("Dynamic pressure q", f"{result.q:.4g}")
+    cols[1].metric("Mach", f"{result.mach:.4g}")
+    cols[2].metric("Total CL", f"{result.total_cl:.4f}")
+    cols[3].metric("Total CMy", f"{result.total_cm:.4f}")
+    cols[4].metric("Trim mode", result.trim_mode)
+
+    # ---- Trim variables ----
+    trim_card = bulk.trims.get(result.trim_sid)
+    prescribed = {k.upper() for k in trim_card.vars.keys()} if trim_card else set()
+    tv_rows = [
+        {
+            "Label": label,
+            "Type": "PRESCRIBED" if label.upper() in prescribed else "FREE",
+            "Value": result.trim_vars[label],
+        }
+        for label in sorted(result.trim_vars.keys())
+    ]
+    st.markdown("**Trim variables**")
+    st.dataframe(pd.DataFrame(tv_rows), width="stretch")
+
+    # ---- Stability & control derivatives (rigid + elastic restrained) ----
+    deriv_rows = []
+    for label in sorted(result.trim_vars.keys()):
+        rg = result.rigid_derivs.get(label, {})
+        el = result.restrained_derivs.get(label, {})
+        deriv_rows.append({
+            "Label": label,
+            "CZ (rigid)":  rg.get("CZ", 0.0),
+            "CMY (rigid)": rg.get("CMY", 0.0),
+            "CX (rigid)":  rg.get("CX", 0.0),
+            "CY (rigid)":  rg.get("CY", 0.0),
+            "CMX (rigid)": rg.get("CMX", 0.0),
+            "CMZ (rigid)": rg.get("CMZ", 0.0),
+            "CZ (elastic)":  el.get("CZ", 0.0),
+            "CMY (elastic)": el.get("CMY", 0.0),
+            "CMX (elastic)": el.get("CMX", 0.0),
+            "CMZ (elastic)": el.get("CMZ", 0.0),
+        })
+    st.markdown("**Stability & control derivatives** (rigid vs elastic-restrained)")
+    st.dataframe(pd.DataFrame(deriv_rows), width="stretch")
+
+    # ---- Divergence readout ----
+    st.markdown("**Aerodynamic divergence**")
+    if result.q_div is None:
+        st.info("No divergence found (q-div → ∞).")
+    else:
+        ratio = result.q / result.q_div if result.q_div else 0.0
+        dc = st.columns(2)
+        dc[0].metric("Critical q-div", f"{result.q_div:.4g}")
+        dc[1].metric("q / q-div", f"{ratio:.4f}")
+
+    # ---- Hinge moments ----
+    if result.hinge_moments:
+        st.markdown("**Hinge-moment derivatives** (about each AESURF cid1 hinge axis)")
+        for surf in sorted(result.hinge_moments):
+            entry = result.hinge_moments[surf]
+            rows = [
+                {"Trim variable": k, "d(HM)/d(var)": result.q * entry[k]}
+                for k in sorted(k for k in entry if k != "total")
+            ]
+            rows.append({"Trim variable": "TOTAL (trim)", "d(HM)/d(var)": result.q * entry["total"]})
+            st.caption(f"Surface: {surf}")
+            st.dataframe(pd.DataFrame(rows), width="stretch")
+
+    # ---- Monitor-point integrated loads ----
+    if result.monitor_loads:
+        st.markdown("**Monitor-point integrated loads**")
+        rows = []
+        for name in sorted(result.monitor_loads):
+            ml = result.monitor_loads[name]
+            t = ml.totals
+            rows.append({
+                "Monitor": name, "Label": ml.label, "Type": ml.mtype,
+                "Fx": t[0], "Fy": t[1], "Fz": t[2],
+                "Mx": t[3], "My": t[4], "Mz": t[5],
+            })
+        st.dataframe(pd.DataFrame(rows), width="stretch")
+
+    # ---- Maneuver closure (balanced-maneuver net load resultant) ----
+    if result.maneuver_closure is not None:
+        st.markdown("**Maneuver load closure** (net aero+inertia resultant; ≈0 when balanced)")
+        c = result.maneuver_closure
+        cc = st.columns(6)
+        for i, lab in enumerate(["Fx", "Fy", "Fz", "Mx", "My", "Mz"]):
+            cc[i].metric(lab, f"{c[i]:.3g}")
+
+    # ---- Deflected shape + canted box cp ----
+    _render_sol144_deflected(bulk, result)
+
+
+def _render_sol144_deflected(bulk: BulkData, result) -> None:
+    """Deformed structure overlay + spline-deflected, canted aero box cp mesh."""
+    st.subheader("Deflected shape & aerodynamic boxes")
+    grid_index = build_grid_index(bulk)
+
+    max_disp = float(np.max(np.abs(result.displacements))) if result.displacements.size else 1.0
+    if max_disp == 0.0:
+        max_disp = 1.0
+    suggested = _model_span(bulk) * 0.1 / max_disp
+    scale = st.slider(
+        "Deflection scale",
+        min_value=0.0,
+        max_value=float(suggested * 10),
+        value=float(suggested),
+        format="%.2g",
+        key="sol144_deform_scale",
+    )
+
+    # Deformed structure
+    fig_struct = build_deformed_figure(bulk, result.displacements, grid_index, scale)
+    st.plotly_chart(fig_struct, use_container_width=True)
+
+    # Spline-deflected aero box mesh + cp (canted geometry — corners are z-bearing)
+    aero_model = st.session_state.get("aero_model_144")
+    if aero_model is None:
+        st.caption("Aero box mesh unavailable (no aero model cached).")
+        return
+
+    box_disp = None
+    if aero_model.g_disp is not None:
+        box_disp = scale * (aero_model.g_disp @ result.displacements)
+    elif result.displacements.size:
+        st.caption("No spline cards — aero boxes shown at jig (undeflected) position.")
+
+    cp = result.box_cp  # None unless AEROF/APRES requested
+    if cp is None:
+        st.caption("Per-box ΔCp shown only when AEROF/APRES is requested in case control.")
+    fig_aero = build_aero_box_figure(bulk, aero_model, cp=cp, box_disp=box_disp)
+    st.plotly_chart(fig_aero, use_container_width=True)
+
+
+def _render_sol144_diverg(result) -> None:
+    """Per-Mach divergence roots table (Step 55 DIVERG sweep)."""
+    st.subheader("Aerodynamic divergence sweep")
+    has_v = result.rhoref > 0.0
+    for mr in result.mach_results:
+        st.markdown(f"**Mach {mr.mach:.4g}**")
+        if not mr.roots:
+            st.info("No divergence found (no positive real root).")
+            continue
+        rows = []
+        for i, root in enumerate(mr.roots, start=1):
+            row = {"Root": i, "q-div": root.q_div}
+            if has_v and root.v_div is not None:
+                row["V-div"] = root.v_div
+            rows.append(row)
+        st.dataframe(pd.DataFrame(rows), width="stretch")
+
+
+def _render_sol144_maneuver(bulk: BulkData, result) -> None:
+    """Phase G0 transient maneuver time histories + deflected shape at a sample."""
+    import plotly.graph_objects as go
+
+    st.subheader("Transient maneuver loads")
+    cols = st.columns(4)
+    cols[0].metric("Dynamic pressure q", f"{result.q:.4g}")
+    cols[1].metric("Mach", f"{result.mach:.4g}")
+    cols[2].metric("Output samples", len(result.steps))
+    cols[3].metric("Critical sample", result.crit_index)
+
+    times = result.times
+    fz = [s.Fz_aero for s in result.steps]
+    my = [s.My_aero for s in result.steps]
+    net = [float(np.max(np.abs(s.net_loads))) if s.net_loads.size else 0.0 for s in result.steps]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=times, y=fz, mode="lines", name="Fz aero"))
+    fig.add_trace(go.Scatter(x=times, y=my, mode="lines", name="My aero"))
+    fig.add_trace(go.Scatter(x=times, y=net, mode="lines", name="max |net load|"))
+    if 0 <= result.crit_index < len(times):
+        fig.add_vline(x=float(times[result.crit_index]), line=dict(color="#cc2222", dash="dash"))
+    fig.update_layout(
+        xaxis_title="Time", yaxis_title="Load",
+        height=350, margin=dict(l=0, r=0, t=20, b=0),
+        legend=dict(orientation="h", y=1.1),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    n = len(result.steps)
+    idx = st.slider(
+        "Sample", min_value=0, max_value=max(n - 1, 0),
+        value=int(result.crit_index) if n else 0, key="sol144_man_step",
+    )
+    step = result.steps[idx]
+    grid_index = build_grid_index(bulk)
+    max_disp = float(np.max(np.abs(step.displacements))) if step.displacements.size else 1.0
+    if max_disp == 0.0:
+        max_disp = 1.0
+    suggested = _model_span(bulk) * 0.1 / max_disp
+    scale = st.slider(
+        "Deflection scale", min_value=0.0, max_value=float(suggested * 10),
+        value=float(suggested), format="%.2g", key="sol144_man_scale",
+    )
+    fig_struct = build_deformed_figure(bulk, step.displacements, grid_index, scale)
+    st.plotly_chart(fig_struct, use_container_width=True)

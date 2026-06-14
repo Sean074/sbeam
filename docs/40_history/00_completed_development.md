@@ -3159,6 +3159,53 @@ maneuver FORCE cards. 5/5 green; full aero suite unchanged.
   half-span / antisymmetric-pinned models (whose residual is a real reaction) don't false-positive.
 
 
+### Phase C — Step 57: Viewer SOL 144 results + Case Control rework ✅ COMPLETE (2026-06-13)
+
+**Objective:** Surface the full SOL 144 chain (trim, stability derivatives, divergence,
+hinge/monitor loads, deflected shape, box `cp`, transient maneuver loads) in the Streamlit
+viewer — the closing interface item — and re-purpose the Case Control tab into a readable,
+SOL-aware analysis-plan summary with a Launch button.
+
+**Deliverables:**
+- **Run wiring (`viewer/app.py`):** `_run_sol144` mirrors the `main.py` routing — one
+  `AeroModel` + `AeroCache` shared across subcases, each subcase dispatched to
+  `run_sol144_trim` / `run_sol144_diverg` / `run_maneuver_qs`. Session keys
+  `sol144_result` / `sol144_diverg_result` / `maneuver_result` / `aero_model_144`; Results-tab
+  dispatch + SOL 144 f06 export (trim + diverg). Pre-solve "no SPC" warning gated off for 144.
+- **Results view (`viewer/results_view.py`):** `render_sol144_results` + `_render_sol144_trim`
+  / `_render_sol144_diverg` / `_render_sol144_maneuver` / `_render_sol144_deflected`. Trim
+  metrics, free/prescribed trim-variable table, rigid-vs-elastic derivative table, `q_div`
+  readout, hinge-moment & monitor-point tables, maneuver closure, DIVERG per-Mach roots, and
+  transient time histories with a per-sample deflected shape. Mirrors the f06 block layout in
+  `results/f06_writer.py::_build_f06_sol144_text`.
+- **Canted, spline-deflected aero mesh (`viewer/aero_view.py`):** `build_aero_box_figure` gains
+  an optional `box_disp` arg that rigidly translates each box's corners (and cp `Mesh3d`
+  vertices) by the spline-interpolated structural displacement `g_disp @ u_g`. Drawn from the
+  z-bearing box corners → ±Γ dihedral geometry renders canted, never flattened.
+- **Case Control rework (`viewer/case_control_ui.py`):** SOL-aware `summarize_case_control` +
+  `_SOL_SUMMARY` registry (101/103/144 + generic fallback) leads the tab as a read-only
+  **Planned Analysis** summary with a **Launch Analysis** button (`on_launch` callback); the
+  subcase editor is demoted behind an "Edit case control" toggle (a toggle, not an expander —
+  the editor nests its own expanders). SOL 144 case control is launch-only in the editor.
+
+**Test/Acceptance:** `tests/viewer/test_apptest_integration.py::test_flow_c_sol144_render_and_run`
+loads `sample/val_dihedral_trim.bdf` (SOL 144, TRIM 1, ±Γ=+10° dihedral CAERO1s), runs the trim,
+and asserts all panels render without error, the summary + Launch button are present, and the
+cached aero mesh is canted (box-corner z range > 0 — the flattening-regression guard).
+`tests/viewer/test_case_control_summary.py` covers the summary registry across SOL 101/103/144.
+Full viewer suite (→75) and aero suite (321, incl. V-C-DIH) green.
+
+**Key decisions:**
+- Reused the already-3-D `build_aero_box_figure` (box corners carry z from Step 58 geometry), so
+  no planar renderer existed to replace — the work was wiring + the `box_disp` deflection.
+- Aero-mesh deflection is a **rigid per-box translation** by the spline `g_disp` displacement
+  (no panel-incidence rotation) — meets the canted-geometry acceptance with the existing operator.
+- The Case Control editor stays SOL 101/103 only; authoring 144 TRIM/DIVERG/MLOADS cards in the UI
+  is out of scope. The summary + Launch path works for any parsed SOL including 144.
+- Deferred (noted in code): injected-vs-computed mean-flow overlay when `CHORDCP` is active, and
+  per-panel incidence rotation of the deflected aero mesh. Neither is in the acceptance.
+
+
 ## Phase G0 — Quasi-Steady Transient Maneuver Loads (DLM-free)
 
 ### Phase G0 — Increment 1: DLM-free quasi-steady transient maneuver loads ✅ COMPLETE (2026-06-13)

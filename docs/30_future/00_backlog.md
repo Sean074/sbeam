@@ -24,7 +24,6 @@ null-space guard complete. **Step 52 fully closed (2026-06-14).**
 |--:|------|------|--------|------------------------------|
 | 1 | [AE8b — unrestrained (mean-axis) derivative column](#major-ae8b--unrestrained-mean-axis-derivative-formulation-known-wrong) | Code | Open (known-wrong first attempt) | Completes the derivative deliverable; off the trim critical path — can run in parallel |
 | 2 | [Step 54 — CFD / wind-tunnel mean-flow injection](#step-54--cfd--wind-tunnel-steady-pressure-injection-mean-flow-trim) | Code | Open | Optional mean-flow enhancement; lower priority |
-| 3 | [Step 57 — Viewer: SOL 144 results (THE INTERFACE)](#step-57--viewer-sol-144-results) | Code | Open | **CLOSING ITEM** — surfaces trim, derivatives, `q_div`, deflected shape, box `cp`, monitor loads in the UI |
 
 > **Monitor points MON1–MON4 / V-MON1 are CLOSED (2026-06-13)** — static `MONPNT1`
 > (aero-only) and `MONPNT3` (aero + inertia + reaction, splined to structural grids)
@@ -489,26 +488,6 @@ Step 52 result (identity); injecting a scaled distribution shifts the trimmed AO
 the expected amount; total injected lift/moment matches the supplied integral.
 
 **Risk (KC7):** Operating-point/reference-AOA mismatch — validate and warn.
-
----
-
-### Step 57 — Viewer: SOL 144 results
-
-**Objective:** Display trim solution, derivatives, divergence q, deflected shape, and
-box `cp` in the viewer.
-
-**Scope/Deliverables:**
-- Extend `viewer/aero_view.py` and `viewer/results_view.py`: trim & derivative tables,
-  flexible-vs-rigid overlay, `q_div` readout, injected-vs-computed mean-flow overlay
-  when `CHORDCP` is active
-- Render the **canted (±Γ dihedral/anhedral) deflected geometry** and per-box `cp` in 3-D, not a
-  flattened xy-projection — the box normals and panel z-coordinates come straight from the Step 58
-  geometry; a planar-only renderer would silently mis-draw any real wing
-- Monitor-point integrated-load table (Fx…Mz per monitor per subcase) once MON4 lands
-
-**Test/Acceptance:** AppTest integration test loads a SOL 144 result and renders all panels
-without error, including a ±Γ dihedral deck (deflected shape shows the canted geometry, not a flat
-projection).
 
 ---
 

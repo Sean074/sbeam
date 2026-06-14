@@ -10,6 +10,7 @@ from sbeam.model.property import Pbar
 from sbeam.parser.bdf_reader import parse_bdf
 
 _BDF_DIR = Path(__file__).parent.parent / "integration" / "bdf"
+_SAMPLE_DIR = Path(__file__).parent.parent.parent / "sample"
 
 
 @pytest.fixture
@@ -41,3 +42,16 @@ def cantilever_sol101_parsed():
 def cantilever_sol103_parsed():
     """Parse v5_cantilever_modal.bdf once — returns (CaseControl, BulkData)."""
     return parse_bdf(_BDF_DIR / "v5_cantilever_modal.bdf")
+
+
+@pytest.fixture(scope="module")
+def dihedral_sol144_parsed():
+    """Parse the ±Γ dihedral SOL 144 trim deck — returns (CaseControl, BulkData).
+
+    Out-of-plane (z≠0) lifting surface so the viewer's deflected aero mesh must
+    render the canted geometry, not a flat xy-projection (Step 57 acceptance).
+    """
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return parse_bdf(_SAMPLE_DIR / "val_dihedral_trim.bdf")

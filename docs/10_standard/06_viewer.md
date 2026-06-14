@@ -24,7 +24,7 @@ viewer/
 ├── geometry.py         # 3D model display functions (Plotly)
 ├── results_view.py     # Results post-processing display
 ├── case_control_ui.py  # Case control form and BDF export
-└── aero_view.py        # Aero box mesh, cp colour map, section-load strip chart (S44)
+└── aero_view.py        # Aero box mesh, cp colour map, section-load strip chart (S44); spline-deflected box overlay (S57)
 ```
 
 ---
@@ -181,6 +181,20 @@ Implemented in `case_control_ui.py`.
 
 ### Page layout (top to bottom)
 
+**Planned Analysis summary (read-only, Step 57):** When a case control is present, the tab
+leads with a SOL-aware, human-readable summary — SOL number + title and one line per subcase
+describing what runs and what is output (e.g. "Subcase 1 — Aeroelastic trim @ q=51, M=0
+(TRIM 1); DIVERG 1; outputs trim vars, stability derivatives, q_div, displacements"). Built by
+`summarize_case_control(cc, bulk)` via the `_SOL_SUMMARY` registry (`{101, 103, 144}` with a
+generic field-dump fallback for unknown SOLs — new solutions slot in by adding a registry
+entry). A **▶ Launch Analysis** button (primary) runs the analysis via an `on_launch` callback
+supplied by `app.py` (`lambda: _run_analysis(bulk)`); results appear on the Results tab. The
+subcase **editor** is demoted behind an "Edit case control" checkbox toggle (a toggle, not an
+expander, because the editor itself nests expanders and Streamlit forbids expander-in-expander),
+default-on only when no case control exists. SOL 144 case control is **read-only** in the editor
+(an info banner directs the user to launch from the summary); the editor's SOL selector stays
+101/103.
+
 **Loaded BDF preview (outside form):** When a run file (with case control) is uploaded, a
 collapsible `st.expander` ("Loaded BDF — Executive & Case Control") shows the re-serialised
 text of the parsed case control. This is the immutable snapshot stored at upload time
@@ -303,6 +317,35 @@ Two-column layout — all controls in the left column (30%), 3D plot in the righ
 
 **Session state:** `sol101_result` / `sol103_result` in session state; cleared on new file upload.
 
+### SOL 144 — Static Aeroelastic Results (Step 57)
+
+`render_sol144_results(bulk, trim_results, diverg_results, maneuver_results)` in
+`results_view.py`. A subcase selector spans all three result dicts; the selected subcase
+renders whichever result types it produced:
+
+- **Trim** (`Sol144TrimResult`, `_render_sol144_trim`): summary metrics (q, Mach, total CL/CMy,
+  trim mode); trim-variable table (FREE/PRESCRIBED, value); rigid-vs-elastic-restrained
+  stability-derivative table (CZ/CMY/CX/CY/CMX/CMZ); `q_div` readout with q/q_div ratio
+  ("No divergence found" when `None`); per-AESURF hinge-moment table; monitor-point integrated
+  loads (Fx…Mz, from `MonitorLoad.totals`); maneuver-closure resultant. Layout mirrors the
+  f06 blocks in `results/f06_writer.py::_build_f06_sol144_text`.
+- **Deflected shape + canted aero boxes** (`_render_sol144_deflected`): a deflection-scale
+  slider, the deformed structure (`build_deformed_figure`), and the aero box mesh from
+  `build_aero_box_figure` with `box_disp = scale · (g_disp @ u_g)` — each box's corners are
+  rigidly translated by its spline-interpolated structural displacement. Box corners are
+  z-bearing, so ±Γ dihedral geometry renders **canted in 3-D, never flattened**. Per-box ΔCp
+  colour is shown only when the subcase requested AEROF/APRES (`result.box_cp`); the cached
+  `aero_model_144` supplies `g_disp` and the box geometry.
+- **Divergence sweep** (`Sol144DivergResult`, `_render_sol144_diverg`): per-Mach roots table
+  (root #, q-div, V-div when RHOREF > 0).
+- **Transient maneuver** (`ManeuverResult`, `_render_sol144_maneuver`): time histories of
+  Fz_aero, My_aero, and max|net load| with the critical sample marked; a sample slider scrubs
+  the per-step deflected shape.
+
+Run wiring lives in `app.py::_run_sol144` (mirrors `main.py` routing — one shared `AeroModel`
++ `AeroCache`, per-subcase dispatch to `run_sol144_trim` / `run_sol144_diverg` /
+`run_maneuver_qs`). F06 export covers SOL 144 trim + divergence.
+
 ---
 
 ## Session State
@@ -318,6 +361,10 @@ Streamlit session state keys used:
 | `selected_subcase_id` | `int \| None` | Active subcase ID for load/force display |
 | `sol101_result` | `Sol101Result \| None` | SOL 101 results |
 | `sol103_result` | `Sol103Result \| None` | SOL 103 results |
+| `sol144_result` | `dict[int, Sol144TrimResult] \| None` | SOL 144 trim results per subcase |
+| `sol144_diverg_result` | `dict[int, Sol144DivergResult] \| None` | SOL 144 divergence-sweep results per subcase |
+| `maneuver_result` | `dict[int, ManeuverResult] \| None` | Phase G0 transient maneuver results per subcase |
+| `aero_model_144` | `AeroModel \| None` | Aero model built for the SOL 144 run (supplies `g_disp` + boxes to the deflected-mesh view) |
 | `selected_gid` | `int \| None` | Currently selected grid (from sidebar inspector) |
 | `selected_eid` | `int \| None` | Currently selected element (from sidebar inspector) |
 | `_parse_warnings` | `list[str]` | Warnings from last file upload |

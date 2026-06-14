@@ -69,6 +69,43 @@ def test_flow_a_sol101_render_and_run(cantilever_sol101_parsed):
     assert any(b.key == "write_f06_btn" for b in at.button)
 
 
+def test_flow_c_sol144_render_and_run(dihedral_sol144_parsed):
+    """Flow C: injected ±Γ dihedral SOL 144 deck → trim run → results UI renders.
+
+    Acceptance (Step 57): loads a SOL 144 result and renders all panels without
+    error, including a ±Γ dihedral deck whose deflected geometry is canted (z≠0),
+    not a flat xy-projection.
+    """
+    cc, bulk = dihedral_sol144_parsed
+
+    at = AppTest.from_function(_sbeam_app, default_timeout=60)
+    at.run()
+    _inject_state(at, bulk, cc)
+    at.run()
+
+    assert not at.exception, [str(e) for e in at.exception]
+    # Case Control tab shows the SOL-aware planned-analysis summary + Launch button
+    assert any("Planned Analysis" in m.value for m in at.markdown)
+    assert any(b.key == "cc_launch" for b in at.button)
+    assert any(b.label == "Run Analysis" for b in at.button)
+
+    next(b for b in at.button if b.label == "Run Analysis").click()
+    at.run(timeout=60)
+
+    assert not at.exception, [str(e) for e in at.exception]
+    assert not at.error, [e.value for e in at.error]
+    result = at.session_state["sol144_result"]
+    assert isinstance(result, dict) and 1 in result
+    assert at.session_state["sol101_result"] is None
+    assert any("SOL 144 complete" in s.value for s in at.success)
+    # Deflected-shape / aero-box deflection slider rendered
+    assert at.slider(key="sol144_deform_scale") is not None
+    # Canted geometry: the cached aero model's box corners carry non-zero z
+    aero = at.session_state["aero_model_144"]
+    zs = [c[2] for b in aero.boxes for c in b.corners]
+    assert max(zs) - min(zs) > 1e-6, "dihedral deck rendered flat (z range ~0)"
+
+
 def test_flow_b_sol103_render_and_run(cantilever_sol103_parsed):
     """Flow B: injected geometry → SOL 103 run → modal results UI renders."""
     cc, bulk = cantilever_sol103_parsed

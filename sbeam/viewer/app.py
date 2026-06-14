@@ -17,7 +17,9 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.gpwg import compute_gpwg
 from sbeam.viewer.geometry import build_model_figure
 from sbeam.viewer.case_control_ui import render_case_control_panel
-from sbeam.viewer.results_view import render_sol101_results, render_sol103_results
+from sbeam.viewer.results_view import (
+    render_sol101_results, render_sol103_results, render_sol144_results,
+)
 from sbeam.viewer.aero_view import build_aero_box_figure
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.vlm import solve_rigid_cl
@@ -30,6 +32,10 @@ def _init_session_state() -> None:
         "_loaded_from_file_cc": None,
         "sol101_result": None,
         "sol103_result": None,
+        "sol144_result": None,
+        "sol144_diverg_result": None,
+        "maneuver_result": None,
+        "aero_model_144": None,
         "aero_model": None,
         "aero_result": None,
         "selected_gid": None,
@@ -84,6 +90,10 @@ def _handle_upload(uploaded) -> None:
         st.session_state.cc_subcases = None   # reset subcase editor
         st.session_state.sol101_result = None
         st.session_state.sol103_result = None
+        st.session_state.sol144_result = None
+        st.session_state.sol144_diverg_result = None
+        st.session_state.maneuver_result = None
+        st.session_state.aero_model_144 = None
         st.session_state.aero_model = None
         st.session_state.aero_result = None
         st.session_state.selected_gid = None
@@ -375,7 +385,11 @@ def _get_pre_solve_warnings(
     # 2. SPC coverage
     has_any_spc = bool(bulk.spcs) or bool(bulk.spc1s)
     if not has_any_spc:
-        if cc is None or cc.sol == 101:
+        if cc is not None and cc.sol == 144:
+            # SOL 144 trim is restrained via SUPORT (free-flight r-set), not SPC;
+            # an unconstrained-SPC model is valid here, so no warning.
+            pass
+        elif cc is None or cc.sol == 101:
             msgs.append(
                 "No SPC or SPC1 constraints are defined. "
                 "An unconstrained model has a singular stiffness matrix; SOL 101 will fail."
@@ -478,20 +492,70 @@ def _run_analysis(bulk: BulkData) -> None:
             st.session_state.sol101_result = None
             n = next(iter(results.values())).frequencies_hz.shape[0]
             st.success(f"SOL 103 complete — {n} modes, {len(results)} subcase(s).")
+        elif cc.sol == 144:
+            _run_sol144(bulk, cc)
         else:
             st.error(f"SOL {cc.sol} is not supported.")
     except Exception as exc:
         st.error(f"Solver error: {exc}")
 
 
+def _run_sol144(bulk: BulkData, cc) -> None:
+    """Run a SOL 144 deck, routing each subcase to trim / divergence / maneuver.
+
+    Mirrors the solver routing in ``sbeam.main`` — build one AeroModel + AeroCache
+    (shared across subcases / multi-Mach AICs) and dispatch per subcase.
+    """
+    from sbeam.aero.aero_model import build_aero_model
+    from sbeam.assembly.load_vector import build_grid_index
+    from sbeam.solver.sol144 import run_sol144_trim, run_sol144_diverg, AeroCache
+    from sbeam.solver.maneuver_qs import run_maneuver_qs
+
+    trim_results: dict = {}
+    diverg_results: dict = {}
+    maneuver_results: dict = {}
+    with st.spinner("Running SOL 144…"):
+        grid_index = build_grid_index(bulk)
+        aero = build_aero_model(bulk, grid_index=grid_index)
+        cache = AeroCache(bulk, grid_index, seed=aero)
+        for sc in cc.subcases:
+            if sc.mloads_sid is not None:
+                maneuver_results[sc.subcase_id] = run_maneuver_qs(
+                    bulk, sc, aero, aero_cache=cache)
+            elif sc.diverg_sid is not None and sc.trim_sid is None:
+                diverg_results[sc.subcase_id] = run_sol144_diverg(
+                    bulk, sc, aero, aero_cache=cache)
+            else:
+                trim_results[sc.subcase_id] = run_sol144_trim(
+                    bulk, sc, aero, aero_cache=cache)
+                if sc.diverg_sid is not None:
+                    diverg_results[sc.subcase_id] = run_sol144_diverg(
+                        bulk, sc, aero, aero_cache=cache)
+
+    st.session_state.aero_model_144 = aero
+    st.session_state.sol144_result = trim_results or None
+    st.session_state.sol144_diverg_result = diverg_results or None
+    st.session_state.maneuver_result = maneuver_results or None
+    st.session_state.sol101_result = None
+    st.session_state.sol103_result = None
+    n = len(trim_results) + len(diverg_results) + len(maneuver_results)
+    st.success(f"SOL 144 complete — {n} subcase(s).")
+
+
 def _render_f06_export(bulk: BulkData) -> None:
     """Show f06 export controls after a successful analysis."""
-    from sbeam.results.f06_writer import build_f06_sol101_text, build_f06_sol103_text
+    from sbeam.results.f06_writer import (
+        build_f06_sol101_text, build_f06_sol103_text,
+        build_f06_sol144_text, build_f06_sol144_diverg_text,
+    )
 
     cc = st.session_state.case_control
     sol101 = st.session_state.sol101_result
     sol103 = st.session_state.sol103_result
-    if cc is None or (sol101 is None and sol103 is None):
+    sol144 = st.session_state.sol144_result
+    sol144_div = st.session_state.sol144_diverg_result
+    if cc is None or (sol101 is None and sol103 is None
+                      and sol144 is None and sol144_div is None):
         return
 
     uploaded_name = st.session_state._uploaded_filename or "results.bdf"
@@ -505,9 +569,14 @@ def _render_f06_export(bulk: BulkData) -> None:
     if sol101 is not None:
         for sc_id, result in sorted(sol101.items()):
             parts.append(build_f06_sol101_text(cc, bulk, result, sc_id))
-    else:
+    elif sol103 is not None:
         for sc_id, result in sorted(sol103.items()):
             parts.append(build_f06_sol103_text(cc, bulk, result, sc_id))
+    else:
+        for sc_id, result in sorted((sol144 or {}).items()):
+            parts.append(build_f06_sol144_text(cc, bulk, result, sc_id))
+        for sc_id, result in sorted((sol144_div or {}).items()):
+            parts.append(build_f06_sol144_diverg_text(cc, bulk, result, sc_id))
     f06_text = "".join(parts)
 
     col1, col2 = st.columns([3, 1])
@@ -660,7 +729,7 @@ def main() -> None:
         _show_model_data_tabs(bulk)
 
     with tab_cc:
-        render_case_control_panel(bulk)
+        render_case_control_panel(bulk, on_launch=lambda: _run_analysis(bulk))
 
     with tab_results:
         st.subheader("Analysis")
@@ -675,6 +744,17 @@ def main() -> None:
 
         elif st.session_state.sol103_result is not None:
             render_sol103_results(bulk, st.session_state.sol103_result)
+            _render_f06_export(bulk)
+
+        elif (st.session_state.sol144_result is not None
+              or st.session_state.sol144_diverg_result is not None
+              or st.session_state.maneuver_result is not None):
+            render_sol144_results(
+                bulk,
+                st.session_state.sol144_result,
+                st.session_state.sol144_diverg_result,
+                st.session_state.maneuver_result,
+            )
             _render_f06_export(bulk)
 
         else:

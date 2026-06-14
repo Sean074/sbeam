@@ -72,11 +72,99 @@ def export_bdf_text(cc: CaseControl, include_path: str = "model.dat") -> str:
 
 
 # ---------------------------------------------------------------------------
+# Analysis-plan summary (SOL-aware, read-only)
+# ---------------------------------------------------------------------------
+
+_SOL_TITLES: dict[int, str] = {
+    101: "Static",
+    103: "Normal Modes",
+    144: "Static Aeroelastic Trim",
+}
+
+
+def _describe_outputs(sc: SubcaseControl) -> str:
+    reqs = [
+        name for flag, name in [
+            (sc.displacement, "DISP"), (sc.spcforce, "SPCFORCE"),
+            (sc.oload, "OLOAD"), (sc.force, "FORCE"), (sc.stress, "STRESS"),
+            (sc.aerof, "AEROF"), (sc.apres, "APRES"),
+        ] if flag
+    ]
+    return ", ".join(reqs) if reqs else "default"
+
+
+def _summarize_sol101(sc: SubcaseControl, bulk: BulkData) -> str:
+    load = f"LOAD {sc.load_sid}" if sc.load_sid is not None else "no load"
+    spc = f"SPC {sc.spc_sid}" if sc.spc_sid is not None else "no SPC"
+    return f"Static: {load}, {spc}; outputs {_describe_outputs(sc)}"
+
+
+def _summarize_sol103(sc: SubcaseControl, bulk: BulkData) -> str:
+    method = f"EIGRL {sc.method_sid}" if sc.method_sid is not None else "no METHOD"
+    return f"Modal: modes via {method} (all frequencies & mode shapes output)"
+
+
+def _summarize_sol144(sc: SubcaseControl, bulk: BulkData) -> str:
+    if sc.mloads_sid is not None:
+        return f"Transient maneuver loads (MLOADS {sc.mloads_sid})"
+    parts: list[str] = []
+    if sc.trim_sid is not None:
+        trim = bulk.trims.get(sc.trim_sid)
+        if trim is not None:
+            parts.append(f"trim @ q={trim.q:g}, M={trim.mach:g} (TRIM {sc.trim_sid})")
+        else:
+            parts.append(f"trim (TRIM {sc.trim_sid})")
+        if sc.trimobj_sid is not None:
+            parts.append(f"over-determined (TRIMOBJ {sc.trimobj_sid})")
+    if sc.diverg_sid is not None:
+        parts.append(f"divergence sweep (DIVERG {sc.diverg_sid})")
+    head = "; ".join(parts) if parts else "aeroelastic"
+    outputs = "trim vars, stability derivatives, q_div, displacements"
+    if sc.aerof or sc.apres:
+        outputs += ", box ΔCp/forces"
+    return f"Aeroelastic {head}; outputs {outputs}"
+
+
+_SOL_SUMMARY = {
+    101: _summarize_sol101,
+    103: _summarize_sol103,
+    144: _summarize_sol144,
+}
+
+
+def summarize_case_control(cc: CaseControl, bulk: BulkData) -> list[str]:
+    """Return human-readable per-subcase summary lines for the planned analysis.
+
+    SOL-aware via the ``_SOL_SUMMARY`` registry so new solutions slot in without
+    touching call sites; an unknown SOL falls back to a generic field dump.
+    """
+    fn = _SOL_SUMMARY.get(cc.sol)
+    lines: list[str] = []
+    for sc in cc.subcases:
+        label = f"Subcase {sc.subcase_id}"
+        if sc.title:
+            label += f" ({sc.title})"
+        if fn is not None:
+            lines.append(f"{label} — {fn(sc, bulk)}")
+        else:
+            lines.append(
+                f"{label} — LOAD {sc.load_sid}, SPC {sc.spc_sid}; "
+                f"outputs {_describe_outputs(sc)}"
+            )
+    return lines
+
+
+# ---------------------------------------------------------------------------
 # Streamlit UI
 # ---------------------------------------------------------------------------
 
-def render_case_control_panel(bulk: Optional[BulkData]) -> None:
-    """Render the case control definition form. Updates st.session_state.case_control."""
+def render_case_control_panel(bulk: Optional[BulkData], on_launch=None) -> None:
+    """Render the analysis-plan summary, a Launch button, and the case-control editor.
+
+    When a case control is present, leads with a SOL-aware read-only summary and a
+    ``Launch Analysis`` button (delegating to ``on_launch``); the subcase editor is
+    demoted to a collapsed expander.  Updates ``st.session_state.case_control``.
+    """
     st.subheader("Case Control")
 
     if bulk is None:
@@ -86,12 +174,46 @@ def render_case_control_panel(bulk: Optional[BulkData]) -> None:
     cc: Optional[CaseControl] = st.session_state.get("case_control")
     loaded_cc: Optional[CaseControl] = st.session_state.get("_loaded_from_file_cc")
 
+    # --- Planned-analysis summary + Launch (read-only) ---
+    if cc is not None and cc.subcases:
+        st.markdown("### Planned Analysis")
+        st.markdown(f"**SOL {cc.sol} — {_SOL_TITLES.get(cc.sol, 'Analysis')}**")
+        if cc.title:
+            st.caption(cc.title)
+        for line in summarize_case_control(cc, bulk):
+            st.markdown(f"- {line}")
+        if on_launch is not None and st.button("▶ Launch Analysis", type="primary", key="cc_launch"):
+            on_launch()
+            st.caption("Results are shown on the Results tab.")
+        st.divider()
+
+    # A checkbox (not an expander) demotes the editor — the editor itself nests
+    # expanders, and Streamlit forbids expander-in-expander.
+    show_editor = st.checkbox(
+        "Edit case control", value=(cc is None), key="cc_show_editor"
+    )
+    if show_editor:
+        _render_case_control_editor(bulk, cc, loaded_cc)
+
+
+def _render_case_control_editor(
+    bulk: BulkData,
+    cc: Optional[CaseControl],
+    loaded_cc: Optional[CaseControl],
+) -> None:
+    """The original subcase editor + BDF export (now nested in an expander)."""
     # --- Loaded BDF preview (read-only, outside form) ---
     if loaded_cc is not None:
         with st.expander("Loaded BDF — Executive & Case Control", expanded=False):
             st.code(export_bdf_text(loaded_cc, include_path=loaded_cc.include or "model.dat"), language="text")
     else:
         st.info("No case control found in the loaded file — define one below.")
+
+    if cc is not None and cc.sol not in _SOL_LABELS:
+        st.info(
+            f"SOL {cc.sol} case control is read-only in the editor — "
+            "launch it from the summary above."
+        )
 
     # Available SIDs from bulk data
     load_sids = sorted(set(list(bulk.forces.keys()) + list(bulk.moments.keys()) + list(bulk.loads.keys())))
