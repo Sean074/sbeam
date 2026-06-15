@@ -378,7 +378,45 @@ _DERIV_AERO_ROWS = {"ANGLEA": "α", "SIDES": "β", "ROLL": "p",
                     "PITCH": "q", "YAW": "r"}
 
 
-def rigid_derivative_table(aero_model, bulk, naming: str = "aero"):
+def _uncorrected_cp_operator(aero_model) -> np.ndarray:
+    """Raw (uncorrected) ΔCp operator in the same units as ``ajj_inv_corr``.
+
+    Inverts the stored PG-compressed raw AIC (``aero_model.ajj``) and applies the
+    Göthert 1/β factor and the Γ→ΔCp (2/chord) conversion — exactly the
+    no-correction branch of ``build_aero_model`` — so swapping it into the model
+    via ``dataclasses.replace`` yields the *uncorrected* rigid derivatives /
+    pressures (no WKK / WT1 / WT2 applied).
+    """
+    import math
+    boxes = aero_model.boxes
+    n = len(boxes)
+    inv = np.linalg.solve(aero_model.ajj, np.eye(n))
+    mach = aero_model.mach
+    beta_pg = math.sqrt(1.0 - mach ** 2) if 0.0 < mach < 1.0 else 1.0
+    if beta_pg != 1.0:
+        inv = inv / beta_pg
+    chord = np.array([
+        b.area / max(math.hypot(b.bound_b[1] - b.bound_a[1],
+                                b.bound_b[2] - b.bound_a[2]), 1e-14)
+        for b in boxes
+    ])
+    return inv * (2.0 / chord)[:, np.newaxis]
+
+
+def _rigid_derivs_for(aero_model, d_jx, labels, bulk, x_ref, ref_pt, state):
+    """``_compute_rigid_derivs`` against the corrected or uncorrected operator."""
+    from sbeam.solver.sol144 import _compute_rigid_derivs
+    if state == "uncorrected":
+        import dataclasses
+        model = dataclasses.replace(
+            aero_model, ajj_inv_corr=_uncorrected_cp_operator(aero_model))
+    else:
+        model = aero_model
+    return _compute_rigid_derivs(model, d_jx, labels, bulk, x_ref, ref_pt)
+
+
+def rigid_derivative_table(aero_model, bulk, naming: str = "aero",
+                           state: str = "corrected"):
     """Full rigid aerodynamic stability & control derivative matrix for the Aero tab.
 
     Reuses the SOL 144 machinery — ``build_djx`` (per-label normalwash columns) and
@@ -389,6 +427,13 @@ def rigid_derivative_table(aero_model, bulk, naming: str = "aero"):
     Rows are the rigid-body labels ANGLEA/SIDES/ROLL/PITCH/YAW plus every AESURF
     control in the deck; columns are the six force/moment coefficients, all
     per-radian / per-unit-label (matching SOL 144).
+
+    ``state`` selects which AIC operator the derivatives are integrated against:
+    ``"corrected"`` (the corrected ΔCp operator with any WKK/WT1/WT2 applied,
+    matching SOL 144), ``"uncorrected"`` (the raw VLM baseline at the same Mach,
+    via :func:`_uncorrected_cp_operator`), or ``"diff"`` (corrected − uncorrected).
+    With no correction cards in the deck the corrected and uncorrected operators
+    coincide and ``"diff"`` is all zeros.
 
     ``naming="aero"`` relabels rows/columns with conventional symbols
     (α, β, p, q, r; CZ, CY, Cl, Cm, Cn, CX); ``naming="raw"`` keeps the SOL 144
@@ -403,7 +448,6 @@ def rigid_derivative_table(aero_model, bulk, naming: str = "aero"):
         return None
 
     from sbeam.aero.integration import build_djx
-    from sbeam.solver.sol144 import _compute_rigid_derivs
     from sbeam.assembly.coord_transform import _get_transform
 
     labels = ["ANGLEA", "SIDES", "ROLL", "PITCH", "YAW"] + sorted(
@@ -419,9 +463,18 @@ def rigid_derivative_table(aero_model, bulk, naming: str = "aero"):
         ref_pt = np.zeros(3)
         x_ref = 0.0
 
-    derivs = _compute_rigid_derivs(aero_model, d_jx, labels, bulk, x_ref, ref_pt)
+    if state == "diff":
+        dc = _rigid_derivs_for(aero_model, d_jx, labels, bulk, x_ref, ref_pt,
+                               "corrected")
+        du = _rigid_derivs_for(aero_model, d_jx, labels, bulk, x_ref, ref_pt,
+                               "uncorrected")
+        data = {col: [dc[lbl][col] - du[lbl][col] for lbl in labels]
+                for col in _DERIV_COLS}
+    else:
+        derivs = _rigid_derivs_for(aero_model, d_jx, labels, bulk, x_ref, ref_pt,
+                                   state)
+        data = {col: [derivs[lbl][col] for lbl in labels] for col in _DERIV_COLS}
 
-    data = {col: [derivs[lbl][col] for lbl in labels] for col in _DERIV_COLS}
     df = pd.DataFrame(data, index=labels)
     if naming == "aero":
         df = df.rename(index=_DERIV_AERO_ROWS, columns=_DERIV_AERO_COLS)

@@ -2283,13 +2283,18 @@ surface's region was selected by the α value; (2) changing the **Preview surfac
 5. **Cp view toggle (#5).** Aero tab radio Corrected / Uncorrected / **Δ** drives the 3D mesh
    (`build_aero_box_figure(cp_cmid=, cp_title=)`, Δ = zero-centred diverging scale) and the span plot
    (`build_span_loading_figure(mode=)`).
+5b. **Span-load per-surface show/hide.** A **Show surfaces** multiselect (default all) thins a busy
+    multi-surface span plot via `build_span_loading_figure(..., surfaces=)`; colours are assigned from
+    the full surface set so hiding one surface does not recolour the others. Stale stored selections
+    (after a model change) are filtered to the current surfaces.
 6. **Full corrected BDF export (#5).** `aero_correction_view.build_corrected_bdf` splices the cards into
    the uploaded model text before `ENDDATA` with a provenance header (source CSV, date, Mach/α/β,
    CAEROs); editable filename via `suggest_corrected_name` (`<stem>_M0p30_A2p0_B0p0.bdf`); raw upload
    text stashed in `_uploaded_source_text`. One file per Mach.
 7. **Tests** — `test_format_utils.py` (new, 5); +9 in `test_aero_correction_view.py` (surface_var/mixed,
    separate α/β, mixed skip, dihedral, canted warning, preview persistence, filename, corrected-BDF
-   round-trip via `parse_bulk_file`); +2 in `test_aero_view.py` (span modes, Δcp diverging mesh).
+   round-trip via `parse_bulk_file`); +3 in `test_aero_view.py` (span modes, Δcp diverging mesh,
+   per-surface filter + stable colours).
 8. **Docs** — 06_viewer.md (Aero + Aero Correction sections, module map, test table), 05_aeroelastics.md,
    CHANGELOG, CLAUDE.md module map.
 
@@ -2302,7 +2307,46 @@ surface's region was selected by the α value; (2) changing the **Preview surfac
 - One axis per surface (ALPHA *or* BETA); canted surfaces only warned, not auto-resolved.
 
 **Test / Acceptance:**
-- `tests/viewer/ tests/aero/` green (was 443; +16 → 462); full suite green; ruff clean on changed files.
+- `tests/viewer/ tests/aero/` green (was 443; +17 → 463); full suite green; ruff clean on changed files.
+
+---
+
+### Step A-GUI5: Aero tab — corrected / uncorrected / Δ rigid-derivative table ✅ COMPLETE (2026-06-14)
+
+**Objective:** On the Aero tab's **Rigid stability & control derivatives** table, the radio
+switched between conventional aero names and raw SOL 144 names — a low-value cross-check toggle.
+Replace it with a Corrected / Uncorrected / **Δ (corr − uncorr)** selector so the correction's
+effect on the rigid stability & control derivatives is visible directly, matching the Cp-view
+vocabulary already used for the 3D pressure mesh and span-load curves (A-GUI4).
+
+**Deliverables:**
+1. **`state` argument on `rigid_derivative_table`** (`aero_view.py`) — `"corrected"` (default; the
+   corrected ΔCp operator with WKK/WT1/WT2 applied — what SOL 144 integrates), `"uncorrected"`
+   (raw VLM baseline at the same Mach), or `"diff"` (corrected − uncorrected, column-for-column).
+2. **`_uncorrected_cp_operator(aero_model)`** — rebuilds the raw ΔCp operator by inverting the
+   stored PG-compressed `aero_model.ajj` and re-applying the Göthert `1/β` factor and Γ→ΔCp
+   `2/chord` conversion (exactly the no-correction branch of `build_aero_model`). Swapped into the
+   model via `dataclasses.replace` so the unchanged `sol144._compute_rigid_derivs` integrates
+   against it — single source of truth, no duplicated derivative maths.
+3. **UI (`app.py` `_render_aero_tab`)** — the **Naming** radio (`aero_deriv_naming`) is removed; a
+   **Values** radio (`aero_deriv_state`, Corrected / Uncorrected / Δ) appears only when an
+   uncorrected baseline exists (`aero_result_unc is not None`, i.e. a correction card is present).
+   The table always uses conventional aero names; the Δ caption notes "Δ = corrected − uncorrected".
+   `naming="raw"` remains callable for f06 cross-checks but is no longer a UI control.
+4. **Tests** — +2 in `test_aero_view.py`: `test_rigid_derivative_table_state_no_correction`
+   (no cards → uncorrected ≡ corrected, Δ all-zero) and `test_rigid_derivative_table_state_with_correction`
+   (a non-uniform WKK diagonal moves the derivatives; uncorrected reconstructs the no-WKK baseline;
+   Δ = corrected − uncorrected).
+5. **Docs** — 06_viewer.md (Aero-tab derivative section, module map, test table), 05_aeroelastics.md.
+
+**Key decisions:**
+- **Replace, not augment.** The Aero/Raw naming toggle is dropped from the UI (per user direction)
+  rather than kept alongside the new control; the raw naming stays available programmatically.
+- The Values radio is hidden when there is no correction (corrected and uncorrected coincide, so a
+  toggle would be meaningless) — same gate as the Cp-view radio.
+
+**Test / Acceptance:**
+- `tests/viewer/ tests/aero/` green (was 463; +2 → 465); ruff clean on changed files.
 
 ---
 

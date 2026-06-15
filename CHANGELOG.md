@@ -13,6 +13,19 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Aero tab — corrected / uncorrected / Δ rigid-derivative table (A-GUI5, 2026-06-14)**
+
+- The Aero-tab **Rigid stability & control derivatives** table gains a **Values** radio
+  (Corrected / Uncorrected / **Δ (corr − uncorr)**), replacing the former Aero/Raw **Naming**
+  toggle (the raw SOL 144 names stay available via `rigid_derivative_table(..., naming="raw")`
+  for f06 cross-checks, just not as a UI control). The radio appears only when a correction card
+  is present (an uncorrected baseline exists); otherwise the corrected table shows alone.
+- `rigid_derivative_table` gains a `state` argument; the uncorrected operator is rebuilt by the new
+  `aero_view._uncorrected_cp_operator` (inverts the stored raw `aero_model.ajj`, re-applies the
+  Göthert `1/β` and Γ→ΔCp `2/chord` scaling — the no-correction branch of `build_aero_model` — and
+  swaps it in via `dataclasses.replace`), so the same `_compute_rigid_derivs` machinery produces the
+  uncorrected and difference matrices.
+
 **Aero Correction page — α/β split, cp comparison, 5-sig-fig formatting, full corrected-BDF export (A-GUI4, 2026-06-14)**
 
 - **Separate α and β operating points.** The Aero Correction build condition now takes two angles
@@ -28,6 +41,9 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 - **Aero tab Cp view toggle** — Corrected / Uncorrected / **Δ (corr − uncorr)** drives both the 3D
   box-pressure mesh (Δ uses a zero-centred diverging scale, **ΔCp** colour bar) and the span-load
   curves (`build_span_loading_figure(..., mode=)`; `build_aero_box_figure(..., cp_cmid=, cp_title=)`).
+- **Span-load per-surface show/hide** — a **Show surfaces** multiselect (default all, multi-select)
+  thins a busy multi-surface span-loading plot via `build_span_loading_figure(..., surfaces=)`; each
+  surface keeps a fixed colour so hiding one does not recolour the others.
 - **Full corrected BDF export.** `build_corrected_bdf` splices the W2GJ/AECORR cards into the uploaded
   model text (before `ENDDATA`) with a provenance header (source CSV, date, Mach/α/β, corrected
   CAEROs) — a self-contained, re-parseable model. Editable filename defaults to

@@ -135,6 +135,47 @@ def test_rigid_derivative_table_includes_aesurf_rows():
     assert "ELEV" in df.index.tolist()
 
 
+def test_rigid_derivative_table_state_no_correction(aero_bulk):
+    """With no correction cards the corrected and uncorrected AIC operators
+    coincide, so ``state="uncorrected"`` equals ``"corrected"`` and ``"diff"`` is
+    all zeros."""
+    aero_model = build_aero_model(aero_bulk)
+    corr = rigid_derivative_table(aero_model, aero_bulk, state="corrected")
+    unc = rigid_derivative_table(aero_model, aero_bulk, state="uncorrected")
+    diff = rigid_derivative_table(aero_model, aero_bulk, state="diff")
+    assert np.allclose(corr.to_numpy(), unc.to_numpy())
+    assert np.allclose(diff.to_numpy(), 0.0, atol=1e-12)
+
+
+def test_rigid_derivative_table_state_with_correction(aero_bulk):
+    """A non-uniform WKK diagonal correction makes corrected ≠ uncorrected; the
+    uncorrected table reconstructs the genuine no-correction baseline, and
+    ``"diff"`` equals corrected − uncorrected exactly."""
+    from sbeam.model.aero import Wkk
+
+    # Baseline (no correction) reference, captured before the WKK is added.
+    model_raw = build_aero_model(aero_bulk)
+    baseline = rigid_derivative_table(model_raw, aero_bulk, state="corrected")
+
+    n_box = aero_bulk.caero1s[100].nspan * aero_bulk.caero1s[100].nchord  # 40
+    aero_bulk.wkks[1] = Wkk(
+        sid=1, caero_eid=100,
+        data=[1.0 + 0.15 * (k % 4) for k in range(n_box)],
+    )
+    model_corr = build_aero_model(aero_bulk)
+
+    corr = rigid_derivative_table(model_corr, aero_bulk, state="corrected")
+    unc = rigid_derivative_table(model_corr, aero_bulk, state="uncorrected")
+    diff = rigid_derivative_table(model_corr, aero_bulk, state="diff")
+
+    # The correction actually moves the derivatives.
+    assert not np.allclose(corr.to_numpy(), unc.to_numpy())
+    # diff column-for-column is corrected − uncorrected.
+    assert np.allclose(diff.to_numpy(), corr.to_numpy() - unc.to_numpy())
+    # The reconstructed uncorrected operator reproduces the no-WKK baseline.
+    assert np.allclose(unc.to_numpy(), baseline.to_numpy())
+
+
 # ---- build_span_loading_figure ---------------------------------------------
 
 def test_build_span_loading_figure_single_surface(aero_bulk):
@@ -246,8 +287,13 @@ def test_apptest_aero_tab_no_exception(aero_bulk):
 
 
 def test_apptest_aero_tab_renders_results(aero_bulk):
-    """AppTest: the full-width derivative table (Styler), naming radio, and span-load
-    figure render without exception when a precomputed aero result is in session."""
+    """AppTest: the full-width derivative table (Styler) and span-load figure render
+    without exception when a precomputed aero result is in session.
+
+    With no uncorrected baseline (no correction card) the **Values** radio is
+    hidden; once an uncorrected result is also present it appears with the
+    Corrected / Uncorrected / Δ options.
+    """
     at = AppTest.from_function(_sbeam_app, default_timeout=60)
     at.run()
     _inject_aero_state(at, aero_bulk)
@@ -262,4 +308,19 @@ def test_apptest_aero_tab_renders_results(aero_bulk):
     at.run()
 
     assert not at.exception, [str(e) for e in at.exception]
-    assert any(r.label == "Naming" for r in at.radio)
+    # No uncorrected baseline → no Values radio (and the old Naming radio is gone).
+    assert not any(r.label == "Values" for r in at.radio)
+    assert not any(r.label == "Naming" for r in at.radio)
+
+    # Provide an uncorrected baseline → the Values radio appears with three options.
+    result_unc = solve_rigid_cl(
+        aero_model.boxes, np.radians(3.0), aeros=aero_model.aeros,
+        wg=aero_model.wg, cp_operator=None, mach=aero_model.mach,
+    )
+    at.session_state["aero_result_unc"] = result_unc
+    at.run()
+
+    assert not at.exception, [str(e) for e in at.exception]
+    values_radio = [r for r in at.radio if r.label == "Values"]
+    assert len(values_radio) == 1
+    assert values_radio[0].options == ["Corrected", "Uncorrected", "Δ (corr − uncorr)"]

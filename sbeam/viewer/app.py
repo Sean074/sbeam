@@ -766,17 +766,32 @@ def _render_aero_tab(bulk: BulkData) -> None:
         # Rigid stability & control derivatives — all airplane rigid derivatives.
         if bulk.aeros is not None:
             st.markdown("#### Rigid stability & control derivatives")
-            naming_label = st.radio(
-                "Naming", ["Aero (α, Cm…)", "Raw (ANGLEA, CMY…)"],
-                horizontal=True, key="aero_deriv_naming",
-            )
-            naming = "aero" if naming_label.startswith("Aero") else "raw"
-            deriv_df = rigid_derivative_table(aero_model, bulk, naming=naming)
+            # Correction-state toggle (only when an uncorrected baseline exists —
+            # i.e. a correction card is present, so the two solves differ).
+            deriv_state = "corrected"
+            if aero_result_unc is not None:
+                state_label = st.radio(
+                    "Values",
+                    ["Corrected", "Uncorrected", "Δ (corr − uncorr)"],
+                    horizontal=True, key="aero_deriv_state",
+                    help="Rigid derivatives from the corrected AIC operator, the "
+                         "uncorrected VLM baseline (same Mach), or their difference.",
+                )
+                deriv_state = (
+                    "uncorrected" if state_label == "Uncorrected"
+                    else "diff" if state_label.startswith("Δ")
+                    else "corrected"
+                )
+            deriv_df = rigid_derivative_table(
+                aero_model, bulk, naming="aero", state=deriv_state)
             if deriv_df is not None:
-                st.caption(
+                caption = (
                     "Per radian / per unit label, rigid (u_a = 0). Rows: "
                     "α, β, roll p, pitch q, yaw r + AESURF controls."
                 )
+                if deriv_state == "diff":
+                    caption += " Δ = corrected − uncorrected."
+                st.caption(caption)
                 st.dataframe(style_numeric(deriv_df), use_container_width=True)
 
         # Per-surface coefficient breakdown (multi-surface decks).  Per-surface

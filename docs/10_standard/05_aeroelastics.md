@@ -827,7 +827,7 @@ When a correction card is present the tab also runs the **uncorrected** baseline
   section normal-force `cn(η)` and section moment `cm(η)` (about each strip's local ¼-chord,
   nose-up +ve, same sign as `solve_rigid_cl`/`sol144._pitch_moment`). Boxes grouped by
   `(caero_eid, i_span)` — one line per surface; corrected solid, uncorrected dashed.
-- `rigid_derivative_table(aero_model, bulk, naming)` — the full rigid stability & control
+- `rigid_derivative_table(aero_model, bulk, naming, state)` — the full rigid stability & control
   derivative matrix. Reuses `build_djx` (per-label normalwash) + `sol144._compute_rigid_derivs`
   (rigid, `u_a = 0`), so the table matches the SOL 144 f06 rigid derivatives exactly without a
   trim/structure solve. Rows: ANGLEA/SIDES/ROLL/PITCH/YAW + AESURF controls; columns: the six
@@ -837,6 +837,14 @@ When a correction card is present the tab also runs the **uncorrected** baseline
   namings — it is *not* relabelled to wind-axis `CL`. `CL` is the lift component ⊥ to U∞ and
   equals `CZ` only at α≈0 (`CL = CZ·cosα + CX·sinα`); this table carries no reference
   incidence, so a wind-axis `CL` is not formed here.
+  `state` (A-GUI5) selects which AIC operator the derivatives are integrated against:
+  `"corrected"` (the corrected ΔCp operator with WKK/WT1/WT2 applied — what SOL 144 uses),
+  `"uncorrected"` (the raw VLM baseline at the same Mach), or `"diff"` (corrected − uncorrected).
+  The uncorrected operator is rebuilt by `_uncorrected_cp_operator(aero_model)`, which inverts the
+  stored raw `aero_model.ajj` and re-applies the Göthert `1/β` factor and the Γ→ΔCp `2/chord`
+  conversion — exactly the no-correction branch of `build_aero_model` — then swaps it in via
+  `dataclasses.replace` so the same `_compute_rigid_derivs` integrates against it. With no
+  correction cards the two operators coincide and `"diff"` is identically zero.
 
 `build_section_correction_figure(boxes, df, data_result, caero_eid)` provides the section-correction
 page's spanwise preview — `cn_α(η)` and `cm0(η)`, input markers vs achieved-on-strips.

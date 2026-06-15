@@ -24,7 +24,7 @@ viewer/
 ├── geometry.py         # 3D model display functions (Plotly)
 ├── results_view.py     # Results post-processing display
 ├── case_control_ui.py  # Case control form and BDF export
-├── aero_view.py        # Aero box mesh + cp colour map (S44); spline-deflected box overlay (S57); per-surface span-loading figure + rigid S&C derivative table (A-GUI2); cp corrected/uncorrected/Δ views + dihedral helper (A-GUI4)
+├── aero_view.py        # Aero box mesh + cp colour map (S44); spline-deflected box overlay (S57); per-surface span-loading figure + rigid S&C derivative table (A-GUI2); cp corrected/uncorrected/Δ views + dihedral helper (A-GUI4); corrected/uncorrected/Δ rigid-derivative table (A-GUI5)
 ├── aero_correction_view.py  # Aero Correction tab: CFD/test section data → W2GJ+AECORR(WT2) cards, injected into the model + full corrected-BDF export (A-GUI3/A-GUI4)
 └── format_utils.py     # Shared 5-sig-fig number formatting for tables/metrics (fmt / fmt_mass / style_numeric) (A-GUI4)
 ```
@@ -154,15 +154,25 @@ full-width figure below.
   Boxes are grouped by `(caero_eid, i_span)` so multi-surface decks no longer merge strips that
   share an `i_span`. `mode` follows the **Cp view** toggle: *corrected* draws corrected solid +
   uncorrected dashed (when present); *uncorrected* draws the baseline solid; *diff* draws the
-  per-strip Δcn/Δcm. Hover/tick values use 5-sig-fig (`.5~g`) formatting.
-- **Rigid stability & control derivatives** — `rigid_derivative_table(aero_model, bulk, naming)`
-  rendered full-width via `st.dataframe`. Reuses the SOL 144 machinery (`build_djx` +
+  per-strip Δcn/Δcm. Hover/tick values use 5-sig-fig (`.5~g`) formatting. A **Show surfaces**
+  `st.multiselect` (`key="aero_span_surfaces"`, default all, shown only for >1 surface) thins a busy
+  multi-surface plot to a chosen subset via `build_span_loading_figure(..., surfaces=)`; each surface
+  keeps a fixed colour (assigned from the full surface set) so hiding one does not recolour the rest.
+  Deselecting all shows an info prompt instead of an empty chart.
+- **Rigid stability & control derivatives** — `rigid_derivative_table(aero_model, bulk, naming,
+  state)` rendered full-width via `st.dataframe`. Reuses the SOL 144 machinery (`build_djx` +
   `_compute_rigid_derivs`, rigid `u_a = 0`) so the matrix matches the f06 rigid derivatives. Rows
   are α, β, roll p, pitch q, yaw r + every AESURF control; columns are the six force/moment
-  coefficients per radian/label. A **Naming** radio (`key="aero_deriv_naming"`) toggles between
-  conventional aero symbols (CZ, CY, Cl, Cm, Cn, CX) and the raw SOL 144 names
-  (CZ, CY, CMX, CMY, CMZ, CX). The vertical-force column is body-axis `CZ` under both namings —
-  not wind-axis `CL` (which equals `CZ` only at α≈0). Hidden when no AEROS card is present.
+  coefficients per radian/label (conventional aero symbols CZ, CY, Cl, Cm, Cn, CX). The
+  vertical-force column is body-axis `CZ` — not wind-axis `CL` (which equals `CZ` only at α≈0).
+  A **Values** radio (`key="aero_deriv_state"`) selects the AIC operator the derivatives are
+  integrated against: **Corrected** (the corrected ΔCp operator, default), **Uncorrected** (the
+  raw VLM baseline at the same Mach, via `_uncorrected_cp_operator` — inverts the stored raw
+  `aero_model.ajj` with the Göthert 1/β + Γ→ΔCp 2/chord scaling, swapped in through
+  `dataclasses.replace`), or **Δ (corr − uncorr)**. The radio appears only when an uncorrected
+  baseline exists (a correction card is present); otherwise the corrected table shows alone.
+  (`naming="raw"` for the SOL 144 names ANGLEA/CMY… remains available programmatically for f06
+  cross-checks but is no longer surfaced as a UI toggle.) Hidden when no AEROS card is present.
 - **Per-surface coefficients (body axis)** — the multi-surface CZ/CY/CM breakdown table (when
   >1 surface). Per-surface contributions are body-axis (so they sum to the body-axis totals);
   the whole-aircraft wind-axis `CL` is the rotated total shown in the metrics above.
@@ -555,8 +565,11 @@ range heuristic.
 | `test_apptest_canted_surface_warns` | Canted surface (20–70°) raises the blended-axis warning |
 | `test_apptest_preview_persists_on_surface_change` | Changing **Preview surface** keeps the build result (upload-id guard) |
 | `test_suggest_corrected_name` / `test_full_corrected_bdf_roundtrips` | Default filename + corrected BDF carries provenance and re-parses with the cards |
+| `test_rigid_derivative_table_state_no_correction` | No correction cards → uncorrected table equals corrected, Δ table is all zeros |
+| `test_rigid_derivative_table_state_with_correction` | A WKK correction moves the derivatives; uncorrected reconstructs the no-WKK baseline; Δ = corrected − uncorrected |
 
-(The Aero Correction tests live in `tests/viewer/test_aero_correction_view.py`.)
+(The Aero Correction tests live in `tests/viewer/test_aero_correction_view.py`; the
+`rigid_derivative_table` / span-loading figure tests in `tests/viewer/test_aero_view.py`.)
 
 **State injection pattern.** Tests do not simulate the file-upload widget (fragile with the temp-file-based parser). Instead, `BulkData` and `CaseControl` are pre-parsed from integration BDF files in module-scoped fixtures (`cantilever_sol101_parsed`, `cantilever_sol103_parsed` in `tests/viewer/conftest.py`), then written directly into `at.session_state` after the first `at.run()`. This replicates exactly what `_handle_upload` sets.
 
