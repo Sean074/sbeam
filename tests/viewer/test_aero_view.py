@@ -161,6 +161,27 @@ def test_build_span_loading_figure_multi_surface():
     assert len(fig.data) == 2 * n_surf
 
 
+def test_build_span_loading_figure_surface_filter():
+    """`surfaces=` thins the plot to a subset; per-surface colours stay fixed."""
+    _cc, bulk = parse_bdf(str(_SAMPLE / "ha144a_fullspan_sbeam.bdf"))
+    aero_model = build_aero_model(bulk)
+    res = solve_rigid_cl(
+        aero_model.boxes, np.radians(3.0), aeros=aero_model.aeros,
+        cp_operator=aero_model.ajj_inv_corr,
+    )
+    eids = sorted({b.caero_eid for b in aero_model.boxes})
+    assert len(eids) > 1
+    fig_all = build_span_loading_figure(aero_model.boxes, res["cp"])
+    assert len(fig_all.data) == 2 * len(eids)
+    # One surface only → a single cn + cm pair.
+    fig_one = build_span_loading_figure(aero_model.boxes, res["cp"], surfaces=[eids[0]])
+    assert len(fig_one.data) == 2
+    # Colour is assigned from the full surface set, so it is unchanged when others hide.
+    c_all = next(t.line.color for t in fig_all.data if t.name == f"CAERO {eids[0]}")
+    c_one = next(t.line.color for t in fig_one.data if t.name == f"CAERO {eids[0]}")
+    assert c_all == c_one
+
+
 def test_build_span_loading_figure_modes(aero_bulk):
     """uncorrected/diff modes draw one curve pair per surface (no dashed overlay)."""
     aero_model = build_aero_model(aero_bulk)

@@ -742,13 +742,26 @@ def _render_aero_tab(bulk: BulkData) -> None:
                     "Solid = corrected · dashed = uncorrected VLM "
                     "(raw AIC + Prandtl–Glauert)."
                 )
-        st.plotly_chart(
-            build_span_loading_figure(
-                aero_model.boxes, cp_corr, cp_unc=cp_unc,
-                aeros=aero_model.aeros, mode=span_mode,
-            ),
-            use_container_width=True,
-        )
+        # Per-surface show/hide — thins a busy multi-surface plot. Stale stored
+        # selections (from a previous model) are filtered to the current surfaces.
+        surf_eids = sorted({b.caero_eid for b in aero_model.boxes})
+        selected = surf_eids
+        if len(surf_eids) > 1:
+            picked = st.multiselect(
+                "Show surfaces", surf_eids, default=surf_eids,
+                format_func=lambda e: f"CAERO {e}", key="aero_span_surfaces",
+            )
+            selected = [e for e in surf_eids if e in picked]
+        if not selected:
+            st.info("Select at least one surface to plot.")
+        else:
+            st.plotly_chart(
+                build_span_loading_figure(
+                    aero_model.boxes, cp_corr, cp_unc=cp_unc,
+                    aeros=aero_model.aeros, mode=span_mode, surfaces=selected,
+                ),
+                use_container_width=True,
+            )
 
         # Rigid stability & control derivatives — all airplane rigid derivatives.
         if bulk.aeros is not None:

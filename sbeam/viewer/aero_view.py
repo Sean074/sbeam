@@ -483,7 +483,7 @@ def _strip_cn_cm(boxes: list, idx: list, cp: np.ndarray) -> tuple:
 
 
 def build_span_loading_figure(boxes, cp_corr, cp_unc=None, aeros=None,
-                              mode: str = "corrected") -> go.Figure:
+                              mode: str = "corrected", surfaces=None) -> go.Figure:
     """Per-surface spanwise normal-force and pitching-moment line plots.
 
     Groups boxes by (caero_eid, i_span) so each CAERO1 surface gets its own
@@ -499,6 +499,11 @@ def build_span_loading_figure(boxes, cp_corr, cp_unc=None, aeros=None,
       when no baseline is supplied).
     * ``"diff"`` — the strip-by-strip difference (corrected − uncorrected); requires
       ``cp_unc`` (falls back to ``"corrected"`` when absent).
+
+    ``surfaces`` restricts which CAERO1 surfaces are drawn (a collection of
+    caero_eids; ``None`` = all) so a busy multi-surface plot can be thinned to a
+    chosen subset.  Each surface keeps a fixed colour from the full surface set, so
+    hiding one does not recolour the rest.
 
     ``aeros`` is accepted for signature symmetry; the section coefficients are
     chord-local and need no global reference.
@@ -535,8 +540,13 @@ def build_span_loading_figure(boxes, cp_corr, cp_unc=None, aeros=None,
             cm.append(b)
         return cn, cm
 
-    for s_i, eid in enumerate(sorted(surf_strips)):
-        color = palette[s_i % len(palette)]
+    all_eids = sorted(surf_strips)
+    color_for = {eid: palette[i % len(palette)] for i, eid in enumerate(all_eids)}
+    want = set(all_eids) if surfaces is None else set(surfaces)
+    draw_eids = [eid for eid in all_eids if eid in want]
+
+    for eid in draw_eids:
+        color = color_for[eid]
         strips = surf_strips[eid]
         order = sorted(strips, key=lambda sp: boxes[strips[sp][0]].span_frac)
         eta = [float(boxes[strips[sp][0]].span_frac) for sp in order]
