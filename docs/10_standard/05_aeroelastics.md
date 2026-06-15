@@ -646,6 +646,14 @@ tuned by correcting the body panels after the flying surfaces.
 
 ### `build_body_correction(bulk, *, horiz_eid, vert_eid, targets, mach=None, aero=None, sid_w2gj_base=9301, sid_aecorr_base=9401, tol=1e-4)`
 
+`horiz_eid` / `vert_eid` each accept **an `int` or a list of `int`** — a body plane may be defined by
+one CAERO1 or several (e.g. a fuselage side split into a panel by the wing, one to the fin TE, and one
+for the lower body). Every listed panel is tuned by **one** joint min-norm solve over all its boxes
+(the per-box weights route each box to pitch / yaw / roll by its normal), and each panel emits its own
+`(W2gj, Aecorr)` pair at `base + i`. Splitting a plane across more boxes gives the solve more freedom
+— it generally **lowers** `ratio_max` and spreads the correction load. (Placement caveat unchanged:
+keep every piece clear of the lifting surfaces.)
+
 Returns a `BodyCorrectionResult` (`cards={eid:(W2gj, Aecorr)}`, `target`/`baseline`/`achieved`
 `BodyTargets`, `residual`, `converged`, `ratio_max`). `bulk` must already carry the flying-surface
 corrections; pass a pre-built flying-corrected `aero` to skip an AIC rebuild. The solve is **direct,
@@ -668,8 +676,41 @@ exact and non-iterative**, exploiting two facts (verified to ~1e-13 against `bui
   for, not fought). Slope is fixed before the offset is solved and the offset never feeds back into
   the slope, so no iteration is needed.
 
-`ratio_max` (largest body WT2 ratio) is surfaced as an authority gauge — a value ≫ 1 means the body
-is being asked for more moment than its area/arm comfortably supplies (warned above ~5).
+`ratio_max` (largest body WT2 ratio) is surfaced as a conditioning gauge. It is **not** a
+contamination metric: WT2 is a post-inverse diagonal on the **body rows only**, so a large ratio
+scales the body-box ΔCp without ever perturbing the lifting-surface operator rows (see *Geometry &
+limitations* below). For panels held clear of the tail a ratio of **tens to ~100 is normal and
+benign**; it is warned only past `_RATIO_WARN = 200`, the point at which the flat-plate cruciform is
+being pushed beyond what it can represent and a slender-body element is the proper tool.
+
+### Geometry & limitations — keep the panels clear of the empennage
+
+The body panels must be held **clear of the lifting surfaces**. A VLM box loads any other box that
+lies in its neighbourhood **or that its semi-infinite +X trailing legs pass through**, so a body box
+overlapping — or trailing its wake into — the HTP/VTP injects a purely numerical interaction onto the
+real surfaces (exactly what the cruciform is meant to *stand in for*, not corrupt). Guidance, as
+applied in `sample/cessna210_body.bdf`:
+
+* **Terminate ahead of the empennage** (deck: body chord ends at x=5.0, ahead of the VTP LE x=6.6 and
+  HTP LE x=6.9) so no body box *and no trailing leg* reaches the tail x-station.
+* **Hold the panels off the tail planes:** the horizontal panel sits below the HTP (deck z=0.30 vs HTP
+  z=0.70) and the vertical panel **wholly below the VTP root** (deck z<0.45 vs root z=0.60). The
+  vertical panel shares the fin's y=0 plane, so any body box at a z in the fin band (0.60–2.30) drives
+  a spurious sidewash straight onto the fin — keep it under the root.
+* **Keep the panels small/compact** over the forward-mid fuselage, where the body's aero actually
+  acts. Smaller panels shed a smaller spurious field on the wing/tail; do **not** enlarge them to chase
+  a lower `ratio_max` — bigger/closer panels lower the ratio but *raise* the contamination.
+
+**The flat-plate cruciform can only legitimately supply a SMALL body increment.** A flat plate aft of
+the moment reference makes a *stabilising* (nose-down) bare pitch — the wrong sign for a fuselage — so
+a large destabilising target is only reachable by immersing the panels in the tail (the spurious
+overlap above) or with an extreme, ill-conditioned correction. The cruciform is therefore a tuning
+device for a **mild** dCm/dα and dCn/dβ with **~0 roll** (a slender body adds negligible Cl_β); the
+`sample/cessna210_body.bdf` `TOTAL` targets are the flying-surface totals **plus a realistic fuselage
+increment** of that size. Large body effects — a several-MAC neutral-point shift, genuine wing-body
+interference — need a true **slender-body element** (see `docs/30_future/00_backlog.md`, "Body
+aerodynamic panels (slender body)"); the `Cl_β` match capability remains in the code but a clean
+cruciform is expected to drive it to ≈0.
 
 **SPLINE0 for body panels.** Body panels carry zero structural coupling (`SPLINE0`): body elastic
 aero effects are negligible, and a flexible spline would smear the *fictitious* correction load onto

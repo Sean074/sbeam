@@ -672,13 +672,35 @@ fixed first (so $(A_{jj}^\ast)^{-1}$ is frozen) and the offset never feeds back 
 slope metric is $w_g$-free), the build is **exact and non-iterative**.
 
 The result is ordinary $W_{2GJ}$ + $W_{T2}$ cards on the body CAERO1s (so `build_aero_model` is
-unchanged); the body's authority shows up as the largest body $W_{T2}$ ratio, warned when it grows
-large (the body asked for more moment than its area/arm supplies). Implemented in
-`sbeam/aero/body_correction.py` (`build_body_correction`); the body panels carry **`SPLINE0`**
-(zero structural coupling) so the fictitious tuning load is not smeared onto the fuselage beam — yet
-they still drive the total/trim $C_m,C_n,C_l$ and all rigid + restrained derivatives, which integrate
-every box directly (independent of the spline; §4.4, §5). Matching $C_{l_\beta}$ needs adequate
-spanwise (z) resolution on the vertical panel to shape the roll arm independently of the yaw arm.
+unchanged). Implemented in `sbeam/aero/body_correction.py` (`build_body_correction`); the body panels
+carry **`SPLINE0`** (zero structural coupling) so the fictitious tuning load is not smeared onto the
+fuselage beam — yet they still drive the total/trim $C_m,C_n,C_l$ and all rigid + restrained
+derivatives, which integrate every box directly (independent of the spline; §4.4, §5).
+
+**Authority and contamination are the same mechanism — keep the panels clear of the tail.** The
+cruciform's ability to *move the total moment* and its tendency to *spuriously load the real
+surfaces* both come from one thing: how strongly the body panels couple to the rest of the lattice
+through $A_{jj}$. A panel **overlapping** the empennage (or one whose semi-infinite $+\hat x$ trailing
+legs **pierce** it — for the vertical panel, sharing the fin's $y=0$ plane, any box in the fin's
+$z$-band drives a sidewash straight onto the fin) is strongly coupled, so it reaches the targets at a
+small $W_{T2}$ ratio — *but that small ratio is bought by dumping load onto the HTP/VTP*. Hold the
+panels clear and the coupling collapses: the targets now need a large ratio, which is **benign for the
+lifting surfaces** (the slope $W_{T2}=\operatorname{diag}(r)A^{-1}$ touches body rows only, eqn 13b)
+and keeps the body $c_p$ of the same order as the real surfaces (it scales a tiny bare value), but it
+exposes the real limit — see below. So `ratio_max` is a *conditioning* gauge, **not** a contamination
+gauge; it is warned only past a large bound, signalling the targets exceed the cruciform's range.
+
+**A flat-plate cruciform can only legitimately supply a small body increment.** A flat plate aft of
+the moment reference makes a *stabilising* (nose-down) bare $C_{m_\alpha}$ — the **wrong sign** for a
+fuselage's destabilising Munk moment — and a clear-of-tail panel has little authority, so a large
+destabilising target is reachable only by re-introducing the overlap (spurious) or by an extreme,
+weakly-conditioned correction. The cruciform is therefore a tuning device for a **mild** $C_{m_\alpha}$
+and $C_{n_\beta}$ increment with **$C_{l_\beta}\approx0$** (a slender body adds negligible roll; the
+match capability remains but a clean cruciform drives it to ~0). A genuine fuselage representation —
+the destabilising couple, wing-body interference, a several-MAC neutral-point shift — requires a true
+**slender-body element** (line of acceleration-potential doublets, Munk slender-body theory), tracked
+in `docs/30_future/00_backlog.md`. Matching $C_{l_\beta}$ at all still needs adequate spanwise ($z$)
+resolution on the vertical panel to shape the roll arm independently of the yaw arm.
 
 ---
 

@@ -2402,8 +2402,76 @@ lift/side-force a by-product.
   `diag(r)·A_base` matches `build_aero_model` to ~1e-13, so `achieved` needs no rebuild).
 
 **Test / Acceptance:**
-- Targets reached to machine precision (residuals ~1e-14), `ratio_max` < 5 for realistic targets;
-  full `tests/` green; ruff clean on changed files.
+- Targets reached to machine precision (residuals ~1e-14); full `tests/` green; ruff clean on changed
+  files.
+
+### Resolved Defect A9a: body panels overlapped the empennage; targets were overlap-calibrated ✅ RESOLVED (2026-06-15)
+
+**Symptom (user-reported):** in `sample/cessna210_body.bdf` the cruciform body panels overlapped the
+empennage, causing non-real interaction effects. The horizontal panel (z=0.60, chord to x=8.00) sat
+just under the HTP (z=0.70); the vertical panel (y=0, z=0.10–1.30, chord to x=8.00) was **coplanar
+with the VTP** (also y=0). Because VLM trailing legs are semi-infinite in +X, body boxes *and their
+wakes* interpenetrated the tail and spuriously loaded the real surfaces.
+
+**Root-cause finding (the important part):** moving the panels into clean air exposed that the sample's
+moment match was **structurally dependent on the overlap**. Diagnostics showed (a) the flying-only
+neutral point sits ~5.7 m aft while the original targets (Cm_α=−6.9) demand it ~1.9 m — a ~3.8 m
+(≈2.5 MAC) forward shift the fuselage was being asked to supply; (b) the original panels delivered
+~+13.2 of that +13.5 Cm_α almost entirely from boxes immersed in the HTP/VTP; (c) in clean air the
+panels' correction sensitivity collapses (~4× pitch, ~600× yaw, ~130× roll) because they were
+"piggy-backing" on the empennage's strong response. The deep result: **a body panel's authority to
+move the total moment and its contamination of the lifting surfaces are the same coupling mechanism**,
+so a clean cruciform can only legitimately supply a *small* increment. `ratio_max` is a *conditioning*
+gauge, not a contamination gauge (WT2 is body-row-only — a large ratio for clear-of-tail panels is
+benign; the genuine adverse metric is the body's induced ΔCp on the lifting-surface boxes, which the
+clean geometry reduces markedly).
+
+**Resolution (user chose "realistic targets + document"):**
+- **Geometry** — both panels made compact and clear of the tail: terminate at x=5.00 (ahead of VTP LE
+  6.60 / HTP LE 6.90); horizontal at z=0.30 (below HTP), vertical wholly below the VTP root
+  (z=0.05–0.45); half-span/height ~0.40. Box counts (372) and SPLINE0 ranges unchanged.
+- **Targets** — CSV `TOTAL` revised to the flying baseline + a realistic fuselage increment (mild
+  destabilising Cm_α/Cn_β, ~0 roll); the body now moves Cm_α by a physical ~+0.85 at a benign (large,
+  decoupled) WT2 ratio with body ΔCp comparable to the real surfaces.
+- **Code** — `body_correction.py` `_RATIO_WARN` 5→200 and message reworded (the old "add area/arm"
+  advice is counterproductive); module docstring + `05_aeroelastics.md` + `01_aeroelastics_theory.md`
+  §3.6 document the geometry guidance and the authority↔contamination finding.
+- **Backlog** — added "Body aerodynamic panels (slender body)" as the proper fix (Tier 1 NASTRAN-style
+  slender + interference body recommended); refined A9-c.
+
+**Test / Acceptance:** new `test_body_panels_clear_of_empennage` (no body box or +X wake reaches the
+tail); body tests assert `ratio_max < _RATIO_WARN` (ratio is decoupled from contamination) and track
+the realistic targets; `tests/aero/` + `tests/viewer/` green; ruff clean.
+
+### Step A9b: multi-surface body planes ✅ COMPLETE (2026-06-15)
+
+**Objective:** let a body plane be defined by **more than one** CAERO1 — e.g. a fuselage side split
+into a panel by the wing, one running to the fin trailing edge, and one for the lower body — rather
+than a single horizontal + single vertical panel.
+
+**Deliverables:**
+- `build_body_correction` `horiz_eid` / `vert_eid` accept an `int` **or a list of `int`** (new
+  `_as_eid_list` helper); fully backward compatible. No solver change was needed: the slope and offset
+  solves were already joint min-norm over the flat `body_idx` set, and the per-box weights
+  (`w_pitch`/`w_yaw`/`w_roll`) route each box to its metric by normal — so any number of panels per
+  plane is matched together, each emitting its own `(W2gj, Aecorr)` pair at `base + i`.
+- Viewer Stage 6 pickers changed from `selectbox` to `st.multiselect` (a plane = one or many panels).
+- Tests: `test_eid_int_and_singleton_list_equivalent` (int ≡ singleton list, identical results) and
+  `test_multi_surface_body_plane` (2-panel vertical body hits all six targets to ~1e-6, one card pair
+  per panel, distinct SIDs); viewer test asserts multiselect pickers.
+
+**Key decisions / findings:**
+- **No special-casing for multiple panels** — the weights-route-by-normal design makes the joint solve
+  size-agnostic; the only changes are list normalisation, the `if horiz_eids:` / `if vert_eids:`
+  guards, and per-panel SID allocation (already a loop).
+- **Splitting a plane improves conditioning** — more body boxes give the min-norm more freedom, so the
+  WT2 ratio drops and the correction load spreads (Cessna body `ratio_max` ~93 → ~32 across 4 panels).
+- **Placement caveat unchanged** — each piece must stay clear of the lifting surfaces; an overlapping
+  piece contaminates them (it does not model interference). Documented in `05_aeroelastics.md` /
+  `01_aeroelastics_theory.md` §3.6 and the viewer caption.
+
+**Test / Acceptance:** `tests/aero/test_body_correction.py` + `tests/viewer/test_aero_correction_view.py`
+green; ruff clean.
 
 ---
 

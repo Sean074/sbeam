@@ -13,6 +13,24 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Multi-surface body planes (2026-06-15)**
+
+- **`sbeam/aero/body_correction.py`** — `build_body_correction` now accepts a **list of EIDs** (as well
+  as a single `int`, backward compatible) for `horiz_eid` / `vert_eid`, so a body plane can be defined
+  by several CAERO1s — e.g. a fuselage side split into a panel by the wing, one running to the fin TE,
+  and one for the lower body. All listed panels are tuned by **one** joint min-norm solve over every
+  body box (the per-box weights already route each box to pitch / yaw / roll by its normal), and each
+  panel emits its own `(W2gj, Aecorr)` pair. Distributing a plane across more boxes gives the solve
+  more freedom and generally **lowers** `ratio_max` (e.g. the Cessna body dropped ~93→~32 split across
+  4 panels). New `_as_eid_list` helper; verified to machine precision on a 1-horizontal + 3-vertical
+  body.
+- **Aero Correction tab** — the horizontal / vertical body-panel pickers are now `st.multiselect`
+  (`viewer/aero_correction_view.py`), so a plane can be built from several panels in the UI; defaults
+  to the auto-guessed surfaces.
+- **Tests** — `test_eid_int_and_singleton_list_equivalent` (int ≡ one-element list) and
+  `test_multi_surface_body_plane` (a 2-panel vertical body hits all targets, one card pair per panel)
+  in `tests/aero/test_body_correction.py`; the viewer test asserts the pickers are multiselects.
+
 **Cruciform body panels — total-aircraft moment correction (Step A9, 2026-06-14)**
 
 - **`sbeam/aero/body_correction.py`** — represent the fuselage (sbeam has no body element) with a
@@ -421,6 +439,40 @@ points (MON3) will consume.
   per-grid export round-trip. 850 tests pass.
 
 ### Changed
+
+**Cruciform body panels moved clear of the empennage (2026-06-15)**
+
+- **`sample/cessna210_body.bdf`** — the body panels overlapped the empennage: the horizontal panel
+  (z=0.60, chord to x=8.00) sat just under the HTP (z=0.70) and the vertical panel (y=0, z=0.10–1.30,
+  chord to x=8.00) was **coplanar with the VTP** (also y=0), so body boxes — and their semi-infinite
+  +X trailing legs — interpenetrated the tail and dumped a spurious load onto the real surfaces. Both
+  panels are now **compact and clear of the tail**: they terminate at x=5.00 (ahead of the VTP LE 6.60
+  / HTP LE 6.90), the horizontal panel drops to z=0.30 (below the HTP) and the vertical panel sits
+  **wholly below the VTP root** (z=0.05–0.45). Half-spans/heights shrunk to ~0.40 to minimise the
+  field they shed on the wing/tail. Box counts (372) and SPLINE0 ranges are unchanged. Measured
+  ‖ΔCp‖ contamination of the lifting-surface boxes drops markedly vs the overlapping deck.
+- **`sample/cessna210_body_section_data.csv`** — `TOTAL` targets revised from the original
+  (Cm_α=−6.9, Cn_β=0.52, Cl_β=−0.24) to a **realistic fuselage increment** over the flying baseline
+  (Cm_α=−19.92, Cn_β=0.368, Cl_β=−0.051, ~0 roll). The original targets demanded the fuselage shift
+  the neutral point ~3.8 m (≈2.5 MAC) forward — only reachable via the empennage overlap that has now
+  been removed; such large body effects belong to a slender-body element (new backlog item).
+- **`sbeam/aero/body_correction.py`** — `ratio_max` is documented as a **conditioning gauge, not a
+  contamination metric**: WT2 is a post-inverse diagonal on the body rows only, so a large ratio for
+  clear-of-tail (weakly-coupled) panels is benign for the lifting surfaces. `_RATIO_WARN` raised
+  5 → 200 and its message reworded (the old "add body-panel area/arm" advice is counterproductive —
+  bigger/closer panels lower the ratio but raise the contamination; large ratios now point to a
+  slender-body element). Module docstring gains a "Geometry, the WT2 ratio, and the cruciform's
+  limits" section.
+- **Docs** — `docs/10_standard/05_aeroelastics.md` gains a "Geometry & limitations — keep the panels
+  clear of the empennage" subsection; `docs/20_theory/01_aeroelastics_theory.md` §3.6 documents the
+  key finding (a body panel's *authority to move the total moment* and its *contamination of the real
+  surfaces* are the same coupling mechanism, so a clean cruciform can only supply a small increment).
+  `docs/30_future/00_backlog.md` adds a **"Body aerodynamic panels (slender body)"** item (Tier 1
+  NASTRAN-style slender + interference body recommended) and refines A9-c.
+- **Tests** — `tests/aero/test_cessna210_body_example.py` adds `test_body_panels_clear_of_empennage`
+  (the panels and their +X wakes must not reach the tail); the `ratio_max < 5` assertions in the body
+  tests are replaced by `< _RATIO_WARN` with a note that the ratio is decoupled from contamination;
+  the parse/roll-delta assertions track the realistic targets.
 
 **Theory — force/moment conventions consolidated (2026-06-14)**
 

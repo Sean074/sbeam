@@ -145,21 +145,46 @@ CAERO1, 300, 10, 0, 6, 6, 0, 0, 1
 $
 $ ------------------------------------------------------- CRUCIFORM BODY PANELS
 $ Two crossing flat surfaces standing in for the fuselage (sbeam has no body
-$ element).  Tuned by sbeam.aero.body_correction so the TOTAL airplane Cm/Cn match
-$ CFD/WT (see sample/cessna210_body_section_data.csv, "TOTAL" rows).
+$ element).  Tuned by sbeam.aero.body_correction so the TOTAL airplane Cm/Cn/Cl match
+$ the CFD/WT "TOTAL" row of sample/cessna210_body_section_data.csv.
 $
-$ ---- Horizontal body panel (XY plane at waterline z=0.60, normal +Z): 2 x 8 = 16 boxes
-$      Span y=-0.58..+0.58 (fuselage half-width), chord x=0.30..8.00 (nose to tail).
-$      NCHORD=8 (along the body) gives the moment arm spread; NSPAN=2 across the width.
+$ IMPORTANT — both panels are kept COMPACT and CLEAR OF THE EMPENNAGE.  They are
+$ corrected, so their geometry need not match the airframe; what matters is that they do
+$ not contaminate the real lifting surfaces.  A VLM box loads any other box that lies on
+$ (or whose +X semi-infinite trailing legs pass through) its neighbourhood, so a body box
+$ sitting in — or trailing its wake into — the HTP/VTP produces a purely numerical
+$ interaction.  Both panels therefore:
+$   * terminate at x=5.00, well ahead of the VTP LE (x=6.60) and HTP LE (x=6.90), so no
+$     body box and no trailing leg reaches the empennage x-station;
+$   * sit low and off the tail planes — the horizontal panel at z=0.30 (below the HTP at
+$     z=0.70), the vertical panel wholly below the VTP root (z<0.60, in the same y=0 plane
+$     as the fin) — so their downstream wakes pass under, not through, the tail;
+$   * stay small (half-span 0.40, height 0.40) over the forward/mid fuselage where the
+$     body's aero actually acts, minimising the spurious field they shed on the wing/tail.
+$
+$ NOTE (see docs/10_standard/05_aeroelastics.md "Cruciform limitations"): a flat-plate
+$ cruciform can only LEGITIMATELY supply a SMALL body increment.  The "TOTAL" targets
+$ here are the flying-surface totals plus a realistic fuselage increment (a mild
+$ destabilising dCm/da and dCn/db, ~0 roll).  Large body effects — e.g. a several-MAC
+$ neutral-point shift — are only reachable if the panels overlap/are immersed in the
+$ tail (the spurious interaction this deck deliberately avoids); those belong to a true
+$ slender-body element (backlog: "Body aerodynamic panels (slender body / CAERO2)").
+$
+$ ---- Horizontal body panel (XY plane at lower fuselage z=0.30, normal +Z): 2 x 8 = 16 boxes
+$      Span y=-0.40..+0.40, chord x=0.30..5.00.  z=0.30 keeps the panel and its +X wake
+$      below the HTP (z=0.70); pitch is z-independent, so dropping it costs nothing.
+$      NCHORD=8 gives the streamwise moment-arm spread; NSPAN=2 across the width.
 CAERO1, 400, 10, 0, 2, 8, 0, 0, 1
-+, 0.30, -0.58, 0.60, 7.70, 0.30, 0.58, 0.60, 7.70
++, 0.30, -0.40, 0.30, 4.70, 0.30, 0.40, 0.30, 4.70
 $
 $ ---- Vertical body panel (XZ plane at y=0, normal +Y): 4 x 8 = 32 boxes
-$      Span z=0.10..1.30 (fuselage height), chord x=0.30..8.00 (nose to tail).
-$      NSPAN=4 (up the height) gives the z-arm spread needed to shape roll (Cl_beta)
-$      independently of yaw (Cn_beta).
+$      Span z=0.05..0.45 (lower fuselage, BELOW the VTP root z=0.60), chord x=0.30..5.00.
+$      The VTP shares this y=0 plane, so any body box (or +X trailing leg) at a z in the
+$      fin band (0.60..2.30) drives a spurious sidewash straight onto the fin; holding the
+$      panel below z=0.60 and ending at x=5.00 removes that overlap entirely.  NSPAN=4 up
+$      the height gives the z-arm spread to shape roll (Cl_beta) vs yaw (Cn_beta).
 CAERO1, 500, 10, 0, 4, 8, 0, 0, 1
-+, 0.30, 0.0, 0.10, 7.70, 0.30, 0.0, 1.30, 7.70
++, 0.30, 0.0, 0.05, 4.70, 0.30, 0.0, 0.45, 4.70
 $
 $ Body panels: SPLINE0 (zero structural coupling — negligible body elasticity).
 $ Box-ID range = caero_eid + i_span*nchord + j_chord (horiz 16, vert 32 boxes).

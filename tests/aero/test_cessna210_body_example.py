@@ -22,6 +22,7 @@ from sbeam.aero.body_correction import (
     build_body_correction,
     parse_body_targets,
     split_total_rows,
+    _RATIO_WARN,
 )
 
 _ROOT = Path(__file__).parent.parent.parent / "sample"
@@ -59,6 +60,27 @@ def test_body_panels_are_a_cruciform(deck):
     assert abs(nv[1]) > 0.99 and abs(nv[0]) < 1e-6 and abs(nv[2]) < 1e-6   # +Y
 
 
+def test_body_panels_clear_of_empennage(deck):
+    """The fix: no body box — and (since trailing legs run downstream in +X) no body
+    box's wake — may reach the empennage, so the panels cannot spuriously load the tail.
+    """
+    _bulk, model = deck
+    body_x = [c[0] for b in model.boxes if b.caero_eid in (400, 500) for c in b.corners]
+    emp_x = [c[0] for b in model.boxes if b.caero_eid in (200, 250, 300) for c in b.corners]
+    # every body box (hence its +X trailing wake's origin) ends well ahead of the
+    # most-forward empennage leading edge — wakes pass the tail x-station having already
+    # cleared it in z/y (checked below), never through an empennage box
+    assert max(body_x) < min(emp_x) - 1.0
+    # vertical body panel shares the fin's y=0 plane, so it must stay BELOW the VTP root
+    vtp_z = [c[2] for b in model.boxes if b.caero_eid == 300 for c in b.corners]
+    vbody_z = [c[2] for b in model.boxes if b.caero_eid == 500 for c in b.corners]
+    assert max(vbody_z) < min(vtp_z) + 1e-9
+    # horizontal body panel stays below the HTP plane
+    htp_z = [c[2] for b in model.boxes if b.caero_eid in (200, 250) for c in b.corners]
+    hbody_z = [c[2] for b in model.boxes if b.caero_eid == 400 for c in b.corners]
+    assert max(hbody_z) < min(htp_z)
+
+
 def test_two_stage_correction_reaches_total_targets(deck):
     bulk, model = deck
     df = pd.read_csv(CSV_PATH)
@@ -83,7 +105,12 @@ def test_two_stage_correction_reaches_total_targets(deck):
     assert out.converged
     for k in ("cm_alpha", "cm0", "cn_beta", "cn0", "cl_beta", "cl0"):
         assert getattr(out.achieved, k) == pytest.approx(getattr(tgt, k), abs=1e-6)
-    # the body genuinely moved the totals (targets differ from the flying baseline)
-    assert abs(out.achieved.cm_alpha - out.baseline.cm_alpha) > 0.1
-    assert abs(out.achieved.cl_beta - out.baseline.cl_beta) > 0.01
-    assert out.ratio_max < 5.0
+    # the body genuinely moves the airplane totals toward the realistic fuselage increment
+    # (mild destabilising pitch + yaw); roll is ~0 by design — a slender body adds no roll.
+    assert abs(out.achieved.cm_alpha - out.baseline.cm_alpha) > 0.1   # pitch destabilised
+    assert abs(out.achieved.cn_beta - out.baseline.cn_beta) > 0.01    # yaw destabilised
+    # ratio_max is NOT a contamination metric: WT2 is a post-inverse diagonal on the body
+    # rows only, so it never perturbs the lifting surfaces.  Panels held clear of the tail
+    # are weakly coupled, so a ratio of tens is normal and benign — only the sane band is
+    # required (see docs/10_standard/05_aeroelastics.md "Cruciform limitations").
+    assert out.ratio_max < _RATIO_WARN

@@ -387,7 +387,8 @@ def test_apptest_body_stage_renders(body_bulk):
     at.run()
     assert not at.exception, [str(e) for e in at.exception]
     assert any("Body panels" in m.value for m in at.markdown)
-    keys = {s.key for s in at.selectbox}
+    # horizontal/vertical body-panel pickers are multiselects (a plane may be several panels)
+    keys = {s.key for s in at.multiselect}
     assert "aero_body_horiz" in keys and "aero_body_vert" in keys
 
 
@@ -413,12 +414,14 @@ def test_apptest_body_build_and_apply(body_bulk):
     at.session_state["aero_corr_df"] = df
     at.session_state["aero_corr_result"] = res
     at.session_state["aero_corr_cond"] = (0.0, 2.0, 0.0)
+    # Small increments: panels held clear of the tail are weakly coupled, so a large
+    # yaw/roll target would need a big (benign) WT2 ratio; keep it in the sane band.
     at.session_state["aero_body_cma"] = base.cm_alpha + 0.05
     at.session_state["aero_body_cm0"] = base.cm0 - 0.02
-    at.session_state["aero_body_cnb"] = base.cn_beta - 0.02
-    at.session_state["aero_body_cn0"] = base.cn0 + 0.01
-    at.session_state["aero_body_clb"] = base.cl_beta + 0.02
-    at.session_state["aero_body_cl0"] = base.cl0 + 0.005
+    at.session_state["aero_body_cnb"] = base.cn_beta - 0.01
+    at.session_state["aero_body_cn0"] = base.cn0 + 0.005
+    at.session_state["aero_body_clb"] = base.cl_beta + 0.005
+    at.session_state["aero_body_cl0"] = base.cl0 + 0.002
     at.run()
 
     next(b for b in at.button if b.key == "aero_body_build").click().run()
@@ -426,7 +429,7 @@ def test_apptest_body_build_and_apply(body_bulk):
     bres = at.session_state["aero_body_result"]
     assert bres is not None and bres.converged
     assert sorted(bres.cards) == [400, 500]
-    assert bres.achieved.cl_beta == pytest.approx(base.cl_beta + 0.02, abs=1e-6)
+    assert bres.achieved.cl_beta == pytest.approx(base.cl_beta + 0.005, abs=1e-6)
 
     next(b for b in at.button if b.key == "aero_body_apply").click().run()
     assert not at.exception, [str(e) for e in at.exception]

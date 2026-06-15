@@ -423,12 +423,43 @@ DTOR/DTHZ ignored-warning — the PG-normals half is re-diagnosed NOT-A-BUG, see
 - **A9-b — canted body panels.** Today the horizontal (+Z) and vertical (+Y) panels are assumed
   axis-aligned (the vertical panel relies on `n_z = 0` for exact pitch/yaw decoupling). Support a
   canted body panel (blended pitch/yaw) via a 2×2 slope solve over both moment metrics.
-- **A9-c — automatic body-panel sizing / mesh guidance.** The bare body load and WT2 ratio are
-  mesh- and proximity-sensitive (a long panel under the wing couples strongly). Add a helper that
-  sizes the cruciform from the fuselage planform/profile and warns when `ratio_max` indicates the
-  body lacks authority for the requested targets.
+- **A9-c — automatic body-panel sizing / mesh guidance.** The bare body load is mesh- and
+  proximity-sensitive (a panel overlapping/under the wing or tail couples strongly). Add a helper that
+  sizes the cruciform from the fuselage planform/profile **and reports the genuine adverse metric — the
+  body's induced ΔCp on the lifting-surface boxes** (`ratio_max` alone is a conditioning gauge, not a
+  contamination gauge: WT2 is body-row-only, so a large ratio for clear-of-tail panels is benign).
 - **A9-d — multi-Mach body targets.** The CSV `TOTAL` block is read at one Mach; extend to a
   per-Mach sweep consistent with the flying-surface per-Mach corrected-BDF export.
+
+### Body aerodynamic panels (slender body) — proper fuselage element (open, medium priority)
+
+The cruciform (A9) is a **flat-plate tuning device**, not a fuselage model, and its limits are now
+understood and documented (`docs/10_standard/05_aeroelastics.md` "Geometry & limitations";
+`docs/20_theory/01_aeroelastics_theory.md` §3.6): a flat plate makes a *stabilising* bare pitch (wrong
+sign for a fuselage), and its authority to move the total moment is the *same* coupling that
+contaminates the real surfaces — so it can only supply a **small** mild increment without either
+overlapping the tail (spurious) or running an extreme correction. Large, *predictive* body effects —
+the destabilising Munk couple, wing-body interference/carryover, a several-MAC neutral-point shift,
+real fuselage airloads into the structure — need a genuine body element.
+
+- **Tier 1 (recommended) — slender body + interference body (NASTRAN `CAERO2`/`PAERO2` style).** A line
+  of acceleration-potential doublets (Munk slender-body theory; z-doublets → lift/pitch, y-doublets →
+  side-force/yaw) for the body's own load, plus a cylindrical interference body whose image system
+  modifies the wing boxes' boundary condition (captures carryover). New: `CAERO2`/`PAERO2` cards + body
+  `AEFACT`; a 3-D line/point-doublet kernel (the horseshoe kernel in `vlm.py` won't do); a **block**
+  `build_ajj` (`[wing-wing | wing-body; body-wing | body-body]`); body force integration; a real spline
+  to the fuselage beam (replacing the SPLINE0 fudge); viewer + theory/standard docs; tests vs Munk
+  closed-form dCm/dα ∝ volume and DATCOM wing-body carryover. The interference-tube image method is the
+  research risk / long pole. Predictive (no CFD target needed) and fully in the AIC. **Large effort.**
+- **Tier 2 — closed vortex-ring/doublet body (sbeam-native).** Wrap the actual cross-sections in a
+  closed surface of vortex-ring panels folded into the existing Biot-Savart `build_ajj`; gets lift +
+  interference + real shape with current machinery, but no thickness/volume (no sources) and needs a
+  Kutta/wake treatment off the body. **Medium-large effort.**
+- **Tier 3 — full source+doublet 3-D panel body (ZAERO `BODY7` style).** Highest fidelity (volume +
+  thickness + non-circular sections, fully coupled), but effectively a second solver. **Very large.**
+
+Until then, keep the cruciform compact and clear of the empennage (A9 guidance) and use it only for a
+mild increment.
 
 ---
 

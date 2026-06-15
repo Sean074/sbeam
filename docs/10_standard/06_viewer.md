@@ -235,13 +235,16 @@ solve, and/or exports a self-contained corrected BDF.
 6. **Body panels — total-aircraft moment match (Step A9)** — shown only when the model has a
    plausible body panel (`_guess_body_panels` finds the largest-chord +Z / +Y surfaces — the
    fuselage cruciform). After the flying surfaces are matched (step 5), the body panels absorb the
-   residual so the **total** airplane Cm/Cn/Cl match CFD/WT. Two **selectboxes** pick the horizontal
-   (Cm) and vertical (Cn, Cl) body panels (pre-set to the guesses; either can be `(none)`); six
-   **target inputs** (Cm_α/Cm0 pitch, Cn_β/Cn0 yaw, Cl_β/Cl0 roll) seed from the CSV `TOTAL` block
+   residual so the **total** airplane Cm/Cn/Cl match CFD/WT. Two **multiselects** pick the horizontal
+   (Cm) and vertical (Cn, Cl) body panels — a plane may be **one panel or several** (e.g. a fuselage
+   side split into pieces; they are tuned jointly), pre-set to the guesses and either may be left
+   empty; six **target inputs** (Cm_α/Cm0 pitch, Cn_β/Cn0 yaw, Cl_β/Cl0 roll) seed from the CSV `TOTAL` block
    (`body_correction.parse_body_targets`; the block is split off the upload before validation by
    `split_total_rows`). **Build body correction** runs `build_body_correction(bulk + flying cards,
    …, aero=…)` and shows a baseline / target / achieved / residual `st.dataframe` plus the **max body
-   WT2 ratio** (an authority gauge — warned above ~5, or if it could not converge). **Apply body
+   WT2 ratio** (a *conditioning* gauge, not a contamination metric — WT2 scales body boxes only;
+   warned past `_RATIO_WARN`=200, the point where targets exceed a flat-plate cruciform and a
+   slender-body element is needed, or if it could not converge). **Apply body
    panels to model** (`_apply_body_cards`) injects the flying pairs (idempotent) and the body
    `(W2gj, Aecorr)` pairs at reserved SIDs (`_BODY_W2GJ_BASE = 9301`, `_BODY_AECORR_BASE = 9401`),
    then nulls the Aero-tab cache; **Download body cards (.bdf)** emits them

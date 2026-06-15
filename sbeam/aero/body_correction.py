@@ -46,6 +46,44 @@ pitch/roll separation; matching Cl_β needs enough spanwise (z) resolution on it
 
 The body cards are ordinary ``W2gj`` / ``Aecorr`` (WT2) cards on the body CAERO1 EIDs;
 ``build_aero_model`` composes them with the flying-surface cards unchanged.
+
+Geometry, the WT2 ratio, and the cruciform's limits
+---------------------------------------------------
+The body panels should be held **clear of the lifting surfaces** — a body box that
+overlaps (or trails its +X wake through) the wing/HTP/VTP dumps a spurious load onto
+those surfaces, which is the very interaction the cruciform is meant to substitute for.
+Keeping the panels clear has a consequence worth understanding:
+
+  * **A large WT2 ratio is expected and benign for clear-of-tail panels.**  Held away
+    from the lifting surfaces the panels are weakly coupled to the flow, so their bare
+    response per box is small and the slope solve scales it up (``ratio_max`` of tens to
+    a few hundred is normal).  This does **not** contaminate the real surfaces: WT2 is a
+    post-inverse diagonal on the *body rows only* (``diag(r)·A⁻¹``), so it never changes
+    the lifting-surface operator rows — verified by the decoupling test.  The resulting
+    body-box ΔCp stays of the same order as the real surfaces (the bare value it scales
+    is tiny).  Do **not** chase a low ratio by enlarging the panels: bigger/closer panels
+    lower the ratio but *raise* the spurious field they shed on the wing/tail.
+
+  * **The flat-plate cruciform can only legitimately supply a SMALL body increment.**  A
+    flat plate aft of the moment reference makes a *stabilising* (nose-down) bare pitch —
+    the wrong sign for a fuselage — so a large destabilising target is only reachable by
+    immersing the panels in the tail (spurious) or with an extreme correction.  Use it
+    for a mild dCm/dα, dCn/dβ and ~0 roll increment; large body effects (a several-MAC
+    neutral-point shift, strong wing-body interference) need a true slender-body element
+    (backlog: "Body aerodynamic panels (slender body / CAERO2)").  ``ratio_max`` past
+    ``_RATIO_WARN`` is the flag that the targets have crossed that line.
+
+  * **A plane may be one panel or several.**  ``horiz_eid`` / ``vert_eid`` each accept a
+    list of CAERO1 EIDs, so a body side can be split into pieces (e.g. one short panel
+    by the wing, one running to the fin TE, one for the lower body) and the horizontal
+    plane likewise.  All listed panels are tuned by **one** joint min-norm solve over
+    every body box — the per-box weights route each box to pitch (n_z≠0) or yaw/roll
+    (n_y≠0), so no per-panel bookkeeping is needed.  Splitting a plane across more boxes
+    gives the solve more freedom: it generally **lowers** ``ratio_max`` and spreads the
+    correction load, and lets the body follow the fuselage shape.  (Placement caveat from
+    the first bullet still applies to every piece — keep them clear of the lifting
+    surfaces; a piece that overlaps the wing/fin contaminates it, it does not model
+    interference.)
 """
 
 import warnings
@@ -63,7 +101,12 @@ from sbeam.solver.sol144 import (
     aero_moment_resultant,
 )
 
-_RATIO_WARN = 5.0    # warn if any body WT2 ratio exceeds this magnitude
+# Warn only on a genuinely extreme WT2 ratio.  For body panels held clear of the
+# lifting surfaces a ratio of tens to ~100 is normal and benign (the panels are weakly
+# coupled; WT2 scales body-box pressure only and does not touch the real surfaces — see
+# the module docstring).  Past this bound the flat-plate cruciform is being pushed beyond
+# what it can represent and a slender-body element is the proper tool.
+_RATIO_WARN = 200.0
 _NORM_TOL = 1e-12    # near-zero sensitivity guard for the min-norm solves
 
 
@@ -174,6 +217,21 @@ def _total_metrics(aero, bulk, d_jx, labels, x_ref, ref_pt) -> BodyTargets:
     )
 
 
+def _as_eid_list(x) -> list:
+    """Normalise an EID argument (``None`` | ``int`` | iterable of ``int``) to a list.
+
+    Lets a body plane be defined by **one or many** CAERO1s — e.g. a fuselage whose
+    side is split into several vertical panels (one short, one to the fin TE, one for
+    the lower body).  The joint min-norm solve treats all body boxes as one set, so any
+    number of panels per plane is matched together (see the module docstring).
+    """
+    if x is None:
+        return []
+    if isinstance(x, (list, tuple, set)):
+        return [int(e) for e in x]
+    return [int(x)]
+
+
 def build_body_correction(
     bulk,
     *,
@@ -192,23 +250,30 @@ def build_body_correction(
     Args:
         bulk:        BulkData with the flying-surface corrections already applied
                      (their W2GJ/WT2 cards in ``bulk.w2gjs`` / ``bulk.aecorrs``).
-        horiz_eid:   CAERO1 EID of the horizontal body panel (matches Cm_α, Cm0).
-                     ``None`` skips the pitch match.
-        vert_eid:    CAERO1 EID of the vertical body panel (matches the sideslip set
-                     Cn_β, Cn0, Cl_β, Cl0). ``None`` skips the yaw/roll match.
+        horiz_eid:   CAERO1 EID(s) of the horizontal body panel(s) that match Cm_α, Cm0
+                     — an ``int`` or a list of ``int`` (define the horizontal body plane
+                     with several panels). ``None``/empty skips the pitch match.
+        vert_eid:    CAERO1 EID(s) of the vertical body panel(s) that match the sideslip
+                     set Cn_β, Cn0, Cl_β, Cl0 — an ``int`` or a list of ``int`` (e.g. a
+                     fuselage side split into several panels). ``None``/empty skips the
+                     yaw/roll match. All listed panels (both planes) are tuned **jointly**
+                     by one min-norm solve over all their boxes.
         targets:     total-aircraft :class:`BodyTargets` (about the AEROS RCSID ref).
         mach:        Mach override (default: AEROS field-8 Mach), for PG consistency.
         aero:        optional pre-built flying-corrected AeroModel for ``bulk`` (avoids
                      an AIC rebuild); must be consistent with ``bulk``/``mach``.
-        sid_w2gj_base / sid_aecorr_base: SID bases for the emitted body cards
-                     (``+0`` = horizontal, ``+1`` = vertical).
+        sid_w2gj_base / sid_aecorr_base: SID bases for the emitted body cards; each panel
+                     gets ``base + i`` (horizontal panels first, then vertical, in the
+                     order given).
         grid_index:  optional g-set index, passed through to ``build_aero_model``.
         tol:         convergence tolerance reported on each coefficient residual.
 
     Returns:
         :class:`BodyCorrectionResult` with the body card pair(s) and diagnostics.
     """
-    if horiz_eid is None and vert_eid is None:
+    horiz_eids = _as_eid_list(horiz_eid)
+    vert_eids = _as_eid_list(vert_eid)
+    if not horiz_eids and not vert_eids:
         raise ValueError("build_body_correction: give horiz_eid and/or vert_eid")
 
     aero0 = aero if aero is not None else build_aero_model(bulk, grid_index, mach)
@@ -251,7 +316,8 @@ def build_body_correction(
     cp_b = a_base @ d_jx[:, 1]      # SIDES
 
     # Body box indices (per panel, for card emission) and the joined body set.
-    panel_eids = [e for e in (horiz_eid, vert_eid) if e is not None]
+    # Horizontal panels first, then vertical, preserving the caller's order.
+    panel_eids = horiz_eids + vert_eids
     panel_idx = {}
     for eid in panel_eids:
         idx = np.array([k for k, b in enumerate(boxes) if b.caero_eid == eid])
@@ -265,12 +331,15 @@ def build_body_correction(
     # uses the α response (cp_a), yaw/roll the β response (cp_b).  The metrics are NOT
     # all panel-private — Cl_β picks up the horizontal panel too (its β-load carries a
     # rolling moment through the w_roll `y·n_z` term) — so all slope constraints are
-    # solved jointly over both panels' boxes (the flying surfaces stay untouched: r is a
-    # post-inverse diagonal, so only body-box Cp changes).
+    # solved jointly over **every** body box (the flying surfaces stay untouched: r is a
+    # post-inverse diagonal, so only body-box Cp changes).  This is what lets a plane be
+    # split across multiple panels: the per-box weights route each box to pitch (horizontal,
+    # n_z≠0) or yaw/roll (vertical, n_y≠0) automatically, so any number of panels per plane
+    # is matched together with no special-casing.
     slope_cons = []   # (weight, cp_unit, d_target)
-    if horiz_eid is not None:
+    if horiz_eids:
         slope_cons.append((w_pitch, cp_a, targets.cm_alpha - baseline.cm_alpha))
-    if vert_eid is not None:
+    if vert_eids:
         slope_cons.append((w_yaw, cp_b, targets.cn_beta - baseline.cn_beta))
         slope_cons.append((w_roll, cp_b, targets.cl_beta - baseline.cl_beta))
     a_slope = np.vstack([(w * cp)[body_idx] for w, cp, _d in slope_cons])
@@ -292,9 +361,9 @@ def build_body_correction(
     cn0_base = float(v_yaw @ aero0.wg)
     cl0_base = float(v_roll @ aero0.wg)
     rows, dvec = [], []
-    if horiz_eid is not None:
+    if horiz_eids:
         rows.append(v_pitch[body_idx]); dvec.append(targets.cm0 - cm0_base)
-    if vert_eid is not None:
+    if vert_eids:
         rows.append(v_yaw[body_idx]); dvec.append(targets.cn0 - cn0_base)
         rows.append(v_roll[body_idx]); dvec.append(targets.cl0 - cl0_base)
     a_off = np.vstack(rows)                       # (m, n_body)
@@ -325,21 +394,24 @@ def build_body_correction(
         cl0=float(v_roll @ wg_total),
     )
     residual = {
-        "cm_alpha": (targets.cm_alpha - achieved.cm_alpha) if horiz_eid else 0.0,
-        "cm0": (targets.cm0 - achieved.cm0) if horiz_eid else 0.0,
-        "cn_beta": (targets.cn_beta - achieved.cn_beta) if vert_eid else 0.0,
-        "cn0": (targets.cn0 - achieved.cn0) if vert_eid else 0.0,
-        "cl_beta": (targets.cl_beta - achieved.cl_beta) if vert_eid else 0.0,
-        "cl0": (targets.cl0 - achieved.cl0) if vert_eid else 0.0,
+        "cm_alpha": (targets.cm_alpha - achieved.cm_alpha) if horiz_eids else 0.0,
+        "cm0": (targets.cm0 - achieved.cm0) if horiz_eids else 0.0,
+        "cn_beta": (targets.cn_beta - achieved.cn_beta) if vert_eids else 0.0,
+        "cn0": (targets.cn0 - achieved.cn0) if vert_eids else 0.0,
+        "cl_beta": (targets.cl_beta - achieved.cl_beta) if vert_eids else 0.0,
+        "cl0": (targets.cl0 - achieved.cl0) if vert_eids else 0.0,
     }
     converged = max(abs(v) for v in residual.values()) < tol
 
     ratio_max = float(np.max(np.abs(r[body_idx]))) if body_idx.size else 0.0
     if ratio_max > _RATIO_WARN:
         warnings.warn(
-            f"build_body_correction: body WT2 ratio reached {ratio_max:.1f} — the body "
-            "panels are being asked to supply a large moment; check the targets or add "
-            "body-panel area/arm",
+            f"build_body_correction: body WT2 ratio reached {ratio_max:.1f} — beyond what a "
+            "flat-plate cruciform can represent.  (A ratio of tens-to-~100 is normal and "
+            "benign for panels held clear of the tail; WT2 scales body-box pressure only "
+            "and does not perturb the lifting surfaces.)  A value this large means the "
+            "TOTAL targets demand more than a fuselage stand-in should supply — reduce the "
+            "body increment, or use a slender-body element for large body effects",
             UserWarning, stacklevel=2,
         )
     if not converged:

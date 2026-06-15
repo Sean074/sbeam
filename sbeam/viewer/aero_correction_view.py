@@ -221,17 +221,19 @@ def _render_body_stage(bulk: BulkData, aero_model, res) -> None:
     )
 
     eids = sorted({b.caero_eid for b in aero_model.boxes})
-    none = "(none)"
-    opts = [none] + [str(e) for e in eids]
+    opts = [str(e) for e in eids]
     c1, c2 = st.columns(2)
-    h_sel = c1.selectbox("Horizontal body panel (Cm)", opts,
-                         index=opts.index(str(gh)) if gh is not None else 0,
-                         key="aero_body_horiz")
-    v_sel = c2.selectbox("Vertical body panel (Cn)", opts,
-                         index=opts.index(str(gv)) if gv is not None else 0,
-                         key="aero_body_vert")
-    horiz = int(h_sel) if h_sel != none else None
-    vert = int(v_sel) if v_sel != none else None
+    # Multiselect: a body plane may be split across several CAERO1s (e.g. a fuselage side
+    # as one panel by the wing + one to the fin TE + one for the lower body). They are
+    # tuned jointly; the auto-guess pre-selects the largest-chord +Z / +Y surface.
+    h_sel = c1.multiselect("Horizontal body panel(s) — match Cm", opts,
+                           default=[str(gh)] if gh is not None else [],
+                           key="aero_body_horiz")
+    v_sel = c2.multiselect("Vertical body panel(s) — match Cn, Cl", opts,
+                           default=[str(gv)] if gv is not None else [],
+                           key="aero_body_vert")
+    horiz = [int(e) for e in h_sel]
+    vert = [int(e) for e in v_sel]
 
     mach_c, _a, _b = st.session_state.get("aero_corr_cond") or (0.0, 0.0, 0.0)
     raw_df = st.session_state.get("aero_corr_raw_df")
@@ -252,11 +254,13 @@ def _render_body_stage(bulk: BulkData, aero_model, res) -> None:
     t_cl0 = g_roll.number_input("Cl0 target", value=float(seed.cl0),
                                 format="%.5f", key="aero_body_cl0")
     st.caption("Targets seed from the CSV `TOTAL` block at this Mach when present; edit "
-               "to match your CFD/WT total. Pitch (Cm) → horizontal panel; yaw+roll "
-               "(Cn, Cl, both sideslip) → vertical panel.")
+               "to match your CFD/WT total. Pitch (Cm) → horizontal panel(s); yaw+roll "
+               "(Cn, Cl, both sideslip) → vertical panel(s). A plane may be split across "
+               "several panels (tuned jointly). Keep panels clear of the wing/tail — an "
+               "overlapping panel contaminates them, it does not model interference.")
 
     if st.button("Build body correction", key="aero_body_build"):
-        if horiz is None and vert is None:
+        if not horiz and not vert:
             st.error("Select at least one body panel (horizontal and/or vertical).")
         else:
             try:
@@ -269,9 +273,9 @@ def _render_body_stage(bulk: BulkData, aero_model, res) -> None:
                                      cn_beta=t_cnb, cn0=t_cn0,
                                      cl_beta=t_clb, cl0=t_cl0)
                 st.session_state.aero_body_result = bc.build_body_correction(
-                    bulk_f, horiz_eid=horiz, vert_eid=vert, targets=tgt, mach=mach_c,
-                    aero=aero_f, sid_w2gj_base=_BODY_W2GJ_BASE,
-                    sid_aecorr_base=_BODY_AECORR_BASE)
+                    bulk_f, horiz_eid=horiz or None, vert_eid=vert or None,
+                    targets=tgt, mach=mach_c, aero=aero_f,
+                    sid_w2gj_base=_BODY_W2GJ_BASE, sid_aecorr_base=_BODY_AECORR_BASE)
             except Exception as exc:
                 st.session_state.aero_body_result = None
                 st.error(f"Body correction failed: {exc}")
@@ -289,13 +293,19 @@ def _render_body_stage(bulk: BulkData, aero_model, res) -> None:
                        ("cl_beta", "Cl_β"), ("cl0", "Cl0"))
     ])
     st.dataframe(style_numeric(table), use_container_width=True)
-    st.caption(f"Max body WT2 ratio: {bres.ratio_max:.2f}")
+    st.caption(f"Max body WT2 ratio: {bres.ratio_max:.2f} "
+               "(conditioning gauge — not contamination; WT2 scales body boxes only)")
     if not bres.converged:
         st.warning("Body panels could not reach the targets within tolerance — reduce the "
-                   "target offset or give the body panels more area / arm.")
-    elif bres.ratio_max > 5.0:
-        st.warning(f"Body WT2 ratio reached {bres.ratio_max:.1f} — the body is being "
-                   "strained; consider a smaller target offset.")
+                   "target increment (a flat-plate cruciform only supplies a small body effect; "
+                   "large effects need a slender-body element).")
+    elif bres.ratio_max > bc._RATIO_WARN:
+        st.warning(f"Body WT2 ratio reached {bres.ratio_max:.1f} — beyond what a flat-plate "
+                   "cruciform can represent. A ratio of tens-to-~100 is normal/benign for panels "
+                   "held clear of the tail (WT2 does not perturb the lifting surfaces); a value "
+                   "this large means the targets demand more than a fuselage stand-in should "
+                   "supply — reduce the body increment, or use a slender-body element. Do NOT "
+                   "enlarge the panels (that lowers the ratio but raises the spurious tail load).")
 
     cba, cbb = st.columns(2)
     if cba.button("Apply body panels to model", type="primary", key="aero_body_apply"):
