@@ -617,6 +617,69 @@ chordwise boxes). The pitching moment is nose-up positive about the per-strip mo
 (default the strip $\tfrac14$-chord; §2.9), and the force targets follow the same
 per-unit-reference-normalwash convention as $W_{T1}$ (§3.3 note).
 
+### 3.6 Body cruciform — matching the *total*-aircraft moment ($W_{2GJ}+W_{T2}$ on body panels)
+
+`sbeam` has no body/slender-body element, so a model built only from lifting surfaces misses the
+fuselage's contribution to the **whole-aircraft** pitch $C_m$, yaw $C_n$ and roll $C_l$ moments
+(lift carry-through, cross-flow, static-margin, directional- and lateral-stability effects). The
+classical remedy is a **cruciform**: stand the fuselage in with two crossing flat panels — a
+*horizontal* panel (normal $\approx +\hat z$, carrying body lift/pitch) and a *vertical* panel
+($\approx +\hat y$, side-force/yaw/roll). They are ordinary `CAERO1`s; what is new is *how they are
+tuned*. The flying surfaces are matched to section data (§3.5); the body panels then absorb the
+**residual** so the totals match CFD/WT: $C_{m_\alpha},C_{m0}$ (pitch, horizontal panel) and the
+sideslip set $C_{n_\beta},C_{n0},C_{l_\beta},C_{l0}$ (yaw + roll, vertical panel). This is
+**moment-primary** — the body's own lift/side-force is left at the bare VLM value (a minimum-norm
+by-product), matching how airplane totals were historically tuned by correcting the body panels
+last. Slope ($W_{T2}$) and offset ($W_{2GJ}$) have **opposite coupling structure**, which dictates
+the solution order.
+
+**Slope is decoupled from the flying surfaces (post-inverse, diagonal); joint across the body
+panels.** The corrected operator is $(A_{jj}^\ast)^{-1}=\operatorname{diag}(r)\,(A_{jj})^{-1}$, so a
+body-box ratio $r_k$ scales *only that box's* $c_p$ — the flying surfaces are **untouched** (their
+$c_p$ never multiplies a body $r$). Each moment slope is linear in the body ratios, e.g.
+
+$$
+C_{m_\alpha}(r)=C_{m_\alpha}^{\text{base}}+\!\!\sum_{k\in\text{body}}\!\! c_k\,(r_k-1),
+\qquad
+c_k=-\frac{1}{S_\text{ref}c_\text{ref}}\,(x_k-x_\text{ref})\,A_k\,n_{z,k}\,(A_{jj}^{\ast,-1}w_\alpha)_k ,
+\tag{13b}
+$$
+
+with $C_{n_\beta}$ using $w_\beta$ and the yaw arm, and $C_{l_\beta}$ using $w_\beta$ and the
+**roll arm** $w_{\text{roll},k}\propto(y_k\!-\!y_\text{ref})n_{z,k}-(z_k\!-\!z_\text{ref})n_{y,k}$.
+Pitch lives only on the horizontal panel ($n_z=0$ on the vertical) and yaw only on the vertical
+($n_y\approx0$ on the horizontal), but **roll couples to both** — the horizontal panel's small
+$\beta$-load carries a rolling moment through the $y\,n_z$ term. So the slope is **one joint
+minimum-norm system** over all body boxes, $A\,\delta r=d$ with one row per active constraint
+(pitch on $c_p^{(\alpha)}$, yaw and roll on $c_p^{(\beta)}$) — exact, force unchanged ($\bar r=1$).
+
+**Offset is coupled (pre-inverse), and must be solved jointly.** $w_g$ enters *before* the inverse,
+$c_p=(A_{jj}^\ast)^{-1}w_g$, so body camber induces load on the wing and tail. For a long body panel
+under the wing that induced moment is **larger than, and opposite to,** the body's own — a naïve
+fixed point that assumes the body's own sign diverges. The cure is to solve against the *actual*
+corrected operator: $C_{m0},C_{n0},C_{l0}$ are linear functionals of the body normalwash,
+
+$$
+C_{m0}=C_{m0}^{\text{base}}+v_m^{\mathsf T}w_g^{\text{body}},\quad
+v_m^{\mathsf T}=-\tfrac{1}{S_\text{ref}c_\text{ref}}\big[(x-x_\text{ref})\!\odot\!A\!\odot\!n_z\big]^{\mathsf T}(A_{jj}^\ast)^{-1},
+\tag{13c}
+$$
+
+(and the analogous $v_n$, $v_l$ for $C_{n0},C_{l0}$). Stacking the constraints over all body boxes
+and taking the **minimum-norm least-squares** solution gives the smallest body camber that hits the
+offsets exactly, with the wing induction *accounted for* rather than fought. Because the slope is
+fixed first (so $(A_{jj}^\ast)^{-1}$ is frozen) and the offset never feeds back into the slope (the
+slope metric is $w_g$-free), the build is **exact and non-iterative**.
+
+The result is ordinary $W_{2GJ}$ + $W_{T2}$ cards on the body CAERO1s (so `build_aero_model` is
+unchanged); the body's authority shows up as the largest body $W_{T2}$ ratio, warned when it grows
+large (the body asked for more moment than its area/arm supplies). Implemented in
+`sbeam/aero/body_correction.py` (`build_body_correction`); the body panels carry **`SPLINE0`**
+(zero structural coupling) so the fictitious tuning load is not smeared onto the fuselage beam — yet
+they still drive the total/trim $C_m,C_n,C_l$ and all rigid + restrained derivatives, which integrate
+every box directly (independent of the spline; §4.4, §5). Matching $C_{l_\beta}$ needs adequate
+spanwise (z) resolution on the vertical panel to shape the roll arm independently of the yaw arm.
+
 ---
 
 ## 4. Structure-to-aerodynamics coupling — splines

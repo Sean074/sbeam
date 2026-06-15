@@ -13,6 +13,35 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Cruciform body panels — total-aircraft moment correction (Step A9, 2026-06-14)**
+
+- **`sbeam/aero/body_correction.py`** — represent the fuselage (sbeam has no body element) with a
+  cruciform of two flat VLM `CAERO1` surfaces (horizontal +Z, vertical +Y) and tune them so the
+  **total airplane** matches CFD / wind tunnel after the flying surfaces are matched to section data:
+  Cm_α, Cm0 (pitch, horizontal panel) and the full sideslip set Cn_β, Cn0, Cl_β, Cl0 (yaw + roll,
+  vertical panel). `build_body_correction` is a **direct, exact, non-iterative** linear solve: a
+  joint minimum-norm WT2 per-box-ratio solve over the body boxes sets the slopes (decoupled from the
+  flying surfaces — `diag(r)·A⁻¹`; the roll metric `Cl_β` couples to both panels via the `y·n_z`
+  arm, so all slope constraints are solved together), then a joint minimum-norm W2GJ solve against
+  the actual corrected operator sets the offsets (accounting for the body camber's induced load on
+  the wing). Moment-primary — the body's lift/side-force is a minimum-norm by-product. Exposes
+  `BodyTargets`, `split_total_rows` / `parse_body_targets` (CSV `TOTAL` block: `cm_a`→Cm_α,
+  `cm0`→Cm0, `cn_a`→Cn_β, `a0`→Cn0, optional `cl_a`→Cl_β, `cl0`→Cl0), and `body_cards_to_bdf`.
+- **Aero Correction tab — Stage 6 "Body panels — total-aircraft moment match"**
+  (`viewer/aero_correction_view.py`): auto-guesses the horizontal/vertical body panels, seeds the
+  six targets (Cm_α/Cm0, Cn_β/Cn0, Cl_β/Cl0) from the CSV `TOTAL` block, builds + shows a
+  baseline/target/achieved/residual table with the max body WT2 ratio, and applies the flying + body
+  card pairs (body SIDs 9301/9401) or downloads them. `build_body_correction` gains an `aero=`
+  argument so the page reuses one AIC build.
+- **Refined Cessna 210 sample** — `sample/cessna210_body.bdf` adds the cruciform body panels
+  (`CAERO1` 400 horizontal 2×8, 500 vertical 4×8 — the spanwise z-resolution gives the roll
+  authority — `SPLINE0` zero structural coupling) and **fixes the empennage so the vertical tail
+  intersects the horizontal tail** (VTP root extended from z=0.80 down to z=0.60, crossing the HTP
+  plane at z=0.70). Companion `cessna210_body_section_data.csv` carries the flying-surface section
+  rows plus a `TOTAL` block (with the optional `cl_a`/`cl0` roll columns).
+- Tests: `tests/aero/test_body_correction.py`, `tests/aero/test_cessna210_body_example.py`, and
+  Stage-6 coverage in `tests/viewer/test_aero_correction_view.py`.
+
 **Aero tab — corrected / uncorrected / Δ rigid-derivative table (A-GUI5, 2026-06-14)**
 
 - The Aero-tab **Rigid stability & control derivatives** table gains a **Values** radio

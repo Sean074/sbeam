@@ -43,7 +43,7 @@ Never batch these updates or defer them to a later session. The backlog is for *
 - **Phase 1 (complete):** SOL 101 (static) and SOL 103 (normal modes) — see `docs/40_history/00_completed_development.md`
 - **Phase 2:** Model enhancements — see `docs/30_future/00_backlog.md`
 - **Phase 3:** SOL 108 (frequency response), 109 (transient), 111 (modal freq), 112 (modal transient) — see `docs/30_future/00_backlog.md`
-- **Phase A (in progress):** Steady VLM aeroelastics (Steps 39–45 complete; A7/A8 open) — see `docs/10_standard/05_aeroelastics.md` and `docs/30_future/00_backlog.md`
+- **Phase A (in progress):** Steady VLM aeroelastics (Steps 39–45 + A9 cruciform body-panel total-moment correction complete; A7/A8 open) — see `docs/10_standard/05_aeroelastics.md` and `docs/30_future/00_backlog.md`
 - **Phase G0 (in progress):** DLM-free quasi-steady transient maneuver loads — increment 1 complete (ZAERO `MLOADS` card set; Level-1 quasi-steady, open-loop; restrained l-set Newmark-β). Follow-ons (free-flight rigid-body coupling, modal ROM, unsteady corrections, closed-loop control) in `docs/30_future/00_backlog.md`
 - **Future:** distributed loads, Timoshenko shear, enforced displacements, buckling (SOL 105), results export — see `docs/30_future/00_backlog.md`
 
@@ -105,7 +105,7 @@ sbeam/
 ├── solver/         # sol101.py, sol103.py, sol144.py (static aeroelastic trim), maneuver_qs.py (Phase G0 transient maneuver loads)
 ├── results/        # results.py, f06_writer.py, load_export.py, monitor_points.py (MONPNT1/MONPNT3 integrated section loads), maneuver_output.py (Phase G0 time histories + critical-step export)
 ├── gpwg.py         # Mass and CG (GPWG)
-├── aero/           # panel.py, vlm.py, integration.py, corrections.py, section_correction.py (W2GJ+WT2 section force/moment synthesis), section_data.py (spanwise section-coefficient ingestion), aero_model.py
+├── aero/           # panel.py, vlm.py, integration.py, corrections.py, section_correction.py (W2GJ+WT2 section force/moment synthesis), section_data.py (spanwise section-coefficient ingestion), body_correction.py (cruciform body-panel total-aircraft moment match), aero_model.py
 └── viewer/         # app.py, geometry.py, results_view.py, case_control_ui.py, aero_view.py, aero_correction_view.py (CFD/test section data → correction cards + full corrected-BDF export), format_utils.py (5-sig-fig table/metric formatting)
 ```
 

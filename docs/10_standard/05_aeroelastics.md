@@ -26,6 +26,7 @@ Results   (cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, CDi, e, per_su
 | `sbeam/aero/corrections.py` | `Wkk` diagonal correction, `WT1` per-strip force-match, `WT2` pressure-match |
 | `sbeam/aero/section_correction.py` | Synthesise a per-surface `W2GJ`+`WT2` card pair matching section force **and** moment (slope + α=0 offset): `build_section_correction_multi` (engine, all surfaces at once), `build_section_correction` (single-surface wrapper), `cards_to_bdf()` |
 | `sbeam/aero/section_data.py` | Spanwise section-coefficient table ingestion (tidy CSV) → strip targets → builder: `validate_section_data`, `available_conditions`, `template_dataframe`, `build_from_section_data` (single), `build_from_section_data_multi` (per-surface at one flight point), `operating_region` |
+| `sbeam/aero/body_correction.py` | **Step A9** — cruciform body-panel total-aircraft moment match: `build_body_correction` (direct linear solve: joint WT2 slope + joint W2GJ offset on the body panels so the TOTAL Cm_α/Cm0, Cn_β/Cn0, Cl_β/Cl0 hit targets), `BodyTargets`, `split_total_rows` / `parse_body_targets` (CSV `TOTAL` block), `body_cards_to_bdf` |
 | `sbeam/aero/aero_model.py` | `AeroModel` container + `build_aero_model()` factory |
 | `sbeam/aero/spline.py` | **Phase B** — `build_g_spline()`: builds `g_slope` (n_box×n_g) and `g_disp` (3n_box×n_g) from `SPLINE2` + `ATTACH` + `SPLINE0` cards |
 | `sbeam/aero/coupling.py` | `build_qaa` flexible aero stiffness `Q_aa = G_dispᵀ S_kj (A_jj*)⁻¹ D_jk G_slope`; `build_fg` baseline aero load; `build_gaf` modal GAF `Q_hh = Φᵀ Q_aa Φ` |
@@ -625,6 +626,74 @@ pressure and the span-load curves. **Download cards (.bdf)** emits the pairs via
 re-parseable model — one per Mach. A separate-file + `INCLUDE` layout is not used: sbeam's parser
 honours only a single whole-bulk INCLUDE. Pre-existing **WKK** (which takes precedence over WT2 in
 `build_aero_model`) or a non-generated WT2 on a corrected surface are flagged as warnings.
+
+## Cruciform body panels — total-aircraft moment correction (`body_correction.py`, Step A9)
+
+sbeam has **no body/slender-body element**, so a flat-panel airplane built only from wing + tails
+gets the **overall pitch (Cm), yaw (Cn) and roll (Cl) moments** wrong (it misses fuselage lift
+carry-through, cross-flow, and the body's contribution to static margin / directional & lateral
+stability). The classic fix is the **cruciform**: represent the fuselage with two crossing flat VLM
+surfaces — a **horizontal body panel** (XY plane, normal ≈ +Z → carries the body's lift / pitch) and
+a **vertical body panel** (XZ plane, normal ≈ +Y → side-force / yaw / roll). They are ordinary
+`CAERO1`s.
+
+The correction is **two-stage**: the flying surfaces (wing/HTP/VTP) are matched to spanwise section
+data (above); then the body panels absorb the **residual** so the **total airplane** matches CFD /
+wind tunnel — Cm_α, Cm0 (pitch, horizontal panel) and the sideslip set Cn_β, Cn0, Cl_β, Cl0 (yaw +
+roll, vertical panel). The body's lift / side-force is left at the bare VLM value (a minimum-norm
+by-product) — the method is **moment-primary**, matching how the airplane total was historically
+tuned by correcting the body panels after the flying surfaces.
+
+### `build_body_correction(bulk, *, horiz_eid, vert_eid, targets, mach=None, aero=None, sid_w2gj_base=9301, sid_aecorr_base=9401, tol=1e-4)`
+
+Returns a `BodyCorrectionResult` (`cards={eid:(W2gj, Aecorr)}`, `target`/`baseline`/`achieved`
+`BodyTargets`, `residual`, `converged`, `ratio_max`). `bulk` must already carry the flying-surface
+corrections; pass a pre-built flying-corrected `aero` to skip an AIC rebuild. The solve is **direct,
+exact and non-iterative**, exploiting two facts (verified to ~1e-13 against `build_aero_model`):
+
+* **Slope — WT2 per-box ratio `r` (decoupled from the flying surfaces; joint across body panels).**
+  The corrected operator is `diag(r)·A⁻¹`, so a body-box ratio scales *only that box's* ΔCp — the
+  body's slope contribution is linear and **decoupled from the flying surfaces**, with force held at
+  the bare VLM value. Pitch (Cm_α, α-driven) is matched by the horizontal panel and yaw (Cn_β,
+  β-driven) by the vertical panel; roll (Cl_β, β-driven) is matched by the vertical panel's z-arm but
+  **also picks up the horizontal panel** (its small β-load carries a rolling moment via the `w_roll`
+  `y·n_z` term). So all slope constraints are solved as **one joint minimum-norm system over both
+  panels' boxes** — exact. (Pitch stays horizontal-only because `w_pitch = 0` on the vertical panel
+  `n_z = 0`; yaw stays vertical-only because `w_yaw ≈ 0` on the horizontal panel.)
+* **Offset — W2GJ baseline normalwash `wg` (coupled, solved jointly).** `wg` enters *before* the
+  inverse (`cp = A⁻¹·wg`), so body camber induces load on the wing/tail too — for a long body panel
+  under the wing that induced load dominates and reverses sign. Cm0, Cn0 and Cl0 are linear
+  functionals of `wg` against the **actual corrected operator**, so a single joint minimum-norm
+  least-squares over all body boxes hits every offset target exactly (the wing induction is accounted
+  for, not fought). Slope is fixed before the offset is solved and the offset never feeds back into
+  the slope, so no iteration is needed.
+
+`ratio_max` (largest body WT2 ratio) is surfaced as an authority gauge — a value ≫ 1 means the body
+is being asked for more moment than its area/arm comfortably supplies (warned above ~5).
+
+**SPLINE0 for body panels.** Body panels carry zero structural coupling (`SPLINE0`): body elastic
+aero effects are negligible, and a flexible spline would smear the *fictitious* correction load onto
+the fuselage beam as spurious bending. The body still drives the **total / trim Cm,Cn and all rigid
++ restrained derivatives**, because those integrate every box directly via `skj·(A⁻¹·w)` —
+independent of the spline (`sol144.py` total-trim and restrained-derivative paths). Consequence: the
+body correction load does **not** appear in fuselage CBAR internal loads (correct — it is a tuning
+load, not a real airload).
+
+**CSV `TOTAL` block.** The total-aircraft targets travel in the same section-data CSV as a `TOTAL`
+block (`var=TOTAL`, `caero=0`): columns `cm_a`→Cm_α, `cm0`→Cm0, `cn_a`→Cn_β, `a0`→Cn0, one row per
+Mach. `split_total_rows` peels it off before `validate_section_data` (which only accepts ALPHA/BETA);
+`parse_body_targets(df, mach)` reads it into `BodyTargets`.
+
+**Aero Correction page — Stage 6 (`viewer/aero_correction_view.py`).** After the flying-surface build
+the tab shows a **Body panels — total-aircraft moment match** stage (only when a body panel is
+present). `_guess_body_panels` pre-selects the largest-chord +Z / +Y surfaces; the six targets
+(Cm_α/Cm0, Cn_β/Cn0, Cl_β/Cl0) seed from the CSV `TOTAL` block. **Build body correction** runs
+`build_body_correction` (flying cards
+merged in) and shows a baseline / target / achieved / residual table plus `ratio_max`. **Apply body
+panels to model** injects the flying pairs (idempotent) and the body `(W2gj, Aecorr)` pairs at reserved
+SIDs (`_BODY_W2GJ_BASE = 9301`, `_BODY_AECORR_BASE = 9401`); **Download body cards (.bdf)** emits them.
+Worked example: `sample/cessna210_body.bdf` + `sample/cessna210_body_section_data.csv`
+(`tests/aero/test_cessna210_body_example.py`).
 
 ### `build_aero_model(bulk, grid_index=None) -> AeroModel`
 

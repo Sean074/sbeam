@@ -15,15 +15,19 @@ per surface.
 """
 from __future__ import annotations
 
+import dataclasses
 import datetime
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
+import numpy as np
+
 from sbeam.model.bulk_data import BulkData
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero import section_data as sd
+from sbeam.aero import body_correction as bc
 from sbeam.aero.section_correction import cards_to_bdf
 from sbeam.viewer.aero_view import build_section_correction_figure, surface_dihedral_deg
 from sbeam.viewer.format_utils import style_numeric
@@ -32,6 +36,9 @@ from sbeam.viewer.format_utils import style_numeric
 # Apply step can find and replace its own cards on a rebuild).
 _W2GJ_BASE = 9001
 _AECORR_BASE = 9101
+# Body-panel cards live in a separate reserved range (Stage 6).
+_BODY_W2GJ_BASE = 9301
+_BODY_AECORR_BASE = 9401
 
 # A surface whose mean dihedral magnitude falls in this band is "canted" — neither
 # clearly horizontal (α-driven) nor vertical (β-driven) — so a single-axis section
@@ -159,6 +166,147 @@ def build_corrected_bdf(source_text: str, cards_text: str, *, source_csv: str,
     return _splice_cards(source_text, header)
 
 
+def _surface_normal_chord(aero_model) -> dict:
+    """Per CAERO1: (mean unit normal, mean box chord) — for body-panel guessing."""
+    info: dict = {}
+    for eid in sorted({b.caero_eid for b in aero_model.boxes}):
+        bx = [b for b in aero_model.boxes if b.caero_eid == eid]
+        info[eid] = (np.mean([b.normal for b in bx], axis=0),
+                     float(np.mean([b.chord for b in bx])))
+    return info
+
+
+def _guess_body_panels(aero_model):
+    """Best-guess (horizontal, vertical) body CAERO1s: the largest-chord +Z / +Y
+    surfaces (the fuselage cruciform panels run nose-to-tail, so their box chord is the
+    longest).  Returns (eid_or_None, eid_or_None)."""
+    info = _surface_normal_chord(aero_model)
+    horiz = [(ch, eid) for eid, (n, ch) in info.items() if abs(n[2]) > 0.9]
+    vert = [(ch, eid) for eid, (n, ch) in info.items() if abs(n[1]) > 0.9]
+    return (max(horiz)[1] if horiz else None,
+            max(vert)[1] if vert else None)
+
+
+def _apply_body_cards(bulk: BulkData, res, bres) -> int:
+    """Inject the flying-surface pairs (idempotent) and the body-panel pairs."""
+    _apply_cards(bulk, res)   # flying cards + clears the Aero-tab cache
+    for sid in st.session_state.get("aero_body_sids", set()):
+        bulk.w2gjs.pop(sid, None)
+        bulk.aecorrs.pop(sid, None)
+    new_sids: set = set()
+    for _eid, (w2, ac) in bres.cards.items():
+        bulk.w2gjs[w2.sid] = w2
+        bulk.aecorrs[ac.sid] = ac
+        new_sids.update((w2.sid, ac.sid))
+    st.session_state.aero_body_sids = new_sids
+    st.session_state.aero_model = None
+    st.session_state.aero_result = None
+    st.session_state.aero_result_unc = None
+    return len(bres.cards)
+
+
+def _render_body_stage(bulk: BulkData, aero_model, res) -> None:
+    """Stage 6 — cruciform body panels absorb the residual so the TOTAL airplane
+    pitching/yawing moment match CFD/WT (after the flying surfaces are corrected)."""
+    gh, gv = _guess_body_panels(aero_model)
+    if gh is None and gv is None:
+        return   # no plausible body panel in this model
+
+    st.markdown("#### 6 · Body panels — total-aircraft moment match")
+    st.caption(
+        "Cruciform body panels absorb the residual so the TOTAL airplane pitching moment "
+        "Cm and yawing moment Cn match CFD / wind tunnel, after the flying surfaces are "
+        "matched to section data. Moment-primary: the body's lift / side-force is a "
+        "minimum-norm by-product."
+    )
+
+    eids = sorted({b.caero_eid for b in aero_model.boxes})
+    none = "(none)"
+    opts = [none] + [str(e) for e in eids]
+    c1, c2 = st.columns(2)
+    h_sel = c1.selectbox("Horizontal body panel (Cm)", opts,
+                         index=opts.index(str(gh)) if gh is not None else 0,
+                         key="aero_body_horiz")
+    v_sel = c2.selectbox("Vertical body panel (Cn)", opts,
+                         index=opts.index(str(gv)) if gv is not None else 0,
+                         key="aero_body_vert")
+    horiz = int(h_sel) if h_sel != none else None
+    vert = int(v_sel) if v_sel != none else None
+
+    mach_c, _a, _b = st.session_state.get("aero_corr_cond") or (0.0, 0.0, 0.0)
+    raw_df = st.session_state.get("aero_corr_raw_df")
+    seed = (bc.parse_body_targets(raw_df, mach_c) if raw_df is not None else None) \
+        or bc.BodyTargets()
+    # Columns group the targets by plane: pitch (horizontal panel) / yaw + roll (vertical).
+    g_pitch, g_yaw, g_roll = st.columns(3)
+    t_cma = g_pitch.number_input("Cm_α target", value=float(seed.cm_alpha),
+                                 format="%.4f", key="aero_body_cma")
+    t_cm0 = g_pitch.number_input("Cm0 target", value=float(seed.cm0),
+                                 format="%.4f", key="aero_body_cm0")
+    t_cnb = g_yaw.number_input("Cn_β target", value=float(seed.cn_beta),
+                               format="%.4f", key="aero_body_cnb")
+    t_cn0 = g_yaw.number_input("Cn0 target", value=float(seed.cn0),
+                               format="%.5f", key="aero_body_cn0")
+    t_clb = g_roll.number_input("Cl_β target", value=float(seed.cl_beta),
+                                format="%.4f", key="aero_body_clb")
+    t_cl0 = g_roll.number_input("Cl0 target", value=float(seed.cl0),
+                                format="%.5f", key="aero_body_cl0")
+    st.caption("Targets seed from the CSV `TOTAL` block at this Mach when present; edit "
+               "to match your CFD/WT total. Pitch (Cm) → horizontal panel; yaw+roll "
+               "(Cn, Cl, both sideslip) → vertical panel.")
+
+    if st.button("Build body correction", key="aero_body_build"):
+        if horiz is None and vert is None:
+            st.error("Select at least one body panel (horizontal and/or vertical).")
+        else:
+            try:
+                fw2 = {w.sid: w for (w, _a) in res.correction.cards.values()}
+                fac = {a.sid: a for (_w, a) in res.correction.cards.values()}
+                bulk_f = dataclasses.replace(
+                    bulk, w2gjs={**bulk.w2gjs, **fw2}, aecorrs={**bulk.aecorrs, **fac})
+                aero_f = build_aero_model(bulk_f, mach=mach_c)
+                tgt = bc.BodyTargets(cm_alpha=t_cma, cm0=t_cm0,
+                                     cn_beta=t_cnb, cn0=t_cn0,
+                                     cl_beta=t_clb, cl0=t_cl0)
+                st.session_state.aero_body_result = bc.build_body_correction(
+                    bulk_f, horiz_eid=horiz, vert_eid=vert, targets=tgt, mach=mach_c,
+                    aero=aero_f, sid_w2gj_base=_BODY_W2GJ_BASE,
+                    sid_aecorr_base=_BODY_AECORR_BASE)
+            except Exception as exc:
+                st.session_state.aero_body_result = None
+                st.error(f"Body correction failed: {exc}")
+
+    bres = st.session_state.get("aero_body_result")
+    if bres is None:
+        return
+
+    table = pd.DataFrame([
+        {"coef": lbl, "flying baseline": getattr(bres.baseline, k),
+         "target": getattr(bres.target, k), "achieved": getattr(bres.achieved, k),
+         "residual": bres.residual[k]}
+        for k, lbl in (("cm_alpha", "Cm_α"), ("cm0", "Cm0"),
+                       ("cn_beta", "Cn_β"), ("cn0", "Cn0"),
+                       ("cl_beta", "Cl_β"), ("cl0", "Cl0"))
+    ])
+    st.dataframe(style_numeric(table), use_container_width=True)
+    st.caption(f"Max body WT2 ratio: {bres.ratio_max:.2f}")
+    if not bres.converged:
+        st.warning("Body panels could not reach the targets within tolerance — reduce the "
+                   "target offset or give the body panels more area / arm.")
+    elif bres.ratio_max > 5.0:
+        st.warning(f"Body WT2 ratio reached {bres.ratio_max:.1f} — the body is being "
+                   "strained; consider a smaller target offset.")
+
+    cba, cbb = st.columns(2)
+    if cba.button("Apply body panels to model", type="primary", key="aero_body_apply"):
+        n = _apply_body_cards(bulk, res, bres)
+        st.success(f"Injected the flying pairs + {n} body card pair(s). Open the **Aero** "
+                   "tab and press Compute Aero to run the fully corrected solve.")
+    cbb.download_button(
+        "Download body cards (.bdf)", data=bc.body_cards_to_bdf(bres),
+        file_name="body_correction.bdf", mime="text/plain", key="aero_body_download")
+
+
 def render_aero_correction_tab(bulk: BulkData) -> None:
     st.subheader("Aero correction — section force/moment cards from CFD / test data")
     st.caption(
@@ -195,10 +343,16 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
         file_id = (up.name, up.size)
         if file_id != st.session_state.get("aero_corr_upload_id"):
             try:
-                df = sd.validate_section_data(pd.read_csv(up))
+                raw = pd.read_csv(up)
+                # A TOTAL block (body-panel targets) is split off before validation,
+                # which only accepts ALPHA/BETA section rows.
+                flying_df, _totals = bc.split_total_rows(raw)
+                df = sd.validate_section_data(flying_df)
                 st.session_state.aero_corr_df = df
+                st.session_state.aero_corr_raw_df = raw
                 st.session_state.aero_corr_csv_name = up.name
                 st.session_state.aero_corr_result = None   # invalidate stale build
+                st.session_state.aero_body_result = None
                 st.session_state.aero_corr_upload_id = file_id
             except Exception as exc:
                 st.error(f"Could not load section data: {exc}")
@@ -359,3 +513,6 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
             mime="text/plain",
             key="aero_corr_bdf_download",
         )
+
+    # ---- 6 · Body panels — total-aircraft moment match -----------------------
+    _render_body_stage(bulk, aero_model, res)

@@ -25,7 +25,7 @@ viewer/
 ├── results_view.py     # Results post-processing display
 ├── case_control_ui.py  # Case control form and BDF export
 ├── aero_view.py        # Aero box mesh + cp colour map (S44); spline-deflected box overlay (S57); per-surface span-loading figure + rigid S&C derivative table (A-GUI2); cp corrected/uncorrected/Δ views + dihedral helper (A-GUI4); corrected/uncorrected/Δ rigid-derivative table (A-GUI5)
-├── aero_correction_view.py  # Aero Correction tab: CFD/test section data → W2GJ+AECORR(WT2) cards, injected into the model + full corrected-BDF export (A-GUI3/A-GUI4)
+├── aero_correction_view.py  # Aero Correction tab: CFD/test section data → W2GJ+AECORR(WT2) cards, injected into the model + full corrected-BDF export (A-GUI3/A-GUI4); Stage 6 = cruciform body-panel total-moment match (A9)
 └── format_utils.py     # Shared 5-sig-fig number formatting for tables/metrics (fmt / fmt_mass / style_numeric) (A-GUI4)
 ```
 
@@ -232,10 +232,25 @@ solve, and/or exports a self-contained corrected BDF.
    defaults to `suggest_corrected_name` (`<stem>_M0p30_A2p0_B0p0.bdf`); build one per Mach. A
    separate-correction-file + `INCLUDE` layout is *not* used because sbeam's parser honours only a
    single whole-bulk INCLUDE (`bdf_reader.parse_bdf`).
+6. **Body panels — total-aircraft moment match (Step A9)** — shown only when the model has a
+   plausible body panel (`_guess_body_panels` finds the largest-chord +Z / +Y surfaces — the
+   fuselage cruciform). After the flying surfaces are matched (step 5), the body panels absorb the
+   residual so the **total** airplane Cm/Cn/Cl match CFD/WT. Two **selectboxes** pick the horizontal
+   (Cm) and vertical (Cn, Cl) body panels (pre-set to the guesses; either can be `(none)`); six
+   **target inputs** (Cm_α/Cm0 pitch, Cn_β/Cn0 yaw, Cl_β/Cl0 roll) seed from the CSV `TOTAL` block
+   (`body_correction.parse_body_targets`; the block is split off the upload before validation by
+   `split_total_rows`). **Build body correction** runs `build_body_correction(bulk + flying cards,
+   …, aero=…)` and shows a baseline / target / achieved / residual `st.dataframe` plus the **max body
+   WT2 ratio** (an authority gauge — warned above ~5, or if it could not converge). **Apply body
+   panels to model** (`_apply_body_cards`) injects the flying pairs (idempotent) and the body
+   `(W2gj, Aecorr)` pairs at reserved SIDs (`_BODY_W2GJ_BASE = 9301`, `_BODY_AECORR_BASE = 9401`),
+   then nulls the Aero-tab cache; **Download body cards (.bdf)** emits them
+   (`body_correction.body_cards_to_bdf`). The body panels carry `SPLINE0` (zero structural
+   coupling); they drive the total/trim Cm/Cn but inject no fictitious load into the fuselage beam.
 
 v1 limits (inherited from the engine): exact-Mach match (no Mach interpolation); one operating
 region per surface (the region whose `[a_lo, a_hi]` contains the operating angle); one axis per
-surface.
+surface. Body correction is moment-primary (body lift/side-force is a minimum-norm by-product).
 
 **Session state keys:**
 | Key | Type | Description |
@@ -247,6 +262,9 @@ surface.
 | `aero_corr_upload_id` | `tuple \| None` | `(name, size)` of the parsed CSV — re-parse only on change |
 | `aero_corr_csv_name` | `str \| None` | Source CSV filename, for the export provenance header |
 | `aero_corr_cond` | `tuple \| None` | `(mach, alpha, beta)` of the last build, for naming / provenance |
+| `aero_corr_raw_df` | `DataFrame \| None` | Unsplit upload (incl. the `TOTAL` block) — seeds the body-stage targets |
+| `aero_body_result` | `BodyCorrectionResult \| None` | Last body-panel build (Step A9 / Stage 6) |
+| `aero_body_sids` | `set[int]` | Body-card SIDs last injected, so Apply replaces them |
 
 All are reset on new file upload. The full-BDF export also reads `_uploaded_source_text` (the raw
 uploaded model text, stashed in `_handle_upload`).
@@ -567,6 +585,9 @@ range heuristic.
 | `test_suggest_corrected_name` / `test_full_corrected_bdf_roundtrips` | Default filename + corrected BDF carries provenance and re-parses with the cards |
 | `test_rigid_derivative_table_state_no_correction` | No correction cards → uncorrected table equals corrected, Δ table is all zeros |
 | `test_rigid_derivative_table_state_with_correction` | A WKK correction moves the derivatives; uncorrected reconstructs the no-WKK baseline; Δ = corrected − uncorrected |
+| `test_guess_body_panels` | Largest-chord +Z / +Y surfaces are picked as the horizontal / vertical body panels (Step A9) |
+| `test_apptest_body_stage_renders` | With a body panel + flying result, Stage 6 renders its header and the two body-panel selectboxes |
+| `test_apptest_body_build_and_apply` | **Build body correction** converges to the targets; **Apply** injects flying + body (9301/9401) card pairs |
 
 (The Aero Correction tests live in `tests/viewer/test_aero_correction_view.py`; the
 `rigid_derivative_table` / span-loading figure tests in `tests/viewer/test_aero_view.py`.)

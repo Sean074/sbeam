@@ -407,11 +407,28 @@ already exist); R21 (spc_sid guard) and R22 (public f06 text aliases) fixed in t
 
 ## Phase A status
 
-Steps 39–46 complete — see `docs/40_history/00_completed_development.md`. Open Phase A
+Steps 39–46 and **A9** (cruciform body-panel total-aircraft moment correction) complete —
+see `docs/40_history/00_completed_development.md`. Open Phase A
 work: **A7** (cosine chordwise spacing helper + low-NCHORD warning), **A8** (box
 aspect-ratio pre-solve warning); and from the 2026-06-11 review: **AE12** (SPLINE2
 DTOR/DTHZ ignored-warning — the PG-normals half is re-diagnosed NOT-A-BUG, see AE12).
 **AE9** (per-TRIM Mach) is closed (2026-06-12 — Mach-keyed AIC cache, supersonic guard).
+
+### Body cruciform (A9) — follow-ons (open, low priority)
+
+- **A9-a — match body force as well as moment (optional).** A9 is moment-primary: the body's
+  lift/side-force is left at the bare VLM value. Add an optional force target (Cz_α/Cy_β and their
+  offsets) so the body's CL/CY contribution can be matched to body-isolated CFD too — a second
+  constraint per panel in the slope and offset solves.
+- **A9-b — canted body panels.** Today the horizontal (+Z) and vertical (+Y) panels are assumed
+  axis-aligned (the vertical panel relies on `n_z = 0` for exact pitch/yaw decoupling). Support a
+  canted body panel (blended pitch/yaw) via a 2×2 slope solve over both moment metrics.
+- **A9-c — automatic body-panel sizing / mesh guidance.** The bare body load and WT2 ratio are
+  mesh- and proximity-sensitive (a long panel under the wing couples strongly). Add a helper that
+  sizes the cruciform from the fuselage planform/profile and warns when `ratio_max` indicates the
+  body lacks authority for the requested targets.
+- **A9-d — multi-Mach body targets.** The CSV `TOTAL` block is read at one Mach; extend to a
+  per-Mach sweep consistent with the flying-surface per-Mach corrected-BDF export.
 
 ---
 

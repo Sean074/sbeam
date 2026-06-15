@@ -2350,6 +2350,63 @@ vocabulary already used for the 3D pressure mesh and span-load curves (A-GUI4).
 
 ---
 
+### Step A9: Cruciform body panels — total-aircraft moment correction ✅ COMPLETE (2026-06-14)
+
+**Objective:** sbeam has no body/slender-body element, so a flat-panel airplane (wing + tails only)
+gets the overall pitching moment Cm, yawing moment Cn and rolling moment Cl (dihedral effect) wrong.
+Adopt the classic **cruciform**: represent the fuselage with two crossing flat VLM surfaces
+(horizontal +Z, vertical +Y), correct the flying surfaces to spanwise section data, then tune the
+body panels so the **total airplane** matches CFD/WT — Cm_α, Cm0 (pitch, horizontal panel) and the
+sideslip set Cn_β, Cn0, Cl_β, Cl0 (yaw + roll, vertical panel). Moment-primary, the body's
+lift/side-force a by-product.
+
+**Deliverables:**
+1. **`sbeam/aero/body_correction.py`** — `build_body_correction(bulk, *, horiz_eid, vert_eid,
+   targets, mach, aero=None, …)` → `BodyCorrectionResult`. A **direct, exact, non-iterative** linear
+   solve: (a) **slope** via a per-box WT2 ratio (`diag(r)·A⁻¹` scales only that box's ΔCp, so the
+   body's slope contribution is decoupled from the flying surfaces; force held at the bare VLM value)
+   — solved **jointly** over both panels' boxes because Cl_β couples to the horizontal panel too (its
+   β-load carries a rolling moment via the `w_roll` `y·n_z` term); (b) **offset** via a joint
+   min-norm W2GJ least-squares against the actual corrected operator (body camber's induced wing load
+   is accounted for, not fought). `BodyTargets` (cm_alpha/cm0/cn_beta/cn0/cl_beta/cl0),
+   `split_total_rows`, `parse_body_targets` (CSV `TOTAL` block), `body_cards_to_bdf`.
+2. **Aero Correction tab — Stage 6** (`viewer/aero_correction_view.py`): `_guess_body_panels`
+   pre-selects the largest-chord +Z / +Y surfaces; six targets seed from the CSV `TOTAL` block;
+   Build shows a baseline/target/achieved/residual table + max WT2 ratio; Apply injects the flying +
+   body card pairs (body SIDs `_BODY_W2GJ_BASE=9301`, `_BODY_AECORR_BASE=9401`); Download body cards.
+3. **Refined Cessna 210 sample** — `sample/cessna210_body.bdf` (cruciform `CAERO1` 400 horizontal
+   2×8, 500 vertical 4×8 — z-resolution for roll authority — with `SPLINE0`; VTP root extended
+   z=0.80→0.60 so the fin intersects the HTP plane at z=0.70) +
+   `sample/cessna210_body_section_data.csv` (flying rows + `TOTAL` block with optional `cl_a`/`cl0`).
+4. **Tests** — `tests/aero/test_body_correction.py` (six targets hit to ~1e-6; production-path
+   cross-check vs `build_aero_model`; flying-surface decoupling; single-panel modes incl. vertical
+   yaw+roll; CSV parse), `tests/aero/test_cessna210_body_example.py` (7 surfaces / 372 boxes;
+   VTP↔HTP intersection; cruciform normals; two-stage build), Stage-6 tests in
+   `tests/viewer/test_aero_correction_view.py`.
+
+**Key decisions:**
+- **Moment-primary, body lift a by-product** (per user direction): the body force is left at the bare
+  VLM value; only the moments are matched.
+- **Order = slope then offset** removes the bilinear slope×offset coupling, making the solve exact in
+  one shot (no fixed-point iteration — an earlier fixed-point diverged because the body W2GJ offset
+  induces a *larger, opposite* wing pitch moment than the body's own).
+- **Joint slope solve** (not per-panel): Cl_β leaks across panels (the horizontal panel's pitch
+  ratio scales its small β-response, which carries roll), so all slope constraints are solved
+  together over the body boxes — exact; pitch stays horizontal-only because `w_pitch=0` on the
+  vertical panel (`n_z=0`) and yaw stays vertical-only (`w_yaw≈0` on the horizontal panel).
+- **SPLINE0 for body panels** (not flexible SPLINE2): body elastic effects are negligible, and a
+  flexible spline would inject the fictitious correction load into the fuselage beam as spurious
+  bending; the body still drives total/trim Cm,Cn and rigid+restrained derivatives via direct box
+  integration (verified against `sol144.py`).
+- **`aero=` reuse + analytic `achieved`** keep the build to a single AIC build (the operator model
+  `diag(r)·A_base` matches `build_aero_model` to ~1e-13, so `achieved` needs no rebuild).
+
+**Test / Acceptance:**
+- Targets reached to machine precision (residuals ~1e-14), `ratio_max` < 5 for realistic targets;
+  full `tests/` green; ruff clean on changed files.
+
+---
+
 ## Phase B — Structure ↔ Aero Splining
 
 ### Step 45: SET1 + SPLINE2 parsing ✅ COMPLETE

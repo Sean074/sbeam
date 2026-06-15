@@ -1,0 +1,355 @@
+"""Total-aircraft moment correction via cruciform body panels.
+
+sbeam's VLM has no body/slender-body element, so a flat-panel airplane built only
+from wing + tails gets the **overall pitching moment Cm and yawing moment Cn** wrong
+(it misses fuselage lift carry-through, cross-flow, and the body's contribution to
+static margin / directional stability).  The fix is the classic **cruciform**: two
+crossing flat VLM surfaces standing in for the fuselage —
+
+  * a **horizontal body panel** (XY plane, normal ≈ +Z) carrying the body's
+    lift / pitch;
+  * a **vertical body panel** (XZ plane, normal ≈ +Y) carrying side-force / yaw.
+
+The correction is **two-stage**:
+
+  1. The flying surfaces (wing/HTP/VTP) are matched to spanwise section data
+     (``sbeam.aero.section_data`` → ``sbeam.aero.section_correction``).
+  2. The body panels then absorb the **residual** so the **total airplane**
+     Cm_α, Cm0 (pitch, horizontal panel) and Cn_β, Cn0, Cl_β, Cl0 (the sideslip yaw +
+     roll set, vertical panel) match CFD/wind tunnel.  This module is stage 2.
+
+Method (moment-primary, direct linear solve)
+--------------------------------------------
+The body panels are tuned to match the total **moments**; their lift / side-force is
+left at the bare VLM value (a minimum-norm by-product).  The body correction is two
+mechanisms, solved in an order that decouples them exactly:
+
+  * **slope — WT2 per-box ratio ``r``.**  The corrected operator is ``diag(r)·A⁻¹``,
+    so a body-box ratio scales *only that box's* Cp: the body's slope contribution is
+    **linear and decoupled** from the flying surfaces.  The horizontal panel matches
+    Cm_α (one scalar min-norm); the vertical panel matches Cn_β **and** Cl_β together (a
+    2-constraint min-norm — it has the chordwise x-spread for the yaw arm and the
+    spanwise z-spread for the roll arm).  Force is held at the bare VLM value.
+
+  * **offset — W2GJ baseline normalwash ``wg``.**  ``wg`` enters *before* the inverse
+    (``cp = A⁻¹·wg``), so body camber induces load on the wing/tail too — and for a
+    long body panel under the wing that induced load dominates the body's own.  We
+    therefore solve the offset against the **actual corrected operator** (with the
+    slope ``r`` already baked in): Cm0, Cn0 and Cl0 are linear functionals of ``wg``
+    over the body boxes, so one joint minimum-norm least-squares hits all offset targets
+    exactly — the wing induction is accounted for, not fought.
+
+Because the slope is fixed before the offset is solved and the offset does not feed
+back into the slope (the slope metric is ``wg``-free), the build is **non-iterative
+and exact**.  The vertical panel relies on ``n_z = 0`` (planar in XZ) for clean
+pitch/roll separation; matching Cl_β needs enough spanwise (z) resolution on it.
+
+The body cards are ordinary ``W2gj`` / ``Aecorr`` (WT2) cards on the body CAERO1 EIDs;
+``build_aero_model`` composes them with the flying-surface cards unchanged.
+"""
+
+import warnings
+from dataclasses import dataclass
+
+import numpy as np
+
+from sbeam.aero.aero_model import build_aero_model
+from sbeam.aero.integration import build_djx
+from sbeam.assembly.coord_transform import _get_transform
+from sbeam.model.aero import Aecorr, W2gj
+from sbeam.solver.sol144 import (
+    _compute_rigid_derivs,
+    _pitch_moment,
+    aero_moment_resultant,
+)
+
+_RATIO_WARN = 5.0    # warn if any body WT2 ratio exceeds this magnitude
+_NORM_TOL = 1e-12    # near-zero sensitivity guard for the min-norm solves
+
+
+@dataclass
+class BodyTargets:
+    """Total-aircraft moment targets (about the AEROS RCSID reference).
+
+    Pitch (Cm) is matched by the horizontal panel; yaw (Cn) and roll (Cl), both
+    sideslip-driven, by the vertical panel.
+    """
+    cm_alpha: float = 0.0   # dCm/dα   (nose-up +, per rad)
+    cm0:      float = 0.0   # Cm at α=0
+    cn_beta:  float = 0.0   # dCn/dβ   (per rad)
+    cn0:      float = 0.0   # Cn at β=0
+    cl_beta:  float = 0.0   # dCl/dβ   (per rad — dihedral effect)
+    cl0:      float = 0.0   # Cl at β=0
+
+
+@dataclass
+class BodyCorrectionResult:
+    """Body-panel cards + achieved-vs-target diagnostics."""
+    cards:      dict          # {caero_eid: (W2gj, Aecorr)}
+    target:     BodyTargets
+    achieved:   BodyTargets   # total airplane after the body correction
+    baseline:   BodyTargets   # total airplane before the body correction (flying only)
+    residual:   dict          # {'cm_alpha','cm0','cn_beta','cn0','cl_beta','cl0'}
+    converged:  bool
+    ratio_max:  float         # max |WT2 ratio| over the body boxes
+
+
+def body_cards_to_bdf(result: "BodyCorrectionResult") -> str:
+    """Format the body-panel W2GJ + AECORR(WT2) cards as bulk-data text."""
+    from sbeam.aero.section_correction import _pair_to_bdf
+    header = "$ Cruciform body-panel total-aircraft moment correction (W2GJ + WT2)\n"
+    body = "".join(_pair_to_bdf(w2, ac)
+                   for _eid, (w2, ac) in sorted(result.cards.items()))
+    return header + body
+
+
+def split_total_rows(df):
+    """Split a section-data table into (flying_rows, total_rows).
+
+    A ``TOTAL`` block carries the total-aircraft CFD/WT targets for the body
+    correction; the flying rows feed the ordinary section-correction pipeline (which
+    only accepts ``var`` in {ALPHA, BETA}).  Returns two DataFrames; the total block
+    may be empty.
+    """
+    var = df["var"].astype(str).str.upper()
+    is_total = var == "TOTAL"
+    return df[~is_total].copy(), df[is_total].copy()
+
+
+def parse_body_targets(df, mach, mach_tol: float = 1e-6):
+    """Read the ``TOTAL`` block of a section-data table into :class:`BodyTargets`.
+
+    Column mapping (reusing the section-data schema): ``cm_a``→Cm_α, ``cm0``→Cm0,
+    ``cn_a``→Cn_β, ``a0``→Cn0; optional roll columns ``cl_a``→Cl_β, ``cl0``→Cl0 (default
+    0 when absent).  Selects the row at ``mach`` (exact within ``mach_tol``).  Returns
+    ``None`` if no TOTAL row matches.
+    """
+    _flying, totals = split_total_rows(df)
+    if totals.empty:
+        return None
+    hit = totals[np.isclose(totals["mach"].astype(float), mach, atol=mach_tol)]
+    if hit.empty:
+        return None
+    r = hit.iloc[0]
+
+    def _opt(col):
+        v = r.get(col)
+        return 0.0 if v is None or (isinstance(v, float) and np.isnan(v)) else float(v)
+
+    return BodyTargets(
+        cm_alpha=float(r["cm_a"]), cm0=float(r["cm0"]),
+        cn_beta=float(r["cn_a"]), cn0=float(r["a0"]),
+        cl_beta=_opt("cl_a"), cl0=_opt("cl0"),
+    )
+
+
+def _ref_geometry(bulk):
+    """Moment reference (x_ref, ref_pt) from the AEROS RCSID (basic if 0)."""
+    aeros = bulk.aeros
+    if aeros is not None and aeros.rcsid:
+        ref_pt, _R = _get_transform(aeros.rcsid, bulk.cord2rs)
+        return float(ref_pt[0]), np.asarray(ref_pt, dtype=float)
+    return 0.0, np.zeros(3)
+
+
+def _total_metrics(aero, bulk, d_jx, labels, x_ref, ref_pt) -> BodyTargets:
+    """Total-aircraft Cm_α, Cm0, Cn_β, Cn0 for the current corrected model.
+
+    Slopes reuse the SOL 144 rigid-derivative integration; offsets integrate the
+    baseline normalwash ``aero.wg`` (which already accumulates every W2GJ, body
+    panels included once their cards are applied).
+    """
+    sref, cref, bref = bulk.aeros.sref, bulk.aeros.cref, bulk.aeros.bref
+    derivs = _compute_rigid_derivs(aero, d_jx, labels, bulk, x_ref, ref_pt)
+    n = len(aero.boxes)
+    f_box0 = aero.skj @ (aero.ajj_inv_corr @ aero.wg)
+    cm0 = _pitch_moment(f_box0, aero.boxes, x_ref) / (sref * cref)
+    mx0, _my0, mz0 = aero_moment_resultant(f_box0.reshape(n, 3), aero.boxes, ref_pt)
+    cn0 = mz0 / (sref * bref) if bref > 0 else 0.0
+    cl0 = mx0 / (sref * bref) if bref > 0 else 0.0
+    return BodyTargets(
+        cm_alpha=derivs["ANGLEA"]["CMY"], cm0=cm0,
+        cn_beta=derivs["SIDES"]["CMZ"], cn0=cn0,
+        cl_beta=derivs["SIDES"]["CMX"], cl0=cl0,
+    )
+
+
+def build_body_correction(
+    bulk,
+    *,
+    horiz_eid=None,
+    vert_eid=None,
+    targets: BodyTargets,
+    mach=None,
+    aero=None,
+    sid_w2gj_base: int = 9301,
+    sid_aecorr_base: int = 9401,
+    grid_index=None,
+    tol: float = 1e-4,
+) -> BodyCorrectionResult:
+    """Tune the cruciform body panels so the total airplane Cm/Cn match ``targets``.
+
+    Args:
+        bulk:        BulkData with the flying-surface corrections already applied
+                     (their W2GJ/WT2 cards in ``bulk.w2gjs`` / ``bulk.aecorrs``).
+        horiz_eid:   CAERO1 EID of the horizontal body panel (matches Cm_α, Cm0).
+                     ``None`` skips the pitch match.
+        vert_eid:    CAERO1 EID of the vertical body panel (matches the sideslip set
+                     Cn_β, Cn0, Cl_β, Cl0). ``None`` skips the yaw/roll match.
+        targets:     total-aircraft :class:`BodyTargets` (about the AEROS RCSID ref).
+        mach:        Mach override (default: AEROS field-8 Mach), for PG consistency.
+        aero:        optional pre-built flying-corrected AeroModel for ``bulk`` (avoids
+                     an AIC rebuild); must be consistent with ``bulk``/``mach``.
+        sid_w2gj_base / sid_aecorr_base: SID bases for the emitted body cards
+                     (``+0`` = horizontal, ``+1`` = vertical).
+        grid_index:  optional g-set index, passed through to ``build_aero_model``.
+        tol:         convergence tolerance reported on each coefficient residual.
+
+    Returns:
+        :class:`BodyCorrectionResult` with the body card pair(s) and diagnostics.
+    """
+    if horiz_eid is None and vert_eid is None:
+        raise ValueError("build_body_correction: give horiz_eid and/or vert_eid")
+
+    aero0 = aero if aero is not None else build_aero_model(bulk, grid_index, mach)
+    boxes = aero0.boxes
+    n = len(boxes)
+    sref, cref, bref = bulk.aeros.sref, bulk.aeros.cref, bulk.aeros.bref
+
+    labels = ["ANGLEA", "SIDES"]
+    d_jx = build_djx(boxes, labels, bulk)
+    x_ref, ref_pt = _ref_geometry(bulk)
+    baseline = _total_metrics(aero0, bulk, d_jx, labels, x_ref, ref_pt)
+
+    # Per-box geometry (force point = ¼-chord bound-vortex midpoint, AE6).
+    xfp = np.array([b.force_point[0] for b in boxes])
+    yfp = np.array([b.force_point[1] for b in boxes])
+    zfp = np.array([b.force_point[2] for b in boxes])
+    area = np.array([b.area for b in boxes])
+    nrm = np.array([b.normal for b in boxes])
+    nx, ny, nz = nrm[:, 0], nrm[:, 1], nrm[:, 2]
+
+    # Moment "weight" rows so that C = w·cp (cp = per-box ΔCp): pitch My, yaw Mz, roll Mx
+    # (the resultant M = Σ(r−ref)×F, with F = area·n̂·cp).
+    arm_x = xfp - x_ref
+    arm_y = yfp - ref_pt[1]
+    arm_z = zfp - ref_pt[2]
+    w_pitch = -(arm_x * area * nz) / (sref * cref)            # cm = w_pitch·cp
+    if bref > 0:
+        w_yaw = (area * (arm_x * ny - arm_y * nx)) / (sref * bref)   # cn = w_yaw·cp
+        w_roll = (area * (arm_y * nz - arm_z * ny)) / (sref * bref)  # cl = w_roll·cp
+    else:
+        w_yaw = np.zeros(n)
+        w_roll = np.zeros(n)
+
+    # Bare-VLM reference circulation (Γ-units) for the WT2 card target.
+    gamma_ref = np.linalg.solve(aero0.ajj, -np.ones(n))
+
+    # Corrected per-box Cp at unit α / β (flying corrections baked in, body r=1).
+    a_base = aero0.ajj_inv_corr
+    cp_a = a_base @ d_jx[:, 0]      # ANGLEA
+    cp_b = a_base @ d_jx[:, 1]      # SIDES
+
+    # Body box indices (per panel, for card emission) and the joined body set.
+    panel_eids = [e for e in (horiz_eid, vert_eid) if e is not None]
+    panel_idx = {}
+    for eid in panel_eids:
+        idx = np.array([k for k, b in enumerate(boxes) if b.caero_eid == eid])
+        if idx.size == 0:
+            raise ValueError(f"build_body_correction: CAERO1 {eid} has no boxes")
+        panel_idx[eid] = idx
+    body_idx = np.concatenate([panel_idx[e] for e in panel_eids])
+
+    # ---- slope: joint minimum-norm WT2 ratio over the body boxes --------------
+    # Each metric is linear in the body ratios: C = C_base + Σ (w·cp_unit)·δr.  Pitch
+    # uses the α response (cp_a), yaw/roll the β response (cp_b).  The metrics are NOT
+    # all panel-private — Cl_β picks up the horizontal panel too (its β-load carries a
+    # rolling moment through the w_roll `y·n_z` term) — so all slope constraints are
+    # solved jointly over both panels' boxes (the flying surfaces stay untouched: r is a
+    # post-inverse diagonal, so only body-box Cp changes).
+    slope_cons = []   # (weight, cp_unit, d_target)
+    if horiz_eid is not None:
+        slope_cons.append((w_pitch, cp_a, targets.cm_alpha - baseline.cm_alpha))
+    if vert_eid is not None:
+        slope_cons.append((w_yaw, cp_b, targets.cn_beta - baseline.cn_beta))
+        slope_cons.append((w_roll, cp_b, targets.cl_beta - baseline.cl_beta))
+    a_slope = np.vstack([(w * cp)[body_idx] for w, cp, _d in slope_cons])
+    d_slope = np.array([d for _w, _cp, d in slope_cons])
+    r = np.ones(n)
+    r[body_idx] = 1.0 + np.linalg.pinv(a_slope) @ d_slope
+
+    # Corrected operator with the body slope ratios baked in (rows scaled).
+    a_r = r[:, np.newaxis] * a_base
+
+    # ---- offset: joint minimum-norm W2GJ against the actual operator ----------
+    # Cm0/Cn0/Cl0 are linear functionals of wg; body camber on one panel induces load
+    # on the other surfaces through the full inverse, so solve all offset constraints
+    # together over the body boxes (minimum-norm: smallest camber hitting the targets).
+    v_pitch = w_pitch @ a_r        # (n,) row: d cm0 / d wg
+    v_yaw = w_yaw @ a_r            # (n,) row: d cn0 / d wg
+    v_roll = w_roll @ a_r          # (n,) row: d cl0 / d wg
+    cm0_base = float(v_pitch @ aero0.wg)
+    cn0_base = float(v_yaw @ aero0.wg)
+    cl0_base = float(v_roll @ aero0.wg)
+    rows, dvec = [], []
+    if horiz_eid is not None:
+        rows.append(v_pitch[body_idx]); dvec.append(targets.cm0 - cm0_base)
+    if vert_eid is not None:
+        rows.append(v_yaw[body_idx]); dvec.append(targets.cn0 - cn0_base)
+        rows.append(v_roll[body_idx]); dvec.append(targets.cl0 - cl0_base)
+    a_off = np.vstack(rows)                       # (m, n_body)
+    wg_solve = np.linalg.pinv(a_off) @ np.array(dvec)   # min-norm
+    wg_body = np.zeros(n)
+    wg_body[body_idx] = wg_solve
+
+    # ---- emit body cards (ordinary W2GJ + WT2 on the body CAERO1s) -------------
+    cards = {}
+    for i, eid in enumerate(panel_eids):
+        idx = panel_idx[eid]
+        w2 = W2gj(sid=sid_w2gj_base + i, caero_eid=eid, data=wg_body[idx].tolist())
+        ac = Aecorr(sid=sid_aecorr_base + i, method="WT2", caero_eid=eid,
+                    target=(r[idx] * gamma_ref[idx]).tolist())
+        cards[eid] = (w2, ac)
+
+    # ---- achieved totals (analytic: a_r is the production operator to ~1e-13) --
+    # No second AIC build is needed — ``a_r = diag(r)·A_base`` matches what
+    # ``build_aero_model`` assembles from these WT2 cards (the body WT2 ratio is a
+    # post-inverse diagonal scaling), and ``wg`` simply accumulates the body W2GJ.
+    wg_total = aero0.wg + wg_body
+    achieved = BodyTargets(
+        cm_alpha=float(w_pitch @ (r * cp_a)),
+        cm0=float(v_pitch @ wg_total),
+        cn_beta=float(w_yaw @ (r * cp_b)),
+        cn0=float(v_yaw @ wg_total),
+        cl_beta=float(w_roll @ (r * cp_b)),
+        cl0=float(v_roll @ wg_total),
+    )
+    residual = {
+        "cm_alpha": (targets.cm_alpha - achieved.cm_alpha) if horiz_eid else 0.0,
+        "cm0": (targets.cm0 - achieved.cm0) if horiz_eid else 0.0,
+        "cn_beta": (targets.cn_beta - achieved.cn_beta) if vert_eid else 0.0,
+        "cn0": (targets.cn0 - achieved.cn0) if vert_eid else 0.0,
+        "cl_beta": (targets.cl_beta - achieved.cl_beta) if vert_eid else 0.0,
+        "cl0": (targets.cl0 - achieved.cl0) if vert_eid else 0.0,
+    }
+    converged = max(abs(v) for v in residual.values()) < tol
+
+    ratio_max = float(np.max(np.abs(r[body_idx]))) if body_idx.size else 0.0
+    if ratio_max > _RATIO_WARN:
+        warnings.warn(
+            f"build_body_correction: body WT2 ratio reached {ratio_max:.1f} — the body "
+            "panels are being asked to supply a large moment; check the targets or add "
+            "body-panel area/arm",
+            UserWarning, stacklevel=2,
+        )
+    if not converged:
+        warnings.warn(
+            f"build_body_correction: residual {residual} exceeds tol={tol:g}; the body "
+            "panels may lack the authority to reach these targets",
+            UserWarning, stacklevel=2,
+        )
+
+    return BodyCorrectionResult(
+        cards=cards, target=targets, achieved=achieved, baseline=baseline,
+        residual=residual, converged=converged, ratio_max=ratio_max,
+    )

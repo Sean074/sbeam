@@ -27,8 +27,11 @@ from sbeam.aero import section_data as sd
 from sbeam.aero.section_correction import cards_to_bdf
 from sbeam.parser.bdf_reader import parse_bulk_file
 from sbeam.viewer.aero_view import surface_dihedral_deg
+from sbeam.aero import body_correction as bc
+from sbeam.aero.integration import build_djx
 from sbeam.viewer.aero_correction_view import (
     _template_csv, _W2GJ_BASE, _AECORR_BASE,
+    _BODY_W2GJ_BASE, _BODY_AECORR_BASE, _guess_body_panels,
     build_corrected_bdf, suggest_corrected_name,
 )
 
@@ -335,3 +338,100 @@ def test_full_corrected_bdf_roundtrips(aero_bulk, tmp_path):
     bulk2 = parse_bulk_file(str(out))
     assert _W2GJ_BASE in bulk2.w2gjs
     assert _AECORR_BASE in bulk2.aecorrs
+
+
+# ---- Stage 6 · cruciform body panels ----------------------------------------
+
+@pytest.fixture
+def body_bulk() -> BulkData:
+    """Wing (CAERO 100, +Z) + horizontal body panel (400, +Z) + vertical body
+    panel (500, +Y), the two body panels running the full length (long chord)."""
+    bulk = BulkData()
+    bulk.aeros = Aeros(acsid=0, rcsid=0, cref=1.0, bref=4.0, sref=4.0, symxz=0, symxy=0)
+    bulk.caero1s[100] = Caero1(
+        eid=100, pid=1, cp=0, nspan=4, nchord=4, lspan=0, lchord=0, igid=1,
+        p1=(1.0, 0.0, 0.0), x12=1.0, p4=(1.0, 4.0, 0.0), x43=1.0)
+    bulk.caero1s[400] = Caero1(   # horizontal body panel (+Z), long chord
+        eid=400, pid=1, cp=0, nspan=2, nchord=4, lspan=0, lchord=0, igid=1,
+        p1=(0.0, -0.4, -0.2), x12=4.0, p4=(0.0, 0.4, -0.2), x43=4.0)
+    bulk.caero1s[500] = Caero1(   # vertical body panel (+Y), long chord
+        eid=500, pid=1, cp=0, nspan=2, nchord=4, lspan=0, lchord=0, igid=1,
+        p1=(0.0, 0.0, -0.5), x12=4.0, p4=(0.0, 0.0, 0.5), x43=4.0)
+    bulk.paero1s[1] = Paero1(pid=1)
+    return bulk
+
+
+def _wing_flying_result(aero_model):
+    """A flying-surface section-correction result for the wing only (CAERO 100)."""
+    df = sd.template_dataframe(aero_model.boxes, 100, mach=0.0, a_lo=-2.0, a_hi=8.0)
+    df = sd.validate_section_data(df)
+    return df, sd.build_from_section_data_multi(
+        aero_model.boxes, aero_model.ajj, df, mach=0.0, incidence_deg=2.0,
+        sid_w2gj_base=_W2GJ_BASE, sid_aecorr_base=_AECORR_BASE)
+
+
+def test_guess_body_panels(body_bulk):
+    model = build_aero_model(body_bulk)
+    assert _guess_body_panels(model) == (400, 500)   # largest-chord +Z / +Y surfaces
+
+
+def test_apptest_body_stage_renders(body_bulk):
+    at = AppTest.from_function(_sbeam_app, default_timeout=90)
+    at.run()
+    _inject_bulk(at, body_bulk)
+    model = build_aero_model(body_bulk)
+    df, res = _wing_flying_result(model)
+    at.session_state["aero_corr_df"] = df
+    at.session_state["aero_corr_result"] = res
+    at.session_state["aero_corr_cond"] = (0.0, 2.0, 0.0)
+    at.run()
+    assert not at.exception, [str(e) for e in at.exception]
+    assert any("Body panels" in m.value for m in at.markdown)
+    keys = {s.key for s in at.selectbox}
+    assert "aero_body_horiz" in keys and "aero_body_vert" in keys
+
+
+def test_apptest_body_build_and_apply(body_bulk):
+    at = AppTest.from_function(_sbeam_app, default_timeout=120)
+    at.run()
+    _inject_bulk(at, body_bulk)
+    model = build_aero_model(body_bulk)
+    df, res = _wing_flying_result(model)
+
+    # flying-corrected baseline → gentle targets the body can reach
+    fw2 = {w.sid: w for (w, _a) in res.correction.cards.values()}
+    fac = {a.sid: a for (_w, a) in res.correction.cards.values()}
+    import dataclasses
+    bulk_f = dataclasses.replace(
+        body_bulk, w2gjs={**body_bulk.w2gjs, **fw2},
+        aecorrs={**body_bulk.aecorrs, **fac})
+    aero_f = build_aero_model(bulk_f)
+    d_jx = build_djx(aero_f.boxes, ["ANGLEA", "SIDES"], bulk_f)
+    x_ref, ref_pt = bc._ref_geometry(bulk_f)
+    base = bc._total_metrics(aero_f, bulk_f, d_jx, ["ANGLEA", "SIDES"], x_ref, ref_pt)
+
+    at.session_state["aero_corr_df"] = df
+    at.session_state["aero_corr_result"] = res
+    at.session_state["aero_corr_cond"] = (0.0, 2.0, 0.0)
+    at.session_state["aero_body_cma"] = base.cm_alpha + 0.05
+    at.session_state["aero_body_cm0"] = base.cm0 - 0.02
+    at.session_state["aero_body_cnb"] = base.cn_beta - 0.02
+    at.session_state["aero_body_cn0"] = base.cn0 + 0.01
+    at.session_state["aero_body_clb"] = base.cl_beta + 0.02
+    at.session_state["aero_body_cl0"] = base.cl0 + 0.005
+    at.run()
+
+    next(b for b in at.button if b.key == "aero_body_build").click().run()
+    assert not at.exception, [str(e) for e in at.exception]
+    bres = at.session_state["aero_body_result"]
+    assert bres is not None and bres.converged
+    assert sorted(bres.cards) == [400, 500]
+    assert bres.achieved.cl_beta == pytest.approx(base.cl_beta + 0.02, abs=1e-6)
+
+    next(b for b in at.button if b.key == "aero_body_apply").click().run()
+    assert not at.exception, [str(e) for e in at.exception]
+    bulk_after = at.session_state["bulk_data"]
+    # flying pairs + body pairs both present
+    assert _AECORR_BASE in bulk_after.aecorrs and _W2GJ_BASE in bulk_after.w2gjs
+    assert _BODY_W2GJ_BASE in bulk_after.w2gjs
+    assert _BODY_AECORR_BASE in bulk_after.aecorrs
