@@ -106,7 +106,7 @@ sbeam/
 ├── results/        # results.py, f06_writer.py, load_export.py, monitor_points.py (MONPNT1/MONPNT3 integrated section loads), maneuver_output.py (Phase G0 time histories + critical-step export)
 ├── gpwg.py         # Mass and CG (GPWG)
 ├── aero/           # panel.py, vlm.py, integration.py, corrections.py, section_correction.py (W2GJ+WT2 section force/moment synthesis), section_data.py (spanwise section-coefficient ingestion), aero_model.py
-└── viewer/         # app.py, geometry.py, results_view.py, case_control_ui.py, aero_view.py, aero_correction_view.py (CFD/test section data → correction cards)
+└── viewer/         # app.py, geometry.py, results_view.py, case_control_ui.py, aero_view.py, aero_correction_view.py (CFD/test section data → correction cards + full corrected-BDF export), format_utils.py (5-sig-fig table/metric formatting)
 ```
 
 ## GPWG

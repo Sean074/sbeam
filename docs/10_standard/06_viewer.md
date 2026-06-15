@@ -24,8 +24,9 @@ viewer/
 ├── geometry.py         # 3D model display functions (Plotly)
 ├── results_view.py     # Results post-processing display
 ├── case_control_ui.py  # Case control form and BDF export
-└── aero_view.py        # Aero box mesh + cp colour map (S44); spline-deflected box overlay (S57); per-surface span-loading figure + rigid S&C derivative table (A-GUI2)
-└── aero_correction_view.py  # Aero Correction tab: CFD/test section data → W2GJ+AECORR(WT2) cards, injected into the model (A-GUI3)
+├── aero_view.py        # Aero box mesh + cp colour map (S44); spline-deflected box overlay (S57); per-surface span-loading figure + rigid S&C derivative table (A-GUI2); cp corrected/uncorrected/Δ views + dihedral helper (A-GUI4)
+├── aero_correction_view.py  # Aero Correction tab: CFD/test section data → W2GJ+AECORR(WT2) cards, injected into the model + full corrected-BDF export (A-GUI3/A-GUI4)
+└── format_utils.py     # Shared 5-sig-fig number formatting for tables/metrics (fmt / fmt_mass / style_numeric) (A-GUI4)
 ```
 
 ---
@@ -128,24 +129,32 @@ a rigid steady-state solve at a user-specified angle of attack.
 - **Show surface normals** — `st.checkbox` (`key="aero_show_normals"`, default off). When
   ticked, draws each box's outward unit normal (`AeroBox.normal`) as a green arrow rooted
   at its collocation point. Re-renders the cached `aero_model` instantly (no AIC recompute).
+- **Cp view** — `st.radio` (`key="aero_cp_view"`), shown only when an uncorrected baseline
+  exists (`aero_result_unc`). Selects **Corrected** / **Uncorrected** / **Δ (corr − uncorr)** and
+  drives *both* the 3D box-pressure mesh and the span-load curves. Δ subtracts the two cp fields
+  per box and renders the 3D mesh with a zero-centred diverging scale (`cp_cmid=0`, colour-bar
+  **ΔCp**).
 - After compute: **CL (wind)**, **CD (induced)**, **CZ (body)**, **CY**, **CM**, and **Boxes**
-  count displayed as `st.metric`. CL/CD are wind-axis (⊥ / ∥ to U∞); CZ is the body-axis
+  count displayed as `st.metric` (5-sig-fig `format_utils.fmt`). CL/CD are wind-axis (⊥ / ∥ to U∞); CZ is the body-axis
   vertical-force coefficient, `CL = CZ·cosα − CX·sinα` (equal only at α ≈ 0); CD is the Trefftz
   induced drag (`CDi`). A caption restates the axis convention.
 
-**3D figure (right column):** built by `build_aero_box_figure(..., strip=False)` — a scene-only
-mesh: `_add_box_mesh` (Scatter3d wire-frame) + `_add_cp_contour` (Mesh3d quads, `RdBu_r`,
-**corrected** cp) + optional `_add_normal_vectors`. The `strip=True` default (used by the SOL 144
-results view) keeps the legacy bottom xy panel; the Aero tab passes `strip=False` because span
-loading has its own full-width figure below.
+**3D figure (right column):** built by `build_aero_box_figure(..., strip=False, cp_cmid=…, cp_title=…)`
+— a scene-only mesh: `_add_box_mesh` (Scatter3d wire-frame) + `_add_cp_contour` (Mesh3d quads,
+`RdBu_r`) + optional `_add_normal_vectors`. The cp field shown follows the **Cp view** toggle
+(corrected / uncorrected / Δcp); for Δcp the contour passes `cmid=0` for a symmetric scale and the
+**ΔCp** colour-bar title. The `strip=True` default (used by the SOL 144 results view) keeps the
+legacy bottom xy panel; the Aero tab passes `strip=False` because span loading has its own
+full-width figure below.
 
 **Full-width results (below the columns), shown after a Compute:**
-- **Spanwise loading** — `build_span_loading_figure(boxes, cp_corr, cp_unc=..., aeros=...)`: two
-  stacked subplots, **one line per CAERO1 surface** — section normal-force coefficient `cn(η)` and
-  section pitching-moment coefficient `cm(η)` about each strip's **local ¼-chord** (nose-up +ve).
+- **Spanwise loading** — `build_span_loading_figure(boxes, cp_corr, cp_unc=..., aeros=..., mode=…)`:
+  two stacked subplots, **one line per CAERO1 surface** — section normal-force coefficient `cn(η)`
+  and section pitching-moment coefficient `cm(η)` about each strip's **local ¼-chord** (nose-up +ve).
   Boxes are grouped by `(caero_eid, i_span)` so multi-surface decks no longer merge strips that
-  share an `i_span`. Corrected = solid; when an uncorrected baseline exists it is overlaid dashed
-  in the same colour (caption flags it).
+  share an `i_span`. `mode` follows the **Cp view** toggle: *corrected* draws corrected solid +
+  uncorrected dashed (when present); *uncorrected* draws the baseline solid; *diff* draws the
+  per-strip Δcn/Δcm. Hover/tick values use 5-sig-fig (`.5~g`) formatting.
 - **Rigid stability & control derivatives** — `rigid_derivative_table(aero_model, bulk, naming)`
   rendered full-width via `st.dataframe`. Reuses the SOL 144 machinery (`build_djx` +
   `_compute_rigid_derivs`, rigid `u_a = 0`) so the matrix matches the f06 rigid derivatives. Rows
@@ -167,13 +176,14 @@ loading has its own full-width figure below.
 
 All three keys are reset to `None` on new file upload (same pattern as `sol101_result`).
 
-### 5. Aero Correction Tab (A-GUI3)
+### 5. Aero Correction Tab (A-GUI3 / A-GUI4)
 
 Present only when `bulk.caero1s` is non-empty (the tab immediately right of **Aero**).
 Implemented in `aero_correction_view.py` (`render_aero_correction_tab(bulk)`); a front end over
 `sbeam.aero.section_data` / `section_correction` that turns a table of **experimental / CFD section
 coefficients** into **W2GJ + AECORR(WT2)** correction cards for one flight **condition** (Mach +
-incidence) and injects them into the in-session model so the **Aero** tab runs the corrected solve.
+operating α and β) and injects them into the in-session model so the **Aero** tab runs the corrected
+solve, and/or exports a self-contained corrected BDF.
 
 **Workflow (top to bottom):**
 1. **Section-data table** — **Download section-data template (CSV)** (`_template_csv`, one row per
@@ -184,25 +194,38 @@ incidence) and injects them into the in-session model so the **Aero** tab runs t
    `caero, eta, mach, var, a_lo, a_hi, cn_a, a0, cm_a, cm0, xref` — local-chord-normalised
    coefficients, slopes **per degree**, moment **nose-up +**.
 2. **Blocks in the table** — `available_conditions(df)` listed as a table (CAERO × Mach × region).
-3. **Build condition** — a **Mach** selectbox (the Mach values present) + an **operating incidence**
-   `st.number_input`. A per-surface status table resolves the region for each CAERO via
-   `operating_region` (covered ✓ / skipped ✗). **Build correction cards** calls
-   `build_from_section_data_multi(aero_model.boxes, build_aero_model(bulk, mach=mach).ajj, df, …)`
-   at reserved SID bases (`_W2GJ_BASE = 9001`, `_AECORR_BASE = 9101`), storing the result in
-   `aero_corr_result`.
+3. **Build condition** — a **Mach** selectbox plus **two** operating-angle inputs, **Operating α (°)**
+   and **Operating β (°)** (they can differ). Each surface is corrected on **one** axis chosen by its
+   table `var`: an ALPHA surface uses α, a BETA surface uses β (`section_data.surface_var`). A
+   per-surface status table shows `var`, the axis, the operating value, the resolved `[a_lo, a_hi]`
+   region (`operating_region`, or ✗ none), and the surface dihedral **Γ** (`aero_view.surface_dihedral_deg`,
+   length-weighted |Γ|). A **canted-surface warning** fires for any surface with `20° ≤ Γ ≤ 70°` —
+   there a single-axis section correction blends both α and β responses. **Build correction cards**
+   calls `build_from_section_data_multi(boxes, build_aero_model(bulk, mach=mach).ajj, df,
+   alpha_deg=…, beta_deg=…, …)` at reserved SID bases (`_W2GJ_BASE = 9001`, `_AECORR_BASE = 9101`),
+   storing the result in `aero_corr_result` and the condition in `aero_corr_cond`. Surfaces with a
+   `MIXED` var (both axes in one table) or no region covering their angle are skipped.
 4. **Generated cards** — extrapolation / skipped-surface warnings, a per-surface input-vs-achieved
-   preview (`aero_view.build_section_correction_figure`) selected by a **Preview surface** box, and a
-   per-strip achieved-targets `st.dataframe` (`moment_ref_x, f_slope, m_slope, f0, m0`).
+   preview (`aero_view.build_section_correction_figure`) selected by a **Preview surface** box (the
+   chart carries a stable `key` and the upload is re-parsed only on change, so switching surfaces no
+   longer wipes the build), and a 5-sig-fig per-strip achieved-targets `st.dataframe`
+   (`moment_ref_x, f_slope, m_slope, f0, m0`).
 5. **Apply / export** — **Apply to model** (`_apply_cards`) injects each `(W2gj, Aecorr)` into
    `bulk.w2gjs` / `bulk.aecorrs`, **clearing any cards this tool injected on a prior build** (tracked
    in `aero_corr_sids`) so re-applies replace rather than stack, then nulls `aero_model` /
    `aero_result` / `aero_result_unc` so the Aero tab recomputes. `_warn_conflicts` flags a
    pre-existing **WKK** on a corrected surface (WKK precedence in `build_aero_model` shadows WT2) or a
    non-generated WT2 on the same surface. **Download cards (.bdf)** emits the bulk-data snippet via
-   `section_correction.cards_to_bdf` for external NASTRAN / persistence.
+   `section_correction.cards_to_bdf`. **Full corrected BDF** (`build_corrected_bdf`) splices those
+   cards into the originally uploaded model text (before `ENDDATA`) with a provenance header (source
+   CSV, date, Mach/α/β, corrected CAEROs) — a self-contained, re-parseable model. The filename input
+   defaults to `suggest_corrected_name` (`<stem>_M0p30_A2p0_B0p0.bdf`); build one per Mach. A
+   separate-correction-file + `INCLUDE` layout is *not* used because sbeam's parser honours only a
+   single whole-bulk INCLUDE (`bdf_reader.parse_bdf`).
 
 v1 limits (inherited from the engine): exact-Mach match (no Mach interpolation); one operating
-region per surface (the region whose `[a_lo, a_hi]` contains the incidence).
+region per surface (the region whose `[a_lo, a_hi]` contains the operating angle); one axis per
+surface.
 
 **Session state keys:**
 | Key | Type | Description |
@@ -211,8 +234,12 @@ region per surface (the region whose `[a_lo, a_hi]` contains the incidence).
 | `aero_corr_df` | `DataFrame \| None` | Validated section-data table from the CSV upload |
 | `aero_corr_result` | `MultiSectionDataBuildResult \| None` | Last build (cards + diagnostics) |
 | `aero_corr_sids` | `set[int]` | SIDs this tool last injected, so Apply can replace them |
+| `aero_corr_upload_id` | `tuple \| None` | `(name, size)` of the parsed CSV — re-parse only on change |
+| `aero_corr_csv_name` | `str \| None` | Source CSV filename, for the export provenance header |
+| `aero_corr_cond` | `tuple \| None` | `(mach, alpha, beta)` of the last build, for naming / provenance |
 
-All four are reset on new file upload.
+All are reset on new file upload. The full-BDF export also reads `_uploaded_source_text` (the raw
+uploaded model text, stashed in `_handle_upload`).
 
 ### 6. Sidebar — Item Inspector
 
@@ -521,6 +548,13 @@ range heuristic.
 | `test_apptest_apply_injects_without_stacking` | Click **Apply to model** → W2GJ/AECORR injected; re-apply replaces (one pair) |
 | `test_built_cards_change_corrected_solve` | Build → inject → rebuild: corrected CL hits the prescribed section slope |
 | `test_template_csv_roundtrips_schema` | `_template_csv` parses back to the section_data schema (one row per strip) |
+| `test_surface_var_and_mixed` | `surface_var` reports per-surface axis; mixed-axis surface → `MIXED` |
+| `test_separate_alpha_beta_selects_region_per_var` | α and β pick each surface's own region; single incidence skips the β surface |
+| `test_mixed_var_surface_is_skipped` | A surface with both ALPHA and BETA rows is skipped (one axis per surface) |
+| `test_surface_dihedral_deg` | Dihedral helper: horizontal ≈0°, 45°-canted ≈45° |
+| `test_apptest_canted_surface_warns` | Canted surface (20–70°) raises the blended-axis warning |
+| `test_apptest_preview_persists_on_surface_change` | Changing **Preview surface** keeps the build result (upload-id guard) |
+| `test_suggest_corrected_name` / `test_full_corrected_bdf_roundtrips` | Default filename + corrected BDF carries provenance and re-parses with the cards |
 
 (The Aero Correction tests live in `tests/viewer/test_aero_correction_view.py`.)
 

@@ -605,18 +605,26 @@ are shown directly — matching the SOL 144 operator. `viewer/aero_view.build_se
 gives the spanwise preview (`cn_α(η)`, `cm0(η)`; input markers vs achieved-on-strips) for the
 section-correction page.
 
-**Aero Correction page (`viewer/aero_correction_view.py`, A-GUI3).** The viewer exposes the
+**Aero Correction page (`viewer/aero_correction_view.py`, A-GUI3 / A-GUI4).** The viewer exposes the
 above pipeline as a dedicated **Aero Correction** tab (right of **Aero**). The user downloads a
 mesh-seeded CSV template (`_template_csv` → `template_dataframe` per surface), fills it with the
 section coefficients, and uploads it (`validate_section_data`). Picking a **condition** —
-exact-match **Mach** + **operating incidence** — drives `build_from_section_data_multi` at reserved
-SID bases (`_W2GJ_BASE = 9001`, `_AECORR_BASE = 9101`), with `operating_region` showing the
-per-surface coverage. **Apply to model** injects the generated `(W2gj, Aecorr)` pairs into
+exact-match **Mach** + **operating α and β** — drives `build_from_section_data_multi(..., alpha_deg=,
+beta_deg=)` at reserved SID bases (`_W2GJ_BASE = 9001`, `_AECORR_BASE = 9101`). Each surface is
+corrected on **one** axis selected by its table `var` (`surface_var`): an ALPHA surface uses α, a
+BETA surface uses β (the two angles may differ; `incidence_deg` remains a single-axis fallback).
+`operating_region` shows the per-surface region coverage, and `surface_dihedral_deg` flags any
+**canted** surface (`20° ≤ |Γ| ≤ 70°`) where a single-axis section correction blends both α and β
+responses. **Apply to model** injects the generated `(W2gj, Aecorr)` pairs into
 `bulk.w2gjs` / `bulk.aecorrs` (replacing the tool's own previously-injected SIDs, never stacking)
-so the existing Aero tab — which keys off `bulk.wkks`/`bulk.aecorrs` — runs the corrected solve;
-**Download cards (.bdf)** emits the same pairs via `cards_to_bdf`. Pre-existing **WKK** (which takes
-precedence over WT2 in `build_aero_model`) or a non-generated WT2 on a corrected surface are flagged
-as warnings.
+so the existing Aero tab — which keys off `bulk.wkks`/`bulk.aecorrs` — runs the corrected solve. The
+Aero tab's **Cp view** toggle then compares corrected / uncorrected / Δcp on both the 3D box
+pressure and the span-load curves. **Download cards (.bdf)** emits the pairs via `cards_to_bdf`;
+**Full corrected BDF** (`build_corrected_bdf`) splices them into the uploaded model text before
+`ENDDATA` with a provenance header (source CSV, date, Mach/α/β), giving a self-contained,
+re-parseable model — one per Mach. A separate-file + `INCLUDE` layout is not used: sbeam's parser
+honours only a single whole-bulk INCLUDE. Pre-existing **WKK** (which takes precedence over WT2 in
+`build_aero_model`) or a non-generated WT2 on a corrected surface are flagged as warnings.
 
 ### `build_aero_model(bulk, grid_index=None) -> AeroModel`
 

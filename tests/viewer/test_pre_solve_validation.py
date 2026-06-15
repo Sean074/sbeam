@@ -1,8 +1,4 @@
 """Tests for _get_pre_solve_warnings in viewer/app.py."""
-import math
-
-import pytest
-
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.element import Cbar
 from sbeam.model.grid import Grid

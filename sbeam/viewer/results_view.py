@@ -13,6 +13,7 @@ from sbeam.results.results import Sol103Result
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.viewer.geometry import build_deformed_figure, build_mode_figure
 from sbeam.viewer.aero_view import build_aero_box_figure
+from sbeam.viewer.format_utils import fmt, style_numeric
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +90,7 @@ def render_sol101_results(bulk: BulkData, results: dict) -> None:
                 "Ry": d[base + 4],
                 "Rz": d[base + 5],
             })
-        st.dataframe(pd.DataFrame(rows), width="stretch")
+        st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
 
     with tab_rxn:
         if result.reactions:
@@ -101,7 +102,7 @@ def render_sol101_results(bulk: BulkData, results: dict) -> None:
                     "Fx": r[0], "Fy": r[1], "Fz": r[2],
                     "Mx": r[3], "My": r[4], "Mz": r[5],
                 })
-            st.dataframe(pd.DataFrame(rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
         else:
             st.info("No SPC reactions.")
 
@@ -121,7 +122,7 @@ def render_sol101_results(bulk: BulkData, results: dict) -> None:
                     "BM1_B": bf.bm1_b,
                     "BM2_B": bf.bm2_b,
                 })
-            st.dataframe(pd.DataFrame(rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
         else:
             st.info("No bar forces.")
 
@@ -142,7 +143,7 @@ def render_sol101_results(bulk: BulkData, results: dict) -> None:
                     "SA_F": bs.sa_f,
                     "SB_F": bs.sb_f,
                 })
-            st.dataframe(pd.DataFrame(rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
         else:
             st.info("No bar stresses.")
 
@@ -160,7 +161,7 @@ def render_sol101_results(bulk: BulkData, results: dict) -> None:
                     "M2 (global)": f[4],
                     "M3 (global)": f[5],
                 })
-            st.dataframe(pd.DataFrame(rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
         else:
             st.info("No CBUSH forces.")
 
@@ -253,7 +254,7 @@ def render_sol103_results(bulk: BulkData, results: dict) -> None:
             omega = 2.0 * np.pi * f
             freq_rows.append({"Mode": i, "Freq (Hz)": f, "ω (rad/s)": omega, "λ (ω²)": lam})
         with st.expander("Natural frequencies", expanded=False):
-            st.dataframe(pd.DataFrame(freq_rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(freq_rows)), width="stretch")
 
         with st.expander("Modal participation", expanded=False):
             _render_modal_mass_chart(bulk, result, grid_index)
@@ -360,12 +361,12 @@ def _render_sol144_trim(bulk: BulkData, result) -> None:
     # ---- Trim summary metrics ----
     st.subheader("Trim solution")
     cols = st.columns(6)
-    cols[0].metric("Dynamic pressure q", f"{result.q:.4g}")
-    cols[1].metric("Mach", f"{result.mach:.4g}")
-    cols[2].metric("CZ (body)", f"{result.total_cl:.4f}")
+    cols[0].metric("Dynamic pressure q", fmt(result.q))
+    cols[1].metric("Mach", fmt(result.mach))
+    cols[2].metric("CZ (body)", fmt(result.total_cl))
     cols[3].metric("CL (wind)",
-                   f"{getattr(result, 'total_cl_wind', result.total_cl):.4f}")
-    cols[4].metric("Total CMy", f"{result.total_cm:.4f}")
+                   fmt(getattr(result, 'total_cl_wind', result.total_cl)))
+    cols[4].metric("Total CMy", fmt(result.total_cm))
     cols[5].metric("Trim mode", result.trim_mode)
 
     # ---- Trim variables ----
@@ -380,7 +381,7 @@ def _render_sol144_trim(bulk: BulkData, result) -> None:
         for label in sorted(result.trim_vars.keys())
     ]
     st.markdown("**Trim variables**")
-    st.dataframe(pd.DataFrame(tv_rows), width="stretch")
+    st.dataframe(style_numeric(pd.DataFrame(tv_rows)), width="stretch")
 
     # ---- Stability & control derivatives (rigid + elastic restrained) ----
     deriv_rows = []
@@ -401,7 +402,7 @@ def _render_sol144_trim(bulk: BulkData, result) -> None:
             "CMZ (elastic)": el.get("CMZ", 0.0),
         })
     st.markdown("**Stability & control derivatives** (rigid vs elastic-restrained)")
-    st.dataframe(pd.DataFrame(deriv_rows), width="stretch")
+    st.dataframe(style_numeric(pd.DataFrame(deriv_rows)), width="stretch")
 
     # ---- Divergence readout ----
     st.markdown("**Aerodynamic divergence**")
@@ -410,8 +411,8 @@ def _render_sol144_trim(bulk: BulkData, result) -> None:
     else:
         ratio = result.q / result.q_div if result.q_div else 0.0
         dc = st.columns(2)
-        dc[0].metric("Critical q-div", f"{result.q_div:.4g}")
-        dc[1].metric("q / q-div", f"{ratio:.4f}")
+        dc[0].metric("Critical q-div", fmt(result.q_div))
+        dc[1].metric("q / q-div", fmt(ratio))
 
     # ---- Hinge moments ----
     if result.hinge_moments:
@@ -424,7 +425,7 @@ def _render_sol144_trim(bulk: BulkData, result) -> None:
             ]
             rows.append({"Trim variable": "TOTAL (trim)", "d(HM)/d(var)": result.q * entry["total"]})
             st.caption(f"Surface: {surf}")
-            st.dataframe(pd.DataFrame(rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
 
     # ---- Monitor-point integrated loads ----
     if result.monitor_loads:
@@ -438,7 +439,7 @@ def _render_sol144_trim(bulk: BulkData, result) -> None:
                 "Fx": t[0], "Fy": t[1], "Fz": t[2],
                 "Mx": t[3], "My": t[4], "Mz": t[5],
             })
-        st.dataframe(pd.DataFrame(rows), width="stretch")
+        st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
 
     # ---- Maneuver closure (balanced-maneuver net load resultant) ----
     if result.maneuver_closure is not None:
@@ -446,7 +447,7 @@ def _render_sol144_trim(bulk: BulkData, result) -> None:
         c = result.maneuver_closure
         cc = st.columns(6)
         for i, lab in enumerate(["Fx", "Fy", "Fz", "Mx", "My", "Mz"]):
-            cc[i].metric(lab, f"{c[i]:.3g}")
+            cc[i].metric(lab, fmt(c[i]))
 
     # ---- Deflected shape + canted box cp ----
     _render_sol144_deflected(bulk, result)
@@ -508,7 +509,7 @@ def _render_sol144_diverg(result) -> None:
             if has_v and root.v_div is not None:
                 row["V-div"] = root.v_div
             rows.append(row)
-        st.dataframe(pd.DataFrame(rows), width="stretch")
+        st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
 
 
 def _render_sol144_maneuver(bulk: BulkData, result) -> None:
@@ -517,8 +518,8 @@ def _render_sol144_maneuver(bulk: BulkData, result) -> None:
 
     st.subheader("Transient maneuver loads")
     cols = st.columns(4)
-    cols[0].metric("Dynamic pressure q", f"{result.q:.4g}")
-    cols[1].metric("Mach", f"{result.mach:.4g}")
+    cols[0].metric("Dynamic pressure q", fmt(result.q))
+    cols[1].metric("Mach", fmt(result.mach))
     cols[2].metric("Output samples", len(result.steps))
     cols[3].metric("Critical sample", result.crit_index)
 

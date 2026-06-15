@@ -2257,6 +2257,55 @@ Aero page runs the corrected solve.
 
 ---
 
+### Step A-GUI4: Aero Correction page fixups — α/β split, cp comparison, formatting, corrected-BDF export ✅ COMPLETE (2026-06-14)
+
+**Objective:** Address five usability/correctness issues raised on the A-GUI3 Aero Correction page:
+(1) one operating angle was applied to every surface regardless of its `var`, so a BETA (fin)
+surface's region was selected by the α value; (2) changing the **Preview surface** wiped the build;
+(3)/(4) plot and table numbers showed 10–12 digits; (5) the only persistence was an in-session apply
++ card snippet — no toggleable pre/post comparison and no self-contained corrected BDF to run/share.
+
+**Deliverables:**
+1. **Separate α / β operating points.** `section_data.build_from_section_data_multi` gains
+   `alpha_deg`/`beta_deg`; each surface picks its angle from its `var` (new `section_data.surface_var`;
+   ALPHA→α, BETA→β; `incidence_deg` retained as a single-axis fallback). A `MIXED` (both-axis) surface
+   is skipped. The build UI exposes two inputs and a per-surface status table (var / axis / operating /
+   region / Γ).
+2. **Canted-surface warning.** New `aero_view.surface_dihedral_deg` (length-weighted |Γ| from box span
+   edges); the status table warns when `20° ≤ Γ ≤ 70°` (single-axis correction blends α/β).
+3. **Preview persistence (#2 fix).** Root cause: `st.file_uploader` returns the file on every rerun, so
+   the upload block re-ran `aero_corr_result = None` each time. Guarded with an upload-id check
+   (`aero_corr_upload_id`); the preview chart also gets a stable key.
+4. **5-sig-fig formatting** — new `viewer/format_utils.py` (`fmt` decimal-down-to-exp-−4 / uppercase-E;
+   `fmt_mass` 0.1-unit; `style_numeric` Styler). Applied across all viewer tables/metrics (model-data
+   tabs, GPWG, inspector, SOL 101/103/144 results, rigid-derivative + per-surface tables) and the
+   Aero/Aero-Correction Plotly hovers/ticks (`.5~g`); masses keep `fmt_mass`.
+5. **Cp view toggle (#5).** Aero tab radio Corrected / Uncorrected / **Δ** drives the 3D mesh
+   (`build_aero_box_figure(cp_cmid=, cp_title=)`, Δ = zero-centred diverging scale) and the span plot
+   (`build_span_loading_figure(mode=)`).
+6. **Full corrected BDF export (#5).** `aero_correction_view.build_corrected_bdf` splices the cards into
+   the uploaded model text before `ENDDATA` with a provenance header (source CSV, date, Mach/α/β,
+   CAEROs); editable filename via `suggest_corrected_name` (`<stem>_M0p30_A2p0_B0p0.bdf`); raw upload
+   text stashed in `_uploaded_source_text`. One file per Mach.
+7. **Tests** — `test_format_utils.py` (new, 5); +9 in `test_aero_correction_view.py` (surface_var/mixed,
+   separate α/β, mixed skip, dihedral, canted warning, preview persistence, filename, corrected-BDF
+   round-trip via `parse_bulk_file`); +2 in `test_aero_view.py` (span modes, Δcp diverging mesh).
+8. **Docs** — 06_viewer.md (Aero + Aero Correction sections, module map, test table), 05_aeroelastics.md,
+   CHANGELOG, CLAUDE.md module map.
+
+**Key decisions:**
+- **Self-contained corrected BDF, not a separate file + `INCLUDE`.** sbeam's parser honours only one
+  case-control INCLUDE that *replaces* the whole bulk (`bdf_reader.parse_bdf`), and browser uploads are
+  single in-memory files — so a separate correction file pulled in via INCLUDE would not run. The
+  self-contained splice is also the literal reading of "update the loaded BDF with the correction." The
+  DRY include layout is deferred (would need a bulk-section/multi-INCLUDE parser enhancement).
+- One axis per surface (ALPHA *or* BETA); canted surfaces only warned, not auto-resolved.
+
+**Test / Acceptance:**
+- `tests/viewer/ tests/aero/` green (was 443; +16 → 462); full suite green; ruff clean on changed files.
+
+---
+
 ## Phase B — Structure ↔ Aero Splining
 
 ### Step 45: SET1 + SPLINE2 parsing ✅ COMPLETE

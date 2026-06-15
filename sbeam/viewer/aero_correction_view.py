@@ -2,16 +2,21 @@
 
 Front end (Option A GUI) over ``sbeam.aero.section_data`` / ``section_correction``: the
 user downloads a mesh-seeded CSV template, fills it with section lift/moment coefficients,
-uploads it, picks a flight **condition** (Mach + operating incidence), and builds one
+uploads it, picks a flight **condition** (Mach + operating α and β), and builds one
 **W2GJ (camber/zero-α offset) + AECORR/WT2 (slope & a.c.)** card pair per lifting surface.
-The cards can be injected into the in-session model — the Aero tab keys off
+Each surface is corrected on one axis chosen by its table ``var`` (ALPHA→α, BETA→β). The
+cards can be injected into the in-session model — the Aero tab keys off
 ``bulk.wkks``/``bulk.aecorrs`` so the corrected solve runs with no further wiring — and/or
-downloaded as a bulk-data snippet.
+downloaded as a bulk-data snippet or a full self-contained corrected BDF.
 
 v1 limits (inherited from the engine): exact-Mach match (no Mach interpolation); one
-operating region per surface (the region whose [a_lo, a_hi] contains the incidence).
+operating region per surface (the region whose [a_lo, a_hi] contains the angle); one axis
+per surface.
 """
 from __future__ import annotations
+
+import datetime
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -20,12 +25,19 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero import section_data as sd
 from sbeam.aero.section_correction import cards_to_bdf
-from sbeam.viewer.aero_view import build_section_correction_figure
+from sbeam.viewer.aero_view import build_section_correction_figure, surface_dihedral_deg
+from sbeam.viewer.format_utils import style_numeric
 
 # Reserved SID range for tool-generated cards (kept clear of typical user SIDs so the
 # Apply step can find and replace its own cards on a rebuild).
 _W2GJ_BASE = 9001
 _AECORR_BASE = 9101
+
+# A surface whose mean dihedral magnitude falls in this band is "canted" — neither
+# clearly horizontal (α-driven) nor vertical (β-driven) — so a single-axis section
+# correction blends both responses and is only approximate.
+_CANTED_LO = 20.0
+_CANTED_HI = 70.0
 
 _SCHEMA_HELP = """\
 One row per **surface × span-station × Mach × region** (tidy / long format):
@@ -98,11 +110,60 @@ def _apply_cards(bulk: BulkData, res) -> int:
     return len(res.correction.cards)
 
 
+def _tok(v: float, prec: int) -> str:
+    """Filesystem-safe condition token: 0.30 → '0p30', -2.0 → 'm2p0'."""
+    return f"{v:.{prec}f}".replace("-", "m").replace(".", "p")
+
+
+def suggest_corrected_name(stem: str, mach: float, alpha: float, beta: float) -> str:
+    """Default output filename encoding the condition, e.g. ``wing_M0p30_A2p0_B0p0.bdf``."""
+    return f"{stem}_M{_tok(mach, 2)}_A{_tok(alpha, 1)}_B{_tok(beta, 1)}.bdf"
+
+
+def _splice_cards(source_text: str, block: str) -> str:
+    """Insert *block* before the first ENDDATA line (or append if none)."""
+    lines = source_text.splitlines()
+    end_idx = None
+    for i, ln in enumerate(lines):
+        if ln.split("$", 1)[0].strip().upper() == "ENDDATA":
+            end_idx = i
+            break
+    block_lines = block.splitlines()
+    if end_idx is None:
+        return "\n".join(lines + block_lines) + "\n"
+    return "\n".join(lines[:end_idx] + block_lines + lines[end_idx:]) + "\n"
+
+
+def build_corrected_bdf(source_text: str, cards_text: str, *, source_csv: str,
+                        mach: float, alpha: float, beta: float, eids: list,
+                        out_name: str, date: str = None) -> str:
+    """Splice the W2GJ/AECORR cards into the uploaded model with a provenance header.
+
+    Produces a self-contained corrected BDF (the loaded model + correction cards),
+    runnable in sbeam (which honours only one whole-bulk INCLUDE, so a separate
+    include file is not used).  The header records the source section-data file,
+    generation date, and flight condition for traceability across the per-Mach set.
+    """
+    date = date or datetime.date.today().isoformat()
+    header = "\n".join([
+        "$ " + "-" * 68,
+        f"$ sbeam aero correction  —  {out_name}",
+        f"$ source section data : {source_csv}",
+        f"$ generated           : {date}",
+        f"$ condition           : Mach {mach:g}  alpha {alpha:g} deg  beta {beta:g} deg",
+        f"$ corrected surfaces  : CAERO {list(eids)}",
+        "$ " + "-" * 68,
+        cards_text.rstrip("\n"),
+        "$ " + "-" * 68,
+    ])
+    return _splice_cards(source_text, header)
+
+
 def render_aero_correction_tab(bulk: BulkData) -> None:
     st.subheader("Aero correction — section force/moment cards from CFD / test data")
     st.caption(
         "Build W2GJ (camber / zero-α offset) + AECORR/WT2 (slope & a.c.) correction cards "
-        "from a table of section coefficients for one flight condition (Mach + incidence), "
+        "from a table of section coefficients for one flight condition (Mach + α/β), "
         "then add them to the model so the **Aero** tab runs the corrected solve."
     )
 
@@ -128,12 +189,19 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
 
     up = st.file_uploader("Upload section-data CSV", type=["csv"], key="aero_corr_upload")
     if up is not None:
-        try:
-            df = sd.validate_section_data(pd.read_csv(up))
-            st.session_state.aero_corr_df = df
-            st.session_state.aero_corr_result = None   # invalidate stale build
-        except Exception as exc:
-            st.error(f"Could not load section data: {exc}")
+        # st.file_uploader returns the same file on every rerun; only re-parse when the
+        # file actually changes, otherwise an unrelated rerun (e.g. changing the preview
+        # surface) would reset aero_corr_result and the preview would vanish.
+        file_id = (up.name, up.size)
+        if file_id != st.session_state.get("aero_corr_upload_id"):
+            try:
+                df = sd.validate_section_data(pd.read_csv(up))
+                st.session_state.aero_corr_df = df
+                st.session_state.aero_corr_csv_name = up.name
+                st.session_state.aero_corr_result = None   # invalidate stale build
+                st.session_state.aero_corr_upload_id = file_id
+            except Exception as exc:
+                st.error(f"Could not load section data: {exc}")
 
     df = st.session_state.get("aero_corr_df")
     if df is None:
@@ -153,30 +221,54 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
 
     # ---- 3 · Build condition -------------------------------------------------
     st.markdown("#### 3 · Build condition")
-    machs = sorted({c.mach for c in conds})
-    col1, col2 = st.columns(2)
-    mach = col1.selectbox("Mach", machs, format_func=lambda m: f"{m:g}", key="aero_corr_mach")
-    incidence = col2.number_input(
-        "Operating incidence α/β (°)", value=2.0, step=0.5, key="aero_corr_incidence"
+    st.caption(
+        "Each surface is corrected on **one** axis: an ALPHA surface uses the operating "
+        "α, a BETA surface uses the operating β (the two can differ)."
     )
+    machs = sorted({c.mach for c in conds})
+    col1, col2, col3 = st.columns(3)
+    mach = col1.selectbox("Mach", machs, format_func=lambda m: f"{m:g}", key="aero_corr_mach")
+    alpha = col2.number_input("Operating α (°)", value=2.0, step=0.5, key="aero_corr_alpha")
+    beta = col3.number_input("Operating β (°)", value=0.0, step=0.5, key="aero_corr_beta")
 
     table_caeros = sorted({c.caero for c in conds if c.mach == mach})
-    st.table([
-        {"CAERO": eid,
-         "status": (f"✓ region [{r[0]:g}, {r[1]:g}]°"
-                    if (r := sd.operating_region(df, eid, mach, incidence)) else
-                    "✗ no region covers this incidence")}
-        for eid in table_caeros
-    ])
+    status_rows, canted = [], []
+    for eid in table_caeros:
+        var = sd.surface_var(df, eid, mach)
+        if var == "ALPHA":
+            ang, axis = alpha, "α"
+        elif var == "BETA":
+            ang, axis = beta, "β"
+        else:  # MIXED or None
+            ang, axis = None, "—"
+        region = sd.operating_region(df, eid, mach, ang) if ang is not None else None
+        gam = surface_dihedral_deg(aero_model.boxes, eid)
+        if _CANTED_LO <= gam <= _CANTED_HI:
+            canted.append((eid, gam))
+        status_rows.append({
+            "CAERO": eid,
+            "var": "MIXED ⚠" if var == "MIXED" else (var or "—"),
+            "axis": axis,
+            "operating [°]": float(ang) if ang is not None else float("nan"),
+            "region [°]": (f"[{region[0]:g}, {region[1]:g}]" if region else "✗ none"),
+            "Γ [°]": gam,
+        })
+    st.dataframe(style_numeric(pd.DataFrame(status_rows)), use_container_width=True)
+    for eid, gam in canted:
+        st.warning(
+            f"CAERO {eid}: dihedral Γ≈{gam:.0f}° (canted) — a single-axis (α or β) section "
+            "correction blends both responses on this surface; interpret with care."
+        )
 
     if st.button("Build correction cards", type="primary", key="aero_corr_build"):
         try:
             ajj = build_aero_model(bulk, mach=mach).ajj
             st.session_state.aero_corr_result = sd.build_from_section_data_multi(
                 aero_model.boxes, ajj, df,
-                mach=mach, incidence_deg=incidence,
+                mach=mach, alpha_deg=alpha, beta_deg=beta,
                 sid_w2gj_base=_W2GJ_BASE, sid_aecorr_base=_AECORR_BASE,
             )
+            st.session_state.aero_corr_cond = (float(mach), float(alpha), float(beta))
         except Exception as exc:
             st.session_state.aero_corr_result = None
             st.error(f"Build failed: {exc}")
@@ -208,17 +300,17 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
     sel = st.selectbox("Preview surface", built_eids, key="aero_corr_preview")
     st.plotly_chart(
         build_section_correction_figure(aero_model.boxes, df, res, sel),
-        use_container_width=True,
+        use_container_width=True, key="aero_corr_preview_fig",
     )
     diag = res.correction.per_surface[sel]
     st.caption("Achieved per-strip targets (force/q and moment/q per rad; offsets at α=0):")
-    st.dataframe(pd.DataFrame({
+    st.dataframe(style_numeric(pd.DataFrame({
         "moment_ref_x": diag.moment_ref,
         "f_slope": diag.achieved_f_slope,
         "m_slope": diag.achieved_m_slope,
         "f0": diag.achieved_f0,
         "m0": diag.achieved_m0,
-    }), use_container_width=True)
+    })), use_container_width=True)
 
     # ---- 5 · Apply / export --------------------------------------------------
     st.markdown("#### 5 · Apply / export")
@@ -237,3 +329,33 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
         mime="text/plain",
         key="aero_corr_download",
     )
+
+    # ---- Full corrected BDF (loaded model + correction cards) ----------------
+    st.markdown("##### Full corrected BDF")
+    st.caption(
+        "Writes a self-contained model = the loaded BDF + these correction cards, with a "
+        "provenance header. Build one per Mach (the filename encodes the condition)."
+    )
+    mach_c, alpha_c, beta_c = st.session_state.get("aero_corr_cond") or (0.0, 0.0, 0.0)
+    stem = Path(st.session_state.get("_uploaded_filename") or "model.bdf").stem
+    default_name = suggest_corrected_name(stem, mach_c, alpha_c, beta_c)
+    out_name = st.text_input("Output filename", value=default_name, key="aero_corr_bdf_name")
+    src = st.session_state.get("_uploaded_source_text")
+    if src is None:
+        st.info(
+            "Full-model export needs the originally uploaded file text; only the card "
+            "snippet above is available for this session."
+        )
+    else:
+        corrected = build_corrected_bdf(
+            src, cards_to_bdf(res.correction),
+            source_csv=st.session_state.get("aero_corr_csv_name", "section_data.csv"),
+            mach=mach_c, alpha=alpha_c, beta=beta_c, eids=built_eids, out_name=out_name,
+        )
+        st.download_button(
+            "Download corrected BDF",
+            data=corrected,
+            file_name=out_name,
+            mime="text/plain",
+            key="aero_corr_bdf_download",
+        )

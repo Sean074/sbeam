@@ -255,25 +255,50 @@ def build_from_section_data(
                                   extrapolated=extrapolated)
 
 
+def surface_var(df: pd.DataFrame, caero_eid: int, mach: float, mach_tol: float = 1e-6):
+    """Return the single incidence variable ('ALPHA'/'BETA') for a surface at *mach*.
+
+    Returns ``None`` if the surface has no rows at this Mach, or the string
+    ``"MIXED"`` if it carries more than one ``var`` (one axis per surface is
+    required — the caller skips such a surface).
+    """
+    data = validate_section_data(df)
+    sel = data[(data["caero"] == caero_eid) & (np.abs(data["mach"] - mach) <= mach_tol)]
+    vs = sorted(set(sel["var"]))
+    if not vs:
+        return None
+    if len(vs) > 1:
+        return "MIXED"
+    return vs[0]
+
+
 def build_from_section_data_multi(
     boxes: list,
     ajj: np.ndarray,
     df: pd.DataFrame,
     *,
     mach: float,
-    incidence_deg: float,
+    incidence_deg: float = None,
+    alpha_deg: float = None,
+    beta_deg: float = None,
     sid_w2gj_base: int,
     sid_aecorr_base: int,
     caeros=None,
     mach_tol: float = 1e-6,
 ) -> MultiSectionDataBuildResult:
-    """Multi-surface build at one flight point (Mach + operating incidence).
+    """Multi-surface build at one flight point (Mach + operating α and β).
 
-    For every CAERO1 present in the table at *mach* (or the subset *caeros*), the region
-    whose range contains *incidence_deg* is selected (v1: one region per surface), its
-    block is interpolated onto that surface's strips and converted, and a single **global**
-    correction is built (one W2GJ + WT2 card pair per surface). Surfaces with no region
-    containing *incidence_deg* are skipped (reported in ``.skipped``).
+    For every CAERO1 present in the table at *mach* (or the subset *caeros*), the surface's
+    incidence variable (``var`` = ALPHA or BETA) selects which operating angle applies —
+    ``alpha_deg`` for an ALPHA surface, ``beta_deg`` for a BETA surface (each falls back to
+    ``incidence_deg`` when its own value is not given, preserving the single-axis call).
+    The region whose range contains that angle is selected (v1: one region per surface),
+    its block is interpolated onto the surface's strips and converted, and a single
+    **global** correction is built (one W2GJ + WT2 card pair per surface).
+
+    Surfaces are skipped (reported in ``.skipped``) when: they carry more than one ``var``
+    (one axis per surface required); the relevant operating angle was not supplied; or no
+    region covers that angle.
 
     Args:
         boxes: whole-model AeroBox list (full AIC).
@@ -286,9 +311,25 @@ def build_from_section_data_multi(
 
     targets, conditions, extrap, skipped = [], {}, {}, []
     for eid in want:
-        region = operating_region(data, eid, mach, incidence_deg, mach_tol)
+        var = surface_var(data, eid, mach, mach_tol)
+        if var is None:
+            skipped.append((eid, "no rows at this Mach"))
+            continue
+        if var == "MIXED":
+            skipped.append((eid, "surface has both ALPHA and BETA rows (one axis per surface)"))
+            continue
+        # Pick the operating angle for this surface's axis; fall back to incidence_deg.
+        angle = (alpha_deg if var == "ALPHA" else beta_deg)
+        if angle is None:
+            angle = incidence_deg
+        if angle is None:
+            axis = "α" if var == "ALPHA" else "β"
+            skipped.append((eid, f"no operating {axis} supplied for this {var} surface"))
+            continue
+        region = operating_region(data, eid, mach, angle, mach_tol)
         if region is None:
-            skipped.append((eid, f"no region contains α/β={incidence_deg}° at Mach {mach}"))
+            axis = "α" if var == "ALPHA" else "β"
+            skipped.append((eid, f"no region contains {axis}={angle}° at Mach {mach}"))
             continue
         sel = _select_block(data, eid, mach, region, mach_tol)
         if sel.empty:

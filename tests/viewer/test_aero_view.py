@@ -161,6 +161,34 @@ def test_build_span_loading_figure_multi_surface():
     assert len(fig.data) == 2 * n_surf
 
 
+def test_build_span_loading_figure_modes(aero_bulk):
+    """uncorrected/diff modes draw one curve pair per surface (no dashed overlay)."""
+    aero_model = build_aero_model(aero_bulk)
+    res = solve_rigid_cl(aero_model.boxes, np.radians(3.0))
+    cp = res["cp"]
+    unc = cp * 0.9
+    # uncorrected: single pair (no overlay); diff: single pair of difference curves.
+    assert len(build_span_loading_figure(aero_model.boxes, cp, cp_unc=unc,
+                                         mode="uncorrected").data) == 2
+    fig_diff = build_span_loading_figure(aero_model.boxes, cp, cp_unc=unc, mode="diff")
+    assert len(fig_diff.data) == 2
+    assert "Δcn" in fig_diff.layout.annotations[0].text
+    # diff with no baseline falls back to corrected (no crash, single pair here).
+    assert isinstance(build_span_loading_figure(aero_model.boxes, cp, mode="diff"), go.Figure)
+
+
+def test_build_aero_box_figure_cp_diff_diverging(aero_bulk):
+    """Δcp view: centred diverging colour scale and ΔCp colour-bar title, no crash."""
+    aero_model = build_aero_model(aero_bulk)
+    res = solve_rigid_cl(aero_model.boxes, np.radians(3.0))
+    dcp = res["cp"] - res["cp"] * 0.9
+    fig = build_aero_box_figure(aero_bulk, aero_model, cp=dcp, strip=False,
+                                cp_cmid=0.0, cp_title="ΔCp")
+    mesh = next(t for t in fig.data if isinstance(t, go.Mesh3d))
+    assert mesh.cmid == 0.0
+    assert mesh.colorbar.title.text == "ΔCp"
+
+
 def _sbeam_app():
     from sbeam.viewer.app import main
     main()

@@ -24,6 +24,7 @@ from sbeam.viewer.aero_view import (
     build_aero_box_figure, build_span_loading_figure, rigid_derivative_table,
 )
 from sbeam.viewer.aero_correction_view import render_aero_correction_tab
+from sbeam.viewer.format_utils import fmt, fmt_mass, style_numeric
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.vlm import solve_rigid_cl
 
@@ -46,6 +47,9 @@ def _init_session_state() -> None:
         "aero_corr_df": None,
         "aero_corr_result": None,
         "aero_corr_sids": set(),
+        "aero_corr_upload_id": None,
+        "aero_corr_csv_name": None,
+        "aero_corr_cond": None,
         "selected_gid": None,
         "selected_eid": None,
         "cc_subcases": None,
@@ -54,6 +58,7 @@ def _init_session_state() -> None:
         "_parse_error": None,
         "_uploaded_file_id": None,
         "_uploaded_filename": None,
+        "_uploaded_source_text": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -95,6 +100,7 @@ def _handle_upload(uploaded) -> None:
         st.session_state.case_control = cc
         st.session_state._loaded_from_file_cc = cc
         st.session_state._uploaded_filename = uploaded.name
+        st.session_state._uploaded_source_text = content
         st.session_state.cc_subcases = None   # reset subcase editor
         st.session_state.sol101_result = None
         st.session_state.sol103_result = None
@@ -109,6 +115,9 @@ def _handle_upload(uploaded) -> None:
         st.session_state.aero_corr_df = None
         st.session_state.aero_corr_result = None
         st.session_state.aero_corr_sids = set()
+        st.session_state.aero_corr_upload_id = None
+        st.session_state.aero_corr_csv_name = None
+        st.session_state.aero_corr_cond = None
         st.session_state.selected_gid = None
         st.session_state.selected_eid = None
         st.session_state.selected_subcase_id = cc.subcases[0].subcase_id if cc and cc.subcases else None
@@ -167,11 +176,11 @@ def _show_warnings() -> None:
 def _show_gpwg(bulk: BulkData) -> None:
     gpwg = compute_gpwg(bulk)
     st.markdown("**GPWG — Mass & CG**")
-    st.metric("Total mass", f"{gpwg.total_mass:.6g}")
+    st.metric("Total mass", fmt_mass(gpwg.total_mass))
     cols = st.columns(3)
-    cols[0].metric("CG X", f"{gpwg.cg_x:.4g}")
-    cols[1].metric("CG Y", f"{gpwg.cg_y:.4g}")
-    cols[2].metric("CG Z", f"{gpwg.cg_z:.4g}")
+    cols[0].metric("CG X", fmt(gpwg.cg_x))
+    cols[1].metric("CG Y", fmt(gpwg.cg_y))
+    cols[2].metric("CG Z", fmt(gpwg.cg_z))
 
 
 def _show_item_inspector(bulk: BulkData) -> None:
@@ -187,7 +196,7 @@ def _show_item_inspector(bulk: BulkData) -> None:
 
     if selected_gid is not None:
         g = bulk.grids[selected_gid]
-        st.write(f"**X:** {g.x:.6g}  **Y:** {g.y:.6g}  **Z:** {g.z:.6g}")
+        st.write(f"**X:** {fmt(g.x)}  **Y:** {fmt(g.y)}  **Z:** {fmt(g.z)}")
         st.write(f"**PS:** {g.ps or '—'}")
         spc_info = _grid_spc_info(bulk, selected_gid)
         st.write(f"**SPC:** {spc_info}")
@@ -211,9 +220,9 @@ def _show_item_inspector(bulk: BulkData) -> None:
         pbar = bulk.pbars.get(cbar.pid)
         mat1 = bulk.mat1s.get(pbar.mid) if pbar else None
         st.write(f"**PID:** {cbar.pid}  **MID:** {mat1.mid if mat1 else '—'}")
-        st.write(f"**GA:** {cbar.ga}  **GB:** {cbar.gb}  **L:** {L:.4g}")
+        st.write(f"**GA:** {cbar.ga}  **GB:** {cbar.gb}  **L:** {fmt(L)}")
         if pbar:
-            st.write(f"**A:** {pbar.A:.4g}  **I1:** {pbar.I1:.4g}  **I2:** {pbar.I2:.4g}  **J:** {pbar.J:.4g}")
+            st.write(f"**A:** {fmt(pbar.A)}  **I1:** {fmt(pbar.I1)}  **I2:** {fmt(pbar.I2)}  **J:** {fmt(pbar.J)}")
         st.write(f"**PA:** {cbar.pa or '—'}  **PB:** {cbar.pb or '—'}")
 
     if bulk.rbe3s:
@@ -267,7 +276,7 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
     with tabs[0]:
         if bulk.grids:
             rows = [{"GID": g.gid, "X": g.x, "Y": g.y, "Z": g.z, "PS": g.ps or ""} for g in bulk.grids.values()]
-            st.dataframe(pd.DataFrame(rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
         else:
             st.info("No grids.")
 
@@ -278,10 +287,10 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
             ga = bulk.grids.get(c.ga)
             gb = bulk.grids.get(c.gb)
             L = math.sqrt((gb.x - ga.x) ** 2 + (gb.y - ga.y) ** 2 + (gb.z - ga.z) ** 2) if ga and gb else 0.0
-            cbar_rows.append({"EID": c.eid, "PID": c.pid, "GA": c.ga, "GB": c.gb, "L": f"{L:.4g}", "PA": c.pa or "", "PB": c.pb or ""})
+            cbar_rows.append({"EID": c.eid, "PID": c.pid, "GA": c.ga, "GB": c.gb, "L": L, "PA": c.pa or "", "PB": c.pb or ""})
         if cbar_rows:
             st.markdown("**CBAR elements**")
-            st.dataframe(pd.DataFrame(cbar_rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(cbar_rows)), width="stretch")
         else:
             st.info("No CBAR elements.")
         if bulk.rbe3s:
@@ -311,12 +320,13 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
                 {"EID": c.eid, "GID": c.gid, "Mass": c.m, "X1": c.x1, "X2": c.x2, "X3": c.x3}
                 for c in bulk.conm2s.values()
             ]
-            st.dataframe(pd.DataFrame(conm2_rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(conm2_rows), mass_cols=["Mass"]),
+                         width="stretch")
 
     with tabs[2]:
         if bulk.pbars:
             rows = [{"PID": p.pid, "MID": p.mid, "A": p.A, "I1": p.I1, "I2": p.I2, "J": p.J, "NSM": p.nsm} for p in bulk.pbars.values()]
-            st.dataframe(pd.DataFrame(rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
         else:
             st.info("No PBAR properties.")
         if bulk.pbushs:
@@ -325,12 +335,12 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
                 {"PID": p.pid, "K1": p.k1, "K2": p.k2, "K3": p.k3, "K4": p.k4, "K5": p.k5, "K6": p.k6}
                 for p in bulk.pbushs.values()
             ]
-            st.dataframe(pd.DataFrame(pbush_rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(pbush_rows)), width="stretch")
 
     with tabs[3]:
         if bulk.mat1s:
             rows = [{"MID": m.mid, "E": m.E, "G": m.G, "nu": m.nu, "rho": m.rho} for m in bulk.mat1s.values()]
-            st.dataframe(pd.DataFrame(rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
         else:
             st.info("No MAT1 materials.")
 
@@ -343,7 +353,7 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
             for m in moments:
                 rows.append({"Type": "MOMENT", "SID": sid, "GID": m.gid, "Scale": m.m, "N1": m.n1, "N2": m.n2, "N3": m.n3})
         if rows:
-            st.dataframe(pd.DataFrame(rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
         else:
             st.info("No loads.")
 
@@ -664,13 +674,22 @@ def _render_aero_tab(bulk: BulkData) -> None:
         show_normals = st.checkbox(
             "Show surface normals", value=False, key="aero_show_normals"
         )
+        # Cp view toggle — only meaningful when an uncorrected baseline exists.
+        cp_view = "Corrected"
+        if aero_result is not None and aero_result_unc is not None:
+            cp_view = st.radio(
+                "Cp view", ["Corrected", "Uncorrected", "Δ (corr − uncorr)"],
+                key="aero_cp_view",
+                help="Switch the 3D box pressure and the span-load curves between the "
+                     "corrected solve, the uncorrected baseline, and their difference.",
+            )
         if aero_result is not None:
-            st.metric("CL (wind)", f"{aero_result.get('CL_wind', aero_result['CL']):.4f}")
+            st.metric("CL (wind)", fmt(aero_result.get('CL_wind', aero_result['CL'])))
             st.metric("CD (induced)",
-                      f"{aero_result.get('CD_wind', aero_result.get('CDi', 0.0)):.4f}")
-            st.metric("CZ (body)", f"{aero_result.get('CZ', aero_result['CL']):.4f}")
-            st.metric("CY", f"{aero_result.get('CY', 0.0):.4f}")
-            st.metric("CM", f"{aero_result['CM']:.4f}")
+                      fmt(aero_result.get('CD_wind', aero_result.get('CDi', 0.0))))
+            st.metric("CZ (body)", fmt(aero_result.get('CZ', aero_result['CL'])))
+            st.metric("CY", fmt(aero_result.get('CY', 0.0)))
+            st.metric("CM", fmt(aero_result['CM']))
             st.metric("Boxes", len(aero_model.boxes))
             st.caption(
                 "CL/CD are **wind-axis** (⊥ / ∥ to U∞); CZ is the **body-axis** "
@@ -690,11 +709,21 @@ def _render_aero_tab(bulk: BulkData) -> None:
                     "reflect the corrected operator."
                 )
 
+    # Resolve the displayed cp field and span-plot mode from the Cp-view toggle.
+    cp_corr = aero_result["cp"] if aero_result is not None else None
+    cp_unc = aero_result_unc["cp"] if aero_result_unc is not None else None
+    disp_cp, cp_cmid, cp_title, span_mode = cp_corr, None, "Cp", "corrected"
+    if cp_unc is not None and aero_result is not None:
+        if cp_view == "Uncorrected":
+            disp_cp, span_mode = cp_unc, "uncorrected"
+        elif cp_view.startswith("Δ"):
+            disp_cp, cp_cmid, cp_title, span_mode = cp_corr - cp_unc, 0.0, "ΔCp", "diff"
+
     with col_fig:
         if aero_model is not None:
-            cp = aero_result["cp"] if aero_result is not None else None
             fig = build_aero_box_figure(
-                bulk, aero_model, cp=cp, show_normals=show_normals, strip=False,
+                bulk, aero_model, cp=disp_cp, show_normals=show_normals, strip=False,
+                cp_cmid=cp_cmid, cp_title=cp_title,
             )
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -703,16 +732,20 @@ def _render_aero_tab(bulk: BulkData) -> None:
     # ---- Full-width results below the 3D view -------------------------------
     if aero_result is not None and aero_model is not None:
         st.markdown("#### Spanwise loading")
-        cp_unc = aero_result_unc["cp"] if aero_result_unc is not None else None
         if cp_unc is not None:
-            st.caption(
-                "Solid = corrected · dashed = uncorrected VLM "
-                "(raw AIC + Prandtl–Glauert)."
-            )
+            if span_mode == "diff":
+                st.caption("Δ = corrected − uncorrected (per strip).")
+            elif span_mode == "uncorrected":
+                st.caption("Uncorrected VLM (raw AIC + Prandtl–Glauert).")
+            else:
+                st.caption(
+                    "Solid = corrected · dashed = uncorrected VLM "
+                    "(raw AIC + Prandtl–Glauert)."
+                )
         st.plotly_chart(
             build_span_loading_figure(
-                aero_model.boxes, aero_result["cp"], cp_unc=cp_unc,
-                aeros=aero_model.aeros,
+                aero_model.boxes, cp_corr, cp_unc=cp_unc,
+                aeros=aero_model.aeros, mode=span_mode,
             ),
             use_container_width=True,
         )
@@ -731,9 +764,7 @@ def _render_aero_tab(bulk: BulkData) -> None:
                     "Per radian / per unit label, rigid (u_a = 0). Rows: "
                     "α, β, roll p, pitch q, yaw r + AESURF controls."
                 )
-                st.dataframe(
-                    deriv_df.style.format("{:+.4f}"), use_container_width=True
-                )
+                st.dataframe(style_numeric(deriv_df), use_container_width=True)
 
         # Per-surface coefficient breakdown (multi-surface decks).  Per-surface
         # contributions are body-axis (CZ vertical / CY side), so they sum to the
@@ -745,11 +776,11 @@ def _render_aero_tab(bulk: BulkData) -> None:
             for eid, info in sorted(per_surf.items()):
                 if info["surface_type"] == "lift":
                     rows.append({"EID": eid, "Type": "lift",
-                                 "CZ": f"{info['CL']:.4f}", "CY": "—",
-                                 "CM": f"{info['CM']:.4f}"})
+                                 "CZ": fmt(info['CL']), "CY": "—",
+                                 "CM": fmt(info['CM'])})
                 else:
                     rows.append({"EID": eid, "Type": "sideforce",
-                                 "CZ": "—", "CY": f"{info['CY']:.4f}",
+                                 "CZ": "—", "CY": fmt(info['CY']),
                                  "CM": "—"})
             st.table(rows)
 

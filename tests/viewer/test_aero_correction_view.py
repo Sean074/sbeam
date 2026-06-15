@@ -24,7 +24,13 @@ from sbeam.model.aero import Aeros, Caero1, Paero1
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.vlm import solve_rigid_cl
 from sbeam.aero import section_data as sd
-from sbeam.viewer.aero_correction_view import _template_csv, _W2GJ_BASE, _AECORR_BASE
+from sbeam.aero.section_correction import cards_to_bdf
+from sbeam.parser.bdf_reader import parse_bulk_file
+from sbeam.viewer.aero_view import surface_dihedral_deg
+from sbeam.viewer.aero_correction_view import (
+    _template_csv, _W2GJ_BASE, _AECORR_BASE,
+    build_corrected_bdf, suggest_corrected_name,
+)
 
 
 @pytest.fixture
@@ -40,6 +46,35 @@ def aero_bulk() -> BulkData:
     )
     bulk.paero1s[1] = Paero1(pid=1)
     return bulk
+
+
+@pytest.fixture
+def multi_bulk() -> BulkData:
+    """Horizontal wing (CAERO 100, α) + a 45°-canted V-tail (CAERO 300, β)."""
+    bulk = BulkData()
+    bulk.aeros = Aeros(acsid=0, rcsid=0, cref=1.0, bref=4.0, sref=4.0, symxz=0, symxy=0)
+    bulk.caero1s[100] = Caero1(
+        eid=100, pid=1, cp=0,
+        nspan=4, nchord=6, lspan=0, lchord=0, igid=1,
+        p1=(0.0, 0.0, 0.0), x12=1.0,
+        p4=(0.0, 4.0, 0.0), x43=1.0,
+    )
+    s = 2.0 ** 0.5 / 2.0 * 2.0  # span 2 at 45° → Δy = Δz = √2
+    bulk.caero1s[300] = Caero1(
+        eid=300, pid=1, cp=0,
+        nspan=3, nchord=4, lspan=0, lchord=0, igid=2,
+        p1=(3.0, 0.0, 0.0), x12=0.6,
+        p4=(3.0, s, s), x43=0.6,
+    )
+    bulk.paero1s[1] = Paero1(pid=1)
+    return bulk
+
+
+def _multi_df(boxes) -> pd.DataFrame:
+    """Section table: wing as ALPHA (region covers α=2), tail as BETA (covers β=-4 only)."""
+    df_w = sd.template_dataframe(boxes, 100, mach=0.0, var="ALPHA", a_lo=-2.0, a_hi=8.0)
+    df_t = sd.template_dataframe(boxes, 300, mach=0.0, var="BETA", a_lo=-8.0, a_hi=-2.0)
+    return sd.validate_section_data(pd.concat([df_w, df_t], ignore_index=True))
 
 
 def _half_slope_df(aero_model) -> pd.DataFrame:
@@ -166,3 +201,137 @@ def test_apptest_apply_injects_without_stacking(aero_bulk):
     bulk_after = at.session_state["bulk_data"]
     assert len(bulk_after.w2gjs) == 1
     assert len(bulk_after.aecorrs) == 1
+
+
+# ---- separate α / β operating points ----------------------------------------
+
+def test_surface_var_and_mixed(multi_bulk):
+    """surface_var reports the per-surface axis; a mixed surface returns 'MIXED'."""
+    aero_model = build_aero_model(multi_bulk)
+    df = _multi_df(aero_model.boxes)
+    assert sd.surface_var(df, 100, 0.0) == "ALPHA"
+    assert sd.surface_var(df, 300, 0.0) == "BETA"
+    assert sd.surface_var(df, 999, 0.0) is None
+
+    n300 = int((df["caero"] == 300).sum())
+    mixed = df.copy()
+    mixed.loc[mixed["caero"] == 300, "var"] = (["ALPHA", "BETA"] * n300)[:n300]
+    assert sd.surface_var(mixed, 300, 0.0) == "MIXED"
+
+
+def test_separate_alpha_beta_selects_region_per_var(multi_bulk):
+    """α and β pick each surface's own region; a single incidence skips the β surface."""
+    aero_model = build_aero_model(multi_bulk)
+    df = _multi_df(aero_model.boxes)
+
+    # α=2 (in the wing's region) and β=−4 (in the tail's region) → both surfaces build.
+    both = sd.build_from_section_data_multi(
+        aero_model.boxes, aero_model.ajj, df,
+        mach=0.0, alpha_deg=2.0, beta_deg=-4.0,
+        sid_w2gj_base=_W2GJ_BASE, sid_aecorr_base=_AECORR_BASE,
+    )
+    assert set(both.correction.cards) == {100, 300}
+    assert both.conditions[100].var == "ALPHA"
+    assert both.conditions[300].var == "BETA"
+
+    # Single-axis incidence=2: the wing builds; the tail's β region [-8,-2] excludes 2.
+    one = sd.build_from_section_data_multi(
+        aero_model.boxes, aero_model.ajj, df,
+        mach=0.0, incidence_deg=2.0,
+        sid_w2gj_base=_W2GJ_BASE, sid_aecorr_base=_AECORR_BASE,
+    )
+    assert set(one.correction.cards) == {100}
+    assert any(eid == 300 for eid, _ in one.skipped)
+
+
+def test_mixed_var_surface_is_skipped(multi_bulk):
+    aero_model = build_aero_model(multi_bulk)
+    df = _multi_df(aero_model.boxes)
+    df.loc[df["caero"] == 300, "var"] = (["ALPHA", "BETA"]
+                                         * len(df[df["caero"] == 300]))[: len(df[df["caero"] == 300])]
+    res = sd.build_from_section_data_multi(
+        aero_model.boxes, aero_model.ajj, df,
+        mach=0.0, alpha_deg=2.0, beta_deg=-4.0,
+        sid_w2gj_base=_W2GJ_BASE, sid_aecorr_base=_AECORR_BASE,
+    )
+    assert set(res.correction.cards) == {100}
+    assert any(eid == 300 and "one axis" in why for eid, why in res.skipped)
+
+
+# ---- dihedral helper + canted warning ---------------------------------------
+
+def test_surface_dihedral_deg(multi_bulk):
+    aero_model = build_aero_model(multi_bulk)
+    assert surface_dihedral_deg(aero_model.boxes, 100) == pytest.approx(0.0, abs=1.0)
+    assert surface_dihedral_deg(aero_model.boxes, 300) == pytest.approx(45.0, abs=2.0)
+
+
+def test_apptest_canted_surface_warns(multi_bulk):
+    at = AppTest.from_function(_sbeam_app, default_timeout=60)
+    at.run()
+    _inject_bulk(at, multi_bulk)
+    aero_model = build_aero_model(multi_bulk)
+    at.session_state["aero_corr_df"] = _multi_df(aero_model.boxes)
+    at.run()
+    assert not at.exception, [str(e) for e in at.exception]
+    assert any("canted" in w.value for w in at.warning)
+
+
+# ---- #2 regression: preview persists across surface change ------------------
+
+def test_apptest_preview_persists_on_surface_change(multi_bulk):
+    at = AppTest.from_function(_sbeam_app, default_timeout=60)
+    at.run()
+    _inject_bulk(at, multi_bulk)
+    aero_model = build_aero_model(multi_bulk)
+    df = _multi_df(aero_model.boxes)
+    res = sd.build_from_section_data_multi(
+        aero_model.boxes, aero_model.ajj, df,
+        mach=0.0, alpha_deg=2.0, beta_deg=-4.0,
+        sid_w2gj_base=_W2GJ_BASE, sid_aecorr_base=_AECORR_BASE,
+    )
+    at.session_state["aero_corr_df"] = df
+    at.session_state["aero_corr_result"] = res
+    at.session_state["aero_corr_cond"] = (0.0, 2.0, -4.0)
+    at.run()
+    assert not at.exception, [str(e) for e in at.exception]
+    # Switch the preview surface — the build result must survive the rerun.
+    sel = next(s for s in at.selectbox if s.key == "aero_corr_preview")
+    sel.set_value(300).run()
+    assert not at.exception, [str(e) for e in at.exception]
+    assert at.session_state["aero_corr_result"] is not None
+    assert set(at.session_state["aero_corr_result"].correction.cards) == {100, 300}
+
+
+# ---- full corrected BDF export ----------------------------------------------
+
+def test_suggest_corrected_name():
+    assert suggest_corrected_name("wing", 0.30, 2.0, 0.0) == "wing_M0p30_A2p0_B0p0.bdf"
+    assert suggest_corrected_name("w", 0.0, -2.0, 1.5) == "w_M0p00_Am2p0_B1p5.bdf"
+
+
+def test_full_corrected_bdf_roundtrips(aero_bulk, tmp_path):
+    """The exported corrected BDF carries provenance and re-parses with the cards."""
+    aero_model = build_aero_model(aero_bulk)
+    df = _half_slope_df(aero_model)
+    res = sd.build_from_section_data_multi(
+        aero_model.boxes, aero_model.ajj, df,
+        mach=0.0, alpha_deg=2.0, beta_deg=0.0,
+        sid_w2gj_base=_W2GJ_BASE, sid_aecorr_base=_AECORR_BASE,
+    )
+    source = "BEGIN BULK\nGRID,1,,0.,0.,0.\nENDDATA\n"
+    text = build_corrected_bdf(
+        source, cards_to_bdf(res.correction),
+        source_csv="cfd_wing_M030.csv", mach=0.0, alpha=2.0, beta=0.0,
+        eids=[100], out_name="wing_M0p00_A2p0_B0p0.bdf", date="2026-06-14",
+    )
+    # Provenance header + condition recorded.
+    assert "cfd_wing_M030.csv" in text
+    assert "2026-06-14" in text
+    assert "Mach 0" in text
+    # Re-parses, and the correction cards are recovered.
+    out = tmp_path / "corrected.bdf"
+    out.write_text(text, encoding="utf-8")
+    bulk2 = parse_bulk_file(str(out))
+    assert _W2GJ_BASE in bulk2.w2gjs
+    assert _AECORR_BASE in bulk2.aecorrs

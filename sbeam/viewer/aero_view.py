@@ -21,6 +21,8 @@ def build_aero_box_figure(
     box_disp: Optional[np.ndarray] = None,
     show_normals: bool = False,
     strip: bool = True,
+    cp_cmid: Optional[float] = None,
+    cp_title: str = "Cp",
 ) -> go.Figure:
     """3D box mesh + optional cp colour map + section-load strip chart.
 
@@ -56,7 +58,8 @@ def build_aero_box_figure(
         _add_normal_vectors(fig, aero_model.boxes, box_disp=box_disp)
     cp_boxes_disp = box_disp if box_disp is not None else None
     if cp is not None:
-        _add_cp_contour(fig, aero_model.boxes, cp, box_disp=cp_boxes_disp)
+        _add_cp_contour(fig, aero_model.boxes, cp, box_disp=cp_boxes_disp,
+                        cmid=cp_cmid, title=cp_title)
     if strip and cl_section is not None:
         _add_section_load_strip(fig, aero_model.boxes, cl_section)
     if strip and cp is not None and cp_corr is not None:
@@ -165,8 +168,14 @@ def _add_cp_contour(
     boxes: list,
     cp: np.ndarray,
     box_disp: Optional[np.ndarray] = None,
+    cmid: Optional[float] = None,
+    title: str = "Cp",
 ) -> None:
-    """Fill each box with its cp value using a triangulated Mesh3d trace."""
+    """Fill each box with its cp value using a triangulated Mesh3d trace.
+
+    ``cmid`` centres the colour scale (pass ``0.0`` for a Δcp difference view so the
+    diverging RdBu scale is symmetric about zero); ``title`` labels the colour bar.
+    """
     vx: list = []
     vy: list = []
     vz: list = []
@@ -188,19 +197,19 @@ def _add_cp_contour(
         cp_val = float(cp[b_idx])
         for _ in range(4):
             intensity.append(cp_val)
-    fig.add_trace(
-        go.Mesh3d(
-            x=vx, y=vy, z=vz,
-            i=ii, j=jj, k=kk,
-            intensity=intensity,
-            colorscale="RdBu_r",
-            colorbar=dict(title="Cp", x=1.05, len=0.6, y=0.7),
-            opacity=0.85,
-            name="Cp",
-            showscale=True,
-        ),
-        row=1, col=1,
+    mesh_kwargs = dict(
+        x=vx, y=vy, z=vz,
+        i=ii, j=jj, k=kk,
+        intensity=intensity,
+        colorscale="RdBu_r",
+        colorbar=dict(title=title, x=1.05, len=0.6, y=0.7),
+        opacity=0.85,
+        name=title,
+        showscale=True,
     )
+    if cmid is not None:
+        mesh_kwargs["cmid"] = cmid
+    fig.add_trace(go.Mesh3d(**mesh_kwargs), row=1, col=1)
 
 
 def _add_section_load_strip(fig: go.Figure, boxes: list, cl_section: dict) -> None:
@@ -334,19 +343,22 @@ def build_section_correction_figure(boxes, df, data_result, caero_eid):
                         f"region [{cond.a_lo:g}, {cond.a_hi:g}]°)",
                         "Section zero-incidence moment cm0"),
     )
+    hov = "η=%{x:.4g}<br>%{y:.5~g}<extra></extra>"
     fig.add_trace(go.Scatter(x=eta_d, y=sel["cn_a"].to_numpy(), mode="markers",
                              name="input", marker=dict(size=10, symbol="x",
-                             color="#d62728")), row=1, col=1)
+                             color="#d62728"), hovertemplate=hov), row=1, col=1)
     fig.add_trace(go.Scatter(x=eta_s, y=ach_cn, mode="lines+markers", name="achieved",
-                             line=dict(color="#1f77b4")), row=1, col=1)
+                             line=dict(color="#1f77b4"), hovertemplate=hov), row=1, col=1)
     fig.add_trace(go.Scatter(x=eta_d, y=sel["cm0"].to_numpy(), mode="markers",
                              name="input cm0", marker=dict(size=10, symbol="x",
-                             color="#d62728"), showlegend=False), row=2, col=1)
+                             color="#d62728"), showlegend=False, hovertemplate=hov),
+                  row=2, col=1)
     fig.add_trace(go.Scatter(x=eta_s, y=ach_cm0, mode="lines+markers", name="achieved cm0",
-                             line=dict(color="#1f77b4"), showlegend=False), row=2, col=1)
+                             line=dict(color="#1f77b4"), showlegend=False,
+                             hovertemplate=hov), row=2, col=1)
     fig.update_xaxes(title_text="span fraction η", row=2, col=1)
-    fig.update_yaxes(title_text="cn_α  [1/deg]", row=1, col=1)
-    fig.update_yaxes(title_text="cm0", row=2, col=1)
+    fig.update_yaxes(title_text="cn_α  [1/deg]", tickformat=".5~g", row=1, col=1)
+    fig.update_yaxes(title_text="cm0", tickformat=".5~g", row=2, col=1)
     fig.update_layout(height=520, legend=dict(orientation="h", y=1.12),
                       margin=dict(l=60, r=20, t=60, b=40))
     return fig
@@ -416,6 +428,30 @@ def rigid_derivative_table(aero_model, bulk, naming: str = "aero"):
     return df
 
 
+def surface_dihedral_deg(boxes: list, caero_eid: int) -> float:
+    """Length-weighted mean dihedral magnitude |Γ| (deg) of a CAERO1 surface.
+
+    0° = horizontal (responds to α), 90° = vertical (responds to β); intermediate
+    values are a canted surface that responds to a blend of α and β — the section
+    correction (one axis per surface) is approximate there.  Uses each box's span
+    edge ``bound_a → bound_b`` and takes ``atan2(|Δz|, |Δy|)`` so left/right sides
+    do not cancel.
+    """
+    import math
+    num = den = 0.0
+    for b in boxes:
+        if b.caero_eid != caero_eid:
+            continue
+        dy = float(b.bound_b[1] - b.bound_a[1])
+        dz = float(b.bound_b[2] - b.bound_a[2])
+        w = math.hypot(dy, dz)
+        if w <= 1e-14:
+            continue
+        num += math.degrees(math.atan2(abs(dz), abs(dy))) * w
+        den += w
+    return num / den if den > 0 else 0.0
+
+
 def _strip_cn_cm(boxes: list, idx: list, cp: np.ndarray) -> tuple:
     """Section normal-force and quarter-chord moment coefficient for one strip.
 
@@ -446,22 +482,33 @@ def _strip_cn_cm(boxes: list, idx: list, cp: np.ndarray) -> tuple:
     return cn, cm
 
 
-def build_span_loading_figure(boxes, cp_corr, cp_unc=None, aeros=None) -> go.Figure:
+def build_span_loading_figure(boxes, cp_corr, cp_unc=None, aeros=None,
+                              mode: str = "corrected") -> go.Figure:
     """Per-surface spanwise normal-force and pitching-moment line plots.
 
     Groups boxes by (caero_eid, i_span) so each CAERO1 surface gets its own
     spanwise station list — fixing the single-surface / global-i_span merge of the
     old bar strip.  Two stacked subplots (section cn(η), then section cm(η) about the
-    local quarter-chord); one line per surface.  ``cp_corr`` draws solid lines; when
-    ``cp_unc`` is given the uncorrected baseline is overlaid dashed in the same
-    colour, so corrections are legible strip-by-strip.  ``aeros`` is accepted for
-    signature symmetry; the section coefficients are chord-local and need no global
-    reference.
+    local quarter-chord); one line per surface.
+
+    ``mode`` selects what is drawn (mirrors the Aero-tab Cp-view toggle):
+
+    * ``"corrected"`` (default) — corrected solid; when ``cp_unc`` is given the
+      uncorrected baseline is overlaid dashed in the same colour.
+    * ``"uncorrected"`` — the uncorrected baseline solid (falls back to ``cp_corr``
+      when no baseline is supplied).
+    * ``"diff"`` — the strip-by-strip difference (corrected − uncorrected); requires
+      ``cp_unc`` (falls back to ``"corrected"`` when absent).
+
+    ``aeros`` is accepted for signature symmetry; the section coefficients are
+    chord-local and need no global reference.
     """
     from collections import defaultdict
 
     cp_corr = np.asarray(cp_corr, dtype=float)
     cp_unc = None if cp_unc is None else np.asarray(cp_unc, dtype=float)
+    if mode in ("uncorrected", "diff") and cp_unc is None:
+        mode = "corrected"
 
     surf_strips: dict = defaultdict(lambda: defaultdict(list))
     for k, b in enumerate(boxes):
@@ -470,12 +517,23 @@ def build_span_loading_figure(boxes, cp_corr, cp_unc=None, aeros=None) -> go.Fig
     palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
                "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
 
+    cn_label = "Δcn" if mode == "diff" else "cn"
+    cm_label = "Δcm" if mode == "diff" else "cm"
     fig = make_subplots(
         rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.10,
-        subplot_titles=("Section normal-force coefficient  cn(η)",
-                        "Section pitching-moment coefficient  cm(η)  "
+        subplot_titles=(f"Section normal-force coefficient  {cn_label}(η)",
+                        f"Section pitching-moment coefficient  {cm_label}(η)  "
                         "(about local ¼-chord, nose-up +)"),
     )
+    hov = "η=%{x:.4g}<br>%{y:.5~g}<extra></extra>"
+
+    def _coeffs(cp, order, strips):
+        cn, cm = [], []
+        for sp in order:
+            a, b = _strip_cn_cm(boxes, strips[sp], cp)
+            cn.append(a)
+            cm.append(b)
+        return cn, cm
 
     for s_i, eid in enumerate(sorted(surf_strips)):
         color = palette[s_i % len(palette)]
@@ -483,35 +541,39 @@ def build_span_loading_figure(boxes, cp_corr, cp_unc=None, aeros=None) -> go.Fig
         order = sorted(strips, key=lambda sp: boxes[strips[sp][0]].span_frac)
         eta = [float(boxes[strips[sp][0]].span_frac) for sp in order]
 
-        cn_c, cm_c = [], []
-        for sp in order:
-            cn, cm = _strip_cn_cm(boxes, strips[sp], cp_corr)
-            cn_c.append(cn)
-            cm_c.append(cm)
-        fig.add_trace(go.Scatter(x=eta, y=cn_c, mode="lines+markers",
-                                 name=f"CAERO {eid}", legendgroup=str(eid),
-                                 line=dict(color=color)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=eta, y=cm_c, mode="lines+markers",
-                                 name=f"CAERO {eid}", legendgroup=str(eid),
-                                 line=dict(color=color), showlegend=False), row=2, col=1)
+        cn_c, cm_c = _coeffs(cp_corr, order, strips)
+        cn_u, cm_u = _coeffs(cp_unc, order, strips) if cp_unc is not None else (None, None)
 
-        if cp_unc is not None:
-            cn_u, cm_u = [], []
-            for sp in order:
-                cn, cm = _strip_cn_cm(boxes, strips[sp], cp_unc)
-                cn_u.append(cn)
-                cm_u.append(cm)
+        if mode == "uncorrected":
+            cn_main, cm_main = cn_u, cm_u
+        elif mode == "diff":
+            cn_main = [c - u for c, u in zip(cn_c, cn_u)]
+            cm_main = [c - u for c, u in zip(cm_c, cm_u)]
+        else:
+            cn_main, cm_main = cn_c, cm_c
+
+        fig.add_trace(go.Scatter(x=eta, y=cn_main, mode="lines+markers",
+                                 name=f"CAERO {eid}", legendgroup=str(eid),
+                                 line=dict(color=color), hovertemplate=hov), row=1, col=1)
+        fig.add_trace(go.Scatter(x=eta, y=cm_main, mode="lines+markers",
+                                 name=f"CAERO {eid}", legendgroup=str(eid),
+                                 line=dict(color=color), showlegend=False,
+                                 hovertemplate=hov), row=2, col=1)
+
+        # In the default corrected view, overlay the uncorrected baseline dashed.
+        if mode == "corrected" and cp_unc is not None:
             fig.add_trace(go.Scatter(x=eta, y=cn_u, mode="lines",
                                      name=f"CAERO {eid} (uncorr)", legendgroup=str(eid),
-                                     line=dict(color=color, dash="dash")), row=1, col=1)
+                                     line=dict(color=color, dash="dash"),
+                                     hovertemplate=hov), row=1, col=1)
             fig.add_trace(go.Scatter(x=eta, y=cm_u, mode="lines",
                                      name=f"CAERO {eid} (uncorr)", legendgroup=str(eid),
                                      line=dict(color=color, dash="dash"),
-                                     showlegend=False), row=2, col=1)
+                                     showlegend=False, hovertemplate=hov), row=2, col=1)
 
     fig.update_xaxes(title_text="span fraction η", row=2, col=1)
-    fig.update_yaxes(title_text="cn", row=1, col=1)
-    fig.update_yaxes(title_text="cm (¼-chord)", row=2, col=1)
+    fig.update_yaxes(title_text=cn_label, tickformat=".5~g", row=1, col=1)
+    fig.update_yaxes(title_text=f"{cm_label} (¼-chord)", tickformat=".5~g", row=2, col=1)
     fig.update_layout(height=560, legend=dict(orientation="h", y=1.12),
                       margin=dict(l=60, r=20, t=60, b=40))
     return fig

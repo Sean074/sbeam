@@ -13,6 +13,32 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Aero Correction page — α/β split, cp comparison, 5-sig-fig formatting, full corrected-BDF export (A-GUI4, 2026-06-14)**
+
+- **Separate α and β operating points.** The Aero Correction build condition now takes two angles
+  (Operating α / β); each surface is corrected on the one axis given by its table `var`
+  (`section_data.surface_var`; ALPHA→α, BETA→β; `incidence_deg` kept as a single-axis fallback).
+  A surface carrying both axes (`MIXED`) is skipped. `build_from_section_data_multi` gains
+  `alpha_deg`/`beta_deg`.
+- **Canted-surface warning.** `aero_view.surface_dihedral_deg` computes each surface's |Γ|; the build
+  status table shows it and warns when `20° ≤ Γ ≤ 70°` (a single-axis section correction blends α/β).
+- **Preview no longer vanishes** when switching the Preview surface — the CSV upload is re-parsed only
+  when the file actually changes (upload-id guard), instead of resetting the build on every rerun;
+  the preview chart also carries a stable key.
+- **Aero tab Cp view toggle** — Corrected / Uncorrected / **Δ (corr − uncorr)** drives both the 3D
+  box-pressure mesh (Δ uses a zero-centred diverging scale, **ΔCp** colour bar) and the span-load
+  curves (`build_span_loading_figure(..., mode=)`; `build_aero_box_figure(..., cp_cmid=, cp_title=)`).
+- **Full corrected BDF export.** `build_corrected_bdf` splices the W2GJ/AECORR cards into the uploaded
+  model text (before `ENDDATA`) with a provenance header (source CSV, date, Mach/α/β, corrected
+  CAEROs) — a self-contained, re-parseable model. Editable filename defaults to
+  `suggest_corrected_name` (`<stem>_M0p30_A2p0_B0p0.bdf`); build one per Mach. (A separate
+  correction file + `INCLUDE` is not used: sbeam's parser honours only a single whole-bulk INCLUDE.)
+- **5-significant-figure formatting across all viewer tables/metrics** via new
+  `viewer/format_utils.py` (`fmt` — decimal down to exp −4, uppercase `E` below; `fmt_mass` — 0.1-unit
+  masses; `style_numeric` — Styler for float columns). Applied to the model-data tabs, GPWG, item
+  inspector, SOL 101/103/144 result tables and metrics, the rigid-derivative and per-surface tables,
+  and the Aero/Aero-Correction Plotly hovers/ticks (`.5~g`).
+
 **Aero — genuine wind-axis CL/CD reported alongside body-axis CZ (2026-06-14)**
 
 - `solve_rigid_cl` (`sbeam/aero/vlm.py`) now returns, in addition to the existing body-axis force
