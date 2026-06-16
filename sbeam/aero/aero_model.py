@@ -24,6 +24,7 @@ from sbeam.aero.vlm import build_ajj, prandtl_glauert_boxes
 from sbeam.aero.integration import build_skj, build_djk, build_wg
 from sbeam.aero.corrections import apply_wkk, apply_wt2, apply_wt1, _check_conditioning
 from sbeam.aero.spline import build_g_spline
+from sbeam.aero.strip import strip_box_mask, strip_box_slopes
 
 
 @dataclass
@@ -38,6 +39,69 @@ class AeroModel:
     mach:         float = 0.0                  # Mach number for Prandtl–Glauert
     g_slope:      Optional[np.ndarray] = None  # slope spline, shape (n, 6*n_g)
     g_disp:       Optional[np.ndarray] = None  # displacement spline, shape (3n, 6*n_g)
+
+
+def _assemble_vlm_operator(bulk: BulkData, op_boxes: list, mach: float):
+    """Build the raw AIC and the corrected ΔCp operator over a box subset.
+
+    Returns ``(ajj, ajj_inv_corr)`` for ``op_boxes`` — the ordinary horseshoe-vortex
+    VLM path (PG compression, WKK/WT2/WT1 correction precedence, Göthert 1/β, and the
+    Γ→ΔCp chord conversion).  Strip body panels are *excluded* by the caller, so the
+    wing/tail inverse is the inverse of the lifting-surface-only AIC (the strip boxes
+    contribute a separate diagonal block — see ``build_aero_model``).
+    """
+    n = len(op_boxes)
+    beta_pg = math.sqrt(1.0 - mach ** 2) if mach > 0.0 else 1.0
+
+    # Build raw AIC on PG-compressed geometry
+    ajj = build_ajj(prandtl_glauert_boxes(op_boxes, mach))
+
+    # Correction precedence over the boxes present here — WKK, then WT2, then WT1.
+    op_eids = sorted({b.caero_eid for b in op_boxes})
+    primary_eid = op_eids[0]
+    wkk_card  = next((c for c in bulk.wkks.values() if c.caero_eid == primary_eid), None)
+    wt2_cards = [c for c in bulk.aecorrs.values()
+                 if c.method == "WT2" and c.caero_eid in op_eids]
+    wt1_card  = next((c for c in bulk.aecorrs.values()
+                      if c.caero_eid == primary_eid and c.method == "WT1"), None)
+
+    if wkk_card is not None:
+        ajj_star = apply_wkk(ajj, wkk_card.data)
+        _check_conditioning(ajj_star)
+        ajj_inv_corr = np.linalg.solve(ajj_star, np.eye(n))
+    elif wt2_cards:
+        ajj_inv_raw = np.linalg.solve(ajj, np.eye(n))
+        cp_target = ajj_inv_raw @ (-np.ones(n))
+        for card in wt2_cards:
+            surf_idx = [k for k, b in enumerate(op_boxes) if b.caero_eid == card.caero_eid]
+            tgt = np.asarray(card.target, dtype=float)
+            if tgt.shape[0] != len(surf_idx):
+                raise ValueError(
+                    f"AECORR {card.sid} (WT2, CAERO {card.caero_eid}): target length "
+                    f"{tgt.shape[0]} != {len(surf_idx)} boxes on that surface"
+                )
+            cp_target[surf_idx] = tgt
+        ajj_inv_corr = apply_wt2(ajj, cp_target)
+    elif wt1_card is not None:
+        f_target = np.asarray(wt1_card.target, dtype=float)
+        ajj_inv_corr = apply_wt1(ajj, prandtl_glauert_boxes(op_boxes, mach), f_target)
+    else:
+        _check_conditioning(ajj)
+        ajj_inv_corr = np.linalg.solve(ajj, np.eye(n))
+
+    # Göthert 1/β scaling (boundary-condition factor from §2.8 Eq. 14)
+    if beta_pg != 1.0:
+        ajj_inv_corr /= beta_pg
+
+    # Convert ajj_inv_corr from Γ-units to ΔCp-units (K-J: Cp = 2Γ/chord).
+    _chord_degen = 1e-14
+    chord_box_arr = np.array([
+        b.area / max(math.sqrt((b.bound_b[1] - b.bound_a[1])**2
+                              + (b.bound_b[2] - b.bound_a[2])**2), _chord_degen)
+        for b in op_boxes          # physical boxes, not pg_boxes
+    ])
+    ajj_inv_corr *= (2.0 / chord_box_arr)[:, np.newaxis]
+    return ajj, ajj_inv_corr
 
 
 def build_aero_model(
@@ -72,6 +136,12 @@ def build_aero_model(
     list and a single AIC is built for the combined surface.  W2GJ (baseline normalwash)
     is already accumulated per CAERO1, and WT2 corrections are now combined per surface;
     WKK and WT1 still act on the primary CAERO1 only.
+
+    Decoupled strip body panels (CAERO1 PID → PSTRIP) bypass all of the above: they are
+    excluded from the VLM AIC inversion and contribute a diagonal block to ``ajj_inv_corr``
+    (ΔCp = -slope/β · normalwash), with zero off-diagonal coupling to or from the lifting
+    surfaces (see ``sbeam.aero.strip``).  Per-box slopes come from a STRIPK card if
+    present, else the PSTRIP ``slope0``; their Δα offset rides in the ordinary W2GJ ``wg``.
     """
     if not bulk.caero1s:
         raise ValueError("build_aero_model: no CAERO1 elements found in bulk data")
@@ -107,58 +177,37 @@ def build_aero_model(
             "VLM cannot solve the transonic/supersonic regime (needs ZONA51/"
             "piston theory). Use a subsonic Mach."
         )
-    beta_pg = math.sqrt(1.0 - mach ** 2) if mach > 0.0 else 1.0
-    pg_boxes = prandtl_glauert_boxes(boxes, mach)
 
-    # Build raw AIC on PG-compressed geometry
-    ajj = build_ajj(pg_boxes)
-
-    # Determine which correction applies — WKK takes precedence, then WT2, then WT1.
-    primary_eid = sorted(bulk.caero1s)[0]
-
-    wkk_card  = next((c for c in bulk.wkks.values()   if c.caero_eid == primary_eid), None)
-    wt2_cards = [c for c in bulk.aecorrs.values() if c.method == "WT2"]
-    wt1_card  = next((c for c in bulk.aecorrs.values() if c.caero_eid == primary_eid and c.method == "WT1"), None)
-
-    if wkk_card is not None:
-        ajj_star = apply_wkk(ajj, wkk_card.data)
-        _check_conditioning(ajj_star)
-        ajj_inv_corr = np.linalg.solve(ajj_star, np.eye(n))
-    elif wt2_cards:
-        # Multi-surface WT2: assemble one global Γ-unit target. Boxes not covered by
-        # any WT2 card default to the VLM reference circulation (correction ratio = 1).
-        ajj_inv_raw = np.linalg.solve(ajj, np.eye(n))
-        cp_target = ajj_inv_raw @ (-np.ones(n))
-        for card in wt2_cards:
-            surf_idx = [k for k, b in enumerate(boxes) if b.caero_eid == card.caero_eid]
-            tgt = np.asarray(card.target, dtype=float)
-            if tgt.shape[0] != len(surf_idx):
-                raise ValueError(
-                    f"AECORR {card.sid} (WT2, CAERO {card.caero_eid}): target length "
-                    f"{tgt.shape[0]} != {len(surf_idx)} boxes on that surface"
-                )
-            cp_target[surf_idx] = tgt
-        ajj_inv_corr = apply_wt2(ajj, cp_target)
-    elif wt1_card is not None:
-        f_target = np.asarray(wt1_card.target, dtype=float)
-        ajj_inv_corr = apply_wt1(ajj, pg_boxes, f_target)
+    # Decoupled strip body panels (PID → PSTRIP) carry NO horseshoe vortex and NO AIC
+    # coupling: they are excluded from the VLM AIC inversion and placed as a diagonal
+    # block in the ΔCp operator (sbeam.aero.strip).  The lifting-surface inverse is then
+    # the inverse of the lifting-surface-only AIC — so strip boxes change the wing/tail
+    # loads by exactly zero (no contamination by construction).
+    strip_mask = strip_box_mask(bulk, boxes)
+    for b, is_s in zip(boxes, strip_mask):
+        b.is_strip = bool(is_s)
+    if not strip_mask.any():
+        ajj, ajj_inv_corr = _assemble_vlm_operator(bulk, boxes, mach)
     else:
-        _check_conditioning(ajj)
-        ajj_inv_corr = np.linalg.solve(ajj, np.eye(n))
-
-    # Apply Göthert 1/β scaling (boundary-condition factor from §2.8 Eq. 14)
-    if beta_pg != 1.0:
-        ajj_inv_corr /= beta_pg
-
-    # Convert ajj_inv_corr from Γ-units to ΔCp-units (K-J: Cp = 2Γ/chord).
-    # build_skj assumes Cp input; every downstream consumer is now unit-consistent.
-    _chord_degen = 1e-14
-    chord_box_arr = np.array([
-        b.area / max(math.sqrt((b.bound_b[1] - b.bound_a[1])**2
-                              + (b.bound_b[2] - b.bound_a[2])**2), _chord_degen)
-        for b in boxes          # physical boxes, not pg_boxes
-    ])
-    ajj_inv_corr *= (2.0 / chord_box_arr)[:, np.newaxis]
+        vlm_idx   = np.where(~strip_mask)[0]
+        strip_idx = np.where(strip_mask)[0]
+        ajj          = np.zeros((n, n))
+        ajj_inv_corr = np.zeros((n, n))
+        if vlm_idx.size:
+            vlm_boxes = [boxes[i] for i in vlm_idx]
+            ajj_vlm, inv_vlm = _assemble_vlm_operator(bulk, vlm_boxes, mach)
+            ajj[np.ix_(vlm_idx, vlm_idx)]          = ajj_vlm
+            ajj_inv_corr[np.ix_(vlm_idx, vlm_idx)] = inv_vlm
+        # Raw `ajj` keeps an identity on the strip diagonal (not zero) so the full
+        # block-diagonal AIC stays invertible — downstream consumers that invert the
+        # whole AIC (e.g. the flying-surface section synthesiser) get the correct
+        # lifting-surface block; the strip rows are decoupled and unused there.
+        ajj[strip_idx, strip_idx] = 1.0
+        # Diagonal strip block in ΔCp-units: ΔCp = -slope/β · rhs (Göthert 1/β for
+        # consistency with the compressible VLM surfaces).  No off-diagonal terms.
+        beta_pg = math.sqrt(1.0 - mach ** 2) if mach > 0.0 else 1.0
+        slopes = strip_box_slopes(bulk, boxes)
+        ajj_inv_corr[strip_idx, strip_idx] = -slopes[strip_idx] / beta_pg
 
     # Integration matrices use physical (unscaled) boxes — structural coupling
     # geometry must match the physical planform, not the PG-compressed one.

@@ -13,7 +13,7 @@ from sbeam.model.mass import Conm2
 from sbeam.model.load import Force, Moment, Load, Grav, Eigrl
 from sbeam.model.constraint import Spc, Spc1, Suport
 from sbeam.model.aero import (
-    Aeros, Caero1, Paero1, Aefact, W2gj, Wkk, Aecorr, Set1,
+    Aeros, Caero1, Paero1, Pstrip, Stripk, Aefact, W2gj, Wkk, Aecorr, Set1,
     Spline2, Attach, Spline0, Spline1,
     Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
     Aecomp, Monpnt1, Monpnt3,
@@ -513,6 +513,32 @@ def _handle_paero1(fields: list, bulk: BulkData) -> None:
     if pid in bulk.paero1s:
         raise ValueError(f"Duplicate PAERO1 PID {pid}")
     bulk.paero1s[pid] = Paero1(pid=pid)
+
+
+def _handle_pstrip(fields: list, bulk: BulkData) -> None:
+    """PSTRIP, pid, [slope0] — decoupled strip body-panel property."""
+    pid = _to_int(fields[1])
+    if pid in bulk.pstrips:
+        raise ValueError(f"Duplicate PSTRIP PID {pid}")
+    if pid in bulk.paero1s:
+        raise ValueError(f"PSTRIP PID {pid} collides with a PAERO1 of the same PID")
+    slope_field = fields[2].strip() if len(fields) > 2 else ""
+    if slope_field:
+        bulk.pstrips[pid] = Pstrip(pid=pid, slope0=_to_float(slope_field))
+    else:
+        bulk.pstrips[pid] = Pstrip(pid=pid)
+
+
+def _handle_stripk(fields: list, conts: list, bulk: BulkData) -> None:
+    """STRIPK, sid, caero, s1, s2, … — per-box strip lift-curve slopes."""
+    sid       = _to_int(fields[1])
+    caero_eid = _to_int(fields[2])
+    if sid in bulk.stripks:
+        raise ValueError(f"Duplicate STRIPK SID {sid}")
+    data = [_to_float(f) for f in fields[3:] if f.strip()]
+    for cont in conts:
+        data += [_to_float(f) for f in cont[1:] if f.strip()]
+    bulk.stripks[sid] = Stripk(sid=sid, caero_eid=caero_eid, data=data)
 
 
 def _handle_caero1(fields: list, cont, bulk: BulkData) -> None:
@@ -1129,6 +1155,22 @@ def parse_bulk_data(lines: list) -> BulkData:
             _handle_aecorr(fields, aecorr_conts, bulk)
         elif keyword == "PAERO1":
             _handle_paero1(fields, bulk)
+        elif keyword == "PSTRIP":
+            _handle_pstrip(fields, bulk)
+        elif keyword == "STRIPK":
+            stripk_conts: list = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    stripk_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_stripk(fields, stripk_conts, bulk)
         elif keyword == "CAERO1":
             _handle_caero1(fields, cont, bulk)
         elif keyword == "SET1":
@@ -1294,14 +1336,27 @@ def parse_bulk_data(lines: list) -> BulkData:
     if bulk.caero1s and bulk.aeros is None:
         raise ValueError("CAERO1 card(s) present but no AEROS card found")
 
-    # Validate CAERO1 cross-references (deferred because AEFACT/PAERO1 may appear after CAERO1)
+    # Validate CAERO1 cross-references (deferred because AEFACT/PAERO1/PSTRIP may
+    # appear after CAERO1).  A CAERO1 PID resolves to either a PAERO1 (ordinary VLM
+    # panel) or a PSTRIP (decoupled strip body panel).
     for eid, caero in bulk.caero1s.items():
-        if caero.pid not in bulk.paero1s:
-            raise ValueError(f"CAERO1 {eid}: PID={caero.pid} not found in PAERO1")
+        if caero.pid not in bulk.paero1s and caero.pid not in bulk.pstrips:
+            raise ValueError(
+                f"CAERO1 {eid}: PID={caero.pid} not found in PAERO1 or PSTRIP")
         if caero.lspan and caero.lspan not in bulk.aefacts:
             raise ValueError(f"CAERO1 {eid}: LSPAN={caero.lspan} not found in AEFACT")
         if caero.lchord and caero.lchord not in bulk.aefacts:
             raise ValueError(f"CAERO1 {eid}: LCHORD={caero.lchord} not found in AEFACT")
+
+    # Validate STRIPK cross-references: must target a strip (PSTRIP-backed) CAERO1.
+    for sid, sk in bulk.stripks.items():
+        caero = bulk.caero1s.get(sk.caero_eid)
+        if caero is None:
+            raise ValueError(f"STRIPK {sid}: CAERO1 {sk.caero_eid} not found")
+        if caero.pid not in bulk.pstrips:
+            raise ValueError(
+                f"STRIPK {sid}: CAERO1 {sk.caero_eid} is not a strip panel "
+                f"(PID={caero.pid} is not a PSTRIP)")
 
     # Validate SPLINE2 cross-references (SET1 SID, CAERO1 EID, grid IDs)
     for eid, sp in bulk.spline2s.items():

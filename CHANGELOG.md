@@ -13,6 +13,31 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Decoupled strip body panels (Step A10, 2026-06-15)**
+
+- **New panel type — `PSTRIP` + `STRIPK` cards** (`model/aero.py`, `parser/bdf_reader.py`): a CAERO1
+  whose PID references a `PSTRIP` (instead of a `PAERO1`) is a **decoupled strip body panel** — no
+  horseshoe vortex, no wake, and **no AIC coupling** to or from any other box. Its block of the ΔCp
+  operator is **diagonal** (`ΔCp = slope·(α·n_z + β·n_y + Δα)`, operator diagonal `-slope/β`), so it
+  **cannot contaminate** the lifting surfaces (their inverse is bit-identical with or without the
+  strip, even overlapping it) and carries no interference/fence effect — a pure load device. `PSTRIP`
+  sets the nominal per-box slope (default π — half the 2π flat plate, "50% normal surface"); `STRIPK`
+  overrides it per box. This is the clean resolution of the cruciform's authority-equals-contamination
+  limit (theory §3.7).
+- **`sbeam/aero/strip.py`** — `is_strip_caero`, `strip_box_mask`, `strip_box_slopes`; `build_aero_model`
+  excludes strip boxes from the VLM AIC inversion and scatters the diagonal strip block into
+  `ajj_inv_corr` (refactored the operator assembly into `_assemble_vlm_operator`). `AeroBox` gains an
+  `is_strip` flag; `solve_rigid_cl`'s raw (no-operator) path rejects strip decks.
+- **`build_strip_body_correction`** (`body_correction.py`) — strip analogue of `build_body_correction`:
+  sets per-box slope (`STRIPK`) and Δα (`W2GJ`) so the total airplane Cm_α/Cm0, Cn_β/Cn0, Cl_β/Cl0 hit
+  targets, contamination-free with no WT2-ratio conditioning concern. `strip_body_cards_to_bdf`
+  formatter. Aero Correction Stage 6 auto-detects panel kind (PSTRIP → strip / PAERO1 → cruciform) and
+  routes to the matching builder (`viewer/aero_correction_view.py`).
+- **Sample** `sample/cessna210_strip.bdf` (strip variant of the cruciform deck) and **tests**
+  `tests/aero/test_strip_body.py` (parser round-trip; diagonal/zero-coupling operator; exact
+  decoupling and overlap-harmless; π-slope ⇒ sectional cl_α=π; correction hits all six targets to
+  machine precision on a full rebuild).
+
 **Multi-surface body planes (2026-06-15)**
 
 - **`sbeam/aero/body_correction.py`** — `build_body_correction` now accepts a **list of EIDs** (as well

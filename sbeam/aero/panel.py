@@ -29,6 +29,8 @@ class AeroBox:
     normal:     np.ndarray    # (3,) outward unit normal
     chord:      float         # mean chord of the box
     span_frac:  float         # spanwise fraction at box mid-span [0, 1]
+    is_strip:   bool = False  # True ⇒ decoupled strip body box (no AIC coupling; set
+                              # by build_aero_model from the CAERO1 PID → PSTRIP)
 
 
 def mesh_caero1(

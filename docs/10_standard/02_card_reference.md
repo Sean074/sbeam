@@ -796,6 +796,42 @@ PAERO1, 1
 
 ---
 
+### PSTRIP — Decoupled Strip Body-Panel Property (sbeam extension)
+
+Alternative to PAERO1 for the CAERO1 PID. A CAERO1 whose PID references a `PSTRIP`
+is a **decoupled strip body panel**: it carries NO horseshoe vortex, NO wake, and NO
+aerodynamic coupling to or from any other box (its block of the influence operator is
+diagonal). Each box is an independent 2-D section, `ΔCp_box = slope·(α·n_z + β·n_y + Δα)`.
+Because it has no coupling, a strip body panel **cannot contaminate the lifting
+surfaces** — and it carries no interference/fence effect either. Used as a fuselage
+load stand-in tuned to total-aircraft targets (`build_strip_body_correction`); see
+`docs/10_standard/05_aeroelastics.md` and `sbeam/aero/strip.py`.
+
+**Format:**
+```
+PSTRIP  PID  SLOPE0
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| PID | `pid` | int | Property ID (unique across PAERO1+PSTRIP; referenced by CAERO1) | required |
+| SLOPE0 | `slope0` | float | Nominal per-box lift-curve slope dΔCp/dα_local | π |
+
+The default π gives a sectional lift-curve slope of π — half the 2π flat-plate value
+("50% normal surface"). Override per box with a `STRIPK` card.
+
+**Example:**
+```
+$ default slope (π)
+PSTRIP, 20
+$ explicit slope
+PSTRIP, 21, 2.5
+```
+
+---
+
 ### AEFACT — Arbitrary Fraction List
 
 Defines non-uniform spanwise or chordwise breakpoints for CAERO1 meshing.
@@ -963,6 +999,37 @@ AECORR, 30, WT1, 100, 0.80, 0.75, 0.65, 0.50
 ```
 
 **Correction precedence** in `build_aero_model()`: WKK → WT2 → WT1 → identity lstsq.
+Strip body panels (CAERO1 PID → PSTRIP) bypass this entirely — see `STRIPK`.
+
+---
+
+### STRIPK — Per-Box Strip Lift-Curve Slopes (sbeam extension)
+
+Overrides the uniform `PSTRIP` `slope0` box-by-box for a decoupled strip body panel.
+Emitted by `build_strip_body_correction` (with a `W2GJ` Δα-offset card) so the total
+airplane Cm/Cn/Cl match CFD/WT. Applies only to a strip (PSTRIP-backed) CAERO1.
+
+**Format:**
+```
+STRIPK  SID  CAERO_EID  S1  S2  S3  S4  S5  S6
++       S7   S8  ...
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| SID | `sid` | int | Set ID | required |
+| CAERO_EID | `caero_eid` | int | EID of the strip CAERO1 this applies to | required |
+| S1–SN | `data` | list[float] | Per-box lift-curve slope dΔCp/dα_local (row-major, signed), length NSPAN×NCHORD | required |
+
+Absent → every box of the panel uses the `PSTRIP` `slope0`. The operator's strip
+diagonal is `-slope/β` (Göthert 1/β applied for compressibility).
+
+**Example:**
+```
+STRIPK, 9501, 400, 3.05, 3.05, 2.98, 2.98, 3.10, 3.10, 3.02, 3.02
+```
 
 ---
 

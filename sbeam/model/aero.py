@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass, field
 
 
@@ -32,6 +33,42 @@ class Caero1:
 @dataclass
 class Paero1:
     pid: int             # property ID (stub — no body support in Phase A)
+
+
+@dataclass
+class Pstrip:
+    """Decoupled strip-body panel property (sbeam extension).
+
+    A CAERO1 whose PID points to a PSTRIP (instead of a PAERO1) is a **decoupled
+    strip body panel**: it carries NO horseshoe vortex, NO trailing wake, and NO
+    AIC coupling (zero off-diagonal influence to or from any other box).  Each box
+    is an independent 2-D section whose load depends only on its own local incidence:
+
+        ΔCp_box = slope_box · (α·n_z + β·n_y + Δα_box)
+
+    ``slope0`` is the nominal per-box lift-curve slope dΔCp/dα_local.  The default
+    ≈ π gives a sectional lift-curve slope of π — half the 2π flat-plate value
+    ("50% normal surface"); a body fudge that cannot contaminate the lifting
+    surfaces because it has no coupling to them (see sbeam.aero.strip).  The body
+    correction overrides ``slope0`` per box with a STRIPK card and sets Δα_box with
+    a W2GJ card so the total airplane Cm/Cn/Cl match CFD/wind tunnel.
+    """
+    pid:    int
+    slope0: float = math.pi   # nominal per-box lift-curve slope (dΔCp/dα_local)
+
+
+@dataclass
+class Stripk:
+    """Per-box strip lift-curve slopes for a PSTRIP panel (sbeam extension).
+
+    Overrides the uniform PSTRIP ``slope0`` box-by-box; emitted by the strip body
+    correction.  ``data`` is the per-box slope dΔCp/dα_local (signed — the
+    correction may drive a box negative), ordered row-major like W2GJ/WKK, length
+    nspan × nchord.  Absent → every box uses the PSTRIP ``slope0``.
+    """
+    sid:       int
+    caero_eid: int           # which (strip) CAERO1 element this applies to
+    data: list = field(default_factory=list)
 
 
 @dataclass

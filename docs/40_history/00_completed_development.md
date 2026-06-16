@@ -2475,6 +2475,45 @@ green; ruff clean.
 
 ---
 
+### Step A10: decoupled strip body panels (PSTRIP/STRIPK) ✅ COMPLETE (2026-06-15)
+
+**Objective:** add a body panel type that resolves the cruciform's structural limit — that a flat
+panel's authority to move the total moment *is* the coupling that contaminates the lifting surfaces
+(Step A9a finding / theory §3.6). A panel with **no coupling** cannot contaminate.
+
+**Deliverables:**
+- **New cards** `PSTRIP` (marker on the CAERO1 PID + nominal per-box lift-curve slope, default π) and
+  `STRIPK` (per-box slope override), with dataclasses, parser handlers, dispatch, and cross-reference
+  validation (CAERO1 PID resolves to PAERO1 **or** PSTRIP; STRIPK must target a strip CAERO1).
+- **`sbeam/aero/strip.py`** — `is_strip_caero`, `strip_box_mask`, `strip_box_slopes`. A strip CAERO1
+  carries no horseshoe vortex / wake / coupling: `build_aero_model` excludes its boxes from the VLM AIC
+  inversion and places a diagonal block `diag(-slope/β)` into `ajj_inv_corr` (operator assembly
+  refactored into `_assemble_vlm_operator`; `AeroBox.is_strip` flag; `solve_rigid_cl` raw path rejects
+  strip decks; viewer uncorrected-overlay skipped for strip decks).
+- **`build_strip_body_correction`** + `strip_body_cards_to_bdf` (`body_correction.py`) — sets per-box
+  slope (STRIPK) and Δα (W2GJ) so the total airplane Cm_α/Cm0, Cn_β/Cn0, Cl_β/Cl0 hit targets; same
+  moment-primary, slope-then-offset min-norm structure as the cruciform but contamination-free and with
+  no `ratio_max` conditioning concern.
+- **Viewer** Stage 6 auto-detects panel kind (PSTRIP → strip / PAERO1 → cruciform) and routes to the
+  matching builder; strip cards apply at `_BODY_W2GJ_BASE=9301` / `_BODY_STRIPK_BASE=9501`.
+- **Sample** `sample/cessna210_strip.bdf`; **docs** card reference (PSTRIP/STRIPK), `05_aeroelastics.md`
+  ("Decoupled strip body panels"), theory §3.7 (block-diagonal load/BC separation + image-fence note).
+
+**Key decisions / findings:**
+- **Diagonal block = exact decoupling.** Verified the lifting-surface inverse is *bit-identical* with
+  or without the strip present, and that relocating a strip on top of the wing changes wing loads by
+  exactly zero — overlap is harmless by construction.
+- **π slope = sectional cl_α of π.** A uniform per-box slope gives a sectional lift-curve slope equal
+  to that value, matching the "50% of 2π flat plate" body fudge requested.
+- **Load and BC are separate mechanisms.** A decoupled strip carries the body's *load* but no
+  interference; the fence / no-through-flow boundary condition is the complementary (necessarily
+  coupled) half, deferred to the backlog "image fence" item.
+
+**Test / Acceptance:** `tests/aero/test_strip_body.py` (16 tests: parser, operator structure, exact
+decoupling, π-slope, six-target correction on rebuild) + aero/parser suites green; ruff clean.
+
+---
+
 ## Phase B — Structure ↔ Aero Splining
 
 ### Step 45: SET1 + SPLINE2 parsing ✅ COMPLETE

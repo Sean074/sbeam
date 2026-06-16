@@ -338,6 +338,15 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
         cp_direct = cp_op @ rhs
         gamma = cp_direct * chord_box / 2.0   # back out Γ for K-J lift / Trefftz
     else:
+        # Decoupled strip body panels have no horseshoe vortex, so the raw VLM
+        # build-and-solve path here cannot represent them — their load is defined by
+        # the diagonal operator block in AeroModel.ajj_inv_corr.  Require the operator.
+        if any(getattr(b, "is_strip", False) for b in boxes):
+            raise ValueError(
+                "solve_rigid_cl: model contains decoupled strip body panels (PSTRIP); "
+                "pass cp_operator=aero_model.ajj_inv_corr (the raw VLM solve cannot "
+                "represent strip panels, which carry no horseshoe vortex)."
+            )
         # AE9: M ≥ 1 is rejected by prandtl_glauert_boxes (the steady subsonic VLM
         # cannot solve it); no silent clamp.
         beta_pg = math.sqrt(1.0 - mach ** 2) if 0.0 < mach < 1.0 else 1.0
@@ -377,9 +386,16 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
         _ar = span_ref * span_ref / S_ref if S_ref > _DEGEN_TOL else 1.0
 
     # -----------------------------------------------------------------------
-    # Trefftz-plane induced drag
+    # Trefftz-plane induced drag.  Decoupled strip body boxes shed NO trailing
+    # vorticity (no wake), so they contribute nothing to the Trefftz wake integral —
+    # zero their reconstructed circulation here.  Their (real) lift still counts in
+    # CL/CZ above; only the induced-drag wake excludes them.
     # -----------------------------------------------------------------------
-    _cdi_result = trefftz_cdi(boxes, gamma, S_ref, _ar)
+    gamma_wake = gamma
+    if any(getattr(b, "is_strip", False) for b in boxes):
+        gamma_wake = gamma.copy()
+        gamma_wake[[i for i, b in enumerate(boxes) if getattr(b, "is_strip", False)]] = 0.0
+    _cdi_result = trefftz_cdi(boxes, gamma_wake, S_ref, _ar)
 
     # -----------------------------------------------------------------------
     # Per-surface classification: horizontal (lift) vs vertical (sideforce)

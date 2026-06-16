@@ -702,6 +702,51 @@ the destabilising couple, wing-body interference, a several-MAC neutral-point sh
 in `docs/30_future/00_backlog.md`. Matching $C_{l_\beta}$ at all still needs adequate spanwise ($z$)
 resolution on the vertical panel to shape the roll arm independently of the yaw arm.
 
+### 3.7 Decoupled strip body — load and boundary condition as *separate* blocks
+
+The cruciform's bind (§3.6) is an identity: a flat panel's **authority** to move the total moment
+and its **contamination** of the lifting surfaces are the *same* off-diagonal coupling. Write the
+combined influence operator in $[\text{wing+tail} \;;\; \text{body}]$ block form,
+
+$$
+\mathbf{A}^{-1}_{\text{corr}} =
+\begin{bmatrix} \mathbf{A}^{-1}_{WW} & \mathbf{A}^{-1}_{WB} \\[2pt]
+                \mathbf{A}^{-1}_{BW} & \mathbf{A}^{-1}_{BB} \end{bmatrix},
+$$
+
+A body that loads the wing has $\mathbf{A}^{-1}_{WB}\neq0$ (contamination); a body that *reacts* to
+the wing — a no-through-flow boundary condition — has $\mathbf{A}^{-1}_{BW}\neq0$. The two are
+inseparable for any element built from a circulation/horseshoe singularity. A flat cruciform fuses
+them and gets the interference sign wrong.
+
+The **decoupled strip body** breaks the fusion by giving the body **no singularity at all**: it
+sheds no vortex and has no wake, so $\mathbf{A}^{-1}_{WB}=\mathbf{A}^{-1}_{BW}=\mathbf 0$ and the
+body block is purely diagonal,
+
+$$
+\mathbf{A}^{-1}_{BB} = \operatorname{diag}\!\big(-\,\text{slope}_i/\beta\big), \qquad
+\Delta C_{p,i} = \text{slope}_i\,(\alpha\,n_{z,i} + \beta\,n_{y,i} + \Delta\alpha_i).
+$$
+
+Each box is an independent 2-D strip ($\text{slope}\approx\pi$ ⇒ a sectional lift-curve slope of
+$\pi$, half the $2\pi$ flat plate). Because $\mathbf{A}^{-1}_{WB}=\mathbf 0$, the strip **cannot
+contaminate** the lifting surfaces — they are untouched no matter where the strip sits, even on top
+of the wing (proved in `tests/aero/test_strip_body.py`). Because $\mathbf{A}^{-1}_{BW}=\mathbf 0$,
+it also carries **no interference / fence effect** — a decoupled element is transparent to the
+wing's flow. A strip body is thus a pure *load* device, tuned (per-box slope via `STRIPK`, per-box
+$\Delta\alpha$ via `W2GJ`) to the total-aircraft targets, with no conditioning gauge to watch.
+
+The complementary half — the body acting as a **fence** (the wing box must not blow through the
+fuselage, $\mathbf{A}^{-1}_{BW}\neq0$) — is, by the identity above, *necessarily* coupling. It can be
+added to the lifting surfaces **without new unknowns** by the **method of images**: reflect each wing
+horseshoe across the body surface (mirrored geometry, reversed circulation, à la ground effect) and
+add the image contribution into $\mathbf{A}^{-1}_{WW}$. That is the same machinery as the trailing
+wake already in `horseshoe_influence` (extra Biot–Savart terms tied to the box's own $\Gamma$, no new
+unknowns), but enforcing no-penetration (transverse reflection) rather than the Kutta condition
+(streamwise shedding). It is a *physical* reflection, not the cruciform's wrong-sign contamination —
+so load (strip) and boundary condition (image fence) become two correct, composable mechanisms. The
+image fence is tracked in `docs/30_future/00_backlog.md`; only the strip load device is implemented.
+
 ---
 
 ## 4. Structure-to-aerodynamics coupling — splines

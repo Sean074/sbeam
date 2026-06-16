@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from .aero import (
-    Aeros, Caero1, Paero1, Aefact, W2gj, Wkk, Aecorr, Set1,
+    Aeros, Caero1, Paero1, Pstrip, Stripk, Aefact, W2gj, Wkk, Aecorr, Set1,
     Spline2, Attach, Spline0, Spline1,
     Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
     Aecomp, Monpnt1, Monpnt3,
@@ -35,6 +35,8 @@ class BulkData:
     aeros: Optional[Aeros] = None                 # single AEROS card (reference geometry)
     caero1s: dict = field(default_factory=dict)   # {eid: Caero1}
     paero1s: dict = field(default_factory=dict)   # {pid: Paero1}
+    pstrips: dict = field(default_factory=dict)   # {pid: Pstrip} (decoupled strip body panels)
+    stripks: dict = field(default_factory=dict)   # {sid: Stripk} (per-box strip slopes)
     aefacts: dict = field(default_factory=dict)   # {sid: Aefact}
     w2gjs:   dict = field(default_factory=dict)   # {sid: W2gj}
     wkks:    dict = field(default_factory=dict)   # {sid: Wkk}

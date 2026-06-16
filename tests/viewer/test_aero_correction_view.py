@@ -20,7 +20,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from sbeam.model.bulk_data import BulkData
-from sbeam.model.aero import Aeros, Caero1, Paero1
+from sbeam.model.aero import Aeros, Caero1, Paero1, Pstrip
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.vlm import solve_rigid_cl
 from sbeam.aero import section_data as sd
@@ -31,7 +31,7 @@ from sbeam.aero import body_correction as bc
 from sbeam.aero.integration import build_djx
 from sbeam.viewer.aero_correction_view import (
     _template_csv, _W2GJ_BASE, _AECORR_BASE,
-    _BODY_W2GJ_BASE, _BODY_AECORR_BASE, _guess_body_panels,
+    _BODY_W2GJ_BASE, _BODY_AECORR_BASE, _BODY_STRIPK_BASE, _guess_body_panels,
     build_corrected_bdf, suggest_corrected_name,
 )
 
@@ -438,3 +438,70 @@ def test_apptest_body_build_and_apply(body_bulk):
     assert _AECORR_BASE in bulk_after.aecorrs and _W2GJ_BASE in bulk_after.w2gjs
     assert _BODY_W2GJ_BASE in bulk_after.w2gjs
     assert _BODY_AECORR_BASE in bulk_after.aecorrs
+
+
+# ---- Stage 6 · decoupled strip body panels (Step A10) -----------------------
+
+@pytest.fixture
+def strip_body_bulk() -> BulkData:
+    """Wing (CAERO 100, PAERO1) + horizontal/vertical DECOUPLED STRIP body panels."""
+    bulk = BulkData()
+    bulk.aeros = Aeros(acsid=0, rcsid=0, cref=1.0, bref=4.0, sref=4.0, symxz=0, symxy=0)
+    bulk.caero1s[100] = Caero1(
+        eid=100, pid=1, cp=0, nspan=4, nchord=4, lspan=0, lchord=0, igid=1,
+        p1=(1.0, 0.0, 0.0), x12=1.0, p4=(1.0, 4.0, 0.0), x43=1.0)
+    bulk.caero1s[400] = Caero1(   # horizontal strip body (+Z)
+        eid=400, pid=20, cp=0, nspan=2, nchord=4, lspan=0, lchord=0, igid=1,
+        p1=(0.0, -0.4, -0.2), x12=4.0, p4=(0.0, 0.4, -0.2), x43=4.0)
+    bulk.caero1s[500] = Caero1(   # vertical strip body (+Y)
+        eid=500, pid=20, cp=0, nspan=2, nchord=4, lspan=0, lchord=0, igid=1,
+        p1=(0.0, 0.0, -0.5), x12=4.0, p4=(0.0, 0.0, 0.5), x43=4.0)
+    bulk.paero1s[1] = Paero1(pid=1)
+    bulk.pstrips[20] = Pstrip(pid=20)   # default slope π → strip bodies
+    return bulk
+
+
+def test_apptest_strip_body_build_and_apply(strip_body_bulk):
+    at = AppTest.from_function(_sbeam_app, default_timeout=120)
+    at.run()
+    _inject_bulk(at, strip_body_bulk)
+    model = build_aero_model(strip_body_bulk)
+    df, res = _wing_flying_result(model)
+
+    import dataclasses
+    fw2 = {w.sid: w for (w, _a) in res.correction.cards.values()}
+    fac = {a.sid: a for (_w, a) in res.correction.cards.values()}
+    bulk_f = dataclasses.replace(
+        strip_body_bulk, w2gjs={**strip_body_bulk.w2gjs, **fw2},
+        aecorrs={**strip_body_bulk.aecorrs, **fac})
+    aero_f = build_aero_model(bulk_f)
+    d_jx = build_djx(aero_f.boxes, ["ANGLEA", "SIDES"], bulk_f)
+    x_ref, ref_pt = bc._ref_geometry(bulk_f)
+    base = bc._total_metrics(aero_f, bulk_f, d_jx, ["ANGLEA", "SIDES"], x_ref, ref_pt)
+
+    at.session_state["aero_corr_df"] = df
+    at.session_state["aero_corr_result"] = res
+    at.session_state["aero_corr_cond"] = (0.0, 2.0, 0.0)
+    at.session_state["aero_body_cma"] = base.cm_alpha - 0.10
+    at.session_state["aero_body_cm0"] = base.cm0 + 0.02
+    at.session_state["aero_body_cnb"] = base.cn_beta + 0.05
+    at.session_state["aero_body_cn0"] = base.cn0 - 0.01
+    at.session_state["aero_body_clb"] = base.cl_beta - 0.01
+    at.session_state["aero_body_cl0"] = base.cl0 + 0.005
+    at.run()
+    assert not at.exception, [str(e) for e in at.exception]
+
+    next(b for b in at.button if b.key == "aero_body_build").click().run()
+    assert not at.exception, [str(e) for e in at.exception]
+    bres = at.session_state["aero_body_result"]
+    assert bres is not None and bres.converged
+    assert at.session_state["aero_body_is_strip"] is True
+    assert sorted(bres.cards) == [400, 500]
+
+    next(b for b in at.button if b.key == "aero_body_apply").click().run()
+    assert not at.exception, [str(e) for e in at.exception]
+    bulk_after = at.session_state["bulk_data"]
+    # strip body emits W2GJ + STRIPK (not AECORR) at the reserved SIDs
+    assert _BODY_W2GJ_BASE in bulk_after.w2gjs
+    assert _BODY_STRIPK_BASE in bulk_after.stripks
+    assert _BODY_AECORR_BASE not in bulk_after.aecorrs

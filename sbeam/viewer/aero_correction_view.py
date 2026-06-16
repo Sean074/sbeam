@@ -29,6 +29,7 @@ from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero import section_data as sd
 from sbeam.aero import body_correction as bc
 from sbeam.aero.section_correction import cards_to_bdf
+from sbeam.aero.strip import is_strip_caero
 from sbeam.viewer.aero_view import build_section_correction_figure, surface_dihedral_deg
 from sbeam.viewer.format_utils import style_numeric
 
@@ -39,6 +40,7 @@ _AECORR_BASE = 9101
 # Body-panel cards live in a separate reserved range (Stage 6).
 _BODY_W2GJ_BASE = 9301
 _BODY_AECORR_BASE = 9401
+_BODY_STRIPK_BASE = 9501
 
 # A surface whose mean dihedral magnitude falls in this band is "canted" — neither
 # clearly horizontal (α-driven) nor vertical (β-driven) — so a single-axis section
@@ -188,16 +190,26 @@ def _guess_body_panels(aero_model):
 
 
 def _apply_body_cards(bulk: BulkData, res, bres) -> int:
-    """Inject the flying-surface pairs (idempotent) and the body-panel pairs."""
+    """Inject the flying-surface pairs (idempotent) and the body-panel pairs.
+
+    The body card pair is (W2GJ, AECORR-WT2) for a cruciform VLM panel or
+    (W2GJ, STRIPK) for a decoupled strip panel; the second card is routed to
+    ``bulk.aecorrs`` or ``bulk.stripks`` by type.
+    """
+    from sbeam.model.aero import Stripk
     _apply_cards(bulk, res)   # flying cards + clears the Aero-tab cache
     for sid in st.session_state.get("aero_body_sids", set()):
         bulk.w2gjs.pop(sid, None)
         bulk.aecorrs.pop(sid, None)
+        bulk.stripks.pop(sid, None)
     new_sids: set = set()
-    for _eid, (w2, ac) in bres.cards.items():
+    for _eid, (w2, second) in bres.cards.items():
         bulk.w2gjs[w2.sid] = w2
-        bulk.aecorrs[ac.sid] = ac
-        new_sids.update((w2.sid, ac.sid))
+        if isinstance(second, Stripk):
+            bulk.stripks[second.sid] = second
+        else:
+            bulk.aecorrs[second.sid] = second
+        new_sids.update((w2.sid, second.sid))
     st.session_state.aero_body_sids = new_sids
     st.session_state.aero_model = None
     st.session_state.aero_result = None
@@ -235,6 +247,20 @@ def _render_body_stage(bulk: BulkData, aero_model, res) -> None:
     horiz = [int(e) for e in h_sel]
     vert = [int(e) for e in v_sel]
 
+    # Panel KIND is set by the deck: a CAERO1 PID → PSTRIP is a decoupled strip body
+    # (no AIC coupling — cannot contaminate); PID → PAERO1 is a cruciform VLM body.
+    sel = horiz + vert
+    n_strip = sum(1 for e in sel if is_strip_caero(bulk, e))
+    body_is_strip = bool(sel) and n_strip == len(sel)
+    body_mixed = 0 < n_strip < len(sel)
+    if body_is_strip:
+        st.info("Selected panels are **decoupled strip bodies** (PSTRIP): each box loads "
+                "only on its own local α/β — zero coupling to the lifting surfaces, so the "
+                "match cannot contaminate the wing/tail and there is no conditioning gauge.")
+    elif body_mixed:
+        st.error("Mix of strip (PSTRIP) and cruciform (PAERO1) body panels selected — "
+                 "build them separately (the two use different correction cards).")
+
     mach_c, _a, _b = st.session_state.get("aero_corr_cond") or (0.0, 0.0, 0.0)
     raw_df = st.session_state.get("aero_corr_raw_df")
     seed = (bc.parse_body_targets(raw_df, mach_c) if raw_df is not None else None) \
@@ -259,7 +285,7 @@ def _render_body_stage(bulk: BulkData, aero_model, res) -> None:
                "several panels (tuned jointly). Keep panels clear of the wing/tail — an "
                "overlapping panel contaminates them, it does not model interference.")
 
-    if st.button("Build body correction", key="aero_body_build"):
+    if st.button("Build body correction", key="aero_body_build", disabled=body_mixed):
         if not horiz and not vert:
             st.error("Select at least one body panel (horizontal and/or vertical).")
         else:
@@ -272,10 +298,17 @@ def _render_body_stage(bulk: BulkData, aero_model, res) -> None:
                 tgt = bc.BodyTargets(cm_alpha=t_cma, cm0=t_cm0,
                                      cn_beta=t_cnb, cn0=t_cn0,
                                      cl_beta=t_clb, cl0=t_cl0)
-                st.session_state.aero_body_result = bc.build_body_correction(
-                    bulk_f, horiz_eid=horiz or None, vert_eid=vert or None,
-                    targets=tgt, mach=mach_c, aero=aero_f,
-                    sid_w2gj_base=_BODY_W2GJ_BASE, sid_aecorr_base=_BODY_AECORR_BASE)
+                if body_is_strip:
+                    st.session_state.aero_body_result = bc.build_strip_body_correction(
+                        bulk_f, horiz_eid=horiz or None, vert_eid=vert or None,
+                        targets=tgt, mach=mach_c, aero=aero_f,
+                        sid_w2gj_base=_BODY_W2GJ_BASE, sid_stripk_base=_BODY_STRIPK_BASE)
+                else:
+                    st.session_state.aero_body_result = bc.build_body_correction(
+                        bulk_f, horiz_eid=horiz or None, vert_eid=vert or None,
+                        targets=tgt, mach=mach_c, aero=aero_f,
+                        sid_w2gj_base=_BODY_W2GJ_BASE, sid_aecorr_base=_BODY_AECORR_BASE)
+                st.session_state.aero_body_is_strip = body_is_strip
             except Exception as exc:
                 st.session_state.aero_body_result = None
                 st.error(f"Body correction failed: {exc}")
@@ -293,27 +326,38 @@ def _render_body_stage(bulk: BulkData, aero_model, res) -> None:
                        ("cl_beta", "Cl_β"), ("cl0", "Cl0"))
     ])
     st.dataframe(style_numeric(table), use_container_width=True)
-    st.caption(f"Max body WT2 ratio: {bres.ratio_max:.2f} "
-               "(conditioning gauge — not contamination; WT2 scales body boxes only)")
-    if not bres.converged:
-        st.warning("Body panels could not reach the targets within tolerance — reduce the "
-                   "target increment (a flat-plate cruciform only supplies a small body effect; "
-                   "large effects need a slender-body element).")
-    elif bres.ratio_max > bc._RATIO_WARN:
-        st.warning(f"Body WT2 ratio reached {bres.ratio_max:.1f} — beyond what a flat-plate "
-                   "cruciform can represent. A ratio of tens-to-~100 is normal/benign for panels "
-                   "held clear of the tail (WT2 does not perturb the lifting surfaces); a value "
-                   "this large means the targets demand more than a fuselage stand-in should "
-                   "supply — reduce the body increment, or use a slender-body element. Do NOT "
-                   "enlarge the panels (that lowers the ratio but raises the spurious tail load).")
+    res_is_strip = st.session_state.get("aero_body_is_strip", False)
+    if res_is_strip:
+        st.caption(f"Max body slope scaling: {bres.ratio_max:.2f}× the nominal PSTRIP slope "
+                   "(informational — a strip body is decoupled, so any value is benign).")
+        if not bres.converged:
+            st.warning("Strip panels could not reach the targets — they may lack the spatial "
+                       "spread (x-arm for pitch/yaw, z-arm for roll). Add boxes or extend the "
+                       "panel; geometry is free (a strip cannot contaminate the lifting surfaces).")
+    else:
+        st.caption(f"Max body WT2 ratio: {bres.ratio_max:.2f} "
+                   "(conditioning gauge — not contamination; WT2 scales body boxes only)")
+        if not bres.converged:
+            st.warning("Body panels could not reach the targets within tolerance — reduce the "
+                       "target increment (a flat-plate cruciform only supplies a small body effect; "
+                       "large effects need a slender-body element).")
+        elif bres.ratio_max > bc._RATIO_WARN:
+            st.warning(f"Body WT2 ratio reached {bres.ratio_max:.1f} — beyond what a flat-plate "
+                       "cruciform can represent. A ratio of tens-to-~100 is normal/benign for panels "
+                       "held clear of the tail (WT2 does not perturb the lifting surfaces); a value "
+                       "this large means the targets demand more than a fuselage stand-in should "
+                       "supply — reduce the body increment, or use a slender-body element. Do NOT "
+                       "enlarge the panels (that lowers the ratio but raises the spurious tail load).")
 
     cba, cbb = st.columns(2)
     if cba.button("Apply body panels to model", type="primary", key="aero_body_apply"):
         n = _apply_body_cards(bulk, res, bres)
         st.success(f"Injected the flying pairs + {n} body card pair(s). Open the **Aero** "
                    "tab and press Compute Aero to run the fully corrected solve.")
+    body_bdf = (bc.strip_body_cards_to_bdf(bres) if res_is_strip
+                else bc.body_cards_to_bdf(bres))
     cbb.download_button(
-        "Download body cards (.bdf)", data=bc.body_cards_to_bdf(bres),
+        "Download body cards (.bdf)", data=body_bdf,
         file_name="body_correction.bdf", mime="text/plain", key="aero_body_download")
 
 

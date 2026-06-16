@@ -26,8 +26,9 @@ Results   (cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, CDi, e, per_su
 | `sbeam/aero/corrections.py` | `Wkk` diagonal correction, `WT1` per-strip force-match, `WT2` pressure-match |
 | `sbeam/aero/section_correction.py` | Synthesise a per-surface `W2GJ`+`WT2` card pair matching section force **and** moment (slope + α=0 offset): `build_section_correction_multi` (engine, all surfaces at once), `build_section_correction` (single-surface wrapper), `cards_to_bdf()` |
 | `sbeam/aero/section_data.py` | Spanwise section-coefficient table ingestion (tidy CSV) → strip targets → builder: `validate_section_data`, `available_conditions`, `template_dataframe`, `build_from_section_data` (single), `build_from_section_data_multi` (per-surface at one flight point), `operating_region` |
-| `sbeam/aero/body_correction.py` | **Step A9** — cruciform body-panel total-aircraft moment match: `build_body_correction` (direct linear solve: joint WT2 slope + joint W2GJ offset on the body panels so the TOTAL Cm_α/Cm0, Cn_β/Cn0, Cl_β/Cl0 hit targets), `BodyTargets`, `split_total_rows` / `parse_body_targets` (CSV `TOTAL` block), `body_cards_to_bdf` |
-| `sbeam/aero/aero_model.py` | `AeroModel` container + `build_aero_model()` factory |
+| `sbeam/aero/body_correction.py` | **Step A9** — cruciform body-panel total-aircraft moment match: `build_body_correction` (direct linear solve: joint WT2 slope + joint W2GJ offset on the body panels so the TOTAL Cm_α/Cm0, Cn_β/Cn0, Cl_β/Cl0 hit targets), `BodyTargets`, `split_total_rows` / `parse_body_targets` (CSV `TOTAL` block), `body_cards_to_bdf`; **Step A10** — `build_strip_body_correction` / `strip_body_cards_to_bdf` (decoupled strip body: STRIPK slope + W2GJ Δα) |
+| `sbeam/aero/strip.py` | **Step A10** — decoupled strip body panels (PSTRIP/STRIPK): `is_strip_caero`, `strip_box_mask`, `strip_box_slopes` (diagonal, zero-coupling ΔCp operator block — cannot contaminate the lifting surfaces) |
+| `sbeam/aero/aero_model.py` | `AeroModel` container + `build_aero_model()` factory (block-diagonal strip body block via `_assemble_vlm_operator`) |
 | `sbeam/aero/spline.py` | **Phase B** — `build_g_spline()`: builds `g_slope` (n_box×n_g) and `g_disp` (3n_box×n_g) from `SPLINE2` + `ATTACH` + `SPLINE0` cards |
 | `sbeam/aero/coupling.py` | `build_qaa` flexible aero stiffness `Q_aa = G_dispᵀ S_kj (A_jj*)⁻¹ D_jk G_slope`; `build_fg` baseline aero load; `build_gaf` modal GAF `Q_hh = Φᵀ Q_aa Φ` |
 | `sbeam/solver/sol144.py` | `run_sol144_trim` (Schur trim solve, derivatives), `run_sol144_diverg` (DIVERG-card divergence sweep + mode shape + V_div), `run_aeroelastic_static`, `AeroCache`, `_divergence_dynamic_pressure`, `_divergence_roots` |
@@ -735,6 +736,61 @@ panels to model** injects the flying pairs (idempotent) and the body `(W2gj, Aec
 SIDs (`_BODY_W2GJ_BASE = 9301`, `_BODY_AECORR_BASE = 9401`); **Download body cards (.bdf)** emits them.
 Worked example: `sample/cessna210_body.bdf` + `sample/cessna210_body_section_data.csv`
 (`tests/aero/test_cessna210_body_example.py`).
+
+## Decoupled strip body panels (`strip.py` + `build_strip_body_correction`)
+
+The cruciform above is bounded by an identity: a flat panel's authority to move the total
+moment **is** the coupling that contaminates the lifting surfaces (see §3.6 of the theory
+reference). The **decoupled strip body panel** removes that tension by construction.
+
+A CAERO1 whose PID references a **`PSTRIP`** (instead of a `PAERO1`) is a strip body: it has
+**no horseshoe vortex, no wake, and no AIC coupling** to or from any other box. Its block of
+the ΔCp operator (`AeroModel.ajj_inv_corr`) is **diagonal**,
+
+```
+ΔCp_box = slope_box · (α·n_z + β·n_y + Δα_box),   operator diagonal = -slope_box/β
+```
+
+so `build_aero_model` excludes strip boxes from the VLM AIC inversion and scatters this
+diagonal block into the operator (`sbeam/aero/strip.py`; `_assemble_vlm_operator` builds the
+lifting-surface-only inverse). Two consequences, both verified in
+`tests/aero/test_strip_body.py`:
+
+* **Zero contamination.** There is no wing↔body coupling block, so adding — or moving, or
+  even overlapping — a strip body changes the wing/HTP/VTP loads by *exactly* zero. The
+  lifting-surface inverse is bit-identical with or without the strip present. Placement is
+  therefore free; in `sample/cessna210_strip.bdf` it is chosen only for physical moment-arm
+  realism, not to dodge the tail.
+* **No interference either.** A decoupled element is transparent to the wing's flow, so a
+  strip carries no fence / no-through-flow effect. It is a pure *load* device. The body's
+  *effect on* the lifting surfaces (the fence boundary condition) is a separate, composable
+  mechanism — the **image fence** (`docs/30_future/00_backlog.md`), deliberately not in the
+  strip element.
+
+**Slope.** The `PSTRIP` default `slope0` ≈ π is the per-box dΔCp/dα_local; with a uniform
+per-box slope the sectional lift-curve slope equals that value, so π is "50% of the 2π
+flat-plate" body fudge. A `STRIPK` card overrides the slope box-by-box (emitted by the
+correction); the Δα offset rides in an ordinary `W2GJ`.
+
+### `build_strip_body_correction(bulk, *, horiz_eid, vert_eid, targets, mach=None, aero=None, sid_w2gj_base=9301, sid_stripk_base=9501, tol=1e-4)`
+
+The strip analogue of `build_body_correction`. Same moment-primary targets (`BodyTargets`:
+Cm_α/Cm0 on the horizontal panel(s); Cn_β/Cn0/Cl_β/Cl0 on the vertical panel(s)) and the same
+two-knob, slope-then-offset decoupled solve — but the body block is diagonal, so:
+
+* **slope** is a per-box `STRIPK` value (`slope = r·slope0`, joint min-norm ratio `r`), and
+* **offset** is a per-box `W2GJ` Δα that, being diagonal, induces load on **no other box** —
+  Cm0/Cn0/Cl0 are purely local functionals of `wg`.
+
+There is no WT2 ratio and no `ratio_max` conditioning concern (a large slope scaling is
+benign — the panel cannot contaminate). Emits one `(W2gj, Stripk)` pair per panel;
+`strip_body_cards_to_bdf` formats them. `build_strip_body_correction` raises if a named panel
+is not a strip (PSTRIP-backed) CAERO1. Worked example: `sample/cessna210_strip.bdf` +
+`sample/cessna210_body_section_data.csv` (`tests/aero/test_strip_body.py`).
+
+The Aero Correction page Stage 6 auto-detects the panel kind from the deck (PSTRIP → strip,
+PAERO1 → cruciform) and routes to the matching builder; strip body cards apply at
+`_BODY_W2GJ_BASE = 9301` / `_BODY_STRIPK_BASE = 9501`.
 
 ### `build_aero_model(bulk, grid_index=None) -> AeroModel`
 

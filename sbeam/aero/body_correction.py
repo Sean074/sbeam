@@ -93,8 +93,9 @@ import numpy as np
 
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.integration import build_djx
+from sbeam.aero.strip import is_strip_caero, strip_box_slopes
 from sbeam.assembly.coord_transform import _get_transform
-from sbeam.model.aero import Aecorr, W2gj
+from sbeam.model.aero import Aecorr, Stripk, W2gj
 from sbeam.solver.sol144 import (
     _compute_rigid_derivs,
     _pitch_moment,
@@ -418,6 +419,188 @@ def build_body_correction(
         warnings.warn(
             f"build_body_correction: residual {residual} exceeds tol={tol:g}; the body "
             "panels may lack the authority to reach these targets",
+            UserWarning, stacklevel=2,
+        )
+
+    return BodyCorrectionResult(
+        cards=cards, target=targets, achieved=achieved, baseline=baseline,
+        residual=residual, converged=converged, ratio_max=ratio_max,
+    )
+
+
+def strip_body_cards_to_bdf(result: "BodyCorrectionResult") -> str:
+    """Format the strip body-panel W2GJ + STRIPK cards as bulk-data text."""
+    from sbeam.aero.section_correction import _card_lines
+    header = "$ Decoupled strip body-panel total-aircraft moment match (W2GJ Δα + STRIPK slope)\n"
+    body = ""
+    for _eid, (w2, sk) in sorted(result.cards.items()):
+        body += _card_lines("W2GJ", [w2.sid, w2.caero_eid], w2.data) + "\n"
+        body += _card_lines("STRIPK", [sk.sid, sk.caero_eid], sk.data) + "\n"
+    return header + body
+
+
+def build_strip_body_correction(
+    bulk,
+    *,
+    horiz_eid=None,
+    vert_eid=None,
+    targets: BodyTargets,
+    mach=None,
+    aero=None,
+    sid_w2gj_base: int = 9301,
+    sid_stripk_base: int = 9501,
+    grid_index=None,
+    tol: float = 1e-4,
+) -> BodyCorrectionResult:
+    """Tune **decoupled strip** body panels so the total airplane Cm/Cn/Cl match ``targets``.
+
+    The strip-panel analogue of :func:`build_body_correction`.  The named panels must be
+    decoupled strip bodies (CAERO1 PID → PSTRIP); each box's load is purely local
+    (``sbeam.aero.strip``), so the correction is **contamination-free by construction** —
+    the lifting-surface loads are untouched no matter what the body does, and there is no
+    WT2 ratio / conditioning gauge to watch.
+
+    Two per-box knobs, solved in the same decoupled order as the cruciform:
+
+      * **slope — STRIPK per-box lift-curve slope.**  The strip block of the operator is the
+        diagonal ``diag(-slope/β)``, so scaling a body box's slope scales *only that box's*
+        ΔCp.  The horizontal panel(s) match Cm_α; the vertical panel(s) match Cn_β and Cl_β
+        (jointly, since a horizontal box's β-load also carries roll).  Solved as a slope
+        ratio ``r`` about the nominal PSTRIP slope, then emitted as ``slope = r·slope0``.
+      * **offset — W2GJ baseline normalwash Δα.**  Because the block is diagonal, a strip
+        box's Δα induces load on *no other box*, so Cm0/Cn0/Cl0 are purely local linear
+        functionals of ``wg`` — one joint minimum-norm solve hits the offset targets exactly.
+
+    The slope is fixed before the offset, and the offset never feeds back into the slope, so
+    the build is non-iterative and exact.  Returns a :class:`BodyCorrectionResult` whose
+    ``cards`` map ``{caero_eid: (W2gj, Stripk)}``; ``ratio_max`` reports the largest slope
+    scaling (informational — a large value is benign here, the panel cannot contaminate).
+    """
+    horiz_eids = _as_eid_list(horiz_eid)
+    vert_eids = _as_eid_list(vert_eid)
+    if not horiz_eids and not vert_eids:
+        raise ValueError("build_strip_body_correction: give horiz_eid and/or vert_eid")
+    panel_eids = horiz_eids + vert_eids
+    for eid in panel_eids:
+        if not is_strip_caero(bulk, eid):
+            raise ValueError(
+                f"build_strip_body_correction: CAERO1 {eid} is not a strip panel "
+                "(its PID must reference a PSTRIP). Use build_body_correction for a "
+                "cruciform VLM body panel."
+            )
+
+    aero0 = aero if aero is not None else build_aero_model(bulk, grid_index, mach)
+    boxes = aero0.boxes
+    n = len(boxes)
+    sref, cref, bref = bulk.aeros.sref, bulk.aeros.cref, bulk.aeros.bref
+
+    labels = ["ANGLEA", "SIDES"]
+    d_jx = build_djx(boxes, labels, bulk)
+    x_ref, ref_pt = _ref_geometry(bulk)
+    baseline = _total_metrics(aero0, bulk, d_jx, labels, x_ref, ref_pt)
+
+    # Per-box geometry and moment weight rows (C = w·cp), identical to the cruciform.
+    xfp = np.array([b.force_point[0] for b in boxes])
+    yfp = np.array([b.force_point[1] for b in boxes])
+    zfp = np.array([b.force_point[2] for b in boxes])
+    area = np.array([b.area for b in boxes])
+    nrm = np.array([b.normal for b in boxes])
+    nx, ny, nz = nrm[:, 0], nrm[:, 1], nrm[:, 2]
+    arm_x = xfp - x_ref
+    arm_y = yfp - ref_pt[1]
+    arm_z = zfp - ref_pt[2]
+    w_pitch = -(arm_x * area * nz) / (sref * cref)
+    if bref > 0:
+        w_yaw = (area * (arm_x * ny - arm_y * nx)) / (sref * bref)
+        w_roll = (area * (arm_y * nz - arm_z * ny)) / (sref * bref)
+    else:
+        w_yaw = np.zeros(n)
+        w_roll = np.zeros(n)
+
+    # The strip block of ajj_inv_corr is diagonal, so the body's unit-α / unit-β responses
+    # are purely local (no flying-surface coupling).  cp_a / cp_b carry the nominal slope.
+    a_base = aero0.ajj_inv_corr
+    cp_a = a_base @ d_jx[:, 0]      # ANGLEA response (body boxes: slope0·n_z/β)
+    cp_b = a_base @ d_jx[:, 1]      # SIDES  response (body boxes: slope0·n_y/β)
+    slope0 = strip_box_slopes(bulk, boxes)   # nominal per-box slope (length n)
+
+    # Body box indices (per panel, for card emission) and the joined body set.
+    panel_idx = {}
+    for eid in panel_eids:
+        idx = np.array([k for k, b in enumerate(boxes) if b.caero_eid == eid])
+        if idx.size == 0:
+            raise ValueError(f"build_strip_body_correction: CAERO1 {eid} has no boxes")
+        panel_idx[eid] = idx
+    body_idx = np.concatenate([panel_idx[e] for e in panel_eids])
+
+    # ---- slope: joint minimum-norm slope ratio r about the nominal PSTRIP slope -------
+    slope_cons = []
+    if horiz_eids:
+        slope_cons.append((w_pitch, cp_a, targets.cm_alpha - baseline.cm_alpha))
+    if vert_eids:
+        slope_cons.append((w_yaw, cp_b, targets.cn_beta - baseline.cn_beta))
+        slope_cons.append((w_roll, cp_b, targets.cl_beta - baseline.cl_beta))
+    a_slope = np.vstack([(w * cp)[body_idx] for w, cp, _d in slope_cons])
+    d_slope = np.array([d for _w, _cp, d in slope_cons])
+    r = np.ones(n)
+    r[body_idx] = 1.0 + np.linalg.pinv(a_slope) @ d_slope
+
+    # Corrected operator with the body slopes scaled (diagonal rows scaled — stays diagonal).
+    a_r = r[:, np.newaxis] * a_base
+
+    # ---- offset: joint minimum-norm W2GJ Δα (purely local for the diagonal block) -----
+    v_pitch = w_pitch @ a_r
+    v_yaw = w_yaw @ a_r
+    v_roll = w_roll @ a_r
+    cm0_base = float(v_pitch @ aero0.wg)
+    cn0_base = float(v_yaw @ aero0.wg)
+    cl0_base = float(v_roll @ aero0.wg)
+    rows, dvec = [], []
+    if horiz_eids:
+        rows.append(v_pitch[body_idx]); dvec.append(targets.cm0 - cm0_base)
+    if vert_eids:
+        rows.append(v_yaw[body_idx]); dvec.append(targets.cn0 - cn0_base)
+        rows.append(v_roll[body_idx]); dvec.append(targets.cl0 - cl0_base)
+    a_off = np.vstack(rows)
+    wg_solve = np.linalg.pinv(a_off) @ np.array(dvec)
+    wg_body = np.zeros(n)
+    wg_body[body_idx] = wg_solve
+
+    # ---- emit body cards: W2GJ (Δα offset) + STRIPK (per-box slope = r·slope0) ---------
+    cards = {}
+    for i, eid in enumerate(panel_eids):
+        idx = panel_idx[eid]
+        w2 = W2gj(sid=sid_w2gj_base + i, caero_eid=eid, data=wg_body[idx].tolist())
+        sk = Stripk(sid=sid_stripk_base + i, caero_eid=eid,
+                    data=(r[idx] * slope0[idx]).tolist())
+        cards[eid] = (w2, sk)
+
+    # ---- achieved totals (analytic: a_r is the exact production operator) --------------
+    wg_total = aero0.wg + wg_body
+    achieved = BodyTargets(
+        cm_alpha=float(w_pitch @ (r * cp_a)),
+        cm0=float(v_pitch @ wg_total),
+        cn_beta=float(w_yaw @ (r * cp_b)),
+        cn0=float(v_yaw @ wg_total),
+        cl_beta=float(w_roll @ (r * cp_b)),
+        cl0=float(v_roll @ wg_total),
+    )
+    residual = {
+        "cm_alpha": (targets.cm_alpha - achieved.cm_alpha) if horiz_eids else 0.0,
+        "cm0": (targets.cm0 - achieved.cm0) if horiz_eids else 0.0,
+        "cn_beta": (targets.cn_beta - achieved.cn_beta) if vert_eids else 0.0,
+        "cn0": (targets.cn0 - achieved.cn0) if vert_eids else 0.0,
+        "cl_beta": (targets.cl_beta - achieved.cl_beta) if vert_eids else 0.0,
+        "cl0": (targets.cl0 - achieved.cl0) if vert_eids else 0.0,
+    }
+    converged = max(abs(v) for v in residual.values()) < tol
+
+    ratio_max = float(np.max(np.abs(r[body_idx]))) if body_idx.size else 0.0
+    if not converged:
+        warnings.warn(
+            f"build_strip_body_correction: residual {residual} exceeds tol={tol:g}; the "
+            "strip panels may lack the spatial spread (x-arm for pitch/yaw, z-arm for "
+            "roll) to reach these targets — add boxes or extend the panel",
             UserWarning, stacklevel=2,
         )
 

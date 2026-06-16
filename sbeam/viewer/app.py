@@ -650,8 +650,10 @@ def _render_aero_tab(bulk: BulkData) -> None:
             )
             # Uncorrected baseline (raw VLM + Prandtl–Glauert at the same Mach and
             # the same W2GJ wg) — only when a correction card is present, so there
-            # is something to overlay; otherwise the two solves coincide.
-            if bulk.wkks or bulk.aecorrs:
+            # is something to overlay; otherwise the two solves coincide.  Skipped for
+            # decks with decoupled strip body panels: a raw VLM solve cannot represent
+            # them (no horseshoe vortex), so there is no meaningful uncorrected overlay.
+            if (bulk.wkks or bulk.aecorrs) and not bulk.pstrips:
                 result_unc = solve_rigid_cl(
                     aero_model.boxes, alpha_rad,
                     beta=beta_rad,

@@ -438,9 +438,13 @@ understood and documented (`docs/10_standard/05_aeroelastics.md` "Geometry & lim
 `docs/20_theory/01_aeroelastics_theory.md` §3.6): a flat plate makes a *stabilising* bare pitch (wrong
 sign for a fuselage), and its authority to move the total moment is the *same* coupling that
 contaminates the real surfaces — so it can only supply a **small** mild increment without either
-overlapping the tail (spurious) or running an extreme correction. Large, *predictive* body effects —
-the destabilising Munk couple, wing-body interference/carryover, a several-MAC neutral-point shift,
-real fuselage airloads into the structure — need a genuine body element.
+overlapping the tail (spurious) or running an extreme correction. The **decoupled strip body panel**
+(Step A10, `PSTRIP`/`STRIPK`, done) is now the recommended *load-only* body stand-in — it removes the
+contamination entirely (diagonal block, zero coupling) but, by the same token, carries **no**
+interference/fence effect. Large, *predictive* body effects — the destabilising Munk couple, wing-body
+interference/carryover, a several-MAC neutral-point shift, real fuselage airloads into the structure —
+still need a genuine body element (below), and the **fence boundary condition** needs the image method
+(next item).
 
 - **Tier 1 (recommended) — slender body + interference body (NASTRAN `CAERO2`/`PAERO2` style).** A line
   of acceleration-potential doublets (Munk slender-body theory; z-doublets → lift/pitch, y-doublets →
@@ -459,7 +463,33 @@ real fuselage airloads into the structure — need a genuine body element.
   thickness + non-circular sections, fully coupled), but effectively a second solver. **Very large.**
 
 Until then, keep the cruciform compact and clear of the empennage (A9 guidance) and use it only for a
-mild increment.
+mild increment — or use the decoupled strip body (A10), which is placement-free.
+
+### Body fence / no-through-flow boundary condition via image vortices (open, medium priority)
+
+The complement to the decoupled strip (A10). A strip body carries the body's *load* but is transparent
+to the wing's flow — it does **not** enforce that a wing box cannot blow through the fuselage (the
+fence / carryover effect). By the §3.7 identity, a fence is *necessarily* coupling (it reacts to the
+wing's induced velocity), so it cannot live in the decoupled strip element. The cheap, **unknown-free**
+way to add it is the **method of images**: reflect each wing horseshoe across the body surface
+(mirrored geometry, reversed circulation, as in ground effect) and add the image's Biot–Savart
+contribution into the wing-wing block of `build_ajj`. This is the same machinery as the trailing wake
+already in `horseshoe_influence` (extra induced-velocity terms tied to the box's own Γ, no new
+unknowns), but enforcing no-penetration (transverse reflection) instead of the Kutta condition
+(streamwise shedding) — and it is a *physical* reflection, not the cruciform's wrong-sign
+contamination. It composes with the strip load device (load + BC as two independent mechanisms).
+
+- **Scope:** an image variant of `horseshoe_influence` (mirror `bound_a`/`bound_b` + the +X trailing
+  legs across a plane, reverse sense); fence planes derived from the body geometry (flanks y≈±w/2,
+  waterline z) with **footprint gating** (reflect only behind the body extent); wire into `build_ajj`
+  via an optional `fence_planes` argument; tests (a wall in isolation reproduces the textbook image
+  result; fence raises wing-root loading; strip + fence compose).
+- **Caveats to document:** a plane is not a body (planar image exact only for an infinite flat wall;
+  finite/curved fuselage ⇒ first-order; gate to the footprint); sbeam is **full-span** so the y=0
+  centreline is already present — fence planes go on the body's *outer* surface, not the centreline; a
+  perpendicular corner (flank + waterline) needs the 3-image corner construction to stay exact. The
+  proper-but-heavier version is the cylinder image (circle theorem) = the Tier-1 interference body.
+- **Effort:** small (AIC augmentation only, no new unknowns / no body solve). **Lands after A10.**
 
 ---
 

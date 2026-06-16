@@ -1,0 +1,168 @@
+$ =========================================================================
+$ cessna210_strip.bdf — Cessna 210 Centurion-like GA aircraft with DECOUPLED
+$ STRIP BODY PANELS (VLM aero model + strip-theory fuselage representation).
+$
+$ Strip variant of cessna210_body.bdf.  The fuselage is represented by two crossing
+$ DECOUPLED STRIP body panels instead of cruciform VLM panels:
+$   * horizontal strip body panel (CAERO1 400, XY plane, normal +Z) — body lift/pitch;
+$   * vertical   strip body panel (CAERO1 500, XZ plane, normal +Y) — body sideforce/yaw.
+$ Their CAERO1 PID points to a PSTRIP (not a PAERO1), so each box is an independent
+$ 2-D section with its OWN ΔCp-vs-α curve and NO horseshoe vortex, NO wake, and NO AIC
+$ coupling to any other box (see sbeam.aero.strip).  Consequences vs the cruciform:
+$   * the strip body CANNOT contaminate the wing/HTP/VTP — its block of the influence
+$     operator is diagonal, so the lifting-surface loads are unchanged no matter where
+$     the strip sits (overlap is harmless; there is no WT2-ratio conditioning to watch);
+$   * it carries NO interference/fence effect either (a decoupled element is transparent
+$     to the wing's flow) — it is a pure load device tuned to the total-airplane targets.
+$ The body correction (sbeam.aero.body_correction.build_strip_body_correction) sets each
+$ box's slope (STRIPK) and local Δα (W2GJ) so the TOTAL airplane Cm/Cn/Cl match the CFD/WT
+$ "TOTAL" row of sample/cessna210_body_section_data.csv.
+$
+$ Coordinate system: X = freestream (forward), Y = starboard, Z = up; origin at nose.
+$ Units: SI (m, N, kg, Pa).  Full-span model (SYMXZ=0).
+$
+$ Splining: the body panels carry SPLINE0 (zero-displacement) — they inject no load into
+$ the fuselage beam (a tuning load, not a real airload), exactly as the cruciform deck.
+$ =========================================================================
+$
+SOL 101
+$
+SUBCASE 1
+  TITLE = Cessna 210 1g Static (structure only; aero via Aero tab / SOL 144)
+  SPC   = 1
+  LOAD  = 10
+  DISPLACEMENT = ALL
+  SPCFORCE     = ALL
+$
+BEGIN BULK
+$
+$ ----------------------------------------------------------------- MATERIAL
+$ Aluminium alloy (2024-T3 representative): E=70 GPa, G=26.9 GPa, nu=0.3, rho=2700
+MAT1, 1, 7.0e10, 2.69e10, 0.3, 2700.0
+$
+$ ---------------------------------------------------------------- PROPERTIES
+$ PID 1 — fuselage equivalent beam   A=0.020, I1=0.010, I2=0.010, J=0.015
+PBAR, 1, 1, 0.020, 0.010, 0.010, 0.015
+$ PID 2 — wing spar box              A=0.004, I1=8.0e-4 (flap), I2=8.0e-5 (chord), J=3.0e-4
+PBAR, 2, 1, 0.004, 8.0e-4, 8.0e-5, 3.0e-4
+$ PID 3 — empennage box (HTP/VTP)    A=0.002, I1=2.0e-4, I2=2.0e-5, J=1.0e-4
+PBAR, 3, 1, 0.002, 2.0e-4, 2.0e-5, 1.0e-4
+$
+$ --------------------------------------------------------------------- NODES
+$ Fuselage spine (y=0, z=0.6 cabin centreline)
+GRID, 1, , 0.50, 0.0, 0.60
+GRID, 2, , 2.70, 0.0, 0.60
+GRID, 3, , 5.00, 0.0, 0.60
+GRID, 4, , 6.90, 0.0, 0.60
+GRID, 5, , 8.00, 0.0, 0.60
+$
+$ Wing elastic axis (~40% chord, z with 1.5 deg dihedral) — root then stbd/port
+GRID, 10, , 2.70, 0.0,  1.250
+GRID, 11, , 2.655, 2.80, 1.323
+GRID, 12, , 2.610, 5.60, 1.397
+GRID, 111, , 2.655, -2.80, 1.323
+GRID, 112, , 2.610, -5.60, 1.397
+$
+$ HTP elastic axis (z=0.70)
+GRID, 20, , 7.32, 0.0,   0.70
+GRID, 21, , 7.36, 0.865, 0.70
+GRID, 22, , 7.40, 1.73,  0.70
+GRID, 121, , 7.36, -0.865, 0.70
+GRID, 122, , 7.40, -1.73,  0.70
+$
+$ VTP elastic axis (vertical) — root extended down to z=0.60 (intersects HTP plane)
+GRID, 30, , 7.20, 0.0, 0.60
+GRID, 31, , 7.36, 0.0, 1.45
+GRID, 32, , 7.525, 0.0, 2.30
+$
+$ ------------------------------------------------------------------ ELEMENTS
+$ Fuselage CBARs (along X) — orientation vec (0,1,0)
+CBAR, 1, 1, 1, 2, 0.0, 1.0, 0.0
+CBAR, 2, 1, 2, 3, 0.0, 1.0, 0.0
+CBAR, 3, 1, 3, 4, 0.0, 1.0, 0.0
+CBAR, 4, 1, 4, 5, 0.0, 1.0, 0.0
+$ Wing root strut (fuselage up to wing EA) — orientation vec (1,0,0)
+CBAR, 5, 2, 2, 10, 1.0, 0.0, 0.0
+$ Wing CBARs (along Y) — orientation vec (1,0,0)
+CBAR, 11, 2, 10, 11, 1.0, 0.0, 0.0
+CBAR, 12, 2, 11, 12, 1.0, 0.0, 0.0
+CBAR, 111, 2, 10, 111, 1.0, 0.0, 0.0
+CBAR, 112, 2, 111, 112, 1.0, 0.0, 0.0
+$ Tail struts (fuselage to HTP / VTP roots) — orientation vec (0,1,0)
+CBAR, 6, 3, 4, 20, 0.0, 1.0, 0.0
+CBAR, 7, 3, 4, 30, 0.0, 1.0, 0.0
+$ HTP CBARs (along Y) — orientation vec (1,0,0)
+CBAR, 21, 3, 20, 21, 1.0, 0.0, 0.0
+CBAR, 22, 3, 21, 22, 1.0, 0.0, 0.0
+CBAR, 121, 3, 20, 121, 1.0, 0.0, 0.0
+CBAR, 122, 3, 121, 122, 1.0, 0.0, 0.0
+$ VTP CBARs (along Z) — orientation vec (0,1,0)
+CBAR, 31, 3, 30, 31, 0.0, 1.0, 0.0
+CBAR, 32, 3, 31, 32, 0.0, 1.0, 0.0
+$
+$ --------------------------------------------------------------- CONSTRAINTS
+$ Fix all 6 DOFs at the nose reference node (ground/wind-tunnel mount)
+SPC1, 1, 123456, 1
+$
+$ --------------------------------------------------------------------- LOADS
+$ 1g body acceleration, -Z
+GRAV, 10, 0, 9.81, 0.0, 0.0, -1.0
+$
+$ ============================================================== AERODYNAMICS
+$ Reference geometry (full-span): CREF = wing MAC, BREF = wing span, SREF = wing area.
+$ Moments are reported about the origin (RCSID 0).  Field 8 (sbeam extension) is the
+$ default Mach for Prandtl-Glauert (0 = incompressible).
+AEROS, 0, 0, 1.471, 11.20, 16.24, 0, 0, 0.0
+$
+$ Aerodynamic panel property for the FLYING surfaces (ordinary VLM, Phase A stub)
+PAERO1, 10
+$
+$ Strip body-panel property: marks CAERO1 400/500 as DECOUPLED strip bodies.  The
+$ optional field 3 is the nominal per-box lift-curve slope dΔCp/dα_local; left blank it
+$ defaults to π — half the 2π flat-plate value ("50% normal surface").
+PSTRIP, 20
+$
+$ Chordwise NCHORD = 6 (>=2 required for the section-moment correction; >=4
+$ recommended for converged pitching moment). Spanwise NSPAN sized for box AR ~1.
+$
+$ ---- Wing starboard: 16 x 6 = 96 boxes
+CAERO1, 100, 10, 0, 16, 6, 0, 0, 1
++, 2.00, 0.0, 1.250, 1.75, 2.15, 5.60, 1.397, 1.15
+$ ---- Wing port: 16 x 6 = 96 boxes
+CAERO1, 150, 10, 0, 16, 6, 0, 0, 1
++, 2.00, 0.0, 1.250, 1.75, 2.15, -5.60, 1.397, 1.15
+$
+$ ---- HTP starboard: 8 x 6 = 48 boxes
+CAERO1, 200, 10, 0, 8, 6, 0, 0, 1
++, 6.90, 0.0, 0.70, 1.05, 7.10, 1.73, 0.70, 0.75
+$ ---- HTP port: 8 x 6 = 48 boxes
+CAERO1, 250, 10, 0, 8, 6, 0, 0, 1
++, 6.90, 0.0, 0.70, 1.05, 7.10, -1.73, 0.70, 0.75
+$
+$ ---- VTP (single surface, "span" is Z): 6 x 6 = 36 boxes
+$ Root extended down to z=0.60 so the fin crosses the HTP plane (z=0.70).
+CAERO1, 300, 10, 0, 6, 6, 0, 0, 1
++, 6.60, 0.0, 0.60, 1.50, 7.10, 0.0, 2.30, 0.85
+$
+$ -------------------------------------------------- DECOUPLED STRIP BODY PANELS
+$ Two crossing strip surfaces standing in for the fuselage.  PID 20 → PSTRIP, so these
+$ are DECOUPLED strips: each box loads only on its own local α/β, with no coupling to
+$ the lifting surfaces.  Because a strip cannot contaminate, the placement is chosen for
+$ PHYSICAL interpretability (spanning the fuselage so the moment arms are realistic) —
+$ NOT to avoid the empennage; an overlap here would change the wing/tail loads by exactly
+$ zero.  Tuned by build_strip_body_correction to the CFD/WT "TOTAL" targets.
+$
+$ ---- Horizontal strip body panel (XY plane at z=0.30, normal +Z): 2 x 8 = 16 boxes
+CAERO1, 400, 20, 0, 2, 8, 0, 0, 1
++, 0.30, -0.40, 0.30, 4.70, 0.30, 0.40, 0.30, 4.70
+$
+$ ---- Vertical strip body panel (XZ plane at y=0, normal +Y): 4 x 8 = 32 boxes
+CAERO1, 500, 20, 0, 4, 8, 0, 0, 1
++, 0.30, 0.0, 0.05, 4.70, 0.30, 0.0, 0.45, 4.70
+$
+$ Body panels: SPLINE0 (zero structural coupling — negligible body elasticity).
+$ Box-ID range = caero_eid + i_span*nchord + j_chord (horiz 16, vert 32 boxes).
+SPLINE0, 9400, 400, 400, 415
+SPLINE0, 9500, 500, 500, 531
+$
+ENDDATA

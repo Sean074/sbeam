@@ -251,6 +251,14 @@ solve, and/or exports a self-contained corrected BDF.
    (`body_correction.body_cards_to_bdf`). The body panels carry `SPLINE0` (zero structural
    coupling); they drive the total/trim Cm/Cn but inject no fictitious load into the fuselage beam.
 
+   **Panel kind is auto-detected from the deck (Step A10).** If the selected body panels are
+   **decoupled strip bodies** (CAERO1 PID → `PSTRIP`) the stage routes to
+   `build_strip_body_correction` instead, emits `(W2gj, Stripk)` pairs at
+   `_BODY_W2GJ_BASE = 9301` / `_BODY_STRIPK_BASE = 9501`, and replaces the WT2-ratio readout with a
+   "max slope scaling" line (no contamination is possible for a strip, so any value is benign). A
+   mix of strip and cruciform panels in one build is rejected. Cruciform (`PAERO1`) panels keep the
+   behaviour above.
+
 v1 limits (inherited from the engine): exact-Mach match (no Mach interpolation); one operating
 region per surface (the region whose `[a_lo, a_hi]` contains the operating angle); one axis per
 surface. Body correction is moment-primary (body lift/side-force is a minimum-norm by-product).
