@@ -1271,8 +1271,10 @@ def run_sol144_trim(
     """SOL 144 static aeroelastic trim solve (Step 52).
 
     Solves the coupled structural/aerodynamic trim problem using the Schur
-    complement method.  Only the determined case (n_free == n_suport) is
-    supported; an over-determined case raises NotImplementedError.
+    complement method.  Handles both the determined case
+    (n_free == n_suport) and the over-determined (redundant-control) case —
+    the latter via null-space reduction with a weighted-L2 objective from
+    the TRIMOBJ/TRIMCON/TRIMVAR cards.
 
     Args:
         bulk:       Parsed BulkData — must include SUPORT and TRIM cards.
@@ -1289,9 +1291,8 @@ def run_sol144_trim(
         Sol144TrimResult with trim variables, displacements, stability derivatives.
 
     Raises:
-        ValueError  if no SUPORT card, TRIM card, or trim is over-determined
-                    without TRIMOBJ/TRIMCON.
-        NotImplementedError for over-determined trim.
+        ValueError  if no SUPORT card, TRIM card, or the trim is
+                    over-determined without a TRIMOBJ objective.
     """
     if not bulk.supports:
         raise ValueError("run_sol144_trim: no SUPORT card found in model")

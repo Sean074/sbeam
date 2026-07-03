@@ -1,6 +1,6 @@
 # sbeam — BDF Card Reference
 
-All BDF cards supported in Phase 1 and Phase 2. For each card: field layout, variable names and types, defaults, and a minimal example.
+All BDF cards supported in Phases 1–2 (structures), Phases A–C (aeroelastics, including splining and trim), and Phase G0 (transient maneuver loads). For each card: field layout, variable names and types, defaults, and a minimal example.
 
 ---
 
@@ -49,12 +49,16 @@ Case control appears between the `SOL` line and `BEGIN BULK`. Keywords are not o
 | `SPC` | int | Constraint set ID (references `SPC`/`SPC1` bulk cards) |
 | `METHOD` | int | Eigenvalue method SID (references `EIGRL` bulk card; SOL 103 only) |
 | `TRIM` | int | Trim condition SID (references `TRIM` bulk card; SOL 144 only) |
+| `TRIMOBJ` | int | Trim objective SID (references `TRIMOBJ` bulk card; over-determined SOL 144 trim) |
 | `DIVERG` | int | Divergence condition SID (references `DIVERG` bulk card; SOL 144 only) |
+| `MLOADS` | int | Transient maneuver-loads SID (references `MLOADS` bulk card; runs `solver/maneuver_qs.py` instead of the static trim; SOL 144, Phase G0) |
 | `DISPLACEMENT` | — | Request nodal displacement output (`= ALL` or `= PRINT`) |
 | `SPCFORCE` | — | Request SPC reaction force output |
 | `OLOAD` | — | Request applied load echo output |
 | `FORCE` | — | Request CBAR/CBUSH element force output |
 | `STRESS` | — | Request CBAR stress output at recovery points |
+| `AEROF` | — | Request per-box aerodynamic force output (SOL 144; emits the AERODYNAMIC BOX PRESSURES AND FORCES block) |
+| `APRES` | — | Request per-box aerodynamic pressure (ΔCp) output (SOL 144; same output block as `AEROF`) |
 | `INCLUDE` | str | Path to bulk data file to include: `INCLUDE 'model.dat'` |
 
 **Example case control section:**
@@ -101,6 +105,11 @@ The continuation line is **required**.
 | C1–C3 | `c` | float×3 | Point in local XZ-plane in RID frame | required |
 
 Local axes are derived: `z = B − A`, `x_temp = C − A`, `y = z × x_temp`, `x = y × z`.
+
+Points A, B, C must be non-collinear: coincident A/B raises
+`ValueError("points A and B are coincident")` and collinear A, B, C raises
+`ValueError("points A, B, C are collinear")` when the transform is resolved at the
+end of parsing.
 
 **Example:**
 ```
@@ -164,7 +173,9 @@ MAT1, MID, E, G, NU, RHO
 | NU | `nu` | float | Poisson's ratio | `0.0` |
 | RHO | `rho` | float | Mass density | `0.0` |
 
-If both G and NU are non-zero, G takes precedence. RHO is required for SOL 103 unless CONM2 supplies all mass.
+If both G and NU are non-zero, G takes precedence. When G is blank or zero (and both
+E and NU are non-zero), G is derived from the isotropic relationship
+`G = E / (2·(1 + ν))` at parse time. RHO is required for SOL 103 unless CONM2 supplies all mass.
 
 **Example:**
 ```
@@ -275,7 +286,14 @@ The continuation line is optional.
 | PA | `pa` | str | Pin releases at end A (DOF digits 1–6) | `""` |
 | PB | `pb` | str | Pin releases at end B (DOF digits 1–6) | `""` |
 
-The orientation vector `[X1, X2, X3]` defines the element y-axis and must not be parallel to the element axis (GA→GB).
+The orientation vector `[X1, X2, X3]` defines the element y-axis and must not be parallel to the element axis (GA→GB). Only the vector form is supported — the NASTRAN
+G0 (grid-ID) form of the orientation field is **not** supported; an integer in field 5
+is read as a vector component, not a grid reference.
+
+Pin-release DOF digits (PA/PB) are in **element local axes** (1 = axial, 4 = torsion,
+5/6 = local bending rotations), not the global DOFs of the DOF Reference table.
+Releases zero the corresponding rows/columns of the local 12×12 stiffness before
+transformation to global.
 
 **Example:**
 ```
@@ -313,6 +331,14 @@ Both the inline fields after CID and the continuation line are optional.
 | X1–X3 | `x1`–`x3` | float | Orientation vector (continuation) | `0.0` |
 
 For a grounded element (GB blank), stiffness acts only on GA DOFs. For a two-node element, symmetric stiffness couples GA and GB.
+
+CBUSH is **massless** — it contributes stiffness only. To model mass at a spring
+connection point, add a CONM2 at the grid.
+
+The orientation vector X1–X3 (CBAR convention: defines the element XZ plane) is
+**required** when GA and GB are coincident — a coincident two-node CBUSH without it
+raises `ValueError`. For a grounded element the orientation vector defines the local
+x-axis.
 
 **Example:**
 ```
@@ -370,7 +396,28 @@ Additional dependent grids may span continuation lines.
 | CM | `cm` | str | DOF string coupling GN to all GMs (e.g., `"123456"`) | required |
 | GM1–GMn | `gm` | list[int] | Dependent grid IDs | required |
 
-Constraint enforced: `u_GMi[d] = u_GN[d]` for each DOF `d` in CM.
+**Constraint enforced** (full rigid-body kinematics, including the lever-arm effect of
+any offset between GN and GM): for each dependent grid GM with offset
+`d = (dx, dy, dz) = r_GM − r_GN` in global coordinates,
+
+```
+u_GM = R @ u_GN,   R = [ 1  0  0    0   dz  -dy ]
+                       [ 0  1  0  -dz    0   dx ]
+                       [ 0  0  1   dy  -dx    0 ]
+                       [ 0  0  0    1    0    0 ]
+                       [ 0  0  0    0    1    0 ]
+                       [ 0  0  0    0    0    1 ]
+```
+
+Only the rows of `R` for the DOFs listed in CM are applied
+(`u_GM[d] = R[d, :] @ u_GN`). When the offset is zero, `R` reduces to identity and
+the constraint becomes the direct DOF copy `u_GM[d] = u_GN[d]`. GN must not itself be
+a dependent DOF of another constraint element (raises `ValueError`).
+
+**Attaching mass via RBE2 + CONM2:** place the CONM2 on the **independent (GN)**
+node; its mass is carried into the reduced system through `M_red = Tᵀ M T`. Placing a
+CONM2 on a dependent GM node is mathematically valid (the transformation
+redistributes it) but is untested — prefer the GN attachment.
 
 **Example:**
 ```
@@ -378,6 +425,9 @@ $ GID 3 rigidly follows GID 2 in all 6 DOFs
 RBE2, 1, 2, 123456, 3
 $ Multiple dependents: GIDs 3, 4, 5 all follow GID 1
 RBE2, 2, 1, 123456, 3, 4, 5
+$ 100 t engine mass at GID 7, carried through an RBE2 from GID 6
+RBE2, 20, 7, 123456, 6
+CONM2, 30, 7, 0, 100000.0
 ```
 
 ---
@@ -456,6 +506,13 @@ Each weight group `(WTi, Ci, Gi_1, Gi_2, ...)` may span continuation lines.
 
 Constraint: `u_REFGRID[d] = Σᵢ(wᵢ × u_i[d]) / Σᵢ wᵢ` for each DOF `d` in REFC.
 
+**Limitation — same-DOF averaging only:** each dependent DOF is a weighted average of
+the *same-numbered* DOF at the independent grids; rotation-to-translation coupling
+across an offset (lever-arm kinematics) is **not** applied. This simplified
+formulation is exact when the independent grids are collocated with the reference
+point or the independent set moves rigidly. When the offset lever-arm effect matters,
+use RBAR (kinematically exact rigid connection) instead.
+
 **Example:**
 ```
 $ REFGRID=7 follows the average motion of GID 6, equal weight, all 6 DOFs
@@ -495,6 +552,21 @@ The continuation line is optional (all inertia terms default to 0).
 | I31 | `i31` | float | Product of inertia, axes 3–1 | `0.0` |
 | I32 | `i32` | float | Product of inertia, axes 3–2 | `0.0` |
 | I33 | `i33` | float | Moment of inertia about CID axis 3 at CG | `0.0` |
+
+**Assembly:** each CONM2 contributes a full symmetric 6×6 block at its grid:
+
+- translational: `m · I₃`
+- translation–rotation coupling (offset `r` non-zero): `−m · skew(r)` and its transpose
+- rotational: `I_cm + m · (|r|² · I₃ − r·rᵀ)` (parallel-axis transfer of the CG inertia
+  tensor to the grid)
+
+When CID ≠ 0, the offset and inertia tensor are rotated to global before assembly:
+`r = R @ r_cid`, `I = R @ I_cid @ Rᵀ`.
+
+> **Singular mass warning (SOL 103):** a CONM2 with zero offset and zero inertia on a
+> model with `rho = 0.0` MAT1s populates only the three translational DOFs at its grid
+> — the global mass matrix is singular. `solve_modes` applies Tikhonov regularisation
+> to zero-mass DOFs; see `docs/10_standard/04_modal_analysis.md`.
 
 **Examples:**
 ```
@@ -685,6 +757,11 @@ GRAV, SID, CID, G, N1, N2, N3
 The gravity load vector is computed as `f_grav = M_global × a_field`, where `a_field` has `G × [N1, N2, N3]` at every translational DOF and zero at rotational DOFs. Both CBAR distributed mass and CONM2 point masses contribute naturally through the assembled consistent mass matrix.
 
 GRAV SIDs may appear as component loads in a `LOAD` card, mixed freely with `FORCE` and `MOMENT` SIDs. CID ≠ 0 raises a parse error in Phase 1–2.
+
+> **Reaction recovery:** SPC reactions are computed as
+> `R = K[spc, :] @ u − f_applied[spc]`. The `f_applied[spc]` term subtracts the
+> gravity (and other applied) load acting directly at SPC'd DOFs, so reactions do not
+> undercount the supported weight. See `docs/10_standard/03_static_analysis.md`.
 
 **Example:**
 ```
@@ -938,7 +1015,8 @@ W2GJ, 5, 100, 0.0349, 0.0349, 0.0349, 0.0349, 0.0349, 0.0349
 ### WKK — Diagonal AIC Correction
 
 Lowest-fidelity AIC correction: scales each row of the AIC matrix by a per-box
-weight. `AJJ* = diag(w) @ AJJ`.
+weight. The corrected AIC is `AJJ* = diag(w) @ AJJ`; the caller inverts it via
+`np.linalg.lstsq`.
 
 **Format:**
 ```
@@ -1030,6 +1108,166 @@ diagonal is `-slope/β` (Göthert 1/β applied for compressibility).
 ```
 STRIPK, 9501, 400, 3.05, 3.05, 2.98, 2.98, 3.10, 3.10, 3.02, 3.02
 ```
+
+---
+
+## Splining Cards (Phase B)
+
+The spline cards couple aero boxes to structural grids (`g_slope` / `g_disp` operators).
+See `docs/10_standard/05_aeroelastics.md` for the interpolation theory and the
+rigid-body exactness gates. Every box must be covered by exactly one spline card;
+overlapping coverage raises `ValueError`, uncovered boxes emit a `UserWarning`.
+
+NASTRAN box ID convention (row-major, matching `mesh_caero1()`):
+`box_id = CAERO1.EID + i_span × n_chord_boxes + j_chord`.
+
+---
+
+### SET1 — Structural Grid List
+
+Lists the structural grid IDs a SPLINE2 interpolates from (referenced by SETG). Also
+referenced by `SET1`-type AECOMP cards for MONPNT3 grid collections.
+
+**Format:**
+```
+SET1, SID, G1, G2, G3, ...
++,    G8, G9, ...
+```
+
+Grid IDs may span continuation lines.
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| SID | `sid` | int | Set ID (unique; referenced by SPLINE2 SETG or AECOMP) | required |
+| G1–Gn | `grids` | list[int] | Structural grid IDs | required |
+
+Cross-reference validation (post-parse): every grid ID must exist in GRID, else
+`ValueError`. A SET1 referenced by a SPLINE2 needs at least 2 grids (spline build).
+
+**Example:**
+```
+$ Wing elastic-axis grids for the beam spline
+SET1, 1100, 10, 11, 12, 13, 14, 15
+```
+
+---
+
+### SPLINE2 — Beam Spline
+
+Couples a range of aero boxes to structural grids via a 1-D cubic Hermite spline
+along the spline axis (CID x-axis = span direction).
+
+**Format:**
+```
+SPLINE2, EID, CAERO, ID1, ID2, SETG, DZ, DTOR, CID
++,       DTHX, DTHZ, , USAGE
+```
+
+The continuation line is optional.
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| EID | `eid` | int | Element ID (unique) | required |
+| CAERO | `caero` | int | CAERO1 EID of the panel being splined | required |
+| ID1 | `id1` | int | First NASTRAN box ID in the range | required |
+| ID2 | `id2` | int | Last NASTRAN box ID in the range | required |
+| SETG | `setg` | int | SET1 SID listing the structural grids | required |
+| DZ | `dz` | float | Smoothing parameter (`0.0` = interpolating Hermite) | `0.0` |
+| DTOR | `dtor` | float | Torsional/bending ratio (parsed; not used in Phase B) | `1.0` |
+| CID | `cid` | int | CORD2R CID defining the spline axis (`0` = global) | `0` |
+| DTHX | `dthx` | float | Torsion (CID x-axis rotation) attachment flag: `1.0` = attached, `−1.0` = detached; other values warn and are treated as detached | `1.0` |
+| DTHZ | `dthz` | float | CID z-axis rotation contribution (parsed; not used in Phase B) | `0.0` |
+| USAGE | `usage` | str | `FORCE` / `DISP` / `BOTH` (informational; not filtered in Phase B) | `"BOTH"` |
+
+Note the blank field before USAGE on the continuation line (field 4).
+
+Cross-reference validation (post-parse): SETG not in SET1 → `ValueError`;
+CAERO not in CAERO1 → `ValueError`.
+
+**Example:**
+```
+$ Spline boxes 1001-1040 to the SET1 1100 grids, spline axis = CORD2R 10
+SPLINE2, 200, 1001, 1001, 1040, 1100, 0.0, 1.0, 10
++,       1.0, 0.0, , BOTH
+```
+
+---
+
+### ATTACH — Rigid Attachment (sbeam extension)
+
+Rigidly couples a group of aero boxes to a single master structural grid. All boxes
+in the covered range move as a rigid body with the master grid (lever-arm kinematics
+about the box ¼-chord force point). ZAERO-inspired sbeam extension.
+
+**Format:**
+```
+ATTACH, EID, CAERO, ID1, ID2, GRID, CID
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| EID | `eid` | int | Element ID (unique) | required |
+| CAERO | `caero` | int | CAERO1 EID of the panel | required |
+| ID1 | `id1` | int | First NASTRAN box ID in the range | required |
+| ID2 | `id2` | int | Last NASTRAN box ID in the range | required |
+| GRID | `grid` | int | Master structural grid ID | required |
+| CID | `cid` | int | Coordinate system — must be `0`; CID ≠ 0 raises `NotImplementedError` at spline build | `0` |
+
+**Example:**
+```
+$ Rigidly attach fuselage boxes 2001-2016 to grid 50
+ATTACH, 300, 2001, 2001, 2016, 50
+```
+
+---
+
+### SPLINE0 — Zero-Displacement Constraint (sbeam extension)
+
+Registers a box range as "covered" without adding any structural coupling: the
+`g_slope` / `g_disp` rows of the covered boxes remain zero. Used to suppress
+un-splined-box warnings for boxes that are intentionally uncoupled.
+
+**Format:**
+```
+SPLINE0, EID, CAERO, ID1, ID2
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| EID | `eid` | int | Element ID (unique) | required |
+| CAERO | `caero` | int | CAERO1 EID of the panel | required |
+| ID1 | `id1` | int | First NASTRAN box ID in the range | required |
+| ID2 | `id2` | int | Last NASTRAN box ID in the range | required |
+
+**Example:**
+```
+$ Boxes 3001-3008 carry aero load but do not deflect structurally
+SPLINE0, 400, 3001, 3001, 3008
+```
+
+---
+
+### SPLINE1 — Infinite-Plate Spline (parsed but rejected)
+
+The Harder–Desmarais infinite-plate spline (IPS) is **not implemented** (Step 48
+deferred). The keyword is recognised by the dispatch table, but the handler raises
+`NotImplementedError` immediately — any SPLINE1 card in a deck aborts parsing with:
+
+```
+SPLINE1 (Harder–Desmarais infinite-plate spline) is not yet implemented;
+use SPLINE2 or ATTACH instead
+```
+
+The `Spline1` dataclass (EID, CAERO, ID1, ID2, SETG, DZ, CID) exists in
+`sbeam/model/aero.py` as a placeholder for the future implementation.
 
 ---
 
@@ -1195,6 +1433,37 @@ DIVERG, 20, 2, 1.225, 0.4, 0.6, 0.8
 
 ---
 
+### SUPORT — Free-Body Support DOFs
+
+Declares the rigid-body reference (r-set) DOFs for a free-flight trim: the a-set is
+partitioned into l-set / r-set at these DOFs and the trim solver holds `u_r = 0`
+(mean-axis constraint). Also used by MONPNT3 reaction recovery and the Phase G0
+restrained-l-set integration.
+
+**Format:**
+```
+SUPORT, G1, C1, G2, C2, ...
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| G1, G2, … | `gid` | int | Grid ID of a support point | required |
+| C1, C2, … | `dofs` | str | DOF string for the preceding grid (e.g. `"35"`, `"123456"`) | required |
+
+GID/DOF pairs repeat across the card; parsing stops at the first blank GID field. A
+blank DOF string after a GID raises `ValueError`. Each pair is appended to
+`bulk.supports` — multiple SUPORT cards accumulate.
+
+**Example:**
+```
+$ Support plunge and pitch at the reference grid 1
+SUPORT, 1, 35
+```
+
+---
+
 ### TRIMVAR — Per-variable bounds (sbeam-defined, over-determined trim)
 
 When a trim problem has more free variables than equilibrium equations, TRIMVAR defines
@@ -1332,6 +1601,205 @@ MONPNT3, MWINGEA, RIGHT WING, 35, WINGEA, 0, 15.0, 0.0, 0.0
 
 ---
 
+## Transient Maneuver Loads (Phase G0)
+
+ZAERO-style card set for the DLM-free quasi-steady transient maneuver-loads solver
+(`solver/maneuver_qs.py`). A SOL 144 subcase requests a run with `MLOADS = sid` in
+case control. Card orchestration:
+
+```
+MLOADS ──references──▶ MLDTRIM (initial condition = a static TRIM sid)
+    │                  MLDTIME (integration window t0/tend/dt/tout)
+    │                  MLDCOMD (pilot command label → TABLED1 time history)
+    └────────────────▶ MLDPRNT (ASCII output request)
+```
+
+See `docs/10_standard/05_aeroelastics.md` for the solver semantics (Level-1
+quasi-steady, open-loop, restrained l-set Newmark-β).
+
+---
+
+### MLOADS — Transient Maneuver Driver
+
+Top-level driver referencing the sub-cards of one transient maneuver run.
+
+**Format:**
+```
+MLOADS, SID, MLDTRIM, MLDTIME, MLDCOMD, MLDPRNT, NMODES
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| SID | `sid` | int | Set ID (unique; referenced by case control `MLOADS =`) | required |
+| MLDTRIM | `mldtrim` | int | MLDTRIM SID (initial steady-state condition) | required |
+| MLDTIME | `mldtime` | int | MLDTIME SID (integration window) | required |
+| MLDCOMD | `mldcomd` | int | MLDCOMD SID (`0` = no commands; hold trim) | `0` |
+| MLDPRNT | `mldprnt` | int | MLDPRNT SID (`0` = no ASCII print) | `0` |
+| NMODES | `nmodes` | int | Elastic modes to retain (`0` = all available) | `0` |
+
+Cross-reference validation (post-parse): MLDTRIM/MLDTIME must exist; MLDCOMD and
+MLDPRNT (if non-zero) must exist — else `ValueError`.
+
+**Example:**
+```
+$ Full transient run: trim IC 100, window 200, commands 300, print 400
+MLOADS, 10, 100, 200, 300, 400
+```
+
+---
+
+### MLDTRIM — Initial Steady-State Condition
+
+References the static TRIM card (Step 53 balanced maneuver) that seeds the transient
+integration.
+
+**Format:**
+```
+MLDTRIM, SID, TRIMID
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| SID | `sid` | int | Set ID (unique; referenced by MLOADS) | required |
+| TRIMID | `trim_sid` | int | SID of the static TRIM card giving the initial condition | required |
+
+Cross-reference validation (post-parse): TRIMID not in TRIM → `ValueError`.
+
+**Example:**
+```
+MLDTRIM, 100, 10
+```
+
+---
+
+### MLDTIME — Integration Window
+
+Defines the time-integration window and step sizes for the Newmark-β integration.
+
+**Format:**
+```
+MLDTIME, SID, T0, TEND, DT, TOUT
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| SID | `sid` | int | Set ID (unique; referenced by MLOADS) | required |
+| T0 | `t0` | float | Start time | `0.0` |
+| TEND | `tend` | float | End time — must exceed T0 | `0.0` |
+| DT | `dt` | float | Integration time step — must be positive | `0.0` |
+| TOUT | `tout` | float | Output sampling interval (`0.0` = every step, = DT) | `0.0` |
+
+DT ≤ 0 or TEND ≤ T0 raise `ValueError` at parse time.
+
+**Example:**
+```
+$ 2-second run, 1 ms steps, output every 10 ms
+MLDTIME, 200, 0.0, 2.0, 0.001, 0.01
+```
+
+---
+
+### MLDCOMD — Pilot Command Time Histories
+
+Pairs a trim-variable label (AESTAT or AESURF label) with the TABLED1 giving its
+commanded value versus time. Labels not commanded here hold their initial-trim value.
+
+**Format:**
+```
+MLDCOMD, SID, L1, TABID1, L2, TABID2, ...
++,       L3, TABID3, ...
+```
+
+Label/TABID pairs may span continuation lines.
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| SID | `sid` | int | Set ID (unique; referenced by MLOADS) | required |
+| L1, L2, … | (in `commands`) | str | AESTAT or AESURF label (e.g. `ELEV`, `ANGLEA`) | required |
+| TABID1, … | (in `commands`) | int | TABLED1 TID giving the commanded value vs time | required |
+
+`commands` is a list of `(label: str, tabid: int)` tuples. An odd number of tokens
+raises `ValueError`. Cross-reference validation (post-parse): every label must be
+defined by an AESTAT or AESURF card; every TABID must exist in TABLED1.
+
+**Example:**
+```
+$ Elevator step commanded by TABLED1 500
+MLDCOMD, 300, ELEV, 500
+```
+
+---
+
+### MLDPRNT — ASCII Time-History Output Request
+
+Requests the MLDPRNT ASCII time-history file (`<stem>.mldprnt.txt`).
+
+**Format:**
+```
+MLDPRNT, SID, ITEM1, ITEM2, ...
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| SID | `sid` | int | Set ID (unique; referenced by MLOADS) | required |
+| ITEM1, … | `items` | list[str] | Optional quantity keywords to print (e.g. `STATE`, `CONTROL`, `LOADS`); empty = print all available time histories | `[]` |
+
+Item keywords may span continuation lines and are upper-cased on parse.
+
+**Example:**
+```
+$ Print everything
+MLDPRNT, 400
+```
+
+---
+
+### TABLED1 — Tabular Function
+
+General tabular function y(x) with linear interpolation, referenced by MLDCOMD for
+pilot-command time histories (x = time, y = commanded value). Values are clamped
+(held constant) outside the tabulated range.
+
+**Format:**
+```
+TABLED1, TID, XAXIS, YAXIS
++,       X1, Y1, X2, Y2, X3, Y3, ..., ENDT
+```
+
+The (x, y) pairs live entirely on the continuation line(s) — fields 5+ of the base
+line are reserved/blank in the NASTRAN layout. The list is terminated by `ENDT`.
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| TID | `tid` | int | Table ID (unique; referenced by MLDCOMD TABID) | required |
+| XAXIS | `xaxis` | str | Abscissa axis type — only `LINEAR` honoured | `"LINEAR"` |
+| YAXIS | `yaxis` | str | Ordinate axis type — only `LINEAR` honoured | `"LINEAR"` |
+| X1, Y1, … | `xs`, `ys` | float pairs | (x, y) data points; at least two pairs; abscissae strictly increasing | required |
+
+Validation at parse time: a dangling abscissa with no ordinate, fewer than two
+points, or non-increasing abscissae raise `ValueError`.
+
+**Example:**
+```
+$ 1-degree elevator ramp over 0.5 s, then hold
+TABLED1, 500
++,       0.0, 0.0, 0.5, 0.01745, 2.0, 0.01745, ENDT
+```
+
+---
+
 ## DOF Reference
 
 | DOF | Label | Physical meaning |
@@ -1344,6 +1812,10 @@ MONPNT3, MWINGEA, RIGHT WING, 35, WINGEA, 0, 15.0, 0.0, 0.0
 | 6 | Rz | Rotation about global Z |
 
 DOF strings (used in SPC, SPC1, RBE2, RBE3, CBAR pin releases) are digit sequences, e.g., `"123456"` = all DOFs, `"13"` = Tx and Tz only.
+
+The table above gives the **global** DOF meanings. CBAR pin-release digits (PA/PB)
+are the exception: they refer to **element local axes** (1 = axial, 4 = torsion,
+5/6 = local bending rotations).
 
 ---
 
@@ -1359,10 +1831,15 @@ DOF strings (used in SPC, SPC1, RBE2, RBE3, CBAR pin releases) are digit sequenc
 | CAERO1 | Exactly one of NCHORD/LCHORD must be non-zero |
 | CAERO1 | Requires PAERO1 reference; PID not in `bulk.paero1s` raises `ValueError` |
 | CBAR | Offsets (W1A/W2A) not supported |
+| CBAR | Orientation must be the X1–X3 vector form; the G0 (grid-ID) form is not supported |
+| CBAR | Pin-release digits (PA/PB) are in element local axes |
 | CBUSH | CID must be `0` or blank |
 | CBUSH | Damping (PBUSH `B` keyword) deferred to Phase 3 |
+| CBUSH | Massless; orientation vector required when GA/GB are coincident |
 | CONM2 | CID must reference a defined CORD2R or be `0` |
 | CORD2R | CID must be > 0; chained RID references supported; cycles raise `ValueError` |
+| CORD2R | Points A, B, C must be non-collinear (checked when the transform is resolved) |
+| RBE2 | GN must not be a dependent DOF of another constraint element |
 | CORD2R | CORD2C/CORD2S/CORD1R not supported |
 | EIGRL | V1/V2 filtering applied in Hz |
 | GRAV | CID must be `0` (global frame only) in Phase 1–2 |
@@ -1373,8 +1850,18 @@ DOF strings (used in SPC, SPC1, RBE2, RBE3, CBAR pin releases) are digit sequenc
 | WKK | Data length must equal NSPAN×NCHORD for the referenced CAERO1 |
 | AESURF | ALID1 (and ALID2 if non-zero) must exist in AELIST |
 | AELIST | All box IDs must fall within at least one CAERO1 range |
+| SET1 | Every grid ID must exist in GRID; a spline-referenced SET1 needs ≥ 2 grids |
+| SPLINE2 | SETG must exist in SET1; CAERO must exist in CAERO1; DTHX other than ±1.0 warns and is treated as detached |
+| SPLINE1 | Not implemented (Step 48 deferred) — handler raises `NotImplementedError`; use SPLINE2 or ATTACH |
+| ATTACH | CID must be `0`; CID ≠ 0 raises `NotImplementedError` at spline build |
+| SUPORT | Blank DOF string after a GID raises `ValueError` |
 | TRIM | Every label must be defined by AESTAT or AESURF; duplicate labels raise `ValueError` |
 | TRIMCON | SENSE must be `LE` or `GE`; any other value raises `ValueError` |
 | AECOMP | LISTTYPE must be `AELIST` or `SET1`; every list ID must exist in that table |
 | MONPNT1 | COMP must exist in AECOMP as an `AELIST`-type collection; CP (if non-zero) must exist in CORD2R |
 | MONPNT3 | COMP must exist in AECOMP as a `SET1`-type collection; CP (if non-zero) must exist in CORD2R |
+| TABLED1 | At least two (x, y) points; abscissae strictly increasing; only `LINEAR` axes honoured |
+| MLDTIME | DT must be positive; TEND must exceed T0 |
+| MLDCOMD | Every label must be defined by AESTAT or AESURF; every TABID must exist in TABLED1 |
+| MLDTRIM | TRIMID must exist in TRIM |
+| MLOADS | MLDTRIM/MLDTIME must exist; MLDCOMD/MLDPRNT (if non-zero) must exist |

@@ -1,4 +1,4 @@
-# Aeroelastics — Phase A: Steady Vortex-Lattice Aeroelastics
+# Aeroelastics — Steady VLM, Splining, SOL 144 Trim & Quasi-Steady Maneuver Loads (Phases A–C, G0)
 
 ## Architecture Overview
 
@@ -29,40 +29,44 @@ Results   (cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, CDi, e, per_su
 | `sbeam/aero/body_correction.py` | **Step A9** — cruciform body-panel total-aircraft moment match: `build_body_correction` (direct linear solve: joint WT2 slope + joint W2GJ offset on the body panels so the TOTAL Cm_α/Cm0, Cn_β/Cn0, Cl_β/Cl0 hit targets), `BodyTargets`, `split_total_rows` / `parse_body_targets` (CSV `TOTAL` block), `body_cards_to_bdf`; **Step A10** — `build_strip_body_correction` / `strip_body_cards_to_bdf` (decoupled strip body: STRIPK slope + W2GJ Δα) |
 | `sbeam/aero/strip.py` | **Step A10** — decoupled strip body panels (PSTRIP/STRIPK): `is_strip_caero`, `strip_box_mask`, `strip_box_slopes` (diagonal, zero-coupling ΔCp operator block — cannot contaminate the lifting surfaces) |
 | `sbeam/aero/aero_model.py` | `AeroModel` container + `build_aero_model()` factory (block-diagonal strip body block via `_assemble_vlm_operator`) |
+| `sbeam/aero/mirror.py` | Half-span → full-span model mirroring (symmetry deprecation; raises on unsupported cards) |
 | `sbeam/aero/spline.py` | **Phase B** — `build_g_spline()`: builds `g_slope` (n_box×n_g) and `g_disp` (3n_box×n_g) from `SPLINE2` + `ATTACH` + `SPLINE0` cards |
 | `sbeam/aero/coupling.py` | `build_qaa` flexible aero stiffness `Q_aa = G_dispᵀ S_kj (A_jj*)⁻¹ D_jk G_slope`; `build_fg` baseline aero load; `build_gaf` modal GAF `Q_hh = Φᵀ Q_aa Φ` |
 | `sbeam/solver/sol144.py` | `run_sol144_trim` (Schur trim solve, derivatives), `run_sol144_diverg` (DIVERG-card divergence sweep + mode shape + V_div), `run_aeroelastic_static`, `AeroCache`, `_divergence_dynamic_pressure`, `_divergence_roots` |
+| `sbeam/solver/maneuver_qs.py` | **Phase G0** — `run_maneuver_qs`: Level-1 quasi-steady, open-loop, restrained l-set Newmark-β transient maneuver integration |
+| `sbeam/model/maneuver.py` | Dataclasses for the ZAERO `MLOADS`/`MLDTRIM`/`MLDTIME`/`MLDCOMD`/`MLDPRNT` + `TABLED1` card set |
+| `sbeam/model/maneuver_presets.py` | Canned pilot-command history presets |
 | `sbeam/results/f06_writer.py` | `build_f06_sol144_text` / `write_f06_sol144` — SOL 144 trim f06 blocks (shares displacement/CBAR helpers with SOL 101) |
 | `sbeam/results/load_export.py` | `write_aero_load_cards` — trimmed flight loads as `FORCE`/`MOMENT` bulk cards |
+| `sbeam/results/monitor_points.py` | `integrate_monpnt1` / `integrate_monpnt3` — monitor-point integrated section loads |
+| `sbeam/results/maneuver_output.py` | MLDPRNT ASCII time-history + critical-sample `FORCE`/`MOMENT` export |
 | `sbeam/viewer/aero_view.py` | Plotly box mesh, cp colour map, section-load strip chart |
 
 ---
 
-## ⚠ Known Defects — Critical Design Review 2026-06-11 (HA144A benchmark)
+## Validation status & known limitations
 
-A design review against the MSC Nastran HA144A benchmark (Aeroelastic Analysis User's Guide
-Listing 7-2) found that while the VLM core (Biot–Savart kernel, symmetry image, Göthert PG)
-matches the NASTRAN rigid result to 4 significant figures (CLα = 5.0709 vs 5.07097, AE3
-resolved), but the **integration, spline, and trim layers carry critical defects**. Until
-the remaining AE items in `docs/30_future/00_backlog.md` (Code Review 2026-06-11) are closed:
+The SOL 144 trim solver is **validated and usable**. The 2026-06-11 HA144A design review
+(MSC Nastran Aeroelastic Analysis User's Guide, Listing 7-2) found critical defects in the
+integration, spline, and trim layers — all of which (AE1–AE7, AE9, AE10, AE11) are now
+**resolved and closed** (see `docs/40_history/00_completed_development.md` and CHANGELOG).
+The VLM core matches the NASTRAN rigid result to 4 significant figures (CLα = 5.0709 vs
+5.07097); the **AE1 trim acceptance gate is CLOSED (2026-06-13)** — both HA144A subcases
+trim within the ≤1%-full-scale gate (measured ≤0.4% FS), and the rigid derivative column is
+gated within 0.5% of the independent ADA370433 Table 3.1.1 values (V-AE1g). Permanent
+regression gates: V-AE1 (trim), V-AE2 (swept-spline rigid body), V-AE3 (coupling-path
+cross-check), V-C-DIH (dihedral ±Γ), V-C4/V-LAT (over-determined trim, lateral derivatives),
+V-C5 (maneuver-load closure).
 
-| ID | Defect | Affected results |
-|----|--------|------------------|
-| AE1 | Trim solve omits the `q·Q_aa` aeroelastic feedback term | All `run_sol144_trim` output |
-| ~~AE2~~ | ~~`skj`/coupling path consumes circulation Γ as if it were ΔCp (×chord_box/2 per box)~~ | **RESOLVED** — `ajj_inv_corr` row-scaled by `2/chord_box` in `build_aero_model`; CZα = 5.071 via skj path ✓ |
-| ~~AE3~~ | ~~K-J lift width uses bound-segment length, not cross-flow projection~~ | **RESOLVED** — `dy = sqrt(Δy²+Δz²)`; CLα = 5.0709 ✓ |
-| ~~AE4~~ | ~~SPLINE2 fails rigid-body kinematics on swept axes / offset grids (sweep projection, Hermite slope sign, DTHX semantics)~~ | **RESOLVED** — `spline.py` rewritten: slope divides by `x_hat[0]` (ZAERO §6.3), nodal-slope sign fixed, `DTHX=−1` correctly detaches; V-AE2a/b/c pass to 1e-12 ✓ |
-| ~~AE5~~ | ~~URDD interpreted in basic frame (RCSID ignored) — HA144A trims to **−1g**~~ | **RESOLVED** — prescribed URDD values transformed through R_rcsid (partial-set support); `pres_values_basic` path in `run_sol144_trim`; V-AE3a gate passes ✓ |
-| ~~AE6~~ | ~~Forces applied at ¾-chord collocation point, not ¼-chord bound vortex~~ | **RESOLVED** — `AeroBox.force_point = (bound_a+bound_b)/2`; `g_disp` and ATTACH lever evaluated at force_point; sol144 moment arms use `force_point[0]` ✓ |
-| ~~AE7~~ | ~~No inertial trim columns; transport terms missing~~ | **RESOLVED** — `_build_inertial_cols` returns (n_g, n_labels) M_ax; translational + spin + transport terms; M_ax_a passed to Schur and derivs; 10/10 tests pass ✓ |
-| ~~AE9~~ | ~~Mach fixed per model (AEROS), TRIM Mach ignored; supersonic silently clamped~~ | **RESOLVED** — per-TRIM Mach via Mach-keyed `AeroCache`; AEROS fallback + mismatch warning; supersonic guard raises; `test_ae9_mach.py` ✓ |
-| AE8 | Unrestrained (mean-axis) derivative set still missing (restrained half closed analytically — Step G ✓) | SC2 high-q flexible trim |
-| ~~AE10~~ | ~~SOL 144 unreachable from `main.py` — no CLI dispatch~~ | **RESOLVED** — `main.py` SOL 144 branch builds the AeroModel/AeroCache and runs `run_sol144_trim` per subcase; f06 + flight-load export written (Step 56). End-to-end `sbeam ha144a.bdf` runs ✓ |
+Two known limitations remain open (full detail and plan in `docs/30_future/00_backlog.md`,
+Steps AC2/AC3):
 
-**Do not use SOL 144 trim results for anything until AE1 and AE8 are resolved.** Rigid
-`solve_rigid_cl` results on **unswept** surfaces are unaffected. AE2–AE7 are resolved;
-the sections below describe the *intended* design; passages known to diverge from the
-implementation carry an `⚠ AE#` marker. Reproduction script: `studies/_review_ha144a_check.py`.
+| ID | Limitation | Severity | Impact |
+|----|-----------|----------|--------|
+| AE8b | The **unrestrained (mean-axis / inertia-relief) stability-derivative column is not computed** — only the rigid and elastic-restrained columns are output. NASTRAN HA144A Table 7-1 prints restrained *and* unrestrained; sbeam reproduces the restrained half only. Closing requires the actual NASTRAN/ZAERO unrestrained algorithm (two first-principles attempts overshoot at high q and were reverted). | MAJOR (missing output column — does **not** affect trim, loads, or the restrained/rigid derivatives) | Derivative table completeness only |
+| AE8a | A small **q-invariant common-mode trim offset** (~0.1°, ≤0.4% of full-scale range, identical at q=40 and q=1200) exists in the rigid baseline. It is *not* a flexible-coupling defect and is within the accepted ≤1% FS trim gate. | MINOR (accepted trim bias) | Trim variables carry a ≤0.4% FS bias |
+
+Reproduction script for the original review: `studies/_review_ha144a_check.py`.
 
 ---
 
@@ -90,6 +94,18 @@ implementation carry an `⚠ AE#` marker. Reproduction script: `studies/_review_
 | `TRIMVAR` | Per-variable bounds + initial guess (sbeam-defined; over-determined trim) | S51 |
 | `TRIMOBJ` | Weighted objective function (sbeam-defined; over-determined trim) | S51 |
 | `TRIMCON` | Inequality constraint (sbeam-defined; over-determined trim) | S51 |
+| `SUPORT` | Rigid-body support DOFs (r-set) for the trim Schur partition | S52 |
+| `PSTRIP` | Decoupled strip body panel property (nominal per-box slope, default π) | A10 |
+| `STRIPK` | Per-box slope override for strip body panels | A10 |
+| `AECOMP` | Named collection of AELIST boxes or SET1 grids for monitor points | MON1 |
+| `MONPNT1` | Aero-only integrated section load at a reference point | MON1 |
+| `MONPNT3` | Aero + inertia + reaction integrated section load (splined to grids) | MON1 |
+| `MLOADS` | Transient maneuver driver (Phase G0; ZAERO card set) | G0 |
+| `MLDTRIM` | Initial-condition TRIM sid for the maneuver | G0 |
+| `MLDCOMD` | Pilot command label → `TABLED1` history | G0 |
+| `MLDTIME` | Integration window t0/tend/dt/tout | G0 |
+| `MLDPRNT` | ASCII time-history output request | G0 |
+| `TABLED1` | Tabular function of time (command histories) | G0 |
 
 ---
 
@@ -1530,10 +1546,11 @@ for a subcase (`SubcaseControl.trimobj_sid`); a single defined `TRIMOBJ` is used
 
 ---
 
-## Step 52 — SOL 144 Trim Solver (WIP — ⚠ carries open critical defects)
+## Step 52 — SOL 144 Trim Solver (CLOSED 2026-06-14)
 
 `solver/sol144.py:run_sol144_trim(bulk, subcase, aero)` implements the **determined** trim
-case (`n_free_labels == n_SUPORT_DOFs`) on the `aeroelastics` branch:
+case (`n_free_labels == n_SUPORT_DOFs`) and the **over-determined** (redundant-control) case
+(null-space reduction + weighted-L2 `TRIMOBJ`/`TRIMCON`/`TRIMVAR`, gate V-C4):
 
 1. Build `D_jx` (per-box normalwash per unit trim label: ANGLEA `−n_z`, SIDES `−n_y`, PITCH
    `−(2/cref)(x−x_ref)`, ROLL `−(2/bref)·y`, YAW `−(2/bref)(x−x_ref)·n_y` (vertical-surface
@@ -1547,23 +1564,12 @@ case (`n_free_labels == n_SUPORT_DOFs`) on the `aeroelastics` branch:
    per-AESURF hinge-moment derivatives (`_compute_hinge_moments`, moment of the box forces about
    each control's `cid1` hinge axis), and return a `Sol144TrimResult`.
 
-The Schur partition structure is sound (equivalent to the MSC r-set/l-set method), but the
-implementation **fails the HA144A benchmark on both subcases** (measured 2026-06-11:
-SC1 ANGLEA −0.098 vs +0.169191, ELEV −1.197 vs +0.492457; trim lift −8 012 lb vs +8 000 lb).
-Open defects, in fix order (full detail in `docs/30_future/00_backlog.md`, Code Review
-2026-06-11):
-
-| Order | ID | Defect |
-|-------|----|--------|
-| ~~1~~ | ~~AE3~~ | ~~K-J lift width not projected to cross-flow~~ — **RESOLVED** ✓ |
-| ~~2~~ | ~~AE2~~ | ~~Γ consumed as ΔCp throughout the coupled force path; `total_cl` divides by q twice~~ — **RESOLVED** ✓ |
-| ~~3~~ | ~~AE4/AE6~~ | ~~SPLINE2 swept-axis kinematics; forces applied at ¾-chord~~ — **RESOLVED** ✓ (V-AE2 gate passes, 711 tests ✓) |
-| ~~4~~ | ~~AE5/AE7~~ | ~~URDD in basic frame (trims to −1g); no inertial trim columns `M·φr`~~ — **RESOLVED** ✓ (V-AE3a gate passes, 721 tests ✓) |
-| 5 | AE1 | Solve uses bare `K_aa` — the `q·Q_aa` aeroelastic feedback never enters the trim system |
-| 6 | AE8 | Unrestrained (mean-axis) derivative set still missing (restrained half closed by Step G; ~~per-TRIM Mach AE9~~ and ~~derivative FD AE8/Step G~~ resolved 2026-06-12; AE10 CLI wiring open) |
-
-Acceptance for closing Step 52 is the V-AE1 gate (backlog AE13): HA144A SC1/SC2 trim
-variables vs MSC Listing 7-2 and the Table 7-1 derivative columns.
+The Schur partition structure is equivalent to the MSC r-set/l-set method. The review-era
+defects (AE1–AE7, AE9, AE10) are all resolved; the HA144A benchmark passes on both subcases
+within the ≤1%-full-scale gate (measured ≤0.4% FS — see "Validation status & known
+limitations" at the top of this document). Step 52 closed 2026-06-14 with the
+over-determined trim and the lateral rate derivatives (`C_lp`/`C_nr`/`C_lβ`); the only open
+derivative work is the unrestrained (mean-axis) column, tracked as **AE8b** in the backlog.
 
 ### Trim acceptance gates — V-AE1f and V-AE1d (`tests/aero/test_ae1_fullspan.py`)
 
@@ -1616,7 +1622,7 @@ already carries the `q·Q_aa` aero feedback), then the linear `∂w → ∂γ �
 prior finite-difference hybrid (AE8); because the trim is linear in δ the two agree to
 round-off. Gate V-AE1e (partial): rigid columns unchanged (CZα 5.071, CMα −2.871), restrained
 CZα 5.112 vs NASTRAN Table 7-1 5.103 (q=40) within 1%. The unrestrained (mean-axis) derivative
-set and the remaining Table 7-1 restrained columns are still open on **AE8**.
+set and the remaining Table 7-1 restrained columns are still open on **AE8b** (backlog Step AC2).
 
 ### Lateral / directional rate derivatives — `C_lp`, `C_nr`, `C_lβ` (Step 52)
 

@@ -4,652 +4,58 @@
 
 The `sbeam` data model represents a NASTRAN-format beam structure. All data originates from BDF card input. The model is assembled into Python dataclass objects by the parser and held in a central `BulkData` object used by the assembler and solver.
 
----
-
-## BDF Card Definitions
-
-### CORD2R
-
-Defines a rectangular (Cartesian) coordinate system by three points.
-
-```
-CORD2R, CID, RID, A1, A2, A3, B1, B2, B3
-+,      C1, C2, C3
-```
-
-| Field | Description |
-|-------|-------------|
-| CID | Coordinate system ID (integer > 0, unique) |
-| RID | Reference coordinate system ID (0 = global; or another CORD2R CID) |
-| A1–A3 | Origin of the new system, expressed in RID frame |
-| B1–B3 | Point on the local Z-axis, expressed in RID frame |
-| C1–C3 | Point in the local XZ-plane, expressed in RID frame |
-
-The three orthonormal axes are derived as:
-- **Local Z** = normalise(B − A)
-- **Local X** = normalise((C − A) − ((C−A)·Ẑ)Ẑ) (Gram-Schmidt)
-- **Local Y** = Ẑ × X̂ (right-handed)
-
-The continuation line carrying C1–C3 is required. A, B, C must be non-collinear; CID must be unique and > 0.
-
-Chained systems (`RID > 0`) are supported; cycles raise a `ValueError`.
-
-Only rectangular systems (CORD2R) are supported. CORD2C, CORD2S, CORD1R are not implemented.
+This document covers the **data model**: the `BulkData` container, the card → dataclass mapping, the parser API, and coordinate-system/model limits. Per-card field layouts, defaults, validation rules, and examples live in the card reference: [`02_card_reference.md`](02_card_reference.md).
 
 ---
 
-### GRID
-
-Defines a grid point (node).
-
-```
-GRID, GID, CP, X1, X2, X3, CD, PS, SEID
-```
-
-| Field | Description |
-|-------|-------------|
-| GID | Grid ID (integer, unique) |
-| CP | Input coordinate system: coordinates X1/X2/X3 are given in this system (0 = global) |
-| X1, X2, X3 | Coordinates in the CP system |
-| CD | Output coordinate system: nodal results (displacements, reactions) are reported in this system |
-| PS | Permanent SPC DOFs (optional) |
-| SEID | Superelement ID (not used; must be blank) |
-
-After parsing, `resolve_grid_positions()` transforms all grid positions from their CP system into global CID 0 in-place. The `cd` field is preserved for output transformation.
-
----
-
-### CBAR
-
-Uniform cross-section beam element using Euler-Bernoulli theory.
-
-```
-CBAR, EID, PID, GA, GB, X1, X2, X3, OFFT
-+,    PA, PB
-```
-
-| Field | Description |
-|-------|-------------|
-| EID | Element ID (integer, unique) |
-| PID | Property ID → references PBAR |
-| GA, GB | End node A and B grid IDs |
-| X1, X2, X3 | Orientation vector components (or GRID ID if G0 form) |
-| OFFT | Offset flag (default GGG — offsets measured at grid points) |
-| PA, PB | Pin releases at end A and B (string of released DOFs 1–6, e.g. "456") |
-
-Pin release DOFs: 1=Tx, 2=Ty, 3=Tz, 4=Rx, 5=Ry, 6=Rz (in element local axes).
-
-**Phase 1 constraint:** Offsets (W1A, W2A, etc.) not supported. X1/X2/X3 orientation vector required.
-
----
-
-### PBAR
-
-Uniform beam cross-section properties. Referenced by CBAR.
-
-```
-PBAR, PID, MID, A, I1, I2, J, NSM
-+,    C1, C2, D1, D2, E1, E2, F1, F2
-```
-
-| Field | Description |
-|-------|-------------|
-| PID | Property ID (integer, unique) |
-| MID | Material ID → references MAT1 |
-| A | Cross-sectional area |
-| I1 | Area moment of inertia about local 1-axis (bending in plane 1-3) |
-| I2 | Area moment of inertia about local 2-axis (bending in plane 1-2) |
-| J | Torsional constant |
-| NSM | Non-structural mass per unit length (optional) |
-| C1,C2 | Y,Z coordinates of stress recovery point C |
-| D1,D2 | Y,Z coordinates of stress recovery point D |
-| E1,E2 | Y,Z coordinates of stress recovery point E |
-| F1,F2 | Y,Z coordinates of stress recovery point F |
-
----
-
-### MAT1
-
-Isotropic material properties. Referenced by PBAR.
-
-```
-MAT1, MID, E, G, NU, RHO, A, TREF, GE
-```
-
-| Field | Description |
-|-------|-------------|
-| MID | Material ID (integer, unique) |
-| E | Young's modulus |
-| G | Shear modulus. **If blank or zero**, sbeam derives G automatically using the isotropic material relationship: `G = E / (2 × (1 + ν))`. If both G and NU are supplied, the provided G is used as-is. |
-| NU | Poisson's ratio |
-| RHO | Mass density |
-| A | Thermal expansion coefficient (phase 2) |
-| TREF | Reference temperature (phase 2) |
-| GE | Structural damping coefficient (phase 2) |
-
-**Phase 1:** E and RHO are required. G may be supplied directly or omitted — when G is blank, sbeam derives it from `G = E / (2 × (1 + ν))` (isotropic material relationship). If both G and NU are present, the supplied G takes precedence and NU is stored but not used for the G derivation.
-
----
-
-### CONM2
-
-Concentrated mass element. Supports translational mass, offset vector, and inertia tensor.
-
-```
-CONM2, EID, GID, CID, M, X1, X2, X3
-+,     I11, I21, I22, I31, I32, I33
-```
-
-| Field | Description |
-|-------|-------------|
-| EID | Element ID |
-| GID | Grid point ID where mass is applied |
-| CID | Coordinate system ID for offset vector and inertia tensor (references CORD2R; 0 = global) |
-| M | Mass value |
-| X1, X2, X3 | Offset vector from grid to centre of mass (optional; default 0) |
-| I11, I21, I22, I31, I32, I33 | Inertia tensor at CM in CID frame (optional, second line; default 0) |
-
-**Mass matrix contribution:** Full 6×6 symmetric block at the grid's DOFs:
-
-- Translational 3×3: `m·I₃`
-- Coupling 3×3 (non-zero when offset ≠ 0): `−m·skew(r)` / `m·skew(r)ᵀ`
-- Rotational 3×3: `I_cm + m·(|r|²·I₃ − r·rᵀ)` (parallel axis theorem + CM inertia)
-
-**Zero offset / zero inertia tensor:** When X1=X2=X3=0 and I11–I33 are omitted or zero, CONM2 contributes only the translational 3×3 block (`m·I₃`). Rotational DOFs at the mass node receive no mass contribution. Combined with `rho=0` on MAT1, this makes the global mass matrix singular — see `docs/10_standard/04_modal_analysis.md` for how SOL 103 handles this via regularisation.
-
-**CID support:** When CID references a CORD2R system, the offset vector `r` and inertia tensor are rotated from the CID frame into global CID 0 before assembly (`R @ r`, `R @ I @ Rᵀ`). CID=0 is a no-op.
-
-**Card format:** Inertia fields may appear on a continuation line (fixed-field) or as fields 8–13 on the same line (free-field).
-
----
-
-### SPC / SPC1
-
-Single-point constraint. Fixes specified DOFs of specified grids to zero.
-
-```
-SPC,  SID, G1, C1, D1, G2, C2, D2
-SPC1, SID, C,  G1, G2, G3, ...
-```
-
-| Field | Description |
-|-------|-------------|
-| SID | Set ID (referenced by `SPC` in case control) |
-| G1, G2 | Grid IDs |
-| C1, C2 | DOF string (e.g. "123456") |
-| D1, D2 | Enforced displacement value (SPC only; must be 0.0 in phase 1) |
-
-DOF key: 1=Tx, 2=Ty, 3=Tz, 4=Rx, 5=Ry, 6=Rz.
-
-**Phase 1:** Enforced non-zero displacements are not supported (D must be 0 or blank).
-
----
-
-### FORCE
-
-Concentrated force at a grid point.
-
-```
-FORCE, SID, GID, CID, F, N1, N2, N3
-```
-
-| Field | Description |
-|-------|-------------|
-| SID | Load set ID |
-| GID | Grid point ID |
-| CID | Coordinate system for direction vector (references CORD2R; 0 = global) |
-| F | Scale factor |
-| N1,N2,N3 | Direction cosines (force vector = F × [N1, N2, N3]) |
-
----
-
-### MOMENT
-
-Concentrated moment at a grid point.
-
-```
-MOMENT, SID, GID, CID, M, N1, N2, N3
-```
-
-Same field structure as FORCE; M is the scale factor, N1–N3 are the moment direction cosines, and CID references a CORD2R system (0 = global).
-
----
-
-### LOAD
-
-Linear combination of load sets. Allows superposition of FORCE/MOMENT sets.
-
-```
-LOAD, SID, S, S1, L1, S2, L2, ...
-```
-
-| Field | Description |
-|-------|-------------|
-| SID | Combined load set ID (referenced by `LOAD` in case control) |
-| S | Overall scale factor |
-| S1, S2 | Scale factor for each component set |
-| L1, L2 | Component load set IDs |
-
-Applied load = S × (S1×L1 + S2×L2 + ...)
-
-Component SIDs (`L1`, `L2`, …) may reference FORCE, MOMENT, or GRAV sets.
-
----
-
-### GRAV
-
-Body acceleration load. Applies a uniform inertial load to all mass-bearing DOFs using the assembled consistent mass matrix.
-
-```
-GRAV, SID, CID, G, N1, N2, N3
-```
-
-| Field | Description |
-|-------|-------------|
-| SID | Load set ID |
-| CID | Coordinate system for the direction vector (Phase 1: CID=0 only) |
-| G | Acceleration magnitude (units/s²) |
-| N1, N2, N3 | Unit direction vector of the acceleration in CID frame |
-
-**Method:** The gravity load vector is computed as:
-
-```
-f_grav = [M_global] × {a_field}
-```
-
-where `{a_field}` has `G × [N1, N2, N3]` at every translational DOF and zero at rotational DOFs. This uses the assembled consistent mass matrix, so both CBAR distributed mass and CONM2 point masses are naturally included.
-
-**Reaction recovery:** Reaction forces are computed as `R = K[spc,:] @ u - f_applied[spc]`. The `f_applied[spc]` term corrects for gravity forces that act at constrained (SPC'd) DOFs and would otherwise cause reactions to undercount the total weight.
-
-**LOAD combination:** GRAV SIDs can appear as components in a LOAD card, mixed freely with FORCE and MOMENT SIDs.
-
-**Phase 1 constraint:** CID must be 0 (global). CID ≠ 0 raises a parse error.
-
----
-
-### PLOTEL
-
-Plot-only element connecting two grid points. Used for visualising intermediate beam geometry and deformed shape. Not included in structural stiffness or mass matrices.
-
-```
-PLOTEL, EID, G1, G2
-```
-
----
-
-### RBE3
-
-Rigid Body Element (interpolation type). Defines a dependent (reference) grid whose DOFs are constrained to be a weighted average of independent grid DOFs.
-
-```
-RBE3, EID, (blank), REFGRID, REFC, WT1, C1, G1,1, G1,2, ..., +
-+,   WT2, C2, G2,1, G2,2, ...
-```
-
-| Field | Description |
-|-------|-------------|
-| EID | Element ID |
-| (blank) | Field 2 is always blank on RBE3 cards |
-| REFGRID | Dependent (reference) grid ID |
-| REFC | DOF string for the dependent grid (e.g. `"123456"`) |
-| WT_i | Weight for independent grid group i |
-| C_i | DOF string for independent grid group i |
-| G_i,j | Independent grid IDs in group i (one or more per continuation line) |
-
-**Constraint equation** — for each DOF `d` in `REFC`:
-
-```
-u_refgrid[d] = Σᵢ (wᵢ · u_i[d]) / Σᵢ wᵢ
-```
-
-where the sum is over independent grids in groups whose DOF string includes `d`.
-
-**Phase 1 assembly:** implemented as a DOF transformation matrix **T** (shape `n_dof × n_red`) built in `assembly/rbe3.py`. T is applied to K and M before SPC partitioning: `K_red = Tᵀ K T`, `M_red = Tᵀ M T`. After solving, full displacements and mode shapes are recovered via `u_full = T @ u_red`. Phase 2 may add Lagrange multiplier support.
-
-**Known limitation — same-DOF weighted averaging only:** For each dependent DOF `d`, the constraint is a weighted average of the *same-numbered* DOF at each independent grid. Rotation-to-translation coupling across an offset (lever-arm kinematics) is not applied. This is the common simplified RBE3 formulation; it is exact when the independent grids are collocated or the reference point moves rigidly with the independent set. Use **RBAR** for kinematically exact rigid connections where the offset lever-arm effect must be captured.
-
-**`Rbe3` dataclass:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `eid` | `int` | Element ID |
-| `refgrid` | `int` | Dependent (reference) grid ID |
-| `refc` | `str` | DOF string for the dependent grid |
-| `wt_gc` | `list` | List of `(weight: float, dofs: str, grids: list[int])` tuples |
-
----
-
-### RBE2
-
-Rigid Body Element (rigid type). Constrains a set of dependent grids to move identically to a single independent grid for a specified set of DOFs.
-
-```
-RBE2, EID, GN, CM, GM1, GM2, GM3, GM4, GM5, GM6
-+,   GM7, GM8, ...
-```
-
-| Field | Description |
-|-------|-------------|
-| EID | Element ID |
-| GN | Independent grid ID |
-| CM | Coupled DOF string (e.g. `"123456"`) |
-| GM1… | Dependent grid IDs (first line and continuation lines) |
-
-**Constraint equation** — for each dependent grid GMi and each DOF `d` in `CM`:
-
-```
-u_GMi[d] = u_GN[d]
-```
-
-**Assembly:** implemented in `assembly/rbe3.py` within `build_rbe3_transformation` using the same T-matrix approach as RBAR. For each GM grid the offset vector `d = r_GM − r_GN` is computed and the 6×6 rigid-body kinematics matrix R is built:
-
-```
-R = [ I₃  S(d)ᵀ ]
-    [ 0    I₃   ]
-
-where S(d) = [  0,  dz, −dy ]
-             [−dz,   0,  dx ]
-             [ dy, −dx,   0 ]
-```
-
-For each DOF `d` in CM, row `d` of R is written into `T_full` at GN's columns: `u_GM[d] = R[d,:] @ u_GN`. When `d = (0,0,0)` R is the identity and the result is the same as a direct-copy constraint. After applying all RBE2, RBE3, and RBAR constraints the transformation matrix `T` (shape `n_dof × n_red`) is applied before SPC partitioning.
-
-**Viewer:** rendered as solid red lines (`#cc2222`, width=2) from GN to each GM — distinguishable from RBE3 dashed lines.
-
-**Attaching CONM2 via RBE2 (Lesson-16 pattern):** The standard approach is to place the CONM2 on the **independent (GN) node**. The RBE2 kinematically couples all dependent nodes to GN, so the concentrated mass inertia is carried into the reduced system when the congruence transformation `M_red = Tᵀ M T` is applied. This is the correct model for discrete equipment masses (motors, payloads, fuel) attached to the structure.
-
-Example (`sample/beam_vib.bdf`):
-```
-RBE2,  20, 7, 123456, 6     $ GN=7 (independent), GM=[6] (dependent)
-CONM2, 30, 7, 0, 100000.0   $ mass on node 7 = independent node ✓
-```
-
-Placing a CONM2 on an RBE2 **dependent (GM) node** is implicitly handled by the same congruence transformation and is mathematically valid, but this configuration is untested in sbeam — verify results against a closed-form or independent model if used.
-
-**`Rbe2` dataclass:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `eid` | `int` | Element ID |
-| `gn` | `int` | Independent grid ID |
-| `cm` | `str` | Coupled DOF string |
-| `gm` | `list[int]` | Dependent grid IDs |
-
----
-
-### RBAR
-
-Rigid Bar element. Connects two independent grids (GA, GB) with full rigid body kinematics — translations and rotations are coupled with the lever-arm effect of the offset vector between the two grids.
-
-```
-RBAR, EID, GA, GB, CNA, CNB, CMA, CMB
-```
-
-| Field | Description |
-|-------|-------------|
-| EID | Element ID (integer, unique) |
-| GA | End A grid ID (independent by default) |
-| GB | End B grid ID (dependent by default) |
-| CNA | Independent DOF components at GA (default `"123456"`) |
-| CNB | Independent DOF components at GB (default blank — none) |
-| CMA | Dependent DOF components at GA (auto-computed; field may be blank) |
-| CMB | Dependent DOF components at GB (auto-computed; field may be blank) |
-
-**Phase 1 scope:** Only the default case is supported — `CNA="123456"` (all 6 DOFs at GA independent) and `CNB=""` (blank, all 6 DOFs at GB dependent). Non-default combinations raise `ValueError`. CMA and CMB are parsed but not stored; they are always the complement of CNA/CNB.
-
-**Constraint equations** — all 6 DOFs at GB are determined by the rigid body kinematics matrix R:
-
-```
-[u_Bx]   [1  0  0   0   dz  -dy] [u_Ax]
-[u_By] = [0  1  0  -dz   0   dx] [u_Ay]
-[u_Bz]   [0  0  1   dy  -dx   0] [u_Az]
-[θ_Bx]   [0  0  0   1    0   0] [θ_Ax]
-[θ_By]   [0  0  0   0    1   0] [θ_Ay]
-[θ_Bz]   [0  0  0   0    0   1] [θ_Az]
-```
-
-where **d** = (dx, dy, dz) = r_GB − r_GA in global coordinates (CID 0).
-
-**Distinction from RBE2:** Both RBAR and RBE2 use the same 6×6 rigid-body R matrix. The difference is scope: RBAR always constrains all 6 DOFs at GB; RBE2 constrains only the DOFs listed in CM and supports multiple dependent grids. When `d = (0,0,0)` (coincident grids), R is the identity and both elements produce an equivalent result.
-
-**Assembly:** implemented in `assembly/rbe3.py` within `build_rbe3_transformation()`. For each RBAR, 6 rows of `T_full` (corresponding to GB's DOFs) are filled with the R matrix evaluated at the grid offset. The resulting T matrix is applied identically in SOL 101 and SOL 103.
-
-**Viewer:** rendered as solid purple lines (`#9467bd`, width=3) from GA to GB.
-
-**`Rbar` dataclass:**
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `eid` | `int` | — | Element ID |
-| `ga` | `int` | — | End A grid (independent) |
-| `gb` | `int` | — | End B grid (dependent) |
-| `cna` | `str` | `"123456"` | Independent DOFs at GA |
-| `cnb` | `str` | `""` | Independent DOFs at GB |
-
----
-
-### PBUSH
-
-Generalised spring-damper property. Referenced by CBUSH.
-
-```
-PBUSH, PID, K, K1, K2, K3, K4, K5, K6
-```
-
-| Field | Description |
-|-------|-------------|
-| PID | Property ID (integer, unique) |
-| K | Literal keyword "K" (identifies the stiffness field group) |
-| K1–K6 | Stiffness values for DOFs 1–6 (Tx, Ty, Tz, Rx, Ry, Rz); blank or 0 = no stiffness in that DOF |
-
-**Phase 2 scope:** Viscous damping (B1–B6) is not supported; a card with the "B" keyword raises `ValueError`. K1–K6 provide diagonal stiffness; off-diagonal coupling is not supported.
-
----
-
-### CBUSH
-
-Two-node generalised spring-damper element. Adds diagonal stiffness in up to 6 DOFs.
-
-```
-CBUSH, EID, PID, GA, GB, (S), (CID)
-+,     X1, X2, X3
-```
-
-| Field | Description |
-|-------|-------------|
-| EID | Element ID (integer, unique) |
-| PID | Property ID → references PBUSH |
-| GA | Node A grid ID |
-| GB | Node B grid ID (blank = grounded element; stiffness applied to GA DOFs only) |
-| S | Spring location ratio (not used; field is read and ignored) |
-| CID | Orientation coordinate system (must be 0 or blank — user CID deferred to Phase 3) |
-| X1, X2, X3 | Orientation vector (continuation line); defines the XZ-plane, same convention as CBAR. Required when nodes are coincident. |
-
-**Element stiffness:** Diagonal 6×6 local matrix `diag(K1…K6)`. For a two-node element, assembled into a 12×12 matrix:
-```
-K_e = [ K_local  -K_local ]
-      [-K_local   K_local ]
-```
-For a grounded element (GB blank), only the 6×6 block at GA is assembled. The local matrix is transformed to global via `Tᵀ K_e T` using the same rotation-matrix approach as CBAR.
-
-**CBUSH is massless.** Use CONM2 to add mass at connection points.
-
-**Viewer:** rendered as a zigzag (spring-coil) polyline between GA and GB, distinct from CBAR and PLOTEL traces.
-
----
-
-### EIGRL
-
-Real eigenvalue extraction parameters for SOL 103.
-
-```
-EIGRL, SID, V1, V2, ND, MSGLVL, MAXSET, SHFSCL, NORM
-```
-
-| Field | Description |
-|-------|-------------|
-| SID | Set ID (referenced by `METHOD` in case control) |
-| V1, V2 | Lower and upper frequency bounds (Hz); blank = no limit |
-| ND | Number of modes to extract |
-| NORM | Normalisation: MASS (modal mass = 1) or MAX (max component = 1) |
-
----
-
-### AEROS
-
-Defines the aerodynamic reference geometry used to non-dimensionalise lift, drag, and moment coefficients. One per model. sbeam is full-span only.
-
-```
-AEROS, ACSID, RCSID, CREF, BREF, SREF, SYMXZ, SYMXY
-```
-
-| Field | Description |
-|-------|-------------|
-| ACSID | Aerodynamic coordinate system (Phase A: 0 = basic frame only) |
-| RCSID | Reference coordinate system (Phase A: 0 = basic frame only) |
-| CREF | Reference chord (consistent model units) |
-| BREF | Reference span — full span |
-| SREF | Reference area — full area |
-| SYMXZ | Parsed for NASTRAN compatibility; **must be 0** (half-span rejected) |
-| SYMXY | Parsed for NASTRAN compatibility; **must be 0** (half-span rejected) |
-
-Full-span only: every lifting surface is meshed in full. `SYMXZ`/`SYMXY` are parsed so
-legacy decks load, but `build_aero_model` raises `ValueError` for any non-zero value; use
-`sbeam.aero.mirror.mirror_halfspan()` to unfold a legacy half-span deck.
-
-Validation: duplicate AEROS raises `ValueError`; CAERO1 present without AEROS raises
-`ValueError("CAERO1 card(s) present but no AEROS card found")`.
-
-Stored in `bulk.aeros: Optional[Aeros]`.
-
----
-
-### AEFACT
-
-Defines a list of decimal fractions used for non-uniform span or chord spacing in aerodynamic panel meshing. Referenced by CAERO1 via LSPAN or LCHORD.
-
-```
-AEFACT, SID, D1, D2, D3, D4, D5, D6, D7
-+,      D8, D9, ...
-```
-
-| Field | Description |
-|-------|-------------|
-| SID | Set ID (integer, unique; referenced by CAERO1 LSPAN/LCHORD) |
-| D1–DN | Decimal fractions (0.0 to 1.0); must start at 0.0 and end at 1.0 for span/chord use |
-
-Multiple continuation lines are supported for long fraction lists (up to NSPAN+1 or NCHORD+1 values).
-
----
-
-### PAERO1
-
-Defines aerodynamic panel properties. Used as a stub in Phase A (no body support).
-
-```
-PAERO1, PID
-```
-
-| Field | Description |
-|-------|-------------|
-| PID | Property ID (integer, unique; referenced by CAERO1) |
-
----
-
-### CAERO1
-
-Defines a flat trapezoidal lifting surface macroelement for panel aerodynamics (VLM/DLM). Meshed into NSPAN × NCHORD boxes by `mesh_caero1()` in `sbeam/aero/panel.py`.
-
-```
-CAERO1, EID, PID, CP, NSPAN, NCHORD, LSPAN, LCHORD, IGID
-+,      X1, Y1, Z1, X12, X4, Y4, Z4, X43
-```
-
-| Field | Description |
-|-------|-------------|
-| EID | Element ID (integer, unique) |
-| PID | Property ID → references PAERO1 |
-| CP | Coordinate system for P1/P4 (0 = global; or CORD2R CID) |
-| NSPAN | Number of equal spanwise boxes (0 if LSPAN used) |
-| NCHORD | Number of equal chordwise boxes (0 if LCHORD used) |
-| LSPAN | AEFACT SID for non-uniform span breakpoints (0 if NSPAN used) |
-| LCHORD | AEFACT SID for non-uniform chord breakpoints (0 if NCHORD used) |
-| IGID | Interference group ID (ignored in Phase A) |
-| X1, Y1, Z1 | Root leading-edge point P1, in CP coordinate system |
-| X12 | Root chord length (in freestream +X direction) |
-| X4, Y4, Z4 | Tip leading-edge point P4, in CP coordinate system |
-| X43 | Tip chord length (in freestream +X direction) |
-
-Exactly one of NSPAN/LSPAN must be non-zero, and exactly one of NCHORD/LCHORD must be non-zero. An AEROS card must be present whenever CAERO1 cards appear.
-
-The continuation line carrying P1/X12/P4/X43 is required.
-
-Cross-reference validation (post-parse):
-- PID not in `bulk.paero1s` → `ValueError`
-- LSPAN or LCHORD not in `bulk.aefacts` → `ValueError`
-- CAERO1 present but no AEROS → `ValueError`
-
----
-
-### W2GJ — Baseline Normalwash Slopes
-
-Per-box dimensionless normalwash slopes (Δz/Δx) representing geometric incidence not
-captured by the VLM angle of attack. Added to computed downwash during the aeroelastic solve.
-
-```
-W2GJ, SID, CAERO_EID, D1, D2, D3, D4, D5, D6
-+,    D7, D8, ...
-```
-
-| Field | Description |
-|-------|-------------|
-| SID | Set ID |
-| CAERO_EID | EID of the CAERO1 this normalwash applies to |
-| D1–DN | Normalwash slopes Δz/Δx, one per box in row-major order (span slowest, chord fastest) |
-
-Stored in `bulk.w2gjs: dict[int, W2gj]`.
-
----
-
-### WKK — Diagonal AIC Correction
-
-Scales each row of the AIC matrix by a per-box diagonal weight.
-`AJJ* = diag(w) @ AJJ`; the caller inverts via `np.linalg.lstsq`.
-
-```
-WKK, SID, CAERO_EID, W1, W2, W3, W4, W5, W6
-+,   W7, W8, ...
-```
-
-| Field | Description |
-|-------|-------------|
-| SID | Set ID |
-| CAERO_EID | EID of the CAERO1 this correction applies to |
-| W1–WN | Diagonal weight per box, row-major order |
-
-Stored in `bulk.wkks: dict[int, Wkk]`.
-
----
-
-### AECORR — Force/Pressure AIC Correction
-
-Higher-fidelity AIC correction matching VLM to CFD or wind-tunnel target data.
-
-```
-AECORR, SID, METHOD, CAERO_EID, T1, T2, T3, T4, T5
-+,      T6, T7, ...
-```
-
-| Field | Description |
-|-------|-------------|
-| SID | Set ID |
-| METHOD | `'WT1'` (per-strip lift matching) or `'WT2'` (per-box pressure matching); any other value raises `ValueError` |
-| CAERO_EID | EID of the CAERO1 this correction applies to |
-| T1–TN | WT2: target `cp` per box (row-major); WT1: target lift coefficient per span strip |
-
-Correction precedence in `build_aero_model()`: WKK → WT2 → WT1 → identity lstsq.
-
-Stored in `bulk.aecorrs: dict[int, Aecorr]`.
+## Supported Cards
+
+One dataclass per card type; parsed instances are stored in `BulkData` (see below). Field-by-field definitions for every card are in [`02_card_reference.md`](02_card_reference.md).
+
+### Geometry and structure
+
+| Card | Purpose |
+|------|---------|
+| `CORD2R` | Rectangular coordinate system defined by three points A/B/C; chained `RID` references supported |
+| `GRID` | Grid point (node); `CP` = input frame for coordinates, `CD` = output frame for results |
+| `CBAR` | Two-node Euler-Bernoulli beam element (orientation vector, OFFT, pin releases) |
+| `PBAR` | Uniform beam cross-section property (A, I1, I2, J, NSM, stress recovery points C/D/E/F) |
+| `MAT1` | Isotropic material (E, G, NU, RHO; G auto-derived from E and NU when blank) |
+| `PLOTEL` | Plot-only line element — visualisation, no stiffness or mass |
+| `CBUSH` / `PBUSH` | Two-node or grounded diagonal spring element and its K1–K6 stiffness property |
+
+### Rigid / interpolation elements
+
+| Card | Purpose |
+|------|---------|
+| `RBE2` | Rigid coupling: dependent grids follow one independent grid for the CM DOFs |
+| `RBE3` | Interpolation constraint: reference grid = weighted average of independent grids |
+| `RBAR` | Rigid bar: all 6 DOFs at GB slaved to GA with full lever-arm kinematics |
+
+All three are assembled as a DOF transformation matrix **T** (`n_dof × n_red`) in `assembly/rbe3.py` (`build_rbe3_transformation()`). T is applied to K and M before SPC partitioning (`K_red = Tᵀ K T`, `M_red = Tᵀ M T`); full displacements/mode shapes are recovered via `u_full = T @ u_red`.
+
+### Mass, constraints, and loads
+
+| Card | Purpose |
+|------|---------|
+| `CONM2` | Concentrated mass with optional CG offset vector and inertia tensor (in a CID frame) |
+| `SPC` / `SPC1` | Single-point constraints (grid/DOF pairs or a DOF string across a grid list) |
+| `FORCE` / `MOMENT` | Concentrated force/moment at a grid (direction in a CID frame) |
+| `LOAD` | Linear combination of FORCE/MOMENT/GRAV load sets |
+| `GRAV` | Body acceleration load via the assembled consistent mass matrix (`f = M·a`) |
+| `EIGRL` | Real eigenvalue extraction parameters for SOL 103 (bounds, mode count, normalisation) |
+
+### Aerodynamics (Phase A)
+
+| Card | Purpose |
+|------|---------|
+| `AEROS` | Aerodynamic reference geometry (CREF/BREF/SREF); one per model, full-span only |
+| `CAERO1` | Flat trapezoidal lifting-surface macroelement, meshed NSPAN × NCHORD |
+| `PAERO1` | Aerodynamic panel property (Phase A stub) |
+| `AEFACT` | Fraction list for non-uniform span/chord panel spacing |
+| `W2GJ` | Per-box baseline normalwash slopes (geometric incidence) |
+| `WKK` | Diagonal AIC correction weights |
+| `AECORR` | WT1/WT2 force- or pressure-matching AIC correction |
 
 ---
 
@@ -689,6 +95,18 @@ class BulkData:
 ```
 
 All dictionaries are keyed by the card's primary ID (GID, EID, PID, SID, CID, etc.).
+
+### Notable dataclass shapes
+
+| Dataclass | Structure |
+|-----------|-----------|
+| `Rbe3` | `eid: int`, `refgrid: int`, `refc: str`, `wt_gc: list` of `(weight: float, dofs: str, grids: list[int])` tuples |
+| `Rbe2` | `eid: int`, `gn: int`, `cm: str`, `gm: list[int]` |
+| `Rbar` | `eid: int`, `ga: int`, `gb: int`, `cna: str = "123456"`, `cnb: str = ""` |
+
+### Coordinate-system handling
+
+All internal computation is in global CID 0. After parsing, `resolve_grid_positions()` transforms every grid position from its `CP` system into CID 0 in-place; the `cd` field is preserved for output transformation of nodal results. `CORD2R` frames are also used to rotate FORCE/MOMENT direction vectors and CONM2 offset vectors / inertia tensors into CID 0 before assembly.
 
 ---
 
@@ -745,9 +163,9 @@ Raises `FileNotFoundError` if the INCLUDE file does not exist.
 
 ### `parse_case_control(lines) -> CaseControl` — `parser/case_control.py`
 
-Parses the case control section (lines above `BEGIN BULK`). Uses space/equals keyword syntax — not the comma/fixed-field bulk format. Recognises: `SOL`, `TITLE`, `SUBCASE`, `LOAD`, `SPC`, `METHOD`, `DISPLACEMENT`, `SPCFORCE`, `OLOAD`, `FORCE`, `STRESS`, `INCLUDE`.
+Parses the case control section (lines above `BEGIN BULK`). Uses space/equals keyword syntax — not the comma/fixed-field bulk format. Recognises: `SOL`, `TITLE`, `SUBCASE`, `LOAD`, `SPC`, `METHOD`, `TRIM`, `DIVERG`, `MLOADS`, `AEROF`, `APRES`, `DISPLACEMENT`, `SPCFORCE`, `OLOAD`, `FORCE`, `STRESS`, `INCLUDE`.
 
-Raises `ValueError` if `SOL` is absent or not 101/103.
+Raises `ValueError` if `SOL` is absent or not one of 101/103/144.
 
 ### `parse_bulk_data(lines) -> BulkData` — `parser/bdf_reader.py`
 
@@ -758,7 +176,7 @@ Accepts a list of BDF text lines (bulk data section only). Supports:
 - **Inline `$` comments** — everything from `$` to end of line is ignored
 - **Continuation lines** — lines whose first field starts with `+`; consumed by the preceding card handler (e.g. PBAR recovery points, SPC1 with >6 grids)
 
-Cards recognised: `CORD2R`, `GRID`, `PBAR`, `PBUSH`, `MAT1`, `CBAR`, `CBUSH`, `PLOTEL`, `CONM2`, `RBE3`, `RBE2`, `RBAR`, `SPC`, `SPC1`, `FORCE`, `MOMENT`, `LOAD`, `GRAV`, `EIGRL`, `AEROS`, `AEFACT`, `PAERO1`, `CAERO1`.
+Cards recognised: `CORD2R`, `GRID`, `PBAR`, `PBUSH`, `MAT1`, `CBAR`, `CBUSH`, `PLOTEL`, `CONM2`, `RBE3`, `RBE2`, `RBAR`, `SPC`, `SPC1`, `FORCE`, `MOMENT`, `LOAD`, `GRAV`, `EIGRL`, `SUPORT`, plus the aero/trim/monitor/maneuver families: `AEROS`, `AEFACT`, `PAERO1`, `PSTRIP`, `STRIPK`, `CAERO1`, `W2GJ`, `WKK`, `AECORR`, `SET1`, `SPLINE0`, `SPLINE1`, `SPLINE2`, `ATTACH`, `AESTAT`, `AESURF`, `AELIST`, `TRIM`, `DIVERG`, `TRIMVAR`, `TRIMOBJ`, `TRIMCON`, `AECOMP`, `MONPNT1`, `MONPNT3`, `MLOADS`, `MLDTRIM`, `MLDTIME`, `MLDCOMD`, `MLDPRNT`, `TABLED1` (full list with fields in `02_card_reference.md`).
 Structural markers `BEGIN BULK` / `ENDDATA` are silently skipped.
 All other keywords issue `warnings.warn(…, UserWarning)` and are skipped.
 Duplicate GID, PID (PBAR), MID (MAT1), or LOAD SID raises `ValueError`.

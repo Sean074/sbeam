@@ -3954,3 +3954,134 @@ follow-ons.
 - **Parity single-sourced from post-mirror `AEROS.SYMXZ`** — the solver runs full-span (mirror zeros
   SYMXZ), so parity = 1 in the normal pipeline; the ×2 path + annotation is retained for direct
   half-model input.
+
+---
+
+## Backlog Closures — 2026-07-03 Aeroelastic Completion Review
+
+The backlog was restructured on 2026-07-03 into the ordered steady-aeroelastic close-out plan
+(Steps AC1–AC6). The following items were closed and moved here in the same session.
+
+### Phase A/C — AE13: Validation gap — no swept/coupled/benchmark gates ✅ RESOLVED (2026-07-03)
+
+**Objective:** Close the validation blind spot exposed by the 2026-06-11 review: 207 aero tests
+passed while the HA144A trim was grossly wrong — every geometric validation case was unswept and
+uncoupled, the V-B1/V-B3 rigid-body gates never exercised a swept spline axis or fore/aft offset
+grids, and no dimensional-consistency check tied the coupled force path back to the rigid solver.
+
+**Deliverables (all landed across 2026-06-11 → 2026-06-13; item formally closed at review):**
+- **V-AE1 — HA144A acceptance gates** (`tests/aero/test_ae1_fullspan.py`): SC1 relative gates
+  (ANGLEA 1.5% / ELEV 1% / lift 1%) and SC2 %-full-scale gates (AE1 Step F) both live — the
+  superseded relative `xfail` is gone. The original "lift tests pass" reassurance was
+  non-discriminating (lift balanced for both the correct and the halved trim) — exactly the blind
+  spot this item was about; superseded by per-target tolerances.
+- **V-AE2 — Swept-spline rigid-body gate** (`TestSweptSplineRigidBody`, 2026-06-11; updated
+  2026-06-12 to EA-only SET1 with DTHX=+1 alongside V-AE1b `TestGlobalRigidBody`): exercises a
+  60°-swept axis + full 6-mode lever-arm rotation.
+- **V-AE3 — Unit-consistency gate** (`tests/aero/test_vae3_cross_check.py`, 2026-06-13):
+  coupling-path (`skj @ ajj_inv_corr`) total force AND moment equals the Kutta-Joukowski
+  resultants from an INDEPENDENT `solve_rigid_cl` rebuild. Fz/My agree to machine precision on
+  HA144A and val_vlm_rect_ar8; the half-f_box parity proxy fails by ~2×, so it DOES catch the
+  factor-of-2 parity bug (unlike the old `min(err_full, err_half)` proxy).
+- **V-AE1g — Rigid-derivative benchmark** (`test_ha144a_rigid_derivs.py`, 2026-06-13): full rigid
+  longitudinal column (CZα/CMα/CZq/CMq/CZδe/CMδe) within 0.5% of the independent ADA370433
+  Table 3.1.1 NASTRAN values.
+
+**Test/Acceptance:** the three planned permanent gates plus the rigid benchmark are all
+implemented and green. Residual coverage — the flexible **unrestrained** derivative layer —
+is not a validation-infrastructure gap and rides with the open AE8b item.
+
+### Phase A — A5: Aero model reachable only from the viewer ✅ CLOSED (expected state, 2026-07-03)
+
+**Verdict:** not a defect. `build_aero_model` / `solve_rigid_cl` are called from `viewer/app.py`
+and (since AE10, 2026-06-13) from `main.py` under SOL 144. No solver or CLI path consumes the
+aero model under SOL 101/103 — expected, since those are non-aero solutions. The item's two
+actionable halves both closed elsewhere: the end-to-end SOL 144 CLI dispatch landed with
+AE10/Step 56 (144 whitelisted at `case_control.py:61`; stale "not 101 or 103" docstring
+corrected), and `val_vlm_rect_ar8.bdf` documents the SOL-101 workaround. Removed from the
+backlog with the "expected-state" verdict recorded here.
+
+### AE1 — HA144A validated trim reference baseline (moved from backlog, 2026-07-03)
+
+AE1 closed 2026-06-13 (see "AE1 Step F" above). The validated-trim table the backlog retained as
+the regression reference baseline is preserved here:
+
+**Validated trim (full-span deck, NASTRAN Listing 7-2 vs sbeam):**
+
+| Quantity | NASTRAN | sbeam | Status |
+|---|---:|---:|---|
+| SC1 (q=40) ANGLEA     | +0.169191 rad | +0.171052 rad (+1.1%) | ✓ |
+| SC1 (q=40) ELEV       | +0.492457 rad | +0.490775 rad (−0.3%) | ✓ |
+| SC1 trim lift         | +16 000 lb    | +16 000 lb            | ✓ |
+| SC2 (q=1200) ANGLEA   | +0.001373 rad | +0.003242 rad (0.36% FS) | ✓ ≤1% FS |
+| SC2 (q=1200) ELEV     | +0.019325 rad | +0.017727 rad (0.23% FS) | ✓ ≤1% FS |
+| Rigid CZα             | −5.071        | −5.071                | ✓ |
+| Restrained CZα (q=40) | −5.103        | −5.112 (within 1%)    | ✓ V-AE1e |
+
+The SC2 "+136%" relative figure was a near-zero-normalization artifact; the real SC2 error is the
+same ~0.1° q-invariant common-mode offset already accepted at SC1 (≤0.4% FS, flat across a 30:1 q
+sweep) — tracked, with the decisive root-cause test, on **AE8a** (backlog Step AC3). Standing
+cautions: do not chase the `q·Q_aa` flexible increment for SC1 (a 0.6% effect at q=40), and do
+not re-tune HA144A bulk parameters (NSPAN/NCHORD, spline DTOR, RCSID) to fit the gate — rigid
+CLα already matches NASTRAN to 4 sig fig at the same mesh.
+
+### Step AC1 — Documentation scrub + full project-documentation review ✅ COMPLETE (2026-07-03)
+
+**Objective:** Remove actively misleading closed-defect guidance from the standard docs and code
+(the original AC1 scope), widened at review to a full audit of every project document against the
+code (parser card dispatch, SOL dispatch, module tree, viewer capability) — including README.md,
+which still described a Phase-1-only tool.
+
+**Deliverables:**
+- **`docs/10_standard/05_aeroelastics.md`:** "⚠ Known Defects" table replaced with "Validation
+  status & known limitations" — AE1/AE2–AE10 resolved rows removed, AE8 split into AE8a/AE8b,
+  the blanket "do not use SOL 144 trim" warning replaced with the accurate validated-and-usable
+  statement + gate list. The stale "Step 52 (WIP — carries open critical defects)" section
+  (pre-fix benchmark-failure numbers) rewritten as CLOSED with the over-determined case. Title
+  broadened to Phases A–C + G0; supported-cards table completed (SUPORT, PSTRIP/STRIPK,
+  AECOMP/MONPNT1/MONPNT3, MLOADS family, TABLED1); module map completed (mirror.py,
+  maneuver_qs.py, maneuver.py, maneuver_presets.py, monitor_points.py, maneuver_output.py).
+- **R23 closed:** `docs/10_standard/03_static_analysis.md` now documents the per-element 6-arg
+  `recover_bar_forces(cbar, grids, pbars, mat1s, displacements, grid_index) -> BarForce`.
+- **`sbeam/solver/sol144.py`:** `run_sol144_trim` docstring corrected — over-determined trim is
+  implemented (null-space + TRIMOBJ/TRIMCON/TRIMVAR), no `NotImplementedError`.
+- **README.md rewritten to current capability:** tagline + analysis types now cover SOL 144 trim
+  / divergence / monitor points and the Phase G0 `MLOADS` path; the supported-cards table extended
+  from 18 to the full 51 parsed cards (aero geometry, corrections, splining, trim, monitor,
+  maneuver families); workflow updated; limitations gained an Aeroelastics section (subsonic
+  steady VLM only, full-span only, unrestrained derivatives open) and the solver line corrected
+  to "SOL 101, 103, and 144".
+- **`docs/10_standard/02_card_reference.md` completed:** new sections for SET1, SPLINE2, ATTACH,
+  SPLINE0, SPLINE1 (parsed-but-rejected, Step 48), SUPORT, and the Phase G0 family (MLOADS,
+  MLDTRIM, MLDTIME, MLDCOMD, MLDPRNT, TABLED1); case-control table gained MLOADS/AEROF/APRES/
+  TRIMOBJ. Verified complete against the parser dispatch table — all 51 bulk keywords documented.
+  **RBE2 correctness fix:** the doc claimed a direct DOF copy; the implementation applies the full
+  6×6 rigid-body lever-arm matrix (`assembly/rbe3.py`) — corrected. Ten details that existed only
+  in the old `01_beam_model.md` card tables ported (RBE3 limitation, CONM2 6×6 assembly +
+  singular-mass warning, MAT1 G-derivation, CBAR local-axis pin releases + no-G0-form, CBUSH
+  massless/coincident-orientation rules, CORD2R non-collinearity, GRAV reaction correction, WKK
+  lstsq inversion, RBE2+CONM2 attachment pattern).
+- **`docs/10_standard/01_beam_model.md` de-duplicated:** the ~645-line per-card field-table
+  section (duplicating the card reference) removed; the doc is now the data-model & parser guide
+  (BulkData, dataclass shapes, parser API, T-matrix assembly, coordinate handling, limits) with a
+  compact card summary linking to `02_card_reference.md`. Stale parser claims fixed (SOL
+  101/103/144; full recognised-card list).
+- **`docs/10_standard/00_program_overview.md`:** purpose/CLI sections now include SOL 144
+  (TRIM/DIVERG/MLOADS routing + the five auxiliary output files); project-structure tree
+  regenerated from the actual package (17 missing modules added); version/phase table rewritten
+  to match CLAUDE.md phases and point at the backlog's AC plan.
+- **`docs/10_standard/06_viewer.md`:** "Run Analysis" and "F06 Export" sections reconciled with
+  the code (`_run_sol144` dispatch + session keys; `build_f06_sol144_text` /
+  `build_f06_sol144_diverg_text`; CLI-only exports noted as backlog Step AC5).
+- **`docs/00_INDEX.md`** descriptions updated (01 scope; 05 covers Phases A–C + G0);
+  **CLAUDE.md** assembly module list corrected.
+
+**Audit verdicts (docs reviewed for deletion/merge):** no file deletions warranted — no orphan
+docs, no dangling INDEX links; `40_history/archive/` correctly holds the one superseded plan.
+The single merge executed was 01→02 (card tables). Authoritative-home rules going forward: card
+fields live in `02_card_reference.md` only; the exhaustive card list lives there (README/CLAUDE
+summarise); the module tree's authoritative home is `00_program_overview.md`.
+
+**Test/Acceptance:** card inventory verified against `bdf_reader.py` dispatch (51/51); every
+ported/updated claim verified against code before writing; trim regression tests pass
+(`tests/aero/test_trim_overdetermined.py`); no doc now states SOL 144 trim is unusable.

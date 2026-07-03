@@ -101,7 +101,7 @@ sbeam/
 ├── main.py
 ├── parser/         # bdf_reader.py, case_control.py
 ├── model/          # grid.py, element.py, property.py, material.py, load.py, constraint.py, mass.py, aero.py, maneuver.py (ZAERO MLOADS cards), maneuver_presets.py
-├── assembly/       # stiffness.py, mass_matrix.py, rbe3.py
+├── assembly/       # stiffness.py, mass_matrix.py, load_vector.py, coord_transform.py, rbe3.py
 ├── solver/         # sol101.py, sol103.py, sol144.py (static aeroelastic trim), maneuver_qs.py (Phase G0 transient maneuver loads)
 ├── results/        # results.py, f06_writer.py, load_export.py, monitor_points.py (MONPNT1/MONPNT3 integrated section loads), maneuver_output.py (Phase G0 time histories + critical-step export)
 ├── gpwg.py         # Mass and CG (GPWG)

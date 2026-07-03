@@ -303,8 +303,9 @@ def apply_spcs(K, f, spc_dofs: list[int]) -> tuple:
 def assemble_load_vector(bulk: BulkData, load_sid: int) -> np.ndarray:
     ...
 
-# results/results.py
-def recover_bar_forces(bulk: BulkData, u: np.ndarray) -> dict[int, BarForces]:
+# solver/sol101.py — called per element in the recovery loop
+def recover_bar_forces(cbar, grids, pbars, mat1s,
+                       displacements, grid_index) -> BarForce:
     ...
 ```
 

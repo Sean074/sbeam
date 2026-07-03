@@ -17,11 +17,11 @@ are the day-to-day references; higher numbers are planning and historical record
 | File | Scope |
 |------|-------|
 | [`00_program_overview.md`](10_standard/00_program_overview.md) | Program code standard, developer and user guide |
-| [`01_beam_model.md`](10_standard/01_beam_model.md) | Geometry and model definition (data model, BDF cards) |
+| [`01_beam_model.md`](10_standard/01_beam_model.md) | Data model and parser (BulkData container, dataclass mapping, parser API, model limits; card summary — field tables in `02_card_reference.md`) |
 | [`02_card_reference.md`](10_standard/02_card_reference.md) | BDF card field reference (all supported cards) |
 | [`03_static_analysis.md`](10_standard/03_static_analysis.md) | SOL 101 static analysis solver |
 | [`04_modal_analysis.md`](10_standard/04_modal_analysis.md) | SOL 103 normal modes solver |
-| [`05_aeroelastics.md`](10_standard/05_aeroelastics.md) | Phase A VLM aeroelastics developer/user guide |
+| [`05_aeroelastics.md`](10_standard/05_aeroelastics.md) | Aeroelastics developer/user guide — VLM (Phase A), splining (Phase B), SOL 144 trim/divergence/monitor points (Phase C), quasi-steady maneuver loads (Phase G0) |
 | [`06_viewer.md`](10_standard/06_viewer.md) | Streamlit/Plotly pre/post-processing viewer |
 | [`07_code_review_process.md`](10_standard/07_code_review_process.md) | Critical code-review process |
 | [`08_release_process.md`](10_standard/08_release_process.md) | Versioning and release process |

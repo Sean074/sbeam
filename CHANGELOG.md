@@ -465,6 +465,64 @@ points (MON3) will consume.
 
 ### Changed
 
+**Step AC1 closed — documentation scrub widened to a full project-documentation review (2026-07-03)**
+
+- **`docs/10_standard/05_aeroelastics.md`** — stale "⚠ Known Defects" table replaced with
+  "Validation status & known limitations" (AE1 and AE2–AE10 rows removed as resolved; AE8 split
+  into AE8a/AE8b; the blanket "do not use SOL 144 trim results" warning replaced — trim is
+  validated and gated at ≤0.4% FS). Stale "Step 52 WIP" section rewritten as CLOSED. Title and
+  scope broadened to Phases A–C + G0; supported-cards table and module map completed.
+- **R23 closed** — `docs/10_standard/03_static_analysis.md` `recover_bar_forces` signature
+  corrected to the per-element 6-arg form.
+- **`sbeam/solver/sol144.py`** — `run_sol144_trim` docstring no longer claims over-determined
+  trim raises `NotImplementedError` (it is implemented; docstring-only change).
+- **README.md** — brought up to current capability: SOL 144 (trim/divergence/monitor points) and
+  Phase G0 `MLOADS` in the tagline and Analysis Types; supported-cards table extended to all 51
+  parsed cards; new Aeroelastics limitations section; solvers limitation corrected.
+- **`docs/10_standard/02_card_reference.md`** — completed against the parser dispatch (51/51
+  cards): new Splining (SET1/SPLINE2/ATTACH/SPLINE0/SPLINE1), SUPORT, and Phase G0
+  (MLOADS/MLDTRIM/MLDTIME/MLDCOMD/MLDPRNT/TABLED1) sections; case-control table gained
+  MLOADS/AEROF/APRES/TRIMOBJ. **RBE2 constraint equation corrected** (full 6×6 lever-arm
+  rigid-body matrix, not a direct DOF copy). Ten details ported from the old beam-model card
+  tables (CONM2 assembly + singular-mass warning, MAT1 G-derivation, CBAR local-axis pin
+  releases, CBUSH rules, CORD2R non-collinearity, GRAV reaction correction, WKK inversion,
+  RBE3 limitation, RBE2+CONM2 pattern).
+- **`docs/10_standard/01_beam_model.md`** — de-duplicated against the card reference: ~645 lines
+  of duplicate per-card field tables removed; now the data-model & parser guide with a compact
+  card summary; stale SOL-101/103-only parser claims fixed.
+- **`docs/10_standard/00_program_overview.md`** — SOL 144 + MLOADS in purpose/CLI sections
+  (incl. the five auxiliary output files); module tree regenerated (17 missing modules);
+  version/phase table rewritten to current phase status.
+- **`docs/10_standard/06_viewer.md`** — Run-Analysis and F06-Export sections reconciled with the
+  SOL 144 viewer code paths; CLI-only exports noted (backlog Step AC5).
+- **`docs/00_INDEX.md`** / **CLAUDE.md** — scope descriptions and assembly module list updated.
+- Audit outcome: no doc deletions warranted (no orphans, no dangling links); the only merge was
+  the 01→02 card-table consolidation. Card fields now live in `02_card_reference.md` only.
+
+**Backlog restructured into the steady-aeroelastic close-out plan; AE13 and A5 closed (2026-07-03)**
+
+- **`docs/30_future/00_backlog.md`** rewritten as the ordered aeroelastic completion plan
+  (Steps AC1–AC6): AC1 documentation scrub (stale `05_aeroelastics.md` defect table, R23,
+  stale `run_sol144_trim` docstring), AC2 AE8b unrestrained derivatives, AC3 AE8a trim offset,
+  AC4 AE12/A7/A8 warnings, AC5 viewer gap close-out (maneuver exports, f06 maneuver block,
+  trim CX/CY + roll/yaw totals, body-panel visualization, run-summary string, viewer-doc
+  reconcile), AC6 Step 54 CHORDCP (optional). Scope decision recorded: steady-complete only;
+  Phase G0 follow-ons and DLM/flutter stay under "Future development"; SOL 144/MLOADS case
+  *authoring* UI recorded as a deferred future item (viewer runs/displays SOL 144 but cases
+  are authored in the BDF).
+- **AE13 (validation gap) CLOSED** — its three planned permanent gates (V-AE1 HA144A acceptance,
+  V-AE2 swept-spline rigid-body, V-AE3 coupling-path/rigid-solver cross-check) plus the V-AE1g
+  ADA370433 rigid-derivative benchmark are all implemented and green; residual flexible
+  unrestrained-derivative coverage rides with AE8b. Moved to
+  `docs/40_history/00_completed_development.md`.
+- **A5 (aero model viewer-only) CLOSED** — expected-state verdict: SOL 144 CLI dispatch landed
+  with AE10/Step 56; SOL 101/103 correctly do not consume the aero model. Moved to
+  `docs/40_history`.
+- **AE1 validated-trim reference-baseline table** moved from the backlog to `docs/40_history`
+  (AE1 itself closed 2026-06-13); closed-narrative blocks (Step 52/53/58 closure summaries,
+  "closed in this branch" lists, Phase A/B status paragraphs) removed from the backlog — the
+  backlog now carries open items only.
+
 **Cruciform body panels moved clear of the empennage (2026-06-15)**
 
 - **`sample/cessna210_body.bdf`** — the body panels overlapped the empennage: the horizontal panel

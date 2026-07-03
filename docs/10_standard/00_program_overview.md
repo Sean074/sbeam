@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`sbeam` (Simple Beam FEA) is a lightweight Python finite element analysis program for beam structures. It reads NASTRAN-format BDF input, solves SOL 101 (static) and SOL 103 (normal modes) analyses, and provides a Streamlit/Plotly viewer for pre- and post-processing.
+`sbeam` (Simple Beam FEA) is a lightweight Python finite element analysis program for beam structures. It reads NASTRAN-format BDF input, solves SOL 101 (static), SOL 103 (normal modes), and SOL 144 (static aeroelastic trim + divergence) analyses — a SOL 144 subcase with an `MLOADS` request additionally runs the Phase G0 quasi-steady transient maneuver-loads solver — and provides a Streamlit/Plotly viewer for pre- and post-processing.
 
 **See also:** [card reference](02_card_reference.md) — BDF card reference (field definitions, variable names, examples for all supported cards).
 
@@ -12,7 +12,7 @@
 
 ```
 sbeam/
-├── main.py               # CLI entry point
+├── main.py               # CLI entry point (SOL routing, f06 + load/monitor/maneuver exports)
 ├── parser/
 │   ├── bdf_reader.py     # Bulk data section parser → BulkData object
 │   └── case_control.py   # Case control section parser → CaseControl object
@@ -26,7 +26,9 @@ sbeam/
 │   ├── constraint.py         # Spc, Spc1 dataclasses
 │   ├── mass.py               # Conm2 dataclass
 │   ├── coordinate_system.py  # Cord2r dataclass
-│   └── aero.py               # Aeros, Caero1, Paero1, Aefact, W2gj, Wkk, Aecorr dataclasses
+│   ├── aero.py               # Aero/trim card dataclasses (Aeros, Caero1, Paero1, Pstrip, Stripk, Aefact, W2gj, Wkk, Aecorr, Set1, Spline0/1/2, Attach, Aestat, Aesurf, Aelist, Trim, Diverg, …)
+│   ├── maneuver.py           # ZAERO MLOADS card set (Mloads, Mldtrim, Mldcomd, Mldtime, Mldprnt, Tabled1) for Phase G0
+│   └── maneuver_presets.py   # Balanced-maneuver TRIM authoring presets (load factor / steady rate → AESTAT values, Step 53)
 ├── assembly/
 │   ├── stiffness.py          # Global stiffness matrix assembly
 │   ├── mass_matrix.py        # Global consistent mass matrix assembly
@@ -35,10 +37,15 @@ sbeam/
 │   └── coord_transform.py    # CORD2R rotation matrices; input/output transforms
 ├── solver/
 │   ├── sol101.py         # Static analysis
-│   └── sol103.py         # Normal modes
+│   ├── sol103.py         # Normal modes
+│   ├── sol144.py         # Static aeroelastic trim (Schur solve, derivatives), divergence sweep, AeroCache
+│   └── maneuver_qs.py    # Phase G0 quasi-steady transient maneuver loads (restrained l-set Newmark-β)
 ├── results/
 │   ├── results.py        # Results dataclass (displacements, forces, modes)
-│   └── f06_writer.py     # .f06-format text output
+│   ├── f06_writer.py     # .f06-format text output (SOL 101/103/144 trim + divergence blocks)
+│   ├── load_export.py    # Trimmed aero + net maneuver FORCE/MOMENT card export; monitor-point CSV
+│   ├── monitor_points.py # MONPNT1/MONPNT3 integrated section loads (aero-only / aero+inertia+reaction)
+│   └── maneuver_output.py # Phase G0 MLDPRNT ASCII time histories + critical-step net-load export
 ├── gpwg.py               # Mass and centre-of-gravity calculation
 ├── aero/
 │   ├── __init__.py
@@ -46,13 +53,22 @@ sbeam/
 │   ├── vlm.py            # Biot–Savart, horseshoe influence, build_ajj, solve_rigid_cl
 │   ├── integration.py    # build_skj, build_djk, build_wg integration matrices
 │   ├── corrections.py    # apply_wkk, apply_wt2, apply_wt1 AIC corrections
-│   ├── aero_model.py     # AeroModel dataclass + build_aero_model() factory
-│   └── coupling.py       # build_qaa (flexible aero stiffness), build_fg, build_gaf (modal GAF Qhh)
+│   ├── section_correction.py # W2GJ+WT2 card-pair synthesis matching section force and moment
+│   ├── section_data.py   # Spanwise section-coefficient table (CSV) ingestion → strip targets
+│   ├── body_correction.py # Cruciform (A9) + decoupled-strip (A10) body-panel total-aircraft moment match
+│   ├── strip.py          # Decoupled strip body panels (PSTRIP/STRIPK; zero-coupling diagonal AIC block)
+│   ├── mirror.py         # mirror_halfspan(): half-span (SYMXZ) deck → full-span unfold migration aid
+│   ├── spline.py         # build_g_spline(): g_slope / g_disp from SPLINE2 + ATTACH + SPLINE0 cards
+│   ├── coupling.py       # build_qaa (flexible aero stiffness), build_fg, build_gaf (modal GAF Qhh)
+│   └── aero_model.py     # AeroModel dataclass + build_aero_model() factory
 └── viewer/
     ├── app.py            # Streamlit app entry point
     ├── geometry.py       # 3D Plotly model display
     ├── results_view.py   # Post-processing display
-    └── case_control_ui.py # Case control form → BDF export
+    ├── case_control_ui.py # Case control form → BDF export
+    ├── aero_view.py      # Aero box mesh + cp colour maps, span loading, S&C derivative tables
+    ├── aero_correction_view.py # Aero Correction tab: CFD/test section data → correction cards + corrected-BDF export
+    └── format_utils.py   # Shared 5-sig-fig table/metric formatting (fmt / fmt_mass / style_numeric)
 ```
 
 ---
@@ -126,7 +142,7 @@ The Streamlit viewer is the **primary entry point** for all interactive use. It 
 
 | File type | Content | Viewer behaviour |
 |-----------|---------|-----------------|
-| Bulk data file (`.dat` or `.bdf`) | GRID, CBAR, PBAR, MAT1, SPC, FORCE, etc. — no case control | Parsed via `parse_bulk_file()`; model displayed immediately; user defines case control in the UI |
+| Bulk data file (`.dat` or `.bdf`) | GRID, CBAR, PBAR, MAT1, SPC, FORCE, etc., plus the aero/trim card families (AEROS/CAERO1/SPLINE2/AESTAT/AESURF/TRIM/MONPNT/MLOADS, …) — no case control. Full list in [card reference](02_card_reference.md) | Parsed via `parse_bulk_file()`; model displayed immediately; user defines case control in the UI |
 | Run file (`.bdf`) | Case control (`SOL`, `SUBCASE`, …) + bulk data (inline or via `INCLUDE`) | Parsed via `parse_bdf()`; both `CaseControl` and `BulkData` loaded |
 
 Detection is automatic: the viewer scans uploaded file content for a `SOL` statement before `BEGIN BULK`.
@@ -139,7 +155,17 @@ python -m sbeam run.bdf
 sbeam run.bdf
 ```
 
-Reads a run file (case control required), determines SOL, runs analysis, and writes `run.f06` **to the same directory as the input file**. Supports SOL 101 and SOL 103; multiple subcases are written sequentially to a single `.f06` file.
+Reads a run file (case control required), determines SOL, runs analysis, and writes `run.f06` **to the same directory as the input file**. Supports SOL 101, SOL 103, and SOL 144; multiple subcases are written sequentially to a single `.f06` file.
+
+For SOL 144 each subcase is routed by its case-control requests: `TRIM` → static aeroelastic trim, `DIVERG` (without `TRIM`) → divergence sweep, `MLOADS` → Phase G0 quasi-steady transient maneuver loads. Besides the `.f06` (trim + divergence blocks), the CLI writes additional files next to the input:
+
+| File | Content | Written when |
+|------|---------|--------------|
+| `<stem>.aero_loads.bdf` | Trimmed aero flight loads as `FORCE`/`MOMENT` cards (SID = subcase id) | Any trim subcase |
+| `<stem>.maneuver_loads.bdf` | Net (aero + inertial) balanced-maneuver loads (Step 53) | Any trim subcase |
+| `<stem>.monitor_loads.csv` | MONPNT1/MONPNT3 integrated section loads across subcases | Trim subcases with monitor points |
+| `<stem>.mldprnt.txt` | MLDPRNT ASCII maneuver time histories | Any `MLOADS` subcase |
+| `<stem>.maneuver_qs_loads.bdf` | Critical-sample net-load `FORCE`/`MOMENT` export | Any `MLOADS` subcase |
 
 Exit codes: 0 on success; 1 on parse or solver error (message printed to stderr). Omitting the argument prints usage and exits with code 2.
 
@@ -221,11 +247,17 @@ pytest --cov=sbeam/solver --cov=sbeam/assembly --cov=sbeam/parser --cov-fail-und
 | 1 | BDF cards: CORD2R, GRID, CBAR, PBAR, MAT1, SPC/SPC1, FORCE, MOMENT, LOAD, PLOTEL, CONM2, EIGRL | Complete |
 | 2 | BDF cards: RBE2, RBE3, CBUSH, PBUSH, RBAR | Complete |
 | 2 | BDF card: GRAV (gravity body load; CID=0; f = M×a via consistent mass matrix) | Complete |
-| 2 | SOL 108 Direct frequency response | Planned |
-| 2 | SOL 109 Direct transient response | Planned |
-| 2 | SOL 111 Modal frequency response | Planned |
-| 2 | SOL 112 Modal transient response | Planned |
-| A | Steady VLM aeroelastics: AEROS/CAERO1/PAERO1/AEFACT/W2GJ/WKK/AECORR parsing; panel meshing; AIC matrix; integration matrices (Skj, Djk, wg); AIC corrections (Wkk, WT1, WT2) | In progress (S39–S43 complete) |
+| A | Steady VLM aeroelastics: card parsing, panel meshing, AIC + integration matrices, AIC corrections (Wkk, WT1, WT2), section force/moment correction synthesis, body-panel total-moment corrections | Steps 39–45 + A9 (cruciform) + A10 (decoupled strip) complete; A7/A8 warnings open |
+| B | Structural coupling splines: SPLINE2/ATTACH/SPLINE0 → g_slope/g_disp; flexible aero stiffness Q_aa | Complete (Step 48 SPLINE1 surface spline deferred) |
+| C | SOL 144 static aeroelastic trim: Schur trim solve, rigid + elastic-restrained derivatives, hinge moments, divergence sweep, balanced-maneuver loads (Step 53), monitor points, load exports | Essentially complete (AE8b unrestrained mean-axis derivatives + optional Step 54 CHORDCP open) |
+| G0 | DLM-free quasi-steady transient maneuver loads (ZAERO MLOADS card set; restrained l-set Newmark-β) | Increment 1 complete (free-flight rigid-body coupling, modal ROM, unsteady corrections, closed-loop control open) |
+| 3 | SOL 108 Direct frequency response | Planned |
+| 3 | SOL 109 Direct transient response | Planned |
+| 3 | SOL 111 Modal frequency response | Planned |
+| 3 | SOL 112 Modal transient response | Planned |
+
+The authoritative open-items list is `docs/30_future/00_backlog.md` — see its "Aeroelastic
+completion plan" (Steps AC1–AC6) for the remaining Phase A/C close-out work.
 
 **Version strategy:** `pyproject.toml` version is `0.1.0` and classifier is `3 - Alpha` for Phase 1.
 On Phase 2 completion (SOL 108/109/111/112 all passing), bump to `0.2.0` and change the classifier

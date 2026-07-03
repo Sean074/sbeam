@@ -8,169 +8,51 @@ step, give it a step number continuing from Step 39 and apply the same step form
 
 ---
 
-## Phase C closure roadmap — to a fully functioning SOL 144 + interface
+## Aeroelastic completion plan — steady (Phase A/C) close-out
 
-Phase C (SOL 144 static aeroelastic trim) is the active program phase. **Done already** (see
-CHANGELOG `[Unreleased]` and `docs/40_history`): the determined-trim Schur solver, **over-determined
-(redundant-control) trim**, rigid + restrained stability/control derivatives (longitudinal **and**
-lateral `C_lp`/`C_nr`/`C_lβ`), single critical divergence `q_div`, SOL 144 CLI dispatch, f06 output,
-and trimmed flight-load export (AE10 / Step 56); and the **AE1 acceptance gate is CLOSED** — both
-HA144A subcases trim within the %-full-scale gate (2026-06-13), AE1 Steps A–G + the Step C
-null-space guard complete. **Step 52 fully closed (2026-06-14).**
+**Reviewed 2026-07-03.** The steady aeroelastic capability (Phase A VLM + Phase C SOL 144
+trim) is feature-complete except for the items below. Everything previously closed —
+Steps 39–58, AE1 acceptance, AE2–AE7/AE9/AE10/AE11, Step 52/53/55/56/57/58, monitor points
+Phase 1, Phase G0 increment 1, AE13, A5 — is recorded in
+`docs/40_history/00_completed_development.md` and CHANGELOG `[Unreleased]`.
 
-**What remains to a fully functioning SOL 144 with a usable interface, in dependency order:**
+**Scope decision (2026-07-03):** this plan targets *steady-complete* only. The Phase G0
+transient follow-ons (G0-b/c/d/e) and the DLM/flutter work are out of scope and listed
+under "Future development" at the bottom of this file. GUI work closes the small display
+and export gaps; SOL 144 case *authoring* stays BDF-only (recorded as a future item).
 
-| # | Item | Kind | Status | Why here / what it unblocks |
-|--:|------|------|--------|------------------------------|
-| 1 | [AE8b — unrestrained (mean-axis) derivative column](#major-ae8b--unrestrained-mean-axis-derivative-formulation-known-wrong) | Code | Open (known-wrong first attempt) | Completes the derivative deliverable; off the trim critical path — can run in parallel |
-| 2 | [Step 54 — CFD / wind-tunnel mean-flow injection](#step-54--cfd--wind-tunnel-steady-pressure-injection-mean-flow-trim) | Code | Open | Optional mean-flow enhancement; lower priority |
+**Step AC1 (documentation scrub) CLOSED 2026-07-03** — widened to a full project-documentation
+review (README, card reference completion incl. an RBE2 correctness fix, program overview,
+viewer doc, beam-model/card-reference de-duplication); see `docs/40_history` and CHANGELOG.
 
-> **Monitor points MON1–MON4 / V-MON1 are CLOSED (2026-06-13)** — static `MONPNT1`
-> (aero-only) and `MONPNT3` (aero + inertia + reaction, splined to structural grids)
-> integrated section loads are emitted per SOL 144 trim subcase (f06 block + CSV).
-> See `docs/40_history`. Two follow-ons remain open below: **Section-cut running loads
-> (Phase 2)** and **Dynamic monitor extraction (Phase 3)**; HDF5 hierarchical export is a
-> small deferred add (f06 + CSV shipped).
+**Execution order** (rationale: AE8b first — the long pole, may need reference-hunting time;
+AE8a and the warnings can run in parallel or after; GUI last since it partly displays AE8b
+output):
 
-**Step 52 is now CLOSED (2026-06-14)** — over-determined (redundant-control) trim via null-space
-reduction + weighted-L2 TRIMOBJ/TRIMCON/TRIMVAR, and the ROLL/YAW/SIDES rate-aero **moment**
-derivatives `C_lp`, `C_nr`, and the dihedral effect `C_lβ`. Gates V-C4
-(`tests/aero/test_trim_overdetermined.py`) and V-LAT (`tests/aero/test_lateral_derivs.py`). Full
-detail in CHANGELOG `[Unreleased]` + `docs/40_history`.
+| Step | Item | Kind | Priority | Notes |
+|-----:|------|------|----------|-------|
+| AC2 | [Unrestrained (mean-axis) derivative formulation (known-wrong)](#step-ac2-major-ae8b--unrestrained-mean-axis-derivative-formulation-known-wrong) | Code | MAJOR | Gated on sourcing the NASTRAN/ZAERO algorithm |
+| AC3 | [AE8a — q-invariant common-mode trim offset](#step-ac3-minor-ae8a--q-invariant-common-mode-trim-offset) | Code | MINOR | Root-cause or document; either closes it |
+| AC4 | [Minor solver warnings — AE12, A7, A8](#step-ac4--minor-solver-warnings--ae12-a7-a8) | Code | MINOR | Small, batchable |
+| AC5 | [GUI — close the small viewer gaps](#step-ac5--gui--close-the-small-viewer-gaps) | Code | Medium | Exports, totals, body-panel display, doc reconcile |
+| AC6 | [Step 54 — CFD/WT steady-pressure injection (CHORDCP)](#step-ac6--step-54--cfd--wind-tunnel-steady-pressure-injection-mean-flow-trim) | Code | Optional | Steady-complete can be declared without it |
 
-**Step 53 (balanced maneuver loads & inertia relief) is CLOSED (2026-06-14)** — the trim now
-emits the net (aero + inertial) grid load (`Sol144TrimResult.net_loads` / `inertial_loads`),
-exports it as `<stem>.maneuver_loads.bdf`, and asserts force/moment closure per maneuver case.
-Gated by **V-C5** (`tests/aero/test_maneuver_loads.py`): symmetric-pull-up closure ≈ 0, lift =
-`n_z·W`, and exact `n_z`-linear CBAR loads. The non-zero `inertial_loads` column is the input the
-monitor-point MON3 inertia contribution consumes. Full detail in CHANGELOG + `docs/40_history`.
-
-**Step 58 (dihedral / anhedral ±Γ correctness) is CLOSED (2026-06-14)** — the
-VLM→spline→force→trim chain is now permanently gated out of the xy-plane by **V-C-DIH**
-(`tests/aero/test_dihedral.py`) for Γ = +10° AND −10°: geometric box normal `(0, ∓sinΓ, cosΓ)`,
-3-component force with side force `Fy`, rigid `CL ≈ CL_planar·cosΓ`, symmetric `Fy`/roll/yaw
-cancellation, and a structured determined trim (`sample/val_dihedral_trim.bdf`) that closes the
-inertia-relief balance out of plane. Key finding: the force/normal architecture was already
-3-component and geometry-driven, so no production rewrite was needed — only the ±Γ decks, the gate,
-and a reusable `aero_moment_resultant` helper. **Dihedral still rides the remaining steps:** the
-lateral derivatives now carry the dihedral effect `C_lβ` (Step 52, closed — V-LAT gates the ±Γ
-`C_lβ` sign-flip); monitor section loads must carry the now-validated `Fy`/`Fz` split (MON2/MON3);
-and the viewer must render
-the canted deflected geometry and box `cp` (Step 57). The V-C-DIH gate is the permanent regression
-guard against the `(0,0,1)`-normal / Fz-only-resultant blind spot.
-
-**Non-blocking polish (close opportunistically, off the critical path):** AE8a (MINOR — optional
-root-cause of the ~0.1° q-invariant common-mode trim offset, already ≤0.4% FS), AE12 (MINOR —
-SPLINE2 DTOR/DTHZ ignored-warning), A7 (cosine chordwise helper + low-NCHORD warning), A8 (box-AR
-pre-solve warning), R23 (NIT — stale doc signature). Phase 2 / Phase 3 / long-tail development is
-out of Phase C scope (bottom of file).
-
-**Closed in this branch (one line; full detail in CHANGELOG `[Unreleased]` + `docs/40_history`):**
-AE2–AE7; AE9 (per-TRIM Mach AIC cache + supersonic guard); AE10 + Step 56 (SOL 144 CLI / f06 /
-flight-load export); **Step 52 (determined + over-determined trim, longitudinal + lateral
-derivatives — V-C4 / V-LAT)**; R16–R22; AE1 Steps A, B, C, D (half-span removed — full-span only),
-E, F, G; V-AE1b/c/e/f/g and V-AE2/V-AE3 acceptance gates. The retracted "flexible `q·Q_aa`" SC1 re-diagnosis
-is closed history and no longer load-bearing (the SC1 gap was the parity double-count, removed by
-construction).
+**Fallback:** AC2 (AE8b) is the only item with external risk — it is gated on obtaining
+the MSC/NASTRAN unrestrained-derivative formulation. If the reference cannot be sourced,
+document the column as unavailable and keep AE8b open; AC3–AC5 still complete
+everything else.
 
 ---
 
-## AE1 — HA144A trim acceptance: CLOSED (reference baseline)
-
-> **Status — CLOSED 2026-06-13.** Both HA144A subcases trim within the %-full-scale gate
-> (`tests/aero/test_ae1_fullspan.py`). AE1 Steps A, B, D, E, F, G and the Step C null-space
-> regression guard are done; the V-AE1b/c/d/e/f/g acceptance gates are green. Full detail lives in
-> `docs/40_history` and CHANGELOG `[Unreleased]`. This block is retained only as the validated-trim
-> **reference baseline** the open Phase C work (dihedral, maneuver, monitor) regresses against. The
-> only open AE1-lineage items are **AE8b** (unrestrained derivative column, MAJOR) and **AE8a**
-> (the ~0.1° q-invariant common-mode trim offset, MINOR) — in their own sections below.
-
-**Validated trim (full-span deck, NASTRAN Listing 7-2 vs sbeam):**
-
-| Quantity | NASTRAN | sbeam | Status |
-|---|---:|---:|---|
-| SC1 (q=40) ANGLEA     | +0.169191 rad | +0.171052 rad (+1.1%) | ✓ |
-| SC1 (q=40) ELEV       | +0.492457 rad | +0.490775 rad (−0.3%) | ✓ |
-| SC1 trim lift         | +16 000 lb    | +16 000 lb            | ✓ |
-| SC2 (q=1200) ANGLEA   | +0.001373 rad | +0.003242 rad (0.36% FS) | ✓ ≤1% FS |
-| SC2 (q=1200) ELEV     | +0.019325 rad | +0.017727 rad (0.23% FS) | ✓ ≤1% FS |
-| Rigid CZα             | −5.071        | −5.071                | ✓ |
-| Restrained CZα (q=40) | −5.103        | −5.112 (within 1%)    | ✓ V-AE1e |
-
-The SC2 "+136%" relative figure was a near-zero-normalization artifact; the real SC2 error is the
-same ~0.1° q-invariant common-mode offset already accepted at SC1 (≤0.4% FS, flat across a 30:1 q
-sweep) — tracked, with the decisive root-cause test, on **AE8a**. Two standing cautions for the
-open work: do not chase the `q·Q_aa` flexible increment for SC1 (a 0.6% effect at q=40), and do not
-re-tune HA144A bulk parameters (NSPAN/NCHORD, spline DTOR, RCSID) to fit the gate — rigid CLα
-already matches NASTRAN to 4 sig fig at the same mesh.
-
----
-
-## Open findings — Aerodynamics (2026-06-11 review)
-
-207 aero/integration tests passed at review time despite the HA144A trim being grossly
-wrong (validation blind spot — see AE13). The VLM core is verified to 4 sig fig vs
-NASTRAN rigid CLα; the defects below sit in the integration, spline, and trim layers.
-AE1 is tracked above; AE2/AE3/AE4/AE5/AE6/AE7 are resolved (see CHANGELOG).
-
----
-
-### [MINOR] AE8a — q-invariant common-mode trim offset
-
-**Files:** `sbeam/aero/coupling.py` (`build_fg` baseline aero load), `sbeam/aero/integration.py`
-(`build_wg` rigid normalwash / incidence), `sbeam/solver/sol144.py` (`run_sol144_trim`),
-`sample/ha144a_fullspan_sbeam.bdf` (canard / baseline-incidence setting).
-
-**Reframed and DOWNGRADED 2026-06-13 (was "MAJOR flexible-coupling fidelity gap, ~1.4×").** New
-metrology evidence shows the SC2 residual is a small, q-INDEPENDENT rigid common-mode trim offset
-(~0.1°, ≤0.4% FS) — the same offset already accepted at SC1, within fitness tolerance. It is NOT a
-flexible-coupling defect and NOT a blocker on AE1 Step F or Phase C. The spline-kernel /
-"obtain the NASTRAN flexible displacement field first" framing is superseded.
-
-```
-EVIDENCE — three independent metrology lenses, same conclusion:
-  (1) ABSOLUTE: the SC2 trim error is ~0.1° per DOF (ANGLEA +0.107°, ELEV −0.092°), not the
-      "+136%" the relative-to-near-zero metric reports.
-  (2) q-INVARIANT: the absolute error barely moves from q=40 to q=1200 —
-        ANGLEA  q=40 +0.1066°   q=1200 +0.1071°   (identical to 4 sig figs)
-        ELEV    q=40 −0.0964°   q=1200 −0.0916°
-      A flexible (q·Q_aa) defect would scale ~30× with q; this does not scale at all.
-  (3) FULL-SCALE: ~0.36% of the 30° (neg→pos stall) AoA range, flat across a 30:1 q sweep.
-
-WHY RIGID, NOT FLEXIBLE: q=40 is independently a ~pure-rigid trim (flex effect 0.6%: restrained
-      CZα 5.103 vs rigid 5.071), so its +0.107° error IS the rigid baseline offset. The SAME
-      error at q=1200 ⇒ flexible_error(1200) ≈ 0.107° − 0.107° ≈ 0 — the high-q flexible coupling
-      is essentially CORRECT. The earlier "Q_aa×1.41 reproduces both SC2 targets" fit is read as
-      NON-UNIQUE, not causal: at high q the flexible term is the dominant lever on the response
-      and can absorb a small residual of any origin, but it is INERT at q=40 where the identical
-      error appears. "No structural parameter fixes it" is consistent with a rigid AERO-baseline
-      source (incidence/camber w_g, canard setting, chordwise box bias) — which the
-      structural-parameter sweep never touched.
-
-DECISIVE TEST (cheap, no NASTRAN flex data needed): diagnose the +0.107° offset at SC1 — a
-      pure-rigid trim there — in the rigid baseline (build_fg / build_wg incidence, canard
-      setting, chordwise discretization). Correct it and re-run SC2: if SC2 collapses too, it is
-      a single q-independent common-mode and the flexible/spline hypothesis is closed for good.
-
-NOT A BLOCKER: under the corrected %-full-scale acceptance gate (AE1 Step F) both subcases
-      already pass at ≤0.4% FS, so Phase C and monitor loads are not gated on this.
-
-ACCEPTANCE (to CLOSE): trim error ≤1% of full-scale range at every TRIM subcase (already met:
-      SC1 and SC2 both ≤0.4% FS) AND the q=40 common-mode either root-caused (trim error ≲0.1% FS)
-      or DOCUMENTED as a known ≤0.4% FS trim bias in docs/10_standard/05_aeroelastics.md.
-```
-
----
-
-### [MAJOR] AE8b — Unrestrained (mean-axis) derivative formulation (known-wrong)
+### Step AC2 [MAJOR] AE8b — Unrestrained (mean-axis) derivative formulation (known-wrong)
 
 **Files:** `sbeam/solver/sol144.py` (`_compute_rigid_derivs`, `_compute_restrained_derivs` —
 add the unrestrained path here).
 
-**MAJOR but NOT on the Step F critical path.** Derivatives are an OUTPUT, not the trim driver
-(closing Step G did not move SC2), so AE8b does not block AE1 Step F, Phase C, or monitor loads.
-It is the missing unrestrained derivative *column* — a Phase C derivative deliverable in its own
-right. Tracked separately from AE8a (the SC2 trim residual) since 2026-06-13.
+**MAJOR but NOT on the trim critical path.** Derivatives are an OUTPUT, not the trim driver
+(closing Step G did not move SC2), so AE8b does not block Phase C trim or monitor loads.
+It is the missing unrestrained derivative *column* — a Phase C derivative deliverable in its
+own right. Tracked separately from AE8a (the SC2 trim residual) since 2026-06-13.
 
 ```
 [MAJOR] The stability-derivative chain has consistent RIGID and RESTRAINED columns but no
@@ -228,11 +110,70 @@ ACCEPTANCE (to CLOSE): HA144A UNRESTRAINED columns within 1% of NASTRAN_UNRESTRA
         RESTRAINED column gated by V-AE1e; do not conflate.)
 RIDES HERE: completing V-AE1e's remaining RESTRAINED columns (Cmα, Cmq, CZδe, Cmδe) needs the
         MSC Table 7-1 values (not ADA370433) and rides with AE8b.
+GUI RIDER: once computed, add the unrestrained column to the stability-derivative table in
+        viewer/results_view.py::_render_sol144_trim (alongside rigid + restrained).
 ```
 
 ---
 
-### [MINOR] AE12 — SPLINE2 DTOR/DTHZ silently ignored (PG-normal half MISIDENTIFIED)
+### Step AC3 [MINOR] AE8a — q-invariant common-mode trim offset
+
+**Files:** `sbeam/aero/coupling.py` (`build_fg` baseline aero load), `sbeam/aero/integration.py`
+(`build_wg` rigid normalwash / incidence), `sbeam/solver/sol144.py` (`run_sol144_trim`),
+`sample/ha144a_fullspan_sbeam.bdf` (canard / baseline-incidence setting).
+
+**Reframed and DOWNGRADED 2026-06-13 (was "MAJOR flexible-coupling fidelity gap, ~1.4×").** New
+metrology evidence shows the SC2 residual is a small, q-INDEPENDENT rigid common-mode trim offset
+(~0.1°, ≤0.4% FS) — the same offset already accepted at SC1, within fitness tolerance. It is NOT a
+flexible-coupling defect and NOT a blocker on Phase C. The spline-kernel /
+"obtain the NASTRAN flexible displacement field first" framing is superseded.
+
+```
+EVIDENCE — three independent metrology lenses, same conclusion:
+  (1) ABSOLUTE: the SC2 trim error is ~0.1° per DOF (ANGLEA +0.107°, ELEV −0.092°), not the
+      "+136%" the relative-to-near-zero metric reports.
+  (2) q-INVARIANT: the absolute error barely moves from q=40 to q=1200 —
+        ANGLEA  q=40 +0.1066°   q=1200 +0.1071°   (identical to 4 sig figs)
+        ELEV    q=40 −0.0964°   q=1200 −0.0916°
+      A flexible (q·Q_aa) defect would scale ~30× with q; this does not scale at all.
+  (3) FULL-SCALE: ~0.36% of the 30° (neg→pos stall) AoA range, flat across a 30:1 q sweep.
+
+WHY RIGID, NOT FLEXIBLE: q=40 is independently a ~pure-rigid trim (flex effect 0.6%: restrained
+      CZα 5.103 vs rigid 5.071), so its +0.107° error IS the rigid baseline offset. The SAME
+      error at q=1200 ⇒ flexible_error(1200) ≈ 0.107° − 0.107° ≈ 0 — the high-q flexible coupling
+      is essentially CORRECT. The earlier "Q_aa×1.41 reproduces both SC2 targets" fit is read as
+      NON-UNIQUE, not causal: at high q the flexible term is the dominant lever on the response
+      and can absorb a small residual of any origin, but it is INERT at q=40 where the identical
+      error appears. "No structural parameter fixes it" is consistent with a rigid AERO-baseline
+      source (incidence/camber w_g, canard setting, chordwise box bias) — which the
+      structural-parameter sweep never touched.
+
+DECISIVE TEST (cheap, no NASTRAN flex data needed): diagnose the +0.107° offset at SC1 — a
+      pure-rigid trim there — in the rigid baseline (build_fg / build_wg incidence, canard
+      setting, chordwise discretization). Correct it and re-run SC2: if SC2 collapses too, it is
+      a single q-independent common-mode and the flexible/spline hypothesis is closed for good.
+
+NOT A BLOCKER: under the corrected %-full-scale acceptance gate (AE1 Step F) both subcases
+      already pass at ≤0.4% FS, so Phase C and monitor loads are not gated on this.
+
+ACCEPTANCE (to CLOSE): trim error ≤1% of full-scale range at every TRIM subcase (already met:
+      SC1 and SC2 both ≤0.4% FS) AND the q=40 common-mode either root-caused (trim error ≲0.1% FS)
+      or DOCUMENTED as a known ≤0.4% FS trim bias in docs/10_standard/05_aeroelastics.md.
+```
+
+Standing cautions (from the closed AE1 baseline — full table in `docs/40_history`): do not
+chase the `q·Q_aa` flexible increment for SC1 (a 0.6% effect at q=40), and do not re-tune
+HA144A bulk parameters (NSPAN/NCHORD, spline DTOR, RCSID) to fit the gate — rigid CLα already
+matches NASTRAN to 4 sig fig at the same mesh.
+
+---
+
+### Step AC4 — Minor solver warnings — AE12, A7, A8
+
+Small, batchable pre-solve/handler warnings. Each closure follows the three-part
+step-completion rule individually.
+
+#### [MINOR] AE12 — SPLINE2 DTOR/DTHZ silently ignored (PG-normal half MISIDENTIFIED)
 
 **Files:** `sbeam/aero/spline.py`, `sbeam/parser/bdf_reader.py:576,583`, `sbeam/aero/vlm.py:144–156`
 
@@ -251,148 +192,106 @@ FIX:    Warn when DTOR/DTHZ carry non-default values that will be ignored. Add a
         Under S=diag(1,β,β) the normal DIRECTION changes only if n_x≠0; it is INVARIANT for
         any n_x=0 panel, dihedral included. mesh_caero1 advances every box chord purely
         along x̂=(1,0,0) (panel.py:78,90), forcing n_x=0 for ANY swept/tapered/dihedral
-        CAERO1 — so the normal-copy is EXACT over the entire current box space. Verified
-        numerically: a 30° dihedral panel → 0.0° normal change; a panel with geometric
-        incidence (n_x≠0) → ~0.94° at M=0.6. The real condition is n_x≈0, NOT planarity.
-        Latent (no current geometry triggers it). If hardened at all: `assert n_x≈0` (or
-        recompute only the n_x-bearing case), NOT "recompute for dihedral". Test should
-        pair an n_x≠0 panel (copied vs recomputed differ) with a dihedral panel (agree to
-        machine precision) to guard against a needless future "fix".
+        CAERO1 — so the normal-copy is EXACT over the entire current box space. Latent (no
+        current geometry triggers it). If hardened at all: `assert n_x≈0` (or recompute only
+        the n_x-bearing case), NOT "recompute for dihedral". Test should pair an n_x≠0 panel
+        (copied vs recomputed differ) with a dihedral panel (agree to machine precision) to
+        guard against a needless future "fix".
 ```
 
----
+#### [MINOR] A7 — Cosine chordwise spacing + low-NCHORD warning (code half)
 
-### [MINOR] AE13 — Validation gap: no swept/coupled/benchmark gates (partially closed)
-
-**Files:** `tests/aero/`, `tests/integration/`, `sample/ha144a_fullspan_sbeam.bdf`
+**Files:** `sbeam/aero/panel.py` (samples already RESOLVED 2026-06-12: both BDFs at NCHORD=8)
 
 ```
-[MINOR] 207 tests passed at review time with every defect above present. Every
-        geometric validation case was unswept and uncoupled; the V-B1/V-B3 rigid-body
-        gates never exercised a swept spline axis or fore/aft offset grids; no
-        dimensional-consistency check tied the coupled force path back to the rigid
-        solver.
-FIX:    Three permanent gates planned; status today:
-        (V-AE1)  HA144A acceptance test — SC1 and SC2 both CLOSED: the sym=2 aero/inertia
-                 parity double-count was removed with half-span support, and SC1 ANGLEA/ELEV/lift
-                 trim within tolerance on the full-span deck (V-AE1d/V-AE1f). SC2 value
-                 tests are now live %-full-scale gates (AE1 Step F, 2026-06-13) — the superseded
-                 relative `xfail` is gone. ⚠ the original "lift tests pass"
-                 reassurance was non-discriminating (lift balanced for both the correct and
-                 the halved trim) — exactly the blind spot AE13 is about; now superseded by
-                 per-target SC1 relative + SC2 %-full-scale tolerances.
-        (V-AE2)  Swept-spline rigid-body gate — IMPLEMENTED 2026-06-11 (3 tests in
-                 TestSweptSplineRigidBody) and updated 2026-06-12 to use EA-only SET1
-                 with DTHX=+1 alongside V-AE1b (`TestGlobalRigidBody`). Genuinely closed:
-                 exercises a 60°-swept axis + full 6-mode lever-arm rotation.
-        (V-AE3)  Unit-consistency gate — coupling-path (skj @ ajj_inv_corr) total force AND
-                 moment equals the Kutta-Joukowski resultants from solve_rigid_cl on the same
-                 model. CLOSED 2026-06-13 (tests/aero/test_vae3_cross_check.py): named to avoid
-                 collision with the UNRELATED "V-AE3a" trim-lift gate in test_trim_urdd.py; built
-                 as an INDEPENDENT path (solve_rigid_cl rebuilds its own AIC + K–J resultants),
-                 NOT an extension of the Step E self-consistency class. Fz/My agree to machine
-                 precision on HA144A and val_vlm_rect_ar8; the half-f_box parity proxy fails by
-                 ~2×, so unlike test_phase_b.py::test_tz_sum_vs_cl_magnitude (min(err_full,
-                 err_half)<0.02) it DOES catch the factor-of-2 parity bug.
-        (V-AE1g) Rigid-derivative benchmark — CLOSED 2026-06-13 (test_ha144a_rigid_derivs.py):
-                 the full rigid longitudinal column (CZα/CMα/CZq/CMq/CZδe/CMδe) gated within
-                 0.5% of the independent ADA370433 Table 3.1.1 NASTRAN values — adds the
-                 benchmark derivative coverage this item flagged as missing (rigid layer only;
-                 the flexible derivative layer remains on AE8b; the coupling-path check on V-AE3).
-```
-
----
-
-## Open findings — Aerodynamics (2026-06-08 review, code-level)
-
-### [MINOR] A5 — Aero model is reachable only from the viewer; aero cards inert under the solver
-
-**Files:** `sbeam/aero/aero_model.py`, `sbeam/solver/`, `sbeam/main.py`
-
-```
-[MINOR] build_aero_model / solve_rigid_cl are called from viewer/app.py and (since AE10)
-        from main.py under SOL 144. No solver or CLI path consumes the aero model under
-        SOL 101/103 — expected, since those are non-aero solutions. (STALE: the old line
-        "case_control.py rejects SOL 144" is no longer true — 144 is whitelisted at
-        case_control.py:61; and AE10 has landed the main.py SOL 144 dispatch, so the
-        end-to-end aero solve now runs from the CLI.) val_vlm_rect_ar8.bdf documents the
-        SOL-101 workaround.
-FIX:    Expected state for SOL 101/103 — keep the "expected-state" verdict. The end-to-end
-        SOL 144 dispatch gap is CLOSED (AE10). The stale parse_case_control docstring
-        ("not 101 or 103") was corrected when AE10 / Step 56 landed.
-```
-
----
-
-### [MINOR] A7 — Default chordwise box count too low; no cosine chordwise spacing
-
-**Files:** `sample/airplane_aero.bdf`, `sample/val_vlm_rect_ar8.bdf`, `sbeam/aero/panel.py`
-
-```
-[MINOR] Sample models used NCHORD=2 (airplane) / NCHORD=1 (rect val). Lift converges at
-        NCHORD=1 (1/4-3/4 rule is 2D-exact). Chordwise loading/pressure are under-resolved
-        at low NCHORD and benefit from refinement.
-        ⚠ NUMBERS RETRACTED (2026-06-12 review): the previously cited "CM shifts ~50%
-        NCHORD 1→2, ~34% 2→4" does NOT reproduce. Re-running solve_rigid_cl at NCHORD=
-        1,2,4,8,16 over 0/18/35° sweep gives ≤~1.9% CM shift 1→2 (worst case) — because each
-        box load already acts at its own ¼-chord (vlm.py:283-284), so chordwise CoP is
-        2D-correct at NCHORD=1 (val_vlm_rect_ar8.bdf:55 self-documents this). No checked-in
-        chordwise study exists. The guidance below stands on standards, not on those numbers.
 GUIDANCE: Steady VLM minimum NCHORD = 4; recommended 8 for converged moment/loading
         (NASA SP-405 / DeJarnette NASA NTRS — cosine LE-concentrated chordwise spacing
-        reaches the same accuracy with fewer boxes). Phase D (DLM) is frequency-driven:
-        ~50 boxes per aerodynamic wavelength (Rodden/MSC), roughly 16·k_max boxes/chord
-        — though this is typically not done with normal convergence at ~4 boxes per
-        wavelength (Sean).
-RESOLVED (samples): both sample BDFs updated to NCHORD=8 with guidance comments; box
-        counts now 192 (airplane) and 320 (rect val); verified parse/build, CL unchanged.
+        reaches the same accuracy with fewer boxes). Lift converges at NCHORD=1 (each box
+        load already acts at its own ¼-chord, so chordwise CoP is 2D-correct); chordwise
+        loading/pressure are what need refinement. Phase D (DLM) is frequency-driven:
+        ~50 boxes per aerodynamic wavelength (Rodden/MSC), roughly 16·k_max boxes/chord —
+        though typically done with normal convergence at ~4 boxes per wavelength (Sean).
 OPEN (code): mesh_caero1 supports only uniform chordwise spacing via NCHORD (cosine
         requires hand-built LCHORD/AEFACT). Add a cosine-spacing helper / default, and
         a pre-solve warning when NCHORD < 4 on any CAERO1.
 ```
 
----
+#### [MINOR] A8 — Box aspect-ratio pre-solve warning (code half, companion to A7)
 
-### [MINOR] A8 — Spanwise box count: aspect ratio must be O(1) (companion to A7)
-
-**Files:** `sample/airplane_aero.bdf`, `sbeam/aero/panel.py`
+**Files:** `sbeam/aero/panel.py` (samples already RESOLVED 2026-06-12: airplane_aero.bdf
+NSPAN 38/31/16, all 1232 boxes AR 0.64–1.63; HA144A left faithful to the MSC deck — do not retune)
 
 ```
-[MINOR] A7 fixes the chordwise count; the spanwise count (NSPAN) is the other half of
-        box sizing. airplane_aero.bdf shipped with NSPAN=6/4/4, giving box aspect
-        ratios (spanwise edge / streamwise edge) of 4–10 — boxes 4–10× longer spanwise
-        than chordwise. High-AR boxes degrade the VLM induced-downwash kernel and bias
-        the loading; they are also the prime suspect / stress case for the A1
-        lift-slope bias.
-GUIDANCE: Size NSPAN so each box AR is near 1.0; acceptable band 0.5–2.0 (standard
-        VLM/DLM practice, NASA SP-405; Rodden/MSC). NOTE the coupling with A7: raising
-        NCHORD shortens the chordwise box length, which forces NSPAN UP to keep AR ≈ 1.
-        With NCHORD=8 and meaningful chords this drives NSPAN high (tens of
-        boxes/edge), so box counts grow fast — size the two together, not independently.
-RESOLVED (samples): airplane_aero.bdf NSPAN 6/4/4 → 38/31/16 (wing/HTP/VTP); all 1232
-        boxes now AR 0.64–1.63 (mean 0.99); verified parse/build/solve (CL_α ~ 4.17/rad).
-        AR computed by reusing mesh_caero1 corner geometry. val_vlm_rect_ar8.bdf
-        already OK (AR ≈ 1 by construction). HA144A.bdf left faithful to the MSC deck
-        (do not retune).
+GUIDANCE: Size NSPAN so each box AR (spanwise edge / streamwise edge) is near 1.0;
+        acceptable band 0.5–2.0 (standard VLM/DLM practice, NASA SP-405; Rodden/MSC).
+        High-AR boxes degrade the VLM induced-downwash kernel and bias the loading.
+        NOTE the coupling with A7: raising NCHORD shortens the chordwise box length,
+        which forces NSPAN UP to keep AR ≈ 1 — size the two together, not independently.
 OPEN (code): add a pre-solve warning when any box AR is outside [0.5, 2.0].
 ```
 
 ---
 
-## Open findings — Documentation & NITs
+### Step AC5 — GUI — close the small viewer gaps
 
-### [NIT] R23 — Stale `recover_bar_forces` signature in the static-analysis doc
+**Objective:** Bring the Streamlit viewer up to parity with the solver output surface for the
+steady aeroelastic results it already runs. (Audit 2026-07-03 of `sbeam/viewer/` vs solver
+capability.)
 
-`docs/10_standard/03_static_analysis.md:307` documents `recover_bar_forces(bulk, u) -> dict`,
-but the code is the per-element 6-arg form `recover_bar_forces(cbar, grids, pbars, mat1s,
-displacements, grid_index) -> BarForce` (sol101.py:91), called in a loop at sol101.py:290.
-Fix: correct the documented signature. (Surfaced 2026-06-12 while verifying R18.)
+**Deliverables:**
+- **Maneuver exports:** wire `results/maneuver_output.py` into the maneuver results tab
+  (`viewer/results_view.py::_render_sol144_maneuver`) — download buttons for the MLDPRNT
+  ASCII time-history and the critical-sample `FORCE`/`MOMENT` BDF
+  (`<stem>.maneuver_qs_loads.bdf`). Currently the tab is plots-only.
+- **F06 export for maneuvers:** `_render_f06_export` covers SOL 101/103 and SOL 144
+  trim + divergence only; add the `ManeuverResult` block.
+- **Missing trim totals:** `_render_sol144_trim` shows only CZ/CL_wind/CMy metrics; surface
+  the total CX/CY and roll/yaw totals already computed in `sol144.py`.
+- **Body-panel visualization:** `viewer/aero_view.py::build_aero_box_figure` draws
+  strip/cruciform body boxes as ordinary boxes — colour/legend-distinguish body panels
+  (`AeroBox.is_strip` flag / PSTRIP PID) so users can see what the body correction acts on.
+- **Run-summary string:** `_summarize_sol144` always lists "trim vars, stability derivatives,
+  q_div, displacements" — make it reflect hinge moments, monitor loads, and maneuver output
+  when the model/case requests them.
+- **Viewer doc reconcile:** `docs/10_standard/06_viewer.md` executive-control section
+  documents only the SOL 101/103 run paths while a later section documents SOL 144
+  (`app.py::_run_sol144`) — reconcile, and document the new export buttons.
 
-*R16–R22 closed and removed 2026-06-12 (per CLAUDE.md backlog hygiene; detail in CHANGELOG /
-`docs/40_history/00_completed_development.md`): R16 & R18 were valid doc gaps at filing,
-fixed by the 2026-06-10 doc restructure; R17 & R19 were misidentified (already present —
-`01_beam_model.md:761` lists GRAV/RBAR; `TestV19RbarLeverArm` + `v19_rbar_offset.bdf`
-already exist); R21 (spc_sid guard) and R22 (public f06 text aliases) fixed in this session.*
+**Out of scope (recorded under Future development):** a SOL 144/MLOADS case-control
+*authoring* UI — TRIM/AESTAT/AESURF/DIVERG/MLOADS/MLDTIME/MLDCOMD/TABLED1 remain BDF-authored;
+the viewer runs and displays them.
+
+**Test/Acceptance:** run the viewer against `sample/ha144a_fullspan_sbeam.bdf` (trim) and an
+MLOADS sample end-to-end — trim totals visible, body panels visually distinct on a
+strip/cruciform deck, maneuver time-history + critical-load downloads produce the same files
+as the CLI run, f06 export includes the maneuver block; AppTest coverage per
+`docs/10_standard/06_viewer.md` conventions.
+
+---
+
+### Step AC6 — Step 54 — CFD / wind-tunnel steady-pressure injection (mean-flow trim)
+
+**Optional** — lower priority; steady-complete can be declared without it (it stays open here
+if not taken).
+
+**Objective:** Allow the trim mean-flow aerodynamics to be supplied directly from CFD or
+wind-tunnel steady pressures, so the trim solution is a perturbation about the measured
+operating point.
+
+**Scope/Deliverables:**
+- `CHORDCP` card supplies a per-box steady `{cp}` (or per-strip load) at a stated
+  reference angle of attack; `Chordcp` dataclass + handler
+- `sol144.py` replaces the program-computed mean-flow rigid load with the injected
+  distribution, reusing the Step 43 pressure-/force-matching machinery; trim variables
+  then perturb about the injected state
+- Require the reference AOA on the `CHORDCP` card; document the operating-point
+  bookkeeping
+
+**Test/Acceptance:** Injecting the program's own inviscid mean-flow reproduces the
+Step 52 result (identity); injecting a scaled distribution shifts the trimmed AOA by
+the expected amount; total injected lift/moment matches the supplied integral.
+
+**Risk (KC7):** Operating-point/reference-AOA mismatch — validate and warn.
 
 ---
 
@@ -405,14 +304,15 @@ already exist); R21 (spc_sid guard) and R22 (public f06 text aliases) fixed in t
 
 ---
 
-## Phase A status
+## Future development — out of scope for the steady close-out
 
-Steps 39–46 and **A9** (cruciform body-panel total-aircraft moment correction) complete —
-see `docs/40_history/00_completed_development.md`. Open Phase A
-work: **A7** (cosine chordwise spacing helper + low-NCHORD warning), **A8** (box
-aspect-ratio pre-solve warning); and from the 2026-06-11 review: **AE12** (SPLINE2
-DTOR/DTHZ ignored-warning — the PG-normals half is re-diagnosed NOT-A-BUG, see AE12).
-**AE9** (per-TRIM Mach) is closed (2026-06-12 — Mach-keyed AIC cache, supersonic guard).
+### Viewer — SOL 144 / MLOADS case authoring UI (deferred 2026-07-03)
+
+The viewer runs and displays SOL 144 trim/DIVERG/MLOADS subcases but cannot *author* them —
+the case-control editor's SOL selector offers 101/103 only and SOL 144 case control is
+read-only. A full authoring UI (TRIM condition builder, AESTAT/AESURF/TRIMVAR editors,
+DIVERG setup, MLOADS/MLDTIME/MLDCOMD/TABLED1 command-history editor, BDF export) is a
+significant effort deliberately deferred; cases are authored in the bulk-data BDF.
 
 ### Body cruciform (A9) — follow-ons (open, low priority)
 
@@ -489,20 +389,7 @@ contamination. It composes with the strip load device (load + BC as two independ
   centreline is already present — fence planes go on the body's *outer* surface, not the centreline; a
   perpendicular corner (flank + waterline) needs the 3-image corner construction to stay exact. The
   proper-but-heavier version is the cylinder image (circle theorem) = the Tier-1 interference body.
-- **Effort:** small (AIC augmentation only, no new unknowns / no body solve). **Lands after A10.**
-
----
-
-## Phase B status
-
-Steps 45, 46, 47, 49 complete; Step 48 (SPLINE1) deferred. The SPLINE2 swept/offset
-kinematics and force-transfer point defects flagged on 2026-06-11 (AE4, AE6) are
-resolved; the AE1 Step B follow-up (multiplication-bending, corrected torsion, EA-only
-SET1, RBAR-expanded recovery) is also resolved. The `TestGlobalRigidBody` (V-AE1b) gate
-and the SET1 collinearity validator in `_build_spline2_block` are in place as
-regressions.
-
----
+- **Effort:** small (AIC augmentation only, no new unknowns / no body solve). **Lands after A10** (done).
 
 ### Step 48 — SPLINE1 surface spline (optional — deferrable)
 
@@ -516,60 +403,7 @@ regressions.
 **Test/Acceptance (when implemented):** Reproduces rigid-body and linear fields exactly;
 matches a published IPS example (Harder & Desmarais 1972).
 
----
-
-## Phase C — SOL 144 Static Aeroelastics (remaining: 53–55, 57)
-
-Phase C wires Phases A + B into the structural stiffness to solve the flexible static
-aeroelastic problem: trim (determined and over-determined), flexible stability/control
-derivatives, optional CFD/WT mean-flow injection, and divergence dynamic pressure. The
-trim core (determined **and** over-determined) and the longitudinal + lateral derivatives
-are done — **Step 52 CLOSED 2026-06-14** (see the closure roadmap at the top of this file and
-`docs/40_history`); the steps below are the remaining work, in numeric order — execution order
-is set by the roadmap table.
-**Step 58 (dihedral / anhedral ±Γ correctness) is CLOSED (2026-06-14)** — the foundational
-out-of-plane gate the rest of the load chain inherits is now locked by V-C-DIH
-(`tests/aero/test_dihedral.py`); the steps below build on it.
-
-**Governing equation (g-set reduced to a-set after SPC):**
-
-```
-(K_aa − q · Q_aa) · u_a  =  q · Q_ax · δ_x  +  q · f_g  +  f_ext
-   where   Q_aa = G_kgᵀ · Skj · AJJ*⁻¹ · Djk · G_kg     (flexible increment)
-           Q_ax = rigid aero load sensitivity to trim variables δ_x
-           f_g  = G_kgᵀ · Skj · AJJ*⁻¹ · w_g            (baseline camber/twist/incidence + CFD/WT)
-```
-
-**Prerequisite:** AE1 acceptance closed (Steps A–G done, including the Step C regression guard).
-Step 52 (determined **and** over-determined trim, longitudinal + lateral derivatives) is **CLOSED
-2026-06-14** as `run_sol144_trim` — see `docs/40_history`. The steps below build on it.
-
----
-
-### Step 54 — CFD / wind-tunnel steady-pressure injection (mean-flow trim)
-
-**Objective:** Allow the trim mean-flow aerodynamics to be supplied directly from CFD or
-wind-tunnel steady pressures, so the trim solution is a perturbation about the measured
-operating point.
-
-**Scope/Deliverables:**
-- `CHORDCP` card supplies a per-box steady `{cp}` (or per-strip load) at a stated
-  reference angle of attack; `Chordcp` dataclass + handler
-- `sol144.py` replaces the program-computed mean-flow rigid load with the injected
-  distribution, reusing the Step 43 pressure-/force-matching machinery; trim variables
-  then perturb about the injected state
-- Require the reference AOA on the `CHORDCP` card; document the operating-point
-  bookkeeping
-
-**Test/Acceptance:** Injecting the program's own inviscid mean-flow reproduces the
-Step 52 result (identity); injecting a scaled distribution shifts the trimmed AOA by
-the expected amount; total injected lift/moment matches the supplied integral.
-
-**Risk (KC7):** Operating-point/reference-AOA mismatch — validate and warn.
-
----
-
-## Phase G0 — transient maneuver loads (DLM-free): follow-on increments
+### Phase G0 — transient maneuver loads (DLM-free): follow-on increments
 
 **Increment 1 is CLOSED (2026-06-13)** — Level-1 quasi-steady (`Ω×r`), open-loop, restrained l-set
 Newmark-β integration of the ZAERO `MLOADS` card set (`MLOADS`/`MLDTRIM`/`MLDCOMD`/`MLDTIME`/
@@ -577,7 +411,7 @@ Newmark-β integration of the ZAERO `MLOADS` card set (`MLOADS`/`MLDTRIM`/`MLDCO
 `solver/maneuver_qs.py`. The increments below build on it; all are **DLM-free** and gated only on
 Phase C. Full unsteady MLOADS (state-space / RFA / control law) remains Phase G (gated on the DLM).
 
-### G0-b — Free-flight rigid-body coupling (self-balancing maneuver)
+#### G0-b — Free-flight rigid-body coupling (self-balancing maneuver)
 
 **Objective:** Instead of prescribing every trim variable open-loop, re-solve the **free** rigid-body
 trim variables (e.g. free `URDD`/`ANGLEA`) at each time step so the net (aero + inertial) load
@@ -589,34 +423,33 @@ case first; over-determined transient is a further follow-on.
 **Test/Acceptance:** commanding a single control (elevator) produces a balanced (closure ≈ 0)
 transient whose steady state equals a Step 53 trim with that control prescribed.
 
-### G0-c — Modal reduction (Level-1b)
+#### G0-c — Modal reduction (Level-1b)
 
 **Objective:** Reduce the l-set integration onto restrained mean-axis elastic modes
-(`scipy.linalg.eigh(K_ll, M_ll)` or `solve_modes` on the l-set) with mode-acceleration recovery, honouring `MLOADS NMODES`. Cheaper than the direct l-set solve for large models; exact identity to
+(`scipy.linalg.eigh(K_ll, M_ll)` or `solve_modes` on the l-set) with mode-acceleration recovery,
+honouring `MLOADS NMODES`. Cheaper than the direct l-set solve for large models; exact identity to
 the direct solve when all modes are retained.
 
-### G0-d — Unsteady corrections (Levels 2–4)
+#### G0-d — Unsteady corrections (Levels 2–4)
 
 **Objective:** Layer the analytic unsteady terms onto the steady VLM forcing: (2) 2-D apparent
 (added) mass per strip (`πρb²`-type loads ∝ `α̇`/`ḧ`); (3) tail downwash-lag delay `τ = l_t/V`
 (the `C_mα̇` effect); (4) strip Wagner/Theodorsen lift-deficiency. Each is optional on top of the
 previous and extends validity beyond `k ≲ 0.05–0.1`.
 
-### G0-e — Closed-loop control layer (ASE bridge)
+#### G0-e — Closed-loop control layer (ASE bridge)
 
 **Objective:** Actuator/sensor/control-law models so commands close the loop (vs the increment-1
 prescribed control histories). Bridges to the full Phase G ASE system.
 
----
-
-## Monitor points & section loads — follow-ons
+### Monitor points & section loads — follow-ons
 
 > **Phase 1 (static `MONPNT1` + `MONPNT3` integrated section loads) is CLOSED (2026-06-13)** —
 > see `docs/40_history/00_completed_development.md` and `docs/10_standard/05_aeroelastics.md`.
 > The two follow-on phases below remain open. HDF5 hierarchical export is a small deferred add
 > (the f06 block + per-case CSV shipped in Phase 1).
 
-### [MINOR] MON-SYM — Off-centerline monitors on SYMXZ half-span models
+#### [MINOR] MON-SYM — Off-centerline monitors on SYMXZ half-span models
 
 A `SYMXZ ≠ 0` half-span build reconstructs the whole-airplane monitor load by mirroring about
 the xz plane (symmetric Fx/Fz/My double, antisymmetric Fy/Mx/Mz cancel — fixed 2026-06-13). That
@@ -626,16 +459,16 @@ model must be used for wing-station cuts. Lifting this would require integrating
 about its own (reflected) reference point rather than the on-plane shortcut — deferred, low
 priority now that full-span is the default build.
 
-### Phase 2 (later) — Section-cut running loads
+#### Phase 2 (later) — Section-cut running loads
 
 The actual stress-team deliverable: per-station `{Vz, My, Mt}` tables along the wing,
 HTP, VTP. Cut convention: plane normal along the spline-axis `x̂` at user-specified
 stations (general normal as override). Builds directly on MON3's per-grid tally — a
 section cut is "sum the per-grid loads outboard of the cut plane, project to EA
-intercept". Lands after Phase 1 + the maneuver trim case (Step 53), so the inertia
-column is non-trivial.
+intercept". Lands after Phase 1 + the maneuver trim case (Step 53) — both done, so this
+is now unblocked.
 
-### Phase 3 (later) — Dynamic monitor extraction
+#### Phase 3 (later) — Dynamic monitor extraction
 
 CS-25.341(a) discrete 1-cos gust (H = 30–350 ft sweep) and CS-25.341(b) continuous
 turbulence (von Kármán PSD → A·σ envelope) at each monitor, with correlated
@@ -644,7 +477,7 @@ Phase 1. Lands with the SOL 146 / dynamic-response solvers (program Phase 3).
 
 ---
 
-## Phase 2 / Phase 3 / Future development
+## Phase 2 / Phase 3 / Future development (non-aero)
 
 ### Phase 2 — Model enhancements
 
