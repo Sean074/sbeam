@@ -33,6 +33,25 @@ class AeroBox:
                               # by build_aero_model from the CAERO1 PID → PSTRIP)
 
 
+def cosine_chord_fractions(nchord: int) -> np.ndarray:
+    """LE-concentrated half-cosine chordwise station fractions ξ ∈ [0, 1].
+
+    Returns ``nchord + 1`` monotone breakpoints ``ξ_i = 1 − cos((π/2)·(i/n))``,
+    dense at the leading edge where the chordwise loading gradient is steepest
+    (NASA SP-405 / DeJarnette: cosine spacing reaches uniform-spacing accuracy
+    with fewer boxes).
+
+    Intended use: generate the fraction list for an ``AEFACT`` card referenced
+    by the CAERO1 ``LCHORD`` field (with NCHORD blank/0).  Uniform NCHORD
+    meshing is unchanged — cosine spacing is opt-in, preserving NASTRAN
+    box-for-box fidelity for decks that use NCHORD.
+    """
+    if nchord < 1:
+        raise ValueError(f"cosine_chord_fractions: nchord must be ≥ 1, got {nchord}")
+    i = np.arange(nchord + 1, dtype=float)
+    return 1.0 - np.cos(0.5 * np.pi * i / nchord)
+
+
 def mesh_caero1(
     caero: Caero1,
     paero: Paero1,

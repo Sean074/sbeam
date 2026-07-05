@@ -231,3 +231,44 @@ class TestStartK:
         boxes = mesh_caero1(caero, PAERO_STUB, NO_AEFACTS, NO_CORD2RS, start_k=50)
         assert boxes[0].k == 50
         assert boxes[-1].k == 55
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# A7 — cosine LE-concentrated chordwise spacing helper
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCosineChordFractions:
+    def test_endpoints_and_length(self):
+        from sbeam.aero.panel import cosine_chord_fractions
+        xi = cosine_chord_fractions(8)
+        assert len(xi) == 9
+        assert xi[0] == pytest.approx(0.0)
+        assert xi[-1] == pytest.approx(1.0)
+
+    def test_monotone_and_le_concentrated(self):
+        from sbeam.aero.panel import cosine_chord_fractions
+        xi = cosine_chord_fractions(6)
+        d = np.diff(xi)
+        assert np.all(d > 0.0)
+        # LE-concentrated: intervals grow monotonically from LE to TE
+        assert np.all(np.diff(d) > 0.0)
+        assert d[0] < d[-1]
+
+    def test_rejects_nonpositive_n(self):
+        from sbeam.aero.panel import cosine_chord_fractions
+        with pytest.raises(ValueError, match="nchord"):
+            cosine_chord_fractions(0)
+
+    def test_mesh_via_lchord_aefact(self):
+        """The helper output drives mesh_caero1 through LCHORD/AEFACT: the
+        first chordwise box is shorter than the last (LE concentration)."""
+        from sbeam.aero.panel import cosine_chord_fractions
+        xi = cosine_chord_fractions(4)
+        caero = _rect_caero(nspan=1, nchord=0, span=4.0, chord=2.0, lchord=77)
+        boxes = mesh_caero1(caero, PAERO_STUB, {77: Aefact(sid=77, data=xi.tolist())},
+                            NO_CORD2RS)
+        assert len(boxes) == 4
+        # Box streamwise edge (root-LE → root-TE); AeroBox.chord is the strip chord
+        chords = [float(np.linalg.norm(b.corners[3] - b.corners[0])) for b in boxes]
+        assert chords[0] < chords[-1]
+        assert sum(b.area for b in boxes) == pytest.approx(8.0)

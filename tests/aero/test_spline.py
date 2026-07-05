@@ -1225,3 +1225,51 @@ class TestGlobalRigidBody:
             f"AE1 Step C dihedral yaw: ‖Q_aa·u_Rz‖∞ {res:.3e} is too small — "
             f"the dihedral surface is not coupling yaw into the aero."
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AE12 — SPLINE2 DTOR / DTHZ warning gates
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSpline2DtorDthzWarnings:
+    """AE12 — DTOR/DTHZ are parsed and stored but not modelled by the beam
+    spline. sbeam must warn when a card carries a value it will ignore:
+    DTOR ≠ 1.0, or DTHZ requesting Rz attachment. DTHZ ∈ {0.0, −1.0}
+    (blank/default, NASTRAN "Rz detached") matches sbeam's actual behaviour
+    and stays silent — the HA144A decks carry DTHZ=−1.0 throughout."""
+
+    def _build(self, dtor=1.0, dthz=-1.0):
+        from sbeam.aero.panel import mesh_caero1
+
+        bulk = _build_ha144a_wing_spline_bulk()
+        sp = bulk.spline2s[1601]
+        sp.dtor = dtor
+        sp.dthz = dthz
+        caero = bulk.caero1s[1100]
+        boxes = mesh_caero1(caero, bulk.paero1s[1000], bulk.aefacts,
+                            bulk.cord2rs, start_k=0)
+        gids_sorted = sorted(bulk.grids.keys())
+        grid_index = {gid: i for i, gid in enumerate(gids_sorted)}
+        return bulk, boxes, grid_index
+
+    def test_dtor_nondefault_warns(self):
+        bulk, boxes, grid_index = self._build(dtor=0.5)
+        with pytest.warns(UserWarning, match=r"SPLINE2 1601: DTOR=0\.5"):
+            build_g_spline(bulk, boxes, grid_index)
+
+    def test_dthz_attached_warns(self):
+        bulk, boxes, grid_index = self._build(dthz=1.0)
+        with pytest.warns(UserWarning, match=r"SPLINE2 1601: DTHZ=1\.0"):
+            build_g_spline(bulk, boxes, grid_index)
+
+    @pytest.mark.parametrize("dthz", [0.0, -1.0])
+    def test_default_and_detached_stay_silent(self, dthz):
+        """DTOR=1.0 with DTHZ blank (0.0) or NASTRAN-detached (−1.0) must not
+        warn — the HA144A validation decks would otherwise spam every run."""
+        bulk, boxes, grid_index = self._build(dtor=1.0, dthz=dthz)
+        with warnings.catch_warnings(record=True) as rec:
+            warnings.simplefilter("always")
+            build_g_spline(bulk, boxes, grid_index)
+        offenders = [str(w.message) for w in rec
+                     if "DTOR" in str(w.message) or "DTHZ" in str(w.message)]
+        assert offenders == []

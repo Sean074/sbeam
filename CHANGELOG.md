@@ -13,6 +13,22 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Minor solver warnings + cosine chordwise spacing — AE12/A7/A8 / Step AC4 (2026-07-05)**
+
+- **SPLINE2 DTOR/DTHZ warnings (AE12)** — `build_g_spline` now warns when a SPLINE2 card carries
+  a value the beam spline ignores: `DTOR ≠ 1.0`, or `DTHZ` outside {0.0, −1.0} (−1.0 is NASTRAN's
+  "Rz detached", which matches sbeam's behaviour and stays silent — the HA144A decks run
+  warning-free). The misidentified PG-normal half is closed with a guard-test pair
+  (`TestPrandtlGlauertNormalCopy`) locking in that the normal copy is exact for all `mesh_caero1`
+  output. Side finding: the HA144A cards carry only the benign detached values, exonerating AE12
+  as the prime suspect for the AE14 high-q coupling gap (backlog AC7 suspect list updated).
+- **`panel.cosine_chord_fractions(n)` (A7)** — LE-concentrated half-cosine chordwise breakpoints
+  for AEFACT/LCHORD use (opt-in; uniform NCHORD meshing unchanged for NASTRAN fidelity), plus a
+  pre-solve `build_aero_model` warning when a VLM CAERO1 has fewer than 4 chordwise boxes.
+- **Box aspect-ratio warning (A8)** — pre-solve warning (one per CAERO1) when any box AR
+  (spanwise/streamwise edge) falls outside [0.5, 2.0], reporting count and worst AR. PSTRIP strip
+  body panels are exempt from both A7/A8 checks. 16 new tests; suite 1053 passed / 6 xfailed.
+
 **Theory tutorial: aeroelastic stability derivatives (2026-07-05)**
 
 - **`docs/20_theory/aeroelastic_derivatives.md`** — new-engineer-level tutorial on the three SOL 144

@@ -266,6 +266,26 @@ def _build_spline2_block(
             stacklevel=3,
         )
 
+    # DTOR / DTHZ (AE12): parsed and stored but not modelled by the beam spline.
+    #   DTOR ≠ 1.0        → torsional-to-bending flexibility ratio is ignored.
+    #   DTHZ ∈ {0.0,−1.0} → blank/default or NASTRAN "Rz detached" — matches sbeam's
+    #                       behaviour (Rz never coupled), so silent.
+    #   other DTHZ        → the card asks for Rz attachment sbeam cannot model.
+    if sp.dtor != 1.0:
+        warnings.warn(
+            f"SPLINE2 {sp.eid}: DTOR={sp.dtor} torsional flexibility ratio "
+            "not supported; value ignored (treated as 1.0)",
+            UserWarning,
+            stacklevel=3,
+        )
+    if sp.dthz not in (0.0, -1.0):
+        warnings.warn(
+            f"SPLINE2 {sp.eid}: DTHZ={sp.dthz} Rz rotational attachment "
+            "not supported; treating as detached",
+            UserWarning,
+            stacklevel=3,
+        )
+
     for i, gid in enumerate(gids_sorted):
         grid_i = grid_index[gid]
         base   = 6 * grid_i
@@ -483,6 +503,9 @@ def build_g_spline(
       - Any box has no spline coverage (g_slope / g_disp rows will be zero)
       - A box collocation point extrapolates >10% beyond the SET1 span range
       - SPLINE2 DTHX carries a non-±1 value (treated as detached)
+      - SPLINE2 DTOR ≠ 1.0 (torsional flexibility ratio ignored)
+      - SPLINE2 DTHZ carries a value other than 0.0 / −1.0 (Rz attachment not
+        modelled; treated as detached)
     """
     has_splines = bool(bulk.spline2s or bulk.attaches or bulk.spline0s)
     if not has_splines:

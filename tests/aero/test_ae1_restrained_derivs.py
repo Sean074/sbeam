@@ -21,7 +21,8 @@ Gated here:
     already 5–28% off Table 7-1 (nothing to do with the mean-axis formulation),
     and the unrestrained operator amplifies that upstream gap to +40…60%.
     Tracked as the high-q flexible-coupling fidelity item in the backlog
-    (prime suspect: AE12 — SPLINE2 DTOR/DTHZ ignored).
+    (prime suspect: SPLINE2 slope/torsion-transfer kinematics; AE12
+    DTOR/DTHZ was exonerated 2026-07-05 — HA144A carries only detached values).
   * analytic restrained columns match the captured pre-rewrite FD baseline.
 
 Reference provenance — RESTRAINED vs UNRESTRAINED are distinct quantities, do
@@ -186,8 +187,8 @@ class TestUnrestrainedDerivsQ1200:
     modal form to 4+ decimals at both q; all six q=40 columns within 1%), but
     sbeam's flexible coupling over-predicts at high q (restrained columns at
     q=1200 are independently 5–28% off Table 7-1). Un-xfail when the high-q
-    flexible-coupling fidelity item closes (prime suspect AE12: SPLINE2
-    DTOR/DTHZ ignored)."""
+    flexible-coupling fidelity item closes (prime suspect: SPLINE2
+    slope/torsion-transfer kinematics — AE12 exonerated 2026-07-05)."""
 
     @pytest.mark.xfail(
         reason="high-q flexible-coupling fidelity gap (see backlog): restrained "

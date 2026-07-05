@@ -32,9 +32,15 @@ independent ZAERO Ch.12 modal cross-check); AE8a root-caused to a W2GJ sign-conv
 inversion (fixed) plus a documented ≤0.31% FS residual. See `docs/40_history` and CHANGELOG.
 The close-out surfaced a NEW finding — AC7 below (high-q flexible-coupling fidelity).
 
+**Step AC4 (AE12/A7/A8 minor solver warnings) CLOSED 2026-07-05** — SPLINE2 DTOR/DTHZ
+now warn when carrying values sbeam ignores; `build_aero_model` warns pre-solve on < 4
+chordwise boxes and box AR outside [0.5, 2.0] (VLM panels only; PSTRIP strips exempt);
+`panel.cosine_chord_fractions` added for LE-concentrated LCHORD/AEFACT spacing. The
+close-out **exonerated AE12 as AC7's prime suspect** (HA144A cards carry only the benign
+detached DTHZ=−1.0/default DTOR=1.0 — NASTRAN does no Rz coupling there either).
+
 | Step | Item | Kind | Priority | Notes |
 |-----:|------|------|----------|-------|
-| AC4 | [Minor solver warnings — AE12, A7, A8](#step-ac4--minor-solver-warnings--ae12-a7-a8) | Code | MINOR | Small, batchable; AE12 is AC7's prime suspect — do it first |
 | AC5 | [GUI — close the small viewer gaps](#step-ac5--gui--close-the-small-viewer-gaps) | Code | Medium | Exports, totals, body-panel display, doc reconcile |
 | AC6 | [Step 54 — CFD/WT steady-pressure injection (CHORDCP)](#step-ac6--step-54--cfd--wind-tunnel-steady-pressure-injection-mean-flow-trim) | Code | Optional | Steady-complete can be declared without it |
 | AC7 | [AE14 — high-q flexible-coupling fidelity gap](#step-ac7-major-ae14--high-q-flexible-coupling-fidelity-gap) | Code | MAJOR | q=1200 restrained columns 5–28% off Table 7-1; operator NOT at fault (proven) |
@@ -43,8 +49,9 @@ The close-out surfaced a NEW finding — AC7 below (high-q flexible-coupling fid
 
 ### Step AC7 [MAJOR] AE14 — High-q flexible-coupling fidelity gap
 
-**Files:** `sbeam/aero/spline.py` (prime suspect: AE12 DTOR/DTHZ), `sbeam/aero/coupling.py`
-(`build_qaa`), `sbeam/aero/vlm.py`, `sample/ha144a_fullspan_sbeam.bdf` (SPLINE2 cards).
+**Files:** `sbeam/aero/spline.py` (prime suspect: SPLINE2 slope/torsion transfer),
+`sbeam/aero/coupling.py` (`build_qaa`), `sbeam/aero/vlm.py`,
+`sample/ha144a_fullspan_sbeam.bdf` (SPLINE2 cards).
 
 **Found 2026-07-05 while closing AC2/AE8b.** sbeam's flexible aeroelastic coupling
 over-predicts the flexible increment at high q. This is NOT a derivative-formulation
@@ -68,11 +75,12 @@ q=40 columns within 1% of Table 7-1, intercepts within 0.7%).
         at q=40 (0.6% flex effect). The unrestrained operator amplifies the same upstream
         error to +40…60% at q=1200 — those gates are XFAILed in
         tests/aero/test_ae1_restrained_derivs.py::TestUnrestrainedDerivsQ1200.
-PRIME SUSPECT: AE12 — SPLINE2 DTOR/DTHZ silently ignored (AC4). The HA144A SPLINE2 cards
-        carry rotational-coupling fields sbeam drops; slope-transfer errors scale the
-        flexible increment directly and grow with q.
-        Second suspect: g_slope/torsion transfer on the swept wing (SPLINE2 linear spline
-        vs sbeam beam-spline kinematics).
+PRIME SUSPECT: g_slope/torsion transfer on the swept wing (SPLINE2 linear spline vs
+        sbeam beam-spline kinematics) — slope-transfer errors scale the flexible
+        increment directly and grow with q.
+        (AE12 EXONERATED 2026-07-05 while closing AC4: the HA144A SPLINE2 cards carry
+        only DTOR=1.0 and DTHZ=−1.0 — NASTRAN's "Rz detached", exactly what sbeam does —
+        so NASTRAN performs no rotational coupling sbeam drops on this deck.)
 HISTORY NOTE: the old AE8b diagnostic "NASTRAN's unrestrained value is NOT the literal
         converged free-free aeroelastic-feedback derivative" was a MISDIAGNOSIS — the
         faithfully-implemented MSC chain reproduces the reverted second attempt's 11.67
@@ -81,70 +89,6 @@ HISTORY NOTE: the old AE8b diagnostic "NASTRAN's unrestrained value is NOT the l
 ACCEPTANCE (to CLOSE): restrained q=1200 longitudinal columns within ~1–2% of Table 7-1
         AND the XFAILed unrestrained q=1200 gates (1% of {CZα 7.772, CMα −4.577, CZq 16.100,
         CMq −12.499, CZδe 0.5219, CMδe 0.3956}) un-xfail and pass.
-```
-
----
-
-### Step AC4 — Minor solver warnings — AE12, A7, A8
-
-Small, batchable pre-solve/handler warnings. Each closure follows the three-part
-step-completion rule individually.
-
-#### [MINOR] AE12 — SPLINE2 DTOR/DTHZ silently ignored (PG-normal half MISIDENTIFIED)
-
-**Files:** `sbeam/aero/spline.py`, `sbeam/parser/bdf_reader.py:576,583`, `sbeam/aero/vlm.py:144–156`
-
-```
-[MINOR — REAL] Spline2.dtor (default 1.0) and dthz (default 0.0) are parsed
-        (bdf_reader.py:576,583) and stored on Spline2 (model/aero.py:79,82) but NEVER
-        referenced in spline.py — silently accepted and ignored, the same failure class as
-        the AE4(c) DTHX misinterpretation. No warning fires when DTOR≠1.0 or DTHZ≠0.0.
-        (The existing V-AE2 fixture test_spline.py:673 already sets dthz=−1.0, so a warning
-        gate there would currently be silent — good evidence the omission is real.)
-FIX:    Warn when DTOR/DTHZ carry non-default values that will be ignored. Add a
-        parser/handler test asserting a UserWarning fires for DTOR≠1.0 and DTHZ≠0.0.
-
-[NOT A BUG — PG normals, re-diagnosed 2026-06-12] The original claim "prandtl_glauert_boxes
-        copies the un-recomputed normal — wrong for dihedral/out-of-plane panels" is WRONG.
-        Under S=diag(1,β,β) the normal DIRECTION changes only if n_x≠0; it is INVARIANT for
-        any n_x=0 panel, dihedral included. mesh_caero1 advances every box chord purely
-        along x̂=(1,0,0) (panel.py:78,90), forcing n_x=0 for ANY swept/tapered/dihedral
-        CAERO1 — so the normal-copy is EXACT over the entire current box space. Latent (no
-        current geometry triggers it). If hardened at all: `assert n_x≈0` (or recompute only
-        the n_x-bearing case), NOT "recompute for dihedral". Test should pair an n_x≠0 panel
-        (copied vs recomputed differ) with a dihedral panel (agree to machine precision) to
-        guard against a needless future "fix".
-```
-
-#### [MINOR] A7 — Cosine chordwise spacing + low-NCHORD warning (code half)
-
-**Files:** `sbeam/aero/panel.py` (samples already RESOLVED 2026-06-12: both BDFs at NCHORD=8)
-
-```
-GUIDANCE: Steady VLM minimum NCHORD = 4; recommended 8 for converged moment/loading
-        (NASA SP-405 / DeJarnette NASA NTRS — cosine LE-concentrated chordwise spacing
-        reaches the same accuracy with fewer boxes). Lift converges at NCHORD=1 (each box
-        load already acts at its own ¼-chord, so chordwise CoP is 2D-correct); chordwise
-        loading/pressure are what need refinement. Phase D (DLM) is frequency-driven:
-        ~50 boxes per aerodynamic wavelength (Rodden/MSC), roughly 16·k_max boxes/chord —
-        though typically done with normal convergence at ~4 boxes per wavelength (Sean).
-OPEN (code): mesh_caero1 supports only uniform chordwise spacing via NCHORD (cosine
-        requires hand-built LCHORD/AEFACT). Add a cosine-spacing helper / default, and
-        a pre-solve warning when NCHORD < 4 on any CAERO1.
-```
-
-#### [MINOR] A8 — Box aspect-ratio pre-solve warning (code half, companion to A7)
-
-**Files:** `sbeam/aero/panel.py` (samples already RESOLVED 2026-06-12: airplane_aero.bdf
-NSPAN 38/31/16, all 1232 boxes AR 0.64–1.63; HA144A left faithful to the MSC deck — do not retune)
-
-```
-GUIDANCE: Size NSPAN so each box AR (spanwise edge / streamwise edge) is near 1.0;
-        acceptable band 0.5–2.0 (standard VLM/DLM practice, NASA SP-405; Rodden/MSC).
-        High-AR boxes degrade the VLM induced-downwash kernel and bias the loading.
-        NOTE the coupling with A7: raising NCHORD shortens the chordwise box length,
-        which forces NSPAN UP to keep AR ≈ 1 — size the two together, not independently.
-OPEN (code): add a pre-solve warning when any box AR is outside [0.5, 2.0].
 ```
 
 ---

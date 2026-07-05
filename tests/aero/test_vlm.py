@@ -720,3 +720,55 @@ class TestPrandtlGlauert:
         result = solve_rigid_cl(boxes, alpha, mach=0.995)
         assert math.isfinite(result["CL"])
         assert result["CL"] > 0.0
+
+
+class TestPrandtlGlauertNormalCopy:
+    """AE12 guard pair (backlog re-diagnosis 2026-06-12): under S=diag(1,β,β)
+    the normal DIRECTION changes only when n_x ≠ 0; it is invariant for any
+    n_x = 0 panel, dihedral included. mesh_caero1 advances every box chord
+    purely along x̂, forcing n_x = 0 for ALL its output — so the normal copy
+    in prandtl_glauert_boxes is EXACT over the entire current box space.
+    This pair guards against a needless future "recompute for dihedral" fix."""
+
+    @staticmethod
+    def _recomputed_normal(corners: np.ndarray) -> np.ndarray:
+        # Same construction as mesh_caero1: cross of the quad diagonals
+        d1 = corners[2] - corners[0]
+        d2 = corners[1] - corners[3]
+        cross = np.cross(d1, d2)
+        n = cross / np.linalg.norm(cross)
+        i_dom = int(np.argmax(np.abs(n)))
+        return -n if n[i_dom] < 0.0 else n
+
+    def test_dihedral_panel_copy_is_exact(self):
+        """n_x = 0 (30° dihedral): copied and recomputed normals agree to
+        machine precision after y,z compression."""
+        caero = Caero1(
+            eid=1, pid=1, cp=0, nspan=4, nchord=2, lspan=0, lchord=0, igid=0,
+            p1=(0.0, 0.0, 0.0), x12=1.0,
+            p4=(0.0, 4.0 * math.cos(math.radians(30.0)),
+                4.0 * math.sin(math.radians(30.0))), x43=1.0,
+        )
+        boxes = mesh_caero1(caero, PAERO, NO_AEFACTS, NO_CORD2RS)
+        pg = prandtl_glauert_boxes(boxes, 0.6)
+        for s in pg:
+            assert abs(s.normal[0]) < 1e-14   # mesh_caero1 forces n_x = 0
+            np.testing.assert_allclose(
+                s.normal, self._recomputed_normal(s.corners), atol=1e-14)
+
+    def test_nx_nonzero_panel_copy_would_differ(self):
+        """Synthetic n_x ≠ 0 box (chordwise z-shear no mesh_caero1 output can
+        have): the copied normal and the recomputed normal DIFFER — proving
+        the guard above is a real invariance, not a vacuous comparison."""
+        boxes = _rect_wing(nspan=1, nchord=1)
+        b = boxes[0]
+        b.corners = b.corners.copy()
+        b.corners[:, 2] += 0.5 * b.corners[:, 0]     # z += 0.5·x → n_x ≠ 0
+        d1 = b.corners[2] - b.corners[0]
+        d2 = b.corners[1] - b.corners[3]
+        n = np.cross(d1, d2)
+        b.normal = n / np.linalg.norm(n)
+        assert abs(b.normal[0]) > 0.1
+        pg = prandtl_glauert_boxes(boxes, 0.6)[0]
+        recomputed = self._recomputed_normal(pg.corners)
+        assert not np.allclose(pg.normal, recomputed, atol=1e-3)

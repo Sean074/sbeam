@@ -63,7 +63,7 @@ Step AC7), plus one documented accepted bias:
 
 | ID | Limitation | Severity | Impact |
 |----|-----------|----------|--------|
-| AE14 | **High-q flexible-coupling fidelity gap** (found 2026-07-05 closing AE8b): the restrained derivative columns at q=1200 are 5–28% off MSC Table 7-1 (≤1.3% at q=40), and the unrestrained column inherits the same upstream error amplified to +40…60%. The mean-axis *operator* is proven correct (see AE8b note below); the error is in the flexible coupling data (prime suspect AE12: SPLINE2 DTOR/DTHZ ignored). The q=1200 unrestrained gates are XFAILed pending this item. | MAJOR (high-q derivative accuracy; trim itself passes its %FS gates at q=1200) | Flexible derivative columns degrade with q |
+| AE14 | **High-q flexible-coupling fidelity gap** (found 2026-07-05 closing AE8b): the restrained derivative columns at q=1200 are 5–28% off MSC Table 7-1 (≤1.3% at q=40), and the unrestrained column inherits the same upstream error amplified to +40…60%. The mean-axis *operator* is proven correct (see AE8b note below); the error is in the flexible coupling data (prime suspect: SPLINE2 slope/torsion-transfer kinematics on the swept wing — AE12/DTOR/DTHZ was exonerated 2026-07-05: the HA144A cards carry only the benign detached values, so NASTRAN does no Rz coupling there either). The q=1200 unrestrained gates are XFAILed pending this item. | MAJOR (high-q derivative accuracy; trim itself passes its %FS gates at q=1200) | Flexible derivative columns degrade with q |
 | AE8a (closed) | The residual **q-invariant common-mode trim offset** after the 2026-07-05 W2GJ sign-convention fix: −0.093° ANGLEA / +0.104° ELEV on HA144A, identical at q=40 and q=1200, ≤0.31% FS — inside every trim gate. A compound of sub-0.5% flexible-column/coupling differences; all rigid derivatives and intercepts match NASTRAN to ≤0.05%. | MINOR (accepted, documented trim bias) | Trim variables carry a ≤0.31% FS bias |
 
 **AE8b closed (2026-07-05):** the unrestrained (mean-axis / inertia-relief) derivative column is
@@ -268,6 +268,24 @@ implementation details:
   surfaces.
 - Non-uniform meshing: AEFACT fraction list defines NSPAN+1 or NCHORD+1 breakpoints;
   panels are sized proportionally to the fraction differences.
+- **Cosine chordwise spacing (A7)**: `cosine_chord_fractions(nchord)` returns LE-concentrated
+  half-cosine breakpoints `ξ_i = 1 − cos((π/2)·i/n)` for use in an `AEFACT` card referenced
+  by `LCHORD` (NCHORD blank). Cosine spacing reaches uniform-spacing accuracy with fewer
+  boxes (NASA SP-405 / DeJarnette). It is **opt-in** — uniform NCHORD meshing is unchanged,
+  preserving box-for-box NASTRAN fidelity.
+
+**Mesh-quality pre-solve warnings (A7/A8, 2026-07-05):** `build_aero_model` warns once per
+VLM CAERO1 when:
+
+- the chordwise box count is **< 4** (A7) — steady-VLM chordwise loading/moment need ≥ 4
+  boxes/chord (recommended 8, or cosine spacing); lift alone converges at NCHORD = 1;
+- any box aspect ratio (spanwise LE edge / mean streamwise edge) falls **outside
+  [0.5, 2.0]** (A8) — high-AR boxes degrade the VLM induced-downwash kernel. The warning
+  reports the out-of-band count and the worst AR. A7/A8 couple: raising NCHORD shortens
+  the streamwise edge, forcing NSPAN up to hold AR ≈ 1 — size the two together.
+
+Decoupled strip body panels (PID → PSTRIP) carry no horseshoe vortex and are exempt from
+both checks.
 
 ---
 
@@ -1127,10 +1145,10 @@ SPLINE2  EID  CAERO  ID1  ID2  SETG  DZ  DTOR  CID
 | ID2   | —       | Last NASTRAN box ID in the range |
 | SETG  | —       | SET1 SID listing the structural grids |
 | DZ    | 0.0     | Smoothing parameter (0.0 = interpolating Hermite) |
-| DTOR  | 1.0     | Torsional/bending ratio (not used in Phase B matrix) |
+| DTOR  | 1.0     | Torsional/bending ratio — not modelled; any value ≠ 1.0 emits a `UserWarning` and is ignored (AE12) |
 | CID   | 0       | CORD2R SID defining the spline axis |
 | DTHX  | 1.0     | Torsion (CID x-axis rotation) attachment switch: `1.0` = attached, `−1.0` = detached (do not couple), other values warn and treat as detached |
-| DTHZ  | 0.0     | CID z-axis rotation contribution (not used in Phase B) |
+| DTHZ  | 0.0     | CID z-axis rotation attachment — not modelled; `0.0` (blank) and `−1.0` (NASTRAN "detached", matching sbeam's behaviour) are silent, any other value emits a `UserWarning` and is treated as detached (AE12) |
 | USAGE | BOTH    | FORCE / DISP / BOTH (informational; not filtered in Phase B) |
 
 **DTHX semantics (AE4c — resolved 2026-06-11):** in MSC Nastran, SPLINE2 DTHX is a
@@ -1138,6 +1156,14 @@ rotational *attachment flag*, where **−1.0 means "do not attach the rotational
 spline"**. sbeam now implements this correctly: `DTHX = 1.0` couples torsion; `DTHX = −1.0`
 detaches it (torsion arrives through fore/aft offset grids, as in HA144A's wing spline);
 other values emit a `UserWarning` and are treated as detached.
+
+**DTOR/DTHZ warnings (AE12 — resolved 2026-07-05):** DTOR and DTHZ are parsed and stored
+but not modelled by the 1-D beam spline. `build_g_spline` warns when a card carries a value
+it will ignore: `DTOR ≠ 1.0`, or `DTHZ ∉ {0.0, −1.0}`. DTHZ = −1.0 is NASTRAN's "Rz
+detached" — exactly what sbeam does anyway — so the HA144A decks (which carry DTHZ = −1.0
+throughout) run warning-free. Note this also means NASTRAN performs no Rz rotational
+coupling on HA144A either — evidence that demoted AE12 from prime suspect for the AE14
+high-q coupling gap (see Step AC7 in the backlog).
 
 **NASTRAN box ID convention** (must match `panel.py` row-major ordering):
 ```
@@ -1206,7 +1232,8 @@ g_slope, g_disp = build_g_spline(bulk, boxes, grid_index)
 ```
 
 Raises `ValueError` if a box is covered by more than one spline or if a SET1 has < 2 grids.
-Issues `UserWarning` for un-splined boxes, >10% extrapolation, or empty box ranges.
+Issues `UserWarning` for un-splined boxes, >10% extrapolation, empty box ranges, non-±1
+DTHX, DTOR ≠ 1.0, or DTHZ outside {0.0, −1.0} (AE12).
 
 `AeroModel` stores the operators as `aero_model.g_slope` and `aero_model.g_disp` when
 `build_aero_model` is called with a `grid_index` dict.

@@ -12,6 +12,7 @@ that the downstream SOL 144 solve (A*⁻¹ @ w) never has to refactor the matrix
 """
 
 import math
+import warnings
 from dataclasses import dataclass
 from typing import Optional
 
@@ -24,7 +25,7 @@ from sbeam.aero.vlm import build_ajj, prandtl_glauert_boxes
 from sbeam.aero.integration import build_skj, build_djk, build_wg
 from sbeam.aero.corrections import apply_wkk, apply_wt2, apply_wt1, _check_conditioning
 from sbeam.aero.spline import build_g_spline
-from sbeam.aero.strip import strip_box_mask, strip_box_slopes
+from sbeam.aero.strip import strip_box_mask, strip_box_slopes, is_strip_caero
 
 
 @dataclass
@@ -104,6 +105,62 @@ def _assemble_vlm_operator(bulk: BulkData, op_boxes: list, mach: float):
     return ajj, ajj_inv_corr
 
 
+# VLM mesh-quality guidance (A7/A8): NASA SP-405; Rodden/MSC practice.
+_MIN_NCHORD = 4            # boxes/chord below which chordwise loading/moment are unconverged
+_AR_BAND = (0.5, 2.0)      # acceptable box aspect-ratio band (spanwise/streamwise edge)
+
+
+def _warn_mesh_quality(caero, new_boxes: list) -> None:
+    """Pre-solve mesh-quality warnings for one VLM CAERO1 (A7 box density, A8 box AR).
+
+    A7: steady-VLM chordwise loading needs ≥ 4 boxes/chord (NASA SP-405); lift
+    alone converges at NCHORD=1, chordwise loading/pressure do not.  Cosine
+    LE-concentrated spacing (``panel.cosine_chord_fractions`` → AEFACT/LCHORD)
+    reaches the same accuracy with fewer boxes.
+
+    A8: high-aspect-ratio boxes degrade the VLM induced-downwash kernel; keep
+    each box AR = spanwise edge / streamwise edge within [0.5, 2.0].  Coupled
+    with A7: raising NCHORD shortens the streamwise edge, which forces NSPAN up
+    to hold AR ≈ 1 — size the two together.  One warning per CAERO1.
+    """
+    # A7 — effective chordwise box count (NCHORD or LCHORD/AEFACT intervals)
+    nchord_boxes = 1 + max(b.j_chord for b in new_boxes)
+    if nchord_boxes < _MIN_NCHORD:
+        warnings.warn(
+            f"CAERO1 {caero.eid}: only {nchord_boxes} chordwise boxes — steady "
+            f"VLM chordwise loading/moment need ≥ {_MIN_NCHORD} boxes/chord "
+            "(recommended 8, or cosine LE-concentrated spacing via "
+            "panel.cosine_chord_fractions + AEFACT/LCHORD)",
+            UserWarning,
+            stacklevel=3,
+        )
+
+    # A8 — box aspect ratio: spanwise LE edge / mean box streamwise edge.
+    # NB: AeroBox.chord is the STRIP chord at the box span station, not the
+    # box streamwise length — use the corner edges.
+    ar_lo, ar_hi = _AR_BAND
+    worst = 1.0
+    n_out = 0
+    for b in new_boxes:
+        span_edge = float(np.linalg.norm(b.corners[1] - b.corners[0]))
+        chord_edge = 0.5 * (float(np.linalg.norm(b.corners[3] - b.corners[0]))
+                            + float(np.linalg.norm(b.corners[2] - b.corners[1])))
+        ar = span_edge / max(chord_edge, 1e-14)
+        if ar < ar_lo or ar > ar_hi:
+            n_out += 1
+            if abs(math.log(ar)) > abs(math.log(worst)):
+                worst = ar
+    if n_out:
+        warnings.warn(
+            f"CAERO1 {caero.eid}: {n_out} of {len(new_boxes)} boxes have aspect "
+            f"ratio (spanwise/streamwise edge) outside [{ar_lo}, {ar_hi}] "
+            f"(worst {worst:.3g}) — high-AR boxes degrade the VLM kernel; "
+            "resize NSPAN/NCHORD together toward AR ≈ 1",
+            UserWarning,
+            stacklevel=3,
+        )
+
+
 def build_aero_model(
     bulk: BulkData,
     grid_index: Optional[dict] = None,
@@ -162,6 +219,13 @@ def build_aero_model(
         caero = bulk.caero1s[eid]
         paero = bulk.paero1s.get(caero.pid)
         new_boxes = mesh_caero1(caero, paero, bulk.aefacts, bulk.cord2rs, start_k=start_k)
+
+        # Pre-solve mesh-quality warnings (A7/A8) — VLM lifting surfaces only;
+        # decoupled strip body panels carry no horseshoe vortex, so the VLM
+        # box-density and box-AR guidance does not apply to them.
+        if not is_strip_caero(bulk, eid):
+            _warn_mesh_quality(caero, new_boxes)
+
         boxes.extend(new_boxes)
         start_k += len(new_boxes)
 

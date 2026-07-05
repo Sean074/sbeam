@@ -972,6 +972,12 @@ non-zero; exactly one of NCHORD/LCHORD must be non-zero.
 Cross-reference validation (post-parse): PID not in `bulk.paero1s` → `ValueError`;
 LSPAN/LCHORD not in `bulk.aefacts` → `ValueError`; CAERO1 present, no AEROS → `ValueError`.
 
+Mesh-quality warnings (A7/A8, pre-solve in `build_aero_model`, VLM panels only): fewer
+than 4 chordwise boxes, or any box aspect ratio (spanwise/streamwise edge) outside
+[0.5, 2.0], emits a `UserWarning`. For chordwise refinement at low box counts use
+LE-concentrated cosine breakpoints — `sbeam.aero.panel.cosine_chord_fractions(n)`
+generates the AEFACT fraction list for `LCHORD`.
+
 **Example:**
 ```
 $ 4×10 wing: root LE at origin, tip LE at y=5, chord=2
@@ -1181,10 +1187,10 @@ The continuation line is optional.
 | ID2 | `id2` | int | Last NASTRAN box ID in the range | required |
 | SETG | `setg` | int | SET1 SID listing the structural grids | required |
 | DZ | `dz` | float | Smoothing parameter (`0.0` = interpolating Hermite) | `0.0` |
-| DTOR | `dtor` | float | Torsional/bending ratio (parsed; not used in Phase B) | `1.0` |
+| DTOR | `dtor` | float | Torsional/bending ratio — not modelled; values ≠ 1.0 warn and are ignored (AE12) | `1.0` |
 | CID | `cid` | int | CORD2R CID defining the spline axis (`0` = global) | `0` |
 | DTHX | `dthx` | float | Torsion (CID x-axis rotation) attachment flag: `1.0` = attached, `−1.0` = detached; other values warn and are treated as detached | `1.0` |
-| DTHZ | `dthz` | float | CID z-axis rotation contribution (parsed; not used in Phase B) | `0.0` |
+| DTHZ | `dthz` | float | CID z-axis rotation attachment — not modelled; `0.0` (blank) and `−1.0` (NASTRAN "detached", matching sbeam) are silent, other values warn and are treated as detached (AE12) | `0.0` |
 | USAGE | `usage` | str | `FORCE` / `DISP` / `BOTH` (informational; not filtered in Phase B) | `"BOTH"` |
 
 Note the blank field before USAGE on the continuation line (field 4).
@@ -1855,7 +1861,7 @@ are the exception: they refer to **element local axes** (1 = axial, 4 = torsion,
 | AESURF | ALID1 (and ALID2 if non-zero) must exist in AELIST |
 | AELIST | All box IDs must fall within at least one CAERO1 range |
 | SET1 | Every grid ID must exist in GRID; a spline-referenced SET1 needs ≥ 2 grids |
-| SPLINE2 | SETG must exist in SET1; CAERO must exist in CAERO1; DTHX other than ±1.0 warns and is treated as detached |
+| SPLINE2 | SETG must exist in SET1; CAERO must exist in CAERO1; DTHX other than ±1.0 warns and is treated as detached; DTOR ≠ 1.0 warns and is ignored; DTHZ outside {0.0, −1.0} warns and is treated as detached |
 | SPLINE1 | Not implemented (Step 48 deferred) — handler raises `NotImplementedError`; use SPLINE2 or ATTACH |
 | ATTACH | CID must be `0`; CID ≠ 0 raises `NotImplementedError` at spline build |
 | SUPORT | Blank DOF string after a GID raises `ValueError` |

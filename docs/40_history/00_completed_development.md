@@ -4178,3 +4178,47 @@ common-mode root-caused (W2GJ sign) and the residual documented in
 `docs/10_standard/05_aeroelastics.md`. Full suite green (the four TestBuildWg pins + 30
 fullspan/derivative tests updated); section/body-correction round-trip tests unaffected
 (writers and reader flipped together).
+
+---
+
+### Step AC4 — Minor solver warnings — AE12, A7, A8 ✅ COMPLETE (2026-07-05)
+
+**Objective:** Close the three batched MINOR pre-solve/handler items: warn when SPLINE2
+DTOR/DTHZ carry values sbeam ignores (AE12), add a cosine chordwise-spacing helper and a
+low-NCHORD pre-solve warning (A7), and a box aspect-ratio pre-solve warning (A8).
+
+**Deliverables:**
+- **AE12 (code half)** — `sbeam/aero/spline.py::_build_spline2_block` warns (UserWarning,
+  same style as the AE4c DTHX switch) when `DTOR ≠ 1.0` (ratio ignored) or
+  `DTHZ ∉ {0.0, −1.0}` (Rz attachment not modelled; treated as detached).
+  **Key decision:** DTHZ = −1.0 is NASTRAN's "Rz detached" — exactly sbeam's behaviour —
+  so it stays silent (the backlog's literal "warn on DTHZ ≠ 0.0" would have spammed every
+  HA144A run, whose SPLINE2 cards all carry DTHZ = −1.0). User-confirmed gate.
+- **AE12 (misidentified PG-normal half)** — no code change (re-diagnosis 2026-06-12 stands:
+  the normal copy in `prandtl_glauert_boxes` is exact for every `mesh_caero1` box since
+  n_x = 0 always). Closed with the prescribed guard-test pair
+  (`tests/aero/test_vlm.py::TestPrandtlGlauertNormalCopy`): a synthetic n_x ≠ 0 box where
+  copied vs recomputed normals differ, paired with a 30° dihedral mesh where they agree to
+  machine precision — guarding against a needless future "recompute for dihedral" fix.
+- **A7** — `sbeam/aero/panel.py::cosine_chord_fractions(n)`: LE-concentrated half-cosine
+  breakpoints `ξ_i = 1 − cos((π/2)·i/n)` for AEFACT/LCHORD use. **Key decision:** helper,
+  NOT a new NCHORD default — uniform NCHORD semantics preserved for box-for-box NASTRAN
+  fidelity (HA144A). Pre-solve warning in `build_aero_model` when a VLM CAERO1 has < 4
+  chordwise boxes (NCHORD or LCHORD intervals).
+- **A8** — companion warning in the same loop when any box AR (spanwise LE edge / mean
+  streamwise corner edge) is outside [0.5, 2.0]; one warning per CAERO1 with out-of-band
+  count and worst AR. NB: `AeroBox.chord` is the STRIP chord, not the box streamwise
+  length — the AR uses corner edges. Decoupled strip body panels (PID → PSTRIP) are exempt
+  from both A7/A8 (no horseshoe vortex).
+- **New finding (feeds AC7/AE14):** the HA144A SPLINE2 cards carry only DTOR=1.0 /
+  DTHZ=−1.0 — NASTRAN performs no Rz rotational coupling on that deck either, so **AE12 is
+  exonerated as AC7's prime suspect**; the backlog AC7 entry now leads with the SPLINE2
+  slope/torsion-transfer kinematics suspect.
+
+**Test/Acceptance:** 16 new tests — `test_spline.py::TestSpline2DtorDthzWarnings` (warn
+gates + HA144A-values-stay-silent), `test_vlm.py::TestPrandtlGlauertNormalCopy` (guard
+pair), `test_panel.py::TestCosineChordFractions` (endpoints, monotone LE-density, LCHORD
+mesh integration), `test_mesh_quality.py` (A7/A8 fire/silent/strip-exempt via
+`build_aero_model`). Full suite 1053 passed / 6 xfailed; end-to-end HA144A build confirmed
+warning-free; a negative scratch deck (DTOR=0.5, DTHZ=1.0, NCHORD=2, sliver boxes) fired
+all four warnings.
