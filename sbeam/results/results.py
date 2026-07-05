@@ -106,6 +106,8 @@ class Sol144TrimResult:
     k_aa_lu: tuple                       # (lu, piv) for reuse by derivative solver
     rigid_derivs: dict                   # {label: {'CZ','CMY','CMX','CMZ','CX','CY'}}
     restrained_derivs: dict              # {label: {'CZ','CMY','CMX','CMZ'}}
+    unrestrained_derivs: Optional[dict] = None   # {label: {'CZ','CMY','CMX','CMZ'}} mean-axis (inertia-relief) column — AE8b; aero labels only
+    unrestrained_intercepts: Optional[dict] = None  # {'CZ0','CMY0'} unrestrained w_g-baseline intercepts
     box_gamma: Optional[np.ndarray] = None   # (n_box,) circulation strengths at trim
     total_cl: float = 0.0                # body-axis CZ = Fz / (q * sref) (balances weight at trim)
     total_cm: float = 0.0               # total CMy / (q * sref * cref) about x_ref

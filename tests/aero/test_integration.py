@@ -133,22 +133,23 @@ class TestBuildWg:
         wg = build_wg(boxes, {1: w2gj}, CAERO_EID)
         np.testing.assert_array_equal(wg, 0.0)
 
-    # T2 — a uniform W2GJ downwash slope reproduces the rigid-AOA cp from S41,
+    # T2 — a uniform W2GJ incidence reproduces the rigid-AOA cp from S41,
     #      through the PRODUCTION combination (gamma = Ajj^-1 @ wg, no local
     #      negation — exactly as sol144._compute_aero_forces / aero_model /
     #      coupling combine wg).
     def test_uniform_w2gj_matches_rigid_cl(self, boxes):
-        """wg = -alpha (the downwash slope of a nose-up AoA alpha) reproduces
-        solve_rigid_cl(alpha) when solved the way production does: gamma =
-        solve(Ajj, wg), with NO -wg negation.
+        """W2GJ card data = +alpha (NASTRAN convention: nose-up incidence,
+        like ANGLEA) reproduces solve_rigid_cl(alpha) when solved the way
+        production does: gamma = solve(Ajj, wg), with NO further negation.
 
-        A leading-edge-up incidence (more lift) is a NEGATIVE wg; a positive wg
-        would unload the section.  This pins the wg sign to the production path
-        (theory §2.4-2.5): positive wg = washout = less lift."""
+        build_wg negates card data into the internal normalwash (positive wg =
+        washout = less lift), matching the ANGLEA column / build_djk sign.
+        This pins the card sign to the MSC HA144A convention (W2GJ = +0.001745
+        is "+0.1 deg wing incidence", more lift)."""
         alpha = 0.1
         n = len(boxes)
-        # Nose-up incidence alpha => negative downwash slope.
-        w2gj = W2gj(sid=1, caero_eid=CAERO_EID, data=[-alpha] * n)
+        # NASTRAN convention: nose-up incidence alpha => POSITIVE card data.
+        w2gj = W2gj(sid=1, caero_eid=CAERO_EID, data=[alpha] * n)
         wg = build_wg(boxes, {1: w2gj}, CAERO_EID)
 
         ajj = build_ajj(boxes)
@@ -171,9 +172,9 @@ class TestBuildWg:
         increasing section CL (interior).
 
         Built-in nose-up incidence growing toward the tip is an increasingly
-        NEGATIVE downwash slope wg (theory §2.5).  Solved as production does
-        (gamma = solve(Ajj, wg), no -wg), the section circulation grows toward
-        the tip.
+        POSITIVE W2GJ card value (NASTRAN convention); build_wg negates it into
+        the internal washout-positive normalwash.  Solved as production does
+        (gamma = solve(Ajj, wg)), the section circulation grows toward the tip.
 
         The outermost tip strip is excluded: VLM always shows tip-vortex rolloff
         that reduces circulation there regardless of incidence.
@@ -182,8 +183,8 @@ class TestBuildWg:
         boxes = _rect_wing(nspan=nspan, nchord=nchord, span=5.0, chord=1.0)
         n = len(boxes)
 
-        # Per-strip downwash slope: nose-up incidence ∝ (i+1) → negative wg ∝ (i+1)
-        slopes = [-0.02 * (box.i_span + 1) for box in boxes]
+        # Per-strip card data: nose-up incidence ∝ (i+1) → positive W2GJ ∝ (i+1)
+        slopes = [0.02 * (box.i_span + 1) for box in boxes]
 
         w2gj = W2gj(sid=1, caero_eid=CAERO_EID, data=slopes)
         wg = build_wg(boxes, {1: w2gj}, CAERO_EID)
@@ -199,12 +200,15 @@ class TestBuildWg:
             )
 
     def test_partial_w2gj_data_fills_remaining_zeros(self):
-        """W2GJ with fewer values than boxes leaves untouched entries as zero."""
+        """W2GJ with fewer values than boxes leaves untouched entries as zero.
+
+        Card data is negated into the internal normalwash (NASTRAN convention:
+        positive card = incidence; internal positive = washout)."""
         boxes = _rect_wing(nspan=2, nchord=2)  # 4 boxes
         w2gj = W2gj(sid=1, caero_eid=CAERO_EID, data=[0.1, 0.2])  # only 2 values
         wg = build_wg(boxes, {1: w2gj}, CAERO_EID)
-        assert wg[0] == pytest.approx(0.1)
-        assert wg[1] == pytest.approx(0.2)
+        assert wg[0] == pytest.approx(-0.1)
+        assert wg[1] == pytest.approx(-0.2)
         assert wg[2] == pytest.approx(0.0)
         assert wg[3] == pytest.approx(0.0)
 
@@ -214,4 +218,4 @@ class TestBuildWg:
         data = [float(j) * 0.01 for j in range(n)]
         w2gj = W2gj(sid=1, caero_eid=CAERO_EID, data=data)
         wg = build_wg(boxes, {1: w2gj}, CAERO_EID)
-        np.testing.assert_allclose(wg, data)
+        np.testing.assert_allclose(wg, [-d for d in data])

@@ -452,8 +452,9 @@ Two-column layout — all controls in the left column (30%), 3D plot in the righ
 renders whichever result types it produced:
 
 - **Trim** (`Sol144TrimResult`, `_render_sol144_trim`): summary metrics (q, Mach, total CL/CMy,
-  trim mode); trim-variable table (FREE/PRESCRIBED, value); rigid-vs-elastic-restrained
-  stability-derivative table (CZ/CMY/CX/CY/CMX/CMZ); `q_div` readout with q/q_div ratio
+  trim mode); trim-variable table (FREE/PRESCRIBED, value); stability-derivative table with
+  rigid, elastic-restrained, and elastic-unrestrained (mean-axis, AE8b) columns
+  (CZ/CMY/CX/CY/CMX/CMZ; unrestrained CZ/CMY blank on URDD rows); `q_div` readout with q/q_div ratio
   ("No divergence found" when `None`); per-AESURF hinge-moment table; monitor-point integrated
   loads (Fx…Mz, from `MonitorLoad.totals`); maneuver-closure resultant. Layout mirrors the
   f06 blocks in `results/f06_writer.py::_build_f06_sol144_text`.

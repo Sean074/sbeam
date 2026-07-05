@@ -359,21 +359,35 @@ def _build_f06_sol144_text(
         lines.append(f"      {label:<12}    {kind:<12}  {_fmt(result.trim_vars[label])}")
     lines.append("")
 
-    # ---- STABILITY & CONTROL DERIVATIVES (rigid + elastic restrained) ----
+    # ---- STABILITY & CONTROL DERIVATIVES (rigid + restrained + unrestrained) ----
+    unrest = result.unrestrained_derivs or {}
     lines.append("                              S T A B I L I T Y   D E R I V A T I V E S")
     lines.append("")
-    lines.append("                          --------------- RIGID ---------------    ----- ELASTIC RESTRAINED -----")
-    lines.append("      LABEL              CZ            CMY            CX            CY            CZ            CMY")
+    lines.append("                          --------------- RIGID ---------------    ----- ELASTIC RESTRAINED -----    ---- ELASTIC UNRESTRAINED ----")
+    lines.append("      LABEL              CZ            CMY            CX            CY            CZ            CMY            CZ            CMY")
     for label in sorted(result.trim_vars.keys()):
         rg = result.rigid_derivs.get(label, {})
         el = result.restrained_derivs.get(label, {})
+        un = unrest.get(label)
+        # URDD acceleration columns have no unrestrained entry (they are the
+        # mean-axis ü_r unknowns); print N/A there.
+        un_cz = _fmt(un['CZ']) if un else "          N/A"
+        un_cm = _fmt(un['CMY']) if un else "          N/A"
         lines.append(
             f"      {label:<12}  "
             f"{_fmt(rg.get('CZ', 0.0))}{_fmt(rg.get('CMY', 0.0))}"
             f"{_fmt(rg.get('CX', 0.0))}{_fmt(rg.get('CY', 0.0))}"
             f"{_fmt(el.get('CZ', 0.0))}{_fmt(el.get('CMY', 0.0))}"
+            f"{un_cz}{un_cm}"
         )
     lines.append("")
+    if result.unrestrained_intercepts:
+        ic = result.unrestrained_intercepts
+        lines.append(
+            f"      UNRESTRAINED INTERCEPTS (W2GJ BASELINE):   "
+            f"CZ0 ={_fmt(ic.get('CZ0', 0.0))}    CMY0 ={_fmt(ic.get('CMY0', 0.0))}"
+        )
+        lines.append("")
 
     # ---- LATERAL / DIRECTIONAL DERIVATIVES (roll/yaw moments, Step 52) ----
     # CMX = rolling-moment coeff (C_lp from ROLL, C_lβ from SIDES); CMZ = yawing-

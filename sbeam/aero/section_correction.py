@@ -308,8 +308,10 @@ def build_section_correction_multi(
             af0[s] = float(fbox_off[idx].sum())
             am0[s] = float((-fbox_off[idx] * arm).sum())
         surf_idx = [k for k, b in enumerate(boxes) if b.caero_eid == T.caero_eid]
+        # Card data is NASTRAN-convention (positive = incidence); the internal
+        # normalwash ``wg`` is the negated sense — see ``build_wg``.
         w2 = W2gj(sid=sid_w2gj_base + i, caero_eid=T.caero_eid,
-                  data=wg[surf_idx].tolist())
+                  data=(-wg[surf_idx]).tolist())
         ac = Aecorr(sid=sid_aecorr_base + i, method="WT2", caero_eid=T.caero_eid,
                     target=cp_target[surf_idx].tolist())
         cards[T.caero_eid] = (w2, ac)

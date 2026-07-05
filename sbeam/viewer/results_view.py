@@ -383,11 +383,13 @@ def _render_sol144_trim(bulk: BulkData, result) -> None:
     st.markdown("**Trim variables**")
     st.dataframe(style_numeric(pd.DataFrame(tv_rows)), width="stretch")
 
-    # ---- Stability & control derivatives (rigid + elastic restrained) ----
+    # ---- Stability & control derivatives (rigid + restrained + unrestrained) ----
+    unrest_all = getattr(result, "unrestrained_derivs", None) or {}
     deriv_rows = []
     for label in sorted(result.trim_vars.keys()):
         rg = result.rigid_derivs.get(label, {})
         el = result.restrained_derivs.get(label, {})
+        un = unrest_all.get(label)
         deriv_rows.append({
             "Label": label,
             "CZ (rigid)":  rg.get("CZ", 0.0),
@@ -396,12 +398,17 @@ def _render_sol144_trim(bulk: BulkData, result) -> None:
             "CY (rigid)":  rg.get("CY", 0.0),
             "CMX (rigid)": rg.get("CMX", 0.0),
             "CMZ (rigid)": rg.get("CMZ", 0.0),
-            "CZ (elastic)":  el.get("CZ", 0.0),
-            "CMY (elastic)": el.get("CMY", 0.0),
-            "CMX (elastic)": el.get("CMX", 0.0),
-            "CMZ (elastic)": el.get("CMZ", 0.0),
+            "CZ (restrained)":  el.get("CZ", 0.0),
+            "CMY (restrained)": el.get("CMY", 0.0),
+            "CMX (restrained)": el.get("CMX", 0.0),
+            "CMZ (restrained)": el.get("CMZ", 0.0),
+            # URDD acceleration columns have no unrestrained entry (they are
+            # the mean-axis ü_r unknowns) — shown as None/blank.
+            "CZ (unrestrained)":  un.get("CZ") if un else None,
+            "CMY (unrestrained)": un.get("CMY") if un else None,
         })
-    st.markdown("**Stability & control derivatives** (rigid vs elastic-restrained)")
+    st.markdown("**Stability & control derivatives** (rigid vs elastic-restrained "
+                "vs elastic-unrestrained/mean-axis)")
     st.dataframe(style_numeric(pd.DataFrame(deriv_rows)), width="stretch")
 
     # ---- Divergence readout ----

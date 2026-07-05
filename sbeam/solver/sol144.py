@@ -1088,6 +1088,176 @@ def _compute_restrained_derivs(
     return rest_derivs
 
 
+def _compute_unrestrained_derivs(
+    K_aa: np.ndarray,
+    M_aa: np.ndarray,
+    Q_aa: np.ndarray,
+    Q_ax_a: np.ndarray,
+    f_aero_a: np.ndarray,
+    all_labels: list,
+    l_idx: list,
+    r_idx: list,
+    free_dofs: list,
+    grid_index: dict,
+    bulk,
+    q: float,
+    ref_pt: np.ndarray,
+) -> tuple:
+    """Unrestrained (mean-axis / inertia-relief) stability derivatives — AE8b.
+
+    Implements the MSC Nastran SOL 144 unrestrained-derivative algorithm
+    verbatim (MSC Aeroelastic Analysis User's Guide, Static Aeroelasticity,
+    Eqs. 2-111 … 2-134; DMAP matrix names kept in the comments for audit).
+    Cross-checked against the ZAERO Theoretical Manual Ch. 12 modal mean-axis
+    form (Eqs. 12.14–12.16).
+
+    The unrestrained derivative is NOT the aero force integrated over a
+    converged free-free aeroelastic response (both reverted AE8b attempts —
+    see docs/40_history).  It is the rigid-body inertial reaction m_r·ü_r per
+    unit trim variable, from a three-block system in (u_l, u_r, ü_r):
+
+        1. l-set equilibrium:      K^a_ll·u_l + K^a_lr·u_r + (M_ll·D+M_lr)·ü_r
+                                       = −K^a_lx·u_x + P_l
+        2. mean-axis constraint:   (DᵀM_ll+M_rl)·u_l + (DᵀM_lr+M_rr)·u_r = 0
+        3. rigid equilibrium:      Dᵀ·(row l) + (row r)
+
+    where D = −K_ll⁻¹·K_lr (STRUCTURAL K only, Eq. 2-111) and
+    K^a = K_aa − q̄·Q_aa.  u_l is eliminated through the aeroelastic K^a_ll,
+    u_r through the mass-weighted mean-axis row (2-129/2-130), leaving
+    MIRR·ü_r + KR1ZX·u_x = IPZF, whence Z1ZX = −m_r·MIRR⁻¹·KR1ZX (2-133).
+
+    Note: the manual's KARZX line prints "KAZL − KAXL·ALX", which is
+    dimensionally impossible (KAXL is n_r×n_x, ALX is n_l×n_x); the correct
+    reading is KARZX = KAXL − KAZL·ALX.
+
+    Only aero labels are computed (URDD acceleration columns are the ü_r
+    unknowns of this formulation, handled by NASTRAN via TRX; not needed for
+    the Phase C derivative deliverable).  Returns ``(derivs, intercepts)``:
+    ``derivs`` shaped like ``restrained_derivs`` and ``intercepts`` holding the
+    unrestrained {CZ0, CMY0} from the IPZF chain (w_g baseline).
+    """
+    n_r = len(r_idx)
+    if n_r == 0:
+        return {}, {}
+
+    aero_cols = [c for c, lbl in enumerate(all_labels)
+                 if not lbl.upper().startswith("URDD")]
+    if not aero_cols:
+        return {}, {}
+
+    ll = np.ix_(l_idx, l_idx)
+    lr = np.ix_(l_idx, r_idx)
+    rl = np.ix_(r_idx, l_idx)
+    rr = np.ix_(r_idx, r_idx)
+    lx = np.ix_(l_idx, aero_cols)
+    rx = np.ix_(r_idx, aero_cols)
+
+    # Structural rigid-body modes (2-111) — STRUCTURAL K only, no aero in D.
+    K_ll_s = K_aa[ll]
+    K_lr_s = K_aa[lr]
+    D = -scipy.linalg.lu_solve(scipy.linalg.lu_factor(K_ll_s), K_lr_s)  # (n_l, n_r)
+
+    # The mean-axis formulation requires genuine free-flight rigid modes in the
+    # SUPORT directions: K_rl·D + K_rr must vanish for a floating structure.
+    res = np.linalg.norm(K_aa[rl] @ D + K_aa[rr]) / max(np.linalg.norm(K_aa), 1e-30)
+    if res > 1e-8:
+        warnings.warn(
+            f"unrestrained derivatives skipped: SUPORT directions are not "
+            f"free rigid-body modes (‖K_rl·D + K_rr‖/‖K‖ = {res:.2e}); "
+            "check SPC/SUPORT consistency.", UserWarning)
+        return {}, {}
+
+    M_ll = M_aa[ll]; M_lr = M_aa[lr]; M_rl = M_aa[rl]; M_rr = M_aa[rr]
+    m_r = M_rr + M_rl @ D + D.T @ M_lr + D.T @ M_ll @ D   # total rigid mass (2-114)
+    MR = D.T @ M_ll + M_rl                                 # mean-axis row operator
+
+    # Aeroelastic partitions (K^a = K − q̄·Q; K^a_ax = −q̄·Q_ax, Eq. 2-110).
+    K_eff = K_aa - q * Q_aa
+    Ka_ll = K_eff[ll]; Ka_lr = K_eff[lr]; Ka_rl = K_eff[rl]; Ka_rr = K_eff[rr]
+    Ka_lx = -q * Q_ax_a[lx]
+    Ka_rx = -q * Q_ax_a[rx]
+    intl = f_aero_a[l_idx]                                 # INTL: aero part of P_l
+    intz = D.T @ intl + f_aero_a[r_idx]                    # INTZ: aero part of DᵀP_l+P_r
+
+    try:
+        lu_a = scipy.linalg.lu_factor(Ka_ll)
+        ARLR  = scipy.linalg.lu_solve(lu_a, Ka_lr)                 # (2-128)
+        AMLR  = scipy.linalg.lu_solve(lu_a, M_ll @ D + M_lr)
+        ALX   = scipy.linalg.lu_solve(lu_a, Ka_lx)
+        UINTL = scipy.linalg.lu_solve(lu_a, intl)
+
+        # Mean-axis row eliminates u_r through the MASS matrix (2-129/2-130).
+        M2RR = (D.T @ M_lr + M_rr) - MR @ ARLR
+        M3RR = -MR @ AMLR
+        K3LX = -MR @ ALX
+        TMP1 = MR @ UINTL
+        M4RR = np.linalg.solve(M2RR, M3RR)
+        K4LX = np.linalg.solve(M2RR, K3LX)
+        TMP2 = np.linalg.solve(M2RR, TMP1)
+
+        # Rigid-equilibrium row (2-131).
+        KAZL  = D.T @ Ka_ll + Ka_rl
+        KAXL  = D.T @ Ka_lx + Ka_rx
+        K2RR  = -KAZL @ ARLR + (D.T @ Ka_lr + Ka_rr)
+        KARZX = KAXL - KAZL @ ALX
+        IPZ   = intz - KAZL @ UINTL
+
+        # (2-132): MIRR·ü_r + KR1ZX·u_x = IPZF.
+        M5RR  = -K2RR @ M4RR + m_r
+        MIRR  = -KAZL @ AMLR + M5RR
+        KR1ZX = -K2RR @ K4LX + KARZX
+        IPZF  = K2RR @ TMP2 + IPZ
+
+        # (2-133): dimensional derivatives Z1ZX = m_r·ü_r per unit u_x.
+        Z1ZX  = -m_r @ np.linalg.solve(MIRR, KR1ZX)        # (n_r, n_x)
+        IPZF2 = m_r @ np.linalg.solve(MIRR, IPZF)          # (n_r,)  intercepts
+    except (np.linalg.LinAlgError, ValueError) as exc:
+        warnings.warn(
+            f"unrestrained derivatives skipped: singular mean-axis system "
+            f"({exc}); q may be at/near divergence.", UserWarning)
+        return {}, {}
+
+    # TR (2-122): transfer the r-set force rows to a 6-component resultant
+    # (Fx,Fy,Fz,Mx,My,Mz) about the aero reference point.  Right-hand My about
+    # +y equals the nose-up-positive _pitch_moment convention.
+    idx_to_gid = {i: gid for gid, i in grid_index.items()}
+    TR = np.zeros((6, n_r))
+    for row, a_loc in enumerate(r_idx):
+        g_dof = free_dofs[a_loc]
+        gid = idx_to_gid[g_dof // 6]
+        comp = g_dof % 6
+        g = bulk.grids[gid]
+        r_vec = np.array([g.x, g.y, g.z]) - ref_pt
+        if comp < 3:
+            TR[comp, row] = 1.0
+            e = np.zeros(3); e[comp] = 1.0
+            TR[3:, row] += np.cross(r_vec, e)
+        else:
+            TR[comp, row] = 1.0
+    R6  = TR @ Z1ZX          # (6, n_x) physical force/moment per unit label
+    R60 = TR @ IPZF2         # (6,)     physical intercept resultant
+
+    # Non-dimensionalisation (NDIM, 2-123) — sbeam sign sense (CZ up-positive,
+    # CMY nose-up-positive), matching the rigid/restrained columns.
+    sref = bulk.aeros.sref
+    cref = bulk.aeros.cref
+    bref = bulk.aeros.bref
+    qS = q * sref
+    unrest_derivs: dict = {}
+    for j, c in enumerate(aero_cols):
+        unrest_derivs[all_labels[c]] = {
+            'CZ':  R6[2, j] / qS,
+            'CMY': R6[4, j] / (qS * cref),
+            'CMX': R6[3, j] / (qS * bref) if bref > 0 else 0.0,
+            'CMZ': R6[5, j] / (qS * bref) if bref > 0 else 0.0,
+        }
+    unrest_intercepts = {
+        'CZ0':  R60[2] / qS,
+        'CMY0': R60[4] / (qS * cref),
+    }
+    return unrest_derivs, unrest_intercepts
+
+
 def _divergence_dynamic_pressure(K_ll: np.ndarray, Q_ll: np.ndarray) -> Optional[float]:
     """Critical static-aeroelastic divergence dynamic pressure (restrained l-set).
 
@@ -1528,6 +1698,23 @@ def run_sol144_trim(
     )
 
     # ------------------------------------------------------------------ #
+    # Unrestrained (mean-axis / inertia-relief) derivatives — AE8b
+    # (MSC Aeroelastic Analysis UG Eqs. 2-111 … 2-134)
+    # ------------------------------------------------------------------ #
+    from sbeam.assembly.mass_matrix import assemble_global_mass
+    M_gg = assemble_global_mass(bulk)
+    M_red_full = (T.T @ M_gg @ T) if dep_dofs else M_gg
+    if hasattr(M_red_full, "toarray"):
+        M_red_full = M_red_full.toarray()
+    M_aa = M_red_full[np.ix_(free_local, free_local)]
+    f_aero_red = (T.T @ f_aero_g) if dep_dofs else f_aero_g
+    f_aero_a = f_aero_red[free_local]
+    unrest_derivs, unrest_intercepts = _compute_unrestrained_derivs(
+        K_aa, M_aa, Q_aa, Q_ax_a, f_aero_a, all_labels,
+        l_idx, r_idx, free_dofs, grid_index, bulk, q_dyn, suport_pos,
+    )
+
+    # ------------------------------------------------------------------ #
     # Total CL and CM at trim
     # ------------------------------------------------------------------ #
     from sbeam.aero.integration import build_djk
@@ -1663,6 +1850,8 @@ def run_sol144_trim(
         k_aa_lu=k_aa_lu_trim,
         rigid_derivs=rigid_derivs,
         restrained_derivs=rest_derivs,
+        unrestrained_derivs=unrest_derivs,
+        unrestrained_intercepts=unrest_intercepts,
         box_gamma=gamma,
         total_cl=total_cl,
         total_cm=total_cm,

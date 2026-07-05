@@ -7,8 +7,9 @@ downwash slope Δz/Δx (z up, x streamwise).  POSITIVE ``w``/``w_g`` is a local
 nose-down (washout) slope that REDUCES lift; a leading-edge-up incidence that
 increases lift is NEGATIVE.  The spline/AoA boundary condition is supplied as a
 nose-up-positive *incidence* and mapped to this normalwash by the negative sign
-in ``build_djk`` (-I) and the ANGLEA column (-n_z); ``w_g`` is already a
-normalwash and is added directly, with no extra negation.
+in ``build_djk`` (-I) and the ANGLEA column (-n_z).  W2GJ card data follows the
+NASTRAN convention (positive = nose-up incidence, like ANGLEA), so ``build_wg``
+applies the same negation when assembling the internal ``w_g``.
 """
 
 import numpy as np
@@ -51,9 +52,11 @@ def build_djk(boxes: list[AeroBox]) -> np.ndarray:
 def build_wg(boxes: list[AeroBox], w2gjs: dict, caero_eid: int) -> np.ndarray:
     """Baseline normalwash vector from W2GJ card.  Shape: (n_box,).
 
-    The W2GJ values are dimensionless downwash slopes Δz/Δx added directly to the
-    assembled normalwash (no D_jk negation), so POSITIVE = local nose-down /
-    washout → LESS lift; NEGATIVE = leading-edge-up incidence → MORE lift.
+    W2GJ card data follows the NASTRAN convention (MSC Aeroelastic UG Eq 2-104,
+    HA144A example): POSITIVE = leading-edge-up incidence/camber → MORE lift —
+    the same nose-up-positive sense as ANGLEA.  Like the ANGLEA column (-n_z)
+    and ``build_djk`` (-I), the card values are NEGATED here to form the
+    internal normalwash slope (positive = washout).
 
     Returns a zero vector when no W2GJ card is present for *caero_eid*.
     W2GJ data is ordered row-major (span index varies slowest, chord fastest),
@@ -71,7 +74,7 @@ def build_wg(boxes: list[AeroBox], w2gjs: dict, caero_eid: int) -> np.ndarray:
         ]
         for local_k, (global_j, _) in enumerate(caero_boxes):
             if local_k < len(w2gj.data):
-                wg[global_j] = w2gj.data[local_k]
+                wg[global_j] = -w2gj.data[local_k]
         break   # only one W2GJ per CAERO1
     return wg
 

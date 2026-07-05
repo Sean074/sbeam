@@ -981,11 +981,14 @@ CAERO1, 100, 1, 0, 4, 10, 0, 0, 0
 
 ---
 
-### W2GJ — Baseline Normalwash Slopes
+### W2GJ — Baseline Incidence / Camber (initial downwash)
 
-Per-box dimensionless normalwash slopes (Δz/Δx) that represent geometric incidence
-not captured by the VLM angle of attack. Added to the computed downwash during the
-aeroelastic solve.
+Per-box built-in incidence/camber angles (rad) representing geometry not captured by
+the VLM angle of attack (wing incidence, twist, camber line, CFD/WT Δα corrections).
+**NASTRAN sign convention** (MSC Aeroelastic UG Eq. 2-104; HA144A example): **positive
+= leading-edge-up incidence → more lift**, the same nose-up-positive sense as ANGLEA.
+`build_wg` negates card data into sbeam's internal washout-positive normalwash.
+(Convention corrected 2026-07-05 — AE8a root cause.)
 
 **Format:**
 ```
@@ -998,14 +1001,15 @@ W2GJ  SID  CAERO_EID  D1  D2  D3  D4  D5  D6
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
 | SID | `sid` | int | Set ID | required |
-| CAERO_EID | `caero_eid` | int | EID of the CAERO1 this normalwash applies to | required |
-| D1–DN | `data` | list[float] | Normalwash slopes Δz/Δx, one per box in row-major order | required |
+| CAERO_EID | `caero_eid` | int | EID of the CAERO1 this incidence applies to | required |
+| D1–DN | `data` | list[float] | Built-in incidence per box (rad), nose-up positive (NASTRAN convention), row-major order | required |
 
 Row-major order: span index slowest, chord index fastest — matching `mesh_caero1()` box ordering.
 
 **Example:**
 ```
-$ Uniform 2° twist (0.0349 rad) on a 4×2 panel (8 boxes)
+$ Uniform +2° incidence (0.0349 rad, more lift) on a 4×2 panel (8 boxes);
+$ a 2° WASHOUT twist would be -0.0349.
 W2GJ, 5, 100, 0.0349, 0.0349, 0.0349, 0.0349, 0.0349, 0.0349
 +,    0.0349, 0.0349
 ```

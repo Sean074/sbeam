@@ -81,11 +81,12 @@ class Aefact:
 class W2gj:
     sid:       int
     caero_eid: int           # which CAERO1 element this applies to
-    # Dimensionless baseline downwash slopes Δz/Δx (z up, x streamwise), one per
-    # box.  Added DIRECTLY to the assembled normalwash (NASTRAN W2GJ convention,
-    # not passed through D_jk), so the sign is the normalwash sign:
-    #   POSITIVE wg = surface sloping up aft = local nose-down / washout → LESS lift
-    #   NEGATIVE wg = leading-edge-up built-in incidence            → MORE lift
+    # Card values in the NASTRAN W2GJ convention (MSC Aeroelastic UG Eq 2-104,
+    # HA144A: W2GJ = +0.001745 rad is "+0.1 deg wing incidence"):
+    #   POSITIVE data = leading-edge-up built-in incidence/camber → MORE lift
+    #   NEGATIVE data = local nose-down washout                   → LESS lift
+    # This is the OPPOSITE sign to sbeam's internal normalwash slope wg
+    # (positive = washout); ``build_wg`` negates card data on assembly.
     # See docs/20_theory/01_aeroelastics_theory.md §2.4–2.5 (Eq 9).
     data: list = field(default_factory=list)
 

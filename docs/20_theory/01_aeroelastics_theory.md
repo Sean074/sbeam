@@ -266,6 +266,16 @@ carries most of the rigid spanwise load, so it must be modelled — it is the $w
 incidence delta from CFD or wind-tunnel data is often better conditioned than a multiplicative
 correction, because it does not blow up where the local load is small.
 
+**W2GJ card convention (fixed 2026-07-05, AE8a root cause).** The BDF `W2GJ` card carries the
+**NASTRAN** sign convention — the *nose-up-positive angles* of Eq. (9), not the normalwash slope:
+positive card data is leading-edge-up incidence/camber (more lift), exactly like `ANGLEA`. The MSC
+HA144A example fixes this unambiguously: `W2GJ = +0.0017453 rad` is "+0.1 deg wing incidence" and
+produces the *positive* lift intercept $C_{z_o}$ of Table 7-1. `build_wg` therefore **negates**
+card data on assembly (the same $-1$ the `ANGLEA` column $-n_z$ and $D_{jk}=-I$ apply), so the
+internal $w_g$ keeps the Eq. (9) normalwash sign (positive = washout). Card *writers*
+(`section_correction`, `body_correction`) apply the matching negation on emission, so generated
+correction decks round-trip and are NASTRAN-convention throughout.
+
 ### 2.6 Full-span modelling (no symmetry image)
 
 sbeam models every configuration **full-span**: both sides of the $x$–$z$ plane are meshed
@@ -935,6 +945,38 @@ yaw damping $C_{nr}=\partial C_{MZ}/\partial r$, and the dihedral effect $C_{l\b
 /\partial\beta$ — the last being identically zero for a planar wing and non-zero (sign set by $\pm\Gamma$)
 once the box normals leave the $xy$-plane (§ dihedral). Because $\mathbf M$ carries the per-box side
 force $F_y$, these are correct for canted surfaces without a flat-plate projection.
+
+**Restrained vs unrestrained (mean-axis) flexible columns (AE8b, 2026-07-05).** The flexible
+derivative of Eq. (19) with the SUPORT DOFs held ($u_r=0$) is the **restrained** column
+(`_compute_restrained_derivs`). NASTRAN additionally prints an **unrestrained** column — the
+free-flight derivative, made SUPORT-location-invariant by the **mean axis**: the frame in which
+elastic deformation moves neither the CG nor the principal axes, i.e. displacements are
+mass-orthogonal to the rigid-body modes. sbeam implements the MSC SOL 144 algorithm verbatim
+(MSC Aeroelastic Analysis User's Guide, Eqs. 2-111…2-134; `_compute_unrestrained_derivs`).
+With $D=-K_{ll}^{-1}K_{lr}$ (structural rigid-body modes), $m_r$ the total rigid mass about the
+SUPORT, and $K^a=K-qQ$ the aeroelastic stiffness, the three-block system in $(u_l,u_r,\ddot u_r)$
+is: the l-set equilibrium, the **mean-axis constraint**
+$(D^{\mathsf T}M_{ll}+M_{rl})u_l+(D^{\mathsf T}M_{lr}+M_{rr})u_r=0$, and the rigid equilibrium row.
+Eliminating $u_l$ through $K^a_{ll}$ and $u_r$ through the *mass-weighted* mean-axis row leaves
+$\mathrm{MIRR}\,\ddot u_r+\mathrm{KR1ZX}\,u_x=\mathrm{IPZF}$; the printed derivative is the
+rigid-body inertial reaction per unit trim variable,
+$Z1ZX=-m_r\,\mathrm{MIRR}^{-1}\,\mathrm{KR1ZX}$, non-dimensionalised like Eq. (19). The
+equivalent modal statement (ZAERO Theoretical Manual Ch. 12, Eqs. 12.9–12.16 — used as an
+independent numerical cross-check, agreement to 4+ decimals) is
+
+$$
+C_\text{unrest} \;=\; \frac{1}{qS}\,\phi_r^{\mathsf T}\Big[\;\frac{\partial f}{\partial a}
+\;+\; q\,Q\,\phi_e\big(K_{ee}-q\,Q_{ee}\big)^{-1}\phi_e^{\mathsf T}\,\frac{\partial f}{\partial a}\Big],
+$$
+
+with the elastic solve restricted to modes **mass-orthogonal to the rigid modes**
+($\phi_e^{\mathsf T}M\phi_r=0$ kills the inertia-relief load in the derivative operator) and the
+rigid modes only *projecting* the force. Neither a load-projector on a restrained solve nor a
+converged free-free solve $\;(K-P\,qQ)^{-1}$ is the printed quantity — both were tried and
+reverted (see `docs/40_history`, Step AC2). Ordering: unrestrained > restrained > rigid for
+$C_{Z_\alpha}$ (the free vehicle washes *in*). Validation: all six longitudinal columns and the
+$w_g$ intercepts match MSC Table 7-1 within 1% at $q=40$; the $q=1200$ comparison is gated by the
+upstream high-q flexible-coupling fidelity item (backlog AC7/AE14), not by this operator.
 
 **Hinge moments.** The hinge moment of a control surface is the moment of its box forces about the
 hinge axis through the hinge origin $\mathbf o$,

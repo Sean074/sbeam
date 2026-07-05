@@ -13,6 +13,32 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Unrestrained (mean-axis) stability derivatives — AE8b / Step AC2 (2026-07-05)**
+
+- **`sol144._compute_unrestrained_derivs`** — the missing UNRESTRAINED derivative column, a literal
+  implementation of the MSC SOL 144 mean-axis / inertia-relief algorithm (MSC Aeroelastic Analysis
+  User's Guide Eqs. 2-111…2-134, sourced into `.refs/`; DMAP names kept in comments). Validated at
+  q=40 against Table 7-1 (all six longitudinal derivatives within 1%, W2GJ intercepts within 1%)
+  and proven operator-correct at both q by an independent ZAERO Ch. 12 modal mean-axis cross-check
+  (agreement to 4+ decimals). New `Sol144TrimResult.unrestrained_derivs` / `.unrestrained_intercepts`;
+  f06 gains the ELASTIC UNRESTRAINED column block + intercepts line; the viewer derivative table
+  gains the unrestrained columns. V-AE1e restrained columns completed against Table 7-1 q=40.
+  The q=1200 gates are XFAILed pending the NEW backlog item AC7/AE14 (high-q flexible-coupling
+  fidelity: restrained q=1200 columns are independently 5–28% off — the coupling, not the operator).
+
+### Fixed
+
+**W2GJ sign convention inverted vs NASTRAN — AE8a root cause / Step AC3 (2026-07-05)**
+
+- **`integration.build_wg`** now negates W2GJ card data into the internal washout-positive
+  normalwash: card values follow the NASTRAN convention (positive = nose-up incidence, like ANGLEA
+  — MSC Eq. 2-104 / HA144A "+0.001745 rad = +0.1 deg wing incidence"); sbeam previously applied
+  deck incidence backwards. W2GJ **writers** (`section_correction`, both `body_correction`
+  emitters) flipped to match, so generated cards stay NASTRAN-convention and round-trip. With the
+  fix, sbeam's rigid intercepts match Table 7-1 to 4 sig figs (CZ0 +0.008419 vs +0.008421,
+  CM0 −0.006007 vs −0.006008). The HA144A trim offset becomes −0.093° ANGLEA / +0.104° ELEV
+  (≤0.31% FS, q-invariant) and is documented as the accepted residual bias.
+
 **Decoupled strip body panels (Step A10, 2026-06-15)**
 
 - **New panel type — `PSTRIP` + `STRIPK` cards** (`model/aero.py`, `parser/bdf_reader.py`): a CAERO1

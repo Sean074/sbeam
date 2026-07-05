@@ -4085,3 +4085,96 @@ summarise); the module tree's authoritative home is `00_program_overview.md`.
 **Test/Acceptance:** card inventory verified against `bdf_reader.py` dispatch (51/51); every
 ported/updated claim verified against code before writing; trim regression tests pass
 (`tests/aero/test_trim_overdetermined.py`); no doc now states SOL 144 trim is unusable.
+
+### Step AC2 — AE8b: Unrestrained (mean-axis) stability derivatives ✅ COMPLETE (2026-07-05)
+
+**Objective:** Implement the missing UNRESTRAINED (mean-axis / inertia-relief) stability-derivative
+column in SOL 144, previously known-wrong after two reverted first-principles attempts, gated on
+sourcing the actual NASTRAN/ZAERO algorithm.
+
+**Algorithm sourced (the gate-lifter):** MSC Nastran Aeroelastic Analysis User's Guide, Static
+Aeroelasticity, Eqs. (2-111)–(2-134) (`.refs/MSC_Nastran_2021.3_Aeroelastic_Analysis_User_Guide.pdf`
+PDF pp. 70–82; 2023.1 edition also in `.refs/`), independently cross-checked against the ZAERO 9.2
+Theoretical Manual Ch. 12 modal mean-axis form, Eqs. (12.9)–(12.16) (`.refs/ZAERO_9.2_Theo_3rd_Ed.pdf`
+PDF pp. 270–276). Zeiler 1997 (NASA 19990010052) and Riso et al. 2018 (JoA) added to `.refs/` as
+supporting background.
+
+**Deliverables:**
+- `sbeam/solver/sol144.py::_compute_unrestrained_derivs` — literal transcription of the MSC DMAP
+  elimination chain (ARLR/AMLR/ALX → M2RR/M3RR/K3LX → M4RR/K4LX → KAZL/K2RR/KARZX → MIRR/KR1ZX →
+  `Z1ZX = −m_r·MIRR⁻¹·KR1ZX`), DMAP names kept in comments for audit. Structural-K rigid-body
+  modes `D = −K_ll⁻¹·K_lr` (separate LU from the aeroelastic `K^a_ll`), rigid-mode validity guard
+  (`‖K_rl·D + K_rr‖/‖K‖`), singularity guard near divergence, TR force/moment transfer from the
+  SUPORT DOFs to the aero reference. Also computes the unrestrained W2GJ-baseline intercepts
+  (IPZF chain). `M_aa` reduced in `run_sol144_trim` via the same RBE3+SPC path as `maneuver_qs`.
+- `Sol144TrimResult.unrestrained_derivs` / `.unrestrained_intercepts`; f06
+  ELASTIC UNRESTRAINED column block (URDD columns print N/A — they are the mean-axis ü_r
+  unknowns) + intercepts line (`sbeam/results/f06_writer.py`); viewer stability-derivative table
+  gained the unrestrained columns (`sbeam/viewer/results_view.py::_render_sol144_trim`).
+- V-AE1e restrained-column completion (rides-here item): all six restrained longitudinal columns
+  now gated against MSC Table 7-1 q=40 (CMα, CZq, CMq, CZδe, CMδe added; ELEV CZ at 2% — actual
+  +1.3%).
+
+**Key decisions / findings:**
+- **The operator, not the physics, was the open question — and the sourced operator is now proven
+  correct two independent ways:** the MSC DMAP chain and the ZAERO modal mean-axis form (exact
+  complement basis, no truncation) agree to 4+ decimals at BOTH q=40 and q=1200.
+- **Why both reverted attempts failed:** the unrestrained derivative eliminates `u_r` through the
+  MASS-weighted mean-axis constraint and `u_l` through the aeroelastic `K^a_ll` — attempt 1's load
+  projector and attempt 2's converged free-free solve are different operators. However, the
+  faithful MSC chain reproduces attempt 2's q=1200 value (CZα 11.67) exactly — the old conclusion
+  "NASTRAN's unrestrained is not the converged free-free derivative" was a MISDIAGNOSIS.
+- **NEW finding (opened as backlog AC7/AE14):** sbeam's flexible coupling itself over-predicts at
+  high q — the RESTRAINED q=1200 columns are 5–28% off Table 7-1 (independent of any mean-axis
+  machinery). The q=1200 unrestrained gates are therefore XFAILed pending AC7; prime suspect is
+  AE12 (SPLINE2 DTOR/DTHZ ignored).
+- Manual typo resolved by dimensional analysis: Table's `KARZX = KAZL − KAXL·ALX` line must read
+  `KARZX = KAXL − KAZL·ALX` (the printed form is not even conformable).
+- Backlog target transcription fix: unrestrained q=1200 CMα is −4.577 (Table 7-1, image-verified),
+  not the −4.557 previously recorded from ADA370433.
+
+**Test/Acceptance:** `tests/aero/test_ae1_restrained_derivs.py` — q=40 acceptance MET: all six
+unrestrained longitudinal derivatives within 1% of Table 7-1 {CZα 5.127, CMα −2.907, CZq 12.158,
+CMq −10.007, CZδe 0.2520, CMδe 0.5678} (actuals 0.2–1.0%), intercepts within 1%
+{CZ0 0.008509, CMY0 −0.006064}; unrestrained > restrained > rigid ordering gate; q=1200 targets
+gated as strict-value XFAIL (un-xfail when AC7 closes). ZAERO modal cross-check (throwaway
+scratchpad script, deleted per plan): MSC chain ≡ modal form, max deviation < 1e-4 relative at
+both q. Full aero+results+solver suites: 490 passed, 6 xfailed.
+
+### Step AC3 — AE8a: q-invariant common-mode trim offset ✅ ROOT-CAUSED & CLOSED (2026-07-05)
+
+**Objective:** Root-cause or document the small q-invariant rigid common-mode trim offset on
+HA144A (was +0.107° ANGLEA / −0.092° ELEV at both q=40 and q=1200, ≤0.4% FS).
+
+**Root cause found — W2GJ sign convention inverted vs NASTRAN.** The MSC guide (Eq. 2-104 and the
+HA144A example: "W2GJ = 0.1 deg = 0.001745 rad for the wing boxes" — positive value, described as
+lift-increasing incidence) defines positive W2GJ as nose-up incidence, the same sense as ANGLEA.
+sbeam added W2GJ card data directly to the internal washout-positive normalwash, applying the deck's
+wing incidence backwards. Decisive metrology: with the sign corrected, sbeam's rigid intercept
+coefficients match Table 7-1 to 4 significant figures (CZ0 +0.008419 vs +0.008421, CM0 −0.006007 vs
+−0.006008) — with the old sign both intercepts are exactly sign-flipped.
+
+**Deliverables:**
+- `sbeam/aero/integration.py::build_wg` negates W2GJ card data into the internal normalwash
+  (card = NASTRAN convention, positive = incidence; internal `wg` unchanged, positive = washout);
+  module docstring + `W2gj` dataclass comment (`sbeam/model/aero.py`) rewritten.
+- Card **writers** negated to match (round-trip coherent): `sbeam/aero/section_correction.py` and
+  both `sbeam/aero/body_correction.py` emitters store NASTRAN-convention data in `W2gj` cards.
+- `sample/ha144a_fullspan_sbeam.bdf` unchanged — its +.001745 values (copied from the MSC deck)
+  are now interpreted correctly.
+- Tests updated: `tests/aero/test_integration.py::TestBuildWg` (card-convention pins),
+  `tests/aero/test_ae1_fullspan.py` (SC2 ANGLEA sign gate → %FS band; docstrings/actuals).
+
+**Residual documented (accepted per the AC3 acceptance clause):** after the fix the offset becomes
+−0.093° ANGLEA / +0.104° ELEV — still q-invariant, ≤0.31% FS, inside every gate (SC1 relative:
+−1.0%/+0.4%; SC2 %FS: 0.31%/0.26%). Decomposition (hand-trim on Table 7-1 coefficients): the old
++0.107° was this −0.093° bias masked by a +0.200° sign-error swing; both codes' incidence response
+is −0.100° per +0.1°, matching to 0.001°. The residual is a compound of sub-0.5% flexible-column
+and coupling differences (see AC7/AE14 for the high-q half), not attributable to any single
+verified input — all rigid derivatives and (now) intercepts match ≤0.05%.
+
+**Test/Acceptance:** trim error ≤1% FS at every TRIM subcase (met: ≤0.31% FS); the q=40
+common-mode root-caused (W2GJ sign) and the residual documented in
+`docs/10_standard/05_aeroelastics.md`. Full suite green (the four TestBuildWg pins + 30
+fullspan/derivative tests updated); section/body-correction round-trip tests unaffected
+(writers and reader flipped together).

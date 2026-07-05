@@ -376,7 +376,9 @@ def build_body_correction(
     cards = {}
     for i, eid in enumerate(panel_eids):
         idx = panel_idx[eid]
-        w2 = W2gj(sid=sid_w2gj_base + i, caero_eid=eid, data=wg_body[idx].tolist())
+        # Card data is NASTRAN-convention (positive = incidence); the internal
+        # normalwash ``wg_body`` is the negated sense — see ``build_wg``.
+        w2 = W2gj(sid=sid_w2gj_base + i, caero_eid=eid, data=(-wg_body[idx]).tolist())
         ac = Aecorr(sid=sid_aecorr_base + i, method="WT2", caero_eid=eid,
                     target=(r[idx] * gamma_ref[idx]).tolist())
         cards[eid] = (w2, ac)
@@ -570,7 +572,8 @@ def build_strip_body_correction(
     cards = {}
     for i, eid in enumerate(panel_eids):
         idx = panel_idx[eid]
-        w2 = W2gj(sid=sid_w2gj_base + i, caero_eid=eid, data=wg_body[idx].tolist())
+        # Card data is NASTRAN-convention (positive = incidence) — see ``build_wg``.
+        w2 = W2gj(sid=sid_w2gj_base + i, caero_eid=eid, data=(-wg_body[idx]).tolist())
         sk = Stripk(sid=sid_stripk_base + i, caero_eid=eid,
                     data=(r[idx] * slope0[idx]).tolist())
         cards[eid] = (w2, sk)

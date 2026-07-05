@@ -58,13 +58,20 @@ regression gates: V-AE1 (trim), V-AE2 (swept-spline rigid body), V-AE3 (coupling
 cross-check), V-C-DIH (dihedral ±Γ), V-C4/V-LAT (over-determined trim, lateral derivatives),
 V-C5 (maneuver-load closure).
 
-Two known limitations remain open (full detail and plan in `docs/30_future/00_backlog.md`,
-Steps AC2/AC3):
+One known limitation remains open (full detail and plan in `docs/30_future/00_backlog.md`,
+Step AC7), plus one documented accepted bias:
 
 | ID | Limitation | Severity | Impact |
 |----|-----------|----------|--------|
-| AE8b | The **unrestrained (mean-axis / inertia-relief) stability-derivative column is not computed** — only the rigid and elastic-restrained columns are output. NASTRAN HA144A Table 7-1 prints restrained *and* unrestrained; sbeam reproduces the restrained half only. Closing requires the actual NASTRAN/ZAERO unrestrained algorithm (two first-principles attempts overshoot at high q and were reverted). | MAJOR (missing output column — does **not** affect trim, loads, or the restrained/rigid derivatives) | Derivative table completeness only |
-| AE8a | A small **q-invariant common-mode trim offset** (~0.1°, ≤0.4% of full-scale range, identical at q=40 and q=1200) exists in the rigid baseline. It is *not* a flexible-coupling defect and is within the accepted ≤1% FS trim gate. | MINOR (accepted trim bias) | Trim variables carry a ≤0.4% FS bias |
+| AE14 | **High-q flexible-coupling fidelity gap** (found 2026-07-05 closing AE8b): the restrained derivative columns at q=1200 are 5–28% off MSC Table 7-1 (≤1.3% at q=40), and the unrestrained column inherits the same upstream error amplified to +40…60%. The mean-axis *operator* is proven correct (see AE8b note below); the error is in the flexible coupling data (prime suspect AE12: SPLINE2 DTOR/DTHZ ignored). The q=1200 unrestrained gates are XFAILed pending this item. | MAJOR (high-q derivative accuracy; trim itself passes its %FS gates at q=1200) | Flexible derivative columns degrade with q |
+| AE8a (closed) | The residual **q-invariant common-mode trim offset** after the 2026-07-05 W2GJ sign-convention fix: −0.093° ANGLEA / +0.104° ELEV on HA144A, identical at q=40 and q=1200, ≤0.31% FS — inside every trim gate. A compound of sub-0.5% flexible-column/coupling differences; all rigid derivatives and intercepts match NASTRAN to ≤0.05%. | MINOR (accepted, documented trim bias) | Trim variables carry a ≤0.31% FS bias |
+
+**AE8b closed (2026-07-05):** the unrestrained (mean-axis / inertia-relief) derivative column is
+now computed by `sol144._compute_unrestrained_derivs` — the MSC SOL 144 algorithm (MSC Aeroelastic
+Analysis UG Eqs. 2-111…2-134), validated at q=40 against Table 7-1 (all six longitudinal
+derivatives ≤1%, W2GJ intercepts ≤1%) and proven operator-correct at both q by an independent
+ZAERO Ch. 12 modal mean-axis cross-check (agreement to 4+ decimals). See
+`docs/40_history/00_completed_development.md` Step AC2.
 
 Reproduction script for the original review: `studies/_review_ha144a_check.py`.
 
@@ -412,12 +419,16 @@ changing the caller interface.
 
 ### `build_wg(boxes, w2gjs, caero_eid) -> np.ndarray`  — shape (n,)
 
-Baseline normalwash vector from the W2GJ BDF card. Values are dimensionless downwash
-slopes Δz/Δx, one per box, in row-major order (span slowest, chord fastest). They are
-added **directly** to the assembled normalwash (NASTRAN W2GJ convention — *not* passed
-through `Djk`), so **positive `wg` = local nose-down / washout → less lift**, and a
-leading-edge-up built-in incidence is a **negative** `wg`. Returns a zero vector if no
-W2GJ card matches `caero_eid`. See `docs/20_theory/01_aeroelastics_theory.md` §2.4–2.5.
+Baseline normalwash vector from the W2GJ BDF card. Card values follow the **NASTRAN
+convention** (MSC Aeroelastic UG Eq. 2-104; HA144A: `W2GJ = +0.001745 rad` is "+0.1 deg
+wing incidence"): **positive = leading-edge-up incidence/camber → more lift**, the same
+nose-up-positive sense as ANGLEA. `build_wg` **negates** the card data into the internal
+washout-positive normalwash — the same negation the ANGLEA column (`−n_z`) and
+`build_djk` (`−I`) apply — so internally positive `wg` remains washout/less lift. One
+value per box, row-major (span slowest, chord fastest). Returns a zero vector if no
+W2GJ card matches `caero_eid`. (Card sign convention corrected 2026-07-05, AE8a root
+cause — card data was previously added un-negated, applying deck incidence backwards.)
+See `docs/20_theory/01_aeroelastics_theory.md` §2.4–2.5.
 
 ### W2GJ Card Format
 
@@ -430,7 +441,7 @@ W2GJ  SID  CAERO_EID  D1  D2  D3  D4  D5  D6
 |-------|-------------|
 | SID | Set ID |
 | CAERO_EID | EID of the CAERO1 this normalwash applies to |
-| D1–DN | Dimensionless downwash slopes Δz/Δx, one per box in row-major order. **Positive = local nose-down / washout → less lift**; a leading-edge-up incidence is negative. (e.g. linear washout root 0° → tip −2° grows from ~0 at the root to +0.035 rad at the tip — see `sample/val_wing_taper_dihedral_twist.bdf`.) |
+| D1–DN | Built-in incidence/camber angles (rad), one per box in row-major order, **NASTRAN convention: positive = leading-edge-up incidence → more lift** (HA144A wing incidence is `+1.745e-3` = +0.1°); a washout twist is **negative** (e.g. linear washout root 0° → tip −2° runs from ~0 at the root to −0.035 rad at the tip — see `sample/val_wing_taper_dihedral_twist.bdf`). `build_wg` negates card data into the internal washout-positive normalwash. |
 
 ---
 

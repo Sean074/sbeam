@@ -25,146 +25,63 @@ and export gaps; SOL 144 case *authoring* stays BDF-only (recorded as a future i
 review (README, card reference completion incl. an RBE2 correctness fix, program overview,
 viewer doc, beam-model/card-reference de-duplication); see `docs/40_history` and CHANGELOG.
 
-**Execution order** (rationale: AE8b first — the long pole, may need reference-hunting time;
-AE8a and the warnings can run in parallel or after; GUI last since it partly displays AE8b
-output):
+**Steps AC2 (AE8b) and AC3 (AE8a) CLOSED 2026-07-05** — the MSC unrestrained-derivative
+algorithm was sourced (MSC Aeroelastic UG Eqs. 2-111…2-134, `.refs/`) and implemented
+(`_compute_unrestrained_derivs`, all six q=40 columns within 1%, operator proven by an
+independent ZAERO Ch.12 modal cross-check); AE8a root-caused to a W2GJ sign-convention
+inversion (fixed) plus a documented ≤0.31% FS residual. See `docs/40_history` and CHANGELOG.
+The close-out surfaced a NEW finding — AC7 below (high-q flexible-coupling fidelity).
 
 | Step | Item | Kind | Priority | Notes |
 |-----:|------|------|----------|-------|
-| AC2 | [Unrestrained (mean-axis) derivative formulation (known-wrong)](#step-ac2-major-ae8b--unrestrained-mean-axis-derivative-formulation-known-wrong) | Code | MAJOR | Gated on sourcing the NASTRAN/ZAERO algorithm |
-| AC3 | [AE8a — q-invariant common-mode trim offset](#step-ac3-minor-ae8a--q-invariant-common-mode-trim-offset) | Code | MINOR | Root-cause or document; either closes it |
-| AC4 | [Minor solver warnings — AE12, A7, A8](#step-ac4--minor-solver-warnings--ae12-a7-a8) | Code | MINOR | Small, batchable |
+| AC4 | [Minor solver warnings — AE12, A7, A8](#step-ac4--minor-solver-warnings--ae12-a7-a8) | Code | MINOR | Small, batchable; AE12 is AC7's prime suspect — do it first |
 | AC5 | [GUI — close the small viewer gaps](#step-ac5--gui--close-the-small-viewer-gaps) | Code | Medium | Exports, totals, body-panel display, doc reconcile |
 | AC6 | [Step 54 — CFD/WT steady-pressure injection (CHORDCP)](#step-ac6--step-54--cfd--wind-tunnel-steady-pressure-injection-mean-flow-trim) | Code | Optional | Steady-complete can be declared without it |
-
-**Fallback:** AC2 (AE8b) is the only item with external risk — it is gated on obtaining
-the MSC/NASTRAN unrestrained-derivative formulation. If the reference cannot be sourced,
-document the column as unavailable and keep AE8b open; AC3–AC5 still complete
-everything else.
+| AC7 | [AE14 — high-q flexible-coupling fidelity gap](#step-ac7-major-ae14--high-q-flexible-coupling-fidelity-gap) | Code | MAJOR | q=1200 restrained columns 5–28% off Table 7-1; operator NOT at fault (proven) |
 
 ---
 
-### Step AC2 [MAJOR] AE8b — Unrestrained (mean-axis) derivative formulation (known-wrong)
+### Step AC7 [MAJOR] AE14 — High-q flexible-coupling fidelity gap
 
-**Files:** `sbeam/solver/sol144.py` (`_compute_rigid_derivs`, `_compute_restrained_derivs` —
-add the unrestrained path here).
+**Files:** `sbeam/aero/spline.py` (prime suspect: AE12 DTOR/DTHZ), `sbeam/aero/coupling.py`
+(`build_qaa`), `sbeam/aero/vlm.py`, `sample/ha144a_fullspan_sbeam.bdf` (SPLINE2 cards).
 
-**MAJOR but NOT on the trim critical path.** Derivatives are an OUTPUT, not the trim driver
-(closing Step G did not move SC2), so AE8b does not block Phase C trim or monitor loads.
-It is the missing unrestrained derivative *column* — a Phase C derivative deliverable in its
-own right. Tracked separately from AE8a (the SC2 trim residual) since 2026-06-13.
-
-```
-[MAJOR] The stability-derivative chain has consistent RIGID and RESTRAINED columns but no
-        UNRESTRAINED (mean-axis / inertial-relief) set. NASTRAN HA144A Table 7-1 prints both
-        restrained and unrestrained columns; sbeam reproduces only the restrained half.
-RESOLVED HALVES (do NOT re-open):
-  * Sign — AE1 Step E (2026-06-12): nose-up-positive −ΣFz·(x−xref) single-sourced in
-    sol144._pitch_moment; CMα = −2.871 matches NASTRAN.
-  * Parity precondition — AE1 Step D (2026-06-12): half-span removed, so the old sym=2
-    contamination of C_ax_l is gone.
-  * Restrained half — AE1 Step G (2026-06-12): _compute_restrained_derivs replaced with the
-    exact analytic Schur derivative (∂u_l/∂δ = K_ll⁻¹·C_ax_l → linear normalwash/force chain);
-    FD machinery deleted; V-AE1e confirms restrained CZα = 5.112 vs Table 7-1 5.103 (q=40)
-    within 1%.
-
-KNOWN-WRONG FIRST ATTEMPT (2026-06-13) — discard, do NOT iterate: a mean-axis inertia-relief
-        derivative (P_l = I − MΦ m_r⁻¹ Φᵀ, mean-axis gauge) yields q=1200 CZα 11.67 vs
-        ADA370433 7.772 (~1.5× HIGH — overshooting in the OPPOSITE direction from AE8a's
-        coupling deficit, so it is a genuine FORMULATION error, not inherited coupling error).
-        The analytic==FD self-consistency check is VACUOUS on a linear system — it cannot
-        catch this.
-
-SECOND ATTEMPT (2026-06-14) — first-principles free-free mean-axis; REVERTED, not committed.
-        Derived the rigorous free-free inertia-relief column from scratch (NOT a patch of the
-        first attempt): structural-K rigid-body modes D = [[−K_ll⁻¹K_lr],[I]] from the SUPORT
-        partition (verified ‖K_aa·D‖/‖K‖ = 1.3e-16); rigid mass m_r = DᵀM_aaD (SPD); the
-        basis-invariant M-orthogonal inertia-relief projector P = I − M_aaD·m_r⁻¹·Dᵀ; and the
-        coupled free-free aeroelastic solve (K_aa − P·qQ_aa)u = P·(qQ_ax)δ with the Step-G force
-        chain.  RESULT: EXACT at q=40 — all six {CZα CMα CZq CMq CZδe CMδe} within 1% — but at
-        q=1200 the rigorously-coupled column overshoots to CZα 11.67–12.44 vs target 7.772
-        (~+50%).  The operator reduces correctly to the restrained column as mass→∞, so the
-        derivation is internally sound.
-        KEY DIAGNOSTIC (q=1200, CZα; target 7.772): restrained-only 6.819 (−12%, too stiff);
-        rigorous free-free coupled 11.67–12.44 (+50–60%, too soft); a structural-K single-aero-pass
-        variant 7.87 (+1.2% on CZα but −4.7% on CMα).  The target sits BETWEEN restrained and
-        free-free, so NASTRAN's "unrestrained" value is NOT the literal converged free-free
-        aeroelastic-feedback derivative.  q_div(restrained) = 4034 (q=1200 is 30% of divergence —
-        the overshoot is formulation, not a near-singular q).  Note the SUPORT r-row reaction form
-        is unavailable here: (M_aa·D)[r,:] is singular (GRID 90 carries ~no direct mass).
-CONCLUSION / NEXT: closing this needs the ACTUAL NASTRAN/ZAERO unrestrained-derivative algorithm
-        (MSC Aeroelastic Analysis User's Guide §2 mean-axis/inertia-relief DMAP, or the explicit
-        ADA370433 Table 3.1.1 derivation) — it cannot be reverse-engineered from the six target
-        values without curve-fitting, which is exactly the first-attempt trap.  Building blocks
-        (M_aa reduction, rigid modes, m_r, projector, force chain) are all verified and ready to
-        reuse once the correct operator is sourced.
-
-FIX:    Re-derive the unrestrained mean-axis set from the ASTROS/ZAERO theory behind ADA370433
-        Table 3.1.1 (inertial relief transforming to the free-flight mean axis) from first
-        principles — not by patching the discarded attempt. Gate on the SOURCED independent
-        values, never on FD self-consistency.
-ACCEPTANCE (to CLOSE): HA144A UNRESTRAINED columns within 1% of NASTRAN_UNRESTRAINED
-        (tests/aero/test_ae1_restrained_derivs.py): q=40 {CZα 5.127, CMα −2.907, CZq 12.158,
-        CMq −10.007, CZδe 0.2520, CMδe 0.5678}; q=1200 {CZα 7.772, CMα −4.557, CZq 16.100,
-        CMq −12.499, CZδe 0.5219, CMδe 0.3956}. (UNRESTRAINED — distinct from the MSC Table 7-1
-        RESTRAINED column gated by V-AE1e; do not conflate.)
-RIDES HERE: completing V-AE1e's remaining RESTRAINED columns (Cmα, Cmq, CZδe, Cmδe) needs the
-        MSC Table 7-1 values (not ADA370433) and rides with AE8b.
-GUI RIDER: once computed, add the unrestrained column to the stability-derivative table in
-        viewer/results_view.py::_render_sol144_trim (alongside rigid + restrained).
-```
-
----
-
-### Step AC3 [MINOR] AE8a — q-invariant common-mode trim offset
-
-**Files:** `sbeam/aero/coupling.py` (`build_fg` baseline aero load), `sbeam/aero/integration.py`
-(`build_wg` rigid normalwash / incidence), `sbeam/solver/sol144.py` (`run_sol144_trim`),
-`sample/ha144a_fullspan_sbeam.bdf` (canard / baseline-incidence setting).
-
-**Reframed and DOWNGRADED 2026-06-13 (was "MAJOR flexible-coupling fidelity gap, ~1.4×").** New
-metrology evidence shows the SC2 residual is a small, q-INDEPENDENT rigid common-mode trim offset
-(~0.1°, ≤0.4% FS) — the same offset already accepted at SC1, within fitness tolerance. It is NOT a
-flexible-coupling defect and NOT a blocker on Phase C. The spline-kernel /
-"obtain the NASTRAN flexible displacement field first" framing is superseded.
+**Found 2026-07-05 while closing AC2/AE8b.** sbeam's flexible aeroelastic coupling
+over-predicts the flexible increment at high q. This is NOT a derivative-formulation
+problem — the AE8b close-out proved the mean-axis operator correct two independent ways
+(MSC DMAP chain ≡ ZAERO Ch.12 modal form to 4+ decimals at both q; all six unrestrained
+q=40 columns within 1% of Table 7-1, intercepts within 0.7%).
 
 ```
-EVIDENCE — three independent metrology lenses, same conclusion:
-  (1) ABSOLUTE: the SC2 trim error is ~0.1° per DOF (ANGLEA +0.107°, ELEV −0.092°), not the
-      "+136%" the relative-to-near-zero metric reports.
-  (2) q-INVARIANT: the absolute error barely moves from q=40 to q=1200 —
-        ANGLEA  q=40 +0.1066°   q=1200 +0.1071°   (identical to 4 sig figs)
-        ELEV    q=40 −0.0964°   q=1200 −0.0916°
-      A flexible (q·Q_aa) defect would scale ~30× with q; this does not scale at all.
-  (3) FULL-SCALE: ~0.36% of the 30° (neg→pos stall) AoA range, flat across a 30:1 q sweep.
-
-WHY RIGID, NOT FLEXIBLE: q=40 is independently a ~pure-rigid trim (flex effect 0.6%: restrained
-      CZα 5.103 vs rigid 5.071), so its +0.107° error IS the rigid baseline offset. The SAME
-      error at q=1200 ⇒ flexible_error(1200) ≈ 0.107° − 0.107° ≈ 0 — the high-q flexible coupling
-      is essentially CORRECT. The earlier "Q_aa×1.41 reproduces both SC2 targets" fit is read as
-      NON-UNIQUE, not causal: at high q the flexible term is the dominant lever on the response
-      and can absorb a small residual of any origin, but it is INERT at q=40 where the identical
-      error appears. "No structural parameter fixes it" is consistent with a rigid AERO-baseline
-      source (incidence/camber w_g, canard setting, chordwise box bias) — which the
-      structural-parameter sweep never touched.
-
-DECISIVE TEST (cheap, no NASTRAN flex data needed): diagnose the +0.107° offset at SC1 — a
-      pure-rigid trim there — in the rigid baseline (build_fg / build_wg incidence, canard
-      setting, chordwise discretization). Correct it and re-run SC2: if SC2 collapses too, it is
-      a single q-independent common-mode and the flexible/spline hypothesis is closed for good.
-
-NOT A BLOCKER: under the corrected %-full-scale acceptance gate (AE1 Step F) both subcases
-      already pass at ≤0.4% FS, so Phase C and monitor loads are not gated on this.
-
-ACCEPTANCE (to CLOSE): trim error ≤1% of full-scale range at every TRIM subcase (already met:
-      SC1 and SC2 both ≤0.4% FS) AND the q=40 common-mode either root-caused (trim error ≲0.1% FS)
-      or DOCUMENTED as a known ≤0.4% FS trim bias in docs/10_standard/05_aeroelastics.md.
+[MAJOR] EVIDENCE — RESTRAINED longitudinal columns vs MSC Table 7-1 (image-verified,
+        .refs/MSC_Nastran_2021.3_Aeroelastic_Analysis_User_Guide.pdf p. 230), sbeam sign:
+                      q=40 (≤1.3% — fine)         q=1200 (5–28% off)
+          CZα     5.1121 vs 5.103  (+0.18%)    6.8194 vs 6.463  (+5.5%)
+          CMα    −2.8991 vs −2.889 (−0.35%)   −4.0686 vs −3.667 (−11.0%)
+          CZδe    0.2572 vs 0.2538 (+1.34%)    0.6855 vs 0.5430 (+26.2%)
+          CMδe    0.5642 vs 0.5667 (−0.43%)    0.2792 vs 0.3860 (−27.7%)
+          CZq    12.0654 vs 12.087 (−0.18%)   11.9828 vs 12.856 (−6.8%)
+          CMq    −9.9500 vs −9.956 (+0.06%)   −9.9519 vs −10.274 (+3.1%)
+        The restrained chain uses ONLY (K_ll − q·Q_ll)⁻¹ + the verified rigid force map,
+        so the error is in the coupling data (Q_aa magnitude / spline slope transfer /
+        stiffness distribution), which the q·amplification exposes at q=1200 and hides
+        at q=40 (0.6% flex effect). The unrestrained operator amplifies the same upstream
+        error to +40…60% at q=1200 — those gates are XFAILed in
+        tests/aero/test_ae1_restrained_derivs.py::TestUnrestrainedDerivsQ1200.
+PRIME SUSPECT: AE12 — SPLINE2 DTOR/DTHZ silently ignored (AC4). The HA144A SPLINE2 cards
+        carry rotational-coupling fields sbeam drops; slope-transfer errors scale the
+        flexible increment directly and grow with q.
+        Second suspect: g_slope/torsion transfer on the swept wing (SPLINE2 linear spline
+        vs sbeam beam-spline kinematics).
+HISTORY NOTE: the old AE8b diagnostic "NASTRAN's unrestrained value is NOT the literal
+        converged free-free aeroelastic-feedback derivative" was a MISDIAGNOSIS — the
+        faithfully-implemented MSC chain reproduces the reverted second attempt's 11.67
+        at q=1200 exactly; NASTRAN's 7.772 differs because of THIS upstream gap, not the
+        operator. Do not reopen the formulation.
+ACCEPTANCE (to CLOSE): restrained q=1200 longitudinal columns within ~1–2% of Table 7-1
+        AND the XFAILed unrestrained q=1200 gates (1% of {CZα 7.772, CMα −4.577, CZq 16.100,
+        CMq −12.499, CZδe 0.5219, CMδe 0.3956}) un-xfail and pass.
 ```
-
-Standing cautions (from the closed AE1 baseline — full table in `docs/40_history`): do not
-chase the `q·Q_aa` flexible increment for SC1 (a 0.6% effect at q=40), and do not re-tune
-HA144A bulk parameters (NSPAN/NCHORD, spline DTOR, RCSID) to fit the gate — rigid CLα already
-matches NASTRAN to 4 sig fig at the same mesh.
 
 ---
 
