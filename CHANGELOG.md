@@ -37,6 +37,15 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**SPLINE9 design proposal (2026-07-05)**
+
+- **`docs/30_future/designs/spline9_hermite_beam_spline.md`** — design proposal for an
+  sbeam-extension FE-consistent cubic-Hermite beam spline as an opt-in alternative to the
+  NASTRAN infinite beam spline (SPLINE2 since AC7), rebuilt on the current conventions
+  with the AC7-found twist-gradient defect fixed. Includes a convergence-study go/no-go
+  gate to be run before any implementation. Indexed in `docs/00_INDEX.md`; summarized
+  under "Future development" in the backlog.
+
 **Minor solver warnings + cosine chordwise spacing — AE12/A7/A8 / Step AC4 (2026-07-05)**
 
 - **SPLINE2 DTOR/DTHZ warnings (AE12)** — `build_g_spline` now warns when a SPLINE2 card carries

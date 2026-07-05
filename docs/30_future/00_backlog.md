@@ -161,6 +161,17 @@ the expected amount; total injected lift/moment matches the supplied integral.
 
 ## Future development — out of scope for the steady close-out
 
+### SPLINE9 — FE-consistent Hermite beam spline (design proposal, 2026-07-05)
+
+An sbeam-extension spline card offering the cubic-Hermite transfer (exact reproduction of
+the CBAR displacement field between grids, twist directly from grid rotations) as an
+alternative to the NASTRAN infinite beam spline SPLINE2 implements since AC7. Rebuilt on
+the current CID-y-axis conventions with the AC7-found twist-gradient defect fixed — NOT a
+revival of the pre-AC7 code. Go/no-go gate: run the coarse-grid convergence study FIRST
+(SPLINE9 vs SPLINE2-with-attached-rotations at 3/5/9 EA stations); if SPLINE2 matches
+within noise at realistic station counts, close as "not worth the second code path".
+Full proposal: [`designs/spline9_hermite_beam_spline.md`](designs/spline9_hermite_beam_spline.md).
+
 ### Viewer — SOL 144 / MLOADS case authoring UI (deferred 2026-07-03)
 
 The viewer runs and displays SOL 144 trim/DIVERG/MLOADS subcases but cannot *author* them —
