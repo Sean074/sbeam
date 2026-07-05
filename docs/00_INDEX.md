@@ -32,6 +32,7 @@ are the day-to-day references; higher numbers are planning and historical record
 |------|-------|
 | [`00_beam_methods.ipynb`](20_theory/00_beam_methods.ipynb) | Euler-Bernoulli theory; stiffness/mass matrix derivations; worked example |
 | [`01_aeroelastics_theory.md`](20_theory/01_aeroelastics_theory.md) | VLM, AIC corrections, splining, SOL 144 theory |
+| [`aeroelastic_derivatives.md`](20_theory/aeroelastic_derivatives.md) | Tutorial: rigid vs elastic-restrained vs elastic-unrestrained (mean-axis) stability derivatives + the ZAERO modal form — new-engineer level |
 | [`studies/a1_spanwise_spacing.md`](20_theory/studies/a1_spanwise_spacing.md) | VLM lift-slope spanwise-spacing convergence diagnostic |
 
 ## 30_future — Future development

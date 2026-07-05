@@ -946,7 +946,9 @@ yaw damping $C_{nr}=\partial C_{MZ}/\partial r$, and the dihedral effect $C_{l\b
 once the box normals leave the $xy$-plane (§ dihedral). Because $\mathbf M$ carries the per-box side
 force $F_y$, these are correct for canted surfaces without a flat-plate projection.
 
-**Restrained vs unrestrained (mean-axis) flexible columns (AE8b, 2026-07-05).** The flexible
+**Restrained vs unrestrained (mean-axis) flexible columns (AE8b, 2026-07-05).** *(Tutorial
+treatment of all three derivative columns, for readers new to the topic:
+[`aeroelastic_derivatives.md`](aeroelastic_derivatives.md).)* The flexible
 derivative of Eq. (19) with the SUPORT DOFs held ($u_r=0$) is the **restrained** column
 (`_compute_restrained_derivs`). NASTRAN additionally prints an **unrestrained** column — the
 free-flight derivative, made SUPORT-location-invariant by the **mean axis**: the frame in which

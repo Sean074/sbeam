@@ -13,6 +13,14 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Theory tutorial: aeroelastic stability derivatives (2026-07-05)**
+
+- **`docs/20_theory/aeroelastic_derivatives.md`** — new-engineer-level tutorial on the three SOL 144
+  derivative columns (rigid / elastic-restrained / elastic-unrestrained mean-axis) as implemented in
+  sbeam (MSC Nastran algorithms), plus the equivalent ZAERO Ch. 12 modal formulation, the HA144A
+  worked numbers, and the two documented wrong turns. Indexed in `docs/00_INDEX.md`; cross-linked
+  from `01_aeroelastics_theory.md` §5.4.
+
 **Unrestrained (mean-axis) stability derivatives — AE8b / Step AC2 (2026-07-05)**
 
 - **`sol144._compute_unrestrained_derivs`** — the missing UNRESTRAINED derivative column, a literal
