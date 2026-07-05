@@ -32,6 +32,16 @@ independent ZAERO Ch.12 modal cross-check); AE8a root-caused to a W2GJ sign-conv
 inversion (fixed) plus a documented ≤0.31% FS residual. See `docs/40_history` and CHANGELOG.
 The close-out surfaced a NEW finding — AC7 below (high-q flexible-coupling fidelity).
 
+**Step AC7 (AE14 high-q flexible-coupling fidelity gap) CLOSED 2026-07-05** — TWO root
+causes: (1) the full-span HA144A deck had not doubled the centreline fuselage PBAR when
+mirroring (masses doubled, stiffness not) — fuselage flexure ran 2x, driving most of the
+5–28% q=1200 derivative errors AND the entire AE8a "accepted trim bias" (now superseded:
+q=40 trim matches NASTRAN Listing 7-2 to 5 digits); (2) SPLINE2 rewritten as the NASTRAN
+infinite beam spline (MSC UG Eqs. 2-48…2-63; CID y-axis convention, rigid chord arms,
+DTOR/DTHX/DTHY/DZ semantics, collinearity restriction removed), with the MSC HA144A
+SET1/DTHX card values restored. q=1200 CZα/CZq/CMq gated live (≤2/2.5%); the remaining
+moment/ELEV residual is re-scoped as Step AC8 below. See `docs/40_history` and CHANGELOG.
+
 **Step AC4 (AE12/A7/A8 minor solver warnings) CLOSED 2026-07-05** — SPLINE2 DTOR/DTHZ
 now warn when carrying values sbeam ignores; `build_aero_model` warns pre-solve on < 4
 chordwise boxes and box AR outside [0.5, 2.0] (VLM panels only; PSTRIP strips exempt);
@@ -43,52 +53,36 @@ detached DTHZ=−1.0/default DTOR=1.0 — NASTRAN does no Rz coupling there eith
 |-----:|------|------|----------|-------|
 | AC5 | [GUI — close the small viewer gaps](#step-ac5--gui--close-the-small-viewer-gaps) | Code | Medium | Exports, totals, body-panel display, doc reconcile |
 | AC6 | [Step 54 — CFD/WT steady-pressure injection (CHORDCP)](#step-ac6--step-54--cfd--wind-tunnel-steady-pressure-injection-mean-flow-trim) | Code | Optional | Steady-complete can be declared without it |
-| AC7 | [AE14 — high-q flexible-coupling fidelity gap](#step-ac7-major-ae14--high-q-flexible-coupling-fidelity-gap) | Code | MAJOR | q=1200 restrained columns 5–28% off Table 7-1; operator NOT at fault (proven) |
+| AC8 | [AE15 — wing-root interference residual](#step-ac8-minor-ae15--wing-root-interference-residual) | Code | MINOR | q=1200 moment/ELEV columns 3–5% off; canard-wake/root region, steady VLM vs k→0 DLM |
 
 ---
 
-### Step AC7 [MAJOR] AE14 — High-q flexible-coupling fidelity gap
+### Step AC8 [MINOR] AE15 — Wing-root interference residual
 
-**Files:** `sbeam/aero/spline.py` (prime suspect: SPLINE2 slope/torsion transfer),
-`sbeam/aero/coupling.py` (`build_qaa`), `sbeam/aero/vlm.py`,
-`sample/ha144a_fullspan_sbeam.bdf` (SPLINE2 cards).
+**Files:** `sbeam/aero/vlm.py` (horseshoe kernel / trailing legs), `sample/ha144a_fullspan_sbeam.bdf`.
 
-**Found 2026-07-05 while closing AC2/AE8b.** sbeam's flexible aeroelastic coupling
-over-predicts the flexible increment at high q. This is NOT a derivative-formulation
-problem — the AE8b close-out proved the mean-axis operator correct two independent ways
-(MSC DMAP chain ≡ ZAERO Ch.12 modal form to 4+ decimals at both q; all six unrestrained
-q=40 columns within 1% of Table 7-1, intercepts within 0.7%).
+**What remains of AE14 after the AC7 close-out (2026-07-05).** With the fuselage-PBAR
+doubling and the NASTRAN beam-spline rewrite, HA144A q=40 restrained columns are all
+≤0.2% and q=1200 CZα/CZq/CMq pass live 2/2.5% gates. The residual:
 
 ```
-[MAJOR] EVIDENCE — RESTRAINED longitudinal columns vs MSC Table 7-1 (image-verified,
-        .refs/MSC_Nastran_2021.3_Aeroelastic_Analysis_User_Guide.pdf p. 230), sbeam sign:
-                      q=40 (≤1.3% — fine)         q=1200 (5–28% off)
-          CZα     5.1121 vs 5.103  (+0.18%)    6.8194 vs 6.463  (+5.5%)
-          CMα    −2.8991 vs −2.889 (−0.35%)   −4.0686 vs −3.667 (−11.0%)
-          CZδe    0.2572 vs 0.2538 (+1.34%)    0.6855 vs 0.5430 (+26.2%)
-          CMδe    0.5642 vs 0.5667 (−0.43%)    0.2792 vs 0.3860 (−27.7%)
-          CZq    12.0654 vs 12.087 (−0.18%)   11.9828 vs 12.856 (−6.8%)
-          CMq    −9.9500 vs −9.956 (+0.06%)   −9.9519 vs −10.274 (+3.1%)
-        The restrained chain uses ONLY (K_ll − q·Q_ll)⁻¹ + the verified rigid force map,
-        so the error is in the coupling data (Q_aa magnitude / spline slope transfer /
-        stiffness distribution), which the q·amplification exposes at q=1200 and hides
-        at q=40 (0.6% flex effect). The unrestrained operator amplifies the same upstream
-        error to +40…60% at q=1200 — those gates are XFAILed in
-        tests/aero/test_ae1_restrained_derivs.py::TestUnrestrainedDerivsQ1200.
-PRIME SUSPECT: g_slope/torsion transfer on the swept wing (SPLINE2 linear spline vs
-        sbeam beam-spline kinematics) — slope-transfer errors scale the flexible
-        increment directly and grow with q.
-        (AE12 EXONERATED 2026-07-05 while closing AC4: the HA144A SPLINE2 cards carry
-        only DTOR=1.0 and DTHZ=−1.0 — NASTRAN's "Rz detached", exactly what sbeam does —
-        so NASTRAN performs no rotational coupling sbeam drops on this deck.)
-HISTORY NOTE: the old AE8b diagnostic "NASTRAN's unrestrained value is NOT the literal
-        converged free-free aeroelastic-feedback derivative" was a MISDIAGNOSIS — the
-        faithfully-implemented MSC chain reproduces the reverted second attempt's 11.67
-        at q=1200 exactly; NASTRAN's 7.772 differs because of THIS upstream gap, not the
-        operator. Do not reopen the formulation.
-ACCEPTANCE (to CLOSE): restrained q=1200 longitudinal columns within ~1–2% of Table 7-1
-        AND the XFAILed unrestrained q=1200 gates (1% of {CZα 7.772, CMα −4.577, CZq 16.100,
-        CMq −12.499, CZδe 0.5219, CMδe 0.3956}) un-xfail and pass.
+[MINOR] EVIDENCE — q=1200 vs Table 7-1 (beam spline + 2x fuselage, 2026-07-05):
+        restrained:   CMα +4.30%   CZδe −2.90%   CMδe +5.23%   (CZα −1.53%, CZq −0.95%, CMq +2.02% pass)
+        unrestrained: CMα −4.33%   CZδe −3.62%   CMδe +5.28%   (CZα −1.90%, CZq −1.25%, CMq −2.28% pass 2.5%)
+ATTRIBUTION (pinned-state per-box comparison vs Listing 7-2 box forces at NASTRAN's
+        exact trim state): canard boxes match ≤0.2% each; wing outboard LE columns ≈1.008;
+        the mismatch concentrates in the WING-ROOT TE boxes (i_span 0–3, j_chord 2–3,
+        y ∈ 0–5 ft) — directly behind the canard. Steady VLM horseshoe trailing legs vs
+        NASTRAN k→0 DLM model the canard-wake/wing-root interference differently, and the
+        flexible increment weights exactly that region. Structure/spline/operator all
+        verified independently (see Step AC7 in docs/40_history).
+CANDIDATE APPROACHES: wake-position sensitivity study (trailing-leg geometry through the
+        wing root), finer canard/root chordwise mesh comparison, or accept as a kernel
+        difference and keep the xfail gates documented.
+ACCEPTANCE (to CLOSE): either the six xfailed q=1200 moment/ELEV gates
+        (tests/aero/test_ae1_restrained_derivs.py::TestRestrainedDerivsQ1200/
+        TestUnrestrainedDerivsQ1200 residual halves) pass at 2%, or a study documents the
+        kernel-difference attribution quantitatively and the residual is accepted.
 ```
 
 ---

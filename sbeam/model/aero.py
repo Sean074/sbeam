@@ -119,11 +119,13 @@ class Spline2:
     id1:   int    # first NASTRAN box ID in the box range
     id2:   int    # last NASTRAN box ID in the box range
     setg:  int    # SET1 SID for the structural grids
-    dz:    float  # smoothing parameter (0.0 = interpolating)
-    dtor:  float  # torsional/bending ratio (default 1.0)
-    cid:   int    # CORD2R SID that defines the spline axis (CID x-axis = span)
-    dthx:  float  # torsion (Rx) contribution scale (default 1.0)
-    dthz:  float  # Rz contribution scale (default 0.0; unused in Phase B)
+    dz:    float  # linear (deflection) attachment flexibility (0 = rigid)
+    dtor:  float  # torsional flexibility ratio EI/GJ (default 1.0)
+    cid:   int    # CORD2R SID; the CID *y-axis* is the spline axis (MSC convention)
+    dthx:  float  # bending-slope (rotation about CID x) attachment flexibility
+                  # (0 = rigid, > 0 = spring, negative = not attached)
+    dthy:  float  # torsion (rotation about CID y = spline axis) attachment
+                  # flexibility (same convention)
     usage: str    # "FORCE", "DISP", or "BOTH" (default "BOTH")
 
 

@@ -36,12 +36,13 @@ CORD2R, 1, 0, 12.5, 0.0, 0.0, 12.5, 0.0, 10.0
 $ CID 100 — stability axis (origin at GRID 90 = x=15 ft, z-down)
 CORD2R, 100, 0, 15.0, 0.0, 0.0, 15.0, 0.0, -10.0
 +, 0.0, 0.0, 0.0
-$ CID 2 — RIGHT wing spline axis (x_hat = (-0.5, +0.866, 0): root->tip +y)
+$ CID 2 — RIGHT wing spline axis, MSC convention (spline axis = CID *y*-axis):
+$   y_hat = (-0.5, +0.866, 0) along the EA root->tip +y (MSC HA144A card verbatim)
 CORD2R, 2, 0, 30.0, 0.0, 0.0, 30.0, 0.0, 10.0
-+, 25.0, 8.66025, 0.0
-$ CID 3 — LEFT wing spline axis (x_hat = (-0.5, -0.866, 0): root->tip -y)
++, 38.66025, 5.0, 0.0
+$ CID 3 — LEFT wing spline axis (mirror): y_hat = (-0.5, -0.866, 0) root->tip -y
 CORD2R, 3, 0, 30.0, 0.0, 0.0, 30.0, 0.0, 10.0
-+, 25.0, -8.66025, 0.0
++, 21.33975, 5.0, 0.0
 $
 $ ============================================================
 $ GRIDS
@@ -70,7 +71,15 @@ $
 $ ============================================================
 $ PROPERTIES AND MATERIALS
 $ ============================================================
-PBAR, 100, 1, 2.0, 0.173611, 0.15, 0.5
+$ Fuselage PBAR DOUBLED (AC7/AE14 root cause, 2026-07-05): the MSC half-span
+$ deck's PBAR 100 (A=2.0, I1=.173611, I2=.15, J=.5) is the HALF-fuselage of a
+$ member lying on the symmetry plane. The full-span mirror must carry BOTH
+$ wings on the physical (2x) fuselage, exactly as the centreline CONM2 masses
+$ were doubled. With 2x: q=40 trim matches NASTRAN Listing 7-2 to 5 digits
+$ (ANGLEA 0.16918 vs 1.6919E-1) and all six restrained columns are <=0.61%.
+$ Recovery points kept geometric (stress recovery approximate for the 2x
+$ parallel-fuselage idealization).
+PBAR, 100, 1, 4.0, 0.347222, 0.3, 1.0
 +, 1.0, 1.0, 1.0, -1.0, -1.0, 1.0, -1.0, -1.0
 PBAR, 101, 1, 1.5, 0.173611, 2.0, 0.462963
 +, 0.5, 3.0, 0.5, -3.0, -0.5, 3.0, -0.5, -3.0
@@ -155,23 +164,29 @@ $
 $ ============================================================
 $ SPLINES
 $ ============================================================
-$ RIGHT wing spline (CID 2, swept +y axis)
+$ MSC HA144A card values restored (AC7, 2026-07-05): DTHX=-1/DTHY=-1 on the
+$ wings (rotations detached; twist comes from the LE/TE stringer deflection
+$ pairs through the beam-spline rigid arms), DTHX=1.0 spring on the canards
+$ (roll smoothing, per the MSC guide's DTHX discussion).
+$ RIGHT wing spline (CID 2 y-axis = swept EA, +y)
 SPLINE2, 1601, 1100, 1100, 1131, 1100, 0.0, 1.0, 2
-+, 1.0, -1.0
-$ RIGHT canard spline (CID 1)
++, -1.0, -1.0
+$ RIGHT canard spline (CID 1, y-axis = +y span)
 SPLINE2, 1501, 1000, 1000, 1007, 1000, 0.0, 1.0, 1
 +, 1.0, -1.0
-$ LEFT wing spline (CID 3, swept -y axis)
+$ LEFT wing spline (CID 3 y-axis = swept EA, -y)
 SPLINE2, 2601, 2100, 2100, 2131, 2100, 0.0, 1.0, 3
-+, 1.0, -1.0
++, -1.0, -1.0
 $ LEFT canard spline (CID 1; shares centreline fuselage SET1)
 SPLINE2, 2501, 2000, 2000, 2007, 2000, 0.0, 1.0, 1
 +, 1.0, -1.0
 $
-$ Spline structural grid sets (elastic-axis grids only; collinear along axis)
-SET1, 1100, 100, 110, 120
+$ Spline structural grid sets — MSC HA144A SET1 1100 restored (root fuselage
+$ grid 99 + root EA 100 + LE/TE stringers; EA mid/tip grids 110/120 NOT in the
+$ MSC set). Left wing mirrors with grids 211/212/221/222.
+SET1, 1100, 99, 100, 111, 112, 121, 122
 SET1, 1000, 98, 99
-SET1, 2100, 100, 210, 220
+SET1, 2100, 99, 100, 211, 212, 221, 222
 SET1, 2000, 98, 99
 $
 $ ============================================================
@@ -181,10 +196,13 @@ $ ============================================================
 $ Wing-root cut: inboard EA grid only
 SET1, 1300, 100
 AECOMP, WINGROOT, SET1, 1300
-$ Full right-wing EA (reuse spline SET1 1100 = {100,110,120})
-AECOMP, WINGEA, SET1, 1100
-$ Whole-aircraft EA grids (every spline target grid)
-SET1, 1310, 98, 99, 100, 110, 120, 210, 220
+$ Right-wing spline-load grids (stringers; root grids 99/100 are shared with
+$ the left wing + canard splines, so per-wing attribution keeps them out)
+SET1, 1320, 111, 112, 121, 122
+AECOMP, WINGEA, SET1, 1320
+$ Whole-aircraft spline-load grids (every grid any spline transfers force to)
+SET1, 1310, 98, 99, 100, 111, 112, 121, 122, 211, 212,
++, 221, 222
 AECOMP, ALLGRID, SET1, 1310
 $ Whole-aircraft aero boxes (all 4 CAERO1 panels)
 AELIST, 1400, 1000, THRU, 1007, 1100, THRU, 1131, 2000, THRU, 2007, 2100, THRU, 2131

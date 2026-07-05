@@ -261,11 +261,13 @@ exactly where NASTRAN's Table 7-1 values lie (6.46 < **7.77** < 11.7 at q = 1200
   rigid-projected rigid derivative — the rigid column, recovered exactly.
 - As vehicle mass $\to\infty$ the airplane cannot accelerate, inertia relief vanishes,
   and the chain reduces to the restrained column.
-- Validation status in sbeam: at q = 40 all six longitudinal unrestrained derivatives
-  and both intercepts match Table 7-1 within 1 %. At q = 1200 the *operator* is proven
-  correct (§6) but sbeam's flexible coupling data itself over-predicts (the restrained
-  columns are already 5–28 % off there) — tracked as backlog item **AC7/AE14**; the
-  q = 1200 test gates are xfail until it closes.
+- Validation status in sbeam (post AC7 close-out, 2026-07-05): at q = 40 all
+  restrained and unrestrained longitudinal columns match Table 7-1 within 0.2 %/1 %.
+  At q = 1200 the α and rate columns (CZα, CZq, CMq) are gated live at ≤2/2.5 %
+  (restrained and unrestrained); the pitching-moment/ELEV columns carry a documented
+  3–5 % residual attributed to canard-wake/wing-root interference (steady VLM vs
+  NASTRAN's k→0 DLM) — tracked as backlog item **AC8/AE15**. The operator itself is
+  proven correct (§6).
 
 ---
 

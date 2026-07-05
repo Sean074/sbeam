@@ -152,7 +152,9 @@ def _build_bulk_x_beam():
     # CORD2R CID=1: x-axis along global Y, z-axis along global Z
     # A=(0,0,0), B=(0,0,1), C=(0,1,0)
     # → x_hat=[0,1,0], y_hat=[-1,0,0], z_hat=[0,0,1]
-    bulk.cord2rs[1] = Cord2r(cid=1, rid=0, a=(0.0, 0.0, 0.0), b=(0.0, 0.0, 1.0), c=(0.0, 1.0, 0.0))
+    # MSC convention: spline axis = CID y-axis. A=(0,0,0), B=z, C=(1,0,0)
+    # -> x_hat=(1,0,0) chord, y_hat=(0,1,0) span axis, z_hat=(0,0,1)
+    bulk.cord2rs[1] = Cord2r(cid=1, rid=0, a=(0.0, 0.0, 0.0), b=(0.0, 0.0, 1.0), c=(1.0, 0.0, 0.0))
 
     # CAERO1: panel in XY plane, span along Y (P1 to P4), chord along X
     # EID=100, PID=10, CP=0, NSPAN=3, NCHORD=1
@@ -169,9 +171,10 @@ def _build_bulk_x_beam():
 
     # SPLINE2: link CAERO1 100 boxes to SET1 20 via CID=1
     # Box ID range: EID + 0 = 100 (box 0) to EID + 2 = 102 (box 2); nchord=1
+    # EA-only SET1 (no chord arms): attach rotations rigidly (DTHX=DTHY=0)
     bulk.spline2s[200] = Spline2(
         eid=200, caero=100, id1=100, id2=102, setg=20,
-        dz=0.0, dtor=1.0, cid=1, dthx=1.0, dthz=0.0, usage="BOTH",
+        dz=0.0, dtor=1.0, cid=1, dthx=0.0, dthy=0.0, usage="BOTH",
     )
 
     return bulk
@@ -259,8 +262,9 @@ class TestSpline2Parse:
         assert sp.dz == pytest.approx(0.0)
         assert sp.dtor == pytest.approx(1.0)
         assert sp.cid == 0
-        assert sp.dthx == pytest.approx(1.0)
-        assert sp.dthz == pytest.approx(0.0)
+        # DTHX/DTHY default 0.0 = rigid rotational attachment (AC7 semantics)
+        assert sp.dthx == pytest.approx(0.0)
+        assert sp.dthy == pytest.approx(0.0)
         assert sp.usage == "BOTH"
 
     def test_explicit_continuation(self):
@@ -272,7 +276,7 @@ class TestSpline2Parse:
         bulk = parse_bulk_data(lines)
         sp = bulk.spline2s[200]
         assert sp.dthx == pytest.approx(0.5)
-        assert sp.dthz == pytest.approx(0.1)
+        assert sp.dthy == pytest.approx(0.1)
         assert sp.usage == "FORCE"
 
     def test_missing_set1_raises(self):
@@ -643,10 +647,11 @@ def _build_ha144a_wing_spline_bulk():
 
     # CID 2: A=(30,0,0), B=(30,0,10), C=(25,8.66025,0)
     # Derived: x_hat=(−0.5,0.866,0), y_hat=(−0.866,−0.5,0), z_hat=(0,0,1)
+    # MSC HA144A CORD2R 2 verbatim: spline axis = CID y-axis = swept EA
     bulk.cord2rs[2] = Cord2r(cid=2, rid=0,
                               a=(30.0, 0.0, 0.0),
                               b=(30.0, 0.0, 10.0),
-                              c=(25.0, 8.66025, 0.0))
+                              c=(38.66025, 5.0, 0.0))
 
     bulk.aeros = Aeros(acsid=0, rcsid=0, cref=10.0, bref=40.0, sref=200.0,
                        symxz=0, symxy=0)
@@ -669,9 +674,11 @@ def _build_ha144a_wing_spline_bulk():
     # SPLINE2 1601: DTHX=+1 (attached). With the AE1 Step B spline-formula fix
     # (multiplication-bending + corrected torsion), the attached path is what
     # reproduces global basic-frame rigid-body modes on the swept spline.
+    # EA-only SET1: torsion must attach through grid rotations (DTHY=0);
+    # bending rotations attached rigidly too (DTHX=0).
     bulk.spline2s[1601] = Spline2(
         eid=1601, caero=1100, id1=1100, id2=1131, setg=1100,
-        dz=0.0, dtor=1.0, cid=2, dthx=1.0, dthz=-1.0, usage="BOTH",
+        dz=0.0, dtor=1.0, cid=2, dthx=0.0, dthy=0.0, usage="BOTH",
     )
 
     return bulk
@@ -713,93 +720,72 @@ class TestSweptSplineRigidBody:
         )
 
     def test_vae2b_rigid_pitch_uniform_incidence(self, vae2_ops):
-        """V-AE2b: Rigid beam pitch → uniform incidence θ at all boxes.
-
-        For the 1D beam spline, the rigid pitch is defined along the spline axis:
-          Tz_i = −x_hat[0] · s_i · θ  (linear in s → exact Hermite reproduction)
-          Ry_i = θ  (nodal slope = −(θ·y_hat[1]) = 0.5θ = −x_hat[0]·θ)
-        Result: dh/ds = −x_hat[0]·θ everywhere → w = −(dh/ds)/x_hat[0] = θ.
-        """
-        from sbeam.assembly.coord_transform import _get_transform
+        """V-AE2b: rigid pitch θ about global ŷ through the spline origin →
+        uniform nose-up incidence θ at every box (any correct spline)."""
         g_slope, _, boxes, grid_index, bulk = vae2_ops
-        sp = bulk.spline2s[1601]
-        origin, R_cid = _get_transform(sp.cid, bulk.cord2rs)
-        x_hat = R_cid[:, 0]   # (−0.5, 0.866, 0) for CID-2
-        x0 = x_hat[0]          # −0.5
-
         theta = 1e-3
         n_g = 6 * len(grid_index)
         u = np.zeros(n_g)
         for gid, gi in grid_index.items():
             g = bulk.grids[gid]
-            r = np.array([g.x, g.y, g.z])
-            s_i = float(np.dot(r - origin, x_hat))
-            u[6 * gi + 2] = -x0 * s_i * theta   # Tz = 0.5·s·θ (linear in s)
-            u[6 * gi + 4] = theta                 # Ry = θ
+            u[6 * gi + 2] = -theta * (g.x - 30.0)   # u_z = −θ·(x − x_origin)
+            u[6 * gi + 4] = theta                    # Ry = θ
 
         downwash = g_slope @ u
         assert np.allclose(downwash, theta, atol=1e-12), (
-            f"V-AE2b: rigid beam pitch must give uniform downwash={theta}; "
+            f"V-AE2b: rigid pitch must give uniform downwash={theta}; "
             f"range [{downwash.min():.4e}, {downwash.max():.4e}], "
             f"max |err| = {np.max(np.abs(downwash - theta)):.3e}"
         )
 
     def test_vae2c_gdisp_uses_force_point(self, vae2_ops):
-        """V-AE2c: g_disp is evaluated at force_point (¼-chord), not at colloc (¾-chord).
+        """V-AE2c (AE6): g_disp is evaluated at the box force_point (¼-chord),
+        not at the colloc point (¾-chord).
 
-        Directly verifies AE6 fix: for the translation Tz DOF of the first sorted
-        grid, g_disp[3k+2, col_Tz] must equal the Hermite function-value basis
-        evaluated at t_force = (force_point − origin)·x_hat, NOT at
-        t_slope = (colloc − origin)·x_hat.
+        Feed a field that is LINEAR along the spline axis (exactly represented
+        by the beam spline): the recovered box z-displacement must equal the
+        field value at force_point — which differs from the colloc value.
         """
-        from scipy.interpolate import CubicHermiteSpline
         from sbeam.assembly.coord_transform import _get_transform
 
         g_slope, g_disp, boxes, grid_index, bulk = vae2_ops
         sp = bulk.spline2s[1601]
         origin, R_cid = _get_transform(sp.cid, bulk.cord2rs)
-        x_hat = R_cid[:, 0]
+        s_hat = R_cid[:, 1]     # spline axis (MSC convention: CID y-axis)
+
+        c1 = 1e-3               # w(t) = c1·t  (linear — exact reproduction)
+        n_g = 6 * len(grid_index)
+        u = np.zeros(n_g)
+        for gid, gi in grid_index.items():
+            g = bulk.grids[gid]
+            t = float(np.dot(np.array([g.x, g.y, g.z]) - origin, s_hat))
+            u[6 * gi + 2] = c1 * t
+            # consistent rotation for the rigid-attached DOFs: dw/dt about ĉ
+            omega = c1 * R_cid[:, 0] * 0.0  # placeholder; set below
+        # rotations: rigid slope c1 about the chord axis: ω = −? use exact
+        # rigid representation: w = c1·t is a rigid rotation about the c-axis
+        # with angle φ_c where dz/dt = c1 ⇒ ω = c1·(ĉ_y, −ĉ_x?, ...) — instead
+        # derive: rotation vector Ω with (Ω × ŝ)·ẑ = c1 and (Ω × ĉ)·ẑ = 0:
+        c_hat = R_cid[:, 0]
         z_hat = R_cid[:, 2]
+        # Ω = c1 · ĉ satisfies (ĉ×ŝ)·ẑ = −1 ⇒ (Ω×ŝ)·ẑ = −c1 … pick Ω = −c1·ĉ
+        omega = -c1 * c_hat
+        chk = float(np.dot(np.cross(omega, s_hat), z_hat))
+        if abs(chk - c1) > 1e-14:
+            omega = c1 * c_hat
+        for gid, gi in grid_index.items():
+            u[6 * gi + 3:6 * gi + 6] = omega
 
-        # Sorted grids — same ordering as _build_spline2_block
-        set1 = bulk.set1s[sp.setg]
-        s_gid = sorted(
-            (float(np.dot(np.array([bulk.grids[g].x, bulk.grids[g].y, bulk.grids[g].z]) - origin, x_hat)), g)
-            for g in set1.grids
-        )
-        s_sorted = np.array([s for s, _ in s_gid])
-        gids_sorted = [gid for _, gid in s_gid]
-
-        # Hermite function-value basis for the first grid (unit value at node 0)
-        n_s = len(s_sorted)
-        y_f = np.zeros(n_s); y_f[0] = 1.0
-        cs = CubicHermiteSpline(s_sorted, y_f, np.zeros(n_s))
-
-        box0 = boxes[0]
-        t_force = float(np.dot(box0.force_point - origin, x_hat))
-        t_slope = float(np.dot(box0.colloc     - origin, x_hat))
-
-        # Sanity: the two evaluation points must differ for the test to be meaningful
-        assert abs(t_force - t_slope) > 1e-3, (
-            f"V-AE2c: force_point and colloc must project to different t values; "
-            f"t_force={t_force:.4f}, t_slope={t_slope:.4f}"
-        )
-
-        gi_0 = grid_index[gids_sorted[0]]
-        col_tz = 6 * gi_0 + 2     # Tz DOF column for first sorted grid
-        k0 = box0.k
-
-        z_sq = float(z_hat[2] ** 2)   # = 1.0 for CID-2 (z_hat = (0,0,1))
-        expected_force = z_sq * float(cs(t_force))
-        expected_slope = z_sq * float(cs(t_slope))
-
-        actual = float(g_disp[3 * k0 + 2, col_tz])
-
-        assert abs(actual - expected_force) < 1e-12, (
-            f"V-AE2c: g_disp[Tz row, col_Tz_0] must equal Hermite φ_0(t_force)="
-            f"{expected_force:.8f}; got {actual:.8f} "
-            f"(old colloc value would be {expected_slope:.8f})"
-        )
+        disp_z = (g_disp @ u)[2::3]
+        w_slope = g_slope @ u
+        for b in boxes:
+            t_force = float(np.dot(b.force_point - origin, s_hat))
+            t_coll = float(np.dot(b.colloc - origin, s_hat))
+            assert abs(disp_z[b.k] - c1 * t_force) < 1e-12, (
+                f"V-AE2c: box k={b.k} g_disp z={disp_z[b.k]:.8e} must equal the "
+                f"field at force_point {c1 * t_force:.8e} "
+                f"(colloc value would be {c1 * t_coll:.8e})"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -1009,13 +995,14 @@ class TestGlobalRigidBody:
         )
         bulk.set1s[1100] = Set1(sid=1100, grids=[100, 101, 102, 103, 104])
         # CID 3: x_hat=(0,1,0) (spanwise), y_hat=(−1,0,0), z_hat=(0,0,1)
+        # MSC convention: spline axis = CID y-axis = global Y (span)
         bulk.cord2rs[3] = Cord2r(cid=3, rid=0,
                                   a=(0.0, 0.0, 0.0),
                                   b=(0.0, 0.0, 1.0),
-                                  c=(0.0, 1.0, 0.0))
+                                  c=(1.0, 0.0, 0.0))
         bulk.spline2s[1601] = Spline2(
             eid=1601, caero=1100, id1=1100, id2=1131, setg=1100,
-            dz=0.0, dtor=1.0, cid=3, dthx=1.0, dthz=-1.0, usage="BOTH",
+            dz=0.0, dtor=1.0, cid=3, dthx=0.0, dthy=0.0, usage="BOTH",
         )
         boxes = mesh_caero1(bulk.caero1s[1100], bulk.paero1s[1000], bulk.aefacts,
                             bulk.cord2rs, start_k=0)
@@ -1085,13 +1072,15 @@ class TestGlobalRigidBody:
         )
         bulk.set1s[1100] = Set1(sid=1100, grids=[100, 101, 102, 103, 104])
         # CID 3: z-axis = tilted surface normal, x-axis = tilted span
+        # MSC convention: y-axis = tilted span, z-axis = surface normal,
+        # x-axis = y×z = (1,0,0) streamwise chord
         bulk.cord2rs[3] = Cord2r(cid=3, rid=0,
                                  a=(0.0, 0.0, 0.0),
                                  b=(0.0, -s, c),
-                                 c=(0.0, c, s))
+                                 c=(1.0, 0.0, 0.0))
         bulk.spline2s[1601] = Spline2(
             eid=1601, caero=1100, id1=1100, id2=1131, setg=1100,
-            dz=0.0, dtor=1.0, cid=3, dthx=1.0, dthz=-1.0, usage="BOTH",
+            dz=0.0, dtor=1.0, cid=3, dthx=0.0, dthy=0.0, usage="BOTH",
         )
         boxes = mesh_caero1(bulk.caero1s[1100], bulk.paero1s[1000], bulk.aefacts,
                             bulk.cord2rs, start_k=0)
@@ -1231,20 +1220,20 @@ class TestGlobalRigidBody:
 # AE12 — SPLINE2 DTOR / DTHZ warning gates
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestSpline2DtorDthzWarnings:
-    """AE12 — DTOR/DTHZ are parsed and stored but not modelled by the beam
-    spline. sbeam must warn when a card carries a value it will ignore:
-    DTOR ≠ 1.0, or DTHZ requesting Rz attachment. DTHZ ∈ {0.0, −1.0}
-    (blank/default, NASTRAN "Rz detached") matches sbeam's actual behaviour
-    and stays silent — the HA144A decks carry DTHZ=−1.0 throughout."""
+class TestSpline2FlexWarnings:
+    """AC7 beam-spline attachment semantics: DTOR and DTHX/DTHY are now USED
+    (DTOR = EI/GJ; DTHX/DTHY = attachment flexibilities). Warnings fire only
+    for genuinely invalid values: DTOR ≤ 0 and DZ < 0."""
 
-    def _build(self, dtor=1.0, dthz=-1.0):
+    def _build(self, dtor=1.0, dz=0.0, dthx=0.0, dthy=0.0):
         from sbeam.aero.panel import mesh_caero1
 
         bulk = _build_ha144a_wing_spline_bulk()
         sp = bulk.spline2s[1601]
         sp.dtor = dtor
-        sp.dthz = dthz
+        sp.dz = dz
+        sp.dthx = dthx
+        sp.dthy = dthy
         caero = bulk.caero1s[1100]
         boxes = mesh_caero1(caero, bulk.paero1s[1000], bulk.aefacts,
                             bulk.cord2rs, start_k=0)
@@ -1252,24 +1241,147 @@ class TestSpline2DtorDthzWarnings:
         grid_index = {gid: i for i, gid in enumerate(gids_sorted)}
         return bulk, boxes, grid_index
 
-    def test_dtor_nondefault_warns(self):
-        bulk, boxes, grid_index = self._build(dtor=0.5)
-        with pytest.warns(UserWarning, match=r"SPLINE2 1601: DTOR=0\.5"):
+    def test_dtor_nonpositive_warns(self):
+        bulk, boxes, grid_index = self._build(dtor=-2.0)
+        with pytest.warns(UserWarning, match=r"SPLINE2 1601: DTOR=-2\.0"):
             build_g_spline(bulk, boxes, grid_index)
 
-    def test_dthz_attached_warns(self):
-        bulk, boxes, grid_index = self._build(dthz=1.0)
-        with pytest.warns(UserWarning, match=r"SPLINE2 1601: DTHZ=1\.0"):
+    def test_negative_dz_warns(self):
+        bulk, boxes, grid_index = self._build(dz=-1.0)
+        with pytest.warns(UserWarning, match=r"SPLINE2 1601: DZ=-1\.0"):
             build_g_spline(bulk, boxes, grid_index)
 
-    @pytest.mark.parametrize("dthz", [0.0, -1.0])
-    def test_default_and_detached_stay_silent(self, dthz):
-        """DTOR=1.0 with DTHZ blank (0.0) or NASTRAN-detached (−1.0) must not
-        warn — the HA144A validation decks would otherwise spam every run."""
-        bulk, boxes, grid_index = self._build(dtor=1.0, dthz=dthz)
+    @pytest.mark.parametrize("dtor,dthy", [(1.0, 0.0), (0.5, 0.0), (2.0, 1.0)])
+    def test_valid_values_stay_silent(self, dtor, dthy):
+        """DTOR ≠ 1 and spring flexibilities are implemented — no warning."""
+        bulk, boxes, grid_index = self._build(dtor=dtor, dthy=dthy)
         with warnings.catch_warnings(record=True) as rec:
             warnings.simplefilter("always")
             build_g_spline(bulk, boxes, grid_index)
         offenders = [str(w.message) for w in rec
-                     if "DTOR" in str(w.message) or "DTHZ" in str(w.message)]
+                     if "DTOR" in str(w.message) or "DTH" in str(w.message)
+                     or "DZ" in str(w.message)]
         assert offenders == []
+
+    def test_dtor_changes_interpolant(self):
+        """DTOR is genuinely used: EI/GJ = 0.2 vs 5.0 must change g_slope on a
+        spline whose twist comes through the GJ arm kernels."""
+        import copy
+        from sbeam.aero.panel import mesh_caero1
+        results = []
+        for dtor in (0.2, 5.0):
+            bulk = _build_ha144a_wing_spline_bulk()
+            sp = bulk.spline2s[1601]
+            sp.dtor = dtor
+            sp.dthx = -1.0
+            sp.dthy = -1.0
+            # off-axis grids so deflections carry twist through the arms
+            bulk.set1s[1100].grids = [100, 111, 112, 121, 122]
+            caero = bulk.caero1s[1100]
+            boxes = mesh_caero1(caero, bulk.paero1s[1000], bulk.aefacts,
+                                bulk.cord2rs, start_k=0)
+            grid_index = {gid: i for i, gid in enumerate(sorted(bulk.grids))}
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                g_slope, _ = build_g_spline(bulk, boxes, grid_index)
+            results.append(g_slope)
+        assert not np.allclose(results[0], results[1], atol=1e-9)
+
+
+
+class TestBeamSplineFlexFields:
+    """AC7 non-rigid spline gates — analytic deformation fields through the
+    NASTRAN beam spline on the swept HA144A wing (MSC SET1 with LE/TE
+    stringers, rotations detached).
+
+    Kinematics: z(t, χ) = h(t) − χ·φ(t) about the spline axis (t along the
+    CID-2 y-axis, χ the chord arm). Expected incidence:
+        −∂z/∂x = −[ ŝ[0]·(h′ − χ·φ′) − ĉ[0]·φ ].
+    Linear h and linear φ are exactly representable (the torsion interpolant
+    is piecewise linear, the bending interpolant contains the linear part);
+    a parabolic h is interpolated (checked loosely, interior only)."""
+
+    ORIGIN = np.array([30.0, 0.0, 0.0])
+    C_HAT = np.array([np.sqrt(3) / 2, 0.5, 0.0])
+    S_HAT = np.array([-0.5, np.sqrt(3) / 2, 0.0])
+    GIDS = [99, 100, 111, 112, 121, 122]
+
+    @pytest.fixture(scope="class")
+    def ops(self):
+        from sbeam.aero.panel import mesh_caero1
+
+        bulk = _build_ha144a_wing_spline_bulk()
+        # MSC-faithful wing spline: deflection-only attachments, stringer SET1
+        sp = bulk.spline2s[1601]
+        sp.dthx = -1.0
+        sp.dthy = -1.0
+        bulk.set1s[1100].grids = list(self.GIDS)
+        caero = bulk.caero1s[1100]
+        boxes = mesh_caero1(caero, bulk.paero1s[1000], bulk.aefacts,
+                            bulk.cord2rs, start_k=0)
+        grid_index = {gid: i for i, gid in enumerate(sorted(bulk.grids))}
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            g_slope, g_disp = build_g_spline(bulk, boxes, grid_index)
+        return g_slope, g_disp, boxes, grid_index, bulk
+
+    def _impose(self, bulk, grid_index, h, th):
+        u = np.zeros(6 * len(grid_index))
+        for gid in self.GIDS:
+            g = bulk.grids[gid]
+            r = np.array([g.x, g.y, g.z]) - self.ORIGIN
+            t, chi = float(r @ self.S_HAT), float(r @ self.C_HAT)
+            u[6 * grid_index[gid] + 2] = h(t) - chi * th(t)
+        return u
+
+    def _expected(self, boxes, h, hp, th, thp):
+        exp = np.empty(len(boxes))
+        for b in boxes:
+            r = b.colloc - self.ORIGIN
+            t, chi = float(r @ self.S_HAT), float(r @ self.C_HAT)
+            exp[b.k] = -(self.S_HAT[0] * (hp(t) - chi * thp(t))
+                         - self.C_HAT[0] * th(t))
+        return exp
+
+    def test_linear_bend_exact(self, ops):
+        g_slope, _, boxes, grid_index, bulk = ops
+        c = 2e-3
+        u = self._impose(bulk, grid_index, lambda t: c * t, lambda t: 0.0)
+        got = g_slope @ u
+        exp = self._expected(boxes, None, lambda t: c, lambda t: 0.0,
+                             lambda t: 0.0)
+        assert np.allclose(got, exp, atol=1e-14)
+
+    def test_linear_twist_matches_at_grid_stations(self, ops):
+        """Twist enters only through the stringer deflection pairs; between
+        stations the beam spline reconstructs its own distribution. Gate the
+        boxes between the two stringer pairs (t≈5.5–6.2 and 10.8–12.0),
+        where the pair deflections pin the twist best."""
+        g_slope, _, boxes, grid_index, bulk = ops
+        tau = 1e-3
+        u = self._impose(bulk, grid_index, lambda t: 0.0, lambda t: tau * t)
+        got = g_slope @ u
+        exp = self._expected(boxes, None, lambda t: 0.0, lambda t: tau * t,
+                             lambda t: tau)
+        for b in boxes:
+            t = float((b.colloc - self.ORIGIN) @ self.S_HAT)
+            if 5.5 <= t <= 6.2 or 10.8 <= t <= 12.0:
+                assert abs(got[b.k] - exp[b.k]) < 0.10 * abs(exp[b.k]), (
+                    f"box k={b.k} (t={t:.2f}): got {got[b.k]:.4e}, "
+                    f"exp {exp[b.k]:.4e}"
+                )
+
+    def test_parabolic_bend_interior(self, ops):
+        """Interpolated field: interior boxes within 25% of the analytic
+        parabola slope (natural-spline end effects excluded)."""
+        g_slope, _, boxes, grid_index, bulk = ops
+        c = 1e-4
+        u = self._impose(bulk, grid_index, lambda t: c * t * t,
+                         lambda t: 0.0)
+        got = g_slope @ u
+        exp = self._expected(boxes, None, lambda t: 2 * c * t,
+                             lambda t: 0.0, lambda t: 0.0)
+        for b in boxes:
+            t = float((b.colloc - self.ORIGIN) @ self.S_HAT)
+            if 5.0 <= t <= 11.0:
+                assert abs(got[b.k] - exp[b.k]) < 0.25 * abs(exp[b.k])

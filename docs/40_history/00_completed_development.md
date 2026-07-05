@@ -4222,3 +4222,64 @@ mesh integration), `test_mesh_quality.py` (A7/A8 fire/silent/strip-exempt via
 `build_aero_model`). Full suite 1053 passed / 6 xfailed; end-to-end HA144A build confirmed
 warning-free; a negative scratch deck (DTOR=0.5, DTHZ=1.0, NCHORD=2, sliver boxes) fired
 all four warnings.
+
+---
+
+### Step AC7 — AE14: High-q flexible-coupling fidelity gap ✅ ROOT-CAUSED & CLOSED (2026-07-05)
+
+**Objective:** Close the 5–28% gap between sbeam's HA144A restrained stability-derivative
+columns and MSC Table 7-1 at q=1200 (≤1.3% at q=40), and un-xfail the q=1200 gates.
+
+**Root cause 1 — full-span deck fuselage stiffness (dominant).** The full-span mirror of
+the MSC half-span deck doubled the centreline CONM2 masses but NOT the centreline fuselage
+PBAR: a member on the symmetry plane carries half properties in a half model, so the
+full-span fuselage (carrying BOTH wings) flexed ×2. Found via the guide's Listing 7-2
+MONDSP1 wing-tip monitor: at q=40 (box forces matching ≤1%) the rigid-fit spanwise
+bending rotation RX matched ×1.038 while the streamwise rotation RY ran **×1.442** — and
+sbeam's fuselage-driven root rotation alone nearly equalled NASTRAN's total. Doubling
+PBAR 100 (A/I1/I2/J ×2, deck comment records the rationale): q=40 trim matches Listing 7-2
+to 5 digits (ANGLEA 0.16918 vs 1.6919E-1), all six q=40 restrained columns ≤0.61%, the
+rate-column (CZq/CMq) increment signs flip to correct — **and the AE8a "accepted trim
+bias" (−0.093°/+0.104°) vanishes: it was this deck bug, superseding the AE8a residual
+documentation.**
+
+**Root cause 2 — SPLINE2 kinematics.** sbeam's cubic-Hermite spline differed from
+NASTRAN's SPLINE2 in kind: (a) canard camber contamination — the 2-grid canard spline
+acquired cubic chordwise curvature from attached grid rotations where NASTRAN's 2-point
+linear fit gives a rigid pitching plane (visible as aft-loaded canard boxes ×1.26–1.39 at
+q=1200); (b) the twist-gradient chordwise term was missing (analytic linear-twist field:
+LE boxes ×0.67, TE ×1.19). **Fix: `_build_spline2_block` rewritten as the NASTRAN
+infinite beam spline** (MSC Aeroelastic UG Eqs. 2-48…2-63): |Δt|³/12EI bending and
+−|Δt|/2GJ torsion kernels + rigid part, **rigid chord arms** (off-axis grids legal, the
+EA-collinearity restriction removed), MSC conventions adopted wholesale — spline axis =
+CID **y-axis** (QRG remark 2), `DTOR = EI/GJ` (now used), `DZ`/`DTHX`/`DTHY` as attachment
+flexibilities (0 rigid / >0 spring / negative detached; model field `dthz` renamed `dthy`
+per the MSC card; parser defaults 0.0 = rigid). Rigid-body modes exact by construction
+(verified 1e-12 on swept/rect/dihedral fixtures + the real deck).
+
+**Deck restoration:** `ha144a_fullspan_sbeam.bdf` wing splines back to the MSC card values
+— SET1 {99,100,111,112,121,122} (+ left mirror) and DTHX=DTHY=−1 (twist from LE/TE
+stringer deflection pairs via rigid arms); CORD2R 2 verbatim MSC (38.66025,5,0 third
+point), CORD2R 3 mirrored; monitor SET1s re-pointed at the spline load-target grids.
+`val_dihedral_trim.bdf` and `tests/integration/bdf/val_spline2_cantilever.bdf` converted
+to the y-axis convention (EA-only collinear SET1s attach rotations rigidly, DTHX=DTHY=0 or
+DTHY=0).
+
+**Results (q=1200 vs Table 7-1):** restrained CZα −1.53%, CZq −0.95%, CMq +2.02% (live
+gates ≤2/2.5% PASS), CMα +4.30%, CZδe −2.90%, CMδe +5.23% (documented residual);
+unrestrained CZα −1.90%, CZq −1.25%, CMq −2.28% (live 2.5% PASS), moment/ELEV residual
+xfailed. q=40: ALL columns ≤0.20% (canard per-box ≤0.2% at pinned state). Residual
+attributed by pinned-state per-box comparison to the wing-root TE boxes behind the canard
+(steady-VLM vs k→0-DLM interference) — re-scoped as backlog Step AC8/AE15 per the
+approved escape hatch.
+
+**Test/Acceptance:** new gates — `TestRestrainedDerivsQ1200` (live α/rate + residual
+xfail), `TestUnrestrainedDerivsQ1200` re-gated, `TestBeamSplineFlexFields` (analytic
+linear-bend exact / linear-twist / parabolic fields), V-AE2b/c rewritten behaviourally,
+`TestSpline2FlexWarnings` (DTOR≤0, DZ<0; valid flexibilities silent; DTOR genuinely
+changes the interpolant). FD baseline re-captured (analytic ≡ FD to 2e-11). Full suite
+green. Re-pinned: q_div sentinel 4034→3809.8 (fuselage + spline change), monitor SET1
+semantics, load-export moment-card expectation (detached rotations ⇒ pure-force grid
+loads, as NASTRAN). Diagnostic method (Listing 7-2 per-box force + MONDSP1 transcription,
+pinned-trim-state comparison via a forced `_solve_trim_determined`) recorded here;
+scratch scripts deleted.

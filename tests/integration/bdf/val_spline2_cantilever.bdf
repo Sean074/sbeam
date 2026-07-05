@@ -52,10 +52,10 @@ CAERO1, 200, 10, 0, 4, 1, 0, 0, 0
 +, 0.0, 0.0, 0.0, 1.0, 0.0, 4.0, 0.0, 1.0
 $
 $ --------------------------------------------- SPLINE COORDINATE SYSTEM
-$ CID=1: x-hat=[0,1,0] (span along Y), z-hat=[0,0,1] (surface normal)
-$ A=(0,0,0), B=(0,0,1) [z-direction], C=(0,1,0) [x-direction]
+$ MSC convention: spline axis = CID *y*-axis.
+$ CID=1: y-hat=[0,1,0] (span along Y), z-hat=[0,0,1], x-hat=[1,0,0] (chord)
 CORD2R, 1, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0
-+, 0.0, 1.0, 0.0
++, 1.0, 0.0, 0.0
 $
 $ --------------------------------------------------- STRUCTURAL GRID SET
 SET1, 10, 1, 2, 3, 4, 5
@@ -63,8 +63,8 @@ $
 $ -------------------------------------------- BEAM SPLINE (SPLINE2)
 $ EID=300, CAERO=200, ID1=200, ID2=203 (all 4 boxes)
 $ SETG=10, DZ=0.0 (interpolating), DTOR=1.0, CID=1
-$ Continuation: DTHX=1.0, DTHZ=0.0
+$ EA-only collinear SET1: attach rotations rigidly (DTHX=0 bending, DTHY=0 torsion)
 SPLINE2, 300, 200, 200, 203, 10, 0.0, 1.0, 1
-+, 1.0, 0.0
++, 0.0, 0.0
 $
 ENDDATA

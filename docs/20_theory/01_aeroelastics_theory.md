@@ -797,12 +797,22 @@ why the spline must be built once and used both ways.
 
 ### 4.2 Beam spline (SPLINE2) — primary for `sbeam`
 
-Because `sbeam` idealises structures as beams, the natural spline is one-dimensional. A
-**beam spline** fits a smoothing spline along a reference axis through the structural grids,
-carrying both bending **deflection + slope** and **torsional rotation**. The aero box
-out-of-plane deflection and incidence are then read off the spline at the box location, with
-the torsion-to-incidence coupling set by the spline's $D_{\theta x}/D_{\theta z}$ ratios. This
-is the exact match for the CBAR's bending+torsion DOF and is the primary $G_{kg}$ builder.
+Because `sbeam` idealises structures as beams, the natural spline is one-dimensional.
+Since the AC7 close-out (2026-07-05) `sbeam` implements the **NASTRAN infinite beam
+spline** exactly (MSC Aeroelastic Analysis UG Eqs. 2-48…2-63). The interpolant is an
+infinite beam on point supports: superimposed fundamental solutions of
+$EI\,w'''' = q$ (kernels $|\Delta t|^3/12EI$ for a point force, $-\Delta t|\Delta t|/4EI$
+for a moment) and torsion (kernel $-|\Delta t|/2GJ$ for a torque), plus a rigid part
+$a_0 + a_1 t - a_2\chi$, closed by the load-equilibrium rows. Each SET1 grid attaches its
+**deflection** at axis station $t$ (along the CID *y*-axis) with a **rigid chord arm**
+$\chi$; the arm converts chordwise-offset deflection pairs (e.g. HA144A's LE/TE stringers)
+into twist — grid rotations attach only when the DTHX/DTHY flexibilities request it
+(0 = rigid, > 0 = elastic spring, negative = detached), and DZ adds a deflection spring.
+`DTOR = EI/GJ` sets the relative bending/torsion weight of the fit. The box surface height
+is $z(t,\chi) = w(t) - \chi\,\phi(t)$; incidence is its streamwise derivative at the
+¾-chord collocation point, and the force transfer is the virtual-work pairing at the
+¼-chord force point. All six rigid-body modes are reproduced exactly by construction (the
+rigid part absorbs them with zero point loads).
 
 ### 4.3 Surface spline (SPLINE1) — optional
 

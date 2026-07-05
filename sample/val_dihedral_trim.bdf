@@ -33,12 +33,13 @@ $ ACSID RCSID  CREF  BREF  SREF  SYMXZ SYMXY  MACH
 AEROS,  0,  0,  1.0,  8.0,  8.0,  0,  0
 $
 $ ----------------------------------------------------------- COORD SYSTEMS
-$ CID 2 — RIGHT wing spline axis: z=(0,-sinG,cosG), x=(0,cosG,sinG); origin ON the EA (x=0.25)
+$ CID 2 — RIGHT wing spline (MSC convention: spline axis = CID *y*-axis):
+$   z=(0,-sinG,cosG) normal, y=(0,cosG,sinG) EA, x=(1,0,0) chord
 CORD2R, 2, 0, 0.25, 0.0, 0.0, 0.25, -0.17364818, 0.98480775
-+, 0.25, 0.98480775, 0.17364818
-$ CID 3 — LEFT wing spline axis: z=(0,+sinG,cosG), x=(0,-cosG,sinG); origin ON the EA (x=0.25)
++, 1.25, 0.0, 0.0
+$ CID 3 — LEFT wing spline: z=(0,+sinG,cosG) normal, y=(0,-cosG,sinG) EA, x=(-1,0,0)
 CORD2R, 3, 0, 0.25, 0.0, 0.0, 0.25, 0.17364818, 0.98480775
-+, 0.25, -0.98480775, 0.17364818
++, -0.75, 0.0, 0.0
 $
 $ ----------------------------------------------------------- GRIDS
 $ Reference / support at the wing root (quarter chord x=0.25)
@@ -85,11 +86,13 @@ CAERO1, 2100, 1, 0, 8, 4, 0, 0, 1
 +, 0.0, 0.0, 0.0, 1.0, 0.0, -3.93923099, 0.69459271, 1.0
 $
 $ ----------------------------------------------------------- SPLINES
-$ RIGHT wing spline (CID 2); LEFT wing spline (CID 3). DTHX=+1 (torsion on).
+$ RIGHT wing spline (CID 2); LEFT wing spline (CID 3).
+$ EA-only collinear SET1 (no chord arms): torsion must attach through the grid
+$ rotations -> DTHY=0.0 (rigid); bending comes from deflections (DTHX=-1).
 SPLINE2, 1601, 1100, 1100, 1131, 1100, 0.0, 1.0, 2
-+, 1.0, -1.0
++, -1.0, 0.0
 SPLINE2, 2601, 2100, 2100, 2131, 2100, 0.0, 1.0, 3
-+, 1.0, -1.0
++, -1.0, 0.0
 $ Elastic-axis grid sets (collinear along the canted spline axis)
 SET1, 1100, 90, 110, 120
 SET1, 2100, 90, 210, 220

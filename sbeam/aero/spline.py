@@ -4,78 +4,45 @@ Builds g_slope (n_box × n_g) and g_disp (3·n_box × n_g) from the BDF spline
 cards SPLINE2, ATTACH (Step 47), and SPLINE0 (Step 47).  These operators feed
 directly into coupling.build_qaa and coupling.build_fg.
 
-Coordinate convention
----------------------
-SPLINE2 CID defines the spline axis:
-  x_hat = CID x-axis in global frame  (span / spline direction)
-  y_hat = CID y-axis in global frame  (bending-slope axis)
-  z_hat = CID z-axis in global frame  (surface normal / deflection direction)
+SPLINE2 — NASTRAN infinite beam (linear) spline (AC7/AE14 rewrite, 2026-07-05)
+------------------------------------------------------------------------------
+Implements the MSC formulation exactly (MSC Aeroelastic Analysis User's Guide,
+"Theory of Infinite Beam Splines" + "Summary of Matrices for Infinite Surface
+and Beam Spline Interpolation", Eqs. 2-48…2-63):
 
-All structural DOFs are in global CID 0:
-  d=0 Tx, d=1 Ty, d=2 Tz, d=3 Rx, d=4 Ry, d=5 Rz
+  * Spline axis = the **CID y-axis** (MSC convention; QRG SPLINE2 remark 2).
+    ŝ = R_cid[:,1] (axis), ĉ = R_cid[:,0] (chord / rigid-arm direction),
+    ẑ = R_cid[:,2] (deflection direction).
+  * Each SET1 grid attaches its DEFLECTION w_g = u·ẑ at axis station
+    t = (r−origin)·ŝ with rigid chord arm χ = (r−origin)·ĉ.  Off-axis grids
+    are legal — the rigid arm converts their deflection into twist information
+    (the pre-AC7 Hermite collinearity restriction is gone).
+  * The interpolant is an infinite beam on point supports: bending kernels
+    |Δt|³/12EI (force) and −Δt|Δt|/4EI (moment), torsion kernel −|Δt|/2GJ,
+    plus the rigid part a₀ + a₁·t − a₂·χ, closed by the equilibrium rows
+    Rᵀq = 0 with R_i = [1, tᵢ, −χᵢ; 0,1,0; 0,0,1].
+  * `DTOR = EI/GJ` (only the ratio matters; EI ≡ 1, GJ ≡ 1/DTOR).
+  * `DZ` / `DTHX` / `DTHY` are ATTACHMENT FLEXIBILITIES added to the A-matrix
+    diagonal: 0 → rigid attachment, > 0 → spring, negative (−1 conventionally)
+    → DOF not attached.  DTHX attaches the grid rotation about ĉ (bending
+    slope dw/dt); DTHY attaches the rotation about ŝ (torsion).
+  * Deformed surface height at a box point: z(t, χ) = w(t) − χ·φ(t).
+    g_slope row (streamwise incidence, nose-up positive)
+        = −∂z/∂x = −[ ŝ[0]·(w′ − χ·φ′) − ĉ[0]·φ ]
+    evaluated at the ¾-chord collocation point; g_disp rows carry z·ẑ at the
+    ¼-chord force point (AE6), so force transfer is virtual-work paired.
 
-The streamwise downwash at a box is w = −∂h/∂x.  Using the chain rule with
-s = (r − origin)·x_hat, ∂h/∂x = (dh/ds)·x_hat[0], so
+All structural DOFs are in global CID 0 (d = 0…5 = Tx Ty Tz Rx Ry Rz).
 
-    w = −(dh/ds)·x_hat[0]
-
-With the Hermite interpolation h(s) = Σ [φ_f[i]·h_i + φ_d[i]·(dh/ds)_i] the
-physical nodal slope is
-
-    (dh/ds)_i = −(ω·y_hat)_i   (AE4b sign convention)
-
-Combining:
-
-  Translation (d<3):   g_slope contribution = −(z_hat[d]·x_hat[0]) · dφ_f[i]/ds
-  Rotation (bending):  g_slope contribution = +(y_hat[d-3]·x_hat[0]) · dφ_d[i]/ds
-  Rotation (torsion):  g_slope contribution = x_hat[d-3] · φ_f[i]
-                       (only when DTHX = 1; DTHX = −1 detaches the DOF)
-
-Both divide by x_hat[0] — or equivalently multiply by (·/x_hat[0]) — via:
-  w = −(dh/ds)/x_hat[0] when (dh/ds) is the axis-direction derivative.
-
-Wait, the chain rule gives ∂h/∂x = (dh/ds)·x_hat[0], NOT (dh/ds)/x_hat[0].
-The correct formula is therefore:
-
-  g_slope += −z_hat[d] · x_hat[0] · dφ_f/ds       (translation)
-  g_slope += +y_hat[d-3] · x_hat[0] · dφ_d/ds     (bending slope, sign-corrected)
-
-For an unswept CID=0 (x_hat[0]=1): translation unchanged, bending slope sign-
-flipped from the pre-AE4 code.  For a swept axis: additional factor x_hat[0].
-
-However: the ZAERO Theo §6.3 beam spline uses w = −(dh/ds)/x_hat[0] (division),
-which correctly handles the physical meaning:
-
-  physical (dh/ds) along the swept axis = x_hat[0] · (−θ) for rigid pitch θ
-  → (dh/ds)/x_hat[0] = −θ  →  w = θ  ✓
-
-The division formula is the correct one; the multiplication formula reproduces
-the spline slope but does NOT equal ∂h/∂x when the spline axis is swept (because
-the spline only "sees" the 1D projection of the 2D displacement field).
-
-Concretely:
-  g_slope (translation d<3):   −(z_hat[d] / x_hat[0]) · dφ_f[i]/ds
-  g_slope (bending, d>=3):     +(y_hat[d-3] / x_hat[0]) · dφ_d[i]/ds
-  g_slope (torsion, d>=3):     +x_hat[d-3] · φ_f[i]   (when DTHX = 1)
-
-g_disp evaluation: AE6 fix — displacement for virtual-work force transfer is
-evaluated at the box force_point (¼-chord bound-vortex midpoint), not at the
-¾-chord collocation point.  g_slope stays at the collocation point.
-
-DTHX semantics (AE4c): MSC SPLINE2 DTHX = −1 means "do not attach the
-rotational DOF to the spline" (detached).  DTHX = 1 (default) means attached.
-Values other than ±1 represent elastic attachment flexibility (not supported;
-treated as detached with a warning).
-
-Rigid-body exactness (machine-precision gate for Phase C trim):
-  Uniform rigid plunge  — g_slope @ u_g = 0 everywhere.
-  Uniform rigid pitch   — g_slope @ u_g = uniform incidence everywhere.
+Rigid-body exactness: any rigid motion gives grid data w = c₀ + c₁t + c₂χ
+with matching attached rotations, which the rigid part (a₀, a₁, a₂) fits with
+zero point loads — all six global rigid-body modes are reproduced to machine
+precision by construction.
 """
 
 import warnings
 
 import numpy as np
-from scipy.interpolate import CubicHermiteSpline
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.aero import Spline2, Spline0, Attach
@@ -142,13 +109,11 @@ def _build_spline2_block(
     AE6 fix — g_disp evaluated at box.force_point (¼-chord), not box.colloc (¾-chord).
     """
 
-    # Spline coordinate frame
+    # Spline coordinate frame (MSC convention: axis = CID y-axis)
     origin, R_cid = _get_transform(sp.cid, bulk.cord2rs)
-    x_hat = R_cid[:, 0]   # spline axis (span direction)
-    y_hat = R_cid[:, 1]   # bending-slope axis
-    z_hat = R_cid[:, 2]   # surface normal / deflection direction
-
-    x0 = x_hat[0]   # freestream projection of spline axis (= cos Λ for swept wing)
+    c_hat = R_cid[:, 0]   # chord / rigid-arm direction (CID x)
+    s_hat = R_cid[:, 1]   # spline axis (CID y)
+    z_hat = R_cid[:, 2]   # deflection direction (CID z)
 
     # Identify covered boxes
     covered_gk = _covered_gk_for_range(sp.caero, sp.id1, sp.id2, boxes, id_to_k)
@@ -168,78 +133,51 @@ def _build_spline2_block(
             )
         covered[gk] = True
 
-    covered_arr = np.array(covered_gk, dtype=int)
-
-    # --- Evaluation coordinates along the spline axis ---
-    # g_slope: flow tangency enforced at ¾-chord collocation point
-    t_slope = np.array([
-        np.dot(boxes[gk].colloc       - origin, x_hat) for gk in covered_gk
-    ])
-    # g_disp: virtual-work force transfer at ¼-chord bound-vortex midpoint (AE6)
-    t_force = np.array([
-        np.dot(boxes[gk].force_point  - origin, x_hat) for gk in covered_gk
-    ])
-
-    # Project structural grids onto spline axis and sort
+    # --- SET1 grid stations and rigid-arm offsets ---
     set1 = bulk.set1s[sp.setg]
     if len(set1.grids) < 2:
         raise ValueError(
             f"SPLINE2 {sp.eid}: SET1 {sp.setg} has fewer than 2 grids; spline is singular"
         )
-
-    s_gid = []
-    for gid in set1.grids:
+    gids = list(set1.grids)
+    t_g = np.empty(len(gids))
+    chi_g = np.empty(len(gids))
+    for idx, gid in enumerate(gids):
         g = bulk.grids[gid]
-        s_i = np.dot(np.array([g.x, g.y, g.z]) - origin, x_hat)
-        s_gid.append((s_i, gid))
-    s_gid.sort(key=lambda item: item[0])
+        r = np.array([g.x, g.y, g.z]) - origin
+        t_g[idx] = r @ s_hat
+        chi_g[idx] = r @ c_hat
 
-    s_sorted = np.array([item[0] for item in s_gid])
-    gids_sorted = [item[1] for item in s_gid]
-    n_s = len(gids_sorted)
+    # --- Attachment flexibilities (QRG SPLINE2 remark 3) ---
+    #   0 → rigid, > 0 → spring flexibility, negative → not attached.
+    dz_flex = sp.dz if sp.dz > 0.0 else 0.0
+    if sp.dz < 0.0:
+        warnings.warn(
+            f"SPLINE2 {sp.eid}: DZ={sp.dz} < 0 is invalid; treating as rigid (0.0)",
+            UserWarning,
+            stacklevel=3,
+        )
+    dthx_attached = sp.dthx >= 0.0    # bending-slope rotation about c_hat
+    dthy_attached = sp.dthy >= 0.0    # torsion rotation about s_hat
 
-    # --- SET1 collinearity check (AE1 Step B3) ---
-    # SPLINE2 is a 1-D beam spline: SET1 must lie along the spline axis. Off-axis
-    # grids carry a chordwise displacement at the same s that the Hermite cannot
-    # back out (proof: nodal slope projection m_i = −ω·ŷ only constrains dh/ds at
-    # the node, not h_i; chord-offset δh_i flows through and aliases as spurious
-    # bending). Detect and refuse rather than silently corrupting Q_aa.
-    s_range = s_sorted[-1] - s_sorted[0]
-    if s_range > 1e-12:
-        offsets = []
-        for s_i, gid in s_gid:
-            g = bulk.grids[gid]
-            r = np.array([g.x, g.y, g.z]) - origin
-            delta_chord = float(np.dot(r, y_hat))
-            offsets.append((gid, g.x, g.y, g.z, s_i, delta_chord))
-        max_abs_offset = max(abs(o[5]) for o in offsets)
-        if max_abs_offset > 0.05 * s_range:
-            offenders = [o for o in offsets if abs(o[5]) > 0.05 * s_range]
-            lines = [
-                f"  GRID {o[0]} at (x={o[1]:.4f}, y={o[2]:.4f}, z={o[3]:.4f}): "
-                f"s={o[4]:.4f}, chord offset Δ={o[5]:+.4f}"
-                for o in offenders
-            ]
-            raise ValueError(
-                f"SPLINE2 {sp.eid}: SET1 {sp.setg} contains grids that are not "
-                f"collinear along the spline axis x̂={tuple(round(v, 6) for v in x_hat)}.\n"
-                f"  span range = {s_range:.4f}; tolerance = {0.05 * s_range:.4f} "
-                f"(5% of span range)\n"
-                f"  max |chord offset| = {max_abs_offset:.4f}\n"
-                f"Offending grids (chord offset Δ = (r−origin)·ŷ_spline):\n"
-                + "\n".join(lines)
-                + "\n"
-                "SPLINE2 is a 1-D beam spline; SET1 must lie along the elastic axis. "
-                "Either move the offending grids onto the EA, build an EA-only SET1 "
-                "(commonly the wing CBAR endpoints), or use SPLINE1 (IPS) for 2-D "
-                "grid scatter once it is available."
-            )
+    # DTOR = EI/GJ (torsional flexibility ratio; only the ratio matters)
+    dtor = sp.dtor
+    if dtor <= 0.0:
+        warnings.warn(
+            f"SPLINE2 {sp.eid}: DTOR={sp.dtor} must be > 0; using 1.0",
+            UserWarning,
+            stacklevel=3,
+        )
+        dtor = 1.0
+    EI = 1.0
+    GJ = 1.0 / dtor
 
-    # Extrapolation warning (>10% of span range)
-    # NB: s_range is computed above for the collinearity check
-    if s_range > 1e-12:
-        for tj in t_slope:
-            if tj < s_sorted[0] - 0.1 * s_range or tj > s_sorted[-1] + 0.1 * s_range:
+    # Extrapolation warning (>10% of the station range)
+    t_range = t_g.max() - t_g.min()
+    if t_range > 1e-12:
+        for gk in covered_gk:
+            tj = float((boxes[gk].colloc - origin) @ s_hat)
+            if tj < t_g.min() - 0.1 * t_range or tj > t_g.max() + 0.1 * t_range:
                 warnings.warn(
                     f"SPLINE2 {sp.eid}: a box extrapolates >10% beyond SET1 span",
                     UserWarning,
@@ -247,138 +185,163 @@ def _build_spline2_block(
                 )
                 break
 
-    zeros_n = np.zeros(n_s)
+    # ------------------------------------------------------------------ #
+    # Attached-DOF bookkeeping.
+    #   Each entry: (kind, grid_list_idx) with kind ∈ {"w", "thx", "thy"}.
+    #   w   — grid deflection u·ẑ            (load: point force  P)
+    #   thx — grid rotation ω·ĉ (bend slope) (load: bending moment M)
+    #   thy — grid rotation ω·ŝ (torsion)    (load: torque        T)
+    # ------------------------------------------------------------------ #
+    dofs = [("w", i) for i in range(len(gids))]
+    if dthx_attached:
+        dofs += [("thx", i) for i in range(len(gids))]
+    if dthy_attached:
+        dofs += [("thy", i) for i in range(len(gids))]
+    m = len(dofs)
 
-    # DTHX attachment switch (AE4c):
-    #   DTHX = 1.0  → attached  (standard torsion coupling)
-    #   DTHX = −1.0 → detached  (do not couple rotational DOF to spline)
-    #   other       → not supported; warn and treat as detached
-    dthx_attached = False
-    if sp.dthx == 1.0:
-        dthx_attached = True
-    elif sp.dthx == -1.0:
-        pass   # detached — skip torsion contribution
-    else:
-        warnings.warn(
-            f"SPLINE2 {sp.eid}: DTHX={sp.dthx} rotational attachment flexibility "
-            "not supported; treating as detached",
-            UserWarning,
-            stacklevel=3,
+    def _flex(kind: str) -> float:
+        if kind == "w":
+            return dz_flex
+        if kind == "thx":
+            return max(sp.dthx, 0.0)
+        return max(sp.dthy, 0.0)
+
+    # ------------------------------------------------------------------ #
+    # Spline system  [[0, Rᵀ], [R, A + diag(flex)]] · [a; q] = [0; u]
+    # (MSC Eqs. 2-54 / 2-58 / 2-59…2-63 with rigid arms.)
+    #
+    # Flexibility kernels between attached DOFs (Δ = t_d − t_e, D = |Δ|):
+    #   (w, w)     :  D³/12EI − χ_d·χ_e·D/2GJ
+    #   (w, thx)   : −Δ·D/4EI              (w at d due to unit moment at e)
+    #   (thx, w)   : +Δ·D/4EI
+    #   (thx, thx) : −D/2EI
+    #   (w, thy)   : +χ_d·D/2GJ            (z = w − χφ; φ from unit torque = −D/2GJ)
+    #   (thy, w)   : +χ_e·D/2GJ            (φ at d from arm torque −χ_e·P_e)
+    #   (thy, thy) : −D/2GJ
+    #   (thx, thy) :  0
+    # A force P_e on a rigid arm χ_e applies axis loads (P_e, torque −χ_e·P_e).
+    # ------------------------------------------------------------------ #
+    n_sys = 3 + m
+    sys_mat = np.zeros((n_sys, n_sys))
+    for a_idx, (kd, i) in enumerate(dofs):
+        # R row (rigid part): w = a0 + a1·t − a2·χ ; thx = a1 ; thy = a2
+        if kd == "w":
+            R_row = (1.0, t_g[i], -chi_g[i])
+        elif kd == "thx":
+            R_row = (0.0, 1.0, 0.0)
+        else:
+            R_row = (0.0, 0.0, 1.0)
+        sys_mat[3 + a_idx, 0:3] = R_row
+        sys_mat[0:3, 3 + a_idx] = R_row
+
+        for b_idx, (ke, j) in enumerate(dofs):
+            dt = t_g[i] - t_g[j]
+            D = abs(dt)
+            if kd == "w" and ke == "w":
+                val = D**3 / (12.0 * EI) - chi_g[i] * chi_g[j] * D / (2.0 * GJ)
+            elif kd == "w" and ke == "thx":
+                val = -dt * D / (4.0 * EI)
+            elif kd == "thx" and ke == "w":
+                val = +dt * D / (4.0 * EI)
+            elif kd == "thx" and ke == "thx":
+                val = -D / (2.0 * EI)
+            elif kd == "w" and ke == "thy":
+                val = +chi_g[i] * D / (2.0 * GJ)
+            elif kd == "thy" and ke == "w":
+                val = +chi_g[j] * D / (2.0 * GJ)
+            elif kd == "thy" and ke == "thy":
+                val = -D / (2.0 * GJ)
+            else:   # thx ↔ thy uncoupled
+                val = 0.0
+            sys_mat[3 + a_idx, 3 + b_idx] = val
+        sys_mat[3 + a_idx, 3 + a_idx] += _flex(kd)
+
+    # Scale-aware singularity guard: an EA-only SET1 (all arms ≈ 0) with
+    # DTHY detached leaves the rigid twist a₂ unconstrained, which shows up
+    # as a (near-)singular system rather than an exception from inv().
+    if np.linalg.cond(sys_mat) > 1e12:
+        raise ValueError(
+            f"SPLINE2 {sp.eid}: singular beam-spline system (SET1 {sp.setg}). "
+            "Common causes: all grids on the spline axis (no chord arms) with "
+            "torsion detached (DTHY < 0) — attach torsion with DTHY ≥ 0 or add "
+            "off-axis grids; all grids at one axis station with bending "
+            "rotations detached (DTHX < 0). See MSC Aeroelastic UG "
+            "'Attachment of Splines with Elastic Springs'."
         )
+    sys_inv = np.linalg.inv(sys_mat)
 
-    # DTOR / DTHZ (AE12): parsed and stored but not modelled by the beam spline.
-    #   DTOR ≠ 1.0        → torsional-to-bending flexibility ratio is ignored.
-    #   DTHZ ∈ {0.0,−1.0} → blank/default or NASTRAN "Rz detached" — matches sbeam's
-    #                       behaviour (Rz never coupled), so silent.
-    #   other DTHZ        → the card asks for Rz attachment sbeam cannot model.
-    if sp.dtor != 1.0:
-        warnings.warn(
-            f"SPLINE2 {sp.eid}: DTOR={sp.dtor} torsional flexibility ratio "
-            "not supported; value ignored (treated as 1.0)",
-            UserWarning,
-            stacklevel=3,
-        )
-    if sp.dthz not in (0.0, -1.0):
-        warnings.warn(
-            f"SPLINE2 {sp.eid}: DTHZ={sp.dthz} Rz rotational attachment "
-            "not supported; treating as detached",
-            UserWarning,
-            stacklevel=3,
-        )
+    # ------------------------------------------------------------------ #
+    # Structural-DOF → attached-DOF value matrix B  (m × 6·n_grid columns
+    # touched).  w = u·ẑ (translations), thx = ω·ĉ, thy = ω·ŝ (rotations).
+    # ------------------------------------------------------------------ #
+    # Solution operator: [a; q] = sys_inv @ [0; u_dof] — only the last m
+    # columns of sys_inv matter:
+    sol_op = sys_inv[:, 3:]                       # (n_sys, m)
 
-    for i, gid in enumerate(gids_sorted):
-        grid_i = grid_index[gid]
-        base   = 6 * grid_i
+    # ------------------------------------------------------------------ #
+    # Box evaluation rows.
+    #   z(t, χ)      = a0 + a1·t − a2·χ + Σ_e K_z(e)·q_e
+    #   ∂z/∂x_basic  = ŝ[0]·(w′ − χ·φ′) − ĉ[0]·φ
+    # with per-load kernels (Δ = t − t_e, D = |Δ|, sg = sign(Δ)):
+    #   w:  P → D³/12EI ; M → −Δ·D/4EI ; T → 0
+    #   w′: P → Δ·D/4EI ; M → −D/2EI   ; T → 0
+    #   φ:  P → +χ_e·D/2GJ ; T → −D/2GJ ; M → 0
+    #   φ′: P → +χ_e·sg/2GJ ; T → −sg/2GJ ; M → 0
+    # ------------------------------------------------------------------ #
+    def _eval_rows(pt: np.ndarray) -> tuple:
+        r = pt - origin
+        t = float(r @ s_hat)
+        chi = float(r @ c_hat)
+        E_z = np.zeros(n_sys)
+        E_dzdx = np.zeros(n_sys)
+        # rigid part
+        E_z[0:3] = (1.0, t, -chi)
+        E_dzdx[0:3] = (0.0, s_hat[0], -c_hat[0])
+        for b_idx, (ke, j) in enumerate(dofs):
+            dt = t - t_g[j]
+            D = abs(dt)
+            sg = np.sign(dt)
+            if ke == "w":
+                w_v, wp = D**3 / (12.0 * EI), dt * D / (4.0 * EI)
+                ph, php = chi_g[j] * D / (2.0 * GJ), chi_g[j] * sg / (2.0 * GJ)
+            elif ke == "thx":
+                w_v, wp = -dt * D / (4.0 * EI), -D / (2.0 * EI)
+                ph, php = 0.0, 0.0
+            else:   # thy
+                w_v, wp = 0.0, 0.0
+                ph, php = -D / (2.0 * GJ), -sg / (2.0 * GJ)
+            E_z[3 + b_idx] = w_v - chi * ph
+            E_dzdx[3 + b_idx] = s_hat[0] * (wp - chi * php) - c_hat[0] * ph
+        return E_z, E_dzdx
 
-        # --- Hermite function-value basis: unit value at node i, zero slopes ---
-        y_f = zeros_n.copy()
-        y_f[i] = 1.0
-        cs_f = CubicHermiteSpline(s_sorted, y_f, zeros_n)
-        f_vals_slope  = cs_f(t_slope)                      # shape (n_cov,)
-        f_slopes_slope = cs_f.derivative()(t_slope)        # shape (n_cov,)
-        f_vals_force  = cs_f(t_force)                      # shape (n_cov,)
-
-        # --- Hermite derivative-value basis: zero values, unit slope at i ---
-        dy_f = zeros_n.copy()
-        dy_f[i] = 1.0
-        cs_d = CubicHermiteSpline(s_sorted, zeros_n, dy_f)
-        d_vals_force  = cs_d(t_force)
-        d_slopes_slope = cs_d.derivative()(t_slope)
-
-        # ---- Translation DOFs (d = 0 Tx, 1 Ty, 2 Tz) ----
-        for d in range(3):
-            z_comp = z_hat[d]
-            if abs(z_comp) < 1e-15:
-                continue
-            col = base + d
-
-            # g_slope (AE1 Step B): chordwise-rigid section reconstruction gives
-            # u_z(x, y) = h(s(x, y)) along the spline axis. The streamwise
-            # downwash is w = −∂u_z/∂x_basic = −(dh/ds)·(∂s/∂x_basic).
-            # Since s = (r − origin)·x̂, ∂s/∂x_basic = x̂[0]. Therefore:
-            #
-            #     w = −x̂[0] · (dh/ds)
-            #
-            # Multiplication, not division — the previous (z_comp / x0) form was
-            # self-consistent only for the "rigid-along-spline-axis" kinematic
-            # (V-AE2b) and produced spurious downwash under genuine basic-frame
-            # rigid-body modes on a swept spline (V-AE1b).
-            g_slope[covered_arr, col] += -z_comp * x0 * f_slopes_slope
-
-            # g_disp: evaluated at force_point (AE6); formula unchanged
-            for comp in range(3):
-                g_disp[3 * covered_arr + comp, col] += z_comp * z_hat[comp] * f_vals_force
-
-        # ---- Rotation DOFs (d = 3 Rx, 4 Ry, 5 Rz) ----
-        for d in range(3):
-            col    = base + 3 + d
-            y_comp = y_hat[d]   # bending-slope axis projection
-            x_comp = x_hat[d]   # spline-axis / torsion projection
-
-            # --- Bending slope contribution ---
-            # Physical nodal slope (AE4b sign): (dh/ds)_i = −y_comp · ω_i.
-            # AE1 Step B: streamwise downwash uses the multiplication form
-            # w = −x̂[0]·(dh/ds), so the nodal contribution becomes
-            #
-            #     g_slope += +y_comp · x̂[0] · (dφ_d/ds)
-            if abs(y_comp) > 1e-15:
-                g_slope[covered_arr, col] += y_comp * x0 * d_slopes_slope
-
-                # g_disp: h contribution = φ_d[i]·(dh/ds)_i = φ_d[i]·(−y_comp·ω)
-                # → g_disp entry = −y_comp · φ_d[i] · z_hat  (AE4b sign, AE6 force point)
+    # Weight rows through the solution operator once per box, then scatter
+    # into the global g_slope / g_disp columns per structural DOF.
+    for gk in covered_gk:
+        box = boxes[gk]
+        _, E_dzdx = _eval_rows(box.colloc)
+        E_zf, _ = _eval_rows(box.force_point)
+        w_slope = -(E_dzdx @ sol_op)              # (m,) incidence weights
+        w_force = E_zf @ sol_op                   # (m,) deflection weights
+        for a_idx, (kd, i) in enumerate(dofs):
+            base = 6 * grid_index[gids[i]]
+            if kd == "w":
+                vecs = z_hat
+                col0 = base
+            elif kd == "thx":
+                vecs = c_hat
+                col0 = base + 3
+            else:
+                vecs = s_hat
+                col0 = base + 3
+            for d in range(3):
+                if abs(vecs[d]) < 1e-15:
+                    continue
+                g_slope[gk, col0 + d] += vecs[d] * w_slope[a_idx]
                 for comp in range(3):
-                    g_disp[3 * covered_arr + comp, col] += (
-                        -y_comp * z_hat[comp] * d_vals_force
-                    )
-
-            # --- Torsion contribution ---
-            # A section rotated about x̂_spline by θ_t produces u_z = θ_t · ζ
-            # at a chordwise point with offset ζ along ŷ_spline. The streamwise
-            # gradient is ∂u_z/∂x_basic = θ_t · y_hat[0] (since ∂ζ/∂x_basic =
-            # y_hat[0] for chordwise-rigid sections), so
-            #
-            #     w_torsion = −y_hat[0] · θ_t = −y_hat[0] · x_comp · ω_basic[d]
-            #
-            # AE1 Step B: previously this was just x_comp · f_vals_slope, which
-            # is correct only when y_hat[0] = −1 (unswept spline) and happened to
-            # match a swept case by accident. With the corrected formula and
-            # multiplication-bending above, the spline reproduces all 6 global
-            # basic-frame rigid-body modes exactly on planar (z = 0) wings.
-            # DTHX = 1: attached; DTHX = −1: detached (skip).
-            if dthx_attached and abs(x_comp) > 1e-15:
-                g_slope[covered_arr, col] += -y_hat[0] * x_comp * f_vals_slope
-
-                # g_disp: torsion adds u = θ_t · ζ · ẑ_spline at the box force
-                # point, distributed back to nodes through the same function-
-                # value Hermite basis used for translation. ζ_k is computed at
-                # the box force_point (AE6: ¼-chord).
-                zeta_force = np.array([
-                    float(np.dot(boxes[gk].force_point - origin, y_hat))
-                    for gk in covered_gk
-                ])
-                for comp in range(3):
-                    g_disp[3 * covered_arr + comp, col] += (
-                        x_comp * zeta_force * z_hat[comp] * f_vals_force
+                    if abs(z_hat[comp]) < 1e-15:
+                        continue
+                    g_disp[3 * gk + comp, col0 + d] += (
+                        vecs[d] * z_hat[comp] * w_force[a_idx]
                     )
 
 

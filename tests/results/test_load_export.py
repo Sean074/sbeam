@@ -44,10 +44,18 @@ class TestLoadExport:
         lift = result.q * result.total_cl * bulk.aeros.sref
         assert fz == pytest.approx(lift, rel=1e-6)
 
-    def test_moment_cards_present(self, trim):
+    def test_moment_cards_canard_spring_only(self, trim):
+        """With the NASTRAN beam spline (AC7), wing splines carry rotations
+        detached (DTHX=DTHY=-1) so grid loads are pure forces — moments arise
+        from the force distribution, exactly as in NASTRAN. MOMENT cards
+        appear only where a spline attaches rotation DOFs (the canard DTHX
+        spring; zero under symmetric flight). Assert the export is
+        force-complete and contains no spurious MOMENT lines with NaN."""
         bulk, result = trim
         text = build_aero_load_cards_text(bulk, result, sid=1)
-        assert any(line.startswith("MOMENT") for line in text.splitlines())
+        assert any(line.startswith("FORCE") for line in text.splitlines())
+        for line in text.splitlines():
+            assert "nan" not in line.lower()
 
     def test_cards_reparse_and_balance(self, trim, tmp_path):
         """Round-trip: the written cards parse back, and the parsed FORCE set

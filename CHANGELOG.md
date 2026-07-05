@@ -11,6 +11,30 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Phase 2 completion.
 
+### Fixed
+
+**High-q flexible-coupling fidelity (AE14) — Step AC7 (2026-07-05)**
+
+- **HA144A full-span deck: fuselage PBAR doubled** — the mirror of the MSC half-span deck
+  had doubled the centreline masses but not the centreline fuselage stiffness, so the
+  full-span fuselage (carrying both wings) flexed ×2. This drove most of the 5–28% q=1200
+  restrained-derivative errors, the wrong-signed rate-column increments, **and the entire
+  AE8a "accepted trim bias"** (superseded: q=40 trim now matches NASTRAN Listing 7-2 to 5
+  digits, ANGLEA 0.16918 vs 1.6919E-1).
+- **SPLINE2 rewritten as the NASTRAN infinite beam spline** (MSC Aeroelastic UG
+  Eqs. 2-48…2-63), replacing the cubic Hermite: spline axis = CID **y-axis** (MSC
+  convention), rigid chord arms (off-axis SET1 grids legal; the EA-collinearity
+  restriction is gone), `DTOR = EI/GJ` now used, `DZ`/`DTHX`/`DTHY` as attachment
+  flexibilities (0 = rigid, > 0 = spring, negative = detached; field `dthz` renamed
+  `dthy` per the MSC card). Fixes the canard chordwise-camber contamination and the
+  missing twist-gradient term; rigid-body modes exact by construction. The HA144A deck's
+  MSC SPLINE2/SET1/CORD2R card values are restored verbatim; `val_dihedral_trim.bdf` and
+  the cantilever test deck converted to the new convention.
+- **Result:** q=40 restrained columns all ≤0.20%; q=1200 CZα/CZq/CMq gated live (≤2/2.5%,
+  restrained and unrestrained). The remaining moment/ELEV residual (3–5%, wing-root TE
+  boxes behind the canard — steady-VLM vs k→0-DLM interference) is documented and
+  re-scoped as backlog Step AC8/AE15. q_div sentinel re-pinned 4034 → 3809.8.
+
 ### Added
 
 **Minor solver warnings + cosine chordwise spacing — AE12/A7/A8 / Step AC4 (2026-07-05)**

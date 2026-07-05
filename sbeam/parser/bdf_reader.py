@@ -603,18 +603,18 @@ def _handle_spline2(fields: list, cont, bulk: BulkData) -> None:
     dz    = _to_float(fields[6]) if len(fields) > 6 and fields[6].strip() else 0.0
     dtor  = _to_float(fields[7]) if len(fields) > 7 and fields[7].strip() else 1.0
     cid   = _to_int_opt(fields[8]) if len(fields) > 8 else 0
-    dthx  = 1.0
-    dthz  = 0.0
+    dthx  = 0.0
+    dthy  = 0.0
     usage = "BOTH"
     if cont is not None:
-        dthx  = _to_float(cont[1]) if len(cont) > 1 and cont[1].strip() else 1.0
-        dthz  = _to_float(cont[2]) if len(cont) > 2 and cont[2].strip() else 0.0
+        dthx  = _to_float(cont[1]) if len(cont) > 1 and cont[1].strip() else 0.0
+        dthy  = _to_float(cont[2]) if len(cont) > 2 and cont[2].strip() else 0.0
         usage = cont[4].strip() if len(cont) > 4 and cont[4].strip() else "BOTH"
     if eid in bulk.spline2s:
         raise ValueError(f"Duplicate SPLINE2 EID {eid}")
     bulk.spline2s[eid] = Spline2(
         eid=eid, caero=caero, id1=id1, id2=id2, setg=setg,
-        dz=dz, dtor=dtor, cid=cid, dthx=dthx, dthz=dthz, usage=usage,
+        dz=dz, dtor=dtor, cid=cid, dthx=dthx, dthy=dthy, usage=usage,
     )
 
 

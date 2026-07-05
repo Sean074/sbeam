@@ -1164,18 +1164,22 @@ SET1, 1100, 10, 11, 12, 13, 14, 15
 
 ---
 
-### SPLINE2 — Beam Spline
+### SPLINE2 — Beam Spline (NASTRAN infinite beam spline)
 
-Couples a range of aero boxes to structural grids via a 1-D cubic Hermite spline
-along the spline axis (CID x-axis = span direction).
+Couples a range of aero boxes to structural grids via the MSC infinite-beam-spline
+formulation (MSC Aeroelastic Analysis UG Eqs. 2-48…2-63): bending + torsion point-load
+kernels along the spline axis with **rigid chord arms**, so off-axis grids are legal and
+carry twist information through their deflections. Rewritten at the AC7 close-out
+(2026-07-05); the former cubic-Hermite implementation and its EA-collinearity restriction
+are gone.
 
 **Format:**
 ```
 SPLINE2, EID, CAERO, ID1, ID2, SETG, DZ, DTOR, CID
-+,       DTHX, DTHZ, , USAGE
++,       DTHX, DTHY, , USAGE
 ```
 
-The continuation line is optional.
+The continuation line is optional (DTHX/DTHY default 0.0 = rigid attachment).
 
 **Fields:**
 
@@ -1186,23 +1190,24 @@ The continuation line is optional.
 | ID1 | `id1` | int | First NASTRAN box ID in the range | required |
 | ID2 | `id2` | int | Last NASTRAN box ID in the range | required |
 | SETG | `setg` | int | SET1 SID listing the structural grids | required |
-| DZ | `dz` | float | Smoothing parameter (`0.0` = interpolating Hermite) | `0.0` |
-| DTOR | `dtor` | float | Torsional/bending ratio — not modelled; values ≠ 1.0 warn and are ignored (AE12) | `1.0` |
-| CID | `cid` | int | CORD2R CID defining the spline axis (`0` = global) | `0` |
-| DTHX | `dthx` | float | Torsion (CID x-axis rotation) attachment flag: `1.0` = attached, `−1.0` = detached; other values warn and are treated as detached | `1.0` |
-| DTHZ | `dthz` | float | CID z-axis rotation attachment — not modelled; `0.0` (blank) and `−1.0` (NASTRAN "detached", matching sbeam) are silent, other values warn and are treated as detached (AE12) | `0.0` |
+| DZ | `dz` | float | Linear (deflection) attachment flexibility: `0.0` = rigid, > 0 = spring; negative warns and is treated as rigid | `0.0` |
+| DTOR | `dtor` | float | Torsional flexibility ratio **EI/GJ** (used; only the ratio matters); ≤ 0 warns and falls back to 1.0 | `1.0` |
+| CID | `cid` | int | CORD2R CID; the **y-axis** is the spline axis, the x-axis the chord/rigid-arm direction, the z-axis the deflection direction (MSC convention) | `0` |
+| DTHX | `dthx` | float | Bending-slope (rotation about CID x) attachment flexibility: `0.0` = rigid, > 0 = spring, negative = not attached | `0.0` |
+| DTHY | `dthy` | float | Torsion (rotation about CID y = spline axis) attachment flexibility, same convention | `0.0` |
 | USAGE | `usage` | str | `FORCE` / `DISP` / `BOTH` (informational; not filtered in Phase B) | `"BOTH"` |
 
 Note the blank field before USAGE on the continuation line (field 4).
 
 Cross-reference validation (post-parse): SETG not in SET1 → `ValueError`;
-CAERO not in CAERO1 → `ValueError`.
+CAERO not in CAERO1 → `ValueError`. A singular spline system (e.g. an EA-only collinear
+SET1 with DTHY < 0 — no twist information) raises a `ValueError` at operator build.
 
-**Example:**
+**Example (HA144A wing — MSC card values):**
 ```
-$ Spline boxes 1001-1040 to the SET1 1100 grids, spline axis = CORD2R 10
-SPLINE2, 200, 1001, 1001, 1040, 1100, 0.0, 1.0, 10
-+,       1.0, 0.0, , BOTH
+$ Wing boxes 1100-1131 to SET1 1100 (root grids + LE/TE stringers); axis = CORD2R 2 y-axis
+SPLINE2, 1601, 1100, 1100, 1131, 1100, 0.0, 1.0, 2
++,       -1.0, -1.0
 ```
 
 ---
@@ -1861,7 +1866,7 @@ are the exception: they refer to **element local axes** (1 = axial, 4 = torsion,
 | AESURF | ALID1 (and ALID2 if non-zero) must exist in AELIST |
 | AELIST | All box IDs must fall within at least one CAERO1 range |
 | SET1 | Every grid ID must exist in GRID; a spline-referenced SET1 needs ≥ 2 grids |
-| SPLINE2 | SETG must exist in SET1; CAERO must exist in CAERO1; DTHX other than ±1.0 warns and is treated as detached; DTOR ≠ 1.0 warns and is ignored; DTHZ outside {0.0, −1.0} warns and is treated as detached |
+| SPLINE2 | SETG must exist in SET1; CAERO must exist in CAERO1; DTOR ≤ 0 and DZ < 0 warn (fall back to 1.0 / rigid); a singular spline system (no twist information) raises `ValueError` |
 | SPLINE1 | Not implemented (Step 48 deferred) — handler raises `NotImplementedError`; use SPLINE2 or ATTACH |
 | ATTACH | CID must be `0`; CID ≠ 0 raises `NotImplementedError` at spline build |
 | SUPORT | Blank DOF string after a GID raises `ValueError` |
