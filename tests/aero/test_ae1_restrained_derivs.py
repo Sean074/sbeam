@@ -190,8 +190,11 @@ class TestRestrainedDerivsQ1200:
         )
 
     @pytest.mark.xfail(
-        reason="AC7 documented residual: wing-root TE (canard-wake) boxes "
-               "differ between steady VLM and NASTRAN k->0 DLM; restrained "
+        reason="AE15 accepted residual (Step AC8, docs/20_theory/studies/"
+               "a2_wing_root_interference.md): canard-wake/wing-root "
+               "interference discretization difference vs MSC's steady AIC on "
+               "the fixed 8x4/2x4 mesh — sbeam's VLM independently confirmed "
+               "(DLR PanelAero, 1.6e-8 operator agreement); restrained "
                "CMa +4.3%, CZde -2.9%, CMde +5.2% at q=1200",
         strict=False,
     )
@@ -252,9 +255,9 @@ class TestUnrestrainedDerivsQ1200:
         )
 
     @pytest.mark.xfail(
-        reason="AC7 documented residual (see TestRestrainedDerivsQ1200): the "
-               "unrestrained moment/ELEV columns inherit the restrained "
-               "wing-root interference residual",
+        reason="AE15 accepted residual (Step AC8, docs/20_theory/studies/"
+               "a2_wing_root_interference.md): the unrestrained moment/ELEV "
+               "columns inherit the restrained wing-root interference residual",
         strict=False,
     )
     @pytest.mark.parametrize("label,comp,key",

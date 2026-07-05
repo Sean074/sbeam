@@ -40,7 +40,16 @@ q=40 trim matches NASTRAN Listing 7-2 to 5 digits); (2) SPLINE2 rewritten as the
 infinite beam spline (MSC UG Eqs. 2-48…2-63; CID y-axis convention, rigid chord arms,
 DTOR/DTHX/DTHY/DZ semantics, collinearity restriction removed), with the MSC HA144A
 SET1/DTHX card values restored. q=1200 CZα/CZq/CMq gated live (≤2/2.5%); the remaining
-moment/ELEV residual is re-scoped as Step AC8 below. See `docs/40_history` and CHANGELOG.
+moment/ELEV residual was re-scoped as Step AC8 (closed below). See `docs/40_history` and CHANGELOG.
+
+**Step AC8 (AE15 wing-root interference residual) CLOSED 2026-07-05** — investigated and
+ACCEPTED as a documented residual (Study A2,
+`docs/20_theory/studies/a2_wing_root_interference.md`). sbeam's VLM implementation
+exonerated by an independent cross-check (DLR PanelAero agrees to 1.6e-8 at operator level
+and to 4+ decimals through the full flexible chain); the q=1200 moment/ELEV residual
+(2.9–5.3%) is a canard-wake/wing-root interference discretization difference — MSC's
+steady AIC is near-mesh-converged on the coarse 8×4 mesh where a horseshoe VLM is not.
+The six q=1200 gates stay `xfail` citing the study. See `docs/40_history` and CHANGELOG.
 
 **Step AC4 (AE12/A7/A8 minor solver warnings) CLOSED 2026-07-05** — SPLINE2 DTOR/DTHZ
 now warn when carrying values sbeam ignores; `build_aero_model` warns pre-solve on < 4
@@ -53,37 +62,6 @@ detached DTHZ=−1.0/default DTOR=1.0 — NASTRAN does no Rz coupling there eith
 |-----:|------|------|----------|-------|
 | AC5 | [GUI — close the small viewer gaps](#step-ac5--gui--close-the-small-viewer-gaps) | Code | Medium | Exports, totals, body-panel display, doc reconcile |
 | AC6 | [Step 54 — CFD/WT steady-pressure injection (CHORDCP)](#step-ac6--step-54--cfd--wind-tunnel-steady-pressure-injection-mean-flow-trim) | Code | Optional | Steady-complete can be declared without it |
-| AC8 | [AE15 — wing-root interference residual](#step-ac8-minor-ae15--wing-root-interference-residual) | Code | MINOR | q=1200 moment/ELEV columns 3–5% off; canard-wake/root region, steady VLM vs k→0 DLM |
-
----
-
-### Step AC8 [MINOR] AE15 — Wing-root interference residual
-
-**Files:** `sbeam/aero/vlm.py` (horseshoe kernel / trailing legs), `sample/ha144a_fullspan_sbeam.bdf`.
-
-**What remains of AE14 after the AC7 close-out (2026-07-05).** With the fuselage-PBAR
-doubling and the NASTRAN beam-spline rewrite, HA144A q=40 restrained columns are all
-≤0.2% and q=1200 CZα/CZq/CMq pass live 2/2.5% gates. The residual:
-
-```
-[MINOR] EVIDENCE — q=1200 vs Table 7-1 (beam spline + 2x fuselage, 2026-07-05):
-        restrained:   CMα +4.30%   CZδe −2.90%   CMδe +5.23%   (CZα −1.53%, CZq −0.95%, CMq +2.02% pass)
-        unrestrained: CMα −4.33%   CZδe −3.62%   CMδe +5.28%   (CZα −1.90%, CZq −1.25%, CMq −2.28% pass 2.5%)
-ATTRIBUTION (pinned-state per-box comparison vs Listing 7-2 box forces at NASTRAN's
-        exact trim state): canard boxes match ≤0.2% each; wing outboard LE columns ≈1.008;
-        the mismatch concentrates in the WING-ROOT TE boxes (i_span 0–3, j_chord 2–3,
-        y ∈ 0–5 ft) — directly behind the canard. Steady VLM horseshoe trailing legs vs
-        NASTRAN k→0 DLM model the canard-wake/wing-root interference differently, and the
-        flexible increment weights exactly that region. Structure/spline/operator all
-        verified independently (see Step AC7 in docs/40_history).
-CANDIDATE APPROACHES: wake-position sensitivity study (trailing-leg geometry through the
-        wing root), finer canard/root chordwise mesh comparison, or accept as a kernel
-        difference and keep the xfail gates documented.
-ACCEPTANCE (to CLOSE): either the six xfailed q=1200 moment/ELEV gates
-        (tests/aero/test_ae1_restrained_derivs.py::TestRestrainedDerivsQ1200/
-        TestUnrestrainedDerivsQ1200 residual halves) pass at 2%, or a study documents the
-        kernel-difference attribution quantitatively and the residual is accepted.
-```
 
 ---
 

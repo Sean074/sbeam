@@ -4283,3 +4283,51 @@ semantics, load-export moment-card expectation (detached rotations ⇒ pure-forc
 loads, as NASTRAN). Diagnostic method (Listing 7-2 per-box force + MONDSP1 transcription,
 pinned-trim-state comparison via a forced `_solve_trim_determined`) recorded here;
 scratch scripts deleted.
+
+### Step AC8 — AE15: Wing-root interference residual ✅ INVESTIGATED & ACCEPTED (2026-07-05)
+
+**Objective:** Close the residual re-scoped from AC7 — HA144A q=1200 moment/ELEV columns
+2.9–5.3% off MSC Table 7-1 (restrained CMα +4.30%, CZδe −2.90%, CMδe +5.23%; unrestrained
+inherits), concentrated in the wing-root TE boxes behind the canard. Acceptance was
+either/or: close the six xfailed gates at 2%, or document the kernel-difference
+attribution quantitatively and accept. **Outcome: Path B — quantitatively attributed and
+accepted** (user pre-decision: even a gate-closing kernel would ship documentation only,
+feeding the Phase D DLM design).
+
+**Deliverables:** `docs/20_theory/studies/a2_wing_root_interference.md` (Study A2, the
+full evidence); six xfail reasons in `tests/aero/test_ae1_restrained_derivs.py` updated
+to cite it; AE15 known-limitation row in `docs/10_standard/05_aeroelastics.md` re-worded
+as investigated/accepted; INDEX row. **No product code changed.**
+
+**Evidence (three independent experiments, all scratch-side):**
+1. *Implementation exoneration* — DLR PanelAero (NASTRAN-lineage VLM: Hedman x/β
+   compressibility, semi-infinite legs, Katz & Plotkin D1+D2+D3) run on the exact HA144A
+   box geometry and substituted for `ajj_inv_corr` through the full SOL 144 chain:
+   operator agreement 1.6e-8 relative Frobenius; every rigid and q=1200 flexible column
+   identical to 4+ decimals. sbeam's VLM (Göthert y,z·β, 1000-chord legs) is
+   implementation-correct; no textbook VLM reproduces MSC's coarse-mesh root loading.
+   NOTE: the pre-registered "DLM-AIC substitution recovers ≥70% of each gap" bar proved
+   unmeetable by construction — PanelAero's k=0 DLM *is* its VLM (steady part), so no
+   open-source arbiter embodies MSC's proprietary steady-AIC quadrature.
+2. *Convergence attribution* — in-memory remesh study (box-ID-dependent cards renumbered
+   programmatically): chordwise refinement collapses the residual (NCHORD=8: CMα −0.49%,
+   CZδe +2.27%, CMδe +0.76% vs NASTRAN's NCHORD=4 values; NCHORD=12 similar). Strip-level
+   at the pinned Listing 7-2 trim state: in the four root strips NASTRAN-coarse lands
+   within 1–15 lb of sbeam-refined where sbeam-coarse is 19–75 lb off. MSC's steady AIC
+   is near-mesh-converged in the interference region; a coarse horseshoe VLM is not.
+3. *Mechanism* — canard/wing spanwise-breakpoint misalignment corrupts even RIGID
+   derivatives (canard 3/5-span stagger: rigid CZδe +0.246→+0.591/−0.502 sign flip;
+   columns ±135–295%): the discrete-wake singularity sweeps across downstream collocation
+   points. A kinked-wake z-offset of ±0.5 ft moves CMδe by 9 points. The residual lives in
+   sub-foot wake-threading details a flat rigid wake at NCHORD=4 cannot resolve.
+
+**Key decisions:** residual ACCEPTED as a documented kernel/method difference; six q=1200
+gates stay `xfail(strict=False)` citing Study A2; resolution path if ever needed = Phase D
+DLM (steady kernel-function quadrature) or chordwise refinement for sbeam-native models.
+Modeling guidance published in Study A2 §5: align upstream/downstream spanwise breakpoints;
+NCHORD ≥ 8 on wake-washed surfaces.
+
+**Test/Acceptance:** no pins moved (no product change); suite unchanged at 1064 passed /
+6 xfailed, with the xfail reasons now citing the study. Scratch artifacts (ac8_boxcmp.py,
+ac8_meshstudy.py, ac8_panelaero.py, ac8_strip_wake.py, PanelAero venv) deleted at
+close-out; reproduction recipe recorded in Study A2 §6.

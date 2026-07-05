@@ -37,6 +37,21 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Wing-root interference residual investigated and accepted (AE15) — Step AC8 (2026-07-05)**
+
+- Study A2 (`docs/20_theory/studies/a2_wing_root_interference.md`) closes the residual
+  re-scoped from AC7: sbeam's VLM implementation is **exonerated** by an independent
+  cross-check (DLR PanelAero substituted through the full SOL 144 chain agrees to 1.6e-8
+  at operator level and to 4+ decimals on every derivative column); the q=1200
+  moment/ELEV residual (2.9–5.3%) is attributed to a canard-wake/wing-root interference
+  **discretization** difference — MSC's steady AIC is near-mesh-converged on the coarse
+  8×4 mesh where a horseshoe VLM is not (sbeam at NCHORD=8–12 matches NASTRAN's
+  coarse-mesh values to ~0.5–2.3%; strip-level confirmation at the pinned Listing 7-2
+  trim state). Residual ACCEPTED; the six q=1200 gates stay xfail citing the study.
+  No product code changed. Modeling guidance: align upstream/downstream spanwise
+  breakpoints (misaligned canard staggers corrupt even rigid derivatives ±135–295%);
+  use NCHORD ≥ 8 on wake-washed surfaces.
+
 **SPLINE9 design proposal (2026-07-05)**
 
 - **`docs/30_future/designs/spline9_hermite_beam_spline.md`** — design proposal for an

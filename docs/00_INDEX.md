@@ -34,6 +34,7 @@ are the day-to-day references; higher numbers are planning and historical record
 | [`01_aeroelastics_theory.md`](20_theory/01_aeroelastics_theory.md) | VLM, AIC corrections, splining, SOL 144 theory |
 | [`aeroelastic_derivatives.md`](20_theory/aeroelastic_derivatives.md) | Tutorial: rigid vs elastic-restrained vs elastic-unrestrained (mean-axis) stability derivatives + the ZAERO modal form — new-engineer level |
 | [`studies/a1_spanwise_spacing.md`](20_theory/studies/a1_spanwise_spacing.md) | VLM lift-slope spanwise-spacing convergence diagnostic |
+| [`studies/a2_wing_root_interference.md`](20_theory/studies/a2_wing_root_interference.md) | HA144A wing-root interference residual (AE15/AC8) — attribution study, accepted residual |
 
 ## 30_future — Future development
 

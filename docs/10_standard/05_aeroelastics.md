@@ -58,11 +58,12 @@ regression gates: V-AE1 (trim), V-AE2 (swept-spline rigid body), V-AE3 (coupling
 cross-check), V-C-DIH (dihedral ±Γ), V-C4/V-LAT (over-determined trim, lateral derivatives),
 V-C5 (maneuver-load closure).
 
-One documented residual remains (full detail in `docs/30_future/00_backlog.md`, Step AC8):
+One documented, accepted residual remains (Study A2,
+`docs/20_theory/studies/a2_wing_root_interference.md` — Step AC8 close-out 2026-07-05):
 
 | ID | Limitation | Severity | Impact |
 |----|-----------|----------|--------|
-| AE15 | **Wing-root interference residual** (what remains of AE14 after the AC7 close-out 2026-07-05): with the fuselage-PBAR deck fix and the NASTRAN beam-spline rewrite, q=1200 restrained CZα/CZq/CMq are gated live at ≤2/2.5%; the pitching-moment and ELEV columns carry a residual (restrained CMα +4.3%, CZδe −2.9%, CMδe +5.2%; unrestrained inherits it). Pinned-state per-box comparison against the guide's Listing 7-2 box forces shows the canard matching ≤0.2% per box, with the residual concentrated in the wing-root TE boxes directly behind the canard — canard-wake/root interference modelled differently by steady VLM (horseshoe trailing legs) vs NASTRAN's k→0 DLM. | MINOR (documented residual; all q=40 columns ≤0.2%) | Moment/ELEV flexible columns 3–5% off at q=1200 |
+| AE15 | **Wing-root interference residual (investigated and ACCEPTED, Step AC8 2026-07-05)**: the HA144A q=1200 pitching-moment/ELEV columns carry a 2.9–5.3% residual vs Table 7-1 (restrained CMα +4.3%, CZδe −2.9%, CMδe +5.2%; unrestrained inherits it; CZα/CZq/CMq gated live at ≤2/2.5%; all q=40 columns ≤0.2%). Study A2 attribution: sbeam's VLM is implementation-correct (independent DLR PanelAero agrees to 1.6e-8 at operator level and to 4+ decimals through the flexible chain); the residual is a canard-wake/wing-root interference **discretization** difference — MSC's steady AIC is near-mesh-converged on the coarse 8×4 mesh where a horseshoe VLM is not (sbeam at NCHORD=8–12 lands within ~0.5–2.3% of NASTRAN's coarse-mesh values). Kept as six `xfail` gates citing the study. Modeling guidance: align upstream/downstream spanwise breakpoints; use NCHORD ≥ 8 on wake-washed surfaces. | MINOR (accepted residual) | Moment/ELEV flexible columns 3–5% off at q=1200 on the NASTRAN-comparison mesh |
 
 **AE14 closed (2026-07-05, Step AC7):** two root causes found and fixed. (1) The full-span
 HA144A deck had NOT doubled the centreline fuselage PBAR when mirroring (masses were
