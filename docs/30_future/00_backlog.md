@@ -17,8 +17,10 @@ Phase 1, Phase G0 increment 1, AE13, A5 — is recorded in
 `docs/40_history/00_completed_development.md` and CHANGELOG `[Unreleased]`.
 
 **Scope decision (2026-07-03):** this plan targets *steady-complete* only. The Phase G0
-transient follow-ons (G0-b/c/d/e) and the DLM/flutter work are out of scope and listed
-under "Future development" at the bottom of this file. GUI work closes the small display
+transient follow-ons and the DLM/flutter work are out of scope and listed under "Future
+development" at the bottom of this file. **Update 2026-07-05:** the Phase G0 follow-ons now
+carry a detailed development plan (Steps 59–63 + G0-d/G0-e, see the Phase G0 section below)
+and are the next major development. GUI work closes the small display
 and export gaps; SOL 144 case *authoring* stays BDF-only (recorded as a future item).
 
 **Step AC1 (documentation scrub) CLOSED 2026-07-03** — widened to a full project-documentation
@@ -216,7 +218,7 @@ contamination. It composes with the strip load device (load + BC as two independ
 **Test/Acceptance (when implemented):** Reproduces rigid-body and linear fields exactly;
 matches a published IPS example (Harder & Desmarais 1972).
 
-### Phase G0 — transient maneuver loads (DLM-free): follow-on increments
+### Phase G0 — transient maneuver loads (DLM-free): follow-on increments — DETAILED PLAN (2026-07-05)
 
 **Increment 1 is CLOSED (2026-06-13)** — Level-1 quasi-steady (`Ω×r`), open-loop, restrained l-set
 Newmark-β integration of the ZAERO `MLOADS` card set (`MLOADS`/`MLDTRIM`/`MLDCOMD`/`MLDTIME`/
@@ -224,36 +226,246 @@ Newmark-β integration of the ZAERO `MLOADS` card set (`MLOADS`/`MLDTRIM`/`MLDCO
 `solver/maneuver_qs.py`. The increments below build on it; all are **DLM-free** and gated only on
 Phase C. Full unsteady MLOADS (state-space / RFA / control law) remains Phase G (gated on the DLM).
 
-#### G0-b — Free-flight rigid-body coupling (self-balancing maneuver)
+**Plan of 2026-07-05 (this section):** the next major development. Steps 59–63 supersede the old
+G0-b/G0-c one-liners with a ZAERO-MLOADS-style **free-free modal-basis architecture** plus a new
+**multi-mass-case (MASSSET) capability**; G0-d/G0-e remain named follow-ons. Sequencing:
+**59 (refactor) → 60 (basis + GAFs) → 61 (modal solver, prescribed rigid) → 62 (free-flight) →
+63 (MASSSET)**, then G0-d/G0-e.
 
-**Objective:** Instead of prescribing every trim variable open-loop, re-solve the **free** rigid-body
-trim variables (e.g. free `URDD`/`ANGLEA`) at each time step so the net (aero + inertial) load
-self-balances (closure ≈ 0) for an arbitrary commanded *control* history — the true free-flight
-maneuver. Couple the elastic l-set Newmark step to the SUPORT r-set equilibrium (the Step 53 Schur
-structure with the Newmark effective stiffness `K̂_ll = a0·M_ll + a1·C_ll + K_eff_ll`), determined
-case first; over-determined transient is a further follow-on.
+#### Architecture decisions (confirmed 2026-07-05)
 
-**Test/Acceptance:** commanding a single control (elevator) produces a balanced (closure ≈ 0)
-transient whose steady state equals a Step 53 trim with that control prescribed.
+1. **Free-free ZAERO-style basis** `Φ = [Φ_r | Φ_e]` (n_a × n_h) built once from the **baseline**
+   mass case:
+   - **Φ_r — geometric rigid-body vectors about the SUPORT point** (one column per SUPORT DOF),
+     NOT eigensolver zero-modes: free-free `eigh` returns the zero-frequency subspace in arbitrary
+     linear combinations, whereas geometric vectors are deterministic, give an **exact algebraic
+     map between rigid modal coordinates and the URDD/ANGLEA/PITCH trim labels** (unit-plunge ⇒
+     `ξ̈ = URDD3`; unit-pitch ⇒ `ξ̈ = URDD5`, `ξ̇·c_ref/2V = PITCH`), and make
+     `M_rr = Φ_rᵀ M_aa Φ_r` exactly the GPWG rigid mass about the SUPORT point. Same reference
+     point as `_build_inertial_cols` (`suport_pos`), so `M_ax ≡ −M_aa Φ_r` column-for-column —
+     a tested identity.
+   - **Φ_e — free-free elastic modes** from `solve_modes(K_aa, M_aa, force_dense=True)`
+     (unconstrained a-set), zero modes dropped, then **explicitly mass-orthogonalized against Φ_r**
+     (`φ_e ← φ_e − Φ_r M_rr⁻¹ Φ_rᵀ M_aa φ_e`, re-M-orthonormalized). `Φ_eᵀ M_aa Φ_r = 0` holds by
+     construction — this **is** the mean-axis condition (ZAERO Ch. 12 Eqs 12.9–12.16; same physics
+     as `_compute_unrestrained_derivs`). `M_hh` is block-diagonal `[M_rr, 0; 0, I]` at baseline.
+   - SUPORT's role changes: it supplies the rigid-mode reference point / DOF selection, the l-set
+     constraint for mode-acceleration recovery, and the trim-label map — it no longer constrains
+     the dynamics (`u_r = 0` dropped in the modal solver). SUPORT remains required.
+2. **Modal EOM (Level-1 quasi-steady, perturbation about the Step 53 trim IC):**
+   `M_hh Δξ̈ + [C_hh − q·B_hh] Δξ̇ + [K_hh − q·Q_hh] Δξ = q·Q_hc·Δδ_c(t)` where
+   `K_hh = Φᵀ K_aa Φ`, `Q_hh = build_gaf(Q_aa, Φ)` (reused verbatim), `B_hh` = quasi-steady
+   rate-damping GAF (plunge-rate column `−1/V` + the existing `Ω×r` PITCH/ROLL/YAW machinery from
+   `build_djx`, rescaled from nondimensional rate; elastic-rate columns zero at Level 1 = the
+   G0-d hook), `Q_hc` = control-surface columns of the existing `Q_ax` projected once, and
+   `C_hh = diag(2ζωᵢ)` on the elastic partition. Rigid-state trim labels (ANGLEA/PITCH/URDD*)
+   become **outputs** recovered from `ξ_r` — not inputs. Newmark-β (¼, ½) on the dense n_h system:
+   `K̂` is nonsingular (M_rr ≻ 0) — **free flight = don't constrain the rigid partition; no Schur,
+   no per-step re-trim**. Perturbation form keeps gravity implicit and guarantees an exact
+   equilibrium start.
+3. **Multi-mass-case: fixed Φ, swap M only (ZAERO-style).** Per MASSSET case *i* recompute only
+   `M_aa,i` → `M_hh,i = Φᵀ M_aa,i Φ` (full, coupled off-baseline), `M_ax,i`, GPWG/trim mass
+   properties, and the Step 53 IC trim. `Φ`, AIC (`ajj/ajj_inv_corr` — geometry+Mach only),
+   `skj/djk/wg`, splines, `Q_hh/Q_hc/B_hh`, `K_hh`, `AeroCache` all reused untouched — explicitly
+   **no aero-cache invalidation**. Exactness property used in the gates: with all n_a modes
+   retained, Φ spans the a-set, so fixed-Φ off-baseline solutions are exact — truncation is the
+   only approximation.
+4. **Mode-acceleration recovery with inertia relief** (theory Eq. 23, required for load quality),
+   per output step: `u_md = Φξ`; residual `r_a = f_ext(t) − M_aa Φξ̈ − C_a Φξ̇ − (K_aa − q·Q_aa)Φξ`;
+   `Δu_l = K_eff_ll⁻¹ r_l` (SUPORT r-set held, reusing the increment-1 `K_eff_ll` LU); downstream
+   recovery via the existing `_recover_step` with URDD entries of `δ_basic` filled from `ξ̈_r`.
 
-#### G0-c — Modal reduction (Level-1b)
+#### Step 59 — Prerequisite refactor: shared a-set reduction + SOL 103 retention (behavior-identical)
 
-**Objective:** Reduce the l-set integration onto restrained mean-axis elastic modes
-(`scipy.linalg.eigh(K_ll, M_ll)` or `solve_modes` on the l-set) with mode-acceleration recovery,
-honouring `MLOADS NMODES`. Cheaper than the direct l-set solve for large models; exact identity to
-the direct solve when all modes are retained.
+**Objective:** Eliminate the 4×-duplicated RBE3+SPC a-set reduction and retain a-set eigendata so
+every later step composes one code path. This is the `reduce_to_aset` refactor already specified in
+`designs/matrix_gaf_export.md` §6.1 — landing it here serves both features.
 
-#### G0-d — Unsteady corrections (Levels 2–4)
+**Deliverables:**
+- `sbeam/assembly/reduction.py` (new): `reduce_to_aset(bulk, grid_index, spc_sid) → AsetReduction`
+  dataclass `{T, dep_dofs, red_dofs, free_local, free_dofs}` + `reduce_matrix` / `reduce_vector` /
+  `expand_to_g` (absorbing `sol144._expand_to_g`). Extracted from `sol144._compute_aset_data` /
+  `_build_qaa_aset`; `sol103.run_sol103`, `sol144`, and `maneuver_qs._assemble_operators` re-pointed
+  (`_compute_aset_data` kept as a thin wrapper — `maneuver_qs` imports it by name).
+- `Sol103Result` gains optional `phi_free` (a-set), `free_dofs`, `K_free`, `M_free` (default None).
 
-**Objective:** Layer the analytic unsteady terms onto the steady VLM forcing: (2) 2-D apparent
-(added) mass per strip (`πρb²`-type loads ∝ `α̇`/`ḧ`); (3) tail downwash-lag delay `τ = l_t/V`
-(the `C_mα̇` effect); (4) strip Wagner/Theodorsen lift-deficiency. Each is optional on top of the
-previous and extends validity beyond `k ≲ 0.05–0.1`.
+**Test/Acceptance:** full existing suite passes unchanged; SOL 103/144 f06 and
+`sample/ha144a_fullspan_mloads.bdf` maneuver output bit-identical pre/post; unit test that
+`reduce_to_aset` products equal the old `_compute_aset_data` outputs on an RBE3+SPC model.
 
-#### G0-e — Closed-loop control layer (ASE bridge)
+#### Step 60 — Free-free maneuver modal basis + one-time h-set operator set
 
-**Objective:** Actuator/sensor/control-law models so commands close the loop (vs the increment-1
-prescribed control histories). Bridges to the full Phase G ASE system.
+**Objective:** Build the ZAERO-style basis and precompute every geometry/Mach-only h-set operator
+exactly once, validated standalone before any time integration touches it.
+
+**Deliverables:**
+- `sbeam/solver/modal_basis.py` (new): `build_rigid_modes(...) → Φ_r`;
+  `build_maneuver_basis(...) → ManeuverBasis` dataclass `{phi, n_r, n_e, elastic_freqs_hz, M_hh,
+  K_hh, rigid_label_map, suport_pos, orthogonality_residual}` — calls `solve_modes` **once**
+  (basis-consistency rule, `matrix_gaf_export.md` §4.3), drops zero modes, mass-orthogonalizes;
+  `build_hset_gafs(...) → {Q_hh, Q_hc, B_hh, f_h0}` composing `coupling.build_gaf` + new rigid-rate
+  columns (`build_dj_rigidrate` added to `aero/integration.py`, reusing the `Ω×r` code in
+  `build_djx`).
+- MLOADS card extension (8-field, appended): `MLOADS SID MLDTRIM MLDTIME MLDCOMD MLDPRNT NMODES
+  METHOD ZETA` — `METHOD` = EIGRL sid for the basis solve (0 ⇒ internal all-modes default);
+  `ZETA` = uniform elastic modal damping ratio (default 0). **NMODES semantics fixed: count of
+  retained ELASTIC modes; rigid modes always all included** (0 ⇒ all elastic).
+
+**Test/Acceptance:** `Φᵀ M_aa Φ` block-diagonal ≤1e−10 relative, elastic block = I; `M_rr` = GPWG
+rigid mass about `suport_pos` to machine precision; **`M_ax` identity** (a-set-reduced
+`_build_inertial_cols` columns = `−M_aa Φ_r` per the rigid map) to machine precision; `Q_hh`
+cross-check vs `Sol144Result.q_hh` from the existing static ROM with the same modes; `K_hh` rigid
+rows/cols ≤1e−8·‖K_hh‖.
+
+**Key decisions:** geometric rigid vectors over eigensolver zero-modes (rejected alternative
+recorded in the theory doc); basis always from the baseline mass configuration.
+
+#### Step 61 — Modal transient solver, prescribed rigid states (increment 1 re-expressed on the basis)
+
+**Objective:** De-risk basis + integration + mode-acceleration recovery with the rigid partition
+still *prescribed* (open-loop, exactly increment-1 physics) before freeing it in Step 62 —
+isolates truncation behavior from free-flight dynamics.
+
+**Deliverables:**
+- `sbeam/solver/maneuver_modal.py` (new): `run_maneuver_modal(bulk, subcase, aero, aero_cache=None)
+  → ManeuverResult`, selected in `main.py` when the MLOADS card has METHOD/NMODES set; otherwise
+  the legacy `run_maneuver_qs` runs unchanged (kept permanently as the regression anchor; the
+  increment-1 NMODES ignored-warning retired). Trim IC via `run_sol144_trim` (unchanged pattern);
+  IC projection `ξ_e0 = Φ_eᵀ M_aa u_a,trim`; prescribed ξ_r(t) from the δ(t) URDD/rate histories
+  via the rigid map; elastic Newmark with `−M_er,i ξ̈_r` (zero at baseline) + `q·Q_ec·Δδ_c` RHS.
+- Recovery per architecture decision 4 (`_recover_step` refactored into a shared helper);
+  `ManeuverStep`/`ManeuverResult` gain optional `modal_coords`, `n_modes_used`.
+- Docs: theory §7.x (free-free basis, mean-axis orthogonalization, mode-acceleration with inertia
+  relief; records the reversal of the increment-1 restrained-basis decision), `05_aeroelastics.md`
+  user section, `02_card_reference.md` MLOADS fields.
+
+**Test/Acceptance:** **modal-convergence gate** — all elastic modes retained ⇒ CBAR forces, net
+loads, closure, Fz/My histories match `run_maneuver_qs` ≤1e−6 relative (displacements compared
+after rigid-projection removal: mean-axis vs `u_r = 0` rigid content differs); convergence table
+NMODES ∈ {2, 4, 8, all} with monotone peak-bar-force error decay (documented); mode-acceleration
+beats mode-displacement by ≥10× on truncated bar forces; hold-at-trim steady output = Step 53
+loads; ζ>0 decays energy, ζ=0 reproduces the gate.
+
+#### Step 62 — G0-b free-flight rigid-body coupling (free the rigid partition)
+
+**Objective:** The self-balancing maneuver: integrate `ξ_r` as states of the coupled h-set Newmark
+system so closure ≈ 0 for an arbitrary commanded *control* history — no per-step trim solve.
+
+**Deliverables:**
+- Full coupled system (architecture decision 2): rigid rows active, `B_hh` rate damping engaged,
+  controls-only `Q_hc`; single `K̂ (n_h×n_h)` LU with `K̂_rr = a0·M_rr − q·(Q_rr + a1·B_rr)`.
+- δ bookkeeping: commanded AESURF labels = inputs (MLDCOMD/`_delta_of_t` reused);
+  ANGLEA/URDD/PITCH labels = **outputs** from `ξ_r, ξ̇_r, ξ̈_r`; a rigid-state label in MLDCOMD
+  under the modal solver ⇒ hard `ValueError` naming the label (the legacy solver remains available
+  for prescribed-rigid studies).
+- Recovery: `δ_basic` URDD entries from `ξ̈_r` (`_urdd_rcsid_to_basic` reused); MLDPRNT gains
+  rigid-state histories (α, pitch rate, Nz).
+
+**Test/Acceptance:** **G0-b gate (unchanged intent):** ELEV ramp-and-hold on the HA144A deck ⇒
+closure ≤ tol throughout with O(dt²) decay under dt-halving, and the settled steady state
+reproduces the Step 53 trim with ELEV prescribed and ANGLEA/URDD free (trim vars + net loads
+≤1e−6 relative, full basis); zero-command free response stays at equilibrium to round-off;
+short-period eigenpair of the assembled system matches a rigid 2-DOF hand calculation from the
+Step 53 derivatives to ~5%. Determined command sets only (over-determined transient allocation
+deferred to G0-e).
+
+**Key decisions:** perturbation-about-trim (gravity implicit, exact equilibrium start); linear
+inertial-frame rigid coordinates at fixed V (steady pull-up reachable since `α = θ − ḣ/V`
+settles; phugoid/speed DOF out of scope, documented).
+
+#### Step 63 — MASSSET multi-mass-case capability (fixed Φ, swap M)
+
+**Objective:** ZAERO-style mass sweeps: AIC/splines/GAFs/`K_hh`/Φ computed once; each mass case
+re-projects only mass-derived quantities and re-runs the cheap n_h-sized trim IC + transient.
+
+**Deliverables:**
+- **New `MASSSET` card** (`model/mass.py` dataclass, `bulk.masssets`, `_handle_massset` +
+  dispatch elif, validation-pass cross-refs):
+  ```
+  MASSSET  SID    LABEL    SCALE
+  +        ADD     301     302    303
+  +        REPLACE 21      22
+  +        DELETE  45
+  ```
+  `LABEL` = case name for output headers; `SCALE` (default 1.0) multiplies the baseline mass
+  before ops; continuation rows = op keyword + up to 7 CONM2 EIDs (`ADD` overlays new CONM2s,
+  `REPLACE` supersedes a baseline EID, `DELETE` removes one). Overlay CONM2s are ordinary CONM2
+  bulk cards; a post-parse pass marks ADD/REPLACE EIDs overlay-only so baseline assembly excludes
+  them (ADD of an existing EID / dangling DELETE/REPLACE ⇒ `ValueError`).
+- **Case-control `MASSSET = n`** per subcase (`SubcaseControl.massset_sid`) — MSC-style selection
+  like SPC/METHOD; works for static SOL 144 too (needed for the IC trim). A mass sweep = one deck,
+  N subcases sharing one `AeroCache` + one `ManeuverBasis`/GAF set.
+- `model/mass_overlay.py` (new): `effective_conm2s(bulk, massset_sid)`;
+  `assemble_global_mass(..., massset_sid=None)`, `_build_inertial_cols(..., massset_sid=None)`,
+  GPWG, `run_sol144_trim` and both maneuver solvers threaded. Explicit invariant (code comment +
+  doc): **no AeroCache invalidation — AIC is geometry/Mach-only.**
+- Output: mass-case LABEL in f06 / `maneuver_output.py` headers and critical-step summaries.
+- New sample deck `sample/ha144a_mloads_massset.bdf` (3-mass sweep).
+
+**Test/Acceptance:** parser round-trip + all three ops + negative cases; equivalence gate (MASSSET
+overlay ≡ hand-edited deck with the same final CONM2 set: identical `M_gg`, GPWG, Step 53 trim to
+machine precision); **fixed-Φ exactness gate** (off-baseline case, all modes ⇒ matches
+`run_maneuver_qs` on the equivalent deck ≤1e−6 — mass-case error is pure truncation);
+**fixed-Φ approximation gate** (+10% fuel overlay, truncated basis: peak-CBAR-force error vs a
+re-solved-modes reference reported, ≤~2% asserted for the sample, guidance recorded in
+`05_aeroelastics.md` — "re-solve the basis when case frequencies shift >~5%"); sweep test
+(3 subcases / 3 MASSSETs, one basis+GAF build asserted by call count, distinct ICs and peaks).
+
+**Key decisions:** case-control selection (not an MLDTRIM field) so static and transient share the
+mechanism; basis always baseline (no per-MASSSET METHOD — basis-drift risk); `SCALE` applies to
+the whole baseline mass.
+
+#### G0-d — Unsteady corrections (Levels 2–4) — follow-on (outline; hooks land in Steps 60–62)
+
+**Objective:** Layer the analytic unsteady terms onto the steady VLM forcing as an ordered list of
+optional `AeroIncrement` objects each contributing `(ΔM_hh, ΔB_hh, ΔK_hh)` and optional appended
+states: (2) 2-D apparent (added) mass per strip (`πρb²` projected to `A_hh`, plus the elastic-rate
+`B_hh` columns — the slot left in Step 60); (3) tail downwash-lag delay `τ = l_t/V` (`C_mα̇`; ring
+buffer of delayed `D_jx`/`D_jξ̇` arguments); (4) strip Wagner/Theodorsen lift-deficiency (per-strip
+2-state R.T. Jones approximation appended to the state vector). Selected by a new `MLDAERO` card
+(designed at promotion). Each optional; extends validity beyond `k ≲ 0.05–0.1`. Acceptance sketch:
+Level 2 reproduces 2-D `πρb²` exactly on a single strip; Level 4 reproduces Wagner indicial lift to
+Jones-approximation accuracy.
+
+#### G0-e — Closed-loop control layer (ASE bridge) — follow-on (outline)
+
+**Objective:** Discrete control-law update `δ_c[n+1] = f(sensor(ξ, ξ̇, ξ̈))` inside the time loop;
+actuator lag as a first-order appended state; sensors at grids via the existing spline/recovery
+operators. Enables commanded-Nz and the over-determined transient control allocation (reusing the
+`TRIMOBJ` null-space QP pattern). ZAERO-ASE-flavoured cards designed at promotion. Bridges to the
+full Phase G ASE system. Acceptance sketch: proportional pitch-rate damper reduces short-period
+overshoot vs open loop; zero-gain identity to Step 62.
+
+#### Phase G0 plan — risks & open questions
+
+1. **Singular/lumped `M_aa` in the free-free eigensolve** — CONM2-only decks leave massless
+   rotational DOFs; the Tikhonov path in `solve_modes` handles the eigensolve, but massless-DOF
+   artificial modes must be excluded from Φ_e (frequency-cutoff + generalized-mass sanity filter);
+   the mean-axis projection uses the *unregularized* `M_aa`; mode-acceleration recovery is the
+   safety net for anything filtered.
+2. **Fixed-Φ mass-case error** — quantified by the Step 63 approximation gate; the exactness gate
+   proves it is pure truncation. Residual risk: large CG shifts change the mean axis materially —
+   warn when an overlay moves the CG by more than a documented fraction of c_ref.
+3. **TABLED1 rate discontinuities** — clamped-linear command tables have slope jumps; with `B_hh`
+   rate terms the forcing is discontinuous and can ring the highest retained mode. Document
+   ramp-smoothing practice; optional cosine-smoothed table evaluation as a future add.
+4. **Damping model** — uniform ζ only at Step 60; per-mode TABDMP1 and the `B_hh` asymmetry
+   (K̂ unsymmetric — LU already handles it) noted; Rayleigh `damping_alpha` stays legacy-solver-only.
+5. **Linear inertial-frame rigid kinematics** — short-period-scale maneuvers at fixed V; no
+   phugoid/speed DOF, no large-attitude kinematics. Documented validity envelope alongside the
+   existing `k ≲ 0.05–0.1` aero limit.
+6. **Control-surface inertia / hinge moments absent** — commanded δ_c produces aero only; surface
+   mass reaction / hinge DOFs out of scope (theory-doc note).
+7. **SUPORT dependence stands** — the modal solver still requires SUPORT (reference point +
+   recovery constraint + rigid DOF selection); a SUPORT-free variant (rigid modes about the GPWG
+   CG) is a possible future relaxation, not planned.
+8. **NMODES behavior change** — previously parsed-and-ignored with a warning; now activates the
+   modal solver. Call out in CHANGELOG as a behavior change.
+9. **Basis drift** — one `solve_modes` call per job, enforced structurally (the basis object is
+   passed into the GAF/mass-case loops; nothing inside can reach the eigensolver).
+10. **Open question:** should `Q_hc` accept AESTAT rigid-state labels a user commands open-loop
+    (e.g. prescribed-α studies)? Current answer: hard error under the modal solver; the legacy
+    solver covers prescribed-rigid studies. Revisit if a use case appears.
 
 ### Monitor points & section loads — follow-ons
 
