@@ -37,6 +37,35 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**GUI — small viewer gaps closed — Step AC5 (2026-07-05)**
+
+- **Maneuver exports in the viewer** — the transient-maneuver results view gained download
+  buttons for the MLDPRNT ASCII time-history (`<stem>.mldprnt.txt`) and the critical-sample
+  net-load BDF (`<stem>.maneuver_qs_loads.bdf`), built in-memory from the same
+  `results/maneuver_output.py` builders the CLI uses (byte-identical content per subcase).
+- **F06 transient-maneuver block** — new `build_f06_sol144_maneuver_text` (run summary,
+  per-output-time MANEUVER TIME HISTORY table with the critical sample marked,
+  critical-sample closure/displacement/CBAR detail), wired into **both** the viewer f06
+  export and the CLI `.f06` (no maneuver f06 block existed anywhere before).
+- **All six aerodynamic trim totals** — `sol144.py` now computes and stores total CY, CMx
+  (roll), and CMz (yaw) (full 3-component `aero_moment_resultant` about the RCSID origin)
+  alongside CZ/CX/CMy/CL_wind; shown as a second metrics row in the viewer trim view and
+  added to the f06 AERODYNAMIC TOTALS block. (The backlog's "already computed" claim was
+  wrong — these were new solver outputs.)
+- **Body panels visually distinct** — `build_aero_box_figure(..., body_eids=)` draws body
+  boxes as a separate purple "Body panels" legend trace: PSTRIP strip bodies automatically
+  (`AeroBox.is_strip`), cruciform bodies via the EIDs remembered in
+  `st.session_state.aero_body_eids` when the Aero Correction tab builds a body correction.
+- **Bulk-aware SOL 144 run summary** — the pre-solve Planned-Analysis line now advertises
+  hinge moments (AESURF), monitor loads (MONPNT1/3), aero totals, and the maneuver exports.
+- **MLOADS sample deck** — `sample/ha144a_fullspan_mloads.bdf` (static trim subcase + an
+  ELEV-ramp quasi-steady pitch-up MLOADS subcase); none existed before.
+- **Docs** — `06_viewer.md` executive-control/SOL 144 run-path reconcile + all new UI
+  documented; `05_aeroelastics.md`/`CLAUDE.md` output lists updated.
+- **Tests** — f06 maneuver-block unit tests, trim-totals gates (lateral totals vanish on
+  the symmetric HA144A; CY cross-checked per-box), body-panel trace-split tests, summary
+  tests, and AppTest Flow D (MLOADS deck end-to-end in the viewer). Suite: 1075 passed.
+
 **Wing-root interference residual investigated and accepted (AE15) — Step AC8 (2026-07-05)**
 
 - Study A2 (`docs/20_theory/studies/a2_wing_root_interference.md`) closes the residual

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -368,6 +369,11 @@ def _render_sol144_trim(bulk: BulkData, result) -> None:
                    fmt(getattr(result, 'total_cl_wind', result.total_cl)))
     cols[4].metric("Total CMy", fmt(result.total_cm))
     cols[5].metric("Trim mode", result.trim_mode)
+    cols2 = st.columns(6)
+    cols2[0].metric("Total CX", fmt(result.total_cx))
+    cols2[1].metric("Total CY", fmt(getattr(result, 'total_cy', 0.0)))
+    cols2[2].metric("Total CMx (roll)", fmt(getattr(result, 'total_cmx', 0.0)))
+    cols2[3].metric("Total CMz (yaw)", fmt(getattr(result, 'total_cmz', 0.0)))
 
     # ---- Trim variables ----
     trim_card = bulk.trims.get(result.trim_sid)
@@ -497,7 +503,10 @@ def _render_sol144_deflected(bulk: BulkData, result) -> None:
     cp = result.box_cp  # None unless AEROF/APRES requested
     if cp is None:
         st.caption("Per-box ΔCp shown only when AEROF/APRES is requested in case control.")
-    fig_aero = build_aero_box_figure(bulk, aero_model, cp=cp, box_disp=box_disp)
+    fig_aero = build_aero_box_figure(
+        bulk, aero_model, cp=cp, box_disp=box_disp,
+        body_eids=st.session_state.get("aero_body_eids"),
+    )
     st.plotly_chart(fig_aero, use_container_width=True)
 
 
@@ -565,3 +574,27 @@ def _render_sol144_maneuver(bulk: BulkData, result) -> None:
     )
     fig_struct = build_deformed_figure(bulk, step.displacements, grid_index, scale)
     st.plotly_chart(fig_struct, use_container_width=True)
+
+    # ---- Exports (same content as the CLI run's file outputs) ----
+    from sbeam.results.maneuver_output import (
+        build_maneuver_time_history_text,
+        build_maneuver_critical_load_cards_text,
+    )
+    st.markdown("**Exports**")
+    stem = Path(st.session_state.get("_uploaded_filename") or "results.bdf").stem
+    ec1, ec2 = st.columns(2)
+    ec1.download_button(
+        label="Download MLDPRNT time history",
+        data=build_maneuver_time_history_text(result),
+        file_name=f"{stem}.mldprnt.txt",
+        mime="text/plain",
+        key=f"dl_mldprnt_{result.subcase_id}",
+    )
+    if result.steps:
+        ec2.download_button(
+            label="Download critical-sample loads (BDF)",
+            data=build_maneuver_critical_load_cards_text(bulk, result),
+            file_name=f"{stem}.maneuver_qs_loads.bdf",
+            mime="text/plain",
+            key=f"dl_qs_loads_{result.subcase_id}",
+        )

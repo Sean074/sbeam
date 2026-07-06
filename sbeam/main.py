@@ -10,6 +10,7 @@ from sbeam.results.f06_writer import (
     build_f06_sol103_text,
     build_f06_sol144_text,
     build_f06_sol144_diverg_text,
+    build_f06_sol144_maneuver_text,
 )
 
 
@@ -88,6 +89,8 @@ def main() -> None:
         if cc.sol == 144:
             for sc_id, dresult in diverg_results.items():
                 fh.write(build_f06_sol144_diverg_text(cc, bulk, dresult, sc_id))
+            for sc_id, mresult in maneuver_results.items():
+                fh.write(build_f06_sol144_maneuver_text(cc, bulk, mresult, sc_id))
 
     print(f"Written: {f06_path}")
 

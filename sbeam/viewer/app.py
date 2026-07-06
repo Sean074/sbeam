@@ -570,6 +570,7 @@ def _render_f06_export(bulk: BulkData) -> None:
     from sbeam.results.f06_writer import (
         build_f06_sol101_text, build_f06_sol103_text,
         build_f06_sol144_text, build_f06_sol144_diverg_text,
+        build_f06_sol144_maneuver_text,
     )
 
     cc = st.session_state.case_control
@@ -577,8 +578,10 @@ def _render_f06_export(bulk: BulkData) -> None:
     sol103 = st.session_state.sol103_result
     sol144 = st.session_state.sol144_result
     sol144_div = st.session_state.sol144_diverg_result
+    sol144_man = st.session_state.get("maneuver_result")
     if cc is None or (sol101 is None and sol103 is None
-                      and sol144 is None and sol144_div is None):
+                      and sol144 is None and sol144_div is None
+                      and sol144_man is None):
         return
 
     uploaded_name = st.session_state._uploaded_filename or "results.bdf"
@@ -600,6 +603,8 @@ def _render_f06_export(bulk: BulkData) -> None:
             parts.append(build_f06_sol144_text(cc, bulk, result, sc_id))
         for sc_id, result in sorted((sol144_div or {}).items()):
             parts.append(build_f06_sol144_diverg_text(cc, bulk, result, sc_id))
+        for sc_id, result in sorted((sol144_man or {}).items()):
+            parts.append(build_f06_sol144_maneuver_text(cc, bulk, result, sc_id))
     f06_text = "".join(parts)
 
     col1, col2 = st.columns([3, 1])
@@ -726,6 +731,7 @@ def _render_aero_tab(bulk: BulkData) -> None:
             fig = build_aero_box_figure(
                 bulk, aero_model, cp=disp_cp, show_normals=show_normals, strip=False,
                 cp_cmid=cp_cmid, cp_title=cp_title,
+                body_eids=st.session_state.get("aero_body_eids"),
             )
             st.plotly_chart(fig, use_container_width=True)
         else:

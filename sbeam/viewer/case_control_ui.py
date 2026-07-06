@@ -105,8 +105,14 @@ def _summarize_sol103(sc: SubcaseControl, bulk: BulkData) -> str:
 
 
 def _summarize_sol144(sc: SubcaseControl, bulk: BulkData) -> str:
+    # Pre-solve summary: advertise what the run WILL output based on the
+    # case-control requests and the bulk cards present (AC5).
+    has_monitors = bool(bulk.monpnt1s or bulk.monpnt3s)
     if sc.mloads_sid is not None:
-        return f"Transient maneuver loads (MLOADS {sc.mloads_sid})"
+        outputs = "time histories, MLDPRNT export, critical-sample loads"
+        if has_monitors:
+            outputs += ", monitor loads"
+        return f"Transient maneuver loads (MLOADS {sc.mloads_sid}); outputs {outputs}"
     parts: list[str] = []
     if sc.trim_sid is not None:
         trim = bulk.trims.get(sc.trim_sid)
@@ -119,7 +125,11 @@ def _summarize_sol144(sc: SubcaseControl, bulk: BulkData) -> str:
     if sc.diverg_sid is not None:
         parts.append(f"divergence sweep (DIVERG {sc.diverg_sid})")
     head = "; ".join(parts) if parts else "aeroelastic"
-    outputs = "trim vars, stability derivatives, q_div, displacements"
+    outputs = "trim vars, stability derivatives, aero totals, q_div, displacements"
+    if bulk.aesurfs:
+        outputs += ", hinge moments"
+    if has_monitors:
+        outputs += ", monitor loads"
     if sc.aerof or sc.apres:
         outputs += ", box ΔCp/forces"
     return f"Aeroelastic {head}; outputs {outputs}"

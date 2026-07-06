@@ -58,47 +58,18 @@ chordwise boxes and box AR outside [0.5, 2.0] (VLM panels only; PSTRIP strips ex
 close-out **exonerated AE12 as AC7's prime suspect** (HA144A cards carry only the benign
 detached DTHZ=−1.0/default DTOR=1.0 — NASTRAN does no Rz coupling there either).
 
+**Step AC5 (GUI — close the small viewer gaps) CLOSED 2026-07-05** — viewer brought to
+parity with the SOL 144 output surface: maneuver MLDPRNT/critical-load download buttons,
+a new f06 transient-maneuver block (`build_f06_sol144_maneuver_text`, viewer + CLI), all
+six aerodynamic trim totals (CY/CMx/CMz were newly computed in `sol144.py` — the backlog's
+"already computed" claim was wrong), body panels colour/legend-distinguished in the 3D
+mesh (`is_strip` flag + `body_eids` for cruciform), a bulk-aware run-summary string, the
+`sample/ha144a_fullspan_mloads.bdf` MLOADS sample deck, and the viewer-doc reconcile.
+See `docs/40_history` and CHANGELOG.
+
 | Step | Item | Kind | Priority | Notes |
 |-----:|------|------|----------|-------|
-| AC5 | [GUI — close the small viewer gaps](#step-ac5--gui--close-the-small-viewer-gaps) | Code | Medium | Exports, totals, body-panel display, doc reconcile |
 | AC6 | [Step 54 — CFD/WT steady-pressure injection (CHORDCP)](#step-ac6--step-54--cfd--wind-tunnel-steady-pressure-injection-mean-flow-trim) | Code | Optional | Steady-complete can be declared without it |
-
----
-
-### Step AC5 — GUI — close the small viewer gaps
-
-**Objective:** Bring the Streamlit viewer up to parity with the solver output surface for the
-steady aeroelastic results it already runs. (Audit 2026-07-03 of `sbeam/viewer/` vs solver
-capability.)
-
-**Deliverables:**
-- **Maneuver exports:** wire `results/maneuver_output.py` into the maneuver results tab
-  (`viewer/results_view.py::_render_sol144_maneuver`) — download buttons for the MLDPRNT
-  ASCII time-history and the critical-sample `FORCE`/`MOMENT` BDF
-  (`<stem>.maneuver_qs_loads.bdf`). Currently the tab is plots-only.
-- **F06 export for maneuvers:** `_render_f06_export` covers SOL 101/103 and SOL 144
-  trim + divergence only; add the `ManeuverResult` block.
-- **Missing trim totals:** `_render_sol144_trim` shows only CZ/CL_wind/CMy metrics; surface
-  the total CX/CY and roll/yaw totals already computed in `sol144.py`.
-- **Body-panel visualization:** `viewer/aero_view.py::build_aero_box_figure` draws
-  strip/cruciform body boxes as ordinary boxes — colour/legend-distinguish body panels
-  (`AeroBox.is_strip` flag / PSTRIP PID) so users can see what the body correction acts on.
-- **Run-summary string:** `_summarize_sol144` always lists "trim vars, stability derivatives,
-  q_div, displacements" — make it reflect hinge moments, monitor loads, and maneuver output
-  when the model/case requests them.
-- **Viewer doc reconcile:** `docs/10_standard/06_viewer.md` executive-control section
-  documents only the SOL 101/103 run paths while a later section documents SOL 144
-  (`app.py::_run_sol144`) — reconcile, and document the new export buttons.
-
-**Out of scope (recorded under Future development):** a SOL 144/MLOADS case-control
-*authoring* UI — TRIM/AESTAT/AESURF/DIVERG/MLOADS/MLDTIME/MLDCOMD/TABLED1 remain BDF-authored;
-the viewer runs and displays them.
-
-**Test/Acceptance:** run the viewer against `sample/ha144a_fullspan_sbeam.bdf` (trim) and an
-MLOADS sample end-to-end — trim totals visible, body panels visually distinct on a
-strip/cruciform deck, maneuver time-history + critical-load downloads produce the same files
-as the CLI run, f06 export includes the maneuver block; AppTest coverage per
-`docs/10_standard/06_viewer.md` conventions.
 
 ---
 

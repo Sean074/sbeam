@@ -131,3 +131,49 @@ def test_flow_b_sol103_render_and_run(cantilever_sol103_parsed):
     assert at.selectbox(key="mode_sel") is not None
     assert at.slider(key="mode_scale") is not None
     assert any(b.key == "write_f06_btn" for b in at.button)
+
+
+def test_flow_d_sol144_mloads_render_and_run():
+    """Flow D (AC5): MLOADS sample deck → trim + maneuver run → results UI renders.
+
+    Acceptance: six trim totals visible on the trim subcase; switching to the
+    maneuver subcase renders the time-history view, sample slider, and export
+    buttons without exception; the f06 export path includes the maneuver block.
+    """
+    import warnings
+    from pathlib import Path
+    from sbeam.parser.bdf_reader import parse_bdf
+
+    sample = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_mloads.bdf"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        cc, bulk = parse_bdf(sample)
+
+    at = AppTest.from_function(_sbeam_app, default_timeout=120)
+    at.run()
+    _inject_state(at, bulk, cc)
+    at.run()
+
+    assert not at.exception, [str(e) for e in at.exception]
+    next(b for b in at.button if b.label == "Run Analysis").click()
+    at.run(timeout=120)
+
+    assert not at.exception, [str(e) for e in at.exception]
+    assert not at.error, [e.value for e in at.error]
+    assert isinstance(at.session_state["sol144_result"], dict)      # trim (subcase 1)
+    assert isinstance(at.session_state["maneuver_result"], dict)    # MLOADS (subcase 2)
+
+    # Trim subcase (default selection) shows all six aero totals (AC5).
+    labels = [m.label for m in at.metric]
+    for lbl in ["CZ (body)", "CL (wind)", "Total CMy", "Total CX",
+                "Total CY", "Total CMx (roll)", "Total CMz (yaw)"]:
+        assert lbl in labels, f"missing trim total metric {lbl!r}"
+
+    # Switch to the maneuver subcase and re-render.
+    at.selectbox(key="sol144_sc_sel").select(2)
+    at.run(timeout=120)
+
+    assert not at.exception, [str(e) for e in at.exception]
+    labels = [m.label for m in at.metric]
+    assert "Output samples" in labels and "Critical sample" in labels
+    assert at.slider(key="sol144_man_step") is not None

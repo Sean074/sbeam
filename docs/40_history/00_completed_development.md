@@ -4331,3 +4331,66 @@ NCHORD ≥ 8 on wake-washed surfaces.
 6 xfailed, with the xfail reasons now citing the study. Scratch artifacts (ac8_boxcmp.py,
 ac8_meshstudy.py, ac8_panelaero.py, ac8_strip_wake.py, PanelAero venv) deleted at
 close-out; reproduction recipe recorded in Study A2 §6.
+
+---
+
+### Step AC5 — GUI — close the small viewer gaps ✅ COMPLETE (2026-07-05)
+
+**Objective:** Bring the Streamlit viewer up to parity with the solver output surface for
+the steady aeroelastic results it already runs (audit 2026-07-03 of `sbeam/viewer/` vs
+solver capability): maneuver exports, f06 maneuver block, all trim totals, body-panel
+visualization, run-summary string, and the viewer-doc reconcile.
+
+**Deliverables:**
+- **Maneuver exports** — `_render_sol144_maneuver` (`viewer/results_view.py`) gained an
+  **Exports** row with two in-memory download buttons reusing the CLI's own builders
+  (`results/maneuver_output.py::build_maneuver_time_history_text` /
+  `build_maneuver_critical_load_cards_text`), so `<stem>.mldprnt.txt` and
+  `<stem>.maneuver_qs_loads.bdf` match the CLI files exactly.
+- **F06 maneuver block** — new `f06_writer.py::build_f06_sol144_maneuver_text` (run
+  summary, MANEUVER TIME HISTORY table with the critical sample marked, critical-sample
+  detail: closure resultant + shared displacement/bar-force blocks). **Key decision
+  (user-confirmed):** wired into BOTH the viewer f06 export (`app.py::_render_f06_export`,
+  which previously never read `maneuver_result`) and the CLI (`main.py`) for parity — no
+  maneuver f06 block had existed anywhere. Full per-sample field data stays in MLDPRNT.
+- **All six trim totals** — the backlog's "already computed in sol144.py" claim was wrong:
+  only CZ/CX/CMy/CL_wind were stored. `sol144.py` now also computes total CY and the full
+  3-component `aero_moment_resultant` roll/yaw moments about the RCSID origin (same
+  convention as the CMX/CMZ derivative columns), stored as
+  `Sol144TrimResult.total_cy/total_cmx/total_cmz`; shown as a second metrics row in
+  `_render_sol144_trim` and added to the f06 AERODYNAMIC TOTALS block.
+- **Body-panel visualization** — `build_aero_box_figure(..., body_eids=)` splits the
+  wire-frame into "Aero mesh" + purple "Body panels" traces (deflected copies too). A box
+  is a body box when `AeroBox.is_strip` (PSTRIP — automatic) or its CAERO EID ∈
+  `body_eids`. **Key decision:** cruciform bodies carry no per-box flag, so the Aero
+  Correction tab persists the user-selected body EIDs to
+  `st.session_state.aero_body_eids` on a successful **Build body correction**; the Aero
+  tab and SOL 144 deflected view pass the set through (highlight-EIDs approach — no
+  model-layer changes).
+- **Run-summary string** — `_summarize_sol144` is bulk-aware: appends "hinge moments"
+  (AESURF present), "monitor loads" (MONPNT1/MONPNT3 present), "aero totals"; the MLOADS
+  branch now advertises "time histories, MLDPRNT export, critical-sample loads".
+  **Key decision:** it stays a PRE-solve summary keyed off cards present, not solved
+  result attributes.
+- **MLOADS sample deck** — `sample/ha144a_fullspan_mloads.bdf` (none existed): the
+  full-span HA144A bulk + MLOADS/MLDTRIM/MLDTIME/MLDCOMD/MLDPRNT/TABLED1; SUBCASE 1 =
+  static TRIM 1, SUBCASE 2 = MLOADS ELEV ramp (+0.1 rad over 0.2 s, hold to 1.0 s) — an
+  open-loop quasi-steady pitch-up that settles quasi-statically.
+- **Viewer doc reconcile** — `docs/10_standard/06_viewer.md`: executive-control section
+  now states the SOL 144 BDF-authored/read-only run path and cross-links the SOL 144
+  sections; new export buttons, six totals, body-panel colouring, bulk-aware summary,
+  session-state key, and testing table documented. `05_aeroelastics.md` + `CLAUDE.md`
+  output lists updated.
+
+**Out of scope (unchanged):** SOL 144/MLOADS case-control *authoring* UI — remains a
+Future-development backlog item.
+
+**Test/Acceptance:** new `tests/results/test_f06_maneuver.py` (block content, critical
+marker, empty-steps), `tests/aero/test_ac5_totals.py` (lateral totals vanish on the
+symmetric HA144A trim; CY cross-checked against the per-box force sum; CZ weight-balance
+regression), body-panel trace-split tests in `test_aero_view.py`, bulk-aware summary tests
+in `test_case_control_summary.py`, and AppTest Flow D
+(`test_flow_d_sol144_mloads_render_and_run`: MLOADS deck end-to-end — six totals visible,
+maneuver subcase renders time history/slider/exports). CLI run of the new sample verified
+(f06 trim + maneuver blocks, MLDPRNT, critical-load BDF, physically sane ELEV-ramp
+response). Full suite 1075 passed / 6 xfailed.

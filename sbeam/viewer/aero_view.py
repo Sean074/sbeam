@@ -23,8 +23,14 @@ def build_aero_box_figure(
     strip: bool = True,
     cp_cmid: Optional[float] = None,
     cp_title: str = "Cp",
+    body_eids: Optional[set] = None,
 ) -> go.Figure:
     """3D box mesh + optional cp colour map + section-load strip chart.
+
+    Body panels — decoupled-strip boxes (``AeroBox.is_strip``, PSTRIP) and any
+    CAERO1s named in ``body_eids`` (the cruciform body surfaces selected in the
+    Aero Correction tab) — are drawn as a separate purple "Body panels" trace so
+    users can see what the body-panel total-moment correction acts on (AC5).
 
     When ``box_disp`` (shape ``(3*n_box,)``) is supplied — the spline-interpolated
     per-box structural translation ``g_disp @ u_g`` (optionally scaled) — each box's
@@ -48,12 +54,26 @@ def build_aero_box_figure(
         )
     else:
         fig = make_subplots(rows=1, cols=1, specs=[[{"type": "scene"}]])
-    _add_box_mesh(fig, aero_model.boxes)
+    eids = body_eids or set()
+
+    def _is_body(b) -> bool:
+        return getattr(b, "is_strip", False) or b.caero_eid in eids
+
+    body_boxes = [b for b in aero_model.boxes if _is_body(b)]
+    wing_boxes = [b for b in aero_model.boxes if not _is_body(b)]
+    _add_box_mesh(fig, wing_boxes)
+    if body_boxes:
+        _add_box_mesh(fig, body_boxes, color="#9467bd", name="Body panels")
     if box_disp is not None:
         _add_box_mesh(
-            fig, aero_model.boxes, box_disp=box_disp,
+            fig, wing_boxes, box_disp=box_disp,
             color="#ff7f0e", name="Deflected mesh",
         )
+        if body_boxes:
+            _add_box_mesh(
+                fig, body_boxes, box_disp=box_disp,
+                color="#c5b0d5", name="Deflected body panels",
+            )
     if show_normals:
         _add_normal_vectors(fig, aero_model.boxes, box_disp=box_disp)
     cp_boxes_disp = box_disp if box_disp is not None else None

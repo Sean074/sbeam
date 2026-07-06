@@ -113,6 +113,9 @@ class Sol144TrimResult:
     total_cm: float = 0.0               # total CMy / (q * sref * cref) about x_ref
     total_cx: float = 0.0                # body-axis CX = Fx / (q * sref) (streamwise, ≈0)
     total_cl_wind: float = 0.0           # wind-axis lift = CZ·cosα − CX·sinα at trim α (genuine CL)
+    total_cy: float = 0.0                # body-axis CY = Fy / (q * sref) (side force, ≈0 symmetric)
+    total_cmx: float = 0.0               # total roll CMx / (q * sref * bref) about the RCSID origin
+    total_cmz: float = 0.0               # total yaw CMz / (q * sref * bref) about the RCSID origin
     # --- Step 56 outputs (f06 blocks, AEROF/APRES, flight-load export) ---
     box_cp: Optional[np.ndarray] = None       # (n_box,) ΔCp per box at trim (normal-projected force/q / area)
     box_forces: Optional[np.ndarray] = None   # (n_box, 3) physical aero force per box = q * (skj@gamma)

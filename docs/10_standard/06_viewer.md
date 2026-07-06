@@ -24,7 +24,7 @@ viewer/
 ├── geometry.py         # 3D model display functions (Plotly)
 ├── results_view.py     # Results post-processing display
 ├── case_control_ui.py  # Case control form and BDF export
-├── aero_view.py        # Aero box mesh + cp colour map (S44); spline-deflected box overlay (S57); per-surface span-loading figure + rigid S&C derivative table (A-GUI2); cp corrected/uncorrected/Δ views + dihedral helper (A-GUI4); corrected/uncorrected/Δ rigid-derivative table (A-GUI5)
+├── aero_view.py        # Aero box mesh + cp colour map (S44); spline-deflected box overlay (S57); per-surface span-loading figure + rigid S&C derivative table (A-GUI2); cp corrected/uncorrected/Δ views + dihedral helper (A-GUI4); corrected/uncorrected/Δ rigid-derivative table (A-GUI5); body-panel colour/legend split (AC5)
 ├── aero_correction_view.py  # Aero Correction tab: CFD/test section data → W2GJ+AECORR(WT2) cards, injected into the model + full corrected-BDF export (A-GUI3/A-GUI4); Stage 6 = cruciform body-panel total-moment match (A9)
 └── format_utils.py     # Shared 5-sig-fig number formatting for tables/metrics (fmt / fmt_mass / style_numeric) (A-GUI4)
 ```
@@ -146,6 +146,16 @@ a rigid steady-state solve at a user-specified angle of attack.
 **ΔCp** colour-bar title. The `strip=True` default (used by the SOL 144 results view) keeps the
 legacy bottom xy panel; the Aero tab passes `strip=False` because span loading has its own
 full-width figure below.
+
+**Body-panel colouring (AC5):** `build_aero_box_figure(..., body_eids=set[int] | None)` splits the
+grey wire-frame into an **Aero mesh** trace and a purple (`#9467bd`) **Body panels** trace (own
+legend entry; the deflected copy is light purple `#c5b0d5`). A box counts as a body box when
+`AeroBox.is_strip` is set (PSTRIP decoupled strip bodies — automatic, no argument needed) **or**
+its `caero_eid` is in `body_eids`. Cruciform body panels are plain CAERO1/PAERO1 boxes with no
+per-box marker, so their EIDs are remembered in `st.session_state.aero_body_eids` when the Aero
+Correction tab's **Build body correction** succeeds; the Aero tab and the SOL 144 deflected view
+pass that set through. Before a body correction is built in the session, only strip bodies are
+highlighted.
 
 **Full-width results (below the columns), shown after a Compute:**
 - **Spanwise loading** — `build_span_loading_figure(boxes, cp_corr, cp_unc=..., aeros=..., mode=…)`:
@@ -312,7 +322,12 @@ Implemented in `case_control_ui.py`.
 **Planned Analysis summary (read-only, Step 57):** When a case control is present, the tab
 leads with a SOL-aware, human-readable summary — SOL number + title and one line per subcase
 describing what runs and what is output (e.g. "Subcase 1 — Aeroelastic trim @ q=51, M=0
-(TRIM 1); DIVERG 1; outputs trim vars, stability derivatives, q_div, displacements"). Built by
+(TRIM 1); DIVERG 1; outputs trim vars, stability derivatives, aero totals, q_div,
+displacements"). The SOL 144 summary is bulk-aware (AC5): it appends "hinge moments" when
+AESURF cards are present, "monitor loads" when MONPNT1/MONPNT3 cards are present, and "box
+ΔCp/forces" on an AEROF/APRES request; an MLOADS subcase reads "Transient maneuver loads
+(MLOADS n); outputs time histories, MLDPRNT export, critical-sample loads[, monitor loads]".
+Built by
 `summarize_case_control(cc, bulk)` via the `_SOL_SUMMARY` registry (`{101, 103, 144}` with a
 generic field-dump fallback for unknown SOLs — new solutions slot in by adding a registry
 entry). A **▶ Launch Analysis** button (primary) runs the analysis via an `on_launch` callback
@@ -340,6 +355,14 @@ in the loaded file — define one below."
 
 Extending to Phase 2 SOLs (108, 109, 111, 112) requires only adding entries to `_SOL_LABELS`
 and `_SOL_OUTPUT_FIELDS` in `case_control_ui.py`.
+
+The editor's SOL selector deliberately stays 101/103: SOL 144 case control (TRIM / DIVERG /
+MLOADS and their bulk card sets) is **BDF-authored, not editor-authored** — a SOL 144 deck is
+uploaded as a run file, shown read-only in the editor, and launched from the Planned-Analysis
+summary (or the Results tab's **Run Analysis**). The run path is `app.py::_run_sol144` — see
+[Run Analysis from Viewer](#run-analysis-from-viewer) and
+[SOL 144 — Static Aeroelastic Results](#sol-144--static-aeroelastic-results-step-57). A SOL
+144/MLOADS authoring UI is recorded under Future development in the backlog.
 
 **Subcases:** One `st.expander` per subcase. Expander label shows the subcase ID and title
 (if set). Within each subcase:
@@ -451,8 +474,12 @@ Two-column layout — all controls in the left column (30%), 3D plot in the righ
 `results_view.py`. A subcase selector spans all three result dicts; the selected subcase
 renders whichever result types it produced:
 
-- **Trim** (`Sol144TrimResult`, `_render_sol144_trim`): summary metrics (q, Mach, total CL/CMy,
-  trim mode); trim-variable table (FREE/PRESCRIBED, value); stability-derivative table with
+- **Trim** (`Sol144TrimResult`, `_render_sol144_trim`): summary metrics — q, Mach, trim mode,
+  and all six aerodynamic totals (AC5): CZ (body), CL (wind), total CMy on the first metric
+  row; total CX, CY, CMx (roll), CMz (yaw) on a second row (`total_cx/total_cy/total_cmx/
+  total_cmz` on `Sol144TrimResult`; the lateral set is the full 3-component
+  `aero_moment_resultant` about the RCSID origin, ≈0 for a symmetric model at a symmetric
+  trim); trim-variable table (FREE/PRESCRIBED, value); stability-derivative table with
   rigid, elastic-restrained, and elastic-unrestrained (mean-axis, AE8b) columns
   (CZ/CMY/CX/CY/CMX/CMZ; unrestrained CZ/CMY blank on URDD rows); `q_div` readout with q/q_div ratio
   ("No divergence found" when `None`); per-AESURF hinge-moment table; monitor-point integrated
@@ -469,11 +496,17 @@ renders whichever result types it produced:
   (root #, q-div, V-div when RHOREF > 0).
 - **Transient maneuver** (`ManeuverResult`, `_render_sol144_maneuver`): time histories of
   Fz_aero, My_aero, and max|net load| with the critical sample marked; a sample slider scrubs
-  the per-step deflected shape.
+  the per-step deflected shape. An **Exports** row (AC5) offers two download buttons built
+  in-memory from `results/maneuver_output.py` — **Download MLDPRNT time history**
+  (`build_maneuver_time_history_text`, `<stem>.mldprnt.txt`) and **Download critical-sample
+  loads (BDF)** (`build_maneuver_critical_load_cards_text`, `<stem>.maneuver_qs_loads.bdf`) —
+  the same builders the CLI's `write_maneuver_outputs` uses, so the content matches the CLI
+  files exactly (the CLI concatenates one block per subcase; the viewer downloads the selected
+  subcase's block).
 
 Run wiring lives in `app.py::_run_sol144` (mirrors `main.py` routing — one shared `AeroModel`
 + `AeroCache`, per-subcase dispatch to `run_sol144_trim` / `run_sol144_diverg` /
-`run_maneuver_qs`). F06 export covers SOL 144 trim + divergence.
+`run_maneuver_qs`). F06 export covers SOL 144 trim + divergence + transient maneuver blocks.
 
 ---
 
@@ -494,6 +527,7 @@ Streamlit session state keys used:
 | `sol144_diverg_result` | `dict[int, Sol144DivergResult] \| None` | SOL 144 divergence-sweep results per subcase |
 | `maneuver_result` | `dict[int, ManeuverResult] \| None` | Phase G0 transient maneuver results per subcase |
 | `aero_model_144` | `AeroModel \| None` | Aero model built for the SOL 144 run (supplies `g_disp` + boxes to the deflected-mesh view) |
+| `aero_body_eids` | `set[int]` | CAERO1 EIDs selected as body panels when the Aero Correction tab's **Build body correction** succeeds; colours the body panels in the Aero-tab / SOL 144 3D mesh (AC5) |
 | `selected_gid` | `int \| None` | Currently selected grid (from sidebar inspector) |
 | `selected_eid` | `int \| None` | Currently selected element (from sidebar inspector) |
 | `_parse_warnings` | `list[str]` | Warnings from last file upload |
@@ -559,13 +593,14 @@ After a successful analysis run, an **Export F06** section appears below the res
 
 2. **Download F06** — triggers a browser download of the `.f06` content as a text file named `<uploaded-stem>.f06`.
 
-Multiple subcases are written sequentially into a single `.f06` file. The f06 text is generated by `build_f06_sol101_text` / `build_f06_sol103_text` in `sbeam/results/f06_writer.py`; for SOL 144 runs, `build_f06_sol144_text` (trim blocks) and `build_f06_sol144_diverg_text` (divergence-sweep blocks) are used instead. The public `write_f06_sol101` / `write_f06_sol103` functions remain available as thin wrappers for programmatic use.
+Multiple subcases are written sequentially into a single `.f06` file. The f06 text is generated by `build_f06_sol101_text` / `build_f06_sol103_text` in `sbeam/results/f06_writer.py`; for SOL 144 runs, `build_f06_sol144_text` (trim blocks), `build_f06_sol144_diverg_text` (divergence-sweep blocks), and `build_f06_sol144_maneuver_text` (Phase G0 transient maneuver blocks, AC5) are used instead. The maneuver block carries the run summary, a per-output-time MANEUVER TIME HISTORY table with the critical sample marked, and the critical-sample detail (closure resultant + displacement/bar-force blocks); the full per-sample field data stays in the MLDPRNT ASCII export. The same three SOL 144 builders feed the CLI f06 (`main.py`), so viewer and CLI f06 files match. The public `write_f06_sol101` / `write_f06_sol103` functions remain available as thin wrappers for programmatic use.
 
 **In-viewer vs CLI-only exports:** the viewer f06 export covers SOL 101/103 and SOL 144 trim +
-divergence. The SOL 144 auxiliary exports (`<stem>.aero_loads.bdf`, `<stem>.maneuver_loads.bdf`,
-`<stem>.monitor_loads.csv`) and the Phase G0 maneuver time-history / critical-load exports
-(`<stem>.mldprnt.txt`, `<stem>.maneuver_qs_loads.bdf`) are currently **CLI-only** (written by
-`main.py`) — closing this viewer gap is tracked as backlog Step AC5.
+divergence + transient maneuver. The Phase G0 maneuver time-history / critical-load exports
+(`<stem>.mldprnt.txt`, `<stem>.maneuver_qs_loads.bdf`) are available as download buttons on the
+maneuver results view (AC5) as well as from the CLI. The remaining SOL 144 auxiliary exports
+(`<stem>.aero_loads.bdf`, `<stem>.maneuver_loads.bdf`, `<stem>.monitor_loads.csv`) are
+**CLI-only** (written by `main.py`).
 
 **Session state:** `_uploaded_filename` stores the original uploaded filename so the default output path can be derived.
 
@@ -593,6 +628,10 @@ range heuristic.
 |------|------|
 | `test_flow_a_sol101_render_and_run` | Injected geometry → GPWG sidebar → SOL 101 run → deformed-shape UI |
 | `test_flow_b_sol103_render_and_run` | Injected geometry → SOL 103 run → mode-shape UI |
+| `test_flow_c_sol144_render_and_run` | Injected ±Γ dihedral SOL 144 deck → trim run → canted deflected-mesh UI |
+| `test_flow_d_sol144_mloads_render_and_run` | Injected MLOADS sample deck → trim + maneuver run → six trim totals visible; maneuver subcase renders time history, sample slider, exports (AC5) |
+| `test_body_eids_split_mesh_traces` / `test_strip_boxes_marked_body_without_eids` / `test_no_body_trace_without_bodies` | Body-panel trace split in `build_aero_box_figure` (AC5) |
+| `test_summary_sol144_advertises_hinge_and_monitor_outputs` / `test_summary_sol144_maneuver_advertises_exports` | Bulk-aware SOL 144 run summary (AC5) |
 | `test_apptest_aero_tab_no_exception` | Injected aero bulk → Aero tab renders without exception |
 | `test_apptest_correction_tab_renders` | Injected aero bulk → Aero Correction tab renders without exception |
 | `test_apptest_build_button_appears_with_table` | Section table in session → **Build correction cards** button present |

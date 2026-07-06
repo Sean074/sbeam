@@ -430,7 +430,15 @@ def _build_f06_sol144_text(
         f"      TOTAL CZ (BODY) = {_fmt(result.total_cl)}        "
         f"TOTAL CL (WIND) = {_fmt(result.total_cl_wind)}"
     )
-    lines.append(f"      TOTAL CMY = {_fmt(result.total_cm)}")
+    lines.append(
+        f"      TOTAL CX (BODY) = {_fmt(result.total_cx)}        "
+        f"TOTAL CY (BODY) = {_fmt(getattr(result, 'total_cy', 0.0))}"
+    )
+    lines.append(
+        f"      TOTAL CMX (ROLL) = {_fmt(getattr(result, 'total_cmx', 0.0))}       "
+        f"TOTAL CMY = {_fmt(result.total_cm)}       "
+        f"TOTAL CMZ (YAW) = {_fmt(getattr(result, 'total_cmz', 0.0))}"
+    )
     lines.append("")
 
     # ---- AERODYNAMIC DIVERGENCE ----
@@ -580,6 +588,96 @@ def _build_f06_sol144_diverg_text(
     return "\n".join(lines) + "\n"
 
 
+def _build_f06_sol144_maneuver_text(
+    case_control,
+    bulk: BulkData,
+    result,
+    subcase_id: int = 1,
+) -> str:
+    """Return a SOL 144 transient maneuver loads .f06 block (Phase G0, AC5).
+
+    Blocks: run summary (MLOADS/MLDTRIM sids, q, Mach, sample count, critical
+    sample), a per-output-time MANEUVER TIME HISTORY table (trim variables,
+    aero Fz/My, peak |net| grid force), and the critical-sample detail — net
+    load closure resultant plus the shared DISPLACEMENT / BAR FORCE blocks.
+    The full per-sample field output stays in the MLDPRNT ASCII export.
+    """
+    grid_index = build_grid_index(bulk)
+    gids_sorted = sorted(bulk.grids.keys())
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    title = getattr(case_control, "title", "") or "sbeam SOL 144"
+
+    lines = []
+    lines.append(f"1    {title}")
+    lines.append(
+        f"     SOL 144 TRANSIENT MANEUVER LOADS (QUASI-STEADY)   "
+        f"SUBCASE {subcase_id}   {now}"
+    )
+    lines.append("")
+    lines.append(
+        f"                           SUBCASE {subcase_id}     MLOADS = {result.mloads_sid}"
+        f"     TRIM = {result.trim_sid}     MACH = {result.mach:.4f}"
+        f"     Q = {_fmt(result.q).strip()}"
+    )
+    lines.append("")
+
+    if not result.steps:
+        lines.append("      NO OUTPUT SAMPLES")
+        lines.append("")
+        lines.append("                                       * * * END OF JOB * * *")
+        lines.append("")
+        return "\n".join(lines) + "\n"
+
+    crit = result.steps[result.crit_index]
+    lines.append(
+        f"      OUTPUT SAMPLES = {len(result.steps)}        CRITICAL SAMPLE = "
+        f"{result.crit_index + 1} (T = {_fmt(crit.t).strip()}, PEAK |NET FORCE|)"
+    )
+    lines.append("")
+
+    # ---- MANEUVER TIME HISTORY ----
+    labels = [l for l in result.labels if l in result.steps[0].trim_vars]
+    lines.append("                              M A N E U V E R   T I M E   H I S T O R Y")
+    lines.append("")
+    header = "      SAMPLE           T"
+    for label in labels:
+        header += f"  {label:>13}"
+    header += "        FZ-AERO        MY-AERO     MAX |NET F|"
+    lines.append(header)
+    for i, step in enumerate(result.steps):
+        net_f = np.abs(step.net_loads).max() if step.net_loads is not None else 0.0
+        row = f"{i + 1:>12}{_fmt(step.t)}"
+        for label in labels:
+            row += _fmt(step.trim_vars.get(label, 0.0))
+        row += f"{_fmt(step.Fz_aero)}{_fmt(step.My_aero)}{_fmt(net_f)}"
+        crit_mark = "  <-- CRITICAL" if i == result.crit_index else ""
+        lines.append(row + crit_mark)
+    lines.append("")
+
+    # ---- Critical-sample detail ----
+    lines.append(
+        f"                    C R I T I C A L   S A M P L E   D E T A I L   "
+        f"( SAMPLE {result.crit_index + 1}, T = {_fmt(crit.t).strip()} )"
+    )
+    lines.append("")
+    c = crit.closure
+    lines.append("      NET (AERO + INERTIAL) LOAD CLOSURE RESULTANT ABOUT THE MOMENT REFERENCE")
+    lines.append(
+        f"      FX ={_fmt(c[0])}   FY ={_fmt(c[1])}   FZ ={_fmt(c[2])}"
+        f"   MX ={_fmt(c[3])}   MY ={_fmt(c[4])}   MZ ={_fmt(c[5])}"
+    )
+    lines.append("")
+
+    _displacement_block(lines, crit.displacements, bulk, grid_index, gids_sorted)
+    _bar_forces_block(lines, bulk, crit.bar_forces)
+
+    lines.append("                                       * * * END OF JOB * * *")
+    lines.append("")
+
+    return "\n".join(lines) + "\n"
+
+
 # Public aliases (R22): callers that need the assembled f06 *text* (main.py CLI,
 # viewer) should import these, not the underscore-prefixed names — a rename of the
 # private builders would otherwise silently break those cross-module imports.
@@ -587,3 +685,4 @@ build_f06_sol101_text = _build_f06_sol101_text
 build_f06_sol103_text = _build_f06_sol103_text
 build_f06_sol144_text = _build_f06_sol144_text
 build_f06_sol144_diverg_text = _build_f06_sol144_diverg_text
+build_f06_sol144_maneuver_text = _build_f06_sol144_maneuver_text

@@ -24,3 +24,36 @@ def test_summary_sol144_trim(dihedral_sol144_parsed):
     # dynamic pressure pulled from the TRIM card
     trim = bulk.trims[cc.subcases[0].trim_sid]
     assert any(f"q={trim.q:g}" in ln for ln in lines)
+
+
+def test_summary_sol144_advertises_hinge_and_monitor_outputs():
+    """AC5: trim summary lists hinge moments (AESURF) and monitor loads (MONPNT)."""
+    import warnings
+    from pathlib import Path
+    from sbeam.parser.bdf_reader import parse_bdf
+
+    sample = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_mloads.bdf"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        cc, bulk = parse_bdf(sample)
+    lines = summarize_case_control(cc, bulk)
+    trim_line = next(ln for ln in lines if "TRIM" in ln)
+    assert "hinge moments" in trim_line
+    assert "monitor loads" in trim_line
+    assert "aero totals" in trim_line
+
+
+def test_summary_sol144_maneuver_advertises_exports():
+    """AC5: MLOADS summary lists the time-history and critical-load exports."""
+    import warnings
+    from pathlib import Path
+    from sbeam.parser.bdf_reader import parse_bdf
+
+    sample = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_mloads.bdf"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        cc, bulk = parse_bdf(sample)
+    lines = summarize_case_control(cc, bulk)
+    man_line = next(ln for ln in lines if "MLOADS" in ln)
+    assert "MLDPRNT" in man_line
+    assert "critical-sample loads" in man_line

@@ -309,6 +309,9 @@ def _render_body_stage(bulk: BulkData, aero_model, res) -> None:
                         targets=tgt, mach=mach_c, aero=aero_f,
                         sid_w2gj_base=_BODY_W2GJ_BASE, sid_aecorr_base=_BODY_AECORR_BASE)
                 st.session_state.aero_body_is_strip = body_is_strip
+                # Remembered so the Aero tab can colour-distinguish the body
+                # panels (cruciform boxes carry no per-box flag — AC5).
+                st.session_state.aero_body_eids = set(sel)
             except Exception as exc:
                 st.session_state.aero_body_result = None
                 st.error(f"Body correction failed: {exc}")

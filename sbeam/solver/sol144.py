@@ -1745,6 +1745,17 @@ def run_sol144_trim(
     total_cl_wind = float(
         total_cl * np.cos(alpha_trim) - total_cx * np.sin(alpha_trim)
     )
+    # Lateral/directional totals — side force plus the full 3-component moment
+    # resultant about the RCSID origin, matching the CMX/CMZ derivative-column
+    # convention (Step 52).  ≈0 for a symmetric model at a symmetric trim.
+    bref = aeros.bref
+    Fy_total = float(f_box_vec[1::3].sum())
+    Mx_total, _My_xp, Mz_total = aero_moment_resultant(
+        f_box_vec.reshape(-1, 3), aero.boxes, suport_pos
+    )
+    total_cy = Fy_total / sref if sref > 0 else 0.0
+    total_cmx = float(Mx_total) / (sref * bref) if sref * bref > 0 else 0.0
+    total_cmz = float(Mz_total) / (sref * bref) if sref * bref > 0 else 0.0
 
     # ------------------------------------------------------------------ #
     # Hinge-moment derivatives + trimmed hinge moment per AESURF control
@@ -1857,6 +1868,9 @@ def run_sol144_trim(
         total_cm=total_cm,
         total_cx=total_cx,
         total_cl_wind=total_cl_wind,
+        total_cy=total_cy,
+        total_cmx=total_cmx,
+        total_cmz=total_cmz,
         box_cp=box_cp,
         box_forces=box_forces,
         grid_loads=grid_loads,

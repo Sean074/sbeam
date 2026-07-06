@@ -324,3 +324,56 @@ def test_apptest_aero_tab_renders_results(aero_bulk):
     values_radio = [r for r in at.radio if r.label == "Values"]
     assert len(values_radio) == 1
     assert values_radio[0].options == ["Corrected", "Uncorrected", "Δ (corr − uncorr)"]
+
+
+# ---------------------------------------------------------------------------
+# AC5 — body-panel colour/legend split in the 3D box mesh
+# ---------------------------------------------------------------------------
+
+def _trace_names(fig: go.Figure) -> list:
+    return [t.name for t in fig.data]
+
+
+def _mesh_box_count(fig: go.Figure, name: str) -> int:
+    """Boxes in a wire-frame trace = points / 6 (5 outline points + None each)."""
+    tr = next(t for t in fig.data if t.name == name)
+    return len(tr.x) // 6
+
+
+def test_body_eids_split_mesh_traces(aero_bulk):
+    """CAERO1s named in body_eids draw as a separate 'Body panels' trace."""
+    from sbeam.model.aero import Caero1
+
+    aero_bulk.caero1s[200] = Caero1(
+        eid=200, pid=1, cp=0, nspan=2, nchord=4, lspan=0, lchord=0, igid=1,
+        p1=(2.0, 0.0, 0.0), x12=1.0, p4=(2.0, 2.0, 0.0), x43=1.0,
+    )
+    model = build_aero_model(aero_bulk)
+    fig = build_aero_box_figure(aero_bulk, model, body_eids={200})
+    names = _trace_names(fig)
+    assert "Aero mesh" in names and "Body panels" in names
+    assert _mesh_box_count(fig, "Aero mesh") == 40      # 4x10 wing
+    assert _mesh_box_count(fig, "Body panels") == 8     # 2x4 body
+
+
+def test_strip_boxes_marked_body_without_eids(aero_bulk):
+    """PSTRIP strip-body boxes are body-coloured via AeroBox.is_strip alone."""
+    from sbeam.model.aero import Caero1, Pstrip
+
+    aero_bulk.pstrips[20] = Pstrip(pid=20)
+    aero_bulk.caero1s[300] = Caero1(
+        eid=300, pid=20, cp=0, nspan=1, nchord=6, lspan=0, lchord=0, igid=1,
+        p1=(2.0, 0.0, 0.0), x12=3.0, p4=(2.0, 0.0, 1.0), x43=3.0,
+    )
+    model = build_aero_model(aero_bulk)
+    fig = build_aero_box_figure(aero_bulk, model)
+    names = _trace_names(fig)
+    assert "Body panels" in names
+    assert _mesh_box_count(fig, "Body panels") == 6
+    assert _mesh_box_count(fig, "Aero mesh") == 40
+
+
+def test_no_body_trace_without_bodies(aero_bulk):
+    model = build_aero_model(aero_bulk)
+    fig = build_aero_box_figure(aero_bulk, model)
+    assert "Body panels" not in _trace_names(fig)

@@ -1012,6 +1012,11 @@ maneuver load at each output time.
 - **Output (`results/maneuver_output.py`):** an MLDPRNT ASCII time-history table
   (`<stem>.mldprnt.txt`: time, commands, aero `Fz`/`My`, closure norms, peak net load) and the
   critical-sample (peak |net force|) net-load `FORCE`/`MOMENT` export (`<stem>.maneuver_qs_loads.bdf`).
+  The f06 gains a transient-maneuver block per MLOADS subcase
+  (`f06_writer.py::build_f06_sol144_maneuver_text`, AC5: run summary, time-history table with
+  critical-sample marker, critical-sample closure/displacement/CBAR detail); the viewer offers
+  the two ASCII/BDF exports as download buttons on the maneuver results view. Sample deck:
+  `sample/ha144a_fullspan_mloads.bdf` (ELEV ramp pitch-up on the HA144A full-span model).
 - **Gates (`tests/aero/test_maneuver_cards.py`, `tests/aero/test_maneuver_qs.py`):** card round-trip +
   validation; G0→Step 53 machine-precision identity; quasi-static settling to the new balanced trim
   (closure → 0, lift = `n_z·W`); per-step closure bounded; MLDPRNT + critical-load export round-trips.
