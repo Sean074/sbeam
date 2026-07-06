@@ -21,7 +21,10 @@ are the day-to-day references; higher numbers are planning and historical record
 | [`02_card_reference.md`](10_standard/02_card_reference.md) | BDF card field reference (all supported cards) |
 | [`03_static_analysis.md`](10_standard/03_static_analysis.md) | SOL 101 static analysis solver |
 | [`04_modal_analysis.md`](10_standard/04_modal_analysis.md) | SOL 103 normal modes solver |
-| [`05_aeroelastics.md`](10_standard/05_aeroelastics.md) | Aeroelastics developer/user guide — VLM (Phase A), splining (Phase B), SOL 144 trim/divergence/monitor points (Phase C), quasi-steady maneuver loads (Phase G0) |
+| [`05_aeroelastics.md`](10_standard/05_aeroelastics.md) | **Aeroelastics index** (split by area 2026-07-05): architecture overview, validation status, supported-card table, file map |
+| [`05a_aero_vlm.md`](10_standard/05a_aero_vlm.md) | Phase A — VLM aerodynamics: CAERO1 meshing, AIC, corrections (WKK/WT1/WT2/CHORDCP), section synthesiser, body panels, viewer aero tab |
+| [`05b_splining.md`](10_standard/05b_splining.md) | Phase B — structure ↔ aero splining (SPLINE2/ATTACH/SPLINE0, `build_g_spline`, load transfer) |
+| [`05c_sol144_maneuver.md`](10_standard/05c_sol144_maneuver.md) | Phases C + G0 — SOL 144 trim/derivatives/divergence, running & output, transient maneuver loads (MLOADS), monitor points |
 | [`06_viewer.md`](10_standard/06_viewer.md) | Streamlit/Plotly pre/post-processing viewer |
 | [`07_code_review_process.md`](10_standard/07_code_review_process.md) | Critical code-review process |
 | [`08_release_process.md`](10_standard/08_release_process.md) | Versioning and release process |
@@ -53,7 +56,14 @@ are the day-to-day references; higher numbers are planning and historical record
 
 | File | Scope |
 |------|-------|
-| [`00_completed_development.md`](40_history/00_completed_development.md) | Authoritative record of completed steps, key decisions, and resolved defects |
+| [`00_completed_development.md`](40_history/00_completed_development.md) | **Index** of the completed-development record (split by area 2026-07-05): file map, defect-ID legend, principles |
+| [`01_program_foundation.md`](40_history/01_program_foundation.md) | Foundation: setup, BDF parser, model enhancements, integration/verification, infrastructure, reviews |
+| [`02_sol101_static.md`](40_history/02_sol101_static.md) | SOL 101 static solver development + defects |
+| [`03_sol103_modal.md`](40_history/03_sol103_modal.md) | SOL 103 modal solver development + defects |
+| [`04_viewer_gui.md`](40_history/04_viewer_gui.md) | Viewer / GUI development (Phase 1 viewer, aero tabs, SOL 144 display) + defects |
+| [`05_aero_vlm_spline.md`](40_history/05_aero_vlm_spline.md) | Aerodynamics: VLM, corrections, body panels, splining (Phases A + B) + defects |
+| [`06_sol144_static_aeroelastic.md`](40_history/06_sol144_static_aeroelastic.md) | SOL 144 static aeroelastics (Phase C): trim, derivatives, maneuver loads, monitor points, AC close-out |
+| [`07_maneuver_transient.md`](40_history/07_maneuver_transient.md) | Transient maneuver loads (Phase G0) |
 | [`archive/`](40_history/archive/) | Superseded one-off plans and fully-actioned reviews (e.g. the CONM2/SOL103 fix plan; the ZAERO capability review, all goals folded into closed Steps 39–58) |
 
 ---

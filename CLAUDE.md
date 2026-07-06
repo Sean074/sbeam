@@ -21,7 +21,10 @@ ones that must track code changes:
 | `docs/10_standard/02_card_reference.md` | BDF card field reference (all supported cards) |
 | `docs/10_standard/03_static_analysis.md` | SOL 101 static analysis solver |
 | `docs/10_standard/04_modal_analysis.md` | SOL 103 normal modes solver |
-| `docs/10_standard/05_aeroelastics.md` | Phase A VLM aeroelastics developer/user guide |
+| `docs/10_standard/05_aeroelastics.md` | Aeroelastics **index** (architecture, validation status, card table; split by area 2026-07-05) |
+| `docs/10_standard/05a_aero_vlm.md` | Phase A — VLM aerodynamics, AIC corrections, body panels, viewer aero tab |
+| `docs/10_standard/05b_splining.md` | Phase B — structure ↔ aero splining |
+| `docs/10_standard/05c_sol144_maneuver.md` | Phases C + G0 — SOL 144 trim, output/exports, transient maneuver loads (MLOADS), monitor points |
 | `docs/10_standard/06_viewer.md` | Pre/post-processing viewer (Streamlit + Plotly) |
 | `docs/10_standard/07_code_review_process.md` | Critical code-review process |
 | `docs/10_standard/08_release_process.md` | Versioning and release process |
@@ -33,7 +36,7 @@ ones that must track code changes:
 **HARD REQUIREMENT — When any backlog item, bug, NIT, or future design item is closed/resolved, ALL THREE of the following MUST be done in the same session. No exceptions.**
 
 1. **`docs/30_future/00_backlog.md`** — **REMOVE** the item entirely. Do not leave it marked `✅ RESOLVED`; resolved items do not belong in the backlog.
-2. **`docs/40_history/00_completed_development.md`** — **ADD** the item with its full step format (Objective, Deliverables, Test/Acceptance, key decisions). For resolved bugs/NITs, add under "Resolved Defects".
+2. **`docs/40_history/`** — **ADD** the item with its full step format (Objective, Deliverables, Test/Acceptance, key decisions) to the **matching area file** (`01_program_foundation.md`, `02_sol101_static.md`, `03_sol103_modal.md`, `04_viewer_gui.md`, `05_aero_vlm_spline.md`, `06_sol144_static_aeroelastic.md`, `07_maneuver_transient.md`). For resolved bugs/NITs, add under that file's "Resolved defects". Update the file-map contents list in the index `00_completed_development.md`.
 3. **`CHANGELOG.md`** — **ADD** an entry in the `[Unreleased]` section describing what was done.
 
 Never batch these updates or defer them to a later session. The backlog is for **open** items only — anything closed must be moved out immediately.
@@ -43,7 +46,7 @@ Never batch these updates or defer them to a later session. The backlog is for *
 - **Phase 1 (complete):** SOL 101 (static) and SOL 103 (normal modes) — see `docs/40_history/00_completed_development.md`
 - **Phase 2:** Model enhancements — see `docs/30_future/00_backlog.md`
 - **Phase 3:** SOL 108 (frequency response), 109 (transient), 111 (modal freq), 112 (modal transient) — see `docs/30_future/00_backlog.md`
-- **Phase A (in progress):** Steady VLM aeroelastics (Steps 39–45 + A9 cruciform body-panel total-moment correction + A10 decoupled strip body panel complete; A7/A8 open) — see `docs/10_standard/05_aeroelastics.md` and `docs/30_future/00_backlog.md`
+- **Phase A (in progress):** Steady VLM aeroelastics (Steps 39–45 + A9 cruciform body-panel total-moment correction + A10 decoupled strip body panel complete; A7/A8 open) — see `docs/10_standard/05a_aero_vlm.md` and `docs/30_future/00_backlog.md`
 - **Phase G0 (in progress):** DLM-free quasi-steady transient maneuver loads — increment 1 complete (ZAERO `MLOADS` card set; Level-1 quasi-steady, open-loop; restrained l-set Newmark-β). Follow-ons (free-flight rigid-body coupling, modal ROM, unsteady corrections, closed-loop control) in `docs/30_future/00_backlog.md`
 - **Future:** distributed loads, Timoshenko shear, enforced displacements, buckling (SOL 105), results export — see `docs/30_future/00_backlog.md`
 

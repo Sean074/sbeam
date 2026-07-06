@@ -157,7 +157,7 @@ A hotfix is a `PATCH` release that corrects a critical defect in a released vers
 3. Run the full pre-release checklist (§3), focusing on the affected subsystem.
 4. Bump to `X.Y.Z+1`, update changelog, tag, and release.
 5. Merge the fix back to `main`: `git cherry-pick <fix-commit>` or `git merge hotfix/...`.
-6. Record the resolved bug in `docs/40_history/00_completed_development.md` under "Resolved Defects".
+6. Record the resolved bug under "Resolved defects" in the matching `docs/40_history/` area file (see the index `00_completed_development.md`).
 
 ---
 

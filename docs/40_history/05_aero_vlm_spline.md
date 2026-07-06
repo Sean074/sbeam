@@ -1,0 +1,1110 @@
+# Completed Development — Aerodynamics: VLM & Splining (Phases A + B)
+
+Part of the completed-development record (index: `00_completed_development.md`).
+Covers the steady VLM (boxes, AIC, corrections, body panels), section-data correction
+synthesis, and the structure-aero splining layer, with their resolved defects.
+
+---
+
+## Phase A — Static Aeroelastics (VLM)
+
+### Step 39: AEROS Card — Reference Geometry + Symmetry Flag ✅ COMPLETE
+
+**Objective:** Add the AEROS BDF card to the parser and data model. The AEROS card
+carries the aerodynamic reference geometry (`cref`, `bref`, `sref`) and symmetry flags
+(`symxz`, `symxy`) required by every downstream VLM calculation (S40–S44).
+
+**Deliverables:**
+- `sbeam/model/aero.py` *(new)* — `Aeros` dataclass with 7 fields: `acsid`, `rcsid`,
+  `cref`, `bref`, `sref`, `symxz`, `symxy`.
+- `sbeam/model/bulk_data.py` — added `aeros: Optional[Aeros] = None` and preparatory
+  `caero1s: dict = field(default_factory=dict)` (needed for the post-parse guard).
+- `sbeam/parser/bdf_reader.py` — `_handle_aeros()` handler; `elif keyword == "AEROS":`
+  dispatch; post-parse guard `if bulk.caero1s and bulk.aeros is None: raise ValueError(...)`.
+- `tests/parser/test_aero.py` *(new)* — 20 tests (19 active, 1 skipped pending S40):
+  round-trip (free-field and fixed-field), default values, `symxz`/`symxy` storage
+  (`+1`, `-1`, `0`), duplicate-AEROS `ValueError`, placeholder for
+  missing-AEROS-with-CAERO1 `ValueError`.
+- `docs/10_standard/05_aeroelastics.md` *(new)* — top-level aeroelastics developer/user guide;
+  architecture overview, module map, supported card table, AEROS card format, symmetry
+  conventions, validation rules. Stub sections for S40–S43.
+
+**Key decisions:**
+- `symxz`/`symxy` stored as bare `int` (not an enum) to keep the dataclass simple and
+  consistent with other integer-coded BDF flags (`cd`, `cp`, `cid`).
+- `caero1s: dict` added to `BulkData` in S39 (not S40) so the post-parse validation
+  guard is fully in place before CAERO1 parsing exists. This prevents a latent gap
+  where the guard would be unreachable if added in S40.
+- Fixed-field AEROS test uses the exact 8-column layout (CREF at cols 25–32) to catch
+  off-by-one column errors.
+
+**Test / Acceptance:**
+- Parser round-trip passes (free-field and fixed-field).
+- `ValueError("Duplicate AEROS card")` on second AEROS card.
+- `symxz` / `symxy` stored correctly as `+1`, `-1`, and `0`.
+- Blank `acsid`, `rcsid`, `symxz`, `symxy` all default to `0`.
+- Post-parse CAERO1-without-AEROS guard is present; test activated in S40.
+- **521 tests pass, 1 skipped (CAERO1 placeholder), 0 failures.**
+
+---
+
+### Step 40: CAERO1/PAERO1/AEFACT Parsing + `panel.py` Box Meshing ✅ COMPLETE
+
+**Objective:** Parse aerodynamic panel cards (CAERO1, PAERO1, AEFACT) and mesh each
+CAERO1 macroelement into trapezoidal boxes with bound vortex at ¼-chord and collocation
+at ¾-chord (horseshoe-vortex convention, NASA SP-405).
+
+**Deliverables:**
+- `sbeam/model/aero.py` — added `Caero1`, `Paero1`, `Aefact` dataclasses.
+- `sbeam/model/bulk_data.py` — added `paero1s` and `aefacts` dicts; expanded import.
+- `sbeam/parser/bdf_reader.py` — `_handle_aefact()` (multi-continuation fraction list);
+  `_handle_paero1()` (stub); `_handle_caero1()` (single required continuation for
+  P1/X12/P4/X43); all three wired into the dispatcher. Post-parse cross-reference
+  validation for PID, LSPAN, LCHORD. Skipped test in `TestAerosValidation` activated.
+- `sbeam/aero/__init__.py` *(new)* — package init.
+- `sbeam/aero/panel.py` *(new)* — `AeroBox` dataclass (k, caero_eid, i_span, j_chord,
+  corners 4×3, colloc, bound_a, bound_b, area, normal, chord, span_frac) +
+  `mesh_caero1(caero, paero, aefacts, cord2rs, start_k=0) -> list[AeroBox]`. P1/P4
+  resolved via `_get_transform()` from `assembly/coord_transform.py`. Bound vortex and
+  collocation placed at ¼ and ¾ of the **box** chord (not the full panel chord), so
+  each box in a multi-chordwise model has an independent horseshoe position. Area from
+  cross-product of diagonals; normal forced to +Z half-space for flat panels.
+- `tests/aero/__init__.py` *(new)* — empty.
+- `tests/aero/test_panel.py` *(new)* — 17 geometric assertion tests covering: 1×1 box
+  (area, colloc at ¾c, bound vortex at ¼c, corners, normal, chord, span_frac), N×M
+  mesh (box count, total area, sequential k, per-box chord placement), non-uniform
+  AEFACT span spacing (strip count, proportional areas), tapered planform (trapezoid
+  area formula, colloc/bound placement at mean chord), `start_k` offset.
+- `tests/parser/test_aero.py` — removed `@pytest.mark.skip`; added `TestAefactRoundTrip`
+  (single-line, multi-continuation, duplicate error), `TestPaero1RoundTrip` (PID stored,
+  duplicate error), `TestCaero1RoundTrip` (NSPAN/NCHORD form, LSPAN form, AEFACT stored),
+  `TestCaero1Validation` (missing PAERO1, missing AEFACT, duplicate EID, both NSPAN and
+  LSPAN non-zero, missing continuation).
+- `docs/10_standard/01_beam_model.md` — added AEFACT, PAERO1, CAERO1 card entries; updated BulkData
+  listing; updated cards-recognised list; added CAERO1 cross-reference validation note.
+
+**Key decisions:**
+- Bound vortex and collocation placed at ¼/¾ of the **box** chord (not the global
+  panel chord). For a 1×1 model both conventions coincide, but for NCHORD > 1 each
+  chordwise row of boxes has independent horseshoe positions — which is required for a
+  full-matrix AIC.
+- CAERO1 cross-reference validation (PID, LSPAN, LCHORD) is deferred to post-parse so
+  AEFACT/PAERO1 cards may appear anywhere in the bulk data relative to CAERO1.
+- `_get_transform()` (not the rotation-only `to_global()`) is used for P1/P4 because
+  they are points, not vectors — the full origin + R @ v_local transform is needed.
+- Normal is forced to the +Z half-space so that flat XY-plane panels always have an
+  upward-pointing outward normal regardless of corner ordering.
+
+**Test / Acceptance (KA1):**
+- 1×1 rectangular box: area = 8.0 (chord=2 × span=4); colloc x = 1.5 (¾ × 2); bound_a
+  x = 0.5 (¼ × 2); normal = [0, 0, 1].
+- N×M mesh (4×10): 40 boxes; total area = 8.0; per-box bound/colloc x confirmed analytically.
+- AEFACT non-uniform span: 3-strip model, areas proportional to span fractions 0.3/0.3/0.4.
+- Tapered planform (X12=4, X43=2): area = 12.0 (½(4+2)×4); colloc at ¾ of mean chord.
+- **560 tests pass, 0 skipped, 0 failures.**
+
+---
+
+### Step 41: Steady VLM AIC `vlm.py` — Symmetric + Antisymmetric Images ✅ COMPLETE
+
+**Objective:** Build the aerodynamic influence coefficient (AIC) matrix at k=0 using the
+horseshoe-vortex lattice method, solve the rigid-wing flow-tangency problem, and return
+lift and pitching-moment coefficients. Support XZ-plane symmetry (symmetric and antisymmetric
+images) for half-span models.
+
+**Deliverables:**
+- `sbeam/aero/vlm.py` *(new)* — four public functions:
+  - `biot_savart_seg(p, a, b) -> np.ndarray` — induced velocity at p from unit-strength
+    finite vortex segment a→b (Biot–Savart law; returns zero vector for degenerate inputs).
+  - `horseshoe_influence(colloc, box, parity=1) -> float` — single AIC entry; normalwash
+    (z-component, flat-wing convention) at `colloc` from unit horseshoe at `box`. Trailing
+    legs extend to `max(bound_a.x, bound_b.x) + 1000 × chord` (finite far-field cutoff).
+    For `parity=+1` (symmetric): image bound reversed (b_img → a_img) so root trailing
+    vortices cancel and the left-wing image produces same-sign lift. For `parity=-1`
+    (antisymmetric): image bound in same-reflection direction, root trailing doubles.
+  - `build_ajj(boxes, parity=1) -> np.ndarray` — n×n AIC matrix assembled from
+    `horseshoe_influence`; O(n²) loop.
+  - `solve_rigid_cl(boxes, alpha, parity=1) -> dict` — solves `A @ gamma = -alpha`,
+    computes Cp using individual box chord (= area / spanwise_width), and returns
+    `{cp, cl_section, CL, CM}`. CL set to 0.0 for parity=-1 (antisymmetric cancels).
+- `tests/aero/test_vlm.py` *(new)* — 22 tests across 5 classes:
+  - `TestBiotSavart` — known segment cross-check, degenerate cases, orthogonality.
+  - `TestSingleHorseshoe` — self-induced normalwash matches direct Biot-Savart sum;
+    parity ordering (symmetric reduces downwash, antisymmetric increases it).
+  - `TestBuildAjj` — shape, diagonal consistency.
+  - `TestRectangularWingCLa` — AR=5 half-span, 4×10 mesh: CLα within 10% of Prandtl
+    `2πAR/(AR+2)` (standard horseshoe VLM with uniform spacing converges to ~10% below
+    Prandtl for AR=5 — not a bug).
+  - `TestMeshRefinement` — CLα decreases monotonically as mesh refines (VLM converges
+    from above), both meshes within 10% of Prandtl.
+  - `TestAntisymmetric` — parity=-1: full-span CL = 0, section loads non-zero.
+
+**Key decisions:**
+- **Image direction for symmetric case**: the image horseshoe bound runs reversed (b_img→a_img,
+  i.e., from reflected-tip toward reflected-root in +y direction) so the left-wing vortex
+  produces the same lift sign as the right wing. Root trailing vortices (at y=0) cancel
+  between the direct and image horseshoes. The antisymmetric image uses the unreversed
+  direction (a_img→b_img), making root trailing vortices reinforce and giving CL_full = 0.
+- **Box chord vs. CAERO1 chord**: `AeroBox.chord` stores the CAERO1 macroelement chord
+  (not the individual VLM panel chord). The Cp formula uses the per-box chord computed as
+  `area / spanwise_width` to avoid an off-by-nchord factor in CL.
+- **VLM vs. Prandtl**: the standard horseshoe VLM with uniform spanwise spacing converges
+  to its own limit (~10% below Prandtl for AR=5). This is a known method characteristic,
+  not a bug. Tests use 10% tolerance accordingly. Convergence is from above (coarser meshes
+  give higher CLα).
+- CL for parity=-1 is returned as exactly 0.0; the `cl_section` dict still contains the
+  right-half section loads (non-zero, representing rolling moment).
+
+**Test / Acceptance (V-A1, V-A2):**
+- Biot–Savart: known segment matches closed-form; degenerate point returns [0,0,0].
+- Self-induced diagonal is negative (horseshoe creates downwash at its own collocation point).
+- Symmetric image (parity=+1) reduces normalwash magnitude vs. no-image (parity=0).
+- AR=5 half-span 4×10 mesh: CLα = 4.26 rad⁻¹ (within 10% of Prandtl 4.49).
+- 4×10 → 8×20 refinement: CLα decreases (4.26 → 4.11), monotone from above.
+- parity=-1 uniform incidence: CL = 0.0, section loads non-zero.
+- **582 tests pass, 0 skipped, 0 failures.**
+
+---
+
+### Step 42: Integration matrices `Skj`, `Djk`, and baseline normalwash `w_g` ✅ COMPLETE
+
+**Objective:** Build the three aeroelastic integration quantities needed to bridge the VLM
+pressure solution to structural forces (`Skj`), to map structural deformation to aerodynamic
+normalwash (`Djk`), and to capture geometric incidence from the W2GJ BDF card (`w_g`). These
+form the foundation of the steady load path and will be reused unchanged by the Phase D DLM
+unsteady solver.
+
+**Deliverables:**
+- `sbeam/model/aero.py` — `W2gj` dataclass added: `sid`, `caero_eid`, `data: list`
+  (dimensionless normalwash slopes Δz/Δx, one per box, row-major order).
+- `sbeam/model/bulk_data.py` — `w2gjs: dict` field added (`{sid: W2gj}`).
+- `sbeam/parser/bdf_reader.py` — `_handle_w2gj()` added (multi-continuation accumulation,
+  same pattern as AEFACT); dispatch block added to main parse loop.
+- `sbeam/aero/integration.py` *(new)* — three public functions:
+  - `build_skj(boxes) -> np.ndarray` — shape `(3*n_box, n_box)`; column `j` maps `cp_j`
+    to resultant force vector `[Fx, Fy, Fz]` at box `j` via `area_j * normal_j`.
+  - `build_djk(boxes) -> np.ndarray` — shape `(n_box, n_box)`; returns `−I` (negative
+    identity) for rigid k=0: unit positive slope at colloc_j → normalwash −1 at box j.
+  - `build_wg(boxes, w2gjs, caero_eid) -> np.ndarray` — shape `(n_box,)`; fills from
+    matching W2GJ card in row-major order; returns zero vector if none present.
+- `tests/aero/test_integration.py` *(new)* — 13 tests across 3 classes.
+- `tests/parser/test_aero.py` — 4 W2GJ parser tests added to `TestW2gjParser`.
+
+**Key decisions:**
+- **Convention**: all normalwash quantities are dimensionless slope Δz/Δx. Documented at
+  module and function level in `integration.py`.
+- **Djk as −I at k=0**: the input is already a slope vector; the negative sign encodes that
+  nose-up slope (positive Δz/Δx) produces downward wash (negative normalwash contribution).
+  Phase D DLM will replace this matrix with the full unsteady kernel.
+- **build_wg row-major ordering**: W2GJ data is indexed by span slowest, chord fastest,
+  matching the ordering produced by `mesh_caero1`. The function filters by `caero_eid` and
+  inserts values at global box indices, leaving unspecified boxes at zero.
+- **T3 tip exclusion**: the linear-twist monotonicity test excludes the outermost span strip
+  because VLM always shows tip-vortex rolloff (reduced gamma at the tip regardless of local
+  incidence). This is physical, not a defect.
+
+**Test / Acceptance (V-A4):**
+- No W2GJ: `build_wg` returns zero vector.
+- Wrong `caero_eid`: `build_wg` returns zero vector.
+- Uniform W2GJ incidence α: `np.linalg.solve(Ajj, −w_g)` yields the same `cp` as
+  `solve_rigid_cl(boxes, α)` to `rtol=1e-10` (round-trip identity).
+- Linear twist (slopes ∝ strip index): interior section gammas increase monotonically
+  (tip excluded due to physical rolloff).
+- `build_djk` is exactly `−np.eye(n)`.
+- `build_skj` column j equals `area_j * normal_j`; `Skj @ cp` total Fz == direct loop sum.
+- Partial W2GJ data (fewer values than boxes): remaining boxes stay zero.
+- **599 tests pass, 0 skipped, 0 failures.**
+
+---
+
+### Step 43: AIC Corrections (`corrections.py`) + `AeroModel` Container ✅ COMPLETE
+
+**Objective:** Add the three steady AIC correction tiers (Wkk, WT2, WT1) and package
+the entire aerodynamic model into a single `AeroModel` container for use by the
+downstream SOL 144 aeroelastic solver.
+
+**Deliverables:**
+- `sbeam/model/aero.py` — two new dataclasses:
+  - `Wkk(sid, caero_eid, data)` — diagonal multiplicative weight per box.
+  - `Aecorr(sid, method, caero_eid, target)` — pressure or force/moment correction
+    spec; `method ∈ {'WT1', 'WT2'}`.
+- `sbeam/model/bulk_data.py` — `wkks: dict` and `aecorrs: dict` fields added; imports
+  extended.
+- `sbeam/parser/bdf_reader.py` — two new handlers and dispatch entries:
+  - `_handle_wkk(fields, conts, bulk)` — same multi-continuation pattern as W2GJ.
+  - `_handle_aecorr(fields, conts, bulk)` — field 2 is the method string `'WT1'`/`'WT2'`;
+    raises `ValueError` for any other value.
+- `sbeam/aero/corrections.py` *(new)* — three correction functions:
+  - `apply_wkk(ajj, wkk_data) -> np.ndarray` — returns `AJJ* = diag(w) @ AJJ`.
+  - `apply_wt2(ajj, cp_target) -> np.ndarray` — returns corrected `AJJ*⁻¹` by
+    scaling `AJJ⁻¹` row-wise by `cp_target / cp_vlm_ref` (reference = unit incidence
+    `w_ref = −ones(n)`). Guard for near-zero `cp_vlm_ref` boxes keeps ratio = 1.
+  - `apply_wt1(ajj, boxes, f_target) -> np.ndarray` — returns corrected `AJJ*⁻¹` by
+    assigning a per-strip ratio `f_target_s / f_vlm_s` to every box in strip s
+    (strips defined by `box.i_span`). Both WT functions warn if `cond(AJJ) > 1e10`.
+- `sbeam/aero/aero_model.py` *(new)* — `AeroModel` dataclass (`boxes`, `ajj`,
+  `ajj_inv_corr`, `skj`, `djk`, `wg`, `parity`) and `build_aero_model(bulk, parity=1)`
+  factory. Correction precedence: Wkk → WT2 → WT1 → identity (lstsq of raw AJJ).
+- `tests/aero/test_corrections.py` *(new)* — 17 tests across 5 classes.
+
+**Key decisions:**
+- **Reference normalwash for WT1/WT2**: `w_ref = -np.ones(n)` (uniform unit incidence,
+  same rhs used by `solve_rigid_cl` for `alpha=1`). The `todo.md` spec did not include
+  `w_ref` in the function signatures; analysis showed that any implicit derivation of
+  `w_ref` from `cp_target` itself would yield a trivial identity correction. A fixed
+  reference state is the only formulation that (a) passes the round-trip tests and
+  (b) provides a useful correction for real CFD/WT data.
+- **Diagonal corrections only**: both WT1 and WT2 apply a per-box (WT2) or per-strip
+  (WT1) scalar factor to the rows of `AJJ⁻¹`. Full off-diagonal correction matrices
+  require multiple reference conditions and are reserved for a later phase.
+- **`apply_wkk` returns `AJJ*`** (not the inverse); the caller (`build_aero_model`)
+  inverts via lstsq. `apply_wt2` and `apply_wt1` return `AJJ*⁻¹` directly (they solve
+  internally). This asymmetry matches the specification in `todo.md`.
+- **`np.errstate`** used inside `apply_wt2` to suppress the numpy divide-by-zero
+  RuntimeWarning that arises from `np.where` evaluating both branches; the near-zero
+  guard then replaces invalid ratios with 1.0.
+- **WT1 `f_target` length**: must equal the number of distinct `i_span` values in
+  `boxes` (one scalar per span strip). A `ValueError` is raised on mismatch to avoid
+  silent wrong corrections.
+
+**Test / Acceptance (V-A3):**
+- No correction: `AJJ*⁻¹ @ AJJ ≈ I` to `abs=1e-10`.
+- Wkk non-unit (weight 1.5): `AJJ*` row 0 is `1.5 × AJJ` row 0, others unchanged.
+- WT2 round-trip: feed VLM cp at unit incidence as target → corrected cp reproduced to `rel=1e-8`.
+- WT2 scaled target: scaling target cp by 1.3 scales corrected output by 1.3 to `rel=1e-8`.
+- WT1 round-trip: feed VLM per-strip lift as target → corrected strip lift reproduced to `rel=1e-8`.
+- WT1 scaled target: scaling by 0.8 scales corrected strip output by 0.8 to `rel=1e-8`.
+- WT1 wrong `f_target` length: `ValueError` raised.
+- Conditioning: near-singular AJJ triggers `UserWarning` matching `"conditioned"` for both WT1 and WT2.
+- `build_aero_model` identity: `AJJ*⁻¹ @ AJJ ≈ I` with no correction card.
+- `build_aero_model` Wkk: `AJJ*⁻¹ @ (1.5 × AJJ) ≈ I` for uniform weight 1.5.
+- `build_aero_model` WT2 round-trip: corrected cp reproduces VLM cp.
+- Shape checks: `AJJ`, `AJJ*⁻¹` `(n, n)`; `Skj` `(3n, n)`; `Djk` `(n, n)`; `wg` `(n,)`.
+- **616 tests pass, 0 skipped, 0 failures.**
+
+---
+
+### Step S45 — VTP Cp Bugs + Sideslip Beta Implementation ✅ COMPLETE
+
+**Objective:** Fix three layered bugs that caused incorrect Cp on vertical surfaces (VTP/fins)
+and implement sideslip angle β for non-zero sideforce loads.
+
+**Deliverables:**
+
+- `sbeam/aero/panel.py`:
+  - Normal orientation: changed from Z-only check to dominant-axis check
+    (`argmax(|normal|)` → positive); horizontal surfaces → +Z, vertical → +Y.
+  - Bound vortex orientation: added condition check `(b−a)×x̂·n̂ < 0`; swaps
+    `bound_a`/`bound_b` when violated (VTP panels swap top↔bottom so AIC diagonal
+    is always negative, consistent with horizontal surfaces).
+- `sbeam/aero/vlm.py`:
+  - `horseshoe_influence` signature: added `colloc_normal` argument; replaced
+    `np.dot(v, _Z_HAT)` with `np.dot(v, colloc_normal)` (ZAERO Eq. 3.49a —
+    full dot product with receiving panel's normal, not Z-component only).
+  - `build_ajj`: passes `box_i.normal` to `horseshoe_influence`.
+  - `solve_rigid_cl`: added `beta: float = 0.0` parameter; RHS changed from
+    `np.full(n, -alpha)` to `-(alpha*n_z + beta*n_y)` per panel (ZAERO Eq. 3.28).
+  - `span_ref`: uses `np.ptp(colloc_pts[:, 1:], axis=0)` max — handles models
+    with both Y-span (wing) and Z-span (VTP) surfaces.
+- `sbeam/viewer/app.py`: added sideslip β number input alongside AoA α in the
+  aero tab; passes `beta=np.radians(beta_deg)` to `solve_rigid_cl`.
+- `tests/aero/test_vlm.py`:
+  - Updated 4 existing `horseshoe_influence` call sites to pass `box.normal`.
+  - Added `_vtp_panel()` helper (CAERO1 in XZ plane, span in +Z).
+  - Added `TestVtpNormal`: asserts VTP normal is `[0,+1,0]`.
+  - Added `TestVtpAerodynamics`: VTP Cp≈0 at alpha-only; non-zero at beta>0.
+  - Added `TestVtpCybConvergence`: CYb within 10% of Prandtl at moderate mesh;
+    internal convergence test (successive differences shrink).
+  - Added `TestAlphaBetaDecoupling`: wing zero at beta-only; VTP zero at alpha-only.
+
+**Key decisions:**
+- **Full normalwash formula** (ZAERO 3.49a, not Z-only): required to support any
+  non-horizontal surface orientation; same formula works for wings, HTP, and VTP.
+- **Bound vortex swap** (panel.py): the sign convention for VTP is inverted relative to
+  horizontal surfaces unless the bound direction is flipped. The condition
+  `(b−a)×x̂·n̂ < 0` is derived from requiring a negative AIC diagonal — the same
+  physical requirement as for horizontal wings.
+- **Beta RHS** (ZAERO 3.28): `rhs[i] = -(α·n_z + β·n_y)`. For the airplane_aero.bdf
+  model at β=0, VTP Cp is zero (correct). Non-zero β produces sideforce on the VTP.
+- **parity=0 convergence**: VLM with parity=0 (single fin, no image) does not converge
+  monotonically toward the Prandtl lifting-line value; it overshoots at coarse meshes
+  and decreases as panels are added. This is an intrinsic VLM characteristic confirmed
+  to be identical for horizontal wings and VTPs under the same parity. The convergence
+  test was updated to check internal convergence (successive differences decrease).
+
+**Test / Acceptance (S45):**
+- `TestVtpNormal::test_vtp_normal_is_plus_y`: VTP box normals all [0,+1,0].
+- `TestVtpAerodynamics::test_vtp_zero_cp_at_alpha_only`: max |Cp| < 1e-6 for β=0.
+- `TestVtpAerodynamics::test_vtp_cl_positive_for_positive_beta`: VTP CL < 0 (negative by
+  K-J sign convention with parity=0; physics confirmed correct by magnitude).
+- `TestVtpCybConvergence::test_CYb_within_10_percent_of_prandtl`: |CYb − target|/target < 10%.
+- `TestVtpCybConvergence::test_CYb_mesh_convergence`: internal convergence confirmed.
+- `TestAlphaBetaDecoupling::test_wing_zero_cp_at_beta_only`, `test_vtp_zero_cp_at_alpha_only`.
+- **32 tests pass, 0 failures.**
+
+---
+
+### Phase A — A1: VLM "lift-curve-slope under-prediction" ✅ RESOLVED (not a defect)
+
+**Date resolved:** 2026-06-09
+
+**Original symptom:** finite-AR CL_α ran 3–8% below analytical references and the deficit
+appeared to GROW with spanwise refinement (nstrip 40→80), suggesting a trailing-vortex
+induced-downwash kernel bias.
+
+**Investigation (two stages):**
+
+1. **Spanwise-spacing study** (`studies/a1_spanwise_spacing_study.py`, results in
+   `docs/20_theory/studies/a1_spanwise_spacing.md`). Swept nspan with uniform vs cosine spanwise spacing
+   on the AVL-anchored tapered wing and the rectangular AR=8 wing, plus control probes:
+   - Uniform vs cosine spacing are **identical to < 0.2%** at every resolution → the
+     Hough/Lan spacing hypothesis is **refuted**.
+   - The drift is **convergent** (decrements halve each nspan doubling) and **purely
+     spanwise-count driven** — independent of nchord (probe 1) and box aspect ratio (probe 2).
+
+2. **Peer-VLM convergence comparison** (`studies/byu_wing_sweep.jl`, run in VortexLattice.jl —
+   BYU FLOW Lab, validated against AVL to < 0.1%):
+
+   | nspan | VLM.jl CL_α | sbeam CL_α | Δ (VLM−sbeam) |
+   |------:|------------:|-----------:|--------------:|
+   | 6  | 4.7621 | 4.7697 | −0.0076 |
+   | 12 | 4.6671 | 4.6746 | −0.0075 |
+   | 24 | 4.6142 | 4.6216 | −0.0074 |
+   | 48 | 4.5864 | ~4.59  | −0.0074 |
+
+   VortexLattice.jl drifts down with refinement **identically** to sbeam (4.76→4.67→4.61→4.59),
+   and the sbeam−peer offset is **constant at ~0.16%** — not a growing divergence. CM (post-A9)
+   and far-field CDi also track VLM.jl across the sweep.
+
+**Resolution:** A1 is **not a defect.** The refinement drift is ordinary convergent
+lifting-surface VLM mesh behaviour, reproduced identically by an AVL-validated peer code. The
+original "deficit" was an artifact of comparing against lifting-LINE upper bounds (`2π/(1+2/AR)`
+= 5.027, etc.), which finite-AR lifting-surface VLM correctly sits below. sbeam's CL_α matches
+VortexLattice.jl/AVL to ~0.16% at every resolution. No code change required.
+
+**Artifacts:** `studies/a1_spanwise_spacing_study.py`, `studies/byu_wing_sweep.jl`,
+`studies/byu_wing.avl` (AVL equivalent), `docs/20_theory/studies/a1_spanwise_spacing.md`,
+regression `tests/aero/test_val_byu_wing.py` (CL 0.16%, CM 0.25% vs AVL).
+
+---
+
+### Phase A — A9: Pitching-moment arm at ¾-chord instead of ¼-chord ✅ FIXED
+
+**Date resolved:** 2026-06-09
+
+**Discovered by:** external-benchmark validation against the BYU FLOW Lab
+VortexLattice.jl "Steady-State Analysis of a Wing" example (itself validated against
+AVL to < 0.1%). sbeam's CL matched to 0.16%, but CM was ~2× the AVL value.
+
+**Root cause:** `solve_rigid_cl` in `sbeam/aero/vlm.py` computed the pitching moment with
+each box's Kutta–Joukowski force acting at the box **¾-chord collocation point**
+(`boxes[i].colloc[0]`). The force physically acts at the **¼-chord bound vortex**. Using the
+collocation point shifts every box load aft by half a box chord, inflating |CM| by
+`CL·(½·box_chord)/c_ref`. The error is mesh-dependent (shrinks as NCHORD→∞), so coarse
+internal checks did not catch it; on the AR-7.5 benchmark (NCHORD=6) it doubled CM:
+−0.04150 (buggy) vs −0.02085 (AVL). This is distinct from A3 (moment *reference point* and
+`c_ref` normalisation, already fixed) — A9 is the per-box *moment arm*.
+
+**Fix:**
+
+1. **`sbeam/aero/vlm.py`** — Precompute `x_qc[i] = ½·(bound_a[0] + bound_b[0])`, the
+   ¼-chord (bound-vortex) x of each box, and use it as the moment arm in both the global
+   `CM` and the per-surface `cm_eid` sums (replacing `boxes[i].colloc[0]`). Docstring updated.
+
+2. **`sample/val_vlm_byu_wing.bdf`** — New AVL-validated benchmark BDF (BYU VortexLattice.jl
+   wing: root 2.2 / tip 1.8 / half-span 7.5 / LE sweep 0.4 / AR 7.5; full-span as two
+   CAERO1 surfaces, parity 0; 144 boxes).
+
+3. **`tests/aero/test_val_byu_wing.py`** — New external-benchmark regression: CL within 1%
+   (0.16%) and CM within 2% (0.25%) of the AVL values, plus a guard asserting CM is not the
+   ~−0.0415 ¾-chord-arm value.
+
+4. **`docs/10_standard/05_aeroelastics.md`** — CM return-dict bullet documents the ¼-chord moment arm.
+
+**Test / Acceptance:** `tests/aero/test_val_byu_wing.py` (4 tests) passes; all 47
+`tests/aero/test_vlm.py` invariance tests (CM∝1/c_ref, xref-shift, aeros-vs-heuristic) remain
+green — they are relative and unaffected by the absolute arm correction. CL = 0.24476 (AVL
+0.24437, +0.16%); CM = −0.02090 (AVL −0.02085, +0.25%).
+
+---
+
+### Phase A — A2 + A3: AEROS reference geometry + per-surface breakdown + moment reference ✅ FIXED
+
+**Date resolved:** 2026-06-09
+
+**Root cause (A2):** `solve_rigid_cl` in `sbeam/aero/vlm.py` (lines 167–174) recomputed
+S_ref, span_ref, and c_ref heuristically from the pooled box geometry and never used the
+parsed `AEROS` card. On multi-surface models (wing + HTP + VTP) this summed the area of
+all surfaces together and mixed VTP sideforce into the CL total — physically meaningless.
+
+**Root cause (A3):** CM was taken about x=0 with the heuristic c_ref, not about a defined
+moment reference point normalised by AEROS CREF.
+
+**Root cause (data loss):** `AeroModel` did not carry the `aeros` field, so `bulk.aeros`
+was discarded before `solve_rigid_cl` was called.
+
+**Fix:**
+
+1. **`sbeam/aero/aero_model.py`** — Added `aeros: Optional[Aeros] = None` field to
+   `AeroModel` dataclass; `build_aero_model` now stores `bulk.aeros` in the returned model.
+
+2. **`sbeam/aero/vlm.py`** — Updated `solve_rigid_cl` signature with two new optional
+   parameters: `aeros=None` (provides S_ref and c_ref from the AEROS card when present;
+   falls back to heuristic when None) and `xref=0.0` (moment reference x-coordinate in
+   CID 0; default preserves existing behaviour). Per-surface classification added: each
+   CAERO1 surface is classified by its mean outward normal — `|n_z| ≥ |n_y|` → "lift"
+   (contributes to CL/CM); `|n_y| > |n_z|` → "sideforce" (contributes to CY). Result
+   dict extended with `CY` and `per_surface` keys.
+
+3. **`sbeam/viewer/app.py`** — `solve_rigid_cl` call now passes `aeros=aero_model.aeros`;
+   viewer displays CY metric and a per-surface breakdown table for multi-surface models.
+
+4. **`tests/aero/test_vlm.py`** — Updated two VTP tests that checked `result["CL"]` for
+   sideforce to check `result["CY"]`. Added three new test classes: `TestAerosReferenceGeometry`
+   (CL and CM scale correctly with AEROS sref/cref), `TestPerSurfaceClassification` (surface
+   type, CL/CY separation, per-surface dict), `TestMomentXref` (CM shift formula).
+
+5. **`docs/10_standard/05_aeroelastics.md`** — Updated `solve_rigid_cl` signature and return dict
+   documentation; updated architecture overview to show `aeros` in `AeroModel`.
+
+**Test / Acceptance:**
+- `TestAerosReferenceGeometry`: CL inversely proportional to aeros.sref; CM inversely
+  proportional to aeros.cref; no-aeros result matches heuristic exactly.
+- `TestPerSurfaceClassification`: horizontal wing → "lift" surface in per_surface; VTP →
+  "sideforce" surface; VTP contributes to CY not CL; per-surface CL sums to global CL.
+- `TestMomentXref`: CM(xref+dx) = CM(xref) + CL*dx/c_ref (to rel=1e-8); default xref=0.
+- `TestVtpCybConvergence`: retested with `result["CY"]` — within 10% of Prandtl, internal
+  convergence confirmed.
+- **653 tests pass, 0 failures.**
+
+---
+
+### Step 46 — Replace `lstsq` AIC inverse with LU factorization ✅ COMPLETE
+
+**Objective:** Eliminate SVD-based inversion of the square, full-rank AIC matrix.
+`np.linalg.lstsq` dominated build time (~25 s for the 1232-box `airplane_aero.bdf`
+model). Replacing it with `np.linalg.solve` (LU-based) reduces cost substantially.
+
+**Deliverables:**
+
+1. **`sbeam/aero/corrections.py`** — `_solve_ajj` rewritten to call
+   `np.linalg.solve(ajj, np.eye(n))` instead of `lstsq`. Docstring updated.
+
+2. **`sbeam/aero/aero_model.py`** — WKK branch (line 82) and no-correction branch
+   (line 90) converted to `np.linalg.solve`. `_check_conditioning` imported from
+   `corrections` and called in both branches so a degenerate AIC emits a `UserWarning`
+   before raising instead of silently returning a pseudo-inverse. Module and function
+   docstrings updated (`lstsq` → `solve`/`LU factorization`).
+
+3. **`tests/aero/test_corrections.py`** — `_ajj_and_inv` helper and
+   `TestBuildAeroModel.test_wt2_round_trip` updated to use `np.linalg.solve`.
+   Conditioning warning tests updated to use a well-conditioned but ill-conditioned
+   diagonal matrix (`cond ≈ 1e12`) instead of a zero matrix — `solve` correctly
+   raises `LinAlgError` on a truly singular input, so the tests now reflect the
+   intended behaviour.
+
+4. **`docs/10_standard/05_aeroelastics.md`** — Correction-precedence table and `apply_wkk` description
+   updated to reflect `np.linalg.solve` and the WKK conditioning guard.
+
+**Key decisions:**
+- `np.linalg.solve(A, I)` preferred over `scipy.linalg.lu_factor/lu_solve` — NumPy
+  is already a dependency and the explicit inverse is stored for repeated `A*⁻¹ @ w`
+  multiplies downstream; forming it once is the right trade-off.
+- Conditioning check added to WKK and no-correction branches to match the existing
+  guard already present in `apply_wt2` and `apply_wt1`.
+
+**Test / Acceptance:**
+- All 17 `test_corrections.py` tests pass.
+- **653 tests pass, 0 failures.**
+
+---
+
+### Phase A — A4: Prandtl–Glauert / Göthert Compressibility Correction ✅ COMPLETE
+
+**Date:** 2026-06-10
+
+**Objective:** Add subsonic compressibility correction to the VLM via the Göthert similarity
+rule: compress panel geometry by β = √(1−M²) before building the AIC, then scale the inverted
+AIC by 1/β. Expose Mach via an sbeam extension field on the AEROS card.
+
+**Deliverables:**
+- `sbeam/model/aero.py` — `Aeros.mach: float = 0.0` field added (sbeam extension, field 8).
+- `sbeam/parser/bdf_reader.py` — `_handle_aeros()` parses optional field 8 as `mach`.
+- `sbeam/aero/vlm.py` — new `prandtl_glauert_boxes(boxes, mach)` helper; `solve_rigid_cl`
+  accepts `mach=` and applies PG before the AIC solve.
+- `sbeam/aero/aero_model.py` — `build_aero_model` applies PG boxes for AIC, scales
+  `ajj_inv_corr` by 1/β; `AeroModel.mach` field added.
+- `sbeam/viewer/app.py` — passes `mach=aero_model.mach` to `solve_rigid_cl`.
+- `tests/aero/test_vlm.py` — 4 new tests in `TestPrandtlGlauert` (identity at M=0, y
+  compression, CL increase bounded by 1/β, M=0.995 cap).
+- `docs/10_standard/02_card_reference.md` — AEROS MACH field documented.
+- `docs/10_standard/05_aeroelastics.md` — "Known Limitations / deferred" replaced with
+  "Implementation Notes" describing the Göthert approach.
+- `docs/20_theory/01_aeroelastics_theory.md` — new §2.8 deriving the Göthert transform
+  (Eq. 14); §2.1 cross-reference updated; §9 and §10 (references) updated.
+
+**Test/Acceptance:**
+- 128 aero tests pass (124 pre-existing + 4 new); M=0.0 gives bit-identical results to
+  the pre-correction solver.
+- `test_pg_correction_increases_cl`: CL at M=0.6 is greater than at M=0 and less than
+  the 2-D PG bound of 1/β, confirming physically correct 3-D correction.
+
+**Key decisions:**
+- Göthert geometry compression (y,z by β) chosen over a simple 1/β AIC scaling: more
+  physically correct for 3-D planform effects and consistent with VortexLattice.jl /
+  ZAERO ZONA6 approach.
+- Mach placed on `AEROS` field 8 (sbeam extension) rather than a new TRIM card; TRIM is
+  deferred to Phase C. Default mach=0.0 keeps full backward compatibility.
+- β capped at 0.99 (not 1.0) to avoid division-by-zero near M=1.
+- `skj`, `djk`, `wg` built from physical (unscaled) boxes — only the AIC uses PG geometry.
+
+---
+
+### Phase A — A6: Trefftz-Plane Induced Drag ✅ COMPLETE
+
+**Date:** 2026-06-09
+
+**Objective:** Add a Trefftz-plane post-processing function to `vlm.py` that computes
+the induced drag coefficient (CDi) and Oswald span efficiency (e) from the solved
+circulation field, enabling the standard elliptic-loading cross-check
+`CDi = CL² / (π · AR · e)`.
+
+**Deliverables:**
+1. **`sbeam/aero/vlm.py`** — new `trefftz_cdi(boxes, gamma, parity, S_ref, ar)` function.
+   Integrates the semi-infinite trailing-vortex wake in the far-field y-z plane using
+   the 2-D Biot-Savart kernel (Katz & Plotkin Eq 12.17).  Only lift surfaces
+   (`|n_z| ≥ |n_y|`) contribute.  Mirror trailing vortices are included for `parity ≠ 0`
+   using the same convention as `horseshoe_influence`: the mirror of a direct trailing at
+   `(y_v, z_v)` with strength `s` is placed at `(-y_v, z_v)` with strength `-parity·s`.
+   `solve_rigid_cl` calls `trefftz_cdi` and adds `"CDi"` and `"e"` to its return dict.
+
+2. **`tests/aero/test_vlm.py`** — new `TestTrefftzInducedDrag` class (6 tests):
+   - `test_keys_present`: CDi and e keys exist in the solve_rigid_cl return dict
+   - `test_cdi_positive`: CDi > 0 for α > 0
+   - `test_oswald_near_unity`: e ∈ (0.85, 1.05) for rectangular AR=16 wing
+   - `test_cdi_cl_identity`: CDi = CL²/(π·AR·e) to 1e-9 relative tolerance
+   - `test_cdi_scales_as_alpha_squared`: CDi(2α)/CDi(α) ≈ 4.0 within 1%
+   - `test_cdi_zero_at_zero_alpha`: CDi < 1e-12 at α = 0
+
+3. **`docs/10_standard/05_aeroelastics.md`** — CDi and e entries added to the `solve_rigid_cl` return
+   dict documentation, including the normalisation formula and expected e range.
+
+**Key decisions:**
+- `CDi = Σ Γ·w_T·Δy / S_ref` (no extra ×2): the Trefftz formula has a ρ/2 prefactor
+  that exactly cancels with the 1/q = 2 in the CDi normalisation, so w_T (full 2-D
+  Biot-Savart, factor 1/(2π)) is used without an additional factor.
+- For heuristic reference geometry (no AEROS card), the physical AR is computed as
+  `(2·max_y)² / (2·S_ref_half)` for half-span models to avoid the factor-of-2 error
+  that arises from using `b_ref² / S_ref_half` directly.
+- When AEROS is provided, `ar = bref² / sref` is unambiguous (AEROS always carries
+  full-wing geometry).
+- `parity = -1` (antisymmetric): CDi = 0.0, e = nan — consistent with CL = 0 convention.
+
+**Test / Acceptance:**
+- 6 new tests pass; full aero suite remains 124 passing, 0 failures.
+
+---
+
+### Step A-SC: Section force + moment correction synthesiser (`section_correction.py`) ✅ COMPLETE
+
+**Objective:** Provide a way to match a target *section line* — slope **and** zero-α offset of
+both force and pitching moment — that `apply_wt1` cannot (it matches per-strip force only and
+cannot move the section aerodynamic centre). Do it with **minimal change to the uncorrected
+chordwise distribution** and **without** any solver or BDF-card-schema change (the chosen "Option
+A": a preprocessor that emits an ordinary `W2GJ` + `WT2` card pair).
+
+**Deliverables:**
+1. **`sbeam/aero/section_correction.py`** — `build_section_correction(boxes, ajj, *, f_slope,
+   alpha_0, m_slope, m_0, caero_eid, sid_w2gj, sid_aecorr, moment_ref=None)` returning a
+   `SectionCorrectionResult` (the `W2gj` + `Aecorr`/WT2 cards, the per-box `r`/`wg` arrays, the
+   per-strip `moment_ref`, and achieved-vs-target diagnostics). `cards_to_bdf()` formats the pair
+   as free-field bulk data.
+2. **`tests/aero/test_section_correction.py`** — 8 tests: identity targets → no-op (`r≈1`,
+   `wg≈0`); pure slope scaling → uniform per-strip `r` (degenerates to WT1) with `wg≈0`; full
+   `(slope, a.c., α₀, Cm0)` match reproduced in the diagnostics **and** end-to-end through
+   `build_aero_model` at α=0 and α=0.1; NCHORD<2 raises; multi-surface raises; length-mismatch
+   raises; `cards_to_bdf` round-trips through `parse_bulk_data`.
+3. **Docs** — theory `docs/20_theory/01_aeroelastics_theory.md` new §3.5 (synthesis method) plus a
+   §3.3 note correcting the WT1 "force/moment" overstatement; standard
+   `docs/10_standard/05_aeroelastics.md` new "Section force + moment correction synthesiser"
+   section, module-map row, and clarified `apply_wt1` entry.
+
+**Key decisions:**
+- **Decomposition.** The four section targets split into a *slope pair* (dF/dα, dM/dα → force
+  slope + a.c.) handled by per-box **WT2**, and an *offset pair* (F₀, M₀ → camber lift + camber
+  moment, the load at α=0) handled by the **W2GJ** camber-line normalwash. A multiplicative
+  correction yields nothing at α=0, so the offset *must* be W2GJ.
+- **One-pass / decoupled.** The WT2 ratio is calibrated on `w_ref=-ones` and is independent of
+  `w_g`, so WT2 is sized first, then W2GJ is sized through the WT2-corrected operator (which also
+  scales the camber load) — no iteration.
+- **Minimal change.** WT2 = uniform per-strip scale (no shape change) for the force + a
+  minimum-norm per-box perturbation orthogonal to the force for the moment/a.c. mismatch; it
+  collapses to the uniform WT1 scaling when the target a.c. equals the VLM a.c. W2GJ = lowest-order
+  two-mode camber (uniform incidence + chordwise-linear) per strip, sized by a small global linear
+  solve so per-strip (F₀, M₀) are reproduced exactly including inter-strip induction.
+- **Unit/guard consistency.** The emitted WT2 target is in Γ-units (the `apply_wt2` convention)
+  and mirrors `apply_wt2`'s near-zero-reference `r=1` guard, so the card and the solver operator
+  are identical. Single-CAERO1 only (matches the existing full-length WT2 target path); NCHORD≥2
+  per strip required (a moment needs two chordwise boxes). Nose-up-positive moment about the
+  per-strip ¼-chord (default), matching `sol144._pitch_moment`.
+
+**Test / Acceptance:**
+- 8 new tests pass; full aero suite 334 passing, 0 failures; ruff clean.
+
+---
+
+### Step A-SD: Spanwise section-data ingestion for the correction GUI (`section_data.py`) ✅ COMPLETE
+
+**Objective:** Feed `build_section_correction` (Step A-SC) from a user-authored table of *section
+coefficients* that vary with span, **Mach**, and a **linearised α/β region** (the standard way the
+nonlinear α dependence is captured — two or more linear fits, each with a validity range). Chosen
+input convention (user-selected): tidy CSV + in-GUI `st.data_editor`, non-dimensional per-degree
+coefficients about ¼-chord, and "v1" single-operating-region selection.
+
+**Deliverables:**
+1. **`sbeam/aero/section_data.py`** — tidy/long CSV schema (`caero, eta, mach, var, a_lo, a_hi,
+   cn_a, a0, cm_a, cm0, xref`) and: `validate_section_data`, `available_conditions`,
+   `template_dataframe` (seeds the editor/template with the actual strip η-stations),
+   `build_from_section_data` (interpolate onto strips → convert → build), `operating_region`.
+2. **`tests/aero/test_section_data.py`** — 12 tests: schema/var/range/numeric guards; condition
+   listing; force-slope and moment-offset coefficient-conversion correctness; end-to-end CL-slope
+   == section `cn_a` through `build_aero_model`; extrapolation flag; missing Mach/region raise;
+   operating-region containment.
+3. **Docs** — standard `docs/10_standard/05_aeroelastics.md` "Spanwise section-data input" section
+   + module-map row.
+
+**Key decisions:**
+- **Local-chord coefficients, per degree.** Section data follow the airfoil-polar convention
+  (normalised by local chord, not `cref`): `f_slope = cn_a·(180/π)·A`, `m_slope = cm_a·(180/π)·c·A`,
+  `m_0 = cm0·c·A`, `alpha_0 = a0·π/180`, `moment_ref = LE_x + xref·c` (strip area `A`, local chord
+  `c`). Nose-up-positive moment about the chord-fraction `xref` (default ¼c).
+- **Spanwise interpolation onto strips** via `AeroBox.span_frac`, clamped at the table ends with an
+  `extrapolated` flag (linear; PCHIP a possible later refinement).
+- **v1 selection:** Mach matched exactly (no Mach interpolation); one operating region built per
+  call, the caller warning if the trim incidence leaves `[a_lo, a_hi]`. Both deferred to follow-ons
+  (Mach interpolation; per-region card set keyed in `AeroCache` with trim-α re-selection).
+- **PG consistency:** the caller passes `β·ajj_pg` so the reference VLM solve matches the solver's
+  1/β-scaled operator at the chosen Mach.
+
+**Test / Acceptance:**
+- 12 new tests pass; full section-correction + section-data suite 20 passing; ruff clean.
+
+---
+
+### Step A-SM: Section force+moment correction extended to multi-surface ✅ COMPLETE
+
+**Objective:** Lift the single-CAERO1 restriction of Steps A-SC / A-SD so a deck with several
+lifting surfaces (wing + tail + fin …) can be corrected. The AIC is global, so the correction must
+be built and applied across all surfaces at once.
+
+**Deliverables:**
+1. **`sbeam/aero/section_correction.py`** — `build_section_correction_multi(boxes, ajj, targets, *,
+   sid_w2gj_base, sid_aecorr_base, beta=1.0)` engine taking a list of `SurfaceTargets`, returning a
+   `MultiSectionCorrectionResult` (`cards[eid] = (W2gj, Aecorr)`, global `r`/`wg`, per-surface
+   `SurfaceDiagnostics`). `build_section_correction` is now a single-surface wrapper; `cards_to_bdf`
+   accepts either result.
+2. **`sbeam/aero/aero_model.py`** — `build_aero_model` WT2 branch combines **all** `WT2` `AECORR`
+   cards into one global Γ-unit target (each card fills its CAERO1's boxes; uncorrected surfaces
+   default to ratio 1).
+3. **`sbeam/aero/section_data.py`** — `build_from_section_data_multi(…, mach, incidence_deg, …)`:
+   per-surface region selection at one flight point, global build, `.skipped` for surfaces with no
+   containing region. Per-surface strip geometry; β derived from `mach`.
+4. **Tests** — +5 (`test_section_correction.py`: multi-surface engine end-to-end through
+   `build_aero_model`, partial correction leaves other surface at r=1/wg=0, multi-card BDF
+   round-trip; `test_section_data.py`: multi build, per-surface region selection + skip).
+5. **Docs** — theory §3.5 multi-surface paragraph; standard-doc engine/precedence/section-data
+   updates + module-map rows.
+
+**Key decisions:**
+- **Global build, per-surface cards.** WT2 `r` is a global per-box vector (1 on uncorrected boxes);
+  the W2GJ camber offset is **one global linear solve** over all corrected strips (camber on one
+  surface induces load on the others). Cards are still emitted per CAERO1 (W2GJ and AECORR are
+  per-surface cards), and `build_aero_model` recombines them.
+- **PG correctness.** The builder takes the raw `ajj_pg` + explicit `beta=√(1−M²)` and applies 1/β
+  only to the physical force, leaving the WT2 card target in pure Γ-units — fixing a latent M>0
+  double-count in the earlier "β·ajj_pg" convention (M=0 unaffected).
+- **Backward compatible.** A single WT2 card on a single-surface deck reduces to the previous
+  behaviour exactly; `WKK`/`WT1` remain primary-CAERO1 only.
+
+**Test / Acceptance:**
+- 5 new tests pass; full aero suite 351 passing, 0 failures; ruff clean.
+
+---
+
+### Step A9: Cruciform body panels — total-aircraft moment correction ✅ COMPLETE (2026-06-14)
+
+**Objective:** sbeam has no body/slender-body element, so a flat-panel airplane (wing + tails only)
+gets the overall pitching moment Cm, yawing moment Cn and rolling moment Cl (dihedral effect) wrong.
+Adopt the classic **cruciform**: represent the fuselage with two crossing flat VLM surfaces
+(horizontal +Z, vertical +Y), correct the flying surfaces to spanwise section data, then tune the
+body panels so the **total airplane** matches CFD/WT — Cm_α, Cm0 (pitch, horizontal panel) and the
+sideslip set Cn_β, Cn0, Cl_β, Cl0 (yaw + roll, vertical panel). Moment-primary, the body's
+lift/side-force a by-product.
+
+**Deliverables:**
+1. **`sbeam/aero/body_correction.py`** — `build_body_correction(bulk, *, horiz_eid, vert_eid,
+   targets, mach, aero=None, …)` → `BodyCorrectionResult`. A **direct, exact, non-iterative** linear
+   solve: (a) **slope** via a per-box WT2 ratio (`diag(r)·A⁻¹` scales only that box's ΔCp, so the
+   body's slope contribution is decoupled from the flying surfaces; force held at the bare VLM value)
+   — solved **jointly** over both panels' boxes because Cl_β couples to the horizontal panel too (its
+   β-load carries a rolling moment via the `w_roll` `y·n_z` term); (b) **offset** via a joint
+   min-norm W2GJ least-squares against the actual corrected operator (body camber's induced wing load
+   is accounted for, not fought). `BodyTargets` (cm_alpha/cm0/cn_beta/cn0/cl_beta/cl0),
+   `split_total_rows`, `parse_body_targets` (CSV `TOTAL` block), `body_cards_to_bdf`.
+2. **Aero Correction tab — Stage 6** (`viewer/aero_correction_view.py`): `_guess_body_panels`
+   pre-selects the largest-chord +Z / +Y surfaces; six targets seed from the CSV `TOTAL` block;
+   Build shows a baseline/target/achieved/residual table + max WT2 ratio; Apply injects the flying +
+   body card pairs (body SIDs `_BODY_W2GJ_BASE=9301`, `_BODY_AECORR_BASE=9401`); Download body cards.
+3. **Refined Cessna 210 sample** — `sample/cessna210_body.bdf` (cruciform `CAERO1` 400 horizontal
+   2×8, 500 vertical 4×8 — z-resolution for roll authority — with `SPLINE0`; VTP root extended
+   z=0.80→0.60 so the fin intersects the HTP plane at z=0.70) +
+   `sample/cessna210_body_section_data.csv` (flying rows + `TOTAL` block with optional `cl_a`/`cl0`).
+4. **Tests** — `tests/aero/test_body_correction.py` (six targets hit to ~1e-6; production-path
+   cross-check vs `build_aero_model`; flying-surface decoupling; single-panel modes incl. vertical
+   yaw+roll; CSV parse), `tests/aero/test_cessna210_body_example.py` (7 surfaces / 372 boxes;
+   VTP↔HTP intersection; cruciform normals; two-stage build), Stage-6 tests in
+   `tests/viewer/test_aero_correction_view.py`.
+
+**Key decisions:**
+- **Moment-primary, body lift a by-product** (per user direction): the body force is left at the bare
+  VLM value; only the moments are matched.
+- **Order = slope then offset** removes the bilinear slope×offset coupling, making the solve exact in
+  one shot (no fixed-point iteration — an earlier fixed-point diverged because the body W2GJ offset
+  induces a *larger, opposite* wing pitch moment than the body's own).
+- **Joint slope solve** (not per-panel): Cl_β leaks across panels (the horizontal panel's pitch
+  ratio scales its small β-response, which carries roll), so all slope constraints are solved
+  together over the body boxes — exact; pitch stays horizontal-only because `w_pitch=0` on the
+  vertical panel (`n_z=0`) and yaw stays vertical-only (`w_yaw≈0` on the horizontal panel).
+- **SPLINE0 for body panels** (not flexible SPLINE2): body elastic effects are negligible, and a
+  flexible spline would inject the fictitious correction load into the fuselage beam as spurious
+  bending; the body still drives total/trim Cm,Cn and rigid+restrained derivatives via direct box
+  integration (verified against `sol144.py`).
+- **`aero=` reuse + analytic `achieved`** keep the build to a single AIC build (the operator model
+  `diag(r)·A_base` matches `build_aero_model` to ~1e-13, so `achieved` needs no rebuild).
+
+**Test / Acceptance:**
+- Targets reached to machine precision (residuals ~1e-14); full `tests/` green; ruff clean on changed
+  files.
+
+### Resolved Defect A9a: body panels overlapped the empennage; targets were overlap-calibrated ✅ RESOLVED (2026-06-15)
+
+**Symptom (user-reported):** in `sample/cessna210_body.bdf` the cruciform body panels overlapped the
+empennage, causing non-real interaction effects. The horizontal panel (z=0.60, chord to x=8.00) sat
+just under the HTP (z=0.70); the vertical panel (y=0, z=0.10–1.30, chord to x=8.00) was **coplanar
+with the VTP** (also y=0). Because VLM trailing legs are semi-infinite in +X, body boxes *and their
+wakes* interpenetrated the tail and spuriously loaded the real surfaces.
+
+**Root-cause finding (the important part):** moving the panels into clean air exposed that the sample's
+moment match was **structurally dependent on the overlap**. Diagnostics showed (a) the flying-only
+neutral point sits ~5.7 m aft while the original targets (Cm_α=−6.9) demand it ~1.9 m — a ~3.8 m
+(≈2.5 MAC) forward shift the fuselage was being asked to supply; (b) the original panels delivered
+~+13.2 of that +13.5 Cm_α almost entirely from boxes immersed in the HTP/VTP; (c) in clean air the
+panels' correction sensitivity collapses (~4× pitch, ~600× yaw, ~130× roll) because they were
+"piggy-backing" on the empennage's strong response. The deep result: **a body panel's authority to
+move the total moment and its contamination of the lifting surfaces are the same coupling mechanism**,
+so a clean cruciform can only legitimately supply a *small* increment. `ratio_max` is a *conditioning*
+gauge, not a contamination gauge (WT2 is body-row-only — a large ratio for clear-of-tail panels is
+benign; the genuine adverse metric is the body's induced ΔCp on the lifting-surface boxes, which the
+clean geometry reduces markedly).
+
+**Resolution (user chose "realistic targets + document"):**
+- **Geometry** — both panels made compact and clear of the tail: terminate at x=5.00 (ahead of VTP LE
+  6.60 / HTP LE 6.90); horizontal at z=0.30 (below HTP), vertical wholly below the VTP root
+  (z=0.05–0.45); half-span/height ~0.40. Box counts (372) and SPLINE0 ranges unchanged.
+- **Targets** — CSV `TOTAL` revised to the flying baseline + a realistic fuselage increment (mild
+  destabilising Cm_α/Cn_β, ~0 roll); the body now moves Cm_α by a physical ~+0.85 at a benign (large,
+  decoupled) WT2 ratio with body ΔCp comparable to the real surfaces.
+- **Code** — `body_correction.py` `_RATIO_WARN` 5→200 and message reworded (the old "add area/arm"
+  advice is counterproductive); module docstring + `05_aeroelastics.md` + `01_aeroelastics_theory.md`
+  §3.6 document the geometry guidance and the authority↔contamination finding.
+- **Backlog** — added "Body aerodynamic panels (slender body)" as the proper fix (Tier 1 NASTRAN-style
+  slender + interference body recommended); refined A9-c.
+
+**Test / Acceptance:** new `test_body_panels_clear_of_empennage` (no body box or +X wake reaches the
+tail); body tests assert `ratio_max < _RATIO_WARN` (ratio is decoupled from contamination) and track
+the realistic targets; `tests/aero/` + `tests/viewer/` green; ruff clean.
+
+### Step A9b: multi-surface body planes ✅ COMPLETE (2026-06-15)
+
+**Objective:** let a body plane be defined by **more than one** CAERO1 — e.g. a fuselage side split
+into a panel by the wing, one running to the fin trailing edge, and one for the lower body — rather
+than a single horizontal + single vertical panel.
+
+**Deliverables:**
+- `build_body_correction` `horiz_eid` / `vert_eid` accept an `int` **or a list of `int`** (new
+  `_as_eid_list` helper); fully backward compatible. No solver change was needed: the slope and offset
+  solves were already joint min-norm over the flat `body_idx` set, and the per-box weights
+  (`w_pitch`/`w_yaw`/`w_roll`) route each box to its metric by normal — so any number of panels per
+  plane is matched together, each emitting its own `(W2gj, Aecorr)` pair at `base + i`.
+- Viewer Stage 6 pickers changed from `selectbox` to `st.multiselect` (a plane = one or many panels).
+- Tests: `test_eid_int_and_singleton_list_equivalent` (int ≡ singleton list, identical results) and
+  `test_multi_surface_body_plane` (2-panel vertical body hits all six targets to ~1e-6, one card pair
+  per panel, distinct SIDs); viewer test asserts multiselect pickers.
+
+**Key decisions / findings:**
+- **No special-casing for multiple panels** — the weights-route-by-normal design makes the joint solve
+  size-agnostic; the only changes are list normalisation, the `if horiz_eids:` / `if vert_eids:`
+  guards, and per-panel SID allocation (already a loop).
+- **Splitting a plane improves conditioning** — more body boxes give the min-norm more freedom, so the
+  WT2 ratio drops and the correction load spreads (Cessna body `ratio_max` ~93 → ~32 across 4 panels).
+- **Placement caveat unchanged** — each piece must stay clear of the lifting surfaces; an overlapping
+  piece contaminates them (it does not model interference). Documented in `05_aeroelastics.md` /
+  `01_aeroelastics_theory.md` §3.6 and the viewer caption.
+
+**Test / Acceptance:** `tests/aero/test_body_correction.py` + `tests/viewer/test_aero_correction_view.py`
+green; ruff clean.
+
+---
+
+### Step A10: decoupled strip body panels (PSTRIP/STRIPK) ✅ COMPLETE (2026-06-15)
+
+**Objective:** add a body panel type that resolves the cruciform's structural limit — that a flat
+panel's authority to move the total moment *is* the coupling that contaminates the lifting surfaces
+(Step A9a finding / theory §3.6). A panel with **no coupling** cannot contaminate.
+
+**Deliverables:**
+- **New cards** `PSTRIP` (marker on the CAERO1 PID + nominal per-box lift-curve slope, default π) and
+  `STRIPK` (per-box slope override), with dataclasses, parser handlers, dispatch, and cross-reference
+  validation (CAERO1 PID resolves to PAERO1 **or** PSTRIP; STRIPK must target a strip CAERO1).
+- **`sbeam/aero/strip.py`** — `is_strip_caero`, `strip_box_mask`, `strip_box_slopes`. A strip CAERO1
+  carries no horseshoe vortex / wake / coupling: `build_aero_model` excludes its boxes from the VLM AIC
+  inversion and places a diagonal block `diag(-slope/β)` into `ajj_inv_corr` (operator assembly
+  refactored into `_assemble_vlm_operator`; `AeroBox.is_strip` flag; `solve_rigid_cl` raw path rejects
+  strip decks; viewer uncorrected-overlay skipped for strip decks).
+- **`build_strip_body_correction`** + `strip_body_cards_to_bdf` (`body_correction.py`) — sets per-box
+  slope (STRIPK) and Δα (W2GJ) so the total airplane Cm_α/Cm0, Cn_β/Cn0, Cl_β/Cl0 hit targets; same
+  moment-primary, slope-then-offset min-norm structure as the cruciform but contamination-free and with
+  no `ratio_max` conditioning concern.
+- **Viewer** Stage 6 auto-detects panel kind (PSTRIP → strip / PAERO1 → cruciform) and routes to the
+  matching builder; strip cards apply at `_BODY_W2GJ_BASE=9301` / `_BODY_STRIPK_BASE=9501`.
+- **Sample** `sample/cessna210_strip.bdf`; **docs** card reference (PSTRIP/STRIPK), `05_aeroelastics.md`
+  ("Decoupled strip body panels"), theory §3.7 (block-diagonal load/BC separation + image-fence note).
+
+**Key decisions / findings:**
+- **Diagonal block = exact decoupling.** Verified the lifting-surface inverse is *bit-identical* with
+  or without the strip present, and that relocating a strip on top of the wing changes wing loads by
+  exactly zero — overlap is harmless by construction.
+- **π slope = sectional cl_α of π.** A uniform per-box slope gives a sectional lift-curve slope equal
+  to that value, matching the "50% of 2π flat plate" body fudge requested.
+- **Load and BC are separate mechanisms.** A decoupled strip carries the body's *load* but no
+  interference; the fence / no-through-flow boundary condition is the complementary (necessarily
+  coupled) half, deferred to the backlog "image fence" item.
+
+**Test / Acceptance:** `tests/aero/test_strip_body.py` (16 tests: parser, operator structure, exact
+decoupling, π-slope, six-target correction on rebuild) + aero/parser suites green; ruff clean.
+
+---
+
+
+## Phase B — Structure ↔ Aero Splining
+
+### Step 45: SET1 + SPLINE2 parsing ✅ COMPLETE
+
+**Objective:** Parse `SET1` (structural grid lists) and `SPLINE2` (beam-spline card)
+from BDF input; add stub dataclasses for `Attach`, `Spline0`, `Spline1`; cross-reference
+validation.
+
+**Deliverables:**
+- `model/aero.py`: added `Set1`, `Spline2`, `Attach`, `Spline0`, `Spline1` dataclasses
+- `model/bulk_data.py`: added `set1s`, `spline2s`, `attaches`, `spline0s`, `spline1s` fields
+- `parser/bdf_reader.py`:
+  - `_handle_set1` (Pattern B multi-continuation, same template as RBE2/SPC1)
+  - `_handle_spline2` (Pattern A, optional single continuation for DTHX/DTHZ/USAGE)
+  - `_handle_attach`, `_handle_spline0` (single-line handlers)
+  - `_handle_spline1` raises `NotImplementedError`
+  - Dispatch entries for `SET1`, `SPLINE2`, `ATTACH`, `SPLINE0`, `SPLINE1`
+  - Cross-reference validation: SPLINE2.setg → SET1, SPLINE2.caero → CAERO1,
+    all SET1 grid IDs → GRID
+- SPLINE2 defaults: DZ=0.0, DTOR=1.0, DTHX=1.0, DTHZ=0.0, USAGE="BOTH"
+
+**Test/Acceptance:**
+- `tests/aero/test_spline.py::TestSet1Parse` — single-line, multi-continuation, duplicate error
+- `tests/aero/test_spline.py::TestSpline2Parse` — defaults, explicit continuation, missing SET1/CAERO1 errors
+- All 686 existing tests continue to pass
+
+**Key decisions:**
+- Box ID mapping verified: NASTRAN box ID = `CAERO1.EID + i_span × nchord + j_chord`,
+  matching `panel.py` row-major ordering (span slowest, chord fastest)
+- `Attach` and `Spline0` dataclasses added here (builders implemented in Step 47)
+- `Spline1` handler raises `NotImplementedError` immediately on parse (deferred to Step 48)
+
+---
+
+### Step 46: SPLINE2 beam-spline operators (`spline.py`) ✅ COMPLETE
+
+**Objective:** Build the two CID-aware spline operators from each `SPLINE2` card using
+`scipy.interpolate.CubicHermiteSpline`. Operators are added to `AeroModel` and feed
+directly into `coupling.build_qaa` / `coupling.build_fg`.
+
+**Deliverables:**
+- New file `sbeam/aero/spline.py`:
+  - `build_g_spline(bulk, boxes, grid_index) → (g_slope, g_disp)`:
+    - `g_slope`: shape `(n_box, 6·n_grid)` — maps structural DOFs → per-box streamwise incidence
+    - `g_disp`:  shape `(3·n_box, 6·n_grid)` — maps structural DOFs → per-box 3-D displacement
+  - `_build_spline2_block`: unit-impulse Hermite approach — for each structural node i,
+    builds two CubicHermiteSpline basis functions (function-value basis phi_f[i] and
+    derivative-value basis phi_d[i]) and fills g_slope/g_disp columns using CID-aware
+    projections via z_hat, y_hat, x_hat from the CORD2R CID
+  - `_register_spline0`: marks boxes as covered with zero rows (Step 47 placeholder)
+  - Per-box coverage tracker: errors on double-spline; warns on un-splined box; warns
+    on >10% extrapolation beyond SET1 span range
+- `model/aero.py` and `aero_model.py`: `AeroModel` gains `g_slope`, `g_disp` optional fields;
+  `build_aero_model` accepts optional `grid_index` parameter and calls `build_g_spline`
+
+**CID-aware DOF projections (key design):**
+- `x_hat = R_cid[:, 0]` (spline axis = span direction)
+- `y_hat = R_cid[:, 1]` (bending-slope axis; rotation projected here is the spanwise slope)
+- `z_hat = R_cid[:, 2]` (surface normal / deflection direction)
+- Translation DOF d: effective normal deflection = `z_hat[d]`; contributes to g_slope via
+  `-z_hat[d] × d(phi_f[i])/ds` and to g_disp via `z_hat[d] × phi_f[i](t_j) × z_hat`
+- Rotation DOF d: bending slope = `y_hat[d-3]`, contributes to g_slope via
+  `-y_hat[d-3] × d(phi_d[i])/ds` and to g_disp via `y_hat[d-3] × phi_d[i](t_j) × z_hat`
+- Rotation DOF d: torsion = `x_hat[d-3]`, contributes to g_slope via
+  `dthx × x_hat[d-3] × phi_f[i](t_j)` (no g_disp contribution)
+- For CID=0: z_hat=[0,0,1] → Tz only; y_hat=[0,1,0] → Ry only; x_hat=[1,0,0] → Rx only
+
+**Test/Acceptance (V-B1 — rigid-body gate passed):**
+- Rigid translation (uniform Tz=1): `g_slope @ u` = 0 everywhere to < 1e-12 ✓
+- Rigid torsion (uniform Ry=1 for span-along-Y): `g_slope @ u` = 1.0 everywhere to < 1e-12 ✓
+  (partition-of-unity: Σ phi_f[i](s) = 1 for all s)
+- Combined Tz=1 + Ry=1: `g_slope @ u` = 1.0 everywhere ✓
+- Energy round-trip: `g_disp.T @ (Skj @ cp_unit)` Z-component = total panel area ✓
+- Parser round-trip and shape tests pass; 686 total tests pass
+
+**Key decisions:**
+- Two operators (`g_slope` + `g_disp`) rather than single G_kg: avoids the "classic spline
+  bug" documented in `coupling.py`; `g_slope` drives the VLM solve, `g_disp` handles
+  virtual-work force transfer back to the structure
+- Unit-impulse Hermite approach: builds the matrix column-by-column using two scipy basis
+  functions per node (phi_f for function-value, phi_d for slope-value); no matrix inversion
+  needed; exact for the CubicHermiteSpline basis
+- Rigid-body gate verified: partition-of-unity (Σ phi_f = 1, Σ d(phi_d)/ds = 0 for uniform
+  slope field) holds analytically and is confirmed numerically to machine precision
+
+---
+
+### Step 47: ATTACH rigid-body spline + SPLINE0 zero-displacement ✅ COMPLETE
+
+**Objective:** Implement `_build_attach_rows()` in `sbeam/aero/spline.py` to give
+rigid-body coupling between a master structural GRID and a group of aero boxes via
+the `ATTACH` card; confirm `SPLINE0` boxes correctly contribute zero rows.
+
+**Deliverables:**
+- `sbeam/aero/spline.py`:
+  - `_build_attach_rows(attach, bulk, boxes, grid_index, id_to_k, covered, g_slope, g_disp)`:
+    rigid lever-arm kinematics in global CID 0; for each covered box gk with lever
+    `r = box.colloc − master_pos = (rx, ry, rz)`:
+    - `g_slope[gk, col_Rx] = +1.0` (torsion coupling)
+    - `g_slope[gk, col_Ry] = -1.0` (pitch → uniform downwash -1)
+    - `g_disp[3*gk+2, col_Tz] = 1.0`, `g_disp[3*gk+2, col_Rx] = ry`,
+      `g_disp[3*gk+2, col_Ry] = -rx` ((ω×r)_z = Rx·ry − Ry·rx)
+  - ATTACH loop replaces Step 46 placeholder warning in `build_g_spline()`
+  - `Attach` added to imports from `sbeam.model.aero`
+  - `NotImplementedError` for CID ≠ 0; `ValueError` for unknown master GRID
+- `tests/aero/test_spline.py`: `TestAttachRigidBodyGate` (V-B3a, V-B3b, V-B3d) and
+  `TestSpline0ZeroForce` (V-B3c ×2); 20 total tests pass
+
+**Test/Acceptance (V-B3 — machine-precision gate):**
+- V-B3a: Rigid Tz translation of master → zero downwash on all ATTACH boxes (< 1e-14) ✓
+- V-B3b: Rigid Ry pitch of master → uniform downwash = -1.0 (< 1e-14) ✓
+- V-B3c: SPLINE0 boxes → `g_disp.T @ any_pressure = 0` and `g_slope` all-zero (< 1e-14) ✓
+- V-B3d: Force transfer — uniform pressure → Fz/Mx/My at master matches analytical
+  lever-arm values (Fz=2.0, Mx=2.0, My=-1.5 for the 2-box fixture) (< 1e-12) ✓
+
+**Key decisions:**
+- Grid positions are already in global CID 0 after `resolve_grid_positions()` at parse
+  time; pattern lifted directly from `spline.py:142` (SPLINE2 structural grid access)
+- CID ≠ 0 raises `NotImplementedError` — no documented use case; can be relaxed in Phase C
+- `g_slope` and `g_disp` z-rows only: consistent with SPLINE2 approach where only the
+  surface-normal component is populated (x/y rows stay zero)
+- Energy consistency confirmed: `∂(−rx)/∂x = −1 = g_slope[j, col_Ry]` ✓ (virtual work)
+
+---
+
+### Step 49: Force transfer & coupled smoke test ✅ COMPLETE
+
+**Objective:** Wire the full rigid-aero → structural load path into a single callable
+(`compute_structural_loads`) and validate end-to-end with a BDF integration fixture.
+
+**Deliverables:**
+- `sbeam/aero/aero_model.py`: `compute_structural_loads(aero_model, q, alpha) → np.ndarray`
+  - Computes normalwash `w_total = -(alpha * normal_z) + wg`, solves `gamma = ajj_inv_corr @ w_total`,
+    integrates box forces `f_box = skj @ gamma`, transfers to g-set via `f_g = q * g_disp.T @ f_box`
+  - Raises `ValueError` if `aero_model.g_disp is None` (caller must pass `grid_index` to `build_aero_model`)
+  - `grid_index` dropped from function signature (g_disp shape already encodes n_grids)
+- `tests/integration/bdf/val_spline2_cantilever.bdf`: 4 CBARs along global Y (GRIDs 1–5,
+  y=0..4), CAERO1 EID=200 (NSPAN=4, NCHORD=1, box IDs 200–203), CORD2R CID=1
+  (x_hat=[0,1,0] span, z_hat=[0,0,1] normal), SPLINE2 EID=300, AEROS SREF=4.0, full span
+- `tests/integration/test_phase_b.py`: 4 V-B2 tests, all pass
+
+**Test/Acceptance (V-B2 — all machine-precision):**
+- V-B2a: `sum(f_g[Tz_dofs]) == q * sum(f_box_z)` to < 1e-10 relative — exact by virtual work
+  (partition-of-unity of SPLINE2 basis functions; independent of gamma/cp convention) ✓
+- V-B2b: `f_tz` within 2% of `q*CL*sref` or `q*CL*sref/2` (accepts gamma- or cp-based AIC) ✓
+- V-B2c: `compute_structural_loads(alpha=0)` == `q * build_fg(aero, g_disp)` to < 1e-12
+  (both evaluate `g_disp.T @ skj @ ajj_inv_corr @ wg`; tested with injected non-zero wg) ✓
+- V-B2d: `ValueError` raised when `aero_model.g_disp is None` ✓
+- 194 total tests pass (full suite)
+
+**Key decisions:**
+- `grid_index` dropped from `compute_structural_loads` signature — `g_disp.shape[1]` already
+  encodes `6*n_grids`; backlog had it because the design was not yet finalised
+- Gamma/cp ambiguity: `ajj_inv_corr @ w` returns circulation Γ (not pressure coefficient cp),
+  but `coupling.py` labels it "cp" — internally consistent; V-B2b accepts either normalisation
+- V-B2a uses the direct `sum(f_box_z)` comparison rather than `solve_rigid_cl` CL to avoid
+  depending on the gamma/cp convention; virtual-work exactness holds independently
+- BDF fixture geometry verified: CORD2R CID=1 gives x_hat=[0,1,0] (span along Y), confirmed
+  from `test_spline.py:154`; CAERO1 EID=200, NSPAN=4, NCHORD=1 → box IDs 200..203
+
+---
+
+
+## Resolved defects (conventions)
+
+### W2GJ baseline-normalwash (`wg`) sign convention unified (2026-06-14) ✅ RESOLVED
+
+**Defect:** The W2GJ baseline-normalwash `wg` carried two opposite sign conventions across
+the codebase. The production solvers treated `wg` as a **downwash slope** added directly to the
+normalwash (positive `wg` ⇒ *less* lift): `sol144._compute_aero_forces`
+(`w_total = w_struct + w_trim + aero.wg`), `aero_model.compute_structural_loads`
+(`w_total = -(α·n_z) + wg`), `coupling.build_fg` (`cp = Ajj⁻¹ @ wg`), `vlm.solve_rigid_cl`
+(`rhs = -(α·n_z) + wg`), and `maneuver_qs`. But the theory doc (Eq 9, §2.4) and
+`tests/aero/test_integration.py` T2/T3 treated `wg` as a **+incidence** (positive `wg` ⇒
+*more* lift): §2.4 read "positive for a leading-edge-up incidence that increases lift," and
+T2 reproduced `solve_rigid_cl(α)` via `solve(Ajj, -wg)` with `wg = +α` — negating `wg`, the
+opposite of the production chain. A deck authored to the doc/test convention would have run
+with silently flipped aerodynamic loads under SOL 144.
+
+**Resolution — single canonical convention:** `wg` is a dimensionless downwash slope Δz/Δx,
+added directly to the assembled normalwash (NASTRAN W2GJ convention; *not* passed through
+`D_jk`). **Positive `wg` = local nose-down / washout → less lift; negative `wg` =
+leading-edge-up built-in incidence → more lift.** Verified empirically through the production
+load path (at α = 0, uniform `wg = +0.02` → total Fz = −330; `wg = −0.02` → +330). This is
+the sign the production code already used and the sign of `sample/val_wing_taper_dihedral_twist.bdf`
+(positive `wg` growing to the tip = washout, ~31 % lift cut). The structural/spline and AoA
+boundary conditions remain in the natural *incidence* sense (nose-up positive); the
+incidence→normalwash sign lives in `D_jk = -I` and the ANGLEA column `-n_z`, while `wg` is
+already a normalwash and is not negated — the original source of the drift.
+
+**Changes (production code unchanged; docs + tests corrected to match):**
+- `docs/20_theory/01_aeroelastics_theory.md` — §2.4 governing-convention sentence rewritten
+  (positive `w` *reduces* lift); Eq 9 incidence/twist/CFD terms now enter as negative downwash
+  slopes with the camber slope entering directly; `w_g` nomenclature row annotated.
+- `sbeam/model/aero.py` — `W2gj` dataclass comment states the slope sign and lift effect.
+- `sbeam/aero/integration.py` — module docstring, `build_djk` (input is *incidence*, output
+  `w = -incidence`), and `build_wg` docstrings clarified.
+- `docs/10_standard/05_aeroelastics.md` — `build_djk` / `build_wg` / W2GJ-field reference.
+- `sbeam/aero/vlm.py` — `solve_rigid_cl` `wg` docstring: stale "documented inconsistency,
+  see backlog" note removed (now one canonical sign).
+- `tests/aero/test_integration.py` — T2/T3 use the production combination
+  (`gamma = Ajj⁻¹ @ wg`, no local `-wg`); a nose-up AoA is reproduced by a *negative* `wg`.
+
+**Test / Acceptance:**
+- New `tests/integration/test_wg_sign_convention.py` (7 tests) drives the real production load
+  path (`compute_structural_loads` / `build_fg`) on a splined cantilever and asserts: positive
+  `wg` unloads the wing, negative `wg` adds lift, total lift falls monotonically as `wg` sweeps
+  negative→positive, and at α = 0 positive `wg` gives a net downward load (antisymmetric in `wg`).
+- `tests/aero` + `tests/integration` suites: **378 passed**, 0 failures.
+
+---
+

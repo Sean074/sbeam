@@ -882,7 +882,7 @@ diagonal). Each box is an independent 2-D section, `ΔCp_box = slope·(α·n_z +
 Because it has no coupling, a strip body panel **cannot contaminate the lifting
 surfaces** — and it carries no interference/fence effect either. Used as a fuselage
 load stand-in tuned to total-aircraft targets (`build_strip_body_correction`); see
-`docs/10_standard/05_aeroelastics.md` and `sbeam/aero/strip.py`.
+`docs/10_standard/05a_aero_vlm.md` and `sbeam/aero/strip.py`.
 
 **Format:**
 ```
@@ -1098,7 +1098,7 @@ wind tunnel) at a stated reference angle of attack. At assembly the injected pre
 **replace the program-computed mean flow** (the W2GJ-driven baseline) on all VLM
 lifting surfaces via an equivalent-normalwash substitution, so a SOL 144 trim becomes
 a perturbation about the measured operating point. See
-`docs/10_standard/05_aeroelastics.md` (usage) and
+`docs/10_standard/05a_aero_vlm.md` (usage) and
 `docs/20_theory/01_aeroelastics_theory.md` (derivation).
 
 **Format:**
@@ -1165,7 +1165,7 @@ STRIPK, 9501, 400, 3.05, 3.05, 2.98, 2.98, 3.10, 3.10, 3.02, 3.02
 ## Splining Cards (Phase B)
 
 The spline cards couple aero boxes to structural grids (`g_slope` / `g_disp` operators).
-See `docs/10_standard/05_aeroelastics.md` for the interpolation theory and the
+See `docs/10_standard/05b_splining.md` for the interpolation theory and the
 rigid-body exactness gates. Every box must be covered by exactly one spline card;
 overlapping coverage raises `ValueError`, uncovered boxes emit a `UserWarning`.
 
@@ -1599,7 +1599,7 @@ TRIMCON, 31, CM, LE, 0.02
 ## Monitor Points (SOL 144)
 
 Integrated section-load output for the structures/loads handoff. See
-`docs/10_standard/05_aeroelastics.md` for the integration semantics.
+`docs/10_standard/05c_sol144_maneuver.md` for the integration semantics.
 
 ### AECOMP — Named box / grid collection
 
@@ -1670,7 +1670,7 @@ MLOADS ──references──▶ MLDTRIM (initial condition = a static TRIM sid)
     └────────────────▶ MLDPRNT (ASCII output request)
 ```
 
-See `docs/10_standard/05_aeroelastics.md` for the solver semantics (Level-1
+See `docs/10_standard/05c_sol144_maneuver.md` for the solver semantics (Level-1
 quasi-steady, open-loop, restrained l-set Newmark-β).
 
 ---

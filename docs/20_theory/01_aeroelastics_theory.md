@@ -221,7 +221,7 @@ so on a **non-planar** (dihedral/anhedral) surface canted at $\Gamma$, the right
 $(0,-\sin\Gamma,\cos\Gamma)$ and the panel carries a side force $F_y=F_z\,n_y/n_z=\mp F_z\tan\Gamma$
 alongside its lift. The effective lift reduces by $\cos\Gamma$ (incidence projection) and the side
 force cancels over a symmetric build; both signs of $\Gamma$ are permanently gated by V-C-DIH (see
-§5/Step 58 in `docs/10_standard/05_aeroelastics.md`). The **substantial-derivative matrix** $[D_{jk}]$ supplies the
+§5/Step 58 in `docs/10_standard/05a_aero_vlm.md`). The **substantial-derivative matrix** $[D_{jk}]$ supplies the
 other direction: it maps a box deflection and slope (the geometric boundary condition produced
 by structural motion) to the normalwash it induces,
 
@@ -1278,7 +1278,7 @@ of §5.3 and solving gives the **balanced maneuver loads**; the recovered net (a
 grid loads are the deliverable for stress. This is a purely static computation built on §5 — no
 time integration and no unsteady aero.
 
-*Implemented (Step 53, see `docs/10_standard/05_aeroelastics.md`):* the inertia-relief column
+*Implemented (Step 53, see `docs/10_standard/05c_sol144_maneuver.md`):* the inertia-relief column
 $M_{ax}$ is built per unit URDD acceleration; the net load is `Sol144TrimResult.net_loads`, with
 per-case force/moment closure (V-C5) and a `<stem>.maneuver_loads.bdf` export. Gravity is folded
 into the load factor ($\text{URDD3} = -n_z g$), so no separate body-force term enters the trim.

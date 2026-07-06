@@ -1,0 +1,546 @@
+# Aeroelastics Phases C + G0 — SOL 144 Static Aeroelastics & Maneuver Loads
+
+Phase C + G0 code standard: the SOL 144 trim solve, stability derivatives, divergence,
+output/exports, transient maneuver loads (MLOADS), and monitor points. Part of the
+aeroelastics guide — see [`05_aeroelastics.md`](05_aeroelastics.md) for the architecture
+overview, validation status, and supported-card table; [`05a_aero_vlm.md`](05a_aero_vlm.md)
+for the Phase A aerodynamics; [`05b_splining.md`](05b_splining.md) for the Phase B splines.
+
+---
+
+## Phase C — SOL 144 Static Aeroelastics
+
+### Governing Equation
+
+The flexible static aeroelastic equilibrium on the SPC-free a-set:
+
+```
+(K_aa − q · Q_aa) · u_a  =  q · f_g  +  f_struct
+```
+
+where:
+- `K_aa` — structural stiffness reduced to the a-set (SPC + RBE3 applied)
+- `Q_aa` — flexible aerodynamic stiffness `G_dispᵀ S_kj (A_jj*)⁻¹ D_jk G_slope`
+- `f_g` — baseline aero load from camber/twist/incidence normalwash (from `build_fg`)
+- `f_struct` — structural load from the BDF `LOAD` set
+
+Step 50 solves this equation without trim variables (Steps 51–52 add trim card
+parsing and the full SOL 144 solve with `Q_ax·δ_x`).
+
+---
+
+### `coupling.py` — Phase C Coupling Functions
+
+Three pure linear-algebra functions in `sbeam/aero/coupling.py` implement the
+Phase C matrix chains. They operate on already-built AeroModel quantities.
+
+#### `build_qaa(aero, g_disp, g_slope) → np.ndarray`
+
+```
+Q_aa = G_disp^T  S_kj  (A_jj*)^-1  D_jk  G_slope    shape (n_g, n_g)
+```
+
+| Arg | Shape | Description |
+|-----|-------|-------------|
+| `aero` | — | AeroModel (provides `skj`, `ajj_inv_corr`, `djk`) |
+| `g_disp` | (3n_box, n_g) | Displacement spline from `build_g_spline` |
+| `g_slope` | (n_box, n_g) | Slope spline from `build_g_spline` |
+
+Returns the **g-set** Q_aa (dense, unsymmetric in general). Reduction to the
+a-set is done downstream in `sol144._build_qaa_aset`.
+
+#### `build_fg(aero, g_disp) → np.ndarray`
+
+```
+f_g = G_disp^T  S_kj  (A_jj*)^-1  w_g               shape (n_g,)
+```
+
+Baseline aero load from the `W2GJ` normalwash at zero elastic deflection.
+The trim/static RHS contribution is `q · f_g`.
+
+#### `build_gaf(qaa, phi) → np.ndarray`
+
+```
+Q_hh = Phi^T  Q_aa  Phi                              shape (n_modes, n_modes)
+```
+
+Modal generalized aerodynamic force (GAF) matrix. `phi` and `qaa` must be on
+the same DOF set. Used by the modal-truncation ROM in `sol144._solve_rom`.
+
+---
+
+### `sol144.py` — Step 50 Aeroelastic Static Solver
+
+**Module:** `sbeam/solver/sol144.py`
+
+#### Public entry point
+
+```python
+from sbeam.solver.sol144 import run_aeroelastic_static
+
+result = run_aeroelastic_static(
+    bulk,           # BulkData
+    subcase,        # SubcaseControl (uses spc_sid, load_sid, method_sid)
+    aero,           # AeroModel — must have g_slope and g_disp populated
+    q,              # float — dynamic pressure in consistent units
+    use_rom=False,  # bool — enable modal-truncation ROM with mode-acceleration
+    sol103_result=None,  # Optional[Sol103Result] — pre-computed modes for ROM
+)
+# result: Sol144Result
+```
+
+`aero` must be built with `build_aero_model(bulk, grid_index=grid_index)`
+to populate the spline operators; raises `ValueError` otherwise.
+
+When `use_rom=True` and `sol103_result is None`, SOL 103 is run internally using
+`subcase.method_sid` (raises if `method_sid` is None).
+
+#### Private helpers
+
+| Function | Purpose |
+|----------|---------|
+| `_build_qaa_aset(bulk, aero, grid_index, spc_sid, f_g_full)` | Reduce g-set Q_aa and K_aa to the a-set via RBE3 + SPC partition |
+| `_solve_direct(K_aa, Q_aa, f_aa, q, free_dofs, n_dofs)` | Dense direct solve of `(K_aa − q·Q_aa)·u_a = f_aa` |
+| `_solve_rom(K_aa, Q_aa, f_aa, q, phi_free)` | Modal-truncation ROM solve |
+| `_mode_acceleration_recovery(K_aa, Q_aa, f_aa, q, phi_free, xi, k_aa_lu)` | Mode-acceleration correction |
+
+#### `_build_qaa_aset` algorithm
+
+Mirrors the RBE3 + SPC reduction in `sol101.py`, applied to the (K, Q, f) triple:
+
+```
+1. Q_gg = build_qaa(aero, aero.g_disp, aero.g_slope)    # (n_g, n_g) dense
+2. K_gg = assemble_global_stiffness(bulk)                  # (n_g, n_g) sparse CSR
+3. T, dep_dofs, red_dofs = build_rbe3_transformation(bulk, grid_index)
+4. If RBE3 present:
+     K_red = (T.T @ K_gg @ T).toarray()   # dense after NumPy @ semantics
+     Q_red = T.T @ Q_gg @ T
+5. Else:
+     K_red = K_gg.toarray()               # dense (Q_aa is dense; system is dense anyway)
+     Q_red = Q_gg
+6. Partition to free a-set (SPC) → K_aa, Q_aa of shape (n_a, n_a)
+7. free_dofs = g-set DOF indices for the a-set rows/cols
+```
+
+Rationale for always-dense K_aa: adding dense Q_aa to sparse K would require a
+mixed-format code path; converting K to dense at this point is consistent with
+the RBE3 dense-fallback precedent in `sol101.py` (Risk KC1 from the backlog).
+
+#### Mode-acceleration recovery
+
+For a truncated modal basis `Φ` (first `n_m` columns), the mode-displacement
+estimate `u_md = Φξ` leaves a static residual. The mode-acceleration correction
+applies the pure structural flexibility to that residual:
+
+```
+residual = f_aa - (K_aa - q·Q_aa) · Φξ
+u_a      = Φξ  +  K_aa⁻¹ · residual
+```
+
+`K_aa⁻¹ · residual` is computed cheaply via `lu_solve(k_aa_lu, residual)` where
+`k_aa_lu` is the LU factorization stored in `Sol144Result.k_aa_lu`. When all modes
+are retained the residual is zero and the correction vanishes identically.
+
+---
+
+### `Sol144Result` — Step 50 Result Dataclass
+
+```python
+@dataclass
+class Sol144Result:
+    displacements: np.ndarray          # (n_dofs,) full g-set; SPC DOFs zeroed
+    bar_forces: dict                   # {eid: BarForce}
+    bar_stresses: dict                 # {eid: BarStress}
+    q_aa: np.ndarray                   # (n_a, n_a) flexible aero stiffness on a-set
+    q: float                           # dynamic pressure used in this solve
+    free_dofs: list                    # a-set DOF indices into the g-set (len = n_a)
+    k_aa_lu: tuple                     # (lu, piv) from lu_factor(K_aa); reused by Step 52
+    modal_coords: Optional[np.ndarray] # (n_modes,) ξ; None when use_rom=False
+    phi_free: Optional[np.ndarray]     # (n_a, n_modes); None when use_rom=False
+    k_hh: Optional[np.ndarray]         # (n_modes, n_modes) Φᵀ K_aa Φ
+    q_hh: Optional[np.ndarray]         # (n_modes, n_modes) Φᵀ Q_aa Φ (modal GAF)
+```
+
+`k_aa_lu` is stored for Step 52 reuse: the pure structural stiffness factorization
+is needed for the mode-acceleration correction in each trim subcase without
+re-factorizing K_aa.
+
+---
+
+### V-C3 Acceptance Criteria (Step 50)
+
+All tests in `tests/aero/test_step50_qaa.py`:
+
+| ID | Test | Tolerance |
+|----|------|-----------|
+| V-C3-1 | `Q_aa.shape == (n_a, n_a)` and `K_aa.shape == (n_a, n_a)` | exact |
+| V-C3-2 | `run_aeroelastic_static(q=0)` displacements ≡ `run_sol101` | 1e-10 |
+| V-C3-3 | ROM (all modes) + mode-acceleration ≡ direct solve | 1e-6 |
+| V-C3-4 | At n_modes/4: MA CBAR root-moment error < MD error | MA < MD always |
+| V-C3-5 | `lu_solve(k_aa_lu, K_aa @ e1) ≈ e1` | 1e-10 |
+
+---
+
+## Step 51 — Trim Card Set Parsing
+
+Step 51 adds BDF-parsing support for the static aeroelastic trim card set. No solver is
+added; these cards are parsed, stored in `BulkData`, and cross-referenced so that the
+Step 52+ trim solver can consume them directly.
+
+### Data model
+
+All trim objects live in `sbeam/model/aero.py` and are stored in `BulkData` as:
+
+| `BulkData` field | Type | Key |
+|-----------------|------|-----|
+| `aestats` | `dict` | `{id: Aestat}` |
+| `aesurfs` | `dict` | `{id: Aesurf}` |
+| `aelists` | `dict` | `{sid: Aelist}` |
+| `trims` | `dict` | `{sid: Trim}` |
+| `divergs` | `dict` | `{sid: Diverg}` |
+| `trimvars` | `dict` | `{id: Trimvar}` |
+| `trimobjs` | `dict` | `{sid: Trimobj}` |
+| `trimcons` | `dict` | `{sid: list[Trimcon]}` |
+
+### Cross-reference validation (in `parse_bulk_data()`)
+
+1. **AESURF → AELIST**: `alid1` (and `alid2` if non-zero) must exist in `bulk.aelists`.
+2. **AELIST → CAERO1 box range**: every element ID must fall within
+   `[caero.eid, caero.eid + nspan×nchord − 1]` for at least one CAERO1.
+3. **TRIM label**: every key in `trim.vars` must be defined by an AESTAT or AESURF card.
+
+### DOF-count diagnostic
+
+After cross-reference validation, `parse_bulk_data()` emits `UserWarning` for degenerate
+trim conditions:
+
+- **Fully prescribed** (`len(free) == 0`): all trim variables have prescribed values — no
+  DOFs remain for the solver.
+- **Over-determined without objective** (`len(free) > len(prescribed)` and no TRIMOBJ
+  present): the system cannot be solved as a square system; a TRIMOBJ card is required to
+  specify the weighted least-squares objective.
+
+### Case control
+
+SOL 144 subcases may declare:
+
+```
+SOL 144
+SUBCASE 1
+  TRIM   = 10
+  DIVERG = 20
+```
+
+`SubcaseControl` gains `trim_sid` and `diverg_sid` fields (both `Optional[int]`, default `None`).
+
+### Over-determined trim (sbeam-defined cards)
+
+When the number of free trim variables exceeds the number of equilibrium equations,
+the problem is over-determined. sbeam uses three sbeam-defined cards to handle this:
+
+| Card | Role |
+|------|------|
+| `TRIMVAR` | Per-variable initial guess and bounds (`lb`, `ub`) |
+| `TRIMOBJ` | Weighted-L2 objective `J = Σ wᵢ·δᵢ²` over the listed labels |
+| `TRIMCON` | Scalar inequality constraints (`LE` or `GE`) |
+
+These cards are consumed by `run_sol144_trim` when `n_free > n_suport` — see
+**Over-determined trim solve** below. The case-control `TRIMOBJ = sid` selects the objective
+for a subcase (`SubcaseControl.trimobj_sid`); a single defined `TRIMOBJ` is used by default.
+
+---
+
+## Step 52 — SOL 144 Trim Solver (CLOSED 2026-06-14)
+
+`solver/sol144.py:run_sol144_trim(bulk, subcase, aero)` implements the **determined** trim
+case (`n_free_labels == n_SUPORT_DOFs`) and the **over-determined** (redundant-control) case
+(null-space reduction + weighted-L2 `TRIMOBJ`/`TRIMCON`/`TRIMVAR`, gate V-C4):
+
+1. Build `D_jx` (per-box normalwash per unit trim label: ANGLEA `−n_z`, SIDES `−n_y`, PITCH
+   `−(2/cref)(x−x_ref)`, ROLL `−(2/bref)·y`, YAW `−(2/bref)(x−x_ref)·n_y` (vertical-surface
+   sidewash), URDD1–6 `0`, AESURF `−(ĥ × n)·x̂·eff` about the `cid1` hinge axis ĥ — reducing to
+   `−n_z·eff` for a spanwise hinge) and `Q_ax = G_dispᵀ S_kj A_jj*⁻¹ D_jx` on the g-set.
+2. Reduce `Q_ax`, `K`, and the RHS (baseline `q·f_g` + prescribed-variable aero + URDD
+   inertial load) to the a-set via the same RBE3 + SPC partition as SOL 101.
+3. Partition the a-set into l-set / r-set (SUPORT DOFs), set `u_r = 0`, and solve the
+   Schur-complement system for the free trim variables and `u_l`.
+4. Recover CBAR forces/stresses, rigid and (analytic) restrained derivatives, total CL/CM,
+   per-AESURF hinge-moment derivatives (`_compute_hinge_moments`, moment of the box forces about
+   each control's `cid1` hinge axis), and return a `Sol144TrimResult`.
+
+The Schur partition structure is equivalent to the MSC r-set/l-set method. The review-era
+defects (AE1–AE7, AE9, AE10) are all resolved; the HA144A benchmark passes on both subcases
+within the ≤1%-full-scale gate (measured ≤0.4% FS — see "Validation status & known
+limitations" at the top of this document). Step 52 closed 2026-06-14 with the
+over-determined trim and the lateral rate derivatives (`C_lp`/`C_nr`/`C_lβ`); the only open
+derivative work is the unrestrained (mean-axis) column, tracked as **AE8b** in the backlog.
+
+### Trim acceptance gates — V-AE1f and V-AE1d (`tests/aero/test_ae1_fullspan.py`)
+
+The HA144A trim is gated on the full-span deck (`sample/ha144a_fullspan_sbeam.bdf`,
+SYMXZ=0, whole-airplane = 16000 lb) — the parity ground truth since half-span support
+was removed (AE1 Step D).
+
+- **V-AE1f** — SC1 ANGLEA/ELEV within a shared ~2% relative tolerance, lift = 16000 lb,
+  mirrored-spline rigid-pitch reproduction, and emergent symmetry (antisymmetric DOF ≈ 0,
+  L/R wing tips match). SC2 is sign/increment-gated only.
+- **V-AE1d** (AE1 Step F, closed 2026-06-13) — the same SC1/SC2 trim, but each TRIM variable
+  is gated against its **full-scale physical range**, not relative to its NASTRAN target:
+  - SC1 **live, relative**: ANGLEA within 1.5% (actual +1.1%; not chased — no bulk re-tuning),
+    ELEV within 1%, lift within 1% of 16000 lb. (SC1 is rigid-dominated with a trim point well
+    away from zero, so a relative tolerance is meaningful there.)
+  - SC2 **live, %-full-scale**: ANGLEA within 0.3° (1% of the 30° AoA stall band), ELEV within
+    0.4° (1% of the 40° elevator throw). A relative tolerance is meaningless for SC2 — its trim
+    AoA passes through ~0 as q rises, so a fixed absolute error reads as an exploding percentage
+    (the old gate saw "+136%" for a 0.107° miss). SC2 actual: ANGLEA 0.36% FS, ELEV 0.23% FS,
+    both inside the gate. The residual ~0.1° is a **q-invariant common-mode offset** — the same
+    absolute error already accepted at SC1, not a high-q flexible defect; its optional root-cause
+    is tracked as MINOR AE8a. (AE1 Step G — the analytic restrained derivatives — is closed and
+    did **not** move SC2: the derivatives are an output, not the trim driver.)
+
+### Coupling-path cross-check — V-AE3 (`tests/aero/test_vae3_cross_check.py`)
+
+An INDEPENDENT confirmation that the force/moment coupling path is correct, closing the AE13
+blind spot where every aero gate was only self-consistent (a common scale error or factor-of-2
+parity bug would pass). The box force/moment is built two ways on the same model:
+
+- **Path A (coupling)** — the SOL 144 chain: `f_box = skj @ (ajj_inv_corr @ w)` with `w` the
+  `D_jx` ANGLEA column (`= −n_z`); totals via `_pitch_moment`.
+- **Path B (independent)** — `solve_rigid_cl` (`sbeam/aero/vlm.py`), which rebuilds its own AIC
+  and Kutta–Joukowski resultants in a separate module; at unit q `Fz = CL·S_ref`,
+  `My = CM·S_ref·c_ref`.
+
+Both paths are driven with the SAME alpha-only normalwash (W2GJ baseline `wg` excluded so the
+excitations match) and the SAME effective Mach (`bulk.aeros.mach`). On HA144A (full-span, M=0.9)
+and `val_vlm_rect_ar8` (planar, M=0) the Path-A totals match the `solve_rigid_cl` resultants to
+machine precision; a parity proxy (halving `f_box`) fails the 1% gate by ~2×, confirming the gate
+discriminates — unlike `test_phase_b.py::test_tz_sum_vs_cl_magnitude`'s
+`min(err_full, err_half) < 0.02`, which accepts both the correct lift and exactly half of it.
+
+### Restrained derivatives — analytic Schur form (`tests/aero/test_ae1_restrained_derivs.py`)
+
+`_compute_restrained_derivs` returns the **exact analytic** restrained stability derivatives
+from the Schur factorisation (AE1 Step G): per label δ, `∂u_l/∂δ = K_ll⁻¹·C_ax_l` (K_ll
+already carries the `q·Q_aa` aero feedback), then the linear `∂w → ∂γ → ∂f_box` chain gives
+`CZ = Σ∂Fz/∂δ / S_ref` and `CMY = _pitch_moment(∂f_box)/(S_ref·c_ref)`. This replaced the
+prior finite-difference hybrid (AE8); because the trim is linear in δ the two agree to
+round-off. Gate V-AE1e (partial): rigid columns unchanged (CZα 5.071, CMα −2.871), restrained
+CZα 5.112 vs NASTRAN Table 7-1 5.103 (q=40) within 1%. The unrestrained (mean-axis) derivative
+set and the remaining Table 7-1 restrained columns are still open on **AE8b** (backlog Step AC2).
+
+### Lateral / directional rate derivatives — `C_lp`, `C_nr`, `C_lβ` (Step 52)
+
+`_compute_rigid_derivs` and `_compute_restrained_derivs` emit the roll/yaw **moment**
+coefficients alongside the longitudinal `CZ`/`CMY`:
+
+```
+CMX = Mx / (S_ref · b_ref)    rolling moment   → C_lp = ∂CMX/∂ROLL,  C_lβ = ∂CMX/∂SIDES
+CMZ = Mz / (S_ref · b_ref)    yawing moment    → C_nr = ∂CMZ/∂YAW
+```
+
+`Mx`, `Mz` are the full 3-component cross-product resultant `Σ(r_box − ref) × F_box`
+(`aero_moment_resultant`), about the AERO reference (`AEROS.RCSID` origin), so they carry the
+side force `Fy` of any canted (±Γ dihedral) panel — the dihedral effect `C_lβ` falls out of the
+Step 58 box normals automatically. The quasi-steady rate normalwash columns (ROLL, YAW) are
+built in `build_djx` (no DLM): roll rate `Δα(y) = p·y/V∞` and yaw-rate sidewash act through the
+local box geometry/normal. **Sign convention:** moments are in sbeam's z-up / y-starboard aero
+frame (the V-C-DIH frame), so the damping derivatives carry that frame's handedness rather than
+a textbook z-down body-axis sign; the magnitudes and the ±Γ `C_lβ` symmetry are the
+convention-independent content. Gate: `tests/aero/test_lateral_derivs.py` (V-LAT) — roll-rate
+damping magnitude in the lifting-line band, clean ROLL↔Fz/My/Mz decoupling on a planar wing,
+and the `C_lβ` sign-flip between `val_vlm_dihedral`/`val_vlm_anhedral` (zero on the planar deck).
+
+### Over-determined trim solve — redundant controls (Step 52)
+
+When `n_free > n_suport` (more free trim variables than equilibrium equations, e.g. redundant
+control effectors), `run_sol144_trim` dispatches to `_solve_trim_overdetermined`. The trim
+equilibrium `schur_A·δ = schur_b` (n_suport equations) is satisfied **by construction** through a
+null-space reduction `δ = δ_p + N·z` (δ_p = least-norm equilibrium solution, `N = null(schur_A)`);
+the redundancy coordinate `z` is then chosen by minimising the convex weighted-L2 TRIMOBJ
+objective `Σ wᵢ·δᵢ²` subject to the TRIMCON inequalities and TRIMVAR bounds (SLSQP on the small,
+well-scaled reduced problem). The null-space form avoids handing the optimiser the stiff
+equilibrium equality (whose rows carry structural-force magnitudes O(10³) that swamp the O(0.1)
+trim variables). Because the objective is convex the optimum is initial-guess insensitive (KC6);
+TRIMVAR `init` only seeds the warm start. `Sol144TrimResult.trim_mode` reports `"determined"` or
+`"over-determined"` and is echoed in the f06 TRIM VARIABLES block. Gate: V-C4
+(`tests/aero/test_trim_overdetermined.py`) — `min(PITCH²)` reproduces the determined ANGLEA/ELEV,
+a TRIMCON forces its bound active, and the result is start-point independent.
+
+
+---
+
+## Running SOL 144 & Output (AE10 + Step 56)
+
+A SOL 144 deck runs end-to-end from the CLI:
+
+```
+sbeam ha144a.bdf
+# → Written: ha144a.f06
+# → Written: ha144a.aero_loads.bdf
+```
+
+**Dispatch (`main.py`, AE10).** Unlike the two-arg SOL 101/103 path, the SOL 144 branch
+builds `grid_index` and an `AeroModel` (`build_aero_model`, which rejects `SYMXZ≠0`
+half-span decks), seeds an `AeroCache` shared across subcases, and calls
+`run_sol144_trim(bulk, subcase, aero, aero_cache=cache)` per TRIM subcase.
+
+**f06 output (`build_f06_sol144_text` / `write_f06_sol144`).** Per subcase:
+
+| Block | Source |
+|-------|--------|
+| TRIM VARIABLES (free vs prescribed) | `result.trim_vars` + the TRIM card |
+| STABILITY DERIVATIVES (rigid + elastic restrained) | `result.rigid_derivs`, `result.restrained_derivs` |
+| AERODYNAMIC TOTALS (CZ body / CL wind / CMY) | `result.total_cl` (body CZ), `result.total_cl_wind` (wind CL = CZ·cosα − CX·sinα at trim α), `result.total_cm` |
+| AERODYNAMIC DIVERGENCE (`q_div`, `q/q_div`) | `result.q_div` (restrained l-set; see below) |
+| DISPLACEMENT / BAR FORCES / BAR STRESSES | shared helpers, reused from the SOL 101 writer |
+| AERODYNAMIC BOX PRESSURES AND FORCES | `result.box_cp`, `result.box_forces` — **only when the subcase requests `AEROF` or `APRES`** |
+
+**Divergence diagnostic.** `sol144._divergence_dynamic_pressure(K_ll, Q_ll)` returns the
+single critical divergence dynamic pressure — the reciprocal of the largest positive-real
+eigenvalue of `K_ll⁻¹ Q_ll` on the **restrained l-set** (the free-flight SUPORT `K_aa` is
+singular, so the full a-set is not used). `None` when the model does not diverge. It is
+emitted in every trim subcase's `AERODYNAMIC DIVERGENCE` block.
+
+**Divergence sweep (`DIVERG` card, Step 55).** A SOL 144 subcase with `DIVERG = sid`
+runs `sol144.run_sol144_diverg`, which solves the same restrained-l-set eigenproblem
+`K_ll φ = q·Q_ll φ` but returns the lowest `NROOTS` positive divergence pressures and
+their **mode shapes** at each Mach on the card:
+
+- `_divergence_roots(K_ll, Q_ll, nroots)` solves `(K_ll⁻¹ Q_ll) x = (1/q) x` (dense
+  generalised solve, mirroring `sol103._solve_modes_dense`), keeps only **real, strictly
+  positive** `1/q` (selection rule for the unsymmetric `Q_ll`; spurious negative/complex
+  roots are discarded), and sorts ascending in `q`. Its lowest root reproduces
+  `_divergence_dynamic_pressure` exactly.
+- Each l-set eigenvector is scattered to the a-set (SUPORT DOFs zero) and expanded to the
+  g-set via the RBE3/RBAR `T` matrix (`_expand_to_g`), then max-abs normalised for output.
+- With the `RHOREF` sbeam-extension density on the card, each root reports
+  `V_div = √(2·q_div/ρ)`.
+- The sweep depends only on `K_aa`/`Q_aa`, so a DIVERG subcase needs no TRIM card; a
+  subcase carrying both runs the trim and the sweep. Output: `Sol144DivergResult`
+  (`mach_results → DivergMachResult → DivergRoot`), rendered by
+  `f06_writer.build_f06_sol144_diverg_text` as a per-Mach `AERODYNAMIC DIVERGENCE` table
+  (root no., `Q-DIV`, `V-DIV`) plus a divergence mode-shape block per root.
+
+**Flight-load export (`results/load_export.py`).** `write_aero_load_cards` writes
+`<stem>.aero_loads.bdf` — comma free-field `FORCE`/`MOMENT` cards (unit scale factor;
+direction components carry the physical load) from `result.grid_loads` (`g_disp^T·q·f_box`),
+one card block per subcase with `SID = subcase_id`. By spline force/moment conservation the
+set sums to the trimmed lift/moment.
+
+**Balanced maneuver loads & inertia relief (Step 53).** Each balanced maneuver is a `TRIM`
+subcase with prescribed `AESTAT` accelerations/rates — a load factor maps to `URDD3 = −n_z·g`
+(`sbeam/model/maneuver_presets.load_factor_to_urdd3`; gravity folded into the load factor,
+NASTRAN convention). After the trim solve the inertial g-set load `M_ax·a` (final trim URDD,
+prescribed + solved-free) is recovered as `result.inertial_loads` and added to the aero load to
+give `result.net_loads` — the net deliverable for stress and the non-zero inertia column for
+MONPNT3. `write_maneuver_load_cards` writes these as `<stem>.maneuver_loads.bdf`.
+`result.maneuver_closure` is the body-frame 6-resultant of the net load; for a free aircraft
+(SUPORT, no SPC) it must balance to ≈ 0 (a non-zero residual warns — gravity/mass-model guard,
+KC9). Recipes: symmetric pull-up/push-over (prescribe `URDD3`, `PITCH=0`), steady roll
+(prescribe `ROLL` rate, `URDD4=0`; aileron free), steady sideslip (prescribe `SIDES`, `YAW=0`;
+rudder free). Gated by **V-C5** (`tests/aero/test_maneuver_loads.py`).
+
+**Transient maneuver loads — Phase G0 increment 1 (DLM-free quasi-steady).** A SOL 144 subcase that
+carries an `MLOADS = sid` request runs `solver/maneuver_qs.py` instead of the static trim. It
+time-integrates the elastic response to a prescribed (open-loop) pilot-command history, starting
+from a Step 53 balanced trim as the initial condition, and recovers the net (aero + inertial)
+maneuver load at each output time.
+
+- **Cards (ZAERO `MLOADS` family, `sbeam/model/maneuver.py`):** `MLOADS` is the driver and
+  references `MLDTRIM` (the initial-condition `TRIM` sid), `MLDTIME` (`t0/tend/dt/tout`), `MLDCOMD`
+  (one or more `(label, TABLED1)` command pairs — any AESTAT/AESURF label; uncommanded labels hold
+  their trim value), and `MLDPRNT` (ASCII output request). `TABLED1` is the general tabular
+  time→value function (linear interpolation; held/constant extrapolation beyond the table, so a
+  command ramps to a deflection and then holds).
+- **Method:** like the trim, the SUPORT r-set is held at the mean axis (`u_r = 0`) and the elastic
+  l-set is integrated with Newmark-β (β=¼, γ=½):
+  `M_ll ü + C_ll u̇ + (K_ll − q·Q_ll) u = f_aero_l + q·Q_ax_l·δ(t) + M_ax_l·a(t)`. The steady VLM is
+  re-evaluated at the instantaneous deformation and trim-variable state each step (Level-1
+  quasi-steady, `Ω×r` rate columns); no DLM, no apparent mass, no lag. Holding the command at the
+  trim value reproduces the Step 53 balanced load to machine precision (the l-set is integrated
+  directly, so this identity is exact). The initial acceleration is taken as zero (the run starts at
+  static equilibrium), so a singular lumped `M_ll` is tolerated.
+- **Convention (increment 1):** open-loop *prescribed-kinematics* — every trim variable is prescribed
+  (commanded or held). The net load closes to ≈ 0 when the commanded histories form a consistent
+  (trimmed) set; the per-step closure residual otherwise equals the instantaneous rigid-body net
+  force. Re-solving the free rigid-body variables each step (free-flight self-balancing), modal
+  reduction (`NMODES`), unsteady corrections, and a closed-loop control layer are Phase G0 follow-ons.
+- **Output (`results/maneuver_output.py`):** an MLDPRNT ASCII time-history table
+  (`<stem>.mldprnt.txt`: time, commands, aero `Fz`/`My`, closure norms, peak net load) and the
+  critical-sample (peak |net force|) net-load `FORCE`/`MOMENT` export (`<stem>.maneuver_qs_loads.bdf`).
+  The f06 gains a transient-maneuver block per MLOADS subcase
+  (`f06_writer.py::build_f06_sol144_maneuver_text`, AC5: run summary, time-history table with
+  critical-sample marker, critical-sample closure/displacement/CBAR detail); the viewer offers
+  the two ASCII/BDF exports as download buttons on the maneuver results view. Sample deck:
+  `sample/ha144a_fullspan_mloads.bdf` (ELEV ramp pitch-up on the HA144A full-span model).
+- **Gates (`tests/aero/test_maneuver_cards.py`, `tests/aero/test_maneuver_qs.py`):** card round-trip +
+  validation; G0→Step 53 machine-precision identity; quasi-static settling to the new balanced trim
+  (closure → 0, lift = `n_z·W`); per-step closure bounded; MLDPRNT + critical-load export round-trips.
+- **Validity:** low reduced frequency `k = ω·c_ref/2V ≲ 0.05–0.1` (slow maneuvers); higher-rate inputs
+  need the Phase G0 unsteady corrections or the Phase D DLM.
+
+---
+
+## Monitor Points — Integrated Section Loads (MON1–MON4)
+
+Static `MONPNT1` / `MONPNT3` integrated section loads are emitted per SOL 144 trim subcase for the
+structures/loads handoff. They sum the trimmed aerodynamic and inertial loads over a named
+collection of aero boxes (`MONPNT1`) or structural grids (`MONPNT3`) and report the six-component
+resultant `[Fx, Fy, Fz, Mx, My, Mz]` about a reference point, in a chosen coordinate frame.
+
+### Cards
+
+```
+$ Named collection: AELIST (box IDs) for MONPNT1, or SET1 (grid IDs) for MONPNT3
+AECOMP,  NAME, LISTTYPE, LISTID1, LISTID2, ...        $ LISTTYPE = AELIST | SET1
+$ Monitor point definition (single line):
+MONPNT1, NAME, LABEL, AXES, COMP, CP, X, Y, Z          $ aero-only
+MONPNT3, NAME, LABEL, AXES, COMP, CP, X, Y, Z          $ aero + inertia + reaction
+```
+
+- `COMP` is an `AECOMP` name. `MONPNT1` requires an `AELIST`-type AECOMP; `MONPNT3` a `SET1`-type.
+- `CP` is the CORD2R (or 0/basic) frame the loads are reported in; `X,Y,Z` is the reference point in
+  that frame. The reference is resolved to basic CID 0 for the moment summation, then the resultant
+  is rotated into `CP`.
+- `AXES` is carried through to the output for annotation (no component masking is applied in Phase 1).
+
+### Integration semantics (`sbeam/results/monitor_points.py`)
+
+- **`MONPNT1` (aero-only):** `F = Σ_k box_forces[k]`, `M = Σ_k (force_point[k] − ref) × box_forces[k]`
+  over the AELIST boxes (NASTRAN box ID → global box index via the spline `_build_id_to_k` map).
+  `box_forces` is the trimmed per-box physical force already on `Sol144TrimResult`.
+- **`MONPNT3` (aero + inertia + reaction):** per SET1 grid, sum the 6-DOF block from
+  `grid_loads` (aero, splined to grids — inherits RBE3/RBAR pass-through), `inertial_loads`
+  (inertia; zero for a plain trim, non-zero for a balanced maneuver / 1g gravity trim), and the
+  recovered SPC/SUPORT reaction (only for constrained grids inside the collection; balances the net
+  aero + inertial load via `sol101.recover_reactions`, R = K·u − f). Forces add directly; moments add
+  `m_grid + (r_grid − ref) × f_grid`.
+- **Parity:** a single `SYMXZ` factor (from the post-mirror `AEROS`) scales every component — 1.0 for
+  the normal full-span pipeline (mirror zeros SYMXZ), 2.0 with a `*WHOLE-AIRPLANE*` annotation if a
+  half model is fed directly. The full 3-component force is carried (no Fz-only projection), so
+  dihedral `Fy`/`Fz` splits survive.
+
+The results are attached as `Sol144TrimResult.monitor_loads = {name: MonitorLoad}`, where
+`MonitorLoad` carries `totals` plus the per-contribution `aero` / `inertia` / `reaction` 6-vectors.
+
+### Output (MON4)
+
+- **f06 block** `MONITOR POINT INTEGRATED LOADS` (`results/f06_writer.py`): one metadata row
+  (name, label, type, axes, cid, reference) + the six totals per monitor per subcase, annotated
+  `*WHOLE-AIRPLANE*` when parity ≠ 1.
+- **CSV** `<stem>.monitor_loads.csv` (`results/load_export.py`, written by `main.py`): one row per
+  monitor per subcase. Columns:
+  `case, name, type, label, axes, cid, x_ref, y_ref, z_ref, Fx, Fy, Fz, Mx, My, Mz,
+  Fz_aero, Fz_inertia, Fz_react, parity, whole_airplane`. The `Fz_*` diagnostic breakdown is the
+  fastest way to debug a wrong sum.
+- **HDF5** hierarchical export is a deferred follow-on (f06 + CSV shipped).
+
+### Validation
+
+`tests/aero/test_monitor_ha144a.py` (V-MON1) gates the chain on the full-span HA144A deck: the
+whole-aircraft `MONPNT1` aero resultant equals the whole-aircraft `MONPNT3` aero resultant by spline
+conservation (force to machine precision, moment to ~1e-6 relative — the spline rotational-row
+numerics), and the whole-aircraft `MONPNT3` aero Fz equals the trimmed 1g weight (~16000 lb) within
+1%. **Note:** the exact `MONPNT1`==`MONPNT3` equality holds only over a collection whose grids
+receive load *exclusively* from those boxes; a shared centreline root grid (right/left wing + canard)
+makes per-surface equality approximate, hence the whole-aircraft gate.

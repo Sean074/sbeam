@@ -13,6 +13,20 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Documentation
 
+**`docs/10_standard/05_aeroelastics.md` split by area (2026-07-05)**
+
+- The 1,842-line aeroelastics code-standard guide is split into three area guides:
+  `05a_aero_vlm.md` (Phase A — VLM, AIC corrections, CHORDCP, section synthesiser, body
+  panels, viewer aero tab), `05b_splining.md` (Phase B — SPLINE2/ATTACH/SPLINE0,
+  `build_g_spline`, load transfer), and `05c_sol144_maneuver.md` (Phases C + G0 — SOL 144
+  trim/derivatives/divergence, running & output, transient maneuver loads, monitor points).
+- `05_aeroelastics.md` retained as the index: architecture overview, validation status,
+  supported-card table, and the file map. All section content carried over verbatim
+  (heading-diff verified against the pre-split file).
+- Phase-specific cross-references re-pointed (`02_card_reference.md`,
+  `01_aeroelastics_theory.md`, backlog, CLAUDE.md, `docs/00_INDEX.md`); generic references
+  continue to resolve via the index.
+
 **Critical design review of `docs/30_future` + backlog restructure (2026-07-05)**
 
 - `docs/30_future/00_backlog.md` rewritten as a priority-ordered plan (P1–P12 across four
@@ -29,6 +43,14 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
   `docs/40_history/00_completed_development.md`.
 - `docs/30_future/02_static_aero_zaero_review.md` archived to `docs/40_history/archive/`
   (all 8 goals actioned via now-closed steps); `docs/00_INDEX.md` updated.
+- **Completed-development record split by area (2026-07-05):**
+  `docs/40_history/00_completed_development.md` (4500+ lines) split into seven area files —
+  `01_program_foundation.md`, `02_sol101_static.md`, `03_sol103_modal.md`,
+  `04_viewer_gui.md`, `05_aero_vlm_spline.md`, `06_sol144_static_aeroelastic.md`,
+  `07_maneuver_transient.md` — with `00_completed_development.md` retained as the index
+  (file map, defect-ID legend, principles). All 130+ step/defect entries carried over
+  verbatim (verified by heading diff). `CLAUDE.md` step-completion rule, `docs/00_INDEX.md`,
+  and the release-process doc updated to point at the area files.
 - **H1 (2026-07-05):** `docs/30_future/01_static_aero_plan.md` pruned per its own
   self-removal rule — the closed Step 39–58 bodies (duplicated in `40_history`) replaced by
   a one-line delivered-step map, and the Phase D/E/F/G0/G placeholders retired in favour of

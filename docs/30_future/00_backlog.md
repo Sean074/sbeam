@@ -260,7 +260,7 @@ transient capability on top of Step 60's MASSSET.
 - Recovery per architecture decision 4 (`_recover_step` refactored into a shared helper);
   `ManeuverStep`/`ManeuverResult` gain optional `modal_coords`, `n_modes_used`, `massset_sid`.
 - Docs: theory §7.x (free-free basis, mean-axis orthogonalization, mode-acceleration with inertia
-  relief; records the reversal of the increment-1 restrained-basis decision), `05_aeroelastics.md`
+  relief; records the reversal of the increment-1 restrained-basis decision), `05c_sol144_maneuver.md`
   user section, `02_card_reference.md` MLOADS fields.
 
 **Test/Acceptance:** **modal-convergence gate** — all elastic modes retained ⇒ CBAR forces, net
@@ -272,7 +272,7 @@ loads; ζ>0 decays energy, ζ=0 reproduces the gate. **Fixed-Φ exactness gate**
 MASSSET, all modes ⇒ matches `run_maneuver_qs` on the equivalent hand-edited deck ≤1e−6 — mass-case
 error is pure truncation). **Fixed-Φ approximation gate** (+10% fuel overlay, truncated basis:
 peak-CBAR-force error vs a re-solved-modes reference reported, ≤~2% asserted for the sample,
-guidance recorded in `05_aeroelastics.md` — "re-solve the basis when case frequencies shift >~5%").
+guidance recorded in `05c_sol144_maneuver.md` — "re-solve the basis when case frequencies shift >~5%").
 
 #### Step 63 (P6) — G0-b free-flight rigid-body coupling (free the rigid partition)
 
@@ -482,7 +482,7 @@ image's Biot–Savart contribution into the wing-wing block of `build_ajj`.
 ### Body aerodynamic panels (slender body) — proper fuselage element (after Phase D)
 
 The cruciform (A9) is a **flat-plate tuning device**, not a fuselage model, and its limits are
-documented (`docs/10_standard/05_aeroelastics.md` "Geometry & limitations";
+documented (`docs/10_standard/05a_aero_vlm.md` "Geometry & limitations";
 `docs/20_theory/01_aeroelastics_theory.md` §3.6). The **decoupled strip body panel** (Step A10,
 `PSTRIP`/`STRIPK`, done) is the recommended *load-only* body stand-in. Large, *predictive* body
 effects — the destabilising Munk couple, wing-body interference/carryover, a several-MAC
