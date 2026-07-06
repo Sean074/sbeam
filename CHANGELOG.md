@@ -11,6 +11,25 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Phase 2 completion.
 
+### Documentation
+
+**Critical design review of `docs/30_future` + backlog restructure (2026-07-05)**
+
+- `docs/30_future/00_backlog.md` rewritten as a priority-ordered plan (P1–P12 across four
+  tiers) toward a production aeroelastic process: SOL 144 early-design sufficiency first
+  (Steps 59–63 Phase G0 plan with `MASSSET` payload sweeps pulled forward to Step 60,
+  monitor section cuts, viewer authoring), then SOL 145 + DLM (Phase D). All six
+  `designs/*` proposals reviewed with recorded verdicts; stale prerequisites flagged
+  (AE4 closed by AC7; `matrix_reuse_store` Phase 0 already delivered by Step 56/AC5);
+  single owners assigned for shared infrastructure (`reduce_to_aset` → Step 59,
+  rigid-basis builder → Step 61 with RBMREF folded in, MKAERO1/export bundle →
+  `matrix_gaf_export`).
+- Closed-item summaries (AC1–AC8, Phase G0 increment 1, monitor Phase 1, Steps 50–58)
+  removed from the backlog — all were already fully recorded in
+  `docs/40_history/00_completed_development.md`.
+- `docs/30_future/02_static_aero_zaero_review.md` archived to `docs/40_history/archive/`
+  (all 8 goals actioned via now-closed steps); `docs/00_INDEX.md` updated.
+
 ### Fixed
 
 **High-q flexible-coupling fidelity (AE14) — Step AC7 (2026-07-05)**

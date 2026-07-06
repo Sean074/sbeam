@@ -40,9 +40,8 @@ are the day-to-day references; higher numbers are planning and historical record
 
 | File | Scope |
 |------|-------|
-| [`00_backlog.md`](30_future/00_backlog.md) | **Authoritative backlog** — open bugs, code-review findings, Phase 2/3 steps, future ideas |
-| [`01_static_aero_plan.md`](30_future/01_static_aero_plan.md) | Static aeroelasticity development plan (Phases A–G) |
-| [`02_static_aero_zaero_review.md`](30_future/02_static_aero_zaero_review.md) | ZAERO capability review of the static-aero plan |
+| [`00_backlog.md`](30_future/00_backlog.md) | **Authoritative backlog** — priority-ordered open work: strategic aim, design-review verdicts, Tier 1 (SOL 144 production process incl. the Phase G0 plan), Tier 2 (infrastructure), Tier 3 (SOL 145 + DLM), Tier 4 (lower priority) |
+| [`01_static_aero_plan.md`](30_future/01_static_aero_plan.md) | Static aeroelasticity development plan (Phases A–C closed; pending prune — backlog housekeeping H1) |
 | [`designs/amode_card.md`](30_future/designs/amode_card.md) | AMODE assumed-mode card — design proposal |
 | [`designs/rbmref_card.md`](30_future/designs/rbmref_card.md) | RBMREF rigid-body-mode reference card — design proposal |
 | [`designs/spline9_hermite_beam_spline.md`](30_future/designs/spline9_hermite_beam_spline.md) | SPLINE9 FE-consistent Hermite beam spline (sbeam extension) — design proposal |
@@ -55,7 +54,7 @@ are the day-to-day references; higher numbers are planning and historical record
 | File | Scope |
 |------|-------|
 | [`00_completed_development.md`](40_history/00_completed_development.md) | Authoritative record of completed steps, key decisions, and resolved defects |
-| [`archive/`](40_history/archive/) | Superseded one-off plans (e.g. the CONM2/SOL103 fix plan) |
+| [`archive/`](40_history/archive/) | Superseded one-off plans and fully-actioned reviews (e.g. the CONM2/SOL103 fix plan; the ZAERO capability review, all goals folded into closed Steps 39–58) |
 
 ---
 
