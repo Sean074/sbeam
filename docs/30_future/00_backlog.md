@@ -67,35 +67,21 @@ mesh (`is_strip` flag + `body_eids` for cruciform), a bulk-aware run-summary str
 `sample/ha144a_fullspan_mloads.bdf` MLOADS sample deck, and the viewer-doc reconcile.
 See `docs/40_history` and CHANGELOG.
 
-| Step | Item | Kind | Priority | Notes |
-|-----:|------|------|----------|-------|
-| AC6 | [Step 54 — CFD/WT steady-pressure injection (CHORDCP)](#step-ac6--step-54--cfd--wind-tunnel-steady-pressure-injection-mean-flow-trim) | Code | Optional | Steady-complete can be declared without it |
+**Step AC6 (Step 54 — CHORDCP steady-pressure injection) CLOSED 2026-07-05** — the trim
+mean flow can now be supplied directly from CFD/wind-tunnel steady pressures: a new
+`CHORDCP` card (per-box physical Cp + required reference AOA in degrees) is converted at
+assembly into an equivalent baseline normalwash over the VLM sub-block
+(`corrections.apply_chordcp`, min-norm solve + dead-row reproducibility check), so
+`sol144.py` needed no load-path change and the trim perturbs about the injected operating
+point with an ABSOLUTE solved ANGLEA. All three acceptance gates pass (identity to 1e-9
+incl. WT2-active; exact scaled-wash algebra; integral match), KC7 warnings implemented
+(Mach mismatch, >2° trim distance, W2GJ discard), f06 gains an INJECTED OPERATING POINT
+echo, `mirror_halfspan` rejects the card. v1 requires full VLM-surface coverage; partial
+coverage + viewer authoring are Future-development notes below. See `docs/40_history` and
+CHANGELOG.
 
----
-
-### Step AC6 — Step 54 — CFD / wind-tunnel steady-pressure injection (mean-flow trim)
-
-**Optional** — lower priority; steady-complete can be declared without it (it stays open here
-if not taken).
-
-**Objective:** Allow the trim mean-flow aerodynamics to be supplied directly from CFD or
-wind-tunnel steady pressures, so the trim solution is a perturbation about the measured
-operating point.
-
-**Scope/Deliverables:**
-- `CHORDCP` card supplies a per-box steady `{cp}` (or per-strip load) at a stated
-  reference angle of attack; `Chordcp` dataclass + handler
-- `sol144.py` replaces the program-computed mean-flow rigid load with the injected
-  distribution, reusing the Step 43 pressure-/force-matching machinery; trim variables
-  then perturb about the injected state
-- Require the reference AOA on the `CHORDCP` card; document the operating-point
-  bookkeeping
-
-**Test/Acceptance:** Injecting the program's own inviscid mean-flow reproduces the
-Step 52 result (identity); injecting a scaled distribution shifts the trimmed AOA by
-the expected amount; total injected lift/moment matches the supplied integral.
-
-**Risk (KC7):** Operating-point/reference-AOA mismatch — validate and warn.
+**All aeroelastic close-out steps (AC1–AC8) are now closed — no open items remain in the
+steady close-out plan.**
 
 ---
 
@@ -128,6 +114,18 @@ the case-control editor's SOL selector offers 101/103 only and SOL 144 case cont
 read-only. A full authoring UI (TRIM condition builder, AESTAT/AESURF/TRIMVAR editors,
 DIVERG setup, MLOADS/MLDTIME/MLDCOMD/TABLED1 command-history editor, BDF export) is a
 significant effort deliberately deferred; cases are authored in the bulk-data BDF.
+
+### CHORDCP (Step 54) — follow-ons (open, low priority; deferred 2026-07-05)
+
+- **S54-a — partial per-surface coverage.** v1 requires every VLM CAERO1 to carry a CHORDCP
+  card (one shared ALPHREF). Allowing e.g. CFD-wing-only injection with the tail on its W2GJ
+  baseline mixes two operating points — the covered surfaces' α_ref re-referencing is exact
+  only surface-locally, and the interference bookkeeping between the injected and VLM halves
+  needs a documented approximation + warning before it can ship.
+- **S54-b — viewer CHORDCP authoring.** `aero_correction_view.py` already ingests CFD/test
+  tables to synthesise W2GJ+WT2 cards; a parallel path from a per-box Cp table (CSV) to
+  CHORDCP cards + corrected-BDF export would complete the GUI workflow. Includes the
+  deferred injected-vs-computed mean-flow overlay in the Aero tab (recorded at AC5).
 
 ### Body cruciform (A9) — follow-ons (open, low priority)
 

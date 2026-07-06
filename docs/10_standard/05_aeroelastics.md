@@ -95,6 +95,7 @@ Reproduction script for the original review: `studies/_review_ha144a_check.py`.
 | `W2GJ` | Per-box baseline normalwash slopes | S42 |
 | `WKK` | Diagonal AIC correction multipliers | S43 |
 | `AECORR` | Force/pressure matching AIC corrections (WT1, WT2) | S43 |
+| `CHORDCP` | Injected CFD/WT steady-Cp mean flow at a reference AOA (sbeam extension) | S54 |
 | `SET1` | List of structural grid IDs for spline input | S45 |
 | `SPLINE2` | NASTRAN infinite beam spline: links CAERO1 box range to SET1 grids (rigid chord arms, DTOR/DTHX/DTHY flexibilities) | S45–46, AC7 |
 | `ATTACH` | Rigid attachment of box group to single master grid (Step 47, complete) | S45–47 |
@@ -539,6 +540,66 @@ i.e. per rad of α (horizontal surface), per rad of β (vertical), per (α·cos�
 a lift-curve-slope quantity, **not** an absolute force at an operating incidence, and it
 produces zero load at α=0 (built-in incidence/camber must come from `W2GJ`). To match a
 section *moment* (a.c.) as well, use the section-correction synthesiser below.
+
+## CHORDCP — CFD/WT steady-pressure injection (Step 54)
+
+The corrections above **rescale** the VLM operator toward measured data; `CHORDCP`
+goes one step further and **replaces the mean flow entirely**: the per-box physical
+steady Cp distribution of every VLM lifting surface, measured (CFD or wind tunnel)
+at a stated reference angle of attack `ALPHREF`, becomes the SOL 144 baseline load,
+and the trim variables then perturb about that injected operating point.
+
+### How it works — equivalent-normalwash substitution
+
+The mean flow reaches every consumer (trim RHS via `build_fg`, f06 totals,
+`_compute_aero_forces`, `maneuver_qs`, monitor points, viewer) exclusively as
+`ΔCp = ajj_inv_corr @ aero.wg`, so `build_aero_model` converts the injected Cp
+into an equivalent baseline normalwash and bakes it into `aero.wg`
+(`corrections.apply_chordcp`, wired by `_apply_chordcp_injection`):
+
+```
+wg_eff = lstsq(ajj_inv_corr_vlm_block, Cp_inj) + n_z·α_ref
+```
+
+- The solve runs over the **VLM sub-block only** — PSTRIP strip panels keep their
+  W2GJ/Δα wash (their `ajj_inv_corr` block is diagonal with zero coupling, so the
+  sub-block solve is exact).
+- The `+ n_z·α_ref` term (`= −D_α·α_ref`, the ANGLEA normalwash column) re-references
+  the injection to α = 0, so **the solved ANGLEA is absolute**, not relative to ALPHREF.
+- A min-norm `lstsq` is used because WT1/WT2 corrections can zero operator rows
+  (target ratio 0); nonzero injected Cp on such a dead row is unreproducible and
+  raises a `ValueError` (residual check), rather than silently losing load.
+- WKK/WT2/WT1 corrections still govern the **perturbation** aerodynamics — the same
+  corrected operator is used for the conversion and the trim, so injecting the
+  program's own mean flow reproduces the uninjected trim exactly (the Step 54
+  identity gate, `tests/aero/test_chordcp.py`).
+- Multi-Mach (AE9) is automatic: injection lives inside `build_aero_model`, which
+  `AeroCache` re-runs per TRIM Mach.
+
+### Usage rules (v1)
+
+- **Full coverage:** when any CHORDCP is present, every VLM CAERO1 must carry exactly
+  one card and all cards must state the same ALPHREF (degrees on the card, stored in
+  radians). Partial per-surface injection is a deferred follow-on (mixed operating
+  points have ambiguous interference bookkeeping).
+- **W2GJ discarded on injected surfaces** (warned): the injected Cp must already
+  contain the camber/incidence — and any body-correction-derived W2GJ offsets — that
+  W2GJ would have supplied.
+- A nonzero ALPHREF requires an `ANGLEA` AESTAT label (error otherwise).
+- `mirror_halfspan` rejects CHORDCP decks (box data is not auto-mirrored).
+- Deriving new correction cards (Aero Correction viewer tab) on a CHORDCP deck is
+  blocked — the derivation baselines would read the injected wash and change meaning.
+
+### Operating-point bookkeeping & KC7 warnings
+
+The trim result carries a `chordcp_echo` dict and the f06 trim block prints an
+`INJECTED OPERATING POINT` table: ALPHREF, the data Mach, and per-surface
+`Fz/q`, `My/q` integrals of the supplied Cp next to the VLM flat-plate lift at the
+same ALPHREF (a plausibility reference). Warnings (KC7):
+
+- data Mach ≠ TRIM Mach;
+- trimmed ANGLEA more than 0.035 rad (≈ 2°) from ALPHREF — the trim is a
+  perturbation about the injected point and degrades with distance.
 
 ## Section force + moment correction synthesiser (`section_correction.py`)
 

@@ -1091,6 +1091,47 @@ Strip body panels (CAERO1 PID → PSTRIP) bypass this entirely — see `STRIPK`.
 
 ---
 
+### CHORDCP — Injected Steady-Pressure Distribution (sbeam extension, Step 54)
+
+Supplies the per-box **physical steady Cp** of one CAERO1 surface, measured (CFD or
+wind tunnel) at a stated reference angle of attack. At assembly the injected pressures
+**replace the program-computed mean flow** (the W2GJ-driven baseline) on all VLM
+lifting surfaces via an equivalent-normalwash substitution, so a SOL 144 trim becomes
+a perturbation about the measured operating point. See
+`docs/10_standard/05_aeroelastics.md` (usage) and
+`docs/20_theory/01_aeroelastics_theory.md` (derivation).
+
+**Format:**
+```
+CHORDCP  SID  CAERO_EID  ALPHREF  MACH
++        CP1  CP2  CP3  ...
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| SID | `sid` | int | Set ID | required |
+| CAERO_EID | `caero_eid` | int | EID of the CAERO1 the pressures apply to (must be a VLM surface, not PSTRIP) | required |
+| ALPHREF | `alpha_ref` | float | Reference angle of attack the data was measured at, **degrees** (stored internally in radians) | **required** |
+| MACH | `mach` | float | Mach the data was measured at; validation only (warned against the TRIM Mach) | blank = not stated |
+| CP1–CPN | `data` | list[float] | Physical steady Cp per box, row-major (span slowest, chord fastest — same ordering as W2GJ) | required |
+
+**Coverage rule (v1):** when any CHORDCP card is present, **every** VLM CAERO1 must
+carry exactly one, and all cards must state the same ALPHREF. PSTRIP strip body panels
+are excluded (they keep their W2GJ/Δα wash) and may not be targeted. The W2GJ baseline
+on injected surfaces is discarded (warned) — the injected Cp must already contain the
+camber/incidence content.
+
+**Example:**
+```
+$ Wing pressures from CFD at alpha = 2.0 deg, Mach 0.9 (8 boxes)
+CHORDCP, 40, 100, 2.0, 0.9, 0.52, 0.31, 0.21, 0.14
++,       0.52, 0.31, 0.21, 0.14
+```
+
+---
+
 ### STRIPK — Per-Box Strip Lift-Curve Slopes (sbeam extension)
 
 Overrides the uniform `PSTRIP` `slope0` box-by-box for a decoupled strip body panel.
@@ -1863,6 +1904,7 @@ are the exception: they refer to **element local axes** (1 = axial, 4 = torsion,
 | SPC | Enforced displacement D must be `0.0` in Phase 1–2 |
 | W2GJ | Data length must equal NSPAN×NCHORD for the referenced CAERO1 |
 | WKK | Data length must equal NSPAN×NCHORD for the referenced CAERO1 |
+| CHORDCP | ALPHREF required (degrees); data length must equal NSPAN×NCHORD; every VLM CAERO1 must be covered by exactly one card, all sharing one ALPHREF; PSTRIP surfaces may not be targeted; injected Cp must be reproducible by the corrected AIC (no nonzero Cp on WT1/WT2 dead rows); half-span mirroring (`mirror_halfspan`) rejects it |
 | AESURF | ALID1 (and ALID2 if non-zero) must exist in AELIST |
 | AELIST | All box IDs must fall within at least one CAERO1 range |
 | SET1 | Every grid ID must exist in GRID; a spline-referenced SET1 needs ≥ 2 grids |

@@ -128,6 +128,7 @@ class Sol144TrimResult:
     hinge_moments: Optional[dict] = None      # {AESURF label: {'total': HM/q at trim, <trim_label>: dHM/dδ}} about cid1 hinge axis
     trim_mode: str = "determined"             # "determined" or "over-determined" (Step 52)
     monitor_loads: Optional[dict] = None      # {name: MonitorLoad} integrated section loads (MON1–MON3)
+    chordcp_echo: Optional[dict] = None       # Step 54 injected-operating-point echo: {'alpha_ref', 'data_machs', 'surfaces': {eid: {'FZ_Q','MY_Q','FZ_Q_VLM'}}}
 
 
 @dataclass

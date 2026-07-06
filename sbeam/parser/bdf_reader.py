@@ -13,7 +13,7 @@ from sbeam.model.mass import Conm2
 from sbeam.model.load import Force, Moment, Load, Grav, Eigrl
 from sbeam.model.constraint import Spc, Spc1, Suport
 from sbeam.model.aero import (
-    Aeros, Caero1, Paero1, Pstrip, Stripk, Aefact, W2gj, Wkk, Aecorr, Set1,
+    Aeros, Caero1, Paero1, Pstrip, Stripk, Aefact, W2gj, Wkk, Aecorr, Chordcp, Set1,
     Spline2, Attach, Spline0, Spline1,
     Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
     Aecomp, Monpnt1, Monpnt3,
@@ -506,6 +506,34 @@ def _handle_aecorr(fields: list, conts: list, bulk: BulkData) -> None:
     for cont in conts:
         target += [_to_float(f) for f in cont[1:] if f.strip()]
     bulk.aecorrs[sid] = Aecorr(sid=sid, method=method, caero_eid=caero_eid, target=target)
+
+
+def _handle_chordcp(fields: list, conts: list, bulk: BulkData) -> None:
+    """CHORDCP, SID, CAERO_EID, ALPHREF, [MACH] / +, CP1, CP2, ... (row-major).
+
+    ALPHREF (degrees, REQUIRED) is the reference angle of attack the injected
+    Cp distribution was measured at; stored in radians on the dataclass.
+    """
+    import math
+    sid       = _to_int(fields[1])
+    caero_eid = _to_int(fields[2])
+    if sid in bulk.chordcps:
+        raise ValueError(f"Duplicate CHORDCP SID {sid}")
+    alphref_field = fields[3].strip() if len(fields) > 3 else ""
+    if not alphref_field:
+        raise ValueError(
+            f"CHORDCP {sid}: ALPHREF (reference angle of attack, degrees) is required"
+        )
+    alpha_ref = math.radians(_to_float(alphref_field))
+    mach = _to_float(fields[4]) if len(fields) > 4 and fields[4].strip() else 0.0
+    data = [_to_float(f) for f in fields[5:] if f.strip()]
+    for cont in conts:
+        data += [_to_float(f) for f in cont[1:] if f.strip()]
+    if not data:
+        raise ValueError(f"CHORDCP {sid}: no Cp data fields found")
+    bulk.chordcps[sid] = Chordcp(
+        sid=sid, caero_eid=caero_eid, alpha_ref=alpha_ref, mach=mach, data=data
+    )
 
 
 def _handle_paero1(fields: list, bulk: BulkData) -> None:
@@ -1153,6 +1181,20 @@ def parse_bulk_data(lines: list) -> BulkData:
                 else:
                     break
             _handle_aecorr(fields, aecorr_conts, bulk)
+        elif keyword == "CHORDCP":
+            chordcp_conts: list = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    chordcp_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_chordcp(fields, chordcp_conts, bulk)
         elif keyword == "PAERO1":
             _handle_paero1(fields, bulk)
         elif keyword == "PSTRIP":

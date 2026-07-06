@@ -23,7 +23,9 @@ from sbeam.model.aero import Aeros
 from sbeam.aero.panel import AeroBox, mesh_caero1
 from sbeam.aero.vlm import build_ajj, prandtl_glauert_boxes
 from sbeam.aero.integration import build_skj, build_djk, build_wg
-from sbeam.aero.corrections import apply_wkk, apply_wt2, apply_wt1, _check_conditioning
+from sbeam.aero.corrections import (
+    apply_wkk, apply_wt2, apply_wt1, apply_chordcp, _check_conditioning,
+)
 from sbeam.aero.spline import build_g_spline
 from sbeam.aero.strip import strip_box_mask, strip_box_slopes, is_strip_caero
 
@@ -40,6 +42,7 @@ class AeroModel:
     mach:         float = 0.0                  # Mach number for Prandtl–Glauert
     g_slope:      Optional[np.ndarray] = None  # slope spline, shape (n, 6*n_g)
     g_disp:       Optional[np.ndarray] = None  # displacement spline, shape (3n, 6*n_g)
+    chordcp_alpha_ref: Optional[float] = None  # CHORDCP reference AOA [rad]; None = no injection
 
 
 def _assemble_vlm_operator(bulk: BulkData, op_boxes: list, mach: float):
@@ -103,6 +106,98 @@ def _assemble_vlm_operator(bulk: BulkData, op_boxes: list, mach: float):
     ])
     ajj_inv_corr *= (2.0 / chord_box_arr)[:, np.newaxis]
     return ajj, ajj_inv_corr
+
+
+def _apply_chordcp_injection(
+    bulk: BulkData,
+    boxes: list,
+    strip_mask: np.ndarray,
+    ajj_inv_corr: np.ndarray,
+    wg: np.ndarray,
+) -> Optional[float]:
+    """CHORDCP steady-pressure injection (Step 54) — mutates ``wg`` in place.
+
+    Replaces the program-computed baseline normalwash of every VLM lifting-surface
+    box with the equivalent wash of the injected Cp distribution (see
+    ``corrections.apply_chordcp``).  PSTRIP strip boxes keep their W2GJ/Δα wash —
+    the strip block of ``ajj_inv_corr`` is diagonal with zero coupling, so the
+    VLM sub-block solve is exact.
+
+    v1 rules: every VLM CAERO1 must be covered by exactly one CHORDCP card, all
+    cards must share the same ALPHREF, and strip CAERO1s may not be targeted.
+
+    Returns the common reference AOA (radians), or None when no CHORDCP cards
+    are present.
+    """
+    if not bulk.chordcps:
+        return None
+
+    vlm_eids = sorted(eid for eid in bulk.caero1s if not is_strip_caero(bulk, eid))
+
+    cards_by_eid: dict = {}
+    for card in bulk.chordcps.values():
+        if card.caero_eid not in bulk.caero1s:
+            raise ValueError(
+                f"CHORDCP {card.sid}: CAERO1 {card.caero_eid} not found in bulk data"
+            )
+        if is_strip_caero(bulk, card.caero_eid):
+            raise ValueError(
+                f"CHORDCP {card.sid}: CAERO1 {card.caero_eid} is a PSTRIP body panel; "
+                "steady-pressure injection applies to VLM lifting surfaces only"
+            )
+        if card.caero_eid in cards_by_eid:
+            raise ValueError(
+                f"CHORDCP {card.sid}: CAERO1 {card.caero_eid} already covered by "
+                f"CHORDCP {cards_by_eid[card.caero_eid].sid}"
+            )
+        cards_by_eid[card.caero_eid] = card
+
+    missing = [eid for eid in vlm_eids if eid not in cards_by_eid]
+    if missing:
+        raise ValueError(
+            "CHORDCP injection requires full coverage of all VLM lifting surfaces; "
+            f"missing CHORDCP card(s) for CAERO1 {missing}"
+        )
+
+    alpha_refs = {eid: c.alpha_ref for eid, c in cards_by_eid.items()}
+    alpha_ref = next(iter(alpha_refs.values()))
+    if any(abs(a - alpha_ref) > 1e-12 for a in alpha_refs.values()):
+        raise ValueError(
+            "CHORDCP cards disagree on ALPHREF (all injected surfaces must share "
+            f"one reference AOA): {{eid: rad}} = {alpha_refs}"
+        )
+
+    # The injected Cp already contains camber/incidence — any W2GJ baseline on a
+    # covered surface is discarded (including body-correction-derived W2GJ cards).
+    discarded = sorted({
+        w.caero_eid for w in bulk.w2gjs.values()
+        if w.caero_eid in cards_by_eid and any(v != 0.0 for v in w.data)
+    })
+    if discarded:
+        warnings.warn(
+            f"CHORDCP injection replaces the W2GJ baseline on CAERO1 {discarded}; "
+            "the W2GJ camber/incidence (and any body-correction offsets) on those "
+            "surfaces is discarded — the injected Cp must already contain it.",
+            UserWarning,
+        )
+
+    # Assemble the injected Cp over the VLM boxes in global box order (per-CAERO
+    # local ordering is row-major, span slowest — same as build_wg / W2GJ).
+    vlm_idx = np.where(~np.asarray(strip_mask, dtype=bool))[0]
+    vlm_boxes = [boxes[i] for i in vlm_idx]
+    cp_inj = np.zeros(len(vlm_boxes))
+    for eid, card in cards_by_eid.items():
+        local = [k for k, b in enumerate(vlm_boxes) if b.caero_eid == eid]
+        if len(card.data) != len(local):
+            raise ValueError(
+                f"CHORDCP {card.sid}: data length {len(card.data)} != "
+                f"{len(local)} boxes on CAERO1 {eid} (NSPAN×NCHORD)"
+            )
+        cp_inj[local] = card.data
+
+    block = ajj_inv_corr[np.ix_(vlm_idx, vlm_idx)]
+    wg[vlm_idx] = apply_chordcp(block, vlm_boxes, cp_inj, alpha_ref)
+    return alpha_ref
 
 
 # VLM mesh-quality guidance (A7/A8): NASA SP-405; Rodden/MSC practice.
@@ -283,6 +378,10 @@ def build_aero_model(
     for eid in sorted(bulk.caero1s):
         wg += build_wg(boxes, bulk.w2gjs, eid)
 
+    # CHORDCP steady-pressure injection (Step 54): replace the VLM boxes'
+    # baseline wash with the equivalent wash of the injected Cp distribution.
+    chordcp_alpha_ref = _apply_chordcp_injection(bulk, boxes, strip_mask, ajj_inv_corr, wg)
+
     # Build spline operators if spline cards are present and grid_index is provided
     g_slope: Optional[np.ndarray] = None
     g_disp:  Optional[np.ndarray] = None
@@ -300,6 +399,7 @@ def build_aero_model(
         mach=mach,
         g_slope=g_slope,
         g_disp=g_disp,
+        chordcp_alpha_ref=chordcp_alpha_ref,
     )
 
 

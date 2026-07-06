@@ -42,6 +42,67 @@ def _solve_ajj(ajj: np.ndarray) -> np.ndarray:
     return np.linalg.solve(ajj, np.eye(ajj.shape[0]))
 
 
+def apply_chordcp(
+    ajj_inv_corr_block: np.ndarray,
+    boxes: list[AeroBox],
+    cp_inj: np.ndarray,
+    alpha_ref: float,
+) -> np.ndarray:
+    """Equivalent-normalwash substitution for injected steady pressures (Step 54).
+
+    Given the corrected normalwash→ΔCp operator of the VLM lifting-surface
+    boxes (``ajj_inv_corr`` restricted to the VLM sub-block — the operator
+    already carries the 2/chord Γ→Cp conversion, the Göthert 1/β factor and
+    any WKK/WT2/WT1 correction), find the baseline normalwash ``wg_eff`` such
+    that the rigid model at the injected operating point (ANGLEA = alpha_ref,
+    all other trim variables zero, no structural deformation) reproduces the
+    injected physical pressures ``cp_inj``:
+
+        ajj_inv_corr @ (D_alpha·alpha_ref + wg_eff) = cp_inj,   D_alpha = -n_z
+
+        ⟹  wg_eff = lstsq(ajj_inv_corr, cp_inj) + n_z·alpha_ref
+
+    The ``+ n_z·alpha_ref`` term re-references the injection to alpha = 0, so
+    a downstream trim solves for the ABSOLUTE angle of attack.
+
+    A min-norm least-squares solve is used instead of a direct solve: WT2/WT1
+    corrections can zero entire rows of the operator (target ratio r_k = 0),
+    making it singular.  A dead row can reproduce only Cp = 0 there, so a
+    nonzero injected Cp on such a row is unrepresentable — detected by the
+    residual check below and raised as an error rather than silently dropped.
+
+    Args:
+        ajj_inv_corr_block: (n, n) corrected wash→ΔCp operator, VLM boxes only.
+        boxes:              the n VLM AeroBox objects (same ordering).
+        cp_inj:             (n,) injected physical Cp at alpha_ref.
+        alpha_ref:          reference angle of attack, radians.
+
+    Returns:
+        wg_eff: (n,) equivalent baseline normalwash for these boxes.
+    """
+    n = ajj_inv_corr_block.shape[0]
+    if len(boxes) != n or cp_inj.shape[0] != n:
+        raise ValueError(
+            f"apply_chordcp: size mismatch (operator {n}, boxes {len(boxes)}, "
+            f"cp {cp_inj.shape[0]})"
+        )
+    _check_conditioning(ajj_inv_corr_block)
+    w_solve, *_ = np.linalg.lstsq(ajj_inv_corr_block, cp_inj, rcond=None)
+    residual = ajj_inv_corr_block @ w_solve - cp_inj
+    res_norm = float(np.linalg.norm(residual))
+    cp_norm  = float(np.linalg.norm(cp_inj))
+    if res_norm > 1e-8 * max(cp_norm, 1.0):
+        bad = np.argsort(-np.abs(residual))[:5]
+        raise ValueError(
+            "apply_chordcp: injected Cp distribution is not reproducible by the "
+            f"corrected AIC operator (residual ‖A·w − cp‖ = {res_norm:.3e}); "
+            "nonzero Cp was likely injected on boxes whose correction ratio is "
+            f"zero (dead rows). Worst box indices (local): {bad.tolist()}"
+        )
+    n_z = np.array([b.normal[2] for b in boxes])
+    return w_solve + n_z * alpha_ref
+
+
 def apply_wkk(ajj: np.ndarray, wkk_data: list) -> np.ndarray:
     """Diagonal multiplicative AIC correction.
 

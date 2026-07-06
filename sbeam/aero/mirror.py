@@ -35,6 +35,7 @@ _UNSUPPORTED = {
     "spline2s": "SPLINE2", "spline1s": "SPLINE1", "spline0s": "SPLINE0",
     "attaches": "ATTACH", "aesurfs": "AESURF", "aelists": "AELIST",
     "set1s": "SET1", "w2gjs": "W2GJ", "wkks": "WKK", "aecorrs": "AECORR",
+    "chordcps": "CHORDCP",
     "spcs": "SPC", "spc1s": "SPC1", "forces": "FORCE", "moments": "MOMENT",
     "loads": "LOAD", "gravs": "GRAV", "trims": "TRIM", "aestats": "AESTAT",
     "divergs": "DIVERG", "trimvars": "TRIMVAR", "trimobjs": "TRIMOBJ",

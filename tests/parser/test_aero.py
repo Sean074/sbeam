@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from sbeam.parser.bdf_reader import parse_bulk_data
@@ -332,3 +334,55 @@ W2GJ, 3, 100, 0.2, 0.2, 0.2, 0.2
         lines = _W2GJ_BASE + "W2GJ, 5, 100, 0.0, 0.0, 0.0, 0.0".splitlines()
         bulk = parse_bulk_data(lines)
         assert bulk.w2gjs[5].caero_eid == 100
+
+
+# ---------------------------------------------------------------------------
+# CHORDCP — injected steady-pressure distribution (Step 54)
+# ---------------------------------------------------------------------------
+
+
+class TestChordcpParser:
+    def test_round_trip_and_degrees_to_radians(self):
+        lines = _W2GJ_BASE + """\
+CHORDCP, 1, 100, 2.0, 0.6
++, 0.5, 0.4, 0.3, 0.2
+""".splitlines()
+        bulk = parse_bulk_data(lines)
+        c = bulk.chordcps[1]
+        assert c.sid == 1
+        assert c.caero_eid == 100
+        assert c.alpha_ref == pytest.approx(math.radians(2.0))
+        assert c.mach == pytest.approx(0.6)
+        assert c.data == pytest.approx([0.5, 0.4, 0.3, 0.2])
+
+    def test_data_on_parent_line_and_continuation(self):
+        lines = _W2GJ_BASE + """\
+CHORDCP, 2, 100, 0.0, , 0.5, 0.4
++, 0.3, 0.2
+""".splitlines()
+        bulk = parse_bulk_data(lines)
+        c = bulk.chordcps[2]
+        assert c.alpha_ref == 0.0
+        assert c.mach == 0.0
+        assert c.data == pytest.approx([0.5, 0.4, 0.3, 0.2])
+
+    def test_missing_alphref_raises(self):
+        lines = _W2GJ_BASE + """\
+CHORDCP, 3, 100
++, 0.5, 0.4, 0.3, 0.2
+""".splitlines()
+        with pytest.raises(ValueError, match="ALPHREF.*required"):
+            parse_bulk_data(lines)
+
+    def test_missing_data_raises(self):
+        lines = _W2GJ_BASE + "CHORDCP, 4, 100, 1.0".splitlines()
+        with pytest.raises(ValueError, match="no Cp data"):
+            parse_bulk_data(lines)
+
+    def test_duplicate_sid_raises(self):
+        lines = _W2GJ_BASE + """\
+CHORDCP, 5, 100, 1.0, , 0.5, 0.4, 0.3, 0.2
+CHORDCP, 5, 100, 1.0, , 0.5, 0.4, 0.3, 0.2
+""".splitlines()
+        with pytest.raises(ValueError, match="Duplicate CHORDCP SID"):
+            parse_bulk_data(lines)

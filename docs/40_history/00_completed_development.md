@@ -4394,3 +4394,62 @@ in `test_case_control_summary.py`, and AppTest Flow D
 maneuver subcase renders time history/slider/exports). CLI run of the new sample verified
 (f06 trim + maneuver blocks, MLDPRNT, critical-load BDF, physically sane ELEV-ramp
 response). Full suite 1075 passed / 6 xfailed.
+
+---
+
+### Step AC6 / Step 54 — CFD / wind-tunnel steady-pressure injection (CHORDCP) ✅ COMPLETE (2026-07-05)
+
+**Objective:** Allow the SOL 144 trim mean-flow aerodynamics to be supplied directly from
+CFD or wind-tunnel steady pressures, so the trim solution is a perturbation about the
+measured operating point (backlog AC6; the last open steady close-out step).
+
+**Deliverables:**
+- **`CHORDCP` card** (sbeam extension) — `CHORDCP, SID, CAERO_EID, ALPHREF, MACH` +
+  row-major per-box physical Cp continuations (same ordering as W2GJ). ALPHREF is
+  **required and in degrees** (user decision — matches CFD/WT reporting and the
+  `section_data.py` CSV convention), stored in radians on the `Chordcp` dataclass
+  (`model/aero.py`); optional MACH is validation-only. Handler clones the AECORR
+  continuation pattern (`parser/bdf_reader.py`); `bulk.chordcps` fills the slot reserved
+  in `docs/30_future/01_static_aero_plan.md`.
+- **Equivalent-normalwash substitution** — `corrections.apply_chordcp`: since the stored
+  corrected operator `ajj_inv_corr` maps normalwash → physical ΔCp directly (2/chord and
+  Göthert 1/β baked in), the injected Cp feeds a **min-norm lstsq** over the VLM
+  sub-block, plus the `+ n_z·α_ref` re-referencing term (ANGLEA column is `−n_z`), and
+  the result overwrites `aero.wg` at assembly (`aero_model._apply_chordcp_injection`).
+  **Key decisions:** (1) NO Cp→Γ conversion — an adversarial design review caught that the
+  plan's assumed Γ-unit operator was wrong (the `gamma` names in sol144 are misnomers);
+  (2) `sol144.py` needed **zero load-path changes** — every consumer (trim RHS, f06
+  totals, `maneuver_qs`, monitor points, viewer) reads the mean flow only through
+  `ajj_inv_corr @ wg`; (3) solved ANGLEA is **absolute** (injection re-referenced to α=0);
+  (4) min-norm solve + residual check because WT1/WT2 dead rows (ratio 0) make the
+  operator singular — nonzero Cp on a dead row raises rather than silently losing load;
+  (5) PSTRIP strip panels keep their W2GJ/Δα wash (diagonal decoupled block → sub-block
+  solve exact).
+- **v1 coverage rule (user decision):** every VLM CAERO1 must carry exactly one CHORDCP
+  card, all sharing one ALPHREF; strip surfaces may not be targeted; W2GJ on injected
+  surfaces is discarded with a warning (incl. body-correction-derived W2GJ). Partial
+  coverage + viewer authoring deferred (backlog "CHORDCP follow-ons").
+- **KC7 validation/warnings** — parse (required ALPHREF, no data), assembly (coverage,
+  ALPHREF consistency, PSTRIP target, length ≠ NSPAN×NCHORD, dead-row Cp), solver
+  (nonzero ALPHREF without an ANGLEA AESTAT → error; card-vs-TRIM Mach mismatch and
+  trimmed-ANGLEA > 0.035 rad (≈2°) from ALPHREF → warnings). `mirror_halfspan` rejects
+  CHORDCP (added to `_UNSUPPORTED`).
+- **Outputs** — `Sol144TrimResult.chordcp_echo` + f06 `INJECTED OPERATING POINT` block
+  (ALPHREF rad/deg, data Mach, per-surface + total injected Fz/q, My/q next to the VLM
+  flat-plate lift at ALPHREF as a plausibility reference). Viewer: parse-summary and
+  Aero-tab captions flag active injection; the Aero Correction tab **blocks** derivation
+  on a CHORDCP deck (its baselines would read the injected wash and change meaning).
+- **Docs** — card reference (entry + validation row), `05_aeroelastics.md` (new CHORDCP
+  section + card table row), theory §3.4 (Eq. 13′ equivalent-normalwash derivation).
+
+**Test/Acceptance (all three backlog gates):** `tests/aero/test_chordcp.py` — (1)
+**identity**: injecting the program's own mean flow on the full-span HA144A deck (4 cards)
+reproduces the Step 52 trim to 1e-9, at α_ref = 0, α_ref = 2°, and with a WT2-corrected
+operator (Γ-unit target); (2) **scaled injection**: machine-precision wash algebra
+`wg_eff(s) = s·wg + (1−s)·n_z·α_ref` verified, plus the physical check that 10% more
+injected lift trims to lower ANGLEA; (3) **integral match**: model-recovered Fz/My at the
+injected point equal the direct Cp·area sums to 1e-9. Plus toy-operator unit tests
+(round-trip, dead rows, size guards), all validation/warning paths, strip-coexistence
+(strip wash untouched, VLM replaced), mirror rejection, and the f06 echo block; parser
+round-trip tests in `tests/parser/test_aero.py`. No-CHORDCP decks are bit-identical
+(injection branch is a no-op). Full suite 1104+ passed / 6 xfailed.

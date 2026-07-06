@@ -163,6 +163,11 @@ def _show_parse_summary(bulk: BulkData) -> None:
         cols[7].metric("Load sets", load_sets)
         cols[8].metric("SPC sets", spc_sets)
         st.caption("No case control loaded — define analysis via Case Control tab.")
+    if bulk.chordcps:
+        st.caption(
+            f"ℹ️ CHORDCP steady-pressure injection active ({len(bulk.chordcps)} "
+            "card(s)) — the SOL 144 mean flow is supplied from CFD/test data."
+        )
 
 
 def _show_warnings() -> None:
@@ -703,7 +708,14 @@ def _render_aero_tab(bulk: BulkData) -> None:
                 "vertical-force coefficient. CL = CZ·cosα − CX·sinα (equal only at "
                 "α ≈ 0). CD is the Trefftz induced drag."
             )
-            if aero_model.wg is not None and np.any(aero_model.wg):
+            if aero_model.chordcp_alpha_ref is not None:
+                st.caption(
+                    "ℹ️ CHORDCP steady-pressure injection active — the mean flow "
+                    "is the injected CFD/test Cp distribution (reference AOA "
+                    f"{np.degrees(aero_model.chordcp_alpha_ref):.3f}°), not the "
+                    "program-computed W2GJ baseline."
+                )
+            elif aero_model.wg is not None and np.any(aero_model.wg):
                 st.caption(
                     "ℹ️ W2GJ baseline incidence (camber/twist) folded into the "
                     "solve — CL/cp include the built-in twist."

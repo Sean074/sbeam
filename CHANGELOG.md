@@ -37,6 +37,27 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**CFD/wind-tunnel steady-pressure injection (CHORDCP) — Step 54 / AC6 (2026-07-05)**
+
+- **New `CHORDCP` card** (sbeam extension): per-box physical steady Cp of a CAERO1 at a
+  required reference AOA (ALPHREF, degrees; optional data MACH). When present, the SOL 144
+  mean flow is the injected CFD/test distribution instead of the program-computed W2GJ
+  baseline, and the trim perturbs about the measured operating point with an **absolute**
+  solved ANGLEA.
+- **Equivalent-normalwash substitution** at assembly (`corrections.apply_chordcp` +
+  `aero_model._apply_chordcp_injection`): min-norm solve of the corrected wash→ΔCp
+  operator over the VLM sub-block with `+ n_z·α_ref` re-referencing; composes with
+  WKK/WT1/WT2 corrections and PSTRIP strip panels (strips keep their wash); dead-row
+  (unreproducible) injected Cp raises. No solver load-path changes — all consumers
+  (trim, maneuver, monitor points, viewer) pick the injection up through `aero.wg`.
+- **v1 coverage rule:** every VLM CAERO1 needs exactly one card, one shared ALPHREF;
+  KC7 validation and warnings (Mach mismatch, trimmed AOA > 2° from ALPHREF, W2GJ
+  discard); `mirror_halfspan` rejects the card; f06 gains an `INJECTED OPERATING POINT`
+  echo block; viewer flags active injection and blocks correction derivation on
+  CHORDCP decks. Identity/scaling/integral acceptance gates in
+  `tests/aero/test_chordcp.py`; docs: card reference, `05_aeroelastics.md`, theory §3.4
+  (Eq. 13′). Partial coverage + viewer authoring recorded as backlog follow-ons.
+
 **GUI — small viewer gaps closed — Step AC5 (2026-07-05)**
 
 - **Maneuver exports in the viewer** — the transient-maneuver results view gained download

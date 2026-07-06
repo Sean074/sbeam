@@ -99,6 +99,25 @@ class Wkk:
 
 
 @dataclass
+class Chordcp:
+    """CFD/wind-tunnel steady-pressure injection (Step 54, sbeam extension).
+
+    Supplies the per-box physical steady Cp distribution of one CAERO1 at a
+    stated reference angle of attack.  At assembly the injected pressures
+    replace the program-computed mean flow (the W2GJ-driven baseline) via an
+    equivalent-normalwash substitution; the trim solution then perturbs about
+    the injected operating point.  ``alpha_ref`` is given in DEGREES on the
+    card and stored here in RADIANS.  ``mach`` (optional, 0.0 = unset) is the
+    Mach the data was measured at — validation only.
+    """
+    sid:       int
+    caero_eid: int
+    alpha_ref: float          # radians (card field is degrees)
+    mach:      float = 0.0    # measurement Mach; 0.0 = not stated
+    data: list = field(default_factory=list)  # per-box physical Cp, row-major (span slowest)
+
+
+@dataclass
 class Aecorr:
     sid:       int
     method:    str           # 'WT1' (force/moment matching) or 'WT2' (pressure matching)

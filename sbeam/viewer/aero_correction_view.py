@@ -376,6 +376,17 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
         st.info("No CAERO1 surfaces in this model.")
         return
 
+    if bulk.chordcps:
+        st.error(
+            "This model carries CHORDCP steady-pressure injection cards: the "
+            "baseline normalwash already holds the injected CFD/test mean flow, "
+            "so a correction derivation here would compute its W2GJ/WT2 (and "
+            "body-correction) baselines from the injected state, not from the "
+            "program's own aerodynamics. Remove the CHORDCP cards before "
+            "deriving correction cards."
+        )
+        return
+
     if st.session_state.get("aero_corr_model") is None:
         st.session_state.aero_corr_model = build_aero_model(bulk)
     aero_model = st.session_state.aero_corr_model

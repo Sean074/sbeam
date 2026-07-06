@@ -41,6 +41,7 @@ class BulkData:
     w2gjs:   dict = field(default_factory=dict)   # {sid: W2gj}
     wkks:    dict = field(default_factory=dict)   # {sid: Wkk}
     aecorrs:  dict = field(default_factory=dict)   # {sid: Aecorr}
+    chordcps: dict = field(default_factory=dict)   # {sid: Chordcp} (injected steady Cp)
     set1s:    dict = field(default_factory=dict)   # {sid: Set1}
     spline2s: dict = field(default_factory=dict)   # {eid: Spline2}
     attaches: dict = field(default_factory=dict)   # {eid: Attach}

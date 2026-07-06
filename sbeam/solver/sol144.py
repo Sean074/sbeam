@@ -1506,6 +1506,26 @@ def run_sol144_trim(
         + [s.label for s in bulk.aesurfs.values()]
     )
 
+    # ------------------------------------------------------------------ #
+    # CHORDCP injection validation (Step 54, KC7)
+    # ------------------------------------------------------------------ #
+    chordcp_alpha_ref = aero.chordcp_alpha_ref
+    if chordcp_alpha_ref is not None:
+        if abs(chordcp_alpha_ref) > 0.0 and "ANGLEA" not in all_labels:
+            raise ValueError(
+                "CHORDCP injection with a nonzero ALPHREF requires an ANGLEA "
+                "AESTAT label (the injected operating point is re-referenced "
+                "through the angle-of-attack normalwash column)."
+            )
+        card_machs = sorted({c.mach for c in bulk.chordcps.values() if c.mach})
+        if card_machs and any(abs(m - mach) > 1e-9 for m in card_machs):
+            warnings.warn(
+                f"run_sol144_trim: CHORDCP data Mach {card_machs} disagrees with "
+                f"the flight Mach {mach}; the injected pressures were measured at "
+                "a different operating point (KC7).",
+                UserWarning,
+            )
+
     # Separate free (to solve for) vs prescribed (given in TRIM card)
     prescribed_dict = {k.upper(): v for k, v in trim_card.vars.items()}
     free_labels   = [l for l in all_labels if l not in prescribed_dict]
@@ -1524,6 +1544,34 @@ def run_sol144_trim(
         x_ref    = 0.0
         R_rcsid  = np.eye(3)
         suport_pos = np.zeros(3)
+
+    # ------------------------------------------------------------------ #
+    # CHORDCP injected-operating-point echo (Step 54) — per-surface integrals
+    # of the supplied Cp, plus the VLM flat-plate lift at the same ALPHREF as
+    # a plausibility reference for the f06 block (KC7 visibility).
+    # ------------------------------------------------------------------ #
+    chordcp_echo = None
+    if chordcp_alpha_ref is not None:
+        n_z_all = np.array([b.normal[2] for b in aero.boxes])
+        cp_flat = aero.ajj_inv_corr @ (-n_z_all * chordcp_alpha_ref)
+        surfaces: dict = {}
+        for card in sorted(bulk.chordcps.values(), key=lambda c: c.caero_eid):
+            idxs = np.array([j for j, b in enumerate(aero.boxes)
+                             if b.caero_eid == card.caero_eid])
+            cp   = np.asarray(card.data, dtype=float)
+            area = np.array([aero.boxes[j].area for j in idxs])
+            nz   = n_z_all[idxs]
+            xfp  = np.array([aero.boxes[j].force_point[0] for j in idxs])
+            surfaces[card.caero_eid] = {
+                'FZ_Q':     float((cp * area * nz).sum()),
+                'MY_Q':     float(-(cp * area * nz * (xfp - x_ref)).sum()),
+                'FZ_Q_VLM': float((cp_flat[idxs] * area * nz).sum()),
+            }
+        chordcp_echo = {
+            'alpha_ref':  chordcp_alpha_ref,
+            'data_machs': sorted({c.mach for c in bulk.chordcps.values() if c.mach}),
+            'surfaces':   surfaces,
+        }
 
     # ------------------------------------------------------------------ #
     # Build D_jx and Q_ax on the g-set
@@ -1662,6 +1710,21 @@ def run_sol144_trim(
 
     # Full delta_all vector (ordered by all_labels)
     delta_all = np.array([trim_vars.get(l, 0.0) for l in all_labels])
+
+    # KC7: the injected mean flow is only valid as a perturbation base near its
+    # reference AOA — warn when the trimmed AOA strays outside ~2 degrees of it.
+    _CHORDCP_ALPHA_TOL = 0.035  # rad
+    if chordcp_alpha_ref is not None and "ANGLEA" in trim_vars:
+        alpha_err = abs(trim_vars["ANGLEA"] - chordcp_alpha_ref)
+        if alpha_err > _CHORDCP_ALPHA_TOL:
+            warnings.warn(
+                f"run_sol144_trim: trimmed ANGLEA {trim_vars['ANGLEA']:.4f} rad is "
+                f"{alpha_err:.4f} rad from the CHORDCP reference AOA "
+                f"{chordcp_alpha_ref:.4f} rad (> {_CHORDCP_ALPHA_TOL} rad ≈ 2°); "
+                "the trim perturbs about the injected operating point and its "
+                "validity degrades with distance (KC7).",
+                UserWarning,
+            )
 
     # ------------------------------------------------------------------ #
     # Expand a-set displacement to full g-set via RBAR/RBE3 T matrix.
@@ -1881,4 +1944,5 @@ def run_sol144_trim(
         hinge_moments=hinge_moments,
         trim_mode=trim_mode,
         monitor_loads=monitor_loads,
+        chordcp_echo=chordcp_echo,
     )

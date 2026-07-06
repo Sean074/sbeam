@@ -573,6 +573,42 @@ $\alpha_\text{ref}$**, not about the inviscid flat-plate state — the correct w
 high-fidelity data end-to-end. The reference incidence must therefore travel with the
 correction data.
 
+**The `CHORDCP` equivalent-normalwash substitution (Step 54).** The baseline load enters
+every consumer of the assembled model through one object only: the baseline normalwash
+$w_g$, applied as $\Delta c_p = \left[A^{*}\right]^{-1} w_g$, where $\left[A^{*}\right]^{-1}$
+is the stored corrected operator (it already carries the $2/c$ circulation→pressure
+conversion of §2.4, the Göthert $1/\beta$ of §2.8, and any §3.1–3.3 correction). So the
+injected physical pressures $c_p^\text{inj}$, measured at $\alpha_\text{ref}$, are converted
+**once, at assembly**, into the equivalent baseline wash that reproduces them at the rigid
+injected operating point ($\delta_\text{ANGLEA}=\alpha_\text{ref}$, all other trim variables
+zero, no deformation):
+
+$$
+\left[A^{*}\right]^{-1}\!\left( D_\alpha\,\alpha_\text{ref} + w_g^\text{eff} \right)
+  = c_p^\text{inj}
+\quad\Longrightarrow\quad
+w_g^\text{eff} = \left[A^{*}\right]^{+} c_p^\text{inj} - D_\alpha\,\alpha_\text{ref}
+              = \left[A^{*}\right]^{+} c_p^\text{inj} + n_z\,\alpha_\text{ref},
+\tag{13'}
+$$
+
+since the ANGLEA normalwash column is $D_\alpha = -n_z$ (§2.4). Three remarks:
+
+1. $\left[A^{*}\right]^{+}$ is the **min-norm pseudo-inverse solve** restricted to the VLM
+   lifting-surface block: WT1/WT2 corrections can zero rows of the operator (target ratio 0),
+   and a nonzero injected $c_p$ on such a *dead row* is unrepresentable — sbeam raises on the
+   residual $\lVert A^{*}\,w_g^\text{eff,0} - c_p^\text{inj}\rVert$ rather than losing load
+   silently. Decoupled strip panels (§3.7) keep their own $w_g$; their operator block is
+   diagonal with zero coupling, so the restriction is exact.
+2. The $-D_\alpha\,\alpha_\text{ref}$ term re-references the injection to $\alpha = 0$: the
+   trim of §5.3 then solves for the **absolute** ANGLEA, and injecting the program's own mean
+   flow at any $\alpha_\text{ref}$ reproduces the uninjected trim identically (the Step 54
+   identity gate).
+3. Because the *same* corrected operator maps both the baseline and the trim-variable
+   perturbations, the injected mean flow composes consistently with §3.1–3.3 corrections:
+   the corrections keep governing the perturbation slopes, the injection fixes the operating
+   point.
+
 ### 3.5 Section force *and* moment from a section line ($W_{2GJ}+W_{T2}$ synthesis)
 
 Often the available data is not a $c_p$ map but a **section line**: per span strip the four

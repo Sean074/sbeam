@@ -1,5 +1,6 @@
 """NASTRAN-style .f06 output writer for SOL 101 and SOL 103 results."""
 
+import math
 from datetime import datetime
 
 import numpy as np
@@ -358,6 +359,34 @@ def _build_f06_sol144_text(
         kind = "PRESCRIBED" if label.upper() in prescribed else "FREE"
         lines.append(f"      {label:<12}    {kind:<12}  {_fmt(result.trim_vars[label])}")
     lines.append("")
+
+    # ---- INJECTED OPERATING POINT (CHORDCP, Step 54) ----
+    if result.chordcp_echo:
+        echo = result.chordcp_echo
+        a_rad = echo['alpha_ref']
+        lines.append("                          I N J E C T E D   O P E R A T I N G   P O I N T   (CHORDCP)")
+        lines.append("")
+        mach_str = (", ".join(f"{m:.4f}" for m in echo['data_machs'])
+                    if echo['data_machs'] else "NOT STATED")
+        lines.append(
+            f"      ALPHREF = {a_rad:.6f} RAD ({math.degrees(a_rad):.4f} DEG)"
+            f"     DATA MACH = {mach_str}"
+        )
+        lines.append("")
+        lines.append("      CAERO1          FZ/Q INJECTED    MY/Q INJECTED   FZ/Q VLM FLAT-PLATE")
+        tot_fz = tot_my = tot_vlm = 0.0
+        for eid in sorted(echo['surfaces']):
+            s = echo['surfaces'][eid]
+            tot_fz  += s['FZ_Q']
+            tot_my  += s['MY_Q']
+            tot_vlm += s['FZ_Q_VLM']
+            lines.append(
+                f"      {eid:<12}  {_fmt(s['FZ_Q'])}  {_fmt(s['MY_Q'])}  {_fmt(s['FZ_Q_VLM'])}"
+            )
+        lines.append(
+            f"      {'TOTAL':<12}  {_fmt(tot_fz)}  {_fmt(tot_my)}  {_fmt(tot_vlm)}"
+        )
+        lines.append("")
 
     # ---- STABILITY & CONTROL DERIVATIVES (rigid + restrained + unrestrained) ----
     unrest = result.unrestrained_derivs or {}
