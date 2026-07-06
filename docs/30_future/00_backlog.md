@@ -458,6 +458,31 @@ the Phase 1 monitor data model. Together these complete the dynamic loads proces
 
 ## Tier 4 — Lower priority / opportunistic
 
+### Quasi-steady rate aerodynamics — yaw-rate wing term (small)
+
+**Strategic note:** the quasi-steady rate-aero path (`build_djx` rate columns) is to remain a
+**fully functional, supported option** even after the DLM (Phase D) lands — it is the cheap
+maneuver-loads method and must be complete in its own right, not a stopgap.
+
+**Gap:** the theory (`docs/20_theory/01_aeroelastics_theory.md` §7.2, Eq. 28) gives yaw rate *two*
+effects: the fin sidewash Δβ(x) = r(x−x_ref)/V∞ **and** the spanwise dynamic-pressure asymmetry
+ΔU(y) = −r·y on the wing (the advancing wing sees higher q∞). `build_djx`
+(`sbeam/aero/integration.py`, `YAW` column) implements only the fin sidewash — the column vanishes
+on horizontal panels, so the wing contribution to C_nr and the cross-derivative C_lr are missing.
+
+- **Scope:** add the wing ΔU term to the `YAW` column. Note it is a *dynamic-pressure* (edgewise
+  velocity) perturbation, not a normalwash — for the linear VLM it enters as an equivalent
+  incidence increment Δw = −(2/bref)·y·(local lift-slope proxy) or, more rigorously, as a per-box
+  freestream scaling of the steady loading; pick and document one formulation. Feeds SOL 144 trim
+  (C_nr, C_lr) and the Phase G0 transient solver (which consumes the same column) unchanged.
+- **Related known gap (same completeness aim):** the Phase G0 transient RHS has no elastic-velocity
+  downwash ẇ/V term (`maneuver_qs.py` `w_struct` is displacement-slope only) — aerodynamic damping
+  of the flexible modes is absent; covered by the G0-d Level 2–4 follow-ons.
+- **Docs:** update §7.2/Eq. 28 note and `05a_aero_vlm.md` card/column table when implemented.
+- **Test/acceptance:** full-span wing-only model — yaw-rate column currently produces zero load;
+  after the change, a nonzero C_nr (drag-asymmetry sign) and C_lr consistent with strip-theory
+  estimates; fin-only C_nr unchanged.
+
 ### Body fence / no-through-flow boundary condition via image vortices (small, opportunistic)
 
 The complement to the decoupled strip (A10). A strip body carries the body's *load* but is
