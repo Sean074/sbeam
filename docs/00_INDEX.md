@@ -41,7 +41,7 @@ are the day-to-day references; higher numbers are planning and historical record
 | File | Scope |
 |------|-------|
 | [`00_backlog.md`](30_future/00_backlog.md) | **Authoritative backlog** — priority-ordered open work: strategic aim, design-review verdicts, Tier 1 (SOL 144 production process incl. the Phase G0 plan), Tier 2 (infrastructure), Tier 3 (SOL 145 + DLM), Tier 4 (lower priority) |
-| [`01_static_aero_plan.md`](30_future/01_static_aero_plan.md) | Static aeroelasticity development plan (Phases A–C closed; pending prune — backlog housekeeping H1) |
+| [`01_static_aero_plan.md`](30_future/01_static_aero_plan.md) | Static-aero architecture reference (Phases A–C complete): layer diagram, matrix nomenclature, delivered-step map, references, validation-case index |
 | [`designs/amode_card.md`](30_future/designs/amode_card.md) | AMODE assumed-mode card — design proposal |
 | [`designs/rbmref_card.md`](30_future/designs/rbmref_card.md) | RBMREF rigid-body-mode reference card — design proposal |
 | [`designs/spline9_hermite_beam_spline.md`](30_future/designs/spline9_hermite_beam_spline.md) | SPLINE9 FE-consistent Hermite beam spline (sbeam extension) — design proposal |

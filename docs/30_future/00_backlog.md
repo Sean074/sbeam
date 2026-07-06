@@ -47,7 +47,7 @@ Verdicts:
 
 | Document | Verdict | Notes |
 |----------|---------|-------|
-| `01_static_aero_plan.md` | **Prune** (housekeeping H1) | Phases A–C (Steps 39–58) all closed but never removed per its own self-removal rule; only the Phase D/E/F/G0/G placeholders are live. Strip the closed bodies; the placeholders are superseded in detail by `designs/dlm_rfa_flutter_gust.md` and the Phase G0 plan below. |
+| `01_static_aero_plan.md` | **Pruned** (H1, done 2026-07-05) | Phases A–C (Steps 39–58) were all closed but never removed per its own self-removal rule. Now a compact architecture/reference doc: layer diagram, matrix nomenclature, delivered-step map, references, V-case index; the Phase D/E/F/G placeholders retired in favour of `designs/dlm_rfa_flutter_gust.md` and this backlog. |
 | `02_static_aero_zaero_review.md` | **Archived** (done, this review) | All 8 ranked goals were folded into Steps 39–58, all closed. Moved to `docs/40_history/archive/`. |
 | `designs/matrix_gaf_export.md` | **Viable — schedule (P8)** | Highest-viability aero design: new code over data already computed; no new physics. Its AE4 prerequisite is **stale** — AE4/spline kinematics closed with AC7 (2026-07-05, NASTRAN infinite-beam SPLINE2, rigid-body-exact). Its `reduce_to_aset` §6.1 is now owned by Step 59. |
 | `designs/matrix_reuse_store.md` | **Viable — subordinate (P12); Phase 0 deleted** | Rigorous cache-boundary analysis, but its Phase 0 ("build the SOL 144 production dispatch + f06 writer") is **stale** — that surface shipped with Step 56/AE10 and AC5. Re-scope to Phases 1–3 only; schedule when envelope sweeps make caching pay. |
@@ -71,14 +71,12 @@ Assigned owners — later features **reuse, never re-extract**:
 
 ### Housekeeping (doc hygiene)
 
-- **H1 — prune `01_static_aero_plan.md`:** remove the closed Step 39–58 bodies (duplicated
-  in `40_history`) per the plan's own self-removal rule; keep the architecture sections and
-  retire the Phase D/E/F/G placeholders in favour of the design docs + this backlog.
-- **H2 — DONE (2026-07-05):** `02_static_aero_zaero_review.md` archived to
-  `docs/40_history/archive/` (fully actioned); INDEX updated.
 - **H3 — stale-prerequisite annotations:** when P8/P10 start, update
   `matrix_gaf_export.md`/`dlm_rfa_flutter_gust.md` AE4 gates (closed by AC7) and
   `matrix_reuse_store.md` Phase 0 (delivered by Step 56/AC5).
+
+(H1 — prune `01_static_aero_plan.md` — and H2 — archive the ZAERO review — closed
+2026-07-05; see `docs/40_history/00_completed_development.md` and CHANGELOG.)
 
 ---
 

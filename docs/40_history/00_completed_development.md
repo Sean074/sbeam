@@ -4453,3 +4453,53 @@ injected point equal the direct Cp·area sums to 1e-9. Plus toy-operator unit te
 (strip wash untouched, VLM replaced), mirror rejection, and the f06 echo block; parser
 round-trip tests in `tests/parser/test_aero.py`. No-CHORDCP decks are bit-identical
 (injection branch is a no-op). Full suite 1104+ passed / 6 xfailed.
+
+---
+
+### Documentation — critical design review of `30_future` + backlog restructure + H1/H2 housekeeping ✅ COMPLETE (2026-07-05)
+
+**Objective:** Review every document and design proposal in `docs/30_future/`, assess
+viability, and restructure `00_backlog.md` into a priority-ordered plan toward the
+strategic aim: a production-like aeroelastic process for different maneuvers and payload
+conditions — SOL 144 developed to early-design sufficiency first, then SOL 145 + DLM.
+
+**Deliverables:**
+- **`docs/30_future/00_backlog.md` rewritten** as a priority-ordered plan: strategic-aim
+  statement; P1–P12 priority table across four tiers (Tier 1 SOL 144 production process =
+  Steps 59–63 Phase G0 plan + monitor section cuts + viewer authoring; Tier 2 GAF export /
+  matrix reuse / SPLINE9 study; Tier 3 AMODE + DLM/SOL 145/SOL 146; Tier 4 lower priority);
+  recorded design-review verdicts for all six `designs/*` proposals; single-owner
+  assignments for infrastructure claimed by multiple designs (`reduce_to_aset` → Step 59;
+  rigid-basis builder → Step 61, RBMREF folded in; MKAERO1/export bundle →
+  `matrix_gaf_export`; SOL 144 dispatch → already exists, Step 56/AC5).
+- **Key review findings:** `MASSSET` pulled forward to Step 60 (its static half delivers
+  payload sweeps with no modal work); stale prerequisites flagged — the AE4 spline gate in
+  `matrix_gaf_export.md`/`dlm_rfa_flutter_gust.md` closed with AC7, and `matrix_reuse_store`
+  Phase 0 (SOL 144 production dispatch) already delivered; RBMREF's `B_target` and the G0
+  plan's `Φ_r` identified as the same object (previously unmanaged duplication); SOL 108–112
+  noted as largely superseded for aero purposes by the G0 solvers + SOL 146; SPLINE9 held to
+  its own go/no-go study; G0-d demoted to opportunistic (DLM supersedes), G0-e deferred with
+  Phase G.
+- **Closed-item summaries removed from the backlog** (AC1–AC8, Phase G0 increment 1,
+  monitor Phase 1, Steps 50–58) — verified beforehand that every one has a full entry in
+  this file; the backlog now contains open work only.
+- **H2 — `02_static_aero_zaero_review.md` archived** to `docs/40_history/archive/`: all 8
+  ranked goals had been folded into Steps 39–58 (see the mapping appendix it shipped with),
+  all closed — fully actioned review artifact.
+- **H1 — `01_static_aero_plan.md` pruned** per its own self-removal rule: the closed
+  Step 39–58 bodies (duplicated here) replaced by a one-line delivered-step map; the
+  Phase D/E/F/G0/G placeholders retired in favour of `designs/dlm_rfa_flutter_gust.md` and
+  the backlog. Retained as a compact architecture reference: layer diagram, matrix
+  nomenclature (as-built module map), references, validation-case index (V-A1…V-C6).
+- **`docs/00_INDEX.md`** updated for the moved/re-scoped documents; **`CHANGELOG.md`**
+  `[Unreleased]` Documentation entry added.
+
+**Test/Acceptance:** documentation-only change — no code touched; backlog contains open
+items only (spot-check: no `✅`/CLOSED step bodies remain); all removed summaries verified
+present in this file before deletion; INDEX links resolve.
+
+**Key decisions:** the backlog is the single forward plan (the static-aero plan no longer
+carries open steps); design proposals keep their own files but their scheduling/verdicts
+live in the backlog; housekeeping H3 (stale-prerequisite annotations inside the design
+docs) deliberately left open until P8/P10 start, so the docs are corrected when actually
+picked up.

@@ -29,6 +29,12 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
   `docs/40_history/00_completed_development.md`.
 - `docs/30_future/02_static_aero_zaero_review.md` archived to `docs/40_history/archive/`
   (all 8 goals actioned via now-closed steps); `docs/00_INDEX.md` updated.
+- **H1 (2026-07-05):** `docs/30_future/01_static_aero_plan.md` pruned per its own
+  self-removal rule — the closed Step 39–58 bodies (duplicated in `40_history`) replaced by
+  a one-line delivered-step map, and the Phase D/E/F/G0/G placeholders retired in favour of
+  `designs/dlm_rfa_flutter_gust.md` + the backlog. Retained as a compact architecture
+  reference (layer diagram, matrix nomenclature, as-built module map, references,
+  validation-case index).
 
 ### Fixed
 
