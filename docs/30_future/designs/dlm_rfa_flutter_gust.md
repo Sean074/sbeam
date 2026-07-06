@@ -4,7 +4,7 @@
 **Target release:** six sub-phases D1–D6 (see §2); D1–D3 deliver NASTRAN-style flutter, D4–D5 deliver RFA and gust loads, D6 is enhancements.
 **Owner:** Sean O'Meara
 **Reviewer:** —
-**Last updated:** 2026-06-11
+**Last updated:** 2026-07-05
 **Related:** `docs/30_future/designs/matrix_gaf_export.md` (MKAERO1 card, per-Mach GAF loop, export bundle — this design extends it to k ≠ 0), `docs/10_standard/05_aeroelastics.md` (Phase A–C architecture), `docs/20_theory/01_aeroelastics_theory.md` (steady AIC/GAF derivation), backlog defects AE4/AE6 (spline correctness — hard prerequisites).
 
 This document is the design proposal for sbeam Phase D: a Doublet Lattice Method (DLM) unsteady aerodynamic module, generation of complex generalized aerodynamic force (GAF) matrices `Q_hh(M, k)` on a fixed SOL 103 modal basis with Mach-matched AIC corrections, a NASTRAN-style SOL 145 flutter solution (PK primary, KE secondary), Rational Function Approximation (RFA, Roger form) with aeroelastic state-space assembly, and a SOL 146 dynamic aeroelastic response solution for discrete (1-cosine) gusts and continuous turbulence (Von Kármán PSD, Ā/N₀ outputs).
@@ -17,6 +17,7 @@ Sources behind every formula in this document (page references inline):
 - **[Z]** ZAERO 9.2 Theoretical Manual, 3rd ed. (RFA §8, g-method §7, gust §10–11, AIC correction §4.3).
 - **[P&G]** Pitt & Goodman, AIAA 87-0882 (AIC correction-factor practice).
 - **[CR]** NASA CR-172232, Chao & Lan 1983 (gust downwash convention, Sears benchmark tables, Padé/Küssner fits).
+- **[PA]** DLR PanelAero `DLM.py` (BSD-3-Clause, copy in `.refs/PanelAero_DLM.py`) — executable reference implementation of the full nonplanar kernel with per-equation citations to Rodden 1971/1972/1998; see §15.
 
 ---
 
@@ -46,7 +47,7 @@ is already implemented end-to-end for real k = 0 matrices. Phase D replaces exac
 
 - DLM is the **k = 0-consistent extension of the VLM sbeam already has**: a constant-pressure doublet line at the box ¼-chord is identical to a horseshoe vortex at k = 0 [AAUG p.17, 19], so the production decomposition `D(k) = D_VLM + ΔD_osc(k)` (§5.4) anchors the unsteady method to the existing validated, corrected steady solution to machine precision.
 - It is the method NASTRAN SOL 145/146 uses subsonically, so card semantics, box-sizing rules, and benchmark decks (HA145B, HA146A) carry over directly.
-- The complete kernel mathematics, including the Laschka coefficients and closed-form spanwise integrals, is in [BLAIR] with a reference implementation and a numeric benchmark — implementation risk is bounded.
+- The complete kernel mathematics, including the Laschka coefficients and closed-form spanwise integrals, is in [BLAIR] with a reference implementation and a numeric benchmark; the full nonplanar kernel (T1/T2, I2, regularization branches) is additionally available as an executable, NASTRAN-validated open-source reference [PA] — implementation risk is bounded.
 
 ---
 
@@ -232,7 +233,7 @@ K2 = 3I2 + (ik1 M² r1²/R̄²)·e^{−ik1u1}/(1+u1²)^{1/2}
      + (M r1/R̄)·[(1+u1²)(β²r1²/R̄²) + 2 + M r1 u1/R̄]·e^{−ik1u1}/(1+u1²)^{3/2}
 ```
 
-`γs, γr` = sending/receiving dihedral angles (general T1/T2 are the standard Landahl/Rodden forms — Blair prints only the planar specialization; **verify the nonplanar factors against Rodden-Giesing-Kalman AFFDL-TR-71-5 during implementation** — flagged research gap). Planar surfaces need only K1 (T2 → 0 in the z0 → 0 limit) [BLAIR p.87] — D1 implements K1 first, K2/T2 in the same sub-phase behind the dihedral test gate (V-D1-6).
+`γs, γr` = sending/receiving dihedral angles (general T1/T2 are the standard Landahl/Rodden forms — Blair prints only the planar specialization). **Research gap closed (2026-07-05):** the nonplanar factors are verified against [PA], which implements K1/K2 in the identical Landahl form (Rodden 1971 eqs 7+8), T1 = cos(γ_sr) (eq 5), and T2 in the r1²-scaled form of Rodden 1971 eq 21a, with the r1 = 0 on-axis limits (K1 = −2, K2 = +4 for x0 ≥ 0; both 0 for x0 < 0) and the analytic k = 0 kernels K10/K20 (eqs 15+16) used for the §5.4 steady subtraction. [PA] also documents Rodden's typographic traps (missing denominators/brackets in eqs 7, 8, 11) — consult its comments during implementation. Planar surfaces need only K1 (T2 → 0 in the z0 → 0 limit) [BLAIR p.87] — D1 implements K1 first, K2/T2 in the same sub-phase behind the dihedral test gate (V-D1-6/V-D1-7).
 
 ### 5.3 Kernel integrals I1, I2 — Laschka approximation [BLAIR pp.87–90]
 
@@ -258,7 +259,19 @@ For `u1 < 0` use the reflection identity [BLAIR eq. 275]:
 I1(u1,k1) = 2·Re[I1(0,k1)] − Re[I1(−u1,k1)] + i·Im[I1(−u1,k1)]
 ```
 
-`I2` (nonplanar only) by the analogous parts-reduction expressing 3I2 via I1 plus boundary terms — the closed form is in Rodden et al., not printed in [BLAIR]; flagged for verification alongside the T1/T2 factors (same gate V-D1-6). The Desmarais 12-term refinement of the exponential fit is a deferred nicety (D6).
+`I2` (nonplanar only) by the analogous parts-reduction — the closed form is not printed in [BLAIR] but is implemented in [PA] (`laschka_approximation`, Rodden 1971 eq A.6, with the same I0/J0 exponential sums):
+
+```
+3·I2 = [(2 + ik1·u1)·(1 − u1/(1+u1²)^{1/2}) − u1/(1+u1²)^{3/2} − ik1·I0 + k1²·J0]·e^{−ik1u1}
+```
+
+and the u1 < 0 reflection identity for I2 mirrors the I1 form (Rodden 1971 eq A.9, [PA] `get_integrals12`):
+
+```
+I2(u1,k1) = 2·Re[I2(0,k1)] − Re[I2(−u1,k1)] + i·Im[I2(−u1,k1)]
+```
+
+The Desmarais 12-term refinement of the exponential fit is a deferred nicety (D6); its coefficient table is also in [PA] (`desmarais_approximation`).
 
 ### 5.4 Steady anchoring — `D(k) = D_VLM + ΔD_osc(k)` [BLAIR p.102]
 
@@ -296,9 +309,9 @@ B2 = 2L/sin²Λ + (y/sin³Λ)·logT + (y²/sin²Λ)·F
 
 - **Λ → 0 (unswept line):** Blair's forms divide by sinΛ — implement the analytic limit `B0 = 2L/y²`, `B1 = 0`, `B2 = 2L³/(3y²)·3 → (2/3)L³/y²·…` (derive and unit-test the limit explicitly; switch at `|sinΛ| < 1e-6` with a continuity test across the switch).
 - **`y² = L²sin²Λ`** (receiving point laterally aligned with a sending-line endpoint): principal-value pole. With the standard lattice (collocation at strip mid-span) this occurs only across equal-width strips, where the pole term cancels pairwise between adjacent sending boxes sharing the endpoint — the assembler must compute strip-pair contributions together or regularize consistently (Rodden 1971 App. B treatment). Acceptance gate: V-D1-3.
-- **Nonplanar denominators** (`r1²`-form, dihedral): quartic denominator closed forms (log/atan) per Rodden-Giesing-Kalman — flagged with §5.2's verification gate.
+- **Nonplanar denominators** (`r1²`-form, dihedral): closed forms per Rodden 1971 eqs 40/41, implemented in [PA] `calc_Ajj` (parabolic branch) in local (ȳ, z̄, e) semiwidth coordinates, including the three-condition regularization NASTRAN uses — planar `|z̄|/e ≤ 0.001`, co-planar series expansion (eq 32/33, `|ratio| ≤ 0.3`), far-field arctan form (eq 31b) — with thresholds cross-checked against NASTRAN `idf1.f`/`idf2.f`. Verified reference available; same gate V-D1-6/V-D1-7.
 
-The quartic (Rodden 1998) numerator fit — five evaluation points, better for low-aspect boxes and high k — is a structured drop-in: the quadrature is isolated behind `_integrate_doublet_line(K̄_samples, geom) → complex`, parabolic in D1, quartic as D6 enhancement.
+The quartic (Rodden 1998) numerator fit — five evaluation points, better for low-aspect boxes and high k — is a structured drop-in: the quadrature is isolated behind `_integrate_doublet_line(K̄_samples, geom) → complex`, parabolic in D1, quartic as D6 enhancement. The complete quartic closed forms (Rodden 1998 eqs 15–34) are implemented in [PA] (`method='quartic'`), including a resolved discrepancy between Rodden 1998 eq 23 and Rodden 1972 eq 30b (the d1/d2 selector values — [PA]'s comment records the correct set).
 
 ### 5.6 Downwash operator — `D_jk = D¹ + ik·D²` [AAUG eq. 2-2]
 
@@ -310,9 +323,9 @@ w_j = D¹_jk·u_k + ik·D²_jk·u_k,   ik·D² ≡ (iω/V)·h_normal
 - `D²` = `(2/c̄)·h_n`, the **normal displacement at the ¾-chord collocation point**. The existing `g_disp` evaluates at the ¼-chord `force_point` (AE6, virtual-work-correct for forces) — D2 of the substantial derivative needs a *second* displacement evaluation at `colloc`. **New spline output `g_disp_colloc`** (same SPLINE2/ATTACH/SPLINE0 machinery, evaluation abscissa moved) listed as a D0 prerequisite. Force transfer continues to use `g_disp` at the ¼-chord (unchanged virtual-work pairing).
 - Gust baseline `w_g` (W2GJ) participates at k = 0 only (static incidence — not part of the oscillatory problem).
 
-### 5.7 Box-sizing rules (documented + warned, not enforced) [AAUG pp.106–107]
+### 5.7 Box-sizing rules (documented + warned, not enforced) [AAUG pp.106–107; RTM]
 
-- Box chord `Δx < 0.08·V/f` for the highest frequency of interest (≈ 12 boxes per minimum wavelength); ≥ 4 chordwise boxes minimum.
+- Box chord `Δx < 0.08·V/f` for the highest frequency of interest (≈ 12 boxes per minimum wavelength); ≥ 4 chordwise boxes minimum. **Note:** Rodden/Taylor/McIntosh [RTM] revise this to **50 boxes per minimum wavelength (`Δx < 0.02·V/f`)** based on N5KA/N5KQ convergence studies — the validator warns at the [AAUG] 12-box rule and *recommends* the [RTM] 50-box rule in the warning text for high-k work.
 - Box aspect ratio < 3 (≈ 1 desirable).
 - `mesh_caero1` gains a validator that, given the MKAERO1 k-list and AERO REFC, prints the implied max usable frequency per CAERO1 and warns when `k_max > c̄/(4·Δx_max)` (the [QRG MKAERO1] limit).
 
@@ -539,8 +552,8 @@ SORT2 frequency-response tables (DISP/VELO/ACCE, complex as real/imag), transien
 1. **Time-domain gust via RFA state space — hybrid method** [Z §10.5, eqs. 10.55–10.56]: RFA only `Q_hh`; generalized gust force computed exactly as `φᵀF_G(t) = (q̄/V)·IFFT[Q_hj(ik)·w_G(iω)]` and fed as exogenous forcing to the §8.2 state space. Avoids RFA-fitting the spiral-phased gust column entirely (the dominant error source [Z Fig. 10.3]); gust-lag RFA [Z 10.16–10.25] only if true state-space gust inputs are later needed for ASE.
 2. **g-method flutter** [Z §7.3, eqs. 7.15–7.32]: damping-perturbation `[ (V/b)²M p² + K − ½ρV²Q′(ik)·g − ½ρV²Q(ik) ]q = 0` with `Q′ = dQ/d(ik)` by central differencing of the tabulated GAFs; k-sweep, Im(g) = 0 crossings. Finds aerodynamic-lag roots PK misses (BAH divergence-as-lag-root case [Z p.7-14]).
 3. **Minimum-state RFA** (Karpel D→E→D iteration, modified for extra columns) — when state count matters.
-4. **Quartic spanwise quadrature** (Rodden 1998) behind the §5.5 integrator interface.
-5. **Desmarais 12-term kernel-integral fit.**
+4. **Quartic spanwise quadrature** (Rodden 1998) behind the §5.5 integrator interface — closed forms in [PA] `method='quartic'` (eqs 15–34 incl. the eq-23 erratum); per [RTM], the payoff is box AR ≳ 3 and damping accuracy.
+5. **Desmarais 12-term kernel-integral fit** — coefficient table in [PA] `desmarais_approximation`.
 6. **Viewer**: flutter-mode animation at crossings, gust time-history animation, PSD panel.
 
 ---
@@ -588,7 +601,8 @@ Closed-form-first house style. **Bold** gates are load-bearing.
 | V-D1-3 | D1 | Pole/limit branches: unswept line (Λ = 0), equal-width-strip endpoint alignment, continuity across the sinΛ switch | finite, continuous, converged vs refined lattice | 1e-6 cont. |
 | V-D1-4 | D1 | Theodorsen 2-D limit: AR ≥ 20 rectangular wing, M ≈ 0, plunge & pitch at k = 0.1/0.3/0.5/1.0; mid-span section lift vs `C(k)` (scipy Hankel functions) | magnitude + phase of L(k) | 3 % |
 | V-D1-5 | D1 | Lattice convergence: V-D1-4 case, error vs NCHORD at fixed k; box-sizing warning fires when Δx rule violated | monotone convergence; warning text | — |
-| V-D1-6 | D1 | Nonplanar gate: two parallel planar surfaces vs single surface (interference sanity); dihedral wing symmetric/antisymmetric image consistency; T1/T2 verified against AFFDL-TR-71-5 forms | documented check + regression snapshot | snapshot |
+| V-D1-6 | D1 | Nonplanar gate: two parallel planar surfaces vs single surface (interference sanity); dihedral wing symmetric/antisymmetric image consistency; T1/T2 and I2 verified against the [PA] closed forms (Rodden 1971 eqs 21a, 40/41, A.6/A.9) | documented check + regression snapshot | snapshot |
+| **V-D1-7** | D1 | **PanelAero oracle**: full-matrix `build_ajj_dlm(M, k)` vs [PA] `calc_Ajj` (pip-installable, BSD-3) on (a) the Blair 3×3 lattice and (b) a dihedral/nonplanar case, several (M, k) pairs. Convention conversion required: [PA] uses k = ω/V (not ω·c̄/2V) and adds the steady VLM part separately — compare total `D_VLM + ΔD_osc` matrices, not intermediate terms | element-wise complex AIC match | 1e-6 rel |
 | **V-D2-1** | D2 | GAF k = 0 cross-check: `Q_hh(M, 0)` from the unsteady driver ≡ steady `Q_hh(M)` from the matrix_gaf_export driver (corrections on) | identical path ⇒ | 1e-12 rel |
 | V-D2-2 | D2 | Correction invariance: WKK-corrected `Q_hh(M, k)` at k = 0 reproduces corrected steady derivatives; corrected/uncorrected ratio at k > 0 equals the k = 0 ratio (multiplicative rule §6.2) | exact-by-construction checks | 1e-12 |
 | V-D2-3 | D2 | Basis-consistency trap: driver called with per-k re-solved modes must be impossible by API (Φ is an argument); test asserts single `solve_modes` call (mock counter) | structural | exact |
@@ -624,8 +638,8 @@ Closed-form-first house style. **Bold** gates are load-bearing.
 
 ### 13.2 Top correctness risks
 
-1. **Kernel/quadrature sign and branch errors** — the classic DLM failure mode. Mitigations: Blair benchmark with per-box Cp comparison (V-D1-2) catches global errors; Theodorsen limit (V-D1-4) catches phase-convention errors; the k = 0 anchoring (§5.4) eliminates the entire steady part as an error source.
-2. **Nonplanar T1/T2 + I2 not printed in available references** — flagged; verify against AFFDL-TR-71-5 (or pyNastran/NASTRAN cross-run) before enabling dihedral surfaces; planar-only is a shippable D1 milestone.
+1. **Kernel/quadrature sign and branch errors** — the classic DLM failure mode. Mitigations: Blair benchmark with per-box Cp comparison (V-D1-2) catches global errors; Theodorsen limit (V-D1-4) catches phase-convention errors; the k = 0 anchoring (§5.4) eliminates the entire steady part as an error source; the [PA] oracle (V-D1-7) provides an independent, NASTRAN-validated full-matrix comparison at arbitrary (M, k) — including the known sign trap that Rodden 1971 switched the signs of K1/K2 relative to Rodden 1968 ([PA] stays with the 1968 convention to keep the VLM steady part consistent; sbeam must make the same choice for §5.4 to hold).
+2. **Nonplanar T1/T2 + I2 closed forms** — ~~not printed in available references~~ **closed 2026-07-05**: [PA] implements all of them with per-equation Rodden citations and NASTRAN `idf1.f`/`idf2.f`/`incro.f` cross-check comments (§5.2, §5.3, §5.5); AFFDL-TR-71-5 no longer on the critical path. Planar-only remains a shippable D1 milestone; dihedral enablement gated by V-D1-6/V-D1-7.
 3. **`Qhh^I/k` at small k** in PK and in the special-linear interpolation — division hazard; the interpolation basis (§7.3) is built for it, and k = 0-exact data improves on NASTRAN's extrapolation, but unit tests must cover k_est below the smallest MKAERO1 k.
 4. **Mode tracking** (PK ordering, KE branch sorting, state-space V-sweep) — wrong pairing produces plausible-looking nonsense V-g plots. Three independent paths (PK, KE, RFA eigen) on the same models (V-D3-4, V-D4-3) are the cross-trap.
 5. **Fourier-method bookkeeping** (Δf/period/output-window, zero-outside-table, e^{±iωt} consistency) — V-D5-2's zero-aero round-trip isolates it from the aerodynamics.
@@ -672,7 +686,9 @@ Closed-form-first house style. **Bold** gates are load-bearing.
 - **[Z]** *ZAERO 9.2 Theoretical Manual*, 3rd ed. — flutter methods incl. g-method (Ch.7), Roger/min-state RFA + state space (Ch.8, eqs. 8.3–8.23), frequency-domain ASE validation strategy (§9.6), gust (Ch.10, eqs. 10.12–10.56), continuous turbulence (Ch.11, eqs. 11.3–11.20), AIC correction (§4.3).
 - **[P&G]** Pitt, D. M., Goodman, C. E., AIAA 87-0882 — k = 0-derived correction factors applied at all k (pp.510–511).
 - **[CR]** NASA CR-172232 — gust downwash convention (eqs. 2–19), Sears benchmark tables (Tables I/II, pp.27–28), Padé/Küssner indicial fits (§2.3–2.5).
-- To source externally during D3/D6 validation: Rodden, Giesing, Kalman AFFDL-TR-71-5 (nonplanar kernel closed forms); Rodden, Taylor, McIntosh 1998 (quartic refinement); NASA TM-100492/Yates (AGARD 445.6 data). Local library copies: `~/Documents/Library/Flutter/` and `~/Documents/Library/Software_Manuals/` (working copies in `.refs/`, gitignored).
+- **[PA]** Voß, A. (DLR-AE), *PanelAero* `DLM.py`, github.com/DLR-AE/PanelAero, BSD-3-Clause — executable reference implementation, copy in `.refs/PanelAero_DLM.py` (retrieved 2026-07-05). Contains: Landahl K1/K2 (Rodden 1971 eqs 7+8) with analytic k = 0 kernels K10/K20 (eqs 15+16) and r1 = 0 limits; T1/T2 (eqs 5, 21a); Laschka I1/I2 closed forms incl. u1 < 0 reflection for both (eqs A.1–A.9); planar/co-planar/far-field regularization branches with NASTRAN-matched thresholds (`idf1.f`/`idf2.f`/`incro.f` cross-check comments); parabolic (Rodden 1971 eqs 28–41) **and** quartic (Rodden 1998 eqs 15–34) quadrature; Desmarais and Watkins coefficient tables; Rodden-paper errata notes. Convention caveats: k = ω/V (not NASTRAN ω·c̄/2V); Rodden local (ȳ, z̄, e) semiwidth parameterization rather than Blair's B0/B1/B2 line-coordinate form — mathematically equivalent, so cross-check assembled AIC matrices, not intermediate terms.
+- **[RTM]** Rodden, W. P., Taylor, P. F., McIntosh, S. C., *Improvements to the Doublet-Lattice Method in MSC/NASTRAN* — N5KA/N5KQ convergence studies; revises chordwise box-sizing to 50 boxes per minimum wavelength (`Δx < 0.02·V/f`); quartic-vs-parabolic guidance (quartic matters for box AR ≳ 3 and damping estimates). Modeling-guidelines companion to the 1998 quartic paper — contains no kernel math. Local copy: `~/Documents/Library/Software_Manuals/IMPROVEMENTS-TO-DLM.pdf`.
+- To source externally during D3/D6 validation: NASA TM-100492/Yates (AGARD 445.6 data); optionally Rodden, Taylor, McIntosh, *Further Refinement of the Subsonic Doublet-Lattice Method*, J. Aircraft 35(5), 1998 (quartic derivation — the closed forms themselves are already in [PA]). AFFDL-TR-71-5 retired from the critical path (superseded by [PA], 2026-07-05). Local library copies: `~/Documents/Library/Flutter/` and `~/Documents/Library/Software_Manuals/` (working copies in `.refs/`, gitignored).
 - **In-project precedents:** `aero/vlm.py` (AIC assembly pattern + steady anchor), `aero/coupling.py` (GAF chain), `aero/corrections.py` (correction tiers), `solver/sol103.py` (modal basis), `docs/30_future/designs/matrix_gaf_export.md` (MKAERO1, Mach-tagged corrections, export bundle, basis-consistency rule).
 
 ---
@@ -681,7 +697,7 @@ Closed-form-first house style. **Bold** gates are load-bearing.
 
 Per sub-phase, in addition to the per-gate tolerances of §12:
 
-- **D1:** V-D1-1…5 pass (V-D1-6 may gate dihedral support separately); `build_ajj_dlm` documented in the theory manual with the §3 conventions block.
+- **D1:** V-D1-1…5 pass plus V-D1-7(a) (PanelAero oracle, planar lattice); V-D1-6/V-D1-7(b) may gate dihedral support separately; `build_ajj_dlm` documented in the theory manual with the §3 conventions block.
 - **D2:** V-D2-1…5 pass; export bundle from a sample deck contains complex QHH/QHJ per (M,k) with a manifest a consumer can act on without the BDF; corrections recorded per (M,k).
 - **D3:** V-D3-1…6 pass; the HA145B-style sample deck produces a NASTRAN-format FLUTTER SUMMARY and a documented flutter crossing in `05_aeroelastics.md`; SOL 145 dispatched from `main.py` with parity from AERO.SYMXZ.
 - **D4:** V-D4-1…3 pass; fit-quality report and state-space export documented; RFA flutter point agrees with PK within gate tolerance on both reference models.
