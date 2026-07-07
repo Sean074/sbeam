@@ -11,13 +11,11 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.parser.case_control import SubcaseControl
 from sbeam.assembly.stiffness import (
     assemble_global_stiffness,
-    get_spc_dofs,
-    apply_spcs,
     check_spc_enforced_displacements,
 )
 from sbeam.assembly.mass_matrix import assemble_global_mass
 from sbeam.assembly.load_vector import build_grid_index
-from sbeam.assembly.rbe3 import build_rbe3_transformation
+from sbeam.assembly.reduction import reduce_to_aset
 from sbeam.results.results import Sol103Result
 
 
@@ -167,39 +165,25 @@ def run_sol103(bulk: BulkData, subcase: SubcaseControl) -> Sol103Result:
     # trying to factorise it. Force the dense path in that case.
     force_dense = spc_sid is None
 
-    # RBE3 DOF transformation — eliminates dependent DOFs before SPC partitioning.
-    # Note: T is dense; T.T @ K_csr @ T produces a dense ndarray (NumPy @ semantics).
-    # solve_modes dispatches to the dense path for the resulting K.
-    T, dep_dofs, red_dofs = build_rbe3_transformation(bulk, grid_index)
-    if dep_dofs:
-        K = T.T @ K @ T
-        M = T.T @ M @ T
-        dep_set = set(dep_dofs)
-        red_map = {g: i for i, g in enumerate(red_dofs)}
-        spc_dofs_full = get_spc_dofs(bulk, spc_sid, grid_index)
-        spc_dofs = [red_map[d] for d in spc_dofs_full if d not in dep_set]
-        n_red = len(red_dofs)
-        K_free, _, free_dofs = apply_spcs(K, np.zeros(n_red), spc_dofs)
-        M_free = M[free_dofs, :][:, free_dofs]
-        freqs_hz, phi_free = solve_modes(K_free, M_free, eigrl, force_dense=force_dense)
-        n_modes = len(freqs_hz)
-        gen_masses = np.array([
-            float((M_free @ phi_free[:, i]) @ phi_free[:, i]) for i in range(n_modes)
-        ])
-        phi_red = np.zeros((n_red, n_modes))
-        phi_red[free_dofs, :] = phi_free
-        full_phi = T @ phi_red
+    # RBE3/RBAR-then-SPC reduction to the free a-set (shared path, Step 59).
+    # With dependent DOFs T.T @ K_csr @ T densifies (NumPy @ semantics) and
+    # solve_modes dispatches to the dense path; without them K stays sparse.
+    red = reduce_to_aset(bulk, grid_index, spc_sid)
+    K_free = red.reduce_matrix(K)
+    M_free = red.reduce_matrix(M)
+    freqs_hz, phi_free = solve_modes(K_free, M_free, eigrl, force_dense=force_dense)
+    n_modes = len(freqs_hz)
+    gen_masses = np.array([
+        float((M_free @ phi_free[:, i]) @ phi_free[:, i]) for i in range(n_modes)
+    ])
+    if red.dep_dofs:
+        # Expand through T so RBAR/RBE3 slave DOFs follow their masters.
+        phi_red = np.zeros((red.n_red, n_modes))
+        phi_red[red.free_local, :] = phi_free
+        full_phi = red.T @ phi_red
     else:
-        spc_dofs = get_spc_dofs(bulk, spc_sid, grid_index)
-        K_free, _, free_dofs = apply_spcs(K, np.zeros(n_dofs), spc_dofs)
-        M_free = M[free_dofs, :][:, free_dofs]
-        freqs_hz, phi_free = solve_modes(K_free, M_free, eigrl, force_dense=force_dense)
-        n_modes = len(freqs_hz)
-        gen_masses = np.array([
-            float((M_free @ phi_free[:, i]) @ phi_free[:, i]) for i in range(n_modes)
-        ])
         full_phi = np.zeros((n_dofs, n_modes))
-        full_phi[free_dofs, :] = phi_free
+        full_phi[red.free_dofs, :] = phi_free
 
     eigenvalues = (2.0 * np.pi * freqs_hz) ** 2
 
@@ -208,4 +192,8 @@ def run_sol103(bulk: BulkData, subcase: SubcaseControl) -> Sol103Result:
         mode_shapes=full_phi,
         eigenvalues=eigenvalues,
         generalized_masses=gen_masses,
+        phi_free=phi_free,
+        free_dofs=red.free_dofs,
+        K_free=K_free,
+        M_free=M_free,
     )

@@ -50,16 +50,21 @@ CONM2 concentrated masses contribute a full 6×6 symmetric block to the global m
 
 RBE3 elements are applied as a DOF transformation (same approach as SOL 101 — see `docs/10_standard/03_static_analysis.md`).
 
-**Insertion point in `run_sol103`** — after full assembly, before SPC partitioning:
+Since Step 59 the RBE3-then-SPC reduction is the **shared a-set path**
+`sbeam/assembly/reduction.py:reduce_to_aset(bulk, grid_index, spc_sid)`, used
+identically by SOL 103, SOL 144, and the Phase G0 maneuver solver. In
+`run_sol103` — after full assembly:
 
 ```
-K_red = Tᵀ K T
-M_red = Tᵀ M T
-spc_dofs mapped from full-space → reduced-space indices
-K_free, M_free partitioned from K_red, M_red
-phi_free solved (reduced space)
-phi_full = T @ phi_red   (phi_red is phi_free expanded to n_red DOFs)
+red    = reduce_to_aset(bulk, grid_index, spc_sid)   # T + a-set partition
+K_free = red.reduce_matrix(K)    # Tᵀ K T then SPC partition (RBE3 present)
+M_free = red.reduce_matrix(M)    # sparse K/M stay sparse when no RBE3
+phi_free solved (a-set)
+phi_full = T @ phi_red   (phi_red is phi_free scattered to n_red DOFs)
 ```
+
+`reduce_matrix` preserves input sparsity when no dependent DOFs exist, so the
+sparse `eigsh` shift-invert path for large SPC'd models is unchanged.
 
 Mode shapes in `full_phi` thus include the interpolated displacement at the dependent (REFGRID) grids.
 
@@ -245,3 +250,18 @@ def normalise_modes(
 ) -> np.ndarray:
     ...
 ```
+
+### `Sol103Result` a-set retention (Step 59)
+
+Besides the primary outputs (`frequencies_hz`, `mode_shapes`, `eigenvalues`,
+`generalized_masses`), `run_sol103` populates four optional a-set fields
+(default `None`, so hand-built results stay valid):
+
+| Field | Contents |
+|-------|----------|
+| `phi_free` | (n_a, n_modes) a-set mode shapes (pre-expansion) |
+| `free_dofs` | a-set indices into the g-set |
+| `K_free` / `M_free` | (n_a, n_a) a-set stiffness / mass (dense, or sparse CSR when no rigid elements) |
+
+These are consumed downstream by the Phase G0 modal basis (Step 61) and the
+`matrix_gaf_export` GAF loop without re-running the reduction.

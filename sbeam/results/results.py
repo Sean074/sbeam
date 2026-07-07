@@ -73,6 +73,13 @@ class Sol103Result:
     mode_shapes: np.ndarray         # shape (n_dofs, n_modes) — full global DOF mode shapes
     eigenvalues: np.ndarray         # shape (n_modes,) — raw eigenvalues ω² [rad²/s²]
     generalized_masses: np.ndarray  # shape (n_modes,) — phi_i^T M_free phi_i per mode
+    # A-set eigendata retained for downstream consumers (Step 59: GAF export,
+    # Step 61 modal basis). Populated by run_sol103; default None so older
+    # constructors stay valid.
+    phi_free: Optional[np.ndarray] = None   # (n_a, n_modes) a-set mode shapes
+    free_dofs: Optional[list] = None        # a-set indices into the g-set
+    K_free: Optional[object] = None         # (n_a, n_a) a-set stiffness (dense or sparse CSR)
+    M_free: Optional[object] = None         # (n_a, n_a) a-set mass (dense or sparse CSR)
 
 
 @dataclass

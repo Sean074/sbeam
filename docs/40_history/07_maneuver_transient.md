@@ -2,7 +2,7 @@
 
 Part of the completed-development record (index: `00_completed_development.md`).
 Covers the DLM-free quasi-steady transient maneuver-loads capability (ZAERO MLOADS
-card set). Future Phase G0 steps (59-63: modal basis, MASSSET, free-flight) land here.
+card set). Future Phase G0 steps (60-63: MASSSET, modal basis, free-flight) land here.
 
 ---
 
@@ -72,3 +72,48 @@ acceleration is taken as exactly zero (the run starts at static equilibrium), so
 - Gravity stays folded into the URDD load factor (consistent with Step 53); the `MLDTRIM` Step 53
   trim is the steady-state initial condition.
 
+
+### Step 59 (P1) — Prerequisite refactor: shared a-set reduction + SOL 103 retention (behavior-identical) ✅ COMPLETE (2026-07-06)
+
+**Objective:** Eliminate the 4×-duplicated RBE3+SPC a-set reduction and retain a-set eigendata so
+every later Phase G0 step composes one code path. This is the `reduce_to_aset` refactor specified
+in `designs/matrix_gaf_export.md` §6.1 (and `matrix_reuse_store.md` §8.1) — landed here under the
+single-owner rule so all three features reuse it, never re-extract.
+
+**Deliverables:**
+- **`sbeam/assembly/reduction.py` (new):** `reduce_to_aset(bulk, grid_index, spc_sid) →
+  AsetReduction` dataclass `{T, dep_dofs, red_dofs, free_local, free_dofs}` with methods
+  `reduce_matrix` (square g-set → a-set; `dense=True` for the dense SOL 144 systems),
+  `reduce_rect` (rectangular column blocks: Q_ax, M_ax), `reduce_vector`, and `expand_to_g`
+  (absorbing `sol144._expand_to_g`, which now aliases the moved module-level function).
+  Extracted verbatim from `sol144._compute_aset_data` / `_build_qaa_aset`.
+- **Re-pointed consumers:** `sol103.run_sol103` (its two RBE3/no-RBE3 branches collapsed onto
+  the shared path), `sol144` (`_build_qaa_aset`, `run_sol144_trim`, `run_sol144_diverg`), and
+  `maneuver_qs._assemble_operators` (six hand-rolled reduce-then-index blocks replaced by the
+  dataclass methods). `sol144._compute_aset_data` kept as a thin tuple-returning wrapper for
+  existing importers.
+- **`Sol103Result`** gains optional `phi_free` (a-set mode shapes), `free_dofs` (g-set indices),
+  `K_free`, `M_free` (all default `None`), populated by `run_sol103` from values already in hand —
+  the retention consumed by Step 61's modal basis and the `matrix_gaf_export` GAF loop.
+
+**Test/Acceptance:**
+- Full suite passes unchanged (1104 → 1115 with the 11 new reduction tests).
+- Bit-identical pre/post refactor (modulo embedded run timestamps): SOL 103 f06
+  (`val_cantilever_modes`, `val_free_free_modes`, `beam_vib`), SOL 144 trim f06 + aero/maneuver/
+  monitor exports (`ha144a_fullspan_sbeam`), and the full `sample/ha144a_fullspan_mloads.bdf`
+  maneuver output set (f06, `.mldprnt.txt`, `.maneuver_qs_loads.bdf`, all load/monitor exports).
+- **`tests/assembly/test_reduction.py` (new, 11 tests):** `reduce_to_aset` products equal the old
+  `_compute_aset_data` logic (reproduced verbatim as the reference) on an RBE3+SPC model;
+  `reduce_matrix`/`reduce_vector`/`reduce_rect` match the old `_build_qaa_aset` reductions
+  exactly; identity-T path, `spc_sid=None` free-free path, and expand/scatter round-trip.
+
+**Key decisions:**
+- **`reduce_matrix` preserves input sparsity when no dependent DOFs exist** (matching the old
+  `apply_spcs` semantics) so SOL 103's sparse `eigsh` shift-invert path is untouched; SOL 144
+  callers pass `dense=True` to reproduce the old explicit `.toarray()` densification. This is the
+  one place the four duplicated code paths genuinely differed, and the reason a naive extraction
+  would not have been behavior-identical.
+- Operation order inside the reduction moved verbatim (no "cleanup" reordering of
+  `T.T @ A @ T` vs slicing) to keep float results bit-identical.
+- `sol101.py` also performs an RBE3+SPC reduction but was deliberately left out of scope
+  (not in the Step 59 re-point list; behavior-identical risk minimisation).

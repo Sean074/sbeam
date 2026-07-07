@@ -26,7 +26,7 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.parser.case_control import SubcaseControl
 from sbeam.assembly.stiffness import assemble_global_stiffness, get_spc_dofs
 from sbeam.assembly.load_vector import assemble_load_vector, build_grid_index
-from sbeam.assembly.rbe3 import build_rbe3_transformation
+from sbeam.assembly.reduction import reduce_to_aset, expand_to_g
 from sbeam.aero.aero_model import AeroModel, build_aero_model
 from sbeam.aero.coupling import build_qaa, build_fg, build_gaf
 from sbeam.aero.integration import build_djx
@@ -107,45 +107,17 @@ def _build_qaa_aset(
             "Call build_aero_model with a grid_index argument."
         )
 
-    n_g = 6 * len(grid_index)
-
     # --- g-set matrices ---
     Q_gg = build_qaa(aero, aero.g_disp, aero.g_slope)     # (n_g, n_g) dense
     K_gg = assemble_global_stiffness(bulk)                  # (n_g, n_g) sparse CSR
 
-    # --- RBE3 / RBAR transform (same as sol101) ---
-    T, dep_dofs, red_dofs = build_rbe3_transformation(bulk, grid_index)
-    if dep_dofs:
-        # T.T @ K_sparse @ T → dense ndarray (NumPy @ semantics, same as sol101 precedent)
-        K_red = (T.T @ K_gg @ T)
-        if hasattr(K_red, "toarray"):
-            K_red = K_red.toarray()
-        Q_red = T.T @ Q_gg @ T
-        f_red = T.T @ f_g_full if f_g_full is not None else None
-        dep_set = set(dep_dofs)
-        red_map = {g: i for i, g in enumerate(red_dofs)}
-        spc_dofs_full = get_spc_dofs(bulk, spc_sid, grid_index)
-        spc_dofs_local = [red_map[d] for d in spc_dofs_full if d not in dep_set]
-    else:
-        K_red = K_gg.toarray()      # convert sparse → dense once; Q_aa is dense so system is dense
-        Q_red = Q_gg
-        f_red = f_g_full.copy() if f_g_full is not None else None
-        red_dofs = list(range(n_g))
-        spc_dofs_full = get_spc_dofs(bulk, spc_sid, grid_index)
-        spc_dofs_local = spc_dofs_full
+    # --- RBE3/RBAR-then-SPC reduction (shared path, Step 59) ---
+    red = reduce_to_aset(bulk, grid_index, spc_sid)
+    K_aa = red.reduce_matrix(K_gg, dense=True)      # (n_a, n_a) dense system
+    Q_aa = red.reduce_matrix(Q_gg)                  # (n_a, n_a)
+    f_aa = red.reduce_vector(f_g_full) if f_g_full is not None else None
 
-    # --- SPC partition to a-set ---
-    constrained = set(spc_dofs_local)
-    free_local = [i for i in range(len(red_dofs)) if i not in constrained]
-
-    K_aa = K_red[np.ix_(free_local, free_local)]    # (n_a, n_a)
-    Q_aa = Q_red[np.ix_(free_local, free_local)]    # (n_a, n_a)
-    f_aa = f_red[free_local] if f_red is not None else None
-
-    # Map local a-set indices → g-set DOF indices for displacement scatter
-    free_dofs = [red_dofs[i] for i in free_local]
-
-    return Q_aa, K_aa, f_aa, free_dofs
+    return Q_aa, K_aa, f_aa, red.free_dofs
 
 
 def _solve_direct(
@@ -359,26 +331,11 @@ def run_aeroelastic_static(
 def _compute_aset_data(bulk: BulkData, grid_index: dict, spc_sid) -> tuple:
     """Compute a-set partition data (T, dep_dofs, red_dofs, free_local, free_dofs).
 
-    Identical reduction logic to _build_qaa_aset; factored out so run_sol144_trim
-    can reuse the partition for Q_ax and the inertial load vector without
-    duplicating the RBE3+SPC reduction.
+    Thin tuple-returning wrapper over assembly.reduction.reduce_to_aset,
+    retained by name for existing importers (Step 59).
     """
-    n_g = 6 * len(grid_index)
-    T, dep_dofs, red_dofs = build_rbe3_transformation(bulk, grid_index)
-    if dep_dofs:
-        dep_set = set(dep_dofs)
-        red_map = {g: i for i, g in enumerate(red_dofs)}
-        spc_dofs_full = get_spc_dofs(bulk, spc_sid, grid_index)
-        spc_dofs_local = [red_map[d] for d in spc_dofs_full if d not in dep_set]
-    else:
-        red_dofs = list(range(n_g))
-        spc_dofs_full = get_spc_dofs(bulk, spc_sid, grid_index)
-        spc_dofs_local = spc_dofs_full
-
-    constrained = set(spc_dofs_local)
-    free_local = [i for i in range(len(red_dofs)) if i not in constrained]
-    free_dofs = [red_dofs[i] for i in free_local]
-    return T, dep_dofs, red_dofs, free_local, free_dofs
+    r = reduce_to_aset(bulk, grid_index, spc_sid)
+    return r.T, r.dep_dofs, r.red_dofs, r.free_local, r.free_dofs
 
 
 def _urdd_rcsid_to_basic(
@@ -516,32 +473,8 @@ def _build_inertial_cols(
     return M
 
 
-def _expand_to_g(
-    u_a: np.ndarray,
-    T: np.ndarray,
-    free_local: list,
-    n_red: int,
-) -> np.ndarray:
-    """Expand an a-set displacement vector to the full g-set via the RBE3/RBAR T matrix.
-
-    The trim solver works on the a-set (post-SPC, post-RBAR). When the result is
-    fed back into `aero.g_slope @ u` or `_compute_aero_forces`, the RBAR slave
-    DOFs must move with their masters; a bare index scatter leaves the slaves at
-    zero and corrupts the structural normalwash on every RBAR-attached grid.
-
-    Args:
-        u_a:        (n_a,) a-set displacement.
-        T:          (n_g, n_red) RBE3/RBAR transformation from build_rbe3_transformation.
-        free_local: list of a-set indices in the reduced set (length n_a).
-        n_red:     number of reduced-set DOFs (T's column count).
-
-    Returns:
-        (n_g,) full g-set displacement with RBAR slaves driven by their masters.
-    """
-    u_red = np.zeros(n_red)
-    for local_i, red_i in enumerate(free_local):
-        u_red[red_i] = u_a[local_i]
-    return T @ u_red
+# Moved to assembly.reduction (Step 59); alias retained for existing importers.
+_expand_to_g = expand_to_g
 
 
 def _get_suport_local(bulk: BulkData, free_dofs: list, grid_index: dict) -> list:
@@ -1376,19 +1309,12 @@ def run_sol144_diverg(
     # ------------------------------------------------------------------ #
     # Mach-independent structural reduction: a-set partition + K_aa + l-set.
     # ------------------------------------------------------------------ #
-    T, dep_dofs, red_dofs, free_local, free_dofs = _compute_aset_data(
-        bulk, grid_index, spc_sid
-    )
-    n_red = len(red_dofs)
+    red = reduce_to_aset(bulk, grid_index, spc_sid)
+    T, free_local, free_dofs = red.T, red.free_local, red.free_dofs
+    n_red = red.n_red
 
     K_gg = assemble_global_stiffness(bulk)
-    if dep_dofs:
-        K_red = T.T @ K_gg @ T
-        if hasattr(K_red, "toarray"):
-            K_red = K_red.toarray()
-    else:
-        K_red = K_gg.toarray()
-    K_aa = K_red[np.ix_(free_local, free_local)]
+    K_aa = red.reduce_matrix(K_gg, dense=True)
 
     # Restrained l-set: drop SUPORT DOFs (full a-set K_aa is singular for the
     # free-flight SUPORT model — same restraint the single-q path uses).
@@ -1403,8 +1329,7 @@ def run_sol144_diverg(
     for mach in machs:
         aero_m = aero_cache.get(mach)
         Q_gg = build_qaa(aero_m, aero_m.g_disp, aero_m.g_slope)
-        Q_red = T.T @ Q_gg @ T if dep_dofs else Q_gg
-        Q_aa = Q_red[np.ix_(free_local, free_local)]
+        Q_aa = red.reduce_matrix(Q_gg)
         Q_ll = Q_aa[np.ix_(l_idx, l_idx)]
 
         roots = []
@@ -1585,34 +1510,20 @@ def run_sol144_trim(
     # ------------------------------------------------------------------ #
     # A-set partition (SPC + RBE3 reduction)
     # ------------------------------------------------------------------ #
-    T, dep_dofs, red_dofs, free_local, free_dofs = _compute_aset_data(
-        bulk, grid_index, spc_sid
-    )
+    red = reduce_to_aset(bulk, grid_index, spc_sid)
+    T, free_local, free_dofs = red.T, red.free_local, red.free_dofs
+    red_dofs = red.red_dofs
 
     # Reduce Q_ax and structural stiffness to a-set
-    if dep_dofs:
-        Q_ax_red = T.T @ Q_ax_g
-    else:
-        Q_ax_red = Q_ax_g
-    Q_ax_a = Q_ax_red[np.ix_(free_local, list(range(len(all_labels))))]  # (n_a, n_labels)
+    Q_ax_a = red.reduce_rect(Q_ax_g)               # (n_a, n_labels)
 
     K_gg = assemble_global_stiffness(bulk)
-    if dep_dofs:
-        K_red = T.T @ K_gg @ T
-        if hasattr(K_red, "toarray"):
-            K_red = K_red.toarray()
-    else:
-        K_red = K_gg.toarray()
-    K_aa = K_red[np.ix_(free_local, free_local)]   # (n_a, n_a)
+    K_aa = red.reduce_matrix(K_gg, dense=True)     # (n_a, n_a)
 
     # Also compute Q_aa for storage in result (reuse existing helper)
     from sbeam.aero.coupling import build_qaa
     Q_gg = build_qaa(aero, aero.g_disp, aero.g_slope)
-    if dep_dofs:
-        Q_red_full = T.T @ Q_gg @ T
-    else:
-        Q_red_full = Q_gg
-    Q_aa = Q_red_full[np.ix_(free_local, free_local)]
+    Q_aa = red.reduce_matrix(Q_gg)
 
     # ------------------------------------------------------------------ #
     # Build combined RHS: q*f_g (baseline aero) + inertial load
@@ -1640,18 +1551,10 @@ def run_sol144_trim(
     f_rhs_g = f_aero_g + pres_aero_g + pres_inertial_g  # (n_g,)
 
     # Reduce f_rhs to a-set
-    if dep_dofs:
-        f_rhs_red = T.T @ f_rhs_g
-    else:
-        f_rhs_red = f_rhs_g.copy()
-    f_rhs_a = f_rhs_red[free_local]   # (n_a,)
+    f_rhs_a = red.reduce_vector(f_rhs_g)   # (n_a,)
 
     # Reduce M_ax to a-set (same RBE3+SPC path as Q_ax)
-    if dep_dofs:
-        M_ax_red = T.T @ M_ax_g
-    else:
-        M_ax_red = M_ax_g
-    M_ax_a = M_ax_red[np.ix_(free_local, list(range(len(all_labels))))]  # (n_a, n_labels)
+    M_ax_a = red.reduce_rect(M_ax_g)       # (n_a, n_labels)
 
     # ------------------------------------------------------------------ #
     # SUPORT DOF indices in a-set
@@ -1766,12 +1669,8 @@ def run_sol144_trim(
     # ------------------------------------------------------------------ #
     from sbeam.assembly.mass_matrix import assemble_global_mass
     M_gg = assemble_global_mass(bulk)
-    M_red_full = (T.T @ M_gg @ T) if dep_dofs else M_gg
-    if hasattr(M_red_full, "toarray"):
-        M_red_full = M_red_full.toarray()
-    M_aa = M_red_full[np.ix_(free_local, free_local)]
-    f_aero_red = (T.T @ f_aero_g) if dep_dofs else f_aero_g
-    f_aero_a = f_aero_red[free_local]
+    M_aa = red.reduce_matrix(M_gg, dense=True)
+    f_aero_a = red.reduce_vector(f_aero_g)
     unrest_derivs, unrest_intercepts = _compute_unrestrained_derivs(
         K_aa, M_aa, Q_aa, Q_ax_a, f_aero_a, all_labels,
         l_idx, r_idx, free_dofs, grid_index, bulk, q_dyn, suport_pos,

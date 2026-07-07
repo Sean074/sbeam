@@ -249,8 +249,8 @@ For each Mach M in the `MKAERO1` list:
 | `sbeam/parser/bdf_reader.py` | `_handle_mkaero1` (continuation pattern as SPC1); extend WKK/AECORR handlers by one optional field. |
 | `sbeam/model/bulk_data.py` | Add `mkaero1s` accumulator. |
 | `sbeam/aero/aero_model.py` | `build_aero_model(..., mach: Optional[float] = None)` — override of the current hardwired `bulk.aeros.mach` (line 77); correction-card selection per §3.3 (currently first-match-by-EID at lines 87–89). |
-| `sbeam/assembly/reduction.py` | **New (refactor).** `reduce_to_aset(bulk, K_or_Q, grid_index, spc_sid) → (A_aa, free_dofs, T, dep_dofs)` extracted from `sol144._build_qaa_aset` so SOL 144 and the exporter share one reduction path. `sol144.py` re-points to it (behaviour-preserving). |
-| `sbeam/solver/sol103.py` | Retain `phi_free`, `free_dofs`, and (when export is requested) `K_free`/`M_free` on `Sol103Result` (new optional fields, default `None` — zero cost when export is off). |
+| `sbeam/assembly/reduction.py` | **DONE — landed with Step 59 (2026-07-06).** `reduce_to_aset(bulk, grid_index, spc_sid) → AsetReduction` (dataclass with `reduce_matrix`/`reduce_rect`/`reduce_vector`/`expand_to_g`) extracted from `sol144._build_qaa_aset`; SOL 103/144 and `maneuver_qs` all re-pointed, bit-identical-verified. This design **reuses** it — no extraction work remains. |
+| `sbeam/solver/sol103.py` | **DONE — landed with Step 59 (2026-07-06).** `Sol103Result` carries `phi_free`, `free_dofs`, `K_free`, `M_free` (optional fields, default `None`), always populated by `run_sol103` from values already in hand. |
 | `sbeam/results/results.py` | Extend `Sol103Result` per above. |
 | `sbeam/solver/gaf_export.py` (or a function in `matrix_export.py`) | **New.** The Phase 2 driver: run SOL 103 once → loop `MKAERO1` Machs → `build_aero_model(mach=M)` → `build_qaa` → `reduce_to_aset` → `build_gaf` → write. |
 | `sbeam/main.py` | After the SOL dispatch, if `cc.export` is set, call `write_bundle` with whatever the solution produced; the QHH token routes through the GAF driver. |

@@ -4,7 +4,7 @@ Authoritative backlog of **open** work only — bugs, planned development, and d
 in priority order. Updated as part of every session that completes a step — never deferred.
 Completed steps live in `docs/40_history/00_completed_development.md`; nothing closed is
 summarised here. When an item is promoted to a formal step, give it a step number (next free
-number is **Step 64**; Steps 59–63 are assigned below) and apply the step format
+number is **Step 64**; Steps 60–63 are assigned below) and apply the step format
 (Objective, Deliverables, Test/Acceptance).
 
 ---
@@ -21,7 +21,6 @@ sweeps, section loads, usable authoring/output surface). The phase after that is
 
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P1 | Step 59 — `reduce_to_aset` refactor | Tier 1 (G0 plan) | ~1 d | Single owner of the a-set reduction claimed by three designs; unblocks everything below. |
 | P2 | Step 60 — `MASSSET` payload/mass cases for static SOL 144 | Tier 1 (G0 plan) | ~3–4 d | Delivers the "different payload conditions" half of the aim immediately, for static trim / Step 53 maneuvers — no modal work needed. |
 | P3 | Monitor Phase 2 — section-cut running loads | Tier 1 | ~2–3 d | The production stress deliverable (per-station Vz/My/Mt); unblocked, independent — can run in parallel with P2–P6. |
 | P4 | Step 61 — free-free modal basis + h-set GAFs | Tier 1 (G0 plan) | ~3–4 d | The ZAERO-style modal architecture; absorbs RBMREF's rigid-basis construction. |
@@ -49,7 +48,7 @@ Verdicts:
 |----------|---------|-------|
 | `01_static_aero_plan.md` | **Pruned** (H1, done 2026-07-05) | Phases A–C (Steps 39–58) were all closed but never removed per its own self-removal rule. Now a compact architecture/reference doc: layer diagram, matrix nomenclature, delivered-step map, references, V-case index; the Phase D/E/F/G placeholders retired in favour of `designs/dlm_rfa_flutter_gust.md` and this backlog. |
 | `02_static_aero_zaero_review.md` | **Archived** (done, this review) | All 8 ranked goals were folded into Steps 39–58, all closed. Moved to `docs/40_history/archive/`. |
-| `designs/matrix_gaf_export.md` | **Viable — schedule (P8)** | Highest-viability aero design: new code over data already computed; no new physics. Its AE4 prerequisite is **stale** — AE4/spline kinematics closed with AC7 (2026-07-05, NASTRAN infinite-beam SPLINE2, rigid-body-exact). Its `reduce_to_aset` §6.1 is now owned by Step 59. |
+| `designs/matrix_gaf_export.md` | **Viable — schedule (P8)** | Highest-viability aero design: new code over data already computed; no new physics. Its AE4 prerequisite is **stale** — AE4/spline kinematics closed with AC7 (2026-07-05, NASTRAN infinite-beam SPLINE2, rigid-body-exact). Its `reduce_to_aset` §6.1 **landed with Step 59** (2026-07-06, `sbeam/assembly/reduction.py`) — reuse, don't re-extract. |
 | `designs/matrix_reuse_store.md` | **Viable — subordinate (P12); Phase 0 deleted** | Rigorous cache-boundary analysis, but its Phase 0 ("build the SOL 144 production dispatch + f06 writer") is **stale** — that surface shipped with Step 56/AE10 and AC5. Re-scope to Phases 1–3 only; schedule when envelope sweeps make caching pay. |
 | `designs/dlm_rfa_flutter_gust.md` | **Viable — the Tier 3 core (P10/P11)** | Technically honest, well-gated (Blair 3×3, Sears, typical-section). The k=0 VLM anchoring is the right de-risking move. Its AE4 gate is stale (closed by AC7); the nonplanar kernel terms (T1/T2, I2) remain a genuine research gap, correctly walled behind V-D1-6 (planar-only ships). Needs `g_disp_colloc` (¾-chord displacement spline) at D0. |
 | `designs/rbmref_card.md` | **Fold, don't build standalone** | Its `B_target` geometric rigid-basis construction is mathematically the same object as Step 61's `Φ_r`. Step 61 owns the single `build_rigid_modes`; the RBMREF *card* (user-selectable reference point + f06 rigid-mode block) becomes a thin optional wrapper afterwards, if still wanted. |
@@ -61,8 +60,9 @@ Verdicts:
 Three designs and the Phase G0 plan each assumed they would build the same infrastructure.
 Assigned owners — later features **reuse, never re-extract**:
 
-- **`reduce_to_aset` a-set reduction** → **Step 59** (serves `matrix_gaf_export` §6.1,
-  `matrix_reuse_store` §8.1, and the G0 solvers).
+- **`reduce_to_aset` a-set reduction** → **Step 59, delivered 2026-07-06**
+  (`sbeam/assembly/reduction.py`; serves `matrix_gaf_export` §6.1, `matrix_reuse_store`
+  §8.1, and the G0 solvers — see `docs/40_history/07_maneuver_transient.md`).
 - **Geometric rigid-body basis builder (`build_rigid_modes`)** → **Step 61** (RBMREF reuses).
 - **`MKAERO1` card, per-Mach GAF loop, export bundle/manifest** → **`matrix_gaf_export`**
   (Phase D "extends rather than duplicates"; `matrix_reuse_store` shares the bundle).
@@ -107,8 +107,8 @@ Phase C. Full unsteady MLOADS (state-space / RFA / control law) remains Phase G 
 **Re-ordering note (this review):** `MASSSET` was pulled forward to Step 60 because its static
 half (payload sweeps for SOL 144 trim / Step 53 maneuvers) needs none of the modal work and
 directly serves the early-design aim; its fixed-Φ transient gates land with Step 62.
-Sequencing: **59 (refactor) → 60 (MASSSET static) → 61 (basis + GAFs) → 62 (modal solver +
-mass gates) → 63 (free-flight)**, then G0-d/G0-e.
+Sequencing: **59 (refactor, closed 2026-07-06) → 60 (MASSSET static) → 61 (basis + GAFs) →
+62 (modal solver + mass gates) → 63 (free-flight)**, then G0-d/G0-e.
 
 #### Architecture decisions (confirmed 2026-07-05)
 
@@ -153,25 +153,6 @@ mass gates) → 63 (free-flight)**, then G0-d/G0-e.
    per output step: `u_md = Φξ`; residual `r_a = f_ext(t) − M_aa Φξ̈ − C_a Φξ̇ − (K_aa − q·Q_aa)Φξ`;
    `Δu_l = K_eff_ll⁻¹ r_l` (SUPORT r-set held, reusing the increment-1 `K_eff_ll` LU); downstream
    recovery via the existing `_recover_step` with URDD entries of `δ_basic` filled from `ξ̈_r`.
-
-#### Step 59 (P1) — Prerequisite refactor: shared a-set reduction + SOL 103 retention (behavior-identical)
-
-**Objective:** Eliminate the 4×-duplicated RBE3+SPC a-set reduction and retain a-set eigendata so
-every later step composes one code path. This is the `reduce_to_aset` refactor already specified in
-`designs/matrix_gaf_export.md` §6.1 (and `matrix_reuse_store.md` §8.1) — landing it here serves
-all three features (single-owner rule above).
-
-**Deliverables:**
-- `sbeam/assembly/reduction.py` (new): `reduce_to_aset(bulk, grid_index, spc_sid) → AsetReduction`
-  dataclass `{T, dep_dofs, red_dofs, free_local, free_dofs}` + `reduce_matrix` / `reduce_vector` /
-  `expand_to_g` (absorbing `sol144._expand_to_g`). Extracted from `sol144._compute_aset_data` /
-  `_build_qaa_aset`; `sol103.run_sol103`, `sol144`, and `maneuver_qs._assemble_operators` re-pointed
-  (`_compute_aset_data` kept as a thin wrapper — `maneuver_qs` imports it by name).
-- `Sol103Result` gains optional `phi_free` (a-set), `free_dofs`, `K_free`, `M_free` (default None).
-
-**Test/Acceptance:** full existing suite passes unchanged; SOL 103/144 f06 and
-`sample/ha144a_fullspan_mloads.bdf` maneuver output bit-identical pre/post; unit test that
-`reduce_to_aset` products equal the old `_compute_aset_data` outputs on an RBE3+SPC model.
 
 #### Step 60 (P2) — MASSSET payload / mass-case capability for static SOL 144
 
@@ -389,8 +370,8 @@ Per `designs/matrix_gaf_export.md` (viable, see verdicts): `EXPORT` case-control
 writing sparse `K_gg`/`M_gg`, dense a-set `K_aa`/`M_aa`, `PHIA`/`PHIG`, modal `K_hh`/`M_hh`,
 and per-Mach steady GAFs `Q_hh(M)` on one fixed Φ (Matrix Market + `.mat`, manifest +
 dofmap); new `MKAERO1` card; Mach-tagged corrections. Phases 1–2 (~8 d). **Sequencing:**
-after Step 59 (reuses `reduce_to_aset`); before Phase D (which extends its MKAERO1/Mach-loop
-machinery). Its stated AE4 prerequisite is stale — closed by AC7. Phase 3 (OP4/UF writers)
+unblocked — Step 59 closed 2026-07-06 (reuses `assembly/reduction.py:reduce_to_aset`);
+before Phase D (which extends its MKAERO1/Mach-loop machinery). Its stated AE4 prerequisite is stale — closed by AC7. Phase 3 (OP4/UF writers)
 deferrable.
 
 ### matrix_reuse_store (P12) — matrix persistence / dual-mode SOL 144

@@ -47,7 +47,8 @@ Q_aa = G_disp^T  S_kj  (A_jj*)^-1  D_jk  G_slope    shape (n_g, n_g)
 | `g_slope` | (n_box, n_g) | Slope spline from `build_g_spline` |
 
 Returns the **g-set** Q_aa (dense, unsymmetric in general). Reduction to the
-a-set is done downstream in `sol144._build_qaa_aset`.
+a-set is done downstream via the shared `assembly.reduction.reduce_to_aset`
+path (wrapped by `sol144._build_qaa_aset`).
 
 #### `build_fg(aero, g_disp) → np.ndarray`
 
@@ -106,25 +107,35 @@ When `use_rom=True` and `sol103_result is None`, SOL 103 is run internally using
 
 #### `_build_qaa_aset` algorithm
 
-Mirrors the RBE3 + SPC reduction in `sol101.py`, applied to the (K, Q, f) triple:
+Since Step 59 the RBE3 + SPC reduction itself lives in
+`sbeam/assembly/reduction.py` (`reduce_to_aset(bulk, grid_index, spc_sid) →
+AsetReduction`), shared by SOL 103, SOL 144, and `maneuver_qs`.
+`_build_qaa_aset` composes it for the (K, Q, f) triple:
 
 ```
 1. Q_gg = build_qaa(aero, aero.g_disp, aero.g_slope)    # (n_g, n_g) dense
 2. K_gg = assemble_global_stiffness(bulk)                  # (n_g, n_g) sparse CSR
-3. T, dep_dofs, red_dofs = build_rbe3_transformation(bulk, grid_index)
-4. If RBE3 present:
-     K_red = (T.T @ K_gg @ T).toarray()   # dense after NumPy @ semantics
-     Q_red = T.T @ Q_gg @ T
-5. Else:
-     K_red = K_gg.toarray()               # dense (Q_aa is dense; system is dense anyway)
-     Q_red = Q_gg
-6. Partition to free a-set (SPC) → K_aa, Q_aa of shape (n_a, n_a)
-7. free_dofs = g-set DOF indices for the a-set rows/cols
+3. red  = reduce_to_aset(bulk, grid_index, spc_sid)        # T + a-set partition
+4. K_aa = red.reduce_matrix(K_gg, dense=True)              # (n_a, n_a) dense
+5. Q_aa = red.reduce_matrix(Q_gg)                          # (n_a, n_a)
+6. f_aa = red.reduce_vector(f_g_full)                      # if supplied
+7. free_dofs = red.free_dofs   # g-set DOF indices for the a-set rows/cols
 ```
 
-Rationale for always-dense K_aa: adding dense Q_aa to sparse K would require a
-mixed-format code path; converting K to dense at this point is consistent with
-the RBE3 dense-fallback precedent in `sol101.py` (Risk KC1 from the backlog).
+`AsetReduction` also provides `reduce_rect` (rectangular column blocks: Q_ax,
+M_ax), and `expand_to_g` (a-set → g-set scatter through the RBE3/RBAR `T`
+matrix so slave DOFs follow their masters). `reduce_matrix` preserves input
+sparsity when no dependent DOFs exist (SOL 103's sparse path); `dense=True`
+forces the dense result the SOL 144 solves need.
+
+Rationale for always-dense K_aa in SOL 144: adding dense Q_aa to sparse K would
+require a mixed-format code path; converting K to dense at this point is
+consistent with the RBE3 dense-fallback precedent in `sol101.py` (Risk KC1 from
+the backlog).
+
+`sol144._compute_aset_data` (tuple form of `reduce_to_aset`) and
+`sol144._expand_to_g` (alias of `reduction.expand_to_g`) are retained as thin
+wrappers for existing importers.
 
 #### Mode-acceleration recovery
 

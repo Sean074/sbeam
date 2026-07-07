@@ -11,6 +11,25 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Phase 2 completion.
 
+### Changed
+
+**Step 59 — shared `reduce_to_aset` a-set reduction (behavior-identical refactor, 2026-07-06)**
+
+- New `sbeam/assembly/reduction.py`: `reduce_to_aset(bulk, grid_index, spc_sid)` returns an
+  `AsetReduction` dataclass (`T`, `dep_dofs`, `red_dofs`, `free_local`, `free_dofs`) with
+  `reduce_matrix` / `reduce_rect` / `reduce_vector` / `expand_to_g` methods — the single owner
+  of the RBE3/RBAR-then-SPC g-set → a-set reduction previously duplicated across
+  `sol144._build_qaa_aset`, `sol144._compute_aset_data`, `sol103.run_sol103`, and
+  `maneuver_qs._assemble_operators`. All four consumers re-pointed;
+  `sol144._compute_aset_data` and `sol144._expand_to_g` retained as thin wrappers/aliases.
+- `Sol103Result` gains optional a-set eigendata fields `phi_free`, `free_dofs`, `K_free`,
+  `M_free` (default `None`), populated by `run_sol103` — the retention consumed by the
+  Step 61 modal basis and the `matrix_gaf_export` GAF loop.
+- Behavior-identical: full suite unchanged, SOL 103/144 f06 and all
+  `ha144a_fullspan_mloads.bdf` maneuver/monitor/load exports verified bit-identical pre/post
+  (modulo embedded run timestamps). New `tests/assembly/test_reduction.py` (11 tests) proves
+  equivalence against the pre-refactor reduction logic on an RBE3+SPC model.
+
 ### Documentation
 
 **`docs/10_standard/05_aeroelastics.md` split by area (2026-07-05)**

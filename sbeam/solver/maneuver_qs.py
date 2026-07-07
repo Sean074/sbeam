@@ -58,13 +58,12 @@ from sbeam.aero.coupling import build_qaa, build_fg
 from sbeam.aero.integration import build_djx, build_djk
 from sbeam.results.results import BarForce, ManeuverStep, ManeuverResult
 from sbeam.solver.sol101 import recover_bar_forces, recover_bar_stresses
+from sbeam.assembly.reduction import reduce_to_aset, expand_to_g
 from sbeam.solver.sol144 import (
     AeroCache,
-    _compute_aset_data,
     _build_inertial_cols,
     _urdd_rcsid_to_basic,
     _get_suport_local,
-    _expand_to_g,
     _load_resultant,
     _pitch_moment,
     run_sol144_trim,
@@ -139,39 +138,28 @@ def _assemble_operators(
     D_jx = build_djx(aero.boxes, all_labels, bulk)                  # (n_box, n_labels)
     Q_ax_g = aero.g_disp.T @ aero.skj @ aero.ajj_inv_corr @ D_jx    # (n_g, n_labels)
 
-    T, dep_dofs, red_dofs, free_local, free_dofs = _compute_aset_data(
-        bulk, grid_index, spc_sid
-    )
+    red = reduce_to_aset(bulk, grid_index, spc_sid)
+    T, free_local, free_dofs = red.T, red.free_local, red.free_dofs
     ncols = list(range(len(all_labels)))
 
     # Reduce Q_ax, K, Q, structural mass to the a-set (same RBE3+SPC path as trim).
-    Q_ax_red = (T.T @ Q_ax_g) if dep_dofs else Q_ax_g
-    Q_ax_a = Q_ax_red[np.ix_(free_local, ncols)]
+    Q_ax_a = red.reduce_rect(Q_ax_g)
 
     K_gg = assemble_global_stiffness(bulk)
-    K_red = (T.T @ K_gg @ T) if dep_dofs else K_gg.toarray()
-    if hasattr(K_red, "toarray"):
-        K_red = K_red.toarray()
-    K_aa = K_red[np.ix_(free_local, free_local)]
+    K_aa = red.reduce_matrix(K_gg, dense=True)
 
     Q_gg = build_qaa(aero, aero.g_disp, aero.g_slope)
-    Q_red = (T.T @ Q_gg @ T) if dep_dofs else Q_gg
-    Q_aa = Q_red[np.ix_(free_local, free_local)]
+    Q_aa = red.reduce_matrix(Q_gg)
 
     M_gg = assemble_global_mass(bulk)
-    M_red = (T.T @ M_gg @ T) if dep_dofs else M_gg.toarray()
-    if hasattr(M_red, "toarray"):
-        M_red = M_red.toarray()
-    M_aa = M_red[np.ix_(free_local, free_local)]
+    M_aa = red.reduce_matrix(M_gg, dense=True)
 
     # Baseline aero load and inertial sensitivity (basic frame) on the g-set.
     f_aero_g = q * build_fg(aero, aero.g_disp)                      # (n_g,)
     M_ax_g = _build_inertial_cols(bulk, all_labels, grid_index, suport_pos)
 
-    f_aero_red = (T.T @ f_aero_g) if dep_dofs else f_aero_g
-    f_aero_a = f_aero_red[free_local]
-    M_ax_red = (T.T @ M_ax_g) if dep_dofs else M_ax_g
-    M_ax_a = M_ax_red[np.ix_(free_local, ncols)]
+    f_aero_a = red.reduce_vector(f_aero_g)
+    M_ax_a = red.reduce_rect(M_ax_g)
 
     # l-set partition (drop the SUPORT DOFs — the mean-axis restraint).
     suport_local = _get_suport_local(bulk, free_dofs, grid_index)
@@ -194,7 +182,7 @@ def _assemble_operators(
 
     return _Operators(
         all_labels=all_labels, label_to_col=label_to_col,
-        T=T, free_local=free_local, red_dofs=red_dofs, free_dofs=free_dofs,
+        T=T, free_local=free_local, red_dofs=red.red_dofs, free_dofs=free_dofs,
         l_idx=l_idx, K_eff_ll=K_eff_ll, M_ll=M_ll, Q_ax_l=Q_ax_l, M_ax_l=M_ax_l,
         f_aero_l=f_aero_l, M_ax_g=M_ax_g, aero=aero, D_jx=D_jx, djk=djk,
         q=q, x_ref=x_ref, suport_pos=suport_pos, R_rcsid=R_rcsid, has_rcsid=has_rcsid,
@@ -231,7 +219,7 @@ def _recover_step(
     u_a = np.zeros(n_a)
     for li_idx, li in enumerate(ops.l_idx):
         u_a[li] = u_l[li_idx]
-    displacements = _expand_to_g(u_a, ops.T, ops.free_local, len(ops.red_dofs))
+    displacements = expand_to_g(u_a, ops.T, ops.free_local, len(ops.red_dofs))
 
     # CBAR force recovery (reuses sol101 unchanged).
     bar_forces = {}
