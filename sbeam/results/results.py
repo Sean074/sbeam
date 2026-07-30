@@ -136,6 +136,11 @@ class Sol144TrimResult:
     trim_mode: str = "determined"             # "determined" or "over-determined" (Step 52)
     monitor_loads: Optional[dict] = None      # {name: MonitorLoad} integrated section loads (MON1–MON3)
     chordcp_echo: Optional[dict] = None       # Step 54 injected-operating-point echo: {'alpha_ref', 'data_machs', 'surfaces': {eid: {'FZ_Q','MY_Q','FZ_Q_VLM'}}}
+    # --- Step 60 (MASSSET payload / mass case) ---
+    massset_sid: Optional[int] = None         # MASSSET SID selected by the subcase; None = baseline
+    massset_label: str = "BASELINE"           # mass-case name for output headers
+    massset_mass: float = 0.0                 # total case mass (GPWG) for this configuration
+    massset_cg: Optional[tuple] = None        # (cg_x, cg_y, cg_z) of the case mass
 
 
 @dataclass

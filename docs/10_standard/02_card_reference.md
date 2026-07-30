@@ -581,6 +581,83 @@ CONM2, 2, 5, 0, 50.0, 0.1, 0.0, 0.0
 
 ---
 
+### MASSSET — Payload / Mass Case (Step 60)
+
+Defines a named mass configuration built from the baseline model mass. Selected per
+subcase with the case-control request `MASSSET = sid` (SOL 144 static trim, balanced
+maneuvers, and the Phase G0 transient maneuver solver).
+
+**Format:**
+```
+MASSSET, SID, LABEL, SCALE
++,       ADD,     e1, e2, ...
++,       REPLACE, old1, new1, old2, new2, ...
++,       DELETE,  e1, e2, ...
+```
+
+Continuation rows are an op keyword followed by CONM2 EIDs (up to 7 per fixed-field
+row). Any number of rows of any op may appear, in any order.
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| SID | `sid` | int | Mass-case ID (referenced in case control) | required |
+| LABEL | `label` | str | Case name used in output headers | `MASSSET <sid>` |
+| SCALE | `scale` | float | Multiplies the **baseline** mass (must be ≥ 0) | `1.0` |
+
+**Ops:**
+
+| Op | Arguments | Effect |
+|----|-----------|--------|
+| `ADD` | overlay CONM2 EIDs | layers the named CONM2s on top of the baseline |
+| `REPLACE` | `(baseline EID, overlay EID)` **pairs** | drops the baseline card and puts the overlay card in its place — each row must hold an even number of EIDs |
+| `DELETE` | baseline CONM2 EIDs | removes the named baseline CONM2s from the case |
+
+**The baseline / overlay rule.** Overlay CONM2s are ordinary `CONM2` bulk cards. Every
+EID named by an `ADD` or by the *overlay* (second) slot of a `REPLACE` pair is marked
+**overlay-only** and is excluded from the baseline mass — it enters only the cases that
+name it. Every EID named by a `DELETE` or by the *baseline* (first) slot of a `REPLACE`
+pair is a **baseline** EID. An EID must be one or the other; using it as both is an error.
+A CONM2 named by no MASSSET at all is an ordinary baseline mass present in every case.
+
+**SCALE** applies to the whole baseline mass — CBAR distributed mass (`rho·A + nsm`) and
+baseline CONM2 mass and inertia alike — and is applied *before* the ops. Overlay cards
+enter at their card values, unscaled: SCALE is a baseline factor, the overlay is the
+payload the deck states explicitly.
+
+**What is rebuilt per case:** only mass-derived quantities — `M_gg`, the inertial
+sensitivity `M_ax`, GPWG mass/CG, and the trim solve. Stiffness, splines, the VLM AIC
+and the whole `AeroCache` are geometry/Mach-only and are **shared untouched** across a
+mass sweep.
+
+**Errors:** an EID not defined by any CONM2 card (`ADD`/`REPLACE`/`DELETE`); an EID
+referenced more than once within one MASSSET; an EID used as both overlay and baseline;
+an odd EID count on a `REPLACE` row; an unknown op keyword; a negative `SCALE`; a
+duplicate MASSSET SID; a case-control `MASSSET` selecting an undefined SID.
+
+**Not supported (v1):** MAT1 `rho` overlays (structural-density cases) — use `SCALE`,
+or author a separate deck.
+
+**Example** (from `sample/ha144a_massset_sweep.bdf`):
+```
+$ Baseline includes the 500 lb baggage CONM2 5000; 6001-6004, 6011-6014
+$ and 6020 are overlay-only and enter only where named.
+MASSSET, 10, EMPTY, 1.0
++, DELETE, 5000
+MASSSET, 20, HALFFUEL, 1.0
++, ADD, 6001, 6002, 6003, 6004
+MASSSET, 30, FULLFUEL, 1.0
++, ADD, 6011, 6012, 6013, 6014
++, REPLACE, 5000, 6020
+```
+
+**Not mirrored:** `mirror_halfspan` rejects a deck containing MASSSET cards — whether a
+payload item mirrors (wing fuel) or does not (a centreline store) is model intent, not
+geometry.
+
+---
+
 ### SPC — Single-Point Constraint (Grid Pairs)
 
 Applies zero (or enforced) displacement to individual grid DOFs.

@@ -83,6 +83,11 @@ def build_aero_load_cards_text(
         f"$ TRIM={result.trim_sid}  Q={result.q:g}  MACH={result.mach:g}  CZ={result.total_cl:.6f}",
         "$ FORCE/MOMENT set sums to the total trimmed lift/moment (plain trim).",
     ]
+    if result.massset_sid is not None:
+        lines.append(
+            f"$ MASSSET={result.massset_sid} ({result.massset_label})  "
+            f"MASS={result.massset_mass:g}"
+        )
     lines += _emit_force_moment_cards(result.grid_loads, bulk, grid_index, sid)
     return "\n".join(lines) + "\n"
 
@@ -115,6 +120,11 @@ def build_maneuver_load_cards_text(
         f"$ TRIM={result.trim_sid}  Q={result.q:g}  MACH={result.mach:g}  CZ={result.total_cl:.6f}",
         "$ FORCE/MOMENT set is the net (aero + inertial) maneuver load for stress (Step 53).",
     ]
+    if result.massset_sid is not None:
+        lines.append(
+            f"$ MASSSET={result.massset_sid} ({result.massset_label})  "
+            f"MASS={result.massset_mass:g}"
+        )
     lines += _emit_force_moment_cards(result.net_loads, bulk, grid_index, sid)
     return "\n".join(lines) + "\n"
 
@@ -137,7 +147,7 @@ def write_aero_load_cards(filepath: str, bulk: BulkData, results: dict) -> None:
 
 
 _MONITOR_CSV_HEADER = [
-    "case", "name", "type", "label", "axes", "cid",
+    "case", "massset", "mass_case", "name", "type", "label", "axes", "cid",
     "x_ref", "y_ref", "z_ref",
     "Fx", "Fy", "Fz", "Mx", "My", "Mz",
     "Fz_aero", "Fz_inertia", "Fz_react",
@@ -164,8 +174,14 @@ def write_monitor_csv(filepath: str, results: dict) -> None:
                 continue
             for name in sorted(result.monitor_loads.keys()):
                 ml = result.monitor_loads[name]
+                # Mass case (Step 60); getattr keeps the writer usable with the
+                # lightweight result stubs the monitor tests build.
+                ms_sid = getattr(result, "massset_sid", None)
                 writer.writerow([
-                    sc_id, ml.name, ml.mtype, ml.label, ml.axes, ml.cid,
+                    sc_id,
+                    ms_sid if ms_sid is not None else "",
+                    getattr(result, "massset_label", "BASELINE"),
+                    ml.name, ml.mtype, ml.label, ml.axes, ml.cid,
                     f"{ml.ref[0]:.6E}", f"{ml.ref[1]:.6E}", f"{ml.ref[2]:.6E}",
                     *(f"{v:.6E}" for v in ml.totals),
                     f"{ml.aero[2]:.6E}", f"{ml.inertia[2]:.6E}", f"{ml.reaction[2]:.6E}",

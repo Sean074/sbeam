@@ -11,7 +11,43 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Phase 2 completion.
 
+### Added
+
+**Step 60 — `MASSSET` payload / mass cases for static SOL 144 (2026-07-30)**
+
+- New `MASSSET` bulk card (`Massset` in `model/mass.py`, `bulk.masssets`): a named mass
+  configuration built from the baseline model mass — `SCALE` multiplies the baseline, then
+  `ADD` / `REPLACE` / `DELETE` continuation rows overlay, swap, or drop CONM2 cards.
+  `REPLACE` takes (baseline EID, overlay EID) **pairs**. EIDs named by `ADD` or by a
+  `REPLACE` overlay slot are marked overlay-only (`bulk.overlay_conm2_eids`) and excluded
+  from the baseline mass; an EID may not be both overlay and baseline.
+- Case-control `MASSSET = sid` per subcase (`SubcaseControl.massset_sid`), MSC-style.
+- New `model/mass_overlay.py`: `resolve_mass_case` / `effective_conm2s`.
+  `assemble_global_mass`, `compute_gpwg`, `sol144._build_inertial_cols`, `run_sol144_trim`
+  and `run_maneuver_qs` all take an optional `massset_sid` (`None` = baseline, unchanged).
+  Only mass-derived quantities are rebuilt per case — stiffness, splines, the VLM AIC and
+  the whole `AeroCache` are geometry/Mach-only and shared untouched across a sweep.
+- Output: `Sol144TrimResult` gains `massset_sid` / `massset_label` / `massset_mass` /
+  `massset_cg`; the f06 subcase header gains `MASSSET`/`LABEL`/`MASS` and `CG` lines when a
+  case is selected (baseline f06 output is byte-identical to before); load-card exports stamp
+  the case in their comment block; the viewer GPWG panel gains a mass-case selector and the
+  analysis-plan summary names the case per subcase.
+- New sample deck `sample/ha144a_massset_sweep.bdf` — full-span HA144A, one TRIM card, three
+  payload conditions (EMPTY 16000 lb / HALFFUEL 18500 lb / FULLFUEL 21000 lb) exercising all
+  three ops.
+- 42 new tests (`tests/parser/test_massset.py`, `tests/aero/test_massset_sweep.py`): card
+  round-trip and every negative case; the equivalence gate (a MASSSET case is identical to a
+  hand-edited deck with the same final CONM2 set — same `M_gg`, GPWG and trim); baseline
+  unchanged; per-case Step 53 closure ≈ 0 and lift = case weight; three subcases sharing one
+  `AeroModel` (object identity); heavier case ⇒ larger trimmed ANGLEA and further-aft CG.
+- `mirror_halfspan` now rejects decks containing MASSSET cards — whether a payload item
+  mirrors is model intent, not geometry.
+
 ### Changed
+
+- **`*.monitor_loads.csv` gains two columns** (`massset`, `mass_case`) after `case`, naming
+  the mass configuration each row was integrated at (`BASELINE` when no MASSSET is selected).
+  Consumers that index the CSV by column position rather than header name need updating.
 
 **Step 59 — shared `reduce_to_aset` a-set reduction (behavior-identical refactor, 2026-07-06)**
 

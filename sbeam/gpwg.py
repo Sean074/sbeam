@@ -13,14 +13,22 @@ class GpwgResult:
     cg_x: float
     cg_y: float
     cg_z: float
+    massset_sid: int = None   # MASSSET SID for this mass case (None = baseline)
+    massset_label: str = "BASELINE"
 
 
-def compute_gpwg(bulk: BulkData) -> GpwgResult:
+def compute_gpwg(bulk: BulkData, massset_sid=None) -> GpwgResult:
     """Compute total mass and centre of gravity from CBAR elements and CONM2 masses.
 
     CBAR mass = (rho * A + nsm) * L, distributed at element midpoint.
     CONM2 mass = Conm2.m at grid location + offset (x1, x2, x3).
+
+    ``massset_sid`` (Step 60) selects a MASSSET payload / mass case; ``None``
+    gives the baseline configuration.
     """
+    from sbeam.model.mass_overlay import resolve_mass_case
+    case = resolve_mass_case(bulk, massset_sid)
+
     mass_contributions = []  # list of (mass, x, y, z)
 
     # CBAR elements
@@ -41,13 +49,13 @@ def compute_gpwg(bulk: BulkData) -> GpwgResult:
         gb_pos = np.array([gb.x, gb.y, gb.z])
         L = np.linalg.norm(gb_pos - ga_pos)
 
-        elem_mass = (mat1.rho * pbar.A + pbar.nsm) * L
+        elem_mass = case.scale * (mat1.rho * pbar.A + pbar.nsm) * L
 
         midpoint = 0.5 * (ga_pos + gb_pos)
         mass_contributions.append((elem_mass, midpoint[0], midpoint[1], midpoint[2]))
 
     # CONM2 point masses
-    for conm2 in bulk.conm2s.values():
+    for conm2 in case.conm2s.values():
         grid = bulk.grids.get(conm2.gid)
         if grid is None:
             continue
@@ -62,7 +70,10 @@ def compute_gpwg(bulk: BulkData) -> GpwgResult:
     total_mass = sum(m for m, _, _, _ in mass_contributions)
 
     if total_mass == 0.0:
-        return GpwgResult(total_mass=0.0, cg_x=0.0, cg_y=0.0, cg_z=0.0)
+        return GpwgResult(
+            total_mass=0.0, cg_x=0.0, cg_y=0.0, cg_z=0.0,
+            massset_sid=case.sid, massset_label=case.label,
+        )
 
     cg_x = sum(m * x for m, x, _, _ in mass_contributions) / total_mass
     cg_y = sum(m * y for m, _, y, _ in mass_contributions) / total_mass
@@ -73,4 +84,6 @@ def compute_gpwg(bulk: BulkData) -> GpwgResult:
         cg_x=cg_x,
         cg_y=cg_y,
         cg_z=cg_z,
+        massset_sid=case.sid,
+        massset_label=case.label,
     )

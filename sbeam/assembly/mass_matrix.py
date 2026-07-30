@@ -81,27 +81,40 @@ def element_mass_global(
     return T.T @ M_local @ T
 
 
-def assemble_global_mass(bulk: BulkData) -> scipy.sparse.csr_matrix:
+def assemble_global_mass(
+    bulk: BulkData,
+    massset_sid=None,
+) -> scipy.sparse.csr_matrix:
     """Assemble the (6N x 6N) global consistent mass matrix.
 
     Includes CBAR element contributions and CONM2 point masses.
     CONM2 contributes the full 6x6 symmetric block: translational mass,
     offset-induced translation-rotation coupling, parallel-axis rotational
     inertia, and CM inertia tensor (I11-I33).
+
+    ``massset_sid`` (Step 60) selects a MASSSET payload / mass case: the
+    baseline mass is scaled by the card's SCALE and the effective CONM2 set is
+    the baseline set with the ADD / REPLACE / DELETE ops applied.  ``None``
+    gives the baseline configuration, unchanged from pre-Step-60 behaviour.
     """
+    from sbeam.model.mass_overlay import resolve_mass_case
+    case = resolve_mass_case(bulk, massset_sid)
+
     grid_index = {gid: i for i, gid in enumerate(sorted(bulk.grids.keys()))}
     n = 6 * len(grid_index)
     rows, cols, data = [], [], []
 
     for cbar in bulk.cbars.values():
         M_e = element_mass_global(cbar, bulk.grids, bulk.pbars, bulk.mat1s)
+        if case.scale != 1.0:
+            M_e = case.scale * M_e   # SCALE applies to the baseline structural mass
         dofs = _node_dofs(cbar.ga, grid_index) + _node_dofs(cbar.gb, grid_index)
         ii, jj = np.meshgrid(dofs, dofs, indexing="ij")
         rows.extend(ii.ravel())
         cols.extend(jj.ravel())
         data.extend(M_e.ravel())
 
-    for conm2 in bulk.conm2s.values():
+    for conm2 in case.conm2s.values():
         if conm2.gid not in grid_index:
             continue
         idx = grid_index[conm2.gid]

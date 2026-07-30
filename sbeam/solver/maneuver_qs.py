@@ -151,12 +151,14 @@ def _assemble_operators(
     Q_gg = build_qaa(aero, aero.g_disp, aero.g_slope)
     Q_aa = red.reduce_matrix(Q_gg)
 
-    M_gg = assemble_global_mass(bulk)
+    # Step 60: the mass case selected by this subcase (None = baseline).
+    massset_sid = subcase.massset_sid
+    M_gg = assemble_global_mass(bulk, massset_sid)
     M_aa = red.reduce_matrix(M_gg, dense=True)
 
     # Baseline aero load and inertial sensitivity (basic frame) on the g-set.
     f_aero_g = q * build_fg(aero, aero.g_disp)                      # (n_g,)
-    M_ax_g = _build_inertial_cols(bulk, all_labels, grid_index, suport_pos)
+    M_ax_g = _build_inertial_cols(bulk, all_labels, grid_index, suport_pos, massset_sid)
 
     f_aero_a = red.reduce_vector(f_aero_g)
     M_ax_a = red.reduce_rect(M_ax_g)
@@ -297,6 +299,7 @@ def run_maneuver_qs(
         spc_sid=subcase.spc_sid,
         trim_sid=mldtrim.trim_sid,
         trimobj_sid=subcase.trimobj_sid,
+        massset_sid=subcase.massset_sid,   # Step 60: IC trim uses the same mass case
     )
     ic = run_sol144_trim(bulk, ic_subcase, aero, aero_cache=aero_cache)
 

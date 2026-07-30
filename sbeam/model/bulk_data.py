@@ -8,6 +8,7 @@ from .aero import (
     Aecomp, Monpnt1, Monpnt3,
 )
 from .maneuver import Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads
+from .mass import Massset
 from .constraint import Suport
 
 
@@ -24,6 +25,10 @@ class BulkData:
     pbushs: dict = field(default_factory=dict)    # {pid: Pbush}
     mat1s: dict = field(default_factory=dict)     # {mid: Mat1}
     conm2s: dict = field(default_factory=dict)    # {eid: Conm2}
+    masssets: dict = field(default_factory=dict)  # {sid: Massset} (Step 60 mass cases)
+    # CONM2 EIDs named by a MASSSET ADD / REPLACE-overlay slot: ordinary CONM2
+    # cards that are overlay-only and therefore excluded from the baseline mass.
+    overlay_conm2_eids: set = field(default_factory=set)
     spcs: dict = field(default_factory=dict)      # {sid: list[Spc]}
     spc1s: dict = field(default_factory=dict)     # {sid: list[Spc1]}
     forces: dict = field(default_factory=dict)    # {sid: list[Force]}

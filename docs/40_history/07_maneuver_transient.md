@@ -2,7 +2,7 @@
 
 Part of the completed-development record (index: `00_completed_development.md`).
 Covers the DLM-free quasi-steady transient maneuver-loads capability (ZAERO MLOADS
-card set). Future Phase G0 steps (60-63: MASSSET, modal basis, free-flight) land here.
+card set). Future Phase G0 steps (61-63: modal basis, modal transient solver, free-flight) land here.
 
 ---
 
@@ -117,3 +117,86 @@ single-owner rule so all three features reuse it, never re-extract.
   `T.T @ A @ T` vs slicing) to keep float results bit-identical.
 - `sol101.py` also performs an RBE3+SPC reduction but was deliberately left out of scope
   (not in the Step 59 re-point list; behavior-identical risk minimisation).
+
+---
+
+### Step 60 (P2) — MASSSET payload / mass-case capability for static SOL 144 ✅ COMPLETE (2026-07-30)
+
+**Objective:** ZAERO-style payload-condition sweeps for the **existing static capability**: one
+deck, N subcases, each pairing a `MASSSET` with its TRIM (or Step 53 balanced-maneuver) case —
+AIC/splines/stiffness shared, only mass-derived quantities rebuilt per case. This is the
+early-design payload deliverable; the modal fixed-Φ interaction lands with Step 62.
+
+**Deliverables:**
+- **New `MASSSET` card** (`Massset` dataclass in `model/mass.py`, `bulk.masssets`,
+  `_handle_massset` + dispatch branch, post-parse cross-reference validation):
+  ```
+  MASSSET, SID, LABEL, SCALE
+  +, ADD,     e1, e2, ...
+  +, REPLACE, old1, new1, old2, new2, ...
+  +, DELETE,  e1, e2, ...
+  ```
+  `LABEL` = case name for output headers; `SCALE` (default 1.0, must be ≥ 0) multiplies the
+  baseline mass before the ops. Continuation rows are an op keyword + CONM2 EIDs; any number
+  of rows of any op, in any order. Overlay CONM2s are ordinary `CONM2` bulk cards; a post-parse
+  pass marks every `ADD` EID and every `REPLACE` overlay-slot EID as **overlay-only** in
+  `bulk.overlay_conm2_eids` so baseline assembly excludes them.
+- **Case-control `MASSSET = n`** per subcase (`SubcaseControl.massset_sid`) — MSC-style selection
+  like SPC/METHOD.
+- **`model/mass_overlay.py` (new):** `resolve_mass_case(bulk, massset_sid) → MassCase`
+  (`sid`, `label`, `scale`, `conm2s` with baseline members already scaled) and the
+  `effective_conm2s(...)` shorthand. `assemble_global_mass(..., massset_sid=None)`,
+  `_build_inertial_cols(..., massset_sid=None)`, `compute_gpwg(..., massset_sid=None)`,
+  `run_sol144_trim` and `run_maneuver_qs` all threaded. Explicit invariant (module docstring,
+  code comment, doc, and an object-identity test): **no AeroCache invalidation — the AIC is
+  geometry/Mach-only.**
+- **Output:** `Sol144TrimResult` gains `massset_sid` / `massset_label` / `massset_mass` /
+  `massset_cg`; the f06 subcase header gains `MASSSET =`/`LABEL =`/`MASS =` and `CG =` lines
+  (emitted only when a MASSSET is selected, so baseline decks stay byte-identical); the
+  monitor-loads CSV gains `massset` + `mass_case` columns; both load-card exports stamp the case
+  in their comment block; the viewer GPWG panel gains a mass-case selector and the analysis-plan
+  summary names the case per subcase.
+- **New sample deck `sample/ha144a_massset_sweep.bdf`** — full-span HA144A, one TRIM card, three
+  payload conditions exercising all three ops: EMPTY 16000 lb (`DELETE` baggage), HALFFUEL
+  18500 lb (`ADD` 2000 lb wing fuel), FULLFUEL 21000 lb (`ADD` 4000 lb wing fuel +
+  `REPLACE` 500 lb baggage with 1000 lb).
+
+**Test/Acceptance (`tests/parser/test_massset.py` 26 tests, `tests/aero/test_massset_sweep.py`
+16 tests):**
+- Parser round-trip (free- and fixed-field), all three ops, multi-row ops, SCALE (including
+  the inertia tensor and SCALE = 0), overlay marking, deck-order preservation, and every
+  negative case: dangling EID, duplicate reference within one MASSSET, EID used as both
+  overlay and baseline, odd `REPLACE` count, unknown op, empty op row, negative SCALE,
+  duplicate SID, case control selecting an undefined SID.
+- **Equivalence gate:** each of the three cases matches a hand-edited deck carrying the same
+  final CONM2 set — `np.array_equal` on `M_gg`, exact-equality GPWG mass/CG, and trim
+  variables + displacements to 1e-12.
+- **Baseline unchanged:** a deck with no MASSSET has `resolve_mass_case(bulk, None).conm2s is
+  bulk.conm2s`-equal and `assemble_global_mass(bulk) == assemble_global_mass(bulk, None)`; the
+  EMPTY case reproduces the untouched `ha144a_fullspan_sbeam.bdf` subcase-1 trim exactly
+  (ANGLEA 1.693721E-01 both ways).
+- **Per-case Step 53 closure ≈ 0** (Fz and My), and trimmed lift = case weight to 1e-6.
+- **Sweep test:** three subcases / three MASSSETs share one `AeroModel` — `len(cache._cache) == 1`
+  plus `is` identity on the model and on `ajj_inv_corr`.
+- **Physics:** heavier case ⇒ monotonically larger trimmed ANGLEA (0.16937 → 0.20079 → 0.23220)
+  and a further-aft CG (17.18 → 17.75 → 18.18 ft).
+
+**Key decisions:**
+- **`REPLACE` takes (baseline EID, overlay EID) pairs**, not a flat list. The plan's flat-list
+  sketch was self-contradictory against its own overlay-marking rule (a referenced EID cannot be
+  both baseline and overlay); pairs make "supersedes a baseline EID" literal and make every
+  promised error case — dangling REPLACE, an EID used as both overlay and baseline — fall out of
+  the same check. Cost: 3 pairs per fixed-field row instead of 7 EIDs.
+- **Case-control selection** (not a TRIM/MLDTRIM field) so static and transient share the
+  mechanism — `run_maneuver_qs` threads `massset_sid` into its own operators *and* into the
+  initial-condition trim, so an `MLOADS` subcase carrying a `MASSSET` runs at that payload
+  condition rather than silently ignoring it.
+- **`SCALE` applies to the whole baseline mass** — CBAR distributed mass and baseline CONM2 mass
+  *and* inertia tensor (the 6×6 CONM2 block is linear in `(m, I)`, so scaling both scales the
+  whole block including offset coupling and parallel-axis terms). Overlay cards enter unscaled.
+- The effective CONM2 set is built by iterating `bulk.conm2s`, so it keeps **deck order** and a
+  mass case sums contributions in the same order a hand-edited deck would — the reason the
+  equivalence gate can assert exact `np.array_equal` on `M_gg` rather than a tolerance.
+- **`mirror_halfspan` rejects MASSSET decks** (added to `_UNSUPPORTED`): whether a payload item
+  mirrors (wing fuel) or does not (a centreline store) is model intent, not geometry.
+- MAT1-`rho` overlays out of scope (v1) — use `SCALE`, or author a separate deck.

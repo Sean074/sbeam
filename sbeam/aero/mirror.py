@@ -41,6 +41,9 @@ _UNSUPPORTED = {
     "divergs": "DIVERG", "trimvars": "TRIMVAR", "trimobjs": "TRIMOBJ",
     "trimcons": "TRIMCON", "rbe3s": "RBE3", "cbushs": "CBUSH",
     "plotels": "PLOTEL",
+    # A MASSSET names CONM2 EIDs; whether a payload item mirrors (wing fuel)
+    # or does not (a single centreline store) is model intent, not geometry.
+    "masssets": "MASSSET",
 }
 
 

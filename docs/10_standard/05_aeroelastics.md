@@ -47,6 +47,7 @@ Results   (cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, CDi, e, per_su
 | `sbeam/solver/maneuver_qs.py` | **Phase G0** — `run_maneuver_qs`: Level-1 quasi-steady, open-loop, restrained l-set Newmark-β transient maneuver integration |
 | `sbeam/model/maneuver.py` | Dataclasses for the ZAERO `MLOADS`/`MLDTRIM`/`MLDTIME`/`MLDCOMD`/`MLDPRNT` + `TABLED1` card set |
 | `sbeam/model/maneuver_presets.py` | Canned pilot-command history presets |
+| `sbeam/model/mass_overlay.py` | **Step 60** — `resolve_mass_case` / `effective_conm2s`: MASSSET payload-case resolution (baseline scaling + ADD/REPLACE/DELETE overlay) |
 | `sbeam/results/f06_writer.py` | `build_f06_sol144_text` / `write_f06_sol144` — SOL 144 trim f06 blocks (shares displacement/CBAR helpers with SOL 101) |
 | `sbeam/results/load_export.py` | `write_aero_load_cards` — trimmed flight loads as `FORCE`/`MOMENT` bulk cards |
 | `sbeam/results/monitor_points.py` | `integrate_monpnt1` / `integrate_monpnt3` — monitor-point integrated section loads |
@@ -132,4 +133,5 @@ Reproduction script for the original review: `studies/_review_ha144a_check.py`.
 | `MLDTIME` | Integration window t0/tend/dt/tout | G0 |
 | `MLDPRNT` | ASCII time-history output request | G0 |
 | `TABLED1` | Tabular function of time (command histories) | G0 |
+| `MASSSET` | Payload / mass case (ADD/REPLACE/DELETE CONM2 ops + SCALE) | S60 |
 

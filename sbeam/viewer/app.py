@@ -179,8 +179,21 @@ def _show_warnings() -> None:
 
 
 def _show_gpwg(bulk: BulkData) -> None:
-    gpwg = compute_gpwg(bulk)
     st.markdown("**GPWG — Mass & CG**")
+    # Step 60: when the deck defines MASSSET payload cases, report GPWG for the
+    # selected case (baseline = no MASSSET selected).
+    massset_sid = None
+    if bulk.masssets:
+        massset_sid = st.selectbox(
+            "Mass case (MASSSET)",
+            [None] + sorted(bulk.masssets.keys()),
+            format_func=lambda s: (
+                "— baseline —" if s is None
+                else f"{s} — {bulk.masssets[s].label}"
+            ),
+            key="sel_massset_gpwg",
+        )
+    gpwg = compute_gpwg(bulk, massset_sid)
     st.metric("Total mass", fmt_mass(gpwg.total_mass))
     cols = st.columns(3)
     cols[0].metric("CG X", fmt(gpwg.cg_x))

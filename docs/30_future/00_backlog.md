@@ -4,7 +4,7 @@ Authoritative backlog of **open** work only — bugs, planned development, and d
 in priority order. Updated as part of every session that completes a step — never deferred.
 Completed steps live in `docs/40_history/00_completed_development.md`; nothing closed is
 summarised here. When an item is promoted to a formal step, give it a step number (next free
-number is **Step 64**; Steps 60–63 are assigned below) and apply the step format
+number is **Step 64**; Steps 61–63 are assigned below) and apply the step format
 (Objective, Deliverables, Test/Acceptance).
 
 ---
@@ -21,8 +21,7 @@ sweeps, section loads, usable authoring/output surface). The phase after that is
 
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P2 | Step 60 — `MASSSET` payload/mass cases for static SOL 144 | Tier 1 (G0 plan) | ~3–4 d | Delivers the "different payload conditions" half of the aim immediately, for static trim / Step 53 maneuvers — no modal work needed. |
-| P3 | Monitor Phase 2 — section-cut running loads | Tier 1 | ~2–3 d | The production stress deliverable (per-station Vz/My/Mt); unblocked, independent — can run in parallel with P2–P6. |
+| P3 | Monitor Phase 2 — section-cut running loads | Tier 1 | ~2–3 d | The production stress deliverable (per-station Vz/My/Mt); unblocked, independent — can run in parallel with P4–P6. |
 | P4 | Step 61 — free-free modal basis + h-set GAFs | Tier 1 (G0 plan) | ~3–4 d | The ZAERO-style modal architecture; absorbs RBMREF's rigid-basis construction. |
 | P5 | Step 62 — modal transient solver (prescribed rigid) + fixed-Φ mass gates | Tier 1 (G0 plan) | ~4–5 d | De-risks basis/truncation/recovery before free flight; lands the fixed-Φ mass-case transient capability. |
 | P6 | Step 63 — free-flight rigid-body coupling | Tier 1 (G0 plan) | ~4–5 d | The "different maneuvers" half of the aim: self-balancing transient maneuvers from arbitrary control input. |
@@ -31,7 +30,7 @@ sweeps, section loads, usable authoring/output surface). The phase after that is
 | P9 | `AMODE` Phase 1 (control-surface hinge modes) | Tier 3 | ~7.5 d | Needed before control-surface flutter in SOL 145; Phase 2 is a declared pre-1.0.0 blocker. |
 | P10 | Phase D core — DLM (D0–D3) + SOL 145 PK flutter | Tier 3 | ~25–30 d | The declared next phase after SOL 144 sufficiency. Gated on P8. |
 | P11 | Phase D cont. — RFA state-space + SOL 146 gust + Monitor Phase 3 | Tier 3 | ~15–20 d | Completes the dynamic loads process (CS-25.341 gust/turbulence monitors). |
-| P12 | `matrix_reuse_store` Phases 1–3 | Tier 2 | ~6 d | Real payoff only once envelope sweeps (many Machs × masses × maneuvers) exist — i.e. after P2–P6/P10. Its Phase 0 is stale (see verdicts). |
+| P12 | `matrix_reuse_store` Phases 1–3 | Tier 2 | ~6 d | Real payoff only once envelope sweeps (many Machs × masses × maneuvers) exist — i.e. after P4–P6/P10. Its Phase 0 is stale (see verdicts). |
 
 **Opportunistic / unranked** (small, independent, do when adjacent): SPLINE9 go/no-go
 convergence study (~1 d, study only); G0-d unsteady corrections; body fence image method;
@@ -92,7 +91,7 @@ Assigned owners — later features **reuse, never re-extract**:
 ## Tier 1 — SOL 144 production process (P1–P7)
 
 The goal state: SOL 144 supports early design analysis end-to-end — static trim and balanced
-maneuvers (done), **payload-condition sweeps** (Step 60), **transient maneuvers with a modal
+maneuvers (done), **payload-condition sweeps** (Step 60, closed 2026-07-30), **transient maneuvers with a modal
 basis** (Steps 61–63), **section loads for stress** (Monitor Phase 2), and a **closed
 authoring loop** (viewer UI).
 
@@ -107,8 +106,8 @@ Phase C. Full unsteady MLOADS (state-space / RFA / control law) remains Phase G 
 **Re-ordering note (this review):** `MASSSET` was pulled forward to Step 60 because its static
 half (payload sweeps for SOL 144 trim / Step 53 maneuvers) needs none of the modal work and
 directly serves the early-design aim; its fixed-Φ transient gates land with Step 62.
-Sequencing: **59 (refactor, closed 2026-07-06) → 60 (MASSSET static) → 61 (basis + GAFs) →
-62 (modal solver + mass gates) → 63 (free-flight)**, then G0-d/G0-e.
+Sequencing: **59 (refactor, closed 2026-07-06) → 60 (MASSSET static, closed 2026-07-30) →
+61 (basis + GAFs) → 62 (modal solver + mass gates) → 63 (free-flight)**, then G0-d/G0-e.
 
 #### Architecture decisions (confirmed 2026-07-05)
 
@@ -153,45 +152,6 @@ Sequencing: **59 (refactor, closed 2026-07-06) → 60 (MASSSET static) → 61 (b
    per output step: `u_md = Φξ`; residual `r_a = f_ext(t) − M_aa Φξ̈ − C_a Φξ̇ − (K_aa − q·Q_aa)Φξ`;
    `Δu_l = K_eff_ll⁻¹ r_l` (SUPORT r-set held, reusing the increment-1 `K_eff_ll` LU); downstream
    recovery via the existing `_recover_step` with URDD entries of `δ_basic` filled from `ξ̈_r`.
-
-#### Step 60 (P2) — MASSSET payload / mass-case capability for static SOL 144
-
-**Objective:** ZAERO-style payload-condition sweeps for the **existing static capability**: one
-deck, N subcases, each pairing a `MASSSET` with its TRIM (or Step 53 balanced-maneuver) case —
-AIC/splines/stiffness shared, only mass-derived quantities rebuilt per case. This is the
-early-design payload deliverable; the modal fixed-Φ interaction lands with Step 62.
-
-**Deliverables:**
-- **New `MASSSET` card** (`model/mass.py` dataclass, `bulk.masssets`, `_handle_massset` +
-  dispatch elif, validation-pass cross-refs):
-  ```
-  MASSSET  SID    LABEL    SCALE
-  +        ADD     301     302    303
-  +        REPLACE 21      22
-  +        DELETE  45
-  ```
-  `LABEL` = case name for output headers; `SCALE` (default 1.0) multiplies the baseline mass
-  before ops; continuation rows = op keyword + up to 7 CONM2 EIDs (`ADD` overlays new CONM2s,
-  `REPLACE` supersedes a baseline EID, `DELETE` removes one). Overlay CONM2s are ordinary CONM2
-  bulk cards; a post-parse pass marks ADD/REPLACE EIDs overlay-only so baseline assembly excludes
-  them (ADD of an existing EID / dangling DELETE/REPLACE ⇒ `ValueError`).
-- **Case-control `MASSSET = n`** per subcase (`SubcaseControl.massset_sid`) — MSC-style selection
-  like SPC/METHOD.
-- `model/mass_overlay.py` (new): `effective_conm2s(bulk, massset_sid)`;
-  `assemble_global_mass(..., massset_sid=None)`, `_build_inertial_cols(..., massset_sid=None)`,
-  GPWG, and `run_sol144_trim` threaded. Explicit invariant (code comment + doc): **no AeroCache
-  invalidation — AIC is geometry/Mach-only.**
-- Output: mass-case LABEL in f06 / GPWG / monitor-loads headers.
-- New sample deck `sample/ha144a_massset_sweep.bdf` (3-mass static sweep: empty / half / full
-  payload, same TRIM per case).
-
-**Test/Acceptance:** parser round-trip + all three ops + negative cases; equivalence gate (MASSSET
-overlay ≡ hand-edited deck with the same final CONM2 set: identical `M_gg`, GPWG, Step 53 trim to
-machine precision); baseline `MASSSET` absent ≡ today, bit-identical; per-case Step 53 closure ≈ 0;
-sweep test (3 subcases / 3 MASSSETs share one `AeroModel` — object-identity assert).
-
-**Key decisions:** case-control selection (not a TRIM/MLDTRIM field) so static and transient share
-the mechanism; `SCALE` applies to the whole baseline mass; MAT1-rho overlays out of scope (v1).
 
 #### Step 61 (P4) — Free-free maneuver modal basis + one-time h-set operator set
 
@@ -382,7 +342,7 @@ content-hash provenance; `DiskAeroCache(AeroCache)` reload path, default fresh-c
 bit-identical. **Re-scoped by this review: Phase 0 deleted** (the SOL 144 production
 dispatch + f06 writer it wanted to build already shipped with Step 56/AE10 + AC5). Phases
 1–3 (~6 d) become worthwhile once envelope sweeps exist (Machs × MASSSETs × maneuvers —
-i.e. after P2–P6/P10); the cache-boundary rules (§4: cache pre-q, pre-reduction operands
+i.e. after P4–P6/P10); the cache-boundary rules (§4: cache pre-q, pre-reduction operands
 only, never `Q_aa`/`K_eff`/LU) stand as written.
 
 ### SPLINE9 — FE-consistent Hermite beam spline (go/no-go study only)

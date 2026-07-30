@@ -108,11 +108,18 @@ def _summarize_sol144(sc: SubcaseControl, bulk: BulkData) -> str:
     # Pre-solve summary: advertise what the run WILL output based on the
     # case-control requests and the bulk cards present (AC5).
     has_monitors = bool(bulk.monpnt1s or bulk.monpnt3s)
+    # Step 60: the payload / mass case this subcase runs at (baseline if unset).
+    mass_case = ""
+    if sc.massset_sid is not None:
+        ms = bulk.masssets.get(sc.massset_sid)
+        label = f" {ms.label}" if ms is not None else ""
+        mass_case = f" [mass case MASSSET {sc.massset_sid}{label}]"
     if sc.mloads_sid is not None:
         outputs = "time histories, MLDPRNT export, critical-sample loads"
         if has_monitors:
             outputs += ", monitor loads"
-        return f"Transient maneuver loads (MLOADS {sc.mloads_sid}); outputs {outputs}"
+        return (f"Transient maneuver loads (MLOADS {sc.mloads_sid}){mass_case}; "
+                f"outputs {outputs}")
     parts: list[str] = []
     if sc.trim_sid is not None:
         trim = bulk.trims.get(sc.trim_sid)
@@ -132,7 +139,7 @@ def _summarize_sol144(sc: SubcaseControl, bulk: BulkData) -> str:
         outputs += ", monitor loads"
     if sc.aerof or sc.apres:
         outputs += ", box ΔCp/forces"
-    return f"Aeroelastic {head}; outputs {outputs}"
+    return f"Aeroelastic {head}{mass_case}; outputs {outputs}"
 
 
 _SOL_SUMMARY = {

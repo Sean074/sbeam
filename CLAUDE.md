@@ -47,7 +47,7 @@ Never batch these updates or defer them to a later session. The backlog is for *
 - **Phase 2:** Model enhancements — see `docs/30_future/00_backlog.md`
 - **Phase 3:** SOL 108 (frequency response), 109 (transient), 111 (modal freq), 112 (modal transient) — see `docs/30_future/00_backlog.md`
 - **Phase A (in progress):** Steady VLM aeroelastics (Steps 39–45 + A9 cruciform body-panel total-moment correction + A10 decoupled strip body panel complete; A7/A8 open) — see `docs/10_standard/05a_aero_vlm.md` and `docs/30_future/00_backlog.md`
-- **Phase G0 (in progress):** DLM-free quasi-steady transient maneuver loads — increment 1 complete (ZAERO `MLOADS` card set; Level-1 quasi-steady, open-loop; restrained l-set Newmark-β). Follow-ons (free-flight rigid-body coupling, modal ROM, unsteady corrections, closed-loop control) in `docs/30_future/00_backlog.md`
+- **Phase G0 (in progress):** DLM-free quasi-steady transient maneuver loads — increment 1 complete (ZAERO `MLOADS` card set; Level-1 quasi-steady, open-loop; restrained l-set Newmark-β); Step 59 (shared a-set reduction) and Step 60 (`MASSSET` payload / mass cases) complete. Follow-ons (free-flight rigid-body coupling, modal ROM, unsteady corrections, closed-loop control) in `docs/30_future/00_backlog.md`
 - **Future:** distributed loads, Timoshenko shear, enforced displacements, buckling (SOL 105), results export — see `docs/30_future/00_backlog.md`
 
 ## Project Backlog
@@ -77,7 +77,7 @@ Phase 1 uses **Euler-Bernoulli beam theory** (shear deformation neglected). Each
 | Elements | `CBAR`, `PLOTEL`, `RBE3` (constraint interpolation; DOF transformation), `RBE2` (rigid body; DOF transformation), `RBAR` (rigid bar; kinematic coupling with lever-arm), `CBUSH` (two-node and grounded spring-damper; CID=0; offsets not supported) |
 | Properties | `PBAR` (uniform cross-section: A, I1, I2, J, recovery points C/D/E/F), `PBUSH` (K1–K6 diagonal stiffness; B1–B6 damping deferred to dynamic solvers) |
 | Material | `MAT1` (E, G, nu, rho) |
-| Mass | `CONM2` (point mass; offset vector and inertia tensor in CID frame) |
+| Mass | `CONM2` (point mass; offset vector and inertia tensor in CID frame), `MASSSET` (payload / mass case: SCALE + ADD/REPLACE/DELETE CONM2 ops, Step 60) |
 | Constraints | `SPC`, `SPC1` (DOFs 1–6: Tx Ty Tz Rx Ry Rz) |
 | Loads | `FORCE`, `MOMENT`, `LOAD` (linear combination), `GRAV` (body acceleration; CID=0 only; f = M×a) |
 | Eigenvalue | `EIGRL` (SOL 103: modes, frequency range, normalization) |
@@ -86,7 +86,7 @@ Phase 1 uses **Euler-Bernoulli beam theory** (shear deformation neglected). Each
 
 ### Case Control Cards (Phase 1)
 
-`SOL`, `SUBCASE`, `LOAD`, `SPC`, `METHOD`, `TRIM`, `MLOADS` (Phase G0 transient maneuver), `DISPLACEMENT`, `SPCFORCE`, `OLOAD`, `FORCE`, `STRESS`, `BEGIN BULK`, `ENDDATA`
+`SOL`, `SUBCASE`, `LOAD`, `SPC`, `METHOD`, `TRIM`, `MLOADS` (Phase G0 transient maneuver), `MASSSET` (payload / mass case, Step 60), `DISPLACEMENT`, `SPCFORCE`, `OLOAD`, `FORCE`, `STRESS`, `BEGIN BULK`, `ENDDATA`
 
 ## Key Constraints
 
@@ -103,7 +103,7 @@ Phase 1 uses **Euler-Bernoulli beam theory** (shear deformation neglected). Each
 sbeam/
 ├── main.py
 ├── parser/         # bdf_reader.py, case_control.py
-├── model/          # grid.py, element.py, property.py, material.py, load.py, constraint.py, mass.py, aero.py, maneuver.py (ZAERO MLOADS cards), maneuver_presets.py
+├── model/          # grid.py, element.py, property.py, material.py, load.py, constraint.py, mass.py, mass_overlay.py (MASSSET mass cases), aero.py, maneuver.py (ZAERO MLOADS cards), maneuver_presets.py
 ├── assembly/       # stiffness.py, mass_matrix.py, load_vector.py, coord_transform.py, rbe3.py, reduction.py (shared RBE3+SPC a-set reduction)
 ├── solver/         # sol101.py, sol103.py, sol144.py (static aeroelastic trim), maneuver_qs.py (Phase G0 transient maneuver loads)
 ├── results/        # results.py, f06_writer.py, load_export.py, monitor_points.py (MONPNT1/MONPNT3 integrated section loads), maneuver_output.py (Phase G0 time histories + critical-step export)

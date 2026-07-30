@@ -347,6 +347,19 @@ def _build_f06_sol144_text(
         f"                           SUBCASE {subcase_id}     TRIM = {result.trim_sid}"
         f"     MACH = {result.mach:.4f}     Q = {_fmt(result.q).strip()}"
     )
+    # Mass case (Step 60) — emitted only when a MASSSET is selected, so baseline
+    # decks produce byte-identical f06 output to pre-Step-60 runs.
+    if result.massset_sid is not None:
+        cg = result.massset_cg or (0.0, 0.0, 0.0)
+        lines.append(
+            f"                           MASSSET = {result.massset_sid}"
+            f"     LABEL = {result.massset_label}"
+            f"     MASS = {_fmt(result.massset_mass).strip()}"
+        )
+        lines.append(
+            "                           CG = "
+            f"({_fmt(cg[0]).strip()}, {_fmt(cg[1]).strip()}, {_fmt(cg[2]).strip()})"
+        )
     lines.append("")
 
     # ---- TRIM VARIABLES ----

@@ -9,7 +9,7 @@ from sbeam.model.grid import Grid
 from sbeam.model.element import Cbar, Plotel, Rbe3, Rbe2, Cbush, Rbar
 from sbeam.model.property import Pbar, Pbush
 from sbeam.model.material import Mat1
-from sbeam.model.mass import Conm2
+from sbeam.model.mass import Conm2, Massset
 from sbeam.model.load import Force, Moment, Load, Grav, Eigrl
 from sbeam.model.constraint import Spc, Spc1, Suport
 from sbeam.model.aero import (
@@ -305,6 +305,72 @@ def _handle_conm2(fields: list, cont, bulk: BulkData) -> None:
         eid=eid, gid=gid, cid=cid, m=m, x1=x1, x2=x2, x3=x3,
         i11=_gi(8), i21=_gi(9), i22=_gi(10),
         i31=_gi(11), i32=_gi(12), i33=_gi(13),
+    )
+
+
+def _handle_massset(fields: list, conts: list, bulk: BulkData) -> None:
+    """MASSSET — payload / mass case (Step 60).
+
+    ``MASSSET SID LABEL SCALE`` followed by continuation rows of
+    ``op-keyword + EIDs``:
+
+        MASSSET  10      FULLFUEL 1.0
+        +        ADD     9301    9302
+        +        REPLACE 21      9021    22      9022
+        +        DELETE  45
+
+    ADD / DELETE rows carry up to 7 CONM2 EIDs; REPLACE rows carry
+    (baseline EID, overlay EID) pairs and so must hold an even count.
+    """
+    sid = _to_int(fields[1])
+    if sid in bulk.masssets:
+        raise ValueError(f"Duplicate MASSSET SID {sid}")
+    label = fields[2].strip() if len(fields) > 2 and fields[2].strip() else f"MASSSET {sid}"
+    scale = _to_float(fields[3]) if len(fields) > 3 and fields[3].strip() else 1.0
+    if scale < 0.0:
+        raise ValueError(f"MASSSET {sid}: SCALE must be >= 0, got {scale}")
+
+    add: list = []
+    replace: list = []
+    delete: list = []
+    seen: dict = {}   # eid -> op that first named it (duplicate-reference guard)
+
+    for cont in conts:
+        entries = [f.strip() for f in cont[1:] if f.strip()]
+        if not entries:
+            continue
+        op = entries[0].upper()
+        if op not in ("ADD", "REPLACE", "DELETE"):
+            raise ValueError(
+                f"MASSSET {sid}: unknown op '{entries[0]}' "
+                "(expected ADD, REPLACE, or DELETE)"
+            )
+        eids = [_to_int(f) for f in entries[1:]]
+        if not eids:
+            raise ValueError(f"MASSSET {sid}: {op} row lists no CONM2 EIDs")
+        for eid in eids:
+            if eid in seen:
+                raise ValueError(
+                    f"MASSSET {sid}: CONM2 EID {eid} referenced more than once "
+                    f"(already named by {seen[eid]})"
+                )
+            seen[eid] = op
+
+        if op == "ADD":
+            add.extend(eids)
+        elif op == "DELETE":
+            delete.extend(eids)
+        else:
+            if len(eids) % 2 != 0:
+                raise ValueError(
+                    f"MASSSET {sid}: REPLACE takes (baseline EID, overlay EID) pairs — "
+                    f"got an odd count ({len(eids)}) on one row"
+                )
+            replace.extend(zip(eids[0::2], eids[1::2]))
+
+    bulk.masssets[sid] = Massset(
+        sid=sid, label=label, scale=scale,
+        add=add, replace=replace, delete=delete,
     )
 
 
@@ -1097,6 +1163,20 @@ def parse_bulk_data(lines: list) -> BulkData:
             _handle_rbar(fields, bulk)
         elif keyword == "CONM2":
             _handle_conm2(fields, cont, bulk)
+        elif keyword == "MASSSET":
+            ms_conts: list = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    ms_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_massset(fields, ms_conts, bulk)
         elif keyword == "SPC":
             _handle_spc(fields, bulk)
         elif keyword == "SPC1":
@@ -1518,6 +1598,39 @@ def parse_bulk_data(lines: list) -> BulkData:
             raise ValueError(f"MLOADS {sid}: MLDCOMD {ml.mldcomd} not found")
         if ml.mldprnt and ml.mldprnt not in bulk.mldprnts:
             raise ValueError(f"MLOADS {sid}: MLDPRNT {ml.mldprnt} not found")
+
+    # Validate MASSSET (Step 60) cross-references and mark overlay-only CONM2s.
+    # An EID is either baseline (DELETE target / REPLACE old slot) or overlay
+    # (ADD / REPLACE new slot) — never both, or the case mass is ill-defined.
+    overlay_eids: set = set()
+    baseline_eids: dict = {}   # eid -> MASSSET sid that uses it as a baseline EID
+    for sid, ms in bulk.masssets.items():
+        refs = (
+            [(e, "ADD") for e in ms.add]
+            + [(e, "DELETE") for e in ms.delete]
+            + [(old, "REPLACE") for old, _ in ms.replace]
+            + [(new, "REPLACE") for _, new in ms.replace]
+        )
+        for eid, op in refs:
+            if eid not in bulk.conm2s:
+                raise ValueError(
+                    f"MASSSET {sid}: {op} references CONM2 EID {eid}, which is not "
+                    "defined by any CONM2 card"
+                )
+        for eid in ms.add:
+            overlay_eids.add(eid)
+        for old, new in ms.replace:
+            overlay_eids.add(new)
+            baseline_eids.setdefault(old, sid)
+        for eid in ms.delete:
+            baseline_eids.setdefault(eid, sid)
+    for eid in sorted(overlay_eids & set(baseline_eids)):
+        raise ValueError(
+            f"MASSSET: CONM2 EID {eid} is named as an overlay (ADD / REPLACE new slot) "
+            f"and also as a baseline EID by MASSSET {baseline_eids[eid]} — an EID must "
+            "be one or the other"
+        )
+    bulk.overlay_conm2_eids = overlay_eids
 
     # Resolve all grid positions from their CP system into global CID 0
     from sbeam.assembly.coord_transform import resolve_grid_positions

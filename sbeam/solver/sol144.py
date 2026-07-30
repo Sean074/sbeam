@@ -392,6 +392,7 @@ def _build_inertial_cols(
     all_labels: list,
     grid_index: dict,
     suport_pos: np.ndarray,
+    massset_sid=None,
 ) -> np.ndarray:
     """Inertial sensitivity matrix M_ax on the full g-set — basic frame.
 
@@ -406,7 +407,13 @@ def _build_inertial_cols(
         where r_i = grid_pos_i - suport_pos and α_hat is the unit rotation axis.
 
     Only CONM2 point masses and CBAR distributed mass (rho > 0) contribute.
+
+    ``massset_sid`` (Step 60) selects a MASSSET payload / mass case, matching
+    ``assemble_global_mass``; ``None`` gives the baseline configuration.
     """
+    from sbeam.model.mass_overlay import resolve_mass_case
+    case = resolve_mass_case(bulk, massset_sid)
+
     n_g = 6 * len(grid_index)
     n_labels = len(all_labels)
     M = np.zeros((n_g, n_labels))
@@ -424,7 +431,7 @@ def _build_inertial_cols(
 
         if ul in _urdd_trans:
             ax = _urdd_trans[ul]
-            for conm2 in bulk.conm2s.values():
+            for conm2 in case.conm2s.values():
                 if conm2.gid not in grid_index:
                     continue
                 M[grid_index[conm2.gid] * 6 + ax, col] -= conm2.m
@@ -436,14 +443,14 @@ def _build_inertial_cols(
                 ga = bulk.grids[cbar.ga]
                 gb = bulk.grids[cbar.gb]
                 L = ((gb.x - ga.x)**2 + (gb.y - ga.y)**2 + (gb.z - ga.z)**2) ** 0.5
-                m_half = 0.5 * mat.rho * pbar.A * L
+                m_half = 0.5 * case.scale * mat.rho * pbar.A * L
                 M[grid_index[cbar.ga] * 6 + ax, col] -= m_half
                 M[grid_index[cbar.gb] * 6 + ax, col] -= m_half
 
         elif ul in _urdd_rot:
             rot = _urdd_rot[ul]
             alpha_hat = _rot_axis[rot]
-            for conm2 in bulk.conm2s.values():
+            for conm2 in case.conm2s.values():
                 if conm2.gid not in grid_index:
                     continue
                 gi = grid_index[conm2.gid]
@@ -464,7 +471,7 @@ def _build_inertial_cols(
                 ga = bulk.grids[cbar.ga]
                 gb = bulk.grids[cbar.gb]
                 L = ((gb.x - ga.x)**2 + (gb.y - ga.y)**2 + (gb.z - ga.z)**2) ** 0.5
-                m_half = 0.5 * mat.rho * pbar.A * L
+                m_half = 0.5 * case.scale * mat.rho * pbar.A * L
                 for gobj, gi in ((ga, grid_index[cbar.ga]), (gb, grid_index[cbar.gb])):
                     r = np.array([gobj.x, gobj.y, gobj.z]) - suport_pos
                     f_transport = -m_half * np.cross(alpha_hat, r)
@@ -1399,6 +1406,19 @@ def run_sol144_trim(
     trim_card = bulk.trims[trim_sid]
     q_dyn  = trim_card.q
 
+    # ------------------------------------------------------------------ #
+    # Mass case (Step 60) — MASSSET payload configuration for this subcase
+    # ------------------------------------------------------------------ #
+    # Every mass-derived operator below (M_ax, M_aa, GPWG) is built for this
+    # case; nothing else changes.  The AIC, splines and the whole AeroCache are
+    # geometry/Mach-only and are reused across mass cases untouched — a MASSSET
+    # sweep must never invalidate the aero cache.
+    from sbeam.gpwg import compute_gpwg
+    from sbeam.model.mass_overlay import resolve_mass_case
+    massset_sid = subcase.massset_sid
+    mass_case_label = resolve_mass_case(bulk, massset_sid).label
+    mass_case_gpwg = compute_gpwg(bulk, massset_sid)
+
     grid_index = build_grid_index(bulk)
     n_dofs = 6 * len(grid_index)
     spc_sid = subcase.spc_sid
@@ -1545,7 +1565,7 @@ def run_sol144_trim(
 
     # Inertial sensitivity matrix (basic frame); prescribed inertial RHS (AE7).
     # M_ax_g[:, col] = dF/dURDD_col; zero for non-URDD labels.
-    M_ax_g = _build_inertial_cols(bulk, all_labels, grid_index, suport_pos)
+    M_ax_g = _build_inertial_cols(bulk, all_labels, grid_index, suport_pos, massset_sid)
     pres_inertial_g = M_ax_g @ pres_values_basic     # (n_g,) — free URDD entry = 0
 
     f_rhs_g = f_aero_g + pres_aero_g + pres_inertial_g  # (n_g,)
@@ -1668,7 +1688,7 @@ def run_sol144_trim(
     # (MSC Aeroelastic Analysis UG Eqs. 2-111 … 2-134)
     # ------------------------------------------------------------------ #
     from sbeam.assembly.mass_matrix import assemble_global_mass
-    M_gg = assemble_global_mass(bulk)
+    M_gg = assemble_global_mass(bulk, massset_sid)
     M_aa = red.reduce_matrix(M_gg, dense=True)
     f_aero_a = red.reduce_vector(f_aero_g)
     unrest_derivs, unrest_intercepts = _compute_unrestrained_derivs(
@@ -1844,4 +1864,8 @@ def run_sol144_trim(
         trim_mode=trim_mode,
         monitor_loads=monitor_loads,
         chordcp_echo=chordcp_echo,
+        massset_sid=massset_sid,
+        massset_label=mass_case_label,
+        massset_mass=mass_case_gpwg.total_mass,
+        massset_cg=(mass_case_gpwg.cg_x, mass_case_gpwg.cg_y, mass_case_gpwg.cg_z),
     )

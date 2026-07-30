@@ -238,11 +238,14 @@ SOL 144 subcases may declare:
 ```
 SOL 144
 SUBCASE 1
-  TRIM   = 10
-  DIVERG = 20
+  TRIM    = 10
+  DIVERG  = 20
+  MASSSET = 30
 ```
 
-`SubcaseControl` gains `trim_sid` and `diverg_sid` fields (both `Optional[int]`, default `None`).
+`SubcaseControl` gains `trim_sid` and `diverg_sid` fields (both `Optional[int]`, default `None`),
+plus `massset_sid` for the Step 60 payload / mass case (see
+[Mass cases](#mass-cases--masset-payload-conditions-step-60)).
 
 ### Over-determined trim (sbeam-defined cards)
 
@@ -489,6 +492,87 @@ maneuver load at each output time.
   (closure → 0, lift = `n_z·W`); per-step closure bounded; MLDPRNT + critical-load export round-trips.
 - **Validity:** low reduced frequency `k = ω·c_ref/2V ≲ 0.05–0.1` (slow maneuvers); higher-rate inputs
   need the Phase G0 unsteady corrections or the Phase D DLM.
+
+---
+
+## Mass cases — MASSSET payload conditions (Step 60)
+
+ZAERO-style payload sweeps for the static capability: **one deck, N subcases**, each
+pairing a `MASSSET` with its `TRIM` (or Step 53 balanced-maneuver) case. This is the
+early-design payload deliverable — different payload conditions analysed without
+duplicating the model.
+
+### Card and selection
+
+The `MASSSET` bulk card (fields and ops in
+[`02_card_reference.md`](02_card_reference.md#massset--payload--mass-case-step-60)) names
+a mass configuration built from the baseline model mass: `SCALE` multiplies the baseline,
+then `ADD` / `REPLACE` / `DELETE` overlay, swap, or drop CONM2 cards. A subcase selects it
+MSC-style with a case-control `MASSSET = sid` request (like `SPC`/`METHOD`) — deliberately
+*not* a TRIM or MLDTRIM field, so the static and transient solvers share one mechanism.
+
+### Resolution — `model/mass_overlay.py`
+
+`resolve_mass_case(bulk, massset_sid)` returns a `MassCase`
+(`sid`, `label`, `scale`, `conm2s`); `effective_conm2s(...)` is the CONM2-only shorthand.
+Baseline members come back already scaled, overlay members at their card values. The
+effective set is built by iterating `bulk.conm2s`, so it keeps **deck (card) order** and a
+mass case sums its contributions in the same order a hand-edited deck would.
+
+`massset_sid=None` is the baseline configuration: every CONM2 that is not overlay-only,
+unscaled. With no MASSSET cards in the deck that is exactly `bulk.conm2s`, and every
+operator below is unchanged from pre-Step-60 behaviour.
+
+### What is rebuilt, and what is not
+
+| Rebuilt per mass case | Shared across the sweep |
+|---|---|
+| `M_gg` (`assemble_global_mass(bulk, massset_sid)`) | `K_gg` / `K_aa` (stiffness) |
+| `M_ax` (`_build_inertial_cols(..., massset_sid)`) | VLM AIC — `ajj`, `ajj_inv_corr` |
+| GPWG mass / CG (`compute_gpwg(bulk, massset_sid)`) | `skj` / `djk` / `wg`, splines `g_disp`/`g_slope` |
+| The trim solve and its recovered loads | the whole `AeroCache` |
+
+> **Invariant — no AeroCache invalidation.** The AIC is a function of geometry and Mach
+> only. A MASSSET sweep must never rebuild or invalidate it; `test_sweep_shares_one_aero_model`
+> asserts object identity across the three subcases of the sample deck.
+
+`SCALE` applies to the whole baseline mass — CBAR distributed mass (`rho·A + nsm`) and
+baseline CONM2 mass *and* inertia tensor — because the 6×6 CONM2 block is linear in
+`(m, I)`, so scaling both scales the whole block including offset coupling and
+parallel-axis terms. MAT1 `rho` overlays are out of scope for v1.
+
+### Output
+
+`Sol144TrimResult` gains `massset_sid`, `massset_label`, `massset_mass` and `massset_cg`.
+When a MASSSET is selected the f06 subcase header gains a `MASSSET = / LABEL = / MASS =`
+line plus a `CG =` line (omitted entirely for baseline runs, so pre-Step-60 decks produce
+byte-identical f06 output). The `*.monitor_loads.csv` gains `massset` and `mass_case`
+columns, and both load-card exports stamp the mass case in their comment block. The viewer's
+GPWG panel offers a mass-case selector when the deck defines MASSSET cards, and the
+analysis-plan summary names the case per subcase.
+
+### Transient maneuvers
+
+`run_maneuver_qs` threads `subcase.massset_sid` into its own `M_gg`/`M_ax` build **and**
+into the initial-condition trim, so an `MLOADS` subcase carrying a `MASSSET` runs the whole
+maneuver at that payload condition. The fixed-Φ modal interaction (recompute `M_hh,i` only,
+reuse the basis) lands with Step 62.
+
+### Sample deck and gates
+
+`sample/ha144a_massset_sweep.bdf` — the full-span HA144A with one TRIM card and three
+payload conditions (EMPTY 16000 lb / HALFFUEL 18500 lb / FULLFUEL 21000 lb), exercising all
+three ops. Gated by `tests/parser/test_massset.py` (card round-trip, overlay marking, SCALE,
+negative cases) and `tests/aero/test_massset_sweep.py`:
+
+- **equivalence** — each MASSSET case matches a hand-edited deck carrying the same final
+  CONM2 set: identical `M_gg`, identical GPWG, identical trim (machine precision);
+- **baseline unchanged** — no MASSSET selected reproduces the pre-Step-60 operators, and the
+  EMPTY case reproduces the untouched `ha144a_fullspan_sbeam.bdf` trim exactly;
+- **closure** — per-case Step 53 balanced-maneuver closure ≈ 0, and trimmed lift equals the
+  case weight;
+- **physics** — heavier case ⇒ larger trimmed ANGLEA and a further-aft CG;
+- **shared aero** — three subcases, one `AeroModel` (object-identity assert).
 
 ---
 
