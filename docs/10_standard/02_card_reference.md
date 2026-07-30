@@ -1521,15 +1521,21 @@ TRIM  SID  MACH  Q  L1  UX1  L2  UX2  L3  UX3
 | MACH | float | Mach number |
 | Q | float | Dynamic pressure |
 | L1, UX1, … | str, float | Label/value pairs for prescribed variables (continuation OK) |
+| `RHOREF`, ρ | str, float | **sbeam extension** (Step 61): reserved pseudo-label carrying the freestream density for this flight condition. Not a trim variable — it never enters the trim solve. Its only use is `V = √(2·Q/ρ)`, the true airspeed the transient maneuver rate terms need (`build_dj_rigidrate`). Omit it and `Trim.velocity()` raises. |
 
 **Example:**
 ```
 TRIM, 10, 0.3, 1500.0, PITCH, 0.0, URDD3, -1.0
+$ with the density needed by transient maneuver runs (V = sqrt(2*1500/0.002377))
+TRIM, 11, 0.3, 1500.0, RHOREF, 2.377-3, PITCH, 0.0
++,    URDD3, -1.0
 ```
 
 **Validation:**
 - Every label must be defined by an AESTAT or AESURF card.
 - Duplicate labels within one TRIM card raise `ValueError`.
+- `RHOREF` must be positive; an AESTAT/AESURF label named `RHOREF` is rejected
+  (it would collide with the reserved pseudo-label).
 - DOF-count diagnostic: warns if all labels are prescribed (nothing to solve) or if the
   system is over-determined and no TRIMOBJ card is present.
 
@@ -1758,7 +1764,7 @@ Top-level driver referencing the sub-cards of one transient maneuver run.
 
 **Format:**
 ```
-MLOADS, SID, MLDTRIM, MLDTIME, MLDCOMD, MLDPRNT, NMODES
+MLOADS, SID, MLDTRIM, MLDTIME, MLDCOMD, MLDPRNT, NMODES, METHOD, ZETA
 ```
 
 **Fields:**
@@ -1770,15 +1776,26 @@ MLOADS, SID, MLDTRIM, MLDTIME, MLDCOMD, MLDPRNT, NMODES
 | MLDTIME | `mldtime` | int | MLDTIME SID (integration window) | required |
 | MLDCOMD | `mldcomd` | int | MLDCOMD SID (`0` = no commands; hold trim) | `0` |
 | MLDPRNT | `mldprnt` | int | MLDPRNT SID (`0` = no ASCII print) | `0` |
-| NMODES | `nmodes` | int | Elastic modes to retain (`0` = all available) | `0` |
+| NMODES | `nmodes` | int | Retained **elastic** modes of the free-free basis (`0` = all). Rigid modes are always all retained. | `0` |
+| METHOD | `method` | int | EIGRL SID for the basis eigensolve (`0` = internal all-modes default) | `0` |
+| ZETA | `zeta` | float | Uniform elastic modal damping ratio | `0.0` |
+
+NMODES/METHOD/ZETA configure the Step 61 free-free modal basis
+(`solver/modal_basis.py`). The basis and its h-set operators are built and
+validated standalone; the modal transient solver that consumes them lands with
+Step 62, so the shipped quasi-steady solver parses all three, warns, and
+integrates the l-set directly.
 
 Cross-reference validation (post-parse): MLDTRIM/MLDTIME must exist; MLDCOMD and
-MLDPRNT (if non-zero) must exist — else `ValueError`.
+MLDPRNT (if non-zero) must exist; METHOD (if non-zero) must name an EIGRL;
+NMODES ≥ 0 and ZETA ≥ 0 — else `ValueError`.
 
 **Example:**
 ```
 $ Full transient run: trim IC 100, window 200, commands 300, print 400
 MLOADS, 10, 100, 200, 300, 400
+$ ... with a 12-elastic-mode basis from EIGRL 900 and 2% modal damping
+MLOADS, 11, 100, 200, 300, 400, 12, 900, 0.02
 ```
 
 ---
@@ -1989,7 +2006,7 @@ are the exception: they refer to **element local axes** (1 = axial, 4 = torsion,
 | SPLINE1 | Not implemented (Step 48 deferred) — handler raises `NotImplementedError`; use SPLINE2 or ATTACH |
 | ATTACH | CID must be `0`; CID ≠ 0 raises `NotImplementedError` at spline build |
 | SUPORT | Blank DOF string after a GID raises `ValueError` |
-| TRIM | Every label must be defined by AESTAT or AESURF; duplicate labels raise `ValueError` |
+| TRIM | Every label must be defined by AESTAT or AESURF; duplicate labels raise `ValueError`; `RHOREF` is a reserved pseudo-label (must be positive; no AESTAT/AESURF may use the name) |
 | TRIMCON | SENSE must be `LE` or `GE`; any other value raises `ValueError` |
 | AECOMP | LISTTYPE must be `AELIST` or `SET1`; every list ID must exist in that table |
 | MONPNT1 | COMP must exist in AECOMP as an `AELIST`-type collection; CP (if non-zero) must exist in CORD2R |
@@ -1998,4 +2015,4 @@ are the exception: they refer to **element local axes** (1 = axial, 4 = torsion,
 | MLDTIME | DT must be positive; TEND must exceed T0 |
 | MLDCOMD | Every label must be defined by AESTAT or AESURF; every TABID must exist in TABLED1 |
 | MLDTRIM | TRIMID must exist in TRIM |
-| MLOADS | MLDTRIM/MLDTIME must exist; MLDCOMD/MLDPRNT (if non-zero) must exist |
+| MLOADS | MLDTRIM/MLDTIME must exist; MLDCOMD/MLDPRNT/METHOD (if non-zero) must exist; NMODES ≥ 0, ZETA ≥ 0 |

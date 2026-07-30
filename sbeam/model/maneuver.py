@@ -96,10 +96,21 @@ class Mldtrim:
 
 @dataclass
 class Mloads:
-    """Top-level transient maneuver-loads driver (references the sub-cards)."""
+    """Top-level transient maneuver-loads driver (references the sub-cards).
+
+    ``nmodes``/``method``/``zeta`` configure the free-free modal basis (Step 61):
+    ``method`` selects the EIGRL used for the basis eigensolve (0 ⇒ an internal
+    all-modes default), ``nmodes`` is the number of retained **elastic** modes
+    (rigid modes are always all retained; 0 ⇒ all elastic), and ``zeta`` is the
+    uniform elastic modal damping ratio.  The Step 61 basis/operator layer is
+    built and validated standalone; the modal transient solver that consumes it
+    lands with Step 62, so the legacy quasi-steady solver still ignores all three.
+    """
     sid:        int
     mldtrim:    int            # MLDTRIM sid (initial condition)
     mldtime:    int            # MLDTIME sid (integration window)
     mldcomd:    int = 0        # MLDCOMD sid (0 ⇒ no commands; hold trim)
     mldprnt:    int = 0        # MLDPRNT sid (0 ⇒ no ASCII print)
-    nmodes:     int = 0        # elastic modes to retain (0 ⇒ all available)
+    nmodes:     int = 0        # retained ELASTIC modes (0 ⇒ all available)
+    method:     int = 0        # EIGRL sid for the basis solve (0 ⇒ internal default)
+    zeta:       float = 0.0    # uniform elastic modal damping ratio

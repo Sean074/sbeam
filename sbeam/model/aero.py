@@ -212,11 +212,36 @@ class Aelist:
 
 @dataclass
 class Trim:
-    """Static trim condition — prescribed values for a subset of trim variables."""
+    """Static trim condition — prescribed values for a subset of trim variables.
+
+    ``rhoref`` is an sbeam extension (Step 61) entered as a pseudo-label in the
+    LABEL/VALUE pair list (``TRIM, 1, 0.9, 1200.0, RHOREF, 0.002377, ...``).  It
+    is the freestream density for this flight condition and exists solely to map
+    the dynamic pressure to a true airspeed ``V = sqrt(2q/rho)``; the static trim
+    (Step 52/53) never needs it.  ``0.0`` means "not supplied".
+    """
     sid:  int
     mach: float
     q:    float          # dynamic pressure
     vars: dict = field(default_factory=dict)   # {label: prescribed_value}
+    rhoref: float = 0.0  # sbeam extension: freestream density (0.0 ⇒ not supplied)
+
+    def velocity(self) -> float:
+        """True airspeed V = sqrt(2q/rho) from the RHOREF pseudo-label.
+
+        Raises:
+            ValueError if RHOREF was not supplied on the card — the transient
+            maneuver rate terms (Step 61 ``build_dj_rigidrate``) are undefined
+            without a physical velocity.
+        """
+        if self.rhoref <= 0.0:
+            raise ValueError(
+                f"TRIM {self.sid}: a freestream velocity is required but RHOREF "
+                "is not set on the card.  Add the RHOREF pseudo-label "
+                "(e.g. 'TRIM, {sid}, MACH, Q, RHOREF, 0.002377, ...') so "
+                "V = sqrt(2q/rho) can be formed.".replace("{sid}", str(self.sid))
+            )
+        return float(math.sqrt(2.0 * self.q / self.rhoref))
 
 
 @dataclass

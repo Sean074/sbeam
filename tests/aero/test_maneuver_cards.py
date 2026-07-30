@@ -136,3 +136,73 @@ def test_tabled1_nonmonotonic_raises():
                          "+,0.0,0.0,0.5,0.1,0.4,0.1,ENDT")
     with pytest.raises(ValueError, match="strictly increasing"):
         _parse(deck)
+
+
+# ---------------------------------------------------------------------------
+# Step 61 — MLOADS METHOD / ZETA (free-free modal basis configuration)
+# ---------------------------------------------------------------------------
+
+def test_mloads_method_and_zeta_default_to_off():
+    """The pre-Step-61 six-field card still parses, with the new fields off."""
+    bulk = _parse(_DECK)
+    ml = bulk.mloads[700]
+    assert ml.nmodes == 4
+    assert ml.method == 0
+    assert ml.zeta == 0.0
+
+
+def test_mloads_method_and_zeta_roundtrip():
+    deck = _DECK.replace("MLOADS,700,600,300,400,500,4",
+                         "EIGRL,900,,,20\nMLOADS,700,600,300,400,500,4,900,0.02")
+    ml = _parse(deck).mloads[700]
+    assert ml.nmodes == 4
+    assert ml.method == 900
+    assert ml.zeta == pytest.approx(0.02)
+
+
+def test_mloads_unknown_method_raises():
+    deck = _DECK.replace("MLOADS,700,600,300,400,500,4",
+                         "MLOADS,700,600,300,400,500,4,999")
+    with pytest.raises(ValueError, match="METHOD 999 not found"):
+        _parse(deck)
+
+
+def test_mloads_negative_zeta_raises():
+    deck = _DECK.replace("MLOADS,700,600,300,400,500,4",
+                         "MLOADS,700,600,300,400,500,4,0,-0.1")
+    with pytest.raises(ValueError, match="ZETA"):
+        _parse(deck)
+
+
+# ---------------------------------------------------------------------------
+# Step 61 — TRIM RHOREF pseudo-label (freestream density -> velocity)
+# ---------------------------------------------------------------------------
+
+def test_trim_rhoref_is_not_a_trim_variable():
+    deck = _DECK.replace(
+        "TRIM,50,0.5,1.5,URDD3,-80.435,PITCH,0.0,URDD5,0.0",
+        "TRIM,50,0.5,1.5,RHOREF,0.5,URDD3,-80.435,PITCH,0.0,URDD5,0.0")
+    trim = _parse(deck).trims[50]
+    assert "RHOREF" not in trim.vars
+    assert trim.rhoref == pytest.approx(0.5)
+    # V = sqrt(2q/rho) = sqrt(2*1.5/0.5)
+    assert trim.velocity() == pytest.approx((2 * 1.5 / 0.5) ** 0.5)
+
+
+def test_trim_without_rhoref_has_no_velocity():
+    trim = _parse(_DECK).trims[50]
+    assert trim.rhoref == 0.0
+    with pytest.raises(ValueError, match="RHOREF"):
+        trim.velocity()
+
+
+def test_trim_negative_rhoref_raises():
+    deck = _DECK.replace("TRIM,50,0.5,1.5,", "TRIM,50,0.5,1.5,RHOREF,-1.0,")
+    with pytest.raises(ValueError, match="RHOREF must be positive"):
+        _parse(deck)
+
+
+def test_aestat_named_rhoref_is_rejected():
+    deck = _DECK.replace("AESTAT,1,ANGLEA", "AESTAT,1,ANGLEA\nAESTAT,5,RHOREF")
+    with pytest.raises(ValueError, match="RHOREF"):
+        _parse(deck)

@@ -22,7 +22,6 @@ sweeps, section loads, usable authoring/output surface). The phase after that is
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
 | P3 | Monitor Phase 2 — section-cut running loads | Tier 1 | ~2–3 d | The production stress deliverable (per-station Vz/My/Mt); unblocked, independent — can run in parallel with P4–P6. |
-| P4 | Step 61 — free-free modal basis + h-set GAFs | Tier 1 (G0 plan) | ~3–4 d | The ZAERO-style modal architecture; absorbs RBMREF's rigid-basis construction. |
 | P5 | Step 62 — modal transient solver (prescribed rigid) + fixed-Φ mass gates | Tier 1 (G0 plan) | ~4–5 d | De-risks basis/truncation/recovery before free flight; lands the fixed-Φ mass-case transient capability. |
 | P6 | Step 63 — free-flight rigid-body coupling | Tier 1 (G0 plan) | ~4–5 d | The "different maneuvers" half of the aim: self-balancing transient maneuvers from arbitrary control input. |
 | P7 | Viewer — SOL 144 / MLOADS case authoring UI | Tier 1 | ~5–8 d | Early-design usability: today SOL 144 cases must be hand-authored in the BDF; a production process needs the authoring loop closed. |
@@ -62,7 +61,11 @@ Assigned owners — later features **reuse, never re-extract**:
 - **`reduce_to_aset` a-set reduction** → **Step 59, delivered 2026-07-06**
   (`sbeam/assembly/reduction.py`; serves `matrix_gaf_export` §6.1, `matrix_reuse_store`
   §8.1, and the G0 solvers — see `docs/40_history/07_maneuver_transient.md`).
-- **Geometric rigid-body basis builder (`build_rigid_modes`)** → **Step 61** (RBMREF reuses).
+- **Geometric rigid-body basis builder (`build_rigid_modes`)** → **Step 61, delivered
+  2026-07-30** (`sbeam/solver/modal_basis.py`; RBMREF reuses it, never re-derives it).
+- **A-set operator assembly for the maneuver solvers (`assemble_aset_operators`)** →
+  **Step 61, delivered 2026-07-30** (`sbeam/solver/modal_basis.py`, on top of Step 59's
+  `reduce_to_aset`; both `maneuver_qs` and the Step 62 modal solver call it).
 - **`MKAERO1` card, per-Mach GAF loop, export bundle/manifest** → **`matrix_gaf_export`**
   (Phase D "extends rather than duplicates"; `matrix_reuse_store` shares the bundle).
 - **SOL 144 production dispatch + f06 surface** → **already exists** (Step 56/AE10 + AC5);
@@ -85,6 +88,7 @@ Assigned owners — later features **reuse, never re-extract**:
 |----|-----------------|----------|--------|
 | Q1 | SPC reaction f06 output: NASTRAN outputs SPCFORCE in the global (CID 0) frame, not the CD displacement frame. Current code matches this convention (no CD transform on reactions). Verify intentional. | Low | Open |
 | Q3 | GRAV CID restriction (only CID=0 supported, parser raises): acceptable for Phase 1 but not documented in "Known Limitations". | Low | Open |
+| Q4 | Lumped vs consistent inertia in `M_ax` (found during Step 61, 2026-07-30): `sol144._build_inertial_cols` builds the inertia-relief columns from **lumped** CONM2 masses / diagonal inertia and CBAR half-masses, while `M_aa` comes from `assemble_global_mass` (**consistent** mass). The `M_ax = −M_aa Φ_r` identity is therefore exact on translational rows always, and on all rows for CONM2-only decks; with `rho > 0` CBARs the rotational rows differ (the consistent-mass translation↔rotation coupling has no lumped counterpart — measured O(10%) of the peak column value on a dihedral test model). Affects the inertia-relief RHS of the Step 53 balanced maneuver and the increment-1 transient solver equally — pre-existing, not introduced by Step 61. Decide whether `_build_inertial_cols` should be replaced by `−M_aa Φ_r` outright (one mass model, and the identity becomes definitional) or the discrepancy documented as intended. Pinned by `tests/solver/test_modal_basis.py::test_m_ax_identity_limits_with_consistent_cbar_mass`. | Medium | Open |
 
 ---
 
@@ -107,7 +111,8 @@ Phase C. Full unsteady MLOADS (state-space / RFA / control law) remains Phase G 
 half (payload sweeps for SOL 144 trim / Step 53 maneuvers) needs none of the modal work and
 directly serves the early-design aim; its fixed-Φ transient gates land with Step 62.
 Sequencing: **59 (refactor, closed 2026-07-06) → 60 (MASSSET static, closed 2026-07-30) →
-61 (basis + GAFs) → 62 (modal solver + mass gates) → 63 (free-flight)**, then G0-d/G0-e.
+61 (basis + GAFs, closed 2026-07-30) → 62 (modal solver + mass gates) → 63 (free-flight)**,
+then G0-d/G0-e.
 
 #### Architecture decisions (confirmed 2026-07-05)
 
@@ -152,34 +157,6 @@ Sequencing: **59 (refactor, closed 2026-07-06) → 60 (MASSSET static, closed 20
    per output step: `u_md = Φξ`; residual `r_a = f_ext(t) − M_aa Φξ̈ − C_a Φξ̇ − (K_aa − q·Q_aa)Φξ`;
    `Δu_l = K_eff_ll⁻¹ r_l` (SUPORT r-set held, reusing the increment-1 `K_eff_ll` LU); downstream
    recovery via the existing `_recover_step` with URDD entries of `δ_basic` filled from `ξ̈_r`.
-
-#### Step 61 (P4) — Free-free maneuver modal basis + one-time h-set operator set
-
-**Objective:** Build the ZAERO-style basis and precompute every geometry/Mach-only h-set operator
-exactly once, validated standalone before any time integration touches it.
-
-**Deliverables:**
-- `sbeam/solver/modal_basis.py` (new): `build_rigid_modes(...) → Φ_r` (**the single rigid-basis
-  builder** — `designs/rbmref_card.md` reuses it if the RBMREF card is ever implemented);
-  `build_maneuver_basis(...) → ManeuverBasis` dataclass `{phi, n_r, n_e, elastic_freqs_hz, M_hh,
-  K_hh, rigid_label_map, suport_pos, orthogonality_residual}` — calls `solve_modes` **once**
-  (basis-consistency rule, `designs/matrix_gaf_export.md` §4.3), drops zero modes,
-  mass-orthogonalizes; `build_hset_gafs(...) → {Q_hh, Q_hc, B_hh, f_h0}` composing
-  `coupling.build_gaf` + new rigid-rate columns (`build_dj_rigidrate` added to
-  `aero/integration.py`, reusing the `Ω×r` code in `build_djx`).
-- MLOADS card extension (8-field, appended): `MLOADS SID MLDTRIM MLDTIME MLDCOMD MLDPRNT NMODES
-  METHOD ZETA` — `METHOD` = EIGRL sid for the basis solve (0 ⇒ internal all-modes default);
-  `ZETA` = uniform elastic modal damping ratio (default 0). **NMODES semantics fixed: count of
-  retained ELASTIC modes; rigid modes always all included** (0 ⇒ all elastic).
-
-**Test/Acceptance:** `Φᵀ M_aa Φ` block-diagonal ≤1e−10 relative, elastic block = I; `M_rr` = GPWG
-rigid mass about `suport_pos` to machine precision; **`M_ax` identity** (a-set-reduced
-`_build_inertial_cols` columns = `−M_aa Φ_r` per the rigid map) to machine precision; `Q_hh`
-cross-check vs `Sol144Result.q_hh` from the existing static ROM with the same modes; `K_hh` rigid
-rows/cols ≤1e−8·‖K_hh‖.
-
-**Key decisions:** geometric rigid vectors over eigensolver zero-modes (rejected alternative
-recorded in the theory doc); basis always from the baseline mass configuration.
 
 #### Step 62 (P5) — Modal transient solver, prescribed rigid states + fixed-Φ mass-case gates
 
@@ -270,11 +247,14 @@ overshoot vs open loop; zero-gain identity to Step 63. **Deferred with Phase G.*
 
 #### Phase G0 plan — risks & open questions
 
-1. **Singular/lumped `M_aa` in the free-free eigensolve** — CONM2-only decks leave massless
-   rotational DOFs; the Tikhonov path in `solve_modes` handles the eigensolve, but massless-DOF
-   artificial modes must be excluded from Φ_e (frequency-cutoff + generalized-mass sanity filter);
-   the mean-axis projection uses the *unregularized* `M_aa`; mode-acceleration recovery is the
-   safety net for anything filtered.
+1. **Singular/lumped `M_aa` in the free-free eigensolve** — CLOSED by Step 61, but *not* the way
+   this risk was originally written. Regularise-and-filter does not work: the Tikhonov
+   eigenvectors carry `O(1/√ε)` amplitudes on the massless DOFs, are M-orthogonal only against
+   the *regularised* mass, and still report unit generalized mass — so no frequency or mass
+   filter can see them, while the mean-axis projection against the true `M_aa` leaves the basis
+   0.99 non-orthogonal (measured on HA144A). Step 61 instead condenses the massless DOFs out
+   statically (exact — those equations carry no mass) before the eigensolve. Downstream steps
+   must keep that path; do not reintroduce a filter-based mitigation.
 2. **Fixed-Φ mass-case error** — quantified by the Step 62 approximation gate; the exactness gate
    proves it is pure truncation. Residual risk: large CG shifts change the mean axis materially —
    warn when an overlay moves the CG by more than a documented fraction of c_ref.
@@ -292,8 +272,9 @@ overshoot vs open loop; zero-gain identity to Step 63. **Deferred with Phase G.*
 7. **SUPORT dependence stands** — the modal solver still requires SUPORT (reference point +
    recovery constraint + rigid DOF selection); a SUPORT-free variant (rigid modes about the GPWG
    CG) is a possible future relaxation, not planned.
-8. **NMODES behavior change** — previously parsed-and-ignored with a warning; now activates the
-   modal solver. Call out in CHANGELOG as a behavior change.
+8. **NMODES behavior change** — parsed-and-ignored with a warning through Step 61 (which added
+   METHOD/ZETA alongside it); Step 62 makes the trio activate the modal solver. Call out in
+   CHANGELOG as a behavior change when it lands.
 9. **Basis drift** — one `solve_modes` call per job, enforced structurally (the basis object is
    passed into the GAF/mass-case loops; nothing inside can reach the eigensolver).
 10. **Open question:** should `Q_hc` accept AESTAT rigid-state labels a user commands open-loop

@@ -247,11 +247,14 @@ W2GJ, 2, 2100
 $
 $ ============================================================
 $ TRIM CARDS — q=40 (SC1) and q=1200 (SC2), both M=0.9, 1g (URDD3=-32.174)
+$ RHOREF (sbeam extension, Step 61) is the freestream density: it plays no part
+$ in the static trim and exists only so V = sqrt(2q/rho) is available to the
+$ transient maneuver rate terms.  2.3769-3 slug/ft^3 = sea-level standard day.
 $ ============================================================
-TRIM, 1, 0.9, 40.0, PITCH, 0.0, URDD3, -32.174
-+, URDD5, 0.0
-TRIM, 2, 0.9, 1200.0, PITCH, 0.0, URDD3, -32.174
-+, URDD5, 0.0
+TRIM, 1, 0.9, 40.0, RHOREF, 2.3769-3, PITCH, 0.0
++, URDD3, -32.174, URDD5, 0.0
+TRIM, 2, 0.9, 1200.0, RHOREF, 2.3769-3, PITCH, 0.0
++, URDD3, -32.174, URDD5, 0.0
 $
 $
 $ ============================================================

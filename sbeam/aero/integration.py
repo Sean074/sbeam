@@ -79,6 +79,78 @@ def build_wg(boxes: list[AeroBox], w2gjs: dict, caero_eid: int) -> np.ndarray:
     return wg
 
 
+#: Rigid-body DOF (1-6) → the ``build_djx`` trim label whose normalwash column
+#: has the same geometry, and the factor that converts that nondimensional
+#: column to a physical rate column (see ``build_dj_rigidrate``).
+#: ``None`` marks a DOF with no quasi-steady rate normalwash at Level 1.
+_RIGID_RATE_LABEL = {1: None, 2: "SIDES", 3: "ANGLEA",
+                     4: "ROLL", 5: "PITCH", 6: "YAW"}
+
+
+def build_dj_rigidrate(boxes: list, rigid_dofs: list, bulk, v_inf: float) -> np.ndarray:
+    """Normalwash per unit *physical* rigid-body rate.  Shape: (n_box, n_rigid).
+
+    Level-1 quasi-steady rate aerodynamics for the free-free maneuver basis
+    (Step 61).  Column k corresponds to ``rigid_dofs[k]`` (a rigid-body DOF
+    component 1-6 about the basis reference point) and gives the normalwash per
+    unit rate of that DOF: per unit velocity (length/time) for the translational
+    DOFs 1-3, per unit angular rate (rad/s) for the rotational DOFs 4-6.
+
+    The geometry is not re-derived here — every column is the corresponding
+    ``build_djx`` column rescaled, so the ``Ω×r`` collocation algebra lives in
+    exactly one place:
+
+    ===== ==================== ==========================================
+    DOF   build_djx label      physical column
+    ===== ==================== ==========================================
+    1 Tx  —                    0 (streamwise rate has no k=0 normalwash)
+    2 Ty  SIDES  (−n_y)        SIDES / V      (sideslip β = v/V)
+    3 Tz  ANGLEA (−n_z)        −ANGLEA / V    (α = −ḣ/V, plunge-rate −1/V)
+    4 Rx  ROLL   (−2y/b_ref)   ROLL · b_ref/(2V)
+    5 Ry  PITCH  (−2(x−x_r)/c) PITCH · c_ref/(2V)
+    6 Rz  YAW    (−2(x−x_r)n_y/b) YAW · b_ref/(2V)
+    ===== ==================== ==========================================
+
+    The sign on DOF 3 is the one physical subtlety: a positive plunge *rate*
+    (``ḣ`` up) reduces the angle of attack (``α = θ − ḣ/V``), so its column is
+    the negative of the ANGLEA column scaled by 1/V.  Positive ``v`` (DOF 2) is
+    a positive sideslip velocity and keeps the SIDES sign.
+
+    Elastic-rate normalwash (the ``ḣ`` of the deformation itself) is zero at
+    Level 1 — the G0-d unsteady-correction hook.
+
+    Args:
+        boxes:      aero boxes.
+        rigid_dofs: list of rigid-body DOF components (1-6), one per column.
+        bulk:       BulkData (AEROS reference geometry, as for build_djx).
+        v_inf:      true airspeed, from ``Trim.velocity()``.
+
+    Returns:
+        (n_box, n_rigid) physical-rate normalwash matrix.
+    """
+    if v_inf <= 0.0:
+        raise ValueError(
+            f"build_dj_rigidrate: v_inf must be positive; got {v_inf}")
+    c_ref = bulk.aeros.cref
+    b_ref = bulk.aeros.bref
+
+    scale = {1: 0.0, 2: 1.0 / v_inf, 3: -1.0 / v_inf,
+             4: b_ref / (2.0 * v_inf), 5: c_ref / (2.0 * v_inf),
+             6: b_ref / (2.0 * v_inf)}
+
+    labels = [_RIGID_RATE_LABEL[d] for d in rigid_dofs]
+    known = [l for l in labels if l is not None]
+    djx = build_djx(boxes, known, bulk) if known else np.zeros((len(boxes), 0))
+
+    out = np.zeros((len(boxes), len(rigid_dofs)))
+    col_of = {l: i for i, l in enumerate(known)}
+    for k, (dof, label) in enumerate(zip(rigid_dofs, labels)):
+        if label is None:
+            continue                       # DOF 1 (streamwise) — no k=0 effect
+        out[:, k] = scale[dof] * djx[:, col_of[label]]
+    return out
+
+
 def build_djx(boxes: list, trim_labels: list, bulk) -> np.ndarray:
     """Downwash-to-trim-variable matrix D_jx.  Shape: (n_box, n_labels).
 

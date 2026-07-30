@@ -477,8 +477,9 @@ maneuver load at each output time.
 - **Convention (increment 1):** open-loop *prescribed-kinematics* — every trim variable is prescribed
   (commanded or held). The net load closes to ≈ 0 when the commanded histories form a consistent
   (trimmed) set; the per-step closure residual otherwise equals the instantaneous rigid-body net
-  force. Re-solving the free rigid-body variables each step (free-flight self-balancing), modal
-  reduction (`NMODES`), unsteady corrections, and a closed-loop control layer are Phase G0 follow-ons.
+  force. Re-solving the free rigid-body variables each step (free-flight self-balancing), the modal
+  transient solver (Step 62), unsteady corrections, and a closed-loop control layer are Phase G0
+  follow-ons. This solver parses `NMODES`/`METHOD`/`ZETA` and warns that it ignores them.
 - **Output (`results/maneuver_output.py`):** an MLDPRNT ASCII time-history table
   (`<stem>.mldprnt.txt`: time, commands, aero `Fz`/`My`, closure norms, peak net load) and the
   critical-sample (peak |net force|) net-load `FORCE`/`MOMENT` export (`<stem>.maneuver_qs_loads.bdf`).
@@ -492,6 +493,45 @@ maneuver load at each output time.
   (closure → 0, lift = `n_z·W`); per-step closure bounded; MLDPRNT + critical-load export round-trips.
 - **Validity:** low reduced frequency `k = ω·c_ref/2V ≲ 0.05–0.1` (slow maneuvers); higher-rate inputs
   need the Phase G0 unsteady corrections or the Phase D DLM.
+
+### Free-free maneuver modal basis (Step 61)
+
+The basis layer of the Steps 61–63 modal architecture (`sbeam/solver/modal_basis.py`). It builds,
+once per job, the free-free basis `Φ = [Φ_r | Φ_e]` and every h-set operator that depends only on
+geometry, Mach and the baseline mass case. **Nothing time-integrates it yet** — the modal transient
+solver that consumes it lands with Step 62; today the objects are exercised by their gates only.
+
+- **Deck input:** `MLOADS ... NMODES METHOD ZETA` (fields 7–9) selects the retained *elastic* mode
+  count (rigid modes are always all retained), the EIGRL for the basis eigensolve (`0` = internal
+  all-modes default), and a uniform elastic modal damping ratio. The `TRIM` card that seeds the run
+  must carry the `RHOREF` pseudo-label — it is the only source of the true airspeed `V = √(2q/ρ)`
+  the rate terms need. Example:
+  `TRIM, 1, 0.9, 40.0, RHOREF, 2.3769-3, PITCH, 0.0` and `MLOADS, 1, 1, 1, 1, 1, 12, 900, 0.02`.
+- **What is built:** `build_rigid_modes` (the single owner of the geometric rigid-body basis —
+  `designs/rbmref_card.md` reuses it), `build_maneuver_basis → ManeuverBasis` (`Φ`, `M_hh`, `K_hh`,
+  `M_rr`, elastic frequencies, the rigid→trim-label map, diagnostics), and
+  `build_hset_gafs → HsetGafs` (`Q_hh` via `coupling.build_gaf`, `Q_hx`/`Q_hc`, the rigid-rate
+  `B_hh`, `f_h0`, `C_hh`). All aerodynamic operators are dynamic-pressure free.
+- **Shared assembly:** `assemble_aset_operators` is now the single a-set assembly for both maneuver
+  paths (it is what `maneuver_qs._assemble_operators` calls), on top of the Step 59
+  `assembly/reduction.reduce_to_aset`.
+- **Massless DOFs:** a CONM2-only model's rotational DOFs are statically (Guyan) condensed out
+  before the eigensolve — exact, since those equations carry no mass. Do **not** substitute a
+  regularise-and-filter approach: the regularised eigenvectors carry huge amplitudes on the massless
+  DOFs and leave the basis non-orthogonal against the true `M_aa` while still reporting unit
+  generalized mass. See theory §7.8.
+- **Gates (`tests/solver/test_modal_basis.py`):** `ΦᵀM_aaΦ` block diagonal with an identity elastic
+  block; `M_rr` = GPWG rigid mass about the SUPORT point; the `M_ax = −M_aa Φ_r` identity;
+  `Q_hh`/`K_hh` equal to the shipped static-ROM projections for the same basis; `K_hh` rigid
+  rows/columns ≈ 0; the rigid-vector round trip through the RBE3/RBAR transformation; NMODES/METHOD
+  truncation; and the `B_hh` rigid-rate columns against their exact rescaling of `Q_hx`
+  (plunge `−1/V·ANGLEA`, pitch `c_ref/2V·PITCH`). `build_dj_rigidrate` has its own column-rescale
+  gate in `tests/aero/test_integration.py`.
+- **Known limit:** `_build_inertial_cols` is a lumped inertia model while `M_aa` is consistent, so
+  the `M_ax` identity is exact only where the two agree — translational rows always, and all rows
+  for CONM2-only decks. With `rho > 0` CBARs the rotational rows differ (the consistent-mass
+  translation↔rotation coupling has no lumped counterpart); this is pre-existing in the increment-1
+  inertia-relief RHS and is tracked in the backlog.
 
 ---
 

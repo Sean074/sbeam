@@ -13,6 +13,38 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Step 61 — Free-free maneuver modal basis + h-set operator set (2026-07-30)**
+
+- New `sbeam/solver/modal_basis.py` — the basis layer of the Phase G0 modal architecture
+  (Steps 61–63), built and validated **standalone**; the modal transient solver that consumes
+  it lands with Step 62, so no analysis behaviour changes in this step.
+  - `build_rigid_modes` — the single owner of the geometric rigid-body basis `Φ_r` (one column
+    per SUPORT DOF, about `suport_pos`); `designs/rbmref_card.md` reuses it rather than
+    deriving its own `B_target`.
+  - `build_maneuver_basis` → `ManeuverBasis` (`Φ = [Φ_r | Φ_e]`, `M_hh`, `K_hh`, `M_rr`,
+    elastic frequencies, rigid→trim-label map, diagnostics): one `solve_modes` call per job,
+    mean-axis mass-orthogonalization of the elastic modes against `Φ_r`, NMODES truncation of
+    the elastic partition only.
+  - `build_hset_gafs` → `HsetGafs` (`Q_hh` via the reused `coupling.build_gaf`, `Q_hx`/`Q_hc`,
+    the rigid-rate `B_hh`, `f_h0`, `C_hh = diag(2ζω)`); all operators dynamic-pressure free.
+  - `assemble_aset_operators` — the shared a-set assembly for both maneuver paths, on top of
+    Step 59's `reduce_to_aset`. `maneuver_qs` now calls it; its behaviour is unchanged.
+- New `aero/integration.py::build_dj_rigidrate` — normalwash per unit *physical* rigid-body
+  rate; each column is the corresponding `build_djx` column rescaled (plunge `−1/V`, pitch
+  `c_ref/2V`, roll/yaw `b_ref/2V`), keeping the `Ω×r` geometry in one place.
+- `MLOADS` gains fields 7–9: `NMODES` (retained **elastic** modes — rigid modes are always all
+  retained), `METHOD` (EIGRL sid for the basis eigensolve, `0` = internal all-modes default)
+  and `ZETA` (uniform elastic modal damping ratio). The shipped quasi-steady solver parses and
+  warns that it ignores all three until Step 62.
+- `TRIM` gains the sbeam `RHOREF` pseudo-label (`TRIM, 1, 0.9, 40.0, RHOREF, 2.3769-3, ...`):
+  the freestream density, used only for `V = √(2q/ρ)`, which the transient rate terms require.
+  Back-compatible — decks without it are unaffected; `Trim.velocity()` raises when it is absent.
+  `sample/ha144a_fullspan_mloads.bdf` updated to carry it.
+- 30 new tests: `tests/solver/test_modal_basis.py` (the five Step 61 gates — basis
+  orthogonality, `M_rr` vs GPWG, the `M_ax = −M_aa Φ_r` identity, `Q_hh`/`K_hh` vs the static
+  ROM, `K_hh` rigid block — plus condensation, truncation and error paths), plus
+  `TestBuildDjRigidRate` and the new TRIM/MLOADS card cases.
+
 **Step 60 — `MASSSET` payload / mass cases for static SOL 144 (2026-07-30)**
 
 - New `MASSSET` bulk card (`Massset` in `model/mass.py`, `bulk.masssets`): a named mass

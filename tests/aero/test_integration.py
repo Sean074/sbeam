@@ -9,15 +9,18 @@ Covers:
   - build_wg: linear built-in incidence (negative wg) → monotonically varying
     section loads (T3)
   - build_wg: wrong caero_eid returns zeros
+  - build_dj_rigidrate: physical rigid-rate columns are rescaled build_djx columns (Step 61)
 """
 
 import numpy as np
 import pytest
 
-from sbeam.model.aero import Caero1, Paero1, W2gj
+from sbeam.model.aero import Aeros, Caero1, Paero1, W2gj
+from sbeam.model.bulk_data import BulkData
 from sbeam.aero.panel import mesh_caero1
 from sbeam.aero.vlm import build_ajj, solve_rigid_cl
-from sbeam.aero.integration import build_skj, build_djk, build_wg
+from sbeam.aero.integration import (
+    build_skj, build_djk, build_wg, build_djx, build_dj_rigidrate)
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -219,3 +222,71 @@ class TestBuildWg:
         w2gj = W2gj(sid=1, caero_eid=CAERO_EID, data=data)
         wg = build_wg(boxes, {1: w2gj}, CAERO_EID)
         np.testing.assert_allclose(wg, [-d for d in data])
+
+
+# ---------------------------------------------------------------------------
+# build_dj_rigidrate (Step 61)
+# ---------------------------------------------------------------------------
+
+class TestBuildDjRigidRate:
+    """Physical-rate normalwash columns for the free-free maneuver basis.
+
+    Every column must be the corresponding ``build_djx`` column rescaled — the
+    Ω×r geometry has exactly one owner.
+    """
+
+    @pytest.fixture(scope="class")
+    def model(self):
+        bulk = BulkData()
+        bulk.aeros = Aeros(acsid=0, rcsid=0, cref=2.0, bref=10.0, sref=20.0,
+                           symxz=0, symxy=0)
+        nspan, nchord = 4, 2
+        bulk.caero1s[CAERO_EID] = Caero1(
+            eid=CAERO_EID, pid=1, cp=0, nspan=nspan, nchord=nchord,
+            lspan=0, lchord=0, igid=0,
+            p1=(0.0, 0.0, 0.0), x12=1.0, p4=(0.0, 5.0, 0.0), x43=1.0,
+        )
+        boxes = _rect_wing(nspan=nspan, nchord=nchord)
+        return bulk, boxes
+
+    def test_columns_are_rescaled_djx_columns(self, model):
+        bulk, boxes = model
+        v = 250.0
+        c_ref, b_ref = bulk.aeros.cref, bulk.aeros.bref
+        dofs = [1, 2, 3, 4, 5, 6]
+        got = build_dj_rigidrate(boxes, dofs, bulk, v)
+
+        expected_scale = {
+            2: ("SIDES", 1.0 / v),
+            3: ("ANGLEA", -1.0 / v),
+            4: ("ROLL", b_ref / (2.0 * v)),
+            5: ("PITCH", c_ref / (2.0 * v)),
+            6: ("YAW", b_ref / (2.0 * v)),
+        }
+        assert np.allclose(got[:, 0], 0.0)      # DOF 1: no k=0 streamwise effect
+        for k, dof in enumerate(dofs):
+            if dof == 1:
+                continue
+            label, scale = expected_scale[dof]
+            ref = scale * build_djx(boxes, [label], bulk)[:, 0]
+            np.testing.assert_allclose(got[:, k], ref, rtol=0, atol=1e-15)
+
+    def test_plunge_rate_is_minus_one_over_v_times_normal_z(self, model):
+        """The -1/V column: alpha = -h_dot / V, so w = +n_z * h_dot / V."""
+        bulk, boxes = model
+        v = 100.0
+        col = build_dj_rigidrate(boxes, [3], bulk, v)[:, 0]
+        expected = np.array([box.normal[2] / v for box in boxes])
+        np.testing.assert_allclose(col, expected, rtol=1e-14)
+
+    def test_column_order_follows_requested_dofs(self, model):
+        bulk, boxes = model
+        a = build_dj_rigidrate(boxes, [3, 5], bulk, 200.0)
+        b = build_dj_rigidrate(boxes, [5, 3], bulk, 200.0)
+        np.testing.assert_allclose(a[:, 0], b[:, 1])
+        np.testing.assert_allclose(a[:, 1], b[:, 0])
+
+    def test_requires_positive_velocity(self, model):
+        bulk, boxes = model
+        with pytest.raises(ValueError, match="v_inf"):
+            build_dj_rigidrate(boxes, [3], bulk, 0.0)

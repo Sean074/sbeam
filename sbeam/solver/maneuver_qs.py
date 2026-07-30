@@ -49,16 +49,13 @@ import scipy.linalg
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.parser.case_control import SubcaseControl
-from sbeam.assembly.stiffness import assemble_global_stiffness, get_spc_dofs
-from sbeam.assembly.mass_matrix import assemble_global_mass
 from sbeam.assembly.load_vector import build_grid_index
-from sbeam.assembly.rbe3 import build_rbe3_transformation
 from sbeam.aero.aero_model import AeroModel
-from sbeam.aero.coupling import build_qaa, build_fg
-from sbeam.aero.integration import build_djx, build_djk
+from sbeam.aero.integration import build_djk
+from sbeam.solver.modal_basis import assemble_aset_operators
 from sbeam.results.results import BarForce, ManeuverStep, ManeuverResult
 from sbeam.solver.sol101 import recover_bar_forces, recover_bar_stresses
-from sbeam.assembly.reduction import reduce_to_aset, expand_to_g
+from sbeam.assembly.reduction import expand_to_g
 from sbeam.solver.sol144 import (
     AeroCache,
     _build_inertial_cols,
@@ -106,65 +103,30 @@ def _assemble_operators(
 ) -> _Operators:
     """Build the a-set / l-set matrices the transient integration needs.
 
-    Mirrors the matrix assembly inside ``run_sol144_trim`` (Q_ax, K_aa, Q_aa,
-    M_ax, baseline aero, RCSID transform), plus the structural mass matrix reduced
-    to the l-set.  Re-assembled here rather than threaded through the trim result
-    so the working trim path is untouched.
+    The a-set assembly is the shared ``modal_basis.assemble_aset_operators``
+    (Step 61) — the same matrices ``run_sol144_trim`` builds (Q_ax, K_aa, Q_aa,
+    M_ax, baseline aero, RCSID transform).  This function adds only the l-set
+    partition (SUPORT DOFs dropped) and the dynamic-pressure scaling.
     """
-    from sbeam.assembly.coord_transform import _get_transform
+    ops = assemble_aset_operators(bulk, subcase, aero)
 
-    grid_index = build_grid_index(bulk)
-    spc_sid = subcase.spc_sid
+    grid_index = ops.grid_index
+    all_labels, label_to_col = ops.all_labels, ops.label_to_col
+    x_ref, suport_pos = ops.x_ref, ops.suport_pos
+    R_rcsid, has_rcsid = ops.R_rcsid, ops.has_rcsid
+    D_jx = ops.D_jx
 
-    all_labels = sorted(
-        [a.label for a in bulk.aestats.values()]
-        + [s.label for s in bulk.aesurfs.values()]
-    )
-    label_to_col = {l: i for i, l in enumerate(all_labels)}
-
-    aeros = bulk.aeros
-    if aeros.rcsid:
-        x_ref_pt, R_rcsid = _get_transform(aeros.rcsid, bulk.cord2rs)
-        x_ref = float(x_ref_pt[0])
-        suport_pos = x_ref_pt
-        has_rcsid = True
-    else:
-        x_ref = 0.0
-        R_rcsid = np.eye(3)
-        suport_pos = np.zeros(3)
-        has_rcsid = False
-
-    # Trim-variable normalwash columns and the g-set aero sensitivity Q_ax.
-    D_jx = build_djx(aero.boxes, all_labels, bulk)                  # (n_box, n_labels)
-    Q_ax_g = aero.g_disp.T @ aero.skj @ aero.ajj_inv_corr @ D_jx    # (n_g, n_labels)
-
-    red = reduce_to_aset(bulk, grid_index, spc_sid)
+    red = ops.red
     T, free_local, free_dofs = red.T, red.free_local, red.free_dofs
     ncols = list(range(len(all_labels)))
 
-    # Reduce Q_ax, K, Q, structural mass to the a-set (same RBE3+SPC path as trim).
-    Q_ax_a = red.reduce_rect(Q_ax_g)
+    Q_ax_a, K_aa, Q_aa, M_aa = ops.Q_ax_a, ops.K_aa, ops.Q_aa, ops.M_aa
+    M_ax_g, M_ax_a = ops.M_ax_g, ops.M_ax_a
 
-    K_gg = assemble_global_stiffness(bulk)
-    K_aa = red.reduce_matrix(K_gg, dense=True)
-
-    Q_gg = build_qaa(aero, aero.g_disp, aero.g_slope)
-    Q_aa = red.reduce_matrix(Q_gg)
-
-    # Step 60: the mass case selected by this subcase (None = baseline).
-    massset_sid = subcase.massset_sid
-    M_gg = assemble_global_mass(bulk, massset_sid)
-    M_aa = red.reduce_matrix(M_gg, dense=True)
-
-    # Baseline aero load and inertial sensitivity (basic frame) on the g-set.
-    f_aero_g = q * build_fg(aero, aero.g_disp)                      # (n_g,)
-    M_ax_g = _build_inertial_cols(bulk, all_labels, grid_index, suport_pos, massset_sid)
-
-    f_aero_a = red.reduce_vector(f_aero_g)
-    M_ax_a = red.reduce_rect(M_ax_g)
+    f_aero_a = red.reduce_vector(q * ops.f_aero_g_unit)
 
     # l-set partition (drop the SUPORT DOFs — the mean-axis restraint).
-    suport_local = _get_suport_local(bulk, free_dofs, grid_index)
+    suport_local = ops.suport_local
     if not suport_local:
         raise ValueError(
             "run_maneuver_qs: no SUPORT DOFs found — Phase G0 requires a free "
@@ -285,11 +247,12 @@ def run_maneuver_qs(
     mldcomd = bulk.mldcomds.get(mload.mldcomd) if mload.mldcomd else None
     mldprnt = bulk.mldprnts.get(mload.mldprnt) if mload.mldprnt else None
 
-    if mload.nmodes:
+    if mload.nmodes or mload.method or mload.zeta:
         warnings.warn(
-            "run_maneuver_qs: MLOADS NMODES is reserved for the Level-1b modal "
-            "reduction (a Phase G0 follow-on); increment 1 integrates the l-set "
-            "directly and ignores NMODES.",
+            "run_maneuver_qs: MLOADS NMODES/METHOD/ZETA configure the free-free "
+            "modal basis (Step 61); the modal transient solver that consumes it "
+            "lands with Step 62.  This solver integrates the l-set directly and "
+            "ignores all three.",
             UserWarning,
         )
 

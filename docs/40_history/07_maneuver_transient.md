@@ -200,3 +200,94 @@ early-design payload deliverable; the modal fixed-Φ interaction lands with Step
 - **`mirror_halfspan` rejects MASSSET decks** (added to `_UNSUPPORTED`): whether a payload item
   mirrors (wing fuel) or does not (a centreline store) is model intent, not geometry.
 - MAT1-`rho` overlays out of scope (v1) — use `SCALE`, or author a separate deck.
+
+---
+
+### Step 61 (P4) — Free-free maneuver modal basis + one-time h-set operator set ✅ COMPLETE (2026-07-30)
+
+**Objective:** Build the ZAERO-style free-free basis `Φ = [Φ_r | Φ_e]` and precompute every
+geometry/Mach-only h-set operator exactly once, validated **standalone** before any time
+integration touches it (the consumer is Step 62).
+
+**Deliverables:**
+- **`sbeam/solver/modal_basis.py` (new):**
+  - `build_rigid_modes(bulk, grid_index, red, rigid_dofs, ref_pos) → Φ_r` — **the single
+    rigid-basis builder** (`designs/rbmref_card.md` reuses it; its `B_target` is the same
+    object). One column per SUPORT DOF, geometric vectors about `suport_pos`: unit axis for
+    translations, `â × (x_i − p)` / `â` for rotations. The a-set restriction is a **row
+    selection on the independent DOFs**, not the force-type `Tᵀ·` reduction (rigid vectors are
+    displacements); the builder asserts the round trip back through the RBE3/RBAR `T`.
+  - `build_maneuver_basis(bulk, ops, eigrl=None, nmodes=0) → ManeuverBasis` — one `solve_modes`
+    call per job (basis-consistency rule, `designs/matrix_gaf_export.md` §4.3), mean-axis
+    orthogonalization `φ_e ← φ_e − Φ_r M_rr⁻¹ Φ_rᵀ M_aa φ_e` (twice, then M-normalized) against
+    the **unregularized** `M_aa`, generalized-mass filter, NMODES truncation of the elastic
+    partition only. Returns `phi`, `n_r`/`n_e`, `rigid_dofs`, `rigid_label_map`, `suport_pos`,
+    `elastic_freqs_hz`, `M_hh`, `K_hh`, `M_rr`, `orthogonality_residual`, `n_filtered`,
+    `filtered_freqs_hz`, `n_available_elastic`, `n_massless`.
+  - `build_hset_gafs(bulk, ops, basis, aero, v_inf, zeta=0.0) → HsetGafs` — `Q_hh` via
+    `coupling.build_gaf` (reused verbatim), `Q_hx` for **all** trim labels with `Q_hc` as the
+    AESURF subset view (so Steps 62 and 63 each take the columns they need without re-deriving
+    anything), the rigid-rate `B_hh`, `f_h0`, and `C_hh = diag(2ζω)` on the elastic partition.
+    All aerodynamic operators are **dynamic-pressure free**.
+  - `assemble_aset_operators(bulk, subcase, aero) → AsetOperators` — the shared a-set assembly
+    (K_aa/M_aa/Q_aa/Q_ax/M_ax/baseline aero/RCSID transform/SUPORT data) on top of Step 59's
+    `reduce_to_aset`. `maneuver_qs._assemble_operators` now calls it and adds only the l-set
+    partition and the `q` scaling — behaviour bit-identical (full suite green before and after).
+- **`aero/integration.py::build_dj_rigidrate(boxes, rigid_dofs, bulk, v_inf)`** — normalwash per
+  unit *physical* rigid-body rate. Every column is the corresponding `build_djx` column rescaled
+  (plunge `−1/V·ANGLEA`, lateral `+1/V·SIDES`, pitch `c_ref/2V·PITCH`, roll/yaw `b_ref/2V`),
+  so the `Ω×r` geometry keeps exactly one owner. DOF 1 (streamwise) is zero at k = 0.
+  Elastic-rate columns are an explicit zero block — the documented G0-d hook.
+- **MLOADS card extension:** `MLOADS SID MLDTRIM MLDTIME MLDCOMD MLDPRNT NMODES METHOD ZETA`
+  (still one small-field line). `METHOD` = EIGRL sid for the basis solve (0 ⇒ internal all-modes
+  default), `ZETA` = uniform elastic modal damping ratio. **NMODES semantics fixed: count of
+  retained ELASTIC modes; rigid modes always all included** (0 ⇒ all elastic). Validation:
+  METHOD must name an EIGRL, NMODES ≥ 0, ZETA ≥ 0. `run_maneuver_qs` warns that it ignores all
+  three (extends the increment-1 NMODES warning) — no behaviour change to the legacy solver.
+- **TRIM `RHOREF` (sbeam extension):** a reserved pseudo-label in the LABEL/VALUE pair list
+  (`TRIM, 1, 0.9, 40.0, RHOREF, 2.3769-3, PITCH, 0.0`) carrying the freestream density, so
+  `Trim.velocity() = √(2q/ρ)`. This is the only source of a true airspeed in the deck and the
+  rate columns cannot be formed without it. Back-compatible (no field-layout change); an
+  AESTAT/AESURF label named `RHOREF` is rejected. `sample/ha144a_fullspan_mloads.bdf` updated.
+
+**Test/Acceptance (`tests/solver/test_modal_basis.py`, 18 tests; plus `TestBuildDjRigidRate` in
+`tests/aero/test_integration.py` and 8 card tests in `tests/aero/test_maneuver_cards.py`):**
+- `Φᵀ M_aa Φ` block diagonal (rigid↔elastic coupling < 1e−10 relative — the mean-axis
+  condition), elastic block = I; measured `orthogonality_residual` ≈ 6e−16 on HA144A.
+- `M_rr` = GPWG rigid mass about `suport_pos`: `M_rr[0,0]` = total mass, `M_rr[0,1]` =
+  `−m(x_cg − x_sup)` from the GPWG CG, `M_rr[1,1]` against an independent `Σ m_i r_i²` sum.
+- **`M_ax` identity** — the a-set-reduced `_build_inertial_cols` URDD columns equal `−M_aa Φ_r`
+  column for column via `rigid_label_map`, to machine precision on the CONM2-only fixture.
+- `Q_hh` **and** `K_hh` equal to `sol144._solve_rom`'s projections for the same basis (1e−12).
+- `K_hh` rigid rows/columns ≤ 1e−8·‖K_hh‖ (measured 1.3e−14).
+- `B_hh` rigid-rate columns against their exact rescaling of `Q_hx`; elastic columns exactly 0.
+- Rigid-vector round trip; NMODES truncation + over-request warning; METHOD/EIGRL bounding;
+  no-SUPORT error; C_hh damping; `v_inf ≤ 0` error; TRIM/MLOADS card round-trips and negatives.
+
+**Key decisions:**
+- **Geometric rigid vectors over eigensolver zero modes** — deterministic across mass cases and
+  LAPACK builds, exact GPWG/`M_ax` identities, and an exact algebraic map to the URDD/ANGLEA/
+  PITCH trim labels (rigid trim labels become *outputs* of the later transient solve). Recorded
+  in theory §7.8.
+- **Massless DOFs are statically (Guyan) condensed, not regularised and filtered** — a deviation
+  from the plan's sketch, forced by measurement. With Tikhonov regularisation the eigenvectors
+  carry `O(1/√ε)` amplitudes on the massless DOFs and are M-orthogonal only against the
+  *regularised* mass; the mean-axis projection against the true `M_aa` then left the HA144A basis
+  **0.99 non-orthogonal** while every mode still reported unit generalized mass — invisible to any
+  frequency or mass filter. Condensation is exact (those equations carry no mass at any
+  frequency) and the condensed subspace contains the rigid vectors exactly, since `K u_r = 0`.
+  After it, HA144A gives 2 rigid + 30 elastic modes from a 50-DOF a-set (18 condensed), the
+  filter drops only the rigid zero modes, and the previously-reported contaminated frequencies
+  (5.59/6.20/9.84…) resolve to the correct 5.53/6.20/9.89… Hz.
+- **`Q_hx` is kept for all labels**, `Q_hc` being a view of its AESURF columns — costs nothing and
+  keeps Steps 62 (prescribed rigid) and 63 (free rigid) from re-deriving the projection.
+- Basis always from the **baseline** mass configuration; `Φ` fixed across MASSSET cases (Step 62).
+- All aerodynamic h-set operators are q-free, matching the `Q_aa` convention, so the solver
+  applies `q` uniformly in `M_hh Δξ̈ + [C_hh − q·B_hh]Δξ̇ + [K_hh − q·Q_hh]Δξ = q·Q_hc·Δδ_c(t)`.
+
+**Found, not fixed (backlog Q4):** `_build_inertial_cols` is a *lumped* inertia model while
+`M_aa` is *consistent*, so the `M_ax = −M_aa Φ_r` identity is exact on translational rows always
+and on all rows for CONM2-only decks, but the rotational rows differ once CBARs carry `rho > 0`
+(no lumped counterpart to the consistent-mass translation↔rotation coupling; measured O(10%) of
+the peak column value). Pre-existing in the Step 53 and increment-1 inertia-relief RHS, pinned by
+`test_m_ax_identity_limits_with_consistent_cbar_mass`.

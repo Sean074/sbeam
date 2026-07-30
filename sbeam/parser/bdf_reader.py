@@ -881,16 +881,28 @@ def _handle_trim(fields: list, conts: list, bulk: BulkData) -> None:
     for cont in conts:
         raw_pairs += list(cont[1:])
     vars_: dict = {}
+    rhoref = 0.0
     raw_pairs = [f for f in raw_pairs if f.strip()]
     if len(raw_pairs) % 2 != 0:
         raise ValueError(f"TRIM {sid}: odd number of LABEL/VALUE tokens — must be paired")
     for i in range(0, len(raw_pairs), 2):
         lbl = raw_pairs[i].strip().upper()
         val = _to_float(raw_pairs[i + 1])
+        # RHOREF is an sbeam extension (Step 61): a pseudo-label carrying the
+        # freestream density so V = sqrt(2q/rho) is available to the transient
+        # maneuver rate terms.  It is not a trim variable and never enters vars_.
+        if lbl == "RHOREF":
+            if rhoref:
+                raise ValueError(f"TRIM {sid}: duplicate label 'RHOREF'")
+            if val <= 0.0:
+                raise ValueError(
+                    f"TRIM {sid}: RHOREF must be positive; got {val}")
+            rhoref = val
+            continue
         if lbl in vars_:
             raise ValueError(f"TRIM {sid}: duplicate label '{lbl}'")
         vars_[lbl] = val
-    bulk.trims[sid] = Trim(sid=sid, mach=mach, q=q, vars=vars_)
+    bulk.trims[sid] = Trim(sid=sid, mach=mach, q=q, vars=vars_, rhoref=rhoref)
 
 
 def _handle_diverg(fields: list, conts: list, bulk: BulkData) -> None:
@@ -1000,18 +1012,33 @@ def _handle_mldtrim(fields: list, bulk: BulkData) -> None:
 
 
 def _handle_mloads(fields: list, bulk: BulkData) -> None:
-    """MLOADS — transient driver: SID MLDTRIM MLDTIME [MLDCOMD] [MLDPRNT] [NMODES]."""
+    """MLOADS — transient driver.
+
+    SID MLDTRIM MLDTIME [MLDCOMD] [MLDPRNT] [NMODES] [METHOD] [ZETA]
+
+    NMODES/METHOD/ZETA configure the Step 61 free-free modal basis (retained
+    ELASTIC mode count, EIGRL sid for the basis solve, uniform elastic damping
+    ratio).  All three are optional and default to "internal default / all
+    modes / undamped".
+    """
     sid     = _to_int(fields[1])
     mldtrim = _to_int(fields[2])
     mldtime = _to_int(fields[3])
     mldcomd = _to_int(fields[4]) if len(fields) > 4 and fields[4].strip() else 0
     mldprnt = _to_int(fields[5]) if len(fields) > 5 and fields[5].strip() else 0
     nmodes  = _to_int(fields[6]) if len(fields) > 6 and fields[6].strip() else 0
+    method  = _to_int(fields[7]) if len(fields) > 7 and fields[7].strip() else 0
+    zeta    = _to_float(fields[8]) if len(fields) > 8 and fields[8].strip() else 0.0
     if sid in bulk.mloads:
         raise ValueError(f"Duplicate MLOADS SID {sid}")
+    if nmodes < 0:
+        raise ValueError(f"MLOADS {sid}: NMODES must be >= 0; got {nmodes}")
+    if zeta < 0.0:
+        raise ValueError(f"MLOADS {sid}: ZETA must be >= 0; got {zeta}")
     bulk.mloads[sid] = Mloads(
         sid=sid, mldtrim=mldtrim, mldtime=mldtime,
         mldcomd=mldcomd, mldprnt=mldprnt, nmodes=nmodes,
+        method=method, zeta=zeta,
     )
 
 
@@ -1553,6 +1580,13 @@ def parse_bulk_data(lines: list) -> BulkData:
         {a.label for a in bulk.aestats.values()}
         | {s.label for s in bulk.aesurfs.values()}
     )
+    if "RHOREF" in all_trim_labels:
+        # RHOREF is reserved as the TRIM density pseudo-label (Step 61); an
+        # AESTAT/AESURF of that name could never be prescribed on a TRIM card.
+        raise ValueError(
+            "AESTAT/AESURF label 'RHOREF' collides with the reserved TRIM "
+            "density pseudo-label — rename the trim variable"
+        )
     for sid, trim in bulk.trims.items():
         for lbl in trim.vars:
             if lbl not in all_trim_labels:
@@ -1598,6 +1632,8 @@ def parse_bulk_data(lines: list) -> BulkData:
             raise ValueError(f"MLOADS {sid}: MLDCOMD {ml.mldcomd} not found")
         if ml.mldprnt and ml.mldprnt not in bulk.mldprnts:
             raise ValueError(f"MLOADS {sid}: MLDPRNT {ml.mldprnt} not found")
+        if ml.method and ml.method not in bulk.eigrls:
+            raise ValueError(f"MLOADS {sid}: METHOD {ml.method} not found in EIGRL")
 
     # Validate MASSSET (Step 60) cross-references and mark overlay-only CONM2s.
     # An EID is either baseline (DELETE target / REPLACE old slot) or overlay

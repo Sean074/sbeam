@@ -1386,6 +1386,106 @@ development plan these methods correspond to the static maneuver loads of Phase 
 DLM-free quasi-steady transient maneuver loads of Phase G0, with the full unsteady MLOADS
 reserved for Phase G.
 
+### 7.8 The free-free maneuver modal basis (Step 61)
+
+The transient maneuver solver of Phase G0 works in a **free-free modal basis** rather than on
+the physical a-set. The basis is built once per job from the baseline mass case and partitioned
+
+$$
+\Phi = \begin{bmatrix} \Phi_r & \Phi_e \end{bmatrix},
+\qquad (n_a \times n_h),\ n_h = n_r + n_e ,
+\tag{36}
+$$
+
+with $\Phi_r$ the rigid-body columns (one per SUPORT DOF) and $\Phi_e$ the retained free-free
+elastic modes. Implementation: `sbeam/solver/modal_basis.py`.
+
+**Geometric rigid vectors, not eigensolver zero modes.** A free-free eigensolve returns the
+zero-frequency subspace in an arbitrary linear combination that changes with the mass case and
+the LAPACK build. Instead each rigid column is written down geometrically about the reference
+point $p$ (the SUPORT/RCSID origin): a unit translation along $\hat e$, or, for a rotation about
+$\hat a$,
+
+$$
+u_i^{\text{trans}} = \hat a \times (x_i - p),
+\qquad
+u_i^{\text{rot}} = \hat a .
+\tag{37}
+$$
+
+Three properties follow, all of them tested:
+
+1. $M_{rr} = \Phi_r^{\mathsf T} M_{aa} \Phi_r$ is exactly the GPWG rigid mass about $p$.
+2. The inertial sensitivity columns of the trim solver satisfy $M_{ax} = -M_{aa}\Phi_r$
+   column for column, because both use the same reference point.
+3. The rigid modal coordinates map algebraically onto the trim labels: unit plunge gives
+   $\ddot\xi = \mathrm{URDD3}$; unit pitch gives $\ddot\xi = \mathrm{URDD5}$,
+   $\dot\xi\, c_{\text{ref}}/2V = \mathrm{PITCH}$ and $\xi = \mathrm{ANGLEA}$. The rigid trim
+   labels therefore become *outputs* of the transient solve rather than inputs.
+
+(This is the same object as the `B_target` of `docs/30_future/designs/rbmref_card.md`; Step 61
+owns the single builder.)
+
+**Mean axis.** The elastic modes are explicitly mass-orthogonalised against the rigid columns,
+
+$$
+\phi_e \leftarrow \phi_e - \Phi_r M_{rr}^{-1}\Phi_r^{\mathsf T} M_{aa}\,\phi_e ,
+\tag{38}
+$$
+
+re-normalised so $\phi_e^{\mathsf T} M_{aa}\phi_e = 1$. Then $\Phi_e^{\mathsf T} M_{aa}\Phi_r=0$
+by construction, which *is* the mean-axis condition (ZAERO Ch. 12, Eqs. 12.9–12.16) — the same
+physics as the unrestrained (mean-axis) stability derivatives of §5. At the baseline mass case
+$M_{hh}$ is block diagonal, $\operatorname{diag}(M_{rr}, I)$; off the baseline (a MASSSET case
+with $\Phi$ held fixed) it is full, and that coupling is the whole content of the fixed-basis
+approximation.
+
+**Massless DOFs must be condensed, not regularised.** A CONM2-only model leaves rotational DOFs
+with no mass at all. Handing them to the generalised eigensolver forces a Tikhonov
+regularisation $M \to M + \varepsilon I$, and the resulting eigenvectors carry
+$O(\varepsilon^{-1/2})$ amplitudes on precisely those DOFs. Such vectors are $M$-orthogonal
+against the *regularised* mass only, so the projection (38) against the true $M_{aa}$ leaves the
+basis badly non-orthogonal — measured at $0.99$ on the HA144A deck — while every mode still
+reports unit generalised mass, so no mass- or frequency-based filter can detect it. The fix is
+exact static (Guyan) condensation before the eigensolve: with no mass on those DOFs their
+equations are purely static at every frequency,
+
+$$
+u_o = -K_{oo}^{-1}K_{om}\,u_m ,
+\tag{39}
+$$
+
+so eliminating them changes no physics. The condensed subspace also contains the rigid vectors
+exactly, since $K u_r = 0$ implies the same relation. After condensation the only modes the
+generalised-mass filter removes are the rigid-body zero modes, which collapse to zero under (38).
+
+**Rate columns and the $-1/V$ term.** Quasi-steady rate aerodynamics needs the normalwash per
+unit *physical* rigid-body rate, whereas the steady trim columns $D_{jx}$ of §7.2 are
+nondimensional. Each rate column is the corresponding steady column rescaled — pitch rate by
+$c_{\text{ref}}/2V$, roll/yaw by $b_{\text{ref}}/2V$ — and plunge rate enters through
+$\alpha = \theta - \dot h / V$, i.e. as $-1/V$ times the ANGLEA column. This is the only place a
+true airspeed is required, which is why the TRIM card carries the sbeam `RHOREF` pseudo-label
+($V = \sqrt{2q/\rho}$). Elastic-rate columns are zero at Level 1 — the hook where the
+apparent-mass and lag corrections of §7.4–7.6 attach.
+
+**The h-set operators and the modal equation.** With $\Phi$ fixed, the projections
+$K_{hh} = \Phi^{\mathsf T}K_{aa}\Phi$, $Q_{hh} = \Phi^{\mathsf T}Q_{aa}\Phi$,
+$Q_{hx} = \Phi^{\mathsf T}Q_{ax}$ (its AESURF columns being $Q_{hc}$), the rate-damping GAF
+$B_{hh}$ and $C_{hh} = \operatorname{diag}(2\zeta\omega_i)$ depend only on geometry, Mach and the
+baseline mass, so they are formed once and reused across mass cases and time steps. The
+equation they serve (Steps 62–63, perturbation about the trim state) is
+
+$$
+M_{hh}\,\Delta\ddot\xi + \left[C_{hh} - q\,B_{hh}\right]\Delta\dot\xi
++ \left[K_{hh} - q\,Q_{hh}\right]\Delta\xi = q\,Q_{hc}\,\Delta\delta_c(t).
+\tag{40}
+$$
+
+Because $M_{rr}\succ 0$, the Newmark operator is non-singular with the rigid partition free:
+free flight is obtained by *not* constraining those rows — no Schur complement and no per-step
+re-trim. This reverses the restrained-basis decision of Phase G0 increment 1, which held
+$u_r = 0$ and prescribed the rigid motion through the URDD labels.
+
 ---
 
 ## 8. Structural model (recap)
