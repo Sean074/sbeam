@@ -738,9 +738,16 @@ cruciform is expected to drive it to ≈0.
 aero effects are negligible, and a flexible spline would smear the *fictitious* correction load onto
 the fuselage beam as spurious bending. The body still drives the **total / trim Cm,Cn and all rigid
 + restrained derivatives**, because those integrate every box directly via `skj·(A⁻¹·w)` —
-independent of the spline (`sol144.py` total-trim and restrained-derivative paths). Consequence: the
-body correction load does **not** appear in fuselage CBAR internal loads (correct — it is a tuning
-load, not a real airload).
+independent of the spline (`sol144.py` total-trim and restrained-derivative paths). The body load
+does not distribute along the fuselage beam, so it produces no local bending there.
+
+**The body load is in the trim balance (Step 64, 2026-07-31).** Until Step 64 the body force was
+*only* in those direct integrals — it never entered the trim force balance or the `FORCE`/`MOMENT`
+export, so a body-panel trim was silently not closed (the printed totals and the load path disagreed;
+31 % lift error measured on `sample/ha144a_body_trim.bdf`). `SPLINE0` field 5 now names a master
+`GRID` (default: the SUPORT grid) at which the panel's 6-component resultant is injected as a rigid
+load, and every force transfer runs through `g_load` instead of `g_disp`. The f06 `INJECTED AERO
+LOADS` block echoes each panel's resultant. See `05b_splining.md` "Load injection".
 
 **CSV `TOTAL` block.** The total-aircraft targets travel in the same section-data CSV as a `TOTAL`
 block (`var=TOTAL`, `caero=0`): columns `cm_a`→Cm_α, `cm0`→Cm0, `cn_a`→Cn_β, `a0`→Cn0, one row per

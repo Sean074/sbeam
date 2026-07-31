@@ -739,9 +739,10 @@ def _handle_spline0(fields: list[str], bulk: BulkData) -> None:
     caero = _to_int(fields[2])
     id1   = _to_int(fields[3])
     id2   = _to_int(fields[4])
+    grid  = _to_int_opt(fields[5]) if len(fields) > 5 else 0
     if eid in bulk.spline0s:
         raise ValueError(f"Duplicate SPLINE0 EID {eid}")
-    bulk.spline0s[eid] = Spline0(eid=eid, caero=caero, id1=id1, id2=id2)
+    bulk.spline0s[eid] = Spline0(eid=eid, caero=caero, id1=id1, id2=id2, grid=grid)
 
 
 def _handle_spline1(fields: list[str], bulk: BulkData) -> None:

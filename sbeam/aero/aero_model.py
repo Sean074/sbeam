@@ -13,7 +13,7 @@ that the downstream SOL 144 solve (A*⁻¹ @ w) never has to refactor the matrix
 
 import math
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
@@ -26,7 +26,7 @@ from sbeam.aero.integration import build_skj, build_djk, build_wg
 from sbeam.aero.corrections import (
     apply_wkk, apply_wt2, apply_wt1, apply_chordcp, check_conditioning,
 )
-from sbeam.aero.spline import build_g_spline
+from sbeam.aero.spline import LoadInjection, build_spline_operators
 from sbeam.aero.strip import strip_box_mask, strip_box_slopes, is_strip_caero
 from sbeam.types import FloatArray
 
@@ -43,7 +43,25 @@ class AeroModel:
     mach:         float = 0.0                  # Mach number for Prandtl–Glauert
     g_slope:      Optional[FloatArray] = None  # slope spline, shape (n, 6*n_g)
     g_disp:       Optional[FloatArray] = None  # displacement spline, shape (3n, 6*n_g)
+    g_load:       Optional[FloatArray] = None  # force-transfer spline, shape (3n, 6*n_g)
     chordcp_alpha_ref: Optional[float] = None  # CHORDCP reference AOA [rad]; None = no injection
+    load_injections: list[LoadInjection] = field(default_factory=list)
+
+    def require_g_load(self) -> FloatArray:
+        """``g_load``, raising if the model was built without splines.
+
+        The force-transfer operator: ``g_disp`` plus rigid-load rows for boxes
+        with no structural coupling (SPLINE0 / unsplined), so their aerodynamic
+        force reaches the structure at a master grid instead of vanishing
+        (Step 64 / DEF-M1).  Every ``gᵀ·f`` transfer uses this; ``g_disp``
+        stays the pure kinematic operator for displacement recovery.
+        """
+        if self.g_load is None:
+            raise ValueError(
+                "AeroModel.g_load is None — build_aero_model must be called with a "
+                "grid_index so the structure/aero force-transfer spline is built."
+            )
+        return self.g_load
 
     def require_g_disp(self) -> FloatArray:
         """``g_disp``, raising if the model was built without splines.
@@ -423,8 +441,13 @@ def build_aero_model(
     # Build spline operators if spline cards are present and grid_index is provided
     g_slope: Optional[FloatArray] = None
     g_disp:  Optional[FloatArray] = None
+    g_load:  Optional[FloatArray] = None
+    load_injections: list[LoadInjection] = []
     if grid_index is not None and (bulk.spline2s or bulk.attaches or bulk.spline0s):
-        g_slope, g_disp = build_g_spline(bulk, boxes, grid_index)
+        ops = build_spline_operators(bulk, boxes, grid_index)
+        if ops is not None:
+            g_slope, g_disp, g_load = ops.g_slope, ops.g_disp, ops.g_load
+            load_injections = ops.injections
 
     return AeroModel(
         boxes=boxes,
@@ -437,7 +460,9 @@ def build_aero_model(
         mach=mach,
         g_slope=g_slope,
         g_disp=g_disp,
+        g_load=g_load,
         chordcp_alpha_ref=chordcp_alpha_ref,
+        load_injections=load_injections,
     )
 
 
@@ -454,13 +479,13 @@ def compute_structural_loads(
         w_total[j] = -(alpha * normal_z[j]) + wg[j]
         gamma       = ajj_inv_corr @ w_total
         f_box       = skj @ gamma
-        f_g         = q * g_disp.T @ f_box
+        f_g         = q * g_load.T @ f_box
 
     Sign convention matches solve_rigid_cl: for a horizontal flat plate
     (normal=[0,0,1]), AoA alpha gives normalwash = -alpha at each box.
 
     Args:
-        aero_model: AeroModel with g_disp populated (build_aero_model called
+        aero_model: AeroModel with g_load populated (build_aero_model called
                     with a grid_index argument).
         q:          Dynamic pressure (Pa or consistent units).
         alpha:      Angle of attack (rad).
@@ -469,15 +494,15 @@ def compute_structural_loads(
         f_g: FloatArray, shape (6 * n_structural_grids,).
 
     Raises:
-        ValueError: if aero_model.g_disp is None.
+        ValueError: if aero_model.g_load is None.
     """
-    if aero_model.g_disp is None:
+    if aero_model.g_load is None:
         raise ValueError(
-            "compute_structural_loads: aero_model.g_disp is None; "
+            "compute_structural_loads: aero_model.g_load is None; "
             "pass grid_index to build_aero_model to populate the spline operators"
         )
     w_aoa   = np.array([-(alpha * b.normal[2]) for b in aero_model.boxes])
     w_total = w_aoa + aero_model.wg
     gamma   = aero_model.ajj_inv_corr @ w_total
     f_box   = aero_model.skj @ gamma
-    return q * (aero_model.require_g_disp().T @ f_box)
+    return q * (aero_model.require_g_load().T @ f_box)

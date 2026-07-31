@@ -13,15 +13,50 @@ for the SOL 144 solve that consumes them.
 ### Overview
 
 Phase B implements the structural-to-aerodynamic spline operators required for the SOL 144
-static-aeroelastic trim solve (Phase C). Two separate operators are built:
+static-aeroelastic trim solve (Phase C). Three operators are built:
 
 | Operator | Shape | Role |
 |----------|-------|------|
 | `g_slope` | `(n_box, 6·n_grid)` | Maps structural DOFs → per-box streamwise incidence (feeds `Djk` in VLM solve) |
-| `g_disp`  | `(3·n_box, 6·n_grid)` | Maps structural DOFs → 3-D box displacement (for virtual-work force transfer `Skjᵀ`) |
+| `g_disp`  | `(3·n_box, 6·n_grid)` | Maps structural DOFs → 3-D box displacement (kinematics: deformed-shape recovery, viewer overlay) |
+| `g_load`  | `(3·n_box, 6·n_grid)` | **Force transfer**: `g_disp` plus rigid-load rows for boxes with no structural coupling (Step 64) |
 
-These are the `G_slope` and `G_disp` operators in the coupling equation
-`Q_aa = G_dispᵀ Skj A_jj*⁻¹ Djk G_slope` (see `coupling.py`).
+These are the `G_slope` and `G_load` operators in the coupling equation
+`Q_aa = G_loadᵀ Skj A_jj*⁻¹ Djk G_slope` (see `coupling.py`). Every `gᵀ·f` transfer —
+`Q_aa`, `f_g`, `Q_ax`, `grid_loads`, the modal GAFs, the maneuver solvers — uses
+`g_load`; `g_disp` is reserved for displacement recovery, so a box the deck never
+attached to anything is never shown moving.
+
+#### Load injection (Step 64 / DEF-M1, 2026-07-31)
+
+Boxes with no structural coupling — `SPLINE0`-declared body panels and boxes no spline
+card covers — still generate aerodynamic force. Before Step 64 that force was multiplied
+by zero `g_disp` rows: it appeared in the printed totals, the rigid derivatives and
+MONPNT1, but never in the trim force balance or the load export, so a body-panel trim was
+silently *not closed* (measured 31 % lift error on `sample/ha144a_body_trim.bdf`).
+
+`g_load` adds, for each such box `k` with master grid `m` at `p` and lever
+`r_k = force_point_k − p`:
+
+```
+g_load[3k:3k+3, Tx:Tz] = I₃
+g_load[3k:3k+3, Rx:Rz] = −skew(r_k)
+⇒  g_loadᵀ f  delivers  Σ F_k  and  Σ r_k × F_k  at the master grid
+```
+
+All three force components are carried (a fin or vertical body panel's `Fy` matters as
+much as a wing panel's `Fz`). Read forward the same rows are the rigid-body displacement
+interpolation `u_k = u_m + θ_m × r_k`, so injection and transfer are a virtual-work pair.
+
+`g_slope` deliberately stays zero on injected boxes: they load the structure but take no
+downwash from it — the `SPLINE0` contract ("body elasticity negligible"). `Q_aa` therefore
+gains rows at the master grid but no columns, making an already unsymmetric matrix more so;
+nothing downstream assumes symmetry (the trim Schur solve and the divergence eigensolve are
+both general).
+
+Master-grid resolution: `SPLINE0` field 5 (`GRID`) if given, else the first SUPORT grid.
+With neither, a `UserWarning` reports the dropped load and the rows stay zero — SOL 101
+body-panel decks (`sample/cessna210_body.bdf`, `cessna210_strip.bdf`) rely on this.
 
 ### SPLINE2 — NASTRAN Infinite Beam (Linear) Spline
 
@@ -121,14 +156,21 @@ construction**. Verified to 1e-12 by `TestSweptSplineRigidBody` (V-AE2) and
 non-rigid analytic-field gates (`TestBeamSplineFlexFields`: linear bend exact, linear
 twist pinned at the stringer stations, parabolic bend interpolated).
 
-### `build_g_spline` API
+### `build_spline_operators` API
 
 ```python
-from sbeam.aero.spline import build_g_spline
+from sbeam.aero.spline import build_spline_operators
 
+ops = build_spline_operators(bulk, boxes, grid_index)   # None if no spline cards
+# ops.g_slope    : np.ndarray (n_box, 6*n_grid)
+# ops.g_disp     : np.ndarray (3*n_box, 6*n_grid)   kinematics
+# ops.g_load     : np.ndarray (3*n_box, 6*n_grid)   force transfer (g_disp + injection)
+# ops.covered    : list[bool] per box
+# ops.injections : list[LoadInjection] — (master_grid, boxes, source)
+
+# Kinematics-only convenience wrapper (no injection rows):
+from sbeam.aero.spline import build_g_spline
 g_slope, g_disp = build_g_spline(bulk, boxes, grid_index)
-# g_slope: np.ndarray (n_box, 6*n_grid)   or None if no spline cards
-# g_disp:  np.ndarray (3*n_box, 6*n_grid) or None if no spline cards
 ```
 
 Raises `ValueError` if a box is covered by more than one spline, a SET1 has < 2 grids,
@@ -136,7 +178,8 @@ or a spline system is singular (e.g. EA-only collinear SET1 with DTHY < 0 — no
 information). Issues `UserWarning` for un-splined boxes, >10% extrapolation, empty box
 ranges, DTOR ≤ 0, or DZ < 0.
 
-`AeroModel` stores the operators as `aero_model.g_slope` and `aero_model.g_disp` when
+`AeroModel` stores the operators as `aero_model.g_slope`, `aero_model.g_disp`,
+`aero_model.g_load` and `aero_model.load_injections` when
 `build_aero_model` is called with a `grid_index` dict.
 
 ### ATTACH — Rigid Attachment (Step 47)
@@ -213,16 +256,18 @@ non-z-normal ATTACH panel are not yet carried — open backlog item DEF-M11.
 ### SPLINE0 — Zero-Displacement Constraint (Step 47)
 
 `SPLINE0` registers a box range as "covered" without adding any structural coupling.
-All `g_slope` and `g_disp` rows for the covered boxes remain zero. Used to suppress
+All `g_slope` and `g_disp` rows for the covered boxes remain zero — but their aerodynamic
+force is injected at the master grid through `g_load` (see *Load injection* above). Used to suppress
 un-splined warnings for boxes that are intentionally uncoupled (e.g. control surfaces
 or far-field boxes that do not deflect structurally).
 
 **Card format:**
 ```
-SPLINE0  EID  CAERO  ID1  ID2
+SPLINE0  EID  CAERO  ID1  ID2  GRID
 ```
 
-`g_disp.T @ (any pressure force)` = 0 for all structural DOFs (V-B3c verified).
+`g_disp.T @ (any pressure force)` = 0 for all structural DOFs (V-B3c verified), while
+`g_load.T @ (that force)` is its exact 6-component resultant at the master grid (V-M1a).
 
 ---
 
@@ -244,7 +289,7 @@ pressure and angle of attack.
 w_total[j] = -(alpha * normal_z[j]) + wg[j]   # flow-tangency + baseline normalwash
 gamma       = ajj_inv_corr @ w_total            # VLM solve (returns circulation Γ)
 f_box       = skj @ gamma                       # per-box aerodynamic forces (3·n_box,)
-f_g         = q * g_disp.T @ f_box             # virtual-work force transfer to g-set
+f_g         = q * g_load.T @ f_box             # virtual-work force transfer to g-set
 ```
 
 **Sign convention:** matches `solve_rigid_cl` — for a horizontal flat plate with
@@ -258,12 +303,12 @@ longer divide by `q`.  Verification: CZα = 5.071 via skj path (target: `solve_r
 CLα = 5.0709 ✓); `total_cl` at SC1 trim = −1.001 ✓.  See `docs/40_history/00_completed_development.md`.
 
 **Requirements:**
-- `aero_model.g_disp` must not be `None` — call `build_aero_model` with a `grid_index`
+- `aero_model.g_load` must not be `None` — call `build_aero_model` with a `grid_index`
   argument to populate the spline operators. Raises `ValueError` otherwise.
 - `alpha` in radians; `q` in consistent pressure units (Pa, psf, …).
 
 **V-B2 verification (Step 49, machine precision):**
 - V-B2a: `sum(f_g[Tz_dofs]) == q * sum(f_box_z)` to < 1e-10 — exact by virtual work ✓
 - V-B2b: `f_tz` within 2% of `q*CL*sref` (or `/2` for Γ-based AIC) ✓
-- V-B2c: `compute_structural_loads(alpha=0) == q * build_fg(aero, g_disp)` to < 1e-12 ✓
-- V-B2d: `ValueError` when `g_disp is None` ✓
+- V-B2c: `compute_structural_loads(alpha=0) == q * build_fg(aero, g_load)` to < 1e-12 ✓
+- V-B2d: `ValueError` when `g_load is None` ✓

@@ -386,3 +386,30 @@ CHORDCP, 5, 100, 1.0, , 0.5, 0.4, 0.3, 0.2
 """.splitlines()
         with pytest.raises(ValueError, match="Duplicate CHORDCP SID"):
             parse_bulk_data(lines)
+
+
+# ---------------------------------------------------------------------------
+# SPLINE0 — optional master GRID field (Step 64 load injection)
+# ---------------------------------------------------------------------------
+
+class TestSpline0Parser:
+
+    def test_explicit_master_grid(self):
+        bulk = parse_bulk_data("SPLINE0, 9400, 400, 400, 415, 98".splitlines())
+        sp = bulk.spline0s[9400]
+        assert (sp.caero, sp.id1, sp.id2, sp.grid) == (400, 400, 415, 98)
+
+    def test_blank_master_grid_defaults_to_zero(self):
+        """Blank/absent field 5 = 0 = 'default to the SUPORT grid'."""
+        for line in ("SPLINE0, 9500, 500, 500, 531",
+                     "SPLINE0, 9600, 500, 500, 531, "):
+            bulk = parse_bulk_data([line])
+            assert next(iter(bulk.spline0s.values())).grid == 0
+
+    def test_duplicate_eid_raises(self):
+        lines = """\
+SPLINE0, 9400, 400, 400, 415
+SPLINE0, 9400, 400, 400, 415
+""".splitlines()
+        with pytest.raises(ValueError, match="Duplicate SPLINE0 EID"):
+            parse_bulk_data(lines)

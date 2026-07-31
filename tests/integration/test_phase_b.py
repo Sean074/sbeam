@@ -106,10 +106,10 @@ class TestBuildFgAgreement:
 
 
 class TestErrorHandling:
-    """V-B2d — ValueError when g_disp is None."""
+    """V-B2d — ValueError when the force-transfer spline is None."""
 
     def test_raises_without_spline(self, cantilever_aero):
         aero, _, _ = cantilever_aero
-        aero_no_spline = dataclasses.replace(aero, g_disp=None)
-        with pytest.raises(ValueError, match="g_disp is None"):
+        aero_no_spline = dataclasses.replace(aero, g_load=None)
+        with pytest.raises(ValueError, match="g_load is None"):
             compute_structural_loads(aero_no_spline, Q, ALPHA)

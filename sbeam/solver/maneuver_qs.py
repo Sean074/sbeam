@@ -196,7 +196,7 @@ def _recover_step(
     w_total = w_struct + ops.D_jx @ delta_arr + aero.wg
     gamma = aero.ajj_inv_corr @ w_total
     f_box_vec = aero.skj @ gamma                                   # force/q units
-    grid_loads = aero.require_g_disp().T @ (ops.q * f_box_vec)
+    grid_loads = aero.require_g_load().T @ (ops.q * f_box_vec)
     Fz_aero = float(ops.q * f_box_vec[2::3].sum())
     My_aero = float(ops.q * pitch_moment(f_box_vec, aero.boxes, ops.x_ref))
 

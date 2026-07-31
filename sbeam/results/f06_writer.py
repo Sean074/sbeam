@@ -412,6 +412,26 @@ def _build_f06_sol144_text(
         )
         lines.append("")
 
+    # ---- INJECTED BODY / UN-SPLINED BOX LOADS (Step 64) ----
+    # Boxes with no structural coupling (SPLINE0 body panels, un-splined boxes)
+    # deliver their force to the structure as a rigid load at a master grid.
+    # Emitted only when such boxes exist, so other decks are unaffected.
+    if result.load_injection_echo:
+        lines.append("                    I N J E C T E D   A E R O   L O A D S   (SPLINE0 / UN-SPLINED)")
+        lines.append("")
+        lines.append("      SOURCE          MASTER GRID   BOXES            FX            FY            FZ            MX            MY            MZ")
+        for inj in result.load_injection_echo:
+            f = inj['force']
+            m = inj['moment']
+            lines.append(
+                f"      {inj['source']:<14}  {inj['master_grid']:>11}  {inj['n_boxes']:>6}  "
+                f"{_fmt(f[0])}{_fmt(f[1])}{_fmt(f[2])}"
+                f"{_fmt(m[0])}{_fmt(m[1])}{_fmt(m[2])}"
+            )
+        lines.append("")
+        lines.append("      (RESULTANTS ABOUT THE MOMENT REFERENCE; INCLUDED IN THE TRIM BALANCE AND THE LOAD EXPORT)")
+        lines.append("")
+
     # ---- STABILITY & CONTROL DERIVATIVES (rigid + restrained + unrestrained) ----
     unrest = result.unrestrained_derivs or {}
     lines.append("                              S T A B I L I T Y   D E R I V A T I V E S")

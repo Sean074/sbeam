@@ -34,26 +34,31 @@ parsing and the full SOL 144 solve with `Q_ax·δ_x`).
 Three pure linear-algebra functions in `sbeam/aero/coupling.py` implement the
 Phase C matrix chains. They operate on already-built AeroModel quantities.
 
-#### `build_qaa(aero, g_disp, g_slope) → np.ndarray`
+#### `build_qaa(aero, g_load, g_slope) → np.ndarray`
 
 ```
-Q_aa = G_disp^T  S_kj  (A_jj*)^-1  D_jk  G_slope    shape (n_g, n_g)
+Q_aa = G_load^T  S_kj  (A_jj*)^-1  D_jk  G_slope    shape (n_g, n_g)
 ```
 
 | Arg | Shape | Description |
 |-----|-------|-------------|
 | `aero` | — | AeroModel (provides `skj`, `ajj_inv_corr`, `djk`) |
-| `g_disp` | (3n_box, n_g) | Displacement spline from `build_g_spline` |
-| `g_slope` | (n_box, n_g) | Slope spline from `build_g_spline` |
+| `g_load` | (3n_box, n_g) | Force-transfer spline from `build_spline_operators` (`g_disp` + Step 64 load injection) |
+| `g_slope` | (n_box, n_g) | Slope spline from `build_spline_operators` |
+
+Every `gᵀ·f` transfer in the SOL 144 / maneuver chain — `Q_aa`, `f_g`, `Q_ax`,
+`grid_loads`, the modal GAFs — uses `g_load`, so `SPLINE0` body-panel and
+un-splined-box forces reach the force balance and the exports (Step 64 / DEF-M1).
+`g_disp` remains the kinematic operator used for displacement recovery only.
 
 Returns the **g-set** Q_aa (dense, unsymmetric in general). Reduction to the
 a-set is done downstream via the shared `assembly.reduction.reduce_to_aset`
 path (wrapped by `sol144._build_qaa_aset`).
 
-#### `build_fg(aero, g_disp) → np.ndarray`
+#### `build_fg(aero, g_load) → np.ndarray`
 
 ```
-f_g = G_disp^T  S_kj  (A_jj*)^-1  w_g               shape (n_g,)
+f_g = G_load^T  S_kj  (A_jj*)^-1  w_g               shape (n_g,)
 ```
 
 Baseline aero load from the `W2GJ` normalwash at zero elastic deflection.
@@ -82,7 +87,7 @@ from sbeam.solver.sol144 import run_aeroelastic_static
 result = run_aeroelastic_static(
     bulk,           # BulkData
     subcase,        # SubcaseControl (uses spc_sid, load_sid, method_sid)
-    aero,           # AeroModel — must have g_slope and g_disp populated
+    aero,           # AeroModel — must have g_slope, g_disp and g_load populated
     q,              # float — dynamic pressure in consistent units
     use_rom=False,  # bool — enable modal-truncation ROM with mode-acceleration
     sol103_result=None,  # Optional[Sol103Result] — pre-computed modes for ROM
@@ -113,7 +118,7 @@ AsetReduction`), shared by SOL 103, SOL 144, and `maneuver_qs`.
 `_build_qaa_aset` composes it for the (K, Q, f) triple:
 
 ```
-1. Q_gg = build_qaa(aero, aero.g_disp, aero.g_slope)    # (n_g, n_g) dense
+1. Q_gg = build_qaa(aero, aero.g_load, aero.g_slope)    # (n_g, n_g) dense
 2. K_gg = assemble_global_stiffness(bulk)                  # (n_g, n_g) sparse CSR
 3. red  = reduce_to_aset(bulk, grid_index, spc_sid)        # T + a-set partition
 4. K_aa = red.reduce_matrix(K_gg, dense=True)              # (n_a, n_a) dense
@@ -437,7 +442,7 @@ their **mode shapes** at each Mach on the card:
 
 **Flight-load export (`results/load_export.py`).** `write_aero_load_cards` writes
 `<stem>.aero_loads.bdf` — comma free-field `FORCE`/`MOMENT` cards (unit scale factor;
-direction components carry the physical load) from `result.grid_loads` (`g_disp^T·q·f_box`),
+direction components carry the physical load) from `result.grid_loads` (`g_load^T·q·f_box`),
 one card block per subcase with `SID = subcase_id`. By spline force/moment conservation the
 set sums to the trimmed lift/moment.
 
@@ -569,7 +574,7 @@ operator below is unchanged from pre-Step-60 behaviour.
 |---|---|
 | `M_gg` (`assemble_global_mass(bulk, massset_sid)`) | `K_gg` / `K_aa` (stiffness) |
 | `M_ax` (`build_inertial_cols(..., massset_sid)`) | VLM AIC — `ajj`, `ajj_inv_corr` |
-| GPWG mass / CG (`compute_gpwg(bulk, massset_sid)`) | `skj` / `djk` / `wg`, splines `g_disp`/`g_slope` |
+| GPWG mass / CG (`compute_gpwg(bulk, massset_sid)`) | `skj` / `djk` / `wg`, splines `g_disp`/`g_load`/`g_slope` |
 | The trim solve and its recovered loads | the whole `AeroCache` |
 
 > **Invariant — no AeroCache invalidation.** The AIC is a function of geometry and Mach

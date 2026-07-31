@@ -35,10 +35,11 @@ from sbeam.model.aero import (
     Aeros, Caero1, Paero1, Set1, Spline2, Attach, Spline0
 )
 from sbeam.model.grid import Grid
+from sbeam.model.constraint import Suport
 from sbeam.model.coordinate_system import Cord2r
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.coupling import build_qaa
-from sbeam.aero.spline import build_g_spline
+from sbeam.aero.spline import build_g_spline, build_spline_operators
 
 
 # ---------------------------------------------------------------------------
@@ -664,7 +665,13 @@ class TestAttachRigidBodyGate:
 
 
 class TestSpline0ZeroForce:
-    """V-B3c: SPLINE0 rows remain zero — no structural force contribution."""
+    """V-B3c: SPLINE0 contributes no displacement coupling and no downwash.
+
+    Its aerodynamic force is not lost, though — it is injected rigidly at the
+    master grid through ``g_load`` (Step 64 / DEF-M1, see
+    :class:`TestSpline0Injection`).  ``g_disp`` remains the pure kinematic
+    operator, so these two invariants stand unchanged.
+    """
 
     def test_v_b3c_zero_force_contribution(self, spline0_operators):
         """SPLINE0 boxes: g_disp.T @ any_pressure_force = 0 for all structural DOFs."""
@@ -687,6 +694,190 @@ class TestSpline0ZeroForce:
         assert np.allclose(g_slope, 0.0, atol=1e-14), (
             f"SPLINE0 g_slope must be all-zero; max |w|={np.max(np.abs(g_slope)):.2e}"
         )
+
+
+# ---------------------------------------------------------------------------
+# V-M1 (Step 64 / DEF-M1): rigid load injection for structurally-uncoupled boxes
+# ---------------------------------------------------------------------------
+
+def _build_injection_bulk(spline0_grid=1, master_pos=(0.0, 0.0, 0.0),
+                          with_suport=False, suport_gid=1, canted=True):
+    """Minimal BulkData for the load-injection tests.
+
+    A CANTED panel (dihedral 30°) so all three force components are non-zero —
+    a z-row-only transfer would silently drop Fy.  ``spline0_grid = 0`` leaves
+    the SPLINE0 GRID field blank so the default (SUPORT) path is exercised.
+    """
+    bulk = BulkData()
+    bulk.grids[1] = Grid(gid=1, cp=0, x=master_pos[0], y=master_pos[1],
+                         z=master_pos[2], cd=0)
+    bulk.grids[2] = Grid(gid=2, cp=0, x=1.0, y=0.0, z=0.0, cd=0)
+
+    bulk.aeros = Aeros(acsid=0, rcsid=0, cref=1.0, bref=2.0, sref=2.0, symxz=0, symxy=0)
+    bulk.paero1s[10] = Paero1(pid=10)
+
+    tip_z = 1.0 if canted else 0.0     # dihedral tip rise
+    bulk.caero1s[200] = Caero1(
+        eid=200, pid=10, cp=0, nspan=2, nchord=1,
+        lspan=0, lchord=0, igid=0,
+        p1=(0.0, 0.0, 0.0), x12=1.0,
+        p4=(0.0, 2.0, tip_z), x43=1.0,
+    )
+    bulk.spline0s[300] = Spline0(eid=300, caero=200, id1=200, id2=201,
+                                 grid=spline0_grid)
+    if with_suport:
+        bulk.supports.append(Suport(gid=suport_gid, dofs="35"))
+    return bulk
+
+
+def _mesh(bulk):
+    from sbeam.aero.panel import mesh_caero1
+    return mesh_caero1(bulk.caero1s[200], bulk.paero1s[10], bulk.aefacts,
+                       bulk.cord2rs, start_k=0)
+
+
+def _ops(bulk, grid_index=None):
+    grid_index = grid_index if grid_index is not None else {1: 0, 2: 1}
+    boxes = _mesh(bulk)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        ops = build_spline_operators(bulk, boxes, grid_index)
+    return ops, boxes, grid_index
+
+
+def _resultant_at(f_g, grid_index, gid):
+    """Return (F, M) from the 6 g-set DOFs of *gid*."""
+    base = 6 * grid_index[gid]
+    return f_g[base:base + 3], f_g[base + 3:base + 6]
+
+
+class TestSpline0Injection:
+    """V-M1 — SPLINE0 / un-splined box forces reach the structure via g_load."""
+
+    def test_v_m1a_closed_form_resultant(self):
+        """g_load.T f == [ΣF, Σ r×F] at the master grid, zero elsewhere."""
+        from sbeam.aero.integration import build_skj
+        bulk = _build_injection_bulk(spline0_grid=1, master_pos=(0.3, -0.2, 0.1))
+        ops, boxes, grid_index = _ops(bulk)
+        master = np.array([0.3, -0.2, 0.1])
+
+        f_box = build_skj(boxes) @ np.array([1.0, -0.7])
+        f_g = ops.g_load.T @ f_box
+
+        forces = f_box.reshape(-1, 3)
+        exp_f = forces.sum(axis=0)
+        exp_m = sum(np.cross(b.force_point - master, forces[k])
+                    for k, b in enumerate(boxes))
+
+        F, M = _resultant_at(f_g, grid_index, 1)
+        assert np.max(np.abs(exp_f)) > 1e-3 and np.max(np.abs(exp_f[:2])) > 1e-3, (
+            "test geometry must exercise all three force components"
+        )
+        assert np.allclose(F, exp_f, atol=1e-14), f"force {F} vs {exp_f}"
+        assert np.allclose(M, exp_m, atol=1e-14), f"moment {M} vs {exp_m}"
+
+        # nothing lands on the other grid
+        F2, M2 = _resultant_at(f_g, grid_index, 2)
+        assert np.allclose(np.concatenate([F2, M2]), 0.0, atol=1e-14)
+
+    def test_v_m1a_kinematic_adjoint(self):
+        """The injection rows are the rigid-body interpolation read forward."""
+        bulk = _build_injection_bulk(spline0_grid=1, master_pos=(0.3, -0.2, 0.1))
+        ops, boxes, grid_index = _ops(bulk)
+        master = np.array([0.3, -0.2, 0.1])
+
+        u = np.zeros(ops.g_load.shape[1])
+        u[0:3] = [0.05, -0.02, 0.11]          # master translation
+        u[3:6] = [0.03, 0.07, -0.04]          # master rotation
+        box_u = (ops.g_load @ u).reshape(-1, 3)
+        for k, b in enumerate(boxes):
+            expected = u[0:3] + np.cross(u[3:6], b.force_point - master)
+            assert np.allclose(box_u[k], expected, atol=1e-14)
+
+    def test_v_m1b_resultant_invariant_to_grouping(self):
+        """Splitting the boxes over two masters preserves the total resultant."""
+        from sbeam.aero.integration import build_skj
+        one = _build_injection_bulk(spline0_grid=1)
+        two = _build_injection_bulk(spline0_grid=1)
+        two.spline0s[300] = Spline0(eid=300, caero=200, id1=200, id2=200, grid=1)
+        two.spline0s[301] = Spline0(eid=301, caero=200, id1=201, id2=201, grid=2)
+
+        ops1, boxes, grid_index = _ops(one)
+        ops2, _, _ = _ops(two)
+        f_box = build_skj(boxes) @ np.array([1.0, -0.7])
+
+        def total(f_g):
+            F = np.zeros(3)
+            M = np.zeros(3)
+            for gid, gi in grid_index.items():
+                g = one.grids[gid]
+                pos = np.array([g.x, g.y, g.z])
+                Fi, Mi = _resultant_at(f_g, grid_index, gid)
+                F += Fi
+                M += Mi + np.cross(pos, Fi)
+            return F, M
+
+        F1, M1 = total(ops1.g_load.T @ f_box)
+        F2, M2 = total(ops2.g_load.T @ f_box)
+        assert np.allclose(F1, F2, atol=1e-14)
+        assert np.allclose(M1, M2, atol=1e-14)
+
+    def test_v_m1c_defaults_to_suport_grid(self):
+        """A blank SPLINE0 GRID field falls back to the SUPORT grid."""
+        bulk = _build_injection_bulk(spline0_grid=0, with_suport=True, suport_gid=2)
+        ops, _boxes, _gi = _ops(bulk)
+        assert [i.master_grid for i in ops.injections] == [2]
+
+    def test_v_m1c_no_master_warns_and_drops(self):
+        """No GRID field and no SUPORT: warn, leave g_load == g_disp, do not raise."""
+        bulk = _build_injection_bulk(spline0_grid=0, with_suport=False)
+        boxes = _mesh(bulk)
+        with pytest.warns(UserWarning, match="no master grid for load injection"):
+            ops = build_spline_operators(bulk, boxes, {1: 0, 2: 1})
+        assert ops.injections == []
+        assert np.array_equal(ops.g_load, ops.g_disp)
+
+    def test_v_m1c_multiple_suport_grids_warn(self):
+        """Several SUPORT grids: first is used, with a warning."""
+        bulk = _build_injection_bulk(spline0_grid=0, with_suport=True, suport_gid=2)
+        bulk.supports.append(Suport(gid=1, dofs="1"))
+        boxes = _mesh(bulk)
+        with pytest.warns(UserWarning, match="several SUPORT grids"):
+            ops = build_spline_operators(bulk, boxes, {1: 0, 2: 1})
+        assert [i.master_grid for i in ops.injections] == [2]
+
+    def test_v_m1d_unknown_master_grid_raises(self):
+        """An explicit GRID that is not in the model is a hard error."""
+        bulk = _build_injection_bulk(spline0_grid=77)
+        boxes = _mesh(bulk)
+        with pytest.raises(ValueError, match="master GRID 77 not found"):
+            build_spline_operators(bulk, boxes, {1: 0, 2: 1})
+
+    def test_v_m1e_unsplined_boxes_warn_and_inject(self):
+        """Boxes with no spline card at all: warning stays, force still injected."""
+        from sbeam.aero.integration import build_skj
+        bulk = _build_injection_bulk(spline0_grid=1, with_suport=True, suport_gid=1)
+        del bulk.spline0s[300]
+        bulk.attaches[400] = Attach(eid=400, caero=200, id1=200, id2=200,
+                                    grid=2, cid=0)   # only box 200 is splined
+        boxes = _mesh(bulk)
+        with pytest.warns(UserWarning, match="has no spline coverage"):
+            ops = build_spline_operators(bulk, boxes, {1: 0, 2: 1})
+
+        assert [(i.source, i.master_grid, i.boxes) for i in ops.injections] == [
+            ("UNSPLINED", 1, [1])
+        ]
+        f_box = build_skj(boxes) @ np.array([0.0, 1.0])    # load the loose box only
+        F, _M = _resultant_at(ops.g_load.T @ f_box, {1: 0, 2: 1}, 1)
+        assert np.allclose(F, f_box.reshape(-1, 3)[1], atol=1e-14)
+
+    def test_v_m1f_fully_splined_deck_is_untouched(self):
+        """With every box covered by a real spline, g_load == g_disp exactly."""
+        bulk = _build_attach_bulk()
+        boxes = _mesh(bulk)
+        ops = build_spline_operators(bulk, boxes, {1: 0})
+        assert ops.injections == []
+        assert np.array_equal(ops.g_load, ops.g_disp)
 
 
 # ---------------------------------------------------------------------------

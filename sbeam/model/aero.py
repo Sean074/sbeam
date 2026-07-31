@@ -165,11 +165,19 @@ class Attach:
 
 @dataclass
 class Spline0:
-    """Zero-displacement constraint — box rows in g_slope / g_disp remain zero."""
+    """Zero-displacement constraint — box rows in g_slope / g_disp remain zero.
+
+    The boxes take no downwash from structural motion (``g_slope`` rows stay
+    zero) and interpolate no displacement (``g_disp`` rows stay zero), but their
+    aerodynamic force is injected into the structure as a rigid load at
+    ``grid`` — the ``g_load`` operator (Step 64 / DEF-M1).  ``grid = 0``
+    (blank field) defaults to the SUPORT grid.
+    """
     eid:   int
     caero: int
     id1:   int
     id2:   int
+    grid:  int = 0    # master grid carrying the injected load; 0 = default to SUPORT
 
 
 @dataclass

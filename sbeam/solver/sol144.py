@@ -17,7 +17,7 @@ Public API:
 """
 
 import warnings
-from typing import Optional, Tuple, cast
+from typing import Any, Optional, Tuple, cast
 
 import numpy as np
 import scipy.linalg
@@ -112,7 +112,7 @@ def _build_qaa_aset(
         )
 
     # --- g-set matrices ---
-    Q_gg = build_qaa(aero, aero.require_g_disp(), aero.require_g_slope())     # (n_g, n_g) dense
+    Q_gg = build_qaa(aero, aero.require_g_load(), aero.require_g_slope())     # (n_g, n_g) dense
     K_gg = assemble_global_stiffness(bulk)                  # (n_g, n_g) sparse CSR
 
     # --- RBE3/RBAR-then-SPC reduction (shared path, Step 59) ---
@@ -269,7 +269,7 @@ def run_aeroelastic_static(
 
     # Combine structural load and baseline aero load on the g-set
     f_struct = assemble_load_vector(bulk, load_sid) if load_sid is not None else np.zeros(n_dofs)
-    f_aero_g = q * build_fg(aero, aero.require_g_disp())    # (n_g,) from coupling.py
+    f_aero_g = q * build_fg(aero, aero.require_g_load())    # (n_g,) from coupling.py
     f_g_full = f_struct + f_aero_g
 
     # Reduce Q_aa, K_aa, and the combined load to the a-set
@@ -797,6 +797,54 @@ def aero_moment_resultant(
     return m
 
 
+def _build_injection_echo(
+    aero: AeroModel,
+    box_forces: FloatArray,
+    ref_point: FloatArray,
+    bulk: BulkData,
+    grid_index: dict[int, int],
+    free_dofs: list[int],
+) -> list[dict[str, Any]]:
+    """Summarise the Step 64 load injections for the f06 (and warn on dead ends).
+
+    For each group of structurally-uncoupled boxes (SPLINE0 body panels,
+    un-splined boxes) report the master grid, the box count and the physical
+    6-component resultant about ``ref_point`` that the injection puts into the
+    trim balance and the load export.
+
+    Warns when the master grid's translations are all constrained: the injected
+    load is then removed by the a-set reduction and reappears as an SPC
+    reaction rather than trimming the aircraft.
+
+    Returns [] when no injection is active, so decks without body panels get a
+    byte-identical f06.
+    """
+    echo: list[dict[str, Any]] = []
+    free = set(free_dofs)
+    for inj in aero.load_injections:
+        idx = inj.boxes
+        forces = box_forces[idx]
+        sub_boxes = [aero.boxes[k] for k in idx]
+        f_tot = forces.sum(axis=0)
+        m_tot = aero_moment_resultant(forces, sub_boxes, ref_point)
+        col = 6 * grid_index[inj.master_grid]
+        if not any((col + d) in free for d in range(3)):
+            warnings.warn(
+                f"{inj.source}: master GRID {inj.master_grid} has all three "
+                "translations constrained — the injected aerodynamic load "
+                f"(F={f_tot}) is carried by the constraint, not by the trim.",
+                UserWarning,
+            )
+        echo.append({
+            'source':      inj.source,
+            'master_grid': inj.master_grid,
+            'n_boxes':     len(idx),
+            'force':       f_tot,
+            'moment':      m_tot,
+        })
+    return echo
+
+
 def compute_rigid_derivs(
     aero: AeroModel,
     D_jx: FloatArray,
@@ -1304,7 +1352,7 @@ def run_sol144_diverg(
     mach_results = []
     for mach in machs:
         aero_m = aero_cache.get(mach)
-        Q_gg = build_qaa(aero_m, aero_m.require_g_disp(), aero_m.require_g_slope())
+        Q_gg = build_qaa(aero_m, aero_m.require_g_load(), aero_m.require_g_slope())
         Q_aa = red.reduce_matrix(Q_gg)
         Q_ll = Q_aa[np.ix_(l_idx, l_idx)]
 
@@ -1492,7 +1540,7 @@ def run_sol144_trim(
     # symmetry force-doubling factor (the AE1 Step D `sym=2` double-count that
     # halved the trim solution is gone with half-span support).
     D_jx = build_djx(aero.boxes, all_labels, bulk)       # (n_box, n_labels)
-    Q_ax_g = aero.require_g_disp().T @ aero.skj @ aero.ajj_inv_corr @ D_jx  # (n_g, n_labels)
+    Q_ax_g = aero.require_g_load().T @ aero.skj @ aero.ajj_inv_corr @ D_jx  # (n_g, n_labels)
 
     # ------------------------------------------------------------------ #
     # A-set partition (SPC + RBE3 reduction)
@@ -1509,14 +1557,14 @@ def run_sol144_trim(
 
     # Also compute Q_aa for storage in result (reuse existing helper)
     from sbeam.aero.coupling import build_qaa
-    Q_gg = build_qaa(aero, aero.require_g_disp(), aero.require_g_slope())
+    Q_gg = build_qaa(aero, aero.require_g_load(), aero.require_g_slope())
     Q_aa = red.reduce_matrix(Q_gg)
 
     # ------------------------------------------------------------------ #
     # Build combined RHS: q*f_g (baseline aero) + inertial load
     # ------------------------------------------------------------------ #
     from sbeam.aero.coupling import build_fg
-    f_aero_g = q_dyn * build_fg(aero, aero.require_g_disp())   # (n_g,) baseline aero (whole-airplane)
+    f_aero_g = q_dyn * build_fg(aero, aero.require_g_load())   # (n_g,) baseline aero (whole-airplane)
 
     # Aerodynamic contribution of prescribed trim variables (URDD cols = 0)
     label_to_col = {l: i for i, l in enumerate(all_labels)}
@@ -1726,8 +1774,18 @@ def run_sol144_trim(
         box_cp[j] = float(np.dot(f_j, b.normal) / b.area) if b.area > 0 else 0.0
 
     # g-set aero flight-load vector for FORCE/MOMENT export (plain trim:
-    # G_disp^T · q · P_k).  Preserves net force/moment through the spline.
-    grid_loads = aero.require_g_disp().T @ (q_dyn * f_box_vec)
+    # G_load^T · q · P_k).  Preserves net force/moment through the spline.
+    grid_loads = aero.require_g_load().T @ (q_dyn * f_box_vec)
+
+    # Step 64 / DEF-M1 — echo what the load injection contributed.  Boxes with
+    # no structural coupling (SPLINE0 body panels, un-splined boxes) enter the
+    # trim balance and the load export as a rigid load at their master grid;
+    # report each group's 6-component resultant about the moment reference so a
+    # mis-placed master grid is visible.  Empty on decks with none, so their f06
+    # is byte-identical.
+    load_injection_echo = _build_injection_echo(
+        aero, box_forces, suport_pos, bulk, grid_index, red.free_dofs
+    )
 
     # ------------------------------------------------------------------ #
     # Step 53 — balanced maneuver loads & inertia relief.
@@ -1831,6 +1889,7 @@ def run_sol144_trim(
         trim_mode=trim_mode,
         monitor_loads=monitor_loads,
         chordcp_echo=chordcp_echo,
+        load_injection_echo=load_injection_echo,
         massset_sid=massset_sid,
         massset_label=mass_case_label,
         massset_mass=mass_case_gpwg.total_mass,

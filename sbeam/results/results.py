@@ -136,6 +136,7 @@ class Sol144TrimResult:
     trim_mode: str = "determined"             # "determined" or "over-determined" (Step 52)
     monitor_loads: Optional[dict[str, MonitorLoad]] = None      # {name: MonitorLoad} integrated section loads (MON1–MON3)
     chordcp_echo: Optional[dict[str, Any]] = None       # Step 54 injected-operating-point echo: {'alpha_ref', 'data_machs', 'surfaces': {eid: {'FZ_Q','MY_Q','FZ_Q_VLM'}}}
+    load_injection_echo: Optional[list[dict[str, Any]]] = None  # Step 64 SPLINE0/un-splined load injection: [{'source','master_grid','n_boxes','force','moment'}]; None/[] = no injection
     # --- Step 60 (MASSSET payload / mass case) ---
     massset_sid: Optional[int] = None         # MASSSET SID selected by the subcase; None = baseline
     massset_label: str = "BASELINE"           # mass-case name for output headers

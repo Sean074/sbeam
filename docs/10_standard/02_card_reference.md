@@ -1374,12 +1374,20 @@ incidence `+n_z` on the covered boxes; roll (+Rx) produces none. See
 ### SPLINE0 — Zero-Displacement Constraint (sbeam extension)
 
 Registers a box range as "covered" without adding any structural coupling: the
-`g_slope` / `g_disp` rows of the covered boxes remain zero. Used to suppress
-un-splined-box warnings for boxes that are intentionally uncoupled.
+`g_slope` / `g_disp` rows of the covered boxes remain zero, so the boxes neither
+deflect with the structure nor take downwash from it. Used for panels whose own
+elasticity is negligible — typically the body panels of the cruciform (A9) and
+decoupled-strip (A10) workflows.
+
+Their aerodynamic **load is not discarded**: since Step 64 it is injected into the
+structure as a rigid load (net force plus the moment of the box forces) at the
+master grid named in field 5, through the `g_load` force-transfer operator. That
+load enters the SOL 144 trim force balance, the `FORCE`/`MOMENT` export, MONPNT3
+and the maneuver solvers. Leave the field blank to use the SUPORT grid.
 
 **Format:**
 ```
-SPLINE0, EID, CAERO, ID1, ID2
+SPLINE0, EID, CAERO, ID1, ID2, GRID
 ```
 
 **Fields:**
@@ -1390,11 +1398,25 @@ SPLINE0, EID, CAERO, ID1, ID2
 | CAERO | `caero` | int | CAERO1 EID of the panel | required |
 | ID1 | `id1` | int | First NASTRAN box ID in the range | required |
 | ID2 | `id2` | int | Last NASTRAN box ID in the range | required |
+| GRID | `grid` | int | Master structural grid carrying the injected load (basic CID 0) | blank = SUPORT grid |
+
+Pick a `GRID` that physically carries the panel — a fuselage grid under the body
+panel, not an arbitrary reference — since the injected force and moment load the
+structure there. The f06 `INJECTED AERO LOADS` block echoes each panel's master
+grid and its 6-component resultant so a misplaced choice is visible.
+
+**Warnings / errors:**
+
+- `ValueError` if `GRID` is given but is not a grid of the structural model.
+- `UserWarning` when neither `GRID` nor a SUPORT grid is available (SOL 101 decks):
+  the panel's force stays out of the structural load path, as before Step 64.
+- `UserWarning` naming the grid used when the model has several SUPORT grids.
 
 **Example:**
 ```
-$ Boxes 3001-3008 carry aero load but do not deflect structurally
-SPLINE0, 400, 3001, 3001, 3008
+$ Boxes 3001-3008 carry aero load but do not deflect structurally;
+$ their resultant is applied at fuselage GRID 98
+SPLINE0, 400, 3001, 3001, 3008, 98
 ```
 
 ---

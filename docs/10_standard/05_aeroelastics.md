@@ -41,7 +41,7 @@ Results   (cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, CDi, e, per_su
 | `sbeam/aero/strip.py` | **Step A10** — decoupled strip body panels (PSTRIP/STRIPK): `is_strip_caero`, `strip_box_mask`, `strip_box_slopes` (diagonal, zero-coupling ΔCp operator block — cannot contaminate the lifting surfaces) |
 | `sbeam/aero/aero_model.py` | `AeroModel` container + `build_aero_model()` factory (block-diagonal strip body block via `_assemble_vlm_operator`) |
 | `sbeam/aero/mirror.py` | Half-span → full-span model mirroring (symmetry deprecation; raises on unsupported cards) |
-| `sbeam/aero/spline.py` | **Phase B** — `build_g_spline()`: builds `g_slope` (n_box×n_g) and `g_disp` (3n_box×n_g) from `SPLINE2` + `ATTACH` + `SPLINE0` cards |
+| `sbeam/aero/spline.py` | **Phase B** — `build_spline_operators()`: builds `g_slope` (n_box×n_g), `g_disp` and `g_load` (3n_box×n_g) from `SPLINE2` + `ATTACH` + `SPLINE0` cards; `g_load` adds the Step 64 rigid load injection for structurally-uncoupled boxes |
 | `sbeam/aero/coupling.py` | `build_qaa` flexible aero stiffness `Q_aa = G_dispᵀ S_kj (A_jj*)⁻¹ D_jk G_slope`; `build_fg` baseline aero load; `build_gaf` modal GAF `Q_hh = Φᵀ Q_aa Φ` |
 | `sbeam/solver/sol144.py` | `run_sol144_trim` (Schur trim solve, derivatives), `run_sol144_diverg` (DIVERG-card divergence sweep + mode shape + V_div), `run_aeroelastic_static`, `AeroCache`, `_divergence_dynamic_pressure`, `_divergence_roots` |
 | `sbeam/solver/maneuver_qs.py` | **Phase G0** — `run_maneuver_qs`: Level-1 quasi-steady, open-loop, restrained l-set Newmark-β transient maneuver integration |
@@ -111,7 +111,7 @@ Reproduction script for the original review: `studies/_review_ha144a_check.py`.
 | `SET1` | List of structural grid IDs for spline input | S45 |
 | `SPLINE2` | NASTRAN infinite beam spline: links CAERO1 box range to SET1 grids (rigid chord arms, DTOR/DTHX/DTHY flexibilities) | S45–46, AC7 |
 | `ATTACH` | Rigid attachment of box group to single master grid (Step 47, complete; slope-row signs corrected by DEF-H1 2026-07-31) | S45–47 |
-| `SPLINE0` | Zero-displacement constraint — box rows in g_slope/g_disp remain zero | S45–47 |
+| `SPLINE0` | Zero-displacement constraint — box rows in g_slope/g_disp remain zero; load injected at the master `GRID` (field 5, default SUPORT) via `g_load` | S45–47, S64 |
 | `SPLINE1` | Harder–Desmarais IPS surface spline (parse raises NotImplementedError; Step 48) | S45 |
 | `AESTAT` | Rigid-body trim DOF label (ANGLEA, PITCH, ROLL, YAW, URDD2–URDD6) | S51 |
 | `AESURF` | Aerodynamic control surface — hinge line + AELIST of active boxes | S51 |

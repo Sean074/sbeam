@@ -219,7 +219,7 @@ def assemble_aset_operators(
         has_rcsid = False
 
     D_jx = build_djx(aero.boxes, all_labels, bulk)                  # (n_box, n_lab)
-    Q_ax_g = aero.require_g_disp().T @ aero.skj @ aero.ajj_inv_corr @ D_jx    # (n_g, n_lab)
+    Q_ax_g = aero.require_g_load().T @ aero.skj @ aero.ajj_inv_corr @ D_jx    # (n_g, n_lab)
 
     red = reduce_to_aset(bulk, grid_index, subcase.spc_sid)
 
@@ -228,14 +228,14 @@ def assemble_aset_operators(
     K_gg = assemble_global_stiffness(bulk)
     K_aa = red.reduce_matrix(K_gg, dense=True)
 
-    Q_gg = build_qaa(aero, aero.require_g_disp(), aero.require_g_slope())
+    Q_gg = build_qaa(aero, aero.require_g_load(), aero.require_g_slope())
     Q_aa = red.reduce_matrix(Q_gg)
 
     massset_sid = subcase.massset_sid            # Step 60 mass case (None = baseline)
     M_gg = assemble_global_mass(bulk, massset_sid)
     M_aa = red.reduce_matrix(M_gg, dense=True)
 
-    f_aero_g_unit = build_fg(aero, aero.require_g_disp())                     # (n_g,) q-free
+    f_aero_g_unit = build_fg(aero, aero.require_g_load())                     # (n_g,) q-free
     M_ax_g = build_inertial_cols(
         bulk, all_labels, grid_index, suport_pos, massset_sid)
     M_ax_a = red.reduce_rect(M_ax_g)
@@ -560,7 +560,7 @@ def build_hset_gafs(
     # Rigid-rate aerodynamics: same chain as Q_ax but with the physical-rate
     # normalwash columns.
     dj_rate = build_dj_rigidrate(aero.boxes, basis.rigid_dofs, bulk, v_inf)
-    B_ar_g = aero.require_g_disp().T @ aero.skj @ aero.ajj_inv_corr @ dj_rate   # (n_g, n_r)
+    B_ar_g = aero.require_g_load().T @ aero.skj @ aero.ajj_inv_corr @ dj_rate   # (n_g, n_r)
     B_hr = phi.T @ ops.red.reduce_rect(B_ar_g)                        # (n_h, n_r)
     B_hh = np.zeros((n_h, n_h))
     B_hh[:, :n_r] = B_hr

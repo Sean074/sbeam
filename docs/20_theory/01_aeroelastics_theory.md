@@ -728,7 +728,8 @@ The result is ordinary $W_{2GJ}$ + $W_{T2}$ cards on the body CAERO1s (so `build
 unchanged). Implemented in `sbeam/aero/body_correction.py` (`build_body_correction`); the body panels
 carry **`SPLINE0`** (zero structural coupling) so the fictitious tuning load is not smeared onto the
 fuselage beam — yet they still drive the total/trim $C_m,C_n,C_l$ and all rigid + restrained
-derivatives, which integrate every box directly (independent of the spline; §4.4, §5).
+derivatives, which integrate every box directly (independent of the spline; §4.4, §5), *and* the
+trim force balance, into which their resultant is injected rigidly at a master grid (§4.4).
 
 **Authority and contamination are the same mechanism — keep the panels clear of the tail.** The
 cruciform's ability to *move the total moment* and its tendency to *spuriously load the real
@@ -882,6 +883,27 @@ The slope rows follow §4.5 directly: for a rigid rotation $\omega$,
 $\alpha = -(\omega \times \hat{x})\cdot\hat{n} = \omega_y n_z - \omega_z n_y$, so roll
 contributes nothing and pitch contributes $+n_z$. Pinned boxes (`SPLINE0`) simply have a
 zero row in $G_{kg}$.
+
+**Load injection for uncoupled boxes (Step 64).** A zero row in $G_{kg}$ means the box takes no
+motion from the structure — it must not mean the box's *force* disappears. The force transfer
+therefore uses a separate operator $G_{load}$ that equals $G_{disp}$ on coupled boxes and, on each
+uncoupled box $k$ with master grid at $\mathbf{p}$ and lever
+$\mathbf{r}_k = \mathbf{x}_k^{1/4} - \mathbf{p}$, carries the rigid-load rows
+
+$$
+G_{load}[3k{:}3k{+}3,\ u_m] = I_3, \qquad
+G_{load}[3k{:}3k{+}3,\ \theta_m] = -[\mathbf{r}_k]_\times
+\quad\Longrightarrow\quad
+G_{load}^T \mathbf{f} \ \to\ \Big(\textstyle\sum_k \mathbf{F}_k,\ \sum_k \mathbf{r}_k \times \mathbf{F}_k\Big)
+$$
+
+i.e. the exact 6-component resultant applied at the master grid, in all three force components.
+Read forward these are the rigid-body interpolation $\mathbf{u}_k = \mathbf{u}_m + \theta_m \times \mathbf{r}_k$,
+so injection and transfer remain a virtual-work pair. $G_{slope}$ stays zero on those boxes: they
+load the structure but take no downwash from it (the `SPLINE0` contract). The asymmetry is
+deliberate — $Q_{aa} = G_{load}^T S_{kj} A^{*-1} D_{jk} G_{slope}$ gains rows at the master grid but
+no columns, so the already-unsymmetric $Q_{aa}$ becomes more so; nothing downstream assumes
+symmetry.
 
 ### 4.5 The rigid-body exactness requirement
 
