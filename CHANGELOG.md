@@ -73,6 +73,43 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Fixed
 
+**Step 64 / DEF-M1 — SPLINE0 / un-splined box loads now enter the trim equilibrium (2026-07-31)**
+
+- **Behaviour change — trim results on body-panel decks change by design.** Aero boxes with
+  no structural spline (`SPLINE0`-declared body panels, or boxes no spline card covers)
+  generate real force that reached the printed totals, the stability derivatives and MONPNT1,
+  but never the trim force balance, `grid_loads`, MONPNT3 or the `FORCE`/`MOMENT` export.
+  Since the A9 cruciform / A10 strip body workflows exist to carry residual Cm/Cn on exactly
+  such panels, the printed aircraft and the balanced aircraft were different aircraft.
+  Measured on the new `sample/ha144a_body_trim.bdf`: trimmed all-box lift missed the weight
+  by **31.5 %** before the fix (21032 lb vs 15999 lb), and by **9.4e-15** after.
+- Root cause: force transfer used the transpose of the displacement spline (the NASTRAN
+  virtual-work convention), under which `u_box = 0 ⇒ f_g = 0` is a theorem — zero
+  displacement necessarily meant zero load path. ZAERO avoids this with a separate
+  force-mapping spline (`SPLINEF`); sbeam had adopted `SPLINE0`/`ATTACH` without it.
+- **New third operator `g_load` = `g_disp` + rigid-load rows** (`aero/spline.py`), delivering
+  each uncoupled group's exact 6-component resultant (all three force components) at a master
+  grid. Read forward those rows are the rigid-body interpolation `u_k = u_m + θ_m × r_k`, so
+  the virtual-work pairing is restored rather than broken: `SPLINE0` now means "`ATTACH` for
+  loads, zero for incidence". `g_slope` stays zero — injected boxes load the structure but
+  take no downwash from it — so `Q_aa` gains rows at the master grid but no columns.
+- **`SPLINE0` gains field 5 `GRID`** naming the master structural grid; blank defaults to the
+  SUPORT grid. `ValueError` on an unknown grid; `UserWarning` (never a raise) when a deck has
+  neither, so SOL 101 body-panel decks such as `sample/cessna210_body.bdf` still build.
+- New `build_spline_operators()` returning `SplineOperators(g_slope, g_disp, g_load, covered,
+  injections)`; `build_g_spline()` kept as a kinematics-only wrapper. `AeroModel` gains
+  `g_load`, `load_injections` and `require_g_load()`. All 13 force-transfer sites — `build_qaa`,
+  `build_fg`, `Q_ax`, `grid_loads`, `compute_structural_loads`, `maneuver_qs`, the Step 61 modal
+  GAFs — now use `g_load`; the viewer's displacement overlay deliberately stays on `g_disp`.
+- New f06 `INJECTED AERO LOADS` block (source card, master grid, box count, resultant), emitted
+  only when injection is active, so decks without uncoupled boxes are byte-identical.
+- New sample `sample/ha144a_body_trim.bdf` (full-span HA144A + `PSTRIP` cruciform body panels)
+  exercising both master-resolution paths; new gates in `tests/aero/test_spline.py` (V-M1a–f),
+  `tests/integration/test_sol144_body_injection.py` and `tests/parser/test_aero.py`.
+  Fully-splined decks are bit-identical (`load_injections == []` asserted).
+- Follow-on backlogged: `SPLINEF`, the general distributed force-mapping spline (one master
+  grid is exact for the global balance, approximate for local internal loads).
+
 **DEF-H1 — ATTACH `g_slope` pitch sign inverted, spurious roll incidence (2026-07-31)**
 
 - `aero/spline.py` wrote `g_slope[..,Ry] = -1.0` and `g_slope[..,Rx] = +1.0` for ATTACH-

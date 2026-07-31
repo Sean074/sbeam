@@ -4,7 +4,8 @@ Authoritative backlog of **open** work only — bugs, planned development, and d
 in priority order. Updated as part of every session that completes a step — never deferred.
 Completed steps live in `docs/40_history/00_completed_development.md`; nothing closed is
 summarised here. When an item is promoted to a formal step, give it a step number (next free
-number is **Step 67**; Steps 62–66 are assigned below) and apply the step format
+number is **Step 67**; Steps 62, 63, 65 and 66 are assigned below — Step 64 closed
+2026-07-31) and apply the step format
 (Objective, Deliverables, Test/Acceptance).
 
 ---
@@ -19,43 +20,43 @@ sweeps, section loads, usable authoring/output surface). The phase after that is
 
 ### Priority order
 
-**Revised 2026-07-31 (this update):** the DEF-H items that held P1/P2 are closed, and the
+**Revised 2026-07-31 (this update):** the DEF-H items that held P1/P1 are closed, and the
 open findings of the 2026-07-31 critical review had never been ranked. The table below is
 renumbered contiguously and now carries the open DEF-M defects. Ordering principle:
 **silently wrong numbers on reachable inputs before new capability** — an early-design
 process is only useful if its trim, inertial loads and exported deliverables are right —
 then the Tier 1 capability sequence, then refactor-before-Phase-D, then Tiers 2–3.
 Amended later the same day: the **2026-07-31 sample-problem review** items slot in at
-P6–P8 — cheap CI insurance and the flagship sample after the correctness batches (whose
-P3 deliverable-integrity fixes the flagship's exports inherit), before new capability.
+P5–P7 — cheap CI insurance and the flagship sample after the correctness batches (whose
+P2 deliverable-integrity fixes the flagship's exports inherit), before new capability.
 
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P1 | Step 64 / DEF-M1 — inject SPLINE0/unsplined box forces into the trim equilibrium | Defects | ~2–3 d | Decision already taken (2026-07-31). The body-panel workflow (A9/A10) is the advertised way to carry residual Cm/Cn, yet those forces are invisible to the force balance and the load export while appearing in printed totals — the trim is not closed on any body-panel deck. |
-| P2 | Q4 + DEF-M3 — one mass model for `M_ax` (`build_inertial_cols` → `−M_aa·Φ_r`) | Defects / Q&R | ~1–2 d | Same root cause, resolve together. Today inertial-relief columns ignore CONM2 offsets, products of inertia and CID rotation, and mix lumped with consistent mass — silently wrong balanced-maneuver and transient inertial loads on any realistic mass model. Fix before Step 62 builds on `Φ_r`. |
-| P3 | DEF-M deliverable-integrity batch — M5, M6, M7, M10 | Defects | ~1–1.5 d | All cheap, all corrupt what leaves the program: the critical-sample selector/label/column disagree, exported FORCE/MOMENT fields overflow 8-char free field (the advertised stress handoff), the f06 time-history header is misaligned, and the shipped HA144A monitor omits 18.75 % of the inertia. |
-| P4 | DEF-M silent-input batch — M4, M8, M9 (+ DEF-R5, DEF-L1, sample-review F1) | Defects | ~2 d | Three "user asked, program ignored" paths: `LOAD` in a TRIM subcase, correction cards dropped/mis-bound, SPC on a rigid-dependent DOF discarded. M9's fix lands once only after R5 ports `sol101` onto `reduce_to_aset`; L1 is the same validation sweep. The 2026-07-31 sample review adds two of the same class: **F1** — CAERO1s with overlapping NASTRAN box-ID ranges silently overwrite in `build_id_to_k` (`spline.py:69-77`; the pre-flagship cessna210 EIDs 100/150/200/250 collide) — and SOL 101 with zero GRIDs running to an empty f06 without warning. |
-| P5 | DEF-M2 + DEF-M11 — force/moment convention and ATTACH transfer completeness | Defects | ~1 d | `solve_rigid_cl` reports panel-normal rather than body-axis totals (viewer and f06 disagree on canted decks) and ATTACH `g_disp` carries only the z-row. Both are carve-outs that become wrong answers as soon as dihedral/fin panels are used. |
-| P6 | Closed-form CI gates for the four CLAUDE.md verification decks | Samples review | ~0.5 d | `val_cantilever_static`, `val_ss_static`, `val_cantilever_modes`, `val_free_free_modes` reproduce their closed forms today (verified by run, 2026-07-31: 0.004 % / 0.004 % / 0.02 % / RBMs ≤ 4.6e-5 Hz) but are gated only by the theory notebook, which CI never runs. Independent of everything; can land any time. |
-| P7 | Step 65 — flagship realistic-airplane SOL 144 sample family + theory doc | Samples review | ~3–5 d | Closes the biggest sample coverage gap: nothing anywhere combines corrected aero + trim + maneuver + mass cases on a realistic airplane, and corrections never reach a trim. Clean of all open defects (SPLINE2 only, no body panels); after P3 so its exports/critical-sample story is clean. |
-| P8 | Step 66 — flagship stage 2: body panels into the flagship family | Samples review | ~2 d | Blocked on **P1/Step 64** (unsplined-box forces into the trim balance) and on **P7/Step 65** (the family it extends). Folds `cessna210_body`/`_strip` + their 14+ tests into the flagship. |
-| P9 | Monitor Phase 2 — section-cut running loads | Tier 1 | ~2–3 d | The production stress deliverable (per-station Vz/My/Mt); unblocked, independent — can run in parallel with P10–P12. |
-| P10 | Vectorize `build_ajj` (broadcast Biot–Savart) (+ DEF-R6) | Tier 1 | ~1–2 d | Measured 12.3 s at 400 boxes vs 3 ms for the solve — the quadratic pure-Python AIC loop is the actual model-size constraint named in CLAUDE.md; ~100× available; paid per Mach, per correction rebuild, per viewer overlay. DEF-R6's redundant O(n³) work is the same hot path. |
-| P11 | Step 62 — modal transient solver (prescribed rigid) + fixed-Φ mass gates | Tier 1 (G0 plan) | ~4–5 d | De-risks basis/truncation/recovery before free flight; lands the fixed-Φ mass-case transient capability. Consumes P2's unified mass model. |
-| P12 | Step 63 — free-flight rigid-body coupling | Tier 1 (G0 plan) | ~4–5 d | The "different maneuvers" half of the aim: self-balancing transient maneuvers from arbitrary control input. |
-| P13 | Viewer — SOL 144 / MLOADS case authoring UI | Tier 1 | ~5–8 d | Early-design usability: today SOL 144 cases must be hand-authored in the BDF; a production process needs the authoring loop closed. Sequenced after Steps 62–63 so it authors the final card surface once. |
-| P14 | DEF-R1 refactor batch — decompose `sol144.py` (+ R2, R3, R4; R7 at a release boundary) | Defects | ~2–3 d | `run_sol144_trim` is a ~500-line god function in an 1838-line module that P15/P17 both extend. Do it after Tier 1 stops churning it and **before** Phase D piles on. |
-| P15 | `matrix_gaf_export` Phases 1–2 | Tier 2 | ~8 d | External flutter handoff (FLAPS) **and** the declared prerequisite of Phase D (MKAERO1, Mach loop, bundle writers). |
-| P16 | `AMODE` Phase 1 (control-surface hinge modes) | Tier 3 | ~7.5 d | Needed before control-surface flutter in SOL 145; Phase 2 is a declared pre-1.0.0 blocker. |
-| P17 | Phase D core — DLM (D0–D3) + SOL 145 PK flutter | Tier 3 | ~25–30 d | The declared next phase after SOL 144 sufficiency. Gated on P15. |
-| P18 | Phase D cont. — RFA state-space + SOL 146 gust + Monitor Phase 3 | Tier 3 | ~15–20 d | Completes the dynamic loads process (CS-25.341 gust/turbulence monitors). |
-| P19 | `matrix_reuse_store` Phases 1–3 | Tier 2 | ~6 d | Real payoff only once envelope sweeps (many Machs × masses × maneuvers) exist — i.e. after P10–P12/P17. Its Phase 0 is stale (see verdicts). |
+| P1 | Q4 + DEF-M3 — one mass model for `M_ax` (`build_inertial_cols` → `−M_aa·Φ_r`) | Defects / Q&R | ~1–2 d | Same root cause, resolve together. Today inertial-relief columns ignore CONM2 offsets, products of inertia and CID rotation, and mix lumped with consistent mass — silently wrong balanced-maneuver and transient inertial loads on any realistic mass model. Fix before Step 62 builds on `Φ_r`. |
+| P2 | DEF-M deliverable-integrity batch — M5, M6, M7, M10 | Defects | ~1–1.5 d | All cheap, all corrupt what leaves the program: the critical-sample selector/label/column disagree, exported FORCE/MOMENT fields overflow 8-char free field (the advertised stress handoff), the f06 time-history header is misaligned, and the shipped HA144A monitor omits 18.75 % of the inertia. |
+| P3 | DEF-M silent-input batch — M4, M8, M9 (+ DEF-R5, DEF-L1, sample-review F1) | Defects | ~2 d | Three "user asked, program ignored" paths: `LOAD` in a TRIM subcase, correction cards dropped/mis-bound, SPC on a rigid-dependent DOF discarded. M9's fix lands once only after R5 ports `sol101` onto `reduce_to_aset`; L1 is the same validation sweep. The 2026-07-31 sample review adds two of the same class: **F1** — CAERO1s with overlapping NASTRAN box-ID ranges silently overwrite in `build_id_to_k` (`spline.py:69-77`; the pre-flagship cessna210 EIDs 100/150/200/250 collide) — and SOL 101 with zero GRIDs running to an empty f06 without warning. |
+| P4 | DEF-M2 + DEF-M11 — force/moment convention and ATTACH transfer completeness | Defects | ~1 d | `solve_rigid_cl` reports panel-normal rather than body-axis totals (viewer and f06 disagree on canted decks) and ATTACH `g_disp` carries only the z-row. Both are carve-outs that become wrong answers as soon as dihedral/fin panels are used. |
+| P5 | Closed-form CI gates for the four CLAUDE.md verification decks | Samples review | ~0.5 d | `val_cantilever_static`, `val_ss_static`, `val_cantilever_modes`, `val_free_free_modes` reproduce their closed forms today (verified by run, 2026-07-31: 0.004 % / 0.004 % / 0.02 % / RBMs ≤ 4.6e-5 Hz) but are gated only by the theory notebook, which CI never runs. Independent of everything; can land any time. |
+| P6 | Step 65 — flagship realistic-airplane SOL 144 sample family + theory doc | Samples review | ~3–5 d | Closes the biggest sample coverage gap: nothing anywhere combines corrected aero + trim + maneuver + mass cases on a realistic airplane, and corrections never reach a trim. Clean of all open defects (SPLINE2 only, no body panels); after P2 so its exports/critical-sample story is clean. |
+| P7 | Step 66 — flagship stage 2: body panels into the flagship family | Samples review | ~2 d | Blocked on **P6/Step 65** (the family it extends); its other prerequisite, Step 64 (unsplined-box forces into the trim balance), closed 2026-07-31. Folds `cessna210_body`/`_strip` + their 14+ tests into the flagship. |
+| P8 | Monitor Phase 2 — section-cut running loads | Tier 1 | ~2–3 d | The production stress deliverable (per-station Vz/My/Mt); unblocked, independent — can run in parallel with P9–P11. |
+| P9 | Vectorize `build_ajj` (broadcast Biot–Savart) (+ DEF-R6) | Tier 1 | ~1–2 d | Measured 12.3 s at 400 boxes vs 3 ms for the solve — the quadratic pure-Python AIC loop is the actual model-size constraint named in CLAUDE.md; ~100× available; paid per Mach, per correction rebuild, per viewer overlay. DEF-R6's redundant O(n³) work is the same hot path. |
+| P10 | Step 62 — modal transient solver (prescribed rigid) + fixed-Φ mass gates | Tier 1 (G0 plan) | ~4–5 d | De-risks basis/truncation/recovery before free flight; lands the fixed-Φ mass-case transient capability. Consumes P1's unified mass model. |
+| P11 | Step 63 — free-flight rigid-body coupling | Tier 1 (G0 plan) | ~4–5 d | The "different maneuvers" half of the aim: self-balancing transient maneuvers from arbitrary control input. |
+| P12 | Viewer — SOL 144 / MLOADS case authoring UI | Tier 1 | ~5–8 d | Early-design usability: today SOL 144 cases must be hand-authored in the BDF; a production process needs the authoring loop closed. Sequenced after Steps 62–63 so it authors the final card surface once. |
+| P13 | DEF-R1 refactor batch — decompose `sol144.py` (+ R2, R3, R4; R7 at a release boundary) | Defects | ~2–3 d | `run_sol144_trim` is a ~500-line god function in an 1838-line module that P14/P16 both extend. Do it after Tier 1 stops churning it and **before** Phase D piles on. |
+| P14 | `matrix_gaf_export` Phases 1–2 | Tier 2 | ~8 d | External flutter handoff (FLAPS) **and** the declared prerequisite of Phase D (MKAERO1, Mach loop, bundle writers). |
+| P15 | `AMODE` Phase 1 (control-surface hinge modes) | Tier 3 | ~7.5 d | Needed before control-surface flutter in SOL 145; Phase 2 is a declared pre-1.0.0 blocker. |
+| P16 | Phase D core — DLM (D0–D3) + SOL 145 PK flutter | Tier 3 | ~25–30 d | The declared next phase after SOL 144 sufficiency. Gated on P14. |
+| P17 | Phase D cont. — RFA state-space + SOL 146 gust + Monitor Phase 3 | Tier 3 | ~15–20 d | Completes the dynamic loads process (CS-25.341 gust/turbulence monitors). |
+| P18 | `matrix_reuse_store` Phases 1–3 | Tier 2 | ~6 d | Real payoff only once envelope sweeps (many Machs × masses × maneuvers) exist — i.e. after P9–P11/P16. Its Phase 0 is stale (see verdicts). |
 
 **Opportunistic / unranked** (small, independent, do when adjacent): SPLINE9 go/no-go
 convergence study (~1 d, study only); G0-d unsteady corrections; body fence image method;
 load-case envelope viewer; CHORDCP follow-ons; A9 follow-ons; the remaining DEF-L items
 (L2–L7 — extrapolation advisory, SUPORT-drop diagnosis, viewer Cp/span-load, f06
 presentation, docs-mismatch batch, SYMXZ parity decision; ~1–1.5 d total, independent);
+`SPLINEF` distributed force-mapping spline (ZAERO parity; the Step 64 follow-on);
 the samples hygiene batch and doc-pointer sweep from the 2026-07-31 sample review
 (~1 d total, zero-risk — details in the sample-review section below).
 **Deferred:** G0-e (with Phase G ASE), slender-body element (after Phase D), non-aero
@@ -71,12 +72,12 @@ Verdicts:
 |----------|---------|-------|
 | `01_static_aero_plan.md` | **Pruned** (H1, done 2026-07-05) | Phases A–C (Steps 39–58) were all closed but never removed per its own self-removal rule. Now a compact architecture/reference doc: layer diagram, matrix nomenclature, delivered-step map, references, V-case index; the Phase D/E/F/G placeholders retired in favour of `designs/dlm_rfa_flutter_gust.md` and this backlog. |
 | `02_static_aero_zaero_review.md` | **Archived** (done, this review) | All 8 ranked goals were folded into Steps 39–58, all closed. Moved to `docs/40_history/archive/`. |
-| `designs/matrix_gaf_export.md` | **Viable — schedule (P15)** | Highest-viability aero design: new code over data already computed; no new physics. Its AE4 prerequisite is **stale** — AE4/spline kinematics closed with AC7 (2026-07-05, NASTRAN infinite-beam SPLINE2, rigid-body-exact). Its `reduce_to_aset` §6.1 **landed with Step 59** (2026-07-06, `sbeam/assembly/reduction.py`) — reuse, don't re-extract. |
-| `designs/matrix_reuse_store.md` | **Viable — subordinate (P19); Phase 0 deleted** | Rigorous cache-boundary analysis, but its Phase 0 ("build the SOL 144 production dispatch + f06 writer") is **stale** — that surface shipped with Step 56/AE10 and AC5. Re-scope to Phases 1–3 only; schedule when envelope sweeps make caching pay. |
-| `designs/dlm_rfa_flutter_gust.md` | **Viable — the Tier 3 core (P17/P18)** | Technically honest, well-gated (Blair 3×3, Sears, typical-section). The k=0 VLM anchoring is the right de-risking move. Its AE4 gate is stale (closed by AC7); the nonplanar kernel terms (T1/T2, I2) remain a genuine research gap, correctly walled behind V-D1-6 (planar-only ships). Needs `g_disp_colloc` (¾-chord displacement spline) at D0. |
+| `designs/matrix_gaf_export.md` | **Viable — schedule (P14)** | Highest-viability aero design: new code over data already computed; no new physics. Its AE4 prerequisite is **stale** — AE4/spline kinematics closed with AC7 (2026-07-05, NASTRAN infinite-beam SPLINE2, rigid-body-exact). Its `reduce_to_aset` §6.1 **landed with Step 59** (2026-07-06, `sbeam/assembly/reduction.py`) — reuse, don't re-extract. |
+| `designs/matrix_reuse_store.md` | **Viable — subordinate (P18); Phase 0 deleted** | Rigorous cache-boundary analysis, but its Phase 0 ("build the SOL 144 production dispatch + f06 writer") is **stale** — that surface shipped with Step 56/AE10 and AC5. Re-scope to Phases 1–3 only; schedule when envelope sweeps make caching pay. |
+| `designs/dlm_rfa_flutter_gust.md` | **Viable — the Tier 3 core (P16/P17)** | Technically honest, well-gated (Blair 3×3, Sears, typical-section). The k=0 VLM anchoring is the right de-risking move. Its AE4 gate is stale (closed by AC7); the nonplanar kernel terms (T1/T2, I2) remain a genuine research gap, correctly walled behind V-D1-6 (planar-only ships). Needs `g_disp_colloc` (¾-chord displacement spline) at D0. |
 | `designs/rbmref_card.md` | **Fold, don't build standalone** | Its `B_target` geometric rigid-basis construction is mathematically the same object as Step 61's `Φ_r`. Step 61 owns the single `build_rigid_modes`; the RBMREF *card* (user-selectable reference point + f06 rigid-mode block) becomes a thin optional wrapper afterwards, if still wanted. |
 | `designs/spline9_hermite_beam_spline.md` | **Run the kill-switch study only** | Correctly self-gated: run the coarse-grid convergence study (SPLINE9 vs SPLINE2-with-attached-rotations at 3/5/9 EA stations) FIRST; if SPLINE2 matches within noise, close without implementing. Do not start the card plumbing before the study. |
-| `designs/amode_card.md` | **Viable — schedule Phase 1 before flutter (P16)** | Mirrors the proven RBE3 transformation path; V19 analytic gate is unforgeable. Phase 2 (elastic rotating set) honestly rated harder and is a declared 1.0.0 blocker. Open interaction to resolve at implementation: AMODE's augmented `q` DOF vs the Step 61 free-free basis solve (neither doc addresses it). |
+| `designs/amode_card.md` | **Viable — schedule Phase 1 before flutter (P15)** | Mirrors the proven RBE3 transformation path; V19 analytic gate is unforgeable. Phase 2 (elastic rotating set) honestly rated harder and is a declared 1.0.0 blocker. Open interaction to resolve at implementation: AMODE's augmented `q` DOF vs the Step 61 free-free basis solve (neither doc addresses it). |
 
 ### Shared-infrastructure ownership (single-owner rule)
 
@@ -98,7 +99,7 @@ Assigned owners — later features **reuse, never re-extract**:
 
 ### Housekeeping (doc hygiene)
 
-- **H3 — stale-prerequisite annotations:** when P15/P17 start, update
+- **H3 — stale-prerequisite annotations:** when P14/P16 start, update
   `matrix_gaf_export.md`/`dlm_rfa_flutter_gust.md` AE4 gates (closed by AC7) and
   `matrix_reuse_store.md` Phase 0 (delivered by Step 56/AC5).
 
@@ -113,7 +114,7 @@ Assigned owners — later features **reuse, never re-extract**:
 |----|-----------------|----------|--------|
 | Q1 | SPC reaction f06 output: NASTRAN outputs SPCFORCE in the global (CID 0) frame, not the CD displacement frame. Current code matches this convention (no CD transform on reactions). Verify intentional. | Low | Open |
 | Q3 | GRAV CID restriction (only CID=0 supported, parser raises): acceptable for Phase 1 but not documented in "Known Limitations". | Low | Open |
-| Q4 | Lumped vs consistent inertia in `M_ax` (found during Step 61, 2026-07-30): `sol144.build_inertial_cols` builds the inertia-relief columns from **lumped** CONM2 masses / diagonal inertia and CBAR half-masses, while `M_aa` comes from `assemble_global_mass` (**consistent** mass). The `M_ax = −M_aa Φ_r` identity is therefore exact on translational rows always, and on all rows for CONM2-only decks; with `rho > 0` CBARs the rotational rows differ (the consistent-mass translation↔rotation coupling has no lumped counterpart — measured O(10%) of the peak column value on a dihedral test model). Affects the inertia-relief RHS of the Step 53 balanced maneuver and the increment-1 transient solver equally — pre-existing, not introduced by Step 61. Decide whether `build_inertial_cols` should be replaced by `−M_aa Φ_r` outright (one mass model, and the identity becomes definitional) or the discrepancy documented as intended. Pinned by `tests/solver/test_modal_basis.py::test_m_ax_identity_limits_with_consistent_cbar_mass`. **Ranked P2, batched with DEF-M3** (same root cause). | Medium | Open |
+| Q4 | Lumped vs consistent inertia in `M_ax` (found during Step 61, 2026-07-30): `sol144.build_inertial_cols` builds the inertia-relief columns from **lumped** CONM2 masses / diagonal inertia and CBAR half-masses, while `M_aa` comes from `assemble_global_mass` (**consistent** mass). The `M_ax = −M_aa Φ_r` identity is therefore exact on translational rows always, and on all rows for CONM2-only decks; with `rho > 0` CBARs the rotational rows differ (the consistent-mass translation↔rotation coupling has no lumped counterpart — measured O(10%) of the peak column value on a dihedral test model). Affects the inertia-relief RHS of the Step 53 balanced maneuver and the increment-1 transient solver equally — pre-existing, not introduced by Step 61. Decide whether `build_inertial_cols` should be replaced by `−M_aa Φ_r` outright (one mass model, and the identity becomes definitional) or the discrepancy documented as intended. Pinned by `tests/solver/test_modal_basis.py::test_m_ax_identity_limits_with_consistent_cbar_mass`. **Ranked P1, batched with DEF-M3** (same root cause). | Medium | Open |
 
 ---
 
@@ -130,40 +131,22 @@ elastic derivatives converge to rigid at 3e-8; strip correction round-trips thro
 text to 1.3e-8; divergence q cross-checks an independent QZ eigensolve to 1e-15.
 
 Decisions taken 2026-07-31: SPLINE0 body loads → **inject as rigid loads at the reference
-point** (DEF-M1 = **Step 64**).
+point** (DEF-M1 = Step 64, delivered 2026-07-31 — see `docs/40_history/06_sol144_static_aeroelastic.md`).
 
 **Ranking (2026-07-31 priority update).** These findings now hold the top of the priority
 order — see the table above:
 
 | Rank | Batch | Items |
 |------|-------|-------|
-| P1 | Step 64 — SPLINE0 body loads into the trim equilibrium | DEF-M1 |
-| P2 | One mass model for `M_ax` | DEF-M3 + **Q4** (same root cause; resolve together) |
-| P3 | Deliverable integrity (what leaves the program) | DEF-M5, M6, M7, M10 |
-| P4 | Silent-input handling (user asked, program ignored) | DEF-M4, M8, M9 + DEF-R5, DEF-L1 + sample-review F1 (duplicate box IDs) |
-| P5 | Convention / transfer completeness | DEF-M2, M11 |
-| P10 | Aero hot path (with the `build_ajj` vectorization) | DEF-R6 |
-| P14 | Refactor before Phase D | DEF-R1, R2, R3, R4 (+ DEF-R7 at a release boundary) |
+| P1 | One mass model for `M_ax` | DEF-M3 + **Q4** (same root cause; resolve together) |
+| P2 | Deliverable integrity (what leaves the program) | DEF-M5, M6, M7, M10 |
+| P3 | Silent-input handling (user asked, program ignored) | DEF-M4, M8, M9 + DEF-R5, DEF-L1 + sample-review F1 (duplicate box IDs) |
+| P4 | Convention / transfer completeness | DEF-M2, M11 |
+| P9 | Aero hot path (with the `build_ajj` vectorization) | DEF-R6 |
+| P13 | Refactor before Phase D | DEF-R1, R2, R3, R4 (+ DEF-R7 at a release boundary) |
 | — | Opportunistic, do when adjacent | DEF-L2–L7 |
 
-### DEF-M — Medium (silent wrong output on specific configurations, or misleading deliverables) — P1–P5
-
-- **DEF-M1 / Step 64 — Inject SPLINE0/unsplined box forces into the trim equilibrium as
-  rigid loads** (decision taken 2026-07-31) [D]
-  Today those forces enter reported totals/derivatives but never the trim force balance
-  or the load export: `sbeam/solver/sol144.py:1674-1707` (all-box sums) vs `:1730`
-  (`g_disp.T` transfer). The cruciform/strip body-panel workflow tunes SPLINE0-covered
-  panels to carry residual Cm/Cn — in a trim those forces are invisible to the force
-  balance and the load export, while printed totals/derivative tables include them.
-  *Objective:* body-panel trims physically closed, ZAERO-style.
-  *Deliverables:* per label column and for the baseline w_g, sum the unsplined boxes'
-  `skj`-forces to a 6-component resultant at the RCSID origin and add it to the r-set
-  rows of the trim equations (Q_ax, f_rhs) and to `grid_loads`/exports via a
-  reference-grid FORCE/MOMENT pair.
-  *Test/Acceptance:* on `cessna210_body`/`_strip`, trimmed ANGLEA shifts by the body
-  ΔCm/CZ_α prediction; closure stays machine-zero; `total_cz` at trim equals the
-  balanced load factor. Complexity medium; trim results on body-panel decks change by
-  design.
+### DEF-M — Medium (silent wrong output on specific configurations, or misleading deliverables) — P1–P4
 
 - **DEF-M2 — `solve_rigid_cl` CZ/CM are panel-normal magnitudes, not body-z** [E]
   `sbeam/aero/vlm.py:320-324, 442-445, 469-472`. Off by 1/cos(dihedral) vs the skj-based
@@ -245,7 +228,7 @@ order — see the table above:
   the full rigid-body transform (translation identity + `skew(ω)·r`); extend V-B3d force
   transfer to a dihedral panel.
 
-### DEF-L — Low (robustness, hygiene, docs; batch opportunistically) — L1 with P4, L2–L7 unranked
+### DEF-L — Low (robustness, hygiene, docs; batch opportunistically) — L1 with P3, L2–L7 unranked
 
 - **DEF-L1** Silent lenient card handling: STRIPK length/duplicates (`strip.py:68-81`);
   W2GJ duplicates (also DEF-M8a); box-ID range collisions mis-bind AELIST boxes
@@ -269,7 +252,11 @@ order — see the table above:
   `sol144.py:870-872`); export SID = subcase_id invites silent superposition with deck
   load sets (`load_export.py:81`; parser merges duplicate FORCE SIDs,
   `bdf_reader.py:413-414`); `build_maneuver_time_history_text` IndexError on
-  empty-steps results the sibling writers guard (`maneuver_output.py:38`). [D]
+  empty-steps results the sibling writers guard (`maneuver_output.py:38`); **every
+  `_fmt`-built table collides on negatives** — `13.6E` with no separator, so a negative
+  value abuts the previous column (`6.872803E+00-2.307861E+00` in the shipped derivative
+  block; noted while adding the Step 64 injection block, which follows the same convention
+  deliberately rather than diverging mid-file). Widen `_fmt` to 14 once, not per block. [D/E]
 - **DEF-L6** Docs-mismatch batch: theory doc claims M ≤ 0.99 cap (code accepts any M<1,
   `aero_model.py:363`); 05c monitor CSV column list missing
   massset/mass_case (`:667-669` vs `load_export.py:154-160`); 05c parity paragraph
@@ -285,7 +272,7 @@ order — see the table above:
   mirror_halfspan silently drops STRIPK/PSTRIP for mirrored strip panels
   (`mirror.py:35-48`). [D]
 
-### DEF-R — Refactor / dead code (no behaviour change) — P14 (R5 with P4, R6 with P10)
+### DEF-R — Refactor / dead code (no behaviour change) — P13 (R5 with P3, R6 with P9)
 
 - **DEF-R1 — Decompose `sol144.py` (1838 lines)** — `run_sol144_trim` is a ~500-line god
   function. Natural seams: derivatives module (rigid/restrained/unrestrained/hinge),
@@ -329,7 +316,7 @@ order — see the table above:
 
 ---
 
-## Open items — 2026-07-31 sample-problem review (P6–P8 + opportunistic)
+## Open items — 2026-07-31 sample-problem review (P5–P7 + opportunistic)
 
 Full review + proposal delivered 2026-07-31. Evidence basis: all 22 `sample/` decks run
 headless through `main.main()` — 20 run end-to-end, 2 fail by design (`HA144A.bdf` MSC
@@ -338,7 +325,7 @@ archive; `simple_beam.dat` viewer onboarding file), and every checkable anchor r
 ≤ 4.6e-5 Hz, HA144A fullspan trim/derivatives to ≤ 0.3 % of the published MSC/ADA370433
 values). The gaps are **coverage and redundancy, not correctness**.
 
-### Step 65 (P7) — Flagship realistic-airplane SOL 144 sample family + theory doc
+### Step 65 (P6) — Flagship realistic-airplane SOL 144 sample family + theory doc
 
 **Objective.** One realistic-airplane worked example combining corrected aerodynamics,
 multi-subcase static trim, a transient maneuver, mass cases and monitor points — the
@@ -390,11 +377,12 @@ FERRY→CRUISE→MTOW and wing-root bending per unit weight **decreases** with w
 and final held sample == a static trim with ELEV prescribed at the ramped value; T6
 MLOADS × MASSSET=30 combined smoke (first coverage of the pairing anywhere).
 
-### Step 66 (P8) — Flagship stage 2: body panels (blocked on Step 64 + Step 65)
+### Step 66 (P7) — Flagship stage 2: body panels (blocked on Step 65)
 
-**Objective.** Total-aircraft moment match on the flagship, once Step 64 injects
-unsplined-box forces into the trim balance (until then a body-panel trim is internally
-inconsistent: totals include the body increment, closure/monitors/exports do not).
+**Objective.** Total-aircraft moment match on the flagship. Its other prerequisite —
+Step 64, injecting unsplined-box forces into the trim balance — **closed 2026-07-31**, so a
+body-panel trim is now internally consistent (totals, closure, monitors and exports agree);
+body panels declare their load-carrying grid in `SPLINE0` field 5.
 
 **Deliverables.** CAERO1 4100/4200 + SPLINE0 (or PSTRIP) + CSV `TOTAL` row +
 body-correction cards into the flagship bulk; tighten T3's lift gate to include the body
@@ -404,7 +392,8 @@ increment; fold `cessna210_body.bdf`/`cessna210_strip.bdf` +
 theory-doc limitations section updated.
 
 **Test/Acceptance.** Existing body/strip gates pass against the flagship decks; trimmed
-ANGLEA shifts by the body increment (the acceptance already recorded under DEF-M1/Step 64).
+all-box lift equals the weight with the body panels active (the Step 64 gate, already
+demonstrated on `sample/ha144a_body_trim.bdf`), and ANGLEA shifts by the body increment.
 
 ### Sample hygiene + doc pointers (opportunistic, ~1 d total, zero risk)
 
@@ -430,7 +419,7 @@ ANGLEA shifts by the body increment (the acceptance already recorded under DEF-M
 
 ---
 
-## Tier 1 — SOL 144 production process (P9–P13)
+## Tier 1 — SOL 144 production process (P8–P12)
 
 The goal state: SOL 144 supports early design analysis end-to-end — static trim and balanced
 maneuvers (done), **payload-condition sweeps** (Step 60, closed 2026-07-30), **transient maneuvers with a modal
@@ -496,7 +485,7 @@ then G0-d/G0-e.
    `Δu_l = K_eff_ll⁻¹ r_l` (SUPORT r-set held, reusing the increment-1 `K_eff_ll` LU); downstream
    recovery via the existing `_recover_step` with URDD entries of `δ_basic` filled from `ξ̈_r`.
 
-#### Step 62 (P11) — Modal transient solver, prescribed rigid states + fixed-Φ mass-case gates
+#### Step 62 (P10) — Modal transient solver, prescribed rigid states + fixed-Φ mass-case gates
 
 **Objective:** De-risk basis + integration + mode-acceleration recovery with the rigid partition
 still *prescribed* (open-loop, exactly increment-1 physics) before freeing it in Step 63 —
@@ -530,7 +519,7 @@ error is pure truncation). **Fixed-Φ approximation gate** (+10% fuel overlay, t
 peak-CBAR-force error vs a re-solved-modes reference reported, ≤~2% asserted for the sample,
 guidance recorded in `05c_sol144_maneuver.md` — "re-solve the basis when case frequencies shift >~5%").
 
-#### Step 63 (P12) — G0-b free-flight rigid-body coupling (free the rigid partition)
+#### Step 63 (P11) — G0-b free-flight rigid-body coupling (free the rigid partition)
 
 **Objective:** The self-balancing maneuver: integrate `ξ_r` as states of the coupled h-set Newmark
 system so closure ≈ 0 for an arbitrary commanded *control* history — no per-step trim solve.
@@ -570,7 +559,7 @@ buffer of delayed `D_jx`/`D_jξ̇` arguments); (4) strip Wagner/Theodorsen lift-
 2-state R.T. Jones approximation appended to the state vector). Selected by a new `MLDAERO` card
 (designed at promotion). Each optional; extends validity beyond `k ≲ 0.05–0.1`. Acceptance sketch:
 Level 2 reproduces 2-D `πρb²` exactly on a single strip; Level 4 reproduces Wagner indicial lift to
-Jones-approximation accuracy. **Priority note (this review):** opportunistic — once Phase D (P17)
+Jones-approximation accuracy. **Priority note (this review):** opportunistic — once Phase D (P16)
 is underway the DLM supersedes Levels 2–4; only implement if transient-load fidelity beyond
 `k ≈ 0.1` is needed *before* the DLM lands.
 
@@ -605,7 +594,7 @@ overshoot vs open loop; zero-gain identity to Step 63. **Deferred with Phase G.*
    phugoid/speed DOF, no large-attitude kinematics. Documented validity envelope alongside the
    existing `k ≲ 0.05–0.1` aero limit.
 6. **Control-surface inertia / hinge moments absent** — commanded δ_c produces aero only; surface
-   mass reaction / hinge DOFs out of scope (theory-doc note). `AMODE` (P16) is the eventual home
+   mass reaction / hinge DOFs out of scope (theory-doc note). `AMODE` (P15) is the eventual home
    of a physical hinge DOF.
 7. **SUPORT dependence stands** — the modal solver still requires SUPORT (reference point +
    recovery constraint + rigid DOF selection); a SUPORT-free variant (rigid modes about the GPWG
@@ -619,7 +608,7 @@ overshoot vs open loop; zero-gain identity to Step 63. **Deferred with Phase G.*
     (e.g. prescribed-α studies)? Current answer: hard error under the modal solver; the legacy
     solver covers prescribed-rigid studies. Revisit if a use case appears.
 
-### Monitor points Phase 2 (P9) — Section-cut running loads
+### Monitor points Phase 2 (P8) — Section-cut running loads
 
 The actual stress-team deliverable: per-station `{Vz, My, Mt}` tables along the wing,
 HTP, VTP. Cut convention: plane normal along the spline-axis `x̂` at user-specified
@@ -629,31 +618,31 @@ intercept". Unblocked (Phase 1 + Step 53 both done); independent of the G0 steps
 land in parallel. With Step 60, section-cut tables per MASSSET complete the early-design
 loads picture.
 
-### Viewer (P13) — SOL 144 / MLOADS case authoring UI
+### Viewer (P12) — SOL 144 / MLOADS case authoring UI
 
 The viewer runs and displays SOL 144 trim/DIVERG/MLOADS subcases but cannot *author* them —
 the case-control editor's SOL selector offers 101/103 only and SOL 144 case control is
 read-only. A full authoring UI (TRIM condition builder, AESTAT/AESURF/TRIMVAR editors,
 DIVERG setup, MLOADS/MLDTIME/MLDCOMD/TABLED1 command-history editor, MASSSET selector after
 Step 60, BDF export) closes the production authoring loop; until it lands, cases are
-authored in the bulk-data BDF. Promoted from "deferred" to P13 by the 2026-07-05 review: a
+authored in the bulk-data BDF. Promoted from "deferred" to P12 by the 2026-07-05 review: a
 production-like process needs authoring, not just display.
 
 ---
 
-## Tier 2 — Supporting infrastructure (P15, P19, studies)
+## Tier 2 — Supporting infrastructure (P14, P18, studies)
 
-### matrix_gaf_export (P15) — matrix / GAF export bundle
+### matrix_gaf_export (P14) — matrix / GAF export bundle
 
 Per `designs/matrix_gaf_export.md` (viable, see verdicts): `EXPORT` case-control command
 writing sparse `K_gg`/`M_gg`, dense a-set `K_aa`/`M_aa`, `PHIA`/`PHIG`, modal `K_hh`/`M_hh`,
 and per-Mach steady GAFs `Q_hh(M)` on one fixed Φ (Matrix Market + `.mat`, manifest +
 dofmap); new `MKAERO1` card; Mach-tagged corrections. Phases 1–2 (~8 d). **Sequencing:**
 unblocked — Step 59 closed 2026-07-06 (reuses `assembly/reduction.py:reduce_to_aset`);
-before Phase D (which extends its MKAERO1/Mach-loop machinery). Its stated AE4 prerequisite is stale — closed by AC7. Phase 3 (OP4/UF writers)
+before Phase D (which extends its MKAERO1/Mach-loop machinery). Its stated AE4 prerequisite is stale — closed by AC7. Phase 3 (OP3/UF writers)
 deferrable.
 
-### matrix_reuse_store (P19) — matrix persistence / dual-mode SOL 144
+### matrix_reuse_store (P18) — matrix persistence / dual-mode SOL 144
 
 Per `designs/matrix_reuse_store.md` (viable, subordinated): persist `ajj_inv_corr`,
 `skj/djk/wg`, box geometry, spline operators, sparse `KGG`/`MGG` to `.npz` bundles with
@@ -661,7 +650,7 @@ content-hash provenance; `DiskAeroCache(AeroCache)` reload path, default fresh-c
 bit-identical. **Re-scoped by this review: Phase 0 deleted** (the SOL 144 production
 dispatch + f06 writer it wanted to build already shipped with Step 56/AE10 + AC5). Phases
 1–3 (~6 d) become worthwhile once envelope sweeps exist (Machs × MASSSETs × maneuvers —
-i.e. after P10–P12/P17); the cache-boundary rules (§4: cache pre-q, pre-reduction operands
+i.e. after P9–P11/P16); the cache-boundary rules (§4: cache pre-q, pre-reduction operands
 only, never `Q_aa`/`K_eff`/LU) stand as written.
 
 ### SPLINE9 — FE-consistent Hermite beam spline (go/no-go study only)
@@ -674,9 +663,9 @@ SPLINE2 either way.
 
 ---
 
-## Tier 3 — SOL 145 flutter + DLM (Phase D/E/F) — the declared next phase (P16–P18)
+## Tier 3 — SOL 145 flutter + DLM (Phase D/E/F) — the declared next phase (P15–P17)
 
-### Phase D core (P17) — DLM (D0–D3) + SOL 145 PK flutter
+### Phase D core (P16) — DLM (D0–D3) + SOL 145 PK flutter
 
 Per `designs/dlm_rfa_flutter_gust.md` (viable, see verdicts): complex unsteady AIC
 `A_jj(M,k)` (Landahl kernel, Laschka approximation, parabolic spanwise quadrature),
@@ -684,17 +673,17 @@ Per `designs/dlm_rfa_flutter_gust.md` (viable, see verdicts): complex unsteady A
 decision — the entire steady content reuses the validated VLM); complex GAFs `Q_hh(M,k)`
 over a Mach×k table (extending `matrix_gaf_export`'s MKAERO1/Mach loop); `sol145.py` PK
 (primary) / PKNL / KE flutter with V-g/V-f output. Gates: Blair 3×3 kernel benchmark
-(0.1%), k=0 GAF cross-check, typical-section flutter closed-form. **Prerequisites:** P15
+(0.1%), k=0 GAF cross-check, typical-section flutter closed-form. **Prerequisites:** P14
 landed; `g_disp_colloc` (¾-chord displacement spline) added at D0; the doc's AE4 gate is
 stale (closed by AC7). Planar-only ships first — the nonplanar kernel terms (T1/T2, I2)
 are a genuine research gap correctly walled behind their own gate. ~25–30 d.
 
-### AMODE Phase 1 (P16) — control-surface hinge modes
+### AMODE Phase 1 (P15) — control-surface hinge modes
 
 Per `designs/amode_card.md`: `AMODE` card adding a generalized rotation DOF `q` for a SET1
 grid group about a CORD2R hinge axis against stiffness `k`, via a transformation composed
 after the RBE reduction (mirrors the proven `rbe3.py` path); f06 participation table.
-**Schedule before control-surface flutter work in P17** (~7.5 d). Phase 2 (elastic rotating
+**Schedule before control-surface flutter work in P16** (~7.5 d). Phase 2 (elastic rotating
 set) is a declared pre-1.0.0 blocker, target after Phase D core. Open interaction to
 resolve at implementation: the augmented `q` DOF vs the Step 61 free-free basis solve.
 
@@ -706,7 +695,7 @@ normalization, f06 rigid-body block) remains available as a thin optional wrappe
 afterwards if the reporting feature is still wanted — do not build a second rigid-basis
 path.
 
-### Phase D cont. (P18) — RFA state-space + SOL 146 gust + Monitor Phase 3
+### Phase D cont. (P17) — RFA state-space + SOL 146 gust + Monitor Phase 3
 
 Roger-form RFA + aeroelastic state-space (`rfa.py`); `sol146.py` discrete 1-cosine gust
 (Fourier method) and continuous Von Kármán/Dryden turbulence (Ā/N₀). **Monitor points
@@ -825,6 +814,37 @@ stub exists; `_handle_spline1` raises `NotImplementedError`. Implement when a 2-
 case arises. Acceptance: reproduces rigid-body and linear fields exactly; matches a
 published IPS example (Harder & Desmarais 1972).
 
+### SPLINEF — distributed force-mapping spline (ZAERO parity, small)
+
+Step 64 gave structurally-uncoupled boxes (`SPLINE0`, un-splined) a load path: their
+6-component resultant is injected rigidly at **one** master grid (`SPLINE0` field 5,
+default the SUPORT grid), via the `g_load` operator in `sbeam/aero/spline.py`. That is a
+minimal, implicit force-mapping spline. ZAERO ships an explicit and general one —
+`SPLINEF` — separate from the displacement spline (see the ZAERO card-set review,
+`docs/40_history/archive/02_static_aero_zaero_review.md` §5, which flagged "a separate
+force spline" as a practical gap; only the `ATTACH`/`SPLINE0` half of that finding was
+implemented, in Step 47).
+
+**Gap.** A single application point is exact for the *global* balance — the resultant is
+transport-correct wherever it is applied — but wrong *locally* when the panel is long
+relative to the structure carrying it. A 20 ft fuselage cruciform dumping its whole
+resultant at one grid produces fuselage bending/shear that the real distributed airload
+would not: correct trim, misleading internal loads. Today's mitigation is guidance ("pick
+a grid that physically carries the panel") plus the f06 `INJECTED AERO LOADS` echo.
+
+- **Scope.** A `SPLINEF` card naming a box range and a `SET1` of grids, distributing each
+  box force over the set by RBE3-style weights (`sbeam/assembly/rbe3.py` already computes
+  exactly those weights — reuse, don't re-derive). `SPLINE0` field 5 stays as the
+  single-grid shorthand. Keep the adjoint property: whatever maps force must be the
+  transpose of a physically meaningful displacement interpolation, so `g_load` remains a
+  virtual-work pair rather than an arbitrary force map.
+- **Caveat.** Confirm the intended semantics against the ZAERO manual before matching the
+  name — the only in-repo record of `SPLINEF` is that review's one-line summary, not the
+  card definition.
+- **Effort:** small (operator + card + tests; no new physics). Do when a deck appears whose
+  body/nacelle panel is long enough for the local error to matter, or alongside Step 66
+  (body panels into the flagship).
+
 ### Load-case envelope (viewer)
 
 Max/min results across all subcases in a single table — becomes genuinely useful once
@@ -856,7 +876,7 @@ Lower priority or significant new infrastructure; independent of the aeroelastic
 | Timoshenko Shear (PBAR K1/K2) | Modified stiffness with shear parameter φ = 12EI/(κAGL²); falls back to Euler-Bernoulli when K1=K2=0. K1/K2 currently ignored silently — correct for slender beams. | Parser update |
 | SOL 105 — Buckling | Solve `([K] + λ[K_G]){φ} = 0`; requires geometric stiffness from SOL 101 axial forces. | SOL 101 complete |
 | Results export (CSV/Excel) | Download displacement, force, stress tables from the viewer as spreadsheets. | Viewer complete |
-| OP2 results export (pyNastran) | Write an OP2 alongside the f06 (displacements, eigenvectors, CBAR forces/stresses; later SOL 144 box pressures/forces). Unlocks pyNastranGUI as an external post-processor. pyNastran (BSD-3) optional dependency; prototype from its test suite first. Acceptance: pyNastran round-trips the OP2; pyNastranGUI renders SOL 101/103 results. | SOL 101/103 complete |
+| OP1 results export (pyNastran) | Write an OP1 alongside the f06 (displacements, eigenvectors, CBAR forces/stresses; later SOL 144 box pressures/forces). Unlocks pyNastranGUI as an external post-processor. pyNastran (BSD-3) optional dependency; prototype from its test suite first. Acceptance: pyNastran round-trips the OP1; pyNastranGUI renders SOL 101/103 results. | SOL 101/103 complete |
 | PBARL | Define PBAR cross-section by standard shape (ROD, BAR, BOX, I, L, T, …) with auto-computed A, I, J. | Parser |
 | Parametric sweep | Vary a geometry/material parameter and plot the response curve. | SOL 103 complete |
 | MAT1 thermal fields | GE (structural damping) parsed but unused; A and TREF for thermal expansion. | SOL 108 for GE |

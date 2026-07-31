@@ -1613,3 +1613,94 @@ round-trip tests in `tests/parser/test_aero.py`. No-CHORDCP decks are bit-identi
 
 ---
 
+
+## Resolved defects
+
+### Step 64 / DEF-M1 — SPLINE0 / un-splined box loads into the trim equilibrium ✅ COMPLETE (2026-07-31)
+
+**Objective:** Close the trim on body-panel decks. Boxes with no structural spline —
+`SPLINE0`-declared body panels (A9 cruciform, A10 decoupled strip) and boxes no spline card
+covers — generate real aerodynamic force that reached the printed totals, the rigid/restrained
+derivatives and MONPNT1 (all-box direct sums), but never the trim force balance, `grid_loads`,
+MONPNT3 or the `FORCE`/`MOMENT` export, because those go through `g_disp.T` and a SPLINE0 box's
+`g_disp` rows are zero. The body-panel workflow exists precisely to carry residual Cm/Cn, so on
+those decks the printed aircraft and the balanced aircraft were different aircraft.
+
+**Root cause (the useful part):** sbeam followed the NASTRAN convention that force transfer is
+the *transpose* of the displacement spline, so virtual work is conserved by construction. Under
+one virtual-work-paired operator, `u_box = G u_g = 0 ⇒ f_g = Gᵀ f_box = 0`: zero load transfer is
+a **theorem**, not an oversight. ZAERO avoids this by shipping a separate force-mapping spline
+(`SPLINEF`); the 2026 ZAERO card-set review flagged "a separate force spline" as a practical gap
+and only the `ATTACH`/`SPLINE0` half of that finding was implemented (Step 47).
+
+**Deliverables:**
+- **Third operator `g_load` = `g_disp` + injection rows** (`aero/spline.py`). For each uncoupled
+  box `k` with master grid at `p` and lever `r_k = force_point_k − p`:
+  `g_load[3k:3k+3, Tx:Tz] = I₃`, `g_load[3k:3k+3, Rx:Rz] = −skew(r_k)`, so `g_loadᵀ f` delivers
+  `Σ F_k` and `Σ r_k × F_k` at the master grid — the exact 6-component resultant, **all three
+  force components** (a vertical body panel's `Fy` is the Cn carrier). Read forward these are the
+  rigid-body interpolation `u_k = u_m + θ_m × r_k`, so the virtual-work pairing is **restored,
+  not broken**: `SPLINE0` now means "ATTACH for loads, zero for incidence".
+- **New API** `build_spline_operators() → SplineOperators(g_slope, g_disp, g_load, covered,
+  injections)`; `build_g_spline` demoted to a kinematics-only wrapper. `AeroModel` gains `g_load`,
+  `load_injections`, `require_g_load()`.
+- **`SPLINE0` field 5 `GRID`** (dataclass + parser) names the master grid; blank falls back to the
+  first usable SUPORT grid.
+- **All 13 force-transfer sites** switched to `require_g_load()` — `coupling.build_qaa`/`build_fg`
+  (parameter renamed), `sol144` (`Q_ax_g`, `Q_gg`, `f_aero_g`, `grid_loads`, Step-50 path),
+  `maneuver_qs`, `modal_basis` (GAFs + rate columns), `compute_structural_loads`. The viewer's
+  displacement overlay (`results_view.py`) deliberately stays on `g_disp`, so a box the deck never
+  attached to anything is never drawn moving.
+- **Diagnostics:** f06 `INJECTED AERO LOADS` block (source card, master grid, box count,
+  6-component resultant about the moment reference) via `Sol144TrimResult.load_injection_echo`;
+  warnings for no-master-grid (SOL 101 body decks — warn, never raise), several SUPORT grids, and
+  a master grid whose translations are fully constrained; `ValueError` for an unknown `GRID`.
+- **New deck** `sample/ha144a_body_trim.bdf` — full-span HA144A + a `PSTRIP` cruciform body pair
+  under `SPLINE0`, exercising both master-resolution paths (panel 400 names GRID 98; panel 500
+  defaults to SUPORT GRID 90).
+- **Docs:** `02_card_reference.md` (GRID field, defaults, warnings), `05b_splining.md` (three-operator
+  table + "Load injection" section + new API), `05a_aero_vlm.md`, `05c_sol144_maneuver.md`,
+  `05_aeroelastics.md`, `00_program_overview.md`, theory §3.7 + §4.4 (injection math and the
+  deliberate `g_slope`-zero / `g_load`-nonzero asymmetry).
+
+**Key decisions:**
+1. **Separate `g_load`, not an augmented `g_disp`** — `g_disp` is also used untransposed for
+   displacement recovery; injecting there would fabricate motion for boxes the deck declared
+   uncoupled.
+2. **`g_slope` stays zero** — injected boxes load the structure but take no downwash from it (the
+   `SPLINE0` contract). `Q_aa` therefore gains rows at the master grid but no columns, making an
+   already-unsymmetric matrix more so; nothing downstream assumes symmetry.
+3. **Scope = all boxes with zero coverage**, not just `SPLINE0`-declared ones; the per-box
+   un-splined `UserWarning` is retained so a forgotten SPLINE2 stays visible.
+4. **Always on** — no opt-in flag. Trim results on body-panel decks change by design.
+5. **One master grid per group**, not an RBE3-style distribution — correct for the global balance,
+   approximate locally; the general form is backlogged as `SPLINEF`.
+
+**Test/Acceptance:** the gate is the load-factor identity — trimmed **all-box** lift equals the
+weight, i.e. the printed totals and the force balance describe the same aircraft. On
+`sample/ha144a_body_trim.bdf`, measured both ways by swapping `g_load` back to `g_disp`:
+
+| | ANGLEA | all-box lift vs weight |
+|---|---|---|
+| pre-fix behaviour | 0.169372 | **31.5 % error** (21032 lb vs 15999 lb) |
+| post-fix | 0.135269 | **9.4e-15** |
+
+Plus: the **delta identity** (`grid_loads` minus the pure-kinematic transfer equals exactly the
+resultant of the uncoupled boxes, any reference point) — the mechanism itself, pinned to machine
+precision; closure stays machine-zero; MONPNT3 over the load-carrying grids recovers the full aero
+Fz; the export emits the master grid's `FORCE`/`MOMENT` pair; the f06 block appears only when
+injection is active. Unit gates `V-M1a–f` in `tests/aero/test_spline.py` (closed-form resultant on
+a canted panel, kinematic-adjoint check, grouping invariance, default/multi/no-SUPORT resolution,
+unknown-grid error, un-splined warn-and-inject, `g_load == g_disp` on a fully splined deck);
+integration gates in `tests/integration/test_sol144_body_injection.py`; parser round-trip in
+`tests/parser/test_aero.py`. V-B3c retained unchanged as the `g_disp` invariant with a `g_load`
+companion. Fully-splined decks (HA144A and every other shipped deck) are **bit-identical** —
+asserted via `load_injections == []`. Full suite 1223 passed / 6 xfailed; `ruff` and strict
+`pyright` clean.
+
+**Not closed here:** DEF-M11 (ATTACH `g_disp` carries only the z-row) — the injection is
+3-component but ATTACH/SPLINE2 transfer stays z-biased, which is why the acceptance gate is the
+delta identity rather than an absolute totals identity on a canted deck. The general
+force-mapping spline (`SPLINEF`) is backlogged.
+
+---
