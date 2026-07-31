@@ -523,26 +523,107 @@ def spline0_operators():
 class TestAttachRigidBodyGate:
     """V-B3: ATTACH lever-arm kinematics must hold to machine precision."""
 
-    def test_v_b3a_rigid_tz_zero_downwash(self, attach_operators):
-        """V-B3a: Rigid Tz translation → zero downwash (plunge has zero slope)."""
+    def test_v_b3a_rigid_tz_zero_incidence(self, attach_operators):
+        """V-B3a: Rigid Tz translation → zero incidence (plunge has zero slope)."""
         g_slope, _, boxes, grid_index, _ = attach_operators
         n_g = 6 * len(grid_index)
         u = np.zeros(n_g)
         u[6 * 0 + 2] = 1.0  # Tz at grid index 0
-        downwash = g_slope @ u
-        assert np.allclose(downwash, 0.0, atol=1e-14), (
-            f"ATTACH rigid Tz must give zero downwash; max |w|={np.max(np.abs(downwash)):.2e}"
+        incidence = g_slope @ u
+        assert np.allclose(incidence, 0.0, atol=1e-14), (
+            f"ATTACH rigid Tz must give zero incidence; "
+            f"max |a|={np.max(np.abs(incidence)):.2e}"
         )
 
-    def test_v_b3b_rigid_ry_uniform_downwash(self, attach_operators):
-        """V-B3b: Rigid Ry pitch → uniform downwash = −1 at all ATTACH boxes."""
+    def test_v_b3b_rigid_ry_uniform_incidence(self, attach_operators):
+        """V-B3b: Rigid Ry pitch → uniform incidence = +1 at all ATTACH boxes.
+
+        g_slope carries streamwise incidence, nose-up positive (build_djk = −I
+        converts it to normalwash), so a nose-up master rotation must produce
+        nose-up incidence.  DEF-H1: this read −1 before 2026-07-31, which fed
+        sign-inverted aeroelastic feedback into Q_aa, trim and divergence.
+        """
         g_slope, _, boxes, grid_index, _ = attach_operators
         n_g = 6 * len(grid_index)
         u = np.zeros(n_g)
         u[6 * 0 + 4] = 1.0  # Ry at grid index 0
-        downwash = g_slope @ u
-        assert np.allclose(downwash, -1.0, atol=1e-14), (
-            f"ATTACH rigid Ry pitch must give uniform downwash=−1; values: {downwash}"
+        incidence = g_slope @ u
+        assert np.allclose(incidence, 1.0, atol=1e-14), (
+            f"ATTACH rigid Ry pitch must give uniform incidence=+1; values: {incidence}"
+        )
+
+    def test_v_b3e_rigid_rx_zero_incidence(self, attach_operators):
+        """V-B3e: Rigid Rx roll → zero incidence on z-normal boxes (DEF-H1).
+
+        u = ω×r with ω = (ω_x,0,0) gives u_z = ω_x·y, independent of x, so
+        ∂u_z/∂x = 0.  The pre-DEF-H1 code injected a full unit of spurious
+        incidence here.
+        """
+        g_slope, _, boxes, grid_index, _ = attach_operators
+        n_g = 6 * len(grid_index)
+        u = np.zeros(n_g)
+        u[6 * 0 + 3] = 1.0  # Rx at grid index 0
+        incidence = g_slope @ u
+        assert np.allclose(incidence, 0.0, atol=1e-14), (
+            f"ATTACH rigid Rx roll must give zero incidence; values: {incidence}"
+        )
+
+    def test_v_b3f_matches_spline2_under_rigid_rotation(self, attach_operators):
+        """V-B3f: ATTACH and SPLINE2 must give the same incidence for rigid motion.
+
+        Same panel, two splining routes: ATTACH to a master GRID at the origin
+        versus SPLINE2 over two grids on the span axis.  A rigid-body motion is
+        applied to both (u = ω×r at each grid, rotation = ω), so §4.5 rigid-body
+        exactness requires identical incidence fields.  This ties the ATTACH
+        convention to the already-validated SPLINE2 path instead of to a
+        hand-written constant (DEF-H1).
+        """
+        from sbeam.aero.panel import mesh_caero1
+
+        omega = np.array([0.3, -0.7, 0.45])   # general rigid rotation
+
+        # --- ATTACH route: single master grid at the origin
+        g_slope_att, _, _, grid_index_att, _ = attach_operators
+        u_att = np.zeros(6 * len(grid_index_att))
+        u_att[3:6] = omega                     # master at origin → no translation
+        inc_att = g_slope_att @ u_att
+
+        # --- SPLINE2 route: same panel, two grids on the span axis
+        bulk = _build_attach_bulk()
+        del bulk.attaches[300]
+        bulk.grids[2] = Grid(gid=2, cp=0, x=0.0, y=2.0, z=0.0, cd=0)
+        # CID 2: chord x_hat=(1,0,0), spline axis y_hat=(0,1,0), z_hat=(0,0,1)
+        bulk.cord2rs[2] = Cord2r(
+            cid=2, rid=0, a=(0.0, 0.0, 0.0), b=(0.0, 0.0, 1.0), c=(1.0, 0.0, 0.0)
+        )
+        bulk.set1s[20] = Set1(sid=20, grids=[1, 2])
+        bulk.spline2s[400] = Spline2(
+            eid=400, caero=200, id1=200, id2=201, setg=20,
+            dz=0.0, dtor=1.0, cid=2, dthx=0.0, dthy=0.0, usage="BOTH",
+        )
+        boxes = mesh_caero1(
+            bulk.caero1s[200], bulk.paero1s[10], bulk.aefacts, bulk.cord2rs, start_k=0
+        )
+        grid_index = {1: 0, 2: 1}
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            g_slope_sp2, _ = build_g_spline(bulk, boxes, grid_index)
+
+        u_sp2 = np.zeros(6 * len(grid_index))
+        for gid, gi in grid_index.items():
+            g = bulk.grids[gid]
+            r = np.array([g.x, g.y, g.z])
+            u_sp2[6 * gi : 6 * gi + 3] = np.cross(omega, r)
+            u_sp2[6 * gi + 3 : 6 * gi + 6] = omega
+        inc_sp2 = g_slope_sp2 @ u_sp2
+
+        assert np.allclose(inc_att, inc_sp2, atol=1e-12), (
+            f"ATTACH vs SPLINE2 rigid-rotation incidence mismatch: "
+            f"{inc_att} vs {inc_sp2}"
+        )
+        # Analytic value for a z-normal panel: a = w_y*n_z - w_z*n_y = omega_y
+        assert np.allclose(inc_att, omega[1], atol=1e-12), (
+            f"Expected uniform incidence {omega[1]}; got {inc_att}"
         )
 
     def test_v_b3d_force_transfer_lever_arm(self, attach_operators):

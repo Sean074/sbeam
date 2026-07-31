@@ -387,14 +387,25 @@ def _build_attach_rows(
     Rigid-body kinematics (CID=0, global frame):
       lever r = box.force_point − master_pos  (¼-chord; AE6 fix)
 
-    g_slope (downwash = −∂u_z/∂x):
-      Tz: zero (uniform plunge → zero slope)
-      Rx: +1.0 (torsion coupling)
-      Ry: −1.0 (pitch → uniform slope −1)
+    g_slope (streamwise incidence, nose-up positive — same sense as SPLINE2 and
+    the ANGLEA column; build_djk = −I turns it into normalwash).  For a rigid
+    rotation ω the surface displacement is u = ω×r, so
+
+        ∂u/∂x = ω × x̂ = (0, ω_z, −ω_y)
+        α = −(∂u/∂x)·n̂ = ω_y·n_z − ω_z·n_y
+
+    giving, per box normal n̂ (DEF-H1, 2026-07-31):
+      Tx/Ty/Tz: zero (uniform translation → zero slope)
+      Rx: zero (roll about the streamwise axis induces no streamwise slope)
+      Ry: +n_z  (pitch; +1 for a z-normal box — nose-up ⇒ nose-up incidence)
+      Rz: −n_y  (yaw; drives incidence on fins and other y-normal boxes)
 
     g_disp (z-component of normal displacement):
       (ω×r)_z = Rx·ry − Ry·rx  evaluated at force_point
       col_Tz: +1.0, col_Rx: +ry, col_Ry: −rx
+
+    Note g_disp carries only the z-row, so force transfer of the in-plane Fx/Fy
+    components (non-z-normal boxes) is not yet implemented — see backlog DEF-M11.
     """
     if attach.cid != 0:
         raise NotImplementedError(
@@ -433,9 +444,11 @@ def _build_attach_rows(
     rx = r[:, 0]                    # streamwise lever
     ry = r[:, 1]                    # spanwise lever
 
-    # g_slope: rigid-body downwash contributions (unchanged from pre-AE6)
-    g_slope[covered_arr, col_base + 3] = 1.0    # Rx torsion
-    g_slope[covered_arr, col_base + 4] = -1.0   # Ry pitch
+    # g_slope: rigid-rotation incidence α = ω_y·n_z − ω_z·n_y (DEF-H1).
+    # The Rx column stays zero — roll induces no streamwise slope.
+    normals = np.array([boxes[gk].normal for gk in covered_gk])   # (n_cov, 3)
+    g_slope[covered_arr, col_base + 4] = normals[:, 2]    # Ry: +n_z
+    g_slope[covered_arr, col_base + 5] = -normals[:, 1]   # Rz: −n_y
 
     # g_disp: z-component of normal displacement
     row_z = 3 * covered_arr + 2

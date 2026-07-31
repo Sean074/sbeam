@@ -110,7 +110,7 @@ Reproduction script for the original review: `studies/_review_ha144a_check.py`.
 | `CHORDCP` | Injected CFD/WT steady-Cp mean flow at a reference AOA (sbeam extension) | S54 |
 | `SET1` | List of structural grid IDs for spline input | S45 |
 | `SPLINE2` | NASTRAN infinite beam spline: links CAERO1 box range to SET1 grids (rigid chord arms, DTOR/DTHX/DTHY flexibilities) | S45–46, AC7 |
-| `ATTACH` | Rigid attachment of box group to single master grid (Step 47, complete) | S45–47 |
+| `ATTACH` | Rigid attachment of box group to single master grid (Step 47, complete; slope-row signs corrected by DEF-H1 2026-07-31) | S45–47 |
 | `SPLINE0` | Zero-displacement constraint — box rows in g_slope/g_disp remain zero | S45–47 |
 | `SPLINE1` | Harder–Desmarais IPS surface spline (parse raises NotImplementedError; Step 48) | S45 |
 | `AESTAT` | Rigid-body trim DOF label (ANGLEA, PITCH, ROLL, YAW, URDD2–URDD6) | S51 |

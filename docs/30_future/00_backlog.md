@@ -112,18 +112,6 @@ Decisions taken 2026-07-31: WT1 → **deprecate** (DEF-H2/H3); SPLINE0 body load
 
 ### DEF-H — High (wrong numbers on reachable inputs; fix before relying on the affected path)
 
-- **DEF-H1 — ATTACH `g_slope` pitch sign inverted, spurious roll incidence** [E]
-  `sbeam/aero/spline.py:436-438`. Nose-up pitch of an ATTACH master grid produces washout
-  (w = +θ) where SPLINE2/ANGLEA give w = −θ; unit roll injects a full unit of spurious
-  incidence on z-normal boxes (analytic check: rigid rotation ω gives incidence
-  α = −∂u_z/∂x = +ω_y ⇒ Ry entry must be +1, Rx must be 0). Any ATTACH deck gets
-  sign-flipped aeroelastic feedback (Q_aa, trim, divergence). Tests V-B3a/b and
-  `05b_splining.md:170-179` encode the wrong values; shipped samples unaffected (ATTACH
-  currently test-only but user-reachable).
-  *Fix (complexity low):* `g_slope[..,Ry]=+1.0`, `g_slope[..,Rx]=0.0`; correct tests + 05b;
-  optionally route ATTACH through shared rigid-body kinematics (theory doc §4.4 already
-  claims it does — it doesn't, see DEF-L6).
-
 - **DEF-H2 + DEF-H3 — Deprecate WT1** (decision taken 2026-07-31) [E]
   WT1 is broken twice: (H2) it achieves `f_target/β²` instead of `f_target` at M > 0
   (`corrections.py:194` + `aero_model.py:118` — reference force computed on PG-compressed
@@ -227,6 +215,17 @@ Decisions taken 2026-07-31: WT1 → **deprecate** (DEF-H2/H3); SPLINE0 body load
   on a balanced trim. Solver summation itself verified exact. *Fix low:* add 97 to SET1
   1310; consider a solver warning when an AECOMP grid set misses CONM2-bearing grids.
 
+- **DEF-M11 — ATTACH `g_disp` carries only the z-row** [D]
+  `sbeam/aero/spline.py:449-453` fills `g_disp` for the z-component of `ω×r` only: the
+  `Tx`/`Ty` columns are absent and the x/y components of the rigid motion are dropped. For
+  a z-normal panel this is exact, but on a dihedral or vertical (fin) ATTACH panel the
+  in-plane `Fx`/`Fy` force transfer to the master grid is lost, and the virtual-work pairing
+  with `g_slope` — now general in the box normal after DEF-H1 (`Ry = +n_z`, `Rz = -n_y`) —
+  is incomplete. Deliberate carve-out when DEF-H1 was fixed (2026-07-31); no shipped deck
+  uses a non-z-normal ATTACH panel. *Fix (complexity low-medium):* fill all three rows with
+  the full rigid-body transform (translation identity + `skew(ω)·r`); extend V-B3d force
+  transfer to a dihedral panel.
+
 ### DEF-L — Low (robustness, hygiene, docs; batch opportunistically)
 
 - **DEF-L1** Silent lenient card handling: STRIPK length/duplicates (`strip.py:68-81`);
@@ -253,8 +252,7 @@ Decisions taken 2026-07-31: WT1 → **deprecate** (DEF-H2/H3); SPLINE0 body load
   `bdf_reader.py:413-414`); `build_maneuver_time_history_text` IndexError on
   empty-steps results the sibling writers guard (`maneuver_output.py:38`). [D]
 - **DEF-L6** Docs-mismatch batch: theory doc claims M ≤ 0.99 cap (code accepts any M<1,
-  `aero_model.py:363`); theory §4.4 (`:872-873`) claims ATTACH reuses RBE2/RBE3 machinery
-  (it doesn't — standalone lever-arm rows in `spline.py:375-444`); 05a "WT1/WKK act on
+  `aero_model.py:363`); 05a "WT1/WKK act on
   primary CAERO1 only" (false, see DEF-H3); 05c monitor CSV column list missing
   massset/mass_case (`:667-669` vs `load_export.py:154-160`); 05c parity paragraph
   (`:653-656`) describes behaviour the code doesn't have; `build_g_spline` docstring lists

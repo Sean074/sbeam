@@ -1358,6 +1358,10 @@ $ Rigidly attach fuselage boxes 2001-2016 to grid 50
 ATTACH, 300, 2001, 2001, 2016, 50
 ```
 
+**Sign convention:** a nose-up (+Ry) rotation of the master grid produces nose-up
+incidence `+n_z` on the covered boxes; roll (+Rx) produces none. See
+[`05b_splining.md`](05b_splining.md) for the full kinematics (DEF-H1, 2026-07-31).
+
 ---
 
 ### SPLINE0 — Zero-Displacement Constraint (sbeam extension)

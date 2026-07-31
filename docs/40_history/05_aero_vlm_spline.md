@@ -1108,3 +1108,57 @@ already a normalwash and is not negated — the original source of the drift.
 
 ---
 
+### DEF-H1 — ATTACH `g_slope` pitch sign inverted, spurious roll incidence (2026-07-31) ✅ RESOLVED
+
+**Objective:** Correct the ATTACH rigid-attachment slope rows so that an ATTACH-splined panel
+sees the same incidence field as the validated SPLINE2 route, and gate that agreement at both
+the operator and the solver level.
+
+**Defect:** `_build_attach_rows` wrote `g_slope[..,Rx] = +1.0` and `g_slope[..,Ry] = -1.0`.
+`g_slope` carries streamwise incidence, nose-up positive (`build_djk = -I` converts it to
+normalwash; the ANGLEA column is `-n_z`), so both rows were wrong: nose-up pitch of a master
+grid produced washout, and unit roll injected a full unit of incidence that does not exist —
+`u = ω×r` with `ω = (ω_x,0,0)` gives `u_z = ω_x·y`, independent of `x`. Every ATTACH deck
+therefore ran with sign-inverted aeroelastic feedback through `Q_aa`, trim and divergence.
+Shipped samples were unaffected (ATTACH is test-only), but the path is user-reachable, and
+tests V-B3a/b plus `05b_splining.md` encoded the wrong values.
+
+**Deliverables:**
+- `sbeam/aero/spline.py` — slope rows rebuilt from the box normal:
+  `g_slope[..,Ry] = +n_z`, `g_slope[..,Rz] = -n_y`, `Rx` left at zero, from
+  `α = -(ω × x̂)·n̂ = ω_y·n_z - ω_z·n_y`. This reduces to `+1 / 0` for a z-normal box and is
+  additionally correct for dihedral and vertical panels, where the previous constants were not.
+  Docstring rewritten (the pre-existing "Rx torsion / Ry pitch" labels were also swapped: for a
+  Y-span wing `Ry` *is* the torsion axis and `Rx` the bending-slope rotation).
+- `tests/aero/test_spline.py` — V-B3b corrected to `+1`; new V-B3e (rigid roll → zero
+  incidence) and V-B3f (ATTACH vs SPLINE2 under a general rigid rotation `ω = (0.3,-0.7,0.45)`,
+  agreement to 1e-12); "downwash" renamed to "incidence" in the V-B3 names and messages, since
+  `D_jk` is not applied at that point and the old naming implied the wrong sign.
+- `tests/aero/test_attach_sol144.py` — new V-B3g solver-level regression (4 tests).
+- Docs: `05b_splining.md` kinematics block + V-B3 gate list re-derived (its "energy
+  consistency" line had itself carried the wrong sign); `02_card_reference.md` ATTACH sign
+  convention; `05_aeroelastics.md` card-status note; `01_aeroelastics_theory.md` §4.4 corrected
+  — it claimed ATTACH reuses the RBE2/RBE3 machinery, which it never did (that clause struck
+  from DEF-L6).
+
+**Test / Acceptance:**
+- Each new/changed gate was run against the pre-fix source and confirmed to fail: V-B3b, V-B3e,
+  V-B3f, and the V-B3g sign test. V-B3a (plunge) and V-B3d (force transfer) are unaffected by
+  the change and continue to pass.
+- V-B3g quantifies the defect end-to-end on `val_spline2_cantilever.bdf` with a 1° W2GJ
+  incidence at q=800: the elastic axis is at the leading edge and the ¼-chord force line aft of
+  it, so the deck must wash out. SPLINE2 gives L/L_rigid = 0.988; per-box ATTACH gives 0.983
+  after the fix but **1.071 before it** — a 7 % lift error of the wrong sign. Both routes
+  converge to the rigid lift within 1e-6 when the structure is stiffened by 1e6.
+- Full suite: **1193 passed, 6 xfailed** (the pre-existing documented AC7 residual XFAILs);
+  HA144A reference derivatives bit-unchanged, as expected — no shipped deck uses ATTACH.
+
+**Key decisions:**
+- Slope rows built from the box normal rather than the literal `+1 / 0` constants named in the
+  backlog, so dihedral and vertical ATTACH panels are correct too, and the rows match the
+  existing `ANGLEA = -n_z` convention by construction.
+- ATTACH was **not** refactored onto the shared RBE2/RBE3 rigid-body machinery; the theory doc
+  was corrected to describe the standalone lever-arm implementation that actually exists.
+- `g_disp` was left carrying only its z-row — a deliberate carve-out, logged as **DEF-M11**.
+
+---

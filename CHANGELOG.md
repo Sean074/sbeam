@@ -43,6 +43,27 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Fixed
 
+**DEF-H1 — ATTACH `g_slope` pitch sign inverted, spurious roll incidence (2026-07-31)**
+
+- `aero/spline.py` wrote `g_slope[..,Ry] = -1.0` and `g_slope[..,Rx] = +1.0` for ATTACH-
+  splined boxes. Since `g_slope` carries nose-up-positive incidence (`build_djk = -I`),
+  nose-up pitch of a master grid produced washout and unit roll injected incidence that
+  does not physically exist — so every ATTACH deck ran with sign-inverted aeroelastic
+  feedback through `Q_aa`, trim and divergence. Measured end-to-end on a splined
+  cantilever at q=800: the ATTACH route reported a 7 % lift *gain* where the validated
+  SPLINE2 route gives a 1.2 % loss. No shipped sample deck uses ATTACH.
+- The slope rows are now derived from the box normal —
+  `g_slope[..,Ry] = +n_z`, `g_slope[..,Rz] = -n_y`, `Rx` zero, from
+  `α = -(ω × x̂)·n̂` — which reduces to the correct `+1 / 0` for a flat panel and also
+  handles dihedral and vertical ATTACH panels, unlike the previous constants.
+- Tests: V-B3b corrected to `+1`; new V-B3e (roll → zero incidence), V-B3f (ATTACH matches
+  SPLINE2 under a general rigid rotation) and a new `tests/aero/test_attach_sol144.py`
+  V-B3g solver-level regression. Each was confirmed to fail against the pre-fix source.
+- Docs: `05b_splining.md` kinematics and gate list re-derived (its "energy consistency"
+  line had carried the wrong sign too), `02_card_reference.md` sign convention added,
+  theory §4.4 corrected — it claimed ATTACH reuses the RBE2/RBE3 machinery, which it never
+  did. The remaining `g_disp` z-row-only limitation is logged as backlog DEF-M11.
+
 **Dead code and red CI lint (2026-07-30)**
 
 - `ruff check sbeam/` had been failing (44 findings; 29 of them present 30 commits back).

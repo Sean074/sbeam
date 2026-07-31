@@ -869,8 +869,11 @@ where a single beam axis is a poor fit.
 
 Box groups with no local structural grid — control surfaces, tips, nacelles/pylons — are tied
 **rigidly** to a master grid: the box motion is the master-grid rigid-body motion evaluated at
-the box (a lever-arm transform). In `sbeam` this reuses the existing `RBE2`/`RBE3` rigid-body
-machinery rather than a new kinematic implementation. Pinned boxes (`SPLINE0`) simply have a
+the box (a lever-arm transform). In `sbeam` this is a standalone lever-arm implementation in
+`aero/spline.py` (`_build_attach_rows`) — it does *not* go through the `RBE2`/`RBE3` machinery.
+The slope rows follow §4.5 directly: for a rigid rotation $\omega$,
+$\alpha = -(\omega \times \hat{x})\cdot\hat{n} = \omega_y n_z - \omega_z n_y$, so roll
+contributes nothing and pitch contributes $+n_z$. Pinned boxes (`SPLINE0`) simply have a
 zero row in $G_{kg}$.
 
 ### 4.5 The rigid-body exactness requirement

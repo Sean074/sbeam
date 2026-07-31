@@ -166,22 +166,49 @@ For each covered box j with lever `r = box.force_point − master_pos = (rx, ry,
 use `box.force_point` (¼-chord bound-vortex midpoint), not `box.colloc` (¾-chord).
 The g_slope operator remains at the ¾-chord collocation point (flow tangency).
 
+`g_slope` carries **streamwise incidence, nose-up positive** — the same sense as SPLINE2
+and the ANGLEA column (`build_djk = -I` converts it to normalwash). For a rigid rotation
+ω the surface displacement is `u = ω×r`, so
+
 ```
-g_slope[j, col_Tz] = 0.0    # plunge → zero slope
-g_slope[j, col_Rx] = +1.0   # torsion coupling
-g_slope[j, col_Ry] = -1.0   # pitch → uniform downwash -1
+∂u/∂x = ω × x̂ = (0, ω_z, -ω_y)
+α     = -(∂u/∂x)·n̂ = ω_y·n_z - ω_z·n_y
+```
+
+giving, per box unit normal `n̂`:
+
+```
+g_slope[j, col_Tx/Ty/Tz] = 0.0     # uniform translation → zero slope
+g_slope[j, col_Rx] = 0.0           # roll about the streamwise axis → no slope
+g_slope[j, col_Ry] = +n_z          # pitch  (+1 for a z-normal box)
+g_slope[j, col_Rz] = -n_y          # yaw    (drives incidence on fins)
 
 g_disp[3j+2, col_Tz] = 1.0  # normal displacement from plunge
 g_disp[3j+2, col_Rx] = ry   # (ω×r)_z = Rx·ry
 g_disp[3j+2, col_Ry] = -rx  # (ω×r)_z = -Ry·rx
 ```
 
-Energy consistency: `∂(-rx)/∂x = -1 = g_slope[j, col_Ry]` (virtual work ✓).
+**DEF-H1 — resolved 2026-07-31:** the `Ry` row previously read `-1.0` and `Rx` a spurious
+`+1.0`. Nose-up pitch of a master grid therefore produced washout, and unit roll injected
+a full unit of false incidence, sign-inverting the aeroelastic feedback in `Q_aa`, trim and
+divergence for every ATTACH deck. The `Ry`/`Rz` rows are now built from the box normal, so
+dihedral and vertical panels are handled as well as flat ones.
+
+Energy consistency: `α = -∂u_z/∂x = -∂(-rx·θ_y)/∂x = +θ_y = g_slope[j, col_Ry]` for a
+z-normal box (virtual work ✓ — `g_disp` supplies `u_z = -rx·θ_y`).
+
+`g_disp` fills only the z-row, so the in-plane Fx/Fy force-transfer components of a
+non-z-normal ATTACH panel are not yet carried — open backlog item DEF-M11.
 
 **V-B3 rigid-body gate (machine precision):**
-- Tz translation → zero downwash (< 1e-14)
-- Ry pitch → uniform downwash -1.0 (< 1e-14)
-- Force transfer: `g_disp.T @ (skj @ cp)` gives correct Fz, Mx, My at master (< 1e-12)
+- V-B3a Tz translation → zero incidence (< 1e-14)
+- V-B3b Ry pitch → uniform incidence +1.0 (< 1e-14)
+- V-B3e Rx roll → zero incidence (< 1e-14)
+- V-B3f rigid rotation matches the SPLINE2 route on the same panel (< 1e-12)
+- V-B3d Force transfer: `g_disp.T @ (skj @ cp)` gives correct Fz, Mx, My at master (< 1e-12)
+- V-B3g (`tests/aero/test_attach_sol144.py`) ATTACH and SPLINE2 give the same flexible
+  lift within 3% through the SOL 144 static aeroelastic solve, and both converge to the
+  rigid lift (1e-6) in the stiff limit
 
 ### SPLINE0 — Zero-Displacement Constraint (Step 47)
 
