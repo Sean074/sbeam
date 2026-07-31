@@ -107,25 +107,8 @@ follows the 3-D Göthert prediction (ratio 1.173 vs 1.177 Helmbold at M=0.6); st
 elastic derivatives converge to rigid at 3e-8; strip correction round-trips through card
 text to 1.3e-8; divergence q cross-checks an independent QZ eigensolve to 1e-15.
 
-Decisions taken 2026-07-31: WT1 → **deprecate** (DEF-H2/H3); SPLINE0 body loads →
-**inject as rigid loads at the reference point** (DEF-M1 = **Step 64**).
-
-### DEF-H — High (wrong numbers on reachable inputs; fix before relying on the affected path)
-
-- **DEF-H2 + DEF-H3 — Deprecate WT1** (decision taken 2026-07-31) [E]
-  WT1 is broken twice: (H2) it achieves `f_target/β²` instead of `f_target` at M > 0
-  (`corrections.py:194` + `aero_model.py:118` — reference force computed on PG-compressed
-  boxes without the Göthert 1/β factor; verified 56 % overshoot at M=0.6, exact at M=0,
-  and all WT1 tests run at M=0 only; found independently by two reviewers with identical
-  numbers); (H3) on multi-surface decks it rescales every surface via shared per-CAERO
-  `i_span` keys (`corrections.py:180-183` — verified: tail load nearly wiped out by a
-  wing card while the wing misses its own target; the 05a "primary CAERO1 only" claim is
-  false). WT2 and the section-correction path are correct and strictly more capable
-  (`section_correction.py:198` divides by β).
-  *Scope (complexity low):* parser/build emits a deprecation warning on any WT1 AECORR
-  ("use WT2 / section corrections"); 05a and 02_card_reference mark WT1 deprecated with
-  the two defects as rationale; existing WT1 decks still parse (no hard removal). Both
-  defects close with the deprecation — no β-math fix is made.
+Decisions taken 2026-07-31: SPLINE0 body loads → **inject as rigid loads at the reference
+point** (DEF-M1 = **Step 64**).
 
 ### DEF-M — Medium (silent wrong output on specific configurations, or misleading deliverables)
 
@@ -252,8 +235,7 @@ Decisions taken 2026-07-31: WT1 → **deprecate** (DEF-H2/H3); SPLINE0 body load
   `bdf_reader.py:413-414`); `build_maneuver_time_history_text` IndexError on
   empty-steps results the sibling writers guard (`maneuver_output.py:38`). [D]
 - **DEF-L6** Docs-mismatch batch: theory doc claims M ≤ 0.99 cap (code accepts any M<1,
-  `aero_model.py:363`); 05a "WT1/WKK act on
-  primary CAERO1 only" (false, see DEF-H3); 05c monitor CSV column list missing
+  `aero_model.py:363`); 05c monitor CSV column list missing
   massset/mass_case (`:667-669` vs `load_export.py:154-160`); 05c parity paragraph
   (`:653-656`) describes behaviour the code doesn't have; `build_g_spline` docstring lists
   retired DTHZ/DTOR warnings (`spline.py:470-474`); `AeroBox.chord` comment says box chord
@@ -297,6 +279,17 @@ Decisions taken 2026-07-31: WT1 → **deprecate** (DEF-H2/H3); SPLINE0 body load
   SVD per static solve (`sol144.py:148`); `run_maneuver_qs` rebuilds the Mach-correct AIC
   twice when no AeroCache is passed (`maneuver_qs.py:267-274`). Factor once (LU), estimate
   condition via gecon. [E/D]
+- **DEF-R7 — Remove the deprecated WT1 correction path** — DEF-H2/H3 (closed 2026-07-31)
+  deprecated `AECORR METHOD=WT1` with a parser `UserWarning` but left it working. Complete
+  the retirement at a release boundary: delete `apply_wt1` (`corrections.py`), the WT1
+  branch in `_assemble_vlm_operator` (`aero_model.py:116-118`), the parser's acceptance of
+  `METHOD='WT1'` (`bdf_reader.py` — `AECORR` becomes WT2-only, and the deprecation warning
+  becomes a `ValueError`), and the `TestApplyWt1`/`TestWt1Deprecation` classes in
+  `tests/aero/test_corrections.py`. Also strip the WT1 rows/notes from `05a_aero_vlm.md`,
+  `02_card_reference.md`, `05_aeroelastics.md`, `01_beam_model.md` and theory §3.3. No
+  shipped deck uses WT1 (no `AECORR` card appears anywhere in `sample/` or `tests/**/*.bdf`),
+  so the only breakage is a hand-written legacy deck — which is producing wrong numbers
+  today. Complexity low. [D]
 
 ---
 

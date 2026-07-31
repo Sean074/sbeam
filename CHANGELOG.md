@@ -41,6 +41,36 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 - Behaviour is unchanged throughout: the full suite is identical before and after
   (1187 passed, 6 xfailed).
 
+### Deprecated
+
+**DEF-H2 + DEF-H3 — `AECORR METHOD=WT1` deprecated (2026-07-31)**
+
+- The WT1 per-strip force-matching AIC correction is deprecated. It still parses and runs
+  unchanged — no numerics were altered — but the parser now raises a `UserWarning` naming
+  both defects and pointing at `WT2` / the section-correction path.
+- **DEF-H2:** `build_aero_model` hands `apply_wt1` the Prandtl–Glauert-compressed boxes, so
+  the reference strip force is integrated over compressed areas and chords while the Göthert
+  `1/β` factor and the Γ→ΔCp conversion (physical chords) are applied afterwards. The
+  delivered strip force is `f_target/β²` — measured at exactly **1.5625 (= 1/0.64) at
+  M = 0.6**, a 56 % overshoot. Exact at M = 0 only, which is where all four pre-existing WT1
+  tests ran.
+- **DEF-H3:** `apply_wt1` groups strips by `box.i_span`, which restarts per parent CAERO1, so
+  a card selected for one surface rescales every surface sharing an `i_span` index. Measured
+  on a wing+tail deck: wing and tail are scaled by the *same* per-`i_span` ratio, so the tail
+  is corrupted although no card names it and the wing misses its own target.
+- **Deprecated rather than fixed** — `WT2` is genuinely multi-surface and
+  `section_correction.py` divides by β, so both are correct and strictly more capable; WT1
+  offers no capability they lack. Both defects are pinned by new characterization tests in
+  `tests/aero/test_corrections.py` so they cannot drift silently. Hard removal is deferred to
+  a release boundary and tracked as backlog **DEF-R7**.
+- Docs: `05a_aero_vlm.md`, `02_card_reference.md`, `05_aeroelastics.md`, `01_beam_model.md`
+  and theory §3.3 mark WT1 deprecated. Two false claims were corrected in the process — 05a's
+  "`WKK` and `WT1` still act on the primary CAERO1 only" (deleted; also struck from DEF-L6),
+  and the card-reference rule that WT1's `f_target` length matches "the number of distinct
+  span strips in the CAERO1" (it is counted model-wide).
+- No shipped deck is affected: no `AECORR` card appears anywhere in `sample/` or
+  `tests/**/*.bdf`.
+
 ### Fixed
 
 **DEF-H1 — ATTACH `g_slope` pitch sign inverted, spurious roll incidence (2026-07-31)**

@@ -114,6 +114,9 @@ def _assemble_vlm_operator(
             cp_target[surf_idx] = tgt
         ajj_inv_corr = apply_wt2(ajj, cp_target)
     elif wt1_card is not None:
+        # DEPRECATED (DEF-H2/H3) — kept working, not fixed.  The PG-compressed boxes
+        # passed here (combined with the 1/β and physical-chord steps below) deliver
+        # f_target/β²; and apply_wt1's i_span grouping bleeds across CAERO1s.
         f_target = np.asarray(wt1_card.target, dtype=float)
         ajj_inv_corr = apply_wt1(ajj, prandtl_glauert_boxes(op_boxes, mach), f_target)
     else:
@@ -308,7 +311,12 @@ def build_aero_model(
                               all WT2 cards are combined into one global Γ-unit target —
                               each card fills its own CAERO1's boxes (row-major), boxes on
                               uncorrected surfaces default to ratio 1.
-      3. AECORR WT1 present → force-matching correction (apply_wt1, primary CAERO1 only).
+      3. AECORR WT1 present → force-matching correction (apply_wt1).  **DEPRECATED
+                              (DEF-H2/H3)** — the card is *selected* by the primary
+                              CAERO1, but it is *applied* to every box sharing an
+                              ``i_span`` key (which restarts per CAERO1), and the
+                              achieved strip force is ``f_target/β²`` at M > 0.  Use
+                              WT2 or the section-correction path.
       4. No correction       → AJJ*⁻¹ = solve(AJJ).
 
     When multiple CAERO1 elements are present, all boxes are concatenated into a single

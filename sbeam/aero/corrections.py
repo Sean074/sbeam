@@ -4,7 +4,8 @@ Three tiers, in increasing data requirement:
 
   Wkk   — diagonal multiplicative weighting: AJJ* = diag(w) @ AJJ.
   WT2   — pressure matching: per-box cp scaling to reproduce a target cp distribution.
-  WT1   — force/moment matching: per-strip lift scaling to reproduce target section loads.
+  WT1   — force/moment matching: per-strip lift scaling.  **DEPRECATED (DEF-H2/H3)** —
+          see ``apply_wt1``; use WT2 or ``sbeam.aero.section_correction`` instead.
 
 Reference normalwash convention (WT1 and WT2):
   w_ref = -np.ones(n)  (uniform unit incidence, alpha = 1, same rhs as solve_rigid_cl).
@@ -140,7 +141,26 @@ def apply_wt2(ajj: FloatArray, cp_target: FloatArray) -> FloatArray:
 
 
 def apply_wt1(ajj: FloatArray, boxes: list[AeroBox], f_target: FloatArray) -> FloatArray:
-    """Force/moment-matching correction.  Returns corrected AJJ*⁻¹ (Γ-unit output).
+    """**DEPRECATED (DEF-H2/H3, 2026-07-31).**  Force/moment-matching correction.
+
+    Returns corrected AJJ*⁻¹ (Γ-unit output).  Two defects make this path
+    untrustworthy, and the decision taken was to **deprecate rather than fix** —
+    ``WT2`` and the section-correction path (``sbeam.aero.section_correction``,
+    which divides by β and is genuinely multi-surface) are correct and strictly
+    more capable:
+
+      DEF-H2  ``build_aero_model`` passes PG-compressed boxes here, so the
+              reference strip force is integrated over compressed areas/chords
+              while the Göthert 1/β factor and the Γ→ΔCp conversion (physical
+              chords) are applied afterwards.  The delivered strip force is
+              ``f_target/β²`` — a 56 % overshoot at M = 0.6.  Exact at M = 0 only.
+      DEF-H3  Strips are grouped by ``box.i_span``, which restarts per parent
+              CAERO1.  On a multi-surface deck a card selected for one CAERO1
+              rescales strips on every surface sharing an ``i_span`` index.
+
+    The numerics below are left unchanged on purpose; both defects are pinned by
+    characterization tests in ``tests/aero/test_corrections.py``.  Removal of the
+    whole path is tracked as backlog DEF-R7.
 
     Finds a diagonal scaling r — constant within each span strip — such that the
     corrected A*⁻¹ = diag(r) @ AJJ⁻¹ reproduces the per-strip physical lift/q

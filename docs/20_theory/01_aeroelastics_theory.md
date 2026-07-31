@@ -561,6 +561,13 @@ $\beta$ on a vertical one, per $\alpha\cos\Gamma$ on a surface canted at dihedra
 match **force and moment together** sbeam uses the synthesiser of §3.5 ($W_{T2}$ for the
 slope/a.c. and $W_{2GJ}$ for the $\alpha=0$ offset), not a chordwise-varying $W_{T1}$.
 
+**`apply_wt1` is deprecated (DEF-H2/H3, 2026-07-31)** and should not be used: its reference
+force is integrated on Prandtl–Glauert-compressed geometry, so it achieves $F^\text{given}/\beta^2$
+rather than $F^\text{given}$ at $M>0$, and its per-strip grouping key restarts per CAERO1, so on a
+multi-surface deck it rescales strips it was never pointed at. The theory of Eq. (13) is
+unaffected — the defects are in the sbeam implementation, and the remedy is the §3.5 synthesiser,
+which applies the $1/\beta$ factor correctly and is scoped per surface.
+
 These match the ZAERO *Theoretical Manual* §4 forms (its Eqs. 4.55–4.58); $W_{kk}$ is the
 diagonal special case of $W_{T2}$.
 

@@ -364,16 +364,36 @@ CFD or wind-tunnel data. The correction precedence in `build_aero_model()` is:
 ```
 WKK card present   →  apply_wkk  (caller inverts via np.linalg.solve; primary CAERO1)
 AECORR WT2 present →  apply_wt2  (returns AJJ*⁻¹) — ALL WT2 cards combined (multi-surface)
-AECORR WT1 present →  apply_wt1  (returns AJJ*⁻¹; primary CAERO1)
+AECORR WT1 present →  apply_wt1  (returns AJJ*⁻¹) — DEPRECATED, see below
 No correction      →  np.linalg.solve(AJJ, I)
 ```
+
+> **WT1 is deprecated (DEF-H2/H3, 2026-07-31).** Use `WT2` or the section-correction
+> path instead. A `WT1` `AECORR` still parses and runs, but the parser now raises a
+> `UserWarning`, because the path is wrong in two ways:
+>
+> - **DEF-H2 — wrong at Mach > 0.** `build_aero_model` passes PG-compressed boxes to
+>   `apply_wt1`, so the reference strip force is integrated over compressed areas and
+>   chords, while the Göthert `1/β` factor and the Γ→ΔCp conversion (physical chords)
+>   are applied afterwards. The delivered strip force is `f_target/β²` — a **56 %
+>   overshoot at M = 0.6**. Exact at M = 0 only.
+> - **DEF-H3 — cross-surface aliasing.** `apply_wt1` groups strips by `box.i_span`,
+>   which restarts per parent CAERO1. On a multi-surface deck the card is *selected*
+>   by the primary CAERO1 but *applied* to every box sharing an `i_span` index, so a
+>   wing card rescales tail strips while the wing itself misses its target.
+>
+> The decision was to **deprecate rather than fix**: `WT2` and the section-correction
+> synthesiser (`section_correction.py`, which divides by β) are correct and strictly
+> more capable. Both defects are pinned by characterization tests in
+> `tests/aero/test_corrections.py`; removal of the path is backlog **DEF-R7**.
 
 **Multi-surface WT2.** When several CAERO1 surfaces each carry a `WT2` `AECORR`, they are
 combined into one global Γ-unit target: each card fills its own surface's boxes (row-major),
 and boxes on uncorrected surfaces default to the VLM reference circulation (ratio 1). `W2GJ`
 baseline normalwash is already accumulated per CAERO1, so the section force+moment correction
-(`section_correction.py`) works across the whole model. `WKK` and `WT1` still act on the
-primary CAERO1 only.
+(`section_correction.py`) works across the whole model. `WKK` acts on the primary CAERO1
+only; `WT1`'s scope is the defective one described above (selected per primary CAERO1,
+applied model-wide by `i_span`).
 
 ### Card Formats
 
@@ -391,7 +411,7 @@ AECORR  SID  METHOD  CAERO_EID  T1  T2  T3  T4  T5
 | WKK CAERO_EID | CAERO1 EID this correction applies to |
 | WKK W1–WN | Diagonal weight per box; one value per box in row-major order |
 | AECORR SID | Set ID |
-| AECORR METHOD | `WT1` (force/moment matching) or `WT2` (pressure matching) |
+| AECORR METHOD | `WT2` (pressure matching), or `WT1` (force/moment matching) — **deprecated**, warns at parse |
 | AECORR CAERO_EID | CAERO1 EID this correction applies to |
 | AECORR T1–TN | Target values; see below |
 
@@ -410,7 +430,10 @@ deriving `w_ref` from `cp_target` itself yields a trivial identity correction. B
 with near-zero `cp_vlm_ref` (tolerance `_RATIO_TOL = 1e-12`) keep a ratio of 1.0.
 Issues a `UserWarning` if `cond(AJJ) > 1e10`.
 
-### `apply_wt1(ajj, boxes, f_target) -> np.ndarray`
+### `apply_wt1(ajj, boxes, f_target) -> np.ndarray` — DEPRECATED (DEF-H2/H3)
+
+**Do not use on new work** — see the deprecation note above; prefer `WT2` or
+`section_correction.py`. The description below is of the shipped (unfixed) behaviour.
 
 Per-strip force-matching correction. Groups boxes by `i_span` and finds a per-strip
 scalar ratio `f_target_s / f_vlm_s`. All boxes in a strip share the same correction

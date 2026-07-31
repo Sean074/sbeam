@@ -9,11 +9,16 @@ Covers:
   - apply_wt1 conditioning warning: near-singular AJJ triggers UserWarning
   - build_aero_model: identity (no correction) — AJJ*⁻¹ @ AJJ ≈ I
   - build_aero_model: WKK correction wired end-to-end
+  - WT1 deprecation (DEF-H2/H3): parser warning, plus characterization tests
+    pinning the β² overshoot at M > 0 and the cross-CAERO1 strip aliasing
 """
+
+import warnings
 
 import numpy as np
 import pytest
 
+from sbeam.parser.bdf_reader import parse_bulk_data
 from sbeam.model.aero import Caero1, Paero1, Wkk, Aecorr
 from sbeam.model.bulk_data import BulkData
 from sbeam.aero.panel import mesh_caero1
@@ -373,3 +378,123 @@ class TestSolveRigidClCorrectedOperator:
         boxes = _rect_wing(2, 2)
         with pytest.raises(ValueError, match="cp_operator has shape"):
             solve_rigid_cl(boxes, alpha=0.05, cp_operator=np.eye(3))
+
+
+# ---------------------------------------------------------------------------
+# WT1 deprecation (DEF-H2 / DEF-H3, 2026-07-31)
+#
+# WT1 is deprecated rather than fixed — WT2 and the section-correction path are
+# correct and strictly more capable.  The two tests below therefore lock in
+# **known-wrong** behaviour on purpose, so that the defects cannot be silently
+# altered while the card is still parseable.  Removal is backlog DEF-R7.
+# ---------------------------------------------------------------------------
+
+TAIL_EID = 2
+
+
+def _strip_forces(model, caero_eid=None) -> np.ndarray:
+    """Physical strip lift/q (Σ area·Cp) at unit reference incidence, by i_span.
+
+    Restricted to one CAERO1 when ``caero_eid`` is given.  Ordered by ascending
+    i_span, matching the WT1 f_target convention.
+    """
+    from collections import defaultdict
+    n = len(model.boxes)
+    cp = model.ajj_inv_corr @ (-np.ones(n))
+    acc: dict = defaultdict(float)
+    for k, box in enumerate(model.boxes):
+        if caero_eid is not None and box.caero_eid != caero_eid:
+            continue
+        acc[box.i_span] += box.area * cp[k]
+    return np.array([acc[s] for s in sorted(acc)])
+
+
+def _wing_and_tail_bulk(nspan: int, nchord: int) -> BulkData:
+    """Two-surface deck: the CAERO_EID wing plus a smaller tail aft of it."""
+    bulk = _rect_bulk(nspan, nchord)
+    bulk.caero1s[TAIL_EID] = Caero1(
+        eid=TAIL_EID, pid=1, cp=0,
+        nspan=nspan, nchord=nchord, lspan=0, lchord=0, igid=0,
+        p1=(4.0, 0.0, 0.0), x12=0.5,
+        p4=(4.0, 2.0, 0.0), x43=0.5,
+    )
+    return bulk
+
+
+class TestWt1Deprecation:
+    def test_parser_warns_on_wt1_card(self):
+        """A WT1 AECORR warns at read time; a WT2 card does not."""
+        wt1 = ["AECORR, 30, WT1, 100, 0.80, 0.75, 0.65, 0.50"]
+        with pytest.warns(UserWarning, match="WT1 is deprecated"):
+            bulk = parse_bulk_data(wt1)
+        assert bulk.aecorrs[30].method == "WT1"      # still parsed, not rejected
+
+        wt2 = ["AECORR, 20, WT2, 100, 0.45, 0.30, 0.22, 0.18"]
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")            # any warning fails the test
+            bulk2 = parse_bulk_data(wt2)
+        assert bulk2.aecorrs[20].method == "WT2"
+
+    def test_wt1_overshoots_by_beta_squared_at_mach(self):
+        """DEF-H2 (pinned, known-wrong): WT1 delivers f_target/β², not f_target.
+
+        ``build_aero_model`` hands ``apply_wt1`` the PG-compressed boxes, so the
+        reference strip force is integrated over compressed areas/chords, while
+        the Göthert 1/β factor and the Γ→ΔCp conversion (physical chords) are
+        applied afterwards.  Exact at M = 0; 56 % high at M = 0.6.  Deprecated,
+        not fixed — see DEF-H2/H3 and backlog DEF-R7.
+        """
+        nspan, nchord = 3, 3
+        f_target = _strip_forces(build_aero_model(_rect_bulk(nspan, nchord), mach=0.0))
+
+        for mach in (0.0, 0.6):
+            bulk = _rect_bulk(nspan, nchord)
+            bulk.aecorrs[30] = Aecorr(sid=30, method="WT1", caero_eid=CAERO_EID,
+                                      target=f_target.tolist())
+            achieved = _strip_forces(build_aero_model(bulk, mach=mach))
+            beta_sq = 1.0 - mach ** 2
+            assert achieved == pytest.approx(f_target / beta_sq, rel=1e-8)
+
+        # The M = 0.6 case specifically: 1/0.64 = 1.5625, a 56 % overshoot.
+        bulk = _rect_bulk(nspan, nchord)
+        bulk.aecorrs[30] = Aecorr(sid=30, method="WT1", caero_eid=CAERO_EID,
+                                  target=f_target.tolist())
+        got = _strip_forces(build_aero_model(bulk, mach=0.6))
+        assert got / f_target == pytest.approx(np.full(nspan, 1.5625), rel=1e-8)
+
+    def test_wt1_aliases_strips_across_caeros(self):
+        """DEF-H3 (pinned, known-wrong): a wing WT1 card rescales tail strips.
+
+        ``apply_wt1`` groups by ``box.i_span``, which restarts per parent CAERO1
+        (``panel.py``), so wing strip 0 and tail strip 0 share a dict key.  The
+        card is *selected* by the primary CAERO1 but *applied* model-wide: the
+        tail is contaminated and the wing misses its own target.  Deprecated, not
+        fixed — see DEF-H2/H3 and backlog DEF-R7.
+        """
+        nspan, nchord = 3, 3
+        base = build_aero_model(_wing_and_tail_bulk(nspan, nchord), mach=0.0)
+        wing_base = _strip_forces(base, caero_eid=CAERO_EID)
+        tail_base = _strip_forces(base, caero_eid=TAIL_EID)
+
+        # Ask the wing for half its baseline load.  f_target must be sized by
+        # *distinct i_span model-wide* (= nspan), not by the wing's own strip
+        # count — itself a symptom of the shared-key defect.
+        wing_target = 0.5 * wing_base
+        bulk = _wing_and_tail_bulk(nspan, nchord)
+        bulk.aecorrs[30] = Aecorr(sid=30, method="WT1", caero_eid=CAERO_EID,
+                                  target=wing_target.tolist())
+        corr = build_aero_model(bulk, mach=0.0)
+
+        wing_corr = _strip_forces(corr, caero_eid=CAERO_EID)
+        tail_corr = _strip_forces(corr, caero_eid=TAIL_EID)
+
+        # (a) The tail is rescaled by roughly the wing's factor, though no card
+        #     names it.  A correctly scoped correction would leave it untouched.
+        assert np.all(np.abs(tail_corr / tail_base - 1.0) > 0.4)
+
+        # (b) The wing misses the half-load target it was given.
+        assert np.any(np.abs(wing_corr / wing_target - 1.0) > 0.05)
+
+        # (c) The smoking gun: wing and tail are scaled by the *same* per-i_span
+        #     ratio, because they share the dict key.
+        assert wing_corr / wing_base == pytest.approx(tail_corr / tail_base, rel=1e-10)

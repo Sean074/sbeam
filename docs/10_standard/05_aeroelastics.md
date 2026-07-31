@@ -34,7 +34,7 @@ Results   (cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, CDi, e, per_su
 | `sbeam/aero/panel.py` | `AeroBox` dataclass + `mesh_caero1()` — trapezoidal box meshing, ¼c/¾c placement |
 | `sbeam/aero/vlm.py` | Biot–Savart segments, horseshoe influence, AIC matrix, rigid-AOA solve |
 | `sbeam/aero/integration.py` | `Skj` force integration matrix, `Djk` downwash matrix, `wg` baseline normalwash |
-| `sbeam/aero/corrections.py` | `Wkk` diagonal correction, `WT1` per-strip force-match, `WT2` pressure-match |
+| `sbeam/aero/corrections.py` | `Wkk` diagonal correction, `WT2` pressure-match, `WT1` per-strip force-match (**deprecated** — DEF-H2/H3) |
 | `sbeam/aero/section_correction.py` | Synthesise a per-surface `W2GJ`+`WT2` card pair matching section force **and** moment (slope + α=0 offset): `build_section_correction_multi` (engine, all surfaces at once), `build_section_correction` (single-surface wrapper), `cards_to_bdf()` |
 | `sbeam/aero/section_data.py` | Spanwise section-coefficient table ingestion (tidy CSV) → strip targets → builder: `validate_section_data`, `available_conditions`, `template_dataframe`, `build_from_section_data` (single), `build_from_section_data_multi` (per-surface at one flight point), `operating_region` |
 | `sbeam/aero/body_correction.py` | **Step A9** — cruciform body-panel total-aircraft moment match: `build_body_correction` (direct linear solve: joint WT2 slope + joint W2GJ offset on the body panels so the TOTAL Cm_α/Cm0, Cn_β/Cn0, Cl_β/Cl0 hit targets), `BodyTargets`, `split_total_rows` / `parse_body_targets` (CSV `TOTAL` block), `body_cards_to_bdf`; **Step A10** — `build_strip_body_correction` / `strip_body_cards_to_bdf` (decoupled strip body: STRIPK slope + W2GJ Δα) |
@@ -106,7 +106,7 @@ Reproduction script for the original review: `studies/_review_ha144a_check.py`.
 | `AEFACT` | Arbitrary span/chord fraction lists for non-uniform meshing | S40 |
 | `W2GJ` | Per-box baseline normalwash slopes | S42 |
 | `WKK` | Diagonal AIC correction multipliers | S43 |
-| `AECORR` | Force/pressure matching AIC corrections (WT1, WT2) | S43 |
+| `AECORR` | Force/pressure matching AIC corrections (WT2; WT1 deprecated by DEF-H2/H3 2026-07-31) | S43 |
 | `CHORDCP` | Injected CFD/WT steady-Cp mean flow at a reference AOA (sbeam extension) | S54 |
 | `SET1` | List of structural grid IDs for spline input | S45 |
 | `SPLINE2` | NASTRAN infinite beam spline: links CAERO1 box range to SET1 grids (rigid chord arms, DTOR/DTHX/DTHY flexibilities) | S45–46, AC7 |

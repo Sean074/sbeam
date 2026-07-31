@@ -1162,3 +1162,67 @@ tests V-B3a/b plus `05b_splining.md` encoded the wrong values.
 - `g_disp` was left carrying only its z-row — a deliberate carve-out, logged as **DEF-M11**.
 
 ---
+
+### DEF-H2 + DEF-H3 — WT1 AIC correction deprecated (2026-07-31) ✅ RESOLVED
+
+**Objective:** Stop `AECORR METHOD=WT1` being presented as a peer of `WT2`. The path is wrong
+in two independent ways; the decision taken was to **deprecate rather than fix**, because `WT2`
+and the section-correction synthesiser are correct and strictly more capable.
+
+**Defects:**
+- **DEF-H2 — wrong scaling at M > 0.** `_assemble_vlm_operator` passed PG-compressed boxes to
+  `apply_wt1`, so the reference strip force `f_vlm_s` was integrated over compressed areas and
+  chords, while the Göthert `1/β` factor and the Γ→ΔCp conversion (physical chords) were
+  applied afterwards. The delivered strip force is `f_target/β²`. Measured exactly: at M = 0.6
+  the achieved/target ratio is **1.5625 = 1/0.64** on every strip, a 56 % overshoot; at M = 0
+  the ratio is 1.0. All four pre-existing WT1 tests ran at M = 0, so the suite never saw it.
+- **DEF-H3 — cross-surface strip aliasing.** `apply_wt1` groups strips by `box.i_span`, which
+  restarts per parent CAERO1 (`panel.py`). The card is *selected* by the primary CAERO1 but
+  *applied* to every box sharing an `i_span` key. Measured on a wing+tail deck asked for half
+  the wing's baseline load: wing and tail strips are scaled by the **same** per-`i_span` ratio,
+  so the tail is rescaled although no card names it, and the wing misses its own target. The
+  `f_target` length check also counts distinct `i_span` values model-wide, not per surface —
+  the same shared-key symptom surfacing as a validation rule.
+
+**Deliverables:**
+- `sbeam/parser/bdf_reader.py` — `_handle_aecorr` raises a `UserWarning` on any WT1 card,
+  naming both defects and pointing at WT2 / the section-correction path. The card still parses
+  and runs; no numerics changed.
+- `sbeam/aero/corrections.py`, `sbeam/aero/aero_model.py` — module/function docstrings and the
+  WT1 branch marked DEPRECATED with both defects and an explicit "left numerically unchanged
+  on purpose" note.
+- `tests/aero/test_corrections.py` — new `TestWt1Deprecation`: parser-warning gate (and a
+  negative control proving a WT2 card does *not* warn), plus two **characterization** tests
+  that pin the known-wrong behaviour so it cannot drift silently.
+- Docs: `05a_aero_vlm.md` deprecation block + `apply_wt1` heading; `02_card_reference.md`
+  AECORR bullet/METHOD row/example/validation rows; `05_aeroelastics.md`, `01_beam_model.md`
+  one-line mentions; theory §3.3 implementation note (Eq. 13 itself is unaffected — the
+  defects are in the sbeam implementation, not the Giesing method).
+- The false 05a claim "`WKK` and `WT1` still act on the primary CAERO1 only" was deleted, and
+  that clause struck from DEF-L6. The 02_card_reference `f_target`-length rule was corrected
+  from "in the CAERO1" to the model-wide truth.
+
+**Test / Acceptance:**
+- `tests/aero/test_corrections.py` — 23 passed. The four pre-existing `TestApplyWt1` tests were
+  left untouched and still pass; because the warning lands in the parser and those tests call
+  `apply_wt1` directly, no existing test needed modification.
+- Teeth proven: with the parser change stashed, `test_parser_warns_on_wt1_card` fails; with a
+  hypothetical β-corrected build path patched in, `test_wt1_overshoots_by_beta_squared_at_mach`
+  fails. The DEF-H3 assertions (`|tail ratio − 1| > 0.4`) are violated by construction under
+  any correctly scoped implementation.
+- Full suite: **1196 passed, 6 xfailed** (the pre-existing documented AC7 residual XFAILs).
+
+**Key decisions:**
+- **Deprecate, not fix.** No β-math or grouping-key change was made. `WT2` is genuinely
+  multi-surface and `section_correction.py` divides by β; WT1 has no capability they lack.
+- **`UserWarning`, not `DeprecationWarning`** — Python hides `DeprecationWarning` outside
+  `__main__`, and this card is *silently* wrong, so the user must see it. It also matches the
+  existing sbeam precedent (`check_conditioning`, the A7/A8 mesh warnings).
+- **Warn in the parser only**, not also at build time — one warning per card for every
+  consumer (solver, viewer, CLI), with no duplicate noise.
+- **Characterization tests over prose.** The two defects are now locked in by executable
+  gates that will fail loudly if anyone "fixes" WT1 without closing DEF-R7.
+- Hard removal deferred to a release boundary and logged as **DEF-R7**. No shipped deck uses
+  WT1 — no `AECORR` card appears anywhere in `sample/` or `tests/**/*.bdf`.
+
+---
