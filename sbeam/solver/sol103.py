@@ -2,6 +2,8 @@
 
 import warnings
 
+from typing import Optional, Union, cast
+
 import numpy as np
 import scipy.linalg
 import scipy.sparse
@@ -17,13 +19,18 @@ from sbeam.assembly.mass_matrix import assemble_global_mass
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.assembly.reduction import reduce_to_aset
 from sbeam.results.results import Sol103Result
+from sbeam.types import FloatArray, SparseMatrix
+from sbeam.model.load import Eigrl
 
 
 _DENSE_THRESHOLD = 1200  # n_free <= this → use dense eigh (200 elements × 6 DOFs)
 _NEG_EIGENVALUE_TOL = -1.0  # rad²/s²; eigenvalues below this suggest a mechanism
 
 
-def solve_modes(K_free, M_free, eigrl, force_dense: bool = False) -> tuple:
+def solve_modes(
+    K_free: Union[FloatArray, SparseMatrix], M_free: Union[FloatArray, SparseMatrix],
+    eigrl: Optional[Eigrl], force_dense: bool = False,
+) -> tuple[FloatArray, FloatArray]:
     """Solve generalised eigenvalue problem K phi = lambda M phi.
 
     Returns (frequencies_hz, eigenvectors) where eigenvectors has shape
@@ -34,10 +41,12 @@ def solve_modes(K_free, M_free, eigrl, force_dense: bool = False) -> tuple:
     singular and the shift-invert factorisation would fail).
     """
     n = K_free.shape[0]
-    nd = eigrl.nd if eigrl.nd is not None else n
+    # No EIGRL card (an internal all-modes basis solve): every mode, MASS-normalised.
+    nd = n if eigrl is None or eigrl.nd is None else eigrl.nd
     nd = min(nd, n)
+    norm = "MASS" if eigrl is None else eigrl.norm
 
-    if eigrl.v1 is not None or eigrl.v2 is not None:
+    if eigrl is not None and (eigrl.v1 is not None or eigrl.v2 is not None):
         warnings.warn(
             "EIGRL V1/V2 frequency bounds are not supported in sbeam Phase 1; "
             "all requested ND modes will be returned regardless of V1/V2. "
@@ -51,20 +60,25 @@ def solve_modes(K_free, M_free, eigrl, force_dense: bool = False) -> tuple:
     # limit always use the dense path for zero regression risk.
     use_dense = (
         force_dense
-        or not scipy.sparse.issparse(K_free)
+        or isinstance(K_free, np.ndarray)
         or n <= _DENSE_THRESHOLD
         or nd >= n  # eigsh requires k < n; fall back to eigh for all modes
     )
 
     if use_dense:
-        K_arr = K_free.toarray() if scipy.sparse.issparse(K_free) else K_free
-        M_arr = M_free.toarray() if scipy.sparse.issparse(M_free) else M_free
-        return _solve_modes_dense(K_arr, M_arr, nd, eigrl.norm)
+        K_arr = K_free if isinstance(K_free, np.ndarray) else K_free.toarray()
+        M_arr = M_free if isinstance(M_free, np.ndarray) else M_free.toarray()
+        return _solve_modes_dense(K_arr, M_arr, nd, norm)
     else:
-        return _solve_modes_sparse(K_free, M_free, nd, n, eigrl.norm)
+        # cast: use_dense is True whenever K_free is dense, so this branch is
+        # only reached with sparse operands (M_free follows K_free by construction).
+        return _solve_modes_sparse(
+            cast(SparseMatrix, K_free), cast(SparseMatrix, M_free), nd, n, norm)
 
 
-def _solve_modes_dense(K_arr: np.ndarray, M_arr: np.ndarray, nd: int, norm: str) -> tuple:
+def _solve_modes_dense(
+    K_arr: FloatArray, M_arr: FloatArray, nd: int, norm: str
+) -> tuple[FloatArray, FloatArray]:
     """Dense generalised eigensolver (scipy.linalg.eigh).
 
     scipy.linalg.eigh solves K x = lambda M x, returning eigenvalues in ascending order.
@@ -89,7 +103,9 @@ def _solve_modes_dense(K_arr: np.ndarray, M_arr: np.ndarray, nd: int, norm: str)
     return _postprocess_modes(eigenvalues, eigenvectors, norm)
 
 
-def _solve_modes_sparse(K_csr, M_csr, nd: int, n: int, norm: str) -> tuple:
+def _solve_modes_sparse(
+    K_csr: SparseMatrix, M_csr: SparseMatrix, nd: int, n: int, norm: str
+) -> tuple[FloatArray, FloatArray]:
     """Sparse generalised eigensolver (scipy.sparse.linalg.eigsh, shift-invert σ=0).
 
     Falls back to dense eigh on ArpackNoConvergence.
@@ -120,7 +136,9 @@ def _solve_modes_sparse(K_csr, M_csr, nd: int, n: int, norm: str) -> tuple:
     return _postprocess_modes(eigenvalues, eigenvectors, norm)
 
 
-def _postprocess_modes(eigenvalues: np.ndarray, eigenvectors: np.ndarray, norm: str) -> tuple:
+def _postprocess_modes(
+    eigenvalues: FloatArray, eigenvectors: FloatArray, norm: str
+) -> tuple[FloatArray, FloatArray]:
     """Convert eigenvalues to Hz and apply MAX normalisation if requested."""
     neg_mask = eigenvalues < _NEG_EIGENVALUE_TOL
     if neg_mask.any():

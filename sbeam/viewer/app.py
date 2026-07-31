@@ -5,7 +5,7 @@ import re
 import tempfile
 import warnings
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import pandas as pd
 import streamlit as st
@@ -14,6 +14,10 @@ import numpy as np
 
 from sbeam.parser.bdf_reader import parse_bdf, parse_bulk_file
 from sbeam.model.bulk_data import BulkData
+from sbeam.parser.case_control import CaseControl
+from sbeam.results.results import (
+    ManeuverResult, Sol144DivergResult, Sol144TrimResult,
+)
 from sbeam.gpwg import compute_gpwg
 from sbeam.viewer.geometry import build_model_figure
 from sbeam.viewer.case_control_ui import render_case_control_panel
@@ -30,7 +34,7 @@ from sbeam.aero.vlm import solve_rigid_cl
 
 
 def _init_session_state() -> None:
-    defaults: dict = {
+    defaults: dict[str, Any] = {
         "bulk_data": None,
         "case_control": None,
         "_loaded_from_file_cc": None,
@@ -77,7 +81,7 @@ def _has_case_control(content: str) -> bool:
     return False
 
 
-def _handle_upload(uploaded) -> None:
+def _handle_upload(uploaded: Any) -> None:
     suffix = os.path.splitext(uploaded.name)[-1] or ".bdf"
     tmp_path: Optional[str] = None
     try:
@@ -203,7 +207,7 @@ def _show_gpwg(bulk: BulkData) -> None:
 
 def _show_item_inspector(bulk: BulkData) -> None:
     st.markdown("**Item inspector**")
-    gid_opts: list = [None] + sorted(bulk.grids.keys())
+    gid_opts: list[Optional[int]] = [None] + sorted(bulk.grids.keys())
     selected_gid = st.selectbox(
         "Inspect GRID",
         gid_opts,
@@ -220,7 +224,7 @@ def _show_item_inspector(bulk: BulkData) -> None:
         st.write(f"**SPC:** {spc_info}")
 
     st.markdown("")
-    eid_opts: list = [None] + sorted(bulk.cbars.keys())
+    eid_opts: list[Optional[int]] = [None] + sorted(bulk.cbars.keys())
     selected_eid = st.selectbox(
         "Inspect CBAR",
         eid_opts,
@@ -245,7 +249,7 @@ def _show_item_inspector(bulk: BulkData) -> None:
 
     if bulk.rbe3s:
         st.markdown("")
-        rbe3_opts: list = [None] + sorted(bulk.rbe3s.keys())
+        rbe3_opts: list[Optional[int]] = [None] + sorted(bulk.rbe3s.keys())
         selected_rbe3_eid = st.selectbox(
             "Inspect RBE3",
             rbe3_opts,
@@ -260,7 +264,7 @@ def _show_item_inspector(bulk: BulkData) -> None:
 
     if bulk.rbe2s:
         st.markdown("")
-        rbe2_opts: list = [None] + sorted(bulk.rbe2s.keys())
+        rbe2_opts: list[Optional[int]] = [None] + sorted(bulk.rbe2s.keys())
         selected_rbe2_eid = st.selectbox(
             "Inspect RBE2",
             rbe2_opts,
@@ -390,8 +394,8 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
 
 
 def _get_pre_solve_warnings(
-    bulk: BulkData, cc, parse_warnings: list
-) -> list:
+    bulk: BulkData, cc: Optional[CaseControl], parse_warnings: list[str]
+) -> list[str]:
     """Return pre-solve validation warning strings.
 
     Checks performed:
@@ -404,7 +408,7 @@ def _get_pre_solve_warnings(
     """
     import math
 
-    msgs: list = []
+    msgs: list[str] = []
 
     # 1. Zero-length CBAR elements
     zero_eids = []
@@ -456,7 +460,7 @@ def _get_pre_solve_warnings(
         "RFORCE", "DLOAD", "TLOAD1", "TLOAD2",
         "RLOAD1", "RLOAD2", "ACCEL", "ACCEL1", "SLOAD",
     })
-    found_unsupported: set = set()
+    found_unsupported: set[str] = set()
     for msg in parse_warnings:
         for card in _UNSUPPORTED_LOAD_CARDS:
             if card in msg:
@@ -491,7 +495,7 @@ def _get_pre_solve_warnings(
     return msgs
 
 
-def _show_pre_solve_warnings(bulk: BulkData, cc) -> None:
+def _show_pre_solve_warnings(bulk: BulkData, cc: Optional[CaseControl]) -> None:
     for msg in _get_pre_solve_warnings(bulk, cc, st.session_state._parse_warnings):
         st.warning(msg)
 
@@ -516,7 +520,7 @@ def _run_analysis(bulk: BulkData) -> None:
     try:
         if cc.sol == 101:
             from sbeam.solver.sol101 import run_sol101
-            results: dict = {}
+            results: dict[int, Any] = {}
             with st.spinner("Running SOL 101…"):
                 for sc in cc.subcases:
                     results[sc.subcase_id] = run_sol101(bulk, sc)
@@ -541,7 +545,7 @@ def _run_analysis(bulk: BulkData) -> None:
         st.error(f"Solver error: {exc}")
 
 
-def _run_sol144(bulk: BulkData, cc) -> None:
+def _run_sol144(bulk: BulkData, cc: CaseControl) -> None:
     """Run a SOL 144 deck, routing each subcase to trim / divergence / maneuver.
 
     Mirrors the solver routing in ``sbeam.main`` — build one AeroModel + AeroCache
@@ -552,9 +556,9 @@ def _run_sol144(bulk: BulkData, cc) -> None:
     from sbeam.solver.sol144 import run_sol144_trim, run_sol144_diverg, AeroCache
     from sbeam.solver.maneuver_qs import run_maneuver_qs
 
-    trim_results: dict = {}
-    diverg_results: dict = {}
-    maneuver_results: dict = {}
+    trim_results: dict[int, Sol144TrimResult] = {}
+    diverg_results: dict[int, Sol144DivergResult] = {}
+    maneuver_results: dict[int, ManeuverResult] = {}
     with st.spinner("Running SOL 144…"):
         grid_index = build_grid_index(bulk)
         aero = build_aero_model(bulk, grid_index=grid_index)
@@ -748,7 +752,7 @@ def _render_aero_tab(bulk: BulkData) -> None:
     if cp_unc is not None and aero_result is not None:
         if cp_view == "Uncorrected":
             disp_cp, span_mode = cp_unc, "uncorrected"
-        elif cp_view.startswith("Δ"):
+        elif cp_view.startswith("Δ") and cp_corr is not None:
             disp_cp, cp_cmid, cp_title, span_mode = cp_corr - cp_unc, 0.0, "ΔCp", "diff"
 
     with col_fig:
@@ -790,7 +794,7 @@ def _render_aero_tab(bulk: BulkData) -> None:
         else:
             st.plotly_chart(
                 build_span_loading_figure(
-                    aero_model.boxes, cp_corr, cp_unc=cp_unc,
+                    aero_model.boxes, np.asarray(cp_corr, dtype=float), cp_unc=cp_unc,
                     aeros=aero_model.aeros, mode=span_mode, surfaces=selected,
                 ),
                 use_container_width=True,

@@ -31,7 +31,7 @@ local chord ``c`` and area ``A = c·dy``,
     m_0     = cm0 · c · A                         [moment/q, nose-up +]
 
 Pitching moment is **nose-up positive** about ``xref`` (chord fraction), matching
-``section_correction`` / ``sol144._pitch_moment``.
+``section_correction`` / ``sol144.pitch_moment``.
 
 Per-region (v1): a single operating region is selected and one W2GJ+WT2 pair is built; the
 caller warns if the trimmed incidence falls outside ``[a_lo, a_hi]``.  Mach is selected by
@@ -40,6 +40,7 @@ exact match against the table (no Mach interpolation in v1).
 
 import math
 from dataclasses import dataclass
+from typing import Any, Iterable, Optional, Tuple, cast
 
 import numpy as np
 import pandas as pd
@@ -51,6 +52,8 @@ from sbeam.aero.section_correction import (
     SectionCorrectionResult,
     MultiSectionCorrectionResult,
 )
+from sbeam.types import FloatArray
+from sbeam.aero.panel import AeroBox
 
 COLUMNS = ["caero", "eta", "mach", "var", "a_lo", "a_hi",
            "cn_a", "a0", "cm_a", "cm0", "xref"]
@@ -76,7 +79,7 @@ class Condition:
                 f"[{self.a_lo:g}°,{self.a_hi:g}°] · {self.n_stations} stns")
 
 
-def template_dataframe(boxes: list, caero_eid: int, mach: float = 0.0,
+def template_dataframe(boxes: list[AeroBox], caero_eid: int, mach: float = 0.0,
                        var: str = "ALPHA", a_lo: float = -2.0,
                        a_hi: float = 8.0) -> pd.DataFrame:
     """Starter table: one row per span strip of *caero_eid*, flat-plate defaults.
@@ -95,7 +98,7 @@ def template_dataframe(boxes: list, caero_eid: int, mach: float = 0.0,
         "cn_a": round(2.0 * math.pi * _DEG2RAD, 5),  # thin-airfoil 2π/rad → per deg
         "a0": 0.0, "cm_a": 0.0, "cm0": 0.0, "xref": 0.25,
     } for e in etas]
-    return pd.DataFrame(rows, columns=COLUMNS)
+    return pd.DataFrame(rows, columns=pd.Index(COLUMNS))
 
 
 def validate_section_data(df: pd.DataFrame) -> pd.DataFrame:
@@ -108,7 +111,7 @@ def validate_section_data(df: pd.DataFrame) -> pd.DataFrame:
     out["var"] = out["var"].astype(str).str.strip().str.upper()
     for c in _NUMERIC:
         out[c] = pd.to_numeric(out[c], errors="coerce")
-    if out[_NUMERIC].isna().any().any():
+    if bool(out[_NUMERIC].isna().to_numpy().any()):
         bad = out.index[out[_NUMERIC].isna().any(axis=1)].tolist()
         raise ValueError(f"section data: non-numeric/blank value in row(s) {bad}")
     badvar = sorted(set(out["var"]) - _VALID_VARS)
@@ -122,19 +125,21 @@ def validate_section_data(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def available_conditions(df: pd.DataFrame) -> list:
+def available_conditions(df: pd.DataFrame) -> list[Condition]:
     """List the distinct (caero, mach, region) blocks, for a GUI selector."""
     out = validate_section_data(df)
-    conds = []
+    conds: list[Condition] = []
     keys = ["caero", "mach", "var", "a_lo", "a_hi"]
     for key, grp in out.groupby(keys, sort=True):
-        caero, mach, var, a_lo, a_hi = key
+        caero, mach, var, a_lo, a_hi = cast(Tuple[Any, ...], key)
         conds.append(Condition(int(caero), float(mach), str(var),
                                float(a_lo), float(a_hi), len(grp)))
     return conds
 
 
-def _strip_geometry(boxes: list, caero_eid: int):
+def _strip_geometry(
+    boxes: list[AeroBox], caero_eid: int
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
     """Per-strip (one CAERO1, sorted by i_span): η, area, local chord, leading-edge x."""
     from collections import defaultdict
     groups = defaultdict(list)
@@ -159,17 +164,19 @@ def _beta_pg(mach: float) -> float:
     return math.sqrt(1.0 - mach * mach) if 0.0 < mach < 1.0 else 1.0
 
 
-def _select_block(data: pd.DataFrame, caero_eid: int, mach: float, region: tuple,
-                  mach_tol: float = 1e-6) -> pd.DataFrame:
+def _select_block(
+    data: pd.DataFrame, caero_eid: int, mach: float,
+    region: tuple[float, float], mach_tol: float = 1e-6,
+) -> pd.DataFrame:
     a_lo, a_hi = float(region[0]), float(region[1])
     sel = data[(data["caero"] == caero_eid)
                & (np.abs(data["mach"] - mach) <= mach_tol)
                & (np.abs(data["a_lo"] - a_lo) <= 1e-9)
                & (np.abs(data["a_hi"] - a_hi) <= 1e-9)]
-    return sel.sort_values("eta")
+    return cast(pd.DataFrame, sel).sort_values(by="eta")
 
 
-def _surface_targets(boxes: list, sel: pd.DataFrame, caero_eid: int):
+def _surface_targets(boxes: list[AeroBox], sel: pd.DataFrame, caero_eid: int):
     """Interpolate a selected block onto a surface's strips and convert to targets.
 
     Returns (SurfaceTargets, extrapolated, var).
@@ -179,7 +186,7 @@ def _surface_targets(boxes: list, sel: pd.DataFrame, caero_eid: int):
     extrapolated = bool(eta_s.min() < eta_d.min() - 1e-9
                         or eta_s.max() > eta_d.max() + 1e-9)
 
-    def interp(col):
+    def interp(col: str) -> FloatArray:
         return np.interp(eta_s, eta_d, sel[col].to_numpy())  # clamps at the ends
 
     cn_a, a0, cm_a, cm0, xref = (interp(c) for c in ("cn_a", "a0", "cm_a", "cm0", "xref"))
@@ -205,19 +212,19 @@ class SectionDataBuildResult:
 @dataclass
 class MultiSectionDataBuildResult:
     correction:   MultiSectionCorrectionResult
-    conditions:   dict          # {caero_eid: Condition}
-    extrapolated: dict          # {caero_eid: bool}
-    skipped:      list          # [(caero_eid, reason), ...] surfaces with no usable region
+    conditions:   dict[int, Condition]
+    extrapolated: dict[int, bool]
+    skipped:      list[tuple[int, str]]   # surfaces with no usable region
 
 
 def build_from_section_data(
-    boxes: list,
-    ajj: np.ndarray,
+    boxes: list[AeroBox],
+    ajj: FloatArray,
     df: pd.DataFrame,
     *,
     caero_eid: int,
     mach: float,
-    region: tuple,
+    region: tuple[float, float],
     sid_w2gj: int,
     sid_aecorr: int,
     mach_tol: float = 1e-6,
@@ -255,7 +262,9 @@ def build_from_section_data(
                                   extrapolated=extrapolated)
 
 
-def surface_var(df: pd.DataFrame, caero_eid: int, mach: float, mach_tol: float = 1e-6):
+def surface_var(
+    df: pd.DataFrame, caero_eid: int, mach: float, mach_tol: float = 1e-6
+) -> Optional[str]:
     """Return the single incidence variable ('ALPHA'/'BETA') for a surface at *mach*.
 
     Returns ``None`` if the surface has no rows at this Mach, or the string
@@ -273,17 +282,17 @@ def surface_var(df: pd.DataFrame, caero_eid: int, mach: float, mach_tol: float =
 
 
 def build_from_section_data_multi(
-    boxes: list,
-    ajj: np.ndarray,
+    boxes: list[AeroBox],
+    ajj: FloatArray,
     df: pd.DataFrame,
     *,
     mach: float,
-    incidence_deg: float = None,
-    alpha_deg: float = None,
-    beta_deg: float = None,
+    incidence_deg: Optional[float] = None,
+    alpha_deg: Optional[float] = None,
+    beta_deg: Optional[float] = None,
     sid_w2gj_base: int,
     sid_aecorr_base: int,
-    caeros=None,
+    caeros: Optional[Iterable[int]] = None,
     mach_tol: float = 1e-6,
 ) -> MultiSectionDataBuildResult:
     """Multi-surface build at one flight point (Mach + operating α and β).
@@ -363,7 +372,8 @@ def operating_region(df: pd.DataFrame, caero_eid: int, mach: float,
     data = validate_section_data(df)
     sel = data[(data["caero"] == caero_eid)
                & (np.abs(data["mach"] - mach) <= mach_tol)]
-    for (a_lo, a_hi), _ in sel.groupby(["a_lo", "a_hi"]):
+    for key, _ in sel.groupby(["a_lo", "a_hi"]):
+        a_lo, a_hi = cast(Tuple[float, float], key)
         if a_lo - 1e-9 <= incidence_deg <= a_hi + 1e-9:
             return (float(a_lo), float(a_hi))
     return None

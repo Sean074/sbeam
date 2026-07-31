@@ -9,7 +9,6 @@ to avoid temp-file creation inside the Streamlit runtime.
 """
 from __future__ import annotations
 
-import pytest
 from streamlit.testing.v1 import AppTest
 
 

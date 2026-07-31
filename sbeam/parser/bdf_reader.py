@@ -14,26 +14,25 @@ from sbeam.model.load import Force, Moment, Load, Grav, Eigrl
 from sbeam.model.constraint import Spc, Spc1, Suport
 from sbeam.model.aero import (
     Aeros, Caero1, Paero1, Pstrip, Stripk, Aefact, W2gj, Wkk, Aecorr, Chordcp, Set1,
-    Spline2, Attach, Spline0, Spline1,
-    Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
+    Spline2, Attach, Spline0, Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
     Aecomp, Monpnt1, Monpnt3,
 )
 from sbeam.model.maneuver import Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads
-from sbeam.parser.case_control import parse_case_control
+from sbeam.parser.case_control import CaseControl, parse_case_control
 
 _IGNORED_KEYWORDS = frozenset({"BEGIN", "BEGINBULK", "ENDDATA"})
 
 
-def _split_free_field(line: str) -> list:
+def _split_free_field(line: str) -> list[str]:
     return [f.strip() for f in line.split(",")]
 
 
-def _split_fixed_field(line: str) -> list:
+def _split_fixed_field(line: str) -> list[str]:
     line = line.ljust(72)
     return [line[i : i + 8].strip() for i in range(0, 72, 8)]
 
 
-def _split_line(line: str) -> list:
+def _split_line(line: str) -> list[str]:
     return _split_free_field(line) if "," in line else _split_fixed_field(line)
 
 
@@ -74,7 +73,7 @@ def _to_int_or_none(s: str) -> Optional[int]:
     return int(s) if s else None
 
 
-def _is_continuation(fields: list) -> bool:
+def _is_continuation(fields: list[str]) -> bool:
     if not fields:
         return False
     if fields[0].startswith("+"):
@@ -90,7 +89,7 @@ def _validate_dof(c: str, context: str) -> None:
         raise ValueError(f"{context}: invalid DOF string '{c}'")
 
 
-def _handle_cord2r(fields: list, cont, bulk: BulkData) -> None:
+def _handle_cord2r(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -> None:
     cid = _to_int(fields[1])
     rid = _to_int_opt(fields[2]) if len(fields) > 2 else 0
     a1  = _to_float(fields[3]) if len(fields) > 3 else 0.0
@@ -120,7 +119,7 @@ def _handle_cord2r(fields: list, cont, bulk: BulkData) -> None:
     )
 
 
-def _handle_grid(fields: list, bulk: BulkData) -> None:
+def _handle_grid(fields: list[str], bulk: BulkData) -> None:
     gid = _to_int(fields[1])
     if gid in bulk.grids:
         raise ValueError(f"Duplicate GID {gid}")
@@ -133,7 +132,7 @@ def _handle_grid(fields: list, bulk: BulkData) -> None:
     bulk.grids[gid] = Grid(gid=gid, x=x, y=y, z=z, ps=ps, cp=cp, cd=cd)
 
 
-def _handle_pbar(fields: list, cont, bulk: BulkData) -> None:
+def _handle_pbar(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -> None:
     pid = _to_int(fields[1])
     if pid in bulk.pbars:
         raise ValueError(f"Duplicate PID {pid}")
@@ -146,7 +145,7 @@ def _handle_pbar(fields: list, cont, bulk: BulkData) -> None:
 
     c1 = c2 = d1 = d2 = e1 = e2 = f1 = f2 = 0.0
     if cont is not None:
-        def g(n):
+        def g(n: int) -> float:
             return _to_float(cont[n]) if len(cont) > n else 0.0
         c1, c2, d1, d2, e1, e2, f1, f2 = g(1), g(2), g(3), g(4), g(5), g(6), g(7), g(8)
 
@@ -156,7 +155,7 @@ def _handle_pbar(fields: list, cont, bulk: BulkData) -> None:
     )
 
 
-def _handle_mat1(fields: list, bulk: BulkData) -> None:
+def _handle_mat1(fields: list[str], bulk: BulkData) -> None:
     mid = _to_int(fields[1])
     if mid in bulk.mat1s:
         raise ValueError(f"Duplicate MID {mid}")
@@ -170,7 +169,7 @@ def _handle_mat1(fields: list, bulk: BulkData) -> None:
     bulk.mat1s[mid] = Mat1(mid=mid, E=E, G=G, nu=nu, rho=rho)
 
 
-def _handle_cbar(fields: list, cont, bulk: BulkData) -> None:
+def _handle_cbar(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -> None:
     eid  = _to_int(fields[1])
     pid  = _to_int(fields[2])
     ga   = _to_int(fields[3])
@@ -192,7 +191,7 @@ def _handle_cbar(fields: list, cont, bulk: BulkData) -> None:
                            x1=x1, x2=x2, x3=x3, offt=offt, pa=pa, pb=pb)
 
 
-def _handle_plotel(fields: list, bulk: BulkData) -> None:
+def _handle_plotel(fields: list[str], bulk: BulkData) -> None:
     eid = _to_int(fields[1])
     g1  = _to_int(fields[2])
     g2  = _to_int(fields[3])
@@ -203,7 +202,7 @@ def _handle_plotel(fields: list, bulk: BulkData) -> None:
     bulk.plotels[eid] = Plotel(eid=eid, g1=g1, g2=g2)
 
 
-def _handle_rbe3(fields: list, conts: list, bulk: BulkData) -> None:
+def _handle_rbe3(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     eid     = _to_int(fields[1])
     # fields[2] is always blank on an RBE3 card
     refgrid = _to_int(fields[3])
@@ -213,14 +212,14 @@ def _handle_rbe3(fields: list, conts: list, bulk: BulkData) -> None:
     for cont in conts:
         all_fields += [f.strip() for f in cont[1:] if f.strip()]
 
-    wt_gc: list = []
+    wt_gc: list[tuple[float, str, list[int]]] = []
     k = 0
     while k < len(all_fields):
         wt = _to_float(all_fields[k]); k += 1
         if k >= len(all_fields):
             break
         c = all_fields[k].strip(); k += 1
-        grids: list = []
+        grids: list[int] = []
         while k < len(all_fields):
             f = all_fields[k]
             if '.' in f or 'e' in f.lower() or 'E' in f:
@@ -234,13 +233,13 @@ def _handle_rbe3(fields: list, conts: list, bulk: BulkData) -> None:
     bulk.rbe3s[eid] = Rbe3(eid=eid, refgrid=refgrid, refc=refc, wt_gc=wt_gc)
 
 
-def _handle_rbe2(fields: list, conts: list, bulk: BulkData) -> None:
+def _handle_rbe2(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     eid = _to_int(fields[1])
     gn  = _to_int(fields[2])
     cm  = fields[3].strip()
     _validate_dof(cm, f"RBE2 {eid}")
 
-    gm: list = []
+    gm: list[int] = []
     for f in fields[4:]:
         if f.strip():
             gm.append(_to_int(f))
@@ -258,7 +257,7 @@ def _handle_rbe2(fields: list, conts: list, bulk: BulkData) -> None:
     bulk.rbe2s[eid] = Rbe2(eid=eid, gn=gn, cm=cm, gm=gm)
 
 
-def _handle_rbar(fields: list, bulk: BulkData) -> None:
+def _handle_rbar(fields: list[str], bulk: BulkData) -> None:
     eid = _to_int(fields[1])
     ga  = _to_int(fields[2])
     gb  = _to_int(fields[3])
@@ -282,7 +281,7 @@ def _handle_rbar(fields: list, bulk: BulkData) -> None:
     bulk.rbars[eid] = Rbar(eid=eid, ga=ga, gb=gb, cna=cna, cnb=cnb)
 
 
-def _handle_conm2(fields: list, cont, bulk: BulkData) -> None:
+def _handle_conm2(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -> None:
     eid = _to_int(fields[1])
     gid = _to_int(fields[2])
     cid = _to_int_opt(fields[3]) if len(fields) > 3 else 0
@@ -308,7 +307,7 @@ def _handle_conm2(fields: list, cont, bulk: BulkData) -> None:
     )
 
 
-def _handle_massset(fields: list, conts: list, bulk: BulkData) -> None:
+def _handle_massset(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     """MASSSET — payload / mass case (Step 60).
 
     ``MASSSET SID LABEL SCALE`` followed by continuation rows of
@@ -330,10 +329,10 @@ def _handle_massset(fields: list, conts: list, bulk: BulkData) -> None:
     if scale < 0.0:
         raise ValueError(f"MASSSET {sid}: SCALE must be >= 0, got {scale}")
 
-    add: list = []
-    replace: list = []
-    delete: list = []
-    seen: dict = {}   # eid -> op that first named it (duplicate-reference guard)
+    add: list[int] = []
+    replace: list[tuple[int, int]] = []
+    delete: list[int] = []
+    seen: dict[int, str] = {}   # eid -> op that first named it (duplicate-reference guard)
 
     for cont in conts:
         entries = [f.strip() for f in cont[1:] if f.strip()]
@@ -374,7 +373,7 @@ def _handle_massset(fields: list, conts: list, bulk: BulkData) -> None:
     )
 
 
-def _handle_spc(fields: list, bulk: BulkData) -> None:
+def _handle_spc(fields: list[str], bulk: BulkData) -> None:
     sid = _to_int(fields[1])
     g1  = _to_int(fields[2])
     c1  = fields[3] if len(fields) > 3 else ""
@@ -390,7 +389,7 @@ def _handle_spc(fields: list, bulk: BulkData) -> None:
     bulk.spcs[sid].append(Spc(sid=sid, g1=g1, c1=c1, d1=d1, g2=g2, c2=c2, d2=d2))
 
 
-def _handle_spc1(fields: list, conts: list, bulk: BulkData) -> None:
+def _handle_spc1(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     sid = _to_int(fields[1])
     c   = fields[2].strip()
     _validate_dof(c, f"SPC1 {sid}")
@@ -402,7 +401,7 @@ def _handle_spc1(fields: list, conts: list, bulk: BulkData) -> None:
     bulk.spc1s[sid].append(Spc1(sid=sid, c=c, grids=grids))
 
 
-def _handle_force(fields: list, bulk: BulkData) -> None:
+def _handle_force(fields: list[str], bulk: BulkData) -> None:
     sid = _to_int(fields[1])
     gid = _to_int(fields[2])
     cid = _to_int_opt(fields[3]) if len(fields) > 3 else 0
@@ -415,7 +414,7 @@ def _handle_force(fields: list, bulk: BulkData) -> None:
     bulk.forces[sid].append(Force(sid=sid, gid=gid, cid=cid, f=f, n1=n1, n2=n2, n3=n3))
 
 
-def _handle_moment(fields: list, bulk: BulkData) -> None:
+def _handle_moment(fields: list[str], bulk: BulkData) -> None:
     sid = _to_int(fields[1])
     gid = _to_int(fields[2])
     cid = _to_int_opt(fields[3]) if len(fields) > 3 else 0
@@ -428,7 +427,7 @@ def _handle_moment(fields: list, bulk: BulkData) -> None:
     bulk.moments[sid].append(Moment(sid=sid, gid=gid, cid=cid, m=m, n1=n1, n2=n2, n3=n3))
 
 
-def _handle_load(fields: list, cont, bulk: BulkData) -> None:
+def _handle_load(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -> None:
     sid = _to_int(fields[1])
     if sid in bulk.loads:
         raise ValueError(f"Duplicate LOAD SID {sid}")
@@ -444,7 +443,7 @@ def _handle_load(fields: list, cont, bulk: BulkData) -> None:
     bulk.loads[sid] = Load(sid=sid, s=s, components=components)
 
 
-def _handle_pbush(fields: list, bulk: BulkData) -> None:
+def _handle_pbush(fields: list[str], bulk: BulkData) -> None:
     pid = _to_int(fields[1])
     if pid in bulk.pbushs:
         raise ValueError(f"Duplicate PBUSH PID {pid}")
@@ -461,7 +460,7 @@ def _handle_pbush(fields: list, bulk: BulkData) -> None:
     bulk.pbushs[pid] = Pbush(pid=pid, k1=k1, k2=k2, k3=k3, k4=k4, k5=k5, k6=k6)
 
 
-def _handle_cbush(fields: list, cont, bulk: BulkData) -> None:
+def _handle_cbush(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -> None:
     eid = _to_int(fields[1])
     pid = _to_int(fields[2])
     ga  = _to_int(fields[3])
@@ -496,7 +495,7 @@ def _handle_cbush(fields: list, cont, bulk: BulkData) -> None:
     bulk.cbushs[eid] = Cbush(eid=eid, pid=pid, ga=ga, gb=gb, x1=x1, x2=x2, x3=x3)
 
 
-def _handle_grav(fields: list, bulk: BulkData) -> None:
+def _handle_grav(fields: list[str], bulk: BulkData) -> None:
     sid = _to_int(fields[1])
     cid = _to_int_opt(fields[2]) if len(fields) > 2 else 0
     g   = _to_float(fields[3]) if len(fields) > 3 else 0.0
@@ -510,7 +509,7 @@ def _handle_grav(fields: list, bulk: BulkData) -> None:
     bulk.gravs[sid] = Grav(sid=sid, cid=cid, g=g, n1=n1, n2=n2, n3=n3)
 
 
-def _handle_aeros(fields: list, bulk: BulkData) -> None:
+def _handle_aeros(fields: list[str], bulk: BulkData) -> None:
     if bulk.aeros is not None:
         raise ValueError("Duplicate AEROS card")
     acsid = _to_int_opt(fields[1]) if len(fields) > 1 else 0
@@ -528,7 +527,7 @@ def _handle_aeros(fields: list, bulk: BulkData) -> None:
     )
 
 
-def _handle_aefact(fields: list, conts: list, bulk: BulkData) -> None:
+def _handle_aefact(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     sid = _to_int(fields[1])
     if sid in bulk.aefacts:
         raise ValueError(f"Duplicate AEFACT SID {sid}")
@@ -538,7 +537,7 @@ def _handle_aefact(fields: list, conts: list, bulk: BulkData) -> None:
     bulk.aefacts[sid] = Aefact(sid=sid, data=data)
 
 
-def _handle_w2gj(fields: list, conts: list, bulk: BulkData) -> None:
+def _handle_w2gj(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     sid       = _to_int(fields[1])
     caero_eid = _to_int(fields[2])
     if sid in bulk.w2gjs:
@@ -549,7 +548,7 @@ def _handle_w2gj(fields: list, conts: list, bulk: BulkData) -> None:
     bulk.w2gjs[sid] = W2gj(sid=sid, caero_eid=caero_eid, data=data)
 
 
-def _handle_wkk(fields: list, conts: list, bulk: BulkData) -> None:
+def _handle_wkk(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     sid       = _to_int(fields[1])
     caero_eid = _to_int(fields[2])
     if sid in bulk.wkks:
@@ -560,7 +559,7 @@ def _handle_wkk(fields: list, conts: list, bulk: BulkData) -> None:
     bulk.wkks[sid] = Wkk(sid=sid, caero_eid=caero_eid, data=data)
 
 
-def _handle_aecorr(fields: list, conts: list, bulk: BulkData) -> None:
+def _handle_aecorr(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     sid       = _to_int(fields[1])
     method    = fields[2].strip().upper() if len(fields) > 2 else ""
     caero_eid = _to_int(fields[3]) if len(fields) > 3 else 0
@@ -574,7 +573,7 @@ def _handle_aecorr(fields: list, conts: list, bulk: BulkData) -> None:
     bulk.aecorrs[sid] = Aecorr(sid=sid, method=method, caero_eid=caero_eid, target=target)
 
 
-def _handle_chordcp(fields: list, conts: list, bulk: BulkData) -> None:
+def _handle_chordcp(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     """CHORDCP, SID, CAERO_EID, ALPHREF, [MACH] / +, CP1, CP2, ... (row-major).
 
     ALPHREF (degrees, REQUIRED) is the reference angle of attack the injected
@@ -602,14 +601,14 @@ def _handle_chordcp(fields: list, conts: list, bulk: BulkData) -> None:
     )
 
 
-def _handle_paero1(fields: list, bulk: BulkData) -> None:
+def _handle_paero1(fields: list[str], bulk: BulkData) -> None:
     pid = _to_int(fields[1])
     if pid in bulk.paero1s:
         raise ValueError(f"Duplicate PAERO1 PID {pid}")
     bulk.paero1s[pid] = Paero1(pid=pid)
 
 
-def _handle_pstrip(fields: list, bulk: BulkData) -> None:
+def _handle_pstrip(fields: list[str], bulk: BulkData) -> None:
     """PSTRIP, pid, [slope0] — decoupled strip body-panel property."""
     pid = _to_int(fields[1])
     if pid in bulk.pstrips:
@@ -623,7 +622,7 @@ def _handle_pstrip(fields: list, bulk: BulkData) -> None:
         bulk.pstrips[pid] = Pstrip(pid=pid)
 
 
-def _handle_stripk(fields: list, conts: list, bulk: BulkData) -> None:
+def _handle_stripk(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     """STRIPK, sid, caero, s1, s2, … — per-box strip lift-curve slopes."""
     sid       = _to_int(fields[1])
     caero_eid = _to_int(fields[2])
@@ -635,7 +634,7 @@ def _handle_stripk(fields: list, conts: list, bulk: BulkData) -> None:
     bulk.stripks[sid] = Stripk(sid=sid, caero_eid=caero_eid, data=data)
 
 
-def _handle_caero1(fields: list, cont, bulk: BulkData) -> None:
+def _handle_caero1(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -> None:
     eid    = _to_int(fields[1])
     pid    = _to_int(fields[2])
     cp     = _to_int_opt(fields[3]) if len(fields) > 3 else 0
@@ -678,7 +677,7 @@ def _handle_caero1(fields: list, cont, bulk: BulkData) -> None:
     )
 
 
-def _handle_set1(fields: list, conts: list, bulk: BulkData) -> None:
+def _handle_set1(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     sid   = _to_int(fields[1])
     grids = [_to_int(f) for f in fields[2:] if f.strip()]
     for cont in conts:
@@ -688,7 +687,7 @@ def _handle_set1(fields: list, conts: list, bulk: BulkData) -> None:
     bulk.set1s[sid] = Set1(sid=sid, grids=grids)
 
 
-def _handle_spline2(fields: list, cont, bulk: BulkData) -> None:
+def _handle_spline2(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -> None:
     eid   = _to_int(fields[1])
     caero = _to_int(fields[2])
     id1   = _to_int(fields[3])
@@ -712,7 +711,7 @@ def _handle_spline2(fields: list, cont, bulk: BulkData) -> None:
     )
 
 
-def _handle_attach(fields: list, bulk: BulkData) -> None:
+def _handle_attach(fields: list[str], bulk: BulkData) -> None:
     eid   = _to_int(fields[1])
     caero = _to_int(fields[2])
     id1   = _to_int(fields[3])
@@ -724,7 +723,7 @@ def _handle_attach(fields: list, bulk: BulkData) -> None:
     bulk.attaches[eid] = Attach(eid=eid, caero=caero, id1=id1, id2=id2, grid=grid, cid=cid)
 
 
-def _handle_spline0(fields: list, bulk: BulkData) -> None:
+def _handle_spline0(fields: list[str], bulk: BulkData) -> None:
     eid   = _to_int(fields[1])
     caero = _to_int(fields[2])
     id1   = _to_int(fields[3])
@@ -734,7 +733,7 @@ def _handle_spline0(fields: list, bulk: BulkData) -> None:
     bulk.spline0s[eid] = Spline0(eid=eid, caero=caero, id1=id1, id2=id2)
 
 
-def _handle_spline1(fields: list, bulk: BulkData) -> None:
+def _handle_spline1(fields: list[str], bulk: BulkData) -> None:
     raise NotImplementedError(
         "SPLINE1 (Harder–Desmarais infinite-plate spline) is not yet implemented; "
         "use SPLINE2 or ATTACH instead"
@@ -745,7 +744,7 @@ def _handle_spline1(fields: list, bulk: BulkData) -> None:
 # Trim card set handlers (Step 51)
 # ---------------------------------------------------------------------------
 
-def _handle_aestat(fields: list, bulk: BulkData) -> None:
+def _handle_aestat(fields: list[str], bulk: BulkData) -> None:
     aid   = _to_int(fields[1])
     label = fields[2].strip().upper() if len(fields) > 2 else ""
     if not label:
@@ -755,7 +754,7 @@ def _handle_aestat(fields: list, bulk: BulkData) -> None:
     bulk.aestats[aid] = Aestat(id=aid, label=label)
 
 
-def _handle_aesurf(fields: list, bulk: BulkData) -> None:
+def _handle_aesurf(fields: list[str], bulk: BulkData) -> None:
     aid   = _to_int(fields[1])
     label = fields[2].strip().upper() if len(fields) > 2 else ""
     cid1  = _to_int(fields[3]) if len(fields) > 3 else 0
@@ -771,7 +770,7 @@ def _handle_aesurf(fields: list, bulk: BulkData) -> None:
                                 cid2=cid2, alid2=alid2, eff=eff)
 
 
-def _expand_int_list_with_thru(tokens: list) -> list:
+def _expand_int_list_with_thru(tokens: list[str]) -> list[int]:
     """Expand a token list that may contain THRU keywords into a flat integer list."""
     result = []
     k = 0
@@ -791,7 +790,7 @@ def _expand_int_list_with_thru(tokens: list) -> list:
     return result
 
 
-def _handle_suport(fields: list, bulk: BulkData) -> None:
+def _handle_suport(fields: list[str], bulk: BulkData) -> None:
     """SUPORT card — pairs of GID/DOF starting at fields[1]."""
     i = 1
     while i + 1 < len(fields) and fields[i].strip():
@@ -803,7 +802,7 @@ def _handle_suport(fields: list, bulk: BulkData) -> None:
         i += 2
 
 
-def _handle_aelist(fields: list, conts: list, bulk: BulkData) -> None:
+def _handle_aelist(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     sid    = _to_int(fields[1])
     tokens = [f for f in fields[2:]]
     for cont in conts:
@@ -814,7 +813,7 @@ def _handle_aelist(fields: list, conts: list, bulk: BulkData) -> None:
     bulk.aelists[sid] = Aelist(sid=sid, elements=elements)
 
 
-def _handle_aecomp(fields: list, conts: list, bulk: BulkData) -> None:
+def _handle_aecomp(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     """AECOMP NAME LISTTYPE LISTID1 LISTID2 ... (continuations add more list IDs).
 
     LISTTYPE is 'AELIST' (box-ID collection, used by MONPNT1) or 'SET1'
@@ -834,7 +833,7 @@ def _handle_aecomp(fields: list, conts: list, bulk: BulkData) -> None:
     bulk.aecomps[name] = Aecomp(name=name, listtype=listtype, list_ids=list_ids)
 
 
-def _handle_monpnt1(fields: list, bulk: BulkData) -> None:
+def _handle_monpnt1(fields: list[str], bulk: BulkData) -> None:
     """MONPNT1 NAME LABEL AXES COMP CP X Y Z (aero-only integrated load)."""
     name  = fields[1].strip()
     label = fields[2].strip() if len(fields) > 2 else ""
@@ -852,7 +851,7 @@ def _handle_monpnt1(fields: list, bulk: BulkData) -> None:
                                   cp=cp, x=x, y=y, z=z)
 
 
-def _handle_monpnt3(fields: list, bulk: BulkData) -> None:
+def _handle_monpnt3(fields: list[str], bulk: BulkData) -> None:
     """MONPNT3 NAME LABEL AXES COMP CP X Y Z (aero + inertia + reaction)."""
     name  = fields[1].strip()
     label = fields[2].strip() if len(fields) > 2 else ""
@@ -870,17 +869,17 @@ def _handle_monpnt3(fields: list, bulk: BulkData) -> None:
                                   cp=cp, x=x, y=y, z=z)
 
 
-def _handle_trim(fields: list, conts: list, bulk: BulkData) -> None:
+def _handle_trim(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     sid  = _to_int(fields[1])
     mach = _to_float(fields[2]) if len(fields) > 2 else 0.0
     q    = _to_float(fields[3]) if len(fields) > 3 else 0.0
     if sid in bulk.trims:
         raise ValueError(f"Duplicate TRIM SID {sid}")
     # Collect alternating LABEL/VALUE pairs from remainder of base line + continuations
-    raw_pairs: list = list(fields[4:])
+    raw_pairs: list[str] = list(fields[4:])
     for cont in conts:
         raw_pairs += list(cont[1:])
-    vars_: dict = {}
+    vars_: dict[str, float] = {}
     rhoref = 0.0
     raw_pairs = [f for f in raw_pairs if f.strip()]
     if len(raw_pairs) % 2 != 0:
@@ -905,7 +904,7 @@ def _handle_trim(fields: list, conts: list, bulk: BulkData) -> None:
     bulk.trims[sid] = Trim(sid=sid, mach=mach, q=q, vars=vars_, rhoref=rhoref)
 
 
-def _handle_diverg(fields: list, conts: list, bulk: BulkData) -> None:
+def _handle_diverg(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     # DIVERG  SID  NROOTS  RHOREF  M1  M2  ...   (RHOREF is an sbeam extension in
     # field 4 used only to map q_div -> V_div; leave blank/0.0 to omit V_div).
     sid    = _to_int(fields[1])
@@ -925,7 +924,7 @@ def _handle_diverg(fields: list, conts: list, bulk: BulkData) -> None:
 # Phase G0 — ZAERO-style transient maneuver-loads cards
 # ---------------------------------------------------------------------------
 
-def _handle_tabled1(fields: list, conts: list, bulk: BulkData) -> None:
+def _handle_tabled1(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     """TABLED1 — tabular function: TID then (x, y) pairs terminated by ENDT."""
     tid   = _to_int(fields[1])
     xaxis = fields[2].strip().upper() if len(fields) > 2 and fields[2].strip() else "LINEAR"
@@ -934,12 +933,12 @@ def _handle_tabled1(fields: list, conts: list, bulk: BulkData) -> None:
         raise ValueError(f"Duplicate TABLED1 TID {tid}")
     # Data pairs live entirely on the continuation line(s); fields[4:] of the
     # base line are reserved/blank in the NASTRAN layout.
-    tokens: list = [f for f in fields[4:]]
+    tokens: list[str] = [f for f in fields[4:]]
     for cont in conts:
         tokens += list(cont[1:])
     tokens = [t.strip() for t in tokens if t.strip()]
-    xs: list = []
-    ys: list = []
+    xs: list[float] = []
+    ys: list[float] = []
     k = 0
     while k < len(tokens):
         if tokens[k].upper() == "ENDT":
@@ -956,7 +955,7 @@ def _handle_tabled1(fields: list, conts: list, bulk: BulkData) -> None:
     bulk.tabled1s[tid] = Tabled1(tid=tid, xs=xs, ys=ys, xaxis=xaxis, yaxis=yaxis)
 
 
-def _handle_mldtime(fields: list, bulk: BulkData) -> None:
+def _handle_mldtime(fields: list[str], bulk: BulkData) -> None:
     """MLDTIME — integration window: SID T0 TEND DT [TOUT]."""
     sid  = _to_int(fields[1])
     t0   = _to_float(fields[2]) if len(fields) > 2 else 0.0
@@ -972,18 +971,18 @@ def _handle_mldtime(fields: list, bulk: BulkData) -> None:
     bulk.mldtimes[sid] = Mldtime(sid=sid, t0=t0, tend=tend, dt=dt, tout=tout)
 
 
-def _handle_mldcomd(fields: list, conts: list, bulk: BulkData) -> None:
+def _handle_mldcomd(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     """MLDCOMD — pilot commands: SID then (LABEL, TABID) pairs."""
     sid = _to_int(fields[1])
     if sid in bulk.mldcomds:
         raise ValueError(f"Duplicate MLDCOMD SID {sid}")
-    tokens: list = list(fields[2:])
+    tokens: list[str] = list(fields[2:])
     for cont in conts:
         tokens += list(cont[1:])
     tokens = [t for t in tokens if t.strip()]
     if len(tokens) % 2 != 0:
         raise ValueError(f"MLDCOMD {sid}: odd number of LABEL/TABID tokens — must be paired")
-    commands: list = []
+    commands: list[tuple[str, int]] = []
     for i in range(0, len(tokens), 2):
         label = tokens[i].strip().upper()
         tabid = _to_int(tokens[i + 1])
@@ -991,18 +990,18 @@ def _handle_mldcomd(fields: list, conts: list, bulk: BulkData) -> None:
     bulk.mldcomds[sid] = Mldcomd(sid=sid, commands=commands)
 
 
-def _handle_mldprnt(fields: list, conts: list, bulk: BulkData) -> None:
+def _handle_mldprnt(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     """MLDPRNT — ASCII time-history output request: SID then optional item keywords."""
     sid = _to_int(fields[1])
     if sid in bulk.mldprnts:
         raise ValueError(f"Duplicate MLDPRNT SID {sid}")
-    items: list = [f.strip().upper() for f in fields[2:] if f.strip()]
+    items: list[str] = [f.strip().upper() for f in fields[2:] if f.strip()]
     for cont in conts:
         items += [f.strip().upper() for f in cont[1:] if f.strip()]
     bulk.mldprnts[sid] = Mldprnt(sid=sid, items=items)
 
 
-def _handle_mldtrim(fields: list, bulk: BulkData) -> None:
+def _handle_mldtrim(fields: list[str], bulk: BulkData) -> None:
     """MLDTRIM — initial steady-state condition: SID TRIMID (a static TRIM sid)."""
     sid      = _to_int(fields[1])
     trim_sid = _to_int(fields[2])
@@ -1011,7 +1010,7 @@ def _handle_mldtrim(fields: list, bulk: BulkData) -> None:
     bulk.mldtrims[sid] = Mldtrim(sid=sid, trim_sid=trim_sid)
 
 
-def _handle_mloads(fields: list, bulk: BulkData) -> None:
+def _handle_mloads(fields: list[str], bulk: BulkData) -> None:
     """MLOADS — transient driver.
 
     SID MLDTRIM MLDTIME [MLDCOMD] [MLDPRNT] [NMODES] [METHOD] [ZETA]
@@ -1042,7 +1041,7 @@ def _handle_mloads(fields: list, bulk: BulkData) -> None:
     )
 
 
-def _handle_trimvar(fields: list, bulk: BulkData) -> None:
+def _handle_trimvar(fields: list[str], bulk: BulkData) -> None:
     vid   = _to_int(fields[1])
     label = fields[2].strip().upper() if len(fields) > 2 else ""
     init  = _to_float(fields[3]) if len(fields) > 3 else 0.0
@@ -1055,25 +1054,25 @@ def _handle_trimvar(fields: list, bulk: BulkData) -> None:
     bulk.trimvars[vid] = Trimvar(id=vid, label=label, init=init, lb=lb, ub=ub)
 
 
-def _handle_trimobj(fields: list, conts: list, bulk: BulkData) -> None:
+def _handle_trimobj(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     sid = _to_int(fields[1])
     if sid in bulk.trimobjs:
         raise ValueError(f"Duplicate TRIMOBJ SID {sid}")
-    raw_pairs: list = list(fields[2:])
+    raw_pairs: list[str] = list(fields[2:])
     for cont in conts:
         raw_pairs += list(cont[1:])
     raw_pairs = [f for f in raw_pairs if f.strip()]
     if len(raw_pairs) % 2 != 0:
         raise ValueError(f"TRIMOBJ {sid}: odd number of LABEL/WEIGHT tokens — must be paired")
-    labels:  list = []
-    weights: list = []
+    labels:  list[str] = []
+    weights: list[float] = []
     for i in range(0, len(raw_pairs), 2):
         labels.append(raw_pairs[i].strip().upper())
         weights.append(_to_float(raw_pairs[i + 1]))
     bulk.trimobjs[sid] = Trimobj(sid=sid, labels=labels, weights=weights)
 
 
-def _handle_trimcon(fields: list, bulk: BulkData) -> None:
+def _handle_trimcon(fields: list[str], bulk: BulkData) -> None:
     sid   = _to_int(fields[1])
     label = fields[2].strip().upper() if len(fields) > 2 else ""
     sense = fields[3].strip().upper() if len(fields) > 3 else ""
@@ -1084,7 +1083,7 @@ def _handle_trimcon(fields: list, bulk: BulkData) -> None:
     bulk.trimcons.setdefault(sid, []).append(Trimcon(sid=sid, label=label, sense=sense, rhs=rhs))
 
 
-def _handle_eigrl(fields: list, bulk: BulkData) -> None:
+def _handle_eigrl(fields: list[str], bulk: BulkData) -> None:
     sid  = _to_int(fields[1])
     v1   = _to_float_or_none(fields[2]) if len(fields) > 2 else None
     v2   = _to_float_or_none(fields[3]) if len(fields) > 3 else None
@@ -1094,7 +1093,7 @@ def _handle_eigrl(fields: list, bulk: BulkData) -> None:
     bulk.eigrls[sid] = Eigrl(sid=sid, v1=v1, v2=v2, nd=nd, norm=norm)
 
 
-def parse_bulk_data(lines: list) -> BulkData:
+def parse_bulk_data(lines: list[str]) -> BulkData:
     """Parse BDF bulk data lines into a BulkData object.
 
     Supports free-field (comma-separated) and fixed-field (8-character column) formats.
@@ -1159,7 +1158,7 @@ def parse_bulk_data(lines: list) -> BulkData:
         elif keyword == "PLOTEL":
             _handle_plotel(fields, bulk)
         elif keyword == "RBE3":
-            conts: list = []
+            conts: list[list[str]] = []
             k = i + 1
             while k < len(processed):
                 if not processed[k].strip():
@@ -1173,7 +1172,7 @@ def parse_bulk_data(lines: list) -> BulkData:
                     break
             _handle_rbe3(fields, conts, bulk)
         elif keyword == "RBE2":
-            conts2: list = []
+            conts2: list[list[str]] = []
             k = i + 1
             while k < len(processed):
                 if not processed[k].strip():
@@ -1191,7 +1190,7 @@ def parse_bulk_data(lines: list) -> BulkData:
         elif keyword == "CONM2":
             _handle_conm2(fields, cont, bulk)
         elif keyword == "MASSSET":
-            ms_conts: list = []
+            ms_conts: list[list[str]] = []
             k = i + 1
             while k < len(processed):
                 if not processed[k].strip():
@@ -1207,7 +1206,7 @@ def parse_bulk_data(lines: list) -> BulkData:
         elif keyword == "SPC":
             _handle_spc(fields, bulk)
         elif keyword == "SPC1":
-            spc1_conts: list = []
+            spc1_conts: list[list[str]] = []
             k = i + 1
             while k < len(processed):
                 if not processed[k].strip():
@@ -1233,7 +1232,7 @@ def parse_bulk_data(lines: list) -> BulkData:
         elif keyword == "AEROS":
             _handle_aeros(fields, bulk)
         elif keyword == "AEFACT":
-            aefact_conts: list = []
+            aefact_conts: list[list[str]] = []
             k = i + 1
             while k < len(processed):
                 if not processed[k].strip():
@@ -1247,7 +1246,7 @@ def parse_bulk_data(lines: list) -> BulkData:
                     break
             _handle_aefact(fields, aefact_conts, bulk)
         elif keyword == "W2GJ":
-            w2gj_conts: list = []
+            w2gj_conts: list[list[str]] = []
             k = i + 1
             while k < len(processed):
                 if not processed[k].strip():
@@ -1261,7 +1260,7 @@ def parse_bulk_data(lines: list) -> BulkData:
                     break
             _handle_w2gj(fields, w2gj_conts, bulk)
         elif keyword == "WKK":
-            wkk_conts: list = []
+            wkk_conts: list[list[str]] = []
             k = i + 1
             while k < len(processed):
                 if not processed[k].strip():
@@ -1275,7 +1274,7 @@ def parse_bulk_data(lines: list) -> BulkData:
                     break
             _handle_wkk(fields, wkk_conts, bulk)
         elif keyword == "AECORR":
-            aecorr_conts: list = []
+            aecorr_conts: list[list[str]] = []
             k = i + 1
             while k < len(processed):
                 if not processed[k].strip():
@@ -1289,7 +1288,7 @@ def parse_bulk_data(lines: list) -> BulkData:
                     break
             _handle_aecorr(fields, aecorr_conts, bulk)
         elif keyword == "CHORDCP":
-            chordcp_conts: list = []
+            chordcp_conts: list[list[str]] = []
             k = i + 1
             while k < len(processed):
                 if not processed[k].strip():
@@ -1307,7 +1306,7 @@ def parse_bulk_data(lines: list) -> BulkData:
         elif keyword == "PSTRIP":
             _handle_pstrip(fields, bulk)
         elif keyword == "STRIPK":
-            stripk_conts: list = []
+            stripk_conts: list[list[str]] = []
             k = i + 1
             while k < len(processed):
                 if not processed[k].strip():
@@ -1323,7 +1322,7 @@ def parse_bulk_data(lines: list) -> BulkData:
         elif keyword == "CAERO1":
             _handle_caero1(fields, cont, bulk)
         elif keyword == "SET1":
-            set1_conts: list = []
+            set1_conts: list[list[str]] = []
             k = i + 1
             while k < len(processed):
                 if not processed[k].strip():
@@ -1349,7 +1348,7 @@ def parse_bulk_data(lines: list) -> BulkData:
         elif keyword == "AESURF":
             _handle_aesurf(fields, bulk)
         elif keyword == "AELIST":
-            aelist_conts: list = []
+            aelist_conts: list[list[str]] = []
             k = i + 1
             while k < len(processed):
                 if not processed[k].strip():
@@ -1363,7 +1362,7 @@ def parse_bulk_data(lines: list) -> BulkData:
                     break
             _handle_aelist(fields, aelist_conts, bulk)
         elif keyword == "TRIM":
-            trim_conts: list = []
+            trim_conts: list[list[str]] = []
             k = i + 1
             while k < len(processed):
                 if not processed[k].strip():
@@ -1377,7 +1376,7 @@ def parse_bulk_data(lines: list) -> BulkData:
                     break
             _handle_trim(fields, trim_conts, bulk)
         elif keyword == "DIVERG":
-            diverg_conts: list = []
+            diverg_conts: list[list[str]] = []
             k = i + 1
             while k < len(processed):
                 if not processed[k].strip():
@@ -1393,7 +1392,7 @@ def parse_bulk_data(lines: list) -> BulkData:
         elif keyword == "TRIMVAR":
             _handle_trimvar(fields, bulk)
         elif keyword == "TRIMOBJ":
-            trimobj_conts: list = []
+            trimobj_conts: list[list[str]] = []
             k = i + 1
             while k < len(processed):
                 if not processed[k].strip():
@@ -1409,7 +1408,7 @@ def parse_bulk_data(lines: list) -> BulkData:
         elif keyword == "TRIMCON":
             _handle_trimcon(fields, bulk)
         elif keyword == "AECOMP":
-            aecomp_conts: list = []
+            aecomp_conts: list[list[str]] = []
             k = i + 1
             while k < len(processed):
                 if not processed[k].strip():
@@ -1429,7 +1428,7 @@ def parse_bulk_data(lines: list) -> BulkData:
         elif keyword == "SUPORT":
             _handle_suport(fields, bulk)
         elif keyword == "TABLED1":
-            tabled1_conts: list = []
+            tabled1_conts: list[list[str]] = []
             k = i + 1
             while k < len(processed):
                 if not processed[k].strip():
@@ -1445,7 +1444,7 @@ def parse_bulk_data(lines: list) -> BulkData:
         elif keyword == "MLDTIME":
             _handle_mldtime(fields, bulk)
         elif keyword == "MLDCOMD":
-            mldcomd_conts: list = []
+            mldcomd_conts: list[list[str]] = []
             k = i + 1
             while k < len(processed):
                 if not processed[k].strip():
@@ -1459,7 +1458,7 @@ def parse_bulk_data(lines: list) -> BulkData:
                     break
             _handle_mldcomd(fields, mldcomd_conts, bulk)
         elif keyword == "MLDPRNT":
-            mldprnt_conts: list = []
+            mldprnt_conts: list[list[str]] = []
             k = i + 1
             while k < len(processed):
                 if not processed[k].strip():
@@ -1638,8 +1637,8 @@ def parse_bulk_data(lines: list) -> BulkData:
     # Validate MASSSET (Step 60) cross-references and mark overlay-only CONM2s.
     # An EID is either baseline (DELETE target / REPLACE old slot) or overlay
     # (ADD / REPLACE new slot) — never both, or the case mass is ill-defined.
-    overlay_eids: set = set()
-    baseline_eids: dict = {}   # eid -> MASSSET sid that uses it as a baseline EID
+    overlay_eids: set[int] = set()
+    baseline_eids: dict[int, int] = {}   # eid -> MASSSET sid using it as a baseline EID
     for sid, ms in bulk.masssets.items():
         refs = (
             [(e, "ADD") for e in ms.add]
@@ -1699,7 +1698,7 @@ def parse_bulk_file(filepath: str) -> BulkData:
     return parse_bulk_data([line.rstrip("\n") for line in lines[bulk_start:]])
 
 
-def parse_bdf(filepath: str) -> tuple:
+def parse_bdf(filepath: str) -> tuple[CaseControl, BulkData]:
     """Read a BDF file and return (CaseControl, BulkData).
 
     Handles single-file models (bulk data after BEGIN BULK in the same file)

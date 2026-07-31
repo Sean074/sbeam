@@ -28,7 +28,7 @@ from sbeam.aero.panel import mesh_caero1
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.integration import build_djx
 from sbeam.solver.sol144 import _compute_hinge_moments
-from sbeam.assembly.coord_transform import _get_transform
+from sbeam.assembly.coord_transform import get_transform
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.assembly.load_vector import build_grid_index
 
@@ -167,7 +167,7 @@ class TestAesurfHingeAxis:
         bulk.aesurfs[505] = Aesurf(id=505, label="FLAP", cid1=7, alid1=900, eff=1.0)
 
         djx = build_djx(boxes, ["FLAP"], bulk)[:, 0]
-        _o, R = _get_transform(7, bulk.cord2rs)
+        _o, R = get_transform(7, bulk.cord2rs)
         h_hat = R[:, 1]
         expected = np.array([-np.cross(h_hat, box.normal)[0] for box in boxes])
         naive = np.array([-box.normal[2] for box in boxes])

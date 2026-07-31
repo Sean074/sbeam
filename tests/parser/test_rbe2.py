@@ -2,7 +2,6 @@
 
 import pytest
 from sbeam.parser.bdf_reader import parse_bulk_data
-from sbeam.model.bulk_data import BulkData
 
 
 _FIXED_SIMPLE = """\

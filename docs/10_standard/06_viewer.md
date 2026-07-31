@@ -171,7 +171,7 @@ highlighted.
   Deselecting all shows an info prompt instead of an empty chart.
 - **Rigid stability & control derivatives** — `rigid_derivative_table(aero_model, bulk, naming,
   state)` rendered full-width via `st.dataframe`. Reuses the SOL 144 machinery (`build_djx` +
-  `_compute_rigid_derivs`, rigid `u_a = 0`) so the matrix matches the f06 rigid derivatives. Rows
+  `compute_rigid_derivs`, rigid `u_a = 0`) so the matrix matches the f06 rigid derivatives. Rows
   are α, β, roll p, pitch q, yaw r + every AESURF control; columns are the six force/moment
   coefficients per radian/label (conventional aero symbols CZ, CY, Cl, Cm, Cn, CX). The
   vertical-force column is body-axis `CZ` — not wind-axis `CL` (which equals `CZ` only at α≈0).
@@ -253,7 +253,7 @@ solve, and/or exports a self-contained corrected BDF.
    `split_total_rows`). **Build body correction** runs `build_body_correction(bulk + flying cards,
    …, aero=…)` and shows a baseline / target / achieved / residual `st.dataframe` plus the **max body
    WT2 ratio** (a *conditioning* gauge, not a contamination metric — WT2 scales body boxes only;
-   warned past `_RATIO_WARN`=200, the point where targets exceed a flat-plate cruciform and a
+   warned past `RATIO_WARN`=200, the point where targets exceed a flat-plate cruciform and a
    slender-body element is needed, or if it could not converge). **Apply body
    panels to model** (`_apply_body_cards`) injects the flying pairs (idempotent) and the body
    `(W2gj, Aecorr)` pairs at reserved SIDs (`_BODY_W2GJ_BASE = 9301`, `_BODY_AECORR_BASE = 9401`),

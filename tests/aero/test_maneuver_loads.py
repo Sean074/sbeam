@@ -22,7 +22,7 @@ from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.parser.case_control import SubcaseControl
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.assembly.load_vector import build_grid_index
-from sbeam.solver.sol144 import run_sol144_trim, _load_resultant
+from sbeam.solver.sol144 import run_sol144_trim, load_resultant
 from sbeam.results.load_export import build_maneuver_load_cards_text
 from sbeam.model.maneuver_presets import load_factor_to_urdd3
 
@@ -52,7 +52,7 @@ def trim_1g():
 def test_closure_symmetric_balance(trim_1g):
     """V-C5: net (aero+inertial) resultant ≈ 0 in the symmetric DOFs (Fz, My)."""
     result, bulk, gi = trim_1g
-    aero_res = _load_resultant(result.grid_loads, bulk, gi, np.zeros(3))
+    aero_res = load_resultant(result.grid_loads, bulk, gi, np.zeros(3))
     fz_scale = max(abs(aero_res[2]), 1.0)
     my_scale = max(abs(aero_res[4]), 1.0)
     assert abs(result.maneuver_closure[2]) < 1e-6 * fz_scale, (
@@ -66,7 +66,7 @@ def test_closure_symmetric_balance(trim_1g):
 def test_lift_equals_nz_weight(trim_1g):
     """Trimmed aero lift equals n_z · W (W = Σ CONM2 mass · g)."""
     result, bulk, gi = trim_1g
-    aero_res = _load_resultant(result.grid_loads, bulk, gi, np.zeros(3))
+    aero_res = load_resultant(result.grid_loads, bulk, gi, np.zeros(3))
     weight = sum(c.m for c in bulk.conm2s.values()) * G
     assert aero_res[2] == pytest.approx(weight, rel=1e-6), (
         f"aero Fz {aero_res[2]} != n_z·W {weight}"

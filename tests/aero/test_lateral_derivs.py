@@ -2,7 +2,7 @@
 
 `build_djx` already produces the ROLL/YAW/SIDES quasi-steady normalwash columns;
 this gate locks the roll/yaw *moment* recovery added in Step 52 to
-`_compute_rigid_derivs` (CMX = roll, CMZ = yaw, both about the AERO reference and
+`compute_rigid_derivs` (CMX = roll, CMZ = yaw, both about the AERO reference and
 non-dimensionalised by S_ref·b_ref).  From these come the damping derivative C_lp
 (ROLL→CMX), C_nr (YAW→CMZ), and the dihedral effect C_lβ (SIDES→CMX).
 
@@ -29,7 +29,7 @@ from sbeam.parser.bdf_reader import parse_bulk_file
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.integration import build_djx
 from sbeam.assembly.load_vector import build_grid_index
-from sbeam.solver.sol144 import _compute_rigid_derivs
+from sbeam.solver.sol144 import compute_rigid_derivs
 
 SAMPLE = Path(__file__).parent.parent.parent / "sample"
 LABELS = ["ANGLEA", "ROLL", "YAW", "SIDES"]
@@ -42,7 +42,7 @@ def _derivs(name):
         warnings.simplefilter("ignore")
         aero = build_aero_model(bulk, grid_index=grid_index)
     djx = build_djx(aero.boxes, LABELS, bulk)
-    return _compute_rigid_derivs(aero, djx, LABELS, bulk, 0.0, np.zeros(3))
+    return compute_rigid_derivs(aero, djx, LABELS, bulk, 0.0, np.zeros(3))
 
 
 @pytest.fixture(scope="module")

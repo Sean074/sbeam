@@ -1,5 +1,7 @@
 """SOL 101 static analysis solver."""
 
+from typing import Optional, Union, cast
+
 import numpy as np
 import scipy.linalg
 import scipy.sparse
@@ -18,19 +20,31 @@ from sbeam.assembly.stiffness import (
 )
 from sbeam.assembly.load_vector import assemble_load_vector, build_grid_index
 from sbeam.assembly.rbe3 import build_rbe3_transformation
-from sbeam.model.element import Cbush
+from sbeam.model.element import Cbar, Cbush
 from sbeam.results.results import BarForce, BarStress, Sol101Result
+from sbeam.types import FloatArray, SparseMatrix
+from sbeam.model.grid import Grid
+from sbeam.model.property import Pbar, Pbush
+from sbeam.model.material import Mat1
 
 
-def solve_static(K_free, f_free: np.ndarray, free_dofs: list, n_dofs: int) -> np.ndarray:
+def solve_static(
+    K_free: Union[FloatArray, SparseMatrix], f_free: FloatArray,
+    free_dofs: list[int], n_dofs: int,
+) -> FloatArray:
     """Solve K_free @ u_free = f_free and return full displacement vector.
 
     K_free may be a sparse CSR matrix (normal path) or a dense ndarray (RBE3
     branch, where T.T @ K_csr @ T produces dense via NumPy's @ operator).
     Raises ValueError if the stiffness matrix is singular or ill-conditioned.
     """
-    if scipy.sparse.issparse(K_free):
-        u_free = scipy.sparse.linalg.spsolve(K_free.tocsc(), f_free)
+    if not isinstance(K_free, np.ndarray):
+        # cast: .tocsc() is typed as csc_matrix | csc_array; spsolve accepts
+        # either, but its overloads are not written over that union.
+        # spsolve returns a sparse result only for a sparse RHS; f_free is
+        # dense, so the result is always a dense vector.
+        u_free = cast(FloatArray, scipy.sparse.linalg.spsolve(
+            cast(scipy.sparse.csc_matrix, K_free.tocsc()), f_free))
         if not np.all(np.isfinite(u_free)):
             raise ValueError(
                 "Singular stiffness matrix: model may have unconstrained DOFs"
@@ -59,7 +73,10 @@ def solve_static(K_free, f_free: np.ndarray, free_dofs: list, n_dofs: int) -> np
     return u
 
 
-def _element_local_forces(cbar, grids, pbars, mat1s, displacements, grid_index):
+def _element_local_forces(
+    cbar: Cbar, grids: dict[int, Grid], pbars: dict[int, Pbar],
+    mat1s: dict[int, Mat1], displacements: FloatArray, grid_index: dict[int, int],
+) -> FloatArray:
     """Compute 12-vector of local end forces for a CBAR element."""
     pbar = pbars[cbar.pid]
     mat1 = mat1s[pbar.mid]
@@ -75,9 +92,9 @@ def _element_local_forces(cbar, grids, pbars, mat1s, displacements, grid_index):
 
     ga = grids[cbar.ga]
     gb = grids[cbar.gb]
-    L = np.linalg.norm(
+    L = float(np.linalg.norm(
         np.array([gb.x - ga.x, gb.y - ga.y, gb.z - ga.z])
-    )
+    ))
 
     K_local = local_stiffness(pbar, mat1, L)
     T = transform_matrix(cbar, grids)
@@ -88,7 +105,10 @@ def _element_local_forces(cbar, grids, pbars, mat1s, displacements, grid_index):
     return f_local
 
 
-def recover_bar_forces(cbar, grids, pbars, mat1s, displacements, grid_index) -> BarForce:
+def recover_bar_forces(
+    cbar: Cbar, grids: dict[int, Grid], pbars: dict[int, Pbar],
+    mat1s: dict[int, Mat1], displacements: FloatArray, grid_index: dict[int, int],
+) -> BarForce:
     """Recover CBAR end forces in local coordinates."""
     f_local = _element_local_forces(cbar, grids, pbars, mat1s, displacements, grid_index)
 
@@ -108,7 +128,10 @@ def recover_bar_forces(cbar, grids, pbars, mat1s, displacements, grid_index) -> 
     )
 
 
-def _stress_at_point(fx_a, mz_a, my_a, y, z, A, I1, I2):
+def _stress_at_point(
+    fx_a: float, mz_a: float, my_a: float,
+    y: float, z: float, A: float, I1: float, I2: float,
+) -> float:
     """σ = Fx/A + Mz*y/I1 - My*z/I2"""
     stress = 0.0
     if A > 0:
@@ -120,7 +143,10 @@ def _stress_at_point(fx_a, mz_a, my_a, y, z, A, I1, I2):
     return stress
 
 
-def recover_bar_stresses(cbar, grids, pbars, mat1s, displacements, grid_index) -> BarStress:
+def recover_bar_stresses(
+    cbar: Cbar, grids: dict[int, Grid], pbars: dict[int, Pbar],
+    mat1s: dict[int, Mat1], displacements: FloatArray, grid_index: dict[int, int],
+) -> BarStress:
     """Recover CBAR stresses at PBAR recovery points."""
     f_local = _element_local_forces(cbar, grids, pbars, mat1s, displacements, grid_index)
 
@@ -169,11 +195,11 @@ def recover_bar_stresses(cbar, grids, pbars, mat1s, displacements, grid_index) -
 
 def recover_cbush_forces(
     cbush: Cbush,
-    grids: dict,
-    pbushs: dict,
-    displacements: np.ndarray,
-    grid_index: dict,
-) -> np.ndarray:
+    grids: dict[int, Grid],
+    pbushs: dict[int, Pbush],
+    displacements: FloatArray,
+    grid_index: dict[int, int],
+) -> FloatArray:
     """Return 6-vector of spring forces in global coordinates for a CBUSH element.
 
     Returns forces at GB for two-node elements, or forces at GA for grounded elements.
@@ -198,19 +224,19 @@ def recover_cbush_forces(
 
 def recover_reactions(
     bulk: BulkData,
-    displacements: np.ndarray,
-    spc_dofs: list,
-    K: np.ndarray,
-    grid_index: dict,
-    f_applied: np.ndarray = None,
-) -> dict:
+    displacements: FloatArray,
+    spc_dofs: list[int],
+    K: Union[FloatArray, SparseMatrix],
+    grid_index: dict[int, int],
+    f_applied: Optional[FloatArray] = None,
+) -> dict[int, FloatArray]:
     """Compute SPC reaction forces.
 
     R_c = K[spc,:] @ u - f_applied[spc].  The f_applied term is zero for
     FORCE/MOMENT loads (all forces at free DOFs) but non-zero for body loads
     such as GRAV where gravity acts on the mass at constrained nodes too.
 
-    Returns {gid: np.ndarray(6,)} for grids with constrained DOFs.
+    Returns {gid: FloatArray(6,)} for grids with constrained DOFs.
     """
     if not spc_dofs:
         return {}

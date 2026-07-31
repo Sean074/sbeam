@@ -23,6 +23,7 @@ import numpy as np
 from sbeam.model.bulk_data import BulkData
 from sbeam.results.results import Sol144TrimResult
 from sbeam.assembly.load_vector import build_grid_index
+from sbeam.types import FloatArray
 
 # Loads below this magnitude are treated as zero and not emitted.
 _TOL = 1e-9
@@ -33,7 +34,9 @@ def _fmt(val: float) -> str:
     return f"{val:.6E}"
 
 
-def _emit_force_moment_cards(loads_g: np.ndarray, bulk: BulkData, grid_index: dict, sid: int) -> list:
+def emit_force_moment_cards(
+    loads_g: FloatArray, bulk: BulkData, grid_index: dict[int, int], sid: int
+) -> list[str]:
     """Return FORCE/MOMENT card lines for a g-set load vector (one per grid)."""
     lines = []
     for gid in sorted(bulk.grids.keys()):
@@ -88,7 +91,7 @@ def build_aero_load_cards_text(
             f"$ MASSSET={result.massset_sid} ({result.massset_label})  "
             f"MASS={result.massset_mass:g}"
         )
-    lines += _emit_force_moment_cards(result.grid_loads, bulk, grid_index, sid)
+    lines += emit_force_moment_cards(result.grid_loads, bulk, grid_index, sid)
     return "\n".join(lines) + "\n"
 
 
@@ -125,11 +128,13 @@ def build_maneuver_load_cards_text(
             f"$ MASSSET={result.massset_sid} ({result.massset_label})  "
             f"MASS={result.massset_mass:g}"
         )
-    lines += _emit_force_moment_cards(result.net_loads, bulk, grid_index, sid)
+    lines += emit_force_moment_cards(result.net_loads, bulk, grid_index, sid)
     return "\n".join(lines) + "\n"
 
 
-def write_aero_load_cards(filepath: str, bulk: BulkData, results: dict) -> None:
+def write_aero_load_cards(
+    filepath: str, bulk: BulkData, results: dict[int, Sol144TrimResult]
+) -> None:
     """Write FORCE/MOMENT cards for all trimmed subcases to one bulk-data file.
 
     Args:
@@ -155,7 +160,7 @@ _MONITOR_CSV_HEADER = [
 ]
 
 
-def write_monitor_csv(filepath: str, results: dict) -> None:
+def write_monitor_csv(filepath: str, results: dict[int, Sol144TrimResult]) -> None:
     """Write monitor-point integrated loads for all trim subcases to one CSV (MON4).
 
     One row per monitor per subcase: metadata, the six totals (cp frame), and the
@@ -184,12 +189,17 @@ def write_monitor_csv(filepath: str, results: dict) -> None:
                     ml.name, ml.mtype, ml.label, ml.axes, ml.cid,
                     f"{ml.ref[0]:.6E}", f"{ml.ref[1]:.6E}", f"{ml.ref[2]:.6E}",
                     *(f"{v:.6E}" for v in ml.totals),
-                    f"{ml.aero[2]:.6E}", f"{ml.inertia[2]:.6E}", f"{ml.reaction[2]:.6E}",
+                    # MONPNT1 has no inertia/reaction split — report 0.0 there.
+                    f"{(ml.aero[2] if ml.aero is not None else 0.0):.6E}",
+                    f"{(ml.inertia[2] if ml.inertia is not None else 0.0):.6E}",
+                    f"{(ml.reaction[2] if ml.reaction is not None else 0.0):.6E}",
                     f"{ml.parity:g}", int(ml.whole_airplane),
                 ])
 
 
-def write_maneuver_load_cards(filepath: str, bulk: BulkData, results: dict) -> None:
+def write_maneuver_load_cards(
+    filepath: str, bulk: BulkData, results: dict[int, Sol144TrimResult]
+) -> None:
     """Write net maneuver-balanced FORCE/MOMENT cards for all subcases (Step 53).
 
     Args:

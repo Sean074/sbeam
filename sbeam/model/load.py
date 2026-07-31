@@ -28,7 +28,8 @@ class Moment:
 class Load:
     sid: int
     s: float                          # Overall scale factor
-    components: list = field(default_factory=list)  # list of (scale, load_sid)
+    # (scale, load_sid) pairs
+    components: list[tuple[float, int]] = field(default_factory=list)
 
 
 @dataclass

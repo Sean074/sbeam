@@ -14,10 +14,13 @@ All coordinates in global CID 0. Freestream V∞ = 1 in +X direction.
 
 import math
 from collections import defaultdict
+from typing import Any, Optional
 
 import numpy as np
 
 from sbeam.aero.panel import AeroBox
+from sbeam.model.aero import Aeros
+from sbeam.types import FloatArray
 
 _FAR_FIELD_FACTOR = 1000.0   # trailing leg length = factor × box chord
 _DEGEN_TOL = 1e-14           # near-zero threshold for Biot-Savart guards
@@ -27,7 +30,7 @@ _DEGEN_TOL = 1e-14           # near-zero threshold for Biot-Savart guards
 # Core Biot-Savart kernel
 # ---------------------------------------------------------------------------
 
-def biot_savart_seg(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> np.ndarray:
+def biot_savart_seg(p: FloatArray, a: FloatArray, b: FloatArray) -> FloatArray:
     """Velocity at p induced by a unit-strength finite vortex segment a→b.
 
     Returns the zero vector when p lies on or very near the segment.
@@ -54,7 +57,7 @@ def biot_savart_seg(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> np.ndarray:
 # Horseshoe influence — single AIC entry
 # ---------------------------------------------------------------------------
 
-def horseshoe_influence(colloc: np.ndarray, colloc_normal: np.ndarray,
+def horseshoe_influence(colloc: FloatArray, colloc_normal: FloatArray,
                         box: AeroBox) -> float:
     """Normalwash at colloc from a unit-strength horseshoe vortex at box.
 
@@ -82,7 +85,7 @@ def horseshoe_influence(colloc: np.ndarray, colloc_normal: np.ndarray,
 # AIC matrix assembly
 # ---------------------------------------------------------------------------
 
-def build_ajj(boxes: list) -> np.ndarray:
+def build_ajj(boxes: list[AeroBox]) -> FloatArray:
     """Build the n_box × n_box aerodynamic influence coefficient matrix.
 
     A[i, j] = normalwash at colloc_i per unit circulation at horseshoe_j.
@@ -101,7 +104,7 @@ def build_ajj(boxes: list) -> np.ndarray:
 # Prandtl–Glauert / Göthert compressibility correction
 # ---------------------------------------------------------------------------
 
-def prandtl_glauert_boxes(boxes: list, mach: float) -> list:
+def prandtl_glauert_boxes(boxes: list[AeroBox], mach: float) -> list[AeroBox]:
     """Return copies of boxes with y,z scaled by β = √(1−M²) (Göthert compression).
 
     The compressible AIC is built on the compressed geometry; the caller must
@@ -142,11 +145,11 @@ def prandtl_glauert_boxes(boxes: list, mach: float) -> list:
 # ---------------------------------------------------------------------------
 
 def trefftz_cdi(
-    boxes: list,
-    gamma: np.ndarray,
+    boxes: list[AeroBox],
+    gamma: FloatArray,
     S_ref: float,
     ar: float,
-) -> dict:
+) -> dict[str, float]:
     """Trefftz-plane induced drag coefficient and Oswald span efficiency.
 
     Integrates the semi-infinite trailing-vortex wake in the far-field y-z
@@ -184,7 +187,7 @@ def trefftz_cdi(
         y_i = 0.5 * (bi.bound_a[1] + bi.bound_b[1])
         z_i = 0.5 * (bi.bound_a[2] + bi.bound_b[2])
 
-        for j, jj in enumerate(lift_idxs):
+        for jj in lift_idxs:
             bj = boxes[jj]
             Gj = gamma[jj]
 
@@ -214,9 +217,11 @@ def trefftz_cdi(
     return {"CDi": CDi, "e": e}
 
 
-def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
-                   aeros=None, xref: float = 0.0,
-                   mach: float = 0.0, wg=None, cp_operator=None) -> dict:
+def solve_rigid_cl(
+    boxes: list[AeroBox], alpha: float, beta: float = 0.0,
+    aeros: Optional[Aeros] = None, xref: float = 0.0, mach: float = 0.0,
+    wg: Optional[FloatArray] = None, cp_operator: Optional[FloatArray] = None,
+) -> dict[str, Any]:
     """Solve flow-tangency for a rigid configuration at incidence alpha/beta (radians).
 
     alpha  — angle of attack (rad); loads horizontal surfaces.
@@ -400,11 +405,11 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
     # -----------------------------------------------------------------------
     # Per-surface classification: horizontal (lift) vs vertical (sideforce)
     # -----------------------------------------------------------------------
-    eid_to_indices: dict = defaultdict(list)
+    eid_to_indices: dict[int, list[int]] = defaultdict(list)
     for i, box in enumerate(boxes):
         eid_to_indices[box.caero_eid].append(i)
 
-    surfaces: dict = {}
+    surfaces: dict[int, dict[str, Any]] = {}
     for eid, idxs in eid_to_indices.items():
         mean_abs_normal = np.abs([boxes[i].normal for i in idxs]).mean(axis=0)
         stype = "lift" if mean_abs_normal[2] >= mean_abs_normal[1] else "sideforce"
@@ -416,11 +421,11 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
     # -----------------------------------------------------------------------
     # Section loads: group by i_span (all surfaces, for backward compatibility)
     # -----------------------------------------------------------------------
-    strips: dict = {}
+    strips: dict[int, list[int]] = {}
     for i, box in enumerate(boxes):
         strips.setdefault(box.i_span, []).append(i)
 
-    cl_section: dict = {}
+    cl_section: dict[int, float] = {}
     for s, idxs in sorted(strips.items()):
         dy_s = dy[idxs[0]]   # all boxes in a strip share the same spanwise width
         chord_strip = sum(boxes[i].area for i in idxs) / dy_s
@@ -459,7 +464,7 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
 
     # Nose-up-positive pitching moment about xref.  Pressure form here
     # (cp·area·arm); the equivalent force form (Fz·arm) lives in
-    # sol144._pitch_moment — the single source for the trim chain.  Both share
+    # sol144.pitch_moment — the single source for the trim chain.  Both share
     # this `−Σ(...)·(x − xref)` sign convention (AE1 Step E); keep them aligned.
     CM = (
         -sum(cp[i] * boxes[i].area * (x_qc[i] - xref) for i in lift_indices)
@@ -469,7 +474,7 @@ def solve_rigid_cl(boxes: list, alpha: float, beta: float = 0.0,
     # -----------------------------------------------------------------------
     # Per-surface coefficients
     # -----------------------------------------------------------------------
-    per_surface: dict = {}
+    per_surface: dict[int, dict[str, Any]] = {}
     for eid, sinfo in surfaces.items():
         idxs = sinfo["indices"]
         idx_arr = np.array(idxs, dtype=int)

@@ -746,11 +746,11 @@ class TestSweptSplineRigidBody:
         by the beam spline): the recovered box z-displacement must equal the
         field value at force_point — which differs from the colloc value.
         """
-        from sbeam.assembly.coord_transform import _get_transform
+        from sbeam.assembly.coord_transform import get_transform
 
         g_slope, g_disp, boxes, grid_index, bulk = vae2_ops
         sp = bulk.spline2s[1601]
-        origin, R_cid = _get_transform(sp.cid, bulk.cord2rs)
+        origin, R_cid = get_transform(sp.cid, bulk.cord2rs)
         s_hat = R_cid[:, 1]     # spline axis (MSC convention: CID y-axis)
 
         c1 = 1e-3               # w(t) = c1·t  (linear — exact reproduction)
@@ -777,7 +777,6 @@ class TestSweptSplineRigidBody:
             u[6 * gi + 3:6 * gi + 6] = omega
 
         disp_z = (g_disp @ u)[2::3]
-        w_slope = g_slope @ u
         for b in boxes:
             t_force = float(np.dot(b.force_point - origin, s_hat))
             t_coll = float(np.dot(b.colloc - origin, s_hat))
@@ -1266,7 +1265,6 @@ class TestSpline2FlexWarnings:
     def test_dtor_changes_interpolant(self):
         """DTOR is genuinely used: EI/GJ = 0.2 vs 5.0 must change g_slope on a
         spline whose twist comes through the GJ arm kernels."""
-        import copy
         from sbeam.aero.panel import mesh_caero1
         results = []
         for dtor in (0.2, 5.0):

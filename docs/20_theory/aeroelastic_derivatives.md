@@ -114,7 +114,7 @@ with forces/moments summed about the aero reference point (the `AEROS` RCSID ori
 
 ## 3. Method 1 — Rigid derivatives
 
-*(code: `sol144._compute_rigid_derivs`)*
+*(code: `sol144.compute_rigid_derivs`)*
 
 Hold the structure perfectly rigid: $u_a = 0$, no feedback at all. For each trim
 variable, take its downwash column, push it through the (corrected) AIC to get pressures,
@@ -323,7 +323,7 @@ proof that sbeam's operator is correct independent of the reference values.
 | Uses the mass matrix? | no | only for URDD columns | yes — $D$, $m_r$, and the constraint are mass-weighted |
 | Derivative is… | integrated aero force | integrated aero force incl. elastic increment | net force on the accelerating vehicle, $m_r\ddot u_r$ |
 | HA144A $C_{Z_\alpha}$, q=1200 | 5.071 | 6.463 | 7.772 |
-| sbeam code | `_compute_rigid_derivs` | `_compute_restrained_derivs` | `_compute_unrestrained_derivs` |
+| sbeam code | `compute_rigid_derivs` | `_compute_restrained_derivs` | `_compute_unrestrained_derivs` |
 | f06 column | RIGID | ELASTIC RESTRAINED | ELASTIC UNRESTRAINED |
 
 Notes for the practitioner:

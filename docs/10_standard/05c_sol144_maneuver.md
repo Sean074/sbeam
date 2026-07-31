@@ -133,9 +133,9 @@ require a mixed-format code path; converting K to dense at this point is
 consistent with the RBE3 dense-fallback precedent in `sol101.py` (Risk KC1 from
 the backlog).
 
-`sol144._compute_aset_data` (tuple form of `reduce_to_aset`) and
-`sol144._expand_to_g` (alias of `reduction.expand_to_g`) are retained as thin
-wrappers for existing importers.
+`sol144._compute_aset_data` (a tuple-returning wrapper around `reduce_to_aset`) was
+removed once its last caller went through `reduce_to_aset` directly; call
+`reduction.reduce_to_aset` / `reduction.expand_to_g` from new code.
 
 #### Mode-acceleration recovery
 
@@ -319,7 +319,7 @@ blind spot where every aero gate was only self-consistent (a common scale error 
 parity bug would pass). The box force/moment is built two ways on the same model:
 
 - **Path A (coupling)** — the SOL 144 chain: `f_box = skj @ (ajj_inv_corr @ w)` with `w` the
-  `D_jx` ANGLEA column (`= −n_z`); totals via `_pitch_moment`.
+  `D_jx` ANGLEA column (`= −n_z`); totals via `pitch_moment`.
 - **Path B (independent)** — `solve_rigid_cl` (`sbeam/aero/vlm.py`), which rebuilds its own AIC
   and Kutta–Joukowski resultants in a separate module; at unit q `Fz = CL·S_ref`,
   `My = CM·S_ref·c_ref`.
@@ -336,7 +336,7 @@ discriminates — unlike `test_phase_b.py::test_tz_sum_vs_cl_magnitude`'s
 `_compute_restrained_derivs` returns the **exact analytic** restrained stability derivatives
 from the Schur factorisation (AE1 Step G): per label δ, `∂u_l/∂δ = K_ll⁻¹·C_ax_l` (K_ll
 already carries the `q·Q_aa` aero feedback), then the linear `∂w → ∂γ → ∂f_box` chain gives
-`CZ = Σ∂Fz/∂δ / S_ref` and `CMY = _pitch_moment(∂f_box)/(S_ref·c_ref)`. This replaced the
+`CZ = Σ∂Fz/∂δ / S_ref` and `CMY = pitch_moment(∂f_box)/(S_ref·c_ref)`. This replaced the
 prior finite-difference hybrid (AE8); because the trim is linear in δ the two agree to
 round-off. Gate V-AE1e (partial): rigid columns unchanged (CZα 5.071, CMα −2.871), restrained
 CZα 5.112 vs NASTRAN Table 7-1 5.103 (q=40) within 1%. The unrestrained (mean-axis) derivative
@@ -344,7 +344,7 @@ set and the remaining Table 7-1 restrained columns are still open on **AE8b** (b
 
 ### Lateral / directional rate derivatives — `C_lp`, `C_nr`, `C_lβ` (Step 52)
 
-`_compute_rigid_derivs` and `_compute_restrained_derivs` emit the roll/yaw **moment**
+`compute_rigid_derivs` and `_compute_restrained_derivs` emit the roll/yaw **moment**
 coefficients alongside the longitudinal `CZ`/`CMY`:
 
 ```
@@ -527,7 +527,7 @@ solver that consumes it lands with Step 62; today the objects are exercised by t
   truncation; and the `B_hh` rigid-rate columns against their exact rescaling of `Q_hx`
   (plunge `−1/V·ANGLEA`, pitch `c_ref/2V·PITCH`). `build_dj_rigidrate` has its own column-rescale
   gate in `tests/aero/test_integration.py`.
-- **Known limit:** `_build_inertial_cols` is a lumped inertia model while `M_aa` is consistent, so
+- **Known limit:** `build_inertial_cols` is a lumped inertia model while `M_aa` is consistent, so
   the `M_ax` identity is exact only where the two agree — translational rows always, and all rows
   for CONM2-only decks. With `rho > 0` CBARs the rotational rows differ (the consistent-mass
   translation↔rotation coupling has no lumped counterpart); this is pre-existing in the increment-1
@@ -568,7 +568,7 @@ operator below is unchanged from pre-Step-60 behaviour.
 | Rebuilt per mass case | Shared across the sweep |
 |---|---|
 | `M_gg` (`assemble_global_mass(bulk, massset_sid)`) | `K_gg` / `K_aa` (stiffness) |
-| `M_ax` (`_build_inertial_cols(..., massset_sid)`) | VLM AIC — `ajj`, `ajj_inv_corr` |
+| `M_ax` (`build_inertial_cols(..., massset_sid)`) | VLM AIC — `ajj`, `ajj_inv_corr` |
 | GPWG mass / CG (`compute_gpwg(bulk, massset_sid)`) | `skj` / `djk` / `wg`, splines `g_disp`/`g_slope` |
 | The trim solve and its recovered loads | the whole `AeroCache` |
 
@@ -642,7 +642,7 @@ MONPNT3, NAME, LABEL, AXES, COMP, CP, X, Y, Z          $ aero + inertia + reacti
 ### Integration semantics (`sbeam/results/monitor_points.py`)
 
 - **`MONPNT1` (aero-only):** `F = Σ_k box_forces[k]`, `M = Σ_k (force_point[k] − ref) × box_forces[k]`
-  over the AELIST boxes (NASTRAN box ID → global box index via the spline `_build_id_to_k` map).
+  over the AELIST boxes (NASTRAN box ID → global box index via the spline `build_id_to_k` map).
   `box_forces` is the trimmed per-box physical force already on `Sol144TrimResult`.
 - **`MONPNT3` (aero + inertia + reaction):** per SET1 grid, sum the 6-DOF block from
   `grid_loads` (aero, splined to grids — inherits RBE3/RBAR pass-through), `inertial_loads`

@@ -3,6 +3,7 @@
 import argparse
 import sys
 from pathlib import Path
+from typing import Any, Callable, Dict
 
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.results.f06_writer import (
@@ -34,7 +35,11 @@ def main() -> None:
         sys.exit(f"Parse error: {exc}")
 
     sol144_results = None
-    maneuver_results = {}
+    maneuver_results: Dict[int, Any] = {}
+    diverg_results: Dict[int, Any] = {}
+    # The three SOL builders take different result types; the dispatch below picks
+    # one and applies it to the matching results dict.
+    build_text: Callable[..., str]
     try:
         if cc.sol == 101:
             from sbeam.solver.sol101 import run_sol101
@@ -61,8 +66,6 @@ def main() -> None:
             # a DIVERG subcase runs the Step 55 divergence sweep (no TRIM needed);
             # a plain TRIM subcase runs the Step 52/53 static trim.
             results = {}
-            maneuver_results = {}
-            diverg_results = {}
             for sc in cc.subcases:
                 if sc.mloads_sid is not None:
                     maneuver_results[sc.subcase_id] = run_maneuver_qs(

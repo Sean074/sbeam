@@ -17,7 +17,7 @@ Public API:
 """
 
 import warnings
-from typing import Optional
+from typing import Optional, Tuple, cast
 
 import numpy as np
 import scipy.linalg
@@ -31,12 +31,16 @@ from sbeam.aero.aero_model import AeroModel, build_aero_model
 from sbeam.aero.coupling import build_qaa, build_fg, build_gaf
 from sbeam.aero.integration import build_djx
 from sbeam.results.results import (
-    BarForce, BarStress, Sol144Result, Sol144TrimResult,
+    Sol144Result, Sol144TrimResult,
     Sol144DivergResult, DivergMachResult, DivergRoot,
 )
 from sbeam.results.monitor_points import compute_monitor_loads
 from sbeam.solver.sol101 import recover_bar_forces, recover_bar_stresses, recover_reactions
 from sbeam.solver.sol103 import run_sol103
+from sbeam.results.results import Sol103Result
+from sbeam.types import ComplexArray, FloatArray, LuFactor
+from sbeam.aero.panel import AeroBox
+from sbeam.model.aero import Trimcon, Trimobj, Trimvar, require_aeros
 
 
 class AeroCache:
@@ -53,10 +57,10 @@ class AeroCache:
 
     _MACH_DP = 6
 
-    def __init__(self, bulk: BulkData, grid_index: dict, seed: Optional[AeroModel] = None):
+    def __init__(self, bulk: BulkData, grid_index: dict[int, int], seed: Optional[AeroModel] = None):
         self.bulk = bulk
         self.grid_index = grid_index
-        self._cache: dict = {}
+        self._cache: dict[float, AeroModel] = {}
         if seed is not None:
             self._cache[round(float(seed.mach), self._MACH_DP)] = seed
 
@@ -73,10 +77,10 @@ class AeroCache:
 def _build_qaa_aset(
     bulk: BulkData,
     aero: AeroModel,
-    grid_index: dict,
-    spc_sid,
-    f_g_full: Optional[np.ndarray] = None,
-) -> tuple:
+    grid_index: dict[int, int],
+    spc_sid: Optional[int],
+    f_g_full: Optional[FloatArray] = None,
+) -> tuple[FloatArray, FloatArray, Optional[FloatArray], list[int]]:
     """Reduce the g-set Q_aa and K_aa to the SPC-free a-set.
 
     Applies the same RBE3-then-SPC reduction as sol101.py so that the a-set
@@ -108,7 +112,7 @@ def _build_qaa_aset(
         )
 
     # --- g-set matrices ---
-    Q_gg = build_qaa(aero, aero.g_disp, aero.g_slope)     # (n_g, n_g) dense
+    Q_gg = build_qaa(aero, aero.require_g_disp(), aero.require_g_slope())     # (n_g, n_g) dense
     K_gg = assemble_global_stiffness(bulk)                  # (n_g, n_g) sparse CSR
 
     # --- RBE3/RBAR-then-SPC reduction (shared path, Step 59) ---
@@ -121,13 +125,13 @@ def _build_qaa_aset(
 
 
 def _solve_direct(
-    K_aa: np.ndarray,
-    Q_aa: np.ndarray,
-    f_aa: np.ndarray,
+    K_aa: FloatArray,
+    Q_aa: FloatArray,
+    f_aa: FloatArray,
     q: float,
-    free_dofs: list,
+    free_dofs: list[int],
     n_dofs: int,
-) -> tuple:
+) -> tuple[FloatArray, FloatArray, LuFactor]:
     """Dense direct solve of (K_aa - q*Q_aa)*u_a = f_aa.
 
     Returns:
@@ -160,12 +164,12 @@ def _solve_direct(
 
 
 def _solve_rom(
-    K_aa: np.ndarray,
-    Q_aa: np.ndarray,
-    f_aa: np.ndarray,
+    K_aa: FloatArray,
+    Q_aa: FloatArray,
+    f_aa: FloatArray,
     q: float,
-    phi_free: np.ndarray,
-) -> tuple:
+    phi_free: FloatArray,
+) -> tuple[FloatArray, FloatArray, FloatArray]:
     """Modal-truncation ROM solve of the reduced system.
 
     Forms the (n_m, n_m) reduced system:
@@ -190,14 +194,14 @@ def _solve_rom(
 
 
 def _mode_acceleration_recovery(
-    K_aa: np.ndarray,
-    Q_aa: np.ndarray,
-    f_aa: np.ndarray,
+    K_aa: FloatArray,
+    Q_aa: FloatArray,
+    f_aa: FloatArray,
     q: float,
-    phi_free: np.ndarray,
-    xi: np.ndarray,
-    k_aa_lu: tuple,
-) -> np.ndarray:
+    phi_free: FloatArray,
+    xi: FloatArray,
+    k_aa_lu: LuFactor,
+) -> FloatArray:
     """Mode-acceleration corrected a-set displacement.
 
     Corrects the mode-displacement estimate u_md = Phi*xi by the static
@@ -225,7 +229,7 @@ def run_aeroelastic_static(
     aero: AeroModel,
     q: float,
     use_rom: bool = False,
-    sol103_result: Optional[object] = None,
+    sol103_result: Optional[Sol103Result] = None,
 ) -> Sol144Result:
     """Solve the flexible static aeroelastic problem (Step 50 — no trim variables).
 
@@ -265,11 +269,13 @@ def run_aeroelastic_static(
 
     # Combine structural load and baseline aero load on the g-set
     f_struct = assemble_load_vector(bulk, load_sid) if load_sid is not None else np.zeros(n_dofs)
-    f_aero_g = q * build_fg(aero, aero.g_disp)    # (n_g,) from coupling.py
+    f_aero_g = q * build_fg(aero, aero.require_g_disp())    # (n_g,) from coupling.py
     f_g_full = f_struct + f_aero_g
 
     # Reduce Q_aa, K_aa, and the combined load to the a-set
     Q_aa, K_aa, f_aa, free_dofs = _build_qaa_aset(bulk, aero, grid_index, spc_sid, f_g_full)
+    if f_aa is None:   # f_g_full was supplied, so _build_qaa_aset always reduces it
+        raise ValueError("run_aeroelastic_static: a-set load vector was not built")
 
     # Direct solve
     displacements, _K_eff, k_aa_lu = _solve_direct(K_aa, Q_aa, f_aa, q, free_dofs, n_dofs)
@@ -328,19 +334,9 @@ def run_aeroelastic_static(
 # Step 52 — SOL 144 Trim Solver
 # ---------------------------------------------------------------------------
 
-def _compute_aset_data(bulk: BulkData, grid_index: dict, spc_sid) -> tuple:
-    """Compute a-set partition data (T, dep_dofs, red_dofs, free_local, free_dofs).
-
-    Thin tuple-returning wrapper over assembly.reduction.reduce_to_aset,
-    retained by name for existing importers (Step 59).
-    """
-    r = reduce_to_aset(bulk, grid_index, spc_sid)
-    return r.T, r.dep_dofs, r.red_dofs, r.free_local, r.free_dofs
-
-
-def _urdd_rcsid_to_basic(
-    vec: np.ndarray, label_to_col: dict, R_rcsid: np.ndarray, has_rcsid: bool
-) -> np.ndarray:
+def urdd_rcsid_to_basic(
+    vec: FloatArray, label_to_col: dict[str, int], R_rcsid: FloatArray, has_rcsid: bool
+) -> FloatArray:
     """Rotate the URDD translational/rotational triples of a label-ordered trim
     vector from the RCSID frame into the basic CID 0 frame (AE5).
 
@@ -366,9 +362,9 @@ def _urdd_rcsid_to_basic(
     return out
 
 
-def _load_resultant(
-    loads_g: np.ndarray, bulk: BulkData, grid_index: dict, ref_pos: np.ndarray
-) -> np.ndarray:
+def load_resultant(
+    loads_g: FloatArray, bulk: BulkData, grid_index: dict[int, int], ref_pos: FloatArray
+) -> FloatArray:
     """Body-frame 6-component resultant (Fx,Fy,Fz, Mx,My,Mz) of a g-set load
     vector about ``ref_pos``, summed over all grids.
 
@@ -387,13 +383,13 @@ def _load_resultant(
     return np.concatenate([F, M])
 
 
-def _build_inertial_cols(
+def build_inertial_cols(
     bulk: BulkData,
-    all_labels: list,
-    grid_index: dict,
-    suport_pos: np.ndarray,
-    massset_sid=None,
-) -> np.ndarray:
+    all_labels: list[str],
+    grid_index: dict[int, int],
+    suport_pos: FloatArray,
+    massset_sid: Optional[int] = None,
+) -> FloatArray:
     """Inertial sensitivity matrix M_ax on the full g-set — basic frame.
 
     Returns (n_g, n_labels) where column k is dF/dURDD_k (force per unit
@@ -438,7 +434,7 @@ def _build_inertial_cols(
             for cbar in bulk.cbars.values():
                 pbar = bulk.pbars.get(cbar.pid)
                 mat = bulk.mat1s.get(pbar.mid) if pbar else None
-                if mat is None or mat.rho == 0.0:
+                if pbar is None or mat is None or mat.rho == 0.0:
                     continue
                 ga = bulk.grids[cbar.ga]
                 gb = bulk.grids[cbar.gb]
@@ -466,7 +462,7 @@ def _build_inertial_cols(
             for cbar in bulk.cbars.values():
                 pbar = bulk.pbars.get(cbar.pid)
                 mat = bulk.mat1s.get(pbar.mid) if pbar else None
-                if mat is None or mat.rho == 0.0:
+                if pbar is None or mat is None or mat.rho == 0.0:
                     continue
                 ga = bulk.grids[cbar.ga]
                 gb = bulk.grids[cbar.gb]
@@ -484,7 +480,9 @@ def _build_inertial_cols(
 _expand_to_g = expand_to_g
 
 
-def _get_suport_local(bulk: BulkData, free_dofs: list, grid_index: dict) -> list:
+def get_suport_local(
+    bulk: BulkData, free_dofs: list[int], grid_index: dict[int, int]
+) -> list[int]:
     """Return local a-set indices corresponding to SUPORT DOFs.
 
     Uses bulk.supports (list[Suport]).  DOF string "35" means Tz (3) and Ry (5).
@@ -503,15 +501,15 @@ def _get_suport_local(bulk: BulkData, free_dofs: list, grid_index: dict) -> list
 
 
 def _build_trim_schur(
-    K_aa: np.ndarray,
-    Q_aa: np.ndarray,
-    Q_ax_a: np.ndarray,
-    M_ax_a: np.ndarray,
-    f_rhs_a: np.ndarray,
+    K_aa: FloatArray,
+    Q_aa: FloatArray,
+    Q_ax_a: FloatArray,
+    M_ax_a: FloatArray,
+    f_rhs_a: FloatArray,
     q: float,
-    suport_local: list,
-    free_label_cols: list,
-) -> tuple:
+    suport_local: list[int],
+    free_label_cols: list[int],
+) -> tuple[FloatArray, FloatArray, LuFactor, list[int], list[int], FloatArray, FloatArray]:
     """Build the trim-equilibrium operator shared by the determined and
     over-determined solves.
 
@@ -557,13 +555,13 @@ def _build_trim_schur(
 
 
 def _recover_u_a(
-    K_ll_lu: tuple,
-    C_ax_l: np.ndarray,
-    f_rhs_l: np.ndarray,
-    delta_free_arr: np.ndarray,
-    l_idx: list,
+    K_ll_lu: LuFactor,
+    C_ax_l: FloatArray,
+    f_rhs_l: FloatArray,
+    delta_free_arr: FloatArray,
+    l_idx: list[int],
     n_a: int,
-) -> np.ndarray:
+) -> FloatArray:
     """Recover the a-set displacement from the trimmed free variables (u_r = 0)."""
     u_l = scipy.linalg.lu_solve(K_ll_lu, C_ax_l @ delta_free_arr + f_rhs_l)
     u_a = np.zeros(n_a)
@@ -573,15 +571,15 @@ def _recover_u_a(
 
 
 def _solve_trim_determined(
-    K_aa: np.ndarray,
-    Q_aa: np.ndarray,
-    Q_ax_a: np.ndarray,
-    M_ax_a: np.ndarray,
-    f_rhs_a: np.ndarray,
+    K_aa: FloatArray,
+    Q_aa: FloatArray,
+    Q_ax_a: FloatArray,
+    M_ax_a: FloatArray,
+    f_rhs_a: FloatArray,
     q: float,
-    suport_local: list,
-    free_label_cols: list,
-) -> tuple:
+    suport_local: list[int],
+    free_label_cols: list[int],
+) -> tuple[FloatArray, FloatArray, LuFactor, list[int], list[int]]:
     """Schur-complement trim solve for the determined case (n_free == n_suport).
 
     Returns:
@@ -598,19 +596,19 @@ def _solve_trim_determined(
 
 
 def _solve_trim_overdetermined(
-    K_aa: np.ndarray,
-    Q_aa: np.ndarray,
-    Q_ax_a: np.ndarray,
-    M_ax_a: np.ndarray,
-    f_rhs_a: np.ndarray,
+    K_aa: FloatArray,
+    Q_aa: FloatArray,
+    Q_ax_a: FloatArray,
+    M_ax_a: FloatArray,
+    f_rhs_a: FloatArray,
     q: float,
-    suport_local: list,
-    free_labels: list,
-    free_label_cols: list,
-    trimobj,
-    trimcons: list,
-    trimvars: dict,
-) -> tuple:
+    suport_local: list[int],
+    free_labels: list[str],
+    free_label_cols: list[int],
+    trimobj: Optional[Trimobj],
+    trimcons: list[Trimcon],
+    trimvars: dict[int, Trimvar],
+) -> tuple[FloatArray, FloatArray, LuFactor, list[int], list[int]]:
     """Over-determined trim solve (n_free > n_suport): redundant controls.
 
     The trim equilibrium ``schur_A @ δ = schur_b`` is ``n_suport`` equations in
@@ -685,11 +683,11 @@ def _solve_trim_overdetermined(
         # No redundancy left after the equilibrium constraint — δ is determined.
         delta_free_arr = delta_p
     else:
-        def objective(z):
+        def objective(z: FloatArray) -> float:
             d = delta_p + N @ z
             return float(np.sum(weights * d * d))
 
-        def objective_grad(z):
+        def objective_grad(z: FloatArray) -> FloatArray:
             d = delta_p + N @ z
             return 2.0 * (N.T @ (weights * d))
 
@@ -742,7 +740,7 @@ def _solve_trim_overdetermined(
     return u_a, delta_free_arr, K_ll_lu, l_idx, r_idx
 
 
-def _pitch_moment(f_box_vec: np.ndarray, boxes: list, x_ref: float) -> float:
+def pitch_moment(f_box_vec: FloatArray, boxes: list[AeroBox], x_ref: float) -> float:
     """Nose-up-positive aerodynamic pitching moment about ``x_ref`` (AE1 Step E).
 
     Single source for the moment-arm convention `My = −ΣFz·(x_force − x_ref)`
@@ -768,15 +766,15 @@ def _pitch_moment(f_box_vec: np.ndarray, boxes: list, x_ref: float) -> float:
 
 
 def aero_moment_resultant(
-    box_forces: np.ndarray, boxes: list, ref_point: np.ndarray
-) -> np.ndarray:
+    box_forces: FloatArray, boxes: list[AeroBox], ref_point: FloatArray
+) -> FloatArray:
     """Full 3-component aerodynamic moment about ``ref_point`` (Step 58).
 
     ``M = Σ_j (r_j − ref) × F_j`` with ``r_j = box.force_point`` (¼-chord
     bound-vortex midpoint) and ``F_j`` the per-box force.  Returns ``[Mx, My, Mz]``
     — roll, pitch, yaw — in the same frame as ``box_forces``.
 
-    Unlike ``_pitch_moment`` (the single-source nose-up-positive *pitch* arm used
+    Unlike ``pitch_moment`` (the single-source nose-up-positive *pitch* arm used
     inside the trim), this is the complete resultant needed once lifting surfaces
     leave the xy-plane: a canted panel carries a side force ``Fy`` that contributes
     roll/yaw, and the moment arm has a non-zero ``z`` component.  Used by the
@@ -799,46 +797,14 @@ def aero_moment_resultant(
     return m
 
 
-def _compute_aero_forces(
-    u_a_full: np.ndarray,
-    delta_all: np.ndarray,
-    all_labels: list,
+def compute_rigid_derivs(
     aero: AeroModel,
-    D_jx: np.ndarray,
-    bulk,
+    D_jx: FloatArray,
+    all_labels: list[str],
+    bulk: BulkData,
     x_ref: float,
-) -> tuple:
-    """Compute total Fz and My at given trim state.
-
-    Returns (Fz, My) where My is the aerodynamic pitching moment about x_ref
-    in the basic CID 0 frame.
-    """
-    from sbeam.aero.integration import build_djk
-
-    djk = build_djk(aero.boxes)
-    w_struct = djk @ (aero.g_slope @ u_a_full)     # structural normalwash
-    w_trim   = D_jx @ delta_all                    # trim-variable normalwash
-    w_total  = w_struct + w_trim + aero.wg         # total normalwash
-
-    gamma = aero.ajj_inv_corr @ w_total            # (n_box,)
-
-    skj = aero.skj                                 # (3*n_box, n_box)
-    f_box_vec = skj @ gamma                        # (3*n_box,) forces per box
-
-    Fz = f_box_vec[2::3].sum()
-    My = _pitch_moment(f_box_vec, aero.boxes, x_ref)   # nose-up-positive
-
-    return Fz, My
-
-
-def _compute_rigid_derivs(
-    aero: AeroModel,
-    D_jx: np.ndarray,
-    all_labels: list,
-    bulk,
-    x_ref: float,
-    ref_pt: np.ndarray,
-) -> dict:
+    ref_pt: FloatArray,
+) -> dict[str, dict[str, float]]:
     """Rigid aerodynamic stability and control derivatives.
 
     For each label, computes the change in total force/moment per unit label
@@ -854,13 +820,13 @@ def _compute_rigid_derivs(
     the side force ``Fy`` of any canted (±Γ dihedral) panel; on a planar wing
     the roll column decouples cleanly from Fz/My (V-LAT gate).
     """
-    sref = bulk.aeros.sref
-    cref = bulk.aeros.cref
-    bref = bulk.aeros.bref
+    sref = require_aeros(bulk).sref
+    cref = require_aeros(bulk).cref
+    bref = require_aeros(bulk).bref
 
     n_box = len(aero.boxes)
     boxes = aero.boxes
-    rigid_derivs: dict = {}
+    rigid_derivs: dict[str, dict[str, float]] = {}
 
     for col, label in enumerate(all_labels):
         # Normalwash from unit perturbation of this label alone
@@ -869,7 +835,7 @@ def _compute_rigid_derivs(
         f_box_vec = aero.skj @ gamma                 # (3*n_box,)
 
         Fz_sens = f_box_vec[2::3].sum()
-        My_sens = _pitch_moment(f_box_vec, boxes, x_ref)   # nose-up-positive
+        My_sens = pitch_moment(f_box_vec, boxes, x_ref)   # nose-up-positive
         Fz_x = f_box_vec[0::3].sum()
         Fz_y = f_box_vec[1::3].sum()
         Mx, _My_xp, Mz = aero_moment_resultant(
@@ -889,11 +855,11 @@ def _compute_rigid_derivs(
 
 def _compute_hinge_moments(
     aero: AeroModel,
-    D_jx: np.ndarray,
-    all_labels: list,
-    bulk,
-    f_box_trim: np.ndarray,
-) -> dict:
+    D_jx: FloatArray,
+    all_labels: list[str],
+    bulk: BulkData,
+    f_box_trim: FloatArray,
+) -> dict[str, dict[str, float]]:
     """Hinge-moment derivatives and trimmed hinge moment per AESURF control.
 
     The hinge moment is the moment of the aero box forces on a surface's AELIST
@@ -903,30 +869,31 @@ def _compute_hinge_moments(
 
     Returns ``{label: {'total': HM_trim, <trim_label>: dHM/dδ, ...}}`` where each
     ``dHM/dδ`` uses the rigid box forces from that label's normalwash column
-    alone (u_a = 0, force/q units), mirroring ``_compute_rigid_derivs``.  The
+    alone (u_a = 0, force/q units), mirroring ``compute_rigid_derivs``.  The
     ``'total'`` entry uses the full trimmed box-force field ``f_box_trim``
     (force/q units; multiply by q for the physical hinge moment).
     """
-    from sbeam.assembly.coord_transform import _get_transform
+    from sbeam.assembly.coord_transform import get_transform
 
     # NASTRAN-box-ID → global-k index (same convention as build_djx)
-    id_to_k: dict = {}
+    id_to_k: dict[int, int] = {}
     for box in aero.boxes:
         caero = bulk.caero1s[box.caero_eid]
         nch = (caero.nchord if caero.nchord > 0
                else len(bulk.aefacts[caero.lchord].data) - 1)
         id_to_k[box.caero_eid + box.i_span * nch + box.j_chord] = box.k
 
-    hinge_moments: dict = {}
+    hinge_moments: dict[str, dict[str, float]] = {}
     for aesurf in bulk.aesurfs.values():
         aelist = bulk.aelists.get(aesurf.alid1)
         if aelist is None:
             continue
-        o, R = _get_transform(aesurf.cid1, bulk.cord2rs)
+        o, R = get_transform(aesurf.cid1, bulk.cord2rs)
         h_hat = R[:, 1]                                   # hinge axis = cid1 y-axis
         ks = [id_to_k[bid] for bid in aelist.elements if bid in id_to_k]
 
-        def _hm(f_box, _ks=ks, _o=o, _h=h_hat):
+        def _hm(f_box: FloatArray, _ks: list[int] = ks,
+                _o: FloatArray = o, _h: FloatArray = h_hat) -> float:
             total = 0.0
             for k in _ks:
                 F = f_box[3 * k:3 * k + 3]
@@ -944,23 +911,23 @@ def _compute_hinge_moments(
 
 
 def _compute_restrained_derivs(
-    K_ll_lu: tuple,
-    l_idx: list,
-    Q_ax_a: np.ndarray,
-    M_ax_a: np.ndarray,
-    all_labels: list,
-    u_a_trim: np.ndarray,
-    delta_all_trim: np.ndarray,
+    K_ll_lu: LuFactor,
+    l_idx: list[int],
+    Q_ax_a: FloatArray,
+    M_ax_a: FloatArray,
+    all_labels: list[str],
+    u_a_trim: FloatArray,
+    delta_all_trim: FloatArray,
     aero: AeroModel,
-    D_jx: np.ndarray,
-    T: np.ndarray,
-    free_local: list,
+    D_jx: FloatArray,
+    T: FloatArray,
+    free_local: list[int],
     n_red: int,
-    bulk,
+    bulk: BulkData,
     x_ref: float,
     q: float,
-    ref_pt: np.ndarray,
-) -> dict:
+    ref_pt: FloatArray,
+) -> dict[str, dict[str, float]]:
     """Elastic restrained stability derivatives — exact analytic form (AE1 Step G).
 
     Restrained means the SUPORT (r-set) DOFs are held at zero; the l-set responds
@@ -980,16 +947,16 @@ def _compute_restrained_derivs(
         ∂f_box/∂δ = S_kj · ∂γ/∂δ
         CZ = Σ∂Fz/∂δ / S_ref,   CMY = ∂My/∂δ / (S_ref·c_ref)
 
-    My uses the nose-up-positive ``_pitch_moment`` convention (AE1 Step E).  Each
+    My uses the nose-up-positive ``pitch_moment`` convention (AE1 Step E).  Each
     g-set displacement derivative is expanded through the RBE3/RBAR T matrix so
     slave DOFs move with their masters (AE1 Step B1).  The result is exact (no FD
     truncation) and the URDD/inertial columns are carried by M_ax_a.
     """
     from sbeam.aero.integration import build_djk
 
-    sref = bulk.aeros.sref
-    cref = bulk.aeros.cref
-    bref = bulk.aeros.bref
+    sref = require_aeros(bulk).sref
+    cref = require_aeros(bulk).cref
+    bref = require_aeros(bulk).bref
     djk  = build_djk(aero.boxes)
     n_a  = Q_ax_a.shape[0]
     n_box = len(aero.boxes)
@@ -1002,7 +969,7 @@ def _compute_restrained_derivs(
     # ∂u_l/∂δ for every label at once: K_ll⁻¹ · C_ax_l  (n_l, n_labels)
     du_l_all = scipy.linalg.lu_solve(K_ll_lu, C_ax_l)
 
-    rest_derivs: dict = {}
+    rest_derivs: dict[str, dict[str, float]] = {}
     for col, label in enumerate(all_labels):
         # Scatter the l-set sensitivity into a full a-set vector, then expand to
         # the g-set so RBAR/RBE3 slaves follow their masters.
@@ -1012,7 +979,7 @@ def _compute_restrained_derivs(
         u_full_d = _expand_to_g(u_a_d, T, free_local, n_red)
 
         # Linear normalwash sensitivity: direct trim term + elastic feedback.
-        dw = D_jx[:, col] + djk @ (aero.g_slope @ u_full_d)
+        dw = D_jx[:, col] + djk @ (aero.require_g_slope() @ u_full_d)
         dgamma = aero.ajj_inv_corr @ dw
         df_box = aero.skj @ dgamma                              # (3·n_box,) force/q
 
@@ -1020,7 +987,7 @@ def _compute_restrained_derivs(
             df_box.reshape(n_box, 3), boxes, ref_pt)
         rest_derivs[label] = {
             'CZ':  df_box[2::3].sum() / sref,
-            'CMY': _pitch_moment(df_box, boxes, x_ref) / (sref * cref),
+            'CMY': pitch_moment(df_box, boxes, x_ref) / (sref * cref),
             'CMX': Mx / (sref * bref) if bref > 0 else 0.0,
             'CMZ': Mz / (sref * bref) if bref > 0 else 0.0,
         }
@@ -1029,20 +996,20 @@ def _compute_restrained_derivs(
 
 
 def _compute_unrestrained_derivs(
-    K_aa: np.ndarray,
-    M_aa: np.ndarray,
-    Q_aa: np.ndarray,
-    Q_ax_a: np.ndarray,
-    f_aero_a: np.ndarray,
-    all_labels: list,
-    l_idx: list,
-    r_idx: list,
-    free_dofs: list,
-    grid_index: dict,
-    bulk,
+    K_aa: FloatArray,
+    M_aa: FloatArray,
+    Q_aa: FloatArray,
+    Q_ax_a: FloatArray,
+    f_aero_a: FloatArray,
+    all_labels: list[str],
+    l_idx: list[int],
+    r_idx: list[int],
+    free_dofs: list[int],
+    grid_index: dict[int, int],
+    bulk: BulkData,
     q: float,
-    ref_pt: np.ndarray,
-) -> tuple:
+    ref_pt: FloatArray,
+) -> tuple[dict[str, dict[str, float]], dict[str, float]]:
     """Unrestrained (mean-axis / inertia-relief) stability derivatives — AE8b.
 
     Implements the MSC Nastran SOL 144 unrestrained-derivative algorithm
@@ -1159,7 +1126,7 @@ def _compute_unrestrained_derivs(
 
     # TR (2-122): transfer the r-set force rows to a 6-component resultant
     # (Fx,Fy,Fz,Mx,My,Mz) about the aero reference point.  Right-hand My about
-    # +y equals the nose-up-positive _pitch_moment convention.
+    # +y equals the nose-up-positive pitch_moment convention.
     idx_to_gid = {i: gid for gid, i in grid_index.items()}
     TR = np.zeros((6, n_r))
     for row, a_loc in enumerate(r_idx):
@@ -1179,11 +1146,11 @@ def _compute_unrestrained_derivs(
 
     # Non-dimensionalisation (NDIM, 2-123) — sbeam sign sense (CZ up-positive,
     # CMY nose-up-positive), matching the rigid/restrained columns.
-    sref = bulk.aeros.sref
-    cref = bulk.aeros.cref
-    bref = bulk.aeros.bref
+    sref = require_aeros(bulk).sref
+    cref = require_aeros(bulk).cref
+    bref = require_aeros(bulk).bref
     qS = q * sref
-    unrest_derivs: dict = {}
+    unrest_derivs: dict[str, dict[str, float]] = {}
     for j, c in enumerate(aero_cols):
         unrest_derivs[all_labels[c]] = {
             'CZ':  R6[2, j] / qS,
@@ -1198,7 +1165,7 @@ def _compute_unrestrained_derivs(
     return unrest_derivs, unrest_intercepts
 
 
-def _divergence_dynamic_pressure(K_ll: np.ndarray, Q_ll: np.ndarray) -> Optional[float]:
+def _divergence_dynamic_pressure(K_ll: FloatArray, Q_ll: FloatArray) -> Optional[float]:
     """Critical static-aeroelastic divergence dynamic pressure (restrained l-set).
 
     Divergence occurs when the effective stiffness ``K_ll - q*Q_ll`` first becomes
@@ -1231,8 +1198,8 @@ def _divergence_dynamic_pressure(K_ll: np.ndarray, Q_ll: np.ndarray) -> Optional
 
 
 def _divergence_roots(
-    K_ll: np.ndarray, Q_ll: np.ndarray, nroots: int
-) -> list:
+    K_ll: FloatArray, Q_ll: FloatArray, nroots: int
+) -> list[tuple[float, FloatArray]]:
     """Lowest ``nroots`` positive divergence roots and their eigenvectors.
 
     Generalises ``_divergence_dynamic_pressure`` from the single critical q to a
@@ -1253,10 +1220,13 @@ def _divergence_roots(
         return []
     try:
         M = scipy.linalg.solve(K_ll, Q_ll)        # K_ll^{-1} Q_ll
-        eigvals, eigvecs = scipy.linalg.eig(M)
+        # scipy.linalg.eig is overloaded on left=/right=; with the defaults it
+        # returns exactly the (eigenvalues, right eigenvectors) pair.
+        eigvals, eigvecs = cast(
+            Tuple[ComplexArray, ComplexArray], scipy.linalg.eig(M))
     except Exception:
         return []
-    roots = []
+    roots: list[tuple[float, FloatArray]] = []
     for ev, vec in zip(eigvals, eigvecs.T):
         if abs(ev.imag) < 1e-8 * max(1.0, abs(ev.real)) and ev.real > 1e-12:
             roots.append((float(1.0 / ev.real), vec.real.copy()))
@@ -1303,14 +1273,13 @@ def run_sol144_diverg(
     diverg = bulk.divergs[diverg_sid]
 
     grid_index = build_grid_index(bulk)
-    n_dofs = 6 * len(grid_index)
     spc_sid = subcase.spc_sid
 
     if aero_cache is None:
         aero_cache = AeroCache(bulk, grid_index, seed=aero)
 
     # Mach list: the DIVERG card's, else the seed/AEROS Mach (single point).
-    aeros_mach = bulk.aeros.mach if bulk.aeros else 0.0
+    aeros_mach = require_aeros(bulk).mach if bulk.aeros else 0.0
     machs = diverg.machs if diverg.machs else [aeros_mach]
 
     # ------------------------------------------------------------------ #
@@ -1325,7 +1294,7 @@ def run_sol144_diverg(
 
     # Restrained l-set: drop SUPORT DOFs (full a-set K_aa is singular for the
     # free-flight SUPORT model — same restraint the single-q path uses).
-    suport_local = _get_suport_local(bulk, free_dofs, grid_index)
+    suport_local = get_suport_local(bulk, free_dofs, grid_index)
     r_idx = list(suport_local)
     l_idx = [i for i in range(K_aa.shape[0]) if i not in set(r_idx)]
     K_ll = K_aa[np.ix_(l_idx, l_idx)]
@@ -1335,7 +1304,7 @@ def run_sol144_diverg(
     mach_results = []
     for mach in machs:
         aero_m = aero_cache.get(mach)
-        Q_gg = build_qaa(aero_m, aero_m.g_disp, aero_m.g_slope)
+        Q_gg = build_qaa(aero_m, aero_m.require_g_disp(), aero_m.require_g_slope())
         Q_aa = red.reduce_matrix(Q_gg)
         Q_ll = Q_aa[np.ix_(l_idx, l_idx)]
 
@@ -1420,7 +1389,6 @@ def run_sol144_trim(
     mass_case_gpwg = compute_gpwg(bulk, massset_sid)
 
     grid_index = build_grid_index(bulk)
-    n_dofs = 6 * len(grid_index)
     spc_sid = subcase.spc_sid
 
     # ------------------------------------------------------------------ #
@@ -1430,7 +1398,7 @@ def run_sol144_trim(
     # comes from the TRIM card.  AEROS.mach is the fallback when the TRIM field is
     # unset (0.0); a genuine disagreement is warned about.  A supersonic Mach is
     # rejected by build_aero_model / AeroCache (steady subsonic VLM only).
-    aeros_mach = bulk.aeros.mach if bulk.aeros else 0.0
+    aeros_mach = require_aeros(bulk).mach if bulk.aeros else 0.0
     mach = trim_card.mach if trim_card.mach else aeros_mach
     if trim_card.mach and aeros_mach and abs(trim_card.mach - aeros_mach) > 1e-9:
         warnings.warn(
@@ -1474,15 +1442,14 @@ def run_sol144_trim(
     # Separate free (to solve for) vs prescribed (given in TRIM card)
     prescribed_dict = {k.upper(): v for k, v in trim_card.vars.items()}
     free_labels   = [l for l in all_labels if l not in prescribed_dict]
-    pres_labels   = [l for l in all_labels if l in prescribed_dict]
 
     # ------------------------------------------------------------------ #
     # Reference geometry + RCSID rotation matrix for URDD transform
     # ------------------------------------------------------------------ #
-    aeros = bulk.aeros
-    from sbeam.assembly.coord_transform import _get_transform
+    aeros = require_aeros(bulk)
+    from sbeam.assembly.coord_transform import get_transform
     if aeros.rcsid:
-        x_ref_pt, R_rcsid = _get_transform(aeros.rcsid, bulk.cord2rs)
+        x_ref_pt, R_rcsid = get_transform(aeros.rcsid, bulk.cord2rs)
         x_ref    = float(x_ref_pt[0])
         suport_pos = x_ref_pt          # RCSID origin = moment reference
     else:
@@ -1499,7 +1466,7 @@ def run_sol144_trim(
     if chordcp_alpha_ref is not None:
         n_z_all = np.array([b.normal[2] for b in aero.boxes])
         cp_flat = aero.ajj_inv_corr @ (-n_z_all * chordcp_alpha_ref)
-        surfaces: dict = {}
+        surfaces: dict[int, dict[str, float]] = {}
         for card in sorted(bulk.chordcps.values(), key=lambda c: c.caero_eid):
             idxs = np.array([j for j, b in enumerate(aero.boxes)
                              if b.caero_eid == card.caero_eid])
@@ -1525,7 +1492,7 @@ def run_sol144_trim(
     # symmetry force-doubling factor (the AE1 Step D `sym=2` double-count that
     # halved the trim solution is gone with half-span support).
     D_jx = build_djx(aero.boxes, all_labels, bulk)       # (n_box, n_labels)
-    Q_ax_g = aero.g_disp.T @ aero.skj @ aero.ajj_inv_corr @ D_jx  # (n_g, n_labels)
+    Q_ax_g = aero.require_g_disp().T @ aero.skj @ aero.ajj_inv_corr @ D_jx  # (n_g, n_labels)
 
     # ------------------------------------------------------------------ #
     # A-set partition (SPC + RBE3 reduction)
@@ -1542,14 +1509,14 @@ def run_sol144_trim(
 
     # Also compute Q_aa for storage in result (reuse existing helper)
     from sbeam.aero.coupling import build_qaa
-    Q_gg = build_qaa(aero, aero.g_disp, aero.g_slope)
+    Q_gg = build_qaa(aero, aero.require_g_disp(), aero.require_g_slope())
     Q_aa = red.reduce_matrix(Q_gg)
 
     # ------------------------------------------------------------------ #
     # Build combined RHS: q*f_g (baseline aero) + inertial load
     # ------------------------------------------------------------------ #
     from sbeam.aero.coupling import build_fg
-    f_aero_g = q_dyn * build_fg(aero, aero.g_disp)   # (n_g,) baseline aero (whole-airplane)
+    f_aero_g = q_dyn * build_fg(aero, aero.require_g_disp())   # (n_g,) baseline aero (whole-airplane)
 
     # Aerodynamic contribution of prescribed trim variables (URDD cols = 0)
     label_to_col = {l: i for i, l in enumerate(all_labels)}
@@ -1559,13 +1526,13 @@ def run_sol144_trim(
     # Transform prescribed URDD values from RCSID frame to basic frame (AE5).
     # pres_values_basic is used only for the inertial path; prescribed_dict
     # is preserved in RCSID-frame form so trim_vars output matches the input card.
-    pres_values_basic = _urdd_rcsid_to_basic(
+    pres_values_basic = urdd_rcsid_to_basic(
         pres_values, label_to_col, R_rcsid, bool(aeros.rcsid)
     )
 
     # Inertial sensitivity matrix (basic frame); prescribed inertial RHS (AE7).
     # M_ax_g[:, col] = dF/dURDD_col; zero for non-URDD labels.
-    M_ax_g = _build_inertial_cols(bulk, all_labels, grid_index, suport_pos, massset_sid)
+    M_ax_g = build_inertial_cols(bulk, all_labels, grid_index, suport_pos, massset_sid)
     pres_inertial_g = M_ax_g @ pres_values_basic     # (n_g,) — free URDD entry = 0
 
     f_rhs_g = f_aero_g + pres_aero_g + pres_inertial_g  # (n_g,)
@@ -1579,7 +1546,7 @@ def run_sol144_trim(
     # ------------------------------------------------------------------ #
     # SUPORT DOF indices in a-set
     # ------------------------------------------------------------------ #
-    suport_local = _get_suport_local(bulk, free_dofs, grid_index)
+    suport_local = get_suport_local(bulk, free_dofs, grid_index)
     n_suport = len(suport_local)
     n_free   = len(free_labels)
 
@@ -1627,7 +1594,7 @@ def run_sol144_trim(
     # ------------------------------------------------------------------ #
     # Assemble full trim variable dict
     # ------------------------------------------------------------------ #
-    trim_vars: dict = dict(prescribed_dict)
+    trim_vars: dict[str, float] = dict(prescribed_dict)
     for i, lbl in enumerate(free_labels):
         trim_vars[lbl] = float(delta_free_arr[i])
 
@@ -1671,7 +1638,7 @@ def run_sol144_trim(
     # ------------------------------------------------------------------ #
     # Rigid derivatives (no structural deformation)
     # ------------------------------------------------------------------ #
-    rigid_derivs = _compute_rigid_derivs(aero, D_jx, all_labels, bulk, x_ref, suport_pos)
+    rigid_derivs = compute_rigid_derivs(aero, D_jx, all_labels, bulk, x_ref, suport_pos)
 
     # ------------------------------------------------------------------ #
     # Elastic restrained derivatives (finite difference, u_r = 0)
@@ -1701,14 +1668,14 @@ def run_sol144_trim(
     # ------------------------------------------------------------------ #
     from sbeam.aero.integration import build_djk
     djk = build_djk(aero.boxes)
-    w_struct = djk @ (aero.g_slope @ displacements)
+    w_struct = djk @ (aero.require_g_slope() @ displacements)
     w_total  = w_struct + D_jx @ delta_all + aero.wg
     gamma    = aero.ajj_inv_corr @ w_total
     f_box_vec = aero.skj @ gamma
     Fz_total = float(f_box_vec[2::3].sum())
     Fx_total = float(f_box_vec[0::3].sum())
     # nose-up-positive (single-source helper, AE1 Step E); whole-airplane (full-span)
-    My_total = float(_pitch_moment(f_box_vec, aero.boxes, x_ref))
+    My_total = float(pitch_moment(f_box_vec, aero.boxes, x_ref))
     sref = aeros.sref
     cref = aeros.cref
     # Fz_total and My_total are force/q (skj @ Cp); divide by area only, not q.
@@ -1760,7 +1727,7 @@ def run_sol144_trim(
 
     # g-set aero flight-load vector for FORCE/MOMENT export (plain trim:
     # G_disp^T · q · P_k).  Preserves net force/moment through the spline.
-    grid_loads = aero.g_disp.T @ (q_dyn * f_box_vec)
+    grid_loads = aero.require_g_disp().T @ (q_dyn * f_box_vec)
 
     # ------------------------------------------------------------------ #
     # Step 53 — balanced maneuver loads & inertia relief.
@@ -1771,7 +1738,7 @@ def run_sol144_trim(
     # non-zero inertia column consumed by MONPNT3 (MON3).  For a 1g determined
     # trim with URDD≈0 these reduce to the aero-only / zero case.
     # ------------------------------------------------------------------ #
-    delta_all_basic = _urdd_rcsid_to_basic(
+    delta_all_basic = urdd_rcsid_to_basic(
         delta_all, label_to_col, R_rcsid, bool(aeros.rcsid)
     )
     inertial_loads = M_ax_g @ delta_all_basic     # (n_g,)
@@ -1784,10 +1751,10 @@ def run_sol144_trim(
     # an SPC'd (e.g. half-span) model the residual legitimately equals the
     # constraint reaction, so the hard warning fires only in the free case; the
     # residual is always stored for the per-case acceptance test.
-    maneuver_closure = _load_resultant(net_loads, bulk, grid_index, suport_pos)
+    maneuver_closure = load_resultant(net_loads, bulk, grid_index, suport_pos)
     spc_dofs_closure = get_spc_dofs(bulk, spc_sid, grid_index) if spc_sid else []
     if len(spc_dofs_closure) == 0:
-        aero_res = _load_resultant(grid_loads, bulk, grid_index, suport_pos)
+        aero_res = load_resultant(grid_loads, bulk, grid_index, suport_pos)
         f_scale = max(np.linalg.norm(aero_res[:3]), 1.0)
         m_scale = max(np.linalg.norm(aero_res[3:]), 1.0)
         if (np.linalg.norm(maneuver_closure[:3]) > 1e-6 * f_scale or

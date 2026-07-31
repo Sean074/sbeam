@@ -17,12 +17,12 @@ sort order; only float columns are reformatted.
 from __future__ import annotations
 
 import math
-from typing import Iterable
+from typing import Any, Callable, Iterable, cast
 
 import pandas as pd
 
 
-def fmt(x, sig: int = 5) -> str:
+def fmt(x: Any, sig: int = 5) -> str:
     """Format *x* to *sig* significant figures, decimal where reasonable.
 
     Non-numeric values pass through as ``str``; NaN renders as ``""`` and
@@ -45,7 +45,7 @@ def fmt(x, sig: int = 5) -> str:
     return s
 
 
-def fmt_mass(x) -> str:
+def fmt_mass(x: Any) -> str:
     """Format a mass at 0.1-unit precision (e.g. kg reported to ±0.1)."""
     try:
         return f"{float(x):.1f}"
@@ -60,10 +60,12 @@ def style_numeric(df: pd.DataFrame, sig: int = 5, mass_cols: Iterable[str] = ())
     columns are left as-is.  Pass the result straight to ``st.dataframe``.
     """
     mass = set(mass_cols)
-    fmt_map: dict = {}
+    fmt_map: dict[str, Callable[[Any], str]] = {}
     for col in df.columns:
         if col in mass:
             fmt_map[col] = fmt_mass
         elif pd.api.types.is_float_dtype(df[col]):
             fmt_map[col] = (lambda v, s=sig: fmt(v, s))
-    return df.style.format(fmt_map)
+    # cast: pandas types the formatter map as str-only, but a per-column
+    # callable is supported and is what the numeric formatting needs.
+    return df.style.format(cast(Any, fmt_map))

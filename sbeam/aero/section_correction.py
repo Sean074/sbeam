@@ -51,7 +51,7 @@ Conventions
 Per-strip target arrays are ordered by ascending ``i_span`` within each surface. Force is
 the surface-normal force/q (``Σ area·Cp``; §2.9) per unit reference normalwash — exactly
 ``apply_wt1``'s convention. Pitching moment is **nose-up positive** about the per-strip
-moment reference (default = strip ¼-chord), matching ``sol144._pitch_moment``.
+moment reference (default = strip ¼-chord), matching ``sol144.pitch_moment``.
 
 The supplied ``ajj`` and ``boxes`` must be the **whole model** (full AIC); pass the AIC
 calibrated at the correction Mach (the PG-consistent ``β·ajj_pg``, or M=0).
@@ -60,12 +60,13 @@ calibrated at the correction Mach (the PG-consistent ``β·ajj_pg``, or M=0).
 import math
 import warnings
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional, Union
 
 import numpy as np
 
 from sbeam.aero.panel import AeroBox
 from sbeam.model.aero import W2gj, Aecorr
+from sbeam.types import FloatArray
 
 _RATIO_TOL = 1e-12   # near-zero reference circulation guard (mirrors apply_wt2)
 _COND_WARN = 1e10    # ill-conditioning warning threshold
@@ -75,31 +76,31 @@ _COND_WARN = 1e10    # ill-conditioning warning threshold
 class SurfaceTargets:
     """Per-strip section targets for one CAERO1 (arrays length = that surface's strips)."""
     caero_eid:  int
-    f_slope:    np.ndarray            # dF/dα  (force/q per rad)
-    alpha_0:    np.ndarray            # zero-force angle α₀ (rad); F₀ = −f_slope·α₀
-    m_slope:    np.ndarray            # dM/dα  (moment/q per rad, nose-up +)
-    m_0:        np.ndarray            # M at α=0 (moment/q, nose-up +)
-    moment_ref: Optional[np.ndarray] = None   # per-strip moment ref x; default ¼-chord
+    f_slope:    FloatArray            # dF/dα  (force/q per rad)
+    alpha_0:    FloatArray            # zero-force angle α₀ (rad); F₀ = −f_slope·α₀
+    m_slope:    FloatArray            # dM/dα  (moment/q per rad, nose-up +)
+    m_0:        FloatArray            # M at α=0 (moment/q, nose-up +)
+    moment_ref: Optional[FloatArray] = None   # per-strip moment ref x; default ¼-chord
 
 
 @dataclass
 class SurfaceDiagnostics:
     """Achieved-vs-target per-strip diagnostics for one surface."""
     caero_eid:        int
-    moment_ref:       np.ndarray
-    achieved_f_slope: np.ndarray
-    achieved_m_slope: np.ndarray
-    achieved_f0:      np.ndarray
-    achieved_m0:      np.ndarray
+    moment_ref:       FloatArray
+    achieved_f_slope: FloatArray
+    achieved_m_slope: FloatArray
+    achieved_f0:      FloatArray
+    achieved_m0:      FloatArray
 
 
 @dataclass
 class MultiSectionCorrectionResult:
     """Per-surface cards + global operators + per-surface diagnostics."""
-    cards:       dict                 # {caero_eid: (W2gj, Aecorr)}
-    r:           np.ndarray           # global per-box WT2 multiplier (length n_box)
-    wg:          np.ndarray           # global per-box W2GJ normalwash (length n_box)
-    per_surface: dict = field(default_factory=dict)   # {caero_eid: SurfaceDiagnostics}
+    cards:       dict[int, tuple[W2gj, Aecorr]]
+    r:           FloatArray           # global per-box WT2 multiplier (length n_box)
+    wg:          FloatArray           # global per-box W2GJ normalwash (length n_box)
+    per_surface: dict[int, SurfaceDiagnostics] = field(default_factory=dict)
 
 
 @dataclass
@@ -107,13 +108,13 @@ class SectionCorrectionResult:
     """Single-surface result (the wrapper return type); global r/wg restricted to it."""
     w2gj:             W2gj
     aecorr:           Aecorr
-    r:                np.ndarray
-    wg:               np.ndarray
-    moment_ref:       np.ndarray
-    achieved_f_slope: np.ndarray
-    achieved_m_slope: np.ndarray
-    achieved_f0:      np.ndarray
-    achieved_m0:      np.ndarray
+    r:                FloatArray
+    wg:               FloatArray
+    moment_ref:       FloatArray
+    achieved_f_slope: FloatArray
+    achieved_m_slope: FloatArray
+    achieved_f0:      FloatArray
+    achieved_m0:      FloatArray
 
 
 def _box_chord(box: AeroBox) -> float:
@@ -123,16 +124,18 @@ def _box_chord(box: AeroBox) -> float:
     return box.area / max(dy, 1e-14)
 
 
-def _strip_quarter_chord_x(boxes: list, idxs: list) -> float:
+def _strip_quarter_chord_x(boxes: list[AeroBox], idxs: list[int]) -> float:
     """Default per-strip moment reference: strip leading-edge x + ¼ strip chord."""
     le = min(min(boxes[k].corners[0][0], boxes[k].corners[1][0]) for k in idxs)
     te = max(max(boxes[k].corners[2][0], boxes[k].corners[3][0]) for k in idxs)
     return le + 0.25 * (te - le)
 
 
-def _surface_strips(boxes: list, caero_eid: int) -> list:
+def _surface_strips(
+    boxes: list[AeroBox], caero_eid: int
+) -> list[tuple[int, list[int]]]:
     """Ordered [(i_span, [global box index,...]), ...] for one CAERO1."""
-    groups: dict = {}
+    groups: dict[int, list[int]] = {}
     for k, box in enumerate(boxes):
         if box.caero_eid == caero_eid:
             groups.setdefault(box.i_span, []).append(k)
@@ -140,9 +143,9 @@ def _surface_strips(boxes: list, caero_eid: int) -> list:
 
 
 def build_section_correction_multi(
-    boxes: list,
-    ajj: np.ndarray,
-    targets,
+    boxes: list[AeroBox],
+    ajj: FloatArray,
+    targets: list[SurfaceTargets],
     *,
     sid_w2gj_base: int,
     sid_aecorr_base: int,
@@ -294,8 +297,8 @@ def build_section_correction_multi(
     # ----------------------------------------------------------- emit cards + diagnostics
     cp_off = b_op @ wg
     fbox_off = area_box * cp_off
-    cards: dict = {}
-    per_surface: dict = {}
+    cards: dict[int, tuple[W2gj, Aecorr]] = {}
+    per_surface: dict[int, SurfaceDiagnostics] = {}
     for i, (T, strips, x_mref) in enumerate(surface_meta):
         n_strip = len(strips)
         af = np.zeros(n_strip); am = np.zeros(n_strip)
@@ -325,17 +328,17 @@ def build_section_correction_multi(
 
 
 def build_section_correction(
-    boxes: list,
-    ajj: np.ndarray,
+    boxes: list[AeroBox],
+    ajj: FloatArray,
     *,
-    f_slope,
-    alpha_0,
-    m_slope,
-    m_0,
+    f_slope: FloatArray,
+    alpha_0: FloatArray,
+    m_slope: FloatArray,
+    m_0: FloatArray,
     caero_eid: int,
     sid_w2gj: int,
     sid_aecorr: int,
-    moment_ref=None,
+    moment_ref: Optional[FloatArray] = None,
     beta: float = 1.0,
 ) -> SectionCorrectionResult:
     """Single-surface convenience wrapper around ``build_section_correction_multi``.
@@ -375,7 +378,7 @@ def build_section_correction(
     )
 
 
-def _card_lines(name: str, head: list, values: list) -> str:
+def card_lines(name: str, head: list[Any], values: list[float]) -> str:
     """Free-field BDF card text: head fields then 8 values/line, '+'-continued."""
     fields = [name] + [str(h) for h in head]
     line = fields[:]
@@ -388,12 +391,14 @@ def _card_lines(name: str, head: list, values: list) -> str:
     return "\n".join(out)
 
 
-def _pair_to_bdf(w2: W2gj, ac: Aecorr) -> str:
-    return (f"{_card_lines('W2GJ', [w2.sid, w2.caero_eid], w2.data)}\n"
-            f"{_card_lines('AECORR', [ac.sid, ac.method, ac.caero_eid], ac.target)}\n")
+def pair_to_bdf(w2: W2gj, ac: Aecorr) -> str:
+    return (f"{card_lines('W2GJ', [w2.sid, w2.caero_eid], w2.data)}\n"
+            f"{card_lines('AECORR', [ac.sid, ac.method, ac.caero_eid], ac.target)}\n")
 
 
-def cards_to_bdf(result) -> str:
+def cards_to_bdf(
+    result: Union[SectionCorrectionResult, MultiSectionCorrectionResult]
+) -> str:
     """Format the generated W2GJ + AECORR(WT2) cards as bulk-data text.
 
     Accepts a single-surface ``SectionCorrectionResult`` or a multi-surface
@@ -401,8 +406,8 @@ def cards_to_bdf(result) -> str:
     """
     header = "$ Section force+moment correction (W2GJ camber offset + WT2 slope/a.c.)\n"
     if isinstance(result, MultiSectionCorrectionResult):
-        body = "".join(_pair_to_bdf(w2, ac)
+        body = "".join(pair_to_bdf(w2, ac)
                        for _, (w2, ac) in sorted(result.cards.items()))
     else:
-        body = _pair_to_bdf(result.w2gj, result.aecorr)
+        body = pair_to_bdf(result.w2gj, result.aecorr)
     return header + body

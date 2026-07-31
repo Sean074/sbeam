@@ -158,7 +158,7 @@ sbeam's sets (terminology per `05_aeroelastics.md`):
 
 | Set | Definition | Size | Where built |
 |---|---|---|---|
-| **g-set** | all grids × 6, grids in ascending sorted-ID order, DOFs `[6i … 6i+5]` = `[Tx Ty Tz Rx Ry Rz]` | 6N | `_node_dofs` / `grid_index` |
+| **g-set** | all grids × 6, grids in ascending sorted-ID order, DOFs `[6i … 6i+5]` = `[Tx Ty Tz Rx Ry Rz]` | 6N | `node_dofs` / `grid_index` |
 | **red-set** | g-set after RBE2/RBE3/RBAR elimination `T` | n_red | `build_rbe3_transformation` |
 | **a-set** | red-set after SPC partition (free DOFs) | n_a | `get_spc_dofs` + `apply_spcs` |
 | **h-set** | modal coordinates | n_m | `solve_modes` |

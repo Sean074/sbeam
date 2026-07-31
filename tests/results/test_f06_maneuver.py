@@ -10,7 +10,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import numpy as np
-import pytest
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.grid import Grid

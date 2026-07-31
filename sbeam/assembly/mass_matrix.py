@@ -1,5 +1,7 @@
 """Consistent mass matrix assembly for Euler-Bernoulli beam elements."""
 
+from typing import Optional
+
 import numpy as np
 import scipy.sparse
 
@@ -7,11 +9,13 @@ from sbeam.model.element import Cbar
 from sbeam.model.property import Pbar
 from sbeam.model.material import Mat1
 from sbeam.model.bulk_data import BulkData
-from sbeam.assembly.stiffness import transform_matrix, _node_dofs
+from sbeam.model.grid import Grid
+from sbeam.assembly.stiffness import transform_matrix, node_dofs
+from sbeam.types import FloatArray, SparseMatrix
 from sbeam.assembly.coord_transform import build_transform
 
 
-def local_mass(pbar: Pbar, mat1: Mat1, L: float) -> np.ndarray:
+def local_mass(pbar: Pbar, mat1: Mat1, L: float) -> FloatArray:
     """12x12 consistent mass matrix for a CBAR element in local coordinates.
 
     Local DOF order per node: [Tx, Ty, Tz, Rx, Ry, Rz]
@@ -62,10 +66,10 @@ def local_mass(pbar: Pbar, mat1: Mat1, L: float) -> np.ndarray:
 
 def element_mass_global(
     cbar: Cbar,
-    grids: dict,
-    pbars: dict,
-    mat1s: dict,
-) -> np.ndarray:
+    grids: dict[int, Grid],
+    pbars: dict[int, Pbar],
+    mat1s: dict[int, Mat1],
+) -> FloatArray:
     """12x12 element mass matrix in global coordinates: T.T @ M_local @ T."""
     pbar = pbars[cbar.pid]
     mat1 = mat1s[pbar.mid]
@@ -73,7 +77,7 @@ def element_mass_global(
     ga = grids[cbar.ga]
     gb = grids[cbar.gb]
     dx = np.array([gb.x - ga.x, gb.y - ga.y, gb.z - ga.z])
-    L = np.linalg.norm(dx)
+    L = float(np.linalg.norm(dx))
 
     M_local = local_mass(pbar, mat1, L)
     T = transform_matrix(cbar, grids)
@@ -83,8 +87,8 @@ def element_mass_global(
 
 def assemble_global_mass(
     bulk: BulkData,
-    massset_sid=None,
-) -> scipy.sparse.csr_matrix:
+    massset_sid: Optional[int] = None,
+) -> SparseMatrix:
     """Assemble the (6N x 6N) global consistent mass matrix.
 
     Includes CBAR element contributions and CONM2 point masses.
@@ -108,7 +112,7 @@ def assemble_global_mass(
         M_e = element_mass_global(cbar, bulk.grids, bulk.pbars, bulk.mat1s)
         if case.scale != 1.0:
             M_e = case.scale * M_e   # SCALE applies to the baseline structural mass
-        dofs = _node_dofs(cbar.ga, grid_index) + _node_dofs(cbar.gb, grid_index)
+        dofs = node_dofs(cbar.ga, grid_index) + node_dofs(cbar.gb, grid_index)
         ii, jj = np.meshgrid(dofs, dofs, indexing="ij")
         rows.extend(ii.ravel())
         cols.extend(jj.ravel())

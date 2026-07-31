@@ -1,7 +1,7 @@
 """Plotly figure builders for the aero box mesh and cp overlay (S44)."""
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Iterable, Optional, cast
 
 import numpy as np
 import pandas as pd
@@ -10,20 +10,23 @@ from plotly.subplots import make_subplots
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.aero.aero_model import AeroModel
+from sbeam.types import FloatArray
+from sbeam.aero.panel import AeroBox
+from sbeam.model.aero import Aeros
 
 
 def build_aero_box_figure(
     bulk: BulkData,
     aero_model: AeroModel,
-    cp: Optional[np.ndarray] = None,
-    cl_section: Optional[dict] = None,
-    cp_corr: Optional[np.ndarray] = None,
-    box_disp: Optional[np.ndarray] = None,
+    cp: Optional[FloatArray] = None,
+    cl_section: Optional[dict[int, float]] = None,
+    cp_corr: Optional[FloatArray] = None,
+    box_disp: Optional[FloatArray] = None,
     show_normals: bool = False,
     strip: bool = True,
     cp_cmid: Optional[float] = None,
     cp_title: str = "Cp",
-    body_eids: Optional[set] = None,
+    body_eids: Optional[set[int]] = None,
 ) -> go.Figure:
     """3D box mesh + optional cp colour map + section-load strip chart.
 
@@ -56,7 +59,7 @@ def build_aero_box_figure(
         fig = make_subplots(rows=1, cols=1, specs=[[{"type": "scene"}]])
     eids = body_eids or set()
 
-    def _is_body(b) -> bool:
+    def _is_body(b: AeroBox) -> bool:
         return getattr(b, "is_strip", False) or b.caero_eid in eids
 
     body_boxes = [b for b in aero_model.boxes if _is_body(b)]
@@ -88,7 +91,7 @@ def build_aero_box_figure(
     return fig
 
 
-def _box_corner(box, i: int, box_disp: Optional[np.ndarray]) -> np.ndarray:
+def _box_corner(box: AeroBox, i: int, box_disp: Optional[FloatArray]) -> FloatArray:
     """Corner ``i`` of ``box``, translated by its per-box displacement if given."""
     c = box.corners[i]
     if box_disp is not None:
@@ -99,15 +102,15 @@ def _box_corner(box, i: int, box_disp: Optional[np.ndarray]) -> np.ndarray:
 
 def _add_box_mesh(
     fig: go.Figure,
-    boxes: list,
-    box_disp: Optional[np.ndarray] = None,
+    boxes: list[AeroBox],
+    box_disp: Optional[FloatArray] = None,
     color: str = "#888888",
     name: str = "Aero mesh",
 ) -> None:
     """Wire-frame quad outline for every aero box — single Scatter3d trace."""
-    xs: list = []
-    ys: list = []
-    zs: list = []
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
     for box in boxes:
         # corners (4, 3): root-LE(0), tip-LE(1), tip-TE(2), root-TE(3)
         for i in [0, 1, 2, 3, 0]:
@@ -131,21 +134,21 @@ def _add_box_mesh(
 
 def _add_normal_vectors(
     fig: go.Figure,
-    boxes: list,
-    box_disp: Optional[np.ndarray] = None,
+    boxes: list[AeroBox],
+    box_disp: Optional[FloatArray] = None,
 ) -> None:
     """Outward surface-normal arrow at each box collocation point (single Cone trace)."""
     if not boxes:
         return
     # Scale arrows to the median box chord so they are proportioned to the mesh.
     scale = float(np.median([box.chord for box in boxes]))
-    xs: list = []
-    ys: list = []
-    zs: list = []
-    us: list = []
-    vs: list = []
-    ws: list = []
-    custom: list = []
+    xs: list[float] = []
+    ys: list[float] = []
+    zs: list[float] = []
+    us: list[float] = []
+    vs: list[float] = []
+    ws: list[float] = []
+    custom: list[list[Any]] = []
     for box in boxes:
         base = box.colloc
         if box_disp is not None:
@@ -185,9 +188,9 @@ def _add_normal_vectors(
 
 def _add_cp_contour(
     fig: go.Figure,
-    boxes: list,
-    cp: np.ndarray,
-    box_disp: Optional[np.ndarray] = None,
+    boxes: list[AeroBox],
+    cp: FloatArray,
+    box_disp: Optional[FloatArray] = None,
     cmid: Optional[float] = None,
     title: str = "Cp",
 ) -> None:
@@ -196,13 +199,13 @@ def _add_cp_contour(
     ``cmid`` centres the colour scale (pass ``0.0`` for a Δcp difference view so the
     diverging RdBu scale is symmetric about zero); ``title`` labels the colour bar.
     """
-    vx: list = []
-    vy: list = []
-    vz: list = []
-    ii: list = []
-    jj: list = []
-    kk: list = []
-    intensity: list = []
+    vx: list[float] = []
+    vy: list[float] = []
+    vz: list[float] = []
+    ii: list[int] = []
+    jj: list[int] = []
+    kk: list[int] = []
+    intensity: list[float] = []
     for b_idx, box in enumerate(boxes):
         c = [_box_corner(box, i, box_disp) for i in range(4)]  # root-LE,tip-LE,tip-TE,root-TE
         base = len(vx)
@@ -232,9 +235,11 @@ def _add_cp_contour(
     fig.add_trace(go.Mesh3d(**mesh_kwargs), row=1, col=1)
 
 
-def _add_section_load_strip(fig: go.Figure, boxes: list, cl_section: dict) -> None:
+def _add_section_load_strip(
+    fig: go.Figure, boxes: list[AeroBox], cl_section: dict[int, float]
+) -> None:
     """Bar chart of spanwise section CL vs span fraction."""
-    span_by_ispan: dict = {}
+    span_by_ispan: dict[int, float] = {}
     for box in boxes:
         span_by_ispan.setdefault(box.i_span, box.span_frac)
     span_vals = []
@@ -255,14 +260,14 @@ def _add_section_load_strip(fig: go.Figure, boxes: list, cl_section: dict) -> No
 
 def _add_corrected_vs_inviscid(
     fig: go.Figure,
-    boxes: list,
-    cp_inv: np.ndarray,
-    cp_corr: np.ndarray,
+    boxes: list[AeroBox],
+    cp_inv: FloatArray,
+    cp_corr: FloatArray,
 ) -> None:
     """Overlay spanwise mean cp for inviscid vs corrected solutions on the strip chart."""
-    span_by_ispan: dict = {}
-    cp_inv_by_ispan: dict = {}
-    cp_corr_by_ispan: dict = {}
+    span_by_ispan: dict[int, float] = {}
+    cp_inv_by_ispan: dict[int, list[float]] = {}
+    cp_corr_by_ispan: dict[int, list[float]] = {}
     for box in boxes:
         span_by_ispan.setdefault(box.i_span, box.span_frac)
         cp_inv_by_ispan.setdefault(box.i_span, []).append(float(cp_inv[box.k]))
@@ -309,7 +314,9 @@ def _apply_aero_layout(fig: go.Figure, strip: bool = True) -> None:
         fig.update_yaxes(title_text="CL section", row=2, col=1)
 
 
-def build_section_correction_figure(boxes, df, data_result, caero_eid):
+def build_section_correction_figure(
+    boxes: list[AeroBox], df: pd.DataFrame, data_result: Any, caero_eid: int
+) -> go.Figure:
     """Spanwise section-correction preview for one CAERO1 surface.
 
     Two stacked panels vs span fraction η: the section force-curve slope ``cn_α`` and
@@ -328,7 +335,7 @@ def build_section_correction_figure(boxes, df, data_result, caero_eid):
     import math
     from collections import defaultdict
 
-    groups: dict = defaultdict(list)
+    groups: dict[int, list[int]] = defaultdict(list)
     for k, b in enumerate(boxes):
         if b.caero_eid == caero_eid:
             groups[b.i_span].append(k)
@@ -350,10 +357,13 @@ def build_section_correction_figure(boxes, df, data_result, caero_eid):
     ach_cm0 = diag.achieved_m0 / (chord_s * area_s)          # back to section cm0
 
     cond = data_result.conditions[caero_eid]
-    sel = df[(df["caero"] == caero_eid)
-             & np.isclose(df["mach"], cond.mach)
-             & np.isclose(df["a_lo"], cond.a_lo)
-             & np.isclose(df["a_hi"], cond.a_hi)].sort_values("eta")
+    # cast: a boolean-mask selection is typed as Series | DataFrame; on a
+    # DataFrame it is always a DataFrame.
+    masked = cast(pd.DataFrame, df[(df["caero"] == caero_eid)
+                                   & np.isclose(df["mach"], cond.mach)
+                                   & np.isclose(df["a_lo"], cond.a_lo)
+                                   & np.isclose(df["a_hi"], cond.a_hi)])
+    sel = masked.sort_values(by="eta")
     eta_d = sel["eta"].to_numpy()
 
     var = cond.var.lower()
@@ -398,7 +408,7 @@ _DERIV_AERO_ROWS = {"ANGLEA": "α", "SIDES": "β", "ROLL": "p",
                     "PITCH": "q", "YAW": "r"}
 
 
-def _uncorrected_cp_operator(aero_model) -> np.ndarray:
+def _uncorrected_cp_operator(aero_model: AeroModel) -> FloatArray:
     """Raw (uncorrected) ΔCp operator in the same units as ``ajj_inv_corr``.
 
     Inverts the stored PG-compressed raw AIC (``aero_model.ajj``) and applies the
@@ -423,24 +433,29 @@ def _uncorrected_cp_operator(aero_model) -> np.ndarray:
     return inv * (2.0 / chord)[:, np.newaxis]
 
 
-def _rigid_derivs_for(aero_model, d_jx, labels, bulk, x_ref, ref_pt, state):
-    """``_compute_rigid_derivs`` against the corrected or uncorrected operator."""
-    from sbeam.solver.sol144 import _compute_rigid_derivs
+def _rigid_derivs_for(
+    aero_model: AeroModel, d_jx: FloatArray, labels: list[str], bulk: BulkData,
+    x_ref: float, ref_pt: FloatArray, state: str,
+) -> dict[str, dict[str, float]]:
+    """``compute_rigid_derivs`` against the corrected or uncorrected operator."""
+    from sbeam.solver.sol144 import compute_rigid_derivs
     if state == "uncorrected":
         import dataclasses
         model = dataclasses.replace(
             aero_model, ajj_inv_corr=_uncorrected_cp_operator(aero_model))
     else:
         model = aero_model
-    return _compute_rigid_derivs(model, d_jx, labels, bulk, x_ref, ref_pt)
+    return compute_rigid_derivs(model, d_jx, labels, bulk, x_ref, ref_pt)
 
 
-def rigid_derivative_table(aero_model, bulk, naming: str = "aero",
-                           state: str = "corrected"):
+def rigid_derivative_table(
+    aero_model: AeroModel, bulk: BulkData, naming: str = "aero",
+    state: str = "corrected",
+) -> Optional[pd.DataFrame]:
     """Full rigid aerodynamic stability & control derivative matrix for the Aero tab.
 
     Reuses the SOL 144 machinery — ``build_djx`` (per-label normalwash columns) and
-    ``sol144._compute_rigid_derivs`` (force/moment integration with no structural
+    ``sol144.compute_rigid_derivs`` (force/moment integration with no structural
     deformation, u_a = 0) — so the table matches the f06 rigid derivatives exactly
     while needing only the aero model (no trim/structure solve).
 
@@ -468,7 +483,7 @@ def rigid_derivative_table(aero_model, bulk, naming: str = "aero",
         return None
 
     from sbeam.aero.integration import build_djx
-    from sbeam.assembly.coord_transform import _get_transform
+    from sbeam.assembly.coord_transform import get_transform
 
     labels = ["ANGLEA", "SIDES", "ROLL", "PITCH", "YAW"] + sorted(
         s.label for s in bulk.aesurfs.values()
@@ -477,7 +492,7 @@ def rigid_derivative_table(aero_model, bulk, naming: str = "aero",
 
     aeros = bulk.aeros
     if aeros.rcsid:
-        ref_pt, _R = _get_transform(aeros.rcsid, bulk.cord2rs)
+        ref_pt, _R = get_transform(aeros.rcsid, bulk.cord2rs)
         x_ref = float(ref_pt[0])
     else:
         ref_pt = np.zeros(3)
@@ -495,13 +510,13 @@ def rigid_derivative_table(aero_model, bulk, naming: str = "aero",
                                    state)
         data = {col: [derivs[lbl][col] for lbl in labels] for col in _DERIV_COLS}
 
-    df = pd.DataFrame(data, index=labels)
+    df = pd.DataFrame(data, index=pd.Index(labels))
     if naming == "aero":
         df = df.rename(index=_DERIV_AERO_ROWS, columns=_DERIV_AERO_COLS)
     return df
 
 
-def surface_dihedral_deg(boxes: list, caero_eid: int) -> float:
+def surface_dihedral_deg(boxes: list[AeroBox], caero_eid: int) -> float:
     """Length-weighted mean dihedral magnitude |Γ| (deg) of a CAERO1 surface.
 
     0° = horizontal (responds to α), 90° = vertical (responds to β); intermediate
@@ -525,7 +540,9 @@ def surface_dihedral_deg(boxes: list, caero_eid: int) -> float:
     return num / den if den > 0 else 0.0
 
 
-def _strip_cn_cm(boxes: list, idx: list, cp: np.ndarray) -> tuple:
+def _strip_cn_cm(
+    boxes: list[AeroBox], idx: list[int], cp: FloatArray
+) -> tuple[float, float]:
     """Section normal-force and quarter-chord moment coefficient for one strip.
 
     cn = Σ(cp·area)/area_strip — area-weighted surface-normal force coefficient.
@@ -555,8 +572,11 @@ def _strip_cn_cm(boxes: list, idx: list, cp: np.ndarray) -> tuple:
     return cn, cm
 
 
-def build_span_loading_figure(boxes, cp_corr, cp_unc=None, aeros=None,
-                              mode: str = "corrected", surfaces=None) -> go.Figure:
+def build_span_loading_figure(
+    boxes: list[AeroBox], cp_corr: FloatArray, cp_unc: Optional[FloatArray] = None,
+    aeros: Optional[Aeros] = None, mode: str = "corrected",
+    surfaces: Optional[Iterable[int]] = None,
+) -> go.Figure:
     """Per-surface spanwise normal-force and pitching-moment line plots.
 
     Groups boxes by (caero_eid, i_span) so each CAERO1 surface gets its own
@@ -588,7 +608,7 @@ def build_span_loading_figure(boxes, cp_corr, cp_unc=None, aeros=None,
     if mode in ("uncorrected", "diff") and cp_unc is None:
         mode = "corrected"
 
-    surf_strips: dict = defaultdict(lambda: defaultdict(list))
+    surf_strips: dict[int, dict[int, list[int]]] = defaultdict(lambda: defaultdict(list))
     for k, b in enumerate(boxes):
         surf_strips[b.caero_eid][b.i_span].append(k)
 
@@ -605,7 +625,9 @@ def build_span_loading_figure(boxes, cp_corr, cp_unc=None, aeros=None,
     )
     hov = "η=%{x:.4g}<br>%{y:.5~g}<extra></extra>"
 
-    def _coeffs(cp, order, strips):
+    def _coeffs(
+        cp: FloatArray, order: list[int], strips: dict[int, list[int]]
+    ) -> tuple[list[float], list[float]]:
         cn, cm = [], []
         for sp in order:
             a, b = _strip_cn_cm(boxes, strips[sp], cp)
@@ -625,7 +647,10 @@ def build_span_loading_figure(boxes, cp_corr, cp_unc=None, aeros=None,
         eta = [float(boxes[strips[sp][0]].span_frac) for sp in order]
 
         cn_c, cm_c = _coeffs(cp_corr, order, strips)
-        cn_u, cm_u = _coeffs(cp_unc, order, strips) if cp_unc is not None else (None, None)
+        # cp_unc is guaranteed non-None here for the two modes that need it —
+        # the mode is downgraded to "corrected" above when it is missing.
+        cn_u, cm_u = (_coeffs(cp_unc, order, strips) if cp_unc is not None
+                      else (cn_c, cm_c))
 
         if mode == "uncorrected":
             cn_main, cm_main = cn_u, cm_u

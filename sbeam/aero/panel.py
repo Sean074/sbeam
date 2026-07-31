@@ -11,7 +11,10 @@ import numpy as np
 from dataclasses import dataclass
 
 from sbeam.model.aero import Caero1, Paero1
-from sbeam.assembly.coord_transform import _get_transform
+from sbeam.assembly.coord_transform import get_transform
+from sbeam.types import FloatArray
+from sbeam.model.aero import Aefact
+from sbeam.model.coordinate_system import Cord2r
 
 
 @dataclass
@@ -20,20 +23,20 @@ class AeroBox:
     caero_eid:  int
     i_span:     int           # spanwise index within parent CAERO1 (0-based)
     j_chord:    int           # chordwise index within parent CAERO1 (0-based)
-    corners:    np.ndarray    # (4, 3): [root-LE, tip-LE, tip-TE, root-TE] in CID 0
-    colloc:     np.ndarray    # (3,): 3/4-chord midspan collocation point
-    bound_a:     np.ndarray    # (3,): 1/4-chord bound vortex, root side
-    bound_b:     np.ndarray    # (3,): 1/4-chord bound vortex, tip side
-    force_point: np.ndarray    # (3,): 1/4-chord bound-vortex midpoint = (bound_a + bound_b)/2
+    corners:    FloatArray    # (4, 3): [root-LE, tip-LE, tip-TE, root-TE] in CID 0
+    colloc:     FloatArray    # (3,): 3/4-chord midspan collocation point
+    bound_a:     FloatArray    # (3,): 1/4-chord bound vortex, root side
+    bound_b:     FloatArray    # (3,): 1/4-chord bound vortex, tip side
+    force_point: FloatArray    # (3,): 1/4-chord bound-vortex midpoint = (bound_a + bound_b)/2
     area:        float
-    normal:     np.ndarray    # (3,) outward unit normal
+    normal:     FloatArray    # (3,) outward unit normal
     chord:      float         # mean chord of the box
     span_frac:  float         # spanwise fraction at box mid-span [0, 1]
     is_strip:   bool = False  # True ⇒ decoupled strip body box (no AIC coupling; set
                               # by build_aero_model from the CAERO1 PID → PSTRIP)
 
 
-def cosine_chord_fractions(nchord: int) -> np.ndarray:
+def cosine_chord_fractions(nchord: int) -> FloatArray:
     """LE-concentrated half-cosine chordwise station fractions ξ ∈ [0, 1].
 
     Returns ``nchord + 1`` monotone breakpoints ``ξ_i = 1 − cos((π/2)·(i/n))``,
@@ -55,10 +58,10 @@ def cosine_chord_fractions(nchord: int) -> np.ndarray:
 def mesh_caero1(
     caero: Caero1,
     paero: Paero1,
-    aefacts: dict,
-    cord2rs: dict,
+    aefacts: dict[int, Aefact],
+    cord2rs: dict[int, Cord2r],
     start_k: int = 0,
-) -> list:
+) -> list[AeroBox]:
     """Mesh one CAERO1 macroelement into a flat list of AeroBox objects.
 
     Bound vortex at 1/4 of the box chord; collocation at 3/4 of the box chord.
@@ -76,7 +79,7 @@ def mesh_caero1(
         List of AeroBox in row-major order (span varies slowest, chord fastest).
     """
     # Resolve P1 and P4 from the CP coordinate system to global CID 0
-    origin, R = _get_transform(caero.cp, cord2rs)
+    origin, R = get_transform(caero.cp, cord2rs)
     p1 = origin + R @ np.array(caero.p1, dtype=float)
     p4 = origin + R @ np.array(caero.p4, dtype=float)
 
@@ -98,7 +101,7 @@ def mesh_caero1(
     # Freestream direction: +X in CID 0 (ACSID=0 assumed in Phase A)
     x_hat = np.array([1.0, 0.0, 0.0])
 
-    def _le(e: float) -> np.ndarray:
+    def _le(e: float) -> FloatArray:
         """Leading-edge point at span fraction e."""
         return p1 + e * (p4 - p1)
 
@@ -106,11 +109,11 @@ def mesh_caero1(
         """Chord length at span fraction e (linear taper)."""
         return caero.x12 + e * (caero.x43 - caero.x12)
 
-    def _pt(e: float, x: float) -> np.ndarray:
+    def _pt(e: float, x: float) -> FloatArray:
         """Point at span fraction e and chord fraction x (0=LE, 1=TE)."""
         return _le(e) + x * _chord_len(e) * x_hat
 
-    boxes: list = []
+    boxes: list[AeroBox] = []
     k = start_k
 
     for i in range(nspan_boxes):

@@ -167,7 +167,7 @@ def test_m_ax_identity(basis_fixture):
 def test_m_ax_identity_limits_with_consistent_cbar_mass():
     """With CBAR rho > 0 the identity holds on translational rows only.
 
-    ``_build_inertial_cols`` is a *lumped* inertia model while ``M_aa`` is the
+    ``build_inertial_cols`` is a *lumped* inertia model while ``M_aa`` is the
     consistent mass matrix.  On translational rows the two agree exactly (the
     consistent beam mass rows sum to the lumped nodal share, rho*A*L/2), so the
     net force is identical.  On rotational rows they do not: a rigid translation

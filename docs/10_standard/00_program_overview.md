@@ -13,6 +13,7 @@
 ```
 sbeam/
 ├── main.py               # CLI entry point (SOL routing, f06 + load/monitor/maneuver exports)
+├── types.py              # Shared type aliases (FloatArray, SparseMatrix, LuFactor, …)
 ├── parser/
 │   ├── bdf_reader.py     # Bulk data section parser → BulkData object
 │   └── case_control.py   # Case control section parser → CaseControl object
@@ -78,13 +79,50 @@ sbeam/
 ## Coding Standards
 
 - Python 3.9+
-- Type hints on all function signatures.
 - Dataclasses (`@dataclass`) for all BDF card data objects.
-- All physical arrays are `numpy.ndarray`. Matrix indices follow DOF ordering: [Tx, Ty, Tz, Rx, Ry, Rz] per node.
 - No global mutable state. Pass model and results objects explicitly.
 - Raise `ValueError` with a descriptive message for invalid input. Do not silently ignore errors.
 - Unrecognised BDF cards: issue a `warnings.warn` and continue; log skipped card text.
 - Tests live in `tests/` and mirror the `sbeam/` directory structure.
+
+### Type annotations
+
+Every function signature is annotated, and the annotations are enforced by `pyright` in CI
+(`pyrightconfig.json`). The conventions:
+
+- **Parameterise every generic.** `dict[int, Grid]`, not `dict` with the value type in a
+  trailing comment; `list[AeroBox]`, not `list`. A bare `dict`/`list`/`tuple`/`set` in an
+  annotation is a CI failure (`reportMissingTypeArgument`).
+- **Physical arrays use the aliases in `sbeam/types.py`**, never a bare `np.ndarray`:
+
+  | Alias | Meaning |
+  |-------|---------|
+  | `FloatArray` | `npt.NDArray[np.float64]` — every physical vector/matrix |
+  | `ComplexArray` | `npt.NDArray[np.complex128]` — non-symmetric eigen-solutions |
+  | `IntArray` / `BoolArray` | DOF index maps / DOF masks |
+  | `SparseMatrix` | assembled sparse `K_gg` / `M_gg` (`csr_matrix \| csr_array`) |
+  | `LuFactor` | the `(lu, piv)` pair from `scipy.linalg.lu_factor` |
+
+  The aliases deliberately do **not** encode shape or rank — the DOF ordering that matters
+  ([Tx, Ty, Tz, Rx, Ry, Rz] per node) is documented per function instead.
+- **`Optional[X]`, not `X | None`,** while the floor is Python 3.9: dataclass annotations are
+  evaluated at import, and PEP 604 unions only became runtime-legal in 3.10. PEP 585 builtin
+  generics (`dict[int, Grid]`) *are* legal in 3.9 and are the preferred form.
+- **`Optional` fields get a guard, not a bare dereference.** `BulkData.aeros` and
+  `AeroModel.g_disp`/`g_slope` are legitimately `None` for non-aero decks, so aero code goes
+  through `require_aeros(bulk)` / `aero.require_g_disp()` / `aero.require_g_slope()`, which
+  raise a descriptive `ValueError` instead of an opaque `AttributeError`.
+- **Helpers used across module boundaries carry public names.** A leading underscore means
+  "private to this module"; anything imported elsewhere (e.g. `get_transform`, `node_dofs`,
+  `build_inertial_cols`, `compute_rigid_derivs`) is named without one.
+
+Three pyright rules are switched off in `pyrightconfig.json`, each for a specific reason:
+
+| Rule | Why it is off |
+|------|---------------|
+| `reportUnknownMemberType`, `reportUnknownArgumentType`, `reportUnknownVariableType`, `reportUnknownLambdaType` | `scipy`, `pandas` and `plotly` ship no `py.typed`, so these fire on every third-party call and on intermediate numpy expressions rather than on sbeam's own API surface. The rules that *do* police that surface (`reportMissingTypeArgument`, `reportMissingParameterType`, `reportUnknownParameterType`) stay on. |
+| `reportConstantRedefinition` | `K`, `M`, `I`, `R`, `A`, `L`, `E` are standard FEA/structural names and are legitimately reassigned. Same rationale as the `E741` entry in the ruff config. |
+| `reportMissingTypeStubs` | No stub packages are vendored; see above. |
 
 ---
 
@@ -183,12 +221,22 @@ plotly>=5.18
 streamlit>=1.30
 ```
 
+Development extras (`pip install -e .[dev]`): `pytest`, `pytest-cov`, `ruff`, `pyright`.
+
 ---
 
 ## Testing
 
 ```
 pytest tests/
+```
+
+CI (`.github/workflows/ci.yml`) runs three gates in order — all three must pass:
+
+```
+ruff check sbeam/ tests/     # lint (E, F, W)
+pyright                      # type check, config in pyrightconfig.json
+pytest -v --tb=short         # test suite
 ```
 
 ### Unit tests

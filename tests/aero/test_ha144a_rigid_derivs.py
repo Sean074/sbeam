@@ -14,7 +14,7 @@ is reproduced here in full:
     C_Zδe          0.2461          ELEV    CZ   (elevator)
     C_Mδe          0.5715          ELEV    CMY
 
-sbeam already computes all six (see `_compute_rigid_derivs`); before this file the
+sbeam already computes all six (see `compute_rigid_derivs`); before this file the
 suite gated only C_Zα and C_Mα (in `test_ae1_restrained_derivs.py`).  These tests
 lock the other four — pitch-rate (C_Zq, C_Mq) and control (C_Zδe, C_Mδe) — against
 the document so the documented, already-correct rigid column is regression-guarded.

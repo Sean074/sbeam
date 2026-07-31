@@ -21,9 +21,9 @@ class Massset:
     sid: int
     label: str = ""
     scale: float = 1.0
-    add: list = field(default_factory=list)      # list[int] overlay EIDs
-    replace: list = field(default_factory=list)  # list[(baseline_eid, overlay_eid)]
-    delete: list = field(default_factory=list)   # list[int] baseline EIDs
+    add: list[int] = field(default_factory=list)                    # overlay EIDs
+    replace: list[tuple[int, int]] = field(default_factory=list)    # (baseline, overlay)
+    delete: list[int] = field(default_factory=list)                 # baseline EIDs
 
 
 @dataclass

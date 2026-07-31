@@ -1,5 +1,9 @@
 import math
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sbeam.model.bulk_data import BulkData
 
 
 @dataclass
@@ -24,9 +28,9 @@ class Caero1:
     lspan:  int          # AEFACT sid for span fractions (0 when NSPAN used)
     lchord: int          # AEFACT sid for chord fractions (0 when NCHORD used)
     igid:   int          # interference group ID (ignored in Phase A)
-    p1:     tuple        # (x, y, z) root leading-edge in CP frame
+    p1:     tuple[float, float, float]   # root leading-edge in CP frame
     x12:    float        # root chord length
-    p4:     tuple        # (x, y, z) tip leading-edge in CP frame
+    p4:     tuple[float, float, float]   # tip leading-edge in CP frame
     x43:    float        # tip chord length
 
 
@@ -68,13 +72,13 @@ class Stripk:
     """
     sid:       int
     caero_eid: int           # which (strip) CAERO1 element this applies to
-    data: list = field(default_factory=list)
+    data: list[float] = field(default_factory=list)
 
 
 @dataclass
 class Aefact:
     sid:  int
-    data: list = field(default_factory=list)   # decimal fraction list (e.g. span/chord breakpoints)
+    data: list[float] = field(default_factory=list)   # decimal fractions (span/chord breakpoints)
 
 
 @dataclass
@@ -88,14 +92,14 @@ class W2gj:
     # This is the OPPOSITE sign to sbeam's internal normalwash slope wg
     # (positive = washout); ``build_wg`` negates card data on assembly.
     # See docs/20_theory/01_aeroelastics_theory.md §2.4–2.5 (Eq 9).
-    data: list = field(default_factory=list)
+    data: list[float] = field(default_factory=list)
 
 
 @dataclass
 class Wkk:
     sid:       int
     caero_eid: int           # which CAERO1 element this applies to
-    data: list = field(default_factory=list)   # per-box diagonal weights (length = nspan × nchord)
+    data: list[float] = field(default_factory=list)   # per-box diagonal weights (nspan × nchord)
 
 
 @dataclass
@@ -114,7 +118,7 @@ class Chordcp:
     caero_eid: int
     alpha_ref: float          # radians (card field is degrees)
     mach:      float = 0.0    # measurement Mach; 0.0 = not stated
-    data: list = field(default_factory=list)  # per-box physical Cp, row-major (span slowest)
+    data: list[float] = field(default_factory=list)  # per-box Cp, row-major (span slowest)
 
 
 @dataclass
@@ -122,13 +126,13 @@ class Aecorr:
     sid:       int
     method:    str           # 'WT1' (force/moment matching) or 'WT2' (pressure matching)
     caero_eid: int           # which CAERO1 element this applies to
-    target: list = field(default_factory=list)  # per-box cp (WT2) or per-strip lift (WT1)
+    target: list[float] = field(default_factory=list)  # per-box cp (WT2) or per-strip lift (WT1)
 
 
 @dataclass
 class Set1:
     sid:   int
-    grids: list = field(default_factory=list)   # list[int] of structural grid IDs
+    grids: list[int] = field(default_factory=list)   # structural grid IDs
 
 
 @dataclass
@@ -207,7 +211,7 @@ class Aesurf:
 class Aelist:
     """List of aerodynamic box IDs forming a control surface."""
     sid:      int
-    elements: list = field(default_factory=list)   # list[int] of CAERO1 box IDs
+    elements: list[int] = field(default_factory=list)   # CAERO1 box IDs
 
 
 @dataclass
@@ -223,7 +227,7 @@ class Trim:
     sid:  int
     mach: float
     q:    float          # dynamic pressure
-    vars: dict = field(default_factory=dict)   # {label: prescribed_value}
+    vars: dict[str, float] = field(default_factory=dict)   # {label: prescribed_value}
     rhoref: float = 0.0  # sbeam extension: freestream density (0.0 ⇒ not supplied)
 
     def velocity(self) -> float:
@@ -250,7 +254,7 @@ class Diverg:
     sid:    int
     nroots: int          # number of divergence roots to find
     rhoref: float = 0.0  # sbeam extension: reference density for V_div (0.0 ⇒ V_div omitted)
-    machs:  list = field(default_factory=list)   # list[float] of Mach values
+    machs:  list[float] = field(default_factory=list)   # Mach values
 
 
 # ---------------------------------------------------------------------------
@@ -271,8 +275,8 @@ class Trimvar:
 class Trimobj:
     """Weighted objective function for over-determined trim."""
     sid:     int
-    labels:  list = field(default_factory=list)   # list[str]
-    weights: list = field(default_factory=list)   # list[float], parallel to labels
+    labels:  list[str] = field(default_factory=list)
+    weights: list[float] = field(default_factory=list)   # parallel to labels
 
 
 @dataclass
@@ -296,7 +300,7 @@ class Aecomp:
     """
     name:     str          # component name (referenced by MONPNT*.comp)
     listtype: str          # 'AELIST' (box IDs) or 'SET1' (grid IDs)
-    list_ids: list = field(default_factory=list)   # list[int] of AELIST SIDs or SET1 SIDs
+    list_ids: list[int] = field(default_factory=list)   # AELIST SIDs or SET1 SIDs
 
 
 @dataclass
@@ -327,3 +331,19 @@ class Monpnt3:
     x:     float           # reference point X in cp frame
     y:     float           # reference point Y in cp frame
     z:     float           # reference point Z in cp frame
+
+
+def require_aeros(bulk: "BulkData") -> Aeros:
+    """Return ``bulk.aeros``, raising if the deck has no AEROS card.
+
+    Every aerodynamic operator needs the reference geometry (SREF/CREF/BREF and
+    the RCSID reference point).  ``BulkData.aeros`` is ``Optional`` because a
+    pure SOL 101/103 deck has no AEROS card, so aero code funnels through this
+    guard instead of dereferencing ``None`` and raising a bare AttributeError.
+    """
+    if bulk.aeros is None:
+        raise ValueError(
+            "An AEROS card is required for aerodynamic analysis "
+            "(reference chord/span/area and the rigid-body reference system)."
+        )
+    return bulk.aeros

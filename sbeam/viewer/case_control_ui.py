@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Callable, Dict, Optional, cast
 
 import streamlit as st
 
@@ -175,7 +175,9 @@ def summarize_case_control(cc: CaseControl, bulk: BulkData) -> list[str]:
 # Streamlit UI
 # ---------------------------------------------------------------------------
 
-def render_case_control_panel(bulk: Optional[BulkData], on_launch=None) -> None:
+def render_case_control_panel(
+    bulk: Optional[BulkData], on_launch: Optional[Callable[[], None]] = None
+) -> None:
     """Render the analysis-plan summary, a Launch button, and the case-control editor.
 
     When a case control is present, leads with a SOL-aware read-only summary and a
@@ -241,7 +243,7 @@ def _render_case_control_editor(
     if not st.session_state.get("cc_subcases"):
         if cc and cc.subcases:
             st.session_state.cc_subcases = [
-                {
+                cast(Dict[str, Any], {
                     "id":           sc.subcase_id,
                     "title":        sc.title,
                     "load_sid":     sc.load_sid,
@@ -252,7 +254,7 @@ def _render_case_control_editor(
                     "oload":        sc.oload,
                     "force":        sc.force,
                     "stress":       sc.stress,
-                }
+                })
                 for sc in cc.subcases
             ]
         else:
@@ -291,7 +293,7 @@ def _render_case_control_editor(
                 )
 
                 col_load, col_spc = st.columns(2)
-                load_opts: list = [None] + load_sids
+                load_opts: list[Optional[int]] = [None] + load_sids
                 load_idx = load_opts.index(sc_data["load_sid"]) if sc_data["load_sid"] in load_opts else 0
                 sc_data["load_sid"] = col_load.selectbox(
                     "LOAD SID",
@@ -300,7 +302,7 @@ def _render_case_control_editor(
                     format_func=lambda v: "— none —" if v is None else str(v),
                     key=f"sc_load_{idx}",
                 )
-                spc_opts: list = [None] + spc_sids
+                spc_opts: list[Optional[int]] = [None] + spc_sids
                 spc_idx = spc_opts.index(sc_data["spc_sid"]) if sc_data["spc_sid"] in spc_opts else 0
                 sc_data["spc_sid"] = col_spc.selectbox(
                     "SPC SID",
@@ -311,7 +313,7 @@ def _render_case_control_editor(
                 )
 
                 if sol == 103:
-                    eigrl_opts: list = [None] + eigrl_sids
+                    eigrl_opts: list[Optional[int]] = [None] + eigrl_sids
                     e_idx = eigrl_opts.index(sc_data["method_sid"]) if sc_data["method_sid"] in eigrl_opts else 0
                     sc_data["method_sid"] = st.selectbox(
                         "METHOD (EIGRL) SID",
@@ -400,7 +402,7 @@ def _render_case_control_editor(
             st.code(bdf_text, language="text")
 
 
-def _default_subcase(subcase_id: int) -> dict:
+def _default_subcase(subcase_id: int) -> dict[str, Any]:
     return {
         "id":           subcase_id,
         "title":        "",

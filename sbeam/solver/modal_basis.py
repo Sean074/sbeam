@@ -22,7 +22,7 @@ rigid-body vectors about the SUPORT reference point are deterministic and give:
     ``xi_dot * c_ref / 2V = PITCH``, ``xi = ANGLEA``);
   * ``M_rr = Phi_r^T M_aa Phi_r`` equal to the GPWG rigid mass about that point;
   * the column-for-column identity ``M_ax = -M_aa Phi_r`` against
-    ``sol144._build_inertial_cols`` (same reference point, ``suport_pos``).
+    ``sol144.build_inertial_cols`` (same reference point, ``suport_pos``).
 
 This is the same mathematical object as ``designs/rbmref_card.md``'s
 ``B_target``; ``build_rigid_modes`` here is its single owner.
@@ -59,7 +59,7 @@ Public API:
 
 import warnings
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 
@@ -74,7 +74,9 @@ from sbeam.aero.aero_model import AeroModel
 from sbeam.aero.coupling import build_qaa, build_fg, build_gaf
 from sbeam.aero.integration import build_djx, build_dj_rigidrate
 from sbeam.solver.sol103 import solve_modes
-from sbeam.solver.sol144 import _build_inertial_cols, _get_suport_local
+from sbeam.solver.sol144 import build_inertial_cols, get_suport_local
+from sbeam.types import FloatArray, IntArray
+from sbeam.model.aero import require_aeros
 
 
 # Relative generalized-mass floor below which a mode is discarded.  After the
@@ -116,19 +118,20 @@ _RIGID_LABELS = {
 @dataclass
 class ManeuverBasis:
     """Free-free basis Phi = [Phi_r | Phi_e] and its structural h-set operators."""
-    phi: np.ndarray                  # (n_a, n_h)
+    phi: FloatArray                  # (n_a, n_h)
     n_r: int
     n_e: int
-    rigid_dofs: list                 # rigid DOF components (1-6), one per Phi_r column
-    rigid_label_map: dict            # col -> {"dof", "accel", "rate", "disp"}
-    suport_pos: np.ndarray
-    elastic_freqs_hz: np.ndarray     # (n_e,)
-    M_hh: np.ndarray                 # (n_h, n_h) — block diagonal at baseline
-    K_hh: np.ndarray
-    M_rr: np.ndarray                 # (n_r, n_r) — GPWG rigid mass about suport_pos
+    rigid_dofs: list[int]                 # rigid DOF components (1-6), one per Phi_r column
+    # col -> {"dof", "accel", "rate", "disp"}; values are label strings or None
+    rigid_label_map: dict[int, dict[str, Any]]
+    suport_pos: FloatArray
+    elastic_freqs_hz: FloatArray     # (n_e,)
+    M_hh: FloatArray                 # (n_h, n_h) — block diagonal at baseline
+    K_hh: FloatArray
+    M_rr: FloatArray                 # (n_r, n_r) — GPWG rigid mass about suport_pos
     orthogonality_residual: float    # max |Phi^T M_aa Phi - blockdiag|
     n_filtered: int = 0              # modes dropped by the generalized-mass filter
-    filtered_freqs_hz: np.ndarray = field(default_factory=lambda: np.zeros(0))
+    filtered_freqs_hz: FloatArray = field(default_factory=lambda: np.zeros(0))
     n_available_elastic: int = 0     # elastic modes before NMODES truncation
     n_massless: int = 0              # a-set DOFs statically condensed before the solve
 
@@ -140,14 +143,14 @@ class ManeuverBasis:
 @dataclass
 class HsetGafs:
     """One-time aerodynamic h-set operators (geometry + Mach only, q-free)."""
-    Q_hh: np.ndarray                 # (n_h, n_h)   modal GAF
-    Q_hx: np.ndarray                 # (n_h, n_lab) all trim-label columns
-    Q_hc: np.ndarray                 # (n_h, n_ctl) AESURF subset view of Q_hx
-    ctrl_labels: list
-    all_labels: list
-    B_hh: np.ndarray                 # (n_h, n_h)   rigid-rate columns only (Level 1)
-    f_h0: np.ndarray                 # (n_h,)       baseline (camber/twist) aero
-    C_hh: np.ndarray                 # (n_h, n_h)   diag(2 zeta omega) on the elastic block
+    Q_hh: FloatArray                 # (n_h, n_h)   modal GAF
+    Q_hx: FloatArray                 # (n_h, n_lab) all trim-label columns
+    Q_hc: FloatArray                 # (n_h, n_ctl) AESURF subset view of Q_hx
+    ctrl_labels: list[str]
+    all_labels: list[str]
+    B_hh: FloatArray                 # (n_h, n_h)   rigid-rate columns only (Level 1)
+    f_h0: FloatArray                 # (n_h,)       baseline (camber/twist) aero
+    C_hh: FloatArray                 # (n_h, n_h)   diag(2 zeta omega) on the elastic block
     zeta: float
     v_inf: float
 
@@ -160,23 +163,23 @@ class AsetOperators:
     before Step 61; both solvers now go through this single assembly so their
     a-set indices and matrices are identical by construction.
     """
-    grid_index: dict
+    grid_index: dict[int, int]
     red: AsetReduction
-    all_labels: list
-    label_to_col: dict
-    K_aa: np.ndarray
-    M_aa: np.ndarray
-    Q_aa: np.ndarray
-    Q_ax_a: np.ndarray               # (n_a, n_lab) q-free aero sensitivity
-    M_ax_a: np.ndarray
-    M_ax_g: np.ndarray
-    f_aero_g_unit: np.ndarray        # (n_g,) q-free baseline aero load
-    D_jx: np.ndarray
-    suport_local: list
-    rigid_dofs: list                 # SUPORT DOF components (1-6), ascending
-    suport_pos: np.ndarray
+    all_labels: list[str]
+    label_to_col: dict[str, int]
+    K_aa: FloatArray
+    M_aa: FloatArray
+    Q_aa: FloatArray
+    Q_ax_a: FloatArray               # (n_a, n_lab) q-free aero sensitivity
+    M_ax_a: FloatArray
+    M_ax_g: FloatArray
+    f_aero_g_unit: FloatArray        # (n_g,) q-free baseline aero load
+    D_jx: FloatArray
+    suport_local: list[int]
+    rigid_dofs: list[int]                 # SUPORT DOF components (1-6), ascending
+    suport_pos: FloatArray
     x_ref: float
-    R_rcsid: np.ndarray
+    R_rcsid: FloatArray
     has_rcsid: bool
 
 
@@ -193,7 +196,7 @@ def assemble_aset_operators(
     baseline aero, RCSID transform) on the Step 59 ``reduce_to_aset`` path.  All
     aerodynamic quantities are dynamic-pressure free; the caller applies q.
     """
-    from sbeam.assembly.coord_transform import _get_transform
+    from sbeam.assembly.coord_transform import get_transform
 
     grid_index = build_grid_index(bulk)
 
@@ -203,9 +206,9 @@ def assemble_aset_operators(
     )
     label_to_col = {l: i for i, l in enumerate(all_labels)}
 
-    aeros = bulk.aeros
+    aeros = require_aeros(bulk)
     if aeros.rcsid:
-        x_ref_pt, R_rcsid = _get_transform(aeros.rcsid, bulk.cord2rs)
+        x_ref_pt, R_rcsid = get_transform(aeros.rcsid, bulk.cord2rs)
         x_ref = float(x_ref_pt[0])
         suport_pos = x_ref_pt
         has_rcsid = True
@@ -216,7 +219,7 @@ def assemble_aset_operators(
         has_rcsid = False
 
     D_jx = build_djx(aero.boxes, all_labels, bulk)                  # (n_box, n_lab)
-    Q_ax_g = aero.g_disp.T @ aero.skj @ aero.ajj_inv_corr @ D_jx    # (n_g, n_lab)
+    Q_ax_g = aero.require_g_disp().T @ aero.skj @ aero.ajj_inv_corr @ D_jx    # (n_g, n_lab)
 
     red = reduce_to_aset(bulk, grid_index, subcase.spc_sid)
 
@@ -225,19 +228,19 @@ def assemble_aset_operators(
     K_gg = assemble_global_stiffness(bulk)
     K_aa = red.reduce_matrix(K_gg, dense=True)
 
-    Q_gg = build_qaa(aero, aero.g_disp, aero.g_slope)
+    Q_gg = build_qaa(aero, aero.require_g_disp(), aero.require_g_slope())
     Q_aa = red.reduce_matrix(Q_gg)
 
     massset_sid = subcase.massset_sid            # Step 60 mass case (None = baseline)
     M_gg = assemble_global_mass(bulk, massset_sid)
     M_aa = red.reduce_matrix(M_gg, dense=True)
 
-    f_aero_g_unit = build_fg(aero, aero.g_disp)                     # (n_g,) q-free
-    M_ax_g = _build_inertial_cols(
+    f_aero_g_unit = build_fg(aero, aero.require_g_disp())                     # (n_g,) q-free
+    M_ax_g = build_inertial_cols(
         bulk, all_labels, grid_index, suport_pos, massset_sid)
     M_ax_a = red.reduce_rect(M_ax_g)
 
-    suport_local = _get_suport_local(bulk, red.free_dofs, grid_index)
+    suport_local = get_suport_local(bulk, red.free_dofs, grid_index)
     rigid_dofs = sorted({int(ch) for sup in bulk.supports for ch in sup.dofs})
 
     return AsetOperators(
@@ -256,11 +259,11 @@ def assemble_aset_operators(
 
 def build_rigid_modes(
     bulk: BulkData,
-    grid_index: dict,
+    grid_index: dict[int, int],
     red: AsetReduction,
-    rigid_dofs: list,
-    ref_pos: np.ndarray,
-) -> np.ndarray:
+    rigid_dofs: list[int],
+    ref_pos: FloatArray,
+) -> FloatArray:
     """Geometric rigid-body vectors about ``ref_pos``, restricted to the a-set.
 
     THE single rigid-basis builder (Step 61 owns it; ``designs/rbmref_card.md``
@@ -333,7 +336,9 @@ def build_rigid_modes(
 # Full basis
 # ---------------------------------------------------------------------------
 
-def _condense_massless(K_aa: np.ndarray, M_aa: np.ndarray) -> tuple:
+def _condense_massless(
+    K_aa: FloatArray, M_aa: FloatArray
+) -> tuple[FloatArray, IntArray]:
     """Static (Guyan) condensation of the massless a-set DOFs.
 
     CONM2-only models (no CBAR ``rho``, no rotary inertia) leave rotational DOFs
@@ -433,7 +438,7 @@ def build_maneuver_basis(
 
     if eigrl is None:
         eigrl = Eigrl(sid=0, nd=None, norm="MASS")
-    T_cond, m_dofs = _condense_massless(K_aa, M_aa)
+    T_cond, _m_dofs = _condense_massless(K_aa, M_aa)
     K_red = T_cond.T @ K_aa @ T_cond
     M_red = T_cond.T @ M_aa @ T_cond
     K_red = 0.5 * (K_red + K_red.T)
@@ -555,7 +560,7 @@ def build_hset_gafs(
     # Rigid-rate aerodynamics: same chain as Q_ax but with the physical-rate
     # normalwash columns.
     dj_rate = build_dj_rigidrate(aero.boxes, basis.rigid_dofs, bulk, v_inf)
-    B_ar_g = aero.g_disp.T @ aero.skj @ aero.ajj_inv_corr @ dj_rate   # (n_g, n_r)
+    B_ar_g = aero.require_g_disp().T @ aero.skj @ aero.ajj_inv_corr @ dj_rate   # (n_g, n_r)
     B_hr = phi.T @ ops.red.reduce_rect(B_ar_g)                        # (n_h, n_r)
     B_hh = np.zeros((n_h, n_h))
     B_hh[:, :n_r] = B_hr

@@ -14,13 +14,14 @@ transient maneuver) must share this path so their a-set indices are identical.
 """
 
 from dataclasses import dataclass
+from typing import Literal, Optional, Union, overload
 
 import numpy as np
-import scipy.sparse
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.assembly.stiffness import get_spc_dofs
 from sbeam.assembly.rbe3 import build_rbe3_transformation
+from sbeam.types import FloatArray, SparseMatrix
 
 
 @dataclass
@@ -36,18 +37,29 @@ class AsetReduction:
         free_local: a-set indices into the reduced set (SPC DOFs removed).
         free_dofs:  a-set indices into the g-set.
     """
-    T: np.ndarray
-    dep_dofs: list
-    red_dofs: list
-    free_local: list
-    free_dofs: list
+    T: FloatArray
+    dep_dofs: list[int]
+    red_dofs: list[int]
+    free_local: list[int]
+    free_dofs: list[int]
 
     @property
     def n_red(self) -> int:
         """Number of reduced-set DOFs (T's column count)."""
         return len(self.red_dofs)
 
-    def reduce_matrix(self, A, dense: bool = False):
+    @overload
+    def reduce_matrix(self, A: FloatArray, dense: bool = ...) -> FloatArray: ...
+    @overload
+    def reduce_matrix(self, A: SparseMatrix, dense: Literal[True]) -> FloatArray: ...
+    @overload
+    def reduce_matrix(
+        self, A: SparseMatrix, dense: bool = ...
+    ) -> Union[FloatArray, SparseMatrix]: ...
+
+    def reduce_matrix(
+        self, A: Union[FloatArray, SparseMatrix], dense: bool = False
+    ) -> Union[FloatArray, SparseMatrix]:
         """Reduce a square (n_g, n_g) matrix to the a-set.
 
         Without dependent DOFs the input's sparsity is preserved (matching
@@ -57,32 +69,34 @@ class AsetReduction:
         semantics, same as the sol101 precedent).
         """
         if self.dep_dofs:
-            A_red = self.T.T @ A @ self.T
-            if hasattr(A_red, "toarray"):
+            A_red: Union[FloatArray, SparseMatrix] = self.T.T @ A @ self.T
+            if not isinstance(A_red, np.ndarray):
                 A_red = A_red.toarray()
             return A_red[np.ix_(self.free_local, self.free_local)]
-        if scipy.sparse.issparse(A):
+        if not isinstance(A, np.ndarray):
             if dense:
                 return A.toarray()[np.ix_(self.free_local, self.free_local)]
             return A[self.free_local, :][:, self.free_local]
         return A[np.ix_(self.free_local, self.free_local)]
 
-    def reduce_rect(self, A: np.ndarray) -> np.ndarray:
+    def reduce_rect(self, A: FloatArray) -> FloatArray:
         """Reduce a rectangular (n_g, k) column block to a-set rows (e.g. Q_ax, M_ax)."""
         A_red = (self.T.T @ A) if self.dep_dofs else A
         return A_red[self.free_local, :]
 
-    def reduce_vector(self, f: np.ndarray) -> np.ndarray:
+    def reduce_vector(self, f: FloatArray) -> FloatArray:
         """Reduce a (n_g,) load vector to the a-set."""
         f_red = (self.T.T @ f) if self.dep_dofs else f
         return f_red[self.free_local]
 
-    def expand_to_g(self, u_a: np.ndarray) -> np.ndarray:
+    def expand_to_g(self, u_a: FloatArray) -> FloatArray:
         """Expand an a-set displacement vector to the full g-set (see expand_to_g)."""
         return expand_to_g(u_a, self.T, self.free_local, self.n_red)
 
 
-def reduce_to_aset(bulk: BulkData, grid_index: dict, spc_sid) -> AsetReduction:
+def reduce_to_aset(
+    bulk: BulkData, grid_index: dict[int, int], spc_sid: Optional[int]
+) -> AsetReduction:
     """Compute the RBE3+SPC a-set partition for a model.
 
     Args:
@@ -117,11 +131,11 @@ def reduce_to_aset(bulk: BulkData, grid_index: dict, spc_sid) -> AsetReduction:
 
 
 def expand_to_g(
-    u_a: np.ndarray,
-    T: np.ndarray,
-    free_local: list,
+    u_a: FloatArray,
+    T: FloatArray,
+    free_local: list[int],
     n_red: int,
-) -> np.ndarray:
+) -> FloatArray:
     """Expand an a-set displacement vector to the full g-set via the RBE3/RBAR T matrix.
 
     The aeroelastic solvers work on the a-set (post-SPC, post-RBAR). When the
@@ -133,7 +147,7 @@ def expand_to_g(
     Args:
         u_a:        (n_a,) a-set displacement.
         T:          (n_g, n_red) RBE3/RBAR transformation from build_rbe3_transformation.
-        free_local: list of a-set indices in the reduced set (length n_a).
+        free_local: list[int] of a-set indices in the reduced set (length n_a).
         n_red:      number of reduced-set DOFs (T's column count).
 
     Returns:

@@ -7,7 +7,6 @@ from sbeam.model.element import Cbush
 from sbeam.model.property import Pbush
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.grid import Grid
-from sbeam.model.material import Mat1
 from sbeam.assembly.stiffness import (
     cbush_local_stiffness,
     cbush_transform_matrix,

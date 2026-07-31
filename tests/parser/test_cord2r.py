@@ -1,10 +1,8 @@
 """Parser tests for CORD2R coordinate system card."""
 
-import math
 import pytest
 
 from sbeam.parser.bdf_reader import parse_bulk_data
-from sbeam.model.coordinate_system import Cord2r
 
 
 # ---------------------------------------------------------------------------

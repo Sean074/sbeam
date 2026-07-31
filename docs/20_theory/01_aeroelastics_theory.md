@@ -473,7 +473,7 @@ and the two points must not be confused:
   takes the same `xref`).
 
 The nose-up-positive pitching moment is the single-source arm
-$M_y=-\sum_j F_{z,j}\,(x_j-x_\text{ref})$ (`_pitch_moment`, AE1 Step E), nondimensionalised
+$M_y=-\sum_j F_{z,j}\,(x_j-x_\text{ref})$ (`pitch_moment`, AE1 Step E), nondimensionalised
 $C_{MY}=M_y/(S_\text{ref}\,c_\text{ref})$. Roll and yaw use the full 3-component resultant above:
 $C_{MX}=M_x/(S_\text{ref}\,b_\text{ref})$, $C_{MZ}=M_z/(S_\text{ref}\,b_\text{ref})$. Because
 $\mathbf M$ carries the per-box side force $F_y$, these are correct for canted surfaces with **no**

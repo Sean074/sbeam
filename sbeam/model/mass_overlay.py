@@ -2,7 +2,7 @@
 
 Resolves a case-control ``MASSSET = sid`` request into the effective CONM2 set
 and structural-mass scale factor used by the mass-derived operators
-(``assemble_global_mass``, ``compute_gpwg``, ``_build_inertial_cols``).
+(``assemble_global_mass``, ``compute_gpwg``, ``build_inertial_cols``).
 
 The case mass is the baseline model mass — CBAR distributed mass plus the
 baseline CONM2s — multiplied by ``SCALE``, then modified by the MASSSET ops:
@@ -30,7 +30,7 @@ class MassCase:
     sid: Optional[int]   # MASSSET SID, or None for the baseline configuration
     label: str           # case name for output headers
     scale: float         # multiplies the baseline (CBAR + baseline CONM2) mass
-    conm2s: dict         # {eid: Conm2} — baseline members already scaled
+    conm2s: dict[int, Conm2]   # baseline members already scaled
 
     @property
     def is_baseline(self) -> bool:
@@ -79,7 +79,7 @@ def resolve_mass_case(bulk: BulkData, massset_sid: Optional[int] = None) -> Mass
     # Iterate bulk.conm2s so the effective set keeps deck (card) order — the
     # assembly sums contributions in this order, which keeps mass-case results
     # reproducible and comparable with a hand-edited deck.
-    conm2s = {}
+    conm2s: dict[int, Conm2] = {}
     for eid, c in bulk.conm2s.items():
         if eid in overlays:
             conm2s[eid] = c                       # overlay — unscaled
@@ -91,6 +91,6 @@ def resolve_mass_case(bulk: BulkData, massset_sid: Optional[int] = None) -> Mass
     return MassCase(sid=ms.sid, label=ms.label, scale=ms.scale, conm2s=conm2s)
 
 
-def effective_conm2s(bulk: BulkData, massset_sid: Optional[int] = None) -> dict:
+def effective_conm2s(bulk: BulkData, massset_sid: Optional[int] = None) -> dict[int, Conm2]:
     """The effective ``{eid: Conm2}`` set for a mass case (see resolve_mass_case)."""
     return resolve_mass_case(bulk, massset_sid).conm2s

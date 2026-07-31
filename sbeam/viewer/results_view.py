@@ -10,7 +10,10 @@ import pandas as pd
 import streamlit as st
 
 from sbeam.model.bulk_data import BulkData
-from sbeam.results.results import Sol103Result
+from sbeam.results.results import (
+    ManeuverResult, Sol101Result, Sol103Result,
+    Sol144DivergResult, Sol144TrimResult,
+)
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.viewer.geometry import build_deformed_figure, build_mode_figure
 from sbeam.viewer.aero_view import build_aero_box_figure
@@ -21,7 +24,7 @@ from sbeam.viewer.format_utils import fmt, style_numeric
 # SOL 101 results display (Step 21)
 # ---------------------------------------------------------------------------
 
-def render_sol101_results(bulk: BulkData, results: dict) -> None:
+def render_sol101_results(bulk: BulkData, results: dict[int, Sol101Result]) -> None:
     """Display deformed shape, scale slider, and results tables for SOL 101."""
     subcase_ids = sorted(results.keys())
     if len(subcase_ids) > 1:
@@ -171,7 +174,7 @@ def render_sol101_results(bulk: BulkData, results: dict) -> None:
 # SOL 103 results display (Step 22)
 # ---------------------------------------------------------------------------
 
-def render_sol103_results(bulk: BulkData, results: dict) -> None:
+def render_sol103_results(bulk: BulkData, results: dict[int, Sol103Result]) -> None:
     """Display mode shapes and frequency table for SOL 103."""
     subcase_ids = sorted(results.keys())
     if len(subcase_ids) > 1:
@@ -275,7 +278,7 @@ def render_sol103_results(bulk: BulkData, results: dict) -> None:
 def _render_modal_mass_chart(
     bulk: BulkData,
     result: Sol103Result,
-    grid_index: dict,
+    grid_index: dict[int, int],
 ) -> None:
     """Bar chart of modal mass fractions for translational DOFs."""
     try:
@@ -330,9 +333,9 @@ def _model_span(bulk: BulkData) -> float:
 
 def render_sol144_results(
     bulk: BulkData,
-    trim_results: Optional[dict] = None,
-    diverg_results: Optional[dict] = None,
-    maneuver_results: Optional[dict] = None,
+    trim_results: Optional[dict[int, Sol144TrimResult]] = None,
+    diverg_results: Optional[dict[int, Sol144DivergResult]] = None,
+    maneuver_results: Optional[dict[int, ManeuverResult]] = None,
 ) -> None:
     """Display SOL 144 trim / divergence / maneuver results (Step 57)."""
     trim_results = trim_results or {}
@@ -357,7 +360,7 @@ def render_sol144_results(
         _render_sol144_maneuver(bulk, maneuver_results[sel_id])
 
 
-def _render_sol144_trim(bulk: BulkData, result) -> None:
+def _render_sol144_trim(bulk: BulkData, result: Sol144TrimResult) -> None:
     """Trim variables, stability derivatives, q_div, hinge/monitor loads, deflected shape."""
     # ---- Trim summary metrics ----
     st.subheader("Trim solution")
@@ -466,7 +469,7 @@ def _render_sol144_trim(bulk: BulkData, result) -> None:
     _render_sol144_deflected(bulk, result)
 
 
-def _render_sol144_deflected(bulk: BulkData, result) -> None:
+def _render_sol144_deflected(bulk: BulkData, result: Sol144TrimResult) -> None:
     """Deformed structure overlay + spline-deflected, canted aero box cp mesh."""
     st.subheader("Deflected shape & aerodynamic boxes")
     grid_index = build_grid_index(bulk)
@@ -510,7 +513,7 @@ def _render_sol144_deflected(bulk: BulkData, result) -> None:
     st.plotly_chart(fig_aero, use_container_width=True)
 
 
-def _render_sol144_diverg(result) -> None:
+def _render_sol144_diverg(result: Sol144DivergResult) -> None:
     """Per-Mach divergence roots table (Step 55 DIVERG sweep)."""
     st.subheader("Aerodynamic divergence sweep")
     has_v = result.rhoref > 0.0
@@ -528,7 +531,7 @@ def _render_sol144_diverg(result) -> None:
         st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
 
 
-def _render_sol144_maneuver(bulk: BulkData, result) -> None:
+def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
     """Phase G0 transient maneuver time histories + deflected shape at a sample."""
     import plotly.graph_objects as go
 

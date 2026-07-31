@@ -38,6 +38,9 @@ box-by-box (emitted by the correction).
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
+from sbeam.types import FloatArray
+from sbeam.aero.panel import AeroBox
+from sbeam.model.aero import Stripk
 
 
 def is_strip_caero(bulk: BulkData, caero_eid: int) -> bool:
@@ -46,12 +49,12 @@ def is_strip_caero(bulk: BulkData, caero_eid: int) -> bool:
     return caero is not None and caero.pid in bulk.pstrips
 
 
-def strip_box_mask(bulk: BulkData, boxes: list) -> np.ndarray:
+def strip_box_mask(bulk: BulkData, boxes: list[AeroBox]) -> FloatArray:
     """Boolean mask (length n_box) — True for boxes belonging to a strip panel."""
     return np.array([is_strip_caero(bulk, b.caero_eid) for b in boxes], dtype=bool)
 
 
-def strip_box_slopes(bulk: BulkData, boxes: list) -> np.ndarray:
+def strip_box_slopes(bulk: BulkData, boxes: list[AeroBox]) -> FloatArray:
     """Per-box lift-curve slope dΔCp/dα_local for every strip box (0 for non-strip).
 
     Resolves, per strip box, the ``STRIPK`` per-box value if a STRIPK card exists for
@@ -61,10 +64,10 @@ def strip_box_slopes(bulk: BulkData, boxes: list) -> np.ndarray:
     """
     n = len(boxes)
     slopes = np.zeros(n)
-    stripk_by_caero: dict = {}
+    stripk_by_caero: dict[int, Stripk] = {}
     for sk in bulk.stripks.values():
         stripk_by_caero.setdefault(sk.caero_eid, sk)   # one card per CAERO1
-    local_count: dict = {}
+    local_count: dict[int, int] = {}
     for j, b in enumerate(boxes):
         if not is_strip_caero(bulk, b.caero_eid):
             continue

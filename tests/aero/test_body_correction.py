@@ -26,13 +26,13 @@ from sbeam.aero.body_correction import (
     build_body_correction,
     parse_body_targets,
     split_total_rows,
-    _RATIO_WARN,
+    RATIO_WARN,
     _ref_geometry,
     _total_metrics,
 )
 from sbeam.aero.integration import build_djx
 from sbeam.model.aero import Aecorr, W2gj
-from sbeam.solver.sol144 import _pitch_moment
+from sbeam.solver.sol144 import pitch_moment
 
 _ROOT = Path(__file__).parent.parent.parent / "sample"
 BDF_PATH = _ROOT / "cessna210_body.bdf"
@@ -102,7 +102,7 @@ def test_body_correction_hits_all_targets(both_result):
     # body rows only, so it never perturbs the lifting surfaces (see test_production_path_
     # and_decoupling).  Panels held clear of the tail are weakly coupled, so a ratio of
     # tens is normal and benign; we only require it stays inside the sane (sub-warn) band.
-    assert res.ratio_max < _RATIO_WARN
+    assert res.ratio_max < RATIO_WARN
 
 
 def test_body_cards_shape(both_result):
@@ -141,7 +141,7 @@ def test_production_path_and_decoupling(flying, both_result):
         for k, b in enumerate(aero.boxes):
             if b.caero_eid in (_HORIZ, _VERT):
                 f[3 * k:3 * k + 3] = 0.0
-        return _pitch_moment(f, aero.boxes, x_ref) / (bulk.aeros.sref * bulk.aeros.cref)
+        return pitch_moment(f, aero.boxes, x_ref) / (bulk.aeros.sref * bulk.aeros.cref)
 
     assert flying_cm_alpha(aero_f, bulk_f) == pytest.approx(
         flying_cm_alpha(aero_b, bulk_b), abs=1e-9)
@@ -226,4 +226,4 @@ def test_multi_surface_body_plane():
     assert w2v0.sid != w2v1.sid                            # distinct SIDs per panel
     for k in ("cm_alpha", "cm0", "cn_beta", "cn0", "cl_beta", "cl0"):
         assert getattr(out.achieved, k) == pytest.approx(getattr(tgt, k), abs=1e-6)
-    assert out.ratio_max < _RATIO_WARN
+    assert out.ratio_max < RATIO_WARN

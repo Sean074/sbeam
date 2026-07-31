@@ -7,10 +7,14 @@ import numpy as np
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.results.results import (
+    BarForce, BarStress, ManeuverResult, MonitorLoad,
     Sol101Result, Sol103Result, Sol144TrimResult, Sol144DivergResult,
 )
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.assembly.coord_transform import build_transform
+from sbeam.types import FloatArray
+from sbeam.parser.case_control import CaseControl
+from sbeam.model.load import Grav
 
 
 def _fmt(val: float) -> str:
@@ -18,7 +22,7 @@ def _fmt(val: float) -> str:
     return f"{val:13.6E}"
 
 
-def _transform_to_cd(t: np.ndarray, r: np.ndarray, gid: int, bulk: BulkData):
+def _transform_to_cd(t: FloatArray, r: FloatArray, gid: int, bulk: BulkData):
     """Rotate translation/rotation vectors into the grid's output (CD) coordinate frame."""
     cd = bulk.grids[gid].cd
     if cd != 0 and cd in bulk.cord2rs:
@@ -28,7 +32,7 @@ def _transform_to_cd(t: np.ndarray, r: np.ndarray, gid: int, bulk: BulkData):
     return t, r
 
 
-def _collect_grav_loads(bulk: BulkData, load_sid: int) -> list:
+def _collect_grav_loads(bulk: BulkData, load_sid: int) -> list[Grav]:
     """Return list of Grav objects referenced by load_sid (direct or via LOAD card)."""
     gravs = []
     if load_sid in bulk.gravs:
@@ -48,7 +52,10 @@ _STRESS_PTS = [
 ]
 
 
-def _displacement_block(lines: list, displacements, bulk: BulkData, grid_index: dict, gids_sorted: list) -> None:
+def _displacement_block(
+    lines: list[str], displacements: FloatArray, bulk: BulkData,
+    grid_index: dict[int, int], gids_sorted: list[int],
+) -> None:
     """Append a NASTRAN DISPLACEMENT VECTOR block (shared by SOL 101 / 144)."""
     lines.append("                                         D I S P L A C E M E N T   V E C T O R")
     lines.append("")
@@ -65,7 +72,9 @@ def _displacement_block(lines: list, displacements, bulk: BulkData, grid_index: 
     lines.append("")
 
 
-def _bar_forces_block(lines: list, bulk: BulkData, bar_forces: dict) -> None:
+def _bar_forces_block(
+    lines: list[str], bulk: BulkData, bar_forces: dict[int, BarForce]
+) -> None:
     """Append a NASTRAN FORCES IN BAR ELEMENTS (CBAR) block (shared by SOL 101 / 144)."""
     lines.append("                                  F O R C E S   I N   B A R   E L E M E N T S         ( C B A R )")
     lines.append("")
@@ -83,7 +92,7 @@ def _bar_forces_block(lines: list, bulk: BulkData, bar_forces: dict) -> None:
     lines.append("")
 
 
-def _monitor_block(lines: list, monitor_loads: dict) -> None:
+def _monitor_block(lines: list[str], monitor_loads: dict[str, MonitorLoad]) -> None:
     """Append a MONITOR POINT INTEGRATED LOADS block (MON4).
 
     One header row of metadata per monitor (LABEL, TYPE, AXES, CID, reference
@@ -110,7 +119,9 @@ def _monitor_block(lines: list, monitor_loads: dict) -> None:
     lines.append("")
 
 
-def _bar_stresses_block(lines: list, bulk: BulkData, bar_stresses: dict) -> None:
+def _bar_stresses_block(
+    lines: list[str], bulk: BulkData, bar_stresses: dict[int, BarStress]
+) -> None:
     """Append a NASTRAN STRESSES IN BAR ELEMENTS (CBAR) block (shared by SOL 101 / 144)."""
     lines.append("                                 S T R E S S E S   I N   B A R   E L E M E N T S        ( C B A R )")
     lines.append("")
@@ -141,7 +152,7 @@ def _bar_stresses_block(lines: list, bulk: BulkData, bar_stresses: dict) -> None
 
 
 def _build_f06_sol101_text(
-    case_control,
+    case_control: CaseControl,
     bulk: BulkData,
     result: Sol101Result,
     subcase_id: int = 1,
@@ -231,7 +242,7 @@ def _build_f06_sol101_text(
 
 
 def _build_f06_sol103_text(
-    case_control,
+    case_control: CaseControl,
     bulk: BulkData,
     result: Sol103Result,
     subcase_id: int = 1,
@@ -302,7 +313,7 @@ def _build_f06_sol103_text(
 
 
 def _build_f06_sol144_text(
-    case_control,
+    case_control: CaseControl,
     bulk: BulkData,
     result: Sol144TrimResult,
     subcase_id: int = 1,
@@ -527,7 +538,7 @@ def _build_f06_sol144_text(
 
 def write_f06_sol101(
     filepath: str,
-    case_control,
+    case_control: CaseControl,
     bulk: BulkData,
     result: Sol101Result,
     subcase_id: int = 1,
@@ -539,7 +550,7 @@ def write_f06_sol101(
 
 def write_f06_sol103(
     filepath: str,
-    case_control,
+    case_control: CaseControl,
     bulk: BulkData,
     result: Sol103Result,
     subcase_id: int = 1,
@@ -551,7 +562,7 @@ def write_f06_sol103(
 
 def write_f06_sol144(
     filepath: str,
-    case_control,
+    case_control: CaseControl,
     bulk: BulkData,
     result: Sol144TrimResult,
     subcase_id: int = 1,
@@ -562,7 +573,7 @@ def write_f06_sol144(
 
 
 def _build_f06_sol144_diverg_text(
-    case_control,
+    case_control: CaseControl,
     bulk: BulkData,
     result: Sol144DivergResult,
     subcase_id: int = 1,
@@ -600,7 +611,7 @@ def _build_f06_sol144_diverg_text(
         lines.append(header)
         for i, root in enumerate(mr.roots, start=1):
             row = f"{i:>14}  {_fmt(root.q_div)}"
-            if has_v:
+            if has_v and root.v_div is not None:
                 row += f"{_fmt(root.v_div)}"
             lines.append(row)
         lines.append("")
@@ -631,9 +642,9 @@ def _build_f06_sol144_diverg_text(
 
 
 def _build_f06_sol144_maneuver_text(
-    case_control,
+    case_control: CaseControl,
     bulk: BulkData,
-    result,
+    result: ManeuverResult,
     subcase_id: int = 1,
 ) -> str:
     """Return a SOL 144 transient maneuver loads .f06 block (Phase G0, AC5).
@@ -688,7 +699,7 @@ def _build_f06_sol144_maneuver_text(
     header += "        FZ-AERO        MY-AERO     MAX |NET F|"
     lines.append(header)
     for i, step in enumerate(result.steps):
-        net_f = np.abs(step.net_loads).max() if step.net_loads is not None else 0.0
+        net_f = float(np.abs(step.net_loads).max())
         row = f"{i + 1:>12}{_fmt(step.t)}"
         for label in labels:
             row += _fmt(step.trim_vars.get(label, 0.0))

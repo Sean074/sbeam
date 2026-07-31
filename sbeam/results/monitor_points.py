@@ -8,31 +8,37 @@ the monitor integration is a summation of those over the monitor's AECOMP
 collection, transformed to the monitor reference point and ``cp`` frame and
 scaled by the AEROS symmetry parity.
 """
+from typing import Optional, Union
+
 import numpy as np
 
-from sbeam.assembly.coord_transform import _get_transform
-from sbeam.aero.spline import _nchord_per_caero, _build_id_to_k
+from sbeam.assembly.coord_transform import get_transform
+from sbeam.aero.spline import nchord_per_caero, build_id_to_k
 from sbeam.results.results import MonitorLoad
+from sbeam.types import FloatArray
+from sbeam.model.aero import Monpnt1, Monpnt3, require_aeros
+from sbeam.model.bulk_data import BulkData
+from sbeam.aero.aero_model import AeroModel
 
 # A monitor must sit on the xz symmetry plane (y≈0) for the SYMXZ parity
 # reconstruction to integrate the mirror half about the correct reference point.
 _SYM_PLANE_TOL = 1e-6
 
 
-def _parity(bulk) -> float:
+def _parity(bulk: BulkData) -> float:
     """Symmetry doubling factor from AEROS.SYMXZ.
 
-    Single-sourced from the post-mirror ``bulk.aeros.symxz``: full-span builds
+    Single-sourced from the post-mirror ``require_aeros(bulk).symxz``: full-span builds
     (mirror.py zeros SYMXZ) give 1.0; a half-model fed directly (SYMXZ≠0) gives
     2.0 so the monitor reports the whole-airplane load.
     """
-    if bulk.aeros is not None and bulk.aeros.symxz != 0:
+    if bulk.aeros is not None and require_aeros(bulk).symxz != 0:
         return 2.0
     return 1.0
 
 
-def _apply_symmetry(load6_basic: np.ndarray, par: float,
-                    ref_basic: np.ndarray, mon_name: str) -> np.ndarray:
+def _apply_symmetry(load6_basic: FloatArray, par: float,
+                    ref_basic: FloatArray, mon_name: str) -> FloatArray:
     """Reconstruct the whole-airplane [F, M] resultant for a half-span (SYMXZ) build.
 
     For an xz-plane-symmetric model under symmetric loading the mirror half doubles
@@ -58,18 +64,20 @@ def _apply_symmetry(load6_basic: np.ndarray, par: float,
     return out
 
 
-def _monitor_frame(mon, bulk) -> tuple:
+def _monitor_frame(
+    mon: Union[Monpnt1, Monpnt3], bulk: BulkData
+) -> tuple[FloatArray, FloatArray]:
     """Return (ref_basic (3,), R (3x3)) for a monitor point.
 
     ``ref_basic`` is the reference point in basic CID 0; ``R`` rotates a basic
     vector into the cp frame via ``R.T @ v_basic`` (R: v_basic = R @ v_cp).
     """
-    origin, R = _get_transform(mon.cp, bulk.cord2rs)
+    origin, R = get_transform(mon.cp, bulk.cord2rs)
     ref_basic = origin + R @ np.array([mon.x, mon.y, mon.z], dtype=float)
     return ref_basic, R
 
 
-def _to_cp(load6_basic: np.ndarray, R: np.ndarray) -> np.ndarray:
+def _to_cp(load6_basic: FloatArray, R: FloatArray) -> FloatArray:
     """Rotate a (6,) [F, M] resultant from basic CID 0 into the cp frame."""
     out = np.empty(6)
     out[:3] = R.T @ load6_basic[:3]
@@ -77,15 +85,17 @@ def _to_cp(load6_basic: np.ndarray, R: np.ndarray) -> np.ndarray:
     return out
 
 
-def integrate_monpnt1(mon, bulk, aero, box_forces: np.ndarray) -> MonitorLoad:
+def integrate_monpnt1(
+    mon: Monpnt1, bulk: BulkData, aero: AeroModel, box_forces: FloatArray
+) -> MonitorLoad:
     """Aero-only integrated load over the monitor's AELIST collection."""
     aecomp = bulk.aecomps[mon.comp]
     ref_basic, R = _monitor_frame(mon, bulk)
 
     # AELIST box IDs -> global box indices k
-    nchord = _nchord_per_caero(aero.boxes)
-    id_to_k = _build_id_to_k(aero.boxes, nchord)
-    box_ids = []
+    nchord = nchord_per_caero(aero.boxes)
+    id_to_k = build_id_to_k(aero.boxes, nchord)
+    box_ids: list[int] = []
     for sid in aecomp.list_ids:
         box_ids.extend(bulk.aelists[sid].elements)
 
@@ -108,8 +118,10 @@ def integrate_monpnt1(mon, bulk, aero, box_forces: np.ndarray) -> MonitorLoad:
     )
 
 
-def _grid_resultant(load_g: np.ndarray, gids: list, bulk, grid_index,
-                    ref_basic: np.ndarray) -> np.ndarray:
+def _grid_resultant(
+    load_g: FloatArray, gids: list[int], bulk: BulkData,
+    grid_index: dict[int, int], ref_basic: FloatArray,
+) -> FloatArray:
     """Sum a g-set load over ``gids`` into a (6,) [F, M] resultant about ref (basic)."""
     F = np.zeros(3)
     M = np.zeros(3)
@@ -124,8 +136,11 @@ def _grid_resultant(load_g: np.ndarray, gids: list, bulk, grid_index,
     return np.concatenate([F, M])
 
 
-def integrate_monpnt3(mon, bulk, grid_loads, inertial_loads, grid_index,
-                      reactions: dict) -> MonitorLoad:
+def integrate_monpnt3(
+    mon: Monpnt3, bulk: BulkData, grid_loads: FloatArray,
+    inertial_loads: Optional[FloatArray], grid_index: dict[int, int],
+    reactions: dict[int, FloatArray],
+) -> MonitorLoad:
     """Aero + inertia + reaction integrated load over the monitor's SET1 grids.
 
     Aero comes from ``grid_loads`` (splined, RBE3/RBAR pass-through), inertia
@@ -166,10 +181,14 @@ def integrate_monpnt3(mon, bulk, grid_loads, inertial_loads, grid_index,
     )
 
 
-def compute_monitor_loads(bulk, aero, box_forces, grid_loads, inertial_loads,
-                          grid_index, reactions: dict = None) -> dict:
+def compute_monitor_loads(
+    bulk: BulkData, aero: AeroModel, box_forces: FloatArray,
+    grid_loads: FloatArray, inertial_loads: Optional[FloatArray],
+    grid_index: dict[int, int],
+    reactions: Optional[dict[int, FloatArray]] = None,
+) -> dict[str, MonitorLoad]:
     """Build {name: MonitorLoad} for all MONPNT1/MONPNT3 cards in the model."""
-    out = {}
+    out: dict[str, MonitorLoad] = {}
     for name, mon in bulk.monpnt1s.items():
         out[name] = integrate_monpnt1(mon, bulk, aero, box_forces)
     for name, mon in bulk.monpnt3s.items():

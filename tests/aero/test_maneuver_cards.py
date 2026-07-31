@@ -6,7 +6,6 @@ malformed decks raise.  The TABLED1.evaluate interpolation contract is also
 checked here since the transient solver depends on it.
 """
 
-import warnings
 
 import pytest
 

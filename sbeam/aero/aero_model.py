@@ -19,33 +19,60 @@ from typing import Optional
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
-from sbeam.model.aero import Aeros
+from sbeam.model.aero import Caero1, Chordcp, Paero1, Aeros, require_aeros
 from sbeam.aero.panel import AeroBox, mesh_caero1
 from sbeam.aero.vlm import build_ajj, prandtl_glauert_boxes
 from sbeam.aero.integration import build_skj, build_djk, build_wg
 from sbeam.aero.corrections import (
-    apply_wkk, apply_wt2, apply_wt1, apply_chordcp, _check_conditioning,
+    apply_wkk, apply_wt2, apply_wt1, apply_chordcp, check_conditioning,
 )
 from sbeam.aero.spline import build_g_spline
 from sbeam.aero.strip import strip_box_mask, strip_box_slopes, is_strip_caero
+from sbeam.types import FloatArray
 
 
 @dataclass
 class AeroModel:
-    boxes:        list                # list[AeroBox] — all panels across all CAERO1 elements
-    ajj:          np.ndarray          # raw VLM AIC,  shape (n, n)
-    ajj_inv_corr: np.ndarray          # corrected A*⁻¹, shape (n, n)
-    skj:          np.ndarray          # force integration matrix, shape (3n, n)
-    djk:          np.ndarray          # deflection-to-downwash matrix, shape (n, n)
-    wg:           np.ndarray          # baseline normalwash vector, shape (n,)
+    boxes: list[AeroBox]                # list[AeroBox] — all panels across all CAERO1 elements
+    ajj:          FloatArray          # raw VLM AIC,  shape (n, n)
+    ajj_inv_corr: FloatArray          # corrected A*⁻¹, shape (n, n)
+    skj:          FloatArray          # force integration matrix, shape (3n, n)
+    djk:          FloatArray          # deflection-to-downwash matrix, shape (n, n)
+    wg:           FloatArray          # baseline normalwash vector, shape (n,)
     aeros:        Optional[Aeros] = None       # AEROS reference geometry card
     mach:         float = 0.0                  # Mach number for Prandtl–Glauert
-    g_slope:      Optional[np.ndarray] = None  # slope spline, shape (n, 6*n_g)
-    g_disp:       Optional[np.ndarray] = None  # displacement spline, shape (3n, 6*n_g)
+    g_slope:      Optional[FloatArray] = None  # slope spline, shape (n, 6*n_g)
+    g_disp:       Optional[FloatArray] = None  # displacement spline, shape (3n, 6*n_g)
     chordcp_alpha_ref: Optional[float] = None  # CHORDCP reference AOA [rad]; None = no injection
 
+    def require_g_disp(self) -> FloatArray:
+        """``g_disp``, raising if the model was built without splines.
 
-def _assemble_vlm_operator(bulk: BulkData, op_boxes: list, mach: float):
+        ``g_disp``/``g_slope`` are ``None`` until ``build_aero_model`` runs with a
+        ``grid_index`` (a spline needs the structural grid).  Aeroelastic code
+        that cannot proceed without them funnels through these accessors rather
+        than dereferencing ``None``.
+        """
+        if self.g_disp is None:
+            raise ValueError(
+                "AeroModel.g_disp is None — build_aero_model must be called with a "
+                "grid_index so the structure/aero displacement spline is built."
+            )
+        return self.g_disp
+
+    def require_g_slope(self) -> FloatArray:
+        """``g_slope``, raising if the model was built without splines."""
+        if self.g_slope is None:
+            raise ValueError(
+                "AeroModel.g_slope is None — build_aero_model must be called with a "
+                "grid_index so the structure/aero slope spline is built."
+            )
+        return self.g_slope
+
+
+def _assemble_vlm_operator(
+    bulk: BulkData, op_boxes: list[AeroBox], mach: float
+) -> tuple[FloatArray, FloatArray]:
     """Build the raw AIC and the corrected ΔCp operator over a box subset.
 
     Returns ``(ajj, ajj_inv_corr)`` for ``op_boxes`` — the ordinary horseshoe-vortex
@@ -71,7 +98,7 @@ def _assemble_vlm_operator(bulk: BulkData, op_boxes: list, mach: float):
 
     if wkk_card is not None:
         ajj_star = apply_wkk(ajj, wkk_card.data)
-        _check_conditioning(ajj_star)
+        check_conditioning(ajj_star)
         ajj_inv_corr = np.linalg.solve(ajj_star, np.eye(n))
     elif wt2_cards:
         ajj_inv_raw = np.linalg.solve(ajj, np.eye(n))
@@ -90,7 +117,7 @@ def _assemble_vlm_operator(bulk: BulkData, op_boxes: list, mach: float):
         f_target = np.asarray(wt1_card.target, dtype=float)
         ajj_inv_corr = apply_wt1(ajj, prandtl_glauert_boxes(op_boxes, mach), f_target)
     else:
-        _check_conditioning(ajj)
+        check_conditioning(ajj)
         ajj_inv_corr = np.linalg.solve(ajj, np.eye(n))
 
     # Göthert 1/β scaling (boundary-condition factor from §2.8 Eq. 14)
@@ -110,10 +137,10 @@ def _assemble_vlm_operator(bulk: BulkData, op_boxes: list, mach: float):
 
 def _apply_chordcp_injection(
     bulk: BulkData,
-    boxes: list,
-    strip_mask: np.ndarray,
-    ajj_inv_corr: np.ndarray,
-    wg: np.ndarray,
+    boxes: list[AeroBox],
+    strip_mask: FloatArray,
+    ajj_inv_corr: FloatArray,
+    wg: FloatArray,
 ) -> Optional[float]:
     """CHORDCP steady-pressure injection (Step 54) — mutates ``wg`` in place.
 
@@ -134,7 +161,7 @@ def _apply_chordcp_injection(
 
     vlm_eids = sorted(eid for eid in bulk.caero1s if not is_strip_caero(bulk, eid))
 
-    cards_by_eid: dict = {}
+    cards_by_eid: dict[int, Chordcp] = {}
     for card in bulk.chordcps.values():
         if card.caero_eid not in bulk.caero1s:
             raise ValueError(
@@ -205,7 +232,7 @@ _MIN_NCHORD = 4            # boxes/chord below which chordwise loading/moment ar
 _AR_BAND = (0.5, 2.0)      # acceptable box aspect-ratio band (spanwise/streamwise edge)
 
 
-def _warn_mesh_quality(caero, new_boxes: list) -> None:
+def _warn_mesh_quality(caero: Caero1, new_boxes: list[AeroBox]) -> None:
     """Pre-solve mesh-quality warnings for one VLM CAERO1 (A7 box density, A8 box AR).
 
     A7: steady-VLM chordwise loading needs ≥ 4 boxes/chord (NASA SP-405); lift
@@ -258,7 +285,7 @@ def _warn_mesh_quality(caero, new_boxes: list) -> None:
 
 def build_aero_model(
     bulk: BulkData,
-    grid_index: Optional[dict] = None,
+    grid_index: Optional[dict[int, int]] = None,
     mach: Optional[float] = None,
 ) -> AeroModel:
     """Assemble the full AeroModel from parsed bulk data.
@@ -298,10 +325,10 @@ def build_aero_model(
     if not bulk.caero1s:
         raise ValueError("build_aero_model: no CAERO1 elements found in bulk data")
 
-    if bulk.aeros is not None and (bulk.aeros.symxz != 0 or bulk.aeros.symxy != 0):
+    if bulk.aeros is not None and (require_aeros(bulk).symxz != 0 or require_aeros(bulk).symxy != 0):
         raise ValueError(
             "build_aero_model: half-span / symmetry models are not supported "
-            f"(AEROS SYMXZ={bulk.aeros.symxz}, SYMXY={bulk.aeros.symxy}). "
+            f"(AEROS SYMXZ={require_aeros(bulk).symxz}, SYMXY={require_aeros(bulk).symxy}). "
             "sbeam runs full-span only. Convert the deck with "
             "sbeam.aero.mirror.mirror_halfspan(), or rebuild it full-span, "
             "so that SYMXZ=SYMXY=0."
@@ -312,7 +339,10 @@ def build_aero_model(
     start_k = 0
     for eid in sorted(bulk.caero1s):
         caero = bulk.caero1s[eid]
-        paero = bulk.paero1s.get(caero.pid)
+        # A strip-body CAERO1 points at a PSTRIP, not a PAERO1; mesh_caero1 does
+        # not use the property card, so a placeholder keeps the geometry path
+        # identical for both panel kinds.
+        paero = bulk.paero1s.get(caero.pid) or Paero1(pid=caero.pid)
         new_boxes = mesh_caero1(caero, paero, bulk.aefacts, bulk.cord2rs, start_k=start_k)
 
         # Pre-solve mesh-quality warnings (A7/A8) — VLM lifting surfaces only;
@@ -329,7 +359,7 @@ def build_aero_model(
     # Prandtl–Glauert / Göthert compressibility correction (§2.8 Eq. 14):
     # compress box y,z by β = √(1-M²) before building AIC; scale AIC⁻¹ by 1/β.
     # AE9: effective Mach = explicit override (per-TRIM) or AEROS.mach fallback.
-    mach = mach if mach is not None else (bulk.aeros.mach if bulk.aeros else 0.0)
+    mach = mach if mach is not None else (require_aeros(bulk).mach if bulk.aeros else 0.0)
     if mach >= 1.0:
         raise ValueError(
             f"build_aero_model: effective Mach {mach} ≥ 1.0; the steady subsonic "
@@ -383,8 +413,8 @@ def build_aero_model(
     chordcp_alpha_ref = _apply_chordcp_injection(bulk, boxes, strip_mask, ajj_inv_corr, wg)
 
     # Build spline operators if spline cards are present and grid_index is provided
-    g_slope: Optional[np.ndarray] = None
-    g_disp:  Optional[np.ndarray] = None
+    g_slope: Optional[FloatArray] = None
+    g_disp:  Optional[FloatArray] = None
     if grid_index is not None and (bulk.spline2s or bulk.attaches or bulk.spline0s):
         g_slope, g_disp = build_g_spline(bulk, boxes, grid_index)
 
@@ -407,7 +437,7 @@ def compute_structural_loads(
     aero_model: AeroModel,
     q: float,
     alpha: float,
-) -> np.ndarray:
+) -> FloatArray:
     """Compute structural g-set loads from rigid VLM at angle of attack alpha.
 
     Combines AoA-driven normalwash with W2GJ baseline (wg), then transfers
@@ -428,7 +458,7 @@ def compute_structural_loads(
         alpha:      Angle of attack (rad).
 
     Returns:
-        f_g: np.ndarray, shape (6 * n_structural_grids,).
+        f_g: FloatArray, shape (6 * n_structural_grids,).
 
     Raises:
         ValueError: if aero_model.g_disp is None.
@@ -442,4 +472,4 @@ def compute_structural_loads(
     w_total = w_aoa + aero_model.wg
     gamma   = aero_model.ajj_inv_corr @ w_total
     f_box   = aero_model.skj @ gamma
-    return q * (aero_model.g_disp.T @ f_box)
+    return q * (aero_model.require_g_disp().T @ f_box)

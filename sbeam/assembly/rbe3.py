@@ -3,13 +3,16 @@
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
+from sbeam.types import FloatArray
 
 
-def build_rbe3_transformation(bulk: BulkData, grid_index: dict) -> tuple:
+def build_rbe3_transformation(
+    bulk: BulkData, grid_index: dict[int, int]
+) -> tuple[FloatArray, list[int], list[int]]:
     """Build the RBE3/RBE2/RBAR DOF transformation matrix T.
 
     Returns (T, dep_dofs, red_dofs) where:
-      T        : np.ndarray shape (n_dof, n_red) — maps reduced → full DOF space
+      T        : FloatArray shape (n_dof, n_red) — maps reduced → full DOF space
       dep_dofs : list[int] — global DOF indices eliminated by RBE3, RBE2, or RBAR
       red_dofs : list[int] — remaining DOF indices in ascending order
 
@@ -22,7 +25,7 @@ def build_rbe3_transformation(bulk: BulkData, grid_index: dict) -> tuple:
 
     # Start from identity; rows for dependent DOFs will be overwritten.
     T_full = np.eye(n_dof)
-    dep_set: set = set()
+    dep_set: set[int] = set()
 
     # RBE3 formulation: each dependent DOF is a weighted average of the *same-numbered* DOF
     # at the independent grids.  Rotation-to-translation coupling across an offset (lever-arm
@@ -39,7 +42,7 @@ def build_rbe3_transformation(bulk: BulkData, grid_index: dict) -> tuple:
             p = 6 * ref_idx + d  # global index of the dependent DOF
 
             # Collect (weight, grid_id) for independent grids that include DOF d.
-            pairs: list = []
+            pairs: list[tuple[float, int]] = []
             for weight, dofs_str, grids in rbe3.wt_gc:
                 if d_char in str(dofs_str):
                     for gid in grids:

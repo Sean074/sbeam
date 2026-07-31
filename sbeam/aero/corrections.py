@@ -21,12 +21,13 @@ import warnings
 import numpy as np
 
 from sbeam.aero.panel import AeroBox
+from sbeam.types import FloatArray
 
 _COND_WARN_THRESHOLD = 1e10
 _RATIO_TOL = 1e-12   # guard for near-zero reference quantities
 
 
-def _check_conditioning(ajj: np.ndarray) -> None:
+def check_conditioning(ajj: FloatArray) -> None:
     cond = float(np.linalg.cond(ajj))
     if cond > _COND_WARN_THRESHOLD:
         warnings.warn(
@@ -37,17 +38,17 @@ def _check_conditioning(ajj: np.ndarray) -> None:
         )
 
 
-def _solve_ajj(ajj: np.ndarray) -> np.ndarray:
+def _solve_ajj(ajj: FloatArray) -> FloatArray:
     """Compute AJJ⁻¹ via LU factorization (np.linalg.solve)."""
     return np.linalg.solve(ajj, np.eye(ajj.shape[0]))
 
 
 def apply_chordcp(
-    ajj_inv_corr_block: np.ndarray,
+    ajj_inv_corr_block: FloatArray,
     boxes: list[AeroBox],
-    cp_inj: np.ndarray,
+    cp_inj: FloatArray,
     alpha_ref: float,
-) -> np.ndarray:
+) -> FloatArray:
     """Equivalent-normalwash substitution for injected steady pressures (Step 54).
 
     Given the corrected normalwash→ΔCp operator of the VLM lifting-surface
@@ -86,7 +87,7 @@ def apply_chordcp(
             f"apply_chordcp: size mismatch (operator {n}, boxes {len(boxes)}, "
             f"cp {cp_inj.shape[0]})"
         )
-    _check_conditioning(ajj_inv_corr_block)
+    check_conditioning(ajj_inv_corr_block)
     w_solve, *_ = np.linalg.lstsq(ajj_inv_corr_block, cp_inj, rcond=None)
     residual = ajj_inv_corr_block @ w_solve - cp_inj
     res_norm = float(np.linalg.norm(residual))
@@ -103,7 +104,7 @@ def apply_chordcp(
     return w_solve + n_z * alpha_ref
 
 
-def apply_wkk(ajj: np.ndarray, wkk_data: list) -> np.ndarray:
+def apply_wkk(ajj: FloatArray, wkk_data: list[float]) -> FloatArray:
     """Diagonal multiplicative AIC correction.
 
     Returns AJJ* = diag(wkk_data) @ AJJ.
@@ -113,7 +114,7 @@ def apply_wkk(ajj: np.ndarray, wkk_data: list) -> np.ndarray:
     return np.diag(w) @ ajj
 
 
-def apply_wt2(ajj: np.ndarray, cp_target: np.ndarray) -> np.ndarray:
+def apply_wt2(ajj: FloatArray, cp_target: FloatArray) -> FloatArray:
     """Pressure-matching correction.  Returns corrected AJJ*⁻¹.
 
     Finds a diagonal scaling r such that the corrected A*⁻¹ = diag(r) @ AJJ⁻¹
@@ -127,7 +128,7 @@ def apply_wt2(ajj: np.ndarray, cp_target: np.ndarray) -> np.ndarray:
     Boxes where |cp_vlm_ref_k| < _RATIO_TOL keep r_k = 1 (no correction applied).
     Warns if cond(AJJ) > 1e10.
     """
-    _check_conditioning(ajj)
+    check_conditioning(ajj)
     n = ajj.shape[0]
     ajj_inv = _solve_ajj(ajj)
     w_ref = -np.ones(n)
@@ -138,7 +139,7 @@ def apply_wt2(ajj: np.ndarray, cp_target: np.ndarray) -> np.ndarray:
     return np.diag(r) @ ajj_inv
 
 
-def apply_wt1(ajj: np.ndarray, boxes: list[AeroBox], f_target: np.ndarray) -> np.ndarray:
+def apply_wt1(ajj: FloatArray, boxes: list[AeroBox], f_target: FloatArray) -> FloatArray:
     """Force/moment-matching correction.  Returns corrected AJJ*⁻¹ (Γ-unit output).
 
     Finds a diagonal scaling r — constant within each span strip — such that the
@@ -161,7 +162,7 @@ def apply_wt1(ajj: np.ndarray, boxes: list[AeroBox], f_target: np.ndarray) -> np
     Warns if cond(AJJ) > 1e10.
     """
     import math as _math
-    _check_conditioning(ajj)
+    check_conditioning(ajj)
     n = ajj.shape[0]
     ajj_inv = _solve_ajj(ajj)
     w_ref = -np.ones(n)

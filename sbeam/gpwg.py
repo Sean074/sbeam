@@ -1,6 +1,8 @@
 """Grid Point Weight Generator (GPWG) — mass and CG computation."""
 
 from dataclasses import dataclass
+from typing import Optional
+
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
@@ -13,11 +15,11 @@ class GpwgResult:
     cg_x: float
     cg_y: float
     cg_z: float
-    massset_sid: int = None   # MASSSET SID for this mass case (None = baseline)
+    massset_sid: Optional[int] = None   # MASSSET SID for this case (None = baseline)
     massset_label: str = "BASELINE"
 
 
-def compute_gpwg(bulk: BulkData, massset_sid=None) -> GpwgResult:
+def compute_gpwg(bulk: BulkData, massset_sid: Optional[int] = None) -> GpwgResult:
     """Compute total mass and centre of gravity from CBAR elements and CONM2 masses.
 
     CBAR mass = (rho * A + nsm) * L, distributed at element midpoint.

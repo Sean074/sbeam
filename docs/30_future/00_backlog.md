@@ -88,7 +88,7 @@ Assigned owners — later features **reuse, never re-extract**:
 |----|-----------------|----------|--------|
 | Q1 | SPC reaction f06 output: NASTRAN outputs SPCFORCE in the global (CID 0) frame, not the CD displacement frame. Current code matches this convention (no CD transform on reactions). Verify intentional. | Low | Open |
 | Q3 | GRAV CID restriction (only CID=0 supported, parser raises): acceptable for Phase 1 but not documented in "Known Limitations". | Low | Open |
-| Q4 | Lumped vs consistent inertia in `M_ax` (found during Step 61, 2026-07-30): `sol144._build_inertial_cols` builds the inertia-relief columns from **lumped** CONM2 masses / diagonal inertia and CBAR half-masses, while `M_aa` comes from `assemble_global_mass` (**consistent** mass). The `M_ax = −M_aa Φ_r` identity is therefore exact on translational rows always, and on all rows for CONM2-only decks; with `rho > 0` CBARs the rotational rows differ (the consistent-mass translation↔rotation coupling has no lumped counterpart — measured O(10%) of the peak column value on a dihedral test model). Affects the inertia-relief RHS of the Step 53 balanced maneuver and the increment-1 transient solver equally — pre-existing, not introduced by Step 61. Decide whether `_build_inertial_cols` should be replaced by `−M_aa Φ_r` outright (one mass model, and the identity becomes definitional) or the discrepancy documented as intended. Pinned by `tests/solver/test_modal_basis.py::test_m_ax_identity_limits_with_consistent_cbar_mass`. | Medium | Open |
+| Q4 | Lumped vs consistent inertia in `M_ax` (found during Step 61, 2026-07-30): `sol144.build_inertial_cols` builds the inertia-relief columns from **lumped** CONM2 masses / diagonal inertia and CBAR half-masses, while `M_aa` comes from `assemble_global_mass` (**consistent** mass). The `M_ax = −M_aa Φ_r` identity is therefore exact on translational rows always, and on all rows for CONM2-only decks; with `rho > 0` CBARs the rotational rows differ (the consistent-mass translation↔rotation coupling has no lumped counterpart — measured O(10%) of the peak column value on a dihedral test model). Affects the inertia-relief RHS of the Step 53 balanced maneuver and the increment-1 transient solver equally — pre-existing, not introduced by Step 61. Decide whether `build_inertial_cols` should be replaced by `−M_aa Φ_r` outright (one mass model, and the identity becomes definitional) or the discrepancy documented as intended. Pinned by `tests/solver/test_modal_basis.py::test_m_ax_identity_limits_with_consistent_cbar_mass`. | Medium | Open |
 
 ---
 
@@ -124,7 +124,7 @@ then G0-d/G0-e.
      map between rigid modal coordinates and the URDD/ANGLEA/PITCH trim labels** (unit-plunge ⇒
      `ξ̈ = URDD3`; unit-pitch ⇒ `ξ̈ = URDD5`, `ξ̇·c_ref/2V = PITCH`), and make
      `M_rr = Φ_rᵀ M_aa Φ_r` exactly the GPWG rigid mass about the SUPORT point. Same reference
-     point as `_build_inertial_cols` (`suport_pos`), so `M_ax ≡ −M_aa Φ_r` column-for-column —
+     point as `build_inertial_cols` (`suport_pos`), so `M_ax ≡ −M_aa Φ_r` column-for-column —
      a tested identity. (This is the same mathematical object as `designs/rbmref_card.md`
      `B_target`; Step 61 owns the single builder.)
    - **Φ_e — free-free elastic modes** from `solve_modes(K_aa, M_aa, force_dense=True)`
@@ -204,7 +204,7 @@ system so closure ≈ 0 for an arbitrary commanded *control* history — no per-
   ANGLEA/URDD/PITCH labels = **outputs** from `ξ_r, ξ̇_r, ξ̈_r`; a rigid-state label in MLDCOMD
   under the modal solver ⇒ hard `ValueError` naming the label (the legacy solver remains available
   for prescribed-rigid studies).
-- Recovery: `δ_basic` URDD entries from `ξ̈_r` (`_urdd_rcsid_to_basic` reused); MLDPRNT gains
+- Recovery: `δ_basic` URDD entries from `ξ̈_r` (`urdd_rcsid_to_basic` reused); MLDPRNT gains
   rigid-state histories (α, pitch rate, Nz).
 - New sample deck `sample/ha144a_mloads_massset.bdf` (free-flight elevator maneuver × 3-mass
   sweep — the full "maneuvers × payload conditions" demonstration).

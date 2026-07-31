@@ -48,23 +48,23 @@ import numpy as np
 import scipy.linalg
 
 from sbeam.model.bulk_data import BulkData
+from sbeam.model.maneuver import Tabled1
 from sbeam.parser.case_control import SubcaseControl
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.aero.aero_model import AeroModel
 from sbeam.aero.integration import build_djk
 from sbeam.solver.modal_basis import assemble_aset_operators
-from sbeam.results.results import BarForce, ManeuverStep, ManeuverResult
-from sbeam.solver.sol101 import recover_bar_forces, recover_bar_stresses
+from sbeam.results.results import ManeuverStep, ManeuverResult
+from sbeam.solver.sol101 import recover_bar_forces
 from sbeam.assembly.reduction import expand_to_g
 from sbeam.solver.sol144 import (
     AeroCache,
-    _build_inertial_cols,
-    _urdd_rcsid_to_basic,
-    _get_suport_local,
-    _load_resultant,
-    _pitch_moment,
+    urdd_rcsid_to_basic,
+    load_resultant,
+    pitch_moment,
     run_sol144_trim,
 )
+from sbeam.types import FloatArray
 
 
 @dataclass
@@ -75,26 +75,26 @@ class _Operators:
     builds, so the steady state of the time integration coincides with the
     Step 53 static solution.
     """
-    all_labels: list
-    label_to_col: dict
-    T: np.ndarray
-    free_local: list
-    red_dofs: list
-    free_dofs: list
-    l_idx: list                  # l-set indices into the a-set (non-SUPORT)
-    K_eff_ll: np.ndarray         # K_ll − q·Q_ll
-    M_ll: np.ndarray
-    Q_ax_l: np.ndarray
-    M_ax_l: np.ndarray
-    f_aero_l: np.ndarray
-    M_ax_g: np.ndarray
+    all_labels: list[str]
+    label_to_col: dict[str, int]
+    T: FloatArray
+    free_local: list[int]
+    red_dofs: list[int]
+    free_dofs: list[int]
+    l_idx: list[int]                  # l-set indices into the a-set (non-SUPORT)
+    K_eff_ll: FloatArray         # K_ll − q·Q_ll
+    M_ll: FloatArray
+    Q_ax_l: FloatArray
+    M_ax_l: FloatArray
+    f_aero_l: FloatArray
+    M_ax_g: FloatArray
     aero: AeroModel
-    D_jx: np.ndarray
-    djk: np.ndarray
+    D_jx: FloatArray
+    djk: FloatArray
     q: float
     x_ref: float
-    suport_pos: np.ndarray
-    R_rcsid: np.ndarray
+    suport_pos: FloatArray
+    R_rcsid: FloatArray
     has_rcsid: bool
 
 
@@ -110,7 +110,6 @@ def _assemble_operators(
     """
     ops = assemble_aset_operators(bulk, subcase, aero)
 
-    grid_index = ops.grid_index
     all_labels, label_to_col = ops.all_labels, ops.label_to_col
     x_ref, suport_pos = ops.x_ref, ops.suport_pos
     R_rcsid, has_rcsid = ops.R_rcsid, ops.has_rcsid
@@ -154,8 +153,9 @@ def _assemble_operators(
 
 
 def _delta_of_t(
-    t: float, base_delta: dict, commands: list, tabled1s: dict, all_labels: list
-) -> np.ndarray:
+    t: float, base_delta: dict[str, float], commands: list[tuple[str, int]],
+    tabled1s: dict[int, Tabled1], all_labels: list[str],
+) -> FloatArray:
     """Full label-ordered δ(t): commanded labels from their TABLED1, others held."""
     vals = dict(base_delta)
     for label, tabid in commands:
@@ -163,17 +163,17 @@ def _delta_of_t(
     return np.array([vals.get(l, 0.0) for l in all_labels])
 
 
-def _force_l(ops: _Operators, delta_arr: np.ndarray) -> np.ndarray:
+def _force_l(ops: _Operators, delta_arr: FloatArray) -> FloatArray:
     """l-set forcing F(t) = f_aero_l + q·Q_ax_l·δ + M_ax_l·δ_basic (mirror of trim RHS)."""
-    delta_basic = _urdd_rcsid_to_basic(
+    delta_basic = urdd_rcsid_to_basic(
         delta_arr, ops.label_to_col, ops.R_rcsid, ops.has_rcsid
     )
     return ops.f_aero_l + ops.q * (ops.Q_ax_l @ delta_arr) + ops.M_ax_l @ delta_basic
 
 
 def _recover_step(
-    ops: _Operators, bulk: BulkData, grid_index: dict,
-    t: float, u_l: np.ndarray, delta_arr: np.ndarray, vals: dict,
+    ops: _Operators, bulk: BulkData, grid_index: dict[int, int],
+    t: float, u_l: FloatArray, delta_arr: FloatArray, vals: dict[str, float],
 ) -> ManeuverStep:
     """Recover per-step displacements, CBAR loads, and net (aero+inertial) loads."""
     aero = ops.aero
@@ -192,20 +192,20 @@ def _recover_step(
             cbar, bulk.grids, bulk.pbars, bulk.mat1s, displacements, grid_index)
 
     # Instantaneous aero box forces at this state (steady VLM, Level 1).
-    w_struct = ops.djk @ (aero.g_slope @ displacements)
+    w_struct = ops.djk @ (aero.require_g_slope() @ displacements)
     w_total = w_struct + ops.D_jx @ delta_arr + aero.wg
     gamma = aero.ajj_inv_corr @ w_total
     f_box_vec = aero.skj @ gamma                                   # force/q units
-    grid_loads = aero.g_disp.T @ (ops.q * f_box_vec)
+    grid_loads = aero.require_g_disp().T @ (ops.q * f_box_vec)
     Fz_aero = float(ops.q * f_box_vec[2::3].sum())
-    My_aero = float(ops.q * _pitch_moment(f_box_vec, aero.boxes, ops.x_ref))
+    My_aero = float(ops.q * pitch_moment(f_box_vec, aero.boxes, ops.x_ref))
 
     # Inertial load from the instantaneous rigid-body acceleration (basic frame).
-    delta_basic = _urdd_rcsid_to_basic(
+    delta_basic = urdd_rcsid_to_basic(
         delta_arr, ops.label_to_col, ops.R_rcsid, ops.has_rcsid)
     inertial_loads = ops.M_ax_g @ delta_basic
     net_loads = grid_loads + inertial_loads
-    closure = _load_resultant(net_loads, bulk, grid_index, ops.suport_pos)
+    closure = load_resultant(net_loads, bulk, grid_index, ops.suport_pos)
 
     return ManeuverStep(
         t=t, trim_vars=dict(vals), displacements=displacements,
@@ -314,13 +314,13 @@ def run_maneuver_qs(
     v = np.zeros_like(u)
     a = np.zeros_like(u)
 
-    def _vals_at(delta_arr):
+    def _vals_at(delta_arr: FloatArray) -> dict[str, float]:
         return {l: float(delta_arr[i]) for i, l in enumerate(ops.all_labels)}
 
-    steps: list = []
-    times: list = []
+    steps: list[ManeuverStep] = []
+    times: list[float] = []
 
-    def _emit(t, u_l, delta_arr):
+    def _emit(t: float, u_l: FloatArray, delta_arr: FloatArray) -> None:
         step = _recover_step(
             ops, bulk, grid_index, t, u_l, delta_arr, _vals_at(delta_arr))
         steps.append(step)

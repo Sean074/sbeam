@@ -5,15 +5,17 @@ critical-step FORCE/MOMENT export.
 recovered loads.  In addition, the single critical sample (peak net resultant
 force) is exported as NASTRAN ``FORCE``/``MOMENT`` cards — the same loads-team
 deliverable as the Step 53 balanced-maneuver export, reusing
-``_emit_force_moment_cards`` so the card form is identical.
+``emit_force_moment_cards`` so the card form is identical.
 """
+
+from typing import Optional
 
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.results.results import ManeuverResult
 from sbeam.assembly.load_vector import build_grid_index
-from sbeam.results.load_export import _emit_force_moment_cards
+from sbeam.results.load_export import emit_force_moment_cards
 
 
 def build_maneuver_time_history_text(result: ManeuverResult) -> str:
@@ -49,7 +51,7 @@ def build_maneuver_time_history_text(result: ManeuverResult) -> str:
 
 
 def build_maneuver_critical_load_cards_text(
-    bulk: BulkData, result: ManeuverResult, sid: int = None
+    bulk: BulkData, result: ManeuverResult, sid: Optional[int] = None
 ) -> str:
     """FORCE/MOMENT cards for the critical (peak net force) maneuver sample.
 
@@ -68,11 +70,13 @@ def build_maneuver_critical_load_cards_text(
         f"MACH={result.mach:g}  t={step.t:g}",
         "$ Net (aero + inertial) load at the peak |net force| sample.",
     ]
-    lines += _emit_force_moment_cards(step.net_loads, bulk, grid_index, sid)
+    lines += emit_force_moment_cards(step.net_loads, bulk, grid_index, sid)
     return "\n".join(lines) + "\n"
 
 
-def write_maneuver_outputs(stem: str, bulk: BulkData, results: dict) -> tuple:
+def write_maneuver_outputs(
+    stem: str, bulk: BulkData, results: dict[int, ManeuverResult]
+) -> tuple[str, str]:
     """Write the ASCII time histories and critical-step load cards.
 
     Args:

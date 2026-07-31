@@ -284,7 +284,7 @@ def apply_rbm_rebase(freqs_hz, phi, eigenvalues, bulk, grid_index, rbmref, M_glo
     gen_masses = np.diag(B_out.T @ M_global @ B_out)
 
     # 6. Compute inertia tensor and CG offset at reference point
-    ref_point_global, R = _get_transform(rbmref.cid, bulk.cord2rs)
+    ref_point_global, R = get_transform(rbmref.cid, bulk.cord2rs)
     inertia_tensor = B_target.T @ M_global @ B_target      # 6x6, mechanical basis
 
     # 7. CG offset extraction (top-right 3x3 block ≡ m·skew(r_CG − P))
@@ -407,7 +407,7 @@ V1–V18 must pass identically after RBMREF is merged. A CI step running `pytest
   - Wright, Cooper, *Introduction to Aircraft Aeroelasticity and Loads*, 2nd ed., §13.4 (control-surface and rigid-body modes in flutter coupling).
 - **In-project precedents:**
   - `sbeam/gpwg.py` — the existing GPWG implementation; the inertia-tensor computation in RBMREF reuses the same parallel-axis logic over the full mass distribution.
-  - `assembly/coord_transform.py` — `_get_transform(cid, cord2rs)` provides the `(P, R)` pair RBMREF needs to construct `B_target`.
+  - `assembly/coord_transform.py` — `get_transform(cid, cord2rs)` provides the `(P, R)` pair RBMREF needs to construct `B_target`.
   - `docs/10_standard/04_modal_analysis.md` — the SOL 103 documentation pattern this design follows.
 
 ---

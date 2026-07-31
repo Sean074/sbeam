@@ -8,7 +8,6 @@ as valid NASTRAN bulk data.
 import warnings
 from pathlib import Path
 
-import numpy as np
 import pytest
 
 from sbeam.parser.bdf_reader import parse_bdf, parse_bulk_file

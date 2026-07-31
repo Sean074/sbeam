@@ -22,7 +22,7 @@ from sbeam.aero.body_correction import (
     build_body_correction,
     parse_body_targets,
     split_total_rows,
-    _RATIO_WARN,
+    RATIO_WARN,
 )
 
 _ROOT = Path(__file__).parent.parent.parent / "sample"
@@ -113,4 +113,4 @@ def test_two_stage_correction_reaches_total_targets(deck):
     # rows only, so it never perturbs the lifting surfaces.  Panels held clear of the tail
     # are weakly coupled, so a ratio of tens is normal and benign — only the sane band is
     # required (see docs/10_standard/05_aeroelastics.md "Cruciform limitations").
-    assert out.ratio_max < _RATIO_WARN
+    assert out.ratio_max < RATIO_WARN

@@ -1,15 +1,26 @@
 from __future__ import annotations
 
 import math
-from typing import Optional
+from typing import Any, Optional, Union
 
 import numpy as np
 import plotly.graph_objects as go
 
 from sbeam.model.bulk_data import BulkData
-from sbeam.model.load import Force, Moment
+from sbeam.model.element import Cbar
+from sbeam.model.load import Force, Grav, Moment
 from sbeam.assembly.coord_transform import build_transform
 from sbeam.viewer.format_utils import fmt_mass
+from sbeam.types import FloatArray
+
+#: {gid: (x, y, z)} nodal positions in CID 0 (optionally deformed).
+GridCoords = dict[int, tuple[float, float, float]]
+
+#: Parallel plotly (xs, ys, zs) coordinate lists; ``None`` breaks a polyline.
+CoordLists = tuple[list[Optional[float]], list[Optional[float]], list[Optional[float]]]
+
+#: Parallel (xs, ys, zs) lists with no polyline breaks (one point per entry).
+PointLists = tuple[list[float], list[float], list[float]]
 
 _PID_COLORS = [
     "#1f77b4",
@@ -51,8 +62,8 @@ def build_model_figure(
 
 def build_deformed_figure(
     bulk: BulkData,
-    displacements: np.ndarray,
-    grid_index: dict,
+    displacements: FloatArray,
+    grid_index: dict[int, int],
     scale: float = 1.0,
     load_sid: Optional[int] = None,
 ) -> go.Figure:
@@ -144,11 +155,11 @@ def build_deformed_figure(
 
 def build_mode_figure(
     bulk: BulkData,
-    mode_shape: np.ndarray,
-    grid_index: dict,
+    mode_shape: FloatArray,
+    grid_index: dict[int, int],
     scale: float = 1.0,
     freq_hz: float = 0.0,
-    camera: Optional[dict] = None,
+    camera: Optional[dict[str, Any]] = None,
     height: int = 600,
     phase: float = 0.25,
 ) -> go.Figure:
@@ -236,14 +247,14 @@ def build_mode_figure(
 
 def _compute_mode_scene_range(
     bulk: BulkData,
-    mode_shape: np.ndarray,
-    grid_index: dict,
+    mode_shape: FloatArray,
+    grid_index: dict[int, int],
     scale: float,
-) -> dict:
+) -> dict[str, Any]:
     """Return padded {x, y, z} axis ranges covering all animation frames."""
-    all_x: list = []
-    all_y: list = []
-    all_z: list = []
+    all_x: list[float] = []
+    all_y: list[float] = []
+    all_z: list[float] = []
     for amp in (0.0, scale, -scale):
         coords = _mode_grid_coords(bulk, mode_shape, grid_index, amp)
         for x, y, z in coords.values():
@@ -253,7 +264,7 @@ def _compute_mode_scene_range(
     if not all_x:
         return {}
     pad = 0.15
-    result: dict = {}
+    result: dict[str, Any] = {}
     for label, vals in (("x", all_x), ("y", all_y), ("z", all_z)):
         lo, hi = min(vals), max(vals)
         span = hi - lo
@@ -267,12 +278,12 @@ def _compute_mode_scene_range(
 
 def _deformed_grid_coords(
     bulk: BulkData,
-    displacements: np.ndarray,
-    grid_index: dict,
+    displacements: FloatArray,
+    grid_index: dict[int, int],
     scale: float,
-) -> dict:
+) -> GridCoords:
     """Return {gid: (x, y, z)} with scale*displacement added."""
-    coords: dict = {}
+    coords: GridCoords = {}
     for gid, grid in bulk.grids.items():
         i = grid_index[gid]
         base = 6 * i
@@ -286,12 +297,12 @@ def _deformed_grid_coords(
 
 def _mode_grid_coords(
     bulk: BulkData,
-    mode_shape: np.ndarray,
-    grid_index: dict,
+    mode_shape: FloatArray,
+    grid_index: dict[int, int],
     amplitude: float,
-) -> dict:
+) -> GridCoords:
     """Return {gid: (x, y, z)} with amplitude*mode_shape added."""
-    coords: dict = {}
+    coords: GridCoords = {}
     for gid, grid in bulk.grids.items():
         i = grid_index[gid]
         base = 6 * i
@@ -303,11 +314,11 @@ def _mode_grid_coords(
     return coords
 
 
-def _cbar_line_coords(bulk: BulkData, coords: dict) -> tuple:
+def _cbar_line_coords(bulk: BulkData, coords: GridCoords) -> CoordLists:
     """Return (xs, ys, zs) lists for CBAR lines using given grid coords."""
-    xs: list = []
-    ys: list = []
-    zs: list = []
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
     for cbar in bulk.cbars.values():
         xa, ya, za = coords[cbar.ga]
         xb, yb, zb = coords[cbar.gb]
@@ -317,7 +328,7 @@ def _cbar_line_coords(bulk: BulkData, coords: dict) -> tuple:
     return xs, ys, zs
 
 
-def _grid_coord_lists(bulk: BulkData, coords: dict) -> tuple:
+def _grid_coord_lists(bulk: BulkData, coords: GridCoords) -> PointLists:
     """Return (xs, ys, zs) lists for all GRIDs in sorted GID order."""
     gids = sorted(bulk.grids.keys())
     xs = [coords[gid][0] for gid in gids]
@@ -326,11 +337,11 @@ def _grid_coord_lists(bulk: BulkData, coords: dict) -> tuple:
     return xs, ys, zs
 
 
-def _plotel_line_coords(bulk: BulkData, coords: dict) -> tuple:
+def _plotel_line_coords(bulk: BulkData, coords: GridCoords) -> CoordLists:
     """Return (xs, ys, zs) lists for PLOTEL lines using given grid coords."""
-    xs: list = []
-    ys: list = []
-    zs: list = []
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
     for plotel in bulk.plotels.values():
         if plotel.g1 not in coords or plotel.g2 not in coords:
             continue
@@ -342,11 +353,11 @@ def _plotel_line_coords(bulk: BulkData, coords: dict) -> tuple:
     return xs, ys, zs
 
 
-def _rbe3_line_coords(bulk: BulkData, coords: dict) -> tuple:
+def _rbe3_line_coords(bulk: BulkData, coords: GridCoords) -> CoordLists:
     """Return (xs, ys, zs) lists for RBE3 lines (refgrid to each independent grid)."""
-    xs: list = []
-    ys: list = []
-    zs: list = []
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
     for rbe3 in bulk.rbe3s.values():
         if rbe3.refgrid not in coords:
             continue
@@ -362,11 +373,11 @@ def _rbe3_line_coords(bulk: BulkData, coords: dict) -> tuple:
     return xs, ys, zs
 
 
-def _rbe2_line_coords(bulk: BulkData, coords: dict) -> tuple:
+def _rbe2_line_coords(bulk: BulkData, coords: GridCoords) -> CoordLists:
     """Return (xs, ys, zs) lists for RBE2 lines (GN to each GM grid)."""
-    xs: list = []
-    ys: list = []
-    zs: list = []
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
     for rbe2 in bulk.rbe2s.values():
         if rbe2.gn not in coords:
             continue
@@ -381,11 +392,11 @@ def _rbe2_line_coords(bulk: BulkData, coords: dict) -> tuple:
     return xs, ys, zs
 
 
-def _rbar_line_coords(bulk: BulkData, coords: dict) -> tuple:
+def _rbar_line_coords(bulk: BulkData, coords: GridCoords) -> CoordLists:
     """Return (xs, ys, zs) lists for RBAR lines (GA to GB)."""
-    xs: list = []
-    ys: list = []
-    zs: list = []
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
     for rbar in bulk.rbars.values():
         if rbar.ga not in coords or rbar.gb not in coords:
             continue
@@ -401,14 +412,14 @@ def _rbar_line_coords(bulk: BulkData, coords: dict) -> tuple:
 # Private helpers — original model traces
 # ---------------------------------------------------------------------------
 
-def _merge_dofs(spc_map: dict, gid: int, dof_str: str) -> None:
+def _merge_dofs(spc_map: dict[int, str], gid: int, dof_str: str) -> None:
     existing = set(spc_map.get(gid, ""))
     spc_map[gid] = "".join(sorted(existing | set(dof_str.strip())))
 
 
-def _get_spc_map(bulk: BulkData) -> dict:
+def _get_spc_map(bulk: BulkData) -> dict[int, str]:
     """Return {gid: sorted_dof_string} for every constrained grid."""
-    spc_map: dict = {}
+    spc_map: dict[int, str] = {}
     for entries in bulk.spcs.values():
         for spc in entries:
             _merge_dofs(spc_map, spc.g1, spc.c1)
@@ -424,7 +435,7 @@ def _get_spc_map(bulk: BulkData) -> dict:
     return spc_map
 
 
-def _load_sid_has_grav(bulk: BulkData, load_sid: int) -> list:
+def _load_sid_has_grav(bulk: BulkData, load_sid: int) -> list[Grav]:
     """Return list of Grav objects referenced by load_sid (direct or via LOAD card)."""
     if load_sid in bulk.gravs:
         return [bulk.gravs[load_sid]]
@@ -437,7 +448,7 @@ def _load_sid_has_grav(bulk: BulkData, load_sid: int) -> list:
     return []
 
 
-def _add_grav_arrow(fig: go.Figure, bulk: BulkData, grav) -> None:
+def _add_grav_arrow(fig: go.Figure, bulk: BulkData, grav: Grav) -> None:
     """Add a single cone arrow showing the GRAV acceleration direction."""
     if not bulk.grids:
         return
@@ -478,9 +489,11 @@ def _add_grav_arrow(fig: go.Figure, bulk: BulkData, grav) -> None:
     ))
 
 
-def _resolve_load_forces(bulk: BulkData, load_sid: int, eff_scale: float = 1.0) -> list:
+def _resolve_load_forces(
+    bulk: BulkData, load_sid: int, eff_scale: float = 1.0
+) -> list[tuple[Union[Force, Moment], float]]:
     """Recursively expand LOAD combinations; return [(Force|Moment, eff_scale)]."""
-    results = []
+    results: list[tuple[Union[Force, Moment], float]] = []
     if load_sid in bulk.loads:
         load = bulk.loads[load_sid]
         for scale_i, sid_i in load.components:
@@ -562,7 +575,7 @@ def _add_load_arrows(fig: go.Figure, bulk: BulkData, load_sid: int) -> None:
 def _cbush_zigzag_coords(
     ax: float, ay: float, az: float,
     bx: float, by: float, bz: float,
-) -> tuple:
+) -> PointLists:
     """Return (xs, ys, zs) for a zigzag spring polyline between points A and B."""
     vx, vy, vz = bx - ax, by - ay, bz - az
     L = math.sqrt(vx * vx + vy * vy + vz * vz)
@@ -607,13 +620,13 @@ def _add_cbush_traces(fig: go.Figure, bulk: BulkData) -> None:
 
     _CBUSH_COLOR = "#9467bd"
 
-    xs: list = []
-    ys: list = []
-    zs: list = []
-    mx: list = []
-    my: list = []
-    mz: list = []
-    customdata: list = []
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
+    mx: list[float] = []
+    my: list[float] = []
+    mz: list[float] = []
+    customdata: list[list[Any]] = []
 
     for cbush in bulk.cbushs.values():
         ga = bulk.grids.get(cbush.ga)
@@ -694,9 +707,9 @@ def _add_ghost_cbush_lines(fig: go.Figure, bulk: BulkData) -> None:
     """Add undeformed CBUSH ghost lines (straight, grey) for deformed/mode figures."""
     if not bulk.cbushs:
         return
-    xs: list = []
-    ys: list = []
-    zs: list = []
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
     for cbush in bulk.cbushs.values():
         ga = bulk.grids.get(cbush.ga)
         if ga is None:
@@ -734,9 +747,9 @@ def _add_ghost_cbush_lines(fig: go.Figure, bulk: BulkData) -> None:
 def _add_ghost_cbar_lines(fig: go.Figure, bulk: BulkData) -> None:
     if not bulk.cbars:
         return
-    xs: list = []
-    ys: list = []
-    zs: list = []
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
     for cbar in bulk.cbars.values():
         ga = bulk.grids[cbar.ga]
         gb = bulk.grids[cbar.gb]
@@ -755,9 +768,9 @@ def _add_ghost_cbar_lines(fig: go.Figure, bulk: BulkData) -> None:
 def _add_ghost_plotel_lines(fig: go.Figure, bulk: BulkData) -> None:
     if not bulk.plotels:
         return
-    xs: list = []
-    ys: list = []
-    zs: list = []
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
     for plotel in bulk.plotels.values():
         if plotel.g1 not in bulk.grids or plotel.g2 not in bulk.grids:
             continue
@@ -781,9 +794,9 @@ def _add_ghost_plotel_lines(fig: go.Figure, bulk: BulkData) -> None:
 def _add_ghost_rbe3_lines(fig: go.Figure, bulk: BulkData) -> None:
     if not bulk.rbe3s:
         return
-    xs: list = []
-    ys: list = []
-    zs: list = []
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
     for rbe3 in bulk.rbe3s.values():
         if rbe3.refgrid not in bulk.grids:
             continue
@@ -811,9 +824,9 @@ def _add_ghost_rbe3_lines(fig: go.Figure, bulk: BulkData) -> None:
 def _add_ghost_rbe2_lines(fig: go.Figure, bulk: BulkData) -> None:
     if not bulk.rbe2s:
         return
-    xs: list = []
-    ys: list = []
-    zs: list = []
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
     for rbe2 in bulk.rbe2s.values():
         if rbe2.gn not in bulk.grids:
             continue
@@ -840,9 +853,9 @@ def _add_ghost_rbe2_lines(fig: go.Figure, bulk: BulkData) -> None:
 def _add_ghost_rbar_lines(fig: go.Figure, bulk: BulkData) -> None:
     if not bulk.rbars:
         return
-    xs: list = []
-    ys: list = []
-    zs: list = []
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
     for rbar in bulk.rbars.values():
         if rbar.ga not in bulk.grids or rbar.gb not in bulk.grids:
             continue
@@ -867,7 +880,7 @@ def _add_grid_trace(
     fig: go.Figure,
     bulk: BulkData,
     selected_gid: Optional[int] = None,
-    spc_map: Optional[dict] = None,
+    spc_map: Optional[dict[int, str]] = None,
 ) -> None:
     if not bulk.grids:
         return
@@ -900,7 +913,8 @@ def _add_grid_trace(
         ))
 
     # SPC-constrained GRIDs (grey outline, red fill)
-    spc_grids = [g for g in grids if g.gid != selected_gid and spc_map and g.gid in spc_map]
+    spc_dofs_by_gid = spc_map or {}
+    spc_grids = [g for g in grids if g.gid != selected_gid and g.gid in spc_dofs_by_gid]
     if spc_grids:
         fig.add_trace(go.Scatter3d(
             x=[g.x for g in spc_grids],
@@ -912,7 +926,7 @@ def _add_grid_trace(
                 color="#cc2222",
                 line=dict(color="#888888", width=2),
             ),
-            text=[f"{g.gid}\n{spc_map[g.gid]}" for g in spc_grids],
+            text=[f"{g.gid}\n{spc_dofs_by_gid[g.gid]}" for g in spc_grids],
             textposition="top center",
             textfont=dict(size=10),
             customdata=[[g.gid, g.ps or "—"] for g in spc_grids],
@@ -946,7 +960,7 @@ def _add_cbar_traces(
     if not bulk.cbars:
         return
 
-    pid_groups: dict = {}
+    pid_groups: dict[int, list[Cbar]] = {}
     for cbar in bulk.cbars.values():
         pid_groups.setdefault(cbar.pid, []).append(cbar)
 
@@ -955,9 +969,9 @@ def _add_cbar_traces(
 
     for pid, cbars in sorted(pid_groups.items()):
         color = color_map[pid]
-        xs: list = []
-        ys: list = []
-        zs: list = []
+        xs: list[Optional[float]] = []
+        ys: list[Optional[float]] = []
+        zs: list[Optional[float]] = []
         for cbar in cbars:
             ga = bulk.grids[cbar.ga]
             gb = bulk.grids[cbar.gb]
@@ -985,10 +999,10 @@ def _add_cbar_traces(
         ))
 
     # Midpoint hover markers
-    mx: list = []
-    my: list = []
-    mz: list = []
-    customdata: list = []
+    mx: list[float] = []
+    my: list[float] = []
+    mz: list[float] = []
+    customdata: list[list[Any]] = []
     for cbar in bulk.cbars.values():
         ga = bulk.grids[cbar.ga]
         gb = bulk.grids[cbar.gb]
@@ -1035,9 +1049,9 @@ def _add_cbar_traces(
 def _add_plotel_trace(fig: go.Figure, bulk: BulkData) -> None:
     if not bulk.plotels:
         return
-    xs: list = []
-    ys: list = []
-    zs: list = []
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
     for plotel in bulk.plotels.values():
         g1 = bulk.grids[plotel.g1]
         g2 = bulk.grids[plotel.g2]
@@ -1056,9 +1070,9 @@ def _add_plotel_trace(fig: go.Figure, bulk: BulkData) -> None:
 def _add_rbe3_trace(fig: go.Figure, bulk: BulkData) -> None:
     if not bulk.rbe3s:
         return
-    xs: list = []
-    ys: list = []
-    zs: list = []
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
     for rbe3 in bulk.rbe3s.values():
         if rbe3.refgrid not in bulk.grids:
             continue
@@ -1085,9 +1099,9 @@ def _add_rbe3_trace(fig: go.Figure, bulk: BulkData) -> None:
 def _add_rbe2_trace(fig: go.Figure, bulk: BulkData) -> None:
     if not bulk.rbe2s:
         return
-    xs: list = []
-    ys: list = []
-    zs: list = []
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
     for rbe2 in bulk.rbe2s.values():
         if rbe2.gn not in bulk.grids:
             continue
@@ -1113,9 +1127,9 @@ def _add_rbe2_trace(fig: go.Figure, bulk: BulkData) -> None:
 def _add_rbar_trace(fig: go.Figure, bulk: BulkData) -> None:
     if not bulk.rbars:
         return
-    xs: list = []
-    ys: list = []
-    zs: list = []
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
     for rbar in bulk.rbars.values():
         if rbar.ga not in bulk.grids or rbar.gb not in bulk.grids:
             continue
@@ -1139,13 +1153,13 @@ def _add_conm2_trace(fig: go.Figure, bulk: BulkData) -> None:
     if not bulk.conm2s:
         return
 
-    cg_xs: list = []
-    cg_ys: list = []
-    cg_zs: list = []
-    customdata: list = []
-    off_xs: list = []
-    off_ys: list = []
-    off_zs: list = []
+    cg_xs: list[float] = []
+    cg_ys: list[float] = []
+    cg_zs: list[float] = []
+    customdata: list[list[Any]] = []
+    off_xs: list[Optional[float]] = []
+    off_ys: list[Optional[float]] = []
+    off_zs: list[Optional[float]] = []
 
     for conm2 in bulk.conm2s.values():
         grid = bulk.grids.get(conm2.gid)
@@ -1234,11 +1248,11 @@ def _add_triad(fig: go.Figure, bulk: BulkData) -> None:
 
 def _apply_layout(
     fig: go.Figure,
-    camera: Optional[dict] = None,
+    camera: Optional[dict[str, Any]] = None,
     height: int = 600,
-    scene_range: Optional[dict] = None,
+    scene_range: Optional[dict[str, Any]] = None,
 ) -> None:
-    scene: dict = dict(
+    scene: dict[str, Any] = dict(
         aspectmode="data",
         xaxis_title="X",
         yaxis_title="Y",

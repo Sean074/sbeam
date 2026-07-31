@@ -42,28 +42,31 @@ precision by construction.
 
 import warnings
 
+from typing import Optional
+
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.aero import Spline2, Spline0, Attach
+from sbeam.assembly.coord_transform import get_transform
+from sbeam.types import FloatArray
 from sbeam.aero.panel import AeroBox
-from sbeam.assembly.coord_transform import _get_transform
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _nchord_per_caero(boxes: list) -> dict:
+def nchord_per_caero(boxes: list[AeroBox]) -> dict[int, int]:
     """Return {caero_eid: n_chord_boxes} from the meshed box list."""
-    result: dict = {}
+    result: dict[int, int] = {}
     for box in boxes:
         eid = box.caero_eid
         result[eid] = max(result.get(eid, 0), box.j_chord + 1)
     return result
 
 
-def _build_id_to_k(boxes: list, nchord: dict) -> dict:
+def build_id_to_k(boxes: list[AeroBox], nchord: dict[int, int]) -> dict[int, int]:
     """Return {nastran_box_id: box.k} for all boxes.
 
     NASTRAN box ID = CAERO1.EID + i_span * nchord + j_chord.
@@ -78,9 +81,9 @@ def _covered_gk_for_range(
     caero_eid: int,
     id1: int,
     id2: int,
-    boxes: list,
-    id_to_k: dict,
-) -> list:
+    boxes: list[AeroBox],
+    id_to_k: dict[int, int],
+) -> list[int]:
     """Return sorted list of global box indices (k) in the NASTRAN ID range."""
     result = []
     for nastran_id, gk in id_to_k.items():
@@ -96,12 +99,12 @@ def _covered_gk_for_range(
 def _build_spline2_block(
     sp: Spline2,
     bulk: BulkData,
-    boxes: list,
-    grid_index: dict,
-    id_to_k: dict,
-    covered: list,
-    g_slope: np.ndarray,
-    g_disp: np.ndarray,
+    boxes: list[AeroBox],
+    grid_index: dict[int, int],
+    id_to_k: dict[int, int],
+    covered: list[bool],
+    g_slope: FloatArray,
+    g_disp: FloatArray,
 ) -> None:
     """Fill g_slope and g_disp rows for all boxes covered by *sp*.
 
@@ -110,7 +113,7 @@ def _build_spline2_block(
     """
 
     # Spline coordinate frame (MSC convention: axis = CID y-axis)
-    origin, R_cid = _get_transform(sp.cid, bulk.cord2rs)
+    origin, R_cid = get_transform(sp.cid, bulk.cord2rs)
     c_hat = R_cid[:, 0]   # chord / rigid-arm direction (CID x)
     s_hat = R_cid[:, 1]   # spline axis (CID y)
     z_hat = R_cid[:, 2]   # deflection direction (CID z)
@@ -288,7 +291,7 @@ def _build_spline2_block(
     #   φ:  P → +χ_e·D/2GJ ; T → −D/2GJ ; M → 0
     #   φ′: P → +χ_e·sg/2GJ ; T → −sg/2GJ ; M → 0
     # ------------------------------------------------------------------ #
-    def _eval_rows(pt: np.ndarray) -> tuple:
+    def _eval_rows(pt: FloatArray) -> tuple[FloatArray, FloatArray]:
         r = pt - origin
         t = float(r @ s_hat)
         chi = float(r @ c_hat)
@@ -347,9 +350,9 @@ def _build_spline2_block(
 
 def _register_spline0(
     sp: Spline0,
-    boxes: list,
-    id_to_k: dict,
-    covered: list,
+    boxes: list[AeroBox],
+    id_to_k: dict[int, int],
+    covered: list[bool],
 ) -> None:
     """Mark SPLINE0 boxes as covered (rows stay zero — no structural coupling)."""
     covered_gk = _covered_gk_for_range(sp.caero, sp.id1, sp.id2, boxes, id_to_k)
@@ -372,12 +375,12 @@ def _register_spline0(
 def _build_attach_rows(
     attach: Attach,
     bulk: BulkData,
-    boxes: list,
-    grid_index: dict,
-    id_to_k: dict,
-    covered: list,
-    g_slope: np.ndarray,
-    g_disp: np.ndarray,
+    boxes: list[AeroBox],
+    grid_index: dict[int, int],
+    id_to_k: dict[int, int],
+    covered: list[bool],
+    g_slope: FloatArray,
+    g_disp: FloatArray,
 ) -> None:
     """Fill g_slope and g_disp rows for boxes rigidly attached to a master GRID.
 
@@ -447,14 +450,14 @@ def _build_attach_rows(
 
 def build_g_spline(
     bulk: BulkData,
-    boxes: list,
-    grid_index: dict,
-) -> tuple:
+    boxes: list[AeroBox],
+    grid_index: dict[int, int],
+) -> tuple[Optional[FloatArray], Optional[FloatArray]]:
     """Build the displacement and slope spline operators from BDF spline cards.
 
     Returns (g_slope, g_disp) where:
-      g_slope : np.ndarray, shape (n_box, 6 * n_grid) — g-DOF → streamwise incidence
-      g_disp  : np.ndarray, shape (3 * n_box, 6 * n_grid) — g-DOF → 3-D box displacement
+      g_slope : FloatArray, shape (n_box, 6 * n_grid) — g-DOF → streamwise incidence
+      g_disp  : FloatArray, shape (3 * n_box, 6 * n_grid) — g-DOF → 3-D box displacement
 
     Returns (None, None) when no spline cards are present.
 
@@ -480,8 +483,8 @@ def build_g_spline(
     g_disp  = np.zeros((3 * n_k, n_g))
     covered = [False] * n_k
 
-    nchord  = _nchord_per_caero(boxes)
-    id_to_k = _build_id_to_k(boxes, nchord)
+    nchord  = nchord_per_caero(boxes)
+    id_to_k = build_id_to_k(boxes, nchord)
 
     for sp in bulk.spline2s.values():
         _build_spline2_block(sp, bulk, boxes, grid_index, id_to_k, covered, g_slope, g_disp)

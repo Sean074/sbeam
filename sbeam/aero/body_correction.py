@@ -71,7 +71,7 @@ Keeping the panels clear has a consequence worth understanding:
     for a mild dCm/dα, dCn/dβ and ~0 roll increment; large body effects (a several-MAC
     neutral-point shift, strong wing-body interference) need a true slender-body element
     (backlog: "Body aerodynamic panels (slender body / CAERO2)").  ``ratio_max`` past
-    ``_RATIO_WARN`` is the flag that the targets have crossed that line.
+    ``RATIO_WARN`` is the flag that the targets have crossed that line.
 
   * **A plane may be one panel or several.**  ``horiz_eid`` / ``vert_eid`` each accept a
     list of CAERO1 EIDs, so a body side can be split into pieces (e.g. one short panel
@@ -88,17 +88,21 @@ Keeping the panels clear has a consequence worth understanding:
 
 import warnings
 from dataclasses import dataclass
+from typing import Iterable, Optional, Union, cast
 
 import numpy as np
+import pandas as pd
 
-from sbeam.aero.aero_model import build_aero_model
+from sbeam.aero.aero_model import AeroModel, build_aero_model
+from sbeam.model.bulk_data import BulkData
+from sbeam.types import FloatArray
 from sbeam.aero.integration import build_djx
 from sbeam.aero.strip import is_strip_caero, strip_box_slopes
-from sbeam.assembly.coord_transform import _get_transform
-from sbeam.model.aero import Aecorr, Stripk, W2gj
+from sbeam.assembly.coord_transform import get_transform
+from sbeam.model.aero import Aecorr, Stripk, W2gj, require_aeros
 from sbeam.solver.sol144 import (
-    _compute_rigid_derivs,
-    _pitch_moment,
+    compute_rigid_derivs,
+    pitch_moment,
     aero_moment_resultant,
 )
 
@@ -107,7 +111,7 @@ from sbeam.solver.sol144 import (
 # coupled; WT2 scales body-box pressure only and does not touch the real surfaces — see
 # the module docstring).  Past this bound the flat-plate cruciform is being pushed beyond
 # what it can represent and a slender-body element is the proper tool.
-_RATIO_WARN = 200.0
+RATIO_WARN = 200.0
 _NORM_TOL = 1e-12    # near-zero sensitivity guard for the min-norm solves
 
 
@@ -129,25 +133,28 @@ class BodyTargets:
 @dataclass
 class BodyCorrectionResult:
     """Body-panel cards + achieved-vs-target diagnostics."""
-    cards:      dict          # {caero_eid: (W2gj, Aecorr)}
+    # Cruciform builds pair the W2GJ with an AECORR (WT2 ratios); the strip-body
+    # builder pairs it with a STRIPK (per-box slopes) instead.
+    cards:      dict[int, tuple[W2gj, Union[Aecorr, Stripk]]]
     target:     BodyTargets
     achieved:   BodyTargets   # total airplane after the body correction
     baseline:   BodyTargets   # total airplane before the body correction (flying only)
-    residual:   dict          # {'cm_alpha','cm0','cn_beta','cn0','cl_beta','cl0'}
+    residual:   dict[str, float]   # keyed by the BodyTargets field names
     converged:  bool
     ratio_max:  float         # max |WT2 ratio| over the body boxes
 
 
 def body_cards_to_bdf(result: "BodyCorrectionResult") -> str:
     """Format the body-panel W2GJ + AECORR(WT2) cards as bulk-data text."""
-    from sbeam.aero.section_correction import _pair_to_bdf
+    from sbeam.aero.section_correction import pair_to_bdf
     header = "$ Cruciform body-panel total-aircraft moment correction (W2GJ + WT2)\n"
-    body = "".join(_pair_to_bdf(w2, ac)
-                   for _eid, (w2, ac) in sorted(result.cards.items()))
+    body = "".join(pair_to_bdf(w2, ac)
+                   for _eid, (w2, ac) in sorted(result.cards.items())
+                   if isinstance(ac, Aecorr))
     return header + body
 
 
-def split_total_rows(df):
+def split_total_rows(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Split a section-data table into (flying_rows, total_rows).
 
     A ``TOTAL`` block carries the total-aircraft CFD/WT targets for the body
@@ -157,10 +164,14 @@ def split_total_rows(df):
     """
     var = df["var"].astype(str).str.upper()
     is_total = var == "TOTAL"
-    return df[~is_total].copy(), df[is_total].copy()
+    # cast: boolean-mask selection on a DataFrame is always a DataFrame.
+    return (cast(pd.DataFrame, df[~is_total]).copy(),
+            cast(pd.DataFrame, df[is_total]).copy())
 
 
-def parse_body_targets(df, mach, mach_tol: float = 1e-6):
+def parse_body_targets(
+    df: pd.DataFrame, mach: float, mach_tol: float = 1e-6
+) -> Optional[BodyTargets]:
     """Read the ``TOTAL`` block of a section-data table into :class:`BodyTargets`.
 
     Column mapping (reusing the section-data schema): ``cm_a``→Cm_α, ``cm0``→Cm0,
@@ -176,7 +187,7 @@ def parse_body_targets(df, mach, mach_tol: float = 1e-6):
         return None
     r = hit.iloc[0]
 
-    def _opt(col):
+    def _opt(col: str) -> float:
         v = r.get(col)
         return 0.0 if v is None or (isinstance(v, float) and np.isnan(v)) else float(v)
 
@@ -187,27 +198,30 @@ def parse_body_targets(df, mach, mach_tol: float = 1e-6):
     )
 
 
-def _ref_geometry(bulk):
+def _ref_geometry(bulk: BulkData) -> tuple[float, FloatArray]:
     """Moment reference (x_ref, ref_pt) from the AEROS RCSID (basic if 0)."""
-    aeros = bulk.aeros
-    if aeros is not None and aeros.rcsid:
-        ref_pt, _R = _get_transform(aeros.rcsid, bulk.cord2rs)
+    aeros = require_aeros(bulk)
+    if aeros.rcsid:
+        ref_pt, _R = get_transform(aeros.rcsid, bulk.cord2rs)
         return float(ref_pt[0]), np.asarray(ref_pt, dtype=float)
     return 0.0, np.zeros(3)
 
 
-def _total_metrics(aero, bulk, d_jx, labels, x_ref, ref_pt) -> BodyTargets:
+def _total_metrics(
+    aero: AeroModel, bulk: BulkData, d_jx: FloatArray, labels: list[str],
+    x_ref: float, ref_pt: FloatArray,
+) -> BodyTargets:
     """Total-aircraft Cm_α, Cm0, Cn_β, Cn0 for the current corrected model.
 
     Slopes reuse the SOL 144 rigid-derivative integration; offsets integrate the
     baseline normalwash ``aero.wg`` (which already accumulates every W2GJ, body
     panels included once their cards are applied).
     """
-    sref, cref, bref = bulk.aeros.sref, bulk.aeros.cref, bulk.aeros.bref
-    derivs = _compute_rigid_derivs(aero, d_jx, labels, bulk, x_ref, ref_pt)
+    sref, cref, bref = require_aeros(bulk).sref, require_aeros(bulk).cref, require_aeros(bulk).bref
+    derivs = compute_rigid_derivs(aero, d_jx, labels, bulk, x_ref, ref_pt)
     n = len(aero.boxes)
     f_box0 = aero.skj @ (aero.ajj_inv_corr @ aero.wg)
-    cm0 = _pitch_moment(f_box0, aero.boxes, x_ref) / (sref * cref)
+    cm0 = pitch_moment(f_box0, aero.boxes, x_ref) / (sref * cref)
     mx0, _my0, mz0 = aero_moment_resultant(f_box0.reshape(n, 3), aero.boxes, ref_pt)
     cn0 = mz0 / (sref * bref) if bref > 0 else 0.0
     cl0 = mx0 / (sref * bref) if bref > 0 else 0.0
@@ -218,7 +232,7 @@ def _total_metrics(aero, bulk, d_jx, labels, x_ref, ref_pt) -> BodyTargets:
     )
 
 
-def _as_eid_list(x) -> list:
+def _as_eid_list(x: Optional[Union[int, Iterable[int]]]) -> list[int]:
     """Normalise an EID argument (``None`` | ``int`` | iterable of ``int``) to a list.
 
     Lets a body plane be defined by **one or many** CAERO1s — e.g. a fuselage whose
@@ -228,22 +242,22 @@ def _as_eid_list(x) -> list:
     """
     if x is None:
         return []
-    if isinstance(x, (list, tuple, set)):
-        return [int(e) for e in x]
-    return [int(x)]
+    if isinstance(x, int):
+        return [int(x)]
+    return [int(e) for e in x]
 
 
 def build_body_correction(
-    bulk,
+    bulk: BulkData,
     *,
-    horiz_eid=None,
-    vert_eid=None,
+    horiz_eid: Optional[Union[int, Iterable[int]]] = None,
+    vert_eid: Optional[Union[int, Iterable[int]]] = None,
     targets: BodyTargets,
-    mach=None,
-    aero=None,
+    mach: Optional[float] = None,
+    aero: Optional[AeroModel] = None,
     sid_w2gj_base: int = 9301,
     sid_aecorr_base: int = 9401,
-    grid_index=None,
+    grid_index: Optional[dict[int, int]] = None,
     tol: float = 1e-4,
 ) -> BodyCorrectionResult:
     """Tune the cruciform body panels so the total airplane Cm/Cn match ``targets``.
@@ -280,7 +294,7 @@ def build_body_correction(
     aero0 = aero if aero is not None else build_aero_model(bulk, grid_index, mach)
     boxes = aero0.boxes
     n = len(boxes)
-    sref, cref, bref = bulk.aeros.sref, bulk.aeros.cref, bulk.aeros.bref
+    sref, cref, bref = require_aeros(bulk).sref, require_aeros(bulk).cref, require_aeros(bulk).bref
 
     labels = ["ANGLEA", "SIDES"]
     d_jx = build_djx(boxes, labels, bulk)
@@ -407,7 +421,7 @@ def build_body_correction(
     converged = max(abs(v) for v in residual.values()) < tol
 
     ratio_max = float(np.max(np.abs(r[body_idx]))) if body_idx.size else 0.0
-    if ratio_max > _RATIO_WARN:
+    if ratio_max > RATIO_WARN:
         warnings.warn(
             f"build_body_correction: body WT2 ratio reached {ratio_max:.1f} — beyond what a "
             "flat-plate cruciform can represent.  (A ratio of tens-to-~100 is normal and "
@@ -432,26 +446,28 @@ def build_body_correction(
 
 def strip_body_cards_to_bdf(result: "BodyCorrectionResult") -> str:
     """Format the strip body-panel W2GJ + STRIPK cards as bulk-data text."""
-    from sbeam.aero.section_correction import _card_lines
+    from sbeam.aero.section_correction import card_lines
     header = "$ Decoupled strip body-panel total-aircraft moment match (W2GJ Δα + STRIPK slope)\n"
     body = ""
     for _eid, (w2, sk) in sorted(result.cards.items()):
-        body += _card_lines("W2GJ", [w2.sid, w2.caero_eid], w2.data) + "\n"
-        body += _card_lines("STRIPK", [sk.sid, sk.caero_eid], sk.data) + "\n"
+        if not isinstance(sk, Stripk):
+            continue
+        body += card_lines("W2GJ", [w2.sid, w2.caero_eid], w2.data) + "\n"
+        body += card_lines("STRIPK", [sk.sid, sk.caero_eid], sk.data) + "\n"
     return header + body
 
 
 def build_strip_body_correction(
-    bulk,
+    bulk: BulkData,
     *,
-    horiz_eid=None,
-    vert_eid=None,
+    horiz_eid: Optional[Union[int, Iterable[int]]] = None,
+    vert_eid: Optional[Union[int, Iterable[int]]] = None,
     targets: BodyTargets,
-    mach=None,
-    aero=None,
+    mach: Optional[float] = None,
+    aero: Optional[AeroModel] = None,
     sid_w2gj_base: int = 9301,
     sid_stripk_base: int = 9501,
-    grid_index=None,
+    grid_index: Optional[dict[int, int]] = None,
     tol: float = 1e-4,
 ) -> BodyCorrectionResult:
     """Tune **decoupled strip** body panels so the total airplane Cm/Cn/Cl match ``targets``.
@@ -494,7 +510,7 @@ def build_strip_body_correction(
     aero0 = aero if aero is not None else build_aero_model(bulk, grid_index, mach)
     boxes = aero0.boxes
     n = len(boxes)
-    sref, cref, bref = bulk.aeros.sref, bulk.aeros.cref, bulk.aeros.bref
+    sref, cref, bref = require_aeros(bulk).sref, require_aeros(bulk).cref, require_aeros(bulk).bref
 
     labels = ["ANGLEA", "SIDES"]
     d_jx = build_djx(boxes, labels, bulk)

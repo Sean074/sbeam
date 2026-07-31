@@ -6,7 +6,7 @@ same model and asserts the totals agree to <=1%:
   Path A (coupling path) — the actual SOL 144 chain:
       f_box = skj @ (ajj_inv_corr @ w)      (w = D_jx ANGLEA column = -n_z)
       Fz    = f_box[2::3].sum()
-      My    = _pitch_moment(f_box, boxes, x_ref)
+      My    = pitch_moment(f_box, boxes, x_ref)
 
   Path B (independent K-J) — solve_rigid_cl (sbeam/aero/vlm.py), which rebuilds
   its own AIC and Kutta-Joukowski resultants in a separate module:
@@ -17,7 +17,7 @@ This is the discriminating gate AE13 lacked: the nearby checks
 only SELF-consistent, so a common scale error or a factor-of-2 parity bug passes
 them.  Path B re-derives gamma, cp = 2*gamma/chord and the moment from scratch,
 so a scale/parity error in build_aero_model's Gamma->dCp conversion
-(aero_model.py) or in skj/_pitch_moment fails this test hard.
+(aero_model.py) or in skj/pitch_moment fails this test hard.
 
 Why the two paths are comparable:
   * Neither target deck carries a WKK/AECORR correction, so build_aero_model
@@ -38,7 +38,6 @@ test_trim_urdd.py.)
 import warnings
 from pathlib import Path
 
-import numpy as np
 import pytest
 
 from sbeam.parser.bdf_reader import parse_bdf
@@ -46,8 +45,8 @@ from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.integration import build_djx
 from sbeam.aero.vlm import solve_rigid_cl
 from sbeam.assembly.load_vector import build_grid_index
-from sbeam.assembly.coord_transform import _get_transform
-from sbeam.solver.sol144 import _pitch_moment
+from sbeam.assembly.coord_transform import get_transform
+from sbeam.solver.sol144 import pitch_moment
 
 SAMPLE = Path(__file__).parent.parent.parent / "sample"
 
@@ -60,7 +59,7 @@ DECKS = {
 def _x_ref(bulk):
     """Moment reference x (RCSID origin in basic CID 0), as sol144 computes it."""
     if bulk.aeros.rcsid:
-        origin, _ = _get_transform(bulk.aeros.rcsid, bulk.cord2rs)
+        origin, _ = get_transform(bulk.aeros.rcsid, bulk.cord2rs)
         return float(origin[0])
     return 0.0
 
@@ -90,7 +89,7 @@ def _cross_check(bulk, aero):
     w = build_djx(aero.boxes, ["ANGLEA"], bulk)[:, 0]   # = -n_z, matches rhs at alpha=1
     f_box = aero.skj @ (aero.ajj_inv_corr @ w)
     Fz_coupling = float(f_box[2::3].sum())
-    My_coupling = _pitch_moment(f_box, aero.boxes, x_ref)
+    My_coupling = pitch_moment(f_box, aero.boxes, x_ref)
 
     return Fz_coupling, Fz_indep, My_coupling, My_indep
 

@@ -8,7 +8,7 @@ import pytest
 import numpy as np
 
 from sbeam.model.aero import Caero1, Paero1, Aefact
-from sbeam.aero.panel import AeroBox, mesh_caero1
+from sbeam.aero.panel import mesh_caero1
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixtures
@@ -213,7 +213,6 @@ class TestTaperedPlanform:
         assert box.colloc[0] == pytest.approx(0.75 * mid_chord)
 
     def test_bound_vortex_x_at_root_qc(self, box):
-        mid_chord = 0.5 * (self.ROOT_CHORD + self.TIP_CHORD)
         assert box.bound_a[0] == pytest.approx(0.25 * self.ROOT_CHORD)
         assert box.bound_b[0] == pytest.approx(0.25 * self.TIP_CHORD)
 

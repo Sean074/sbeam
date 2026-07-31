@@ -15,10 +15,13 @@ applies the same negation when assembling the internal ``w_g``.
 import numpy as np
 
 from sbeam.aero.panel import AeroBox
-from sbeam.assembly.coord_transform import _get_transform
+from sbeam.model.bulk_data import BulkData
+from sbeam.assembly.coord_transform import get_transform
+from sbeam.types import FloatArray
+from sbeam.model.aero import W2gj, require_aeros
 
 
-def build_skj(boxes: list[AeroBox]) -> np.ndarray:
+def build_skj(boxes: list[AeroBox]) -> FloatArray:
     """Area-weighted force integration matrix.  Shape: (3*n_box, n_box).
 
     Column j maps pressure coefficient cp_j to the resultant force vector
@@ -33,7 +36,7 @@ def build_skj(boxes: list[AeroBox]) -> np.ndarray:
     return skj
 
 
-def build_djk(boxes: list[AeroBox]) -> np.ndarray:
+def build_djk(boxes: list[AeroBox]) -> FloatArray:
     """Deflection-to-downwash matrix for rigid wing at k=0.  Shape: (n_box, n_box).
 
     The input is the per-box *incidence* (nose-up positive) that the spline
@@ -49,7 +52,7 @@ def build_djk(boxes: list[AeroBox]) -> np.ndarray:
     return -np.eye(len(boxes))
 
 
-def build_wg(boxes: list[AeroBox], w2gjs: dict, caero_eid: int) -> np.ndarray:
+def build_wg(boxes: list[AeroBox], w2gjs: dict[int, W2gj], caero_eid: int) -> FloatArray:
     """Baseline normalwash vector from W2GJ card.  Shape: (n_box,).
 
     W2GJ card data follows the NASTRAN convention (MSC Aeroelastic UG Eq 2-104,
@@ -87,7 +90,9 @@ _RIGID_RATE_LABEL = {1: None, 2: "SIDES", 3: "ANGLEA",
                      4: "ROLL", 5: "PITCH", 6: "YAW"}
 
 
-def build_dj_rigidrate(boxes: list, rigid_dofs: list, bulk, v_inf: float) -> np.ndarray:
+def build_dj_rigidrate(
+    boxes: list[AeroBox], rigid_dofs: list[int], bulk: BulkData, v_inf: float
+) -> FloatArray:
     """Normalwash per unit *physical* rigid-body rate.  Shape: (n_box, n_rigid).
 
     Level-1 quasi-steady rate aerodynamics for the free-free maneuver basis
@@ -121,7 +126,7 @@ def build_dj_rigidrate(boxes: list, rigid_dofs: list, bulk, v_inf: float) -> np.
 
     Args:
         boxes:      aero boxes.
-        rigid_dofs: list of rigid-body DOF components (1-6), one per column.
+        rigid_dofs: list[int] of rigid-body DOF components (1-6), one per column.
         bulk:       BulkData (AEROS reference geometry, as for build_djx).
         v_inf:      true airspeed, from ``Trim.velocity()``.
 
@@ -131,8 +136,8 @@ def build_dj_rigidrate(boxes: list, rigid_dofs: list, bulk, v_inf: float) -> np.
     if v_inf <= 0.0:
         raise ValueError(
             f"build_dj_rigidrate: v_inf must be positive; got {v_inf}")
-    c_ref = bulk.aeros.cref
-    b_ref = bulk.aeros.bref
+    c_ref = require_aeros(bulk).cref
+    b_ref = require_aeros(bulk).bref
 
     scale = {1: 0.0, 2: 1.0 / v_inf, 3: -1.0 / v_inf,
              4: b_ref / (2.0 * v_inf), 5: c_ref / (2.0 * v_inf),
@@ -151,7 +156,9 @@ def build_dj_rigidrate(boxes: list, rigid_dofs: list, bulk, v_inf: float) -> np.
     return out
 
 
-def build_djx(boxes: list, trim_labels: list, bulk) -> np.ndarray:
+def build_djx(
+    boxes: list[AeroBox], trim_labels: list[str], bulk: BulkData
+) -> FloatArray:
     """Downwash-to-trim-variable matrix D_jx.  Shape: (n_box, n_labels).
 
     Each column k gives the normalwash contribution at each box collocation
@@ -175,19 +182,19 @@ def build_djx(boxes: list, trim_labels: list, bulk) -> np.ndarray:
     n_labels = len(trim_labels)
     djx      = np.zeros((n_box, n_labels))
 
-    aeros   = bulk.aeros
+    aeros   = require_aeros(bulk)
     c_ref   = aeros.cref
     b_ref   = aeros.bref
 
     # Reference point for pitch rate: origin of RCSID in basic CID 0
     if aeros.rcsid:
-        x_ref_pt, _ = _get_transform(aeros.rcsid, bulk.cord2rs)
+        x_ref_pt, _ = get_transform(aeros.rcsid, bulk.cord2rs)
         x_ref = float(x_ref_pt[0])
     else:
         x_ref = 0.0
 
     # Build NASTRAN-box-ID → global-k-index reverse map (for AESURF columns)
-    nastran_id_to_k: dict = {}
+    nastran_id_to_k: dict[int, int] = {}
     for box in boxes:
         caero = bulk.caero1s[box.caero_eid]
         nchord_b = (caero.nchord if caero.nchord > 0
@@ -238,7 +245,7 @@ def build_djx(boxes: list, trim_labels: list, bulk) -> np.ndarray:
                 if aesurf.label.upper() != ul:
                     continue
                 eff    = aesurf.eff
-                _o, R  = _get_transform(aesurf.cid1, bulk.cord2rs)
+                _o, R  = get_transform(aesurf.cid1, bulk.cord2rs)
                 h_hat  = R[:, 1]                       # hinge axis = cid1 y-axis
                 aelist = bulk.aelists.get(aesurf.alid1)
                 if aelist is None:

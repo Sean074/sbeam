@@ -27,7 +27,7 @@ class SubcaseControl:
 class CaseControl:
     sol: int
     title: str = ""
-    subcases: list = field(default_factory=list)  # list[SubcaseControl]
+    subcases: list["SubcaseControl"] = field(default_factory=list)
     include: Optional[str] = None  # Path to bulk data INCLUDE file
 
 
@@ -66,7 +66,7 @@ def _cc_include_path(line: str) -> str:
 _SUPPORTED_SOLS = frozenset({101, 103, 144})
 
 
-def parse_case_control(lines: list) -> CaseControl:
+def parse_case_control(lines: list[str]) -> CaseControl:
     """Parse case control lines (above BEGIN BULK) into a CaseControl object.
 
     Raises ValueError if no SOL card is found or SOL value is not one of the

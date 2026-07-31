@@ -22,12 +22,18 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from typing import Optional
+
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero import section_data as sd
 from sbeam.aero import body_correction as bc
+from sbeam.aero.aero_model import AeroModel
+from sbeam.aero.body_correction import BodyCorrectionResult
+from sbeam.aero.section_data import MultiSectionDataBuildResult
+from sbeam.types import FloatArray
 from sbeam.aero.section_correction import cards_to_bdf
 from sbeam.aero.strip import is_strip_caero
 from sbeam.viewer.aero_view import build_section_correction_figure, surface_dihedral_deg
@@ -69,16 +75,16 @@ Coefficients are **local-chord** normalised (airfoil-polar convention). Pitching
 """
 
 
-def _template_csv(aero_model) -> str:
+def _template_csv(aero_model: AeroModel) -> str:
     """Mesh-seeded starter table covering every CAERO1 surface, as CSV text."""
     eids = sorted({b.caero_eid for b in aero_model.boxes})
     frames = [sd.template_dataframe(aero_model.boxes, eid) for eid in eids]
     df = (pd.concat(frames, ignore_index=True) if frames
-          else pd.DataFrame(columns=sd.COLUMNS))
+          else pd.DataFrame(columns=pd.Index(sd.COLUMNS)))
     return df.to_csv(index=False)
 
 
-def _warn_conflicts(bulk: BulkData, eids: list) -> None:
+def _warn_conflicts(bulk: BulkData, eids: list[int]) -> None:
     """Surface correction-card clashes that ``build_aero_model`` would resolve silently."""
     own = st.session_state.get("aero_corr_sids", set())
     for eid in eids:
@@ -97,7 +103,7 @@ def _warn_conflicts(bulk: BulkData, eids: list) -> None:
             )
 
 
-def _apply_cards(bulk: BulkData, res) -> int:
+def _apply_cards(bulk: BulkData, res: MultiSectionDataBuildResult) -> int:
     """Inject the generated W2GJ/AECORR pairs into the in-session model.
 
     Removes any cards this tool injected on a previous build (tracked SIDs), adds the new
@@ -106,7 +112,7 @@ def _apply_cards(bulk: BulkData, res) -> int:
     for sid in st.session_state.get("aero_corr_sids", set()):
         bulk.w2gjs.pop(sid, None)
         bulk.aecorrs.pop(sid, None)
-    new_sids: set = set()
+    new_sids: set[int] = set()
     for _eid, (w2, ac) in res.correction.cards.items():
         bulk.w2gjs[w2.sid] = w2
         bulk.aecorrs[ac.sid] = ac
@@ -144,8 +150,8 @@ def _splice_cards(source_text: str, block: str) -> str:
 
 
 def build_corrected_bdf(source_text: str, cards_text: str, *, source_csv: str,
-                        mach: float, alpha: float, beta: float, eids: list,
-                        out_name: str, date: str = None) -> str:
+                        mach: float, alpha: float, beta: float, eids: list[int],
+                        out_name: str, date: Optional[str] = None) -> str:
     """Splice the W2GJ/AECORR cards into the uploaded model with a provenance header.
 
     Produces a self-contained corrected BDF (the loaded model + correction cards),
@@ -168,9 +174,11 @@ def build_corrected_bdf(source_text: str, cards_text: str, *, source_csv: str,
     return _splice_cards(source_text, header)
 
 
-def _surface_normal_chord(aero_model) -> dict:
+def _surface_normal_chord(
+    aero_model: AeroModel
+) -> dict[int, tuple[FloatArray, float]]:
     """Per CAERO1: (mean unit normal, mean box chord) — for body-panel guessing."""
-    info: dict = {}
+    info: dict[int, tuple[FloatArray, float]] = {}
     for eid in sorted({b.caero_eid for b in aero_model.boxes}):
         bx = [b for b in aero_model.boxes if b.caero_eid == eid]
         info[eid] = (np.mean([b.normal for b in bx], axis=0),
@@ -178,7 +186,9 @@ def _surface_normal_chord(aero_model) -> dict:
     return info
 
 
-def _guess_body_panels(aero_model):
+def _guess_body_panels(
+    aero_model: AeroModel
+) -> tuple[Optional[int], Optional[int]]:
     """Best-guess (horizontal, vertical) body CAERO1s: the largest-chord +Z / +Y
     surfaces (the fuselage cruciform panels run nose-to-tail, so their box chord is the
     longest).  Returns (eid_or_None, eid_or_None)."""
@@ -189,7 +199,10 @@ def _guess_body_panels(aero_model):
             max(vert)[1] if vert else None)
 
 
-def _apply_body_cards(bulk: BulkData, res, bres) -> int:
+def _apply_body_cards(
+    bulk: BulkData, res: Optional[MultiSectionDataBuildResult],
+    bres: BodyCorrectionResult,
+) -> int:
     """Inject the flying-surface pairs (idempotent) and the body-panel pairs.
 
     The body card pair is (W2GJ, AECORR-WT2) for a cruciform VLM panel or
@@ -197,12 +210,13 @@ def _apply_body_cards(bulk: BulkData, res, bres) -> int:
     ``bulk.aecorrs`` or ``bulk.stripks`` by type.
     """
     from sbeam.model.aero import Stripk
-    _apply_cards(bulk, res)   # flying cards + clears the Aero-tab cache
+    if res is not None:
+        _apply_cards(bulk, res)   # flying cards + clears the Aero-tab cache
     for sid in st.session_state.get("aero_body_sids", set()):
         bulk.w2gjs.pop(sid, None)
         bulk.aecorrs.pop(sid, None)
         bulk.stripks.pop(sid, None)
-    new_sids: set = set()
+    new_sids: set[int] = set()
     for _eid, (w2, second) in bres.cards.items():
         bulk.w2gjs[w2.sid] = w2
         if isinstance(second, Stripk):
@@ -217,7 +231,10 @@ def _apply_body_cards(bulk: BulkData, res, bres) -> int:
     return len(bres.cards)
 
 
-def _render_body_stage(bulk: BulkData, aero_model, res) -> None:
+def _render_body_stage(
+    bulk: BulkData, aero_model: AeroModel,
+    res: Optional[MultiSectionDataBuildResult],
+) -> None:
     """Stage 6 — cruciform body panels absorb the residual so the TOTAL airplane
     pitching/yawing moment match CFD/WT (after the flying surfaces are corrected)."""
     gh, gv = _guess_body_panels(aero_model)
@@ -290,8 +307,9 @@ def _render_body_stage(bulk: BulkData, aero_model, res) -> None:
             st.error("Select at least one body panel (horizontal and/or vertical).")
         else:
             try:
-                fw2 = {w.sid: w for (w, _a) in res.correction.cards.values()}
-                fac = {a.sid: a for (_w, a) in res.correction.cards.values()}
+                flying = res.correction.cards if res is not None else {}
+                fw2 = {w.sid: w for (w, _a) in flying.values()}
+                fac = {a.sid: a for (_w, a) in flying.values()}
                 bulk_f = dataclasses.replace(
                     bulk, w2gjs={**bulk.w2gjs, **fw2}, aecorrs={**bulk.aecorrs, **fac})
                 aero_f = build_aero_model(bulk_f, mach=mach_c)
@@ -344,7 +362,7 @@ def _render_body_stage(bulk: BulkData, aero_model, res) -> None:
             st.warning("Body panels could not reach the targets within tolerance — reduce the "
                        "target increment (a flat-plate cruciform only supplies a small body effect; "
                        "large effects need a slender-body element).")
-        elif bres.ratio_max > bc._RATIO_WARN:
+        elif bres.ratio_max > bc.RATIO_WARN:
             st.warning(f"Body WT2 ratio reached {bres.ratio_max:.1f} — beyond what a flat-plate "
                        "cruciform can represent. A ratio of tens-to-~100 is normal/benign for panels "
                        "held clear of the tail (WT2 does not perturb the lifting surfaces); a value "
@@ -520,6 +538,8 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
     st.success(f"Built {len(built_eids)} surface card pair(s): CAERO {built_eids}")
 
     sel = st.selectbox("Preview surface", built_eids, key="aero_corr_preview")
+    if sel is None:
+        return
     st.plotly_chart(
         build_section_correction_figure(aero_model.boxes, df, res, sel),
         use_container_width=True, key="aero_corr_preview_fig",

@@ -11,6 +11,56 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Phase 2 completion.
 
+### Changed
+
+**Project-wide type annotations + pyright CI gate (2026-07-30)**
+
+- New `sbeam/types.py` with the shared aliases every physical quantity now uses:
+  `FloatArray`, `ComplexArray`, `IntArray`, `BoolArray`, `SparseMatrix`, `LuFactor`.
+  All 275 bare `np.ndarray` annotations and 488 bare `dict`/`list`/`tuple`/`set`
+  annotations across 41 modules are now parameterised; the type information moved out of
+  trailing comments and into the signatures (`BulkData` alone gained 54 field types).
+- New `pyrightconfig.json` (strict, Python 3.9) and a `pyright` step in CI after `ruff`;
+  `pyright` added to the `dev` extra. The three unknown-type rules and
+  `reportConstantRedefinition` are disabled with the rationale documented in
+  `docs/10_standard/00_program_overview.md` §Coding Standards.
+- `Optional` dereferences that could raise a bare `AttributeError` now go through explicit
+  guards: `require_aeros(bulk)` (`BulkData.aeros`) and `AeroModel.require_g_disp()` /
+  `require_g_slope()`, each raising a descriptive `ValueError`.
+- Cross-module helpers promoted from private to public names, matching what they already
+  are in practice: `_get_transform` → `get_transform`, `_node_dofs` → `node_dofs`,
+  `_build_inertial_cols` → `build_inertial_cols`, `_get_suport_local` → `get_suport_local`,
+  `_compute_rigid_derivs` → `compute_rigid_derivs`, `_pitch_moment` → `pitch_moment`,
+  `_urdd_rcsid_to_basic` → `urdd_rcsid_to_basic`, `_load_resultant` → `load_resultant`,
+  `_check_conditioning` → `check_conditioning`, `_pair_to_bdf` → `pair_to_bdf`,
+  `_card_lines` → `card_lines`, `_build_id_to_k` → `build_id_to_k`,
+  `_nchord_per_caero` → `nchord_per_caero`, `_emit_force_moment_cards` →
+  `emit_force_moment_cards`, `_RATIO_WARN` → `RATIO_WARN`.
+- `AsetReduction.reduce_matrix` gained `@overload`s so a dense input (or `dense=True`) is
+  typed as returning `FloatArray` rather than the dense-or-sparse union.
+- Behaviour is unchanged throughout: the full suite is identical before and after
+  (1187 passed, 6 xfailed).
+
+### Fixed
+
+**Dead code and red CI lint (2026-07-30)**
+
+- `ruff check sbeam/` had been failing (44 findings; 29 of them present 30 commits back).
+  All unused imports and dead locals removed across `sbeam/` and `tests/`; the CI lint step
+  now covers `tests/` as well. Three of the findings were introduced by Step 61
+  (`maneuver_qs.py` kept importing `build_inertial_cols`/`get_suport_local` after they moved
+  to `modal_basis`, plus a dead `grid_index` local).
+- Removed two private SOL 144 helpers left dead by the Step 59/61 refactors:
+  `_compute_aset_data` (superseded by `reduce_to_aset`) and `_compute_aero_forces`.
+- `Sol144DivergResult` f06 output guarded `root.v_div` (`Optional[float]`) before formatting;
+  `write_monitor_csv` guarded the MONPNT1 `aero`/`inertia`/`reaction` columns, which are
+  `None` for aero-only monitors.
+- `BodyCorrectionResult.cards` is typed `dict[int, tuple[W2gj, Union[Aecorr, Stripk]]]` —
+  the strip-body builder stores `Stripk`, not `Aecorr`, so the two `*_cards_to_bdf`
+  formatters now select by type instead of assuming one variant.
+- `get_spc_dofs`, `assemble_global_mass`, `compute_gpwg` and `reduce_to_aset` declare their
+  `Optional[int]` SID parameters (they were already called with `None`).
+
 ### Added
 
 **Step 61 — Free-free maneuver modal basis + h-set operator set (2026-07-30)**

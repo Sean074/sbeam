@@ -27,6 +27,7 @@ import copy
 from dataclasses import replace
 
 from sbeam.model.bulk_data import BulkData
+from sbeam.model.aero import require_aeros
 
 
 # Collections that the geometric unfold cannot safely auto-convert.  Mapping of
@@ -70,7 +71,7 @@ def mirror_halfspan(bulk: BulkData, tol: float = 1e-9) -> BulkData:
         ValueError:          if ``bulk`` is not a half-span model.
         NotImplementedError: if it contains cards outside the supported set.
     """
-    if bulk.aeros is None or (bulk.aeros.symxz == 0 and bulk.aeros.symxy == 0):
+    if bulk.aeros is None or (require_aeros(bulk).symxz == 0 and require_aeros(bulk).symxy == 0):
         raise ValueError(
             "mirror_halfspan: model is not a half-span model "
             "(AEROS SYMXZ and SYMXY are both 0 — nothing to mirror)."

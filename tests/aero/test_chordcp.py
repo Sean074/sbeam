@@ -30,7 +30,7 @@ from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.corrections import apply_chordcp
 from sbeam.aero.mirror import mirror_halfspan
 from sbeam.assembly.load_vector import build_grid_index
-from sbeam.model.aero import Chordcp, W2gj
+from sbeam.model.aero import Chordcp
 from sbeam.solver.sol144 import run_sol144_trim
 
 BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"

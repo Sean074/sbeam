@@ -147,7 +147,7 @@ def mesh_caero1(
 Converts one CAERO1 macroelement into an ordered list of `AeroBox` objects. Key
 implementation details:
 
-- P1 and P4 are transformed from CP frame to global CID 0 using `_get_transform()`
+- P1 and P4 are transformed from CP frame to global CID 0 using `get_transform()`
   (full origin + R @ v_local, not rotation-only).
 - Bound vortex and collocation points are placed at ¼ and ¾ of each **box** chord
   individually. For NCHORD > 1 each chordwise row has independent horseshoe positions.
@@ -437,7 +437,7 @@ and the trim variables then perturb about that injected operating point.
 ### How it works — equivalent-normalwash substitution
 
 The mean flow reaches every consumer (trim RHS via `build_fg`, f06 totals,
-`_compute_aero_forces`, `maneuver_qs`, monitor points, viewer) exclusively as
+the SOL 144 trim recovery, `maneuver_qs`, monitor points, viewer) exclusively as
 `ΔCp = ajj_inv_corr @ aero.wg`, so `build_aero_model` converts the injected Cp
 into an equivalent baseline normalwash and bakes it into `aero.wg`
 (`corrections.apply_chordcp`, wired by `_apply_chordcp_injection`):
@@ -679,7 +679,7 @@ exact and non-iterative**, exploiting two facts (verified to ~1e-13 against `bui
 contamination metric: WT2 is a post-inverse diagonal on the **body rows only**, so a large ratio
 scales the body-box ΔCp without ever perturbing the lifting-surface operator rows (see *Geometry &
 limitations* below). For panels held clear of the tail a ratio of **tens to ~100 is normal and
-benign**; it is warned only past `_RATIO_WARN = 200`, the point at which the flat-plate cruciform is
+benign**; it is warned only past `RATIO_WARN = 200`, the point at which the flat-plate cruciform is
 being pushed beyond what it can represent and a slender-body element is the proper tool.
 
 ### Geometry & limitations — keep the panels clear of the empennage
@@ -882,10 +882,10 @@ When a correction card is present the tab also runs the **uncorrected** baseline
 **Full-width results below the 3D view (A-GUI2):**
 - `build_span_loading_figure(boxes, cp_corr, cp_unc=None, aeros=None)` — per-CAERO1 spanwise
   section normal-force `cn(η)` and section moment `cm(η)` (about each strip's local ¼-chord,
-  nose-up +ve, same sign as `solve_rigid_cl`/`sol144._pitch_moment`). Boxes grouped by
+  nose-up +ve, same sign as `solve_rigid_cl`/`sol144.pitch_moment`). Boxes grouped by
   `(caero_eid, i_span)` — one line per surface; corrected solid, uncorrected dashed.
 - `rigid_derivative_table(aero_model, bulk, naming, state)` — the full rigid stability & control
-  derivative matrix. Reuses `build_djx` (per-label normalwash) + `sol144._compute_rigid_derivs`
+  derivative matrix. Reuses `build_djx` (per-label normalwash) + `sol144.compute_rigid_derivs`
   (rigid, `u_a = 0`), so the table matches the SOL 144 f06 rigid derivatives exactly without a
   trim/structure solve. Rows: ANGLEA/SIDES/ROLL/PITCH/YAW + AESURF controls; columns: the six
   force/moment coefficients per radian/label. `naming` toggles conventional aero symbols
@@ -900,7 +900,7 @@ When a correction card is present the tab also runs the **uncorrected** baseline
   The uncorrected operator is rebuilt by `_uncorrected_cp_operator(aero_model)`, which inverts the
   stored raw `aero_model.ajj` and re-applies the Göthert `1/β` factor and the Γ→ΔCp `2/chord`
   conversion — exactly the no-correction branch of `build_aero_model` — then swaps it in via
-  `dataclasses.replace` so the same `_compute_rigid_derivs` integrates against it. With no
+  `dataclasses.replace` so the same `compute_rigid_derivs` integrates against it. With no
   correction cards the two operators coincide and `"diff"` is identically zero.
 
 `build_section_correction_figure(boxes, df, data_result, caero_eid)` provides the section-correction

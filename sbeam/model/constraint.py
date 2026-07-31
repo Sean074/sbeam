@@ -17,7 +17,7 @@ class Spc:
 class Spc1:
     sid: int
     c: str              # DOF string applied to all listed grids
-    grids: list = field(default_factory=list)  # list of grid IDs
+    grids: list[int] = field(default_factory=list)  # grid IDs
 
 
 @dataclass

@@ -3,7 +3,7 @@
 Unit tests:
   TestUrddRcsidTransform — verify R_rcsid correctly maps URDD3 from z-down
       RCSID frame to basic frame (AE5 math).
-  TestInertialCols — verify _build_inertial_cols entries for translational
+  TestInertialCols — verify build_inertial_cols entries for translational
       and rotational URDD labels (AE7 matrix structure).
 
 Integration test:
@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from sbeam.assembly.coord_transform import _get_transform
+from sbeam.assembly.coord_transform import get_transform
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.model.aero import Aeros, Aestat, Trim
 from sbeam.model.bulk_data import BulkData
@@ -29,7 +29,7 @@ from sbeam.model.mass import Conm2
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.parser.case_control import SubcaseControl
 from sbeam.aero.aero_model import build_aero_model
-from sbeam.solver.sol144 import _build_inertial_cols, run_sol144_trim
+from sbeam.solver.sol144 import build_inertial_cols, run_sol144_trim
 
 BDF_PATH = Path(__file__).parent.parent / "integration" / "bdf" / "val_spline2_cantilever.bdf"
 
@@ -60,7 +60,7 @@ class TestUrddRcsidTransform:
     def test_z_down_rcsid_transforms_urdd3(self):
         """CORD2R with local z pointing -z_basic: URDD3=-g → basic z = +g."""
         cord2rs = {99: _z_down_cord2r(99)}
-        _, R = _get_transform(99, cord2rs)
+        _, R = get_transform(99, cord2rs)
         # R[2,2] must be -1 (local z = -basic z)
         assert abs(R[2, 2] - (-1.0)) < 1e-12, f"R[2,2] = {R[2,2]}, expected -1"
         v_basic = R @ np.array([0.0, 0.0, -G_FT_S2])
@@ -69,13 +69,13 @@ class TestUrddRcsidTransform:
 
     def test_identity_rcsid_leaves_urdd3_unchanged(self):
         """RCSID=0 (identity): URDD3 value must pass through unchanged."""
-        _, R = _get_transform(0, {})
+        _, R = get_transform(0, {})
         v_basic = R @ np.array([0.0, 0.0, -G_FT_S2])
         assert abs(v_basic[2] - (-G_FT_S2)) < 1e-12
 
 
 # ---------------------------------------------------------------------------
-# Unit tests — _build_inertial_cols matrix entries
+# Unit tests — build_inertial_cols matrix entries
 # ---------------------------------------------------------------------------
 
 def _minimal_bulk_one_conm2(m: float, gx: float, gy: float, gz: float,
@@ -97,7 +97,7 @@ class TestInertialCols:
         grid_index = {1: 0}   # single grid → index 0
         all_labels = ['URDD1', 'URDD2', 'URDD3']
         suport_pos = np.zeros(3)
-        M = _build_inertial_cols(bulk, all_labels, grid_index, suport_pos)
+        M = build_inertial_cols(bulk, all_labels, grid_index, suport_pos)
         # Shape: (6, 3)
         assert M.shape == (6, 3)
         # URDD3 col = 2; Tz dof = 2 (dof offset for translational z is 2)
@@ -129,7 +129,7 @@ class TestInertialCols:
         grid_index = {1: 0, 2: 1}
         all_labels = ['URDD3']
         suport_pos = np.zeros(3)
-        M = _build_inertial_cols(bulk, all_labels, grid_index, suport_pos)
+        M = build_inertial_cols(bulk, all_labels, grid_index, suport_pos)
         L = 1.0
         m_half = 0.5 * rho * A * L
         # Grid 1 Tz = dof 2; Grid 2 Tz = dof 8
@@ -144,7 +144,7 @@ class TestInertialCols:
         grid_index = {1: 0}
         all_labels = ['URDD4', 'URDD5', 'URDD6']
         suport_pos = np.zeros(3)
-        M = _build_inertial_cols(bulk, all_labels, grid_index, suport_pos)
+        M = build_inertial_cols(bulk, all_labels, grid_index, suport_pos)
         # URDD5 col = 1 in ['URDD4','URDD5','URDD6']; Ry dof = 4 (3+1)
         assert abs(M[4, 1] - (-I22)) < 1e-15, f"M[Ry, URDD5] = {M[4,1]}, expected {-I22}"
         # Other rotational diagonals
@@ -160,7 +160,7 @@ class TestInertialCols:
         grid_index = {1: 0}
         all_labels = ['URDD5']
         suport_pos = np.zeros(3)
-        M = _build_inertial_cols(bulk, all_labels, grid_index, suport_pos)
+        M = build_inertial_cols(bulk, all_labels, grid_index, suport_pos)
         # alpha_hat for URDD5 = (0,1,0); r = (rx,0,0)
         # F_trans = -m * cross((0,1,0), (rx,0,0)) = -m*(1*0-0*0, 0*rx-0*0, 0*0-1*rx)
         #         = -m*(0, 0, -rx) = (0, 0, m*rx)
@@ -176,7 +176,7 @@ class TestInertialCols:
         grid_index = {1: 0}
         all_labels = ['ANGLEA', 'PITCH', 'URDD3']
         suport_pos = np.zeros(3)
-        M = _build_inertial_cols(bulk, all_labels, grid_index, suport_pos)
+        M = build_inertial_cols(bulk, all_labels, grid_index, suport_pos)
         assert np.allclose(M[:, 0], 0.0), "ANGLEA column should be all zeros"
         assert np.allclose(M[:, 1], 0.0), "PITCH column should be all zeros"
         # URDD3 column must be non-zero

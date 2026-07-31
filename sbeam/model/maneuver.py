@@ -21,8 +21,6 @@ Card orchestration::
 """
 
 from dataclasses import dataclass, field
-from typing import List, Tuple
-
 import numpy as np
 
 
@@ -36,8 +34,8 @@ class Tabled1:
     pilot input that ramps to a steady deflection and then holds.
     """
     tid:   int
-    xs:    list = field(default_factory=list)   # list[float] abscissae (time)
-    ys:    list = field(default_factory=list)   # list[float] ordinates (command)
+    xs:    list[float] = field(default_factory=list)   # abscissae (time)
+    ys:    list[float] = field(default_factory=list)   # ordinates (command)
     xaxis: str = "LINEAR"                         # LINEAR or LOG (only LINEAR honoured)
     yaxis: str = "LINEAR"
 
@@ -73,7 +71,7 @@ class Mldcomd:
     versus time.  Labels not commanded here remain at their initial-trim value.
     """
     sid:      int
-    commands: List[Tuple[str, int]] = field(default_factory=list)   # [(label, tabid)]
+    commands: list[tuple[str, int]] = field(default_factory=list)   # [(label, tabid)]
 
 
 @dataclass
@@ -84,7 +82,7 @@ class Mldprnt:
     ``CONTROL``, ``LOADS``); empty means print all available time histories.
     """
     sid:   int
-    items: List[str] = field(default_factory=list)
+    items: list[str] = field(default_factory=list)
 
 
 @dataclass

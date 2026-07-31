@@ -101,7 +101,7 @@ box_id = CAERO1.EID + i_span × n_chord_boxes + j_chord
 All structural DOFs are in global CID 0. The spline CID provides the projections:
 
 ```
-origin, R_cid = _get_transform(spline2.cid, cord2rs)
+origin, R_cid = get_transform(spline2.cid, cord2rs)
 c_hat = R_cid[:, 0]   # chord / rigid-arm direction (CID x)
 s_hat = R_cid[:, 1]   # spline axis (CID y) — MSC convention
 z_hat = R_cid[:, 2]   # deflection direction (CID z)

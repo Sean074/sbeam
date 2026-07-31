@@ -28,9 +28,10 @@ already baked into that stored inverse upstream — there is no correction appli
 import numpy as np
 
 from sbeam.aero.aero_model import AeroModel
+from sbeam.types import FloatArray
 
 
-def _check_spline_shapes(aero: AeroModel, g_disp: np.ndarray, g_slope: np.ndarray) -> int:
+def _check_spline_shapes(aero: AeroModel, g_disp: FloatArray, g_slope: FloatArray) -> int:
     """Validate spline-operator shapes against the AeroModel and return n_g."""
     n = len(aero.boxes)
     if g_slope.ndim != 2 or g_slope.shape[0] != n:
@@ -51,7 +52,7 @@ def _check_spline_shapes(aero: AeroModel, g_disp: np.ndarray, g_slope: np.ndarra
     return g_slope.shape[1]
 
 
-def build_qaa(aero: AeroModel, g_disp: np.ndarray, g_slope: np.ndarray) -> np.ndarray:
+def build_qaa(aero: AeroModel, g_disp: FloatArray, g_slope: FloatArray) -> FloatArray:
     """Flexible aerodynamic stiffness Q_aa on the structural g-set.
 
     Q_aa = G_disp^T  S_kj  (A_jj*)^-1  D_jk  G_slope.
@@ -75,7 +76,7 @@ def build_qaa(aero: AeroModel, g_disp: np.ndarray, g_slope: np.ndarray) -> np.nd
     )
 
 
-def build_fg(aero: AeroModel, g_disp: np.ndarray) -> np.ndarray:
+def build_fg(aero: AeroModel, g_disp: FloatArray) -> FloatArray:
     """Baseline aerodynamic load f_g on the structural g-set.
 
     f_g = G_disp^T  S_kj  (A_jj*)^-1  w_g.
@@ -102,7 +103,7 @@ def build_fg(aero: AeroModel, g_disp: np.ndarray) -> np.ndarray:
     return g_disp.T @ p                        # (n_g,) structural grid loads
 
 
-def build_gaf(qaa: np.ndarray, phi: np.ndarray) -> np.ndarray:
+def build_gaf(qaa: FloatArray, phi: FloatArray) -> FloatArray:
     """Modal generalized aerodynamic force (GAF) matrix Q_hh = Phi^T Q_aa Phi.
 
     The steady (k = 0) generalized aerodynamic force matrix, the aerodynamics
