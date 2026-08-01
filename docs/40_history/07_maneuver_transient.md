@@ -291,3 +291,8 @@ and on all rows for CONM2-only decks, but the rotational rows differ once CBARs 
 (no lumped counterpart to the consistent-mass translation↔rotation coupling; measured O(10%) of
 the peak column value). Pre-existing in the Step 53 and increment-1 inertia-relief RHS, pinned by
 `test_m_ax_identity_limits_with_consistent_cbar_mass`.
+
+> **Closed 2026-07-31** (Q4 + DEF-M3) — `build_inertial_cols` is now `−M_gg·Φ_r` off the same
+> consistent mass matrix, so the identity is exact on all rows and the pin became
+> `test_m_ax_identity_exact_with_consistent_cbar_mass`. See
+> `docs/40_history/06_sol144_static_aeroelastic.md`.

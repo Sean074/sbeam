@@ -73,6 +73,38 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Fixed
 
+**Q4 + DEF-M3 — one mass model for `M_ax` (2026-07-31)**
+
+- **`build_inertial_cols` is now `M_ax = −M_gg·Φ_r`**, formed from the same consistent
+  `assemble_global_mass` the elastic equations use, instead of a separate hand-rolled
+  *lumped* inertia model. The `M_ax = −M_aa·Φ_r` identity is now definitional rather than
+  incidental (`reduce_rect` is `Tᵀ·` and `T Φ_r_a = Φ_r_g`).
+- **Fixes DEF-M3** — the inertia-relief columns silently ignored CONM2 offset transport
+  (the *grid* position was used as the moment arm, so an offset mass lost its parallel-axis
+  `m·d²` inertia entirely), products of inertia (`i21/i31/i32` were never read, so yaw
+  acceleration produced no roll reaction), CONM2 `CID` rotation, and PBAR `nsm`.
+- **Fixes Q4** — lumped CBAR half-masses had no counterpart to the consistent-mass
+  translation↔rotation coupling, so the identity broke on rotational rows whenever
+  `rho > 0` (O(10 %) of the peak column value).
+- **Behaviour change on decks with distributed CBAR mass or non-trivial CONM2s.** `M_ax`
+  enters the trim equilibrium as `C_ax = q·Q_ax + M_ax` and is what `inertial_loads`,
+  `net_loads` and the exported `FORCE`/`MOMENT` stress handoff are recovered from, so trim
+  variables and maneuver loads move. Every shipped deck is **bit-identical** (all are
+  CONM2-only with `rho = 0`); with `rho = 2700` forced onto `ha144a_fullspan_mloads`,
+  ANGLEA goes 166.6637 → 166.7048 and peak displacement 33.193 → 33.447.
+- **New `sbeam/assembly/rigid_body.py`** — `build_rigid_vectors_g`, the single derivation of
+  the g-set rigid-body geometry, shared by `sol144.build_inertial_cols` and
+  `modal_basis.build_rigid_modes` (which keeps ownership of the a-set restriction and its
+  RBE3/RBAR round-trip check). It lives in `assembly/` because `modal_basis` imports
+  `sol144`, so `sol144` cannot import back.
+- **`build_inertial_cols` gained an optional `M_gg=` parameter** so callers that already
+  hold the mass matrix do not assemble it twice; `assemble_aset_operators` and
+  `run_sol144_trim` both pass theirs, removing a duplicate assembly from the trim path.
+- New gates in `tests/aero/test_trim_urdd.py::TestInertialColsFullMassModel` check the
+  closed-form rigid-body resultant (`F = −m a`, `M = −I_ref α`) rather than re-deriving
+  through the same code path; the Q4 pin becomes
+  `test_m_ax_identity_exact_with_consistent_cbar_mass` (exact to 1e-12 on all rows).
+
 **Step 64 / DEF-M1 — SPLINE0 / un-splined box loads now enter the trim equilibrium (2026-07-31)**
 
 - **Behaviour change — trim results on body-panel decks change by design.** Aero boxes with

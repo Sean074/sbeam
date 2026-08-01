@@ -30,9 +30,14 @@ Amended later the same day: the **2026-07-31 sample-problem review** items slot 
 P5–P7 — cheap CI insurance and the flagship sample after the correctness batches (whose
 P2 deliverable-integrity fixes the flagship's exports inherit), before new capability.
 
+**P1 delivered 2026-07-31** (Q4 + DEF-M3, one mass model for `M_ax` — see
+`docs/40_history/06_sol144_static_aeroelastic.md`), so the list now opens at P2. The
+remaining rows keep their numbers: the P-labels are used as stable identifiers by the
+cross-references throughout this document, so closing an item removes its row without
+re-flowing the rest. Renumber only when the whole table is re-ranked.
+
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P1 | Q4 + DEF-M3 — one mass model for `M_ax` (`build_inertial_cols` → `−M_aa·Φ_r`) | Defects / Q&R | ~1–2 d | Same root cause, resolve together. Today inertial-relief columns ignore CONM2 offsets, products of inertia and CID rotation, and mix lumped with consistent mass — silently wrong balanced-maneuver and transient inertial loads on any realistic mass model. Fix before Step 62 builds on `Φ_r`. |
 | P2 | DEF-M deliverable-integrity batch — M5, M6, M7, M10 | Defects | ~1–1.5 d | All cheap, all corrupt what leaves the program: the critical-sample selector/label/column disagree, exported FORCE/MOMENT fields overflow 8-char free field (the advertised stress handoff), the f06 time-history header is misaligned, and the shipped HA144A monitor omits 18.75 % of the inertia. |
 | P3 | DEF-M silent-input batch — M4, M8, M9 (+ DEF-R5, DEF-L1, sample-review F1) | Defects | ~2 d | Three "user asked, program ignored" paths: `LOAD` in a TRIM subcase, correction cards dropped/mis-bound, SPC on a rigid-dependent DOF discarded. M9's fix lands once only after R5 ports `sol101` onto `reduce_to_aset`; L1 is the same validation sweep. The 2026-07-31 sample review adds two of the same class: **F1** — CAERO1s with overlapping NASTRAN box-ID ranges silently overwrite in `build_id_to_k` (`spline.py:69-77`; the pre-flagship cessna210 EIDs 100/150/200/250 collide) — and SOL 101 with zero GRIDs running to an empty f06 without warning. |
 | P4 | DEF-M2 + DEF-M11 — force/moment convention and ATTACH transfer completeness | Defects | ~1 d | `solve_rigid_cl` reports panel-normal rather than body-axis totals (viewer and f06 disagree on canted decks) and ATTACH `g_disp` carries only the z-row. Both are carve-outs that become wrong answers as soon as dihedral/fin panels are used. |
@@ -89,6 +94,9 @@ Assigned owners — later features **reuse, never re-extract**:
   §8.1, and the G0 solvers — see `docs/40_history/07_maneuver_transient.md`).
 - **Geometric rigid-body basis builder (`build_rigid_modes`)** → **Step 61, delivered
   2026-07-30** (`sbeam/solver/modal_basis.py`; RBMREF reuses it, never re-derives it).
+  The underlying g-set geometry moved to `sbeam/assembly/rigid_body.py`
+  (`build_rigid_vectors_g`) with Q4/DEF-M3 so `sol144.build_inertial_cols` can form
+  `M_ax = −M_gg Φ_r` from the same vectors; `build_rigid_modes` remains the a-set owner.
 - **A-set operator assembly for the maneuver solvers (`assemble_aset_operators`)** →
   **Step 61, delivered 2026-07-30** (`sbeam/solver/modal_basis.py`, on top of Step 59's
   `reduce_to_aset`; both `maneuver_qs` and the Step 62 modal solver call it).
@@ -114,7 +122,6 @@ Assigned owners — later features **reuse, never re-extract**:
 |----|-----------------|----------|--------|
 | Q1 | SPC reaction f06 output: NASTRAN outputs SPCFORCE in the global (CID 0) frame, not the CD displacement frame. Current code matches this convention (no CD transform on reactions). Verify intentional. | Low | Open |
 | Q3 | GRAV CID restriction (only CID=0 supported, parser raises): acceptable for Phase 1 but not documented in "Known Limitations". | Low | Open |
-| Q4 | Lumped vs consistent inertia in `M_ax` (found during Step 61, 2026-07-30): `sol144.build_inertial_cols` builds the inertia-relief columns from **lumped** CONM2 masses / diagonal inertia and CBAR half-masses, while `M_aa` comes from `assemble_global_mass` (**consistent** mass). The `M_ax = −M_aa Φ_r` identity is therefore exact on translational rows always, and on all rows for CONM2-only decks; with `rho > 0` CBARs the rotational rows differ (the consistent-mass translation↔rotation coupling has no lumped counterpart — measured O(10%) of the peak column value on a dihedral test model). Affects the inertia-relief RHS of the Step 53 balanced maneuver and the increment-1 transient solver equally — pre-existing, not introduced by Step 61. Decide whether `build_inertial_cols` should be replaced by `−M_aa Φ_r` outright (one mass model, and the identity becomes definitional) or the discrepancy documented as intended. Pinned by `tests/solver/test_modal_basis.py::test_m_ax_identity_limits_with_consistent_cbar_mass`. **Ranked P1, batched with DEF-M3** (same root cause). | Medium | Open |
 
 ---
 
@@ -138,7 +145,6 @@ order — see the table above:
 
 | Rank | Batch | Items |
 |------|-------|-------|
-| P1 | One mass model for `M_ax` | DEF-M3 + **Q4** (same root cause; resolve together) |
 | P2 | Deliverable integrity (what leaves the program) | DEF-M5, M6, M7, M10 |
 | P3 | Silent-input handling (user asked, program ignored) | DEF-M4, M8, M9 + DEF-R5, DEF-L1 + sample-review F1 (duplicate box IDs) |
 | P4 | Convention / transfer completeness | DEF-M2, M11 |
@@ -146,7 +152,7 @@ order — see the table above:
 | P13 | Refactor before Phase D | DEF-R1, R2, R3, R4 (+ DEF-R7 at a release boundary) |
 | — | Opportunistic, do when adjacent | DEF-L2–L7 |
 
-### DEF-M — Medium (silent wrong output on specific configurations, or misleading deliverables) — P1–P4
+### DEF-M — Medium (silent wrong output on specific configurations, or misleading deliverables) — P2–P4
 
 - **DEF-M2 — `solve_rigid_cl` CZ/CM are panel-normal magnitudes, not body-z** [E]
   `sbeam/aero/vlm.py:320-324, 442-445, 469-472`. Off by 1/cos(dihedral) vs the skj-based
@@ -155,15 +161,6 @@ order — see the table above:
   equal; `test_dihedral.py:110` enshrines the wrong convention (cos Γ vs cos² Γ).
   *Options:* (a) project through n_z/n_y and update the dihedral test + theory doc
   (medium); (b) keep as normal-force convention and rename/redocument (low).
-
-- **DEF-M3 — `build_inertial_cols` ignores CONM2 offsets, products of inertia, and CID
-  rotation** [D] `sbeam/solver/sol144.py:400-476`. M_ax uses grid-point m and diagonal
-  I11/I22/I33 in the basic frame only, while `assemble_global_mass`/GPWG handle offset
-  transport, parallel-axis, and CID. Trim inertial loads and URDD columns are silently
-  wrong for decks with offset/rotated/product-inertia CONM2s (HA144A has none, so gates
-  pass). **Same root cause as Q4** (lumped vs consistent `M_ax`, found during Step 61) —
-  resolve together: Q4's option of replacing `build_inertial_cols` by `−M_aa·Φ_r`
-  (one mass model, identity becomes definitional) fixes both. Complexity medium.
 
 - **DEF-M4 — `LOAD` in a TRIM subcase silently ignored** [D] `run_sol144_trim` never reads
   `subcase.load_sid` (only the test-only Step-50 path does). A payload/thrust FORCE in a

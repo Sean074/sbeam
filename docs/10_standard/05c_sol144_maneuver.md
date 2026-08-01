@@ -532,11 +532,13 @@ solver that consumes it lands with Step 62; today the objects are exercised by t
   truncation; and the `B_hh` rigid-rate columns against their exact rescaling of `Q_hx`
   (plunge `−1/V·ANGLEA`, pitch `c_ref/2V·PITCH`). `build_dj_rigidrate` has its own column-rescale
   gate in `tests/aero/test_integration.py`.
-- **Known limit:** `build_inertial_cols` is a lumped inertia model while `M_aa` is consistent, so
-  the `M_ax` identity is exact only where the two agree — translational rows always, and all rows
-  for CONM2-only decks. With `rho > 0` CBARs the rotational rows differ (the consistent-mass
-  translation↔rotation coupling has no lumped counterpart); this is pre-existing in the increment-1
-  inertia-relief RHS and is tracked in the backlog.
+- **One mass model (Q4 / DEF-M3, 2026-07-31):** `M_ax` is *defined* as `−M_gg Φ_r` — the same
+  consistent `assemble_global_mass` the elastic equations use, times the geometric rigid vectors
+  from `assembly/rigid_body.py`. The `M_ax = −M_aa Φ_r` identity is therefore definitional rather
+  than incidental (`red.reduce_rect` is `Tᵀ·` and `T Φ_r_a = Φ_r_g`), and everything
+  `assemble_global_mass` knows — CONM2 offset transport, products of inertia, CONM2 `CID`
+  rotation, PBAR `nsm`, consistent CBAR mass — reaches the inertia-relief columns. The previous
+  hand-rolled lumped model silently dropped all five.
 
 ---
 
@@ -573,7 +575,7 @@ operator below is unchanged from pre-Step-60 behaviour.
 | Rebuilt per mass case | Shared across the sweep |
 |---|---|
 | `M_gg` (`assemble_global_mass(bulk, massset_sid)`) | `K_gg` / `K_aa` (stiffness) |
-| `M_ax` (`build_inertial_cols(..., massset_sid)`) | VLM AIC — `ajj`, `ajj_inv_corr` |
+| `M_ax` (`build_inertial_cols(..., M_gg=M_gg)` — `−M_gg Φ_r`, the row above reused) | VLM AIC — `ajj`, `ajj_inv_corr` |
 | GPWG mass / CG (`compute_gpwg(bulk, massset_sid)`) | `skj` / `djk` / `wg`, splines `g_disp`/`g_load`/`g_slope` |
 | The trim solve and its recovered loads | the whole `AeroCache` |
 

@@ -383,12 +383,19 @@ def load_resultant(
     return np.concatenate([F, M])
 
 
+#: URDD label -> rigid DOF component (1-6).  URDD1-3 are translational
+#: accelerations along basic x/y/z; URDD4-6 are angular accelerations about
+#: basic x/y/z, referred to ``suport_pos``.
+_URDD_DOF = {f"URDD{d}": d for d in range(1, 7)}
+
+
 def build_inertial_cols(
     bulk: BulkData,
     all_labels: list[str],
     grid_index: dict[int, int],
     suport_pos: FloatArray,
     massset_sid: Optional[int] = None,
+    M_gg: Optional[Any] = None,
 ) -> FloatArray:
     """Inertial sensitivity matrix M_ax on the full g-set — basic frame.
 
@@ -397,82 +404,71 @@ def build_inertial_cols(
     are expressed in the basic CID 0 frame; RCSID-frame URDD values must be
     transformed to basic before multiplying.
 
-    Translational URDD (1-3): M[Tx/Ty/Tz dof, col] = -mass_i (CONM2 + CBAR).
-    Rotational URDD (4-6): M[Ry dof, col] = -I_diag (CONM2 spin term)
-        plus transport coupling: M[Tx/Ty/Tz dof, col] += -m_i * (α_hat × r_i)
-        where r_i = grid_pos_i - suport_pos and α_hat is the unit rotation axis.
+    Definition — one mass model (Q4 / DEF-M3)
+    -----------------------------------------
+    A unit URDD_k is, by definition, a unit rigid-body acceleration of the whole
+    airframe about ``suport_pos``.  The d'Alembert load it induces is therefore
 
-    Only CONM2 point masses and CBAR distributed mass (rho > 0) contribute.
+        M_ax[:, k] = -M_gg @ phi_r_g[:, dof(k)]
 
-    ``massset_sid`` (Step 60) selects a MASSSET payload / mass case, matching
-    ``assemble_global_mass``; ``None`` gives the baseline configuration.
+    with ``phi_r_g`` the geometric rigid-body vectors from
+    ``assembly.rigid_body.build_rigid_vectors_g`` and ``M_gg`` the *same*
+    consistent mass matrix the elastic equations use.  This is not an
+    approximation of the inertia model — it *is* the inertia model, so
+    ``M_ax = -M_aa Phi_r`` holds column for column on the a-set as an identity
+    (``red.reduce_rect`` is ``T^T .`` and ``T Phi_r_a = Phi_r_g``).
+
+    Before this was unified, M_ax was a hand-rolled *lumped* model that read
+    ``conm2.m`` and the diagonal ``i11/i22/i33`` in the basic frame only.  It
+    silently dropped CONM2 offset transport, products of inertia, CONM2 CID
+    rotation and PBAR ``nsm``, and mixed lumped CBAR half-masses with the
+    consistent ``M_aa`` — all of which ``assemble_global_mass`` handles and all
+    of which now come along for free.
+
+    Args:
+        bulk:        parsed model.
+        all_labels:  trim labels, in column order.
+        grid_index:  {gid: i} — must be the g-set ordering ``M_gg`` was built on.
+        suport_pos:  rigid-acceleration reference point, basic coordinates.
+        massset_sid: MASSSET mass case (Step 60); ignored when ``M_gg`` is given.
+        M_gg:        pre-assembled global mass matrix for this mass case.  Pass
+                     it when the caller already has one — it is the single most
+                     expensive object here.  When ``None`` it is assembled from
+                     ``bulk``/``massset_sid``.
+
+    Raises:
+        ValueError: if a supplied ``M_gg`` does not match the g-set size.
     """
-    from sbeam.model.mass_overlay import resolve_mass_case
-    case = resolve_mass_case(bulk, massset_sid)
+    from sbeam.assembly.mass_matrix import assemble_global_mass
+    from sbeam.assembly.rigid_body import build_rigid_vectors_g
 
     n_g = 6 * len(grid_index)
-    n_labels = len(all_labels)
-    M = np.zeros((n_g, n_labels))
+    M = np.zeros((n_g, len(all_labels)))
 
-    _urdd_trans = {'URDD1': 0, 'URDD2': 1, 'URDD3': 2}
-    _urdd_rot   = {'URDD4': 0, 'URDD5': 1, 'URDD6': 2}
-
-    # Unit rotation axes in basic frame for URDD4/5/6
-    _rot_axis = {0: np.array([1.0, 0.0, 0.0]),
-                 1: np.array([0.0, 1.0, 0.0]),
-                 2: np.array([0.0, 0.0, 1.0])}
-
+    # {rigid DOF -> column} for the URDD labels actually present.
+    urdd_cols: dict[int, int] = {}
     for col, label in enumerate(all_labels):
-        ul = label.upper()
+        dof = _URDD_DOF.get(label.upper())
+        if dof is not None:
+            urdd_cols[dof] = col
+    if not urdd_cols:
+        return M            # aerodynamic labels only — M_ax is identically zero
 
-        if ul in _urdd_trans:
-            ax = _urdd_trans[ul]
-            for conm2 in case.conm2s.values():
-                if conm2.gid not in grid_index:
-                    continue
-                M[grid_index[conm2.gid] * 6 + ax, col] -= conm2.m
-            for cbar in bulk.cbars.values():
-                pbar = bulk.pbars.get(cbar.pid)
-                mat = bulk.mat1s.get(pbar.mid) if pbar else None
-                if pbar is None or mat is None or mat.rho == 0.0:
-                    continue
-                ga = bulk.grids[cbar.ga]
-                gb = bulk.grids[cbar.gb]
-                L = ((gb.x - ga.x)**2 + (gb.y - ga.y)**2 + (gb.z - ga.z)**2) ** 0.5
-                m_half = 0.5 * case.scale * mat.rho * pbar.A * L
-                M[grid_index[cbar.ga] * 6 + ax, col] -= m_half
-                M[grid_index[cbar.gb] * 6 + ax, col] -= m_half
+    if M_gg is None:
+        M_gg = assemble_global_mass(bulk, massset_sid)
+    elif M_gg.shape != (n_g, n_g):
+        raise ValueError(
+            f"build_inertial_cols: supplied M_gg is {M_gg.shape[0]}x"
+            f"{M_gg.shape[1]} but the g-set has {n_g} DOFs — the mass matrix "
+            "and grid_index must come from the same model."
+        )
 
-        elif ul in _urdd_rot:
-            rot = _urdd_rot[ul]
-            alpha_hat = _rot_axis[rot]
-            for conm2 in case.conm2s.values():
-                if conm2.gid not in grid_index:
-                    continue
-                gi = grid_index[conm2.gid]
-                base = gi * 6
-                # Spin inertia (diagonal only)
-                I_val = (conm2.i11, conm2.i22, conm2.i33)[rot]
-                M[base + 3 + rot, col] -= I_val
-                # Transport term: F_trans = -m * (alpha_hat × r)
-                g = bulk.grids[conm2.gid]
-                r = np.array([g.x, g.y, g.z]) - suport_pos
-                f_transport = -conm2.m * np.cross(alpha_hat, r)
-                M[base:base + 3, col] += f_transport
-            for cbar in bulk.cbars.values():
-                pbar = bulk.pbars.get(cbar.pid)
-                mat = bulk.mat1s.get(pbar.mid) if pbar else None
-                if pbar is None or mat is None or mat.rho == 0.0:
-                    continue
-                ga = bulk.grids[cbar.ga]
-                gb = bulk.grids[cbar.gb]
-                L = ((gb.x - ga.x)**2 + (gb.y - ga.y)**2 + (gb.z - ga.z)**2) ** 0.5
-                m_half = 0.5 * case.scale * mat.rho * pbar.A * L
-                for gobj, gi in ((ga, grid_index[cbar.ga]), (gb, grid_index[cbar.gb])):
-                    r = np.array([gobj.x, gobj.y, gobj.z]) - suport_pos
-                    f_transport = -m_half * np.cross(alpha_hat, r)
-                    M[gi * 6: gi * 6 + 3, col] += f_transport
+    dofs = sorted(urdd_cols)
+    phi_r_g = build_rigid_vectors_g(bulk, grid_index, dofs, suport_pos)
+    cols = -np.asarray(M_gg @ phi_r_g)          # (n_g, n_dofs)
 
+    for k, dof in enumerate(dofs):
+        M[:, urdd_cols[dof]] = cols[:, k]
     return M
 
 
@@ -1578,9 +1574,16 @@ def run_sol144_trim(
         pres_values, label_to_col, R_rcsid, bool(aeros.rcsid)
     )
 
+    # Mass matrix for this mass case.  Assembled once here and reused by both
+    # M_ax (below) and the unrestrained-derivative block further down — one mass
+    # model for the whole subcase, by construction (Q4 / DEF-M3).
+    from sbeam.assembly.mass_matrix import assemble_global_mass
+    M_gg = assemble_global_mass(bulk, massset_sid)
+
     # Inertial sensitivity matrix (basic frame); prescribed inertial RHS (AE7).
-    # M_ax_g[:, col] = dF/dURDD_col; zero for non-URDD labels.
-    M_ax_g = build_inertial_cols(bulk, all_labels, grid_index, suport_pos, massset_sid)
+    # M_ax_g[:, col] = dF/dURDD_col = -M_gg @ phi_r; zero for non-URDD labels.
+    M_ax_g = build_inertial_cols(
+        bulk, all_labels, grid_index, suport_pos, massset_sid, M_gg=M_gg)
     pres_inertial_g = M_ax_g @ pres_values_basic     # (n_g,) — free URDD entry = 0
 
     f_rhs_g = f_aero_g + pres_aero_g + pres_inertial_g  # (n_g,)
@@ -1702,9 +1705,7 @@ def run_sol144_trim(
     # Unrestrained (mean-axis / inertia-relief) derivatives — AE8b
     # (MSC Aeroelastic Analysis UG Eqs. 2-111 … 2-134)
     # ------------------------------------------------------------------ #
-    from sbeam.assembly.mass_matrix import assemble_global_mass
-    M_gg = assemble_global_mass(bulk, massset_sid)
-    M_aa = red.reduce_matrix(M_gg, dense=True)
+    M_aa = red.reduce_matrix(M_gg, dense=True)   # M_gg assembled with M_ax above
     f_aero_a = red.reduce_vector(f_aero_g)
     unrest_derivs, unrest_intercepts = _compute_unrestrained_derivs(
         K_aa, M_aa, Q_aa, Q_ax_a, f_aero_a, all_labels,

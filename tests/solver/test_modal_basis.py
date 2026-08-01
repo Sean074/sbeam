@@ -164,17 +164,19 @@ def test_m_ax_identity(basis_fixture):
         assert np.abs(actual - expected).max() / scale < 1e-12, info["accel"]
 
 
-def test_m_ax_identity_limits_with_consistent_cbar_mass():
-    """With CBAR rho > 0 the identity holds on translational rows only.
+def test_m_ax_identity_exact_with_consistent_cbar_mass():
+    """Q4 — the identity is exact on ALL rows, including with CBAR rho > 0.
 
-    ``build_inertial_cols`` is a *lumped* inertia model while ``M_aa`` is the
-    consistent mass matrix.  On translational rows the two agree exactly (the
-    consistent beam mass rows sum to the lumped nodal share, rho*A*L/2), so the
-    net force is identical.  On rotational rows they do not: a rigid translation
-    produces a consistent-mass moment (the 22L/420 + 13L/420 coupling) which the
-    lumped model has no term for.  This test pins the exact half and bounds the
-    other so the discrepancy cannot drift unnoticed — see the backlog item on
-    reconciling the two mass models.
+    This case is the one that used to break it.  ``build_inertial_cols`` was a
+    *lumped* inertia model while ``M_aa`` is consistent: on translational rows
+    the two agreed (the consistent beam mass rows sum to the lumped nodal share
+    rho*A*L/2), but on rotational rows a rigid translation produces a
+    consistent-mass moment (the 22L/420 + 13L/420 coupling) that the lumped
+    model had no term for — measured O(10 %) of the peak column value here.
+
+    Since M_ax is defined as ``-M_gg Phi_r``, both halves are now exact.  A
+    regression to any second mass model shows up on the rotational rows first,
+    so those are asserted separately rather than being folded into a norm.
     """
     _cc, bulk = parse_bdf(str(SAMPLE / "val_dihedral_trim.bdf"))
     for mat in bulk.mat1s.values():
@@ -195,11 +197,11 @@ def test_m_ax_identity_limits_with_consistent_cbar_mass():
 
     is_trans = np.array([g % 6 < 3 for g in ops.red.free_dofs])
     scale = np.abs(expected).max()
-    # Translational rows: exact (identical net force per grid).
-    assert np.abs((actual - expected)[is_trans]).max() / scale < 1e-9
-    # Rotational rows: the documented lumped-vs-consistent gap, O(10%) here.
-    rot_gap = np.abs((actual - expected)[~is_trans]).max() / scale
-    assert 0.0 < rot_gap < 0.25
+    assert np.abs((actual - expected)[is_trans]).max() / scale < 1e-12
+    assert np.abs((actual - expected)[~is_trans]).max() / scale < 1e-12
+    # The rotational rows must be genuinely populated — otherwise the assertion
+    # above would pass for the trivial reason that both sides are zero.
+    assert np.abs(expected[~is_trans]).max() / scale > 1e-3
 
 
 # ---------------------------------------------------------------------------

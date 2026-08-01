@@ -23,6 +23,10 @@ rigid-body vectors about the SUPORT reference point are deterministic and give:
   * ``M_rr = Phi_r^T M_aa Phi_r`` equal to the GPWG rigid mass about that point;
   * the column-for-column identity ``M_ax = -M_aa Phi_r`` against
     ``sol144.build_inertial_cols`` (same reference point, ``suport_pos``).
+    Since Q4/DEF-M3 that identity is *definitional*, not incidental:
+    ``build_inertial_cols`` forms its columns as ``-M_gg Phi_r_g`` from the same
+    geometric primitive (``assembly.rigid_body.build_rigid_vectors_g``) and the
+    same consistent mass matrix.
 
 This is the same mathematical object as ``designs/rbmref_card.md``'s
 ``B_target``; ``build_rigid_modes`` here is its single owner.
@@ -70,6 +74,7 @@ from sbeam.assembly.stiffness import assemble_global_stiffness
 from sbeam.assembly.mass_matrix import assemble_global_mass
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.assembly.reduction import reduce_to_aset, AsetReduction
+from sbeam.assembly.rigid_body import build_rigid_vectors_g
 from sbeam.aero.aero_model import AeroModel
 from sbeam.aero.coupling import build_qaa, build_fg, build_gaf
 from sbeam.aero.integration import build_djx, build_dj_rigidrate
@@ -236,8 +241,10 @@ def assemble_aset_operators(
     M_aa = red.reduce_matrix(M_gg, dense=True)
 
     f_aero_g_unit = build_fg(aero, aero.require_g_load())                     # (n_g,) q-free
+    # Same M_gg as M_aa above — M_ax IS -M_gg Phi_r, so the a-set identity
+    # M_ax_a = -M_aa Phi_r holds exactly rather than in a limit (Q4 / DEF-M3).
     M_ax_g = build_inertial_cols(
-        bulk, all_labels, grid_index, suport_pos, massset_sid)
+        bulk, all_labels, grid_index, suport_pos, massset_sid, M_gg=M_gg)
     M_ax_a = red.reduce_rect(M_ax_g)
 
     suport_local = get_suport_local(bulk, red.free_dofs, grid_index)
@@ -266,8 +273,12 @@ def build_rigid_modes(
 ) -> FloatArray:
     """Geometric rigid-body vectors about ``ref_pos``, restricted to the a-set.
 
-    THE single rigid-basis builder (Step 61 owns it; ``designs/rbmref_card.md``
-    reuses it rather than deriving its own ``B_target``).
+    THE single a-set rigid-basis builder (Step 61 owns it;
+    ``designs/rbmref_card.md`` reuses it rather than deriving its own
+    ``B_target``).  The g-set geometry itself comes from
+    ``assembly.rigid_body.build_rigid_vectors_g``, which
+    ``sol144.build_inertial_cols`` also uses so that ``M_ax`` and ``Phi_r``
+    cannot describe different rigid motions.
 
     Column k corresponds to ``rigid_dofs[k]``:
 
@@ -293,26 +304,7 @@ def build_rigid_modes(
     Returns:
         (n_a, n_r) rigid-body basis on the a-set.
     """
-    n_g = 6 * len(grid_index)
-    ref = np.asarray(ref_pos, dtype=float)
-    phi_r_g = np.zeros((n_g, len(rigid_dofs)))
-
-    for col, dof in enumerate(rigid_dofs):
-        if not 1 <= dof <= 6:
-            raise ValueError(
-                f"build_rigid_modes: rigid DOF must be 1-6; got {dof}")
-        if dof <= 3:
-            for gid, i in grid_index.items():
-                phi_r_g[6 * i + (dof - 1), col] = 1.0
-        else:
-            axis = np.zeros(3)
-            axis[dof - 4] = 1.0
-            for gid, i in grid_index.items():
-                g = bulk.grids[gid]
-                r = np.array([g.x, g.y, g.z]) - ref
-                phi_r_g[6 * i: 6 * i + 3, col] = np.cross(axis, r)
-                phi_r_g[6 * i + 3: 6 * i + 6, col] = axis
-
+    phi_r_g = build_rigid_vectors_g(bulk, grid_index, rigid_dofs, ref_pos)
     phi_r_a = phi_r_g[red.free_dofs, :]
 
     # Round trip: the a-set vector re-expanded through T must reproduce the

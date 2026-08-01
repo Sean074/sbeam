@@ -1616,6 +1616,90 @@ round-trip tests in `tests/parser/test_aero.py`. No-CHORDCP decks are bit-identi
 
 ## Resolved defects
 
+### Q4 + DEF-M3 — one mass model for `M_ax` (`build_inertial_cols` → `−M_gg·Φ_r`) ✅ COMPLETE (2026-07-31)
+
+**Objective:** Remove the second mass model. `M_ax`, the inertia-relief sensitivity
+(`dF/dURDD_k`), was a hand-rolled *lumped* inertia built directly from `conm2.m`, the diagonal
+`i11/i22/i33` in the basic frame, and CBAR half-masses, while every elastic operator used the
+consistent `assemble_global_mass`. Two defects fell out of that one root cause:
+
+- **DEF-M3** — the hand-rolled model silently dropped CONM2 **offset transport** (it used the
+  *grid* position as the moment arm, so an offset mass lost its parallel-axis `m·d²` inertia
+  entirely), **products of inertia** (`i21/i31/i32` were never read, so yaw acceleration produced
+  no roll reaction), CONM2 **`CID` rotation** (the tensor was used as if always basic-frame), and
+  PBAR **`nsm`**. HA144A has none of these, so every shipped gate passed.
+- **Q4** — even on clean CONM2s, lumped CBAR half-masses have no counterpart to the consistent
+  mass translation↔rotation coupling, so `M_ax = −M_aa Φ_r` held on translational rows always but
+  broke on rotational rows whenever `rho > 0` (measured O(10 %) of the peak column value).
+
+This was load-bearing, not diagnostic: `M_ax` enters the trim equilibrium as
+`C_ax = q·Q_ax + M_ax` (so the balance point itself moved) and is what `inertial_loads`,
+`net_loads` and the exported `FORCE`/`MOMENT` stress handoff are recovered from. The maneuver
+force/moment closure was machine-zero throughout because it checks `M_ax` against itself.
+
+**Deliverables:**
+- **`sbeam/assembly/rigid_body.py`** (new) — `build_rigid_vectors_g(bulk, grid_index, rigid_dofs,
+  ref_pos)`, the single derivation of the g-set rigid-body geometry. It lives in `assembly/`
+  rather than `modal_basis` because `modal_basis` imports `sol144`, so `sol144` cannot import
+  back; both consumers now call one primitive instead of deriving the geometry twice.
+- **`sol144.build_inertial_cols` rewritten** as `M_ax[:, k] = −M_gg @ Φ_r_g[:, dof(k)]` — ~90
+  lines of hand-rolled inertia replaced by the definition. Gains an optional `M_gg=` parameter so
+  callers that already hold the mass matrix do not assemble it twice, and a `ValueError` when a
+  supplied `M_gg` does not match the g-set size. Aero-label columns stay identically zero and no
+  mass is assembled at all when a deck has no URDD labels.
+- **`modal_basis.build_rigid_modes`** now delegates its geometry to `build_rigid_vectors_g` and
+  keeps ownership of the a-set restriction plus the RBE3/RBAR rigid-body-exactness round trip.
+- **Callers wired to share one `M_gg`** — `assemble_aset_operators` passes the `M_gg` it already
+  builds for `M_aa`; `run_sol144_trim` hoists its `assemble_global_mass` call above the `M_ax`
+  build and reuses it for the unrestrained-derivative block, removing a duplicate assembly.
+- **Docs:** `05c_sol144_maneuver.md` (the "Known limit" note replaced by the one-mass-model
+  definition; MASSSET rebuild table), `00_program_overview.md` and `CLAUDE.md` (module tree),
+  backlog shared-infrastructure ownership note.
+
+**Key decisions:**
+1. **Build on the g-set, then reduce** — not `−M_aa Φ_r_a` directly. `M_ax_g` is needed on the
+   g-set anyway for inertial-load recovery and the load export, and the a-set identity follows
+   exactly: `red.reduce_rect` is `Tᵀ·` and `T Φ_r_a = Φ_r_g`, so
+   `Tᵀ(−M_gg Φ_r_g) = −M_aa Φ_r_a`. The identity is now **definitional**, not incidental.
+2. **The primitive moves out of `modal_basis`, the a-set builder does not** — the single-owner
+   rule is preserved where it matters (one derivation of the rigid geometry); splitting only the
+   dependency-free part is what breaks the import cycle without a deferred import.
+3. **`massset_sid` semantics unchanged** — `M_ax` inherits whatever `assemble_global_mass` does
+   for a mass case, which is the point: a MASSSET sweep can no longer scale the elastic mass and
+   the inertia-relief mass differently.
+
+**Test/Acceptance:** the new gates are written against the **closed-form rigid-body resultant**,
+not a second call into the same code path — for a unit rigid acceleration the d'Alembert nodal
+loads must integrate to exactly the negated rigid mass properties about the reference point
+(`F = −m a`, `M = −I_ref α` with `I_ref` parallel-axis transported). That is unforgeable by any
+implementation that drops a term. `tests/aero/test_trim_urdd.py::TestInertialColsFullMassModel`
+covers offset-transport-about-the-CM, products of inertia, CONM2 `CID` rotation, PBAR `nsm`, the
+`M_gg` reuse path, the mismatched-`M_gg` error and the no-URDD-label short circuit. The Q4 pin
+`test_m_ax_identity_limits_with_consistent_cbar_mass` becomes
+`test_m_ax_identity_exact_with_consistent_cbar_mass`: exact to 1e-12 on **all** rows with
+`rho = 2700` CBARs, plus an assertion that the rotational rows are genuinely populated so the
+exactness check cannot pass for the trivial reason. **All seven new/changed gates were confirmed
+to fail against the pre-fix implementation.**
+
+Numerically, the shipped decks are **bit-identical** — HA144A and `val_dihedral_trim` are
+CONM2-only with `rho = 0`, which is exactly why this defect survived. The change is visible only
+once distributed mass exists (same decks, `rho` overridden to 2700):
+
+| Deck | Quantity | pre-fix | post-fix |
+|---|---|---|---|
+| `ha144a_fullspan_mloads` | ANGLEA | 166.6637 | 166.7048 |
+| `ha144a_fullspan_mloads` | ELEV | 320.9278 | 320.8873 |
+| `ha144a_fullspan_mloads` | peak \|u\| | 33.193 | 33.447 (+0.76 %) |
+| `val_dihedral_trim` | peak \|u\| | 0.001820 | 0.000842 (−54 %) |
+
+Full suite 1230 passed / 6 xfailed; `ruff` and `pyright` clean.
+
+**Not closed here:** the `M_ax` columns are still referred to `suport_pos` (the RCSID origin or
+basic origin) rather than a user-selectable point — that is the RBMREF card, which remains a thin
+wrapper over `build_rigid_modes` in the backlog.
+
+---
+
 ### Step 64 / DEF-M1 — SPLINE0 / un-splined box loads into the trim equilibrium ✅ COMPLETE (2026-07-31)
 
 **Objective:** Close the trim on body-panel decks. Boxes with no structural spline —

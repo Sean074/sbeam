@@ -184,6 +184,174 @@ class TestInertialCols:
 
 
 # ---------------------------------------------------------------------------
+# Unit tests — DEF-M3: M_ax must carry the FULL CONM2 mass model
+# ---------------------------------------------------------------------------
+#
+# M_ax is defined as -M_gg @ Phi_r, so everything assemble_global_mass knows
+# about a CONM2 (offset transport, products of inertia, CID rotation) and about
+# a PBAR (nsm) reaches the inertia-relief columns.  The gates below are written
+# against the closed-form rigid-body resultant, NOT against a second call into
+# the same code path: for a unit rigid acceleration the d'Alembert loads must
+# integrate to exactly the negated rigid mass properties about the reference
+# point.  That is unforgeable by any implementation that drops a term.
+
+def _resultant(col: np.ndarray, bulk: BulkData, grid_index: dict, ref: np.ndarray):
+    """Total (force, moment about ``ref``) of a g-set nodal load column."""
+    F = np.zeros(3)
+    Mo = np.zeros(3)
+    for gid, i in grid_index.items():
+        f = col[6 * i: 6 * i + 3]
+        mmt = col[6 * i + 3: 6 * i + 6]
+        g = bulk.grids[gid]
+        r = np.array([g.x, g.y, g.z]) - ref
+        F += f
+        Mo += mmt + np.cross(r, f)
+    return F, Mo
+
+
+def _rigid_resultants(m: float, R: np.ndarray, I_cm: np.ndarray, dof: int):
+    """Closed-form (F, M about ref) for a unit rigid acceleration of one mass.
+
+    ``R`` is the CM position relative to the reference point, ``I_cm`` the
+    inertia tensor about the CM in basic axes.  Translation along unit axis
+    ``a`` gives ``F = -m a``, ``M = R x F``.  Rotation about ``a`` gives the CM
+    acceleration ``a x R``, hence ``F = -m (a x R)``; the moment about the
+    reference collapses to ``M = -I_ref a`` with ``I_ref`` the parallel-axis
+    transported tensor, since ``R x (-m (a x R)) = -m(|R|^2 I - R (x) R) a``.
+    """
+    a = np.zeros(3)
+    a[(dof - 1) % 3] = 1.0
+    if dof <= 3:
+        F = -m * a
+        return F, np.cross(R, F)
+    I_ref = I_cm + m * (float(R @ R) * np.eye(3) - np.outer(R, R))
+    return -m * np.cross(a, R), -I_ref @ a
+
+
+class TestInertialColsFullMassModel:
+    """DEF-M3 — offsets, products of inertia, CID rotation and nsm."""
+
+    def test_offset_conm2_transports_about_the_cm_not_the_grid(self):
+        """A CONM2 offset from its grid must accelerate about its own CM.
+
+        The pre-fix lumped model used the *grid* position as the moment arm and
+        had no parallel-axis term, so a mass hung below its attach node was
+        transported from the wrong point and lost its m*d^2 inertia entirely.
+        """
+        from sbeam.model.grid import Grid
+        m, d = 3.0, np.array([0.0, 0.0, -4.0])      # 4 units below the grid
+        p = np.array([10.0, 0.0, 0.0])              # grid position
+        ref = np.zeros(3)
+        bulk = BulkData()
+        bulk.grids[1] = Grid(gid=1, cp=0, x=p[0], y=p[1], z=p[2], cd=0)
+        bulk.conm2s[1] = Conm2(eid=1, gid=1, cid=0, m=m,
+                               x1=d[0], x2=d[1], x3=d[2])
+        grid_index = {1: 0}
+        labels = ['URDD3', 'URDD5']
+        M = build_inertial_cols(bulk, labels, grid_index, ref)
+
+        R = p + d - ref                              # CM relative to reference
+        for j, dof in enumerate((3, 5)):
+            F, Mo = _resultant(M[:, j], bulk, grid_index, ref)
+            F_ref, M_ref = _rigid_resultants(m, R, np.zeros((3, 3)), dof)
+            assert np.allclose(F, F_ref, atol=1e-12), f"URDD{dof} force"
+            assert np.allclose(Mo, M_ref, atol=1e-12), f"URDD{dof} moment"
+
+        # Guard the specific term the old model dropped: the pitch inertia about
+        # the reference must include m*(x^2 + z^2) from the offset CM.
+        _F, Mo5 = _resultant(M[:, 1], bulk, grid_index, ref)
+        assert abs(-Mo5[1] - m * (R[0] ** 2 + R[2] ** 2)) < 1e-12
+
+    def test_products_of_inertia_couple_the_axes(self):
+        """Yaw acceleration on a CONM2 with I31 != 0 must produce roll moment."""
+        from sbeam.model.grid import Grid
+        i31 = 2.5
+        bulk = BulkData()
+        bulk.grids[1] = Grid(gid=1, cp=0, x=0.0, y=0.0, z=0.0, cd=0)
+        bulk.conm2s[1] = Conm2(eid=1, gid=1, cid=0, m=0.0,
+                               i11=8.0, i22=6.0, i33=4.0, i31=i31)
+        grid_index = {1: 0}
+        M = build_inertial_cols(bulk, ['URDD6'], grid_index, np.zeros(3))
+        _F, Mo = _resultant(M[:, 0], bulk, grid_index, np.zeros(3))
+        # M = -I @ (0,0,1) = -(I13, I23, I33) = -(i31, i32, i33)
+        assert abs(Mo[0] - (-i31)) < 1e-12, "roll moment from I31 is missing"
+        assert abs(Mo[2] - (-4.0)) < 1e-12
+
+    def test_conm2_cid_rotates_the_inertia_tensor(self):
+        """A CONM2 in a rotated CID: the tensor must be rotated to basic.
+
+        CID 7 is a 90 deg rotation about z (x_local = +y_basic), so a mass with
+        I11 = 9 about its *local* 1-axis has 9 about the *basic* y-axis.  The
+        pre-fix model read i11/i22/i33 as if always basic-frame and would report
+        9 about basic x.
+        """
+        from sbeam.model.grid import Grid
+        bulk = BulkData()
+        bulk.grids[1] = Grid(gid=1, cp=0, x=0.0, y=0.0, z=0.0, cd=0)
+        # A=(0,0,0), B=(0,0,1) -> k=z; C=(0,1,0) -> i=y  =>  x_local = y_basic
+        bulk.cord2rs[7] = Cord2r(cid=7, rid=0, a=(0.0, 0.0, 0.0),
+                                 b=(0.0, 0.0, 1.0), c=(0.0, 1.0, 0.0))
+        bulk.conm2s[1] = Conm2(eid=1, gid=1, cid=7, m=0.0, i11=9.0)
+        grid_index = {1: 0}
+        M = build_inertial_cols(bulk, ['URDD4', 'URDD5'], grid_index, np.zeros(3))
+        _F, Mo_roll = _resultant(M[:, 0], bulk, grid_index, np.zeros(3))
+        _F, Mo_pitch = _resultant(M[:, 1], bulk, grid_index, np.zeros(3))
+        assert abs(Mo_roll[0]) < 1e-12, "local I11 must not land on basic x"
+        assert abs(Mo_pitch[1] - (-9.0)) < 1e-12, "local I11 must land on basic y"
+
+    def test_pbar_nsm_contributes(self):
+        """Non-structural mass is part of M_aa, so it is part of M_ax."""
+        from sbeam.model.grid import Grid
+        from sbeam.model.element import Cbar
+        from sbeam.model.property import Pbar
+        from sbeam.model.material import Mat1
+
+        def _mass_of(nsm: float) -> float:
+            bulk = BulkData()
+            bulk.grids[1] = Grid(gid=1, cp=0, x=0.0, y=0.0, z=0.0, cd=0)
+            bulk.grids[2] = Grid(gid=2, cp=0, x=0.0, y=2.0, z=0.0, cd=0)
+            bulk.mat1s[1] = Mat1(mid=1, E=1.0, G=None, nu=0.3, rho=2.0)
+            bulk.pbars[1] = Pbar(pid=1, mid=1, A=1.0, I1=0.0, I2=0.0, J=0.0, nsm=nsm)
+            bulk.cbars[1] = Cbar(eid=1, pid=1, ga=1, gb=2,
+                                 x1=0.0, x2=0.0, x3=1.0, offt='GGG')
+            gi = {1: 0, 2: 1}
+            M = build_inertial_cols(bulk, ['URDD3'], gi, np.zeros(3))
+            F, _Mo = _resultant(M[:, 0], bulk, gi, np.zeros(3))
+            return -F[2]
+
+        L = 2.0
+        assert abs(_mass_of(0.0) - 2.0 * 1.0 * L) < 1e-12
+        assert abs(_mass_of(0.5) - (2.0 * 1.0 + 0.5) * L) < 1e-12
+
+    def test_supplied_m_gg_matches_internal_assembly(self):
+        """The M_gg reuse path is bit-identical to assembling internally."""
+        from sbeam.assembly.mass_matrix import assemble_global_mass
+        bulk = _minimal_bulk_one_conm2(5.0, 1.0, 2.0, 3.0, i11=1.0, i22=2.0, i33=3.0)
+        gi = build_grid_index(bulk)
+        labels = ['URDD3', 'URDD5']
+        ref = np.array([0.5, 0.0, 0.0])
+        a = build_inertial_cols(bulk, labels, gi, ref)
+        b = build_inertial_cols(bulk, labels, gi, ref,
+                                M_gg=assemble_global_mass(bulk, None))
+        assert np.array_equal(a, b)
+
+    def test_mismatched_m_gg_raises(self):
+        """A wrong-sized M_gg is a caller error, not a silent broadcast."""
+        import scipy.sparse
+        bulk = _minimal_bulk_one_conm2(5.0, 0.0, 0.0, 0.0)
+        with pytest.raises(ValueError, match="same model"):
+            build_inertial_cols(bulk, ['URDD3'], {1: 0}, np.zeros(3),
+                                M_gg=scipy.sparse.eye(12, format="csr"))
+
+    def test_aero_only_labels_give_zero_matrix(self):
+        """No URDD labels at all: M_ax is identically zero, no mass assembled."""
+        bulk = _minimal_bulk_one_conm2(5.0, 0.0, 0.0, 0.0)
+        M = build_inertial_cols(bulk, ['ANGLEA', 'PITCH'], {1: 0}, np.zeros(3))
+        assert M.shape == (6, 2)
+        assert np.array_equal(M, np.zeros((6, 2)))
+
+
+# ---------------------------------------------------------------------------
 # Integration test — V-AE3a: trim lift positive after AE5 fix
 # ---------------------------------------------------------------------------
 

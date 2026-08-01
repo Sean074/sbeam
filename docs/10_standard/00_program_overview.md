@@ -37,6 +37,7 @@ sbeam/
 │   ├── load_vector.py        # Load vector assembly (FORCE, MOMENT, GRAV)
 │   ├── rbe3.py               # RBE3, RBE2, and RBAR DOF transformation matrix
 │   ├── reduction.py          # Shared RBE3+SPC g-set → a-set reduction (reduce_to_aset / AsetReduction, Step 59)
+│   ├── rigid_body.py         # Geometric rigid-body vectors on the g-set — the single derivation shared by Φ_r (modal_basis) and M_ax (sol144)
 │   └── coord_transform.py    # CORD2R rotation matrices; input/output transforms
 ├── solver/
 │   ├── sol101.py         # Static analysis
