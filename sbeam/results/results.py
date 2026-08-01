@@ -2,6 +2,9 @@
 
 from dataclasses import dataclass, field
 from typing import Any, Optional, Union
+
+import numpy as np
+
 from sbeam.types import FloatArray, LuFactor, SparseMatrix
 
 
@@ -188,6 +191,28 @@ class ManeuverStep:
     My_aero: float = 0.0                  # instantaneous aero pitching moment about x_ref
 
 
+def peak_grid_force(step: "ManeuverStep") -> float:
+    """Severity metric for one maneuver sample: peak per-grid net force.
+
+    The maximum over grids of the net (aero + inertial) translational force
+    magnitude ``‖F‖`` at that grid.
+
+    This is the single metric that selects the critical sample, fills the f06
+    and MLDPRNT columns, and labels both (DEF-M5).  It is deliberately *not*:
+
+    * ``‖closure[:3]‖`` — the resultant about the reference point, i.e. the
+      aero/inertia balance residual.  On a converged balanced maneuver that is
+      ~0, so selecting on it picks the sample with the most numerical noise.
+    * ``max|net_loads|`` over all six DOFs — that mixes forces and moments,
+      which have different units, so the winner depends on the unit system.
+    """
+    n = step.net_loads.size // 6
+    if n == 0:
+        return 0.0
+    f = step.net_loads[:6 * n].reshape(n, 6)[:, :3]
+    return float(np.linalg.norm(f, axis=1).max())
+
+
 @dataclass
 class ManeuverResult:
     """Result of a Phase G0 (DLM-free quasi-steady) transient maneuver subcase."""
@@ -199,5 +224,5 @@ class ManeuverResult:
     labels: list[str]                          # all trim-variable labels (column order)
     times: FloatArray                     # (n_out,) output sample times
     steps: list["ManeuverStep"]            # one per output sample
-    crit_index: int                       # index into steps of the peak |net force| sample
+    crit_index: int                       # index into steps of the peak_grid_force sample
     mldprnt_items: list[str] = field(default_factory=list)  # requested ASCII-print keywords

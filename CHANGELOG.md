@@ -13,6 +13,49 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Changed
 
+**DEF-M deliverable-integrity batch — M5, M6, M7, M10 (2026-08-01)**
+
+Four defects in what *leaves* the program — the f06 tables, the exported bulk-data cards and
+the shipped sample decks. No solver math changed; every fix is at the handoff boundary.
+
+- **DEF-M6 — exported `FORCE`/`MOMENT` cards now fit the NASTRAN 8-character field.** The
+  exporter wrote 12-13 character reals into a comma free-field card; free field does not
+  exempt a card from the 8-character width, so a strict reader truncated `4.715932E+03` to
+  `4.715932`. New `sbeam/parser/bdf_field.py` provides `fmt_real8`, which picks whichever of a
+  fixed-point or NASTRAN implicit-exponent spelling reproduces the value more closely, and
+  `parse_real`, which `bdf_reader._to_float` now delegates to so the read and write formats
+  are one definition. Non-finite values raise instead of writing `NAN` into a card.
+  **0 oversized fields across 1456** exported over the four HA144A decks, from 66 in one
+  export. Two per-grid export round-trip tolerances moved `1e-6` -> `1e-5`: that is the
+  8-character field floor (a sign costs a significant figure), not exporter slop.
+- **DEF-M5 — the critical maneuver sample is one metric on one numbering.** The selector
+  (`argmax ‖closure‖`, the aero/inertia *balance residual*, ~0 on a balanced maneuver), the
+  f06 label, the printed column (`max|net_loads|` over all six DOFs, mixing forces and
+  moments) and the MLDPRNT index (0-based vs the f06's 1-based) were four different things,
+  and the exported critical-sample BDF was taken at a sample the table disowned. All now use
+  `results.peak_grid_force` — the peak per-grid net translational force — on 1-based
+  numbering. `CLOSURE_F`/`CLOSURE_M` stay in the MLDPRNT table as the balance diagnostic
+  they are.
+- **DEF-M7 — f06 maneuver time-history columns align with their headers.** 15-character
+  header cells over 13-character data drifted a full column with 5 trim variables; header
+  and rows now share one `_FIELD_W`.
+- **DEF-M10 — the HA144A whole-aircraft `MONPNT3` accounts for all of the inertia.**
+  `SET1 1310` omitted grid 97 (93.236 slug, exactly 18.75 % of the model), so the
+  `WHOLE AIRCRAFT` monitor reported ~+3000 lb of phantom lift on a balanced trim; it now
+  closes to 0. The same defect was found and fixed in `ha144a_fullspan_mloads.bdf` and
+  `ha144a_massset_sweep.bdf` (which also omitted the four fuel-overlay stations). New solver
+  warning when a monitor integrates the *whole* aero load but only part of the mass — scoped
+  that way so it cannot fire on deliberate section cuts, and measured against the active
+  MASSSET case rather than every `CONM2` card.
+
+Two follow-ons filed while verifying, both the same defect classes in adjacent code and
+neither in this batch's scope:
+- **DEF-M12** — `aero/section_correction.card_lines` writes the same oversized fields into
+  `W2GJ`/`AECORR`/`STRIPK` correction cards and should route through `fmt_real8`.
+- **DEF-M13** — four more f06 blocks (monitor totals, displacement vector, bar forces, bar
+  stresses) carry the same header/data column drift DEF-M7 fixed in the maneuver table.
+  Numbers are correct; the listing layout is not.
+
 **Project-wide type annotations + pyright CI gate (2026-07-30)**
 
 - New `sbeam/types.py` with the shared aliases every physical quantity now uses:

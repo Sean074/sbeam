@@ -1862,7 +1862,8 @@ def run_sol144_trim(
                     bulk, displacements, constrained, K_gg, grid_index, net_loads
                 )
         monitor_loads = compute_monitor_loads(
-            bulk, aero, box_forces, grid_loads, inertial_loads, grid_index, reactions
+            bulk, aero, box_forces, grid_loads, inertial_loads, grid_index,
+            reactions, massset_sid
         )
 
     return Sol144TrimResult(

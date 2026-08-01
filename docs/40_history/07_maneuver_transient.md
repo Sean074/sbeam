@@ -296,3 +296,70 @@ the peak column value). Pre-existing in the Step 53 and increment-1 inertia-reli
 > consistent mass matrix, so the identity is exact on all rows and the pin became
 > `test_m_ax_identity_exact_with_consistent_cbar_mass`. See
 > `docs/40_history/06_sol144_static_aeroelastic.md`.
+
+---
+
+## Resolved defects
+
+### DEF-M5 — critical maneuver sample: selector, f06 label and printed column were three different metrics ✅ COMPLETE (2026-08-01)
+
+**Objective:** The Phase G0 "critical sample" — the one whose net load is exported for stress
+sizing — was named by four disagreeing things:
+
+| Role | Quantity it actually used |
+|------|---------------------------|
+| Selector (`maneuver_qs.py:342`) | `argmax ‖closure[:3]‖` |
+| f06 label (`f06_writer.py:708`) | printed `PEAK \|NET FORCE\|` |
+| f06 column (`:719,722`) | `max\|net_loads\|` over **all six DOFs** — forces and moments mixed |
+| MLDPRNT (`maneuver_output.py:38`) | printed the **0-based** index; the f06 printed 1-based |
+
+`closure` is the resultant of `net_loads` about the reference point — i.e. the aero/inertia
+**balance residual**, which is ~0 on a converged balanced maneuver. Selecting on it ranked samples
+by numerical noise. Verified divergent on the shipped deck (selector 7, column peak 11), so the
+exported critical-sample BDF was taken at a sample the printed table disowned.
+
+**Deliverables:**
+- **`results.peak_grid_force(step)`** — the max over grids of the net (aero + inertial)
+  translational force magnitude. Placed beside `ManeuverStep` in `results.py`, not in an output
+  module, so the solver does not have to import `results/maneuver_output` to select.
+- One metric everywhere: `maneuver_qs` selects with it, the f06 column prints it under
+  `PEAK GRID F`, the f06 header names it `PEAK |NET GRID FORCE|`, and MLDPRNT prints it under
+  `PEAK_GRID_F`.
+- Sample numbering unified to **1-based** (NASTRAN convention): MLDPRNT now prints
+  `critical sample=k of n`, matching the f06 `SAMPLE` column and `CRITICAL SAMPLE = k`. The
+  exported critical-sample BDF header states the same `k of n`.
+- `CLOSURE_F`/`CLOSURE_M` are **kept** in the MLDPRNT table and relabelled in the docstring as
+  what they are — a solution-quality diagnostic, useful but not a severity metric.
+
+**Key decision — peak per-grid net force, not peak bar load.** Bar load is closer to what a loads
+team sizes to, but combining axial/shear/torque/bending into one scalar needs section properties
+and would have silently ignored whichever component was left out. Per-grid net force is
+unit-consistent, needs no arbitrary combination, and is the quantity the export actually contains.
+
+**Test/Acceptance:** five new gates in `tests/aero/test_maneuver_qs.py`, all run on a maneuver with
+a real transient (a held-at-trim run is a fixed point and cannot distinguish a correct selector
+from a broken one — the new fixture asserts the run has a transient to rank): `crit_index` equals
+the `peak_grid_force` argmax; the f06 header number, the `<-- CRITICAL` row and the printed column
+argmax agree and the column equals `peak_grid_force` per row; MLDPRNT numbering matches the f06;
+the MLDPRNT column matches the selector metric; and the exported card set is the sample the f06
+names — with a companion assertion that some *other* sample would have produced different cards,
+so that check has teeth.
+
+---
+
+### DEF-M7 — f06 maneuver time-history header misaligned 2 characters per column ✅ COMPLETE (2026-08-01)
+
+**Objective:** `f06_writer.py:716-719` built header cells as `f"  {label:>13}"` (15 characters) and
+the three fixed trailing headers at 15, over data cells of `_fmt` = `f"{val:13.6E}"` (13). The `T`
+header was 12 over a 13-wide datum. With the 5 trim variables of the HA144A deck the
+`FZ-AERO`/`MY-AERO` headers sat a full column off their data.
+
+**Deliverable:** one module-level `_FIELD_W = 13` that `_fmt` itself formats against, with the
+header row and the data rows both laid out on it, so the two cannot drift apart again. Header text
+is kept under `_FIELD_W` so adjacent cells never abut (the first attempt used a 13-character
+`PEAK |GRID F|`, which was correctly aligned but ran straight into `MY-AERO`; shortened to
+`PEAK GRID F`).
+
+**Test/Acceptance:** `test_f06_time_history_columns_align_with_their_headers` — the header line and
+a data row are the same length, and the 13 characters ending where each of `FZ-AERO`/`MY-AERO`
+ends parse as a float. Verified visually on the shipped `ha144a_fullspan_mloads` run.

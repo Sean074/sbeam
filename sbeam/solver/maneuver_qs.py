@@ -54,7 +54,7 @@ from sbeam.assembly.load_vector import build_grid_index
 from sbeam.aero.aero_model import AeroModel
 from sbeam.aero.integration import build_djk
 from sbeam.solver.modal_basis import assemble_aset_operators
-from sbeam.results.results import ManeuverStep, ManeuverResult
+from sbeam.results.results import ManeuverStep, ManeuverResult, peak_grid_force
 from sbeam.solver.sol101 import recover_bar_forces
 from sbeam.assembly.reduction import expand_to_g
 from sbeam.solver.sol144 import (
@@ -339,9 +339,9 @@ def run_maneuver_qs(
         if n % out_every == 0 or n == n_steps:
             _emit(t, u, delta)
 
-    # Critical sample = peak net resultant-force magnitude (loads-team deliverable).
-    crit_index = int(np.argmax([np.linalg.norm(s.closure[:3]) for s in steps])) \
-        if steps else 0
+    # Critical sample = peak per-grid net force (DEF-M5).  One metric, shared with
+    # the f06 table, the MLDPRNT column and the critical-sample export.
+    crit_index = int(np.argmax([peak_grid_force(s) for s in steps])) if steps else 0
 
     return ManeuverResult(
         subcase_id=subcase.subcase_id,

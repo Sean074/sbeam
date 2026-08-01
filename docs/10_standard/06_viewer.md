@@ -495,7 +495,7 @@ renders whichever result types it produced:
 - **Divergence sweep** (`Sol144DivergResult`, `_render_sol144_diverg`): per-Mach roots table
   (root #, q-div, V-div when RHOREF > 0).
 - **Transient maneuver** (`ManeuverResult`, `_render_sol144_maneuver`): time histories of
-  Fz_aero, My_aero, and max|net load| with the critical sample marked; a sample slider scrubs
+  Fz_aero, My_aero, and peak grid force (`results.peak_grid_force`, the DEF-M5 severity metric) with the critical sample marked; a 1-based sample slider scrubs
   the per-step deflected shape. An **Exports** row (AC5) offers two download buttons built
   in-memory from `results/maneuver_output.py` — **Download MLDPRNT time history**
   (`build_maneuver_time_history_text`, `<stem>.mldprnt.txt`) and **Download critical-sample

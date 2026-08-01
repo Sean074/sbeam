@@ -462,6 +462,19 @@ direction components carry the physical load) from `result.grid_loads` (`g_load^
 one card block per subcase with `SID = subcase_id`. By spline force/moment conservation the
 set sums to the trimmed lift/moment.
 
+**Field format (DEF-M6).** Every real in an exported card is written by
+`parser/bdf_field.fmt_real8`, which fits it into the NASTRAN **8-character** data field.
+Free field does not exempt a card from that width — a strict reader truncates each
+comma-delimited field to its first 8 characters, which would turn `4.715932E+03` into
+`4.715932`. `fmt_real8` builds both a fixed-point spelling (`4715.932`) and a NASTRAN
+implicit-exponent spelling (`4.716+3`) and keeps whichever reproduces the value more
+closely; `bdf_field.parse_real` is the matching read side, which `bdf_reader._to_float`
+delegates to so the two cannot drift. Non-finite values raise rather than being written.
+Precision is therefore bounded by the field width: 6-7 significant figures across the
+physical load range, fewer for very large or very small magnitudes, and one fewer for a
+negative value (the sign costs a character). This applies to every load-card export below,
+since they share `emit_force_moment_cards`.
+
 **Balanced maneuver loads & inertia relief (Step 53).** Each balanced maneuver is a `TRIM`
 subcase with prescribed `AESTAT` accelerations/rates — a load factor maps to `URDD3 = −n_z·g`
 (`sbeam/model/maneuver_presets.load_factor_to_urdd3`; gravity folded into the load factor,
@@ -501,12 +514,21 @@ maneuver load at each output time.
   force. Re-solving the free rigid-body variables each step (free-flight self-balancing), the modal
   transient solver (Step 62), unsteady corrections, and a closed-loop control layer are Phase G0
   follow-ons. This solver parses `NMODES`/`METHOD`/`ZETA` and warns that it ignores them.
+- **Critical sample (DEF-M5):** one severity metric, `results.peak_grid_force` — the maximum over
+  grids of the net (aero + inertial) **translational force magnitude** at that grid. It selects the
+  critical sample, fills the f06 `PEAK GRID F` and MLDPRNT `PEAK_GRID_F` columns, and labels the f06
+  header (`PEAK |NET GRID FORCE|`); sample numbering is **1-based** everywhere, including MLDPRNT.
+  It is deliberately neither the load-closure resultant (`closure`, the aero/inertia balance
+  residual — ~0 on a balanced maneuver, so ranking by it ranks numerical noise) nor
+  `max|net_loads|` over all six DOFs (which mixes force and moment units). `CLOSURE_F`/`CLOSURE_M`
+  remain in the MLDPRNT table as the balance diagnostic they are.
 - **Output (`results/maneuver_output.py`):** an MLDPRNT ASCII time-history table
-  (`<stem>.mldprnt.txt`: time, commands, aero `Fz`/`My`, closure norms, peak net load) and the
-  critical-sample (peak |net force|) net-load `FORCE`/`MOMENT` export (`<stem>.maneuver_qs_loads.bdf`).
+  (`<stem>.mldprnt.txt`: time, commands, aero `Fz`/`My`, closure norms, peak grid force) and the
+  critical-sample net-load `FORCE`/`MOMENT` export (`<stem>.maneuver_qs_loads.bdf`).
   The f06 gains a transient-maneuver block per MLOADS subcase
   (`f06_writer.py::build_f06_sol144_maneuver_text`, AC5: run summary, time-history table with
-  critical-sample marker, critical-sample closure/displacement/CBAR detail); the viewer offers
+  critical-sample marker, critical-sample closure/displacement/CBAR detail). Header and data cells
+  of the time-history table share one column width (`f06_writer._FIELD_W`, DEF-M7). The viewer offers
   the two ASCII/BDF exports as download buttons on the maneuver results view. Sample deck:
   `sample/ha144a_fullspan_mloads.bdf` (ELEV ramp pitch-up on the HA144A full-span model).
 - **Gates (`tests/aero/test_maneuver_cards.py`, `tests/aero/test_maneuver_qs.py`):** card round-trip +
@@ -678,6 +700,20 @@ MONPNT3, NAME, LABEL, AXES, COMP, CP, X, Y, Z          $ aero + inertia + reacti
   the normal full-span pipeline (mirror zeros SYMXZ), 2.0 with a `*WHOLE-AIRPLANE*` annotation if a
   half model is fed directly. The full 3-component force is carried (no Fz-only projection), so
   dihedral `Fy`/`Fz` splits survive.
+
+- **Mass-coverage warning (DEF-M10).** A `MONPNT3` whose SET1 misses a mass-bearing grid reports a
+  spurious force imbalance on a balanced trim — the shipped HA144A deck omitted one 93.236-slug
+  grid (18.75 % of the model) and showed ~+3000 lb of phantom lift. A section cut legitimately
+  covers only part of the model, so the check qualifies on **aero** scope first: only a monitor
+  whose z-force matches the model total (within 1 %) is treated as whole-aircraft, and only then is
+  its grid set compared against the CONM2-bearing grids. Wing-root and per-wing cuts therefore never
+  trigger it. Masses come from the **active MASSSET case** (`mass_overlay.effective_conm2s`), not
+  from every `CONM2` card, so mutually exclusive overlays are not double-counted. The warning names
+  the omitted grids, their mass and the omitted fraction.
+
+  A whole-aircraft `MONPNT3` should list every grid that carries mass, not only the grids a spline
+  transfers force to — these differ whenever a mass sits on a structural grid outside the spline
+  target set.
 
 The results are attached as `Sol144TrimResult.monitor_loads = {name: MonitorLoad}`, where
 `MonitorLoad` carries `totals` plus the per-contribution `aero` / `inertia` / `reaction` 6-vectors.

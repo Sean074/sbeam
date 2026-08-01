@@ -8,6 +8,7 @@ the monitor integration is a summation of those over the monitor's AECOMP
 collection, transformed to the monitor reference point and ``cp`` frame and
 scaled by the AEROS symmetry parity.
 """
+import warnings
 from typing import Optional, Union
 
 import numpy as np
@@ -17,6 +18,7 @@ from sbeam.results.results import MonitorLoad
 from sbeam.types import FloatArray
 from sbeam.model.aero import Monpnt1, Monpnt3, require_aeros
 from sbeam.model.bulk_data import BulkData
+from sbeam.model.mass_overlay import effective_conm2s
 from sbeam.aero.aero_model import AeroModel
 
 # A monitor must sit on the xz symmetry plane (y≈0) for the SYMXZ parity
@@ -185,11 +187,69 @@ def integrate_monpnt3(
     )
 
 
+def _warn_if_mass_coverage_incomplete(
+    name: str, mon: Monpnt3, bulk: BulkData, grid_loads: FloatArray,
+    grid_index: dict[int, int], massset_sid: Optional[int],
+) -> None:
+    """Warn when a whole-aircraft MONPNT3 omits CONM2-bearing grids (DEF-M10).
+
+    A section-cut monitor legitimately covers only part of the model, so a plain
+    "does this set include every mass?" test would fire on every wing-root or
+    per-wing cut.  The signature of the real defect is narrower: a monitor that
+    integrates *all* of the aero but only *some* of the mass.  Such a monitor
+    reports a spurious force imbalance on a balanced trim — the shipped HA144A
+    deck omitted one 93.24-slug grid and showed ~+3000 lb of phantom lift.
+
+    So the aero coverage is what qualifies a monitor as whole-aircraft in scope;
+    only then is its mass coverage checked.
+
+    Masses are taken from the *active* mass case, not from every CONM2 card:
+    a MASSSET deck carries mutually exclusive overlays (half fuel / full fuel),
+    and counting them all would report a fraction the run never had.
+    """
+    conm2s = effective_conm2s(bulk, massset_sid)
+    conm2_grids = {c.gid for c in conm2s.values()}
+    if not conm2_grids:
+        return
+
+    aecomp = bulk.aecomps[mon.comp]
+    gids = set()
+    for sid in aecomp.list_ids:
+        gids.update(bulk.set1s[sid].grids)
+
+    # Aero coverage: this monitor's z-force against the model total.
+    total_fz = float(np.sum(grid_loads[2::6]))
+    if abs(total_fz) < 1e-12:
+        return
+    mon_fz = sum(float(grid_loads[6 * grid_index[gid] + 2])
+                 for gid in gids if gid in grid_index)
+    if abs(mon_fz - total_fz) > 0.01 * abs(total_fz):
+        return                      # a genuine section cut — not our business
+
+    missing = sorted(conm2_grids - gids)
+    if not missing:
+        return
+
+    m_missing = sum(c.m for c in conm2s.values() if c.gid in missing)
+    m_total = sum(c.m for c in conm2s.values())
+    frac = 100.0 * m_missing / m_total if m_total else 0.0
+    warnings.warn(
+        f"MONPNT3 {name} (AECOMP {mon.comp}) integrates the whole-aircraft aero "
+        f"load but its grid set omits {len(missing)} CONM2-bearing grid(s) "
+        f"{missing} carrying {m_missing:g} of {m_total:g} mass units "
+        f"({frac:.2f}%).  The monitor will report a spurious force imbalance on "
+        f"a balanced trim; add the grid(s) to its SET1.",
+        UserWarning,
+        stacklevel=3,
+    )
+
+
 def compute_monitor_loads(
     bulk: BulkData, aero: AeroModel, box_forces: FloatArray,
     grid_loads: FloatArray, inertial_loads: Optional[FloatArray],
     grid_index: dict[int, int],
     reactions: Optional[dict[int, FloatArray]] = None,
+    massset_sid: Optional[int] = None,
 ) -> dict[str, MonitorLoad]:
     """Build {name: MonitorLoad} for all MONPNT1/MONPNT3 cards in the model."""
     out: dict[str, MonitorLoad] = {}
@@ -198,4 +258,6 @@ def compute_monitor_loads(
     for name, mon in bulk.monpnt3s.items():
         out[name] = integrate_monpnt3(mon, bulk, grid_loads, inertial_loads,
                                       grid_index, reactions or {})
+        _warn_if_mass_coverage_incomplete(
+            name, mon, bulk, grid_loads, grid_index, massset_sid)
     return out

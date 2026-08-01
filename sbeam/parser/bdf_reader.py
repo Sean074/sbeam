@@ -1,5 +1,4 @@
 import os
-import re
 import warnings
 from typing import Optional
 
@@ -18,6 +17,7 @@ from sbeam.model.aero import (
     Aecomp, Monpnt1, Monpnt3,
 )
 from sbeam.model.maneuver import Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads
+from sbeam.parser.bdf_field import parse_real
 from sbeam.parser.case_control import CaseControl, parse_case_control
 
 _IGNORED_KEYWORDS = frozenset({"BEGIN", "BEGINBULK", "ENDDATA"})
@@ -36,22 +36,14 @@ def _split_line(line: str) -> list[str]:
     return _split_free_field(line) if "," in line else _split_fixed_field(line)
 
 
-_NASTRAN_SCI = re.compile(r'([^eEdD+\-])([+-]\d+)$')
-
-
 def _to_float(s: str) -> float:
     """Convert a BDF field string to float.
 
     Handles NASTRAN short scientific notation (e.g. '1.44+9' → 1.44e9)
-    in addition to standard Python float literals.
+    in addition to standard Python float literals.  Defined in ``bdf_field``
+    alongside the write-side formatter so read and write cannot drift.
     """
-    s = s.strip()
-    if not s:
-        return 0.0
-    m = _NASTRAN_SCI.search(s)
-    if m:
-        s = s[:m.start(2)] + 'e' + s[m.start(2):]
-    return float(s)
+    return parse_real(s)
 
 
 def _to_int(s: str) -> int:

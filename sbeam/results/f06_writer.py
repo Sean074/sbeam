@@ -3,12 +3,11 @@
 import math
 from datetime import datetime
 
-import numpy as np
-
 from sbeam.model.bulk_data import BulkData
 from sbeam.results.results import (
     BarForce, BarStress, ManeuverResult, MonitorLoad,
     Sol101Result, Sol103Result, Sol144TrimResult, Sol144DivergResult,
+    peak_grid_force,
 )
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.assembly.coord_transform import build_transform
@@ -17,9 +16,14 @@ from sbeam.parser.case_control import CaseControl
 from sbeam.model.load import Grav
 
 
+# Width of one numeric column in the f06 listing.  Column headers must be laid
+# out on this same width or they drift off their data (DEF-M7).
+_FIELD_W = 13
+
+
 def _fmt(val: float) -> str:
     """Format a float in NASTRAN 13.6E style."""
-    return f"{val:13.6E}"
+    return f"{val:{_FIELD_W}.6E}"
 
 
 def _transform_to_cd(t: FloatArray, r: FloatArray, gid: int, bulk: BulkData):
@@ -705,25 +709,26 @@ def _build_f06_sol144_maneuver_text(
     crit = result.steps[result.crit_index]
     lines.append(
         f"      OUTPUT SAMPLES = {len(result.steps)}        CRITICAL SAMPLE = "
-        f"{result.crit_index + 1} (T = {_fmt(crit.t).strip()}, PEAK |NET FORCE|)"
+        f"{result.crit_index + 1} (T = {_fmt(crit.t).strip()}, PEAK |NET GRID FORCE|)"
     )
     lines.append("")
 
     # ---- MANEUVER TIME HISTORY ----
+    # Header cells and data cells share _FIELD_W so the columns cannot drift
+    # apart again (DEF-M7: 15-char headers over 13-char data).
     labels = [l for l in result.labels if l in result.steps[0].trim_vars]
     lines.append("                              M A N E U V E R   T I M E   H I S T O R Y")
     lines.append("")
-    header = "      SAMPLE           T"
-    for label in labels:
-        header += f"  {label:>13}"
-    header += "        FZ-AERO        MY-AERO     MAX |NET F|"
+    # Header text is kept under _FIELD_W so adjacent cells never abut.
+    heads = labels + ["FZ-AERO", "MY-AERO", "PEAK GRID F"]
+    header = f"{'SAMPLE':>12}{'T':>{_FIELD_W}}"
+    header += "".join(f"{h[:_FIELD_W]:>{_FIELD_W}}" for h in heads)
     lines.append(header)
     for i, step in enumerate(result.steps):
-        net_f = float(np.abs(step.net_loads).max())
         row = f"{i + 1:>12}{_fmt(step.t)}"
         for label in labels:
             row += _fmt(step.trim_vars.get(label, 0.0))
-        row += f"{_fmt(step.Fz_aero)}{_fmt(step.My_aero)}{_fmt(net_f)}"
+        row += f"{_fmt(step.Fz_aero)}{_fmt(step.My_aero)}{_fmt(peak_grid_force(step))}"
         crit_mark = "  <-- CRITICAL" if i == result.crit_index else ""
         lines.append(row + crit_mark)
     lines.append("")

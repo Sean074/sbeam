@@ -32,14 +32,15 @@ P2 deliverable-integrity fixes the flagship's exports inherit), before new capab
 
 **P1 delivered 2026-07-31** (Q4 + DEF-M3, one mass model for `M_ax` — see
 `docs/40_history/06_sol144_static_aeroelastic.md`).  **P3 delivered 2026-08-01**
-(the DEF-M silent-input batch: M4, M8, M9, DEF-R5, DEF-L1 and sample-review F1). The
+(the DEF-M silent-input batch: M4, M8, M9, DEF-R5, DEF-L1 and sample-review F1).
+**P2 delivered 2026-08-01** (the DEF-M deliverable-integrity batch: M5, M6, M7, M10 —
+see `docs/40_history/06_sol144_static_aeroelastic.md` and `07_maneuver_transient.md`). The
 remaining rows keep their numbers: the P-labels are used as stable identifiers by the
 cross-references throughout this document, so closing an item removes its row without
 re-flowing the rest. Renumber only when the whole table is re-ranked.
 
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P2 | DEF-M deliverable-integrity batch — M5, M6, M7, M10 | Defects | ~1–1.5 d | All cheap, all corrupt what leaves the program: the critical-sample selector/label/column disagree, exported FORCE/MOMENT fields overflow 8-char free field (the advertised stress handoff), the f06 time-history header is misaligned, and the shipped HA144A monitor omits 18.75 % of the inertia. |
 | P4 | DEF-M2 + DEF-M11 — force/moment convention and ATTACH transfer completeness | Defects | ~1 d | `solve_rigid_cl` reports panel-normal rather than body-axis totals (viewer and f06 disagree on canted decks) and ATTACH `g_disp` carries only the z-row. Both are carve-outs that become wrong answers as soon as dihedral/fin panels are used. |
 | P5 | Closed-form CI gates for the four CLAUDE.md verification decks | Samples review | ~0.5 d | `val_cantilever_static`, `val_ss_static`, `val_cantilever_modes`, `val_free_free_modes` reproduce their closed forms today (verified by run, 2026-07-31: 0.004 % / 0.004 % / 0.02 % / RBMs ≤ 4.6e-5 Hz) but are gated only by the theory notebook, which CI never runs. Independent of everything; can land any time. |
 | P6 | Step 65 — flagship realistic-airplane SOL 144 sample family + theory doc | Samples review | ~3–5 d | Closes the biggest sample coverage gap: nothing anywhere combines corrected aero + trim + maneuver + mass cases on a realistic airplane, and corrections never reach a trim. Clean of all open defects (SPLINE2 only, no body panels); after P2 so its exports/critical-sample story is clean. |
@@ -145,13 +146,12 @@ order — see the table above:
 
 | Rank | Batch | Items |
 |------|-------|-------|
-| P2 | Deliverable integrity (what leaves the program) | DEF-M5, M6, M7, M10 |
 | P4 | Convention / transfer completeness | DEF-M2, M11 |
 | P9 | Aero hot path (with the `build_ajj` vectorization) | DEF-R6 |
 | P13 | Refactor before Phase D | DEF-R1, R2, R3, R4 (+ DEF-R7 at a release boundary) |
 | — | Opportunistic, do when adjacent | DEF-L2–L7 |
 
-### DEF-M — Medium (silent wrong output on specific configurations, or misleading deliverables) — P2–P4
+### DEF-M — Medium (silent wrong output on specific configurations, or misleading deliverables) — P4
 
 - **DEF-M2 — `solve_rigid_cl` CZ/CM are panel-normal magnitudes, not body-z** [E]
   `sbeam/aero/vlm.py:320-324, 442-445, 469-472`. Off by 1/cos(dihedral) vs the skj-based
@@ -160,33 +160,6 @@ order — see the table above:
   equal; `test_dihedral.py:110` enshrines the wrong convention (cos Γ vs cos² Γ).
   *Options:* (a) project through n_z/n_y and update the dihedral test + theory doc
   (medium); (b) keep as normal-force convention and rename/redocument (low).
-
-- **DEF-M5 — Critical maneuver sample: selector, f06 label, and printed column are three
-  different metrics** [D] `maneuver_qs.py:343` (argmax ‖closure force‖) vs f06 "PEAK |NET
-  FORCE|" label and `MAX |NET F|` column (= per-DOF max incl. moment DOFs, mixed units);
-  0-based MLDPRNT vs 1-based f06 numbering. Verified divergent on the shipped MLOADS
-  sample (crit=2, column peak=10, actual bar-load peak=4); the exported critical-sample
-  BDF is taken at yet another sample than the column suggests. (MLDPRNT's ASCII already
-  prints CLOSURE_F/CLOSURE_M — the inconsistency is the f06 table + the selection metric.)
-  *Fix (complexity medium):* pick one severity metric (translational-force max or peak bar
-  load), use it for selection + column + label, unify numbering.
-
-- **DEF-M6 — Exported FORCE/MOMENT cards use 12–13-char fields on 8-char free-field
-  format** [E] `load_export.py:32-53`. sbeam round-trips them, but a strict NASTRAN
-  free-field reader truncates `4.715932E+03` catastrophically — and external stress
-  handoff is the advertised purpose (05c:439). 66 oversized fields in one sample export.
-  *Fix (complexity low):* NASTRAN 8-char reals (`4.7159+3`) or large-field `FORCE*`.
-
-- **DEF-M7 — f06 maneuver time-history header misaligned 2 chars/column** [E]
-  `f06_writer.py:696-699` (15-char header cells vs 13-char data cells): with 5 trim
-  variables the FZ-AERO/MY-AERO headers sit a full column off their data. *Fix low:* one
-  column-spec for header + rows.
-
-- **DEF-M10 — Sample-deck defect: HA144A "whole aircraft" MONPNT3 misses 18.75 % of the
-  inertia** [E] `sample/ha144a_fullspan_sbeam.bdf:204-205` — SET1 1310 omits grid 97
-  (CONM2 93.24 slug), so the WHOLE-AIRCRAFT monitor reports +3000 lb apparent imbalance
-  on a balanced trim. Solver summation itself verified exact. *Fix low:* add 97 to SET1
-  1310; consider a solver warning when an AECOMP grid set misses CONM2-bearing grids.
 
 - **DEF-M11 — ATTACH `g_disp` carries only the z-row** [D]
   `sbeam/aero/spline.py:449-453` fills `g_disp` for the z-component of `ω×r` only: the
@@ -198,6 +171,36 @@ order — see the table above:
   uses a non-z-normal ATTACH panel. *Fix (complexity low-medium):* fill all three rows with
   the full rigid-body transform (translation identity + `skew(ω)·r`); extend V-B3d force
   transfer to a dihedral panel.
+
+- **DEF-M12 — Correction-card export uses 12–13-char fields on an 8-char free field** [E]
+  `sbeam/aero/section_correction.py:381-391` (`card_lines`) writes `f"{v:.6E}"` into
+  `W2GJ`/`AECORR`/`STRIPK` cards, so a strict NASTRAN/ZAERO free-field reader truncates
+  every value to its first 8 characters — the same defect DEF-M6 fixed for the
+  `FORCE`/`MOMENT` load export, on a different deliverable. Reaches the viewer's
+  full-corrected-BDF download (`aero_correction_view.py`) and `body_correction.py:147,473`.
+  sbeam round-trips its own output, so the corruption only appears downstream.
+  *Fix (complexity low):* route the values through the existing
+  `sbeam/parser/bdf_field.fmt_real8` helper (written for DEF-M6), and add a width
+  assertion to the section-correction round-trip test.
+
+- **DEF-M13 — the same header/data column drift in four more f06 blocks** [E]
+  DEF-M7 fixed the maneuver time-history table; the identical 15-character-header-over
+  13-character-data drift was then measured in four other blocks of
+  `sbeam/results/f06_writer.py`, all pre-existing and all the same root cause (header
+  literals hand-spaced at 15 or 14 against `_fmt`'s 13):
+  - `:120` `MONITOR POINT INTEGRATED LOADS` totals (`FX FY FZ MX MY MZ`) — FY/FZ/MX/MY
+    sit off their data;
+  - `:66` / `:209` `DISPLACEMENT VECTOR` (`T1 T2 T3 R1 R2 R3`) — drift accumulates from T3 on;
+  - `ELEMENT ID. / AXIAL FORCE / SHEAR-1 …` bar-force block;
+  - `ELEMENT ID. / AXIAL / PT / SA(END-A) …` bar-stress block.
+  Also `:426` (body-load injection) and `:548` (box pressures) are hand-spaced at 14 and
+  should be checked in the same pass. Numbers are correct in every case — this is a
+  readability/parse defect in the listing only.
+  *Fix (complexity low, but touches asserted layouts):* lay every one of these out on the
+  shared `f06_writer._FIELD_W` the way the maneuver table now is, in one pass, and update the
+  layout assertions that encode the current spacing (e.g. `test_f06_sol101.py:205`). Worth a
+  general gate: for each header line, the `_FIELD_W` characters ending at each label must
+  parse as a float.
 
 ### DEF-L — Low (robustness, hygiene, docs; batch opportunistically) — L2–L7 unranked
 
@@ -336,7 +339,7 @@ demonstrated on `sample/ha144a_body_trim.bdf`), and ANGLEA shifts by the body in
 - **Doc-pointer sweep (fold into the DEF-L docs-mismatch batch):** `sample/ha144a_sbeam.bdf`
   cited 5× but deleted long ago (incl. `40_history/06`); `05a_aero_vlm.md` overstates
   `test_strip_body.py`'s coupling to `cessna210_body_section_data.csv` (targets are
-  programmatic); de-line-number DEF-M10's `ha144a_fullspan_sbeam.bdf:204-205` pointer.
+  programmatic).
 - **Deferred verdicts (re-examine at flagship stage 2):** `val_vlm_anhedral.bdf` is a
   2-coordinate sign flip of `_dihedral` that 2 test files could mirror in memory —
   consolidate opportunistically or keep; ha144a_fullspan ×3 INCLUDE consolidation

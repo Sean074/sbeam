@@ -202,9 +202,10 @@ $ Right-wing spline-load grids (stringers; root grids 99/100 are shared with
 $ the left wing + canard splines, so per-wing attribution keeps them out)
 SET1, 1320, 111, 112, 121, 122
 AECOMP, WINGEA, SET1, 1320
-$ Whole-aircraft spline-load grids (every grid any spline transfers force to)
-SET1, 1310, 98, 99, 100, 111, 112, 121, 122, 211, 212,
-+, 221, 222
+$ Whole-aircraft monitor grids.  Every spline-load grid AND every CONM2-bearing grid — grid 97 carries mass
+$ but no spline load; omitting it lost 18.75 % of the inertia (DEF-M10).
+SET1, 1310, 97, 98, 99, 100, 111, 112, 121, 122, 211,
++, 212, 221, 222
 AECOMP, ALLGRID, SET1, 1310
 $ Whole-aircraft aero boxes (all 4 CAERO1 panels)
 AELIST, 1400, 1000, THRU, 1007, 1100, THRU, 1131, 2000, THRU, 2007, 2100, THRU, 2131

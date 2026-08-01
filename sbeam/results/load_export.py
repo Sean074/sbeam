@@ -23,6 +23,7 @@ import numpy as np
 from sbeam.model.bulk_data import BulkData
 from sbeam.results.results import Sol144TrimResult
 from sbeam.assembly.load_vector import build_grid_index
+from sbeam.parser.bdf_field import fmt_real8
 from sbeam.types import FloatArray
 
 # Loads below this magnitude are treated as zero and not emitted.
@@ -30,8 +31,13 @@ _TOL = 1e-9
 
 
 def _fmt(val: float) -> str:
-    """Format a load component in NASTRAN 6-digit scientific style."""
-    return f"{val:.6E}"
+    """Format a load component into an 8-character NASTRAN field.
+
+    Free-field does not exempt a card from the 8-character field width: a
+    strict reader truncates ``4.715932E+03`` to ``4.715932``.  These cards are
+    the handoff to an external stress code, so they must survive that.
+    """
+    return fmt_real8(val)
 
 
 def emit_force_moment_cards(

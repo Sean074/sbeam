@@ -95,3 +95,67 @@ def test_inertia_column_live(trim):
     result, _ = trim
     inertia = result.monitor_loads["MALLEA"].inertia
     assert np.linalg.norm(inertia) > 1.0
+
+
+# ---------------------------------------------------------------------------
+# DEF-M10 — whole-aircraft mass coverage
+# ---------------------------------------------------------------------------
+
+def _run(bulk):
+    """Trim ``bulk``, returning (result, coverage warnings raised)."""
+    gi = build_grid_index(bulk)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        aero = build_aero_model(bulk, grid_index=gi)
+        result = run_sol144_trim(
+            bulk, SubcaseControl(subcase_id=1, spc_sid=1, trim_sid=1), aero)
+    coverage = [str(w.message) for w in caught
+                if "CONM2-bearing" in str(w.message)]
+    return result, coverage
+
+
+def test_whole_aircraft_set1_covers_every_conm2_grid():
+    """SET1 1310 must include every mass-bearing grid.
+
+    Grid 97 carries a 93.236-slug CONM2 but no spline load, so it was omitted —
+    18.75 % of the model inertia missing from the 'whole aircraft' monitor.
+    """
+    _cc, bulk = parse_bdf(str(BDF_PATH))
+    conm2_grids = {c.gid for c in bulk.conm2s.values()}
+    set1_grids = set(bulk.set1s[1310].grids)
+    assert conm2_grids - set1_grids == set(), (
+        f"SET1 1310 omits CONM2-bearing grids {sorted(conm2_grids - set1_grids)}")
+
+
+def test_whole_aircraft_monitor_closes_on_a_balanced_trim(trim):
+    """Aero and inertia cancel: a balanced 1g trim has no net section load.
+
+    This is the observable the omission corrupted — MALLEA reported ~+3000 lb
+    of phantom lift (exactly the missing 93.236 slug × 32.174).
+    """
+    result, _ = trim
+    ml = result.monitor_loads["MALLEA"]
+    assert ml.totals[2] == pytest.approx(0.0, abs=1e-6 * abs(ml.aero[2]))
+
+
+def test_missing_mass_grid_raises_a_coverage_warning():
+    """A whole-aircraft monitor that omits a CONM2 grid is called out."""
+    _cc, bulk = parse_bdf(str(BDF_PATH))
+    bulk.set1s[1310].grids = [g for g in bulk.set1s[1310].grids if g != 97]
+    result, coverage = _run(bulk)
+    assert len(coverage) == 1, coverage
+    msg = coverage[0]
+    assert "MALLEA" in msg and "97" in msg and "18.75%" in msg
+    # And the warning is warranted: the monitor really is out of balance.
+    assert abs(result.monitor_loads["MALLEA"].totals[2]) > 1000.0
+
+
+def test_section_cuts_do_not_warn():
+    """The check must not cry wolf on deliberate partial cuts.
+
+    MWINGRT (one grid) and MWINGEA (one wing) legitimately exclude most of the
+    model's mass; only a monitor integrating the *whole* aero load is checked.
+    """
+    _cc, bulk = parse_bdf(str(BDF_PATH))
+    _result, coverage = _run(bulk)
+    assert coverage == []

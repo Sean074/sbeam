@@ -12,7 +12,7 @@ import streamlit as st
 from sbeam.model.bulk_data import BulkData
 from sbeam.results.results import (
     ManeuverResult, Sol101Result, Sol103Result,
-    Sol144DivergResult, Sol144TrimResult,
+    Sol144DivergResult, Sol144TrimResult, peak_grid_force,
 )
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.viewer.geometry import build_deformed_figure, build_mode_figure
@@ -540,17 +540,18 @@ def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
     cols[0].metric("Dynamic pressure q", fmt(result.q))
     cols[1].metric("Mach", fmt(result.mach))
     cols[2].metric("Output samples", len(result.steps))
-    cols[3].metric("Critical sample", result.crit_index)
+    # 1-based, matching the f06 SAMPLE column and the MLDPRNT header (DEF-M5).
+    cols[3].metric("Critical sample", result.crit_index + 1)
 
     times = result.times
     fz = [s.Fz_aero for s in result.steps]
     my = [s.My_aero for s in result.steps]
-    net = [float(np.max(np.abs(s.net_loads))) if s.net_loads.size else 0.0 for s in result.steps]
+    net = [peak_grid_force(s) for s in result.steps]
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=times, y=fz, mode="lines", name="Fz aero"))
     fig.add_trace(go.Scatter(x=times, y=my, mode="lines", name="My aero"))
-    fig.add_trace(go.Scatter(x=times, y=net, mode="lines", name="max |net load|"))
+    fig.add_trace(go.Scatter(x=times, y=net, mode="lines", name="peak grid force"))
     if 0 <= result.crit_index < len(times):
         fig.add_vline(x=float(times[result.crit_index]), line=dict(color="#cc2222", dash="dash"))
     fig.update_layout(
@@ -561,11 +562,12 @@ def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
     st.plotly_chart(fig, use_container_width=True)
 
     n = len(result.steps)
-    idx = st.slider(
-        "Sample", min_value=0, max_value=max(n - 1, 0),
-        value=int(result.crit_index) if n else 0, key="sol144_man_step",
+    # 1-based to match the metric above and the f06 (DEF-M5).
+    sample = st.slider(
+        "Sample", min_value=1, max_value=max(n, 1),
+        value=int(result.crit_index) + 1 if n else 1, key="sol144_man_step",
     )
-    step = result.steps[idx]
+    step = result.steps[sample - 1]
     grid_index = build_grid_index(bulk)
     max_disp = float(np.max(np.abs(step.displacements))) if step.displacements.size else 1.0
     if max_disp == 0.0:

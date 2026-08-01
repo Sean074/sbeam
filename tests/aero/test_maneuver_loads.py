@@ -106,8 +106,14 @@ def test_maneuver_export_roundtrip(trim_1g):
     """Each exported FORCE card reproduces the per-grid net_loads force.
 
     The net Fz resultant is ~0 (a balanced maneuver), so a resultant-sum check
-    would compare cancelling near-zero quantities dominated by 6-digit
-    formatting roundoff.  Per-grid fidelity is the meaningful exporter gate.
+    would compare cancelling near-zero quantities dominated by formatting
+    roundoff.  Per-grid fidelity is the meaningful exporter gate.
+
+    Tolerance is set by the NASTRAN 8-character field width (DEF-M6), not by
+    the exporter: a negative value spends one of the eight characters on its
+    sign, leaving six significant figures, so ``-2999.775064`` can only be
+    written as ``-2999.78`` (rel 1.7e-6).  ``rtol=1e-5`` is the floor for any
+    8-character field; anything looser would stop catching real defects.
     """
     result, bulk, gi = trim_1g
     text = build_maneuver_load_cards_text(bulk, result, sid=99)
@@ -120,7 +126,7 @@ def test_maneuver_export_roundtrip(trim_1g):
         f_card = np.array([float(parts[5]), float(parts[6]), float(parts[7])])
         base = 6 * gi[gid]
         f_ref = result.net_loads[base:base + 3]
-        assert np.allclose(f_card, f_ref, rtol=1e-6, atol=1e-9), (
+        assert np.allclose(f_card, f_ref, rtol=1e-5, atol=1e-9), (
             f"FORCE on grid {gid}: card {f_card} != net_loads {f_ref}"
         )
         checked += 1

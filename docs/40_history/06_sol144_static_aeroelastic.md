@@ -1616,6 +1616,86 @@ round-trip tests in `tests/parser/test_aero.py`. No-CHORDCP decks are bit-identi
 
 ## Resolved defects
 
+### DEF-M6 — exported `FORCE`/`MOMENT` fields overflow the 8-character free field ✅ COMPLETE (2026-08-01)
+
+**Objective:** `load_export._fmt` wrote `f"{val:.6E}"` — 12 characters, 13 with a sign — into
+comma free-field `FORCE`/`MOMENT` cards. Free field does *not* exempt a card from the NASTRAN
+8-character field width: a strict reader truncates each comma-delimited field to its first 8
+characters, so `4.715932E+03` is read as `4.715932`, a silent factor-of-1000 corruption. sbeam
+round-tripped its own output (its reader has no width limit), so nothing caught it — and
+external stress handoff is the advertised purpose of this export (`05c:439`). One sample export
+carried 66 oversized fields.
+
+**Deliverables:**
+- **`sbeam/parser/bdf_field.py`** (new) — `fmt_real8(val)` plus `parse_real(s)` and the
+  `NASTRAN_SCI` regex. Sited in `parser/` so the write format and the read format are one
+  module: `bdf_reader._to_float` now delegates to `parse_real`, and a test asserts they remain
+  the same function.
+- `fmt_real8` builds **both** a fixed-point candidate (`4715.932`) and a NASTRAN
+  implicit-exponent candidate (`4.716+3`) and keeps whichever reproduces the value more
+  closely — decimal wins across the normal load range, implicit exponent wins for very large or
+  very small magnitudes. Non-finite input raises rather than writing `NAN` into a card, and a
+  candidate that would read back as `inf` is rejected.
+- `load_export._fmt` delegates to it, which propagates to every load-card consumer through the
+  shared `emit_force_moment_cards` — the trim aero export, the Step 53 maneuver export and the
+  Phase G0 critical-sample export.
+
+**Key decision — 8-character fields, not large-field `FORCE*`.** Large field would preserve full
+precision, but the reader has *no* `*` support at all (`_split_fixed_field` is hardcoded to
+8-char/72-column and `FORCE*` falls through to the "Unknown BDF card" warning), so it would
+convert a low-complexity export fix into a parser feature. Filed as part of the deferred work
+instead; the 8-character path needs no reader change.
+
+**Precision, measured not assumed:** fixed point keeps 6-7 significant figures across the
+physical load range (worst observed rel 2e-6); the implicit-exponent range keeps 3-5 (worst 2.6e-5
+positive, 3.5e-4 negative). The sign costs a character, which is the binding constraint:
+`-2999.775064` can only be written `-2999.78`. Two existing per-grid export round-trip
+assertions (`test_maneuver_loads.py`, `test_maneuver_qs.py`) were therefore relaxed from
+`rtol=1e-6` to `1e-5` — the field-width floor, not exporter slop, and recorded as such in both
+docstrings. The summed-lift round trip through `parse_bulk_file` still holds at `1e-6`.
+
+**Test/Acceptance:** `tests/parser/test_bdf_field.py` (new) — width never exceeds 8 over the full
+representable range (±1e-30 … ±1e30), legality (every real carries a decimal point), round-trip
+per magnitude regime, non-finite raises, and the spelling-choice cases. End-to-end: **0 oversized
+fields across 1456** exported card fields over all four HA144A decks, down from 66 in one export.
+
+---
+
+### DEF-M10 — HA144A whole-aircraft `MONPNT3` omitted 18.75 % of the inertia ✅ COMPLETE (2026-08-01)
+
+**Objective:** `SET1 1310` (`AECOMP ALLGRID`, feeding `MONPNT3 MALLEA` "WHOLE AIRCRAFT") listed
+every grid a spline transfers force to, but grid **97** carries `CONM2 97 = 93.236` slug and no
+spline load, so it was never added. 93.236 of 497.256 slug is exactly 18.75 % of the model, and
+the monitor reported ~+3000 lb of phantom lift on a balanced 1g trim. The solver summation itself
+was verified exact — this was purely a deck defect.
+
+**Deliverables:**
+- Grid 97 added to `SET1 1310` in `sample/ha144a_fullspan_sbeam.bdf`. `MALLEA` now closes to
+  0.0000 on the balanced trim (was +2999.78).
+- **The same defect found in two sibling decks** while verifying: `ha144a_fullspan_mloads.bdf`
+  (also missing 97) and `ha144a_massset_sweep.bdf` (missing 97 *and* the four fuel-overlay
+  stations 110/120/210/220 — 5 grids, 38 % of that deck's mass). Both fixed.
+  `ha144a_body_trim.bdf` already listed 97 and needed no change.
+- **`monitor_points._warn_if_mass_coverage_incomplete`** — a solver warning naming the omitted
+  grids, their mass and the omitted fraction.
+
+**Key decision — qualify on aero coverage, not on closure.** A plain "does this set contain every
+mass?" check fires on every legitimate section cut (`MWINGRT` is a single grid), and a plain
+closure check does too. The signature of the real defect is narrower: *a monitor that integrates
+all of the aero but only some of the mass*. So the monitor's z-force is compared against the model
+total first, and only a whole-aircraft-scope monitor has its mass coverage checked — no opt-out
+mechanism and no new card syntax needed. Masses come from the **active mass case**
+(`mass_overlay.effective_conm2s`, threaded through as `massset_sid`), not from every `CONM2`
+card: a MASSSET deck carries mutually exclusive overlays, and counting them all reported a
+fraction the run never had (38.30 % of a 730 slug total that no single case has).
+
+**Test/Acceptance:** `tests/aero/test_monitor_ha144a.py` — `SET1 1310` covers every CONM2-bearing
+grid; `MALLEA` closes to ~0 on the balanced trim; a deck with grid 97 stripped raises exactly one
+warning naming `97` and `18.75%` *and* is genuinely out of balance; and the two section cuts raise
+none (the cry-wolf guard). All four shipped HA144A decks now run warning-free.
+
+---
+
 ### DEF-M4 — `LOAD` in a TRIM subcase is refused, not silently ignored ✅ COMPLETE (2026-08-01)
 
 **Objective:** `run_sol144_trim` never read `subcase.load_sid`.  The trim RHS is aero + inertia

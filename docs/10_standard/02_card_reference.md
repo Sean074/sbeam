@@ -32,7 +32,19 @@ A bulk-only file (`.dat`) contains only the bulk data cards (no case control, no
 | Comment | `$` anywhere on a line — rest of line is ignored |
 | Blank field | Leave empty between commas or use double comma: `GRID, 1, , 0.0` |
 
-Both free-field and fixed-field formats are supported. Continuation lines must immediately follow their parent card.
+Both free-field and fixed-field formats are supported. Continuation lines must immediately follow their parent card. Large-field (16-character, `NAME*`) format is **not** supported.
+
+**Real number fields.** A NASTRAN data field is **8 characters wide**, in free field as well as
+fixed field — a strict reader truncates each comma-delimited field to its first 8 characters.
+sbeam's own reader does not enforce that width on input. Implicit-exponent reals (`1.44+9`,
+`-2.31-4`, `1.5+03`) are accepted on read alongside ordinary Python float literals;
+`parser/bdf_field.parse_real` is the single read-side implementation and
+`parser/bdf_field.fmt_real8` the matching write side.
+
+On the write side `fmt_real8` is used by the **load-card exports** (`FORCE`/`MOMENT` from
+`results/load_export.py`; see `05c_sol144_maneuver.md` for the precision bound it implies). The
+**aero-correction card export** (`W2GJ`/`AECORR`/`STRIPK` from `aero/section_correction.py`) still
+writes 12-13 character fields and is a known open defect — backlog **DEF-M12**.
 
 ---
 

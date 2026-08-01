@@ -18,6 +18,7 @@ use.  Gates:
 
 import warnings
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -34,6 +35,8 @@ from sbeam.results.maneuver_output import (
     build_maneuver_time_history_text,
     build_maneuver_critical_load_cards_text,
 )
+from sbeam.results.results import peak_grid_force
+from sbeam.results.f06_writer import build_f06_sol144_maneuver_text
 
 BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
 G = 32.174  # ft/s²
@@ -190,7 +193,12 @@ def test_mldprnt_time_history_text():
 
 
 def test_critical_load_card_export_roundtrip():
-    """Critical-step FORCE cards reproduce that sample's per-grid net load."""
+    """Critical-step FORCE cards reproduce that sample's per-grid net load.
+
+    rtol is the NASTRAN 8-character field floor (DEF-M6), not exporter slop: a
+    negative value spends a character on its sign, leaving six significant
+    figures (``-2325.83671373`` -> ``-2325.84``).
+    """
     res, _ic, bulk, gi = _maneuver(2.0, lambda b, l, tv: [], tend=0.2)
     text = build_maneuver_critical_load_cards_text(bulk, res, sid=77)
     crit = res.steps[res.crit_index]
@@ -202,6 +210,146 @@ def test_critical_load_card_export_roundtrip():
         gid = int(parts[2])
         f_card = np.array([float(parts[5]), float(parts[6]), float(parts[7])])
         base = 6 * gi[gid]
-        assert np.allclose(f_card, crit.net_loads[base:base + 3], rtol=1e-6, atol=1e-9)
+        assert np.allclose(f_card, crit.net_loads[base:base + 3], rtol=1e-5, atol=1e-9)
         checked += 1
     assert checked > 0
+
+
+# ---------------------------------------------------------------------------
+# DEF-M5 — the critical sample is ONE metric on ONE numbering
+# ---------------------------------------------------------------------------
+
+def _transient_maneuver():
+    """A maneuver with a real transient, so the critical sample is not sample 1.
+
+    Held-at-trim runs are a fixed point (every sample identical), which cannot
+    distinguish a correct selector from a broken one.
+    """
+    trim2g, _b, _a, _gi = _trim(2.0)
+    return _maneuver(
+        1.0, _full_state_ramp(trim2g.trim_vars, t_ramp=0.3, t_hold=10.0),
+        tend=2.0, dt=0.004, tout=0.1)
+
+
+def _time_history(text):
+    """(header, data rows) of the f06 MANEUVER TIME HISTORY table only.
+
+    The f06 also contains displacement and bar-force blocks whose rows start
+    with an integer, so the table has to be sliced out by its heading.
+    """
+    lines = text.splitlines()
+    start = next(i for i, ln in enumerate(lines)
+                 if "M A N E U V E R   T I M E   H I S T O R Y" in ln)
+    hdr_i = next(i for i in range(start, len(lines)) if "SAMPLE" in lines[i])
+    rows = []
+    for ln in lines[hdr_i + 1:]:
+        if not ln.strip():
+            break
+        rows.append(ln)
+    return lines[hdr_i], rows
+
+
+def test_crit_index_is_the_peak_grid_force_sample():
+    """The selector is peak per-grid net force — not the closure residual.
+
+    Regression for DEF-M5: the selector used ``‖closure[:3]‖``, the aero/inertia
+    balance residual, which is ~0 on a balanced maneuver and so ranked samples
+    by numerical noise.
+    """
+    res, _ic, _b, _gi = _transient_maneuver()
+    metric = [peak_grid_force(s) for s in res.steps]
+    assert res.crit_index == int(np.argmax(metric))
+    # The gate is only meaningful if the run actually has a transient.
+    assert max(metric) > 1.0000001 * min(metric), "fixture has no transient to rank"
+
+
+def test_f06_column_label_and_selector_agree():
+    """f06 CRITICAL SAMPLE, the <-- CRITICAL row, and the printed column agree."""
+    res, _ic, bulk, gi = _transient_maneuver()
+    text = build_f06_sol144_maneuver_text(
+        SimpleNamespace(title="DEF-M5"), bulk, res, subcase_id=1)
+    lines = text.splitlines()
+
+    # Header states a 1-based sample number and names the metric.
+    hdr = next(ln for ln in lines if "CRITICAL SAMPLE =" in ln)
+    stated = int(hdr.split("CRITICAL SAMPLE =")[1].split("(")[0].strip())
+    assert stated == res.crit_index + 1
+    assert "PEAK |NET GRID FORCE|" in hdr
+
+    # Exactly one row is marked, and it is the row the header names.
+    marked = [ln for ln in lines if "<-- CRITICAL" in ln]
+    assert len(marked) == 1
+    assert int(marked[0].split()[0]) == stated
+
+    # The marked row is the argmax of the printed severity column, and that
+    # column is peak_grid_force (this is what diverged: crit=2, column peak=10).
+    _hdr, rows = _time_history(text)
+    assert len(rows) == len(res.steps)
+    printed = [float(ln.replace("  <-- CRITICAL", "")[-13:]) for ln in rows]
+    assert int(np.argmax(printed)) == res.crit_index
+    for col, step in zip(printed, res.steps):
+        assert col == pytest.approx(peak_grid_force(step), rel=1e-6)
+
+
+def test_f06_time_history_columns_align_with_their_headers():
+    """DEF-M7: header cells and data cells share one column width."""
+    res, _ic, bulk, gi = _transient_maneuver()
+    text = build_f06_sol144_maneuver_text(
+        SimpleNamespace(title="DEF-M5"), bulk, res, subcase_id=1)
+    hdr, rows = _time_history(text)
+    row = rows[0].replace("  <-- CRITICAL", "")
+
+    # With 5 trim variables on this deck the old 15-vs-13 drift put FZ-AERO a
+    # full column off its data; every header must end where its datum ends.
+    assert len(hdr) == len(row), f"header {len(hdr)} vs row {len(row)} chars"
+    for name in ("FZ-AERO", "MY-AERO"):
+        end = hdr.index(name) + len(name)
+        cell = row[end - 13:end]
+        assert cell.strip(), f"{name} header does not sit over a datum"
+        float(cell)  # the datum under the header must parse
+
+
+def test_mldprnt_numbering_matches_the_f06():
+    """MLDPRNT printed the 0-based index while the f06 printed 1-based."""
+    res, _ic, _b, _gi = _transient_maneuver()
+    text = build_maneuver_time_history_text(res)
+    hdr = next(ln for ln in text.splitlines() if "critical sample=" in ln)
+    stated = int(hdr.split("critical sample=")[1].split()[0])
+    assert stated == res.crit_index + 1
+
+
+def test_mldprnt_severity_column_is_the_selector_metric():
+    """PEAK_GRID_F column agrees with the metric that chose the critical sample."""
+    res, _ic, _b, _gi = _transient_maneuver()
+    lines = build_maneuver_time_history_text(res).splitlines()
+    hdr = next(ln for ln in lines if "TIME" in ln and "PEAK_GRID_F" in ln)
+    col = hdr.split().index("PEAK_GRID_F")
+    rows = [ln for ln in lines if not ln.startswith("$") and "TIME" not in ln]
+    printed = [float(ln.split()[col]) for ln in rows]
+    assert int(np.argmax(printed)) == res.crit_index
+    for v, step in zip(printed, res.steps):
+        assert v == pytest.approx(peak_grid_force(step), rel=1e-4)
+
+
+def test_exported_critical_bdf_is_the_sample_the_f06_names():
+    """The exported card set must be the sample the table points at.
+
+    Previously the selector, the printed column and the export could each name a
+    different sample, so the loads engineer sized to a set the table disowned.
+    """
+    res, _ic, bulk, gi = _transient_maneuver()
+    text = build_maneuver_critical_load_cards_text(bulk, res, sid=77)
+    named = res.steps[res.crit_index]
+    for line in text.splitlines():
+        if not line.startswith("FORCE,"):
+            continue
+        parts = [p.strip() for p in line.split(",")]
+        base = 6 * gi[int(parts[2])]
+        f_card = np.array([float(parts[5]), float(parts[6]), float(parts[7])])
+        assert np.allclose(f_card, named.net_loads[base:base + 3],
+                           rtol=1e-5, atol=1e-9)
+    # And no *other* sample would have produced these cards (the export is
+    # genuinely sample-specific, so the check above has teeth).
+    others = [i for i in range(len(res.steps)) if i != res.crit_index]
+    assert any(not np.allclose(res.steps[i].net_loads, named.net_loads,
+                               rtol=1e-5, atol=1e-9) for i in others)
