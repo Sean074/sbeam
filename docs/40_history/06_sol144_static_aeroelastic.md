@@ -1889,8 +1889,10 @@ asserted via `load_injections == []`. Full suite 1223 passed / 6 xfailed; `ruff`
 `pyright` clean.
 
 **Not closed here:** DEF-M11 (ATTACH `g_disp` carries only the z-row) — the injection is
-3-component but ATTACH/SPLINE2 transfer stays z-biased, which is why the acceptance gate is the
+3-component but ATTACH transfer stays z-biased, which is why the acceptance gate is the
 delta identity rather than an absolute totals identity on a canted deck. The general
 force-mapping spline (`SPLINEF`) is backlogged.
+*(DEF-M11 closed 2026-08-01 — see `05_aero_vlm_spline.md`. The gate chosen here still stands
+as written; it simply is no longer forced by the ATTACH limitation.)*
 
 ---

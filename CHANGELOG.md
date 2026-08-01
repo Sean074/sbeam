@@ -11,6 +11,31 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Phase 2 completion.
 
+### Fixed
+
+**DEF-M11 — ATTACH force transfer completed for canted and vertical panels (2026-08-01)**
+
+`_build_attach_rows` (`sbeam/aero/spline.py`) filled only the z-displacement row of `g_disp`
+— `Tz` plus the z-component of `ω×r`. Since `g_disp` is copied into `g_load`, the operator
+whose transpose transfers box forces to the structure, the in-plane `Fx`/`Fy` of any
+non-z-normal ATTACH box never reached the master grid, taking the roll and yaw moments with
+them. On a 26.57° dihedral panel a true box force of `(0, −0.5, 1.0)` transferred as
+`(0, 0, 1.0)` — half the lift dropped as side force — with `Mz` entirely lost and `Mx` short
+by the `Fy·rz` term; a vertical fin panel transferred nothing at all. All three rows now
+carry the full rigid-body transform `u = t + ω×r` (translation identity plus `skew(ω)·r`),
+so `g_dispᵀ f` is the exact `F = Σ f_j`, `M = Σ r_j × f_j`, completing the pairing with the
+box-normal-general `g_slope` from DEF-H1.
+
+**No shipped result changes.** For a z-normal panel the box force is pure `Fz`, so the added
+rows multiply by zero — gated by a bit-identity test. The audit also found that no `.bdf` or
+`.dat` file in the repo contains an `ATTACH` card at all; the card is exercised only by
+Python-built test fixtures, which is now logged as a sample-coverage gap in the backlog.
+
+New gates in `tests/aero/test_spline.py` (`TestAttachInPlaneForceTransfer`): V-B3d-DIH
+(dihedral, all six components to 1e-14), V-B3d-VERT (fin), and a kinematic-exactness check
+that `g_disp @ u` reproduces `t + ω×r` per box. All three were confirmed to fail against the
+pre-fix source.
+
 ### Changed
 
 **DEF-M deliverable-integrity batch — M5, M6, M7, M10 (2026-08-01)**

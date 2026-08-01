@@ -439,29 +439,34 @@ class TestEnergyRoundTrip:
 # V-B3: ATTACH rigid-body gate + SPLINE0 zero-force (machine-precision)
 # ---------------------------------------------------------------------------
 
-def _build_attach_bulk():
+def _build_attach_bulk(p4=(0.0, 2.0, 0.0), master=(0.0, 0.0, 0.0)):
     """Minimal BulkData for ATTACH tests.
 
-    Geometry:
+    Geometry (default, planar):
       GRID 1 at (0, 0, 0) — master structural grid
       CAERO1 EID=200: span along Y (0..2), chord along X (0..1), 2span×1chord
         Box 200: force_point ≈ (0.25, 0.5, 0),  lever r = (0.25, 0.5, 0)
         Box 201: force_point ≈ (0.25, 1.5, 0),  lever r = (0.25, 1.5, 0)
       ATTACH EID=300: covers boxes 200–201, master GRID=1, CID=0
+
+    ``p4`` moves the panel tip so the same geometry can be canted (dihedral,
+    e.g. ``(0, 2, 2)`` → 45°) or made a pure vertical fin (``(0, 0, 2)`` →
+    y-normal), which the DEF-M11 force-transfer gates need.  ``master`` moves
+    the master grid off the origin so the lever arm is non-trivial.
     """
     bulk = BulkData()
 
-    bulk.grids[1] = Grid(gid=1, cp=0, x=0.0, y=0.0, z=0.0, cd=0)
+    bulk.grids[1] = Grid(gid=1, cp=0, x=master[0], y=master[1], z=master[2], cd=0)
 
     bulk.aeros = Aeros(acsid=0, rcsid=0, cref=1.0, bref=2.0, sref=2.0, symxz=0, symxy=0)
     bulk.paero1s[10] = Paero1(pid=10)
 
-    # Panel spans Y (P1→P4 direction), chord along X
+    # Panel spans P1→P4, chord along X
     bulk.caero1s[200] = Caero1(
         eid=200, pid=10, cp=0, nspan=2, nchord=1,
         lspan=0, lchord=0, igid=0,
         p1=(0.0, 0.0, 0.0), x12=1.0,
-        p4=(0.0, 2.0, 0.0), x43=1.0,
+        p4=tuple(p4), x43=1.0,
     )
 
     bulk.attaches[300] = Attach(eid=300, caero=200, id1=200, id2=201, grid=1, cid=0)
@@ -662,6 +667,140 @@ class TestAttachRigidBodyGate:
         assert abs(fz - expected_fz) < 1e-12, f"Fz mismatch: {fz:.6f} vs {expected_fz:.6f}"
         assert abs(mx - expected_mx) < 1e-12, f"Mx mismatch: {mx:.6f} vs {expected_mx:.6f}"
         assert abs(my - expected_my) < 1e-12, f"My mismatch: {my:.6f} vs {expected_my:.6f}"
+
+    def test_v_b3d_z_normal_in_plane_rows_are_inert(self, attach_operators):
+        """V-B3d: on a z-normal panel the DEF-M11 x/y rows contribute nothing.
+
+        The box force of a z-normal panel is pure Fz, so zeroing the new x- and
+        y-displacement rows must leave the transferred load bit-identical.  This
+        pins the "no shipped result moves" claim made when DEF-M11 was fixed.
+        """
+        from sbeam.aero.integration import build_skj
+        _g_slope, g_disp, boxes, _grid_index, _ = attach_operators
+        force_vec = build_skj(boxes) @ np.linspace(0.3, 1.7, len(boxes))
+
+        g_z_only = g_disp.copy()
+        for k in range(len(boxes)):
+            g_z_only[3 * k + 0, :] = 0.0     # drop the x-displacement row
+            g_z_only[3 * k + 1, :] = 0.0     # drop the y-displacement row
+
+        assert np.array_equal(g_disp.T @ force_vec, g_z_only.T @ force_vec), (
+            "z-normal ATTACH transfer must be unchanged by the DEF-M11 rows"
+        )
+
+
+def _attach_ops(p4, master=(0.0, 0.0, 0.0)):
+    """Build (g_disp, boxes, bulk, master_pos) for an ATTACH panel with tip *p4*."""
+    from sbeam.aero.panel import mesh_caero1
+    bulk = _build_attach_bulk(p4=p4, master=master)
+    boxes = mesh_caero1(
+        bulk.caero1s[200], bulk.paero1s[10], bulk.aefacts, bulk.cord2rs, start_k=0
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        _g_slope, g_disp = build_g_spline(bulk, boxes, {1: 0})
+    return g_disp, boxes, bulk, np.array(master, dtype=float)
+
+
+class TestAttachInPlaneForceTransfer:
+    """DEF-M11 — ATTACH ``g_disp`` carries the full rigid transform, not the z-row.
+
+    Before the fix ``g_disp`` filled only the z-displacement row, so the in-plane
+    Fx/Fy of a canted or vertical panel never reached the master grid (and the
+    roll/yaw moments they generate were lost with them).  These gates are the
+    cases a z-normal panel cannot exercise.
+    """
+
+    @staticmethod
+    def _transfer(g_disp, boxes, master, cp):
+        """Return transferred (F, M) at the master grid and the exact (F, M)."""
+        from sbeam.aero.integration import build_skj
+        force_vec = build_skj(boxes) @ np.asarray(cp, dtype=float)
+        f_g = g_disp.T @ force_vec
+        F_got, M_got = f_g[0:3], f_g[3:6]
+
+        f_box = force_vec.reshape(-1, 3)
+        F_exp = f_box.sum(axis=0)
+        M_exp = sum(
+            np.cross(box.force_point - master, f_box[j])
+            for j, box in enumerate(boxes)
+        )
+        return F_got, M_got, F_exp, M_exp
+
+    def test_v_b3d_dih_force_transfer_canted_panel(self):
+        """V-B3d-DIH: dihedral ATTACH panel — Fy and Mz must survive transfer.
+
+        Chord along x, span (0, 2, 1) → Γ = 26.57°, so n̂ = (0, −1, 2)/√5 and each
+        box force carries Fy = −Fz/2.  The pre-DEF-M11 operator returned
+        Fy = Mz = 0 and an Mx short by the Fy·rz term.
+
+        Γ is deliberately under 45°: ``mesh_caero1`` orients the normal so its
+        *dominant* component is positive (``panel.py:220``), so past 45° the panel
+        flips to the +Y (fin) sense.  That convention is exercised separately by
+        the vertical-panel gate below.
+        """
+        g_disp, boxes, _bulk, master = _attach_ops(p4=(0.0, 2.0, 1.0))
+
+        n = boxes[0].normal
+        assert np.allclose(n, np.array([0.0, -1.0, 2.0]) / np.sqrt(5.0), atol=1e-12)
+
+        F_got, M_got, F_exp, M_exp = self._transfer(
+            g_disp, boxes, master, np.ones(len(boxes))
+        )
+
+        # tan Γ = 1/2: the side force is exactly half the lift, opposite sign.
+        assert F_exp[1] == pytest.approx(-0.5 * F_exp[2], abs=1e-12)
+        assert abs(F_exp[1]) > 1e-3 and abs(M_exp[2]) > 1e-3, (
+            "geometry must actually generate in-plane force and yaw moment"
+        )
+
+        assert np.allclose(F_got, F_exp, atol=1e-14), f"force {F_got} vs {F_exp}"
+        assert np.allclose(M_got, M_exp, atol=1e-14), f"moment {M_got} vs {M_exp}"
+
+    def test_v_b3d_vert_force_transfer_fin_panel(self):
+        """V-B3d-VERT: vertical (fin) ATTACH panel — the whole load is in-plane.
+
+        Span along ẑ gives a y-normal panel (n̂ = +ŷ under the dominant-component
+        orientation of ``panel.py:220``), so the box force is pure Fy.  The
+        pre-DEF-M11 operator transferred *nothing at all* for this panel.
+        """
+        g_disp, boxes, _bulk, master = _attach_ops(
+            p4=(0.0, 0.0, 2.0), master=(0.3, -0.2, 0.1)
+        )
+
+        assert np.allclose(boxes[0].normal, [0.0, 1.0, 0.0], atol=1e-12)
+
+        F_got, M_got, F_exp, M_exp = self._transfer(
+            g_disp, boxes, master, np.ones(len(boxes))
+        )
+
+        assert F_exp[2] == pytest.approx(0.0, abs=1e-14), "fin carries no vertical force"
+        assert abs(F_exp[1]) > 1e-3, "geometry must generate side force"
+
+        assert np.allclose(F_got, F_exp, atol=1e-14), f"force {F_got} vs {F_exp}"
+        assert np.allclose(M_got, M_exp, atol=1e-14), f"moment {M_got} vs {M_exp}"
+
+    def test_v_b3d_g_disp_is_the_exact_rigid_transform(self):
+        """DEF-M11 kinematics: g_disp @ u == t + ω×r per box, for arbitrary motion.
+
+        Pins the operator itself, not just its transpose — the force-transfer
+        gates above would pass for any operator whose transpose happens to sum
+        correctly, whereas this fixes every entry.
+        """
+        g_disp, boxes, _bulk, master = _attach_ops(
+            p4=(0.0, 2.0, 1.0), master=(0.3, -0.2, 0.1)
+        )
+
+        t     = np.array([0.11, -0.23, 0.37])     # arbitrary translation
+        omega = np.array([0.30, -0.70, 0.45])     # arbitrary rotation
+        u = np.concatenate([t, omega])
+
+        u_box = (g_disp @ u).reshape(-1, 3)
+        for j, box in enumerate(boxes):
+            expected = t + np.cross(omega, box.force_point - master)
+            assert np.allclose(u_box[j], expected, atol=1e-14), (
+                f"box {j}: {u_box[j]} vs rigid {expected}"
+            )
 
 
 class TestSpline0ZeroForce:

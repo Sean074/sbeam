@@ -41,7 +41,7 @@ re-flowing the rest. Renumber only when the whole table is re-ranked.
 
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P4 | DEF-M2 + DEF-M11 — force/moment convention and ATTACH transfer completeness | Defects | ~1 d | `solve_rigid_cl` reports panel-normal rather than body-axis totals (viewer and f06 disagree on canted decks) and ATTACH `g_disp` carries only the z-row. Both are carve-outs that become wrong answers as soon as dihedral/fin panels are used. |
+| P4 | DEF-M2 — force/moment convention | Defects | ~0.5 d | `solve_rigid_cl` reports panel-normal rather than body-axis totals, so the viewer Aero-tab metrics and the f06/skj totals disagree on any canted deck (measured 1/cos Γ; 1.1547 at 30°). A carve-out that becomes a wrong answer as soon as dihedral panels are used. Its sibling DEF-M11 closed 2026-08-01. |
 | P5 | Closed-form CI gates for the four CLAUDE.md verification decks | Samples review | ~0.5 d | `val_cantilever_static`, `val_ss_static`, `val_cantilever_modes`, `val_free_free_modes` reproduce their closed forms today (verified by run, 2026-07-31: 0.004 % / 0.004 % / 0.02 % / RBMs ≤ 4.6e-5 Hz) but are gated only by the theory notebook, which CI never runs. Independent of everything; can land any time. |
 | P6 | Step 65 — flagship realistic-airplane SOL 144 sample family + theory doc | Samples review | ~3–5 d | Closes the biggest sample coverage gap: nothing anywhere combines corrected aero + trim + maneuver + mass cases on a realistic airplane, and corrections never reach a trim. Clean of all open defects (SPLINE2 only, no body panels); after P2 so its exports/critical-sample story is clean. |
 | P7 | Step 66 — flagship stage 2: body panels into the flagship family | Samples review | ~2 d | Blocked on **P6/Step 65** (the family it extends); its other prerequisite, Step 64 (unsplined-box forces into the trim balance), closed 2026-07-31. Folds `cessna210_body`/`_strip` + their 14+ tests into the flagship. |
@@ -64,7 +64,11 @@ load-case envelope viewer; CHORDCP follow-ons; A9 follow-ons; the remaining DEF-
 presentation, docs-mismatch batch, SYMXZ parity decision; ~1–1.5 d total, independent);
 `SPLINEF` distributed force-mapping spline (ZAERO parity; the Step 64 follow-on);
 the samples hygiene batch and doc-pointer sweep from the 2026-07-31 sample review
-(~1 d total, zero-risk — details in the sample-review section below).
+(~1 d total, zero-risk — details in the sample-review section below);
+an `ATTACH` sample deck (~0.5 d — found during DEF-M11, 2026-08-01: **no `.bdf`/`.dat` file
+anywhere in the repo contains an `ATTACH` card**, so a documented card is gated only by
+Python-built test fixtures and has never been exercised through the file → parse → solve
+path; natural to fold into the P6/Step 65 flagship family).
 **Deferred:** G0-e (with Phase G ASE), slender-body element (after Phase D), non-aero
 Phase 2/3 items.
 
@@ -146,7 +150,7 @@ order — see the table above:
 
 | Rank | Batch | Items |
 |------|-------|-------|
-| P4 | Convention / transfer completeness | DEF-M2, M11 |
+| P4 | Convention completeness | DEF-M2 |
 | P9 | Aero hot path (with the `build_ajj` vectorization) | DEF-R6 |
 | P13 | Refactor before Phase D | DEF-R1, R2, R3, R4 (+ DEF-R7 at a release boundary) |
 | — | Opportunistic, do when adjacent | DEF-L2–L7 |
@@ -160,17 +164,6 @@ order — see the table above:
   equal; `test_dihedral.py:110` enshrines the wrong convention (cos Γ vs cos² Γ).
   *Options:* (a) project through n_z/n_y and update the dihedral test + theory doc
   (medium); (b) keep as normal-force convention and rename/redocument (low).
-
-- **DEF-M11 — ATTACH `g_disp` carries only the z-row** [D]
-  `sbeam/aero/spline.py:449-453` fills `g_disp` for the z-component of `ω×r` only: the
-  `Tx`/`Ty` columns are absent and the x/y components of the rigid motion are dropped. For
-  a z-normal panel this is exact, but on a dihedral or vertical (fin) ATTACH panel the
-  in-plane `Fx`/`Fy` force transfer to the master grid is lost, and the virtual-work pairing
-  with `g_slope` — now general in the box normal after DEF-H1 (`Ry = +n_z`, `Rz = -n_y`) —
-  is incomplete. Deliberate carve-out when DEF-H1 was fixed (2026-07-31); no shipped deck
-  uses a non-z-normal ATTACH panel. *Fix (complexity low-medium):* fill all three rows with
-  the full rigid-body transform (translation identity + `skew(ω)·r`); extend V-B3d force
-  transfer to a dihedral panel.
 
 - **DEF-M12 — Correction-card export uses 12–13-char fields on an 8-char free field** [E]
   `sbeam/aero/section_correction.py:381-391` (`card_lines`) writes `f"{v:.6E}"` into

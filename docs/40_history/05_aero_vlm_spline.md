@@ -1244,6 +1244,67 @@ tests V-B3a/b plus `05b_splining.md` encoded the wrong values.
 
 ---
 
+### DEF-M11 — ATTACH `g_disp` carried only the z-row (2026-08-01) ✅ RESOLVED
+
+**Objective:** Close the carve-out left open by DEF-H1 — make the ATTACH displacement/force
+operator the exact rigid-body transform in all three components, so a canted or vertical
+ATTACH panel transfers its in-plane force to the master grid.
+
+**Defect:** `_build_attach_rows` filled only the z-displacement row of `g_disp` (`Tz` plus the
+z-component of `ω×r`); the `Tx`/`Ty` columns and the x/y rows of `ω×r` were absent. `g_disp` is
+the (3·n_box × n_g) kinematic operator whose copy `g_load` is the force-transfer path
+(`g_load.T @ skj @ …` in `build_qaa`/`build_fg`/`compute_structural_loads`), so with those rows
+empty the in-plane `Fx`/`Fy` of a non-z-normal box never reached the structure, and the roll and
+yaw moments they generate went with them. Exact for a z-normal panel (the box force is pure
+`Fz`); silently lossy otherwise. Measured on a 26.57° dihedral panel (`n̂ = (0,−1,2)/√5`, unit
+`cp`): true box force `(0, −0.5, 1.0)` transferred as `(0, 0, 1.0)` — **50 % of `Fz` dropped as
+side force** — with true moment `(0.625, 0.75, 0.375)` transferred as `(0.5, 0.75, 0.0)`: `Mz`
+entirely lost and `Mx` short by the `Fy·rz` term. On a vertical fin panel the transfer is
+identically zero. It also left the pairing with `g_slope` — general in the box normal since
+DEF-H1 (`Ry = +n_z`, `Rz = −n_y`) — one-sided.
+
+**Deliverables:**
+- `sbeam/aero/spline.py` — `g_disp` rows rebuilt as the full rigid-body transform
+  `u = t + ω×r`: a translation identity on all three components plus `skew(ω)·r`
+  (`u_x = ω_y·rz − ω_z·ry`, `u_y = ω_z·rx − ω_x·rz`, `u_z = ω_x·ry − ω_y·rx`), evaluated at
+  `box.force_point`. Docstring rewritten; the DEF-M11 carve-out note removed.
+- `tests/aero/test_spline.py` — `_build_attach_bulk` generalised with `p4` / `master`
+  arguments so the same geometry can be canted or made a fin; new `TestAttachInPlaneForceTransfer`
+  with V-B3d-DIH (dihedral), V-B3d-VERT (fin) and a kinematic-exactness gate, plus a
+  z-normal-inertness gate added to the existing V-B3d class.
+- Docs: `05b_splining.md` kinematics block (all nine rows), DEF-M11 resolution note, and four
+  new lines in the V-B3 gate list.
+
+**Test / Acceptance:**
+- V-B3d-DIH: on a 26.57° dihedral panel all three force and all three moment components match
+  the closed forms `Σ f_j` and `Σ r_j × f_j` to 1e-14, with `Fy = −Fz/2` from `tan Γ`.
+- V-B3d-VERT: on a vertical (fin) panel the pure-`Fy` load and its moment transfer intact to
+  1e-14 — the case that previously transferred nothing at all.
+- Kinematic gate: `g_disp @ u` reproduces `t + ω×r` per box for an arbitrary rigid motion
+  (`t = (0.11,−0.23,0.37)`, `ω = (0.30,−0.70,0.45)`) to 1e-14, pinning every entry of the
+  operator rather than only the sums its transpose produces.
+- Each of those three was run against the pre-fix source and confirmed to fail.
+- Bit-identity gate: on a z-normal panel, zeroing the new x/y rows leaves the transferred load
+  `np.array_equal`-identical, which is why no shipped result moves.
+- Full suite: **1421 passed, 6 xfailed** (the pre-existing AC7 residual XFAILs), lint clean.
+
+**Key decisions:**
+- **No shipped deck was affected, and the audit was stronger than expected:** no `.bdf`/`.dat`
+  file anywhere in the repo contains an `ATTACH` card. The card is exercised only by
+  Python-built fixtures, two of which are z-normal. The third (`_build_injection_bulk`, 26.57°
+  dihedral) already *was* canted, but its ATTACH'd box is never loaded, so the defect sat one
+  loaded box away from being caught. That gap is logged as a new opportunistic backlog item.
+- The dihedral gate uses Γ = 26.57°, not 45°. `mesh_caero1` orients each box normal so its
+  *dominant* component is positive (`panel.py:220`), so past 45° a panel flips to the `+Y`
+  (fin) sense. That is the intended convention — it is what the `|n_z| ≥ |n_y|` lift/sideforce
+  classification keys off — so the gates straddle it deliberately rather than asserting through
+  it: one case each side, no case on the boundary.
+- A virtual-work reciprocity test was drafted and **discarded**: `uᵀ(Gᵀf) ≡ (Gu)ᵀf` is numpy
+  associativity, true for any operator, so it can never fail. The kinematic-exactness gate
+  covers the intent with real signal.
+
+---
+
 ### DEF-H2 + DEF-H3 — WT1 AIC correction deprecated (2026-07-31) ✅ RESOLVED
 
 **Objective:** Stop `AECORR METHOD=WT1` being presented as a peer of `WT2`. The path is wrong

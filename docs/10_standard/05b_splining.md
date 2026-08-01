@@ -233,9 +233,15 @@ g_slope[j, col_Rx] = 0.0           # roll about the streamwise axis → no slope
 g_slope[j, col_Ry] = +n_z          # pitch  (+1 for a z-normal box)
 g_slope[j, col_Rz] = -n_y          # yaw    (drives incidence on fins)
 
-g_disp[3j+2, col_Tz] = 1.0  # normal displacement from plunge
-g_disp[3j+2, col_Rx] = ry   # (ω×r)_z = Rx·ry
-g_disp[3j+2, col_Ry] = -rx  # (ω×r)_z = -Ry·rx
+g_disp[3j+0, col_Tx] = 1.0  # translation identity, all three components
+g_disp[3j+1, col_Ty] = 1.0
+g_disp[3j+2, col_Tz] = 1.0
+g_disp[3j+0, col_Ry] =  rz  # (ω×r)_x = +Ry·rz - Rz·ry
+g_disp[3j+0, col_Rz] = -ry
+g_disp[3j+1, col_Rx] = -rz  # (ω×r)_y = -Rx·rz + Rz·rx
+g_disp[3j+1, col_Rz] =  rx
+g_disp[3j+2, col_Rx] =  ry  # (ω×r)_z = +Rx·ry - Ry·rx
+g_disp[3j+2, col_Ry] = -rx
 ```
 
 **DEF-H1 — resolved 2026-07-31:** the `Ry` row previously read `-1.0` and `Rx` a spurious
@@ -247,15 +253,29 @@ dihedral and vertical panels are handled as well as flat ones.
 Energy consistency: `α = -∂u_z/∂x = -∂(-rx·θ_y)/∂x = +θ_y = g_slope[j, col_Ry]` for a
 z-normal box (virtual work ✓ — `g_disp` supplies `u_z = -rx·θ_y`).
 
-`g_disp` fills only the z-row, so the in-plane Fx/Fy force-transfer components of a
-non-z-normal ATTACH panel are not yet carried — open backlog item DEF-M11.
+**DEF-M11 — resolved 2026-08-01:** `g_disp` previously filled only the z-row (`Tz`, and the
+z-component of `ω×r`), so the in-plane `Fx`/`Fy` of a canted or vertical ATTACH panel never
+reached the master grid and the roll/yaw moments they generate were lost with them — a
+26.57° dihedral panel dropped 50% of `Fz` as side force and all of `Mz`; a fin panel
+transferred nothing at all. All three rows now carry the full rigid-body transform
+`u = t + ω×r`, so `g_dispᵀ f` is the exact transfer `F = Σ f_j`, `M = Σ r_j × f_j`, and the
+pairing with `g_slope` (general in the box normal since DEF-H1) is complete. For a z-normal
+panel the box force is pure `Fz`, so the added rows multiply by zero and every existing
+result is bit-identical.
 
 **V-B3 rigid-body gate (machine precision):**
 - V-B3a Tz translation → zero incidence (< 1e-14)
 - V-B3b Ry pitch → uniform incidence +1.0 (< 1e-14)
 - V-B3e Rx roll → zero incidence (< 1e-14)
 - V-B3f rigid rotation matches the SPLINE2 route on the same panel (< 1e-12)
-- V-B3d Force transfer: `g_disp.T @ (skj @ cp)` gives correct Fz, Mx, My at master (< 1e-12)
+- V-B3d Force transfer: `g_disp.T @ (skj @ cp)` gives correct Fz, Mx, My at master (< 1e-12),
+  and the in-plane rows are inert on a z-normal panel (bit-identical)
+- V-B3d-DIH Force transfer on a 26.57° dihedral panel: all three force and all three moment
+  components match `ΣF` / `Σ r×F` (< 1e-14), with `Fy = −Fz/2` from `tan Γ` (DEF-M11)
+- V-B3d-VERT Force transfer on a vertical (fin) panel: the load is pure `Fy` and survives
+  transfer intact (< 1e-14) (DEF-M11)
+- V-B3d kinematics: `g_disp @ u` reproduces `t + ω×r` per box for arbitrary rigid motion
+  (< 1e-14) — pins the operator itself, not only its transpose (DEF-M11)
 - V-B3g (`tests/aero/test_attach_sol144.py`) ATTACH and SPLINE2 give the same flexible
   lift within 3% through the SOL 144 static aeroelastic solve, and both converge to the
   rigid lift (1e-6) in the stiff limit

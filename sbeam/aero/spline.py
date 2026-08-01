@@ -392,12 +392,20 @@ def _build_attach_rows(
       Ry: +n_z  (pitch; +1 for a z-normal box — nose-up ⇒ nose-up incidence)
       Rz: −n_y  (yaw; drives incidence on fins and other y-normal boxes)
 
-    g_disp (z-component of normal displacement):
-      (ω×r)_z = Rx·ry − Ry·rx  evaluated at force_point
-      col_Tz: +1.0, col_Rx: +ry, col_Ry: −rx
+    g_disp (full rigid-body displacement u = t + ω×r at force_point, DEF-M11):
 
-    Note g_disp carries only the z-row, so force transfer of the in-plane Fx/Fy
-    components (non-z-normal boxes) is not yet implemented — see backlog DEF-M11.
+        u_x = Tx + ω_y·rz − ω_z·ry
+        u_y = Ty + ω_z·rx − ω_x·rz
+        u_z = Tz + ω_x·ry − ω_y·rx
+
+    i.e. a translation identity plus skew(ω)·r, all three rows filled.  All three
+    rows matter: transposed, ``g_dispᵀ f`` is the exact rigid force transfer
+    ``F = Σ f_j``, ``M = Σ r_j × f_j``, which needs the in-plane Fx/Fy of a
+    canted or vertical (fin) panel as well as Fz.  This also completes the
+    virtual-work pairing with ``g_slope``, general in the box normal since
+    DEF-H1.  For a z-normal panel the box force is pure Fz, so the added rows
+    multiply by zero and the operator is bit-identical to the pre-DEF-M11
+    z-row-only form.
     """
     if attach.cid != 0:
         raise NotImplementedError(
@@ -435,6 +443,7 @@ def _build_attach_rows(
     r = force_pts - master_pos      # (n_cov, 3)
     rx = r[:, 0]                    # streamwise lever
     ry = r[:, 1]                    # spanwise lever
+    rz = r[:, 2]                    # vertical lever
 
     # g_slope: rigid-rotation incidence α = ω_y·n_z − ω_z·n_y (DEF-H1).
     # The Rx column stays zero — roll induces no streamwise slope.
@@ -442,11 +451,19 @@ def _build_attach_rows(
     g_slope[covered_arr, col_base + 4] = normals[:, 2]    # Ry: +n_z
     g_slope[covered_arr, col_base + 5] = -normals[:, 1]   # Rz: −n_y
 
-    # g_disp: z-component of normal displacement
-    row_z = 3 * covered_arr + 2
-    g_disp[row_z, col_base + 2] = 1.0   # Tz
-    g_disp[row_z, col_base + 3] = ry    # Rx: (ω×r)_z = ry
-    g_disp[row_z, col_base + 4] = -rx   # Ry: (ω×r)_z = −rx
+    # g_disp: full rigid-body transform u = t + ω×r (DEF-M11).  Transposed this
+    # is the exact force transfer F = Σ f_j, M = Σ r_j × f_j; the x/y rows carry
+    # the in-plane Fx/Fy of a canted or vertical panel, which the earlier
+    # z-row-only form dropped.  Bit-identical for a z-normal panel (Fx = Fy = 0).
+    row = 3 * covered_arr
+    for comp in range(3):                        # translation identity
+        g_disp[row + comp, col_base + comp] = 1.0
+    g_disp[row + 0, col_base + 4] = rz    # Ry: (ω×r)_x = +rz
+    g_disp[row + 0, col_base + 5] = -ry   # Rz: (ω×r)_x = −ry
+    g_disp[row + 1, col_base + 3] = -rz   # Rx: (ω×r)_y = −rz
+    g_disp[row + 1, col_base + 5] = rx    # Rz: (ω×r)_y = +rx
+    g_disp[row + 2, col_base + 3] = ry    # Rx: (ω×r)_z = +ry
+    g_disp[row + 2, col_base + 4] = -rx   # Ry: (ω×r)_z = −rx
 
 
 # ---------------------------------------------------------------------------
