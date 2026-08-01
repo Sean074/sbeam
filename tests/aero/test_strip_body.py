@@ -35,7 +35,7 @@ _ROOT = Path(__file__).parent.parent.parent / "sample"
 STRIP_BDF = _ROOT / "cessna210_strip.bdf"
 BODY_BDF = _ROOT / "cessna210_body.bdf"
 
-_HORIZ, _VERT = 400, 500
+_HORIZ, _VERT = 6000, 7000
 
 
 # --------------------------------------------------------------------------- #
@@ -112,11 +112,11 @@ def strip_model():
 def test_strip_boxes_flagged(strip_model):
     bulk, model = strip_model
     mask = strip_box_mask(bulk, model.boxes)
-    # 400: 2x8=16 boxes, 500: 4x8=32 boxes → 48 strip boxes
+    # 6000: 2x8=16 boxes, 7000: 4x8=32 boxes → 48 strip boxes
     assert mask.sum() == 48
     assert all(b.is_strip == m for b, m in zip(model.boxes, mask))
     assert is_strip_caero(bulk, _HORIZ) and is_strip_caero(bulk, _VERT)
-    assert not is_strip_caero(bulk, 100)   # wing is ordinary VLM
+    assert not is_strip_caero(bulk, 1000)   # wing is ordinary VLM
 
 
 def test_strip_block_is_diagonal_and_uncoupled(strip_model):
@@ -274,10 +274,10 @@ def test_strip_correction_emits_w2gj_and_stripk_cards(strip_model, strip_baselin
 
 
 def test_strip_correction_rejects_non_strip_panel():
-    _cc, bulk = parse_bdf(str(BODY_BDF))   # cruciform deck: 400/500 are PAERO1
+    _cc, bulk = parse_bdf(str(BODY_BDF))   # cruciform deck: 6000/7000 are PAERO1
     with pytest.raises(ValueError, match="not a strip panel"):
         build_strip_body_correction(
-            bulk, horiz_eid=400, targets=BodyTargets(cm_alpha=0.1))
+            bulk, horiz_eid=6000, targets=BodyTargets(cm_alpha=0.1))
 
 
 def test_strip_correction_does_not_touch_flying_surfaces(strip_model, strip_baseline):
@@ -299,3 +299,61 @@ def test_strip_correction_does_not_touch_flying_surfaces(strip_model, strip_base
     # The lifting-surface rows of the operator are unchanged by the body correction.
     assert np.array_equal(model.ajj_inv_corr[np.ix_(v, v)],
                           model_c.ajj_inv_corr[np.ix_(v, v)])
+
+
+# --------------------------------------------------------------------------- #
+# DEF-L1 — STRIPK binding and length must not be silently lenient
+# --------------------------------------------------------------------------- #
+
+_STRIP_DECK = (
+    "AEROS, 0, 0, 1.0, 1.0, 1.0, 0, 0, 0.0\n"
+    "PSTRIP, 20, 2.5\n"
+    "CAERO1, 400, 20, 0, 1, 4, 0, 0, 1\n"
+    "+, 0.0, -0.5, 0.0, 1.0, 0.0, 0.5, 0.0, 1.0\n"
+)
+
+
+def _strip_boxes(bulk):
+    from sbeam.aero.panel import mesh_caero1
+    from sbeam.model.aero import Paero1
+    caero = bulk.caero1s[400]
+    return mesh_caero1(caero, Paero1(pid=caero.pid), bulk.aefacts, bulk.cord2rs)
+
+
+def test_short_stripk_raises_instead_of_falling_back_to_slope0():
+    """A short STRIPK used to silently use PSTRIP SLOPE0 for the rest.
+
+    That is indistinguishable from a deck that meant the default, so a
+    miscounted card quietly changed the body lift-curve slope.
+    """
+    bulk = _parse(_STRIP_DECK + "STRIPK, 9501, 400, 1.1, 1.2\n")   # 2 of 4
+    with pytest.raises(ValueError, match=r"STRIPK 9501: 2 slope values .* 4 boxes"):
+        strip_box_slopes(bulk, _strip_boxes(bulk))
+
+
+def test_long_stripk_raises():
+    bulk = _parse(_STRIP_DECK + "STRIPK, 9501, 400, 1.1, 1.2, 1.3, 1.4, 1.5\n")
+    with pytest.raises(ValueError, match=r"STRIPK 9501: 5 slope values .* 4 boxes"):
+        strip_box_slopes(bulk, _strip_boxes(bulk))
+
+
+def test_duplicate_stripk_per_caero_raises():
+    """Two STRIPKs on one CAERO1: the second used to lose to `setdefault`."""
+    bulk = _parse(_STRIP_DECK
+                  + "STRIPK, 9501, 400, 1.1, 1.2, 1.3, 1.4\n"
+                  + "STRIPK, 9502, 400, 9.1, 9.2, 9.3, 9.4\n")
+    with pytest.raises(ValueError, match=r"STRIPK 9502: CAERO1 400 already has"):
+        strip_box_slopes(bulk, _strip_boxes(bulk))
+
+
+def test_exact_length_stripk_is_applied():
+    bulk = _parse(_STRIP_DECK + "STRIPK, 9501, 400, 1.1, 1.2, 1.3, 1.4\n")
+    np.testing.assert_allclose(
+        strip_box_slopes(bulk, _strip_boxes(bulk)), [1.1, 1.2, 1.3, 1.4])
+
+
+def test_no_stripk_still_uses_the_pstrip_default():
+    """Omitting the card entirely stays the documented way to take SLOPE0."""
+    bulk = _parse(_STRIP_DECK)
+    np.testing.assert_allclose(
+        strip_box_slopes(bulk, _strip_boxes(bulk)), [2.5] * 4)

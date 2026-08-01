@@ -12,14 +12,13 @@ from sbeam.parser.case_control import SubcaseControl
 from sbeam.assembly.stiffness import (
     assemble_global_stiffness,
     get_spc_dofs,
-    apply_spcs,
     check_spc_enforced_displacements,
     local_stiffness,
     transform_matrix,
     cbush_stiffness_global,
 )
 from sbeam.assembly.load_vector import assemble_load_vector, build_grid_index
-from sbeam.assembly.rbe3 import build_rbe3_transformation
+from sbeam.assembly.reduction import reduce_to_aset
 from sbeam.model.element import Cbar, Cbush
 from sbeam.results.results import BarForce, BarStress, Sol101Result
 from sbeam.types import FloatArray, SparseMatrix
@@ -288,27 +287,24 @@ def run_sol101(bulk: BulkData, subcase: SubcaseControl) -> Sol101Result:
         f = assemble_load_vector(bulk, load_sid)
     f_full = f.copy()
 
-    # RBE3 DOF transformation — eliminates dependent DOFs before SPC partitioning.
-    # Note: T is dense; T.T @ K_csr @ T produces a dense ndarray (NumPy @ semantics).
-    # solve_static dispatches to the dense path for the resulting K.
-    T, dep_dofs, red_dofs = build_rbe3_transformation(bulk, grid_index)
-    if dep_dofs:
-        K_orig = K.copy()   # sparse copy; used by recover_reactions before T transform
-        K = T.T @ K @ T
-        f = T.T @ f
-        dep_set = set(dep_dofs)
-        red_map = {g: i for i, g in enumerate(red_dofs)}
-        spc_dofs_full = get_spc_dofs(bulk, spc_sid, grid_index)
-        spc_dofs = [red_map[d] for d in spc_dofs_full if d not in dep_set]
-        K_free, f_free, free_dofs = apply_spcs(K, f, spc_dofs)
-        u_red = solve_static(K_free, f_free, free_dofs, len(red_dofs))
-        displacements = T @ u_red
-    else:
-        spc_dofs_full = get_spc_dofs(bulk, spc_sid, grid_index)
-        spc_dofs = spc_dofs_full
-        K_orig = K
-        K_free, f_free, free_dofs = apply_spcs(K, f, spc_dofs)
-        displacements = solve_static(K_free, f_free, free_dofs, n_dofs)
+    # RBE3/RBAR reduction + SPC partitioning, through the Step-59 shared
+    # ``reduce_to_aset`` (DEF-R5).  SOL 101 used to hand-roll this — including its
+    # own copy of the silently-discarded-SPC bug — so the fix now lands once for
+    # SOL 101, 103, 144 and the maneuver solvers.
+    #
+    # ``K`` itself is deliberately NOT rebound: ``recover_reactions`` needs the
+    # unreduced, g-set-sized sparse stiffness, the unreduced load vector and the
+    # raw SPC DOF list, none of which live on the AsetReduction.
+    # ``reduce_matrix`` preserves sparsity exactly when the old code did (no
+    # dependent DOFs), so ``solve_static``'s sparse/dense dispatch is unchanged.
+    red = reduce_to_aset(bulk, grid_index, spc_sid)
+    spc_dofs_full = get_spc_dofs(bulk, spc_sid, grid_index)
+
+    K_aa = red.reduce_matrix(K)
+    f_aa = red.reduce_vector(f)
+    n_a = len(red.free_local)
+    u_a = solve_static(K_aa, f_aa, list(range(n_a)), n_a)
+    displacements = red.expand_to_g(u_a)
 
     # Recover bar forces and stresses
     bar_forces = {}
@@ -330,7 +326,10 @@ def run_sol101(bulk: BulkData, subcase: SubcaseControl) -> Sol101Result:
 
     # Recover reactions: R = K[spc,:] @ u - f[spc].
     # The f_full subtraction handles body loads (GRAV) that act at constrained DOFs.
-    reactions = recover_reactions(bulk, displacements, spc_dofs_full, K_orig, grid_index, f_full)
+    # K is the unreduced g-set sparse stiffness (never rebound by the port);
+    # f_full is the load vector before reduction.
+    reactions = recover_reactions(
+        bulk, displacements, spc_dofs_full, K, grid_index, f_full)
 
     return Sol101Result(
         displacements=displacements,

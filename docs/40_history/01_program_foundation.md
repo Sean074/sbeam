@@ -257,6 +257,55 @@ The two top-level functions serve distinct use cases:
 
 ## Resolved defects (documentation / model)
 
+### DEF-R5 + DEF-M9 — one a-set reduction, and SPC-on-a-rigid-DOF is fatal ✅ COMPLETE (2026-08-01)
+
+**Objective:** Close the structural half of the P3 silent-input batch. `reduce_to_aset`
+(`assembly/reduction.py`) filtered out any SPC DOF that a rigid element had already eliminated —
+silently. The constraint was never applied, the DOF stayed free to follow its master, and no
+reaction was reported. Reproduction from the defect report: a 2-CBAR cantilever with grid 3
+RBE2-slaved to grid 2 and `SPC1,5,123456,3` solved with `u_z(3) = −8.33e-3` and zero warnings.
+NASTRAN fatals on the same m-set/s-set overlap.
+
+**DEF-R5 first (pure refactor, no behaviour change).** `sol101.py:294-311` hand-rolled the same
+reduction — including its own copy of the bug — so the fix had to land twice. SOL 103, 144 and
+the maneuver solvers were already on the shared path; SOL 101 was the last holdout. Ported onto
+`reduce_to_aset`. It is **not** a drop-in: `recover_reactions` needs the unreduced g-set-sized
+sparse stiffness, the unreduced load vector and the *raw* SPC DOF list, none of which live on
+`AsetReduction`. Resolved by not rebinding `K` at all (so the old `K_orig` copy collapses away)
+and calling `get_spc_dofs` directly.
+
+**Fixed in the same commit:** `AsetReduction.expand_to_g` always evaluated `T @ u_red`, and with
+no rigid elements `T` is a dense identity — the port would have turned SOL 101's cheap scatter
+into an O(n_g²) matvec on every static solve. Added a no-`dep_dofs` scatter fast path (exact:
+multiplying by an exact identity is exact).
+
+**DEF-M9.** `rbe3.py` recorded *which* DOFs a rigid element eliminates but not *which element*
+owned each one, so the error could not name it. Rather than add a fourth return value —
+`build_rbe3_transformation` has 30+ `T, dep_dofs, red_dofs = ...` unpackings across the tests —
+the body moved into `_build_rigid_transform(bulk, grid_index) -> (T_full, dep_owner)`, with
+`build_rbe3_transformation` (signature unchanged) and a new `dep_dof_owners` as thin wrappers.
+`dep_dofs` is literally `sorted()` of the owner map's keys, so the two cannot drift.
+`reduce_to_aset` now raises, naming every offending grid/DOF and its owning element, and calls
+`dep_dof_owners` **only on the error path** so the happy path pays nothing.
+
+**Key decisions:**
+1. **R5 before M9.** Landing the pure refactor first keeps the largest regression surface
+   (`test_sol101_recovery::TestReactionRecovery`, the `test_verification` reaction-equilibrium
+   cases, V13/V14/V18/V19) bisectable against a known no-op.
+2. **Raise, not warn.** Pre-flight over every `.bdf` in `sample/` and `tests/` **and** every
+   inline Python-built fixture in `tests/assembly`, `tests/solver` and `tests/integration` found
+   **zero** SPC-on-dependent-DOF overlaps, so nothing depended on the silent behaviour.
+
+**Test/Acceptance:** the R5 port was verified numerically inert by hashing displacements,
+reactions and CBAR end forces across **31 decks** before and after — bit-identical. New gates in
+`tests/assembly/test_reduction.py`: `TestSpcOnDependentDof` (RBE2/RBAR/RBE3 each named in the
+message, plus the legitimate SPC-on-the-independent-grid and no-SPC cases) and
+`TestDepOwnerMapAgreesWithDepDofs`, which pins the owner map's keys to `dep_dofs` permanently.
+All eight new gates confirmed to fail against the pre-fix implementation.
+
+---
+
+
 ### R16–R22: Documentation gaps + NITs (2026-06-12 backlog review) ✅ RESOLVED / removed
 
 Closed and removed from `docs/30_future/00_backlog.md` during the 2026-06-12 backlog

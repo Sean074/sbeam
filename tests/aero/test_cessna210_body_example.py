@@ -38,7 +38,7 @@ def deck():
 
 def test_deck_meshes_seven_surfaces(deck):
     bulk, model = deck
-    assert sorted(bulk.caero1s) == [100, 150, 200, 250, 300, 400, 500]
+    assert sorted(bulk.caero1s) == [1000, 2000, 3000, 4000, 5000, 6000, 7000]
     # wing 2*16*6 + HTP 2*8*6 + VTP 6*6 + body-H 2*8 + body-V 4*8 = 192+96+36+16+32
     assert len(model.boxes) == 372
     assert sorted(bulk.spline0s) == [9400, 9500]
@@ -46,7 +46,7 @@ def test_deck_meshes_seven_surfaces(deck):
 
 def test_vtp_intersects_htp(deck):
     _bulk, model = deck
-    vtp_z = [c[2] for b in model.boxes if b.caero_eid == 300 for c in b.corners]
+    vtp_z = [c[2] for b in model.boxes if b.caero_eid == 5000 for c in b.corners]
     # the fin now spans through the HTP plane (z = 0.70), no gap
     assert min(vtp_z) <= 0.60 + 1e-9
     assert min(vtp_z) < 0.70 < max(vtp_z)
@@ -54,8 +54,8 @@ def test_vtp_intersects_htp(deck):
 
 def test_body_panels_are_a_cruciform(deck):
     _bulk, model = deck
-    nh = np.mean([b.normal for b in model.boxes if b.caero_eid == 400], axis=0)
-    nv = np.mean([b.normal for b in model.boxes if b.caero_eid == 500], axis=0)
+    nh = np.mean([b.normal for b in model.boxes if b.caero_eid == 6000], axis=0)
+    nv = np.mean([b.normal for b in model.boxes if b.caero_eid == 7000], axis=0)
     assert abs(nh[2]) > 0.99 and abs(nh[0]) < 1e-6 and abs(nh[1]) < 1e-6   # +Z
     assert abs(nv[1]) > 0.99 and abs(nv[0]) < 1e-6 and abs(nv[2]) < 1e-6   # +Y
 
@@ -65,19 +65,19 @@ def test_body_panels_clear_of_empennage(deck):
     box's wake — may reach the empennage, so the panels cannot spuriously load the tail.
     """
     _bulk, model = deck
-    body_x = [c[0] for b in model.boxes if b.caero_eid in (400, 500) for c in b.corners]
-    emp_x = [c[0] for b in model.boxes if b.caero_eid in (200, 250, 300) for c in b.corners]
+    body_x = [c[0] for b in model.boxes if b.caero_eid in (6000, 7000) for c in b.corners]
+    emp_x = [c[0] for b in model.boxes if b.caero_eid in (3000, 4000, 5000) for c in b.corners]
     # every body box (hence its +X trailing wake's origin) ends well ahead of the
     # most-forward empennage leading edge — wakes pass the tail x-station having already
     # cleared it in z/y (checked below), never through an empennage box
     assert max(body_x) < min(emp_x) - 1.0
     # vertical body panel shares the fin's y=0 plane, so it must stay BELOW the VTP root
-    vtp_z = [c[2] for b in model.boxes if b.caero_eid == 300 for c in b.corners]
-    vbody_z = [c[2] for b in model.boxes if b.caero_eid == 500 for c in b.corners]
+    vtp_z = [c[2] for b in model.boxes if b.caero_eid == 5000 for c in b.corners]
+    vbody_z = [c[2] for b in model.boxes if b.caero_eid == 7000 for c in b.corners]
     assert max(vbody_z) < min(vtp_z) + 1e-9
     # horizontal body panel stays below the HTP plane
-    htp_z = [c[2] for b in model.boxes if b.caero_eid in (200, 250) for c in b.corners]
-    hbody_z = [c[2] for b in model.boxes if b.caero_eid == 400 for c in b.corners]
+    htp_z = [c[2] for b in model.boxes if b.caero_eid in (3000, 4000) for c in b.corners]
+    hbody_z = [c[2] for b in model.boxes if b.caero_eid == 6000 for c in b.corners]
     assert max(hbody_z) < min(htp_z)
 
 
@@ -91,7 +91,7 @@ def test_two_stage_correction_reaches_total_targets(deck):
     res = sd.build_from_section_data_multi(
         model.boxes, model.ajj, flying, mach=0.0, incidence_deg=3.0,
         sid_w2gj_base=9100, sid_aecorr_base=9200)
-    assert sorted(res.correction.cards) == [100, 150, 200, 250, 300]
+    assert sorted(res.correction.cards) == [1000, 2000, 3000, 4000, 5000]
     assert res.skipped == []
     w2 = {w.sid: w for (w, _a) in res.correction.cards.values()}
     ac = {a.sid: a for (_w, a) in res.correction.cards.values()}
@@ -100,7 +100,7 @@ def test_two_stage_correction_reaches_total_targets(deck):
 
     # stage 2 — body panels absorb the residual to the CSV TOTAL targets
     tgt = parse_body_targets(df, mach=0.0)
-    out = build_body_correction(bulk_f, horiz_eid=400, vert_eid=500,
+    out = build_body_correction(bulk_f, horiz_eid=6000, vert_eid=7000,
                                 targets=tgt, mach=0.0)
     assert out.converged
     for k in ("cm_alpha", "cm0", "cn_beta", "cn0", "cl_beta", "cl0"):

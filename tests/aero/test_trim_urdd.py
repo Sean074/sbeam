@@ -13,6 +13,7 @@ Integration test:
       that was broken by the AE5 defect).
 """
 
+import dataclasses
 import warnings
 from pathlib import Path
 
@@ -437,3 +438,38 @@ class TestTrimSignAe5:
             f"V-AE3a FAIL: ANGLEA = {anglea:.6f} ≤ 0 "
             "(should be positive for 1g upward trim)"
         )
+
+
+class TestTrimRejectsLoadRequest:
+    """DEF-M4 — a LOAD in a TRIM subcase must be refused, not silently dropped.
+
+    The trim RHS is aero + inertia only; there is no ``f_struct`` term, so a
+    payload or thrust FORCE requested via ``LOAD`` in a SOL 144 trim subcase used
+    to be read into the subcase and then never consulted.  The restrained static
+    path (``run_aeroelastic_static``) does support it, so the error names it.
+    """
+
+    def test_load_in_trim_subcase_raises(self, trim_setup):
+        bulk, aero, subcase = trim_setup
+        bad = dataclasses.replace(subcase, load_sid=42)
+        with pytest.raises(ValueError, match=r"TRIM=.*and LOAD=42"):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                run_sol144_trim(bulk, bad, aero)
+
+    def test_error_points_at_the_path_that_supports_load(self, trim_setup):
+        bulk, aero, subcase = trim_setup
+        bad = dataclasses.replace(subcase, load_sid=42)
+        with pytest.raises(ValueError) as exc:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                run_sol144_trim(bulk, bad, aero)
+        assert "run_aeroelastic_static" in str(exc.value)
+
+    def test_trim_without_load_is_unaffected(self, trim_setup):
+        """The guard must not fire on the ordinary no-LOAD trim subcase."""
+        bulk, aero, subcase = trim_setup
+        assert subcase.load_sid is None
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            assert run_sol144_trim(bulk, subcase, aero) is not None

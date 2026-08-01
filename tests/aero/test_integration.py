@@ -20,7 +20,7 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.aero.panel import mesh_caero1
 from sbeam.aero.vlm import build_ajj, solve_rigid_cl
 from sbeam.aero.integration import (
-    build_skj, build_djk, build_wg, build_djx, build_dj_rigidrate)
+    build_skj, build_djk, build_wg, build_wg_all, build_djx, build_dj_rigidrate)
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -202,18 +202,50 @@ class TestBuildWg:
                 f"strip {i+1}={gamma[i+1]:.6f}"
             )
 
-    def test_partial_w2gj_data_fills_remaining_zeros(self):
-        """W2GJ with fewer values than boxes leaves untouched entries as zero.
+    def test_short_w2gj_data_raises(self):
+        """DEF-M8a — a short W2GJ used to be silently zero-padded.
 
-        Card data is negated into the internal normalwash (NASTRAN convention:
-        positive card = incidence; internal positive = washout)."""
+        The pad was indistinguishable from a deliberately zero-camber outboard
+        section, so a miscounted mesh produced a quietly different aeroplane.
+        """
         boxes = _rect_wing(nspan=2, nchord=2)  # 4 boxes
         w2gj = W2gj(sid=1, caero_eid=CAERO_EID, data=[0.1, 0.2])  # only 2 values
-        wg = build_wg(boxes, {1: w2gj}, CAERO_EID)
-        assert wg[0] == pytest.approx(-0.1)
-        assert wg[1] == pytest.approx(-0.2)
-        assert wg[2] == pytest.approx(0.0)
-        assert wg[3] == pytest.approx(0.0)
+        with pytest.raises(ValueError, match=r"W2GJ 1: 2 data values .* 4 boxes"):
+            build_wg(boxes, {1: w2gj}, CAERO_EID)
+
+    def test_long_w2gj_data_raises(self):
+        """The other half of the same defect: extra values were truncated."""
+        boxes = _rect_wing(nspan=2, nchord=2)  # 4 boxes
+        w2gj = W2gj(sid=1, caero_eid=CAERO_EID, data=[0.1, 0.2, 0.3, 0.4, 0.5])
+        with pytest.raises(ValueError, match=r"W2GJ 1: 5 data values .* 4 boxes"):
+            build_wg(boxes, {1: w2gj}, CAERO_EID)
+
+    def test_duplicate_w2gj_per_caero_raises(self):
+        """Two cards on one CAERO1: the second used to lose to a bare `break`."""
+        boxes = _rect_wing(nspan=2, nchord=2)
+        a = W2gj(sid=1, caero_eid=CAERO_EID, data=[0.1] * 4)
+        b = W2gj(sid=2, caero_eid=CAERO_EID, data=[0.9] * 4)
+        with pytest.raises(ValueError, match=r"CAERO1 .* targeted by 2 cards"):
+            build_wg(boxes, {1: a, 2: b}, CAERO_EID)
+
+    def test_orphan_w2gj_raises(self):
+        """A W2GJ naming an absent CAERO1 was dead data nothing ever reported."""
+        boxes = _rect_wing(nspan=2, nchord=2)
+        orphan = W2gj(sid=7, caero_eid=CAERO_EID + 12345, data=[0.1] * 4)
+        with pytest.raises(ValueError, match=r"W2GJ 7 → CAERO1 \d+: no such CAERO1"):
+            build_wg_all(boxes, {7: orphan})
+
+    def test_build_wg_all_matches_the_per_surface_sum(self):
+        boxes = _rect_wing(nspan=3, nchord=2)
+        data = [float(j) * 0.01 for j in range(len(boxes))]
+        w2gj = W2gj(sid=1, caero_eid=CAERO_EID, data=data)
+        np.testing.assert_allclose(
+            build_wg_all(boxes, {1: w2gj}), build_wg(boxes, {1: w2gj}, CAERO_EID))
+
+    def test_no_w2gj_is_still_zero(self):
+        """The no-card path must stay a silent zero vector, not an error."""
+        boxes = _rect_wing(nspan=2, nchord=2)
+        np.testing.assert_allclose(build_wg_all(boxes, {}), np.zeros(len(boxes)))
 
     def test_w2gj_length_matches_n_boxes(self):
         boxes = _rect_wing(nspan=3, nchord=2)

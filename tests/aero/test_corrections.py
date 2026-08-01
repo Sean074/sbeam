@@ -389,7 +389,9 @@ class TestSolveRigidClCorrectedOperator:
 # altered while the card is still parseable.  Removal is backlog DEF-R7.
 # ---------------------------------------------------------------------------
 
-TAIL_EID = 2
+# 1000 clear of CAERO_EID=1's box-ID range: a CAERO1 owns the NSPAN*NCHORD
+# consecutive IDs from its EID, so EID 2 would overlap the wing (F1).
+TAIL_EID = 1000
 
 
 def _strip_forces(model, caero_eid=None) -> np.ndarray:
@@ -498,3 +500,95 @@ class TestWt1Deprecation:
         # (c) The smoking gun: wing and tail are scaled by the *same* per-i_span
         #     ratio, because they share the dict key.
         assert wing_corr / wing_base == pytest.approx(tail_corr / tail_base, rel=1e-10)
+
+
+class TestWkkSurfaceBinding:
+    """DEF-M8b — WKK binds per CAERO1, not "primary card applied model-wide".
+
+    A WKK card used to be selected by the *primary* (lowest-EID) CAERO1 and then
+    applied to every box in the operator.  On a multi-surface deck that meant the
+    ``diag(w)`` was the wrong size and numpy raised a bare shape error; a WKK on
+    any non-primary surface was ignored outright.
+    """
+
+    @staticmethod
+    def _two_surface(nspan, nchord):
+        return _wing_and_tail_bulk(nspan, nchord)
+
+    def test_wkk_on_non_primary_surface_is_applied(self):
+        """Previously ignored entirely — the tail card never reached the AIC."""
+        nspan = nchord = 3
+        n_surf = nspan * nchord
+        base = build_aero_model(self._two_surface(nspan, nchord), mach=0.0)
+
+        bulk = self._two_surface(nspan, nchord)
+        bulk.wkks[10] = Wkk(sid=10, caero_eid=TAIL_EID, data=[0.5] * n_surf)
+        corr = build_aero_model(bulk, mach=0.0)
+        assert not np.allclose(corr.ajj_inv_corr, base.ajj_inv_corr), \
+            "WKK on the non-primary CAERO1 had no effect"
+
+    def test_wkk_on_one_surface_leaves_the_other_rows_alone(self):
+        """Unlisted surfaces get weight 1, so AJJ* rows there are untouched."""
+        nspan = nchord = 3
+        n_surf = nspan * nchord
+        bulk = self._two_surface(nspan, nchord)
+        bulk.wkks[10] = Wkk(sid=10, caero_eid=CAERO_EID, data=[0.5] * n_surf)
+        corr = build_aero_model(bulk, mach=0.0)
+        tail_rows = [k for k, b in enumerate(corr.boxes) if b.caero_eid == TAIL_EID]
+        base = build_aero_model(self._two_surface(nspan, nchord), mach=0.0)
+        np.testing.assert_allclose(corr.ajj[tail_rows], base.ajj[tail_rows], rtol=1e-12)
+
+    def test_multi_surface_wkk_no_longer_shape_errors(self):
+        """Two WKK cards, one per surface — used to be a raw numpy shape error."""
+        nspan = nchord = 3
+        n_surf = nspan * nchord
+        bulk = self._two_surface(nspan, nchord)
+        bulk.wkks[10] = Wkk(sid=10, caero_eid=CAERO_EID, data=[0.9] * n_surf)
+        bulk.wkks[11] = Wkk(sid=11, caero_eid=TAIL_EID, data=[0.7] * n_surf)
+        model = build_aero_model(bulk, mach=0.0)          # must not raise
+        assert model.ajj_inv_corr.shape == (2 * n_surf, 2 * n_surf)
+
+    def test_wrong_length_wkk_raises_a_card_labelled_error(self):
+        nspan = nchord = 3
+        bulk = self._two_surface(nspan, nchord)
+        bulk.wkks[10] = Wkk(sid=10, caero_eid=CAERO_EID, data=[0.9] * 4)
+        with pytest.raises(ValueError, match=r"WKK 10 \(CAERO1 1\): 4 weights for 9 boxes"):
+            build_aero_model(bulk, mach=0.0)
+
+    def test_duplicate_wkk_per_caero_raises(self):
+        nspan = nchord = 3
+        n_surf = nspan * nchord
+        bulk = self._two_surface(nspan, nchord)
+        bulk.wkks[10] = Wkk(sid=10, caero_eid=CAERO_EID, data=[0.9] * n_surf)
+        bulk.wkks[11] = Wkk(sid=11, caero_eid=CAERO_EID, data=[0.7] * n_surf)
+        with pytest.raises(ValueError, match=r"already has a WKK card"):
+            build_aero_model(bulk, mach=0.0)
+
+    def test_zero_weight_raises_instead_of_bare_linalgerror(self):
+        """A zero weight zeroes an AJJ* row → singular; solve() would raise raw."""
+        nspan = nchord = 3
+        n_surf = nspan * nchord
+        data = [0.9] * n_surf
+        data[2] = 0.0
+        bulk = self._two_surface(nspan, nchord)
+        bulk.wkks[10] = Wkk(sid=10, caero_eid=CAERO_EID, data=data)
+        with pytest.raises(ValueError, match=r"WKK 10 .*zero weight at box index"):
+            build_aero_model(bulk, mach=0.0)
+
+    def test_single_surface_wkk_is_unchanged(self):
+        """The pre-existing single-CAERO1 path must be bit-identical."""
+        nspan = nchord = 3
+        n_surf = nspan * nchord
+        bulk = _rect_bulk(nspan, nchord)
+        bulk.wkks[10] = Wkk(sid=10, caero_eid=CAERO_EID, data=[0.8] * n_surf)
+        model = build_aero_model(bulk, mach=0.0)
+        expect = apply_wkk(build_ajj(mesh_caero1(
+            bulk.caero1s[CAERO_EID], bulk.paero1s[1], {}, {}, start_k=0)),
+            [0.8] * n_surf)
+        np.testing.assert_allclose(
+            model.ajj_inv_corr,
+            np.linalg.solve(expect, np.eye(n_surf)) * (2.0 / np.array(
+                [b.area / np.hypot(b.bound_b[1] - b.bound_a[1],
+                                   b.bound_b[2] - b.bound_a[2]) for b in model.boxes]
+            ))[:, None],
+            rtol=1e-10)

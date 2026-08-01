@@ -362,11 +362,31 @@ Phase A provides three correction tiers to match VLM predictions to higher-fidel
 CFD or wind-tunnel data. The correction precedence in `build_aero_model()` is:
 
 ```
-WKK card present   →  apply_wkk  (caller inverts via np.linalg.solve; primary CAERO1)
+WKK card present   →  apply_wkk  (caller inverts via np.linalg.solve; per-CAERO1 scatter)
 AECORR WT2 present →  apply_wt2  (returns AJJ*⁻¹) — ALL WT2 cards combined (multi-surface)
 AECORR WT1 present →  apply_wt1  (returns AJJ*⁻¹) — DEPRECATED, see below
 No correction      →  np.linalg.solve(AJJ, I)
 ```
+
+### Card binding is validated, not lenient (DEF-M8 / DEF-L1)
+
+A correction card that cannot be applied is an error, never a silent no-op — the builder
+reporting "converged" while production never sees the card was the defect class this
+closes. All checks are card-labelled (`CARDNAME sid: …`, the CHORDCP house style):
+
+| Card | Rejected |
+|------|----------|
+| `W2GJ` | two cards on one CAERO1; data length ≠ that surface's box count (either direction); a `caero_eid` with no meshed boxes |
+| `WKK` | two cards on one CAERO1; length ≠ that surface's box count; any **zero weight** (it zeroes an AJJ* row, making the corrected AIC singular) |
+| `AECORR` (WT2) | target length ≠ that surface's box count |
+| `STRIPK` | two cards on one CAERO1; length ≠ that surface's box count (omit the card entirely to take the PSTRIP `SLOPE0` default) |
+| section-data CSV | `caero` not in the model (when the caller supplies the model); duplicate `eta` within one `(caero, var, mach, a_lo, a_hi)` curve |
+| body TOTAL row | blank/NaN in a **required** column (`cm_a`, `cm0`, `cn_a`, `a0`); only the roll columns `cl_a`/`cl0` default to 0 |
+
+**WKK is per-surface.** Each card applies to its own CAERO1; boxes on unlisted surfaces
+take weight 1 (a no-op). Previously the card was selected by the primary (lowest-EID)
+CAERO1 and then applied to every box in the operator, so a multi-surface deck raised a
+bare numpy shape error and a WKK on a non-primary surface was ignored outright.
 
 > **WT1 is deprecated (DEF-H2/H3, 2026-07-31).** Use `WT2` or the section-correction
 > path instead. A `WT1` `AECORR` still parses and runs, but the parser now raises a

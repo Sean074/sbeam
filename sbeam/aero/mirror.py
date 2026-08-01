@@ -101,6 +101,16 @@ def mirror_halfspan(bulk: BulkData, tol: float = 1e-9) -> BulkData:
         + list(bulk.rbe2s)
         + list(bulk.caero1s)
     )
+    # The offset must also clear the *box-ID* span of the highest-numbered
+    # CAERO1, not just its EID: a CAERO1 owns the NSPAN*NCHORD consecutive
+    # NASTRAN box IDs from its EID, so an offset chosen from EIDs alone can
+    # place a mirrored surface inside an original surface's box-ID range and
+    # trip the collision check in ``panel.build_box_id_map`` on a deck the user
+    # numbered perfectly well (F1).
+    for eid, ca in bulk.caero1s.items():
+        nspan = ca.nspan if ca.nspan > 0 else len(bulk.aefacts[ca.lspan].data) - 1
+        nchord = ca.nchord if ca.nchord > 0 else len(bulk.aefacts[ca.lchord].data) - 1
+        max_id = max(max_id, eid + nspan * nchord - 1)
     off = _next_pow10(max_id)
 
     def on_centerline(gid: int) -> bool:

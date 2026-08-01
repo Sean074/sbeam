@@ -1616,6 +1616,32 @@ round-trip tests in `tests/parser/test_aero.py`. No-CHORDCP decks are bit-identi
 
 ## Resolved defects
 
+### DEF-M4 — `LOAD` in a TRIM subcase is refused, not silently ignored ✅ COMPLETE (2026-08-01)
+
+**Objective:** `run_sol144_trim` never read `subcase.load_sid`.  The trim RHS is aero + inertia
+only — there is no `f_struct` term — so a payload or thrust `FORCE` requested via `LOAD` in a
+SOL 144 trim subcase was parsed into the subcase and then never consulted.  The restrained static
+path (`run_aeroelastic_static`, `sol144.py:268-273`) *does* combine a LOAD set with the aero load,
+which made the omission easy to miss.
+
+**Deliverable:** a guard beside the existing SUPORT/TRIM checks at the top of `run_sol144_trim`,
+raising when a subcase carries both `trim_sid` and `load_sid`.  The message names the subcase,
+both SIDs, and the path that does support the request.
+
+**Key decision — raise, do not implement.** Adding `f_struct` to the trim RHS is a capability
+change with unresolved physics, not a defect fix: on a free-flight SUPORT trim an applied
+structural load enters the force balance, so `maneuver_closure` stops meaning "aero vs inertia",
+and whether the applied load participates in inertia relief is undecided.  That is now its own
+backlog item; this batch closes the silent-ignore.
+
+**Test/Acceptance:** verified safe first — no sample deck and no test constructs a
+`SubcaseControl` with both `trim_sid` and `load_sid`, and `maneuver_qs` builds its `ic_subcase`
+without one.  Gates in `tests/aero/test_trim_urdd.py::TestTrimRejectsLoadRequest`: the raise, the
+message pointing at `run_aeroelastic_static`, and a no-regression guard that the ordinary no-LOAD
+trim subcase is unaffected.  Both new gates confirmed to fail against the pre-fix implementation.
+
+---
+
 ### Q4 + DEF-M3 — one mass model for `M_ax` (`build_inertial_cols` → `−M_gg·Φ_r`) ✅ COMPLETE (2026-07-31)
 
 **Objective:** Remove the second mass model. `M_ax`, the inertia-relief sensitivity

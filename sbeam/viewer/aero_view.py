@@ -488,7 +488,8 @@ def rigid_derivative_table(
     labels = ["ANGLEA", "SIDES", "ROLL", "PITCH", "YAW"] + sorted(
         s.label for s in bulk.aesurfs.values()
     )
-    d_jx = build_djx(aero_model.boxes, labels, bulk)
+    d_jx = build_djx(aero_model.boxes, labels, bulk,
+                     id_to_k=aero_model.require_box_id_to_k())
 
     aeros = bulk.aeros
     if aeros.rcsid:

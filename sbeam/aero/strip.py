@@ -61,12 +61,39 @@ def strip_box_slopes(bulk: BulkData, boxes: list[AeroBox]) -> FloatArray:
     the box's CAERO1, else the ``PSTRIP`` ``slope0``.  Row-major ordering (matching
     ``mesh_caero1`` / W2GJ / WKK).  Non-strip boxes return 0.0 — their slope is
     meaningless (they use the VLM AIC, not the diagonal block).
+
+    Raises:
+        ValueError: if two STRIPK cards target the same CAERO1 (the second used
+            to be silently discarded by ``setdefault``), or if a STRIPK's data
+            length does not match the surface's box count — a short card used to
+            fall back to the PSTRIP ``slope0`` for the remaining boxes, which is
+            indistinguishable from a deck that meant the default (DEF-L1).
     """
     n = len(boxes)
     slopes = np.zeros(n)
+
+    n_boxes_per_caero: dict[int, int] = {}
+    for b in boxes:
+        n_boxes_per_caero[b.caero_eid] = n_boxes_per_caero.get(b.caero_eid, 0) + 1
+
     stripk_by_caero: dict[int, Stripk] = {}
-    for sk in bulk.stripks.values():
-        stripk_by_caero.setdefault(sk.caero_eid, sk)   # one card per CAERO1
+    for sk in sorted(bulk.stripks.values(), key=lambda c: c.sid):
+        prev = stripk_by_caero.get(sk.caero_eid)
+        if prev is not None:
+            raise ValueError(
+                f"STRIPK {sk.sid}: CAERO1 {sk.caero_eid} already has a STRIPK "
+                f"card (SID {prev.sid}); only one STRIPK per CAERO1 is supported."
+            )
+        stripk_by_caero[sk.caero_eid] = sk
+        n_surf = n_boxes_per_caero.get(sk.caero_eid)
+        if n_surf is not None and len(sk.data) != n_surf:
+            raise ValueError(
+                f"STRIPK {sk.sid}: {len(sk.data)} slope values for CAERO1 "
+                f"{sk.caero_eid}, which meshes to {n_surf} boxes.  STRIPK data is "
+                "one value per box, row-major (span slowest, chord fastest); omit "
+                "the card entirely to use the PSTRIP SLOPE0 default."
+            )
+
     local_count: dict[int, int] = {}
     for j, b in enumerate(boxes):
         if not is_strip_caero(bulk, b.caero_eid):
@@ -75,7 +102,7 @@ def strip_box_slopes(bulk: BulkData, boxes: list[AeroBox]) -> FloatArray:
         local_k = local_count.get(eid, 0)
         local_count[eid] = local_k + 1
         sk = stripk_by_caero.get(eid)
-        if sk is not None and local_k < len(sk.data):
+        if sk is not None:
             slopes[j] = sk.data[local_k]
         else:
             slopes[j] = bulk.pstrips[bulk.caero1s[eid].pid].slope0

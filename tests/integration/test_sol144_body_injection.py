@@ -65,7 +65,7 @@ class TestInjectionSetup:
         assert got == [("SPLINE0 9400", 98, 16), ("SPLINE0 9500", 90, 32)], got
 
     def test_explicit_and_default_master(self, body_trim):
-        """Panel 400 names GRID 98; panel 500 leaves the field blank → SUPORT 90."""
+        """Panel 6000 names GRID 98; panel 7000 leaves the field blank → SUPORT 90."""
         _r, bulk, _gi, _aero, _cc = body_trim
         assert bulk.spline0s[9400].grid == 98
         assert bulk.spline0s[9500].grid == 0

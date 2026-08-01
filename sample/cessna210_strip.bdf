@@ -126,22 +126,22 @@ $ Chordwise NCHORD = 6 (>=2 required for the section-moment correction; >=4
 $ recommended for converged pitching moment). Spanwise NSPAN sized for box AR ~1.
 $
 $ ---- Wing starboard: 16 x 6 = 96 boxes
-CAERO1, 100, 10, 0, 16, 6, 0, 0, 1
+CAERO1, 1000, 10, 0, 16, 6, 0, 0, 1
 +, 2.00, 0.0, 1.250, 1.75, 2.15, 5.60, 1.397, 1.15
 $ ---- Wing port: 16 x 6 = 96 boxes
-CAERO1, 150, 10, 0, 16, 6, 0, 0, 1
+CAERO1, 2000, 10, 0, 16, 6, 0, 0, 1
 +, 2.00, 0.0, 1.250, 1.75, 2.15, -5.60, 1.397, 1.15
 $
 $ ---- HTP starboard: 8 x 6 = 48 boxes
-CAERO1, 200, 10, 0, 8, 6, 0, 0, 1
+CAERO1, 3000, 10, 0, 8, 6, 0, 0, 1
 +, 6.90, 0.0, 0.70, 1.05, 7.10, 1.73, 0.70, 0.75
 $ ---- HTP port: 8 x 6 = 48 boxes
-CAERO1, 250, 10, 0, 8, 6, 0, 0, 1
+CAERO1, 4000, 10, 0, 8, 6, 0, 0, 1
 +, 6.90, 0.0, 0.70, 1.05, 7.10, -1.73, 0.70, 0.75
 $
 $ ---- VTP (single surface, "span" is Z): 6 x 6 = 36 boxes
 $ Root extended down to z=0.60 so the fin crosses the HTP plane (z=0.70).
-CAERO1, 300, 10, 0, 6, 6, 0, 0, 1
+CAERO1, 5000, 10, 0, 6, 6, 0, 0, 1
 +, 6.60, 0.0, 0.60, 1.50, 7.10, 0.0, 2.30, 0.85
 $
 $ -------------------------------------------------- DECOUPLED STRIP BODY PANELS
@@ -153,16 +153,16 @@ $ NOT to avoid the empennage; an overlap here would change the wing/tail loads b
 $ zero.  Tuned by build_strip_body_correction to the CFD/WT "TOTAL" targets.
 $
 $ ---- Horizontal strip body panel (XY plane at z=0.30, normal +Z): 2 x 8 = 16 boxes
-CAERO1, 400, 20, 0, 2, 8, 0, 0, 1
+CAERO1, 6000, 20, 0, 2, 8, 0, 0, 1
 +, 0.30, -0.40, 0.30, 4.70, 0.30, 0.40, 0.30, 4.70
 $
 $ ---- Vertical strip body panel (XZ plane at y=0, normal +Y): 4 x 8 = 32 boxes
-CAERO1, 500, 20, 0, 4, 8, 0, 0, 1
+CAERO1, 7000, 20, 0, 4, 8, 0, 0, 1
 +, 0.30, 0.0, 0.05, 4.70, 0.30, 0.0, 0.45, 4.70
 $
 $ Body panels: SPLINE0 (zero structural coupling — negligible body elasticity).
 $ Box-ID range = caero_eid + i_span*nchord + j_chord (horiz 16, vert 32 boxes).
-SPLINE0, 9400, 400, 400, 415
-SPLINE0, 9500, 500, 500, 531
+SPLINE0, 9400, 6000, 6000, 6015
+SPLINE0, 9500, 7000, 7000, 7031
 $
 ENDDATA

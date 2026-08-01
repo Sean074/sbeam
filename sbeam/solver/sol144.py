@@ -919,13 +919,8 @@ def _compute_hinge_moments(
     """
     from sbeam.assembly.coord_transform import get_transform
 
-    # NASTRAN-box-ID → global-k index (same convention as build_djx)
-    id_to_k: dict[int, int] = {}
-    for box in aero.boxes:
-        caero = bulk.caero1s[box.caero_eid]
-        nch = (caero.nchord if caero.nchord > 0
-               else len(bulk.aefacts[caero.lchord].data) - 1)
-        id_to_k[box.caero_eid + box.i_span * nch + box.j_chord] = box.k
+    # NASTRAN-box-ID → global-k index — the one shared, collision-checked map (F1)
+    id_to_k = aero.require_box_id_to_k()
 
     hinge_moments: dict[str, dict[str, float]] = {}
     for aesurf in bulk.aesurfs.values():
@@ -1406,8 +1401,9 @@ def run_sol144_trim(
         Sol144TrimResult with trim variables, displacements, stability derivatives.
 
     Raises:
-        ValueError  if no SUPORT card, TRIM card, or the trim is
-                    over-determined without a TRIMOBJ objective.
+        ValueError  if no SUPORT card, TRIM card, a LOAD request the trim
+                    cannot honour, or the trim is over-determined without a
+                    TRIMOBJ objective.
     """
     if not bulk.supports:
         raise ValueError("run_sol144_trim: no SUPORT card found in model")
@@ -1415,6 +1411,19 @@ def run_sol144_trim(
     trim_sid = subcase.trim_sid
     if trim_sid is None or trim_sid not in bulk.trims:
         raise ValueError(f"run_sol144_trim: TRIM SID {trim_sid} not found")
+
+    # DEF-M4 — the trim RHS is aero + inertia only; it has no f_struct term, so a
+    # LOAD request here would be read, discarded and never mentioned.  Refuse it
+    # rather than silently solving a different problem than the deck asked for.
+    if subcase.load_sid is not None:
+        raise ValueError(
+            f"run_sol144_trim: subcase {subcase.subcase_id} requests both "
+            f"TRIM={trim_sid} and LOAD={subcase.load_sid}, but SOL 144 trim "
+            "applies aerodynamic and inertial loads only — the LOAD would be "
+            "silently ignored.  Remove the LOAD request, or use the restrained "
+            "static path (run_aeroelastic_static), which does combine a LOAD "
+            "set with the aero load."
+        )
 
     trim_card = bulk.trims[trim_sid]
     q_dyn  = trim_card.q
@@ -1535,7 +1544,8 @@ def run_sol144_trim(
     # Full-span model: aero and inertia are both whole-airplane, so there is no
     # symmetry force-doubling factor (the AE1 Step D `sym=2` double-count that
     # halved the trim solution is gone with half-span support).
-    D_jx = build_djx(aero.boxes, all_labels, bulk)       # (n_box, n_labels)
+    D_jx = build_djx(aero.boxes, all_labels, bulk,
+                     id_to_k=aero.require_box_id_to_k())   # (n_box, n_labels)
     Q_ax_g = aero.require_g_load().T @ aero.skj @ aero.ajj_inv_corr @ D_jx  # (n_g, n_labels)
 
     # ------------------------------------------------------------------ #

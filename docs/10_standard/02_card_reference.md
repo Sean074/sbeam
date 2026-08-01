@@ -1256,6 +1256,14 @@ overlapping coverage raises `ValueError`, uncovered boxes emit a `UserWarning`.
 NASTRAN box ID convention (row-major, matching `mesh_caero1()`):
 `box_id = CAERO1.EID + i_span × n_chord_boxes + j_chord`.
 
+**CAERO1 EID spacing is a hard constraint.** A CAERO1 therefore occupies the
+`NSPAN × NCHORD` consecutive box IDs starting at its EID, so **each CAERO1 must be
+numbered at least `NSPAN × NCHORD` above the previous one**. Overlapping ranges make
+`SPLINE2`/`ATTACH`/`SPLINE0` box ranges, `AELIST` control-surface boxes and `MONPNT1`
+integration resolve to the wrong box — `build_aero_model` raises naming both CAERO1s
+and the required renumbering (defect F1). The shipped sample decks use `EID = 1000 × k`
+in declaration order, which is the recommended convention.
+
 ---
 
 ### SET1 — Structural Grid List

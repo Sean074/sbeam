@@ -51,31 +51,16 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.model.aero import Spline2, Spline0, Attach
 from sbeam.assembly.coord_transform import get_transform
 from sbeam.types import FloatArray
-from sbeam.aero.panel import AeroBox
+from sbeam.aero.panel import AeroBox, build_box_id_map
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def nchord_per_caero(boxes: list[AeroBox]) -> dict[int, int]:
-    """Return {caero_eid: n_chord_boxes} from the meshed box list."""
-    result: dict[int, int] = {}
-    for box in boxes:
-        eid = box.caero_eid
-        result[eid] = max(result.get(eid, 0), box.j_chord + 1)
-    return result
-
-
-def build_id_to_k(boxes: list[AeroBox], nchord: dict[int, int]) -> dict[int, int]:
-    """Return {nastran_box_id: box.k} for all boxes.
-
-    NASTRAN box ID = CAERO1.EID + i_span * nchord + j_chord.
-    """
-    return {
-        box.caero_eid + box.i_span * nchord[box.caero_eid] + box.j_chord: box.k
-        for box in boxes
-    }
+# ``nchord_per_caero`` / ``build_box_id_map`` live in ``aero.panel`` (F1) so that
+# this module, ``integration``, ``sol144`` and ``monitor_points`` share one
+# derivation of the NASTRAN box-ID convention — and one collision check.
 
 
 def _covered_gk_for_range(
@@ -576,6 +561,7 @@ def build_spline_operators(
     bulk: BulkData,
     boxes: list[AeroBox],
     grid_index: dict[int, int],
+    id_to_k: Optional[dict[int, int]] = None,
 ) -> Optional[SplineOperators]:
     """Build g_slope / g_disp / g_load from the BDF spline cards.
 
@@ -618,8 +604,10 @@ def build_spline_operators(
     g_disp  = np.zeros((3 * n_k, n_g))
     covered = [False] * n_k
 
-    nchord  = nchord_per_caero(boxes)
-    id_to_k = build_id_to_k(boxes, nchord)
+    # ``build_aero_model`` passes the map it already built and validated; the
+    # default keeps standalone callers (and tests) working.
+    if id_to_k is None:
+        id_to_k = build_box_id_map(boxes)
 
     for sp in bulk.spline2s.values():
         _build_spline2_block(sp, bulk, boxes, grid_index, id_to_k, covered, g_slope, g_disp)

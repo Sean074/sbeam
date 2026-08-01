@@ -12,12 +12,13 @@ Reference normalwash convention (WT1 and WT2):
   All corrections are relative to the VLM solution at that reference incidence.
 
 Return types:
-  apply_wkk  →  corrected AJJ*  (caller inverts via lstsq)
+  apply_wkk  →  corrected AJJ*  (caller inverts via np.linalg.solve)
   apply_wt2  →  corrected AJJ*⁻¹
   apply_wt1  →  corrected AJJ*⁻¹
 """
 
 import warnings
+from typing import Sequence, Union
 
 import numpy as np
 
@@ -105,11 +106,16 @@ def apply_chordcp(
     return w_solve + n_z * alpha_ref
 
 
-def apply_wkk(ajj: FloatArray, wkk_data: list[float]) -> FloatArray:
+def apply_wkk(
+    ajj: FloatArray, wkk_data: Union[Sequence[float], FloatArray]
+) -> FloatArray:
     """Diagonal multiplicative AIC correction.
 
     Returns AJJ* = diag(wkk_data) @ AJJ.
-    Caller is responsible for inverting AJJ* (e.g. via lstsq).
+    Caller is responsible for inverting AJJ* — ``_assemble_vlm_operator`` uses
+    ``np.linalg.solve``, which requires AJJ* to be non-singular.  A zero entry
+    in ``wkk_data`` zeroes a whole row and makes it singular, so the caller
+    rejects zero weights rather than letting LAPACK raise.
     """
     w = np.asarray(wkk_data, dtype=float)
     return np.diag(w) @ ajj

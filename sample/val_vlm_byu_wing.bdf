@@ -61,11 +61,11 @@ PAERO1, 1
 $
 $ ---- Starboard half: root (0,0,0) c=2.2  ->  tip (0.4, 7.5, 0) c=1.8
 $ CAERO1  EID  PID CP NSPAN NCHORD LSPAN LCHORD IGID
-CAERO1, 100, 1, 0, 12, 6, 0, 0, 1
+CAERO1, 1000, 1, 0, 12, 6, 0, 0, 1
 +, 0.0, 0.0, 0.0, 2.2, 0.4, 7.5, 0.0, 1.8
 $
 $ ---- Port half: root (0,0,0) c=2.2  ->  tip (0.4, -7.5, 0) c=1.8
-CAERO1, 150, 1, 0, 12, 6, 0, 0, 1
+CAERO1, 2000, 1, 0, 12, 6, 0, 0, 1
 +, 0.0, 0.0, 0.0, 2.2, 0.4, -7.5, 0.0, 1.8
 $
 ENDDATA

@@ -73,6 +73,60 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Fixed
 
+**DEF-M silent-input batch — M4, M8, M9 + DEF-R5, DEF-L1, F1 (2026-08-01)**
+
+Six defects, one theme: the deck said something, the program read it, discarded it, and
+reported a converged answer anyway. **Several previously-accepted decks now fail loudly** —
+that is the point of the batch, but it is a breaking change for any deck relying on the
+silent behaviour.
+
+- **F1 — colliding NASTRAN box IDs are now fatal.** A CAERO1 owns the `NSPAN*NCHORD`
+  consecutive box IDs from its EID, so two CAERO1s numbered closer together overlap. The
+  ID formula was reimplemented three times, each last-wins: on a 2×(30×2) case **10 of 120
+  boxes were silently unreachable**, and `MONPNT1` resolves AELIST box IDs through that map
+  with a direct lookup, so a collision dropped a box's load from the monitor total. New
+  `panel.build_box_id_map` is the single derivation and validates once in
+  `build_aero_model`; `AeroModel.require_box_id_to_k()` serves all four consumers.
+  `mirror.py` now clears the box-ID *span*, not just the EIDs, when offsetting a mirrored
+  half-model.
+- **Sample decks renumbered.** Eight decks collided (`airplane_aero`,
+  `cessna210_aero`/`_body`/`_strip`, `val_vlm_dihedral`/`_anhedral`/`_rect_ar8`/`_byu_wing`)
+  and are renumbered to **`EID = 1000 × k`**, with the `SPLINE0` box ranges and the
+  section-data CSV `caero` columns updated in lockstep. Results are **bit-identical** —
+  `caero.eid` is a label that never enters an arithmetic expression, and meshing is in
+  sorted-EID order.
+- **DEF-M8a — W2GJ.** Duplicate cards per CAERO1 (silently shadowed by a bare `break`),
+  short data (silently zero-padded) and long data (silently truncated) are all fatal. A
+  W2GJ naming a CAERO1 not in the model — previously dead data no loop ever visited — is
+  reported by the new `build_wg_all`.
+- **DEF-M8b — WKK.** Was selected by the primary (lowest-EID) CAERO1 and applied to every
+  box: a multi-surface deck hit a raw numpy shape error and a WKK on a non-primary surface
+  was ignored. Now a per-surface scatter with length, duplicate and zero-weight checks (a
+  zero weight makes the corrected AIC singular).
+- **DEF-L1 — STRIPK, body targets, section data.** Duplicate STRIPK per CAERO1 and short
+  STRIPK data (was a silent fall-back to PSTRIP `SLOPE0`) are fatal; `parse_body_targets`
+  NaN-checks the four required TOTAL columns; `build_body_correction` rejects a PSTRIP
+  panel; `validate_section_data` gains an optional `caero_eids` binding and a duplicate-eta
+  check grouped by `(caero, var, mach, a_lo, a_hi)`.
+- **DEF-M9 — an SPC on an RBE2/RBAR/RBE3-dependent DOF is now fatal.** It used to be
+  filtered out of `reduce_to_aset` silently: the constraint never applied, the DOF stayed
+  free to follow its master, and no reaction was reported. The error names every offending
+  grid/DOF and the owning element. Verified safe first — no deck in `sample/` or `tests/`,
+  and no inline fixture, trips it.
+- **DEF-R5 — `sol101` ported onto the shared `reduce_to_aset`.** It hand-rolled the same
+  reduction including its own copy of M9's bug, so the fix now lands once for SOL 101, 103,
+  144 and the maneuver solvers. Verified numerically inert: displacements, reactions and
+  CBAR end forces bit-identical across 31 decks.
+- **DEF-M4 — `LOAD` in a TRIM subcase now raises.** `run_sol144_trim` never read
+  `subcase.load_sid`; the trim RHS has no `f_struct` term, so the request vanished. The
+  error points at `run_aeroelastic_static`, which does support it. Adding `f_struct` to the
+  trim RHS is backlogged separately — it is a capability change with unresolved physics.
+- `AsetReduction.expand_to_g` gains a no-rigid-elements fast path, so the SOL 101 port does
+  not turn a cheap scatter into an O(n²) identity matvec on every static solve.
+- Two stale "inverts via lstsq" docstrings corrected to `np.linalg.solve`.
+- **Retired:** `test_partial_w2gj_data_fills_remaining_zeros`, which pinned the silent
+  zero-pad as intended behaviour.
+
 **Q4 + DEF-M3 — one mass model for `M_ax` (2026-07-31)**
 
 - **`build_inertial_cols` is now `M_ax = −M_gg·Φ_r`**, formed from the same consistent

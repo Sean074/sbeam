@@ -1061,6 +1061,87 @@ the `ATTACH` card; confirm `SPLINE0` boxes correctly contribute zero rows.
 
 ## Resolved defects (conventions)
 
+### F1 + DEF-M8 + DEF-L1 — aerodynamic silent-input batch ✅ COMPLETE (2026-08-01)
+
+**Objective:** Close the aero half of the P3 "user asked, program ignored" batch. Every item
+here had the same shape: the deck said something, the program read it, discarded it, and
+reported a converged answer anyway.
+
+**F1 — colliding NASTRAN box IDs.** A CAERO1 owns the `NSPAN*NCHORD` consecutive box IDs from
+its EID, so two CAERO1s numbered closer than that overlap. The ID formula was reimplemented
+**three times** (`spline.py`, `integration.py:build_djx`, `sol144._compute_hinge_moments`), each
+as a last-wins dict build. Measured on a 2×(30×2) case: **10 of 120 boxes silently unreachable**.
+`monitor_points.py` resolves AELIST box IDs through that map with a direct lookup, so a collision
+drops a box's load from the MONPNT1 total with no warning.
+- **`aero/panel.py`** gains `nchord_per_caero` / `nastran_box_id` / `build_box_id_map` — one
+  derivation, beside `AeroBox`, importing nothing from the aero package so there is no cycle.
+  `nchord` is derived from `j_chord` rather than the card, so the AEFACT/LCHORD path needs no
+  special case and no `BulkData` argument.
+- `AeroModel.box_id_to_k` + `require_box_id_to_k()` (lazy, mirroring the `require_g_*` idiom so
+  the hand-built `AeroModel`s in the tests keep working); `build_aero_model` validates it
+  **immediately after meshing**, before any correction or spline work.
+- All four consumers now share it; `monitor_points` additionally names an unknown AELIST box ID.
+- **`mirror.py`** picked its ID offset from EIDs alone, so it could synthesise a colliding
+  mirrored surface from a deck the user numbered correctly; it now clears the box-ID *span*.
+
+**DEF-M8a / DEF-L1 — W2GJ.** `build_wg` took the first card per CAERO1 via a bare `break`
+(duplicates silently shadowed), zero-padded short data and truncated long data. All three
+verified against the pre-fix code. Now fatal in both directions. New `build_wg_all` replaces the
+caller-side `for eid in sorted(bulk.caero1s)` loop and additionally catches an **orphan** W2GJ —
+a card naming a CAERO1 that is not in the model, which that loop never visited at all.
+
+**DEF-M8b / DEF-L1 — WKK.** Selected by the *primary* (lowest-EID) CAERO1 then applied to every
+box in the operator: a multi-surface deck hit a raw numpy shape error, and a WKK on any
+non-primary surface was ignored. Replaced by a per-surface scatter onto `w = ones(n)` (unlisted
+surfaces are a no-op), with a WT2-style length check, a duplicate-per-CAERO1 check, and a
+zero-weight check — a zero weight zeroes an AJJ* row, which is the bare `LinAlgError` from
+`np.linalg.solve`. The two stale "inverts via lstsq" docstrings now say `np.linalg.solve`.
+
+**DEF-L1 — STRIPK / body targets / section data.** Duplicate STRIPK per CAERO1 (was
+`setdefault`, first wins) and short STRIPK data (was a silent fall-back to PSTRIP `SLOPE0`) are
+fatal. `parse_body_targets` NaN-checks the four *required* TOTAL columns — only the roll columns
+are optional, but all six used to go through a bare `float()`, so a blank cell became a silent
+`nan` in the min-norm solve. `build_body_correction` rejects a PSTRIP panel (mirroring the
+CHORDCP guard in `aero_model`) — the cruciform solve tunes through the shared AIC, which a strip
+panel does not participate in. `validate_section_data` gains an optional `caero_eids` binding and
+a duplicate-`eta` check **grouped by `(caero, var, mach, a_lo, a_hi)`** — deliberately not
+global, since one station legitimately recurs across surfaces, Machs and alpha regions.
+
+**Deck renumbering (data-only, landed first).** Eight shipped decks collided —
+`airplane_aero`, `cessna210_aero`/`_body`/`_strip`, `val_vlm_dihedral`/`_anhedral`/`_rect_ar8`/
+`_byu_wing` — plus three inline test fixtures (`test_section_correction._two_surface_parts` with
+EIDs 1/2, its twin in `test_section_data`, and the 510 panel injected inside 500's range in
+`test_body_correction`). All renumbered to **`EID = 1000 × k` in declaration order**; the largest
+mesh anywhere is 304 boxes, so 1000 spacing is ample. Lockstep: the `SPLINE0` **box ranges** in
+`cessna210_body`/`_strip`, and the `caero` column of both section-data CSVs (the `caero=0` TOTAL
+rows left alone — that column is not an EID on those rows).
+
+**Key decisions:**
+1. **Fatal on any collision, not only on a reached one.** The stricter option: one unconditional
+   invariant, and no latent-defect decks left in the tree. It costs the renumbering above.
+2. **Length mismatches raise in both directions.** This retires
+   `test_partial_w2gj_data_fills_remaining_zeros`, which pinned the zero-pad as intended
+   behaviour — a short W2GJ is almost always a miscounted mesh, and the pad was
+   indistinguishable from a deliberately zero-camber section.
+3. **The box-ID primitive lives in `panel.py`, not `spline.py`.** `panel.py` defines `AeroBox`
+   and imports nothing from the aero package, so all four consumers can reach it.
+
+**Test/Acceptance:** the renumbering commit was kept pure and gated on the full suite passing
+with **no tolerance edits** — `caero.eid` is a label that never enters an arithmetic expression
+in `mesh_caero1`, and `build_aero_model` meshes in sorted-EID order, so renumbering that
+preserves relative order leaves every box's `k` and geometry bit-identical. Verified directly by
+hashing box `k`/corners/colloc/bound/force-point/normal/area/chord/span-fraction for all eight
+decks before and after: **identical**. End-to-end, `ha144a_fullspan_mloads`, `ha144a_body_trim`
+and `val_dihedral_trim` give identical trim variables, peak displacement and CL — every change in
+this batch is a validation gate, not a numerics change. New gates in `test_panel.py`
+(`TestBoxIdMap`), `test_integration.py` (`TestBuildWg`), `test_corrections.py`
+(`TestWkkSurfaceBinding`), `test_strip_body.py`, `test_body_correction.py` and
+`test_section_data.py` (`TestValidationBindings`); every one was confirmed to fail against the
+pre-fix implementation.
+
+---
+
+
 ### W2GJ baseline-normalwash (`wg`) sign convention unified (2026-06-14) ✅ RESOLVED
 
 **Defect:** The W2GJ baseline-normalwash `wg` carried two opposite sign conventions across

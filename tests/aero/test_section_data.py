@@ -6,6 +6,7 @@ Mach/region selection (v1), and the operating-region helper.
 """
 
 import math
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -179,9 +180,9 @@ class TestConversion:
 # --------------------------------------------------------------------------- selection
 
 def _two_surface_parts():
-    wing = Caero1(eid=1, pid=1, cp=0, nspan=4, nchord=3, lspan=0, lchord=0, igid=0,
+    wing = Caero1(eid=1000, pid=1, cp=0, nspan=4, nchord=3, lspan=0, lchord=0, igid=0,
                   p1=(0.0, 0.0, 0.0), x12=1.0, p4=(0.0, 5.0, 0.0), x43=1.0)
-    tail = Caero1(eid=2, pid=1, cp=0, nspan=3, nchord=2, lspan=0, lchord=0, igid=0,
+    tail = Caero1(eid=2000, pid=1, cp=0, nspan=3, nchord=2, lspan=0, lchord=0, igid=0,
                   p1=(4.0, 0.0, 0.0), x12=0.6, p4=(4.0, 2.0, 0.0), x43=0.6)
     bw = mesh_caero1(wing, PAERO, {}, {}, start_k=0)
     bt = mesh_caero1(tail, PAERO, {}, {}, start_k=len(bw))
@@ -201,23 +202,23 @@ class TestMultiSurface:
         from sbeam.aero.vlm import build_ajj
         ajj = build_ajj(boxes)
         df = pd.concat([
-            _const_rows(boxes, 1, 0.10, cm0=-0.03),
-            _const_rows(boxes, 2, 0.09, a0=1.0),
+            _const_rows(boxes, 1000, 0.10, cm0=-0.03),
+            _const_rows(boxes, 2000, 0.09, a0=1.0),
         ], ignore_index=True)
 
         res = sd.build_from_section_data_multi(
             boxes, ajj, df, mach=0.0, incidence_deg=3.0,
             sid_w2gj_base=100, sid_aecorr_base=200)
-        assert set(res.correction.cards) == {1, 2}
-        assert set(res.conditions) == {1, 2}
+        assert set(res.correction.cards) == {1000, 2000}
+        assert set(res.conditions) == {1000, 2000}
         # wing force-slope target reproduced (cn_a·180/π·area per strip)
         from collections import defaultdict
         groups = defaultdict(list)
         for k, b in enumerate(boxes):
-            if b.caero_eid == 1:
+            if b.caero_eid == 1000:
                 groups[b.i_span].append(k)
         area = np.array([sum(boxes[k].area for k in groups[s]) for s in sorted(groups)])
-        d = res.correction.per_surface[1]
+        d = res.correction.per_surface[1000]
         assert d.achieved_f_slope == pytest.approx(0.10 * 180.0 / math.pi * area, rel=1e-8)
 
     def test_region_selected_per_surface_and_skip(self):
@@ -226,16 +227,16 @@ class TestMultiSurface:
         ajj = build_ajj(boxes)
         # Wing has a region covering α=10; tail only covers low α → tail skipped at α=10.
         df = pd.concat([
-            _const_rows(boxes, 1, 0.11, a_lo=-2.0, a_hi=6.0),
-            _const_rows(boxes, 1, 0.06, a_lo=6.0, a_hi=14.0),
-            _const_rows(boxes, 2, 0.09, a_lo=-2.0, a_hi=6.0),
+            _const_rows(boxes, 1000, 0.11, a_lo=-2.0, a_hi=6.0),
+            _const_rows(boxes, 1000, 0.06, a_lo=6.0, a_hi=14.0),
+            _const_rows(boxes, 2000, 0.09, a_lo=-2.0, a_hi=6.0),
         ], ignore_index=True)
         res = sd.build_from_section_data_multi(
             boxes, ajj, df, mach=0.0, incidence_deg=10.0,
             sid_w2gj_base=100, sid_aecorr_base=200)
-        assert set(res.correction.cards) == {1}
-        assert res.conditions[1].a_lo == 6.0 and res.conditions[1].a_hi == 14.0
-        assert any(eid == 2 for eid, _ in res.skipped)
+        assert set(res.correction.cards) == {1000}
+        assert res.conditions[1000].a_lo == 6.0 and res.conditions[1000].a_hi == 14.0
+        assert any(eid == 2000 for eid, _ in res.skipped)
 
 
 class TestSelection:
@@ -271,3 +272,57 @@ class TestSelection:
         assert sd.operating_region(df, CAERO_EID, 0.0, 3.0) == (-2.0, 6.0)
         assert sd.operating_region(df, CAERO_EID, 0.0, 10.0) == (6.0, 14.0)
         assert sd.operating_region(df, CAERO_EID, 0.0, 20.0) is None
+
+
+class TestValidationBindings:
+    """DEF-L1 — the caero column and duplicate eta stations."""
+
+    @staticmethod
+    def _df():
+        return sd.template_dataframe(_rect_wing(4, 3), CAERO_EID)
+
+    def test_unknown_caero_raises_when_the_model_is_supplied(self):
+        """The column used to be only astype(int); a typo matched no boxes."""
+        df = self._df()
+        df["caero"] = 999
+        with pytest.raises(ValueError, match=r"caero \[999\] not in the model"):
+            sd.validate_section_data(df, caero_eids={CAERO_EID})
+
+    def test_known_caero_passes(self):
+        df = self._df()
+        assert len(sd.validate_section_data(df, caero_eids={CAERO_EID})) == len(df)
+
+    def test_caero_unchecked_when_no_model_is_supplied(self):
+        """Callers with no model to check against keep the old lenient behaviour."""
+        df = self._df()
+        df["caero"] = 999
+        assert len(sd.validate_section_data(df)) == len(df)
+
+    def test_duplicate_eta_in_one_curve_raises(self):
+        """A repeated station makes the downstream np.interp non-monotone."""
+        df = self._df()
+        dup = pd.concat([df, df.iloc[[0]]], ignore_index=True)
+        with pytest.raises(ValueError, match=r"duplicate eta=.* each spanwise station"):
+            sd.validate_section_data(dup)
+
+    def test_same_eta_across_regions_is_legal(self):
+        """Grouped, not global: one station legitimately recurs per alpha region."""
+        lo = self._df()
+        hi = self._df().assign(a_lo=6.0, a_hi=14.0)
+        assert len(sd.validate_section_data(pd.concat([lo, hi], ignore_index=True))) \
+            == 2 * len(lo)
+
+    def test_same_eta_across_surfaces_and_machs_is_legal(self):
+        a = self._df()
+        b = self._df().assign(caero=CAERO_EID + 1000)
+        c = self._df().assign(mach=0.6)
+        merged = pd.concat([a, b, c], ignore_index=True)
+        assert len(sd.validate_section_data(merged)) == 3 * len(a)
+
+    def test_shipped_sample_csvs_are_clean_under_the_grouped_rule(self):
+        """The grouped rule must not reject either shipped table."""
+        from sbeam.aero.body_correction import split_total_rows
+        root = Path(__file__).parent.parent.parent / "sample"
+        for name in ("cessna210_section_data.csv", "cessna210_body_section_data.csv"):
+            flying, _totals = split_total_rows(pd.read_csv(root / name))
+            sd.validate_section_data(flying)      # must not raise

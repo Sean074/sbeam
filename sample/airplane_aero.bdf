@@ -154,32 +154,32 @@ $
 $ ---- Wing starboard: 38 spanwise x 8 chordwise = 304 boxes
 $ P1 = root LE (10.0,   0.0, 0.0), X12 = 4.0 m (root chord)
 $ P4 = tip  LE (14.0,  12.0, 0.0), X43 = 1.6 m (tip  chord)
-CAERO1, 100, 10, 0, 38, 8, 0, 0, 1
+CAERO1, 1000, 10, 0, 38, 8, 0, 0, 1
 +, 10.0, 0.0, 0.0, 4.0, 14.0, 12.0, 0.0, 1.6
 $
 $ ---- Wing port: 38 spanwise x 8 chordwise = 304 boxes
 $ P1 = root LE (10.0,   0.0, 0.0), X12 = 4.0 m
 $ P4 = tip  LE (14.0, -12.0, 0.0), X43 = 1.6 m  (tip at negative Y)
-CAERO1, 150, 10, 0, 38, 8, 0, 0, 1
+CAERO1, 2000, 10, 0, 38, 8, 0, 0, 1
 +, 10.0, 0.0, 0.0, 4.0, 14.0, -12.0, 0.0, 1.6
 $
 $ ---- HTP starboard: 31 spanwise x 8 chordwise = 248 boxes
 $ P1 = root LE (30.0, 0.0, 0.0), X12 = 2.0 m
 $ P4 = tip  LE (33.0, 5.0, 0.0), X43 = 1.0 m
-CAERO1, 200, 10, 0, 31, 8, 0, 0, 1
+CAERO1, 3000, 10, 0, 31, 8, 0, 0, 1
 +, 30.0, 0.0, 0.0, 2.0, 33.0, 5.0, 0.0, 1.0
 $
 $ ---- HTP port: 31 spanwise x 8 chordwise = 248 boxes
 $ P1 = root LE (30.0,  0.0, 0.0), X12 = 2.0 m
 $ P4 = tip  LE (33.0, -5.0, 0.0), X43 = 1.0 m
-CAERO1, 250, 10, 0, 31, 8, 0, 0, 1
+CAERO1, 4000, 10, 0, 31, 8, 0, 0, 1
 +, 30.0, 0.0, 0.0, 2.0, 33.0, -5.0, 0.0, 1.0
 $
 $ ---- VTP (full surface; "span" is Z from z=0 to z=5): 16 x 8 = 128 boxes
 $ Lies in the XZ plane (y=0); no symmetry duplication with SYMXZ=0.
 $ P1 = root LE (29.0, 0.0, 0.0), X12 = 4.0 m
 $ P4 = tip  LE (32.5, 0.0, 5.0), X43 = 2.0 m
-CAERO1, 300, 10, 0, 16, 8, 0, 0, 1
+CAERO1, 5000, 10, 0, 16, 8, 0, 0, 1
 +, 29.0, 0.0, 0.0, 4.0, 32.5, 0.0, 5.0, 2.0
 $
 ENDDATA

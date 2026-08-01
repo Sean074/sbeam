@@ -181,3 +181,102 @@ class TestNoSpc:
         ref = _old_compute_aset_data(bulk, gi, spc_sid=None)
         assert red.free_local == ref[3]
         assert red.free_dofs == ref[4]
+
+
+# ---------------------------------------------------------------------------
+# DEF-M9 — an SPC on a rigid-dependent DOF must be fatal, not silently dropped
+# ---------------------------------------------------------------------------
+
+def _rbe2_spc_on_dependent_grid():
+    """2-CBAR cantilever, grid 3 RBE2-slaved to grid 2, SPC1 also fixing grid 3.
+
+    The reproduction from the defect report: this used to solve with
+    u_z(3) following its master and zero warnings — the SPC never applied and
+    no reaction reported.
+    """
+    from sbeam.model.element import Rbe2
+    bulk = BulkData()
+    for gid, x in ((1, 0.0), (2, 1.0), (3, 2.0)):
+        bulk.grids[gid] = Grid(gid=gid, x=x, y=0.0, z=0.0)
+    bulk.rbe2s[100] = Rbe2(eid=100, gn=2, cm="123456", gm=[3])
+    bulk.spc1s[5] = [Spc1(sid=5, c="123456", grids=[3])]
+    return bulk
+
+
+class TestSpcOnDependentDof:
+
+    def test_spc_on_a_dependent_dof_raises(self):
+        bulk = _rbe2_spc_on_dependent_grid()
+        with pytest.raises(ValueError, match=r"SPC set 5 constrains 6 DOF\(s\) already"):
+            reduce_to_aset(bulk, _grid_index(bulk), 5)
+
+    def test_error_names_the_grid_dof_and_owning_element(self):
+        bulk = _rbe2_spc_on_dependent_grid()
+        with pytest.raises(ValueError) as exc:
+            reduce_to_aset(bulk, _grid_index(bulk), 5)
+        msg = str(exc.value)
+        assert "GRID 3 DOF 1" in msg and "GRID 3 DOF 6" in msg
+        assert "RBE2 100" in msg and "GM 3" in msg
+        assert "Move the SPC to the independent grid" in msg
+
+    def test_rbar_dependent_dof_names_the_rbar(self):
+        from sbeam.model.element import Rbar
+        bulk = BulkData()
+        for gid, x in ((1, 0.0), (2, 1.0)):
+            bulk.grids[gid] = Grid(gid=gid, x=x, y=0.0, z=0.0)
+        bulk.rbars[7] = Rbar(eid=7, ga=1, gb=2)
+        bulk.spc1s[3] = [Spc1(sid=3, c="3", grids=[2])]
+        with pytest.raises(ValueError, match=r"RBAR 7 \(GB 2, C3\)"):
+            reduce_to_aset(bulk, _grid_index(bulk), 3)
+
+    def test_rbe3_dependent_dof_names_the_rbe3(self):
+        bulk = _rbe3_spc_bulk()
+        bulk.spc1s[1] = [Spc1(sid=1, c="3", grids=[3])]     # grid 3 is the REFGRID
+        with pytest.raises(ValueError, match=r"RBE3 10 \(REFGRID 3, C3\)"):
+            reduce_to_aset(bulk, _grid_index(bulk), 1)
+
+    def test_spc_on_the_independent_grid_is_unaffected(self):
+        """The legitimate arrangement must keep working untouched."""
+        bulk = _rbe3_spc_bulk()
+        red = reduce_to_aset(bulk, _grid_index(bulk), 1)
+        assert len(red.free_dofs) == 6           # grid 2 free; grid 1 SPC'd; grid 3 dependent
+
+    def test_no_spc_set_is_unaffected(self):
+        bulk = _rbe2_spc_on_dependent_grid()
+        assert reduce_to_aset(bulk, _grid_index(bulk), None) is not None
+
+
+class TestDepOwnerMapAgreesWithDepDofs:
+    """The owner map and dep_dofs come from one derivation — pin them together.
+
+    ``build_rbe3_transformation``'s ``dep_dofs`` is literally ``sorted()`` of the
+    owner map's keys.  If that ever stops being true the error message would name
+    the wrong element, or the check would miss a DOF.
+    """
+
+    @pytest.mark.parametrize("factory", [
+        _rbe3_spc_bulk, _rbe2_spc_on_dependent_grid,
+    ])
+    def test_keys_match_dep_dofs(self, factory):
+        from sbeam.assembly.rbe3 import dep_dof_owners
+        bulk = factory()
+        gi = _grid_index(bulk)
+        _T, dep_dofs, _red = build_rbe3_transformation(bulk, gi)
+        assert sorted(dep_dof_owners(bulk, gi)) == dep_dofs
+
+    def test_rbar_keys_match_dep_dofs(self):
+        from sbeam.assembly.rbe3 import dep_dof_owners
+        from sbeam.model.element import Rbar
+        bulk = BulkData()
+        for gid, x in ((1, 0.0), (2, 1.0)):
+            bulk.grids[gid] = Grid(gid=gid, x=x, y=0.0, z=0.0)
+        bulk.rbars[7] = Rbar(eid=7, ga=1, gb=2)
+        gi = _grid_index(bulk)
+        _T, dep_dofs, _red = build_rbe3_transformation(bulk, gi)
+        assert sorted(dep_dof_owners(bulk, gi)) == dep_dofs
+        assert dep_dofs, "fixture must actually produce dependent DOFs"
+
+    def test_no_rigid_elements_gives_an_empty_map(self):
+        from sbeam.assembly.rbe3 import dep_dof_owners
+        bulk = _plain_spc_bulk()
+        assert dep_dof_owners(bulk, _grid_index(bulk)) == {}

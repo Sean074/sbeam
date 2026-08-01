@@ -36,6 +36,71 @@ class AeroBox:
                               # by build_aero_model from the CAERO1 PID → PSTRIP)
 
 
+# ---------------------------------------------------------------------------
+# NASTRAN box identifiers
+# ---------------------------------------------------------------------------
+#
+# THE single derivation of the NASTRAN box-ID convention.  It lives here, beside
+# ``AeroBox``, because every consumer already imports this module and it imports
+# nothing from the aero package — so there is no cycle to break.  Before this was
+# unified the same formula was reimplemented three times (``spline.py``,
+# ``integration.py``, ``sol144._compute_hinge_moments``) and each copy silently
+# dropped a box on an ID collision (defect F1).
+
+def nchord_per_caero(boxes: list[AeroBox]) -> dict[int, int]:
+    """Return {caero_eid: n_chord_boxes} from the meshed box list.
+
+    Derived from the boxes rather than ``Caero1.nchord`` so the AEFACT/LCHORD
+    path needs no special case and no ``BulkData`` argument.
+    """
+    result: dict[int, int] = {}
+    for box in boxes:
+        result[box.caero_eid] = max(result.get(box.caero_eid, 0), box.j_chord + 1)
+    return result
+
+
+def nastran_box_id(box: AeroBox, nchord: int) -> int:
+    """NASTRAN aero box ID = CAERO1.EID + i_span * NCHORD + j_chord."""
+    return box.caero_eid + box.i_span * nchord + box.j_chord
+
+
+def build_box_id_map(boxes: list[AeroBox]) -> dict[int, int]:
+    """Return {nastran_box_id: box.k}, fatal on any ID collision.
+
+    Because a CAERO1 consumes the ``NSPAN * NCHORD`` consecutive IDs starting at
+    its EID, two CAERO1s numbered closer together than that overlap.  The map is
+    what ``SPLINE2``/``ATTACH`` box ranges, ``AELIST`` control-surface boxes and
+    ``MONPNT1`` integrate through, so an overlap silently attributes one box's
+    load to another — or drops it entirely.  Detect it once, here, rather than
+    letting each consumer resolve a wrong ``k``.
+
+    Raises:
+        ValueError: naming both CAERO1s, the first colliding ID and the remedy.
+    """
+    nchord = nchord_per_caero(boxes)
+    id_to_k: dict[int, int] = {}
+    owner: dict[int, AeroBox] = {}
+    for box in boxes:
+        bid = nastran_box_id(box, nchord[box.caero_eid])
+        prev = owner.get(bid)
+        if prev is not None and prev.caero_eid != box.caero_eid:
+            first, second = sorted((prev.caero_eid, box.caero_eid))
+            n_first = sum(1 for b in boxes if b.caero_eid == first)
+            span = f"{first}..{first + n_first - 1}"
+            raise ValueError(
+                f"CAERO1 {second}: NASTRAN box ID {bid} collides with CAERO1 "
+                f"{first}, which occupies IDs {span} ({n_first} boxes).  Box IDs "
+                "are EID + i_span*NCHORD + j_chord, so each CAERO1 must be "
+                "numbered at least NSPAN*NCHORD above the previous one — "
+                f"renumber CAERO1 {second} to {first + n_first} or higher and "
+                "shift its SPLINE/ATTACH/AELIST/MONPNT box ranges by the same "
+                "delta."
+            )
+        owner[bid] = box
+        id_to_k[bid] = box.k
+    return id_to_k
+
+
 def cosine_chord_fractions(nchord: int) -> FloatArray:
     """LE-concentrated half-cosine chordwise station fractions ξ ∈ [0, 1].
 

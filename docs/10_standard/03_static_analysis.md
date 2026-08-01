@@ -109,6 +109,17 @@ SPC constraints are applied by the **penalty / elimination method** (elimination
 4. Solve: `K_free @ u_free = f_free`
 5. Reconstruct full `u_global` by inserting zeros at constrained DOF positions, then applying `u_full = T @ u_red`.
 
+Since DEF-R5 all of steps 1–3 and 5 go through the **shared** reduction,
+`assembly/reduction.py:reduce_to_aset` — the same object SOL 103, SOL 144 and the
+maneuver solvers use (`red.reduce_matrix` / `reduce_vector` / `expand_to_g`). SOL 101
+previously hand-rolled it, which meant a second copy of every fix. `run_sol101` keeps the
+*unreduced* sparse `K`, the unreduced load vector and the raw SPC DOF list, because
+`recover_reactions` works in g-set space.
+
+**An SPC on an RBE2/RBAR/RBE3-dependent DOF raises** (DEF-M9) — that DOF has already been
+eliminated, so there is no equation left to constrain. It used to be dropped silently, and
+the model solved with the DOF free to follow its master and no reaction reported.
+
 ---
 
 ## Pin Releases (PA, PB)

@@ -20,7 +20,7 @@ import numpy as np
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.assembly.stiffness import get_spc_dofs
-from sbeam.assembly.rbe3 import build_rbe3_transformation
+from sbeam.assembly.rbe3 import build_rbe3_transformation, dep_dof_owners
 from sbeam.types import FloatArray, SparseMatrix
 
 
@@ -90,7 +90,18 @@ class AsetReduction:
         return f_red[self.free_local]
 
     def expand_to_g(self, u_a: FloatArray) -> FloatArray:
-        """Expand an a-set displacement vector to the full g-set (see expand_to_g)."""
+        """Expand an a-set displacement vector to the full g-set (see expand_to_g).
+
+        With no rigid elements ``T`` is a dense identity, so the general path
+        would spend an O(n_g²) matvec reproducing a plain scatter.  Skipping it
+        is exact, not an approximation — multiplying by an exact identity is
+        exact — and it keeps SOL 101's per-solve cost where it was before the
+        solver moved onto this shared reduction.
+        """
+        if not self.dep_dofs:
+            u_g = np.zeros(self.n_red)
+            u_g[self.free_local] = u_a
+            return u_g
         return expand_to_g(u_a, self.T, self.free_local, self.n_red)
 
 
@@ -108,6 +119,13 @@ def reduce_to_aset(
         AsetReduction with the transformation and index sets; use its
         reduce_matrix / reduce_rect / reduce_vector / expand_to_g methods to
         move quantities between the g-set and the a-set.
+
+    Raises:
+        ValueError: if an SPC constrains a DOF that a rigid element has already
+            eliminated (DEF-M9).  Such a DOF has no equation left to constrain,
+            so the constraint used to be filtered out silently — the model then
+            solved with the DOF free to follow its master and no reaction
+            reported.  NASTRAN fatals on the same m-set/s-set overlap.
     """
     n_g = 6 * len(grid_index)
     T, dep_dofs, red_dofs = build_rbe3_transformation(bulk, grid_index)
@@ -115,7 +133,24 @@ def reduce_to_aset(
         dep_set = set(dep_dofs)
         red_map = {g: i for i, g in enumerate(red_dofs)}
         spc_dofs_full = get_spc_dofs(bulk, spc_sid, grid_index)
-        spc_dofs_local = [red_map[d] for d in spc_dofs_full if d not in dep_set]
+
+        dropped = sorted(set(spc_dofs_full) & dep_set)
+        if dropped:
+            owners = dep_dof_owners(bulk, grid_index)     # error path only
+            gid_of = {i: gid for gid, i in grid_index.items()}
+            detail = "; ".join(
+                f"GRID {gid_of[d // 6]} DOF {d % 6 + 1} is dependent on "
+                f"{owners.get(d, 'a rigid element')}"
+                for d in dropped
+            )
+            raise ValueError(
+                f"SPC set {spc_sid} constrains {len(dropped)} DOF(s) already "
+                f"eliminated by a rigid element, so the constraint cannot be "
+                f"applied: {detail}.  Move the SPC to the independent grid, or "
+                "remove that DOF from the rigid element."
+            )
+
+        spc_dofs_local = [red_map[d] for d in spc_dofs_full]
     else:
         red_dofs = list(range(n_g))
         spc_dofs_full = get_spc_dofs(bulk, spc_sid, grid_index)

@@ -178,6 +178,12 @@ def parse_body_targets(
     ``cn_a``→Cn_β, ``a0``→Cn0; optional roll columns ``cl_a``→Cl_β, ``cl0``→Cl0 (default
     0 when absent).  Selects the row at ``mach`` (exact within ``mach_tol``).  Returns
     ``None`` if no TOTAL row matches.
+
+    Raises:
+        ValueError: if a *required* TOTAL column is blank/NaN.  The optional roll
+            columns degrade to 0.0 by design; the required four used to go
+            through a bare ``float()``, so a blank cell became a silent ``nan``
+            that propagated into the min-norm solve (DEF-L1).
     """
     _flying, totals = split_total_rows(df)
     if totals.empty:
@@ -191,9 +197,19 @@ def parse_body_targets(
         v = r.get(col)
         return 0.0 if v is None or (isinstance(v, float) and np.isnan(v)) else float(v)
 
+    def _req(col: str) -> float:
+        v = r.get(col)
+        if v is None or (isinstance(v, float) and np.isnan(v)) or pd.isna(v):
+            raise ValueError(
+                f"body targets: TOTAL row at mach={mach:g} has a blank/non-numeric "
+                f"{col!r}.  cm_a, cm0, cn_a and a0 are required (only the roll "
+                "columns cl_a/cl0 default to 0)."
+            )
+        return float(v)
+
     return BodyTargets(
-        cm_alpha=float(r["cm_a"]), cm0=float(r["cm0"]),
-        cn_beta=float(r["cn_a"]), cn0=float(r["a0"]),
+        cm_alpha=_req("cm_a"), cm0=_req("cm0"),
+        cn_beta=_req("cn_a"), cn0=_req("a0"),
         cl_beta=_opt("cl_a"), cl0=_opt("cl0"),
     )
 
@@ -335,6 +351,16 @@ def build_body_correction(
     panel_eids = horiz_eids + vert_eids
     panel_idx = {}
     for eid in panel_eids:
+        # The cruciform builder tunes VLM body panels through the shared AIC.  A
+        # PSTRIP panel carries no AIC coupling at all, so it would be accepted
+        # here and then never actually corrected — use build_strip_body_correction
+        # for those (DEF-L1; mirrors the CHORDCP guard in aero_model).
+        if is_strip_caero(bulk, eid):
+            raise ValueError(
+                f"build_body_correction: CAERO1 {eid} is a PSTRIP body panel; "
+                "the cruciform builder corrects VLM body panels only — use "
+                "build_strip_body_correction for decoupled strip panels."
+            )
         idx = np.array([k for k, b in enumerate(boxes) if b.caero_eid == eid])
         if idx.size == 0:
             raise ValueError(f"build_body_correction: CAERO1 {eid} has no boxes")

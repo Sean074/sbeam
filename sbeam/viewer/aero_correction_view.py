@@ -433,7 +433,10 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
                 # A TOTAL block (body-panel targets) is split off before validation,
                 # which only accepts ALPHA/BETA section rows.
                 flying_df, _totals = bc.split_total_rows(raw)
-                df = sd.validate_section_data(flying_df)
+                # Bind the caero column to the deck's CAERO1s so a typo'd EID is
+                # reported here rather than silently matching no boxes (DEF-L1).
+                df = sd.validate_section_data(
+                    flying_df, caero_eids=set(bulk.caero1s))
                 st.session_state.aero_corr_df = df
                 st.session_state.aero_corr_raw_df = raw
                 st.session_state.aero_corr_csv_name = up.name

@@ -57,11 +57,11 @@ $ converged chordwise load/pressure distribution and a stable pitching moment.
 $
 $ ---- Starboard half: y = 0 -> 4, 20 spanwise x 8 chordwise = 160 boxes
 $ P1 = root LE (0,0,0)  X12 = 1.0   P4 = tip LE (0,4,0)  X43 = 1.0
-CAERO1, 100, 1, 0, 20, 8, 0, 0, 1
+CAERO1, 1000, 1, 0, 20, 8, 0, 0, 1
 +, 0.0, 0.0, 0.0, 1.0, 0.0, 4.0, 0.0, 1.0
 $
 $ ---- Port half: y = 0 -> -4, 20 spanwise x 8 chordwise = 160 boxes
-CAERO1, 150, 1, 0, 20, 8, 0, 0, 1
+CAERO1, 2000, 1, 0, 20, 8, 0, 0, 1
 +, 0.0, 0.0, 0.0, 1.0, 0.0, -4.0, 0.0, 1.0
 $
 ENDDATA

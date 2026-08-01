@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from sbeam.parser.bdf_reader import parse_bulk_data
-from sbeam.aero.panel import mesh_caero1
+from sbeam.aero.panel import mesh_caero1, build_box_id_map
 from sbeam.results.monitor_points import integrate_monpnt1, integrate_monpnt3
 
 
@@ -35,7 +35,10 @@ def wing_boxes(wing_bulk):
     caero = wing_bulk.caero1s[1001]
     paero = wing_bulk.paero1s[1]
     boxes = mesh_caero1(caero, paero, wing_bulk.aefacts, wing_bulk.cord2rs)
-    return types.SimpleNamespace(boxes=boxes)
+    # Stands in for an AeroModel: integrate_monpnt1 resolves AELIST box IDs
+    # through the shared, collision-checked map (F1).
+    return types.SimpleNamespace(
+        boxes=boxes, require_box_id_to_k=lambda: build_box_id_map(boxes))
 
 
 def test_monpnt1_uniform_fz_sum(wing_bulk, wing_boxes):

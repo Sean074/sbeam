@@ -38,7 +38,7 @@ _ROOT = Path(__file__).parent.parent.parent / "sample"
 BDF_PATH = _ROOT / "cessna210_body.bdf"
 CSV_PATH = _ROOT / "cessna210_body_section_data.csv"
 
-_HORIZ, _VERT = 400, 500
+_HORIZ, _VERT = 6000, 7000
 
 
 @pytest.fixture(scope="module")
@@ -188,16 +188,16 @@ def test_eid_int_and_singleton_list_equivalent(flying):
 def test_multi_surface_body_plane():
     """A body plane may be split across several CAERO1s; all are tuned by one joint solve
     and each emits its own card pair.  Here the vertical body is two panels (the deck's
-    500 plus a ventral piece 510)."""
+    7000 plus a ventral piece 8000)."""
     _cc, bulk = parse_bdf(str(BDF_PATH))
-    c500 = bulk.caero1s[500]
-    # second vertical body panel (ventral, below 500 — distinct z band, clear of the tail)
-    bulk.caero1s[510] = dataclasses.replace(
-        c500, eid=510, nspan=4, nchord=8,
+    c500 = bulk.caero1s[7000]
+    # second vertical body panel (ventral, below 7000 — distinct z band, clear of the tail)
+    bulk.caero1s[8000] = dataclasses.replace(
+        c500, eid=8000, nspan=4, nchord=8,
         p1=(0.30, 0.0, -0.35), x12=4.70, p4=(0.30, 0.0, -0.05), x43=4.70)
     model = build_aero_model(bulk)
     # vertical body is now two panels (both +Y), horizontal one panel (+Z)
-    nv510 = [b for b in model.boxes if b.caero_eid == 510]
+    nv510 = [b for b in model.boxes if b.caero_eid == 8000]
     assert len(nv510) == 32 and abs(np.mean([b.normal[1] for b in nv510])) > 0.99
 
     df = pd.read_csv(CSV_PATH)
@@ -217,13 +217,54 @@ def test_multi_surface_body_plane():
     tgt = BodyTargets(cm_alpha=base.cm_alpha + 0.3, cm0=base.cm0 - 0.02,
                       cn_beta=base.cn_beta - 0.03, cn0=base.cn0 + 0.002,
                       cl_beta=base.cl_beta - 0.005, cl0=base.cl0)
-    out = build_body_correction(bulk_f, horiz_eid=400, vert_eid=[500, 510],
+    out = build_body_correction(bulk_f, horiz_eid=6000, vert_eid=[7000, 8000],
                                 targets=tgt, aero=aero_f, mach=0.0)
     assert out.converged
-    assert sorted(out.cards) == [400, 500, 510]            # one card pair per panel
-    w2v0, _ = out.cards[500]
-    w2v1, _ = out.cards[510]
+    assert sorted(out.cards) == [6000, 7000, 8000]            # one card pair per panel
+    w2v0, _ = out.cards[7000]
+    w2v1, _ = out.cards[8000]
     assert w2v0.sid != w2v1.sid                            # distinct SIDs per panel
     for k in ("cm_alpha", "cm0", "cn_beta", "cn0", "cl_beta", "cl0"):
         assert getattr(out.achieved, k) == pytest.approx(getattr(tgt, k), abs=1e-6)
     assert out.ratio_max < RATIO_WARN
+
+
+# --------------------------------------------------------------------------- #
+# DEF-L1 — required TOTAL columns and cruciform/strip panel binding
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("col", ["cm_a", "cm0", "cn_a", "a0"])
+def test_blank_required_total_column_raises(col):
+    """A blank required column used to become a silent NaN.
+
+    Only the roll columns (cl_a/cl0) are optional; the other four went through a
+    bare float(), so a blank cell produced BodyTargets(cm_alpha=nan, ...) that
+    propagated all the way into the min-norm solve without a word.
+    """
+    df = pd.read_csv(CSV_PATH)
+    totals = df["var"].astype(str).str.upper() == "TOTAL"
+    df.loc[totals, col] = np.nan
+    with pytest.raises(ValueError, match=rf"blank/non-numeric '{col}'"):
+        parse_body_targets(df, mach=0.0)
+
+
+def test_blank_optional_roll_column_still_defaults_to_zero():
+    """The documented optional-column behaviour must be preserved."""
+    df = pd.read_csv(CSV_PATH)
+    totals = df["var"].astype(str).str.upper() == "TOTAL"
+    df.loc[totals, "cl_a"] = np.nan
+    df.loc[totals, "cl0"] = np.nan
+    tgt = parse_body_targets(df, mach=0.0)
+    assert tgt is not None
+    assert tgt.cl_beta == 0.0 and tgt.cl0 == 0.0
+
+
+def test_cruciform_builder_rejects_a_strip_panel():
+    """A PSTRIP panel has no AIC coupling, so the cruciform solve cannot tune it.
+
+    It used to be accepted and then never actually corrected.
+    """
+    _cc, bulk = parse_bdf(str(_ROOT / "cessna210_strip.bdf"))
+    with pytest.raises(ValueError, match=r"CAERO1 6000 is a PSTRIP body panel"):
+        build_body_correction(
+            bulk, horiz_eid=6000, targets=BodyTargets(cm_alpha=0.1))

@@ -40,7 +40,7 @@ exact match against the table (no Mach interpolation in v1).
 
 import math
 from dataclasses import dataclass
-from typing import Any, Iterable, Optional, Tuple, cast
+from typing import Any, Collection, Iterable, Optional, Tuple, cast
 
 import numpy as np
 import pandas as pd
@@ -101,8 +101,24 @@ def template_dataframe(boxes: list[AeroBox], caero_eid: int, mach: float = 0.0,
     return pd.DataFrame(rows, columns=pd.Index(COLUMNS))
 
 
-def validate_section_data(df: pd.DataFrame) -> pd.DataFrame:
-    """Return a cleaned, type-coerced copy; raise ValueError on a malformed table."""
+def validate_section_data(
+    df: pd.DataFrame, caero_eids: Optional[Collection[int]] = None,
+) -> pd.DataFrame:
+    """Return a cleaned, type-coerced copy; raise ValueError on a malformed table.
+
+    Args:
+        df:         raw section-data table.
+        caero_eids: when given, the CAERO1 EIDs present in the model.  A ``caero``
+                    value outside this set is rejected — previously the column was
+                    only ``astype(int)``-coerced, so a typo'd EID was accepted here
+                    and silently matched no boxes downstream (DEF-L1).  Omitted by
+                    the callers that have no model to check against.
+
+    Raises:
+        ValueError: on a missing column, a non-numeric value, an unknown ``var``,
+            an inverted ``a_lo``/``a_hi``, an out-of-range ``eta``, an unknown
+            ``caero``, or a duplicate ``eta`` within one interpolation group.
+    """
     missing = [c for c in COLUMNS if c not in df.columns]
     if missing:
         raise ValueError(f"section data: missing column(s) {missing}; expected {COLUMNS}")
@@ -122,6 +138,34 @@ def validate_section_data(df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(f"section data: a_hi must exceed a_lo in row(s) {bad}")
     if ((out["eta"] < -1e-9) | (out["eta"] > 1 + 1e-9)).any():
         raise ValueError("section data: eta must lie in [0, 1]")
+
+    # Ordered AFTER the var check so a TOTAL-row frame (caero=0) reports the
+    # informative "var must be ALPHA or BETA" first rather than an unknown-CAERO.
+    if caero_eids is not None:
+        known = set(caero_eids)
+        unknown = sorted(set(out["caero"]) - known)
+        if unknown:
+            raise ValueError(
+                f"section data: caero {unknown} not in the model "
+                f"(CAERO1 EIDs present: {sorted(known)})"
+            )
+
+    # Duplicate eta within one interpolation group.  Grouped by the keys that
+    # select a curve — a duplicate station makes the downstream np.interp
+    # non-monotone, which silently returns a wrong interpolated value rather
+    # than failing.  Deliberately NOT a global check: the same eta legitimately
+    # recurs across surfaces, Machs and alpha regions.
+    gcols = ["caero", "var", "mach", "a_lo", "a_hi"]
+    dup = out[out.duplicated(subset=gcols + ["eta"], keep=False)]
+    if not dup.empty:
+        first = dup.iloc[0]
+        raise ValueError(
+            f"section data: duplicate eta={first['eta']:g} for caero "
+            f"{int(first['caero'])} var {first['var']} mach {first['mach']:g} "
+            f"region [{first['a_lo']:g}, {first['a_hi']:g}] "
+            f"(rows {dup.index.tolist()}); each spanwise station must appear once "
+            "per curve."
+        )
     return out
 
 

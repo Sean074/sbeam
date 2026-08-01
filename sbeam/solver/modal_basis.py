@@ -223,7 +223,8 @@ def assemble_aset_operators(
         suport_pos = np.zeros(3)
         has_rcsid = False
 
-    D_jx = build_djx(aero.boxes, all_labels, bulk)                  # (n_box, n_lab)
+    D_jx = build_djx(aero.boxes, all_labels, bulk,
+                     id_to_k=aero.require_box_id_to_k())          # (n_box, n_lab)
     Q_ax_g = aero.require_g_load().T @ aero.skj @ aero.ajj_inv_corr @ D_jx    # (n_g, n_lab)
 
     red = reduce_to_aset(bulk, grid_index, subcase.spc_sid)

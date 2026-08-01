@@ -27,6 +27,14 @@ where:
 Step 50 solves this equation without trim variables (Steps 51–52 add trim card
 parsing and the full SOL 144 solve with `Q_ax·δ_x`).
 
+> **`LOAD` applies to the restrained static path only.** `run_aeroelastic_static`
+> combines a `LOAD` set with the aero load as above. The **trim** RHS
+> (`run_sol144_trim`) is aero + inertia only — there is no `f_struct` term — so a
+> subcase carrying both `TRIM` and `LOAD` now **raises** rather than silently
+> ignoring the load request (DEF-M4). Adding `f_struct` to the trim RHS is a
+> capability change, not a defect fix: on a free-flight SUPORT trim it enters the
+> force balance and changes what `maneuver_closure` means. Backlogged separately.
+
 ---
 
 ### `coupling.py` — Phase C Coupling Functions
@@ -141,6 +149,14 @@ the backlog).
 `sol144._compute_aset_data` (a tuple-returning wrapper around `reduce_to_aset`) was
 removed once its last caller went through `reduce_to_aset` directly; call
 `reduction.reduce_to_aset` / `reduction.expand_to_g` from new code.
+
+**SPC on a rigid-dependent DOF is fatal (DEF-M9).** A DOF eliminated by an
+RBE2/RBAR/RBE3 has no equation left to constrain, so `reduce_to_aset` raises naming the
+grid, the DOF and the owning element. It used to filter such DOFs out silently: the
+constraint never applied, the DOF stayed free to follow its master, and no reaction was
+reported. NASTRAN fatals on the same m-set/s-set overlap. Since DEF-R5, **SOL 101 also
+goes through `reduce_to_aset`** (it previously hand-rolled the reduction, bug included),
+so all four solvers inherit the one check.
 
 #### Mode-acceleration recovery
 
@@ -649,7 +665,8 @@ MONPNT3, NAME, LABEL, AXES, COMP, CP, X, Y, Z          $ aero + inertia + reacti
 ### Integration semantics (`sbeam/results/monitor_points.py`)
 
 - **`MONPNT1` (aero-only):** `F = Σ_k box_forces[k]`, `M = Σ_k (force_point[k] − ref) × box_forces[k]`
-  over the AELIST boxes (NASTRAN box ID → global box index via the spline `build_id_to_k` map).
+  over the AELIST boxes (NASTRAN box ID → global box index via the shared,
+  collision-checked `panel.build_box_id_map`, reached as `aero.require_box_id_to_k()`).
   `box_forces` is the trimmed per-box physical force already on `Sol144TrimResult`.
 - **`MONPNT3` (aero + inertia + reaction):** per SET1 grid, sum the 6-DOF block from
   `grid_loads` (aero, splined to grids — inherits RBE3/RBAR pass-through), `inertial_loads`

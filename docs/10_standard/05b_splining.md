@@ -131,6 +131,13 @@ field is DTHY per the MSC card. See `docs/40_history/00_completed_development.md
 box_id = CAERO1.EID + i_span × n_chord_boxes + j_chord
 ```
 
+Single owner: `panel.nchord_per_caero` / `nastran_box_id` / `build_box_id_map`. The last
+builds the `{box ID: k}` map every consumer uses (spline coverage, `build_djx` AESURF
+columns, hinge moments, `MONPNT1`) and **raises on any ID collision** — a CAERO1 spans
+`NSPAN × NCHORD` consecutive IDs from its EID, so surfaces numbered closer than that
+overlap and one box's load is attributed to another. `build_aero_model` validates it
+immediately after meshing; `AeroModel.require_box_id_to_k()` hands out the validated map.
+
 ### CID-aware DOF projection
 
 All structural DOFs are in global CID 0. The spline CID provides the projections:

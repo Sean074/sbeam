@@ -8,7 +8,9 @@ import pytest
 import numpy as np
 
 from sbeam.model.aero import Caero1, Paero1, Aefact
-from sbeam.aero.panel import mesh_caero1
+from sbeam.aero.panel import (
+    mesh_caero1, build_box_id_map, nchord_per_caero, nastran_box_id,
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixtures
@@ -271,3 +273,65 @@ class TestCosineChordFractions:
         chords = [float(np.linalg.norm(b.corners[3] - b.corners[0])) for b in boxes]
         assert chords[0] < chords[-1]
         assert sum(b.area for b in boxes) == pytest.approx(8.0)
+
+
+class TestBoxIdMap:
+    """F1 — the NASTRAN box-ID space must be collision-free.
+
+    A CAERO1 owns the ``NSPAN * NCHORD`` consecutive IDs starting at its EID, so
+    two CAERO1s numbered closer together than that silently overlap.  Before this
+    check the map was a dict comprehension in three places and the last box
+    written won, so a SPLINE2 range / AELIST / MONPNT1 lookup resolved to the
+    wrong box — or dropped one entirely.
+    """
+
+    @staticmethod
+    def _mesh(eid, nspan, nchord, y0=0.0, start_k=0):
+        c = Caero1(eid=eid, pid=1, cp=0, nspan=nspan, nchord=nchord,
+                   lspan=0, lchord=0, igid=0,
+                   p1=(0.0, y0, 0.0), x12=1.0, p4=(0.0, y0 + 2.0, 0.0), x43=1.0)
+        return mesh_caero1(c, Paero1(pid=1), {}, {}, start_k=start_k)
+
+    def test_ids_follow_the_nastran_formula(self):
+        boxes = self._mesh(100, 3, 2)
+        nchord = nchord_per_caero(boxes)
+        assert nchord == {100: 2}
+        assert [nastran_box_id(b, nchord[b.caero_eid]) for b in boxes] == \
+            [100, 101, 102, 103, 104, 105]
+        # EID + i_span*NCHORD + j_chord, row-major (span slowest, chord fastest)
+        assert build_box_id_map(boxes) == {
+            100: 0, 101: 1, 102: 2, 103: 3, 104: 4, 105: 5}
+
+    def test_nchord_derived_from_boxes_not_the_card(self):
+        """Derived from j_chord so the AEFACT/LCHORD path needs no special case."""
+        c = Caero1(eid=100, pid=1, cp=0, nspan=2, nchord=0, lspan=0, lchord=7,
+                   igid=0, p1=(0.0, 0.0, 0.0), x12=1.0, p4=(0.0, 2.0, 0.0), x43=1.0)
+        boxes = mesh_caero1(c, Paero1(pid=1), {7: Aefact(sid=7, data=[0.0, 0.5, 1.0])},
+                            {}, start_k=0)
+        assert nchord_per_caero(boxes) == {100: 2}
+        assert set(build_box_id_map(boxes)) == {100, 101, 102, 103}
+
+    def test_well_spaced_surfaces_are_accepted(self):
+        boxes = self._mesh(100, 3, 2) + self._mesh(1000, 3, 2, y0=5.0, start_k=6)
+        m = build_box_id_map(boxes)
+        assert len(m) == 12 and m[100] == 0 and m[1000] == 6
+
+    def test_overlapping_surfaces_are_fatal(self):
+        """EID 150 sits inside 100's 100..159 range → must raise, not overwrite."""
+        boxes = self._mesh(100, 30, 2) + self._mesh(150, 30, 2, y0=5.0, start_k=60)
+        with pytest.raises(ValueError, match=r"CAERO1 150: NASTRAN box ID 150 collides"):
+            build_box_id_map(boxes)
+
+    def test_error_names_both_surfaces_and_the_remedy(self):
+        boxes = self._mesh(100, 30, 2) + self._mesh(150, 30, 2, y0=5.0, start_k=60)
+        with pytest.raises(ValueError) as exc:
+            build_box_id_map(boxes)
+        msg = str(exc.value)
+        assert "CAERO1 150" in msg and "CAERO1 100" in msg
+        assert "100..159" in msg and "60 boxes" in msg
+        assert "renumber CAERO1 150 to 160 or higher" in msg
+
+    def test_adjacent_surfaces_touching_exactly_are_legal(self):
+        """EID 106 immediately after 100's 100..105 — no gap needed, no overlap."""
+        boxes = self._mesh(100, 3, 2) + self._mesh(106, 3, 2, y0=5.0, start_k=6)
+        assert len(build_box_id_map(boxes)) == 12

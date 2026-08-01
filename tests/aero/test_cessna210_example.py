@@ -34,7 +34,7 @@ def model_and_data():
 
 def test_deck_meshes_five_surfaces(model_and_data):
     bulk, model, _df = model_and_data
-    assert sorted(bulk.caero1s) == [100, 150, 200, 250, 300]
+    assert sorted(bulk.caero1s) == [1000, 2000, 3000, 4000, 5000]
     # wing 2*16*6 + HTP 2*8*6 + VTP 6*6 = 192 + 96 + 36
     assert len(model.boxes) == 324
     assert bulk.aeros.sref == pytest.approx(16.24)
@@ -46,24 +46,24 @@ def test_multi_correction_all_surfaces(model_and_data):
     res = sd.build_from_section_data_multi(
         model.boxes, model.ajj, df, mach=0.0, incidence_deg=3.0,
         sid_w2gj_base=9100, sid_aecorr_base=9200)
-    assert sorted(res.correction.cards) == [100, 150, 200, 250, 300]
+    assert sorted(res.correction.cards) == [1000, 2000, 3000, 4000, 5000]
     assert res.skipped == []
     # wing picks the low-α region; VTP is the BETA surface
-    assert (res.conditions[100].a_lo, res.conditions[100].a_hi) == (-4.0, 8.0)
-    assert res.conditions[300].var == "BETA"
+    assert (res.conditions[1000].a_lo, res.conditions[1000].a_hi) == (-4.0, 8.0)
+    assert res.conditions[5000].var == "BETA"
 
     # Wing per-strip force slope reproduces cn_a (0.105/deg) × area_strip.
-    d = res.correction.per_surface[100]
+    d = res.correction.per_surface[1000]
     from collections import defaultdict
     groups = defaultdict(list)
     for k, b in enumerate(model.boxes):
-        if b.caero_eid == 100:
+        if b.caero_eid == 1000:
             groups[b.i_span].append(k)
     area = np.array([sum(model.boxes[k].area for k in groups[s]) for s in sorted(groups)])
     assert d.achieved_f_slope == pytest.approx(0.105 * _RAD2DEG * area, rel=1e-8)
     # Wing has camber moment (cm0 = -0.065 → nonzero m_0); HTP is symmetric (≈0).
     assert np.all(np.abs(d.achieved_m0) > 1e-6)
-    assert np.allclose(res.correction.per_surface[200].achieved_m0, 0.0, atol=1e-9)
+    assert np.allclose(res.correction.per_surface[3000].achieved_m0, 0.0, atol=1e-9)
 
 
 def test_correction_takes_effect_through_operator(model_and_data):
@@ -120,7 +120,7 @@ def test_section_preview_figure(model_and_data):
     res = sd.build_from_section_data_multi(
         model.boxes, model.ajj, df, mach=0.0, incidence_deg=3.0,
         sid_w2gj_base=9100, sid_aecorr_base=9200)
-    fig = build_section_correction_figure(model.boxes, df, res, caero_eid=100)
+    fig = build_section_correction_figure(model.boxes, df, res, caero_eid=1000)
     assert len(fig.data) == 4   # input cn, achieved cn, input cm0, achieved cm0
     # achieved curves (traces 1, 3) reproduce the constant input section coefficients
     # across the whole span (input covers η 0..1, so no extrapolation).

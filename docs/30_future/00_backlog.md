@@ -31,7 +31,8 @@ P5–P7 — cheap CI insurance and the flagship sample after the correctness bat
 P2 deliverable-integrity fixes the flagship's exports inherit), before new capability.
 
 **P1 delivered 2026-07-31** (Q4 + DEF-M3, one mass model for `M_ax` — see
-`docs/40_history/06_sol144_static_aeroelastic.md`), so the list now opens at P2. The
+`docs/40_history/06_sol144_static_aeroelastic.md`).  **P3 delivered 2026-08-01**
+(the DEF-M silent-input batch: M4, M8, M9, DEF-R5, DEF-L1 and sample-review F1). The
 remaining rows keep their numbers: the P-labels are used as stable identifiers by the
 cross-references throughout this document, so closing an item removes its row without
 re-flowing the rest. Renumber only when the whole table is re-ranked.
@@ -39,7 +40,6 @@ re-flowing the rest. Renumber only when the whole table is re-ranked.
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
 | P2 | DEF-M deliverable-integrity batch — M5, M6, M7, M10 | Defects | ~1–1.5 d | All cheap, all corrupt what leaves the program: the critical-sample selector/label/column disagree, exported FORCE/MOMENT fields overflow 8-char free field (the advertised stress handoff), the f06 time-history header is misaligned, and the shipped HA144A monitor omits 18.75 % of the inertia. |
-| P3 | DEF-M silent-input batch — M4, M8, M9 (+ DEF-R5, DEF-L1, sample-review F1) | Defects | ~2 d | Three "user asked, program ignored" paths: `LOAD` in a TRIM subcase, correction cards dropped/mis-bound, SPC on a rigid-dependent DOF discarded. M9's fix lands once only after R5 ports `sol101` onto `reduce_to_aset`; L1 is the same validation sweep. The 2026-07-31 sample review adds two of the same class: **F1** — CAERO1s with overlapping NASTRAN box-ID ranges silently overwrite in `build_id_to_k` (`spline.py:69-77`; the pre-flagship cessna210 EIDs 100/150/200/250 collide) — and SOL 101 with zero GRIDs running to an empty f06 without warning. |
 | P4 | DEF-M2 + DEF-M11 — force/moment convention and ATTACH transfer completeness | Defects | ~1 d | `solve_rigid_cl` reports panel-normal rather than body-axis totals (viewer and f06 disagree on canted decks) and ATTACH `g_disp` carries only the z-row. Both are carve-outs that become wrong answers as soon as dihedral/fin panels are used. |
 | P5 | Closed-form CI gates for the four CLAUDE.md verification decks | Samples review | ~0.5 d | `val_cantilever_static`, `val_ss_static`, `val_cantilever_modes`, `val_free_free_modes` reproduce their closed forms today (verified by run, 2026-07-31: 0.004 % / 0.004 % / 0.02 % / RBMs ≤ 4.6e-5 Hz) but are gated only by the theory notebook, which CI never runs. Independent of everything; can land any time. |
 | P6 | Step 65 — flagship realistic-airplane SOL 144 sample family + theory doc | Samples review | ~3–5 d | Closes the biggest sample coverage gap: nothing anywhere combines corrected aero + trim + maneuver + mass cases on a realistic airplane, and corrections never reach a trim. Clean of all open defects (SPLINE2 only, no body panels); after P2 so its exports/critical-sample story is clean. |
@@ -146,7 +146,6 @@ order — see the table above:
 | Rank | Batch | Items |
 |------|-------|-------|
 | P2 | Deliverable integrity (what leaves the program) | DEF-M5, M6, M7, M10 |
-| P3 | Silent-input handling (user asked, program ignored) | DEF-M4, M8, M9 + DEF-R5, DEF-L1 + sample-review F1 (duplicate box IDs) |
 | P4 | Convention / transfer completeness | DEF-M2, M11 |
 | P9 | Aero hot path (with the `build_ajj` vectorization) | DEF-R6 |
 | P13 | Refactor before Phase D | DEF-R1, R2, R3, R4 (+ DEF-R7 at a release boundary) |
@@ -161,12 +160,6 @@ order — see the table above:
   equal; `test_dihedral.py:110` enshrines the wrong convention (cos Γ vs cos² Γ).
   *Options:* (a) project through n_z/n_y and update the dihedral test + theory doc
   (medium); (b) keep as normal-force convention and rename/redocument (low).
-
-- **DEF-M4 — `LOAD` in a TRIM subcase silently ignored** [D] `run_sol144_trim` never reads
-  `subcase.load_sid` (only the test-only Step-50 path does). A payload/thrust FORCE in a
-  SOL 144 trim subcase vanishes without warning.
-  *Options:* (a) raise/warn "LOAD not supported with TRIM" (low); (b) add f_struct to the
-  trim RHS as the Step-50 path does (medium; NASTRAN-consistent).
 
 - **DEF-M5 — Critical maneuver sample: selector, f06 label, and printed column are three
   different metrics** [D] `maneuver_qs.py:343` (argmax ‖closure force‖) vs f06 "PEAK |NET
@@ -189,25 +182,6 @@ order — see the table above:
   variables the FZ-AERO/MY-AERO headers sit a full column off their data. *Fix low:* one
   column-spec for header + rows.
 
-- **DEF-M8 — Correction cards silently dropped on real decks** [E] Three variants, one
-  theme (builder reports converged, production never sees the card):
-  (a) `build_wg` first-W2GJ-wins — a generated correction W2GJ is ignored when the deck
-  already carries one for that surface (`integration.py:70-81`), and short/long data
-  silently pads/truncates; (b) WKK on non-primary CAERO1 ignored, on multi-surface primary
-  crashes with a raw numpy shape error (`aero_model.py:93`, `corrections.py:113`);
-  (c) WT2/AECORR on strip or nonexistent EIDs dropped, and the cruciform builder accepts
-  strip panels whose WT2 half then never applies (`aero_model.py:94`,
-  `body_correction.py:250`). *Fix (complexity low):* validate card↔surface binding and
-  lengths at build time with card-labelled errors, mirroring the CHORDCP standard.
-
-- **DEF-M9 — SPC on an RBE2/RBAR/RBE3-dependent DOF silently discarded** [E]
-  `assembly/reduction.py:117-118` (+ duplicate `sol101.py:299-302`). Reproduced: a
-  2-CBAR cantilever with grid 3 RBE2-slaved to grid 2 and `SPC1, 5, 123456, 3` solves
-  with u_z(3) = −8.33e-3 (following its master) and zero warnings — the constraint is
-  never enforced and the reaction is omitted. NASTRAN fatals on m-set/s-set overlap.
-  *Fix low:* raise naming the grid/DOF and owning rigid element (fix once in
-  `reduce_to_aset` after DEF-R5 ports sol101 onto it).
-
 - **DEF-M10 — Sample-deck defect: HA144A "whole aircraft" MONPNT3 misses 18.75 % of the
   inertia** [E] `sample/ha144a_fullspan_sbeam.bdf:204-205` — SET1 1310 omits grid 97
   (CONM2 93.24 slug), so the WHOLE-AIRCRAFT monitor reports +3000 lb apparent imbalance
@@ -225,51 +199,9 @@ order — see the table above:
   the full rigid-body transform (translation identity + `skew(ω)·r`); extend V-B3d force
   transfer to a dihedral panel.
 
-### DEF-L — Low (robustness, hygiene, docs; batch opportunistically) — L1 with P3, L2–L7 unranked
+### DEF-L — Low (robustness, hygiene, docs; batch opportunistically) — L2–L7 unranked
 
-- **DEF-L1** Silent lenient card handling: STRIPK length/duplicates (`strip.py:68-81`);
-  W2GJ duplicates (also DEF-M8a); box-ID range collisions mis-bind AELIST boxes
-  (`integration.py:202`, duplicated in `sol144._compute_hinge_moments`); WKK zero weight
-  → bare LinAlgError, docstrings say lstsq while code uses solve (`aero_model.py:102/306`);
-  `parse_body_targets` passes NaN through required TOTAL columns
-  (`body_correction.py:194`); section-data `caero` column bypasses friendly validation,
-  duplicate eta rows silently interp (`section_data.py:110`). [E/D]
-- **DEF-L2** SPLINE2 extrapolation advisory skipped for single-station SET1; probes colloc
-  only (`spline.py:179-189`). (The pre-existing HA144A warnings are legitimate: 3 wing-tip
-  boxes extrapolate ≤25 % past the EA tip — physically reasonable.) [E]
-- **DEF-L3** `get_suport_local` silently drops SUPORT DOFs eliminated by SPC/RBE3 —
-  changes determined/over-determined classification without diagnosis
-  (`sol144.py:490-500`). [D]
-- **DEF-L4** Viewer: uncorrected-Cp operator inverts the strip identity placeholder as a
-  real AIC on PSTRIP decks (`aero_view.py:423`); `cl_section` merges strips across
-  surfaces so multi-surface span-load plots are meaningless (`vlm.py:424-434`). [D]
-- **DEF-L5** f06 presentation: AEROF/APRES "BOX ID" is the internal index, not the NASTRAN
-  box ID every other card uses (`f06_writer.py:520-530`); hinge-moment block omits that
-  per-variable derivatives are rigid while TOTAL is elastic (`f06_writer.py:462`,
-  `sol144.py:870-872`); export SID = subcase_id invites silent superposition with deck
-  load sets (`load_export.py:81`; parser merges duplicate FORCE SIDs,
-  `bdf_reader.py:413-414`); `build_maneuver_time_history_text` IndexError on
-  empty-steps results the sibling writers guard (`maneuver_output.py:38`); **every
-  `_fmt`-built table collides on negatives** — `13.6E` with no separator, so a negative
-  value abuts the previous column (`6.872803E+00-2.307861E+00` in the shipped derivative
-  block; noted while adding the Step 64 injection block, which follows the same convention
-  deliberately rather than diverging mid-file). Widen `_fmt` to 14 once, not per block. [D/E]
-- **DEF-L6** Docs-mismatch batch: theory doc claims M ≤ 0.99 cap (code accepts any M<1,
-  `aero_model.py:363`); 05c monitor CSV column list missing
-  massset/mass_case (`:667-669` vs `load_export.py:154-160`); 05c parity paragraph
-  (`:653-656`) describes behaviour the code doesn't have; `build_g_spline` docstring lists
-  retired DTHZ/DTOR warnings (`spline.py:470-474`); `AeroBox.chord` comment says box chord
-  but stores strip chord (`panel.py:33/168`); stale "(finite difference)" comment at
-  `sol144.py:1644` (implementation is exact analytic); CLAUDE.md module map omits
-  `aero/spline.py`, `aero/coupling.py`, `aero/mirror.py`. [D]
-- **DEF-L7** Monitor SYMXZ parity path (par=2, *WHOLE-AIRPLANE* tag, CSV parity columns)
-  unreachable in the shipped pipeline — build_aero_model rejects SYMXZ≠0 and
-  mirror_halfspan (which zeroes it) has no production caller (`monitor_points.py:35-64`).
-  Decide: remove (full-span-only), or wire mirror_halfspan into parse/main. Related:
-  mirror_halfspan silently drops STRIPK/PSTRIP for mirrored strip panels
-  (`mirror.py:35-48`). [D]
-
-### DEF-R — Refactor / dead code (no behaviour change) — P13 (R5 with P3, R6 with P9)
+### DEF-R — Refactor / dead code (no behaviour change) — P13 (R6 with P9)
 
 - **DEF-R1 — Decompose `sol144.py` (1838 lines)** — `run_sol144_trim` is a ~500-line god
   function. Natural seams: derivatives module (rigid/restrained/unrestrained/hinge),
@@ -290,9 +222,6 @@ order — see the table above:
   (`body_correction.py:289-444` vs `497-629`; diff-measured ~190 line-identical of 289);
   extract the shared weight-row/solve/achieved core, parameterized by unit response +
   card emitter. Dead `_NORM_TOL` constant (:115). [D]
-- **DEF-R5 — `sol101` inline duplicate of `reduce_to_aset`** — `sol101.py:294-311`
-  hand-rolls the Step-59 shared reduction (including its own copy of DEF-M9's silent SPC
-  drop); port onto `reduce_to_aset` so the fix lands once. [D]
 - **DEF-R6 — Redundant O(n³) work per aero build** — WT2 branch inverts the same AIC twice
   plus a full-SVD `np.linalg.cond` (3× the dominant cost; `aero_model.py:104`,
   `corrections.py:131-133`, `section_correction.py:184-192`); `np.linalg.cond(K_eff)` full
@@ -335,8 +264,8 @@ SOL 144 solve).
   `_massset`: one TRIM × MASSSET 10/20/30) via whole-bulk `INCLUDE`, plus
   `cessna210_flagship_section_data.csv`.
 - Bulk = the cessna210 stick + 324-box mesh with CAERO1 EIDs renumbered
-  1100/1300/2100/2200/3100 (kills the F1 box-ID collisions; 4100/4200 reserved for
-  stage 2), plus: GRID 900 at ¼-MAC + z-down stability CORD2R 990 (`AEROS RCSID`, HA144A
+  1000-spaced per the convention adopted with the P3 batch (1000/2000/3000/4000/5000;
+  6000/7000 reserved for stage 2's body panels), plus: GRID 900 at ¼-MAC + z-down stability CORD2R 990 (`AEROS RCSID`, HA144A
   URDD3 = −g convention); `SPC1,1,1246,900` + `SUPORT,900,35`; ~19 CONM2s (≈ 1081 kg
   baseline, CG ≈ 22 % MAC, GPWG-checked, C210 envelope); 5× SPLINE2+SET1+spline-axis
   CORD2R (EA-only SET1 ⇒ **DTHY = 0.0** or the spline system is singular); part-chord

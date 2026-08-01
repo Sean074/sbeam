@@ -20,9 +20,9 @@ import numpy as np
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.aero import Caero1, Chordcp, Paero1, Aeros, require_aeros
-from sbeam.aero.panel import AeroBox, mesh_caero1
+from sbeam.aero.panel import AeroBox, mesh_caero1, build_box_id_map
 from sbeam.aero.vlm import build_ajj, prandtl_glauert_boxes
-from sbeam.aero.integration import build_skj, build_djk, build_wg
+from sbeam.aero.integration import build_skj, build_djk, build_wg_all
 from sbeam.aero.corrections import (
     apply_wkk, apply_wt2, apply_wt1, apply_chordcp, check_conditioning,
 )
@@ -46,6 +46,20 @@ class AeroModel:
     g_load:       Optional[FloatArray] = None  # force-transfer spline, shape (3n, 6*n_g)
     chordcp_alpha_ref: Optional[float] = None  # CHORDCP reference AOA [rad]; None = no injection
     load_injections: list[LoadInjection] = field(default_factory=list)
+    box_id_to_k: Optional[dict[int, int]] = None   # {NASTRAN box ID: k}; set by build_aero_model
+
+    def require_box_id_to_k(self) -> dict[int, int]:
+        """``{NASTRAN box ID: k}`` — the single map every box-ID lookup uses.
+
+        ``build_aero_model`` populates it (and so validates it) up front; this
+        accessor builds it on demand for the hand-constructed ``AeroModel``s in
+        the test suite.  Deferring rather than making it a required field keeps
+        those constructions working, and a ``None`` default rather than an empty
+        dict means a missing map can never be mistaken for "no boxes".
+        """
+        if self.box_id_to_k is None:
+            self.box_id_to_k = build_box_id_map(self.boxes)   # fatal on collision
+        return self.box_id_to_k
 
     def require_g_load(self) -> FloatArray:
         """``g_load``, raising if the model was built without splines.
@@ -108,14 +122,46 @@ def _assemble_vlm_operator(
     # Correction precedence over the boxes present here — WKK, then WT2, then WT1.
     op_eids = sorted({b.caero_eid for b in op_boxes})
     primary_eid = op_eids[0]
-    wkk_card  = next((c for c in bulk.wkks.values() if c.caero_eid == primary_eid), None)
+    wkk_cards = [c for c in bulk.wkks.values() if c.caero_eid in op_eids]
     wt2_cards = [c for c in bulk.aecorrs.values()
                  if c.method == "WT2" and c.caero_eid in op_eids]
     wt1_card  = next((c for c in bulk.aecorrs.values()
                       if c.caero_eid == primary_eid and c.method == "WT1"), None)
 
-    if wkk_card is not None:
-        ajj_star = apply_wkk(ajj, wkk_card.data)
+    if wkk_cards:
+        # Per-surface scatter onto a unit baseline (DEF-M8b).  WKK used to be
+        # selected for the primary CAERO1 only and then applied to *every* box in
+        # the operator, so on a multi-surface deck the diag() was the wrong size
+        # and numpy raised a bare shape error, while a WKK on a non-primary
+        # surface was ignored outright.  Unlisted surfaces get weight 1 — a
+        # no-op — so single-surface decks are unchanged.
+        w = np.ones(n)
+        seen: dict[int, int] = {}
+        for card in wkk_cards:
+            if card.caero_eid in seen:
+                raise ValueError(
+                    f"WKK {card.sid}: CAERO1 {card.caero_eid} already has a WKK "
+                    f"card (SID {seen[card.caero_eid]}); only one WKK per CAERO1 "
+                    "is supported."
+                )
+            seen[card.caero_eid] = card.sid
+            surf_idx = [k for k, b in enumerate(op_boxes) if b.caero_eid == card.caero_eid]
+            data = np.asarray(card.data, dtype=float)
+            if data.shape[0] != len(surf_idx):
+                raise ValueError(
+                    f"WKK {card.sid} (CAERO1 {card.caero_eid}): {data.shape[0]} "
+                    f"weights for {len(surf_idx)} boxes on that surface."
+                )
+            if np.any(data == 0.0):
+                zeros = [i for i, v in enumerate(data) if v == 0.0]
+                raise ValueError(
+                    f"WKK {card.sid} (CAERO1 {card.caero_eid}): zero weight at "
+                    f"box index(es) {zeros[:5]}{'...' if len(zeros) > 5 else ''}. "
+                    "A zero weight makes the corrected AIC singular — use a small "
+                    "non-zero weight to suppress a box's influence."
+                )
+            w[surf_idx] = data
+        ajj_star = apply_wkk(ajj, w)
         check_conditioning(ajj_star)
         ajj_inv_corr = np.linalg.solve(ajj_star, np.eye(n))
     elif wt2_cards:
@@ -324,7 +370,8 @@ def build_aero_model(
 
     Correction precedence (first match wins):
       1. WKK card present  → diagonal multiplicative: AJJ* = diag(wkk) @ AJJ,
-                              AJJ*⁻¹ computed via lstsq (primary CAERO1 only).
+                              AJJ*⁻¹ computed via np.linalg.solve; each WKK card
+                              applies to its own CAERO1 (weight 1 elsewhere).
       2. AECORR WT2 present → pressure-matching correction (apply_wt2). **Multi-surface:**
                               all WT2 cards are combined into one global Γ-unit target —
                               each card fills its own CAERO1's boxes (row-major), boxes on
@@ -339,8 +386,9 @@ def build_aero_model(
 
     When multiple CAERO1 elements are present, all boxes are concatenated into a single
     list and a single AIC is built for the combined surface.  W2GJ (baseline normalwash)
-    is already accumulated per CAERO1, and WT2 corrections are now combined per surface;
-    WKK and WT1 still act on the primary CAERO1 only.
+    is already accumulated per CAERO1, WT2 corrections are combined per surface, and WKK
+    scatters per surface onto a unit baseline (boxes on surfaces with no WKK card take
+    weight 1).  WT1 alone still acts on the primary CAERO1 only — it is deprecated.
 
     Decoupled strip body panels (CAERO1 PID → PSTRIP) bypass all of the above: they are
     excluded from the VLM AIC inversion and contribute a diagonal block to ``ajj_inv_corr``
@@ -381,6 +429,12 @@ def build_aero_model(
         start_k += len(new_boxes)
 
     n = len(boxes)
+
+    # Validate the NASTRAN box-ID space before anything consumes it (F1).  This
+    # is deliberately the first check after meshing: a collision makes SPLINE2 /
+    # ATTACH / AELIST / MONPNT1 box ranges resolve to the wrong box, so it must
+    # be fatal before any correction, spline or integration work is done.
+    box_id_to_k = build_box_id_map(boxes)
 
     # Prandtl–Glauert / Göthert compressibility correction (§2.8 Eq. 14):
     # compress box y,z by β = √(1-M²) before building AIC; scale AIC⁻¹ by 1/β.
@@ -429,10 +483,10 @@ def build_aero_model(
     skj = build_skj(boxes)
     djk = build_djk(boxes)
 
-    # Accumulate baseline normalwash across all CAERO1 elements
-    wg = np.zeros(n)
-    for eid in sorted(bulk.caero1s):
-        wg += build_wg(boxes, bulk.w2gjs, eid)
+    # Accumulate baseline normalwash across all meshed CAERO1 elements.  Goes
+    # through build_wg_all so a W2GJ naming a CAERO1 that is not in the model is
+    # reported rather than silently never visited (DEF-M8a).
+    wg = build_wg_all(boxes, bulk.w2gjs)
 
     # CHORDCP steady-pressure injection (Step 54): replace the VLM boxes'
     # baseline wash with the equivalent wash of the injected Cp distribution.
@@ -444,7 +498,7 @@ def build_aero_model(
     g_load:  Optional[FloatArray] = None
     load_injections: list[LoadInjection] = []
     if grid_index is not None and (bulk.spline2s or bulk.attaches or bulk.spline0s):
-        ops = build_spline_operators(bulk, boxes, grid_index)
+        ops = build_spline_operators(bulk, boxes, grid_index, id_to_k=box_id_to_k)
         if ops is not None:
             g_slope, g_disp, g_load = ops.g_slope, ops.g_disp, ops.g_load
             load_injections = ops.injections
@@ -463,6 +517,7 @@ def build_aero_model(
         g_load=g_load,
         chordcp_alpha_ref=chordcp_alpha_ref,
         load_injections=load_injections,
+        box_id_to_k=box_id_to_k,
     )
 
 

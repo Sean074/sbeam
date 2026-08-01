@@ -243,10 +243,14 @@ class TestGuards:
 
 
 def _two_surface_parts():
-    """Wing (EID 1) + tail (EID 2), both horizontal, meshed into one box list."""
-    wing = Caero1(eid=1, pid=1, cp=0, nspan=4, nchord=3, lspan=0, lchord=0, igid=0,
+    """Wing (EID 1000) + tail (EID 2000), both horizontal, meshed into one box list.
+
+    EIDs are 1000 apart so the two surfaces' NASTRAN box-ID ranges cannot overlap
+    (box ID = EID + i_span*NCHORD + j_chord).
+    """
+    wing = Caero1(eid=1000, pid=1, cp=0, nspan=4, nchord=3, lspan=0, lchord=0, igid=0,
                   p1=(0.0, 0.0, 0.0), x12=1.0, p4=(0.0, 5.0, 0.0), x43=1.0)
-    tail = Caero1(eid=2, pid=1, cp=0, nspan=3, nchord=2, lspan=0, lchord=0, igid=0,
+    tail = Caero1(eid=2000, pid=1, cp=0, nspan=3, nchord=2, lspan=0, lchord=0, igid=0,
                   p1=(4.0, 0.0, 0.0), x12=0.6, p4=(4.0, 2.0, 0.0), x43=0.6)
     bw = mesh_caero1(wing, PAERO, {}, {}, start_k=0)
     bt = mesh_caero1(tail, PAERO, {}, {}, start_k=len(bw))
@@ -257,8 +261,8 @@ def _two_surface_bulk(wing, tail):
     bulk = BulkData()
     bulk.aeros = Aeros(acsid=0, rcsid=0, cref=1.0, bref=10.0, sref=10.0, symxz=0, symxy=0)
     bulk.paero1s[1] = Paero1(pid=1)
-    bulk.caero1s[1] = wing
-    bulk.caero1s[2] = tail
+    bulk.caero1s[1000] = wing
+    bulk.caero1s[2000] = tail
     return bulk
 
 
@@ -283,18 +287,18 @@ class TestMultiSurface:
     def test_two_surfaces_reproduced(self):
         wing, tail, boxes = _two_surface_parts()
         ajj = build_ajj(boxes)
-        tW = SurfaceTargets(1, f_slope=np.linspace(0.8, 0.95, 4),
+        tW = SurfaceTargets(1000, f_slope=np.linspace(0.8, 0.95, 4),
                             alpha_0=np.full(4, np.deg2rad(-2.0)),
                             m_slope=np.linspace(-0.02, -0.04, 4), m_0=np.full(4, -0.025))
-        tT = SurfaceTargets(2, f_slope=np.linspace(0.4, 0.5, 3),
+        tT = SurfaceTargets(2000, f_slope=np.linspace(0.4, 0.5, 3),
                             alpha_0=np.full(3, np.deg2rad(1.0)),
                             m_slope=np.full(3, -0.01), m_0=np.full(3, 0.005))
         res = build_section_correction_multi(
             boxes, ajj, [tW, tT], sid_w2gj_base=100, sid_aecorr_base=200)
-        assert set(res.cards) == {1, 2}
+        assert set(res.cards) == {1000, 2000}
 
         # Builder diagnostics reproduce both surfaces' targets.
-        for eid, t in [(1, tW), (2, tT)]:
+        for eid, t in [(1000, tW), (2000, tT)]:
             d = res.per_surface[eid]
             assert d.achieved_f_slope == pytest.approx(t.f_slope, rel=1e-8)
             assert d.achieved_m_slope == pytest.approx(t.m_slope, rel=1e-8)
@@ -307,7 +311,7 @@ class TestMultiSurface:
             bulk.w2gjs[w2.sid] = w2
             bulk.aecorrs[ac.sid] = ac
         model = build_aero_model(bulk)
-        for eid, t in [(1, tW), (2, tT)]:
+        for eid, t in [(1000, tW), (2000, tT)]:
             xref = res.per_surface[eid].moment_ref
             F0, M0 = _surface_lines(model, eid, xref, 0.0)
             assert F0 == pytest.approx(-t.f_slope * t.alpha_0, rel=1e-6, abs=1e-9)
@@ -322,12 +326,12 @@ class TestMultiSurface:
         """Correcting only the wing → tail boxes keep r=1, wg=0."""
         wing, tail, boxes = _two_surface_parts()
         ajj = build_ajj(boxes)
-        tW = SurfaceTargets(1, f_slope=np.full(4, 0.9),
+        tW = SurfaceTargets(1000, f_slope=np.full(4, 0.9),
                             alpha_0=np.zeros(4), m_slope=np.zeros(4), m_0=np.zeros(4))
         res = build_section_correction_multi(
             boxes, ajj, [tW], sid_w2gj_base=100, sid_aecorr_base=200)
-        assert set(res.cards) == {1}
-        tail_idx = [k for k, b in enumerate(boxes) if b.caero_eid == 2]
+        assert set(res.cards) == {1000}
+        tail_idx = [k for k, b in enumerate(boxes) if b.caero_eid == 2000]
         assert res.r[tail_idx] == pytest.approx(np.ones(len(tail_idx)), abs=1e-12)
         assert res.wg[tail_idx] == pytest.approx(np.zeros(len(tail_idx)), abs=1e-12)
 
@@ -335,16 +339,16 @@ class TestMultiSurface:
         from sbeam.parser.bdf_reader import parse_bulk_data
         wing, tail, boxes = _two_surface_parts()
         ajj = build_ajj(boxes)
-        tW = SurfaceTargets(1, f_slope=np.full(4, 0.9), alpha_0=np.full(4, np.deg2rad(-1.0)),
+        tW = SurfaceTargets(1000, f_slope=np.full(4, 0.9), alpha_0=np.full(4, np.deg2rad(-1.0)),
                             m_slope=np.full(4, -0.02), m_0=np.full(4, -0.02))
-        tT = SurfaceTargets(2, f_slope=np.full(3, 0.45), alpha_0=np.zeros(3),
+        tT = SurfaceTargets(2000, f_slope=np.full(3, 0.45), alpha_0=np.zeros(3),
                             m_slope=np.full(3, -0.01), m_0=np.zeros(3))
         res = build_section_correction_multi(
             boxes, ajj, [tW, tT], sid_w2gj_base=100, sid_aecorr_base=200)
         bulk = parse_bulk_data(cards_to_bdf(res).splitlines())
         assert set(bulk.w2gjs) == {100, 101}
         assert set(bulk.aecorrs) == {200, 201}
-        assert {c.caero_eid for c in bulk.aecorrs.values()} == {1, 2}
+        assert {c.caero_eid for c in bulk.aecorrs.values()} == {1000, 2000}
 
 
 class TestBdfRoundTrip:

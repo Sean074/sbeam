@@ -13,7 +13,6 @@ from typing import Optional, Union
 import numpy as np
 
 from sbeam.assembly.coord_transform import get_transform
-from sbeam.aero.spline import nchord_per_caero, build_id_to_k
 from sbeam.results.results import MonitorLoad
 from sbeam.types import FloatArray
 from sbeam.model.aero import Monpnt1, Monpnt3, require_aeros
@@ -92,9 +91,8 @@ def integrate_monpnt1(
     aecomp = bulk.aecomps[mon.comp]
     ref_basic, R = _monitor_frame(mon, bulk)
 
-    # AELIST box IDs -> global box indices k
-    nchord = nchord_per_caero(aero.boxes)
-    id_to_k = build_id_to_k(aero.boxes, nchord)
+    # AELIST box IDs -> global box indices k (shared collision-checked map, F1)
+    id_to_k = aero.require_box_id_to_k()
     box_ids: list[int] = []
     for sid in aecomp.list_ids:
         box_ids.extend(bulk.aelists[sid].elements)
@@ -102,6 +100,12 @@ def integrate_monpnt1(
     F = np.zeros(3)
     M = np.zeros(3)
     for bid in box_ids:
+        if bid not in id_to_k:
+            raise ValueError(
+                f"MONPNT1 {mon.name}: AELIST box ID {bid} is not a meshed aero "
+                "box.  Check the AELIST box range against the CAERO1 it belongs "
+                "to (box IDs run EID .. EID + NSPAN*NCHORD - 1)."
+            )
         k = id_to_k[bid]
         f = box_forces[k]
         r = aero.boxes[k].force_point - ref_basic

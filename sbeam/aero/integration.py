@@ -12,9 +12,11 @@ NASTRAN convention (positive = nose-up incidence, like ANGLEA), so ``build_wg``
 applies the same negation when assembling the internal ``w_g``.
 """
 
+from typing import Optional
+
 import numpy as np
 
-from sbeam.aero.panel import AeroBox
+from sbeam.aero.panel import AeroBox, build_box_id_map
 from sbeam.model.bulk_data import BulkData
 from sbeam.assembly.coord_transform import get_transform
 from sbeam.types import FloatArray
@@ -64,21 +66,65 @@ def build_wg(boxes: list[AeroBox], w2gjs: dict[int, W2gj], caero_eid: int) -> Fl
     Returns a zero vector when no W2GJ card is present for *caero_eid*.
     W2GJ data is ordered row-major (span index varies slowest, chord fastest),
     matching the ordering produced by mesh_caero1.
+
+    Raises:
+        ValueError: if two W2GJ cards target the same CAERO1 (the second used to
+            be silently shadowed), or if the card's data length does not match
+            the surface's box count.  A short card used to be zero-padded and a
+            long one truncated — both silent, and both almost always a mesh the
+            builder and the deck disagree about (DEF-M8a / DEF-L1).
     """
     n = len(boxes)
     wg = np.zeros(n)
-    for w2gj in w2gjs.values():
-        if w2gj.caero_eid != caero_eid:
-            continue
-        caero_boxes = [
-            (global_j, box)
-            for global_j, box in enumerate(boxes)
-            if box.caero_eid == caero_eid
-        ]
-        for local_k, (global_j, _) in enumerate(caero_boxes):
-            if local_k < len(w2gj.data):
-                wg[global_j] = -w2gj.data[local_k]
-        break   # only one W2GJ per CAERO1
+
+    cards = [w for w in w2gjs.values() if w.caero_eid == caero_eid]
+    if not cards:
+        return wg
+    if len(cards) > 1:
+        sids = ", ".join(str(w.sid) for w in sorted(cards, key=lambda w: w.sid))
+        raise ValueError(
+            f"W2GJ: CAERO1 {caero_eid} is targeted by {len(cards)} cards "
+            f"(SIDs {sids}); only one W2GJ per CAERO1 is supported.  Merge them "
+            "into a single card or remove the duplicates."
+        )
+
+    w2gj = cards[0]
+    surf_idx = [j for j, box in enumerate(boxes) if box.caero_eid == caero_eid]
+    if len(w2gj.data) != len(surf_idx):
+        raise ValueError(
+            f"W2GJ {w2gj.sid}: {len(w2gj.data)} data values for CAERO1 "
+            f"{caero_eid}, which meshes to {len(surf_idx)} boxes.  W2GJ data is "
+            "one value per box, row-major (span slowest, chord fastest)."
+        )
+    for local_k, global_j in enumerate(surf_idx):
+        wg[global_j] = -w2gj.data[local_k]
+    return wg
+
+
+def build_wg_all(boxes: list[AeroBox], w2gjs: dict[int, W2gj]) -> FloatArray:
+    """Assemble the baseline normalwash over every meshed CAERO1.  Shape: (n_box,).
+
+    Replaces the caller-side ``for eid in sorted(bulk.caero1s)`` loop so that the
+    orphan case is caught: a W2GJ naming a ``caero_eid`` that no meshed CAERO1
+    provides was never visited by that loop at all, making it dead data that the
+    program accepted and ignored (DEF-M8a).
+
+    Raises:
+        ValueError: if a W2GJ card references a CAERO1 with no meshed boxes.
+    """
+    meshed = {box.caero_eid for box in boxes}
+    orphans = sorted({w.sid for w in w2gjs.values() if w.caero_eid not in meshed})
+    if orphans:
+        detail = ", ".join(
+            f"W2GJ {sid} → CAERO1 {w2gjs[sid].caero_eid}" for sid in orphans)
+        raise ValueError(
+            f"{detail}: no such CAERO1 in the meshed model, so the card would "
+            "never be applied.  Check the CAERO1 EID on the W2GJ card."
+        )
+
+    wg = np.zeros(len(boxes))
+    for eid in sorted(meshed):
+        wg += build_wg(boxes, w2gjs, eid)
     return wg
 
 
@@ -157,7 +203,8 @@ def build_dj_rigidrate(
 
 
 def build_djx(
-    boxes: list[AeroBox], trim_labels: list[str], bulk: BulkData
+    boxes: list[AeroBox], trim_labels: list[str], bulk: BulkData,
+    id_to_k: Optional[dict[int, int]] = None,
 ) -> FloatArray:
     """Downwash-to-trim-variable matrix D_jx.  Shape: (n_box, n_labels).
 
@@ -193,14 +240,10 @@ def build_djx(
     else:
         x_ref = 0.0
 
-    # Build NASTRAN-box-ID → global-k-index reverse map (for AESURF columns)
-    nastran_id_to_k: dict[int, int] = {}
-    for box in boxes:
-        caero = bulk.caero1s[box.caero_eid]
-        nchord_b = (caero.nchord if caero.nchord > 0
-                    else len(bulk.aefacts[caero.lchord].data) - 1)
-        bid = box.caero_eid + box.i_span * nchord_b + box.j_chord
-        nastran_id_to_k[bid] = box.k
+    # NASTRAN-box-ID → global-k reverse map (for AESURF/AELIST columns).  One
+    # shared, collision-checked derivation (F1); callers holding an AeroModel
+    # pass ``aero.require_box_id_to_k()`` so it is not rebuilt per call.
+    nastran_id_to_k = build_box_id_map(boxes) if id_to_k is None else id_to_k
 
     for col, label in enumerate(trim_labels):
         ul = label.upper()

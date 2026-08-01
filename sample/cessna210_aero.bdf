@@ -121,21 +121,21 @@ $ Chordwise NCHORD = 6 (>=2 required for the section-moment correction; >=4
 $ recommended for converged pitching moment). Spanwise NSPAN sized for box AR ~1.
 $
 $ ---- Wing starboard: 16 x 6 = 96 boxes
-CAERO1, 100, 10, 0, 16, 6, 0, 0, 1
+CAERO1, 1000, 10, 0, 16, 6, 0, 0, 1
 +, 2.00, 0.0, 1.250, 1.75, 2.15, 5.60, 1.397, 1.15
 $ ---- Wing port: 16 x 6 = 96 boxes
-CAERO1, 150, 10, 0, 16, 6, 0, 0, 1
+CAERO1, 2000, 10, 0, 16, 6, 0, 0, 1
 +, 2.00, 0.0, 1.250, 1.75, 2.15, -5.60, 1.397, 1.15
 $
 $ ---- HTP starboard: 8 x 6 = 48 boxes
-CAERO1, 200, 10, 0, 8, 6, 0, 0, 1
+CAERO1, 3000, 10, 0, 8, 6, 0, 0, 1
 +, 6.90, 0.0, 0.70, 1.05, 7.10, 1.73, 0.70, 0.75
 $ ---- HTP port: 8 x 6 = 48 boxes
-CAERO1, 250, 10, 0, 8, 6, 0, 0, 1
+CAERO1, 4000, 10, 0, 8, 6, 0, 0, 1
 +, 6.90, 0.0, 0.70, 1.05, 7.10, -1.73, 0.70, 0.75
 $
 $ ---- VTP (single surface, "span" is Z): 6 x 6 = 36 boxes
-CAERO1, 300, 10, 0, 6, 6, 0, 0, 1
+CAERO1, 5000, 10, 0, 6, 6, 0, 0, 1
 +, 6.60, 0.0, 0.80, 1.50, 7.10, 0.0, 2.30, 0.85
 $
 ENDDATA
