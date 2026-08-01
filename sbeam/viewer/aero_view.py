@@ -548,7 +548,14 @@ def _strip_cn_cm(
 
     cn = Σ(cp·area)/area_strip — area-weighted surface-normal force coefficient.
     cm = −Σ cp·area·(x_qc − x_¼c)/(area_strip·chord_strip) about the strip's own
-    quarter-chord, nose-up positive (same arm/sign as vlm.solve_rigid_cl).
+    quarter-chord, nose-up positive.
+
+    Both are **section** coefficients in the surface-normal sense — the same
+    convention as ``vlm.solve_rigid_cl``'s ``cl_section``, and the one
+    ``section_data``/``section_correction`` ingest from CFD and test.  They are
+    deliberately not projected on body-z; only the global totals (CZ/CY/CM) are
+    body-axis (DEF-M2).  The ``−Σ(...)·(x − x_ref)`` moment arm and nose-up sign
+    are shared with the global CM.
     """
     area = np.array([boxes[k].area for k in idx])
     area_strip = float(area.sum())

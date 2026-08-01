@@ -191,7 +191,7 @@ highlighted.
 | Key | Type | Description |
 |-----|------|-------------|
 | `aero_model` | `AeroModel \| None` | Built by `build_aero_model(bulk)` |
-| `aero_result` | `dict \| None` | Corrected `{cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, per_surface, …}` from `solve_rigid_cl` |
+| `aero_result` | `dict \| None` | Corrected `{cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, per_surface, …}` from `solve_rigid_cl`. Since DEF-M2 (2026-08-01) these totals are true body-axis components, identical to the skj integration — so the tab's CZ/CM metrics and its S&C derivative table (which has always gone through `compute_rigid_derivs`/skj) now agree on canted decks; previously they differed by `1/cos Γ`. |
 | `aero_result_unc` | `dict \| None` | Uncorrected baseline solve (only when a correction card is present), else `None` |
 
 All three keys are reset to `None` on new file upload (same pattern as `sol101_result`).

@@ -1305,6 +1305,83 @@ DEF-H1 (`Ry = +n_z`, `Rz = −n_y`) — one-sided.
 
 ---
 
+### DEF-M2 — `solve_rigid_cl` reported panel-normal magnitudes, not body-axis (2026-08-01) ✅ RESOLVED
+
+**Objective:** Make the rigid VLM path report genuine body-axis force and moment components,
+identical to the `skj`-integrated totals every other deliverable uses, so the viewer Aero tab
+and the f06 cannot disagree on a canted deck.
+
+**Defect:** `solve_rigid_cl` integrated lift as `2·Σ Γ·‖Δs⃗‖`, crediting the whole
+Kutta–Joukowski force *magnitude* to body-z with no `n_z` projection, and computed `CM` from
+the pressure form `cp·area·arm` over lift surfaces only. `build_skj` produces
+`F_j = area_j·n̂_j·cp_j`, a genuine vector, and the normalwash RHS already carries one `cos Γ`
+— so the trim/f06 totals scaled as `cos²Γ` while the rigid path scaled as `cos Γ`, an
+`1/cos Γ` disagreement (1.1547 at 30° dihedral). `CL_wind` inherited it. The classification
+split compounded it: a dihedral wing's real side force was reported nowhere, because `CY` was
+restricted to surfaces *classified* as sideforce. Within the viewer this meant the Aero tab's
+CZ/CM metrics disagreed with the S&C derivative table on the same tab, the latter having
+always gone through `compute_rigid_derivs`/`skj`.
+
+**Deliverables:**
+- `sbeam/aero/vlm.py` — a single per-box force vector
+  `f_box = (2·Γ·width)[:,None] · normals`, which since `chord_box = area/width` is *identically*
+  `build_skj(boxes) @ cp`. `CX`/`CY`/`CZ` are its three columns summed over every box; `CM` is
+  `−Σ Fz·(x_force − xref)`, verbatim `sol144.pitch_moment`. The `dy` variable was renamed
+  `width` — it is the panel width (setting `chord_box` and weighting the Trefftz integral),
+  never the vertical-force lever, and conflating those two roles was the defect. `x_qc` was
+  deleted in favour of `box.force_point[0]` (verified bitwise identical). `trefftz_cdi`'s
+  internal `CL_l` projected so `CDi = CZ²/(π·AR·e)` holds against the returned `CZ`.
+- `tests/aero/test_dihedral.py` — `test_rigid_cl_cos_gamma` re-baselined from `cos Γ` to
+  `cos²Γ`, with the reason recorded in the docstring.
+- `tests/aero/test_vae3_cross_check.py` — three canted decks added to the cross-check
+  parametrisation, plus V-AE3-DIH: feeding both paths the *same* `cp` isolates the force
+  convention and asserts `CX`/`CY`/`CZ`/`CM` against the `skj` integration to 1e-12.
+- Docs: `05a_aero_vlm.md` (force convention, return dict, width convention),
+  `06_viewer.md` (session-state note), `01_aeroelastics_theory.md` §2.9 (the `cos²Γ` result
+  and the now-true `CZ ≡ total_cl` identity).
+
+**Test / Acceptance:**
+- **Every moved value explained by a computed cosine before it was written down.** Measured
+  across all 15 aero sample decks at α = 3°:
+
+  | Deck | Wing dihedral | cos Γ | Observed CZ ratio |
+  |------|---------------|-------|-------------------|
+  | `val_vlm_dihedral` / `_anhedral` / `val_dihedral_trim` | 10.000° | 0.984808 | 0.98481 |
+  | `val_wing_taper_dihedral(_twist)` | 5.000° | 0.996195 | 0.99619 |
+  | `cessna210_aero` / `_body` / `_strip` | 1.504° wing, flat tail, vertical fin | 0.999656 → 1.0 | 0.99969 (load-weighted blend) |
+
+  The remaining 8 decks (`airplane_aero`, all four HA144A, `val_vlm_byu_wing`,
+  `val_vlm_rect_ar8`) are planar and bit-identical, ratio exactly 1.00000. `CM` moved by the
+  same factor on the same decks. `CY` returns ~1e-17 on every symmetric build — the side force
+  cancels, as theory §2.9 requires.
+- Cross-path identity now holds to < 1e-12 on all 15 decks (it held only on the 8 planar ones
+  before).
+- Full suite: **1432 passed, 6 xfailed**, `ruff` and `pyright` clean.
+
+**Key decisions:**
+- **Option (a) — project — over option (b) — rename and redocument.** Three reasons: `skj` is
+  already the house convention and every shipped deliverable uses it, so two conventions for
+  "CZ" *is* the defect; the theory doc §2.9 already described the correct `cos²Γ` physics, so
+  projecting made existing documentation true rather than degrading it; and the code already
+  contradicted its own comment, which read "lift scales with Δy, not ‖Δs⃗‖" directly above the
+  line that used ‖Δs⃗‖.
+- **`f_box` defined so the two paths are identical by construction, not by tolerance.** The
+  regression gate asserts machine precision against `skj`, so the paths cannot silently drift
+  again.
+- **Totals now sum every box**, not the classification partition. The lift/sideforce split
+  survives only as a `per_surface` label. On existing decks this is near-nil numerically (fins
+  carry `Fz ≈ 0`), but it removes a second, independent divergence from the trim path.
+- **`cl_section` deliberately left as a section *normal-force* coefficient `cn`,** unprojected.
+  `cn` is the conventional section quantity and is what `section_data`/`section_correction`
+  ingest from CFD and test; projecting it would break the correction round-trip. The
+  asymmetry is now documented at both ends rather than left to look accidental.
+- **The nonplanar Trefftz `Di` integral was left alone and backlogged as DEF-M14.** It uses
+  `w_z` against a projected `Δy` where a nonplanar wake needs `(w⃗·n̂)‖Δs⃗‖` — a genuine physics
+  question, not a convention slip, and changing it silently inside a convention fix would have
+  buried it.
+
+---
+
 ### DEF-H2 + DEF-H3 — WT1 AIC correction deprecated (2026-07-31) ✅ RESOLVED
 
 **Objective:** Stop `AECORR METHOD=WT1` being presented as a peer of `WT2`. The path is wrong

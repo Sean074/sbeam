@@ -34,14 +34,15 @@ P2 deliverable-integrity fixes the flagship's exports inherit), before new capab
 `docs/40_history/06_sol144_static_aeroelastic.md`).  **P3 delivered 2026-08-01**
 (the DEF-M silent-input batch: M4, M8, M9, DEF-R5, DEF-L1 and sample-review F1).
 **P2 delivered 2026-08-01** (the DEF-M deliverable-integrity batch: M5, M6, M7, M10 —
-see `docs/40_history/06_sol144_static_aeroelastic.md` and `07_maneuver_transient.md`). The
+see `docs/40_history/06_sol144_static_aeroelastic.md` and `07_maneuver_transient.md`).
+**P4 delivered 2026-08-01** (DEF-M11 then DEF-M2 — force/moment convention and ATTACH
+transfer completeness; see `docs/40_history/05_aero_vlm_spline.md`). The
 remaining rows keep their numbers: the P-labels are used as stable identifiers by the
 cross-references throughout this document, so closing an item removes its row without
 re-flowing the rest. Renumber only when the whole table is re-ranked.
 
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P4 | DEF-M2 — force/moment convention | Defects | ~0.5 d | `solve_rigid_cl` reports panel-normal rather than body-axis totals, so the viewer Aero-tab metrics and the f06/skj totals disagree on any canted deck (measured 1/cos Γ; 1.1547 at 30°). A carve-out that becomes a wrong answer as soon as dihedral panels are used. Its sibling DEF-M11 closed 2026-08-01. |
 | P5 | Closed-form CI gates for the four CLAUDE.md verification decks | Samples review | ~0.5 d | `val_cantilever_static`, `val_ss_static`, `val_cantilever_modes`, `val_free_free_modes` reproduce their closed forms today (verified by run, 2026-07-31: 0.004 % / 0.004 % / 0.02 % / RBMs ≤ 4.6e-5 Hz) but are gated only by the theory notebook, which CI never runs. Independent of everything; can land any time. |
 | P6 | Step 65 — flagship realistic-airplane SOL 144 sample family + theory doc | Samples review | ~3–5 d | Closes the biggest sample coverage gap: nothing anywhere combines corrected aero + trim + maneuver + mass cases on a realistic airplane, and corrections never reach a trim. Clean of all open defects (SPLINE2 only, no body panels); after P2 so its exports/critical-sample story is clean. |
 | P7 | Step 66 — flagship stage 2: body panels into the flagship family | Samples review | ~2 d | Blocked on **P6/Step 65** (the family it extends); its other prerequisite, Step 64 (unsplined-box forces into the trim balance), closed 2026-07-31. Folds `cessna210_body`/`_strip` + their 14+ tests into the flagship. |
@@ -150,20 +151,26 @@ order — see the table above:
 
 | Rank | Batch | Items |
 |------|-------|-------|
-| P4 | Convention completeness | DEF-M2 |
 | P9 | Aero hot path (with the `build_ajj` vectorization) | DEF-R6 |
 | P13 | Refactor before Phase D | DEF-R1, R2, R3, R4 (+ DEF-R7 at a release boundary) |
 | — | Opportunistic, do when adjacent | DEF-L2–L7 |
 
-### DEF-M — Medium (silent wrong output on specific configurations, or misleading deliverables) — P4
+### DEF-M — Medium (silent wrong output on specific configurations, or misleading deliverables)
 
-- **DEF-M2 — `solve_rigid_cl` CZ/CM are panel-normal magnitudes, not body-z** [E]
-  `sbeam/aero/vlm.py:320-324, 442-445, 469-472`. Off by 1/cos(dihedral) vs the skj-based
-  SOL 144 totals (verified 1.1547 at 30° dihedral); viewer Aero tab and f06 silently
-  disagree on any canted deck; CL_wind inherits it; theory doc §2.9/`:435` claims they are
-  equal; `test_dihedral.py:110` enshrines the wrong convention (cos Γ vs cos² Γ).
-  *Options:* (a) project through n_z/n_y and update the dihedral test + theory doc
-  (medium); (b) keep as normal-force convention and rename/redocument (low).
+- **DEF-M14 — `trefftz_cdi` uses a planar-wake formulation on nonplanar wakes** [E]
+  `sbeam/aero/vlm.py` `trefftz_cdi`. The far-field integral is
+  `Di = ρ/2 · Σ Γ_i · w_z,i · Δy_i` — the **z-component** of the induced velocity against a
+  cross-flow-projected width. For a genuinely nonplanar wake (dihedral, winglets, a
+  cruciform tail) the correct kernel is the wake-normal component, `Σ Γ_i (w⃗_i·n̂_i) ‖Δs⃗_i‖`,
+  and the induced velocity has a `v_y` component the current form ignores entirely.
+  Raised (not fixed) during DEF-M2, 2026-08-01: DEF-M2 corrected the force *convention*,
+  and `CL_l` inside `trefftz_cdi` was projected with it so the documented identity
+  `CDi = CZ²/(π·AR·e)` holds — but the `Di` integral itself is a separate physics question,
+  not a convention slip, so it was deliberately left alone rather than changed silently.
+  Affects `CDi` and `e` on canted decks only; both are reporting-only outputs (no solver
+  or trim path consumes them). *Fix (complexity medium):* rebuild the Trefftz kernel on
+  `(w⃗·n̂)‖Δs⃗‖`; gate against a closed-form elliptic-wing case with and without dihedral,
+  and against a winglet case where the planar form is known to be wrong.
 
 - **DEF-M12 — Correction-card export uses 12–13-char fields on an 8-char free field** [E]
   `sbeam/aero/section_correction.py:381-391` (`card_lines`) writes `f"{v:.6E}"` into

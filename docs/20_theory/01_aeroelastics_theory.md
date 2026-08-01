@@ -433,7 +433,10 @@ there is no leading-edge suction and no in-plane (chordwise) force.
 | Wind axis ($C_L$) | $\perp\,\mathbf U_\infty$ | ✗ for force *integration*; **reported** as `CL_wind`/`CD_wind` by rotating the body-axis resultant through $\alpha$ ($C_L=C_Z\cos\alpha-C_X\sin\alpha$; $C_D=C_{Di}$ Trefftz) |
 
 **Body vs wind axis for reporting.** The integrated coefficient summed on global-$z$ is the
-**body-axis** $C_Z$ (returned as `CL`/`CZ` by `solve_rigid_cl`, `total_cl` by SOL 144). The
+**body-axis** $C_Z$ (returned as `CL`/`CZ` by `solve_rigid_cl`, `total_cl` by SOL 144 — the two
+are the same number by construction, both being the $z$-column of $S_{kj}\Delta C_p$; that
+identity held only for planar geometry until DEF-M2 was fixed on 2026-08-01, and is now gated
+on canted decks by V-AE3-DIH). The
 **wind-axis lift** $C_L$ — the force component perpendicular to $\mathbf U_\infty$ — is a distinct
 quantity obtained by rotating the body-axis resultant $(C_X,C_Z)$ through the angle of attack:
 $C_L=C_Z\cos\alpha-C_X\sin\alpha$ and $C_D=C_X\cos\alpha+C_Z\sin\alpha$. They coincide only at
@@ -449,6 +452,13 @@ effective incidence is reduced by $\cos\Gamma$; and (ii) the resulting force vec
 vertical, carrying a side force $F_y=F_z\,n_y/n_z=\mp F_z\tan\Gamma$ alongside the lift (§2.4).
 The side force cancels over a symmetric build; both signs of $\Gamma$ are gated by V-C-DIH
 (Step 58).
+
+Net effect: $C_Z\propto\cos^2\Gamma$ — one $\cos\Gamma$ from the boundary condition, one from
+the projection. Measured on `val_vlm_dihedral` ($\Gamma=10°$) the ratio to the planar deck is
+$0.98481=\cos10°$ relative to the once-projected value, i.e. $\cos^2 10°$ against planar.
+Reporting the panel-normal *magnitude* $2\Gamma\|\Delta\vec s\|$ as if it were vertical — which
+`solve_rigid_cl` did until DEF-M2 — overstates $C_Z$ by $1/\cos\Gamma$ and, being the
+once-projected quantity, silently disagrees with every $S_{kj}$-integrated deliverable.
 
 **Where the force acts.** Each box force is applied at its **local quarter-chord** — the
 bound-vortex midpoint $\mathbf r_j=$ `box.force_point` (the Kutta–Joukowski application point,

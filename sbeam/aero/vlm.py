@@ -209,8 +209,11 @@ def trefftz_cdi(
     Di = float(np.dot(gamma_l * w_tr, dy_l))
     CDi = Di / S_ref
 
-    # CL from lift boxes (same normalisation as solve_rigid_cl: CL = 2·L/S_ref)
-    CL_l = 2.0 * float(np.dot(gamma_l, dy_l)) / S_ref
+    # CL from lift boxes, body-axis (same convention as solve_rigid_cl's CZ, so
+    # the documented identity CDi = CZ²/(π·AR·e) holds against the returned CZ).
+    # The z-component of the box force is 2·Γ·‖Δs⃗‖·n_z (DEF-M2).
+    nz_l = np.array([boxes[ii].normal[2] for ii in lift_idxs])
+    CL_l = 2.0 * float(np.dot(gamma_l * dy_l, nz_l)) / S_ref
 
     e = (CL_l * CL_l) / (math.pi * ar * CDi) if CDi > _DEGEN_TOL else float("nan")
 
@@ -259,21 +262,37 @@ def solve_rigid_cl(
              = -(α·n_z[i] + β·n_y[i]) + wg[i]
 
     Each CAERO1 surface is classified by its dominant outward normal:
-      |mean n_z| ≥ |mean n_y|  →  "lift"      (horizontal surface; contributes to CL/CM)
-      |mean n_y|  > |mean n_z|  →  "sideforce" (vertical surface; contributes to CY)
+      |mean n_z| ≥ |mean n_y|  →  "lift"      (horizontal surface)
+      |mean n_y|  > |mean n_z|  →  "sideforce" (vertical surface)
+    The classification labels the ``per_surface`` breakdown; it does NOT partition
+    the global totals, which are true body-axis sums over every box (DEF-M2).
+
+    **Force convention (DEF-M2).**  Every box force is ``F_j = area_j·n̂_j·cp_j``
+    — the same object ``build_skj`` produces — so CX/CY/CZ/CM here are identical
+    to the skj-integrated totals used by SOL 144, the f06 and the viewer's S&C
+    derivative table.  They are components of the body-axis resultant, not the
+    panel-normal force magnitude: on a surface with dihedral Γ the boundary
+    condition reduces the pressure by cos Γ and the projection reduces the
+    vertical force by a further cos Γ, so CZ scales as cos²Γ (theory §2.9,
+    "dihedral enters twice").
 
     Returns a dict with keys:
       cp            (n,) pressure coefficient per box  (ΔCp = 2Γ / (V∞ · chord_box))
-      cl_section    dict mapping i_span → section load coefficient (all surfaces)
-      CL            **body-axis** vertical-force coefficient from horizontal (lift)
-                    surfaces (≡ CZ; the force summed on global/body-z).  This is the
-                    historical key name; it is NOT the wind-axis lift.  Linear in α,
-                    so the α-linearity / AoA-equivalence / parallel-axis-CM identities
-                    are expressed in terms of it.
+      cl_section    dict mapping i_span → section **normal-force** coefficient cn
+                    (all surfaces).  Deliberately NOT projected on body-z: cn is the
+                    conventional section quantity and is what ``section_data`` /
+                    ``section_correction`` ingest from CFD and test.  Only the global
+                    totals below are body-axis.
+      CL            **body-axis** vertical-force coefficient — the box forces summed
+                    on global/body-z over every box (≡ CZ).  This is the historical
+                    key name; it is NOT the wind-axis lift.  Linear in α, so the
+                    α-linearity / AoA-equivalence / parallel-axis-CM identities are
+                    expressed in terms of it.
       CZ            body-axis vertical-force coefficient (explicit alias of ``CL``)
-      CX            body-axis streamwise-force coefficient (≈ 0 — a surface-normal-
-                    pressure VLM carries no leading-edge suction, and incidence/
-                    camber/controls enter via normalwash, not geometric rotation)
+      CX            body-axis streamwise-force coefficient (≈ 0 for planar geometry —
+                    a surface-normal-pressure VLM carries no leading-edge suction, and
+                    incidence/camber/controls enter via normalwash, not geometric
+                    rotation — but non-zero wherever a panel is tilted in x)
       CL_wind       **wind-axis** lift coefficient (force ⊥ to U∞): the body-axis
                     resultant rotated through α, ``CL_wind = CZ·cosα − CX·sinα``.
                     Equals CZ only at α ≈ 0; this is the genuine CL.
@@ -281,11 +300,14 @@ def solve_rigid_cl(
                     near-field projection ``CX·cosα + CZ·sinα`` (a no-LE-suction
                     flat-panel VLM gets that wrong); the Trefftz far-field value is
                     the physically meaningful wind-axis drag.
-      CY            sideforce coefficient from vertical (sideforce) surfaces
+      CY            body-axis sideforce coefficient, summed over every box — so a
+                    canted lifting surface's side force is included, not only that
+                    of surfaces classified "sideforce"
       CM            pitching moment coefficient about xref, nose-up positive;
-                    lift surfaces only; normalised by S_ref × c_ref. Each box
-                    load acts at its 1/4-chord bound vortex (not the 3/4-chord
-                    collocation point) — the physically correct moment arm.
+                    ``−Σ Fz·(x_force − xref)`` over every box, normalised by
+                    S_ref × c_ref — verbatim ``sol144.pitch_moment``.  Each box load
+                    acts at its 1/4-chord bound vortex (not the 3/4-chord collocation
+                    point) — the physically correct moment arm.
                     (Pitch moment is invariant under the body→wind rotation about y.)
       CDi           Trefftz-plane induced drag coefficient (lift surfaces only)
       e             Oswald span efficiency: CDi = CZ²/(π·AR·e)  (body-axis lift)
@@ -313,20 +335,22 @@ def solve_rigid_cl(
     # positive wg (downwash slope) reduces lift exactly as in the trim solver.
     rhs = np.array([-(alpha * b.normal[2] + beta * b.normal[1]) for b in boxes]) + wg_vec
 
-    # Spanwise width of each box (used for Kutta-Joukowski lift).
-    # K-J: F⃗ = ρ V⃗∞ × Γ Δs⃗; for V⃗∞ = (1,0,0), lift scales with Δy, not ‖Δs⃗‖.
-    # Use the projected cross-flow width sqrt(Δy²+Δz²) so sweep and dihedral
-    # are handled correctly without changing any caller.
-    dy = np.array([
+    # Cross-flow width of each box: ‖Δs⃗‖ projected on the y-z plane,
+    # sqrt(Δy²+Δz²), so sweep and dihedral are handled correctly.  This is the
+    # panel *width* — it sets the box chord below and weights the Trefftz wake
+    # integral.  It is NOT the vertical-force lever: the body-axis components of
+    # the box force come from the box normal (see f_box), not from this scalar
+    # (DEF-M2).
+    width = np.array([
         float(math.sqrt((b.bound_b[1] - b.bound_a[1])**2
                       + (b.bound_b[2] - b.bound_a[2])**2))
         for b in boxes
     ])
 
-    # Individual box chord = area / spanwise_width  (avoids relying on box.chord
+    # Individual box chord = area / width  (avoids relying on box.chord
     # which stores the CAERO1 macroelement chord, not the VLM panel chord)
     chord_box = np.array([
-        boxes[i].area / dy[i] if dy[i] > _DEGEN_TOL else 1.0
+        boxes[i].area / width[i] if width[i] > _DEGEN_TOL else 1.0
         for i in range(n)
     ])
 
@@ -359,16 +383,27 @@ def solve_rigid_cl(
         gamma = np.linalg.solve(A, rhs)
         gamma /= beta_pg   # Göthert boundary-condition scaling (§2.8 Eq. 14)
 
-    # Quarter-chord (bound-vortex) x of each box: the point at which the
-    # Kutta-Joukowski force physically acts, and hence the correct moment arm
-    # for the pitching moment.  Using the 3/4-chord collocation point instead
-    # shifts every box load aft by half a box chord and inflates |CM| by
-    # CL·(½·box_chord)/c_ref — a mesh-dependent bias that vanishes only as
-    # NCHORD→∞.  Validated against AVL/VortexLattice.jl (val_vlm_byu_wing).
-    x_qc = np.array([0.5 * (boxes[i].bound_a[0] + boxes[i].bound_b[0]) for i in range(n)])
-
     # Pressure coefficient per box: ΔCp = 2Γ / (V∞ · chord_box), V∞ = 1
     cp = 2.0 * gamma / chord_box
+
+    # Per-box body-axis force in force/q units, [Fx, Fy, Fz] per row.  Identical
+    # by construction to build_skj(boxes) @ cp — since chord_box = area/width,
+    #     F_j = area_j·n̂_j·cp_j = 2·Γ_j·‖Δs⃗_j‖·n̂_j
+    # — so this rigid path and the skj path used by SOL 144 cannot drift apart.
+    # The z-column is also exactly the Kutta-Joukowski lift ρV∞Γ Δy_raw, because
+    # ‖Δs⃗‖·n_z = Δy_raw.  Before DEF-M2 the totals below used the force
+    # *magnitude* 2Γ‖Δs⃗‖ as if it were vertical, overstating CZ by 1/cos Γ on a
+    # panel with dihedral and disagreeing with every skj-based deliverable.
+    normals = np.array([b.normal for b in boxes])            # (n, 3)
+    f_box = (2.0 * gamma * width)[:, None] * normals         # (n, 3)
+
+    # Streamwise station at which each box force acts: the ¼-chord bound-vortex
+    # midpoint (AE6), the correct pitching-moment arm.  Using the ¾-chord
+    # collocation point instead shifts every box load aft by half a box chord and
+    # inflates |CM| by CL·(½·box_chord)/c_ref — a mesh-dependent bias that
+    # vanishes only as NCHORD→∞.  Validated against AVL/VortexLattice.jl
+    # (val_vlm_byu_wing).
+    x_force = np.array([b.force_point[0] for b in boxes])
 
     # -----------------------------------------------------------------------
     # Reference geometry
@@ -384,7 +419,7 @@ def solve_rigid_cl(
         # full tip-to-tip extent, so AR = span_ref² / S_ref is unambiguous.
         S_ref = sum(b.area for b in boxes)
         colloc_pts = np.array([b.colloc for b in boxes])
-        span_ref = float(np.max(np.ptp(colloc_pts[:, 1:], axis=0))) + dy.mean()
+        span_ref = float(np.max(np.ptp(colloc_pts[:, 1:], axis=0))) + width.mean()
         if span_ref < _DEGEN_TOL:
             span_ref = 1.0
         c_ref = S_ref / span_ref
@@ -415,8 +450,9 @@ def solve_rigid_cl(
         stype = "lift" if mean_abs_normal[2] >= mean_abs_normal[1] else "sideforce"
         surfaces[eid] = {"type": stype, "indices": idxs}
 
-    lift_indices = [i for s in surfaces.values() if s["type"] == "lift"  for i in s["indices"]]
-    sf_indices   = [i for s in surfaces.values() if s["type"] == "sideforce" for i in s["indices"]]
+    # (No flat lift/sideforce index lists: since DEF-M2 the global totals sum
+    # every box, and the per-surface breakdown below uses each surface's own
+    # index list.  The classification survives only as a per_surface label.)
 
     # -----------------------------------------------------------------------
     # Section loads: group by i_span (all surfaces, for backward compatibility)
@@ -427,67 +463,70 @@ def solve_rigid_cl(
 
     cl_section: dict[int, float] = {}
     for s, idxs in sorted(strips.items()):
-        dy_s = dy[idxs[0]]   # all boxes in a strip share the same spanwise width
+        dy_s = width[idxs[0]]   # all boxes in a strip share the same spanwise width
         chord_strip = sum(boxes[i].area for i in idxs) / dy_s
         if chord_strip < _DEGEN_TOL:
             chord_strip = 1.0
         cl_section[s] = 2.0 * sum(gamma[i] for i in idxs) / chord_strip
 
     # -----------------------------------------------------------------------
-    # Global CL (lift surfaces), CY (sideforce surfaces), CM (lift, about xref)
+    # Global body-axis force coefficients (DEF-M2).
+    #
+    # Each is the corresponding column of f_box summed over EVERY box and
+    # normalised by S_ref — genuine components of the body-axis resultant, the
+    # same quantities `sol144.compute_rigid_derivs` integrates through skj.
+    # Before DEF-M2, CZ and CY were partitioned by surface *classification*
+    # (lift surfaces → CZ, sideforce surfaces → CY) and each carried the panel-
+    # normal force magnitude rather than its projection, so a dihedral wing's
+    # real side force was reported nowhere and its CZ was 1/cos Γ too large.
+    # The lift/sideforce classification is retained for `per_surface` labelling.
     # -----------------------------------------------------------------------
-    lift_idx = np.array(lift_indices, dtype=int)
-    sf_idx   = np.array(sf_indices,   dtype=int)
-
-    L_lift = float(np.dot(gamma[lift_idx], dy[lift_idx])) if len(lift_idx) else 0.0
-    L_sf   = float(np.dot(gamma[sf_idx],   dy[sf_idx]))   if len(sf_idx)   else 0.0
-
-    CL = 2.0 * L_lift / S_ref      # body-axis vertical force (≡ CZ)
-    CY = 2.0 * L_sf   / S_ref
+    CX = float(f_box[:, 0].sum()) / S_ref
+    CY = float(f_box[:, 1].sum()) / S_ref
+    CL = float(f_box[:, 2].sum()) / S_ref      # body-axis vertical force (≡ CZ)
 
     # ------------------------------------------------------------------ #
     # Wind-axis lift/drag (genuine CL/CD, ⊥ and ∥ to the freestream U∞).
     # The body-axis resultant is (CX, CZ); rotating through the angle of
-    # attack gives CL_wind = CZ·cosα − CX·sinα.  CX = 2·Σ Γ·Δy·n_x / S_ref is
-    # the body-streamwise force — ≈ 0 here because the panels carry only
-    # surface-normal pressure (no leading-edge suction) and incidence/camber/
-    # controls enter through the normalwash rather than a geometric panel tilt,
-    # so for planar geometry CL_wind reduces to CZ·cosα.  The genuine wind-axis
-    # (induced) drag is the Trefftz CDi, not the unreliable near-field
-    # projection CX·cosα + CZ·sinα.  CL_wind = CZ only at α ≈ 0 (see §5.4 of
+    # attack gives CL_wind = CZ·cosα − CX·sinα.  CX is the body-streamwise
+    # force — ≈ 0 here because the panels carry only surface-normal pressure
+    # (no leading-edge suction) and incidence/camber/controls enter through the
+    # normalwash rather than a geometric panel tilt, so for planar geometry
+    # CL_wind reduces to CZ·cosα.  The genuine wind-axis (induced) drag is the
+    # Trefftz CDi, not the unreliable near-field projection CX·cosα + CZ·sinα.
+    # CL_wind = CZ only at α ≈ 0 (see §5.4 of
     # docs/20_theory/01_aeroelastics_theory.md).
-    n_x = np.array([b.normal[0] for b in boxes])
-    CX = 2.0 * float(np.dot(gamma * dy, n_x)) / S_ref
     ca, sa = math.cos(alpha), math.sin(alpha)
     CL_wind = CL * ca - CX * sa
     CD_wind = _cdi_result["CDi"]
 
-    # Nose-up-positive pitching moment about xref.  Pressure form here
-    # (cp·area·arm); the equivalent force form (Fz·arm) lives in
-    # sol144.pitch_moment — the single source for the trim chain.  Both share
-    # this `−Σ(...)·(x − xref)` sign convention (AE1 Step E); keep them aligned.
-    CM = (
-        -sum(cp[i] * boxes[i].area * (x_qc[i] - xref) for i in lift_indices)
-        / (S_ref * c_ref)
-    ) if lift_indices else 0.0
+    # Nose-up-positive pitching moment about xref: −Σ Fz·(x_force − xref) over
+    # every box, verbatim `sol144.pitch_moment` — the single source for the
+    # moment-arm convention in the trim chain (AE1 Step E).  Before DEF-M2 this
+    # used the pressure form cp·area·arm over lift surfaces only, i.e. the
+    # normal-force magnitude rather than Fz, diverging from the trim path on any
+    # canted deck.
+    CM = -float(np.dot(f_box[:, 2], x_force - xref)) / (S_ref * c_ref)
 
     # -----------------------------------------------------------------------
     # Per-surface coefficients
     # -----------------------------------------------------------------------
+    # Same body-axis projection as the global totals, restricted to one CAERO1.
+    # The surface_type label still selects which coefficient is reported, so the
+    # per-surface breakdown keeps its existing shape; only the convention of the
+    # numbers changed (DEF-M2).
     per_surface: dict[int, dict[str, Any]] = {}
     for eid, sinfo in surfaces.items():
-        idxs = sinfo["indices"]
-        idx_arr = np.array(idxs, dtype=int)
-        L_eid = float(np.dot(gamma[idx_arr], dy[idx_arr]))
+        idx_arr = np.array(sinfo["indices"], dtype=int)
         if sinfo["type"] == "lift":
-            cl_eid = 2.0 * L_eid / S_ref
+            cl_eid = float(f_box[idx_arr, 2].sum()) / S_ref
             cm_eid = (
-                -sum(cp[i] * boxes[i].area * (x_qc[i] - xref) for i in idxs)
+                -float(np.dot(f_box[idx_arr, 2], x_force[idx_arr] - xref))
                 / (S_ref * c_ref)
             ) if S_ref * c_ref > _DEGEN_TOL else 0.0
             per_surface[eid] = {"surface_type": "lift",      "CL": cl_eid, "CY": 0.0,    "CM": cm_eid}
         else:
-            cy_eid = 2.0 * L_eid / S_ref
+            cy_eid = float(f_box[idx_arr, 1].sum()) / S_ref
             per_surface[eid] = {"surface_type": "sideforce", "CL": 0.0,    "CY": cy_eid, "CM": 0.0}
 
     return {

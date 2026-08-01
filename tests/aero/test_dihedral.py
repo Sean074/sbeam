@@ -95,9 +95,17 @@ def test_side_force_ratio_and_cancellation(deck, sign):
 
 
 # --------------------------------------------------------------------------- #
-# 3. Rigid CL ≈ CL_planar·cosΓ (backlog acceptance) + dihedral/anhedral symmetry.
+# 3. Rigid CZ ≈ CZ_planar·cos²Γ + dihedral/anhedral symmetry.
 # --------------------------------------------------------------------------- #
 def test_rigid_cl_cos_gamma():
+    """Dihedral enters twice: cos Γ in the boundary condition, cos Γ in the projection.
+
+    ``solve_rigid_cl`` returns the **body-axis** CZ (theory §2.9), so the ratio to
+    the planar deck is cos²Γ.  Before DEF-M2 (2026-08-01) it returned the
+    panel-normal force *magnitude* — the once-projected cos Γ — which is why this
+    gate previously asserted a single cosine and disagreed with the skj-integrated
+    SOL 144 totals on exactly these decks.
+    """
     am_p, bulk_p = _rigid_aero("val_vlm_rect_ar8.bdf")
     cl_planar = solve_rigid_cl(am_p.boxes, ALPHA, aeros=bulk_p.aeros)["CL"]
 
@@ -107,7 +115,7 @@ def test_rigid_cl_cos_gamma():
         r = solve_rigid_cl(am.boxes, ALPHA, aeros=bulk.aeros)
         cls[deck] = r["CL"]
         assert r["CY"] == pytest.approx(0.0, abs=1e-9)            # side force cancels
-        assert r["CL"] == pytest.approx(cl_planar * COS, rel=0.01)
+        assert r["CL"] == pytest.approx(cl_planar * COS * COS, rel=0.01)
 
     # cos is even → dihedral and anhedral give identical CL.
     assert cls["val_vlm_dihedral.bdf"] == pytest.approx(

@@ -254,17 +254,33 @@ A @ Γ = rhs
   rigid-path sign (`TestBaselineNormalwashWg`).
 
 **Surface classification:** each CAERO1 surface is classified from its mean outward
-normal — `|n_z| ≥ |n_y|` → *lift* surface (contributes to CL and CM); `|n_y| > |n_z|`
-→ *sideforce* surface (contributes to CY). This ensures VTP sideforce is not added to
-wing CL on multi-surface models.
+normal — `|n_z| ≥ |n_y|` → *lift* surface; `|n_y| > |n_z|` → *sideforce* surface. Since
+DEF-M2 this labels the `per_surface` breakdown only; the **global totals are true
+body-axis sums over every box**, so a VTP contributes its (near-zero) `Fz` to CZ and a
+dihedral wing contributes its real `Fy` to CY, exactly as `skj` integrates them.
+
+**Force convention (DEF-M2, resolved 2026-08-01):** every box force is
+`F_j = area_j · n̂_j · cp_j` — the same object `build_skj` produces — so `CX/CY/CZ/CM`
+here are *identical* to the skj-integrated totals used by SOL 144, the f06 and the
+viewer's S&C derivative table. They are components of the body-axis resultant, not the
+panel-normal force magnitude. On a surface with dihedral Γ the boundary condition
+reduces the pressure by `cos Γ` and the projection reduces the vertical force by a
+further `cos Γ`, so **CZ scales as cos²Γ** (theory §2.9, "dihedral enters twice").
+Previously the totals used the force *magnitude* `2Γ‖Δs⃗‖` as if it were vertical,
+overstating CZ by `1/cos Γ` (1.1547 at Γ = 30°) and silently disagreeing with every
+skj-based deliverable on any canted deck.
 
 **Returns a dict:**
 - `cp`: (n,) pressure coefficient per box — `2Γ / (V∞ × box_chord)`, V∞ = 1
-- `cl_section`: `{i_span: CL_strip}` — per-strip coefficient via Kutta–Joukowski (all surfaces)
-- `CL`: **body-axis** vertical-force coefficient (≡ `CZ`) — lift surfaces only, normalised
-  by S_ref. This is the historical key name; it is the force summed on global/body-z, **not**
-  the wind-axis lift. It is linear in α, so the α-linearity / AoA-equivalence / parallel-axis-CM
-  identities are stated in terms of it.
+- `cl_section`: `{i_span: cn_strip}` — per-strip **normal-force** coefficient via
+  Kutta–Joukowski (all surfaces). Deliberately *not* projected on body-z: `cn` is the
+  conventional section quantity and is what `section_data` / `section_correction` ingest
+  from CFD and test, so projecting it would break the correction round-trip. Only the
+  global totals below are body-axis.
+- `CL`: **body-axis** vertical-force coefficient (≡ `CZ`) — the box forces summed on
+  global/body-z over **every** box, normalised by S_ref. This is the historical key name;
+  it is **not** the wind-axis lift. It is linear in α, so the α-linearity /
+  AoA-equivalence / parallel-axis-CM identities are stated in terms of it.
 - `CZ`: body-axis vertical-force coefficient (explicit alias of `CL`)
 - `CX`: body-axis streamwise-force coefficient. ≈ 0 — a surface-normal-pressure VLM carries no
   leading-edge suction, and incidence/camber/controls enter via normalwash (not a geometric
@@ -275,16 +291,21 @@ wing CL on multi-surface models.
 - `CD_wind`: **wind-axis drag** coefficient (force ∥ to U∞) = the Trefftz `CDi`. Deliberately
   *not* the near-field projection `CX·cosα + CZ·sinα`, which a no-LE-suction flat-panel VLM
   computes incorrectly; the Trefftz far-field induced drag is the meaningful wind-axis drag.
-- `CY`: total sideforce coefficient — sideforce surfaces only, normalised by S_ref
-- `CM`: pitching moment about `xref`, nose-up positive; lift surfaces only;
-  normalised by S_ref × c_ref. Each box load acts at its **¼-chord bound vortex**
-  (not the ¾-chord collocation point) — the physically correct moment arm.
-  Validated against AVL / VortexLattice.jl (`val_vlm_byu_wing`: CM −0.0209 vs −0.02085).
+- `CY`: body-axis sideforce coefficient, summed over **every** box, normalised by S_ref —
+  so a canted lifting surface's side force is included, not only that of surfaces
+  classified *sideforce*. It cancels to ~1e-17 over a symmetric build.
+- `CM`: pitching moment about `xref`, nose-up positive — `−Σ Fz·(x_force − xref)` over
+  **every** box, normalised by S_ref × c_ref. This is verbatim `sol144.pitch_moment`, the
+  single source for the moment-arm convention in the trim chain. Each box load acts at its
+  **¼-chord bound vortex** (not the ¾-chord collocation point) — the physically correct
+  moment arm. Validated against AVL / VortexLattice.jl (`val_vlm_byu_wing`: CM −0.0209 vs
+  −0.02085).
 
-  **dy convention (AE3 resolved):** `dy = sqrt(Δy² + Δz²)` — the projected cross-flow
-  width of the bound-vortex segment. The K-J force is `F⃗ = ρV⃗∞ × ΓΔs⃗`; for
-  `V⃗∞ = (1,0,0)` the lift component scales with the **y-projection** of the segment, not
-  its 3-D length. The projection handles sweep and dihedral automatically. Verified:
+  **Width convention (AE3 resolved; clarified by DEF-M2):** `width = sqrt(Δy² + Δz²)` —
+  the cross-flow-projected width of the bound-vortex segment. It sets the box chord
+  (`chord_box = area / width`) and weights the Trefftz wake integral. It is **not** the
+  vertical-force lever: the body-axis components come from the box normal, via
+  `F_j = 2Γ_j·width_j·n̂_j ≡ area_j·n̂_j·cp_j`. Conflating the two was DEF-M2. Verified:
   HA144A (Λ = 30°) CLα = 5.0709 vs NASTRAN 5.07097; CMα = −2.871 vs NASTRAN −2.871.
 - `CDi`: Trefftz-plane induced drag coefficient — lift surfaces only, normalised by
   S_ref. Computed by `trefftz_cdi()` via the 2-D Biot-Savart far-field integral

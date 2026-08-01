@@ -13,6 +13,40 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Fixed
 
+**DEF-M2 — `solve_rigid_cl` now reports body-axis force/moment components (2026-08-01)**
+
+⚠️ **Behaviour change on canted decks.** The rigid VLM path integrated lift as
+`2·Σ Γ·‖Δs⃗‖`, crediting the whole Kutta–Joukowski force *magnitude* to body-z with no `n_z`
+projection, and computed `CM` from the pressure form over lift surfaces only. `build_skj`
+produces a genuine vector `F_j = area_j·n̂_j·cp_j`, and the normalwash RHS already carries one
+`cos Γ` — so the trim/f06 totals scaled as `cos²Γ` while the rigid path scaled as `cos Γ`, an
+`1/cos Γ` disagreement (1.1547 at 30° dihedral). Inside the viewer, the Aero tab's CZ/CM
+metrics disagreed with the S&C derivative table *on the same tab*.
+
+`CX`/`CY`/`CZ` are now the three columns of a single per-box force vector
+`f_box = 2·Γ·width·n̂ ≡ skj @ cp`, summed over every box; `CM` is `−Σ Fz·(x_force − xref)`,
+verbatim `sol144.pitch_moment`. The two paths are now identical **by construction**, gated at
+1e-12 by the new V-AE3-DIH test on three canted decks. The `dy` variable was renamed `width`:
+it is the panel width (setting `chord_box`, weighting the Trefftz integral), never the
+vertical-force lever, and conflating the two roles was the defect.
+
+Values that move, all explained by the deck's dihedral — measured at α = 3°:
+
+| Deck | Wing dihedral | CZ and CM ratio (new/old) |
+|------|---------------|---------------------------|
+| `val_vlm_dihedral`, `val_vlm_anhedral`, `val_dihedral_trim` | 10.000° | 0.98481 = cos 10° |
+| `val_wing_taper_dihedral`, `..._twist` | 5.000° | 0.99619 = cos 5° |
+| `cessna210_aero`, `_body`, `_strip` | 1.504° | 0.99969 (load-weighted blend with the flat tail) |
+
+The other 8 aero sample decks are planar and bit-identical. `CY` is now summed over every box,
+so a canted wing's real side force is reported (it cancels to ~1e-17 on symmetric builds)
+rather than being dropped because the surface was classified "lift". `cl_section` is
+deliberately unchanged — it is a section *normal-force* coefficient `cn`, which is what the
+section-correction path ingests from CFD; that asymmetry is now documented at both ends.
+`trefftz_cdi`'s internal `CL_l` was projected so `CDi = CZ²/(π·AR·e)` holds against the
+returned `CZ`; the nonplanar-wake `Di` kernel itself is a separate physics question, raised as
+backlog **DEF-M14** rather than changed silently here.
+
 **DEF-M11 — ATTACH force transfer completed for canted and vertical panels (2026-08-01)**
 
 `_build_attach_rows` (`sbeam/aero/spline.py`) filled only the z-displacement row of `g_disp`

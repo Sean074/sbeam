@@ -53,6 +53,13 @@ SAMPLE = Path(__file__).parent.parent.parent / "sample"
 DECKS = {
     "ha144a": SAMPLE / "ha144a_fullspan_sbeam.bdf",   # M=0.9, has W2GJ (excluded)
     "rect_ar8": SAMPLE / "val_vlm_rect_ar8.bdf",      # M=0.0, planar, no W2GJ
+    # Canted decks (DEF-M2).  Until 2026-08-01 solve_rigid_cl reported the
+    # panel-normal force magnitude rather than its body-axis projection, so it
+    # disagreed with the skj path by 1/cos Γ on exactly these decks — the two
+    # planar decks above could never have caught it.
+    "dihedral": SAMPLE / "val_vlm_dihedral.bdf",      # M=0.0, Γ = +10°
+    "anhedral": SAMPLE / "val_vlm_anhedral.bdf",      # M=0.0, Γ = −10°
+    "taper_dih": SAMPLE / "val_wing_taper_dihedral.bdf",   # Γ = +5°, tapered
 }
 
 
@@ -114,3 +121,42 @@ def test_total_moment_cross_check(model):
         f"{name}: coupling-path My {My_c:.6g} != solve_rigid_cl CM*S*c {My_i:.6g} "
         f"(abs err {abs(My_c - My_i):.6g}, floor {abs_floor:.6g})"
     )
+
+
+def test_vae3_dih_rigid_totals_are_the_skj_totals(model):
+    """V-AE3-DIH: on a *shared* ΔCp the two paths agree to machine precision.
+
+    The cross-checks above rebuild the AIC independently, so they can only assert
+    a 1% engineering agreement.  Feeding both paths the same ``cp`` isolates the
+    force *convention*, which after DEF-M2 is one definition
+    (``F_j = area_j·n̂_j·cp_j``) rather than two — so CX, CY, CZ and CM must match
+    the skj integration exactly, on canted decks as much as planar ones.
+
+    This is the gate DEF-M2 actually needed: `test_rigid_cl_cos_gamma` pins the
+    physics against a closed form, but only this pins the rigid path to the
+    deliverables (f06 totals, trim, viewer S&C table) that consume skj.
+    """
+    import numpy as np
+    name, bulk, aero = model
+
+    x_ref = _x_ref(bulk)
+    res = solve_rigid_cl(aero.boxes, alpha=0.05, beta=0.0, aeros=bulk.aeros,
+                         xref=x_ref, wg=aero.wg, cp_operator=aero.ajj_inv_corr)
+
+    f_box = (aero.skj @ res["cp"]).reshape(-1, 3)
+    S, c = float(bulk.aeros.sref), float(bulk.aeros.cref)
+
+    for j, key in enumerate(("CX", "CY", "CZ")):
+        assert res[key] == pytest.approx(float(f_box[:, j].sum()) / S, abs=1e-12), (
+            f"{name}: {key} differs from the skj integration"
+        )
+
+    my_skj = pitch_moment(f_box.reshape(-1), aero.boxes, x_ref)
+    assert res["CM"] == pytest.approx(my_skj / (S * c), abs=1e-12), (
+        f"{name}: CM differs from sol144.pitch_moment"
+    )
+
+    # The canted decks must actually exercise the projection, or the gate is vacuous.
+    if name in ("dihedral", "anhedral", "taper_dih"):
+        nz = np.array([b.normal[2] for b in aero.boxes])
+        assert np.all(np.abs(nz - 1.0) > 1e-6), "expected a canted deck"
