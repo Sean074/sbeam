@@ -55,8 +55,16 @@ nothing downstream assumes symmetry (the trim Schur solve and the divergence eig
 both general).
 
 Master-grid resolution: `SPLINE0` field 5 (`GRID`) if given, else the first SUPORT grid.
-With neither, a `UserWarning` reports the dropped load and the rows stay zero — SOL 101
-body-panel decks (`sample/cessna210_body.bdf`, `cessna210_strip.bdf`) rely on this.
+With neither, a `UserWarning` reports the dropped load and the rows stay zero
+(`tests/integration/test_sol144_body_injection.py::TestNoSuportDecksStillBuild`).
+
+The flagship body overlays (`sample/cessna210_flagship_body_cruciform.bdf`,
+`..._strip.bdf`) name the grid explicitly — `SPLINE0, 9400, 6000, 6000, 6015, 900` — even
+though GRID 900 is also the SUPORT grid, so the intent is on the card rather than implied.
+Two conditions on that grid: it must be in the structural load path (GRID 900 is spliced
+into the fuselage CBAR chain, not floated on an RBE2), and it must appear in the
+whole-airplane `MONPNT3` `SET1`, or the balanced-monitor check silently stops covering the
+body load (DEF-M10).
 
 ### SPLINE2 — NASTRAN Infinite Beam (Linear) Spline
 

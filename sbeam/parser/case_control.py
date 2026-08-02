@@ -28,7 +28,14 @@ class CaseControl:
     sol: int
     title: str = ""
     subcases: list["SubcaseControl"] = field(default_factory=list)
-    include: Optional[str] = None  # Path to bulk data INCLUDE file
+    include: Optional[str] = None  # First INCLUDE path (back-compat; see `includes`)
+    # All INCLUDE paths, in file order.  A deck may name several — the bulk is the
+    # concatenation of every included file followed by any inline bulk data (the
+    # NASTRAN behaviour).  This is what lets a driver deck compose a shared bulk
+    # file with a small overlay, e.g. the Cessna 210 flagship + its body panels.
+    # `include` stays the first entry so existing single-INCLUDE callers are
+    # unaffected.
+    includes: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -75,7 +82,7 @@ def parse_case_control(lines: list[str]) -> CaseControl:
     sol = None
     title = ""
     subcases = []
-    include = None
+    includes: list[str] = []
     current_sc = None
 
     for raw in lines:
@@ -102,7 +109,7 @@ def parse_case_control(lines: list[str]) -> CaseControl:
             current_sc = SubcaseControl(subcase_id=int(value))
 
         elif keyword == "INCLUDE":
-            include = _cc_include_path(stripped)
+            includes.append(_cc_include_path(stripped))
 
         elif keyword == "BEGIN":
             break
@@ -145,4 +152,6 @@ def parse_case_control(lines: list[str]) -> CaseControl:
     if sol is None:
         raise ValueError("Case control section contains no SOL statement")
 
-    return CaseControl(sol=sol, title=title, subcases=subcases, include=include)
+    return CaseControl(sol=sol, title=title, subcases=subcases,
+                       include=includes[0] if includes else None,
+                       includes=includes)

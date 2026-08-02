@@ -35,28 +35,24 @@ from sbeam.model.aero import Aecorr, W2gj
 from sbeam.solver.sol144 import pitch_moment
 
 _ROOT = Path(__file__).parent.parent.parent / "sample"
-BDF_PATH = _ROOT / "cessna210_body.bdf"
-CSV_PATH = _ROOT / "cessna210_body_section_data.csv"
+BDF_PATH = _ROOT / "cessna210_flagship_body.bdf"
+STRIP_BDF_PATH = _ROOT / "cessna210_flagship_body_strip_drv.bdf"
+CSV_PATH = _ROOT / "cessna210_flagship_section_data.csv"
 
 _HORIZ, _VERT = 6000, 7000
 
 
 @pytest.fixture(scope="module")
-def flying():
-    """Flying-corrected bulk + its AeroModel + baseline totals (built once)."""
-    _cc, bulk = parse_bdf(str(BDF_PATH))
-    model = build_aero_model(bulk)
+def flying(flagship_cruciform_uncorrected):
+    """Flying-corrected bulk + its AeroModel + baseline totals.
+
+    The flagship deck ships its flying-surface correction already committed, so
+    unlike the retired cessna210_body deck there is nothing to synthesise here —
+    the shared fixture just removes the committed BODY cards, leaving exactly the
+    input the body-correction builders expect.
+    """
+    _cc, bulk_f, aero_f, _gi, _w = flagship_cruciform_uncorrected
     df = pd.read_csv(CSV_PATH)
-    flying_rows, _totals = split_total_rows(df)
-    res = sd.build_from_section_data_multi(
-        model.boxes, model.ajj, flying_rows, mach=0.0, incidence_deg=3.0,
-        sid_w2gj_base=9100, sid_aecorr_base=9200)
-    assert res.skipped == []
-    w2 = {w.sid: w for (w, _a) in res.correction.cards.values()}
-    ac = {a.sid: a for (_w, a) in res.correction.cards.values()}
-    bulk_f = dataclasses.replace(
-        bulk, w2gjs={**bulk.w2gjs, **w2}, aecorrs={**bulk.aecorrs, **ac})
-    aero_f = build_aero_model(bulk_f)
     x_ref, ref_pt = _ref_geometry(bulk_f)
     d_jx = build_djx(aero_f.boxes, ["ANGLEA", "SIDES"], bulk_f)
     base = _total_metrics(aero_f, bulk_f, d_jx, ["ANGLEA", "SIDES"], x_ref, ref_pt)
@@ -66,9 +62,14 @@ def flying():
 @pytest.fixture(scope="module")
 def both_result(flying):
     bulk_f, _df, aero_f, base = flying
+    # Increments are exercise values, not physical anchors — but they have to stay
+    # inside what this panel pair can legitimately supply.  On the flagship geometry
+    # the roll ask is the binding one: +0.04 in Cl_beta drives the WT2 ratio past
+    # RATIO_WARN, which is the builder correctly reporting that a flat-plate
+    # cruciform is being asked for more than a fuselage stand-in should give.
     tgt = BodyTargets(cm_alpha=base.cm_alpha + 0.30, cm0=base.cm0 - 0.06,
                       cn_beta=base.cn_beta - 0.05, cn0=base.cn0 + 0.004,
-                      cl_beta=base.cl_beta + 0.04, cl0=base.cl0 + 0.003)
+                      cl_beta=base.cl_beta + 0.015, cl0=base.cl0 + 0.003)
     res = build_body_correction(bulk_f, horiz_eid=_HORIZ, vert_eid=_VERT,
                                 targets=tgt, aero=aero_f, mach=0.0)
     return tgt, res
@@ -83,8 +84,8 @@ def test_split_and_parse_total_block():
     tgt = parse_body_targets(df, mach=0.0)
     # Realistic totals = flying-surface baseline + a small fuselage increment (mild
     # destabilising pitch/yaw, ~0 roll); see the deck header and 05_aeroelastics.md.
-    assert tgt == BodyTargets(cm_alpha=-19.92, cm0=-0.51, cn_beta=0.368, cn0=0.001,
-                              cl_beta=-0.051, cl0=0.0)
+    assert tgt == BodyTargets(cm_alpha=-1.4921, cm0=-0.0404, cn_beta=0.0772, cn0=0.0,
+                              cl_beta=-0.0364, cl0=0.0)
     assert parse_body_targets(df, mach=0.7) is None   # no TOTAL row at this Mach
 
 
@@ -112,7 +113,7 @@ def test_body_cards_shape(both_result):
     assert ach.method == "WT2" and ach.caero_eid == _HORIZ
     assert len(w2h.data) == 16 and len(ach.target) == 16   # horizontal: 2 x 8 boxes
     w2v, acv = res.cards[_VERT]
-    assert len(w2v.data) == 32 and len(acv.target) == 32   # vertical: 4 x 8 boxes
+    assert len(w2v.data) == 32 and len(acv.target) == 32   # vertical: 2 x 16 boxes
 
 
 def test_production_path_and_decoupling(flying, both_result):
@@ -190,10 +191,13 @@ def test_multi_surface_body_plane():
     and each emits its own card pair.  Here the vertical body is two panels (the deck's
     7000 plus a ventral piece 8000)."""
     _cc, bulk = parse_bdf(str(BDF_PATH))
+    for store in (bulk.w2gjs, bulk.aecorrs, bulk.stripks):
+        for sid in [s for s, c in store.items() if c.caero_eid in (6000, 7000)]:
+            del store[sid]
     c500 = bulk.caero1s[7000]
     # second vertical body panel (ventral, below 7000 — distinct z band, clear of the tail)
     bulk.caero1s[8000] = dataclasses.replace(
-        c500, eid=8000, nspan=4, nchord=8,
+        c500, eid=8000, nspan=2, nchord=16,
         p1=(0.30, 0.0, -0.35), x12=4.70, p4=(0.30, 0.0, -0.05), x43=4.70)
     model = build_aero_model(bulk)
     # vertical body is now two panels (both +Y), horizontal one panel (+Z)
@@ -264,7 +268,7 @@ def test_cruciform_builder_rejects_a_strip_panel():
 
     It used to be accepted and then never actually corrected.
     """
-    _cc, bulk = parse_bdf(str(_ROOT / "cessna210_strip.bdf"))
+    _cc, bulk = parse_bdf(str(STRIP_BDF_PATH))
     with pytest.raises(ValueError, match=r"CAERO1 6000 is a PSTRIP body panel"):
         build_body_correction(
             bulk, horiz_eid=6000, targets=BodyTargets(cm_alpha=0.1))

@@ -1190,6 +1190,84 @@ MASSSET both halves; T7 fin ATTACH resolves from file and transfers side force e
 (F = Σf_j) with non-zero roll/yaw; T8 divergence ≥ 10× q. Plus 5 re-derived checks in
 `test_cessna210_example.py`.
 
+### Step 66 (P7) — Flagship stage 2: body panels ✅ COMPLETE (2026-08-02)
+
+**Objective.** Fuselage aerodynamics on the flagship: total-aircraft moment match through a
+real trim. Closes the last coverage gap of the body-panel machinery — a **VLM-coupled
+(cruciform) body panel had never run through a SOL 144 trim anywhere in the repo**
+(`ha144a_body_trim.bdf` covers strip panels; `cessna210_body.bdf` was a SOL 101 deck with no
+splines and no `TRIM`), and no deck combined body panels with section-corrected flying
+surfaces, monitor points and mass cases.
+
+**Deliverables.**
+- Two body-panel **overlays** — `sample/cessna210_flagship_body_cruciform.bdf` (PAERO1) and
+  `..._strip.bdf` (PSTRIP) — sharing one geometry: `CAERO1 6000` (2×8) and `7000` (2×16),
+  the EIDs the flagship bulk reserved; `SPLINE0 9400/9500` naming **GRID 900**; `AELIST
+  1401`/`AECOMP ALLAERB`/`MONPNT1 MALLARB` over all 372 boxes; baked body correction cards
+  under a provenance header.
+- Two drivers — `cessna210_flagship_body.bdf` (cruciform, SC1 1g + SC2 2.5g) and
+  `cessna210_flagship_body_strip_drv.bdf` (strip, SC1) — each composing bulk + overlay by
+  **two `INCLUDE`s**.
+- `TOTAL` target block added to `sample/cessna210_flagship_section_data.csv` (plus the
+  optional `cl_a`/`cl0` columns).
+- **Parser: multi-`INCLUDE` support** (`parser/case_control.py`, `parser/bdf_reader.py`).
+  `CaseControl.includes` is the ordered list; the bulk is every included file concatenated
+  followed by any inline bulk. `include` remains the first entry for back-compat.
+- `docs/20_theory/02_realistic_airplane_sol144.md` §6 (the body layer, 5 subsections);
+  `05a_aero_vlm.md`, `05b_splining.md`, `05c_sol144_maneuver.md`, `01_beam_model.md`,
+  `02_card_reference.md` updated.
+- Deletions: `sample/cessna210_body.bdf`, `cessna210_strip.bdf`,
+  `cessna210_body_section_data.csv`; `test_cessna210_body_example.py`,
+  `test_body_correction.py`, `test_strip_body.py`, `test_section_data.py`,
+  `test_cessna210_example.py` re-pointed; `tests/aero/conftest.py` added (session-scoped
+  deck fixtures, so the four modules share one AIC build each).
+
+**Key decisions.**
+- **Overlay `INCLUDE`, not the flagship bulk — a deliberate deviation from the backlog's
+  wording** ("into the flagship bulk"). Putting the panels in the bulk would have
+  re-baselined every Step 65 anchor (CL, CZ_α, Cm_α, elevator °/g, divergence margin,
+  MONPNT1 = n·W), forcing all 24 flagship gates and the theory doc's block-by-block f06
+  walkthrough to be re-derived. The bulk is **byte-identical**; body coverage is purely
+  additive. The prerequisite was multi-`INCLUDE`, which the parser did not have.
+- **The plan's three-pass bake collapsed to one pass.** With the bulk frozen the flying
+  cards cannot be rebaked, and `build_body_correction` takes no incidence argument, so the
+  loop reduces to a single body solve plus a check that the trimmed α stays inside the
+  committed −4…8° region (it does: 2.26° / 2.25° against the bare 2.39°).
+- **Targets measured from the bare airplane**: Cm_α −1.6921 → **−1.4921** (+0.20 /rad,
+  ~12 % destabilising), Cn_β 0.1072 → 0.0772, Cl_β held. Note the correction's own
+  `baseline` is the *body-present, uncorrected* model (Cm_α −1.5589) — a flat-plate
+  cruciform is destabilising by itself, so +0.133 of the increment comes from merely adding
+  the panels and +0.067 from the correction.
+- **The correction matches moments and leaves body lift free.** At the `PSTRIP` default
+  `slope0` = π the strip body trims out carrying **1168 N — 11 % of the airplane weight**,
+  with every total exact and the trim closed. Fixed in the deck with `PSTRIP, 20, 0.35`
+  (237 N, 2.2 %, matching the cruciform's 216 N / 2.0 %), which also makes the two variants
+  a genuinely controlled comparison. Logged as an open API gap in the backlog.
+- **The vertical panel re-meshed 2×16, not the retired deck's 4×8.** Four boxes up a 0.40 m
+  height gave box AR 0.17 and tripped the high-AR kernel warning; 2×16 gives 0.73 with the
+  same 32 boxes and keeps two z-stations for roll-vs-yaw arm spread.
+- **`test_vtp_intersects_htp` dropped rather than ported.** The flagship's VTP root is at
+  z = 0.80, above the HTP; the retired body deck had lowered it to 0.60 for a true cruciform
+  tail. Porting the assertion would have meant editing the frozen bulk.
+- **Silent-input fix found in passing:** inline bulk after `BEGIN BULK` used to be
+  *discarded* whenever an `INCLUDE` was present. Cards typed into a driver deck vanished
+  without a word. Now appended.
+
+**Test/Acceptance.** `tests/aero/test_cessna210_flagship_body.py` — 34 checks, ~47 s:
+B1 both drivers compose through two INCLUDEs, 372 boxes, no ID collision, all 48 body boxes
+SPLINE0-covered at GRID 900, zero warnings; B2 committed body cards regenerate from the CSV
+`TOTAL` block **solved against the body-uncorrected model** (re-solving on the corrected deck
+would derive a null correction and pass regardless); B3 all-box lift = n·W at 1g and 2.5g
+(the Step 64 closure gate) and the body carries 1–4 % of weight; **B4 the contamination
+contrast** — strip changes the flying-surface ΔCp response by 1.8e-15 (machine precision,
+diagonal influence block) while the cruciform changes it by 4.5e-1, *both* reaching identical
+rigid Cm_α, measured at a fixed aerodynamic state because both variants trim at a different
+α; B5 targets met to 1e-9 with `ratio_max` 27.7/10.1 against the 200 bound; B6 Cm_α
+destabilised by 0.20 ± 0.01, α falls 0.05–0.20°, both trims inside the baked region; B7
+MONPNT1 over 372 boxes = n·W while the bulk's 324-box AELIST falls short by **exactly** the
+injected body resultant (215.6 N); B8 injection echo, f06 block and FORCE/MOMENT export all
+carry the GRID 900 load; B9 divergence still ≥ 10× q. Step 65's 24 gates unchanged.
+
 ## Monitor Points — Integrated Section Loads (Phase 1, static)
 
 ### MON1–MON4 / V-MON1 — `MONPNT1` / `MONPNT3` integrated section loads ✅ COMPLETE (2026-06-13)

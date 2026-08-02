@@ -1707,8 +1707,12 @@ def parse_bdf(filepath: StrPath) -> tuple[CaseControl, BulkData]:
     """Read a BDF file and return (CaseControl, BulkData).
 
     Handles single-file models (bulk data after BEGIN BULK in the same file)
-    and two-file models (INCLUDE in the case control section points to a
-    separate bulk data file).
+    and multi-file models (one or more INCLUDEs in the case control section, each
+    naming a bulk data file).  The bulk is the **concatenation** of every included
+    file, in the order the INCLUDEs appear, followed by any inline bulk data after
+    BEGIN BULK.  That lets a driver deck compose a shared bulk with a small overlay
+    without duplicating the shared part (e.g. the Cessna 210 flagship bulk plus its
+    body-panel overlay).
 
     Raises FileNotFoundError if the main file or an INCLUDE file does not exist.
     Raises ValueError if the SOL value is not supported (101 or 103).
@@ -1734,16 +1738,19 @@ def parse_bdf(filepath: StrPath) -> tuple[CaseControl, BulkData]:
 
     cc = parse_case_control([line.rstrip("\n") for line in cc_lines])
 
-    if cc.include is not None:
+    if cc.includes:
         base_dir = os.path.dirname(os.path.abspath(filepath))
-        include_path = (
-            cc.include if os.path.isabs(cc.include)
-            else os.path.join(base_dir, cc.include)
-        )
-        if not os.path.exists(include_path):
-            raise FileNotFoundError(f"INCLUDE file not found: {cc.include!r}")
-        with open(include_path, "r") as fh:
-            bulk_lines = fh.readlines()
+        included_lines: list[str] = []
+        for inc in cc.includes:
+            include_path = inc if os.path.isabs(inc) else os.path.join(base_dir, inc)
+            if not os.path.exists(include_path):
+                raise FileNotFoundError(f"INCLUDE file not found: {inc!r}")
+            with open(include_path, "r") as fh:
+                included_lines.extend(fh.readlines())
+        # Included files first, then any inline bulk after BEGIN BULK.  Inline bulk
+        # used to be discarded whenever an INCLUDE was present — a silent-input
+        # hazard: cards typed into the driver deck vanished without a word.
+        bulk_lines = included_lines + bulk_lines
 
     bulk = parse_bulk_data([line.rstrip("\n") for line in bulk_lines])
     return cc, bulk

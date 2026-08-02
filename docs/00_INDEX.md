@@ -35,7 +35,7 @@ are the day-to-day references; higher numbers are planning and historical record
 |------|-------|
 | [`00_beam_methods.ipynb`](20_theory/00_beam_methods.ipynb) | Euler-Bernoulli theory; stiffness/mass matrix derivations; worked example |
 | [`01_aeroelastics_theory.md`](20_theory/01_aeroelastics_theory.md) | VLM, AIC corrections, splining, SOL 144 theory |
-| [`02_realistic_airplane_sol144.md`](20_theory/02_realistic_airplane_sol144.md) | Tutorial: the Cessna 210 flagship SOL 144 sample family — the deck layer by layer (structure, mass, mesh, splines, corrections, trim, monitors, mass cases, transient), then the f06 read block by block against hand-check anchors |
+| [`02_realistic_airplane_sol144.md`](20_theory/02_realistic_airplane_sol144.md) | Tutorial: the Cessna 210 flagship SOL 144 sample family — the deck layer by layer (structure, mass, mesh, splines, corrections, trim, monitors, mass cases, transient, body panels), then the f06 read block by block against hand-check anchors |
 | [`aeroelastic_derivatives.md`](20_theory/aeroelastic_derivatives.md) | Tutorial: rigid vs elastic-restrained vs elastic-unrestrained (mean-axis) stability derivatives + the ZAERO modal form — new-engineer level |
 | [`studies/a1_spanwise_spacing.md`](20_theory/studies/a1_spanwise_spacing.md) | VLM lift-slope spanwise-spacing convergence diagnostic |
 | [`studies/a2_wing_root_interference.md`](20_theory/studies/a2_wing_root_interference.md) | HA144A wing-root interference residual (AE15/AC8) — attribution study, accepted residual |

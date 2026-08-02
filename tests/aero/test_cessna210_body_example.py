@@ -1,11 +1,16 @@
-"""Refined Cessna 210 worked example — cruciform body panels (Step A9).
+"""Cessna 210 worked example — cruciform body panels (Step A9, re-pointed at Step 66).
 
-Validates that ``sample/cessna210_body.bdf`` + ``sample/cessna210_body_section_data.csv``:
+Validates that ``sample/cessna210_flagship_body.bdf`` (the flagship bulk plus the
+cruciform overlay) + ``sample/cessna210_flagship_section_data.csv``:
   - parse and mesh into a 7-surface, full-span VLM model (wing/HTP/VTP + body cruciform);
-  - place the vertical tail so it intersects the horizontal tail (no gap);
   - orient the body panels as a cruciform (horizontal normal +Z, vertical normal +Y);
+  - hold both panels clear of the empennage, so they cannot spuriously load the tail;
   - drive the end-to-end two-stage correction (flying section data → body residual) so
     the TOTAL airplane Cm/Cn reach the CSV ``TOTAL`` targets.
+
+The retired cessna210_body.bdf was a SOL 101 deck whose correction ladder never
+reached a trim.  On the flagship the same ladder feeds a real SOL 144 trim; the
+trim-side gates live in `test_cessna210_flagship_body.py`.
 """
 
 import dataclasses
@@ -15,8 +20,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sbeam.parser.bdf_reader import parse_bdf
-from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero import section_data as sd
 from sbeam.aero.body_correction import (
     build_body_correction,
@@ -26,30 +29,28 @@ from sbeam.aero.body_correction import (
 )
 
 _ROOT = Path(__file__).parent.parent.parent / "sample"
-BDF_PATH = _ROOT / "cessna210_body.bdf"
-CSV_PATH = _ROOT / "cessna210_body_section_data.csv"
+BDF_PATH = _ROOT / "cessna210_flagship_body.bdf"
+CSV_PATH = _ROOT / "cessna210_flagship_section_data.csv"
 
 
 @pytest.fixture(scope="module")
-def deck():
-    _cc, bulk = parse_bdf(str(BDF_PATH))
-    return bulk, build_aero_model(bulk)
+def deck(flagship_cruciform_uncorrected):
+    """The cruciform deck with its committed BODY cards stripped.
+
+    The two-stage correction below re-derives them, so it has to start from the
+    uncorrected body panels — otherwise it would be re-solving against its own
+    answer and would derive a null correction whatever the deck said.
+    """
+    _cc, bulk, aero, _gi, _w = flagship_cruciform_uncorrected
+    return bulk, aero
 
 
 def test_deck_meshes_seven_surfaces(deck):
     bulk, model = deck
     assert sorted(bulk.caero1s) == [1000, 2000, 3000, 4000, 5000, 6000, 7000]
-    # wing 2*16*6 + HTP 2*8*6 + VTP 6*6 + body-H 2*8 + body-V 4*8 = 192+96+36+16+32
+    # wing 2*16*6 + HTP 2*8*6 + VTP 6*6 + body-H 2*8 + body-V 2*16 = 192+96+36+16+32
     assert len(model.boxes) == 372
     assert sorted(bulk.spline0s) == [9400, 9500]
-
-
-def test_vtp_intersects_htp(deck):
-    _bulk, model = deck
-    vtp_z = [c[2] for b in model.boxes if b.caero_eid == 5000 for c in b.corners]
-    # the fin now spans through the HTP plane (z = 0.70), no gap
-    assert min(vtp_z) <= 0.60 + 1e-9
-    assert min(vtp_z) < 0.70 < max(vtp_z)
 
 
 def test_body_panels_are_a_cruciform(deck):
@@ -87,7 +88,8 @@ def test_two_stage_correction_reaches_total_targets(deck):
     flying, totals = split_total_rows(df)
     assert len(totals) == 1
 
-    # stage 1 — flying surfaces from spanwise section data
+    # stage 1 — flying surfaces from spanwise section data.  The deck already ships
+    # these committed; re-synthesising them here proves the ladder end to end.
     res = sd.build_from_section_data_multi(
         model.boxes, model.ajj, flying, mach=0.0, incidence_deg=3.0,
         sid_w2gj_base=9100, sid_aecorr_base=9200)
@@ -105,10 +107,17 @@ def test_two_stage_correction_reaches_total_targets(deck):
     assert out.converged
     for k in ("cm_alpha", "cm0", "cn_beta", "cn0", "cl_beta", "cl0"):
         assert getattr(out.achieved, k) == pytest.approx(getattr(tgt, k), abs=1e-6)
-    # the body genuinely moves the airplane totals toward the realistic fuselage increment
-    # (mild destabilising pitch + yaw); roll is ~0 by design — a slender body adds no roll.
-    assert abs(out.achieved.cm_alpha - out.baseline.cm_alpha) > 0.1   # pitch destabilised
-    assert abs(out.achieved.cn_beta - out.baseline.cn_beta) > 0.01    # yaw destabilised
+    # The body genuinely moves the airplane totals toward the realistic fuselage
+    # increment (mild destabilising pitch + yaw).
+    #
+    # Note what `baseline` means: the totals with the body panels PRESENT but
+    # UNCORRECTED, not the bodiless airplane.  On the flagship those differ — a
+    # flat-plate cruciform is destabilising in pitch all by itself.  The committed
+    # +0.20 /rad increment is measured from the bare airplane (Cm_alpha -1.6921 ->
+    # -1.4921) and splits roughly +0.133 from merely adding the panels and +0.067
+    # from the correction, which is what this delta sees.
+    assert abs(out.achieved.cm_alpha - out.baseline.cm_alpha) > 0.05   # pitch destabilised
+    assert abs(out.achieved.cn_beta - out.baseline.cn_beta) > 0.01     # yaw destabilised
     # ratio_max is NOT a contamination metric: WT2 is a post-inverse diagonal on the body
     # rows only, so it never perturbs the lifting surfaces.  Panels held clear of the tail
     # are weakly coupled, so a ratio of tens is normal and benign — only the sane band is

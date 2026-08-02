@@ -1,0 +1,47 @@
+$ cessna210_flagship_body.bdf — SOL 144 trim WITH CRUCIFORM BODY PANELS (Step 66)
+$
+$ Stage 2 of the flagship family.  Same airplane, same two trims as
+$ cessna210_flagship_trim.bdf, but with the fuselage aerodynamics switched on:
+$
+$   SUBCASE 1  TRIM 1   1g cruise      q = 2334 Pa, V = 61.7 m/s (120 kt)
+$   SUBCASE 2  TRIM 2   2.5g pull-up   same q, PITCH = (n-1)*g*c/(2V^2)
+$
+$ TWO INCLUDEs.  The shared bulk is unchanged from Step 65; the body panels
+$ arrive as a small overlay.  Composing a deck this way — one INCLUDE per
+$ layer, concatenated in order — is what keeps the flagship's calibrated
+$ numbers from having to be re-derived every time a layer is added.
+$
+$ The body panels here are CRUCIFORM (PAERO1): true VLM surfaces that couple to
+$ the wing and tail through the AIC.  For the decoupled-strip contrast run
+$ cessna210_flagship_body_strip_drv.bdf, which differs in exactly one line.
+$
+$ Outputs: .f06 (trim variables, three stability-derivative columns, hinge
+$ moments, aero totals, divergence q, displacements, CBAR loads, monitor
+$ point integrated loads including the INJECTED AERO LOADS block for the
+$ SPLINE0 body panels), <stem>.aero_loads.bdf, <stem>.maneuver_loads.bdf
+$ and <stem>.monitor_loads.csv.
+$
+$ Walk-through: docs/20_theory/02_realistic_airplane_sol144.md section 8
+$ Units: SI (m, N, kg, Pa, s)
+$
+SOL 144
+TITLE = Cessna 210 flagship — cruciform body panels, 1g and 2.5g
+INCLUDE 'cessna210_flagship_bulk.bdf'
+INCLUDE 'cessna210_flagship_body_cruciform.bdf'
+$
+SUBCASE 1
+  TITLE = 1g cruise with body panels, q = 2334 Pa
+  TRIM  = 1
+  SPC   = 1
+  DISPLACEMENT = ALL
+  FORCE        = ALL
+$
+SUBCASE 2
+  TITLE = 2.5g symmetric pull-up with body panels
+  TRIM  = 2
+  SPC   = 1
+  DISPLACEMENT = ALL
+  FORCE        = ALL
+$
+BEGIN BULK
+ENDDATA

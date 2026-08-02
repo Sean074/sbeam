@@ -33,6 +33,7 @@ import pytest
 
 from sbeam.aero import section_data as sd
 from sbeam.aero.aero_model import build_aero_model
+from sbeam.aero.body_correction import split_total_rows
 from sbeam.aero.panel import build_box_id_map
 from sbeam.aero.spline import build_spline_operators
 from sbeam.assembly.load_vector import build_grid_index
@@ -77,7 +78,16 @@ def trims(model):
 
 @pytest.fixture(scope="module")
 def section_df():
-    return pd.read_csv(CSV_PATH)
+    """The FLYING-surface rows of the section table.
+
+    Since Step 66 the CSV also carries a ``TOTAL`` block — the total-aircraft
+    targets for the body-panel correction (see `test_cessna210_flagship_body.py`).
+    The flying-surface synthesiser only accepts ``var`` in {ALPHA, BETA}, so the
+    two blocks must be split before use; this is the same thing the viewer does at
+    `aero_correction_view.py`.
+    """
+    flying, _totals = split_total_rows(pd.read_csv(CSV_PATH))
+    return flying
 
 
 @pytest.fixture(scope="module")

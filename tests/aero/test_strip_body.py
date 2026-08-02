@@ -32,8 +32,12 @@ from sbeam.aero.body_correction import (
 from sbeam.model.aero import Stripk, W2gj
 
 _ROOT = Path(__file__).parent.parent.parent / "sample"
-STRIP_BDF = _ROOT / "cessna210_strip.bdf"
-BODY_BDF = _ROOT / "cessna210_body.bdf"
+CRUCIFORM_BDF = _ROOT / "cessna210_flagship_body.bdf"
+
+# The deck-backed tests run on the flagship's STRIP body overlay with its committed
+# STRIPK stripped out (fixture `flagship_strip_uncorrected`), so the operator
+# diagonal is the deck's uniform PSTRIP slope rather than the per-box corrected one.
+PSTRIP_SLOPE0 = 0.35
 
 _HORIZ, _VERT = 6000, 7000
 
@@ -104,15 +108,15 @@ def test_pstrip_pid_collision_with_paero1():
 # --------------------------------------------------------------------------- #
 
 @pytest.fixture(scope="module")
-def strip_model():
-    _cc, bulk = parse_bdf(str(STRIP_BDF))
-    return bulk, build_aero_model(bulk)
+def strip_model(flagship_strip_uncorrected):
+    _cc, bulk, aero, _gi, _w = flagship_strip_uncorrected
+    return bulk, aero
 
 
 def test_strip_boxes_flagged(strip_model):
     bulk, model = strip_model
     mask = strip_box_mask(bulk, model.boxes)
-    # 6000: 2x8=16 boxes, 7000: 4x8=32 boxes → 48 strip boxes
+    # 6000: 2x8=16 boxes, 7000: 2x16=32 boxes → 48 strip boxes
     assert mask.sum() == 48
     assert all(b.is_strip == m for b, m in zip(model.boxes, mask))
     assert is_strip_caero(bulk, _HORIZ) and is_strip_caero(bulk, _VERT)
@@ -131,8 +135,8 @@ def test_strip_block_is_diagonal_and_uncoupled(strip_model):
     # Strip block is purely diagonal.
     sblk = A[np.ix_(s, s)]
     assert np.abs(sblk - np.diag(np.diag(sblk))).max() == 0.0
-    # Diagonal equals -slope (default π, incompressible).
-    assert np.allclose(np.diag(sblk), -np.pi)
+    # Diagonal equals -slope (the deck's uniform PSTRIP slope0, incompressible).
+    assert np.allclose(np.diag(sblk), -PSTRIP_SLOPE0)
 
 
 def test_lifting_surface_inverse_unchanged_by_strip(strip_model):
@@ -274,7 +278,7 @@ def test_strip_correction_emits_w2gj_and_stripk_cards(strip_model, strip_baselin
 
 
 def test_strip_correction_rejects_non_strip_panel():
-    _cc, bulk = parse_bdf(str(BODY_BDF))   # cruciform deck: 6000/7000 are PAERO1
+    _cc, bulk = parse_bdf(str(CRUCIFORM_BDF))  # cruciform deck: 6000/7000 are PAERO1
     with pytest.raises(ValueError, match="not a strip panel"):
         build_strip_body_correction(
             bulk, horiz_eid=6000, targets=BodyTargets(cm_alpha=0.1))

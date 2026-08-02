@@ -4,8 +4,8 @@ Authoritative backlog of **open** work only — bugs, planned development, and d
 in priority order. Updated as part of every session that completes a step — never deferred.
 Completed steps live in `docs/40_history/00_completed_development.md`; nothing closed is
 summarised here. When an item is promoted to a formal step, give it a step number (next free
-number is **Step 67**; Steps 62, 63, 65 and 66 are assigned below — Step 64 closed
-2026-07-31) and apply the step format
+number is **Step 67**; Steps 62 and 63 are assigned below — Step 64 closed 2026-07-31,
+Steps 65 and 66 closed 2026-08-01/02) and apply the step format
 (Objective, Deliverables, Test/Acceptance).
 
 ---
@@ -45,7 +45,6 @@ re-flowing the rest. Renumber only when the whole table is re-ranked.
 
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P7 | Step 66 — flagship stage 2: body panels into the flagship family | Samples review | ~2 d | **Unblocked** — both prerequisites closed: Step 65 (the flagship family it extends) 2026-08-01, and Step 64 (unsplined-box forces into the trim balance) 2026-07-31. Folds `cessna210_body`/`_strip` + their 14+ tests into the flagship. |
 | P8 | Monitor Phase 2 — section-cut running loads | Tier 1 | ~2–3 d | The production stress deliverable (per-station Vz/My/Mt); unblocked, independent — can run in parallel with P9–P11. |
 | P9 | Vectorize `build_ajj` (broadcast Biot–Savart) (+ DEF-R6) | Tier 1 | ~1–2 d | Measured 12.3 s at 400 boxes vs 3 ms for the solve — the quadratic pure-Python AIC loop is the actual model-size constraint named in CLAUDE.md; ~100× available; paid per Mach, per correction rebuild, per viewer overlay. DEF-R6's redundant O(n³) work is the same hot path. |
 | P10 | Step 62 — modal transient solver (prescribed rigid) + fixed-Φ mass gates | Tier 1 (G0 plan) | ~4–5 d | De-risks basis/truncation/recovery before free flight; lands the fixed-Φ mass-case transient capability. Consumes P1's unified mass model. |
@@ -241,7 +240,7 @@ order — see the table above:
 
 ---
 
-## Open items — 2026-07-31 sample-problem review (P6–P7 + opportunistic)
+## Open items — 2026-07-31 sample-problem review (opportunistic remainder)
 
 Full review + proposal delivered 2026-07-31. Evidence basis: all 22 `sample/` decks run
 headless through `main.main()` — 20 run end-to-end, 2 fail by design (`HA144A.bdf` MSC
@@ -253,26 +252,6 @@ values). The gaps are **coverage and redundancy, not correctness**.
 The four closed-form anchors of that evidence basis are now **enforced by CI** —
 `tests/integration/test_sample_verification.py`, delivered 2026-08-01 as P5/VAL2
 (see `docs/40_history/01_program_foundation.md`).
-
-### Step 66 (P7) — Flagship stage 2: body panels
-
-**Objective.** Total-aircraft moment match on the flagship. **Unblocked** — both
-prerequisites are closed: Step 65 (the flagship family, 2026-08-01) and Step 64
-(unsplined-box forces into the trim balance, 2026-07-31), so a body-panel trim is now
-internally consistent (totals, closure, monitors and exports agree); body panels declare
-their load-carrying grid in `SPLINE0` field 5.
-
-**Deliverables.** CAERO1 **6000/7000** (the EIDs the flagship bulk reserves) + SPLINE0
-(or PSTRIP) + CSV `TOTAL` row +
-body-correction cards into the flagship bulk; tighten T3's lift gate to include the body
-increment; fold `cessna210_body.bdf`/`cessna210_strip.bdf` +
-`cessna210_body_section_data.csv` into the family and re-point
-`test_cessna210_body_example.py` / `test_body_correction.py` / `test_strip_body.py`;
-theory-doc limitations section updated.
-
-**Test/Acceptance.** Existing body/strip gates pass against the flagship decks; trimmed
-all-box lift equals the weight with the body panels active (the Step 64 gate, already
-demonstrated on `sample/ha144a_body_trim.bdf`), and ANGLEA shifts by the body increment.
 
 ### Sample hygiene + doc pointers (opportunistic, ~1 d total, zero risk)
 
@@ -291,13 +270,14 @@ demonstrated on `sample/ha144a_body_trim.bdf`), and ANGLEA shifts by the body in
   cited 5× but deleted long ago (incl. `40_history/06`); `05a_aero_vlm.md` overstates
   `test_strip_body.py`'s coupling to `cessna210_body_section_data.csv` (targets are
   programmatic).
-- **Deferred verdicts (re-examine at flagship stage 2):** `val_vlm_anhedral.bdf` is a
-  2-coordinate sign flip of `_dihedral` that 2 test files could mirror in memory —
-  consolidate opportunistically or keep; ha144a_fullspan ×3 INCLUDE consolidation
-  (superset bulk + 3 drivers, ~280 duplicated lines each, already drifting) is now
-  **unblocked** — Step 65 proved the whole-bulk-INCLUDE driver pattern across three
-  drivers (trim / massset / mloads) — but the ripple is still ~24 test files + 6 docs, so
-  it stays opportunistic.
+- **Deferred verdicts (flagship stage 2 delivered 2026-08-02, so these are now due):**
+  `val_vlm_anhedral.bdf` is a 2-coordinate sign flip of `_dihedral` that 2 test files
+  could mirror in memory — consolidate opportunistically or keep; ha144a_fullspan ×3
+  INCLUDE consolidation (superset bulk + 3 drivers, ~280 duplicated lines each, already
+  drifting) has lost its last technical objection — Step 65 proved the whole-bulk-INCLUDE
+  driver pattern and Step 66 added **multi-INCLUDE** support, so a shared bulk plus
+  per-deck overlays is now expressible without duplication — but the ripple is still ~24
+  test files + 6 docs, so it stays opportunistic.
 
 ---
 
@@ -724,8 +704,26 @@ a grid that physically carries the panel") plus the f06 `INJECTED AERO LOADS` ec
   name — the only in-repo record of `SPLINEF` is that review's one-line summary, not the
   card definition.
 - **Effort:** small (operator + card + tests; no new physics). Do when a deck appears whose
-  body/nacelle panel is long enough for the local error to matter, or alongside Step 66
-  (body panels into the flagship).
+  body/nacelle panel is long enough for the local error to matter.  (Step 66 put body
+  panels into the flagship without needing it — those panels are `SPLINE0`, so they take
+  the rigid-injection path rather than a distributed force map.)
+
+### Body correction matches moments but leaves body lift unconstrained
+
+Found during Step 66. `build_body_correction` / `build_strip_body_correction` solve for
+Cm_α, Cm0, Cn_β, Cn0, Cl_β, Cl0 and say nothing about the body's own normal force, which
+falls out of whatever slope the panels happen to carry. On the flagship at the `PSTRIP`
+default `slope0` = π the strip body trims out carrying **11 % of the airplane weight** —
+every total exact, the trim closed, and 11 % of the lift lifted off the wing. The deck
+works around it by choosing `PSTRIP, 20, 0.35` by hand (2.2 % of weight, matching the
+cruciform's 2.0 %), which is a deck-authoring fix for what is really an API gap.
+
+**Proposal:** add an optional CZ0/CZ_α pair to `BodyTargets`. The horizontal-panel solve
+already has two knobs (slope ratio and Δα offset) against two pitch targets; adding a lift
+target makes it three constraints, so it needs either a third knob (per-box slope
+distribution rather than a single joint ratio) or a documented least-squares trade. Until
+then the guidance in `05a_aero_vlm.md` — *check what your body panels carry, not only what
+they correct* — is the mitigation. Complexity low-medium; no new physics.
 
 ### Load-case envelope (viewer)
 

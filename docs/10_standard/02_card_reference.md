@@ -71,7 +71,7 @@ Case control appears between the `SOL` line and `BEGIN BULK`. Keywords are not o
 | `STRESS` | — | Request CBAR stress output at recovery points |
 | `AEROF` | — | Request per-box aerodynamic force output (SOL 144; emits the AERODYNAMIC BOX PRESSURES AND FORCES block) |
 | `APRES` | — | Request per-box aerodynamic pressure (ΔCp) output (SOL 144; same output block as `AEROF`) |
-| `INCLUDE` | str | Path to bulk data file to include: `INCLUDE 'model.dat'` |
+| `INCLUDE` | str | Path to a bulk data file: `INCLUDE 'model.dat'`. May appear **several times** — the bulk is the concatenation of every included file, in order, followed by any inline bulk after `BEGIN BULK`. Used to layer an overlay over a shared bulk (`sample/cessna210_flagship_body.bdf`) |
 
 **Example case control section:**
 

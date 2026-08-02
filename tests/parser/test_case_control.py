@@ -291,6 +291,24 @@ class TestIncludeParsing:
     def test_no_include_is_none(self, cc_static):
         assert cc_static.include is None
 
+    def test_single_include_populates_both_fields(self, cc_include):
+        assert cc_include.includes == ["model.dat"]
+
+    def test_no_include_is_empty_list(self, cc_static):
+        assert cc_static.includes == []
+
+    def test_multiple_includes_kept_in_order(self):
+        """A driver deck may compose a shared bulk with an overlay."""
+        cc = parse_case_control([
+            "SOL 144",
+            "INCLUDE 'bulk.bdf'",
+            "INCLUDE 'overlay.bdf'",
+            "SUBCASE 1",
+        ])
+        assert cc.includes == ["bulk.bdf", "overlay.bdf"]
+        # `include` stays the FIRST entry, so single-INCLUDE callers are unaffected.
+        assert cc.include == "bulk.bdf"
+
 
 # ---------------------------------------------------------------------------
 # Comment handling
@@ -450,3 +468,70 @@ class TestParseBulkFile:
         assert bulk.grids[2].x == 1.0
         assert bulk.pbars[1].A == pytest.approx(0.01)
         assert bulk.mat1s[1].E == pytest.approx(2.0e11)
+
+
+# ---------------------------------------------------------------------------
+# Multi-file composition: several INCLUDEs + inline bulk (Step 66)
+# ---------------------------------------------------------------------------
+
+class TestIncludeComposition:
+    """`parse_bdf` concatenates every INCLUDE, then any inline bulk.
+
+    This is what lets a driver deck compose a shared bulk file with a small
+    overlay instead of duplicating the shared part.
+    """
+
+    @staticmethod
+    def _write(tmp_path):
+        (tmp_path / "bulk.bdf").write_text(
+            "MAT1, 1, 2.0e11, 8.0e10, 0.3, 7850.0\n"
+            "GRID, 1, , 0.0, 0.0, 0.0\n"
+            "GRID, 2, , 1.0, 0.0, 0.0\n"
+            "ENDDATA\n"
+        )
+        (tmp_path / "overlay.bdf").write_text(
+            "GRID, 3, , 2.0, 0.0, 0.0\n"
+            "ENDDATA\n"
+        )
+
+    def test_two_includes_are_concatenated(self, tmp_path):
+        self._write(tmp_path)
+        drv = tmp_path / "drv.bdf"
+        drv.write_text(
+            "SOL 101\nINCLUDE 'bulk.bdf'\nINCLUDE 'overlay.bdf'\n"
+            "SUBCASE 1\n  SPC = 1\nBEGIN BULK\nENDDATA\n"
+        )
+        _cc, bulk = parse_bdf(str(drv))
+        assert sorted(bulk.grids) == [1, 2, 3]
+
+    def test_enddata_midstream_does_not_truncate(self, tmp_path):
+        """The first file ends in ENDDATA; the overlay behind it must survive."""
+        self._write(tmp_path)
+        drv = tmp_path / "drv.bdf"
+        drv.write_text(
+            "SOL 101\nINCLUDE 'bulk.bdf'\nINCLUDE 'overlay.bdf'\n"
+            "SUBCASE 1\nBEGIN BULK\nENDDATA\n"
+        )
+        _cc, bulk = parse_bdf(str(drv))
+        assert 3 in bulk.grids
+
+    def test_inline_bulk_survives_alongside_an_include(self, tmp_path):
+        """Cards typed into the driver used to be silently discarded."""
+        self._write(tmp_path)
+        drv = tmp_path / "drv.bdf"
+        drv.write_text(
+            "SOL 101\nINCLUDE 'bulk.bdf'\n"
+            "SUBCASE 1\nBEGIN BULK\nGRID, 9, , 9.0, 0.0, 0.0\nENDDATA\n"
+        )
+        _cc, bulk = parse_bdf(str(drv))
+        assert sorted(bulk.grids) == [1, 2, 9]
+
+    def test_missing_second_include_raises(self, tmp_path):
+        self._write(tmp_path)
+        drv = tmp_path / "drv.bdf"
+        drv.write_text(
+            "SOL 101\nINCLUDE 'bulk.bdf'\nINCLUDE 'nope.bdf'\n"
+            "SUBCASE 1\nBEGIN BULK\nENDDATA\n"
+        )
+        with pytest.raises(FileNotFoundError, match="nope.bdf"):
+            parse_bdf(str(drv))

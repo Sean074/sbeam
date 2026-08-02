@@ -173,11 +173,41 @@ class TestOutputs:
 
 
 class TestNoSuportDecksStillBuild:
-    """SOL 101 body-panel decks have no SUPORT — warn, never raise."""
+    """A body panel with no master grid AND no SUPORT — warn, never raise.
 
-    @pytest.mark.parametrize("name", ["cessna210_body.bdf", "cessna210_strip.bdf"])
-    def test_builds_with_warning(self, name):
-        _cc, bulk = parse_bdf(str(_SAMPLE / name))
+    The master grid resolves from SPLINE0 field 5, falling back to the SUPORT grid.
+    With neither, the body force has nowhere to go: the build must say so loudly and
+    drop the injection rather than raise or silently keep it.
+
+    This used to be parametrised over sample/cessna210_body.bdf and _strip.bdf, two
+    SOL 101 decks that happened to have no SUPORT.  Step 66 folded those into the
+    flagship family, whose decks all carry one, so the case is now built explicitly —
+    which also states the precondition instead of relying on a deck to keep it.
+    """
+
+    _MIN_DECK = """\
+AEROS, 0, 0, 1.0, 2.0, 2.0, 0, 0, 0.0
+PAERO1, 10
+MAT1, 1, 7.0e10, 2.69e10, 0.3, 2700.0
+PBAR, 1, 1, 0.01, 1.0e-5, 1.0e-5, 2.0e-5
+GRID, 1, , 0.0, 0.0, 0.0
+GRID, 2, , 1.0, 0.0, 0.0
+CBAR, 1, 1, 1, 2, 0.0, 0.0, 1.0
+CAERO1, 400, 10, 0, 2, 2, 0, 0, 1
++, 0.0, -0.5, 0.0, 1.0, 0.0, 0.5, 0.0, 1.0
+SPLINE0, 9400, 400, 400, 403
+"""
+
+    def _bulk(self):
+        from sbeam.parser.bdf_reader import parse_bulk_data
+        bulk = parse_bulk_data(self._MIN_DECK.splitlines())
+        assert not bulk.supports, "precondition: this deck must have no SUPORT"
+        assert bulk.spline0s[9400].grid in (None, 0), \
+            "precondition: SPLINE0 must not name a master grid"
+        return bulk
+
+    def test_builds_with_warning(self):
+        bulk = self._bulk()
         grid_index = build_grid_index(bulk)
         with pytest.warns(UserWarning, match="no master grid for load injection"):
             aero = build_aero_model(bulk, grid_index=grid_index)

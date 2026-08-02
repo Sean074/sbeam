@@ -24,6 +24,7 @@ import pytest
 
 from sbeam.aero import section_data as sd
 from sbeam.aero.aero_model import build_aero_model
+from sbeam.aero.body_correction import split_total_rows
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.parser.bdf_reader import parse_bdf
 
@@ -39,7 +40,9 @@ def model_and_data():
     warnings.simplefilter("ignore")
     _cc, bulk = parse_bdf(str(BDF_PATH))
     model = build_aero_model(bulk, grid_index=build_grid_index(bulk))
-    df = pd.read_csv(CSV_PATH)
+    # Since Step 66 the CSV also carries the body-panel TOTAL block; the
+    # flying-surface synthesiser only accepts var in {ALPHA, BETA}.
+    df, _totals = split_total_rows(pd.read_csv(CSV_PATH))
     return bulk, model, df
 
 

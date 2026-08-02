@@ -751,3 +751,13 @@ numerics), and the whole-aircraft `MONPNT3` aero Fz equals the trimmed 1g weight
 1%. **Note:** the exact `MONPNT1`==`MONPNT3` equality holds only over a collection whose grids
 receive load *exclusively* from those boxes; a shared centreline root grid (right/left wing + canard)
 makes per-surface equality approximate, hence the whole-aircraft gate.
+
+> **An `AELIST` does not follow the mesh.** A `MONPNT1` collection is a literal list of box
+> IDs, so boxes added to the model later are simply not in it and the monitor goes on
+> returning a confident, slightly wrong number — no warning. The flagship shows this
+> deliberately: with body panels active, the bulk's 324-box `AELIST 1400` returns
+> 1.0389e4 N where the weight is 1.0605e4 N, short by exactly the 215.6 N injected body
+> resultant, while the overlay's 372-box `AELIST 1401` returns n·W. Whenever a deck gains
+> `CAERO1`s, every `AELIST` that is meant to say "the whole airplane" has to be extended.
+> The `SET1` side of this is the same trap in `MONPNT3` form (DEF-M10). Gated by
+> `tests/aero/test_cessna210_flagship_body.py` (B7).

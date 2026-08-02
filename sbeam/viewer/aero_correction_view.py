@@ -154,9 +154,11 @@ def build_corrected_bdf(source_text: str, cards_text: str, *, source_csv: str,
                         out_name: str, date: Optional[str] = None) -> str:
     """Splice the W2GJ/AECORR cards into the uploaded model with a provenance header.
 
-    Produces a self-contained corrected BDF (the loaded model + correction cards),
-    runnable in sbeam (which honours only one whole-bulk INCLUDE, so a separate
-    include file is not used).  The header records the source section-data file,
+    Produces a self-contained corrected BDF (the loaded model + correction cards).
+    The cards are spliced into the model rather than written to a separate include
+    file so the export is a single self-contained deck; sbeam does support several
+    INCLUDEs per driver (see `parse_bdf`), which is how the hand-authored flagship
+    body overlays are composed.  The header records the source section-data file,
     generation date, and flight condition for traceability across the per-Mach set.
     """
     date = date or datetime.date.today().isoformat()

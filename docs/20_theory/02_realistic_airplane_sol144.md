@@ -2,7 +2,8 @@
 
 *A tutorial for engineers who have a working SOL 144 solver and now have to point it at a
 real airplane. It walks the flagship sample family layer by layer — structure, mass,
-aero mesh, splines, corrections, trim, monitors, mass cases, transient — and then reads
+aero mesh, splines, corrections, trim, monitors, mass cases, transient, body panels — and
+then reads
 the resulting `.f06` block by block against numbers you can check by hand. The solver
 theory lives in [`01_aeroelastics_theory.md`](01_aeroelastics_theory.md); the three
 stability-derivative columns are explained in
@@ -17,12 +18,18 @@ building and reading a **model**.*
 | `sample/cessna210_flagship_trim.bdf` | SC1 1g cruise, SC2 2.5g pull-up |
 | `sample/cessna210_flagship_massset.bdf` | one TRIM × three payload cases |
 | `sample/cessna210_flagship_mloads.bdf` | trim + elevator-ramp transient |
-| `sample/cessna210_flagship_section_data.csv` | spanwise section coefficients |
+| `sample/cessna210_flagship_section_data.csv` | spanwise section coefficients + the body `TOTAL` block |
+| `sample/cessna210_flagship_body.bdf` | §6 — trim with cruciform body panels |
+| `sample/cessna210_flagship_body_strip_drv.bdf` | §6 — the decoupled-strip contrast |
+| `sample/cessna210_flagship_body_cruciform.bdf` | body-panel overlay (not standalone) |
+| `sample/cessna210_flagship_body_strip.bdf` | body-panel overlay (not standalone) |
 
-The drivers are thin: a `SOL 144` line, a `TITLE`, a case-control `INCLUDE` of the shared
-bulk file, and their subcases. Everything physical lives in one place.
+The drivers are thin: a `SOL 144` line, a `TITLE`, one or more case-control `INCLUDE`s of
+the shared bulk (plus, in §6, a body overlay), and their subcases. Everything physical
+lives in one place — and layers are added by `INCLUDE`, never by editing the bulk.
 
-Gated by `tests/aero/test_cessna210_flagship.py` (24 checks) and
+Gated by `tests/aero/test_cessna210_flagship.py` (24 checks),
+`tests/aero/test_cessna210_flagship_body.py` (34 checks) and
 `tests/aero/test_cessna210_example.py`.
 
 ---
@@ -429,11 +436,164 @@ by the restraint rather than by an inertial response.
 
 ---
 
-## 6. Limitations and roadmap
+## 6. The body layer
+
+Everything above is a bare airframe: five lifting surfaces and no fuselage. The fuselage
+of a real airplane is not aerodynamically silent — it is mildly destabilising in pitch and
+in yaw, and it carries a small share of the lift. sbeam has no slender-body element, so the
+fuselage is represented by flat VLM panels: a **cruciform** of two crossing surfaces, one
+horizontal (body lift and pitching moment) and one vertical (side force and yaw).
+
+```
+sbeam sample/cessna210_flagship_body.bdf            # cruciform  (PAERO1)
+sbeam sample/cessna210_flagship_body_strip_drv.bdf  # strip      (PSTRIP)
+```
+
+Both drivers are three lines of aerodynamics on top of the deck you already have:
+
+```
+INCLUDE 'cessna210_flagship_bulk.bdf'
+INCLUDE 'cessna210_flagship_body_cruciform.bdf'
+```
+
+The bulk is **byte-identical** to the one §2 describes. That is deliberate, and it is worth
+copying: the flagship's numbers took a long calibration to land, and a layered deck lets you
+add aerodynamics without putting any of them back in play. Every number in §3 is still the
+number that deck produces.
+
+### 6.1 What the correction actually constrains
+
+The body panels are tuned by `build_body_correction` against a `TOTAL` row in the same
+section-data CSV the flying surfaces use:
+
+```
+caero,eta,mach,var,a_lo,a_hi,cn_a,a0,cm_a,cm0,xref,cl_a,cl0
+0,0.00,0.0,TOTAL,-4.0,8.0,0.0772,0.000,-1.4921,-0.0404,0.25,-0.0364,0.0
+```
+
+The column names are re-used, not renamed: on a `TOTAL` row `cm_a` is Cm_α, `cn_a` is
+Cn_β, `a0` is Cn0, `cl_a` is Cl_β. The targets are **total-airplane** coefficients about
+the `AEROS` RCSID origin — here the ¼-MAC at (2.4375, 0, 0.60), *not* the basic origin. A
+`TOTAL` row copied from a deck with a different reference point is meaningless; moment
+coefficients are only defined with respect to a point.
+
+Cm_α = −1.4921 against the bare airplane's −1.6921 is the whole fuselage story: a
+**+0.20 /rad destabilising increment**, about 12 % of the airplane's pitch stiffness. The
+static margin shrinks and the airplane stays comfortably stable, which is what a fuselage
+does.
+
+Note what the correction does **not** constrain: **lift**. It matches four moment
+coefficients and leaves the body's own normal force to fall out of whatever slope the panel
+happens to have. That is not academic. At the `PSTRIP` default slope of π the strip body
+trims out carrying **1168 N — 11 % of the airplane's weight — on the fuselage**. The trim
+still closes, every total is still exact, and the answer is still wrong for loads work:
+11 % of the weight has been taken off the wing and put somewhere it does not belong. The
+committed deck sets `PSTRIP, 20, 0.35`, which brings the strip body to 237 N (2.2 %),
+matching the cruciform's 216 N (2.0 %).
+
+If you take one thing from this section: **check what your body panels carry, not just what
+they correct.**
+
+### 6.2 Reading the body in the `.f06`
+
+Body boxes have no structural spline — they carry `SPLINE0`, which means "no elastic
+coupling", and their force reaches the structure as a rigid load at a named master grid:
+
+```
+                    I N J E C T E D   A E R O   L O A D S   (SPLINE0 / UN-SPLINED)
+
+      SOURCE          MASTER GRID   BOXES        FX        FY        FZ        MX        MY
+      SPLINE0 9400            900      16       0.0       0.0   2.156E+02  -1.417E+01  1.054E+03
+      SPLINE0 9500            900      32       0.0  -3.943E+01       0.0  -1.298E+01       0.0
+```
+
+Before Step 64 this force appeared in the printed totals but not in the force balance, and
+a body-panel trim silently did not close. The gate that it does now is the same one as
+always — all-box lift equals n·W — and it is worth re-checking whenever you add panels.
+
+`SPLINE0` field 5 names the master grid; left blank it falls back to the `SUPORT` grid, and
+with neither you get a warning and the body force is **dropped**. The deck names GRID 900
+explicitly. Two things have to be true of that grid: it must be in the structural load path
+(GRID 900 is spliced into the fuselage CBAR chain), and it must be inside your
+whole-airplane `MONPNT3` `SET1`, or the balance check in §3.4 stops meaning anything.
+
+### 6.3 Your monitors do not follow your mesh
+
+The bulk's `AELIST 1400` covers the 324 flying boxes. It was correct in §3.4 and it is
+quietly wrong now:
+
+```
+      MONITOR MALLAR    (324 flying boxes)      FZ = 1.038922E+04
+      MONITOR MALLARB   (all 372 boxes)         FZ = 1.060486E+04     <- = n*W
+```
+
+The shortfall is 215.6 N — exactly the injected body force above. Nothing warns you. An
+`AELIST` is a list of box IDs, so boxes added later are simply not in it, and the monitor
+goes on returning a confident, slightly wrong number. The overlay adds `AELIST 1401` over
+all 372 boxes and keeps both, so the difference is visible rather than hypothetical.
+
+### 6.4 Cruciform or strip: the same airplane, twice
+
+The two overlays differ in exactly one field — the `CAERO1` property ID — and therefore in
+exactly one physical property:
+
+| | Cruciform (`PAERO1`) | Strip (`PSTRIP`) |
+|---|---|---|
+| Horseshoe vortex, wake | yes | no |
+| Influence-operator block | fully coupled | **diagonal** |
+| Effect on wing/HTP/VTP | real | **exactly zero** |
+| Placement constraints | must stay clear of the tail | none — overlap is harmless |
+| Interference / fence effect | represented (crudely) | not represented |
+
+They were tuned to the same targets and matched on body-lift share, so they trim within
+0.003° of α of one another and produce identical rigid Cm_α. And yet:
+
+```
+max change in flying-surface DCp response vs the bare airplane
+  strip      1.8e-15      (machine precision)
+  cruciform  4.5e-01      (tens of percent of a typical box DCp)
+```
+
+The horizontal panel sits 0.95 m under the wing. For the cruciform that is a genuine VLM
+surface loading its neighbour; for the strip it is invisible. **Both airplanes have exactly
+the right total moments.** One of them has substantially redistributed the spanwise wing
+loading to get there.
+
+That is the trap this pair exists to show. Matching total coefficients is not the same as
+getting the load distribution right, and a correction that is tuned on totals cannot tell
+you which one you have. If you are computing stability derivatives, the cruciform's
+interference is a feature. If you are computing wing-root bending for a structural sizing
+loop, prefer the strip — it is a pure load device that cannot perturb what you are
+measuring — and understand that in exchange it models no interference at all.
+
+The measurement above is taken at a **fixed** aerodynamic state, not at the trim point. At
+their own trims both variants change the flying loads, simply because both add lift and so
+both trim at a lower α. Contamination is a property of the influence operator, so that is
+where it has to be measured.
+
+### 6.5 Where a flat plate runs out
+
+The correction reports a `ratio_max` — the largest WT2 pressure scaling it had to apply to
+the body boxes — and warns past 200. On this deck it is 27.7 (cruciform) and 10.1 (strip),
+comfortably inside. Push the targets harder and it climbs: the panels are weakly coupled,
+so large authority has to come from large per-box scaling.
+
+A high ratio is not contamination — WT2 is a post-inverse diagonal on the body rows only —
+it is the builder telling you that a flat plate is being asked to be something it is not.
+Large body effects (a several-MAC neutral-point shift, say) are only reachable by immersing
+the panels in the tail, which buys the authority with a spurious interference the deck
+deliberately avoids. That is where a real slender-body element is the right tool, and it is
+on the backlog.
+
+---
+
+## 7. Limitations and roadmap
 
 | Limitation | Where it lifts |
 |---|---|
-| No body/fuselage aero panels — the fuselage carries no lift or moment | Step 66 (flagship stage 2); EIDs 6000/7000 reserved |
+| Body panels are flat plates, not a slender body — only a small increment is legitimate (§6.5) | slender-body / CAERO2 element (backlog) |
+| The body correction matches moments only; body lift is unconstrained (§6.1) | constrained-CZ body solve (backlog) |
+| A cruciform body redistributes the wing loading it corrects (§6.4) | use the strip variant for loads; image-fence method for interference |
 | Steady aerodynamics only (VLM at k = 0); no unsteady, no flutter | Phase D — DLM, SOL 145 |
 | Transient is restrained and open-loop; ANGLEA/PITCH/URDD frozen | Step 62 (modal basis), Step 63 (free flight) |
 | One correction operating region per surface, no warning on exit | `section_data` v2; T3b gates it meanwhile |
@@ -443,7 +603,7 @@ by the restraint rather than by an inertial response.
 
 ---
 
-## 7. If you are building your own deck
+## 8. If you are building your own deck
 
 The order that worked, each step gated before starting the next:
 
@@ -458,6 +618,10 @@ The order that worked, each step gated before starting the next:
    equals the α it produces.
 5. **Then the second trim, monitors, mass cases**, and only last the transient, whose
    command table depends on a converged trim.
+6. **Body panels last of all, as a separate layer.** Add them over a frozen bulk so the
+   calibration above is not back in play, check what they *carry* as well as what they
+   correct (§6.1), and extend every `AELIST` that is supposed to mean "the whole
+   airplane" (§6.3).
 
 The recurring theme in every failure above is that the wrong answer looks like an answer.
 A zeroed control column gives a singular matrix with no explanation; a missing monitor grid

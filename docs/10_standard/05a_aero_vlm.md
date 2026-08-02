@@ -765,12 +765,12 @@ The body panels must be held **clear of the lifting surfaces**. A VLM box loads 
 lies in its neighbourhood **or that its semi-infinite +X trailing legs pass through**, so a body box
 overlapping — or trailing its wake into — the HTP/VTP injects a purely numerical interaction onto the
 real surfaces (exactly what the cruciform is meant to *stand in for*, not corrupt). Guidance, as
-applied in `sample/cessna210_body.bdf`:
+applied in `sample/cessna210_flagship_body_cruciform.bdf`:
 
 * **Terminate ahead of the empennage** (deck: body chord ends at x=5.0, ahead of the VTP LE x=6.6 and
   HTP LE x=6.9) so no body box *and no trailing leg* reaches the tail x-station.
 * **Hold the panels off the tail planes:** the horizontal panel sits below the HTP (deck z=0.30 vs HTP
-  z=0.70) and the vertical panel **wholly below the VTP root** (deck z<0.45 vs root z=0.60). The
+  z=0.70) and the vertical panel **wholly below the VTP root** (deck z<0.45 vs root z=0.80). The
   vertical panel shares the fin's y=0 plane, so any body box at a z in the fin band (0.60–2.30) drives
   a spurious sidewash straight onto the fin — keep it under the root.
 * **Keep the panels small/compact** over the forward-mid fuselage, where the body's aero actually
@@ -782,8 +782,9 @@ the moment reference makes a *stabilising* (nose-down) bare pitch — the wrong 
 a large destabilising target is only reachable by immersing the panels in the tail (the spurious
 overlap above) or with an extreme, ill-conditioned correction. The cruciform is therefore a tuning
 device for a **mild** dCm/dα and dCn/dβ with **~0 roll** (a slender body adds negligible Cl_β); the
-`sample/cessna210_body.bdf` `TOTAL` targets are the flying-surface totals **plus a realistic fuselage
-increment** of that size. Large body effects — a several-MAC neutral-point shift, genuine wing-body
+`sample/cessna210_flagship_section_data.csv` `TOTAL` row is the flying-surface totals **plus a
+realistic fuselage increment** of that size (+0.20 /rad in Cm_α, ~12 % of the flagship's pitch
+stiffness). Large body effects — a several-MAC neutral-point shift, genuine wing-body
 interference — need a true **slender-body element** (see `docs/30_future/00_backlog.md`, "Body
 aerodynamic panels (slender body)"); the `Cl_β` match capability remains in the code but a clean
 cruciform is expected to drive it to ≈0.
@@ -816,8 +817,9 @@ present). `_guess_body_panels` pre-selects the largest-chord +Z / +Y surfaces; t
 merged in) and shows a baseline / target / achieved / residual table plus `ratio_max`. **Apply body
 panels to model** injects the flying pairs (idempotent) and the body `(W2gj, Aecorr)` pairs at reserved
 SIDs (`_BODY_W2GJ_BASE = 9301`, `_BODY_AECORR_BASE = 9401`); **Download body cards (.bdf)** emits them.
-Worked example: `sample/cessna210_body.bdf` + `sample/cessna210_body_section_data.csv`
-(`tests/aero/test_cessna210_body_example.py`).
+Worked example: `sample/cessna210_flagship_body.bdf` (flagship bulk + cruciform overlay) +
+the `TOTAL` row of `sample/cessna210_flagship_section_data.csv`
+(`tests/aero/test_cessna210_body_example.py`, `tests/aero/test_cessna210_flagship_body.py`).
 
 ## Decoupled strip body panels (`strip.py` + `build_strip_body_correction`)
 
@@ -841,8 +843,9 @@ lifting-surface-only inverse). Two consequences, both verified in
 * **Zero contamination.** There is no wing↔body coupling block, so adding — or moving, or
   even overlapping — a strip body changes the wing/HTP/VTP loads by *exactly* zero. The
   lifting-surface inverse is bit-identical with or without the strip present. Placement is
-  therefore free; in `sample/cessna210_strip.bdf` it is chosen only for physical moment-arm
-  realism, not to dodge the tail.
+  therefore free; in `sample/cessna210_flagship_body_strip.bdf` it is held identical to the
+  cruciform overlay only so the two variants differ in one thing (the coupling) and the
+  comparison is controlled.
 * **No interference either.** A decoupled element is transparent to the wing's flow, so a
   strip carries no fence / no-through-flow effect. It is a pure *load* device. The body's
   *effect on* the lifting surfaces (the fence boundary condition) is a separate, composable
@@ -867,8 +870,17 @@ two-knob, slope-then-offset decoupled solve — but the body block is diagonal, 
 There is no WT2 ratio and no `ratio_max` conditioning concern (a large slope scaling is
 benign — the panel cannot contaminate). Emits one `(W2gj, Stripk)` pair per panel;
 `strip_body_cards_to_bdf` formats them. `build_strip_body_correction` raises if a named panel
-is not a strip (PSTRIP-backed) CAERO1. Worked example: `sample/cessna210_strip.bdf` +
-`sample/cessna210_body_section_data.csv` (`tests/aero/test_strip_body.py`).
+is not a strip (PSTRIP-backed) CAERO1. Worked example:
+`sample/cessna210_flagship_body_strip_drv.bdf` + the `TOTAL` row of
+`sample/cessna210_flagship_section_data.csv` (`tests/aero/test_strip_body.py`).
+
+> **The correction matches moments, not lift.** `BodyTargets` constrains Cm_α/Cm0/Cn_β/Cn0/
+> Cl_β/Cl0 and leaves the body's own normal force to fall out of whatever slope the panel has.
+> At the `PSTRIP` default `slope0` = π the flagship strip body trims out carrying **11 % of the
+> airplane weight** on the fuselage — every total exact, the trim closed, and 11 % of the lift
+> taken off the wing. `sample/cessna210_flagship_body_strip.bdf` therefore sets
+> `PSTRIP, 20, 0.35`, giving 2.2 % of weight against the cruciform's 2.0 %. Check what your
+> body panels *carry*, not only what they correct.
 
 The Aero Correction page Stage 6 auto-detects the panel kind from the deck (PSTRIP → strip,
 PAERO1 → cruciform) and routes to the matching builder; strip body cards apply at

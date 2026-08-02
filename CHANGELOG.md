@@ -13,6 +13,42 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Step 66 — flagship stage 2: body panels (2026-08-02)**
+
+Fuselage aerodynamics on the flagship, and the first **VLM-coupled (cruciform) body panel
+to run through a SOL 144 trim** anywhere in the repo. The flagship bulk is left
+byte-identical: the panels arrive as an overlay file, composed by a driver that `INCLUDE`s
+bulk and overlay in turn.
+
+- `sample/cessna210_flagship_body_cruciform.bdf` / `..._body_strip.bdf` — two overlays over
+  one geometry (`CAERO1 6000` 2×8 and `7000` 2×16, the EIDs the bulk reserved), `SPLINE0`
+  to GRID 900, an all-372-box `MONPNT1`, and baked body-correction cards.
+- `sample/cessna210_flagship_body.bdf` (cruciform, 1g + 2.5g) and
+  `..._body_strip_drv.bdf` (strip, 1g).
+- A `TOTAL` target block in `sample/cessna210_flagship_section_data.csv`.
+- `docs/20_theory/02_realistic_airplane_sol144.md` §6 — the body layer.
+
+**Multi-`INCLUDE` support** (`parser/case_control.py`, `parser/bdf_reader.py`). A case
+control section may name several `INCLUDE` files; the bulk is their concatenation in order,
+followed by any inline bulk after `BEGIN BULK`. `CaseControl.includes` is the ordered list
+and `include` remains the first entry. This is what lets a deck be built in layers rather
+than copied.
+
+The two variants differ in exactly one field — the `CAERO1` property ID — and are matched on
+geometry, targets and body-lift share, so they trim within 0.003° of α and produce identical
+rigid Cm_α (−1.4921 /rad, a +0.20 destabilising increment on the bare −1.6921). What differs
+is contamination: the strip changes the flying-surface ΔCp response by **1.8e-15** (its
+influence block is diagonal), the cruciform by **4.5e-1**. Both airplanes have exactly the
+right total moments; one of them got there by substantially redistributing the wing loading.
+
+Two findings worth repeating. **The body correction matches moments and leaves body lift
+unconstrained** — at the `PSTRIP` default slope the strip body trims out carrying 11 % of the
+airplane weight on the fuselage, every total exact and the trim closed; the deck sets
+`PSTRIP, 20, 0.35` to bring it to 2.2 %, and the API gap is on the backlog. And **an
+`AELIST` does not follow the mesh**: the bulk's 324-box whole-airplane monitor silently
+under-reports by exactly the 215.6 N body resultant once the panels are added, so both the
+old and the extended collection are kept and the difference is gated.
+
 **Step 65 — flagship realistic-airplane SOL 144 sample family + theory doc (2026-08-01)**
 
 The first deck anywhere in the repo where a **corrected AIC drives a trim**, and the first
@@ -74,6 +110,12 @@ wing) that no other test covered.
   `sample/cessna210_section_data.csv` — superseded by the flagship family.
   `tests/aero/test_cessna210_example.py` is re-pointed at the flagship with its numeric
   assertions **re-derived** for the 3D-informed table (they were tied to the old flat 2D CSV).
+- `sample/cessna210_body.bdf`, `sample/cessna210_strip.bdf` and
+  `sample/cessna210_body_section_data.csv` (Step 66) — SOL 101 decks whose correction ladder
+  never reached a trim. Folded into the flagship family; `test_cessna210_body_example.py`,
+  `test_body_correction.py`, `test_strip_body.py` and `test_section_data.py` re-pointed, and
+  the no-`SUPORT` load-injection warning they happened to cover is now built explicitly in
+  `test_sol144_body_injection.py` rather than relying on a deck to keep that property.
 
 **Offset-tip-mass coupled bending-torsion sample deck (2026-08-01)**
 
@@ -128,6 +170,12 @@ second XZ bending mode at 16.16 Hz (mode 4, 71.95 Hz, is first torsion). No prod
 and no CI-config change.
 
 ### Fixed
+
+**Inline bulk data was silently discarded alongside an `INCLUDE` (2026-08-02)**
+
+`parse_bdf` replaced the lines after `BEGIN BULK` with the included file rather than
+appending to them, so cards typed into a driver deck vanished without a word. Found while
+adding multi-`INCLUDE` support for the Step 66 body overlays.
 
 **`parse_bdf` / `parse_bulk_file` accept a `Path`, not just a `str` (2026-08-01)**
 

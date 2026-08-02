@@ -155,11 +155,13 @@ Reads a bulk-data-only file. Behaviour:
 
 1. Reads the file and splits on the `BEGIN BULK` line.
 2. Passes the case control section (before `BEGIN BULK`) to `parse_case_control`.
-3. If the `CaseControl` has an `include` path, loads the referenced file as bulk data; otherwise uses the lines after `BEGIN BULK`.
+3. Loads every path in `CaseControl.includes`, in the order the `INCLUDE` lines appear, and concatenates them; the lines after `BEGIN BULK` are appended to that.
 4. Passes the bulk data lines to `parse_bulk_data`.
 5. Returns `(CaseControl, BulkData)`.
 
-Raises `FileNotFoundError` if the INCLUDE file does not exist.
+**Several `INCLUDE`s are allowed** (Step 66), which is how a driver deck composes a shared bulk with an overlay without duplicating the shared part — see `sample/cessna210_flagship_body.bdf`. `ENDDATA` is an ignored keyword rather than a terminator, so an included file ending in one does not truncate the files behind it. `CaseControl.include` remains as the first entry for callers that expect a single path.
+
+Raises `FileNotFoundError` if any INCLUDE file does not exist.
 
 ### `parse_case_control(lines) -> CaseControl` — `parser/case_control.py`
 

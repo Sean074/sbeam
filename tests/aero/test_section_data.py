@@ -320,10 +320,14 @@ class TestValidationBindings:
         assert len(sd.validate_section_data(merged)) == 3 * len(a)
 
     def test_shipped_sample_csvs_are_clean_under_the_grouped_rule(self):
-        """The grouped rule must not reject either shipped table."""
+        """The grouped rule must not reject the shipped table.
+
+        Since Step 66 there is one shipped section table: the flagship's, which
+        carries both the flying rows and the body-panel TOTAL block.
+        """
         from sbeam.aero.body_correction import split_total_rows
         root = Path(__file__).parent.parent.parent / "sample"
-        for name in ("cessna210_flagship_section_data.csv",
-                     "cessna210_body_section_data.csv"):
-            flying, _totals = split_total_rows(pd.read_csv(root / name))
-            sd.validate_section_data(flying)      # must not raise
+        flying, totals = split_total_rows(
+            pd.read_csv(root / "cessna210_flagship_section_data.csv"))
+        assert len(totals) == 1
+        sd.validate_section_data(flying)          # must not raise
