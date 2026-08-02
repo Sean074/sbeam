@@ -40,7 +40,6 @@ Public API:
     run_maneuver_qs(bulk, subcase, aero, aero_cache=None, damping_alpha=0.0)
 """
 
-import warnings
 from dataclasses import dataclass
 from typing import Optional
 
@@ -68,7 +67,7 @@ from sbeam.types import FloatArray
 
 
 @dataclass
-class _Operators:
+class Operators:
     """Re-assembled a-set / l-set operators mirroring run_sol144_trim's assembly.
 
     Kept local to the maneuver solver; the matrices are exactly those the trim
@@ -82,6 +81,7 @@ class _Operators:
     red_dofs: list[int]
     free_dofs: list[int]
     l_idx: list[int]                  # l-set indices into the a-set (non-SUPORT)
+    suport_local: list[int]           # SUPORT (r-set) a-set indices, Phi_r column order
     K_eff_ll: FloatArray         # K_ll − q·Q_ll
     M_ll: FloatArray
     Q_ax_l: FloatArray
@@ -98,9 +98,9 @@ class _Operators:
     has_rcsid: bool
 
 
-def _assemble_operators(
+def assemble_operators(
     bulk: BulkData, subcase: SubcaseControl, aero: AeroModel, q: float
-) -> _Operators:
+) -> Operators:
     """Build the a-set / l-set matrices the transient integration needs.
 
     The a-set assembly is the shared ``modal_basis.assemble_aset_operators``
@@ -143,16 +143,17 @@ def _assemble_operators(
 
     djk = build_djk(aero.boxes)
 
-    return _Operators(
+    return Operators(
         all_labels=all_labels, label_to_col=label_to_col,
         T=T, free_local=free_local, red_dofs=red.red_dofs, free_dofs=free_dofs,
-        l_idx=l_idx, K_eff_ll=K_eff_ll, M_ll=M_ll, Q_ax_l=Q_ax_l, M_ax_l=M_ax_l,
+        l_idx=l_idx, suport_local=list(suport_local),
+        K_eff_ll=K_eff_ll, M_ll=M_ll, Q_ax_l=Q_ax_l, M_ax_l=M_ax_l,
         f_aero_l=f_aero_l, M_ax_g=M_ax_g, aero=aero, D_jx=D_jx, djk=djk,
         q=q, x_ref=x_ref, suport_pos=suport_pos, R_rcsid=R_rcsid, has_rcsid=has_rcsid,
     )
 
 
-def _delta_of_t(
+def delta_of_t(
     t: float, base_delta: dict[str, float], commands: list[tuple[str, int]],
     tabled1s: dict[int, Tabled1], all_labels: list[str],
 ) -> FloatArray:
@@ -163,7 +164,7 @@ def _delta_of_t(
     return np.array([vals.get(l, 0.0) for l in all_labels])
 
 
-def _force_l(ops: _Operators, delta_arr: FloatArray) -> FloatArray:
+def force_l(ops: Operators, delta_arr: FloatArray) -> FloatArray:
     """l-set forcing F(t) = f_aero_l + q·Q_ax_l·δ + M_ax_l·δ_basic (mirror of trim RHS)."""
     delta_basic = urdd_rcsid_to_basic(
         delta_arr, ops.label_to_col, ops.R_rcsid, ops.has_rcsid
@@ -171,9 +172,10 @@ def _force_l(ops: _Operators, delta_arr: FloatArray) -> FloatArray:
     return ops.f_aero_l + ops.q * (ops.Q_ax_l @ delta_arr) + ops.M_ax_l @ delta_basic
 
 
-def _recover_step(
-    ops: _Operators, bulk: BulkData, grid_index: dict[int, int],
+def recover_step(
+    ops: Operators, bulk: BulkData, grid_index: dict[int, int],
     t: float, u_l: FloatArray, delta_arr: FloatArray, vals: dict[str, float],
+    modal_coords: Optional[FloatArray] = None,
 ) -> ManeuverStep:
     """Recover per-step displacements, CBAR loads, and net (aero+inertial) loads."""
     aero = ops.aero
@@ -211,7 +213,7 @@ def _recover_step(
         t=t, trim_vars=dict(vals), displacements=displacements,
         bar_forces=bar_forces, grid_loads=grid_loads,
         inertial_loads=inertial_loads, net_loads=net_loads, closure=closure,
-        Fz_aero=Fz_aero, My_aero=My_aero,
+        Fz_aero=Fz_aero, My_aero=My_aero, modal_coords=modal_coords,
     )
 
 
@@ -247,14 +249,10 @@ def run_maneuver_qs(
     mldcomd = bulk.mldcomds.get(mload.mldcomd) if mload.mldcomd else None
     mldprnt = bulk.mldprnts.get(mload.mldprnt) if mload.mldprnt else None
 
-    if mload.nmodes or mload.method or mload.zeta:
-        warnings.warn(
-            "run_maneuver_qs: MLOADS NMODES/METHOD/ZETA configure the free-free "
-            "modal basis (Step 61); the modal transient solver that consumes it "
-            "lands with Step 62.  This solver integrates the l-set directly and "
-            "ignores all three.",
-            UserWarning,
-        )
+    # NMODES/METHOD/ZETA select the Step 62 modal solver (Mloads.selects_modal);
+    # the main.py dispatch routes those cards to run_maneuver_modal, so this
+    # solver only ever sees all-zeros cards and the increment-1 ignored-warning
+    # is retired.
 
     # Initial condition: the Step 53 static balanced trim for the referenced TRIM.
     ic_subcase = SubcaseControl(
@@ -277,7 +275,7 @@ def run_maneuver_qs(
     q = ic.q
     aero = aero_cache.get(ic.mach)
 
-    ops = _assemble_operators(bulk, subcase, aero, q)
+    ops = assemble_operators(bulk, subcase, aero, q)
 
     # Base δ held for any label the command set does not drive = the trim value.
     base_delta = {l: float(ic.trim_vars.get(l, 0.0)) for l in ops.all_labels}
@@ -311,8 +309,8 @@ def run_maneuver_qs(
     # begins at equilibrium (MLDTRIM = steady-state initial condition).  At
     # equilibrium K·u = F and v = 0, so the initial acceleration is exactly zero
     # (M·a = F − K·u = 0) — no M⁻¹ needed.
-    delta0 = _delta_of_t(t0, base_delta, commands, bulk.tabled1s, ops.all_labels)
-    F0 = _force_l(ops, delta0)
+    delta0 = delta_of_t(t0, base_delta, commands, bulk.tabled1s, ops.all_labels)
+    F0 = force_l(ops, delta0)
     u = scipy.linalg.solve(K, F0)                    # static l-set displacement
     v = np.zeros_like(u)
     a = np.zeros_like(u)
@@ -324,7 +322,7 @@ def run_maneuver_qs(
     times: list[float] = []
 
     def _emit(t: float, u_l: FloatArray, delta_arr: FloatArray) -> None:
-        step = _recover_step(
+        step = recover_step(
             ops, bulk, grid_index, t, u_l, delta_arr, _vals_at(delta_arr))
         steps.append(step)
         times.append(t)
@@ -332,8 +330,8 @@ def run_maneuver_qs(
     _emit(t0, u, delta0)
     for n in range(1, n_steps + 1):
         t = t0 + n * dt
-        delta = _delta_of_t(t, base_delta, commands, bulk.tabled1s, ops.all_labels)
-        F = _force_l(ops, delta)
+        delta = delta_of_t(t, base_delta, commands, bulk.tabled1s, ops.all_labels)
+        F = force_l(ops, delta)
         rhs = F + M @ (a0 * u + a2 * v + a3 * a) + C @ (a1 * u + a4 * v + a5 * a)
         u_new = scipy.linalg.lu_solve(K_hat_lu, rhs)
         a_new = a0 * (u_new - u) - a2 * v - a3 * a
@@ -357,4 +355,5 @@ def run_maneuver_qs(
         steps=steps,
         crit_index=crit_index,
         mldprnt_items=(mldprnt.items if mldprnt is not None else []),
+        massset_sid=subcase.massset_sid,
     )

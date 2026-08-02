@@ -1605,7 +1605,97 @@ $$
 Because $M_{rr}\succ 0$, the Newmark operator is non-singular with the rigid partition free:
 free flight is obtained by *not* constraining those rows — no Schur complement and no per-step
 re-trim. This reverses the restrained-basis decision of Phase G0 increment 1, which held
-$u_r = 0$ and prescribed the rigid motion through the URDD labels.
+$u_r = 0$ and prescribed the rigid motion through the URDD labels. Equation (40) with the rigid
+rows active is the Step 63 free-flight system; the Step 62 solver below keeps the rigid motion
+prescribed and therefore uses a *restrained-frame representation* of the same basis.
+
+### 7.9 The modal transient solver with prescribed rigid states (Step 62)
+
+Step 62 integrates **exactly the increment-1 physics** — Level-1 quasi-steady aero, open-loop
+commands, rigid motion prescribed through the $\delta(t)$ trim labels, the restrained
+($u_r = 0$) frame — but in the coordinates of the §7.8 basis, with mode-acceleration recovery.
+Implementation: `sbeam/solver/maneuver_modal.py`; the direct l-set solver
+(`maneuver_qs.py`) is retained unchanged as the permanent regression anchor.
+
+**Why the mean-axis modes must be re-based first.** A Galerkin projection of the l-set system
+directly onto the mean-axis shapes $\Phi_e$ does *not* reproduce the direct solver. Writing the
+direct solution's a-set residual as $e_r\lambda$ (the implicit SUPORT reaction on the r-rows;
+zero only when the commanded state is balanced), the mean-axis test space sees
+
+$$
+\Phi_e^{\mathsf T} e_r \lambda = \Phi_{e,r}^{\mathsf T}\lambda \neq 0 ,
+$$
+
+because the mean-axis shapes are nonzero at the SUPORT DOFs; and the restrained solution's
+$M$-rigid content $\Phi_r c(t)$ carries aerodynamic load $q\,\Phi_e^{\mathsf T}Q\,\Phi_r c$ that
+an elastic-only mean-axis system never sees. Both terms vanish identically when each mode's
+rigid content is re-based so the mode is zero at the SUPORT DOFs — the output convention (D2)
+applied to the *basis*:
+
+$$
+\psi_e = \phi_e - \Phi_r\left(\Phi_r[r]\right)^{-1}\phi_e[r],
+\qquad \psi_e[r] = 0 ,
+\tag{41}
+$$
+
+where $[r]$ denotes the SUPORT-DOF rows ($\Phi_r[r] = I$ when the SUPORT grid sits at the
+reference point). $\psi_e$ differs from $\phi_e$ by a strain-free rigid vector, so frequencies,
+strain content and truncation behaviour are those of the free-free basis; but every $\psi_e$
+lies in the restrained subspace, so with $V = \psi_e[l]$ the reduced system
+
+$$
+M_{\psi\psi}\ddot\xi + C_{\psi\psi}\dot\xi + K_{\psi\psi}\xi = V^{\mathsf T}F_l(t),
+\qquad
+\begin{aligned}
+M_{\psi\psi} &= V^{\mathsf T}M_{ll}V ,\\
+K_{\psi\psi} &= V^{\mathsf T}\left(K_{ll} - q\,Q_{ll}\right)V ,\\
+C_{\psi\psi} &= M_{\psi\psi}\operatorname{diag}(2\zeta\omega_i),
+\end{aligned}
+\tag{42}
+$$
+
+is an **exact change of coordinates** of the increment-1 l-set ODE whenever $V$ spans it. At
+baseline $M_{\psi\psi} = I + \Phi_{e}[r]^{\mathsf T}M_{rr}\Phi_{e}[r]$ (the mean-axis
+cross-terms vanish); the damping choice makes the physical damping force
+$M_{ll}V\,2\zeta\omega_i\dot\xi_i$ consistent with the generalized one. $B_{hh}$ is
+deliberately **not** engaged: the rigid rates are prescribed via the $\delta(t)$
+PITCH/ROLL/YAW labels, so their aerodynamics already arrive through $q\,Q_{ax}\delta$ — adding
+$B_{hh}$ would double-count. It activates at Step 63 when the rates become states.
+
+**Mode-acceleration recovery with inertia relief** (per output step, cf. Eq. 23):
+
+$$
+u_l = K_{\text{eff},ll}^{-1}\left(F_l - M_{ll}V\ddot\xi - M_{ll}V\,2\zeta\omega_i\dot\xi_i\right),
+\tag{43}
+$$
+
+reusing the direct solver's $K_{\text{eff},ll} = K_{ll} - q\,Q_{ll}$, which already contains
+the static aeroelastic coupling. The recovered $u_l$ has $u_r = 0$ by construction, so both
+solvers share one per-step recovery path (`maneuver_qs.recover_step`). Starting from the
+static reduced solve $K_{\psi\psi}\xi_0 = V^{\mathsf T}F(t_0)$ gives $\ddot\xi_0 = 0$ and makes
+the recovered $t_0$ sample equal the direct solver's static start *independently of
+truncation*.
+
+**Identity and its limits (measured).** With all elastic modes retained and every free DOF
+carrying mass ($n_{\text{massless}} = 0$, e.g. CBAR $\rho > 0$), the modal solution matches the
+direct solver to round-off ($\sim 10^{-14}$ relative). On a CONM2-only deck the condensation
+(39) removes the massless DOFs from the basis, so even the full basis cannot span the l-set;
+(43) recovers their static content through $K_{\text{eff}}^{-1}$ exactly, leaving only the
+aerodynamic coupling to that static content — measured $\sim 10^{-5}$ on net loads,
+$\sim 10^{-3}$ on displacements (HA144A). Truncation convergence is only visible on **smooth
+commands**: a clamped-linear `TABLED1` ramp's slope discontinuities ring the highest retained
+modes (risk item 3) and put an $\omega$-independent ringing floor under every truncated
+solution. With a cosine-sampled ramp the peak-CBAR-force error decays monotonically over
+NMODES $\in \{2, 4, 8, \text{all}\}$ and mode-acceleration beats mode-displacement recovery by
+$\gg 10\times$.
+
+**Fixed-$\Phi$ mass cases.** A MASSSET subcase swaps only the mass side — $M_{ll,i}$,
+$M_{ax,i}$ and the IC trim, through the same subcase-threaded assembly both solvers share —
+while $\Phi$, the AIC, splines and all aero operators are reused untouched. With all modes
+retained the fixed-$\Phi$ off-baseline solution still matches the direct solver on the same
+mass case exactly (the mass-case error is pure truncation). The frozen mean axis degrades as
+the overlay moves the CG: the solver warns above a shift of 5 % of $c_{\text{ref}}$ (decision
+D4), and practice is to re-solve the basis when case frequencies shift by more than $\sim$5 %.
 
 ---
 

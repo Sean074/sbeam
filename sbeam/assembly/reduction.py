@@ -2,7 +2,7 @@
 
 Single owner of the g-set → a-set reduction previously duplicated across
 ``sol144._build_qaa_aset`` / ``sol144._compute_aset_data``, ``sol103.run_sol103``,
-and ``maneuver_qs._assemble_operators``.  The reduction is two stages:
+and ``maneuver_qs.assemble_operators``.  The reduction is two stages:
 
 1. RBE3/RBE2/RBAR transformation ``T`` (n_g × n_red) eliminates dependent DOFs
    (``build_rbe3_transformation``); when no rigid elements exist T is identity.

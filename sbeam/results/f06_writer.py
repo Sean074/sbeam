@@ -752,6 +752,26 @@ def _build_f06_sol144_maneuver_text(
     )
     lines.append("")
 
+    # Step 62 modal solver: one basis-summary block; absent for the direct
+    # l-set solver so the legacy layout is untouched.
+    if result.n_modes_used is not None and result.basis_info:
+        bi = result.basis_info
+        freqs = bi.get("freqs_hz") or []
+        frange = (
+            f"{freqs[0]:.4G} - {freqs[-1]:.4G} HZ" if freqs else "N/A"
+        )
+        lines.append(
+            f"      MODAL SOLVER: RIGID MODES = {bi['n_r']}"
+            f"     ELASTIC MODES = {bi['n_e']} OF {bi['n_available']}"
+            f"     FREQ RANGE = {frange}"
+        )
+        lines.append(
+            f"      ZETA = {bi.get('zeta', 0.0):.4G}"
+            f"     ORTHOGONALITY RESIDUAL = {bi.get('orthogonality_residual', 0.0):.3E}"
+            f"     MASSLESS DOFS CONDENSED = {bi.get('n_massless', 0)}"
+        )
+        lines.append("")
+
     if not result.steps:
         lines.append("      NO OUTPUT SAMPLES")
         lines.append("")

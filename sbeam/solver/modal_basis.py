@@ -57,6 +57,7 @@ serve (Step 62/63) is::
 Public API:
     build_rigid_modes(...)          -> Phi_r (the single rigid-basis builder)
     build_maneuver_basis(...)       -> ManeuverBasis
+    truncate_basis(...)             -> ManeuverBasis (per-subcase NMODES slice)
     build_hset_gafs(...)            -> HsetGafs
     assemble_aset_operators(...)    -> AsetOperators (shared with maneuver_qs)
 """
@@ -164,7 +165,7 @@ class HsetGafs:
 class AsetOperators:
     """A-set matrices shared by the legacy and modal maneuver paths.
 
-    Exactly the quantities ``maneuver_qs._assemble_operators`` built inline
+    Exactly the quantities ``maneuver_qs.assemble_operators`` built inline
     before Step 61; both solvers now go through this single assembly so their
     a-set indices and matrices are identical by construction.
     """
@@ -518,6 +519,40 @@ def build_maneuver_basis(
         n_filtered=int(dropped.size), filtered_freqs_hz=dropped,
         n_available_elastic=n_available,
         n_massless=int(K_aa.shape[0] - T_cond.shape[1]),
+    )
+
+
+def truncate_basis(basis: ManeuverBasis, nmodes: int) -> ManeuverBasis:
+    """Return a copy of ``basis`` retaining the first ``nmodes`` elastic modes.
+
+    Rigid modes are always all retained.  ``nmodes`` <= 0 returns the basis
+    unchanged.  This is how a per-subcase MLOADS NMODES is applied to the shared
+    (untruncated) job-level basis: a column slice, never a re-solve — the basis
+    object stays the single eigensolve of ``build_maneuver_basis`` (risk item 9).
+    """
+    if nmodes <= 0 or nmodes >= basis.n_e:
+        if nmodes > basis.n_e:
+            warnings.warn(
+                f"truncate_basis: MLOADS NMODES={nmodes} exceeds the "
+                f"{basis.n_e} elastic modes available from the basis solve; "
+                "retaining all of them.",
+                UserWarning, stacklevel=2,
+            )
+        return basis
+    n_r = basis.n_r
+    n_h = n_r + nmodes
+    return ManeuverBasis(
+        phi=basis.phi[:, :n_h], n_r=n_r, n_e=nmodes,
+        rigid_dofs=list(basis.rigid_dofs),
+        rigid_label_map=dict(basis.rigid_label_map),
+        suport_pos=basis.suport_pos,
+        elastic_freqs_hz=basis.elastic_freqs_hz[:nmodes],
+        M_hh=basis.M_hh[:n_h, :n_h], K_hh=basis.K_hh[:n_h, :n_h],
+        M_rr=basis.M_rr,
+        orthogonality_residual=basis.orthogonality_residual,
+        n_filtered=basis.n_filtered, filtered_freqs_hz=basis.filtered_freqs_hz,
+        n_available_elastic=basis.n_available_elastic,
+        n_massless=basis.n_massless,
     )
 
 

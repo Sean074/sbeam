@@ -231,6 +231,7 @@ class ManeuverStep:
     closure: FloatArray                   # (6,) body-frame resultant (Fx..Mz) of net_loads about the ref
     Fz_aero: float = 0.0                  # instantaneous aero Fz (force/q · q) = lift
     My_aero: float = 0.0                  # instantaneous aero pitching moment about x_ref
+    modal_coords: Optional[FloatArray] = None   # (n_e,) modal amplitudes (Step 62 solver only)
 
 
 def peak_grid_force(step: "ManeuverStep") -> float:
@@ -268,3 +269,8 @@ class ManeuverResult:
     steps: list["ManeuverStep"]            # one per output sample
     crit_index: int                       # index into steps of the peak_grid_force sample
     mldprnt_items: list[str] = field(default_factory=list)  # requested ASCII-print keywords
+    massset_sid: Optional[int] = None     # MASSSET mass case (None = baseline)
+    n_modes_used: Optional[int] = None    # retained elastic modes (Step 62 solver; None = direct l-set)
+    # Step 62 basis summary for the f06 (n_r, n_e, n_available, freqs_hz,
+    # orthogonality_residual, n_massless); None for the direct l-set solver.
+    basis_info: Optional[dict] = None

@@ -96,13 +96,15 @@ class Mldtrim:
 class Mloads:
     """Top-level transient maneuver-loads driver (references the sub-cards).
 
-    ``nmodes``/``method``/``zeta`` configure the free-free modal basis (Step 61):
-    ``method`` selects the EIGRL used for the basis eigensolve (0 ⇒ an internal
-    all-modes default), ``nmodes`` is the number of retained **elastic** modes
-    (rigid modes are always all retained; 0 ⇒ all elastic), and ``zeta`` is the
-    uniform elastic modal damping ratio.  The Step 61 basis/operator layer is
-    built and validated standalone; the modal transient solver that consumes it
-    lands with Step 62, so the legacy quasi-steady solver still ignores all three.
+    ``nmodes``/``method``/``zeta`` configure the free-free modal basis (Step 61)
+    and select the solver (Step 62): ``method`` selects the EIGRL used for the
+    basis eigensolve (0 ⇒ an internal all-modes default; -1 ⇒ the same internal
+    default AND the modal solver — the all-defaults-modal sentinel), ``nmodes``
+    is the number of retained **elastic** modes (rigid modes are always all
+    retained; 0 ⇒ all elastic), and ``zeta`` is the uniform elastic modal
+    damping ratio.  Any of the three nonzero selects the Step 62 modal transient
+    solver (``selects_modal``); an all-zeros card runs the legacy direct l-set
+    solver (``maneuver_qs``), kept permanently as the regression anchor.
     """
     sid:        int
     mldtrim:    int            # MLDTRIM sid (initial condition)
@@ -110,5 +112,11 @@ class Mloads:
     mldcomd:    int = 0        # MLDCOMD sid (0 ⇒ no commands; hold trim)
     mldprnt:    int = 0        # MLDPRNT sid (0 ⇒ no ASCII print)
     nmodes:     int = 0        # retained ELASTIC modes (0 ⇒ all available)
-    method:     int = 0        # EIGRL sid for the basis solve (0 ⇒ internal default)
+    method:     int = 0        # EIGRL sid for the basis solve (0 ⇒ internal
+                               # default; -1 ⇒ internal default + modal solver)
     zeta:       float = 0.0    # uniform elastic modal damping ratio
+
+    @property
+    def selects_modal(self) -> bool:
+        """True when this card requests the Step 62 modal transient solver."""
+        return bool(self.nmodes or self.method or self.zeta)

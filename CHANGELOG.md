@@ -11,6 +11,34 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Phase 2 completion.
 
+### Added
+
+**Step 62 — modal transient maneuver solver (prescribed rigid) + fixed-Φ mass-case gates (2026-08-02)**
+
+New `sbeam/solver/maneuver_modal.py::run_maneuver_modal`: the Phase G0 transient maneuver
+solve in the coordinates of the Step 61 free-free basis, with mode-acceleration recovery
+(inertia relief through the direct solver's `K_eff_ll`). Same increment-1 physics
+(Level-1 quasi-steady, open-loop, rigid motion prescribed through the δ(t) labels); the
+mean-axis modes are re-based into the restrained frame
+(`ψ_e = φ_e − Φ_r(Φ_r[r])⁻¹φ_e[r]`) so that with all modes retained the modal solution is
+an exact change of coordinates of the direct l-set system — matched to ~1e−14 on a deck
+with distributed mass, with the documented CONM2-only near-identity (~1e−5 net loads,
+massless-DOF condensation). Fixed-Φ MASSSET cases: one basis per job
+(`ManeuverBasisCache`, shared across subcases by `main.py`), mass side swapped per case,
+CG-shift warning above 5 % of c_ref. Gates in `tests/solver/test_maneuver_modal.py`
+(full-basis identity, NMODES convergence on smooth commands, mode-acceleration ≥10× over
+mode-displacement, hold-at-trim, ζ-damping decay, fixed-Φ exactness/approximation, cache
+build-once, D4 threshold). Docs: theory §7.9, `05c_sol144_maneuver.md`,
+`02_card_reference.md`.
+
+**Behavior change:** the MLOADS NMODES/METHOD/ZETA fields — parsed-and-ignored with a
+warning since Step 61 — now select the modal solver (any of the three nonzero;
+`METHOD=-1` = modal with all modes/defaults). All-zeros MLOADS cards run the direct
+l-set solver (`run_maneuver_qs`) unchanged and warning-free; the ignored-warning is
+retired. `ManeuverStep` gains `modal_coords`; `ManeuverResult` gains `massset_sid`,
+`n_modes_used`, `basis_info`; the f06 transient block gains a `MODAL SOLVER` basis
+summary (modal runs only — direct-solver output is byte-identical).
+
 ### Changed
 
 **P9 — vectorized `build_ajj` (broadcast Biot–Savart) + DEF-R6 LU/gecon batch (2026-08-02)**

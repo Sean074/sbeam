@@ -1105,10 +1105,13 @@ def _handle_mloads(fields: list[str], bulk: BulkData) -> None:
 
     SID MLDTRIM MLDTIME [MLDCOMD] [MLDPRNT] [NMODES] [METHOD] [ZETA]
 
-    NMODES/METHOD/ZETA configure the Step 61 free-free modal basis (retained
-    ELASTIC mode count, EIGRL sid for the basis solve, uniform elastic damping
-    ratio).  All three are optional and default to "internal default / all
-    modes / undamped".
+    NMODES/METHOD/ZETA configure the free-free modal basis (retained ELASTIC
+    mode count, EIGRL sid for the basis solve, uniform elastic damping ratio).
+    All three are optional and default to "internal default / all modes /
+    undamped".  Any of the three nonzero selects the Step 62 modal transient
+    solver; METHOD=-1 is the sentinel for "modal solver with the internal
+    all-modes EIGRL default" (the all-defaults modal case).  All-zeros runs
+    the legacy direct l-set solver.
     """
     sid     = _to_int(fields[1])
     mldtrim = _to_int(fields[2])
@@ -1122,6 +1125,10 @@ def _handle_mloads(fields: list[str], bulk: BulkData) -> None:
         raise ValueError(f"Duplicate MLOADS SID {sid}")
     if nmodes < 0:
         raise ValueError(f"MLOADS {sid}: NMODES must be >= 0; got {nmodes}")
+    if method < -1:
+        raise ValueError(
+            f"MLOADS {sid}: METHOD must be an EIGRL sid, 0 (default) or -1 "
+            f"(modal solver, internal all-modes default); got {method}")
     if zeta < 0.0:
         raise ValueError(f"MLOADS {sid}: ZETA must be >= 0; got {zeta}")
     bulk.mloads[sid] = Mloads(
@@ -1740,7 +1747,7 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
             raise ValueError(f"MLOADS {sid}: MLDCOMD {ml.mldcomd} not found")
         if ml.mldprnt and ml.mldprnt not in bulk.mldprnts:
             raise ValueError(f"MLOADS {sid}: MLDPRNT {ml.mldprnt} not found")
-        if ml.method and ml.method not in bulk.eigrls:
+        if ml.method > 0 and ml.method not in bulk.eigrls:
             raise ValueError(f"MLOADS {sid}: METHOD {ml.method} not found in EIGRL")
 
     # Validate MASSSET (Step 60) cross-references and mark overlay-only CONM2s.

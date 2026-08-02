@@ -299,6 +299,75 @@ the peak column value). Pre-existing in the Step 53 and increment-1 inertia-reli
 
 ---
 
+### Step 62 (P10) — Modal transient solver, prescribed rigid states + fixed-Φ mass-case gates ✅ COMPLETE (2026-08-02)
+
+**Objective:** De-risk basis + integration + mode-acceleration recovery with the rigid partition
+still *prescribed* (open-loop, exactly increment-1 physics) before Step 63 frees it — isolating
+truncation behavior from free-flight dynamics — and land the fixed-Φ mass-case transient
+capability on top of Step 60's MASSSET.
+
+**Design decisions (resolved with the user, 2026-08-02):**
+
+| # | Decision | Outcome |
+|---|----------|---------|
+| D1 | Solver selection | Trio-nonzero (any of NMODES/METHOD/ZETA) + `METHOD=-1` all-defaults-modal sentinel; all-zeros keeps the direct solver bit-identical. `Mloads.selects_modal` is the single dispatch predicate. |
+| D2 | Displacement convention | Outputs in the direct solver's `u_r = 0` frame — realized by re-basing the *basis* (below), so the full-basis gate is a plain match on all quantities. |
+| D3 | Φ sharing scope | Job-level `ManeuverBasisCache` (keyed `spc_sid` + EIGRL sid), shared by `main.py` across all modal MLOADS subcases; basis always from the baseline mass. |
+| D4 | CG-shift warning | Warn when a MASSSET overlay moves the GPWG CG by more than 5 % of `c_ref`. |
+
+**Key implementation finding — restrained-frame re-basing (Eq. 41, theory §7.9).** A Galerkin
+projection onto the mean-axis `Φ_e` directly cannot reproduce the direct solver: under an
+unbalancing command the implicit SUPORT reaction leaks into the mean-axis test space
+(`Φ_e,rᵀλ ≠ 0`) and the restrained solution's rigid content carries aero load
+(`q·Φ_eᵀQ·Φ_r c`) the elastic-only system never sees. Re-basing each mode to be zero at the
+SUPORT DOFs (`ψ_e = φ_e − Φ_r(Φ_r[r])⁻¹φ_e[r]` — strain-identical; the D2 convention applied to
+the basis) kills both terms, making the reduced system `M_ψψξ̈ + C_ψψξ̇ + K_ψψξ = VᵀF_l(t)`
+(V = `ψ_e[l]`) an **exact change of coordinates** of the increment-1 l-set ODE at full basis.
+`B_hh` deliberately not engaged (rates prescribed via δ(t) labels — would double-count; Step 63).
+Second finding: on CONM2-only decks the Guyan condensation removes massless DOFs from the basis,
+so even the full basis cannot span the l-set — mode-acceleration recovers their static content
+through `K_eff⁻¹` and the identity degrades to a measured ~1e−5 (net loads) near-identity.
+Third finding (risk item 3 realized): clamped-linear TABLED1 ramps ring the highest retained
+modes and put an ω-independent floor under truncated solutions — NMODES convergence is only
+visible on smooth (cosine-sampled) commands; documented as deck-authoring practice.
+
+**Deliverables:**
+- `sbeam/solver/maneuver_modal.py` — `run_maneuver_modal(bulk, subcase, aero, aero_cache=None,
+  basis_cache=None, recovery="acceleration")`: IC trim (mass case threaded), restrained-frame
+  re-basing, dense n_e Newmark-β (¼, ½), equilibrium start (`K_ψψξ0 = VᵀF(t0)` ⇒ recovered t0
+  sample = the direct static start independently of truncation), mode-acceleration recovery with
+  inertia relief reusing the direct solver's `K_eff_ll` (damping force `M_ll V·2ζω_iξ̇_i`
+  consistent with `C_ψψ = M_ψψ·diag(2ζω_i)`); `ManeuverBasisCache` (D3) + D4 CG warning;
+  `recovery="displacement"` as the test/reference mode.
+- Dispatch: `main.py` routes `Mloads.selects_modal` subcases to the modal solver with one shared
+  basis cache; parser accepts `METHOD=-1` (validates ≥ −1); the increment-1
+  NMODES-ignored warning retired (CHANGELOG behavior change).
+- Shared recovery: `maneuver_qs`'s `Operators`/`assemble_operators`/`delta_of_t`/`force_l`/
+  `recover_step` made the sanctioned shared names (were `_`-private), `Operators` gains
+  `suport_local`; `recover_step` gains `modal_coords` passthrough. `modal_basis.truncate_basis`
+  (per-subcase NMODES as a column slice — one eigensolve per job, risk item 9 enforced
+  structurally). `ManeuverStep.modal_coords`; `ManeuverResult.massset_sid` / `n_modes_used` /
+  `basis_info`; f06 `MODAL SOLVER` basis-summary block (modal runs only — direct output
+  byte-identical).
+- Docs: theory §7.9 (records the reversal of the increment-1 restrained-basis decision *and* why
+  the restrained frame reappears as a representation in Step 62), `05c_sol144_maneuver.md`
+  Step 62 user section, `02_card_reference.md` MLOADS fields, `05_aeroelastics.md` module table,
+  CLAUDE.md.
+
+**Test/Acceptance (`tests/solver/test_maneuver_modal.py`, 15 gates):** full-basis identity to
+`run_maneuver_qs` ≤ 1e−6 (measured ~1e−14) on the rho-variant HA144A deck (`n_massless = 0`);
+documented CONM2-only near-identity (≤1e−4 net loads); monotone NMODES ∈ {2, 4, 8, all}
+peak-CBAR-force decay on a smooth command; mode-acceleration ≥ 10× over mode-displacement
+(measured ~400×); hold-at-trim = Step 53 to 1e−8; ζ > 0 halves the late-time oscillation;
+fixed-Φ exactness (MASSSET + all modes ≤ 1e−6 vs the direct solver on the same case) and
+approximation (+10 % fuel, NMODES=8: peak CBAR force within 2 % of a re-solved-modes reference);
+basis cache builds Φ exactly once across five runs; truncated equilibrium start exact (≤1e−9);
+D4 warning fires above 5 % `c_ref` and not below; `selects_modal` truth table, `METHOD=-1`
+parser sentinel, no-warning-on-all-zeros; f06 summary present for modal, absent for direct.
+Full suite: 1581 passed.
+
+---
+
 ## Resolved defects
 
 ### DEF-R6 (maneuver share) — `run_maneuver_qs` rebuilt the Mach-correct AIC twice ✅ COMPLETE (2026-08-02)
