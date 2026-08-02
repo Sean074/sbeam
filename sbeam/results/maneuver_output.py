@@ -34,8 +34,12 @@ def build_maneuver_time_history_text(result: ManeuverResult) -> str:
     prints the full set.
     """
     labels = result.labels
+    # Step 63 free-flight runs report the load-factor ratio NZ_REL =
+    # URDD3_basic(t)/URDD3_basic(t0) (D3; = n_z in g for a 1g IC).
+    has_nz = any(s.nz_rel is not None for s in result.steps)
     header_cols = (
         ["TIME"] + [l[:12] for l in labels]
+        + (["NZ_REL"] if has_nz else [])
         + ["FZ_AERO", "MY_AERO", "CLOSURE_F", "CLOSURE_M", "PEAK_GRID_F"]
     )
     lines = [
@@ -50,6 +54,8 @@ def build_maneuver_time_history_text(result: ManeuverResult) -> str:
     for s in result.steps:
         row = [f"{s.t:13.5e}"]
         row += [f"{s.trim_vars.get(l, 0.0):13.5e}" for l in labels]
+        if has_nz:
+            row += [f"{(s.nz_rel if s.nz_rel is not None else 0.0):13.5e}"]
         cl_f = float(np.linalg.norm(s.closure[:3]))
         cl_m = float(np.linalg.norm(s.closure[3:]))
         row += [f"{s.Fz_aero:13.5e}", f"{s.My_aero:13.5e}",

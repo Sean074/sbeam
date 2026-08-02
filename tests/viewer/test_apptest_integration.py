@@ -176,3 +176,38 @@ def test_flow_d_sol144_mloads_render_and_run():
     labels = [m.label for m in at.metric]
     assert "Output samples" in labels and "Critical sample" in labels
     assert at.slider(key="sol144_man_step") is not None
+
+
+def test_flow_e_sol144_free_flight_modal_dispatch():
+    """Flow E (Step 63): a modal MLOADS deck routes to the FREE-FLIGHT modal
+    solver in the viewer (not the direct solver, which would silently run the
+    prescribed-rigid physics).
+
+    Acceptance: every maneuver result carries the modal/free-flight markers
+    (n_modes_used set, basis_info['free_flight']) and the UI renders.
+    """
+    import warnings
+    from pathlib import Path
+    from sbeam.parser.bdf_reader import parse_bdf
+
+    sample = Path(__file__).parent.parent.parent / "sample" / "ha144a_mloads_massset.bdf"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        cc, bulk = parse_bdf(sample)
+
+    at = AppTest.from_function(_sbeam_app, default_timeout=300)
+    at.run()
+    _inject_state(at, bulk, cc)
+    at.run()
+
+    assert not at.exception, [str(e) for e in at.exception]
+    next(b for b in at.button if b.label == "Run Analysis").click()
+    at.run(timeout=300)
+
+    assert not at.exception, [str(e) for e in at.exception]
+    assert not at.error, [e.value for e in at.error]
+    results = at.session_state["maneuver_result"]
+    assert isinstance(results, dict) and len(results) == 3
+    for r in results.values():
+        assert r.n_modes_used is not None                 # modal solver ran
+        assert r.basis_info and r.basis_info["free_flight"] is True

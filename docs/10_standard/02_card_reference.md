@@ -63,7 +63,7 @@ Case control appears between the `SOL` line and `BEGIN BULK`. Keywords are not o
 | `TRIM` | int | Trim condition SID (references `TRIM` bulk card; SOL 144 only) |
 | `TRIMOBJ` | int | Trim objective SID (references `TRIMOBJ` bulk card; over-determined SOL 144 trim) |
 | `DIVERG` | int | Divergence condition SID (references `DIVERG` bulk card; SOL 144 only) |
-| `MLOADS` | int | Transient maneuver-loads SID (references `MLOADS` bulk card; runs `solver/maneuver_modal.py` when the card's NMODES/METHOD/ZETA select the Step 62 modal solver, else `solver/maneuver_qs.py`; SOL 144, Phase G0) |
+| `MLOADS` | int | Transient maneuver-loads SID (references `MLOADS` bulk card; runs the Step 63 free-flight modal solver `solver/maneuver_modal.py` when the card's NMODES/METHOD/ZETA select it, else the prescribed-rigid direct solver `solver/maneuver_qs.py`; SOL 144, Phase G0) |
 | `DISPLACEMENT` | — | Request nodal displacement output (`= ALL` or `= PRINT`) |
 | `SPCFORCE` | — | Request SPC reaction force output |
 | `OLOAD` | — | Request applied load echo output |
@@ -1906,18 +1906,23 @@ MLOADS, SID, MLDTRIM, MLDTIME, MLDCOMD, MLDPRNT, NMODES, METHOD, ZETA
 | METHOD | `method` | int | EIGRL SID for the basis eigensolve (`0` = internal all-modes default; `-1` = internal default **and** selects the modal solver — the all-defaults-modal sentinel) | `0` |
 | ZETA | `zeta` | float | Uniform elastic modal damping ratio | `0.0` |
 
-**Solver selection (Step 62, decision D1).** Any of NMODES/METHOD/ZETA nonzero
-selects the modal transient solver (`solver/maneuver_modal.py`), which
-integrates in the Step 61 free-free basis (`solver/modal_basis.py`) with
-mode-acceleration recovery. An all-zeros card runs the direct l-set solver
-(`solver/maneuver_qs.py`, the increment-1 path, kept permanently as the
-regression anchor). `METHOD=-1` requests the modal solver with all modes,
-default EIGRL and no damping — the case the trio-nonzero rule could not
-otherwise express.
+**Solver selection (Steps 62–63, decision D1).** Any of NMODES/METHOD/ZETA nonzero
+selects the modal transient solver (`solver/maneuver_modal.py`) — since Step 63
+the **free-flight** solver: it integrates in the Step 61 free-free basis
+(`solver/modal_basis.py`) with the rigid states free (self-balancing; rigid
+trim labels are outputs) and mode-acceleration recovery. An all-zeros card runs
+the direct l-set solver (`solver/maneuver_qs.py`, the increment-1
+prescribed-rigid path, kept permanently as the regression anchor).
+`METHOD=-1` requests the modal solver with all modes, default EIGRL and no
+damping — the case the trio-nonzero rule could not otherwise express.
+Free-flight requirements: the IC `TRIM` must carry `RHOREF`, and the MLDCOMD
+may command **AESURF controls only** (a rigid-state AESTAT label under the
+modal solver is a `ValueError` at parse and at solve).
 
 Cross-reference validation (post-parse): MLDTRIM/MLDTIME must exist; MLDCOMD and
 MLDPRNT (if non-zero) must exist; METHOD (if > 0) must name an EIGRL;
-NMODES ≥ 0, METHOD ≥ -1 and ZETA ≥ 0 — else `ValueError`.
+NMODES ≥ 0, METHOD ≥ -1 and ZETA ≥ 0; a modal (`selects_modal`) MLOADS whose
+MLDCOMD commands a non-AESURF label — else `ValueError`.
 
 **Example:**
 ```

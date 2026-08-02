@@ -4,9 +4,9 @@ Authoritative backlog of **open** work only — bugs, planned development, and d
 in priority order. Updated as part of every session that completes a step — never deferred.
 Completed steps live in `docs/40_history/00_completed_development.md`; nothing closed is
 summarised here. When an item is promoted to a formal step, give it a step number (next free
-number is **Step 68**; Steps 63 and 67 are assigned below — Step 64 closed 2026-07-31,
-Steps 65 and 66 closed 2026-08-01/02, Step 62 closed 2026-08-02) and apply the step format
-(Objective, Deliverables, Test/Acceptance).
+number is **Step 68**; Step 67 is assigned below — Step 64 closed 2026-07-31,
+Steps 65 and 66 closed 2026-08-01/02, Steps 62 and 63 closed 2026-08-02) and apply the
+step format (Objective, Deliverables, Test/Acceptance).
 
 ---
 
@@ -51,12 +51,14 @@ yaw-rate wing term is promoted to **Step 67** and enters release scope.
 DEF-R6 LU/gecon batch; see `docs/40_history/05_aero_vlm_spline.md`).
 **P10 delivered 2026-08-02** (Step 62 — modal transient solver, prescribed rigid +
 fixed-Φ mass-case gates; see `docs/40_history/07_maneuver_transient.md`).
+**P11 delivered 2026-08-02** (Step 63 — free-flight rigid-body coupling: the modal
+solver is now the self-balancing free-flight solver; see
+`docs/40_history/07_maneuver_transient.md`).
 
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P8b | Section cuts on transient (MLOADS) maneuvers | Tier 1 | ~0.5 d (critical sample) + ~1–1.5 d (full history) | Follow-on to Monitor Phase 2 (closed 2026-08-02, static only); the integrand is reusable verbatim, the work is the per-time-step output design + envelope. Better sequenced after P11, which needs the same envelope machinery (P10 delivered 2026-08-02). |
-| P11 | Step 63 — free-flight rigid-body coupling | Tier 1 (G0 plan) | ~4–5 d | The "different maneuvers" half of the aim: self-balancing transient maneuvers from arbitrary control input. |
-| P12 | Viewer — SOL 144 / MLOADS case authoring UI | Tier 1 | ~5–8 d | Early-design usability: today SOL 144 cases must be hand-authored in the BDF; a production process needs the authoring loop closed. Sequenced after Steps 62–63 so it authors the final card surface once. |
+| P8b | Section cuts on transient (MLOADS) maneuvers | Tier 1 | ~0.5 d (critical sample) + ~1–1.5 d (full history) | Follow-on to Monitor Phase 2 (closed 2026-08-02, static only); the integrand is reusable verbatim, the work is the per-time-step output design + envelope (P10/P11 delivered 2026-08-02). |
+| P12 | Viewer — SOL 144 / MLOADS case authoring UI | Tier 1 | ~5–8 d | Early-design usability: today SOL 144 cases must be hand-authored in the BDF; a production process needs the authoring loop closed. Sequenced after Steps 62–63 (both closed 2026-08-02) so it authors the final card surface once. |
 | P13 | DEF-R1 refactor batch — decompose `sol144.py` (+ R2, R3, R4; R7 at a release boundary) | Defects | ~2–3 d | `run_sol144_trim` is a ~500-line god function in an 1838-line module that P14/P16 both extend. Do it after Tier 1 stops churning it and **before** Phase D piles on. |
 | P14 | `matrix_gaf_export` Phases 1–2 | Tier 2 | ~8 d | External flutter handoff (FLAPS) **and** the declared prerequisite of Phase D (MKAERO1, Mach loop, bundle writers). |
 | P15 | `AMODE` Phase 1 (control-surface hinge modes) | Tier 3 | ~7.5 d | Needed before control-surface flutter in SOL 145; Phase 2 is a declared pre-1.0.0 blocker. |
@@ -87,7 +89,7 @@ questions were resolved as follows:
 
 | Decision | Outcome |
 |----------|---------|
-| Transient maneuvers | **Quasi-steady only.** Ship Step 53 balanced maneuvers + the increment-1 prescribed-rigid MLOADS solver. Step 63 (free-flight coupling) stays post-release at P11. (Step 62, also scoped post-release, was delivered 2026-08-02 ahead of the release.) |
+| Transient maneuvers | **Quasi-steady only.** Ship Step 53 balanced maneuvers + the increment-1 prescribed-rigid MLOADS solver. (Steps 62 and 63, both scoped post-release, were delivered 2026-08-02 ahead of the release — the free-flight modal solver ships as a bonus.) |
 | Lateral cases | **In scope.** Steady sideslip/roll/aileron trim (already supported) plus yaw-rate cases — the Tier 4 yaw-rate wing term is promoted to **Step 67** (below), release-required. Formulation decided: loading-scaled force term. |
 | Propeller effects | **Corrections position, documented.** Powered effects (slipstream over the washed wing, thrust-line pitching moment) enter only via the correction cards (`W2GJ`/`WT2`/`CHORDCP`) built from powered CFD or flight-test data; no native slipstream model. The modeling-guidance + Known-Limitations text lands in `docs/20_theory/02_realistic_airplane_sol144.md` and `05a_aero_vlm.md` as part of the release hygiene batch. |
 | Fuselage | **Corrected body panels adequate.** The A9/A10 correction-matched body panels are the early-design answer (Step 66 demonstrates them on the flagship); the predictive slender-body element stays deferred past Phase D. Validity envelope documented in the theory doc's limitations section. |
@@ -107,7 +109,7 @@ questions were resolved as follows:
   closing **Q1** (accept + document the CID-0 SPCFORCE convention — it matches NASTRAN)
   and **Q3** (Known-Limitations line for the GRAV CID=0 restriction).
 
-**Explicitly out of release scope:** Step 63 (P11), viewer authoring UI (P12),
+**Explicitly out of release scope:** viewer authoring UI (P12),
 P13–P18, DEF-M14, and every Tier 2–4 item not named above.
 
 ### Step 67 (release-required) — Quasi-steady yaw-rate wing term
@@ -380,7 +382,7 @@ half (payload sweeps for SOL 144 trim / Step 53 maneuvers) needs none of the mod
 directly serves the early-design aim; its fixed-Φ transient gates landed with Step 62.
 Sequencing: **59 (refactor, closed 2026-07-06) → 60 (MASSSET static, closed 2026-07-30) →
 61 (basis + GAFs, closed 2026-07-30) → 62 (modal solver + mass gates, closed 2026-08-02) →
-63 (free-flight)**, then G0-d/G0-e.
+63 (free-flight, closed 2026-08-02)** — the Tier 1 G0 sequence is complete; G0-d/G0-e remain.
 
 #### Architecture decisions (confirmed 2026-07-05)
 
@@ -426,37 +428,7 @@ Sequencing: **59 (refactor, closed 2026-07-06) → 60 (MASSSET static, closed 20
    `Δu_l = K_eff_ll⁻¹ r_l` (SUPORT r-set held, reusing the increment-1 `K_eff_ll` LU); downstream
    recovery via the shared `maneuver_qs.recover_step` with URDD entries of `δ_basic` filled from `ξ̈_r`.
 
-#### Step 63 (P11) — G0-b free-flight rigid-body coupling (free the rigid partition)
-
-**Objective:** The self-balancing maneuver: integrate `ξ_r` as states of the coupled h-set Newmark
-system so closure ≈ 0 for an arbitrary commanded *control* history — no per-step trim solve.
-
-**Deliverables:**
-- Full coupled system (architecture decision 2): rigid rows active, `B_hh` rate damping engaged,
-  controls-only `Q_hc`; single `K̂ (n_h×n_h)` LU with `K̂_rr = a0·M_rr − q·(Q_rr + a1·B_rr)`.
-- δ bookkeeping: commanded AESURF labels = inputs (MLDCOMD/`delta_of_t` reused);
-  ANGLEA/URDD/PITCH labels = **outputs** from `ξ_r, ξ̇_r, ξ̈_r`; a rigid-state label in MLDCOMD
-  under the modal solver ⇒ hard `ValueError` naming the label (the legacy solver remains available
-  for prescribed-rigid studies).
-- Recovery: `δ_basic` URDD entries from `ξ̈_r` (`urdd_rcsid_to_basic` reused); MLDPRNT gains
-  rigid-state histories (α, pitch rate, Nz).
-- New sample deck `sample/ha144a_mloads_massset.bdf` (free-flight elevator maneuver × 3-mass
-  sweep — the full "maneuvers × payload conditions" demonstration).
-
-**Test/Acceptance:** **G0-b gate (unchanged intent):** ELEV ramp-and-hold on the HA144A deck ⇒
-closure ≤ tol throughout with O(dt²) decay under dt-halving, and the settled steady state
-reproduces the Step 53 trim with ELEV prescribed and ANGLEA/URDD free (trim vars + net loads
-≤1e−6 relative, full basis); zero-command free response stays at equilibrium to round-off;
-short-period eigenpair of the assembled system matches a rigid 2-DOF hand calculation from the
-Step 53 derivatives to ~5%; mass-case physics sanity (heavier MASSSET ⇒ lower steady load factor
-for equal elevator). Determined command sets only (over-determined transient allocation deferred
-to G0-e).
-
-**Key decisions:** perturbation-about-trim (gravity implicit, exact equilibrium start); linear
-inertial-frame rigid coordinates at fixed V (steady pull-up reachable since `α = θ − ḣ/V`
-settles; phugoid/speed DOF out of scope, documented).
-
-#### G0-d — Unsteady corrections (Levels 2–4) — follow-on (outline; hooks land in Steps 61–63)
+#### G0-d — Unsteady corrections (Levels 2–4) — follow-on (outline; hooks landed in Steps 61–63)
 
 **Objective:** Layer the analytic unsteady terms onto the steady VLM forcing as an ordered list of
 optional `AeroIncrement` objects each contributing `(ΔM_hh, ΔB_hh, ΔK_hh)` and optional appended
@@ -512,9 +484,10 @@ overshoot vs open loop; zero-gain identity to Step 63. **Deferred with Phase G.*
    CHANGELOG as a behavior change.
 9. **Basis drift** — one `solve_modes` call per job, enforced structurally (the basis object is
    passed into the GAF/mass-case loops; nothing inside can reach the eigensolver).
-10. **Open question:** should `Q_hc` accept AESTAT rigid-state labels a user commands open-loop
-    (e.g. prescribed-α studies)? Current answer: hard error under the modal solver; the legacy
-    solver covers prescribed-rigid studies. Revisit if a use case appears.
+10. **Open question — CLOSED by Step 63 (2026-08-02):** `Q_hc` does not accept AESTAT
+    rigid-state labels; commanding one under the modal solver is a hard `ValueError` at both
+    parse time and solve time. The direct solver covers prescribed-rigid studies. Revisit
+    only if an open-loop prescribed-α use case appears.
 
 ### Section cuts on transient maneuvers (P8b)
 
@@ -526,7 +499,8 @@ becomes a per-time-step table — a third dimension in the f06 block, the CSV sc
 the viewer plot, plus a critical-station / critical-time envelope. Scope the
 **critical-sample cut first** (one table at the MLDPRNT critical step, reusing the static
 schema unchanged, ~0.5 d); the full time-history table and envelope follow (~1–1.5 d) and
-are better sequenced after the envelope-sweep work (P11; P10 delivered 2026-08-02), which will want the same
+are better sequenced with the envelope-sweep work (P10/P11 both delivered 2026-08-02:
+free-flight maneuver × mass-case sweeps now exist), which wants the same
 max/min-with-driving-case machinery.
 
 ### Viewer (P12) — SOL 144 / MLOADS case authoring UI
@@ -560,8 +534,9 @@ Per `designs/matrix_reuse_store.md` (viable, subordinated): persist `ajj_inv_cor
 content-hash provenance; `DiskAeroCache(AeroCache)` reload path, default fresh-compute
 bit-identical. **Re-scoped by this review: Phase 0 deleted** (the SOL 144 production
 dispatch + f06 writer it wanted to build already shipped with Step 56/AE10 + AC5). Phases
-1–3 (~6 d) become worthwhile once envelope sweeps exist (Machs × MASSSETs × maneuvers —
-i.e. after P11/P16); the cache-boundary rules (§4: cache pre-q, pre-reduction operands
+1–3 (~6 d) become worthwhile once envelope sweeps grow large (Machs × MASSSETs ×
+maneuvers — the maneuver × mass sweep exists since Step 63; the Mach dimension arrives
+with P16); the cache-boundary rules (§4: cache pre-q, pre-reduction operands
 only, never `Q_aa`/`K_eff`/LU) stand as written.
 
 ### SPLINE9 — FE-consistent Hermite beam spline (go/no-go study only)

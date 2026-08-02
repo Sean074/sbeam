@@ -368,7 +368,101 @@ Full suite: 1581 passed.
 
 ---
 
+### Step 63 (P11) — G0-b free-flight rigid-body coupling ✅ COMPLETE (2026-08-02)
+
+**Objective:** The self-balancing maneuver: integrate `ξ_r` as states of the coupled h-set
+Newmark system so closure ≈ 0 for an arbitrary commanded *control* history — no per-step trim
+solve. Completes the Tier 1 G0 sequence (59 → 60 → 61 → 62 → 63): the "different maneuvers ×
+payload conditions" aim is demonstrated end-to-end.
+
+**Design decisions (finalized with the user, 2026-08-02):**
+
+| # | Decision | Outcome |
+|---|----------|---------|
+| D1 | Solver modes | The modal solver becomes **free-flight only** (`selects_modal` ⇒ free flight, no new card field); the direct solver remains the prescribed-rigid reference. Step 62's ELEV-ramp identity gates reworked to full-basis free-flight self-convergence. |
+| D2 | Displacement output | Stays **elastic-only** (`u_r = 0`, restrained frame); rigid motion is reported through the now-live ANGLEA/PITCH/URDD label histories and the new per-step `xi_r`/`xi_r_dot`/`xi_r_ddot` states, never in the displacement vector. `recover_step` unchanged. |
+| D3 | Load-factor output | `NZ_REL = URDD3_basic(t)/URDD3_basic(t0)` — unit-free ratio (= n_z in g for a 1g IC); no gravity card. MLDPRNT column, free-flight runs only. |
+| D4 | Viewer dispatch | The viewer's `_run_sol144` gains the `selects_modal` dispatch + a shared `ManeuverBasisCache` (it previously ran every MLOADS deck through the direct solver silently). |
+| D5 | MLDCOMD restriction | A rigid-state (AESTAT) label commanded under the modal solver is a hard `ValueError` naming the label — at parse time (deck cross-ref) and solve time (programmatic cards). |
+| D6 | RCSID URDD spill | Rotation content on an absent URDD label ⇒ `UserWarning` (not error). |
+| D7 | RHOREF | Mandatory for free flight (`B_hh` needs `V = √(2q/ρ)`); missing ⇒ `ValueError` naming the TRIM sid. |
+
+**Key implementation findings:**
+
+1. **The label-fill consistency identity — `recover_step` needs no changes.**
+   `build_dj_rigidrate` columns are by construction the `build_djx` label columns rescaled, so
+   reconstructing the TOTAL δ(t) per output step (commanded AESURFs from tables; attitude, rate
+   and URDD labels filled from the rigid states) makes the existing `D_jx @ δ` recovery path and
+   `M_ax_g·δ_basic` inertia reproduce the EOM's rigid aerodynamics and inertia exactly — closure
+   is the discrete Newmark residual (~round-off) at every dt, stronger than the planned O(dt²)
+   gate.
+2. **Mixed η/ξ bookkeeping is required for that identity.** The mean-axis `Φ_e` carries rigid
+   content at the SUPORT DOFs, so the *attitude* (displacement) labels must carry the
+   SUPORT-frame re-split `η_r = Δξ_r + (Φ_rr⁻¹Φ_e,r)Δξ_e` (Step 62's Eq. 41 applied per step;
+   the deformation output is the complementary `Ψ_e Δξ_e`), while *rate* and *acceleration*
+   labels must stay MEAN-AXIS (`Δξ̇_r`/`Δξ̈_r`) — they mirror `B_hh Δξ̇` and `M_ax Δξ̈` one-for-one,
+   and the elastic inertia `M Φ_e Δξ̈_e` needs no load-side term at all (zero rigid-row resultant
+   by mean-axis orthogonality). Feeding `η̈_r` instead injects the elastic ringing into the
+   closure (measured 4 orders too large); feeding raw `ξ_r` for attitude drops the elastic
+   modes' rigid aero (dt-independent closure error). Both wrong paths were built and measured
+   before the identity converged.
+3. **Case-mean-axis correction for MASSSET.** Under a mass case `Φ_rᵀM_caseΦ_e ≠ 0` and the
+   elastic inertia acquires a rigid-row resultant the recovery cannot represent. Fix: cheaply
+   re-orthogonalize `Φ_e ← Φ_e − Φ_r·M_rr,case⁻¹(Φ_rᵀM_caseΦ_e)` before building the h-set
+   operators — same eigensolve, same span, still fixed-Φ; every free-flight identity then holds
+   exactly in the case coordinates.
+
+**Deliverables:**
+- `solver/maneuver_modal.py` rewritten: coupled dense n_h EOM
+  `M_hh Δξ̈ + (C_s − q·B_hh)Δξ̇ + (K_hh − q·Q_hh)Δξ = q·Q_hc·Δδ_c(t)`, perturbation about the IC
+  trim (gravity implicit; zero-command free response stays at equilibrium to round-off), single
+  unsymmetric `K̂` LU (`K̂_rr = a0·M_rr − q(Q_rr + a1·B_rr)`), `C_s` built from the case `M_hh`
+  columns (not `HsetGafs.C_hh`) so the ζ damping force is exact under a MASSSET.
+  `build_hset_gafs`/`HsetGafs` gain their first production consumer.
+- Helpers: `aero.integration.rigid_rate_scales` (single owner of the rate
+  nondimensionalization, shared with `build_dj_rigidrate`),
+  `modal_basis.rigid_state_label_increments` (rigid states → additive label increments),
+  `sol144.urdd_basic_to_rcsid` (inverse rotation + D6 spill warning);
+  `assemble_operators` gains an `ops_a=` pass-through (no double a-set assembly).
+- Output: `ManeuverStep.xi_r/xi_r_dot/xi_r_ddot/nz_rel`; `modal_coords` now the full Δξ (n_h);
+  `basis_info` gains `free_flight`/`v_inf`/`rigid_dofs`; MLDPRNT `NZ_REL` column; f06
+  `FREE FLIGHT: V = …  RIGID STATES = … (OUTPUTS)` line; ANGLEA/PITCH/URDD become live history
+  columns with zero output-plumbing changes (they ride the δ fill).
+- Sample deck `sample/ha144a_mloads_massset.bdf` — free-flight elevator ramp × 3 MASSSET
+  payloads (16000/18500/21000 lb), fuel tanks CG-balanced (30/70 fwd/aft split) so the sweep is
+  a near-pure mass change; per-case MLOADS/MLDCOMD/TABLED1 (absolute tables are
+  mass-case-specific — the two-pass authoring practice demonstrated in-deck).
+- Viewer dispatch fix (D4) + AppTest Flow E gate.
+
+**Test/Acceptance (`tests/solver/test_maneuver_freeflight.py`, 9 gates + reworked
+`test_maneuver_modal.py`, 15 gates):** zero-command equilibrium to round-off; ELEV-ramp closure
+≤ 1e−8·scale at every dt with O(dt²) trajectory convergence (Richardson ratio ~5, ≥3 asserted);
+settled steady state reproduces the Step 53 trim with {ELEV, PITCH=settled, URDD5=0} prescribed
+and ANGLEA/URDD3 free ≤ 1e−6 (the backlog's 2-label wording is under-determined at 5 labels /
+2 equations — PITCH must be pinned), plus the pull-up kinematic identity ΔURDD3 = V·Δθ̇;
+short-period eigenpair vs a rigid 2-DOF hand calc from the AE8b unrestrained derivatives
+(agreement measured ~2e−5, 5 % asserted); uniform-SCALE mass sweep ⇒ strictly decreasing
+settled |Δn_z| with one basis build; solver + parser rigid-label errors; RHOREF error;
+sample-deck end-to-end sweep (closure, NZ_REL trend 1.226 > 1.185 > 1.156, f06 block).
+Full suite: 1592 passed.
+
+---
+
 ## Resolved defects
+
+### Free-URDD trim variables reported in the wrong frame on RCSID decks (`run_sol144_trim`) ✅ COMPLETE (2026-08-02)
+
+Latent since Step 52, exposed by the Step 63 settled-state gate. A FREE URDD trim variable is
+solved in the BASIC frame (its Schur sensitivity column is the basic-frame `M_ax`), but the
+solved value was stored directly as the RCSID-frame label: on the HA144A z-down stability axis
+the reported URDD3 had the wrong sign (+64.35 for the 1g −64.35 case) and the downstream
+label→basic rotation then corrupted `inertial_loads`/`net_loads`/`maneuver_closure`
+(closure O(1e5) on a converged trim). Never seen before because every earlier deck and test
+prescribed its URDDs. Fix in `run_sol144_trim`: rebuild the label values of free URDDs from
+the full basic triple (`urdd_basic_to_rcsid` over prescribed-basic + solved-free entries)
+before assembling `trim_vars`. Gate: free-URDD3 1g trim now reproduces the prescribed-URDD3
+trim labels and closure exactly (exercised by
+`test_settled_state_reproduces_step53_elev_prescribed`).
 
 ### DEF-R6 (maneuver share) — `run_maneuver_qs` rebuilt the Mach-correct AIC twice ✅ COMPLETE (2026-08-02)
 

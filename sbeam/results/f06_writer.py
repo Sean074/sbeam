@@ -770,6 +770,14 @@ def _build_f06_sol144_maneuver_text(
             f"     ORTHOGONALITY RESIDUAL = {bi.get('orthogonality_residual', 0.0):.3E}"
             f"     MASSLESS DOFS CONDENSED = {bi.get('n_massless', 0)}"
         )
+        # Step 63 free-flight solver: rigid states are outputs.
+        if bi.get("free_flight"):
+            rigid_lbls = "/".join(
+                f"DOF{d}" for d in bi.get("rigid_dofs", [])) or "NONE"
+            lines.append(
+                f"      FREE FLIGHT: V = {bi.get('v_inf', 0.0):.6G}"
+                f"     RIGID STATES = {rigid_lbls} (OUTPUTS)"
+            )
         lines.append("")
 
     if not result.steps:

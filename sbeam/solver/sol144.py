@@ -366,6 +366,48 @@ def urdd_rcsid_to_basic(
     return out
 
 
+def urdd_basic_to_rcsid(
+    vec: FloatArray, label_to_col: dict[str, int], R_rcsid: FloatArray, has_rcsid: bool
+) -> FloatArray:
+    """Inverse of ``urdd_rcsid_to_basic``: rotate the URDD triples of a
+    label-ordered vector from the basic CID 0 frame into the RCSID frame.
+
+    Same conventions: non-URDD entries pass through, absent URDD components are
+    treated as zero in the rotation, only present ones are written back, and a
+    copy is returned.  Used by the Step 63 free-flight recovery to express the
+    basic-frame ``ξ̈_r`` accelerations as URDD label values.
+
+    If the rotation puts non-negligible content onto an absent URDD component
+    (no AESTAT label to carry it), a ``UserWarning`` names the component — the
+    dropped content would silently vanish from the label bookkeeping.
+    """
+    out = vec.copy()
+    if not has_rcsid:
+        return out
+    R_inv = R_rcsid.T
+    for triple_lbls in (['URDD1', 'URDD2', 'URDD3'], ['URDD4', 'URDD5', 'URDD6']):
+        present = {l: label_to_col[l] for l in triple_lbls if l in label_to_col}
+        if not present:
+            continue
+        triple = np.array([
+            out[label_to_col[l]] if l in label_to_col else 0.0 for l in triple_lbls
+        ])
+        triple_rcsid = R_inv @ triple
+        scale = max(1.0, float(np.abs(triple_rcsid).max()))
+        for i, lbl in enumerate(triple_lbls):
+            if lbl in present:
+                out[present[lbl]] = triple_rcsid[i]
+            elif abs(triple_rcsid[i]) > 1e-10 * scale:
+                warnings.warn(
+                    f"urdd_basic_to_rcsid: the RCSID rotation places "
+                    f"{triple_rcsid[i]:.4g} on {lbl}, which has no AESTAT "
+                    "label — that acceleration component is dropped from the "
+                    "URDD bookkeeping.",
+                    UserWarning,
+                )
+    return out
+
+
 def load_resultant(
     loads_g: FloatArray, bulk: BulkData, grid_index: dict[int, int], ref_pos: FloatArray
 ) -> FloatArray:
@@ -1662,6 +1704,26 @@ def run_sol144_trim(
     trim_vars: dict[str, float] = dict(prescribed_dict)
     for i, lbl in enumerate(free_labels):
         trim_vars[lbl] = float(delta_free_arr[i])
+
+    # FREE URDD variables are solved in the BASIC frame — their sensitivity
+    # column in the Schur system is the basic-frame M_ax — while URDD *labels*
+    # are RCSID-frame values.  Rebuild the label values from the full basic
+    # triple (prescribed entries from pres_values_basic, free entries from the
+    # solve) so trim_vars is uniformly RCSID; without this a free URDD on an
+    # RCSID deck is reported in the wrong frame and the downstream
+    # rcsid-to-basic rotation corrupts the inertial loads and closure
+    # (latent since Step 52 — every earlier deck prescribed its URDDs;
+    # exposed by the Step 63 settled-state gate).
+    free_urdd = [l for l in free_labels if l in _URDD_DOF]
+    if free_urdd and bool(aeros.rcsid):
+        urdd_full_basic = pres_values_basic.copy()
+        for i, lbl in enumerate(free_labels):
+            if lbl in _URDD_DOF:
+                urdd_full_basic[label_to_col[lbl]] = float(delta_free_arr[i])
+        urdd_full_rcsid = urdd_basic_to_rcsid(
+            urdd_full_basic, label_to_col, R_rcsid, True)
+        for lbl in free_urdd:
+            trim_vars[lbl] = float(urdd_full_rcsid[label_to_col[lbl]])
 
     # Full delta_all vector (ordered by all_labels)
     delta_all = np.array([trim_vars.get(l, 0.0) for l in all_labels])

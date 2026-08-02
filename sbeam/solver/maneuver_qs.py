@@ -52,7 +52,7 @@ from sbeam.parser.case_control import SubcaseControl
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.aero.aero_model import AeroModel
 from sbeam.aero.integration import build_djk
-from sbeam.solver.modal_basis import assemble_aset_operators
+from sbeam.solver.modal_basis import AsetOperators, assemble_aset_operators
 from sbeam.results.results import ManeuverStep, ManeuverResult, peak_grid_force
 from sbeam.solver.sol101 import recover_bar_forces
 from sbeam.assembly.reduction import expand_to_g
@@ -99,16 +99,19 @@ class Operators:
 
 
 def assemble_operators(
-    bulk: BulkData, subcase: SubcaseControl, aero: AeroModel, q: float
+    bulk: BulkData, subcase: SubcaseControl, aero: AeroModel, q: float,
+    ops_a: Optional["AsetOperators"] = None,
 ) -> Operators:
     """Build the a-set / l-set matrices the transient integration needs.
 
     The a-set assembly is the shared ``modal_basis.assemble_aset_operators``
     (Step 61) — the same matrices ``run_sol144_trim`` builds (Q_ax, K_aa, Q_aa,
     M_ax, baseline aero, RCSID transform).  This function adds only the l-set
-    partition (SUPORT DOFs dropped) and the dynamic-pressure scaling.
+    partition (SUPORT DOFs dropped) and the dynamic-pressure scaling.  A caller
+    that already holds the a-set operators for this subcase (the Step 63
+    free-flight solver) passes them via ``ops_a`` to skip the second assembly.
     """
-    ops = assemble_aset_operators(bulk, subcase, aero)
+    ops = ops_a if ops_a is not None else assemble_aset_operators(bulk, subcase, aero)
 
     all_labels, label_to_col = ops.all_labels, ops.label_to_col
     x_ref, suport_pos = ops.x_ref, ops.suport_pos
@@ -176,8 +179,17 @@ def recover_step(
     ops: Operators, bulk: BulkData, grid_index: dict[int, int],
     t: float, u_l: FloatArray, delta_arr: FloatArray, vals: dict[str, float],
     modal_coords: Optional[FloatArray] = None,
+    xi_r: Optional[FloatArray] = None,
+    xi_r_dot: Optional[FloatArray] = None,
+    xi_r_ddot: Optional[FloatArray] = None,
+    nz_rel: Optional[float] = None,
 ) -> ManeuverStep:
-    """Recover per-step displacements, CBAR loads, and net (aero+inertial) loads."""
+    """Recover per-step displacements, CBAR loads, and net (aero+inertial) loads.
+
+    The optional ``xi_r*``/``nz_rel`` fields are the Step 63 free-flight rigid
+    states, passed through untouched — the recovery itself sees rigid motion
+    only through the ``delta_arr`` labels the free-flight solver fills.
+    """
     aero = ops.aero
     # Scatter l-set displacement into the a-set (r-set = 0), expand to g-set so
     # RBAR/RBE3 slaves follow their masters (same as the trim recovery).
@@ -214,6 +226,7 @@ def recover_step(
         bar_forces=bar_forces, grid_loads=grid_loads,
         inertial_loads=inertial_loads, net_loads=net_loads, closure=closure,
         Fz_aero=Fz_aero, My_aero=My_aero, modal_coords=modal_coords,
+        xi_r=xi_r, xi_r_dot=xi_r_dot, xi_r_ddot=xi_r_ddot, nz_rel=nz_rel,
     )
 
 

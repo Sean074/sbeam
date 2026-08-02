@@ -428,7 +428,9 @@ response settles. `FZ_AERO` rises from 10 605 N (= W) to 11 410 N.
 with the rigid-body DOFs *restrained*. The airplane does not fly away in response to the
 elevator; the extra load is reacted by the support. What the run gives you is the
 structural load path responding to a time-varying control input at a frozen flight state.
-Free-flight rigid-body coupling — where ANGLEA, PITCH and URDD3 evolve — is Step 63.
+Free-flight rigid-body coupling — where ANGLEA, PITCH and URDD3 evolve — is the Step 63
+modal solver (select it with MLOADS METHOD=-1; this flagship deck deliberately runs the
+prescribed-rigid direct solver).
 
 The same restraint explains why the aero/inertia closure residual, machine-small at t = 0,
 grows as the elevator deflects: away from the initial condition the extra lift is balanced
@@ -595,7 +597,7 @@ on the backlog.
 | The body correction matches moments only; body lift is unconstrained (§6.1) | constrained-CZ body solve (backlog) |
 | A cruciform body redistributes the wing loading it corrects (§6.4) | use the strip variant for loads; image-fence method for interference |
 | Steady aerodynamics only (VLM at k = 0); no unsteady, no flutter | Phase D — DLM, SOL 145 |
-| Transient is restrained and open-loop; ANGLEA/PITCH/URDD frozen | Step 62 (modal basis), Step 63 (free flight) |
+| Direct-solver transient is restrained and open-loop; ANGLEA/PITCH/URDD frozen | Delivered: the Step 63 free-flight modal solver (MLOADS NMODES/METHOD/ZETA) integrates them |
 | One correction operating region per surface, no warning on exit | `section_data` v2; T3b gates it meanwhile |
 | Mach matched exactly, no interpolation | as above |
 | Euler–Bernoulli beams, no shear flexibility | Phase 2 (Timoshenko) |

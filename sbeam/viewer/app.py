@@ -555,6 +555,7 @@ def _run_sol144(bulk: BulkData, cc: CaseControl) -> None:
     from sbeam.assembly.load_vector import build_grid_index
     from sbeam.solver.sol144 import run_sol144_trim, run_sol144_diverg, AeroCache
     from sbeam.solver.maneuver_qs import run_maneuver_qs
+    from sbeam.solver.maneuver_modal import run_maneuver_modal, ManeuverBasisCache
 
     trim_results: dict[int, Sol144TrimResult] = {}
     diverg_results: dict[int, Sol144DivergResult] = {}
@@ -563,10 +564,19 @@ def _run_sol144(bulk: BulkData, cc: CaseControl) -> None:
         grid_index = build_grid_index(bulk)
         aero = build_aero_model(bulk, grid_index=grid_index)
         cache = AeroCache(bulk, grid_index, seed=aero)
+        # Step 62/63 (D3): one free-free basis per job, shared across every
+        # modal MLOADS subcase (MASSSET sweeps swap M only, never Phi).
+        basis_cache = ManeuverBasisCache(bulk, aero)
         for sc in cc.subcases:
             if sc.mloads_sid is not None:
-                maneuver_results[sc.subcase_id] = run_maneuver_qs(
-                    bulk, sc, aero, aero_cache=cache)
+                mload = bulk.mloads.get(sc.mloads_sid)
+                if mload is not None and mload.selects_modal:
+                    maneuver_results[sc.subcase_id] = run_maneuver_modal(
+                        bulk, sc, aero, aero_cache=cache,
+                        basis_cache=basis_cache)
+                else:
+                    maneuver_results[sc.subcase_id] = run_maneuver_qs(
+                        bulk, sc, aero, aero_cache=cache)
             elif sc.diverg_sid is not None and sc.trim_sid is None:
                 diverg_results[sc.subcase_id] = run_sol144_diverg(
                     bulk, sc, aero, aero_cache=cache)

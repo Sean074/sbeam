@@ -1606,16 +1606,19 @@ Because $M_{rr}\succ 0$, the Newmark operator is non-singular with the rigid par
 free flight is obtained by *not* constraining those rows — no Schur complement and no per-step
 re-trim. This reverses the restrained-basis decision of Phase G0 increment 1, which held
 $u_r = 0$ and prescribed the rigid motion through the URDD labels. Equation (40) with the rigid
-rows active is the Step 63 free-flight system; the Step 62 solver below keeps the rigid motion
-prescribed and therefore uses a *restrained-frame representation* of the same basis.
+rows active **is the shipped Step 63 free-flight system** (`solver/maneuver_modal.py`, delivered
+2026-08-02 — see §7.10); the Step 62 prescribed-rigid solver described in §7.9 was its
+de-risking predecessor in the same module and no longer ships, but its restrained-frame
+derivation (Eq. 41) survives as the per-step recovery decomposition of §7.10.
 
-### 7.9 The modal transient solver with prescribed rigid states (Step 62)
+### 7.9 The restrained-frame representation (Step 62, historical) and Eq. 41
 
-Step 62 integrates **exactly the increment-1 physics** — Level-1 quasi-steady aero, open-loop
+Step 62 integrated **exactly the increment-1 physics** — Level-1 quasi-steady aero, open-loop
 commands, rigid motion prescribed through the $\delta(t)$ trim labels, the restrained
 ($u_r = 0$) frame — but in the coordinates of the §7.8 basis, with mode-acceleration recovery.
-Implementation: `sbeam/solver/maneuver_modal.py`; the direct l-set solver
-(`maneuver_qs.py`) is retained unchanged as the permanent regression anchor.
+Implementation: `sbeam/solver/maneuver_modal.py` (since Step 63 rewritten as the free-flight
+solver, §7.10); the direct l-set solver (`maneuver_qs.py`) is retained unchanged as the
+permanent prescribed-rigid regression anchor.
 
 **Why the mean-axis modes must be re-based first.** A Galerkin projection of the l-set system
 directly onto the mean-axis shapes $\Phi_e$ does *not* reproduce the direct solver. Writing the
@@ -1660,7 +1663,8 @@ cross-terms vanish); the damping choice makes the physical damping force
 $M_{ll}V\,2\zeta\omega_i\dot\xi_i$ consistent with the generalized one. $B_{hh}$ is
 deliberately **not** engaged: the rigid rates are prescribed via the $\delta(t)$
 PITCH/ROLL/YAW labels, so their aerodynamics already arrive through $q\,Q_{ax}\delta$ — adding
-$B_{hh}$ would double-count. It activates at Step 63 when the rates become states.
+$B_{hh}$ would double-count. It activates in the §7.10 free-flight system, where the rates are
+states.
 
 **Mode-acceleration recovery with inertia relief** (per output step, cf. Eq. 23):
 
@@ -1696,6 +1700,50 @@ retained the fixed-$\Phi$ off-baseline solution still matches the direct solver 
 mass case exactly (the mass-case error is pure truncation). The frozen mean axis degrades as
 the overlay moves the CG: the solver warns above a shift of 5 % of $c_{\text{ref}}$ (decision
 D4), and practice is to re-solve the basis when case frequencies shift by more than $\sim$5 %.
+
+### 7.10 The free-flight solver (Step 63) — Eq. 40 with the rigid rows active
+
+Step 63 (2026-08-02) integrates Eq. (40) as written: the rigid coordinates $\Delta\xi_r$ are
+states, $B_{hh}$ is engaged, and only the AESURF controls force the system through
+$q\,Q_{hc}\Delta\delta_c(t)$. The perturbation form keeps gravity and the trim forcing
+implicit, so the IC trim *is* the equilibrium: a zero-command free response stays there to
+round-off, and the rigid trim labels (ANGLEA/PITCH/URDD…) become **outputs**. One unsymmetric
+$\hat K$ LU per run; $\hat K_{rr} = a_0 M_{rr} - q\,(Q_{rr} + a_1 B_{rr})$.
+
+**Recovery — the label-fill consistency identity.** The per-output-step recovery reuses the
+increment-1 machinery unchanged by reconstructing the TOTAL trim-label vector so that the
+steady label paths reproduce the EOM's rigid terms exactly:
+
+- *attitude (displacement) labels* carry the SUPORT-frame attitude of the whole field,
+  $\eta_r = \Delta\xi_r + (\Phi_r[r])^{-1}\Phi_e[r]\,\Delta\xi_e$ — Eq. (41) applied per step,
+  the displacement output being the complementary deformation $\Psi_e\Delta\xi_e$ (elastic-only,
+  $u_r = 0$). The attitude column of $D_{jx}$ equals $Q_{aa}\Phi_r$ through the spline path, so
+  label attitude + deformation slope $= q\,Q_{aa}u$ exactly;
+- *rate labels* carry the **mean-axis** $\Delta\dot\xi_r$ scaled by the same factors that built
+  $B_{hh}$ (`rigid_rate_scales`; the `build_dj_rigidrate` columns are by construction the
+  rescaled `build_djx` label columns), so the $D_{jx}$ path reproduces $q\,B_{hh}\Delta\dot\xi$;
+- *URDD labels* carry the **mean-axis** $\Delta\ddot\xi_r$ (basic frame, rotated to RCSID);
+  $M_{ax} = -M_{gg}\Phi_r$ being definitional, $M_{ax}\delta_{\text{basic}}$ reproduces the
+  rigid inertia, and the elastic inertia $M\Phi_e\Delta\ddot\xi_e$ needs no load-side term at
+  all — its rigid-row resultant is zero by mean-axis orthogonality. (Feeding $\ddot\eta_r$
+  instead injects the elastic ringing into the closure; feeding raw $\Delta\xi_r$ for attitude
+  drops the elastic modes' rigid aero — both measured before the identity converged.)
+
+The recovered closure is then the *discrete Newmark residual* — round-off at every $\Delta t$ —
+which is the G0-b self-balancing gate. Under a MASSSET the baseline mean axis is not the case
+mean axis ($\Phi_r^{\mathsf T}M_{\text{case}}\Phi_e \neq 0$), which would give the elastic
+inertia a rigid-row resultant the labels cannot carry; the solver therefore re-orthogonalizes
+$\Phi_e \leftarrow \Phi_e - \Phi_r M_{rr,\text{case}}^{-1}(\Phi_r^{\mathsf T}
+M_{\text{case}}\Phi_e)$ before building the h-set operators — a cheap projection (same
+eigensolve, same span, still fixed-$\Phi$) that restores the identity exactly off-baseline.
+
+**Validity.** Linear inertial-frame rigid coordinates at fixed $V$: the steady pull-up is
+reachable ($\alpha = \theta - \dot h/V$ settles at constant $\dot\theta$, giving the kinematic
+identity $\Delta\ddot h = V\Delta\dot\theta$, tested); no phugoid/speed DOF, no large-attitude
+kinematics. Elastic-rate downwash is zero at Level 1 (G0-d hook), so the elastic modes are
+aerodynamically undamped — use the MLOADS ZETA field. The short-period eigenpair of the
+assembled system matches a rigid two-DOF hand calculation from the §5 unrestrained (mean-axis)
+derivatives to $\sim 10^{-5}$ relative (HA144A, measured) — the AE8b cross-check.
 
 ---
 

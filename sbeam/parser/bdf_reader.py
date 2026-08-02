@@ -1749,6 +1749,21 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
             raise ValueError(f"MLOADS {sid}: MLDPRNT {ml.mldprnt} not found")
         if ml.method > 0 and ml.method not in bulk.eigrls:
             raise ValueError(f"MLOADS {sid}: METHOD {ml.method} not found in EIGRL")
+        # Step 63: under the free-flight modal solver the rigid-state labels
+        # (ANGLEA/PITCH/URDD...) are outputs — only AESURF controls may be
+        # commanded.  Deck-time mirror of the run_maneuver_modal check.
+        if ml.selects_modal and ml.mldcomd:
+            aesurf_labels = {s.label for s in bulk.aesurfs.values()}
+            for label, _tabid in bulk.mldcomds[ml.mldcomd].commands:
+                if label not in aesurf_labels:
+                    raise ValueError(
+                        f"MLOADS {sid}: MLDCOMD {ml.mldcomd} commands "
+                        f"rigid-state label '{label}' — under the free-flight "
+                        "modal solver (NMODES/METHOD/ZETA set) rigid states "
+                        "are outputs; command AESURF controls only, or use "
+                        "the direct solver (all-zeros MLOADS fields 7-9) for "
+                        "prescribed-rigid studies"
+                    )
 
     # Validate MASSSET (Step 60) cross-references and mark overlay-only CONM2s.
     # An EID is either baseline (DELETE target / REPLACE old slot) or overlay

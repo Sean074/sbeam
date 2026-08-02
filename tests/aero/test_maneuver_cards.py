@@ -29,11 +29,16 @@ TABLED1,200,LINEAR,LINEAR,
 TABLED1,201,,,
 +,0.0,0.0,2.0,5.0,ENDT
 MLDTIME,300,0.0,1.0,0.01,0.05
-MLDCOMD,400,ELEV,200,ANGLEA,201
+MLDCOMD,400,ELEV,200
+MLDCOMD,401,ELEV,200,ANGLEA,201
 MLDPRNT,500,STATE,CONTROL,LOADS
 MLDTRIM,600,50
 MLOADS,700,600,300,400,500,4
 """
+# MLOADS 700 selects the modal (free-flight, Step 63) solver via NMODES=4, so
+# its MLDCOMD 400 may command AESURF controls only; MLDCOMD 401 keeps the
+# mixed AESTAT+AESURF command list (legal for the direct solver) for the
+# round-trip test without being referenced by a modal MLOADS.
 
 
 def _parse(deck):
@@ -66,8 +71,20 @@ def test_mldtime_roundtrip():
 
 
 def test_mldcomd_roundtrip():
-    mc = _parse(_DECK).mldcomds[400]
+    mc = _parse(_DECK).mldcomds[401]
     assert mc.commands == [("ELEV", 200), ("ANGLEA", 201)]
+
+
+def test_modal_mloads_rejects_rigid_state_command():
+    """Step 63: a modal MLOADS whose MLDCOMD commands an AESTAT (rigid-state)
+    label fails at parse; the same command set is legal for the direct solver."""
+    deck = _DECK.replace("MLOADS,700,600,300,400,500,4",
+                         "MLOADS,700,600,300,401,500,4")
+    with pytest.raises(ValueError, match="ANGLEA"):
+        _parse(deck)
+    direct = _DECK.replace("MLOADS,700,600,300,400,500,4",
+                           "MLOADS,700,600,300,401,500")
+    assert _parse(direct).mloads[700].selects_modal is False
 
 
 def test_mldprnt_roundtrip():
@@ -97,15 +114,15 @@ def test_case_control_mloads_hook():
 # ---- cross-reference + validation failures -------------------------------
 
 def test_mldcomd_bad_label_raises():
-    deck = _DECK.replace("MLDCOMD,400,ELEV,200,ANGLEA,201",
-                         "MLDCOMD,400,NOPE,200")
+    deck = _DECK.replace("MLDCOMD,401,ELEV,200,ANGLEA,201",
+                         "MLDCOMD,401,NOPE,200")
     with pytest.raises(ValueError, match="not defined in any"):
         _parse(deck)
 
 
 def test_mldcomd_bad_tabid_raises():
-    deck = _DECK.replace("MLDCOMD,400,ELEV,200,ANGLEA,201",
-                         "MLDCOMD,400,ELEV,999")
+    deck = _DECK.replace("MLDCOMD,401,ELEV,200,ANGLEA,201",
+                         "MLDCOMD,401,ELEV,999")
     with pytest.raises(ValueError, match="TABID 999 not found"):
         _parse(deck)
 

@@ -231,7 +231,17 @@ class ManeuverStep:
     closure: FloatArray                   # (6,) body-frame resultant (Fx..Mz) of net_loads about the ref
     Fz_aero: float = 0.0                  # instantaneous aero Fz (force/q · q) = lift
     My_aero: float = 0.0                  # instantaneous aero pitching moment about x_ref
-    modal_coords: Optional[FloatArray] = None   # (n_e,) modal amplitudes (Step 62 solver only)
+    # Modal amplitudes: (n_e,) restrained elastic ξ under the Step 62 solver;
+    # (n_h,) full free-flight perturbation Δξ under the Step 63 solver.
+    modal_coords: Optional[FloatArray] = None
+    # Step 63 free-flight rigid states (n_r,), basic frame about suport_pos,
+    # perturbations about the IC trim; None under the prescribed-rigid solvers.
+    xi_r: Optional[FloatArray] = None            # rigid displacements Δξ_r
+    xi_r_dot: Optional[FloatArray] = None        # rigid rates Δξ̇_r
+    xi_r_ddot: Optional[FloatArray] = None       # rigid accelerations Δξ̈_r
+    # Load-factor ratio URDD3_basic(t)/URDD3_basic(t0) (D3); None when not
+    # free-flight or when the IC has no vertical acceleration to normalize by.
+    nz_rel: Optional[float] = None
 
 
 def peak_grid_force(step: "ManeuverStep") -> float:

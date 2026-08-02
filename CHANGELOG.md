@@ -13,6 +13,40 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Step 63 — free-flight rigid-body coupling: the self-balancing maneuver (2026-08-02)**
+
+`sbeam/solver/maneuver_modal.py::run_maneuver_modal` rewritten as the **free-flight** modal
+transient solver (G0-b): the rigid modal coordinates are states of the coupled h-set Newmark
+system (`M_hh Δξ̈ + (C_s − q·B_hh)Δξ̇ + (K_hh − q·Q_hh)Δξ = q·Q_hc·Δδ_c(t)`, perturbation about
+the IC trim, one unsymmetric `K̂` LU), so the net (aero + inertial) load closes to ≈ 0 for an
+arbitrary commanded control history — no per-step trim solve. Rigid trim labels
+(ANGLEA/PITCH/URDD…) become **outputs**; commanding one in MLDCOMD under the modal solver is a
+`ValueError` at parse and solve time (the direct solver keeps prescribed-rigid studies); RHOREF
+on the IC TRIM is now mandatory for modal runs (`B_hh` needs `V = √(2q/ρ)`). Recovery reuses the
+shared `recover_step` unchanged via the label-fill identity (attitude labels carry the
+SUPORT-frame `η_r`, rate/URDD labels the mean-axis `ξ̇_r`/`ξ̈_r`); closure is the discrete Newmark
+residual (~round-off) at every dt. Fixed-Φ MASSSET cases gain an exact case-mean-axis
+re-orthogonalization. New outputs: MLDPRNT `NZ_REL` load-factor column, f06
+`FREE FLIGHT` line, per-step `xi_r/xi_r_dot/xi_r_ddot`/`nz_rel`, live ANGLEA/PITCH/URDD history
+columns. New sample deck `sample/ha144a_mloads_massset.bdf` (free-flight elevator maneuver ×
+3-MASSSET payload sweep). New helpers `rigid_rate_scales`, `rigid_state_label_increments`,
+`urdd_basic_to_rcsid`. G0-b gates in `tests/solver/test_maneuver_freeflight.py` (zero-command
+equilibrium; O(dt²) convergence; settled state = Step 53 trim ≤1e−6; short-period vs AE8b 2-DOF
+hand calc; mass sweep physics; sample-deck end-to-end).
+
+**Behavior changes (Step 63):** the NMODES/METHOD/ZETA modal solver is now free-flight only —
+Step 62's prescribed-rigid modal mode no longer exists (its ELEV-ramp identity gates are
+re-anchored to the full-basis free-flight solution). The **viewer** now dispatches modal MLOADS
+subcases to the modal solver (it previously ran every MLOADS deck through the direct solver
+silently).
+
+**Fixed (exposed by the Step 63 settled-state gate):** `run_sol144_trim` reported FREE URDD trim
+variables in the basic frame on RCSID decks (the Schur sensitivity column is the basic-frame
+`M_ax`), sign-flipping the label on a z-down stability axis and corrupting
+`inertial_loads`/`net_loads`/`maneuver_closure` downstream. Latent since Step 52 — every earlier
+deck prescribed its URDDs. Free URDD labels are now rebuilt from the basic triple via
+`urdd_basic_to_rcsid`.
+
 **Step 62 — modal transient maneuver solver (prescribed rigid) + fixed-Φ mass-case gates (2026-08-02)**
 
 New `sbeam/solver/maneuver_modal.py::run_maneuver_modal`: the Phase G0 transient maneuver

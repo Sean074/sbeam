@@ -490,9 +490,10 @@ rudder free). Gated by **V-C5** (`tests/aero/test_maneuver_loads.py`).
 
 **Transient maneuver loads — Phase G0 increment 1 (DLM-free quasi-steady).** A SOL 144 subcase that
 carries an `MLOADS = sid` request runs a transient maneuver solve instead of the static trim:
-`solver/maneuver_modal.py` when the MLOADS card's NMODES/METHOD/ZETA select the Step 62 modal
-solver (see the Step 62 section below), otherwise the direct l-set solver `solver/maneuver_qs.py`
-described here (kept permanently as the regression anchor). The direct solver
+`solver/maneuver_modal.py` when the MLOADS card's NMODES/METHOD/ZETA select the modal solver —
+since Step 63 the **free-flight** solver (see the Steps 62–63 section below) — otherwise the
+direct l-set solver `solver/maneuver_qs.py`
+described here (kept permanently as the prescribed-rigid reference). The direct solver
 time-integrates the elastic response to a prescribed (open-loop) pilot-command history, starting
 from a Step 53 balanced trim as the initial condition, and recovers the net (aero + inertial)
 maneuver load at each output time. When called without an `AeroCache`, `run_maneuver_qs` seeds
@@ -517,10 +518,12 @@ the Mach-correct AIC was built twice.
 - **Convention (increment 1):** open-loop *prescribed-kinematics* — every trim variable is prescribed
   (commanded or held). The net load closes to ≈ 0 when the commanded histories form a consistent
   (trimmed) set; the per-step closure residual otherwise equals the instantaneous rigid-body net
-  force. Re-solving the free rigid-body variables each step (free-flight self-balancing, Step 63),
-  unsteady corrections, and a closed-loop control layer are Phase G0 follow-ons. Since Step 62 the
-  NMODES/METHOD/ZETA trio routes the subcase to the modal solver instead (the increment-1
+  force. The free-flight self-balancing counterpart is the Step 63 modal solver (below);
+  unsteady corrections and a closed-loop control layer remain Phase G0 follow-ons (G0-d/G0-e).
+  The NMODES/METHOD/ZETA trio routes the subcase to the modal solver instead (the increment-1
   "parsed-and-ignored" warning is retired — this solver only ever sees all-zeros cards).
+  Prescribed-rigid studies (e.g. commanding ANGLEA directly) must use this solver; the modal
+  solver rejects rigid-state commands.
 - **Critical sample (DEF-M5):** one severity metric, `results.peak_grid_force` — the maximum over
   grids of the net (aero + inertial) **translational force magnitude** at that grid. It selects the
   critical sample, fills the f06 `PEAK GRID F` and MLDPRNT `PEAK_GRID_F` columns, and labels the f06
@@ -550,8 +553,8 @@ the Mach-correct AIC was built twice.
 
 The basis layer of the Steps 61–63 modal architecture (`sbeam/solver/modal_basis.py`). It builds,
 once per job, the free-free basis `Φ = [Φ_r | Φ_e]` and every h-set operator that depends only on
-geometry, Mach and the baseline mass case. The Step 62 modal transient solver (next section)
-consumes the basis; the h-set GAF operators (`Q_hh`/`Q_hc`/`B_hh`) are consumed by Step 63.
+geometry, Mach and the baseline mass case. The free-flight modal transient solver (next section)
+consumes the basis and, since Step 63, the h-set GAF operators (`Q_hh`/`Q_hc`/`B_hh`).
 
 - **Deck input:** `MLOADS ... NMODES METHOD ZETA` (fields 7–9) selects the retained *elastic* mode
   count (rigid modes are always all retained), the EIGRL for the basis eigensolve (`0` = internal
@@ -587,56 +590,88 @@ consumes the basis; the h-set GAF operators (`Q_hh`/`Q_hc`/`B_hh`) are consumed 
   rotation, PBAR `nsm`, consistent CBAR mass — reaches the inertia-relief columns. The previous
   hand-rolled lumped model silently dropped all five.
 
-### Modal transient solver — prescribed rigid states (Step 62)
+### Free-flight modal transient solver (Steps 62–63)
 
-`solver/maneuver_modal.py::run_maneuver_modal` integrates **exactly the increment-1 physics**
-(Level-1 quasi-steady aero, open-loop commands, rigid motion prescribed through the δ(t) labels,
-restrained `u_r = 0` frame) in the coordinates of the Step 61 basis, with mode-acceleration
-recovery. Theory: §7.9 of `docs/20_theory/01_aeroelastics_theory.md`.
+`solver/maneuver_modal.py::run_maneuver_modal` is, since Step 63, the **self-balancing
+free-flight** solver: the rigid modal coordinates `ξ_r` are states of the coupled h-set Newmark
+system, so the net (aero + inertial) load closes to ≈ 0 for an arbitrary commanded *control*
+history — no per-step trim solve. Step 62 delivered the same module as a prescribed-rigid
+solver to de-risk the basis/recovery machinery; that mode no longer exists (the direct solver
+covers prescribed-rigid studies). Theory: §7.8 Eq. 40 (the free-flight system) and §7.9 (the
+restrained decomposition, reused per-step in recovery) of
+`docs/20_theory/01_aeroelastics_theory.md`.
 
 - **Selection (decision D1):** any of the MLOADS NMODES/METHOD/ZETA fields nonzero routes the
   subcase here; `METHOD=-1` is the "modal solver, all modes, defaults" sentinel; an all-zeros card
-  keeps the direct solver. `Mloads.selects_modal` is the single predicate `main.py` dispatches on.
-- **Restrained-frame re-basing:** a Galerkin projection onto the mean-axis `Φ_e` directly would
-  *not* reproduce the direct solver — under an unbalancing command the implicit SUPORT reaction
-  leaks into the mean-axis test space, and the restrained solution's rigid content carries aero
-  load the elastic-only system never sees. Each mode is therefore re-based to be zero at the
-  SUPORT DOFs (`ψ_e = φ_e − Φ_r(Φ_r[r])⁻¹φ_e[r]` — strain-identical, the D2 output convention
-  applied to the basis), and the direct solver's l-set system is projected onto `V = ψ_e[l]`.
-  With all modes retained this is an exact change of coordinates of the increment-1 ODE.
-- **Not engaged here:** `B_hh` (rigid rates are prescribed via the δ(t) PITCH/ROLL/YAW labels —
-  their aero already arrives through `q·Q_ax·δ`; engaging `B_hh` too would double-count. It
-  activates at Step 63 when the rates become states).
-- **Recovery:** mode-acceleration with inertia relief, `u_l = K_eff_ll⁻¹(F_l − M_ll V ξ̈ − f_damp)`,
-  reusing the direct solver's effective stiffness; both solvers share one per-step recovery
-  (`maneuver_qs.recover_step`). The equilibrium start (`K_ψψ ξ0 = Vᵀ F(t0)`) makes the t0 sample
-  equal the direct solver's static start independently of truncation. `recovery="displacement"`
-  (`u = V·ξ`) exists as a test/reference mode only.
-- **Fixed-Φ mass cases (D3):** the basis is built once per job from the **baseline** mass
-  (`ManeuverBasisCache`, keyed on `spc_sid` + EIGRL sid; `main.py` shares one across all modal
-  subcases — a MASSSET sweep builds Φ exactly once). A MASSSET subcase swaps only `M_ll,i`/`M_ax,i`
-  and the IC trim; Φ, AIC, splines and all aero operators are reused untouched. **D4:** the solver
-  warns when an overlay moves the CG by more than 5 % of `c_ref`; practice is to re-solve the basis
-  when case frequencies shift by more than ~5 %.
-- **Deck-authoring practice — smooth commands:** clamped-linear `TABLED1` ramps have slope
-  discontinuities that ring the highest retained modes (risk item 3) and put an ω-independent
-  ringing floor under every truncated solution. Author command ramps as densely-sampled smooth
-  (e.g. cosine) tables when running truncated bases; convergence with NMODES is only visible on
-  smooth commands.
-- **Output:** same f06/MLDPRNT/export surface as the direct solver, plus a `MODAL SOLVER` basis
-  summary block in the f06 (rigid/elastic mode counts, frequency range, ζ, orthogonality residual,
-  condensed massless-DOF count); `ManeuverStep.modal_coords` and `ManeuverResult.n_modes_used` /
-  `massset_sid` / `basis_info` carry the modal state.
-- **Gates (`tests/solver/test_maneuver_modal.py`):** full-basis identity to the direct solver
-  ≤ 1e−6 (measured ~1e−14) on a deck with distributed mass (`n_massless = 0`); documented
-  near-identity on the CONM2-only deck (~1e−5 net loads — the aero coupling to the condensed
-  static content); monotone NMODES ∈ {2, 4, 8, all} peak-CBAR-force convergence on a smooth
-  command; mode-acceleration ≥ 10× better than mode-displacement (measured ~400×); hold-at-trim =
-  Step 53; ζ > 0 decays the late-time oscillation; fixed-Φ exactness (MASSSET + all modes ≤ 1e−6
-  vs the direct solver on the same case) and approximation (+10 % fuel, truncated, peak CBAR force
-  within 2 % of a re-solved-modes reference) gates; basis cache builds Φ once across a sweep;
-  truncated equilibrium start exact; D4 warning threshold; solver-selection truth table and the
-  `METHOD=-1` parser sentinel.
+  keeps the direct solver. `Mloads.selects_modal` is the single predicate `main.py` **and the
+  viewer** dispatch on (the viewer gained the same dispatch + shared `ManeuverBasisCache` at
+  Step 63 — it previously ran every MLOADS deck through the direct solver silently).
+- **Coupled EOM (perturbation about the IC trim):**
+  `M_hh Δξ̈ + (C_s − q·B_hh) Δξ̇ + (K_hh − q·Q_hh) Δξ = q·Q_hc·Δδ_c(t)` — dense n_h, Newmark-β
+  (¼, ½), one unsymmetric `K̂` LU (`K̂_rr = a0·M_rr − q(Q_rr + a1·B_rr)`; `M_rr ≻ 0` keeps it
+  nonsingular — free flight is simply the unconstrained rigid partition, no Schur, no re-trim).
+  The Δ-form keeps gravity and the trim forcing implicit: a zero-command free response stays at
+  the trim equilibrium to round-off. `C_s` is built from the case `M_hh` columns
+  (`M_hh[:,e]·2ζω`), not `HsetGafs.C_hh`, so the damping force is exact under a MASSSET.
+- **δ bookkeeping:** commanded **AESURF controls are the only inputs** (`MLDCOMD`); the rigid
+  trim labels (ANGLEA/PITCH/URDD…) are **outputs** computed from the rigid states. Commanding a
+  rigid-state label under this solver is a hard `ValueError` naming the label — at parse time
+  and at solve time. `RHOREF` on the IC `TRIM` is **mandatory** (the rigid-rate aero `B_hh`
+  needs `V = √(2q/ρ)`); missing ⇒ `ValueError` naming the TRIM sid.
+- **Recovery — the label-fill consistency identity:** per output step the TOTAL δ(t) is
+  reconstructed and fed to the unchanged shared `maneuver_qs.recover_step`: attitude labels
+  carry the SUPORT-frame attitude `η_r = Δξ_r + (Φ_rr⁻¹Φ_e,r)Δξ_e` (the §7.9 re-split applied
+  per step; the displacement output is the complementary deformation `Ψ_e Δξ_e`, elastic-only
+  `u_r = 0` — decision D2), rate labels carry the mean-axis `Δξ̇_r` through
+  `rigid_state_label_increments` (the same `rigid_rate_scales` factors that built `B_hh` — the
+  `D_jx` path then reproduces `q·B_hh Δξ̇` exactly), and URDD labels carry the mean-axis `Δξ̈_r`
+  added in the basic frame and rotated back (`urdd_basic_to_rcsid`) — `M_ax = −M_gg Φ_r` being
+  definitional, `M_ax·δ_basic` reproduces the rigid inertia exactly, and the elastic inertia
+  needs no load-side term (zero rigid-row resultant by mean-axis orthogonality). Closure is
+  therefore the discrete Newmark residual (~round-off) at every dt. Mode-acceleration
+  `u_l = K_eff_ll⁻¹(F_l − (M Φ_e Δξ̈_e)_l − f_damp,l)`; the t0 sample equals the static trim
+  start independently of truncation. `recovery="displacement"` remains a test/reference mode.
+- **Fixed-Φ mass cases (D3):** basis built once per job from the **baseline** mass
+  (`ManeuverBasisCache`, keyed `spc_sid` + EIGRL sid; `main.py` and the viewer share one across
+  subcases — a MASSSET sweep builds Φ exactly once). A MASSSET subcase swaps only the mass side
+  (`M_hh = ΦᵀM_aa,caseΦ`, `M_ax,case`) and the IC trim. **Case-mean-axis correction (Step 63):**
+  before building the h-set operators the elastic columns are re-orthogonalized against `Φ_r`
+  under the CASE mass (`Φ_e ← Φ_e − Φ_r·M_rr,case⁻¹(Φ_rᵀM_caseΦ_e)` — a cheap projection, same
+  eigensolve, still fixed-Φ) so the closure identity holds exactly off-baseline. **D4:** warn
+  when an overlay moves the CG by more than 5 % of `c_ref`.
+- **Deck-authoring practice:** MLDCOMD tables are ABSOLUTE and mass-case-specific — author them
+  two-pass (trim first, table = trim value + increment; a table that starts off the trim value
+  is a step input at t0). Clamped-linear ramps ring the highest retained modes (risk item 3);
+  use densely-sampled smooth (cosine) tables for truncated bases — NMODES and dt convergence are
+  only visible on smooth commands.
+- **Output:** same f06/MLDPRNT/export surface as the direct solver, plus: live ANGLEA/PITCH/URDD
+  history columns (they ride the δ fill), the MLDPRNT `NZ_REL` column
+  (`URDD3_basic(t)/URDD3_basic(t0)` — unit-free load-factor ratio, = n_z in g for a 1g IC,
+  decision D3), the f06 `MODAL SOLVER` basis block extended with a
+  `FREE FLIGHT: V = …  RIGID STATES = … (OUTPUTS)` line, and per-step
+  `ManeuverStep.xi_r/xi_r_dot/xi_r_ddot` (mean-axis rigid states) / `nz_rel`;
+  `modal_coords` holds the full Δξ (n_h). Sample deck:
+  `sample/ha144a_mloads_massset.bdf` — the free-flight elevator maneuver × 3-MASSSET payload
+  sweep (heavier ⇒ lower settled NZ_REL; CG-balanced fuel tanks so the sweep is a pure mass
+  effect).
+- **Scope limits (documented):** linear inertial-frame rigid coordinates at fixed V — the steady
+  pull-up is reachable (`α = θ − ḣ/V` settles); no phugoid/speed DOF, no large attitude;
+  determined command sets only (over-determined allocation is G0-e); the lateral
+  attitude-to-sideslip map is deliberately unencoded (`_RIGID_LABELS`); elastic-rate aero
+  (`ẇ/V` downwash) is zero at Level 1 — the G0-d hook.
+- **Gates:** `tests/solver/test_maneuver_freeflight.py` (G0-b physics): zero-command equilibrium
+  to round-off; ELEV-ramp closure ≤ 1e−8·scale at every dt + O(dt²) trajectory convergence;
+  settled steady state = Step 53 trim with {ELEV, PITCH=settled, URDD5=0} prescribed and
+  ANGLEA/URDD3 free ≤ 1e−6, plus the pull-up identity ΔURDD3 = V·Δθ̇; short-period eigenpair vs
+  a rigid 2-DOF hand calc from the AE8b unrestrained derivatives (measured ~2e−5, 5 % gate);
+  uniform-SCALE mass sweep ⇒ strictly decreasing settled |Δn_z|, one basis build; rigid-label
+  and RHOREF errors; sample-deck end-to-end sweep. `tests/solver/test_maneuver_modal.py`
+  (mechanics): free-flight closure on both mass variants; NMODES convergence and
+  mode-acceleration ≥ 10× vs mode-displacement against the full-basis free-flight reference;
+  hold-at-trim = Step 53; ζ decays the elastic tail (second-difference metric); fixed-Φ MASSSET
+  hold-at-trim/closure exactness and the +10 % fuel truncated approximation gate; cache
+  builds-once; equilibrium-start truncation independence; D4 threshold; selection truth table;
+  f06 blocks.
 
 ---
 

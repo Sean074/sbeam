@@ -139,6 +139,28 @@ _RIGID_RATE_LABEL = {1: None, 2: "SIDES", 3: "ANGLEA",
                      4: "ROLL", 5: "PITCH", 6: "YAW"}
 
 
+def rigid_rate_scales(bulk: BulkData, v_inf: float) -> dict[int, float]:
+    """Physical rigid rate (DOF 1-6) -> equivalent steady-trim-label value.
+
+    The single owner of the quasi-steady rate nondimensionalization: the same
+    factors convert a ``build_djx`` label column into a physical rate column
+    (``build_dj_rigidrate``) and a rigid modal rate into the trim-label
+    increment the free-flight recovery feeds through ``D_jx`` (Step 63) — by
+    construction the two paths then agree exactly.
+
+    See the sign discussion in ``build_dj_rigidrate``; DOF 3 carries the
+    ``α = θ − ḣ/V`` plunge-rate sign.
+    """
+    if v_inf <= 0.0:
+        raise ValueError(
+            f"rigid_rate_scales: v_inf must be positive; got {v_inf}")
+    c_ref = require_aeros(bulk).cref
+    b_ref = require_aeros(bulk).bref
+    return {1: 0.0, 2: 1.0 / v_inf, 3: -1.0 / v_inf,
+            4: b_ref / (2.0 * v_inf), 5: c_ref / (2.0 * v_inf),
+            6: b_ref / (2.0 * v_inf)}
+
+
 def build_dj_rigidrate(
     boxes: list[AeroBox], rigid_dofs: list[int], bulk: BulkData, v_inf: float
 ) -> FloatArray:
@@ -185,12 +207,7 @@ def build_dj_rigidrate(
     if v_inf <= 0.0:
         raise ValueError(
             f"build_dj_rigidrate: v_inf must be positive; got {v_inf}")
-    c_ref = require_aeros(bulk).cref
-    b_ref = require_aeros(bulk).bref
-
-    scale = {1: 0.0, 2: 1.0 / v_inf, 3: -1.0 / v_inf,
-             4: b_ref / (2.0 * v_inf), 5: c_ref / (2.0 * v_inf),
-             6: b_ref / (2.0 * v_inf)}
+    scale = rigid_rate_scales(bulk, v_inf)
 
     labels = [_RIGID_RATE_LABEL[d] for d in rigid_dofs]
     known = [l for l in labels if l is not None]

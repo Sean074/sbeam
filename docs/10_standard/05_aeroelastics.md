@@ -45,7 +45,7 @@ Results   (cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, CDi, e, per_su
 | `sbeam/aero/coupling.py` | `build_qaa` flexible aero stiffness `Q_aa = G_dispᵀ S_kj (A_jj*)⁻¹ D_jk G_slope`; `build_fg` baseline aero load; `build_gaf` modal GAF `Q_hh = Φᵀ Q_aa Φ` |
 | `sbeam/solver/sol144.py` | `run_sol144_trim` (Schur trim solve, derivatives), `run_sol144_diverg` (DIVERG-card divergence sweep + mode shape + V_div), `run_aeroelastic_static`, `AeroCache`, `_divergence_dynamic_pressure`, `_divergence_roots` |
 | `sbeam/solver/maneuver_qs.py` | **Phase G0** — `run_maneuver_qs`: Level-1 quasi-steady, open-loop, restrained l-set Newmark-β transient maneuver integration (the direct solver / regression anchor) |
-| `sbeam/solver/maneuver_modal.py` | **Phase G0 Step 62** — `run_maneuver_modal`: the same physics in the Step 61 free-free basis (restrained-frame re-basing), mode-acceleration recovery, fixed-Φ MASSSET cases, job-level `ManeuverBasisCache` |
+| `sbeam/solver/maneuver_modal.py` | **Phase G0 Steps 62–63** — `run_maneuver_modal`: the free-flight modal transient solver (coupled h-set EOM, `B_hh` engaged, rigid trim labels as outputs, self-balancing closure), mode-acceleration recovery, fixed-Φ MASSSET cases with case-mean-axis correction, job-level `ManeuverBasisCache` |
 | `sbeam/solver/modal_basis.py` | **Phase G0 Step 61** — free-free maneuver basis `Φ = [Φ_r | Φ_e]`, h-set operators, shared a-set assembly |
 | `sbeam/model/maneuver.py` | Dataclasses for the ZAERO `MLOADS`/`MLDTRIM`/`MLDTIME`/`MLDCOMD`/`MLDPRNT` + `TABLED1` card set |
 | `sbeam/model/maneuver_presets.py` | Canned pilot-command history presets |

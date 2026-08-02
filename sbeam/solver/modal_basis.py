@@ -78,7 +78,7 @@ from sbeam.assembly.reduction import reduce_to_aset, AsetReduction
 from sbeam.assembly.rigid_body import build_rigid_vectors_g
 from sbeam.aero.aero_model import AeroModel
 from sbeam.aero.coupling import build_qaa, build_fg, build_gaf
-from sbeam.aero.integration import build_djx, build_dj_rigidrate
+from sbeam.aero.integration import build_djx, build_dj_rigidrate, rigid_rate_scales
 from sbeam.solver.sol103 import solve_modes
 from sbeam.solver.sol144 import build_inertial_cols, get_suport_local
 from sbeam.types import FloatArray, IntArray
@@ -554,6 +554,42 @@ def truncate_basis(basis: ManeuverBasis, nmodes: int) -> ManeuverBasis:
         n_available_elastic=basis.n_available_elastic,
         n_massless=basis.n_massless,
     )
+
+
+def rigid_state_label_increments(
+    basis: ManeuverBasis,
+    bulk: BulkData,
+    v_inf: float,
+    dxi_r: FloatArray,
+    dvxi_r: FloatArray,
+) -> dict[str, float]:
+    """Trim-label increments equivalent to the rigid disp/rate states (Step 63).
+
+    Maps the free-flight rigid modal displacements ``dxi_r`` and rates
+    ``dvxi_r`` (perturbations about trim, basic frame about ``suport_pos``)
+    onto the steady trim labels via ``rigid_label_map`` and the
+    ``rigid_rate_scales`` nondimensionalization, so that feeding the returned
+    increments through the steady ``D_jx`` label columns reproduces exactly the
+    attitude (``Q_hh`` rigid columns) and rate (``B_hh``) aerodynamics of the
+    coupled EOM — the free-flight recovery consistency identity.
+
+    Increments are ADDITIVE and may stack on one label: the DOF-5 attitude
+    (disp -> ANGLEA) and the DOF-3 plunge rate (rate -> ANGLEA, the −ḣ/V term
+    of ``α = θ − ḣ/V``) both feed ANGLEA.  URDD (acceleration) labels are NOT
+    handled here — ``ξ̈_r`` maps to them unscaled and frame-rotated by the
+    caller (see ``sol144.urdd_basic_to_rcsid``).
+    """
+    scales = rigid_rate_scales(bulk, v_inf)
+    out: dict[str, float] = {}
+    for col, entry in basis.rigid_label_map.items():
+        dof = entry["dof"]
+        if entry["disp"] is not None:
+            # Attitude angles map 1:1 onto their steady label (e.g. θ -> ANGLEA).
+            out[entry["disp"]] = out.get(entry["disp"], 0.0) + float(dxi_r[col])
+        if entry["rate"] is not None:
+            out[entry["rate"]] = (
+                out.get(entry["rate"], 0.0) + scales[dof] * float(dvxi_r[col]))
+    return out
 
 
 # ---------------------------------------------------------------------------
