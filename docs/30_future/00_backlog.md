@@ -27,7 +27,7 @@ renumbered contiguously and now carries the open DEF-M defects. Ordering princip
 process is only useful if its trim, inertial loads and exported deliverables are right —
 then the Tier 1 capability sequence, then refactor-before-Phase-D, then Tiers 2–3.
 Amended later the same day: the **2026-07-31 sample-problem review** items slot in at
-P5–P7 — cheap CI insurance and the flagship sample after the correctness batches (whose
+P5–P7 — cheap CI insurance (P5, delivered) and the flagship sample after the correctness batches (whose
 P2 deliverable-integrity fixes the flagship's exports inherit), before new capability.
 
 **P1 delivered 2026-07-31** (Q4 + DEF-M3, one mass model for `M_ax` — see
@@ -36,14 +36,15 @@ P2 deliverable-integrity fixes the flagship's exports inherit), before new capab
 **P2 delivered 2026-08-01** (the DEF-M deliverable-integrity batch: M5, M6, M7, M10 —
 see `docs/40_history/06_sol144_static_aeroelastic.md` and `07_maneuver_transient.md`).
 **P4 delivered 2026-08-01** (DEF-M11 then DEF-M2 — force/moment convention and ATTACH
-transfer completeness; see `docs/40_history/05_aero_vlm_spline.md`). The
+transfer completeness; see `docs/40_history/05_aero_vlm_spline.md`).
+**P5 delivered 2026-08-01** (VAL2 — closed-form CI gates for the four `CLAUDE.md`
+verification decks; see `docs/40_history/01_program_foundation.md`). The
 remaining rows keep their numbers: the P-labels are used as stable identifiers by the
 cross-references throughout this document, so closing an item removes its row without
 re-flowing the rest. Renumber only when the whole table is re-ranked.
 
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P5 | Closed-form CI gates for the four CLAUDE.md verification decks | Samples review | ~0.5 d | `val_cantilever_static`, `val_ss_static`, `val_cantilever_modes`, `val_free_free_modes` reproduce their closed forms today (verified by run, 2026-07-31: 0.004 % / 0.004 % / 0.02 % / RBMs ≤ 4.6e-5 Hz) but are gated only by the theory notebook, which CI never runs. Independent of everything; can land any time. |
 | P6 | Step 65 — flagship realistic-airplane SOL 144 sample family + theory doc | Samples review | ~3–5 d | Closes the biggest sample coverage gap: nothing anywhere combines corrected aero + trim + maneuver + mass cases on a realistic airplane, and corrections never reach a trim. Clean of all open defects (SPLINE2 only, no body panels); after P2 so its exports/critical-sample story is clean. |
 | P7 | Step 66 — flagship stage 2: body panels into the flagship family | Samples review | ~2 d | Blocked on **P6/Step 65** (the family it extends); its other prerequisite, Step 64 (unsplined-box forces into the trim balance), closed 2026-07-31. Folds `cessna210_body`/`_strip` + their 14+ tests into the flagship. |
 | P8 | Monitor Phase 2 — section-cut running loads | Tier 1 | ~2–3 d | The production stress deliverable (per-station Vz/My/Mt); unblocked, independent — can run in parallel with P9–P11. |
@@ -245,7 +246,7 @@ order — see the table above:
 
 ---
 
-## Open items — 2026-07-31 sample-problem review (P5–P7 + opportunistic)
+## Open items — 2026-07-31 sample-problem review (P6–P7 + opportunistic)
 
 Full review + proposal delivered 2026-07-31. Evidence basis: all 22 `sample/` decks run
 headless through `main.main()` — 20 run end-to-end, 2 fail by design (`HA144A.bdf` MSC
@@ -253,6 +254,10 @@ archive; `simple_beam.dat` viewer onboarding file), and every checkable anchor r
 (PL³/3EI to 0.004 %, PL³/48EI to 0.004 %, cantilever f₁ to 0.02 %, free-free RBMs
 ≤ 4.6e-5 Hz, HA144A fullspan trim/derivatives to ≤ 0.3 % of the published MSC/ADA370433
 values). The gaps are **coverage and redundancy, not correctness**.
+
+The four closed-form anchors of that evidence basis are now **enforced by CI** —
+`tests/integration/test_sample_verification.py`, delivered 2026-08-01 as P5/VAL2
+(see `docs/40_history/01_program_foundation.md`).
 
 ### Step 65 (P6) — Flagship realistic-airplane SOL 144 sample family + theory doc
 
@@ -332,7 +337,8 @@ demonstrated on `sample/ha144a_body_trim.bdf`), and ANGLEA shifts by the body in
   washout-table rows); delete the two stale untracked f06s (`beam_vib.f06` is actually
   `beam_vib1`'s output); fix `beam_vib.bdf`'s copied header and its RHO=0 config (f06
   prints ~10⁶-Hz junk modes 4–5); fix `val_cantilever_modes.bdf`'s stale "f₂ ≈ 2.58 (XY)"
-  comment (actual f₂ = 16.16 Hz — the deck's own SPC1 suppresses the XY family); 2-line
+  comment (actual f₂ = 16.16 Hz — the deck's own SPC1 suppresses the XY family; VAL2's
+  `test_second_bending_mode` now gates that 16.16 Hz, so the corrected comment must match it); 2-line
   archive notice in `HA144A.bdf` (not runnable by design; holds the published Table 7-1
   reference values); extend the ha144a canard SET1 span to silence the SPLINE2
   extrapolation warnings emitted on every run of all three ha144a decks.
@@ -803,6 +809,9 @@ Lower priority or significant new infrastructure; independent of the aeroelastic
 |------|-------------|--------------|
 | PLOAD1 — Distributed Loads | Equivalent nodal load vector for linearly-varying / uniform loads along CBAR; viewer load visualisation. VAL1 complete — viewer warns when PLOAD1 cards are present. S30 can be implemented. | — |
 | Timoshenko Shear (PBAR K1/K2) | Modified stiffness with shear parameter φ = 12EI/(κAGL²); falls back to Euler-Bernoulli when K1=K2=0. K1/K2 currently ignored silently — correct for slender beams. | Parser update |
+| CBAR end offsets (WA/WB) | Rigid offset of the element axis from the grid points, applied to stiffness, mass and load recovery (the standard NASTRAN WA/WB fields; `OFFT` is parsed but unused and WA/WB are not parsed). Today an off-axis beam or an off-center applied force must be modeled with explicit RBE2/RBAR lever arms. Found in the 2026-08-01 torsion-capability review. | Parser update |
+| Shear-center offset / bend–twist coupling (PBAR I12) | The elastic axis is the grid line by construction: a transverse `FORCE` at a grid produces no twist, which is wrong for sections whose shear center is off the section reference (channels, open sections), and `PBAR` carries no I12, so unsymmetric-section cross-plane bending coupling is absent. Needs the coupled 12-DOF stiffness (I12 terms) and a shear-center eccentricity in the element formulation; until then, model the eccentricity with rigid links. Found in the 2026-08-01 torsion-capability review. | New element formulation |
+| Restrained warping (open thin-walled sections) | Torsion is uniform St. Venant `GJ/L` only — no warping DOF, so restrained torsion of open thin-walled sections (I, channel, Z) is predicted too flexible, and warping-driven torsional frequencies come out low. Needs a 7th warping DOF per node (14-DOF element, PBEAM CWA/CWB-style warping constant) or stays a documented limitation. Found in the 2026-08-01 torsion-capability review. | New element formulation |
 | SOL 105 — Buckling | Solve `([K] + λ[K_G]){φ} = 0`; requires geometric stiffness from SOL 101 axial forces. | SOL 101 complete |
 | Results export (CSV/Excel) | Download displacement, force, stress tables from the viewer as spreadsheets. | Viewer complete |
 | OP1 results export (pyNastran) | Write an OP1 alongside the f06 (displacements, eigenvectors, CBAR forces/stresses; later SOL 144 box pressures/forces). Unlocks pyNastranGUI as an external post-processor. pyNastran (BSD-3) optional dependency; prototype from its test suite first. Acceptance: pyNastran round-trips the OP1; pyNastranGUI renders SOL 101/103 results. | SOL 101/103 complete |

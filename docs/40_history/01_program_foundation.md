@@ -824,6 +824,55 @@ silently-dropped load cards before implementation was safe.
 
 ---
 
+### VAL2: Closed-Form CI Gates for the Four Sample Verification Decks ✅ COMPLETE
+
+**Objective:** Put the four `CLAUDE.md` "Verification Test Cases" under CI. The decks that
+embody them — `sample/val_cantilever_static.bdf`, `val_ss_static.bdf`,
+`val_cantilever_modes.bdf`, `val_free_free_modes.bdf` — reproduced their closed forms, but
+nothing automated executed them: the only exercise was `docs/20_theory/00_beam_methods.ipynb`,
+which CI never runs, and the V1–V20 suite in `tests/integration/test_verification.py` gates
+its own private decks in `tests/integration/bdf/` (L = 1 m, A = 0.05), not the shipped ones.
+A regression in the decks users copy and the docs cite would have reached a release silently.
+
+**Deliverables:**
+- `tests/integration/test_sample_verification.py` — 11 tests in four classes, one per deck.
+  Solves at the library level (`parse_bdf` → `run_sol101`/`run_sol103`), not through
+  `main()`, which swallows solver exceptions into `sys.exit("Solver error: …")`; the CLI/f06
+  path is already covered by `tests/test_main.py`. Module-scoped fixture per deck (four
+  solves total, 0.6 s).
+- Gates: cantilever tip Tz = PL³/3EI, tip Ry = PL²/2EI, root reactions Fz = P and
+  My = −P·L; simply-supported mid-span Tz = PL³/48EI and P/2 at each support; cantilever
+  f₁ (β₁ = 1.875104) and f₂ (β₂ = 4.694091) with an ascending-order guard; free-free six
+  rigid-body modes < 1e-3 Hz, mode 7 elastic with a >1e3 separation ratio, and f₇ against the
+  free-free closed form (β = 4.730041).
+- No production-code and no CI-config change — `.github/workflows/ci.yml` already runs
+  `pytest` over `testpaths = ["tests"]`.
+
+**Test/Acceptance:** 11 tests pass. Measured errors against the closed forms:
+tip deflection and tip rotation 1.8e-11 %, mid-span deflection 2.8e-13 %, reactions exact,
+f₁ 9.3e-5 %, f₂ 3.3e-3 %, rigid-body modes ≤ 4.6e-5 Hz, f₇ 3.4e-3 %. Each gate was
+negative-controlled — perturbing the expected value by the tolerance fails the test.
+
+**Key decisions:**
+- **Properties are read back out of the parsed deck** (`_beam_props`), never declared as
+  module constants. `test_verification.py:20-26` hardcodes `E`/`I`/`A`/`rho`/`L`/`P` with a
+  comment "must match the BDF files" — a silent-drift hazard this module deliberately avoids.
+  A physically consistent deck edit therefore keeps the gate honest rather than breaking it.
+- **Static tolerance is `rel = 1e-9`, not an engineering tolerance.** The consistent
+  Euler-Bernoulli formulation is *exact at the nodes* for point loads, so the measured error is
+  round-off (~1e-13 relative); 1e-9 is three decades above round-off and five decades tighter
+  than the `rel=1e-3` used by V1–V20. Modal gates carry real discretisation error and run at
+  `rel = 1e-5` (f₁) and `2e-4` (f₂, f₇) — 6–11× the measured error.
+- **f₂ = 16.16 Hz, not the 2.58 Hz the deck header claims.** `val_cantilever_modes.bdf`'s own
+  `SPC1, 1, 12, …` suppresses the XY bending family, so mode 2 is the *second XZ* bending
+  mode; mode 4 (71.95 Hz) is the first torsion mode. The stale header comment is left for the
+  sample-hygiene batch in `docs/30_future/00_backlog.md`; the module docstring cross-references
+  it so the two changes do not collide.
+- Deck signs are gated, not just magnitudes: the sample decks load −Z (unlike V1/V3, which
+  load −Y), so a convention flip fails rather than passing on an absolute value.
+
+---
+
 ### R15: SPC1 multi-continuation grids silently dropped ✅ FIXED
 
 **Root cause:** `_handle_spc1` accepted a single optional `cont` (one look-ahead continuation

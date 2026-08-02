@@ -11,7 +11,85 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Phase 2 completion.
 
+### Added
+
+**Offset-tip-mass coupled bending-torsion sample deck (2026-08-01)**
+
+`sample/val_cantilever_offset_mass_modes.bdf` — a SOL 103 cantilever with a tip CONM2 whose
+CG sits 1.5 m off the elastic axis (m = 5000 kg, I11 = 5000 kg·m²). The offset mass block
+(the `m·[r]×` translation-rotation coupling plus the `m·d²` parallel-axis term) produces two
+genuinely coupled bending-torsion modes: f₁ ≈ 0.1489 Hz (bending-dominant, ~10 % twist
+participation) and f₂ ≈ 0.7466 Hz (torsion-dominant). The deck header carries the tip-dominant
+2-DOF closed form with Rayleigh beam-mass corrections; the FE result matches it to 1.4e-5 /
+9.6e-4 relative. Unlike V12 (which SPCs everything but Rx), both partitions stay free — this
+is the shipped demonstration that a mass off the elastic center couples the mode families.
+
+Gated in CI alongside the VAL2 decks: `tests/integration/test_sample_verification.py` gains
+`TestValCantileverOffsetMassModes` (3 tests — coupled-pair frequencies vs the closed form at
+rel 2e-3, twist-participation ratios of both mode shapes, and a decoupling check that zeroing
+the CONM2 offset separates the families). Docs: `04_modal_analysis.md` verification Case 6,
+`00_program_overview.md` VAL2 table row.
+
+Alongside it, the 2026-08-01 torsion-capability review recorded the three known torsion gaps
+as backlog items (`docs/30_future/00_backlog.md`, Phase 2+ table): CBAR end offsets (WA/WB),
+shear-center offset / PBAR I12 bend-twist coupling, and restrained warping of open
+thin-walled sections.
+
+**VAL2 — closed-form CI gates for the four sample verification decks (2026-08-01)**
+
+The four `CLAUDE.md` "Verification Test Cases" are now enforced by CI against the decks that
+ship them. Previously they were exercised only by `docs/20_theory/00_beam_methods.ipynb`,
+which CI never runs — the V1–V20 suite gates its own private decks under
+`tests/integration/bdf/`, not `sample/` — so a regression in the decks users copy could reach
+a release unnoticed.
+
+`tests/integration/test_sample_verification.py` (11 tests, 4 solves, 0.6 s) parses each
+shipped deck, solves it through `run_sol101`/`run_sol103` and asserts the analytical result:
+
+| Deck | Gates |
+|------|-------|
+| `sample/val_cantilever_static.bdf` | tip Tz = PL³/3EI, tip Ry = PL²/2EI, root Fz = P and My = −P·L |
+| `sample/val_ss_static.bdf` | mid-span Tz = PL³/48EI, P/2 at each support |
+| `sample/val_cantilever_modes.bdf` | f₁ (β₁ = 1.875104) and f₂ (β₂ = 4.694091), ascending-order guard |
+| `sample/val_free_free_modes.bdf` | six rigid-body modes < 1e-3 Hz, mode 7 elastic (>1e3 separation), f₇ against the free-free closed form (β = 4.730041) |
+
+Beam properties are read back out of the parsed deck rather than declared as module constants,
+so a deck edit cannot silently drift away from the values a test compares against. Static
+gates run at `rel = 1e-9` — the consistent Euler-Bernoulli formulation is exact at the nodes
+for point loads, so the measured error is round-off (~1e-13 relative); modal gates run at
+`rel = 1e-5` (f₁) and `2e-4` (f₂, f₇), 6–11× the measured discretisation error. Signs are
+gated, not just magnitudes.
+
+Note for anyone reading `val_cantilever_modes.bdf`: its header's "f₂ ≈ 2.58 Hz (XY)" comment
+is stale — the deck's own `SPC1, 1, 12, …` suppresses the XY bending family, so f₂ is the
+second XZ bending mode at 16.16 Hz (mode 4, 71.95 Hz, is first torsion). No production code
+and no CI-config change.
+
 ### Fixed
+
+**`parse_bdf` / `parse_bulk_file` accept a `Path`, not just a `str` (2026-08-01)**
+
+Both readers were annotated `filepath: str` while only ever calling `open(filepath)` and
+`os.path.dirname(os.path.abspath(filepath))` — all of which take any `os.PathLike[str]`. The
+annotation understated what the functions accept, so every `parse_bdf(BDF_DIR / "model.bdf")`
+call site was a type error (21 in `tests/integration/test_verification.py`, 6 in the viewer
+tests) and the other 68 call sites carried a redundant `str(...)` wrapper to work around it.
+
+Both signatures now take `StrPath = Union[str, os.PathLike[str]]`, a new alias in
+`sbeam/types.py` (the first non-array alias there; documented in the
+`docs/10_standard/00_program_overview.md` alias table). Runtime behaviour is unchanged — this
+is an annotation widening only, and no call site needed editing.
+
+While fixing this, both integration verification modules were brought up to the project's
+"every function signature is annotated" standard: fixture return types and the test-method
+parameters that consume them are now typed (`Sol101Fixture`/`Sol101BulkFixture` in
+`test_verification.py`, `StaticFixture`/`ModalFixture` in `test_sample_verification.py`),
+clearing 67 and 22 strict-mode errors respectively. These were invisible to CI — `pyrightconfig.json`
+sets `"include": ["sbeam"]` — but Pylance applies strict mode to any open file, so the editor
+disagreed with CI. Annotating `TestB3MultiSubcase._make_model` also pinned down that it returns
+a `CaseControl`, not the `SubcaseControl` its sibling `TestR12NoLoadSid._make_model` returns.
+`test_verification.py`'s docstring said "V1–V19" while the file has run V20 since the CBUSH
+step; corrected.
 
 **DEF-M2 — `solve_rigid_cl` now reports body-axis force/moment components (2026-08-01)**
 

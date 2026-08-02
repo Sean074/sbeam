@@ -205,6 +205,21 @@ Output sections written to `results.f06`:
 - Tolerance: < 1% relative error.
 - **Cross-check:** same analytical frequency as V8 (I_eff=2.0 via offset equals i11=2.0 directly).
 
+### Case 6 — Coupled Bending-Torsion Pair from an Offset Tip Mass (shipped sample, 2026-08-01)
+
+- Configuration: steel cantilever (L = 10 m, 10 CBARs, 0.1 m solid square), tip CONM2
+  (m = 5000 kg, `x2` = 1.5 m transverse offset, `i11` = 5000 kg·m²). SPC1 suppresses the
+  axial and XY-bending families so the deck isolates the coupled Tz/Rx/Ry family. Unlike
+  V12, both partitions stay free — the offset mass block (`m·[r]×` coupling + `m·d²`
+  parallel-axis) produces two genuinely **coupled** bending-torsion modes.
+- Analytical: tip-dominant 2-DOF eigenproblem with Rayleigh beam-mass corrections —
+  `M = [[m + (33/140)·ρAL, m·d], [m·d, m·d² + i11 + ρ·Ip·L/3]]`, `K = diag(3EI/L³, GJ/L)`
+  → f₁ ≈ 0.1489 Hz (bending-dominant, tip Rx·d/Tz ≈ +0.10), f₂ ≈ 0.7466 Hz
+  (torsion-dominant, Rx·d/Tz ≈ −0.99). Measured FE error 1.4e-5 / 9.6e-4 relative.
+- BDF: `sample/val_cantilever_offset_mass_modes.bdf` (user-facing; header carries the full
+  derivation). CI gate: `tests/integration/test_sample_verification.py`
+  (`TestValCantileverOffsetMassModes`), including a decoupling check with the offset zeroed.
+
 ### Note — RBE2 and CONM2
 
 Unlike RBE3 (which uses weighted DOF-by-DOF interpolation), RBE2 enforces true rigid-body kinematic coupling. The correct place for a CONM2 representing tip equipment or payload mass is on the **independent (GN) node** of the RBE2. The assembly pipeline applies `M_red = Tᵀ M T` after full-space assembly, which correctly projects the concentrated mass and any offset inertia into the reduced system.

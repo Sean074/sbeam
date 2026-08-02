@@ -1,5 +1,8 @@
 """Shared type aliases for sbeam.
 
+Most of the aliases here describe physical data; ``StrPath`` is the exception —
+it is the filesystem-path alias used by the functions that read BDF input.
+
 All physical quantities in sbeam are dense ``numpy`` arrays of 64-bit floats —
 displacement vectors, stiffness/mass matrices, aerodynamic influence
 coefficients, mode shapes.  ``FloatArray`` is the single alias used for every
@@ -20,6 +23,7 @@ Usage::
         ...
 """
 
+import os
 from typing import Tuple, Union
 
 import numpy as np
@@ -54,5 +58,13 @@ SparseMatrix = Union[scipy.sparse.csr_matrix, scipy.sparse.csr_array]
 #: for many right-hand sides (trim Schur complement, stability derivatives).
 LuFactor = Tuple[FloatArray, IntArray]
 
+#: A filesystem path accepted by the BDF readers — anything ``open()`` takes.
+#:
+#: The readers only ``open()`` the path and hand it to ``os.path``, so a
+#: ``pathlib.Path`` is as valid as a ``str``; annotating them ``str`` alone made
+#: every ``parse_bdf(BDF_DIR / "model.bdf")`` call site a type error and pushed
+#: callers into a redundant ``str(...)`` wrapper.
+StrPath = Union[str, os.PathLike[str]]
+
 __all__ = ["FloatArray", "ComplexArray", "IntArray", "BoolArray",
-           "SparseMatrix", "LuFactor"]
+           "SparseMatrix", "LuFactor", "StrPath"]

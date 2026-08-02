@@ -18,6 +18,7 @@ from sbeam.model.aero import (
 )
 from sbeam.model.maneuver import Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads
 from sbeam.parser.bdf_field import parse_real
+from sbeam.types import StrPath
 from sbeam.parser.case_control import CaseControl, parse_case_control
 
 _IGNORED_KEYWORDS = frozenset({"BEGIN", "BEGINBULK", "ENDDATA"})
@@ -1678,7 +1679,7 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
     return bulk
 
 
-def parse_bulk_file(filepath: str) -> BulkData:
+def parse_bulk_file(filepath: StrPath) -> BulkData:
     """Parse a bulk-data-only file and return a BulkData object.
 
     Handles files with or without a BEGIN BULK header line.  Does not
@@ -1702,7 +1703,7 @@ def parse_bulk_file(filepath: str) -> BulkData:
     return parse_bulk_data([line.rstrip("\n") for line in lines[bulk_start:]])
 
 
-def parse_bdf(filepath: str) -> tuple[CaseControl, BulkData]:
+def parse_bdf(filepath: StrPath) -> tuple[CaseControl, BulkData]:
     """Read a BDF file and return (CaseControl, BulkData).
 
     Handles single-file models (bulk data after BEGIN BULK in the same file)

@@ -94,7 +94,8 @@ Every function signature is annotated, and the annotations are enforced by `pyri
 - **Parameterise every generic.** `dict[int, Grid]`, not `dict` with the value type in a
   trailing comment; `list[AeroBox]`, not `list`. A bare `dict`/`list`/`tuple`/`set` in an
   annotation is a CI failure (`reportMissingTypeArgument`).
-- **Physical arrays use the aliases in `sbeam/types.py`**, never a bare `np.ndarray`:
+- **Shared aliases live in `sbeam/types.py`.** Physical arrays use them rather than a bare
+  `np.ndarray`; the one non-array alias is `StrPath`, for the BDF readers' file arguments:
 
   | Alias | Meaning |
   |-------|---------|
@@ -103,8 +104,9 @@ Every function signature is annotated, and the annotations are enforced by `pyri
   | `IntArray` / `BoolArray` | DOF index maps / DOF masks |
   | `SparseMatrix` | assembled sparse `K_gg` / `M_gg` (`csr_matrix \| csr_array`) |
   | `LuFactor` | the `(lu, piv)` pair from `scipy.linalg.lu_factor` |
+  | `StrPath` | `Union[str, os.PathLike[str]]` — a filesystem path accepted by the BDF readers |
 
-  The aliases deliberately do **not** encode shape or rank — the DOF ordering that matters
+  The array aliases deliberately do **not** encode shape or rank — the DOF ordering that matters
   ([Tx, Ty, Tz, Rx, Ry, Rz] per node) is documented per function instead.
 - **`Optional[X]`, not `X | None`,** while the floor is Python 3.9: dataclass annotations are
   evaluated at import, and PEP 604 unions only became runtime-legal in 3.10. PEP 585 builtin
@@ -271,6 +273,25 @@ Tests mirror the `sbeam/` module structure under `tests/`. Each assembly, solver
 | V18 | `v18_rbe2_offset.bdf` | 101 | u_y at GN/GM satisfy cantilever formula with eccentric load; u_GM = R·u_GN (RBE2 lever-arm) | < 0.1% |
 
 V1–V7 use: E=2.0×10¹¹ Pa, ρ=7850 kg/m³, A=0.05 m², I=8.333×10⁻⁴ m⁴, L=1.0 m, 10 CBAR elements. V8–V18 use parameters defined in their BDF files; see `tests/integration/test_verification.py` for exact values.
+
+### Integration tests — shipped sample decks (VAL2)
+
+The V-suite above gates its own decks under `tests/integration/bdf/` (L = 1 m, A = 0.05 m²). `tests/integration/test_sample_verification.py` separately gates the **shipped** closed-form decks — the four named in `CLAUDE.md` "Verification Test Cases" (L = 10 m, A = 0.1 m², 10 CBAR elements), plus the offset-tip-mass coupled bending-torsion deck added 2026-08-01:
+
+| Deck (`sample/`) | SOL | Checks | Tolerance |
+|------------------|-----|--------|-----------|
+| `val_cantilever_static.bdf` | 101 | Tip Tz = PL³/3EI; tip Ry = PL²/2EI; root reactions Fz = P, My = −P·L | rel 1e-9 |
+| `val_ss_static.bdf` | 101 | Mid-span Tz = PL³/48EI; P/2 at each support | rel 1e-9 |
+| `val_cantilever_modes.bdf` | 103 | f₁ (β₁ = 1.875104) ≈ 2.578 Hz; f₂ (β₂ = 4.694091) ≈ 16.159 Hz; ascending order | rel 1e-5 / 2e-4 |
+| `val_free_free_modes.bdf` | 103 | Six rigid-body modes < 1e-3 Hz; mode 7 elastic (>1e3 separation); f₇ (β = 4.730041) ≈ 16.407 Hz | 1e-3 Hz / rel 2e-4 |
+| `val_cantilever_offset_mass_modes.bdf` | 103 | Coupled bending-torsion pair from a transverse-offset tip CONM2: f₁ ≈ 0.1489 Hz, f₂ ≈ 0.7466 Hz vs the tip-dominant 2-DOF closed form (Rayleigh beam-mass corrections); twist participation Rx·d/Tz ≈ +0.10 / −0.99; zeroing the offset decouples the families | rel 2e-3 |
+
+Two conventions differ from the V-suite and matter when reading the module:
+
+- **Beam properties are read back out of the parsed deck** (`_beam_props`), not declared as module constants, so a deck edit cannot silently drift away from the value a test compares against.
+- **The static tolerance is round-off, not engineering.** The consistent Euler-Bernoulli formulation is exact at the nodes for point loads (measured error ~1e-13 relative), so `rel = 1e-9` is three decades above round-off. The modal gates carry genuine discretisation error and sit 6–11× above it.
+
+The sample decks load in **−Z** (the V-suite loads −Y), and the gates assert signs, not magnitudes — a convention flip fails.
 
 ### Coverage
 
