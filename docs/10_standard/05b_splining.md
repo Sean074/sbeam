@@ -191,6 +191,14 @@ ranges, DTOR ≤ 0, or DZ < 0.
 
 ### ATTACH — Rigid Attachment (Step 47)
 
+**Sample deck (Step 65).** `sample/cessna210_flagship_bulk.bdf` slaves all 36 vertical-fin
+boxes to the fin-root grid with `ATTACH, 1005, 5000, 5000, 5035, 30, 0` — the first (and
+currently only) `ATTACH` card in any `.bdf`/`.dat` in the repo, so the card now has
+file → parse → solve coverage rather than only Python-built fixtures. It is also the
+configuration DEF-M11 fixed: `tests/aero/test_cessna210_flagship.py::test_t7_*` gates that a
+sideslipped fin delivers its side force to the master grid *exactly* (`F = Σ f_j`) and brings
+non-zero roll and yaw moments with it.
+
 `ATTACH` rigidly couples a group of aero boxes to a single master structural GRID.
 It is an sbeam extension (ZAERO-inspired). All boxes in the covered ID range move
 as a rigid body with the master grid.

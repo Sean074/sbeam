@@ -529,8 +529,10 @@ maneuver load at each output time.
   (`f06_writer.py::build_f06_sol144_maneuver_text`, AC5: run summary, time-history table with
   critical-sample marker, critical-sample closure/displacement/CBAR detail). Header and data cells
   of the time-history table share one column width (`f06_writer._FIELD_W`, DEF-M7). The viewer offers
-  the two ASCII/BDF exports as download buttons on the maneuver results view. Sample deck:
-  `sample/ha144a_fullspan_mloads.bdf` (ELEV ramp pitch-up on the HA144A full-span model).
+  the two ASCII/BDF exports as download buttons on the maneuver results view. Sample decks:
+  `sample/ha144a_fullspan_mloads.bdf` (ELEV ramp pitch-up on the HA144A full-span model) and
+  `sample/cessna210_flagship_mloads.bdf` (Step 65 — the same maneuver on the corrected,
+  splined, monitored realistic-airplane flagship).
 - **Gates (`tests/aero/test_maneuver_cards.py`, `tests/aero/test_maneuver_qs.py`):** card round-trip +
   validation; G0→Step 53 machine-precision identity; quasi-static settling to the new balanced trim
   (closure → 0, lift = `n_z·W`); per-step closure bounded; MLDPRNT + critical-load export round-trips.
@@ -642,6 +644,16 @@ analysis-plan summary names the case per subcase.
 into the initial-condition trim, so an `MLOADS` subcase carrying a `MASSSET` runs the whole
 maneuver at that payload condition. The fixed-Φ modal interaction (recompute `M_hh,i` only,
 reuse the basis) lands with Step 62.
+
+> **The command table is mass-case-specific.** `MLDCOMD` tables are **absolute**, not
+> incremental, so a `TABLED1` authored to start at one case's trimmed control angle is not
+> that angle in another case: the trim shifts with the payload, and the run then begins with
+> a step input instead of at equilibrium. This is a deck-authoring property, not a solver
+> defect — pairing `MASSSET` with `MLOADS` means re-running the trim for that mass case and
+> re-baking the table's first point. First covered at Step 65 by
+> `tests/aero/test_cessna210_flagship.py::test_t6_mloads_with_massset_is_exact_when_the_table_matches_the_case`,
+> which pins down both halves: stale table ⇒ the initial condition is not the trim;
+> re-authored table ⇒ the initial condition is reproduced to machine precision.
 
 ### Sample deck and gates
 

@@ -1517,7 +1517,7 @@ AESURF  ID  LABEL  CID1  ALID1  CID2  ALID2  EFF
 |-------|------|---------|-------------|
 | ID | int | — | Unique identifier |
 | LABEL | str | — | Control surface name (e.g. `AILERON`) |
-| CID1 | int | — | Coordinate system defining the hinge axis (x-axis = hinge) |
+| CID1 | int | — | Coordinate system defining the hinge axis — the **y-axis** of this CORD2R is the hinge line (`integration.build_djx` takes `R[:, 1]`), matching the SPLINE2 spline-axis convention |
 | ALID1 | int | — | AELIST SID listing boxes on this surface |
 | CID2 | int | 0 | Optional second hinge CID (0 = unused) |
 | ALID2 | int | 0 | Optional second AELIST SID (0 = unused) |

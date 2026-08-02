@@ -45,8 +45,7 @@ re-flowing the rest. Renumber only when the whole table is re-ranked.
 
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P6 | Step 65 — flagship realistic-airplane SOL 144 sample family + theory doc | Samples review | ~3–5 d | Closes the biggest sample coverage gap: nothing anywhere combines corrected aero + trim + maneuver + mass cases on a realistic airplane, and corrections never reach a trim. Clean of all open defects (SPLINE2 only, no body panels); after P2 so its exports/critical-sample story is clean. |
-| P7 | Step 66 — flagship stage 2: body panels into the flagship family | Samples review | ~2 d | Blocked on **P6/Step 65** (the family it extends); its other prerequisite, Step 64 (unsplined-box forces into the trim balance), closed 2026-07-31. Folds `cessna210_body`/`_strip` + their 14+ tests into the flagship. |
+| P7 | Step 66 — flagship stage 2: body panels into the flagship family | Samples review | ~2 d | **Unblocked** — both prerequisites closed: Step 65 (the flagship family it extends) 2026-08-01, and Step 64 (unsplined-box forces into the trim balance) 2026-07-31. Folds `cessna210_body`/`_strip` + their 14+ tests into the flagship. |
 | P8 | Monitor Phase 2 — section-cut running loads | Tier 1 | ~2–3 d | The production stress deliverable (per-station Vz/My/Mt); unblocked, independent — can run in parallel with P9–P11. |
 | P9 | Vectorize `build_ajj` (broadcast Biot–Savart) (+ DEF-R6) | Tier 1 | ~1–2 d | Measured 12.3 s at 400 boxes vs 3 ms for the solve — the quadratic pure-Python AIC loop is the actual model-size constraint named in CLAUDE.md; ~100× available; paid per Mach, per correction rebuild, per viewer overlay. DEF-R6's redundant O(n³) work is the same hot path. |
 | P10 | Step 62 — modal transient solver (prescribed rigid) + fixed-Φ mass gates | Tier 1 (G0 plan) | ~4–5 d | De-risks basis/truncation/recovery before free flight; lands the fixed-Φ mass-case transient capability. Consumes P1's unified mass model. |
@@ -66,11 +65,7 @@ load-case envelope viewer; CHORDCP follow-ons; A9 follow-ons; the remaining DEF-
 presentation, docs-mismatch batch, SYMXZ parity decision; ~1–1.5 d total, independent);
 `SPLINEF` distributed force-mapping spline (ZAERO parity; the Step 64 follow-on);
 the samples hygiene batch and doc-pointer sweep from the 2026-07-31 sample review
-(~1 d total, zero-risk — details in the sample-review section below);
-an `ATTACH` sample deck (~0.5 d — found during DEF-M11, 2026-08-01: **no `.bdf`/`.dat` file
-anywhere in the repo contains an `ATTACH` card**, so a documented card is gated only by
-Python-built test fixtures and has never been exercised through the file → parse → solve
-path; natural to fold into the P6/Step 65 flagship family).
+(~1 d total, zero-risk — details in the sample-review section below).
 **Deferred:** G0-e (with Phase G ASE), slender-body element (after Phase D), non-aero
 Phase 2/3 items.
 
@@ -259,66 +254,16 @@ The four closed-form anchors of that evidence basis are now **enforced by CI** �
 `tests/integration/test_sample_verification.py`, delivered 2026-08-01 as P5/VAL2
 (see `docs/40_history/01_program_foundation.md`).
 
-### Step 65 (P6) — Flagship realistic-airplane SOL 144 sample family + theory doc
+### Step 66 (P7) — Flagship stage 2: body panels
 
-**Objective.** One realistic-airplane worked example combining corrected aerodynamics,
-multi-subcase static trim, a transient maneuver, mass cases and monitor points — the
-combination no HA144A or cessna deck covers (the cessna correction ladder never reaches a
-SOL 144 solve).
+**Objective.** Total-aircraft moment match on the flagship. **Unblocked** — both
+prerequisites are closed: Step 65 (the flagship family, 2026-08-01) and Step 64
+(unsplined-box forces into the trim balance, 2026-07-31), so a body-panel trim is now
+internally consistent (totals, closure, monitors and exports agree); body panels declare
+their load-carrying grid in `SPLINE0` field 5.
 
-**Deliverables.**
-- `sample/cessna210_flagship_bulk.bdf` + three thin case-control drivers
-  (`_trim`: SC1 1g cruise + SC2 2.5g pull-up; `_mloads`: trim + elevator-ramp transient;
-  `_massset`: one TRIM × MASSSET 10/20/30) via whole-bulk `INCLUDE`, plus
-  `cessna210_flagship_section_data.csv`.
-- Bulk = the cessna210 stick + 324-box mesh with CAERO1 EIDs renumbered
-  1000-spaced per the convention adopted with the P3 batch (1000/2000/3000/4000/5000;
-  6000/7000 reserved for stage 2's body panels), plus: GRID 900 at ¼-MAC + z-down stability CORD2R 990 (`AEROS RCSID`, HA144A
-  URDD3 = −g convention); `SPC1,1,1246,900` + `SUPORT,900,35`; ~19 CONM2s (≈ 1081 kg
-  baseline, CG ≈ 22 % MAC, GPWG-checked, C210 envelope); 5× SPLINE2+SET1+spline-axis
-  CORD2R (EA-only SET1 ⇒ **DTHY = 0.0** or the spline system is singular); part-chord
-  elevator (hinge CORD2R at the straight ⅔-chord line x ≈ 7.60, AESURF + explicit 32-box
-  AELIST); AESTAT ANGLEA/PITCH/URDD3/URDD5; TRIM 1 (q = 2334 Pa, M = 0.0, 1g) and TRIM 2
-  (2.5g, PITCH = (n−1)g·c/2V²), both with RHOREF; MASSSET FERRY/CRUISE/MTOW
-  (≈ 996/1201/1560 kg — exercises DELETE, ADD, REPLACE and an offset CONM2); MONPNT3
-  wing-root + whole-aircraft, MONPNT1 all-aero + right-wing (+ AECOMPs); MLOADS chain
-  with the trimmed ELEV baked into TABLED1 (+2° over 0.3 s, hold — MLDCOMD tables are
-  absolute, two-pass workflow).
-- Corrections **pre-baked and committed** (generated once via
-  `build_from_section_data_multi`, viewer-export provenance header) from a
-  **3D-informed** CSV: spanwise-tapered cn_a integrating to wing CLα ≈ 4.9/rad, washout
-  in a0, per-polar cm data, reduced-slope 8–14° region adjacent to the 2.5g trim point.
-  Raw 2D polars (the old cessna CSV) would give an unphysical corrected CLα ≈ 7/rad —
-  the theory doc's central lesson.
-- `docs/20_theory/02_realistic_airplane_sol144.md` (tutorial register of
-  `aeroelastic_derivatives.md`): the deck layer-by-layer, then the f06 block-by-block
-  with hand-check anchors (CL₁g ≈ 0.28, CLα ≈ 5.0–5.2/rad Helmbold AR 7.72,
-  Cmα ≈ −0.7…−0.9/rad from tail volume 0.63, ≈ 2°/g elevator; MONPNT1 ≈ n·W aero-only vs
-  MONPNT3 ≈ 0 balanced), mass sweep, transient, limitations/roadmap. Plus one
-  `docs/00_INDEX.md` row.
-- Staged deletions: `airplane_aero.bdf` (its NCHORD/NSPAN box-AR sizing rationale moves
-  into the flagship bulk header) and `cessna210_aero.bdf` + `cessna210_section_data.csv`
-  (`tests/aero/test_cessna210_example.py`'s 5 tests re-pointed at the flagship bulk;
-  `docs/10_standard/05a_aero_vlm.md` §"worked example" updated).
-
-**Test/Acceptance.** `tests/aero/test_cessna210_flagship.py` (module-scoped, ≈ 3 solves):
-T1 all three drivers parse via INCLUDE, 324 boxes, **no duplicate box IDs**, zero
-spline-coverage warnings; T2 regenerating W2GJ/AECORR from the CSV reproduces the
-committed cards (atol 1e-8); T3 both trims close, lift = n·W from GPWG mass (rel 1e-6),
-corrected whole-model CLα = 5.2 ± 0.5/rad; T4 MASSSET sweep — ANGLEA strictly increasing
-FERRY→CRUISE→MTOW and wing-root bending per unit weight **decreases** with wing fuel
-(inertia relief; no existing test covers that physics); T5 MLOADS t=0 sample == SC1 trim
-and final held sample == a static trim with ELEV prescribed at the ramped value; T6
-MLOADS × MASSSET=30 combined smoke (first coverage of the pairing anywhere).
-
-### Step 66 (P7) — Flagship stage 2: body panels (blocked on Step 65)
-
-**Objective.** Total-aircraft moment match on the flagship. Its other prerequisite —
-Step 64, injecting unsplined-box forces into the trim balance — **closed 2026-07-31**, so a
-body-panel trim is now internally consistent (totals, closure, monitors and exports agree);
-body panels declare their load-carrying grid in `SPLINE0` field 5.
-
-**Deliverables.** CAERO1 4100/4200 + SPLINE0 (or PSTRIP) + CSV `TOTAL` row +
+**Deliverables.** CAERO1 **6000/7000** (the EIDs the flagship bulk reserves) + SPLINE0
+(or PSTRIP) + CSV `TOTAL` row +
 body-correction cards into the flagship bulk; tighten T3's lift gate to include the body
 increment; fold `cessna210_body.bdf`/`cessna210_strip.bdf` +
 `cessna210_body_section_data.csv` into the family and re-point
@@ -349,8 +294,10 @@ demonstrated on `sample/ha144a_body_trim.bdf`), and ANGLEA shifts by the body in
 - **Deferred verdicts (re-examine at flagship stage 2):** `val_vlm_anhedral.bdf` is a
   2-coordinate sign flip of `_dihedral` that 2 test files could mirror in memory —
   consolidate opportunistically or keep; ha144a_fullspan ×3 INCLUDE consolidation
-  (superset bulk + 3 drivers, ~280 duplicated lines each, already drifting) only **after**
-  the flagship proves the driver pattern — ripple is ~24 test files + 6 docs.
+  (superset bulk + 3 drivers, ~280 duplicated lines each, already drifting) is now
+  **unblocked** — Step 65 proved the whole-bulk-INCLUDE driver pattern across three
+  drivers (trim / massset / mloads) — but the ripple is still ~24 test files + 6 docs, so
+  it stays opportunistic.
 
 ---
 

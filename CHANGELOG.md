@@ -13,6 +13,68 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Step 65 — flagship realistic-airplane SOL 144 sample family + theory doc (2026-08-01)**
+
+The first deck anywhere in the repo where a **corrected AIC drives a trim**, and the first
+that pairs `MLOADS` with `MASSSET`. One bulk model, three thin case-control drivers over it
+by whole-bulk `INCLUDE`:
+
+- `sample/cessna210_flagship_bulk.bdf` — Cessna 210-like full-span airframe: 324-box
+  5-surface mesh (1000-spaced CAERO1 EIDs; 6000/7000 reserved for Step 66 body panels),
+  quarter-MAC reference grid spliced into the fuselage load path with a z-down stability
+  `CORD2R`, `SUPORT,900,35`, 1081.0 kg at 22.0 % MAC, four `SPLINE2` (DTHY = 0.0) plus an
+  `ATTACH` on the fin, a part-chord 32-box elevator on the straight ⅔-chord line, two
+  `MONPNT1` + two `MONPNT3`, three `MASSSET` cases (996.0/1201.0/1560.0 kg exercising
+  DELETE/ADD/REPLACE and an offset CONM2), and the full `MLOADS` chain.
+- `..._trim.bdf` (1g cruise + 2.5g pull-up), `..._massset.bdf` (payload sweep),
+  `..._mloads.bdf` (elevator-ramp transient), `..._section_data.csv`.
+- `docs/20_theory/02_realistic_airplane_sol144.md` — tutorial: the deck layer by layer with
+  a "what breaks if you get this wrong" note per layer, then the f06 read block by block
+  against hand-check anchors.
+
+Results: CL closes on n·W at both load factors (rel 1e-6), rigid CZ_α = 5.33 /rad with the
+elastic-restrained column +3.5 % on it, divergence at 23× the cruise q, elevator −3.91 °/g,
+whole-aircraft `MONPNT1` = n·W with `MONPNT3` ≈ 0 (1.5e-11 N).
+
+**The correction is pre-baked from 3D-informed section data**, and that is the family's
+central lesson. A VLM strip already carries the finite-wing downwash, so its installed slope
+(0.086 → 0.047 /deg on this wing, 0.044 /deg on the HTP) is far below the 2D section value;
+tabulating the 2D slope and letting WT2 enforce it double-counts the downwash and drives the
+wing alone to an unphysical 6.0 /rad. The committed table is anchored to the model's own 3D
+strip loading and scaled to the Helmbold AR-7.72 target, so the correction adds camber,
+washout and section moment (CL₀ 0 → 0.099) while moving the lift slope only 5.21 → 5.33 /rad.
+
+Also in this step:
+- **Wing stiffness calibrated** rather than inherited — the previous PBAR values left the
+  wing effectively rigid (+0.44 % elastic, divergence 175× q). Established empirically that
+  `I2`, not `I1`, resists flapwise bending for a wing CBAR along global Y with orientation
+  vector (1,0,0); the inherited comment had them swapped. Cross-section area re-sized as the
+  mass property it also is (the old `A = 0.020` fuselage was 564 kg of structure at
+  CG x = 4.06, which put the design CG out of reach).
+- **First `ATTACH` card in any `.bdf`/`.dat` in the repo** (the fin), closing the coverage
+  gap found during DEF-M11 — the card had only ever been exercised by Python fixtures.
+- **`MLDCOMD` tables are absolute, hence mass-case specific.** First coverage of MLOADS ×
+  MASSSET: a table authored for the baseline trim does not start at another mass case's
+  trimmed elevator, so the run begins with a step input. Deck-authoring property, not a
+  solver defect — re-authored for the case, the initial condition reproduces to 3e-16.
+  Documented in `05c_sol144_maneuver.md`.
+- **Docs fix:** `02_card_reference.md` described the `AESURF` `CID1` hinge as that system's
+  **x**-axis; the code uses the **y**-axis (`integration.build_djx` → `R[:, 1]`). Following
+  the documented convention yields an identically-zero elevator column and an unexplained
+  singular-matrix failure in the trim solve.
+
+Gated by `tests/aero/test_cessna210_flagship.py` (24 checks, ~28 s), including a wing-root
+inertia-relief gate (bending per unit weight falls 0.760 → 0.635 → 0.586 as fuel enters the
+wing) that no other test covered.
+
+### Removed
+
+- `sample/airplane_aero.bdf` (its NCHORD/NSPAN box-aspect-ratio sizing rationale moved into
+  the flagship bulk header), `sample/cessna210_aero.bdf` and
+  `sample/cessna210_section_data.csv` — superseded by the flagship family.
+  `tests/aero/test_cessna210_example.py` is re-pointed at the flagship with its numeric
+  assertions **re-derived** for the 3D-informed table (they were tied to the old flat 2D CSV).
+
 **Offset-tip-mass coupled bending-torsion sample deck (2026-08-01)**
 
 `sample/val_cantilever_offset_mass_modes.bdf` — a SOL 103 cantilever with a tip CONM2 whose

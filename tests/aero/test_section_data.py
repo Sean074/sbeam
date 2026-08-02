@@ -323,6 +323,7 @@ class TestValidationBindings:
         """The grouped rule must not reject either shipped table."""
         from sbeam.aero.body_correction import split_total_rows
         root = Path(__file__).parent.parent.parent / "sample"
-        for name in ("cessna210_section_data.csv", "cessna210_body_section_data.csv"):
+        for name in ("cessna210_flagship_section_data.csv",
+                     "cessna210_body_section_data.csv"):
             flying, _totals = split_total_rows(pd.read_csv(root / name))
             sd.validate_section_data(flying)      # must not raise

@@ -658,10 +658,23 @@ incidence falls outside `[a_lo, a_hi]`. Pass `ajj` as the **raw** PG AIC at the 
 (`build_aero_model(bulk, mach).ajj`); the Prandtl–Glauert 1/β factor is applied internally
 from `mach`.
 
-**Worked example.** `sample/cessna210_aero.bdf` + `sample/cessna210_section_data.csv` are a
-full-span 5-surface Cessna 210-like model (wing + HTP + VTP) with per-surface section data —
-a cambered, two-α-region wing, symmetric HTP, and a `BETA` VTP — exercised end-to-end by
-`tests/aero/test_cessna210_example.py`.
+**Worked example.** `sample/cessna210_flagship_bulk.bdf` +
+`sample/cessna210_flagship_section_data.csv` are a full-span 5-surface Cessna 210-like model
+(wing + HTP + VTP) with per-surface section data — a cambered, washed-out, two-α-region wing,
+symmetric HTP, and a `BETA` VTP — exercised end-to-end by
+`tests/aero/test_cessna210_example.py`. Unlike the standalone `cessna210_aero.bdf` it replaced
+at Step 65, the correction here is **pre-baked into the deck** and **reaches a SOL 144 trim**;
+see `docs/20_theory/02_realistic_airplane_sol144.md`.
+
+> **The section table must be 3D-informed, not a raw 2D polar.** A VLM strip already carries
+> the finite-wing downwash, so its *installed* normal-force slope is well below the airfoil
+> section value — on this wing 0.086/deg at the root falling to 0.047/deg at the tip, and only
+> 0.044/deg on the HTP, which additionally sits in the wing's downwash field. Tabulating the
+> 2D section slope (≈0.105/deg) and letting WT2 enforce it **double-counts the downwash**: the
+> wing alone is driven to 0.105 × 180/π = 6.0/rad, an unphysical finite-wing lift slope. The
+> flagship table is anchored to the model's own 3D strip loading and scaled to the Helmbold
+> target for AR 7.72 (4.86/rad), so the correction moves the whole-model slope by ~2 %
+> (5.21 → 5.33/rad) instead of by a third.
 
 **Aero-tab visualisation.** The viewer Aero tab passes `cp_operator=ajj_inv_corr` to
 `solve_rigid_cl`, so the corrected CL / CM / cp / section loads (WKK / WT1 / WT2 **and** W2GJ)
