@@ -1852,6 +1852,24 @@ round-trip tests in `tests/parser/test_aero.py`. No-CHORDCP decks are bit-identi
 
 ## Resolved defects
 
+### DEF-R6 (SOL 144 share) — full-SVD `np.linalg.cond(K_eff)` per static solve ✅ COMPLETE (2026-08-02)
+
+**Objective:** `_solve_direct` ran a full SVD (`np.linalg.cond`) on the effective aeroelastic
+stiffness `K_eff = K_aa − q·Q_aa` for the singularity check, then solved the same matrix again
+with `scipy.linalg.solve` — two O(n³) passes where one factorization suffices.
+
+**Deliverables:** `solver/sol144.py` `_solve_direct` factors `K_eff` once
+(`estimate_cond_1norm` from the new `sbeam/linalg_utils.py` — LU + LAPACK `gecon` 1-norm
+estimate) and reuses the LU for the solve (`lu_solve`). The 1e15 singularity threshold and
+the divergence error message are unchanged (the norm choice is immaterial at that
+magnitude). `k_aa_lu` (a different matrix, reused downstream) is untouched.
+
+**Test/Acceptance:** full SOL 144 suite unchanged and green; the near-divergence singularity
+raise still fires (existing tests). Part of the P9 batch — see
+`05_aero_vlm_spline.md` "Performance" for the batch entry and key decisions.
+
+---
+
 ### DEF-M6 — exported `FORCE`/`MOMENT` fields overflow the 8-character free field ✅ COMPLETE (2026-08-01)
 
 **Objective:** `load_export._fmt` wrote `f"{val:.6E}"` — 12 characters, 13 with a sign — into

@@ -47,10 +47,12 @@ re-flowing the rest. Renumber only when the whole table is re-ranked.
 "Release scope" below the table. Ranks and P-labels are unchanged; the Tier 4
 yaw-rate wing term is promoted to **Step 67** and enters release scope.
 
+**P9 delivered 2026-08-02** (`build_ajj` broadcast-Biot–Savart vectorization +
+DEF-R6 LU/gecon batch; see `docs/40_history/05_aero_vlm_spline.md`).
+
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P8b | Section cuts on transient (MLOADS) maneuvers | Tier 1 | ~0.5 d (critical sample) + ~1–1.5 d (full history) | Follow-on to Monitor Phase 2 (closed 2026-08-02, static only); the integrand is reusable verbatim, the work is the per-time-step output design + envelope. Better sequenced after P9–P11, which need the same envelope machinery. |
-| P9 | Vectorize `build_ajj` (broadcast Biot–Savart) (+ DEF-R6) | Tier 1 | ~1–2 d | Measured 12.3 s at 400 boxes vs 3 ms for the solve — the quadratic pure-Python AIC loop is the actual model-size constraint named in CLAUDE.md; ~100× available; paid per Mach, per correction rebuild, per viewer overlay. DEF-R6's redundant O(n³) work is the same hot path. |
+| P8b | Section cuts on transient (MLOADS) maneuvers | Tier 1 | ~0.5 d (critical sample) + ~1–1.5 d (full history) | Follow-on to Monitor Phase 2 (closed 2026-08-02, static only); the integrand is reusable verbatim, the work is the per-time-step output design + envelope. Better sequenced after P10–P11, which need the same envelope machinery. |
 | P10 | Step 62 — modal transient solver (prescribed rigid) + fixed-Φ mass gates | Tier 1 (G0 plan) | ~4–5 d | De-risks basis/truncation/recovery before free flight; lands the fixed-Φ mass-case transient capability. Consumes P1's unified mass model. |
 | P11 | Step 63 — free-flight rigid-body coupling | Tier 1 (G0 plan) | ~4–5 d | The "different maneuvers" half of the aim: self-balancing transient maneuvers from arbitrary control input. |
 | P12 | Viewer — SOL 144 / MLOADS case authoring UI | Tier 1 | ~5–8 d | Early-design usability: today SOL 144 cases must be hand-authored in the BDF; a production process needs the authoring loop closed. Sequenced after Steps 62–63 so it authors the final card surface once. |
@@ -59,7 +61,7 @@ yaw-rate wing term is promoted to **Step 67** and enters release scope.
 | P15 | `AMODE` Phase 1 (control-surface hinge modes) | Tier 3 | ~7.5 d | Needed before control-surface flutter in SOL 145; Phase 2 is a declared pre-1.0.0 blocker. |
 | P16 | Phase D core — DLM (D0–D3) + SOL 145 PK flutter | Tier 3 | ~25–30 d | The declared next phase after SOL 144 sufficiency. Gated on P14. |
 | P17 | Phase D cont. — RFA state-space + SOL 146 gust + Monitor Phase 3 | Tier 3 | ~15–20 d | Completes the dynamic loads process (CS-25.341 gust/turbulence monitors). |
-| P18 | `matrix_reuse_store` Phases 1–3 | Tier 2 | ~6 d | Real payoff only once envelope sweeps (many Machs × masses × maneuvers) exist — i.e. after P9–P11/P16. Its Phase 0 is stale (see verdicts). |
+| P18 | `matrix_reuse_store` Phases 1–3 | Tier 2 | ~6 d | Real payoff only once envelope sweeps (many Machs × masses × maneuvers) exist — i.e. after P10–P11/P16. Its Phase 0 is stale (see verdicts). |
 
 **Opportunistic / unranked** (small, independent, do when adjacent): SPLINE9 go/no-go
 convergence study (~1 d, study only); G0-d unsteady corrections; body fence image method;
@@ -93,9 +95,8 @@ questions were resolved as follows:
 
 **Release-required items** (everything else in this backlog is post-release):
 
-- **P9** — `build_ajj` vectorization (+ DEF-R6): an ATR42-class full-aircraft mesh
-  exceeds the measured 400-box / 12.3 s case; the AIC loop is the practical size
-  constraint.
+- **P9** — `build_ajj` vectorization (+ DEF-R6): **delivered 2026-08-02**
+  (~120× at 400 boxes; see `docs/40_history/05_aero_vlm_spline.md`).
 - **DEF-M12** — correction-card export field width: the corrected-BDF export sits on
   the release-critical corrections workflow.
 - **Step 67** — quasi-steady yaw-rate wing term (below).
@@ -230,7 +231,6 @@ order — see the table above:
 
 | Rank | Batch | Items |
 |------|-------|-------|
-| P9 | Aero hot path (with the `build_ajj` vectorization) | DEF-R6 |
 | P13 | Refactor before Phase D | DEF-R1, R2, R3, R4 (+ DEF-R7 at a release boundary) |
 | — | Opportunistic, do when adjacent | DEF-L2–L7 |
 
@@ -283,7 +283,7 @@ order — see the table above:
 
 ### DEF-L — Low (robustness, hygiene, docs; batch opportunistically) — L2–L7 unranked
 
-### DEF-R — Refactor / dead code (no behaviour change) — P13 (R6 with P9)
+### DEF-R — Refactor / dead code (no behaviour change) — P13
 
 - **DEF-R1 — Decompose `sol144.py` (1838 lines)** — `run_sol144_trim` is a ~500-line god
   function. Natural seams: derivatives module (rigid/restrained/unrestrained/hinge),
@@ -304,12 +304,6 @@ order — see the table above:
   (`body_correction.py:289-444` vs `497-629`; diff-measured ~190 line-identical of 289);
   extract the shared weight-row/solve/achieved core, parameterized by unit response +
   card emitter. Dead `_NORM_TOL` constant (:115). [D]
-- **DEF-R6 — Redundant O(n³) work per aero build** — WT2 branch inverts the same AIC twice
-  plus a full-SVD `np.linalg.cond` (3× the dominant cost; `aero_model.py:104`,
-  `corrections.py:131-133`, `section_correction.py:184-192`); `np.linalg.cond(K_eff)` full
-  SVD per static solve (`sol144.py:148`); `run_maneuver_qs` rebuilds the Mach-correct AIC
-  twice when no AeroCache is passed (`maneuver_qs.py:267-274`). Factor once (LU), estimate
-  condition via gecon. [E/D]
 - **DEF-R7 — Remove the deprecated WT1 correction path** — DEF-H2/H3 (closed 2026-07-31)
   deprecated `AECORR METHOD=WT1` with a parser `UserWarning` but left it working. Complete
   the retirement at a release boundary: delete `apply_wt1` (`corrections.py`), the WT1
@@ -564,7 +558,7 @@ becomes a per-time-step table — a third dimension in the f06 block, the CSV sc
 the viewer plot, plus a critical-station / critical-time envelope. Scope the
 **critical-sample cut first** (one table at the MLDPRNT critical step, reusing the static
 schema unchanged, ~0.5 d); the full time-history table and envelope follow (~1–1.5 d) and
-are better sequenced after the envelope-sweep work (P9–P11), which will want the same
+are better sequenced after the envelope-sweep work (P10–P11), which will want the same
 max/min-with-driving-case machinery.
 
 ### Viewer (P12) — SOL 144 / MLOADS case authoring UI
@@ -599,7 +593,7 @@ content-hash provenance; `DiskAeroCache(AeroCache)` reload path, default fresh-c
 bit-identical. **Re-scoped by this review: Phase 0 deleted** (the SOL 144 production
 dispatch + f06 writer it wanted to build already shipped with Step 56/AE10 + AC5). Phases
 1–3 (~6 d) become worthwhile once envelope sweeps exist (Machs × MASSSETs × maneuvers —
-i.e. after P9–P11/P16); the cache-boundary rules (§4: cache pre-q, pre-reduction operands
+i.e. after P10–P11/P16); the cache-boundary rules (§4: cache pre-q, pre-reduction operands
 only, never `Q_aa`/`K_eff`/LU) stand as written.
 
 ### SPLINE9 — FE-consistent Hermite beam spline (go/no-go study only)

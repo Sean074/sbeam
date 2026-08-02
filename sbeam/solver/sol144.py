@@ -34,6 +34,7 @@ from sbeam.results.results import (
     Sol144Result, Sol144TrimResult,
     Sol144DivergResult, DivergMachResult, DivergRoot,
 )
+from sbeam.linalg_utils import estimate_cond_1norm
 from sbeam.results.monitor_points import compute_monitor_loads
 from sbeam.results.section_cuts import compute_section_cuts
 from sbeam.solver.sol101 import recover_bar_forces, recover_bar_stresses, recover_reactions
@@ -145,17 +146,19 @@ def _solve_direct(
     K_eff = K_aa - q * Q_aa
     k_aa_lu = scipy.linalg.lu_factor(K_aa)
 
+    # Factor K_eff once (DEF-R6): gecon 1-norm condition estimate replaces the
+    # former full-SVD np.linalg.cond, and the same LU serves the solve below.
     try:
-        cond = np.linalg.cond(K_eff)
+        cond, keff_lu = estimate_cond_1norm(K_eff)
     except Exception:
-        cond = np.inf
-    if cond > 1e15:
+        cond, keff_lu = np.inf, None
+    if keff_lu is None or cond > 1e15:
         raise ValueError(
             "Singular effective aeroelastic stiffness (K_aa - q*Q_aa): "
             "model may be at or beyond divergence dynamic pressure."
         )
 
-    u_free = scipy.linalg.solve(K_eff, f_aa)
+    u_free = scipy.linalg.lu_solve(keff_lu, f_aa)
 
     displacements = np.zeros(n_dofs)
     for local_idx, g_dof in enumerate(free_dofs):

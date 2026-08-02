@@ -103,6 +103,7 @@ Phase 1 uses **Euler-Bernoulli beam theory** (shear deformation neglected). Each
 sbeam/
 ├── main.py
 ├── types.py        # Shared type aliases (FloatArray, SparseMatrix, LuFactor, …)
+├── linalg_utils.py # Shared dense linear-algebra helpers (estimate_cond_1norm: LU + gecon condition estimate)
 ├── parser/         # bdf_reader.py, case_control.py
 ├── model/          # grid.py, element.py, property.py, material.py, load.py, constraint.py, mass.py, mass_overlay.py (MASSSET mass cases), aero.py, maneuver.py (ZAERO MLOADS cards), maneuver_presets.py
 ├── assembly/       # stiffness.py, mass_matrix.py, load_vector.py, coord_transform.py, rbe3.py, reduction.py (shared RBE3+SPC a-set reduction), rigid_body.py (geometric rigid-body vectors shared by Φ_r and M_ax)

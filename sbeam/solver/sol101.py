@@ -19,6 +19,7 @@ from sbeam.assembly.stiffness import (
 )
 from sbeam.assembly.load_vector import assemble_load_vector, build_grid_index
 from sbeam.assembly.reduction import reduce_to_aset
+from sbeam.linalg_utils import estimate_cond_1norm
 from sbeam.model.element import Cbar, Cbush
 from sbeam.results.results import BarForce, BarStress, Sol101Result
 from sbeam.types import FloatArray, SparseMatrix
@@ -49,21 +50,18 @@ def solve_static(
                 "Singular stiffness matrix: model may have unconstrained DOFs"
             )
     else:
-        # Dense path: used when RBE3 transformation collapses K to dense
+        # Dense path: used when RBE3 transformation collapses K to dense.
+        # Factor once (DEF-R6): gecon 1-norm condition estimate replaces the
+        # former full-SVD np.linalg.cond, and the same LU serves the solve.
         try:
-            cond = np.linalg.cond(K_free)
+            cond, k_lu = estimate_cond_1norm(K_free)
         except Exception:
-            cond = np.inf
-        if cond > 1e15:
+            cond, k_lu = np.inf, None
+        if k_lu is None or cond > 1e15:
             raise ValueError(
                 "Singular stiffness matrix: model may have unconstrained DOFs"
             )
-        try:
-            u_free = scipy.linalg.solve(K_free, f_free)
-        except scipy.linalg.LinAlgError:
-            raise ValueError(
-                "Singular stiffness matrix: model may have unconstrained DOFs"
-            )
+        u_free = scipy.linalg.lu_solve(k_lu, f_free)
 
     u = np.zeros(n_dofs)
     for local_idx, global_dof in enumerate(free_dofs):

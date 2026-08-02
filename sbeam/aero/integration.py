@@ -33,8 +33,11 @@ def build_skj(boxes: list[AeroBox]) -> FloatArray:
     """
     n = len(boxes)
     skj = np.zeros((3 * n, n))
-    for j, box in enumerate(boxes):
-        skj[3 * j : 3 * j + 3, j] = box.area * box.normal
+    if n:
+        areas = np.array([box.area for box in boxes])
+        normals = np.array([box.normal for box in boxes])
+        idx = np.arange(n)
+        skj.reshape(n, 3, n)[idx, :, idx] = areas[:, None] * normals
     return skj
 
 

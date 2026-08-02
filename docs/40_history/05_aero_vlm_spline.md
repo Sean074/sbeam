@@ -1445,3 +1445,69 @@ and the section-correction synthesiser are correct and strictly more capable.
   WT1 — no `AECORR` card appears anywhere in `sample/` or `tests/**/*.bdf`.
 
 ---
+
+## Performance
+
+### P9 — Vectorize `build_ajj` (broadcast Biot–Savart) + DEF-R6 aero-side LU/gecon batch ✅ COMPLETE (2026-08-02)
+
+**Objective:** The VLM AIC build was a pure-Python n² double loop over `AeroBox` objects —
+measured **6.9 s at 400 boxes on the dev machine (12.3 s at ranking time) vs ~3 ms for the
+solve** — paid per Mach, per correction rebuild and per viewer overlay: the practical
+model-size constraint. DEF-R6 stacked redundant O(n³) work on the same path (double AIC
+inversion in the WT2 branch, full-SVD `np.linalg.cond` per build/solve).
+
+**Deliverables:**
+- **`aero/vlm.py`** — `build_ajj` rewritten as a broadcast Biot–Savart: `_boxes_to_arrays`
+  gathers box geometry into `(n,3)` arrays in **positional order** (callers pass filtered
+  sublists — strip boxes are excluded upstream, so `box.k` must not be used);
+  `_biot_savart_batch` evaluates receivers × senders as `(m,n,3)` with the scalar kernel's
+  exact float64 op order, degenerate guards (`_DEGEN_TOL`) becoming masks under
+  `np.errstate`; per-sender far-field points are computed once (previously n× per sender);
+  receivers are processed in `_AJJ_CHUNK = 512`-row blocks to bound peak temporary memory
+  (~25 MB per temp at n = 2000). The scalar `biot_savart_seg` / `horseshoe_influence` are
+  kept unchanged as reference implementations.
+- **`aero/vlm.py` `trefftz_cdi`** — the O(n²) Trefftz wake loop broadcast the same way
+  (stacked ±Γ trailing-vortex arrays, masked degenerate r²).
+- **`aero/integration.py` `build_skj`** — loop replaced by a reshaped fancy-index scatter.
+- **`sbeam/linalg_utils.py`** (new) — `estimate_cond_1norm(a, lu_piv=None)`: LU + LAPACK
+  `gecon` 1-norm condition estimate in O(n²) given the factorization; returns the LU for
+  reuse; singular → `inf` (no raise). Shared by aero and the solvers.
+- **`aero/corrections.py`** — `check_conditioning` now uses the gecon estimate and
+  **returns the LU** for reuse; `apply_wt2` gains `ajj_inv=None` so
+  `_assemble_vlm_operator` passes the already-computed inverse (kills the second O(n³)
+  inverse + the SVD); `apply_wt1` (deprecated) reuses its own LU.
+- **`aero/aero_model.py` `_assemble_vlm_operator`** — all three branches (WKK / WT2 /
+  uncorrected) factor once and `lu_solve` from the `check_conditioning` LU.
+- **`aero/section_correction.py`** — same single-factorization pattern (the tiny `g_map`
+  SVD at the end is left alone).
+
+**Test/Acceptance:**
+- New `tests/aero/test_vlm_vectorized.py` — vectorized `build_ajj` **bit-for-bit equal**
+  (`assert_array_equal`, atol=0) to the scalar loop on random irregular geometry
+  (sweep/dihedral/twist/mixed normals) and on all degenerate cases (colloc on a bound
+  endpoint, on the extended segment line, on the segment interior); chunked path equals
+  unchunked; `trefftz_cdi` vs a verbatim copy of the old loop at rel 1e-12 (row-sum order
+  differs); `build_skj` exact; gecon conditioning warns on near-singular, silent + reusable
+  LU on well-conditioned, `inf` on exactly singular.
+- Full suite green (1566 passed); external validation `test_val_byu_wing.py` (CL within 1%
+  of AVL) and flagship families unchanged.
+- **Measured: 6.87 s → 0.046–0.058 s at 400 boxes (~120×), identical matrix checksum.**
+  The full test suite dropped to ~18 s (the flagship fixtures no longer dominate).
+
+**Key decisions:**
+- **Bit-for-bit, not tolerance-based** — every arithmetic step reproduces the scalar float64
+  op order (explicit 3-component dots, `np.sqrt`, same 3-segment sum order), so the
+  equivalence gate asserts exact equality; a documented atol=1e-15 fallback exists in the
+  test docstring should a platform/BLAS quirk ever surface.
+- **1-norm gecon estimate replaces the 2-norm SVD cond** (user-approved): warning values
+  can differ from the old numbers by up to ~n×; thresholds unchanged (1e10 warn); warning
+  text now says "1-norm condition estimate". Nothing in f06 output or tests asserted a
+  numeric cond.
+- Scalar kernels retained as the reference implementation and test oracle rather than
+  deleted — they are the specification the broadcast must match.
+
+The solver-side DEF-R6 fixes (SOL 144 `K_eff`, SOL 101 dense path, `maneuver_qs` AeroCache
+seeding) are logged in `02_sol101_static.md`, `06_sol144_static_aeroelastic.md` and
+`07_maneuver_transient.md` under "Resolved defects".
+
+---

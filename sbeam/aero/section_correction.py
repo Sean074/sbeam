@@ -63,8 +63,10 @@ from dataclasses import dataclass, field
 from typing import Any, Optional, Union
 
 import numpy as np
+from scipy.linalg import lu_solve
 
 from sbeam.aero.panel import AeroBox
+from sbeam.linalg_utils import estimate_cond_1norm
 from sbeam.model.aero import W2gj, Aecorr
 from sbeam.types import FloatArray
 
@@ -181,15 +183,17 @@ def build_section_correction_multi(
             "— pass the whole-model AIC and box list"
         )
 
-    cond = float(np.linalg.cond(ajj))
+    # LU + gecon 1-norm condition estimate (DEF-R6); the factorization is
+    # reused for the inverse instead of a second O(n³) solve.
+    cond, lu_piv = estimate_cond_1norm(ajj)
     if cond > _COND_WARN:
         warnings.warn(
-            f"AIC matrix is poorly conditioned (cond={cond:.2e}); "
-            "section-correction accuracy may be degraded",
+            f"AIC matrix is poorly conditioned (1-norm condition estimate "
+            f"{cond:.2e}); section-correction accuracy may be degraded",
             UserWarning, stacklevel=2,
         )
 
-    ajj_inv   = np.linalg.solve(ajj, np.eye(n))
+    ajj_inv   = lu_solve(lu_piv, np.eye(n))
     gamma_ref = ajj_inv @ (-np.ones(n))          # PG circulation (Γ-units; no 1/β)
     chord_box = np.array([_box_chord(b) for b in boxes])
     area_box  = np.array([b.area for b in boxes])

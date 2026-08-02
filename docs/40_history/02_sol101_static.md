@@ -88,6 +88,21 @@ force/stress recovery, f06 output, GPWG, and resolved SOL 101 defects.
 
 ## Resolved defects
 
+### DEF-R6 (SOL 101 share) — full-SVD `np.linalg.cond(K_free)` on the dense RBE3 path ✅ COMPLETE (2026-08-02)
+
+**Objective:** The dense solve branch (RBE3 transformation collapses K to dense) ran a full
+SVD for the singularity check, then solved the same matrix again with `scipy.linalg.solve`.
+
+**Deliverables:** `solver/sol101.py` — one `estimate_cond_1norm(K_free)` (LU + LAPACK
+`gecon` 1-norm estimate, `sbeam/linalg_utils.py`) whose LU is reused by `lu_solve` for the
+solve. The 1e15 threshold and the "unconstrained DOFs" error are unchanged; the sparse
+`spsolve` path is untouched.
+
+**Test/Acceptance:** SOL 101 suite (incl. RBE3 cases) unchanged and green. Part of the P9
+batch — see `05_aero_vlm_spline.md` "Performance".
+
+---
+
 ### B3: Solver — Multi-Subcase ✅ FIXED
 
 **Objective:** Both `run_sol101` and `run_sol103` silently used only `case_control.subcases[0]`. Fixed to support any number of subcases.

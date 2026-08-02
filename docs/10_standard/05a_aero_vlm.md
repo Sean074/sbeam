@@ -215,7 +215,18 @@ no symmetry-image vortex (both sides of the XZ plane are meshed explicitly).
 
 Assembles the n×n aerodynamic influence coefficient (AIC) matrix. `A[i, j]` is the
 normalwash at collocation point `i` per unit circulation strength at horseshoe `j`.
-O(n²) loop over all panel pairs.
+
+Vectorized broadcast Biot–Savart (P9, 2026-08-02): `_boxes_to_arrays` gathers box
+geometry into `(n,3)` arrays in **positional order** (callers pass filtered sublists —
+never index by `box.k`), `_biot_savart_batch` evaluates receiver × sender pairs as
+`(m,n,3)` blocks with the scalar kernel's exact float64 op order (degenerate guards
+become masks), and receivers are processed in `_AJJ_CHUNK = 512`-row chunks to bound
+peak temporary memory (~25 MB per temp at n = 2000). Bit-for-bit identical to the
+scalar `horseshoe_influence` double loop, which is retained as the reference
+implementation and test oracle (`tests/aero/test_vlm_vectorized.py`); ~120× faster at
+400 boxes (6.9 s → ~0.05 s). `trefftz_cdi`'s O(n²) wake sum and `build_skj`'s scatter
+are vectorized the same way (Trefftz row-sum order differs from the old interleaved
+accumulation, so its equivalence gate is rel 1e-12 rather than bit-for-bit).
 
 **`solve_rigid_cl(boxes, alpha, beta=0.0, aeros=None, xref=0.0, mach=0.0, wg=None, cp_operator=None) -> dict`**
 
@@ -458,18 +469,29 @@ AECORR  SID  METHOD  CAERO_EID  T1  T2  T3  T4  T5
 
 ### `apply_wkk(ajj, wkk_data) -> np.ndarray`
 
-Returns `AJJ* = diag(w) @ AJJ`. The caller (`build_aero_model`) inverts via
-`np.linalg.solve`. Simplest correction; can absorb empirical scale factors or
-stall nonlinearity. Issues a `UserWarning` if `cond(AJJ*) > 1e10`.
+Returns `AJJ* = diag(w) @ AJJ`. The caller (`build_aero_model`) inverts it via the
+LU factorization returned by `check_conditioning` (`scipy.linalg.lu_solve`).
+Simplest correction; can absorb empirical scale factors or stall nonlinearity.
+Issues a `UserWarning` if the condition estimate of `AJJ*` exceeds 1e10.
 
-### `apply_wt2(ajj, cp_target) -> np.ndarray`
+### `apply_wt2(ajj, cp_target, ajj_inv=None) -> np.ndarray`
 
 Pressure-matching correction. Returns corrected `AJJ*⁻¹` by scaling each row of
 `AJJ⁻¹` by `cp_target_k / cp_vlm_ref_k`, where the reference normalwash is
 `w_ref = -ones(n)` (uniform unit incidence). The fixed reference state is required:
 deriving `w_ref` from `cp_target` itself yields a trivial identity correction. Boxes
 with near-zero `cp_vlm_ref` (tolerance `_RATIO_TOL = 1e-12`) keep a ratio of 1.0.
-Issues a `UserWarning` if `cond(AJJ) > 1e10`.
+`ajj_inv` may be supplied by a caller that already inverted AJJ
+(`_assemble_vlm_operator` does, DEF-R6 — one factorization serves the conditioning
+check, the target baseline and the correction); when omitted the function factors
+AJJ itself and issues a `UserWarning` if the condition estimate exceeds 1e10.
+
+**Conditioning (DEF-R6, 2026-08-02).** `check_conditioning` (and the section-correction
+builder's equivalent) no longer runs a full SVD: it computes an LU factorization once
+and estimates the **1-norm** condition via LAPACK `gecon`
+(`sbeam/linalg_utils.py: estimate_cond_1norm`), returning the LU for reuse by the
+solve. Reported values are 1-norm estimates (can differ from the old 2-norm SVD
+numbers by up to ~n×); the 1e10 warning threshold is unchanged.
 
 ### `apply_wt1(ajj, boxes, f_target) -> np.ndarray` — DEPRECATED (DEF-H2/H3)
 

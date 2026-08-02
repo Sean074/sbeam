@@ -264,17 +264,20 @@ def run_maneuver_qs(
         trimobj_sid=subcase.trimobj_sid,
         massset_sid=subcase.massset_sid,   # Step 60: IC trim uses the same mass case
     )
+    # Seed the AeroCache BEFORE the IC trim (DEF-R6): the trim then populates
+    # it at the flight Mach, so the .get(ic.mach) below is a cache hit instead
+    # of a second full AIC build.
+    grid_index = build_grid_index(bulk)
+    if aero_cache is None:
+        aero_cache = AeroCache(bulk, grid_index, seed=aero)
     ic = run_sol144_trim(bulk, ic_subcase, aero, aero_cache=aero_cache)
 
     # Resolve the flight Mach / dynamic pressure from the IC trim, and the
-    # Mach-correct AeroModel (the AeroCache built/seeded inside the trim solve).
+    # Mach-correct AeroModel from the shared cache.
     q = ic.q
-    if aero_cache is None:
-        aero_cache = AeroCache(bulk, build_grid_index(bulk), seed=aero)
     aero = aero_cache.get(ic.mach)
 
     ops = _assemble_operators(bulk, subcase, aero, q)
-    grid_index = build_grid_index(bulk)
 
     # Base δ held for any label the command set does not drive = the trim value.
     base_delta = {l: float(ic.trim_vars.get(l, 0.0)) for l in ops.all_labels}

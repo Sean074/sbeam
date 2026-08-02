@@ -1,8 +1,10 @@
 """Shared fixtures for the aero test package.
 
-The Cessna 210 flagship body decks (Step 66) are used by four modules.  At 372
-boxes the pure-Python Biot-Savart AIC build is ~11 s, so the parses and builds are
-**session**-scoped and shared rather than repeated per module.
+The Cessna 210 flagship body decks (Step 66) are used by four modules.  The
+parses and builds are **session**-scoped and shared rather than repeated per
+module.  (Originally this was forced by the pre-P9 pure-Python Biot-Savart AIC
+build — ~11 s at 372 boxes; the vectorized build is ~100× faster, but sharing
+one immutable model per deck is still the right structure.)
 
 Fixtures hand back the live `BulkData`/`AeroModel`.  Tests must not mutate them —
 compose with `dataclasses.replace` (as the existing body/strip tests do) instead.

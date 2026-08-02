@@ -11,6 +11,30 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Phase 2 completion.
 
+### Changed
+
+**P9 — vectorized `build_ajj` (broadcast Biot–Savart) + DEF-R6 LU/gecon batch (2026-08-02)**
+
+The VLM AIC build is no longer the model-size constraint: the pure-Python n² loop in
+`aero/vlm.py` is rewritten as a chunked broadcast Biot–Savart, **bit-for-bit identical**
+to the scalar kernels (retained as reference implementations) and **~120× faster**
+(6.9 s → ~0.05 s at 400 boxes on the dev machine); `trefftz_cdi`'s O(n²) wake sum and
+`build_skj` are vectorized in the same pass. New equivalence gates in
+`tests/aero/test_vlm_vectorized.py` (random irregular geometry, degenerate-guard cases,
+chunked-vs-unchunked). DEF-R6 removes the redundant O(n³) work on the same hot path:
+
+- New `sbeam/linalg_utils.py: estimate_cond_1norm` — LU + LAPACK `gecon` 1-norm
+  condition estimate replacing every full-SVD `np.linalg.cond`; the LU is returned and
+  reused for the subsequent solve (factor once). Warning/singularity thresholds are
+  unchanged; reported values are now 1-norm estimates.
+- `check_conditioning` returns the LU; all three `_assemble_vlm_operator` branches and
+  `section_correction` factor once; `apply_wt2` accepts a precomputed `ajj_inv` so the
+  WT2 path no longer inverts the same AIC twice.
+- SOL 144 `_solve_direct` factors `K_eff` once (gecon singularity check + `lu_solve`);
+  SOL 101's dense RBE3 path likewise.
+- `run_maneuver_qs` seeds the `AeroCache` before the IC trim, eliminating the second
+  full AIC build when no cache is passed in.
+
 ### Added
 
 **P8 / Monitor Phase 2 — `MONSECT` section-cut running loads (2026-08-02)**

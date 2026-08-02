@@ -114,7 +114,7 @@ When `use_rom=True` and `sol103_result is None`, SOL 103 is run internally using
 | Function | Purpose |
 |----------|---------|
 | `_build_qaa_aset(bulk, aero, grid_index, spc_sid, f_g_full)` | Reduce g-set Q_aa and K_aa to the a-set via RBE3 + SPC partition |
-| `_solve_direct(K_aa, Q_aa, f_aa, q, free_dofs, n_dofs)` | Dense direct solve of `(K_aa − q·Q_aa)·u_a = f_aa` |
+| `_solve_direct(K_aa, Q_aa, f_aa, q, free_dofs, n_dofs)` | Dense direct solve of `(K_aa − q·Q_aa)·u_a = f_aa`. `K_eff` is factored **once** (DEF-R6): the singularity check is an LU + LAPACK `gecon` 1-norm condition estimate (`sbeam/linalg_utils.py`, threshold 1e15 unchanged) and the same LU serves the solve via `lu_solve` |
 | `_solve_rom(K_aa, Q_aa, f_aa, q, phi_free)` | Modal-truncation ROM solve |
 | `_mode_acceleration_recovery(K_aa, Q_aa, f_aa, q, phi_free, xi, k_aa_lu)` | Mode-acceleration correction |
 
@@ -492,7 +492,10 @@ rudder free). Gated by **V-C5** (`tests/aero/test_maneuver_loads.py`).
 carries an `MLOADS = sid` request runs `solver/maneuver_qs.py` instead of the static trim. It
 time-integrates the elastic response to a prescribed (open-loop) pilot-command history, starting
 from a Step 53 balanced trim as the initial condition, and recovers the net (aero + inertial)
-maneuver load at each output time.
+maneuver load at each output time. When called without an `AeroCache`, `run_maneuver_qs` seeds
+one **before** the IC trim and passes it in (DEF-R6, 2026-08-02): the trim populates the cache
+at the flight Mach, so the solver's own `aero_cache.get(ic.mach)` is a cache hit — previously
+the Mach-correct AIC was built twice.
 
 - **Cards (ZAERO `MLOADS` family, `sbeam/model/maneuver.py`):** `MLOADS` is the driver and
   references `MLDTRIM` (the initial-condition `TRIM` sid), `MLDTIME` (`t0/tend/dt/tout`), `MLDCOMD`

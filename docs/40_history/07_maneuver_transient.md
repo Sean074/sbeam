@@ -301,6 +301,23 @@ the peak column value). Pre-existing in the Step 53 and increment-1 inertia-reli
 
 ## Resolved defects
 
+### DEF-R6 (maneuver share) — `run_maneuver_qs` rebuilt the Mach-correct AIC twice ✅ COMPLETE (2026-08-02)
+
+**Objective:** When called without an `AeroCache`, `run_maneuver_qs` let the IC trim build
+and discard its own internal cache, then seeded a fresh `AeroCache` with the *original*
+(wrong-Mach) model, so the subsequent `aero_cache.get(ic.mach)` rebuilt the full AIC a
+second time.
+
+**Deliverables:** `solver/maneuver_qs.py` — the `if aero_cache is None` seeding is hoisted
+**above** the `run_sol144_trim` call and the cache is passed in; the trim populates it at
+the flight Mach, so `.get(ic.mach)` is a cache hit. The hoisted `build_grid_index` result
+is reused for the later `grid_index` (was computed twice).
+
+**Test/Acceptance:** maneuver/MLOADS integration tests unchanged and green. Part of the P9
+batch — see `05_aero_vlm_spline.md` "Performance".
+
+---
+
 ### DEF-M5 — critical maneuver sample: selector, f06 label and printed column were three different metrics ✅ COMPLETE (2026-08-01)
 
 **Objective:** The Phase G0 "critical sample" — the one whose net load is exported for stress

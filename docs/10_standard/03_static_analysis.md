@@ -106,7 +106,12 @@ SPC constraints are applied by the **penalty / elimination method** (elimination
 1. Identify all constrained DOF indices from the active SPC set (mapped to reduced-space indices when RBE3 is present).
 2. Remove the corresponding rows and columns from `K_red` (or `K_global` if no RBE3) to obtain `K_free`.
 3. Remove the corresponding entries from `f_red` to obtain `f_free`.
-4. Solve: `K_free @ u_free = f_free`
+4. Solve: `K_free @ u_free = f_free`. The sparse path uses `spsolve`; the dense path
+   (RBE3 transformation collapses K to dense) factors `K_free` **once** (DEF-R6,
+   2026-08-02): the singularity check is an LU + LAPACK `gecon` 1-norm condition
+   estimate (`sbeam/linalg_utils.py: estimate_cond_1norm`, threshold 1e15 as before —
+   replacing a full-SVD `np.linalg.cond`) and the same LU serves the solve via
+   `lu_solve`.
 5. Reconstruct full `u_global` by inserting zeros at constrained DOF positions, then applying `u_full = T @ u_red`.
 
 Since DEF-R5 all of steps 1–3 and 5 go through the **shared** reduction,

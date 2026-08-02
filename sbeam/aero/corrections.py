@@ -18,31 +18,37 @@ Return types:
 """
 
 import warnings
-from typing import Sequence, Union
+from typing import Optional, Sequence, Union
 
 import numpy as np
+from scipy.linalg import lu_solve
 
 from sbeam.aero.panel import AeroBox
-from sbeam.types import FloatArray
+from sbeam.linalg_utils import estimate_cond_1norm
+from sbeam.types import FloatArray, LuFactor
 
 _COND_WARN_THRESHOLD = 1e10
 _RATIO_TOL = 1e-12   # guard for near-zero reference quantities
 
 
-def check_conditioning(ajj: FloatArray) -> None:
-    cond = float(np.linalg.cond(ajj))
+def check_conditioning(
+    ajj: FloatArray, lu_piv: Optional[LuFactor] = None
+) -> LuFactor:
+    """Warn if the AIC's 1-norm condition estimate exceeds the threshold.
+
+    LU + LAPACK ``gecon`` estimate (DEF-R6), replacing the former full-SVD
+    ``np.linalg.cond``.  Returns the LU factorization of ``ajj`` so callers
+    solve with it (``scipy.linalg.lu_solve``) instead of refactorizing.
+    """
+    cond, lu_piv = estimate_cond_1norm(ajj, lu_piv)
     if cond > _COND_WARN_THRESHOLD:
         warnings.warn(
-            f"AIC matrix is poorly conditioned (cond={cond:.2e}); "
-            "correction accuracy may be degraded",
+            f"AIC matrix is poorly conditioned (1-norm condition estimate "
+            f"{cond:.2e}); correction accuracy may be degraded",
             UserWarning,
             stacklevel=3,
         )
-
-
-def _solve_ajj(ajj: FloatArray) -> FloatArray:
-    """Compute AJJ⁻¹ via LU factorization (np.linalg.solve)."""
-    return np.linalg.solve(ajj, np.eye(ajj.shape[0]))
+    return lu_piv
 
 
 def apply_chordcp(
@@ -121,7 +127,9 @@ def apply_wkk(
     return np.diag(w) @ ajj
 
 
-def apply_wt2(ajj: FloatArray, cp_target: FloatArray) -> FloatArray:
+def apply_wt2(
+    ajj: FloatArray, cp_target: FloatArray, ajj_inv: Optional[FloatArray] = None
+) -> FloatArray:
     """Pressure-matching correction.  Returns corrected AJJ*⁻¹.
 
     Finds a diagonal scaling r such that the corrected A*⁻¹ = diag(r) @ AJJ⁻¹
@@ -133,11 +141,15 @@ def apply_wt2(ajj: FloatArray, cp_target: FloatArray) -> FloatArray:
         A*⁻¹        = diag(r) @ AJJ⁻¹
 
     Boxes where |cp_vlm_ref_k| < _RATIO_TOL keep r_k = 1 (no correction applied).
-    Warns if cond(AJJ) > 1e10.
+    ``ajj_inv`` may be supplied by a caller that already inverted AJJ (DEF-R6:
+    ``_assemble_vlm_operator`` computes it for the WT2 target baseline, and its
+    ``check_conditioning`` already covered the matrix); when omitted, this
+    function factors and inverts AJJ itself and warns if cond(AJJ) > 1e10.
     """
-    check_conditioning(ajj)
     n = ajj.shape[0]
-    ajj_inv = _solve_ajj(ajj)
+    if ajj_inv is None:
+        lu_piv = check_conditioning(ajj)
+        ajj_inv = np.asarray(lu_solve(lu_piv, np.eye(n)))
     w_ref = -np.ones(n)
     cp_vlm_ref = ajj_inv @ w_ref
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -188,9 +200,9 @@ def apply_wt1(ajj: FloatArray, boxes: list[AeroBox], f_target: FloatArray) -> Fl
     Warns if cond(AJJ) > 1e10.
     """
     import math as _math
-    check_conditioning(ajj)
     n = ajj.shape[0]
-    ajj_inv = _solve_ajj(ajj)
+    lu_piv = check_conditioning(ajj)
+    ajj_inv = lu_solve(lu_piv, np.eye(n))
     w_ref = -np.ones(n)
     gamma_ref = ajj_inv @ w_ref
 

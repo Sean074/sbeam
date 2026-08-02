@@ -82,8 +82,51 @@ def horseshoe_influence(colloc: FloatArray, colloc_normal: FloatArray,
 
 
 # ---------------------------------------------------------------------------
-# AIC matrix assembly
+# AIC matrix assembly — broadcast Biot-Savart
 # ---------------------------------------------------------------------------
+
+_AJJ_CHUNK = 512   # receiver rows per broadcast block (bounds peak temp memory)
+
+
+def _dot3(u: FloatArray, v: FloatArray) -> FloatArray:
+    """3-component dot over the last axis, summed left-to-right like the
+    scalar kernel's explicit x*x + y*y + z*z (bit-for-bit with biot_savart_seg)."""
+    return u[..., 0] * v[..., 0] + u[..., 1] * v[..., 1] + u[..., 2] * v[..., 2]
+
+
+def _boxes_to_arrays(
+    boxes: list[AeroBox],
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray, FloatArray]:
+    """Gather box geometry into arrays in POSITIONAL order (not box.k — callers
+    pass filtered sublists, e.g. the VLM subset with strip boxes removed)."""
+    colloc = np.array([box.colloc for box in boxes], dtype=float)
+    normal = np.array([box.normal for box in boxes], dtype=float)
+    a = np.array([box.bound_a for box in boxes], dtype=float)
+    b = np.array([box.bound_b for box in boxes], dtype=float)
+    chord = np.array([box.chord for box in boxes], dtype=float)
+    return colloc, normal, a, b, chord
+
+
+def _biot_savart_batch(p: FloatArray, a: FloatArray, b: FloatArray) -> FloatArray:
+    """Broadcast biot_savart_seg: receivers p (m,1,3) × segments a,b (n,3) → (m,n,3).
+
+    Same formula and float64 op order as the scalar kernel; the scalar's
+    early-return-zero guards become masks (any NaN/Inf produced in a masked
+    lane is discarded by the final where).
+    """
+    r1 = p - a
+    r2 = p - b
+    r0 = b - a
+    n1 = np.sqrt(_dot3(r1, r1))
+    n2 = np.sqrt(_dot3(r2, r2))
+    cross = np.cross(r1, r2)
+    denom = _dot3(cross, cross)
+    bad = (n1 < _DEGEN_TOL) | (n2 < _DEGEN_TOL) | (denom < _DEGEN_TOL)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        factor = (_dot3(r0, r1) / n1 - _dot3(r0, r2) / n2) / (4.0 * math.pi * denom)
+        v = factor[..., None] * cross
+    return np.where(bad[..., None], 0.0, v)
+
 
 def build_ajj(boxes: list[AeroBox]) -> FloatArray:
     """Build the n_box × n_box aerodynamic influence coefficient matrix.
@@ -91,12 +134,32 @@ def build_ajj(boxes: list[AeroBox]) -> FloatArray:
     A[i, j] = normalwash at colloc_i per unit circulation at horseshoe_j.
     Uses the receiving panel's outward normal (ZAERO Eq. 3.49a), supporting
     arbitrary surface orientations (horizontal wings, vertical fins, etc.).
+
+    Vectorized broadcast Biot-Savart (P9), bit-for-bit identical to the scalar
+    horseshoe_influence loop; receivers are processed in chunks of _AJJ_CHUNK
+    rows so peak temporary memory stays bounded (~25 MB per (chunk, n, 3)
+    float64 temp at n = 2000).
     """
     n = len(boxes)
-    A = np.zeros((n, n))
-    for i, box_i in enumerate(boxes):
-        for j, box_j in enumerate(boxes):
-            A[i, j] = horseshoe_influence(box_i.colloc, box_i.normal, box_j)
+    if n == 0:
+        return np.zeros((0, 0))
+    colloc, normal, a, b, chord = _boxes_to_arrays(boxes)
+
+    # Per-sender far-field points (horseshoe_influence convention): trailing
+    # legs run downstream to max(a_x, b_x) + factor × CAERO1 macroelement chord.
+    far_x = np.maximum(a[:, 0], b[:, 0]) + _FAR_FIELD_FACTOR * chord
+    far_a = np.column_stack([far_x, a[:, 1], a[:, 2]])
+    far_b = np.column_stack([far_x, b[:, 1], b[:, 2]])
+
+    A = np.empty((n, n))
+    for i0 in range(0, n, _AJJ_CHUNK):
+        i1 = min(i0 + _AJJ_CHUNK, n)
+        p = colloc[i0:i1, None, :]
+        # Same left-to-right 3-segment sum as horseshoe_influence.
+        v = (_biot_savart_batch(p, a, b)
+             + _biot_savart_batch(p, b, far_b)
+             + _biot_savart_batch(p, far_a, a))
+        A[i0:i1, :] = _dot3(v, normal[i0:i1, None, :])
     return A
 
 
@@ -170,38 +233,27 @@ def trefftz_cdi(
     if len(lift_idxs) == 0 or S_ref < _DEGEN_TOL or ar < _DEGEN_TOL:
         return {"CDi": 0.0, "e": float("nan")}
 
-    n = len(lift_idxs)
     gamma_l = gamma[lift_idxs]
-    dy_l = np.array([
-        float(math.sqrt((boxes[ii].bound_b[1] - boxes[ii].bound_a[1])**2
-                      + (boxes[ii].bound_b[2] - boxes[ii].bound_a[2])**2))
-        for ii in lift_idxs
-    ])
+    ba = np.array([boxes[ii].bound_a for ii in lift_idxs])
+    bb = np.array([boxes[ii].bound_b for ii in lift_idxs])
+    dy_l = np.sqrt((bb[:, 1] - ba[:, 1])**2 + (bb[:, 2] - ba[:, 2])**2)
 
-    # Trefftz-plane induced downwash at each lift-box bound-vortex midpoint
-    w_tr = np.zeros(n)
+    # Trefftz-plane induced downwash at each lift-box bound-vortex midpoint,
+    # broadcast over all trailing vortices: +Γ at bound_b, -Γ at bound_a.
     _twopi_inv = 1.0 / (2.0 * math.pi)
+    y_i = 0.5 * (ba[:, 1] + bb[:, 1])
+    z_i = 0.5 * (ba[:, 2] + bb[:, 2])
+    y_v = np.concatenate([bb[:, 1], ba[:, 1]])
+    z_v = np.concatenate([bb[:, 2], ba[:, 2]])
+    sv = np.concatenate([gamma_l, -gamma_l])
 
-    for i, ii in enumerate(lift_idxs):
-        bi = boxes[ii]
-        y_i = 0.5 * (bi.bound_a[1] + bi.bound_b[1])
-        z_i = 0.5 * (bi.bound_a[2] + bi.bound_b[2])
-
-        for jj in lift_idxs:
-            bj = boxes[jj]
-            Gj = gamma[jj]
-
-            # Direct trailing: +Gj at bound_b, -Gj at bound_a
-            for (y_v, z_v, sv) in (
-                (bj.bound_b[1], bj.bound_b[2],  Gj),
-                (bj.bound_a[1], bj.bound_a[2], -Gj),
-            ):
-                dy = y_i - y_v
-                dz = z_i - z_v
-                r2 = dy * dy + dz * dz
-                if r2 > _DEGEN_TOL:
-                    # u_z from 2-D vortex: -Γ/(2π) · (y - y_v) / r²
-                    w_tr[i] += -sv * _twopi_inv * dy / r2
+    dy = y_i[:, None] - y_v
+    dz = z_i[:, None] - z_v
+    r2 = dy * dy + dz * dz
+    # u_z from 2-D vortex: -Γ/(2π) · (y - y_v) / r²  (degenerate r² masked out)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        contrib = -sv * _twopi_inv * dy / r2
+    w_tr = np.sum(np.where(r2 > _DEGEN_TOL, contrib, 0.0), axis=1)
 
     # Trefftz-plane formula: Di = ρ/2 · Σ Γ·w_T·Δy  (Katz & Plotkin Eq 12.17)
     # With ρ=V∞=1 → q=0.5:  CDi = Di/(q·S_ref) = 2·(ρ/2·Σ)/S_ref = Σ/S_ref

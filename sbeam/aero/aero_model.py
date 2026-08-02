@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
+from scipy.linalg import lu_solve
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.aero import Caero1, Chordcp, Paero1, Aeros, require_aeros
@@ -162,10 +163,13 @@ def _assemble_vlm_operator(
                 )
             w[surf_idx] = data
         ajj_star = apply_wkk(ajj, w)
-        check_conditioning(ajj_star)
-        ajj_inv_corr = np.linalg.solve(ajj_star, np.eye(n))
+        lu_star = check_conditioning(ajj_star)
+        ajj_inv_corr = lu_solve(lu_star, np.eye(n))
     elif wt2_cards:
-        ajj_inv_raw = np.linalg.solve(ajj, np.eye(n))
+        # Factor AJJ once (DEF-R6): the conditioning check, the raw inverse for
+        # the target baseline, and apply_wt2 all share the same factorization.
+        lu = check_conditioning(ajj)
+        ajj_inv_raw = lu_solve(lu, np.eye(n))
         cp_target = ajj_inv_raw @ (-np.ones(n))
         for card in wt2_cards:
             surf_idx = [k for k, b in enumerate(op_boxes) if b.caero_eid == card.caero_eid]
@@ -176,7 +180,7 @@ def _assemble_vlm_operator(
                     f"{tgt.shape[0]} != {len(surf_idx)} boxes on that surface"
                 )
             cp_target[surf_idx] = tgt
-        ajj_inv_corr = apply_wt2(ajj, cp_target)
+        ajj_inv_corr = apply_wt2(ajj, cp_target, ajj_inv=ajj_inv_raw)
     elif wt1_card is not None:
         # DEPRECATED (DEF-H2/H3) — kept working, not fixed.  The PG-compressed boxes
         # passed here (combined with the 1/β and physical-chord steps below) deliver
@@ -184,8 +188,8 @@ def _assemble_vlm_operator(
         f_target = np.asarray(wt1_card.target, dtype=float)
         ajj_inv_corr = apply_wt1(ajj, prandtl_glauert_boxes(op_boxes, mach), f_target)
     else:
-        check_conditioning(ajj)
-        ajj_inv_corr = np.linalg.solve(ajj, np.eye(n))
+        lu = check_conditioning(ajj)
+        ajj_inv_corr = lu_solve(lu, np.eye(n))
 
     # Göthert 1/β scaling (boundary-condition factor from §2.8 Eq. 14)
     if beta_pg != 1.0:

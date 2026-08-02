@@ -14,6 +14,7 @@
 sbeam/
 ├── main.py               # CLI entry point (SOL routing, f06 + load/monitor/maneuver exports)
 ├── types.py              # Shared type aliases (FloatArray, SparseMatrix, LuFactor, …)
+├── linalg_utils.py       # Shared dense linear-algebra helpers (estimate_cond_1norm — LU + gecon 1-norm condition estimate, DEF-R6)
 ├── parser/
 │   ├── bdf_reader.py     # Bulk data section parser → BulkData object
 │   └── case_control.py   # Case control section parser → CaseControl object
@@ -54,7 +55,7 @@ sbeam/
 ├── aero/
 │   ├── __init__.py
 │   ├── panel.py          # AeroBox dataclass + mesh_caero1() trapezoidal box meshing
-│   ├── vlm.py            # Biot–Savart, horseshoe influence, build_ajj, solve_rigid_cl
+│   ├── vlm.py            # Biot–Savart, horseshoe influence, vectorized (broadcast) build_ajj, solve_rigid_cl
 │   ├── integration.py    # build_skj, build_djk, build_wg integration matrices
 │   ├── corrections.py    # apply_wkk, apply_wt2, apply_wt1 AIC corrections
 │   ├── section_correction.py # W2GJ+WT2 card-pair synthesis matching section force and moment

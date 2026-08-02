@@ -4,8 +4,9 @@ Gates `sample/cessna210_flagship_bulk.bdf` and its three thin case-control drive
 the only decks in the repo that combine corrected aerodynamics, multi-subcase static
 trim, mass cases, monitor points and a transient maneuver on one realistic airplane.
 
-The AIC build is ~8 s at 324 boxes (pure-Python Biot-Savart), so the model and the
-solves are module-scoped fixtures and shared across the gates.
+The model and the solves are module-scoped fixtures and shared across the gates
+(originally forced by the pre-P9 pure-Python AIC build, ~8 s at 324 boxes; the
+vectorized build is ~100× faster, but sharing immutable results is still right).
 
 Gate map (T-numbers as in the Step 65 plan):
   T1  the three drivers parse via INCLUDE; 324 boxes; no box-ID collision; every box

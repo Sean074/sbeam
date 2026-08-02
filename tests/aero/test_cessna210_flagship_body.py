@@ -12,9 +12,9 @@ payoff: the strip perturbs the flying-surface loading at machine precision while
 cruciform moves it by O(0.1) in DCp, even though BOTH reproduce the same
 total-aircraft moments and trim to within 0.003 deg of each other.
 
-The AIC build is ~11 s at 372 boxes (pure-Python Biot-Savart), so the parses and builds
-live in `tests/aero/conftest.py` at **session** scope and are shared with the three other
-modules that use these decks.
+The parses and builds live in `tests/aero/conftest.py` at **session** scope and are
+shared with the three other modules that use these decks (originally forced by the
+pre-P9 pure-Python AIC build, ~11 s at 372 boxes; the vectorized build is ~100× faster).
 
 Gate map (B-numbers as in the Step 66 plan):
   B1  both drivers parse through the double INCLUDE; 372 boxes; no ID collision;
