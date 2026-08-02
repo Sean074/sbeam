@@ -137,6 +137,8 @@ def _summarize_sol144(sc: SubcaseControl, bulk: BulkData) -> str:
         outputs += ", hinge moments"
     if has_monitors:
         outputs += ", monitor loads"
+    if bulk.monsects:
+        outputs += ", section-cut running loads"
     if sc.aerof or sc.apres:
         outputs += ", box ΔCp/forces"
     return f"Aeroelastic {head}{mass_case}; outputs {outputs}"

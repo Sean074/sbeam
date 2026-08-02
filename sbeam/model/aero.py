@@ -1,6 +1,6 @@
 import math
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from sbeam.model.bulk_data import BulkData
@@ -339,6 +339,32 @@ class Monpnt3:
     x:     float           # reference point X in cp frame
     y:     float           # reference point Y in cp frame
     z:     float           # reference point Z in cp frame
+
+
+@dataclass
+class Monsect:
+    """Section-cut running-load monitor (sbeam extension, Monitor Phase 2).
+
+    Sweeps the MONPNT1/MONPNT3 integrand over a list of cut planes: at each
+    station the load carried across the cut is the resultant of everything on
+    the ``side`` side of the plane, taken about the plane's intercept with the
+    reference line ``origin(cid) + s·â`` (the elastic axis when ``cid`` is the
+    surface's spline CID).
+
+    ``axis`` selects which CID axis carries the stations; the default 2 (y)
+    matches the ``Spline2`` convention that the CID y-axis *is* the spline axis,
+    so one CORD2R serves both cards.  ``normal`` optionally tilts the cut plane
+    away from that axis (given in the ``cid`` frame, normalised on use).
+    """
+    name:     str                # monitor name (unique across MONPNT1/3/MONSECT)
+    label:    str                # descriptive label
+    comp:     str                # AECOMP name: SET1 => aero+inertia+reaction, AELIST => aero only
+    cid:      int                # CORD2R (or 0) defining the cut frame
+    axis:     int = 2            # station axis: 1=x, 2=y, 3=z (default y, the spline axis)
+    side:     str = "POS"        # 'POS' (station coord greater) or 'NEG' (lesser)
+    tol:      Optional[float] = None    # on-plane tolerance; None => auto from the station span
+    stations: list[float] = field(default_factory=list)   # cut stations along axis, increasing
+    normal:   Optional[tuple[float, float, float]] = None  # cut-plane normal in cid frame
 
 
 def require_aeros(bulk: "BulkData") -> Aeros:

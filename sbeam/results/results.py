@@ -61,6 +61,47 @@ class MonitorLoad:
 
 
 @dataclass
+class SectionCutStation:
+    """One cut plane of a MONSECT section-cut table.
+
+    Loads are the resultant of everything on the cut's ``side``, taken about
+    ``ref`` and reported in the cut CID frame as a raw ``[Fx, Fy, Fz, Mx, My, Mz]``
+    6-vector; ``SectionCutResult.comp_map`` reorders those into the labelled
+    ``[N, V*, V*, Mt, M*, M*]`` stress components.  No symmetry parity is ever
+    applied (unlike ``MonitorLoad``): a cut on a half model is already the
+    physical per-side load.
+    """
+    station: float                  # station coordinate along the cut axis, cid frame
+    ref:     FloatArray             # (3,) reference point in basic CID 0 (cut-plane/EA intercept)
+    totals:  FloatArray             # (6,) aero + inertia + reaction, cid frame
+    aero:    FloatArray             # (6,) aero contribution
+    inertia: FloatArray             # (6,) inertia contribution (zero for an AELIST cut / plain trim)
+    reaction: FloatArray            # (6,) SPC/SUPORT reaction contribution (zero for an AELIST cut)
+    n_members: int = 0              # grids (SET1) or boxes (AELIST) on the integrated side
+    # (6,) d/ds of the labelled components vs the previous station — the running
+    # load in the per-unit-span sense.  None at the first station.
+    d_ds: Optional[FloatArray] = None
+
+
+@dataclass
+class SectionCutResult:
+    """Per-station running-load table for one MONSECT card (Monitor Phase 2)."""
+    name:  str
+    label: str
+    comp:  str                      # AECOMP name
+    listtype: str                   # 'SET1' (aero+inertia+reaction) or 'AELIST' (aero only)
+    cid:   int                      # frame the components are reported in
+    axis:  int                      # station axis within cid (1/2/3)
+    side:  str                      # 'POS' or 'NEG'
+    stations: list[SectionCutStation] = field(default_factory=list)
+    # comp_map[i] is the index into the raw cid-frame 6-vector for labelled
+    # component i of [N, Vy, Vz, Mt, My, Mz] — see section_cuts.component_map.
+    comp_map: tuple[int, ...] = (0, 1, 2, 3, 4, 5)
+    half_model: bool = False        # AEROS SYMXZ≠0: the table is per side, never doubled
+    normal: Optional[FloatArray] = None   # (3,) cut normal in basic, when overridden
+
+
+@dataclass
 class Sol101Result:
     displacements: FloatArray         # Full displacement vector (n_dofs,)
     reactions: dict[int, FloatArray] = field(default_factory=dict)   # {gid: (6,)} SPC reactions
@@ -138,6 +179,7 @@ class Sol144TrimResult:
     hinge_moments: Optional[dict[str, dict[str, float]]] = None      # {AESURF label: {'total': HM/q at trim, <trim_label>: dHM/dδ}} about cid1 hinge axis
     trim_mode: str = "determined"             # "determined" or "over-determined" (Step 52)
     monitor_loads: Optional[dict[str, MonitorLoad]] = None      # {name: MonitorLoad} integrated section loads (MON1–MON3)
+    section_loads: Optional[dict[str, SectionCutResult]] = None  # {name: SectionCutResult} MONSECT running loads
     chordcp_echo: Optional[dict[str, Any]] = None       # Step 54 injected-operating-point echo: {'alpha_ref', 'data_machs', 'surfaces': {eid: {'FZ_Q','MY_Q','FZ_Q_VLM'}}}
     load_injection_echo: Optional[list[dict[str, Any]]] = None  # Step 64 SPLINE0/un-splined load injection: [{'source','master_grid','n_boxes','force','moment'}]; None/[] = no injection
     # --- Step 60 (MASSSET payload / mass case) ---

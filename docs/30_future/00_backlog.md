@@ -4,7 +4,7 @@ Authoritative backlog of **open** work only — bugs, planned development, and d
 in priority order. Updated as part of every session that completes a step — never deferred.
 Completed steps live in `docs/40_history/00_completed_development.md`; nothing closed is
 summarised here. When an item is promoted to a formal step, give it a step number (next free
-number is **Step 67**; Steps 62 and 63 are assigned below — Step 64 closed 2026-07-31,
+number is **Step 68**; Steps 62, 63 and 67 are assigned below — Step 64 closed 2026-07-31,
 Steps 65 and 66 closed 2026-08-01/02) and apply the step format
 (Objective, Deliverables, Test/Acceptance).
 
@@ -43,9 +43,13 @@ remaining rows keep their numbers: the P-labels are used as stable identifiers b
 cross-references throughout this document, so closing an item removes its row without
 re-flowing the rest. Renumber only when the whole table is re-ranked.
 
+**2026-08-02:** the scope of the first SOL 144 loads release was decided — see
+"Release scope" below the table. Ranks and P-labels are unchanged; the Tier 4
+yaw-rate wing term is promoted to **Step 67** and enters release scope.
+
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P8 | Monitor Phase 2 — section-cut running loads | Tier 1 | ~2–3 d | The production stress deliverable (per-station Vz/My/Mt); unblocked, independent — can run in parallel with P9–P11. |
+| P8b | Section cuts on transient (MLOADS) maneuvers | Tier 1 | ~0.5 d (critical sample) + ~1–1.5 d (full history) | Follow-on to Monitor Phase 2 (closed 2026-08-02, static only); the integrand is reusable verbatim, the work is the per-time-step output design + envelope. Better sequenced after P9–P11, which need the same envelope machinery. |
 | P9 | Vectorize `build_ajj` (broadcast Biot–Savart) (+ DEF-R6) | Tier 1 | ~1–2 d | Measured 12.3 s at 400 boxes vs 3 ms for the solve — the quadratic pure-Python AIC loop is the actual model-size constraint named in CLAUDE.md; ~100× available; paid per Mach, per correction rebuild, per viewer overlay. DEF-R6's redundant O(n³) work is the same hot path. |
 | P10 | Step 62 — modal transient solver (prescribed rigid) + fixed-Φ mass gates | Tier 1 (G0 plan) | ~4–5 d | De-risks basis/truncation/recovery before free flight; lands the fixed-Φ mass-case transient capability. Consumes P1's unified mass model. |
 | P11 | Step 63 — free-flight rigid-body coupling | Tier 1 (G0 plan) | ~4–5 d | The "different maneuvers" half of the aim: self-balancing transient maneuvers from arbitrary control input. |
@@ -67,6 +71,86 @@ the samples hygiene batch and doc-pointer sweep from the 2026-07-31 sample revie
 (~1 d total, zero-risk — details in the sample-review section below).
 **Deferred:** G0-e (with Phase G ASE), slender-body element (after Phase D), non-aero
 Phase 2/3 items.
+
+### Release scope — first SOL 144 loads release (decided 2026-08-02)
+
+Decision record for the first release claiming **SOL 144 loads on an ATR42-class
+airplane** (twin-turboprop regional: high wing, T-tail empennage, wing-mounted engines,
+M ≈ 0.45). Capability baseline already delivered: trim + derivatives, balanced maneuvers
+(Step 53), MASSSET payload sweeps (Step 60), monitor points, prescribed-rigid
+quasi-steady MLOADS (increment 1), and corrected aerodynamics reaching a trim on a
+realistic airplane (Steps 65–66). Ranks and P-labels above are unchanged; the six scope
+questions were resolved as follows:
+
+| Decision | Outcome |
+|----------|---------|
+| Transient maneuvers | **Quasi-steady only.** Ship Step 53 balanced maneuvers + the increment-1 prescribed-rigid MLOADS solver. Steps 62–63 (modal solver / free-flight coupling) stay post-release at P10/P11. |
+| Lateral cases | **In scope.** Steady sideslip/roll/aileron trim (already supported) plus yaw-rate cases — the Tier 4 yaw-rate wing term is promoted to **Step 67** (below), release-required. Formulation decided: loading-scaled force term. |
+| Propeller effects | **Corrections position, documented.** Powered effects (slipstream over the washed wing, thrust-line pitching moment) enter only via the correction cards (`W2GJ`/`WT2`/`CHORDCP`) built from powered CFD or flight-test data; no native slipstream model. The modeling-guidance + Known-Limitations text lands in `docs/20_theory/02_realistic_airplane_sol144.md` and `05a_aero_vlm.md` as part of the release hygiene batch. |
+| Fuselage | **Corrected body panels adequate.** The A9/A10 correction-matched body panels are the early-design answer (Step 66 demonstrates them on the flagship); the predictive slender-body element stays deferred past Phase D. Validity envelope documented in the theory doc's limitations section. |
+| Gust/turbulence | **Out of scope.** CS-25.341 gust/continuous turbulence needs Phase D (P16/P17); the release claims maneuver loads only and the release notes must state the exclusion explicitly. |
+| Q1 / Q3 | **Both accepted for closure** in the release hygiene batch (see the open-questions table). |
+
+**Release-required items** (everything else in this backlog is post-release):
+
+- **P9** — `build_ajj` vectorization (+ DEF-R6): an ATR42-class full-aircraft mesh
+  exceeds the measured 400-box / 12.3 s case; the AIC loop is the practical size
+  constraint.
+- **DEF-M12** — correction-card export field width: the corrected-BDF export sits on
+  the release-critical corrections workflow.
+- **Step 67** — quasi-steady yaw-rate wing term (below).
+- **Release hygiene batch** — DEF-R7 (WT1 removal, "at a release boundary" per its own
+  note), DEF-M13 (f06 column drift), the sample-hygiene + doc-pointer sweep
+  (sample-review section), the propeller-effects modeling-position docs (above), and
+  closing **Q1** (accept + document the CID-0 SPCFORCE convention — it matches NASTRAN)
+  and **Q3** (Known-Limitations line for the GRAV CID=0 restriction).
+
+**Explicitly out of release scope:** Steps 62/63 (P10/P11), viewer authoring UI (P12),
+P13–P18, DEF-M14, and every Tier 2–4 item not named above.
+
+### Step 67 (release-required) — Quasi-steady yaw-rate wing term
+
+Promoted 2026-08-02 from Tier 4 by the release-scope decision (lateral maneuver cases —
+rudder kick, engine-out, steady yawing flight — are in release scope).
+
+**Strategic note:** the quasi-steady rate-aero path (`build_djx` rate columns) is to
+remain a **fully functional, supported option** even after the DLM (Phase D) lands — it
+is the cheap maneuver-loads method and must be complete in its own right, not a stopgap.
+
+**Objective.** Complete the quasi-steady yaw-rate aerodynamics. The theory
+(`docs/20_theory/01_aeroelastics_theory.md` §7.2, Eq. 28) gives yaw rate *two* effects:
+the fin sidewash Δβ(x) = r(x−x_ref)/V∞ **and** the spanwise dynamic-pressure asymmetry
+ΔU(y) = −r·y on the wing (the advancing wing sees higher q∞). `build_djx`
+(`sbeam/aero/integration.py`, `YAW` column) implements only the fin sidewash — the
+column vanishes on horizontal panels, so the wing contribution to C_nr and the
+cross-derivative C_lr are missing.
+
+**Formulation (decided 2026-08-02): loading-scaled force term.** The asymmetry is an
+edgewise-velocity (dynamic-pressure) perturbation, not a normalwash, so it cannot be a
+constant normalwash column. The per-box yaw-rate force increment is
+`Δf_box = 2·(ΔU/U)·f_box,steady = −2·(r·y/V)·f_box,steady`, evaluated **at the trim
+loading**. This is the rigorous form — C_lr genuinely scales with the trim CL (strip
+theory: C_lr ≈ CL/4 for near-elliptic loading) — chosen over the equivalent-incidence
+lift-slope proxy (rejected: the proxy is heuristic and C_lr would not track trim CL).
+Design consequence: the wing yaw-rate contribution is a loading-linear force-side
+operator rather than a fixed `djx` column, so it is trim-state-dependent — document the
+evaluation point; the fin sidewash normalwash column is unchanged and the two compose.
+
+**Deliverables.** The force-side wing ΔU term composed with the existing `YAW` fin
+sidewash; feeds SOL 144 trim (C_nr, C_lr) and the Phase G0 transient solver (which
+consumes the same column) unchanged; docs — theory §7.2/Eq. 28 note and
+`05a_aero_vlm.md` card/column table.
+
+**Test/Acceptance.** Full-span wing-only model: the yaw-rate column currently produces
+zero load; after the change, a nonzero C_nr (drag-asymmetry sign) and C_lr consistent
+with the strip-theory estimate at the trim CL (≈ CL/4 for near-elliptic loading);
+fin-only C_nr unchanged; PITCH/ROLL columns and all planar longitudinal results
+bit-identical.
+
+**Related known gap (stays a G0-d follow-on):** the Phase G0 transient RHS has no
+elastic-velocity downwash ẇ/V term (`maneuver_qs.py` `w_struct` is displacement-slope
+only) — aerodynamic damping of the flexible modes is absent; covered by the G0-d
+Level 2–4 follow-ons.
 
 ### Design-review verdicts on the `30_future` documents (2026-07-05)
 
@@ -121,8 +205,8 @@ Assigned owners — later features **reuse, never re-extract**:
 
 | ID | Question / Risk | Severity | Status |
 |----|-----------------|----------|--------|
-| Q1 | SPC reaction f06 output: NASTRAN outputs SPCFORCE in the global (CID 0) frame, not the CD displacement frame. Current code matches this convention (no CD transform on reactions). Verify intentional. | Low | Open |
-| Q3 | GRAV CID restriction (only CID=0 supported, parser raises): acceptable for Phase 1 but not documented in "Known Limitations". | Low | Open |
+| Q1 | SPC reaction f06 output: NASTRAN outputs SPCFORCE in the global (CID 0) frame, not the CD displacement frame. Current code matches this convention (no CD transform on reactions). Verify intentional. | Low | Accepted 2026-08-02 — convention is intentional (matches NASTRAN); document + close in the release hygiene batch |
+| Q3 | GRAV CID restriction (only CID=0 supported, parser raises): acceptable for Phase 1 but not documented in "Known Limitations". | Low | Accepted 2026-08-02 — add the Known-Limitations line; close in the release hygiene batch |
 
 ---
 
@@ -281,12 +365,12 @@ The four closed-form anchors of that evidence basis are now **enforced by CI** �
 
 ---
 
-## Tier 1 — SOL 144 production process (P8–P12)
+## Tier 1 — SOL 144 production process (P8b–P12)
 
 The goal state: SOL 144 supports early design analysis end-to-end — static trim and balanced
 maneuvers (done), **payload-condition sweeps** (Step 60, closed 2026-07-30), **transient maneuvers with a modal
-basis** (Steps 61–63), **section loads for stress** (Monitor Phase 2), and a **closed
-authoring loop** (viewer UI).
+basis** (Steps 61–63), **section loads for stress** (Monitor Phase 2, closed 2026-08-02 —
+static; transient is P8b), and a **closed authoring loop** (viewer UI).
 
 ### Phase G0 — transient maneuver loads (DLM-free): detailed plan (2026-07-05, re-prioritised in this review)
 
@@ -470,15 +554,18 @@ overshoot vs open loop; zero-gain identity to Step 63. **Deferred with Phase G.*
     (e.g. prescribed-α studies)? Current answer: hard error under the modal solver; the legacy
     solver covers prescribed-rigid studies. Revisit if a use case appears.
 
-### Monitor points Phase 2 (P8) — Section-cut running loads
+### Section cuts on transient maneuvers (P8b)
 
-The actual stress-team deliverable: per-station `{Vz, My, Mt}` tables along the wing,
-HTP, VTP. Cut convention: plane normal along the spline-axis `x̂` at user-specified
-stations (general normal as override). Builds directly on MON3's per-grid tally — a
-section cut is "sum the per-grid loads outboard of the cut plane, project to EA
-intercept". Unblocked (Phase 1 + Step 53 both done); independent of the G0 steps — can
-land in parallel. With Step 60, section-cut tables per MASSSET complete the early-design
-loads picture.
+Monitor Phase 2 (`MONSECT`) closed 2026-08-02 for **static** SOL 144 subcases — see
+`docs/40_history/06_sol144_static_aeroelastic.md` and `designs/monsect_section_cuts.md`.
+The remaining piece is the **transient (`MLOADS`) counterpart**: the integration in
+`results/section_cuts.py` is reusable verbatim at each output time, but the deliverable
+becomes a per-time-step table — a third dimension in the f06 block, the CSV schema and
+the viewer plot, plus a critical-station / critical-time envelope. Scope the
+**critical-sample cut first** (one table at the MLDPRNT critical step, reusing the static
+schema unchanged, ~0.5 d); the full time-history table and envelope follow (~1–1.5 d) and
+are better sequenced after the envelope-sweep work (P9–P11), which will want the same
+max/min-with-driving-case machinery.
 
 ### Viewer (P12) — SOL 144 / MLOADS case authoring UI
 
@@ -569,30 +656,11 @@ the Phase 1 monitor data model. Together these complete the dynamic loads proces
 
 ## Tier 4 — Lower priority / opportunistic
 
-### Quasi-steady rate aerodynamics — yaw-rate wing term (small)
+### Quasi-steady rate aerodynamics — yaw-rate wing term
 
-**Strategic note:** the quasi-steady rate-aero path (`build_djx` rate columns) is to remain a
-**fully functional, supported option** even after the DLM (Phase D) lands — it is the cheap
-maneuver-loads method and must be complete in its own right, not a stopgap.
-
-**Gap:** the theory (`docs/20_theory/01_aeroelastics_theory.md` §7.2, Eq. 28) gives yaw rate *two*
-effects: the fin sidewash Δβ(x) = r(x−x_ref)/V∞ **and** the spanwise dynamic-pressure asymmetry
-ΔU(y) = −r·y on the wing (the advancing wing sees higher q∞). `build_djx`
-(`sbeam/aero/integration.py`, `YAW` column) implements only the fin sidewash — the column vanishes
-on horizontal panels, so the wing contribution to C_nr and the cross-derivative C_lr are missing.
-
-- **Scope:** add the wing ΔU term to the `YAW` column. Note it is a *dynamic-pressure* (edgewise
-  velocity) perturbation, not a normalwash — for the linear VLM it enters as an equivalent
-  incidence increment Δw = −(2/bref)·y·(local lift-slope proxy) or, more rigorously, as a per-box
-  freestream scaling of the steady loading; pick and document one formulation. Feeds SOL 144 trim
-  (C_nr, C_lr) and the Phase G0 transient solver (which consumes the same column) unchanged.
-- **Related known gap (same completeness aim):** the Phase G0 transient RHS has no elastic-velocity
-  downwash ẇ/V term (`maneuver_qs.py` `w_struct` is displacement-slope only) — aerodynamic damping
-  of the flexible modes is absent; covered by the G0-d Level 2–4 follow-ons.
-- **Docs:** update §7.2/Eq. 28 note and `05a_aero_vlm.md` card/column table when implemented.
-- **Test/acceptance:** full-span wing-only model — yaw-rate column currently produces zero load;
-  after the change, a nonzero C_nr (drag-asymmetry sign) and C_lr consistent with strip-theory
-  estimates; fin-only C_nr unchanged.
+**Promoted to Step 67 (release-required) 2026-08-02** — see the release-scope section
+above for the full step (Objective, formulation decision, Deliverables,
+Test/Acceptance).
 
 ### Body fence / no-through-flow boundary condition via image vortices (small, opportunistic)
 

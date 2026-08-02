@@ -102,6 +102,7 @@ def main() -> None:
     if sol144_results:
         from sbeam.results.load_export import (
             write_aero_load_cards, write_maneuver_load_cards, write_monitor_csv,
+            write_section_loads_csv,
         )
         loads_path = bdf_path.with_suffix(".aero_loads.bdf")
         write_aero_load_cards(str(loads_path), bulk, sol144_results)
@@ -115,6 +116,11 @@ def main() -> None:
             mon_path = bdf_path.with_suffix(".monitor_loads.csv")
             write_monitor_csv(str(mon_path), sol144_results)
             print(f"Written: {mon_path}")
+        # Monitor Phase 2: MONSECT per-station running loads (one CSV across subcases).
+        if any(r.section_loads for r in sol144_results.values()):
+            sec_path = bdf_path.with_suffix(".section_loads.csv")
+            write_section_loads_csv(str(sec_path), sol144_results)
+            print(f"Written: {sec_path}")
 
     # Phase G0: transient maneuver-loads time histories (MLDPRNT) + critical-step
     # net (aero + inertial) FORCE/MOMENT export.

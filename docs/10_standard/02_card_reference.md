@@ -1736,11 +1736,14 @@ TRIMCON, 31, CM, LE, 0.02
 
 Integrated section-load output for the structures/loads handoff. See
 `docs/10_standard/05c_sol144_maneuver.md` for the integration semantics.
+`MONPNT1`/`MONPNT3` give one resultant per named collection; `MONSECT` (Phase 2) sweeps
+that same integrand over a list of cut planes for per-station running loads.
 
 ### AECOMP — Named box / grid collection
 
 Resolves a monitor's component name to either an AELIST box collection (for MONPNT1)
-or a SET1 grid collection (for MONPNT3). Continuations add more list IDs.
+or a SET1 grid collection (for MONPNT3). `MONSECT` accepts either type. Continuations
+add more list IDs.
 
 **Format:**
 ```
@@ -1749,7 +1752,7 @@ AECOMP  NAME  LISTTYPE  LISTID1  LISTID2  ...
 
 | Field | Type | Description |
 |-------|------|-------------|
-| NAME | str | Component name (referenced by MONPNT1/MONPNT3 `COMP`) |
+| NAME | str | Component name (referenced by MONPNT1/MONPNT3/MONSECT `COMP`) |
 | LISTTYPE | str | `AELIST` (box IDs) or `SET1` (grid IDs) |
 | LISTID1… | int | One or more AELIST SIDs or SET1 SIDs |
 
@@ -1789,6 +1792,76 @@ non-zero) must exist in CORD2R.
 ```
 AECOMP,  WINGEA,  SET1,  1100
 MONPNT3, MWINGEA, RIGHT WING, 35, WINGEA, 0, 15.0, 0.0, 0.0
+```
+
+### MONSECT — Section-cut running loads (sbeam extension)
+
+Sweeps the MONPNT1/MONPNT3 integrand over a list of cut planes, producing the
+per-station `{shear, bending, torque}` table a stress group sizes a surface from.
+Where a `MONPNT3` gives **one** resultant, a `MONSECT` gives **one per station**.
+
+![Section-cut geometry and component labelling](../figures/section_cut.svg)
+
+**Format:**
+```
+MONSECT  NAME  LABEL  COMP  CID  AXIS  SIDE  TOL
++        STA1  STA2   STA3  STA4 STA5  STA6  STA7  STA8
++        STA9  ...
++        NORMAL  NX  NY  NZ                     $ optional normal override
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| NAME | str | — | Monitor name; unique across **MONPNT1, MONPNT3 and MONSECT** |
+| LABEL | str | blank | Descriptive label |
+| COMP | str | — | AECOMP name. `SET1` type ⇒ aero + inertia + reaction; `AELIST` type ⇒ aero only |
+| CID | int | — | CORD2R (or 0) defining the cut frame; stations and reported components are in it |
+| AXIS | int | 2 | Station axis within CID: 1 = x, 2 = y, 3 = z |
+| SIDE | str | POS | `POS` integrates members with station coordinate **greater** than the cut; `NEG` the lesser |
+| TOL | float | auto | On-plane tolerance. Default `1e-6 × (STA_max − STA_min)`, floored at `1e-9` |
+| STAi | float | — | Cut stations along `AXIS`, in the CID frame. **Strictly increasing**, at least one |
+| NORMAL | — | — | Optional continuation: cut-plane normal `NX, NY, NZ` in the CID frame (normalised internally) |
+
+**Why `AXIS` defaults to 2 (CID y).** That is sbeam's `SPLINE2` convention — the CID
+y-axis *is* the spline axis — so a `MONSECT` can point at the CORD2R the surface's
+`SPLINE2` already uses. The stations then run along the elastic axis and every cut's
+moment reference lands on it, which is the reference a stress group wants.
+
+**Reference point.** Each station's moment reference is the cut plane's intercept with
+the reference line `origin(CID) + s·â`, i.e. `origin + (s / (â·n̂))·â`. With the default
+normal this is simply `origin + s·â`. Because the stations and the reference line share
+the axis, this stays correct on a swept surface.
+
+**Component labelling.** Only two components carry a role name: the force along the
+station axis (`N`) and the moment about it (`Mt`). The other four keep the name of the
+CID axis they act along or about, so nothing is silently renamed. With `AXIS = 2` the
+table is `N(Fy), Vx, Vz, Mt(My), Mx, Mz` — `Vz` is the vertical shear and `Mx` the wing
+bending moment. The f06 block prints the mapping in use in its header.
+
+**Conventions:**
+
+- A member **within `TOL` of a cut plane counts as inboard** (the test is strictly
+  `s > station + TOL` for `SIDE = POS`). A grid load is a point load, so a cut *at* a
+  node must exclude it for the outboard free body's resultant to equal the beam internal
+  force there. Any member inside `TOL` raises a warning naming it and the station.
+- **No symmetry parity is ever applied.** Unlike `MONPNT1`/`MONPNT3`, a `MONSECT` is
+  never doubled for an `AEROS SYMXZ ≠ 0` half model: a wing cut is already the physical
+  per-side load. Output is annotated `HALF-MODEL (LOADS PER SIDE)` instead.
+- A station outboard of every member returns an exact zero row, not an error — a useful
+  closure check.
+
+**Cross-reference:** `COMP` must exist in AECOMP; `CID` (if non-zero) must exist in
+CORD2R; stations must be strictly increasing; `NORMAL` must not be near-perpendicular to
+the station axis (`|n̂·â| ≥ 0.1`), or the plane has no usable intercept with the
+reference line.
+
+**Example** (right wing of `sample/cessna210_flagship_bulk.bdf`, reusing the wing's
+`SPLINE2` CID 991 as the cut frame):
+```
+SET1,    1300, 11, 12
+AECOMP,  RWINGEA, SET1, 1300
+MONSECT, SECRW, RIGHT WING LOADS, RWINGEA, 991
++, 0.30, 1.50, 4.20, 6.50
 ```
 
 ---
@@ -2064,6 +2137,7 @@ are the exception: they refer to **element local axes** (1 = axial, 4 = torsion,
 | AECOMP | LISTTYPE must be `AELIST` or `SET1`; every list ID must exist in that table |
 | MONPNT1 | COMP must exist in AECOMP as an `AELIST`-type collection; CP (if non-zero) must exist in CORD2R |
 | MONPNT3 | COMP must exist in AECOMP as a `SET1`-type collection; CP (if non-zero) must exist in CORD2R |
+| MONSECT | COMP must exist in AECOMP (either list type); CID (if non-zero) must exist in CORD2R; AXIS ∈ {1,2,3}; SIDE ∈ {POS,NEG}; ≥ 1 strictly increasing station; NAME unique across all monitor cards; NORMAL (if given) non-degenerate against the station axis |
 | TABLED1 | At least two (x, y) points; abscissae strictly increasing; only `LINEAR` axes honoured |
 | MLDTIME | DT must be positive; TEND must exceed T0 |
 | MLDCOMD | Every label must be defined by AESTAT or AESURF; every TABID must exist in TABLED1 |

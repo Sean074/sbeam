@@ -24,7 +24,7 @@ ones that must track code changes:
 | `docs/10_standard/05_aeroelastics.md` | Aeroelastics **index** (architecture, validation status, card table; split by area 2026-07-05) |
 | `docs/10_standard/05a_aero_vlm.md` | Phase A — VLM aerodynamics, AIC corrections, body panels, viewer aero tab |
 | `docs/10_standard/05b_splining.md` | Phase B — structure ↔ aero splining |
-| `docs/10_standard/05c_sol144_maneuver.md` | Phases C + G0 — SOL 144 trim, output/exports, transient maneuver loads (MLOADS), monitor points |
+| `docs/10_standard/05c_sol144_maneuver.md` | Phases C + G0 — SOL 144 trim, output/exports, transient maneuver loads (MLOADS), monitor points, MONSECT section-cut running loads |
 | `docs/10_standard/06_viewer.md` | Pre/post-processing viewer (Streamlit + Plotly) |
 | `docs/10_standard/07_code_review_process.md` | Critical code-review process |
 | `docs/10_standard/08_release_process.md` | Versioning and release process |
@@ -82,7 +82,7 @@ Phase 1 uses **Euler-Bernoulli beam theory** (shear deformation neglected). Each
 | Loads | `FORCE`, `MOMENT`, `LOAD` (linear combination), `GRAV` (body acceleration; CID=0 only; f = M×a) |
 | Eigenvalue | `EIGRL` (SOL 103: modes, frequency range, normalization) |
 | Transient maneuver (Phase G0) | `MLOADS` (driver), `MLDTRIM` (initial-condition TRIM sid), `MLDCOMD` (pilot command label → `TABLED1`), `MLDTIME` (t0/tend/dt/tout), `MLDPRNT` (ASCII output), `TABLED1` (tabular function) |
-| Monitor points (SOL 144) | `MONPNT1` (aero-only integrated section load), `MONPNT3` (aero + inertia + reaction, splined to structural grids), `AECOMP` (named AELIST-box / SET1-grid collection) |
+| Monitor points (SOL 144) | `MONPNT1` (aero-only integrated section load), `MONPNT3` (aero + inertia + reaction, splined to structural grids), `MONSECT` (section-cut running loads — per-station shear/bending/torque table, Monitor Phase 2), `AECOMP` (named AELIST-box / SET1-grid collection) |
 
 ### Case Control Cards (Phase 1)
 
@@ -107,7 +107,7 @@ sbeam/
 ├── model/          # grid.py, element.py, property.py, material.py, load.py, constraint.py, mass.py, mass_overlay.py (MASSSET mass cases), aero.py, maneuver.py (ZAERO MLOADS cards), maneuver_presets.py
 ├── assembly/       # stiffness.py, mass_matrix.py, load_vector.py, coord_transform.py, rbe3.py, reduction.py (shared RBE3+SPC a-set reduction), rigid_body.py (geometric rigid-body vectors shared by Φ_r and M_ax)
 ├── solver/         # sol101.py, sol103.py, sol144.py (static aeroelastic trim), maneuver_qs.py (Phase G0 transient maneuver loads)
-├── results/        # results.py, f06_writer.py, load_export.py, monitor_points.py (MONPNT1/MONPNT3 integrated section loads), maneuver_output.py (Phase G0 time histories + critical-step export)
+├── results/        # results.py, f06_writer.py, load_export.py, monitor_points.py (MONPNT1/MONPNT3 integrated section loads), section_cuts.py (MONSECT per-station running loads), maneuver_output.py (Phase G0 time histories + critical-step export)
 ├── gpwg.py         # Mass and CG (GPWG)
 ├── aero/           # panel.py, vlm.py, integration.py, corrections.py, section_correction.py (W2GJ+WT2 section force/moment synthesis), section_data.py (spanwise section-coefficient ingestion), body_correction.py (cruciform + decoupled-strip body-panel total-aircraft moment match), strip.py (decoupled strip body panels — PSTRIP/STRIPK, zero-coupling diagonal AIC block), aero_model.py
 └── viewer/         # app.py, geometry.py, results_view.py, case_control_ui.py, aero_view.py, aero_correction_view.py (CFD/test section data → correction cards + full corrected-BDF export), format_utils.py (5-sig-fig table/metric formatting)
@@ -131,7 +131,7 @@ Mass and CG computation is called **GPWG** (Grid Point Weight Generator), not "O
 
 - **SOL 101:** nodal displacements, SPC reactions, applied load echo, CBAR end forces/moments, CBAR stresses at recovery points, CBUSH element forces (global coordinates)
 - **SOL 103:** natural frequencies (Hz and rad/s), normalised mode shapes, modal mass fractions
-- **SOL 144** (static aeroelastic trim, Phase C): trim variables, rigid + elastic-restrained + elastic-unrestrained (mean-axis, AE8b) stability derivatives, per-AESURF hinge-moment derivatives (about the `cid1` hinge axis), all six aerodynamic totals (body-axis CZ/CX/CY + wind-axis CL, and CMx/CMy/CMz), critical divergence dynamic pressure, displacements/CBAR loads, and (on `AEROF`/`APRES` request) per-box ΔCp and forces. Exports trimmed aero flight loads as `FORCE`/`MOMENT` cards (`<stem>.aero_loads.bdf`). For balanced maneuvers (Step 53) it also emits the net (aero + inertial) maneuver load (`net_loads`/`inertial_loads`, with per-case force/moment closure) and exports it as `<stem>.maneuver_loads.bdf`. With `MONPNT1`/`MONPNT3` cards present it emits a `MONITOR POINT INTEGRATED LOADS` f06 block and a per-run `<stem>.monitor_loads.csv` (aero-only / aero+inertia+reaction integrated section loads with an `Fz_aero/Fz_inertia/Fz_react` breakdown)
+- **SOL 144** (static aeroelastic trim, Phase C): trim variables, rigid + elastic-restrained + elastic-unrestrained (mean-axis, AE8b) stability derivatives, per-AESURF hinge-moment derivatives (about the `cid1` hinge axis), all six aerodynamic totals (body-axis CZ/CX/CY + wind-axis CL, and CMx/CMy/CMz), critical divergence dynamic pressure, displacements/CBAR loads, and (on `AEROF`/`APRES` request) per-box ΔCp and forces. Exports trimmed aero flight loads as `FORCE`/`MOMENT` cards (`<stem>.aero_loads.bdf`). For balanced maneuvers (Step 53) it also emits the net (aero + inertial) maneuver load (`net_loads`/`inertial_loads`, with per-case force/moment closure) and exports it as `<stem>.maneuver_loads.bdf`. With `MONPNT1`/`MONPNT3` cards present it emits a `MONITOR POINT INTEGRATED LOADS` f06 block and a per-run `<stem>.monitor_loads.csv` (aero-only / aero+inertia+reaction integrated section loads with an `Fz_aero/Fz_inertia/Fz_react` breakdown). With `MONSECT` cards present it emits a `SECTION CUT RUNNING LOADS` f06 block and a per-run `<stem>.section_loads.csv` — the per-station shear/bending/torque table for stress, swept from the same integrand over user-specified cut planes (Monitor Phase 2)
 - **SOL 144 transient maneuver loads** (Phase G0, DLM-free): a SOL 144 subcase with an `MLOADS = sid` request runs `solver/maneuver_qs.py` — a Level-1 quasi-steady, open-loop, restrained-l-set Newmark-β time integration seeded from a Step 53 trim (`MLDTRIM`). Per output time it recovers displacements, CBAR loads, instantaneous aero loads, and the net (aero + inertial) maneuver load. Writes a transient-maneuver f06 block, an MLDPRNT ASCII time-history (`<stem>.mldprnt.txt`), and the critical-sample net-load `FORCE`/`MOMENT` export (`<stem>.maneuver_qs_loads.bdf`); the viewer offers the two ASCII/BDF exports as download buttons. ZAERO card set: `MLOADS`/`MLDTRIM`/`MLDCOMD`/`MLDTIME`/`MLDPRNT` + `TABLED1`. Sample deck: `sample/ha144a_fullspan_mloads.bdf`.
 
 ## Verification Test Cases

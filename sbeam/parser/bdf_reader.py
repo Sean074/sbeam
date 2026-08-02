@@ -14,7 +14,7 @@ from sbeam.model.constraint import Spc, Spc1, Suport
 from sbeam.model.aero import (
     Aeros, Caero1, Paero1, Pstrip, Stripk, Aefact, W2gj, Wkk, Aecorr, Chordcp, Set1,
     Spline2, Attach, Spline0, Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
-    Aecomp, Monpnt1, Monpnt3,
+    Aecomp, Monpnt1, Monpnt3, Monsect,
 )
 from sbeam.model.maneuver import Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads
 from sbeam.parser.bdf_field import parse_real
@@ -874,6 +874,91 @@ def _handle_monpnt3(fields: list[str], bulk: BulkData) -> None:
                                   cp=cp, x=x, y=y, z=z)
 
 
+def _handle_monsect(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
+    """MONSECT NAME LABEL COMP CID AXIS SIDE TOL + station continuations.
+
+    Continuation lines carry the cut stations, except one optionally led by the
+    literal ``NORMAL`` which carries the cut-plane normal in the CID frame::
+
+        MONSECT, SECRW, RIGHT WING, RWING, 70, 2, POS
+        +,       0.30, 1.20, 2.10, 3.00
+        +,       NORMAL, 0.26, 1.0, 0.0
+
+    The keyword makes the normal line unambiguous against a station line — a
+    station list is pure numbers, so a leading alpha token cannot be misread.
+    """
+    name  = fields[1].strip()
+    label = fields[2].strip() if len(fields) > 2 else ""
+    comp  = fields[3].strip() if len(fields) > 3 else ""
+    cid   = _to_int_opt(fields[4]) if len(fields) > 4 else 0
+    axis  = _to_int(fields[5]) if len(fields) > 5 and fields[5].strip() else 2
+    side  = fields[6].strip().upper() if len(fields) > 6 and fields[6].strip() else "POS"
+    tol   = _to_float(fields[7]) if len(fields) > 7 and fields[7].strip() else None
+
+    if not name:
+        raise ValueError("MONSECT: NAME must not be blank")
+    if name in bulk.monsects:
+        raise ValueError(f"Duplicate MONSECT NAME {name}")
+    if name in bulk.monpnt1s or name in bulk.monpnt3s:
+        raise ValueError(
+            f"MONSECT {name}: NAME collides with an existing MONPNT1/MONPNT3 — "
+            "monitor names must be unique across all monitor cards"
+        )
+    if axis not in (1, 2, 3):
+        raise ValueError(f"MONSECT {name}: AXIS must be 1, 2 or 3 (got {axis})")
+    if side not in ("POS", "NEG"):
+        raise ValueError(f"MONSECT {name}: SIDE must be 'POS' or 'NEG' (got '{side}')")
+    if tol is not None and tol < 0.0:
+        raise ValueError(f"MONSECT {name}: TOL must be non-negative (got {tol})")
+
+    stations: list[float] = []
+    normal: Optional[tuple[float, float, float]] = None
+    for cont in conts:
+        tokens = [f for f in cont[1:] if f.strip()]
+        if not tokens:
+            continue
+        if tokens[0].strip().upper() == "NORMAL":
+            if normal is not None:
+                raise ValueError(f"MONSECT {name}: more than one NORMAL continuation")
+            comps = [_to_float(t) for t in tokens[1:4]]
+            if len(comps) != 3:
+                raise ValueError(
+                    f"MONSECT {name}: NORMAL needs three components NX, NY, NZ"
+                )
+            normal = (comps[0], comps[1], comps[2])
+            continue
+        stations += [_to_float(t) for t in tokens]
+
+    if not stations:
+        raise ValueError(f"MONSECT {name}: at least one station is required")
+    for prev, cur in zip(stations, stations[1:]):
+        if cur <= prev:
+            raise ValueError(
+                f"MONSECT {name}: stations must be strictly increasing "
+                f"({prev:g} followed by {cur:g})"
+            )
+    if normal is not None:
+        nsq = sum(c * c for c in normal)
+        if nsq < 1e-24:
+            raise ValueError(f"MONSECT {name}: NORMAL vector is zero-length")
+        # The station axis and the normal are both given in the CID frame, so
+        # the cosine needs no coordinate resolution.  A cut plane near-parallel
+        # to the reference line either misses it or meets it at an
+        # ill-conditioned point, so the reference point would be meaningless.
+        cos_an = abs(normal[axis - 1]) / nsq ** 0.5
+        if cos_an < 0.1:
+            raise ValueError(
+                f"MONSECT {name}: NORMAL is within 84 deg of perpendicular to the "
+                f"AXIS={axis} reference line (|cos|={cos_an:.3g} < 0.1) — the cut "
+                "plane has no usable intercept with it"
+            )
+
+    bulk.monsects[name] = Monsect(
+        name=name, label=label, comp=comp, cid=cid, axis=axis, side=side,
+        tol=tol, stations=stations, normal=normal,
+    )
+
+
 def _handle_trim(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     sid  = _to_int(fields[1])
     mach = _to_float(fields[2]) if len(fields) > 2 else 0.0
@@ -1430,6 +1515,20 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
             _handle_monpnt1(fields, bulk)
         elif keyword == "MONPNT3":
             _handle_monpnt3(fields, bulk)
+        elif keyword == "MONSECT":
+            monsect_conts: list[list[str]] = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    monsect_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_monsect(fields, monsect_conts, bulk)
         elif keyword == "SUPORT":
             _handle_suport(fields, bulk)
         elif keyword == "TABLED1":
@@ -1578,6 +1677,11 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
             )
         if mon.cp and mon.cp not in bulk.cord2rs:
             raise ValueError(f"MONPNT3 {name}: CP={mon.cp} not found in CORD2R")
+    for name, cut in bulk.monsects.items():
+        if cut.comp not in bulk.aecomps:
+            raise ValueError(f"MONSECT {name}: COMP '{cut.comp}' not found in AECOMP")
+        if cut.cid and cut.cid not in bulk.cord2rs:
+            raise ValueError(f"MONSECT {name}: CID={cut.cid} not found in CORD2R")
 
     # Validate TRIM label cross-references and emit DOF-count diagnostics
     all_trim_labels = (

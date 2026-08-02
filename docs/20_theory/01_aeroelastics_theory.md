@@ -1342,6 +1342,85 @@ apparent mass, no lag (those are the §7.4–7.6 follow-ons). Because the RHS eq
 RHS when $\delta(t)=\delta_{\text{trim}}$, the steady state of the integration reproduces the
 balanced maneuver load exactly. Validity is the same $k \lesssim 0.05$–$0.1$ limit of §7.7.
 
+### 7.3a Section loads — the free-body cut
+
+The balanced maneuver of §7.3 delivers a *field* of net grid loads. What sizes a structure is
+the **internal** load that field induces: at each spanwise station, the shear, bending moment
+and torque the structure must carry across a cut. The link between the two is free-body
+equilibrium, and nothing more.
+
+Cut the structure with a plane, and consider the piece on one side of it in isolation. That
+piece is in equilibrium under (i) the external loads applied to it and (ii) the internal load
+the rest of the structure transmits across the cut face. Hence the internal load at the cut is
+the negative of the applied resultant, i.e. — up to the sign convention of which face one
+reports — the **resultant of everything on one side of the plane**, taken about a point on the
+plane:
+
+$$
+F(s) \;=\; \sum_{g \,\in\, \Omega^{+}(s)} f_g ,
+\qquad
+M(s) \;=\; \sum_{g \,\in\, \Omega^{+}(s)} \Bigl[\, m_g + (r_g - r_\text{ref}(s)) \times f_g \,\Bigr] ,
+\tag{30a}
+$$
+
+where $\Omega^{+}(s) = \{\,g : (r_g - P)\cdot\hat n > s\,\}$ is the set of grids outboard of the
+cut plane at station $s$, and $f_g$, $m_g$ are the **net** (aerodynamic + inertial + reaction)
+loads of §7.3 at grid $g$. No new mechanics enters: Equation (30a) is a re-summation of the
+same load field, so its correctness is inherited from the trim.
+
+![Section-cut geometry and component labelling](../figures/section_cut.svg)
+
+*Figure 7 — (A) The cut. Stations are measured along the axis $\hat a$ of a chosen coordinate
+system; the cut plane at station $s$ has normal $\hat n$ (equal to $\hat a$ unless overridden),
+and the moment reference is its intercept with the reference line $P + t\,\hat a$. When that
+line is the elastic axis, the reported moments are EA-referenced. (B) Component labelling: the
+force along the station axis is the axial load $N$ and the moment about it the torque $M_t$;
+the remaining four components are named for the coordinate axis they act along or about.*
+
+Three consequences of Equation (30a) are worth stating, because each is a place the
+implementation could go quietly wrong.
+
+**The reference point must ride the station.** Using a fixed reference (say the CID origin)
+instead of $r_\text{ref}(s)$ yields a smooth, plausible, and wrong table, differing by
+$(r_\text{ref}(s) - r_0) \times F(s)$ — of order $s\,V$, i.e. the same order as the bending
+moment being reported. The reference line construction
+
+$$
+r_\text{ref}(s) \;=\; P + \frac{s}{\hat a \cdot \hat n}\,\hat a
+\tag{30b}
+$$
+
+places the reference on both the plane and the axis; with $\hat n = \hat a$ it reduces to
+$P + s\,\hat a$. Sharing the axis between the stations and the reference line is what keeps
+this correct on a **swept** surface, where a plane normal to the elastic axis is not a plane of
+constant $y$.
+
+**A point load is either side of the cut, never split.** The grid loads of §7.3 are lumped, so
+$F(s)$ and $M(s)$ are piecewise constant/linear in $s$ with a step at each grid station. A cut
+placed exactly at a node is therefore ambiguous by that grid's entire load. Resolving it
+*inboard* is what makes the discrete statement of equilibrium exact: the outboard free body
+then terminates at the node, and its resultant equals the beam element's internal end force
+there — which is computed by a completely different route, $K\,u$. That identity is the
+strongest available check on Equation (30a) and is the V-SEC2 gate.
+
+**Symmetry does not double a section cut.** A whole-airplane resultant on a half model is
+reconstructed by doubling the symmetric components and cancelling the antisymmetric ones
+(§ Monitor Points, `05c`). A wing section cut is not a whole-airplane quantity: it is already
+the per-side internal load, its reference is deliberately off the symmetry plane, and the
+cancellation argument does not apply. Half-model results are annotated, never scaled.
+
+The same construction applies unchanged to an aerodynamic-box collection, with $f_g$ the box
+force at its force point and $m_g = 0$; that gives the *airload* distribution rather than the
+internal load. The two agree over a whole collection by spline force/moment conservation (§4),
+but not station by station: near a cut plane a box and the grids its load splines to can fall on
+opposite sides.
+
+*Implemented (Monitor Phase 2, `results/section_cuts.py`, card `MONSECT`):* see
+`docs/10_standard/05c_sol144_maneuver.md`. Because the inertia term of Equation (30a) is the
+§7.3 net load, a `MASSSET` payload sweep produces a station table per mass case with no
+additional input — which is how the classic **wing-fuel bending relief** (fuel outboard reduces
+the net root bending even as the airplane gets heavier) falls out of the tables directly.
+
 ### 7.4 Apparent (added) mass — the non-circulatory loads
 
 When the motion is fast enough that acceleration matters, a thin airfoil carries

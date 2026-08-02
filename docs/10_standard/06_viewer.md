@@ -324,7 +324,8 @@ leads with a SOL-aware, human-readable summary — SOL number + title and one li
 describing what runs and what is output (e.g. "Subcase 1 — Aeroelastic trim @ q=51, M=0
 (TRIM 1); DIVERG 1; outputs trim vars, stability derivatives, aero totals, q_div,
 displacements"). The SOL 144 summary is bulk-aware (AC5): it appends "hinge moments" when
-AESURF cards are present, "monitor loads" when MONPNT1/MONPNT3 cards are present, and "box
+AESURF cards are present, "monitor loads" when MONPNT1/MONPNT3 cards are present,
+"section-cut running loads" when MONSECT cards are present, and "box
 ΔCp/forces" on an AEROF/APRES request; an MLOADS subcase reads "Transient maneuver loads
 (MLOADS n); outputs time histories, MLDPRNT export, critical-sample loads[, monitor loads]".
 Built by
@@ -483,7 +484,12 @@ renders whichever result types it produced:
   rigid, elastic-restrained, and elastic-unrestrained (mean-axis, AE8b) columns
   (CZ/CMY/CX/CY/CMX/CMZ; unrestrained CZ/CMY blank on URDD rows); `q_div` readout with q/q_div ratio
   ("No divergence found" when `None`); per-AESURF hinge-moment table; monitor-point integrated
-  loads (Fx…Mz, from `MonitorLoad.totals`); maneuver-closure resultant. Layout mirrors the
+  loads (Fx…Mz, from `MonitorLoad.totals`); **section-cut running loads**
+  (`_render_section_cuts`, Monitor Phase 2) — one expander per `MONSECT` with the
+  per-station table in the cut's own labelled components (the legend is rendered with it,
+  since only `N`/`Mt` are role names) plus a spanwise chart whose components and
+  contribution (total / aero / inertia / reaction) are selectable; maneuver-closure
+  resultant. Layout mirrors the
   f06 blocks in `results/f06_writer.py::_build_f06_sol144_text`.
 - **Deflected shape + canted aero boxes** (`_render_sol144_deflected`): a deflection-scale
   slider, the deformed structure (`build_deformed_figure`), and the aero box mesh from
@@ -599,7 +605,8 @@ Multiple subcases are written sequentially into a single `.f06` file. The f06 te
 divergence + transient maneuver. The Phase G0 maneuver time-history / critical-load exports
 (`<stem>.mldprnt.txt`, `<stem>.maneuver_qs_loads.bdf`) are available as download buttons on the
 maneuver results view (AC5) as well as from the CLI. The remaining SOL 144 auxiliary exports
-(`<stem>.aero_loads.bdf`, `<stem>.maneuver_loads.bdf`, `<stem>.monitor_loads.csv`) are
+(`<stem>.aero_loads.bdf`, `<stem>.maneuver_loads.bdf`, `<stem>.monitor_loads.csv`,
+`<stem>.section_loads.csv`) are
 **CLI-only** (written by `main.py`).
 
 **Session state:** `_uploaded_filename` stores the original uploaded filename so the default output path can be derived.

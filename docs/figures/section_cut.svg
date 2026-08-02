@@ -1,0 +1,116 @@
+<svg viewBox="0 0 1020 500" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1f6feb"/>
+    </marker>
+    <marker id="arK" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+  </defs>
+  <style>
+    .ttl{fill:#1a1a1a;font-size:15px;font-weight:bold;}
+    .lbl{fill:#1a1a1a;font-size:13px;}
+    .sub{fill:#555;font-size:12px;font-style:italic;}
+    .mono{fill:#1a1a1a;font-size:12.5px;font-family:"SF Mono",Menlo,Consolas,monospace;}
+    .red{fill:#c0392b;}
+    .blue{fill:#1f6feb;}
+  </style>
+
+  <!-- ============================ PANEL A ============================ -->
+  <text class="ttl" x="30" y="32">A — The cut: plane, station and reference point</text>
+  <text class="sub" x="30" y="50">Plan view, swept right wing.  A cut plane at each station;</text>
+  <text class="sub" x="30" y="66">everything outboard is summed about the plane's EA intercept.</text>
+
+  <!-- fuselage stub -->
+  <rect x="52" y="116" width="46" height="96" fill="#f2f4f7" stroke="#9aa7b4" stroke-width="1.2"/>
+  <text class="sub" x="75" y="168" text-anchor="middle">fus.</text>
+
+  <!-- integrated (outboard) region -->
+  <polygon points="341.1,187.9 479.3,246.2 454.7,313.8 311.3,269.6"
+           fill="#e8f1fd" stroke="none"/>
+
+  <!-- wing planform -->
+  <polygon points="128.8,98.3 479.3,246.2 454.7,313.8 91.2,201.7"
+           fill="none" stroke="#333" stroke-width="1.8"/>
+
+  <!-- elastic axis = CID y-axis = station axis -->
+  <line x1="110" y1="150" x2="467" y2="280" stroke="#333" stroke-width="2.6"/>
+  <text class="lbl" x="486" y="330">elastic axis</text>
+  <text class="sub" x="486" y="345">= CID ŷ, AXIS 2</text>
+
+  <!-- CID origin -->
+  <circle cx="110" cy="150" r="5.5" fill="#333"/>
+  <line x1="106" y1="114" x2="110" y2="144" stroke="#9aa7b4" stroke-width="1" stroke-dasharray="3 3"/>
+  <text class="lbl" x="104" y="108" text-anchor="end">CID origin</text>
+
+  <!-- station dimension along the axis -->
+  <line x1="116" y1="139.5" x2="330.3" y2="217.4" stroke="#1f6feb" stroke-width="1.6"
+        marker-end="url(#ar)"/>
+  <text class="lbl blue" x="196" y="163">station s</text>
+
+  <!-- cut plane (edge-on) -->
+  <line x1="349.7" y1="164.4" x2="302.8" y2="293.1" stroke="#c0392b" stroke-width="2.4"/>
+  <text class="lbl red" x="358" y="160">cut plane</text>
+  <text class="sub red" x="358" y="175">normal n̂ = ŷ (default)</text>
+
+  <!-- reference point at the intercept -->
+  <circle cx="326.2" cy="228.7" r="6.5" fill="#c0392b"/>
+  <line x1="330" y1="236" x2="358" y2="312" stroke="#c0392b" stroke-width="1" stroke-dasharray="3 3"/>
+  <text class="lbl red" x="356" y="324">reference point</text>
+  <text class="sub red" x="356" y="338">= origin + s·ŷ, on the EA</text>
+
+  <!-- grids: inboard (open) vs outboard (filled) vs on-plane -->
+  <g stroke="#333" stroke-width="1.6">
+    <circle cx="166.4" cy="170.5" r="5" fill="#fff"/>
+    <circle cx="251.0" cy="201.3" r="5" fill="#fff"/>
+    <circle cx="308.3" cy="190.2" r="5" fill="#fff"/>
+    <circle cx="392.0" cy="252.6" r="5" fill="#333"/>
+    <circle cx="334.7" cy="263.7" r="5" fill="#333"/>
+    <circle cx="430.0" cy="225.0" r="5" fill="#333"/>
+  </g>
+  <circle cx="317.7" cy="252.2" r="5" fill="#fff" stroke="#c0392b" stroke-width="1.8"/>
+
+  <!-- key -->
+  <g stroke="#333" stroke-width="1.6">
+    <circle cx="38" cy="356" r="5" fill="#333"/>
+    <circle cx="38" cy="378" r="5" fill="#fff"/>
+  </g>
+  <circle cx="38" cy="400" r="5" fill="#fff" stroke="#c0392b" stroke-width="1.8"/>
+  <text class="lbl" x="54" y="360">outboard grid — summed into this station</text>
+  <text class="lbl" x="54" y="382">inboard grid — excluded</text>
+  <text class="lbl" x="54" y="404">within TOL of the plane — counted INBOARD,</text>
+  <text class="sub" x="54" y="419">so the cut equals the CBAR internal force at a node</text>
+
+  <!-- summation caption -->
+  <text class="mono" x="30" y="452" xml:space="preserve">F = Σ f_g      M = Σ [ m_g + (r_g − r_ref) × f_g ]</text>
+  <text class="sub" x="30" y="470">from the trimmed aero + inertia + reaction grid loads.  No symmetry parity is</text>
+  <text class="sub" x="30" y="486">applied: a cut on a half model is already the per-side load.</text>
+
+  <!-- ============================ PANEL B ============================ -->
+  <line x1="600" y1="22" x2="600" y2="490" stroke="#d0d7de" stroke-width="1.2"/>
+  <text class="ttl" x="628" y="32">B — Component labelling</text>
+  <text class="sub" x="628" y="50">Reported in the CID frame, at the reference point.</text>
+
+  <!-- triad at the reference point -->
+  <circle cx="700" cy="150" r="11" fill="none" stroke="#333" stroke-width="1.6"/>
+  <circle cx="700" cy="150" r="2.6" fill="#333"/>
+  <text class="lbl" x="628" y="126">ẑ  out of page</text>
+  <line x1="714" y1="155" x2="800" y2="186" stroke="#333" stroke-width="2" marker-end="url(#arK)"/>
+  <text class="lbl" x="808" y="192">ŷ  station axis</text>
+  <line x1="695" y1="163" x2="668" y2="240" stroke="#333" stroke-width="2" marker-end="url(#arK)"/>
+  <text class="lbl" x="640" y="258">x̂  chordwise</text>
+  <circle cx="700" cy="150" r="5.5" fill="#c0392b"/>
+
+  <text class="sub" x="628" y="298">Only two components carry a role name: the force along</text>
+  <text class="sub" x="628" y="314">the station axis, and the moment about it.  The other four</text>
+  <text class="sub" x="628" y="330">keep the name of the CID axis they act along or about —</text>
+  <text class="sub" x="628" y="346">nothing is silently renamed.</text>
+
+  <!-- component table -->
+  <text class="mono" x="628" y="378" xml:space="preserve">N   = F·ŷ   axial     (AXIS=2: Fy)</text>
+  <text class="mono" x="628" y="396" xml:space="preserve">Vx  = F·x̂   shear     (Fx)</text>
+  <text class="mono" x="628" y="414" xml:space="preserve">Vz  = F·ẑ   shear     (Fz)  ← vertical shear</text>
+  <text class="mono" x="628" y="432" xml:space="preserve">Mt  = M·ŷ   torque    (My)</text>
+  <text class="mono" x="628" y="450" xml:space="preserve">Mx  = M·x̂   bending   (Mx)  ← wing bending</text>
+  <text class="mono" x="628" y="468" xml:space="preserve">Mz  = M·ẑ   bending   (Mz)</text>
+</svg>

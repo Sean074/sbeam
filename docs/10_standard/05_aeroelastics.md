@@ -9,7 +9,7 @@
 |------|-------|
 | [`05a_aero_vlm.md`](05a_aero_vlm.md) | **Phase A — aerodynamics**: AEROS/CAERO1 cards, VLM AIC, integration matrices, AIC corrections (WKK/WT1/WT2), CHORDCP, section force/moment synthesiser, body panels (cruciform + decoupled strip), compressibility, viewer aero tab |
 | [`05b_splining.md`](05b_splining.md) | **Phase B — structure ↔ aero splining**: SPLINE2 (NASTRAN infinite beam), ATTACH, SPLINE0, `build_g_spline` API, `compute_structural_loads` |
-| [`05c_sol144_maneuver.md`](05c_sol144_maneuver.md) | **Phases C + G0 — SOL 144 & maneuver loads**: governing equation, coupling, trim card set, trim solver + derivatives, running & output (f06, load export, balanced maneuvers, transient MLOADS), monitor points |
+| [`05c_sol144_maneuver.md`](05c_sol144_maneuver.md) | **Phases C + G0 — SOL 144 & maneuver loads**: governing equation, coupling, trim card set, trim solver + derivatives, running & output (f06, load export, balanced maneuvers, transient MLOADS), monitor points, MONSECT section-cut running loads |
 
 ## Architecture Overview
 
@@ -51,6 +51,7 @@ Results   (cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, CDi, e, per_su
 | `sbeam/results/f06_writer.py` | `build_f06_sol144_text` / `write_f06_sol144` — SOL 144 trim f06 blocks (shares displacement/CBAR helpers with SOL 101) |
 | `sbeam/results/load_export.py` | `write_aero_load_cards` — trimmed flight loads as `FORCE`/`MOMENT` bulk cards |
 | `sbeam/results/monitor_points.py` | `integrate_monpnt1` / `integrate_monpnt3` — monitor-point integrated section loads |
+| `sbeam/results/section_cuts.py` | **Monitor Phase 2** — `compute_section_cuts`: MONSECT per-station running loads (the Phase 1 integrand swept over cut planes) |
 | `sbeam/results/maneuver_output.py` | MLDPRNT ASCII time-history + critical-sample `FORCE`/`MOMENT` export |
 | `sbeam/viewer/aero_view.py` | Plotly box mesh, cp colour map, section-load strip chart |
 
@@ -127,6 +128,7 @@ Reproduction script for the original review: `studies/_review_ha144a_check.py`.
 | `AECOMP` | Named collection of AELIST boxes or SET1 grids for monitor points | MON1 |
 | `MONPNT1` | Aero-only integrated section load at a reference point | MON1 |
 | `MONPNT3` | Aero + inertia + reaction integrated section load (splined to grids) | MON1 |
+| `MONSECT` | Section-cut running loads — per-station shear/bending/torque table (sbeam extension) | MON2 |
 | `MLOADS` | Transient maneuver driver (Phase G0; ZAERO card set) | G0 |
 | `MLDTRIM` | Initial-condition TRIM sid for the maneuver | G0 |
 | `MLDCOMD` | Pilot command label → `TABLED1` history | G0 |

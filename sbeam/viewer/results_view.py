@@ -15,6 +15,7 @@ from sbeam.results.results import (
     Sol144DivergResult, Sol144TrimResult, peak_grid_force,
 )
 from sbeam.assembly.load_vector import build_grid_index
+from sbeam.results.section_cuts import component_legend, component_names, labelled
 from sbeam.viewer.geometry import build_deformed_figure, build_mode_figure
 from sbeam.viewer.aero_view import build_aero_box_figure
 from sbeam.viewer.format_utils import fmt, style_numeric
@@ -457,6 +458,10 @@ def _render_sol144_trim(bulk: BulkData, result: Sol144TrimResult) -> None:
             })
         st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
 
+    # ---- MONSECT section-cut running loads (Monitor Phase 2) ----
+    if result.section_loads:
+        _render_section_cuts(result)
+
     # ---- Maneuver closure (balanced-maneuver net load resultant) ----
     if result.maneuver_closure is not None:
         st.markdown("**Maneuver load closure** (net aero+inertia resultant; ≈0 when balanced)")
@@ -467,6 +472,55 @@ def _render_sol144_trim(bulk: BulkData, result: Sol144TrimResult) -> None:
 
     # ---- Deflected shape + canted box cp ----
     _render_sol144_deflected(bulk, result)
+
+
+def _render_section_cuts(result: Sol144TrimResult) -> None:
+    """Per-station running-load table and spanwise plot for each MONSECT cut.
+
+    The component labels come from the cut's own station axis (only ``N`` and
+    ``Mt`` are role names; the rest name a CID axis), so the legend is rendered
+    with the table rather than assumed.
+    """
+    st.markdown("**Section-cut running loads** (MONSECT)")
+    for name in sorted(result.section_loads):
+        sc = result.section_loads[name]
+        names = component_names(sc.axis)
+        half = "  ·  HALF-MODEL (loads per side)" if sc.half_model else ""
+        src = "aero only" if sc.listtype == "AELIST" else "aero + inertia + reaction"
+        with st.expander(f"{name} — {sc.label}", expanded=True):
+            st.caption(
+                f"COMP {sc.comp} ({sc.listtype}, {src})  ·  CID {sc.cid}  ·  "
+                f"axis {sc.axis}  ·  side {sc.side}  ·  {component_legend(sc.axis)}{half}"
+            )
+            rows = []
+            for stn in sc.stations:
+                lab = labelled(stn.totals, sc.comp_map)
+                row = {"Station": stn.station}
+                row.update({n: lab[i] for i, n in enumerate(names)})
+                row["Members"] = stn.n_members
+                rows.append(row)
+            df = pd.DataFrame(rows)
+            st.dataframe(style_numeric(df), width="stretch")
+
+            which = st.multiselect(
+                "Plot components", list(names),
+                default=[names[2], names[4], names[3]],
+                key=f"seccut_{name}_comps",
+            )
+            source = st.radio(
+                "Contribution", ["Total", "Aero", "Inertia", "Reaction"],
+                horizontal=True, key=f"seccut_{name}_src",
+            )
+            attr = {"Total": "totals", "Aero": "aero",
+                    "Inertia": "inertia", "Reaction": "reaction"}[source]
+            if which:
+                stations = [stn.station for stn in sc.stations]
+                plot = pd.DataFrame({"Station": stations})
+                for n in which:
+                    i = names.index(n)
+                    plot[n] = [labelled(getattr(stn, attr), sc.comp_map)[i]
+                               for stn in sc.stations]
+                st.line_chart(plot, x="Station", y=which)
 
 
 def _render_sol144_deflected(bulk: BulkData, result: Sol144TrimResult) -> None:

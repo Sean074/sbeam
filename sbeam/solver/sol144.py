@@ -35,6 +35,7 @@ from sbeam.results.results import (
     Sol144DivergResult, DivergMachResult, DivergRoot,
 )
 from sbeam.results.monitor_points import compute_monitor_loads
+from sbeam.results.section_cuts import compute_section_cuts
 from sbeam.solver.sol101 import recover_bar_forces, recover_bar_stresses, recover_reactions
 from sbeam.solver.sol103 import run_sol103
 from sbeam.results.results import Sol103Result
@@ -1849,9 +1850,16 @@ def run_sol144_trim(
     # (aero + inertial) load; recovered the same way as SOL 101 (R = K·u − f).
     # ------------------------------------------------------------------ #
     monitor_loads = None
-    if bulk.monpnt1s or bulk.monpnt3s:
+    section_loads = None
+    # A SET1-backed MONSECT needs the reaction column for exactly the same
+    # reason MONPNT3 does — a cut that spans a constrained grid carries its
+    # reaction across the plane.
+    needs_reactions = bool(bulk.monpnt3s) or any(
+        bulk.aecomps[c.comp].listtype == "SET1" for c in bulk.monsects.values()
+    )
+    if bulk.monpnt1s or bulk.monpnt3s or bulk.monsects:
         reactions = {}
-        if bulk.monpnt3s:
+        if needs_reactions:
             constrained = list(get_spc_dofs(bulk, spc_sid, grid_index)) if spc_sid else []
             for sup in bulk.supports:
                 if sup.gid in grid_index:
@@ -1861,10 +1869,17 @@ def run_sol144_trim(
                 reactions = recover_reactions(
                     bulk, displacements, constrained, K_gg, grid_index, net_loads
                 )
-        monitor_loads = compute_monitor_loads(
-            bulk, aero, box_forces, grid_loads, inertial_loads, grid_index,
-            reactions, massset_sid
-        )
+        if bulk.monpnt1s or bulk.monpnt3s:
+            monitor_loads = compute_monitor_loads(
+                bulk, aero, box_forces, grid_loads, inertial_loads, grid_index,
+                reactions, massset_sid
+            )
+        # MONSECT — the same integrand swept over cut planes (Monitor Phase 2).
+        if bulk.monsects:
+            section_loads = compute_section_cuts(
+                bulk, aero, box_forces, grid_loads, inertial_loads, grid_index,
+                reactions
+            )
 
     return Sol144TrimResult(
         subcase_id=subcase.subcase_id,
@@ -1900,6 +1915,7 @@ def run_sol144_trim(
         hinge_moments=hinge_moments,
         trim_mode=trim_mode,
         monitor_loads=monitor_loads,
+        section_loads=section_loads,
         chordcp_echo=chordcp_echo,
         load_injection_echo=load_injection_echo,
         massset_sid=massset_sid,

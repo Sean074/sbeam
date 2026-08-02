@@ -5,7 +5,7 @@ from .aero import (
     Aeros, Caero1, Paero1, Pstrip, Stripk, Aefact, W2gj, Wkk, Chordcp, Aecorr, Set1,
     Spline2, Attach, Spline0, Spline1,
     Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
-    Aecomp, Monpnt1, Monpnt3,
+    Aecomp, Monpnt1, Monpnt3, Monsect,
 )
 from .maneuver import Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads
 from .mass import Massset, Conm2
@@ -69,6 +69,7 @@ class BulkData:
     aecomps:  dict[str, Aecomp] = field(default_factory=dict)
     monpnt1s: dict[str, Monpnt1] = field(default_factory=dict)
     monpnt3s: dict[str, Monpnt3] = field(default_factory=dict)
+    monsects: dict[str, Monsect] = field(default_factory=dict)
     supports: list[Suport] = field(default_factory=list)
     # Phase G0 — ZAERO-style transient maneuver-loads cards
     tabled1s: dict[int, Tabled1] = field(default_factory=dict)

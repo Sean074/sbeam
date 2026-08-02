@@ -1268,7 +1268,7 @@ MONPNT1 over 372 boxes = n·W while the bulk's 324-box AELIST falls short by **e
 injected body resultant (215.6 N); B8 injection echo, f06 block and FORCE/MOMENT export all
 carry the GRID 900 load; B9 divergence still ≥ 10× q. Step 65's 24 gates unchanged.
 
-## Monitor Points — Integrated Section Loads (Phase 1, static)
+## Monitor Points — Integrated Section Loads (Phases 1 and 2, static)
 
 ### MON1–MON4 / V-MON1 — `MONPNT1` / `MONPNT3` integrated section loads ✅ COMPLETE (2026-06-13)
 
@@ -1327,6 +1327,88 @@ follow-ons.
 - **Parity single-sourced from post-mirror `AEROS.SYMXZ`** — the solver runs full-span (mirror zeros
   SYMXZ), so parity = 1 in the normal pipeline; the ×2 path + annotation is retained for direct
   half-model input.
+
+---
+
+### P8 / V-SEC — Monitor Phase 2: `MONSECT` section-cut running loads ✅ COMPLETE (2026-08-02)
+
+**Objective:** Deliver the artefact a stress group actually sizes a surface from — the **per-station
+running-load table** (shear, bending, torque along wing / HTP / VTP) — for every static SOL 144 trim
+subcase and every `MASSSET` payload case. Phase 1 gives one resultant per named collection; a section
+cut is that same free-body sum with the collection filtered by a plane test and the moment reference
+moved onto the plane, so Phase 2 is a station sweep around the Phase 1 integrand: no new solve, no
+re-splining, no re-reduction. Design: `docs/30_future/designs/monsect_section_cuts.md`.
+
+**Deliverables:**
+- **Card (`sbeam/model/aero.py`, `sbeam/parser/bdf_reader.py`):** `Monsect` dataclass +
+  `BulkData.monsects`; `_handle_monsect` with station continuations and a keyword-led `NORMAL`
+  continuation (a station list is pure numbers, so a leading alpha token cannot be misread);
+  validation for AXIS/SIDE/TOL, strictly increasing stations, degenerate normal, name uniqueness
+  **across MONPNT1/MONPNT3/MONSECT**, and the AECOMP/CORD2R cross-references. Layout:
+  `MONSECT, NAME, LABEL, COMP, CID, AXIS, SIDE, TOL` + station continuations.
+- **Integration (`sbeam/results/section_cuts.py`, new ~250 lines):** `compute_section_cuts` /
+  `compute_section_cut`; member geometry and station coordinates resolved **once per cut** and swept
+  with a boolean mask. `SET1` collections give aero + inertia + reaction; `AELIST` collections give
+  aero only, from the box force points. Component helpers `component_map` / `component_names` /
+  `component_legend` / `labelled`. The Phase 1 helpers `monitor_frame` / `to_cp` / `grid_resultant`
+  were promoted from private in `monitor_points.py` (rename only — MON1/MON3 numerics untouched).
+- **Result types + wiring (`results/results.py`, `solver/sol144.py`):** `SectionCutStation` /
+  `SectionCutResult`; `Sol144TrimResult.section_loads`. The call sits in the existing monitor block of
+  `run_sol144_trim`, reusing `box_forces`/`grid_loads`/`inertial_loads`/`reactions`; the
+  reaction-recovery trigger was widened to include SET1-backed `MONSECT`s.
+- **Output:** `SECTION CUT RUNNING LOADS` f06 block (header with collection, frame, axis, side, source
+  and the **explicit component legend**, then one row per station); `<stem>.section_loads.csv`
+  (`write_section_loads_csv`, wired in `main.py`) with mass-case columns, labelled components *and*
+  their names, raw cid components, the aero/inertia/reaction split, `n_members` and the `d*_ds`
+  running-load differences; viewer panel `_render_section_cuts` (station table + spanwise chart with
+  selectable components and contribution); case-control summary advertises "section-cut running loads".
+- **Docs + figure:** new `docs/figures/section_cut.svg` (panel A: cut plane, station, EA-intercept
+  reference, member classification; panel B: component labelling) referenced from both the card
+  reference and the new theory subsection **§7.3a "Section loads — the free-body cut"** in
+  `docs/20_theory/01_aeroelastics_theory.md` (Figure 7, Eqs 30a–30b); `MONSECT` section in
+  `02_card_reference.md`; "Section-Cut Running Loads" section in `05c_sol144_maneuver.md`.
+- **Samples:** `sample/ha144a_fullspan_sbeam.bdf` gains `SECRW` (right-wing EA, 4 stations) reusing
+  the wing's `SPLINE2` CID 2; `sample/cessna210_flagship_bulk.bdf` gains `SECRW` (structural) and
+  `SECRWA` (aero-only) on CID 991, inherited by all four flagship drivers.
+
+**Test/Acceptance:** 31 new tests, all green; full suite 1551 passed / 6 xfailed with no regressions.
+- `tests/parser/test_monsect.py` (11) — round-trip incl. defaults and `NORMAL`; P-SEC rejections.
+- `tests/results/test_section_cuts.py` (10) — **V-SEC1** tip-load closed form (`Vz = P`,
+  `Mx = P(L−s)`, machine precision) and lumped-load free-body sum; reference-point tracking;
+  POS+NEG additivity; **V-SEC4** zero row; **V-SEC8** normal override; **V-SEC9** half-model not
+  doubled; **V-SEC10** on-plane warning.
+- `tests/aero/test_section_cuts_sol144.py` (9) — **V-SEC2** free-body vs CBAR internal force;
+  **V-SEC3** whole-model cut == `MONPNT3`; **V-SEC5** net ≈ 0; **V-SEC7** AELIST vs SET1 over a whole
+  collection; monotone outboard decay.
+- `tests/aero/test_section_cuts_massset.py` (5) — **V-SEC6** wing-fuel bending relief.
+- `tests/results/test_section_cut_output.py` (5) — f06 block (legend, HALF-MODEL, AERO ONLY) + CSV.
+
+**Key decisions:**
+- **`AXIS` defaults to 2 (CID y), not x.** That is sbeam's `SPLINE2` convention (the CID y-axis *is*
+  the spline axis), so a `MONSECT` reuses the surface's spline CORD2R verbatim — stations then run
+  along the elastic axis and every reference point lands on it. Supersedes the backlog's original
+  "plane normal along the spline-axis x̂" wording; `AXIS` remains explicit in the card.
+- **Components are axis-named, not cyclic.** An earlier cyclic scheme (`N, Vy, Vz, Mt, My, Mz` rotated
+  with the axis) was rejected during implementation: at `AXIS = 2` it labelled the *vertical* shear
+  `Fz` as "Vy" and the wing bending moment `Mx` as "Mz" — inverted from what a loads engineer reads,
+  and from the backlog's own `{Vz, My, Mt}`. Only `N` (force along the station axis) and `Mt` (moment
+  about it) are role names; the other four keep their CID-axis names, and the f06 header prints the
+  mapping in use. This removes the mislabelling risk rather than mitigating it.
+- **No symmetry parity, ever.** A wing cut on a `SYMXZ ≠ 0` half model is already the physical
+  per-side load, its reference is deliberately off-centreline, and the antisymmetric cancellation is
+  meaningless there. `parity` is fixed at 1.0, output is annotated `HALF-MODEL (LOADS PER SIDE)`, and
+  the new module deliberately does not import `_apply_symmetry`. Gated by V-SEC9.
+- **On-plane members count as inboard** (strict `s > station + TOL`) — that is what makes the outboard
+  free body terminate at a node, so its resultant equals the beam element's internal end force there.
+  V-SEC2 only closes with this convention; a warning names any member inside `TOL`.
+- **V-SEC2 chosen as the load-bearing gate** — it compares the cut against `K·u` element recovery, an
+  entirely different route, pinning the plane test, reference point, moment transfer and on-plane
+  convention at once. On HA144A, stations 8/10 cross only `CBAR 120` and match to machine precision.
+- **Mass cases come for free** — the inertia column is `inertial_loads`, which already reflects the
+  active `MASSSET` (Step 60), so a payload sweep yields a table per mass case with no extra cards.
+  V-SEC6 shows the classic wing-fuel bending relief falling straight out of it.
+- **Transient (`MLOADS`) cuts split out as P8b** — the integrand is reusable verbatim, but the
+  per-time-step output design and critical-time envelope are separate work.
 
 ---
 

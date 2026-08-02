@@ -372,6 +372,24 @@ AELIST, 1410, 1000, THRU, 1095
 AECOMP, RWAERO, AELIST, 1410
 MONPNT1, MRWAER, RIGHT WING AERO, 35, RWAERO, 0, 2.70, 0.0, 1.25
 $
+$ ---- Section-cut running loads (MONSECT, Monitor Phase 2).
+$ Where a MONPNT3 gives ONE resultant, a MONSECT sweeps the same sum over a
+$ list of cut planes and returns the per-station {shear, bending, torque} table
+$ the stress group sizes the wing from.
+$ CID 991 is the right wing's SPLINE2 axis, reused verbatim as the cut frame:
+$ its y-axis is the elastic axis, so the default AXIS=2 measures stations along
+$ the EA and every cut's moment reference lands on it.  Stations are chosen
+$ clear of the EA grids (11 at 2.801, 12 at 5.603) so no cut lands on a grid;
+$ 6.50 is outboard of the tip and must return exactly zero.
+$ Under a MASSSET case the wing-fuel CONM2s on grids 11/12 enter the inertia
+$ column automatically, so the table is per mass case with no extra cards.
+MONSECT, SECRW, RIGHT WING LOADS, RWINGEA, 991
++, 0.30, 1.50, 4.20, 6.50
+$ The same stations taken aero-only (an AELIST-type AECOMP), for the airload
+$ distribution without the inertia relief.
+MONSECT, SECRWA, RIGHT WING AIRLOAD, RWAERO, 991
++, 0.30, 1.50, 4.20, 6.50
+$
 $ ======================================================= TRIM VARIABLE SET
 $ Symmetric longitudinal trim: two free variables (ANGLEA and the elevator)
 $ against the two SUPORT equations (Tz and Ry) — a determined trim.

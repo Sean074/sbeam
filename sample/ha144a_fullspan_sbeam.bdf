@@ -215,6 +215,24 @@ MONPNT3, MWINGEA, RIGHT WING, 35, WINGEA, 0, 15.0, 0.0, 0.0
 MONPNT3, MALLEA, WHOLE AIRCRAFT, 35, ALLGRID, 0, 15.0, 0.0, 0.0
 MONPNT1, MALLAR, AIRCRAFT AERO, 35, ALLAERO, 0, 15.0, 0.0, 0.0
 $
+$ ------------------------------------------------------------
+$ SECTION-CUT RUNNING LOADS (MONSECT, Monitor Phase 2 / V-SEC)
+$ ------------------------------------------------------------
+$ CID 2 is the RIGHT wing SPLINE2 axis, reused verbatim as the cut frame — its
+$ y-axis is the swept elastic axis through GRIDs 100/110/120, so the default
+$ AXIS=2 measures stations along the EA and every cut's moment reference lands
+$ on it.  Cut planes are normal to the EA, so the two stringers at one y land at
+$ different stations (112 at 4.52, 111 at 7.02; 122 at 16.07, 121 at 18.57).
+$ Collection: every RIGHT-wing grid that carries aero load or mass.
+SET1, 1330, 111, 112, 121, 122
+AECOMP, RWINGALL, SET1, 1330
+$ Stations 8/10 cut ONLY CBAR 120 (EA nodes at 5.77 and 11.55, stringers at
+$ 4.52/7.02 inboard and 16.07/18.57 outboard) — the free-body identity against
+$ the element internal force (V-SEC2).  12 also crosses the tip RBARs; 20 is
+$ outboard of everything and must return exactly zero (V-SEC4).
+MONSECT, SECRW, RIGHT WING EA, RWINGALL, 2
++, 8.0, 10.0, 12.0, 20.0
+$
 $ ============================================================
 $ AERODYNAMIC TRIM VARIABLES
 $ ============================================================

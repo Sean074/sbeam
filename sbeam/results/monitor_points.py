@@ -65,7 +65,7 @@ def _apply_symmetry(load6_basic: FloatArray, par: float,
     return out
 
 
-def _monitor_frame(
+def monitor_frame(
     mon: Union[Monpnt1, Monpnt3], bulk: BulkData
 ) -> tuple[FloatArray, FloatArray]:
     """Return (ref_basic (3,), R (3x3)) for a monitor point.
@@ -78,7 +78,7 @@ def _monitor_frame(
     return ref_basic, R
 
 
-def _to_cp(load6_basic: FloatArray, R: FloatArray) -> FloatArray:
+def to_cp(load6_basic: FloatArray, R: FloatArray) -> FloatArray:
     """Rotate a (6,) [F, M] resultant from basic CID 0 into the cp frame."""
     out = np.empty(6)
     out[:3] = R.T @ load6_basic[:3]
@@ -91,7 +91,7 @@ def integrate_monpnt1(
 ) -> MonitorLoad:
     """Aero-only integrated load over the monitor's AELIST collection."""
     aecomp = bulk.aecomps[mon.comp]
-    ref_basic, R = _monitor_frame(mon, bulk)
+    ref_basic, R = monitor_frame(mon, bulk)
 
     # AELIST box IDs -> global box indices k (shared collision-checked map, F1)
     id_to_k = aero.require_box_id_to_k()
@@ -115,7 +115,7 @@ def integrate_monpnt1(
         M += np.cross(r, f)
 
     par = _parity(bulk)
-    aero6 = _to_cp(_apply_symmetry(np.concatenate([F, M]), par, ref_basic, mon.name), R)
+    aero6 = to_cp(_apply_symmetry(np.concatenate([F, M]), par, ref_basic, mon.name), R)
     return MonitorLoad(
         name=mon.name, label=mon.label, mtype="MONPNT1", axes=mon.axes,
         cid=mon.cp, ref=ref_basic, totals=aero6, aero=aero6,
@@ -124,7 +124,7 @@ def integrate_monpnt1(
     )
 
 
-def _grid_resultant(
+def grid_resultant(
     load_g: FloatArray, gids: list[int], bulk: BulkData,
     grid_index: dict[int, int], ref_basic: FloatArray,
 ) -> FloatArray:
@@ -155,14 +155,14 @@ def integrate_monpnt3(
     — zero elsewhere).
     """
     aecomp = bulk.aecomps[mon.comp]
-    ref_basic, R = _monitor_frame(mon, bulk)
+    ref_basic, R = monitor_frame(mon, bulk)
 
     gids = []
     for sid in aecomp.list_ids:
         gids.extend(bulk.set1s[sid].grids)
 
-    aero_b = _grid_resultant(grid_loads, gids, bulk, grid_index, ref_basic)
-    inert_b = (_grid_resultant(inertial_loads, gids, bulk, grid_index, ref_basic)
+    aero_b = grid_resultant(grid_loads, gids, bulk, grid_index, ref_basic)
+    inert_b = (grid_resultant(inertial_loads, gids, bulk, grid_index, ref_basic)
                if inertial_loads is not None else np.zeros(6))
 
     # Reaction: only grids in the collection that carry a recovered reaction.
@@ -172,12 +172,12 @@ def integrate_monpnt3(
             if gid in grid_index:
                 gi = grid_index[gid]
                 react_g[6 * gi: 6 * gi + 6] = r6
-    react_b = _grid_resultant(react_g, gids, bulk, grid_index, ref_basic)
+    react_b = grid_resultant(react_g, gids, bulk, grid_index, ref_basic)
 
     par = _parity(bulk)
-    aero6 = _to_cp(_apply_symmetry(aero_b, par, ref_basic, mon.name), R)
-    inert6 = _to_cp(_apply_symmetry(inert_b, par, ref_basic, mon.name), R)
-    react6 = _to_cp(_apply_symmetry(react_b, par, ref_basic, mon.name), R)
+    aero6 = to_cp(_apply_symmetry(aero_b, par, ref_basic, mon.name), R)
+    inert6 = to_cp(_apply_symmetry(inert_b, par, ref_basic, mon.name), R)
+    react6 = to_cp(_apply_symmetry(react_b, par, ref_basic, mon.name), R)
     totals = aero6 + inert6 + react6
     return MonitorLoad(
         name=mon.name, label=mon.label, mtype="MONPNT3", axes=mon.axes,

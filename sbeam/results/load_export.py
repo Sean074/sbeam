@@ -22,6 +22,7 @@ import numpy as np
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.results.results import Sol144TrimResult
+from sbeam.results.section_cuts import component_names, labelled
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.parser.bdf_field import fmt_real8
 from sbeam.types import FloatArray
@@ -201,6 +202,67 @@ def write_monitor_csv(filepath: str, results: dict[int, Sol144TrimResult]) -> No
                     f"{(ml.reaction[2] if ml.reaction is not None else 0.0):.6E}",
                     f"{ml.parity:g}", int(ml.whole_airplane),
                 ])
+
+
+def write_section_loads_csv(filepath: str, results: dict[int, Sol144TrimResult]) -> None:
+    """Write MONSECT section-cut running loads for all trim subcases to one CSV.
+
+    One row per cut per station per subcase.  Both the labelled stress
+    components (``N``/``V*``/``Mt``/``M*``, whose meaning depends on the station
+    axis) and the raw cid-frame ``Fx..Mz`` are written, so a consuming tool never
+    has to reconstruct the mapping; ``comp_1..comp_6`` name it explicitly.  The
+    per-contribution aero / inertia / reaction split is the section-cut analogue
+    of the monitor CSV's ``Fz_*`` diagnostic — the fastest way to find a wrong
+    sum.  ``massset`` columns make a payload sweep a single pivot.
+
+    Args:
+        filepath: Output ``*.section_loads.csv`` path.
+        results:  {subcase_id: Sol144TrimResult}.
+    """
+    header = [
+        "case", "massset", "mass_case", "name", "label", "comp", "listtype",
+        "cid", "axis", "side", "half_model", "station",
+        "x_ref", "y_ref", "z_ref",
+        "comp_1", "comp_2", "comp_3", "comp_4", "comp_5", "comp_6",
+        "c1", "c2", "c3", "c4", "c5", "c6",
+        "Fx", "Fy", "Fz", "Mx", "My", "Mz",
+        "c1_aero", "c2_aero", "c3_aero", "c4_aero", "c5_aero", "c6_aero",
+        "c1_inertia", "c2_inertia", "c3_inertia", "c4_inertia", "c5_inertia",
+        "c6_inertia",
+        "c1_react", "c2_react", "c3_react", "c4_react", "c5_react", "c6_react",
+        "n_members",
+        "dc1_ds", "dc2_ds", "dc3_ds", "dc4_ds", "dc5_ds", "dc6_ds",
+    ]
+    with open(filepath, "w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(header)
+        for sc_id, result in results.items():
+            if not getattr(result, "section_loads", None):
+                continue
+            ms_sid = getattr(result, "massset_sid", None)
+            for name in sorted(result.section_loads.keys()):
+                sc = result.section_loads[name]
+                names = component_names(sc.axis)
+                for st in sc.stations:
+                    d = st.d_ds
+                    writer.writerow([
+                        sc_id,
+                        ms_sid if ms_sid is not None else "",
+                        getattr(result, "massset_label", "BASELINE"),
+                        sc.name, sc.label, sc.comp, sc.listtype,
+                        sc.cid, sc.axis, sc.side, int(sc.half_model),
+                        f"{st.station:.6E}",
+                        *(f"{v:.6E}" for v in st.ref),
+                        *names,
+                        *(f"{v:.6E}" for v in labelled(st.totals, sc.comp_map)),
+                        *(f"{v:.6E}" for v in st.totals),
+                        *(f"{v:.6E}" for v in labelled(st.aero, sc.comp_map)),
+                        *(f"{v:.6E}" for v in labelled(st.inertia, sc.comp_map)),
+                        *(f"{v:.6E}" for v in labelled(st.reaction, sc.comp_map)),
+                        st.n_members,
+                        *(("" if d is None else f"{v:.6E}")
+                          for v in (d if d is not None else range(6))),
+                    ])
 
 
 def write_maneuver_load_cards(

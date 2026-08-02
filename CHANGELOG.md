@@ -13,6 +13,43 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**P8 / Monitor Phase 2 — `MONSECT` section-cut running loads (2026-08-02)**
+
+The per-station shear / bending / torque table a stress group sizes a surface from, for
+every static SOL 144 trim subcase and every `MASSSET` payload case. A section cut is the
+`MONPNT3` free-body sum with the collection filtered by a plane test and the moment
+reference moved onto the plane, so this is a station sweep around the existing integrand —
+no new solve, no re-splining, no re-reduction.
+
+- **New card `MONSECT`** (`NAME, LABEL, COMP, CID, AXIS, SIDE, TOL` + station
+  continuations, optional `NORMAL` override). `COMP` accepts either AECOMP list type:
+  `SET1` ⇒ aero + inertia + reaction, `AELIST` ⇒ aero only. `AXIS` defaults to **2 (CID
+  y)**, sbeam's `SPLINE2` convention, so a cut reuses the surface's spline CORD2R and its
+  stations run along the elastic axis.
+- **`sbeam/results/section_cuts.py`** (new) — `compute_section_cuts`; the Phase 1 helpers
+  `monitor_frame` / `to_cp` / `grid_resultant` promoted from private in `monitor_points.py`
+  (rename only; MON1/MON3 output unchanged).
+- **Output** — `SECTION CUT RUNNING LOADS` f06 block (with an explicit component legend),
+  `<stem>.section_loads.csv` (mass-case columns, labelled + raw components, aero/inertia/
+  reaction split, running-load differences), and a viewer panel with a station table and a
+  spanwise chart.
+- **Samples** — `MONSECT` cards added to `sample/ha144a_fullspan_sbeam.bdf` and
+  `sample/cessna210_flagship_bulk.bdf` (inherited by all flagship drivers), both reusing
+  the wing's existing `SPLINE2` CID as the cut frame.
+- **Docs** — new figure `docs/figures/section_cut.svg`; theory §7.3a "Section loads — the
+  free-body cut" (Figure 7); `MONSECT` card reference; "Section-Cut Running Loads" in
+  `05c_sol144_maneuver.md`.
+- **Gates** — 31 new tests (V-SEC1–V-SEC10, P-SEC). V-SEC2 checks the outboard resultant
+  against the CBAR internal force from `K·u` (machine precision on HA144A); V-SEC6
+  reproduces wing-fuel bending relief across the flagship's three payload cases.
+
+Two notes for users of the design draft: components are **axis-named**, not cyclically
+rotated — only `N` (force along the station axis) and `Mt` (moment about it) are role
+names, so at `AXIS = 2` the vertical shear is `Vz` and the wing bending moment `Mx`, not
+relabelled neighbours. And a `MONSECT` is **never parity-doubled** on a `SYMXZ ≠ 0` half
+model: a wing cut is already the per-side load, and the output is annotated
+`HALF-MODEL (LOADS PER SIDE)` instead. Transient (`MLOADS`) section cuts are backlog P8b.
+
 **Step 66 — flagship stage 2: body panels (2026-08-02)**
 
 Fuselage aerodynamics on the flagship, and the first **VLM-coupled (cruciform) body panel

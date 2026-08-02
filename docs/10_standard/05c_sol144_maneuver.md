@@ -761,3 +761,173 @@ makes per-surface equality approximate, hence the whole-aircraft gate.
 > `CAERO1`s, every `AELIST` that is meant to say "the whole airplane" has to be extended.
 > The `SET1` side of this is the same trap in `MONPNT3` form (DEF-M10). Gated by
 > `tests/aero/test_cessna210_flagship_body.py` (B7).
+
+---
+
+## Section-Cut Running Loads (Monitor Phase 2 — `MONSECT`)
+
+Phase 1 gives **one** resultant per named collection. The artefact a stress group
+actually sizes a surface from is the **running-load table**: at each of N stations along
+the span, the shear, bending moment and torque carried across a cut plane, for every
+trim condition and every mass case. `MONSECT` produces it.
+
+The physics is free-body equilibrium — the load carried across a cut is the resultant of
+everything on one side of it — which is exactly the `MONPNT3` integrand with the
+collection filtered by a plane test and the moment reference moved onto the plane. So
+`sbeam/results/section_cuts.py` is a station sweep around the Phase 1 sum: no new solve,
+no re-splining, no re-reduction. It consumes the `box_forces` / `grid_loads` /
+`inertial_loads` / recovered-reaction arrays `run_sol144_trim` has already built.
+
+![Section-cut geometry and component labelling](../figures/section_cut.svg)
+
+### Card
+
+```
+$ Collection: SET1 grids (aero+inertia+reaction) or AELIST boxes (aero only)
+AECOMP,  RWINGEA, SET1, 1300
+$ Cut definition; continuations carry the stations
+MONSECT, SECRW, RIGHT WING LOADS, RWINGEA, 991, 2, POS
++, 0.30, 1.50, 4.20, 6.50
++, NORMAL, 0.26, 1.0, 0.0            $ optional: tilt the cut plane
+```
+
+Full field table in `docs/10_standard/02_card_reference.md`. The essentials:
+
+- `CID` + `AXIS` define the station axis. **`AXIS` defaults to 2 (CID y)** — sbeam's
+  `SPLINE2` convention — so a cut can reuse the surface's spline CORD2R verbatim, as
+  both shipped samples do (HA144A CID 2, flagship CID 991).
+- `SIDE` (`POS` default) picks which side of each plane is integrated.
+- Stations must be **strictly increasing**; every downstream consumer assumes a monotone
+  table.
+
+### Integration semantics (`sbeam/results/section_cuts.py`)
+
+With `(P, R) = get_transform(CID)`, `â` the `AXIS` column of `R` and `n̂` the cut normal
+(`â` unless overridden), a member at basic position `r` has **station coordinate**
+`s_m = (r − P)·n̂`. For `SIDE = POS` it enters station `s` when `s_m > s + TOL`.
+
+The **reference point** is the plane's intercept with the reference line:
+
+```
+r_ref(s) = P + (s / (â·n̂))·â          →   P + s·â  with the default normal
+```
+
+When `CID` is the surface's spline CID that line *is* the elastic axis, so the reported
+moments are EA-referenced — and it stays correct on a swept surface, because the
+stations and the reference line share the axis.
+
+The sum is then Phase 1's, per station:
+
+- **`SET1` collection** — over the outboard grids, `F += f_g`,
+  `M += m_g + (r_g − r_ref) × f_g`, applied separately to `grid_loads` (aero),
+  `inertial_loads` (inertia) and the recovered SPC/SUPORT reaction. All three are
+  reported, plus `totals = aero + inertia + reaction`.
+- **`AELIST` collection** — over the outboard boxes, `F += box_forces[k]`,
+  `M += (force_point[k] − r_ref) × box_forces[k]`. Inertia and reaction are zero.
+
+Results are rotated into the `CID` frame and attached as
+`Sol144TrimResult.section_loads = {name: SectionCutResult}`, each carrying a
+`stations: list[SectionCutStation]` with the contribution split and the per-unit-span
+differences `d_ds` to the previous station.
+
+### Component labelling
+
+Only two of the six components carry a **role** name: the force along the station axis
+(`N`) and the moment about it (`Mt`). The other four keep the name of the CID axis they
+act along or about, so nothing is silently renamed by the choice of axis:
+
+| `AXIS` | Labelled order | Raw CID components |
+|--------|----------------|--------------------|
+| 1 (x)  | `N, Vy, Vz, Mt, My, Mz` | `Fx, Fy, Fz, Mx, My, Mz` |
+| **2 (y, default)** | `N, Vx, Vz, Mt, Mx, Mz` | `Fy, Fx, Fz, My, Mx, Mz` |
+| 3 (z)  | `N, Vx, Vy, Mt, Mx, My` | `Fz, Fx, Fy, Mz, Mx, My` |
+
+For a spanwise wing cut (`AXIS = 2`) that makes `Vz` the vertical shear and `Mx` the
+wing bending moment — the quantities a loads engineer means by those names. The f06
+header prints the mapping actually in use, and the CSV writes both the labelled and the
+raw components, so no consumer has to reconstruct it.
+
+### Conventions that must be deliberate
+
+1. **On-plane members count as inboard** — the test is strictly `s_m > s + TOL`. A grid
+   load is a point load, so a cut *at* a node must exclude it for the outboard free
+   body's resultant to equal the beam internal force there; that identity is what
+   V-SEC2 gates. Any member within `TOL` of a plane raises a `UserWarning` naming it and
+   the station, because that is exactly where the table steps and where the convention
+   and a user's expectation can differ.
+2. **No symmetry parity, ever.** `monitor_points._apply_symmetry` doubles the symmetric
+   components of an `AEROS SYMXZ ≠ 0` half model to report the whole airplane. None of
+   that applies to a section cut: a wing cut is *already* the physical per-side load, its
+   reference is deliberately off-centreline, and the antisymmetric cancellation is
+   meaningless there. `parity` is fixed at 1.0 and the output is annotated
+   `HALF-MODEL (LOADS PER SIDE)` instead. The new module deliberately does not import the
+   Phase 1 parity helper.
+3. **An empty outboard set is a zero row, not an error.** A station outboard of every
+   member is a legitimate closure check — it must return exactly zero.
+4. **Mass cases come for free.** The inertia column is built from `inertial_loads`, which
+   already reflects the active `MASSSET` (Step 60), so a payload sweep produces a table
+   per mass case with no extra cards.
+
+> **A `SET1` does not follow the mesh either.** `MONSECT` recomputes *membership* from
+> the current model, so a station table can never go stale the way a hand-built
+> per-station collection would — but the `AECOMP` it cuts is still a literal list. A
+> `MONSECT` over a `SET1` that has not kept up with the model is as wrong as a stale
+> `AELIST`, and harder to notice because the table still looks plausible. Same trap as
+> the `MONPNT1` box-list note above, in `MONPNT3` form (DEF-M10).
+
+### Output
+
+- **f06 block** `SECTION CUT RUNNING LOADS` (`results/f06_writer.py:_section_cut_block`):
+  per cut, a header with the collection, frame, axis, side and source
+  (`AERO ONLY` / `AERO + INERTIA + REACTION`), the explicit component legend, then one
+  row per station with the reference point and the six labelled components.
+- **CSV** `<stem>.section_loads.csv` (`results/load_export.py:write_section_loads_csv`,
+  written by `main.py`): one row per cut per station per subcase. Carries the mass-case
+  columns, the labelled components *and* their names (`comp_1..comp_6`), the raw
+  `Fx..Mz`, the aero / inertia / reaction split, `n_members`, and the `d*_ds` running-load
+  differences. The contribution split is the section-cut analogue of the monitor CSV's
+  `Fz_*` diagnostic — the fastest way to find a wrong sum.
+- **Viewer**: a "Section-cut running loads" panel per cut — the station table plus a
+  spanwise chart with selectable components and contribution (total / aero / inertia /
+  reaction).
+
+### Validation
+
+| ID | Gate | Where |
+|----|------|-------|
+| V-SEC1 | Tip point load: `Vz = P`, `Mx = P(L−s)` in closed form, machine precision | `tests/results/test_section_cuts.py` |
+| V-SEC2 | **Free-body equilibrium** — outboard resultant == CBAR internal force from `K·u`, ~1e-8 rel | `tests/aero/test_section_cuts_sol144.py` |
+| V-SEC3 | Cut inboard of everything == whole-aircraft `MONPNT3` (transferred to the cut reference) | `tests/aero/test_section_cuts_sol144.py` |
+| V-SEC4 | Station outboard of every member returns exact zero | both |
+| V-SEC5 | Whole-model net (aero+inertia+reaction) ≈ 0, reproducing the maneuver closure | `tests/aero/test_section_cuts_sol144.py` |
+| V-SEC6 | **Wing-fuel bending relief** across three `MASSSET` cases | `tests/aero/test_section_cuts_massset.py` |
+| V-SEC7 | `AELIST` cut == `SET1` cut aero over a whole collection (spline conservation) | `tests/aero/test_section_cuts_sol144.py` |
+| V-SEC8 | `NORMAL` override reassigns members by geometry; reference stays on the EA and on the plane | `tests/results/test_section_cuts.py` |
+| V-SEC9 | Half model is annotated, never doubled | `tests/results/test_section_cuts.py` |
+| V-SEC10 | On-plane grid warns and counts inboard | `tests/results/test_section_cuts.py` |
+| P-SEC1–11 | Parser rejections (non-monotone stations, bad AXIS/SIDE, unknown COMP/CID, degenerate NORMAL, name collision) | `tests/parser/test_monsect.py` |
+
+**V-SEC2 is the load-bearing gate.** It ties the cut to a quantity computed by an
+entirely different route — element stiffness times displacement — so it pins the plane
+test, the reference point, the moment transfer and the on-plane convention at once. On
+the HA144A deck, stations 8 and 10 (CID 2, along the swept EA) cross only `CBAR 120`,
+and the outboard resultant matches its end-B internal force to machine precision.
+
+**V-SEC6 is the one a loads engineer will recognise.** On the flagship's three payload
+cases the aero root bending rises steeply with weight (9.0 → 11.1 → 14.5 kN·m), the
+wing-fuel inertia relief grows against it (−2.4 → −4.4 → −6.4 kN·m), and the *net* root
+bending therefore rises far more slowly (6.7 → 6.7 → 8.0 kN·m). A cut that ignored the
+mass case, or got the inertia sign wrong, could not reproduce that.
+
+> **A station-by-station `AELIST` cut is not a `SET1` cut's aero column.** The two agree
+> over a whole collection (V-SEC7, spline conservation) but not per station: near a cut
+> plane, a box and the grids its load splines to can fall on opposite sides. Use the
+> `SET1` cut's `*_aero` split for the airload carried across a *structural* station, and
+> an `AELIST` cut for the airload distribution in its own right.
+
+### Not covered (follow-on P8b)
+
+Transient (`MLOADS`) section cuts. The integration is reusable verbatim at each output
+time, but the deliverable becomes a per-time-step table — a third dimension in the f06
+block, the CSV schema and the viewer plot, plus a critical-station/critical-time
+envelope. Scope the critical-sample cut first, reusing this schema unchanged.

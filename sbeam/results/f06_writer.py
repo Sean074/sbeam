@@ -5,10 +5,11 @@ from datetime import datetime
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.results.results import (
-    BarForce, BarStress, ManeuverResult, MonitorLoad,
+    BarForce, BarStress, ManeuverResult, MonitorLoad, SectionCutResult,
     Sol101Result, Sol103Result, Sol144TrimResult, Sol144DivergResult,
     peak_grid_force,
 )
+from sbeam.results.section_cuts import component_legend, component_names, labelled
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.assembly.coord_transform import build_transform
 from sbeam.types import FloatArray
@@ -119,6 +120,54 @@ def _monitor_block(lines: list[str], monitor_loads: dict[str, MonitorLoad]) -> N
         )
         lines.append("              FX             FY             FZ             MX             MY             MZ")
         lines.append("        " + "".join(_fmt(v) for v in ml.totals))
+        lines.append("")
+    lines.append("")
+
+
+def _section_cut_block(
+    lines: list[str], section_loads: dict[str, SectionCutResult]
+) -> None:
+    """Append a SECTION CUT RUNNING LOADS block (MONSECT, Monitor Phase 2).
+
+    One header per cut giving the collection, frame, station axis and side, then
+    the labelled component legend — printed explicitly because only ``N`` and
+    ``Mt`` are role names; the rest name the CID axis they act along or about,
+    and a reader must not have to infer that.  One row per station follows.
+
+    Never annotated *WHOLE-AIRPLANE*: a section cut is not parity-scaled.  A
+    half model is flagged HALF-MODEL instead, meaning the table is the per-side
+    load it physically is.
+    """
+    lines.append("                          S E C T I O N   C U T   R U N N I N G   L O A D S")
+    lines.append("")
+    for name in sorted(section_loads.keys()):
+        sc = section_loads[name]
+        axis_tag = f"{'+XYZ'[sc.axis]}" if sc.axis in (1, 2, 3) else "?"
+        tag = "   HALF-MODEL (LOADS PER SIDE)" if sc.half_model else ""
+        lines.append(
+            f"      MONSECT {name:<8}  LABEL: {sc.label:<24}  COMP {sc.comp}"
+            f" ({sc.listtype})   CID = {sc.cid}   AXIS = {sc.axis} (+{axis_tag})"
+            f"   SIDE = {sc.side}{tag}"
+        )
+        src = ("AERO ONLY" if sc.listtype == "AELIST"
+               else "AERO + INERTIA + REACTION")
+        lines.append(f"        SOURCE: {src}      COMPONENTS: {component_legend(sc.axis)}")
+        if sc.normal is not None:
+            lines.append(
+                "        CUT NORMAL (BASIC): " +
+                "".join(_fmt(v) for v in sc.normal)
+            )
+        names = component_names(sc.axis)
+        lines.append(
+            "         STATION          X-REF          Y-REF          Z-REF"
+            + "".join(f"{n:>15}" for n in names)
+        )
+        for st in sc.stations:
+            lines.append(
+                "     " + _fmt(st.station)
+                + "".join(_fmt(v) for v in st.ref)
+                + "".join(_fmt(v) for v in labelled(st.totals, sc.comp_map))
+            )
         lines.append("")
     lines.append("")
 
@@ -534,6 +583,10 @@ def _build_f06_sol144_text(
     # ---- MONITOR POINT INTEGRATED LOADS (MON4) ----
     if result.monitor_loads:
         _monitor_block(lines, result.monitor_loads)
+
+    # ---- SECTION CUT RUNNING LOADS (MONSECT, Monitor Phase 2) ----
+    if result.section_loads:
+        _section_cut_block(lines, result.section_loads)
 
     # ---- Shared structural-response blocks ----
     _displacement_block(lines, result.displacements, bulk, grid_index, gids_sorted)
