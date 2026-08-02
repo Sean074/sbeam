@@ -109,12 +109,13 @@ model on every run and cannot go stale.
 
 ### 2.2 Out of scope (follow-ons, to be recorded in the backlog as P8b)
 
-- **Transient (`MLOADS`) section cuts.** The integration is reusable verbatim at each
-  output time, but the deliverable becomes a per-time-step table — a third dimension in
-  the f06 block, the CSV schema and the viewer plot, plus a critical-station/critical-time
-  envelope. That output design is a separate piece of work; P8b should scope the
-  critical-sample cut first (one table at the MLDPRNT critical step, reusing this schema
-  unchanged).
+- **Transient (`MLOADS`) section cuts.** ✅ **DELIVERED 2026-08-02 as Step 68** — see
+  `designs/monsect_transient_section_cuts.md` and
+  `docs/40_history/07_maneuver_transient.md`. Note this section's premise was only half
+  right: the *integration* was reusable verbatim, but its *inputs* were not. A transient
+  free body carries an elastic d'Alembert load `−M·ü_e` that no result object held, and
+  that no global closure gate could have caught (mean-axis orthogonality gives it zero
+  rigid-row resultant). That term, not the output plumbing, was the work.
 - **Envelope / max-min tables across subcases.** Once several trim cases and mass cases
   each produce a station table, the natural next artefact is a per-station envelope with
   the driving case ID. Deliberately deferred: it is a pure post-processing pass over the

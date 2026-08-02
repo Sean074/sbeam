@@ -488,7 +488,8 @@ renders whichever result types it produced:
   (`_render_section_cuts`, Monitor Phase 2) — one expander per `MONSECT` with the
   per-station table in the cut's own labelled components (the legend is rendered with it,
   since only `N`/`Mt` are role names) plus a spanwise chart whose components and
-  contribution (total / aero / inertia / reaction) are selectable; maneuver-closure
+  contribution (total / aero / inertia / reaction — plus elastic inertia and damping on a
+  transient sample) are selectable; maneuver-closure
   resultant. Layout mirrors the
   f06 blocks in `results/f06_writer.py::_build_f06_sol144_text`.
 - **Deflected shape + canted aero boxes** (`_render_sol144_deflected`): a deflection-scale
@@ -509,6 +510,21 @@ renders whichever result types it produced:
   the same builders the CLI's `write_maneuver_outputs` uses, so the content matches the CLI
   files exactly (the CLI concatenates one block per subcase; the viewer downloads the selected
   subcase's block).
+
+  **Section cuts on the maneuver (Step 68).** When the deck carries `MONSECT` cards the
+  panel adds, below the deflected shape: the **station table at the selected sample**
+  (rendered by the same `_render_section_cuts` the static trim panel uses — it takes
+  `(section_loads, key_prefix)` precisely so both panels share one renderer without widget
+  key collisions, and its contribution selector gains *Elastic inertia* and *Damping* when
+  those columns are present); a **section-cut time history** expander
+  (`_render_section_time_history`) plotting one cut × station × component against time with
+  **two** markers — the run's critical sample (red dashed) and *this* station/component's
+  driving sample (blue dotted), which are usually different samples; and the **envelope
+  table** (`_render_section_envelope`) of per-station max/min with the sample and time that
+  drove each. Two further download buttons offer
+  `<stem>.maneuver_section_loads.csv` and `<stem>.maneuver_section_envelope.csv`, built by
+  the same `load_export` writers the CLI uses (gated byte-for-byte against the written
+  files).
 
 Run wiring lives in `app.py::_run_sol144` (mirrors `main.py` routing — one shared `AeroModel`
 + `AeroCache`, per-subcase dispatch to `run_sol144_trim` / `run_sol144_diverg` /

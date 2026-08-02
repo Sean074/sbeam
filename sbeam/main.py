@@ -144,3 +144,18 @@ def main() -> None:
             str(bdf_path.with_suffix("")), bulk, maneuver_results)
         print(f"Written: {mldprnt_path}")
         print(f"Written: {qs_loads_path}")
+        # Step 68: MONSECT running loads at every output sample (one CSV across
+        # subcases), written only when the deck actually carries MONSECT cards.
+        if any(s.section_loads for r in maneuver_results.values() for s in r.steps):
+            from sbeam.results.load_export import (
+                write_maneuver_section_envelope_csv,
+                write_maneuver_section_loads_csv,
+            )
+            tsec_path = bdf_path.with_suffix(".maneuver_section_loads.csv")
+            write_maneuver_section_loads_csv(str(tsec_path), maneuver_results)
+            print(f"Written: {tsec_path}")
+            # The per-station max/min with its driving sample — what says no
+            # other instant is worse at any other station.
+            env_path = bdf_path.with_suffix(".maneuver_section_envelope.csv")
+            write_maneuver_section_envelope_csv(str(env_path), maneuver_results)
+            print(f"Written: {env_path}")

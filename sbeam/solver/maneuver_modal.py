@@ -104,6 +104,7 @@ from sbeam.assembly.load_vector import build_grid_index
 from sbeam.aero.aero_model import AeroModel
 from sbeam.gpwg import compute_gpwg
 from sbeam.results.results import ManeuverStep, ManeuverResult, peak_grid_force
+from sbeam.results.section_envelope import build_section_envelope
 from sbeam.solver.maneuver_qs import (
     assemble_operators,
     delta_of_t,
@@ -482,12 +483,20 @@ def run_maneuver_modal(
             delta_basic, ops.label_to_col, ops.R_rcsid, ops.has_rcsid)
 
         F_l = force_l(ops, delta_arr)
+        # Elastic acceleration and damping-rate fields, built ONCE outside the
+        # recovery-mode branch (Step 68).  They were previously formed only on
+        # the mode-acceleration path; leaving them there would make the
+        # "displacement" recovery silently report section cuts with no elastic
+        # inertia — the same physical sample answering differently depending on
+        # a recovery switch.
+        accel_a = phi_e @ daxi_e                        # ü_e, a-set
+        damp_rate_a = (phi_e @ (c_rate * dvxi_e)) if mload.zeta else None
         if recovery == "displacement":
             u_l = u_l_trim + (psi_e @ dxi_e)[ops.l_idx]
         else:
-            f_inert = ops_a.M_aa @ (phi_e @ daxi_e)
-            f_damp = (ops_a.M_aa @ (phi_e @ (c_rate * dvxi_e))
-                      if mload.zeta else np.zeros_like(f_inert))
+            f_inert = ops_a.M_aa @ accel_a
+            f_damp = (ops_a.M_aa @ damp_rate_a if damp_rate_a is not None
+                      else np.zeros_like(f_inert))
             u_l = scipy.linalg.lu_solve(
                 K_eff_lu, F_l - f_inert[ops.l_idx] - f_damp[ops.l_idx])
 
@@ -495,7 +504,8 @@ def run_maneuver_modal(
             ops, bulk, grid_index, t, u_l, delta_arr, _vals_at(delta_arr),
             modal_coords=xi.copy(),
             xi_r=dxi_r.copy(), xi_r_dot=dvxi_r.copy(), xi_r_ddot=daxi_r.copy(),
-            nz_rel=nz_rel)
+            nz_rel=nz_rel,
+            elastic_accel_a=accel_a, damping_rate_a=damp_rate_a)
         steps.append(step)
         times.append(t)
 
@@ -515,7 +525,7 @@ def run_maneuver_modal(
 
     crit_index = int(np.argmax([peak_grid_force(s) for s in steps])) if steps else 0
 
-    return ManeuverResult(
+    result = ManeuverResult(
         subcase_id=subcase.subcase_id,
         mloads_sid=subcase.mloads_sid,
         trim_sid=mldtrim.trim_sid,
@@ -541,3 +551,5 @@ def run_maneuver_modal(
             "rigid_dofs": list(basis.rigid_dofs),
         },
     )
+    result.section_envelope = build_section_envelope(result)
+    return result

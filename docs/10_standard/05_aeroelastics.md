@@ -53,7 +53,8 @@ Results   (cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, CDi, e, per_su
 | `sbeam/results/f06_writer.py` | `build_f06_sol144_text` / `write_f06_sol144` — SOL 144 trim f06 blocks (shares displacement/CBAR helpers with SOL 101) |
 | `sbeam/results/load_export.py` | `write_aero_load_cards` — trimmed flight loads as `FORCE`/`MOMENT` bulk cards |
 | `sbeam/results/monitor_points.py` | `integrate_monpnt1` / `integrate_monpnt3` — monitor-point integrated section loads |
-| `sbeam/results/section_cuts.py` | **Monitor Phase 2** — `compute_section_cuts`: MONSECT per-station running loads (the Phase 1 integrand swept over cut planes) |
+| `sbeam/results/section_cuts.py` | **Monitor Phase 2** — `compute_section_cuts`: MONSECT per-station running loads (the Phase 1 integrand swept over cut planes). **Step 68** splits it into `prepare_section_cuts` (geometry/masks/warnings, once per run) + `evaluate_section_cut` (masked sums per sample) for the transient path |
+| `sbeam/results/section_envelope.py` | **Step 68** — `build_section_envelope`: per-station max/min of a transient maneuver's cuts with the driving sample |
 | `sbeam/results/maneuver_output.py` | MLDPRNT ASCII time-history + critical-sample `FORCE`/`MOMENT` export |
 | `sbeam/viewer/aero_view.py` | Plotly box mesh, cp colour map, section-load strip chart |
 
@@ -130,7 +131,7 @@ Reproduction script for the original review: `studies/_review_ha144a_check.py`.
 | `AECOMP` | Named collection of AELIST boxes or SET1 grids for monitor points | MON1 |
 | `MONPNT1` | Aero-only integrated section load at a reference point | MON1 |
 | `MONPNT3` | Aero + inertia + reaction integrated section load (splined to grids) | MON1 |
-| `MONSECT` | Section-cut running loads — per-station shear/bending/torque table (sbeam extension) | MON2 |
+| `MONSECT` | Section-cut running loads — per-station shear/bending/torque table (sbeam extension). Static trim **and** transient MLOADS (per sample + envelope, Step 68) | MON2 / Step 68 |
 | `MLOADS` | Transient maneuver driver (Phase G0; ZAERO card set) | G0 |
 | `MLDTRIM` | Initial-condition TRIM sid for the maneuver | G0 |
 | `MLDCOMD` | Pilot command label → `TABLED1` history | G0 |

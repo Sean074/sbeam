@@ -11,7 +11,7 @@ import streamlit as st
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.results.results import (
-    ManeuverResult, Sol101Result, Sol103Result,
+    ManeuverResult, SectionCutResult, Sol101Result, Sol103Result,
     Sol144DivergResult, Sol144TrimResult, peak_grid_force,
 )
 from sbeam.assembly.load_vector import build_grid_index
@@ -460,7 +460,8 @@ def _render_sol144_trim(bulk: BulkData, result: Sol144TrimResult) -> None:
 
     # ---- MONSECT section-cut running loads (Monitor Phase 2) ----
     if result.section_loads:
-        _render_section_cuts(result)
+        st.markdown("**Section-cut running loads** (MONSECT)")
+        _render_section_cuts(result.section_loads, "seccut")
 
     # ---- Maneuver closure (balanced-maneuver net load resultant) ----
     if result.maneuver_closure is not None:
@@ -474,19 +475,30 @@ def _render_sol144_trim(bulk: BulkData, result: Sol144TrimResult) -> None:
     _render_sol144_deflected(bulk, result)
 
 
-def _render_section_cuts(result: Sol144TrimResult) -> None:
+def _render_section_cuts(
+    section_loads: dict[str, SectionCutResult], key_prefix: str,
+) -> None:
     """Per-station running-load table and spanwise plot for each MONSECT cut.
 
     The component labels come from the cut's own station axis (only ``N`` and
     ``Mt`` are role names; the rest name a CID axis), so the legend is rendered
     with the table rather than assumed.
+
+    Takes the table dict rather than a result object so the static trim panel
+    and the Step 68 transient panel render through one code path; ``key_prefix``
+    keeps the two panels' widget keys from colliding when both are on screen.
     """
-    st.markdown("**Section-cut running loads** (MONSECT)")
-    for name in sorted(result.section_loads):
-        sc = result.section_loads[name]
+    for name in sorted(section_loads):
+        sc = section_loads[name]
         names = component_names(sc.axis)
         half = "  ·  HALF-MODEL (loads per side)" if sc.half_model else ""
-        src = "aero only" if sc.listtype == "AELIST" else "aero + inertia + reaction"
+        transient = any(s.elastic_inertia is not None for s in sc.stations)
+        if sc.listtype == "AELIST":
+            src = "aero only"
+        else:
+            src = "aero + inertia + reaction"
+            if transient:
+                src += " + elastic inertia + damping"
         with st.expander(f"{name} — {sc.label}", expanded=True):
             st.caption(
                 f"COMP {sc.comp} ({sc.listtype}, {src})  ·  CID {sc.cid}  ·  "
@@ -505,14 +517,20 @@ def _render_section_cuts(result: Sol144TrimResult) -> None:
             which = st.multiselect(
                 "Plot components", list(names),
                 default=[names[2], names[4], names[3]],
-                key=f"seccut_{name}_comps",
+                key=f"{key_prefix}_{name}_comps",
             )
+            choices = ["Total", "Aero", "Inertia", "Reaction"]
+            attrs = {"Total": "totals", "Aero": "aero",
+                     "Inertia": "inertia", "Reaction": "reaction"}
+            if transient:
+                choices += ["Elastic inertia", "Damping"]
+                attrs["Elastic inertia"] = "elastic_inertia"
+                attrs["Damping"] = "damping"
             source = st.radio(
-                "Contribution", ["Total", "Aero", "Inertia", "Reaction"],
-                horizontal=True, key=f"seccut_{name}_src",
+                "Contribution", choices,
+                horizontal=True, key=f"{key_prefix}_{name}_src",
             )
-            attr = {"Total": "totals", "Aero": "aero",
-                    "Inertia": "inertia", "Reaction": "reaction"}[source]
+            attr = attrs[source]
             if which:
                 stations = [stn.station for stn in sc.stations]
                 plot = pd.DataFrame({"Station": stations})
@@ -521,6 +539,90 @@ def _render_section_cuts(result: Sol144TrimResult) -> None:
                     plot[n] = [labelled(getattr(stn, attr), sc.comp_map)[i]
                                for stn in sc.stations]
                 st.line_chart(plot, x="Station", y=which)
+
+
+def _render_section_time_history(result: ManeuverResult, step) -> None:
+    """Load-vs-time for one cut × station × component (Step 68).
+
+    The station table answers "what is the load right now"; this answers "when
+    was it worst", which is the question that decides whether the critical
+    sample is the one a stress group should size to.
+    """
+    import plotly.graph_objects as go
+
+    names_by_cut = sorted(step.section_loads)
+    with st.expander("Section-cut time history", expanded=False):
+        cut_name = st.selectbox("Cut", names_by_cut, key="man_tsec_cut")
+        sc = step.section_loads[cut_name]
+        names = component_names(sc.axis)
+        stations = [s.station for s in sc.stations]
+        c1, c2 = st.columns(2)
+        station = c1.selectbox("Station", stations, key="man_tsec_station")
+        comp = c2.selectbox("Component", list(names), index=2,
+                            key="man_tsec_comp")
+        j = stations.index(station)
+        i = names.index(comp)
+
+        times, vals = [], []
+        for s in result.steps:
+            if not s.section_loads or cut_name not in s.section_loads:
+                continue
+            cut = s.section_loads[cut_name]
+            times.append(s.t)
+            vals.append(labelled(cut.stations[j].totals, cut.comp_map)[i])
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=times, y=vals, mode="lines",
+                                 name=f"{comp} @ {fmt(station)}"))
+        if 0 <= result.crit_index < len(result.times):
+            fig.add_vline(x=float(result.times[result.crit_index]),
+                          line=dict(color="#cc2222", dash="dash"),
+                          annotation_text="critical sample")
+        # The driving sample for THIS station/component — generally not the
+        # critical one, which is the whole point of showing both.
+        env = (result.section_envelope or {}).get(cut_name)
+        if env is not None:
+            e = next((x for x in env.entries
+                      if x.station == station and x.comp == i), None)
+            if e is not None:
+                drive_t = (e.max_time if abs(e.max_value) >= abs(e.min_value)
+                           else e.min_time)
+                fig.add_vline(x=float(drive_t),
+                              line=dict(color="#2277cc", dash="dot"),
+                              annotation_text="driving sample")
+        fig.update_layout(
+            xaxis_title="Time", yaxis_title=comp,
+            height=320, margin=dict(l=0, r=0, t=20, b=0),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+
+def _render_section_envelope(result: ManeuverResult) -> None:
+    """Per-station max/min table with the driving sample (Step 68)."""
+    st.markdown("**Section-cut envelope** (max/min over the output samples)")
+    st.caption(
+        f"The driving sample is per station and component and need not be the "
+        f"critical sample ({result.crit_index + 1}), which is selected by peak "
+        f"|net grid force| over the whole model."
+    )
+    for name in sorted(result.section_envelope):
+        env = result.section_envelope[name]
+        names = component_names(env.axis)
+        half = "  ·  HALF-MODEL (loads per side)" if env.half_model else ""
+        with st.expander(f"{name} — {env.label}", expanded=False):
+            st.caption(
+                f"COMP {env.comp} ({env.listtype})  ·  CID {env.cid}  ·  "
+                f"axis {env.axis}  ·  {env.n_samples} samples  ·  "
+                f"{component_legend(env.axis)}{half}"
+            )
+            rows = [{
+                "Station": e.station, "Component": names[e.comp],
+                "Max": e.max_value, "Max sample": e.max_sample,
+                "Max time": e.max_time,
+                "Min": e.min_value, "Min sample": e.min_sample,
+                "Min time": e.min_time, "|Max|": e.absmax,
+            } for e in env.entries]
+            st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
 
 
 def _render_sol144_deflected(bulk: BulkData, result: Sol144TrimResult) -> None:
@@ -634,6 +736,18 @@ def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
     fig_struct = build_deformed_figure(bulk, step.displacements, grid_index, scale)
     st.plotly_chart(fig_struct, use_container_width=True)
 
+    # ---- MONSECT running loads at the selected sample (Step 68) ----
+    if step.section_loads:
+        crit = " (critical sample)" if sample - 1 == result.crit_index else ""
+        st.markdown(
+            f"**Section-cut running loads** (MONSECT) — sample {sample}, "
+            f"t = {fmt(step.t)}{crit}"
+        )
+        _render_section_cuts(step.section_loads, "man_seccut")
+        _render_section_time_history(result, step)
+    if result.section_envelope:
+        _render_section_envelope(result)
+
     # ---- Exports (same content as the CLI run's file outputs) ----
     from sbeam.results.maneuver_output import (
         build_maneuver_time_history_text,
@@ -656,4 +770,27 @@ def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
             file_name=f"{stem}.maneuver_qs_loads.bdf",
             mime="text/plain",
             key=f"dl_qs_loads_{result.subcase_id}",
+        )
+    # Step 68: the full per-sample MONSECT table — the same file the CLI writes.
+    if any(s.section_loads for s in result.steps):
+        from sbeam.results.load_export import build_maneuver_section_loads_csv_text
+        csv_text = build_maneuver_section_loads_csv_text(
+            {result.subcase_id: result})
+        st.download_button(
+            label="Download section-cut running loads, all samples (CSV)",
+            data=csv_text,
+            file_name=f"{stem}.maneuver_section_loads.csv",
+            mime="text/csv",
+            key=f"dl_tsec_{result.subcase_id}",
+        )
+    if result.section_envelope:
+        from sbeam.results.load_export import (
+            build_maneuver_section_envelope_csv_text)
+        st.download_button(
+            label="Download section-cut envelope (CSV)",
+            data=build_maneuver_section_envelope_csv_text(
+                {result.subcase_id: result}),
+            file_name=f"{stem}.maneuver_section_envelope.csv",
+            mime="text/csv",
+            key=f"dl_tsecenv_{result.subcase_id}",
         )

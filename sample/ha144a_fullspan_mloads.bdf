@@ -216,6 +216,24 @@ MONPNT3, MWINGEA, RIGHT WING, 35, WINGEA, 0, 15.0, 0.0, 0.0
 MONPNT3, MALLEA, WHOLE AIRCRAFT, 35, ALLGRID, 0, 15.0, 0.0, 0.0
 MONPNT1, MALLAR, AIRCRAFT AERO, 35, ALLAERO, 0, 15.0, 0.0, 0.0
 $
+$ SECTION-CUT RUNNING LOADS ON THE TRANSIENT MANEUVER (MONSECT, Step 68)
+$ ----------------------------------------------------------------------
+$ Same cut as the steady sample deck: CID 2 is the right-wing SPLINE2 axis, so
+$ the default AXIS=2 measures stations along the swept elastic axis and each
+$ cut's moment reference lands on it.  Present here so the DIRECT (l-set,
+$ prescribed-rigid) transient solver has section-cut coverage in a sample deck
+$ — the modal free-flight path is covered by ha144a_mloads_massset.bdf.
+$
+$ On an MLOADS subcase the table is produced at EVERY output sample: the f06
+$ carries the critical sample, and .maneuver_section_loads.csv the full history.
+$ The transient table has two columns the steady one does not — the elastic
+$ d'Alembert load and the modal/Rayleigh damping force.  They are what make the
+$ cut equal the CBAR internal force while the airframe is accelerating.
+SET1, 1330, 111, 112, 121, 122
+AECOMP, RWINGALL, SET1, 1330
+MONSECT, SECRW, RIGHT WING EA, RWINGALL, 2
++, 8.0, 10.0, 12.0, 20.0
+$
 $ ============================================================
 $ AERODYNAMIC TRIM VARIABLES
 $ ============================================================

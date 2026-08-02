@@ -81,7 +81,7 @@ from sbeam.aero.coupling import build_qaa, build_fg, build_gaf
 from sbeam.aero.integration import build_djx, build_dj_rigidrate, rigid_rate_scales
 from sbeam.solver.sol103 import solve_modes
 from sbeam.solver.sol144 import build_inertial_cols, get_suport_local
-from sbeam.types import FloatArray, IntArray
+from sbeam.types import FloatArray, IntArray, SparseMatrix
 from sbeam.model.aero import require_aeros
 
 
@@ -176,6 +176,12 @@ class AsetOperators:
     K_aa: FloatArray
     M_aa: FloatArray
     Q_aa: FloatArray
+    # g-set stiffness and mass, retained rather than discarded (Step 68): the
+    # transient elastic-inertia load must be formed as M_gg·ü_g, since mapping a
+    # reduced a-set force back to the g-set through Tᵀ is not well defined across
+    # an RBE3.  K_gg is what ``recover_reactions`` needs for the reaction column.
+    K_gg: SparseMatrix
+    M_gg: SparseMatrix
     Q_ax_a: FloatArray               # (n_a, n_lab) q-free aero sensitivity
     M_ax_a: FloatArray
     M_ax_g: FloatArray
@@ -255,7 +261,7 @@ def assemble_aset_operators(
     return AsetOperators(
         grid_index=grid_index, red=red,
         all_labels=all_labels, label_to_col=label_to_col,
-        K_aa=K_aa, M_aa=M_aa, Q_aa=Q_aa, Q_ax_a=Q_ax_a,
+        K_aa=K_aa, M_aa=M_aa, Q_aa=Q_aa, Q_ax_a=Q_ax_a, K_gg=K_gg, M_gg=M_gg,
         M_ax_a=M_ax_a, M_ax_g=M_ax_g, f_aero_g_unit=f_aero_g_unit,
         D_jx=D_jx, suport_local=suport_local, rigid_dofs=rigid_dofs,
         suport_pos=suport_pos, x_ref=x_ref, R_rcsid=R_rcsid, has_rcsid=has_rcsid,

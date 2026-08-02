@@ -1421,6 +1421,51 @@ opposite sides.
 additional input — which is how the classic **wing-fuel bending relief** (fuel outboard reduces
 the net root bending even as the airplane gets heavier) falls out of the tables directly.
 
+#### The transient free body — a term that cancels globally and not locally
+
+On a *static* balanced trim the free body of Equation (30a) is complete with the aerodynamic
+load, the rigid-body inertia relief and the constraint reaction. On an instant of a *maneuver*
+it is not. Writing the total displacement in the mean-axis decomposition of §7.3,
+$u = \Phi_r\xi_r + \Phi_e\xi_e$, the d'Alembert load is
+
+$$
+f_{\text{inertia}}(t) \;=\; -M\,\ddot u \;=\;
+\underbrace{-M\,\Phi_r\ddot\xi_r}_{\text{rigid — the URDD/inertia-relief term}}
+\;\underbrace{-\;M\,\Phi_e\ddot\xi_e}_{\text{elastic}} ,
+\tag{30b}
+$$
+
+and only the first group is the trim's inertia column. The second is a genuine distributed
+load: the outboard wing is accelerating elastically, and a free body of it must carry
+$-M\Phi_e\ddot\xi_e$ over the members outboard of the plane.
+
+What makes this easy to miss is the mean-axis mass orthogonality $\Phi_r^{\mathsf T} M \Phi_e = 0$
+that §7.3 relies on. It says exactly that the elastic inertia has **zero rigid-row resultant**:
+
+$$
+\Phi_r^{\mathsf T}\big(-M\,\Phi_e\ddot\xi_e\big) \;=\; 0 \quad\text{for all }\ddot\xi_e .
+\tag{30c}
+$$
+
+So the whole-airplane force and moment balance — the closure diagnostic of the free-flight
+solver — is *identically blind* to the term, no matter how large it is. A section cut is not a
+rigid-row resultant: it is the sum over an arbitrary subset of members about an arbitrary point,
+and Equation (30c) says nothing about that. The term therefore appears at full strength in
+every station table while being invisible to every global check.
+
+This is why the transient cut needs a *local* verification. The identity of Equation (30a) —
+outboard resultant equals the beam internal end force from $K u$ — remains the right one,
+because $K u$ already contains the elastic inertia (the integrator solved for $u$ with it on the
+right-hand side) while the load sum does not unless the term is added explicitly. Measured on
+the HA144A elevator-step deck, the worst sample's wing cut misses the $CBAR$ internal shear by
+1.2 % without Equation (30b)'s second group and by $\sim\!10^{-11}$ with it (gate V-TSEC3).
+
+A structural damping force $-C\dot u$ enters the free body the same way and for the same reason.
+
+*Implemented (Step 68):* per-sample cuts on both transient solvers, with the elastic and damping
+contributions reported as their own columns rather than folded into the inertia column, plus a
+per-station envelope over the time history. See `docs/10_standard/05c_sol144_maneuver.md`.
+
 ### 7.4 Apparent (added) mass — the non-circulatory loads
 
 When the motion is fast enough that acceleration matters, a thin airfoil carries

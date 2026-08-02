@@ -5,13 +5,15 @@ so a failure here is the plane test, the reference point, the moment transfer or
 the component labelling, and nothing else.  The solver-level gates (V-SEC2/3/5/6)
 live in ``tests/aero/test_section_cuts_sol144.py``.
 """
+import warnings
+
 import numpy as np
 import pytest
 
 from sbeam.parser.bdf_reader import parse_bulk_data
 from sbeam.results.section_cuts import (
     compute_section_cut, compute_section_cuts, component_map, component_names,
-    labelled,
+    evaluate_section_cut, labelled, prepare_section_cut,
 )
 
 # A 10-unit cantilever along +y: 11 grids at y = 0..10, all in basic CID 0.
@@ -199,3 +201,76 @@ def test_compute_section_cuts_maps_every_card(bulk, grid_index):
     out = compute_section_cuts(bulk, None, None, _tip_load(bulk, grid_index),
                                None, grid_index)
     assert set(out) == set(bulk.monsects)
+
+
+# --------------------------------------------------------------------------- #
+# V-TSEC9 — the Step 68 prepare/evaluate split must be neutral for static runs.
+# --------------------------------------------------------------------------- #
+
+def test_vtsec9_two_phase_api_is_bit_identical(bulk, grid_index):
+    """The prepared plan reproduces the one-shot call exactly, not approximately.
+
+    The transient path evaluates cuts through ``prepare`` + ``evaluate``; the
+    static path keeps calling ``compute_section_cut``.  If those two ever drift,
+    a transient cut and a static cut of the same model stop being comparable —
+    so the gate is bitwise, not ``approx``.
+    """
+    load = _tip_load(bulk, grid_index)
+    one_shot = compute_section_cut(bulk.monsects["SECB"], bulk, None, None,
+                                   load, None, grid_index)
+    plan = prepare_section_cut(bulk.monsects["SECB"], bulk, None, grid_index)
+    two_phase = evaluate_section_cut(plan, None, load, None, grid_index)
+
+    assert len(one_shot.stations) == len(two_phase.stations)
+    for a, b in zip(one_shot.stations, two_phase.stations):
+        assert a.station == b.station and a.n_members == b.n_members
+        for field in ("ref", "totals", "aero", "inertia", "reaction"):
+            assert np.array_equal(getattr(a, field), getattr(b, field))
+        assert (a.d_ds is None) == (b.d_ds is None)
+        if a.d_ds is not None:
+            assert np.array_equal(a.d_ds, b.d_ds)
+    # A static evaluation reports no transient columns at all — None, not zeros,
+    # so a consumer can tell "not applicable" from "computed and it was zero".
+    assert all(s.elastic_inertia is None and s.damping is None
+               for s in two_phase.stations)
+
+
+def test_vtsec9_on_plane_warning_fires_once_per_plan(grid_index):
+    """Preparing once and evaluating N times must not warn N times.
+
+    This is the property that makes per-sample evaluation usable: a 2000-sample
+    maneuver would otherwise emit 2000 identical on-plane warnings.
+    """
+    bdf = _BDF[:-2] + ["MONSECT,SECO,ON GRID,BEAM,0", "+,5.0"]
+    b = parse_bulk_data(bdf)
+    gi = {gid: i for i, gid in enumerate(sorted(b.grids))}
+    load = np.zeros(6 * len(b.grids))
+    load[6 * gi[110] + 2] = 1.0
+
+    with pytest.warns(UserWarning, match="INBOARD side") as rec:
+        plan = prepare_section_cut(b.monsects["SECO"], b, None, gi)
+    assert len(rec) == 1
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")        # any warning here fails the test
+        for _ in range(50):
+            evaluate_section_cut(plan, None, load, None, gi)
+
+
+def test_transient_columns_add_into_the_totals(bulk, grid_index):
+    """Elastic-inertia and damping enter ``totals`` and are reported separately."""
+    aero = _tip_load(bulk, grid_index, 3.0)
+    elastic = _tip_load(bulk, grid_index, -1.0)
+    damp = _tip_load(bulk, grid_index, 0.25)
+    plan = prepare_section_cut(bulk.monsects["SECB"], bulk, None, grid_index)
+    cut = evaluate_section_cut(plan, None, aero, None, grid_index,
+                               elastic_inertial_loads=elastic, damping_loads=damp)
+    st = cut.stations[0]
+    lab = labelled(st.totals, cut.comp_map)
+    assert lab[2] == pytest.approx(3.0 - 1.0 + 0.25, abs=1e-12)
+    assert labelled(st.aero, cut.comp_map)[2] == pytest.approx(3.0, abs=1e-12)
+    assert labelled(st.elastic_inertia, cut.comp_map)[2] == pytest.approx(-1.0, abs=1e-12)
+    assert labelled(st.damping, cut.comp_map)[2] == pytest.approx(0.25, abs=1e-12)
+    # And the moment arm applies to the new columns exactly as it does to aero.
+    assert labelled(st.elastic_inertia, cut.comp_map)[4] == pytest.approx(
+        -1.0 * (_L - st.station), abs=1e-12)

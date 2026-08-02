@@ -16,12 +16,13 @@ form, but the set sums to the trimmed lift minus the inertia-relief reaction
 """
 
 import csv
+import io
 from typing import Optional
 
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
-from sbeam.results.results import Sol144TrimResult
+from sbeam.results.results import ManeuverResult, Sol144TrimResult
 from sbeam.results.section_cuts import component_names, labelled
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.parser.bdf_field import fmt_real8
@@ -204,6 +205,46 @@ def write_monitor_csv(filepath: str, results: dict[int, Sol144TrimResult]) -> No
                 ])
 
 
+# Column block shared by the static and transient section-load CSVs, so the two
+# files stay readable by one consumer (Step 68).  The transient writer inserts
+# its sample/time identity columns before these and appends the elastic-inertia
+# and damping contributions after them.
+_SECTION_CUT_COLUMNS = [
+    "name", "label", "comp", "listtype",
+    "cid", "axis", "side", "half_model", "station",
+    "x_ref", "y_ref", "z_ref",
+    "comp_1", "comp_2", "comp_3", "comp_4", "comp_5", "comp_6",
+    "c1", "c2", "c3", "c4", "c5", "c6",
+    "Fx", "Fy", "Fz", "Mx", "My", "Mz",
+    "c1_aero", "c2_aero", "c3_aero", "c4_aero", "c5_aero", "c6_aero",
+    "c1_inertia", "c2_inertia", "c3_inertia", "c4_inertia", "c5_inertia",
+    "c6_inertia",
+    "c1_react", "c2_react", "c3_react", "c4_react", "c5_react", "c6_react",
+    "n_members",
+    "dc1_ds", "dc2_ds", "dc3_ds", "dc4_ds", "dc5_ds", "dc6_ds",
+]
+
+
+def _section_cut_row(sc, st) -> list:
+    """The shared per-station cells of a section-cut CSV row."""
+    d = st.d_ds
+    return [
+        sc.name, sc.label, sc.comp, sc.listtype,
+        sc.cid, sc.axis, sc.side, int(sc.half_model),
+        f"{st.station:.6E}",
+        *(f"{v:.6E}" for v in st.ref),
+        *component_names(sc.axis),
+        *(f"{v:.6E}" for v in labelled(st.totals, sc.comp_map)),
+        *(f"{v:.6E}" for v in st.totals),
+        *(f"{v:.6E}" for v in labelled(st.aero, sc.comp_map)),
+        *(f"{v:.6E}" for v in labelled(st.inertia, sc.comp_map)),
+        *(f"{v:.6E}" for v in labelled(st.reaction, sc.comp_map)),
+        st.n_members,
+        *(("" if d is None else f"{v:.6E}")
+          for v in (d if d is not None else range(6))),
+    ]
+
+
 def write_section_loads_csv(filepath: str, results: dict[int, Sol144TrimResult]) -> None:
     """Write MONSECT section-cut running loads for all trim subcases to one CSV.
 
@@ -219,20 +260,7 @@ def write_section_loads_csv(filepath: str, results: dict[int, Sol144TrimResult])
         filepath: Output ``*.section_loads.csv`` path.
         results:  {subcase_id: Sol144TrimResult}.
     """
-    header = [
-        "case", "massset", "mass_case", "name", "label", "comp", "listtype",
-        "cid", "axis", "side", "half_model", "station",
-        "x_ref", "y_ref", "z_ref",
-        "comp_1", "comp_2", "comp_3", "comp_4", "comp_5", "comp_6",
-        "c1", "c2", "c3", "c4", "c5", "c6",
-        "Fx", "Fy", "Fz", "Mx", "My", "Mz",
-        "c1_aero", "c2_aero", "c3_aero", "c4_aero", "c5_aero", "c6_aero",
-        "c1_inertia", "c2_inertia", "c3_inertia", "c4_inertia", "c5_inertia",
-        "c6_inertia",
-        "c1_react", "c2_react", "c3_react", "c4_react", "c5_react", "c6_react",
-        "n_members",
-        "dc1_ds", "dc2_ds", "dc3_ds", "dc4_ds", "dc5_ds", "dc6_ds",
-    ]
+    header = ["case", "massset", "mass_case"] + _SECTION_CUT_COLUMNS
     with open(filepath, "w", newline="") as fh:
         writer = csv.writer(fh)
         writer.writerow(header)
@@ -242,27 +270,139 @@ def write_section_loads_csv(filepath: str, results: dict[int, Sol144TrimResult])
             ms_sid = getattr(result, "massset_sid", None)
             for name in sorted(result.section_loads.keys()):
                 sc = result.section_loads[name]
-                names = component_names(sc.axis)
                 for st in sc.stations:
-                    d = st.d_ds
                     writer.writerow([
                         sc_id,
                         ms_sid if ms_sid is not None else "",
                         getattr(result, "massset_label", "BASELINE"),
-                        sc.name, sc.label, sc.comp, sc.listtype,
-                        sc.cid, sc.axis, sc.side, int(sc.half_model),
-                        f"{st.station:.6E}",
-                        *(f"{v:.6E}" for v in st.ref),
-                        *names,
-                        *(f"{v:.6E}" for v in labelled(st.totals, sc.comp_map)),
-                        *(f"{v:.6E}" for v in st.totals),
-                        *(f"{v:.6E}" for v in labelled(st.aero, sc.comp_map)),
-                        *(f"{v:.6E}" for v in labelled(st.inertia, sc.comp_map)),
-                        *(f"{v:.6E}" for v in labelled(st.reaction, sc.comp_map)),
-                        st.n_members,
-                        *(("" if d is None else f"{v:.6E}")
-                          for v in (d if d is not None else range(6))),
+                        *_section_cut_row(sc, st),
                     ])
+
+
+def write_maneuver_section_loads_csv(
+    filepath: str, results: dict[int, "ManeuverResult"]
+) -> None:
+    """Write MONSECT running loads for every sample of every maneuver subcase.
+
+    One row per cut per station per **sample**.  The static
+    ``section_loads.csv`` schema is carried verbatim (same column names, same
+    order) with four identity columns inserted up front — ``mloads``, ``sample``
+    (1-based, matching the f06 SAMPLE column, DEF-M5), ``time`` and ``critical``
+    — and the two Step 68 contributions appended.  A tool that reads the static
+    file reads this one; a pivot on ``station`` × ``time`` is the running-load
+    time history, and a groupby on ``case``/``massset`` is the sweep envelope.
+
+    Written as its own file rather than merged into ``section_loads.csv``: the
+    row cardinality differs by orders of magnitude, and a static table sitting
+    in a mostly-empty ``time`` column serves neither consumer.
+
+    Args:
+        filepath: Output ``*.maneuver_section_loads.csv`` path.
+        results:  {subcase_id: ManeuverResult}.
+    """
+    with open(filepath, "w", newline="") as fh:
+        _write_maneuver_section_loads(fh, results)
+
+
+def build_maneuver_section_loads_csv_text(
+    results: dict[int, "ManeuverResult"]
+) -> str:
+    """The same CSV as :func:`write_maneuver_section_loads_csv`, as a string.
+
+    The viewer offers this as a download button; sharing the writer keeps the
+    downloaded file byte-identical to the one the CLI run produces.
+    """
+    buf = io.StringIO()
+    _write_maneuver_section_loads(buf, results)
+    return buf.getvalue()
+
+
+def _write_maneuver_section_loads(fh, results: dict[int, "ManeuverResult"]) -> None:
+    header = (["case", "mloads", "massset", "sample", "time", "critical"]
+              + _SECTION_CUT_COLUMNS
+              + [f"c{i}_elastic" for i in range(1, 7)]
+              + [f"c{i}_damping" for i in range(1, 7)])
+    writer = csv.writer(fh)
+    writer.writerow(header)
+    for sc_id, result in results.items():
+        ms_sid = result.massset_sid
+        for i, step in enumerate(result.steps):
+            if not step.section_loads:
+                continue
+            for name in sorted(step.section_loads.keys()):
+                sc = step.section_loads[name]
+                for st in sc.stations:
+                    el = (st.elastic_inertia if st.elastic_inertia is not None
+                          else np.zeros(6))
+                    da = st.damping if st.damping is not None else np.zeros(6)
+                    writer.writerow([
+                        sc_id, result.mloads_sid,
+                        ms_sid if ms_sid is not None else "",
+                        i + 1, f"{step.t:.6E}",
+                        int(i == result.crit_index),
+                        *_section_cut_row(sc, st),
+                        *(f"{v:.6E}" for v in labelled(el, sc.comp_map)),
+                        *(f"{v:.6E}" for v in labelled(da, sc.comp_map)),
+                    ])
+
+
+def write_maneuver_section_envelope_csv(
+    filepath: str, results: dict[int, "ManeuverResult"]
+) -> None:
+    """Write the per-station section-cut envelope for all maneuver subcases.
+
+    One row per cut per station per labelled component: the max and min over the
+    run's samples with the sample and time that drove each, plus ``absmax`` (the
+    sizing number).  ``max_sample``/``min_sample`` are the **driving** samples,
+    which need not be the run's ``critical`` sample — the latter is carried as
+    its own column so a consumer can see when they differ.
+
+    Args:
+        filepath: Output ``*.maneuver_section_envelope.csv`` path.
+        results:  {subcase_id: ManeuverResult}.
+    """
+    with open(filepath, "w", newline="") as fh:
+        _write_maneuver_section_envelope(fh, results)
+
+
+def build_maneuver_section_envelope_csv_text(
+    results: dict[int, "ManeuverResult"]
+) -> str:
+    """The envelope CSV as a string, for the viewer download button."""
+    buf = io.StringIO()
+    _write_maneuver_section_envelope(buf, results)
+    return buf.getvalue()
+
+
+def _write_maneuver_section_envelope(fh, results: dict[int, "ManeuverResult"]) -> None:
+    header = [
+        "case", "mloads", "massset", "name", "label", "comp", "listtype",
+        "cid", "axis", "side", "half_model", "n_samples", "critical_sample",
+        "station", "comp_index", "comp_name",
+        "max", "max_sample", "max_time",
+        "min", "min_sample", "min_time", "absmax",
+    ]
+    writer = csv.writer(fh)
+    writer.writerow(header)
+    for sc_id, result in results.items():
+        if not result.section_envelope:
+            continue
+        ms_sid = result.massset_sid
+        for name in sorted(result.section_envelope.keys()):
+            env = result.section_envelope[name]
+            names = component_names(env.axis)
+            for e in env.entries:
+                writer.writerow([
+                    sc_id, result.mloads_sid,
+                    ms_sid if ms_sid is not None else "",
+                    env.name, env.label, env.comp, env.listtype,
+                    env.cid, env.axis, env.side, int(env.half_model),
+                    env.n_samples, result.crit_index + 1,
+                    f"{e.station:.6E}", e.comp + 1, names[e.comp],
+                    f"{e.max_value:.6E}", e.max_sample, f"{e.max_time:.6E}",
+                    f"{e.min_value:.6E}", e.min_sample, f"{e.min_time:.6E}",
+                    f"{e.absmax:.6E}",
+                ])
 
 
 def write_maneuver_load_cards(

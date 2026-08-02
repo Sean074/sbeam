@@ -3,9 +3,12 @@
 import math
 from datetime import datetime
 
+import numpy as np
+
 from sbeam.model.bulk_data import BulkData
 from sbeam.results.results import (
-    BarForce, BarStress, ManeuverResult, MonitorLoad, SectionCutResult,
+    BarForce, BarStress, ManeuverResult, MonitorLoad, SectionCutEnvelope,
+    SectionCutResult,
     Sol101Result, Sol103Result, Sol144TrimResult, Sol144DivergResult,
     peak_grid_force,
 )
@@ -125,7 +128,8 @@ def _monitor_block(lines: list[str], monitor_loads: dict[str, MonitorLoad]) -> N
 
 
 def _section_cut_block(
-    lines: list[str], section_loads: dict[str, SectionCutResult]
+    lines: list[str], section_loads: dict[str, SectionCutResult],
+    title_suffix: str = "",
 ) -> None:
     """Append a SECTION CUT RUNNING LOADS block (MONSECT, Monitor Phase 2).
 
@@ -137,8 +141,12 @@ def _section_cut_block(
     Never annotated *WHOLE-AIRPLANE*: a section cut is not parity-scaled.  A
     half model is flagged HALF-MODEL instead, meaning the table is the per-side
     load it physically is.
+
+    ``title_suffix`` stamps the transient block with the sample it was taken at
+    (Step 68), so a table lifted out of an f06 always says which instant it is.
     """
-    lines.append("                          S E C T I O N   C U T   R U N N I N G   L O A D S")
+    lines.append("                          S E C T I O N   C U T   R U N N I N G   L O A D S"
+                 + title_suffix)
     lines.append("")
     for name in sorted(section_loads.keys()):
         sc = section_loads[name]
@@ -149,8 +157,18 @@ def _section_cut_block(
             f" ({sc.listtype})   CID = {sc.cid}   AXIS = {sc.axis} (+{axis_tag})"
             f"   SIDE = {sc.side}{tag}"
         )
-        src = ("AERO ONLY" if sc.listtype == "AELIST"
-               else "AERO + INERTIA + REACTION")
+        if sc.listtype == "AELIST":
+            src = "AERO ONLY"
+        else:
+            src = "AERO + INERTIA + REACTION"
+            # Step 68: name the transient columns when they exist, so a reader
+            # never has to guess whether the elastic d'Alembert load is in the
+            # sum.  An AELIST cut has no such columns by construction.
+            if any(s.elastic_inertia is not None for s in sc.stations):
+                src += " + ELASTIC INERTIA"
+                if any(s.damping is not None and np.any(s.damping)
+                       for s in sc.stations):
+                    src += " + DAMPING"
         lines.append(f"        SOURCE: {src}      COMPONENTS: {component_legend(sc.axis)}")
         if sc.normal is not None:
             lines.append(
@@ -167,6 +185,56 @@ def _section_cut_block(
                 "     " + _fmt(st.station)
                 + "".join(_fmt(v) for v in st.ref)
                 + "".join(_fmt(v) for v in labelled(st.totals, sc.comp_map))
+            )
+        lines.append("")
+    lines.append("")
+
+
+def _section_envelope_block(
+    lines: list[str], envelope: dict[str, "SectionCutEnvelope"], crit_sample: int
+) -> None:
+    """Append a SECTION CUT ENVELOPE block (Step 68).
+
+    One row per station per labelled component, giving the max and min over the
+    run's samples and the sample that drove each.  The driving sample is printed
+    because it is generally NOT the critical sample — the header says so
+    explicitly rather than leaving a reader to assume the two columns agree.
+
+    The full per-sample table is not written to the f06 (samples × stations ×
+    cuts would swamp it); it goes to the maneuver section-loads CSV.
+    """
+    lines.append("                          S E C T I O N   C U T   E N V E L O P E")
+    lines.append("")
+    lines.append(
+        f"      MAX/MIN OVER THE OUTPUT SAMPLES.  THE DRIVING SAMPLE IS PER "
+        f"STATION AND COMPONENT AND NEED NOT BE THE"
+    )
+    lines.append(
+        f"      CRITICAL SAMPLE ({crit_sample}), WHICH IS SELECTED BY PEAK "
+        f"|NET GRID FORCE| OVER THE WHOLE MODEL."
+    )
+    lines.append("")
+    for name in sorted(envelope.keys()):
+        env = envelope[name]
+        tag = "   HALF-MODEL (LOADS PER SIDE)" if env.half_model else ""
+        lines.append(
+            f"      MONSECT {name:<8}  LABEL: {env.label:<24}  COMP {env.comp}"
+            f" ({env.listtype})   CID = {env.cid}   AXIS = {env.axis}"
+            f"   SIDE = {env.side}   SAMPLES = {env.n_samples}{tag}"
+        )
+        lines.append(f"        COMPONENTS: {component_legend(env.axis)}")
+        lines.append(
+            "         STATION   COMP            MAX     SAMPLE          T-MAX"
+            "            MIN     SAMPLE          T-MIN         ABS-MAX"
+        )
+        names = component_names(env.axis)
+        for e in env.entries:
+            lines.append(
+                "     " + _fmt(e.station)
+                + f"{names[e.comp]:>7}"
+                + _fmt(e.max_value) + f"{e.max_sample:>11}" + _fmt(e.max_time)
+                + _fmt(e.min_value) + f"{e.min_sample:>11}" + _fmt(e.min_time)
+                + _fmt(e.absmax)
             )
         lines.append("")
     lines.append("")
@@ -830,6 +898,18 @@ def _build_f06_sol144_maneuver_text(
 
     _displacement_block(lines, crit.displacements, bulk, grid_index, gids_sorted)
     _bar_forces_block(lines, bulk, crit.bar_forces)
+
+    # MONSECT running loads at the critical sample (Step 68).  The full
+    # per-sample history is deliberately not written here — samples × stations ×
+    # cuts would swamp the f06; it goes to the section-loads CSV.
+    if crit.section_loads:
+        _section_cut_block(
+            lines, crit.section_loads,
+            title_suffix=(f"   ( S A M P L E  {result.crit_index + 1},"
+                          f"  T = {_fmt(crit.t).strip()} )"))
+    if result.section_envelope:
+        _section_envelope_block(
+            lines, result.section_envelope, result.crit_index + 1)
 
     lines.append("                                       * * * END OF JOB * * *")
     lines.append("")

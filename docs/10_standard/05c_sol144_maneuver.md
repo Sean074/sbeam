@@ -1019,9 +1019,107 @@ mass case, or got the inertia sign wrong, could not reproduce that.
 > `SET1` cut's `*_aero` split for the airload carried across a *structural* station, and
 > an `AELIST` cut for the airload distribution in its own right.
 
-### Not covered (follow-on P8b)
+## Section Cuts on Transient Maneuvers (Step 68)
 
-Transient (`MLOADS`) section cuts. The integration is reusable verbatim at each output
-time, but the deliverable becomes a per-time-step table — a third dimension in the f06
-block, the CSV schema and the viewer plot, plus a critical-station/critical-time
-envelope. Scope the critical-sample cut first, reusing this schema unchanged.
+A deck carrying `MONSECT` cards and an `MLOADS` subcase produces the running-load table at
+**every output sample**, on both transient solvers. No new card and no new field: the
+presence of the cards is the request, exactly as for a static trim.
+
+### The extra load column, and why it is not optional
+
+A static trim's free body is `aero + inertia + reaction`. A transient sample's is not.
+The structure is accelerating elastically, so the free body outboard of the plane carries
+its own d'Alembert load:
+
+```
+totals(t) = aero(t) + inertia_rigid(t) + inertia_elastic(t) + damping(t) + reaction(t)
+
+inertia_elastic(t) = −M_gg · ü_g,elastic(t)      the elastic d'Alembert load
+damping(t)         = −M_gg · w_g(t)              modal (ζ) or Rayleigh (α) damping force
+```
+
+`ManeuverStep.inertial_loads` is `M_ax_g·δ_basic` — the **rigid-body** term only. The
+elastic term is recovered separately (`ManeuverStep.elastic_inertial_loads`) and reported
+as its own cut column rather than folded into `inertia`, so a static table keeps exactly
+the three-column split it was verified against.
+
+> **Why no existing diagnostic caught this.** Every global check sbeam had is blind to the
+> elastic term: mean-axis orthogonality makes the rigid-row resultant of `M·Φ_e ξ̈_e`
+> **exactly zero**, so the Step 63 free-flight closure is ≈ 0 whether or not the term is
+> present. A section cut is a *local* resultant and carries it in full. On the HA144A
+> elevator-step deck the worst sample's wing cut was out by **1.21 %** without it and by
+> **3.7e-11** with it, measured against `CBAR 120`'s internal force. A quantity that
+> cancels globally and does not cancel locally needs a local gate — which is V-TSEC3.
+
+The columns are formed once, in `maneuver_qs.recover_step`, and both solvers feed it the
+acceleration field: Newmark's `a_l` for the direct l-set solver, `Φ_e ξ̈_e` for the modal
+one. In `maneuver_modal` they are built **outside** the recovery-mode branch, so the
+`displacement` recovery cannot silently report cuts without elastic inertia.
+
+### Critical sample vs driving sample
+
+Two "worsts" coexist and are labelled differently everywhere they appear:
+
+| | Meaning | Scope |
+|---|---|---|
+| **Critical sample** | `result.crit_index`, selected by `peak_grid_force` (DEF-M5) | one per subcase; selects the f06 detail table and the exported load cards |
+| **Driving sample** | the sample at which *this* station's *this* component peaks | per station, per component, from the envelope |
+
+They routinely differ — on the shipped `ha144a_fullspan_mloads` run the wing station's
+driving sample is 5 (t = 0.4) while the critical sample is 11. The f06 envelope header
+says so explicitly. The critical-sample metric is **not** redefined to be
+section-cut-based; DEF-M5's one-metric-one-numbering ruling stands.
+
+### Envelope
+
+`results/section_envelope.py` reduces the run's samples to, per cut / station / labelled
+component, the max and min with the sample and time that drove each, plus `absmax` (the
+sizing number). The reduction is **within one subcase**; enveloping across subcases and
+mass cases is a groupby over the CSV, whose `case`/`massset` columns exist for exactly
+that. Ties resolve to the earliest sample.
+
+### Output
+
+- **f06**: `SECTION CUT RUNNING LOADS ( SAMPLE n, T = … )` at the critical sample, with the
+  `SOURCE:` line naming the transient columns
+  (`AERO + INERTIA + REACTION + ELASTIC INERTIA + DAMPING`), followed by a
+  `SECTION CUT ENVELOPE` block. The full per-sample history is deliberately **not** in the
+  f06 — samples × stations × cuts would swamp it.
+- **CSV** `<stem>.maneuver_section_loads.csv`: one row per cut per station per sample. The
+  static `section_loads.csv` schema verbatim, with `mloads` / `sample` (1-based) / `time` /
+  `critical` inserted up front and `c*_elastic` / `c*_damping` appended. A tool that reads
+  the static file reads this one; a pivot on station × time is the running-load history.
+- **CSV** `<stem>.maneuver_section_envelope.csv`: the envelope, with `max_sample` /
+  `min_sample` / `critical_sample` side by side.
+- **Viewer**: the station table at the sample the existing slider selects, a
+  cut × station × component time-history chart marking both the critical and the driving
+  sample, the envelope table, and both CSVs as downloads.
+
+### Validation
+
+| ID | Gate | Where |
+|----|------|-------|
+| V-TSEC1 | **Anchor** — commands held at trim: every sample's cut == the static Step 53 table, both solvers | `tests/aero/test_section_cuts_transient.py` |
+| V-TSEC3 | **Load-bearing** — on a dynamic sample the cut == `CBAR 120`'s internal force (~1e-8 rel), plus a companion asserting it *fails* without the elastic column | same |
+| V-TSEC4 | Station outboard of everything is exactly zero, including the new columns | same |
+| V-TSEC5 | A cut over the **entire** model closes to 1e-8·lift at every sample — pins the signs of both new columns and the reaction | same |
+| V-TSEC6 | Envelope max/min/driving-sample == a brute-force reduction; bounds every sample; ties → earliest | `tests/results/test_section_envelope.py`, `..._transient.py` |
+| V-TSEC9 | The `prepare`/`evaluate` split is **bitwise** identical to the one-shot call; on-plane warning fires once per plan | `tests/results/test_section_cuts.py` |
+| V-TSEC10 | Cuts do not dominate runtime (no per-sample geometry rebuild) | `tests/aero/test_section_cuts_transient.py` |
+| V-TSEC11 | Both solvers produce cuts; the two modal recovery modes give an identical elastic column | same |
+
+> **V-TSEC5 is not `closure ≈ 0`.** Under the direct (prescribed-rigid) solver the closure
+> is *genuinely non-zero* during a maneuver: the rigid state is held at the trim URDD while
+> the elevator adds lift, and the imbalance is reacted at the SUPORT. The free body closes
+> only once that reaction is counted — which also means a whole-model cut whose `AECOMP`
+> omits the SUPORT grid cannot balance. The deck's own `ALLGRID` omits GRID 90 for exactly
+> this reason, so the gate builds its own collection.
+
+### Not covered (follow-ons)
+
+- **`MONPNT1`/`MONPNT3` on transient** (P8c). The enabling inputs all exist per sample; only
+  the monitor output surface is missing.
+- **Cross-subcase / cross-mass-case envelopes.** A pivot over the CSVs, and the same gap
+  exists for static tables; it belongs with the sweep post-processing.
+- **Elastic inertia in `net_loads`.** The exported critical-sample `FORCE`/`MOMENT` cards
+  still carry aero + rigid inertia only. See the backlog's Step 68 follow-ons.

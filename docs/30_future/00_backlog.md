@@ -57,7 +57,6 @@ solver is now the self-balancing free-flight solver; see
 
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P8b | Section cuts on transient (MLOADS) maneuvers | Tier 1 | ~0.5 d (critical sample) + ~1–1.5 d (full history) | Follow-on to Monitor Phase 2 (closed 2026-08-02, static only); the integrand is reusable verbatim, the work is the per-time-step output design + envelope (P10/P11 delivered 2026-08-02). |
 | P12 | Viewer — SOL 144 / MLOADS case authoring UI | Tier 1 | ~5–8 d | Early-design usability: today SOL 144 cases must be hand-authored in the BDF; a production process needs the authoring loop closed. Sequenced after Steps 62–63 (both closed 2026-08-02) so it authors the final card surface once. |
 | P13 | DEF-R1 refactor batch — decompose `sol144.py` (+ R2, R3, R4; R7 at a release boundary) | Defects | ~2–3 d | `run_sol144_trim` is a ~500-line god function in an 1838-line module that P14/P16 both extend. Do it after Tier 1 stops churning it and **before** Phase D piles on. |
 | P14 | `matrix_gaf_export` Phases 1–2 | Tier 2 | ~8 d | External flutter handoff (FLAPS) **and** the declared prerequisite of Phase D (MKAERO1, Mach loop, bundle writers). |
@@ -66,7 +65,9 @@ solver is now the self-balancing free-flight solver; see
 | P17 | Phase D cont. — RFA state-space + SOL 146 gust + Monitor Phase 3 | Tier 3 | ~15–20 d | Completes the dynamic loads process (CS-25.341 gust/turbulence monitors). |
 | P18 | `matrix_reuse_store` Phases 1–3 | Tier 2 | ~6 d | Real payoff only once envelope sweeps (many Machs × masses × maneuvers) exist — i.e. after P11/P16. Its Phase 0 is stale (see verdicts). |
 
-**Opportunistic / unranked** (small, independent, do when adjacent): SPLINE9 go/no-go
+**Opportunistic / unranked** (small, independent, do when adjacent): transient
+`net_loads` elastic-inertia decision and `MONPNT1`/`MONPNT3` on transient — both
+Step 68 follow-ons, see below; SPLINE9 go/no-go
 convergence study (~1 d, study only); G0-d unsteady corrections; body fence image method;
 load-case envelope viewer; CHORDCP follow-ons; A9 follow-ons; the remaining DEF-L items
 (L2–L7 — extrapolation advisory, SUPORT-drop diagnosis, viewer Cp/span-load, f06
@@ -362,12 +363,12 @@ The four closed-form anchors of that evidence basis are now **enforced by CI** �
 
 ---
 
-## Tier 1 — SOL 144 production process (P8b–P12)
+## Tier 1 — SOL 144 production process (P12)
 
 The goal state: SOL 144 supports early design analysis end-to-end — static trim and balanced
 maneuvers (done), **payload-condition sweeps** (Step 60, closed 2026-07-30), **transient maneuvers with a modal
 basis** (Steps 61–63), **section loads for stress** (Monitor Phase 2, closed 2026-08-02 —
-static; transient is P8b), and a **closed authoring loop** (viewer UI).
+static; transient closed 2026-08-02 by Step 68), and a **closed authoring loop** (viewer UI).
 
 ### Phase G0 — transient maneuver loads (DLM-free): detailed plan (2026-07-05, re-prioritised in this review)
 
@@ -489,19 +490,31 @@ overshoot vs open loop; zero-gain identity to Step 63. **Deferred with Phase G.*
     parse time and solve time. The direct solver covers prescribed-rigid studies. Revisit
     only if an open-loop prescribed-α use case appears.
 
-### Section cuts on transient maneuvers (P8b)
+### Step 68 follow-ons (unranked, opportunistic)
 
-Monitor Phase 2 (`MONSECT`) closed 2026-08-02 for **static** SOL 144 subcases — see
-`docs/40_history/06_sol144_static_aeroelastic.md` and `designs/monsect_section_cuts.md`.
-The remaining piece is the **transient (`MLOADS`) counterpart**: the integration in
-`results/section_cuts.py` is reusable verbatim at each output time, but the deliverable
-becomes a per-time-step table — a third dimension in the f06 block, the CSV schema and
-the viewer plot, plus a critical-station / critical-time envelope. Scope the
-**critical-sample cut first** (one table at the MLDPRNT critical step, reusing the static
-schema unchanged, ~0.5 d); the full time-history table and envelope follow (~1–1.5 d) and
-are better sequenced with the envelope-sweep work (P10/P11 both delivered 2026-08-02:
-free-flight maneuver × mass-case sweeps now exist), which wants the same
-max/min-with-driving-case machinery.
+Step 68 (MONSECT on transient maneuvers) closed 2026-08-02 — see
+`docs/40_history/07_maneuver_transient.md` and
+`designs/monsect_transient_section_cuts.md`. Two items were deliberately scoped out:
+
+1. **Should transient `net_loads` carry the elastic inertia?** (~0.5–1 d, decision + gates.)
+   `ManeuverStep.net_loads` is aero + **rigid** inertia. The elastic d'Alembert load
+   `−M·ü_e` is now recovered alongside it (Step 68) but kept separate, because folding it in
+   would simultaneously move the exported `maneuver_qs_loads.bdf` cards, the closure
+   diagnostic and the DEF-M5 critical-sample selection. Physically it belongs in the export
+   — a stress model consuming those cards should see the whole applied load. The data is on
+   `ManeuverStep` now, so the first task is to *quantify* the difference on the flagship deck
+   and then decide, with gates, rather than argue it in the abstract. Note the interaction:
+   changing `net_loads` also changes which sample is "critical".
+2. **`MONPNT1`/`MONPNT3` on transient maneuvers (P8c)** (~0.5 d). The enabling work is done —
+   the per-sample integrand inputs (`box_forces`, `grid_loads`, `inertial_loads`, reactions,
+   and now the elastic/damping columns) all exist inside `recover_step`. What is missing is
+   only the monitor output surface: a per-sample `MonitorLoad` dict, an f06 block at the
+   critical sample and a maneuver monitor CSV. Kept out of Step 68 so that step had one
+   output design to get right.
+
+Also unexercised by any deck (recorded, not a defect): the Step 68 reaction recovery uses the
+full applied load, which only differs from `net_loads` when a **constrained grid carries
+mass**. No sample deck has that. A deck that does would be cheap CI insurance.
 
 ### Viewer (P12) — SOL 144 / MLOADS case authoring UI
 

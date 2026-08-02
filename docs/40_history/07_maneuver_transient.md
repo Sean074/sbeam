@@ -448,6 +448,99 @@ Full suite: 1592 passed.
 
 ---
 
+### Step 68 (P8b) — MONSECT section cuts on transient (MLOADS) maneuvers ✅ COMPLETE (2026-08-02)
+
+**Objective:** Close the transient counterpart of Monitor Phase 2. A stress group sizes a wing
+from the worst *instant* of a maneuver, not from the trimmed condition, and needs the running
+loads at that instant plus the envelope over the whole history. Design:
+`docs/30_future/designs/monsect_transient_section_cuts.md`.
+
+**Key finding — the backlog's premise was incomplete.** P8b was estimated on "the integrand is
+reusable verbatim, the work is the per-time-step output design." The *integrand* is reusable; its
+*inputs* were not. `ManeuverStep.inertial_loads` is `M_ax_g·δ_basic` — the **rigid-body**
+d'Alembert load only. On a dynamic sample the elastic acceleration field produces a real
+distributed load `−M·ü_e` that a free body of the outboard wing carries in full.
+
+No existing gate could catch this, because every existing gate is *global*: mean-axis
+orthogonality makes the rigid-row resultant of `M·Φ_e ξ̈_e` exactly zero, so the Step 63
+free-flight closure is ≈ 0 whether or not the term is present. A section cut is a *local*
+resultant and sees it directly. Measured on the HA144A elevator-step run at the worst sample:
+the cut missed the CBAR 120 internal shear by **1.21 %** (4522.31 vs 4577.69) without the term
+and by **3.7e-11** with it. Effort accordingly ran ~3 d against the ~2 d estimate.
+
+**Deliverables:**
+
+1. **Two-phase section-cut API** (`results/section_cuts.py`) — `prepare_section_cuts` → a frozen
+   `SectionCutPlan` (collection, CID transform, station coordinates, per-station masks and
+   reference points, on-plane warnings) and `evaluate_section_cut` (masked sums only).
+   `compute_section_cut(s)` is now prepare + evaluate, so the static call site is untouched.
+   Landed first, on its own, behind a bit-identity gate.
+2. **Elastic-inertia and damping load recovery**, formed in the **g-set** as `−M_gg·ü_g` (never a
+   reduced force pushed back through `Tᵀ`, which is not well defined across an RBE3).
+   `AsetOperators` retains `M_gg`/`K_gg` rather than discarding them. Built once in `recover_step`
+   so the two solvers cannot grow two definitions of the same force; in `maneuver_modal` the
+   fields are formed **outside** the recovery-mode branch, so the `displacement` recovery cannot
+   silently report cuts without elastic inertia.
+3. **Per-sample cuts on both solvers** — direct l-set (`maneuver_qs`, threading Newmark's `a_l`/`v_l`
+   into the emit path) and free-flight modal (`maneuver_modal`). Stored on
+   `ManeuverStep.section_loads`; `SectionCutStation` gains `elastic_inertia`/`damping`, `None` on a
+   static trim so "not applicable" is distinguishable from "computed and zero".
+4. **Envelope** (`results/section_envelope.py`) — per station, per component, max/min over the
+   run's samples with the **driving sample** for each. Deliberately distinct from the critical
+   sample: on the shipped HA144A deck the driving sample is 5 (t = 0.4) while the critical sample
+   is 11. DEF-M5's one-global-metric ruling is untouched; both numbers are printed and labelled.
+5. **Outputs** — f06 `SECTION CUT RUNNING LOADS ( SAMPLE n, T = … )` at the critical sample plus a
+   `SECTION CUT ENVELOPE` block (the full history would swamp the f06);
+   `<stem>.maneuver_section_loads.csv` (static schema verbatim + `mloads`/`sample`/`time`/`critical`
+   identity columns + `c*_elastic`/`c*_damping`) and `<stem>.maneuver_section_envelope.csv`;
+   viewer station table at the selected sample, cut × station × component time history with
+   critical- and driving-sample markers, envelope table, and both CSVs as downloads.
+   `_render_section_cuts` now takes `(section_loads, key_prefix)` so the static and transient
+   panels share one renderer.
+6. **Sample deck** — `sample/ha144a_fullspan_mloads.bdf` gains `SET1 1330`/`AECOMP RWINGALL`/
+   `MONSECT SECRW` so the direct-solver path has cut coverage (the modal path is covered by
+   `ha144a_mloads_massset.bdf` via the shared bulk model).
+
+**Test/Acceptance** (`tests/aero/test_section_cuts_transient.py`, `tests/results/test_section_envelope.py`,
+extensions to `tests/results/test_section_cuts.py` and `test_section_cut_output.py`):
+
+* **V-TSEC1** (anchor) — commands held at trim: every sample's cut equals the static Step 53
+  MONSECT table to 1e-6 relative, on both solvers; the transient columns are computed-and-zero.
+* **V-TSEC3** (load-bearing) — on the sample with the largest `ü_e`, the cut at stations 8 and 10
+  equals CBAR 120's end-B internal force from `K·u` to 1e-8 relative. Paired with
+  `test_vtsec3_gate_would_fail_without_the_elastic_column`, which re-sums the cut without the
+  elastic column and asserts it misses — so V-TSEC3 cannot go vacuous if the term ever shrinks.
+* **V-TSEC5** — a cut containing the *entire* model closes to 1e-8·lift at every sample. This pins
+  the signs of both new columns and the reaction against a route that never touches the cut code.
+  Note it is **not** `closure ≈ 0`: under the prescribed-rigid direct solver the closure is
+  genuinely non-zero during a maneuver (the imbalance is reacted at the SUPORT), which
+  `test_prescribed_rigid_closure_is_carried_by_the_reaction` documents so nobody "fixes" it.
+  `test_partial_collection_does_not_close` guards the gate with a collection that omits GRID 90.
+* **V-TSEC6** — envelope max/min/driving-sample match a brute-force numpy reduction; the envelope
+  bounds every sample of the real run; ties resolve to the earliest sample.
+* **V-TSEC9** — the prepare/evaluate split is **bitwise** identical to the one-shot call, and the
+  on-plane `UserWarning` fires once per plan, not once per evaluation (50 evaluations under
+  `simplefilter("error")`).
+* **V-TSEC10** — the flagship-scale run with cuts stays within 2× the same run without them.
+* **V-TSEC11** — both solvers produce cuts, and the two modal recovery modes produce an
+  **identical** elastic column.
+
+Full suite: 1627 passed, 6 xfailed.
+
+**Known gap (deliberate, recorded):** `recover_reactions` is called with the *full* applied load
+(`net_loads + elastic + damping`) rather than `net_loads`, which is the correct form — `R = K·u −
+f_applied` — but **no sample deck exercises it**: it only differs when a constrained grid carries
+mass, and HA144A's SPC/SUPORT grid 90 is massless (the two forms agree to 0.0 there). Written in
+the correct form deliberately rather than to match a passing test.
+
+**Open question deferred (O1):** `net_loads` is *not* changed to include the elastic inertia. It
+physically belongs there — the exported critical-sample `FORCE`/`MOMENT` cards are what a stress
+model consumes — but folding it in moves the exported cards, the closure diagnostic and the DEF-M5
+critical-sample selection simultaneously. The data now sits on `ManeuverStep` to quantify the
+difference first. Recorded in the backlog as its own item.
+
+---
+
 ## Resolved defects
 
 ### Free-URDD trim variables reported in the wrong frame on RCSID decks (`run_sol144_trim`) ✅ COMPLETE (2026-08-02)

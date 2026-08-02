@@ -81,6 +81,11 @@ class SectionCutStation:
     # (6,) d/ds of the labelled components vs the previous station — the running
     # load in the per-unit-span sense.  None at the first station.
     d_ds: Optional[FloatArray] = None
+    # Step 68 transient contributions, cid frame; None on a static trim (where
+    # the structure has no elastic acceleration, so there is no such column to
+    # report — as opposed to a zero one).  ``totals`` includes them when present.
+    elastic_inertia: Optional[FloatArray] = None   # (6,) M·ü_e — the elastic d'Alembert load
+    damping: Optional[FloatArray] = None           # (6,) modal-damping force (ζ ≠ 0 only)
 
 
 @dataclass
@@ -99,6 +104,46 @@ class SectionCutResult:
     comp_map: tuple[int, ...] = (0, 1, 2, 3, 4, 5)
     half_model: bool = False        # AEROS SYMXZ≠0: the table is per side, never doubled
     normal: Optional[FloatArray] = None   # (3,) cut normal in basic, when overridden
+
+
+@dataclass
+class SectionCutEnvelopeEntry:
+    """Max/min of one labelled component at one station over a maneuver.
+
+    ``max_sample``/``min_sample`` are 1-based, matching the f06 SAMPLE column and
+    the MLDPRNT numbering (DEF-M5).  They are the **driving** samples and are
+    generally not the run's critical sample — see
+    :mod:`sbeam.results.section_envelope`.
+    """
+    station: float
+    comp: int                       # 0..5, index into the labelled component order
+    max_value: float
+    max_sample: int
+    max_time: float
+    min_value: float
+    min_sample: int
+    min_time: float
+
+    @property
+    def absmax(self) -> float:
+        """The larger magnitude of the two extremes (the sizing number)."""
+        return max(abs(self.max_value), abs(self.min_value))
+
+
+@dataclass
+class SectionCutEnvelope:
+    """Per-station max/min envelope of one MONSECT cut over a maneuver (Step 68)."""
+    name:  str
+    label: str
+    comp:  str
+    listtype: str
+    cid:   int
+    axis:  int
+    side:  str
+    comp_map: tuple[int, ...] = (0, 1, 2, 3, 4, 5)
+    half_model: bool = False
+    n_samples: int = 0              # samples the envelope was reduced over
+    entries: list[SectionCutEnvelopeEntry] = field(default_factory=list)
 
 
 @dataclass
@@ -242,6 +287,15 @@ class ManeuverStep:
     # Load-factor ratio URDD3_basic(t)/URDD3_basic(t0) (D3); None when not
     # free-flight or when the IC has no vertical acceleration to normalize by.
     nz_rel: Optional[float] = None
+    # Step 68 — the elastic d'Alembert load −M·ü_e and the damping force −M·w,
+    # g-set.  Deliberately NOT folded into net_loads: that vector feeds the
+    # exported FORCE/MOMENT cards, the closure diagnostic and the DEF-M5
+    # critical-sample metric, and moving all three at once is a separate
+    # decision (see designs/monsect_transient_section_cuts.md §9 O1).
+    elastic_inertial_loads: Optional[FloatArray] = None
+    damping_loads: Optional[FloatArray] = None
+    # {name: SectionCutResult} MONSECT running loads at this sample.
+    section_loads: Optional[dict[str, "SectionCutResult"]] = None
 
 
 def peak_grid_force(step: "ManeuverStep") -> float:
@@ -284,3 +338,6 @@ class ManeuverResult:
     # Step 62 basis summary for the f06 (n_r, n_e, n_available, freqs_hz,
     # orthogonality_residual, n_massless); None for the direct l-set solver.
     basis_info: Optional[dict] = None
+    # Step 68 — {name: SectionCutEnvelope} per-station max/min over the run's
+    # samples.  None when the deck has no MONSECT cards.
+    section_envelope: Optional[dict[str, "SectionCutEnvelope"]] = None

@@ -13,6 +13,36 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Step 68 — MONSECT section cuts on transient (MLOADS) maneuvers (2026-08-02)**
+
+`MONSECT` running loads are now produced at **every output sample** of a transient maneuver, on
+both the direct l-set and the free-flight modal solvers, closing the transient half of Monitor
+Phase 2.
+
+The enabling physics is a load column no static trim has: the **elastic d'Alembert load**
+`−M·ü_e` (and the modal/Rayleigh damping force), recovered per sample in the g-set and reported
+as its own contribution. It matters locally and cancels globally — mean-axis orthogonality gives
+`M·Φ_e ξ̈_e` zero rigid-row resultant, so the existing closure diagnostics were blind to it while a
+wing cut was out by 1.21 % on the HA144A elevator-step run. With the term the cut matches the CBAR
+internal force to 3.7e-11.
+
+- `results/section_cuts.py` split into `prepare_section_cuts` (geometry, masks, on-plane
+  warnings — once per run) and `evaluate_section_cut` (masked sums per sample); the static
+  entry points are unchanged and bitwise identical.
+- `results/section_envelope.py` — per-station, per-component max/min over the run with the
+  **driving sample**, which is generally not the DEF-M5 critical sample (on the shipped deck:
+  driving sample 5, critical sample 11). Both are reported and labelled distinctly.
+- f06: `SECTION CUT RUNNING LOADS ( SAMPLE n, T = … )` at the critical sample and a
+  `SECTION CUT ENVELOPE` block. New exports `<stem>.maneuver_section_loads.csv` (the static
+  schema verbatim plus `mloads`/`sample`/`time`/`critical` and the elastic/damping columns) and
+  `<stem>.maneuver_section_envelope.csv`.
+- Viewer: station table at the selected sample, a cut × station × component time history with
+  critical- and driving-sample markers, the envelope table, and both CSVs as downloads.
+- `sample/ha144a_fullspan_mloads.bdf` gains a `MONSECT` right-wing cut.
+
+`net_loads`, the closure diagnostic and the critical-sample metric are deliberately unchanged;
+whether the exported cards should carry the elastic inertia is recorded as a follow-on.
+
 **Step 63 — free-flight rigid-body coupling: the self-balancing maneuver (2026-08-02)**
 
 `sbeam/solver/maneuver_modal.py::run_maneuver_modal` rewritten as the **free-flight** modal

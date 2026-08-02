@@ -19,8 +19,21 @@ Two conventions carry the weight and are deliberate (see
   section cut is already the physical per-side load, its reference is
   deliberately off-centreline, and the antisymmetric cancellation is meaningless
   there.  Half-model runs are annotated, never scaled.
+
+Two-phase evaluation (Step 68)
+------------------------------
+A transient maneuver evaluates the same cuts once per output sample, so the
+state-independent half of the work — resolving the AECOMP collection, the CID
+transform, the member station coordinates, the per-station masks and the on-plane
+warnings — is hoisted into :func:`prepare_section_cuts`, which returns a frozen
+:class:`SectionCutPlan`.  :func:`evaluate_section_cut` is then masked sums only.
+That is what keeps the per-sample cost proportional to stations rather than to a
+full geometry rebuild, and what makes the on-plane ``UserWarning`` fire once per
+run instead of once per sample.  :func:`compute_section_cuts` (the static SOL 144
+entry point) is prepare + evaluate and is unchanged for its callers.
 """
 import warnings
+from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
@@ -153,13 +166,16 @@ def _member_geometry(
     return "AELIST", ks, pos
 
 
-def _gather_grid_load(load_g: Optional[FloatArray], gids: list[int],
-                      grid_index: dict[int, int]) -> tuple[FloatArray, FloatArray]:
-    """Split a g-set load vector into per-member ``(forces (n,3), moments (n,3))``."""
-    n = len(gids)
+def _gather_grid_load(load_g: Optional[FloatArray],
+                      rows: FloatArray) -> tuple[FloatArray, FloatArray]:
+    """Split a g-set load vector into per-member ``(forces (n,3), moments (n,3))``.
+
+    ``rows`` is the precomputed ``6·grid_index[gid]`` base row of every member
+    (see :class:`SectionCutPlan`), so this is pure gather with no dict lookups.
+    """
+    n = rows.size
     if load_g is None:
         return np.zeros((n, 3)), np.zeros((n, 3))
-    rows = np.array([6 * grid_index[g] for g in gids], dtype=int)
     f = np.stack([load_g[rows + 0], load_g[rows + 1], load_g[rows + 2]], axis=1)
     m = np.stack([load_g[rows + 3], load_g[rows + 4], load_g[rows + 5]], axis=1)
     return f, m
@@ -198,62 +214,143 @@ def _warn_on_plane(cut: Monsect, station: float, member_ids: list[int],
     )
 
 
-def compute_section_cut(
+@dataclass(frozen=True)
+class SectionCutPlan:
+    """Everything about one MONSECT cut that does not depend on the load state.
+
+    Built once per run by :func:`prepare_section_cuts` and consumed by
+    :func:`evaluate_section_cut` at every sample of a transient maneuver.  The
+    on-plane warnings are emitted while building this, so they are a property of
+    the model rather than of the number of output samples.
+    """
+    cut: Monsect
+    listtype: str                    # 'SET1' | 'AELIST'
+    member_ids: list[int]            # grid IDs (SET1) or global box indices k (AELIST)
+    rows: FloatArray                 # (n,) 6·grid_index[gid] base rows; empty for AELIST
+    pos: FloatArray                  # (n, 3) member positions, basic
+    R: FloatArray                    # (3, 3) cid rotation, v_basic = R @ v_cid
+    masks: list[FloatArray]          # per station, (n,) bool — members on the cut side
+    refs: FloatArray                 # (n_station, 3) reference points, basic
+    comp_map: tuple[int, ...]
+    half_model: bool
+    normal: Optional[FloatArray]     # (3,) cut normal in basic, when overridden
+    n_dofs: int                      # g-set size, for scattering the reaction dict
+
+
+def prepare_section_cut(
     cut: Monsect, bulk: BulkData, aero: Optional[AeroModel],
-    box_forces: Optional[FloatArray], grid_loads: Optional[FloatArray],
-    inertial_loads: Optional[FloatArray], grid_index: dict[int, int],
-    reactions: Optional[dict[int, FloatArray]] = None,
-) -> SectionCutResult:
-    """Build the per-station running-load table for one MONSECT card."""
+    grid_index: dict[int, int],
+) -> SectionCutPlan:
+    """Resolve one cut's geometry, masks and warnings — everything state-free."""
     P, R, a_hat, n_hat, denom = _cut_geometry(cut, bulk)
     listtype, member_ids, pos = _member_geometry(cut, bulk, aero, grid_index)
     tol = _auto_tol(cut)
-    cmap = component_map(cut.axis)
 
     # Station coordinate of every member, measured once for the whole sweep.
     s_member = (pos - P) @ n_hat if len(member_ids) else np.zeros(0)
 
-    if listtype == "SET1":
-        gids = member_ids
-        f_aero, m_aero = _gather_grid_load(grid_loads, gids, grid_index)
-        f_in, m_in = _gather_grid_load(inertial_loads, gids, grid_index)
-        react_g: Optional[FloatArray] = None
-        if reactions:
-            n_dofs = 6 * (max(grid_index.values()) + 1) if grid_index else 0
-            react_g = np.zeros(n_dofs)
-            for gid, r6 in reactions.items():
-                if gid in grid_index:
-                    react_g[6 * grid_index[gid]: 6 * grid_index[gid] + 6] = r6
-        f_re, m_re = _gather_grid_load(react_g, gids, grid_index)
-    else:
-        forces = (np.asarray(box_forces)[member_ids] if len(member_ids)
-                  else np.zeros((0, 3)))
-        f_aero, m_aero = forces, np.zeros_like(forces)
-        f_in = m_in = f_re = m_re = np.zeros_like(forces)
-
-    stations: list[SectionCutStation] = []
-    prev_lab: Optional[FloatArray] = None
-    prev_s: Optional[float] = None
+    masks: list[FloatArray] = []
+    refs: list[FloatArray] = []
     for s in cut.stations:
         _warn_on_plane(cut, s, member_ids, s_member, tol,
                        "grid" if listtype == "SET1" else "box")
         if cut.side == "POS":
-            mask = s_member > s + tol
+            masks.append(s_member > s + tol)
         else:
-            mask = s_member < s - tol
-
+            masks.append(s_member < s - tol)
         # Reference point: the cut plane's intercept with the reference line
         # origin + t·â — the elastic axis when CID is the surface's spline CID.
-        ref = P + (s / denom) * a_hat
+        refs.append(P + (s / denom) * a_hat)
 
-        aero6_b = _resultant(f_aero, m_aero, pos, ref, mask)
-        inert6_b = _resultant(f_in, m_in, pos, ref, mask)
-        react6_b = _resultant(f_re, m_re, pos, ref, mask)
-        # Rotate basic -> cid.  No parity factor is applied (see module docstring).
-        aero6 = np.concatenate([R.T @ aero6_b[:3], R.T @ aero6_b[3:]])
-        inert6 = np.concatenate([R.T @ inert6_b[:3], R.T @ inert6_b[3:]])
-        react6 = np.concatenate([R.T @ react6_b[:3], R.T @ react6_b[3:]])
+    rows = (np.array([6 * grid_index[g] for g in member_ids], dtype=int)
+            if listtype == "SET1" else np.zeros(0, dtype=int))
+    return SectionCutPlan(
+        cut=cut, listtype=listtype, member_ids=member_ids, rows=rows, pos=pos,
+        R=R, masks=masks,
+        refs=np.array(refs, dtype=float).reshape(-1, 3),
+        comp_map=component_map(cut.axis),
+        half_model=bool(bulk.aeros is not None and bulk.aeros.symxz != 0),
+        normal=(n_hat.copy() if cut.normal is not None else None),
+        n_dofs=(6 * (max(grid_index.values()) + 1) if grid_index else 0),
+    )
+
+
+def prepare_section_cuts(
+    bulk: BulkData, aero: Optional[AeroModel], grid_index: dict[int, int],
+) -> dict[str, SectionCutPlan]:
+    """Build ``{name: SectionCutPlan}`` for every MONSECT card in the model."""
+    return {name: prepare_section_cut(cut, bulk, aero, grid_index)
+            for name, cut in bulk.monsects.items()}
+
+
+def _scatter_reactions(reactions: Optional[dict[int, FloatArray]],
+                       grid_index: dict[int, int],
+                       n_dofs: int) -> Optional[FloatArray]:
+    """Expand a ``{gid: (6,)}`` reaction dict into a g-set vector."""
+    if not reactions:
+        return None
+    react_g = np.zeros(n_dofs)
+    for gid, r6 in reactions.items():
+        if gid in grid_index:
+            react_g[6 * grid_index[gid]: 6 * grid_index[gid] + 6] = r6
+    return react_g
+
+
+def evaluate_section_cut(
+    plan: SectionCutPlan,
+    box_forces: Optional[FloatArray], grid_loads: Optional[FloatArray],
+    inertial_loads: Optional[FloatArray], grid_index: dict[int, int],
+    reactions: Optional[dict[int, FloatArray]] = None,
+    elastic_inertial_loads: Optional[FloatArray] = None,
+    damping_loads: Optional[FloatArray] = None,
+) -> SectionCutResult:
+    """Sum one prepared cut against a load state — masked sums, no geometry.
+
+    ``elastic_inertial_loads``/``damping_loads`` are the Step 68 transient
+    contributions (``M·ü_e`` and the modal-damping force).  They are zero on a
+    static trim and are reported as their own columns rather than folded into
+    ``inertia``, so a reader can see how much of a transient cut is elastic
+    response — and so the static tables keep the exact three-column split the
+    Monitor Phase 2 outputs were verified against.
+    """
+    cut = plan.cut
+    pos, R, cmap = plan.pos, plan.R, plan.comp_map
+
+    if plan.listtype == "SET1":
+        f_aero, m_aero = _gather_grid_load(grid_loads, plan.rows)
+        f_in, m_in = _gather_grid_load(inertial_loads, plan.rows)
+        f_el, m_el = _gather_grid_load(elastic_inertial_loads, plan.rows)
+        f_da, m_da = _gather_grid_load(damping_loads, plan.rows)
+        react_g = _scatter_reactions(reactions, grid_index, plan.n_dofs)
+        f_re, m_re = _gather_grid_load(react_g, plan.rows)
+    else:
+        forces = (np.asarray(box_forces)[plan.member_ids] if plan.member_ids
+                  else np.zeros((0, 3)))
+        f_aero, m_aero = forces, np.zeros_like(forces)
+        z = np.zeros_like(forces)
+        f_in = m_in = f_re = m_re = f_el = m_el = f_da = m_da = z
+
+    has_extra = elastic_inertial_loads is not None or damping_loads is not None
+
+    def to_cid(v6: FloatArray) -> FloatArray:
+        """Rotate basic -> cid.  No parity factor (see the module docstring)."""
+        return np.concatenate([R.T @ v6[:3], R.T @ v6[3:]])
+
+    stations: list[SectionCutStation] = []
+    prev_lab: Optional[FloatArray] = None
+    prev_s: Optional[float] = None
+    for i, s in enumerate(cut.stations):
+        mask, ref = plan.masks[i], plan.refs[i]
+
+        aero6 = to_cid(_resultant(f_aero, m_aero, pos, ref, mask))
+        inert6 = to_cid(_resultant(f_in, m_in, pos, ref, mask))
+        react6 = to_cid(_resultant(f_re, m_re, pos, ref, mask))
         totals = aero6 + inert6 + react6
+        elastic6 = damp6 = None
+        if has_extra:
+            elastic6 = to_cid(_resultant(f_el, m_el, pos, ref, mask))
+            damp6 = to_cid(_resultant(f_da, m_da, pos, ref, mask))
+            totals = totals + elastic6 + damp6
 
         lab = labelled(totals, cmap)
         d_ds = None
@@ -264,16 +361,27 @@ def compute_section_cut(
         stations.append(SectionCutStation(
             station=float(s), ref=ref, totals=totals, aero=aero6,
             inertia=inert6, reaction=react6, n_members=int(mask.sum()),
-            d_ds=d_ds,
+            d_ds=d_ds, elastic_inertia=elastic6, damping=damp6,
         ))
 
-    half = bool(bulk.aeros is not None and bulk.aeros.symxz != 0)
     return SectionCutResult(
-        name=cut.name, label=cut.label, comp=cut.comp, listtype=listtype,
+        name=cut.name, label=cut.label, comp=cut.comp, listtype=plan.listtype,
         cid=cut.cid, axis=cut.axis, side=cut.side, stations=stations,
-        comp_map=cmap, half_model=half,
-        normal=(n_hat.copy() if cut.normal is not None else None),
+        comp_map=cmap, half_model=plan.half_model,
+        normal=(plan.normal.copy() if plan.normal is not None else None),
     )
+
+
+def compute_section_cut(
+    cut: Monsect, bulk: BulkData, aero: Optional[AeroModel],
+    box_forces: Optional[FloatArray], grid_loads: Optional[FloatArray],
+    inertial_loads: Optional[FloatArray], grid_index: dict[int, int],
+    reactions: Optional[dict[int, FloatArray]] = None,
+) -> SectionCutResult:
+    """Build the per-station running-load table for one MONSECT card."""
+    plan = prepare_section_cut(cut, bulk, aero, grid_index)
+    return evaluate_section_cut(plan, box_forces, grid_loads, inertial_loads,
+                                grid_index, reactions)
 
 
 def compute_section_cuts(
@@ -284,7 +392,7 @@ def compute_section_cuts(
 ) -> dict[str, SectionCutResult]:
     """Build ``{name: SectionCutResult}`` for every MONSECT card in the model."""
     return {
-        name: compute_section_cut(cut, bulk, aero, box_forces, grid_loads,
-                                  inertial_loads, grid_index, reactions)
-        for name, cut in bulk.monsects.items()
+        name: evaluate_section_cut(plan, box_forces, grid_loads, inertial_loads,
+                                   grid_index, reactions)
+        for name, plan in prepare_section_cuts(bulk, aero, grid_index).items()
     }

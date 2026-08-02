@@ -40,7 +40,7 @@ Public API:
     run_maneuver_qs(bulk, subcase, aero, aero_cache=None, damping_alpha=0.0)
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
@@ -50,12 +50,17 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.model.maneuver import Tabled1
 from sbeam.parser.case_control import SubcaseControl
 from sbeam.assembly.load_vector import build_grid_index
+from sbeam.assembly.stiffness import get_spc_dofs
 from sbeam.aero.aero_model import AeroModel
 from sbeam.aero.integration import build_djk
 from sbeam.solver.modal_basis import AsetOperators, assemble_aset_operators
 from sbeam.results.results import ManeuverStep, ManeuverResult, peak_grid_force
-from sbeam.solver.sol101 import recover_bar_forces
-from sbeam.assembly.reduction import expand_to_g
+from sbeam.results.section_cuts import (
+    SectionCutPlan, evaluate_section_cut, prepare_section_cuts,
+)
+from sbeam.results.section_envelope import build_section_envelope
+from sbeam.solver.sol101 import recover_bar_forces, recover_reactions
+from sbeam.assembly.reduction import AsetReduction, expand_to_g
 from sbeam.solver.sol144 import (
     AeroCache,
     urdd_rcsid_to_basic,
@@ -63,7 +68,7 @@ from sbeam.solver.sol144 import (
     pitch_moment,
     run_sol144_trim,
 )
-from sbeam.types import FloatArray
+from sbeam.types import FloatArray, SparseMatrix
 
 
 @dataclass
@@ -96,6 +101,14 @@ class Operators:
     suport_pos: FloatArray
     R_rcsid: FloatArray
     has_rcsid: bool
+    # ---- Step 68: per-sample section-cut recovery ----
+    red: AsetReduction                # for the a-set -> g-set expansion
+    M_gg: SparseMatrix                # elastic-inertia load is formed in the g-set
+    K_gg: SparseMatrix                # reaction recovery (R = K·u − f)
+    # MONSECT plans, resolved once per subcase (geometry + on-plane warnings);
+    # empty when the deck has no MONSECT cards, which is the whole opt-in.
+    cut_plans: dict[str, SectionCutPlan] = field(default_factory=dict)
+    constrained_dofs: list[int] = field(default_factory=list)  # SPC + SUPORT g-set DOFs
 
 
 def assemble_operators(
@@ -146,6 +159,27 @@ def assemble_operators(
 
     djk = build_djk(aero.boxes)
 
+    # ---- Step 68: MONSECT plans + the reaction DOF set, resolved once ---- #
+    # The geometry, the masks and the on-plane warnings are state-free, so they
+    # are built here rather than inside the time loop; a 2000-sample run would
+    # otherwise rebuild them (and re-warn) 2000 times.
+    grid_index = ops.grid_index
+    cut_plans: dict[str, SectionCutPlan] = {}
+    constrained_dofs: list[int] = []
+    if bulk.monsects:
+        cut_plans = prepare_section_cuts(bulk, aero, grid_index)
+        # A SET1-backed cut spanning a constrained grid carries its reaction
+        # across the plane — the same reason run_sol144_trim recovers reactions
+        # for MONPNT3.  Aero-only (AELIST) cuts never need them.
+        if any(p.listtype == "SET1" for p in cut_plans.values()):
+            if subcase.spc_sid:
+                constrained_dofs += list(
+                    get_spc_dofs(bulk, subcase.spc_sid, grid_index))
+            for sup in bulk.supports:
+                if sup.gid in grid_index:
+                    base = grid_index[sup.gid] * 6
+                    constrained_dofs += [base + (int(ch) - 1) for ch in sup.dofs]
+
     return Operators(
         all_labels=all_labels, label_to_col=label_to_col,
         T=T, free_local=free_local, red_dofs=red.red_dofs, free_dofs=free_dofs,
@@ -153,6 +187,8 @@ def assemble_operators(
         K_eff_ll=K_eff_ll, M_ll=M_ll, Q_ax_l=Q_ax_l, M_ax_l=M_ax_l,
         f_aero_l=f_aero_l, M_ax_g=M_ax_g, aero=aero, D_jx=D_jx, djk=djk,
         q=q, x_ref=x_ref, suport_pos=suport_pos, R_rcsid=R_rcsid, has_rcsid=has_rcsid,
+        red=red, M_gg=ops.M_gg, K_gg=ops.K_gg,
+        cut_plans=cut_plans, constrained_dofs=constrained_dofs,
     )
 
 
@@ -183,12 +219,24 @@ def recover_step(
     xi_r_dot: Optional[FloatArray] = None,
     xi_r_ddot: Optional[FloatArray] = None,
     nz_rel: Optional[float] = None,
+    elastic_accel_a: Optional[FloatArray] = None,
+    damping_rate_a: Optional[FloatArray] = None,
 ) -> ManeuverStep:
     """Recover per-step displacements, CBAR loads, and net (aero+inertial) loads.
 
     The optional ``xi_r*``/``nz_rel`` fields are the Step 63 free-flight rigid
     states, passed through untouched — the recovery itself sees rigid motion
     only through the ``delta_arr`` labels the free-flight solver fills.
+
+    ``elastic_accel_a`` / ``damping_rate_a`` (Step 68) are the a-set elastic
+    acceleration ``ü_e`` and the damping rate vector ``w`` for which the damping
+    force is ``M·w`` — mass-proportional ``α·u̇`` for the direct solver, modal
+    ``Φ_e(2ζω)ξ̇_e`` for the modal one.  Both are turned into g-set loads here,
+    in one place, so the two solvers cannot grow two definitions of the same
+    force.  They are what a **section cut** needs and the global closure does
+    not: mean-axis orthogonality makes the rigid-row resultant of ``M·Φ_e ξ̈_e``
+    exactly zero, so a whole-airplane resultant is blind to a term that a local
+    free body carries in full.
     """
     aero = ops.aero
     # Scatter l-set displacement into the a-set (r-set = 0), expand to g-set so
@@ -221,12 +269,63 @@ def recover_step(
     net_loads = grid_loads + inertial_loads
     closure = load_resultant(net_loads, bulk, grid_index, ops.suport_pos)
 
+    # ---- Step 68: elastic-inertia and damping loads (g-set) ---- #
+    # Same d'Alembert sign as the rigid column: M_ax_g IS −M_gg·Φ_r, so the
+    # rigid load is −M·ü_rigid and the elastic one must be −M·ü_elastic.  Formed
+    # in the g-set (M_gg·expand(ü_a)), never as a reduced force pushed back
+    # through Tᵀ — that mapping is not well defined across an RBE3.
+    elastic_inertial_loads = None
+    damping_loads = None
+    if elastic_accel_a is not None:
+        elastic_inertial_loads = -(ops.M_gg @ ops.red.expand_to_g(elastic_accel_a))
+    if damping_rate_a is not None:
+        damping_loads = -(ops.M_gg @ ops.red.expand_to_g(damping_rate_a))
+
+    # ---- Step 68: MONSECT section cuts at this sample ---- #
+    section_loads = None
+    if ops.cut_plans:
+        reactions = {}
+        if ops.constrained_dofs:
+            # R = K·u − f_applied, and f_applied here is the FULL applied load,
+            # not ``net_loads``: the elastic d'Alembert and damping forces act on
+            # the constrained DOFs too, and omitting them would leave that
+            # difference sitting in the reaction.
+            #
+            # NOTE: no current sample deck exercises this.  It only bites when a
+            # constrained grid carries mass; on HA144A the SPC/SUPORT grid 90 is
+            # massless, so the two forms agree to 0.0 there.  Written in the
+            # correct form deliberately rather than to match a passing test.
+            f_applied = net_loads
+            if elastic_inertial_loads is not None:
+                f_applied = f_applied + elastic_inertial_loads
+            if damping_loads is not None:
+                f_applied = f_applied + damping_loads
+            reactions = recover_reactions(
+                bulk, displacements, ops.constrained_dofs, ops.K_gg,
+                grid_index, f_applied)
+        box_forces = (ops.q * f_box_vec).reshape(-1, 3)
+        zero_g = np.zeros_like(net_loads)
+        section_loads = {
+            name: evaluate_section_cut(
+                plan, box_forces, grid_loads, inertial_loads, grid_index,
+                reactions,
+                elastic_inertial_loads=(elastic_inertial_loads
+                                        if elastic_inertial_loads is not None
+                                        else zero_g),
+                damping_loads=(damping_loads if damping_loads is not None
+                               else zero_g),
+            )
+            for name, plan in ops.cut_plans.items()
+        }
+
     return ManeuverStep(
         t=t, trim_vars=dict(vals), displacements=displacements,
         bar_forces=bar_forces, grid_loads=grid_loads,
         inertial_loads=inertial_loads, net_loads=net_loads, closure=closure,
         Fz_aero=Fz_aero, My_aero=My_aero, modal_coords=modal_coords,
         xi_r=xi_r, xi_r_dot=xi_r_dot, xi_r_ddot=xi_r_ddot, nz_rel=nz_rel,
+        elastic_inertial_loads=elastic_inertial_loads,
+        damping_loads=damping_loads, section_loads=section_loads,
     )
 
 
@@ -334,13 +433,27 @@ def run_maneuver_qs(
     steps: list[ManeuverStep] = []
     times: list[float] = []
 
-    def _emit(t: float, u_l: FloatArray, delta_arr: FloatArray) -> None:
+    def _scatter_l(x_l: FloatArray) -> FloatArray:
+        """l-set vector -> a-set with the restrained r-set rows at zero."""
+        x_a = np.zeros(len(ops.free_local))
+        for li_idx, li in enumerate(ops.l_idx):
+            x_a[li] = x_l[li_idx]
+        return x_a
+
+    def _emit(t: float, u_l: FloatArray, delta_arr: FloatArray,
+              a_l: FloatArray, v_l: FloatArray) -> None:
+        # Step 68: the l-set acceleration the integrator already carries IS the
+        # elastic acceleration here (the rigid motion is prescribed through the
+        # URDD labels, so u_l is purely elastic in the mean-axis frame).
         step = recover_step(
-            ops, bulk, grid_index, t, u_l, delta_arr, _vals_at(delta_arr))
+            ops, bulk, grid_index, t, u_l, delta_arr, _vals_at(delta_arr),
+            elastic_accel_a=_scatter_l(a_l),
+            damping_rate_a=(_scatter_l(damping_alpha * v_l)
+                            if damping_alpha else None))
         steps.append(step)
         times.append(t)
 
-    _emit(t0, u, delta0)
+    _emit(t0, u, delta0, a, v)
     for n in range(1, n_steps + 1):
         t = t0 + n * dt
         delta = delta_of_t(t, base_delta, commands, bulk.tabled1s, ops.all_labels)
@@ -351,13 +464,13 @@ def run_maneuver_qs(
         v_new = v + dt * ((1.0 - gamma) * a + gamma * a_new)
         u, v, a = u_new, v_new, a_new
         if n % out_every == 0 or n == n_steps:
-            _emit(t, u, delta)
+            _emit(t, u, delta, a, v)
 
     # Critical sample = peak per-grid net force (DEF-M5).  One metric, shared with
     # the f06 table, the MLDPRNT column and the critical-sample export.
     crit_index = int(np.argmax([peak_grid_force(s) for s in steps])) if steps else 0
 
-    return ManeuverResult(
+    result = ManeuverResult(
         subcase_id=subcase.subcase_id,
         mloads_sid=subcase.mloads_sid,
         trim_sid=mldtrim.trim_sid,
@@ -370,3 +483,5 @@ def run_maneuver_qs(
         mldprnt_items=(mldprnt.items if mldprnt is not None else []),
         massset_sid=subcase.massset_sid,
     )
+    result.section_envelope = build_section_envelope(result)
+    return result
