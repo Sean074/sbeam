@@ -4,8 +4,8 @@ Authoritative backlog of **open** work only — bugs, planned development, and d
 in priority order. Updated as part of every session that completes a step — never deferred.
 Completed steps live in `docs/40_history/00_completed_development.md`; nothing closed is
 summarised here. When an item is promoted to a formal step, give it a step number (next free
-number is **Step 68**; Step 67 is assigned below — Step 64 closed 2026-07-31,
-Steps 65 and 66 closed 2026-08-01/02, Steps 62 and 63 closed 2026-08-02) and apply the
+number is **Step 69**; Step 67 is assigned below — Step 64 closed 2026-07-31,
+Steps 65 and 66 closed 2026-08-01/02, Steps 62, 63 and 68 closed 2026-08-02) and apply the
 step format (Objective, Deliverables, Test/Acceptance).
 
 ---
@@ -20,53 +20,35 @@ sweeps, section loads, usable authoring/output surface). The phase after that is
 
 ### Priority order
 
-**Revised 2026-07-31 (this update):** the DEF-H items that held P1/P1 are closed, and the
-open findings of the 2026-07-31 critical review had never been ranked. The table below is
-renumbered contiguously and now carries the open DEF-M defects. Ordering principle:
-**silently wrong numbers on reachable inputs before new capability** — an early-design
-process is only useful if its trim, inertial loads and exported deliverables are right —
-then the Tier 1 capability sequence, then refactor-before-Phase-D, then Tiers 2–3.
-Amended later the same day: the **2026-07-31 sample-problem review** items slot in at
-P5–P7 — cheap CI insurance (P5, delivered) and the flagship sample after the correctness batches (whose
-P2 deliverable-integrity fixes the flagship's exports inherit), before new capability.
+**Re-ranked and renumbered 2026-08-02 (this update).** Everything ranked P1–P11 of the
+2026-07-31 numbering is delivered, and P13 landed the same day; the surviving open items
+were P14–P18 plus three release-required work packages (from the 2026-08-02 release-scope
+decision, below) that had never held a rank. The table is renumbered contiguously per its
+own rule ("renumber only when the whole table is re-ranked"); **the P-labels below
+supersede the 2026-07-31 numbering** — dated "Pn delivered" notes in this file's history
+sections and in `docs/40_history/` refer to the old numbering. Ordering principle
+unchanged: **silently wrong numbers on reachable inputs and corrupted deliverables before
+new capability** — release-required items first (cheapest deliverable-integrity fix, then
+the missing physics, then the decided-but-unexecuted hygiene), then the last open
+correctness defect, then the Tier 2–3 capability sequence.
 
-**P1 delivered 2026-07-31** (Q4 + DEF-M3, one mass model for `M_ax` — see
-`docs/40_history/06_sol144_static_aeroelastic.md`).  **P3 delivered 2026-08-01**
-(the DEF-M silent-input batch: M4, M8, M9, DEF-R5, DEF-L1 and sample-review F1).
-**P2 delivered 2026-08-01** (the DEF-M deliverable-integrity batch: M5, M6, M7, M10 —
-see `docs/40_history/06_sol144_static_aeroelastic.md` and `07_maneuver_transient.md`).
-**P4 delivered 2026-08-01** (DEF-M11 then DEF-M2 — force/moment convention and ATTACH
-transfer completeness; see `docs/40_history/05_aero_vlm_spline.md`).
-**P5 delivered 2026-08-01** (VAL2 — closed-form CI gates for the four `CLAUDE.md`
-verification decks; see `docs/40_history/01_program_foundation.md`). The
-remaining rows keep their numbers: the P-labels are used as stable identifiers by the
-cross-references throughout this document, so closing an item removes its row without
-re-flowing the rest. Renumber only when the whole table is re-ranked.
-
-**2026-08-02:** the scope of the first SOL 144 loads release was decided — see
-"Release scope" below the table. Ranks and P-labels are unchanged; the Tier 4
-yaw-rate wing term is promoted to **Step 67** and enters release scope.
-
-**P9 delivered 2026-08-02** (`build_ajj` broadcast-Biot–Savart vectorization +
-DEF-R6 LU/gecon batch; see `docs/40_history/05_aero_vlm_spline.md`).
-**P10 delivered 2026-08-02** (Step 62 — modal transient solver, prescribed rigid +
-fixed-Φ mass-case gates; see `docs/40_history/07_maneuver_transient.md`).
-**P11 delivered 2026-08-02** (Step 63 — free-flight rigid-body coupling: the modal
-solver is now the self-balancing free-flight solver; see
-`docs/40_history/07_maneuver_transient.md`).
-
-**P13 delivered 2026-08-02** (DEF-R1/R2/R3/R4 refactor batch — `sol144.py` decomposed
-into an orchestrator + `sol144_util`/`sol144_trim_solve`/`sol144_derivs`/`sol144_diverg`/
-`sol144_static` with a full import facade; DEF-R7 deliberately left with the release
-hygiene batch; see `docs/40_history/06_sol144_static_aeroelastic.md`).
+**Delivery record (2026-07-31 numbering):** P1 (Q4 + DEF-M3) closed 2026-07-31;
+P2/P3/P4/P5 (the DEF-M correctness batches + VAL2 CI gates) closed 2026-08-01;
+P9 (`build_ajj` vectorization + DEF-R6), P10 (Step 62), P11 (Step 63) and
+P13 (DEF-R1–R4 refactor; DEF-R7 deferred to the hygiene batch) closed 2026-08-02.
+Details in `docs/40_history/`.
 
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P14 | `matrix_gaf_export` Phases 1–2 | Tier 2 | ~8 d | External flutter handoff (FLAPS) **and** the declared prerequisite of Phase D (MKAERO1, Mach loop, bundle writers). |
-| P15 | `AMODE` Phase 1 (control-surface hinge modes) | Tier 3 | ~7.5 d | Needed before control-surface flutter in SOL 145; Phase 2 is a declared pre-1.0.0 blocker. |
-| P16 | Phase D core — DLM (D0–D3) + SOL 145 PK flutter | Tier 3 | ~25–30 d | The declared next phase after SOL 144 sufficiency. Gated on P14. |
-| P17 | Phase D cont. — RFA state-space + SOL 146 gust + Monitor Phase 3 | Tier 3 | ~15–20 d | Completes the dynamic loads process (CS-25.341 gust/turbulence monitors). |
-| P18 | `matrix_reuse_store` Phases 1–3 | Tier 2 | ~6 d | Real payoff only once envelope sweeps (many Machs × masses × maneuvers) exist — i.e. after P11/P16. Its Phase 0 is stale (see verdicts). |
+| P1 | DEF-M12 — correction-card export field width | Release-required | ~0.5 d | Release-critical deliverable corruption: the corrected-BDF download truncates every value under a strict 8-char free-field reader. Cheapest fix in the table — `fmt_real8` already exists (DEF-M6). |
+| P2 | Step 67 — quasi-steady yaw-rate wing term | Release-required | ~1–2 d | Lateral/yaw-rate cases are in release scope and the wing contribution to C_nr/C_lr is currently silently zero. Formulation already decided (loading-scaled force term). |
+| P3 | Release hygiene batch — DEF-R7 (WT1 removal), DEF-M13 (f06 column drift), sample-hygiene + doc-pointer sweep, propeller-position docs, close Q1 + Q3 | Release-required | ~2–3 d | Everything else the release-scope decision committed to; all low-risk and fully decided — pure execution, batched to land once at the release boundary. |
+| P4 | DEF-M14 — nonplanar Trefftz `CDi` kernel | Post-release | ~1–2 d | The last open correctness defect: silently wrong CDi/e on canted decks (dihedral, winglets, cruciform tails). Reporting-only outputs, so it ranks below the release gate but above all new capability. |
+| P5 | `matrix_gaf_export` Phases 1–2 | Tier 2 | ~8 d | External flutter handoff (FLAPS) **and** the declared prerequisite of Phase D (MKAERO1, Mach loop, bundle writers). |
+| P6 | `AMODE` Phase 1 (control-surface hinge modes) | Tier 3 | ~7.5 d | Needed before control-surface flutter in SOL 145; Phase 2 is a declared pre-1.0.0 blocker. |
+| P7 | Phase D core — DLM (D0–D3) + SOL 145 PK flutter | Tier 3 | ~25–30 d | The declared next phase after SOL 144 sufficiency. Gated on P5. |
+| P8 | Phase D cont. — RFA state-space + SOL 146 gust + Monitor Phase 3 | Tier 3 | ~15–20 d | Completes the dynamic loads process (CS-25.341 gust/turbulence monitors). |
+| P9 | `matrix_reuse_store` Phases 1–3 | Tier 2 | ~6 d | Real payoff only once envelope sweeps (many Machs × masses × maneuvers) exist — the Mach dimension arrives with P7. Its Phase 0 is stale (see verdicts). |
 
 **Opportunistic / unranked** (small, independent, do when adjacent): transient
 `net_loads` elastic-inertia decision and `MONPNT1`/`MONPNT3` on transient — both
@@ -88,8 +70,8 @@ airplane** (twin-turboprop regional: high wing, T-tail empennage, wing-mounted e
 M ≈ 0.45). Capability baseline already delivered: trim + derivatives, balanced maneuvers
 (Step 53), MASSSET payload sweeps (Step 60), monitor points, prescribed-rigid
 quasi-steady MLOADS (increment 1), and corrected aerodynamics reaching a trim on a
-realistic airplane (Steps 65–66). Ranks and P-labels above are unchanged; the six scope
-questions were resolved as follows:
+realistic airplane (Steps 65–66). The release-required items below hold P1–P3 of the
+re-ranked table above; the six scope questions were resolved as follows:
 
 | Decision | Outcome |
 |----------|---------|
@@ -97,25 +79,24 @@ questions were resolved as follows:
 | Lateral cases | **In scope.** Steady sideslip/roll/aileron trim (already supported) plus yaw-rate cases — the Tier 4 yaw-rate wing term is promoted to **Step 67** (below), release-required. Formulation decided: loading-scaled force term. |
 | Propeller effects | **Corrections position, documented.** Powered effects (slipstream over the washed wing, thrust-line pitching moment) enter only via the correction cards (`W2GJ`/`WT2`/`CHORDCP`) built from powered CFD or flight-test data; no native slipstream model. The modeling-guidance + Known-Limitations text lands in `docs/20_theory/02_realistic_airplane_sol144.md` and `05a_aero_vlm.md` as part of the release hygiene batch. |
 | Fuselage | **Corrected body panels adequate.** The A9/A10 correction-matched body panels are the early-design answer (Step 66 demonstrates them on the flagship); the predictive slender-body element stays deferred past Phase D. Validity envelope documented in the theory doc's limitations section. |
-| Gust/turbulence | **Out of scope.** CS-25.341 gust/continuous turbulence needs Phase D (P16/P17); the release claims maneuver loads only and the release notes must state the exclusion explicitly. |
+| Gust/turbulence | **Out of scope.** CS-25.341 gust/continuous turbulence needs Phase D (P7/P8); the release claims maneuver loads only and the release notes must state the exclusion explicitly. |
 | Q1 / Q3 | **Both accepted for closure** in the release hygiene batch (see the open-questions table). |
 
 **Release-required items** (everything else in this backlog is post-release):
 
-- **P9** — `build_ajj` vectorization (+ DEF-R6): **delivered 2026-08-02**
+- `build_ajj` vectorization (+ DEF-R6): **delivered 2026-08-02**
   (~120× at 400 boxes; see `docs/40_history/05_aero_vlm_spline.md`).
-- **DEF-M12** — correction-card export field width: the corrected-BDF export sits on
-  the release-critical corrections workflow.
-- **Step 67** — quasi-steady yaw-rate wing term (below).
-- **Release hygiene batch** — DEF-R7 (WT1 removal, "at a release boundary" per its own
-  note), DEF-M13 (f06 column drift), the sample-hygiene + doc-pointer sweep
+- **DEF-M12 (P1)** — correction-card export field width: the corrected-BDF export sits
+  on the release-critical corrections workflow.
+- **Step 67 (P2)** — quasi-steady yaw-rate wing term (below).
+- **Release hygiene batch (P3)** — DEF-R7 (WT1 removal, "at a release boundary" per its
+  own note), DEF-M13 (f06 column drift), the sample-hygiene + doc-pointer sweep
   (sample-review section), the propeller-effects modeling-position docs (above), and
   closing **Q1** (accept + document the CID-0 SPCFORCE convention — it matches NASTRAN)
   and **Q3** (Known-Limitations line for the GRAV CID=0 restriction).
 
-**Explicitly out of release scope:** P14–P18, DEF-M14, and every Tier 2–4 item not
-named above.  (P13, also out of release scope, was delivered 2026-08-02 ahead of the
-release anyway — see the priority table.)
+**Explicitly out of release scope:** P4–P9 (DEF-M14, `matrix_gaf_export`, AMODE,
+Phase D, `matrix_reuse_store`) and every Tier 2–4 item not named above.
 
 ### Step 67 (release-required) — Quasi-steady yaw-rate wing term
 
@@ -171,12 +152,12 @@ Verdicts:
 |----------|---------|-------|
 | `01_static_aero_plan.md` | **Pruned** (H1, done 2026-07-05) | Phases A–C (Steps 39–58) were all closed but never removed per its own self-removal rule. Now a compact architecture/reference doc: layer diagram, matrix nomenclature, delivered-step map, references, V-case index; the Phase D/E/F/G placeholders retired in favour of `designs/dlm_rfa_flutter_gust.md` and this backlog. |
 | `02_static_aero_zaero_review.md` | **Archived** (done, this review) | All 8 ranked goals were folded into Steps 39–58, all closed. Moved to `docs/40_history/archive/`. |
-| `designs/matrix_gaf_export.md` | **Viable — schedule (P14)** | Highest-viability aero design: new code over data already computed; no new physics. Its AE4 prerequisite is **stale** — AE4/spline kinematics closed with AC7 (2026-07-05, NASTRAN infinite-beam SPLINE2, rigid-body-exact). Its `reduce_to_aset` §6.1 **landed with Step 59** (2026-07-06, `sbeam/assembly/reduction.py`) — reuse, don't re-extract. |
-| `designs/matrix_reuse_store.md` | **Viable — subordinate (P18); Phase 0 deleted** | Rigorous cache-boundary analysis, but its Phase 0 ("build the SOL 144 production dispatch + f06 writer") is **stale** — that surface shipped with Step 56/AE10 and AC5. Re-scope to Phases 1–3 only; schedule when envelope sweeps make caching pay. |
-| `designs/dlm_rfa_flutter_gust.md` | **Viable — the Tier 3 core (P16/P17)** | Technically honest, well-gated (Blair 3×3, Sears, typical-section). The k=0 VLM anchoring is the right de-risking move. Its AE4 gate is stale (closed by AC7); the nonplanar kernel terms (T1/T2, I2) remain a genuine research gap, correctly walled behind V-D1-6 (planar-only ships). Needs `g_disp_colloc` (¾-chord displacement spline) at D0. |
+| `designs/matrix_gaf_export.md` | **Viable — schedule (P5)** | Highest-viability aero design: new code over data already computed; no new physics. Its AE4 prerequisite is **stale** — AE4/spline kinematics closed with AC7 (2026-07-05, NASTRAN infinite-beam SPLINE2, rigid-body-exact). Its `reduce_to_aset` §6.1 **landed with Step 59** (2026-07-06, `sbeam/assembly/reduction.py`) — reuse, don't re-extract. |
+| `designs/matrix_reuse_store.md` | **Viable — subordinate (P9); Phase 0 deleted** | Rigorous cache-boundary analysis, but its Phase 0 ("build the SOL 144 production dispatch + f06 writer") is **stale** — that surface shipped with Step 56/AE10 and AC5. Re-scope to Phases 1–3 only; schedule when envelope sweeps make caching pay. |
+| `designs/dlm_rfa_flutter_gust.md` | **Viable — the Tier 3 core (P7/P8)** | Technically honest, well-gated (Blair 3×3, Sears, typical-section). The k=0 VLM anchoring is the right de-risking move. Its AE4 gate is stale (closed by AC7); the nonplanar kernel terms (T1/T2, I2) remain a genuine research gap, correctly walled behind V-D1-6 (planar-only ships). Needs `g_disp_colloc` (¾-chord displacement spline) at D0. |
 | `designs/rbmref_card.md` | **Fold, don't build standalone** | Its `B_target` geometric rigid-basis construction is mathematically the same object as Step 61's `Φ_r`. Step 61 owns the single `build_rigid_modes`; the RBMREF *card* (user-selectable reference point + f06 rigid-mode block) becomes a thin optional wrapper afterwards, if still wanted. |
 | `designs/spline9_hermite_beam_spline.md` | **Run the kill-switch study only** | Correctly self-gated: run the coarse-grid convergence study (SPLINE9 vs SPLINE2-with-attached-rotations at 3/5/9 EA stations) FIRST; if SPLINE2 matches within noise, close without implementing. Do not start the card plumbing before the study. |
-| `designs/amode_card.md` | **Viable — schedule Phase 1 before flutter (P15)** | Mirrors the proven RBE3 transformation path; V19 analytic gate is unforgeable. Phase 2 (elastic rotating set) honestly rated harder and is a declared 1.0.0 blocker. Open interaction to resolve at implementation: AMODE's augmented `q` DOF vs the Step 61 free-free basis solve (neither doc addresses it). |
+| `designs/amode_card.md` | **Viable — schedule Phase 1 before flutter (P6)** | Mirrors the proven RBE3 transformation path; V19 analytic gate is unforgeable. Phase 2 (elastic rotating set) honestly rated harder and is a declared 1.0.0 blocker. Open interaction to resolve at implementation: AMODE's augmented `q` DOF vs the Step 61 free-free basis solve (neither doc addresses it). |
 
 ### Shared-infrastructure ownership (single-owner rule)
 
@@ -201,7 +182,7 @@ Assigned owners — later features **reuse, never re-extract**:
 
 ### Housekeeping (doc hygiene)
 
-- **H3 — stale-prerequisite annotations:** when P14/P16 start, update
+- **H3 — stale-prerequisite annotations:** when P5/P7 start, update
   `matrix_gaf_export.md`/`dlm_rfa_flutter_gust.md` AE4 gates (closed by AC7) and
   `matrix_reuse_store.md` Phase 0 (delivered by Step 56/AC5).
 
@@ -234,15 +215,18 @@ text to 1.3e-8; divergence q cross-checks an independent QZ eigensolve to 1e-15.
 Decisions taken 2026-07-31: SPLINE0 body loads → **inject as rigid loads at the reference
 point** (DEF-M1 = Step 64, delivered 2026-07-31 — see `docs/40_history/06_sol144_static_aeroelastic.md`).
 
-**Ranking (2026-07-31 priority update).** These findings now hold the top of the priority
-order — see the table above:
+**Ranking (2026-08-02 re-rank).** The surviving findings hold these ranks in the
+priority table above:
 
 | Rank | Batch | Items |
 |------|-------|-------|
+| P1 | Deliverable integrity (release-required) | DEF-M12 |
+| P3 | Release hygiene batch | DEF-R7, DEF-M13 |
+| P4 | Correctness (post-release) | DEF-M14 |
 | — | Opportunistic, do when adjacent | DEF-L2–L7 |
 
-(P13 — the DEF-R1/R2/R3/R4 refactor batch — delivered 2026-08-02; DEF-R7 below
-remains, scheduled with the release hygiene batch.)
+(The DEF-R1/R2/R3/R4 refactor batch — P13 of the 2026-07-31 numbering — was delivered
+2026-08-02; only DEF-R7 below remains, scheduled with the release hygiene batch.)
 
 ### DEF-M — Medium (silent wrong output on specific configurations, or misleading deliverables)
 
@@ -433,9 +417,9 @@ buffer of delayed `D_jx`/`D_jξ̇` arguments); (4) strip Wagner/Theodorsen lift-
 2-state R.T. Jones approximation appended to the state vector). Selected by a new `MLDAERO` card
 (designed at promotion). Each optional; extends validity beyond `k ≲ 0.05–0.1`. Acceptance sketch:
 Level 2 reproduces 2-D `πρb²` exactly on a single strip; Level 4 reproduces Wagner indicial lift to
-Jones-approximation accuracy. **Priority note (this review):** opportunistic — once Phase D (P16)
+Jones-approximation accuracy. **Priority note (this review):** opportunistic — once Phase D (P7)
 is underway the DLM supersedes Levels 2–4; only implement if transient-load fidelity beyond
-`k ≈ 0.1` is needed *before* the DLM lands.
+`k ≈ 0.1` is needed *before* the DLM lands. (Phase D is P7 in the priority table.)
 
 #### G0-e — Closed-loop control layer (ASE bridge) — deferred (outline)
 
@@ -469,7 +453,7 @@ overshoot vs open loop; zero-gain identity to Step 63. **Deferred with Phase G.*
    phugoid/speed DOF, no large-attitude kinematics. Documented validity envelope alongside the
    existing `k ≲ 0.05–0.1` aero limit.
 6. **Control-surface inertia / hinge moments absent** — commanded δ_c produces aero only; surface
-   mass reaction / hinge DOFs out of scope (theory-doc note). `AMODE` (P15) is the eventual home
+   mass reaction / hinge DOFs out of scope (theory-doc note). `AMODE` (P6) is the eventual home
    of a physical hinge DOF.
 7. **SUPORT dependence stands** — the modal solver still requires SUPORT (reference point +
    recovery constraint + rigid DOF selection); a SUPORT-free variant (rigid modes about the GPWG
@@ -512,9 +496,9 @@ mass**. No sample deck has that. A deck that does would be cheap CI insurance.
 
 ---
 
-## Tier 2 — Supporting infrastructure (P14, P18, studies)
+## Tier 2 — Supporting infrastructure (P5, P9, studies)
 
-### matrix_gaf_export (P14) — matrix / GAF export bundle
+### matrix_gaf_export (P5) — matrix / GAF export bundle
 
 Per `designs/matrix_gaf_export.md` (viable, see verdicts): `EXPORT` case-control command
 writing sparse `K_gg`/`M_gg`, dense a-set `K_aa`/`M_aa`, `PHIA`/`PHIG`, modal `K_hh`/`M_hh`,
@@ -524,7 +508,7 @@ unblocked — Step 59 closed 2026-07-06 (reuses `assembly/reduction.py:reduce_to
 before Phase D (which extends its MKAERO1/Mach-loop machinery). Its stated AE4 prerequisite is stale — closed by AC7. Phase 3 (OP3/UF writers)
 deferrable.
 
-### matrix_reuse_store (P18) — matrix persistence / dual-mode SOL 144
+### matrix_reuse_store (P9) — matrix persistence / dual-mode SOL 144
 
 Per `designs/matrix_reuse_store.md` (viable, subordinated): persist `ajj_inv_corr`,
 `skj/djk/wg`, box geometry, spline operators, sparse `KGG`/`MGG` to `.npz` bundles with
@@ -533,7 +517,7 @@ bit-identical. **Re-scoped by this review: Phase 0 deleted** (the SOL 144 produc
 dispatch + f06 writer it wanted to build already shipped with Step 56/AE10 + AC5). Phases
 1–3 (~6 d) become worthwhile once envelope sweeps grow large (Machs × MASSSETs ×
 maneuvers — the maneuver × mass sweep exists since Step 63; the Mach dimension arrives
-with P16); the cache-boundary rules (§4: cache pre-q, pre-reduction operands
+with P7); the cache-boundary rules (§4: cache pre-q, pre-reduction operands
 only, never `Q_aa`/`K_eff`/LU) stand as written.
 
 ### SPLINE9 — FE-consistent Hermite beam spline (go/no-go study only)
@@ -546,9 +530,9 @@ SPLINE2 either way.
 
 ---
 
-## Tier 3 — SOL 145 flutter + DLM (Phase D/E/F) — the declared next phase (P15–P17)
+## Tier 3 — SOL 145 flutter + DLM (Phase D/E/F) — the declared next phase (P6–P8)
 
-### Phase D core (P16) — DLM (D0–D3) + SOL 145 PK flutter
+### Phase D core (P7) — DLM (D0–D3) + SOL 145 PK flutter
 
 Per `designs/dlm_rfa_flutter_gust.md` (viable, see verdicts): complex unsteady AIC
 `A_jj(M,k)` (Landahl kernel, Laschka approximation, parabolic spanwise quadrature),
@@ -556,17 +540,17 @@ Per `designs/dlm_rfa_flutter_gust.md` (viable, see verdicts): complex unsteady A
 decision — the entire steady content reuses the validated VLM); complex GAFs `Q_hh(M,k)`
 over a Mach×k table (extending `matrix_gaf_export`'s MKAERO1/Mach loop); `sol145.py` PK
 (primary) / PKNL / KE flutter with V-g/V-f output. Gates: Blair 3×3 kernel benchmark
-(0.1%), k=0 GAF cross-check, typical-section flutter closed-form. **Prerequisites:** P14
+(0.1%), k=0 GAF cross-check, typical-section flutter closed-form. **Prerequisites:** P5
 landed; `g_disp_colloc` (¾-chord displacement spline) added at D0; the doc's AE4 gate is
 stale (closed by AC7). Planar-only ships first — the nonplanar kernel terms (T1/T2, I2)
 are a genuine research gap correctly walled behind their own gate. ~25–30 d.
 
-### AMODE Phase 1 (P15) — control-surface hinge modes
+### AMODE Phase 1 (P6) — control-surface hinge modes
 
 Per `designs/amode_card.md`: `AMODE` card adding a generalized rotation DOF `q` for a SET1
 grid group about a CORD2R hinge axis against stiffness `k`, via a transformation composed
 after the RBE reduction (mirrors the proven `rbe3.py` path); f06 participation table.
-**Schedule before control-surface flutter work in P16** (~7.5 d). Phase 2 (elastic rotating
+**Schedule before control-surface flutter work in P7** (~7.5 d). Phase 2 (elastic rotating
 set) is a declared pre-1.0.0 blocker, target after Phase D core. Open interaction to
 resolve at implementation: the augmented `q` DOF vs the Step 61 free-free basis solve.
 
@@ -578,7 +562,7 @@ normalization, f06 rigid-body block) remains available as a thin optional wrappe
 afterwards if the reporting feature is still wanted — do not build a second rigid-basis
 path.
 
-### Phase D cont. (P17) — RFA state-space + SOL 146 gust + Monitor Phase 3
+### Phase D cont. (P8) — RFA state-space + SOL 146 gust + Monitor Phase 3
 
 Roger-form RFA + aeroelastic state-space (`rfa.py`); `sol146.py` discrete 1-cosine gust
 (Fourier method) and continuous Von Kármán/Dryden turbulence (Ā/N₀). **Monitor points

@@ -13,6 +13,14 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Changed
 
+**Backlog priority table re-ranked and renumbered (2026-08-02)**
+
+`docs/30_future/00_backlog.md` priority table re-ranked after the 2026-08-02 delivery
+wave: the three release-required work packages now hold P1–P3 (DEF-M12 export field
+width, Step 67 yaw-rate wing term, release hygiene batch), DEF-M14 holds P4, and the
+former P14–P18 design items renumber to P5–P9. Docs only — the new labels supersede
+the 2026-07-31 numbering; dated references in `docs/40_history/` keep the old labels.
+
 **P13 — DEF-R1/R2/R3/R4 refactor batch: decompose `sol144.py` (2026-08-02)**
 
 Internal refactor, **no numeric changes** — every f06/BDF/CSV output verified
