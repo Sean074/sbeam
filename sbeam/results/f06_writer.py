@@ -30,6 +30,24 @@ def _fmt(val: float) -> str:
     return f"{val:{_FIELD_W}.6E}"
 
 
+def _hdr(lead: str, *labels: str) -> str:
+    """Lay column labels out on ``_FIELD_W`` so they cannot drift off their data.
+
+    ``lead`` is the literal prefix that spans whatever non-numeric columns come
+    first (grid/element ID, TYPE, …); it must be exactly as wide as the data
+    row's own prefix.  Every remaining label is then right-justified in one
+    ``_FIELD_W`` cell, matching ``_fmt``.  Labels longer than a cell are
+    truncated so adjacent cells never abut (DEF-M7 / DEF-M13).
+    """
+    return lead + "".join(f"{h[:_FIELD_W]:>{_FIELD_W}}" for h in labels)
+
+
+# Grid-row blocks (DISPLACEMENT, SPCFORCE, EIGENVECTOR, divergence mode shape)
+# all share this data prefix: f"{gid:>14}     G  " — 22 characters.
+_GRID_LEAD = f"{'POINT ID.':>15}   TYPE"
+_DISP_HDR = _hdr(_GRID_LEAD, "T1", "T2", "T3", "R1", "R2", "R3")
+
+
 def _transform_to_cd(t: FloatArray, r: FloatArray, gid: int, bulk: BulkData):
     """Rotate translation/rotation vectors into the grid's output (CD) coordinate frame."""
     cd = bulk.grids[gid].cd
@@ -67,7 +85,7 @@ def _displacement_block(
     """Append a NASTRAN DISPLACEMENT VECTOR block (shared by SOL 101 / 144)."""
     lines.append("                                         D I S P L A C E M E N T   V E C T O R")
     lines.append("")
-    lines.append("      POINT ID.   TYPE          T1             T2             T3             R1             R2             R3")
+    lines.append(_DISP_HDR)
     for gid in gids_sorted:
         i = grid_index[gid]
         base = 6 * i
@@ -86,9 +104,11 @@ def _bar_forces_block(
     """Append a NASTRAN FORCES IN BAR ELEMENTS (CBAR) block (shared by SOL 101 / 144)."""
     lines.append("                                  F O R C E S   I N   B A R   E L E M E N T S         ( C B A R )")
     lines.append("")
-    lines.append(
-        "      ELEMENT ID.    AXIAL FORCE    SHEAR-1        SHEAR-2        TORQUE         BENDING-1 A    BENDING-2 A    BENDING-1 B    BENDING-2 B"
-    )
+    lines.append(_hdr(
+        f"{'ELEMENT ID.':>14}  ",
+        "AXIAL FORCE", "SHEAR-1", "SHEAR-2", "TORQUE",
+        "BENDING-1 A", "BENDING-2 A", "BENDING-1 B", "BENDING-2 B",
+    ))
     for eid in sorted(bulk.cbars.keys()):
         if eid in bar_forces:
             bf = bar_forces[eid]
@@ -121,7 +141,7 @@ def _monitor_block(lines: list[str], monitor_loads: dict[str, MonitorLoad]) -> N
             f"        REF POINT (BASIC):  X ={_fmt(ml.ref[0])}  Y ={_fmt(ml.ref[1])}"
             f"  Z ={_fmt(ml.ref[2])}"
         )
-        lines.append("              FX             FY             FZ             MX             MY             MZ")
+        lines.append(_hdr(" " * 8, "FX", "FY", "FZ", "MX", "MY", "MZ"))
         lines.append("        " + "".join(_fmt(v) for v in ml.totals))
         lines.append("")
     lines.append("")
@@ -247,7 +267,8 @@ def _bar_stresses_block(
     lines.append("                                 S T R E S S E S   I N   B A R   E L E M E N T S        ( C B A R )")
     lines.append("")
     lines.append(
-        "      ELEMENT ID.    AXIAL          PT      SA(END-A)      SB(END-B)"
+        _hdr(f"{'ELEMENT ID.':>14}  ", "AXIAL") + f"{'PT':>5}  "
+        + _hdr("", "SA(END-A)", "SB(END-B)")
     )
     for eid in sorted(bulk.cbars.keys()):
         if eid not in bar_stresses:
@@ -323,7 +344,7 @@ def _build_f06_sol101_text(
     # ---- SPCFORCE section ----
     lines.append("                                    F O R C E S   O F   S I N G L E - P O I N T   C O N S T R A I N T")
     lines.append("")
-    lines.append("      POINT ID.   TYPE          T1             T2             T3             R1             R2             R3")
+    lines.append(_DISP_HDR)
 
     for gid in gids_sorted:
         if gid in result.reactions:
@@ -348,9 +369,9 @@ def _build_f06_sol101_text(
     if result.cbush_forces:
         lines.append("                                F O R C E S   I N   C B U S H   E L E M E N T S        ( C B U S H )")
         lines.append("")
-        lines.append(
-            "      ELEMENT ID.       F1             F2             F3             M1             M2             M3"
-        )
+        lines.append(_hdr(
+            f"{'ELEMENT ID.':>14}  ", "F1", "F2", "F3", "M1", "M2", "M3"
+        ))
         for eid in sorted(bulk.cbushs.keys()):
             if eid in result.cbush_forces:
                 f = result.cbush_forces[eid]
@@ -414,9 +435,7 @@ def _build_f06_sol103_text(
             f"                          E I G E N V E C T O R   NO. {mode_idx + 1}     FREQ = {freq:.6E} Hz"
         )
         lines.append("")
-        lines.append(
-            "      POINT ID.   TYPE          T1             T2             T3             R1             R2             R3"
-        )
+        lines.append(_DISP_HDR)
         phi = result.mode_shapes[:, mode_idx]
         for gid in gids_sorted:
             i = grid_index[gid]
@@ -553,7 +572,10 @@ def _build_f06_sol144_text(
     if result.load_injection_echo:
         lines.append("                    I N J E C T E D   A E R O   L O A D S   (SPLINE0 / UN-SPLINED)")
         lines.append("")
-        lines.append("      SOURCE          MASTER GRID   BOXES            FX            FY            FZ            MX            MY            MZ")
+        lines.append(_hdr(
+            f"      {'SOURCE':<14}  {'MASTER GRID':>11}  {'BOXES':>6}  ",
+            "FX", "FY", "FZ", "MX", "MY", "MZ",
+        ))
         for inj in result.load_injection_echo:
             f = inj['force']
             m = inj['moment']
@@ -679,7 +701,10 @@ def _build_f06_sol144_text(
     if want_aero and result.box_forces is not None and result.box_cp is not None:
         lines.append("                      A E R O D Y N A M I C   B O X   P R E S S U R E S   A N D   F O R C E S")
         lines.append("")
-        lines.append("      BOX ID         DELTA-CP          FX             FY             FZ")
+        lines.append(
+            _hdr(f"{'BOX ID':>12}  ", "DELTA-CP") + "  "
+            + _hdr("", "FX", "FY", "FZ")
+        )
         for k in range(len(result.box_forces)):
             cp = result.box_cp[k]
             fx, fy, fz = result.box_forces[k]
@@ -783,9 +808,7 @@ def _build_f06_sol144_diverg_text(
                 f"( ROOT {i}, Q-DIV = {_fmt(root.q_div)} )"
             )
             lines.append("")
-            lines.append(
-                "      POINT ID.   TYPE          T1             T2             T3             R1             R2             R3"
-            )
+            lines.append(_DISP_HDR)
             for gid in gids_sorted:
                 base = 6 * grid_index[gid]
                 t = root.mode_shape[base:base+3]
@@ -883,9 +906,7 @@ def _build_f06_sol144_maneuver_text(
     lines.append("")
     # Header text is kept under _FIELD_W so adjacent cells never abut.
     heads = labels + ["FZ-AERO", "MY-AERO", "PEAK GRID F"]
-    header = f"{'SAMPLE':>12}{'T':>{_FIELD_W}}"
-    header += "".join(f"{h[:_FIELD_W]:>{_FIELD_W}}" for h in heads)
-    lines.append(header)
+    lines.append(_hdr(f"{'SAMPLE':>12}", "T", *heads))
     for i, step in enumerate(result.steps):
         row = f"{i + 1:>12}{_fmt(step.t)}"
         for label in labels:

@@ -43,14 +43,14 @@ Minimal change
   * WT2: per strip a uniform scale r̄ = (dF/dα)_target / (dF/dα)_VLM hits the force with
     **no shape change**; a minimum-norm per-box perturbation δ orthogonal to the force
     (Σ δ_k·g0_k = 0) supplies only the moment/a.c. mismatch. When the target a.c. equals the
-    VLM a.c. (pure slope scaling) δ = 0 and the result degenerates to the uniform WT1 scaling.
+    VLM a.c. (pure slope scaling) δ = 0 and the result degenerates to a uniform per-strip scaling.
   * W2GJ: a two-mode camber line per strip (uniform incidence + chordwise-linear camber).
 
 Conventions
 -----------
 Per-strip target arrays are ordered by ascending ``i_span`` within each surface. Force is
-the surface-normal force/q (``Σ area·Cp``; §2.9) per unit reference normalwash — exactly
-``apply_wt1``'s convention. Pitching moment is **nose-up positive** about the per-strip
+the surface-normal force/q (``Σ area·Cp``; §2.9) per unit reference normalwash.
+Pitching moment is **nose-up positive** about the per-strip
 moment reference (default = strip ¼-chord), matching ``sol144.pitch_moment``.
 
 The supplied ``ajj`` and ``boxes`` must be the **whole model** (full AIC); pass the AIC
@@ -121,7 +121,7 @@ class SectionCorrectionResult:
 
 
 def _box_chord(box: AeroBox) -> float:
-    """Physical VLM box chord = area / projected spanwise width (apply_wt1 formula)."""
+    """Physical VLM box chord = area / projected spanwise width."""
     dy = math.sqrt((box.bound_b[1] - box.bound_a[1]) ** 2
                    + (box.bound_b[2] - box.bound_a[2]) ** 2)
     return box.area / max(dy, 1e-14)

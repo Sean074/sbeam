@@ -22,7 +22,7 @@ are the day-to-day references; higher numbers are planning and historical record
 | [`03_static_analysis.md`](10_standard/03_static_analysis.md) | SOL 101 static analysis solver |
 | [`04_modal_analysis.md`](10_standard/04_modal_analysis.md) | SOL 103 normal modes solver |
 | [`05_aeroelastics.md`](10_standard/05_aeroelastics.md) | **Aeroelastics index** (split by area 2026-07-05): architecture overview, validation status, supported-card table, file map |
-| [`05a_aero_vlm.md`](10_standard/05a_aero_vlm.md) | Phase A — VLM aerodynamics: CAERO1 meshing, AIC, corrections (WKK/WT1/WT2/CHORDCP), section synthesiser, body panels, viewer aero tab |
+| [`05a_aero_vlm.md`](10_standard/05a_aero_vlm.md) | Phase A — VLM aerodynamics: CAERO1 meshing, AIC, corrections (WKK/WT2/CHORDCP), section synthesiser, body panels, viewer aero tab |
 | [`05b_splining.md`](10_standard/05b_splining.md) | Phase B — structure ↔ aero splining (SPLINE2/ATTACH/SPLINE0, `build_g_spline`, load transfer) |
 | [`05c_sol144_maneuver.md`](10_standard/05c_sol144_maneuver.md) | Phases C + G0 — SOL 144 trim/derivatives/divergence, running & output, transient maneuver loads (MLOADS), monitor points |
 | [`06_viewer.md`](10_standard/06_viewer.md) | Streamlit/Plotly pre/post-processing viewer |

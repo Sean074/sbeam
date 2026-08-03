@@ -11,6 +11,23 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Phase 2 completion.
 
+### Removed
+
+**DEF-R7 — the deprecated WT1 AIC correction path (2026-08-03)**
+
+`AECORR METHOD=WT1` was deprecated by DEF-H2/H3 (2026-07-31) with a parser `UserWarning`
+but left working; the release boundary completes the retirement. Removed `apply_wt1`
+(`aero/corrections.py`), the WT1 branch of `_assemble_vlm_operator` (`aero/aero_model.py`)
+and the `TestApplyWt1`/`TestWt1Deprecation` characterization classes. **Breaking for any
+deck carrying `AECORR METHOD=WT1`:** the parser now raises a `ValueError` naming the
+removal instead of warning. No shipped deck was affected — no `AECORR` card appears in
+`sample/` or `tests/**/*.bdf` — so the only breakage is a hand-written legacy deck, which
+was producing wrong numbers (`f_target/β²` at Mach > 0, and strip aliasing across CAERO1s).
+`WT2` and the section-correction path are unchanged and strictly more capable. WT1 rows
+stripped from `05a_aero_vlm.md`, `02_card_reference.md`, `05_aeroelastics.md`,
+`01_beam_model.md`, `06_viewer.md`, `00_program_overview.md`, `00_INDEX.md`, theory
+§3.3 and the three `30_future/designs/` proposals.
+
 ### Added
 
 **Step 67a — quasi-steady yaw-rate wing term (2026-08-02)**
@@ -56,6 +73,21 @@ per-surface `CD0` input is backlogged.
 
 ### Fixed
 
+**DEF-M13 — f06 header/data column drift in five more blocks (2026-08-03)**
+
+DEF-M7 fixed the maneuver time-history table; the identical 15-or-14-character-header-over
+13-character-data drift was still present in the `DISPLACEMENT VECTOR` header (four
+hand-written copies: SOL 101 displacement + SPCFORCE, SOL 103 eigenvector, SOL 144
+divergence mode shape), the CBAR force and CBAR stress blocks, the `MONITOR POINT
+INTEGRATED LOADS` totals, the CBUSH force block, the SPLINE0 body-load injection echo and
+the aero box-pressure block. Numbers were always correct — this was a readability/parse
+defect in the listing. All headers now go through a new `f06_writer._hdr(lead, *labels)`
+helper laying every label on the shared `_FIELD_W`, which also de-duplicates the four
+copies of the grid-row header. New general gate `tests/results/test_f06_column_alignment.py`:
+for every header line in a real f06, the `_FIELD_W` characters ending at each column label
+must parse as a float, and adjacent labels must not abut. Verified to fail on the pre-fix
+writer and pass after.
+
 **Q1 — SPC reactions now written in the grid's CD output frame (2026-08-03)**
 
 The `.f06` SPCFORCE block rotates each reaction into the grid's `CD` frame, matching the
@@ -72,6 +104,17 @@ Gate: `tests/results/test_f06_sol101.py::TestSpcForceCdFrame` (CD = 0 unchanged;
 rotation checked component-by-component; stored reactions unmutated by the write).
 
 ### Changed
+
+**Doc-pointer sweep (2026-08-03)**
+
+`sample/ha144a_sbeam.bdf` (the half-span HA144A deck, removed long ago) was still cited by
+two sample-deck provenance comments and by a copy-pasteable snippet in
+`docs/40_history/06_sol144_static_aeroelastic.md`; the comments are reworded and the
+history snippet is annotated as a non-runnable historical record rather than rewritten.
+`05a_aero_vlm.md` no longer overstates `tests/aero/test_strip_body.py`'s coupling to
+`sample/cessna210_flagship_section_data.csv` — that test builds `BodyTargets`
+programmatically and reads no CSV; the tests that do exercise the deck-plus-CSV pair are
+`test_body_correction.py` and `test_cessna210_flagship_body.py`.
 
 **Q3 — program-level "Known Limitations" section (2026-08-03)**
 

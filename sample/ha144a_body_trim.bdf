@@ -15,7 +15,7 @@ $   * ANGLEA shifts against ha144a_fullspan_sbeam.bdf by the body's nose-up
 $     increment (the horizontal panel sits ahead of the reference point).
 $
 $ Purpose: an explicit full-span model — NO symmetry doubling — built as an
-$ EXACT 2x mirror of the half-span ha144a_sbeam.bdf:
+$ EXACT 2x mirror of the half-span HA144A deck (ha144a_sbeam.bdf, since removed):
 $   * both wings + both canards modelled explicitly (SYMXZ=0)
 $   * fuselage centreline CONM2 masses DOUBLED, wing masses MIRRORED, so the
 $     full model is a precise 2x replica: same CL (W/S), same CG_x (=17.18 ft).

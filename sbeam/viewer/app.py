@@ -693,7 +693,7 @@ def _render_aero_tab(bulk: BulkData) -> None:
             alpha_rad = np.radians(alpha_deg)
             beta_rad  = np.radians(beta_deg)
             # Corrected solve on aero_model.ajj_inv_corr — any AIC correction
-            # (WKK / WT1 / WT2) and Prandtl–Glauert are honoured, matching the
+            # (WKK / WT2) and Prandtl–Glauert are honoured, matching the
             # SOL 144 path; the W2GJ baseline normalwash (camber/twist/built-in
             # incidence) is folded into the RHS with the SOL 144 sign.
             result = solve_rigid_cl(

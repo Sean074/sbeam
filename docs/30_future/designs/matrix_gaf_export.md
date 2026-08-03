@@ -7,7 +7,7 @@
 **Last updated:** 2026-06-11
 **Related:** `docs/10_standard/05_aeroelastics.md` (Phase A architecture), `docs/20_theory/01_aeroelastics_theory.md` (Q_aa / GAF derivation), backlog defects AE1/AE4/AE5 (correctness of the exported aero).
 
-This document is the design proposal for a matrix-export capability: the full global stiffness `K_gg` and mass `M_gg` with an explicit DOF map, the SOL 103 modal-reduced `K_hh`, `M_hh` and mode-shape matrix `Φ`, and a steady (k = 0) generalized aerodynamic force matrix `Q_hh(M)` per Mach number including the Prandtl–Glauert and WKK/WT1/WT2 corrections. The motivating use case is handing a reduced flutter-ready model (`M_hh`, `K_hh`, `Q_hh` per Mach) to external solvers — primarily **FLAPS** (Flutter Analysis Programs, Meyer), and secondarily ZAERO/NASTRAN-adjacent tools via OUTPUT4.
+This document is the design proposal for a matrix-export capability: the full global stiffness `K_gg` and mass `M_gg` with an explicit DOF map, the SOL 103 modal-reduced `K_hh`, `M_hh` and mode-shape matrix `Φ`, and a steady (k = 0) generalized aerodynamic force matrix `Q_hh(M)` per Mach number including the Prandtl–Glauert and WKK/WT2 corrections. The motivating use case is handing a reduced flutter-ready model (`M_hh`, `K_hh`, `Q_hh` per Mach) to external solvers — primarily **FLAPS** (Flutter Analysis Programs, Meyer), and secondarily ZAERO/NASTRAN-adjacent tools via OUTPUT4.
 
 ---
 
@@ -45,7 +45,7 @@ The modal-reduction workflow is explicitly the intended FLAPS use pattern: manua
 
 ### 1.3 ZAERO / NASTRAN context
 
-The per-Mach GAF generation loop is ZAERO's MKAEROZ pattern and NASTRAN's MKAERO1 pattern, restricted to k = 0 (steady). sbeam's correction chain (WKK diagonal, WT1 force-matching, WT2 pressure-matching — `aero/corrections.py`) is already ZAERO-style; what is missing for multi-Mach use is that correction data is physically **Mach-specific** (wind-tunnel or CFD targets are measured at a Mach), while sbeam's WKK/AECORR cards currently carry no Mach tag. OUTPUT4 is the lingua franca of that ecosystem, which motivates the Phase 3 `.op4` writer.
+The per-Mach GAF generation loop is ZAERO's MKAEROZ pattern and NASTRAN's MKAERO1 pattern, restricted to k = 0 (steady). sbeam's correction chain (WKK diagonal, WT2 pressure-matching — `aero/corrections.py`; WT1 force-matching was removed by DEF-R7) is already ZAERO-style; what is missing for multi-Mach use is that correction data is physically **Mach-specific** (wind-tunnel or CFD targets are measured at a Mach), while sbeam's WKK/AECORR cards currently carry no Mach tag. OUTPUT4 is the lingua franca of that ecosystem, which motivates the Phase 3 `.op4` writer.
 
 ### 1.4 What this feature delivers
 
@@ -381,7 +381,7 @@ pz{i=(QHH0, QHH3, QHH6), o=QHH, mach=(0.0, 0.3, 0.6)}
 ## 11. References
 
 - **FLAPS:** *Flaps Users' Manual* v2.3.4, E. E. Meyer — Eq. 2.2.5 (flutter equation), §4.4/Table 4.1–4.2 (units), §6.4 (matrix parameterizations), §8.3/§8.8 (`export`/`import` formats), §8.12 (`pz`), §9.2.3 (modal reduction example), §10.11.2 (Universal File datasets 15/55/82). Local copy: `~/Documents/Library/Software_Manuals/FLAPS_manual.pdf`.
-- **ZAERO:** ZAERO 9.2 Theoretical Manual (AIC correction, GAF formation conventions); ZAERO 9.2 User's Manual (MKAEROZ per-Mach AIC generation pattern). sbeam's WKK/WT1/WT2 chain already follows these — see `docs/20_theory/01_aeroelastics_theory.md`.
+- **ZAERO:** ZAERO 9.2 Theoretical Manual (AIC correction, GAF formation conventions); ZAERO 9.2 User's Manual (MKAEROZ per-Mach AIC generation pattern). sbeam's WKK/WT2 chain already follows these — see `docs/20_theory/01_aeroelastics_theory.md`.
 - **NASTRAN:** MSC Nastran Quick Reference Guide — `MKAERO1` field layout, OUTPUT4 ASCII format; MSC Nastran Aeroelastic Analysis User's Guide — GAF / modal-reduction conventions.
 - **Matrix Market format:** NIST, https://math.nist.gov/MatrixMarket/formats.html (`scipy.io.mmwrite`/`mmread`).
 - **In-project precedents:** `aero/coupling.py::build_qaa/build_gaf` (the physics, already implemented); `solver/sol144.py::_build_qaa_aset` (the reduction to refactor); `assembly/rbe3.py` + `assembly/stiffness.py::apply_spcs` (set machinery); `tests/aero/test_step50_qaa.py` (ROM test anchor for X7).

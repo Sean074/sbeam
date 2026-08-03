@@ -415,7 +415,7 @@ def _uncorrected_cp_operator(aero_model: AeroModel) -> FloatArray:
     Göthert 1/β factor and the Γ→ΔCp (2/chord) conversion — exactly the
     no-correction branch of ``build_aero_model`` — so swapping it into the model
     via ``dataclasses.replace`` yields the *uncorrected* rigid derivatives /
-    pressures (no WKK / WT1 / WT2 applied).
+    pressures (no WKK / WT2 applied).
     """
     import math
     boxes = aero_model.boxes
@@ -464,7 +464,7 @@ def rigid_derivative_table(
     per-radian / per-unit-label (matching SOL 144).
 
     ``state`` selects which AIC operator the derivatives are integrated against:
-    ``"corrected"`` (the corrected ΔCp operator with any WKK/WT1/WT2 applied,
+    ``"corrected"`` (the corrected ΔCp operator with any WKK/WT2 applied,
     matching SOL 144), ``"uncorrected"`` (the raw VLM baseline at the same Mach,
     via :func:`_uncorrected_cp_operator`), or ``"diff"`` (corrected − uncorrected).
     With no correction cards in the deck the corrected and uncorrected operators

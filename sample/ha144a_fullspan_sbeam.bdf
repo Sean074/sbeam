@@ -2,7 +2,7 @@ $ HA144A — FULL-SPAN sbeam version (parity cross-check for AE1)
 $ Ref: MSC Nastran 2021.3 Aeroelastic Analysis User's Guide, Listing 7-1
 $
 $ Purpose: an explicit full-span model — NO symmetry doubling — built as an
-$ EXACT 2x mirror of the half-span ha144a_sbeam.bdf:
+$ EXACT 2x mirror of the half-span HA144A deck (ha144a_sbeam.bdf, since removed):
 $   * both wings + both canards modelled explicitly (SYMXZ=0)
 $   * fuselage centreline CONM2 masses DOUBLED, wing masses MIRRORED, so the
 $     full model is a precise 2x replica: same CL (W/S), same CG_x (=17.18 ft).

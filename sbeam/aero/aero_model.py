@@ -3,7 +3,7 @@
 Build order:
   1. Mesh all CAERO1 elements into AeroBox lists.
   2. Build the raw VLM AIC matrix AJJ.
-  3. Apply whichever correction is present (Wkk → WT2 → WT1 → none).
+  3. Apply whichever correction is present (Wkk → WT2 → none).
   4. Build Skj, Djk, and the baseline normalwash wg.
   5. Package everything into AeroModel.
 
@@ -25,7 +25,7 @@ from sbeam.aero.panel import AeroBox, mesh_caero1, build_box_id_map
 from sbeam.aero.vlm import build_ajj, prandtl_glauert_boxes
 from sbeam.aero.integration import build_skj, build_djk, build_wg_all
 from sbeam.aero.corrections import (
-    apply_wkk, apply_wt2, apply_wt1, apply_chordcp, check_conditioning,
+    apply_wkk, apply_wt2, apply_chordcp, check_conditioning,
 )
 from sbeam.aero.spline import LoadInjection, build_spline_operators
 from sbeam.aero.strip import strip_box_mask, strip_box_slopes, is_strip_caero
@@ -109,7 +109,7 @@ def _assemble_vlm_operator(
     """Build the raw AIC and the corrected ΔCp operator over a box subset.
 
     Returns ``(ajj, ajj_inv_corr)`` for ``op_boxes`` — the ordinary horseshoe-vortex
-    VLM path (PG compression, WKK/WT2/WT1 correction precedence, Göthert 1/β, and the
+    VLM path (PG compression, WKK/WT2 correction precedence, Göthert 1/β, and the
     Γ→ΔCp chord conversion).  Strip body panels are *excluded* by the caller, so the
     wing/tail inverse is the inverse of the lifting-surface-only AIC (the strip boxes
     contribute a separate diagonal block — see ``build_aero_model``).
@@ -120,14 +120,11 @@ def _assemble_vlm_operator(
     # Build raw AIC on PG-compressed geometry
     ajj = build_ajj(prandtl_glauert_boxes(op_boxes, mach))
 
-    # Correction precedence over the boxes present here — WKK, then WT2, then WT1.
+    # Correction precedence over the boxes present here — WKK, then WT2.
     op_eids = sorted({b.caero_eid for b in op_boxes})
-    primary_eid = op_eids[0]
     wkk_cards = [c for c in bulk.wkks.values() if c.caero_eid in op_eids]
     wt2_cards = [c for c in bulk.aecorrs.values()
                  if c.method == "WT2" and c.caero_eid in op_eids]
-    wt1_card  = next((c for c in bulk.aecorrs.values()
-                      if c.caero_eid == primary_eid and c.method == "WT1"), None)
 
     if wkk_cards:
         # Per-surface scatter onto a unit baseline (DEF-M8b).  WKK used to be
@@ -181,12 +178,6 @@ def _assemble_vlm_operator(
                 )
             cp_target[surf_idx] = tgt
         ajj_inv_corr = apply_wt2(ajj, cp_target, ajj_inv=ajj_inv_raw)
-    elif wt1_card is not None:
-        # DEPRECATED (DEF-H2/H3) — kept working, not fixed.  The PG-compressed boxes
-        # passed here (combined with the 1/β and physical-chord steps below) deliver
-        # f_target/β²; and apply_wt1's i_span grouping bleeds across CAERO1s.
-        f_target = np.asarray(wt1_card.target, dtype=float)
-        ajj_inv_corr = apply_wt1(ajj, prandtl_glauert_boxes(op_boxes, mach), f_target)
     else:
         lu = check_conditioning(ajj)
         ajj_inv_corr = lu_solve(lu, np.eye(n))
@@ -380,19 +371,13 @@ def build_aero_model(
                               all WT2 cards are combined into one global Γ-unit target —
                               each card fills its own CAERO1's boxes (row-major), boxes on
                               uncorrected surfaces default to ratio 1.
-      3. AECORR WT1 present → force-matching correction (apply_wt1).  **DEPRECATED
-                              (DEF-H2/H3)** — the card is *selected* by the primary
-                              CAERO1, but it is *applied* to every box sharing an
-                              ``i_span`` key (which restarts per CAERO1), and the
-                              achieved strip force is ``f_target/β²`` at M > 0.  Use
-                              WT2 or the section-correction path.
-      4. No correction       → AJJ*⁻¹ = solve(AJJ).
+      3. No correction       → AJJ*⁻¹ = solve(AJJ).
 
     When multiple CAERO1 elements are present, all boxes are concatenated into a single
     list and a single AIC is built for the combined surface.  W2GJ (baseline normalwash)
     is already accumulated per CAERO1, WT2 corrections are combined per surface, and WKK
     scatters per surface onto a unit baseline (boxes on surfaces with no WKK card take
-    weight 1).  WT1 alone still acts on the primary CAERO1 only — it is deprecated.
+    weight 1).
 
     Decoupled strip body panels (CAERO1 PID → PSTRIP) bypass all of the above: they are
     excluded from the VLM AIC inversion and contribute a diagonal block to ``ajj_inv_corr``

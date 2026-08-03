@@ -257,6 +257,74 @@ The two top-level functions serve distinct use cases:
 
 ## Resolved defects (documentation / model)
 
+### DEF-M13 (P3, release hygiene batch) — f06 header/data column drift ✅ COMPLETE (2026-08-03)
+
+**Objective:** DEF-M7 fixed the maneuver time-history table's 15-character headers over
+13-character `_fmt` data; the identical drift was then measured in five more blocks of
+`sbeam/results/f06_writer.py`. Fix them all in one pass and make the class of defect
+non-recurring, rather than pinning each block's spacing individually.
+
+**Deliverables:**
+- `f06_writer._hdr(lead, *labels)` — new shared helper. `lead` spans the non-numeric
+  prefix columns (grid/element ID, TYPE); every remaining label is right-justified in one
+  `_FIELD_W` cell, truncated so adjacent cells cannot abut. `_GRID_LEAD` / `_DISP_HDR`
+  hoist the grid-row header out as a module constant.
+- Converted blocks: `DISPLACEMENT VECTOR` (**four** hand-written copies of the same
+  header — SOL 101 displacement, SOL 101 SPCFORCE, SOL 103 eigenvector, SOL 144 divergence
+  mode shape — now one constant), CBAR forces, CBAR stresses (including the 7-character
+  `PT` column), `MONITOR POINT INTEGRATED LOADS` totals, CBUSH forces, the SPLINE0
+  body-load injection echo and the aero box-pressure block. The maneuver table was
+  re-routed through `_hdr` too, so there is a single layout mechanism.
+- ID labels now end where the ID data ends (`ELEMENT ID.` at 14+2, `BOX ID` at 12+2)
+  instead of overhanging by two columns.
+- New gate `tests/results/test_f06_column_alignment.py`: over a real full-span HA144A
+  SOL 144 listing with `AEROF`/`APRES` on, for every header line the `_FIELD_W` characters
+  ending at each numeric column label must parse as a float, and adjacent labels must keep
+  at least one space. A `checked >= 30` assertion stops the gate passing vacuously if the
+  header parser ever stops recognising headers.
+
+**Test/Acceptance:** the new gate was run against the pre-fix writer and **fails** there
+(`column 'FY' … cell '+00 0.000000E' is not a float` on the monitor totals block), and
+passes after. Full suite green (1741 passed, 6 xfailed) — no existing layout assertion in
+`test_f06_sol101.py` needed changing, because those slice the *data* rows.
+
+**Key decisions:**
+- **State the invariant, don't pin the spacing.** The backlog proposed updating the
+  assertions that encode current spacing; a general gate is strictly stronger and is what
+  would have caught DEF-M7 and DEF-M13 at authoring time. Per-block spacing assertions
+  would have to be rewritten by anyone adding a column.
+- **The listing format is a deliberate breaking change**, recorded in `CHANGELOG.md`:
+  columns move, so anything parsing the `.f06` by fixed column index is affected. Numbers
+  were never wrong.
+- **Scope taken wider than filed.** The backlog named four blocks and flagged two more to
+  "check"; the CBUSH force block was found in the same pass and is the same root cause. A
+  partial conversion would have left the defect class alive.
+
+### Doc-pointer sweep (P3, release hygiene batch) ✅ COMPLETE (2026-08-03)
+
+**Objective:** Close the two stale doc pointers from the 2026-07-31 sample-problem review.
+
+**Deliverables:**
+- `sample/ha144a_sbeam.bdf` (the half-span HA144A deck, removed by the full-span
+  migration) was still named in two sample-deck provenance comments
+  (`ha144a_fullspan_sbeam.bdf`, `ha144a_body_trim.bdf`) — reworded to say the deck was
+  since removed — and in a copy-pasteable `Test/Acceptance` snippet in
+  `docs/40_history/06_sol144_static_aeroelastic.md`, which is now annotated as a
+  non-runnable historical record pointing at the full-span equivalent.
+- `05a_aero_vlm.md` overstated `tests/aero/test_strip_body.py`'s coupling to
+  `sample/cessna210_flagship_section_data.csv`. Verified: that test constructs
+  `BodyTargets` programmatically and reads no CSV. The pointer now names the tests that do
+  exercise the deck-plus-CSV pair (`test_body_correction.py`,
+  `test_cessna210_flagship_body.py`) and says explicitly what `test_strip_body.py` gates.
+  (The backlog also mis-named the CSV as `cessna210_body_section_data.csv`; the shipped
+  file is `cessna210_flagship_section_data.csv`.)
+
+**Key decision:** **`docs/40_history/` is not rewritten.** Most `ha144a_sbeam.bdf`
+citations there are legitimately historical — one of them records the very step that
+removed the deck. Only the citation that hands a reader a command that cannot run was
+touched, and it was annotated rather than edited, preserving the record of what was
+actually executed at the time.
+
 ### Q3 — program-level "Known Limitations" section ✅ COMPLETE (2026-08-03)
 
 **Objective:** Q3 asked for the `GRAV` `CID = 0` restriction to be added to "Known

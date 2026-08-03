@@ -351,7 +351,7 @@ Extends the `matrix_gaf_export.md` Phase 2 driver from a Mach loop at k = 0 to a
  1. ω_n, Φ = solve_modes(...)                 once, before any loop (§3 rule 8)
  2. for M in MKAERO1 machs:
  3.    select correction cards Mach-matched per matrix_gaf_export §3.3
- 4.    A_vlm(M) = existing steady corrected chain (PG + WKK/WT1/WT2 + units)
+ 4.    A_vlm(M) = existing steady corrected chain (PG + WKK/WT2 + units)
  5.    D_dlm0(M) = build_ajj_dlm(boxes, M, k=0, parity)        # raw, uncorrected
  6.    for k in MKAERO1 ks:
  7.        A_jj(M,k)   = A_vlm_raw(M) + [build_ajj_dlm(M,k) − D_dlm0(M)]
@@ -368,7 +368,7 @@ Standard industry practice, three independent citations:
 
 - [P&G p.511]: correction factors derived from steady (k = 0) CFD at a Mach are "applied to all the unsteady AICs **for each value of k**".
 - [AAUG pp.26–27, eq. 2-20]: `W_kk` is a multiplicative diagonal on box forces, the *flutter-appropriate* correction (the additive experimental-pressure term is static-aero-only and excluded here).
-- [Z §4.3]: DWM (post-multiply, downwash side) and FCM (pre-multiply, force side) weighting matrices from steady Cp/force targets — sbeam's existing WT2/WT1.
+- [Z §4.3]: DWM (post-multiply, downwash side) and FCM (pre-multiply, force side) weighting matrices from steady Cp/force targets — sbeam's existing WT2 (the force-side WT1 was removed by DEF-R7).
 
 sbeam rule: the **same correction operator the steady path builds at this Mach** (Mach-matched per the `WKK`/`AECORR` `MACH` field, `matrix_gaf_export.md` §3.3) is applied unchanged to the complex `A_jj(M,k)` at every k of that Mach. Known limitation, documented in the theory manual: steady-derived multiplicative corrections have no rational basis for the out-of-phase (imaginary) parts [Z p.4-42, LANN-wing failure case]; transonic-grade corrections (ZTAW successive kernel expansion) are out of scope. The correction record per (M, k) goes into the export manifest exactly as the steady design specifies.
 

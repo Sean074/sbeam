@@ -414,7 +414,10 @@ V⃗∞ = (1,0,0) the lift component scales with Δy, not ‖Δs⃗‖.
 - `tests/aero/test_integration.py` — inline `dy` formula aligned to match production
   (numerical result unchanged — test uses an unswept box)
 
-**Test/Acceptance:**
+**Test/Acceptance:** (historical — `sample/ha144a_sbeam.bdf` was the half-span deck,
+removed later in this file; the snippet is kept as the record of what was run at the
+time and is not runnable today. The full-span equivalent is
+`sample/ha144a_fullspan_sbeam.bdf` with `parity=2`.)
 
 ```
 python -c "

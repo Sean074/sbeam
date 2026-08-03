@@ -1145,17 +1145,18 @@ WKK, 10, 100, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1
 ### AECORR — Force/Pressure AIC Correction
 
 Higher-fidelity AIC correction that matches VLM predictions to CFD or wind-tunnel
-target data at a reference condition. Two methods:
+target data at a reference condition. One method:
 
 - **WT2** (pressure matching): per-box `cp` targets.
-- **WT1** (force/moment matching): per-strip lift coefficient targets.
-  **DEPRECATED (DEF-H2/H3, 2026-07-31)** — still parses and runs, but emits a
-  `UserWarning`. It delivers `f_target/β²` instead of `f_target` at Mach > 0 (56 %
-  overshoot at M = 0.6; exact at M = 0 only), and on multi-CAERO1 decks it rescales
-  strips on *every* surface sharing an `i_span` index, so a wing card corrupts the
-  tail load while the wing misses its own target. Use **WT2** or the
-  section-correction path (`sbeam/aero/section_correction.py`), which are correct
-  and strictly more capable. Removal is tracked as backlog DEF-R7.
+
+A second method, **WT1** (force/moment matching, per-strip lift targets), was
+**removed at the first SOL 144 loads release (DEF-R7)**; `METHOD=WT1` now raises a
+`ValueError` at read time. It had been deprecated by DEF-H2/H3 (2026-07-31) for
+delivering `f_target/β²` instead of `f_target` at Mach > 0 (56 % overshoot at
+M = 0.6; exact at M = 0 only), and for rescaling strips on *every* surface sharing
+an `i_span` index on multi-CAERO1 decks — a wing card corrupted the tail load while
+the wing missed its own target. Use **WT2** or the section-correction path
+(`sbeam/aero/section_correction.py`), which are correct and strictly more capable.
 
 **Format:**
 ```
@@ -1168,23 +1169,21 @@ AECORR  SID  METHOD  CAERO_EID  T1  T2  T3  T4  T5
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
 | SID | `sid` | int | Set ID | required |
-| METHOD | `method` | str | `'WT2'`, or `'WT1'` (**deprecated** — warns); any other value raises `ValueError` | required |
+| METHOD | `method` | str | `'WT2'` — the only accepted value; `'WT1'` raises a `ValueError` naming its removal (DEF-R7), any other value raises `ValueError` | required |
 | CAERO_EID | `caero_eid` | int | EID of the CAERO1 this correction applies to | required |
-| T1–TN | `target` | list[float] | WT2: target cp per box (row-major); WT1: target lift per strip | required |
+| T1–TN | `target` | list[float] | Target cp per box (row-major) | required |
 
-Reference normalwash for both methods: `w_ref = -ones(n)` (uniform unit incidence,
-same as `solve_rigid_cl` at `alpha=1`).
+Reference normalwash: `w_ref = -ones(n)` (uniform unit incidence, same as
+`solve_rigid_cl` at `alpha=1`).
 
 **Examples:**
 ```
 $ WT2: pressure-matching targets for an 8-box panel
 AECORR, 20, WT2, 100, 0.45, 0.30, 0.22, 0.18, 0.45, 0.30, 0.22, 0.18
 
-$ WT1 (DEPRECATED — warns; use WT2): per-strip lift targets for a 4-strip wing
-AECORR, 30, WT1, 100, 0.80, 0.75, 0.65, 0.50
 ```
 
-**Correction precedence** in `build_aero_model()`: WKK → WT2 → WT1 → identity lstsq.
+**Correction precedence** in `build_aero_model()`: WKK → WT2 → identity lstsq.
 Strip body panels (CAERO1 PID → PSTRIP) bypass this entirely — see `STRIPK`.
 
 ---
@@ -2112,8 +2111,7 @@ are the exception: they refer to **element local axes** (1 = axial, 4 = torsion,
 
 | Card | Constraint |
 |------|-----------|
-| AECORR | METHOD must be `'WT1'` or `'WT2'`; any other value raises `ValueError`. `'WT1'` is deprecated and raises a `UserWarning` (DEF-H2/H3) |
-| AECORR | `f_target` length (WT1) must equal the number of distinct `i_span` indices across **all** boxes in the operator block, not the targeted CAERO1's own strip count — a symptom of the DEF-H3 shared-key defect |
+| AECORR | METHOD must be `'WT2'`; any other value raises `ValueError`. `'WT1'` was removed at the release boundary (DEF-R7) and raises a `ValueError` naming its removal |
 | AEROS | Only one per model; ACSID and RCSID must be `0` in Phase A |
 | AEROS | Required whenever CAERO1 cards are present |
 | CAERO1 | Exactly one of NSPAN/LSPAN must be non-zero |
@@ -2137,7 +2135,7 @@ are the exception: they refer to **element local axes** (1 = axial, 4 = torsion,
 | SPC | Enforced displacement D must be `0.0` in Phase 1–2 |
 | W2GJ | Data length must equal NSPAN×NCHORD for the referenced CAERO1 |
 | WKK | Data length must equal NSPAN×NCHORD for the referenced CAERO1 |
-| CHORDCP | ALPHREF required (degrees); data length must equal NSPAN×NCHORD; every VLM CAERO1 must be covered by exactly one card, all sharing one ALPHREF; PSTRIP surfaces may not be targeted; injected Cp must be reproducible by the corrected AIC (no nonzero Cp on WT1/WT2 dead rows); half-span mirroring (`mirror_halfspan`) rejects it |
+| CHORDCP | ALPHREF required (degrees); data length must equal NSPAN×NCHORD; every VLM CAERO1 must be covered by exactly one card, all sharing one ALPHREF; PSTRIP surfaces may not be targeted; injected Cp must be reproducible by the corrected AIC (no nonzero Cp on WT2 dead rows); half-span mirroring (`mirror_halfspan`) rejects it |
 | AESURF | ALID1 (and ALID2 if non-zero) must exist in AELIST |
 | AELIST | All box IDs must fall within at least one CAERO1 range |
 | SET1 | Every grid ID must exist in GRID; a spline-referenced SET1 needs ≥ 2 grids |

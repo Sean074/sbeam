@@ -362,7 +362,7 @@ restrictions there first, then link them here.
 | Results frames | The `.f06` DISPLACEMENT and SPCFORCE blocks are written in each grid's `CD` frame (NASTRAN's "global" system). CBAR element forces are in element local axes; CBUSH forces are in basic CID 0. The viewer result tables report basic CID 0 throughout |
 
 For aeroelastic limitations (`SPLINE1` not implemented, `AEROS` `ACSID`/`RCSID` must be `0`,
-`ATTACH` `CID = 0`, WT1 deprecation, body-panel geometry rules) see
+`ATTACH` `CID = 0`, body-panel geometry rules) see
 [`05_aeroelastics.md`](05_aeroelastics.md#validation-status--known-limitations) and the
 card table. Open defects and unresolved questions are tracked in
 [`../30_future/00_backlog.md`](../30_future/00_backlog.md).
@@ -378,7 +378,7 @@ card table. Open defects and unresolved questions are tracked in
 | 1 | BDF cards: CORD2R, GRID, CBAR, PBAR, MAT1, SPC/SPC1, FORCE, MOMENT, LOAD, PLOTEL, CONM2, EIGRL | Complete |
 | 2 | BDF cards: RBE2, RBE3, CBUSH, PBUSH, RBAR | Complete |
 | 2 | BDF card: GRAV (gravity body load; CID=0; f = M×a via consistent mass matrix) | Complete |
-| A | Steady VLM aeroelastics: card parsing, panel meshing, AIC + integration matrices, AIC corrections (Wkk, WT1, WT2), section force/moment correction synthesis, body-panel total-moment corrections | Steps 39–45 + A9 (cruciform) + A10 (decoupled strip) complete; A7/A8 warnings open |
+| A | Steady VLM aeroelastics: card parsing, panel meshing, AIC + integration matrices, AIC corrections (Wkk, WT2), section force/moment correction synthesis, body-panel total-moment corrections | Steps 39–45 + A9 (cruciform) + A10 (decoupled strip) complete; A7/A8 warnings open |
 | B | Structural coupling splines: SPLINE2/ATTACH/SPLINE0 → g_slope/g_disp/g_load; flexible aero stiffness Q_aa | Complete (Step 48 SPLINE1 surface spline deferred) |
 | C | SOL 144 static aeroelastic trim: Schur trim solve, rigid + elastic-restrained derivatives, hinge moments, divergence sweep, balanced-maneuver loads (Step 53), monitor points, load exports | Essentially complete (AE8b unrestrained mean-axis derivatives + optional Step 54 CHORDCP open) |
 | G0 | DLM-free quasi-steady transient maneuver loads (ZAERO MLOADS card set; restrained l-set Newmark-β) | Increment 1 complete (free-flight rigid-body coupling, modal ROM, unsteady corrections, closed-loop control open) |

@@ -612,7 +612,7 @@ $$
 since the ANGLEA normalwash column is $D_\alpha = -n_z$ (§2.4). Three remarks:
 
 1. $\left[A^{*}\right]^{+}$ is the **min-norm pseudo-inverse solve** restricted to the VLM
-   lifting-surface block: WT1/WT2 corrections can zero rows of the operator (target ratio 0),
+   lifting-surface block: a WT2 correction can zero rows of the operator (target ratio 0),
    and a nonzero injected $c_p$ on such a *dead row* is unrepresentable — sbeam raises on the
    residual $\lVert A^{*}\,w_g^\text{eff,0} - c_p^\text{inj}\rVert$ rather than losing load
    silently. Decoupled strip panels (§3.7) keep their own $w_g$; their operator block is

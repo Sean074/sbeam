@@ -124,9 +124,9 @@ class Chordcp:
 @dataclass
 class Aecorr:
     sid:       int
-    method:    str           # 'WT1' (force/moment matching) or 'WT2' (pressure matching)
+    method:    str           # 'WT2' (pressure matching) — the only method supported
     caero_eid: int           # which CAERO1 element this applies to
-    target: list[float] = field(default_factory=list)  # per-box cp (WT2) or per-strip lift (WT1)
+    target: list[float] = field(default_factory=list)  # per-box cp (WT2)
 
 
 @dataclass

@@ -55,7 +55,7 @@ All three are assembled as a DOF transformation matrix **T** (`n_dof × n_red`) 
 | `AEFACT` | Fraction list for non-uniform span/chord panel spacing |
 | `W2GJ` | Per-box baseline normalwash slopes (geometric incidence) |
 | `WKK` | Diagonal AIC correction weights |
-| `AECORR` | WT2 pressure-matching AIC correction (WT1 force-matching is deprecated — DEF-H2/H3) |
+| `AECORR` | WT2 pressure-matching AIC correction (WT1 force-matching removed at the release boundary — DEF-R7) |
 
 ---
 
@@ -121,7 +121,7 @@ All internal computation is in global CID 0. After parsing, `resolve_grid_positi
 | CAERO1 NCHORD/LCHORD | Exactly one non-zero | Both zero or both non-zero raises `ValueError` |
 | CAERO1 IGID | Ignored in Phase A | Interference group support deferred |
 | PAERO1 | Phase A stub | Body element support deferred |
-| W2GJ/WKK/AECORR | One correction tier active | WKK overrides WT2/WT1 if all present; WT1 deprecated |
+| W2GJ/WKK/AECORR | One correction tier active | WKK overrides WT2 if both present |
 | Coordinate systems | CORD2R only (rectangular) | CORD2C, CORD2S, CORD1R not implemented |
 | Tapered sections | Not supported | PBAR is uniform cross-section only |
 | CBAR offsets | Not supported | W1A/W2A/etc. offset fields are ignored |

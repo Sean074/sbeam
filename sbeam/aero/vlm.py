@@ -374,7 +374,7 @@ def solve_rigid_cl(
              matches the SOL 144 baseline load.
     cp_operator — optional (n, n) corrected ΔCp operator (``AeroModel.ajj_inv_corr``).
              When given, ΔCp = cp_operator @ rhs directly instead of building and
-             solving the raw VLM AIC here — so any AIC correction (WKK / WT1 / WT2)
+             solving the raw VLM AIC here — so any AIC correction (WKK / WT2)
              **and** the Prandtl–Glauert factor baked into ``ajj_inv_corr`` are
              honoured (the SOL 144 path). ``mach`` is then ignored (β already baked
              in). ``None`` (default) keeps the original build-and-solve behaviour;
@@ -473,7 +473,7 @@ def solve_rigid_cl(
         for i in range(n)
     ])
 
-    # Circulation: either from a supplied corrected ΔCp operator (so WKK/WT1/WT2 and
+    # Circulation: either from a supplied corrected ΔCp operator (so WKK/WT2 and
     # the Prandtl–Glauert factor baked into ajj_inv_corr are honoured — the SOL 144
     # path), or by building and solving the raw VLM AIC here.
     if cp_operator is not None:

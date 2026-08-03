@@ -126,7 +126,7 @@ a rigid steady-state solve at a user-specified angle of attack.
   `solve_rigid_cl(..., cp_operator=None, mach=aero_model.mach)` (same `wg`, raw VLM + Prandtl–Glauert)
   and stores it in `aero_result_unc` for the span-load overlay. The corrected solve reflects both
   the W2GJ baseline incidence (camber/twist/built-in incidence) **and** any AIC correction
-  (WKK / WT1 / WT2) in CL/CM/cp/section loads — matching the SOL 144 path. Positive `wg` reduces
+  (WKK / WT2) in CL/CM/cp/section loads — matching the SOL 144 path. Positive `wg` reduces
   lift (SOL 144 sign). Captions flag an active `wg` and/or correction method.
 - **Show surface normals** — `st.checkbox` (`key="aero_show_normals"`, default off). When
   ticked, draws each box's outward unit normal (`AeroBox.normal`) as a green arrow rooted

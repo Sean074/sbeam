@@ -1504,8 +1504,58 @@ and the section-correction synthesiser are correct and strictly more capable.
   consumer (solver, viewer, CLI), with no duplicate noise.
 - **Characterization tests over prose.** The two defects are now locked in by executable
   gates that will fail loudly if anyone "fixes" WT1 without closing DEF-R7.
-- Hard removal deferred to a release boundary and logged as **DEF-R7**. No shipped deck uses
-  WT1 — no `AECORR` card appears anywhere in `sample/` or `tests/**/*.bdf`.
+- Hard removal deferred to a release boundary and logged as **DEF-R7** (closed 2026-08-03,
+  below). No shipped deck uses WT1 — no `AECORR` card appears anywhere in `sample/` or
+  `tests/**/*.bdf`.
+
+---
+
+### DEF-R7 (P3, release hygiene batch) — WT1 correction path removed ✅ COMPLETE (2026-08-03)
+
+**Objective:** Complete the DEF-H2/H3 retirement at the release boundary, so the first
+SOL 144 loads release ships no correction path that is known to produce wrong numbers.
+
+**Deliverables:**
+- `sbeam/aero/corrections.py` — `apply_wt1` deleted (78 lines); module docstring goes from
+  three correction tiers to two, retaining a short note on why the third is gone.
+- `sbeam/aero/aero_model.py` — the `wt1_card` lookup and the `elif wt1_card is not None`
+  branch of `_assemble_vlm_operator` deleted, along with the now-unused `primary_eid`
+  binding; correction precedence is `WKK → WT2 → identity` in code and docstring.
+- `sbeam/parser/bdf_reader.py` — `_handle_aecorr` raises a `ValueError` naming the removal
+  for `METHOD=WT1`, and a separate `ValueError` for any other non-`WT2` value. The
+  DEF-H2/H3 `UserWarning` is gone.
+- `sbeam/model/aero.py` — `Aecorr.method` / `target` field comments are WT2-only.
+- Comment-only mentions cleaned in `aero/coupling.py`, `aero/vlm.py`, `viewer/app.py`,
+  `viewer/aero_view.py`. `aero/section_correction.py` keeps its conceptual references to
+  the degenerate uniform-per-strip case but no longer names the removed function.
+- `tests/aero/test_corrections.py` — `TestApplyWt1` and `TestWt1Deprecation` deleted;
+  new `TestWt1Removed` gates the `ValueError`, that `WT2` still parses, and that an
+  unknown method still raises.
+- Docs: WT1 rows/notes stripped from `05a_aero_vlm.md` (the corrections section is now
+  "Wkk, WT2"), `02_card_reference.md`, `05_aeroelastics.md`, `01_beam_model.md`,
+  `06_viewer.md`, `00_program_overview.md`, `00_INDEX.md` and theory §3.3, each keeping a
+  one-line removal notice so a legacy deck's failure is self-explanatory. The three
+  `30_future/designs/` proposals (`matrix_gaf_export`, `matrix_reuse_store`,
+  `dlm_rfa_flutter_gust`) had their correction-chain descriptions corrected so future work
+  is not planned against a removed path.
+
+**Test/Acceptance:** full suite green (1741 passed, 6 xfailed). No shipped deck changed —
+no `AECORR` card appears in `sample/` or `tests/**/*.bdf`, so the only breakage is a
+hand-written legacy deck, which was producing `f_target/β²` at Mach > 0.
+
+**Key decisions:**
+- **`ValueError`, not silent acceptance of an unknown method.** A legacy WT1 deck now
+  fails at read time with a message naming the removal and the replacement, rather than
+  falling through to the no-correction branch and silently producing *different* wrong
+  numbers than it used to.
+- **Keep the DEF-H2/H3 explanation in the docs, not just the removal notice.** Someone
+  holding a deck that used to run needs to know why its numbers were wrong, not only that
+  the card is gone.
+- **Conceptual references retained, function names dropped.** `section_correction.py` and
+  theory §3.3 legitimately describe the uniform-per-strip scaling as a degenerate case of
+  the section correction; those stay, reworded so they do not cite `apply_wt1`.
+- **`docs/30_future/01_static_aero_plan.md` deliberately left alone** — it is the Phase A
+  plan record and its Step 43 line describes what was built at the time.
 
 ---
 

@@ -233,7 +233,7 @@ accumulation, so its equivalence gate is rel 1e-12 rather than bit-for-bit).
 Solves the rigid-wing flow-tangency problem at angle of attack `alpha` and sideslip
 `beta` (both in radians). When `cp_operator` (the corrected ΔCp operator
 `AeroModel.ajj_inv_corr`) is supplied, `ΔCp = cp_operator @ rhs` directly — so any AIC
-correction (WKK / WT1 / WT2) and the baked-in Prandtl–Glauert factor are honoured (and
+correction (WKK / WT2) and the baked-in Prandtl–Glauert factor are honoured (and
 `mach` is ignored); with no correction this is numerically identical to building and solving
 the raw AIC here. Boundary condition per panel (ZAERO Eq. 3.28):
 
@@ -436,15 +436,14 @@ W2GJ  SID  CAERO_EID  D1  D2  D3  D4  D5  D6
 
 ---
 
-## AIC Corrections (Wkk, WT1, WT2)
+## AIC Corrections (Wkk, WT2)
 
-Phase A provides three correction tiers to match VLM predictions to higher-fidelity
+Phase A provides two correction tiers to match VLM predictions to higher-fidelity
 CFD or wind-tunnel data. The correction precedence in `build_aero_model()` is:
 
 ```
 WKK card present   →  apply_wkk  (caller inverts via np.linalg.solve; per-CAERO1 scatter)
 AECORR WT2 present →  apply_wt2  (returns AJJ*⁻¹) — ALL WT2 cards combined (multi-surface)
-AECORR WT1 present →  apply_wt1  (returns AJJ*⁻¹) — DEPRECATED, see below
 No correction      →  np.linalg.solve(AJJ, I)
 ```
 
@@ -468,32 +467,31 @@ take weight 1 (a no-op). Previously the card was selected by the primary (lowest
 CAERO1 and then applied to every box in the operator, so a multi-surface deck raised a
 bare numpy shape error and a WKK on a non-primary surface was ignored outright.
 
-> **WT1 is deprecated (DEF-H2/H3, 2026-07-31).** Use `WT2` or the section-correction
-> path instead. A `WT1` `AECORR` still parses and runs, but the parser now raises a
-> `UserWarning`, because the path is wrong in two ways:
+> **WT1 was removed at the first SOL 144 loads release (DEF-R7).** A third tier,
+> force/moment matching by per-strip lift scaling (`AECORR METHOD=WT1`), was deprecated
+> by DEF-H2/H3 (2026-07-31) and is now gone: `AECORR METHOD=WT1` raises a `ValueError`
+> at read time. Use `WT2` or the section-correction path. The two defects that
+> condemned it, recorded here so a legacy deck's numbers can be understood:
 >
-> - **DEF-H2 — wrong at Mach > 0.** `build_aero_model` passes PG-compressed boxes to
->   `apply_wt1`, so the reference strip force is integrated over compressed areas and
->   chords, while the Göthert `1/β` factor and the Γ→ΔCp conversion (physical chords)
->   are applied afterwards. The delivered strip force is `f_target/β²` — a **56 %
->   overshoot at M = 0.6**. Exact at M = 0 only.
-> - **DEF-H3 — cross-surface aliasing.** `apply_wt1` groups strips by `box.i_span`,
->   which restarts per parent CAERO1. On a multi-surface deck the card is *selected*
->   by the primary CAERO1 but *applied* to every box sharing an `i_span` index, so a
->   wing card rescales tail strips while the wing itself misses its target.
+> - **DEF-H2 — wrong at Mach > 0.** The correction was handed PG-compressed boxes, so
+>   the reference strip force was integrated over compressed areas and chords while the
+>   Göthert `1/β` factor and the Γ→ΔCp conversion (physical chords) were applied
+>   afterwards. The delivered strip force was `f_target/β²` — a **56 % overshoot at
+>   M = 0.6**. Exact at M = 0 only.
+> - **DEF-H3 — cross-surface aliasing.** Strips were grouped by `box.i_span`, which
+>   restarts per parent CAERO1. On a multi-surface deck the card was *selected* by the
+>   primary CAERO1 but *applied* to every box sharing an `i_span` index, so a wing card
+>   rescaled tail strips while the wing itself missed its target.
 >
 > The decision was to **deprecate rather than fix**: `WT2` and the section-correction
 > synthesiser (`section_correction.py`, which divides by β) are correct and strictly
-> more capable. Both defects are pinned by characterization tests in
-> `tests/aero/test_corrections.py`; removal of the path is backlog **DEF-R7**.
+> more capable.
 
 **Multi-surface WT2.** When several CAERO1 surfaces each carry a `WT2` `AECORR`, they are
 combined into one global Γ-unit target: each card fills its own surface's boxes (row-major),
 and boxes on uncorrected surfaces default to the VLM reference circulation (ratio 1). `W2GJ`
 baseline normalwash is already accumulated per CAERO1, so the section force+moment correction
-(`section_correction.py`) works across the whole model. `WKK` acts on the primary CAERO1
-only; `WT1`'s scope is the defective one described above (selected per primary CAERO1,
-applied model-wide by `i_span`).
+(`section_correction.py`) works across the whole model. `WKK` acts per CAERO1.
 
 ### Card Formats
 
@@ -511,7 +509,7 @@ AECORR  SID  METHOD  CAERO_EID  T1  T2  T3  T4  T5
 | WKK CAERO_EID | CAERO1 EID this correction applies to |
 | WKK W1–WN | Diagonal weight per box; one value per box in row-major order |
 | AECORR SID | Set ID |
-| AECORR METHOD | `WT2` (pressure matching), or `WT1` (force/moment matching) — **deprecated**, warns at parse |
+| AECORR METHOD | `WT2` (pressure matching) — the only accepted value; `WT1` raises a `ValueError` (removed, DEF-R7) |
 | AECORR CAERO_EID | CAERO1 EID this correction applies to |
 | AECORR T1–TN | Target values; see below |
 
@@ -585,10 +583,10 @@ wg_eff = lstsq(ajj_inv_corr_vlm_block, Cp_inj) + n_z·α_ref
   sub-block solve is exact).
 - The `+ n_z·α_ref` term (`= −D_α·α_ref`, the ANGLEA normalwash column) re-references
   the injection to α = 0, so **the solved ANGLEA is absolute**, not relative to ALPHREF.
-- A min-norm `lstsq` is used because WT1/WT2 corrections can zero operator rows
+- A min-norm `lstsq` is used because a WT2 correction can zero operator rows
   (target ratio 0); nonzero injected Cp on such a dead row is unreproducible and
   raises a `ValueError` (residual check), rather than silently losing load.
-- WKK/WT2/WT1 corrections still govern the **perturbation** aerodynamics — the same
+- WKK/WT2 corrections still govern the **perturbation** aerodynamics — the same
   corrected operator is used for the conversion and the trim, so injecting the
   program's own mean flow reproduces the uninjected trim exactly (the Step 54
   identity gate, `tests/aero/test_chordcp.py`).
@@ -665,7 +663,7 @@ of `w_g`, so the build is one pass: (1) **per strip across all surfaces**, a uni
 `r̄ = f_slope/f_slope_vlm` hits the force with **no shape change**, plus a minimum-norm
 per-box perturbation orthogonal to the force (`Σ δ·g0 = 0`) supplies only the moment/a.c.
 mismatch — when the target a.c. equals the VLM a.c. (pure slope scaling), `δ = 0` and the
-result degenerates exactly to the uniform WT1 scaling. (2) A two-mode camber line per strip
+result degenerates exactly to a uniform per-strip scaling. (2) A two-mode camber line per strip
 (uniform incidence + chordwise-linear) is sized by **one global linear solve over all
 corrected strips** so the WT2-corrected operator reproduces `(F₀, M₀)` per strip exactly
 (camber on one surface induces load on the others; the global solve captures it).
@@ -750,7 +748,7 @@ see `docs/20_theory/02_realistic_airplane_sol144.md`.
 > (5.21 → 5.33/rad) instead of by a third.
 
 **Aero-tab visualisation.** The viewer Aero tab passes `cp_operator=ajj_inv_corr` to
-`solve_rigid_cl`, so the corrected CL / CM / cp / section loads (WKK / WT1 / WT2 **and** W2GJ)
+`solve_rigid_cl`, so the corrected CL / CM / cp / section loads (WKK / WT2 **and** W2GJ)
 are shown directly — matching the SOL 144 operator. `viewer/aero_view.build_section_correction_figure`
 gives the spanwise preview (`cn_α(η)`, `cm0(η)`; input markers vs achieved-on-strips) for the
 section-correction page.
@@ -945,7 +943,10 @@ benign — the panel cannot contaminate). Emits one `(W2gj, Stripk)` pair per pa
 `strip_body_cards_to_bdf` formats them. `build_strip_body_correction` raises if a named panel
 is not a strip (PSTRIP-backed) CAERO1. Worked example:
 `sample/cessna210_flagship_body_strip_drv.bdf` + the `TOTAL` row of
-`sample/cessna210_flagship_section_data.csv` (`tests/aero/test_strip_body.py`).
+`sample/cessna210_flagship_section_data.csv`, exercised together by
+`tests/aero/test_body_correction.py` and `tests/aero/test_cessna210_flagship_body.py`.
+(`tests/aero/test_strip_body.py` gates the builder itself — it constructs `BodyTargets`
+programmatically and reads no CSV.)
 
 > **The correction matches moments, not lift.** `BodyTargets` constrains Cm_α/Cm0/Cn_β/Cn0/
 > Cl_β/Cl0 and leaves the body's own normal force to fall out of whatever slope the panel has.
@@ -966,7 +967,7 @@ Factory function that orchestrates the full Phase A assembly pipeline:
 1. Reject half-span models — raise `ValueError` if `AEROS SYMXZ ≠ 0` or `SYMXY ≠ 0`
 2. Mesh all CAERO1 elements in ascending EID order → concatenated `AeroBox` list
 3. Build raw AIC matrix via `build_ajj(boxes)`
-4. Apply correction at highest available tier (WKK → WT2 → WT1 → identity)
+4. Apply correction at highest available tier (WKK → WT2 → identity)
 5. Build `Skj`, `Djk`, and `wg` integration quantities
 6. Package into `AeroModel` and return
 
@@ -1037,7 +1038,7 @@ tab automatically when `bulk.caero1s` is non-empty.
 The Aero tab's **Compute Aero** button solves
 `solve_rigid_cl(..., wg=aero_model.wg, cp_operator=aero_model.ajj_inv_corr)`, so the solve runs on
 the **corrected** operator: both the **W2GJ baseline incidence** (camber/twist/built-in incidence)
-and any **AIC correction (WKK / WT1 / WT2)** are reflected in CL/CM/cp/section loads, matching the
+and any **AIC correction (WKK / WT2)** are reflected in CL/CM/cp/section loads, matching the
 SOL 144 path. Two decks that differ only by a W2GJ twist produce different loads (e.g. the
 `sample/val_wing_taper_dihedral*.bdf` pair: a 0→−2° washout drops CL from 0.268 to 0.186 at
 α = 3°); a section force+moment correction likewise changes the lift-curve slope and a.c. Captions
@@ -1064,7 +1065,7 @@ When a correction card is present the tab also runs the **uncorrected** baseline
   equals `CZ` only at α≈0 (`CL = CZ·cosα + CX·sinα`); this table carries no reference
   incidence, so a wind-axis `CL` is not formed here.
   `state` (A-GUI5) selects which AIC operator the derivatives are integrated against:
-  `"corrected"` (the corrected ΔCp operator with WKK/WT1/WT2 applied — what SOL 144 uses),
+  `"corrected"` (the corrected ΔCp operator with WKK/WT2 applied — what SOL 144 uses),
   `"uncorrected"` (the raw VLM baseline at the same Mach), or `"diff"` (corrected − uncorrected).
   **The `YAW` row is the fin sidewash only.** The wing's yaw-rate contribution (Steps 67a/67b) is
   a *loading-scaled force* term (`build_fjx_yaw`), so it exists only at a trim state and is

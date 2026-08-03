@@ -28,7 +28,7 @@ structure without taking downwash from it; ``Q_aa`` therefore gains rows at the
 master grid but no columns, which makes it (already unsymmetric) more so.
 
 The corrected inverse ``A_jj*^-1`` is read directly from ``AeroModel.ajj_inv_corr``;
-this layer never refactors or re-inverts the AIC. All correction (Wkk/WT1/WT2) is
+this layer never refactors or re-inverts the AIC. All correction (Wkk/WT2) is
 already baked into that stored inverse upstream — there is no correction applied here.
 """
 

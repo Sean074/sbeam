@@ -4,13 +4,11 @@ Covers:
   - No correction: AJJ*⁻¹ @ AJJ ≈ I (identity round-trip)
   - apply_wkk non-unit weight: corrected cp scales by weight factor
   - apply_wt2 round-trip: feed VLM cp as target → corrected cp reproduced to tol
-  - apply_wt1 round-trip: feed VLM per-strip lift as target → strip lift reproduced to tol
   - apply_wt2 conditioning warning: near-singular AJJ triggers UserWarning
-  - apply_wt1 conditioning warning: near-singular AJJ triggers UserWarning
   - build_aero_model: identity (no correction) — AJJ*⁻¹ @ AJJ ≈ I
   - build_aero_model: WKK correction wired end-to-end
-  - WT1 deprecation (DEF-H2/H3): parser warning, plus characterization tests
-    pinning the β² overshoot at M > 0 and the cross-CAERO1 strip aliasing
+  - WT1 removal (DEF-R7): an ``AECORR METHOD=WT1`` card is rejected at read time
+  - WKK per-surface binding (DEF-M8b) on a two-surface deck
 """
 
 import warnings
@@ -23,7 +21,7 @@ from sbeam.model.aero import Caero1, Paero1, Wkk, Aecorr
 from sbeam.model.bulk_data import BulkData
 from sbeam.aero.panel import mesh_caero1
 from sbeam.aero.vlm import build_ajj, solve_rigid_cl
-from sbeam.aero.corrections import apply_wkk, apply_wt2, apply_wt1
+from sbeam.aero.corrections import apply_wkk, apply_wt2
 from sbeam.aero.aero_model import build_aero_model
 
 # ---------------------------------------------------------------------------
@@ -153,108 +151,6 @@ class TestApplyWt2:
             apply_wt2(ill_cond_ajj, cp_target)
 
 
-# ---------------------------------------------------------------------------
-# apply_wt1 — force/moment matching
-# ---------------------------------------------------------------------------
-
-class TestApplyWt1:
-    def test_round_trip_with_vlm_strip_loads(self):
-        """Feed physical VLM strip lift/q as target → corrected strip lift/q reproduced."""
-        nspan, nchord = 4, 4
-        boxes = _rect_wing(nspan, nchord)
-        ajj, ajj_inv = _ajj_and_inv(boxes)
-        n = len(boxes)
-        w_ref = -np.ones(n)
-        gamma_ref = ajj_inv @ w_ref
-        # Physical strip lift/q: Σ area * Cp = Σ area * 2*Γ/chord
-        dy = np.array([
-            np.sqrt((b.bound_b[1] - b.bound_a[1])**2 + (b.bound_b[2] - b.bound_a[2])**2)
-            for b in boxes
-        ])
-        chord_box = np.array([boxes[k].area / dy[k] for k in range(n)])
-        cp_ref = 2.0 * gamma_ref / chord_box
-
-        from collections import defaultdict
-        strip_idxs: dict = defaultdict(list)
-        for k, box in enumerate(boxes):
-            strip_idxs[box.i_span].append(k)
-        sorted_strips = sorted(strip_idxs)
-        f_target = np.array([
-            sum(boxes[k].area * cp_ref[k] for k in strip_idxs[s])
-            for s in sorted_strips
-        ])
-
-        ajj_inv_corr = apply_wt1(ajj, boxes, f_target)   # Γ-unit output
-        gamma_corr = ajj_inv_corr @ w_ref
-        cp_corr = 2.0 * gamma_corr / chord_box            # convert to Cp
-
-        # Corrected physical strip lift/q must reproduce f_target
-        f_corr = np.array([
-            sum(boxes[k].area * cp_corr[k] for k in strip_idxs[s])
-            for s in sorted_strips
-        ])
-        assert f_corr == pytest.approx(f_target, rel=1e-8)
-
-    def test_scaled_target_scales_strip_output(self):
-        """Scaling f_target by constant factor scales corrected physical strip loads."""
-        nspan, nchord = 3, 3
-        boxes = _rect_wing(nspan, nchord)
-        ajj, ajj_inv = _ajj_and_inv(boxes)
-        n = len(boxes)
-        w_ref = -np.ones(n)
-        gamma_ref = ajj_inv @ w_ref
-        dy = np.array([
-            np.sqrt((b.bound_b[1] - b.bound_a[1])**2 + (b.bound_b[2] - b.bound_a[2])**2)
-            for b in boxes
-        ])
-        chord_box = np.array([boxes[k].area / dy[k] for k in range(n)])
-        cp_ref = 2.0 * gamma_ref / chord_box
-
-        from collections import defaultdict
-        strip_idxs: dict = defaultdict(list)
-        for k, box in enumerate(boxes):
-            strip_idxs[box.i_span].append(k)
-        sorted_strips = sorted(strip_idxs)
-        f_target = np.array([
-            sum(boxes[k].area * cp_ref[k] for k in strip_idxs[s])
-            for s in sorted_strips
-        ])
-
-        scale = 0.8
-        ajj_inv_corr = apply_wt1(ajj, boxes, scale * f_target)
-        gamma_corr = ajj_inv_corr @ w_ref
-        cp_corr = 2.0 * gamma_corr / chord_box
-        f_corr = np.array([
-            sum(boxes[k].area * cp_corr[k] for k in strip_idxs[s])
-            for s in sorted_strips
-        ])
-        assert f_corr == pytest.approx(scale * f_target, rel=1e-8)
-
-    def test_wrong_f_target_length_raises(self):
-        boxes = _rect_wing(3, 3)
-        ajj = build_ajj(boxes)
-        # 3 span strips, but provide 5 targets
-        with pytest.raises(ValueError, match="f_target length"):
-            apply_wt1(ajj, boxes, np.ones(5))
-
-    def test_shape(self):
-        nspan, nchord = 2, 2
-        boxes = _rect_wing(nspan, nchord)
-        ajj = build_ajj(boxes)
-        n = len(boxes)
-        f_target = np.ones(nspan)
-        result = apply_wt1(ajj, boxes, f_target)
-        assert result.shape == (n, n)
-
-    def test_conditioning_warning(self):
-        nspan = 2
-        boxes = _rect_wing(nspan, 2)
-        # Diagonal matrix with cond ≈ 1e12 — ill-conditioned but invertible.
-        ill_cond_ajj = np.diag([1.0, 1.0, 1.0, 1e-12])
-        f_target = np.ones(nspan)
-        with pytest.warns(UserWarning, match="conditioned"):
-            apply_wt1(ill_cond_ajj, boxes, f_target)
-
 
 # ---------------------------------------------------------------------------
 # build_aero_model — end-to-end container
@@ -381,12 +277,7 @@ class TestSolveRigidClCorrectedOperator:
 
 
 # ---------------------------------------------------------------------------
-# WT1 deprecation (DEF-H2 / DEF-H3, 2026-07-31)
-#
-# WT1 is deprecated rather than fixed — WT2 and the section-correction path are
-# correct and strictly more capable.  The two tests below therefore lock in
-# **known-wrong** behaviour on purpose, so that the defects cannot be silently
-# altered while the card is still parseable.  Removal is backlog DEF-R7.
+# Multi-surface decks — WT1 removal (DEF-R7) and WKK per-surface binding (DEF-M8b)
 # ---------------------------------------------------------------------------
 
 # 1000 clear of CAERO_EID=1's box-ID range: a CAERO1 owns the NSPAN*NCHORD
@@ -398,7 +289,7 @@ def _strip_forces(model, caero_eid=None) -> np.ndarray:
     """Physical strip lift/q (Σ area·Cp) at unit reference incidence, by i_span.
 
     Restricted to one CAERO1 when ``caero_eid`` is given.  Ordered by ascending
-    i_span, matching the WT1 f_target convention.
+    i_span.
     """
     from collections import defaultdict
     n = len(model.boxes)
@@ -423,83 +314,29 @@ def _wing_and_tail_bulk(nspan: int, nchord: int) -> BulkData:
     return bulk
 
 
-class TestWt1Deprecation:
-    def test_parser_warns_on_wt1_card(self):
-        """A WT1 AECORR warns at read time; a WT2 card does not."""
+
+class TestWt1Removed:
+    """DEF-R7 — ``AECORR METHOD=WT1`` is rejected at read time, not warned about.
+
+    DEF-H2/H3 (2026-07-31) deprecated WT1 with a parser ``UserWarning`` but left
+    it working; the release boundary completes the retirement.  A legacy deck
+    carrying the card now fails loudly instead of producing wrong numbers.
+    """
+
+    def test_parser_rejects_wt1_card(self):
         wt1 = ["AECORR, 30, WT1, 100, 0.80, 0.75, 0.65, 0.50"]
-        with pytest.warns(UserWarning, match="WT1 is deprecated"):
-            bulk = parse_bulk_data(wt1)
-        assert bulk.aecorrs[30].method == "WT1"      # still parsed, not rejected
+        with pytest.raises(ValueError, match="METHOD WT1 has been removed"):
+            parse_bulk_data(wt1)
 
-        wt2 = ["AECORR, 20, WT2, 100, 0.45, 0.30, 0.22, 0.18"]
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")            # any warning fails the test
-            bulk2 = parse_bulk_data(wt2)
-        assert bulk2.aecorrs[20].method == "WT2"
+    def test_parser_still_accepts_wt2_card(self):
+        wt2 = ["AECORR, 30, WT2, 100, 0.80, 0.75, 0.65, 0.50"]
+        bulk = parse_bulk_data(wt2)
+        assert bulk.aecorrs[30].method == "WT2"
 
-    def test_wt1_overshoots_by_beta_squared_at_mach(self):
-        """DEF-H2 (pinned, known-wrong): WT1 delivers f_target/β², not f_target.
-
-        ``build_aero_model`` hands ``apply_wt1`` the PG-compressed boxes, so the
-        reference strip force is integrated over compressed areas/chords, while
-        the Göthert 1/β factor and the Γ→ΔCp conversion (physical chords) are
-        applied afterwards.  Exact at M = 0; 56 % high at M = 0.6.  Deprecated,
-        not fixed — see DEF-H2/H3 and backlog DEF-R7.
-        """
-        nspan, nchord = 3, 3
-        f_target = _strip_forces(build_aero_model(_rect_bulk(nspan, nchord), mach=0.0))
-
-        for mach in (0.0, 0.6):
-            bulk = _rect_bulk(nspan, nchord)
-            bulk.aecorrs[30] = Aecorr(sid=30, method="WT1", caero_eid=CAERO_EID,
-                                      target=f_target.tolist())
-            achieved = _strip_forces(build_aero_model(bulk, mach=mach))
-            beta_sq = 1.0 - mach ** 2
-            assert achieved == pytest.approx(f_target / beta_sq, rel=1e-8)
-
-        # The M = 0.6 case specifically: 1/0.64 = 1.5625, a 56 % overshoot.
-        bulk = _rect_bulk(nspan, nchord)
-        bulk.aecorrs[30] = Aecorr(sid=30, method="WT1", caero_eid=CAERO_EID,
-                                  target=f_target.tolist())
-        got = _strip_forces(build_aero_model(bulk, mach=0.6))
-        assert got / f_target == pytest.approx(np.full(nspan, 1.5625), rel=1e-8)
-
-    def test_wt1_aliases_strips_across_caeros(self):
-        """DEF-H3 (pinned, known-wrong): a wing WT1 card rescales tail strips.
-
-        ``apply_wt1`` groups by ``box.i_span``, which restarts per parent CAERO1
-        (``panel.py``), so wing strip 0 and tail strip 0 share a dict key.  The
-        card is *selected* by the primary CAERO1 but *applied* model-wide: the
-        tail is contaminated and the wing misses its own target.  Deprecated, not
-        fixed — see DEF-H2/H3 and backlog DEF-R7.
-        """
-        nspan, nchord = 3, 3
-        base = build_aero_model(_wing_and_tail_bulk(nspan, nchord), mach=0.0)
-        wing_base = _strip_forces(base, caero_eid=CAERO_EID)
-        tail_base = _strip_forces(base, caero_eid=TAIL_EID)
-
-        # Ask the wing for half its baseline load.  f_target must be sized by
-        # *distinct i_span model-wide* (= nspan), not by the wing's own strip
-        # count — itself a symptom of the shared-key defect.
-        wing_target = 0.5 * wing_base
-        bulk = _wing_and_tail_bulk(nspan, nchord)
-        bulk.aecorrs[30] = Aecorr(sid=30, method="WT1", caero_eid=CAERO_EID,
-                                  target=wing_target.tolist())
-        corr = build_aero_model(bulk, mach=0.0)
-
-        wing_corr = _strip_forces(corr, caero_eid=CAERO_EID)
-        tail_corr = _strip_forces(corr, caero_eid=TAIL_EID)
-
-        # (a) The tail is rescaled by roughly the wing's factor, though no card
-        #     names it.  A correctly scoped correction would leave it untouched.
-        assert np.all(np.abs(tail_corr / tail_base - 1.0) > 0.4)
-
-        # (b) The wing misses the half-load target it was given.
-        assert np.any(np.abs(wing_corr / wing_target - 1.0) > 0.05)
-
-        # (c) The smoking gun: wing and tail are scaled by the *same* per-i_span
-        #     ratio, because they share the dict key.
-        assert wing_corr / wing_base == pytest.approx(tail_corr / tail_base, rel=1e-10)
+    def test_unknown_method_still_rejected(self):
+        bad = ["AECORR, 30, WT9, 100, 0.80"]
+        with pytest.raises(ValueError, match="METHOD must be WT2"):
+            parse_bulk_data(bad)
 
 
 class TestWkkSurfaceBinding:

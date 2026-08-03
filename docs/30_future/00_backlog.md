@@ -41,7 +41,7 @@ Details in `docs/40_history/`.
 
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P3 | Release hygiene batch — DEF-R7 (WT1 removal), DEF-M13 (f06 column drift), sample-hygiene + doc-pointer sweep, propeller-position docs (Q1 + Q3 closed 2026-08-03) | Release-required | ~2–3 d | Everything else the release-scope decision committed to; all low-risk and fully decided — pure execution, batched to land once at the release boundary. |
+| P3 | Release hygiene batch (remainder) — sample hygiene (DD-1/DD-3) and the ha144a canard SET1 extension (DD-9); propeller-position docs (WP5). DEF-R7, DEF-M13 and the doc-pointer sweep closed 2026-08-03 | Release-required | ~1 d | What is left of the release-scope hygiene commitment. The three open design decisions below must be settled first — two of them because the 2026-07-31 sample review's premises turned out to be wrong, one because the item is not the zero-risk edit it was filed as. |
 | P4 | DEF-M14 — nonplanar Trefftz `CDi` kernel | Post-release | ~1–2 d | The last open correctness defect: silently wrong CDi/e on canted decks (dihedral, winglets, cruciform tails). Reporting-only outputs, so it ranks below the release gate but above all new capability. |
 | P5 | `matrix_gaf_export` Phases 1–2 | Tier 2 | ~8 d | External flutter handoff (FLAPS) **and** the declared prerequisite of Phase D (MKAERO1, Mach loop, bundle writers). |
 | P6 | `AMODE` Phase 1 (control-surface hinge modes) | Tier 3 | ~7.5 d | Needed before control-surface flutter in SOL 145; Phase 2 is a declared pre-1.0.0 blocker. |
@@ -92,12 +92,14 @@ re-ranked table above; the six scope questions were resolved as follows:
   (lift asymmetry, C_lr) and 67b (drag asymmetry, C_nr) both closed (`build_fjx_yaw` +
   `build_fx_induced_drag` + the SOL 144 loading fixed point; see
   `docs/40_history/06_sol144_static_aeroelastic.md`).
-- **Release hygiene batch (P3)** — DEF-R7 (WT1 removal, "at a release boundary" per its
-  own note), DEF-M13 (f06 column drift), the sample-hygiene + doc-pointer sweep
-  (sample-review section) and the propeller-effects modeling-position docs (above).
-  **Q1** (SPCFORCE `CD` output frame — fixed, not merely documented) and **Q3**
-  (program-level Known Limitations section) **delivered 2026-08-03**; see
-  `docs/40_history/02_sol101_static.md` and `01_program_foundation.md`.
+- **Release hygiene batch (P3)** — **partly delivered 2026-08-03**: DEF-R7 (WT1
+  removal), DEF-M13 (f06 column drift, with a general header-alignment gate) and the
+  doc-pointer sweep are closed; see `docs/40_history/05_aero_vlm_spline.md` and
+  `01_program_foundation.md`. **Open:** the sample-hygiene deck edits (blocked on DD-1
+  and DD-3 below), the ha144a canard SET1 extension (DD-9) and the propeller-effects
+  modeling-position docs (above). **Q1** (SPCFORCE `CD` output frame — fixed, not
+  merely documented) and **Q3** (program-level Known Limitations section) **delivered
+  2026-08-03**; see `docs/40_history/02_sol101_static.md` and `01_program_foundation.md`.
 
 **Explicitly out of release scope:** P4–P9 (DEF-M14, `matrix_gaf_export`, AMODE,
 Phase D, `matrix_reuse_store`) and every Tier 2–4 item not named above.
@@ -106,9 +108,13 @@ Phase D, `matrix_reuse_store`) and every Tier 2–4 item not named above.
 
 | ID | Question / Risk | Severity | Status |
 |----|-----------------|----------|--------|
+| DD-1 | `val_wing_taper_dihedral.bdf` is a live VAE3 cross-check case, not the zero-ref duplicate the 2026-07-31 sample review filed — does it still get deleted? | Low | **Open** — blocks the deletion half of the P3 sample-hygiene batch; details in the sample-review section below |
+| DD-3 | Which of `beam_vib.bdf` / `beam_vib1.bdf` survives, and what is the intended point mass (100 / 10 000 / 100 000)? | Low | **Open** — blocks the `beam_vib` repair in the P3 sample-hygiene batch; details below |
+| DD-9 | Extending the ha144a canard SET1 to silence the SPLINE2 extrapolation warning changes the spline, so it moves numbers on three decks gated to ≤ 0.3 % of published values — measure before extending | Medium | **Open** — the one non-zero-risk item in a batch filed as zero-risk; details below |
 
-*(No open questions. Q1 and Q3 closed 2026-08-03 — see
-`docs/40_history/02_sol101_static.md` and `01_program_foundation.md`.)*
+(Q1 and Q3 closed 2026-08-03 — see `docs/40_history/02_sol101_static.md` and
+`01_program_foundation.md`. DD-1/DD-3/DD-9 were raised 2026-08-03 while executing the
+P3 release hygiene batch.)
 
 ---
 
@@ -132,12 +138,11 @@ priority table above:
 
 | Rank | Batch | Items |
 |------|-------|-------|
-| P3 | Release hygiene batch | DEF-R7, DEF-M13 |
 | P4 | Correctness (post-release) | DEF-M14 |
 | — | Opportunistic, do when adjacent | DEF-L2–L7 |
 
 (The DEF-R1/R2/R3/R4 refactor batch — P13 of the 2026-07-31 numbering — was delivered
-2026-08-02; only DEF-R7 below remains, scheduled with the release hygiene batch.)
+2026-08-02; DEF-R7 and DEF-M13 closed 2026-08-03 with the release hygiene batch.)
 
 ### DEF-M — Medium (silent wrong output on specific configurations, or misleading deliverables)
 
@@ -156,46 +161,13 @@ priority table above:
   `(w⃗·n̂)‖Δs⃗‖`; gate against a closed-form elliptic-wing case with and without dihedral,
   and against a winglet case where the planar form is known to be wrong.
 
-- **DEF-M13 — the same header/data column drift in four more f06 blocks** [E]
-  DEF-M7 fixed the maneuver time-history table; the identical 15-character-header-over
-  13-character-data drift was then measured in four other blocks of
-  `sbeam/results/f06_writer.py`, all pre-existing and all the same root cause (header
-  literals hand-spaced at 15 or 14 against `_fmt`'s 13):
-  - `:120` `MONITOR POINT INTEGRATED LOADS` totals (`FX FY FZ MX MY MZ`) — FY/FZ/MX/MY
-    sit off their data;
-  - `:66` / `:209` `DISPLACEMENT VECTOR` (`T1 T2 T3 R1 R2 R3`) — drift accumulates from T3 on;
-  - `ELEMENT ID. / AXIAL FORCE / SHEAR-1 …` bar-force block;
-  - `ELEMENT ID. / AXIAL / PT / SA(END-A) …` bar-stress block.
-  Also `:426` (body-load injection) and `:548` (box pressures) are hand-spaced at 14 and
-  should be checked in the same pass. Numbers are correct in every case — this is a
-  readability/parse defect in the listing only.
-  *Fix (complexity low, but touches asserted layouts):* lay every one of these out on the
-  shared `f06_writer._FIELD_W` the way the maneuver table now is, in one pass, and update the
-  layout assertions that encode the current spacing (e.g. `test_f06_sol101.py:205`). Worth a
-  general gate: for each header line, the `_FIELD_W` characters ending at each label must
-  parse as a float.
-
 ### DEF-L — Low (robustness, hygiene, docs; batch opportunistically) — L2–L7 unranked
 
 ### DEF-R — Refactor / dead code (no behaviour change)
 
-(DEF-R1/R2/R3/R4 — the P13 batch — closed 2026-08-02; see
-`docs/40_history/06_sol144_static_aeroelastic.md`. Only DEF-R7 remains, scheduled
-with the release hygiene batch. Note for R7: since P13/WP5 the WT2 `Aecorr` card
-emission is an isolated contiguous block inside `build_body_correction`, so the
-WT1 retirement touches no shared body-builder code.)
-
-- **DEF-R7 — Remove the deprecated WT1 correction path** — DEF-H2/H3 (closed 2026-07-31)
-  deprecated `AECORR METHOD=WT1` with a parser `UserWarning` but left it working. Complete
-  the retirement at a release boundary: delete `apply_wt1` (`corrections.py`), the WT1
-  branch in `_assemble_vlm_operator` (`aero_model.py:116-118`), the parser's acceptance of
-  `METHOD='WT1'` (`bdf_reader.py` — `AECORR` becomes WT2-only, and the deprecation warning
-  becomes a `ValueError`), and the `TestApplyWt1`/`TestWt1Deprecation` classes in
-  `tests/aero/test_corrections.py`. Also strip the WT1 rows/notes from `05a_aero_vlm.md`,
-  `02_card_reference.md`, `05_aeroelastics.md`, `01_beam_model.md` and theory §3.3. No
-  shipped deck uses WT1 (no `AECORR` card appears anywhere in `sample/` or `tests/**/*.bdf`),
-  so the only breakage is a hand-written legacy deck — which is producing wrong numbers
-  today. Complexity low. [D]
+*(No open DEF-R items. DEF-R1/R2/R3/R4 — the P13 batch — closed 2026-08-02; DEF-R7
+closed 2026-08-03. See `docs/40_history/06_sol144_static_aeroelastic.md` and
+`05_aero_vlm_spline.md`.)*
 
 ---
 
@@ -214,21 +186,53 @@ The four closed-form anchors of that evidence basis are now **enforced by CI** �
 
 ### Sample hygiene + doc pointers (opportunistic, ~1 d total, zero risk)
 
-- **Hygiene batch (~0.5 d):** delete `beam_vib1.bdf` (zero refs; header says 100 kg, card
-  says 10 000) and `val_wing_taper_dihedral.bdf` (byte-identical to `_twist` minus W2GJ,
-  zero refs — record the no-twist CL 0.268 as a comment in `_twist` and reword the 05a
-  washout-table rows); delete the two stale untracked f06s (`beam_vib.f06` is actually
-  `beam_vib1`'s output); fix `beam_vib.bdf`'s copied header and its RHO=0 config (f06
-  prints ~10⁶-Hz junk modes 4–5); fix `val_cantilever_modes.bdf`'s stale "f₂ ≈ 2.58 (XY)"
+**Doc-pointer sweep: closed 2026-08-03** with the release hygiene batch (see
+`docs/40_history/01_program_foundation.md`).
+
+**Hygiene batch — partly open.** Three items are settled and were not blocked, so they
+land with the remaining P3 work; three turned out to rest on wrong premises or to carry
+more risk than filed, and are the open design decisions **DD-1 / DD-3 / DD-9** below.
+
+- **Settled, still to do (~0.25 d):** `val_cantilever_modes.bdf`'s stale "f₂ ≈ 2.58 (XY)"
   comment (actual f₂ = 16.16 Hz — the deck's own SPC1 suppresses the XY family; VAL2's
-  `test_second_bending_mode` now gates that 16.16 Hz, so the corrected comment must match it); 2-line
-  archive notice in `HA144A.bdf` (not runnable by design; holds the published Table 7-1
-  reference values); extend the ha144a canard SET1 span to silence the SPLINE2
-  extrapolation warnings emitted on every run of all three ha144a decks.
-- **Doc-pointer sweep (fold into the DEF-L docs-mismatch batch):** `sample/ha144a_sbeam.bdf`
-  cited 5× but deleted long ago (incl. `40_history/06`); `05a_aero_vlm.md` overstates
-  `test_strip_body.py`'s coupling to `cessna210_body_section_data.csv` (targets are
-  programmatic).
+  `test_second_bending_mode` gates that 16.16 Hz, so the corrected comment must match it);
+  a 2-line archive notice in `HA144A.bdf` (not runnable by design; holds the published
+  Table 7-1 reference values); `beam_vib.bdf`'s copied header and its `RHO=0` config (f06
+  prints ~10⁶-Hz junk modes 4–5) — but see **DD-3**, which decides *which deck* is repaired.
+- **Withdrawn:** "delete the two stale untracked f06s". Verified 2026-08-03 — the working
+  tree is clean and `sample/*.f06` matches nothing. Nothing to do.
+
+### Open design decisions — sample hygiene (raised 2026-08-03)
+
+- **DD-1 — `val_wing_taper_dihedral.bdf` is not zero-ref; does it still get deleted?**
+  The 2026-07-31 review filed it as "byte-identical to `_twist` minus W2GJ, zero refs".
+  The zero-refs premise is **wrong**: it is the `"taper_dih"` case in
+  `tests/aero/test_vae3_cross_check.py:62`, grouped with dihedral/anhedral at `:160`.
+  Deleting the deck deletes a VAE3 cross-check case. Options: **(a)** keep the deck and do
+  only the CL 0.268 comment in `_twist` plus the 05a washout-table rewording
+  (`05a_aero_vlm.md:1042`) — *recommended*; **(b)** delete and repoint the case to
+  `_twist`, which carries W2GJ and so stops being a pure taper+dihedral case; **(c)**
+  delete the deck and drop the case. Blocks the deletion half of the hygiene batch.
+
+- **DD-3 — which of `beam_vib.bdf` / `beam_vib1.bdf` survives, and at what mass?**
+  The review said delete `beam_vib1` and repair `beam_vib`, but `beam_vib1` is the more
+  nearly correct deck: `RHO=7850` and the mass on node 7 via RBE3, exactly as both headers
+  claim. `beam_vib.bdf` has `RHO=0.0` and `CONM2, 30, 6, 0, 100000.0` — mass on node 6,
+  no node 7, no RBE3. So the surviving deck needs a decision on **(i)** which content wins
+  and **(ii)** the intended point mass: 100 kg (what both headers say), 10 000 (`beam_vib1`'s
+  card) or 100 000 (`beam_vib`'s card). `docs/10_standard/04_modal_analysis.md:227` cites
+  `beam_vib.bdf` as a worked example, so whichever content wins should keep that filename.
+  *Recommended:* keep the name `beam_vib.bdf`, take `beam_vib1`'s content, settle the mass
+  explicitly, delete the other deck.
+
+- **DD-9 — the ha144a canard SET1 extension is not zero-risk.** Extending the canard SET1
+  (`sample/ha144a_fullspan_sbeam.bdf` SET1 1000/2000 = grids 98, 99) to silence the
+  `SPLINE2 …: a box extrapolates >10% beyond SET1 span` warning (`sbeam/aero/spline.py:171`)
+  **changes the spline**, so it moves trim and derivative numbers on all three ha144a decks
+  — decks gated against published MSC/ADA370433 values to ≤ 0.3 %. This is the only item in
+  a batch filed as "zero risk" that can change results. *Recommended:* measure the delta
+  first and extend only if the published-value agreement holds; otherwise leave the warning
+  in place and document it as expected in the deck header.
 - **Deferred verdicts (flagship stage 2 delivered 2026-08-02, so these are now due):**
   `val_vlm_anhedral.bdf` is a 2-coordinate sign flip of `_dihedral` that 2 test files
   could mirror in memory — consolidate opportunistically or keep; ha144a_fullspan ×3

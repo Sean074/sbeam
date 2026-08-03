@@ -556,19 +556,18 @@ def _handle_aecorr(fields: list[str], conts: list[list[str]], bulk: BulkData) ->
     sid       = _to_int(fields[1])
     method    = fields[2].strip().upper() if len(fields) > 2 else ""
     caero_eid = _to_int(fields[3]) if len(fields) > 3 else 0
-    if method not in ("WT1", "WT2"):
-        raise ValueError(f"AECORR {sid}: METHOD must be WT1 or WT2, got '{method}'")
     if method == "WT1":
-        # DEF-H2/H3 (2026-07-31): WT1 is deprecated, not fixed — WT2 and the
-        # section-correction path are correct and strictly more capable.
-        warnings.warn(
-            f"AECORR {sid}: METHOD WT1 is deprecated and produces wrong numbers — "
-            "it achieves f_target/beta^2 instead of f_target at Mach > 0 (DEF-H2), and "
-            "on multi-CAERO1 decks it rescales strips on every surface sharing an "
-            "i_span index (DEF-H3). Use WT2 or the section-correction path instead.",
-            UserWarning,
-            stacklevel=2,
+        # DEF-R7 (release boundary): WT1 was deprecated by DEF-H2/H3 (2026-07-31)
+        # and is now removed — it achieved f_target/beta^2 instead of f_target at
+        # Mach > 0 (DEF-H2), and on multi-CAERO1 decks it rescaled strips on every
+        # surface sharing an i_span index (DEF-H3).
+        raise ValueError(
+            f"AECORR {sid}: METHOD WT1 has been removed — it produced wrong numbers "
+            "(f_target/beta^2 at Mach > 0, and strip aliasing across CAERO1s). Use "
+            "METHOD WT2 or the section-correction path instead."
         )
+    if method != "WT2":
+        raise ValueError(f"AECORR {sid}: METHOD must be WT2, got '{method}'")
     if sid in bulk.aecorrs:
         raise ValueError(f"Duplicate AECORR SID {sid}")
     target = [_to_float(f) for f in fields[4:] if f.strip()]

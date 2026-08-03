@@ -1,20 +1,23 @@
 """AIC correction methods — steady (k=0) rescaling of the VLM aerodynamic influence matrix.
 
-Three tiers, in increasing data requirement:
+Two tiers, in increasing data requirement:
 
   Wkk   — diagonal multiplicative weighting: AJJ* = diag(w) @ AJJ.
   WT2   — pressure matching: per-box cp scaling to reproduce a target cp distribution.
-  WT1   — force/moment matching: per-strip lift scaling.  **DEPRECATED (DEF-H2/H3)** —
-          see ``apply_wt1``; use WT2 or ``sbeam.aero.section_correction`` instead.
 
-Reference normalwash convention (WT1 and WT2):
+A third tier, force/moment matching by per-strip lift scaling (``AECORR
+METHOD=WT1``), was removed at the first SOL 144 loads release (DEF-R7): it was
+deprecated by DEF-H2/H3 (2026-07-31) for delivering ``f_target/β²`` at Mach and
+for aliasing strips across CAERO1s, and ``WT2`` plus the section-correction path
+(``sbeam.aero.section_correction``) are correct and strictly more capable.
+
+Reference normalwash convention (WT2):
   w_ref = -np.ones(n)  (uniform unit incidence, alpha = 1, same rhs as solve_rigid_cl).
   All corrections are relative to the VLM solution at that reference incidence.
 
 Return types:
   apply_wkk  →  corrected AJJ*  (caller inverts via np.linalg.solve)
   apply_wt2  →  corrected AJJ*⁻¹
-  apply_wt1  →  corrected AJJ*⁻¹
 """
 
 import warnings
@@ -62,7 +65,7 @@ def apply_chordcp(
     Given the corrected normalwash→ΔCp operator of the VLM lifting-surface
     boxes (``ajj_inv_corr`` restricted to the VLM sub-block — the operator
     already carries the 2/chord Γ→Cp conversion, the Göthert 1/β factor and
-    any WKK/WT2/WT1 correction), find the baseline normalwash ``wg_eff`` such
+    any WKK/WT2 correction), find the baseline normalwash ``wg_eff`` such
     that the rigid model at the injected operating point (ANGLEA = alpha_ref,
     all other trim variables zero, no structural deformation) reproduces the
     injected physical pressures ``cp_inj``:
@@ -74,8 +77,8 @@ def apply_chordcp(
     The ``+ n_z·alpha_ref`` term re-references the injection to alpha = 0, so
     a downstream trim solves for the ABSOLUTE angle of attack.
 
-    A min-norm least-squares solve is used instead of a direct solve: WT2/WT1
-    corrections can zero entire rows of the operator (target ratio r_k = 0),
+    A min-norm least-squares solve is used instead of a direct solve: a WT2
+    correction can zero entire rows of the operator (target ratio r_k = 0),
     making it singular.  A dead row can reproduce only Cp = 0 there, so a
     nonzero injected Cp on such a row is unrepresentable — detected by the
     residual check below and raised as an error rather than silently dropped.
@@ -155,84 +158,4 @@ def apply_wt2(
     with np.errstate(divide="ignore", invalid="ignore"):
         ratio = np.where(cp_vlm_ref != 0.0, cp_target / cp_vlm_ref, 1.0)
     r = np.where(np.abs(cp_vlm_ref) > _RATIO_TOL, ratio, 1.0)
-    return np.diag(r) @ ajj_inv
-
-
-def apply_wt1(ajj: FloatArray, boxes: list[AeroBox], f_target: FloatArray) -> FloatArray:
-    """**DEPRECATED (DEF-H2/H3, 2026-07-31).**  Force/moment-matching correction.
-
-    Returns corrected AJJ*⁻¹ (Γ-unit output).  Two defects make this path
-    untrustworthy, and the decision taken was to **deprecate rather than fix** —
-    ``WT2`` and the section-correction path (``sbeam.aero.section_correction``,
-    which divides by β and is genuinely multi-surface) are correct and strictly
-    more capable:
-
-      DEF-H2  ``build_aero_model`` passes PG-compressed boxes here, so the
-              reference strip force is integrated over compressed areas/chords
-              while the Göthert 1/β factor and the Γ→ΔCp conversion (physical
-              chords) are applied afterwards.  The delivered strip force is
-              ``f_target/β²`` — a 56 % overshoot at M = 0.6.  Exact at M = 0 only.
-      DEF-H3  Strips are grouped by ``box.i_span``, which restarts per parent
-              CAERO1.  On a multi-surface deck a card selected for one CAERO1
-              rescales strips on every surface sharing an ``i_span`` index.
-
-    The numerics below are left unchanged on purpose; both defects are pinned by
-    characterization tests in ``tests/aero/test_corrections.py``.  Removal of the
-    whole path is tracked as backlog DEF-R7.
-
-    Finds a diagonal scaling r — constant within each span strip — such that the
-    corrected A*⁻¹ = diag(r) @ AJJ⁻¹ reproduces the per-strip physical lift/q
-    f_target when the caller subsequently applies the 2/chord Cp-conversion step
-    (build_aero_model does this).  f_target must be physical strip lift/q:
-
-        f_target_s  = Σ_k area_k · Cp_k  for all k in strip s  (force per q)
-
-    Internally:
-        gamma_ref   = AJJ⁻¹ @ w_ref          (VLM circulation at unit incidence)
-        f_vlm_s     = Σ_k area_k · 2·gamma_ref_k / chord_k   (physical reference)
-        ratio_s     = f_target_s / f_vlm_s
-        r_k         = ratio_s  for all boxes k in strip s
-
-    Strips where |f_vlm_s| < _RATIO_TOL keep ratio_s = 1 (no correction applied).
-    f_target must have length equal to the number of distinct i_span values in boxes,
-    ordered by ascending i_span.
-
-    Warns if cond(AJJ) > 1e10.
-    """
-    import math as _math
-    n = ajj.shape[0]
-    lu_piv = check_conditioning(ajj)
-    ajj_inv = lu_solve(lu_piv, np.eye(n))
-    w_ref = -np.ones(n)
-    gamma_ref = ajj_inv @ w_ref
-
-    # Physical chord per box (same formula as solve_rigid_cl / build_aero_model)
-    chord_box = [
-        b.area / max(_math.sqrt((b.bound_b[1] - b.bound_a[1])**2
-                                + (b.bound_b[2] - b.bound_a[2])**2), 1e-14)
-        for b in boxes
-    ]
-
-    # Group boxes by span strip
-    strip_indices: dict[int, list[int]] = {}
-    for k, box in enumerate(boxes):
-        strip_indices.setdefault(box.i_span, []).append(k)
-
-    sorted_strips = sorted(strip_indices.keys())
-    if len(sorted_strips) != len(f_target):
-        raise ValueError(
-            f"apply_wt1: f_target length {len(f_target)} does not match "
-            f"number of span strips {len(sorted_strips)}"
-        )
-
-    r = np.ones(n)
-    for s_idx, i_span in enumerate(sorted_strips):
-        idxs = strip_indices[i_span]
-        # Physical strip lift/q reference: Σ area * Cp = Σ area * 2*Γ/chord
-        f_vlm_s = sum(boxes[k].area * 2.0 * gamma_ref[k] / chord_box[k] for k in idxs)
-        if abs(f_vlm_s) > _RATIO_TOL:
-            ratio_s = float(f_target[s_idx]) / f_vlm_s
-            for k in idxs:
-                r[k] = ratio_s
-
     return np.diag(r) @ ajj_inv
