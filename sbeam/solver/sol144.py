@@ -27,9 +27,11 @@ from sbeam.parser.case_control import SubcaseControl
 from sbeam.assembly.stiffness import assemble_global_stiffness, get_spc_dofs
 from sbeam.assembly.load_vector import assemble_load_vector, build_grid_index
 from sbeam.assembly.reduction import reduce_to_aset, expand_to_g
+from sbeam.assembly.coord_transform import get_transform
+from sbeam.assembly.mass_matrix import assemble_global_mass
 from sbeam.aero.aero_model import AeroModel, build_aero_model
 from sbeam.aero.coupling import build_qaa, build_fg, build_gaf
-from sbeam.aero.integration import build_djx
+from sbeam.aero.integration import build_djx, build_djk
 from sbeam.results.results import (
     Sol144Result, Sol144TrimResult,
     Sol144DivergResult, DivergMachResult, DivergRoot,
@@ -485,7 +487,6 @@ def build_inertial_cols(
     Raises:
         ValueError: if a supplied ``M_gg`` does not match the g-set size.
     """
-    from sbeam.assembly.mass_matrix import assemble_global_mass
     from sbeam.assembly.rigid_body import build_rigid_vectors_g
 
     n_g = 6 * len(grid_index)
@@ -516,10 +517,6 @@ def build_inertial_cols(
     for k, dof in enumerate(dofs):
         M[:, urdd_cols[dof]] = cols[:, k]
     return M
-
-
-# Moved to assembly.reduction (Step 59); alias retained for existing importers.
-_expand_to_g = expand_to_g
 
 
 def get_suport_local(
@@ -926,8 +923,8 @@ def compute_rigid_derivs(
 
         Fz_sens = f_box_vec[2::3].sum()
         My_sens = pitch_moment(f_box_vec, boxes, x_ref)   # nose-up-positive
-        Fz_x = f_box_vec[0::3].sum()
-        Fz_y = f_box_vec[1::3].sum()
+        Fx_sens = f_box_vec[0::3].sum()
+        Fy_sens = f_box_vec[1::3].sum()
         Mx, _My_xp, Mz = aero_moment_resultant(
             f_box_vec.reshape(n_box, 3), boxes, ref_pt)
 
@@ -936,8 +933,8 @@ def compute_rigid_derivs(
             'CMY': My_sens / (sref * cref),
             'CMX': Mx / (sref * bref) if bref > 0 else 0.0,
             'CMZ': Mz / (sref * bref) if bref > 0 else 0.0,
-            'CX':  Fz_x / sref,
-            'CY':  Fz_y / sref,
+            'CX':  Fx_sens / sref,
+            'CY':  Fy_sens / sref,
         }
 
     return rigid_derivs
@@ -963,7 +960,6 @@ def _compute_hinge_moments(
     ``'total'`` entry uses the full trimmed box-force field ``f_box_trim``
     (force/q units; multiply by q for the physical hinge moment).
     """
-    from sbeam.assembly.coord_transform import get_transform
 
     # NASTRAN-box-ID → global-k index — the one shared, collision-checked map (F1)
     id_to_k = aero.require_box_id_to_k()
@@ -1001,8 +997,6 @@ def _compute_restrained_derivs(
     Q_ax_a: FloatArray,
     M_ax_a: FloatArray,
     all_labels: list[str],
-    u_a_trim: FloatArray,
-    delta_all_trim: FloatArray,
     aero: AeroModel,
     D_jx: FloatArray,
     T: FloatArray,
@@ -1037,7 +1031,6 @@ def _compute_restrained_derivs(
     slave DOFs move with their masters (AE1 Step B1).  The result is exact (no FD
     truncation) and the URDD/inertial columns are carried by M_ax_a.
     """
-    from sbeam.aero.integration import build_djk
 
     sref = require_aeros(bulk).sref
     cref = require_aeros(bulk).cref
@@ -1061,7 +1054,7 @@ def _compute_restrained_derivs(
         u_a_d = np.zeros(n_a)
         for li_idx, li in enumerate(l_idx):
             u_a_d[li] = du_l_all[li_idx, col]
-        u_full_d = _expand_to_g(u_a_d, T, free_local, n_red)
+        u_full_d = expand_to_g(u_a_d, T, free_local, n_red)
 
         # Linear normalwash sensitivity: direct trim term + elastic feedback.
         dw = D_jx[:, col] + djk @ (aero.require_g_slope() @ u_full_d)
@@ -1400,7 +1393,7 @@ def run_sol144_diverg(
             u_a = np.zeros(K_aa.shape[0])
             for li_idx, li in enumerate(l_idx):
                 u_a[li] = vec_l[li_idx]
-            mode_g = _expand_to_g(u_a, T, free_local, n_red)
+            mode_g = expand_to_g(u_a, T, free_local, n_red)
             peak = np.max(np.abs(mode_g))
             if peak > 0.0:
                 mode_g = mode_g / peak
@@ -1546,7 +1539,6 @@ def run_sol144_trim(
     # Reference geometry + RCSID rotation matrix for URDD transform
     # ------------------------------------------------------------------ #
     aeros = require_aeros(bulk)
-    from sbeam.assembly.coord_transform import get_transform
     if aeros.rcsid:
         x_ref_pt, R_rcsid = get_transform(aeros.rcsid, bulk.cord2rs)
         x_ref    = float(x_ref_pt[0])
@@ -1607,15 +1599,13 @@ def run_sol144_trim(
     K_gg = assemble_global_stiffness(bulk)
     K_aa = red.reduce_matrix(K_gg, dense=True)     # (n_a, n_a)
 
-    # Also compute Q_aa for storage in result (reuse existing helper)
-    from sbeam.aero.coupling import build_qaa
+    # Also compute Q_aa for storage in result
     Q_gg = build_qaa(aero, aero.require_g_load(), aero.require_g_slope())
     Q_aa = red.reduce_matrix(Q_gg)
 
     # ------------------------------------------------------------------ #
     # Build combined RHS: q*f_g (baseline aero) + inertial load
     # ------------------------------------------------------------------ #
-    from sbeam.aero.coupling import build_fg
     f_aero_g = q_dyn * build_fg(aero, aero.require_g_load())   # (n_g,) baseline aero (whole-airplane)
 
     # Aerodynamic contribution of prescribed trim variables (URDD cols = 0)
@@ -1633,7 +1623,6 @@ def run_sol144_trim(
     # Mass matrix for this mass case.  Assembled once here and reused by both
     # M_ax (below) and the unrestrained-derivative block further down — one mass
     # model for the whole subcase, by construction (Q4 / DEF-M3).
-    from sbeam.assembly.mass_matrix import assemble_global_mass
     M_gg = assemble_global_mass(bulk, massset_sid)
 
     # Inertial sensitivity matrix (basic frame); prescribed inertial RHS (AE7).
@@ -1749,7 +1738,7 @@ def run_sol144_trim(
     # downstream `g_slope @ u` or `_compute_aero_forces` call; a bare index
     # scatter leaves them at zero and corrupts the structural normalwash.
     # ------------------------------------------------------------------ #
-    displacements = _expand_to_g(u_a, T, free_local, len(red_dofs))
+    displacements = expand_to_g(u_a, T, free_local, len(red_dofs))
 
     # ------------------------------------------------------------------ #
     # CBAR force / stress recovery
@@ -1772,7 +1761,7 @@ def run_sol144_trim(
     # ------------------------------------------------------------------ #
     rest_derivs = _compute_restrained_derivs(
         K_ll_lu, l_idx, Q_ax_a, M_ax_a, all_labels,
-        u_a, delta_all, aero, D_jx,
+        aero, D_jx,
         T, free_local, len(red_dofs),
         bulk, x_ref, q_dyn, suport_pos,
     )
@@ -1791,7 +1780,6 @@ def run_sol144_trim(
     # ------------------------------------------------------------------ #
     # Total CL and CM at trim
     # ------------------------------------------------------------------ #
-    from sbeam.aero.integration import build_djk
     djk = build_djk(aero.boxes)
     w_struct = djk @ (aero.require_g_slope() @ displacements)
     w_total  = w_struct + D_jx @ delta_all + aero.wg
@@ -1907,8 +1895,6 @@ def run_sol144_trim(
     Q_ll_div = Q_aa[np.ix_(l_idx, l_idx)]
     q_div = _divergence_dynamic_pressure(K_ll_div, Q_ll_div)
 
-    k_aa_lu_trim = scipy.linalg.lu_factor(K_aa)
-
     # ------------------------------------------------------------------ #
     # MON2/MON3 — monitor-point integrated section loads.
     # The reaction column needs the SPC/SUPORT reaction that balances the net
@@ -1957,7 +1943,6 @@ def run_sol144_trim(
         bar_stresses=bar_stresses,
         q_aa=Q_aa,
         free_dofs=free_dofs,
-        k_aa_lu=k_aa_lu_trim,
         rigid_derivs=rigid_derivs,
         restrained_derivs=rest_derivs,
         unrestrained_derivs=unrest_derivs,

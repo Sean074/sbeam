@@ -112,7 +112,6 @@ from sbeam.solver.sol144 import (
 # the module docstring).  Past this bound the flat-plate cruciform is being pushed beyond
 # what it can represent and a slender-body element is the proper tool.
 RATIO_WARN = 200.0
-_NORM_TOL = 1e-12    # near-zero sensitivity guard for the min-norm solves
 
 
 @dataclass

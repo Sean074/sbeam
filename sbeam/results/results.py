@@ -199,7 +199,6 @@ class Sol144TrimResult:
     bar_stresses: dict[int, BarStress]                   # {eid: BarStress}
     q_aa: FloatArray                     # (n_a, n_a) aerodynamic stiffness on a-set
     free_dofs: list[int]                      # a-set indices into g-set (length n_a)
-    k_aa_lu: LuFactor                       # (lu, piv) for reuse by derivative solver
     rigid_derivs: dict[str, dict[str, float]]                   # {label: {'CZ','CMY','CMX','CMZ','CX','CY'}}
     restrained_derivs: dict[str, dict[str, float]]              # {label: {'CZ','CMY','CMX','CMZ'}}
     unrestrained_derivs: Optional[dict[str, dict[str, float]]] = None   # {label: {'CZ','CMY','CMX','CMZ'}} mean-axis (inertia-relief) column — AE8b; aero labels only
