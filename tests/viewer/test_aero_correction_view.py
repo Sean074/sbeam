@@ -25,6 +25,7 @@ from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.vlm import solve_rigid_cl
 from sbeam.aero import section_data as sd
 from sbeam.aero.section_correction import cards_to_bdf
+from sbeam.parser.bdf_field import FIELD_WIDTH
 from sbeam.parser.bdf_reader import parse_bulk_file
 from sbeam.viewer.aero_view import surface_dihedral_deg
 from sbeam.aero import body_correction as bc
@@ -338,6 +339,12 @@ def test_full_corrected_bdf_roundtrips(aero_bulk, tmp_path):
     bulk2 = parse_bulk_file(str(out))
     assert _W2GJ_BASE in bulk2.w2gjs
     assert _AECORR_BASE in bulk2.aecorrs
+    # Every free-field token in the deck fits the strict 8-char field (DEF-M12).
+    for line in text.splitlines():
+        if line.startswith("$") or "," not in line:
+            continue
+        for tok in line.split(","):
+            assert len(tok.strip()) <= FIELD_WIDTH, f"{tok!r} in {line!r}"
 
 
 # ---- Stage 6 · cruciform body panels ----------------------------------------

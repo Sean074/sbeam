@@ -13,6 +13,15 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Changed
 
+**Lint pass — ruff + pyright residuals (2026-08-02)**
+
+Repo-wide `ruff check` and `card_writers` pyright-strict residuals cleared alongside
+DEF-M12: unused imports/variable and placeholder-less f-strings removed, two test files'
+mid-file section imports hoisted to the top, `card_writers.write_card` loosened to
+`Sequence[Field]` (its callers pass narrower list types — invariance false-positives),
+and `write_authored_block`'s `bulk` parameter annotated `BulkData`. No behavior change;
+full suite green.
+
 **Backlog priority table re-ranked and renumbered (2026-08-02)**
 
 `docs/30_future/00_backlog.md` priority table re-ranked after the 2026-08-02 delivery
@@ -398,6 +407,19 @@ second XZ bending mode at 16.16 Hz (mode 4, 71.95 Hz, is first torsion). No prod
 and no CI-config change.
 
 ### Fixed
+
+**DEF-M12 — correction-card export truncated under a strict 8-char free-field reader (2026-08-02)**
+
+`aero/section_correction.card_lines` wrote every `W2GJ`/`AECORR`/`STRIPK` value as
+`%.6E` (12–13 characters), so a strict NASTRAN/ZAERO free-field reader truncated each
+field to its first 8 characters — e.g. `-3.490660E-02` read back as `-3.49066`, a 100×
+silent corruption on the viewer's corrected-BDF download and the body-card exports
+(the same defect DEF-M6 fixed for the `FORCE`/`MOMENT` load export). `card_lines` now
+delegates to the shared `model/card_writers.write_card` serializer, routing every real
+through `parser/bdf_field.fmt_real8`; NaN/inf now raise instead of silently writing
+`NAN`. Width gates (every token ≤ 8 chars) added to the section-correction, strip-body,
+and full-corrected-deck round-trip tests; the section-correction round-trip tolerance
+relaxed `rel=1e-5 → 5e-4` (the 8-char floor for signed values, not exporter slop).
 
 **Inline bulk data was silently discarded alongside an `INCLUDE` (2026-08-02)**
 

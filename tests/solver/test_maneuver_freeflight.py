@@ -53,7 +53,6 @@ from tests.solver.test_maneuver_modal import (
     _command_elev,
     _load_scale,
     _max_closure,
-    _run_modal,
 )
 
 SAMPLE_DECK = Path(__file__).parent.parent.parent / "sample" / "ha144a_mloads_massset.bdf"

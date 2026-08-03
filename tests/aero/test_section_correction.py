@@ -25,6 +25,7 @@ from sbeam.aero.section_correction import (
     SurfaceTargets,
     cards_to_bdf,
 )
+from sbeam.parser.bdf_field import FIELD_WIDTH
 
 PAERO = Paero1(pid=1)
 CAERO_EID = 1
@@ -353,6 +354,9 @@ class TestMultiSurface:
 
 class TestBdfRoundTrip:
     def test_cards_to_bdf_parses_back(self):
+        # rel=5e-4 is the NASTRAN 8-character field width (DEF-M6/DEF-M12
+        # `fmt_real8` floor — worst case 3.5e-4 for negatives, where the sign
+        # consumes a character), not exporter slop.
         from sbeam.parser.bdf_reader import parse_bulk_data
 
         boxes = _rect_wing(4, 3)
@@ -365,7 +369,23 @@ class TestBdfRoundTrip:
         )
         bulk = parse_bulk_data(cards_to_bdf(res).splitlines())
 
-        assert np.array(bulk.w2gjs[101].data) == pytest.approx(np.array(res.w2gj.data), rel=1e-5)
+        assert np.array(bulk.w2gjs[101].data) == pytest.approx(np.array(res.w2gj.data), rel=5e-4)
         assert bulk.aecorrs[201].method == "WT2"
         assert np.array(bulk.aecorrs[201].target) == pytest.approx(
-            np.array(res.aecorr.target), rel=1e-5)
+            np.array(res.aecorr.target), rel=5e-4)
+
+    def test_cards_to_bdf_fields_fit_8_chars(self):
+        """Every free-field token fits the strict 8-character field (DEF-M12)."""
+        boxes = _rect_wing(4, 3)
+        ajj = build_ajj(boxes)
+        res = build_section_correction(
+            boxes, ajj, f_slope=np.linspace(0.8, 0.95, 4),
+            alpha_0=np.full(4, np.deg2rad(-2.0)),
+            m_slope=np.linspace(-0.02, -0.05, 4), m_0=np.full(4, -0.03),
+            caero_eid=CAERO_EID, sid_w2gj=101, sid_aecorr=201,
+        )
+        for line in cards_to_bdf(res).splitlines():
+            if line.startswith("$"):
+                continue
+            for tok in line.split(","):
+                assert len(tok.strip()) <= FIELD_WIDTH, f"{tok!r} in {line!r}"

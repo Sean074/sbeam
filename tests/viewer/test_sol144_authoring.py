@@ -1,11 +1,13 @@
 """P12 S3 — SOL 144 authoring logic (pure) + AppTest render smoke."""
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from sbeam.model.aero import Aestat, Trim, Trimcon
+from sbeam.model.aero import Trim, Trimcon
 from sbeam.model.constraint import Suport
+from sbeam.model.maneuver_presets import load_factor_to_urdd3
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.viewer import sol144_authoring as logic
 
@@ -142,10 +144,6 @@ def test_authoring_tab_renders(mloads_bulk):
 # ---------------------------------------------------------------------------
 # P12 S4 — presets, TABLED1 generators, two-pass increment resolution
 # ---------------------------------------------------------------------------
-
-from types import SimpleNamespace
-
-from sbeam.model.maneuver_presets import load_factor_to_urdd3
 
 
 class TestPresets:

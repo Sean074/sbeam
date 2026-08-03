@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from sbeam.model.card_writers import _FAMILIES, write_authored_block
+from sbeam.model.card_writers import _FAMILIES
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.viewer.sol144_authoring import snapshot_family_ids
 from sbeam.viewer.sol144_authoring_ui import export_sol144_bdf

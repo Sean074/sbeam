@@ -8,7 +8,7 @@ The Streamlit layer lives in ``sol144_authoring_ui.py``.
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.card_writers import _FAMILIES

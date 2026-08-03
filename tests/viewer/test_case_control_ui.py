@@ -1,5 +1,8 @@
 """Tests for Step 19: Case Control UI — BDF export round-trip."""
 
+from pathlib import Path
+
+from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.parser.case_control import CaseControl, SubcaseControl, parse_case_control
 from sbeam.viewer.case_control_ui import export_bdf_text
 
@@ -211,10 +214,6 @@ class TestMultiSubcaseRoundTrip:
 # ---------------------------------------------------------------------------
 # P12 S2 — SOL 144 case-control export + round-trip
 # ---------------------------------------------------------------------------
-
-from pathlib import Path
-
-from sbeam.parser.bdf_reader import parse_bdf
 
 _SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
 

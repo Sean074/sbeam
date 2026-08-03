@@ -1061,6 +1061,41 @@ the `ATTACH` card; confirm `SPLINE0` boxes correctly contribute zero rows.
 
 ## Resolved defects (conventions)
 
+### DEF-M12 (P1, release-required) — correction-card export field width ✅ COMPLETE (2026-08-02)
+
+**Objective:** `sbeam/aero/section_correction.py` `card_lines` wrote every value as
+`f"{v:.6E}"` — 12–13 characters — into the comma free-field `W2GJ`/`AECORR`/`STRIPK`
+correction cards. Free-field does not exempt a card from the 8-character field width:
+a strict NASTRAN/ZAERO reader truncates `-3.490660E-02` to `-3.49066` — a 100× silent
+corruption. The same defect DEF-M6 fixed for the `FORCE`/`MOMENT` load export, on a
+different deliverable: the viewer's corrected-BDF download (`aero_correction_view.py`)
+and the cruciform/strip body-card exports (`body_correction.py`), the only channel for
+powered/CFD corrections and on the release-critical path. sbeam round-trips its own
+output, so the corruption only appeared downstream.
+
+**Deliverables:** `card_lines` is now a thin wrapper over the shared free-field
+serializer `sbeam/model/card_writers.write_card`, which routes every real through
+`parser/bdf_field.fmt_real8` (written for DEF-M6) and produces identical 9-token line
+packing (name + 8 fields, then `+` + 8 per continuation). **Decision: delegate to
+`write_card`, not an in-place format swap** — it removes the duplicate serializer
+(P13 DEF-R4 shared-core style); the `aero → model` import direction is legal.
+**Behavior change (intentional):** `fmt_real8` raises `ValueError` on NaN/inf where
+`.6E` silently wrote `NAN` — a NaN in a correction card is a corrupt deliverable, so
+it is surfaced rather than written out. All callers (`pair_to_bdf`, `cards_to_bdf`,
+`body_cards_to_bdf`, `strip_body_cards_to_bdf`) and the viewer downloads inherit the
+fix unchanged.
+
+**Test/Acceptance:** width gates (every free-field token ≤ `FIELD_WIDTH` = 8 chars)
+added to the section-correction round-trip (`tests/aero/test_section_correction.py`),
+the strip-body export (`tests/aero/test_strip_body.py`), and end-to-end over the full
+corrected deck (`tests/viewer/test_aero_correction_view.py::test_full_corrected_bdf_roundtrips`).
+The section-correction round-trip tolerance was relaxed `rel=1e-5 → 5e-4` — the
+8-character field-width floor for negative values, where the sign consumes a character
+(DEF-M6 measured worst case 3.5e-4), not exporter slop. Full suite green
+(1708 passed, 6 xfailed).
+
+---
+
 ### DEF-R4 (P13 share) — body-builder duplication in `body_correction.py` ✅ COMPLETE (2026-08-02)
 
 **Objective:** `build_body_correction` (cruciform) and `build_strip_body_correction`

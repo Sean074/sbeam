@@ -14,7 +14,7 @@ AESURF, AELIST, SUPORT, TRIM, TRIMVAR, TRIMOBJ, TRIMCON, DIVERG, MLOADS,
 MLDTRIM, MLDTIME, MLDCOMD, MLDPRNT, TABLED1.
 """
 
-from typing import Union
+from typing import TYPE_CHECKING, Sequence, Union
 
 from sbeam.model.aero import (
     Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
@@ -24,6 +24,9 @@ from sbeam.model.maneuver import (
     Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads,
 )
 from sbeam.parser.bdf_field import fmt_real8
+
+if TYPE_CHECKING:
+    from sbeam.model.bulk_data import BulkData
 
 Field = Union[int, float, str]
 
@@ -41,7 +44,7 @@ def _fld(v: Field) -> str:
     return str(v)
 
 
-def write_card(name: str, fields: list[Field],
+def write_card(name: str, fields: Sequence[Field],
                fields_per_line: int = _FIELDS_PER_LINE) -> list[str]:
     """Return comma free-field lines for one card, continuing with '+' lines."""
     toks = [_fld(f) for f in fields]
@@ -172,7 +175,7 @@ _FAMILIES = {
 }
 
 
-def write_authored_block(bulk, authored: dict[str, set[int]],
+def write_authored_block(bulk: "BulkData", authored: dict[str, set[int]],
                          header_comment: str = "") -> str:
     """Serialize the authored cards tracked by the viewer into one text block.
 

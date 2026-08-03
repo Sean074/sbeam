@@ -42,9 +42,10 @@ sbeam's own reader does not enforce that width on input. Implicit-exponent reals
 `parser/bdf_field.fmt_real8` the matching write side.
 
 On the write side `fmt_real8` is used by the **load-card exports** (`FORCE`/`MOMENT` from
-`results/load_export.py`; see `05c_sol144_maneuver.md` for the precision bound it implies). The
-**aero-correction card export** (`W2GJ`/`AECORR`/`STRIPK` from `aero/section_correction.py`) still
-writes 12-13 character fields and is a known open defect — backlog **DEF-M12**.
+`results/load_export.py`; see `05c_sol144_maneuver.md` for the precision bound it implies), the
+**authored-card writers** (`model/card_writers.py`), and the **aero-correction card export**
+(`W2GJ`/`AECORR`/`STRIPK` from `aero/section_correction.py` / `aero/body_correction.py`, which
+delegates to `card_writers.write_card` — DEF-M12, fixed 2026-08-02).
 
 ---
 

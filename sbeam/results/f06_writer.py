@@ -206,8 +206,8 @@ def _section_envelope_block(
     lines.append("                          S E C T I O N   C U T   E N V E L O P E")
     lines.append("")
     lines.append(
-        f"      MAX/MIN OVER THE OUTPUT SAMPLES.  THE DRIVING SAMPLE IS PER "
-        f"STATION AND COMPONENT AND NEED NOT BE THE"
+        "      MAX/MIN OVER THE OUTPUT SAMPLES.  THE DRIVING SAMPLE IS PER "
+        "STATION AND COMPONENT AND NEED NOT BE THE"
     )
     lines.append(
         f"      CRITICAL SAMPLE ({crit_sample}), WHICH IS SELECTED BY PEAK "

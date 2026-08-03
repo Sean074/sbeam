@@ -30,6 +30,7 @@ from sbeam.aero.body_correction import (
     _total_metrics,
 )
 from sbeam.model.aero import Stripk, W2gj
+from sbeam.parser.bdf_field import FIELD_WIDTH
 
 _ROOT = Path(__file__).parent.parent.parent / "sample"
 CRUCIFORM_BDF = _ROOT / "cessna210_flagship_body.bdf"
@@ -273,8 +274,14 @@ def test_strip_correction_emits_w2gj_and_stripk_cards(strip_model, strip_baselin
     # distinct SIDs for the two panels
     sids = [sk.sid for (_w, sk) in res.cards.values()]
     assert len(set(sids)) == 2
-    # round-trips to bulk-data text
-    assert "STRIPK" in strip_body_cards_to_bdf(res)
+    # round-trips to bulk-data text, every token within the strict 8-char field (DEF-M12)
+    text = strip_body_cards_to_bdf(res)
+    assert "STRIPK" in text
+    for line in text.splitlines():
+        if line.startswith("$"):
+            continue
+        for tok in line.split(","):
+            assert len(tok.strip()) <= FIELD_WIDTH, f"{tok!r} in {line!r}"
 
 
 def test_strip_correction_rejects_non_strip_panel():

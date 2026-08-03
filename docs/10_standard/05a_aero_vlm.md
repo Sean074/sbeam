@@ -607,7 +607,10 @@ model** (full AIC). `beta = √(1−M²)` carries the solver's Prandtl–Glauert
 Single-surface convenience wrapper (requires `boxes` to contain exactly one CAERO1; raises
 otherwise). Returns the one surface's cards plus the (global == surface) `.r`/`.wg` and
 diagnostics. `cards_to_bdf(result)` formats the pair(s) as bulk-data text — it accepts both
-the single- and multi-surface result.
+the single- and multi-surface result. All card text is serialized by `card_lines`, a thin
+wrapper over `model/card_writers.write_card`: every real routes through
+`parser/bdf_field.fmt_real8`, so each free-field token fits the strict 8-character NASTRAN
+field (DEF-M12) and NaN/inf raise rather than being written out.
 
 **Algorithm.** The WT2 ratio is calibrated on `w_ref = −ones` and is therefore independent
 of `w_g`, so the build is one pass: (1) **per strip across all surfaces**, a uniform scale

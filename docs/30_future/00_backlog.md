@@ -35,12 +35,12 @@ correctness defect, then the Tier 2–3 capability sequence.
 **Delivery record (2026-07-31 numbering):** P1 (Q4 + DEF-M3) closed 2026-07-31;
 P2/P3/P4/P5 (the DEF-M correctness batches + VAL2 CI gates) closed 2026-08-01;
 P9 (`build_ajj` vectorization + DEF-R6), P10 (Step 62), P11 (Step 63) and
-P13 (DEF-R1–R4 refactor; DEF-R7 deferred to the hygiene batch) closed 2026-08-02.
+P13 (DEF-R1–R4 refactor; DEF-R7 deferred to the hygiene batch) closed 2026-08-02;
+P1 of the 2026-08-02 re-rank (DEF-M12 correction-card export field width) closed 2026-08-02.
 Details in `docs/40_history/`.
 
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P1 | DEF-M12 — correction-card export field width | Release-required | ~0.5 d | Release-critical deliverable corruption: the corrected-BDF download truncates every value under a strict 8-char free-field reader. Cheapest fix in the table — `fmt_real8` already exists (DEF-M6). |
 | P2 | Step 67 — quasi-steady yaw-rate wing term | Release-required | ~1–2 d | Lateral/yaw-rate cases are in release scope and the wing contribution to C_nr/C_lr is currently silently zero. Formulation already decided (loading-scaled force term). |
 | P3 | Release hygiene batch — DEF-R7 (WT1 removal), DEF-M13 (f06 column drift), sample-hygiene + doc-pointer sweep, propeller-position docs, close Q1 + Q3 | Release-required | ~2–3 d | Everything else the release-scope decision committed to; all low-risk and fully decided — pure execution, batched to land once at the release boundary. |
 | P4 | DEF-M14 — nonplanar Trefftz `CDi` kernel | Post-release | ~1–2 d | The last open correctness defect: silently wrong CDi/e on canted decks (dihedral, winglets, cruciform tails). Reporting-only outputs, so it ranks below the release gate but above all new capability. |
@@ -86,8 +86,9 @@ re-ranked table above; the six scope questions were resolved as follows:
 
 - `build_ajj` vectorization (+ DEF-R6): **delivered 2026-08-02**
   (~120× at 400 boxes; see `docs/40_history/05_aero_vlm_spline.md`).
-- **DEF-M12 (P1)** — correction-card export field width: the corrected-BDF export sits
-  on the release-critical corrections workflow.
+- **DEF-M12 (P1)** — correction-card export field width: **delivered 2026-08-02**
+  (`card_lines` → `card_writers.write_card`/`fmt_real8`; see
+  `docs/40_history/05_aero_vlm_spline.md`).
 - **Step 67 (P2)** — quasi-steady yaw-rate wing term (below).
 - **Release hygiene batch (P3)** — DEF-R7 (WT1 removal, "at a release boundary" per its
   own note), DEF-M13 (f06 column drift), the sample-hygiene + doc-pointer sweep
@@ -220,7 +221,6 @@ priority table above:
 
 | Rank | Batch | Items |
 |------|-------|-------|
-| P1 | Deliverable integrity (release-required) | DEF-M12 |
 | P3 | Release hygiene batch | DEF-R7, DEF-M13 |
 | P4 | Correctness (post-release) | DEF-M14 |
 | — | Opportunistic, do when adjacent | DEF-L2–L7 |
@@ -244,17 +244,6 @@ priority table above:
   or trim path consumes them). *Fix (complexity medium):* rebuild the Trefftz kernel on
   `(w⃗·n̂)‖Δs⃗‖`; gate against a closed-form elliptic-wing case with and without dihedral,
   and against a winglet case where the planar form is known to be wrong.
-
-- **DEF-M12 — Correction-card export uses 12–13-char fields on an 8-char free field** [E]
-  `sbeam/aero/section_correction.py:381-391` (`card_lines`) writes `f"{v:.6E}"` into
-  `W2GJ`/`AECORR`/`STRIPK` cards, so a strict NASTRAN/ZAERO free-field reader truncates
-  every value to its first 8 characters — the same defect DEF-M6 fixed for the
-  `FORCE`/`MOMENT` load export, on a different deliverable. Reaches the viewer's
-  full-corrected-BDF download (`aero_correction_view.py`) and `body_correction.py:147,473`.
-  sbeam round-trips its own output, so the corruption only appears downstream.
-  *Fix (complexity low):* route the values through the existing
-  `sbeam/parser/bdf_field.fmt_real8` helper (written for DEF-M6), and add a width
-  assertion to the section-correction round-trip test.
 
 - **DEF-M13 — the same header/data column drift in four more f06 blocks** [E]
   DEF-M7 fixed the maneuver time-history table; the identical 15-character-header-over

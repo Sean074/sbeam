@@ -68,6 +68,7 @@ from scipy.linalg import lu_solve
 from sbeam.aero.panel import AeroBox
 from sbeam.linalg_utils import estimate_cond_1norm
 from sbeam.model.aero import W2gj, Aecorr
+from sbeam.model.card_writers import write_card
 from sbeam.types import FloatArray
 
 _RATIO_TOL = 1e-12   # near-zero reference circulation guard (mirrors apply_wt2)
@@ -383,16 +384,13 @@ def build_section_correction(
 
 
 def card_lines(name: str, head: list[Any], values: list[float]) -> str:
-    """Free-field BDF card text: head fields then 8 values/line, '+'-continued."""
-    fields = [name] + [str(h) for h in head]
-    line = fields[:]
-    first_cap = max(0, 8 - len(head))
-    line += [f"{v:.6E}" for v in values[:first_cap]]
-    out = [", ".join(line)]
-    rest = values[first_cap:]
-    for i in range(0, len(rest), 8):
-        out.append(", ".join(["+"] + [f"{v:.6E}" for v in rest[i:i + 8]]))
-    return "\n".join(out)
+    """Free-field BDF card text: head fields then 8 values/line, '+'-continued.
+
+    Every value routes through ``card_writers.write_card`` and hence
+    ``fmt_real8`` — a strict reader truncates each free-field token to
+    8 characters, so ``%.6E`` output would be silently corrupt (DEF-M12).
+    """
+    return "\n".join(write_card(name, list(head) + [float(v) for v in values]))
 
 
 def pair_to_bdf(w2: W2gj, ac: Aecorr) -> str:

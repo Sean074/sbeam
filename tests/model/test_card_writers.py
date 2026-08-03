@@ -150,7 +150,6 @@ def test_mloads_roundtrip_modal_fields():
 
 
 def test_mldtrim_mldtime_mldcomd_mldprnt_roundtrip():
-    bulk = parse_bulk_data(_maneuver_scaffold())
     for card, writer, store in [
         (Mldtrim(sid=601, trim_sid=50), cw.write_mldtrim, "mldtrims"),
         (Mldtime(sid=301, t0=0.0, tend=2.0, dt=0.01, tout=0.1), cw.write_mldtime, "mldtimes"),
