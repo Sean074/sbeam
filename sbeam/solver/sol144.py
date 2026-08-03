@@ -19,6 +19,7 @@ The Step-50 no-trim reference path (``run_aeroelastic_static``) lives in
 """
 
 import warnings
+from dataclasses import dataclass
 from typing import Any, Optional
 
 import numpy as np
@@ -118,39 +119,132 @@ def _build_injection_echo(
 
 
 
-def run_sol144_trim(
-    bulk: BulkData,
-    subcase: SubcaseControl,
-    aero: AeroModel,
-    aero_cache: Optional["AeroCache"] = None,
-) -> Sol144TrimResult:
-    """SOL 144 static aeroelastic trim solve (Step 52).
 
-    Solves the coupled structural/aerodynamic trim problem using the Schur
-    complement method.  Handles both the determined case
-    (n_free == n_suport) and the over-determined (redundant-control) case —
-    the latter via null-space reduction with a weighted-L2 objective from
-    the TRIMOBJ/TRIMCON/TRIMVAR cards.
+# KC7: the injected CHORDCP mean flow is only valid as a perturbation base near
+# its reference AOA — the trim warns when the trimmed AOA strays further than
+# this from it (~2 degrees).
+_CHORDCP_ALPHA_TOL = 0.035  # rad
 
-    Args:
-        bulk:       Parsed BulkData — must include SUPORT and TRIM cards.
-        subcase:    SubcaseControl — uses spc_sid and trim_sid.
-        aero:       AeroModel with g_slope, g_disp, ajj_inv_corr, skj, wg
-                    populated.  Used directly when its Mach matches the TRIM
-                    Mach; otherwise it seeds the AeroCache and the AIC is rebuilt
-                    at the TRIM Mach (AE9).
-        aero_cache: Optional AeroCache shared across subcases so multi-Mach runs
-                    build each AIC once.  When None, a local cache seeded with
-                    ``aero`` is created.
 
-    Returns:
-        Sol144TrimResult with trim variables, displacements, stability derivatives.
+@dataclass
+class _TrimState:
+    """Mutable dataflow context threaded through the run_sol144_trim stages.
 
-    Raises:
-        ValueError  if no SUPORT card, TRIM card, a LOAD request the trim
-                    cannot honour, or the trim is over-determined without a
-                    TRIMOBJ objective.
+    Each ``_stage_*`` helper reads the fields written by the stages before it
+    and writes its own outputs back; ``run_sol144_trim`` owns the calling
+    order.  Fields appear in the order the stages produce them.
     """
+
+    # Inputs
+    bulk: BulkData
+    subcase: SubcaseControl
+    aero: AeroModel
+    aero_cache: Optional[AeroCache]
+
+    # _stage_validate_inputs
+    trim_sid: int = 0
+    trim_card: Any = None
+    q_dyn: float = 0.0
+
+    # _stage_resolve_massset_and_mach
+    massset_sid: Optional[int] = None
+    mass_case_label: str = ""
+    mass_case_gpwg: Any = None
+    grid_index: Optional[dict[int, int]] = None
+    spc_sid: Optional[int] = None
+    mach: float = 0.0
+
+    # _stage_build_labels
+    all_labels: Optional[list[str]] = None
+    chordcp_alpha_ref: Optional[float] = None
+    prescribed_dict: Optional[dict[str, float]] = None
+    free_labels: Optional[list[str]] = None
+
+    # _stage_resolve_ref_geometry
+    aeros: Any = None
+    x_ref: float = 0.0
+    R_rcsid: Optional[FloatArray] = None
+    suport_pos: Optional[FloatArray] = None
+
+    # _stage_echo_chordcp
+    chordcp_echo: Optional[dict[str, Any]] = None
+
+    # _stage_build_downwash_and_reduce
+    D_jx: Optional[FloatArray] = None
+    red: Any = None
+    T: Any = None
+    free_local: Optional[list[int]] = None
+    free_dofs: Optional[list[int]] = None
+    red_dofs: Any = None
+    Q_ax_a: Optional[FloatArray] = None
+    K_gg: Any = None
+    K_aa: Optional[FloatArray] = None
+    Q_aa: Optional[FloatArray] = None
+    f_aero_g: Optional[FloatArray] = None
+    label_to_col: Optional[dict[str, int]] = None
+    pres_values_basic: Optional[FloatArray] = None
+    M_gg: Any = None
+    M_ax_g: Optional[FloatArray] = None
+    f_rhs_a: Optional[FloatArray] = None
+    M_ax_a: Optional[FloatArray] = None
+    suport_local: Optional[list[int]] = None
+    over_determined: bool = False
+    n_free: int = 0
+    n_suport: int = 0
+    free_label_cols: Optional[list[int]] = None
+
+    # _stage_solve_trim
+    u_a: Optional[FloatArray] = None
+    delta_free_arr: Optional[FloatArray] = None
+    K_ll_lu: Any = None
+    l_idx: Optional[list[int]] = None
+    r_idx: Optional[list[int]] = None
+    trim_mode: str = ""
+    trim_vars: Optional[dict[str, float]] = None
+    delta_all: Optional[FloatArray] = None
+
+    # _stage_recover_displacements
+    displacements: Optional[FloatArray] = None
+    bar_forces: Optional[dict[int, Any]] = None
+    bar_stresses: Optional[dict[int, Any]] = None
+
+    # _stage_compute_derivs
+    rigid_derivs: Any = None
+    rest_derivs: Any = None
+    unrest_derivs: Any = None
+    unrest_intercepts: Any = None
+
+    # _stage_compute_totals
+    gamma: Optional[FloatArray] = None
+    f_box_vec: Optional[FloatArray] = None
+    total_cl: float = 0.0
+    total_cm: float = 0.0
+    total_cx: float = 0.0
+    total_cl_wind: float = 0.0
+    total_cy: float = 0.0
+    total_cmx: float = 0.0
+    total_cmz: float = 0.0
+    hinge_moments: Any = None
+
+    # _stage_flight_and_net_loads
+    box_forces: Optional[FloatArray] = None
+    box_cp: Optional[FloatArray] = None
+    grid_loads: Optional[FloatArray] = None
+    load_injection_echo: Any = None
+    inertial_loads: Optional[FloatArray] = None
+    net_loads: Optional[FloatArray] = None
+    maneuver_closure: Optional[FloatArray] = None
+    q_div: Optional[float] = None
+
+    # _stage_monitor_outputs
+    monitor_loads: Any = None
+    section_loads: Any = None
+
+
+def _stage_validate_inputs(st: _TrimState) -> None:
+    """SUPORT/TRIM presence + DEF-M4 LOAD refusal; picks up the TRIM card."""
+    bulk, subcase = st.bulk, st.subcase
+
     if not bulk.supports:
         raise ValueError("run_sol144_trim: no SUPORT card found in model")
 
@@ -173,6 +267,14 @@ def run_sol144_trim(
 
     trim_card = bulk.trims[trim_sid]
     q_dyn  = trim_card.q
+
+    st.trim_sid, st.trim_card, st.q_dyn = trim_sid, trim_card, q_dyn
+
+
+def _stage_resolve_massset_and_mach(st: _TrimState) -> None:
+    """MASSSET mass case (Step 60) + flight-Mach / AeroCache resolution (AE9)."""
+    bulk, subcase, aero, aero_cache = st.bulk, st.subcase, st.aero, st.aero_cache
+    trim_card = st.trim_card
 
     # ------------------------------------------------------------------ #
     # Mass case (Step 60) — MASSSET payload configuration for this subcase
@@ -210,6 +312,16 @@ def run_sol144_trim(
         aero_cache = AeroCache(bulk, grid_index, seed=aero)
     aero = aero_cache.get(mach)
 
+    st.massset_sid, st.mass_case_label, st.mass_case_gpwg = (
+        massset_sid, mass_case_label, mass_case_gpwg)
+    st.grid_index, st.spc_sid = grid_index, spc_sid
+    st.mach, st.aero, st.aero_cache = mach, aero, aero_cache
+
+
+def _stage_build_labels(st: _TrimState) -> None:
+    """AESTAT+AESURF label assembly, CHORDCP validation (KC7), free/prescribed split."""
+    bulk, aero, mach, trim_card = st.bulk, st.aero, st.mach, st.trim_card
+
     # ------------------------------------------------------------------ #
     # All labels (AESTAT + AESURF), sorted consistently
     # ------------------------------------------------------------------ #
@@ -242,6 +354,14 @@ def run_sol144_trim(
     prescribed_dict = {k.upper(): v for k, v in trim_card.vars.items()}
     free_labels   = [l for l in all_labels if l not in prescribed_dict]
 
+    st.all_labels, st.chordcp_alpha_ref = all_labels, chordcp_alpha_ref
+    st.prescribed_dict, st.free_labels = prescribed_dict, free_labels
+
+
+def _stage_resolve_ref_geometry(st: _TrimState) -> None:
+    """Moment reference point + RCSID rotation matrix for the URDD transform."""
+    bulk = st.bulk
+
     # ------------------------------------------------------------------ #
     # Reference geometry + RCSID rotation matrix for URDD transform
     # ------------------------------------------------------------------ #
@@ -254,6 +374,14 @@ def run_sol144_trim(
         x_ref    = 0.0
         R_rcsid  = np.eye(3)
         suport_pos = np.zeros(3)
+
+    st.aeros, st.x_ref, st.R_rcsid, st.suport_pos = aeros, x_ref, R_rcsid, suport_pos
+
+
+def _stage_echo_chordcp(st: _TrimState) -> None:
+    """CHORDCP injected-operating-point echo (Step 54, KC7 visibility)."""
+    bulk, aero = st.bulk, st.aero
+    chordcp_alpha_ref, x_ref = st.chordcp_alpha_ref, st.x_ref
 
     # ------------------------------------------------------------------ #
     # CHORDCP injected-operating-point echo (Step 54) — per-surface integrals
@@ -282,6 +410,18 @@ def run_sol144_trim(
             'data_machs': sorted({c.mach for c in bulk.chordcps.values() if c.mach}),
             'surfaces':   surfaces,
         }
+
+    st.chordcp_echo = chordcp_echo
+
+
+def _stage_build_downwash_and_reduce(st: _TrimState) -> None:
+    """D_jx/Q_ax on the g-set, a-set reduction, RHS assembly, SUPORT indexing."""
+    bulk, aero = st.bulk, st.aero
+    grid_index, spc_sid, q_dyn = st.grid_index, st.spc_sid, st.q_dyn
+    all_labels, prescribed_dict, free_labels = (
+        st.all_labels, st.prescribed_dict, st.free_labels)
+    aeros, R_rcsid, suport_pos = st.aeros, st.R_rcsid, st.suport_pos
+    massset_sid = st.massset_sid
 
     # ------------------------------------------------------------------ #
     # Build D_jx and Q_ax on the g-set
@@ -367,6 +507,28 @@ def run_sol144_trim(
     # ------------------------------------------------------------------ #
     free_label_cols = [label_to_col[l] for l in free_labels]
 
+    st.D_jx, st.red = D_jx, red
+    st.T, st.free_local, st.free_dofs, st.red_dofs = T, free_local, free_dofs, red_dofs
+    st.Q_ax_a, st.K_gg, st.K_aa, st.Q_aa = Q_ax_a, K_gg, K_aa, Q_aa
+    st.f_aero_g, st.label_to_col = f_aero_g, label_to_col
+    st.pres_values_basic, st.M_gg, st.M_ax_g = pres_values_basic, M_gg, M_ax_g
+    st.f_rhs_a, st.M_ax_a = f_rhs_a, M_ax_a
+    st.suport_local, st.over_determined = suport_local, over_determined
+    st.n_free, st.n_suport, st.free_label_cols = n_free, n_suport, free_label_cols
+
+
+def _stage_solve_trim(st: _TrimState) -> None:
+    """Schur trim solve (determined / over-determined), trim-variable assembly."""
+    bulk, subcase = st.bulk, st.subcase
+    K_aa, Q_aa, Q_ax_a, M_ax_a, f_rhs_a = (
+        st.K_aa, st.Q_aa, st.Q_ax_a, st.M_ax_a, st.f_rhs_a)
+    q_dyn, suport_local, free_label_cols = st.q_dyn, st.suport_local, st.free_label_cols
+    all_labels, free_labels, prescribed_dict = (
+        st.all_labels, st.free_labels, st.prescribed_dict)
+    label_to_col, aeros, R_rcsid = st.label_to_col, st.aeros, st.R_rcsid
+    pres_values_basic, chordcp_alpha_ref = st.pres_values_basic, st.chordcp_alpha_ref
+    over_determined, n_free, n_suport = st.over_determined, st.n_free, st.n_suport
+
     # ------------------------------------------------------------------ #
     # Schur-complement trim solve (determined or over-determined)
     # ------------------------------------------------------------------ #
@@ -425,8 +587,8 @@ def run_sol144_trim(
     delta_all = np.array([trim_vars.get(l, 0.0) for l in all_labels])
 
     # KC7: the injected mean flow is only valid as a perturbation base near its
-    # reference AOA — warn when the trimmed AOA strays outside ~2 degrees of it.
-    _CHORDCP_ALPHA_TOL = 0.035  # rad
+    # reference AOA — warn when the trimmed AOA strays outside ~2 degrees of it
+    # (_CHORDCP_ALPHA_TOL, module constant).
     if chordcp_alpha_ref is not None and "ANGLEA" in trim_vars:
         alpha_err = abs(trim_vars["ANGLEA"] - chordcp_alpha_ref)
         if alpha_err > _CHORDCP_ALPHA_TOL:
@@ -438,6 +600,17 @@ def run_sol144_trim(
                 "validity degrades with distance (KC7).",
                 UserWarning,
             )
+
+    st.u_a, st.delta_free_arr = u_a, delta_free_arr
+    st.K_ll_lu, st.l_idx, st.r_idx = K_ll_lu, l_idx, r_idx
+    st.trim_mode, st.trim_vars, st.delta_all = trim_mode, trim_vars, delta_all
+
+
+def _stage_recover_displacements(st: _TrimState) -> None:
+    """a→g expansion through the RBAR/RBE3 T matrix + CBAR force/stress recovery."""
+    bulk = st.bulk
+    u_a, T, free_local, red_dofs, grid_index = (
+        st.u_a, st.T, st.free_local, st.red_dofs, st.grid_index)
 
     # ------------------------------------------------------------------ #
     # Expand a-set displacement to full g-set via RBAR/RBE3 T matrix.
@@ -457,6 +630,20 @@ def run_sol144_trim(
             cbar, bulk.grids, bulk.pbars, bulk.mat1s, displacements, grid_index)
         bar_stresses[cbar.eid] = recover_bar_stresses(
             cbar, bulk.grids, bulk.pbars, bulk.mat1s, displacements, grid_index)
+
+    st.displacements = displacements
+    st.bar_forces, st.bar_stresses = bar_forces, bar_stresses
+
+
+def _stage_compute_derivs(st: _TrimState) -> None:
+    """Rigid, elastic-restrained and unrestrained (AE8b) stability derivatives."""
+    bulk, aero, q_dyn = st.bulk, st.aero, st.q_dyn
+    D_jx, all_labels, x_ref, suport_pos = st.D_jx, st.all_labels, st.x_ref, st.suport_pos
+    K_ll_lu, l_idx, r_idx, Q_ax_a, M_ax_a = (
+        st.K_ll_lu, st.l_idx, st.r_idx, st.Q_ax_a, st.M_ax_a)
+    T, free_local, red_dofs, free_dofs, grid_index = (
+        st.T, st.free_local, st.red_dofs, st.free_dofs, st.grid_index)
+    K_aa, Q_aa, red, M_gg, f_aero_g = st.K_aa, st.Q_aa, st.red, st.M_gg, st.f_aero_g
 
     # ------------------------------------------------------------------ #
     # Rigid derivatives (no structural deformation)
@@ -483,6 +670,17 @@ def run_sol144_trim(
         K_aa, M_aa, Q_aa, Q_ax_a, f_aero_a, all_labels,
         l_idx, r_idx, free_dofs, grid_index, bulk, q_dyn, suport_pos,
     )
+
+    st.rigid_derivs, st.rest_derivs = rigid_derivs, rest_derivs
+    st.unrest_derivs, st.unrest_intercepts = unrest_derivs, unrest_intercepts
+
+
+def _stage_compute_totals(st: _TrimState) -> None:
+    """Aerodynamic totals at trim (body/wind axes) + hinge moments."""
+    bulk, aero = st.bulk, st.aero
+    displacements, D_jx, delta_all, all_labels = (
+        st.displacements, st.D_jx, st.delta_all, st.all_labels)
+    aeros, x_ref, suport_pos = st.aeros, st.x_ref, st.suport_pos
 
     # ------------------------------------------------------------------ #
     # Total CL and CM at trim
@@ -530,6 +728,22 @@ def run_sol144_trim(
     # Hinge-moment derivatives + trimmed hinge moment per AESURF control
     # ------------------------------------------------------------------ #
     hinge_moments = _compute_hinge_moments(aero, D_jx, all_labels, bulk, f_box_vec)
+
+    st.gamma, st.f_box_vec = gamma, f_box_vec
+    st.total_cl, st.total_cm, st.total_cx = total_cl, total_cm, total_cx
+    st.total_cl_wind, st.total_cy = total_cl_wind, total_cy
+    st.total_cmx, st.total_cmz = total_cmx, total_cmz
+    st.hinge_moments = hinge_moments
+
+
+def _stage_flight_and_net_loads(st: _TrimState) -> None:
+    """Per-box forces (Step 56), injection echo (Step 64), balanced maneuver
+    loads + closure (Step 53), critical divergence q."""
+    bulk, aero, q_dyn = st.bulk, st.aero, st.q_dyn
+    f_box_vec, delta_all, label_to_col = st.f_box_vec, st.delta_all, st.label_to_col
+    aeros, R_rcsid, suport_pos, x_ref = st.aeros, st.R_rcsid, st.suport_pos, st.x_ref
+    grid_index, spc_sid, red = st.grid_index, st.spc_sid, st.red
+    M_ax_g, K_aa, Q_aa, l_idx = st.M_ax_g, st.K_aa, st.Q_aa, st.l_idx
 
     # ------------------------------------------------------------------ #
     # Step 56 — per-box pressures/forces, g-set flight loads, divergence q
@@ -602,6 +816,20 @@ def run_sol144_trim(
     Q_ll_div = Q_aa[np.ix_(l_idx, l_idx)]
     q_div = _divergence_dynamic_pressure(K_ll_div, Q_ll_div)
 
+    st.box_forces, st.box_cp, st.grid_loads = box_forces, box_cp, grid_loads
+    st.load_injection_echo = load_injection_echo
+    st.inertial_loads, st.net_loads = inertial_loads, net_loads
+    st.maneuver_closure, st.q_div = maneuver_closure, q_div
+
+
+def _stage_monitor_outputs(st: _TrimState) -> None:
+    """MON2/MON3 monitor points + MONSECT section cuts (Monitor Phase 2)."""
+    bulk, aero, grid_index, spc_sid = st.bulk, st.aero, st.grid_index, st.spc_sid
+    displacements, K_gg = st.displacements, st.K_gg
+    box_forces, grid_loads, inertial_loads, net_loads = (
+        st.box_forces, st.grid_loads, st.inertial_loads, st.net_loads)
+    massset_sid = st.massset_sid
+
     # ------------------------------------------------------------------ #
     # MON2/MON3 — monitor-point integrated section loads.
     # The reaction column needs the SPC/SUPORT reaction that balances the net
@@ -639,44 +867,99 @@ def run_sol144_trim(
                 reactions
             )
 
+    st.monitor_loads, st.section_loads = monitor_loads, section_loads
+
+
+def _pack_trim_result(st: _TrimState) -> Sol144TrimResult:
+    """Assemble the Sol144TrimResult from the completed stage state."""
+    mass_case_gpwg = st.mass_case_gpwg
     return Sol144TrimResult(
-        subcase_id=subcase.subcase_id,
-        trim_sid=trim_sid,
-        q=q_dyn,
-        mach=mach,
-        trim_vars=trim_vars,
-        displacements=displacements,
-        bar_forces=bar_forces,
-        bar_stresses=bar_stresses,
-        q_aa=Q_aa,
-        free_dofs=free_dofs,
-        rigid_derivs=rigid_derivs,
-        restrained_derivs=rest_derivs,
-        unrestrained_derivs=unrest_derivs,
-        unrestrained_intercepts=unrest_intercepts,
-        box_gamma=gamma,
-        total_cl=total_cl,
-        total_cm=total_cm,
-        total_cx=total_cx,
-        total_cl_wind=total_cl_wind,
-        total_cy=total_cy,
-        total_cmx=total_cmx,
-        total_cmz=total_cmz,
-        box_cp=box_cp,
-        box_forces=box_forces,
-        grid_loads=grid_loads,
-        inertial_loads=inertial_loads,
-        net_loads=net_loads,
-        maneuver_closure=maneuver_closure,
-        q_div=q_div,
-        hinge_moments=hinge_moments,
-        trim_mode=trim_mode,
-        monitor_loads=monitor_loads,
-        section_loads=section_loads,
-        chordcp_echo=chordcp_echo,
-        load_injection_echo=load_injection_echo,
-        massset_sid=massset_sid,
-        massset_label=mass_case_label,
+        subcase_id=st.subcase.subcase_id,
+        trim_sid=st.trim_sid,
+        q=st.q_dyn,
+        mach=st.mach,
+        trim_vars=st.trim_vars,
+        displacements=st.displacements,
+        bar_forces=st.bar_forces,
+        bar_stresses=st.bar_stresses,
+        q_aa=st.Q_aa,
+        free_dofs=st.free_dofs,
+        rigid_derivs=st.rigid_derivs,
+        restrained_derivs=st.rest_derivs,
+        unrestrained_derivs=st.unrest_derivs,
+        unrestrained_intercepts=st.unrest_intercepts,
+        box_gamma=st.gamma,
+        total_cl=st.total_cl,
+        total_cm=st.total_cm,
+        total_cx=st.total_cx,
+        total_cl_wind=st.total_cl_wind,
+        total_cy=st.total_cy,
+        total_cmx=st.total_cmx,
+        total_cmz=st.total_cmz,
+        box_cp=st.box_cp,
+        box_forces=st.box_forces,
+        grid_loads=st.grid_loads,
+        inertial_loads=st.inertial_loads,
+        net_loads=st.net_loads,
+        maneuver_closure=st.maneuver_closure,
+        q_div=st.q_div,
+        hinge_moments=st.hinge_moments,
+        trim_mode=st.trim_mode,
+        monitor_loads=st.monitor_loads,
+        section_loads=st.section_loads,
+        chordcp_echo=st.chordcp_echo,
+        load_injection_echo=st.load_injection_echo,
+        massset_sid=st.massset_sid,
+        massset_label=st.mass_case_label,
         massset_mass=mass_case_gpwg.total_mass,
         massset_cg=(mass_case_gpwg.cg_x, mass_case_gpwg.cg_y, mass_case_gpwg.cg_z),
     )
+
+
+def run_sol144_trim(
+    bulk: BulkData,
+    subcase: SubcaseControl,
+    aero: AeroModel,
+    aero_cache: Optional["AeroCache"] = None,
+) -> Sol144TrimResult:
+    """SOL 144 static aeroelastic trim solve (Step 52).
+
+    Solves the coupled structural/aerodynamic trim problem using the Schur
+    complement method.  Handles both the determined case
+    (n_free == n_suport) and the over-determined (redundant-control) case —
+    the latter via null-space reduction with a weighted-L2 objective from
+    the TRIMOBJ/TRIMCON/TRIMVAR cards.
+
+    Args:
+        bulk:       Parsed BulkData — must include SUPORT and TRIM cards.
+        subcase:    SubcaseControl — uses spc_sid and trim_sid.
+        aero:       AeroModel with g_slope, g_disp, ajj_inv_corr, skj, wg
+                    populated.  Used directly when its Mach matches the TRIM
+                    Mach; otherwise it seeds the AeroCache and the AIC is rebuilt
+                    at the TRIM Mach (AE9).
+        aero_cache: Optional AeroCache shared across subcases so multi-Mach runs
+                    build each AIC once.  When None, a local cache seeded with
+                    ``aero`` is created.
+
+    Returns:
+        Sol144TrimResult with trim variables, displacements, stability derivatives.
+
+    Raises:
+        ValueError  if no SUPORT card, TRIM card, a LOAD request the trim
+                    cannot honour, or the trim is over-determined without a
+                    TRIMOBJ objective.
+    """
+    st = _TrimState(bulk=bulk, subcase=subcase, aero=aero, aero_cache=aero_cache)
+    _stage_validate_inputs(st)
+    _stage_resolve_massset_and_mach(st)
+    _stage_build_labels(st)
+    _stage_resolve_ref_geometry(st)
+    _stage_echo_chordcp(st)
+    _stage_build_downwash_and_reduce(st)
+    _stage_solve_trim(st)
+    _stage_recover_displacements(st)
+    _stage_compute_derivs(st)
+    _stage_compute_totals(st)
+    _stage_flight_and_net_loads(st)
+    _stage_monitor_outputs(st)
+    return _pack_trim_result(st)
