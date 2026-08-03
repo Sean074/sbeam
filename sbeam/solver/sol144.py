@@ -33,7 +33,9 @@ from sbeam.assembly.coord_transform import get_transform
 from sbeam.assembly.mass_matrix import assemble_global_mass
 from sbeam.aero.aero_model import AeroModel
 from sbeam.aero.coupling import build_qaa, build_fg
-from sbeam.aero.integration import build_djx, build_djk, build_fjx_yaw
+from sbeam.aero.integration import (
+    build_djx, build_djk, build_fjx_yaw, build_fx_induced_drag,
+)
 from sbeam.results.results import Sol144TrimResult
 from sbeam.results.monitor_points import compute_monitor_loads
 from sbeam.results.section_cuts import compute_section_cuts
@@ -758,8 +760,15 @@ def _stage_refine_yaw_rate(st: _TrimState) -> None:
     rel_change = float("inf")
 
     for it in range(1, _YAW_MAX_ITER + 1):
-        _gamma, f_box_steady = _trim_aero_box_forces(st)
-        f_box_yaw = build_fjx_yaw(st.aero.boxes, f_box_steady, st.bulk, y_ref)
+        gamma, f_box_steady = _trim_aero_box_forces(st)
+        # Step 67b: the reference loading the asymmetry acts on is the normal
+        # force PLUS the streamwise induced drag.  The drag field enters here
+        # and nowhere else — it is not part of the baseline load, CX or the
+        # export (see aero.vlm.trefftz_box_drag) — because only the asymmetric
+        # part of the drag makes a yaw moment; its symmetric part is already
+        # carried by CDi and contributes no Mz.
+        f_box_ref = f_box_steady + build_fx_induced_drag(st.aero.boxes, gamma)
+        f_box_yaw = build_fjx_yaw(st.aero.boxes, f_box_ref, st.bulk, y_ref)
         col_a = st.red.reduce_vector(
             st.aero.require_g_load().T @ f_box_yaw)            # (n_a,)
 

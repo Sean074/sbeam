@@ -17,6 +17,7 @@ from typing import Optional
 import numpy as np
 
 from sbeam.aero.panel import AeroBox, build_box_id_map
+from sbeam.aero.vlm import box_circulation, trefftz_box_drag
 from sbeam.model.bulk_data import BulkData
 from sbeam.assembly.coord_transform import get_transform
 from sbeam.types import FloatArray
@@ -254,6 +255,24 @@ def yaw_rate_force_scale(
             f"yaw_rate_force_scale: AEROS bref must be positive; got {b_ref}")
     y = np.array([box.force_point[1] for box in boxes])
     return -(4.0 / b_ref) * (y - y_ref)
+
+
+def build_fx_induced_drag(boxes: list[AeroBox], cp: FloatArray) -> FloatArray:
+    """Streamwise induced-drag force field from a ΔCp field.  Shape: (3*n_box,).
+
+    Step 67b.  Box-major ``[Fx,Fy,Fz]`` force/q layout with only the streamwise
+    entries populated: ``F_x,j`` is the per-box Trefftz induced drag
+    (``vlm.trefftz_box_drag``), reached from the pressure field through the
+    circulation identity ``Γ_j = cp_j·area_j/(2·width_j)`` (``vlm.box_circulation``)
+    so no second VLM solve is needed.
+
+    This exists ONLY to give the yaw-rate term a streamwise force to make its
+    asymmetry from — see ``trefftz_box_drag`` for why it is deliberately kept out
+    of the baseline load path, ``CX`` and ``CD_wind``.
+    """
+    out = np.zeros(3 * len(boxes))
+    out[0::3] = trefftz_box_drag(boxes, box_circulation(boxes, cp))
+    return out
 
 
 def build_fjx_yaw(

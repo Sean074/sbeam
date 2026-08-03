@@ -30,11 +30,29 @@ New `Sol144TrimResult.yaw_rate_iters` and an f06 TRIM VARIABLES echo when the te
 Delivers the roll-rate cross-derivative `C_lr` — matching the closed form
 `−(4/(S·b²))Σ(y−y_ref)²F_z` to 1e-12 and `C_L/4` within 15 % on the rectangular AR=8 deck,
 and **exactly proportional to the trim C_L**, the property that motivated the loading-scaled
-form over a lift-slope proxy. **The wing C_nr is still zero**: box forces are strictly
-panel-normal (no leading-edge suction), so a planar wing has no streamwise force to make a
-yaw moment from — that is the open Step 67b drag-asymmetry follow-on, and C_nr is presently
-the fin sidewash column's alone. Gated on `YAW` being a trim label and nonzero, so every
+form over a lift-slope proxy. Gated on `YAW` being a trim label and nonzero, so every
 existing deck is bit-identical. Gate: `tests/aero/test_yaw_rate_wing.py` (19 tests).
+
+**Step 67b — yaw-rate wing drag asymmetry, the wing C_nr (2026-08-02)**
+
+Scaling the panel-normal box forces gives C_lr but *no* yaw moment — a planar wing has no
+streamwise force (no leading-edge suction), and the wing's yaw damping is an induced-**drag**
+asymmetry. Each box now gets its share of the Trefftz integral as a streamwise force
+(`aero/vlm.py`: `trefftz_box_drag`, with `trefftz_cdi` and it both reading a shared
+`_trefftz_wake` so total and distribution cannot drift apart; `box_circulation` supplies Γ from
+a ΔCp field via `Γ = cp·area/(2·width)`, no second solve). `build_fx_induced_drag` adds that
+field to the yaw column's reference loading, so trim, derivatives, hinge moments and both
+transient solvers pick it up through the Step 67a machinery unchanged. Result:
+`C_nr = +(4/(S·b²))Σ(y−y_ref)²F_x,drag` → `CDi/4` for elliptic loading, hence **C_nr ∝ CL²**;
+measured ~1.45·CDi/4 on the rectangular AR=8 deck, where tip-heavy downwash pushes drag outboard.
+
+The **symmetric** drag stays out of the baseline load, `CX`, `CD_wind` and the export — sbeam
+reports `CD_wind` as the Trefftz CDi, not the near-field projection. What the trim carries is the
+drag's *asymmetry* under a yaw rate: a real antisymmetric fore-aft wing load whose resultant is
+the reported C_nr. The `trefftz_cdi` refactor is verified bit-identical (CDi/e/CL as hex floats
+on five decks). Gate: `tests/aero/test_yaw_rate_drag.py` (14 tests). Known limitation: no profile
+drag, so the wing C_nr is the induced part only — an under-prediction of a damping derivative; a
+per-surface `CD0` input is backlogged.
 
 ### Changed
 

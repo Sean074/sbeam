@@ -1315,13 +1315,33 @@ $$
 the strip-theory result — $C_{l_r}$ genuinely tracks the trim $C_L$, which an equivalent-incidence
 lift-slope proxy could not reproduce.
 
-**Known limitation — the wing $C_{n_r}$.** Every box force in this VLM is strictly panel-normal
-(no leading-edge suction, §5.4), so a planar wing has $F_x=F_y=0$ and (28a) produces *no* yaw
-moment: the wing's yaw damping is an induced-**drag** asymmetry and needs a streamwise per-box
-force, which is the Step 67b follow-on. Until then $C_{n_r}$ is carried by the fin sidewash
-column alone and the wing contribution is zero. Profile drag is absent in any case (sbeam has no
-viscous model), so even with 67b the wing $C_{n_r}$ covers only the induced part — an
-under-prediction of a damping derivative, i.e. the non-conservative direction.
+**The wing $C_{n_r}$ needs a drag force (Step 67b).** Every box force in this VLM is strictly
+panel-normal (no leading-edge suction, §5.4), so a planar wing has $F_x=F_y=0$ and (28a) on the
+lift alone produces *no* yaw moment. The wing's yaw damping is an induced-**drag** asymmetry: the
+advancing wing carries more drag. Each box is therefore given a streamwise force — its share of
+the Trefftz integral, $F_{x,j}=\Gamma_j w_{T,j}\Delta y_j$, whose sum is $C_{D_i}S_\text{ref}$ by
+construction — for the same $s_j$ to act on. Integrating gives the companion of (28b):
+
+$$
+C_{n_r} = +\frac{4}{S_\text{ref}b_\text{ref}^2}\sum_j (y_j-y_\text{ref})^2 F_{x,j}
+\;\;\xrightarrow[\text{elliptic}]{}\;\; \frac{C_{D_i}}{4},
+\qquad\text{hence } C_{n_r}\propto C_L^2 .
+\tag{28c}
+$$
+
+The sign differs from (28b) because $M_z = xF_y - yF_x$ carries a minus on the arm that
+$M_x = yF_z - zF_y$ does not. The elliptic $C_{D_i}/4$ is the limit in which $w_T$ is constant so
+the drag distribution is $\propto\Gamma$; a rectangular wing's tip-heavy downwash pushes drag
+outboard, where the $y^2$ arm is largest, and the measured value is ~1.45 times that.
+
+Two consequences to hold onto. First, the streamwise field enters **only** the yaw column: sbeam
+reports $C_{D}$ as the Trefftz $C_{D_i}$, not the unreliable near-field projection (§5.4), and the
+symmetric part of the drag makes no yaw moment anyway — it is the *asymmetry* that does, and that
+asymmetry is a genuine fore-aft load which the trim therefore carries. Second, **profile drag is
+absent** (sbeam has no viscous model), so the wing $C_{n_r}$ covers only the induced part. On a
+real airplane the profile contribution is of comparable size, so this under-predicts a damping
+derivative — the non-conservative direction. Supply it through the correction cards, or treat the
+computed $C_{n_r}$ as a lower bound.
 
 ![Rigid-body rates as a local incidence field](../figures/maneuver_rates.svg)
 

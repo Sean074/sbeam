@@ -322,9 +322,12 @@ derivative blocks in `sol144_derivs.py` (see the module map in `05_aeroelastics.
    forces (the increment is first order in ΔU/U and must not scale itself). The increment
    is part of the trimmed load — it flows into the totals, the per-box forces, the
    flight-load export and the balanced-maneuver net load — and the f06 TRIM VARIABLES block
-   echoes `YAW-RATE WING TERM ACTIVE` with the iteration count when it is live. The wing
-   contributes `C_lr` only; `C_nr` needs the Step 67b drag term (see the theory §7.2
-   limitation note).
+   echoes `YAW-RATE WING TERM ACTIVE` with the iteration count when it is live. The
+   reference loading is the steady normal force **plus** the streamwise induced drag
+   (Step 67b, `build_fx_induced_drag`), so the scaling yields both the wing `C_lr` (from the
+   lift) and the wing `C_nr` (from the drag). The symmetric drag itself never enters the
+   baseline load, `CX` or the export; only its yaw-rate asymmetry does, which is a real
+   antisymmetric fore-aft wing load whose resultant is the reported `C_nr`.
 4. Recover CBAR forces/stresses, rigid and (analytic) restrained derivatives, total CL/CM,
    per-AESURF hinge-moment derivatives (`_compute_hinge_moments`, moment of the box forces about
    each control's `cid1` hinge axis), and return a `Sol144TrimResult`.
@@ -396,8 +399,8 @@ coefficients alongside the longitudinal `CZ`/`CMY`:
 
 ```
 CMX = Mx / (S_ref · b_ref)    rolling moment   → C_lp = ∂CMX/∂ROLL,  C_lβ = ∂CMX/∂SIDES
-                                               → C_lr = ∂CMX/∂YAW  (Step 67a wing term)
-CMZ = Mz / (S_ref · b_ref)    yawing moment    → C_nr = ∂CMZ/∂YAW  (fin sidewash only)
+                                               → C_lr = ∂CMX/∂YAW  (Step 67a wing lift asymmetry)
+CMZ = Mz / (S_ref · b_ref)    yawing moment    → C_nr = ∂CMZ/∂YAW  (fin sidewash + Step 67b wing drag asymmetry)
 ```
 
 `Mx`, `Mz` are the full 3-component cross-product resultant `Σ(r_box − ref) × F_box`

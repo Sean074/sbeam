@@ -20,7 +20,7 @@ import numpy as np
 
 from sbeam.aero.panel import AeroBox
 from sbeam.model.aero import Aeros
-from sbeam.types import FloatArray
+from sbeam.types import FloatArray, IntArray
 
 _FAR_FIELD_FACTOR = 1000.0   # trailing leg length = factor × box chord
 _DEGEN_TOL = 1e-14           # near-zero threshold for Biot-Savart guards
@@ -207,31 +207,52 @@ def prandtl_glauert_boxes(boxes: list[AeroBox], mach: float) -> list[AeroBox]:
 # Rigid-wing solver
 # ---------------------------------------------------------------------------
 
-def trefftz_cdi(
-    boxes: list[AeroBox],
-    gamma: FloatArray,
-    S_ref: float,
-    ar: float,
-) -> dict[str, float]:
-    """Trefftz-plane induced drag coefficient and Oswald span efficiency.
+def box_widths(boxes: list[AeroBox]) -> FloatArray:
+    """Per-box bound-vortex span ‖Δs⃗‖ (the y-z projected width).  Shape: (n,)."""
+    return np.array([
+        float(math.sqrt((b.bound_b[1] - b.bound_a[1])**2
+                        + (b.bound_b[2] - b.bound_a[2])**2))
+        for b in boxes
+    ])
 
-    Integrates the semi-infinite trailing-vortex wake in the far-field y-z
-    plane using the 2-D Biot-Savart kernel.  Only lift surfaces
-    (|n_z| ≥ |n_y|) contribute.
 
-    S_ref must be consistent with the CL normalisation used by the caller
-    (= sum of modelled box areas for heuristic models).
-    ar is the physical aspect ratio (full-span²/full-area) and is computed
-    by the caller to avoid any ambiguity about half-vs-full-span reference.
+def box_circulation(boxes: list[AeroBox], cp: FloatArray) -> FloatArray:
+    """Circulation Γ per box from its ΔCp.  Shape: (n,).
 
-    Returns {"CDi": float, "e": float} where e is the Oswald efficiency.
+    The inverse of ``solve_rigid_cl``'s ``cp = 2Γ/chord_box``, with
+    ``chord_box = area/width``:  **Γ_j = cp_j·area_j / (2·width_j)**.  This is
+    the one place the factor is written down for callers that hold a ΔCp field
+    but not the circulation — SOL 144, whose ``gamma`` variable is the ΔCp the
+    corrected operator returns.  Degenerate (zero-width) boxes get Γ = 0.
+    """
+    width = box_widths(boxes)
+    area = np.array([b.area for b in boxes])
+    cp = np.asarray(cp, dtype=float)
+    return np.where(width > _DEGEN_TOL, cp * area / (2.0 * np.maximum(width, _DEGEN_TOL)), 0.0)
+
+
+def _trefftz_wake(
+    boxes: list[AeroBox], gamma: FloatArray
+) -> tuple[IntArray, FloatArray, FloatArray, FloatArray]:
+    """Shared Trefftz-plane wake integral: ``(lift_idxs, gamma_l, w_tr, dy_l)``.
+
+    The single owner of the far-field downwash — ``trefftz_cdi`` (the total CDi)
+    and ``trefftz_box_drag`` (its per-box breakdown) are both thin readers of
+    it, so the induced-drag total and its distribution cannot drift apart.
+
+    Only lift surfaces (|n_z| ≥ |n_y|) shed a wake here, and **decoupled strip
+    body panels shed none at all** (no horseshoe vortex): their circulation is
+    zeroed, so they contribute nothing to either result.
     """
     lift_idxs = np.array(
-        [i for i, b in enumerate(boxes) if abs(b.normal[2]) >= abs(b.normal[1])],
+        [i for i, b in enumerate(boxes)
+         if abs(b.normal[2]) >= abs(b.normal[1])
+         and not getattr(b, "is_strip", False)],
         dtype=int,
     )
-    if len(lift_idxs) == 0 or S_ref < _DEGEN_TOL or ar < _DEGEN_TOL:
-        return {"CDi": 0.0, "e": float("nan")}
+    if len(lift_idxs) == 0:
+        empty = np.zeros(0)
+        return lift_idxs, empty, empty, empty
 
     gamma_l = gamma[lift_idxs]
     ba = np.array([boxes[ii].bound_a for ii in lift_idxs])
@@ -254,6 +275,56 @@ def trefftz_cdi(
     with np.errstate(divide="ignore", invalid="ignore"):
         contrib = -sv * _twopi_inv * dy / r2
     w_tr = np.sum(np.where(r2 > _DEGEN_TOL, contrib, 0.0), axis=1)
+
+    return lift_idxs, gamma_l, w_tr, dy_l
+
+
+def trefftz_box_drag(boxes: list[AeroBox], gamma: FloatArray) -> FloatArray:
+    """Per-box streamwise induced-drag force, force/q units.  Shape: (n_box,).
+
+    The spanwise breakdown of the Trefftz integral: ``d_j = Γ_j·w_T,j·Δy_j``,
+    whose sum is ``CDi·S_ref`` by construction (``trefftz_cdi`` forms exactly
+    that sum).  Positive is downstream (+x̂), so ``Σ d / S_ref`` is a positive
+    drag coefficient.  Zero on non-lift and strip-body boxes.
+
+    **Scope of use (Step 67b).**  This is deliberately NOT added to the baseline
+    box forces, ``CX``, ``CD_wind`` or the load export: sbeam reports
+    ``CD_wind`` as the Trefftz CDi rather than the unreliable near-field
+    projection (see ``solve_rigid_cl``), and folding a near-field drag into the
+    load path would contradict that.  It exists to supply the *asymmetry* of the
+    drag under a yaw rate — only the asymmetric part makes a yaw moment; the
+    symmetric part is already in CDi and contributes no Mz.
+    """
+    out = np.zeros(len(boxes))
+    lift_idxs, gamma_l, w_tr, dy_l = _trefftz_wake(boxes, gamma)
+    if len(lift_idxs):
+        out[lift_idxs] = gamma_l * w_tr * dy_l
+    return out
+
+
+def trefftz_cdi(
+    boxes: list[AeroBox],
+    gamma: FloatArray,
+    S_ref: float,
+    ar: float,
+) -> dict[str, float]:
+    """Trefftz-plane induced drag coefficient and Oswald span efficiency.
+
+    Integrates the semi-infinite trailing-vortex wake in the far-field y-z
+    plane using the 2-D Biot-Savart kernel.  Only lift surfaces
+    (|n_z| ≥ |n_y|) contribute.  The wake itself is ``_trefftz_wake``, shared
+    with the per-box breakdown ``trefftz_box_drag``.
+
+    S_ref must be consistent with the CL normalisation used by the caller
+    (= sum of modelled box areas for heuristic models).
+    ar is the physical aspect ratio (full-span²/full-area) and is computed
+    by the caller to avoid any ambiguity about half-vs-full-span reference.
+
+    Returns {"CDi": float, "e": float} where e is the Oswald efficiency.
+    """
+    lift_idxs, gamma_l, w_tr, dy_l = _trefftz_wake(boxes, gamma)
+    if len(lift_idxs) == 0 or S_ref < _DEGEN_TOL or ar < _DEGEN_TOL:
+        return {"CDi": 0.0, "e": float("nan")}
 
     # Trefftz-plane formula: Di = ρ/2 · Σ Γ·w_T·Δy  (Katz & Plotkin Eq 12.17)
     # With ρ=V∞=1 → q=0.5:  CDi = Di/(q·S_ref) = 2·(ρ/2·Σ)/S_ref = Σ/S_ref
@@ -393,11 +464,7 @@ def solve_rigid_cl(
     # integral.  It is NOT the vertical-force lever: the body-axis components of
     # the box force come from the box normal (see f_box), not from this scalar
     # (DEF-M2).
-    width = np.array([
-        float(math.sqrt((b.bound_b[1] - b.bound_a[1])**2
-                      + (b.bound_b[2] - b.bound_a[2])**2))
-        for b in boxes
-    ])
+    width = box_widths(boxes)
 
     # Individual box chord = area / width  (avoids relying on box.chord
     # which stores the CAERO1 macroelement chord, not the VLM panel chord)
@@ -480,14 +547,11 @@ def solve_rigid_cl(
     # -----------------------------------------------------------------------
     # Trefftz-plane induced drag.  Decoupled strip body boxes shed NO trailing
     # vorticity (no wake), so they contribute nothing to the Trefftz wake integral —
-    # zero their reconstructed circulation here.  Their (real) lift still counts in
-    # CL/CZ above; only the induced-drag wake excludes them.
+    # `_trefftz_wake` excludes them (it owns that rule for both the total CDi and
+    # the per-box breakdown).  Their (real) lift still counts in CL/CZ above; only
+    # the induced-drag wake excludes them.
     # -----------------------------------------------------------------------
-    gamma_wake = gamma
-    if any(getattr(b, "is_strip", False) for b in boxes):
-        gamma_wake = gamma.copy()
-        gamma_wake[[i for i, b in enumerate(boxes) if getattr(b, "is_strip", False)]] = 0.0
-    _cdi_result = trefftz_cdi(boxes, gamma_wake, S_ref, _ar)
+    _cdi_result = trefftz_cdi(boxes, gamma, S_ref, _ar)
 
     # -----------------------------------------------------------------------
     # Per-surface classification: horizontal (lift) vs vertical (sideforce)

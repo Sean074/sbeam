@@ -373,6 +373,7 @@ scales the local load:
 | `yaw_rate_force_scale(boxes, bulk, y_ref=0)` | `(n,)` | `s_j = −(4/b_ref)(y_j − y_ref)` at the box **force point** (¼-chord), the per-unit-`YAW`-label load scaling |
 | `build_fjx_yaw(boxes, f_box_ref, bulk, y_ref=0)` | `(3n,)` | `s ⊙ f_box_ref` — the load increment per unit `YAW` trim label, in `build_skj`'s force/q box-major layout |
 | `build_fj_rigidrate_yaw(boxes, f_box_ref, bulk, v_inf, y_ref=0)` | `(3n,)` | the same per unit *physical* yaw rate r (rad/s), scaled through `rigid_rate_scales[6]` — the free-flight (Step 61/63) sibling |
+| `build_fx_induced_drag(boxes, cp)` | `(3n,)` | Step 67b — the streamwise induced-drag field added into `f_box_ref` so the asymmetry has a drag to act on (`vlm.trefftz_box_drag` reached through `vlm.box_circulation`) |
 
 The whole 3-vector of each box force is scaled, so a canted or vertical panel's in-plane
 components come along. `f_box_ref` is the **steady** (normalwash-driven) box-force field at the
@@ -380,9 +381,32 @@ trim state; the increment is first order in ΔU/U and must not scale itself. Bec
 depends on the trim loading, SOL 144 iterates it as a fixed point (`05c_sol144_maneuver.md`
 step 3a) and the transient solvers freeze it at the IC trim.
 
-Consequence to know: the wing contributes `C_lr` (= `C_L`/4 for elliptic loading) but **no**
-`C_nr` — box forces are strictly panel-normal, so a planar wing has no streamwise force to make a
-yaw moment from. That is the Step 67b drag-asymmetry follow-on; today `C_nr` is the fin's alone.
+The reference loading is the **steady** box-force field (`skj @ cp`) **plus** the streamwise
+induced drag. Both derivatives come out of the same scaling: `C_lr` = `C_L`/4 from the normal
+force and `C_nr` = `CDi`/4 from the drag (elliptic limits; a rectangular wing's tip-heavy
+downwash pushes drag outboard, giving ~1.45× the latter). Signs differ in structure because
+`Mz = x·F_y − y·F_x` carries a minus on the arm that `Mx = y·F_z − z·F_y` does not.
+
+### `box_circulation` / `box_widths` / `trefftz_box_drag` (Step 67b)
+
+`trefftz_box_drag(boxes, gamma)` is the per-box breakdown of the Trefftz integral,
+`d_j = Γ_j·w_T,j·Δy_j`, with `Σ d ≡ CDi·S_ref` by construction — `trefftz_cdi` and it are both
+thin readers of a shared `_trefftz_wake`, so the induced-drag total and its spanwise distribution
+cannot drift apart. Zero on non-lift boxes and on decoupled strip bodies (no wake).
+`box_circulation(boxes, cp)` inverts `cp = 2Γ/chord_box` — **`Γ_j = cp_j·area_j/(2·width_j)`** —
+so a caller holding a ΔCp field (SOL 144's `gamma` *is* ΔCp) reaches the circulation without a
+second solve; `box_widths` is the shared `‖Δs⃗‖`.
+
+**Scope rule.** This drag field feeds the yaw column and nothing else. It is *not* added to the
+baseline box forces, `CX`, `CD_wind` or the load export — sbeam reports `CD_wind` as the Trefftz
+`CDi` rather than the near-field projection, and the symmetric part of the drag produces no yaw
+moment in any case. What the trim *does* carry is the drag's **asymmetry** under a yaw rate: a
+real antisymmetric fore-aft wing load whose resultant is precisely the reported wing `C_nr`.
+Without a yaw rate the exported per-box forces have no streamwise component at all.
+
+**Known limitation:** no profile drag (sbeam has no viscous model), so the wing `C_nr` is the
+induced part only — an under-prediction of a damping derivative, i.e. the non-conservative
+direction. A per-surface `CD0` input is backlogged.
 
 ### `build_wg(boxes, w2gjs, caero_eid) -> np.ndarray`  — shape (n,)
 
@@ -1042,9 +1066,10 @@ When a correction card is present the tab also runs the **uncorrected** baseline
   `state` (A-GUI5) selects which AIC operator the derivatives are integrated against:
   `"corrected"` (the corrected ΔCp operator with WKK/WT1/WT2 applied — what SOL 144 uses),
   `"uncorrected"` (the raw VLM baseline at the same Mach), or `"diff"` (corrected − uncorrected).
-  **The `YAW` row is the fin sidewash only.** The wing's yaw-rate contribution (Step 67a) is a
-  *loading-scaled force* term (`build_fjx_yaw`), so it exists only at a trim state and is
-  reported by SOL 144, not by this trim-free table — `C_lr` here reads zero on a planar wing.
+  **The `YAW` row is the fin sidewash only.** The wing's yaw-rate contribution (Steps 67a/67b) is
+  a *loading-scaled force* term (`build_fjx_yaw`), so it exists only at a trim state and is
+  reported by SOL 144, not by this trim-free table — `C_lr` and the wing's `C_nr` read zero on a
+  planar wing here.
   The uncorrected operator is rebuilt by `_uncorrected_cp_operator(aero_model)`, which inverts the
   stored raw `aero_model.ajj` and re-applies the Göthert `1/β` factor and the Γ→ΔCp `2/chord`
   conversion — exactly the no-correction branch of `build_aero_model` — then swaps it in via

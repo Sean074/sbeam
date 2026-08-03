@@ -80,7 +80,7 @@ from sbeam.aero.aero_model import AeroModel
 from sbeam.aero.coupling import build_qaa, build_fg, build_gaf
 from sbeam.aero.integration import (
     build_djx, build_dj_rigidrate, rigid_rate_scales,
-    build_fjx_yaw, build_fj_rigidrate_yaw,
+    build_fjx_yaw, build_fj_rigidrate_yaw, build_fx_induced_drag,
 )
 from sbeam.solver.sol103 import solve_modes
 from sbeam.solver.sol144_util import build_inertial_cols, get_suport_local
@@ -208,11 +208,15 @@ def yaw_reference_loading(aero: AeroModel, trim: Any) -> Optional[FloatArray]:
     ``Sol144TrimResult.box_gamma`` is the trim ΔCp field, so ``skj @ gamma`` is
     the *steady* (normalwash-driven) box-force field — the right thing to scale,
     since the yaw increment is first order in ΔU/U and must not be scaled by
-    itself.  Returns None when the trim carries no box data, which leaves the
-    transient operators on their pre-Step-67 path.
+    itself.  The streamwise induced-drag field (Step 67b) is added on top, since
+    the drag asymmetry is what gives the wing its C_nr; like the trim path, that
+    field lives only inside the yaw column.  Returns None when the trim carries
+    no box data, which leaves the transient operators on their pre-Step-67 path.
     """
     gamma = getattr(trim, "box_gamma", None)
-    return None if gamma is None else aero.skj @ gamma
+    if gamma is None:
+        return None
+    return aero.skj @ gamma + build_fx_induced_drag(aero.boxes, gamma)
 
 
 def assemble_aset_operators(

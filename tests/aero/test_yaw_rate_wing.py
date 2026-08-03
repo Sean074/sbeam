@@ -36,8 +36,8 @@ import pytest
 from sbeam.parser.bdf_reader import parse_bulk_file, parse_bdf
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.integration import (
-    build_djx, build_fjx_yaw, build_fj_rigidrate_yaw, rigid_rate_scales,
-    yaw_rate_force_scale,
+    build_djx, build_fjx_yaw, build_fj_rigidrate_yaw, build_fx_induced_drag,
+    rigid_rate_scales, yaw_rate_force_scale,
 )
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.model.aero import Aestat, require_aeros
@@ -190,12 +190,14 @@ def test_c_lr_flips_with_the_loading_sign(rect):
     assert dn["YAW"]["CMX"] == pytest.approx(-up["YAW"]["CMX"], rel=1e-12)
 
 
-def test_planar_wing_yaw_moment_stays_zero(rect):
-    """KNOWN LIMITATION, asserted so it cannot regress silently: box forces are
-    strictly panel-normal (no leading-edge suction), so a planar wing has
-    F_x = F_y = 0 and the scaled load produces NO yaw moment.  The wing's C_nr is
-    an induced-drag asymmetry and needs the Step 67b streamwise-force term; until
-    then C_nr is carried by the fin sidewash column alone."""
+def test_lift_asymmetry_alone_makes_no_yaw_moment(rect):
+    """The 67a term on its own is a pure rolling moment.
+
+    Box forces are strictly panel-normal (no leading-edge suction), so a planar
+    wing has F_x = F_y = 0 and *scaling* that load cannot produce a yaw moment —
+    which is exactly why the wing C_nr needed Step 67b's streamwise induced-drag
+    field (`test_yaw_rate_drag.py`).  Asserted here on the lift-only reference
+    loading so the division of labour between 67a and 67b stays explicit."""
     bulk, aero = rect
     f_ref = _rigid_loading(bulk, aero, np.radians(5.0))
     d = _derivs(bulk, aero, f_box_yaw=build_fjx_yaw(aero.boxes, f_ref, bulk))
@@ -334,9 +336,10 @@ def test_transient_operators_gate_on_the_yaw_label():
     assert np.array_equal(with_ref.Q_ax_a, base.Q_ax_a)
 
 
-def test_yaw_reference_loading_is_the_steady_load():
+def test_yaw_reference_loading_is_the_steady_load_plus_drag():
     """The reference loading is the STEADY (normalwash-driven) box-force field —
-    scaling the already-incremented load would double-count at second order."""
+    scaling the already-incremented load would double-count at second order —
+    plus the Step 67b streamwise induced-drag field."""
     from sbeam.solver.modal_basis import yaw_reference_loading
 
     cc, bulk = _ha144a()
@@ -346,8 +349,14 @@ def test_yaw_reference_loading_is_the_steady_load():
         warnings.simplefilter("ignore")
         aero = build_aero_model(bulk, grid_index=grid_index)
         trim = run_sol144_trim(bulk, subcase, aero)
-    assert np.allclose(yaw_reference_loading(aero, trim),
-                       aero.skj @ trim.box_gamma, rtol=0, atol=0)
+    ref = yaw_reference_loading(aero, trim)
+    steady = aero.skj @ trim.box_gamma
+    # Normal-force rows are the steady load untouched; the x rows gain the drag.
+    assert np.allclose(ref[1::3], steady[1::3], rtol=0, atol=0)
+    assert np.allclose(ref[2::3], steady[2::3], rtol=0, atol=0)
+    assert np.allclose(ref[0::3],
+                       steady[0::3] + build_fx_induced_drag(
+                           aero.boxes, trim.box_gamma)[0::3], rtol=0, atol=0)
 
 
 def test_yaw_rate_sign_reverses_the_rolling_moment():

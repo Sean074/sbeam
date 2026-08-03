@@ -1182,13 +1182,74 @@ bit-identity at YAW = 0, convergence in ≤ 4 iterations at YAW = 0.05 with a re
 and an unchanged longitudinal trim, load participation in the exported per-box forces, and ±r
 antisymmetry. Full suite 1725 passed / 6 xfailed.
 
-**Known limitation, asserted so it cannot regress silently.** Every box force is strictly
-panel-normal (no leading-edge suction), so a planar wing has F_x = F_y = 0 and the scaled load
-produces a rolling moment but **exactly zero yaw moment**
-(`test_planar_wing_yaw_moment_stays_zero`). The wing's yaw damping is an induced-drag
-asymmetry needing a per-box streamwise force — Step 67b. Until then C_nr is the fin's alone.
-The original Step 67 acceptance text ("nonzero C_nr, drag-asymmetry sign") was therefore not
-met by 67a and is carried into the 67b backlog entry rather than reinterpreted.
+**Division of labour with 67b.** Every box force is strictly panel-normal (no leading-edge
+suction), so a planar wing has F_x = F_y = 0 and scaling the *lift* produces a rolling moment
+but exactly zero yaw moment (`test_lift_asymmetry_alone_makes_no_yaw_moment`). The wing's yaw
+damping is an induced-drag asymmetry and needed the streamwise force field of Step 67b, below;
+the original Step 67 acceptance clause "nonzero C_nr (drag-asymmetry sign)" is met there.
+
+---
+
+### Step 67b — Yaw-rate wing drag asymmetry (the wing C_nr) ✅ COMPLETE (2026-08-02)
+
+**Objective.** Give the wing a yaw-damping contribution. Step 67a scales the trim loading by
+`s_j = −(4/b_ref)(y_j − y_ref)`; applied to the panel-normal box forces that produces C_lr but
+no C_nr at all, because a planar wing has no streamwise force for the asymmetry to act on. The
+wing's yaw damping is an induced-**drag** asymmetry — the advancing wing carries more drag.
+
+**Formulation.** Exactly the 67a algebra with F_x in place of F_z:
+
+```
+C_nr = +(4/(S_ref·b_ref²))·Σ (y_j−y_ref)²·F_x,drag,j   →  CDi/4 (elliptic)   ⇒  C_nr ∝ CL²
+```
+
+The sign structure differs from C_lr's because `Mz = x·F_y − y·F_x` carries a minus on the arm
+that `Mx = y·F_z − z·F_y` does not — so with a positive-lift trim C_lr and C_nr come out with
+opposite signs, and C_nr matches the fin's (both damping in sbeam's frame). Theory §7.2 Eq. 28c.
+
+**Deliverables.**
+- `aero/vlm.py` — `_trefftz_wake` extracted as the single owner of the far-field downwash;
+  `trefftz_cdi` and the new `trefftz_box_drag` (per-box `d_j = Γ_j·w_T,j·Δy_j`, `Σ ≡ CDi·S_ref`)
+  are both thin readers of it, so total and distribution cannot drift apart. Plus
+  `box_circulation` (the `Γ_j = cp_j·area_j/(2·width_j)` identity, so a ΔCp holder reaches Γ
+  without a second solve) and the shared `box_widths`. The strip-body wake exclusion moved into
+  `_trefftz_wake`, deleting `solve_rigid_cl`'s local `gamma_wake` copy.
+- `aero/integration.py` — `build_fx_induced_drag(boxes, cp)`: the streamwise field in
+  `build_skj` layout, added to the yaw column's reference loading in `sol144._stage_refine_yaw_rate`
+  and in `modal_basis.yaw_reference_loading` (so trim, derivatives, hinge moments and both
+  transient solvers pick it up through the machinery 67a already built — no new plumbing).
+
+**Key decisions.**
+1. **The refactor landed provably bit-identical first.** CDi/e/CL verified equal as hex floats
+   on five decks (rect AR=8, ±dihedral, BYU wing, flagship) before any new physics was wired in.
+2. **The symmetric drag never enters the load path** — sbeam reports `CD_wind` as the Trefftz
+   CDi rather than the near-field projection (`vlm.py`), and folding a near-field drag into the
+   baseline would contradict that and move every existing result. What the trim *does* carry is
+   the drag's **asymmetry** under a yaw rate: a real antisymmetric fore-aft wing load whose
+   resultant is exactly the reported C_nr. Excluding it would make the printed CMZ disagree with
+   the exported loads. Without a yaw rate the exported box forces still have no F_x at all.
+3. **Strip bodies contribute nothing** — no horseshoe vortex ⇒ no wake ⇒ no induced drag, now
+   enforced in one place for both readers.
+
+**Test/Acceptance** (`tests/aero/test_yaw_rate_drag.py`, 14 tests). `Σ F_x,drag = CDi·S_ref` to
+1e-12 on three decks; `box_circulation` against `solve_rigid_cl`'s own reconstruction; the
+closed form to 1e-10; **C_nr ∝ CL²** (the trend that distinguishes a genuine drag term from a
+lift-scaled fudge) and C_nr unchanged in sign under a negative-lift trim while C_lr flips; the
+damping sign asserted *against the fin's own C_nr on the flagship deck* rather than as a bare
+sign, since sbeam's z-up/y-starboard frame is not the textbook body axis (the fin's C_nr is
+positive here) — the wing term reinforces fin damping and strictly increases |C_nr|; strip boxes
+zero; the confinement guards. Full suite 1741 passed / 6 xfailed; ruff + pyright clean.
+
+**Measured, and worth knowing:** |C_nr| on the rectangular AR=8 deck is ~1.45·CDi/4, not CDi/4.
+The elliptic identity assumes constant w_T so that drag ∝ Γ; a rectangular wing's tip-heavy
+downwash pushes drag outboard where the y² arm is largest. The test asserts the band with that
+rationale rather than a false-precision 15 %.
+
+**Not covered:** the planned URDD1-row check has no vehicle — no sample deck supports the
+streamwise DOF, and since the symmetric drag is deliberately absent such a row would balance
+zero anyway. **Known limitation:** no profile drag (no viscous model), so the wing C_nr is the
+induced part only — an under-prediction of a damping derivative. A per-surface `CD0` input is
+backlogged as a Tier-2 follow-on.
 
 ---
 

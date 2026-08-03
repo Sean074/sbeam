@@ -4,7 +4,7 @@ Authoritative backlog of **open** work only — bugs, planned development, and d
 in priority order. Updated as part of every session that completes a step — never deferred.
 Completed steps live in `docs/40_history/00_completed_development.md`; nothing closed is
 summarised here. When an item is promoted to a formal step, give it a step number (next free
-number is **Step 69**; Step 67b is assigned below (67a closed 2026-08-02) — Step 64 closed 2026-07-31,
+number is **Step 69** — Step 64 closed 2026-07-31,
 Steps 65 and 66 closed 2026-08-01/02, Steps 62, 63 and 68 closed 2026-08-02) and apply the
 step format (Objective, Deliverables, Test/Acceptance).
 
@@ -41,7 +41,6 @@ Details in `docs/40_history/`.
 
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P2 | Step 67b — yaw-rate wing DRAG asymmetry (C_nr) | Release-required | ~1–1.5 d | Step 67a (the loading-scaled force term, C_lr) closed 2026-08-02. The wing C_nr needs a per-box streamwise induced-drag force, which the near-field VLM has no representation of. |
 | P3 | Release hygiene batch — DEF-R7 (WT1 removal), DEF-M13 (f06 column drift), sample-hygiene + doc-pointer sweep, propeller-position docs, close Q1 + Q3 | Release-required | ~2–3 d | Everything else the release-scope decision committed to; all low-risk and fully decided — pure execution, batched to land once at the release boundary. |
 | P4 | DEF-M14 — nonplanar Trefftz `CDi` kernel | Post-release | ~1–2 d | The last open correctness defect: silently wrong CDi/e on canted decks (dihedral, winglets, cruciform tails). Reporting-only outputs, so it ranks below the release gate but above all new capability. |
 | P5 | `matrix_gaf_export` Phases 1–2 | Tier 2 | ~8 d | External flutter handoff (FLAPS) **and** the declared prerequisite of Phase D (MKAERO1, Mach loop, bundle writers). |
@@ -76,7 +75,7 @@ re-ranked table above; the six scope questions were resolved as follows:
 | Decision | Outcome |
 |----------|---------|
 | Transient maneuvers | **Quasi-steady only.** Ship Step 53 balanced maneuvers + the increment-1 prescribed-rigid MLOADS solver. (Steps 62 and 63, both scoped post-release, were delivered 2026-08-02 ahead of the release — the free-flight modal solver ships as a bonus.) |
-| Lateral cases | **In scope.** Steady sideslip/roll/aileron trim (already supported) plus yaw-rate cases — the Tier 4 yaw-rate wing term is promoted to **Step 67**, release-required. Formulation decided: loading-scaled force term. 67a (lift asymmetry, C_lr) delivered 2026-08-02; 67b (drag asymmetry, C_nr) remains open below. |
+| Lateral cases | **In scope.** Steady sideslip/roll/aileron trim (already supported) plus yaw-rate cases — the Tier 4 yaw-rate wing term is promoted to **Step 67**, release-required. Formulation decided: loading-scaled force term. Delivered 2026-08-02 (67a lift asymmetry / C_lr + 67b drag asymmetry / C_nr). |
 | Propeller effects | **Corrections position, documented.** Powered effects (slipstream over the washed wing, thrust-line pitching moment) enter only via the correction cards (`W2GJ`/`WT2`/`CHORDCP`) built from powered CFD or flight-test data; no native slipstream model. The modeling-guidance + Known-Limitations text lands in `docs/20_theory/02_realistic_airplane_sol144.md` and `05a_aero_vlm.md` as part of the release hygiene batch. |
 | Fuselage | **Corrected body panels adequate.** The A9/A10 correction-matched body panels are the early-design answer (Step 66 demonstrates them on the flagship); the predictive slender-body element stays deferred past Phase D. Validity envelope documented in the theory doc's limitations section. |
 | Gust/turbulence | **Out of scope.** CS-25.341 gust/continuous turbulence needs Phase D (P7/P8); the release claims maneuver loads only and the release notes must state the exclusion explicitly. |
@@ -89,10 +88,10 @@ re-ranked table above; the six scope questions were resolved as follows:
 - **DEF-M12 (P1)** — correction-card export field width: **delivered 2026-08-02**
   (`card_lines` → `card_writers.write_card`/`fmt_real8`; see
   `docs/40_history/05_aero_vlm_spline.md`).
-- **Step 67a (P2)** — yaw-rate wing lift asymmetry (C_lr): **delivered 2026-08-02**
-  (`build_fjx_yaw` + the SOL 144 loading fixed point; see
+- **Step 67 (P2)** — quasi-steady yaw-rate wing term: **delivered 2026-08-02** — 67a
+  (lift asymmetry, C_lr) and 67b (drag asymmetry, C_nr) both closed (`build_fjx_yaw` +
+  `build_fx_induced_drag` + the SOL 144 loading fixed point; see
   `docs/40_history/06_sol144_static_aeroelastic.md`).
-- **Step 67b (P2)** — yaw-rate wing drag asymmetry (C_nr) (below).
 - **Release hygiene batch (P3)** — DEF-R7 (WT1 removal, "at a release boundary" per its
   own note), DEF-M13 (f06 column drift), the sample-hygiene + doc-pointer sweep
   (sample-review section), the propeller-effects modeling-position docs (above), and
@@ -101,113 +100,6 @@ re-ranked table above; the six scope questions were resolved as follows:
 
 **Explicitly out of release scope:** P4–P9 (DEF-M14, `matrix_gaf_export`, AMODE,
 Phase D, `matrix_reuse_store`) and every Tier 2–4 item not named above.
-
-### Step 67b (release-required) — Yaw-rate wing drag asymmetry (C_nr)
-
-The remaining half of Step 67. **Step 67a** (the loading-scaled force term
-`Δf_box = −(4/b_ref)(y−y_ref)·YAW·f_box,steady`, the SOL 144 loading fixed point, the
-transient hook, C_lr = C_L/4) closed 2026-08-02 —
-`docs/40_history/06_sol144_static_aeroelastic.md`.
-
-**Strategic note:** the quasi-steady rate-aero path (`build_djx` rate columns) is to
-remain a **fully functional, supported option** even after the DLM (Phase D) lands — it
-is the cheap maneuver-loads method and must be complete in its own right, not a stopgap.
-
-**Objective.** Give the wing a yaw-damping contribution. Every box force in the VLM is
-strictly panel-normal (`build_skj`: `F_j = area_j·n̂_j·cp_j`; "no leading-edge suction",
-`vlm.py` CX ≈ 0), so a planar wing has `F_x = F_y = 0` and the 67a load scaling produces a
-rolling moment but **exactly zero yaw moment**. The wing's yaw damping is an
-induced-**drag** asymmetry and needs a per-box streamwise force. Today C_nr is the fin
-sidewash column's alone — asserted, so it cannot regress silently, by
-`tests/aero/test_yaw_rate_wing.py::test_planar_wing_yaw_moment_stays_zero`.
-
-**Formulation.** Exactly the 67a algebra with F_x for F_z:
-`C_nr = −(4/(S_ref·b_ref²))·Σ (y_j−y_ref)²·F_x,drag,j`, which for a near-elliptic drag
-distribution gives |C_nr| = CDi/4 — and hence C_nr ∝ CL², the physically right trend.
-`F_x,drag` comes from refactoring the per-box sum already inside `trefftz_cdi`
-(`vlm.py:210-272`) out into a `trefftz_box_drag(boxes, gamma, S_ref, ar)` returning the
-per-box streamwise force with `Σ ≡ CDi·S_ref`, leaving `trefftz_cdi` a thin wrapper (so
-CDi/e stay bit-identical). Circulation is recoverable without a second solve through the
-codebase's own identity `Γ_j = cp_j·area_j/(2·width_j)` (`vlm.py:440-449`) — add a
-`box_circulation` helper rather than re-deriving the factor at the call site.
-
-**Confinement — the critical design rule.** `F_x,drag` is used **only** to build the YAW
-column. It must NOT be added to the baseline box forces, `CX`, `CD_wind` or the load
-export: (i) the codebase deliberately reports `CD_wind = Trefftz CDi, not the near-field
-projection` (`vlm.py:351-354`), and (ii) only the *asymmetric* part makes a yaw moment —
-the symmetric part is already in CDi and contributes no Mz.
-
-**Deliverables.** `trefftz_box_drag` + `box_circulation` (landed as their own
-bit-identical refactor commit first); the drag contribution summed into the existing
-`build_fjx_yaw` force column so trim, restrained/unrestrained derivatives, hinge moments
-and both transient solvers pick it up unchanged; docs — theory §7.2 (drop the
-known-limitation paragraph, add the C_nr identity), `05a_aero_vlm.md`, `05c`.
-
-**Test/Acceptance.** Refactor bit-identity (CDi/e unchanged on every deck,
-`Σ F_x,drag = CDi·S_ref` to machine precision); `box_circulation` reproduces
-`solve_rigid_cl`'s gamma; |C_nr| ≈ CDi/4 on the AR=8 full-span deck (~15 %, rectangular ≠
-elliptic) **and C_nr ∝ CL²**; damping sign (`sign(ΔMz) = −sign(r)`); confinement guard —
-baseline CX/CD_wind/CDi/`total_cx`/per-box export bit-identical; strip (`PSTRIP`) boxes
-contribute zero (no wake); the URDD1 trim row on an x-supported deck.
-
-**Known limitation that survives 67b:** no profile drag (sbeam has no viscous model), so
-the wing C_nr covers only the induced part — an under-prediction of a damping derivative,
-i.e. the non-conservative direction. Documented in the theory §7.2 limitation note and
-`05a_aero_vlm.md`; a per-surface `CD0` input is the Tier-2 follow-on below.
-
-**Related known gap (stays a G0-d follow-on):** the Phase G0 transient RHS has no
-elastic-velocity downwash ẇ/V term (`maneuver_qs.py` `w_struct` is displacement-slope
-only) — aerodynamic damping of the flexible modes is absent; covered by the G0-d
-Level 2–4 follow-ons.
-
-### Design-review verdicts on the `30_future` documents (2026-07-05)
-
-All six design proposals share the house style (bit-identical-when-absent guarantees,
-closed-form gates, resolved decision tables) and none had been reviewed before this pass.
-Verdicts:
-
-| Document | Verdict | Notes |
-|----------|---------|-------|
-| `01_static_aero_plan.md` | **Pruned** (H1, done 2026-07-05) | Phases A–C (Steps 39–58) were all closed but never removed per its own self-removal rule. Now a compact architecture/reference doc: layer diagram, matrix nomenclature, delivered-step map, references, V-case index; the Phase D/E/F/G placeholders retired in favour of `designs/dlm_rfa_flutter_gust.md` and this backlog. |
-| `02_static_aero_zaero_review.md` | **Archived** (done, this review) | All 8 ranked goals were folded into Steps 39–58, all closed. Moved to `docs/40_history/archive/`. |
-| `designs/matrix_gaf_export.md` | **Viable — schedule (P5)** | Highest-viability aero design: new code over data already computed; no new physics. Its AE4 prerequisite is **stale** — AE4/spline kinematics closed with AC7 (2026-07-05, NASTRAN infinite-beam SPLINE2, rigid-body-exact). Its `reduce_to_aset` §6.1 **landed with Step 59** (2026-07-06, `sbeam/assembly/reduction.py`) — reuse, don't re-extract. |
-| `designs/matrix_reuse_store.md` | **Viable — subordinate (P9); Phase 0 deleted** | Rigorous cache-boundary analysis, but its Phase 0 ("build the SOL 144 production dispatch + f06 writer") is **stale** — that surface shipped with Step 56/AE10 and AC5. Re-scope to Phases 1–3 only; schedule when envelope sweeps make caching pay. |
-| `designs/dlm_rfa_flutter_gust.md` | **Viable — the Tier 3 core (P7/P8)** | Technically honest, well-gated (Blair 3×3, Sears, typical-section). The k=0 VLM anchoring is the right de-risking move. Its AE4 gate is stale (closed by AC7); the nonplanar kernel terms (T1/T2, I2) remain a genuine research gap, correctly walled behind V-D1-6 (planar-only ships). Needs `g_disp_colloc` (¾-chord displacement spline) at D0. |
-| `designs/rbmref_card.md` | **Fold, don't build standalone** | Its `B_target` geometric rigid-basis construction is mathematically the same object as Step 61's `Φ_r`. Step 61 owns the single `build_rigid_modes`; the RBMREF *card* (user-selectable reference point + f06 rigid-mode block) becomes a thin optional wrapper afterwards, if still wanted. |
-| `designs/spline9_hermite_beam_spline.md` | **Run the kill-switch study only** | Correctly self-gated: run the coarse-grid convergence study (SPLINE9 vs SPLINE2-with-attached-rotations at 3/5/9 EA stations) FIRST; if SPLINE2 matches within noise, close without implementing. Do not start the card plumbing before the study. |
-| `designs/amode_card.md` | **Viable — schedule Phase 1 before flutter (P6)** | Mirrors the proven RBE3 transformation path; V19 analytic gate is unforgeable. Phase 2 (elastic rotating set) honestly rated harder and is a declared 1.0.0 blocker. Open interaction to resolve at implementation: AMODE's augmented `q` DOF vs the Step 61 free-free basis solve (neither doc addresses it). |
-
-### Shared-infrastructure ownership (single-owner rule)
-
-Three designs and the Phase G0 plan each assumed they would build the same infrastructure.
-Assigned owners — later features **reuse, never re-extract**:
-
-- **`reduce_to_aset` a-set reduction** → **Step 59, delivered 2026-07-06**
-  (`sbeam/assembly/reduction.py`; serves `matrix_gaf_export` §6.1, `matrix_reuse_store`
-  §8.1, and the G0 solvers — see `docs/40_history/07_maneuver_transient.md`).
-- **Geometric rigid-body basis builder (`build_rigid_modes`)** → **Step 61, delivered
-  2026-07-30** (`sbeam/solver/modal_basis.py`; RBMREF reuses it, never re-derives it).
-  The underlying g-set geometry moved to `sbeam/assembly/rigid_body.py`
-  (`build_rigid_vectors_g`) with Q4/DEF-M3 so `sol144.build_inertial_cols` can form
-  `M_ax = −M_gg Φ_r` from the same vectors; `build_rigid_modes` remains the a-set owner.
-- **A-set operator assembly for the maneuver solvers (`assemble_aset_operators`)** →
-  **Step 61, delivered 2026-07-30** (`sbeam/solver/modal_basis.py`, on top of Step 59's
-  `reduce_to_aset`; both `maneuver_qs` and the Step 62 modal solver call it).
-- **`MKAERO1` card, per-Mach GAF loop, export bundle/manifest** → **`matrix_gaf_export`**
-  (Phase D "extends rather than duplicates"; `matrix_reuse_store` shares the bundle).
-- **SOL 144 production dispatch + f06 surface** → **already exists** (Step 56/AE10 + AC5);
-  no design may re-propose it.
-
-### Housekeeping (doc hygiene)
-
-- **H3 — stale-prerequisite annotations:** when P5/P7 start, update
-  `matrix_gaf_export.md`/`dlm_rfa_flutter_gust.md` AE4 gates (closed by AC7) and
-  `matrix_reuse_store.md` Phase 0 (delivered by Step 56/AC5).
-
-(H1 — prune `01_static_aero_plan.md` — and H2 — archive the ZAERO review — closed
-2026-07-05; see `docs/40_history/00_completed_development.md` and CHANGELOG.)
-
----
 
 ## Open questions / risks
 
@@ -582,11 +474,11 @@ the Phase 1 monitor data model. Together these complete the dynamic loads proces
 
 ### Profile drag input (`CD0`) — the other half of the wing C_nr
 
-Step 67b gives the wing an *induced*-drag yaw-damping term; a real airplane's profile drag
-contributes comparably, and sbeam has no viscous model. A per-CAERO1 (or per-strip) `CD0`
-input would let the user supply it from drag polars / CFD, entering the same loading-scaled
-yaw column as an extra streamwise force. Small and self-contained once 67b's streamwise
-force field exists; until then the omission is a documented Known Limitation (theory §7.2,
+Step 67b gives the wing an *induced*-drag yaw-damping term (`build_fx_induced_drag`); a real
+airplane's profile drag contributes comparably, and sbeam has no viscous model. A per-CAERO1
+(or per-strip) `CD0` input would let the user supply it from drag polars / CFD, added into the
+same streamwise field the yaw column already scales — small and self-contained now that the
+field exists. Until then the omission is a documented Known Limitation (theory §7.2,
 `05a_aero_vlm.md`) and biases C_nr low — the non-conservative direction.
 
 ### Body fence / no-through-flow boundary condition via image vortices (small, opportunistic)
