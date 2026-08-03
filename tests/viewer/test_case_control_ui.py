@@ -75,7 +75,7 @@ class TestExportBdfText:
 
     def test_include_in_text(self):
         cc = _make_sol101_cc()
-        text = export_bdf_text(cc, include_path="my_model.dat")
+        text = export_bdf_text(cc, include_paths=["my_model.dat"])
         assert "my_model.dat" in text
 
     def test_begin_bulk_present(self):
@@ -93,7 +93,7 @@ class TestRoundTrip:
     def test_sol101_round_trip(self):
         """Exported SOL 101 BDF parses back to identical CaseControl."""
         cc = _make_sol101_cc()
-        text = export_bdf_text(cc, include_path="model.dat")
+        text = export_bdf_text(cc, include_paths=["model.dat"])
         lines = text.splitlines()
         cc2 = parse_case_control(lines)
         assert cc2.sol == cc.sol
@@ -112,7 +112,7 @@ class TestRoundTrip:
     def test_sol103_round_trip(self):
         """Exported SOL 103 BDF includes METHOD and parses back correctly."""
         cc = _make_sol103_cc()
-        text = export_bdf_text(cc, include_path="bulk.dat")
+        text = export_bdf_text(cc, include_paths=["bulk.dat"])
         assert "METHOD = 30" in text
         lines = text.splitlines()
         cc2 = parse_case_control(lines)
@@ -183,7 +183,7 @@ class TestMultiSubcaseRoundTrip:
     def test_two_subcase_round_trip(self):
         """Both subcases survive export → parse with correct, independent field values."""
         cc = self._make_two_subcase_cc()
-        text = export_bdf_text(cc, include_path="model.dat")
+        text = export_bdf_text(cc, include_paths=["model.dat"])
         cc2 = parse_case_control(text.splitlines())
 
         assert cc2.sol == 101
@@ -206,3 +206,70 @@ class TestMultiSubcaseRoundTrip:
         assert sc2.spcforce is False
         assert sc2.force is False
         assert sc2.stress is True
+
+
+# ---------------------------------------------------------------------------
+# P12 S2 — SOL 144 case-control export + round-trip
+# ---------------------------------------------------------------------------
+
+from pathlib import Path
+
+from sbeam.parser.bdf_reader import parse_bdf
+
+_SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
+
+
+def _make_sol144_cc() -> CaseControl:
+    return CaseControl(
+        sol=144,
+        title="Full-surface SOL 144",
+        subcases=[
+            SubcaseControl(subcase_id=1, title="trim", spc_sid=1, trim_sid=10,
+                           trimobj_sid=11, diverg_sid=12, massset_sid=20,
+                           displacement=True, force=True, aerof=True, apres=True),
+            SubcaseControl(subcase_id=2, title="maneuver", spc_sid=1,
+                           mloads_sid=30, massset_sid=21, stress=True),
+        ],
+        include="model.dat",
+        includes=["model.dat", "overlay.dat"],
+    )
+
+
+class TestSol144Export:
+    def test_all_keywords_emitted(self):
+        text = export_bdf_text(_make_sol144_cc())
+        for expected in ["SOL 144", "TRIM = 10", "TRIMOBJ = 11", "DIVERG = 12",
+                         "MLOADS = 30", "MASSSET = 20", "MASSSET = 21",
+                         "AEROF = ALL", "APRES = ALL"]:
+            assert expected in text, expected
+
+    def test_multi_include_preserved(self):
+        text = export_bdf_text(_make_sol144_cc())
+        assert "INCLUDE 'model.dat'" in text
+        assert "INCLUDE 'overlay.dat'" in text
+        # INCLUDE lines must sit above BEGIN BULK where the parser reads them.
+        assert text.index("INCLUDE 'overlay.dat'") < text.index("BEGIN BULK")
+
+    def test_sol144_round_trip_zero_loss(self):
+        cc = _make_sol144_cc()
+        cc2 = parse_case_control(export_bdf_text(cc).splitlines())
+        assert cc2.sol == 144
+        assert cc2.includes == cc.includes
+        assert cc2.subcases == cc.subcases
+
+    def test_authored_block_emitted_inline(self):
+        text = export_bdf_text(_make_sol144_cc(),
+                               authored_block="TRIM, 10, 0.9, 40.0, PITCH, 0.0\n")
+        bulk_part = text.split("BEGIN BULK")[1]
+        assert "TRIM, 10" in bulk_part
+        assert bulk_part.index("TRIM, 10") < bulk_part.index("ENDDATA")
+
+
+class TestSampleDeckCaseControlRoundTrip:
+    def test_sample_decks_round_trip(self):
+        """The two MLOADS sample decks' case control survives export → parse."""
+        for deck in ("ha144a_fullspan_mloads.bdf", "ha144a_mloads_massset.bdf"):
+            cc, _ = parse_bdf(_SAMPLE_DIR / deck)
+            cc2 = parse_case_control(export_bdf_text(cc).splitlines())
+            assert cc2.sol == cc.sol, deck
+            assert cc2.subcases == cc.subcases, deck

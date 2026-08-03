@@ -13,6 +13,37 @@ Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Pha
 
 ### Added
 
+**Step 69 (P12) — Viewer SOL 144 / MLOADS case authoring UI (2026-08-02)**
+
+The viewer now authors SOL 144 cases end-to-end, closing the Tier 1 production authoring
+loop (previously the case-control editor was SOL 101/103-only and SOL 144 decks were
+BDF-authored, read-only).
+
+- `sbeam/model/card_writers.py` — comma free-field serializers for the full 15-family
+  condition-card surface (AESTAT/AESURF/AELIST/SUPORT/TRIM/TRIMVAR/TRIMOBJ/TRIMCON/
+  DIVERG/MLOADS/MLDTRIM/MLDTIME/MLDCOMD/MLDPRNT/TABLED1), all reals via `fmt_real8`,
+  parser round-trip tested.
+- Case-control editor: SOL 144 selectable; per-subcase driver radio + TRIM/TRIMOBJ/
+  DIVERG/MLOADS/MASSSET pickers + AEROF/APRES; fixes the silent loss of aeroelastic
+  fields when a loaded SOL 144 deck was round-tripped; `export_bdf_text` now emits the
+  full keyword surface, all INCLUDEs (multi-INCLUDE loss fixed), and authored bulk cards
+  inline.
+- New **Aeroelastic Authoring** tab: per-family form editors with apply-to-session
+  (`authored_cards` tracking, result-cache invalidation), user-chosen SIDs with
+  clash detection and a clone-as-new export policy (the parser raises on duplicate SIDs).
+- Maneuver presets (pull-up / steady roll / steady sideslip) pre-filling the TRIM form;
+  TABLED1 shape generators (cosine ramp default, ramp, step, doublet); **two-pass
+  MLDCOMD automation** — command tables authored as increments, resolved to absolute
+  per-mass-case TABLED1s from the solved trim value in one click.
+- `validate_sol144_authoring` pre-launch/pre-export gate (parser parity + solver
+  preconditions: one driver per subcase, AESURF-only modal commands, RHOREF on modal IC
+  TRIM, SUPORT with MLOADS, AELIST box ranges, unresolved increments, duplicate SIDs);
+  errors disable Launch and downloads, warnings join the pre-solve list.
+- Exports: run BDF (driver + INCLUDEs, provenance header) and authored-cards-only
+  snippet. Docs: `06_viewer.md` authoring chapter (supersedes the "BDF-authored only"
+  convention), `MASSSET` added to the case-control keyword table in
+  `02_card_reference.md`.
+
 **Step 68 — MONSECT section cuts on transient (MLOADS) maneuvers (2026-08-02)**
 
 `MONSECT` running loads are now produced at **every output sample** of a transient maneuver, on

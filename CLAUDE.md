@@ -111,7 +111,7 @@ sbeam/
 ├── results/        # results.py, f06_writer.py, load_export.py, monitor_points.py (MONPNT1/MONPNT3 integrated section loads), section_cuts.py (MONSECT per-station running loads; two-phase prepare/evaluate for per-sample transient use), section_envelope.py (Step 68 per-station max/min over a maneuver), maneuver_output.py (Phase G0 time histories + critical-step export)
 ├── gpwg.py         # Mass and CG (GPWG)
 ├── aero/           # panel.py, vlm.py, integration.py, corrections.py, section_correction.py (W2GJ+WT2 section force/moment synthesis), section_data.py (spanwise section-coefficient ingestion), body_correction.py (cruciform + decoupled-strip body-panel total-aircraft moment match), strip.py (decoupled strip body panels — PSTRIP/STRIPK, zero-coupling diagonal AIC block), aero_model.py
-└── viewer/         # app.py, geometry.py, results_view.py, case_control_ui.py, aero_view.py, aero_correction_view.py (CFD/test section data → correction cards + full corrected-BDF export), format_utils.py (5-sig-fig table/metric formatting)
+└── viewer/         # app.py, geometry.py, results_view.py, case_control_ui.py, aero_view.py, aero_correction_view.py (CFD/test section data → correction cards + full corrected-BDF export), sol144_authoring.py (P12 authoring logic: SID policy, presets, TABLED1 generators, two-pass MLDCOMD resolution, validation), sol144_authoring_ui.py (Aeroelastic Authoring tab — SOL 144/MLOADS card editors + driver export), format_utils.py (5-sig-fig table/metric formatting)
 ```
 
 ## GPWG

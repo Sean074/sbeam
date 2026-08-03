@@ -617,3 +617,69 @@ response). Full suite 1075 passed / 6 xfailed.
 
 ---
 
+
+## SOL 144 authoring
+
+### Step 69 (P12) — Viewer SOL 144 / MLOADS case authoring UI ✅ COMPLETE (2026-08-02)
+
+**Objective:** Close the Tier 1 production authoring loop: author SOL 144 static-aeroelastic
+and MLOADS transient-maneuver cases entirely in the viewer — case control **and** the
+condition bulk cards — where previously the editor was SOL 101/103-only and SOL 144 decks
+were BDF-authored and read-only (supersedes the Step 57 / AC5 "authoring out of scope"
+decisions).
+
+**Deliverables:**
+- **`sbeam/model/card_writers.py`** — Streamlit-free comma free-field serializers for the
+  full 15-family authoring surface (AESTAT, AESURF, AELIST, SUPORT, TRIM incl. RHOREF,
+  TRIMVAR, TRIMOBJ, TRIMCON, DIVERG, MLOADS, MLDTRIM, MLDTIME, MLDCOMD, MLDPRNT, TABLED1)
+  plus `write_authored_block`; every real through `parser/bdf_field.fmt_real8` (DEF-M12
+  compliant), round-trip tested dataclass → text → parser → equality.
+- **Case-control editor SOL 144 support** (`viewer/case_control_ui.py`) — SOL 144 in
+  `_SOL_LABELS`/`_SOL_OUTPUT_FIELDS` (adds AEROF/APRES checkboxes); per-subcase driver
+  radio (Trim / Divergence only / Maneuver) + TRIM/TRIMOBJ/DIVERG/MLOADS/MASSSET
+  selectboxes; LOAD suppressed for SOL 144 (DEF-M4); `cc_subcases` schema extended —
+  **fixes the round-trip data loss** where editing a loaded SOL 144 deck silently dropped
+  its aeroelastic fields; `export_bdf_text` rewritten to emit the full keyword surface,
+  every `CaseControl.includes` entry (multi-INCLUDE loss fixed), and an authored bulk
+  block inline after BEGIN BULK.
+- **Aeroelastic Authoring tab** (`viewer/sol144_authoring_ui.py` +
+  `viewer/sol144_authoring.py`) — four sub-tabs of per-family form editors (select
+  existing / create new / delete), apply-to-session with `authored_cards` tracking and
+  result-cache invalidation, CAERO1 box-range-bounded AELIST entry with THRU parsing.
+- **Presets & generators** — the three balanced-maneuver recipes (pull-up via
+  `load_factor_to_urdd3`, steady roll, steady sideslip) pre-fill the TRIM form with
+  one-click creation of missing AESTATs; TABLED1 shape generators (cosine ramp default,
+  linear ramp, step, sine doublet).
+- **Two-pass MLDCOMD automation** — command increments authored pre-solve
+  (`IncrementSpec`), then `resolve_increment_tables` offsets by the solved trim control
+  value per mass case (`Sol144TrimResult.trim_vars` / `ManeuverResult.steps[0].trim_vars`)
+  and writes the absolute TABLED1 + rewritten MLDCOMD (+ MLOADS when it had none) —
+  automating the documented absolute/mass-case-specific table requirement.
+- **Validation** — `validate_sol144_authoring` (parser-parity + solver preconditions:
+  one driver per subcase, dangling refs, AESURF-only modal commands, RHOREF on modal IC
+  TRIM, SUPORT with MLOADS, AELIST ranges, table well-formedness) gates ▶ Launch and both
+  exports; warnings (trim determinacy, fixed-Φ note, sparse modal tables) join the
+  pre-solve warnings.
+- **Export** — driver + INCLUDE layout: run BDF (provenance header + case control +
+  authored cards inline + untouched INCLUDEs, `suggest_run_name` filenames) and
+  authored-cards-only snippet.
+
+**Key decisions:** user-chosen SIDs (default `max+1` per family) with clash detection
+rather than reserved bases — SIDs are semantic engineering references; **clone-as-new**
+policy because the parser raises on duplicate SIDs (in-session edits of file-sourced cards
+are launchable but export blocks until saved under a new SID); driver + INCLUDE export
+layout (model bulk stays pristine; multi-INCLUDE preserved); authoring panels live in
+their own tab with one `st.form` per family (forms cannot nest, and form widgets don't
+rerun on interaction — all SOL 144 subcase pickers stay visible with the kind radio
+enforced at Apply); MASSSET stays select-only; MLDPRNT exposed on/off only (items never
+filter output); DEF-R3 sidestepped — the UI requires exactly one driver per subcase.
+
+**Test/Acceptance:** `tests/model/test_card_writers.py` (per-card + sample-deck golden
+round-trips), extended `tests/viewer/test_case_control_ui.py` (full-surface export,
+multi-INCLUDE, sample-deck case-control zero-loss), `tests/viewer/test_sol144_authoring.py`
+(logic + presets/generators/two-pass incl. per-mass-case fan-out + AppTest render),
+`tests/viewer/test_sol144_validation.py` (table-driven rule trips on mutated sample
+decks), `tests/viewer/test_sol144_export.py` (both sample decks split into
+driver-with-authored-cards + model INCLUDE, re-parsed to full semantic equality; exported
+driver solves through `run_sol144_trim`; AppTest authors an AESTAT through the real form).
+Full suite 1707 passed / 6 xfailed.

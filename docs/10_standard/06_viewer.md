@@ -26,6 +26,8 @@ viewer/
 ├── case_control_ui.py  # Case control form and BDF export
 ├── aero_view.py        # Aero box mesh + cp colour map (S44); spline-deflected box overlay (S57); per-surface span-loading figure + rigid S&C derivative table (A-GUI2); cp corrected/uncorrected/Δ views + dihedral helper (A-GUI4); corrected/uncorrected/Δ rigid-derivative table (A-GUI5); body-panel colour/legend split (AC5)
 ├── aero_correction_view.py  # Aero Correction tab: CFD/test section data → W2GJ+AECORR(WT2) cards, injected into the model + full corrected-BDF export (A-GUI3/A-GUI4); Stage 6 = cruciform body-panel total-moment match (A9)
+├── sol144_authoring.py     # P12 pure logic: SID allocation/clash checks, presets, TABLED1 generators, two-pass increment resolution, validate_sol144_authoring
+├── sol144_authoring_ui.py  # P12 Aeroelastic Authoring tab: per-family card editors, apply-to-session, driver/snippet export
 └── format_utils.py     # Shared 5-sig-fig number formatting for tables/metrics (fmt / fmt_mass / style_numeric) (A-GUI4)
 ```
 
@@ -353,17 +355,17 @@ in the loaded file — define one below."
 |-----------|-------|
 | 101 | `101 — Static` |
 | 103 | `103 — Normal Modes` |
+| 144 | `144 — Static Aeroelastic / Maneuver` |
 
 Extending to Phase 2 SOLs (108, 109, 111, 112) requires only adding entries to `_SOL_LABELS`
 and `_SOL_OUTPUT_FIELDS` in `case_control_ui.py`.
 
-The editor's SOL selector deliberately stays 101/103: SOL 144 case control (TRIM / DIVERG /
-MLOADS and their bulk card sets) is **BDF-authored, not editor-authored** — a SOL 144 deck is
-uploaded as a run file, shown read-only in the editor, and launched from the Planned-Analysis
-summary (or the Results tab's **Run Analysis**). The run path is `app.py::_run_sol144` — see
-[Run Analysis from Viewer](#run-analysis-from-viewer) and
-[SOL 144 — Static Aeroelastic Results](#sol-144--static-aeroelastic-results-step-57). A SOL
-144/MLOADS authoring UI is recorded under Future development in the backlog.
+**SOL 144 is fully editor-authored since P12** (this supersedes the Step 57/AC5 "BDF-authored
+only" convention): the editor authors the SOL 144 case control (TRIM/TRIMOBJ/DIVERG/MLOADS/
+MASSSET selection per subcase plus AEROF/APRES output requests), and the **Aeroelastic
+Authoring** tab (below) authors the condition bulk cards themselves. The run path is
+unchanged — `app.py::_run_sol144`; see [Run Analysis from Viewer](#run-analysis-from-viewer)
+and [SOL 144 — Static Aeroelastic Results](#sol-144--static-aeroelastic-results-step-57).
 
 **Subcases:** One `st.expander` per subcase. Expander label shows the subcase ID and title
 (if set). Within each subcase:
@@ -371,19 +373,28 @@ summary (or the Results tab's **Run Analysis**). The run path is `app.py::_run_s
 | Field | Layout | Condition |
 |-------|--------|-----------|
 | Subcase title | Full-width text input | Always |
-| LOAD SID | Left column selectbox | Always |
+| LOAD SID | Left column selectbox | Not SOL 144 (LOAD is refused in SOL 144 subcases, DEF-M4) |
 | SPC SID | Right column selectbox | Always |
+| Analysis kind radio (Trim / Divergence only / Maneuver (MLOADS)) | Horizontal radio | SOL 144 only |
+| TRIM / TRIMOBJ / DIVERG / MLOADS / MASSSET SIDs | Selectboxes, three-up | SOL 144 only |
 | METHOD (EIGRL) SID | Full-width selectbox | SOL 103 only |
 | Output requests | One checkbox per field, equal columns | SOL defined in `_SOL_OUTPUT_FIELDS` |
 | Auto-output info | Info banner | SOLs not in `_SOL_OUTPUT_FIELDS` (e.g. SOL 103) |
 
+All five SOL 144 SID pickers stay visible regardless of the kind radio (widgets inside a
+form do not rerun on interaction, so hiding them would leave stale UI); the Apply handler
+keeps only the fields consistent with the selected kind (`_apply_sol144_kind`) — exactly one
+driver per subcase, matching the `_run_sol144` routing (MLOADS wins; DIVERG-without-TRIM =
+divergence-only; TRIM otherwise, with DIVERG as an optional add-on sweep).
+
 Output request checkboxes per SOL:
 - **SOL 101:** DISPLACEMENT, SPCFORCE, OLOAD, FORCE, STRESS
 - **SOL 103:** No checkboxes — info message: "All modal results … output automatically."
+- **SOL 144:** SOL 101 set plus AEROF and APRES.
 
-**Advanced expander (collapsed by default):** Contains the INCLUDE path text input
-(path to the bulk-data `*.dat` file). Defaults to `model.dat` or the path parsed from
-the loaded run file.
+**Advanced expander (collapsed by default):** Contains the INCLUDE paths text area, one
+bulk-data file per line (multi-INCLUDE, Step 66). Defaults to `model.dat` or the paths
+parsed from the loaded run file (`CaseControl.includes` — all of them, not just the first).
 
 **Action row (bottom of form):**
 ```
@@ -393,26 +404,32 @@ All three are `form_submit_button` widgets so they submit without triggering int
 reruns. Add/Remove handlers run after the form closes and call `st.rerun()`.
 
 **Export (below form, only when case control is applied):**
-- Download BDF button — triggers browser download of `run.bdf`.
-- Collapsible "Preview BDF" expander — shows the full case control text in a code block.
+- Download BDF button — triggers browser download of `run.bdf`. Disabled while any
+  export-blocking validation error stands (unresolved increment commands, or an authored
+  SID that duplicates one defined in the loaded file — the parser raises on duplicate
+  SIDs, so such a deck would not read back).
+- Collapsible "Preview BDF" expander — shows the full driver text in a code block.
 
 ### BDF export
 
-`export_bdf_text(cc: CaseControl, include_path: str) -> str` in `case_control_ui.py`
-serialises a `CaseControl` object to a parseable BDF string. Example output:
+`export_bdf_text(cc: CaseControl, include_paths: list[str] | None = None,
+authored_block: str = "") -> str` in `case_control_ui.py` serialises a `CaseControl` to a
+parseable driver BDF: full SOL 144 keyword surface (TRIM/TRIMOBJ/DIVERG/MLOADS/MASSSET +
+AEROF/APRES), one `INCLUDE` per entry (INCLUDE lines sit above `BEGIN BULK`, where the
+parser reads them), and any viewer-authored bulk cards inline after `BEGIN BULK`.
+Example output:
 
 ```
-SOL 101
-TITLE = My analysis
+SOL 144
+TITLE = My maneuver
 SUBCASE 1
-  LOAD = 10
-  SPC = 20
+  SPC = 1
+  TRIM = 1
   DISPLACEMENT = ALL
-  SPCFORCE = ALL
-  FORCE = ALL
-  STRESS = ALL
 INCLUDE 'model.dat'
 BEGIN BULK
+$ Authored in the sbeam viewer (SOL 144 / MLOADS authoring tab)
+TRIM, 1, 0.9, 40.0, RHOREF, 2.3769-3, PITCH, 0.0
 ENDDATA
 ```
 
@@ -425,6 +442,73 @@ pre-populated with the first available LOAD SID and first available SPC SID from
 data, so the user can click Apply immediately without any manual selection.
 
 **Subcase selector (sidebar):** When a run file (with case control) is loaded, an **Active subcase** dropdown appears in the sidebar. The selected subcase determines which load set is visualised as force/moment arrows in the 3D model view and on the deformed shape. The active subcase ID is stored in `st.session_state.selected_subcase_id`; initialised to the first subcase on upload.
+
+---
+
+## Aeroelastic Authoring Tab (P12)
+
+Shown when the model has CAERO1 panels (same gate as the Aero tabs). Authors the full
+SOL 144 / MLOADS condition-card surface in the browser: **AESTAT, AESURF, AELIST, SUPORT,
+TRIM (incl. the RHOREF pseudo-label), TRIMVAR, TRIMOBJ, TRIMCON, DIVERG, MLOADS, MLDTRIM,
+MLDTIME, MLDCOMD, MLDPRNT, TABLED1**. MASSSET remains select-only (chosen per subcase in
+the Case Control editor; mass cases themselves stay BDF-authored).
+
+Modules: `viewer/sol144_authoring.py` (pure logic — SID allocation, clash detection,
+CAERO box ranges, THRU parsing, presets, TABLED1 generators, two-pass increment
+resolution, `validate_sol144_authoring`) and `viewer/sol144_authoring_ui.py` (the
+Streamlit layer). Card serialisation lives in `sbeam/model/card_writers.py` — comma
+free-field writers for all 15 families, every real through `parser/bdf_field.fmt_real8`
+(8-char safe, DEF-M12 compliant), round-trip tested against the parser.
+
+**Layout:** four sub-tabs — *Surfaces & States* (AESTAT/AESURF/AELIST/SUPORT), *Trim
+Conditions* (presets + TRIM/TRIMVAR/TRIMOBJ/TRIMCON/DIVERG), *Maneuver (MLOADS)*
+(two-pass command builder + MLDTRIM/MLDTIME/MLDCOMD/MLDPRNT/MLOADS), *Tables* (shape
+generator + TABLED1 point editor). Each family gets an expander with a selectbox
+("— new —" or an existing ID, outside the form so switching pre-fills) and one
+`st.form`; dynamic rows (TRIM vars, MLDCOMD pairs, TABLED1 points) use `st.data_editor`
+with `num_rows="dynamic"`. All widget keys are `auth_`-prefixed and reset on upload.
+
+**Apply-to-session:** submitting builds the dataclass and injects it into the in-session
+`BulkData` (`apply_card`), records the ID in `st.session_state.authored_cards`
+(`{family: set[int]}`), and nulls the SOL 144 result/aero-model caches. The authored set
+is exactly what the driver export emits inline.
+
+**SID policy (clone-as-new):** SIDs are user-chosen, defaulting to `max(existing) + 1`
+per family. Editing a card that came from the loaded file is allowed in-session (and
+immediately launchable), but the driver export blocks until it is saved under a new SID —
+the parser raises on duplicate SIDs, so an inline card duplicating an INCLUDE-defined SID
+would make the exported deck unparseable. The form shows a **Save as new SID** button for
+file-sourced cards; `snapshot_family_ids` at upload (`file_card_sids`) backs the check.
+
+**Presets:** the three balanced-maneuver recipes from `model/maneuver_presets.py`
+(symmetric pull-up via `load_factor_to_urdd3`, steady roll, steady sideslip) pre-fill the
+TRIM form and offer one-click creation of missing AESTAT labels.
+
+**TABLED1 generators:** cosine ramp (default — clamped-linear slope jumps ring the
+highest retained mode under the modal solver), linear ramp, step, smooth sine doublet.
+
+**Two-pass command builder:** MLDCOMD tables are absolute and mass-case specific, so the
+builder authors them as *increments from trim* (`IncrementSpec` per MLOADS/label pair,
+held in `st.session_state.mldcomd_increments`). After a solve, **Resolve → absolute
+TABLED1s** reads the solved trim control value per mass case (`Sol144TrimResult.trim_vars`
+or `ManeuverResult.steps[0].trim_vars`), writes one absolute TABLED1 per pair, and
+rewrites the owning MLDCOMD (allocating one when the MLOADS had none). Unresolved
+increments block export. An MLOADS shared by subcases with different MASSSETs is refused
+(give each mass case its own MLOADS — the sample-deck convention).
+
+**Validation:** `validate_sol144_authoring(bulk, cc, …) -> (errors, warnings)` re-implements
+the parser's deck-time cross-reference pass (authored cards bypass it) plus the solver
+preconditions: exactly one driver per subcase, no LOAD, dangling SID references, modal
+MLDCOMD labels AESURF-only, RHOREF required on a modal IC TRIM, SUPORT required with
+MLOADS, MLDTIME/TABLED1 well-formedness, AELIST boxes inside CAERO1 ranges. Errors
+disable ▶ Launch Analysis and the BDF downloads; warnings (over-/fully-determined trim,
+fixed-Φ MASSSET note, sparse modal command tables) surface with the pre-solve warnings.
+
+**Export:** two buttons at the tab foot — *Download run BDF (driver + INCLUDEs)*
+(`export_sol144_bdf`: provenance header + case control + authored cards inline +
+untouched INCLUDEs; filename via `suggest_run_name`) and *Download authored cards only*
+(the `write_authored_block` snippet). The Case Control editor's Download BDF emits the
+same driver.
 
 ---
 

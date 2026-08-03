@@ -57,7 +57,6 @@ solver is now the self-balancing free-flight solver; see
 
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P12 | Viewer — SOL 144 / MLOADS case authoring UI | Tier 1 | ~5–8 d | Early-design usability: today SOL 144 cases must be hand-authored in the BDF; a production process needs the authoring loop closed. Sequenced after Steps 62–63 (both closed 2026-08-02) so it authors the final card surface once. |
 | P13 | DEF-R1 refactor batch — decompose `sol144.py` (+ R2, R3, R4; R7 at a release boundary) | Defects | ~2–3 d | `run_sol144_trim` is a ~500-line god function in an 1838-line module that P14/P16 both extend. Do it after Tier 1 stops churning it and **before** Phase D piles on. |
 | P14 | `matrix_gaf_export` Phases 1–2 | Tier 2 | ~8 d | External flutter handoff (FLAPS) **and** the declared prerequisite of Phase D (MKAERO1, Mach loop, bundle writers). |
 | P15 | `AMODE` Phase 1 (control-surface hinge modes) | Tier 3 | ~7.5 d | Needed before control-surface flutter in SOL 145; Phase 2 is a declared pre-1.0.0 blocker. |
@@ -110,8 +109,8 @@ questions were resolved as follows:
   closing **Q1** (accept + document the CID-0 SPCFORCE convention — it matches NASTRAN)
   and **Q3** (Known-Limitations line for the GRAV CID=0 restriction).
 
-**Explicitly out of release scope:** viewer authoring UI (P12),
-P13–P18, DEF-M14, and every Tier 2–4 item not named above.
+**Explicitly out of release scope:** P13–P18, DEF-M14, and every Tier 2–4 item not
+named above.
 
 ### Step 67 (release-required) — Quasi-steady yaw-rate wing term
 
@@ -363,12 +362,13 @@ The four closed-form anchors of that evidence basis are now **enforced by CI** �
 
 ---
 
-## Tier 1 — SOL 144 production process (P12)
+## Tier 1 — SOL 144 production process
 
 The goal state: SOL 144 supports early design analysis end-to-end — static trim and balanced
 maneuvers (done), **payload-condition sweeps** (Step 60, closed 2026-07-30), **transient maneuvers with a modal
 basis** (Steps 61–63), **section loads for stress** (Monitor Phase 2, closed 2026-08-02 —
-static; transient closed 2026-08-02 by Step 68), and a **closed authoring loop** (viewer UI).
+static; transient closed 2026-08-02 by Step 68), and a **closed authoring loop** (P12 viewer
+authoring UI, closed 2026-08-02 — see `docs/40_history/04_viewer_gui.md`). Tier 1 is complete.
 
 ### Phase G0 — transient maneuver loads (DLM-free): detailed plan (2026-07-05, re-prioritised in this review)
 
@@ -515,16 +515,6 @@ Step 68 (MONSECT on transient maneuvers) closed 2026-08-02 — see
 Also unexercised by any deck (recorded, not a defect): the Step 68 reaction recovery uses the
 full applied load, which only differs from `net_loads` when a **constrained grid carries
 mass**. No sample deck has that. A deck that does would be cheap CI insurance.
-
-### Viewer (P12) — SOL 144 / MLOADS case authoring UI
-
-The viewer runs and displays SOL 144 trim/DIVERG/MLOADS subcases but cannot *author* them —
-the case-control editor's SOL selector offers 101/103 only and SOL 144 case control is
-read-only. A full authoring UI (TRIM condition builder, AESTAT/AESURF/TRIMVAR editors,
-DIVERG setup, MLOADS/MLDTIME/MLDCOMD/TABLED1 command-history editor, MASSSET selector after
-Step 60, BDF export) closes the production authoring loop; until it lands, cases are
-authored in the bulk-data BDF. Promoted from "deferred" to P12 by the 2026-07-05 review: a
-production-like process needs authoring, not just display.
 
 ---
 

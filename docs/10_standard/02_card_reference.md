@@ -64,6 +64,7 @@ Case control appears between the `SOL` line and `BEGIN BULK`. Keywords are not o
 | `TRIMOBJ` | int | Trim objective SID (references `TRIMOBJ` bulk card; over-determined SOL 144 trim) |
 | `DIVERG` | int | Divergence condition SID (references `DIVERG` bulk card; SOL 144 only) |
 | `MLOADS` | int | Transient maneuver-loads SID (references `MLOADS` bulk card; runs the Step 63 free-flight modal solver `solver/maneuver_modal.py` when the card's NMODES/METHOD/ZETA select it, else the prescribed-rigid direct solver `solver/maneuver_qs.py`; SOL 144, Phase G0) |
+| `MASSSET` | int | Payload / mass case SID (references `MASSSET` bulk card, Step 60); the subcase runs at the resolved mass configuration — baseline when absent |
 | `DISPLACEMENT` | — | Request nodal displacement output (`= ALL` or `= PRINT`) |
 | `SPCFORCE` | — | Request SPC reaction force output |
 | `OLOAD` | — | Request applied load echo output |

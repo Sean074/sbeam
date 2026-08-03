@@ -28,6 +28,10 @@ from sbeam.viewer.aero_view import (
     build_aero_box_figure, build_span_loading_figure, rigid_derivative_table,
 )
 from sbeam.viewer.aero_correction_view import render_aero_correction_tab
+from sbeam.viewer.sol144_authoring_ui import render_sol144_authoring
+from sbeam.viewer.sol144_authoring import (
+    snapshot_family_ids, validate_sol144_authoring,
+)
 from sbeam.viewer.format_utils import fmt, fmt_mass, style_numeric
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.vlm import solve_rigid_cl
@@ -51,6 +55,10 @@ def _init_session_state() -> None:
         "aero_corr_df": None,
         "aero_corr_result": None,
         "aero_corr_sids": set(),
+        "authored_cards": {},
+        "mldcomd_increments": {},
+        "auth_trim_prefill": None,
+        "file_card_sids": None,
         "aero_corr_upload_id": None,
         "aero_corr_csv_name": None,
         "aero_corr_cond": None,
@@ -119,6 +127,10 @@ def _handle_upload(uploaded: Any) -> None:
         st.session_state.aero_corr_df = None
         st.session_state.aero_corr_result = None
         st.session_state.aero_corr_sids = set()
+        st.session_state.authored_cards = {}
+        st.session_state.mldcomd_increments = {}
+        st.session_state.auth_trim_prefill = None
+        st.session_state.file_card_sids = snapshot_family_ids(bulk)
         st.session_state.aero_corr_upload_id = None
         st.session_state.aero_corr_csv_name = None
         st.session_state.aero_corr_cond = None
@@ -491,6 +503,12 @@ def _get_pre_solve_warnings(
                 f"{ratio:.0f}× range across materials. "
                 "Verify all inputs use the same consistent unit system."
             )
+
+    # 6. SOL 144 authoring validation (P12) — warnings only here; the
+    #    blocking errors are surfaced next to Launch/export in the CC panel.
+    if cc is not None and cc.sol == 144:
+        _, auth_warns = validate_sol144_authoring(bulk, cc)
+        msgs.extend(auth_warns)
 
     return msgs
 
@@ -912,11 +930,14 @@ def main() -> None:
     # --- Main tabs ---
     _has_aero = bool(bulk.caero1s)
     if _has_aero:
-        tab_model, tab_cc, tab_results, tab_aero, tab_aero_corr = st.tabs(
-            ["Model", "Case Control", "Results", "Aero", "Aero Correction"]
+        (tab_model, tab_cc, tab_authoring, tab_results, tab_aero,
+         tab_aero_corr) = st.tabs(
+            ["Model", "Case Control", "Aeroelastic Authoring", "Results",
+             "Aero", "Aero Correction"]
         )
     else:
         tab_model, tab_cc, tab_results = st.tabs(["Model", "Case Control", "Results"])
+        tab_authoring = None
         tab_aero = None
         tab_aero_corr = None
 
@@ -935,6 +956,10 @@ def main() -> None:
 
     with tab_cc:
         render_case_control_panel(bulk, on_launch=lambda: _run_analysis(bulk))
+
+    if tab_authoring is not None:
+        with tab_authoring:
+            render_sol144_authoring(bulk)
 
     with tab_results:
         st.subheader("Analysis")

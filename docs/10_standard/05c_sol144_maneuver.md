@@ -643,7 +643,10 @@ restrained decomposition, reused per-step in recovery) of
   two-pass (trim first, table = trim value + increment; a table that starts off the trim value
   is a step input at t0). Clamped-linear ramps ring the highest retained modes (risk item 3);
   use densely-sampled smooth (cosine) tables for truncated bases — NMODES and dt convergence are
-  only visible on smooth commands.
+  only visible on smooth commands. The viewer's Aeroelastic Authoring tab (Step 69 / P12,
+  `docs/10_standard/06_viewer.md`) automates both: its two-pass command builder authors
+  increments and resolves them to absolute per-mass-case TABLED1s from the solved trim value,
+  and its shape generator defaults to densely-sampled cosine ramps.
 - **Output:** same f06/MLDPRNT/export surface as the direct solver, plus: live ANGLEA/PITCH/URDD
   history columns (they ride the δ fill), the MLDPRNT `NZ_REL` column
   (`URDD3_basic(t)/URDD3_basic(t0)` — unit-free load-factor ratio, = n_z in g for a 1g IC,
