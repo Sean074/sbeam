@@ -11,6 +11,31 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Phase 2 completion.
 
+### Added
+
+**Step 67a — quasi-steady yaw-rate wing term (2026-08-02)**
+
+The wing half of theory §7.2 Eq. 28: a yaw rate's spanwise dynamic-pressure asymmetry
+`ΔU(y) = −r·y`. Being an edgewise-velocity perturbation it is not a normalwash, so it
+enters as a **loading-scaled force column** `Δf_j = −(4/b_ref)(y_j − y_ref)·YAW·f_j,steady`
+(`aero/integration.py`: `yaw_rate_force_scale`, `build_fjx_yaw`, `build_fj_rigidrate_yaw`)
+rather than as a `build_djx` column. Because it is scaled by the trim loading, SOL 144 now
+solves the trim as a **fixed point** (`_stage_refine_yaw_rate`: solve → rescale → re-solve,
+≤ 8 iterations at 1e-10 relative), and the increment flows into the totals, per-box forces,
+flight-load export and net maneuver load; the rigid/restrained derivative and hinge-moment
+columns pick up the direct term, the unrestrained (AE8b) block through `Q_ax_a`. The Phase
+G0 solvers take the same term with the reference loading frozen at the IC trim.
+New `Sol144TrimResult.yaw_rate_iters` and an f06 TRIM VARIABLES echo when the term is live.
+
+Delivers the roll-rate cross-derivative `C_lr` — matching the closed form
+`−(4/(S·b²))Σ(y−y_ref)²F_z` to 1e-12 and `C_L/4` within 15 % on the rectangular AR=8 deck,
+and **exactly proportional to the trim C_L**, the property that motivated the loading-scaled
+form over a lift-slope proxy. **The wing C_nr is still zero**: box forces are strictly
+panel-normal (no leading-edge suction), so a planar wing has no streamwise force to make a
+yaw moment from — that is the open Step 67b drag-asymmetry follow-on, and C_nr is presently
+the fin sidewash column's alone. Gated on `YAW` being a trim label and nonzero, so every
+existing deck is bit-identical. Gate: `tests/aero/test_yaw_rate_wing.py` (19 tests).
+
 ### Changed
 
 **Lint pass — ruff + pyright residuals (2026-08-02)**

@@ -1114,6 +1114,84 @@ maneuver FORCE cards. 5/5 green; full aero suite unchanged.
 
 
 
+### Step 67a — Quasi-steady yaw-rate wing term (lift asymmetry, C_lr) ✅ COMPLETE (2026-08-02)
+
+**Objective.** Complete the wing half of the quasi-steady yaw-rate aerodynamics. Theory §7.2
+Eq. 28 gives yaw rate two effects: the fin sidewash Δβ(x) = r(x−x_ref)/V (the `build_djx` `YAW`
+normalwash column, in since AE11) and the wing's spanwise dynamic-pressure asymmetry
+ΔU(y) = −r·y. Only the first was implemented — the column carries `n_y` and so vanishes on
+horizontal panels, leaving the wing's yaw-rate contribution silently zero. Step 67 was split
+during implementation: **67a** is the lift asymmetry (this entry); **67b**, the drag asymmetry
+that the wing's C_nr actually needs, stays open in the backlog.
+
+**Formulation (decided 2026-08-02, unchanged in implementation).** ΔU is an *edgewise* velocity
+perturbation — it changes the local dynamic pressure, not the incidence — so it cannot be a
+normalwash column. To first order the local load scales, and with the `YAW` label being the
+reduced rate r·b_ref/2V the per-unit-label increment is purely geometric:
+
+```
+Δf_j = 2(ΔU/U)·f_j,steady = s_j·f_j,steady ,     s_j = −(4/b_ref)·(y_j − y_ref)
+```
+
+Chosen over the equivalent-incidence lift-slope proxy because it is the rigorous form: C_lr
+genuinely tracks the trim C_L, which the proxy cannot reproduce. Theory §7.2 Eqs. 28a/28b added.
+
+**Deliverables.**
+- `aero/integration.py` — `yaw_rate_force_scale` (the geometric scale), `build_fjx_yaw` (the
+  force-side `YAW` column, `build_skj`'s force/q box-major layout) and `build_fj_rigidrate_yaw`
+  (the physical-rate sibling, scaled through `rigid_rate_scales[6]` so the trim-label and
+  free-flight paths agree by construction).
+- `solver/sol144.py` — `_stage_refine_yaw_rate`: the operator is scaled by the trim loading, so
+  the single linear trim solve becomes a fixed point (solve → rebuild at the new loading →
+  re-solve; cap 8, 1e-10 relative, warn on non-convergence). The column is added into `Q_ax_a`
+  (free YAW) and into `f_rhs_a` (prescribed YAW). `_trim_aero_box_forces` extracted so the
+  totals stage and the fixed point share one definition of the trim loading; the increment is
+  carried into the totals, per-box forces, flight-load export and net maneuver load.
+- `solver/sol144_derivs.py` — `yaw_force_column` helper; rigid, restrained and hinge-moment
+  columns add the direct force term (the unrestrained AE8b block needs nothing: it reads
+  `Q_ax_a`, already updated). New `Sol144TrimResult.yaw_rate_iters` + f06 echo line.
+- Phase G0 — `modal_basis.assemble_aset_operators(f_box_ref=…)` adds the force-side `YAW`
+  column, `build_hset_gafs(f_box_ref=…)` the DOF-6 rate column; both maneuver solvers pass the
+  IC-trim loading through the new `yaw_reference_loading` helper.
+
+**Key decisions.**
+1. **Reference loading = the *steady* box-force field** (`skj @ gamma`), not the incremented
+   load: Δf is first order in ΔU/U, so scaling the already-incremented load double-counts at
+   second order. Same rule in the trim fixed point and in the transient hook.
+2. **Force point, not collocation point** — this scales a *load*, so `y_j` is taken at the box
+   ¼-chord force point, unlike the ¾-chord boundary conditions in `build_djx`.
+3. **y measured from the RCSID origin**, the same reference the moment resultants use (a no-op
+   on a symmetric deck, correct off-centreline).
+4. **Gated** on `YAW` being a trim label AND either free or prescribed nonzero. With a zero yaw
+   rate the increment is identically zero, so every existing deck takes the pre-Step-67 path
+   and is bit-identical — the cheapest possible answer to the "planar longitudinal results
+   unchanged" acceptance clause.
+5. **Transient reference loading frozen at the IC trim** (fixed-Φ discipline, as `MASSSET`).
+6. The whole 3-vector of each box force is scaled, so canted/vertical panels' in-plane
+   components come along; the fin sidewash column is untouched and the two effects compose
+   (distinct physics, not a double count).
+
+**Test/Acceptance** (`tests/aero/test_yaw_rate_wing.py`, 19 tests). The sharp gate is the
+closed form: in force/q units C_lr = −(4/(S_ref·b_ref²))·Σ(y_j−y_ref)²·F_z,j, matched to 1e-12,
+equal to C_L/4 within 15 % on the (non-elliptic) rectangular AR=8 deck, and **exactly linear in
+the trim C_L** — the property the loading-scaled form was chosen for, asserted directly rather
+than inferred. Plus: the scale formula box-by-box at two reference stations; antisymmetry;
+zero reference loading → exactly zero column; physical-rate ↔ label-column identity; other
+label columns bit-identical; end-to-end trim gating (`yaw_rate_iters == 0` without a YAW label),
+bit-identity at YAW = 0, convergence in ≤ 4 iterations at YAW = 0.05 with a real rolling moment
+and an unchanged longitudinal trim, load participation in the exported per-box forces, and ±r
+antisymmetry. Full suite 1725 passed / 6 xfailed.
+
+**Known limitation, asserted so it cannot regress silently.** Every box force is strictly
+panel-normal (no leading-edge suction), so a planar wing has F_x = F_y = 0 and the scaled load
+produces a rolling moment but **exactly zero yaw moment**
+(`test_planar_wing_yaw_moment_stays_zero`). The wing's yaw damping is an induced-drag
+asymmetry needing a per-box streamwise force — Step 67b. Until then C_nr is the fin's alone.
+The original Step 67 acceptance text ("nonzero C_nr, drag-asymmetry sign") was therefore not
+met by 67a and is carried into the 67b backlog entry rather than reinterpreted.
+
+---
+
 ## Sample Families
 
 ### Step 65 (P6) — Flagship realistic-airplane SOL 144 sample family + theory doc ✅ COMPLETE (2026-08-01)

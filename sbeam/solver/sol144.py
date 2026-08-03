@@ -33,7 +33,7 @@ from sbeam.assembly.coord_transform import get_transform
 from sbeam.assembly.mass_matrix import assemble_global_mass
 from sbeam.aero.aero_model import AeroModel
 from sbeam.aero.coupling import build_qaa, build_fg
-from sbeam.aero.integration import build_djx, build_djk
+from sbeam.aero.integration import build_djx, build_djk, build_fjx_yaw
 from sbeam.results.results import Sol144TrimResult
 from sbeam.results.monitor_points import compute_monitor_loads
 from sbeam.results.section_cuts import compute_section_cuts
@@ -260,6 +260,10 @@ class _TrimState:
     displacements: FloatArray = field(init=False)
     bar_forces: dict[int, Any] = field(init=False)
     bar_stresses: dict[int, Any] = field(init=False)
+
+    # _stage_refine_yaw_rate (Step 67a)
+    f_box_yaw: Optional[FloatArray] = field(init=False)
+    yaw_rate_iters: int = field(init=False)
 
     # _stage_compute_derivs
     rigid_derivs: dict[str, dict[str, float]] = field(init=False)
@@ -688,6 +692,102 @@ def _stage_recover_displacements(st: _TrimState) -> None:
     st.bar_forces, st.bar_stresses = bar_forces, bar_stresses
 
 
+#: Step 67a yaw-rate fixed point: iteration cap and the relative trim-variable
+#: change below which the reference loading is considered converged.
+_YAW_MAX_ITER = 8
+_YAW_TOL = 1e-10
+
+
+def _trim_aero_box_forces(st: _TrimState) -> tuple[FloatArray, FloatArray]:
+    """``(gamma, f_box_steady)`` at the current trim state, in force/q units.
+
+    ``f_box_steady`` is the normalwash-driven load — the elastic structural
+    slope, the trim-label columns and the ``w_g`` baseline — *without* the
+    Step-67a yaw-rate increment.  That is deliberately the quantity the yaw
+    term is scaled from: ``Δf = 2(ΔU/U)·f_steady`` is first order in ΔU/U, so
+    scaling the already-incremented load would double-count at second order.
+    """
+    aero = st.aero
+    djk = build_djk(aero.boxes)
+    w_struct = djk @ (aero.require_g_slope() @ st.displacements)
+    w_total  = w_struct + st.D_jx @ st.delta_all + aero.wg
+    gamma    = aero.ajj_inv_corr @ w_total
+    return gamma, aero.skj @ gamma
+
+
+def _yaw_delta(st: _TrimState) -> float:
+    """Trimmed ``YAW`` label value (0.0 when the model has no YAW label)."""
+    col = st.label_to_col.get("YAW")
+    return float(st.delta_all[col]) if col is not None else 0.0
+
+
+def _stage_refine_yaw_rate(st: _TrimState) -> None:
+    """Step 67a — the yaw-rate wing term, as a loading-scaled force column.
+
+    The wing's yaw-rate effect is a spanwise dynamic-pressure asymmetry
+    (theory §7.2 Eq. 28), not a normalwash, so it enters as a force-side
+    column ``ΔQ_ax[:, YAW] = G_loadᵀ·(s ⊙ f_box,steady)`` rather than as a
+    ``D_jx`` column.  Because it is scaled by the trim loading it is
+    trim-state-dependent, which turns the single linear trim solve into a
+    fixed point: solve → rebuild the column at the new loading → re-solve,
+    until the trim variables stop moving.
+
+    Gated on ``YAW`` being a trim label AND either free or prescribed nonzero:
+    with a zero yaw rate the increment is identically zero, so every deck
+    without a yaw-rate case takes exactly the pre-Step-67 code path and its
+    results are bit-identical.
+    """
+    st.f_box_yaw = None
+    st.yaw_rate_iters = 0
+
+    yaw_col = st.label_to_col.get("YAW")
+    if yaw_col is None:
+        return
+    pres_yaw = st.prescribed_dict.get("YAW", 0.0)
+    if "YAW" not in st.free_labels and pres_yaw == 0.0:
+        return
+
+    # Spanwise reference station: the RCSID origin, the same point the other
+    # rate columns and the moment resultants reference (y = 0 on the usual
+    # symmetric deck, so this is a no-op there but correct off-centreline).
+    y_ref = float(st.suport_pos[1])
+
+    Q_ax_base  = st.Q_ax_a.copy()
+    f_rhs_base = st.f_rhs_a.copy()
+    prev_delta = st.delta_all.copy()
+    rel_change = float("inf")
+
+    for it in range(1, _YAW_MAX_ITER + 1):
+        _gamma, f_box_steady = _trim_aero_box_forces(st)
+        f_box_yaw = build_fjx_yaw(st.aero.boxes, f_box_steady, st.bulk, y_ref)
+        col_a = st.red.reduce_vector(
+            st.aero.require_g_load().T @ f_box_yaw)            # (n_a,)
+
+        st.Q_ax_a = Q_ax_base.copy()
+        st.Q_ax_a[:, yaw_col] += col_a
+        st.f_rhs_a = f_rhs_base + (st.q_dyn * pres_yaw) * col_a
+        st.f_box_yaw = f_box_yaw
+
+        _stage_solve_trim(st)
+        _stage_recover_displacements(st)
+        st.yaw_rate_iters = it
+
+        scale = max(float(np.max(np.abs(st.delta_all))), 1.0)
+        rel_change = float(np.max(np.abs(st.delta_all - prev_delta))) / scale
+        prev_delta = st.delta_all.copy()
+        if rel_change <= _YAW_TOL:
+            return
+
+    warnings.warn(
+        f"run_sol144_trim: the Step 67a yaw-rate loading fixed point did not "
+        f"converge in {_YAW_MAX_ITER} iterations (last relative trim-variable "
+        f"change {rel_change:.2e} > {_YAW_TOL:.0e}); the reported trim uses "
+        "the last iterate.  Check the yaw rate and dynamic pressure — the term "
+        "is linear in r·y/V and this form assumes it stays a small perturbation.",
+        UserWarning,
+    )
+
+
 def _stage_compute_derivs(st: _TrimState) -> None:
     """Rigid, elastic-restrained and unrestrained (AE8b) stability derivatives."""
     bulk, aero, q_dyn = st.bulk, st.aero, st.q_dyn
@@ -701,7 +801,12 @@ def _stage_compute_derivs(st: _TrimState) -> None:
     # ------------------------------------------------------------------ #
     # Rigid derivatives (no structural deformation)
     # ------------------------------------------------------------------ #
-    rigid_derivs = compute_rigid_derivs(aero, D_jx, all_labels, bulk, x_ref, suport_pos)
+    # The Step-67a yaw-rate force column rides on the YAW label alongside its
+    # normalwash column (None when the deck has no yaw-rate case).  The
+    # unrestrained (AE8b) block needs no equivalent argument: it reads Q_ax_a,
+    # which _stage_refine_yaw_rate has already updated in place.
+    rigid_derivs = compute_rigid_derivs(
+        aero, D_jx, all_labels, bulk, x_ref, suport_pos, f_box_yaw=st.f_box_yaw)
 
     # ------------------------------------------------------------------ #
     # Elastic restrained derivatives (finite difference, u_r = 0)
@@ -711,6 +816,7 @@ def _stage_compute_derivs(st: _TrimState) -> None:
         aero, D_jx,
         T, free_local, len(red_dofs),
         bulk, x_ref, q_dyn, suport_pos,
+        f_box_yaw=st.f_box_yaw,
     )
 
     # ------------------------------------------------------------------ #
@@ -731,18 +837,19 @@ def _stage_compute_derivs(st: _TrimState) -> None:
 def _stage_compute_totals(st: _TrimState) -> None:
     """Aerodynamic totals at trim (body/wind axes) + hinge moments."""
     bulk, aero = st.bulk, st.aero
-    displacements, D_jx, delta_all, all_labels = (
-        st.displacements, st.D_jx, st.delta_all, st.all_labels)
+    D_jx, delta_all, all_labels = st.D_jx, st.delta_all, st.all_labels
     aeros, x_ref, suport_pos = st.aeros, st.x_ref, st.suport_pos
 
     # ------------------------------------------------------------------ #
     # Total CL and CM at trim
     # ------------------------------------------------------------------ #
-    djk = build_djk(aero.boxes)
-    w_struct = djk @ (aero.require_g_slope() @ displacements)
-    w_total  = w_struct + D_jx @ delta_all + aero.wg
-    gamma    = aero.ajj_inv_corr @ w_total
-    f_box_vec = aero.skj @ gamma
+    gamma, f_box_vec = _trim_aero_box_forces(st)
+    # Step 67a — the yaw-rate load increment is part of the trimmed load, so it
+    # flows from here into the totals, the per-box forces, the flight-load
+    # export and the balanced-maneuver net load.  ``f_box_yaw`` is None (and the
+    # trimmed YAW is zero) on every deck without a yaw-rate case.
+    if st.f_box_yaw is not None:
+        f_box_vec = f_box_vec + _yaw_delta(st) * st.f_box_yaw
     Fz_total = float(f_box_vec[2::3].sum())
     Fx_total = float(f_box_vec[0::3].sum())
     # nose-up-positive (single-source helper, AE1 Step E); whole-airplane (full-span)
@@ -780,7 +887,8 @@ def _stage_compute_totals(st: _TrimState) -> None:
     # ------------------------------------------------------------------ #
     # Hinge-moment derivatives + trimmed hinge moment per AESURF control
     # ------------------------------------------------------------------ #
-    hinge_moments = compute_hinge_moments(aero, D_jx, all_labels, bulk, f_box_vec)
+    hinge_moments = compute_hinge_moments(
+        aero, D_jx, all_labels, bulk, f_box_vec, f_box_yaw=st.f_box_yaw)
 
     st.gamma, st.f_box_vec = gamma, f_box_vec
     st.total_cl, st.total_cm, st.total_cx = total_cl, total_cm, total_cx
@@ -962,6 +1070,7 @@ def _pack_trim_result(st: _TrimState) -> Sol144TrimResult:
         section_loads=st.section_loads,
         chordcp_echo=st.chordcp_echo,
         load_injection_echo=st.load_injection_echo,
+        yaw_rate_iters=st.yaw_rate_iters,
         massset_sid=st.massset_sid,
         massset_label=st.mass_case_label,
         massset_mass=mass_case_gpwg.total_mass,
@@ -1011,6 +1120,7 @@ def run_sol144_trim(
     _stage_build_downwash_and_reduce(st)
     _stage_solve_trim(st)
     _stage_recover_displacements(st)
+    _stage_refine_yaw_rate(st)
     _stage_compute_derivs(st)
     _stage_compute_totals(st)
     _stage_flight_and_net_loads(st)

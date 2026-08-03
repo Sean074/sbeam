@@ -118,6 +118,7 @@ from sbeam.solver.modal_basis import (
     build_maneuver_basis,
     rigid_state_label_increments,
     truncate_basis,
+    yaw_reference_loading,
 )
 from sbeam.solver.sol144 import run_sol144_trim
 from sbeam.solver.sol144_util import (
@@ -311,7 +312,11 @@ def run_maneuver_modal(
 
     # Shared a-set operators (mass case included) once; the l-set recovery
     # operators reuse them instead of re-assembling.
-    ops_a = assemble_aset_operators(bulk, subcase, aero)
+    # Step 67a — the yaw-rate wing term is scaled by the IC-trim loading, frozen
+    # for the whole time history (fixed-Φ discipline); None-safe on decks with
+    # no YAW label, where it changes nothing.
+    f_box_ref = yaw_reference_loading(aero, ic)
+    ops_a = assemble_aset_operators(bulk, subcase, aero, f_box_ref=f_box_ref)
     ops = assemble_operators(bulk, subcase, aero, q, ops_a=ops_a)
 
     eigrl_sid = mload.method if mload.method > 0 else 0
@@ -343,7 +348,8 @@ def run_maneuver_modal(
         phi_corr[:, n_r:] -= phi0[:, :n_r] @ X
         basis = replace(basis, phi=phi_corr)
 
-    gafs = build_hset_gafs(bulk, ops_a, basis, aero, v_inf, zeta=mload.zeta)
+    gafs = build_hset_gafs(bulk, ops_a, basis, aero, v_inf, zeta=mload.zeta,
+                           f_box_ref=f_box_ref)
 
     phi = basis.phi
     phi_r = phi[:, :n_r]

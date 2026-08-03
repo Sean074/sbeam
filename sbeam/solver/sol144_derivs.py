@@ -7,6 +7,7 @@ All names remain importable from ``sbeam.solver.sol144`` (facade).
 """
 
 import warnings
+from typing import Optional
 
 import numpy as np
 import scipy.linalg
@@ -21,6 +22,23 @@ from sbeam.solver.sol144_util import pitch_moment, aero_moment_resultant
 from sbeam.types import FloatArray, LuFactor
 
 
+def yaw_force_column(
+    label: str, f_box_yaw: Optional[FloatArray], n_box: int
+) -> FloatArray:
+    """The Step-67a force-side increment belonging to ``label``.
+
+    The yaw-rate wing term (theory §7.2 Eq. 28, ``aero.integration.build_fjx_yaw``)
+    is a load *scaling* rather than a normalwash, so it never appears in ``D_jx``
+    and every per-column force recovery has to add it explicitly for the ``YAW``
+    label.  Returns zeros for every other label, and for decks with no yaw-rate
+    case (``f_box_yaw is None``) — which is what keeps their results
+    bit-identical to the pre-Step-67 solver.
+    """
+    if f_box_yaw is None or label.upper() != "YAW":
+        return np.zeros(3 * n_box)
+    return f_box_yaw
+
+
 def compute_rigid_derivs(
     aero: AeroModel,
     D_jx: FloatArray,
@@ -28,6 +46,7 @@ def compute_rigid_derivs(
     bulk: BulkData,
     x_ref: float,
     ref_pt: FloatArray,
+    f_box_yaw: Optional[FloatArray] = None,
 ) -> dict[str, dict[str, float]]:
     """Rigid aerodynamic stability and control derivatives.
 
@@ -43,6 +62,12 @@ def compute_rigid_derivs(
     ``CMX``/``CMZ`` use ``aero_moment_resultant`` so the roll/yaw moments carry
     the side force ``Fy`` of any canted (±Γ dihedral) panel; on a planar wing
     the roll column decouples cleanly from Fz/My (V-LAT gate).
+
+    ``f_box_yaw`` (Step 67a) is the force-side yaw-rate column evaluated at the
+    trim loading; when given it is added to the ``YAW`` column's box forces, so
+    C_lr picks up the wing's dynamic-pressure asymmetry.  These are still
+    *rigid* derivatives (u_a = 0) about a trim-dependent reference loading —
+    the one place a rigid derivative here is not purely geometric.
     """
     sref = require_aeros(bulk).sref
     cref = require_aeros(bulk).cref
@@ -56,7 +81,8 @@ def compute_rigid_derivs(
         # Normalwash from unit perturbation of this label alone
         w_pert = D_jx[:, col]
         gamma = aero.ajj_inv_corr @ w_pert          # (n_box,)
-        f_box_vec = aero.skj @ gamma                 # (3*n_box,)
+        f_box_vec = (aero.skj @ gamma
+                     + yaw_force_column(label, f_box_yaw, n_box))  # (3*n_box,)
 
         Fz_sens = f_box_vec[2::3].sum()
         My_sens = pitch_moment(f_box_vec, boxes, x_ref)   # nose-up-positive
@@ -83,6 +109,7 @@ def compute_hinge_moments(
     all_labels: list[str],
     bulk: BulkData,
     f_box_trim: FloatArray,
+    f_box_yaw: Optional[FloatArray] = None,
 ) -> dict[str, dict[str, float]]:
     """Hinge-moment derivatives and trimmed hinge moment per AESURF control.
 
@@ -121,7 +148,8 @@ def compute_hinge_moments(
 
         entry = {'total': _hm(f_box_trim)}
         for col, lbl in enumerate(all_labels):
-            f_box_col = aero.skj @ (aero.ajj_inv_corr @ D_jx[:, col])
+            f_box_col = (aero.skj @ (aero.ajj_inv_corr @ D_jx[:, col])
+                         + yaw_force_column(lbl, f_box_yaw, len(aero.boxes)))
             entry[lbl] = _hm(f_box_col)
         hinge_moments[aesurf.label.upper()] = entry
 
@@ -143,6 +171,7 @@ def compute_restrained_derivs(
     x_ref: float,
     q: float,
     ref_pt: FloatArray,
+    f_box_yaw: Optional[FloatArray] = None,
 ) -> dict[str, dict[str, float]]:
     """Elastic restrained stability derivatives — exact analytic form (AE1 Step G).
 
@@ -196,7 +225,11 @@ def compute_restrained_derivs(
         # Linear normalwash sensitivity: direct trim term + elastic feedback.
         dw = D_jx[:, col] + djk @ (aero.require_g_slope() @ u_full_d)
         dgamma = aero.ajj_inv_corr @ dw
-        df_box = aero.skj @ dgamma                              # (3·n_box,) force/q
+        # Step 67a: the direct force-side yaw term.  Its elastic feedback is
+        # already inside du_l — Q_ax_a carries the column — so only the direct
+        # part is added here.
+        df_box = (aero.skj @ dgamma
+                  + yaw_force_column(label, f_box_yaw, n_box))  # (3·n_box,) force/q
 
         Mx, _, Mz = aero_moment_resultant(
             df_box.reshape(n_box, 3), boxes, ref_pt)

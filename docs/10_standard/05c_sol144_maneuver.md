@@ -309,6 +309,22 @@ derivative blocks in `sol144_derivs.py` (see the module map in `05_aeroelastics.
    inertial load) to the a-set via the same RBE3 + SPC partition as SOL 101.
 3. Partition the a-set into l-set / r-set (SUPORT DOFs), set `u_r = 0`, and solve the
    Schur-complement system for the free trim variables and `u_l`.
+3a. **Yaw-rate wing term** (Step 67a, `_stage_refine_yaw_rate`). The wing half of the
+   yaw-rate effect is a spanwise dynamic-pressure asymmetry, not a normalwash, so it is a
+   *force-side* column `ΔQ_ax[:, YAW] = G_dispᵀ(s ⊙ f_box,steady)` with
+   `s_j = −(4/b_ref)(y_j − y_ref)` (`aero.integration.build_fjx_yaw`; theory §7.2 Eq. 28a),
+   scaled by the trimmed loading and hence trim-state-dependent. Steps 3–4 therefore
+   iterate: solve → rebuild the column at the new loading → re-solve, until the trim
+   variables stop moving (≤ 8 iterations, 1e-10 relative; a warning if not). The stage is
+   **gated** on `YAW` being a trim label AND either free or prescribed nonzero, so a deck
+   without a yaw-rate case runs the single linear solve exactly as before and its results
+   are bit-identical. Reference loading: the converged elastic, corrected, *steady* box
+   forces (the increment is first order in ΔU/U and must not scale itself). The increment
+   is part of the trimmed load — it flows into the totals, the per-box forces, the
+   flight-load export and the balanced-maneuver net load — and the f06 TRIM VARIABLES block
+   echoes `YAW-RATE WING TERM ACTIVE` with the iteration count when it is live. The wing
+   contributes `C_lr` only; `C_nr` needs the Step 67b drag term (see the theory §7.2
+   limitation note).
 4. Recover CBAR forces/stresses, rigid and (analytic) restrained derivatives, total CL/CM,
    per-AESURF hinge-moment derivatives (`_compute_hinge_moments`, moment of the box forces about
    each control's `cid1` hinge axis), and return a `Sol144TrimResult`.
@@ -380,7 +396,8 @@ coefficients alongside the longitudinal `CZ`/`CMY`:
 
 ```
 CMX = Mx / (S_ref · b_ref)    rolling moment   → C_lp = ∂CMX/∂ROLL,  C_lβ = ∂CMX/∂SIDES
-CMZ = Mz / (S_ref · b_ref)    yawing moment    → C_nr = ∂CMZ/∂YAW
+                                               → C_lr = ∂CMX/∂YAW  (Step 67a wing term)
+CMZ = Mz / (S_ref · b_ref)    yawing moment    → C_nr = ∂CMZ/∂YAW  (fin sidewash only)
 ```
 
 `Mx`, `Mz` are the full 3-component cross-product resultant `Σ(r_box − ref) × F_box`

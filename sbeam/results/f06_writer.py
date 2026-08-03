@@ -504,6 +504,15 @@ def _build_f06_sol144_text(
         kind = "PRESCRIBED" if label.upper() in prescribed else "FREE"
         lines.append(f"      {label:<12}    {kind:<12}  {_fmt(result.trim_vars[label])}")
     lines.append("")
+    # Step 67a — the yaw-rate wing term is scaled by the trim loading, so the
+    # trim is a fixed point rather than a single linear solve.  Echoed only when
+    # the term is active, so every other deck's f06 is unchanged.
+    if result.yaw_rate_iters:
+        lines.append(
+            f"      YAW-RATE WING TERM ACTIVE (LOADING-SCALED): "
+            f"{result.yaw_rate_iters} LOADING ITERATION(S)"
+        )
+        lines.append("")
 
     # ---- INJECTED OPERATING POINT (CHORDCP, Step 54) ----
     if result.chordcp_echo:

@@ -222,6 +222,75 @@ def build_dj_rigidrate(
     return out
 
 
+def yaw_rate_force_scale(
+    boxes: list[AeroBox], bulk: BulkData, y_ref: float = 0.0
+) -> FloatArray:
+    """Per-box load scaling per unit ``YAW`` label (Step 67a).  Shape: (n_box,).
+
+    The second of the two yaw-rate effects of theory Eq. 28.  A yaw rate ``r``
+    gives the wing a spanwise *edgewise-velocity* (dynamic-pressure) asymmetry
+    ``ΔU(y) = −r·(y − y_ref)`` — the advancing wing sees a higher q∞ — which is
+    NOT a normalwash and therefore cannot be a ``build_djx`` column.  To first
+    order in ΔU/U the local load scales as
+
+        Δf_box = 2·(ΔU/U)·f_box,steady = −2·(r·(y−y_ref)/V)·f_box,steady,
+
+    and since the ``YAW`` trim label is the reduced rate ``r·b_ref/(2V)`` (so
+    ``r/V = (2/b_ref)·YAW``) the per-unit-label scaling is the purely geometric
+
+        s_j = −(4/b_ref)·(y_j − y_ref).
+
+    ``y_j`` is taken at the box **force point** (¼-chord bound-vortex midpoint),
+    where the load acts — not at the ¾-chord collocation point that carries the
+    boundary conditions in ``build_djx``.
+
+    The complementary fin sidewash Δβ(x) = r(x−x_ref)/V is the ``build_djx``
+    ``YAW`` normalwash column; the two effects are physically distinct and
+    compose (they are not a double count).
+    """
+    b_ref = require_aeros(bulk).bref
+    if b_ref <= 0.0:
+        raise ValueError(
+            f"yaw_rate_force_scale: AEROS bref must be positive; got {b_ref}")
+    y = np.array([box.force_point[1] for box in boxes])
+    return -(4.0 / b_ref) * (y - y_ref)
+
+
+def build_fjx_yaw(
+    boxes: list[AeroBox], f_box_ref: FloatArray, bulk: BulkData,
+    y_ref: float = 0.0,
+) -> FloatArray:
+    """Force-side ``YAW`` column: ``s ⊙ f_box_ref``.  Shape: (3*n_box,).
+
+    The load increment per unit ``YAW`` trim label, in the same box-major
+    ``[Fx0,Fy0,Fz0,Fx1,…]`` force/q layout that ``build_skj`` produces.  The
+    whole 3-vector is scaled: on a canted or vertical panel the in-plane force
+    components are part of the same load and scale with it.
+
+    ``f_box_ref`` is the *reference loading* the term is evaluated at — the
+    corrected, elastic, trimmed box-force field.  That makes this operator
+    trim-state-dependent (the price of the rigorous form: C_lr genuinely scales
+    with the trim CL), unlike the fixed geometric ``build_djx`` columns.
+    """
+    scale = yaw_rate_force_scale(boxes, bulk, y_ref)
+    return (np.repeat(scale, 3) * np.asarray(f_box_ref, dtype=float))
+
+
+def build_fj_rigidrate_yaw(
+    boxes: list[AeroBox], f_box_ref: FloatArray, bulk: BulkData, v_inf: float,
+    y_ref: float = 0.0,
+) -> FloatArray:
+    """``build_fjx_yaw`` per unit *physical* yaw rate r (rad/s).  Shape: (3*n_box,).
+
+    The force-side sibling of ``build_dj_rigidrate``'s DOF-6 column, for the
+    free-flight maneuver basis (Step 61/63).  Scaled through the single owner of
+    the rate nondimensionalization (``rigid_rate_scales``), so the trim-label and
+    physical-rate paths agree by construction.
+    """
+    return (rigid_rate_scales(bulk, v_inf)[6]
+            * build_fjx_yaw(boxes, f_box_ref, bulk, y_ref))
+
+
 def build_djx(
     boxes: list[AeroBox], trim_labels: list[str], bulk: BulkData,
     id_to_k: Optional[dict[int, int]] = None,
@@ -239,7 +308,9 @@ def build_djx(
     PITCH   -(2/cref)*(x_ctrl[j] - x_ref)
     ROLL    -(2/bref)*y_ctrl[j]
     YAW     -(2/bref)*(x_ctrl[j] - x_ref)*ny[j]  (yaw-rate sidewash on vertical
-            panels; vanishes on horizontal/z-normal panels)
+            panels; vanishes on horizontal/z-normal panels.  The wing's
+            dynamic-pressure asymmetry is the force-side ``build_fjx_yaw``
+            companion — a normalwash column cannot represent it, Step 67a)
     URDD1–6  0  (inertial — structural only, no direct aerodynamic effect)
     AESURF  -(h_hat × n[j])·x_hat * eff for boxes in the AELIST, 0 elsewhere,
             where h_hat is the hinge axis (cid1 y-axis); reduces to -nz[j]*eff

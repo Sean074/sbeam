@@ -1283,6 +1283,46 @@ $$
 a spanwise dynamic-pressure asymmetry on the wing plus a sideslip on the vertical tail, giving
 the yaw-damping derivative $C_{n_r}$.
 
+**The wing half of Equation (28) is not a normalwash** (Step 67a). $\Delta U$ is an *edgewise*
+velocity perturbation: it changes the local dynamic pressure, not the local incidence, so it
+cannot be an extra boundary-condition column the way (26) and (27) are. To first order in
+$\Delta U/U$ the local load simply scales, and since the `YAW` trim label is the reduced rate
+$rb_\text{ref}/2V$ the per-unit-label increment is purely geometric:
+
+$$
+\Delta\mathbf F_j = 2\frac{\Delta U}{U}\mathbf F_{j,\text{steady}}
+ = s_j\,\mathbf F_{j,\text{steady}},
+\qquad
+s_j = -\frac{4}{b_\text{ref}}\,(y_j-y_\text{ref}).
+\tag{28a}
+$$
+
+$\mathbf F_{j,\text{steady}}$ is the *steady* (normalwash-driven) box load — scaling the
+already-incremented load would double-count at second order — evaluated at the **trim** state,
+which makes this a loading-linear force-side operator rather than a fixed $D_{jx}$ column and
+turns the trim into a fixed point (solve → rescale → re-solve). The fin sidewash of (28) remains
+an ordinary normalwash column and the two compose; they are distinct effects, not a double count.
+
+The formulation is the rigorous one *because* it is trim-dependent. Integrating (28a) gives, in
+force/$q$ units, the closed form
+
+$$
+C_{l_r} = -\frac{4}{S_\text{ref}b_\text{ref}^2}\sum_j (y_j-y_\text{ref})^2 F_{z,j}
+\;\;\xrightarrow[\text{elliptic}]{}\;\; \frac{C_L}{4},
+\tag{28b}
+$$
+
+the strip-theory result — $C_{l_r}$ genuinely tracks the trim $C_L$, which an equivalent-incidence
+lift-slope proxy could not reproduce.
+
+**Known limitation — the wing $C_{n_r}$.** Every box force in this VLM is strictly panel-normal
+(no leading-edge suction, §5.4), so a planar wing has $F_x=F_y=0$ and (28a) produces *no* yaw
+moment: the wing's yaw damping is an induced-**drag** asymmetry and needs a streamwise per-box
+force, which is the Step 67b follow-on. Until then $C_{n_r}$ is carried by the fin sidewash
+column alone and the wing contribution is zero. Profile drag is absent in any case (sbeam has no
+viscous model), so even with 67b the wing $C_{n_r}$ covers only the induced part — an
+under-prediction of a damping derivative, i.e. the non-conservative direction.
+
 ![Rigid-body rates as a local incidence field](../figures/maneuver_rates.svg)
 
 *Figure 6 — Rigid-body rates resolved into a local incidence/velocity field. Pitch rate gives a

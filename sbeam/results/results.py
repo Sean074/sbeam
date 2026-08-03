@@ -226,6 +226,8 @@ class Sol144TrimResult:
     section_loads: Optional[dict[str, SectionCutResult]] = None  # {name: SectionCutResult} MONSECT running loads
     chordcp_echo: Optional[dict[str, Any]] = None       # Step 54 injected-operating-point echo: {'alpha_ref', 'data_machs', 'surfaces': {eid: {'FZ_Q','MY_Q','FZ_Q_VLM'}}}
     load_injection_echo: Optional[list[dict[str, Any]]] = None  # Step 64 SPLINE0/un-splined load injection: [{'source','master_grid','n_boxes','force','moment'}]; None/[] = no injection
+    # --- Step 67a (quasi-steady yaw-rate wing term) ---
+    yaw_rate_iters: int = 0                   # fixed-point iterations spent on the loading-scaled yaw-rate force column; 0 = term not active (no YAW label, or zero yaw rate)
     # --- Step 60 (MASSSET payload / mass case) ---
     massset_sid: Optional[int] = None         # MASSSET SID selected by the subcase; None = baseline
     massset_label: str = "BASELINE"           # mass-case name for output headers

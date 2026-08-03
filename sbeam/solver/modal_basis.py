@@ -78,7 +78,10 @@ from sbeam.assembly.reduction import reduce_to_aset, AsetReduction
 from sbeam.assembly.rigid_body import build_rigid_vectors_g
 from sbeam.aero.aero_model import AeroModel
 from sbeam.aero.coupling import build_qaa, build_fg, build_gaf
-from sbeam.aero.integration import build_djx, build_dj_rigidrate, rigid_rate_scales
+from sbeam.aero.integration import (
+    build_djx, build_dj_rigidrate, rigid_rate_scales,
+    build_fjx_yaw, build_fj_rigidrate_yaw,
+)
 from sbeam.solver.sol103 import solve_modes
 from sbeam.solver.sol144_util import build_inertial_cols, get_suport_local
 from sbeam.types import FloatArray, IntArray, SparseMatrix
@@ -199,14 +202,36 @@ class AsetOperators:
 # Shared a-set assembly
 # ---------------------------------------------------------------------------
 
+def yaw_reference_loading(aero: AeroModel, trim: Any) -> Optional[FloatArray]:
+    """Step-67a reference loading (force/q) from a completed SOL 144 trim.
+
+    ``Sol144TrimResult.box_gamma`` is the trim ΔCp field, so ``skj @ gamma`` is
+    the *steady* (normalwash-driven) box-force field — the right thing to scale,
+    since the yaw increment is first order in ΔU/U and must not be scaled by
+    itself.  Returns None when the trim carries no box data, which leaves the
+    transient operators on their pre-Step-67 path.
+    """
+    gamma = getattr(trim, "box_gamma", None)
+    return None if gamma is None else aero.skj @ gamma
+
+
 def assemble_aset_operators(
     bulk: BulkData, subcase: SubcaseControl, aero: AeroModel,
+    f_box_ref: Optional[FloatArray] = None,
 ) -> AsetOperators:
     """Assemble the a-set operators the maneuver solvers share.
 
     Mirrors ``run_sol144_trim``'s assembly (Q_ax, K_aa, Q_aa, M_aa, M_ax,
     baseline aero, RCSID transform) on the Step 59 ``reduce_to_aset`` path.  All
     aerodynamic quantities are dynamic-pressure free; the caller applies q.
+
+    ``f_box_ref`` (Step 67a, force/q units) is the IC-trim box-force field the
+    yaw-rate wing term is scaled from.  Passing it adds the force-side ``YAW``
+    column into ``Q_ax_a``; omitting it reproduces the pre-Step-67 operators
+    exactly.  The reference loading is **frozen at the IC trim** for the whole
+    time history — the same fixed-Φ discipline the ``MASSSET`` mass cases use,
+    and an approximation that is exact to the order the Level-1 quasi-steady
+    model already works to.
     """
     from sbeam.assembly.coord_transform import get_transform
 
@@ -233,6 +258,12 @@ def assemble_aset_operators(
     D_jx = build_djx(aero.boxes, all_labels, bulk,
                      id_to_k=aero.require_box_id_to_k())          # (n_box, n_lab)
     Q_ax_g = aero.require_g_load().T @ aero.skj @ aero.ajj_inv_corr @ D_jx    # (n_g, n_lab)
+
+    # Step 67a — the yaw-rate wing term is a load scaling, not a normalwash, so
+    # it is added to the YAW column on the force side (see build_fjx_yaw).
+    if f_box_ref is not None and "YAW" in label_to_col:
+        Q_ax_g[:, label_to_col["YAW"]] += aero.require_g_load().T @ build_fjx_yaw(
+            aero.boxes, f_box_ref, bulk, float(suport_pos[1]))
 
     red = reduce_to_aset(bulk, grid_index, subcase.spc_sid)
 
@@ -609,6 +640,7 @@ def build_hset_gafs(
     aero: AeroModel,
     v_inf: float,
     zeta: float = 0.0,
+    f_box_ref: Optional[FloatArray] = None,
 ) -> HsetGafs:
     """Project the aerodynamic operators onto the basis (once per job).
 
@@ -616,6 +648,11 @@ def build_hset_gafs(
     Level-1 quasi-steady rate aerodynamics: the rigid-rate columns from
     ``build_dj_rigidrate``; the elastic-rate columns are an explicit zero block —
     the documented G0-d (apparent-mass / lag) hook.
+
+    ``f_box_ref`` (Step 67a) adds the force-side yaw-rate wing term to the yaw
+    (DOF 6) rate column, scaled through the same ``rigid_rate_scales`` factors
+    as the normalwash part, so the rate column and the ``Q_hx`` YAW label column
+    describe the same physics from either direction.
     """
     phi = basis.phi
     n_h, n_r = basis.n_h, basis.n_r
@@ -631,6 +668,12 @@ def build_hset_gafs(
     # normalwash columns.
     dj_rate = build_dj_rigidrate(aero.boxes, basis.rigid_dofs, bulk, v_inf)
     B_ar_g = aero.require_g_load().T @ aero.skj @ aero.ajj_inv_corr @ dj_rate   # (n_g, n_r)
+
+    # Step 67a — force-side yaw-rate wing term on the DOF-6 (yaw) rate column.
+    if f_box_ref is not None and 6 in basis.rigid_dofs:
+        B_ar_g[:, basis.rigid_dofs.index(6)] += (
+            aero.require_g_load().T @ build_fj_rigidrate_yaw(
+                aero.boxes, f_box_ref, bulk, v_inf, float(ops.suport_pos[1])))
     B_hr = phi.T @ ops.red.reduce_rect(B_ar_g)                        # (n_h, n_r)
     B_hh = np.zeros((n_h, n_h))
     B_hh[:, :n_r] = B_hr

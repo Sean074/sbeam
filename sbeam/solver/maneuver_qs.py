@@ -53,7 +53,9 @@ from sbeam.assembly.load_vector import build_grid_index
 from sbeam.assembly.stiffness import get_spc_dofs
 from sbeam.aero.aero_model import AeroModel
 from sbeam.aero.integration import build_djk
-from sbeam.solver.modal_basis import AsetOperators, assemble_aset_operators
+from sbeam.solver.modal_basis import (
+    AsetOperators, assemble_aset_operators, yaw_reference_loading,
+)
 from sbeam.results.results import ManeuverStep, ManeuverResult, peak_grid_force
 from sbeam.results.section_cuts import (
     SectionCutPlan, evaluate_section_cut, prepare_section_cuts,
@@ -114,6 +116,7 @@ class Operators:
 def assemble_operators(
     bulk: BulkData, subcase: SubcaseControl, aero: AeroModel, q: float,
     ops_a: Optional["AsetOperators"] = None,
+    f_box_ref: Optional[FloatArray] = None,
 ) -> Operators:
     """Build the a-set / l-set matrices the transient integration needs.
 
@@ -124,7 +127,8 @@ def assemble_operators(
     that already holds the a-set operators for this subcase (the Step 63
     free-flight solver) passes them via ``ops_a`` to skip the second assembly.
     """
-    ops = ops_a if ops_a is not None else assemble_aset_operators(bulk, subcase, aero)
+    ops = (ops_a if ops_a is not None
+           else assemble_aset_operators(bulk, subcase, aero, f_box_ref=f_box_ref))
 
     all_labels, label_to_col = ops.all_labels, ops.label_to_col
     x_ref, suport_pos = ops.x_ref, ops.suport_pos
@@ -387,7 +391,10 @@ def run_maneuver_qs(
     q = ic.q
     aero = aero_cache.get(ic.mach)
 
-    ops = assemble_operators(bulk, subcase, aero, q)
+    # Step 67a — yaw-rate wing term, scaled by the IC-trim loading frozen for the
+    # whole time history.
+    ops = assemble_operators(bulk, subcase, aero, q,
+                             f_box_ref=yaw_reference_loading(aero, ic))
 
     # Base δ held for any label the command set does not drive = the trim value.
     base_delta = {l: float(ic.trim_vars.get(l, 0.0)) for l in ops.all_labels}

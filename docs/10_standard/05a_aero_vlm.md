@@ -360,6 +360,30 @@ negative normalwash. This is the *opposite* sign sense to a baseline `wg` slope 
 `build_wg`). Phase D DLM will replace this matrix with the full unsteady kernel without
 changing the caller interface.
 
+### `yaw_rate_force_scale` / `build_fjx_yaw` / `build_fj_rigidrate_yaw` (Step 67a)
+
+The **force-side** companion to the `build_djx` `YAW` normalwash column. Yaw rate has two
+effects (theory §7.2 Eq. 28): the fin sidewash `Δβ(x) = r(x−x_ref)/V`, which is a normalwash and
+lives in `build_djx`; and the wing's spanwise dynamic-pressure asymmetry `ΔU(y) = −r·y`, which is
+an *edgewise* velocity perturbation and therefore **cannot** be a normalwash column. The latter
+scales the local load:
+
+| Function | Shape | Meaning |
+|----------|-------|---------|
+| `yaw_rate_force_scale(boxes, bulk, y_ref=0)` | `(n,)` | `s_j = −(4/b_ref)(y_j − y_ref)` at the box **force point** (¼-chord), the per-unit-`YAW`-label load scaling |
+| `build_fjx_yaw(boxes, f_box_ref, bulk, y_ref=0)` | `(3n,)` | `s ⊙ f_box_ref` — the load increment per unit `YAW` trim label, in `build_skj`'s force/q box-major layout |
+| `build_fj_rigidrate_yaw(boxes, f_box_ref, bulk, v_inf, y_ref=0)` | `(3n,)` | the same per unit *physical* yaw rate r (rad/s), scaled through `rigid_rate_scales[6]` — the free-flight (Step 61/63) sibling |
+
+The whole 3-vector of each box force is scaled, so a canted or vertical panel's in-plane
+components come along. `f_box_ref` is the **steady** (normalwash-driven) box-force field at the
+trim state; the increment is first order in ΔU/U and must not scale itself. Because the operator
+depends on the trim loading, SOL 144 iterates it as a fixed point (`05c_sol144_maneuver.md`
+step 3a) and the transient solvers freeze it at the IC trim.
+
+Consequence to know: the wing contributes `C_lr` (= `C_L`/4 for elliptic loading) but **no**
+`C_nr` — box forces are strictly panel-normal, so a planar wing has no streamwise force to make a
+yaw moment from. That is the Step 67b drag-asymmetry follow-on; today `C_nr` is the fin's alone.
+
 ### `build_wg(boxes, w2gjs, caero_eid) -> np.ndarray`  — shape (n,)
 
 Baseline normalwash vector from the W2GJ BDF card. Card values follow the **NASTRAN
@@ -1018,6 +1042,9 @@ When a correction card is present the tab also runs the **uncorrected** baseline
   `state` (A-GUI5) selects which AIC operator the derivatives are integrated against:
   `"corrected"` (the corrected ΔCp operator with WKK/WT1/WT2 applied — what SOL 144 uses),
   `"uncorrected"` (the raw VLM baseline at the same Mach), or `"diff"` (corrected − uncorrected).
+  **The `YAW` row is the fin sidewash only.** The wing's yaw-rate contribution (Step 67a) is a
+  *loading-scaled force* term (`build_fjx_yaw`), so it exists only at a trim state and is
+  reported by SOL 144, not by this trim-free table — `C_lr` here reads zero on a planar wing.
   The uncorrected operator is rebuilt by `_uncorrected_cp_operator(aero_model)`, which inverts the
   stored raw `aero_model.ajj` and re-applies the Göthert `1/β` factor and the Γ→ΔCp `2/chord`
   conversion — exactly the no-correction branch of `build_aero_model` — then swaps it in via

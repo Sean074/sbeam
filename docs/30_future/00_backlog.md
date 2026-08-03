@@ -4,7 +4,7 @@ Authoritative backlog of **open** work only — bugs, planned development, and d
 in priority order. Updated as part of every session that completes a step — never deferred.
 Completed steps live in `docs/40_history/00_completed_development.md`; nothing closed is
 summarised here. When an item is promoted to a formal step, give it a step number (next free
-number is **Step 69**; Step 67 is assigned below — Step 64 closed 2026-07-31,
+number is **Step 69**; Step 67b is assigned below (67a closed 2026-08-02) — Step 64 closed 2026-07-31,
 Steps 65 and 66 closed 2026-08-01/02, Steps 62, 63 and 68 closed 2026-08-02) and apply the
 step format (Objective, Deliverables, Test/Acceptance).
 
@@ -41,7 +41,7 @@ Details in `docs/40_history/`.
 
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P2 | Step 67 — quasi-steady yaw-rate wing term | Release-required | ~1–2 d | Lateral/yaw-rate cases are in release scope and the wing contribution to C_nr/C_lr is currently silently zero. Formulation already decided (loading-scaled force term). |
+| P2 | Step 67b — yaw-rate wing DRAG asymmetry (C_nr) | Release-required | ~1–1.5 d | Step 67a (the loading-scaled force term, C_lr) closed 2026-08-02. The wing C_nr needs a per-box streamwise induced-drag force, which the near-field VLM has no representation of. |
 | P3 | Release hygiene batch — DEF-R7 (WT1 removal), DEF-M13 (f06 column drift), sample-hygiene + doc-pointer sweep, propeller-position docs, close Q1 + Q3 | Release-required | ~2–3 d | Everything else the release-scope decision committed to; all low-risk and fully decided — pure execution, batched to land once at the release boundary. |
 | P4 | DEF-M14 — nonplanar Trefftz `CDi` kernel | Post-release | ~1–2 d | The last open correctness defect: silently wrong CDi/e on canted decks (dihedral, winglets, cruciform tails). Reporting-only outputs, so it ranks below the release gate but above all new capability. |
 | P5 | `matrix_gaf_export` Phases 1–2 | Tier 2 | ~8 d | External flutter handoff (FLAPS) **and** the declared prerequisite of Phase D (MKAERO1, Mach loop, bundle writers). |
@@ -76,7 +76,7 @@ re-ranked table above; the six scope questions were resolved as follows:
 | Decision | Outcome |
 |----------|---------|
 | Transient maneuvers | **Quasi-steady only.** Ship Step 53 balanced maneuvers + the increment-1 prescribed-rigid MLOADS solver. (Steps 62 and 63, both scoped post-release, were delivered 2026-08-02 ahead of the release — the free-flight modal solver ships as a bonus.) |
-| Lateral cases | **In scope.** Steady sideslip/roll/aileron trim (already supported) plus yaw-rate cases — the Tier 4 yaw-rate wing term is promoted to **Step 67** (below), release-required. Formulation decided: loading-scaled force term. |
+| Lateral cases | **In scope.** Steady sideslip/roll/aileron trim (already supported) plus yaw-rate cases — the Tier 4 yaw-rate wing term is promoted to **Step 67**, release-required. Formulation decided: loading-scaled force term. 67a (lift asymmetry, C_lr) delivered 2026-08-02; 67b (drag asymmetry, C_nr) remains open below. |
 | Propeller effects | **Corrections position, documented.** Powered effects (slipstream over the washed wing, thrust-line pitching moment) enter only via the correction cards (`W2GJ`/`WT2`/`CHORDCP`) built from powered CFD or flight-test data; no native slipstream model. The modeling-guidance + Known-Limitations text lands in `docs/20_theory/02_realistic_airplane_sol144.md` and `05a_aero_vlm.md` as part of the release hygiene batch. |
 | Fuselage | **Corrected body panels adequate.** The A9/A10 correction-matched body panels are the early-design answer (Step 66 demonstrates them on the flagship); the predictive slender-body element stays deferred past Phase D. Validity envelope documented in the theory doc's limitations section. |
 | Gust/turbulence | **Out of scope.** CS-25.341 gust/continuous turbulence needs Phase D (P7/P8); the release claims maneuver loads only and the release notes must state the exclusion explicitly. |
@@ -89,7 +89,10 @@ re-ranked table above; the six scope questions were resolved as follows:
 - **DEF-M12 (P1)** — correction-card export field width: **delivered 2026-08-02**
   (`card_lines` → `card_writers.write_card`/`fmt_real8`; see
   `docs/40_history/05_aero_vlm_spline.md`).
-- **Step 67 (P2)** — quasi-steady yaw-rate wing term (below).
+- **Step 67a (P2)** — yaw-rate wing lift asymmetry (C_lr): **delivered 2026-08-02**
+  (`build_fjx_yaw` + the SOL 144 loading fixed point; see
+  `docs/40_history/06_sol144_static_aeroelastic.md`).
+- **Step 67b (P2)** — yaw-rate wing drag asymmetry (C_nr) (below).
 - **Release hygiene batch (P3)** — DEF-R7 (WT1 removal, "at a release boundary" per its
   own note), DEF-M13 (f06 column drift), the sample-hygiene + doc-pointer sweep
   (sample-review section), the propeller-effects modeling-position docs (above), and
@@ -99,44 +102,58 @@ re-ranked table above; the six scope questions were resolved as follows:
 **Explicitly out of release scope:** P4–P9 (DEF-M14, `matrix_gaf_export`, AMODE,
 Phase D, `matrix_reuse_store`) and every Tier 2–4 item not named above.
 
-### Step 67 (release-required) — Quasi-steady yaw-rate wing term
+### Step 67b (release-required) — Yaw-rate wing drag asymmetry (C_nr)
 
-Promoted 2026-08-02 from Tier 4 by the release-scope decision (lateral maneuver cases —
-rudder kick, engine-out, steady yawing flight — are in release scope).
+The remaining half of Step 67. **Step 67a** (the loading-scaled force term
+`Δf_box = −(4/b_ref)(y−y_ref)·YAW·f_box,steady`, the SOL 144 loading fixed point, the
+transient hook, C_lr = C_L/4) closed 2026-08-02 —
+`docs/40_history/06_sol144_static_aeroelastic.md`.
 
 **Strategic note:** the quasi-steady rate-aero path (`build_djx` rate columns) is to
 remain a **fully functional, supported option** even after the DLM (Phase D) lands — it
 is the cheap maneuver-loads method and must be complete in its own right, not a stopgap.
 
-**Objective.** Complete the quasi-steady yaw-rate aerodynamics. The theory
-(`docs/20_theory/01_aeroelastics_theory.md` §7.2, Eq. 28) gives yaw rate *two* effects:
-the fin sidewash Δβ(x) = r(x−x_ref)/V∞ **and** the spanwise dynamic-pressure asymmetry
-ΔU(y) = −r·y on the wing (the advancing wing sees higher q∞). `build_djx`
-(`sbeam/aero/integration.py`, `YAW` column) implements only the fin sidewash — the
-column vanishes on horizontal panels, so the wing contribution to C_nr and the
-cross-derivative C_lr are missing.
+**Objective.** Give the wing a yaw-damping contribution. Every box force in the VLM is
+strictly panel-normal (`build_skj`: `F_j = area_j·n̂_j·cp_j`; "no leading-edge suction",
+`vlm.py` CX ≈ 0), so a planar wing has `F_x = F_y = 0` and the 67a load scaling produces a
+rolling moment but **exactly zero yaw moment**. The wing's yaw damping is an
+induced-**drag** asymmetry and needs a per-box streamwise force. Today C_nr is the fin
+sidewash column's alone — asserted, so it cannot regress silently, by
+`tests/aero/test_yaw_rate_wing.py::test_planar_wing_yaw_moment_stays_zero`.
 
-**Formulation (decided 2026-08-02): loading-scaled force term.** The asymmetry is an
-edgewise-velocity (dynamic-pressure) perturbation, not a normalwash, so it cannot be a
-constant normalwash column. The per-box yaw-rate force increment is
-`Δf_box = 2·(ΔU/U)·f_box,steady = −2·(r·y/V)·f_box,steady`, evaluated **at the trim
-loading**. This is the rigorous form — C_lr genuinely scales with the trim CL (strip
-theory: C_lr ≈ CL/4 for near-elliptic loading) — chosen over the equivalent-incidence
-lift-slope proxy (rejected: the proxy is heuristic and C_lr would not track trim CL).
-Design consequence: the wing yaw-rate contribution is a loading-linear force-side
-operator rather than a fixed `djx` column, so it is trim-state-dependent — document the
-evaluation point; the fin sidewash normalwash column is unchanged and the two compose.
+**Formulation.** Exactly the 67a algebra with F_x for F_z:
+`C_nr = −(4/(S_ref·b_ref²))·Σ (y_j−y_ref)²·F_x,drag,j`, which for a near-elliptic drag
+distribution gives |C_nr| = CDi/4 — and hence C_nr ∝ CL², the physically right trend.
+`F_x,drag` comes from refactoring the per-box sum already inside `trefftz_cdi`
+(`vlm.py:210-272`) out into a `trefftz_box_drag(boxes, gamma, S_ref, ar)` returning the
+per-box streamwise force with `Σ ≡ CDi·S_ref`, leaving `trefftz_cdi` a thin wrapper (so
+CDi/e stay bit-identical). Circulation is recoverable without a second solve through the
+codebase's own identity `Γ_j = cp_j·area_j/(2·width_j)` (`vlm.py:440-449`) — add a
+`box_circulation` helper rather than re-deriving the factor at the call site.
 
-**Deliverables.** The force-side wing ΔU term composed with the existing `YAW` fin
-sidewash; feeds SOL 144 trim (C_nr, C_lr) and the Phase G0 transient solver (which
-consumes the same column) unchanged; docs — theory §7.2/Eq. 28 note and
-`05a_aero_vlm.md` card/column table.
+**Confinement — the critical design rule.** `F_x,drag` is used **only** to build the YAW
+column. It must NOT be added to the baseline box forces, `CX`, `CD_wind` or the load
+export: (i) the codebase deliberately reports `CD_wind = Trefftz CDi, not the near-field
+projection` (`vlm.py:351-354`), and (ii) only the *asymmetric* part makes a yaw moment —
+the symmetric part is already in CDi and contributes no Mz.
 
-**Test/Acceptance.** Full-span wing-only model: the yaw-rate column currently produces
-zero load; after the change, a nonzero C_nr (drag-asymmetry sign) and C_lr consistent
-with the strip-theory estimate at the trim CL (≈ CL/4 for near-elliptic loading);
-fin-only C_nr unchanged; PITCH/ROLL columns and all planar longitudinal results
-bit-identical.
+**Deliverables.** `trefftz_box_drag` + `box_circulation` (landed as their own
+bit-identical refactor commit first); the drag contribution summed into the existing
+`build_fjx_yaw` force column so trim, restrained/unrestrained derivatives, hinge moments
+and both transient solvers pick it up unchanged; docs — theory §7.2 (drop the
+known-limitation paragraph, add the C_nr identity), `05a_aero_vlm.md`, `05c`.
+
+**Test/Acceptance.** Refactor bit-identity (CDi/e unchanged on every deck,
+`Σ F_x,drag = CDi·S_ref` to machine precision); `box_circulation` reproduces
+`solve_rigid_cl`'s gamma; |C_nr| ≈ CDi/4 on the AR=8 full-span deck (~15 %, rectangular ≠
+elliptic) **and C_nr ∝ CL²**; damping sign (`sign(ΔMz) = −sign(r)`); confinement guard —
+baseline CX/CD_wind/CDi/`total_cx`/per-box export bit-identical; strip (`PSTRIP`) boxes
+contribute zero (no wake); the URDD1 trim row on an x-supported deck.
+
+**Known limitation that survives 67b:** no profile drag (sbeam has no viscous model), so
+the wing C_nr covers only the induced part — an under-prediction of a damping derivative,
+i.e. the non-conservative direction. Documented in the theory §7.2 limitation note and
+`05a_aero_vlm.md`; a per-surface `CD0` input is the Tier-2 follow-on below.
 
 **Related known gap (stays a G0-d follow-on):** the Phase G0 transient RHS has no
 elastic-velocity downwash ẇ/V term (`maneuver_qs.py` `w_struct` is displacement-slope
@@ -563,11 +580,14 @@ the Phase 1 monitor data model. Together these complete the dynamic loads proces
 
 ## Tier 4 — Lower priority / opportunistic
 
-### Quasi-steady rate aerodynamics — yaw-rate wing term
+### Profile drag input (`CD0`) — the other half of the wing C_nr
 
-**Promoted to Step 67 (release-required) 2026-08-02** — see the release-scope section
-above for the full step (Objective, formulation decision, Deliverables,
-Test/Acceptance).
+Step 67b gives the wing an *induced*-drag yaw-damping term; a real airplane's profile drag
+contributes comparably, and sbeam has no viscous model. A per-CAERO1 (or per-strip) `CD0`
+input would let the user supply it from drag polars / CFD, entering the same loading-scaled
+yaw column as an extra streamwise force. Small and self-contained once 67b's streamwise
+force field exists; until then the omission is a documented Known Limitation (theory §7.2,
+`05a_aero_vlm.md`) and biases C_nr low — the non-conservative direction.
 
 ### Body fence / no-through-flow boundary condition via image vortices (small, opportunistic)
 
