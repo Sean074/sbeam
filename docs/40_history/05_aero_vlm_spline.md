@@ -1061,6 +1061,34 @@ the `ATTACH` card; confirm `SPLINE0` boxes correctly contribute zero rows.
 
 ## Resolved defects (conventions)
 
+### DEF-R4 (P13 share) — body-builder duplication in `body_correction.py` ✅ COMPLETE (2026-08-02)
+
+**Objective:** `build_body_correction` (cruciform) and `build_strip_body_correction`
+(decoupled strip) shared ~125 byte-identical lines — model build, per-box geometry,
+moment weight rows, the joint min-norm slope and offset solves, and the
+achieved/residual/converged/ratio_max reporting — copy-pasted between them, already
+drifting in comments. Part of the P13 refactor batch (main entry:
+`06_sol144_static_aeroelastic.md`).
+
+**Deliverables:** four shared helpers in `sbeam/aero/body_correction.py` —
+`_body_panel_geometry` (baseline metrics + per-box geometry + moment weight rows +
+unit α/β responses), `_body_panel_indices`, `_solve_body_min_norm` (joint minimum-norm
+slope-ratio + W2GJ-offset solves) and `_summarize_body_result`. **Decision: three-ish
+small helpers, not one flag-parameterized mega-function** — the builders genuinely
+differ mid-stream (panel-type validation polarity, `gamma_ref` vs `strip_box_slopes`
+unit-response extras, `Aecorr` WT2 vs `Stripk` card emission, cruciform-only
+`RATIO_WARN` guard), and each keeps those inline. The cruciform's PSTRIP rejection
+moved ahead of the box-index loop, mirroring the strip builder's up-front validation.
+The WT2 `Aecorr` emission stays a contiguous block — the DEF-R7 retirement seam.
+Dead `_NORM_TOL` constant deleted (P13/WP1).
+
+**Test/Acceptance:** full suite green, including the cross-builder flagship
+regression (`test_cessna210_flagship_body.py`, parametrized over both builders);
+both flagship body decks rerun with f06/exports byte-identical to the
+pre-refactor reference.
+
+---
+
 ### F1 + DEF-M8 + DEF-L1 — aerodynamic silent-input batch ✅ COMPLETE (2026-08-01)
 
 **Objective:** Close the aero half of the P3 "user asked, program ignored" batch. Every item

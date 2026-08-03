@@ -1852,6 +1852,70 @@ round-trip tests in `tests/parser/test_aero.py`. No-CHORDCP decks are bit-identi
 
 ## Resolved defects
 
+### P13 — DEF-R1/R2/R3 refactor batch: decompose `sol144.py` ✅ COMPLETE (2026-08-02)
+
+**Objective:** `run_sol144_trim` had grown into a ~570-line god function in a
+1990-line `sol144.py` that P14 (`matrix_gaf_export`) and P16 (Phase D) both extend.
+Decompose along the natural seams with **zero behavior change** — all f06/BDF/CSV
+outputs bit-identical, no test-file edits — before Phase D piles more on.
+(DEF-R4, the body-builder half of the P13 batch, is recorded in
+`05_aero_vlm_spline.md`; DEF-R7 was deliberately left with the release hygiene
+batch, where it is release-required.)
+
+**Deliverables (five commits, each independently green):**
+- **WP1 — hygiene + DEF-R2.** Duplicate function-local imports (`get_transform`,
+  `build_djk`, `assemble_global_mass`) hoisted to the header; dead re-imports of
+  `build_qaa`/`build_fg` deleted; `_expand_to_g` alias removed; misnamed locals
+  `Fz_x`/`Fz_y` → `Fx_sens`/`Fy_sens` (`'CX'`/`'CY'` keys unchanged); unused
+  `_compute_restrained_derivs` params `u_a_trim`/`delta_all_trim` dropped.
+  **DEF-R2:** the dead per-trim `lu_factor(K_aa)` (an O(n³) factorization of the
+  free-flight `K_aa` on every trim, with zero consumers) and the
+  `Sol144TrimResult.k_aa_lu` field deleted; `Sol144Result.k_aa_lu` (Step-50 path,
+  consumed) kept.
+- **WP2 — DEF-R3.** The Step-50 cluster (`run_aeroelastic_static`,
+  `_build_qaa_aset`, `_solve_direct`, `_solve_rom`, `_mode_acceleration_recovery`,
+  ~250 lines, no production callers) moved verbatim to **`sol144_static.py`**,
+  documented as the reference implementation / test scaffolding. **Decision:**
+  keep as scaffolding rather than wiring SOL 144-without-TRIM subcases into
+  main/viewer (that would be a new reachable behavior, out of scope for a
+  zero-change batch).
+- **WP3 — module split.** Verbatim extraction into **`sol144_util.py`**
+  (`AeroCache`, URDD frame rotations, `load_resultant`, `build_inertial_cols`,
+  `get_suport_local`, `pitch_moment`/`aero_moment_resultant`),
+  **`sol144_trim_solve.py`** (Schur partition + determined/over-determined trim
+  solvers), **`sol144_derivs.py`** (rigid/restrained/unrestrained + hinge-moment
+  blocks) and **`sol144_diverg.py`** (divergence + `run_sol144_diverg`).
+  `AeroCache` lives in `sol144_util` (not `sol144.py` as first sketched) because
+  `run_sol144_diverg` constructs one — this keeps the import graph strictly
+  one-way (`sol144` → split modules, never back). Production importers
+  (`maneuver_qs`, `maneuver_modal`, `modal_basis`, `body_correction`) repointed
+  at the concrete modules.
+- **WP4 — the god function.** `run_sol144_trim` decomposed into a 13-line
+  orchestrator over 12 private `_stage_*` helpers threaded through a
+  **`_TrimState`** dataflow dataclass; stage bodies are verbatim cut-and-paste
+  with plumbing confined to locals-pull/write-back at the stage boundaries (no
+  float-op reordering, preserving bit-identity). `_CHORDCP_ALPHA_TOL` hoisted to
+  a module constant. Longest stage ≈ 103 lines.
+- **Facade:** `sol144.py` re-exports every public **and test-pinned private**
+  name (`_build_qaa_aset`, `_solve_direct`, `_solve_rom`,
+  `_mode_acceleration_recovery`, `_compute_hinge_moments`, `_divergence_roots`,
+  Schur solvers), so all ~25 test files and `studies/` import unchanged. The
+  DEF-M4 LOAD-refusal error string (asserted by `tests/aero/test_trim_urdd.py`)
+  is byte-identical.
+
+**Test/Acceptance:** full suite green after every WP (1707 passed, 6 xfailed —
+identical to the pre-refactor baseline); bit-identity gate — four decks
+(`ha144a_fullspan_sbeam`, `ha144a_massset_sweep`, `cessna210_flagship_body`,
+`cessna210_flagship_body_strip_drv`) rerun after every WP with every f06,
+`FORCE`/`MOMENT` export and monitor/section CSV diffed byte-identical (DATE
+stamp aside) against the pre-refactor reference.
+
+**Known residual:** `aero/body_correction.py` imports from `solver/` (against the
+documented `viewer → solver → assembly → model → parser` layering) — pre-existing,
+out of scope here, noted for a future layering pass.
+
+---
+
 ### DEF-R6 (SOL 144 share) — full-SVD `np.linalg.cond(K_eff)` per static solve ✅ COMPLETE (2026-08-02)
 
 **Objective:** `_solve_direct` ran a full SVD (`np.linalg.cond`) on the effective aeroelastic

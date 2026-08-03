@@ -83,9 +83,13 @@ the same DOF set. Used by the modal-truncation ROM in `sol144._solve_rom`.
 
 ---
 
-### `sol144.py` — Step 50 Aeroelastic Static Solver
+### `sol144_static.py` — Step 50 Aeroelastic Static Solver
 
-**Module:** `sbeam/solver/sol144.py`
+**Module:** `sbeam/solver/sol144_static.py` (P13/DEF-R3: the Step-50 cluster —
+`run_aeroelastic_static`, `_build_qaa_aset`, `_solve_direct`, `_solve_rom`,
+`_mode_acceleration_recovery` — lives here as the reference/test-scaffolding
+path; it has no production callers.  All five names remain importable from
+`sbeam.solver.sol144` via the facade, so the imports below are unchanged.)
 
 #### Public entry point
 
@@ -289,7 +293,13 @@ for a subcase (`SubcaseControl.trimobj_sid`); a single defined `TRIMOBJ` is used
 
 `solver/sol144.py:run_sol144_trim(bulk, subcase, aero)` implements the **determined** trim
 case (`n_free_labels == n_SUPORT_DOFs`) and the **over-determined** (redundant-control) case
-(null-space reduction + weighted-L2 `TRIMOBJ`/`TRIMCON`/`TRIMVAR`, gate V-C4):
+(null-space reduction + weighted-L2 `TRIMOBJ`/`TRIMCON`/`TRIMVAR`, gate V-C4).
+Since P13 (DEF-R1) the function is a short orchestrator over private `_stage_*`
+helpers threaded through a `_TrimState` dataflow context (validate → mass case/Mach →
+labels → reference geometry → CHORDCP echo → downwash + a-set reduction → Schur solve →
+displacement recovery → derivatives → totals → flight/net loads → monitor outputs →
+result packing); the Schur machinery itself lives in `sol144_trim_solve.py` and the
+derivative blocks in `sol144_derivs.py` (see the module map in `05_aeroelastics.md`):
 
 1. Build `D_jx` (per-box normalwash per unit trim label: ANGLEA `−n_z`, SIDES `−n_y`, PITCH
    `−(2/cref)(x−x_ref)`, ROLL `−(2/bref)·y`, YAW `−(2/bref)(x−x_ref)·n_y` (vertical-surface

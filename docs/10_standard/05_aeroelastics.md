@@ -43,7 +43,12 @@ Results   (cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, CDi, e, per_su
 | `sbeam/aero/mirror.py` | Half-span → full-span model mirroring (symmetry deprecation; raises on unsupported cards) |
 | `sbeam/aero/spline.py` | **Phase B** — `build_spline_operators()`: builds `g_slope` (n_box×n_g), `g_disp` and `g_load` (3n_box×n_g) from `SPLINE2` + `ATTACH` + `SPLINE0` cards; `g_load` adds the Step 64 rigid load injection for structurally-uncoupled boxes |
 | `sbeam/aero/coupling.py` | `build_qaa` flexible aero stiffness `Q_aa = G_dispᵀ S_kj (A_jj*)⁻¹ D_jk G_slope`; `build_fg` baseline aero load; `build_gaf` modal GAF `Q_hh = Φᵀ Q_aa Φ` |
-| `sbeam/solver/sol144.py` | `run_sol144_trim` (Schur trim solve, derivatives), `run_sol144_diverg` (DIVERG-card divergence sweep + mode shape + V_div), `run_aeroelastic_static`, `AeroCache`, `_divergence_dynamic_pressure`, `_divergence_roots` |
+| `sbeam/solver/sol144.py` | `run_sol144_trim` — the trim orchestrator (`_TrimState` + stage helpers, P13) — plus a facade re-exporting every public and test-pinned name from the split modules below, so `from sbeam.solver.sol144 import …` keeps working for all of them |
+| `sbeam/solver/sol144_util.py` | `AeroCache` (Mach-keyed AeroModel cache, AE9), URDD frame rotations (`urdd_rcsid_to_basic`/`urdd_basic_to_rcsid`), `load_resultant`, `build_inertial_cols` (M_ax, Q4/DEF-M3), `get_suport_local`, `pitch_moment`, `aero_moment_resultant` |
+| `sbeam/solver/sol144_trim_solve.py` | SUPORT Schur partition (`_build_trim_schur`) + determined and over-determined (TRIMOBJ/TRIMCON null-space weighted-L2) trim solvers |
+| `sbeam/solver/sol144_derivs.py` | `compute_rigid_derivs`, restrained (`u_r = 0`) and unrestrained (mean-axis AE8b) derivative blocks, AESURF hinge moments (AE11) |
+| `sbeam/solver/sol144_diverg.py` | `run_sol144_diverg` (DIVERG-card divergence sweep + mode shape + V_div), `_divergence_dynamic_pressure`, `_divergence_roots` |
+| `sbeam/solver/sol144_static.py` | `run_aeroelastic_static` — the Step-50 no-trim reference path (test scaffolding; no production callers, DEF-R3) |
 | `sbeam/solver/maneuver_qs.py` | **Phase G0** — `run_maneuver_qs`: Level-1 quasi-steady, open-loop, restrained l-set Newmark-β transient maneuver integration (the direct solver / regression anchor) |
 | `sbeam/solver/maneuver_modal.py` | **Phase G0 Steps 62–63** — `run_maneuver_modal`: the free-flight modal transient solver (coupled h-set EOM, `B_hh` engaged, rigid trim labels as outputs, self-balancing closure), mode-acceleration recovery, fixed-Φ MASSSET cases with case-mean-axis correction, job-level `ManeuverBasisCache` |
 | `sbeam/solver/modal_basis.py` | **Phase G0 Step 61** — free-free maneuver basis `Φ = [Φ_r | Φ_e]`, h-set operators, shared a-set assembly |

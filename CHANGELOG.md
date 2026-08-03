@@ -11,6 +11,35 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Phase 2 completion.
 
+### Changed
+
+**P13 — DEF-R1/R2/R3/R4 refactor batch: decompose `sol144.py` (2026-08-02)**
+
+Internal refactor, **no numeric changes** — every f06/BDF/CSV output verified
+bit-identical (four-deck gate) and the full suite green after each of five commits.
+
+- `sbeam/solver/sol144.py` (1990 lines) split into an orchestrator plus five sibling
+  modules: `sol144_util.py` (AeroCache, URDD frame rotations, `load_resultant`,
+  `build_inertial_cols`, `get_suport_local`, moment resultants), `sol144_trim_solve.py`
+  (Schur trim solvers), `sol144_derivs.py` (rigid/restrained/unrestrained + hinge
+  derivatives), `sol144_diverg.py` (divergence + `run_sol144_diverg`) and
+  `sol144_static.py` (DEF-R3 — the Step-50 `run_aeroelastic_static` reference path,
+  no production callers). `sol144.py` re-exports every public and test-pinned name,
+  so existing imports are unaffected.
+- `run_sol144_trim` (~570 lines) decomposed into a 13-line orchestrator over 12
+  `_stage_*` helpers threaded through a `_TrimState` dataflow context.
+- DEF-R2: deleted the dead per-trim `lu_factor(K_aa)` (an O(n³) factorization per
+  trim with zero consumers) and the `Sol144TrimResult.k_aa_lu` field — trim solves
+  get faster; `Sol144Result.k_aa_lu` (Step-50) unchanged.
+- DEF-R4: the ~125 duplicated lines between `build_body_correction` and
+  `build_strip_body_correction` extracted into shared helpers
+  (`_body_panel_geometry`, `_body_panel_indices`, `_solve_body_min_norm`,
+  `_summarize_body_result`); the WT2 `Aecorr` card emission stays contiguous as
+  the DEF-R7 retirement seam. Dead `_NORM_TOL` deleted.
+- Hygiene: duplicate function-local imports hoisted, dead `_expand_to_g` alias
+  removed, unused `_compute_restrained_derivs` params dropped, `Fz_x`/`Fz_y`
+  locals renamed.
+
 ### Added
 
 **Step 69 (P12) — Viewer SOL 144 / MLOADS case authoring UI (2026-08-02)**

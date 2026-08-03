@@ -55,9 +55,13 @@ fixed-Φ mass-case gates; see `docs/40_history/07_maneuver_transient.md`).
 solver is now the self-balancing free-flight solver; see
 `docs/40_history/07_maneuver_transient.md`).
 
+**P13 delivered 2026-08-02** (DEF-R1/R2/R3/R4 refactor batch — `sol144.py` decomposed
+into an orchestrator + `sol144_util`/`sol144_trim_solve`/`sol144_derivs`/`sol144_diverg`/
+`sol144_static` with a full import facade; DEF-R7 deliberately left with the release
+hygiene batch; see `docs/40_history/06_sol144_static_aeroelastic.md`).
+
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P13 | DEF-R1 refactor batch — decompose `sol144.py` (+ R2, R3, R4; R7 at a release boundary) | Defects | ~2–3 d | `run_sol144_trim` is a ~500-line god function in an 1838-line module that P14/P16 both extend. Do it after Tier 1 stops churning it and **before** Phase D piles on. |
 | P14 | `matrix_gaf_export` Phases 1–2 | Tier 2 | ~8 d | External flutter handoff (FLAPS) **and** the declared prerequisite of Phase D (MKAERO1, Mach loop, bundle writers). |
 | P15 | `AMODE` Phase 1 (control-surface hinge modes) | Tier 3 | ~7.5 d | Needed before control-surface flutter in SOL 145; Phase 2 is a declared pre-1.0.0 blocker. |
 | P16 | Phase D core — DLM (D0–D3) + SOL 145 PK flutter | Tier 3 | ~25–30 d | The declared next phase after SOL 144 sufficiency. Gated on P14. |
@@ -109,8 +113,9 @@ questions were resolved as follows:
   closing **Q1** (accept + document the CID-0 SPCFORCE convention — it matches NASTRAN)
   and **Q3** (Known-Limitations line for the GRAV CID=0 restriction).
 
-**Explicitly out of release scope:** P13–P18, DEF-M14, and every Tier 2–4 item not
-named above.
+**Explicitly out of release scope:** P14–P18, DEF-M14, and every Tier 2–4 item not
+named above.  (P13, also out of release scope, was delivered 2026-08-02 ahead of the
+release anyway — see the priority table.)
 
 ### Step 67 (release-required) — Quasi-steady yaw-rate wing term
 
@@ -234,8 +239,10 @@ order — see the table above:
 
 | Rank | Batch | Items |
 |------|-------|-------|
-| P13 | Refactor before Phase D | DEF-R1, R2, R3, R4 (+ DEF-R7 at a release boundary) |
 | — | Opportunistic, do when adjacent | DEF-L2–L7 |
+
+(P13 — the DEF-R1/R2/R3/R4 refactor batch — delivered 2026-08-02; DEF-R7 below
+remains, scheduled with the release hygiene batch.)
 
 ### DEF-M — Medium (silent wrong output on specific configurations, or misleading deliverables)
 
@@ -286,27 +293,14 @@ order — see the table above:
 
 ### DEF-L — Low (robustness, hygiene, docs; batch opportunistically) — L2–L7 unranked
 
-### DEF-R — Refactor / dead code (no behaviour change) — P13
+### DEF-R — Refactor / dead code (no behaviour change)
 
-- **DEF-R1 — Decompose `sol144.py` (1838 lines)** — `run_sol144_trim` is a ~500-line god
-  function. Natural seams: derivatives module (rigid/restrained/unrestrained/hinge),
-  divergence module, trim assembly, Step-50 static path. Includes hygiene: duplicate local
-  imports of top-level names (`build_qaa`/`build_fg` at 1511/1518, `build_djk` twice,
-  `get_transform` twice), unused `_compute_restrained_derivs` params
-  `u_a_trim`/`delta_all_trim` (:919-920), misnamed `Fz_x`/`Fz_y`. Complexity medium-high;
-  best done before Phase D piles more on. [D]
-- **DEF-R2 — Dead per-trim `lu_factor(K_aa)`** — `sol144.py:1775` factorizes the singular
-  free-flight K_aa (O(n³)) into `Sol144TrimResult.k_aa_lu`, which no production or test
-  code ever consumes. Delete the field or populate lazily. [D]
-- **DEF-R3 — Step-50 path is test-only** — `run_aeroelastic_static`/`_solve_rom`/
-  `_mode_acceleration_recovery` (~250 lines) have no production caller. Decide: route SOL
-  144-without-TRIM subcases to it in main/viewer, or mark it reference/test scaffolding
-  and move next to the tests. [D]
-- **DEF-R4 — Body-builder duplication** — ~110 lines copy-pasted between
-  `build_body_correction` and `build_strip_body_correction`
-  (`body_correction.py:289-444` vs `497-629`; diff-measured ~190 line-identical of 289);
-  extract the shared weight-row/solve/achieved core, parameterized by unit response +
-  card emitter. Dead `_NORM_TOL` constant (:115). [D]
+(DEF-R1/R2/R3/R4 — the P13 batch — closed 2026-08-02; see
+`docs/40_history/06_sol144_static_aeroelastic.md`. Only DEF-R7 remains, scheduled
+with the release hygiene batch. Note for R7: since P13/WP5 the WT2 `Aecorr` card
+emission is an isolated contiguous block inside `build_body_correction`, so the
+WT1 retirement touches no shared body-builder code.)
+
 - **DEF-R7 — Remove the deprecated WT1 correction path** — DEF-H2/H3 (closed 2026-07-31)
   deprecated `AECORR METHOD=WT1` with a parser `UserWarning` but left it working. Complete
   the retirement at a release boundary: delete `apply_wt1` (`corrections.py`), the WT1

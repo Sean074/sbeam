@@ -43,7 +43,12 @@ sbeam/
 ├── solver/
 │   ├── sol101.py         # Static analysis
 │   ├── sol103.py         # Normal modes
-│   ├── sol144.py         # Static aeroelastic trim (Schur solve, derivatives), divergence sweep, AeroCache
+│   ├── sol144.py         # Static aeroelastic trim orchestrator + import facade (P13 split below)
+│   ├── sol144_util.py    # AeroCache, URDD frame rotations, load resultants, M_ax, SUPORT indexing
+│   ├── sol144_trim_solve.py  # Schur partition + determined/over-determined trim solvers
+│   ├── sol144_derivs.py  # Rigid/restrained/unrestrained + hinge-moment derivatives
+│   ├── sol144_diverg.py  # Divergence eigenproblems + DIVERG-card sweep
+│   ├── sol144_static.py  # Step-50 no-trim reference path (test scaffolding, DEF-R3)
 │   └── maneuver_qs.py    # Phase G0 quasi-steady transient maneuver loads (restrained l-set Newmark-β)
 ├── results/
 │   ├── results.py        # Results dataclass (displacements, forces, modes)

@@ -143,7 +143,7 @@ Everything below the dynamic-pressure fusion and the subcase-dependent reduction
 - `f_g` (`build_fg`, `coupling.py:78`) and `D_jx` (`build_djx`, `integration.py:65`) — cheap; recompute live.
 - `K_eff = K_aa − q·Q_aa` (`sol144.py:164/240/541`) and `C_ax = q·Q_ax_a + M_ax_a` (`sol144.py:546–549`) — **q-fused**; caching them freezes one dynamic pressure and breaks the entire q-sweep, which is the primary use case.
 - `K_aa`/`M_aa`/`Q_aa` (SPC/RBE3-reduced) — **subcase-dependent**; the RBE3 transformation, SPC partition and SUPORT partition (`get_spc_dofs`/`apply_spcs`) run per subcase and must stay live.
-- LU factorizations (`k_aa_lu`, `K_ll_lu`, built at `sol144.py:554`) — cross-scipy-version landmine; store raw matrices, re-factor on load.
+- LU factorizations (`k_aa_lu` on the Step-50 path, `K_ll_lu` in `sol144_trim_solve.py`; the per-trim `Sol144TrimResult.k_aa_lu` was deleted as dead by P13/DEF-R2) — cross-scipy-version landmine; store raw matrices, re-factor on load.
 
 **The rule:** *cache only the pre-q, pre-reduction operands.* One stored set then serves an arbitrary q-sweep **and** any SPC/AESTAT/AESURF label set with zero rebuild.
 
