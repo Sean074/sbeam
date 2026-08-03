@@ -257,6 +257,43 @@ The two top-level functions serve distinct use cases:
 
 ## Resolved defects (documentation / model)
 
+### Q3 — program-level "Known Limitations" section ✅ COMPLETE (2026-08-03)
+
+**Objective:** Q3 asked for the `GRAV` `CID = 0` restriction to be added to "Known
+Limitations". On inspection the restriction was already documented — `02_card_reference.md`,
+"Constraints and Limitations", `| GRAV | CID must be 0 (global frame only) in Phase 1–2 |`
+— and the parser fails loudly rather than silently (`bdf_reader.py:_handle_grav` raises
+`ValueError`). The actual gap was structural: **there was no program-level Known Limitations
+section at all.** The only such heading in the doc set was aeroelastics-specific
+(`05_aeroelastics.md`), so a new user had nowhere to look for "what can this program not
+do", and per-card restrictions were discoverable only by reading a 60-row table at the
+bottom of the card reference.
+
+**Deliverables:** `docs/10_standard/00_program_overview.md` — a new **Known Limitations**
+section (before "Version and Phase") grouped as Theory / Coordinate systems / Loads and
+constraints / Output, covering Euler-Bernoulli-only, uniform cross-section, consistent mass,
+linear-only, `CORD2R`-only, basic-frame computation, `GRAV` `CID = 0`, `SPC` `D = 0.0`,
+CBAR offsets and G0 form, CBUSH restrictions, `MAT1` thermal fields, and the results output
+frames. Aeroelastic limitations are linked out rather than restated.
+
+**Key decision — index, not a second source of truth.** The section states each limitation
+in one line and links to the authoritative per-card table; it explicitly instructs that new
+restrictions be added to `02_card_reference.md` first and linked here. Duplicating the
+constraint text would have created two copies to keep in sync, which is how the original
+gap (documented in one place, invisible from the other) arose.
+
+Two limitations documented here were **not previously written down anywhere**: that
+`SPC`/`SPC1` DOF digits are always basic-frame regardless of the grid's `CD` (surfaced by
+the Q1 investigation), and the per-block results output frames — `.f06` displacements and
+reactions in `CD`, CBAR forces in element local axes, CBUSH forces in basic, viewer tables
+in basic throughout.
+
+**Test/Acceptance:** Documentation only; no code change. Cross-checked every claim against
+the source (`bdf_reader.py`, `coord_transform.py`, `f06_writer.py`, `results_view.py`)
+rather than against CLAUDE.md.
+
+---
+
 ### DEF-R5 + DEF-M9 — one a-set reduction, and SPC-on-a-rigid-DOF is fatal ✅ COMPLETE (2026-08-01)
 
 **Objective:** Close the structural half of the P3 silent-input batch. `reduce_to_aset`

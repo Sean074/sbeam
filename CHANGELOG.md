@@ -54,7 +54,36 @@ on five decks). Gate: `tests/aero/test_yaw_rate_drag.py` (14 tests). Known limit
 drag, so the wing C_nr is the induced part only — an under-prediction of a damping derivative; a
 per-surface `CD0` input is backlogged.
 
+### Fixed
+
+**Q1 — SPC reactions now written in the grid's CD output frame (2026-08-03)**
+
+The `.f06` SPCFORCE block rotates each reaction into the grid's `CD` frame, matching the
+DISPLACEMENT block. Previously it wrote basic CID 0 while displacements were written in
+`CD`, so a deck with `CD ≠ 0` on a constrained grid reported the two blocks in different
+frames. The backlog had accepted this as "matches NASTRAN"; it does not — NASTRAN's
+"global" output system is the assembly of the per-grid `CD` frames, not basic CID 0.
+
+The rotation is **write-time only**: `Sol101Result.reactions` remains in basic CID 0,
+because `results/section_cuts.py` and the MONPNT3 integrators consume those vectors as
+basic-frame quantities. Recovery stays in basic as well, which is correct — `SPC`/`SPC1`
+DOF digits are themselves basic-frame regardless of the grid's `CD` (now documented).
+Gate: `tests/results/test_f06_sol101.py::TestSpcForceCdFrame` (CD = 0 unchanged; 90°-about-Z
+rotation checked component-by-component; stored reactions unmutated by the write).
+
 ### Changed
+
+**Q3 — program-level "Known Limitations" section (2026-08-03)**
+
+`docs/10_standard/00_program_overview.md` gains a Known Limitations section grouped as
+Theory / Coordinate systems / Loads and constraints / Output. Q3 originally asked only for
+the `GRAV` `CID = 0` line, which was already in the card-reference constraints table — the
+real gap was that no program-level limitations section existed anywhere. Written as an
+**index** into the authoritative per-card table rather than a second copy of it. Two
+limitations were previously undocumented: `SPC`/`SPC1` directions are always basic-frame
+regardless of `CD`, and the per-block results output frames (f06 displacements/reactions in
+`CD`, CBAR forces in element local axes, CBUSH forces and all viewer tables in basic).
+`03_static_analysis.md` "SPC Reaction Forces" now states the recovery vs output frames.
 
 **Lint pass — ruff + pyright residuals (2026-08-02)**
 

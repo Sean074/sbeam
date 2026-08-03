@@ -327,9 +327,13 @@ def _build_f06_sol101_text(
 
     for gid in gids_sorted:
         if gid in result.reactions:
-            r = result.reactions[gid]
+            # Reactions are recovered in basic CID 0 (that is the frame the SPC
+            # itself acts in) but are reported, like the displacements above, in
+            # the grid's CD output frame — NASTRAN's "global" system (Q1).
+            rf, rm = _transform_to_cd(result.reactions[gid][:3],
+                                      result.reactions[gid][3:], gid, bulk)
             lines.append(
-                f"{gid:>14}     G  {_fmt(r[0])}{_fmt(r[1])}{_fmt(r[2])}{_fmt(r[3])}{_fmt(r[4])}{_fmt(r[5])}"
+                f"{gid:>14}     G  {_fmt(rf[0])}{_fmt(rf[1])}{_fmt(rf[2])}{_fmt(rm[0])}{_fmt(rm[1])}{_fmt(rm[2])}"
             )
 
     lines.append("")

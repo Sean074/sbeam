@@ -317,6 +317,58 @@ pytest --cov=sbeam/solver --cov=sbeam/assembly --cov=sbeam/parser --cov-fail-und
 
 ---
 
+## Known Limitations
+
+Restrictions that apply to a model the solver will otherwise accept. This is an **index**,
+not the authoritative statement — the per-card rules live in the "Constraints and
+Limitations" table of
+[`02_card_reference.md`](02_card_reference.md#constraints-and-limitations), and the
+aeroelastic ones in
+[`05_aeroelastics.md`](05_aeroelastics.md#validation-status--known-limitations). Add new
+restrictions there first, then link them here.
+
+**Theory**
+
+| Limitation | Detail |
+|------------|--------|
+| Euler-Bernoulli beams only | Transverse shear deformation is neglected; no Timoshenko option. Short, deep beams (low L/h) are over-stiff |
+| Uniform cross-section elements | No tapered CBAR — taper must be modelled by subdividing into stepped-constant elements |
+| Consistent mass matrix only | No lumped-mass option |
+| Linear static / linear modal | No geometric or material nonlinearity, no buckling (SOL 105), no enforced displacements |
+
+**Coordinate systems**
+
+| Limitation | Detail |
+|------------|--------|
+| `CORD2R` only | `CORD2C`, `CORD2S` and `CORD1R` are not supported; the parser raises `ValueError` |
+| All computation in basic CID 0 | `CP` and `CD` are input/output transforms only. See [DOF Numbering Convention](#dof-numbering-convention) |
+| SPC directions are basic-frame | `SPC`/`SPC1` DOF digits always refer to basic CID 0, **not** the grid's `CD` frame — a constrained grid with `CD ≠ 0` is restrained along basic axes even though its results are reported in `CD` |
+
+**Loads and constraints**
+
+| Limitation | Detail |
+|------------|--------|
+| `GRAV` requires `CID = 0` | Body acceleration is defined in the basic frame only; a non-zero `CID` raises `ValueError` at parse time. Resolve the direction into basic before writing the card |
+| `SPC` enforced displacement must be `0.0` | Non-zero `D` is rejected; enforced-motion support is a Phase 3 item |
+| `CBAR` offsets not supported | `W1A`/`W2A` are not honoured; use a short rigid element (`RBAR`/`RBE2`) to model the offset |
+| `CBAR` orientation vector form only | The `G0` grid-ID orientation form is not supported — use `X1/X2/X3` |
+| `CBUSH` restrictions | `CID` must be `0` or blank; element offsets unsupported; massless; `PBUSH` damping (`B1`–`B6`) is deferred to the dynamic solvers |
+| `MAT1` thermal fields ignored | `A`, `TREF` and `GE` are parsed but unused — there is no thermal load path |
+
+**Output**
+
+| Limitation | Detail |
+|------------|--------|
+| Results frames | The `.f06` DISPLACEMENT and SPCFORCE blocks are written in each grid's `CD` frame (NASTRAN's "global" system). CBAR element forces are in element local axes; CBUSH forces are in basic CID 0. The viewer result tables report basic CID 0 throughout |
+
+For aeroelastic limitations (`SPLINE1` not implemented, `AEROS` `ACSID`/`RCSID` must be `0`,
+`ATTACH` `CID = 0`, WT1 deprecation, body-panel geometry rules) see
+[`05_aeroelastics.md`](05_aeroelastics.md#validation-status--known-limitations) and the
+card table. Open defects and unresolved questions are tracked in
+[`../30_future/00_backlog.md`](../30_future/00_backlog.md).
+
+---
+
 ## Version and Phase
 
 | Phase | Capability | Status |

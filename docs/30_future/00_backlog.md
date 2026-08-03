@@ -41,7 +41,7 @@ Details in `docs/40_history/`.
 
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P3 | Release hygiene batch — DEF-R7 (WT1 removal), DEF-M13 (f06 column drift), sample-hygiene + doc-pointer sweep, propeller-position docs, close Q1 + Q3 | Release-required | ~2–3 d | Everything else the release-scope decision committed to; all low-risk and fully decided — pure execution, batched to land once at the release boundary. |
+| P3 | Release hygiene batch — DEF-R7 (WT1 removal), DEF-M13 (f06 column drift), sample-hygiene + doc-pointer sweep, propeller-position docs (Q1 + Q3 closed 2026-08-03) | Release-required | ~2–3 d | Everything else the release-scope decision committed to; all low-risk and fully decided — pure execution, batched to land once at the release boundary. |
 | P4 | DEF-M14 — nonplanar Trefftz `CDi` kernel | Post-release | ~1–2 d | The last open correctness defect: silently wrong CDi/e on canted decks (dihedral, winglets, cruciform tails). Reporting-only outputs, so it ranks below the release gate but above all new capability. |
 | P5 | `matrix_gaf_export` Phases 1–2 | Tier 2 | ~8 d | External flutter handoff (FLAPS) **and** the declared prerequisite of Phase D (MKAERO1, Mach loop, bundle writers). |
 | P6 | `AMODE` Phase 1 (control-surface hinge modes) | Tier 3 | ~7.5 d | Needed before control-surface flutter in SOL 145; Phase 2 is a declared pre-1.0.0 blocker. |
@@ -79,7 +79,7 @@ re-ranked table above; the six scope questions were resolved as follows:
 | Propeller effects | **Corrections position, documented.** Powered effects (slipstream over the washed wing, thrust-line pitching moment) enter only via the correction cards (`W2GJ`/`WT2`/`CHORDCP`) built from powered CFD or flight-test data; no native slipstream model. The modeling-guidance + Known-Limitations text lands in `docs/20_theory/02_realistic_airplane_sol144.md` and `05a_aero_vlm.md` as part of the release hygiene batch. |
 | Fuselage | **Corrected body panels adequate.** The A9/A10 correction-matched body panels are the early-design answer (Step 66 demonstrates them on the flagship); the predictive slender-body element stays deferred past Phase D. Validity envelope documented in the theory doc's limitations section. |
 | Gust/turbulence | **Out of scope.** CS-25.341 gust/continuous turbulence needs Phase D (P7/P8); the release claims maneuver loads only and the release notes must state the exclusion explicitly. |
-| Q1 / Q3 | **Both accepted for closure** in the release hygiene batch (see the open-questions table). |
+| Q1 / Q3 | **Both closed 2026-08-03.** Q1 turned out to be a real defect, not a convention to document: NASTRAN's "global" output system is the per-grid `CD` frame, not basic CID 0, so the SPCFORCE block now rotates to `CD` like the displacement block. Q3 landed as a program-level Known Limitations index in `00_program_overview.md`. |
 
 **Release-required items** (everything else in this backlog is post-release):
 
@@ -94,9 +94,10 @@ re-ranked table above; the six scope questions were resolved as follows:
   `docs/40_history/06_sol144_static_aeroelastic.md`).
 - **Release hygiene batch (P3)** — DEF-R7 (WT1 removal, "at a release boundary" per its
   own note), DEF-M13 (f06 column drift), the sample-hygiene + doc-pointer sweep
-  (sample-review section), the propeller-effects modeling-position docs (above), and
-  closing **Q1** (accept + document the CID-0 SPCFORCE convention — it matches NASTRAN)
-  and **Q3** (Known-Limitations line for the GRAV CID=0 restriction).
+  (sample-review section) and the propeller-effects modeling-position docs (above).
+  **Q1** (SPCFORCE `CD` output frame — fixed, not merely documented) and **Q3**
+  (program-level Known Limitations section) **delivered 2026-08-03**; see
+  `docs/40_history/02_sol101_static.md` and `01_program_foundation.md`.
 
 **Explicitly out of release scope:** P4–P9 (DEF-M14, `matrix_gaf_export`, AMODE,
 Phase D, `matrix_reuse_store`) and every Tier 2–4 item not named above.
@@ -105,8 +106,9 @@ Phase D, `matrix_reuse_store`) and every Tier 2–4 item not named above.
 
 | ID | Question / Risk | Severity | Status |
 |----|-----------------|----------|--------|
-| Q1 | SPC reaction f06 output: NASTRAN outputs SPCFORCE in the global (CID 0) frame, not the CD displacement frame. Current code matches this convention (no CD transform on reactions). Verify intentional. | Low | Accepted 2026-08-02 — convention is intentional (matches NASTRAN); document + close in the release hygiene batch |
-| Q3 | GRAV CID restriction (only CID=0 supported, parser raises): acceptable for Phase 1 but not documented in "Known Limitations". | Low | Accepted 2026-08-02 — add the Known-Limitations line; close in the release hygiene batch |
+
+*(No open questions. Q1 and Q3 closed 2026-08-03 — see
+`docs/40_history/02_sol101_static.md` and `01_program_foundation.md`.)*
 
 ---
 

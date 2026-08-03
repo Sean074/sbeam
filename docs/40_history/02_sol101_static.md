@@ -88,6 +88,48 @@ force/stress recovery, f06 output, GPWG, and resolved SOL 101 defects.
 
 ## Resolved defects
 
+### Q1 — SPC reactions written in basic CID 0 instead of the grid CD frame ✅ FIXED (2026-08-03)
+
+**Objective:** Q1 sat in the backlog as "verify intentional", on the premise that *NASTRAN
+outputs SPCFORCE in the global (CID 0) frame, not the CD displacement frame*, so the code
+already matched. The premise is wrong. In MSC/NX Nastran the **global coordinate system is
+the assembly of the per-grid `CD` frames**, not basic CID 0 — displacements, SPC forces and
+grid point forces are all reported there. So the accepted "close it with a doc line" outcome
+would have documented a defect as a convention. Reopened as a fix.
+
+The symptom is also internally visible: `f06_writer.py` applied `_transform_to_cd` to the
+DISPLACEMENT block but not to the SPCFORCE block, so a deck with `CD ≠ 0` on a constrained
+grid emitted displacements and reactions in **different frames** in the same listing. It
+further contradicted `01_beam_model.md`, which already claimed `cd` was "preserved for
+output transformation of nodal results".
+
+**Deliverables:**
+- `results/f06_writer.py` — the SPCFORCE loop rotates through the existing
+  `_transform_to_cd` helper, matching the displacement block.
+- The rotation is **write-time only**. `Sol101Result.reactions` stays in basic CID 0:
+  `results/section_cuts.py` (`_scatter_reactions`) and the MONPNT3 integrators consume
+  those vectors as basic-frame quantities, and rotating the stored values would corrupt
+  every section cut and monitor point on a `CD ≠ 0` model.
+- `docs/10_standard/03_static_analysis.md` — "SPC Reaction Forces" now states the
+  recovery frame, the output frame and why they differ.
+
+**Key decision — recover in basic, report in CD.** Basic is the correct *recovery* frame
+because SPC/SPC1 DOF digits are themselves basic: nothing in `model/constraint.py` or
+`assembly/reduction.py` reads `grid.cd`. That residual asymmetry (a `CD ≠ 0` grid is
+restrained along basic axes but reported along `CD`) is a real limitation rather than a
+bug, and is now documented in the Known Limitations index rather than silently implied.
+
+**Test/Acceptance:** `tests/results/test_f06_sol101.py::TestSpcForceCdFrame` — three cases
+on the reference cantilever: `CD = 0` still writes the raw basic reaction (guards against
+an unwanted rotation on the overwhelmingly common path); `CD = 90°` about Z writes
+`(Fy, −Fx, Fz, My, −Mx, Mz)`, checked component-by-component against the basic vector; and
+`result.reactions` is byte-identical before and after the write, pinning the
+presentation-only contract that `section_cuts` depends on. Full suite green
+(1744 passed, 6 xfailed) — no existing test asserted the old frame, since every
+verification deck uses `CD = 0`.
+
+---
+
 ### DEF-R6 (SOL 101 share) — full-SVD `np.linalg.cond(K_free)` on the dense RBE3 path ✅ COMPLETE (2026-08-02)
 
 **Objective:** The dense solve branch (RBE3 transformation collapses K to dense) ran a full

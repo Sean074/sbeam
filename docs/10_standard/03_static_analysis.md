@@ -173,6 +173,14 @@ f_spc = K_global @ u_global - f_global
 
 Extract values at constrained DOF indices.
 
+**Output frame.** Reactions are recovered — and stored in `Sol101Result.reactions` — in
+basic CID 0, which is the frame the SPC itself acts in (SPC DOF digits are always basic;
+see the Known Limitations index in `00_program_overview.md`). They are rotated into the
+grid's `CD` frame at f06 **write** time only, exactly like the displacement block, because
+NASTRAN's "global" output system is the assembly of the per-grid `CD` frames rather than
+basic CID 0. Downstream consumers of the stored vectors — `results/section_cuts.py` and
+the MONPNT3 integrators — depend on them staying in basic.
+
 ### CBAR End Forces and Moments
 
 For each element:
