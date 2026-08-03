@@ -39,6 +39,13 @@ bit-identical (four-deck gate) and the full suite green after each of five commi
 - Hygiene: duplicate function-local imports hoisted, dead `_expand_to_g` alias
   removed, unused `_compute_restrained_derivs` params dropped, `Fz_x`/`Fz_y`
   locals renamed.
+- Lint follow-up (same day): the shared helpers are the split modules' **public
+  API** — leading underscores dropped in their new homes (`solve_rom`,
+  `compute_hinge_moments`, `divergence_roots`, `build_qaa_aset`, …); the
+  `sol144` facade keeps the historic underscore names bound as aliases and
+  declares the full surface in `__all__`, so every existing import still works.
+  `_TrimState` stage fields are now `field(init=False)` with non-Optional types
+  (premature reads fail loudly instead of passing `None`).
 
 ### Added
 

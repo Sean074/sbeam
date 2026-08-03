@@ -62,7 +62,7 @@ def compute_rigid_derivs(
         My_sens = pitch_moment(f_box_vec, boxes, x_ref)   # nose-up-positive
         Fx_sens = f_box_vec[0::3].sum()
         Fy_sens = f_box_vec[1::3].sum()
-        Mx, _My_xp, Mz = aero_moment_resultant(
+        Mx, _, Mz = aero_moment_resultant(
             f_box_vec.reshape(n_box, 3), boxes, ref_pt)
 
         rigid_derivs[label] = {
@@ -77,7 +77,7 @@ def compute_rigid_derivs(
     return rigid_derivs
 
 
-def _compute_hinge_moments(
+def compute_hinge_moments(
     aero: AeroModel,
     D_jx: FloatArray,
     all_labels: list[str],
@@ -128,7 +128,7 @@ def _compute_hinge_moments(
     return hinge_moments
 
 
-def _compute_restrained_derivs(
+def compute_restrained_derivs(
     K_ll_lu: LuFactor,
     l_idx: list[int],
     Q_ax_a: FloatArray,
@@ -198,7 +198,7 @@ def _compute_restrained_derivs(
         dgamma = aero.ajj_inv_corr @ dw
         df_box = aero.skj @ dgamma                              # (3·n_box,) force/q
 
-        Mx, _My_xp, Mz = aero_moment_resultant(
+        Mx, _, Mz = aero_moment_resultant(
             df_box.reshape(n_box, 3), boxes, ref_pt)
         rest_derivs[label] = {
             'CZ':  df_box[2::3].sum() / sref,
@@ -210,7 +210,7 @@ def _compute_restrained_derivs(
     return rest_derivs
 
 
-def _compute_unrestrained_derivs(
+def compute_unrestrained_derivs(
     K_aa: FloatArray,
     M_aa: FloatArray,
     Q_aa: FloatArray,

@@ -19,7 +19,7 @@ The Step-50 no-trim reference path (``run_aeroelastic_static``) lives in
 """
 
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import numpy as np
@@ -38,32 +38,80 @@ from sbeam.results.results import Sol144TrimResult
 from sbeam.results.monitor_points import compute_monitor_loads
 from sbeam.results.section_cuts import compute_section_cuts
 from sbeam.solver.sol101 import recover_bar_forces, recover_bar_stresses, recover_reactions
-from sbeam.types import FloatArray
+from sbeam.types import FloatArray, LuFactor
 from sbeam.model.aero import require_aeros
 
-# Facade re-exports (P13/DEF-R1/R3) — the split modules; public + test-pinned
-# names keep their historic home here.  Import order follows the dependency
+# Facade re-exports (P13/DEF-R1/R3) — the split modules; every name stays
+# importable from its historic home here.  Import order follows the dependency
 # layering (util has no sol144-internal imports; derivs/diverg import util).
 from sbeam.solver.sol144_util import (  # noqa: F401
     AeroCache, urdd_rcsid_to_basic, urdd_basic_to_rcsid, load_resultant,
     build_inertial_cols, get_suport_local, pitch_moment, aero_moment_resultant,
-    _URDD_DOF,
+    URDD_DOF,
 )
 from sbeam.solver.sol144_trim_solve import (  # noqa: F401
-    _build_trim_schur, _recover_u_a,
-    _solve_trim_determined, _solve_trim_overdetermined,
+    build_trim_schur, recover_u_a,
+    solve_trim_determined, solve_trim_overdetermined,
 )
 from sbeam.solver.sol144_derivs import (  # noqa: F401
-    compute_rigid_derivs, _compute_hinge_moments,
-    _compute_restrained_derivs, _compute_unrestrained_derivs,
+    compute_rigid_derivs, compute_hinge_moments,
+    compute_restrained_derivs, compute_unrestrained_derivs,
 )
 from sbeam.solver.sol144_diverg import (  # noqa: F401
-    run_sol144_diverg, _divergence_dynamic_pressure, _divergence_roots,
+    run_sol144_diverg, divergence_dynamic_pressure, divergence_roots,
 )
 from sbeam.solver.sol144_static import (  # noqa: F401
-    run_aeroelastic_static, _build_qaa_aset, _solve_direct,
-    _solve_rom, _mode_acceleration_recovery,
+    run_aeroelastic_static, build_qaa_aset, solve_direct,
+    solve_rom, mode_acceleration_recovery,
 )
+
+# Backwards-compatible aliases for the historic underscore-private names.  The
+# helpers became the split modules' public API (P13 lint pass), but tests and
+# studies still import the old names from here (e.g. test_step50_qaa,
+# test_modal_basis, test_ae11_hinge, test_step55_diverg) — keep both bound.
+_URDD_DOF = URDD_DOF
+_build_trim_schur = build_trim_schur
+_recover_u_a = recover_u_a
+_solve_trim_determined = solve_trim_determined
+_solve_trim_overdetermined = solve_trim_overdetermined
+_compute_hinge_moments = compute_hinge_moments
+_compute_restrained_derivs = compute_restrained_derivs
+_compute_unrestrained_derivs = compute_unrestrained_derivs
+_divergence_dynamic_pressure = divergence_dynamic_pressure
+_divergence_roots = divergence_roots
+_build_qaa_aset = build_qaa_aset
+_solve_direct = solve_direct
+_solve_rom = solve_rom
+_mode_acceleration_recovery = mode_acceleration_recovery
+
+#: The facade surface: everything importable from this module by design —
+#: the trim entry point, the split modules' public API, and the historic
+#: underscore aliases still pinned by tests.
+__all__ = [
+    "run_sol144_trim",
+    # sol144_util
+    "AeroCache", "urdd_rcsid_to_basic", "urdd_basic_to_rcsid", "load_resultant",
+    "build_inertial_cols", "get_suport_local", "pitch_moment",
+    "aero_moment_resultant", "URDD_DOF",
+    # sol144_trim_solve
+    "build_trim_schur", "recover_u_a",
+    "solve_trim_determined", "solve_trim_overdetermined",
+    # sol144_derivs
+    "compute_rigid_derivs", "compute_hinge_moments",
+    "compute_restrained_derivs", "compute_unrestrained_derivs",
+    # sol144_diverg
+    "run_sol144_diverg", "divergence_dynamic_pressure", "divergence_roots",
+    # sol144_static
+    "run_aeroelastic_static", "build_qaa_aset", "solve_direct",
+    "solve_rom", "mode_acceleration_recovery",
+    # historic underscore aliases (test-pinned)
+    "_URDD_DOF", "_build_trim_schur", "_recover_u_a",
+    "_solve_trim_determined", "_solve_trim_overdetermined",
+    "_compute_hinge_moments", "_compute_restrained_derivs",
+    "_compute_unrestrained_derivs", "_divergence_dynamic_pressure",
+    "_divergence_roots", "_build_qaa_aset", "_solve_direct",
+    "_solve_rom", "_mode_acceleration_recovery",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +122,6 @@ def _build_injection_echo(
     aero: AeroModel,
     box_forces: FloatArray,
     ref_point: FloatArray,
-    bulk: BulkData,
     grid_index: dict[int, int],
     free_dofs: list[int],
 ) -> list[dict[str, Any]]:
@@ -141,104 +188,110 @@ class _TrimState:
     aero: AeroModel
     aero_cache: Optional[AeroCache]
 
+    # Stage-produced fields are declared ``field(init=False)`` with no default:
+    # they do not exist until their stage writes them, so a premature read
+    # fails loudly (AttributeError) instead of silently passing None around,
+    # and the declared types stay non-Optional.  ``Optional[...]`` below marks
+    # only the fields for which None is a genuine runtime value.
+
     # _stage_validate_inputs
-    trim_sid: int = 0
-    trim_card: Any = None
-    q_dyn: float = 0.0
+    trim_sid: int = field(init=False)
+    trim_card: Any = field(init=False)
+    q_dyn: float = field(init=False)
 
     # _stage_resolve_massset_and_mach
-    massset_sid: Optional[int] = None
-    mass_case_label: str = ""
-    mass_case_gpwg: Any = None
-    grid_index: Optional[dict[int, int]] = None
-    spc_sid: Optional[int] = None
-    mach: float = 0.0
+    massset_sid: Optional[int] = field(init=False)
+    mass_case_label: str = field(init=False)
+    mass_case_gpwg: Any = field(init=False)
+    grid_index: dict[int, int] = field(init=False)
+    spc_sid: Optional[int] = field(init=False)
+    mach: float = field(init=False)
 
     # _stage_build_labels
-    all_labels: Optional[list[str]] = None
-    chordcp_alpha_ref: Optional[float] = None
-    prescribed_dict: Optional[dict[str, float]] = None
-    free_labels: Optional[list[str]] = None
+    all_labels: list[str] = field(init=False)
+    chordcp_alpha_ref: Optional[float] = field(init=False)
+    prescribed_dict: dict[str, float] = field(init=False)
+    free_labels: list[str] = field(init=False)
 
     # _stage_resolve_ref_geometry
-    aeros: Any = None
-    x_ref: float = 0.0
-    R_rcsid: Optional[FloatArray] = None
-    suport_pos: Optional[FloatArray] = None
+    aeros: Any = field(init=False)
+    x_ref: float = field(init=False)
+    R_rcsid: FloatArray = field(init=False)
+    suport_pos: FloatArray = field(init=False)
 
     # _stage_echo_chordcp
-    chordcp_echo: Optional[dict[str, Any]] = None
+    chordcp_echo: Optional[dict[str, Any]] = field(init=False)
 
     # _stage_build_downwash_and_reduce
-    D_jx: Optional[FloatArray] = None
-    red: Any = None
-    T: Any = None
-    free_local: Optional[list[int]] = None
-    free_dofs: Optional[list[int]] = None
-    red_dofs: Any = None
-    Q_ax_a: Optional[FloatArray] = None
-    K_gg: Any = None
-    K_aa: Optional[FloatArray] = None
-    Q_aa: Optional[FloatArray] = None
-    f_aero_g: Optional[FloatArray] = None
-    label_to_col: Optional[dict[str, int]] = None
-    pres_values_basic: Optional[FloatArray] = None
-    M_gg: Any = None
-    M_ax_g: Optional[FloatArray] = None
-    f_rhs_a: Optional[FloatArray] = None
-    M_ax_a: Optional[FloatArray] = None
-    suport_local: Optional[list[int]] = None
-    over_determined: bool = False
-    n_free: int = 0
-    n_suport: int = 0
-    free_label_cols: Optional[list[int]] = None
+    D_jx: FloatArray = field(init=False)
+    red: Any = field(init=False)
+    T: Any = field(init=False)
+    free_local: list[int] = field(init=False)
+    free_dofs: list[int] = field(init=False)
+    red_dofs: Any = field(init=False)
+    Q_ax_a: FloatArray = field(init=False)
+    K_gg: Any = field(init=False)
+    K_aa: FloatArray = field(init=False)
+    Q_aa: FloatArray = field(init=False)
+    f_aero_g: FloatArray = field(init=False)
+    label_to_col: dict[str, int] = field(init=False)
+    pres_values_basic: FloatArray = field(init=False)
+    M_gg: Any = field(init=False)
+    M_ax_g: FloatArray = field(init=False)
+    f_rhs_a: FloatArray = field(init=False)
+    M_ax_a: FloatArray = field(init=False)
+    suport_local: list[int] = field(init=False)
+    over_determined: bool = field(init=False)
+    n_free: int = field(init=False)
+    n_suport: int = field(init=False)
+    free_label_cols: list[int] = field(init=False)
 
     # _stage_solve_trim
-    u_a: Optional[FloatArray] = None
-    delta_free_arr: Optional[FloatArray] = None
-    K_ll_lu: Any = None
-    l_idx: Optional[list[int]] = None
-    r_idx: Optional[list[int]] = None
-    trim_mode: str = ""
-    trim_vars: Optional[dict[str, float]] = None
-    delta_all: Optional[FloatArray] = None
+    u_a: FloatArray = field(init=False)
+    delta_free_arr: FloatArray = field(init=False)
+    K_ll_lu: LuFactor = field(init=False)
+    l_idx: list[int] = field(init=False)
+    r_idx: list[int] = field(init=False)
+    trim_mode: str = field(init=False)
+    trim_vars: dict[str, float] = field(init=False)
+    delta_all: FloatArray = field(init=False)
 
     # _stage_recover_displacements
-    displacements: Optional[FloatArray] = None
-    bar_forces: Optional[dict[int, Any]] = None
-    bar_stresses: Optional[dict[int, Any]] = None
+    displacements: FloatArray = field(init=False)
+    bar_forces: dict[int, Any] = field(init=False)
+    bar_stresses: dict[int, Any] = field(init=False)
 
     # _stage_compute_derivs
-    rigid_derivs: Any = None
-    rest_derivs: Any = None
-    unrest_derivs: Any = None
-    unrest_intercepts: Any = None
+    rigid_derivs: dict[str, dict[str, float]] = field(init=False)
+    rest_derivs: dict[str, dict[str, float]] = field(init=False)
+    unrest_derivs: Any = field(init=False)
+    unrest_intercepts: Any = field(init=False)
 
     # _stage_compute_totals
-    gamma: Optional[FloatArray] = None
-    f_box_vec: Optional[FloatArray] = None
-    total_cl: float = 0.0
-    total_cm: float = 0.0
-    total_cx: float = 0.0
-    total_cl_wind: float = 0.0
-    total_cy: float = 0.0
-    total_cmx: float = 0.0
-    total_cmz: float = 0.0
-    hinge_moments: Any = None
+    gamma: FloatArray = field(init=False)
+    f_box_vec: FloatArray = field(init=False)
+    total_cl: float = field(init=False)
+    total_cm: float = field(init=False)
+    total_cx: float = field(init=False)
+    total_cl_wind: float = field(init=False)
+    total_cy: float = field(init=False)
+    total_cmx: float = field(init=False)
+    total_cmz: float = field(init=False)
+    hinge_moments: Any = field(init=False)
 
     # _stage_flight_and_net_loads
-    box_forces: Optional[FloatArray] = None
-    box_cp: Optional[FloatArray] = None
-    grid_loads: Optional[FloatArray] = None
-    load_injection_echo: Any = None
-    inertial_loads: Optional[FloatArray] = None
-    net_loads: Optional[FloatArray] = None
-    maneuver_closure: Optional[FloatArray] = None
-    q_div: Optional[float] = None
+    box_forces: FloatArray = field(init=False)
+    box_cp: FloatArray = field(init=False)
+    grid_loads: FloatArray = field(init=False)
+    load_injection_echo: list[dict[str, Any]] = field(init=False)
+    inertial_loads: FloatArray = field(init=False)
+    net_loads: FloatArray = field(init=False)
+    maneuver_closure: FloatArray = field(init=False)
+    q_div: Optional[float] = field(init=False)
 
     # _stage_monitor_outputs
-    monitor_loads: Any = None
-    section_loads: Any = None
+    monitor_loads: Any = field(init=False)
+    section_loads: Any = field(init=False)
 
 
 def _stage_validate_inputs(st: _TrimState) -> None:
@@ -546,12 +599,12 @@ def _stage_solve_trim(st: _TrimState) -> None:
         trimcons = []
         for cons in bulk.trimcons.values():
             trimcons.extend(cons)
-        u_a, delta_free_arr, K_ll_lu, l_idx, r_idx = _solve_trim_overdetermined(
+        u_a, delta_free_arr, K_ll_lu, l_idx, r_idx = solve_trim_overdetermined(
             K_aa, Q_aa, Q_ax_a, M_ax_a, f_rhs_a, q_dyn, suport_local,
             free_labels, free_label_cols, trimobj, trimcons, bulk.trimvars,
         )
     else:
-        u_a, delta_free_arr, K_ll_lu, l_idx, r_idx = _solve_trim_determined(
+        u_a, delta_free_arr, K_ll_lu, l_idx, r_idx = solve_trim_determined(
             K_aa, Q_aa, Q_ax_a, M_ax_a, f_rhs_a, q_dyn, suport_local, free_label_cols
         )
     trim_mode = "over-determined" if over_determined else "determined"
@@ -572,11 +625,11 @@ def _stage_solve_trim(st: _TrimState) -> None:
     # rcsid-to-basic rotation corrupts the inertial loads and closure
     # (latent since Step 52 — every earlier deck prescribed its URDDs;
     # exposed by the Step 63 settled-state gate).
-    free_urdd = [l for l in free_labels if l in _URDD_DOF]
+    free_urdd = [l for l in free_labels if l in URDD_DOF]
     if free_urdd and bool(aeros.rcsid):
         urdd_full_basic = pres_values_basic.copy()
         for i, lbl in enumerate(free_labels):
-            if lbl in _URDD_DOF:
+            if lbl in URDD_DOF:
                 urdd_full_basic[label_to_col[lbl]] = float(delta_free_arr[i])
         urdd_full_rcsid = urdd_basic_to_rcsid(
             urdd_full_basic, label_to_col, R_rcsid, True)
@@ -653,7 +706,7 @@ def _stage_compute_derivs(st: _TrimState) -> None:
     # ------------------------------------------------------------------ #
     # Elastic restrained derivatives (finite difference, u_r = 0)
     # ------------------------------------------------------------------ #
-    rest_derivs = _compute_restrained_derivs(
+    rest_derivs = compute_restrained_derivs(
         K_ll_lu, l_idx, Q_ax_a, M_ax_a, all_labels,
         aero, D_jx,
         T, free_local, len(red_dofs),
@@ -666,7 +719,7 @@ def _stage_compute_derivs(st: _TrimState) -> None:
     # ------------------------------------------------------------------ #
     M_aa = red.reduce_matrix(M_gg, dense=True)   # M_gg assembled with M_ax above
     f_aero_a = red.reduce_vector(f_aero_g)
-    unrest_derivs, unrest_intercepts = _compute_unrestrained_derivs(
+    unrest_derivs, unrest_intercepts = compute_unrestrained_derivs(
         K_aa, M_aa, Q_aa, Q_ax_a, f_aero_a, all_labels,
         l_idx, r_idx, free_dofs, grid_index, bulk, q_dyn, suport_pos,
     )
@@ -717,7 +770,7 @@ def _stage_compute_totals(st: _TrimState) -> None:
     # convention (Step 52).  ≈0 for a symmetric model at a symmetric trim.
     bref = aeros.bref
     Fy_total = float(f_box_vec[1::3].sum())
-    Mx_total, _My_xp, Mz_total = aero_moment_resultant(
+    Mx_total, _, Mz_total = aero_moment_resultant(
         f_box_vec.reshape(-1, 3), aero.boxes, suport_pos
     )
     total_cy = Fy_total / sref if sref > 0 else 0.0
@@ -727,7 +780,7 @@ def _stage_compute_totals(st: _TrimState) -> None:
     # ------------------------------------------------------------------ #
     # Hinge-moment derivatives + trimmed hinge moment per AESURF control
     # ------------------------------------------------------------------ #
-    hinge_moments = _compute_hinge_moments(aero, D_jx, all_labels, bulk, f_box_vec)
+    hinge_moments = compute_hinge_moments(aero, D_jx, all_labels, bulk, f_box_vec)
 
     st.gamma, st.f_box_vec = gamma, f_box_vec
     st.total_cl, st.total_cm, st.total_cx = total_cl, total_cm, total_cx
@@ -741,7 +794,7 @@ def _stage_flight_and_net_loads(st: _TrimState) -> None:
     loads + closure (Step 53), critical divergence q."""
     bulk, aero, q_dyn = st.bulk, st.aero, st.q_dyn
     f_box_vec, delta_all, label_to_col = st.f_box_vec, st.delta_all, st.label_to_col
-    aeros, R_rcsid, suport_pos, x_ref = st.aeros, st.R_rcsid, st.suport_pos, st.x_ref
+    aeros, R_rcsid, suport_pos = st.aeros, st.R_rcsid, st.suport_pos
     grid_index, spc_sid, red = st.grid_index, st.spc_sid, st.red
     M_ax_g, K_aa, Q_aa, l_idx = st.M_ax_g, st.K_aa, st.Q_aa, st.l_idx
 
@@ -770,7 +823,7 @@ def _stage_flight_and_net_loads(st: _TrimState) -> None:
     # mis-placed master grid is visible.  Empty on decks with none, so their f06
     # is byte-identical.
     load_injection_echo = _build_injection_echo(
-        aero, box_forces, suport_pos, bulk, grid_index, red.free_dofs
+        aero, box_forces, suport_pos, grid_index, red.free_dofs
     )
 
     # ------------------------------------------------------------------ #
@@ -814,7 +867,7 @@ def _stage_flight_and_net_loads(st: _TrimState) -> None:
     # Critical divergence dynamic pressure on the restrained l-set.
     K_ll_div = K_aa[np.ix_(l_idx, l_idx)]
     Q_ll_div = Q_aa[np.ix_(l_idx, l_idx)]
-    q_div = _divergence_dynamic_pressure(K_ll_div, Q_ll_div)
+    q_div = divergence_dynamic_pressure(K_ll_div, Q_ll_div)
 
     st.box_forces, st.box_cp, st.grid_loads = box_forces, box_cp, grid_loads
     st.load_injection_echo = load_injection_echo

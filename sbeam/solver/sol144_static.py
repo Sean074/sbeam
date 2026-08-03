@@ -41,7 +41,7 @@ from sbeam.solver.sol103 import run_sol103
 from sbeam.types import FloatArray, LuFactor
 
 
-def _build_qaa_aset(
+def build_qaa_aset(
     bulk: BulkData,
     aero: AeroModel,
     grid_index: dict[int, int],
@@ -74,7 +74,7 @@ def _build_qaa_aset(
     """
     if aero.g_slope is None or aero.g_disp is None:
         raise ValueError(
-            "_build_qaa_aset: aero.g_slope and aero.g_disp must be populated. "
+            "build_qaa_aset: aero.g_slope and aero.g_disp must be populated. "
             "Call build_aero_model with a grid_index argument."
         )
 
@@ -91,7 +91,7 @@ def _build_qaa_aset(
     return Q_aa, K_aa, f_aa, red.free_dofs
 
 
-def _solve_direct(
+def solve_direct(
     K_aa: FloatArray,
     Q_aa: FloatArray,
     f_aa: FloatArray,
@@ -132,7 +132,7 @@ def _solve_direct(
     return displacements, K_eff, k_aa_lu
 
 
-def _solve_rom(
+def solve_rom(
     K_aa: FloatArray,
     Q_aa: FloatArray,
     f_aa: FloatArray,
@@ -162,7 +162,7 @@ def _solve_rom(
     return xi, k_hh, q_hh
 
 
-def _mode_acceleration_recovery(
+def mode_acceleration_recovery(
     K_aa: FloatArray,
     Q_aa: FloatArray,
     f_aa: FloatArray,
@@ -178,7 +178,7 @@ def _mode_acceleration_recovery(
 
         u_a = Phi*xi + K_aa^{-1} * (f_aa - (K_aa - q*Q_aa)*Phi*xi)
 
-    The K_aa factorization is already available from _solve_direct so no
+    The K_aa factorization is already available from solve_direct so no
     additional factorization is required.  When all modes are retained the
     residual is zero and u_corrected == u_md exactly.
 
@@ -242,12 +242,12 @@ def run_aeroelastic_static(
     f_g_full = f_struct + f_aero_g
 
     # Reduce Q_aa, K_aa, and the combined load to the a-set
-    Q_aa, K_aa, f_aa, free_dofs = _build_qaa_aset(bulk, aero, grid_index, spc_sid, f_g_full)
-    if f_aa is None:   # f_g_full was supplied, so _build_qaa_aset always reduces it
+    Q_aa, K_aa, f_aa, free_dofs = build_qaa_aset(bulk, aero, grid_index, spc_sid, f_g_full)
+    if f_aa is None:   # f_g_full was supplied, so build_qaa_aset always reduces it
         raise ValueError("run_aeroelastic_static: a-set load vector was not built")
 
     # Direct solve
-    displacements, _K_eff, k_aa_lu = _solve_direct(K_aa, Q_aa, f_aa, q, free_dofs, n_dofs)
+    displacements, _K_eff, k_aa_lu = solve_direct(K_aa, Q_aa, f_aa, q, free_dofs, n_dofs)
 
     # --- Modal ROM path (optional) ---
     modal_coords = phi_free = k_hh = q_hh = None
@@ -264,8 +264,8 @@ def run_aeroelastic_static(
         phi_full = sol103_result.mode_shapes       # (n_dofs, n_modes)
         phi_free = phi_full[free_dofs, :]          # (n_a, n_modes)
 
-        xi, k_hh, q_hh = _solve_rom(K_aa, Q_aa, f_aa, q, phi_free)
-        u_free_corrected = _mode_acceleration_recovery(K_aa, Q_aa, f_aa, q, phi_free, xi, k_aa_lu)
+        xi, k_hh, q_hh = solve_rom(K_aa, Q_aa, f_aa, q, phi_free)
+        u_free_corrected = mode_acceleration_recovery(K_aa, Q_aa, f_aa, q, phi_free, xi, k_aa_lu)
 
         modal_coords = xi
         # Scatter mode-acceleration corrected a-set back to full DOF vector

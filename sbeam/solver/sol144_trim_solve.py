@@ -15,7 +15,7 @@ from sbeam.model.aero import Trimcon, Trimobj, Trimvar
 from sbeam.types import FloatArray, LuFactor
 
 
-def _build_trim_schur(
+def build_trim_schur(
     K_aa: FloatArray,
     Q_aa: FloatArray,
     Q_ax_a: FloatArray,
@@ -69,7 +69,7 @@ def _build_trim_schur(
     return schur_A, schur_b, K_ll_lu, l_idx, r_idx, C_ax_l, f_rhs_l
 
 
-def _recover_u_a(
+def recover_u_a(
     K_ll_lu: LuFactor,
     C_ax_l: FloatArray,
     f_rhs_l: FloatArray,
@@ -85,7 +85,7 @@ def _recover_u_a(
     return u_a
 
 
-def _solve_trim_determined(
+def solve_trim_determined(
     K_aa: FloatArray,
     Q_aa: FloatArray,
     Q_ax_a: FloatArray,
@@ -101,16 +101,16 @@ def _solve_trim_determined(
         (u_a, delta_free, K_ll_lu, l_idx, r_idx)
     """
     n_a = K_aa.shape[0]
-    schur_A, schur_b, K_ll_lu, l_idx, r_idx, C_ax_l, f_rhs_l = _build_trim_schur(
+    schur_A, schur_b, K_ll_lu, l_idx, r_idx, C_ax_l, f_rhs_l = build_trim_schur(
         K_aa, Q_aa, Q_ax_a, M_ax_a, f_rhs_a, q, suport_local, free_label_cols)
 
     delta_free_arr = scipy.linalg.solve(schur_A, schur_b)        # (n_free,)
 
-    u_a = _recover_u_a(K_ll_lu, C_ax_l, f_rhs_l, delta_free_arr, l_idx, n_a)
+    u_a = recover_u_a(K_ll_lu, C_ax_l, f_rhs_l, delta_free_arr, l_idx, n_a)
     return u_a, delta_free_arr, K_ll_lu, l_idx, r_idx
 
 
-def _solve_trim_overdetermined(
+def solve_trim_overdetermined(
     K_aa: FloatArray,
     Q_aa: FloatArray,
     Q_ax_a: FloatArray,
@@ -157,7 +157,7 @@ def _solve_trim_overdetermined(
 
     n_a = K_aa.shape[0]
     n_free = len(free_labels)
-    schur_A, schur_b, K_ll_lu, l_idx, r_idx, C_ax_l, f_rhs_l = _build_trim_schur(
+    schur_A, schur_b, K_ll_lu, l_idx, r_idx, C_ax_l, f_rhs_l = build_trim_schur(
         K_aa, Q_aa, Q_ax_a, M_ax_a, f_rhs_a, q, suport_local, free_label_cols)
 
     label_to_idx = {lbl: i for i, lbl in enumerate(free_labels)}
@@ -251,7 +251,7 @@ def _solve_trim_overdetermined(
                 f"bounds: {res.message}")
         delta_free_arr = delta_p + N @ res.x
 
-    u_a = _recover_u_a(K_ll_lu, C_ax_l, f_rhs_l, delta_free_arr, l_idx, n_a)
+    u_a = recover_u_a(K_ll_lu, C_ax_l, f_rhs_l, delta_free_arr, l_idx, n_a)
     return u_a, delta_free_arr, K_ll_lu, l_idx, r_idx
 
 

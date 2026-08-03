@@ -145,7 +145,7 @@ def load_resultant(
 #: URDD label -> rigid DOF component (1-6).  URDD1-3 are translational
 #: accelerations along basic x/y/z; URDD4-6 are angular accelerations about
 #: basic x/y/z, referred to ``suport_pos``.
-_URDD_DOF = {f"URDD{d}": d for d in range(1, 7)}
+URDD_DOF = {f"URDD{d}": d for d in range(1, 7)}
 
 
 def build_inertial_cols(
@@ -206,7 +206,7 @@ def build_inertial_cols(
     # {rigid DOF -> column} for the URDD labels actually present.
     urdd_cols: dict[int, int] = {}
     for col, label in enumerate(all_labels):
-        dof = _URDD_DOF.get(label.upper())
+        dof = URDD_DOF.get(label.upper())
         if dof is not None:
             urdd_cols[dof] = col
     if not urdd_cols:

@@ -61,7 +61,7 @@ un-splined-box forces reach the force balance and the exports (Step 64 / DEF-M1)
 
 Returns the **g-set** Q_aa (dense, unsymmetric in general). Reduction to the
 a-set is done downstream via the shared `assembly.reduction.reduce_to_aset`
-path (wrapped by `sol144._build_qaa_aset`).
+path (wrapped by `sol144.build_qaa_aset`).
 
 #### `build_fg(aero, g_load) → np.ndarray`
 
@@ -79,15 +79,15 @@ Q_hh = Phi^T  Q_aa  Phi                              shape (n_modes, n_modes)
 ```
 
 Modal generalized aerodynamic force (GAF) matrix. `phi` and `qaa` must be on
-the same DOF set. Used by the modal-truncation ROM in `sol144._solve_rom`.
+the same DOF set. Used by the modal-truncation ROM in `sol144.solve_rom`.
 
 ---
 
 ### `sol144_static.py` — Step 50 Aeroelastic Static Solver
 
 **Module:** `sbeam/solver/sol144_static.py` (P13/DEF-R3: the Step-50 cluster —
-`run_aeroelastic_static`, `_build_qaa_aset`, `_solve_direct`, `_solve_rom`,
-`_mode_acceleration_recovery` — lives here as the reference/test-scaffolding
+`run_aeroelastic_static`, `build_qaa_aset`, `solve_direct`, `solve_rom`,
+`mode_acceleration_recovery` — lives here as the reference/test-scaffolding
 path; it has no production callers.  All five names remain importable from
 `sbeam.solver.sol144` via the facade, so the imports below are unchanged.)
 
@@ -117,17 +117,17 @@ When `use_rom=True` and `sol103_result is None`, SOL 103 is run internally using
 
 | Function | Purpose |
 |----------|---------|
-| `_build_qaa_aset(bulk, aero, grid_index, spc_sid, f_g_full)` | Reduce g-set Q_aa and K_aa to the a-set via RBE3 + SPC partition |
-| `_solve_direct(K_aa, Q_aa, f_aa, q, free_dofs, n_dofs)` | Dense direct solve of `(K_aa − q·Q_aa)·u_a = f_aa`. `K_eff` is factored **once** (DEF-R6): the singularity check is an LU + LAPACK `gecon` 1-norm condition estimate (`sbeam/linalg_utils.py`, threshold 1e15 unchanged) and the same LU serves the solve via `lu_solve` |
-| `_solve_rom(K_aa, Q_aa, f_aa, q, phi_free)` | Modal-truncation ROM solve |
-| `_mode_acceleration_recovery(K_aa, Q_aa, f_aa, q, phi_free, xi, k_aa_lu)` | Mode-acceleration correction |
+| `build_qaa_aset(bulk, aero, grid_index, spc_sid, f_g_full)` | Reduce g-set Q_aa and K_aa to the a-set via RBE3 + SPC partition |
+| `solve_direct(K_aa, Q_aa, f_aa, q, free_dofs, n_dofs)` | Dense direct solve of `(K_aa − q·Q_aa)·u_a = f_aa`. `K_eff` is factored **once** (DEF-R6): the singularity check is an LU + LAPACK `gecon` 1-norm condition estimate (`sbeam/linalg_utils.py`, threshold 1e15 unchanged) and the same LU serves the solve via `lu_solve` |
+| `solve_rom(K_aa, Q_aa, f_aa, q, phi_free)` | Modal-truncation ROM solve |
+| `mode_acceleration_recovery(K_aa, Q_aa, f_aa, q, phi_free, xi, k_aa_lu)` | Mode-acceleration correction |
 
-#### `_build_qaa_aset` algorithm
+#### `build_qaa_aset` algorithm
 
 Since Step 59 the RBE3 + SPC reduction itself lives in
 `sbeam/assembly/reduction.py` (`reduce_to_aset(bulk, grid_index, spc_sid) →
 AsetReduction`), shared by SOL 103, SOL 144, and `maneuver_qs`.
-`_build_qaa_aset` composes it for the (K, Q, f) triple:
+`build_qaa_aset` composes it for the (K, Q, f) triple:
 
 ```
 1. Q_gg = build_qaa(aero, aero.g_load, aero.g_slope)    # (n_g, n_g) dense
@@ -440,7 +440,7 @@ half-span decks), seeds an `AeroCache` shared across subcases, and calls
 | DISPLACEMENT / BAR FORCES / BAR STRESSES | shared helpers, reused from the SOL 101 writer |
 | AERODYNAMIC BOX PRESSURES AND FORCES | `result.box_cp`, `result.box_forces` — **only when the subcase requests `AEROF` or `APRES`** |
 
-**Divergence diagnostic.** `sol144._divergence_dynamic_pressure(K_ll, Q_ll)` returns the
+**Divergence diagnostic.** `sol144_diverg.divergence_dynamic_pressure(K_ll, Q_ll)` returns the
 single critical divergence dynamic pressure — the reciprocal of the largest positive-real
 eigenvalue of `K_ll⁻¹ Q_ll` on the **restrained l-set** (the free-flight SUPORT `K_aa` is
 singular, so the full a-set is not used). `None` when the model does not diverge. It is
@@ -455,7 +455,7 @@ their **mode shapes** at each Mach on the card:
   generalised solve, mirroring `sol103._solve_modes_dense`), keeps only **real, strictly
   positive** `1/q` (selection rule for the unsymmetric `Q_ll`; spurious negative/complex
   roots are discarded), and sorts ascending in `q`. Its lowest root reproduces
-  `_divergence_dynamic_pressure` exactly.
+  `divergence_dynamic_pressure` exactly.
 - Each l-set eigenvector is scattered to the a-set (SUPORT DOFs zero) and expanded to the
   g-set via the RBE3/RBAR `T` matrix (`_expand_to_g`), then max-abs normalised for output.
 - With the `RHOREF` sbeam-extension density on the card, each root reports

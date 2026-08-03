@@ -24,7 +24,7 @@ from sbeam.solver.sol144_util import AeroCache, get_suport_local
 from sbeam.types import ComplexArray, FloatArray
 
 
-def _divergence_dynamic_pressure(K_ll: FloatArray, Q_ll: FloatArray) -> Optional[float]:
+def divergence_dynamic_pressure(K_ll: FloatArray, Q_ll: FloatArray) -> Optional[float]:
     """Critical static-aeroelastic divergence dynamic pressure (restrained l-set).
 
     Divergence occurs when the effective stiffness ``K_ll - q*Q_ll`` first becomes
@@ -56,12 +56,12 @@ def _divergence_dynamic_pressure(K_ll: FloatArray, Q_ll: FloatArray) -> Optional
     return float(1.0 / max(real_pos))
 
 
-def _divergence_roots(
+def divergence_roots(
     K_ll: FloatArray, Q_ll: FloatArray, nroots: int
 ) -> list[tuple[float, FloatArray]]:
     """Lowest ``nroots`` positive divergence roots and their eigenvectors.
 
-    Generalises ``_divergence_dynamic_pressure`` from the single critical q to a
+    Generalises ``divergence_dynamic_pressure`` from the single critical q to a
     full sorted sweep: solves ``K_ll x = q*Q_ll x`` as the standard eigenproblem
     ``(K_ll^{-1} Q_ll) x = (1/q) x`` via a dense ``scipy.linalg.eig`` on the
     restrained l-set, keeps the real-positive ``1/q`` eigenvalues, and returns
@@ -168,7 +168,7 @@ def run_sol144_diverg(
         Q_ll = Q_aa[np.ix_(l_idx, l_idx)]
 
         roots = []
-        for q_div, vec_l in _divergence_roots(K_ll, Q_ll, diverg.nroots):
+        for q_div, vec_l in divergence_roots(K_ll, Q_ll, diverg.nroots):
             # Scatter l-set eigenvector to a-set, expand to g-set (RBAR/RBE3),
             # then max-abs normalise for a readable mode-shape report.
             u_a = np.zeros(K_aa.shape[0])

@@ -1902,6 +1902,15 @@ batch, where it is release-required.)
   Schur solvers), so all ~25 test files and `studies/` import unchanged. The
   DEF-M4 LOAD-refusal error string (asserted by `tests/aero/test_trim_urdd.py`)
   is byte-identical.
+- **Lint follow-up (same day):** the shared helpers were made the split
+  modules' public API (underscores dropped in their new homes:
+  `solve_trim_determined`, `compute_hinge_moments`, `divergence_roots`,
+  `build_qaa_aset`, `URDD_DOF`, …); the facade binds the historic underscore
+  names as aliases and declares the whole surface in `__all__`. `_TrimState`
+  stage fields became `field(init=False)` with non-Optional types (a premature
+  read raises AttributeError instead of propagating `None`). Unused
+  `_build_injection_echo` ``bulk`` param dropped. Suite + four-deck
+  bit-identity gate re-verified.
 
 **Test/Acceptance:** full suite green after every WP (1707 passed, 6 xfailed —
 identical to the pre-refactor baseline); bit-identity gate — four decks
