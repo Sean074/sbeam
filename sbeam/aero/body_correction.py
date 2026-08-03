@@ -100,11 +100,8 @@ from sbeam.aero.integration import build_djx
 from sbeam.aero.strip import is_strip_caero, strip_box_slopes
 from sbeam.assembly.coord_transform import get_transform
 from sbeam.model.aero import Aecorr, Stripk, W2gj, require_aeros
-from sbeam.solver.sol144 import (
-    compute_rigid_derivs,
-    pitch_moment,
-    aero_moment_resultant,
-)
+from sbeam.solver.sol144_derivs import compute_rigid_derivs
+from sbeam.solver.sol144_util import pitch_moment, aero_moment_resultant
 
 # Warn only on a genuinely extreme WT2 ratio.  For body panels held clear of the
 # lifting surfaces a ratio of tens to ~100 is normal and benign (the panels are weakly

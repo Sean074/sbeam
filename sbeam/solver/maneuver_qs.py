@@ -61,12 +61,12 @@ from sbeam.results.section_cuts import (
 from sbeam.results.section_envelope import build_section_envelope
 from sbeam.solver.sol101 import recover_bar_forces, recover_reactions
 from sbeam.assembly.reduction import AsetReduction, expand_to_g
-from sbeam.solver.sol144 import (
+from sbeam.solver.sol144 import run_sol144_trim
+from sbeam.solver.sol144_util import (
     AeroCache,
     urdd_rcsid_to_basic,
     load_resultant,
     pitch_moment,
-    run_sol144_trim,
 )
 from sbeam.types import FloatArray, SparseMatrix
 

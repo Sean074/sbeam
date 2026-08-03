@@ -119,9 +119,9 @@ from sbeam.solver.modal_basis import (
     rigid_state_label_increments,
     truncate_basis,
 )
-from sbeam.solver.sol144 import (
+from sbeam.solver.sol144 import run_sol144_trim
+from sbeam.solver.sol144_util import (
     AeroCache,
-    run_sol144_trim,
     urdd_basic_to_rcsid,
     urdd_rcsid_to_basic,
 )

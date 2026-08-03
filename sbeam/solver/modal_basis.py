@@ -80,7 +80,7 @@ from sbeam.aero.aero_model import AeroModel
 from sbeam.aero.coupling import build_qaa, build_fg, build_gaf
 from sbeam.aero.integration import build_djx, build_dj_rigidrate, rigid_rate_scales
 from sbeam.solver.sol103 import solve_modes
-from sbeam.solver.sol144 import build_inertial_cols, get_suport_local
+from sbeam.solver.sol144_util import build_inertial_cols, get_suport_local
 from sbeam.types import FloatArray, IntArray, SparseMatrix
 from sbeam.model.aero import require_aeros
 
