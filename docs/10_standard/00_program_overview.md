@@ -355,6 +355,13 @@ restrictions there first, then link them here.
 | `CBUSH` restrictions | `CID` must be `0` or blank; element offsets unsupported; massless; `PBUSH` damping (`B1`–`B6`) is deferred to the dynamic solvers |
 | `MAT1` thermal fields ignored | `A`, `TREF` and `GE` are parsed but unused — there is no thermal load path |
 
+**Propulsion**
+
+| Limitation | Detail |
+|------------|--------|
+| No propulsion model of any kind | There is no thrust, no propeller, no actuator disc and no slipstream. The VLM sees one freestream over the whole model. Powered effects — slipstream dynamic pressure, swirl, propeller normal force, tail immersion — enter **only** through the `W2GJ`/`WT2`/`CHORDCP` correction cards built from powered CFD or flight-test data, and are frozen at the single power setting they were built for. See [`../20_theory/02_realistic_airplane_sol144.md`](../20_theory/02_realistic_airplane_sol144.md) §7 |
+| Thrust cannot be applied in a SOL 144 trim | A subcase requesting both `TRIM` and `LOAD` is refused (DEF-M4) — the trim RHS is aerodynamic + inertial only. Apply thrust via the restrained static path (`run_aeroelastic_static`), or fold the thrust-line moment into a correction `cm0` and accept that it then scales with `q` rather than with thrust. §7.2 |
+
 **Output**
 
 | Limitation | Detail |

@@ -2165,6 +2165,65 @@ none (the cry-wolf guard). All four shipped HA144A decks now run warning-free.
 
 ---
 
+### Propeller effects — modelling position documented (P3, release hygiene batch) ✅ COMPLETE (2026-08-03)
+
+**Objective:** The 2026-08-02 release-scope decision resolved powered effects as
+"corrections position, documented" — powered aerodynamics enter only through the existing
+correction cards, with no native slipstream model — and committed the modelling guidance
+and Known-Limitations text to this release. Nothing on propellers or slipstream existed
+anywhere in the doc set beforehand (`grep -i "propeller\|slipstream"` returned zero hits),
+so this is net-new writing rather than an edit.
+
+**Deliverables:**
+- `docs/20_theory/02_realistic_airplane_sol144.md` **§7 — Powered effects: the corrections
+  position** (new section; former §7/§8 renumbered to §8/§9, no cross-references broken):
+  - **§7.1** separates the five distinct powered effects and names the card each belongs on
+    — slipstream dynamic pressure → strip force slope `cn_a` → `WT2`; swirl → per-strip Δα
+    `a0` → `W2GJ`; propeller normal force → body `TOTAL` row `cn_a`/`cm_a`; thrust-line
+    moment → §7.2; tail immersion → the tail's own rows. Stresses that swirl is
+    *antisymmetric* about each nacelle and cancels in lift but not in rolling/yawing moment,
+    so a co-rotating twin carries a net roll and yaw at every power setting.
+  - **§7.2** the thrust-moment problem: a SOL 144 trim subcase carrying both `TRIM` and
+    `LOAD` is refused (DEF-M4), so thrust cannot be applied in a trim at all. Two honest
+    routes (fold `T·z` into a body `cm0` and accept that it scales with `q` not thrust;
+    or drop to `run_aeroelastic_static` and give up free-flight trim) and one that quietly
+    corrupts wing torsion (putting it in a wing strip's `cm0`).
+  - **§7.3** what a frozen correction cannot do: one power setting / advance ratio, no
+    movement with α or with the trim solution, no re-evaluation against elastic twist, no
+    thrust lapse, one operating region per surface, and OEI as a separate correction set
+    rather than a scaled symmetric one.
+  - **§7.4** the build workflow — powered and unpowered runs at the same condition, the
+    powered-minus-unpowered delta as a sanity check (concentrated in the washed strips,
+    antisymmetric in `a0` about each nacelle), correct the tail as well as the wing,
+    provenance headers stating power setting and advance ratio.
+  - The §8 limitations table gains a no-propeller-model row and a thrust-in-trim row.
+- `docs/10_standard/05a_aero_vlm.md` — a card-level **"Powered (propeller) effects — the
+  modelling position"** subsection in the section-correction area: the effect→column→card
+  table and the two consequences (frozen at one power setting; the thrust moment has no
+  card), pointing at the theory section.
+- `docs/10_standard/05_aeroelastics.md` — a modelling-position paragraph in
+  "Validation status & known limitations".
+- `docs/10_standard/00_program_overview.md` — a new **Propulsion** block in the Q3 Known
+  Limitations index: no propulsion model of any kind, and thrust cannot be applied in a
+  SOL 144 trim.
+
+**Key decisions:**
+- **State it as a position, not an omission.** A correction built from powered CFD carries
+  the real installed effect including interference that momentum-theory slipstream would
+  miss; what it cannot do is *vary*. The docs lead with that trade rather than apologising
+  for a missing feature.
+- **Separate the five effects.** Treating "prop effects" as one lump is the common way to
+  get a powered deck wrong — the q increment and the swirl increment are different physics,
+  land on different cards, and have opposite symmetry.
+- **Name the trap in each case.** Following the §2.6 house style, each subsection says what
+  breaks and how it looks plausible while being wrong.
+- **The thrust-moment gap is filed, not papered over.** Writing §7.2 surfaced that DEF-M4's
+  close-out promised a follow-on backlog item for an applied-load term in the trim RHS and
+  it was never filed; it is now in `30_future/00_backlog.md` as an unranked post-release
+  item, and §7.2 links to it.
+
+---
+
 ### DEF-M4 — `LOAD` in a TRIM subcase is refused, not silently ignored ✅ COMPLETE (2026-08-01)
 
 **Objective:** `run_sol144_trim` never read `subcase.load_sid`.  The trim RHS is aero + inertia

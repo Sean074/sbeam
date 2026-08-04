@@ -30,6 +30,24 @@ stripped from `05a_aero_vlm.md`, `02_card_reference.md`, `05_aeroelastics.md`,
 
 ### Added
 
+**Propeller-effects modelling position — documentation (2026-08-03)**
+
+Closes the last release-required item. sbeam has no propulsion model of any kind; powered
+aerodynamics enter only through the existing `W2GJ`/`WT2`/`CHORDCP` correction cards, built
+from powered CFD or flight-test data. Nothing on the subject existed in the doc set before
+this. New `docs/20_theory/02_realistic_airplane_sol144.md` **§7** (former §7/§8 renumbered
+to §8/§9) covers: which of the five distinct powered effects lands on which card (slipstream
+q → `cn_a`/`WT2`; swirl Δα → `a0`/`W2GJ`, antisymmetric about each nacelle; propeller normal
+force → body `TOTAL` row; tail immersion → the tail's own rows); why the thrust-line moment
+has no card at all and what to do instead, given that a trim subcase carrying both `TRIM` and
+`LOAD` is refused (DEF-M4); what a frozen correction cannot do (one power setting, no
+movement with α or with the trim, no thrust lapse, OEI as its own set); and the build
+workflow. Card-level summaries added to `05a_aero_vlm.md` and `05_aeroelastics.md`, plus a
+new **Propulsion** block in the `00_program_overview.md` Known Limitations index.
+
+Writing §7.2 also surfaced that DEF-M4's close-out promised a follow-on backlog item for an
+applied-structural-load term in the SOL 144 trim RHS which was never filed — now logged.
+
 **Step 67a — quasi-steady yaw-rate wing term (2026-08-02)**
 
 The wing half of theory §7.2 Eq. 28: a yaw rate's spanwise dynamic-pressure asymmetry

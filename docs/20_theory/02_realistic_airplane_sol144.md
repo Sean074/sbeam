@@ -589,13 +589,143 @@ on the backlog.
 
 ---
 
-## 7. Limitations and roadmap
+## 7. Powered effects — the corrections position
+
+The flagship is a single-engine tractor-prop airplane, and everything above models it
+**unpowered**. That is deliberate, and it is worth being explicit about why, because the
+release this document supports claims maneuver loads on a twin-turboprop.
+
+**sbeam has no propeller.** No actuator disc, no slipstream tube, no thrust. The VLM sees
+one freestream, one dynamic pressure, one Mach, over the whole model. Powered effects enter
+by exactly one route: **the same correction cards you have already met — `W2GJ`, `WT2`,
+`CHORDCP` — built from powered data instead of unpowered data.** There is no third option
+and no partial one. If your correction table came from an unpowered source, your airplane
+is unpowered no matter what the thrust line in your drawing says.
+
+This is a position, not an oversight. A correction built from powered CFD or powered flight
+test carries the real installed effect, including the interference a simple momentum-theory
+slipstream would miss. What it cannot do is *vary* — and §7.3 is about that.
+
+### 7.1 What a propeller does, and which card carries it
+
+Five distinct effects. They are separate physics and they land on different cards; treating
+them as one lump is the most common way to get a powered deck subtly wrong.
+
+| # | Effect | Physics | Card it belongs on |
+|---|--------|---------|--------------------|
+| 1 | **Slipstream dynamic pressure** | Axial induction raises local q on the washed strips — `q_s/q∞ ≈ (1+a)²`. More load, same shape. | Force **slope** on the washed strips: `cn_a` in the section table → `WT2` |
+| 2 | **Swirl** | The disc imparts rotation: upwash on the up-going-blade side, downwash on the other. A local Δα, **antisymmetric about the nacelle**. | Zero-lift incidence per strip: `a0` in the section table → `W2GJ` |
+| 3 | **Propeller normal force** | A disc at incidence carries a side/normal force in its own plane. Ahead of the CG it is **destabilising** — a real `Cm_α` increment. | Body/nacelle correction `TOTAL` row: `cn_a`, `cm_a` |
+| 4 | **Thrust-line offset moment** | `T × z_offset`. Not aerodynamic at all. | **Nothing clean — see §7.2** |
+| 5 | **Slipstream on the tail** | A conventional tail sits in the washed flow; a T-tail (ATR42) largely does not. Changes tail q *and* the downwash reaching it. | The tail surface's own section-table rows |
+
+Effects 1 and 2 are the ones people remember, and they behave very differently. The q
+increment is roughly symmetric about the nacelle and adds lift. The swirl increment is
+**antisymmetric** and, over one nacelle, largely cancels in lift — but it does *not* cancel
+in rolling or yawing moment, and it does not cancel across the airplane unless the
+propellers are handed. On a co-rotating twin, swirl is a net rolling and yawing moment at
+every power setting, which is precisely the trim asymmetry a powered deck exists to capture.
+Tabulate it per strip with the correct sign on each side of each nacelle, or you have built
+a symmetric airplane with extra steps.
+
+### 7.2 The thrust moment has no clean home — read this before you fake it
+
+Effect 4 is the awkward one, and the deck will not let you do the obvious thing.
+
+**You cannot apply thrust as a `FORCE`/`MOMENT` in a SOL 144 trim subcase.** A subcase
+carrying both `TRIM` and `LOAD` is *refused* with an error naming both SIDs (DEF-M4). The
+trim RHS is aerodynamic + inertial only — there is no applied-structural-load term — and
+rather than read a `LOAD` request and silently discard it, the solver stops. That refusal is
+protecting you: a deck that "trimmed with thrust" while ignoring the thrust card is exactly
+the failure mode that looks plausible and is wrong.
+
+That leaves two honest routes and one temptation:
+
+1. **Fold the thrust moment into the aerodynamic correction** — add `T·z_offset`, expressed
+   as a `cm0` increment, to the body correction's `TOTAL` row. The airplane then trims
+   against an *aerodynamic* moment standing in for a *propulsive* one.
+   > **The catch, and it is not small.** A correction moment scales with `q·S·c̄`. Thrust
+   > moment does not — it scales with thrust, which at fixed power roughly *falls* with
+   > speed. Build the fudge at one condition and it is exact there and wrong everywhere
+   > else, in the direction that flatters you at low speed. If you take this route, build
+   > one correction set **per flight condition** and never sweep speed inside one.
+2. **Use the restrained static path** (`run_aeroelastic_static`), which *does* combine a
+   `LOAD` set with the aero load, and apply thrust as ordinary `FORCE`/`MOMENT` cards. You
+   give up free-flight trim and inertia relief to get it — a fair trade for a stress case at
+   a known attitude, not for a maneuver.
+3. **Do not** put the thrust moment into a wing section's `cm0` to "make the trim come out".
+   It lands as a distributed aerodynamic moment on the wing strips, so your wing torsion —
+   the thing the section loads exist to report — is wrong by the amount you fudged.
+
+The real fix is an applied-load term in the trim RHS, which is a capability change with
+undecided physics (does an applied load participate in inertia relief, and what does
+`maneuver_closure` mean once it does?), not a defect. It is on the backlog.
+
+### 7.3 What a frozen correction cannot do
+
+Everything in §2.6 about honest data applies here, and powered corrections add failure modes
+of their own. **A correction is a fixed matrix.** It is built once, at one condition, and the
+solver applies it unchanged no matter where the trim lands.
+
+- **One power setting.** The correction encodes a single advance ratio `J` and disc loading.
+  Climb power and cruise power are different airplanes; so are the same airplane at the same
+  power at two altitudes. Build a correction set per condition and say so in the provenance
+  header.
+- **It does not move with α.** The slipstream Δα of §7.1 is applied as a fixed `W2GJ`. In
+  reality the slipstream tube deflects with the airplane and the washed strip set changes.
+  Trim to an α far from the build α and the wash is being applied to the wrong strips.
+- **It does not move with the trim solution, or with the structure.** The correction is
+  calibrated on the *rigid* mesh at the build condition. Elastic twist changes the real
+  loading; the powered increment does not re-evaluate. This is the ordinary correction
+  caveat, but powered increments are large, so the error is larger too.
+- **No thrust lapse.** Nothing in the model knows what thrust *is*, so nothing varies it
+  with speed, altitude or temperature.
+- **One operating region per surface** (`section_data` v1), and nothing warns on exit —
+  the §2.6 limitation, now with a powered table that is even more strongly nonlinear in α.
+- **Asymmetric cases need their own correction set.** One engine out is not a scaled version
+  of both-engines-running: the washed strips on one wing revert to freestream while the
+  other stays washed, and the swirl on that side disappears. That is a different `W2GJ` and
+  a different `WT2`, built from a different CFD run. Do not scale a symmetric powered
+  correction and call it OEI.
+
+> **The one-line summary.** sbeam will let you model a powered airplane accurately at *the
+> condition you built the correction for*, and will not warn you when you leave it.
+
+### 7.4 The workflow, concretely
+
+The correction machinery does not care that your data is powered — it takes section
+coefficients per strip. So the work is entirely in producing the table:
+
+1. Run (or obtain) the aerodynamics **twice** at the same geometry, Mach and α: **powered**
+   and **unpowered**.
+2. Reduce both to the section quantities the table wants — `cn_a`, `a0`, `cm_a`, `cm0` per
+   strip, per surface (§2.6 for the column meanings, and for the 2D-vs-3D trap, which does
+   not go away just because the data is powered).
+3. Build the table from the **powered** numbers, anchored to the model's own 3D strip loading
+   exactly as §2.6 describes. The unpowered run is your check: the powered-minus-unpowered
+   delta should be concentrated in the washed strips and should be antisymmetric in `a0`
+   about each nacelle. If it is not, something upstream is wrong.
+4. Synthesise the `W2GJ` + `WT2` pairs through the viewer's correction tab (or
+   `build_section_correction_multi` directly), and commit them with a provenance header
+   stating the **power setting and advance ratio** alongside the Mach and date.
+5. Correct the **tail as well as the wing** (effect 5). A powered wing with an unpowered tail
+   trims to the wrong elevator angle and therefore the wrong tail load — and tail load is a
+   structural deliverable.
+6. Gate the trim's α against the table's region, the way `test_cessna210_flagship` does.
+
+Nothing above needs a card sbeam does not have. It needs data sbeam cannot generate.
+
+---
+
+## 8. Limitations and roadmap
 
 | Limitation | Where it lifts |
 |---|---|
 | Body panels are flat plates, not a slender body — only a small increment is legitimate (§6.5) | slender-body / CAERO2 element (backlog) |
 | The body correction matches moments only; body lift is unconstrained (§6.1) | constrained-CZ body solve (backlog) |
 | A cruciform body redistributes the wing loading it corrects (§6.4) | use the strip variant for loads; image-fence method for interference |
+| No propeller model — powered effects only via corrections, frozen at one power setting (§7) | no native slipstream model planned; a correction set per condition is the method |
+| Thrust cannot be applied in a trim subcase (`TRIM` + `LOAD` is refused, DEF-M4) (§7.2) | applied-load term in the trim RHS (backlog) |
 | Steady aerodynamics only (VLM at k = 0); no unsteady, no flutter | Phase D — DLM, SOL 145 |
 | Direct-solver transient is restrained and open-loop; ANGLEA/PITCH/URDD frozen | Delivered: the Step 63 free-flight modal solver (MLOADS NMODES/METHOD/ZETA) integrates them |
 | One correction operating region per surface, no warning on exit | `section_data` v2; T3b gates it meanwhile |
@@ -605,7 +735,7 @@ on the backlog.
 
 ---
 
-## 8. If you are building your own deck
+## 9. If you are building your own deck
 
 The order that worked, each step gated before starting the next:
 

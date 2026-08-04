@@ -41,7 +41,6 @@ Details in `docs/40_history/`.
 
 | P | Item | Where | Effort (est.) | Rationale |
 |---|------|-------|--------------|-----------|
-| P3 | Release hygiene batch (remainder) — **propeller-effects modeling-position docs only** | Release-required | ~0.5 d | Everything else in the batch closed 2026-08-03 (DEF-R7, DEF-M13, doc-pointer sweep, sample hygiene incl. DD-1/DD-3/DD-9). What remains is net-new writing: no propeller/slipstream text exists anywhere in the doc set today. |
 | P4 | DEF-M14 — nonplanar Trefftz `CDi` kernel | Post-release | ~1–2 d | The last open correctness defect: silently wrong CDi/e on canted decks (dihedral, winglets, cruciform tails). Reporting-only outputs, so it ranks below the release gate but above all new capability. |
 | P5 | `matrix_gaf_export` Phases 1–2 | Tier 2 | ~8 d | External flutter handoff (FLAPS) **and** the declared prerequisite of Phase D (MKAERO1, Mach loop, bundle writers). |
 | P6 | `AMODE` Phase 1 (control-surface hinge modes) | Tier 3 | ~7.5 d | Needed before control-surface flutter in SOL 145; Phase 2 is a declared pre-1.0.0 blocker. |
@@ -77,7 +76,7 @@ re-ranked table above; the six scope questions were resolved as follows:
 |----------|---------|
 | Transient maneuvers | **Quasi-steady only.** Ship Step 53 balanced maneuvers + the increment-1 prescribed-rigid MLOADS solver. (Steps 62 and 63, both scoped post-release, were delivered 2026-08-02 ahead of the release — the free-flight modal solver ships as a bonus.) |
 | Lateral cases | **In scope.** Steady sideslip/roll/aileron trim (already supported) plus yaw-rate cases — the Tier 4 yaw-rate wing term is promoted to **Step 67**, release-required. Formulation decided: loading-scaled force term. Delivered 2026-08-02 (67a lift asymmetry / C_lr + 67b drag asymmetry / C_nr). |
-| Propeller effects | **Corrections position, documented.** Powered effects (slipstream over the washed wing, thrust-line pitching moment) enter only via the correction cards (`W2GJ`/`WT2`/`CHORDCP`) built from powered CFD or flight-test data; no native slipstream model. The modeling-guidance + Known-Limitations text lands in `docs/20_theory/02_realistic_airplane_sol144.md` and `05a_aero_vlm.md` as part of the release hygiene batch. |
+| Propeller effects | **Corrections position, documented — delivered 2026-08-03.** Powered effects enter only via the correction cards (`W2GJ`/`WT2`/`CHORDCP`) built from powered CFD or flight-test data; no native slipstream model. Written up as `docs/20_theory/02_realistic_airplane_sol144.md` §7 (which effect lands on which card, the thrust-moment problem, the frozen-correction limits, the build workflow), with card-level summaries in `05a_aero_vlm.md` and `05_aeroelastics.md` and a Propulsion block in the `00_program_overview.md` Known Limitations index. |
 | Fuselage | **Corrected body panels adequate.** The A9/A10 correction-matched body panels are the early-design answer (Step 66 demonstrates them on the flagship); the predictive slender-body element stays deferred past Phase D. Validity envelope documented in the theory doc's limitations section. |
 | Gust/turbulence | **Out of scope.** CS-25.341 gust/continuous turbulence needs Phase D (P7/P8); the release claims maneuver loads only and the release notes must state the exclusion explicitly. |
 | Q1 / Q3 | **Both closed 2026-08-03.** Q1 turned out to be a real defect, not a convention to document: NASTRAN's "global" output system is the per-grid `CD` frame, not basic CID 0, so the SPCFORCE block now rotates to `CD` like the displacement block. Q3 landed as a program-level Known Limitations index in `00_program_overview.md`. |
@@ -93,15 +92,17 @@ re-ranked table above; the six scope questions were resolved as follows:
   (lift asymmetry, C_lr) and 67b (drag asymmetry, C_nr) both closed (`build_fjx_yaw` +
   `build_fx_induced_drag` + the SOL 144 loading fixed point; see
   `docs/40_history/06_sol144_static_aeroelastic.md`).
-- **Release hygiene batch (P3)** — **all but the propeller docs delivered 2026-08-03**:
-  DEF-R7 (WT1 removal), DEF-M13 (f06 column drift, with a general header-alignment gate),
-  the doc-pointer sweep and the sample hygiene (DD-1/DD-3/DD-9) are closed; see
-  `docs/40_history/05_aero_vlm_spline.md`, `01_program_foundation.md` and
-  `03_sol103_modal.md`. **Open: the propeller-effects modeling-position docs only**
-  (above) — net-new writing, nothing on propellers or slipstream exists in the doc set
-  yet. **Q1** (SPCFORCE `CD` output frame — fixed, not merely documented) and **Q3**
+- **Release hygiene batch (P3)** — **delivered in full 2026-08-03**: DEF-R7 (WT1
+  removal), DEF-M13 (f06 column drift, with a general header-alignment gate), the
+  doc-pointer sweep, the sample hygiene (DD-1/DD-3/DD-9) and the propeller-effects
+  modelling-position docs. See `docs/40_history/05_aero_vlm_spline.md`,
+  `01_program_foundation.md`, `03_sol103_modal.md` and `06_sol144_static_aeroelastic.md`.
+  **Q1** (SPCFORCE `CD` output frame — fixed, not merely documented) and **Q3**
   (program-level Known Limitations section) **delivered 2026-08-03**; see
   `docs/40_history/02_sol101_static.md` and `01_program_foundation.md`.
+
+**All release-required work is now closed.** The remaining open items in this backlog are
+post-release: P4 (DEF-M14) onward, the unranked DEF-M4 follow-on, and the DEF-L batch.
 
 **Explicitly out of release scope:** P4–P9 (DEF-M14, `matrix_gaf_export`, AMODE,
 Phase D, `matrix_reuse_store`) and every Tier 2–4 item not named above.
@@ -161,6 +162,20 @@ priority table above:
   or trim path consumes them). *Fix (complexity medium):* rebuild the Trefftz kernel on
   `(w⃗·n̂)‖Δs⃗‖`; gate against a closed-form elliptic-wing case with and without dihedral,
   and against a winglet case where the planar form is known to be wrong.
+
+- **DEF-M4 follow-on — applied structural load in the SOL 144 trim RHS** (unranked,
+  post-release). DEF-M4 (closed 2026-08-01) made a subcase carrying both `TRIM` and `LOAD`
+  raise rather than silently ignore the load, and its close-out recorded that adding an
+  `f_struct` term to the trim RHS "is now its own backlog item" — **it was never filed**;
+  logged here 2026-08-03 while writing the propeller-effects docs, which is where the gap
+  bites. Today the trim RHS is aerodynamic + inertial only, so **thrust cannot be applied
+  in a trim** at all: a powered deck must either fold the thrust-line moment into a
+  correction `cm0` (where it wrongly scales with `q` instead of thrust) or drop to the
+  restrained static path and give up free-flight trim. *Undecided physics, which is why it
+  is a capability change and not a defect:* on a free-flight SUPORT trim an applied load
+  enters the force balance, so `maneuver_closure` stops meaning "aero vs inertia", and
+  whether the applied load participates in inertia relief is an open question. Complexity
+  medium. See `docs/20_theory/02_realistic_airplane_sol144.md` §7.2.
 
 ### DEF-L — Low (robustness, hygiene, docs; batch opportunistically) — L2–L7 unranked
 

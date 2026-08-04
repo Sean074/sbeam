@@ -86,6 +86,17 @@ One documented, accepted residual remains (Study A2,
 |----|-----------|----------|--------|
 | AE15 | **Wing-root interference residual (investigated and ACCEPTED, Step AC8 2026-07-05)**: the HA144A q=1200 pitching-moment/ELEV columns carry a 2.9–5.3% residual vs Table 7-1 (restrained CMα +4.3%, CZδe −2.9%, CMδe +5.2%; unrestrained inherits it; CZα/CZq/CMq gated live at ≤2/2.5%; all q=40 columns ≤0.2%). Study A2 attribution: sbeam's VLM is implementation-correct (independent DLR PanelAero agrees to 1.6e-8 at operator level and to 4+ decimals through the flexible chain); the residual is a canard-wake/wing-root interference **discretization** difference — MSC's steady AIC is near-mesh-converged on the coarse 8×4 mesh where a horseshoe VLM is not (sbeam at NCHORD=8–12 lands within ~0.5–2.3% of NASTRAN's coarse-mesh values). Kept as six `xfail` gates citing the study. Modeling guidance: align upstream/downstream spanwise breakpoints; use NCHORD ≥ 8 on wake-washed surfaces. | MINOR (accepted residual) | Moment/ELEV flexible columns 3–5% off at q=1200 on the NASTRAN-comparison mesh |
 
+**Modelling position — powered (propeller) effects.** There is no propulsion model: no
+thrust, no propeller, no actuator disc, no slipstream. Powered aerodynamics enter **only**
+as a correction (`W2GJ`/`WT2`/`CHORDCP`) built from powered CFD or flight-test data, and
+are frozen at the single power setting and advance ratio they were built for — nothing
+warns when a trim leaves that condition, and one-engine-out requires its own correction
+set rather than a scaled symmetric one. The thrust-line pitching moment has no card at all,
+and a SOL 144 trim subcase carrying both `TRIM` and `LOAD` is refused (DEF-M4). Full
+guidance, including which powered effect lands on which card and the workarounds for the
+thrust moment: `docs/20_theory/02_realistic_airplane_sol144.md` §7, summarised at card
+level in [`05a_aero_vlm.md`](05a_aero_vlm.md).
+
 **AE14 closed (2026-07-05, Step AC7):** two root causes found and fixed. (1) The full-span
 HA144A deck had NOT doubled the centreline fuselage PBAR when mirroring (masses were
 doubled, stiffness was not) — the fuselage flexed ×2, driving 5–28% derivative errors at

@@ -679,6 +679,38 @@ convention) and mirrors `apply_wt2`'s near-zero-reference guard so the card and 
 operator are identical. `ajj` is the raw `ajj_pg` at the correction Mach (with `beta`); at
 M=0, `beta=1`.
 
+### Powered (propeller) effects — the modelling position
+
+sbeam has **no propulsion model**: no thrust, no propeller, no actuator disc, no slipstream.
+The VLM solves one freestream over the whole model. Powered aerodynamics therefore enter
+through **this** machinery and nowhere else — a section table built from *powered* CFD or
+flight test, synthesised into the ordinary `W2GJ` + `WT2` pair (or injected wholesale with
+`CHORDCP`). No card, solver path or option is specific to propellers, and none is needed.
+
+What lands where:
+
+| Powered effect | Section-table column | Emitted card |
+|----------------|----------------------|--------------|
+| Slipstream dynamic pressure on the washed strips | `cn_a` (force slope) | `WT2` |
+| Swirl — a local Δα, antisymmetric about each nacelle | `a0` (zero-lift incidence) | `W2GJ` |
+| Propeller normal force at the disc (a `Cm_α` increment) | body/nacelle `TOTAL` row `cn_a`/`cm_a` | body correction |
+| Slipstream immersion of the tail | the tail surface's own rows | `WT2` + `W2GJ` |
+
+Two consequences worth stating at card level:
+
+- **The correction is frozen at one power setting.** It encodes a single advance ratio and
+  disc loading, applied unchanged wherever the trim lands, and nothing warns on exit — the
+  same limitation as the single operating region above, with a stronger α-nonlinearity.
+  Build one correction set per flight condition. One-engine-out is a *different* set, not a
+  scaled one.
+- **The thrust-line pitching moment has no card.** It is not aerodynamic, and a SOL 144
+  trim subcase carrying both `TRIM` and `LOAD` is refused (DEF-M4). See
+  `docs/20_theory/02_realistic_airplane_sol144.md` §7.2 for the two honest workarounds and
+  the one that quietly corrupts your wing torsion.
+
+Full modelling guidance, including the build workflow and the failure modes:
+`docs/20_theory/02_realistic_airplane_sol144.md` §7.
+
 ### Spanwise section-data input (`section_data.py`)
 
 The viewer drives `build_section_correction` from a user table of **section coefficients**.
