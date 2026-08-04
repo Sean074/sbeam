@@ -15,8 +15,15 @@ $   rho*A*L^4   = 7850 * 0.1 * 10^4 = 7.85e6 kg.m^3
 $   sqrt(E*I / rho*A*L^4) = sqrt(21.23) = 4.608 rad/s
 $   f1 = (1.875^2 / 2*pi) * 4.608 = 0.5596 * 4.608 = 2.579 Hz
 $
-$ Expected:  f1 (mode 1 bending in XZ) ≈ 2.58 Hz
-$            f2 (mode 2 bending in XY) ≈ 2.58 Hz  (symmetric square section)
+$ Expected:  f1 (mode 1, 1st bending in XZ) ≈ 2.58 Hz   (beta1*L = 1.875)
+$            f2 (mode 2, 2nd bending in XZ) ≈ 16.16 Hz  (beta2*L = 4.694)
+$
+$ NOTE: f2 is the SECOND XZ bending mode, not the XY twin of f1.  A solid square
+$ section would give a degenerate XY pair at 2.58 Hz, but this deck's second SPC1
+$ (`SPC1, 1, 12, 11, ... 2`) constrains DOFs 1 and 2 on every node, suppressing the
+$ whole XY bending family.  Only the XZ series survives.  Gated by VAL2 —
+$ tests/integration/test_sample_verification.py::TestValCantileverModes.
+$ Measured: 2.5784, 16.1591, 45.2561 Hz.
 $ Units:     SI (m, N, kg, Pa)
 $
 SOL 103

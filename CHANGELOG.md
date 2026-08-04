@@ -105,6 +105,36 @@ rotation checked component-by-component; stored reactions unmutated by the write
 
 ### Changed
 
+**Sample hygiene — DD-1 / DD-3 / DD-9 (2026-08-03)**
+
+The 2026-07-31 sample review's hygiene batch, executed after checking its premises — three
+of which did not hold, so **no deck was deleted and no deck content changed**; the work was
+headers and docs:
+
+- **DD-1** — `sample/val_wing_taper_dihedral.bdf` was filed as a zero-ref duplicate. It is
+  the `taper_dih` case in `tests/aero/test_vae3_cross_check.py` and the controlled half of
+  the W2GJ washout A/B pair documented in `05a_aero_vlm.md`. Kept; both it and `_twist` now
+  record the measured pair in their headers (CL 0.2669 vs 0.1851 at α = 3°). The doc's
+  0.268/0.186 were stale by exactly the DEF-M2 body-axis projection factor and are refreshed.
+- **DD-3** — `sample/beam_vib.bdf`'s `RHO=0` was filed as a defect. Git shows it was set
+  deliberately (`a4fc728`) to make the deck a tip-mass-dominated case; the ~10⁶-Hz modes 4–5
+  are the expected artifact of a massless beam with one lumped mass. Both `beam_vib.bdf` and
+  `beam_vib1.bdf` kept, both headers rewritten to describe the cards they actually contain.
+  Separately, `docs/10_standard/04_modal_analysis.md` cited `beam_vib.bdf` for an
+  RBE2-with-CONM2 example whose cards were deleted in `516016a`; the snippet is now labelled
+  illustrative and notes that no shipped deck uses the pattern.
+- **DD-9** — the "extend the ha144a canard SET1" item named the wrong spline (the warnings
+  are on the *wing* splines 1601/2601) and proposed an impossible edit: one of eight wing box
+  strips sits beyond the SET1 range because the structure ends at y = ±15 while the panel
+  reaches y = ±20, and y = ±15 is the outermost structural grid in the model. Documented as
+  an expected warning in the five affected decks rather than suppressed; the 10 % threshold
+  in `aero/spline.py` is deliberately left alone.
+- `sample/val_cantilever_modes.bdf` — the stale `f₂ ≈ 2.58 Hz (XY)` comment corrected to the
+  second XZ bending mode at 16.16 Hz (the deck's own `SPC1` suppresses the XY family), matching
+  the frequency VAL2 already gates.
+- `sample/HA144A.bdf` — archive notice added: not runnable by design, kept for the published
+  Table 7-1 reference values, with a pointer to the runnable transcription.
+
 **Doc-pointer sweep (2026-08-03)**
 
 `sample/ha144a_sbeam.bdf` (the half-span HA144A deck, removed long ago) was still cited by

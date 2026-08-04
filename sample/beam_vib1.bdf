@@ -1,10 +1,22 @@
 
-$ Simple cantilever beam — SOL 103 normal modes with point mass
+$ Cantilever beam — SOL 103 normal modes, offset point mass carried through an RBE3
 $ Based on sample/simple_beam.bdf (10 m, 5 CBAR elements, 6 nodes + node 7)
-$ Steel, solid square cross-section, A = 0.1 m^2 (side = 0.31623 m)
+$ Steel, solid square cross-section, A = 0.1 m^2 (side = 0.31623 m), RHO = 7850
 $ Fixed (encastre) at node 1 (x=0), free at node 6 (x=10)
-$ CONM2: 100 kg point mass at node 7 (connected to node 6 via RBE3)
+$ CONM2: 10 000 kg point mass at node 7 (10.0, 1.0, 0.0), tied to node 6 by RBE3 20
 $ Units: SI (m, N, kg, Pa)
+$
+$ Companion to beam_vib.bdf, which is the same beam with the mass placed directly on
+$ the tip node and RHO = 0.  This deck keeps the distributed beam mass, so its spectrum
+$ is the ordinary cantilever set (f1 = f2 = 1.033 Hz, the XZ/XY pair of a square
+$ section) with no numerical high-frequency artifacts.
+$
+$ NOTE: an RBE3 does NOT transfer torsional inertia from an offset mass — the
+$ transformation is DOF-by-DOF interpolation with no rigid-body lever arm (see
+$ docs/10_standard/04_modal_analysis.md, "Note — RBE3 and Offset Mass").  The 1.0 m
+$ y-offset of node 7 therefore contributes translational mass only.  For a genuine
+$ offset inertia, put the offset in the CONM2 X1/X2/X3 fields at the tip node instead
+$ — sample/val_cantilever_offset_mass_modes.bdf is the verified deck for that.
 $
 SOL 103
 $

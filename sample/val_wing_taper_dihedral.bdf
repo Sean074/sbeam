@@ -2,6 +2,13 @@ $ =========================================================================
 $ val_wing_taper_dihedral.bdf
 $ Example wing — 5 deg dihedral, taper 0.80
 $
+$ The NO-TWIST half of an A/B pair with val_wing_taper_dihedral_twist.bdf, which is
+$ this deck plus a 0 -> -2 deg linear washout W2GJ and nothing else.  The pair is the
+$ worked example in docs/10_standard/05a_aero_vlm.md for what a W2GJ twist does to the
+$ load: rigid VLM at alpha = 3 deg gives CL = 0.2669 here against 0.1851 with washout.
+$ Do not delete this deck as a duplicate — without it the comparison has no baseline,
+$ and it is the 'taper_dih' canted-deck case in tests/aero/test_vae3_cross_check.py.
+$
 $ PLANFORM (full span, modelled as two CAERO1 surfaces):
 $   Root chord cr = 1.000, tip chord ct = 0.800 (taper 0.80)
 $   Root LE at (0, 0, 0); LE unswept (X4 = 0)

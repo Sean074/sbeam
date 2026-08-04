@@ -1040,8 +1040,8 @@ The Aero tab's **Compute Aero** button solves
 the **corrected** operator: both the **W2GJ baseline incidence** (camber/twist/built-in incidence)
 and any **AIC correction (WKK / WT2)** are reflected in CL/CM/cp/section loads, matching the
 SOL 144 path. Two decks that differ only by a W2GJ twist produce different loads (e.g. the
-`sample/val_wing_taper_dihedral*.bdf` pair: a 0→−2° washout drops CL from 0.268 to 0.186 at
-α = 3°); a section force+moment correction likewise changes the lift-curve slope and a.c. Captions
+`sample/val_wing_taper_dihedral*.bdf` pair: a 0→−2° washout drops CL from 0.2669 to 0.1851
+at α = 3°; both decks record the figure in their headers); a section force+moment correction likewise changes the lift-curve slope and a.c. Captions
 appear when a non-zero `wg` and/or a correction method are active. The mesh *geometry* is unchanged
 by twist/correction (incidence and pressure, not shape), so the visible difference is in the cp
 colour map and the section-load strip chart, not the wire-frame.

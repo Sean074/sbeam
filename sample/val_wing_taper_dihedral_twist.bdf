@@ -2,6 +2,10 @@ $ =========================================================================
 $ val_wing_taper_dihedral_twist.bdf
 $ Example wing — 5 deg dihedral, taper 0.80, linear washout root 0 deg -> tip -2 deg
 $
+$ The TWISTED half of an A/B pair with val_wing_taper_dihedral.bdf — identical geometry,
+$ differing only by the W2GJ block below.  Rigid VLM at alpha = 3 deg: CL = 0.1851 here
+$ against 0.2669 with no twist (docs/10_standard/05a_aero_vlm.md).
+$
 $ PLANFORM (full span, modelled as two CAERO1 surfaces):
 $   Root chord cr = 1.000, tip chord ct = 0.800 (taper 0.80)
 $   Root LE at (0, 0, 0); LE unswept (X4 = 0)

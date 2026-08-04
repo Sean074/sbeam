@@ -186,6 +186,18 @@ $
 $ Spline structural grid sets — MSC HA144A SET1 1100 restored (root fuselage
 $ grid 99 + root EA 100 + LE/TE stringers; EA mid/tip grids 110/120 NOT in the
 $ MSC set). Left wing mirrors with grids 211/212/221/222.
+$
+$ EXPECTED WARNING — "SPLINE2 1601/2601: a box extrapolates >10% beyond SET1 span".
+$ This is correct and by design, not a deck defect.  The HA144A wing structural model
+$ ends at the outboard stringers y = +/-15, while the wing CAERO1 panel runs to
+$ y = +/-20, so the outermost of the 8 box strips (collocation y = 18.75) sits 25%
+$ beyond the SET1 span range and the beam spline extrapolates to reach it.  There is
+$ no grid to extend the SET1 to — y = +/-15 is the outermost structural grid in the
+$ whole model — so the warning cannot be silenced without either inventing structure
+$ MSC did not model or shortening the published aero panel.  Both would change the
+$ reference case.  The warning is left in place deliberately: a user comparing these
+$ results with the published MSC/ADA370433 values should know the tip strip is
+$ splined by extrapolation.
 SET1, 1100, 99, 100, 111, 112, 121, 122
 SET1, 1000, 98, 99
 SET1, 2100, 99, 100, 211, 212, 221, 222

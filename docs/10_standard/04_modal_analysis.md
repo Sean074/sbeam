@@ -224,11 +224,21 @@ Output sections written to `results.f06`:
 
 Unlike RBE3 (which uses weighted DOF-by-DOF interpolation), RBE2 enforces true rigid-body kinematic coupling. The correct place for a CONM2 representing tip equipment or payload mass is on the **independent (GN) node** of the RBE2. The assembly pipeline applies `M_red = Tᵀ M T` after full-space assembly, which correctly projects the concentrated mass and any offset inertia into the reduced system.
 
-Example (`sample/beam_vib.bdf`):
+Example (illustrative — see the note below):
 ```
 RBE2,  20, 7, 123456, 6     $ GN=7 (independent), GM=[6] (dependent)
 CONM2, 30, 7, 0, 100000.0   $ mass on node 7 = independent node ✓
 ```
+
+> **No shipped deck currently uses this pattern.** This snippet cited
+> `sample/beam_vib.bdf` until 2026-08-03; that deck carried the two cards above only
+> between commits `b0d81b5` and `516016a`, and `516016a` removed its `GRID 7`, `PLOTEL`
+> and `RBE2` without updating the doc. `beam_vib.bdf` today places its `CONM2` directly
+> on the tip node with no rigid element at all. The RBE2 kinematics themselves are gated
+> by `tests/integration/bdf/v13_rbe2_rigid_coupling.bdf` and `v18_rbe2_offset.bdf`
+> (neither carries a `CONM2`), so the mass-through-RBE2 path above is documented but not
+> demonstrated by a sample deck — treat the snippet as the recommended pattern, not as a
+> file you can run.
 
 Placing a CONM2 on an RBE2 **dependent (GM) node** is implicitly handled by the same congruence transformation and is mathematically valid, but this configuration is untested. Contrast this with the RBE3 limitation below: for RBE2, the kinematic constraint is exact, so mass at GN is always correctly transferred.
 

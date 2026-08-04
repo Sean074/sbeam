@@ -1,6 +1,11 @@
 $ =========================================================================
 $ HA144A.bdf — FSW Airplane in Level Flight (Static Aeroelastic, SOL 144)
 $
+$ ARCHIVE — NOT RUNNABLE BY DESIGN.  This is the verbatim MSC listing, kept as the
+$ reference record of the published problem and its Table 7-1 values; it uses MSC
+$ cards sbeam does not implement and fails at parse (CBAR 101: property PID=100 not
+$ found).  The runnable sbeam transcription is sample/ha144a_fullspan_sbeam.bdf.
+$
 $ Faithful transcription of MSC Nastran example HA144A from:
 $   MSC Nastran 2021.3 Aeroelastic Analysis User's Guide, Chapter 7,
 $   "Static Aeroelastic Analysis Problems — FSW Airplane in Level Flight",
