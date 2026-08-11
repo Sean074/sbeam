@@ -1,0 +1,120 @@
+<svg viewBox="0 0 1020 540" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="scl-ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1f6feb"/>
+    </marker>
+    <marker id="scl-arK" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+    <marker id="scl-arR" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/>
+    </marker>
+  </defs>
+  <style>
+    .ttl{fill:#1a1a1a;font-size:15px;font-weight:bold;}
+    .lbl{fill:#1a1a1a;font-size:13px;}
+    .sub{fill:#555;font-size:12px;font-style:italic;}
+    .mono{fill:#1a1a1a;font-size:12.5px;font-family:"SF Mono",Menlo,Consolas,monospace;}
+    .red{fill:#c0392b;}
+    .blue{fill:#1f6feb;}
+  </style>
+
+  <!-- ===================== PANEL A — CBAR recovery ===================== -->
+  <text class="ttl" x="24" y="30">A — CBAR force recovery: raw K·u, reported at end B</text>
+  <text class="sub" x="24" y="48">Element local frame: e_x = GB−GA; e_y from the orientation vector;</text>
+  <text class="sub" x="24" y="64">e_z = e_x × e_y (out of page when e_y is drawn up).</text>
+
+  <!-- element bar -->
+  <line x1="70" y1="180" x2="310" y2="180" stroke="#333" stroke-width="6"/>
+  <circle cx="70" cy="180" r="7" fill="#fff" stroke="#333" stroke-width="2"/>
+  <circle cx="310" cy="180" r="7" fill="#333"/>
+  <text class="lbl" x="58" y="206">GA</text>
+  <text class="lbl" x="302" y="206">GB</text>
+
+  <!-- end-A moment caveat -->
+  <path d="M 92,146 A 26,26 0 0 1 118,130" fill="none" stroke="#c0392b" stroke-width="1.8" marker-end="url(#scl-arR)"/>
+  <text class="lbl red" x="24" y="106">bm1_a = My_A, bm2_a = Mz_A</text>
+  <text class="sub red" x="24" y="122">raw nodal K·u — face NOT defined (⚠)</text>
+
+  <!-- end-B arrows -->
+  <line x1="310" y1="180" x2="382" y2="180" stroke="#1f6feb" stroke-width="2.2" marker-end="url(#scl-ar)"/>
+  <text class="lbl blue" x="388" y="184">axial</text>
+  <line x1="310" y1="180" x2="310" y2="120" stroke="#1f6feb" stroke-width="2.2" marker-end="url(#scl-ar)"/>
+  <text class="lbl blue" x="318" y="116">shear1</text>
+  <circle cx="342" cy="212" r="10" fill="none" stroke="#1f6feb" stroke-width="1.8"/>
+  <circle cx="342" cy="212" r="2" fill="#1f6feb"/>
+  <text class="lbl blue" x="358" y="216">shear2 ⊙</text>
+  <path d="M 244,152 A 24,24 0 0 1 272,140" fill="none" stroke="#1f6feb" stroke-width="1.8" marker-end="url(#scl-ar)"/>
+  <text class="lbl blue" x="188" y="134">torque</text>
+
+  <!-- local triad (right-handed: e_y up so e_z is out of page) -->
+  <line x1="86" y1="268" x2="156" y2="268" stroke="#333" stroke-width="1.8" marker-end="url(#scl-arK)"/>
+  <text class="lbl" x="162" y="272">e_x</text>
+  <line x1="86" y1="268" x2="86" y2="224" stroke="#333" stroke-width="1.8" marker-end="url(#scl-arK)"/>
+  <text class="lbl" x="76" y="216">e_y</text>
+  <text class="sub" x="112" y="248">e_z ⊙ out of page</text>
+
+  <!-- component legend -->
+  <text class="mono" x="220" y="252" xml:space="preserve">axial  = Fx_B  tension +</text>
+  <text class="mono" x="220" y="270" xml:space="preserve">shear1 = Fy_B  along +e_y</text>
+  <text class="mono" x="220" y="288" xml:space="preserve">shear2 = Fz_B  along +e_z</text>
+  <text class="mono" x="220" y="306" xml:space="preserve">torque = Mx_B  RH about +e_x</text>
+  <text class="sub" x="24" y="306">Fx_A is the negated reaction —</text>
+  <text class="sub" x="24" y="321">never used.</text>
+
+  <!-- MSC caveat block -->
+  <rect x="24" y="344" width="464" height="100" fill="#fdf3f2" stroke="#c0392b" stroke-width="1"/>
+  <text class="lbl red" x="36" y="366">⚠ f06 plane labels vs MSC NASTRAN (DEF-M18)</text>
+  <text class="mono" x="36" y="388" xml:space="preserve">SHEAR-1   = Fy = MSC plane 1   (agrees)</text>
+  <text class="mono" x="36" y="406" xml:space="preserve">BENDING-1 = My = MSC plane 2   (SWAPPED)</text>
+  <text class="sub" x="36" y="426">Column order also differs; do not reuse an MSC f06</text>
+  <text class="sub" x="36" y="440">parser unchecked.</text>
+
+  <!-- ===================== PANEL B — section cut / SMT ===================== -->
+  <line x1="520" y1="22" x2="520" y2="518" stroke="#d0d7de" stroke-width="1.2"/>
+  <text class="ttl" x="544" y="30">B — Section-cut &amp; diagram sign (right wing, up-load)</text>
+  <text class="sub" x="544" y="48">Cut = resultant of applied loads on the OUTBOARD side, no flip;</text>
+  <text class="sub" x="544" y="64">equals the CBAR end-B internal force at a node (V-SEC2 gate).</text>
+
+  <!-- wing beam, root left -->
+  <polygon points="740,140 960,140 960,160 740,160" fill="#e8f1fd"/>
+  <line x1="560" y1="150" x2="960" y2="150" stroke="#333" stroke-width="5"/>
+  <rect x="544" y="118" width="16" height="64" fill="#f2f4f7" stroke="#9aa7b4" stroke-width="1.2"/>
+  <text class="sub" x="540" y="200">root</text>
+  <text class="sub" x="944" y="200">tip</text>
+
+  <!-- distributed up-load -->
+  <g stroke="#1f6feb" stroke-width="1.6">
+    <line x1="600" y1="138" x2="600" y2="100" marker-end="url(#scl-ar)"/>
+    <line x1="670" y1="138" x2="670" y2="102" marker-end="url(#scl-ar)"/>
+    <line x1="740" y1="138" x2="740" y2="106" marker-end="url(#scl-ar)"/>
+    <line x1="810" y1="138" x2="810" y2="110" marker-end="url(#scl-ar)"/>
+    <line x1="880" y1="138" x2="880" y2="116" marker-end="url(#scl-ar)"/>
+    <line x1="940" y1="138" x2="940" y2="122" marker-end="url(#scl-ar)"/>
+  </g>
+  <text class="lbl blue" x="576" y="92">lift (+z)</text>
+
+  <!-- cut -->
+  <line x1="730" y1="126" x2="730" y2="176" stroke="#c0392b" stroke-width="2.4"/>
+  <text class="lbl red" x="702" y="196">station s</text>
+  <text class="sub" x="782" y="178">summed side (outboard)</text>
+
+  <!-- SMT mini-diagrams -->
+  <text class="lbl" x="544" y="248">Vz(s)</text>
+  <line x1="590" y1="300" x2="960" y2="300" stroke="#9aa7b4" stroke-width="1"/>
+  <line x1="590" y1="300" x2="590" y2="236" stroke="#9aa7b4" stroke-width="1"/>
+  <path d="M590,244 Q760,268 956,299" fill="none" stroke="#1f6feb" stroke-width="2.2"/>
+  <text class="mono blue" x="600" y="238">+ at root, decays to 0 at tip</text>
+
+  <text class="lbl" x="544" y="340">Mx(s)</text>
+  <line x1="590" y1="400" x2="960" y2="400" stroke="#9aa7b4" stroke-width="1"/>
+  <line x1="590" y1="400" x2="590" y2="330" stroke="#9aa7b4" stroke-width="1"/>
+  <path d="M590,336 Q740,372 956,399" fill="none" stroke="#1f6feb" stroke-width="2.2"/>
+  <text class="mono blue" x="600" y="332">+ (up-bending), monotonic on a 1g trim</text>
+
+  <text class="mono" x="544" y="440" xml:space="preserve">tip load +P (+z):  Vz(s) = +P    Mx(s) = +P·(L−s)</text>
+  <text class="sub" x="544" y="460">Diagrams plot the raw signed values — no sagging/hogging inversion.</text>
+  <text class="sub" x="544" y="476">Never apply symmetry parity to a cut: a half-model cut is per-side.</text>
+  <text class="sub" x="544" y="492">Components in the cut CID frame: (N, Vx, Vz, Mt, Mx, Mz) for AXIS=2 —</text>
+  <text class="sub" x="544" y="508">see section_cut.svg panel B.  aero + inertia + reaction columns signed alike.</text>
+</svg>

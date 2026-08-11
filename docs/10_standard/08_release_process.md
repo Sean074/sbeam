@@ -22,70 +22,41 @@ The current version is recorded in `pyproject.toml` (or `setup.py`) under `versi
 
 ## 2. What Constitutes a Release
 
-A release is cut when one or more of the following is true:
+**Cadence rule (2026-08-04, R13): release small and often.** Cut a release whenever the
+gate in §3 passes and any of the following is true:
 
-- A Phase milestone is complete (e.g., all Phase 2 steps done).
-- A critical bug fix (B-series) is resolved and verified.
+- ~1 month has passed since the last tag, **or** ~5 steps have closed since the last tag
+  — whichever comes first. Accumulated small improvements are a valid release; do not
+  wait for a phase milestone.
+- A critical bug fix is resolved and verified.
 - A new SOL (solver type) is production-ready and passes all acceptance tests.
 - A breaking change to the BDF format or f06 output has been made.
 
-Do **not** cut a release for documentation-only changes or in-progress steps.
+Version numbers are **decoupled from phase completion** — bump `MINOR` per release under
+the §1 rules. Do not cut a release for documentation-only changes. Never let
+`[Unreleased]` grow past roughly a month of work: unreleased work has no regression
+baseline (the pre-2026-08 state — one tagless release in three months and ~2,500
+unreleased changelog lines — is the cautionary precedent).
 
 ---
 
-## 3. Pre-Release Checklist
+## 3. Pre-Release Gate (slim, 2026-08-04)
 
-Complete all items before tagging. Each item is a hard gate — do not proceed past a failure.
+The gate is **deliberately small and bounded** — documentation consistency is enforced
+per-change by the tiered closure requirement in CLAUDE.md, not re-audited at release
+time. Each item is a hard gate:
 
-### 3.1 Backlog and Documentation
-
-- [ ] `docs/30_future/00_backlog.md` — all bugs listed for this release are marked resolved.
-- [ ] `docs/40_history/00_completed_development.md` — all steps included in this release are recorded with their full step format.
-- [ ] All `docs/` files are consistent with the code being released (no documentation drift).
-- [ ] `CHANGELOG.md` (or `CHNGLOG`) entry written for this version: summary of new features, bug fixes, and breaking changes.
-
-### 3.2 Code Quality
-
-- [ ] No `[CRITICAL]` or `[MAJOR]` open findings from the most recent code review (see `docs/10_standard/07_code_review_process.md`).
-- [ ] No TODO comments that are release-blocking (deferred-to-next-version TODOs are acceptable if logged in `docs/30_future/00_backlog.md`).
-- [ ] All public functions in `assembly/`, `solver/`, `parser/`, and `model/` have type hints and docstrings.
-
-### 3.3 Test Suite
-
-Run the full test suite and confirm all pass:
-
-```
-pytest tests/ -v
-```
-
-- [ ] Zero test failures.
-- [ ] Zero test errors (as distinct from assertion failures).
-- [ ] No tests marked `skip` or `xfail` without a documented reason in `docs/30_future/00_backlog.md`.
-
-### 3.4 Analytical Verification Cases
-
-All four closed-form verification cases must pass. Tolerance: ≤ 0.1% relative error.
-
-| Case | Formula | Module |
-|---|---|---|
-| Cantilever tip load deflection | `δ = PL³/3EI` | SOL 101 |
-| Simply supported mid-span deflection | `δ = PL³/48EI` | SOL 101 |
-| Cantilever fundamental frequency | `f₁ = (1.875²/2π)√(EI/ρAL⁴)` | SOL 103 |
-| Free-free beam rigid body modes | First 6 modes ≤ 0.001 Hz | SOL 103 |
-
-- [ ] All four cases pass.
-- [ ] Verification output (numerical result vs. analytical result) is recorded in the release notes.
-
-### 3.5 Coordinate System Regression
-
-- [ ] At least one test model with a non-zero `CORD2R` (CP ≠ 0 on GRID, or non-zero CID on FORCE/MOMENT/CONM2) produces correct results.
-- [ ] Round-trip coordinate transform test passes to machine precision.
-
-### 3.6 Viewer Smoke Test
-
-- [ ] Streamlit viewer starts without error: `streamlit run sbeam/viewer/app.py`.
-- [ ] A representative model (e.g., cantilever) can be loaded, viewed, solved (SOL 101 and SOL 103), and results displayed without error.
-- [ ] f06 file is written to the expected location.
+- [ ] **CI green:** `ruff` + `pyright` + full `pytest tests/ -v` — zero failures, zero
+  errors, no `skip`/`xfail` without a documented reason in the backlog. The closed-form
+  verification cases (≤ 0.1% tolerance), the VAL2 shipped-deck gates, and the coordinate
+  regression tests are all part of the suite and pass with it (authoritative case tables:
+  `00_program_overview.md`).
+- [ ] **No open `[CRITICAL]`/`[MAJOR]` review findings** (see `07_code_review_process.md`).
+- [ ] **Backlog is open-items-only** for the release scope (anything closed has moved to
+  `docs/40_history/` — spot-check, not an audit).
+- [ ] **`CHANGELOG.md` entry cut** for this version: features, fixes, breaking changes.
+- [ ] **Viewer smoke test** — only if viewer code changed since the last tag: app starts,
+  a representative model loads/solves/displays.
 
 ---
 
@@ -135,7 +106,9 @@ Then create a GitHub Release from the tag with the changelog entry as the releas
 
 ### Step 4 — Archive verification results
 
-Create `docs/verification/vX.Y.Z.md` recording the numerical output of all four verification cases run against the release tag. This provides a permanent regression baseline for future releases.
+Create `docs/verification/vX.Y.Z.md` recording the numerical output of the closed-form
+verification cases run against the release tag (pasting the CI verification-test output is
+sufficient). This provides a permanent regression baseline for future releases.
 
 ---
 

@@ -1,0 +1,137 @@
+<svg viewBox="0 0 1020 560" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="scs-ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1f6feb"/>
+    </marker>
+    <marker id="scs-arK" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+    <marker id="scs-arR" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/>
+    </marker>
+    <marker id="scs-arG" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8a949e"/>
+    </marker>
+  </defs>
+  <style>
+    .ttl{fill:#1a1a1a;font-size:15px;font-weight:bold;}
+    .lbl{fill:#1a1a1a;font-size:13px;}
+    .sub{fill:#555;font-size:12px;font-style:italic;}
+    .mono{fill:#1a1a1a;font-size:12.5px;font-family:"SF Mono",Menlo,Consolas,monospace;}
+    .red{fill:#c0392b;}
+    .blue{fill:#1f6feb;}
+    .gray{fill:#8a949e;}
+  </style>
+
+  <!-- ============================ PANEL A — side view ============================ -->
+  <text class="ttl" x="24" y="30">A — Pitch plane (side view)</text>
+  <text class="sub" x="24" y="48">Nose left; freestream downstream = basic +x.</text>
+  <text class="sub" x="24" y="64">Viewed from port: +y is INTO the page.</text>
+
+  <!-- basic triad -->
+  <line x1="60" y1="150" x2="140" y2="150" stroke="#333" stroke-width="2" marker-end="url(#scs-arK)"/>
+  <text class="lbl" x="146" y="154">x̂ aft</text>
+  <line x1="60" y1="150" x2="60" y2="92" stroke="#333" stroke-width="2" marker-end="url(#scs-arK)"/>
+  <text class="lbl" x="50" y="84">ẑ up</text>
+  <text class="sub" x="46" y="170">basic CID 0</text>
+  <!-- textbook triad (gray dashed) -->
+  <line x1="290" y1="120" x2="220" y2="120" stroke="#8a949e" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#scs-arG)"/>
+  <text class="lbl gray" x="214" y="106">x′ fwd</text>
+  <line x1="290" y1="120" x2="290" y2="176" stroke="#8a949e" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#scs-arG)"/>
+  <text class="lbl gray" x="270" y="192">z′ down</text>
+  <text class="sub gray" x="230" y="86">textbook body axes</text>
+  <text class="sub" x="46" y="192">y = y′ shared; x, z both negated</text>
+
+  <!-- aircraft side silhouette: nose left -->
+  <path d="M40,265 Q60,252 110,252 L232,252 Q260,250 268,236 L272,236 Q270,252 250,258 L286,258 L286,272 L110,272 Q60,272 40,265 z"
+        fill="#f2f4f7" stroke="#333" stroke-width="1.6"/>
+  <!-- wing chord -->
+  <line x1="118" y1="264" x2="172" y2="264" stroke="#333" stroke-width="4"/>
+  <!-- tailplane + elevator -->
+  <line x1="242" y1="262" x2="272" y2="262" stroke="#333" stroke-width="3.5"/>
+  <line x1="272" y1="262" x2="288" y2="270" stroke="#c0392b" stroke-width="3.5"/>
+  <line x1="284" y1="270" x2="266" y2="296" stroke="#c0392b" stroke-width="1" stroke-dasharray="3 3"/>
+
+  <!-- pitch-up curved arrow ahead of the nose: nose surface moves up -->
+  <path d="M 52,246 C 34,232 34,214 50,202" fill="none" stroke="#1f6feb" stroke-width="2" marker-end="url(#scs-ar)"/>
+  <text class="lbl blue" x="64" y="212">+α, +PITCH (qc/2V)</text>
+  <text class="sub blue" x="64" y="227">nose-up positive — textbook sign</text>
+
+  <!-- freestream -->
+  <line x1="24" y1="298" x2="86" y2="290" stroke="#1f6feb" stroke-width="1.8" marker-end="url(#scs-ar)"/>
+  <text class="lbl blue" x="24" y="316">U∞</text>
+
+  <!-- elevator caption -->
+  <text class="lbl red" x="120" y="300">+δ_ELEV = TE-down</text>
+  <text class="sub red" x="120" y="315">lift-increasing (universal rule);</text>
+  <text class="sub red" x="120" y="330">aft tail → nose-DOWN, canard → nose-UP</text>
+
+  <text class="mono" x="24" y="360" xml:space="preserve">ANGLEA = α    CMY nose-up +</text>
+  <text class="sub" x="24" y="378">column −n_z ; w &gt; 0 = washout = less lift</text>
+
+  <!-- ============================ PANEL B — plan view ============================ -->
+  <line x1="352" y1="22" x2="352" y2="538" stroke="#d0d7de" stroke-width="1.2"/>
+  <text class="ttl" x="376" y="30">B — Sideslip &amp; yaw (plan view)</text>
+  <text class="sub" x="376" y="48">Nose up-page; +y = starboard (right); ẑ toward viewer.</text>
+
+  <!-- plan silhouette: nose up -->
+  <path d="M496,84 Q504,72 512,84 L514,150 L600,196 L600,214 L514,192 L512,268 L546,292 L546,304 L504,296 L462,304 L462,292 L496,268 L494,192 L408,214 L408,196 L494,150 z"
+        fill="#f2f4f7" stroke="#333" stroke-width="1.6"/>
+  <text class="sub" x="588" y="234">starboard (+y)</text>
+
+  <!-- yaw arrow at nose, labels on the left -->
+  <path d="M 478,86 A 30,30 0 0 1 534,86" fill="none" stroke="#c0392b" stroke-width="1.8" marker-end="url(#scs-arR)"/>
+  <text class="lbl red" x="376" y="76">+YAW (rb/2V)</text>
+  <text class="sub red" x="376" y="91">nose-right positive</text>
+
+  <!-- SIDES wind arrow from port -->
+  <line x1="398" y1="132" x2="470" y2="146" stroke="#1f6feb" stroke-width="2.2" marker-end="url(#scs-ar)"/>
+  <text class="lbl blue" x="376" y="118">+SIDES: wind FROM PORT</text>
+  <!-- textbook beta arrow from starboard -->
+  <line x1="628" y1="146" x2="548" y2="160" stroke="#8a949e" stroke-width="1.8" stroke-dasharray="4 3" marker-end="url(#scs-arG)"/>
+  <text class="lbl gray" x="556" y="122">+β textbook:</text>
+  <text class="lbl gray" x="556" y="137">wind from starboard</text>
+
+  <text class="mono" x="376" y="346" xml:space="preserve">SIDES = −β_textbook</text>
+  <text class="sub" x="376" y="364">column −n_y ; fin force → +y when SIDES &gt; 0</text>
+  <text class="sub" x="376" y="380">CMZ about basic +z (up): + = nose-LEFT</text>
+  <text class="sub" x="376" y="396">= −N_textbook</text>
+
+  <!-- ============================ PANEL C — rear view ============================ -->
+  <line x1="680" y1="22" x2="680" y2="538" stroke="#d0d7de" stroke-width="1.2"/>
+  <text class="ttl" x="704" y="30">C — Roll (view from behind)</text>
+  <text class="sub" x="704" y="48">Looking forward: +y starboard = right,</text>
+  <text class="sub" x="704" y="64">ẑ up, x̂ (aft) toward the viewer.</text>
+
+  <!-- rear silhouette -->
+  <line x1="716" y1="196" x2="940" y2="196" stroke="#333" stroke-width="4"/>
+  <circle cx="828" cy="196" r="16" fill="#f2f4f7" stroke="#333" stroke-width="1.6"/>
+  <line x1="828" y1="180" x2="828" y2="132" stroke="#333" stroke-width="3.5"/>
+  <line x1="812" y1="136" x2="844" y2="136" stroke="#333" stroke-width="3"/>
+  <text class="sub" x="884" y="182">starboard (+y)</text>
+
+  <!-- +ROLL: starboard wing down = clockwise seen from behind -->
+  <path d="M 892,158 A 78,78 0 0 1 908,222" fill="none" stroke="#1f6feb" stroke-width="2" marker-end="url(#scs-ar)"/>
+  <text class="lbl blue" x="846" y="250">+ROLL (pb/2V)</text>
+  <text class="sub blue" x="846" y="265">starboard-wing-DOWN</text>
+
+  <!-- +CMX about x-hat toward viewer = CCW = port wing down: left side moves down -->
+  <path d="M 760,162 A 78,78 0 0 0 746,226" fill="none" stroke="#c0392b" stroke-width="2" marker-end="url(#scs-arR)"/>
+  <text class="lbl red" x="704" y="130">+CMX (about x̂, aft)</text>
+  <text class="sub red" x="704" y="145">port-wing-down = −L_textbook</text>
+
+  <text class="mono" x="704" y="330" xml:space="preserve">ROLL/YAW labels: RH about</text>
+  <text class="mono" x="704" y="348" xml:space="preserve">nose (−x) and down (−z)</text>
+  <text class="mono" x="704" y="366" xml:space="preserve">CMX/CMZ: about basic +x/+z</text>
+  <text class="sub" x="704" y="386">Opposite handedness — so C_lp and C_nr</text>
+  <text class="sub" x="704" y="402">are POSITIVE for a damped airplane.</text>
+
+  <!-- footer strip -->
+  <line x1="24" y1="424" x2="996" y2="424" stroke="#d0d7de" stroke-width="1.2"/>
+  <text class="ttl" x="24" y="450">Charter statements (docs/10_standard/09_conventions.md §1, §5, §6)</text>
+  <text class="mono" x="24" y="476" xml:space="preserve">basic: x aft, y starboard, z up  =  textbook body axes rotated 180° about y</text>
+  <text class="mono" x="24" y="494" xml:space="preserve">α, θ, q, CMY: textbook signs    SIDES = −β_textbook    CMX = −L, CMZ = −N</text>
+  <text class="mono" x="24" y="512" xml:space="preserve">+δ_surface = lift-increasing = RH rotation about the cid1 +y hinge axis (radians)</text>
+  <text class="sub" x="24" y="532">URDD1–6 are authored in the RCSID frame (z-down stability axes in every shipped aircraft deck) and rotated</text>
+  <text class="sub" x="24" y="548">to basic; the aero labels (ANGLEA/SIDES/rates) never rotate.  Rate mechanisms: maneuver_rates.svg.</text>
+</svg>

@@ -10,6 +10,9 @@
 
 ## Project Structure
 
+**Authoritative module/file map** — CLAUDE.md and all other docs point here; do not
+duplicate this tree elsewhere (2026-08-04 single-source rule).
+
 ```
 sbeam/
 ├── main.py               # CLI entry point (SOL routing, f06 + load/monitor/maneuver exports)
@@ -388,15 +391,14 @@ card table. Open defects and unresolved questions are tracked in
 | A | Steady VLM aeroelastics: card parsing, panel meshing, AIC + integration matrices, AIC corrections (Wkk, WT2), section force/moment correction synthesis, body-panel total-moment corrections | Steps 39–45 + A9 (cruciform) + A10 (decoupled strip) complete; A7/A8 warnings open |
 | B | Structural coupling splines: SPLINE2/ATTACH/SPLINE0 → g_slope/g_disp/g_load; flexible aero stiffness Q_aa | Complete (Step 48 SPLINE1 surface spline deferred) |
 | C | SOL 144 static aeroelastic trim: Schur trim solve, rigid + elastic-restrained derivatives, hinge moments, divergence sweep, balanced-maneuver loads (Step 53), monitor points, load exports | Essentially complete (AE8b unrestrained mean-axis derivatives + optional Step 54 CHORDCP open) |
-| G0 | DLM-free quasi-steady transient maneuver loads (ZAERO MLOADS card set; restrained l-set Newmark-β) | Increment 1 complete (free-flight rigid-body coupling, modal ROM, unsteady corrections, closed-loop control open) |
-| 3 | SOL 108 Direct frequency response | Planned |
-| 3 | SOL 109 Direct transient response | Planned |
-| 3 | SOL 111 Modal frequency response | Planned |
-| 3 | SOL 112 Modal transient response | Planned |
+| G0 | DLM-free transient maneuver loads (ZAERO MLOADS card set): direct restrained solver + free-flight modal solver, MASSSET sweeps, per-sample section loads + envelopes | Complete (Steps 59–63, 68; G0-d unsteady corrections conditional, G0-e closed-loop parked) |
 
-The authoritative open-items list is `docs/30_future/00_backlog.md` — see its "Aeroelastic
-completion plan" (Steps AC1–AC6) for the remaining Phase A/C close-out work.
+The authoritative open-items list is `docs/30_future/00_backlog.md` (mission-tagged,
+priority-ordered; parked items in `02_parked.md`). SOL 108/109/111/112 are parked —
+superseded for the loads mission by the G0 solvers and the planned SOL 146.
 
-**Version strategy:** `pyproject.toml` version is `0.1.0` and classifier is `3 - Alpha` for Phase 1.
-On Phase 2 completion (SOL 108/109/111/112 all passing), bump to `0.2.0` and change the classifier
-to `4 - Beta`.
+**Version strategy (2026-08-04, R13):** version numbers are decoupled from phase
+completion. A release is cut whenever the slim release gate passes (see
+`08_release_process.md`) — roughly monthly or every handful of steps — bumping the minor
+version each time. The classifier moves to `4 - Beta` when the loads-mission near-term
+items (gust cases, case matrix, envelope report) have shipped.

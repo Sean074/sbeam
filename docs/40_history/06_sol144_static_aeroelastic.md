@@ -1994,6 +1994,15 @@ round-trip tests in `tests/parser/test_aero.py`. No-CHORDCP decks are bit-identi
 
 ## Resolved defects
 
+- **Charter §5 URDD3 wording note ✅ RETRACTED (2026-08-09, sign-convention review):**
+  the 2026-08-04 charter NIT flagging the "(RCSID z-down)" docstring at
+  `model/maneuver_presets.py:25` as misleading was itself wrong — every shipped aircraft
+  deck's RCSID *is* z-down stability axes (`cessna210_flagship_bulk.bdf:80-82`,
+  `HA144A.bdf:187-188`), which is exactly what makes `URDD3 = −n_z·g` a pull; the charter
+  note was corrected instead of the docstring, and the missing z-up guard is DEF-M20.
+  Same review: charter §§9–11 extraction (internal loads, powered effects, figures) and
+  defects DEF-M15–M20 filed with bodies — see `CHANGELOG.md` 2026-08-09.
+
 ### P13 — DEF-R1/R2/R3 refactor batch: decompose `sol144.py` ✅ COMPLETE (2026-08-02)
 
 **Objective:** `run_sol144_trim` had grown into a ~570-line god function in a

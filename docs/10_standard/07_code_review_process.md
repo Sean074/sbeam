@@ -6,6 +6,41 @@ and deviations from FEA engineering best practice — not just style.
 
 ---
 
+## 0. Review Tiers, Scoping, and Cadence (2026-08-04 process review)
+
+The review depth scales with the change, matching the S/M/L closure tiers in CLAUDE.md:
+
+| Change tier | Review required |
+|---|---|
+| **S** (small fix, hygiene, docs, sample decks — no behavior change) | **Light checklist only:** CI green (ruff/pyright/pytest); closed-form + VAL2 suite green; conventions charter (`09_conventions.md`) consulted if signs/axes/frames are touched; same-class defect sweep done (see rule 3 below); closure tier done. No numbered review steps. |
+| **M** (behavior change, existing capability) | Steps 1, 11, plus **only the domain steps (2–10) whose areas the diff touches**. |
+| **L** (new capability / new physics / new solver) | The full ordered process below. Physics steps additionally require the **design-note-before-code** review (theory reference, conventions citations, validation target with expected numbers) *before* implementation — the cheapest defect ever found in this project was caught at design review, before any code existed. |
+
+**Scoping rule (all tiers):** domain steps 2–10 apply only to areas the diff touches. Do
+not walk the parser checklist for a viewer change.
+
+**Cadence:** hold a scheduled light review every ~2 weeks or every ~5 closed steps,
+whichever comes first — small, recent findings are cheap to fix. Do not let findings
+accumulate into multi-week review waves (the 2026-07-31 wave surfaced ~24 defect IDs at
+once because seven weeks had passed).
+
+**Review hygiene (lessons from the defect history):**
+
+1. **File findings with bodies in the same session they are raised.** A severity-tagged
+   name list is not a finding — the DEF-L2–L7 write-ups were lost this way and had to be
+   scheduled for re-derivation.
+2. **Verify premises with evidence before acting on a finding.** Three of the 2026-07-31
+   sample-review deletion proposals had false premises (DD-1/3/9) and were correctly
+   declined only because git history was checked first.
+3. **Generalize on first find:** when a review confirms a defect, sweep the same defect
+   class across the codebase in the same fix and add an invariant gate where feasible
+   (DEF-M6→M12 and DEF-M7→M13 each cost a second full discovery cycle).
+4. **Integration benchmarks outrank unit tests.** 207 unit tests were green while the
+   HA144A trim was grossly wrong (AE13). A physics review must check that an end-to-end
+   benchmark gate ships **with** the change.
+
+---
+
 ## 1. Objectives
 
 A code review in this project must verify:
@@ -53,7 +88,10 @@ Check:
 - `docs/40_history/00_completed_development.md` — updated if a development step is completed.
 - `docs/30_future/00_backlog.md` — updated if a bug is resolved or a step is closed.
 
-**Raise as CRITICAL** if documentation was not updated. Do not approve the PR until docs are in sync.
+The required documentation depth follows the S/M/L closure tier in CLAUDE.md — a Tier-S
+change needs only the changelog + backlog + one-line history entry, not a full doc sweep.
+**Raise as MAJOR** (blocking) if the closure tier was not completed. Documentation drift
+blocks approval but is not the same severity class as wrong results.
 
 ---
 
@@ -204,8 +242,8 @@ Coordinate system errors are silent and affect every result.
 
 | Severity | Label | Criteria | Required action |
 |---|---|---|---|
-| **Critical** | `[CRITICAL]` | Produces wrong results, data loss, silent card drop, wrong matrix assembly, documentation not updated | Block merge — must fix |
-| **Major** | `[MAJOR]` | Unhandled exception path, missing coordinate transform, wrong DOF index, missing test for new solver logic | Block merge — must fix or explicitly justify |
+| **Critical** | `[CRITICAL]` | Produces wrong results, data loss, silent card drop, wrong matrix assembly | Block merge — must fix |
+| **Major** | `[MAJOR]` | Unhandled exception path, missing coordinate transform, wrong DOF index, missing test for new solver logic, closure tier (docs) not completed | Block merge — must fix or explicitly justify |
 | **Minor** | `[MINOR]` | Type hint missing, magic number, suboptimal but correct algorithm | Non-blocking — fix in this PR or open follow-up |
 | **Nit** | `[NIT]` | Style, naming, comment wording | Optional |
 
@@ -260,8 +298,8 @@ A PR may be approved **only** when:
 - [ ] All `[CRITICAL]` and `[MAJOR]` items are resolved or explicitly accepted with documented justification.
 - [ ] `pytest tests/ -v` passes with no failures.
 - [ ] All four closed-form verification cases pass (cantilever static, simply-supported static, cantilever frequency, free-free modes).
-- [ ] All relevant `docs/` files are up to date.
-- [ ] `docs/30_future/00_backlog.md` and `docs/40_history/00_completed_development.md` are consistent with the step status.
+- [ ] The closure tier (CLAUDE.md S/M/L table) is complete for every item the change closes.
+- [ ] `docs/30_future/00_backlog.md` and `docs/40_history/` are consistent with the step status.
 
 ---
 

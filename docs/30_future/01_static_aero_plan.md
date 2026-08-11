@@ -140,19 +140,21 @@ solver/output surface in `docs/10_standard/05_aeroelastics.md`.
 
 ## 3. Follow-on phases — pointers only (the plan lives elsewhere)
 
-The forward plan is priority-ordered in **`docs/30_future/00_backlog.md`** (strategic aim,
-P1–P12, Tiers 1–4). Per-phase design detail:
+The forward plan is priority-ordered in **`docs/30_future/00_backlog.md`** (mission
+statement + mission-tagged priority list, 2026-08-04 structure; parked items in
+`02_parked.md`). Per-phase design detail:
 
-- **Phase G0 follow-ons (transient maneuvers + payload conditions)** — backlog Tier 1,
-  Steps 59–63 (free-free modal basis, `MASSSET` mass cases, free-flight coupling).
-- **Phase D (DLM) + Phase E (SOL 145 flutter) + Phase F (SOL 146 gust)** — backlog Tier 3;
+- **Loads-process completion (gust cases, case matrix, envelope/report)** — backlog
+  near-term items; Steps 59–63 (free-free modal basis, `MASSSET` mass cases, free-flight
+  coupling) are closed, see `docs/40_history/07_maneuver_transient.md`.
+- **Phase D (DLM) + SOL 145 flutter + SOL 146 gust** — backlog Phase D chain;
   full design in `designs/dlm_rfa_flutter_gust.md` (kernel, GAFs, PK/KE, RFA, gust). The
   ZTAW out-of-phase correction recovery belongs here, building on the Step 43 steady
   correction layer.
-- **Matrix/GAF export and reuse** — backlog Tier 2; `designs/matrix_gaf_export.md` and
-  `designs/matrix_reuse_store.md`.
-- **Phase G (full unsteady MLOADS + ASE)** — gated on Phase D; outline in the backlog
-  (G0-e) and the Phase G notes inside `designs/dlm_rfa_flutter_gust.md`.
+- **Matrix/GAF export and reuse** — backlog Phase D chain; `designs/matrix_gaf_export.md`
+  and `designs/matrix_reuse_store.md`.
+- **Phase G (full unsteady MLOADS + ASE)** — gated on Phase D; outline parked
+  (`02_parked.md` G0-e) and the Phase G notes inside `designs/dlm_rfa_flutter_gust.md`.
 
 ---
 

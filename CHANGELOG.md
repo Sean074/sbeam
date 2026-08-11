@@ -9,7 +9,90 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Post-Phase-1 additions built on top of v0.1.0. Will be released as v0.2.0 on Phase 2 completion.
+Post-Phase-1 additions built on top of v0.1.0. Release cadence per the 2026-08-04 slim
+release process (`docs/10_standard/08_release_process.md`) — versions are decoupled from
+phase completion.
+
+### Changed
+
+**Sign-convention extraction — charter §§1/5/6 expansion, §§9–11, convention figures (2026-08-09)**
+
+Documentation-only change set from a full sign-convention review (state variables,
+controls, internal loads, powered effects); no code touched. Every claim verified
+against code with citations.
+
+- **Conventions charter expanded** (`docs/10_standard/09_conventions.md`): textbook-axes
+  comparison (basic = body axes rotated 180° about y; CMX/CMZ = −L/−N, C_lp/C_nr
+  positive-when-damped), **SIDES = −β_textbook** stated for the first time, rate-label
+  senses, URDD-vs-aero-label frame asymmetry; new §9 internal loads & output signs (CBAR
+  end-B recovery, MONSECT face = CBAR end-B sign, SPCFORCE/CD-frame note, applied-load
+  and CONM2 signs), §10 engines/powered-effects position, §11 convention-figure index.
+- **Erroneous 2026-08-04 charter note retracted:** the `maneuver_presets.py:25` "(RCSID
+  z-down)" docstring it flagged is correct — every shipped aircraft deck's RCSID is
+  z-down stability axes; guard gap filed as DEF-M20.
+- **Two figures added** (`docs/figures/sign_conventions_state.svg`,
+  `sign_conventions_internal_loads.svg`), completing the four-figure sign-convention set
+  with `maneuver_rates.svg` + `section_cut.svg`.
+- **CONM2 card reference**: documented that I21/I31/I32 are direct positive tensor
+  entries — the opposite of MSC NASTRAN's negated products (`02_card_reference.md`).
+- **Critical-case report item extended** (backlog [E]): the deliverable now includes a
+  TeX → PDF report whose front matter must embed the four convention figures as a
+  sign-convention appendix.
+- **Defects filed with bodies** (backlog): DEF-M15 `rigid_rate_scales` DOF-2/4/6 lateral
+  sign (verified analytically; latent anti-damping), DEF-M16 `AESURF CID2/ALID2`
+  silently ignored, DEF-M17 pin releases ignored in CBAR force recovery, DEF-M18 CBAR
+  f06 plane labels vs MSC, DEF-M19 missing OLOAD block, DEF-M20 URDD3 RCSID-orientation
+  guard, plus a four-item sign-wording hygiene batch.
+- **Required convention decisions indexed** (backlog): the six deliberate choices the
+  review left open (aileron and rudder sign conventions, CBAR end-A moment face,
+  propeller handedness/swirl tabulation, bank-angle/turn-coordination scope, ROLL
+  spanwise reference), each pinned to the first consuming step's design note.
+
+**Development-process overhaul — mission re-point, tiered closure, conventions charter (2026-08-04)**
+
+Documentation-only change set implementing the 2026-08-04 development process review
+(`docs/50_reviews/2026-08-04_development_process_review.md`; findings F1–F8,
+recommendations R1–R17). No code touched.
+
+- **Mission declared:** a FAR/CS-23-style loads process (maneuver + gust cases, section
+  loads, critical-case reporting), stated in `CLAUDE.md` and the backlog; SOL 145/DLM is
+  the phase after loads sufficiency.
+- **Backlog re-pointed** (`docs/30_future/00_backlog.md`): closed content purged (~40 %
+  of the file), every item mission-tagged [E]/[V], P-rank/letter numbering retired in
+  favour of plain step numbers at promotion. **New essential items:** quasi-static gust
+  cases (Pratt, 23.341), V-n design-case matrix generation, loads envelope +
+  critical-case report. ~40 off-mission items moved with full write-ups to the new
+  `docs/30_future/02_parked.md` (Phase 2/3 enhancements, SOL 108–112, fidelity
+  follow-ons, tooling ideas) with explicit out-of-scope declarations (ground loads,
+  engine case sets, unsymmetric gust, ASE). DEF-L2–L7 flagged for re-triage — their
+  finding bodies were never recorded. Stale P1–P12 pointer fixed in
+  `01_static_aero_plan.md`.
+- **Tiered closure (S/M/L)** replaces the size-invariant 3-part rule in `CLAUDE.md`,
+  plus five new working rules: design-note-before-code for physics steps,
+  benchmark-first definition of done (AE13 lesson), generalize-on-first-find
+  (M6→M12/M7→M13 lesson), findings-filed-with-bodies (DEF-L lesson), no speculative
+  features (WT1 lesson).
+- **Review process tiered** (`07_code_review_process.md` §0): light checklist for S
+  changes, touched-area scoping for M, full 11-step process only for L/physics;
+  ~2-week/5-step review cadence replaces multi-week review waves; documentation drift
+  reclassified CRITICAL → MAJOR.
+- **Release process slimmed** (`08_release_process.md`): monthly-or-5-steps cadence
+  rule, bounded gate (CI + closed-form/VAL2 suite + changelog + tag), versions decoupled
+  from phases, unbounded doc-consistency audit dropped (enforced per-change instead).
+- **Conventions charter added** (`docs/10_standard/09_conventions.md`): the single
+  source for signs/axes/frames/reference points/units (x-aft basic frame, panel-normal
+  box forces at ¼-chord, washout-positive internal normalwash vs NASTRAN-sign W2GJ,
+  RCSID-origin moment reference, nose-up-positive CMY, cid1-y hinge axis, radian trim
+  angles, URDD3 = −n_z·g) with the single-source helper table; physics design notes must
+  cite it. One wording defect flagged for opportunistic fix: the "(RCSID z-down)"
+  docstring parenthetical at `model/maneuver_presets.py:25`.
+- **CLAUDE.md rewritten as rules + pointers** (~150-line budget): card-field tables,
+  annotated module tree, and results prose replaced by pointers to their authoritative
+  single sources (`02_card_reference.md`, `00_program_overview.md`, per-solver guides);
+  card name list corrected to include TRIMVAR/TRIMCON/TRIMOBJ.
+- **Docs index** gains the `50_reviews/` section, the parked file, and the charter;
+  `00_program_overview.md` Version-and-Phase table refreshed (G0 complete, SOL 108–112
+  parked) and marked authoritative for the module tree + verification tables.
 
 ### Removed
 

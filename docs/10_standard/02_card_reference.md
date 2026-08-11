@@ -577,6 +577,14 @@ The continuation line is optional (all inertia terms default to 0).
 When CID ≠ 0, the offset and inertia tensor are rotated to global before assembly:
 `r = R @ r_cid`, `I = R @ I_cid @ Rᵀ`.
 
+> **⚠ Sign convention differs from MSC NASTRAN:** sbeam uses the off-diagonal fields as
+> the **direct (positive) tensor entries** —
+> `I_cid = [[I11, I21, I31], [I21, I22, I32], [I31, I32, I33]]`
+> (`assembly/mass_matrix.py:130-134`, gated by `tests/aero/test_trim_urdd.py:265-279`).
+> MSC NASTRAN's CONM2 fields are the **negated** products of inertia. A NASTRAN deck
+> with nonzero I21/I31/I32 therefore imports into sbeam with flipped inertia coupling —
+> negate those three fields when porting. See `09_conventions.md` §9.
+
 > **Singular mass warning (SOL 103):** a CONM2 with zero offset and zero inertia on a
 > model with `rho = 0.0` MAT1s populates only the three translational DOFs at its grid
 > — the global mass matrix is singular. `solve_modes` applies Tikhonov regularisation
