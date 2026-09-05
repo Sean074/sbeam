@@ -8,6 +8,44 @@
 
 ---
 
+## Architecture — solver core and loads toolchain (2026-09-05)
+
+The repository is **two products with one release**, and the boundary between them is a
+rule, not a convention:
+
+> **The solver reads a deck and writes results for the cases it is given. It never
+> decides which cases exist, and it never reduces across runs.**
+
+| | `sbeam/` — the solver core | `scripts/loads/` — the loads toolchain |
+|---|---|---|
+| Role | NASTRAN-style: one deck in, f06 + CSV out | Pre-processing (case construction) and post-processing (cross-case reduction, reporting) |
+| Units | Never converts; card fields are unit-neutral (`09_conventions.md` §7) | May know units, atmospheres and regulatory constants |
+| Owns | Per-case physics; **within-run** reduction (per-sample envelopes, `SECTION CUT ENVELOPE`) — only the solver holds per-sample data | Which cases exist; **cross-run** reduction; the critical-case report |
+| Cost of a change | Permanent API: parse, validate, write-back, f06, viewer, card reference, charter, gates | A tool with its own gates |
+
+**Why.** sbeam declares NASTRAN BDF compatibility, so adopting NASTRAN's own
+decomposition (solver + pre/post) keeps generated decks portable and keeps the solver's
+card surface finite. It was validated by issue #1: the FAR/CS 23.341 gust calculation is
+irreducibly dimensional, and moving it out dissolved a charter §7 conflict instead of
+carving an exception into the solver.
+
+**"Outside the solver" does not mean outside the product.** The toolchain is versioned,
+linted, type-checked, gated and released with the solver, and the mission stated in
+CLAUDE.md — a FAR/CS-23 loads process — is the **repository's** mission, not the solver
+package's. The loads process is delivered by both halves together.
+
+**Consequences to respect:**
+
+- **The exported CSVs are an interface.** Once a tool parses `monitor_loads.csv` /
+  `section_loads.csv`, a column rename is a breaking change. Their headers are gated.
+- **The case index is the join.** Case-construction tools emit an index keyed by subcase
+  ID carrying *why* each case exists; results carry `case`/`massset`/`mass_case`. The
+  post-processor joins the two, so the solver needs no case-construction knowledge.
+- **Cross-checks beat good intentions.** Where reduction logic exists on both sides, gate
+  the tool's reduction of a single run against the solver's own f06 block.
+
+---
+
 ## Project Structure
 
 **Authoritative module/file map** — CLAUDE.md and all other docs point here; do not
