@@ -183,6 +183,53 @@ SUBCASE 10
   SPC     = 1
 ```
 
+### 4.3 The f06 provenance block
+
+Emitted **only** when the subcase names a `GUSTLF`, immediately after the subcase/MASSSET
+header and **before** `T R I M   V A R I A B L E S` — so a reader meets the gust condition
+first and the `URDD3` it produced second, in causal order.
+
+```
+                        G U S T   L O A D   C O N D I T I O N   (GUSTLF, FAR/CS 23.341)
+
+      GUSTLF = 700     TRIM = 1     SENSE = UP-GUST
+      U-DE = 1.524000E+01     V-EAS = 6.173000E+01     ALTITUDE = 0.000000E+00
+      MASS RATIO MU = 1.385500E+01     K-G = 6.365000E-01     A = 5.333500E+00 (RIGID)
+      LOAD FACTOR N = 3.996000E+00     DELTA-N (N-1) = 2.996000E+00     URDD3 = -3.920076E+01
+
+      RECORDED PROVENANCE ONLY — N AND G ENTER THE SOLUTION; SBEAM DOES NOT COMPUTE THE GUST.
+```
+
+and for the down-gust partner, hand-authored with no provenance recorded:
+
+```
+      GUSTLF = 800     TRIM = 5     SENSE = DOWN-GUST
+      U-DE = NOT RECORDED     V-EAS = NOT RECORDED     ALTITUDE = NOT RECORDED
+      MASS RATIO MU = NOT RECORDED     K-G = NOT RECORDED     A = NOT RECORDED
+      LOAD FACTOR N = -1.996000E+00     DELTA-N (N-1) = -2.996000E+00     URDD3 = 1.958076E+01
+```
+
+**Format rules obeyed.** Scalars use `_fmt(...).strip()` — the established pattern for inline
+values in the header (`Q = …`, `MASS = …`) and the divergence block. Unrecorded optional
+fields print `NOT RECORDED`, following CHORDCP's `DATA MACH = NOT STATED` precedent. Fields
+are separated by five spaces so the alignment gate's token regex cannot run two together.
+
+**`SENSE` and `DELTA-N` are labels, not physics** — `SENSE` is `n > 1`, `DELTA-N` is `n − 1`.
+Both are printed because the sign of a down-gust case is the thing a reader most needs stated
+explicitly. `URDD3` is echoed so the block closes the loop with `T R I M   V A R I A B L E S`.
+
+**No consistency check is performed.** The solver cannot verify `μ`, `K_g` and `N` agree,
+because it deliberately does not own the formula (§9, risk 3); the `0 < KG < 0.88` range gate
+at parse is the only arithmetic guard, and the closing line states the limitation in the
+listing itself.
+
+**No `_NUMERIC_LABELS` additions are needed.** `tests/results/test_f06_column_alignment.py`
+scans only for labels *exactly* matching its set and checks the `_FIELD_W` cell beneath them;
+this block is prose-formatted `LABEL = value` text with no column headers over numeric data,
+so it is out of that gate's scope by construction. None of `U-DE`, `V-EAS`, `K-G`, `MU`, `A`,
+`N`, `DELTA-N (N-1)` or `URDD3` collides with an existing entry. V-GUST5 therefore gates the
+block's *content and conditional emission*, not column alignment.
+
 ---
 
 ## 5. Mathematical formulation (implemented **in the script**)
@@ -262,7 +309,7 @@ and touches no lateral rate column, stated explicitly per the charter's DEF-M15 
 | `sbeam/solver/sol144.py` | Stage resolving the gust case: inject `URDD3` before `_stage_build_labels`; stash `gust_echo` |
 | `sbeam/solver/sol144_util.py` *(or the URDD path)* | **DEF-M20 guard** (#23): warn when a negative `URDD3` is prescribed against an absent or z-up RCSID |
 | `sbeam/results/results.py` | `gust_echo: Optional[dict[str, Any]] = None` on `Sol144TrimResult` |
-| `sbeam/results/f06_writer.py` | Conditional provenance block (CHORDCP block is the template) |
+| `sbeam/results/f06_writer.py` | Conditional provenance block per §4.3, placed before `T R I M   V A R I A B L E S` |
 | `sbeam/main.py` | Dispatch a `GUSTLF` subcase |
 
 ### 6.2 Order of operations
@@ -299,7 +346,7 @@ MONSECT and MASSSET blocks are.
 | **V-GUST2** | ± pair | up-gust trims to greater incidence than 1g, down-gust to less — signs **relative to the 1g case**, never absolute (charter §6) |
 | **V-GUST3** | Negative-`n` case | the down-gust case (`n = −2.0` on the flagship) trims; `maneuver_closure ≈ 0` |
 | **V-GUST4** | Monitor/section flow-through | gust subcase produces monitor and section-cut loads indistinguishable in form from a maneuver subcase |
-| **V-GUST5** | f06 provenance block | present, correct, and column-aligned (add labels to `_NUMERIC_LABELS`) |
+| **V-GUST5** | f06 provenance block | §4.3 block emitted with correct values and `SENSE`/`DELTA-N`/`URDD3` consistent with `N`; `NOT RECORDED` shown for unset optional fields. **No `_NUMERIC_LABELS` change** — the block is prose-formatted (§4.3) |
 | **V-GUST6** | Non-regression | a deck without `GUSTLF` produces a byte-identical f06 |
 | **V-GUST7** | **DEF-M20 guard (#23)** | negative `URDD3` against an absent or z-up RCSID warns; `sample/val_dihedral_trim.bdf` (which does this deliberately) stays green with the warning expected |
 | **P-GUST1–6** | Parse rejections | unknown TRIMID; TRIM prescribing `URDD3`; `G ≤ 0`; bad `ASRC`; `KG` outside `(0, 0.88)`; negative recorded `UDE`/`MU`/`A` |
