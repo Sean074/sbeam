@@ -46,9 +46,9 @@ are the day-to-day references; higher numbers are planning and historical record
 
 | File | Scope |
 |------|-------|
-| [`00_backlog.md`](30_future/00_backlog.md) | **Authoritative backlog** — mission statement (FAR/CS-23 loads process) + mission-tagged, priority-ordered open work (near-term loads items, Phase D chain, opportunistic) |
+| [`00_backlog.md`](30_future/00_backlog.md) | **Mission & milestone map** — mission statement (FAR/CS-23 loads process) + the release-milestone ladder to 1.0.0; the working backlog itself is [GitHub issues](https://github.com/Sean074/sbeam/issues) (migrated 2026-09-05) |
 | [`01_static_aero_plan.md`](30_future/01_static_aero_plan.md) | Static-aero architecture reference (Phases A–C complete): layer diagram, matrix nomenclature, delivered-step map, references, validation-case index |
-| [`02_parked.md`](30_future/02_parked.md) | **Parked items** — real but off the mission path (Phase 2/3 enhancements, fidelity follow-ons, tooling ideas, declared out-of-scope) |
+| [`02_parked.md`](30_future/02_parked.md) | **Parked items** — real but off the mission path (Phase 2/3 enhancements, fidelity follow-ons, tooling ideas, declared out-of-scope); deliberately not issues — activation opens one |
 | [`designs/amode_card.md`](30_future/designs/amode_card.md) | AMODE assumed-mode card — design proposal |
 | [`designs/rbmref_card.md`](30_future/designs/rbmref_card.md) | RBMREF rigid-body-mode reference card — design proposal |
 | [`designs/spline9_hermite_beam_spline.md`](30_future/designs/spline9_hermite_beam_spline.md) | SPLINE9 FE-consistent Hermite beam spline (sbeam extension) — design proposal |

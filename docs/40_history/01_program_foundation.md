@@ -257,6 +257,12 @@ The two top-level functions serve distinct use cases:
 
 ## Resolved defects (documentation / model)
 
+### Process migration to GitHub milestones/issues (Tier S, process) ✅ COMPLETE (2026-09-05)
+
+Backlog migrated to GitHub issues #1–#28 under milestones v0.3.0–v1.0.0; release-branch
+model + sloads-review best practices recorded in `08_release_process.md` §§2–2a; issue
+numbers replace step numbers for new work (Step 1–68 references stand).
+
 ### AJJ bit-for-bit test gates hardware-dependent (Tier S, v0.2.0 CI) ✅ COMPLETE (2026-09-05)
 
 The `test_vlm_vectorized.py` vectorized-vs-scalar AJJ gates asserted bit-for-bit

@@ -4,8 +4,11 @@ Created 2026-08-04 (development process review, `docs/50_reviews/2026-08-04_deve
 R1/R12). Items here are genuine and retain their full write-ups, but they are **not on the
 path to the loads mission** stated in `00_backlog.md` — general-FEA completeness, fidelity
 completion beyond early-design loads accuracy, tooling polish, and NASTRAN-compat niceties.
-Nothing here is scheduled or ranked. To activate an item, move it back to `00_backlog.md`
-with a mission tag; do not work parked items opportunistically without moving them first.
+Nothing here is scheduled or ranked, and parked items are deliberately **not** GitHub
+issues (the tracker holds only open, on-mission work — migration 2026-09-05). To activate
+an item, open a GitHub issue carrying its write-up (with a milestone or the
+`opportunistic` label and a mission tag) and delete the entry here; do not work parked
+items opportunistically without activating them first.
 
 ---
 

@@ -64,7 +64,7 @@ Complete before reading a single line of diff:
 - [ ] Read the PR description / commit message — understand the *intent*, not just the change.
 - [ ] Read the relevant `docs/` file for every module touched (see table in CLAUDE.md).
 - [ ] Confirm the diff includes documentation updates (`docs/`) if code changed. Flag immediately if absent.
-- [ ] Check `docs/30_future/00_backlog.md` — does this PR close a known bug, or introduce a pattern already flagged there?
+- [ ] Check the open GitHub issues — does this change close a known issue, or introduce a pattern already flagged there?
 - [ ] Confirm `docs/40_history/00_completed_development.md` was updated if a step is marked complete.
 - [ ] Confirm tests exist for new or changed functions in `assembly/`, `solver/`, or `parser/`.
 - [ ] Identify any function whose signature or return shape changed in `assembly/` or `solver/` — these are high-blast-radius changes.
@@ -86,7 +86,8 @@ Check:
 - `docs/10_standard/06_viewer.md` — any UI control added, removed, or renamed must be reflected.
 - `docs/20_theory/00_beam_methods.ipynb` — algorithm derivations must stay consistent with implemented formulations.
 - `docs/40_history/00_completed_development.md` — updated if a development step is completed.
-- `docs/30_future/00_backlog.md` — updated if a bug is resolved or a step is closed.
+- The GitHub issue — explicitly closed if a bug is resolved or a step is closed
+  (`08_release_process.md` §2a).
 
 The required documentation depth follows the S/M/L closure tier in CLAUDE.md — a Tier-S
 change needs only the changelog + backlog + one-line history entry, not a full doc sweep.
@@ -314,7 +315,7 @@ A PR may be approved **only** when:
 | `docs/10_standard/06_viewer.md` | Streamlit viewer architecture |
 | `docs/20_theory/00_beam_methods.ipynb` | Euler-Bernoulli stiffness and mass matrix derivations |
 | `docs/40_history/00_completed_development.md` | Record of completed steps and key decisions |
-| `docs/30_future/00_backlog.md` | Open bugs and backlog |
+| GitHub issues (map: `docs/30_future/00_backlog.md`) | Open bugs and backlog |
 | `CLAUDE.md` | Project conventions and documentation requirement |
 | NASA-CR-145949 | Beam element formulation reference |
 | https://www.sesamx.io/blog/beam_finite_element/ | Beam FE theory reference |

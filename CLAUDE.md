@@ -13,8 +13,9 @@ standard NASTRAN BDF input format. It is **not** related to RAM SBeam.
 model — generate maneuver + gust design cases, trim/integrate them, and deliver
 monitor/section loads with a traceable critical-case report for stress. SOL 145 flutter +
 DLM is the declared phase after loads sufficiency. New work must serve this mission or be
-parked (`docs/30_future/02_parked.md`); the working backlog is
-`docs/30_future/00_backlog.md` (open items only, mission-tagged).
+parked (`docs/30_future/02_parked.md`); the working backlog is **GitHub issues**
+(milestones = planned releases; mission + milestone map: `docs/30_future/00_backlog.md`;
+workflow: `docs/10_standard/08_release_process.md` §2a).
 
 ## Documentation Map
 
@@ -34,8 +35,10 @@ them instead:
 ## Step Completion Requirement (tiered)
 
 **HARD REQUIREMENT — when any backlog item, bug, NIT, or step is closed, its closure tier
-must be completed in the same session. The backlog holds open items only; anything closed
-moves out immediately. Never batch or defer closure to a later session.**
+must be completed in the same session, and its GitHub issue explicitly closed
+(`gh issue close N --comment "Closed by <sha>"` — never rely on `Closes #N` auto-close;
+it does not fire on release branches). One commit per closed item, `(#N)` in the subject.
+Never batch or defer closure to a later session.**
 
 | Tier | Applies to | Required closure |
 |------|-----------|------------------|
@@ -63,8 +66,9 @@ Additional rules (from the 2026-08-04 process review — rationale in
 
 Phase 1 (SOL 101/103) complete; SOL 144 static aeroelastic trim + Phase G0 transient
 maneuver loads delivered and release-scoped. Current state: `docs/40_history/` (done),
-`docs/30_future/00_backlog.md` (open, priority-ordered). Release process:
-`docs/10_standard/08_release_process.md`.
+GitHub issues/milestones (open; map in `docs/30_future/00_backlog.md`). Work happens on
+the current `release/X.Y.0` branch, merged to `main` at milestone completion — release
+process and branch model: `docs/10_standard/08_release_process.md`.
 
 ## Tech Stack
 

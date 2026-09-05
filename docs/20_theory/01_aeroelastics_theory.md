@@ -763,7 +763,7 @@ and $C_{n_\beta}$ increment with **$C_{l_\beta}\approx0$** (a slender body adds 
 match capability remains but a clean cruciform drives it to ~0). A genuine fuselage representation —
 the destabilising couple, wing-body interference, a several-MAC neutral-point shift — requires a true
 **slender-body element** (line of acceleration-potential doublets, Munk slender-body theory), tracked
-in `docs/30_future/00_backlog.md`. Matching $C_{l_\beta}$ at all still needs adequate spanwise ($z$)
+in `docs/30_future/02_parked.md`. Matching $C_{l_\beta}$ at all still needs adequate spanwise ($z$)
 resolution on the vertical panel to shape the roll arm independently of the yaw arm.
 
 ### 3.7 Decoupled strip body — load and boundary condition as *separate* blocks
@@ -809,7 +809,7 @@ wake already in `horseshoe_influence` (extra Biot–Savart terms tied to the box
 unknowns), but enforcing no-penetration (transverse reflection) rather than the Kutta condition
 (streamwise shedding). It is a *physical* reflection, not the cruciform's wrong-sign contamination —
 so load (strip) and boundary condition (image fence) become two correct, composable mechanisms. The
-image fence is tracked in `docs/30_future/00_backlog.md`; only the strip load device is implemented.
+image fence is tracked in `docs/30_future/02_parked.md`; only the strip load device is implemented.
 
 ---
 

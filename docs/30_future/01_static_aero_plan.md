@@ -12,8 +12,8 @@ This document is retained for what stays useful after completion:
 - **§1 Architecture overview** — the layer diagram and matrix nomenclature that the code,
   theory doc, and design proposals all cross-reference.
 - **§2 Delivered steps** — a one-line map from each step to its deliverable and history entry.
-- **§3 Follow-on phases** — pointers only; the forward plan now lives in
-  `docs/30_future/00_backlog.md` (priority-ordered) and `docs/30_future/designs/`.
+- **§3 Follow-on phases** — pointers only; the forward plan now lives in GitHub issues
+  (milestone map: `docs/30_future/00_backlog.md`) and `docs/30_future/designs/`.
 - **§4 References** and **§5 validation-case index** — the literature and V-case IDs cited
   throughout the tests and docs.
 
@@ -140,8 +140,8 @@ solver/output surface in `docs/10_standard/05_aeroelastics.md`.
 
 ## 3. Follow-on phases — pointers only (the plan lives elsewhere)
 
-The forward plan is priority-ordered in **`docs/30_future/00_backlog.md`** (mission
-statement + mission-tagged priority list, 2026-08-04 structure; parked items in
+The forward plan lives in **GitHub issues** under release milestones (2026-09-05
+migration; mission + milestone map: `docs/30_future/00_backlog.md`; parked items in
 `02_parked.md`). Per-phase design detail:
 
 - **Loads-process completion (gust cases, case matrix, envelope/report)** — backlog

@@ -375,7 +375,8 @@ For aeroelastic limitations (`SPLINE1` not implemented, `AEROS` `ACSID`/`RCSID` 
 `ATTACH` `CID = 0`, body-panel geometry rules) see
 [`05_aeroelastics.md`](05_aeroelastics.md#validation-status--known-limitations) and the
 card table. Open defects and unresolved questions are tracked in
-[`../30_future/00_backlog.md`](../30_future/00_backlog.md).
+[GitHub issues](https://github.com/Sean074/sbeam/issues) (mission + milestone map:
+[`../30_future/00_backlog.md`](../30_future/00_backlog.md)).
 
 ---
 
@@ -393,8 +394,8 @@ card table. Open defects and unresolved questions are tracked in
 | C | SOL 144 static aeroelastic trim: Schur trim solve, rigid + elastic-restrained derivatives, hinge moments, divergence sweep, balanced-maneuver loads (Step 53), monitor points, load exports | Essentially complete (AE8b unrestrained mean-axis derivatives + optional Step 54 CHORDCP open) |
 | G0 | DLM-free transient maneuver loads (ZAERO MLOADS card set): direct restrained solver + free-flight modal solver, MASSSET sweeps, per-sample section loads + envelopes | Complete (Steps 59–63, 68; G0-d unsteady corrections conditional, G0-e closed-loop parked) |
 
-The authoritative open-items list is `docs/30_future/00_backlog.md` (mission-tagged,
-priority-ordered; parked items in `02_parked.md`). SOL 108/109/111/112 are parked —
+The authoritative open-items list is GitHub issues (mission + milestone map:
+`docs/30_future/00_backlog.md`; parked items in `02_parked.md`). SOL 108/109/111/112 are parked —
 superseded for the loads mission by the G0 solvers and the planned SOL 146.
 
 **Version strategy (2026-08-04, R13):** version numbers are decoupled from phase

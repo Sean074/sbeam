@@ -888,7 +888,7 @@ device for a **mild** dCm/dα and dCn/dβ with **~0 roll** (a slender body adds 
 `sample/cessna210_flagship_section_data.csv` `TOTAL` row is the flying-surface totals **plus a
 realistic fuselage increment** of that size (+0.20 /rad in Cm_α, ~12 % of the flagship's pitch
 stiffness). Large body effects — a several-MAC neutral-point shift, genuine wing-body
-interference — need a true **slender-body element** (see `docs/30_future/00_backlog.md`, "Body
+interference — need a true **slender-body element** (see `docs/30_future/02_parked.md`, "Body
 aerodynamic panels (slender body)"); the `Cl_β` match capability remains in the code but a clean
 cruciform is expected to drive it to ≈0.
 
@@ -952,7 +952,7 @@ lifting-surface-only inverse). Two consequences, both verified in
 * **No interference either.** A decoupled element is transparent to the wing's flow, so a
   strip carries no fence / no-through-flow effect. It is a pure *load* device. The body's
   *effect on* the lifting surfaces (the fence boundary condition) is a separate, composable
-  mechanism — the **image fence** (`docs/30_future/00_backlog.md`), deliberately not in the
+  mechanism — the **image fence** (`docs/30_future/02_parked.md`), deliberately not in the
   strip element.
 
 **Slope.** The `PSTRIP` default `slope0` ≈ π is the per-box dΔCp/dα_local; with a uniform

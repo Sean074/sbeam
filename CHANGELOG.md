@@ -9,7 +9,15 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-(Nothing yet — next cycle opens per `docs/30_future/00_backlog.md`.)
+### Changed
+- **Development process moved to GitHub milestones + issues (2026-09-05).** Milestones =
+  planned releases (v0.3.0 → v1.0.0 ladder); the backlog's 28 open items migrated to
+  issues #1–#28 with full bodies; `docs/30_future/00_backlog.md` reduced to the mission +
+  milestone map. Development now runs on `release/X.Y.0` branches (one commit per closed
+  issue), MINOR releases cut at milestone completion with `-beta.N` interim baselines;
+  best practices adopted from the sloads process review (explicit issue close, no-squash
+  milestone merge, hotfix back-merge rule) — `docs/10_standard/08_release_process.md`
+  §§2–2a. CI now also triggers on `release/**` pushes.
 
 ---
 
