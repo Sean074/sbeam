@@ -33,7 +33,7 @@ jobs:
           pip install -e . --no-deps
 
       - name: Lint (ruff)
-        run: ruff check sbeam/ tests/ scripts/
+        run: ruff check sbeam/ sbeam_tools/ tests/
 
       - name: Type check (pyright)
         run: pyright

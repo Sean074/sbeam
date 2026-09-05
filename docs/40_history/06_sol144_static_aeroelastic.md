@@ -2449,7 +2449,7 @@ applies the result as an incremental load factor — precisely the input the Ste
 balanced-maneuver path already accepts.
 
 **Deliverables:**
-- `scripts/gust_load_factor.py` — ISA atmosphere, the 23.333(c) `U_de` schedule
+- `sbeam_tools/cases/gust.py` — ISA atmosphere, the 23.333(c) `U_de` schedule
   (V_C/V_D/V_B, tapering above 20,000 ft), the Pratt helpers (`mass_ratio`,
   `alleviation_factor`, `gust_increment`), a deck reader and a BDF emitter, behind a
   CLI. Reads `S`/`c̄` from `AEROS`, `W` from GPWG per `MASSSET`, and rigid `CZ_α` from

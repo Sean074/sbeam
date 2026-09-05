@@ -1146,7 +1146,7 @@ def _handle_gustlf(fields: list[str], conts: list[list[str]], bulk: BulkData) ->
 
     Only TRIMID, N and G affect the solution (``URDD3 = -N*G`` on the referenced
     TRIM); every other field is provenance recorded by
-    ``scripts/gust_load_factor.py`` and echoed to the f06.  The card carries no
+    ``sbeam_tools/cases/gust.py`` and echoed to the f06.  The card carries no
     dimensional semantics sbeam acts on — see ``model/gust.py``.
     """
     vals = list(fields[1:])

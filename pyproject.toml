@@ -25,11 +25,16 @@ dependencies = [
     "numpy",
     "scipy",
     "pandas",
-    "plotly",
-    "streamlit",
 ]
 
 [project.optional-dependencies]
+# The GUI's dependencies are an extra, not a base requirement: a solver run in
+# CI or a batch pipeline has no use for a web framework.  Enforced by
+# tests/tools/test_import_boundary.py, which fails if sbeam/ imports either.
+viewer = [
+    "plotly",
+    "streamlit",
+]
 dev = [
     "pytest",
     "pytest-cov",
@@ -39,10 +44,11 @@ dev = [
 
 [project.scripts]
 sbeam = "sbeam.main:main"
+sbeam-cases = "sbeam_tools.cases.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["sbeam*"]
+include = ["sbeam*", "sbeam_tools*"]
 
 [tool.ruff]
 line-length = 120

@@ -12,7 +12,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - **Quasi-static gust load cases (FAR/CS 23.341)** — the mandatory certification gust
   cases, delivered as ordinary balanced-maneuver trims with no DLM dependency (#1).
-  - `scripts/gust_load_factor.py` — preprocessing tool, deliberately **outside** the
+  - `sbeam_tools/cases/gust.py` — preprocessing tool, deliberately **outside** the
     solver package: it owns the ISA atmosphere, the 23.333(c) `U_de` altitude schedule
     and `ρ₀` in a declared unit system, reads `S`/`c̄`/`W`/rigid `CZ_α` out of the deck
     itself, and emits a runnable SOL 144 driver of `TRIM` + `GUSTLF` pairs.
@@ -27,8 +27,27 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - 40 gates: S-GUST1–6a, V-GUST1–7, P-GUST1–6. The external anchor is the regulation's
     own Imperial constant — a consistent-units implementation must reproduce `498` to
     0.11 %, since `498 ≡ 2/(ρ₀·1.6878)`.
-- `scripts/` is now linted and type-checked in CI (ruff invocation and pyright
-  `include` both widened), so preprocessing tools ship gated rather than untyped.
+- **`sbeam_tools/` — the pre/post toolchain becomes a first-class half of the product**
+  (#33). `sbeam_tools/{common,cases,report}` sits beside the solver: `common/` holds the
+  unit systems, ISA atmosphere and deck reader; `cases/` holds case construction (the
+  gust family, with the 23.337 maneuver points to follow in #4); `report/` is the
+  placeholder for cross-run reduction (#5). `scripts/` is retired and the gust generator
+  moved into it — output verified byte-identical, and its S-GUST gates pass with only an
+  import-path change.
+  - New console command **`sbeam-cases`** replaces `python scripts/gust_load_factor.py`.
+  - **The toolchain now ships.** `pyproject.toml` packaged `sbeam*` only, so a built
+    wheel contained no tools at all; `scripts/` worked purely because an editable
+    install puts the repo root on `sys.path`.
+  - **`streamlit` and `plotly` are no longer mandatory.** They were hard dependencies of
+    every install, so a solver run in CI or a batch pipeline pulled in a web framework;
+    they are now the `viewer` extra (`pip install sbeam[viewer]`).
+  - **The boundary is enforced, not just documented** — `tests/tools/test_import_boundary.py`
+    fails if anything under `sbeam/` imports `sbeam_tools`, `streamlit` or `plotly`.
+    Relocation alone enforces nothing; Python imports across any boundary. `sbeam/viewer/`
+    is the one declared exception until it relocates in v0.4.0 (#34), and a second gate
+    fails if that exception list grows.
+- `sbeam_tools/` is linted and type-checked in CI (ruff invocation and pyright `include`
+  both widened), so the tools ship gated rather than untyped.
 
 ### Fixed
 - **DEF-M20** (#23) — a prescribed negative `URDD3` against an absent or z-up RCSID now

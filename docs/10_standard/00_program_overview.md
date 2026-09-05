@@ -49,9 +49,11 @@ imports `sbeam_tools/`, `streamlit` or `plotly`. Tools may reach into solver int
 they ship together, and freezing a public surface would cost more than it protects while
 the solver is still growing.
 
-*Migration status:* the gust generator currently lives at `scripts/gust_load_factor.py`
-and moves to `sbeam_tools/` with #4; the viewer relocates at the start of v0.4.0 as a
-mechanical import-path change, before #11 rewrites its authoring layer.
+*Migration status (2026-09-05):* `sbeam_tools/{common,cases,report}` exist and the gust
+generator has moved into them; `scripts/` is retired. **`sbeam/viewer/` has not moved
+yet** — it relocates at the start of v0.4.0 (#34) as a mechanical import-path change,
+before #11 rewrites its authoring layer. Until then the import gate excludes it, which is
+the one live exception to the rule above.
 
 **Why.** sbeam declares NASTRAN BDF compatibility, so adopting NASTRAN's own
 decomposition (solver + pre/post) keeps generated decks portable and keeps the solver's
@@ -151,6 +153,25 @@ sbeam/
     ├── aero_correction_view.py # Aero Correction tab: CFD/test section data → correction cards + corrected-BDF export
     └── format_utils.py   # Shared 5-sig-fig table/metric formatting (fmt / fmt_mass / style_numeric)
 ```
+
+The **pre/post toolchain** is a sibling package, not part of the solver core (see
+Architecture above). `sbeam/` must never import it — `tests/tools/test_import_boundary.py`
+asserts that.
+
+```
+sbeam_tools/
+├── common/
+│   ├── atmosphere.py     # ISA standard atmosphere, SI (no dependency on units — one-way)
+│   ├── units.py          # UnitSystem / UNIT_SYSTEMS; isa_density in model units
+│   └── deck.py           # Read S, cbar, W per MASSSET and rigid CZ_alpha out of a deck
+├── cases/                # Case construction — what the solver never decides
+│   ├── gust.py           # FAR/CS 23.341 Pratt gust family + 23.333(c) U_de schedule (#1)
+│   └── cli.py            # `sbeam-cases` entry point
+└── report/               # Cross-run reduction + critical-case report (#5) — placeholder
+```
+
+`studies/` at the repo root holds one-off diagnostic scripts (A1 spanwise-spacing study,
+review artefacts). It is deliberately unpackaged and outside both trees.
 
 ---
 
@@ -373,7 +394,7 @@ The sample decks load in **−Z** (the V-suite loads −Y), and the gates assert
 ### Gust load cases — S-GUST / V-GUST / P-GUST (issue #1)
 
 FAR/CS 23.341 quasi-static gust cases split across the preprocessing tool and the
-solver (`05c_sol144_maneuver.md`). The tool's gates live in `tests/scripts/`, the
+solver (`05c_sol144_maneuver.md`). The tool's gates live in `tests/tools/`, the
 solver's in `tests/aero/` and `tests/parser/`.
 
 | ID | Case | Gate |

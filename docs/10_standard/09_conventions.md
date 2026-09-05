@@ -129,7 +129,7 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
   constants were calibrated on the rigid basis; `K_g` alleviates rigid-body plunge
   during gust penetration plus unsteady lift growth, and is **not** a
   structural-flexibility correction. The whole dimensional calculation lives outside
-  the solver in `scripts/gust_load_factor.py` (§7).
+  the solver in `sbeam_tools/cases/gust.py` (§7).
 - **URDD labels are the only trim labels rotated RCSID→basic** (`sol144_util.py:54-121`);
   the aero labels (ANGLEA/SIDES/rates) never rotate. Under the standard z-down RCSID,
   authored URDD4/5/6 are therefore textbook stability-axis angular accelerations
@@ -167,7 +167,7 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
 - **Preprocessing tools may know units; the solver may not (2026-09-05, issue #1).**
   This rule binds `sbeam/` — card fields and solver arithmetic. Tools under
   `scripts/` that *generate* decks are outside it, and are where dimensional
-  regulatory content belongs: `scripts/gust_load_factor.py` owns the ISA atmosphere,
+  regulatory content belongs: `sbeam_tools/cases/gust.py` owns the ISA atmosphere,
   the FAR/CS 23.333(c) `U_de` schedule in feet, and `ρ₀`, then hands the solver a
   dimensionless load factor on a `GUSTLF` card. Nothing dimensional crosses the
   boundary. Prefer this split to adding a unit-aware field.
@@ -185,7 +185,7 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
 | `aero_moment_resultant` | Full 3-component moment about a reference (Step 58) | `solver/sol144_util.py:280` |
 | `rigid_rate_scales` | PITCH/ROLL/YAW rate nondimensionalization | `aero/integration.py:143` |
 | `load_factor_to_urdd3` | The load-factor → `URDD3` sign (`−n_z·g`), for maneuvers and gusts alike | `model/maneuver_presets.py:24` |
-| `mass_ratio` / `alleviation_factor` / `gust_increment` | The Pratt gust formula (μ, `K_g`, Δn). Deliberately **outside** the solver — dimensional, see §7 | `scripts/gust_load_factor.py` |
+| `mass_ratio` / `alleviation_factor` / `gust_increment` | The Pratt gust formula (μ, `K_g`, Δn). Deliberately **outside** the solver — dimensional, see §7 | `sbeam_tools/cases/gust.py` |
 | `build_box_id_map` | The NASTRAN box-ID derivation (F1) | `aero/panel.py:43` |
 | `build_wg` / card writers | W2GJ sign flip (assembly negates; writers negate back) | `aero/integration.py:61`, `model/aero.py:88` |
 

@@ -1174,7 +1174,7 @@ in feet, `ρ₀` is a sea-level density — while sbeam's card fields are unit-n
 charter (`09_conventions.md` §7) and the solver has no atmosphere model. So:
 
 ```
-scripts/gust_load_factor.py          sbeam solver
+sbeam_tools/cases/gust.py          sbeam solver
 ─────────────────────────────        ─────────────────────────
 ISA atmosphere ρ(h)                  reads N (dimensionless)
 23.333(c) U_de schedule       ──▶    URDD3 = −N·G
@@ -1190,7 +1190,7 @@ which must lie strictly inside `(0, 0.88)`.
 ### Generating a case set
 
 ```bash
-.venv/bin/python scripts/gust_load_factor.py sample/cessna210_flagship_trim.bdf \
+sbeam-cases sample/cessna210_flagship_trim.bdf \
     --units SI --trim-template 1 --vc 86.0 --vd 105.0 --altitude 0 \
     --massset 10,20,30 --g 9.81 -o sample/cessna210_flagship_gust.bdf
 ```

@@ -23,8 +23,12 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 Install the package and its dependencies in editable mode:
 
 ```bash
-pip install -e .
+pip install -e ".[viewer]"
 ```
+
+`pip install -e .` alone installs the **solver and the loads toolchain** (numpy, scipy,
+pandas). The `[viewer]` extra adds Streamlit and Plotly — omit it for a batch or CI
+install that never opens the GUI.
 
 The editable install registers `sbeam` into the active environment so it is importable from anywhere — including inside Streamlit.
 
@@ -45,6 +49,27 @@ python -m sbeam.main path/to/model.bdf
 ```
 
 The solver reads the case control file (`.bdf`), which uses `INCLUDE` to reference the bulk data file (`.dat`). Results are written to a `.f06` file in NASTRAN format.
+
+## Running the Loads Tools
+
+`sbeam` is a solver: it analyses the cases a deck gives it. Deciding *which* cases exist,
+and reducing results across them, is the job of the `sbeam_tools` package that ships
+alongside it — which, unlike the solver, is allowed to know about physical units,
+standard atmospheres and regulatory constants.
+
+Generate the FAR/CS 23.341 quasi-static gust design cases for a deck:
+
+```bash
+sbeam-cases sample/cessna210_flagship_trim.bdf --units SI --trim-template 1 --vc 86.0 --vd 105.0 --massset 10,20,30 -o gust_cases.bdf
+```
+
+It reads the reference geometry, the weight of each mass case and the rigid lift-curve
+slope out of the deck itself, applies the gust schedule and the Pratt formula, and writes
+a runnable driver deck plus a summary table. Run the result with `sbeam` like any other
+deck.
+
+See `docs/10_standard/00_program_overview.md` (Architecture) for the boundary between the
+two packages, and `docs/10_standard/05c_sol144_maneuver.md` for the gust workflow.
 
 ## Running Tests
 

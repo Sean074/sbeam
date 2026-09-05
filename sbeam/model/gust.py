@@ -12,7 +12,7 @@ That split is deliberate.  The 23.341 gust calculation is dimensional (``U_de``
 is 50 ft/s, the schedule is keyed to altitude in feet) while conventions charter
 §7 forbids unit-converting fields anywhere in sbeam, and the solver has no
 atmosphere model.  So the dimensional half lives in
-``scripts/gust_load_factor.py`` and the solver receives only the dimensionless
+``sbeam_tools/cases/gust.py`` and the solver receives only the dimensionless
 load factor.  sbeam does **not** compute, and cannot verify, the gust
 derivation — the f06 block says so in the listing itself.
 """

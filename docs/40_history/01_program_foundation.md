@@ -257,6 +257,17 @@ The two top-level functions serve distinct use cases:
 
 ## Resolved defects (documentation / model)
 
+### sbeam_tools/ package split (Tier M, issue #33) ✅ COMPLETE (2026-09-05)
+
+The pre/post toolchain became a sibling package `sbeam_tools/{common,cases,report}`;
+`scripts/` retired, gust generator migrated (output byte-identical, S-GUST gates unchanged
+but for an import line), `sbeam-cases` console command added. Fixed two defects the
+architecture audit surfaced: the toolchain was excluded from the wheel (`include =
+["sbeam*"]`), and `streamlit`/`plotly` were hard dependencies of every install — now the
+`viewer` extra. Boundary enforced by `tests/tools/test_import_boundary.py`; `sbeam/viewer/`
+is a declared exception until #34 relocates it.
+
+
 ### Process migration to GitHub milestones/issues (Tier S, process) ✅ COMPLETE (2026-09-05)
 
 Backlog migrated to GitHub issues #1–#28 under milestones v0.3.0–v1.0.0; release-branch
