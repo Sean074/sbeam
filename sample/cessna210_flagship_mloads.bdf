@@ -1,0 +1,43 @@
+$ cessna210_flagship_mloads.bdf — SOL 144 transient maneuver driver (Step 65)
+$
+$ Phase G0, DLM-free: a Level-1 quasi-steady, open-loop, restrained-l-set
+$ Newmark-beta time integration seeded from the static 1g cruise trim.
+$
+$   SUBCASE 1  TRIM 1     the static 1g cruise trim (the MLOADS initial
+$                         condition, solved and reported in its own right)
+$   SUBCASE 2  MLOADS 1   elevator ramp: +2 deg over 0.3 s from the trimmed
+$                         angle, then held to 1.0 s
+$
+$ Outputs: .f06 (trim block for SUBCASE 1 + transient maneuver block for
+$ SUBCASE 2), <stem>.mldprnt.txt ASCII time history, and
+$ <stem>.maneuver_qs_loads.bdf FORCE/MOMENT cards for the critical sample.
+$
+$ TWO-PASS AUTHORING.  MLDCOMD tables are ABSOLUTE, so TABLED1 300 in the bulk
+$ file starts at the trimmed elevator angle (-0.065992 rad).  If the airframe,
+$ the mass set or the flight condition changes, re-run
+$ cessna210_flagship_trim.bdf and rewrite that first table point.
+$
+$ What to look for: at t = 0 every recovered quantity must equal the SUBCASE 1
+$ trim exactly (the IC is that trim), and once the command has been held long
+$ enough the response settles toward the static trim of the same airplane with
+$ ELEV prescribed at the held value.  Both are gated by the test suite.
+$
+$ Walk-through: docs/20_theory/02_realistic_airplane_sol144.md
+$ Units: SI (m, N, kg, Pa, s)
+$
+SOL 144
+TITLE = Cessna 210 flagship — elevator-ramp pull-up (MLOADS)
+INCLUDE 'cessna210_flagship_bulk.bdf'
+$
+SUBCASE 1
+  TITLE = 1g cruise trim (MLOADS initial condition)
+  TRIM  = 1
+  SPC   = 1
+$
+SUBCASE 2
+  TITLE  = Elevator ramp +2 deg over 0.3 s, held
+  MLOADS = 1
+  SPC    = 1
+$
+BEGIN BULK
+ENDDATA

@@ -1,0 +1,71 @@
+$ =========================================================================
+$ val_vlm_byu_wing.bdf — VLM validation against BYU FLOW Lab VortexLattice.jl
+$
+$ Reproduces the "Steady-State Analysis of a Wing" example from
+$   https://flow.byu.edu/VortexLattice.jl/dev/examples/
+$ which is itself validated against AVL (agreement < 0.1% on CL).
+$
+$ PLANFORM (right half; full wing modelled as two CAERO1 surfaces here):
+$   Root  LE = (0.0, 0.0, 0.0),  chord = 2.2
+$   Tip   LE = (0.4, 7.5, 0.0),  chord = 1.8   (taper 0.818, LE sweep aft 0.4)
+$   Planar (z = 0), symmetric airfoil (no camber).
+$   Half-area = 7.5*(2.2+1.8)/2 = 15.0  ->  full Sref = 30.0
+$   Full span bref = 15.0,  mean chord cref = Sref/bref = 2.0
+$   AR = bref^2/Sref = 7.5
+$
+$ DISCRETISATION (matches the reference): ns = 12 spanwise, nc = 6 chordwise
+$   PER HALF.  Full model = 2 x 12 x 6 = 144 boxes, parity = 0 (SYMXZ = 0)
+$   so no box straddles the centreline.
+$
+$ FLOW CONDITION:
+$   Reference run: alpha = 1.0 deg, geometric twist theta = 2.0 deg (constant).
+$   For a flat/symmetric-airfoil planar wing the linearised boundary condition
+$   depends only on the LOCAL incidence = alpha + theta. Twist is uniform here,
+$   so the case is reproduced exactly by a UNIFORM incidence of 3.0 deg with no
+$   separate twist input (sbeam has no per-box twist on a flat mesh yet; this is
+$   the W2GJ baseline-incidence path, deferred). Run sbeam at alpha = 3.0 deg.
+$   Moment reference x = 0.5 (rref = [0.5, 0, 0]),  cref = 2.0.
+$
+$ REFERENCE RESULTS (VortexLattice.jl / AVL):
+$   CL  = 0.24437 / 0.24454
+$   CM  = -0.02085 / -0.02091   (about x = 0.5, nose-up positive)
+$   CDi =  0.00247 (near) / 0.00248 (far)   [sbeam has no Trefftz drag -> N/A]
+$   => CL_alpha = CL / (3 deg) = 0.24437 / 0.052360 = 4.667 /rad
+$
+$ HOW TO RUN (rigid VLM only; no structure, no spline; Phase C/SOL144 absent):
+$   from math import radians
+$   from sbeam.parser.bdf_reader import parse_bdf
+$   from sbeam.aero.aero_model import build_aero_model
+$   from sbeam.aero.vlm import solve_rigid_cl
+$   cc, bulk = parse_bdf("sample/val_vlm_byu_wing.bdf")
+$   am = build_aero_model(bulk, parity=0)
+$   r  = solve_rigid_cl(am.boxes, radians(3.0), parity=0,
+$                       aeros=bulk.aeros, xref=0.5)
+$   CL, CM = r["CL"], r["CM"]
+$
+$ NOTE: declared SOL 101 only so the case-control parser accepts the file;
+$ the aero panels are inert under the solver (no SOL 144 yet).
+$ =========================================================================
+SOL 101
+$
+SUBCASE 1
+  TITLE = BYU VortexLattice.jl wing — rigid VLM CL/CM vs AVL
+$
+BEGIN BULK
+$
+$ ----------------------------------------------------------- AERO REFERENCE
+$ ACSID RCSID  CREF  BREF  SREF  SYMXZ SYMXY
+AEROS,  0,  0,  2.0,  15.0,  30.0,  0,  0
+$
+PAERO1, 1
+$
+$ ---- Starboard half: root (0,0,0) c=2.2  ->  tip (0.4, 7.5, 0) c=1.8
+$ CAERO1  EID  PID CP NSPAN NCHORD LSPAN LCHORD IGID
+CAERO1, 1000, 1, 0, 12, 6, 0, 0, 1
++, 0.0, 0.0, 0.0, 2.2, 0.4, 7.5, 0.0, 1.8
+$
+$ ---- Port half: root (0,0,0) c=2.2  ->  tip (0.4, -7.5, 0) c=1.8
+CAERO1, 2000, 1, 0, 12, 6, 0, 0, 1
++, 0.0, 0.0, 0.0, 2.2, 0.4, -7.5, 0.0, 1.8
+$
+ENDDATA

@@ -1,0 +1,34 @@
+$ cessna210_flagship_body_strip_drv.bdf — SOL 144 trim with DECOUPLED STRIP
+$ body panels (Step 66).
+$
+$ The controlled contrast to cessna210_flagship_body.bdf.  Identical airplane,
+$ identical body-panel geometry, identical total-aircraft targets — the ONLY
+$ difference is which overlay is INCLUDEd, i.e. whether the body boxes carry
+$ PAERO1 (cruciform, AIC-coupled) or PSTRIP (strip, decoupled).
+$
+$ That single-variable design is the point.  A PSTRIP block of the influence
+$ operator is diagonal, so under this deck the wing/HTP/VTP box loads come out
+$ BIT-IDENTICAL to the bare flagship; under the cruciform they do not.  Running
+$ both is the cheapest demonstration of what body-panel interference actually
+$ costs, with everything else held fixed.
+$
+$ One subcase only — the cruciform deck carries the 2.5g case, and the contrast
+$ this deck exists for is fully visible at 1g.
+$
+$ Walk-through: docs/20_theory/02_realistic_airplane_sol144.md section 8
+$ Units: SI (m, N, kg, Pa, s)
+$
+SOL 144
+TITLE = Cessna 210 flagship — decoupled strip body panels, 1g
+INCLUDE 'cessna210_flagship_bulk.bdf'
+INCLUDE 'cessna210_flagship_body_strip.bdf'
+$
+SUBCASE 1
+  TITLE = 1g cruise with strip body panels, q = 2334 Pa
+  TRIM  = 1
+  SPC   = 1
+  DISPLACEMENT = ALL
+  FORCE        = ALL
+$
+BEGIN BULK
+ENDDATA

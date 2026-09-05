@@ -1,10 +1,23 @@
 
-$ Simple cantilever beam — SOL 103 normal modes with point mass
+$ Cantilever beam — SOL 103 normal modes, tip-mass dominated (zero beam density)
 $ Based on sample/simple_beam.bdf (10 m, 5 CBAR elements, 6 nodes)
-$ Steel, solid square cross-section, A = 0.1 m^2 (side = 0.31623 m)
+$ Steel stiffness, solid square cross-section, A = 0.1 m^2 (side = 0.31623 m)
 $ Fixed (encastre) at node 1 (x=0), free at node 6 (x=10)
-$ CONM2: 100 kg point mass at node 7 (connected to node 6 via RBE3)
+$ CONM2: 100 000 kg point mass directly on node 6 (the tip) — no RBE3, no node 7
 $ Units: SI (m, N, kg, Pa)
+$
+$ RHO = 0.0 IS DELIBERATE.  This deck is the tip-mass-dominated demonstration case:
+$ with no distributed beam mass the fundamental is the closed-form single-DOF result
+$ f1 = sqrt(3EI/(m L^3)) / 2pi = 0.3564 Hz (bending in XZ; the XY twin and a torsion
+$ mode complete the low set).  A massless beam carrying one lumped mass gives a
+$ rank-deficient mass matrix, so modes 4-5 come back as ~1e6 Hz numerical artifacts —
+$ expected for this configuration, not a modelling error.  Do NOT "fix" RHO to 7850:
+$ that turns this into a different deck (see beam_vib1.bdf, which has distributed mass).
+$
+$ History: this deck once carried GRID 7 + RBE3 (and later RBE2) with the mass offset
+$ to node 7; those cards were removed in 516016a and the header was not updated, which
+$ is why it described a model this file has not contained since.  beam_vib1.bdf is the
+$ surviving offset-mass-via-RBE3 variant.
 $
 SOL 103
 $

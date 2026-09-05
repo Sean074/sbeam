@@ -28,7 +28,8 @@ class Rbe3:
     eid: int
     refgrid: int  # Reference (dependent) grid ID
     refc: str     # Reference grid DOF string
-    wt_gc: list = field(default_factory=list)  # list of (weight, dofs, [grid_ids])
+    # (weight, DOF string, [grid IDs]) triples
+    wt_gc: list[tuple[float, str, list[int]]] = field(default_factory=list)
 
 
 @dataclass
@@ -36,7 +37,7 @@ class Rbe2:
     eid: int
     gn: int       # Independent grid
     cm: str       # Coupled DOF string (e.g. "123456")
-    gm: list = field(default_factory=list)  # Dependent grid IDs
+    gm: list[int] = field(default_factory=list)  # Dependent grid IDs
 
 
 @dataclass

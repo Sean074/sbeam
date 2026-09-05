@@ -2,6 +2,31 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class Massset:
+    """MASSSET — a named payload / mass configuration (Step 60).
+
+    Selected per subcase by the case-control ``MASSSET = sid`` request.  The
+    case mass is built from the baseline model mass (CBAR distributed mass +
+    baseline CONM2s), multiplied by ``scale``, then modified by the three ops:
+
+      ``add``      — overlay CONM2 EIDs layered on top of the baseline
+      ``replace``  — (baseline EID, overlay EID) pairs; the baseline card is
+                     dropped and the overlay card takes its place
+      ``delete``   — baseline CONM2 EIDs removed from the case
+
+    EIDs named by ``add`` and by the overlay half of ``replace`` are
+    overlay-only: they are ordinary CONM2 bulk cards but are excluded from
+    the baseline mass (see ``BulkData.overlay_conm2_eids``).
+    """
+    sid: int
+    label: str = ""
+    scale: float = 1.0
+    add: list[int] = field(default_factory=list)                    # overlay EIDs
+    replace: list[tuple[int, int]] = field(default_factory=list)    # (baseline, overlay)
+    delete: list[int] = field(default_factory=list)                 # baseline EIDs
+
+
+@dataclass
 class Conm2:
     eid: int
     gid: int   # Grid point where mass is applied

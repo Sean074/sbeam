@@ -1,5 +1,7 @@
 """Element and global stiffness matrix assembly for Euler-Bernoulli beam elements."""
 
+from typing import Optional, Union
+
 import numpy as np
 import scipy.sparse
 from scipy.linalg import block_diag
@@ -8,15 +10,17 @@ from sbeam.model.element import Cbar, Cbush
 from sbeam.model.property import Pbar, Pbush
 from sbeam.model.material import Mat1
 from sbeam.model.bulk_data import BulkData
+from sbeam.model.grid import Grid
+from sbeam.types import FloatArray, SparseMatrix
 
 
-def _node_dofs(gid: int, grid_index: dict) -> list:
+def node_dofs(gid: int, grid_index: dict[int, int]) -> list[int]:
     """Return the 6 global DOF indices for a grid point."""
     i = grid_index[gid]
     return [6 * i + d for d in range(6)]
 
 
-def local_stiffness(pbar: Pbar, mat1: Mat1, L: float) -> np.ndarray:
+def local_stiffness(pbar: Pbar, mat1: Mat1, L: float) -> FloatArray:
     """12x12 Euler-Bernoulli local element stiffness matrix.
 
     Local DOF order per node: [Tx, Ty, Tz, Rx, Ry, Rz]
@@ -73,7 +77,7 @@ def local_stiffness(pbar: Pbar, mat1: Mat1, L: float) -> np.ndarray:
     return K
 
 
-def transform_matrix(cbar: Cbar, grids: dict) -> np.ndarray:
+def transform_matrix(cbar: Cbar, grids: dict[int, Grid]) -> FloatArray:
     """12x12 transformation matrix T such that u_local = T @ u_global.
 
     Local axes:
@@ -91,7 +95,7 @@ def transform_matrix(cbar: Cbar, grids: dict) -> np.ndarray:
 
     # Local x-axis
     dx = gb_pos - ga_pos
-    L = np.linalg.norm(dx)
+    L = float(np.linalg.norm(dx))
     if L < 1e-12:
         raise ValueError(f"CBAR {cbar.eid}: nodes GA={cbar.ga} and GB={cbar.gb} are coincident")
     e_x = dx / L
@@ -119,7 +123,7 @@ def transform_matrix(cbar: Cbar, grids: dict) -> np.ndarray:
     return T
 
 
-def apply_pin_releases(K: np.ndarray, pa: str, pb: str) -> np.ndarray:
+def apply_pin_releases(K: FloatArray, pa: str, pb: str) -> FloatArray:
     """Return a copy of local 12×12 K with released DOF rows/columns zeroed.
 
     PA/PB are strings of DOF codes 1–6 to release at end A / end B.
@@ -140,10 +144,10 @@ def apply_pin_releases(K: np.ndarray, pa: str, pb: str) -> np.ndarray:
 
 def element_stiffness_global(
     cbar: Cbar,
-    grids: dict,
-    pbars: dict,
-    mat1s: dict,
-) -> np.ndarray:
+    grids: dict[int, Grid],
+    pbars: dict[int, Pbar],
+    mat1s: dict[int, Mat1],
+) -> FloatArray:
     """12x12 element stiffness matrix in global coordinates: T.T @ K_local @ T."""
     pbar = pbars[cbar.pid]
     mat1 = mat1s[pbar.mid]
@@ -152,7 +156,7 @@ def element_stiffness_global(
     gb = grids[cbar.gb]
     ga_pos = np.array([ga.x, ga.y, ga.z])
     gb_pos = np.array([gb.x, gb.y, gb.z])
-    L = np.linalg.norm(gb_pos - ga_pos)
+    L = float(np.linalg.norm(gb_pos - ga_pos))
 
     K_local = local_stiffness(pbar, mat1, L)
     if cbar.pa or cbar.pb:
@@ -162,7 +166,7 @@ def element_stiffness_global(
     return T.T @ K_local @ T
 
 
-def assemble_global_stiffness(bulk: BulkData) -> scipy.sparse.csr_matrix:
+def assemble_global_stiffness(bulk: BulkData) -> SparseMatrix:
     """Assemble the (6N x 6N) global stiffness matrix from all CBAR and CBUSH elements."""
     grid_index = {gid: i for i, gid in enumerate(sorted(bulk.grids.keys()))}
     n = 6 * len(grid_index)
@@ -170,7 +174,7 @@ def assemble_global_stiffness(bulk: BulkData) -> scipy.sparse.csr_matrix:
 
     for cbar in bulk.cbars.values():
         K_e = element_stiffness_global(cbar, bulk.grids, bulk.pbars, bulk.mat1s)
-        dofs = _node_dofs(cbar.ga, grid_index) + _node_dofs(cbar.gb, grid_index)
+        dofs = node_dofs(cbar.ga, grid_index) + node_dofs(cbar.gb, grid_index)
         ii, jj = np.meshgrid(dofs, dofs, indexing="ij")
         rows.extend(ii.ravel())
         cols.extend(jj.ravel())
@@ -178,8 +182,8 @@ def assemble_global_stiffness(bulk: BulkData) -> scipy.sparse.csr_matrix:
 
     for cbush in bulk.cbushs.values():
         K_e = cbush_stiffness_global(cbush, bulk.grids, bulk.pbushs)
-        dofs_a = _node_dofs(cbush.ga, grid_index)
-        dofs = dofs_a + _node_dofs(cbush.gb, grid_index) if cbush.gb is not None else dofs_a
+        dofs_a = node_dofs(cbush.ga, grid_index)
+        dofs = dofs_a + node_dofs(cbush.gb, grid_index) if cbush.gb is not None else dofs_a
         ii, jj = np.meshgrid(dofs, dofs, indexing="ij")
         rows.extend(ii.ravel())
         cols.extend(jj.ravel())
@@ -191,12 +195,12 @@ def assemble_global_stiffness(bulk: BulkData) -> scipy.sparse.csr_matrix:
     ).tocsr()
 
 
-def cbush_local_stiffness(pbush: Pbush) -> np.ndarray:
+def cbush_local_stiffness(pbush: Pbush) -> FloatArray:
     """6×6 diagonal local stiffness matrix for a CBUSH element."""
     return np.diag([pbush.k1, pbush.k2, pbush.k3, pbush.k4, pbush.k5, pbush.k6])
 
 
-def cbush_transform_matrix(cbush: Cbush, grids: dict) -> np.ndarray:
+def cbush_transform_matrix(cbush: Cbush, grids: dict[int, Grid]) -> FloatArray:
     """3×3 rotation matrix R for a CBUSH element.
 
     Rows are local axes expressed in the global frame.
@@ -207,7 +211,7 @@ def cbush_transform_matrix(cbush: Cbush, grids: dict) -> np.ndarray:
         ga = grids[cbush.ga]
         gb = grids[cbush.gb]
         dx = np.array([gb.x - ga.x, gb.y - ga.y, gb.z - ga.z], dtype=float)
-        L = np.linalg.norm(dx)
+        L = float(np.linalg.norm(dx))
         if L < 1e-12:
             raise ValueError(
                 f"CBUSH {cbush.eid}: nodes GA and GB are coincident; X1/X2/X3 orientation is required"
@@ -246,7 +250,9 @@ def cbush_transform_matrix(cbush: Cbush, grids: dict) -> np.ndarray:
     return np.array([e_x, e_y, e_z])
 
 
-def cbush_stiffness_global(cbush: Cbush, grids: dict, pbushs: dict) -> np.ndarray:
+def cbush_stiffness_global(
+    cbush: Cbush, grids: dict[int, Grid], pbushs: dict[int, Pbush]
+) -> FloatArray:
     """Global stiffness contribution for a CBUSH element.
 
     Returns a 12×12 array for two-node elements or a 6×6 array for grounded
@@ -268,16 +274,18 @@ def cbush_stiffness_global(cbush: Cbush, grids: dict, pbushs: dict) -> np.ndarra
         return T6.T @ K6 @ T6
 
 
-def get_spc_dofs(bulk: BulkData, spc_sid: int, grid_index: dict) -> list:
+def get_spc_dofs(
+    bulk: BulkData, spc_sid: Optional[int], grid_index: dict[int, int]
+) -> list[int]:
     """Return list of constrained global DOF indices for a given SPC SID.
 
     Also includes permanent SPCs from Grid.ps for all grids.
     Duplicates are handled by the caller (apply_spcs uses a set).
     """
-    spc_dofs = []
+    spc_dofs: list[int] = []
 
     # --- SPC cards ---
-    for spc in bulk.spcs.get(spc_sid, []):
+    for spc in (bulk.spcs.get(spc_sid, []) if spc_sid is not None else []):
         for c in str(spc.c1):
             d = int(c)  # 1-6
             if spc.g1 in grid_index:
@@ -289,7 +297,7 @@ def get_spc_dofs(bulk: BulkData, spc_sid: int, grid_index: dict) -> list:
                     spc_dofs.append(6 * grid_index[spc.g2] + (d - 1))
 
     # --- SPC1 cards ---
-    for spc1 in bulk.spc1s.get(spc_sid, []):
+    for spc1 in (bulk.spc1s.get(spc_sid, []) if spc_sid is not None else []):
         for gid in spc1.grids:
             if gid in grid_index:
                 for c in str(spc1.c):
@@ -326,7 +334,9 @@ def check_spc_enforced_displacements(bulk: BulkData, spc_sid: int) -> None:
         )
 
 
-def apply_spcs(K, f: np.ndarray, spc_dofs: list) -> tuple:
+def apply_spcs(
+    K: Union[FloatArray, SparseMatrix], f: FloatArray, spc_dofs: list[int]
+) -> tuple[Union[FloatArray, SparseMatrix], FloatArray, list[int]]:
     """Partition K and f to free DOFs only.
 
     Returns (K_free, f_free, free_dofs). K may be a dense ndarray or a sparse

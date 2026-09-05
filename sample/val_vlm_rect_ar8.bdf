@@ -1,0 +1,67 @@
+$ =========================================================================
+$ val_vlm_rect_ar8.bdf — VLM validation case: rectangular wing, AR = 8
+$
+$ STANDARD TEST CASE for steady vortex-lattice lift-curve slope.
+$   Planform : rectangular, span b = 8.0 m, chord c = 1.0 m
+$   Area     : S = 8.0 m^2,  Aspect ratio AR = b^2/S = 8.0
+$   Modelled full-span as two CAERO1 surfaces (starboard + port) so no
+$   single box straddles the centreline.  SYMXZ = 0 (parity = 0).
+$
+$ Coordinate system: X = freestream, Y = starboard, Z = up.
+$ Quarter-chord line is straight and unswept at x = 0.25 (LE at x = 0).
+$
+$ EXPECTED LIFT-CURVE SLOPE (incompressible, per radian):
+$   Elliptic lifting-line upper bound  2*pi/(1 + 2/AR)      = 5.027  /rad
+$   Polhamus lifting-surface estimate                       ~ 4.91  /rad
+$   Rectangular lifting-line (typ. ~0.95 x elliptic)        ~ 4.78  /rad
+$   --> A converged, correct VLM should land ~4.8-4.9 /rad.
+$
+$ CHORDWISE BOX GUIDANCE (steady VLM):
+$   Lift slope converges at NCHORD=1 (1/4-3/4 rule is 2D-exact), but the
+$   chordwise pressure distribution and pitching moment do NOT: CM changes
+$   ~50% from NCHORD 1->2 and only settles to ~1-2% drift by NCHORD~8.
+$   Recommended minimum NCHORD = 4; use 8 for converged moment/loading.
+$   Cosine chordwise spacing (LCHORD + AEFACT, concentrated at the LE) reaches
+$   the same accuracy with fewer boxes (NASA SP-405; DeJarnette NASA NTRS).
+$   Forward note for Phase D (DLM): chordwise count becomes frequency-driven,
+$   ~50 boxes per aerodynamic wavelength (Rodden/MSC), i.e. roughly 16*k_max
+$   boxes per chord — far more than the steady minimum.
+$
+$ This file has NO structural model and NO splines: it exercises the rigid
+$ VLM only.  Run via the viewer Aerodynamics panel, or programmatically:
+$     cc, bulk = parse_bdf("sample/val_vlm_rect_ar8.bdf")
+$     am = build_aero_model(bulk, parity=bulk.aeros.symxz or 0)
+$     r  = solve_rigid_cl(am.boxes, radians(1.0), parity=0)
+$     CL_alpha = r["CL"] / radians(1.0)
+$ =========================================================================
+$
+$ NOTE: declared SOL 101 only so the case-control parser accepts the file.
+$ There is no SOL 144 solver yet (Phase C unimplemented), so the aero panels
+$ are inert under the solver; the rigid VLM is reached via the viewer / API.
+SOL 101
+$
+SUBCASE 1
+  TITLE = Rectangular AR=8 wing — rigid VLM lift-curve slope
+$
+BEGIN BULK
+$
+$ ----------------------------------------------------------- AERO REFERENCE
+$ ACSID RCSID  CREF  BREF  SREF  SYMXZ SYMXY
+AEROS,  0,  0,  1.0,  8.0,  8.0,  0,  0
+$
+PAERO1, 1
+$
+$ Chordwise resolution: NCHORD = 8 (see header note on chordwise box count).
+$ CL_alpha is chordwise-insensitive (~0.3% from NCHORD=1), but 8 boxes give a
+$ converged chordwise load/pressure distribution and a stable pitching moment.
+$
+$ ---- Starboard half: y = 0 -> 4, 20 spanwise x 8 chordwise = 160 boxes
+$ P1 = root LE (0,0,0)  X12 = 1.0   P4 = tip LE (0,4,0)  X43 = 1.0
+CAERO1, 1000, 1, 0, 20, 8, 0, 0, 1
++, 0.0, 0.0, 0.0, 1.0, 0.0, 4.0, 0.0, 1.0
+$
+$ ---- Port half: y = 0 -> -4, 20 spanwise x 8 chordwise = 160 boxes
+CAERO1, 2000, 1, 0, 20, 8, 0, 0, 1
++, 0.0, 0.0, 0.0, 1.0, 0.0, -4.0, 0.0, 1.0
+$
+ENDDATA

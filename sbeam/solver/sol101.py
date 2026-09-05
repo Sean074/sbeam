@@ -1,5 +1,7 @@
 """SOL 101 static analysis solver."""
 
+from typing import Optional, Union, cast
+
 import numpy as np
 import scipy.linalg
 import scipy.sparse
@@ -10,47 +12,56 @@ from sbeam.parser.case_control import SubcaseControl
 from sbeam.assembly.stiffness import (
     assemble_global_stiffness,
     get_spc_dofs,
-    apply_spcs,
     check_spc_enforced_displacements,
     local_stiffness,
     transform_matrix,
     cbush_stiffness_global,
 )
 from sbeam.assembly.load_vector import assemble_load_vector, build_grid_index
-from sbeam.assembly.rbe3 import build_rbe3_transformation
-from sbeam.model.element import Cbush
+from sbeam.assembly.reduction import reduce_to_aset
+from sbeam.linalg_utils import estimate_cond_1norm
+from sbeam.model.element import Cbar, Cbush
 from sbeam.results.results import BarForce, BarStress, Sol101Result
+from sbeam.types import FloatArray, SparseMatrix
+from sbeam.model.grid import Grid
+from sbeam.model.property import Pbar, Pbush
+from sbeam.model.material import Mat1
 
 
-def solve_static(K_free, f_free: np.ndarray, free_dofs: list, n_dofs: int) -> np.ndarray:
+def solve_static(
+    K_free: Union[FloatArray, SparseMatrix], f_free: FloatArray,
+    free_dofs: list[int], n_dofs: int,
+) -> FloatArray:
     """Solve K_free @ u_free = f_free and return full displacement vector.
 
     K_free may be a sparse CSR matrix (normal path) or a dense ndarray (RBE3
     branch, where T.T @ K_csr @ T produces dense via NumPy's @ operator).
     Raises ValueError if the stiffness matrix is singular or ill-conditioned.
     """
-    if scipy.sparse.issparse(K_free):
-        u_free = scipy.sparse.linalg.spsolve(K_free.tocsc(), f_free)
+    if not isinstance(K_free, np.ndarray):
+        # cast: .tocsc() is typed as csc_matrix | csc_array; spsolve accepts
+        # either, but its overloads are not written over that union.
+        # spsolve returns a sparse result only for a sparse RHS; f_free is
+        # dense, so the result is always a dense vector.
+        u_free = cast(FloatArray, scipy.sparse.linalg.spsolve(
+            cast(scipy.sparse.csc_matrix, K_free.tocsc()), f_free))
         if not np.all(np.isfinite(u_free)):
             raise ValueError(
                 "Singular stiffness matrix: model may have unconstrained DOFs"
             )
     else:
-        # Dense path: used when RBE3 transformation collapses K to dense
+        # Dense path: used when RBE3 transformation collapses K to dense.
+        # Factor once (DEF-R6): gecon 1-norm condition estimate replaces the
+        # former full-SVD np.linalg.cond, and the same LU serves the solve.
         try:
-            cond = np.linalg.cond(K_free)
+            cond, k_lu = estimate_cond_1norm(K_free)
         except Exception:
-            cond = np.inf
-        if cond > 1e15:
+            cond, k_lu = np.inf, None
+        if k_lu is None or cond > 1e15:
             raise ValueError(
                 "Singular stiffness matrix: model may have unconstrained DOFs"
             )
-        try:
-            u_free = scipy.linalg.solve(K_free, f_free)
-        except scipy.linalg.LinAlgError:
-            raise ValueError(
-                "Singular stiffness matrix: model may have unconstrained DOFs"
-            )
+        u_free = scipy.linalg.lu_solve(k_lu, f_free)
 
     u = np.zeros(n_dofs)
     for local_idx, global_dof in enumerate(free_dofs):
@@ -59,7 +70,10 @@ def solve_static(K_free, f_free: np.ndarray, free_dofs: list, n_dofs: int) -> np
     return u
 
 
-def _element_local_forces(cbar, grids, pbars, mat1s, displacements, grid_index):
+def _element_local_forces(
+    cbar: Cbar, grids: dict[int, Grid], pbars: dict[int, Pbar],
+    mat1s: dict[int, Mat1], displacements: FloatArray, grid_index: dict[int, int],
+) -> FloatArray:
     """Compute 12-vector of local end forces for a CBAR element."""
     pbar = pbars[cbar.pid]
     mat1 = mat1s[pbar.mid]
@@ -75,9 +89,9 @@ def _element_local_forces(cbar, grids, pbars, mat1s, displacements, grid_index):
 
     ga = grids[cbar.ga]
     gb = grids[cbar.gb]
-    L = np.linalg.norm(
+    L = float(np.linalg.norm(
         np.array([gb.x - ga.x, gb.y - ga.y, gb.z - ga.z])
-    )
+    ))
 
     K_local = local_stiffness(pbar, mat1, L)
     T = transform_matrix(cbar, grids)
@@ -88,7 +102,10 @@ def _element_local_forces(cbar, grids, pbars, mat1s, displacements, grid_index):
     return f_local
 
 
-def recover_bar_forces(cbar, grids, pbars, mat1s, displacements, grid_index) -> BarForce:
+def recover_bar_forces(
+    cbar: Cbar, grids: dict[int, Grid], pbars: dict[int, Pbar],
+    mat1s: dict[int, Mat1], displacements: FloatArray, grid_index: dict[int, int],
+) -> BarForce:
     """Recover CBAR end forces in local coordinates."""
     f_local = _element_local_forces(cbar, grids, pbars, mat1s, displacements, grid_index)
 
@@ -108,7 +125,10 @@ def recover_bar_forces(cbar, grids, pbars, mat1s, displacements, grid_index) -> 
     )
 
 
-def _stress_at_point(fx_a, mz_a, my_a, y, z, A, I1, I2):
+def _stress_at_point(
+    fx_a: float, mz_a: float, my_a: float,
+    y: float, z: float, A: float, I1: float, I2: float,
+) -> float:
     """σ = Fx/A + Mz*y/I1 - My*z/I2"""
     stress = 0.0
     if A > 0:
@@ -120,7 +140,10 @@ def _stress_at_point(fx_a, mz_a, my_a, y, z, A, I1, I2):
     return stress
 
 
-def recover_bar_stresses(cbar, grids, pbars, mat1s, displacements, grid_index) -> BarStress:
+def recover_bar_stresses(
+    cbar: Cbar, grids: dict[int, Grid], pbars: dict[int, Pbar],
+    mat1s: dict[int, Mat1], displacements: FloatArray, grid_index: dict[int, int],
+) -> BarStress:
     """Recover CBAR stresses at PBAR recovery points."""
     f_local = _element_local_forces(cbar, grids, pbars, mat1s, displacements, grid_index)
 
@@ -169,11 +192,11 @@ def recover_bar_stresses(cbar, grids, pbars, mat1s, displacements, grid_index) -
 
 def recover_cbush_forces(
     cbush: Cbush,
-    grids: dict,
-    pbushs: dict,
-    displacements: np.ndarray,
-    grid_index: dict,
-) -> np.ndarray:
+    grids: dict[int, Grid],
+    pbushs: dict[int, Pbush],
+    displacements: FloatArray,
+    grid_index: dict[int, int],
+) -> FloatArray:
     """Return 6-vector of spring forces in global coordinates for a CBUSH element.
 
     Returns forces at GB for two-node elements, or forces at GA for grounded elements.
@@ -198,19 +221,19 @@ def recover_cbush_forces(
 
 def recover_reactions(
     bulk: BulkData,
-    displacements: np.ndarray,
-    spc_dofs: list,
-    K: np.ndarray,
-    grid_index: dict,
-    f_applied: np.ndarray = None,
-) -> dict:
+    displacements: FloatArray,
+    spc_dofs: list[int],
+    K: Union[FloatArray, SparseMatrix],
+    grid_index: dict[int, int],
+    f_applied: Optional[FloatArray] = None,
+) -> dict[int, FloatArray]:
     """Compute SPC reaction forces.
 
     R_c = K[spc,:] @ u - f_applied[spc].  The f_applied term is zero for
     FORCE/MOMENT loads (all forces at free DOFs) but non-zero for body loads
     such as GRAV where gravity acts on the mass at constrained nodes too.
 
-    Returns {gid: np.ndarray(6,)} for grids with constrained DOFs.
+    Returns {gid: FloatArray(6,)} for grids with constrained DOFs.
     """
     if not spc_dofs:
         return {}
@@ -252,7 +275,8 @@ def run_sol101(bulk: BulkData, subcase: SubcaseControl) -> Sol101Result:
     load_sid = subcase.load_sid
     spc_sid = subcase.spc_sid
 
-    check_spc_enforced_displacements(bulk, spc_sid)
+    if spc_sid is not None:
+        check_spc_enforced_displacements(bulk, spc_sid)
 
     # Load vector (saved before RBE3 transform for reaction correction)
     if load_sid is None:
@@ -261,27 +285,24 @@ def run_sol101(bulk: BulkData, subcase: SubcaseControl) -> Sol101Result:
         f = assemble_load_vector(bulk, load_sid)
     f_full = f.copy()
 
-    # RBE3 DOF transformation — eliminates dependent DOFs before SPC partitioning.
-    # Note: T is dense; T.T @ K_csr @ T produces a dense ndarray (NumPy @ semantics).
-    # solve_static dispatches to the dense path for the resulting K.
-    T, dep_dofs, red_dofs = build_rbe3_transformation(bulk, grid_index)
-    if dep_dofs:
-        K_orig = K.copy()   # sparse copy; used by recover_reactions before T transform
-        K = T.T @ K @ T
-        f = T.T @ f
-        dep_set = set(dep_dofs)
-        red_map = {g: i for i, g in enumerate(red_dofs)}
-        spc_dofs_full = get_spc_dofs(bulk, spc_sid, grid_index)
-        spc_dofs = [red_map[d] for d in spc_dofs_full if d not in dep_set]
-        K_free, f_free, free_dofs = apply_spcs(K, f, spc_dofs)
-        u_red = solve_static(K_free, f_free, free_dofs, len(red_dofs))
-        displacements = T @ u_red
-    else:
-        spc_dofs_full = get_spc_dofs(bulk, spc_sid, grid_index)
-        spc_dofs = spc_dofs_full
-        K_orig = K
-        K_free, f_free, free_dofs = apply_spcs(K, f, spc_dofs)
-        displacements = solve_static(K_free, f_free, free_dofs, n_dofs)
+    # RBE3/RBAR reduction + SPC partitioning, through the Step-59 shared
+    # ``reduce_to_aset`` (DEF-R5).  SOL 101 used to hand-roll this — including its
+    # own copy of the silently-discarded-SPC bug — so the fix now lands once for
+    # SOL 101, 103, 144 and the maneuver solvers.
+    #
+    # ``K`` itself is deliberately NOT rebound: ``recover_reactions`` needs the
+    # unreduced, g-set-sized sparse stiffness, the unreduced load vector and the
+    # raw SPC DOF list, none of which live on the AsetReduction.
+    # ``reduce_matrix`` preserves sparsity exactly when the old code did (no
+    # dependent DOFs), so ``solve_static``'s sparse/dense dispatch is unchanged.
+    red = reduce_to_aset(bulk, grid_index, spc_sid)
+    spc_dofs_full = get_spc_dofs(bulk, spc_sid, grid_index)
+
+    K_aa = red.reduce_matrix(K)
+    f_aa = red.reduce_vector(f)
+    n_a = len(red.free_local)
+    u_a = solve_static(K_aa, f_aa, list(range(n_a)), n_a)
+    displacements = red.expand_to_g(u_a)
 
     # Recover bar forces and stresses
     bar_forces = {}
@@ -303,7 +324,10 @@ def run_sol101(bulk: BulkData, subcase: SubcaseControl) -> Sol101Result:
 
     # Recover reactions: R = K[spc,:] @ u - f[spc].
     # The f_full subtraction handles body loads (GRAV) that act at constrained DOFs.
-    reactions = recover_reactions(bulk, displacements, spc_dofs_full, K_orig, grid_index, f_full)
+    # K is the unreduced g-set sparse stiffness (never rebound by the port);
+    # f_full is the load vector before reduction.
+    reactions = recover_reactions(
+        bulk, displacements, spc_dofs_full, K, grid_index, f_full)
 
     return Sol101Result(
         displacements=displacements,

@@ -1,21 +1,54 @@
 """NASTRAN-style .f06 output writer for SOL 101 and SOL 103 results."""
 
+import math
 from datetime import datetime
 
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
-from sbeam.results.results import Sol101Result, Sol103Result
+from sbeam.results.results import (
+    BarForce, BarStress, ManeuverResult, MonitorLoad, SectionCutEnvelope,
+    SectionCutResult,
+    Sol101Result, Sol103Result, Sol144TrimResult, Sol144DivergResult,
+    peak_grid_force,
+)
+from sbeam.results.section_cuts import component_legend, component_names, labelled
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.assembly.coord_transform import build_transform
+from sbeam.types import FloatArray
+from sbeam.parser.case_control import CaseControl
+from sbeam.model.load import Grav
+
+
+# Width of one numeric column in the f06 listing.  Column headers must be laid
+# out on this same width or they drift off their data (DEF-M7).
+_FIELD_W = 13
 
 
 def _fmt(val: float) -> str:
     """Format a float in NASTRAN 13.6E style."""
-    return f"{val:13.6E}"
+    return f"{val:{_FIELD_W}.6E}"
 
 
-def _transform_to_cd(t: np.ndarray, r: np.ndarray, gid: int, bulk: BulkData):
+def _hdr(lead: str, *labels: str) -> str:
+    """Lay column labels out on ``_FIELD_W`` so they cannot drift off their data.
+
+    ``lead`` is the literal prefix that spans whatever non-numeric columns come
+    first (grid/element ID, TYPE, …); it must be exactly as wide as the data
+    row's own prefix.  Every remaining label is then right-justified in one
+    ``_FIELD_W`` cell, matching ``_fmt``.  Labels longer than a cell are
+    truncated so adjacent cells never abut (DEF-M7 / DEF-M13).
+    """
+    return lead + "".join(f"{h[:_FIELD_W]:>{_FIELD_W}}" for h in labels)
+
+
+# Grid-row blocks (DISPLACEMENT, SPCFORCE, EIGENVECTOR, divergence mode shape)
+# all share this data prefix: f"{gid:>14}     G  " — 22 characters.
+_GRID_LEAD = f"{'POINT ID.':>15}   TYPE"
+_DISP_HDR = _hdr(_GRID_LEAD, "T1", "T2", "T3", "R1", "R2", "R3")
+
+
+def _transform_to_cd(t: FloatArray, r: FloatArray, gid: int, bulk: BulkData):
     """Rotate translation/rotation vectors into the grid's output (CD) coordinate frame."""
     cd = bulk.grids[gid].cd
     if cd != 0 and cd in bulk.cord2rs:
@@ -25,7 +58,7 @@ def _transform_to_cd(t: np.ndarray, r: np.ndarray, gid: int, bulk: BulkData):
     return t, r
 
 
-def _collect_grav_loads(bulk: BulkData, load_sid: int) -> list:
+def _collect_grav_loads(bulk: BulkData, load_sid: int) -> list[Grav]:
     """Return list of Grav objects referenced by load_sid (direct or via LOAD card)."""
     gravs = []
     if load_sid in bulk.gravs:
@@ -37,8 +70,231 @@ def _collect_grav_loads(bulk: BulkData, load_sid: int) -> list:
     return gravs
 
 
+_STRESS_PTS = [
+    ("C", "sa",   "sb",   "c1", "c2"),
+    ("D", "sa_d", "sb_d", "d1", "d2"),
+    ("E", "sa_e", "sb_e", "e1", "e2"),
+    ("F", "sa_f", "sb_f", "f1", "f2"),
+]
+
+
+def _displacement_block(
+    lines: list[str], displacements: FloatArray, bulk: BulkData,
+    grid_index: dict[int, int], gids_sorted: list[int],
+) -> None:
+    """Append a NASTRAN DISPLACEMENT VECTOR block (shared by SOL 101 / 144)."""
+    lines.append("                                         D I S P L A C E M E N T   V E C T O R")
+    lines.append("")
+    lines.append(_DISP_HDR)
+    for gid in gids_sorted:
+        i = grid_index[gid]
+        base = 6 * i
+        t = displacements[base:base+3]
+        r = displacements[base+3:base+6]
+        t, r = _transform_to_cd(t, r, gid, bulk)
+        lines.append(
+            f"{gid:>14}     G  {_fmt(t[0])}{_fmt(t[1])}{_fmt(t[2])}{_fmt(r[0])}{_fmt(r[1])}{_fmt(r[2])}"
+        )
+    lines.append("")
+
+
+def _bar_forces_block(
+    lines: list[str], bulk: BulkData, bar_forces: dict[int, BarForce]
+) -> None:
+    """Append a NASTRAN FORCES IN BAR ELEMENTS (CBAR) block (shared by SOL 101 / 144)."""
+    lines.append("                                  F O R C E S   I N   B A R   E L E M E N T S         ( C B A R )")
+    lines.append("")
+    lines.append(_hdr(
+        f"{'ELEMENT ID.':>14}  ",
+        "AXIAL FORCE", "SHEAR-1", "SHEAR-2", "TORQUE",
+        "BENDING-1 A", "BENDING-2 A", "BENDING-1 B", "BENDING-2 B",
+    ))
+    for eid in sorted(bulk.cbars.keys()):
+        if eid in bar_forces:
+            bf = bar_forces[eid]
+            lines.append(
+                f"{eid:>14}"
+                f"  {_fmt(bf.axial)}{_fmt(bf.shear1)}{_fmt(bf.shear2)}{_fmt(bf.torque)}"
+                f"{_fmt(bf.bm1_a)}{_fmt(bf.bm2_a)}{_fmt(bf.bm1_b)}{_fmt(bf.bm2_b)}"
+            )
+    lines.append("")
+
+
+def _monitor_block(lines: list[str], monitor_loads: dict[str, MonitorLoad]) -> None:
+    """Append a MONITOR POINT INTEGRATED LOADS block (MON4).
+
+    One header row of metadata per monitor (LABEL, TYPE, AXES, CID, reference
+    point) followed by the six integrated force/moment components in the
+    monitor's cp frame.  Annotated *WHOLE-AIRPLANE* when a symmetry parity factor
+    has been applied so downstream consumers do not double-count.
+    """
+    lines.append("                          M O N I T O R   P O I N T   I N T E G R A T E D   L O A D S")
+    lines.append("")
+    for name in sorted(monitor_loads.keys()):
+        ml = monitor_loads[name]
+        tag = "   *WHOLE-AIRPLANE*" if ml.whole_airplane else ""
+        lines.append(
+            f"      MONITOR {name:<8}  LABEL: {ml.label:<24}  {ml.mtype}"
+            f"   AXES = {ml.axes}   CID = {ml.cid}{tag}"
+        )
+        lines.append(
+            f"        REF POINT (BASIC):  X ={_fmt(ml.ref[0])}  Y ={_fmt(ml.ref[1])}"
+            f"  Z ={_fmt(ml.ref[2])}"
+        )
+        lines.append(_hdr(" " * 8, "FX", "FY", "FZ", "MX", "MY", "MZ"))
+        lines.append("        " + "".join(_fmt(v) for v in ml.totals))
+        lines.append("")
+    lines.append("")
+
+
+def _section_cut_block(
+    lines: list[str], section_loads: dict[str, SectionCutResult],
+    title_suffix: str = "",
+) -> None:
+    """Append a SECTION CUT RUNNING LOADS block (MONSECT, Monitor Phase 2).
+
+    One header per cut giving the collection, frame, station axis and side, then
+    the labelled component legend — printed explicitly because only ``N`` and
+    ``Mt`` are role names; the rest name the CID axis they act along or about,
+    and a reader must not have to infer that.  One row per station follows.
+
+    Never annotated *WHOLE-AIRPLANE*: a section cut is not parity-scaled.  A
+    half model is flagged HALF-MODEL instead, meaning the table is the per-side
+    load it physically is.
+
+    ``title_suffix`` stamps the transient block with the sample it was taken at
+    (Step 68), so a table lifted out of an f06 always says which instant it is.
+    """
+    lines.append("                          S E C T I O N   C U T   R U N N I N G   L O A D S"
+                 + title_suffix)
+    lines.append("")
+    for name in sorted(section_loads.keys()):
+        sc = section_loads[name]
+        axis_tag = f"{'+XYZ'[sc.axis]}" if sc.axis in (1, 2, 3) else "?"
+        tag = "   HALF-MODEL (LOADS PER SIDE)" if sc.half_model else ""
+        lines.append(
+            f"      MONSECT {name:<8}  LABEL: {sc.label:<24}  COMP {sc.comp}"
+            f" ({sc.listtype})   CID = {sc.cid}   AXIS = {sc.axis} (+{axis_tag})"
+            f"   SIDE = {sc.side}{tag}"
+        )
+        if sc.listtype == "AELIST":
+            src = "AERO ONLY"
+        else:
+            src = "AERO + INERTIA + REACTION"
+            # Step 68: name the transient columns when they exist, so a reader
+            # never has to guess whether the elastic d'Alembert load is in the
+            # sum.  An AELIST cut has no such columns by construction.
+            if any(s.elastic_inertia is not None for s in sc.stations):
+                src += " + ELASTIC INERTIA"
+                if any(s.damping is not None and np.any(s.damping)
+                       for s in sc.stations):
+                    src += " + DAMPING"
+        lines.append(f"        SOURCE: {src}      COMPONENTS: {component_legend(sc.axis)}")
+        if sc.normal is not None:
+            lines.append(
+                "        CUT NORMAL (BASIC): " +
+                "".join(_fmt(v) for v in sc.normal)
+            )
+        names = component_names(sc.axis)
+        lines.append(
+            "         STATION          X-REF          Y-REF          Z-REF"
+            + "".join(f"{n:>15}" for n in names)
+        )
+        for st in sc.stations:
+            lines.append(
+                "     " + _fmt(st.station)
+                + "".join(_fmt(v) for v in st.ref)
+                + "".join(_fmt(v) for v in labelled(st.totals, sc.comp_map))
+            )
+        lines.append("")
+    lines.append("")
+
+
+def _section_envelope_block(
+    lines: list[str], envelope: dict[str, "SectionCutEnvelope"], crit_sample: int
+) -> None:
+    """Append a SECTION CUT ENVELOPE block (Step 68).
+
+    One row per station per labelled component, giving the max and min over the
+    run's samples and the sample that drove each.  The driving sample is printed
+    because it is generally NOT the critical sample — the header says so
+    explicitly rather than leaving a reader to assume the two columns agree.
+
+    The full per-sample table is not written to the f06 (samples × stations ×
+    cuts would swamp it); it goes to the maneuver section-loads CSV.
+    """
+    lines.append("                          S E C T I O N   C U T   E N V E L O P E")
+    lines.append("")
+    lines.append(
+        "      MAX/MIN OVER THE OUTPUT SAMPLES.  THE DRIVING SAMPLE IS PER "
+        "STATION AND COMPONENT AND NEED NOT BE THE"
+    )
+    lines.append(
+        f"      CRITICAL SAMPLE ({crit_sample}), WHICH IS SELECTED BY PEAK "
+        f"|NET GRID FORCE| OVER THE WHOLE MODEL."
+    )
+    lines.append("")
+    for name in sorted(envelope.keys()):
+        env = envelope[name]
+        tag = "   HALF-MODEL (LOADS PER SIDE)" if env.half_model else ""
+        lines.append(
+            f"      MONSECT {name:<8}  LABEL: {env.label:<24}  COMP {env.comp}"
+            f" ({env.listtype})   CID = {env.cid}   AXIS = {env.axis}"
+            f"   SIDE = {env.side}   SAMPLES = {env.n_samples}{tag}"
+        )
+        lines.append(f"        COMPONENTS: {component_legend(env.axis)}")
+        lines.append(
+            "         STATION   COMP            MAX     SAMPLE          T-MAX"
+            "            MIN     SAMPLE          T-MIN         ABS-MAX"
+        )
+        names = component_names(env.axis)
+        for e in env.entries:
+            lines.append(
+                "     " + _fmt(e.station)
+                + f"{names[e.comp]:>7}"
+                + _fmt(e.max_value) + f"{e.max_sample:>11}" + _fmt(e.max_time)
+                + _fmt(e.min_value) + f"{e.min_sample:>11}" + _fmt(e.min_time)
+                + _fmt(e.absmax)
+            )
+        lines.append("")
+    lines.append("")
+
+
+def _bar_stresses_block(
+    lines: list[str], bulk: BulkData, bar_stresses: dict[int, BarStress]
+) -> None:
+    """Append a NASTRAN STRESSES IN BAR ELEMENTS (CBAR) block (shared by SOL 101 / 144)."""
+    lines.append("                                 S T R E S S E S   I N   B A R   E L E M E N T S        ( C B A R )")
+    lines.append("")
+    lines.append(
+        _hdr(f"{'ELEMENT ID.':>14}  ", "AXIAL") + f"{'PT':>5}  "
+        + _hdr("", "SA(END-A)", "SB(END-B)")
+    )
+    for eid in sorted(bulk.cbars.keys()):
+        if eid not in bar_stresses:
+            continue
+        bs = bar_stresses[eid]
+        pbar = bulk.pbars[bulk.cbars[eid].pid]
+        first = True
+        for pt, sa_attr, sb_attr, y_attr, z_attr in _STRESS_PTS:
+            if getattr(pbar, y_attr) == 0.0 and getattr(pbar, z_attr) == 0.0:
+                continue
+            sa = getattr(bs, sa_attr)
+            sb = getattr(bs, sb_attr)
+            if first:
+                lines.append(
+                    f"{eid:>14}  {_fmt(bs.axial)}    {pt}  {_fmt(sa)}{_fmt(sb)}"
+                )
+                first = False
+            else:
+                lines.append(
+                    f"{'':>14}  {'':13}    {pt}  {_fmt(sa)}{_fmt(sb)}"
+                )
+    lines.append("")
+
+
 def _build_f06_sol101_text(
-    case_control,
+    case_control: CaseControl,
     bulk: BulkData,
     result: Sol101Result,
     subcase_id: int = 1,
@@ -83,98 +339,39 @@ def _build_f06_sol101_text(
             lines.append("")
 
     # ---- DISPLACEMENT section ----
-    lines.append("                                         D I S P L A C E M E N T   V E C T O R")
-    lines.append("")
-    lines.append("      POINT ID.   TYPE          T1             T2             T3             R1             R2             R3")
-
-    for gid in gids_sorted:
-        i = grid_index[gid]
-        base = 6 * i
-        t = result.displacements[base:base+3]
-        r = result.displacements[base+3:base+6]
-        t, r = _transform_to_cd(t, r, gid, bulk)
-        lines.append(
-            f"{gid:>14}     G  {_fmt(t[0])}{_fmt(t[1])}{_fmt(t[2])}{_fmt(r[0])}{_fmt(r[1])}{_fmt(r[2])}"
-        )
-
-    lines.append("")
+    _displacement_block(lines, result.displacements, bulk, grid_index, gids_sorted)
 
     # ---- SPCFORCE section ----
     lines.append("                                    F O R C E S   O F   S I N G L E - P O I N T   C O N S T R A I N T")
     lines.append("")
-    lines.append("      POINT ID.   TYPE          T1             T2             T3             R1             R2             R3")
+    lines.append(_DISP_HDR)
 
     for gid in gids_sorted:
         if gid in result.reactions:
-            r = result.reactions[gid]
+            # Reactions are recovered in basic CID 0 (that is the frame the SPC
+            # itself acts in) but are reported, like the displacements above, in
+            # the grid's CD output frame — NASTRAN's "global" system (Q1).
+            rf, rm = _transform_to_cd(result.reactions[gid][:3],
+                                      result.reactions[gid][3:], gid, bulk)
             lines.append(
-                f"{gid:>14}     G  {_fmt(r[0])}{_fmt(r[1])}{_fmt(r[2])}{_fmt(r[3])}{_fmt(r[4])}{_fmt(r[5])}"
+                f"{gid:>14}     G  {_fmt(rf[0])}{_fmt(rf[1])}{_fmt(rf[2])}{_fmt(rm[0])}{_fmt(rm[1])}{_fmt(rm[2])}"
             )
 
     lines.append("")
 
     # ---- BAR FORCES section ----
-    lines.append("                                  F O R C E S   I N   B A R   E L E M E N T S         ( C B A R )")
-    lines.append("")
-    lines.append(
-        "      ELEMENT ID.    AXIAL FORCE    SHEAR-1        SHEAR-2        TORQUE         BENDING-1 A    BENDING-2 A    BENDING-1 B    BENDING-2 B"
-    )
-
-    for eid in sorted(bulk.cbars.keys()):
-        if eid in result.bar_forces:
-            bf = result.bar_forces[eid]
-            lines.append(
-                f"{eid:>14}"
-                f"  {_fmt(bf.axial)}{_fmt(bf.shear1)}{_fmt(bf.shear2)}{_fmt(bf.torque)}"
-                f"{_fmt(bf.bm1_a)}{_fmt(bf.bm2_a)}{_fmt(bf.bm1_b)}{_fmt(bf.bm2_b)}"
-            )
-
-    lines.append("")
+    _bar_forces_block(lines, bulk, result.bar_forces)
 
     # ---- BAR STRESSES section ----
-    lines.append("                                 S T R E S S E S   I N   B A R   E L E M E N T S        ( C B A R )")
-    lines.append("")
-    lines.append(
-        "      ELEMENT ID.    AXIAL          PT      SA(END-A)      SB(END-B)"
-    )
-
-    _stress_pts = [
-        ("C", "sa",   "sb",   "c1", "c2"),
-        ("D", "sa_d", "sb_d", "d1", "d2"),
-        ("E", "sa_e", "sb_e", "e1", "e2"),
-        ("F", "sa_f", "sb_f", "f1", "f2"),
-    ]
-
-    for eid in sorted(bulk.cbars.keys()):
-        if eid not in result.bar_stresses:
-            continue
-        bs = result.bar_stresses[eid]
-        pbar = bulk.pbars[bulk.cbars[eid].pid]
-        first = True
-        for pt, sa_attr, sb_attr, y_attr, z_attr in _stress_pts:
-            if getattr(pbar, y_attr) == 0.0 and getattr(pbar, z_attr) == 0.0:
-                continue
-            sa = getattr(bs, sa_attr)
-            sb = getattr(bs, sb_attr)
-            if first:
-                lines.append(
-                    f"{eid:>14}  {_fmt(bs.axial)}    {pt}  {_fmt(sa)}{_fmt(sb)}"
-                )
-                first = False
-            else:
-                lines.append(
-                    f"{'':>14}  {'':13}    {pt}  {_fmt(sa)}{_fmt(sb)}"
-                )
-
-    lines.append("")
+    _bar_stresses_block(lines, bulk, result.bar_stresses)
 
     # ---- CBUSH FORCES section ----
     if result.cbush_forces:
         lines.append("                                F O R C E S   I N   C B U S H   E L E M E N T S        ( C B U S H )")
         lines.append("")
-        lines.append(
-            "      ELEMENT ID.       F1             F2             F3             M1             M2             M3"
-        )
+        lines.append(_hdr(
+            f"{'ELEMENT ID.':>14}  ", "F1", "F2", "F3", "M1", "M2", "M3"
+        ))
         for eid in sorted(bulk.cbushs.keys()):
             if eid in result.cbush_forces:
                 f = result.cbush_forces[eid]
@@ -191,7 +388,7 @@ def _build_f06_sol101_text(
 
 
 def _build_f06_sol103_text(
-    case_control,
+    case_control: CaseControl,
     bulk: BulkData,
     result: Sol103Result,
     subcase_id: int = 1,
@@ -238,9 +435,7 @@ def _build_f06_sol103_text(
             f"                          E I G E N V E C T O R   NO. {mode_idx + 1}     FREQ = {freq:.6E} Hz"
         )
         lines.append("")
-        lines.append(
-            "      POINT ID.   TYPE          T1             T2             T3             R1             R2             R3"
-        )
+        lines.append(_DISP_HDR)
         phi = result.mode_shapes[:, mode_idx]
         for gid in gids_sorted:
             i = grid_index[gid]
@@ -261,9 +456,272 @@ def _build_f06_sol103_text(
     return "\n".join(lines) + "\n"
 
 
+def _build_f06_sol144_text(
+    case_control: CaseControl,
+    bulk: BulkData,
+    result: Sol144TrimResult,
+    subcase_id: int = 1,
+) -> str:
+    """Return a complete SOL 144 static aeroelastic trim .f06 block as a string.
+
+    Blocks: TRIM VARIABLES, STABILITY DERIVATIVES (rigid + elastic-restrained),
+    AERODYNAMIC TOTALS (CL/CMY), AERODYNAMIC DIVERGENCE, the shared DISPLACEMENT
+    / BAR FORCE / BAR STRESS blocks, and — when the subcase requests AEROF/APRES —
+    an AERODYNAMIC BOX PRESSURES AND FORCES block.
+    """
+    grid_index = build_grid_index(bulk)
+    gids_sorted = sorted(bulk.grids.keys())
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    title = getattr(case_control, "title", "") or "sbeam SOL 144"
+
+    # Locate the matching subcase to read AEROF/APRES output requests.
+    subcase_obj = None
+    if hasattr(case_control, "subcases"):
+        for sc in case_control.subcases:
+            if sc.subcase_id == subcase_id:
+                subcase_obj = sc
+                break
+    want_aero = bool(subcase_obj and (subcase_obj.aerof or subcase_obj.apres))
+
+    # Prescribed vs free labels (prescribed values are fixed on the TRIM card).
+    prescribed = set()
+    trim_card = bulk.trims.get(result.trim_sid)
+    if trim_card is not None:
+        prescribed = {k.upper() for k in trim_card.vars.keys()}
+
+    lines = []
+
+    # ---- Header ----
+    lines.append(f"1                                                                           {'sbeam':>20}")
+    lines.append("                                  SOL 144 STATIC AEROELASTIC RESPONSE")
+    lines.append(f"                                          {title}")
+    lines.append(f"                                          DATE: {now}")
+    lines.append("")
+    lines.append(
+        f"                           SUBCASE {subcase_id}     TRIM = {result.trim_sid}"
+        f"     MACH = {result.mach:.4f}     Q = {_fmt(result.q).strip()}"
+    )
+    # Mass case (Step 60) — emitted only when a MASSSET is selected, so baseline
+    # decks produce byte-identical f06 output to pre-Step-60 runs.
+    if result.massset_sid is not None:
+        cg = result.massset_cg or (0.0, 0.0, 0.0)
+        lines.append(
+            f"                           MASSSET = {result.massset_sid}"
+            f"     LABEL = {result.massset_label}"
+            f"     MASS = {_fmt(result.massset_mass).strip()}"
+        )
+        lines.append(
+            "                           CG = "
+            f"({_fmt(cg[0]).strip()}, {_fmt(cg[1]).strip()}, {_fmt(cg[2]).strip()})"
+        )
+    lines.append("")
+
+    # ---- TRIM VARIABLES ----
+    lines.append("                                          T R I M   V A R I A B L E S")
+    lines.append("")
+    lines.append(f"      TRIM SOLUTION: {result.trim_mode.upper()}")
+    lines.append("")
+    lines.append("      LABEL           TYPE             VALUE")
+    for label in sorted(result.trim_vars.keys()):
+        kind = "PRESCRIBED" if label.upper() in prescribed else "FREE"
+        lines.append(f"      {label:<12}    {kind:<12}  {_fmt(result.trim_vars[label])}")
+    lines.append("")
+    # Step 67a — the yaw-rate wing term is scaled by the trim loading, so the
+    # trim is a fixed point rather than a single linear solve.  Echoed only when
+    # the term is active, so every other deck's f06 is unchanged.
+    if result.yaw_rate_iters:
+        lines.append(
+            f"      YAW-RATE WING TERM ACTIVE (LOADING-SCALED): "
+            f"{result.yaw_rate_iters} LOADING ITERATION(S)"
+        )
+        lines.append("")
+
+    # ---- INJECTED OPERATING POINT (CHORDCP, Step 54) ----
+    if result.chordcp_echo:
+        echo = result.chordcp_echo
+        a_rad = echo['alpha_ref']
+        lines.append("                          I N J E C T E D   O P E R A T I N G   P O I N T   (CHORDCP)")
+        lines.append("")
+        mach_str = (", ".join(f"{m:.4f}" for m in echo['data_machs'])
+                    if echo['data_machs'] else "NOT STATED")
+        lines.append(
+            f"      ALPHREF = {a_rad:.6f} RAD ({math.degrees(a_rad):.4f} DEG)"
+            f"     DATA MACH = {mach_str}"
+        )
+        lines.append("")
+        lines.append("      CAERO1          FZ/Q INJECTED    MY/Q INJECTED   FZ/Q VLM FLAT-PLATE")
+        tot_fz = tot_my = tot_vlm = 0.0
+        for eid in sorted(echo['surfaces']):
+            s = echo['surfaces'][eid]
+            tot_fz  += s['FZ_Q']
+            tot_my  += s['MY_Q']
+            tot_vlm += s['FZ_Q_VLM']
+            lines.append(
+                f"      {eid:<12}  {_fmt(s['FZ_Q'])}  {_fmt(s['MY_Q'])}  {_fmt(s['FZ_Q_VLM'])}"
+            )
+        lines.append(
+            f"      {'TOTAL':<12}  {_fmt(tot_fz)}  {_fmt(tot_my)}  {_fmt(tot_vlm)}"
+        )
+        lines.append("")
+
+    # ---- INJECTED BODY / UN-SPLINED BOX LOADS (Step 64) ----
+    # Boxes with no structural coupling (SPLINE0 body panels, un-splined boxes)
+    # deliver their force to the structure as a rigid load at a master grid.
+    # Emitted only when such boxes exist, so other decks are unaffected.
+    if result.load_injection_echo:
+        lines.append("                    I N J E C T E D   A E R O   L O A D S   (SPLINE0 / UN-SPLINED)")
+        lines.append("")
+        lines.append(_hdr(
+            f"      {'SOURCE':<14}  {'MASTER GRID':>11}  {'BOXES':>6}  ",
+            "FX", "FY", "FZ", "MX", "MY", "MZ",
+        ))
+        for inj in result.load_injection_echo:
+            f = inj['force']
+            m = inj['moment']
+            lines.append(
+                f"      {inj['source']:<14}  {inj['master_grid']:>11}  {inj['n_boxes']:>6}  "
+                f"{_fmt(f[0])}{_fmt(f[1])}{_fmt(f[2])}"
+                f"{_fmt(m[0])}{_fmt(m[1])}{_fmt(m[2])}"
+            )
+        lines.append("")
+        lines.append("      (RESULTANTS ABOUT THE MOMENT REFERENCE; INCLUDED IN THE TRIM BALANCE AND THE LOAD EXPORT)")
+        lines.append("")
+
+    # ---- STABILITY & CONTROL DERIVATIVES (rigid + restrained + unrestrained) ----
+    unrest = result.unrestrained_derivs or {}
+    lines.append("                              S T A B I L I T Y   D E R I V A T I V E S")
+    lines.append("")
+    lines.append("                          --------------- RIGID ---------------    ----- ELASTIC RESTRAINED -----    ---- ELASTIC UNRESTRAINED ----")
+    lines.append("      LABEL              CZ            CMY            CX            CY            CZ            CMY            CZ            CMY")
+    for label in sorted(result.trim_vars.keys()):
+        rg = result.rigid_derivs.get(label, {})
+        el = result.restrained_derivs.get(label, {})
+        un = unrest.get(label)
+        # URDD acceleration columns have no unrestrained entry (they are the
+        # mean-axis ü_r unknowns); print N/A there.
+        un_cz = _fmt(un['CZ']) if un else "          N/A"
+        un_cm = _fmt(un['CMY']) if un else "          N/A"
+        lines.append(
+            f"      {label:<12}  "
+            f"{_fmt(rg.get('CZ', 0.0))}{_fmt(rg.get('CMY', 0.0))}"
+            f"{_fmt(rg.get('CX', 0.0))}{_fmt(rg.get('CY', 0.0))}"
+            f"{_fmt(el.get('CZ', 0.0))}{_fmt(el.get('CMY', 0.0))}"
+            f"{un_cz}{un_cm}"
+        )
+    lines.append("")
+    if result.unrestrained_intercepts:
+        ic = result.unrestrained_intercepts
+        lines.append(
+            f"      UNRESTRAINED INTERCEPTS (W2GJ BASELINE):   "
+            f"CZ0 ={_fmt(ic.get('CZ0', 0.0))}    CMY0 ={_fmt(ic.get('CMY0', 0.0))}"
+        )
+        lines.append("")
+
+    # ---- LATERAL / DIRECTIONAL DERIVATIVES (roll/yaw moments, Step 52) ----
+    # CMX = rolling-moment coeff (C_lp from ROLL, C_lβ from SIDES); CMZ = yawing-
+    # moment coeff (C_nr from YAW).  Both about the AERO reference, /(S_ref·b_ref).
+    lines.append("                    L A T E R A L / D I R E C T I O N A L   D E R I V A T I V E S")
+    lines.append("")
+    lines.append("                          ------- RIGID -------    -- ELASTIC RESTRAINED --")
+    lines.append("      LABEL              CMX           CMZ            CMX           CMZ")
+    for label in sorted(result.trim_vars.keys()):
+        rg = result.rigid_derivs.get(label, {})
+        el = result.restrained_derivs.get(label, {})
+        lines.append(
+            f"      {label:<12}  "
+            f"{_fmt(rg.get('CMX', 0.0))}{_fmt(rg.get('CMZ', 0.0))}"
+            f"{_fmt(el.get('CMX', 0.0))}{_fmt(el.get('CMZ', 0.0))}"
+        )
+    lines.append("")
+
+    # ---- HINGE-MOMENT DERIVATIVES (about each AESURF cid1 hinge axis) ----
+    if result.hinge_moments:
+        lines.append("                          H I N G E   M O M E N T   D E R I V A T I V E S")
+        lines.append("")
+        lines.append("      (moment about each control's cid1 hinge axis, at the trim dynamic pressure)")
+        lines.append("")
+        for surf in sorted(result.hinge_moments):
+            entry = result.hinge_moments[surf]
+            lines.append(f"      SURFACE: {surf}")
+            lines.append("        TRIM VARIABLE      d(HM)/d(VAR)")
+            for label in sorted(k for k in entry if k != "total"):
+                lines.append(f"        {label:<14}{_fmt(result.q * entry[label])}")
+            lines.append(f"        {'TOTAL (TRIM)':<14}{_fmt(result.q * entry['total'])}")
+            lines.append("")
+
+    # ---- AERODYNAMIC TOTALS ----
+    lines.append("                                     A E R O D Y N A M I C   T O T A L S")
+    lines.append("")
+    # CZ is the body-axis vertical-force coefficient (balances weight at trim);
+    # CL is the genuine wind-axis lift (⊥ to U∞) = CZ·cosα − CX·sinα at trim α.
+    lines.append(
+        f"      TOTAL CZ (BODY) = {_fmt(result.total_cl)}        "
+        f"TOTAL CL (WIND) = {_fmt(result.total_cl_wind)}"
+    )
+    lines.append(
+        f"      TOTAL CX (BODY) = {_fmt(result.total_cx)}        "
+        f"TOTAL CY (BODY) = {_fmt(getattr(result, 'total_cy', 0.0))}"
+    )
+    lines.append(
+        f"      TOTAL CMX (ROLL) = {_fmt(getattr(result, 'total_cmx', 0.0))}       "
+        f"TOTAL CMY = {_fmt(result.total_cm)}       "
+        f"TOTAL CMZ (YAW) = {_fmt(getattr(result, 'total_cmz', 0.0))}"
+    )
+    lines.append("")
+
+    # ---- AERODYNAMIC DIVERGENCE ----
+    lines.append("                                  A E R O D Y N A M I C   D I V E R G E N C E")
+    lines.append("")
+    if result.q_div is None:
+        lines.append("      NO DIVERGENCE FOUND (Q-DIV -> INFINITY)")
+    else:
+        ratio = result.q / result.q_div if result.q_div else 0.0
+        lines.append(
+            f"      CRITICAL DIVERGENCE DYNAMIC PRESSURE  Q-DIV = {_fmt(result.q_div)}"
+            f"        Q / Q-DIV = {_fmt(ratio)}"
+        )
+    lines.append("")
+
+    # ---- MONITOR POINT INTEGRATED LOADS (MON4) ----
+    if result.monitor_loads:
+        _monitor_block(lines, result.monitor_loads)
+
+    # ---- SECTION CUT RUNNING LOADS (MONSECT, Monitor Phase 2) ----
+    if result.section_loads:
+        _section_cut_block(lines, result.section_loads)
+
+    # ---- Shared structural-response blocks ----
+    _displacement_block(lines, result.displacements, bulk, grid_index, gids_sorted)
+    _bar_forces_block(lines, bulk, result.bar_forces)
+    _bar_stresses_block(lines, bulk, result.bar_stresses)
+
+    # ---- AERODYNAMIC BOX PRESSURES AND FORCES (AEROF / APRES) ----
+    # BOX ID is the global 1-based box index (= AeroModel box k + 1).
+    if want_aero and result.box_forces is not None and result.box_cp is not None:
+        lines.append("                      A E R O D Y N A M I C   B O X   P R E S S U R E S   A N D   F O R C E S")
+        lines.append("")
+        lines.append(
+            _hdr(f"{'BOX ID':>12}  ", "DELTA-CP") + "  "
+            + _hdr("", "FX", "FY", "FZ")
+        )
+        for k in range(len(result.box_forces)):
+            cp = result.box_cp[k]
+            fx, fy, fz = result.box_forces[k]
+            lines.append(
+                f"{k + 1:>12}  {_fmt(cp)}  {_fmt(fx)}{_fmt(fy)}{_fmt(fz)}"
+            )
+        lines.append("")
+
+    lines.append("                                       * * * END OF JOB * * *")
+    lines.append("")
+
+    return "\n".join(lines) + "\n"
+
+
 def write_f06_sol101(
     filepath: str,
-    case_control,
+    case_control: CaseControl,
     bulk: BulkData,
     result: Sol101Result,
     subcase_id: int = 1,
@@ -275,7 +733,7 @@ def write_f06_sol101(
 
 def write_f06_sol103(
     filepath: str,
-    case_control,
+    case_control: CaseControl,
     bulk: BulkData,
     result: Sol103Result,
     subcase_id: int = 1,
@@ -283,3 +741,221 @@ def write_f06_sol103(
     """Write NASTRAN-style .f06 file for SOL 103 normal modes results."""
     with open(filepath, "w") as fh:
         fh.write(_build_f06_sol103_text(case_control, bulk, result, subcase_id))
+
+
+def write_f06_sol144(
+    filepath: str,
+    case_control: CaseControl,
+    bulk: BulkData,
+    result: Sol144TrimResult,
+    subcase_id: int = 1,
+) -> None:
+    """Write NASTRAN-style .f06 file for a SOL 144 static aeroelastic trim subcase."""
+    with open(filepath, "w") as fh:
+        fh.write(_build_f06_sol144_text(case_control, bulk, result, subcase_id))
+
+
+def _build_f06_sol144_diverg_text(
+    case_control: CaseControl,
+    bulk: BulkData,
+    result: Sol144DivergResult,
+    subcase_id: int = 1,
+) -> str:
+    """Return a SOL 144 DIVERG-card divergence sweep .f06 block (Step 55).
+
+    One AERODYNAMIC DIVERGENCE table per Mach (root no., Q-DIV, V-DIV) followed by
+    the max-abs-normalised divergence mode shape for each root.
+    """
+    grid_index = build_grid_index(bulk)
+    gids_sorted = sorted(bulk.grids.keys())
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    title = getattr(case_control, "title", "") or "sbeam SOL 144"
+
+    lines = []
+    lines.append(f"1    {title}")
+    lines.append(f"     SOL 144 AEROELASTIC DIVERGENCE   SUBCASE {subcase_id}   {now}")
+    lines.append("")
+
+    has_v = result.rhoref > 0.0
+    for mr in result.mach_results:
+        lines.append(
+            "                                  A E R O D Y N A M I C   D I V E R G E N C E"
+        )
+        lines.append(f"      MACH = {_fmt(mr.mach)}        REF DENSITY (RHOREF) = {_fmt(result.rhoref)}")
+        lines.append("")
+        if not mr.roots:
+            lines.append("      NO DIVERGENCE FOUND (NO POSITIVE REAL ROOT)")
+            lines.append("")
+            continue
+        header = "      ROOT NO.        Q-DIV"
+        if has_v:
+            header += "          V-DIV"
+        lines.append(header)
+        for i, root in enumerate(mr.roots, start=1):
+            row = f"{i:>14}  {_fmt(root.q_div)}"
+            if has_v and root.v_div is not None:
+                row += f"{_fmt(root.v_div)}"
+            lines.append(row)
+        lines.append("")
+
+        # Divergence mode shape(s) — max-abs normalised g-set eigenvector.
+        for i, root in enumerate(mr.roots, start=1):
+            if root.mode_shape is None:
+                continue
+            lines.append(
+                f"                        D I V E R G E N C E   M O D E   S H A P E   "
+                f"( ROOT {i}, Q-DIV = {_fmt(root.q_div)} )"
+            )
+            lines.append("")
+            lines.append(_DISP_HDR)
+            for gid in gids_sorted:
+                base = 6 * grid_index[gid]
+                t = root.mode_shape[base:base+3]
+                r = root.mode_shape[base+3:base+6]
+                t, r = _transform_to_cd(t, r, gid, bulk)
+                lines.append(
+                    f"{gid:>14}     G  {_fmt(t[0])}{_fmt(t[1])}{_fmt(t[2])}{_fmt(r[0])}{_fmt(r[1])}{_fmt(r[2])}"
+                )
+            lines.append("")
+
+    return "\n".join(lines) + "\n"
+
+
+def _build_f06_sol144_maneuver_text(
+    case_control: CaseControl,
+    bulk: BulkData,
+    result: ManeuverResult,
+    subcase_id: int = 1,
+) -> str:
+    """Return a SOL 144 transient maneuver loads .f06 block (Phase G0, AC5).
+
+    Blocks: run summary (MLOADS/MLDTRIM sids, q, Mach, sample count, critical
+    sample), a per-output-time MANEUVER TIME HISTORY table (trim variables,
+    aero Fz/My, peak |net| grid force), and the critical-sample detail — net
+    load closure resultant plus the shared DISPLACEMENT / BAR FORCE blocks.
+    The full per-sample field output stays in the MLDPRNT ASCII export.
+    """
+    grid_index = build_grid_index(bulk)
+    gids_sorted = sorted(bulk.grids.keys())
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    title = getattr(case_control, "title", "") or "sbeam SOL 144"
+
+    lines = []
+    lines.append(f"1    {title}")
+    lines.append(
+        f"     SOL 144 TRANSIENT MANEUVER LOADS (QUASI-STEADY)   "
+        f"SUBCASE {subcase_id}   {now}"
+    )
+    lines.append("")
+    lines.append(
+        f"                           SUBCASE {subcase_id}     MLOADS = {result.mloads_sid}"
+        f"     TRIM = {result.trim_sid}     MACH = {result.mach:.4f}"
+        f"     Q = {_fmt(result.q).strip()}"
+    )
+    lines.append("")
+
+    # Step 62 modal solver: one basis-summary block; absent for the direct
+    # l-set solver so the legacy layout is untouched.
+    if result.n_modes_used is not None and result.basis_info:
+        bi = result.basis_info
+        freqs = bi.get("freqs_hz") or []
+        frange = (
+            f"{freqs[0]:.4G} - {freqs[-1]:.4G} HZ" if freqs else "N/A"
+        )
+        lines.append(
+            f"      MODAL SOLVER: RIGID MODES = {bi['n_r']}"
+            f"     ELASTIC MODES = {bi['n_e']} OF {bi['n_available']}"
+            f"     FREQ RANGE = {frange}"
+        )
+        lines.append(
+            f"      ZETA = {bi.get('zeta', 0.0):.4G}"
+            f"     ORTHOGONALITY RESIDUAL = {bi.get('orthogonality_residual', 0.0):.3E}"
+            f"     MASSLESS DOFS CONDENSED = {bi.get('n_massless', 0)}"
+        )
+        # Step 63 free-flight solver: rigid states are outputs.
+        if bi.get("free_flight"):
+            rigid_lbls = "/".join(
+                f"DOF{d}" for d in bi.get("rigid_dofs", [])) or "NONE"
+            lines.append(
+                f"      FREE FLIGHT: V = {bi.get('v_inf', 0.0):.6G}"
+                f"     RIGID STATES = {rigid_lbls} (OUTPUTS)"
+            )
+        lines.append("")
+
+    if not result.steps:
+        lines.append("      NO OUTPUT SAMPLES")
+        lines.append("")
+        lines.append("                                       * * * END OF JOB * * *")
+        lines.append("")
+        return "\n".join(lines) + "\n"
+
+    crit = result.steps[result.crit_index]
+    lines.append(
+        f"      OUTPUT SAMPLES = {len(result.steps)}        CRITICAL SAMPLE = "
+        f"{result.crit_index + 1} (T = {_fmt(crit.t).strip()}, PEAK |NET GRID FORCE|)"
+    )
+    lines.append("")
+
+    # ---- MANEUVER TIME HISTORY ----
+    # Header cells and data cells share _FIELD_W so the columns cannot drift
+    # apart again (DEF-M7: 15-char headers over 13-char data).
+    labels = [l for l in result.labels if l in result.steps[0].trim_vars]
+    lines.append("                              M A N E U V E R   T I M E   H I S T O R Y")
+    lines.append("")
+    # Header text is kept under _FIELD_W so adjacent cells never abut.
+    heads = labels + ["FZ-AERO", "MY-AERO", "PEAK GRID F"]
+    lines.append(_hdr(f"{'SAMPLE':>12}", "T", *heads))
+    for i, step in enumerate(result.steps):
+        row = f"{i + 1:>12}{_fmt(step.t)}"
+        for label in labels:
+            row += _fmt(step.trim_vars.get(label, 0.0))
+        row += f"{_fmt(step.Fz_aero)}{_fmt(step.My_aero)}{_fmt(peak_grid_force(step))}"
+        crit_mark = "  <-- CRITICAL" if i == result.crit_index else ""
+        lines.append(row + crit_mark)
+    lines.append("")
+
+    # ---- Critical-sample detail ----
+    lines.append(
+        f"                    C R I T I C A L   S A M P L E   D E T A I L   "
+        f"( SAMPLE {result.crit_index + 1}, T = {_fmt(crit.t).strip()} )"
+    )
+    lines.append("")
+    c = crit.closure
+    lines.append("      NET (AERO + INERTIAL) LOAD CLOSURE RESULTANT ABOUT THE MOMENT REFERENCE")
+    lines.append(
+        f"      FX ={_fmt(c[0])}   FY ={_fmt(c[1])}   FZ ={_fmt(c[2])}"
+        f"   MX ={_fmt(c[3])}   MY ={_fmt(c[4])}   MZ ={_fmt(c[5])}"
+    )
+    lines.append("")
+
+    _displacement_block(lines, crit.displacements, bulk, grid_index, gids_sorted)
+    _bar_forces_block(lines, bulk, crit.bar_forces)
+
+    # MONSECT running loads at the critical sample (Step 68).  The full
+    # per-sample history is deliberately not written here — samples × stations ×
+    # cuts would swamp the f06; it goes to the section-loads CSV.
+    if crit.section_loads:
+        _section_cut_block(
+            lines, crit.section_loads,
+            title_suffix=(f"   ( S A M P L E  {result.crit_index + 1},"
+                          f"  T = {_fmt(crit.t).strip()} )"))
+    if result.section_envelope:
+        _section_envelope_block(
+            lines, result.section_envelope, result.crit_index + 1)
+
+    lines.append("                                       * * * END OF JOB * * *")
+    lines.append("")
+
+    return "\n".join(lines) + "\n"
+
+
+# Public aliases (R22): callers that need the assembled f06 *text* (main.py CLI,
+# viewer) should import these, not the underscore-prefixed names — a rename of the
+# private builders would otherwise silently break those cross-module imports.
+build_f06_sol101_text = _build_f06_sol101_text
+build_f06_sol103_text = _build_f06_sol103_text
+build_f06_sol144_text = _build_f06_sol144_text
+build_f06_sol144_diverg_text = _build_f06_sol144_diverg_text
+build_f06_sol144_maneuver_text = _build_f06_sol144_maneuver_text

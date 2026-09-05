@@ -1,0 +1,36 @@
+$ cessna210_flagship_trim.bdf — SOL 144 static trim driver (Step 65)
+$
+$ Thin case-control driver over the shared flagship bulk model.  Two symmetric
+$ longitudinal trims of the same airplane at the same flight condition:
+$
+$   SUBCASE 1  TRIM 1   1g cruise      q = 2334 Pa, V = 61.7 m/s (120 kt)
+$   SUBCASE 2  TRIM 2   2.5g pull-up   same q, PITCH = (n-1)*g*c/(2V^2)
+$
+$ Outputs: .f06 (trim variables, three stability-derivative columns, hinge
+$ moments, aero totals, divergence q, displacements, CBAR loads, monitor
+$ point integrated loads), <stem>.aero_loads.bdf, <stem>.maneuver_loads.bdf
+$ and <stem>.monitor_loads.csv.
+$
+$ Walk-through: docs/20_theory/02_realistic_airplane_sol144.md
+$ Units: SI (m, N, kg, Pa, s)
+$
+SOL 144
+TITLE = Cessna 210 flagship — 1g cruise and 2.5g pull-up
+INCLUDE 'cessna210_flagship_bulk.bdf'
+$
+SUBCASE 1
+  TITLE = 1g cruise, q = 2334 Pa
+  TRIM  = 1
+  SPC   = 1
+  DISPLACEMENT = ALL
+  FORCE        = ALL
+$
+SUBCASE 2
+  TITLE = 2.5g symmetric pull-up
+  TRIM  = 2
+  SPC   = 1
+  DISPLACEMENT = ALL
+  FORCE        = ALL
+$
+BEGIN BULK
+ENDDATA

@@ -1,0 +1,108 @@
+$ =========================================================================
+$ val_dihedral_trim.bdf — STEP 58 (V-C-DIH) minimal STRUCTURED dihedral trim
+$
+$ A small symmetric rectangular wing canted at Gamma = +10 deg dihedral, with a
+$ flexible CBAR spar along each canted elastic axis, a SPLINE2 per semi-span
+$ (canted CID so z_hat = surface normal), point masses, and a determined plunge
+$ trim (ANGLEA free against a 1g URDD3, Tz supported).  Purpose: exercise the
+$ FULL VLM -> spline -> force -> trim chain OUT OF THE xy-PLANE.
+$
+$   Gamma = +10 deg: cosG = 0.98480775, sinG = 0.17364818
+$   Right EA / spline axis x_hat = (0, cosG, sinG); surface normal z_hat = (0,-sinG,cosG)
+$   Left  EA / spline axis x_hat = (0,-cosG, sinG); surface normal z_hat = (0, sinG,cosG)
+$   Consistent units (SI-like: m, N, kg, s).  Sref = 8, cref = 1, bref = 8.
+$
+$ ACCEPTANCE (V-C-DIH): the trim closes out of plane — aero vertical force
+$ exactly opposes the 1g inertial load (Fz_aero + (-m*URDD3) = 0, |Fz| = m*g =
+$ 98.1 N), and the residual side force Fy / roll moment / yaw moment all cancel
+$ to ~0 in the symmetric body frame (both semi-spans' Fy are equal & opposite).
+$ The trimmed ANGLEA sign reflects this minimal single-DOF (Tz) plunge support in
+$ the basic z-up frame (no RCSID / canard); the validated invariant is the exact
+$ force & moment balance + symmetric cancellation, which is convention-free.
+$ =========================================================================
+$
+SOL 144
+TITLE = Dihedral wing minimal trim (Step 58 V-C-DIH)
+SUBCASE 1
+  TRIM = 1
+  SPC  = 1
+BEGIN BULK
+$
+$ ----------------------------------------------------------- AERO REFERENCE
+$ ACSID RCSID  CREF  BREF  SREF  SYMXZ SYMXY  MACH
+AEROS,  0,  0,  1.0,  8.0,  8.0,  0,  0
+$
+$ ----------------------------------------------------------- COORD SYSTEMS
+$ CID 2 — RIGHT wing spline (MSC convention: spline axis = CID *y*-axis):
+$   z=(0,-sinG,cosG) normal, y=(0,cosG,sinG) EA, x=(1,0,0) chord
+CORD2R, 2, 0, 0.25, 0.0, 0.0, 0.25, -0.17364818, 0.98480775
++, 1.25, 0.0, 0.0
+$ CID 3 — LEFT wing spline: z=(0,+sinG,cosG) normal, y=(0,-cosG,sinG) EA, x=(-1,0,0)
+CORD2R, 3, 0, 0.25, 0.0, 0.0, 0.25, 0.17364818, 0.98480775
++, -0.75, 0.0, 0.0
+$
+$ ----------------------------------------------------------- GRIDS
+$ Reference / support at the wing root (quarter chord x=0.25)
+GRID, 90,  , 0.25, 0.0, 0.0
+$ RIGHT elastic axis: root(90) -> mid(110, s=2) -> tip(120, s=4) along (0,cosG,sinG)
+GRID, 110, , 0.25, 1.96961550, 0.34729636
+GRID, 120, , 0.25, 3.93923099, 0.69459271
+$ LEFT elastic axis (mirror): mid(210), tip(220) along (0,-cosG,sinG)
+GRID, 210, , 0.25, -1.96961550, 0.34729636
+GRID, 220, , 0.25, -3.93923099, 0.69459271
+$
+$ ----------------------------------------------------------- PROPERTY / MATERIAL
+$ PBAR: A, I1 (bending about elem-y = surface-normal deflection), I2, J
+PBAR, 100, 1, 1.0-2, 1.0-5, 1.0-5, 2.0-5
+MAT1, 1, 7.0+10, 2.6+10
+$
+$ ----------------------------------------------------------- STRUCTURAL ELEMENTS
+$ CBAR orientation v = (1,0,0): elem-y in-plane, I1 resists normal-dir bending.
+CBAR, 110, 100, 90,  110, 1.0, 0.0, 0.0
+CBAR, 120, 100, 110, 120, 1.0, 0.0, 0.0
+CBAR, 210, 100, 90,  210, 1.0, 0.0, 0.0
+CBAR, 220, 100, 210, 220, 1.0, 0.0, 0.0
+$
+$ ----------------------------------------------------------- POINT MASSES (kg)
+$ Total 10 kg.  1g (URDD3 = -9.81) -> trimmed lift must equal ~98.1 N.
+CONM2, 90,  90,  0, 4.0
+CONM2, 110, 110, 0, 1.5
+CONM2, 120, 120, 0, 1.5
+CONM2, 210, 210, 0, 1.5
+CONM2, 220, 220, 0, 1.5
+$
+$ ----------------------------------------------------------- CONSTRAINTS
+$ Pin the 5 non-plunge DOFs at the reference; SUPORT carries the Tz trim DOF.
+SPC1, 1, 12456, 90
+SUPORT, 90, 3
+$
+$ ----------------------------------------------------------- AERO PANELS
+PAERO1, 1
+$ RIGHT half: root (0,0,0) -> tip (0, 3.93923099, 0.69459271); 8 span x 4 chord
+CAERO1, 1100, 1, 0, 8, 4, 0, 0, 1
++, 0.0, 0.0, 0.0, 1.0, 0.0, 3.93923099, 0.69459271, 1.0
+$ LEFT half: root (0,0,0) -> tip (0, -3.93923099, 0.69459271)
+CAERO1, 2100, 1, 0, 8, 4, 0, 0, 1
++, 0.0, 0.0, 0.0, 1.0, 0.0, -3.93923099, 0.69459271, 1.0
+$
+$ ----------------------------------------------------------- SPLINES
+$ RIGHT wing spline (CID 2); LEFT wing spline (CID 3).
+$ EA-only collinear SET1 (no chord arms): torsion must attach through the grid
+$ rotations -> DTHY=0.0 (rigid); bending comes from deflections (DTHX=-1).
+SPLINE2, 1601, 1100, 1100, 1131, 1100, 0.0, 1.0, 2
++, -1.0, 0.0
+SPLINE2, 2601, 2100, 2100, 2131, 2100, 0.0, 1.0, 3
++, -1.0, 0.0
+$ Elastic-axis grid sets (collinear along the canted spline axis)
+SET1, 1100, 90, 110, 120
+SET1, 2100, 90, 210, 220
+$
+$ ----------------------------------------------------------- TRIM VARIABLES
+AESTAT, 501, ANGLEA
+AESTAT, 503, URDD3
+$
+$ ----------------------------------------------------------- TRIM
+$ q = 51, M = 0, 1g (URDD3 = -9.81).  Free: ANGLEA.  Supported: Tz.
+TRIM, 1, 0.0, 51.0, URDD3, -9.81
+$
+ENDDATA

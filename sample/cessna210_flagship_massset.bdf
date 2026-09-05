@@ -1,0 +1,49 @@
+$ cessna210_flagship_massset.bdf — SOL 144 payload sweep driver (Step 65)
+$
+$ One airframe, one flight condition (TRIM 1: 1g, q = 2334 Pa), three payload
+$ conditions selected per subcase with the case-control MASSSET request:
+$
+$   SUBCASE 1  MASSSET 10  FERRY    996.0 kg  baseline less rear-seat payload
+$   SUBCASE 2  MASSSET 20  CRUISE  1201.0 kg  + 120 kg half wing fuel
+$   SUBCASE 3  MASSSET 30  MTOW    1560.0 kg  + 240 kg full wing fuel
+$                                             + rear-seat payload 85 -> 324 kg
+$
+$ The AIC, splines, stiffness and the whole AeroCache are geometry/Mach-only
+$ and are built ONCE and shared; only the mass-derived operators (M_gg, M_ax,
+$ GPWG, the trim solve) are rebuilt per case.
+$
+$ Two things to read out of the .f06:
+$   1. ANGLEA rises monotonically FERRY -> CRUISE -> MTOW: more weight needs
+$      more lift needs more incidence at fixed q.
+$   2. The MWROOT wing-root bending PER UNIT AIRCRAFT WEIGHT FALLS as fuel
+$      goes into the wing.  That is inertia relief: wing fuel sits outboard of
+$      the root cut, so its weight cancels part of the lift there.  It is the
+$      reason a loads engineer certifies the zero-fuel case, not the MTOW one.
+$
+$ Walk-through: docs/20_theory/02_realistic_airplane_sol144.md
+$ Units: SI (m, N, kg, Pa, s)
+$
+SOL 144
+TITLE = Cessna 210 flagship — payload / mass-case sweep at 1g
+INCLUDE 'cessna210_flagship_bulk.bdf'
+$
+SUBCASE 1
+  TITLE   = FERRY
+  TRIM    = 1
+  SPC     = 1
+  MASSSET = 10
+$
+SUBCASE 2
+  TITLE   = CRUISE
+  TRIM    = 1
+  SPC     = 1
+  MASSSET = 20
+$
+SUBCASE 3
+  TITLE   = MTOW
+  TRIM    = 1
+  SPC     = 1
+  MASSSET = 30
+$
+BEGIN BULK
+ENDDATA

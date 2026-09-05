@@ -34,6 +34,25 @@
     "PARAM",
     "SUPORT",
     "ASET",
-    "QSET"
+    "QSET",
+    "sbeam",
+    "CAERO",
+    "PAERO",
+    "PSTRIP",
+    "STRIPK",
+    "AECORR",
+    "AECOMP",
+    "AESURF",
+    "AESTAT",
+    "AELIST",
+    "AEROS",
+    "SPLINE",
+    "MONPNT",
+    "caero",
+    "aecorrs",
+    "stripks",
+    "EIDS",
+    "Biot",
+    "Savart"
   ]
 }

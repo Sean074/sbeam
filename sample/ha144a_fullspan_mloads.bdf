@@ -1,0 +1,307 @@
+$ HA144A full-span — Phase G0 transient maneuver loads (MLOADS) sample
+$
+$ Purpose: end-to-end MLOADS demonstration deck (AC5). The bulk model is an
+$ exact copy of ha144a_fullspan_sbeam.bdf (see that file's header for the
+$ model provenance); this deck adds the ZAERO-style maneuver card set:
+$   MLOADS 1 -> MLDTRIM 1 (IC = TRIM 1, 1g @ q=40) + MLDTIME 1 + MLDCOMD 1
+$              + MLDPRNT 1
+$   TABLED1 300 ramps ELEV from its trimmed value (0.492457 rad, NASTRAN
+$   Listing 7-2) up by +0.1 rad over 0.2 s, then holds — an open-loop
+$   quasi-steady pitch-up.
+$
+$ Outputs: .f06 (trim block for SUBCASE 1 + maneuver block for SUBCASE 2),
+$ .mldprnt.txt time history, .maneuver_qs_loads.bdf critical-sample loads.
+$
+$ Units: ft, lb, slug, s
+$
+SOL 144
+TITLE = HA144A full-span MLOADS pitch-up
+SUBCASE 1
+  TRIM   = 1
+  SPC    = 1
+SUBCASE 2
+  MLOADS = 1
+  SPC    = 1
+BEGIN BULK
+$
+$ ============================================================
+$ REFERENCE GEOMETRY  (SYMXZ=0 full-span; sref=400 = full wing area)
+$ ============================================================
+AEROS, 1, 100, 10.0, 40.0, 400.0, 0, 0, 0.9
+$
+$ ============================================================
+$ COORDINATE SYSTEMS
+$ ============================================================
+$ CID 1 — canard hinge axis (shared by both canards; hinge y-axis spanwise)
+CORD2R, 1, 0, 12.5, 0.0, 0.0, 12.5, 0.0, 10.0
++, 20.0, 0.0, 0.0
+$ CID 100 — stability axis (origin at GRID 90 = x=15 ft, z-down)
+CORD2R, 100, 0, 15.0, 0.0, 0.0, 15.0, 0.0, -10.0
++, 0.0, 0.0, 0.0
+$ CID 2 — RIGHT wing spline axis, MSC convention (spline axis = CID *y*-axis):
+$   y_hat = (-0.5, +0.866, 0) along the EA root->tip +y (MSC HA144A card verbatim)
+CORD2R, 2, 0, 30.0, 0.0, 0.0, 30.0, 0.0, 10.0
++, 38.66025, 5.0, 0.0
+$ CID 3 — LEFT wing spline axis (mirror): y_hat = (-0.5, -0.866, 0) root->tip -y
+CORD2R, 3, 0, 30.0, 0.0, 0.0, 30.0, 0.0, 10.0
++, 21.33975, 5.0, 0.0
+$
+$ ============================================================
+$ GRIDS
+$ ============================================================
+$ Fuselage (GRID 90 = reference/trim point at x=15 ft)
+GRID, 90,  , 15.0,     0.0,   0.0
+GRID, 97,  , 0.0,      0.0,   0.0
+GRID, 98,  , 10.0,     0.0,   0.0
+GRID, 99,  , 20.0,     0.0,   0.0
+GRID, 100, , 30.0,     0.0,   0.0
+$ RIGHT wing elastic axis + stringers (y > 0)
+GRID, 111, , 24.61325, 5.0,   0.0
+GRID, 110, , 27.11325, 5.0,   0.0
+GRID, 112, , 29.61325, 5.0,   0.0
+GRID, 121, , 18.83975, 15.0,  0.0
+GRID, 120, , 21.33975, 15.0,  0.0
+GRID, 122, , 23.83975, 15.0,  0.0
+$ LEFT wing elastic axis + stringers (y < 0, mirror)
+GRID, 211, , 24.61325, -5.0,  0.0
+GRID, 210, , 27.11325, -5.0,  0.0
+GRID, 212, , 29.61325, -5.0,  0.0
+GRID, 221, , 18.83975, -15.0, 0.0
+GRID, 220, , 21.33975, -15.0, 0.0
+GRID, 222, , 23.83975, -15.0, 0.0
+$
+$ ============================================================
+$ PROPERTIES AND MATERIALS
+$ ============================================================
+$ Fuselage PBAR DOUBLED (AC7/AE14 root cause, 2026-07-05): the MSC half-span
+$ deck's PBAR 100 (A=2.0, I1=.173611, I2=.15, J=.5) is the HALF-fuselage of a
+$ member lying on the symmetry plane. The full-span mirror must carry BOTH
+$ wings on the physical (2x) fuselage, exactly as the centreline CONM2 masses
+$ were doubled. With 2x: q=40 trim matches NASTRAN Listing 7-2 to 5 digits
+$ (ANGLEA 0.16918 vs 1.6919E-1) and all six restrained columns are <=0.61%.
+$ Recovery points kept geometric (stress recovery approximate for the 2x
+$ parallel-fuselage idealization).
+PBAR, 100, 1, 4.0, 0.347222, 0.3, 1.0
++, 1.0, 1.0, 1.0, -1.0, -1.0, 1.0, -1.0, -1.0
+PBAR, 101, 1, 1.5, 0.173611, 2.0, 0.462963
++, 0.5, 3.0, 0.5, -3.0, -0.5, 3.0, -0.5, -3.0
+MAT1, 1, 1.44+9, 5.40+8
+$
+$ ============================================================
+$ STRUCTURAL ELEMENTS
+$ ============================================================
+$ Fuselage CBARs
+CBAR, 101, 100, 97,  98,  0.0, 0.0, 1.0
+CBAR, 102, 100, 98,  90,  0.0, 0.0, 1.0
+CBAR, 100, 100, 90,  99,  0.0, 0.0, 1.0
+CBAR, 103, 100, 99,  100, 0.0, 0.0, 1.0
+$ RIGHT wing CBARs + RBARs
+CBAR, 110, 101, 100, 110, 0.0, 0.0, 1.0
+CBAR, 120, 101, 110, 120, 0.0, 0.0, 1.0
+RBAR, 111, 110, 111, 123456
+RBAR, 112, 110, 112, 123456
+RBAR, 121, 120, 121, 123456
+RBAR, 122, 120, 122, 123456
+$ LEFT wing CBARs + RBARs (mirror; root at fuselage GRID 100)
+CBAR, 210, 101, 100, 210, 0.0, 0.0, 1.0
+CBAR, 220, 101, 210, 220, 0.0, 0.0, 1.0
+RBAR, 211, 210, 211, 123456
+RBAR, 212, 210, 212, 123456
+RBAR, 221, 220, 221, 123456
+RBAR, 222, 220, 222, 123456
+$
+$ ============================================================
+$ POINT MASSES (slugs).  Total = 16000 lb = 2 x 8000.
+$   Fuselage centreline masses DOUBLED (46.618 -> 93.236) so the full model is
+$   an exact 2x replica (preserves CG_x = 17.18 ft and CL = W/S).
+$ ============================================================
+$ Fuselage: 1500 lb -> doubled = 3000 lb each = 93.236 slug
+CONM2, 97,  97,  0, 93.236
+CONM2, 98,  98,  0, 93.236
+CONM2, 99,  99,  0, 93.236
+CONM2, 100, 100, 0, 93.236
+$ RIGHT wing fwd 600 lb (18.647 slug), aft 400 lb (12.431 slug)
+CONM2, 311, 111, 0, 18.647
+CONM2, 321, 121, 0, 18.647
+CONM2, 312, 112, 0, 12.431
+CONM2, 322, 122, 0, 12.431
+$ LEFT wing (mirror)
+CONM2, 411, 211, 0, 18.647
+CONM2, 421, 221, 0, 18.647
+CONM2, 412, 212, 0, 12.431
+CONM2, 422, 222, 0, 12.431
+$
+$ ============================================================
+$ CONSTRAINTS — FULL-SPAN single-point ground (NOT the half-model symmetry BC).
+$   A full-span model must NOT carry the half-model's centreline symmetry SPCs
+$   (Ty,Rx,Rz along 97-100): those ground fuselage torsion and give the wing
+$   roots a rigid wall instead of the real wing->fuselage->wing load path, and
+$   they bake the symmetry assumption into what is meant to be an independent
+$   check.  Instead pin the 4 non-trim rigid-body modes (Tx,Ty,Rx,Rz) at the
+$   single reference point GRID 90; SUPORT carries the 2 symmetric trim DOF
+$   (Tz,Ry).  Under symmetric loads the antisymmetric DOF come out ~0 with no
+$   SPC needed, so the structure deforms freely (both wings react through the
+$   fuselage, not against a rigid centreline).
+$ ============================================================
+SPC1, 1, 1246, 90
+SUPORT, 90, 35
+$
+$ ============================================================
+$ AERODYNAMIC PANELS  (CAERO1 EIDs sorted: 1000,1100,2000,2100)
+$ ============================================================
+PAERO1, 1000
+$ RIGHT wing: 8 span x 4 chord = 32 boxes (1100-1131)
+CAERO1, 1100, 1000, 0, 8, 4, 0, 0, 1
++, 25.0, 0.0, 0.0, 10.0, 13.45299, 20.0, 0.0, 10.0
+$ RIGHT canard: 2 span x 4 chord = 8 boxes (1000-1007)
+CAERO1, 1000, 1000, 0, 2, 4, 0, 0, 1
++, 10.0, 0.0, 0.0, 10.0, 10.0, 5.0, 0.0, 10.0
+$ LEFT wing: 8 span x 4 chord = 32 boxes (2100-2131); tip at y=-20
+CAERO1, 2100, 1000, 0, 8, 4, 0, 0, 1
++, 25.0, 0.0, 0.0, 10.0, 13.45299, -20.0, 0.0, 10.0
+$ LEFT canard: 2 span x 4 chord = 8 boxes (2000-2007); tip at y=-5
+CAERO1, 2000, 1000, 0, 2, 4, 0, 0, 1
++, 10.0, 0.0, 0.0, 10.0, 10.0, -5.0, 0.0, 10.0
+$
+$ ============================================================
+$ SPLINES
+$ ============================================================
+$ MSC HA144A card values restored (AC7, 2026-07-05): DTHX=-1/DTHY=-1 on the
+$ wings (rotations detached; twist comes from the LE/TE stringer deflection
+$ pairs through the beam-spline rigid arms), DTHX=1.0 spring on the canards
+$ (roll smoothing, per the MSC guide's DTHX discussion).
+$ RIGHT wing spline (CID 2 y-axis = swept EA, +y)
+SPLINE2, 1601, 1100, 1100, 1131, 1100, 0.0, 1.0, 2
++, -1.0, -1.0
+$ RIGHT canard spline (CID 1, y-axis = +y span)
+SPLINE2, 1501, 1000, 1000, 1007, 1000, 0.0, 1.0, 1
++, 1.0, -1.0
+$ LEFT wing spline (CID 3 y-axis = swept EA, -y)
+SPLINE2, 2601, 2100, 2100, 2131, 2100, 0.0, 1.0, 3
++, -1.0, -1.0
+$ LEFT canard spline (CID 1; shares centreline fuselage SET1)
+SPLINE2, 2501, 2000, 2000, 2007, 2000, 0.0, 1.0, 1
++, 1.0, -1.0
+$
+$ Spline structural grid sets — MSC HA144A SET1 1100 restored (root fuselage
+$ grid 99 + root EA 100 + LE/TE stringers; EA mid/tip grids 110/120 NOT in the
+$ MSC set). Left wing mirrors with grids 211/212/221/222.
+$
+$ EXPECTED WARNING — "SPLINE2 1601/2601: a box extrapolates >10% beyond SET1 span".
+$ This is correct and by design, not a deck defect.  The HA144A wing structural model
+$ ends at the outboard stringers y = +/-15, while the wing CAERO1 panel runs to
+$ y = +/-20, so the outermost of the 8 box strips (collocation y = 18.75) sits 25%
+$ beyond the SET1 span range and the beam spline extrapolates to reach it.  There is
+$ no grid to extend the SET1 to — y = +/-15 is the outermost structural grid in the
+$ whole model — so the warning cannot be silenced without either inventing structure
+$ MSC did not model or shortening the published aero panel.  Both would change the
+$ reference case.  The warning is left in place deliberately: a user comparing these
+$ results with the published MSC/ADA370433 values should know the tip strip is
+$ splined by extrapolation.
+SET1, 1100, 99, 100, 111, 112, 121, 122
+SET1, 1000, 98, 99
+SET1, 2100, 99, 100, 211, 212, 221, 222
+SET1, 2000, 98, 99
+$
+$ ============================================================
+$ MONITOR POINTS (MON1-MON4 / V-MON1) — integrated section loads
+$ Reference point = AERO ref (RCSID/CORD2R 100 origin, x=15) in basic CID 0.
+$ ============================================================
+$ Wing-root cut: inboard EA grid only
+SET1, 1300, 100
+AECOMP, WINGROOT, SET1, 1300
+$ Right-wing spline-load grids (stringers; root grids 99/100 are shared with
+$ the left wing + canard splines, so per-wing attribution keeps them out)
+SET1, 1320, 111, 112, 121, 122
+AECOMP, WINGEA, SET1, 1320
+$ Whole-aircraft monitor grids.  Every spline-load grid AND every CONM2-bearing grid — grid 97 carries mass
+$ but no spline load; omitting it lost 18.75 % of the inertia (DEF-M10).
+SET1, 1310, 97, 98, 99, 100, 111, 112, 121, 122, 211,
++, 212, 221, 222
+AECOMP, ALLGRID, SET1, 1310
+$ Whole-aircraft aero boxes (all 4 CAERO1 panels)
+AELIST, 1400, 1000, THRU, 1007, 1100, THRU, 1131, 2000, THRU, 2007, 2100, THRU, 2131
+AECOMP, ALLAERO, AELIST, 1400
+$ MONPNT3 section cuts (aero + inertia + reaction) and MONPNT1 aero-only:
+MONPNT3, MWINGRT, WING ROOT, 35, WINGROOT, 0, 15.0, 0.0, 0.0
+MONPNT3, MWINGEA, RIGHT WING, 35, WINGEA, 0, 15.0, 0.0, 0.0
+MONPNT3, MALLEA, WHOLE AIRCRAFT, 35, ALLGRID, 0, 15.0, 0.0, 0.0
+MONPNT1, MALLAR, AIRCRAFT AERO, 35, ALLAERO, 0, 15.0, 0.0, 0.0
+$
+$ SECTION-CUT RUNNING LOADS ON THE TRANSIENT MANEUVER (MONSECT, Step 68)
+$ ----------------------------------------------------------------------
+$ Same cut as the steady sample deck: CID 2 is the right-wing SPLINE2 axis, so
+$ the default AXIS=2 measures stations along the swept elastic axis and each
+$ cut's moment reference lands on it.  Present here so the DIRECT (l-set,
+$ prescribed-rigid) transient solver has section-cut coverage in a sample deck
+$ — the modal free-flight path is covered by ha144a_mloads_massset.bdf.
+$
+$ On an MLOADS subcase the table is produced at EVERY output sample: the f06
+$ carries the critical sample, and .maneuver_section_loads.csv the full history.
+$ The transient table has two columns the steady one does not — the elastic
+$ d'Alembert load and the modal/Rayleigh damping force.  They are what make the
+$ cut equal the CBAR internal force while the airframe is accelerating.
+SET1, 1330, 111, 112, 121, 122
+AECOMP, RWINGALL, SET1, 1330
+MONSECT, SECRW, RIGHT WING EA, RWINGALL, 2
++, 8.0, 10.0, 12.0, 20.0
+$
+$ ============================================================
+$ AERODYNAMIC TRIM VARIABLES
+$ ============================================================
+AESTAT, 501, ANGLEA
+AESTAT, 502, PITCH
+AESTAT, 503, URDD3
+AESTAT, 504, URDD5
+$
+$ ============================================================
+$ CONTROL SURFACE — ELEV drives BOTH canards (all 16 canard boxes)
+$ ============================================================
+AESURF, 505, ELEV, 1, 1000
+AELIST, 1000, 1000, 1001, 1002, 1003, 1004, 1005, 1006
++, 1007, 2000, 2001, 2002, 2003, 2004, 2005, 2006
++, 2007
+$
+$ ============================================================
+$ WING INCIDENCE: 0.1 deg = 0.001745 rad on all wing boxes (both wings)
+$ ============================================================
+W2GJ, 1, 1100
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
+W2GJ, 2, 2100
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
++, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
+$
+$ ============================================================
+$ TRIM CARDS — q=40 (SC1) and q=1200 (SC2), both M=0.9, 1g (URDD3=-32.174)
+$ RHOREF (sbeam extension, Step 61) is the freestream density: it plays no part
+$ in the static trim and exists only so V = sqrt(2q/rho) is available to the
+$ transient maneuver rate terms.  2.3769-3 slug/ft^3 = sea-level standard day.
+$ ============================================================
+TRIM, 1, 0.9, 40.0, RHOREF, 2.3769-3, PITCH, 0.0
++, URDD3, -32.174, URDD5, 0.0
+TRIM, 2, 0.9, 1200.0, RHOREF, 2.3769-3, PITCH, 0.0
++, URDD3, -32.174, URDD5, 0.0
+$
+$
+$ ============================================================
+$ PHASE G0 — TRANSIENT MANEUVER LOADS (MLOADS)
+$ ============================================================
+$ Driver: IC trim 1, window 1, commands 1, ASCII print 1
+MLOADS, 1, 1, 1, 1, 1
+$ Initial condition = static TRIM 1 (1g, q=40)
+MLDTRIM, 1, 1
+$ Integrate 0 -> 1.0 s at dt=0.01, output every 0.1 s
+MLDTIME, 1, 0.0, 1.0, 0.01, 0.1
+$ Pilot command: ELEV follows TABLED1 300 (labels not listed hold trim)
+MLDCOMD, 1, ELEV, 300
+$ ASCII time-history print (increment 1 prints the full column set)
+MLDPRNT, 1
+$ ELEV command: trim value 0.492457 rad -> +0.1 rad ramp over 0.2 s, hold
+TABLED1, 300
++, 0.0, 0.492457, 0.2, 0.592457, 1.0, 0.592457, ENDT
+ENDDATA

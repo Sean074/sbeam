@@ -1,6 +1,5 @@
 """Unit tests for coord_transform.py."""
 
-import math
 import numpy as np
 import pytest
 

@@ -17,4 +17,11 @@ class Spc:
 class Spc1:
     sid: int
     c: str              # DOF string applied to all listed grids
-    grids: list = field(default_factory=list)  # list of grid IDs
+    grids: list[int] = field(default_factory=list)  # grid IDs
+
+
+@dataclass
+class Suport:
+    """SUPORT card — free-body (inertia-relief) DOFs for SOL 144 trim."""
+    gid: int
+    dofs: str   # component string, e.g. "35" means Tz and Ry

@@ -1,0 +1,13 @@
+{
+  "include": ["sbeam"],
+  "extraPaths": ["."],
+  "pythonVersion": "3.9",
+  "typeCheckingMode": "strict",
+
+  "reportMissingTypeStubs": false,
+  "reportUnknownVariableType": "none",
+  "reportUnknownMemberType": "none",
+  "reportUnknownArgumentType": "none",
+  "reportUnknownLambdaType": "none",
+  "reportConstantRedefinition": "none"
+}

@@ -9,19 +9,33 @@ class SubcaseControl:
     load_sid: Optional[int] = None    # LOAD set ID
     spc_sid: Optional[int] = None     # SPC set ID
     method_sid: Optional[int] = None  # METHOD (EIGRL) SID for SOL 103
+    trim_sid: Optional[int] = None    # TRIM set ID for SOL 144
+    trimobj_sid: Optional[int] = None # TRIMOBJ set ID (over-determined trim objective)
+    diverg_sid: Optional[int] = None  # DIVERG set ID for SOL 144
+    mloads_sid: Optional[int] = None  # MLOADS set ID (Phase G0 transient maneuver loads)
+    massset_sid: Optional[int] = None # MASSSET set ID (Step 60 payload / mass case)
     displacement: bool = False        # Request DISPLACEMENT output
     spcforce: bool = False            # Request SPCFORCE output
     oload: bool = False               # Request OLOAD output
     force: bool = False               # Request FORCE output
     stress: bool = False              # Request STRESS output
+    aerof: bool = False               # Request AEROF output (SOL 144 aero box forces)
+    apres: bool = False               # Request APRES output (SOL 144 aero box pressures)
 
 
 @dataclass
 class CaseControl:
     sol: int
     title: str = ""
-    subcases: list = field(default_factory=list)  # list[SubcaseControl]
-    include: Optional[str] = None  # Path to bulk data INCLUDE file
+    subcases: list["SubcaseControl"] = field(default_factory=list)
+    include: Optional[str] = None  # First INCLUDE path (back-compat; see `includes`)
+    # All INCLUDE paths, in file order.  A deck may name several — the bulk is the
+    # concatenation of every included file followed by any inline bulk data (the
+    # NASTRAN behaviour).  This is what lets a driver deck compose a shared bulk
+    # file with a small overlay, e.g. the Cessna 210 flagship + its body panels.
+    # `include` stays the first entry so existing single-INCLUDE callers are
+    # unaffected.
+    includes: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -56,18 +70,19 @@ def _cc_include_path(line: str) -> str:
 # Main parser
 # ---------------------------------------------------------------------------
 
-_SUPPORTED_SOLS = frozenset({101, 103})
+_SUPPORTED_SOLS = frozenset({101, 103, 144})
 
 
-def parse_case_control(lines: list) -> CaseControl:
+def parse_case_control(lines: list[str]) -> CaseControl:
     """Parse case control lines (above BEGIN BULK) into a CaseControl object.
 
-    Raises ValueError if no SOL card is found or SOL value is not 101 or 103.
+    Raises ValueError if no SOL card is found or SOL value is not one of the
+    supported solutions (101, 103, 144).
     """
     sol = None
     title = ""
     subcases = []
-    include = None
+    includes: list[str] = []
     current_sc = None
 
     for raw in lines:
@@ -80,7 +95,7 @@ def parse_case_control(lines: list) -> CaseControl:
         if keyword == "SOL":
             sol = int(value)
             if sol not in _SUPPORTED_SOLS:
-                raise ValueError(f"SOL {sol} not supported in phase 1 (only 101 and 103)")
+                raise ValueError(f"SOL {sol} not supported (only SOL 101, 103, and 144 supported)")
 
         elif keyword == "TITLE":
             if current_sc is not None:
@@ -94,7 +109,7 @@ def parse_case_control(lines: list) -> CaseControl:
             current_sc = SubcaseControl(subcase_id=int(value))
 
         elif keyword == "INCLUDE":
-            include = _cc_include_path(stripped)
+            includes.append(_cc_include_path(stripped))
 
         elif keyword == "BEGIN":
             break
@@ -106,6 +121,16 @@ def parse_case_control(lines: list) -> CaseControl:
                 current_sc.spc_sid = int(value)
             elif keyword == "METHOD":
                 current_sc.method_sid = int(value)
+            elif keyword == "TRIM":
+                current_sc.trim_sid = int(value)
+            elif keyword == "TRIMOBJ":
+                current_sc.trimobj_sid = int(value)
+            elif keyword == "DIVERG":
+                current_sc.diverg_sid = int(value)
+            elif keyword == "MLOADS":
+                current_sc.mloads_sid = int(value)
+            elif keyword == "MASSSET":
+                current_sc.massset_sid = int(value)
             elif keyword == "DISPLACEMENT":
                 current_sc.displacement = True
             elif keyword == "SPCFORCE":
@@ -116,6 +141,10 @@ def parse_case_control(lines: list) -> CaseControl:
                 current_sc.force = True
             elif keyword == "STRESS":
                 current_sc.stress = True
+            elif keyword == "AEROF":
+                current_sc.aerof = True
+            elif keyword == "APRES":
+                current_sc.apres = True
 
     if current_sc is not None:
         subcases.append(current_sc)
@@ -123,4 +152,6 @@ def parse_case_control(lines: list) -> CaseControl:
     if sol is None:
         raise ValueError("Case control section contains no SOL statement")
 
-    return CaseControl(sol=sol, title=title, subcases=subcases, include=include)
+    return CaseControl(sol=sol, title=title, subcases=subcases,
+                       include=includes[0] if includes else None,
+                       includes=includes)

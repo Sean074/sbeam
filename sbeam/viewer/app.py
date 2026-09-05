@@ -5,26 +5,63 @@ import re
 import tempfile
 import warnings
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import pandas as pd
 import streamlit as st
 
+import numpy as np
+
 from sbeam.parser.bdf_reader import parse_bdf, parse_bulk_file
 from sbeam.model.bulk_data import BulkData
+from sbeam.parser.case_control import CaseControl
+from sbeam.results.results import (
+    ManeuverResult, Sol144DivergResult, Sol144TrimResult,
+)
 from sbeam.gpwg import compute_gpwg
 from sbeam.viewer.geometry import build_model_figure
 from sbeam.viewer.case_control_ui import render_case_control_panel
-from sbeam.viewer.results_view import render_sol101_results, render_sol103_results
+from sbeam.viewer.results_view import (
+    render_sol101_results, render_sol103_results, render_sol144_results,
+)
+from sbeam.viewer.aero_view import (
+    build_aero_box_figure, build_span_loading_figure, rigid_derivative_table,
+)
+from sbeam.viewer.aero_correction_view import render_aero_correction_tab
+from sbeam.viewer.sol144_authoring_ui import render_sol144_authoring
+from sbeam.viewer.sol144_authoring import (
+    snapshot_family_ids, validate_sol144_authoring,
+)
+from sbeam.viewer.format_utils import fmt, fmt_mass, style_numeric
+from sbeam.aero.aero_model import build_aero_model
+from sbeam.aero.vlm import solve_rigid_cl
 
 
 def _init_session_state() -> None:
-    defaults: dict = {
+    defaults: dict[str, Any] = {
         "bulk_data": None,
         "case_control": None,
         "_loaded_from_file_cc": None,
         "sol101_result": None,
         "sol103_result": None,
+        "sol144_result": None,
+        "sol144_diverg_result": None,
+        "maneuver_result": None,
+        "aero_model_144": None,
+        "aero_model": None,
+        "aero_result": None,
+        "aero_result_unc": None,
+        "aero_corr_model": None,
+        "aero_corr_df": None,
+        "aero_corr_result": None,
+        "aero_corr_sids": set(),
+        "authored_cards": {},
+        "mldcomd_increments": {},
+        "auth_trim_prefill": None,
+        "file_card_sids": None,
+        "aero_corr_upload_id": None,
+        "aero_corr_csv_name": None,
+        "aero_corr_cond": None,
         "selected_gid": None,
         "selected_eid": None,
         "cc_subcases": None,
@@ -33,6 +70,7 @@ def _init_session_state() -> None:
         "_parse_error": None,
         "_uploaded_file_id": None,
         "_uploaded_filename": None,
+        "_uploaded_source_text": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -51,7 +89,7 @@ def _has_case_control(content: str) -> bool:
     return False
 
 
-def _handle_upload(uploaded) -> None:
+def _handle_upload(uploaded: Any) -> None:
     suffix = os.path.splitext(uploaded.name)[-1] or ".bdf"
     tmp_path: Optional[str] = None
     try:
@@ -74,9 +112,28 @@ def _handle_upload(uploaded) -> None:
         st.session_state.case_control = cc
         st.session_state._loaded_from_file_cc = cc
         st.session_state._uploaded_filename = uploaded.name
+        st.session_state._uploaded_source_text = content
         st.session_state.cc_subcases = None   # reset subcase editor
         st.session_state.sol101_result = None
         st.session_state.sol103_result = None
+        st.session_state.sol144_result = None
+        st.session_state.sol144_diverg_result = None
+        st.session_state.maneuver_result = None
+        st.session_state.aero_model_144 = None
+        st.session_state.aero_model = None
+        st.session_state.aero_result = None
+        st.session_state.aero_result_unc = None
+        st.session_state.aero_corr_model = None
+        st.session_state.aero_corr_df = None
+        st.session_state.aero_corr_result = None
+        st.session_state.aero_corr_sids = set()
+        st.session_state.authored_cards = {}
+        st.session_state.mldcomd_increments = {}
+        st.session_state.auth_trim_prefill = None
+        st.session_state.file_card_sids = snapshot_family_ids(bulk)
+        st.session_state.aero_corr_upload_id = None
+        st.session_state.aero_corr_csv_name = None
+        st.session_state.aero_corr_cond = None
         st.session_state.selected_gid = None
         st.session_state.selected_eid = None
         st.session_state.selected_subcase_id = cc.subcases[0].subcase_id if cc and cc.subcases else None
@@ -122,6 +179,11 @@ def _show_parse_summary(bulk: BulkData) -> None:
         cols[7].metric("Load sets", load_sets)
         cols[8].metric("SPC sets", spc_sets)
         st.caption("No case control loaded — define analysis via Case Control tab.")
+    if bulk.chordcps:
+        st.caption(
+            f"ℹ️ CHORDCP steady-pressure injection active ({len(bulk.chordcps)} "
+            "card(s)) — the SOL 144 mean flow is supplied from CFD/test data."
+        )
 
 
 def _show_warnings() -> None:
@@ -133,18 +195,31 @@ def _show_warnings() -> None:
 
 
 def _show_gpwg(bulk: BulkData) -> None:
-    gpwg = compute_gpwg(bulk)
     st.markdown("**GPWG — Mass & CG**")
-    st.metric("Total mass", f"{gpwg.total_mass:.6g}")
+    # Step 60: when the deck defines MASSSET payload cases, report GPWG for the
+    # selected case (baseline = no MASSSET selected).
+    massset_sid = None
+    if bulk.masssets:
+        massset_sid = st.selectbox(
+            "Mass case (MASSSET)",
+            [None] + sorted(bulk.masssets.keys()),
+            format_func=lambda s: (
+                "— baseline —" if s is None
+                else f"{s} — {bulk.masssets[s].label}"
+            ),
+            key="sel_massset_gpwg",
+        )
+    gpwg = compute_gpwg(bulk, massset_sid)
+    st.metric("Total mass", fmt_mass(gpwg.total_mass))
     cols = st.columns(3)
-    cols[0].metric("CG X", f"{gpwg.cg_x:.4g}")
-    cols[1].metric("CG Y", f"{gpwg.cg_y:.4g}")
-    cols[2].metric("CG Z", f"{gpwg.cg_z:.4g}")
+    cols[0].metric("CG X", fmt(gpwg.cg_x))
+    cols[1].metric("CG Y", fmt(gpwg.cg_y))
+    cols[2].metric("CG Z", fmt(gpwg.cg_z))
 
 
 def _show_item_inspector(bulk: BulkData) -> None:
     st.markdown("**Item inspector**")
-    gid_opts: list = [None] + sorted(bulk.grids.keys())
+    gid_opts: list[Optional[int]] = [None] + sorted(bulk.grids.keys())
     selected_gid = st.selectbox(
         "Inspect GRID",
         gid_opts,
@@ -155,13 +230,13 @@ def _show_item_inspector(bulk: BulkData) -> None:
 
     if selected_gid is not None:
         g = bulk.grids[selected_gid]
-        st.write(f"**X:** {g.x:.6g}  **Y:** {g.y:.6g}  **Z:** {g.z:.6g}")
+        st.write(f"**X:** {fmt(g.x)}  **Y:** {fmt(g.y)}  **Z:** {fmt(g.z)}")
         st.write(f"**PS:** {g.ps or '—'}")
         spc_info = _grid_spc_info(bulk, selected_gid)
         st.write(f"**SPC:** {spc_info}")
 
     st.markdown("")
-    eid_opts: list = [None] + sorted(bulk.cbars.keys())
+    eid_opts: list[Optional[int]] = [None] + sorted(bulk.cbars.keys())
     selected_eid = st.selectbox(
         "Inspect CBAR",
         eid_opts,
@@ -179,14 +254,14 @@ def _show_item_inspector(bulk: BulkData) -> None:
         pbar = bulk.pbars.get(cbar.pid)
         mat1 = bulk.mat1s.get(pbar.mid) if pbar else None
         st.write(f"**PID:** {cbar.pid}  **MID:** {mat1.mid if mat1 else '—'}")
-        st.write(f"**GA:** {cbar.ga}  **GB:** {cbar.gb}  **L:** {L:.4g}")
+        st.write(f"**GA:** {cbar.ga}  **GB:** {cbar.gb}  **L:** {fmt(L)}")
         if pbar:
-            st.write(f"**A:** {pbar.A:.4g}  **I1:** {pbar.I1:.4g}  **I2:** {pbar.I2:.4g}  **J:** {pbar.J:.4g}")
+            st.write(f"**A:** {fmt(pbar.A)}  **I1:** {fmt(pbar.I1)}  **I2:** {fmt(pbar.I2)}  **J:** {fmt(pbar.J)}")
         st.write(f"**PA:** {cbar.pa or '—'}  **PB:** {cbar.pb or '—'}")
 
     if bulk.rbe3s:
         st.markdown("")
-        rbe3_opts: list = [None] + sorted(bulk.rbe3s.keys())
+        rbe3_opts: list[Optional[int]] = [None] + sorted(bulk.rbe3s.keys())
         selected_rbe3_eid = st.selectbox(
             "Inspect RBE3",
             rbe3_opts,
@@ -201,7 +276,7 @@ def _show_item_inspector(bulk: BulkData) -> None:
 
     if bulk.rbe2s:
         st.markdown("")
-        rbe2_opts: list = [None] + sorted(bulk.rbe2s.keys())
+        rbe2_opts: list[Optional[int]] = [None] + sorted(bulk.rbe2s.keys())
         selected_rbe2_eid = st.selectbox(
             "Inspect RBE2",
             rbe2_opts,
@@ -235,7 +310,7 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
     with tabs[0]:
         if bulk.grids:
             rows = [{"GID": g.gid, "X": g.x, "Y": g.y, "Z": g.z, "PS": g.ps or ""} for g in bulk.grids.values()]
-            st.dataframe(pd.DataFrame(rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
         else:
             st.info("No grids.")
 
@@ -246,10 +321,10 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
             ga = bulk.grids.get(c.ga)
             gb = bulk.grids.get(c.gb)
             L = math.sqrt((gb.x - ga.x) ** 2 + (gb.y - ga.y) ** 2 + (gb.z - ga.z) ** 2) if ga and gb else 0.0
-            cbar_rows.append({"EID": c.eid, "PID": c.pid, "GA": c.ga, "GB": c.gb, "L": f"{L:.4g}", "PA": c.pa or "", "PB": c.pb or ""})
+            cbar_rows.append({"EID": c.eid, "PID": c.pid, "GA": c.ga, "GB": c.gb, "L": L, "PA": c.pa or "", "PB": c.pb or ""})
         if cbar_rows:
             st.markdown("**CBAR elements**")
-            st.dataframe(pd.DataFrame(cbar_rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(cbar_rows)), width="stretch")
         else:
             st.info("No CBAR elements.")
         if bulk.rbe3s:
@@ -279,12 +354,13 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
                 {"EID": c.eid, "GID": c.gid, "Mass": c.m, "X1": c.x1, "X2": c.x2, "X3": c.x3}
                 for c in bulk.conm2s.values()
             ]
-            st.dataframe(pd.DataFrame(conm2_rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(conm2_rows), mass_cols=["Mass"]),
+                         width="stretch")
 
     with tabs[2]:
         if bulk.pbars:
             rows = [{"PID": p.pid, "MID": p.mid, "A": p.A, "I1": p.I1, "I2": p.I2, "J": p.J, "NSM": p.nsm} for p in bulk.pbars.values()]
-            st.dataframe(pd.DataFrame(rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
         else:
             st.info("No PBAR properties.")
         if bulk.pbushs:
@@ -293,12 +369,12 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
                 {"PID": p.pid, "K1": p.k1, "K2": p.k2, "K3": p.k3, "K4": p.k4, "K5": p.k5, "K6": p.k6}
                 for p in bulk.pbushs.values()
             ]
-            st.dataframe(pd.DataFrame(pbush_rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(pbush_rows)), width="stretch")
 
     with tabs[3]:
         if bulk.mat1s:
             rows = [{"MID": m.mid, "E": m.E, "G": m.G, "nu": m.nu, "rho": m.rho} for m in bulk.mat1s.values()]
-            st.dataframe(pd.DataFrame(rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
         else:
             st.info("No MAT1 materials.")
 
@@ -311,7 +387,7 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
             for m in moments:
                 rows.append({"Type": "MOMENT", "SID": sid, "GID": m.gid, "Scale": m.m, "N1": m.n1, "N2": m.n2, "N3": m.n3})
         if rows:
-            st.dataframe(pd.DataFrame(rows), width="stretch")
+            st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
         else:
             st.info("No loads.")
 
@@ -330,8 +406,8 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
 
 
 def _get_pre_solve_warnings(
-    bulk: BulkData, cc, parse_warnings: list
-) -> list:
+    bulk: BulkData, cc: Optional[CaseControl], parse_warnings: list[str]
+) -> list[str]:
     """Return pre-solve validation warning strings.
 
     Checks performed:
@@ -344,7 +420,7 @@ def _get_pre_solve_warnings(
     """
     import math
 
-    msgs: list = []
+    msgs: list[str] = []
 
     # 1. Zero-length CBAR elements
     zero_eids = []
@@ -366,7 +442,11 @@ def _get_pre_solve_warnings(
     # 2. SPC coverage
     has_any_spc = bool(bulk.spcs) or bool(bulk.spc1s)
     if not has_any_spc:
-        if cc is None or cc.sol == 101:
+        if cc is not None and cc.sol == 144:
+            # SOL 144 trim is restrained via SUPORT (free-flight r-set), not SPC;
+            # an unconstrained-SPC model is valid here, so no warning.
+            pass
+        elif cc is None or cc.sol == 101:
             msgs.append(
                 "No SPC or SPC1 constraints are defined. "
                 "An unconstrained model has a singular stiffness matrix; SOL 101 will fail."
@@ -392,7 +472,7 @@ def _get_pre_solve_warnings(
         "RFORCE", "DLOAD", "TLOAD1", "TLOAD2",
         "RLOAD1", "RLOAD2", "ACCEL", "ACCEL1", "SLOAD",
     })
-    found_unsupported: set = set()
+    found_unsupported: set[str] = set()
     for msg in parse_warnings:
         for card in _UNSUPPORTED_LOAD_CARDS:
             if card in msg:
@@ -424,10 +504,16 @@ def _get_pre_solve_warnings(
                 "Verify all inputs use the same consistent unit system."
             )
 
+    # 6. SOL 144 authoring validation (P12) — warnings only here; the
+    #    blocking errors are surfaced next to Launch/export in the CC panel.
+    if cc is not None and cc.sol == 144:
+        _, auth_warns = validate_sol144_authoring(bulk, cc)
+        msgs.extend(auth_warns)
+
     return msgs
 
 
-def _show_pre_solve_warnings(bulk: BulkData, cc) -> None:
+def _show_pre_solve_warnings(bulk: BulkData, cc: Optional[CaseControl]) -> None:
     for msg in _get_pre_solve_warnings(bulk, cc, st.session_state._parse_warnings):
         st.warning(msg)
 
@@ -452,7 +538,7 @@ def _run_analysis(bulk: BulkData) -> None:
     try:
         if cc.sol == 101:
             from sbeam.solver.sol101 import run_sol101
-            results: dict = {}
+            results: dict[int, Any] = {}
             with st.spinner("Running SOL 101…"):
                 for sc in cc.subcases:
                     results[sc.subcase_id] = run_sol101(bulk, sc)
@@ -469,20 +555,83 @@ def _run_analysis(bulk: BulkData) -> None:
             st.session_state.sol101_result = None
             n = next(iter(results.values())).frequencies_hz.shape[0]
             st.success(f"SOL 103 complete — {n} modes, {len(results)} subcase(s).")
+        elif cc.sol == 144:
+            _run_sol144(bulk, cc)
         else:
             st.error(f"SOL {cc.sol} is not supported.")
     except Exception as exc:
         st.error(f"Solver error: {exc}")
 
 
+def _run_sol144(bulk: BulkData, cc: CaseControl) -> None:
+    """Run a SOL 144 deck, routing each subcase to trim / divergence / maneuver.
+
+    Mirrors the solver routing in ``sbeam.main`` — build one AeroModel + AeroCache
+    (shared across subcases / multi-Mach AICs) and dispatch per subcase.
+    """
+    from sbeam.aero.aero_model import build_aero_model
+    from sbeam.assembly.load_vector import build_grid_index
+    from sbeam.solver.sol144 import run_sol144_trim, run_sol144_diverg, AeroCache
+    from sbeam.solver.maneuver_qs import run_maneuver_qs
+    from sbeam.solver.maneuver_modal import run_maneuver_modal, ManeuverBasisCache
+
+    trim_results: dict[int, Sol144TrimResult] = {}
+    diverg_results: dict[int, Sol144DivergResult] = {}
+    maneuver_results: dict[int, ManeuverResult] = {}
+    with st.spinner("Running SOL 144…"):
+        grid_index = build_grid_index(bulk)
+        aero = build_aero_model(bulk, grid_index=grid_index)
+        cache = AeroCache(bulk, grid_index, seed=aero)
+        # Step 62/63 (D3): one free-free basis per job, shared across every
+        # modal MLOADS subcase (MASSSET sweeps swap M only, never Phi).
+        basis_cache = ManeuverBasisCache(bulk, aero)
+        for sc in cc.subcases:
+            if sc.mloads_sid is not None:
+                mload = bulk.mloads.get(sc.mloads_sid)
+                if mload is not None and mload.selects_modal:
+                    maneuver_results[sc.subcase_id] = run_maneuver_modal(
+                        bulk, sc, aero, aero_cache=cache,
+                        basis_cache=basis_cache)
+                else:
+                    maneuver_results[sc.subcase_id] = run_maneuver_qs(
+                        bulk, sc, aero, aero_cache=cache)
+            elif sc.diverg_sid is not None and sc.trim_sid is None:
+                diverg_results[sc.subcase_id] = run_sol144_diverg(
+                    bulk, sc, aero, aero_cache=cache)
+            else:
+                trim_results[sc.subcase_id] = run_sol144_trim(
+                    bulk, sc, aero, aero_cache=cache)
+                if sc.diverg_sid is not None:
+                    diverg_results[sc.subcase_id] = run_sol144_diverg(
+                        bulk, sc, aero, aero_cache=cache)
+
+    st.session_state.aero_model_144 = aero
+    st.session_state.sol144_result = trim_results or None
+    st.session_state.sol144_diverg_result = diverg_results or None
+    st.session_state.maneuver_result = maneuver_results or None
+    st.session_state.sol101_result = None
+    st.session_state.sol103_result = None
+    n = len(trim_results) + len(diverg_results) + len(maneuver_results)
+    st.success(f"SOL 144 complete — {n} subcase(s).")
+
+
 def _render_f06_export(bulk: BulkData) -> None:
     """Show f06 export controls after a successful analysis."""
-    from sbeam.results.f06_writer import _build_f06_sol101_text, _build_f06_sol103_text
+    from sbeam.results.f06_writer import (
+        build_f06_sol101_text, build_f06_sol103_text,
+        build_f06_sol144_text, build_f06_sol144_diverg_text,
+        build_f06_sol144_maneuver_text,
+    )
 
     cc = st.session_state.case_control
     sol101 = st.session_state.sol101_result
     sol103 = st.session_state.sol103_result
-    if cc is None or (sol101 is None and sol103 is None):
+    sol144 = st.session_state.sol144_result
+    sol144_div = st.session_state.sol144_diverg_result
+    sol144_man = st.session_state.get("maneuver_result")
+    if cc is None or (sol101 is None and sol103 is None
+                      and sol144 is None and sol144_div is None
+                      and sol144_man is None):
         return
 
     uploaded_name = st.session_state._uploaded_filename or "results.bdf"
@@ -495,10 +644,17 @@ def _render_f06_export(bulk: BulkData) -> None:
     parts = []
     if sol101 is not None:
         for sc_id, result in sorted(sol101.items()):
-            parts.append(_build_f06_sol101_text(cc, bulk, result, sc_id))
-    else:
+            parts.append(build_f06_sol101_text(cc, bulk, result, sc_id))
+    elif sol103 is not None:
         for sc_id, result in sorted(sol103.items()):
-            parts.append(_build_f06_sol103_text(cc, bulk, result, sc_id))
+            parts.append(build_f06_sol103_text(cc, bulk, result, sc_id))
+    else:
+        for sc_id, result in sorted((sol144 or {}).items()):
+            parts.append(build_f06_sol144_text(cc, bulk, result, sc_id))
+        for sc_id, result in sorted((sol144_div or {}).items()):
+            parts.append(build_f06_sol144_diverg_text(cc, bulk, result, sc_id))
+        for sc_id, result in sorted((sol144_man or {}).items()):
+            parts.append(build_f06_sol144_maneuver_text(cc, bulk, result, sc_id))
     f06_text = "".join(parts)
 
     col1, col2 = st.columns([3, 1])
@@ -521,6 +677,205 @@ def _render_f06_export(bulk: BulkData) -> None:
         mime="text/plain",
         key="download_f06_btn",
     )
+
+
+def _render_aero_tab(bulk: BulkData) -> None:
+    col_ctrl, col_fig = st.columns([1, 3])
+
+    with col_ctrl:
+        alpha_deg = st.number_input("AoA α (°)", value=3.0, step=0.5, key="aero_alpha")
+        beta_deg  = st.number_input("Sideslip β (°)", value=0.0, step=0.5, key="aero_beta")
+        compute_btn = st.button("Compute Aero", type="primary", key="aero_compute")
+
+    if compute_btn:
+        with st.spinner("Building AIC and solving…"):
+            aero_model = build_aero_model(bulk)
+            alpha_rad = np.radians(alpha_deg)
+            beta_rad  = np.radians(beta_deg)
+            # Corrected solve on aero_model.ajj_inv_corr — any AIC correction
+            # (WKK / WT2) and Prandtl–Glauert are honoured, matching the
+            # SOL 144 path; the W2GJ baseline normalwash (camber/twist/built-in
+            # incidence) is folded into the RHS with the SOL 144 sign.
+            result = solve_rigid_cl(
+                aero_model.boxes, alpha_rad,
+                beta=beta_rad,
+                aeros=aero_model.aeros,
+                wg=aero_model.wg,
+                cp_operator=aero_model.ajj_inv_corr,
+            )
+            # Uncorrected baseline (raw VLM + Prandtl–Glauert at the same Mach and
+            # the same W2GJ wg) — only when a correction card is present, so there
+            # is something to overlay; otherwise the two solves coincide.  Skipped for
+            # decks with decoupled strip body panels: a raw VLM solve cannot represent
+            # them (no horseshoe vortex), so there is no meaningful uncorrected overlay.
+            if (bulk.wkks or bulk.aecorrs) and not bulk.pstrips:
+                result_unc = solve_rigid_cl(
+                    aero_model.boxes, alpha_rad,
+                    beta=beta_rad,
+                    aeros=aero_model.aeros,
+                    wg=aero_model.wg,
+                    cp_operator=None,
+                    mach=aero_model.mach,
+                )
+            else:
+                result_unc = None
+        st.session_state["aero_model"] = aero_model
+        st.session_state["aero_result"] = result
+        st.session_state["aero_result_unc"] = result_unc
+
+    aero_model = st.session_state["aero_model"]
+    aero_result = st.session_state["aero_result"]
+    aero_result_unc = st.session_state["aero_result_unc"]
+
+    with col_ctrl:
+        show_normals = st.checkbox(
+            "Show surface normals", value=False, key="aero_show_normals"
+        )
+        # Cp view toggle — only meaningful when an uncorrected baseline exists.
+        cp_view = "Corrected"
+        if aero_result is not None and aero_result_unc is not None:
+            cp_view = st.radio(
+                "Cp view", ["Corrected", "Uncorrected", "Δ (corr − uncorr)"],
+                key="aero_cp_view",
+                help="Switch the 3D box pressure and the span-load curves between the "
+                     "corrected solve, the uncorrected baseline, and their difference.",
+            )
+        if aero_result is not None:
+            st.metric("CL (wind)", fmt(aero_result.get('CL_wind', aero_result['CL'])))
+            st.metric("CD (induced)",
+                      fmt(aero_result.get('CD_wind', aero_result.get('CDi', 0.0))))
+            st.metric("CZ (body)", fmt(aero_result.get('CZ', aero_result['CL'])))
+            st.metric("CY", fmt(aero_result.get('CY', 0.0)))
+            st.metric("CM", fmt(aero_result['CM']))
+            st.metric("Boxes", len(aero_model.boxes))
+            st.caption(
+                "CL/CD are **wind-axis** (⊥ / ∥ to U∞); CZ is the **body-axis** "
+                "vertical-force coefficient. CL = CZ·cosα − CX·sinα (equal only at "
+                "α ≈ 0). CD is the Trefftz induced drag."
+            )
+            if aero_model.chordcp_alpha_ref is not None:
+                st.caption(
+                    "ℹ️ CHORDCP steady-pressure injection active — the mean flow "
+                    "is the injected CFD/test Cp distribution (reference AOA "
+                    f"{np.degrees(aero_model.chordcp_alpha_ref):.3f}°), not the "
+                    "program-computed W2GJ baseline."
+                )
+            elif aero_model.wg is not None and np.any(aero_model.wg):
+                st.caption(
+                    "ℹ️ W2GJ baseline incidence (camber/twist) folded into the "
+                    "solve — CL/cp include the built-in twist."
+                )
+            if bulk.wkks or bulk.aecorrs:
+                methods = (["WKK"] if bulk.wkks else []) + \
+                    sorted({c.method for c in bulk.aecorrs.values()})
+                st.caption(
+                    f"ℹ️ AIC correction ({', '.join(methods)}) applied — CL/CM/cp "
+                    "reflect the corrected operator."
+                )
+
+    # Resolve the displayed cp field and span-plot mode from the Cp-view toggle.
+    cp_corr = aero_result["cp"] if aero_result is not None else None
+    cp_unc = aero_result_unc["cp"] if aero_result_unc is not None else None
+    disp_cp, cp_cmid, cp_title, span_mode = cp_corr, None, "Cp", "corrected"
+    if cp_unc is not None and aero_result is not None:
+        if cp_view == "Uncorrected":
+            disp_cp, span_mode = cp_unc, "uncorrected"
+        elif cp_view.startswith("Δ") and cp_corr is not None:
+            disp_cp, cp_cmid, cp_title, span_mode = cp_corr - cp_unc, 0.0, "ΔCp", "diff"
+
+    with col_fig:
+        if aero_model is not None:
+            fig = build_aero_box_figure(
+                bulk, aero_model, cp=disp_cp, show_normals=show_normals, strip=False,
+                cp_cmid=cp_cmid, cp_title=cp_title,
+                body_eids=st.session_state.get("aero_body_eids"),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Set parameters and press Compute Aero to visualise the panel mesh.")
+
+    # ---- Full-width results below the 3D view -------------------------------
+    if aero_result is not None and aero_model is not None:
+        st.markdown("#### Spanwise loading")
+        if cp_unc is not None:
+            if span_mode == "diff":
+                st.caption("Δ = corrected − uncorrected (per strip).")
+            elif span_mode == "uncorrected":
+                st.caption("Uncorrected VLM (raw AIC + Prandtl–Glauert).")
+            else:
+                st.caption(
+                    "Solid = corrected · dashed = uncorrected VLM "
+                    "(raw AIC + Prandtl–Glauert)."
+                )
+        # Per-surface show/hide — thins a busy multi-surface plot. Stale stored
+        # selections (from a previous model) are filtered to the current surfaces.
+        surf_eids = sorted({b.caero_eid for b in aero_model.boxes})
+        selected = surf_eids
+        if len(surf_eids) > 1:
+            picked = st.multiselect(
+                "Show surfaces", surf_eids, default=surf_eids,
+                format_func=lambda e: f"CAERO {e}", key="aero_span_surfaces",
+            )
+            selected = [e for e in surf_eids if e in picked]
+        if not selected:
+            st.info("Select at least one surface to plot.")
+        else:
+            st.plotly_chart(
+                build_span_loading_figure(
+                    aero_model.boxes, np.asarray(cp_corr, dtype=float), cp_unc=cp_unc,
+                    aeros=aero_model.aeros, mode=span_mode, surfaces=selected,
+                ),
+                use_container_width=True,
+            )
+
+        # Rigid stability & control derivatives — all airplane rigid derivatives.
+        if bulk.aeros is not None:
+            st.markdown("#### Rigid stability & control derivatives")
+            # Correction-state toggle (only when an uncorrected baseline exists —
+            # i.e. a correction card is present, so the two solves differ).
+            deriv_state = "corrected"
+            if aero_result_unc is not None:
+                state_label = st.radio(
+                    "Values",
+                    ["Corrected", "Uncorrected", "Δ (corr − uncorr)"],
+                    horizontal=True, key="aero_deriv_state",
+                    help="Rigid derivatives from the corrected AIC operator, the "
+                         "uncorrected VLM baseline (same Mach), or their difference.",
+                )
+                deriv_state = (
+                    "uncorrected" if state_label == "Uncorrected"
+                    else "diff" if state_label.startswith("Δ")
+                    else "corrected"
+                )
+            deriv_df = rigid_derivative_table(
+                aero_model, bulk, naming="aero", state=deriv_state)
+            if deriv_df is not None:
+                caption = (
+                    "Per radian / per unit label, rigid (u_a = 0). Rows: "
+                    "α, β, roll p, pitch q, yaw r + AESURF controls."
+                )
+                if deriv_state == "diff":
+                    caption += " Δ = corrected − uncorrected."
+                st.caption(caption)
+                st.dataframe(style_numeric(deriv_df), use_container_width=True)
+
+        # Per-surface coefficient breakdown (multi-surface decks).  Per-surface
+        # contributions are body-axis (CZ vertical / CY side), so they sum to the
+        # body-axis totals; the wind-axis CL above is the whole-aircraft rotation.
+        per_surf = aero_result.get("per_surface", {})
+        if len(per_surf) > 1:
+            st.markdown("#### Per-surface coefficients (body axis)")
+            rows = []
+            for eid, info in sorted(per_surf.items()):
+                if info["surface_type"] == "lift":
+                    rows.append({"EID": eid, "Type": "lift",
+                                 "CZ": fmt(info['CL']), "CY": "—",
+                                 "CM": fmt(info['CM'])})
+                else:
+                    rows.append({"EID": eid, "Type": "sideforce",
+                                 "CZ": "—", "CY": fmt(info['CY']),
+                                 "CM": "—"})
+            st.table(rows)
 
 
 def main() -> None:
@@ -573,7 +928,18 @@ def main() -> None:
         return
 
     # --- Main tabs ---
-    tab_model, tab_cc, tab_results = st.tabs(["Model", "Case Control", "Results"])
+    _has_aero = bool(bulk.caero1s)
+    if _has_aero:
+        (tab_model, tab_cc, tab_authoring, tab_results, tab_aero,
+         tab_aero_corr) = st.tabs(
+            ["Model", "Case Control", "Aeroelastic Authoring", "Results",
+             "Aero", "Aero Correction"]
+        )
+    else:
+        tab_model, tab_cc, tab_results = st.tabs(["Model", "Case Control", "Results"])
+        tab_authoring = None
+        tab_aero = None
+        tab_aero_corr = None
 
     with tab_model:
         _show_parse_summary(bulk)
@@ -589,7 +955,11 @@ def main() -> None:
         _show_model_data_tabs(bulk)
 
     with tab_cc:
-        render_case_control_panel(bulk)
+        render_case_control_panel(bulk, on_launch=lambda: _run_analysis(bulk))
+
+    if tab_authoring is not None:
+        with tab_authoring:
+            render_sol144_authoring(bulk)
 
     with tab_results:
         st.subheader("Analysis")
@@ -606,12 +976,31 @@ def main() -> None:
             render_sol103_results(bulk, st.session_state.sol103_result)
             _render_f06_export(bulk)
 
+        elif (st.session_state.sol144_result is not None
+              or st.session_state.sol144_diverg_result is not None
+              or st.session_state.maneuver_result is not None):
+            render_sol144_results(
+                bulk,
+                st.session_state.sol144_result,
+                st.session_state.sol144_diverg_result,
+                st.session_state.maneuver_result,
+            )
+            _render_f06_export(bulk)
+
         else:
             cc = st.session_state.case_control
             if cc is not None:
                 st.info(f"Press Run Analysis to execute SOL {cc.sol}.")
             else:
                 st.info("Define a case control in the Case Control tab, then run the analysis.")
+
+    if tab_aero is not None:
+        with tab_aero:
+            _render_aero_tab(bulk)
+
+    if tab_aero_corr is not None:
+        with tab_aero_corr:
+            render_aero_correction_tab(bulk)
 
 
 if __name__ == "__main__":

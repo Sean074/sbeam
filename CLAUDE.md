@@ -1,125 +1,128 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this
+repository. It holds **rules and pointers only** — status, feature descriptions, and field
+tables live in `docs/` (budget: keep this file under ~150 lines; move prose out, not in).
 
 ## Project Overview
 
-`sbeam` (Simple Beam FEA) is a Python-based finite element analysis program for beams using standard NASTRAN BDF input format. It is **not** related to RAM SBeam.
+`sbeam` (Simple Beam FEA) is a Python-based finite element analysis program for beams using
+standard NASTRAN BDF input format. It is **not** related to RAM SBeam.
 
-## Documentation Requirement
+**Mission (2026-08-04):** a FAR/CS-23-style **loads process** on a beam-stick aeroelastic
+model — generate maneuver + gust design cases, trim/integrate them, and deliver
+monitor/section loads with a traceable critical-case report for stress. SOL 145 flutter +
+DLM is the declared phase after loads sufficiency. New work must serve this mission or be
+parked (`docs/30_future/02_parked.md`); the working backlog is
+`docs/30_future/00_backlog.md` (open items only, mission-tagged).
 
-**When ANY code changes are made, the relevant project documentation files MUST be updated.** Each subsystem has a dedicated guide in `docs/`:
+## Documentation Map
 
-| File | Scope |
-|------|-------|
-| `docs/sbeam.md` | Overall program code standard, developer and user guide |
-| `docs/viewer.md` | Pre/post-processing viewer (Streamlit + Plotly) |
-| `docs/Beam_model.md` | Geometry and model definition (BDF cards, data model) |
-| `docs/Static_analysis.md` | SOL 101 static analysis solver |
-| `docs/Modal_analysis.md` | SOL 103 normal modes solver |
-| `docs/Methods.ipynb` | Summary of analytical methods (Euler-Bernoulli theory, stiffness and mass matrix derivations) |
+`docs/00_INDEX.md` is the map. Sections: `10_standard/` (code-standard guides — these must
+track code changes), `20_theory/` (analytical references), `30_future/` (backlog + parked +
+designs), `40_history/` (completed steps + resolved defects), `50_reviews/` (process
+reviews). Authoritative single sources — never duplicate their content elsewhere, link to
+them instead:
 
-## Step Completion Requirement
+- **Card fields/defaults/validation:** `docs/10_standard/02_card_reference.md`
+- **Module/file structure:** `docs/10_standard/00_program_overview.md` (Project Structure)
+- **Verification-case tables (V-suite, VAL2):** `docs/10_standard/00_program_overview.md`
+- **Sign/axis/frame/reference-point conventions:** `docs/10_standard/09_conventions.md`
+- **Solver behavior and outputs:** the per-solver guides `03`/`04`/`05a`–`05c`
+- **Known limitations:** index in `00_program_overview.md`
 
-**When a development step is completed, BOTH of the following files MUST be updated in the same session:**
+## Step Completion Requirement (tiered)
 
-1. **`docs/completed_development.md`** — add the completed step with its full step format (Objective, Deliverables, Test/Acceptance, key decisions).
-2. **`development_plan_bugs_todo.md`** — remove or mark the step as complete; update the open bugs list if a defect was resolved.
+**HARD REQUIREMENT — when any backlog item, bug, NIT, or step is closed, its closure tier
+must be completed in the same session. The backlog holds open items only; anything closed
+moves out immediately. Never batch or defer closure to a later session.**
 
-Never batch these updates or defer them to a later session. When resolving a bug (B1–B4), move the resolution note to `docs/completed_development.md` under "Resolved Defects" and remove it from `development_plan_bugs_todo.md`.
+| Tier | Applies to | Required closure |
+|------|-----------|------------------|
+| **S** | Small fix, hygiene, docs, sample decks — no behavior change | `CHANGELOG.md` entry + backlog removal + a **one-line** entry under "Resolved defects" in the matching `docs/40_history/` area file |
+| **M** | Behavior change to an existing capability | Tier S + update the affected `docs/10_standard/` section(s) |
+| **L** | New capability, new card, new physics | Tier S + affected standard docs + **full step format** (Objective, Deliverables, Test/Acceptance, key decisions) in the matching `docs/40_history/` area file + its index `00_completed_development.md` |
 
-## Development Phases
+Additional rules (from the 2026-08-04 process review — rationale in
+`docs/50_reviews/2026-08-04_development_process_review.md`):
 
-- **Phase 1 (complete):** SOL 101 (static) and SOL 103 (normal modes) — see `docs/completed_development.md`
-- **Phase 2:** Model enhancements — see `development_plan_bugs_todo.md`
-- **Phase 3:** SOL 108 (frequency response), 109 (transient), 111 (modal freq), 112 (modal transient) — see `development_plan_bugs_todo.md`
-- **Future:** distributed loads, Timoshenko shear, enforced displacements, buckling (SOL 105), results export — see `development_plan_bugs_todo.md`
+1. **Design note before code (physics/L steps):** a short note — theory reference,
+   conventions-charter citations (`09_conventions.md`), validation target with expected
+   numbers, acceptance tolerances — agreed in chat **before** implementation starts.
+2. **Benchmark-first definition of done:** a physics step is not done until an end-to-end
+   benchmark number (closed-form, NASTRAN, or AVL) passes in CI, written **with** the
+   feature. Green unit tests alone are demonstrated insufficient (AE13).
+3. **Generalize on first find:** a defect fix must sweep the same defect class across the
+   codebase in the same change, and add an invariant gate where feasible.
+4. **Review findings are filed with bodies** in the same session they are raised — a name
+   list is not a finding (DEF-L lesson).
+5. **No speculative features:** nothing is built without a named validation target or a
+   named load case that consumes it (WT1 lesson).
 
-## Project Backlog
+## Development Status
 
-`development_plan_bugs_todo.md` is the authoritative backlog. It lists open bugs, Phase 2 and Phase 3 steps, and future development ideas. When a new development step is added, follow the same step format used in `docs/completed_development.md`.
+Phase 1 (SOL 101/103) complete; SOL 144 static aeroelastic trim + Phase G0 transient
+maneuver loads delivered and release-scoped. Current state: `docs/40_history/` (done),
+`docs/30_future/00_backlog.md` (open, priority-ordered). Release process:
+`docs/10_standard/08_release_process.md`.
 
 ## Tech Stack
 
-Python with: `scipy`, `numpy`, `matplotlib`, `pandas`, `plotly`, `streamlit`, `csv`
+Python with: `scipy`, `numpy`, `matplotlib`, `pandas`, `plotly`, `streamlit`, `csv`.
+Run everything with the repo venv: `.venv/bin/python` (plain `python` is not on PATH).
 
-## Beam Theory
+## Structural Theory
 
-Phase 1 uses **Euler-Bernoulli beam theory** (shear deformation neglected). Each CBAR element has 12 DOFs (6 per node). Phase 1 uses a **consistent mass matrix**.
+Euler-Bernoulli beam theory (no shear deformation); 12 DOFs per CBAR; consistent mass
+matrix; uniform torsion GJ/L. Derivations: `docs/20_theory/00_beam_methods.ipynb`.
 
-## Input File Format
+## Input / Output
 
-- Model geometry / bulk data: `*.dat` or `*.bdf` (user-defined BDF card format)
-- Case control: `*.bdf` (main file, exported from viewer UI — this is what the solver reads; uses `INCLUDE` to pull in the bulk data file)
-- Results: `*.f06` (NASTRAN-style output)
+- Bulk data: `*.dat`/`*.bdf` (BDF cards); case control: main `*.bdf` (uses `INCLUDE`)
+- Results: `*.f06` NASTRAN-style output + per-run CSV/BDF exports
+- Per-solver output details: `03_static_analysis.md`, `04_modal_analysis.md`,
+  `05c_sol144_maneuver.md` (SOL 144 trim, MLOADS transient, monitor/section loads)
 
-### Supported BDF Cards (Phase 1)
+## Supported Cards
 
-| Category | Cards |
-|----------|-------|
-| Coordinate systems | `CORD2R` (rectangular system; defined by three points A, B, C; supports chained RID references) |
-| Geometry | `GRID` (CP = input system; CD = output system for results) |
-| Elements | `CBAR`, `PLOTEL`, `RBE3` (constraint interpolation; DOF transformation), `RBE2` (rigid body; DOF transformation), `RBAR` (rigid bar; kinematic coupling with lever-arm), `CBUSH` (two-node and grounded spring-damper; CID=0; offsets not supported) |
-| Properties | `PBAR` (uniform cross-section: A, I1, I2, J, recovery points C/D/E/F), `PBUSH` (K1–K6 diagonal stiffness; B1–B6 damping deferred to dynamic solvers) |
-| Material | `MAT1` (E, G, nu, rho) |
-| Mass | `CONM2` (point mass; offset vector and inertia tensor in CID frame) |
-| Constraints | `SPC`, `SPC1` (DOFs 1–6: Tx Ty Tz Rx Ry Rz) |
-| Loads | `FORCE`, `MOMENT`, `LOAD` (linear combination), `GRAV` (body acceleration; CID=0 only; f = M×a) |
-| Eigenvalue | `EIGRL` (SOL 103: modes, frequency range, normalization) |
+Field-level reference (authoritative): `docs/10_standard/02_card_reference.md`.
 
-### Case Control Cards (Phase 1)
-
-`SOL`, `SUBCASE`, `LOAD`, `SPC`, `METHOD`, `DISPLACEMENT`, `SPCFORCE`, `OLOAD`, `FORCE`, `STRESS`, `BEGIN BULK`, `ENDDATA`
+- **Structure:** CORD2R, GRID, CBAR, PLOTEL, RBE3, RBE2, RBAR, CBUSH, PBAR, PBUSH, MAT1
+- **Mass:** CONM2, MASSSET
+- **Constraints/loads:** SPC, SPC1, FORCE, MOMENT, LOAD, GRAV
+- **Eigenvalue:** EIGRL
+- **Aero (Phase A/C):** AEROS, CAERO1, PAERO1, AEFACT, W2GJ, WKK, AECORR, CHORDCP,
+  PSTRIP, STRIPK, SPLINE0/2 (+ ATTACH), SET1, AELIST, AESTAT, AESURF, TRIM, TRIMVAR,
+  TRIMCON, TRIMOBJ, SUPORT, DIVERG, MONPNT1, MONPNT3, MONSECT, AECOMP
+- **Transient maneuver (G0):** MLOADS, MLDTRIM, MLDCOMD, MLDTIME, MLDPRNT, TABLED1
+- **Case control:** SOL, SUBCASE, LOAD, SPC, METHOD, TRIM, MLOADS, MASSSET,
+  DISPLACEMENT, SPCFORCE, OLOAD, FORCE, STRESS, BEGIN BULK, ENDDATA
 
 ## Key Constraints
 
-- No hard CBAR element limit — sparse solver used for all models; memory and compute time are the practical constraint
-- **CORD2R rectangular coordinate systems supported** (Step 32); CORD2C/CORD2S/CORD1R not supported
-- All internal computations in global CID 0; CORD2R used for input (GRID CP, FORCE/MOMENT/CONM2 CID) and output (GRID CD) transforms only
-- Uniform cross-section elements only (no tapered beams in phase 1)
-- Euler-Bernoulli only (no Timoshenko shear in phase 1)
-- Units are user-defined and must be consistent throughout the model
+- Sparse solvers throughout — no hard element limit; memory/time are the practical bounds
+- CORD2R only (no CORD2C/CORD2S/CORD1R); all internal computation in basic CID 0
+- Uniform cross-sections; Euler-Bernoulli only; units are user-defined and must be
+  consistent
+- GPWG = mass/CG summary (Grid Point Weight Generator). OLOAD = applied-load output
+  request. Do not confuse them.
 
 ## Module Structure
 
-```
-sbeam/
-├── main.py
-├── parser/         # bdf_reader.py, case_control.py
-├── model/          # grid.py, element.py, property.py, material.py, load.py, constraint.py, mass.py
-├── assembly/       # stiffness.py, mass_matrix.py, rbe3.py
-├── solver/         # sol101.py, sol103.py
-├── results/        # results.py, f06_writer.py
-├── gpwg.py         # Mass and CG (GPWG)
-└── viewer/         # app.py, geometry.py, results_view.py, case_control_ui.py
-```
+Packages: `parser/`, `model/`, `assembly/`, `solver/`, `results/`, `aero/`, `viewer/`,
+plus `gpwg.py`, `types.py`, `linalg_utils.py`. Import direction:
+viewer → solver → assembly → model → parser. The annotated file-level tree is in
+`docs/10_standard/00_program_overview.md` (Project Structure) — keep it there only.
 
-## GPWG
+## Verification
 
-Mass and CG computation is called **GPWG** (Grid Point Weight Generator), not "OLOAD". OLOAD is an applied load output request in case control.
+All solvers must pass closed-form verification (authoritative case tables incl. VAL2
+sample-deck gates: `00_program_overview.md`):
 
-## Workflow
-
-1. Define geometry, properties, materials, and loads in BDF card format (`*.dat`)
-2. View and interrogate model in the Streamlit viewer
-3. Run GPWG (mass and CG summary)
-4. Define case control via viewer UI → export `*.bdf`
-5. Run analysis (SOL 101 or 103)
-6. Review results: deflected shape / nodal forces (SOL 101); mode shapes / frequencies (SOL 103)
-7. Output results to `*.f06`-format file
-
-## Results Output
-
-- **SOL 101:** nodal displacements, SPC reactions, applied load echo, CBAR end forces/moments, CBAR stresses at recovery points, CBUSH element forces (global coordinates)
-- **SOL 103:** natural frequencies (Hz and rad/s), normalised mode shapes, modal mass fractions
-
-## Verification Test Cases
-
-All solvers must pass closed-form verification:
 - Cantilever tip load: δ = PL³/3EI (SOL 101)
 - Simply supported mid-span load: δ = PL³/48EI (SOL 101)
 - Cantilever fundamental frequency: f₁ = (1.875²/2π)√(EI/ρAL⁴) (SOL 103)
-- Free-free beam: first 6 modes must be ~0 Hz (SOL 103)
+- Free-free beam: first 6 modes ~0 Hz (SOL 103)
 
 ## Reference Material
 

@@ -2,7 +2,7 @@ import pytest
 import plotly.graph_objects as go
 
 from sbeam.model.bulk_data import BulkData
-from sbeam.model.element import Cbar, Plotel
+from sbeam.model.element import Cbar
 from sbeam.model.grid import Grid
 from sbeam.model.mass import Conm2
 from sbeam.model.material import Mat1

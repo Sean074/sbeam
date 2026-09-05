@@ -1,0 +1,46 @@
+$ =========================================================================
+$ val_vlm_dihedral.bdf — VLM validation case: rectangular wing, AR = 8, +10 deg dihedral
+$
+$ STEP 58 (V-C-DIH) test deck — out-of-plane (z != 0) lifting surface.
+$   Identical to val_vlm_rect_ar8.bdf but each semi-span is canted UP at
+$   Gamma = +10 deg about the root chord (x-axis).  The starboard tip LE is
+$   raised to (0, 4cosG, 4sinG); the port tip to (0, -4cosG, 4sinG).
+$
+$   Gamma = +10 deg:  cosG = 0.98480775,  sinG = 0.17364818
+$   Semi-span ALONG the canted surface = 4.0 (so panel area S = 8.0 is
+$   unchanged from the planar deck; SREF stays the true surface area).
+$
+$ EXPECTED (vs the planar val_vlm_rect_ar8 run at the same AoA):
+$   Right-wing box normal  n = (0, -sinG, cosG); left wing mirrored (0, +sinG, cosG).
+$   Per box  Fy/Fz = n_y/n_z = -tan(G)  (starboard), +tan(G) (port) — EXACT.
+$   Side force Fy cancels over the full-span symmetric build (sum ~ 0).
+$   Vertical lift reduced (canted normal); CL ~ CL_planar * cos^2(G) (incidence
+$   reduction x force projection), confirmed numerically by the V-C-DIH gate.
+$
+$ Coordinate system: X = freestream, Y = starboard, Z = up.  SYMXZ = 0.
+$ Pure rigid VLM — NO structural model, NO splines.
+$ =========================================================================
+$
+SOL 101
+$
+SUBCASE 1
+  TITLE = Rectangular AR=8 wing, +10deg dihedral — rigid VLM
+$
+BEGIN BULK
+$
+$ ----------------------------------------------------------- AERO REFERENCE
+$ ACSID RCSID  CREF  BREF  SREF  SYMXZ SYMXY
+AEROS,  0,  0,  1.0,  8.0,  8.0,  0,  0
+$
+PAERO1, 1
+$
+$ ---- Starboard half: root (0,0,0) -> tip (0, 3.93923099, 0.69459271)
+$ 20 spanwise x 8 chordwise = 160 boxes
+CAERO1, 1000, 1, 0, 20, 8, 0, 0, 1
++, 0.0, 0.0, 0.0, 1.0, 0.0, 3.93923099, 0.69459271, 1.0
+$
+$ ---- Port half: root (0,0,0) -> tip (0, -3.93923099, 0.69459271)
+CAERO1, 2000, 1, 0, 20, 8, 0, 0, 1
++, 0.0, 0.0, 0.0, 1.0, 0.0, -3.93923099, 0.69459271, 1.0
+$
+ENDDATA

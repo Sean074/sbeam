@@ -1,6 +1,5 @@
 """Integration verification for CORD2R coordinate system support (V-CS1 to V-CS5)."""
 
-import math
 import numpy as np
 import pytest
 
@@ -10,7 +9,6 @@ from sbeam.assembly.mass_matrix import assemble_global_mass
 from sbeam.assembly.load_vector import assemble_load_vector, build_grid_index
 from sbeam.solver.sol101 import solve_static
 from sbeam.solver.sol103 import solve_modes
-from sbeam.model.constraint import Spc1
 
 
 # ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ from sbeam.model.property import Pbar
 from sbeam.model.material import Mat1
 from sbeam.model.load import Force
 from sbeam.model.constraint import Spc1
+from sbeam.model.coordinate_system import Cord2r
 from sbeam.model.bulk_data import BulkData
 from sbeam.parser.case_control import CaseControl, SubcaseControl
 from sbeam.solver.sol101 import run_sol101
@@ -209,3 +210,80 @@ class TestF06BarStressAllRecoveryPoints:
         sa_parsed = float(vals_str[:13].strip())
         expected = self.result.bar_stresses[1].sa_d
         assert sa_parsed == pytest.approx(expected, rel=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# Q1 — SPC reactions are reported in the grid's CD output frame
+#
+# NASTRAN's "global" output system is the assembly of the per-grid CD frames,
+# not basic CID 0.  Reactions are recovered in basic (the frame the SPC acts
+# in) and rotated at write time, exactly like the displacement block.
+# ---------------------------------------------------------------------------
+
+def _spcforce_row(content: str, gid: int) -> list[float]:
+    """Return the six SPCFORCE components written for ``gid``."""
+    start = content.find("S I N G L E - P O I N T")
+    assert start >= 0, "SPCFORCE block not found"
+    block = content[start:]
+    prefix = f"{gid:>14}     G  "
+    line = next((l for l in block.splitlines() if l.startswith(prefix)), None)
+    assert line is not None, f"No SPCFORCE row for grid {gid}"
+    vals = line[len(prefix):]
+    return [float(vals[13 * i:13 * (i + 1)]) for i in range(6)]
+
+
+def _write(bulk, cc, result) -> str:
+    tmp = tempfile.NamedTemporaryFile(suffix=".f06", delete=False, mode="w")
+    tmp.close()
+    try:
+        write_f06_sol101(tmp.name, cc, bulk, result, subcase_id=1)
+        with open(tmp.name) as fh:
+            return fh.read()
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+
+
+class TestSpcForceCdFrame:
+    """SPCFORCE output frame (backlog Q1)."""
+
+    def test_cd_zero_is_basic(self):
+        """With CD = 0 the written row is the raw basic-frame reaction."""
+        bulk, cc, result = make_cantilever()
+        row = _spcforce_row(_write(bulk, cc, result), 1)
+        for i in range(6):
+            assert row[i] == pytest.approx(result.reactions[1][i], rel=1e-5, abs=1e-9)
+
+    def test_cd_rotation_applied(self):
+        """CD = 90 deg about Z: local X = global Y, local Y = -global X."""
+        bulk, cc, result = make_cantilever()
+        bulk.cord2rs[1] = Cord2r(cid=1, rid=0, a=(0.0, 0.0, 0.0),
+                                 b=(0.0, 0.0, 1.0), c=(0.0, 1.0, 0.0))
+        bulk.grids[1].cd = 1
+        row = _spcforce_row(_write(bulk, cc, result), 1)
+
+        basic = result.reactions[1]
+        # The tip load is +Y, so the basic reaction at the root is dominated by
+        # Fy and Mz — Fy must reappear as the local T1 component.
+        assert abs(basic[1]) > 1.0
+        expected = [basic[1], -basic[0], basic[2],
+                    basic[4], -basic[3], basic[5]]
+        for i in range(6):
+            assert row[i] == pytest.approx(expected[i], rel=1e-5, abs=1e-9)
+
+    def test_stored_reactions_left_in_basic(self):
+        """The rotation is presentation-only — Sol101Result stays in basic CID 0.
+
+        ``results/section_cuts.py`` and the monitor-point integrators consume
+        ``result.reactions`` as basic-frame vectors; rotating the stored values
+        would corrupt them.
+        """
+        bulk, cc, result = make_cantilever()
+        bulk.cord2rs[1] = Cord2r(cid=1, rid=0, a=(0.0, 0.0, 0.0),
+                                 b=(0.0, 0.0, 1.0), c=(0.0, 1.0, 0.0))
+        bulk.grids[1].cd = 1
+        before = result.reactions[1].copy()
+        _write(bulk, cc, result)
+        assert result.reactions[1] == pytest.approx(before)

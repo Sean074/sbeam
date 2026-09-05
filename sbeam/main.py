@@ -3,9 +3,16 @@
 import argparse
 import sys
 from pathlib import Path
+from typing import Any, Callable, Dict
 
 from sbeam.parser.bdf_reader import parse_bdf
-from sbeam.results.f06_writer import _build_f06_sol101_text, _build_f06_sol103_text
+from sbeam.results.f06_writer import (
+    build_f06_sol101_text,
+    build_f06_sol103_text,
+    build_f06_sol144_text,
+    build_f06_sol144_diverg_text,
+    build_f06_sol144_maneuver_text,
+)
 
 
 def main() -> None:
@@ -27,15 +34,67 @@ def main() -> None:
     except Exception as exc:
         sys.exit(f"Parse error: {exc}")
 
+    sol144_results = None
+    maneuver_results: Dict[int, Any] = {}
+    diverg_results: Dict[int, Any] = {}
+    # The three SOL builders take different result types; the dispatch below picks
+    # one and applies it to the matching results dict.
+    build_text: Callable[..., str]
     try:
         if cc.sol == 101:
             from sbeam.solver.sol101 import run_sol101
             results = {sc.subcase_id: run_sol101(bulk, sc) for sc in cc.subcases}
-            build_text = _build_f06_sol101_text
+            build_text = build_f06_sol101_text
         elif cc.sol == 103:
             from sbeam.solver.sol103 import run_sol103
             results = {sc.subcase_id: run_sol103(bulk, sc) for sc in cc.subcases}
-            build_text = _build_f06_sol103_text
+            build_text = build_f06_sol103_text
+        elif cc.sol == 144:
+            # SOL 144 needs a prebuilt AeroModel + grid_index (not the two-arg
+            # solver pattern of 101/103). Build the aero model once, share an
+            # AeroCache across subcases so multi-Mach decks build each AIC once.
+            from sbeam.aero.aero_model import build_aero_model
+            from sbeam.assembly.load_vector import build_grid_index
+            from sbeam.solver.sol144 import (
+                run_sol144_trim, run_sol144_diverg, AeroCache,
+            )
+            from sbeam.solver.maneuver_qs import run_maneuver_qs
+            from sbeam.solver.maneuver_modal import (
+                run_maneuver_modal, ManeuverBasisCache,
+            )
+            grid_index = build_grid_index(bulk)
+            aero = build_aero_model(bulk, grid_index=grid_index)
+            cache = AeroCache(bulk, grid_index, seed=aero)
+            # Step 62 (D3): one free-free basis per job, shared across every
+            # modal MLOADS subcase (MASSSET sweeps swap M only, never Phi).
+            basis_cache = ManeuverBasisCache(bulk, aero)
+            # An MLOADS subcase runs the Phase G0 transient maneuver-loads solver
+            # (the Step 62 modal solver when the card requests it via
+            # NMODES/METHOD/ZETA, the increment-1 direct l-set solver otherwise);
+            # a DIVERG subcase runs the Step 55 divergence sweep (no TRIM needed);
+            # a plain TRIM subcase runs the Step 52/53 static trim.
+            results = {}
+            for sc in cc.subcases:
+                if sc.mloads_sid is not None:
+                    mload = bulk.mloads.get(sc.mloads_sid)
+                    if mload is not None and mload.selects_modal:
+                        maneuver_results[sc.subcase_id] = run_maneuver_modal(
+                            bulk, sc, aero, aero_cache=cache,
+                            basis_cache=basis_cache)
+                    else:
+                        maneuver_results[sc.subcase_id] = run_maneuver_qs(
+                            bulk, sc, aero, aero_cache=cache)
+                elif sc.diverg_sid is not None and sc.trim_sid is None:
+                    diverg_results[sc.subcase_id] = run_sol144_diverg(
+                        bulk, sc, aero, aero_cache=cache)
+                else:
+                    results[sc.subcase_id] = run_sol144_trim(
+                        bulk, sc, aero, aero_cache=cache)
+                    if sc.diverg_sid is not None:
+                        diverg_results[sc.subcase_id] = run_sol144_diverg(
+                            bulk, sc, aero, aero_cache=cache)
+            build_text = build_f06_sol144_text
+            sol144_results = results
         else:
             sys.exit(f"Error: SOL {cc.sol} is not supported")
     except Exception as exc:
@@ -44,5 +103,59 @@ def main() -> None:
     with open(f06_path, "w") as fh:
         for sc_id, result in results.items():
             fh.write(build_text(cc, bulk, result, sc_id))
+        if cc.sol == 144:
+            for sc_id, dresult in diverg_results.items():
+                fh.write(build_f06_sol144_diverg_text(cc, bulk, dresult, sc_id))
+            for sc_id, mresult in maneuver_results.items():
+                fh.write(build_f06_sol144_maneuver_text(cc, bulk, mresult, sc_id))
 
     print(f"Written: {f06_path}")
+
+    # SOL 144: also export the trimmed flight loads as FORCE/MOMENT cards for
+    # downstream stress analysis (one card block per subcase, SID = subcase id).
+    if sol144_results:
+        from sbeam.results.load_export import (
+            write_aero_load_cards, write_maneuver_load_cards, write_monitor_csv,
+            write_section_loads_csv,
+        )
+        loads_path = bdf_path.with_suffix(".aero_loads.bdf")
+        write_aero_load_cards(str(loads_path), bulk, sol144_results)
+        print(f"Written: {loads_path}")
+        # Step 53: net (aero + inertial) balanced-maneuver loads for stress.
+        man_path = bdf_path.with_suffix(".maneuver_loads.bdf")
+        write_maneuver_load_cards(str(man_path), bulk, sol144_results)
+        print(f"Written: {man_path}")
+        # MON4: monitor-point integrated section loads (one CSV across subcases).
+        if any(r.monitor_loads for r in sol144_results.values()):
+            mon_path = bdf_path.with_suffix(".monitor_loads.csv")
+            write_monitor_csv(str(mon_path), sol144_results)
+            print(f"Written: {mon_path}")
+        # Monitor Phase 2: MONSECT per-station running loads (one CSV across subcases).
+        if any(r.section_loads for r in sol144_results.values()):
+            sec_path = bdf_path.with_suffix(".section_loads.csv")
+            write_section_loads_csv(str(sec_path), sol144_results)
+            print(f"Written: {sec_path}")
+
+    # Phase G0: transient maneuver-loads time histories (MLDPRNT) + critical-step
+    # net (aero + inertial) FORCE/MOMENT export.
+    if maneuver_results:
+        from sbeam.results.maneuver_output import write_maneuver_outputs
+        mldprnt_path, qs_loads_path = write_maneuver_outputs(
+            str(bdf_path.with_suffix("")), bulk, maneuver_results)
+        print(f"Written: {mldprnt_path}")
+        print(f"Written: {qs_loads_path}")
+        # Step 68: MONSECT running loads at every output sample (one CSV across
+        # subcases), written only when the deck actually carries MONSECT cards.
+        if any(s.section_loads for r in maneuver_results.values() for s in r.steps):
+            from sbeam.results.load_export import (
+                write_maneuver_section_envelope_csv,
+                write_maneuver_section_loads_csv,
+            )
+            tsec_path = bdf_path.with_suffix(".maneuver_section_loads.csv")
+            write_maneuver_section_loads_csv(str(tsec_path), maneuver_results)
+            print(f"Written: {tsec_path}")
+            # The per-station max/min with its driving sample — what says no
+            # other instant is worse at any other station.
+            env_path = bdf_path.with_suffix(".maneuver_section_envelope.csv")
+            write_maneuver_section_envelope_csv(str(env_path), maneuver_results)
+            print(f"Written: {env_path}")

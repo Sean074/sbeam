@@ -1,0 +1,70 @@
+$ val_spline2_cantilever.bdf  —  Step 49 force-transfer smoke test
+$ 4 CBARs along global Y (GRIDs 1-5, y=0..4), flat CAERO1 panel in XY plane
+$ (span along Y, chord=1 along X), SPLINE2 via CORD2R CID=1 (x-hat=Y, z-hat=Z)
+$ Root GRID 1 (y=0) fixed in all 6 DOFs.
+$
+SOL 101
+$
+SUBCASE 1
+  TITLE = Phase B spline smoke test
+  SPC = 1
+  DISPLACEMENT = ALL
+$
+BEGIN BULK
+$
+$ ------------------------------------------------------------------ NODES
+GRID, 1, , 0.0, 0.0, 0.0
+GRID, 2, , 0.0, 1.0, 0.0
+GRID, 3, , 0.0, 2.0, 0.0
+GRID, 4, , 0.0, 3.0, 0.0
+GRID, 5, , 0.0, 4.0, 0.0
+$
+$ --------------------------------------------------------------- MATERIAL
+$ Aluminium-like (E=70 GPa, nu=0.33, rho=2700 kg/m3)
+MAT1, 1, 7.0e10, , 0.33, 2700.0
+$
+$ ------------------------------------------------------------- PROPERTIES
+$ Square tube cross-section ~50x50mm, t=3mm (approximate)
+PBAR, 1, 1, 0.01, 8.333e-6, 8.333e-6, 1.406e-5
+$
+$ --------------------------------------------------------------- ELEMENTS
+$ Reference vector (0,0,1) is not parallel to beam axis (global Y)
+CBAR, 1, 1, 1, 2, 0.0, 0.0, 1.0
+CBAR, 2, 1, 2, 3, 0.0, 0.0, 1.0
+CBAR, 3, 1, 3, 4, 0.0, 0.0, 1.0
+CBAR, 4, 1, 4, 5, 0.0, 0.0, 1.0
+$
+$ ----------------------------------------------------------- CONSTRAINTS
+$ Root fixity: all 6 DOFs at GRID 1
+SPC1, 1, 123456, 1
+$
+$ ------------------------------------------- AERODYNAMIC REFERENCE GEOMETRY
+$ CREF=1.0 m, BREF=4.0 m, SREF=4.0 m^2; full span (SYMXZ=0)
+AEROS, 0, 0, 1.0, 4.0, 4.0, 0, 0
+$
+$ -------------------------------------------- AERODYNAMIC PANEL (CAERO1)
+$ EID=200, PID=10, CP=0, NSPAN=4, NCHORD=1
+$ P1=(0,0,0) root-LE, x12=1.0 root-chord
+$ P4=(0,4,0) tip-LE,  x43=1.0 tip-chord
+$ Box IDs: 200, 201, 202, 203
+PAERO1, 10
+CAERO1, 200, 10, 0, 4, 1, 0, 0, 0
++, 0.0, 0.0, 0.0, 1.0, 0.0, 4.0, 0.0, 1.0
+$
+$ --------------------------------------------- SPLINE COORDINATE SYSTEM
+$ MSC convention: spline axis = CID *y*-axis.
+$ CID=1: y-hat=[0,1,0] (span along Y), z-hat=[0,0,1], x-hat=[1,0,0] (chord)
+CORD2R, 1, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0
++, 1.0, 0.0, 0.0
+$
+$ --------------------------------------------------- STRUCTURAL GRID SET
+SET1, 10, 1, 2, 3, 4, 5
+$
+$ -------------------------------------------- BEAM SPLINE (SPLINE2)
+$ EID=300, CAERO=200, ID1=200, ID2=203 (all 4 boxes)
+$ SETG=10, DZ=0.0 (interpolating), DTOR=1.0, CID=1
+$ EA-only collinear SET1: attach rotations rigidly (DTHX=0 bending, DTHY=0 torsion)
+SPLINE2, 300, 200, 200, 203, 10, 0.0, 1.0, 1
++, 0.0, 0.0
+$
+ENDDATA

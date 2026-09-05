@@ -1,4 +1,4 @@
-"""Step 24: End-to-end integration verification tests (V1–V19).
+"""Step 24: End-to-end integration verification tests (V1–V20).
 
 Each test reads a BDF file through parse_bdf, runs the solver, and checks
 the result against a closed-form analytical value.
@@ -14,6 +14,16 @@ from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.solver.sol101 import run_sol101
 from sbeam.solver.sol103 import run_sol103
 from sbeam.assembly.load_vector import build_grid_index
+from sbeam.model.bulk_data import BulkData
+from sbeam.parser.case_control import CaseControl, SubcaseControl
+from sbeam.results.results import Sol101Result
+from sbeam.types import FloatArray
+
+#: (result, grid_index) — the shape returned by most fixtures below.
+Sol101Fixture = tuple[Sol101Result, dict[int, int]]
+
+#: (result, grid_index, bulk) — V18 also needs the model to rebuild the lever arm.
+Sol101BulkFixture = tuple[Sol101Result, dict[int, int], BulkData]
 
 BDF_DIR = Path(__file__).parent / "bdf"
 
@@ -31,7 +41,7 @@ P   = 1000.0
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
-def cantilever_sol101():
+def cantilever_sol101() -> Sol101Fixture:
     cc, bulk = parse_bdf(BDF_DIR / "v1_v2_cantilever.bdf")
     result = run_sol101(bulk, cc.subcases[0])
     grid_index = build_grid_index(bulk)
@@ -39,7 +49,7 @@ def cantilever_sol101():
 
 
 @pytest.fixture(scope="module")
-def simply_supported_sol101():
+def simply_supported_sol101() -> Sol101Fixture:
     cc, bulk = parse_bdf(BDF_DIR / "v3_simply_supported.bdf")
     result = run_sol101(bulk, cc.subcases[0])
     grid_index = build_grid_index(bulk)
@@ -47,7 +57,7 @@ def simply_supported_sol101():
 
 
 @pytest.fixture(scope="module")
-def fixed_fixed_sol101():
+def fixed_fixed_sol101() -> Sol101Result:
     cc, bulk = parse_bdf(BDF_DIR / "v4_fixed_fixed_udl.bdf")
     result = run_sol101(bulk, cc.subcases[0])
     return result
@@ -58,7 +68,7 @@ def fixed_fixed_sol101():
 # ---------------------------------------------------------------------------
 
 class TestV1CantileverTipDeflection:
-    def test_tip_ty(self, cantilever_sol101):
+    def test_tip_ty(self, cantilever_sol101: Sol101Fixture) -> None:
         result, grid_index = cantilever_sol101
         ty = result.displacements[6 * grid_index[11] + 1]
         expected = P * L**3 / (3 * E * I)
@@ -70,7 +80,7 @@ class TestV1CantileverTipDeflection:
 # ---------------------------------------------------------------------------
 
 class TestV2CantileverFixedEndMoment:
-    def test_fixed_end_mz(self, cantilever_sol101):
+    def test_fixed_end_mz(self, cantilever_sol101: Sol101Fixture) -> None:
         result, _ = cantilever_sol101
         # Mz reaction at node 1 (index 5 in the 6-DOF reaction vector)
         mz = abs(result.reactions[1][5])
@@ -82,7 +92,7 @@ class TestV2CantileverFixedEndMoment:
 # ---------------------------------------------------------------------------
 
 class TestV3SimplySupported:
-    def test_midspan_ty(self, simply_supported_sol101):
+    def test_midspan_ty(self, simply_supported_sol101: Sol101Fixture) -> None:
         result, grid_index = simply_supported_sol101
         ty = result.displacements[6 * grid_index[6] + 1]
         expected = P * L**3 / (48 * E * I)
@@ -96,7 +106,7 @@ class TestV3SimplySupported:
 class TestV4FixedFixedUDL:
     TOTAL_LOAD = 9 * 1000.0  # 9 interior nodes × 1000 N
 
-    def test_reaction_equilibrium(self, fixed_fixed_sol101):
+    def test_reaction_equilibrium(self, fixed_fixed_sol101: Sol101Result) -> None:
         result = fixed_fixed_sol101
         # Reactions oppose the applied +Y forces, so sum is negative; check magnitude
         reaction_sum = abs(result.reactions[1][1] + result.reactions[11][1])
@@ -108,7 +118,7 @@ class TestV4FixedFixedUDL:
 # ---------------------------------------------------------------------------
 
 class TestV5CantileverModal:
-    def test_first_frequency(self):
+    def test_first_frequency(self) -> None:
         cc, bulk = parse_bdf(BDF_DIR / "v5_cantilever_modal.bdf")
         result = run_sol103(bulk, cc.subcases[0])
         expected = (1.87510**2 / (2 * math.pi)) * math.sqrt(E * I / (rho * A)) / L**2
@@ -120,7 +130,7 @@ class TestV5CantileverModal:
 # ---------------------------------------------------------------------------
 
 class TestV6FreeFree:
-    def test_rigid_body_modes(self):
+    def test_rigid_body_modes(self) -> None:
         cc, bulk = parse_bdf(BDF_DIR / "v6_free_free_modal.bdf")
         result = run_sol103(bulk, cc.subcases[0])
         # Numerical noise places rigid body modes up to ~0.003 Hz; first elastic >> 1 Hz
@@ -132,7 +142,7 @@ class TestV6FreeFree:
 # ---------------------------------------------------------------------------
 
 class TestV7SimplySupported:
-    def test_first_frequency(self):
+    def test_first_frequency(self) -> None:
         cc, bulk = parse_bdf(BDF_DIR / "v7_simply_supported_modal.bdf")
         result = run_sol103(bulk, cc.subcases[0])
         expected = (math.pi**2 / (2 * math.pi * L**2)) * math.sqrt(E * I / (rho * A))
@@ -158,7 +168,7 @@ I22_V9 = 0.1
 # ---------------------------------------------------------------------------
 
 class TestV8Conm2TorsionalInertia:
-    def test_torsional_frequency(self):
+    def test_torsional_frequency(self) -> None:
         cc, bulk = parse_bdf(BDF_DIR / "v8_conm2_torsional_inertia.bdf")
         result = run_sol103(bulk, cc.subcases[0])
         expected = math.sqrt(G_V8 * J_V8 / (L_V8 * I11_V8)) / (2 * math.pi)
@@ -171,7 +181,7 @@ class TestV8Conm2TorsionalInertia:
 
 class TestV9Conm2OffsetBending:
     @staticmethod
-    def _analytical_freqs():
+    def _analytical_freqs() -> FloatArray:
         from scipy.linalg import eigh as sp_eigh
         K = np.array([[12 * E_V9 * I1_V9 / L_V9**3, 6 * E_V9 * I1_V9 / L_V9**2],
                       [6 * E_V9 * I1_V9 / L_V9**2, 4 * E_V9 * I1_V9 / L_V9]])
@@ -181,13 +191,13 @@ class TestV9Conm2OffsetBending:
         vals, _ = sp_eigh(K, M)
         return np.sqrt(np.clip(vals, 0, None)) / (2 * math.pi)
 
-    def test_first_frequency(self):
+    def test_first_frequency(self) -> None:
         cc, bulk = parse_bdf(BDF_DIR / "v9_conm2_offset_bending.bdf")
         result = run_sol103(bulk, cc.subcases[0])
         expected = self._analytical_freqs()
         assert result.frequencies_hz[0] == pytest.approx(expected[0], rel=0.01)
 
-    def test_second_frequency(self):
+    def test_second_frequency(self) -> None:
         cc, bulk = parse_bdf(BDF_DIR / "v9_conm2_offset_bending.bdf")
         result = run_sol103(bulk, cc.subcases[0])
         expected = self._analytical_freqs()
@@ -206,7 +216,7 @@ M_V10 = 1.0
 
 
 class TestV10Conm2ZeroDensity:
-    def test_no_linalg_error(self):
+    def test_no_linalg_error(self) -> None:
         import scipy.linalg
         cc, bulk = parse_bdf(BDF_DIR / "v10_conm2_zero_density.bdf")
         try:
@@ -214,7 +224,7 @@ class TestV10Conm2ZeroDensity:
         except scipy.linalg.LinAlgError as exc:
             pytest.fail(f"LinAlgError raised for zero-density CONM2 model: {exc}")
 
-    def test_bending_frequency(self):
+    def test_bending_frequency(self) -> None:
         cc, bulk = parse_bdf(BDF_DIR / "v10_conm2_zero_density.bdf")
         result = run_sol103(bulk, cc.subcases[0])
         expected = math.sqrt(3 * E_V10 * I1_V10 / (M_V10 * L_V10 ** 3)) / (2 * math.pi)
@@ -239,7 +249,7 @@ D_V12 = 1.0
 # ---------------------------------------------------------------------------
 
 class TestV11CantileverTorsionSol101:
-    def test_torsional_rotation(self):
+    def test_torsional_rotation(self) -> None:
         cc, bulk = parse_bdf(BDF_DIR / "v11_cantilever_torsion_sol101.bdf")
         result = run_sol101(bulk, cc.subcases[0])
         grid_index = build_grid_index(bulk)
@@ -254,7 +264,7 @@ class TestV11CantileverTorsionSol101:
 # ---------------------------------------------------------------------------
 
 class TestV12Conm2OffsetTorsionSol103:
-    def test_torsional_frequency(self):
+    def test_torsional_frequency(self) -> None:
         cc, bulk = parse_bdf(BDF_DIR / "v12_conm2_offset_torsion_sol103.bdf")
         result = run_sol103(bulk, cc.subcases[0])
         I_eff = M_V12 * D_V12 ** 2
@@ -282,7 +292,7 @@ class TestB3MultiSubcase:
     P1 = 1000.0
     P2 = 2000.0
 
-    def _make_model(self):
+    def _make_model(self) -> tuple[BulkData, CaseControl]:
         from sbeam.model.grid import Grid
         from sbeam.model.element import Cbar
         from sbeam.model.property import Pbar
@@ -311,7 +321,7 @@ class TestB3MultiSubcase:
         )
         return bulk, cc
 
-    def test_two_subcases_produce_independent_results(self):
+    def test_two_subcases_produce_independent_results(self) -> None:
         bulk, cc = self._make_model()
         gi = build_grid_index(bulk)
         results = {sc.subcase_id: run_sol101(bulk, sc) for sc in cc.subcases}
@@ -341,20 +351,20 @@ P_V13 = 1000.0
 
 class TestV13Rbe2RigidCoupling:
     @pytest.fixture(scope="class")
-    def result_and_gi(self):
+    def result_and_gi(self) -> Sol101Fixture:
         cc, bulk = parse_bdf(BDF_DIR / "v13_rbe2_rigid_coupling.bdf")
         result = run_sol101(bulk, cc.subcases[0])
         grid_index = build_grid_index(bulk)
         return result, grid_index
 
-    def test_gid2_tip_deflection(self, result_and_gi):
+    def test_gid2_tip_deflection(self, result_and_gi: Sol101Fixture) -> None:
         """Ty at CBAR tip (GID 2) matches cantilever formula PL^3/3EI."""
         result, gi = result_and_gi
         ty = result.displacements[6 * gi[2] + 1]
         expected = P_V13 * L_V13 ** 3 / (3 * E_V13 * I_V13)
         assert ty == pytest.approx(expected, rel=1e-3)
 
-    def test_gid3_equals_gid2(self, result_and_gi):
+    def test_gid3_equals_gid2(self, result_and_gi: Sol101Fixture) -> None:
         """RBE2 constraint: all DOFs of GID 3 (dependent) == GID 2 (independent)."""
         result, gi = result_and_gi
         u2 = result.displacements[6 * gi[2]: 6 * gi[2] + 6]
@@ -374,20 +384,20 @@ P_V14 = 1000.0
 
 class TestV14RbarZeroOffset:
     @pytest.fixture(scope="class")
-    def result_and_gi(self):
+    def result_and_gi(self) -> Sol101Fixture:
         cc, bulk = parse_bdf(BDF_DIR / "v14_rbar_zero_offset.bdf")
         result = run_sol101(bulk, cc.subcases[0])
         grid_index = build_grid_index(bulk)
         return result, grid_index
 
-    def test_gid2_tip_deflection(self, result_and_gi):
+    def test_gid2_tip_deflection(self, result_and_gi: Sol101Fixture) -> None:
         """Ty at CBAR tip (GID 2) matches cantilever formula PL^3/3EI."""
         result, gi = result_and_gi
         ty = result.displacements[6 * gi[2] + 1]
         expected = P_V14 * L_V14 ** 3 / (3 * E_V14 * I_V14)
         assert ty == pytest.approx(expected, rel=1e-3)
 
-    def test_gid3_equals_gid2(self, result_and_gi):
+    def test_gid3_equals_gid2(self, result_and_gi: Sol101Fixture) -> None:
         """RBAR zero-offset constraint: all DOFs of GID 3 (dependent) == GID 2 (independent)."""
         result, gi = result_and_gi
         u2 = result.displacements[6 * gi[2]: 6 * gi[2] + 6]
@@ -406,17 +416,17 @@ _V15_WEIGHT = _V15_MASS * 9.81      # 3849.225 N
 
 class TestV15GravSimplySupported:
     @pytest.fixture(scope="class")
-    def result(self):
+    def result(self) -> Sol101Result:
         cc, bulk = parse_bdf(BDF_DIR / "v15_grav_simply_supported.bdf")
         return run_sol101(bulk, cc.subcases[0])
 
-    def test_reaction_sum_equals_total_weight(self, result):
+    def test_reaction_sum_equals_total_weight(self, result: Sol101Result) -> None:
         """Sum of Ty reactions at both supports equals total CBAR weight."""
         r1  = result.reactions.get(1,  np.zeros(6))[1]
         r11 = result.reactions.get(11, np.zeros(6))[1]
         assert r1 + r11 == pytest.approx(_V15_WEIGHT, rel=1e-4)
 
-    def test_reactions_symmetric(self, result):
+    def test_reactions_symmetric(self, result: Sol101Result) -> None:
         """Uniform beam under uniform gravity: each support carries half the weight."""
         r1  = result.reactions.get(1,  np.zeros(6))[1]
         r11 = result.reactions.get(11, np.zeros(6))[1]
@@ -435,24 +445,24 @@ _V16_WEIGHT = _V16_MASS * 9.81      # 4340.925 N
 
 class TestV16GravWithConm2:
     @pytest.fixture(scope="class")
-    def result(self):
+    def result(self) -> Sol101Result:
         cc, bulk = parse_bdf(BDF_DIR / "v16_grav_with_conm2.bdf")
         return run_sol101(bulk, cc.subcases[0])
 
-    def test_reaction_sum_equals_total_weight(self, result):
+    def test_reaction_sum_equals_total_weight(self, result: Sol101Result) -> None:
         """Sum of Ty reactions equals CBAR weight + CONM2 weight."""
         r1  = result.reactions.get(1,  np.zeros(6))[1]
         r11 = result.reactions.get(11, np.zeros(6))[1]
         assert r1 + r11 == pytest.approx(_V16_WEIGHT, rel=1e-4)
 
-    def test_reactions_symmetric(self, result):
+    def test_reactions_symmetric(self, result: Sol101Result) -> None:
         """CONM2 at midspan: each support carries half the total weight."""
         r1  = result.reactions.get(1,  np.zeros(6))[1]
         r11 = result.reactions.get(11, np.zeros(6))[1]
         assert r1 == pytest.approx(_V16_WEIGHT / 2.0, rel=1e-4)
         assert r11 == pytest.approx(_V16_WEIGHT / 2.0, rel=1e-4)
 
-    def test_conm2_contribution(self, result):
+    def test_conm2_contribution(self, result: Sol101Result) -> None:
         """Total weight exceeds CBAR-only weight by CONM2 mass * g."""
         r1  = result.reactions.get(1,  np.zeros(6))[1]
         r11 = result.reactions.get(11, np.zeros(6))[1]
@@ -472,17 +482,17 @@ _V17_NET_LOAD = _V15_WEIGHT - 1000.0   # 2849.225 N
 
 class TestV17GravPlusForce:
     @pytest.fixture(scope="class")
-    def result(self):
+    def result(self) -> Sol101Result:
         cc, bulk = parse_bdf(BDF_DIR / "v17_grav_plus_force.bdf")
         return run_sol101(bulk, cc.subcases[0])
 
-    def test_reaction_sum_equals_net_load(self, result):
+    def test_reaction_sum_equals_net_load(self, result: Sol101Result) -> None:
         """Sum of Ty reactions equals net load (gravity minus upward force)."""
         r1  = result.reactions.get(1,  np.zeros(6))[1]
         r11 = result.reactions.get(11, np.zeros(6))[1]
         assert r1 + r11 == pytest.approx(_V17_NET_LOAD, rel=1e-4)
 
-    def test_reactions_symmetric(self, result):
+    def test_reactions_symmetric(self, result: Sol101Result) -> None:
         """Symmetric loading: each support carries half the net load."""
         r1  = result.reactions.get(1,  np.zeros(6))[1]
         r11 = result.reactions.get(11, np.zeros(6))[1]
@@ -520,25 +530,25 @@ _UY_GM_V18 = _UY_GN_V18 + _A_V18 * _TZ_GN_V18
 
 class TestV18Rbe2LeverArm:
     @pytest.fixture(scope="class")
-    def result_and_gi(self):
+    def result_and_gi(self) -> Sol101BulkFixture:
         cc, bulk = parse_bdf(BDF_DIR / "v18_rbe2_offset.bdf")
         result = run_sol101(bulk, cc.subcases[0])
         gi = build_grid_index(bulk)
         return result, gi, bulk
 
-    def test_gn_tip_deflection(self, result_and_gi):
+    def test_gn_tip_deflection(self, result_and_gi: Sol101BulkFixture) -> None:
         """u_y at GN (grid 2) matches cantilever formula with eccentric load."""
         result, gi, _ = result_and_gi
         u_y = result.displacements[6 * gi[2] + 1]
         assert u_y == pytest.approx(_UY_GN_V18, rel=1e-3)
 
-    def test_gm_offset_deflection(self, result_and_gi):
+    def test_gm_offset_deflection(self, result_and_gi: Sol101BulkFixture) -> None:
         """u_y at GM (grid 3) includes lever-arm: u_y(GN) + a*θ_z(GN)."""
         result, gi, _ = result_and_gi
         u_y = result.displacements[6 * gi[3] + 1]
         assert u_y == pytest.approx(_UY_GM_V18, rel=1e-3)
 
-    def test_gm_equals_R_times_gn(self, result_and_gi):
+    def test_gm_equals_R_times_gn(self, result_and_gi: Sol101BulkFixture) -> None:
         """All 6 DOFs at GM satisfy u_GM = R @ u_GN (rigid-body kinematics)."""
         result, gi, _ = result_and_gi
         u_gn = result.displacements[6 * gi[2]: 6 * gi[2] + 6]
@@ -583,25 +593,25 @@ _UY_GB_V19 = _UY_GA_V19 + _A_V19 * _TZ_GA_V19
 
 class TestV19RbarLeverArm:
     @pytest.fixture(scope="class")
-    def result_and_gi(self):
+    def result_and_gi(self) -> Sol101Fixture:
         cc, bulk = parse_bdf(BDF_DIR / "v19_rbar_offset.bdf")
         result = run_sol101(bulk, cc.subcases[0])
         gi = build_grid_index(bulk)
         return result, gi
 
-    def test_ga_tip_deflection(self, result_and_gi):
+    def test_ga_tip_deflection(self, result_and_gi: Sol101Fixture) -> None:
         """u_y at GA (grid 2) matches cantilever formula with lever-arm load transfer."""
         result, gi = result_and_gi
         u_y = result.displacements[6 * gi[2] + 1]
         assert u_y == pytest.approx(_UY_GA_V19, rel=1e-3)
 
-    def test_gb_lever_arm_deflection(self, result_and_gi):
+    def test_gb_lever_arm_deflection(self, result_and_gi: Sol101Fixture) -> None:
         """u_y at GB (grid 3) includes lever-arm: u_y(GA) + a*θ_z(GA)."""
         result, gi = result_and_gi
         u_y = result.displacements[6 * gi[3] + 1]
         assert u_y == pytest.approx(_UY_GB_V19, rel=1e-3)
 
-    def test_gb_equals_R_times_ga(self, result_and_gi):
+    def test_gb_equals_R_times_ga(self, result_and_gi: Sol101Fixture) -> None:
         """All 6 DOFs at GB satisfy u_GB = R @ u_GA (RBAR rigid-body kinematics)."""
         result, gi = result_and_gi
         u_ga = result.displacements[6 * gi[2]: 6 * gi[2] + 6]
@@ -625,7 +635,7 @@ class TestV19RbarLeverArm:
 class TestR12NoLoadSid:
     """Subcase with no LOAD card (load_sid=None) must produce zero displacements."""
 
-    def _make_model(self):
+    def _make_model(self) -> tuple[BulkData, SubcaseControl]:
         from sbeam.model.grid import Grid
         from sbeam.model.element import Cbar
         from sbeam.model.property import Pbar
@@ -646,12 +656,12 @@ class TestR12NoLoadSid:
         subcase = SubcaseControl(subcase_id=1, spc_sid=1, load_sid=None)
         return bulk, subcase
 
-    def test_no_load_sid_returns_zero_displacements(self):
+    def test_no_load_sid_returns_zero_displacements(self) -> None:
         bulk, subcase = self._make_model()
         result = run_sol101(bulk, subcase)
         np.testing.assert_array_equal(result.displacements, 0.0)
 
-    def test_no_load_sid_returns_zero_reactions(self):
+    def test_no_load_sid_returns_zero_reactions(self) -> None:
         bulk, subcase = self._make_model()
         result = run_sol101(bulk, subcase)
         for vec in result.reactions.values():
@@ -668,19 +678,19 @@ F_V20 = 1000.0
 
 class TestV20CbushGroundedSpring:
     @pytest.fixture(scope="class")
-    def result_and_gi(self):
+    def result_and_gi(self) -> Sol101Fixture:
         cc, bulk = parse_bdf(BDF_DIR / "v20_cbush_grounded_spring.bdf")
         result = run_sol101(bulk, cc.subcases[0])
         gi = build_grid_index(bulk)
         return result, gi
 
-    def test_displacement_equals_f_over_k(self, result_and_gi):
+    def test_displacement_equals_f_over_k(self, result_and_gi: Sol101Fixture) -> None:
         """Tx at grounded node equals F/K."""
         result, gi = result_and_gi
         tx = result.displacements[6 * gi[1]]
         assert tx == pytest.approx(F_V20 / K_V20, rel=1e-4)
 
-    def test_cbush_force_equals_k_times_u(self, result_and_gi):
+    def test_cbush_force_equals_k_times_u(self, result_and_gi: Sol101Fixture) -> None:
         """CBUSH element force in X equals K × u = F."""
         result, gi = result_and_gi
         tx = result.displacements[6 * gi[1]]

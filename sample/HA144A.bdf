@@ -1,0 +1,253 @@
+$ =========================================================================
+$ HA144A.bdf — FSW Airplane in Level Flight (Static Aeroelastic, SOL 144)
+$
+$ ARCHIVE — NOT RUNNABLE BY DESIGN.  This is the verbatim MSC listing, kept as the
+$ reference record of the published problem and its Table 7-1 values; it uses MSC
+$ cards sbeam does not implement and fails at parse (CBAR 101: property PID=100 not
+$ found).  The runnable sbeam transcription is sample/ha144a_fullspan_sbeam.bdf.
+$
+$ Faithful transcription of MSC Nastran example HA144A from:
+$   MSC Nastran 2021.3 Aeroelastic Analysis User's Guide, Chapter 7,
+$   "Static Aeroelastic Analysis Problems — FSW Airplane in Level Flight",
+$   Listing 7-1 (pp. 206-214).  Original problem: Rodden & Love (1985),
+$   "Equations of Motion of a Quasisteady Flight Vehicle..." (Ref. 51).
+$
+$ PURPOSE (sbeam): canonical static-aeroelastic VALIDATION BENCHMARK for the
+$   Phase B (spline) + Phase C (SOL 144 trim / divergence / stability
+$   derivatives) work.  It is the "HA144A-class" case named in static_aero_plan.md
+$   (validation V-C1).  This deck is NOT runnable in sbeam today — see the
+$   "sbeam support status" note below.  It is committed as the reference model
+$   and as the source of the expected answers tabulated below.
+$
+$ MODEL  : 30-deg FORWARD-swept wing + canard, HALF-SPAN symmetric model.
+$          Idealised beam ("stick") structure with dumbbell point masses.
+$          Wing AR=4, no taper/twist/camber, +0.1 deg incidence to fuselage.
+$          Canard AR=1, no taper/twist/camber/incidence, hinged at its 1/4 chord.
+$          Wing & canard chords = 10 ft; REFC c_bar = 10 ft; REFS S = 200 sqft
+$          (half-model); REFB b = 40 ft (full span).  Total weight 8000 lb/side.
+$ UNITS  : lb-ft-sec (PARAM WTMASS = 1/g = .031081 converts weight -> mass slug).
+$ AERO   : Doublet-Lattice (subsonic).  Wing = 8 spanwise x 4 chordwise = 32
+$          boxes (1100-1131); canard = 2 x 4 = 8 boxes (1000-1007).
+$          Fuselage aerodynamics neglected.  SYMXZ=1 (symmetric half model).
+$
+$ FLIGHT CONDITIONS (1 g level flight, URDD3 = -1.0):
+$   TRIM 1 : M=0.9, q_bar = 40   psf  (low-q "quasi-rigid")   [subsonic]
+$   TRIM 2 : M=0.9, q_bar = 1200 psf  (sea level)             [subsonic]
+$   TRIM 3 : M=1.3, q_bar = 1151 psf  (20,000 ft)             [SUPERSONIC -
+$            ZONA51; OUT OF sbeam subsonic scope, kept for fidelity]
+$
+$ ------------------------------------------------------------------ EXPECTED
+$ Published reference results to validate sbeam Phase C against
+$ (MSC guide Table 7-1 and pp. 216, 218).  C_z = -C_L; moments about the
+$ NACA stability axes (CORD2R 100, x fwd / z down, origin at GRID 90).
+$
+$ Trim solution (level flight):
+$   TRIM 1 (q=40)  : ANGLEA = 0.169191 rad (9.69 deg);  ELEV = 0.492457 rad (28.22 deg)
+$   TRIM 2 (q=1200): ANGLEA = 0.001373 rad (0.079 deg); ELEV = 0.01932  rad (1.107 deg)
+$   TRIM 3 (q=1151): ANGLEA = -0.0005118 rad (-0.003 deg); ELEV = 0.03027 rad (1.734 deg)
+$   Unrestrained aero centre (subsonic, q=1200): x_ac = 2.945 ft aft of GRID 90.
+$
+$ Subsonic non-dimensional stability derivatives (Table 7-1):
+$   Deriv     Rigid      Restr@40   Unrest@40  Restr@1200  Unrest@1200
+$   Cz_o    -0.008421  -0.008464  -0.008509  -0.010332   -0.012653
+$   Cm_o    -0.006008  -0.006031  -0.006064  -0.007074   -0.008678
+$   Cz_a    -5.071     -5.103     -5.127     -6.463      -7.772
+$   Cm_a    -2.871     -2.889     -2.907     -3.667      -4.577
+$   Cz_de   -0.2461    -0.2538    -0.2520    -0.5430     -0.5219
+$   Cm_de    0.5715     0.5667     0.5678     0.3860      0.3956
+$   Cz_q   -12.074    -12.087    -12.158    -12.856     -16.100
+$   Cm_q    -9.954     -9.956    -10.007    -10.274     -12.499
+$
+$ ------------------------------------------------------ sbeam support status
+$ Supported now (Phase A): GRID, CBAR, PBAR, MAT1, CONM2, RBAR, SPC1, CORD2R,
+$   CAERO1, PAERO1, AEROS.
+$ NOT yet supported (needed to run this case):
+$   - SOL 144 + TRIM/AESTAT/AESURF/AELIST/SUPORT  -> Phase C (case-control
+$     currently rejects SOL 144).
+$   - SPLINE2 + SET1                              -> Phase B (structure<->aero spline).
+$   - DMI WKK / W2GJ / FA2J  -> sbeam uses native WKK / W2GJ cards, NOT DMI.
+$     Here WKK = identity (no correction) and W2GJ = 0.1 deg (0.0017453 rad)
+$     on the 32 wing boxes, 0 on the 8 canard boxes; FA2J = 0.
+$   - PARAM AUNITS/LDSUM/SDCSV/XYUNIT/SDUNIT; monitor points (AECOMP, MONPNT1/2,
+$     MONSUM, MONDSP1, MONCNCM) — output requests, omitted (see note at end).
+$ =========================================================================
+ASSIGN USERFILE='HA144CSVT.CSV' STATUS=UNKNOWN FORM=FORMATTED UNIT=52
+ASSIGN USERFILE='HA144CSVS.CSV' STATUS=UNKNOWN FORM=FORMATTED UNIT=51
+ID MSC, HA144A
+TIME 5
+SOL 144
+CEND
+TITLE = EXAMPLE HA144A: 30 DEG FWD SWEPT WING WITH CANARD HA144A
+SUBTI = SYMMETRIC FLIGHT CONDITIONS, DOUBLET-LATTICE AERO
+LABEL = HALF-SPAN MODEL, STATIC SYMMETRIC LOADING
+  ECHO   = BOTH
+  SPC    = 1
+  DISP   = ALL
+  STRESS = ALL
+  FORCE  = ALL
+  AEROF  = ALL
+  APRES  = ALL
+  GPFO   = ALL
+SUBCASE 1
+  TRIM = 1   $ 1 G level flight (low speed,  q = 40 psf)
+SUBCASE 2
+  TRIM = 2   $ 1 G level flight (high subsonic, q = 1200 psf)
+SUBCASE 3
+  TRIM = 3   $ 1 G level flight (low supersonic, q = 1151 psf)
+BEGIN BULK
+$
+$ * * * STRUCTURAL DATA * * *   (LB-FT-SEC SYSTEM)
+$
+$ ---------------------------------------------------------- GRID GEOMETRY
+$ Fuselage points (GRID 90,97-100); wing points (GRID 110-122)
+$ GID, CP, X1,        X2,    X3
+GRID, 90,  , 15.0,     0.0,   0.0
+GRID, 97,  , 0.0,      0.0,   0.0
+GRID, 98,  , 10.0,     0.0,   0.0
+GRID, 99,  , 20.0,     0.0,   0.0
+GRID, 100, , 30.0,     0.0,   0.0
+$ Wing grids: y=5 ft strip (110 = elastic axis @ 50% chord; 111 fwd, 112 aft)
+GRID, 111, , 24.61325, 5.0,   0.0
+GRID, 110, , 27.11325, 5.0,   0.0
+GRID, 112, , 29.61325, 5.0,   0.0
+$ Wing grids: y=15 ft strip (120 = elastic axis; 121 fwd, 122 aft)
+GRID, 121, , 18.83975, 15.0,  0.0
+GRID, 120, , 21.33975, 15.0,  0.0
+GRID, 122, , 23.83975, 15.0,  0.0
+$
+$ ------------------------------------------------------- FUSELAGE STRUCTURE
+$ CBAR, EID, PID, GA,  GB,  X1, X2, X3   (orientation vector 0,0,1)
+CBAR, 101, 100, 97,  98,  0.0, 0.0, 1.0
+CBAR, 102, 100, 98,  90,  0.0, 0.0, 1.0
+CBAR, 100, 100, 90,  99,  0.0, 0.0, 1.0
+CBAR, 103, 100, 99,  100, 0.0, 0.0, 1.0
+$ PBAR, PID, MID, A,   I1,       I2,   J
+PBAR, 100, 1, 2.0, 0.173611, 0.15, 0.5
+$ stress recovery points C,D,E,F at (+-1, +-1)
++, 1.0, 1.0, 1.0, -1.0, -1.0, 1.0, -1.0, -1.0
+$
+$ ----------------------------------------------------------- WING STRUCTURE
+$ Wing beam along the 50%-chord elastic axis: GRID 100 -> 110 -> 120
+CBAR, 110, 101, 100, 110, 0.0, 0.0, 1.0
+CBAR, 120, 101, 110, 120, 0.0, 0.0, 1.0
+$ Rigid streamwise bars: fwd/aft grids slaved to the elastic-axis grids
+$ RBAR, EID, GA,  GB,  CNA
+RBAR, 111, 110, 111, 123456
+RBAR, 112, 110, 112, 123456
+RBAR, 121, 120, 121, 123456
+RBAR, 122, 120, 122, 123456
+$ PBAR, PID, MID, A,   I1,       I2,  J
+PBAR, 101, 1, 1.5, 0.173611, 2.0, 0.462963
+$ stress recovery points (depth +-0.5, chord +-3.0); I12 = 0
++, 0.5, 3.0, 0.5, -3.0, -0.5, 3.0, -0.5, -3.0
++, , , 0.0
+$
+$ MAT1, MID, E,      G
+MAT1, 1, 1.44+9, 5.40+8
+$
+$ ---------------------------------------------------- MASS / INERTIA (lb)
+$ Fuselage masses (1500 lb each at GRID 97-100)
+$ CONM2, EID, G,   CID, M
+CONM2, 97,  97,  0, 1500.0
+CONM2, 98,  98,  0, 1500.0
+CONM2, 99,  99,  0, 1500.0
+CONM2, 100, 100, 0, 1500.0
+$ Wing dumbbell masses: 600 lb fwd (111,121), 400 lb aft (112,122)
+CONM2, 311, 111, 0, 600.0
+CONM2, 312, 112, 0, 400.0
+CONM2, 321, 121, 0, 600.0
+CONM2, 322, 122, 0, 400.0
+$
+$ ----------------------------------------------------------- PARAMETERS
+PARAM, GRDPNT, 90
+PARAM, WTMASS, .031081
+PARAM, AUNITS, .031081
+PARAM, LDSUM,  2
+PARAM, SDCSV,  63
+PARAM, XYUNIT, 52
+PARAM, SDUNIT, 51
+$
+$ ---------------------------------------------------------- CONSTRAINTS
+$ Symmetric constraints; GRID 90 also fixed in X (1)
+SPC1, 1, 1246, 90
+SPC1, 1, 246, 97, 98, 99, 100
+$ Rigid-body trim freedoms: plunge (3) and pitch (5) at the reference point
+SUPORT, 90, 35
+$
+$ * * * AERODYNAMIC DATA * * *   (LB-FT-SEC SYSTEM)
+$
+$ AEROS, ACSID, RCSID, REFC, REFB, REFS, SYMXZ, SYMXY
+AEROS, 1, 100, 10.0, 40.0, 200.0, 1, 0
+$
+$ Aero coordinate system (origin at canard 1/4 chord); flow x = global +X
+$ CORD2R, CID, RID, A1,   A2,  A3,  B1,   B2,  B3
+CORD2R, 1, 0, 12.5, 0.0, 0.0, 12.5, 0.0, 10.0
++, 20.0, 0.0, 0.0
+$ NACA stability axes for derivative output (x fwd, z down), origin GRID 90
+CORD2R, 100, 0, 15.0, 0.0, 0.0, 15.0, 0.0, -10.0
++, 0.0, 0.0, 0.0
+$
+$ ----------------------------------------------- WING AERO + BEAM SPLINE
+$ SPLINE2, EID, CAERO, ID1,  ID2,  SETG, DZ,  DTOR, CID
+SPLINE2, 1601, 1100, 1100, 1131, 1100, 0.0, 1.0, 2
++, -1.0, -1.0
+$ CAERO1, EID, PID, CP, NSPAN, NCHORD, LSPAN, LCHORD, IGID
+CAERO1, 1100, 1000, 0, 8, 4, 0, 0, 1
++, 25.0, 0.0, 0.0, 10.0, 13.45299, 20.0, 0.0, 10.0
+PAERO1, 1000
+$ Structural grids used by the wing spline (root region grids 99,100 included)
+SET1, 1100, 99, 100, 111, 112, 121, 122
+$ Wing spline axis coordinate system (extends along wing y-axis)
+CORD2R, 2, 0, 30.0, 0.0, 0.0, 30.0, 0.0, 10.0
++, 38.66025, 5.0, 0.0
+$
+$ ------------------------------- CANARD AERO + CONTROL SURFACE + SPLINE
+$ Control surface ELEV = the canard, hinge line = CORD2R 1, boxes via AELIST 1000
+AESURF, 505, ELEV, 1, 1000
+AELIST, 1000, 1000, THRU, 1007
+$ SPLINE2, EID, CAERO, ID1,  ID2,  SETG, DZ,  DTOR, CID
+SPLINE2, 1501, 1000, 1000, 1007, 1000, 0.0, 1.0, 1
++, 1.0, -1.0
+$ CAERO1, EID, PID, CP, NSPAN, NCHORD, LSPAN, LCHORD, IGID
+CAERO1, 1000, 1000, 0, 2, 4, 0, 0, 1
++, 10.0, 0.0, 0.0, 10.0, 10.0, 5.0, 0.0, 10.0
+$ Structural grids used by the canard spline
+SET1, 1000, 98, 99
+$
+$ ------------------------------ AERO CORRECTION / DOWNWASH (DMI - see note)
+$ WKK  = 1.0 (identity, no correction) for all 80 (= 2 x 40) entries
+DMI, WKK, 0, 3, 1, , 80, 1
+DMI, WKK, 1, 1, 1.0, THRU, 80
+$ W2GJ = initial downwash: 0.1 deg = 0.0017453 rad on wing boxes (rows 9-40),
+$        0 on canard boxes (rows 1-8)
+DMI, W2GJ, 0, 2, 1, , 40, 1
+DMI, W2GJ, 1, 9, .0017453, THRU, 40
+$ FA2J = additive pressure coefficients at zero alpha = 0
+DMI, FA2J, 0, 2, 1, , 40, 1
+DMI, FA2J, 1, 1, 0.0, THRU, 40
+$
+$ * * * SOLUTION SPECIFICATIONS * * *
+$
+$ Trim variables (rigid-body DOF + control surface)
+AESTAT, 501, ANGLEA
+AESTAT, 502, PITCH
+AESTAT, 503, URDD3
+AESTAT, 504, URDD5
+$
+$ TRIM, ID, MACH, Q,    LABEL1, UX1, LABEL2, UX2
+TRIM, 1, 0.9, 40.0, PITCH, 0.0, URDD3, -1.0
++, URDD5, 0.0
+TRIM, 2, 0.9, 1200.0, PITCH, 0.0, URDD3, -1.0
++, URDD5, 0.0
+TRIM, 3, 1.3, 1151.0, PITCH, 0.0, URDD3, -1.0
++, URDD5, 0.0
+$
+$ NOTE: The original HA144A deck (Listing 7-1, entries 440-481) also defines
+$ monitor-point output requests — AECOMP, SET1 1, MONPNT1 (WINGSTRC/WINGAERO),
+$ MONSUM (WINGSUM), four MONPNT2 (wing root/tip stresses), MONDSP1 (RWTSD/RWTAD
+$ tip displacements) and two MONCNCM (CNCMWING/CNCMCAN strip loads).  These are
+$ post-processing summations only; they do not affect the trim solution or the
+$ stability derivatives and are omitted here to avoid transcribing MSC-specific
+$ monitor-point syntax that sbeam does not parse.  See the guide if needed.
+$
+ENDDATA

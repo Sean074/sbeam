@@ -29,7 +29,10 @@ jobs:
           pip install -e .[dev]
 
       - name: Lint (ruff)
-        run: ruff check sbeam/
+        run: ruff check sbeam/ tests/
+
+      - name: Type check (pyright)
+        run: pyright
 
       - name: Test (pytest)
         env:

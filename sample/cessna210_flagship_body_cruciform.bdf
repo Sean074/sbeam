@@ -1,0 +1,106 @@
+$ =========================================================================
+$ cessna210_flagship_body_cruciform.bdf — Step 66 body-panel OVERLAY for the
+$ Cessna 210 flagship SOL 144 family.
+$
+$ NOT A STANDALONE DECK.  This file carries only the fuselage aerodynamics; it
+$ is INCLUDEd *after* sample/cessna210_flagship_bulk.bdf by a driver deck:
+$
+$     SOL 144
+$     ...case control...
+$     INCLUDE 'cessna210_flagship_bulk.bdf'
+$     INCLUDE 'cessna210_flagship_body_cruciform.bdf'
+$
+$ The flagship bulk is left BYTE-IDENTICAL by design: every Step 65 anchor
+$ (CL, CZa, Cma, elevator deg/g, divergence margin, MONPNT1 = n*W) stays valid
+$ and this overlay is purely additive.  The bulk reserves CAERO1 EIDs 6000/7000
+$ for exactly this purpose.
+$
+$ CRUCIFORM variant: the panels carry PAERO1 10, so they are ordinary VLM
+$ surfaces — horseshoe vortices, wakes, and full AIC coupling to the wing and
+$ tail.  That coupling is real and measurable: adding these panels UNCORRECTED
+$ already moves the airplane's Cm0 (see the strip variant, which cannot).
+$
+$ Coordinate system: X = freestream (forward), Y = starboard, Z = up; origin at
+$ the nose.  Units: SI (m, N, kg, Pa).  Full-span model.
+$ =========================================================================
+$
+$ ------------------------------------------------------- BODY PANEL GEOMETRY
+$ sbeam has no slender-body element, so the fuselage is a CRUCIFORM of two
+$ crossing flat surfaces:
+$   * horizontal panel (CAERO1 6000, XY plane, normal +Z) — body lift / pitch;
+$   * vertical   panel (CAERO1 7000, XZ plane, normal +Y) — body sideforce / yaw.
+$
+$ PLACEMENT.  Both panels terminate at x=5.00, well ahead of the VTP LE (6.60)
+$ and HTP LE (6.90), and both sit low — the horizontal at z=0.30 (below the HTP
+$ at 0.70), the vertical wholly below the VTP root (z<0.60, in the same y=0
+$ plane as the fin).  So no body box, and no +X trailing leg, reaches the
+$ empennage station.  That matters here: a cruciform box
+$ genuinely loads its neighbours, so an overlap would be a numerical artefact.
+$
+$ MESH.  Both panels are 16/32 boxes with box aspect ratios inside the VLM's
+$ [0.5, 2.0] band (0.73 each).  The vertical panel is 2 spanwise x 16 chordwise
+$ rather than the 4x8 of the retired cessna210_body.bdf: 4 boxes up a 0.40 m
+$ height gave AR 0.17 and tripped the high-AR kernel warning.  Two z-stations
+$ still give the arm spread needed to separate roll from yaw.
+$
+$ ID NOTE: box IDs run 6000-6015 and 7000-7031.  Those numerically overlap the
+$ flagship's overlay CONM2 EIDs (6001-6014, 6020) — different namespaces, no
+$ conflict, but do not read one for the other.
+$
+CAERO1, 6000, 10, 0, 2, 8, 0, 0, 1
++, 0.30, -0.40, 0.30, 4.70, 0.30, 0.40, 0.30, 4.70
+CAERO1, 7000, 10, 0, 2, 16, 0, 0, 1
++, 0.30, 0.0, 0.05, 4.70, 0.30, 0.0, 0.45, 4.70
+$
+$ ------------------------------------------------------------------ SPLINING
+$ SPLINE0 = no structural coupling: body elasticity is negligible, so the
+$ panels add no deformation.  Field 5 names the master GRID that carries their
+$ resultant into the structure (Step 64).  GRID 900 is the trim reference,
+$ spliced into the fuselage CBAR chain and already listed in SET1 1310, so the
+$ injected body load lands inside the whole-aircraft MONPNT3 cut.  Naming it
+$ explicitly rather than defaulting to the SUPORT grid documents the intent
+$ (here they are the same grid).
+SPLINE0, 9400, 6000, 6000, 6015, 900
+SPLINE0, 9500, 7000, 7000, 7031, 900
+$
+$ ------------------------------------------------------- MONITOR (ALL 372 BOXES)
+$ The bulk's AELIST 1400 covers the 324 FLYING boxes only.  With body panels
+$ active that monitor no longer returns n*W — it falls short by exactly the body
+$ resultant.  This adds the whole-airplane collection so the aero-only = n*W
+$ identity still holds; keeping BOTH makes the shortfall measurable.
+AELIST, 1401, 1000, THRU, 1095, 2000, THRU, 2095, 3000, THRU, 3047
++, 4000, THRU, 4047, 5000, THRU, 5035, 6000, THRU, 6015
++, 7000, THRU, 7031
+AECOMP, ALLAERB, AELIST, 1401
+MONPNT1, MALLARB, AIRCRAFT AERO INC BODY, 35, ALLAERB, 0, 2.4375, 0.0, 0.60
+$
+$ --------------------------------------------------------------------
+$ sbeam body-panel correction  —  cruciform
+$ source section data : cessna210_flagship_section_data.csv  (TOTAL block)
+$ generated           : 2026-08-02
+$ condition           : Mach 0
+$ reference            : AEROS RCSID 990 origin (2.4375, 0.0, 0.60), basic axes
+$ targets              : Cma -1.4921  Cm0 -0.0404  Cnb +0.0772  Clb -0.0364
+$ achieved             : Cma -1.4921  Cm0 -0.0404  Cnb +0.0772  Clb -0.0364
+$ baseline (uncorrected panels present): Cma -1.5588  Cm0 -0.0525
+$ max |WT2 ratio|      : 27.736   (warn threshold 200)
+$ --------------------------------------------------------------------
+$ Cruciform body-panel total-aircraft moment correction (W2GJ + WT2)
+W2GJ, 9301, 6000, 4.005578E-02, 5.315901E-02, 4.321195E-02, 1.897335E-02, 2.670566E-03, 2.042345E-02
++, 3.776220E-02, 3.433886E-02, 3.782014E-02, 5.490116E-02, 4.372729E-02, 2.217663E-02, 2.575318E-02, 4.962044E-02
++, 4.957956E-02, -1.020364E-02
+AECORR, 9401, WT2, 6000, 1.477154E+00, 2.127566E-01, -1.006824E-01, -2.333303E-01, -1.031354E-01
++, -4.327070E-02, 5.567919E-03, 3.187278E-02, 1.331826E+00, 1.892745E-01, -1.031576E-01, -2.332755E-01, -1.030766E-01
++, -4.330254E-02, 5.511360E-03, 3.208849E-02
+W2GJ, 9302, 7000, 1.016506E-02, 6.335664E-03, 3.419593E-03, 2.156157E-03, 1.577498E-03, 1.531221E-03
++, 1.694309E-03, 1.952500E-03, 1.947639E-03, 1.273003E-03, 1.725245E-03, 4.167063E-04, 1.042014E-03, 2.641415E-04
++, 1.687988E-03, 1.155055E-03, 1.680470E-03, 1.319726E-03, 1.883687E-03, 1.674101E-03, 1.444295E-03, 1.401343E-03
++, 2.070577E-03, 2.270487E-03, 3.347034E-03, 3.889738E-03, 3.621631E-03, 3.761647E-03, 2.087663E-03, 1.375391E-03
++, 7.292425E-05, -4.638123E-03
+AECORR, 9402, WT2, 7000, -2.119746E+00, -8.978072E-02, -1.055551E-03, 2.109594E-03, 1.288252E-03
++, 7.983743E-04, 5.666419E-04, 4.572973E-04, 4.009238E-04, 3.755416E-04, 3.752065E-04, 3.940579E-04, 4.282238E-04
++, 4.684266E-04, 4.898315E-04, 4.840990E-04, 8.682568E+00, 1.424126E-01, 1.649554E-03, 2.568847E-03, 4.946554E-04
++, 8.555959E-04, 6.781671E-04, 5.829949E-04, 4.940567E-04, 4.541522E-04, 4.122060E-04, 4.548572E-04, 4.910632E-04
++, 5.638980E-04, 6.620729E-04, 6.200490E-04
+$ --------------------------------------------------------------------
+ENDDATA

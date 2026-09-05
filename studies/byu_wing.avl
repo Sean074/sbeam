@@ -1,0 +1,67 @@
+#=======================================================================
+# byu_wing.avl — AVL geometry for the A1 spanwise-refinement convergence sweep
+#
+# Reproduces the BYU FLOW Lab VortexLattice.jl "Steady-State Analysis of a
+# Wing" example (https://flow.byu.edu/VortexLattice.jl/dev/examples/), the
+# same planform used in sbeam's val_vlm_byu_wing.bdf and the A1 study
+# (docs/a1_spanwise_spacing_study.md).
+#
+# PLANFORM (right half; YDUPLICATE mirrors to full span):
+#   root LE (0,0,0) chord 2.2 ;  tip LE (0.4,7.5,0) chord 1.8 ;  twist 2 deg
+# REFERENCE: Sref=30, Cref=2, Bref=15, moment ref x=0.50
+# FLOW: alpha = 1 deg (set in OPER), + 2 deg twist (Ainc) = 3 deg incidence.
+# Equal (uniform) spacing both directions (Sspace=Cspace=3.0) to match sbeam's
+# uniform runs exactly.  My sbeam study showed cosine (1.0) gives the same CL.
+#
+# ---------------------------------------------------------------------
+# CONVERGENCE SWEEP — edit ONE number: the Nspan field on the SURFACE line
+# (3rd value, marked  <<< Nspan).  Run it for Nspan = 6, 12, 24, 48 and
+# record CLtot, Cmtot, CDind each time.  sbeam (uniform) gave:
+#       Nspan :   6        12        24        48
+#       CL_a  : 4.7697   4.6746   4.6216   4.5938   /rad
+#   (CL at 3deg = CL_a * 0.052360 ;  AVL published 12x6 value CL = 0.24454)
+# Question: does AVL drift the same way (-> ~4.57) or plateau at 4.667?
+#
+# HOW TO RUN (interactive):
+#   avl byu_wing.avl
+#   OPER
+#   A A 1.0        (constraint: Alpha = 1.0 deg)
+#   X              (execute)               -> read CLtot, Cmtot, CDind
+#   <quit>
+# Repeat with Nspan edited to 6 / 24 / 48.  CL is linear in alpha, so any
+# small alpha works; 1.0 deg matches the published VortexLattice.jl case.
+#=======================================================================
+BYU VortexLattice.jl wing  (A1 convergence sweep)
+#Mach
+0.0
+#IYsym  IZsym  Zsym
+0       0      0.0
+#Sref   Cref   Bref
+30.0    2.0    15.0
+#Xref   Yref   Zref
+0.50    0.0    0.0
+#
+#=====================================================================
+SURFACE
+Wing
+#Nchord  Cspace   Nspan   Sspace
+6        3.0      12      3.0
+#                 ^^^  <<< Nspan: set to 6 / 12 / 24 / 48 for the sweep
+#
+COMPONENT
+1
+#
+YDUPLICATE
+0.0
+#
+ANGLE
+0.0
+#
+#---------------------------------------------------------------------
+SECTION
+#Xle   Yle   Zle   Chord   Ainc
+0.0    0.0   0.0   2.2     2.0
+#
+SECTION
+#Xle   Yle   Zle   Chord   Ainc
+0.4    7.5   0.0   1.8     2.0

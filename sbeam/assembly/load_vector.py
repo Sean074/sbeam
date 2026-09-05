@@ -6,16 +6,20 @@ import numpy as np
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.load import Grav
+from sbeam.model.coordinate_system import Cord2r
+from sbeam.model.load import Force, Moment
 from sbeam.assembly.coord_transform import to_global
+from sbeam.types import FloatArray, SparseMatrix
 
 
-def build_grid_index(bulk: BulkData) -> dict:
+def build_grid_index(bulk: BulkData) -> dict[int, int]:
     """Return {gid: i} where i is the 0-based index in sorted GID order."""
     return {gid: i for i, gid in enumerate(sorted(bulk.grids.keys()))}
 
 
 def _apply_forces_to_vector(
-    f_vec: np.ndarray, forces: list, grid_index: dict, cord2rs: dict, scale: float = 1.0
+    f_vec: FloatArray, forces: list[Force], grid_index: dict[int, int],
+    cord2rs: dict[int, Cord2r], scale: float = 1.0
 ) -> None:
     """Add scaled force contributions to f_vec in-place, rotating CID → global."""
     for force in forces:
@@ -29,7 +33,8 @@ def _apply_forces_to_vector(
 
 
 def _apply_moments_to_vector(
-    f_vec: np.ndarray, moments: list, grid_index: dict, cord2rs: dict, scale: float = 1.0
+    f_vec: FloatArray, moments: list[Moment], grid_index: dict[int, int],
+    cord2rs: dict[int, Cord2r], scale: float = 1.0
 ) -> None:
     """Add scaled moment contributions to f_vec in-place, rotating CID → global."""
     for moment in moments:
@@ -45,10 +50,10 @@ def _apply_moments_to_vector(
 def _apply_grav_to_vector(
     grav: Grav,
     bulk: BulkData,
-    f_vec: np.ndarray,
-    grid_index: dict,
+    f_vec: FloatArray,
+    grid_index: dict[int, int],
     scale: float = 1.0,
-    M: Optional[np.ndarray] = None,
+    M: Optional[SparseMatrix] = None,
 ) -> None:
     """Add gravity body-force contribution to f_vec in-place.
 
@@ -76,7 +81,7 @@ def _apply_grav_to_vector(
     f_vec += scale * (M @ a_field)
 
 
-def assemble_load_vector(bulk: BulkData, load_sid: int) -> np.ndarray:
+def assemble_load_vector(bulk: BulkData, load_sid: int) -> FloatArray:
     """Assemble global load vector for the given load SID.
 
     Handles:

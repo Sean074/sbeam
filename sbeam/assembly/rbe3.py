@@ -3,26 +3,40 @@
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
+from sbeam.types import FloatArray
 
 
-def build_rbe3_transformation(bulk: BulkData, grid_index: dict) -> tuple:
-    """Build the RBE3/RBE2/RBAR DOF transformation matrix T.
+def _build_rigid_transform(
+    bulk: BulkData, grid_index: dict[int, int]
+) -> tuple[FloatArray, dict[int, str]]:
+    """Full (n_dof, n_dof) transform plus {dependent g-DOF: owning-element label}.
 
-    Returns (T, dep_dofs, red_dofs) where:
-      T        : np.ndarray shape (n_dof, n_red) — maps reduced → full DOF space
-      dep_dofs : list[int] — global DOF indices eliminated by RBE3, RBE2, or RBAR
-      red_dofs : list[int] — remaining DOF indices in ascending order
-
-    If no RBE3, RBE2, or RBAR elements are present, returns (eye(n_dof), [], list(range(n_dof))).
+    The single derivation behind both ``build_rbe3_transformation`` (which drops
+    the owner map) and ``dep_dof_owners`` (which keeps only the owner map), so the
+    two can never disagree about which DOFs a rigid element eliminates.  The
+    labels exist so an SPC landing on a dependent DOF can name the element that
+    owns it (DEF-M9) instead of being silently discarded.
     """
     n_dof = 6 * len(grid_index)
 
     if not bulk.rbe3s and not bulk.rbe2s and not bulk.rbars:
-        return np.eye(n_dof), [], list(range(n_dof))
+        return np.eye(n_dof), {}
 
     # Start from identity; rows for dependent DOFs will be overwritten.
     T_full = np.eye(n_dof)
-    dep_set: set = set()
+    dep_owner: dict[int, str] = {}
+
+    class _DepSet:
+        """``dep_set`` shim: ``add`` records the owner, membership tests unchanged."""
+        owner_label = ""
+
+        def add(self, dof: int) -> None:
+            dep_owner[dof] = self.owner_label
+
+        def __contains__(self, dof: object) -> bool:
+            return dof in dep_owner
+
+    dep_set = _DepSet()
 
     # RBE3 formulation: each dependent DOF is a weighted average of the *same-numbered* DOF
     # at the independent grids.  Rotation-to-translation coupling across an offset (lever-arm
@@ -39,7 +53,7 @@ def build_rbe3_transformation(bulk: BulkData, grid_index: dict) -> tuple:
             p = 6 * ref_idx + d  # global index of the dependent DOF
 
             # Collect (weight, grid_id) for independent grids that include DOF d.
-            pairs: list = []
+            pairs: list[tuple[float, int]] = []
             for weight, dofs_str, grids in rbe3.wt_gc:
                 if d_char in str(dofs_str):
                     for gid in grids:
@@ -58,6 +72,7 @@ def build_rbe3_transformation(bulk: BulkData, grid_index: dict) -> tuple:
                 q = 6 * grid_index[gid] + d
                 T_full[p, q] += weight / W
 
+            dep_set.owner_label = f"RBE3 {rbe3.eid} (REFGRID {rbe3.refgrid}, C{d + 1})"
             dep_set.add(p)
 
     # RBE2: dependent grid DOFs follow GN via rigid-body kinematics (lever-arm).
@@ -90,6 +105,7 @@ def build_rbe3_transformation(bulk: BulkData, grid_index: dict) -> tuple:
                 T_full[dep_dof, :] = 0.0
                 for k in range(6):
                     T_full[dep_dof, 6 * indep_idx + k] = R[d, k]
+                dep_set.owner_label = f"RBE2 {rbe2.eid} (GM {gm_id}, C{d + 1})"
                 dep_set.add(dep_dof)
 
     # GN of an RBE2 must not itself be a dependent DOF of another constraint element.
@@ -130,6 +146,7 @@ def build_rbe3_transformation(bulk: BulkData, grid_index: dict) -> tuple:
             T_full[dep_dof, :] = 0.0
             for k in range(6):
                 T_full[dep_dof, 6 * ga_idx + k] = R[d, k]
+            dep_set.owner_label = f"RBAR {rbar.eid} (GB {rbar.gb}, C{d + 1})"
             dep_set.add(dep_dof)
 
     # GA of an RBAR must not be a dependent DOF of another constraint element.
@@ -144,7 +161,35 @@ def build_rbe3_transformation(bulk: BulkData, grid_index: dict) -> tuple:
                     f"of another constraint element"
                 )
 
-    dep_dofs = sorted(dep_set)
-    red_dofs = [i for i in range(n_dof) if i not in dep_set]
-    T = T_full[:, red_dofs]
-    return T, dep_dofs, red_dofs
+    return T_full, dep_owner
+
+
+def build_rbe3_transformation(
+    bulk: BulkData, grid_index: dict[int, int]
+) -> tuple[FloatArray, list[int], list[int]]:
+    """Build the RBE3/RBE2/RBAR DOF transformation matrix T.
+
+    Returns (T, dep_dofs, red_dofs) where:
+      T        : FloatArray shape (n_dof, n_red) — maps reduced → full DOF space
+      dep_dofs : list[int] — global DOF indices eliminated by RBE3, RBE2, or RBAR
+      red_dofs : list[int] — remaining DOF indices in ascending order
+
+    If no RBE3, RBE2, or RBAR elements are present, returns (eye(n_dof), [], list(range(n_dof))).
+    """
+    n_dof = 6 * len(grid_index)
+    T_full, dep_owner = _build_rigid_transform(bulk, grid_index)
+    dep_dofs = sorted(dep_owner)
+    red_dofs = [i for i in range(n_dof) if i not in dep_owner]
+    return T_full[:, red_dofs], dep_dofs, red_dofs
+
+
+def dep_dof_owners(bulk: BulkData, grid_index: dict[int, int]) -> dict[int, str]:
+    """{dependent g-set DOF: label of the rigid element that eliminates it}.
+
+    Same derivation as ``build_rbe3_transformation``'s ``dep_dofs`` — that
+    function's list is literally ``sorted()`` of this dict's keys — so the two
+    cannot drift.  Used only on the error path of ``reduce_to_aset``, where an
+    SPC has been found on a dependent DOF and the message needs to name the
+    owning element.
+    """
+    return _build_rigid_transform(bulk, grid_index)[1]
