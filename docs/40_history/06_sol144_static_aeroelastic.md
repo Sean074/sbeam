@@ -2433,3 +2433,81 @@ force-mapping spline (`SPLINEF`) is backlogged.
 as written; it simply is no longer forced by the ATTACH limitation.)*
 
 ---
+
+---
+
+## Issue #1: Quasi-static gust load cases (Pratt, FAR/CS 23.341) ✅ COMPLETE (2026-09-05)
+
+**Tier L** (new capability, new card, new physics). Milestone v0.3.0. Design note
+agreed before code per CLAUDE.md rule 1:
+`docs/30_future/designs/gust_pratt_23341.md`.
+
+**Objective:** deliver the mandatory FAR/CS-23 vertical-gust design cases as ordinary
+balanced-maneuver trims, with no DLM and no unsteady aerodynamics. 23.341 collapses
+the airplane's 1-cosine gust response into a closed-form alleviation factor and
+applies the result as an incremental load factor — precisely the input the Step-53
+balanced-maneuver path already accepts.
+
+**Deliverables:**
+- `scripts/gust_load_factor.py` — ISA atmosphere, the 23.333(c) `U_de` schedule
+  (V_C/V_D/V_B, tapering above 20,000 ft), the Pratt helpers (`mass_ratio`,
+  `alleviation_factor`, `gust_increment`), a deck reader and a BDF emitter, behind a
+  CLI. Reads `S`/`c̄` from `AEROS`, `W` from GPWG per `MASSSET`, and rigid `CZ_α` from
+  a structure-free derivative run.
+- `sbeam/model/gust.py` (`Gustlf`), parser handler + cross-reference validation,
+  `write_gustlf` + `FAMILIES` entry, `gustlf_sid` on `SubcaseControl`, the solver
+  stage that injects `URDD3`, `gust_echo` on `Sol144TrimResult`, and the f06
+  provenance block.
+- `sample/cessna210_flagship_gust.bdf` — generated 12-case deck.
+- 40 gates (S-GUST1–6a, V-GUST1–7, P-GUST1–6); `scripts/` added to the ruff and
+  pyright scopes.
+
+**Test/acceptance:** the external anchor is **S-GUST1** — a consistent-units
+implementation fed Imperial inputs must reproduce the regulation's own constant
+`498` to within 0.2 % (measured 0.11 %), because `498 ≡ 2/(ρ₀ · 1.6878)`. ISA density
+matches published tables to 0.001 %. The flagship reproduces the design note's worked
+table (μ = 13.855, `K_g` = 0.6365, `n` = +3.996 / −1.996 at the cruise point) with
+every value recomputed from the parsed deck. End-to-end, `lift == n·W` to 1e-6.
+
+**Key decisions:**
+
+1. **The dimensional calculation lives outside the solver.** The regulation is
+   dimensional; sbeam's card fields are unit-neutral by charter (§7) and the solver
+   has no atmosphere model. Rather than breach the charter, the script owns units and
+   the solver receives a dimensionless load factor. Charter §7 gained a rule making
+   this the preferred pattern over adding unit-aware fields.
+2. **`GUSTLF` is a provenance card.** Only `TRIMID`, `N` and `G` reach the solution;
+   the derivation is recorded and echoed so the f06 is self-describing for a
+   certification artefact, without sbeam owning arithmetic it cannot verify. The f06
+   block states that limitation in the listing. The one falsifiable check is
+   `0 < K_g < 0.88`, the strict range of `0.88μ/(5.3+μ)`.
+3. **Rigid `CZ_α`.** Pratt is a rigid-airplane derivation in plunge; an elastic slope
+   would mix a flexible quantity into a formula whose empirical constants were
+   calibrated on the rigid basis. `K_g` alleviates rigid-body plunge plus unsteady
+   lift growth — it is *not* a flexibility correction, and the note records that
+   explicitly because the opposite rationale had been proposed. Rigid is also
+   single-pass: `compute_rigid_derivs` needs no structure, mass or `q`.
+4. **`ALT` is the one blank-able provenance field.** Zero is physically meaningless
+   for gust velocity, airspeed, `K_g`, `μ` and lift slope, so `0.0` safely means "not
+   recorded" for those; sea level is a real condition, so altitude needed a distinct
+   absence. Caught by the f06 printing a sea-level case as "NOT RECORDED".
+5. **Balanced posing; 23.423 split out.** Applying `n` as a balanced maneuver is what
+   23.341 asks for. Horizontal-tail gust loads need a controls-fixed posing and their
+   own formula, and were filed as their own v0.3.0 issue rather than left unplanned.
+6. **The acceptance criterion on the issue was corrected.** It cited a worked example
+   in the FAR-23 guidance material; that document carries the regulation text and the
+   23.423 formula but **no numeric worked example** (verified 2026-09-05 — every
+   "example" in it is a plot). The `498` identity replaced it.
+
+## Resolved defects (SOL 144 static aeroelastics)
+
+### DEF-M20 — `URDD3 = −n_z·g` had no RCSID-orientation guard (issue #23) ✅ COMPLETE (2026-09-05)
+
+Closed inside issue #1. A prescribed negative `URDD3` encodes a positive load factor
+only under a z-DOWN RCSID; with RCSID absent or z-up the same value is a genuinely
+downward acceleration and trimmed **inverted lift** with nothing to say so.
+`_stage_resolve_ref_geometry` now warns, naming the frame and pointing at
+`09_conventions.md` §5. Closed with the gust work because that is what makes the trap
+reachable in ordinary use: a down-gust is a real negative-`n` design case.
+`sample/val_dihedral_trim.bdf` does this deliberately and is expected to warn.
+Gate: V-GUST7.

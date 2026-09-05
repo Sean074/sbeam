@@ -13,6 +13,7 @@ class SubcaseControl:
     trimobj_sid: Optional[int] = None # TRIMOBJ set ID (over-determined trim objective)
     diverg_sid: Optional[int] = None  # DIVERG set ID for SOL 144
     mloads_sid: Optional[int] = None  # MLOADS set ID (Phase G0 transient maneuver loads)
+    gustlf_sid: Optional[int] = None  # GUSTLF set ID (FAR/CS 23.341 gust load case)
     massset_sid: Optional[int] = None # MASSSET set ID (Step 60 payload / mass case)
     displacement: bool = False        # Request DISPLACEMENT output
     spcforce: bool = False            # Request SPCFORCE output
@@ -129,6 +130,8 @@ def parse_case_control(lines: list[str]) -> CaseControl:
                 current_sc.diverg_sid = int(value)
             elif keyword == "MLOADS":
                 current_sc.mloads_sid = int(value)
+            elif keyword == "GUSTLF":
+                current_sc.gustlf_sid = int(value)
             elif keyword == "MASSSET":
                 current_sc.massset_sid = int(value)
             elif keyword == "DISPLACEMENT":

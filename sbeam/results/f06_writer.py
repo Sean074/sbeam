@@ -489,6 +489,11 @@ def _build_f06_sol144_text(
     trim_card = bulk.trims.get(result.trim_sid)
     if trim_card is not None:
         prescribed = {k.upper() for k in trim_card.vars.keys()}
+    # A GUSTLF subcase prescribes URDD3 from the gust card rather than the TRIM
+    # (issue #1), so the card alone under-reports what was held fixed — without
+    # this the listing calls the gust load factor a solved unknown.
+    if result.gust_echo:
+        prescribed.add("URDD3")
 
     lines = []
 
@@ -516,6 +521,51 @@ def _build_f06_sol144_text(
             f"({_fmt(cg[0]).strip()}, {_fmt(cg[1]).strip()}, {_fmt(cg[2]).strip()})"
         )
     lines.append("")
+
+    # ---- GUST LOAD CONDITION (GUSTLF, issue #1) ----
+    # Emitted only when the subcase names a GUSTLF, so every other deck's f06 is
+    # byte-identical.  Placed before TRIM VARIABLES so the reader meets the gust
+    # condition first and the URDD3 it produced second.  Prose-formatted
+    # `LABEL = value` lines, not columns over data: the DEF-M13 alignment gate
+    # therefore does not apply and needs no new _NUMERIC_LABELS entry.
+    if result.gust_echo:
+        gust = result.gust_echo
+
+        def _rec(key: str) -> str:
+            """Recorded provenance, or the explicit absence of it."""
+            value = float(gust[key])
+            return _fmt(value).strip() if value else "NOT RECORDED"
+
+        lines.append(
+            "                        G U S T   L O A D   C O N D I T I O N   "
+            "(GUSTLF, FAR/CS 23.341)"
+        )
+        lines.append("")
+        lines.append(
+            f"      GUSTLF = {gust['sid']}     TRIM = {gust['trimid']}"
+            f"     SENSE = {gust['sense']}"
+        )
+        alt = gust["alt"]
+        alt_str = "NOT RECORDED" if alt is None else _fmt(float(alt)).strip()
+        lines.append(
+            f"      U-DE = {_rec('ude')}     V-EAS = {_rec('veas')}"
+            f"     ALTITUDE = {alt_str}"
+        )
+        lines.append(
+            f"      MASS RATIO MU = {_rec('mu')}     K-G = {_rec('kg')}"
+            f"     A = {_rec('a')} ({gust['asrc']})"
+        )
+        lines.append(
+            f"      LOAD FACTOR N = {_fmt(float(gust['n'])).strip()}"
+            f"     DELTA-N (N-1) = {_fmt(float(gust['n']) - 1.0).strip()}"
+            f"     URDD3 = {_fmt(float(gust['urdd3'])).strip()}"
+        )
+        lines.append("")
+        lines.append(
+            "      RECORDED PROVENANCE ONLY — N AND G ENTER THE SOLUTION; "
+            "SBEAM DOES NOT COMPUTE THE GUST."
+        )
+        lines.append("")
 
     # ---- TRIM VARIABLES ----
     lines.append("                                          T R I M   V A R I A B L E S")

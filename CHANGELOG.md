@@ -9,6 +9,37 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Quasi-static gust load cases (FAR/CS 23.341)** — the mandatory certification gust
+  cases, delivered as ordinary balanced-maneuver trims with no DLM dependency (#1).
+  - `scripts/gust_load_factor.py` — preprocessing tool, deliberately **outside** the
+    solver package: it owns the ISA atmosphere, the 23.333(c) `U_de` altitude schedule
+    and `ρ₀` in a declared unit system, reads `S`/`c̄`/`W`/rigid `CZ_α` out of the deck
+    itself, and emits a runnable SOL 144 driver of `TRIM` + `GUSTLF` pairs.
+  - `GUSTLF` card + `GUSTLF =` case-control command — a **provenance card**: only
+    `TRIMID`, `N` and `G` reach the solution (`URDD3 = −N·G` through the existing
+    `load_factor_to_urdd3`); `U_de`, `V_EAS`, `K_g`, `μ`, `a`, `ASRC` and altitude are
+    recorded and echoed to a new f06 block, never entering an equation. This keeps the
+    regulation's dimensional content out of a solver whose card fields are unit-neutral
+    by charter (§7), and the f06 block states that sbeam does not compute the gust.
+  - `sample/cessna210_flagship_gust.bdf` — generated 12-case deck (V_C/V_D × three mass
+    cases × ±), showing gust cases exceeding the deck's 2.5 g maneuver condition.
+  - 40 gates: S-GUST1–6a, V-GUST1–7, P-GUST1–6. The external anchor is the regulation's
+    own Imperial constant — a consistent-units implementation must reproduce `498` to
+    0.11 %, since `498 ≡ 2/(ρ₀·1.6878)`.
+- `scripts/` is now linted and type-checked in CI (ruff invocation and pyright
+  `include` both widened), so preprocessing tools ship gated rather than untyped.
+
+### Fixed
+- **DEF-M20** (#23) — a prescribed negative `URDD3` against an absent or z-up RCSID now
+  warns instead of silently trimming inverted lift. Closed with #1, which is what makes
+  the trap reachable in ordinary work: a down-gust is a genuine negative-`n` case.
+- The f06 trim-variable table reported `URDD3` as `FREE` on a gust subcase, because the
+  prescribed set was read from the TRIM card alone; a `GUSTLF`-supplied value is now
+  reported `PRESCRIBED`.
+- The parse-time DOF diagnostic counted a `GUSTLF`-driven TRIM as over-determined,
+  warning on every generated gust case.
+
 ### Changed
 - **Development process moved to GitHub milestones + issues (2026-09-05).** Milestones =
   planned releases (v0.3.0 → v1.0.0 ladder); the backlog's 28 open items migrated to

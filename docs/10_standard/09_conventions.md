@@ -109,11 +109,27 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
   which every shipped aircraft deck uses (`sample/HA144A.bdf:187-188`,
   `sample/cessna210_flagship_bulk.bdf:80-82`) — the URDD rotation to basic z-up turns −g
   into an upward +g reaction and positive trimmed lift. With RCSID absent or z-up, the
-  same value is a genuinely downward acceleration and trims **inverted lift** with no
-  warning (`sample/val_dihedral_trim.bdf` does exactly this, deliberately — see its
+  same value is a genuinely downward acceleration and trims **inverted lift**
+  (`sample/val_dihedral_trim.bdf` does exactly this, deliberately — see its
   header). *A 2026-08-04 charter note claiming the `maneuver_presets.py:25` "(RCSID
   z-down)" docstring was misleading was itself wrong and is retracted (2026-08-09); the
-  docstring is correct. Guard defect filed (DEF-M20).*
+  docstring is correct.* **DEF-M20 closed 2026-09-05 (issue #23, with #1):**
+  `_stage_resolve_ref_geometry` (`solver/sol144.py`) now warns when a prescribed
+  negative `URDD3` meets an absent or z-up RCSID, so the case is loud rather than
+  silent; `val_dihedral_trim.bdf` is expected to warn. Gate: `V-GUST7`
+  (`tests/aero/test_gust_cases.py`).
+- **Gust load factors (FAR/CS 23.341) enter through the same helper.** A `GUSTLF`
+  card carries a dimensionless load factor `N` and prescribes `URDD3 = −N·G` via
+  `load_factor_to_urdd3`; a down-gust with `N < 0` therefore prescribes a **positive**
+  `URDD3`, which is correct and is not what DEF-M20 guards. **Decision (2026-09-05,
+  issue #1):** the lift-curve slope in the Pratt formula is the **rigid** `CZ_α` —
+  the body-axis normal-force slope, which is the regulation's `C_NA` (§2), not
+  wind-axis `CL_α`. Pratt is a rigid-airplane derivation in plunge, so an elastic
+  slope would mix a flexible quantity into a rigid-body formula whose empirical
+  constants were calibrated on the rigid basis; `K_g` alleviates rigid-body plunge
+  during gust penetration plus unsteady lift growth, and is **not** a
+  structural-flexibility correction. The whole dimensional calculation lives outside
+  the solver in `scripts/gust_load_factor.py` (§7).
 - **URDD labels are the only trim labels rotated RCSID→basic** (`sol144_util.py:54-121`);
   the aero labels (ANGLEA/SIDES/rates) never rotate. Under the standard z-down RCSID,
   authored URDD4/5/6 are therefore textbook stability-axis angular accelerations
@@ -148,6 +164,13 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
 
 ## 7. Units
 
+- **Preprocessing tools may know units; the solver may not (2026-09-05, issue #1).**
+  This rule binds `sbeam/` — card fields and solver arithmetic. Tools under
+  `scripts/` that *generate* decks are outside it, and are where dimensional
+  regulatory content belongs: `scripts/gust_load_factor.py` owns the ISA atmosphere,
+  the FAR/CS 23.333(c) `U_de` schedule in feet, and `ρ₀`, then hands the solver a
+  dimensionless load factor on a `GUSTLF` card. Nothing dimensional crosses the
+  boundary. Prefer this split to adding a unit-aware field.
 - **User-defined consistent units throughout** — sbeam never converts. The two deliberate
   exceptions (card-field degrees → stored radians): CHORDCP `alpha_ref`
   (`model/aero.py:119`) and its tolerance constant `_CHORDCP_ALPHA_TOL = 0.035 rad`
@@ -161,6 +184,8 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
 | `pitch_moment` | The nose-up-positive pitch arm (AE1 Step E) | `solver/sol144_util.py:255` |
 | `aero_moment_resultant` | Full 3-component moment about a reference (Step 58) | `solver/sol144_util.py:280` |
 | `rigid_rate_scales` | PITCH/ROLL/YAW rate nondimensionalization | `aero/integration.py:143` |
+| `load_factor_to_urdd3` | The load-factor → `URDD3` sign (`−n_z·g`), for maneuvers and gusts alike | `model/maneuver_presets.py:24` |
+| `mass_ratio` / `alleviation_factor` / `gust_increment` | The Pratt gust formula (μ, `K_g`, Δn). Deliberately **outside** the solver — dimensional, see §7 | `scripts/gust_load_factor.py` |
 | `build_box_id_map` | The NASTRAN box-ID derivation (F1) | `aero/panel.py:43` |
 | `build_wg` / card writers | W2GJ sign flip (assembly negates; writers negate back) | `aero/integration.py:61`, `model/aero.py:88` |
 

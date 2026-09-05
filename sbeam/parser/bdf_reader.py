@@ -1,4 +1,5 @@
 import os
+import math
 import warnings
 from typing import Optional
 
@@ -16,6 +17,7 @@ from sbeam.model.aero import (
     Spline2, Attach, Spline0, Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
     Aecomp, Monpnt1, Monpnt3, Monsect,
 )
+from sbeam.model.gust import Gustlf, KG_MAX
 from sbeam.model.maneuver import Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads
 from sbeam.parser.bdf_field import parse_real
 from sbeam.types import StrPath
@@ -1137,6 +1139,67 @@ def _handle_mloads(fields: list[str], bulk: BulkData) -> None:
     )
 
 
+def _handle_gustlf(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
+    """GUSTLF — quasi-static gust load-factor case (FAR/CS 23.341).
+
+    SID TRIMID N G [UDE] [VEAS] [KG] [MU] / [A] [ASRC] [ALT]
+
+    Only TRIMID, N and G affect the solution (``URDD3 = -N*G`` on the referenced
+    TRIM); every other field is provenance recorded by
+    ``scripts/gust_load_factor.py`` and echoed to the f06.  The card carries no
+    dimensional semantics sbeam acts on — see ``model/gust.py``.
+    """
+    vals = list(fields[1:])
+    for cont in conts:
+        vals += list(cont[1:])
+
+    def _opt_float(idx: int) -> float:
+        return _to_float(vals[idx]) if len(vals) > idx and vals[idx].strip() else 0.0
+
+    if len(vals) < 4 or not all(v.strip() for v in vals[:4]):
+        raise ValueError("GUSTLF: SID, TRIMID, N and G are required")
+
+    sid    = _to_int(vals[0])
+    trimid = _to_int(vals[1])
+    n      = _to_float(vals[2])
+    g      = _to_float(vals[3])
+    ude    = _opt_float(4)
+    veas   = _opt_float(5)
+    kg     = _opt_float(6)
+    mu     = _opt_float(7)
+    a      = _opt_float(8)
+    asrc   = vals[9].strip().upper() if len(vals) > 9 and vals[9].strip() else "RIGID"
+    # ALT is Optional, unlike the other provenance fields: sea level is a real
+    # condition, so 0.0 cannot double as "not recorded" here (see model/gust.py).
+    alt    = _to_float_or_none(vals[10]) if len(vals) > 10 else None
+
+    if sid in bulk.gustlfs:
+        raise ValueError(f"Duplicate GUSTLF SID {sid}")
+    if not math.isfinite(n):
+        raise ValueError(f"GUSTLF {sid}: N must be finite; got {n}")
+    if g <= 0.0:
+        raise ValueError(f"GUSTLF {sid}: G must be > 0; got {g}")
+    if asrc not in ("RIGID", "RESTRAINED"):
+        raise ValueError(
+            f"GUSTLF {sid}: ASRC must be RIGID or RESTRAINED; got {asrc!r}"
+        )
+    for name, value in (("UDE", ude), ("VEAS", veas), ("MU", mu), ("A", a)):
+        if value < 0.0:
+            raise ValueError(f"GUSTLF {sid}: {name} must be >= 0 when recorded; got {value}")
+    # K_g = 0.88 mu / (5.3 + mu) is strictly inside (0, 0.88); a recorded value
+    # outside it cannot have come from the regulation's formula.  This is the one
+    # part of the derivation the parser can falsify without owning the arithmetic.
+    if kg != 0.0 and not (0.0 < kg < KG_MAX):
+        raise ValueError(
+            f"GUSTLF {sid}: KG must lie in (0, {KG_MAX}) when recorded; got {kg}"
+        )
+
+    bulk.gustlfs[sid] = Gustlf(
+        sid=sid, trimid=trimid, n=n, g=g, ude=ude, veas=veas,
+        kg=kg, mu=mu, a=a, asrc=asrc, alt=alt,
+    )
+
+
 def _handle_trimvar(fields: list[str], bulk: BulkData) -> None:
     vid   = _to_int(fields[1])
     label = fields[2].strip().upper() if len(fields) > 2 else ""
@@ -1471,6 +1534,20 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
                 else:
                     break
             _handle_trim(fields, trim_conts, bulk)
+        elif keyword == "GUSTLF":
+            gustlf_conts: list[list[str]] = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    gustlf_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_gustlf(fields, gustlf_conts, bulk)
         elif keyword == "DIVERG":
             diverg_conts: list[list[str]] = []
             k = i + 1
@@ -1701,6 +1778,35 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
             "AESTAT/AESURF label 'RHOREF' collides with the reserved TRIM "
             "density pseudo-label — rename the trim variable"
         )
+    # A TRIM named by a GUSTLF has URDD3 supplied by that card (issue #1), so it
+    # is prescribed for DOF-counting even though it is absent from TRIM.vars.
+    # Without this the generated gust decks warn "over-determined" on every case.
+    gust_trims: dict[int, int] = {}
+    for gsid, gust in bulk.gustlfs.items():
+        if gust.trimid not in bulk.trims:
+            raise ValueError(
+                f"GUSTLF {gsid}: TRIMID {gust.trimid} not found in any TRIM card"
+            )
+        trim = bulk.trims[gust.trimid]
+        if "URDD3" in trim.vars:
+            raise ValueError(
+                f"GUSTLF {gsid}: TRIM {gust.trimid} also prescribes URDD3 — the gust "
+                "card supplies it, so the TRIM must leave it free (two sources for "
+                "one quantity; cf. DEF-M4)"
+            )
+        if "URDD3" not in all_trim_labels:
+            raise ValueError(
+                f"GUSTLF {gsid}: no AESTAT defines URDD3 — a gust load factor cannot "
+                "be applied without it"
+            )
+        prior = gust_trims.get(gust.trimid)
+        if prior is not None:
+            raise ValueError(
+                f"GUSTLF {gsid}: TRIM {gust.trimid} is already driven by GUSTLF {prior} "
+                "— one gust case per TRIM"
+            )
+        gust_trims[gust.trimid] = gsid
+
     for sid, trim in bulk.trims.items():
         for lbl in trim.vars:
             if lbl not in all_trim_labels:
@@ -1708,6 +1814,8 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
                     f"TRIM {sid}: label '{lbl}' not defined in any AESTAT or AESURF card"
                 )
         prescribed = set(trim.vars.keys())
+        if sid in gust_trims:
+            prescribed.add("URDD3")
         free = all_trim_labels - prescribed
         if len(free) == 0:
             warnings.warn(

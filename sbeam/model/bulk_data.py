@@ -7,6 +7,7 @@ from .aero import (
     Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
     Aecomp, Monpnt1, Monpnt3, Monsect,
 )
+from .gust import Gustlf
 from .maneuver import Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads
 from .mass import Massset, Conm2
 from .constraint import Spc, Spc1, Suport
@@ -66,6 +67,7 @@ class BulkData:
     trimvars: dict[int, Trimvar] = field(default_factory=dict)
     trimobjs: dict[int, Trimobj] = field(default_factory=dict)
     trimcons: dict[int, list[Trimcon]] = field(default_factory=dict)
+    gustlfs:  dict[int, Gustlf] = field(default_factory=dict)
     aecomps:  dict[str, Aecomp] = field(default_factory=dict)
     monpnt1s: dict[str, Monpnt1] = field(default_factory=dict)
     monpnt3s: dict[str, Monpnt3] = field(default_factory=dict)

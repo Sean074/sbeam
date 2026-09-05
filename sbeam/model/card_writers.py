@@ -20,6 +20,7 @@ from sbeam.model.aero import (
     Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
 )
 from sbeam.model.constraint import Suport
+from sbeam.model.gust import Gustlf
 from sbeam.model.maneuver import (
     Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads,
 )
@@ -103,6 +104,22 @@ def write_diverg(d: Diverg) -> list[str]:
     return write_card("DIVERG", [d.sid, d.nroots, d.rhoref] + list(d.machs))
 
 
+def write_gustlf(gu: Gustlf) -> list[str]:
+    """GUSTLF — the provenance fields are always written, defaults included.
+
+    Unlike MLOADS this does *not* trim trailing defaults: the recorded
+    derivation is the card's reason for existing, and a card that silently
+    dropped ``ALT = 0.0`` (sea level — a real, common condition) would read as
+    "not recorded" on the way back in.
+    """
+    fields: list[Field] = [
+        gu.sid, gu.trimid, gu.n, gu.g, gu.ude, gu.veas,
+        gu.kg, gu.mu, gu.a, gu.asrc,
+        gu.alt if gu.alt is not None else "",
+    ]
+    return write_card("GUSTLF", fields)
+
+
 def write_mloads(m: Mloads) -> list[str]:
     fields: list[Field] = [m.sid, m.mldtrim, m.mldtime,
                            m.mldcomd, m.mldprnt, m.nmodes, m.method, m.zeta]
@@ -166,6 +183,7 @@ FAMILIES = {
     "trimobj": ("trimobjs", write_trimobj),
     "trimcon": ("trimcons", write_trimcon),
     "diverg":  ("divergs",  write_diverg),
+    "gustlf":  ("gustlfs",  write_gustlf),
     "tabled1": ("tabled1s", write_tabled1),
     "mldtrim": ("mldtrims", write_mldtrim),
     "mldtime": ("mldtimes", write_mldtime),

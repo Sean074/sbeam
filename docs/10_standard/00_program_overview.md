@@ -302,6 +302,32 @@ Two conventions differ from the V-suite and matter when reading the module:
 
 The sample decks load in **−Z** (the V-suite loads −Y), and the gates assert signs, not magnitudes — a convention flip fails.
 
+### Gust load cases — S-GUST / V-GUST / P-GUST (issue #1)
+
+FAR/CS 23.341 quasi-static gust cases split across the preprocessing tool and the
+solver (`05c_sol144_maneuver.md`). The tool's gates live in `tests/scripts/`, the
+solver's in `tests/aero/` and `tests/parser/`.
+
+| ID | Case | Gate |
+|----|------|------|
+| S-GUST1 | Imperial identity | consistent-units `Δn` reproduces the regulation's own `498` constant within 0.2 % (`498 ≡ 2/(ρ₀·1.6878)`) — the external, non-circular anchor |
+| S-GUST2 | ISA atmosphere | `ρ` at 0 / 20,000 / 50,000 ft vs published tables, 0.5 % |
+| S-GUST3 | `U_de` schedule | 50/25/66 fps below 20,000 ft, tapering to 25/12.5/38 at 50,000 ft; both unit systems; above the schedule raises |
+| S-GUST4 | Bounds & trends | `0 < K_g < 0.88`; `Δn` rises with `V`, falls with `W/S` |
+| S-GUST5 | Flagship end-to-end | μ, `K_g`, `n` recomputed from the **parsed deck** (VAL2 discipline), matching the design note |
+| S-GUST6a | Generated deck | parses; TRIMs carry the right `q`/`RHOREF` and leave `URDD3` for `GUSTLF` |
+| V-GUST1 | Trim closes | `lift == n·W` (rel 1e-6); `URDD3` is the card's `−n·g`; trim stays determined |
+| V-GUST2 | The ± pair | straddles 1 g; incidence and elevator ordered **relative to each other**, never absolutely |
+| V-GUST3 | Down-gust | the `n < 0` case solves, with positive `URDD3` and negative incidence |
+| V-GUST4 | Loads flow through | monitor and section-cut loads produced as for any maneuver |
+| V-GUST5 | f06 block | present and correct; recorded sea level prints as a value, not "NOT RECORDED"; `URDD3` reported PRESCRIBED |
+| V-GUST6 | Non-regression | a deck without `GUSTLF` emits no gust block |
+| V-GUST7 | **DEF-M20 guard** | negative `URDD3` against an absent/z-up RCSID warns; the z-down flagship stays silent |
+| P-GUST1–6 | Parse rejections | unknown TRIMID; TRIM also prescribing `URDD3`; `G ≤ 0`; bad `ASRC`; `KG` outside `(0, 0.88)`; negative recorded provenance |
+
+`sample/cessna210_flagship_gust.bdf` is generated output, committed with its
+generating command in the header — regenerate it rather than hand-editing.
+
 ### Coverage
 
 Every `pytest` run automatically emits a per-file branch-coverage table (configured via `addopts` in `pyproject.toml`). No extra flags needed:

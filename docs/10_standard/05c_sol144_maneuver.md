@@ -1156,3 +1156,93 @@ that. Ties resolve to the earliest sample.
   exists for static tables; it belongs with the sweep post-processing.
 - **Elastic inertia in `net_loads`.** The exported critical-sample `FORCE`/`MOMENT` cards
   still carry aero + rigid inertia only. See the backlog's Step 68 follow-ons.
+
+---
+
+## Quasi-Static Gust Load Cases — Pratt Formula (issue #1)
+
+FAR/CS 23.341 gust load factors delivered as ordinary balanced-maneuver trims. No
+DLM, no unsteady aerodynamics: the regulation collapses the airplane's response to a
+1-cosine gust into a closed-form alleviation factor and applies the result as an
+incremental load factor — exactly the input the Step-53 balanced-maneuver path
+already takes. Design note: `docs/30_future/designs/gust_pratt_23341.md`.
+
+### The split: script owns the units, solver owns the trim
+
+The regulation is dimensional — `U_de` is 50 ft/s, the schedule is keyed to altitude
+in feet, `ρ₀` is a sea-level density — while sbeam's card fields are unit-neutral by
+charter (`09_conventions.md` §7) and the solver has no atmosphere model. So:
+
+```
+scripts/gust_load_factor.py          sbeam solver
+─────────────────────────────        ─────────────────────────
+ISA atmosphere ρ(h)                  reads N (dimensionless)
+23.333(c) U_de schedule       ──▶    URDD3 = −N·G
+μ, K_g, Δn  →  n                     ordinary SOL 144 trim
+reads S, c̄, W, CZ_α from the deck    echoes the provenance to f06
+```
+
+**sbeam does not compute, and cannot verify, the gust derivation.** The `GUSTLF` card
+carries the derivation as recorded provenance; the f06 block states the limitation in
+the listing itself. The one thing the parser *can* falsify is the recorded `K_g`,
+which must lie strictly inside `(0, 0.88)`.
+
+### Generating a case set
+
+```bash
+.venv/bin/python scripts/gust_load_factor.py sample/cessna210_flagship_trim.bdf \
+    --units SI --trim-template 1 --vc 86.0 --vd 105.0 --altitude 0 \
+    --massset 10,20,30 --g 9.81 -o sample/cessna210_flagship_gust.bdf
+```
+
+The tool reads reference area and mean chord from `AEROS`, the weight from GPWG for
+each `MASSSET`, and the **rigid** `CZ_α` from a structure-free derivative run — so it
+needs no trim solve and adds no second source for any number already in the deck. It
+emits one `TRIM` + `GUSTLF` pair and one subcase per
+`(design speed × altitude × mass case × sense)`, reusing the input deck's `INCLUDE`
+list and SPC. Speeds and altitudes are in the model's own units; `--units` tells the
+tool which system that is, and is echoed into the generated deck's header.
+
+`q = ½·ρ₀·V_EAS²` and `RHOREF = ρ(h)`, so the solver's `Trim.velocity()` returns true
+airspeed while Pratt uses equivalent airspeed — the two densities never meet.
+
+### Reading the output
+
+Each gust subcase produces the ordinary trim output plus a provenance block before
+`T R I M   V A R I A B L E S`:
+
+```
+                        G U S T   L O A D   C O N D I T I O N   (GUSTLF, FAR/CS 23.341)
+
+      GUSTLF = 9000     TRIM = 9000     SENSE = UP-GUST
+      U-DE = 1.524000E+01     V-EAS = 8.600000E+01     ALTITUDE = 0.000000E+00
+      MASS RATIO MU = 1.276566E+01     K-G = 6.218310E-01     A = 5.333485E+00 (RIGID)
+      LOAD FACTOR N = 5.425060E+00     DELTA-N (N-1) = 4.425060E+00     URDD3 = -5.321984E+01
+
+      RECORDED PROVENANCE ONLY — N AND G ENTER THE SOLUTION; SBEAM DOES NOT COMPUTE THE GUST.
+```
+
+`URDD3` then appears as **PRESCRIBED** in the trim-variable table even though it is
+absent from the TRIM card — it came from the gust card, and it is not a solved unknown.
+
+### What to expect
+
+On `sample/cessna210_flagship_gust.bdf` the gust cases run from `n = +5.43 / −3.43`
+(FERRY at V_C) to `n = +2.93 / −0.93` (MTOW at V_D). Two results worth recognising:
+
+- **Gust load factor is highest at the lightest weight** — `μ` falls with wing loading,
+  and the alleviation factor falls with it. Light-weight gust cases routinely size
+  structure that the maneuver envelope does not.
+- **V_C dominates V_D**, because `U_de` halves from 50 to 25 fps while the speed rises
+  by much less.
+
+Both cases exceed the deck's 2.5 g maneuver condition, which is the reason the
+omission mattered.
+
+### Scope
+
+Symmetric vertical gusts only, at the design speeds the user supplies. **Not** covered:
+horizontal-tail gust loads (23.423 — its own formula and a controls-fixed posing; see
+that issue), flap-extended gusts (23.345), and dynamic/tuned gust and continuous
+turbulence (Phase D, SOL 146). The script implements the V_B rough-air schedule, but no
+shipped deck exercises it.

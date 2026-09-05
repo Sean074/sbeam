@@ -42,6 +42,7 @@ from sbeam.results.section_cuts import compute_section_cuts
 from sbeam.solver.sol101 import recover_bar_forces, recover_bar_stresses, recover_reactions
 from sbeam.types import FloatArray, LuFactor
 from sbeam.model.aero import require_aeros
+from sbeam.model.gust import Gustlf
 
 # Facade re-exports (P13/DEF-R1/R3) — the split modules; every name stays
 # importable from its historic home here.  Import order follows the dependency
@@ -209,6 +210,9 @@ class _TrimState:
     spc_sid: Optional[int] = field(init=False)
     mach: float = field(init=False)
 
+    # _stage_validate_inputs — None unless the subcase names a GUSTLF (issue #1)
+    gustlf: Optional[Gustlf] = field(init=False)
+
     # _stage_build_labels
     all_labels: list[str] = field(init=False)
     chordcp_alpha_ref: Optional[float] = field(init=False)
@@ -307,7 +311,25 @@ def _stage_validate_inputs(st: _TrimState) -> None:
     if not bulk.supports:
         raise ValueError("run_sol144_trim: no SUPORT card found in model")
 
+    # A GUSTLF subcase names its TRIM through the gust card (issue #1), so the
+    # subcase need not repeat it.  When it does, the two must agree — a silent
+    # disagreement would run a different flight condition than the deck reads as.
+    gustlf: Optional[Gustlf] = None
+    if subcase.gustlf_sid is not None:
+        gustlf = bulk.gustlfs.get(subcase.gustlf_sid)
+        if gustlf is None:
+            raise ValueError(
+                f"run_sol144_trim: GUSTLF SID {subcase.gustlf_sid} not found"
+            )
+
     trim_sid = subcase.trim_sid
+    if gustlf is not None:
+        if trim_sid is not None and trim_sid != gustlf.trimid:
+            raise ValueError(
+                f"run_sol144_trim: subcase {subcase.subcase_id} requests "
+                f"TRIM={trim_sid} but GUSTLF {gustlf.sid} names TRIM={gustlf.trimid}"
+            )
+        trim_sid = gustlf.trimid
     if trim_sid is None or trim_sid not in bulk.trims:
         raise ValueError(f"run_sol144_trim: TRIM SID {trim_sid} not found")
 
@@ -328,6 +350,7 @@ def _stage_validate_inputs(st: _TrimState) -> None:
     q_dyn  = trim_card.q
 
     st.trim_sid, st.trim_card, st.q_dyn = trim_sid, trim_card, q_dyn
+    st.gustlf = gustlf
 
 
 def _stage_resolve_massset_and_mach(st: _TrimState) -> None:
@@ -411,6 +434,17 @@ def _stage_build_labels(st: _TrimState) -> None:
 
     # Separate free (to solve for) vs prescribed (given in TRIM card)
     prescribed_dict = {k.upper(): v for k, v in trim_card.vars.items()}
+    # GUSTLF supplies the load factor as URDD3 = -n*g (issue #1).  The card is the
+    # single source for it — the parser refuses a TRIM that also prescribes URDD3
+    # (two sources for one quantity, cf. DEF-M4) — and the sign goes through
+    # load_factor_to_urdd3 (charter §5/§8), never re-derived here.
+    if st.gustlf is not None:
+        if "URDD3" not in all_labels:
+            raise ValueError(
+                f"GUSTLF {st.gustlf.sid}: no AESTAT defines URDD3 — a gust load "
+                "factor cannot be applied without it"
+            )
+        prescribed_dict["URDD3"] = st.gustlf.urdd3
     free_labels   = [l for l in all_labels if l not in prescribed_dict]
 
     st.all_labels, st.chordcp_alpha_ref = all_labels, chordcp_alpha_ref
@@ -435,6 +469,35 @@ def _stage_resolve_ref_geometry(st: _TrimState) -> None:
         suport_pos = np.zeros(3)
 
     st.aeros, st.x_ref, st.R_rcsid, st.suport_pos = aeros, x_ref, R_rcsid, suport_pos
+
+    # ------------------------------------------------------------------ #
+    # DEF-M20 — RCSID orientation guard for the load-factor convention
+    # ------------------------------------------------------------------ #
+    # `URDD3 = -n_z*g` (charter §5) presumes a z-DOWN (stability-axes) RCSID:
+    # the rotation to basic turns -g into an upward reaction and positive
+    # trimmed lift.  With RCSID absent or z-UP the identical value is a
+    # genuinely downward acceleration and the deck trims INVERTED lift, with
+    # nothing to say so.  Gust cases (issue #1) make this reachable in normal
+    # work because a down-gust prescribes a positive URDD3, so the guard lands
+    # with them.  `sample/val_dihedral_trim.bdf` does this deliberately and is
+    # expected to warn.
+    urdd3 = st.prescribed_dict.get("URDD3")
+    if urdd3 is not None and urdd3 < 0.0:
+        # Third column of R_rcsid is the RCSID z-axis expressed in basic.
+        rcsid_z_in_basic_z = float(R_rcsid[2, 2])
+        if rcsid_z_in_basic_z >= 0.0:
+            why = (
+                "the AEROS card names no RCSID, so the trim frame is basic (z-UP)"
+                if not aeros.rcsid
+                else f"the RCSID {aeros.rcsid} z-axis does not point down in basic"
+            )
+            warnings.warn(
+                f"TRIM {st.trim_sid}: URDD3 = {urdd3:.6g} is negative, which encodes "
+                f"a positive load factor only for a z-DOWN RCSID, but {why} — so this "
+                "trims INVERTED lift.  See docs/10_standard/09_conventions.md §5 "
+                "(DEF-M20).",
+                UserWarning, stacklevel=2,
+            )
 
 
 def _stage_echo_chordcp(st: _TrimState) -> None:
@@ -1078,6 +1141,16 @@ def _pack_trim_result(st: _TrimState) -> Sol144TrimResult:
         monitor_loads=st.monitor_loads,
         section_loads=st.section_loads,
         chordcp_echo=st.chordcp_echo,
+        gust_echo=(
+            {
+                "sid": st.gustlf.sid, "trimid": st.gustlf.trimid,
+                "n": st.gustlf.n, "g": st.gustlf.g, "urdd3": st.gustlf.urdd3,
+                "sense": st.gustlf.sense, "ude": st.gustlf.ude,
+                "veas": st.gustlf.veas, "kg": st.gustlf.kg, "mu": st.gustlf.mu,
+                "a": st.gustlf.a, "asrc": st.gustlf.asrc, "alt": st.gustlf.alt,
+            }
+            if st.gustlf is not None else None
+        ),
         load_injection_echo=st.load_injection_echo,
         yaw_rate_iters=st.yaw_rate_iters,
         massset_sid=st.massset_sid,
