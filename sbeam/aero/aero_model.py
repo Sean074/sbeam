@@ -29,7 +29,7 @@ from sbeam.aero.corrections import (
 )
 from sbeam.aero.spline import LoadInjection, build_spline_operators
 from sbeam.aero.strip import strip_box_mask, strip_box_slopes, is_strip_caero
-from sbeam.types import FloatArray
+from sbeam.types import BoolArray, FloatArray
 
 
 @dataclass
@@ -200,7 +200,7 @@ def _assemble_vlm_operator(
 def _apply_chordcp_injection(
     bulk: BulkData,
     boxes: list[AeroBox],
-    strip_mask: FloatArray,
+    strip_mask: BoolArray,
     ajj_inv_corr: FloatArray,
     wg: FloatArray,
 ) -> Optional[float]:

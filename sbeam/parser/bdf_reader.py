@@ -774,7 +774,7 @@ def _handle_aesurf(fields: list[str], bulk: BulkData) -> None:
                                 cid2=cid2, alid2=alid2, eff=eff)
 
 
-def _expand_int_list_with_thru(tokens: list[str]) -> list[int]:
+def expand_int_list_with_thru(tokens: list[str]) -> list[int]:
     """Expand a token list that may contain THRU keywords into a flat integer list."""
     result = []
     k = 0
@@ -811,7 +811,7 @@ def _handle_aelist(fields: list[str], conts: list[list[str]], bulk: BulkData) ->
     tokens = [f for f in fields[2:]]
     for cont in conts:
         tokens += list(cont[1:])
-    elements = _expand_int_list_with_thru(tokens)
+    elements = expand_int_list_with_thru(tokens)
     if sid in bulk.aelists:
         raise ValueError(f"Duplicate AELIST SID {sid}")
     bulk.aelists[sid] = Aelist(sid=sid, elements=elements)

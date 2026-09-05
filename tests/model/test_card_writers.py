@@ -164,7 +164,7 @@ def test_mldtrim_mldtime_mldcomd_mldprnt_roundtrip():
 # Golden round-trips: every family instance in the two MLOADS sample decks
 # ---------------------------------------------------------------------------
 
-_FAMILY_ATTRS = [a for a, _ in cw._FAMILIES.values()]
+_FAMILY_ATTRS = [a for a, _ in cw.FAMILIES.values()]
 
 
 @pytest.mark.parametrize("deck", ["ha144a_fullspan_mloads.bdf",
@@ -172,7 +172,7 @@ _FAMILY_ATTRS = [a for a, _ in cw._FAMILIES.values()]
 def test_sample_deck_golden_roundtrip(deck):
     _, bulk = parse_bdf(SAMPLE_DIR / deck)
     lines: list[str] = []
-    for family, (attr, writer) in cw._FAMILIES.items():
+    for family, (attr, writer) in cw.FAMILIES.items():
         store = getattr(bulk, attr)
         if family == "suport":
             lines += [ln for s in store for ln in writer(s)]

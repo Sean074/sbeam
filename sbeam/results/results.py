@@ -338,7 +338,7 @@ class ManeuverResult:
     n_modes_used: Optional[int] = None    # retained elastic modes (Step 62 solver; None = direct l-set)
     # Step 62 basis summary for the f06 (n_r, n_e, n_available, freqs_hz,
     # orthogonality_residual, n_massless); None for the direct l-set solver.
-    basis_info: Optional[dict] = None
+    basis_info: Optional[dict[str, Any]] = None
     # Step 68 — {name: SectionCutEnvelope} per-station max/min over the run's
     # samples.  None when the deck has no MONSECT cards.
     section_envelope: Optional[dict[str, "SectionCutEnvelope"]] = None

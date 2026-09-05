@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, Optional, cast
 
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.parser.case_control import CaseControl, SubcaseControl
@@ -48,7 +49,7 @@ _SC_KIND_MLOADS = "Maneuver (MLOADS)"
 _SC_KINDS = [_SC_KIND_TRIM, _SC_KIND_DIVERG, _SC_KIND_MLOADS]
 
 
-def _subcase_kind(sc_data: dict) -> str:
+def _subcase_kind(sc_data: dict[str, Any]) -> str:
     """Infer the SOL 144 driver kind from a subcase's populated SID fields."""
     if sc_data.get("mloads_sid") is not None:
         return _SC_KIND_MLOADS
@@ -549,7 +550,8 @@ def _render_sol144_subcase_fields(
              "(DIVERG also combines with Trim as an add-on sweep).",
     )
 
-    def _sid_box(col, label: str, field: str, sids: list[int], help_: str = "") -> None:
+    def _sid_box(col: DeltaGenerator, label: str, field: str, sids: list[int],
+                 help_: str = "") -> None:
         opts: list[Optional[int]] = [None] + sids
         cur = sc_data.get(field)
         sc_data[field] = col.selectbox(

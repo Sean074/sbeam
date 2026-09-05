@@ -257,6 +257,15 @@ The two top-level functions serve distinct use cases:
 
 ## Resolved defects (documentation / model)
 
+### Pyright-gate restoration (Tier S, hygiene) ✅ COMPLETE (2026-09-05)
+
+Cleared all 127 strict-mode pyright errors so the documented CI type-check gate passes
+again: bool/int mask and index arrays retyped (`BoolArray`/`IntArray` instead of
+`FloatArray`), missing viewer/results annotations added, Optional accesses guarded,
+possibly-unbound variables initialised, and the shared `_FAMILIES` /
+`_expand_int_list_with_thru` names made public (`FAMILIES`, `expand_int_list_with_thru`).
+No behavior change; full suite 1741 passed / 6 xfailed before and after.
+
 ### DEF-M13 (P3, release hygiene batch) — f06 header/data column drift ✅ COMPLETE (2026-08-03)
 
 **Objective:** DEF-M7 fixed the maneuver time-history table's 15-character headers over

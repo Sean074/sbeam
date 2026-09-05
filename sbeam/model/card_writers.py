@@ -156,7 +156,7 @@ def write_tabled1(t: Tabled1) -> list[str]:
 
 # Family key -> (BulkData attribute, writer).  Order is emission order and is
 # chosen so referenced cards appear before their referrers when read top-down.
-_FAMILIES = {
+FAMILIES = {
     "aestat":  ("aestats",  write_aestat),
     "aesurf":  ("aesurfs",  write_aesurf),
     "aelist":  ("aelists",  write_aelist),
@@ -189,7 +189,7 @@ def write_authored_block(bulk: "BulkData", authored: dict[str, set[int]],
         Card text ending with a newline, or "" when nothing is authored.
     """
     lines: list[str] = []
-    for family, (attr, writer) in _FAMILIES.items():
+    for family, (attr, writer) in FAMILIES.items():
         ids = authored.get(family)
         if not ids:
             continue

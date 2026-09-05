@@ -43,29 +43,30 @@ def build_section_envelope(
     sample: ``np.argmax``/``argmin`` semantics, stated here because "which
     sample drove this" must be reproducible run to run.
     """
-    samples = [(i, s) for i, s in enumerate(result.steps) if s.section_loads]
+    samples = [(i, s, s.section_loads) for i, s in enumerate(result.steps)
+               if s.section_loads]
     if not samples:
         return None
 
-    names = sorted(samples[0][1].section_loads.keys())
+    names = sorted(samples[0][2].keys())
     out: dict[str, SectionCutEnvelope] = {}
 
     for name in names:
         # A cut present at some samples but not others would make the stacked
         # array ragged; take the samples that carry this cut, in time order.
-        rows = [(i, s) for i, s in samples if name in s.section_loads]
-        first = rows[0][1].section_loads[name]
+        rows = [(i, s, sl) for i, s, sl in samples if name in sl]
+        first = rows[0][2][name]
         n_st = len(first.stations)
 
         # (n_sample, n_station, 6) of LABELLED components — the envelope is
         # reported in the same N/V/Mt/M order the tables use, not raw cid order.
         values = np.array([
             [labelled(st.totals, first.comp_map)
-             for st in s.section_loads[name].stations]
-            for _i, s in rows
+             for st in sl[name].stations]
+            for _i, _s, sl in rows
         ])
-        idx = np.array([i for i, _s in rows])
-        times = np.array([s.t for _i, s in rows])
+        idx = np.array([i for i, _s, _sl in rows])
+        times = np.array([s.t for _i, s, _sl in rows])
 
         i_max = values.argmax(axis=0)          # (n_station, 6)
         i_min = values.argmin(axis=0)

@@ -9,7 +9,7 @@ are ``auth_``-prefixed; ``st.session_state.authored_cards`` tracks what this
 session created, which is exactly the card set the driver export inlines.
 """
 
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, cast
 
 import pandas as pd
 import streamlit as st
@@ -24,11 +24,13 @@ from sbeam.model.maneuver import (
 )
 from sbeam.model.card_writers import write_authored_block
 from sbeam.viewer import sol144_authoring as logic
+from sbeam.parser.case_control import CaseControl
 from sbeam.viewer.case_control_ui import export_bdf_text
 
 
-def export_sol144_bdf(cc, bulk: BulkData, authored: dict[str, set[int]],
-                      include_paths: Optional[list] = None,
+def export_sol144_bdf(cc: CaseControl, bulk: BulkData,
+                      authored: dict[str, set[int]],
+                      include_paths: Optional[list[str]] = None,
                       title_comment: str = "") -> str:
     """Full driver deck: provenance header + case control + authored cards
     inline + every INCLUDE.  Pure — reused by the export tests."""
@@ -91,7 +93,7 @@ def _family_editor(
                 existing = next(s for s in store if s.gid == sel)
             else:
                 existing = store[sel]
-        default_id = sel if editing else logic.next_free_sid(bulk, family)
+        default_id = cast(int, sel) if editing else logic.next_free_sid(bulk, family)
 
         with st.form(f"auth_form_{family}"):
             card = render_form(bulk, existing, default_id)
@@ -130,7 +132,7 @@ def _family_editor(
 def _pairs_editor(key: str, columns: dict[str, Any],
                   rows: list[dict[str, Any]]) -> pd.DataFrame:
     """A dynamic-row data editor (allowed inside forms; commits on submit)."""
-    df = pd.DataFrame(rows, columns=list(columns))
+    df = pd.DataFrame(rows, columns=pd.Index(list(columns)))
     return st.data_editor(
         df, key=key, num_rows="dynamic", column_config=columns,
         use_container_width=True, hide_index=True,
@@ -264,8 +266,9 @@ def _trim_form(bulk: BulkData, card: Optional[Trim], default_id: int):
     )
     vars_: dict[str, float] = {}
     for _, row in df.iterrows():
-        if isinstance(row["label"], str) and row["label"].strip():
-            vars_[row["label"].strip().upper()] = float(row["value"] or 0.0)
+        label = row["label"]
+        if isinstance(label, str) and label.strip():
+            vars_[label.strip().upper()] = float(row["value"] or 0.0)
     if not labels:
         st.warning("Define AESTAT/AESURF labels first.")
         return None
@@ -311,10 +314,12 @@ def _trimobj_form(bulk: BulkData, card: Optional[Trimobj], default_id: int):
          "weight": st.column_config.NumberColumn("Weight", format="%.6g")},
         rows,
     )
-    out_labels, weights = [], []
+    out_labels: list[str] = []
+    weights: list[float] = []
     for _, row in df.iterrows():
-        if isinstance(row["label"], str) and row["label"].strip():
-            out_labels.append(row["label"].strip().upper())
+        label = row["label"]
+        if isinstance(label, str) and label.strip():
+            out_labels.append(label.strip().upper())
             weights.append(float(row["weight"] or 0.0))
     if not out_labels:
         st.warning("TRIMOBJ needs at least one label/weight pair.")
@@ -322,7 +327,8 @@ def _trimobj_form(bulk: BulkData, card: Optional[Trimobj], default_id: int):
     return Trimobj(sid=int(sid), labels=out_labels, weights=weights)
 
 
-def _trimcon_form(bulk: BulkData, cards: Optional[list[Trimcon]], default_id: int):
+def _trimcon_form(bulk: BulkData, cards: Optional[list[Trimcon]],
+                  default_id: int) -> Optional[list[Trimcon]]:
     sid = st.number_input("SID", min_value=1,
                           value=(cards[0].sid if cards else default_id),
                           key="auth_trimcon_sid")
@@ -337,10 +343,11 @@ def _trimcon_form(bulk: BulkData, cards: Optional[list[Trimcon]], default_id: in
          "rhs": st.column_config.NumberColumn("RHS", format="%.6g")},
         rows,
     )
-    cons = []
+    cons: list[Trimcon] = []
     for _, row in df.iterrows():
-        if isinstance(row["label"], str) and row["label"].strip():
-            cons.append(Trimcon(sid=int(sid), label=row["label"].strip().upper(),
+        label = row["label"]
+        if isinstance(label, str) and label.strip():
+            cons.append(Trimcon(sid=int(sid), label=label.strip().upper(),
                                 sense=str(row["sense"]), rhs=float(row["rhs"] or 0.0)))
     if not cons:
         st.warning("TRIMCON needs at least one constraint row.")
@@ -495,10 +502,11 @@ def _mldcomd_form(bulk: BulkData, card: Optional[Mldcomd], default_id: int):
          "tabid": st.column_config.SelectboxColumn("TABLED1", options=tabids)},
         rows,
     )
-    commands = []
+    commands: list[tuple[str, int]] = []
     for _, row in df.iterrows():
-        if isinstance(row["label"], str) and row["label"].strip():
-            commands.append((row["label"].strip().upper(), int(row["tabid"] or 0)))
+        label = row["label"]
+        if isinstance(label, str) and label.strip():
+            commands.append((label.strip().upper(), int(row["tabid"] or 0)))
     if not labels or not tabids:
         st.warning("Define AESURF/AESTAT labels and at least one TABLED1 first.")
         return None
@@ -590,7 +598,8 @@ _GENERATORS = ["Cosine ramp (recommended)", "Linear ramp", "Step", "Doublet"]
 
 def _generator_points(shape: str, key_prefix: str,
                       y0_label: str = "Start value y0",
-                      y1_label: str = "End value y1") -> Optional[list]:
+                      y1_label: str = "End value y1",
+                      ) -> Optional[list[tuple[float, float]]]:
     """Shared generator parameter widgets; returns (x, y) points or None."""
     col1, col2 = st.columns(2)
     t1 = col1.number_input("t1 (shape start)", min_value=0.0, value=0.0,
@@ -598,6 +607,7 @@ def _generator_points(shape: str, key_prefix: str,
     t2 = col2.number_input("t2 (shape end)", min_value=0.0, value=0.2,
                            key=f"{key_prefix}_t2", format="%.4g")
     col3, col4 = st.columns(2)
+    y1 = amp = 0.0  # each branch overwrites the values its shapes consume
     if shape == "Doublet":
         y0 = col3.number_input("Baseline y0", value=0.0,
                                key=f"{key_prefix}_y0", format="%.6g")
@@ -653,7 +663,8 @@ def _render_increment_builder(bulk: BulkData) -> None:
             "here; after running the analysis, one click offsets it by the "
             "solved trim value per mass case and writes the absolute TABLED1."
         )
-        specs: dict = st.session_state.setdefault("mldcomd_increments", {})
+        specs: dict[tuple[int, str], logic.IncrementSpec] = (
+            st.session_state.setdefault("mldcomd_increments", {}))
         mloads_sids = sorted(bulk.mloads.keys())
         surf_labels = logic.label_options(bulk, modal_only=True)
         if not mloads_sids or not surf_labels:
@@ -696,6 +707,10 @@ def _render_increment_builder(bulk: BulkData) -> None:
             elif st.button("Resolve → absolute TABLED1s", type="primary",
                            key="auth_inc_resolve"):
                 cc = st.session_state.get("case_control")
+                if cc is None:
+                    st.error("Load or author SOL 144 case control before "
+                             "resolving increment commands.")
+                    return
                 cards, report, errors, resolved = logic.resolve_increment_tables(
                     bulk, cc, list(specs.values()),
                     trim_results=trim_results,

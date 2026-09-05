@@ -145,7 +145,7 @@ class ManeuverBasisCache:
     def __init__(self, bulk: BulkData, aero: AeroModel):
         self._bulk = bulk
         self._aero = aero
-        self._cache: dict[tuple, ManeuverBasis] = {}
+        self._cache: dict[tuple[Optional[int], int], ManeuverBasis] = {}
         self.n_builds = 0
 
     def get(self, subcase: SubcaseControl, eigrl_sid: int) -> ManeuverBasis:
@@ -213,7 +213,7 @@ def _warn_unrepresented_labels(
     (and closure) blind to that state.
     """
     missing: list[str] = []
-    for col, entry in basis.rigid_label_map.items():
+    for _col, entry in basis.rigid_label_map.items():
         for key in ("accel", "rate", "disp"):
             lbl = entry[key]
             if lbl is not None and lbl not in label_to_col:
@@ -446,9 +446,10 @@ def run_maneuver_modal(
     urdd3_col = ops.label_to_col.get("URDD3")
     urdd3_basic0 = float(base_basic[urdd3_col]) if urdd3_col is not None else 0.0
 
-    # Constant trim static l-set solution for the "displacement" reference mode.
-    if recovery == "displacement":
-        u_l_trim = scipy.linalg.lu_solve(K_eff_lu, force_l(ops, base_arr))
+    # Constant trim static l-set solution for the "displacement" reference mode
+    # (None in mode-acceleration recovery, and never read there).
+    u_l_trim = (scipy.linalg.lu_solve(K_eff_lu, force_l(ops, base_arr))
+                if recovery == "displacement" else None)
 
     def _vals_at(delta_arr: FloatArray) -> dict[str, float]:
         return {l: float(delta_arr[i]) for i, l in enumerate(ops.all_labels)}
@@ -497,7 +498,7 @@ def run_maneuver_modal(
         # a recovery switch.
         accel_a = phi_e @ daxi_e                        # ü_e, a-set
         damp_rate_a = (phi_e @ (c_rate * dvxi_e)) if mload.zeta else None
-        if recovery == "displacement":
+        if u_l_trim is not None:  # "displacement" recovery
             u_l = u_l_trim + (psi_e @ dxi_e)[ops.l_idx]
         else:
             f_inert = ops_a.M_aa @ accel_a

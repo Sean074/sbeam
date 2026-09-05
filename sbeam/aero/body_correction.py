@@ -95,7 +95,8 @@ import pandas as pd
 
 from sbeam.aero.aero_model import AeroModel, build_aero_model
 from sbeam.model.bulk_data import BulkData
-from sbeam.types import FloatArray
+from sbeam.aero.panel import AeroBox
+from sbeam.types import FloatArray, IntArray
 from sbeam.aero.integration import build_djx
 from sbeam.aero.strip import is_strip_caero, strip_box_slopes
 from sbeam.assembly.coord_transform import get_transform
@@ -261,8 +262,8 @@ def _as_eid_list(x: Optional[Union[int, Iterable[int]]]) -> list[int]:
 
 def _body_panel_geometry(
     bulk: BulkData, aero0: AeroModel,
-) -> tuple[list, int, FloatArray, BodyTargets, FloatArray, FloatArray, FloatArray,
-           FloatArray, FloatArray, FloatArray]:
+) -> tuple[list[AeroBox], int, FloatArray, BodyTargets, FloatArray, FloatArray,
+           FloatArray, FloatArray, FloatArray, FloatArray]:
     """Shared body-builder prelude (DEF-R4): baseline metrics, per-box geometry,
     moment weight rows and the corrected unit α/β responses.
 
@@ -310,15 +311,16 @@ def _body_panel_geometry(
 
 
 def _body_panel_indices(
-    boxes: list, panel_eids: list[int], what: str,
-) -> tuple[dict[int, FloatArray], FloatArray]:
+    boxes: list[AeroBox], panel_eids: list[int], what: str,
+) -> tuple[dict[int, IntArray], IntArray]:
     """Per-panel box indices and the joined body set (caller-validated EIDs).
 
     Horizontal panels first, then vertical, preserving the caller's order.
     """
-    panel_idx = {}
+    panel_idx: dict[int, IntArray] = {}
     for eid in panel_eids:
-        idx = np.array([k for k, b in enumerate(boxes) if b.caero_eid == eid])
+        idx = np.array([k for k, b in enumerate(boxes) if b.caero_eid == eid],
+                       dtype=np.int_)
         if idx.size == 0:
             raise ValueError(f"{what}: CAERO1 {eid} has no boxes")
         panel_idx[eid] = idx
@@ -335,7 +337,7 @@ def _solve_body_min_norm(
     cp_a: FloatArray, cp_b: FloatArray,
     a_base: FloatArray,
     wg0: FloatArray,
-    body_idx: FloatArray,
+    body_idx: IntArray,
     n: int,
 ) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray, FloatArray]:
     """Joint minimum-norm slope-ratio and offset solves over the body boxes (DEF-R4).
@@ -402,7 +404,7 @@ def _summarize_body_result(
     cp_a: FloatArray, cp_b: FloatArray,
     v_pitch: FloatArray, v_yaw: FloatArray, v_roll: FloatArray,
     wg_total: FloatArray,
-    body_idx: FloatArray,
+    body_idx: IntArray,
     tol: float,
 ) -> tuple[BodyTargets, dict[str, float], bool, float]:
     """Achieved totals, residuals, convergence flag and max slope ratio (DEF-R4).

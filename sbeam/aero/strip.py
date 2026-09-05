@@ -38,7 +38,7 @@ box-by-box (emitted by the correction).
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
-from sbeam.types import FloatArray
+from sbeam.types import BoolArray, FloatArray
 from sbeam.aero.panel import AeroBox
 from sbeam.model.aero import Stripk
 
@@ -49,7 +49,7 @@ def is_strip_caero(bulk: BulkData, caero_eid: int) -> bool:
     return caero is not None and caero.pid in bulk.pstrips
 
 
-def strip_box_mask(bulk: BulkData, boxes: list[AeroBox]) -> FloatArray:
+def strip_box_mask(bulk: BulkData, boxes: list[AeroBox]) -> BoolArray:
     """Boolean mask (length n_box) — True for boxes belonging to a strip panel."""
     return np.array([is_strip_caero(bulk, b.caero_eid) for b in boxes], dtype=bool)
 

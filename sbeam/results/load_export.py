@@ -17,12 +17,14 @@ form, but the set sums to the trimmed lift minus the inertia-relief reaction
 
 import csv
 import io
-from typing import Optional
+from typing import Optional, TextIO, Union
 
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
-from sbeam.results.results import ManeuverResult, Sol144TrimResult
+from sbeam.results.results import (
+    ManeuverResult, SectionCutResult, SectionCutStation, Sol144TrimResult,
+)
 from sbeam.results.section_cuts import component_names, labelled
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.parser.bdf_field import fmt_real8
@@ -225,7 +227,7 @@ _SECTION_CUT_COLUMNS = [
 ]
 
 
-def _section_cut_row(sc, st) -> list:
+def _section_cut_row(sc: "SectionCutResult", st: "SectionCutStation") -> list[Union[str, int]]:
     """The shared per-station cells of a section-cut CSV row."""
     d = st.d_ds
     return [
@@ -265,11 +267,12 @@ def write_section_loads_csv(filepath: str, results: dict[int, Sol144TrimResult])
         writer = csv.writer(fh)
         writer.writerow(header)
         for sc_id, result in results.items():
-            if not getattr(result, "section_loads", None):
+            section_loads = result.section_loads
+            if not section_loads:
                 continue
             ms_sid = getattr(result, "massset_sid", None)
-            for name in sorted(result.section_loads.keys()):
-                sc = result.section_loads[name]
+            for name in sorted(section_loads.keys()):
+                sc = section_loads[name]
                 for st in sc.stations:
                     writer.writerow([
                         sc_id,
@@ -317,7 +320,7 @@ def build_maneuver_section_loads_csv_text(
     return buf.getvalue()
 
 
-def _write_maneuver_section_loads(fh, results: dict[int, "ManeuverResult"]) -> None:
+def _write_maneuver_section_loads(fh: TextIO, results: dict[int, "ManeuverResult"]) -> None:
     header = (["case", "mloads", "massset", "sample", "time", "critical"]
               + _SECTION_CUT_COLUMNS
               + [f"c{i}_elastic" for i in range(1, 7)]
@@ -374,7 +377,7 @@ def build_maneuver_section_envelope_csv_text(
     return buf.getvalue()
 
 
-def _write_maneuver_section_envelope(fh, results: dict[int, "ManeuverResult"]) -> None:
+def _write_maneuver_section_envelope(fh: TextIO, results: dict[int, "ManeuverResult"]) -> None:
     header = [
         "case", "mloads", "massset", "name", "label", "comp", "listtype",
         "cid", "axis", "side", "half_model", "n_samples", "critical_sample",

@@ -11,10 +11,12 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from sbeam.model.bulk_data import BulkData
-from sbeam.model.card_writers import _FAMILIES
+from sbeam.model.card_writers import FAMILIES
 from sbeam.model.maneuver import Mldcomd, Mloads, Tabled1
 from sbeam.model.maneuver_presets import load_factor_to_urdd3
-from sbeam.parser.bdf_reader import _expand_int_list_with_thru
+from sbeam.parser.bdf_reader import expand_int_list_with_thru
+from sbeam.parser.case_control import CaseControl, SubcaseControl
+from sbeam.results.results import ManeuverResult, Sol144TrimResult
 
 # Canonical AESTAT rigid-body trim-variable labels.
 AESTAT_LABELS = [
@@ -24,7 +26,7 @@ AESTAT_LABELS = [
 
 # family key -> BulkData attribute (shared with the card writers so the two
 # can never disagree about where a family lives).
-FAMILY_ATTRS: dict[str, str] = {fam: attr for fam, (attr, _) in _FAMILIES.items()}
+FAMILY_ATTRS: dict[str, str] = {fam: attr for fam, (attr, _) in FAMILIES.items()}
 
 
 def family_store(bulk: BulkData, family: str) -> Any:
@@ -35,7 +37,7 @@ def card_key(family: str, card: Any) -> int:
     """The tracking key for a card: its SID/ID (GID for SUPORT)."""
     if family == "suport":
         return card.gid
-    return getattr(card, "sid", None) if hasattr(card, "sid") else card.id
+    return card.sid if hasattr(card, "sid") else card.id
 
 
 def next_free_sid(bulk: BulkData, family: str) -> int:
@@ -130,7 +132,7 @@ def expand_int_tokens(text: str) -> list[int]:
     Raises ValueError on non-integer tokens.
     """
     tokens = [t for t in text.replace(",", " ").split() if t]
-    return _expand_int_list_with_thru(tokens)
+    return expand_int_list_with_thru(tokens)
 
 
 def parse_float_list(text: str) -> list[float]:
@@ -283,11 +285,11 @@ class IncrementSpec:
 
 def _trim_value_for_subcase(
     bulk: BulkData,
-    sc,
+    sc: SubcaseControl,
     mloads: Mloads,
     label: str,
-    trim_results: Optional[dict],
-    maneuver_results: Optional[dict],
+    trim_results: Optional[dict[int, Sol144TrimResult]],
+    maneuver_results: Optional[dict[int, ManeuverResult]],
 ) -> Optional[float]:
     """The solved trim value of ``label`` for one subcase, or None."""
     mr = (maneuver_results or {}).get(sc.subcase_id)
@@ -311,10 +313,10 @@ def _trim_value_for_subcase(
 
 def resolve_increment_tables(
     bulk: BulkData,
-    cc,
+    cc: CaseControl,
     specs: list[IncrementSpec],
-    trim_results: Optional[dict] = None,
-    maneuver_results: Optional[dict] = None,
+    trim_results: Optional[dict[int, Sol144TrimResult]] = None,
+    maneuver_results: Optional[dict[int, ManeuverResult]] = None,
 ) -> tuple[list[tuple[str, Any]], list[str], list[str], list["IncrementSpec"]]:
     """Resolve increment command specs into absolute TABLED1/MLDCOMD/MLOADS cards.
 
@@ -433,8 +435,8 @@ def snapshot_family_ids(bulk: BulkData) -> dict[str, set[int]]:
 
 def validate_sol144_authoring(
     bulk: BulkData,
-    cc,
-    unresolved_increments: Optional[list] = None,
+    cc: Optional[CaseControl],
+    unresolved_increments: Optional[list["IncrementSpec"]] = None,
     file_sids: Optional[dict[str, set[int]]] = None,
     authored: Optional[dict[str, set[int]]] = None,
 ) -> tuple[list[str], list[str]]:
@@ -577,7 +579,7 @@ def validate_sol144_authoring(
 
     # --- export-only gates ---
     for key in (unresolved_increments or []):
-        msid, label = (key.mloads_sid, key.label) if hasattr(key, "mloads_sid") else key
+        msid, label = key.mloads_sid, key.label
         errors.append(
             f"MLOADS {msid} {label}: unresolved increment command — resolve "
             "to absolute TABLED1s (after a solve) before exporting.")
@@ -593,7 +595,7 @@ def validate_sol144_authoring(
     return errors, warns
 
 
-def suggest_run_name(stem: str, cc) -> str:
+def suggest_run_name(stem: str, cc: Optional[CaseControl]) -> str:
     """Filesystem-safe driver filename for an exported SOL 144 run deck."""
     base = "".join(ch if (ch.isalnum() or ch in "-_") else "_"
                    for ch in (stem or "model"))

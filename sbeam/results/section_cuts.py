@@ -43,7 +43,7 @@ from sbeam.aero.aero_model import AeroModel
 from sbeam.model.aero import Monsect
 from sbeam.model.bulk_data import BulkData
 from sbeam.results.results import SectionCutResult, SectionCutStation
-from sbeam.types import FloatArray
+from sbeam.types import BoolArray, FloatArray, IntArray
 
 # Floor on the auto on-plane tolerance, for a single-station cut (no span to
 # scale from) or a degenerate station list.
@@ -167,7 +167,7 @@ def _member_geometry(
 
 
 def _gather_grid_load(load_g: Optional[FloatArray],
-                      rows: FloatArray) -> tuple[FloatArray, FloatArray]:
+                      rows: IntArray) -> tuple[FloatArray, FloatArray]:
     """Split a g-set load vector into per-member ``(forces (n,3), moments (n,3))``.
 
     ``rows`` is the precomputed ``6·grid_index[gid]`` base row of every member
@@ -182,7 +182,7 @@ def _gather_grid_load(load_g: Optional[FloatArray],
 
 
 def _resultant(f: FloatArray, m: FloatArray, pos: FloatArray,
-               ref: FloatArray, mask: FloatArray) -> FloatArray:
+               ref: FloatArray, mask: BoolArray) -> FloatArray:
     """(6,) ``[F, M]`` resultant about ``ref`` (basic) over the masked members."""
     if not mask.any():
         return np.zeros(6)
@@ -226,10 +226,10 @@ class SectionCutPlan:
     cut: Monsect
     listtype: str                    # 'SET1' | 'AELIST'
     member_ids: list[int]            # grid IDs (SET1) or global box indices k (AELIST)
-    rows: FloatArray                 # (n,) 6·grid_index[gid] base rows; empty for AELIST
+    rows: IntArray                   # (n,) 6·grid_index[gid] base rows; empty for AELIST
     pos: FloatArray                  # (n, 3) member positions, basic
     R: FloatArray                    # (3, 3) cid rotation, v_basic = R @ v_cid
-    masks: list[FloatArray]          # per station, (n,) bool — members on the cut side
+    masks: list[BoolArray]           # per station, (n,) bool — members on the cut side
     refs: FloatArray                 # (n_station, 3) reference points, basic
     comp_map: tuple[int, ...]
     half_model: bool
@@ -249,7 +249,7 @@ def prepare_section_cut(
     # Station coordinate of every member, measured once for the whole sweep.
     s_member = (pos - P) @ n_hat if len(member_ids) else np.zeros(0)
 
-    masks: list[FloatArray] = []
+    masks: list[BoolArray] = []
     refs: list[FloatArray] = []
     for s in cut.stations:
         _warn_on_plane(cut, s, member_ids, s_member, tol,

@@ -15,6 +15,31 @@ phase completion.
 
 ### Changed
 
+**Pyright-gate restoration — 127 strict-mode errors cleared (2026-09-05)**
+
+Typing-hygiene sweep with no behavior change, restoring the documented CI gate
+(`ruff → pyright → pytest`, all green; suite 1741 passed / 6 xfailed before and after):
+
+- Boolean masks and integer index arrays retyped from `FloatArray` to the existing
+  `BoolArray`/`IntArray` aliases (`aero/strip.py` `strip_box_mask`, `aero/aero_model.py`,
+  `aero/body_correction.py` panel/body indices, `results/section_cuts.py` masks/rows).
+- Missing parameter/return annotations added in `results/load_export.py`,
+  `viewer/case_control_ui.py`, `viewer/results_view.py`, `viewer/sol144_authoring.py`
+  (`cc: CaseControl`, typed trim/maneuver result dicts) and
+  `viewer/sol144_authoring_ui.py`.
+- Optional accesses guarded instead of assumed (`results/section_envelope.py`,
+  section-cut/envelope viewer rendering, `resolve_increment_tables` now refuses a
+  missing case control with a UI error instead of crashing).
+- Possibly-unbound variables initialised (`maneuver_modal.py` `u_l_trim` — now an
+  explicit `None` outside "displacement" recovery; `sol144_authoring_ui.py` generator
+  `y1`/`amp`).
+- **Renamed for legitimate cross-module use:** `model/card_writers._FAMILIES` →
+  `FAMILIES`, `parser/bdf_reader._expand_int_list_with_thru` →
+  `expand_int_list_with_thru` (both were consumed by the SOL 144 authoring layer).
+- Dead tuple-unpacking fallback dropped in `validate_sol144_authoring` (increments are
+  always `IncrementSpec`); redundant `getattr` guards replaced by direct attribute
+  narrowing in `load_export.write_section_loads_csv`.
+
 **Sign-convention extraction — charter §§1/5/6 expansion, §§9–11, convention figures (2026-08-09)**
 
 Documentation-only change set from a full sign-convention review (state variables,

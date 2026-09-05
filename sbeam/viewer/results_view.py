@@ -11,7 +11,7 @@ import streamlit as st
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.results.results import (
-    ManeuverResult, SectionCutResult, Sol101Result, Sol103Result,
+    ManeuverResult, ManeuverStep, SectionCutResult, Sol101Result, Sol103Result,
     Sol144DivergResult, Sol144TrimResult, peak_grid_force,
 )
 from sbeam.assembly.load_vector import build_grid_index
@@ -541,7 +541,7 @@ def _render_section_cuts(
                 st.line_chart(plot, x="Station", y=which)
 
 
-def _render_section_time_history(result: ManeuverResult, step) -> None:
+def _render_section_time_history(result: ManeuverResult, step: ManeuverStep) -> None:
     """Load-vs-time for one cut × station × component (Step 68).
 
     The station table answers "what is the load right now"; this answers "when
@@ -550,6 +550,8 @@ def _render_section_time_history(result: ManeuverResult, step) -> None:
     """
     import plotly.graph_objects as go
 
+    if not step.section_loads:  # caller-guarded; keeps the narrowing local
+        return
     names_by_cut = sorted(step.section_loads)
     with st.expander("Section-cut time history", expanded=False):
         cut_name = st.selectbox("Cut", names_by_cut, key="man_tsec_cut")
@@ -605,8 +607,11 @@ def _render_section_envelope(result: ManeuverResult) -> None:
         f"critical sample ({result.crit_index + 1}), which is selected by peak "
         f"|net grid force| over the whole model."
     )
-    for name in sorted(result.section_envelope):
-        env = result.section_envelope[name]
+    envelope = result.section_envelope
+    if not envelope:  # caller-guarded; keeps the narrowing local
+        return
+    for name in sorted(envelope):
+        env = envelope[name]
         names = component_names(env.axis)
         half = "  ·  HALF-MODEL (loads per side)" if env.half_model else ""
         with st.expander(f"{name} — {env.label}", expanded=False):

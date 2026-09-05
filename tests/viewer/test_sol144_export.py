@@ -10,14 +10,14 @@ from pathlib import Path
 
 import pytest
 
-from sbeam.model.card_writers import _FAMILIES
+from sbeam.model.card_writers import FAMILIES
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.viewer.sol144_authoring import snapshot_family_ids
 from sbeam.viewer.sol144_authoring_ui import export_sol144_bdf
 
 SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
 
-_CARD_NAMES = {fam.upper() for fam in _FAMILIES}
+_CARD_NAMES = {fam.upper() for fam in FAMILIES}
 
 
 def _split_sample(deck_path: Path) -> tuple[str, str]:
@@ -51,7 +51,7 @@ def _split_sample(deck_path: Path) -> tuple[str, str]:
 
 
 def _families_equal(a, b) -> None:
-    for family, (attr, _) in _FAMILIES.items():
+    for family, (attr, _) in FAMILIES.items():
         assert getattr(a, attr) == getattr(b, attr), family
 
 

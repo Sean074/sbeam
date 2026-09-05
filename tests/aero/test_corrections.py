@@ -11,7 +11,6 @@ Covers:
   - WKK per-surface binding (DEF-M8b) on a two-surface deck
 """
 
-import warnings
 
 import numpy as np
 import pytest
