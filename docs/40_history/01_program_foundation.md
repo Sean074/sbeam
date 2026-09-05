@@ -257,6 +257,13 @@ The two top-level functions serve distinct use cases:
 
 ## Resolved defects (documentation / model)
 
+### AJJ bit-for-bit test gates hardware-dependent (Tier S, v0.2.0 CI) ✅ COMPLETE (2026-09-05)
+
+The `test_vlm_vectorized.py` vectorized-vs-scalar AJJ gates asserted bit-for-bit
+equality, which does not survive cross-CPU SIMD/FMA dispatch (failed on 2 of 3 CI
+runners at 2.2e-16); switched to the file's own documented fallback
+`assert_allclose(atol=1e-15, rtol=1e-14)`; the elementwise `build_skj` gate stays exact.
+
 ### `python -m sbeam.main` silent no-op (Tier S, v0.2.0 smoke test) ✅ COMPLETE (2026-09-05)
 
 `sbeam/main.py` lacked the `if __name__ == "__main__"` guard, so the README-documented

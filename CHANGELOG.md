@@ -23,6 +23,17 @@ from phase completion. Verification baseline: `docs/verification/v0.2.0.md`.
 
 ### Fixed
 
+**AJJ vectorized-vs-scalar gates were hardware-dependent (2026-09-05)**
+
+`tests/aero/test_vlm_vectorized.py` asserted BIT-FOR-BIT equality between the
+vectorized `build_ajj` and the scalar reference loop. That holds on any one machine
+but not across CPUs — SIMD/FMA dispatch differs, and the first CI run of these tests
+(they predate CI reaching main) failed on two of the three runners with max abs diff
+2.2e-16. Switched the six AJJ equivalence gates to the fallback the file itself had
+documented for exactly this case, `assert_allclose(atol=1e-15, rtol=1e-14)` — well
+inside every downstream tolerance. The `build_skj` gate stays exact (elementwise
+products, no reductions).
+
 **`python -m sbeam.main` was a silent no-op (2026-09-05)**
 
 `sbeam/main.py` had no `if __name__ == "__main__"` guard, so the README-documented

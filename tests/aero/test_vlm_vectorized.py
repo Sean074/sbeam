@@ -1,18 +1,21 @@
 """Vectorized-vs-scalar equivalence for the broadcast Biot-Savart AIC build (P9).
 
 The vectorized ``build_ajj`` reproduces the scalar ``horseshoe_influence`` loop
-op-for-op on float64, so the equivalence assertions here are BIT-FOR-BIT
-(``assert_array_equal``).  If a platform/BLAS quirk ever breaks exactness, the
-documented fallback is ``assert_allclose(atol=1e-15, rtol=1e-14)`` — well
-inside every downstream tolerance (the tightest existing gate on build_ajj
-output is the diagonal check at rel=1e-12).
+op-for-op on float64.  On one machine that is bit-for-bit, and the suite ran
+that way until v0.2.0 — but SIMD/FMA dispatch differs across CPUs (seen on the
+GitHub CI runners, 2026-09-05: max abs diff 2.2e-16), so the AJJ equivalence
+assertions use the originally documented fallback
+``assert_allclose(atol=1e-15, rtol=1e-14)`` — well inside every downstream
+tolerance (the tightest existing gate on build_ajj output is the diagonal
+check at rel=1e-12).  ``build_skj`` is elementwise products only (one rounding,
+no reductions), so its gate stays exact.
 """
 
 import math
 
 import numpy as np
 import pytest
-from numpy.testing import assert_array_equal
+from numpy.testing import assert_allclose, assert_array_equal
 
 from sbeam.aero.integration import build_skj
 from sbeam.aero.panel import AeroBox
@@ -67,6 +70,11 @@ def _random_boxes(n=30, seed=1234):
     return boxes
 
 
+def _assert_ajj_equiv(got, want):
+    """AJJ vectorized-vs-scalar gate: exact on one CPU, ulp-level across CPUs."""
+    assert_allclose(got, want, rtol=1e-14, atol=1e-15)
+
+
 def _scalar_ajj(boxes):
     """The pre-P9 scalar double loop, kept as the reference implementation."""
     n = len(boxes)
@@ -80,7 +88,7 @@ def _scalar_ajj(boxes):
 class TestBuildAjjEquivalence:
     def test_random_geometry_bit_for_bit(self):
         boxes = _random_boxes(n=30)
-        assert_array_equal(build_ajj(boxes), _scalar_ajj(boxes))
+        _assert_ajj_equiv(build_ajj(boxes), _scalar_ajj(boxes))
 
     def test_planar_wing_bit_for_bit(self):
         boxes = []
@@ -93,7 +101,7 @@ class TestBuildAjjEquivalence:
                      [(j + 1) * 0.5, (i + 1) * 1.0, 0.0], [(j + 1) * 0.5, i * 1.0, 0.0]],
                     chord=2.0, i_span=i, j_chord=j))
                 k += 1
-        assert_array_equal(build_ajj(boxes), _scalar_ajj(boxes))
+        _assert_ajj_equiv(build_ajj(boxes), _scalar_ajj(boxes))
 
     def test_chunking_matches_unchunked(self, monkeypatch):
         """A chunk size smaller than n exercises the blocked path."""
@@ -101,7 +109,7 @@ class TestBuildAjjEquivalence:
         boxes = _random_boxes(n=25)
         full = build_ajj(boxes)
         monkeypatch.setattr(vlm, "_AJJ_CHUNK", 7)
-        assert_array_equal(vlm.build_ajj(boxes), full)
+        _assert_ajj_equiv(vlm.build_ajj(boxes), full)
 
     def test_empty_box_list(self):
         assert build_ajj([]).shape == (0, 0)
@@ -114,7 +122,7 @@ class TestDegenerateGuards:
         boxes = _random_boxes(n=4)
         boxes[0].colloc = boxes[1].bound_a.copy()
         A = build_ajj(boxes)
-        assert_array_equal(A, _scalar_ajj(boxes))
+        _assert_ajj_equiv(A, _scalar_ajj(boxes))
         assert np.all(np.isfinite(A))
 
     def test_colloc_on_segment_line(self):
@@ -124,7 +132,7 @@ class TestDegenerateGuards:
         a, b = boxes[2].bound_a, boxes[2].bound_b
         boxes[0].colloc = a + 2.5 * (b - a)   # collinear, beyond the tip end
         A = build_ajj(boxes)
-        assert_array_equal(A, _scalar_ajj(boxes))
+        _assert_ajj_equiv(A, _scalar_ajj(boxes))
         assert np.all(np.isfinite(A))
 
     def test_degenerate_entries_are_exact_zero_per_segment(self):
@@ -134,7 +142,7 @@ class TestDegenerateGuards:
         a, b = boxes[1].bound_a, boxes[1].bound_b
         boxes[0].colloc = 0.5 * (a + b)       # on the bound segment
         A = build_ajj(boxes)
-        assert_array_equal(A, _scalar_ajj(boxes))
+        _assert_ajj_equiv(A, _scalar_ajj(boxes))
 
 
 class TestTrefftzCdiEquivalence:
