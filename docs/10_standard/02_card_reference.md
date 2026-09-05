@@ -935,7 +935,7 @@ AEROS  ACSID  RCSID  CREF  BREF  SREF  SYMXZ  SYMXY  [MACH]
 
 > **Full-span only:** sbeam does not support half-span / symmetry models. `SYMXZ`/`SYMXY` are
 > parsed so legacy decks load, but `build_aero_model` raises `ValueError` for any non-zero
-> value. Unfold a legacy half-span deck with `sbeam.aero.mirror.mirror_halfspan()`.
+> value. Unfold a legacy half-span deck with `sbeam_tools.common.mirror.mirror_halfspan()`.
 
 One AEROS card per model. A second card raises `ValueError("Duplicate AEROS card")`.
 CAERO1 cards without an AEROS card raise `ValueError("CAERO1 card(s) present but no AEROS card found")`.

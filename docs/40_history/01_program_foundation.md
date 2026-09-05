@@ -257,6 +257,17 @@ The two top-level functions serve distinct use cases:
 
 ## Resolved defects (documentation / model)
 
+### Aero-correction ingestion moved to sbeam_tools (Tier M, issue #32) ✅ COMPLETE (2026-09-05)
+
+`sbeam/aero/section_data.py` → `sbeam_tools/corrections/`, taking `split_total_rows` /
+`parse_body_targets` out of `body_correction.py` with it; `mirror.py` →
+`sbeam_tools/common/`. Removed an undeclared charter §7 exception (six deg↔rad conversion
+sites, degrees-based public API) instead of declaring it, and left `sbeam/` free of pandas
+outside the viewer — now asserted by the import gate. The correction solvers stayed: the
+line is that ingesting external dimensional data is tooling, while serialising a computed
+result (`cards_to_bdf`, `load_export`) is not.
+
+
 ### sbeam_tools/ package split (Tier M, issue #33) ✅ COMPLETE (2026-09-05)
 
 The pre/post toolchain became a sibling package `sbeam_tools/{common,cases,report}`;

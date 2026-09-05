@@ -23,7 +23,7 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.model.aero import Aeros, Caero1, Paero1, Pstrip
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.vlm import solve_rigid_cl
-from sbeam.aero import section_data as sd
+from sbeam_tools.corrections import section_data as sd
 from sbeam.aero.section_correction import cards_to_bdf
 from sbeam.parser.bdf_field import FIELD_WIDTH
 from sbeam.parser.bdf_reader import parse_bulk_file

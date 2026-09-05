@@ -354,7 +354,7 @@ def build_aero_model(
 
     sbeam is full-span only.  A half-span / symmetry model (AEROS SYMXZ or
     SYMXY non-zero) is rejected here — mirror it to a full-span deck first
-    (see sbeam.aero.mirror.mirror_halfspan).
+    (see sbeam_tools.common.mirror.mirror_halfspan).
 
     Mach (AE9): the effective Mach is ``mach`` if given, otherwise ``AEROS.mach``
     (field 9, an sbeam extension).  Callers running SOL 144 at a per-TRIM Mach
@@ -393,7 +393,7 @@ def build_aero_model(
             "build_aero_model: half-span / symmetry models are not supported "
             f"(AEROS SYMXZ={require_aeros(bulk).symxz}, SYMXY={require_aeros(bulk).symxy}). "
             "sbeam runs full-span only. Convert the deck with "
-            "sbeam.aero.mirror.mirror_halfspan(), or rebuild it full-span, "
+            "sbeam_tools.common.mirror.mirror_halfspan(), or rebuild it full-span, "
             "so that SYMXZ=SYMXY=0."
         )
 

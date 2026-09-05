@@ -20,13 +20,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sbeam.aero import section_data as sd
-from sbeam.aero.body_correction import (
-    build_body_correction,
-    parse_body_targets,
-    split_total_rows,
-    RATIO_WARN,
-)
+from sbeam_tools.corrections import section_data as sd
+from sbeam.aero.body_correction import build_body_correction, RATIO_WARN
+from sbeam_tools.corrections import parse_body_targets, split_total_rows
 
 _ROOT = Path(__file__).parent.parent.parent / "sample"
 BDF_PATH = _ROOT / "cessna210_flagship_body.bdf"

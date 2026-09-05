@@ -22,9 +22,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sbeam.aero import section_data as sd
+from sbeam_tools.corrections import section_data as sd
 from sbeam.aero.aero_model import build_aero_model
-from sbeam.aero.body_correction import split_total_rows
+from sbeam_tools.corrections import split_total_rows
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.parser.bdf_reader import parse_bdf
 

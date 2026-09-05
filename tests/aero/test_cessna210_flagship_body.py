@@ -38,6 +38,7 @@ import pandas as pd
 import pytest
 
 from sbeam.aero import body_correction as bc
+from sbeam_tools.corrections import section_data as sd
 from sbeam.aero.integration import build_djx
 from sbeam.aero.panel import build_box_id_map
 from sbeam.gpwg import compute_gpwg
@@ -110,7 +111,7 @@ def bare_trim(bare):
 @pytest.fixture(scope="module")
 def targets():
     """The TOTAL block of the shared section-data CSV."""
-    t = bc.parse_body_targets(pd.read_csv(CSV_PATH), 0.0)
+    t = sd.parse_body_targets(pd.read_csv(CSV_PATH), 0.0)
     assert t is not None, "no TOTAL row at Mach 0 in the flagship CSV"
     return t
 
@@ -220,7 +221,7 @@ def test_b2_committed_body_cards_regenerate(name, builder, card_attr, value_attr
 
 def test_b2_total_block_is_separate_from_the_flying_rows(targets):
     """The CSV carries both blocks; only the TOTAL one drives the body."""
-    flying, totals = bc.split_total_rows(pd.read_csv(CSV_PATH))
+    flying, totals = sd.split_total_rows(pd.read_csv(CSV_PATH))
     assert len(totals) == 1
     assert set(flying["var"].str.upper()) == {"ALPHA", "BETA"}
     assert targets.cm_alpha == pytest.approx(-1.4921)

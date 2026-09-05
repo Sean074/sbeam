@@ -202,7 +202,7 @@ All three keys are reset to `None` on new file upload (same pattern as `sol101_r
 
 Present only when `bulk.caero1s` is non-empty (the tab immediately right of **Aero**).
 Implemented in `aero_correction_view.py` (`render_aero_correction_tab(bulk)`); a front end over
-`sbeam.aero.section_data` / `section_correction` that turns a table of **experimental / CFD section
+`sbeam_tools.corrections.section_data` / `sbeam.aero.section_correction` that turns a table of **experimental / CFD section
 coefficients** into **W2GJ + AECORR(WT2)** correction cards for one flight **condition** (Mach +
 operating α and β) and injects them into the in-session model so the **Aero** tab runs the corrected
 solve, and/or exports a self-contained corrected BDF.

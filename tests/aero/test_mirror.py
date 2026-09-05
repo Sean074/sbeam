@@ -8,7 +8,7 @@ from sbeam.model.grid import Grid
 from sbeam.model.element import Cbar
 from sbeam.model.mass import Conm2
 from sbeam.aero.aero_model import build_aero_model
-from sbeam.aero.mirror import mirror_halfspan
+from sbeam_tools.common.mirror import mirror_halfspan
 
 
 def _half_deck() -> BulkData:

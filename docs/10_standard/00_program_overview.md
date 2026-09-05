@@ -30,6 +30,7 @@ sbeam/                    the solver core — no streamlit, no plotly, no unit c
 sbeam_tools/
     common/               unit systems, ISA atmosphere, deck reader, case index, emitters
     cases/                case construction  →  sbeam-cases      (#4)
+    corrections/          external CFD/test data → aero correction cards
     report/               envelope + critical-case report  →  sbeam-report   (#5)
     viewer/               the Streamlit GUI  →  sbeam-view       (relocated at v0.4.0)
 ```
@@ -49,8 +50,10 @@ imports `sbeam_tools/`, `streamlit` or `plotly`. Tools may reach into solver int
 they ship together, and freezing a public surface would cost more than it protects while
 the solver is still growing.
 
-*Migration status (2026-09-05):* `sbeam_tools/{common,cases,report}` exist and the gust
-generator has moved into them; `scripts/` is retired. **`sbeam/viewer/` has not moved
+*Migration status (2026-09-05):* `sbeam_tools/{common,cases,corrections,report}` exist;
+the gust generator (#1) and the section-data CSV ingestion (#32) have moved into them, and
+`scripts/` is retired. The solver is now free of `pandas` as well as `streamlit`/`plotly`,
+and the import gate asserts all three. **`sbeam/viewer/` has not moved
 yet** — it relocates at the start of v0.4.0 (#34) as a mechanical import-path change,
 before #11 rewrites its authoring layer. Until then the import gate excludes it, which is
 the one live exception to the rule above.
@@ -137,10 +140,8 @@ sbeam/
 │   ├── integration.py    # build_skj, build_djk, build_wg integration matrices
 │   ├── corrections.py    # apply_wkk, apply_wt2, apply_wt1 AIC corrections
 │   ├── section_correction.py # W2GJ+WT2 card-pair synthesis matching section force and moment
-│   ├── section_data.py   # Spanwise section-coefficient table (CSV) ingestion → strip targets
 │   ├── body_correction.py # Cruciform (A9) + decoupled-strip (A10) body-panel total-aircraft moment match
 │   ├── strip.py          # Decoupled strip body panels (PSTRIP/STRIPK; zero-coupling diagonal AIC block)
-│   ├── mirror.py         # mirror_halfspan(): half-span (SYMXZ) deck → full-span unfold migration aid
 │   ├── spline.py         # build_spline_operators(): g_slope / g_disp / g_load from SPLINE2 + ATTACH + SPLINE0
 │   ├── coupling.py       # build_qaa (flexible aero stiffness), build_fg, build_gaf (modal GAF Qhh)
 │   └── aero_model.py     # AeroModel dataclass + build_aero_model() factory
@@ -163,10 +164,13 @@ sbeam_tools/
 ├── common/
 │   ├── atmosphere.py     # ISA standard atmosphere, SI (no dependency on units — one-way)
 │   ├── units.py          # UnitSystem / UNIT_SYSTEMS; isa_density in model units
-│   └── deck.py           # Read S, cbar, W per MASSSET and rigid CZ_alpha out of a deck
+│   ├── deck.py           # Read S, cbar, W per MASSSET and rigid CZ_alpha out of a deck
+│   └── mirror.py         # mirror_halfspan(): half-span (SYMXZ) deck → full-span unfold
 ├── cases/                # Case construction — what the solver never decides
 │   ├── gust.py           # FAR/CS 23.341 Pratt gust family + 23.333(c) U_de schedule (#1)
 │   └── cli.py            # `sbeam-cases` entry point
+├── corrections/          # External CFD/test data → aero correction cards
+│   └── section_data.py   # Section-coefficient CSV: schema, validation, deg↔rad, TOTAL block
 └── report/               # Cross-run reduction + critical-case report (#5) — placeholder
 ```
 

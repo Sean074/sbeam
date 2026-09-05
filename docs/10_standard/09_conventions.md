@@ -164,6 +164,15 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
 
 ## 7. Units
 
+- **The section-data CSV was an undeclared exception, and was removed rather than
+  declared (2026-09-05, issue #32).** `section_data.py` converted degrees↔radians in six
+  places and carried a degrees-based public API, inside `sbeam/aero/`. It moved to
+  `sbeam_tools/corrections/`, taking the `TOTAL`-block ingestion from
+  `body_correction.py` with it. The solver kept only the min-norm solve that consumes the
+  resulting targets — and with the DataFrames went `pandas`, so `sbeam/` (outside the
+  viewer) no longer reads tabular data at all. **The general rule: when a §7 exception is
+  proposed, first check whether the converting code belongs on the other side of the
+  architecture boundary.**
 - **Preprocessing tools may know units; the solver may not (2026-09-05, issue #1).**
   This rule binds `sbeam/` — card fields and solver arithmetic. Tools under
   `scripts/` that *generate* decks are outside it, and are where dimensional

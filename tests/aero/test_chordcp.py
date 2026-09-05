@@ -28,7 +28,7 @@ from sbeam.parser.bdf_reader import parse_bdf, parse_bulk_data
 from sbeam.parser.case_control import SubcaseControl
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.corrections import apply_chordcp
-from sbeam.aero.mirror import mirror_halfspan
+from sbeam_tools.common.mirror import mirror_halfspan
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.model.aero import Chordcp
 from sbeam.solver.sol144 import run_sol144_trim

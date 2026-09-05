@@ -28,7 +28,11 @@ SOLVER = REPO / "sbeam"
 # sbeam/ allowed to import streamlit/plotly.
 _EXCLUDED = {"viewer"}
 
-_FORBIDDEN_IN_SOLVER = {"sbeam_tools", "streamlit", "plotly"}
+# `pandas` joined this list with issue #32: once the section-data CSV ingestion
+# moved to sbeam_tools/corrections/, nothing in the solver read a DataFrame. The
+# solver works in numpy arrays and BDF cards; a DataFrame arriving in `sbeam/` now
+# means external tabular data has been dragged across the boundary again.
+_FORBIDDEN_IN_SOLVER = {"sbeam_tools", "streamlit", "plotly", "pandas"}
 
 
 def _solver_modules() -> list[Path]:

@@ -48,6 +48,18 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     fails if that exception list grows.
 - `sbeam_tools/` is linted and type-checked in CI (ruff invocation and pyright `include`
   both widened), so the tools ship gated rather than untyped.
+- **Aero-correction data ingestion moved out of the solver** (#32). `section_data.py` — the
+  section-coefficient CSV schema, its validation, its degree↔radian conversions and the
+  condition/Mach selection — is now `sbeam_tools/corrections/`, together with the
+  `TOTAL`-block readers (`split_total_rows`, `parse_body_targets`) that had been sitting in
+  `sbeam/aero/body_correction.py`. `mirror_halfspan` moved to `sbeam_tools/common/mirror.py`.
+  The solver keeps the correction **solvers**, whose min-norm solve against the global AIC
+  genuinely needs solver data.
+  - This removed an **undeclared** charter §7 exception rather than declaring it: six
+    unit-conversion sites and a degrees-based public API were inside the solver package.
+  - `sbeam/` (outside the viewer) is now free of **pandas** as well as streamlit and
+    plotly — nothing in the solver reads tabular data any more. All three are in the
+    import gate.
 
 ### Fixed
 - **DEF-M20** (#23) — a prescribed negative `URDD3` against an absent or z-up RCSID now

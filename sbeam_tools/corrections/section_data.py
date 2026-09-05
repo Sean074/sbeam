@@ -52,6 +52,7 @@ from sbeam.aero.section_correction import (
     SectionCorrectionResult,
     MultiSectionCorrectionResult,
 )
+from sbeam.aero.body_correction import BodyTargets
 from sbeam.types import FloatArray
 from sbeam.aero.panel import AeroBox
 
@@ -421,3 +422,71 @@ def operating_region(df: pd.DataFrame, caero_eid: int, mach: float,
         if a_lo - 1e-9 <= incidence_deg <= a_hi + 1e-9:
             return (float(a_lo), float(a_hi))
     return None
+
+
+# --------------------------------------------------------------------------- #
+# The TOTAL block — body-correction targets from the same CSV
+# --------------------------------------------------------------------------- #
+# Moved out of ``sbeam/aero/body_correction.py`` (issue #32): reading a user's
+# CSV is ingestion, and the solver keeps only the min-norm solve that consumes
+# the ``BodyTargets`` these produce.
+
+
+def split_total_rows(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split a section-data table into (flying_rows, total_rows).
+
+    A ``TOTAL`` block carries the total-aircraft CFD/WT targets for the body
+    correction; the flying rows feed the ordinary section-correction pipeline (which
+    only accepts ``var`` in {ALPHA, BETA}).  Returns two DataFrames; the total block
+    may be empty.
+    """
+    var = df["var"].astype(str).str.upper()
+    is_total = var == "TOTAL"
+    # cast: boolean-mask selection on a DataFrame is always a DataFrame.
+    return (cast(pd.DataFrame, df[~is_total]).copy(),
+            cast(pd.DataFrame, df[is_total]).copy())
+
+
+def parse_body_targets(
+    df: pd.DataFrame, mach: float, mach_tol: float = 1e-6
+) -> Optional[BodyTargets]:
+    """Read the ``TOTAL`` block of a section-data table into :class:`BodyTargets`.
+
+    Column mapping (reusing the section-data schema): ``cm_a``→Cm_α, ``cm0``→Cm0,
+    ``cn_a``→Cn_β, ``a0``→Cn0; optional roll columns ``cl_a``→Cl_β, ``cl0``→Cl0 (default
+    0 when absent).  Selects the row at ``mach`` (exact within ``mach_tol``).  Returns
+    ``None`` if no TOTAL row matches.
+
+    Raises:
+        ValueError: if a *required* TOTAL column is blank/NaN.  The optional roll
+            columns degrade to 0.0 by design; the required four used to go
+            through a bare ``float()``, so a blank cell became a silent ``nan``
+            that propagated into the min-norm solve (DEF-L1).
+    """
+    _flying, totals = split_total_rows(df)
+    if totals.empty:
+        return None
+    hit = totals[np.isclose(totals["mach"].astype(float), mach, atol=mach_tol)]
+    if hit.empty:
+        return None
+    r = hit.iloc[0]
+
+    def _opt(col: str) -> float:
+        v = r.get(col)
+        return 0.0 if v is None or (isinstance(v, float) and np.isnan(v)) else float(v)
+
+    def _req(col: str) -> float:
+        v = r.get(col)
+        if v is None or (isinstance(v, float) and np.isnan(v)) or pd.isna(v):
+            raise ValueError(
+                f"body targets: TOTAL row at mach={mach:g} has a blank/non-numeric "
+                f"{col!r}.  cm_a, cm0, cn_a and a0 are required (only the roll "
+                "columns cl_a/cl0 default to 0)."
+            )
+        return float(v)
+
+    return BodyTargets(
+        cm_alpha=_req("cm_a"), cm0=_req("cm0"),
+        cn_beta=_req("cn_a"), cn0=_req("a0"),
+        cl_beta=_opt("cl_a"), cl0=_opt("cl0"),
+    )

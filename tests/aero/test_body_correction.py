@@ -20,16 +20,15 @@ import pytest
 
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.aero.aero_model import build_aero_model
-from sbeam.aero import section_data as sd
+from sbeam_tools.corrections import section_data as sd
 from sbeam.aero.body_correction import (
     BodyTargets,
     build_body_correction,
-    parse_body_targets,
-    split_total_rows,
     RATIO_WARN,
     _ref_geometry,
     _total_metrics,
 )
+from sbeam_tools.corrections import parse_body_targets, split_total_rows
 from sbeam.aero.integration import build_djx
 from sbeam.model.aero import Aecorr, W2gj
 from sbeam.solver.sol144 import pitch_moment

@@ -1,6 +1,6 @@
 """Aero Correction tab — CFD/test section data → W2GJ + AECORR(WT2) cards.
 
-Front end (Option A GUI) over ``sbeam.aero.section_data`` / ``section_correction``: the
+Front end (Option A GUI) over ``sbeam_tools.corrections.section_data`` / ``section_correction``: the
 user downloads a mesh-seeded CSV template, fills it with section lift/moment coefficients,
 uploads it, picks a flight **condition** (Mach + operating α and β), and builds one
 **W2GJ (camber/zero-α offset) + AECORR/WT2 (slope & a.c.)** card pair per lifting surface.
@@ -28,11 +28,11 @@ import numpy as np
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.aero.aero_model import build_aero_model
-from sbeam.aero import section_data as sd
+from sbeam_tools.corrections import section_data as sd
 from sbeam.aero import body_correction as bc
 from sbeam.aero.aero_model import AeroModel
 from sbeam.aero.body_correction import BodyCorrectionResult
-from sbeam.aero.section_data import MultiSectionDataBuildResult
+from sbeam_tools.corrections.section_data import MultiSectionDataBuildResult
 from sbeam.types import FloatArray
 from sbeam.aero.section_correction import cards_to_bdf
 from sbeam.aero.strip import is_strip_caero
@@ -282,7 +282,7 @@ def _render_body_stage(
 
     mach_c, _a, _b = st.session_state.get("aero_corr_cond") or (0.0, 0.0, 0.0)
     raw_df = st.session_state.get("aero_corr_raw_df")
-    seed = (bc.parse_body_targets(raw_df, mach_c) if raw_df is not None else None) \
+    seed = (sd.parse_body_targets(raw_df, mach_c) if raw_df is not None else None) \
         or bc.BodyTargets()
     # Columns group the targets by plane: pitch (horizontal panel) / yaw + roll (vertical).
     g_pitch, g_yaw, g_roll = st.columns(3)
@@ -434,7 +434,7 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
                 raw = pd.read_csv(up)
                 # A TOTAL block (body-panel targets) is split off before validation,
                 # which only accepts ALPHA/BETA section rows.
-                flying_df, _totals = bc.split_total_rows(raw)
+                flying_df, _totals = sd.split_total_rows(raw)
                 # Bind the caero column to the deck's CAERO1s so a typo'd EID is
                 # reported here rather than silently matching no boxes (DEF-L1).
                 df = sd.validate_section_data(
