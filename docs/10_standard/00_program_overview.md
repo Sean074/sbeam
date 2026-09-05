@@ -16,12 +16,42 @@ rule, not a convention:
 > **The solver reads a deck and writes results for the cases it is given. It never
 > decides which cases exist, and it never reduces across runs.**
 
-| | `sbeam/` — the solver core | `scripts/loads/` — the loads toolchain |
+| | `sbeam/` — the solver core | `sbeam_tools/` — pre/post tooling |
 |---|---|---|
-| Role | NASTRAN-style: one deck in, f06 + CSV out | Pre-processing (case construction) and post-processing (cross-case reduction, reporting) |
+| Role | NASTRAN-style: one deck in, f06 + CSV out | Pre-processing (case construction), post-processing (cross-case reduction, reporting), and the GUI |
 | Units | Never converts; card fields are unit-neutral (`09_conventions.md` §7) | May know units, atmospheres and regulatory constants |
-| Owns | Per-case physics; **within-run** reduction (per-sample envelopes, `SECTION CUT ENVELOPE`) — only the solver holds per-sample data | Which cases exist; **cross-run** reduction; the critical-case report |
-| Cost of a change | Permanent API: parse, validate, write-back, f06, viewer, card reference, charter, gates | A tool with its own gates |
+| Owns | Per-case physics; **within-run** reduction (per-sample envelopes, `SECTION CUT ENVELOPE`) — only the solver holds per-sample data | Which cases exist; **cross-run** reduction; the critical-case report; all display |
+| Cost of a change | Permanent API: parse, validate, write-back, f06, card reference, charter, gates | A tool with its own gates |
+
+### Layout (decided 2026-09-05)
+
+```
+sbeam/                    the solver core — no streamlit, no plotly, no unit conversion
+sbeam_tools/
+    common/               unit systems, ISA atmosphere, deck reader, case index, emitters
+    cases/                case construction  →  sbeam-cases      (#4)
+    report/               envelope + critical-case report  →  sbeam-report   (#5)
+    viewer/               the Streamlit GUI  →  sbeam-view       (relocated at v0.4.0)
+```
+
+One distribution, so the toolchain ships with every release. The GUI's `streamlit` /
+`plotly` become an **extra** (`pip install sbeam[viewer]`) rather than hard dependencies of
+everyone who installs the solver — today they are mandatory even for a batch run.
+
+**Naming is host-first** (`sbeam_tools.cases`, command `sbeam-cases`), matching Python
+convention and keeping the packages together alphabetically. Names say what the tool
+*does*: the critical-case selector is `report`, not a coined term a new engineer would
+have to be taught.
+
+**The boundary is enforced by a CI gate, not by convention** — relocation alone enforces
+nothing, since Python will happily import across it. A test asserts that `sbeam/` never
+imports `sbeam_tools/`, `streamlit` or `plotly`. Tools may reach into solver internals;
+they ship together, and freezing a public surface would cost more than it protects while
+the solver is still growing.
+
+*Migration status:* the gust generator currently lives at `scripts/gust_load_factor.py`
+and moves to `sbeam_tools/` with #4; the viewer relocates at the start of v0.4.0 as a
+mechanical import-path change, before #11 rewrites its authoring layer.
 
 **Why.** sbeam declares NASTRAN BDF compatibility, so adopting NASTRAN's own
 decomposition (solver + pre/post) keeps generated decks portable and keeps the solver's

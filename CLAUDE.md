@@ -22,10 +22,12 @@ workflow: `docs/10_standard/08_release_process.md` §2a).
 **The solver reads a deck and writes results for the cases it is given. It never decides
 which cases exist, and it never reduces across runs.** `sbeam/` is the NASTRAN-style
 solver core (unit-neutral card fields, per-case physics, within-run envelopes);
-`scripts/loads/` is the loads toolchain (case construction, cross-run reduction,
-reporting) and *may* know units, atmospheres and regulatory constants. Both ship in every
-release — the mission above is the repository's, not the solver package's. Rationale and
-the consequences that follow: `docs/10_standard/00_program_overview.md` (Architecture).
+`sbeam_tools/{common,cases,report,viewer}` is the pre/post tooling (case construction,
+cross-run reduction, reporting, GUI) and *may* know units, atmospheres and regulatory
+constants. `sbeam/` must never import `sbeam_tools/`, `streamlit` or `plotly` — a CI gate
+asserts it. Both ship in one distribution; the mission above is the repository's, not the
+solver package's. Rationale, layout and migration status:
+`docs/10_standard/00_program_overview.md` (Architecture).
 
 ## Documentation Map
 
