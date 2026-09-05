@@ -1,5 +1,5 @@
 {
-  "include": ["sbeam"],
+  "include": ["sbeam", "scripts"],
   "extraPaths": ["."],
   "pythonVersion": "3.9",
   "typeCheckingMode": "strict",

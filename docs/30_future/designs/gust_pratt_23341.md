@@ -312,6 +312,26 @@ and touches no lateral rate column, stated explicitly per the charter's DEF-M15 
 | `sbeam/results/f06_writer.py` | Conditional provenance block per §4.3, placed before `T R I M   V A R I A B L E S` |
 | `sbeam/main.py` | Dispatch a `GUSTLF` subcase |
 
+### 6.1a Finding from building the script first (2026-09-05)
+
+A generated deck currently parses with a spurious diagnostic:
+
+```
+UserWarning: TRIM 9000: over-determined (3 free vs 2 equations) but no TRIMOBJ
+```
+
+The referenced TRIM deliberately leaves `URDD3` unprescribed (§4.1), so at parse
+time the free set is `{ANGLEA, ELEV, URDD3}` — three against two SUPORT DOFs — and
+the parse-time diagnostic at `bdf_reader.py:1712-1727` has no way to know that
+`GUSTLF` will supply `URDD3`. Once the card is implemented the case is genuinely
+determined (`{ANGLEA, ELEV}` against two DOFs).
+
+**The card work must therefore teach that diagnostic about `GUSTLF`** — a TRIM
+named by a `GUSTLF` has `URDD3` effectively prescribed — otherwise every gust deck
+ships a false warning, which is exactly the kind of noise that trains users to
+ignore warnings. Add a parse gate asserting the generated flagship gust deck parses
+**clean**.
+
 ### 6.2 Order of operations
 
 Single-pass by construction: the script computes `n` before the deck exists, and the solver
@@ -336,7 +356,8 @@ MONSECT and MASSSET blocks are.
 | **S-GUST3** | `U_de` schedule | 50/25/66 fps below 20,000 ft; 25/12.5/38 fps at 50,000 ft; linear between; both unit systems |
 | **S-GUST4** | `K_g` bounds & monotonicity | `0 < K_g < 0.88`; `Δn` increases with `V`, decreases with `W/S` |
 | **S-GUST5** | Flagship end-to-end | reproduces the §7.3 table from the **parsed deck** (GPWG mass, AEROS `sref`/`cref`, solved `CZ_α`), never module constants — the VAL2 discipline |
-| **S-GUST6** | Emitted deck round-trips | the generated fragment parses, and its `GUSTLF` cards re-emit byte-identically through `card_writers` |
+| **S-GUST6a** | Emitted deck parses | ✅ the generated deck parses; its TRIM cards carry the expected `q`/`RHOREF`/labels and leave `URDD3` unprescribed for `GUSTLF` |
+| **S-GUST6b** | `GUSTLF` round-trips | deferred to the card step — the script writes the card through `write_card`, so `write_gustlf` agrees by construction. Also gate that the deck parses **clean** (§6.1a) |
 
 ### 7.2 Solver gates — `tests/aero/test_gust_cases.py`
 
