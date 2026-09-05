@@ -159,3 +159,7 @@ def main() -> None:
             env_path = bdf_path.with_suffix(".maneuver_section_envelope.csv")
             write_maneuver_section_envelope_csv(str(env_path), maneuver_results)
             print(f"Written: {env_path}")
+
+
+if __name__ == "__main__":
+    main()

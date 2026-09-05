@@ -24,9 +24,13 @@ jobs:
           cache: "pip"
 
       - name: Install dependencies
+        # requirements-ci.txt pins the exact verified toolchain — pyright output
+        # depends on the numpy/scipy/pandas inline types and the pyright version,
+        # so an unpinned resolve makes the type gate drift independently of the code.
         run: |
           pip install --upgrade pip
-          pip install -e .[dev]
+          pip install -r requirements-ci.txt
+          pip install -e . --no-deps
 
       - name: Lint (ruff)
         run: ruff check sbeam/ tests/

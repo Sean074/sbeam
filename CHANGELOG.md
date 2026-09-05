@@ -9,11 +9,40 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Post-Phase-1 additions built on top of v0.1.0. Release cadence per the 2026-08-04 slim
-release process (`docs/10_standard/08_release_process.md`) — versions are decoupled from
-phase completion.
+(Nothing yet — next cycle opens per `docs/30_future/00_backlog.md`.)
+
+---
+
+## [0.2.0] — 2026-09-05
+
+Everything since v0.1.0: static aeroelastics Phases A (steady VLM + corrections),
+B (splining), C (SOL 144 trim/derivatives/divergence/monitor loads) and G0 (transient
+maneuver loads), plus the release-hygiene and process work below. Cut per the 2026-08-04
+slim release process (`docs/10_standard/08_release_process.md`) — versions are decoupled
+from phase completion. Verification baseline: `docs/verification/v0.2.0.md`.
+
+### Fixed
+
+**`python -m sbeam.main` was a silent no-op (2026-09-05)**
+
+`sbeam/main.py` had no `if __name__ == "__main__"` guard, so the README-documented
+invocation `python -m sbeam.main model.bdf` imported the module and exited 0 without
+parsing or solving anything. Found by the release-gate viewer/CLI smoke test. The
+`sbeam` console script and `python -m sbeam` (via `__main__.py`) were unaffected.
+Guard added; the flagship trim deck now runs end-to-end through the documented command.
 
 ### Changed
+
+**CI toolchain pinned — `requirements-ci.txt` lockfile (2026-09-05)**
+
+The first CI run on the merged aeroelastics work failed its pyright gate on Python
+3.11/3.12 only: those jobs resolved newer numpy/scipy stubs than the verified local
+environment (the 3.9 job, resolving the same numpy 2.0.2, was green through the full
+suite). CI now installs the exact verified toolchain from `requirements-ci.txt`
+(numpy 2.0.2, scipy 1.13.1, pandas 2.3.3, streamlit 1.50.0, plotly 6.7.0,
+pytest/ruff/pyright pins) before `pip install -e . --no-deps`, so the type gate can no
+longer drift independently of the code. Version bumps are made deliberately, in lockstep
+with the local venv, re-running all three gates.
 
 **Pyright-gate restoration — 127 strict-mode errors cleared (2026-09-05)**
 

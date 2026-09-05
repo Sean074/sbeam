@@ -1,0 +1,17 @@
+# CI lockfile — the exact toolchain sbeam is developed and verified against.
+# CI installs this BEFORE `pip install -e . --no-deps` so the gates (ruff,
+# pyright, pytest) run on a reproducible environment: pyright output depends on
+# the numpy/scipy/pandas inline types and on the pyright version itself, so an
+# unpinned resolve makes the type gate drift independently of the code (seen
+# 2026-09-05: latest numpy stubs failed a locally-green tree).
+# Update deliberately: bump versions here together with the local venv, and
+# re-run all three gates in the same change.
+numpy==2.0.2
+scipy==1.13.1
+pandas==2.3.3
+plotly==6.7.0
+streamlit==1.50.0
+pytest==8.4.2
+pytest-cov==7.1.0
+ruff==0.15.12
+pyright==1.1.411

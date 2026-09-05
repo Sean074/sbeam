@@ -257,6 +257,12 @@ The two top-level functions serve distinct use cases:
 
 ## Resolved defects (documentation / model)
 
+### `python -m sbeam.main` silent no-op (Tier S, v0.2.0 smoke test) ✅ COMPLETE (2026-09-05)
+
+`sbeam/main.py` lacked the `if __name__ == "__main__"` guard, so the README-documented
+`python -m sbeam.main model.bdf` imported and exited 0 with no output; guard added,
+flagship trim deck verified end-to-end through the documented command.
+
 ### Pyright-gate restoration (Tier S, hygiene) ✅ COMPLETE (2026-09-05)
 
 Cleared all 127 strict-mode pyright errors so the documented CI type-check gate passes
