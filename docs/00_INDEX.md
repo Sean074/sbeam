@@ -52,6 +52,7 @@ are the day-to-day references; higher numbers are planning and historical record
 | [`02_parked.md`](30_future/02_parked.md) | **Parked items** — real but off the mission path (Phase 2/3 enhancements, fidelity follow-ons, tooling ideas, declared out-of-scope); deliberately not issues — activation opens one |
 | [`designs/gust_pratt_23341.md`](30_future/designs/gust_pratt_23341.md) | Quasi-static gust load cases (Pratt, FAR/CS 23.341) — **AGREED** design note for issue #1: preprocessing script + GUSTLF provenance card |
 | [`designs/vn_matrix_23337.md`](30_future/designs/vn_matrix_23337.md) | V-n design-case matrix, maneuver corner points (23.337 / 25.337) — design note for issue #4 (v0.7.0): certification-basis selection across Parts 23 and 25, corner-point generation, the case index |
+| [`designs/transient_net_loads_elastic_inertia.md`](30_future/designs/transient_net_loads_elastic_inertia.md) | Transient `net_loads` carries the elastic inertia + damping — **agreed** design note for issue #3 (v0.3.0): decision B, quantification on both sample decks, the static re-apply gate G1 |
 | [`designs/amode_card.md`](30_future/designs/amode_card.md) | AMODE assumed-mode card — design proposal |
 | [`designs/rbmref_card.md`](30_future/designs/rbmref_card.md) | RBMREF rigid-body-mode reference card — design proposal |
 | [`designs/spline9_hermite_beam_spline.md`](30_future/designs/spline9_hermite_beam_spline.md) | SPLINE9 FE-consistent Hermite beam spline (sbeam extension) — design proposal |
