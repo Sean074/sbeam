@@ -554,8 +554,16 @@ the Mach-correct AIC was built twice.
   "parsed-and-ignored" warning is retired — this solver only ever sees all-zeros cards).
   Prescribed-rigid studies (e.g. commanding ANGLEA directly) must use this solver; the modal
   solver rejects rigid-state commands.
+- **Net load (#3):** `ManeuverStep.net_loads` is the **full applied load** at the sample —
+  `F_aero − M·ü_rigid − M·ü_elastic − C·u̇` — so a stress model applying the exported cards
+  statically to the same structure recovers the sample's internal loads (gate **G1** below).
+  `inertial_loads` is the rigid term alone; the elastic and damping terms are also carried
+  separately (`elastic_inertial_loads`, `damping_loads`) because the section cuts report them
+  as their own columns. `closure` is the resultant of the full load: under free flight the
+  transient terms have zero resultant (mean-axis orthogonality) so it is unchanged; under
+  the direct solver it is what the SUPORT reacts.
 - **Critical sample (DEF-M5):** one severity metric, `results.peak_grid_force` — the maximum over
-  grids of the net (aero + inertial) **translational force magnitude** at that grid. It selects the
+  grids of the net applied **translational force magnitude** at that grid. It selects the
   critical sample, fills the f06 `PEAK GRID F` and MLDPRNT `PEAK_GRID_F` columns, and labels the f06
   header (`PEAK |NET GRID FORCE|`); sample numbering is **1-based** everywhere, including MLDPRNT.
   It is deliberately neither the load-closure resultant (`closure`, the aero/inertia balance
@@ -1074,7 +1082,9 @@ damping(t)         = −M_gg · w_g(t)              modal (ζ) or Rayleigh (α) 
 `ManeuverStep.inertial_loads` is `M_ax_g·δ_basic` — the **rigid-body** term only. The
 elastic term is recovered separately (`ManeuverStep.elastic_inertial_loads`) and reported
 as its own cut column rather than folded into `inertia`, so a static table keeps exactly
-the three-column split it was verified against.
+the three-column split it was verified against. Both transient terms **are** in
+`ManeuverStep.net_loads` (#3, 2026-09-05), so the cut `totals` and the exported cards for
+the same sample are the same load.
 
 > **Why no existing diagnostic caught this.** Every global check sbeam had is blind to the
 > elastic term: mean-axis orthogonality makes the rigid-row resultant of `M·Φ_e ξ̈_e`
@@ -1140,6 +1150,8 @@ that. Ties resolve to the earliest sample.
 | V-TSEC9 | The `prepare`/`evaluate` split is **bitwise** identical to the one-shot call; on-plane warning fires once per plan | `tests/results/test_section_cuts.py` |
 | V-TSEC10 | Cuts do not dominate runtime (no per-sample geometry rebuild) | `tests/aero/test_section_cuts_transient.py` |
 | V-TSEC11 | Both solvers produce cuts; the two modal recovery modes give an identical elastic column | same |
+| **G1** (#3) | **Static re-apply** — a sample's `net_loads` applied as SOL 101 (SPC + SUPORT DOFs fixed) reproduces its CBAR forces: 1.6e-14 direct and modal (mode-acceleration recovery); 4.6e-7 through the exported cards (DEF-M6 field floor, gate 1e-5), 3.2e-7 on the shipped C210 MLOADS deck; companion asserting it **fails** (1.5 %) without the elastic + damping terms; modal `displacement` recovery exact at all modes, 1.49 % at `NMODES=2` (the measured truncation error) | `tests/aero/test_maneuver_reapply.py` |
+| G2 / G3 (#3) | Free-flight closure unchanged by the transient terms (resultant < 1e-12·lift); direct closure shifts by exactly their resultant; commands held at trim reproduce the static `net_loads` to 1e-8 | same |
 
 > **V-TSEC5 is not `closure ≈ 0`.** Under the direct (prescribed-rigid) solver the closure
 > is *genuinely non-zero* during a maneuver: the rigid state is held at the trim URDD while
@@ -1154,8 +1166,6 @@ that. Ties resolve to the earliest sample.
   the monitor output surface is missing.
 - **Cross-subcase / cross-mass-case envelopes.** A pivot over the CSVs, and the same gap
   exists for static tables; it belongs with the sweep post-processing.
-- **Elastic inertia in `net_loads`.** The exported critical-sample `FORCE`/`MOMENT` cards
-  still carry aero + rigid inertia only. See the backlog's Step 68 follow-ons.
 
 ---
 

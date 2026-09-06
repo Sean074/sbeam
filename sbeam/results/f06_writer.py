@@ -973,7 +973,10 @@ def _build_f06_sol144_maneuver_text(
     )
     lines.append("")
     c = crit.closure
-    lines.append("      NET (AERO + INERTIAL) LOAD CLOSURE RESULTANT ABOUT THE MOMENT REFERENCE")
+    # The transient net load is the full applied load (#3); name every term so
+    # the reader never has to guess, as the section-cut SOURCE: line does.
+    lines.append("      NET (AERO + INERTIA + ELASTIC INERTIA + DAMPING) LOAD CLOSURE"
+                 " RESULTANT ABOUT THE MOMENT REFERENCE")
     lines.append(
         f"      FX ={_fmt(c[0])}   FY ={_fmt(c[1])}   FZ ={_fmt(c[2])}"
         f"   MX ={_fmt(c[3])}   MY ={_fmt(c[4])}   MZ ={_fmt(c[5])}"

@@ -273,8 +273,11 @@ class ManeuverStep:
     displacements: FloatArray             # (n_dofs,) g-set; SPC/SUPORT DOFs zeroed
     bar_forces: dict[int, BarForce]                      # {eid: BarForce}
     grid_loads: FloatArray                # (n_dofs,) g-set aero flight load at this instant
-    inertial_loads: FloatArray            # (n_dofs,) g-set inertial load = M_ax · a_urdd(t)
-    net_loads: FloatArray                 # (n_dofs,) net (aero + inertial) load — stress deliverable
+    inertial_loads: FloatArray            # (n_dofs,) g-set RIGID inertial load = M_ax · a_urdd(t)
+    # (n_dofs,) the FULL applied load at this sample — aero + rigid inertia +
+    # elastic inertia + damping (#3).  The stress deliverable: applied
+    # statically to the same model it reproduces this sample's internal loads.
+    net_loads: FloatArray
     closure: FloatArray                   # (6,) body-frame resultant (Fx..Mz) of net_loads about the ref
     Fz_aero: float = 0.0                  # instantaneous aero Fz (force/q · q) = lift
     My_aero: float = 0.0                  # instantaneous aero pitching moment about x_ref
@@ -290,10 +293,8 @@ class ManeuverStep:
     # free-flight or when the IC has no vertical acceleration to normalize by.
     nz_rel: Optional[float] = None
     # Step 68 — the elastic d'Alembert load −M·ü_e and the damping force −M·w,
-    # g-set.  Deliberately NOT folded into net_loads: that vector feeds the
-    # exported FORCE/MOMENT cards, the closure diagnostic and the DEF-M5
-    # critical-sample metric, and moving all three at once is a separate
-    # decision (see designs/monsect_transient_section_cuts.md §9 O1).
+    # g-set.  Both are INCLUDED in net_loads (#3); they are carried separately
+    # as well because the section cuts report them as their own columns.
     elastic_inertial_loads: Optional[FloatArray] = None
     damping_loads: Optional[FloatArray] = None
     # {name: SectionCutResult} MONSECT running loads at this sample.
@@ -303,8 +304,9 @@ class ManeuverStep:
 def peak_grid_force(step: "ManeuverStep") -> float:
     """Severity metric for one maneuver sample: peak per-grid net force.
 
-    The maximum over grids of the net (aero + inertial) translational force
-    magnitude ``‖F‖`` at that grid.
+    The maximum over grids of the net applied translational force magnitude
+    ``‖F‖`` at that grid (aero + rigid inertia + elastic inertia + damping on a
+    transient sample, #3).
 
     This is the single metric that selects the critical sample, fills the f06
     and MLDPRNT columns, and labels both (DEF-M5).  It is deliberately *not*:

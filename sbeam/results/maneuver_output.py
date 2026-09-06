@@ -69,8 +69,9 @@ def build_maneuver_critical_load_cards_text(
 ) -> str:
     """FORCE/MOMENT cards for the critical (peak per-grid net force) sample.
 
-    Emits the net (aero + inertial) grid load at ``result.steps[crit_index]`` —
-    the worst-case balanced maneuver load for stress sizing.
+    Emits the full applied grid load at ``result.steps[crit_index]`` — aero +
+    rigid inertia + elastic inertia + damping (#3) — so a stress model applying
+    the cards statically recovers this sample's internal loads.
     """
     if not result.steps:
         raise ValueError("build_maneuver_critical_load_cards_text: no maneuver samples")
@@ -78,11 +79,12 @@ def build_maneuver_critical_load_cards_text(
     grid_index = build_grid_index(bulk)
     step = result.steps[result.crit_index]
     lines = [
-        f"$ Phase G0 critical maneuver loads (aero + inertial) — subcase "
+        f"$ Phase G0 critical maneuver loads (aero + inertia + elastic inertia"
+        f" + damping) — subcase "
         f"{result.subcase_id}, SID {sid}",
         f"$ MLOADS={result.mloads_sid}  IC TRIM={result.trim_sid}  Q={result.q:g}  "
         f"MACH={result.mach:g}  t={step.t:g}",
-        f"$ Net (aero + inertial) load at the peak |net grid force| sample "
+        f"$ Full applied load at the peak |net grid force| sample "
         f"({result.crit_index + 1} of {len(result.steps)}).",
     ]
     lines += emit_force_moment_cards(step.net_loads, bulk, grid_index, sid)

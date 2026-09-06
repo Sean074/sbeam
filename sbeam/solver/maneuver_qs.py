@@ -4,7 +4,8 @@ This is increment 1 of Phase G0 (the realistic, DLM-free path to a ZAERO
 ``MLOADS``-style transient maneuver capability).  It time-integrates the elastic
 response of the airframe to a prescribed (open-loop) pilot-command history,
 starting from a Step 53 static balanced-trim initial condition, and recovers the
-net (aero + inertial) maneuver loads at each output time.
+net applied maneuver loads (aero + rigid inertia + elastic inertia + damping, #3)
+at each output time.
 
 Level-1 quasi-steady aerodynamics
 ---------------------------------
@@ -226,7 +227,7 @@ def recover_step(
     elastic_accel_a: Optional[FloatArray] = None,
     damping_rate_a: Optional[FloatArray] = None,
 ) -> ManeuverStep:
-    """Recover per-step displacements, CBAR loads, and net (aero+inertial) loads.
+    """Recover per-step displacements, CBAR loads, and the net applied load.
 
     The optional ``xi_r*``/``nz_rel`` fields are the Step 63 free-flight rigid
     states, passed through untouched — the recovery itself sees rigid motion
@@ -240,7 +241,8 @@ def recover_step(
     force.  They are what a **section cut** needs and the global closure does
     not: mean-axis orthogonality makes the rigid-row resultant of ``M·Φ_e ξ̈_e``
     exactly zero, so a whole-airplane resultant is blind to a term that a local
-    free body carries in full.
+    free body carries in full.  Both are also folded into ``net_loads`` (#3),
+    which is the full applied load at the sample.
     """
     aero = ops.aero
     # Scatter l-set displacement into the a-set (r-set = 0), expand to g-set so
@@ -270,8 +272,6 @@ def recover_step(
     delta_basic = urdd_rcsid_to_basic(
         delta_arr, ops.label_to_col, ops.R_rcsid, ops.has_rcsid)
     inertial_loads = ops.M_ax_g @ delta_basic
-    net_loads = grid_loads + inertial_loads
-    closure = load_resultant(net_loads, bulk, grid_index, ops.suport_pos)
 
     # ---- Step 68: elastic-inertia and damping loads (g-set) ---- #
     # Same d'Alembert sign as the rigid column: M_ax_g IS −M_gg·Φ_r, so the
@@ -285,28 +285,38 @@ def recover_step(
     if damping_rate_a is not None:
         damping_loads = -(ops.M_gg @ ops.red.expand_to_g(damping_rate_a))
 
+    # ---- The net load: the FULL applied load at this sample (#3) ---- #
+    # K·u = F_aero − M·ü_rigid − M·ü_elastic − C·u̇, and ``net_loads`` is the
+    # right-hand side entire: the exported FORCE/MOMENT cards, the closure and
+    # the DEF-M5 critical-sample metric all read this one vector, so a stress
+    # model that applies the cards statically recovers this sample's internal
+    # loads (gate G1, tests/aero/test_maneuver_reapply.py).  The elastic and
+    # damping terms are kept as separate fields as well because the section
+    # cuts report them as their own columns.
+    net_loads = grid_loads + inertial_loads
+    if elastic_inertial_loads is not None:
+        net_loads = net_loads + elastic_inertial_loads
+    if damping_loads is not None:
+        net_loads = net_loads + damping_loads
+    closure = load_resultant(net_loads, bulk, grid_index, ops.suport_pos)
+
     # ---- Step 68: MONSECT section cuts at this sample ---- #
     section_loads = None
     if ops.cut_plans:
         reactions = {}
         if ops.constrained_dofs:
-            # R = K·u − f_applied, and f_applied here is the FULL applied load,
-            # not ``net_loads``: the elastic d'Alembert and damping forces act on
-            # the constrained DOFs too, and omitting them would leave that
-            # difference sitting in the reaction.
+            # R = K·u − f_applied, with ``net_loads`` the full applied load
+            # (aero + rigid + elastic inertia + damping): the elastic d'Alembert
+            # and damping forces act on the constrained DOFs too, and omitting
+            # them would leave that difference sitting in the reaction.
             #
             # NOTE: no current sample deck exercises this.  It only bites when a
             # constrained grid carries mass; on HA144A the SPC/SUPORT grid 90 is
-            # massless, so the two forms agree to 0.0 there.  Written in the
-            # correct form deliberately rather than to match a passing test.
-            f_applied = net_loads
-            if elastic_inertial_loads is not None:
-                f_applied = f_applied + elastic_inertial_loads
-            if damping_loads is not None:
-                f_applied = f_applied + damping_loads
+            # massless, so it is 0.0 there.  Written in the correct form
+            # deliberately rather than to match a passing test.
             reactions = recover_reactions(
                 bulk, displacements, ops.constrained_dofs, ops.K_gg,
-                grid_index, f_applied)
+                grid_index, net_loads)
         box_forces = (ops.q * f_box_vec).reshape(-1, 3)
         zero_g = np.zeros_like(net_loads)
         section_loads = {

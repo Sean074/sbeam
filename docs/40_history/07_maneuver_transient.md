@@ -537,11 +537,29 @@ the correct form deliberately rather than to match a passing test.
 physically belongs there — the exported critical-sample `FORCE`/`MOMENT` cards are what a stress
 model consumes — but folding it in moves the exported cards, the closure diagnostic and the DEF-M5
 critical-sample selection simultaneously. The data now sits on `ManeuverStep` to quantify the
-difference first. Recorded in the backlog as its own item.
+difference first. Recorded in the backlog as its own item — **resolved by #3 (2026-09-05),
+see Resolved defects below.**
 
 ---
 
 ## Resolved defects
+
+### #3 — transient `net_loads` carries the elastic inertia and damping (Tier M) ✅ COMPLETE (2026-09-05)
+
+`ManeuverStep.net_loads` was aero + rigid inertia; the exported critical-sample cards therefore
+disagreed with the section-cut `totals` for the same sample by the terms V-TSEC3 had proved
+necessary. Decision B of `docs/30_future/designs/transient_net_loads_elastic_inertia.md`:
+`net_loads = grid_loads + inertial_loads + elastic_inertial_loads + damping_loads`, formed once
+in `recover_step`; the cards, the closure and the DEF-M5 metric all read it. Quantified first on
+both sample decks (elastic term ≤ 0.6 % per grid, ≤ 1.5 % of root-cut bending on the shipped
+ramps; free-flight closure unchanged to 8e-15; direct-solver critical-sample flips are near-ties).
+Load-bearing gate **G1** (`tests/aero/test_maneuver_reapply.py`): a sample's `net_loads`
+re-applied as SOL 101 with the SUPORT DOFs fixed reproduces its CBAR forces to **1.6e-14** on
+both solvers, **4.6e-7** through the exported cards (DEF-M6 floor), **3.2e-7** on the shipped
+C210 MLOADS deck (whose critical sample moves 21 → 9, a 1e-5 near-tie); the companion fails by
+**1.55 %** without the terms. Modal `displacement` recovery: exact with all modes, **1.49 %** at
+`NMODES=2`, 0.77 % at 4 — the measured truncation error of that recovery mode. f06/card labels
+name all four terms.
 
 ### Free-URDD trim variables reported in the wrong frame on RCSID decks (`run_sol144_trim`) ✅ COMPLETE (2026-08-02)
 

@@ -119,7 +119,9 @@ fails today on any sample with meaningful elastic acceleration and passes after.
   term is added as a *separate* contribution and is **not** folded into `net_loads`.
   Folding it in would change the exported `maneuver_qs_loads.bdf` cards, the closure
   diagnostic and the DEF-M5 severity metric all at once — a much larger and separately
-  arguable change. See §7.2 (open question O1).
+  arguable change. See §7.2 (open question O1). **Superseded 2026-09-05:** issue #3 made
+  exactly that change — `net_loads` is now the full applied load
+  ([`transient_net_loads_elastic_inertia.md`](transient_net_loads_elastic_inertia.md)).
 - **HDF5 export, `AXES` masking, stress recovery.** Inherited exclusions from the P8
   design; unchanged.
 - **New card fields.** No `MLOADS`/`MLDPRNT` field is added; the presence of `MONSECT`
@@ -521,7 +523,10 @@ it is the integrand's *inputs* that are incomplete on a transient sample.
 
 ## 9. Open questions
 
-- **O1 — should `net_loads` include the elastic inertia?** Physically the exported
+- **O1 — should `net_loads` include the elastic inertia?** *Resolved 2026-09-05 by #3:
+  yes, with the damping term too —
+  [`transient_net_loads_elastic_inertia.md`](transient_net_loads_elastic_inertia.md).*
+  Original text: Physically the exported
   critical-sample `FORCE`/`MOMENT` cards are the load a stress model should see, and that
   load *does* include `M·ü_e`. This design deliberately does **not** change `net_loads`,
   because doing so simultaneously moves the exported cards, the closure diagnostic and the

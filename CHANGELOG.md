@@ -72,6 +72,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   warning on every generated gust case.
 
 ### Changed
+- **Transient `net_loads` is now the full applied load** — aero + rigid inertia + elastic
+  d'Alembert + damping (#3). The exported `<stem>.maneuver_qs_loads.bdf` cards, the closure
+  and the DEF-M5 critical-sample metric all read it, so the cards applied statically to the
+  same model reproduce the sample's internal loads (new gate G1, 1.6e-14 direct/modal, 4.6e-7
+  through the 8-character cards; fails by 1.5 % without the terms). Free-flight closure is
+  unchanged (the terms have zero resultant); on the direct solver the closure and the
+  critical sample can move — on the shipped C210 deck the critical sample is now 9, not 21,
+  a 1e-5 near-tie. Transient f06/card labels name all four terms.
 - **The loads process is defined, and re-sequenced to a new v0.7.0 milestone
   (2026-09-05).** `docs/30_future/loads_process.md` writes down the five stages an
   external loads engineer runs — model, declare, generate, run, report/downselect,

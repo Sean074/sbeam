@@ -1,6 +1,6 @@
 # Transient `net_loads` carries the elastic inertia — design note for issue #3
 
-**Status:** 🟡 agreed in chat 2026-09-05 (option B). Milestone
+**Status:** ✅ implemented 2026-09-05 (option B; measured G1 figures in §5). Milestone
 [v0.3.0](https://github.com/Sean074/sbeam/milestone/1). Tier **M** — behaviour change to
 an existing capability, no new card, no new physics. Closes the question deferred as O1 in
 [`monsect_transient_section_cuts.md`](monsect_transient_section_cuts.md) §9 and the Step 68
@@ -102,10 +102,13 @@ DOFs fixed; recover CBAR forces; compare with `step.bar_forces`.
 - G1c: **truncated** modal basis (`NMODES` < all). The modal residual `r = F − Mü − Cu̇ − Ku`
   is orthogonal to the retained modes but not zero, so the static re-apply differs from
   the modal recovery by `K⁻¹r`. This is the truncation error and it is *measured*, not
-  bounded a priori: the test pins the number at the deck's shipped `NMODES` and asserts it
-  shrinks monotonically as modes are added. The measured figure goes in the history entry.
+  bounded a priori. **Measured** on the HA144A elevator step: 1.49 % at `NMODES=2`, 0.77 %
+  at 4, 1.4e-14 with all modes. Under the default mode-*acceleration* recovery the
+  displacement is the static l-set solve of the full load, so G1a is exact regardless of
+  `NMODES` — the truncation is only visible under `displacement` recovery.
 - Companion (V-TSEC3 pattern): G1a asserted to **fail** with the elastic + damping terms
-  removed, so the gate is demonstrably load-bearing.
+  removed, so the gate is demonstrably load-bearing. Measured: 1.6e-14 with, 1.55 % without;
+  G1b 4.6e-7 (direct), 2.5e-7 (modal), 3.2e-7 (shipped C210 deck).
 
 **G2 — closure.** Modal free-flight: `‖resultant(elastic + damping)‖ < 1e-12·lift` and the
 closure bit-unchanged against the pre-change value. Direct: the closure shifts by exactly
