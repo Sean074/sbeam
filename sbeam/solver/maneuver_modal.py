@@ -104,7 +104,9 @@ from sbeam.assembly.load_vector import build_grid_index
 from sbeam.aero.aero_model import AeroModel
 from sbeam.gpwg import compute_gpwg
 from sbeam.results.results import ManeuverStep, ManeuverResult, peak_grid_force
-from sbeam.results.section_envelope import build_section_envelope
+from sbeam.results.section_envelope import (
+    build_monitor_envelope, build_section_envelope,
+)
 from sbeam.solver.maneuver_qs import (
     assemble_operators,
     delta_of_t,
@@ -559,4 +561,5 @@ def run_maneuver_modal(
         },
     )
     result.section_envelope = build_section_envelope(result)
+    result.monitor_envelope = build_monitor_envelope(result)
     return result

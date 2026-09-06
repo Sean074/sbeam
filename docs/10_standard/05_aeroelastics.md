@@ -57,7 +57,7 @@ Results   (cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, CDi, e, per_su
 | `sbeam/model/mass_overlay.py` | **Step 60** — `resolve_mass_case` / `effective_conm2s`: MASSSET payload-case resolution (baseline scaling + ADD/REPLACE/DELETE overlay) |
 | `sbeam/results/f06_writer.py` | `build_f06_sol144_text` / `write_f06_sol144` — SOL 144 trim f06 blocks (shares displacement/CBAR helpers with SOL 101) |
 | `sbeam/results/load_export.py` | `write_aero_load_cards` — trimmed flight loads as `FORCE`/`MOMENT` bulk cards |
-| `sbeam/results/monitor_points.py` | `integrate_monpnt1` / `integrate_monpnt3` — monitor-point integrated section loads |
+| `sbeam/results/monitor_points.py` | `prepare_monitor_points` (once per run) + `evaluate_monitor_point` (per load state) — monitor-point integrated section loads; `compute_monitor_loads` / `integrate_monpnt1` / `integrate_monpnt3` are the one-shot forms. **#2** takes them at every transient sample |
 | `sbeam/results/section_cuts.py` | **Monitor Phase 2** — `compute_section_cuts`: MONSECT per-station running loads (the Phase 1 integrand swept over cut planes). **Step 68** splits it into `prepare_section_cuts` (geometry/masks/warnings, once per run) + `evaluate_section_cut` (masked sums per sample) for the transient path |
 | `sbeam/results/section_envelope.py` | **Step 68** — `build_section_envelope`: per-station max/min of a transient maneuver's cuts with the driving sample |
 | `sbeam/results/maneuver_output.py` | MLDPRNT ASCII time-history + critical-sample `FORCE`/`MOMENT` export |

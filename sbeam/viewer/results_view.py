@@ -10,9 +10,10 @@ import pandas as pd
 import streamlit as st
 
 from sbeam.model.bulk_data import BulkData
+from sbeam.types import FloatArray
 from sbeam.results.results import (
-    ManeuverResult, ManeuverStep, SectionCutResult, Sol101Result, Sol103Result,
-    Sol144DivergResult, Sol144TrimResult, peak_grid_force,
+    ManeuverResult, ManeuverStep, MonitorLoad, SectionCutResult, Sol101Result,
+    Sol103Result, Sol144DivergResult, Sol144TrimResult, peak_grid_force,
 )
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.results.section_cuts import component_legend, component_names, labelled
@@ -447,16 +448,7 @@ def _render_sol144_trim(bulk: BulkData, result: Sol144TrimResult) -> None:
     # ---- Monitor-point integrated loads ----
     if result.monitor_loads:
         st.markdown("**Monitor-point integrated loads**")
-        rows = []
-        for name in sorted(result.monitor_loads):
-            ml = result.monitor_loads[name]
-            t = ml.totals
-            rows.append({
-                "Monitor": name, "Label": ml.label, "Type": ml.mtype,
-                "Fx": t[0], "Fy": t[1], "Fz": t[2],
-                "Mx": t[3], "My": t[4], "Mz": t[5],
-            })
-        st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
+        _render_monitor_table(result.monitor_loads)
 
     # ---- MONSECT section-cut running loads (Monitor Phase 2) ----
     if result.section_loads:
@@ -597,6 +589,59 @@ def _render_section_time_history(result: ManeuverResult, step: ManeuverStep) -> 
             height=320, margin=dict(l=0, r=0, t=20, b=0),
         )
         st.plotly_chart(fig, use_container_width=True)
+
+
+def _render_monitor_table(monitor_loads: dict[str, MonitorLoad],
+                          contributions: bool = False) -> None:
+    """One row per monitor: the six cp-frame totals.
+
+    With ``contributions`` (a transient sample, #2) the per-source Fz split is
+    appended so the elastic d'Alembert share is visible, as in the f06 block.
+    """
+    rows = []
+    for name in sorted(monitor_loads):
+        ml = monitor_loads[name]
+        t = ml.totals
+        row = {
+            "Monitor": name, "Label": ml.label, "Type": ml.mtype,
+            "Fx": t[0], "Fy": t[1], "Fz": t[2],
+            "Mx": t[3], "My": t[4], "Mz": t[5],
+        }
+        if contributions:
+            def _fz(v: Optional[FloatArray]) -> float:
+                return float(v[2]) if v is not None else 0.0
+            row.update({
+                "Fz aero": _fz(ml.aero), "Fz inertia (rigid)": _fz(ml.inertia),
+                "Fz elastic": _fz(ml.elastic_inertia),
+                "Fz damping": _fz(ml.damping), "Fz reaction": _fz(ml.reaction),
+            })
+        rows.append(row)
+    st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
+
+
+def _render_monitor_envelope(result: ManeuverResult) -> None:
+    """Per-monitor, per-component max/min table with the driving sample (#2)."""
+    st.markdown("**Monitor-point envelope** (max/min over the output samples)")
+    st.caption(
+        f"The driving sample is per monitor and component and need not be the "
+        f"critical sample ({result.crit_index + 1}), which is selected by peak "
+        f"|net grid force| over the whole model."
+    )
+    envelope = result.monitor_envelope
+    if not envelope:  # caller-guarded; keeps the narrowing local
+        return
+    comp_names = ("Fx", "Fy", "Fz", "Mx", "My", "Mz")
+    rows = []
+    for name in sorted(envelope):
+        env = envelope[name]
+        for e in env.entries:
+            rows.append({
+                "Monitor": name, "Type": env.mtype, "Component": comp_names[e.comp],
+                "Max": e.max_value, "Max sample": e.max_sample, "t max": e.max_time,
+                "Min": e.min_value, "Min sample": e.min_sample, "t min": e.min_time,
+                "Abs max": e.absmax,
+            })
+    st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
 
 
 def _render_section_envelope(result: ManeuverResult) -> None:
@@ -741,6 +786,17 @@ def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
     fig_struct = build_deformed_figure(bulk, step.displacements, grid_index, scale)
     st.plotly_chart(fig_struct, use_container_width=True)
 
+    # ---- MONPNT1/MONPNT3 integrated loads at the selected sample (#2) ----
+    if step.monitor_loads:
+        crit = " (critical sample)" if sample - 1 == result.crit_index else ""
+        st.markdown(
+            f"**Monitor-point integrated loads** — sample {sample}, "
+            f"t = {fmt(step.t)}{crit}"
+        )
+        _render_monitor_table(step.monitor_loads, contributions=True)
+    if result.monitor_envelope:
+        _render_monitor_envelope(result)
+
     # ---- MONSECT running loads at the selected sample (Step 68) ----
     if step.section_loads:
         crit = " (critical sample)" if sample - 1 == result.crit_index else ""
@@ -775,6 +831,27 @@ def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
             file_name=f"{stem}.maneuver_qs_loads.bdf",
             mime="text/plain",
             key=f"dl_qs_loads_{result.subcase_id}",
+        )
+    # #2: the per-sample monitor table and its envelope — the CLI's files.
+    if any(s.monitor_loads for s in result.steps):
+        from sbeam.results.load_export import build_maneuver_monitor_csv_text
+        st.download_button(
+            label="Download monitor-point loads, all samples (CSV)",
+            data=build_maneuver_monitor_csv_text({result.subcase_id: result}),
+            file_name=f"{stem}.maneuver_monitor_loads.csv",
+            mime="text/csv",
+            key=f"dl_tmon_{result.subcase_id}",
+        )
+    if result.monitor_envelope:
+        from sbeam.results.load_export import (
+            build_maneuver_monitor_envelope_csv_text)
+        st.download_button(
+            label="Download monitor-point envelope (CSV)",
+            data=build_maneuver_monitor_envelope_csv_text(
+                {result.subcase_id: result}),
+            file_name=f"{stem}.maneuver_monitor_envelope.csv",
+            mime="text/csv",
+            key=f"dl_tmonenv_{result.subcase_id}",
         )
     # Step 68: the full per-sample MONSECT table — the same file the CLI writes.
     if any(s.section_loads for s in result.steps):

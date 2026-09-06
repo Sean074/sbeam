@@ -7,15 +7,24 @@ solution.  Forces/moments already exist on ``Sol144TrimResult`` at the box level
 the monitor integration is a summation of those over the monitor's AECOMP
 collection, transformed to the monitor reference point and ``cp`` frame and
 scaled by the AEROS symmetry parity.
+
+Split into a state-free :class:`MonitorPlan` (geometry, index rows, frame,
+parity — built once per run by :func:`prepare_monitor_points`) and a per-load
+:func:`evaluate_monitor_point`, so a transient (MLOADS) maneuver can take the
+same monitors at every output sample without re-resolving the collection
+(#2, the pattern Step 68 set for ``MONSECT``).  On a transient sample the
+evaluation additionally carries the elastic d'Alembert and damping loads as
+their own columns, exactly as the section cuts do.
 """
 import warnings
+from dataclasses import dataclass, field
 from typing import Optional, Union
 
 import numpy as np
 
 from sbeam.assembly.coord_transform import get_transform
 from sbeam.results.results import MonitorLoad
-from sbeam.types import FloatArray
+from sbeam.types import FloatArray, IntArray
 from sbeam.model.aero import Monpnt1, Monpnt3, require_aeros
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.mass_overlay import effective_conm2s
@@ -86,42 +95,188 @@ def to_cp(load6_basic: FloatArray, R: FloatArray) -> FloatArray:
     return out
 
 
+@dataclass
+class MonitorPlan:
+    """Everything about one monitor that does not depend on the load state.
+
+    Built once per run by :func:`prepare_monitor_points` and consumed by
+    :func:`evaluate_monitor_point` at every sample of a transient maneuver (or
+    once, on a static trim).  Resolving the AELIST/SET1 collection here rather
+    than per evaluation keeps a 2000-sample run from re-walking the same box
+    and grid lists 2000 times.
+    """
+    name: str
+    mtype: str                       # 'MONPNT1' | 'MONPNT3'
+    label: str
+    axes: int
+    cid: int
+    ref_basic: FloatArray            # (3,) reference point, basic
+    R: FloatArray                    # (3, 3) cp rotation, v_basic = R @ v_cp
+    par: float                       # AEROS symmetry parity (1.0 or 2.0)
+    source_ids: list[int]            # AELIST or SET1 SIDs
+    pos: FloatArray                  # (n, 3) member positions, basic
+    rows: IntArray                   # (n,) 6·grid_index[gid] base rows (SET1); empty for AELIST
+    box_ks: IntArray                 # (n,) global box indices (AELIST); empty for SET1
+    gids: list[int] = field(default_factory=list)   # SET1 grid IDs (MONPNT3)
+    n_dofs: int = 0                  # g-set size, for scattering the reaction dict
+
+
+def prepare_monitor_point(
+    mon: Union[Monpnt1, Monpnt3], bulk: BulkData, aero: Optional[AeroModel],
+    grid_index: dict[int, int],
+) -> MonitorPlan:
+    """Resolve one monitor's collection, reference point, frame and parity."""
+    aecomp = bulk.aecomps[mon.comp]
+    ref_basic, R = monitor_frame(mon, bulk)
+    par = _parity(bulk)
+    if isinstance(mon, Monpnt1):
+        if aero is None:
+            raise ValueError(f"MONPNT1 {mon.name}: an AeroModel is required")
+        # AELIST box IDs -> global box indices k (shared collision-checked map, F1)
+        id_to_k = aero.require_box_id_to_k()
+        box_ids: list[int] = []
+        for sid in aecomp.list_ids:
+            box_ids.extend(bulk.aelists[sid].elements)
+        ks: list[int] = []
+        for bid in box_ids:
+            if bid not in id_to_k:
+                raise ValueError(
+                    f"MONPNT1 {mon.name}: AELIST box ID {bid} is not a meshed aero "
+                    "box.  Check the AELIST box range against the CAERO1 it belongs "
+                    "to (box IDs run EID .. EID + NSPAN*NCHORD - 1)."
+                )
+            ks.append(id_to_k[bid])
+        pos = (np.array([aero.boxes[k].force_point for k in ks], dtype=float)
+               .reshape(-1, 3))
+        return MonitorPlan(
+            name=mon.name, mtype="MONPNT1", label=mon.label, axes=mon.axes,
+            cid=mon.cp, ref_basic=ref_basic, R=R, par=par,
+            source_ids=list(aecomp.list_ids), pos=pos,
+            rows=np.zeros(0, dtype=int), box_ks=np.array(ks, dtype=int),
+        )
+
+    gids: list[int] = []
+    for sid in aecomp.list_ids:
+        gids.extend(bulk.set1s[sid].grids)
+    pos = np.array([[bulk.grids[g].x, bulk.grids[g].y, bulk.grids[g].z]
+                    for g in gids], dtype=float).reshape(-1, 3)
+    return MonitorPlan(
+        name=mon.name, mtype="MONPNT3", label=mon.label, axes=mon.axes,
+        cid=mon.cp, ref_basic=ref_basic, R=R, par=par,
+        source_ids=list(aecomp.list_ids), pos=pos,
+        rows=np.array([6 * grid_index[g] for g in gids], dtype=int),
+        box_ks=np.zeros(0, dtype=int), gids=gids,
+        n_dofs=(6 * (max(grid_index.values()) + 1) if grid_index else 0),
+    )
+
+
+def prepare_monitor_points(
+    bulk: BulkData, aero: Optional[AeroModel], grid_index: dict[int, int],
+) -> dict[str, MonitorPlan]:
+    """Build ``{name: MonitorPlan}`` for every MONPNT1/MONPNT3 card in the model."""
+    out: dict[str, MonitorPlan] = {}
+    for name, mon1 in bulk.monpnt1s.items():
+        out[name] = prepare_monitor_point(mon1, bulk, aero, grid_index)
+    for name, mon3 in bulk.monpnt3s.items():
+        out[name] = prepare_monitor_point(mon3, bulk, aero, grid_index)
+    return out
+
+
+def _gather(load_g: Optional[FloatArray], rows: IntArray) -> tuple[FloatArray, FloatArray]:
+    """(n, 3) forces and moments of a g-set load at the plan's rows (zeros if None)."""
+    if load_g is None or rows.size == 0:
+        return np.zeros((rows.size, 3)), np.zeros((rows.size, 3))
+    idx = rows[:, None] + np.arange(6)[None, :]
+    blk = np.asarray(load_g)[idx]
+    return blk[:, :3], blk[:, 3:]
+
+
+def _resultant_about(f: FloatArray, m: FloatArray, pos: FloatArray,
+                     ref: FloatArray) -> FloatArray:
+    """(6,) [ΣF, Σ(m + r×f)] about ``ref`` — the same sum ``grid_resultant`` takes."""
+    if f.shape[0] == 0:
+        return np.zeros(6)
+    F = f.sum(axis=0)
+    M = m.sum(axis=0) + np.cross(pos - ref, f).sum(axis=0)
+    return np.concatenate([F, M])
+
+
+def evaluate_monitor_point(
+    plan: MonitorPlan,
+    box_forces: Optional[FloatArray], grid_loads: Optional[FloatArray],
+    inertial_loads: Optional[FloatArray],
+    reactions: Optional[dict[int, FloatArray]] = None,
+    grid_index: Optional[dict[int, int]] = None,
+    elastic_inertial_loads: Optional[FloatArray] = None,
+    damping_loads: Optional[FloatArray] = None,
+) -> MonitorLoad:
+    """Sum one prepared monitor against a load state — no geometry, no lookups.
+
+    ``elastic_inertial_loads``/``damping_loads`` are the transient contributions
+    (``−M·ü_e`` and ``−M·w``, #2).  They are absent (None) on a static trim and
+    reported as their own columns rather than folded into ``inertia`` — so the
+    static outputs keep the exact three-way split they were verified against,
+    and a reader of a transient monitor can see how much of it is elastic
+    response.  A MONPNT1 is aero-only by definition and never carries them.
+    """
+    ref, R, par = plan.ref_basic, plan.R, plan.par
+
+    def cp(v6: FloatArray) -> FloatArray:
+        return to_cp(_apply_symmetry(v6, par, ref, plan.name), R)
+
+    if plan.mtype == "MONPNT1":
+        forces = (np.asarray(box_forces)[plan.box_ks] if plan.box_ks.size
+                  else np.zeros((0, 3)))
+        aero6 = cp(_resultant_about(forces, np.zeros_like(forces), plan.pos, ref))
+        return MonitorLoad(
+            name=plan.name, label=plan.label, mtype="MONPNT1", axes=plan.axes,
+            cid=plan.cid, ref=ref, totals=aero6, aero=aero6,
+            inertia=np.zeros(6), reaction=np.zeros(6),
+            parity=par, whole_airplane=(par != 1.0),
+            source_ids=list(plan.source_ids),
+        )
+
+    f_a, m_a = _gather(grid_loads, plan.rows)
+    f_i, m_i = _gather(inertial_loads, plan.rows)
+    # Reaction: only grids in the collection that carry a recovered reaction.
+    react_g = None
+    if reactions and grid_index is not None:
+        react_g = np.zeros(plan.n_dofs)
+        for gid, r6 in reactions.items():
+            if gid in grid_index:
+                gi = grid_index[gid]
+                react_g[6 * gi: 6 * gi + 6] = r6
+    f_r, m_r = _gather(react_g, plan.rows)
+
+    aero6 = cp(_resultant_about(f_a, m_a, plan.pos, ref))
+    inert6 = cp(_resultant_about(f_i, m_i, plan.pos, ref))
+    react6 = cp(_resultant_about(f_r, m_r, plan.pos, ref))
+    totals = aero6 + inert6 + react6
+
+    elastic6 = damp6 = None
+    if elastic_inertial_loads is not None or damping_loads is not None:
+        f_e, m_e = _gather(elastic_inertial_loads, plan.rows)
+        f_d, m_d = _gather(damping_loads, plan.rows)
+        elastic6 = cp(_resultant_about(f_e, m_e, plan.pos, ref))
+        damp6 = cp(_resultant_about(f_d, m_d, plan.pos, ref))
+        totals = totals + elastic6 + damp6
+
+    return MonitorLoad(
+        name=plan.name, label=plan.label, mtype="MONPNT3", axes=plan.axes,
+        cid=plan.cid, ref=ref, totals=totals,
+        aero=aero6, inertia=inert6, reaction=react6,
+        parity=par, whole_airplane=(par != 1.0),
+        source_ids=list(plan.source_ids),
+        elastic_inertia=elastic6, damping=damp6,
+    )
+
+
 def integrate_monpnt1(
     mon: Monpnt1, bulk: BulkData, aero: AeroModel, box_forces: FloatArray
 ) -> MonitorLoad:
     """Aero-only integrated load over the monitor's AELIST collection."""
-    aecomp = bulk.aecomps[mon.comp]
-    ref_basic, R = monitor_frame(mon, bulk)
-
-    # AELIST box IDs -> global box indices k (shared collision-checked map, F1)
-    id_to_k = aero.require_box_id_to_k()
-    box_ids: list[int] = []
-    for sid in aecomp.list_ids:
-        box_ids.extend(bulk.aelists[sid].elements)
-
-    F = np.zeros(3)
-    M = np.zeros(3)
-    for bid in box_ids:
-        if bid not in id_to_k:
-            raise ValueError(
-                f"MONPNT1 {mon.name}: AELIST box ID {bid} is not a meshed aero "
-                "box.  Check the AELIST box range against the CAERO1 it belongs "
-                "to (box IDs run EID .. EID + NSPAN*NCHORD - 1)."
-            )
-        k = id_to_k[bid]
-        f = box_forces[k]
-        r = aero.boxes[k].force_point - ref_basic
-        F += f
-        M += np.cross(r, f)
-
-    par = _parity(bulk)
-    aero6 = to_cp(_apply_symmetry(np.concatenate([F, M]), par, ref_basic, mon.name), R)
-    return MonitorLoad(
-        name=mon.name, label=mon.label, mtype="MONPNT1", axes=mon.axes,
-        cid=mon.cp, ref=ref_basic, totals=aero6, aero=aero6,
-        inertia=np.zeros(6), reaction=np.zeros(6),
-        parity=par, whole_airplane=(par != 1.0), source_ids=list(aecomp.list_ids),
-    )
+    plan = prepare_monitor_point(mon, bulk, aero, {})
+    return evaluate_monitor_point(plan, box_forces, None, None)
 
 
 def grid_resultant(
@@ -154,37 +309,9 @@ def integrate_monpnt3(
     SPC/SUPORT reaction dict (restricted to constrained grids in the collection
     — zero elsewhere).
     """
-    aecomp = bulk.aecomps[mon.comp]
-    ref_basic, R = monitor_frame(mon, bulk)
-
-    gids = []
-    for sid in aecomp.list_ids:
-        gids.extend(bulk.set1s[sid].grids)
-
-    aero_b = grid_resultant(grid_loads, gids, bulk, grid_index, ref_basic)
-    inert_b = (grid_resultant(inertial_loads, gids, bulk, grid_index, ref_basic)
-               if inertial_loads is not None else np.zeros(6))
-
-    # Reaction: only grids in the collection that carry a recovered reaction.
-    react_g = np.zeros_like(grid_loads)
-    if reactions:
-        for gid, r6 in reactions.items():
-            if gid in grid_index:
-                gi = grid_index[gid]
-                react_g[6 * gi: 6 * gi + 6] = r6
-    react_b = grid_resultant(react_g, gids, bulk, grid_index, ref_basic)
-
-    par = _parity(bulk)
-    aero6 = to_cp(_apply_symmetry(aero_b, par, ref_basic, mon.name), R)
-    inert6 = to_cp(_apply_symmetry(inert_b, par, ref_basic, mon.name), R)
-    react6 = to_cp(_apply_symmetry(react_b, par, ref_basic, mon.name), R)
-    totals = aero6 + inert6 + react6
-    return MonitorLoad(
-        name=mon.name, label=mon.label, mtype="MONPNT3", axes=mon.axes,
-        cid=mon.cp, ref=ref_basic, totals=totals,
-        aero=aero6, inertia=inert6, reaction=react6,
-        parity=par, whole_airplane=(par != 1.0), source_ids=list(aecomp.list_ids),
-    )
+    plan = prepare_monitor_point(mon, bulk, None, grid_index)
+    return evaluate_monitor_point(plan, None, grid_loads, inertial_loads,
+                                  reactions, grid_index)
 
 
 def _warn_if_mass_coverage_incomplete(
@@ -253,11 +380,12 @@ def compute_monitor_loads(
 ) -> dict[str, MonitorLoad]:
     """Build {name: MonitorLoad} for all MONPNT1/MONPNT3 cards in the model."""
     out: dict[str, MonitorLoad] = {}
-    for name, mon in bulk.monpnt1s.items():
-        out[name] = integrate_monpnt1(mon, bulk, aero, box_forces)
-    for name, mon in bulk.monpnt3s.items():
-        out[name] = integrate_monpnt3(mon, bulk, grid_loads, inertial_loads,
-                                      grid_index, reactions or {})
-        _warn_if_mass_coverage_incomplete(
-            name, mon, bulk, grid_loads, grid_index, massset_sid)
+    for name, plan in prepare_monitor_points(bulk, aero, grid_index).items():
+        out[name] = evaluate_monitor_point(
+            plan, box_forces, grid_loads, inertial_loads, reactions or {},
+            grid_index)
+        if plan.mtype == "MONPNT3":
+            _warn_if_mass_coverage_incomplete(
+                name, bulk.monpnt3s[name], bulk, grid_loads, grid_index,
+                massset_sid)
     return out

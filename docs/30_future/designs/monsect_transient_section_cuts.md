@@ -114,7 +114,7 @@ fails today on any sample with meaningful elastic acceleration and passes after.
   belongs with the sweep post-processing, alongside the identical static gap.
 - **`MONPNT1`/`MONPNT3` on transient.** Same enabling work (the per-sample integrand
   inputs) but a separate output surface. Cheap once this lands (~0.5 d); deliberately not
-  bundled so this step has one output design to get right. Log as **P8c**.
+  bundled so this step has one output design to get right. Log as **P8c**. **Delivered 2026-09-06 as issue #2** (`ManeuverStep.monitor_loads`, f06 block at the critical sample with the contribution split, `maneuver_monitor_loads.csv`, per-component envelope; gates V-TMON1–3).
 - **Changing `net_loads` / `closure` / the critical-sample metric.** The elastic-inertia
   term is added as a *separate* contribution and is **not** folded into `net_loads`.
   Folding it in would change the exported `maneuver_qs_loads.bdf` cards, the closure

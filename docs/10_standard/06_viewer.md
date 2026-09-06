@@ -610,6 +610,14 @@ renders whichever result types it produced:
   the same `load_export` writers the CLI uses (gated byte-for-byte against the written
   files).
 
+  **Monitor points on the maneuver (#2).** When the deck carries `MONPNT1`/`MONPNT3` cards
+  the panel adds, above the section cuts: the **monitor table at the selected sample**
+  (`_render_monitor_table(…, contributions=True)` — the static panel's renderer with the
+  per-source Fz split appended: aero, rigid inertia, elastic, damping, reaction) and the
+  **monitor envelope table** (`_render_monitor_envelope`) of per-component max/min with the
+  driving sample. Two download buttons offer `<stem>.maneuver_monitor_loads.csv` and
+  `<stem>.maneuver_monitor_envelope.csv`, built by the CLI's writers.
+
 Run wiring lives in `app.py::_run_sol144` (mirrors `main.py` routing — one shared `AeroModel`
 + `AeroCache`, per-subcase dispatch to `run_sol144_trim` / `run_sol144_diverg` /
 `run_maneuver_qs`). F06 export covers SOL 144 trim + divergence + transient maneuver blocks.

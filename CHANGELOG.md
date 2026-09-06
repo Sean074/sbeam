@@ -10,6 +10,20 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`MONPNT1`/`MONPNT3` on transient (MLOADS) maneuvers** (#2). The deck's monitor points
+  are now evaluated at every output sample, not only on static trims:
+  `ManeuverStep.monitor_loads`, an f06 `MONITOR POINT INTEGRATED LOADS ( SAMPLE n … )`
+  block at the critical sample printing the per-source rows (`AERO`, `INERTIA (RIGID)`,
+  `ELASTIC INERTIA`, `DAMPING`, `REACTION`) under `TOTAL`, a `MONITOR POINT ENVELOPE`
+  block, `<stem>.maneuver_monitor_loads.csv` (the static `monitor_loads.csv` schema
+  verbatim with sample/time identity columns and the full contribution split) and
+  `<stem>.maneuver_monitor_envelope.csv`; viewer table, envelope and downloads.
+  `MonitorLoad` gains `elastic_inertia` / `damping` columns (transient samples only).
+  `monitor_points.py` is split into `prepare_monitor_points` + `evaluate_monitor_point`
+  (static outputs byte-identical). Gates V-TMON1–3: held at trim equals the static
+  monitor; an every-grid `MONPNT3` equals the sample closure and closes with the
+  reaction; a monitor over the members outboard of a cut station equals the section-cut
+  row column by column, and fails without the elastic column.
 - **Quasi-static gust load cases (FAR/CS 23.341)** — the mandatory certification gust
   cases, delivered as ordinary balanced-maneuver trims with no DLM dependency (#1).
   - `sbeam_tools/cases/gust.py` — preprocessing tool, deliberately **outside** the

@@ -2,13 +2,14 @@
 
 import math
 from datetime import datetime
+from typing import Optional
 
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.results.results import (
-    BarForce, BarStress, ManeuverResult, MonitorLoad, SectionCutEnvelope,
-    SectionCutResult,
+    BarForce, BarStress, ManeuverResult, MonitorEnvelope, MonitorLoad,
+    SectionCutEnvelope, SectionCutResult,
     Sol101Result, Sol103Result, Sol144TrimResult, Sol144DivergResult,
     peak_grid_force,
 )
@@ -120,15 +121,25 @@ def _bar_forces_block(
     lines.append("")
 
 
-def _monitor_block(lines: list[str], monitor_loads: dict[str, MonitorLoad]) -> None:
+def _monitor_block(
+    lines: list[str], monitor_loads: dict[str, MonitorLoad],
+    title_suffix: str = "", contributions: bool = False,
+) -> None:
     """Append a MONITOR POINT INTEGRATED LOADS block (MON4).
 
     One header row of metadata per monitor (LABEL, TYPE, AXES, CID, reference
     point) followed by the six integrated force/moment components in the
     monitor's cp frame.  Annotated *WHOLE-AIRPLANE* when a symmetry parity factor
     has been applied so downstream consumers do not double-count.
+
+    ``title_suffix`` stamps a transient block with the sample it was taken at,
+    and ``contributions`` prints the per-source rows under the total (#2) —
+    named in full, as the section-cut SOURCE: line is, so the elastic
+    d'Alembert term is visible in the f06 rather than silently inside the sum.
+    The static block is unchanged (byte-identical) with both at their defaults.
     """
-    lines.append("                          M O N I T O R   P O I N T   I N T E G R A T E D   L O A D S")
+    lines.append("                          M O N I T O R   P O I N T   I N T E G R A T E D   L O A D S"
+                 + title_suffix)
     lines.append("")
     for name in sorted(monitor_loads.keys()):
         ml = monitor_loads[name]
@@ -141,8 +152,75 @@ def _monitor_block(lines: list[str], monitor_loads: dict[str, MonitorLoad]) -> N
             f"        REF POINT (BASIC):  X ={_fmt(ml.ref[0])}  Y ={_fmt(ml.ref[1])}"
             f"  Z ={_fmt(ml.ref[2])}"
         )
-        lines.append(_hdr(" " * 8, "FX", "FY", "FZ", "MX", "MY", "MZ"))
-        lines.append("        " + "".join(_fmt(v) for v in ml.totals))
+        if not contributions:
+            lines.append(_hdr(" " * 8, "FX", "FY", "FZ", "MX", "MY", "MZ"))
+            lines.append("        " + "".join(_fmt(v) for v in ml.totals))
+            lines.append("")
+            continue
+        rows: list[tuple[str, Optional[FloatArray]]]
+        if ml.mtype == "MONPNT1":
+            src = "AERO ONLY"
+            rows = [("TOTAL", ml.totals)]
+        else:
+            src = "AERO + INERTIA + REACTION"
+            rows = [("TOTAL", ml.totals), ("AERO", ml.aero),
+                    ("INERTIA (RIGID)", ml.inertia)]
+            if ml.elastic_inertia is not None:
+                src += " + ELASTIC INERTIA"
+                rows.append(("ELASTIC INERTIA", ml.elastic_inertia))
+                if ml.damping is not None and np.any(ml.damping):
+                    src += " + DAMPING"
+                    rows.append(("DAMPING", ml.damping))
+            rows.append(("REACTION", ml.reaction))
+        lines.append(f"        SOURCE: {src}")
+        lines.append(_hdr(" " * 24, "FX", "FY", "FZ", "MX", "MY", "MZ"))
+        for label, v6 in rows:
+            vals = v6 if v6 is not None else np.zeros(6)
+            lines.append(f"        {label:<16}" + "".join(_fmt(v) for v in vals))
+        lines.append("")
+    lines.append("")
+
+
+def _monitor_envelope_block(
+    lines: list[str], envelope: dict[str, "MonitorEnvelope"], crit_sample: int
+) -> None:
+    """Append a MONITOR POINT ENVELOPE block (#2).
+
+    One row per monitor per cp-frame component: the max and min over the run's
+    samples and the sample that drove each.  As for the section-cut envelope,
+    the driving sample is generally NOT the critical sample, and the header
+    says so.
+    """
+    lines.append("                          M O N I T O R   P O I N T   E N V E L O P E")
+    lines.append("")
+    lines.append(
+        "      MAX/MIN OVER THE OUTPUT SAMPLES.  THE DRIVING SAMPLE IS PER "
+        "MONITOR AND COMPONENT AND NEED NOT BE THE"
+    )
+    lines.append(
+        f"      CRITICAL SAMPLE ({crit_sample}), WHICH IS SELECTED BY PEAK "
+        f"|NET GRID FORCE| OVER THE WHOLE MODEL."
+    )
+    lines.append("")
+    comp_names = ("FX", "FY", "FZ", "MX", "MY", "MZ")
+    for name in sorted(envelope.keys()):
+        env = envelope[name]
+        tag = "   *WHOLE-AIRPLANE*" if env.whole_airplane else ""
+        lines.append(
+            f"      MONITOR {name:<8}  LABEL: {env.label:<24}  {env.mtype}"
+            f"   AXES = {env.axes}   CID = {env.cid}   SAMPLES = {env.n_samples}{tag}"
+        )
+        lines.append(
+            "           COMP            MAX     SAMPLE          T-MAX"
+            "            MIN     SAMPLE          T-MIN         ABS-MAX"
+        )
+        for e in env.entries:
+            lines.append(
+                f"        {comp_names[e.comp]:>7}"
+                + _fmt(e.max_value) + f"{e.max_sample:>11}" + _fmt(e.max_time)
+                + _fmt(e.min_value) + f"{e.min_sample:>11}" + _fmt(e.min_time)
+                + _fmt(e.absmax)
+            )
         lines.append("")
     lines.append("")
 
@@ -986,14 +1064,23 @@ def _build_f06_sol144_maneuver_text(
     _displacement_block(lines, crit.displacements, bulk, grid_index, gids_sorted)
     _bar_forces_block(lines, bulk, crit.bar_forces)
 
+    # MONPNT1/MONPNT3 integrated loads at the critical sample, with the
+    # contribution split (#2).  The per-sample history goes to the maneuver
+    # monitor CSV, as the section cuts' does.
+    sample_suffix = (f"   ( S A M P L E  {result.crit_index + 1},"
+                     f"  T = {_fmt(crit.t).strip()} )")
+    if crit.monitor_loads:
+        _monitor_block(lines, crit.monitor_loads, title_suffix=sample_suffix,
+                       contributions=True)
+    if result.monitor_envelope:
+        _monitor_envelope_block(lines, result.monitor_envelope,
+                                result.crit_index + 1)
+
     # MONSECT running loads at the critical sample (Step 68).  The full
     # per-sample history is deliberately not written here — samples × stations ×
     # cuts would swamp the f06; it goes to the section-loads CSV.
     if crit.section_loads:
-        _section_cut_block(
-            lines, crit.section_loads,
-            title_suffix=(f"   ( S A M P L E  {result.crit_index + 1},"
-                          f"  T = {_fmt(crit.t).strip()} )"))
+        _section_cut_block(lines, crit.section_loads, title_suffix=sample_suffix)
     if result.section_envelope:
         _section_envelope_block(
             lines, result.section_envelope, result.crit_index + 1)

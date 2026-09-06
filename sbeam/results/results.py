@@ -58,6 +58,47 @@ class MonitorLoad:
     parity: float = 1.0             # symmetry doubling factor applied to all components
     whole_airplane: bool = False    # True when parity≠1 (annotate output to avoid double-up)
     source_ids: list[int] = field(default_factory=list)   # AELIST or SET1 SIDs
+    # Transient (MLOADS) contributions, cp frame (#2); None on a static trim,
+    # where the structure has no elastic acceleration — as opposed to zero.
+    # ``totals`` includes them when present; ``inertia`` stays the RIGID
+    # inertia, exactly as on ``SectionCutStation``.
+    elastic_inertia: Optional[FloatArray] = None   # (6,) −M·ü_e, the elastic d'Alembert load
+    damping: Optional[FloatArray] = None           # (6,) −M·w, the damping force (ζ/α ≠ 0 only)
+
+
+@dataclass
+class MonitorEnvelopeEntry:
+    """Max/min of one component of one monitor over a maneuver (#2).
+
+    ``max_sample``/``min_sample`` are 1-based, matching the f06 SAMPLE column
+    and the MLDPRNT numbering (DEF-M5).  They are the **driving** samples and
+    are generally not the run's critical sample.
+    """
+    comp: int                       # 0..5, index into [Fx, Fy, Fz, Mx, My, Mz] (cp frame)
+    max_value: float
+    max_sample: int
+    max_time: float
+    min_value: float
+    min_sample: int
+    min_time: float
+
+    @property
+    def absmax(self) -> float:
+        """The larger magnitude of the two extremes (the sizing number)."""
+        return max(abs(self.max_value), abs(self.min_value))
+
+
+@dataclass
+class MonitorEnvelope:
+    """Per-component max/min envelope of one monitor point over a maneuver (#2)."""
+    name:  str
+    label: str
+    mtype: str
+    axes:  int
+    cid:   int
+    whole_airplane: bool = False
+    n_samples: int = 0              # samples the envelope was reduced over
+    entries: list[MonitorEnvelopeEntry] = field(default_factory=list)
 
 
 @dataclass
@@ -299,6 +340,8 @@ class ManeuverStep:
     damping_loads: Optional[FloatArray] = None
     # {name: SectionCutResult} MONSECT running loads at this sample.
     section_loads: Optional[dict[str, "SectionCutResult"]] = None
+    # {name: MonitorLoad} MONPNT1/MONPNT3 integrated loads at this sample (#2).
+    monitor_loads: Optional[dict[str, "MonitorLoad"]] = None
 
 
 def peak_grid_force(step: "ManeuverStep") -> float:
@@ -345,3 +388,6 @@ class ManeuverResult:
     # Step 68 — {name: SectionCutEnvelope} per-station max/min over the run's
     # samples.  None when the deck has no MONSECT cards.
     section_envelope: Optional[dict[str, "SectionCutEnvelope"]] = None
+    # #2 — {name: MonitorEnvelope} per-component max/min over the run's
+    # samples.  None when the deck has no MONPNT1/MONPNT3 cards.
+    monitor_envelope: Optional[dict[str, "MonitorEnvelope"]] = None

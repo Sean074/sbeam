@@ -864,6 +864,11 @@ MONPNT3, NAME, LABEL, AXES, COMP, CP, X, Y, Z          $ aero + inertia + reacti
 
 The results are attached as `Sol144TrimResult.monitor_loads = {name: MonitorLoad}`, where
 `MonitorLoad` carries `totals` plus the per-contribution `aero` / `inertia` / `reaction` 6-vectors.
+The integrator is split into a state-free `MonitorPlan` (`prepare_monitor_points`, once per
+run) and `evaluate_monitor_point` (per load state); `compute_monitor_loads` is the two in
+sequence. On a transient (`MLOADS`) subcase the same monitors are taken at **every output
+sample** and carry two further columns — see *Monitor points on transient maneuvers (#2)*
+under Step 68.
 
 ### Output (MON4)
 
@@ -1160,10 +1165,65 @@ that. Ties resolve to the earliest sample.
 > omits the SUPORT grid cannot balance. The deck's own `ALLGRID` omits GRID 90 for exactly
 > this reason, so the gate builds its own collection.
 
+### Monitor points on transient maneuvers (#2)
+
+The same `MONPNT1`/`MONPNT3` cards a static trim reports are evaluated at every output
+sample of an `MLOADS` subcase (`ManeuverStep.monitor_loads = {name: MonitorLoad}`), by the
+same prepare/evaluate split the section cuts use: `MonitorPlan`s are resolved once in
+`build_operators`, and `recover_step` sums them against the sample's load state. A
+`MONPNT3` on a transient sample carries the two Step 68 columns as its own fields —
+`MonitorLoad.elastic_inertia` (`−M·ü_e`) and `.damping` (`−M·w`) — **present-and-zero**
+when held at trim, `None` on a static trim; `totals` includes them, `inertia` stays the
+rigid inertia, exactly as on `SectionCutStation`. A `MONPNT1` is aero-only and never has
+them. Reactions are recovered whenever the deck has a `MONPNT3` (not only a `SET1` cut),
+against the full applied load (#3). The DEF-M10 mass-coverage warning is issued by the
+IC trim the run starts from and **not** re-issued per sample.
+
+Consequences a reader should expect, all gated below:
+
+- **Held at trim, the transient monitor is the static monitor** (V-TMON1).
+- **A whole-model `MONPNT3` is a closed free body at every sample.** Under the direct
+  (prescribed-rigid) solver `aero + rigid inertia + elastic inertia + damping` equals the
+  sample's `closure` (all six components when the monitor reference is the SUPORT
+  point) and the reaction brings it to zero — provided the collection includes the SUPORT
+  grid (the V-TSEC5 lesson; the HA144A deck's own `ALLGRID` omits GRID 90). In free flight
+  nothing is reacted and the monitor itself is ≈ 0 (V-TMON2). On the shipped C210 MLOADS
+  deck `MALLEA` closes to ~1e-10 against a 1e4 lift at every sample.
+- **A monitor over the members outboard of a cut station, referenced at that station,
+  *is* the section-cut row** — column by column, including the elastic and damping
+  columns (V-TMON3). The cut is tied to the beam internal force by V-TSEC3, so the monitor
+  inherits that gate.
+
+**Envelope.** `build_monitor_envelope` (`results/section_envelope.py`) reduces the run to,
+per monitor and cp-frame component, the max and min with the driving sample and time, plus
+`absmax` — the same within-subcase contract as the section envelope, ties to the earliest
+sample.
+
+**Output.**
+
+- **f06**: `MONITOR POINT INTEGRATED LOADS ( SAMPLE n, T = … )` at the critical sample,
+  with a `SOURCE:` line and the per-source rows printed under `TOTAL` (`AERO`,
+  `INERTIA (RIGID)`, `ELASTIC INERTIA`, `DAMPING` when non-zero, `REACTION`) so the elastic
+  share is visible; then a `MONITOR POINT ENVELOPE` block. The static block is unchanged.
+- **CSV** `<stem>.maneuver_monitor_loads.csv`: one row per monitor per sample — the static
+  `monitor_loads.csv` schema verbatim with `mloads` / `sample` (1-based) / `time` /
+  `critical` up front, then `Fz_elastic` / `Fz_damping` beside the static `Fz_*` diagnostics
+  and the full six-component split of all five sources as `aero_Fx … react_Mz`.
+- **CSV** `<stem>.maneuver_monitor_envelope.csv`: the envelope with `max_sample` /
+  `min_sample` / `critical_sample` side by side.
+- **Viewer**: the monitor table at the selected sample with the Fz split, the envelope
+  table, and both CSVs as downloads.
+
+| ID | Gate | Where |
+|----|------|-------|
+| V-TMON1 | **Anchor** — commands held at trim: every sample's monitor == the static monitor, both solvers; transient columns present-and-zero | `tests/aero/test_monitor_transient.py` |
+| V-TMON2 | **Load-bearing** — every-grid `MONPNT3` on a dynamic sample: applied load == `closure` (6 components, 1e-8·lift) and `+ reaction` == 0, direct solver with and without α-damping; free-flight modal run closes to 1e-6·lift with the damping column populated | same |
+| V-TMON3 | Monitor over the members outboard of `SECRW` station 8 == that station's row, every column, 1e-10 rel; companion asserting it **fails** without the elastic column | same |
+| — | DEF-M10 warning once per run (IC trim), not per sample; envelope bounds every sample and names the driving sample, both solvers; shipped C210 deck's `MALLEA` closes at every sample | same |
+| — | f06 static block byte-identical; transient block prints the split, names `DAMPING` only when non-zero; envelope == brute force, per component, ties → earliest; CSV schema (no duplicate columns, static columns verbatim), text builders == written files | `tests/results/test_monitor_transient_output.py` |
+
 ### Not covered (follow-ons)
 
-- **`MONPNT1`/`MONPNT3` on transient** (P8c). The enabling inputs all exist per sample; only
-  the monitor output surface is missing.
 - **Cross-subcase / cross-mass-case envelopes.** A pivot over the CSVs, and the same gap
   exists for static tables; it belongs with the sweep post-processing.
 

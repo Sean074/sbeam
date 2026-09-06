@@ -25,7 +25,8 @@ import numpy as np
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.results.results import (
-    ManeuverResult, SectionCutResult, SectionCutStation, Sol144TrimResult,
+    ManeuverResult, MonitorLoad, SectionCutResult, SectionCutStation,
+    Sol144TrimResult,
 )
 from sbeam.results.section_cuts import component_names, labelled
 from sbeam.assembly.load_vector import build_grid_index
@@ -194,18 +195,12 @@ def write_monitor_csv(filepath: str, results: dict[int, Sol144TrimResult]) -> No
                 # Mass case (Step 60); getattr keeps the writer usable with the
                 # lightweight result stubs the monitor tests build.
                 ms_sid = getattr(result, "massset_sid", None)
+                # MONPNT1 has no inertia/reaction split — _monitor_row reports 0.0 there.
                 writer.writerow([
                     sc_id,
                     ms_sid if ms_sid is not None else "",
                     getattr(result, "massset_label", "BASELINE"),
-                    ml.name, ml.mtype, ml.label, ml.axes, ml.cid,
-                    f"{ml.ref[0]:.6E}", f"{ml.ref[1]:.6E}", f"{ml.ref[2]:.6E}",
-                    *(f"{v:.6E}" for v in ml.totals),
-                    # MONPNT1 has no inertia/reaction split — report 0.0 there.
-                    f"{(ml.aero[2] if ml.aero is not None else 0.0):.6E}",
-                    f"{(ml.inertia[2] if ml.inertia is not None else 0.0):.6E}",
-                    f"{(ml.reaction[2] if ml.reaction is not None else 0.0):.6E}",
-                    f"{ml.parity:g}", int(ml.whole_airplane),
+                    *_monitor_row(ml),
                 ])
 
 
@@ -349,6 +344,145 @@ def _write_maneuver_section_loads(fh: TextIO, results: dict[int, "ManeuverResult
                         *(f"{v:.6E}" for v in labelled(el, sc.comp_map)),
                         *(f"{v:.6E}" for v in labelled(da, sc.comp_map)),
                     ])
+
+
+# The static monitor CSV's per-monitor cells (everything after the case/mass
+# identity), so the transient file carries the same schema verbatim (#2).
+_MONITOR_COLUMNS = _MONITOR_CSV_HEADER[3:]
+# Source-first names (``aero_Fx`` …) so they cannot collide with the static
+# schema's ``Fz_aero``/``Fz_inertia``/``Fz_react`` diagnostics.
+_MONITOR_SPLIT_COLUMNS = [
+    f"{src}_{c}" for src in ("aero", "inertia", "elastic", "damping", "react")
+    for c in ("Fx", "Fy", "Fz", "Mx", "My", "Mz")
+]
+
+
+def _monitor_row(ml: "MonitorLoad") -> list[Union[str, int]]:
+    """The shared per-monitor cells of a monitor CSV row (static schema)."""
+    return [
+        ml.name, ml.mtype, ml.label, ml.axes, ml.cid,
+        f"{ml.ref[0]:.6E}", f"{ml.ref[1]:.6E}", f"{ml.ref[2]:.6E}",
+        *(f"{v:.6E}" for v in ml.totals),
+        f"{(ml.aero[2] if ml.aero is not None else 0.0):.6E}",
+        f"{(ml.inertia[2] if ml.inertia is not None else 0.0):.6E}",
+        f"{(ml.reaction[2] if ml.reaction is not None else 0.0):.6E}",
+        f"{ml.parity:g}", int(ml.whole_airplane),
+    ]
+
+
+def write_maneuver_monitor_csv(
+    filepath: str, results: dict[int, "ManeuverResult"]
+) -> None:
+    """Write MONPNT1/MONPNT3 loads for every sample of every maneuver subcase (#2).
+
+    One row per monitor per **sample**.  The static ``monitor_loads.csv`` schema
+    is carried verbatim with the same identity columns the transient
+    section-loads file uses inserted up front — ``mloads``, ``sample`` (1-based,
+    matching the f06 SAMPLE column, DEF-M5), ``time`` and ``critical`` — and the
+    full six-component contribution split appended (``Fz_elastic``/``Fz_damping``
+    next to the static ``Fz_*`` diagnostics, then all five sources in full as
+    ``aero_Fx`` … ``react_Mz``).  A
+    tool that reads the static file reads this one; a pivot on ``name`` ×
+    ``time`` is the monitor time history.
+
+    Args:
+        filepath: Output ``*.maneuver_monitor_loads.csv`` path.
+        results:  {subcase_id: ManeuverResult}.
+    """
+    with open(filepath, "w", newline="") as fh:
+        _write_maneuver_monitor(fh, results)
+
+
+def build_maneuver_monitor_csv_text(results: dict[int, "ManeuverResult"]) -> str:
+    """The same CSV as :func:`write_maneuver_monitor_csv`, as a string (viewer)."""
+    buf = io.StringIO()
+    _write_maneuver_monitor(buf, results)
+    return buf.getvalue()
+
+
+def _write_maneuver_monitor(fh: TextIO, results: dict[int, "ManeuverResult"]) -> None:
+    header = (["case", "mloads", "massset", "sample", "time", "critical"]
+              + _MONITOR_COLUMNS + ["Fz_elastic", "Fz_damping"]
+              + _MONITOR_SPLIT_COLUMNS)
+    writer = csv.writer(fh)
+    writer.writerow(header)
+    zero = np.zeros(6)
+    for sc_id, result in results.items():
+        ms_sid = result.massset_sid
+        for i, step in enumerate(result.steps):
+            if not step.monitor_loads:
+                continue
+            for name in sorted(step.monitor_loads.keys()):
+                ml = step.monitor_loads[name]
+                el = ml.elastic_inertia if ml.elastic_inertia is not None else zero
+                da = ml.damping if ml.damping is not None else zero
+                split = [ml.aero if ml.aero is not None else zero,
+                         ml.inertia if ml.inertia is not None else zero,
+                         el, da,
+                         ml.reaction if ml.reaction is not None else zero]
+                writer.writerow([
+                    sc_id, result.mloads_sid,
+                    ms_sid if ms_sid is not None else "",
+                    i + 1, f"{step.t:.6E}", int(i == result.crit_index),
+                    *_monitor_row(ml),
+                    f"{el[2]:.6E}", f"{da[2]:.6E}",
+                    *(f"{v:.6E}" for v6 in split for v in v6),
+                ])
+
+
+def write_maneuver_monitor_envelope_csv(
+    filepath: str, results: dict[int, "ManeuverResult"]
+) -> None:
+    """Write the per-component monitor envelope for all maneuver subcases (#2).
+
+    One row per monitor per cp-frame component: max and min over the run's
+    samples with the driving sample and time of each, plus ``absmax``.  The
+    ``critical_sample`` column is carried separately so a consumer can see when
+    the driving sample and the critical sample differ.
+    """
+    with open(filepath, "w", newline="") as fh:
+        _write_maneuver_monitor_envelope(fh, results)
+
+
+def build_maneuver_monitor_envelope_csv_text(
+    results: dict[int, "ManeuverResult"]
+) -> str:
+    """The monitor envelope CSV as a string, for the viewer download button."""
+    buf = io.StringIO()
+    _write_maneuver_monitor_envelope(buf, results)
+    return buf.getvalue()
+
+
+def _write_maneuver_monitor_envelope(
+    fh: TextIO, results: dict[int, "ManeuverResult"]
+) -> None:
+    header = [
+        "case", "mloads", "massset", "name", "type", "label", "axes", "cid",
+        "whole_airplane", "n_samples", "critical_sample",
+        "comp_index", "comp_name",
+        "max", "max_sample", "max_time",
+        "min", "min_sample", "min_time", "absmax",
+    ]
+    comp_names = ("Fx", "Fy", "Fz", "Mx", "My", "Mz")
+    writer = csv.writer(fh)
+    writer.writerow(header)
+    for sc_id, result in results.items():
+        if not result.monitor_envelope:
+            continue
+        ms_sid = result.massset_sid
+        for name in sorted(result.monitor_envelope.keys()):
+            env = result.monitor_envelope[name]
+            for e in env.entries:
+                writer.writerow([
+                    sc_id, result.mloads_sid,
+                    ms_sid if ms_sid is not None else "",
+                    env.name, env.mtype, env.label, env.axes, env.cid,
+                    int(env.whole_airplane), env.n_samples, result.crit_index + 1,
+                    e.comp + 1, comp_names[e.comp],
+                    f"{e.max_value:.6E}", e.max_sample, f"{e.max_time:.6E}",
+                    f"{e.min_value:.6E}", e.min_sample, f"{e.min_time:.6E}",
+                    f"{e.absmax:.6E}",
+                ])
 
 
 def write_maneuver_section_envelope_csv(

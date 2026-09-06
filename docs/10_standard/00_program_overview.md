@@ -130,7 +130,7 @@ sbeam/
 │   ├── results.py        # Results dataclass (displacements, forces, modes)
 │   ├── f06_writer.py     # .f06-format text output (SOL 101/103/144 trim + divergence blocks)
 │   ├── load_export.py    # Trimmed aero + net maneuver FORCE/MOMENT card export; monitor-point CSV
-│   ├── monitor_points.py # MONPNT1/MONPNT3 integrated section loads (aero-only / aero+inertia+reaction)
+│   ├── monitor_points.py # MONPNT1/MONPNT3 integrated section loads (prepare/evaluate split; static + per transient sample)
 │   └── maneuver_output.py # Phase G0 MLDPRNT ASCII time histories + critical-step net-load export
 ├── gpwg.py               # Mass and centre-of-gravity calculation
 ├── aero/
@@ -312,6 +312,8 @@ For SOL 144 each subcase is routed by its case-control requests: `TRIM` → stat
 | `<stem>.monitor_loads.csv` | MONPNT1/MONPNT3 integrated section loads across subcases | Trim subcases with monitor points |
 | `<stem>.mldprnt.txt` | MLDPRNT ASCII maneuver time histories | Any `MLOADS` subcase |
 | `<stem>.maneuver_qs_loads.bdf` | Critical-sample net-load `FORCE`/`MOMENT` export | Any `MLOADS` subcase |
+| `<stem>.maneuver_monitor_loads.csv` / `<stem>.maneuver_monitor_envelope.csv` | MONPNT1/MONPNT3 loads at every output sample, and their per-component envelope (#2) | `MLOADS` subcases with monitor points |
+| `<stem>.maneuver_section_loads.csv` / `<stem>.maneuver_section_envelope.csv` | MONSECT running loads at every output sample, and their per-station envelope (Step 68) | `MLOADS` subcases with `MONSECT` cards |
 
 Exit codes: 0 on success; 1 on parse or solver error (message printed to stderr). Omitting the argument prints usage and exits with code 2.
 
