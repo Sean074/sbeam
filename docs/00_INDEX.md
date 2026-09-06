@@ -46,10 +46,12 @@ are the day-to-day references; higher numbers are planning and historical record
 
 | File | Scope |
 |------|-------|
-| [`00_backlog.md`](30_future/00_backlog.md) | **Mission & milestone map** — mission statement (FAR/CS-23 loads process) + the release-milestone ladder to 1.0.0; the working backlog itself is [GitHub issues](https://github.com/Sean074/sbeam/issues) (migrated 2026-09-05) |
+| [`00_backlog.md`](30_future/00_backlog.md) | **Mission & milestone map** — mission statement (FAR/CS-23 and -25 loads process; solver first, process second) + the release-milestone ladder to 1.0.0; the working backlog itself is [GitHub issues](https://github.com/Sean074/sbeam/issues) (migrated 2026-09-05) |
+| [`loads_process.md`](30_future/loads_process.md) | **The loads process, end to end** (v0.7.0) — the five stages an external loads engineer runs, from design-case matrix to the LRA delivery package for stress; the tool boundaries, the case-index contract and the artefacts that are public interfaces |
 | [`01_static_aero_plan.md`](30_future/01_static_aero_plan.md) | Static-aero architecture reference (Phases A–C complete): layer diagram, matrix nomenclature, delivered-step map, references, validation-case index |
 | [`02_parked.md`](30_future/02_parked.md) | **Parked items** — real but off the mission path (Phase 2/3 enhancements, fidelity follow-ons, tooling ideas, declared out-of-scope); deliberately not issues — activation opens one |
 | [`designs/gust_pratt_23341.md`](30_future/designs/gust_pratt_23341.md) | Quasi-static gust load cases (Pratt, FAR/CS 23.341) — **AGREED** design note for issue #1: preprocessing script + GUSTLF provenance card |
+| [`designs/vn_matrix_23337.md`](30_future/designs/vn_matrix_23337.md) | V-n design-case matrix, maneuver corner points (23.337 / 25.337) — design note for issue #4 (v0.7.0): certification-basis selection across Parts 23 and 25, corner-point generation, the case index |
 | [`designs/amode_card.md`](30_future/designs/amode_card.md) | AMODE assumed-mode card — design proposal |
 | [`designs/rbmref_card.md`](30_future/designs/rbmref_card.md) | RBMREF rigid-body-mode reference card — design proposal |
 | [`designs/spline9_hermite_beam_spline.md`](30_future/designs/spline9_hermite_beam_spline.md) | SPLINE9 FE-consistent Hermite beam spline (sbeam extension) — design proposal |

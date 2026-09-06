@@ -9,13 +9,15 @@ tables live in `docs/` (budget: keep this file under ~150 lines; move prose out,
 `sbeam` (Simple Beam FEA) is a Python-based finite element analysis program for beams using
 standard NASTRAN BDF input format. It is **not** related to RAM SBeam.
 
-**Mission (2026-08-04):** a FAR/CS-23-style **loads process** on a beam-stick aeroelastic
-model — generate maneuver + gust design cases, trim/integrate them, and deliver
-monitor/section loads with a traceable critical-case report for stress. SOL 145 flutter +
-DLM is the declared phase after loads sufficiency. New work must serve this mission or be
-parked (`docs/30_future/02_parked.md`); the working backlog is **GitHub issues**
-(milestones = planned releases; mission + milestone map: `docs/30_future/00_backlog.md`;
-workflow: `docs/10_standard/08_release_process.md` §2a).
+**Mission (2026-08-04; re-sequenced 2026-09-05):** a FAR/CS-23 and -25 **loads process** on a
+beam-stick aeroelastic model — generate maneuver + gust design cases, trim/integrate them, and
+deliver monitor/section loads with a traceable critical-case report for stress. Route: **solver
+first, process second** — mature the solver (v0.3.0), then flutter/DLM (v0.5.0) and dynamic
+gust (v0.6.0), then build the process once on the complete set of case families (v0.7.0;
+`docs/30_future/loads_process.md`). New work must serve this mission or be parked
+(`docs/30_future/02_parked.md`); the working backlog is **GitHub issues** (milestones =
+planned releases; mission + milestone map: `docs/30_future/00_backlog.md`; workflow:
+`docs/10_standard/08_release_process.md` §2a).
 
 ## Architecture boundary (2026-09-05)
 

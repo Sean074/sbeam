@@ -285,6 +285,27 @@ Backlog migrated to GitHub issues #1–#28 under milestones v0.3.0–v1.0.0; rel
 model + sloads-review best practices recorded in `08_release_process.md` §§2–2a; issue
 numbers replace step numbers for new work (Step 1–68 references stand).
 
+### Loads process defined and re-sequenced to v0.7.0 (Tier S, process) ✅ COMPLETE (2026-09-05)
+
+The end-to-end loads process was written down for the first time
+(`docs/30_future/loads_process.md`, five stages from design-case matrix to the stress
+delivery package) and the exercise found five gaps in issues about to be implemented: the
+delivery package was unspecified, downselect had been conflated with enveloping, units had
+no route to stress, the f06 named a regulation the solver cannot know is true, and #2/#31
+were mis-prioritised (both sit *under* the stress hand-off once the LRA is defined as
+`MONPNT3` monitor points, not beside it). #35 (`sbeam-critic` downselect) and #36 (LRA
+delivery package) filed; the V-n design note written
+(`docs/30_future/designs/vn_matrix_23337.md`) with certification-basis selection across
+FAR/CS-23 and -25.
+
+**Re-sequenced:** the process is too large for v0.3.0, whose aim is a **mature solver**.
+New milestone **v0.7.0** takes #4/#5/#35/#36, landing after the dynamic-gust work (#16,
+v0.6.0) so the toolchain is built once against the complete set of case families rather
+than retrofitted twice. Mission statement updated in `CLAUDE.md` and `00_backlog.md`
+(solver first, process second; scope broadened to Part 25). #11 retargeted to the v0.3.0
+*solver*; #31 reframed as solver output maturity and #29 confirmed as solver trim posing,
+both staying in v0.3.0.
+
 ### AJJ bit-for-bit test gates hardware-dependent (Tier S, v0.2.0 CI) ✅ COMPLETE (2026-09-05)
 
 The `test_vlm_vectorized.py` vectorized-vs-scalar AJJ gates asserted bit-for-bit

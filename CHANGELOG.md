@@ -72,6 +72,25 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   warning on every generated gust case.
 
 ### Changed
+- **The loads process is defined, and re-sequenced to a new v0.7.0 milestone
+  (2026-09-05).** `docs/30_future/loads_process.md` writes down the five stages an
+  external loads engineer runs — model, declare, generate, run, report/downselect,
+  deliver — with the tool boundaries, the case-index contract and the artefacts that are
+  now public interfaces. Writing it found five gaps in issues about to be implemented,
+  including an f06 block citing a regulation the solver cannot know is true, and #2/#31
+  being mis-prioritised once the **LRA is defined as `MONPNT3` monitor points** (which
+  also cancels the load-transfer capability the delivery package was assumed to need).
+  - **v0.3.0's aim is now a mature *solver*.** The process (#4, #5, and new #35
+    `sbeam-critic` downselect, #36 LRA delivery package) moves to
+    [v0.7.0](https://github.com/Sean074/sbeam/milestone/6), after the dynamic-gust work
+    (#16) so the toolchain is built once against the complete set of case families rather
+    than retrofitted twice. Mission statement updated: **solver first, process second**,
+    scope broadened to FAR/CS-25 alongside -23.
+  - `docs/30_future/designs/vn_matrix_23337.md` — V-n design note (#4): certification-basis
+    selection across Parts 23 and 25 (the rulesets share their envelope *shape*, differing
+    only in `n_max`'s floor and `n_min`'s definition), applicability guards, corner-point
+    generation and the case index. Its end-to-end anchor is the flagship deck's own
+    hand-authored `PITCH = 2.8402e-3` at 2.5 g, written before the tool existed.
 - **Development process moved to GitHub milestones + issues (2026-09-05).** Milestones =
   planned releases (v0.3.0 → v1.0.0 ladder); the backlog's 28 open items migrated to
   issues #1–#28 with full bodies; `docs/30_future/00_backlog.md` reduced to the mission +
