@@ -38,6 +38,32 @@ operators. Enables commanded-Nz and the over-determined transient control alloca
 full Phase G ASE system. Acceptance sketch: proportional pitch-rate damper reduces short-period
 overshoot vs open loop; zero-gain identity to Step 63.
 
+### Propeller whirl flutter (follow-on to #14; recorded 2026-10-02)
+
+**What it is:** a rigid propeller on a flexible nacelle/pylon mount. The pitch and yaw of the
+hub couple through:
+- gyroscopic damping `J_p·Ω`, a skew-symmetric matrix on the hub rotations;
+- propeller aerodynamic stiffness and damping derivatives (Houbolt–Reed / Ribner strip
+  integrals).
+
+**How it fits:** the mount already fits the stick model: CBUSH/CBAR pylon (CROD struts once
+active), with the rotor inertia on a CONM2. What is missing is a way to add hub-grid `B` and
+`K` terms to the PK flutter equation of #14. Two options:
+- a generic direct-matrix card (DMIG/B2PP/K2PP style);
+- a dedicated propeller card that builds the terms from Ω, `J_p` and the propeller
+  derivatives.
+
+**Validation:** Houbolt & Reed, NASA TR R-106 (whirl-flutter stability boundaries), and
+Reed's Electra-era results.
+
+**Not from NASTRAN-95:** its rotor/turboprop aero (cascade theories 6/7, rotating-frame
+cyclic symmetry, `fvrst1.f` Coriolis) is blade aeroelasticity, not whirl flutter.
+
+**Related:** the out-of-scope engine torque/gyroscopic load cases (23.361/.363) need the same
+gyroscopic term.
+
+**Prerequisite:** #14 PK flutter. **Physics step:** needs a design note.
+
 ### Body fence / no-through-flow boundary condition via image vortices (small)
 
 The complement to the decoupled strip (A10). A strip body carries the body's *load* but is
@@ -115,7 +141,9 @@ default build.
 Harder–Desmarais Infinite-Plate Spline for general 2-D grid scatter. `Spline1` dataclass
 stub exists; `_handle_spline1` raises `NotImplementedError`. Implement when a 2-D scatter
 case arises. Acceptance: reproduces rigid-body and linear fields exactly; matches a
-published IPS example (Harder & Desmarais 1972).
+published IPS example (Harder & Desmarais 1972). **Named future consumer (2026-10-02):** the
+far-future rod/shear-panel box model (Structural-fidelity route, below), where a beam spline
+cannot carry aero loads onto the box.
 
 ### SPLINE9 — FE-consistent Hermite beam spline (go/no-go study only)
 
@@ -164,6 +192,84 @@ tests), and SOL 111/112 share the modal machinery Steps 61–62 built.
 | PBARL | Define PBAR cross-section by standard shape (ROD, BAR, BOX, I, L, T, …) with auto-computed A, I, J. | Parser |
 | MAT1 thermal fields | GE (structural damping) parsed but unused; A and TREF for thermal expansion. | SOL 108 for GE |
 | CBEND | Curved beam element. | New element formulation |
+
+---
+
+## Structural-fidelity route (decided 2026-10-02)
+
+**Aim (user decision, 2026-10-02):** better loads *on the stick model*. The primary means are
+**rods plus reduction**, not shells. **Far future:** loads may be generated directly on a
+more detailed aeroelastic FEM, idealised as rods and shear panels, with no derived beam
+model. General shells (CQUAD4/CTRIA3, PSHELL/PCOMP), solids and heat transfer are not on
+this route.
+
+The route came out of the 2026-10-02 NASTRAN-95 review. NASTRAN-95 (github.com/nasa/NASTRAN-95,
+NOSA 1.3) is used as a theory and benchmark reference only: no code is copied, and decks are
+rebuilt from published numbers.
+
+### Element interface (enabler for everything below)
+
+Assembly is CBAR-specific today: `assemble_global_stiffness` (`assembly/stiffness.py`), the
+mass matrix, GPWG and recovery each loop over `bulk.cbars`.
+
+A second element type needs a small per-element interface (local stiffness, mass, transform,
+recovery), with CBAR as its first implementation. Natural first step: the #20 pin-release
+condensation fix, which already rewrites the CBAR local-stiffness and recovery path.
+
+### CROD / CONROD (near; consumer named: engine pylon struts)
+
+Axial + torsion rod (EA/L, GJ/L) with consistent/lumped mass and axial-force/torque recovery.
+
+**Consumer:** engine pylon struts. These are pin-ended, triangulated struts carrying the nacelle
+mass into the wing; CBAR with pin flags is the current workaround.
+
+**Validation targets (closed form):**
+- fixed–free axial rod, δ = PL/EA; torsion, θ = TL/GJ;
+- a two-strut triangulated pylon under a tip load: member forces by statics;
+- a CONM2 engine on a strut pylon: the mount mode against a hand-derived 2-DOF frequency.
+
+NASTRAN-95 cross-check decks: the truss modal-synthesis series `d02031a`–`d02036a`, and the
+CROD members of `d01011a`.
+
+**Ready to activate:** it has a named consumer, so open an issue when scheduled.
+
+### Model reduction — ASET/OMIT (Guyan), then Craig–Bampton (near)
+
+Reduce a detailed component (pylon, strut-braced or truss structure) onto the stick/a-set
+grids that feed the VLM/DLM chain. It builds on the existing `assembly/reduction.py`
+`reduce_to_aset`.
+
+- **Guyan (static condensation)** first.
+- **Craig–Bampton** (fixed-interface modes) when component dynamics matter (flutter, #14;
+  dynamic gust, #16).
+
+**Validation:**
+- the reduced model reproduces full-model static deflections at retained DOFs exactly (Guyan);
+- the reduced model's modes converge to the full model's modes as the number of component
+  modes grows (Craig–Bampton);
+- NASTRAN-95 automated modal synthesis demos `d02031a`+ (reference output in `demoout/`).
+
+*Superelement/substructure-database machinery is not wanted* (already rejected in
+`designs/amode_card.md`).
+
+### Rod / shear-panel aeroelastic box model, no beam (far future)
+
+A wing/fuselage box idealised as rods (caps, stringers) plus CSHEAR/PSHEAR webs, with
+membrane skins (CQDMEM/CTRMEM-class, in-plane only).
+
+Prerequisites:
+- the element interface above;
+- an AUTOSPC-style treatment of rotational DOFs that have no stiffness;
+- SPLINE1 (or an SPLINE4-type surface spline) to carry aero loads onto the box;
+- element-level recovery (shear flows, rod loads) for the stress hand-off.
+
+Monitor points and section cuts need **no** change: they are free-body sums of grid loads and do
+not depend on the element type (see the guardrail in `00_program_overview.md`, Architecture).
+A grid-point force balance (MSC `GPFORCE`) is needed only for per-element load paths to stress.
+NASTRAN-95 has none, so design it from MSC documentation.
+
+**Benchmark:** NASTRAN-95 delta-wing series `d01011a`–`d01014a`. This is a quarter delta wing,
+biconvex section: 36 CSHEAR, 48 CROD/CONROD, 17 membranes, with reference output.
 
 ---
 

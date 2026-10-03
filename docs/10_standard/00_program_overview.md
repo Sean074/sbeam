@@ -23,6 +23,16 @@ rule, not a convention:
 | Owns | Per-case physics; **within-run** reduction (per-sample envelopes, `SECTION CUT ENVELOPE`) — only the solver holds per-sample data | Which cases exist; **cross-run** reduction; the critical-case report; all display |
 | Cost of a change | Permanent API: parse, validate, write-back, f06, card reference, charter, gates | A tool with its own gates |
 
+**Element-agnostic loads guardrail (2026-10-02).** Monitor points, section cuts and everything
+downstream of them must consume **free-body grid quantities**: aero, inertia and reaction loads
+at grids, and the resultants built from them. This covers the v0.7.0 loads process, the
+critical-case report and the LRA package. None of it may depend on CBAR internal forces.
+
+This is how the code already works (`results/monitor_points.py`, `results/section_cuts.py`). It
+keeps the loads process valid when the structure moves to rods and reduced components, and
+later to a rod/shear-panel box with no beam (`docs/30_future/02_parked.md`,
+Structural-fidelity route).
+
 ### Layout (decided 2026-09-05)
 
 ```
