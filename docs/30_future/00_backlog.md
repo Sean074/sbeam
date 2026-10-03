@@ -43,7 +43,7 @@ decisions stand (see `docs/40_history/06_sol144_static_aeroelastic.md`).
 
 | Milestone | Definition of done | Key issues |
 |---|---|---|
-| [v0.3.0](https://github.com/Sean074/sbeam/milestone/1) — **Solver capability mature** | SOL 144 + MLOADS engineering-complete **including lateral**: transient monitors, net_loads decision, thrust-in-trim, DEF-M14/M15/M16 closed, aileron/rudder capability with conventions decided, 23.423 tail-gust posing, stable documented output schemas | #2, #3, #6–#10, #29, #30, #31 |
+| [v0.3.0](https://github.com/Sean074/sbeam/milestone/1) — **Solver capability mature** | SOL 144 + MLOADS engineering-complete **including lateral**: transient monitors, net_loads decision, thrust-in-trim, DEF-M14/M15/M16 closed, aileron/rudder capability with conventions decided, 23.423 tail-gust posing, stable documented output schemas, CBAR pin-release/stress/plane defects closed (DEF-M17/M18/M21), rod element for engine pylon struts | #2, #3, #6–#10, #20, #21, #29, #30, #31, #37, #38 |
 | [v0.4.0](https://github.com/Sean074/sbeam/milestone/2) — GUI production-ready | An engineer can author, run and review every v0.3.0 **solver** capability from the viewer without hand-editing BDFs; scripted GUI journey test in CI | #11 (scoping), #34 |
 | [v0.5.0](https://github.com/Sean074/sbeam/milestone/3) — DLM + SOL 145 flutter | GAF export, AMODE Phase 1, DLM D0–D3 anchored to the VLM at k=0, PK flutter, matrix reuse store | #12–#15 |
 | [v0.6.0](https://github.com/Sean074/sbeam/milestone/4) — Dynamic gust loads | RFA state-space, SOL 146 discrete gust + continuous turbulence, Monitor Phase 3 — completes the dynamic case families | #16 |

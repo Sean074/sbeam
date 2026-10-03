@@ -46,8 +46,7 @@ hub couple through:
 - propeller aerodynamic stiffness and damping derivatives (Houbolt–Reed / Ribner strip
   integrals).
 
-**How it fits:** the mount already fits the stick model: CBUSH/CBAR pylon (CROD struts once
-active), with the rotor inertia on a CONM2. What is missing is a way to add hub-grid `B` and
+**How it fits:** the mount already fits the stick model: CBUSH/CBAR pylon (CROD struts, #38), with the rotor inertia on a CONM2. What is missing is a way to add hub-grid `B` and
 `K` terms to the PK flutter equation of #14. Two options:
 - a generic direct-matrix card (DMIG/B2PP/K2PP style);
 - a dedicated propeller card that builds the terms from Ω, `J_p` and the propeller
@@ -207,31 +206,8 @@ The route came out of the 2026-10-02 NASTRAN-95 review. NASTRAN-95 (github.com/n
 NOSA 1.3) is used as a theory and benchmark reference only: no code is copied, and decks are
 rebuilt from published numbers.
 
-### Element interface (enabler for everything below)
-
-Assembly is CBAR-specific today: `assemble_global_stiffness` (`assembly/stiffness.py`), the
-mass matrix, GPWG and recovery each loop over `bulk.cbars`.
-
-A second element type needs a small per-element interface (local stiffness, mass, transform,
-recovery), with CBAR as its first implementation. Natural first step: the #20 pin-release
-condensation fix, which already rewrites the CBAR local-stiffness and recovery path.
-
-### CROD / CONROD (near; consumer named: engine pylon struts)
-
-Axial + torsion rod (EA/L, GJ/L) with consistent/lumped mass and axial-force/torque recovery.
-
-**Consumer:** engine pylon struts. These are pin-ended, triangulated struts carrying the nacelle
-mass into the wing; CBAR with pin flags is the current workaround.
-
-**Validation targets (closed form):**
-- fixed–free axial rod, δ = PL/EA; torsion, θ = TL/GJ;
-- a two-strut triangulated pylon under a tip load: member forces by statics;
-- a CONM2 engine on a strut pylon: the mount mode against a hand-derived 2-DOF frequency.
-
-NASTRAN-95 cross-check decks: the truss modal-synthesis series `d02031a`–`d02036a`, and the
-CROD members of `d01011a`.
-
-**Ready to activate:** it has a named consumer, so open an issue when scheduled.
+**Activated 2026-10-02:** the element interface and CROD/PROD/CONROD (consumer: engine pylon
+struts) moved to issue #38 (v0.3.0) — the write-up lives there.
 
 ### Model reduction — ASET/OMIT (Guyan), then Craig–Bampton (near)
 
@@ -258,7 +234,7 @@ A wing/fuselage box idealised as rods (caps, stringers) plus CSHEAR/PSHEAR webs,
 membrane skins (CQDMEM/CTRMEM-class, in-plane only).
 
 Prerequisites:
-- the element interface above;
+- the element interface (delivered with #38);
 - an AUTOSPC-style treatment of rotational DOFs that have no stiffness;
 - SPLINE1 (or an SPLINE4-type surface spline) to carry aero loads onto the box;
 - element-level recovery (shear flows, rod loads) for the stress hand-off.
