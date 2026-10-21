@@ -161,7 +161,7 @@ Bug reports and pull requests are welcome via the GitHub issue tracker.
 
 `sbeam` implements standard, well-published finite element methods (Euler-Bernoulli beam theory, consistent mass matrix, direct stiffness assembly) using established numerical libraries. It is intended as an educational and exploratory engineering tool.
 
-Results are **not certified** for safety-critical or regulated structural design. The implementation uses simplified assumptions (uniform cross-sections, no shear deformation, global coordinate frame, dense direct solver). Verify any results against an established commercial solver and competent engineering judgement before relying on them for design decisions.
+Results are **not certified** for safety-critical or regulated structural design. The implementation uses simplified assumptions (uniform cross-sections, no shear deformation, global coordinate frame, sparse direct solver for the structure and dense influence-coefficient matrices for the aerodynamics). Verify any results against an established commercial solver and competent engineering judgement before relying on them for design decisions.
 
 The software is provided "as is", without warranty of any kind. See the [LICENSE](LICENSE) file for the full disclaimer of liability.
 
