@@ -1189,6 +1189,18 @@ def _handle_eigrl(fields: list[str], bulk: BulkData) -> None:
     bulk.eigrls[sid] = Eigrl(sid=sid, v1=v1, v2=v2, nd=nd, norm=norm)
 
 
+def _handle_param(fields: list[str], bulk: BulkData) -> None:
+    name = fields[1].strip().upper() if len(fields) > 1 else ""
+    if name == "WTMASS":
+        # WTMASS scales the mass matrix in Nastran; sbeam never converts units (charter §7)
+        value = _to_float(fields[2]) if len(fields) > 2 else 1.0
+        if value != 1.0:
+            raise ValueError(
+                f"PARAM,WTMASS,{value:g} is not supported: sbeam does not scale mass; "
+                "enter mass in the deck's consistent mass unit (charter §7)"
+            )
+
+
 def parse_bulk_data(lines: list[str]) -> BulkData:
     """Parse BDF bulk data lines into a BulkData object.
 
@@ -1585,6 +1597,8 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
             _handle_mldtrim(fields, bulk)
         elif keyword == "MLOADS":
             _handle_mloads(fields, bulk)
+        elif keyword == "PARAM":
+            _handle_param(fields, bulk)
         else:
             warnings.warn(f"Unknown BDF card '{keyword}' — skipped", UserWarning, stacklevel=2)
 
