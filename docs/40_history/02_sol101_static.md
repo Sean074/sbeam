@@ -88,6 +88,7 @@ force/stress recovery, f06 output, GPWG, and resolved SOL 101 defects.
 
 ## Resolved defects
 
+- **DEF-M21** (#37, 2026-10-23, Tier M) — CBAR end-B bending stress sign flipped (one formula on raw nodal moments at both ends) and PBAR I1/I2 planes mislabelled in the card reference; stresses now from +x-face internal resultants via `bar_internal_resultants`, `σ = P/A − Mz·y/I1 + My·z/I2` at both ends, end A bit-identical; gates G1–G6 in `tests/solver/test_cbar_stress_sign.py` and `tests/aero/test_cbar_stress_sign_sol144.py`. Design note `30_future/designs/cbar_stress_recovery_sign.md`.
 - **DEF-M17** (#20, 2026-10-23, Tier M) — CBAR PA/PB releases zeroed instead of condensed (element over-stiff, released end forces non-zero); replaced by static condensation of K and congruent M from one helper shared by assembly and recovery, D5 both-ends mechanism check at parse time, gates V21–V23 + 121-combination invariants. Design note `30_future/designs/cbar_pin_release_condensation.md`.
 
 ### Q1 — SPC reactions written in basic CID 0 instead of the grid CD frame ✅ FIXED (2026-08-03)

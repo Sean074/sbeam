@@ -111,19 +111,24 @@ class TestBarStressRecovery:
     def setup_method(self):
         self.result, self.bulk = _run_cantilever()
 
-    def test_bending_stress_at_fixed_end(self):
-        """Bending stress at recovery point C at end A: σ = Mz*c1/I1."""
+    def test_bending_stress_at_fixed_end_signed(self):
+        """+P in +y at the tip: root fibre C (y = +c1) is in compression,
+        σ_A = −P·L·c1/I1 (DEF-M21 G2: signed, not magnitude)."""
+        bs = self.result.bar_stresses[1]
+        expected_stress = -P * L * c1_val / I1
+        assert bs.sa == pytest.approx(expected_stress, rel=1e-9)
+
+    def test_end_a_matches_face_moment(self):
+        """σ_A = −Mz_face·c1/I1 with Mz_face(0) = −bm2_a (raw nodal, DEF-M18)."""
         bs = self.result.bar_stresses[1]
         bf = self.result.bar_forces[1]
-        mz_a = abs(bf.bm2_a)
-        expected_stress = mz_a * c1_val / I1
-        assert abs(bs.sa) == pytest.approx(expected_stress, rel=1e-3)
+        mz_face_a = -bf.bm2_a
+        assert bs.sa == pytest.approx(-mz_face_a * c1_val / I1, rel=1e-9)
 
-    def test_stress_end_b_smaller(self):
-        """Tip stress should be smaller than fixed-end stress for cantilever."""
+    def test_stress_end_b_zero_moment(self):
+        """At the free end B the moment is zero → bending stress is zero."""
         bs = self.result.bar_stresses[1]
-        # At end B (tip), moment is zero → stress near zero
-        assert abs(bs.sb) < abs(bs.sa)
+        assert bs.sb == pytest.approx(0.0, abs=1e-9 * abs(bs.sa))
 
 
 F_AXIAL = 5000.0  # tension force in X at tip

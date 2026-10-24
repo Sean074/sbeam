@@ -76,6 +76,18 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     import gate.
 
 ### Fixed
+- **DEF-M21** (#37) — CBAR fibre stress at **end B** had the bending term sign-flipped: the
+  one stress formula was applied to raw nodal moments at both ends, and only end A's nodal
+  moment happens to be the negated face moment. Stresses are now recovered from +x-face
+  internal resultants (`bar_internal_resultants`, the single nodal-to-internal conversion),
+  with `σ = P/A − Mz·y/I1 + My·z/I2` at both ends. End-A stresses are bit-identical; end-B
+  bending stresses change sign on every deck with a non-zero end-B moment (SOL 101 and SOL
+  144 f06/viewer). Gates: signed two-plane closed form on the cantilever, per-plane sign
+  anchors, stress continuity at every shared node, the end-B equilibrium identity, and the
+  nodal-load jump condition on the trimmed HA144A. The PBAR `I1`/`I2` rows in the card
+  reference had the planes swapped (code was right): I1 is bending in the element x–y plane
+  (about z), I2 in x–z (about y). `SA/SB` stay total (axial + bending) stresses; the NASTRAN
+  bending-only layout and the force-table faces are #21.
 - **DEF-M17** (#20) — CBAR pin releases (PA/PB) are now **statically condensed** instead of
   zeroed, in assembly and in every force-recovery path from one helper
   (`released_local_stiffness`); the consistent mass is condensed congruently with the same

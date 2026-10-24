@@ -218,8 +218,8 @@ The continuation line is optional (stress recovery points default to 0).
 | PID | `pid` | int | Property ID (unique) | required |
 | MID | `mid` | int | Material ID (references MAT1) | required |
 | A | `A` | float | Cross-sectional area | required |
-| I1 | `I1` | float | Moment of inertia about element y-axis (bending in XZ plane) | required |
-| I2 | `I2` | float | Moment of inertia about element z-axis (bending in XY plane) | required |
+| I1 | `I1` | float | Area moment of inertia for bending in the element x–y plane (plane 1, the plane containing the orientation vector; about local z) | required |
+| I2 | `I2` | float | Area moment of inertia for bending in the element x–z plane (plane 2; about local y) | required |
 | J | `J` | float | Torsional constant | required |
 | NSM | `nsm` | float | Non-structural mass per unit length | `0.0` |
 | C1, C2 | `c1`, `c2` | float | y, z of stress recovery point C | `0.0` |

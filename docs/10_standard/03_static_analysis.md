@@ -218,18 +218,35 @@ For each element:
 
 ### CBAR Stress at Recovery Points
 
-For each recovery point (C, D, E, F) on the PBAR:
+The nodal 12-vector `f_local = [k_e] @ u_local` is first converted to **internal resultants on
+the positive (+x) face** of the section by `bar_internal_resultants` (`solver/sol101.py`), the
+single place where the nodal-to-internal sign conversion happens (DEF-M21, #37):
 
 ```
-sigma = P/A  +  Mz * y / I1  -  My * z / I2
+end A (x = 0):  P = -f[0]   Vy = -f[1]   Vz = -f[2]   T = -f[3]   My_A = -f[4]   Mz_A = -f[5]
+end B (x = L):  P = +f[6]   Vy = +f[7]   Vz = +f[8]   T = +f[9]   My_B = +f[10]  Mz_B = +f[11]
 ```
 
-Where y and z are the recovery point coordinates from the PBAR card. Torsional shear stress is not computed in phase 1.
+This is the section-cut / CBAR end-B sign of `09_conventions.md` §9 applied to both ends: at
+end B the nodal value already is the +x-face resultant; at end A it is the negated one. For
+each recovery point (C, D, E, F) on the PBAR, with (y, z) the point coordinates in the element
+frame, the same formula is then evaluated at both ends:
 
-**Axial sign convention:** The internal axial force P is taken from `f_local[6]` (Fx at end B,
-tension-positive). This value is the same at both ends A and B for a prismatic element with no
-intermediate axial loads. `f_local[0]` (Fx at end A) is the nodal reaction and has the opposite
-sign; it must not be used for stress recovery.
+```
+sigma = P/A  -  Mz * y / I1  +  My * z / I2
+```
+
+Tension is positive; I12 = 0. A +y tip load on a cantilever therefore puts the +y fibres in
+compression at every station. The same fibre at a shared node reads the same stress from end B
+of one element and end A of the next (gate G3), and NASTRAN-95 `sbar2.f` gives the same number
+term by term (its plane-2 moment is the negated +x-face My, so it writes `σ = −M1·y/I1 −
+M2·z/I2`). Torsional shear stress is not computed.
+
+**SA/SB are total stresses** (axial + bending) at ends A and B. NASTRAN's `SA1–4` are
+bending-only with `SA-MAX/SA-MIN` carrying the total; that layout, together with the f06 plane
+labels and the force-table faces, is issue #21 (DEF-M18). Until #21 lands the `BarForce` moments
+`bm1_a`/`bm2_a`/`bm1_b`/`bm2_b` are still the raw nodal values, so the force table and the
+stress table are on different sign conventions at end A (`09_conventions.md` §9).
 
 ---
 

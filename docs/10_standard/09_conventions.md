@@ -213,9 +213,18 @@ Figure: `../figures/sign_conventions_internal_loads.svg`; cut geometry:
   end-A `Fx` is the negated reaction and is deliberately not used
   (`sol101.py:155-156`). Element local frame: `e_x = GB−GA`, `e_y` from the orientation
   vector, `e_z = e_x × e_y` (`assembly/stiffness.py:99-122`).
-- **⚠ End-A bending moments `bm1_a`/`bm2_a` are reported raw** — no statement anywhere
-  fixes which face they are on (the end-B trap called out for axial is not applied to
-  them). **⚠ f06 plane labels are internally inconsistent and half-swapped vs MSC:**
+- **CBAR internal resultants and fibre stress are on the +x face at both ends**
+  (`bar_internal_resultants`, `solver/sol101.py`; DEF-M21 #37): end-B values are the
+  nodal `K·u` values as they stand, end-A values are the negated nodal values, so
+  `P = −f[0] = +f[6]`, `Mz_A = −f[5]`, `Mz_B = +f[11]`, etc. This is the section-cut
+  sign below extended to end A. Stress at a recovery point (y, z) is
+  `σ = P/A − Mz·y/I1 + My·z/I2` at both ends (tension-positive, I1 ↔ x–y plane about z,
+  I2 ↔ x–z plane about y); +Py compresses +y fibres. The same fibre at a shared node
+  reads the same from both elements (`tests/solver/test_cbar_stress_sign.py`). NASTRAN-95
+  `sbar2.f` agrees term by term; its plane-2 moment is `−My`.
+- **⚠ The force-table end-A bending moments `bm1_a`/`bm2_a` are still reported raw**
+  (nodal, the opposite face from the stresses above) until #21 moves `recover_bar_forces`
+  onto the same helper. **⚠ f06 plane labels are internally inconsistent and half-swapped vs MSC:**
   `SHEAR-1 = Fy` matches MSC plane 1, but `BENDING-1 = My` is MSC's plane **2**
   (DEF-M18; `sol101.py:117-124`). Do not map an MSC-trained f06 parser onto sbeam
   columns without checking.

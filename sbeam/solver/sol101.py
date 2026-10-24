@@ -1,5 +1,6 @@
 """SOL 101 static analysis solver."""
 
+from dataclasses import dataclass
 from typing import Optional, Union, cast
 
 import numpy as np
@@ -125,18 +126,78 @@ def recover_bar_forces(
     )
 
 
+@dataclass(frozen=True)
+class BarInternal:
+    """CBAR internal resultants on the positive (+x) face of the section.
+
+    The face convention is the section-cut / CBAR end-B sign of
+    ``09_conventions.md`` §9: each value is the force or moment that the part
+    of the element beyond the station exerts on the station, in the element
+    local frame. Axial ``p`` is tension-positive; ``vy``/``vz`` act along local
+    +y/+z; ``t``, ``my_*``, ``mz_*`` are right-handed about local +x/+y/+z.
+    Without element loads ``p``, ``vy``, ``vz`` and ``t`` are constant along the
+    element, so one value each is kept; the bending moments differ between
+    the ends and are kept per end.
+    """
+    p: float
+    vy: float
+    vz: float
+    t: float
+    my_a: float
+    mz_a: float
+    my_b: float
+    mz_b: float
+
+
+def bar_internal_resultants(f_local: FloatArray) -> BarInternal:
+    """Convert the element-frame nodal 12-vector ``f_local = K·u`` to +x-face
+    internal resultants (DEF-M21, #37).
+
+    ``f_local`` holds the forces the nodes exert on the element:
+    ``[Fx_A, Fy_A, Fz_A, Mx_A, My_A, Mz_A, Fx_B, Fy_B, Fz_B, Mx_B, My_B, Mz_B]``.
+    At end B the nodal value *is* the +x-face internal resultant; at end A the
+    +x-face resultant is the negated nodal value. This is the only place in
+    the solver where that nodal-to-internal sign conversion happens; stress
+    recovery (and, from #21, force recovery) consumes it.
+
+    End-B moments are read directly from ``f_local[10]``/``f_local[11]``, not
+    rebuilt from end A by equilibrium. Without element loads the two agree
+    (``Mz_B = Mz_A − Vy·L``, ``My_B = My_A + Vz·L``; gate G4 of
+    ``docs/30_future/designs/cbar_stress_recovery_sign.md``). A future PLOAD1
+    implementation must revisit this function.
+    """
+    return BarInternal(
+        p=float(f_local[6]),
+        vy=float(f_local[7]),
+        vz=float(f_local[8]),
+        t=float(f_local[9]),
+        my_a=-float(f_local[4]),
+        mz_a=-float(f_local[5]),
+        my_b=float(f_local[10]),
+        mz_b=float(f_local[11]),
+    )
+
+
 def _stress_at_point(
-    fx_a: float, mz_a: float, my_a: float,
+    p: float, mz: float, my: float,
     y: float, z: float, A: float, I1: float, I2: float,
 ) -> float:
-    """σ = Fx/A + Mz*y/I1 - My*z/I2"""
+    """Fibre stress at (y, z) from +x-face internal resultants:
+    ``σ = P/A − Mz·y/I1 + My·z/I2`` (tension-positive; I12 = 0).
+
+    ``mz``/``my`` must be the positive-face internal moments from
+    :func:`bar_internal_resultants`, never raw nodal values. The same formula
+    holds at both ends. NASTRAN-95 ``sbar2.f`` writes it as
+    ``σ = −M1·y/I1 − M2·z/I2`` with its plane-2 moment ``M2 = −My``; the two
+    agree term by term.
+    """
     stress = 0.0
     if A > 0:
-        stress += fx_a / A
+        stress += p / A
     if I1 > 0:
-        stress += mz_a * y / I1
+        stress -= mz * y / I1
     if I2 > 0:
-        stress -= my_a * z / I2
+        stress += my * z / I2
     return stress
 
 
@@ -144,21 +205,20 @@ def recover_bar_stresses(
     cbar: Cbar, grids: dict[int, Grid], pbars: dict[int, Pbar],
     mat1s: dict[int, Mat1], displacements: FloatArray, grid_index: dict[int, int],
 ) -> BarStress:
-    """Recover CBAR stresses at PBAR recovery points."""
+    """Recover CBAR stresses at PBAR recovery points.
+
+    ``sa*``/``sb*`` are the **total** fibre stress (axial + bending) at ends A
+    and B, evaluated on the +x-face internal resultants so the same fibre at a
+    shared node reads the same from both adjoining elements. NASTRAN's
+    bending-only ``SA1–4`` + ``SA-MAX/MIN`` layout is #21.
+    """
     f_local = _element_local_forces(cbar, grids, pbars, mat1s, displacements, grid_index)
+    r = bar_internal_resultants(f_local)
 
     pbar = pbars[cbar.pid]
     A = pbar.A
     I1 = pbar.I1
     I2 = pbar.I2
-
-    # f_local[6] = Fx at end B = internal axial force P, tension-positive.
-    # f_local[0] = Fx at end A is sign-negated (reaction) — do not use for stress.
-    p_axial = f_local[6]
-    my_a = f_local[4]
-    mz_a = f_local[5]
-    my_b = f_local[10]
-    mz_b = f_local[11]
 
     recovery_pts = {
         "C": (pbar.c1, pbar.c2),
@@ -168,13 +228,13 @@ def recover_bar_stresses(
     }
     stresses = {
         pt: (
-            _stress_at_point(p_axial, mz_a, my_a, y, z, A, I1, I2),
-            _stress_at_point(p_axial, mz_b, my_b, y, z, A, I1, I2),
+            _stress_at_point(r.p, r.mz_a, r.my_a, y, z, A, I1, I2),
+            _stress_at_point(r.p, r.mz_b, r.my_b, y, z, A, I1, I2),
         )
         for pt, (y, z) in recovery_pts.items()
     }
 
-    axial_stress = p_axial / A if A > 0 else 0.0
+    axial_stress = r.p / A if A > 0 else 0.0
 
     return BarStress(
         eid=cbar.eid,

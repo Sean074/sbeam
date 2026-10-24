@@ -1,6 +1,6 @@
 # CBAR stress recovery from face-consistent internal moments — design note for issue #37
 
-**Status:** ✅ **agreed 2026-10-02** (CLAUDE.md rule 1): D3 defer SA layout to #21, D1 direct end-B moments with G4 gate and sequencing #20 → #37 → #21 all accepted as recommended; not yet implemented.
+**Status:** ✅ **agreed 2026-10-02**, ✅ **implemented 2026-10-23** (CLAUDE.md rule 1): D3 defer SA layout to #21, D1 direct end-B moments with G4 gate and sequencing #20 → #37 → #21 all accepted as recommended. Implementation decisions in §9.
 - **Milestone:** [v0.3.0](https://github.com/Sean074/sbeam/milestone/1).
 - **Tier M:** behaviour change to an existing output. No new card and no new physics.
 - **Issue:** [#37](https://github.com/Sean074/sbeam/issues/37) (DEF-M21): the end-B bending
@@ -196,3 +196,31 @@ The closed-form column is the G1 expectation.
 2. **D1:** end-B moments are taken directly from `f[10]`, `f[11]`, with the G4 equilibrium
    gate, as recommended.
 3. **Sequencing:** #20 → #37 → #21, as recommended.
+
+## 9. Implementation decisions (2026-10-23)
+
+1. **Helper signature is `bar_internal_resultants(f_local) -> BarInternal`** — no `L`
+   argument. End-B moments are read directly (D1), so the length is not needed; passing an
+   unused parameter only to document the future PLOAD1 dependency was rejected in favour of
+   the docstring and the G4 gate. `BarInternal` is a frozen dataclass beside the helper in
+   `solver/sol101.py` with one `p`/`vy`/`vz`/`t` (constant without element loads) and
+   per-end `my_a`/`mz_a`/`my_b`/`mz_b`.
+2. **G6 restated as a jump condition.** On the trimmed full-span HA144A every shared node of
+   a collinear same-section pair is loaded (splined aero and CONM2 inertia via the RBAR'd
+   chord grids at 110/120, inertia at the fuselage grids), so G3 continuity cannot hold
+   there: the wing node 110 carries a net nodal `Mz` of ≈5.0e3 at trim. The gate now asserts
+   `σ_A(e+1) − σ_B(e)` equals the stress of the net nodal load at the shared grid (sum of the
+   two elements' nodal values), which reduces to G3 on the fuselage nodes (net moment ≈0) and
+   would leave a residual of twice the end moment under the old end-B face. End-A
+   bit-identity on the SOL 144 path is asserted separately.
+   `tests/aero/test_cbar_stress_sign_sol144.py`.
+3. **G5 is asserted as exact float equality** against the pre-#37 expression on the raw
+   nodal vector (negation and sign-symmetric multiplication are exact in IEEE arithmetic),
+   on both the SOL 101 cantilever and the HA144A trim.
+4. **Measured G1 values** (C = (+0.15811, +0.15811) as on the sample PBAR, Px = 5000,
+   Py = 1000, Pz = 2000): el 5 end B at C = −2.79598e6 and at E = +2.89598e6; all values match
+   `σ = Px/A − Py(L−x)y/I1 − Pz(L−x)z/I2` to 1e-9 relative at both ends of elements 1, 5, 6
+   and 9; el 5 end B equals el 6 end A to 1e-12.
+5. **Existing test moved from magnitude to sign:** `test_sol101_recovery.py`
+   `TestBarStressRecovery` now asserts `σ_A = −P·L·c1/I1` (compression at +y under +Py) and
+   zero end-B bending stress at the free tip.
