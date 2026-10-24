@@ -76,6 +76,16 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     import gate.
 
 ### Fixed
+- **DEF-M17** (#20) — CBAR pin releases (PA/PB) are now **statically condensed** instead of
+  zeroed, in assembly and in every force-recovery path from one helper
+  (`released_local_stiffness`); the consistent mass is condensed congruently with the same
+  transformation. Zeroing left every pin-flagged element over-stiff (fixed–pinned 4× too
+  stiff; a clamped–pinned span reported the clamped–clamped frequency) and recovered
+  non-zero forces at released DOFs. Released end forces are now exactly zero. Releasing the
+  same translation/torsion digit (1–4) at both ends is refused at parse time (internal
+  mechanism; use `56` for a two-force member) — `PA=PB=456` decks must change to `56`.
+  Gates V21–V23 (δ = PL³/3EI, clamped–pinned 11.30667 Hz, N=4 mass-condensation
+  regression) and a 121-combination invariant test. No shipped deck used pin flags.
 - **DEF-M20** (#23) — a prescribed negative `URDD3` against an absent or z-up RCSID now
   warns instead of silently trimming inverted lift. Closed with #1, which is what makes
   the trap reachable in ordinary work: a down-gust is a genuine negative-`n` case.

@@ -306,8 +306,11 @@ is read as a vector component, not a grid reference.
 
 Pin-release DOF digits (PA/PB) are in **element local axes** (1 = axial, 4 = torsion,
 5/6 = local bending rotations), not the global DOFs of the DOF Reference table.
-Releases zero the corresponding rows/columns of the local 12×12 stiffness before
-transformation to global.
+Released DOFs are removed by static condensation of the local 12×12 stiffness (and,
+congruently, the consistent mass) before transformation to global; a released end
+reports exactly zero force in that component (`03_static_analysis.md` "Pin Releases").
+Releasing the same digit 1–4 at both ends raises `ValueError` (internal mechanism);
+use `56` for a two-force member.
 
 **Example:**
 ```

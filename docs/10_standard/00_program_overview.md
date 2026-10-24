@@ -385,8 +385,12 @@ Tests mirror the `sbeam/` module structure under `tests/`. Each assembly, solver
 | V16 | `v16_grav_with_conm2.bdf` | 101 | Reactions sum to (ρAL + m_conm2)·g (CBAR mass + CONM2 under GRAV) | < 0.01% |
 | V17 | `v17_grav_plus_force.bdf` | 101 | Reactions sum to net load (GRAV + upward FORCE combined via LOAD card) | < 0.01% |
 | V18 | `v18_rbe2_offset.bdf` | 101 | u_y at GN/GM satisfy cantilever formula with eccentric load; u_GM = R·u_GN (RBE2 lever-arm) | < 0.1% |
+| V20 | `v20_cbush_grounded_spring.bdf` | 101 | u = F/K; CBUSH force = K·u | < 0.01% |
+| V21 | `v21_fixed_pinned_tip_load.bdf` | 101 | Pin release `PB=6`: δ = PL³/3EI, root moment = −PL, released end-B moment exactly 0 (DEF-M17 G1) | 1e-10 rel; 0 abs |
+| V22 | `v22_clamped_pinned_modal_n20.bdf` | 103 | 20 elements, grid ends clamped, last element `PB=56`: f₁ = (3.92660²/2π)√(EI/ρAL⁴) = 11.30667 Hz, double root (DEF-M17 G2) | < 0.01% |
+| V23 | `v23_clamped_pinned_modal_n4.bdf` | 103 | Same at N=4: 11.31450 Hz regression value pinning the congruent mass condensation (DEF-M17 G2b) | 1e-6 rel |
 
-V1–V7 use: E=2.0×10¹¹ Pa, ρ=7850 kg/m³, A=0.05 m², I=8.333×10⁻⁴ m⁴, L=1.0 m, 10 CBAR elements. V8–V18 use parameters defined in their BDF files; see `tests/integration/test_verification.py` for exact values.
+V1–V7 use: E=2.0×10¹¹ Pa, ρ=7850 kg/m³, A=0.05 m², I=8.333×10⁻⁴ m⁴, L=1.0 m, 10 CBAR elements. V8–V23 use parameters defined in their BDF files; see `tests/integration/test_verification.py` for exact values.
 
 ### Integration tests — shipped sample decks (VAL2)
 

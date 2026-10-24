@@ -1,0 +1,35 @@
+$ V21: Fixed–pinned single CBAR, tip load — SOL 101 pin-release verification
+$ Clamped at GA; PB=6 releases the local-z bending rotation at GB (grid 2 R3 SPC'd
+$ so the released grid DOF is not singular). The released end carries no moment:
+$ delta = P L^3 / 3EI = 2.000080e-6 m, root moment = -P L = -1000 N m,
+$ recovered end-B bending moment = 0 exactly.
+$ Units: SI. E=2.0e11, A=0.1, I1=I2=8.333e-4, L=1.0, P=1000 N in +Y
+$ Gate for designs/cbar_pin_release_condensation.md (DEF-M17 / #20): G1
+$
+SOL 101
+$
+SUBCASE 1
+  TITLE = Fixed-Pinned Tip Load (pin release)
+  SPC = 1
+  LOAD = 10
+  DISPLACEMENT = ALL
+  SPCFORCE = ALL
+  FORCE = ALL
+$
+BEGIN BULK
+$
+GRID, 1, , 0.0, 0.0, 0.0
+GRID, 2, , 1.0, 0.0, 0.0
+$
+MAT1, 1, 2.0e11, 7.692e10, 0.3, 7850.0
+PBAR, 1, 1, 0.1, 8.333e-4, 8.333e-4, 1.406e-3
+$
+CBAR, 1, 1, 1, 2, 0.0, 1.0, 0.0
++, , 6
+$
+SPC1, 1, 123456, 1
+SPC1, 1, 6, 2
+$
+FORCE, 10, 2, 0, 1000.0, 0.0, 1.0, 0.0
+$
+ENDDATA

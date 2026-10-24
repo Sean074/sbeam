@@ -13,7 +13,7 @@ from sbeam.assembly.stiffness import (
     assemble_global_stiffness,
     get_spc_dofs,
     check_spc_enforced_displacements,
-    local_stiffness,
+    released_local_stiffness,
     transform_matrix,
     cbush_stiffness_global,
 )
@@ -93,7 +93,7 @@ def _element_local_forces(
         np.array([gb.x - ga.x, gb.y - ga.y, gb.z - ga.z])
     ))
 
-    K_local = local_stiffness(pbar, mat1, L)
+    K_local, _ = released_local_stiffness(pbar, mat1, L, cbar.pa, cbar.pb)
     T = transform_matrix(cbar, grids)
 
     u_local = T @ u_global_elem

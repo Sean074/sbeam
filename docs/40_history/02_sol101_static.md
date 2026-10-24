@@ -88,6 +88,8 @@ force/stress recovery, f06 output, GPWG, and resolved SOL 101 defects.
 
 ## Resolved defects
 
+- **DEF-M17** (#20, 2026-10-23, Tier M) — CBAR PA/PB releases zeroed instead of condensed (element over-stiff, released end forces non-zero); replaced by static condensation of K and congruent M from one helper shared by assembly and recovery, D5 both-ends mechanism check at parse time, gates V21–V23 + 121-combination invariants. Design note `30_future/designs/cbar_pin_release_condensation.md`.
+
 ### Q1 — SPC reactions written in basic CID 0 instead of the grid CD frame ✅ FIXED (2026-08-03)
 
 **Objective:** Q1 sat in the backlog as "verify intentional", on the premise that *NASTRAN

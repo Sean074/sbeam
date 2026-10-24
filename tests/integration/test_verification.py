@@ -1,4 +1,4 @@
-"""Step 24: End-to-end integration verification tests (V1–V20).
+"""Step 24: End-to-end integration verification tests (V1–V23).
 
 Each test reads a BDF file through parse_bdf, runs the solver, and checks
 the result against a closed-form analytical value.
@@ -697,3 +697,64 @@ class TestV20CbushGroundedSpring:
         assert 1 in result.cbush_forces
         f_cbush = result.cbush_forces[1][0]
         assert abs(f_cbush) == pytest.approx(K_V20 * tx, rel=1e-4)
+
+
+# ---------------------------------------------------------------------------
+# V21–V23 — CBAR pin releases by static condensation (DEF-M17 / #20)
+# Design note: docs/30_future/designs/cbar_pin_release_condensation.md (G1, G2, G2b)
+# ---------------------------------------------------------------------------
+
+A_V21 = 0.1
+P_V21 = 1000.0
+
+
+class TestV21FixedPinnedTipLoad:
+    """G1: clamped at GA, PB=6 at GB. δ = PL³/3EI, root moment −PL, end-B moment exactly 0."""
+
+    @pytest.fixture(scope="class")
+    def solved(self) -> tuple[Sol101Result, dict[int, int], BulkData]:
+        cc, bulk = parse_bdf(BDF_DIR / "v21_fixed_pinned_tip_load.bdf")
+        result = run_sol101(bulk, cc.subcases[0])
+        return result, build_grid_index(bulk), bulk
+
+    def test_tip_deflection(self, solved) -> None:
+        result, gi, _ = solved
+        ty = result.displacements[6 * gi[2] + 1]
+        assert ty == pytest.approx(P_V21 * L**3 / (3 * E * I), rel=1e-10)
+
+    def test_root_moment(self, solved) -> None:
+        result, gi, _ = solved
+        assert result.reactions[1][5] == pytest.approx(-P_V21 * L, rel=1e-10)
+
+    def test_released_end_moment_zero(self, solved) -> None:
+        result, _, _ = solved
+        bf = result.bar_forces[1]
+        assert bf.bm2_b == 0.0
+        assert bf.bm2_a == pytest.approx(-P_V21 * L, rel=1e-10)
+
+
+L_V22 = 10.0
+F1_CLAMPED_PINNED = (3.92660 ** 2 / (2 * math.pi)) * math.sqrt(E * I / (rho * A_V21 * L_V22 ** 4))
+
+
+class TestV22ClampedPinnedModalN20:
+    """G2: 20 elements, both grid ends clamped, last element PB=56 → clamped–pinned in both
+    planes. f₁ = (3.92660²/2π)√(EI/ρAL⁴) = 11.30667 Hz as a double root."""
+
+    def test_first_pair_matches_closed_form(self) -> None:
+        cc, bulk = parse_bdf(BDF_DIR / "v22_clamped_pinned_modal_n20.bdf")
+        result = run_sol103(bulk, cc.subcases[0])
+        assert result.frequencies_hz[0] == pytest.approx(F1_CLAMPED_PINNED, rel=1e-4)
+        assert result.frequencies_hz[1] == pytest.approx(F1_CLAMPED_PINNED, rel=1e-4)
+
+
+class TestV23ClampedPinnedModalN4:
+    """G2b: the N=4 regression value pins the congruent mass condensation (D3).
+    Condensed K with the raw consistent mass gives 11.47135 Hz; zeroing gives 16.4 Hz."""
+
+    def test_first_pair_regression(self) -> None:
+        cc, bulk = parse_bdf(BDF_DIR / "v23_clamped_pinned_modal_n4.bdf")
+        result = run_sol103(bulk, cc.subcases[0])
+        assert result.frequencies_hz[0] == pytest.approx(11.31450, rel=1e-6)
+        assert result.frequencies_hz[1] == pytest.approx(11.31450, rel=1e-6)
+        assert result.frequencies_hz[0] == pytest.approx(F1_CLAMPED_PINNED, rel=1e-3)

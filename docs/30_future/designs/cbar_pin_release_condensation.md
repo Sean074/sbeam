@@ -1,6 +1,6 @@
 # CBAR pin releases by static condensation — design note for issue #20
 
-**Status:** ✅ **agreed 2026-10-02** (CLAUDE.md rule 1): D3 congruent mass, D5 validation error and G2 in both planes all accepted as recommended; not yet implemented.
+**Status:** ✅ **agreed 2026-10-02**, ✅ **implemented 2026-10-23** (CLAUDE.md rule 1): D3 congruent mass, D5 validation error and G2 in both planes all accepted as recommended. Implementation decisions 4–7 in §8.
 - **Milestone:** [v0.3.0](https://github.com/Sean074/sbeam/milestone/1).
 - **Tier M:** behaviour change to an existing capability. No new card and no new physics:
   the release semantics are standard NASTRAN.
@@ -194,3 +194,20 @@ and `local_mass`, with sequential condensation as in D1/D3. It produced every nu
 1. **D3:** congruent mass condensation `M' = TᵀMT`, as recommended.
 2. **D5:** validation error for the same digit 1–4 at both ends, as recommended.
 3. **G2:** runs in both bending planes (`PB=56`), as recommended.
+
+## 9. Implementation decisions (2026-10-23)
+
+4. **G3 / D5 conflict:** the truss gate and the `03_static_analysis.md` idiom used
+   `PA=PB="456"`, which D5 rejects (digit 4 at both ends). Both now use `"56"`, and the D5
+   error message suggests it.
+5. **Helper shape:** `released_local_stiffness(pbar, mat1, L, pa, pb) -> (K', T)` and the
+   pure `condense_released_dofs(K, released) -> (K', T)` live in `assembly/stiffness.py`;
+   `mass_matrix.element_mass_global` applies `M' = TᵀMT` with that `T` (it cannot be a single
+   `(K', M')` function without a `stiffness → mass_matrix` import cycle). `T` is returned so a
+   future PLOAD1 implementation can condense fixed-end loads (`f' = Tᵀf`, D6).
+6. **D5 enforcement:** at parse time in `_handle_cbar`, beside the GA/GB/PID checks; PA/PB
+   digit strings are also validated there (`_validate_dof`).
+7. **Gates landed as:** G1 → V21 + `TestG1FixedPinned`; G2/G2b → V22/V23; G3 →
+   `TestG3TrussAnalytical` (I1 = I2 = 8.333e-4, J = 1.406e-3); G4 → `TestG4Invariants`
+   (102 allowed combinations of 121); G5 → `TestG5SingleSource` (AST scan); G6 →
+   `TestG6SameDofBothEnds`. Measured: V22 11.30668 Hz, V23 11.31450 Hz, as predicted.

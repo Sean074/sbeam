@@ -40,7 +40,7 @@ CONM2 concentrated masses contribute a full 6×6 symmetric block to the global m
 ## Global Mass Assembly
 
 1. Initialise `M_global` as a `(6N × 6N)` zero matrix.
-2. For each CBAR element: compute local consistent mass matrix `[m_e]` and transform to global coordinates using the same `[T]` as used for the stiffness matrix.
+2. For each CBAR element: compute local consistent mass matrix `[m_e]` and transform to global coordinates using the same `[T]` as used for the stiffness matrix. On a pin-flagged element (PA/PB) the local mass is first condensed congruently with the stiffness release transformation, `M' = TᵀMT` (NASTRAN-95 `bard.f`), so the released DOF follows the static deflected shape; on a 4-element clamped–pinned span this is the difference between +1.5 % and +0.07 % on f₁ (V23).
 3. Scatter into `M_global` at DOF positions of GA and GB.
 4. For each CONM2: assemble the full 6×6 symmetric mass block into `M_global` at the referenced grid's DOF base. Block includes: `m·I₃` (translational), `−m·skew(r)` / `m·skew(r)ᵀ` (coupling, non-zero only when offset r ≠ 0), and `I_cm + m·(|r|²·I₃ − r·rᵀ)` (rotational, parallel axis + CM inertia).
 

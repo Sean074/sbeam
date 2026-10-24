@@ -24,14 +24,15 @@ CBAR, 4, 1, 4, 5, 0.0, 1.0, 0.0
 CBAR, 5, 1, 5, 6, 0.0, 1.0, 0.0
 """.splitlines()
 
-# CBAR with pin releases (moment hinges at both ends)
+# CBAR with pin releases (moment hinges at both ends — a two-force member).
+# PA=PB=456 is refused since DEF-M17 (torsion released at both ends is a mechanism).
 _PINNED_CBAR = """\
 GRID, 1, , 0.0, 0.0, 0.0
 GRID, 2, , 1.0, 0.0, 0.0
 PBAR, 1, 1, 0.1, 8.333e-4, 8.333e-4, 1.406e-3
 MAT1, 1, 2.0e11, 7.692e10, 0.3, 7850.0
 CBAR, 10, 1, 1, 2, 0.0, 1.0, 0.0
-+, 456, 456
++, 56, 56
 """.splitlines()
 
 # Model with PLOTEL and CONM2
@@ -107,10 +108,10 @@ class TestCbarCantilever:
 
 class TestCbarPinFlags:
     def test_pin_flag_pa(self, pinned):
-        assert pinned.cbars[10].pa == "456"
+        assert pinned.cbars[10].pa == "56"
 
     def test_pin_flag_pb(self, pinned):
-        assert pinned.cbars[10].pb == "456"
+        assert pinned.cbars[10].pb == "56"
 
 
 # ---------------------------------------------------------------------------

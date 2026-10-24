@@ -182,6 +182,19 @@ def _handle_cbar(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -
         raise ValueError(f"CBAR {eid}: grid GB={gb} not found")
     if pid not in bulk.pbars:
         raise ValueError(f"CBAR {eid}: property PID={pid} not found")
+    if pa:
+        _validate_dof(pa, f"CBAR {eid} PA")
+    if pb:
+        _validate_dof(pb, f"CBAR {eid} PB")
+    # Releasing the same translation or torsion at both ends leaves an internal
+    # mechanism (designs/cbar_pin_release_condensation.md D5).
+    for d in "1234":
+        if d in pa and d in pb:
+            raise ValueError(
+                f"CBAR {eid}: DOF {d} released at both ends (PA={pa}, PB={pb}) leaves "
+                f"an internal mechanism; release only bending rotations (e.g. PA=PB=56) "
+                f"for a two-force member"
+            )
     bulk.cbars[eid] = Cbar(eid=eid, pid=pid, ga=ga, gb=gb,
                            x1=x1, x2=x2, x3=x3, offt=offt, pa=pa, pb=pb)
 

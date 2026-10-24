@@ -10,7 +10,7 @@ from sbeam.model.property import Pbar
 from sbeam.model.material import Mat1
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.grid import Grid
-from sbeam.assembly.stiffness import transform_matrix, node_dofs
+from sbeam.assembly.stiffness import transform_matrix, node_dofs, released_local_stiffness
 from sbeam.types import FloatArray, SparseMatrix
 from sbeam.assembly.coord_transform import build_transform
 
@@ -80,6 +80,11 @@ def element_mass_global(
     L = float(np.linalg.norm(dx))
 
     M_local = local_mass(pbar, mat1, L)
+    if cbar.pa or cbar.pb:
+        # Congruent condensation with the stiffness transform (NASTRAN-95 bard.f):
+        # the released DOF follows the static deflected shape.
+        _, T_rel = released_local_stiffness(pbar, mat1, L, cbar.pa, cbar.pb)
+        M_local = T_rel.T @ M_local @ T_rel
     T = transform_matrix(cbar, grids)
 
     return T.T @ M_local @ T

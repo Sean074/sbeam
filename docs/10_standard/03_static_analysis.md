@@ -129,12 +129,29 @@ the model solved with the DOF free to follow its master and no reaction reported
 
 ## Pin Releases (PA, PB)
 
-Pin releases on a CBAR element free specified DOFs at end A (PA) or end B (PB) before the element stiffness contributes to global assembly.
+Pin releases on a CBAR element free specified DOFs at end A (PA) or end B (PB). A released
+DOF carries **no force**: it is removed from the element by **static condensation** (the
+Schur complement, i.e. Guyan reduction at element level, exact for statics), not by zeroing.
+Zeroing discards the coupling of the released DOF into the retained ones and leaves the
+element over-stiff (DEF-M17: a fixed–pinned element came out 4× too stiff). Design note:
+`docs/30_future/designs/cbar_pin_release_condensation.md`.
 
-**Implementation** (`apply_pin_releases(K_local, pa, pb)` in `assembly/stiffness.py`):
-- For each DOF code `d` in PA: zero row and column `d-1` (0-based) of the 12×12 local K.
-- For each DOF code `d` in PB: zero row and column `d-1+6` (0-based) of the 12×12 local K.
-- Pin releases are applied after `local_stiffness()` and before the coordinate transformation.
+**Implementation** (`released_local_stiffness(pbar, mat1, L, pa, pb)` → `(K', T)` and
+`condense_released_dofs(K, released)` in `assembly/stiffness.py`):
+- Released local indices: digit `d` in PA → `d-1`, in PB → `d+5` (`release_indices`).
+- One released DOF *i* at a time, in element local axes before the coordinate
+  transformation (the NASTRAN-95 `kbar.f` form, order-independent):
+  `K ← K − K[:,i]·K[i,:] / K[i,i]`, then zero row and column *i*. If
+  `|K[i,i]| ≤ 1e-12·max|diag K|` (e.g. I1 = 0 or J = 0) the row/column is only zeroed.
+- `T` is the transformation with `u_released = −K[i,r]·u_r / K[i,i]`, so `K' = TᵀKT`.
+  The consistent mass is condensed congruently with the same `T` (`M' = TᵀMT`,
+  `assembly/mass_matrix.py`; see `04_modal_analysis.md`), and any future fixed-end load
+  vector must be condensed as `f' = Tᵀf`.
+- The **same `K'`** is used for assembly and for every force-recovery path
+  (`_element_local_forces` in `solver/sol101.py`, serving SOL 101, SOL 144 and MLOADS).
+  Released rows of `K'` are zero, so the recovered force at a released DOF is **exactly
+  zero** by construction. A test asserts that nothing else in `sbeam/` builds the
+  unreleased CBAR matrices.
 
 **DOF code mapping (1-based):**
 
@@ -147,9 +164,19 @@ Pin releases on a CBAR element free specified DOFs at end A (PA) or end B (PB) b
 | 5 | 4, 10 | Bending moment (Ry) |
 | 6 | 5, 11 | Bending moment (Rz) |
 
-**Typical use:** PA=PB="456" releases torsion and both bending moments at both ends, making the element behave as a pure truss member (only transmits axial and transverse shear). When combined with SPC constraints that fix rotational DOFs at all free joints, the element provides exactly the truss stiffness matrix.
+**Typical use:** `PA=PB="56"` releases both bending rotations at both ends, making the
+element a **two-force member**: it transmits axial force (and torsion) only — once both end
+moments are released, no transverse shear can survive. Releasing a single bending rotation
+at one end (`PB=6`) gives a fixed–pinned member.
 
-**Note:** Released DOFs that are not otherwise constrained (by SPC or connected elements) will produce zero-stiffness rows in the global K, causing a singular matrix. Always SPC rotational DOFs at all free joints when using PA=PB="456" truss members.
+**Validation:** releasing the same translation or torsion digit (1–4) at **both** ends
+leaves an internal mechanism (the element cannot carry that load and its rigid mass in that
+direction is undefined), so the parser refuses it with a `ValueError` naming the element and
+digit. `PA=PB="456"` is therefore an error; use `"56"`. Rotations 5/6 at both ends are
+allowed.
+
+**Note:** a released grid DOF that no other element or SPC stiffens is a singular row of
+the global K. Constrain rotational DOFs at free joints of `PA=PB="56"` truss members.
 
 ---
 
