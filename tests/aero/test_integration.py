@@ -288,12 +288,14 @@ class TestBuildDjRigidRate:
         dofs = [1, 2, 3, 4, 5, 6]
         got = build_dj_rigidrate(boxes, dofs, bulk, v)
 
+        # Regression pin of the #8 (DEF-M15) signs; the source of truth is the
+        # kinematic identity in tests/aero/test_rate_column_kinematics.py.
         expected_scale = {
-            2: ("SIDES", 1.0 / v),
+            2: ("SIDES", -1.0 / v),
             3: ("ANGLEA", -1.0 / v),
-            4: ("ROLL", b_ref / (2.0 * v)),
+            4: ("ROLL", -b_ref / (2.0 * v)),
             5: ("PITCH", c_ref / (2.0 * v)),
-            6: ("YAW", b_ref / (2.0 * v)),
+            6: ("YAW", -b_ref / (2.0 * v)),
         }
         assert np.allclose(got[:, 0], 0.0)      # DOF 1: no k=0 streamwise effect
         for k, dof in enumerate(dofs):

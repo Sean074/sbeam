@@ -130,9 +130,10 @@ def test_physical_rate_column_matches_the_label_column(rect):
     label = build_fjx_yaw(aero.boxes, f_ref, bulk)
     assert np.allclose(phys, rigid_rate_scales(bulk, v_inf)[6] * label,
                        rtol=0, atol=0)
-    # ... and equals the raw physical form −2·(y/V)·f_ref.
+    # ... and equals the raw physical form +2·(y/V)·f_ref: a positive rate about
+    # basic +z advances the starboard wing (higher q∞, more load) (#8, DEF-M15).
     y = np.repeat([b.force_point[1] for b in aero.boxes], 3)
-    assert np.allclose(phys, -2.0 * (y / v_inf) * f_ref, rtol=1e-12)
+    assert np.allclose(phys, 2.0 * (y / v_inf) * f_ref, rtol=1e-12)
 
 
 # ---------------------------------------------------------------------------

@@ -296,4 +296,19 @@ CHANGELOG **Added** + **Changed**; `40_history/06` **full step format** +
 
 ## 9. Implementation decisions
 
-*(appended per issue at closure)*
+**#8 (closed 2026-10-24):**
+1. The three rate columns dispatch through one table `_RATE_LABEL_AXIS = {PITCH: (+ŷ, cref),
+   ROLL: (−x̂, bref), YAW: (−ẑ, bref)}` and one function `_rate_column`; no per-label branch
+   remains in `build_djx`. `r_ref` is the full RCSID origin (was `x_ref` only).
+2. G1 builds the velocity field by placing a one-grid throwaway `BulkData` at each collocation
+   point and calling `build_rigid_vectors_g` — the literal `rigid_body.py` primitive, not a
+   re-derivation. Parametrized over the flagship (fin, dihedral, off-origin RCSID), the planar
+   AR 8 wing and the dihedral wing.
+3. G3 frees the flagship MLOADS deck in `SUPORT 23456` in-test (SPC1 reduced to surge) and
+   asserts every rigid diagonal of `B_hh` is negative (`C = C_struct − q·B_hh`); the fin makes
+   the three lateral entries observable. The pre-#8 scales fail it on DOFs 2, 4, 6.
+4. Measured impact (before/after on all twelve SOL 144 samples, single-threaded BLAS): HA144A
+   family and `val_dihedral_trim` bit-identical except the HA144A **body** deck, whose strip
+   panels lost the same spurious `CY_q = −0.27`; flagship `TRIM 2` ELEV −0.16824 → −0.16910,
+   ANGLEA +0.002 %, total CY 5.3e-3 → 9e-7, CMZ 2.3e-3 → −5e-7, whole-aircraft aero monitor
+   Fy 202.6 N → 0.03 N; wing-root section loads < 0.01 %. All pinned tests passed unchanged.

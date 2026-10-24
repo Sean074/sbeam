@@ -1254,7 +1254,12 @@ $$
 \tag{25}
 $$
 
-Resolving the three rates for a conventional configuration (Figure 6):
+Equation (25) is what the code implements for all three rate labels (`_rate_column`,
+`aero/integration.py`, #8): the body velocity $\boldsymbol\Omega\times\Delta\mathbf r$ about the
+AEROS RCSID origin, projected on the box normal, so a vertical fin sees no pitch-rate normalwash
+and a fin above the roll axis sees roll-rate sidewash. Equations (26)–(27) are its planar-wing
+specializations ($\hat{\mathbf n} = \hat{\mathbf z}$), written for a conventional configuration
+(Figure 6):
 
 $$
 \text{pitch rate:}\quad \Delta\alpha(x) = \frac{q\,(x-x_\text{ref})}{V_\infty}
@@ -1265,7 +1270,7 @@ a streamwise-linear incidence — stations aft of the CG see more incidence, whi
 horizontal tail dominates the pitch-damping derivative $C_{m_q}$;
 
 $$
-\text{roll rate:}\quad \Delta\alpha(y) = \frac{p\,y}{V_\infty}
+\text{roll rate:}\quad \Delta\alpha(y) = \frac{p\,(y-y_\text{ref})}{V_\infty}
 \tag{27}
 $$
 

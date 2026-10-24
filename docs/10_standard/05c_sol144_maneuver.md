@@ -301,10 +301,13 @@ displacement recovery → derivatives → totals → flight/net loads → monito
 result packing); the Schur machinery itself lives in `sol144_trim_solve.py` and the
 derivative blocks in `sol144_derivs.py` (see the module map in `05_aeroelastics.md`):
 
-1. Build `D_jx` (per-box normalwash per unit trim label: ANGLEA `−n_z`, SIDES `−n_y`, PITCH
-   `−(2/cref)(x−x_ref)`, ROLL `−(2/bref)·y`, YAW `−(2/bref)(x−x_ref)·n_y` (vertical-surface
-   sidewash), URDD1–6 `0`, AESURF `−(ĥ × n)·x̂·eff` about the `cid1` hinge axis ĥ — reducing to
-   `−n_z·eff` for a spanwise hinge) and `Q_ax = G_dispᵀ S_kj A_jj*⁻¹ D_jx` on the g-set.
+1. Build `D_jx` (per-box normalwash per unit trim label: ANGLEA `−n_z`, SIDES `−n_y`; the
+   rate labels PITCH/ROLL/YAW as the one kinematic rule `(2/L_ref)·n̂·(ê × (r − r_ref))` about
+   the RCSID origin with `ê = +ŷ / −x̂ / −ẑ` — `−(2/cref)(x−x_ref)` and `−(2/bref)(y−y_ref)` on
+   a planar wing, `−(2/bref)(x−x_ref)·n_y` sidewash on a fin, zero pitch-rate normalwash on a
+   fin (#8, charter §5); URDD1–6 `0`, AESURF `−(ĥ × n)·x̂·eff` about the `cid1` hinge axis ĥ —
+   reducing to `−n_z·eff` for a spanwise hinge) and `Q_ax = G_dispᵀ S_kj A_jj*⁻¹ D_jx` on the
+   g-set.
 2. Reduce `Q_ax`, `K`, and the RHS (baseline `q·f_g` + prescribed-variable aero + URDD
    inertial load) to the a-set via the same RBE3 + SPC partition as SOL 101.
 3. Partition the a-set into l-set / r-set (SUPORT DOFs), set `u_r = 0`, and solve the
@@ -407,8 +410,10 @@ CMZ = Mz / (S_ref · b_ref)    yawing moment    → C_nr = ∂CMZ/∂YAW  (fin s
 (`aero_moment_resultant`), about the AERO reference (`AEROS.RCSID` origin), so they carry the
 side force `Fy` of any canted (±Γ dihedral) panel — the dihedral effect `C_lβ` falls out of the
 Step 58 box normals automatically. The quasi-steady rate normalwash columns (ROLL, YAW) are
-built in `build_djx` (no DLM): roll rate `Δα(y) = p·y/V∞` and yaw-rate sidewash act through the
-local box geometry/normal. **Sign convention:** moments are in sbeam's z-up / y-starboard aero
+built in `build_djx` (no DLM) from the rigid-body velocity field about the RCSID origin
+projected on each box normal (`_rate_column`, #8): on a planar wing roll rate is
+`Δα(y) = p·(y − y_ref)/V∞`; a fin above the roll axis sees `p·(z − z_ref)` sidewash, and the
+yaw-rate sidewash acts through the fin's `n_y`. **Sign convention:** moments are in sbeam's z-up / y-starboard aero
 frame (the V-C-DIH frame), so the damping derivatives carry that frame's handedness rather than
 a textbook z-down body-axis sign; the magnitudes and the ±Γ `C_lβ` symmetry are the
 convention-independent content. Gate: `tests/aero/test_lateral_derivs.py` (V-LAT) — roll-rate

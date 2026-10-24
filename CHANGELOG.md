@@ -154,6 +154,29 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     import gate.
 
 ### Fixed
+- **DEF-M15 — lateral rate scales had the wrong sign, and the rate columns were planar-wing
+  shortcuts** (#8, Tier M; design note `docs/30_future/designs/lateral_cases_aileron_rudder.md`).
+  `rigid_rate_scales` mapped sway/roll/yaw body rates (basic +y/+x/+z) to `+SIDES`, `+ROLL`,
+  `+YAW` although the labels are defined wind-relative and about −x/−z (charter §5); a
+  free-flight lateral rate would have been anti-damped through `B_hh`. DOFs 2/4/6 are now
+  `−1/V`, `−b/2V`, `−b/2V`, and the force-side yaw-rate wing term inherits the sign
+  (`+2(y/V)·f_ref`). Generalized on first find: the PITCH/ROLL/YAW `build_djx` columns are now
+  one kinematic rule, `(2/L_ref)·n̂·(ê × (r − r_ref))` about the RCSID origin
+  (`_rate_column`), instead of `−(2/c)(x−x_ref)` / `−(2/b)·y` unprojected. The old PITCH
+  column loaded every **vertical** panel under pitch rate — on the flagship a sideforce
+  coefficient of 1.88 per unit PITCH on the fin, a yawing moment of 0.79, and pitch damping
+  3.3 % low; the HA144A body-panel deck had the same spurious `CY_q = −0.27`. ROLL now
+  references the RCSID origin's y (was hard-wired to y = 0; identical on every shipped deck)
+  and sees a fin's height (`C_yp`), and dihedral panels carry `n_z` in both columns.
+  **Shipped numbers:** HA144A, the planar wing and every PITCH = 0 case are bit-identical;
+  the flagship 2.5 g pull-up (`TRIM 2`, PITCH = 0.00284) moves ANGLEA by +0.002 %, ELEV by
+  +0.5 % (−0.16824 → −0.16910 rad), total CY from 5.3e-3 to 9e-7, and the whole-aircraft
+  aero monitor loses a 203 N spurious sideforce; wing-root section loads change by < 0.01 %.
+  V-LAT dihedral `C_lp` 0.5300 → 0.5381 (cos Γ). Gates: `tests/aero/test_rate_column_kinematics.py`
+  (every physical-rate column equals `(1/V)·n̂·v` built from `assembly/rigid_body.py`, fin
+  pitch-rate column exactly zero, ROLL follows the RCSID origin) and a free-flight gate that
+  every rigid diagonal of `B_hh` is damping with SUPORT 23456 on the flagship
+  (`tests/solver/test_modal_basis.py`). Closes #24 item 4 (ROLL reference).
 - **Unit-system leaks removed from `sbeam/`** (#30, Tier S). The viewer's preset gravity
   defaulted to `32.174` under a "model units" label (an SI user got a load factor ~3.3×
   wrong); it now prefills from a "Deck unit system" selector (`sbeam_tools.common.units`)

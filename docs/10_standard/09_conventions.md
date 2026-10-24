@@ -93,16 +93,27 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
   the §1 axis reversal in mind.
 - **Rate-label senses** (figure `../figures/maneuver_rates.svg`): positive PITCH =
   nose-up q (textbook); positive ROLL = starboard-wing-down (right roll); positive YAW =
-  nose-starboard (right yaw) (`aero/integration.py:369-387`). ROLL and YAW are thus
-  right-handed about the **nose (−x)** and **down (−z)** directions — the opposite
-  handedness of CMX/CMZ (§1). The ROLL column has **no spanwise reference**: it is always
-  about the deck's y = 0 plane, unlike PITCH (RCSID-origin `x_ref`) and the yaw-drag
-  force term (`y_ref = suport_pos[1]`).
-- Plunge-rate sign: α = θ − ḣ/V, so the DOF-3 rate column is −ANGLEA/V
-  (`aero/integration.py:185-194`). **⚠ Known defect (DEF-M15):** the same
-  relative-wind negation is *missing* from the DOF-2/4/6 entries of
-  `rigid_rate_scales` (`aero/integration.py:160-162`) — latent while free-flight scope
-  is symmetric-only; do not cite those scales as a convention until it is resolved.
+  nose-starboard (right yaw). ROLL and YAW are thus right-handed about the **nose (−x)**
+  and **down (−z)** directions — the opposite handedness of CMX/CMZ (§1). In code the
+  three senses are the axes `ê_PITCH = +ŷ`, `ê_ROLL = −x̂`, `ê_YAW = −ẑ` of
+  `_RATE_LABEL_AXIS` (`aero/integration.py`).
+- **Every rate column is one kinematic rule** (#8, DEF-M15 closed 2026-10-24; design note
+  `30_future/designs/lateral_cases_aileron_rudder.md` §2.1): the normalwash of a rigid
+  rate about the **RCSID origin** `r_ref`, projected on the box normal,
+  `D_jx = (2/L_ref)·n̂·(ê × (r_colloc − r_ref))` (`_rate_column`, §8). On a planar wing it
+  reduces to the familiar `−(2/c)(x − x_ref)` and `−(2/b)(y − y_ref)`; on a vertical fin
+  PITCH is zero and ROLL is `(2/b)·n_y·(z − z_ref)`. **ROLL, PITCH and the yaw-drag force
+  term all reference the same point**, the RCSID origin (= `suport_pos`), which every
+  shipped deck puts on the centreline. Before #8 the PITCH and ROLL columns were the planar
+  formulas unprojected, so a vertical fin was loaded under pitch rate (flagship: CY = 1.88
+  per unit PITCH, pitch damping 3.3 % low) and ROLL was hard-wired to y = 0.
+- **Physical rates → labels** (`rigid_rate_scales`, §8): the label value whose normalwash
+  equals a unit body rate about basic +x/+y/+z. Relative wind = −body velocity, so plunge
+  ḣ → `ANGLEA = −ḣ/V` (α = θ − ḣ/V) and sway v → `SIDES = −v/V`; rotations follow the
+  axes above: `PITCH = +q·c/2V`, `ROLL = −p·b/2V`, `YAW = −r·b/2V` with p, q, r about
+  basic +x, +y, +z. Gate: `tests/aero/test_rate_column_kinematics.py` derives all five from
+  `assembly/rigid_body.py` with no reference to the label table. (Until #8 DOFs 2/4/6 had
+  the opposite sign, which would have anti-damped a free-flight lateral rate.)
 - **Load factor: `URDD3 = −n_z·g` authored in the RCSID frame** (1g level flight = −g;
   2.5g pull-up = −2.5g); gravity is folded into the load factor
   (`model/maneuver_presets.py:24-38`). **This presumes a z-DOWN (stability-axes) RCSID**,
@@ -199,7 +210,8 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
 |---|---|---|
 | `pitch_moment` | The nose-up-positive pitch arm (AE1 Step E) | `solver/sol144_util.py:255` |
 | `aero_moment_resultant` | Full 3-component moment about a reference (Step 58) | `solver/sol144_util.py:280` |
-| `rigid_rate_scales` | PITCH/ROLL/YAW rate nondimensionalization | `aero/integration.py:143` |
+| `_rate_column` / `_RATE_LABEL_AXIS` | The rate-column kinematics: `(2/L)·n̂·(ê × (r − r_ref))` about the RCSID origin, and the label axes `+ŷ / −x̂ / −ẑ` (#8) | `aero/integration.py` |
+| `rigid_rate_scales` | Physical rate (basic +x/+y/+z) → label value: `−1/V, −1/V, −b/2V, +c/2V, −b/2V` for DOFs 2–6 (#8) | `aero/integration.py` |
 | `load_factor_to_urdd3` | The load-factor → `URDD3` sign (`−n_z·g`), for maneuvers and gusts alike | `model/maneuver_presets.py:24` |
 | `mass_ratio` / `alleviation_factor` / `gust_increment` | The Pratt gust formula (μ, `K_g`, Δn). Deliberately **outside** the solver — dimensional, see §7 | `sbeam_tools/cases/gust.py` |
 | `build_box_id_map` | The NASTRAN box-ID derivation (F1) | `aero/panel.py:43` |
