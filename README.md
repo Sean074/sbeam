@@ -77,6 +77,14 @@ two packages, and `docs/10_standard/05c_sol144_maneuver.md` for the gust workflo
 pytest
 ```
 
+## First analysis in ten minutes
+
+New here? [`docs/20_theory/03_first_analysis_tutorial.md`](docs/20_theory/03_first_analysis_tutorial.md)
+takes you from an empty folder to a plotted SOL 101 result: a six-grid cantilever typed
+in by hand, one CLI run, the f06 read block by block against the closed-form deflection
+and stress, then the deflected shape in the viewer and from a ten-line Python script.
+Calling the solver from your own code: [`docs/10_standard/11_python_api.md`](docs/10_standard/11_python_api.md).
+
 ## Documentation
 
 Full documentation lives in [`docs/`](docs/00_INDEX.md), organised into four sections:
@@ -97,18 +105,18 @@ code standard (`10_standard/`), theory & worked examples (`20_theory/`), future 
 | Category | Cards |
 |---|---|
 | Geometry | `GRID`, `CORD2R` |
-| Elements | `CBAR`, `CBUSH`, `PLOTEL`, `RBE2`, `RBE3`, `RBAR` |
-| Properties | `PBAR`, `PBUSH` |
+| Elements | `CBAR`, `CROD`, `CONROD`, `CBUSH`, `PLOTEL`, `RBE2`, `RBE3`, `RBAR` |
+| Properties | `PBAR`, `PROD`, `PBUSH` |
 | Material | `MAT1` |
-| Mass | `CONM2` |
+| Mass | `CONM2`, `MASSSET` |
 | Constraints | `SPC`, `SPC1`, `SUPORT` |
 | Loads | `FORCE`, `MOMENT`, `LOAD`, `GRAV` |
 | Eigenvalue | `EIGRL` |
 | Aero geometry | `AEROS`, `CAERO1`, `PAERO1`, `AEFACT`, `PSTRIP`, `STRIPK` |
-| Aero corrections | `W2GJ`, `WKK`, `AECORR` |
+| Aero corrections | `W2GJ`, `WKK`, `AECORR`, `CHORDCP` |
 | Splining | `SET1`, `SPLINE0`, `SPLINE1`*, `SPLINE2`, `ATTACH` |
-| Trim / divergence | `AESTAT`, `AESURF`, `AELIST`, `TRIM`, `DIVERG`, `TRIMVAR`, `TRIMOBJ`, `TRIMCON` |
-| Monitor points | `MONPNT1`, `MONPNT3`, `AECOMP` |
+| Trim / divergence / gust | `AESTAT`, `AESURF`, `AELIST`, `TRIM`, `DIVERG`, `TRIMVAR`, `TRIMOBJ`, `TRIMCON`, `GUSTLF` |
+| Monitor points / section cuts | `MONPNT1`, `MONPNT3`, `MONSECT`, `AECOMP` |
 | Transient maneuver | `MLOADS`, `MLDTRIM`, `MLDTIME`, `MLDCOMD`, `MLDPRNT`, `TABLED1` |
 
 \* `SPLINE1` is parsed but not yet implemented (use `SPLINE2`).
@@ -137,7 +145,7 @@ Full field-by-field definitions: [`docs/10_standard/02_card_reference.md`](docs/
 - **`CBUSH` requires CID=0** — element offsets are not supported.
 
 ### Loads
-- **`PLOAD1` not supported** — distributed beam loads are not implemented. A `PLOAD1` card in the BDF is currently silently dropped with no user-visible warning. Do not use `PLOAD1`; a pre-solve validator warning is planned for a future release.
+- **`PLOAD1` not supported** — distributed beam loads are not implemented. A deck carrying `PLOAD1` (or any other known-but-unsupported NASTRAN card) is refused at parse with a counted list; replace it with equivalent `FORCE`/`MOMENT` cards. Table of refused cards and alternatives: `docs/10_standard/02_card_reference.md`, "Unsupported cards".
 
 ### Solvers
 - **SOL 101, SOL 103, and SOL 144 only** — frequency response (SOL 108 / SOL 111), transient response (SOL 109 / SOL 112), and buckling (SOL 105) are not yet implemented.

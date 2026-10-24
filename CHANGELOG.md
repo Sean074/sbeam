@@ -36,6 +36,18 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   columns must be retired.
 
 ### Added
+- **First-analysis tutorial** (#46). `docs/20_theory/03_first_analysis_tutorial.md` takes a
+  new user from an empty folder to a plotted SOL 101 result in ten minutes: a six-grid steel
+  cantilever typed in by hand with every card explained, one CLI run, the four f06 blocks
+  read line by line against the closed-form tip deflection, root reaction and root stress
+  (all three reproduced to the printed digit), the deflected shape in the viewer and from a
+  short Python script through the public API, and where to go next (SOL 103 variant with
+  its expected first frequency, the Cessna 210 tutorial). Linked from the README above the
+  guide index and first in the `00_INDEX.md` theory table. Gate
+  `tests/docs/test_first_analysis_tutorial.py` lifts the deck and the script out of the page,
+  runs them and asserts every quoted number, the modal frequency and every relative link.
+  README on the way: `PLOAD1` limitation text updated to the #45 refusal, supported-card
+  table gains `CROD`/`CONROD`/`PROD`, `MASSSET`, `CHORDCP`, `GUSTLF`, `MONSECT`.
 - **Python API guide** (#47). `docs/10_standard/11_python_api.md` names the public
   programmatic entry points by layer — parse (`parse_bdf`, `parse_bulk_file`, …), model
   queries (`compute_gpwg`, `resolve_mass_case`, `build_grid_index`), run (`run_sol101`,

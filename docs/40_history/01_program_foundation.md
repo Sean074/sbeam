@@ -257,6 +257,7 @@ The two top-level functions serve distinct use cases:
 
 ## Resolved defects (documentation / model)
 
+- **#46 (Tier S, 2026-10-24)** — No path from the README to a first plotted result; new `20_theory/03_first_analysis_tutorial.md` (hand-typed cantilever deck, CLI run, f06 read against PL³/3EI, PL and Mc/I, plot in viewer and via the API), linked from the README above the guide index; gate `tests/docs/test_first_analysis_tutorial.py` runs the page's deck and script and asserts its quoted numbers and links. README `PLOAD1` text and supported-card table brought up to date on the way.
 - **#47 (Tier S, 2026-10-24)** — No documentation of calling sbeam from Python although sloads' round-trip gate already depended on `parse_bdf` / `run_sol101` / `compute_gpwg`; new `10_standard/11_python_api.md` names the public entry points per layer, the result fields, the SOL 144 build-once pattern and the public-vs-internal rule; gate `tests/docs/test_python_api_guide.py` imports every listed name, cross-checks the CLI's imports and runs both examples.
 - **#45 (Tier M, 2026-10-24)** — `PLOAD1` and every other known-but-unsupported NASTRAN card now refuse the deck at parse with one counted `ValueError` (`_UNSUPPORTED_CARDS`, `bdf_reader.py`) instead of being dropped behind an uncollected `UserWarning`; the CLI prints remaining unknown-card warnings; viewer check 3 reports unrecognised cards only; gate `tests/parser/test_unsupported_cards.py`.
 
