@@ -197,6 +197,7 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
 | `mass_ratio` / `alleviation_factor` / `gust_increment` | The Pratt gust formula (μ, `K_g`, Δn). Deliberately **outside** the solver — dimensional, see §7 | `sbeam_tools/cases/gust.py` |
 | `build_box_id_map` | The NASTRAN box-ID derivation (F1) | `aero/panel.py:43` |
 | `build_wg` / card writers | W2GJ sign flip (assembly negates; writers negate back) | `aero/integration.py:61`, `model/aero.py:88` |
+| `bar_internal_resultants` | The nodal `K·u` → +x-face internal-resultant sign (CBAR `P, V, T, M`; rod `P, T` via `rod_force_from_local`) (#37, #38) | `solver/sol101.py`, `solver/element_recovery.py` |
 
 When a new sign-sensitive quantity appears, create its single-source helper first and add
 it to this table.
@@ -232,6 +233,12 @@ Figure: `../figures/sign_conventions_internal_loads.svg`; cut geometry:
   contributes 0.0 and bounds MAX/MIN, as in NASTRAN. Stress and force tables are on the
   same face and plane convention by construction
   (`tests/solver/test_cbar_force_layout.py` G5).
+- **CROD/CONROD force output is the NASTRAN `FORCES IN ROD ELEMENTS` layout on the same
+  +x-face resultants** (`RodForce`, `solver/element_recovery.py`; #38): `AXIAL = P = +f[6]`
+  (tension +), `TORQUE = T = +f[9]` (right-handed about `e_x = GB−GA`), through the same
+  `bar_internal_resultants` helper as CBAR, so a rod and a `PA=PB=56` CBAR print identical
+  columns (V27). `STRESSES IN ROD ELEMENTS`: `AXIAL STRESS = P/A`, `TORSIONAL STRESS =
+  T·C/J`. A rod has no orientation vector; its local y/z are irrelevant to every output.
 - **MONSECT/section-cut sign = the CBAR end-B sign, with no flip:** the cut reports the
   resultant of all applied loads (aero + inertia + reaction, each column signed alike)
   on the **outboard** side, about the cut plane's axis intercept, rotated into the cut

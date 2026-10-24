@@ -210,14 +210,20 @@ def element_stiffness_global(
 
 
 def assemble_global_stiffness(bulk: BulkData) -> SparseMatrix:
-    """Assemble the (6N x 6N) global stiffness matrix from all CBAR and CBUSH elements."""
+    """Assemble the (6N x 6N) global stiffness matrix from every line element
+    (CBAR, CROD, CONROD through the ``assembly/elements.py`` registry, #38) and
+    every CBUSH."""
+    # Local import: elements.py builds on this module's CBAR helpers.
+    from sbeam.assembly.elements import iter_line_elements, line_element
+
     grid_index = {gid: i for i, gid in enumerate(sorted(bulk.grids.keys()))}
     n = 6 * len(grid_index)
     rows, cols, data = [], [], []
 
-    for cbar in bulk.cbars.values():
-        K_e = element_stiffness_global(cbar, bulk.grids, bulk.pbars, bulk.mat1s)
-        dofs = node_dofs(cbar.ga, grid_index) + node_dofs(cbar.gb, grid_index)
+    for elem in iter_line_elements(bulk):
+        le = line_element(elem, bulk)
+        K_e = le.global_stiffness()
+        dofs = node_dofs(le.ga, grid_index) + node_dofs(le.gb, grid_index)
         ii, jj = np.meshgrid(dofs, dofs, indexing="ij")
         rows.extend(ii.ravel())
         cols.extend(jj.ravel())

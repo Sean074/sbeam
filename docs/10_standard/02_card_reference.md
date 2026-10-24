@@ -237,6 +237,38 @@ $ Stress recovery at corners (y=±0.158, z=±0.158)
 
 ---
 
+### PROD — Rod Property
+
+Defines the section of `CROD` elements: area, torsional constant, torsional stress
+coefficient and non-structural mass (#38). A rod has no bending or shear properties.
+
+**Format:**
+```
+PROD, PID, MID, A, J, C, NSM
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| PID | `pid` | int | Property ID (unique across `PBAR` and `PROD`) | required |
+| MID | `mid` | int | Material ID (references MAT1) | required |
+| A | `A` | float | Cross-sectional area (> 0) | required |
+| J | `J` | float | Torsional constant (≥ 0; `0.0` = no torsional stiffness) | `0.0` |
+| C | `c` | float | Torsional stress coefficient: `τ = T·C/J` | `0.0` |
+| NSM | `nsm` | float | Non-structural mass per unit length | `0.0` |
+
+`A ≤ 0` or `J < 0` raises `ValueError`. The MID is checked against MAT1 when a `CROD`
+references the property, so `MAT1` and `PROD` must both precede the element.
+
+**Example:**
+```
+$ Strut: A = 5 cm², J = 1e-7, tau = T * 5e-3 / J
+PROD, 3, 1, 5.0e-4, 1.0e-7, 5.0e-3
+```
+
+---
+
 ### PBUSH — Spring-Damper Property
 
 Defines stiffness (and optionally damping) for CBUSH elements.
@@ -319,6 +351,90 @@ CBAR, 1, 1, 1, 2, 0.0, 1.0, 0.0
 $ Pin release: Ry and Rz released at both ends (moment-free = truss)
 CBAR, 5, 1, 5, 6, 0.0, 1.0, 0.0
 +,    56, 56
+```
+
+---
+
+### CROD — Rod Element (axial + torsion)
+
+Two-node rod element: axial stiffness `EA/L` and torsional stiffness `GJ/L` along the
+element axis GA→GB, no bending or shear (#38; design note
+`30_future/designs/rod_element_crod.md`). The consumer is pin-ended struts such as
+engine-pylon braces, which were previously modelled as `CBAR` with `PA=PB=56`.
+
+**Format:**
+```
+CROD, EID, PID, GA, GB
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| EID | `eid` | int | Element ID (unique across `CBAR`, `CROD`, `CONROD`, `CBUSH`) | required |
+| PID | `pid` | int | Property ID (references `PROD`) | required |
+| GA | `ga` | int | End A grid ID | required |
+| GB | `gb` | int | End B grid ID (≠ GA) | required |
+
+No orientation vector: the element x-axis is GA→GB and the rod's response does not depend
+on the choice of local y/z (`assembly/elements.py` `rod_frame`). Mass is the consistent
+translational `(ρA + NSM)·L/6·[2 1; 1 2]` on each translation pair, with **no torsional or
+rotary inertia** (MSC / NASTRAN-95 rod convention; `04_modal_analysis.md`). GPWG counts
+`(ρA + NSM)·L` at the midpoint.
+
+Validation at parse time: GA, GB exist and differ; PID → `PROD` exists; the `PROD` MID →
+`MAT1` exists; the EID is not already used by another structural element. Coincident grids
+raise at assembly.
+
+**A grid connected only by rods has no rotational stiffness** apart from torsion about each
+rod's axis. sbeam has no AUTOSPC, so SPC the free rotations yourself (`SPC1, sid, 456,
+grid`), or the stiffness matrix is singular. A rod meeting a `CBAR`, `CBUSH` or rigid
+element at the grid needs nothing. The viewer's pre-solve check lists offending grids.
+
+Output: the f06 `FORCES IN ROD ELEMENTS` block prints `AXIAL FORCE` (tension positive)
+and `TORQUE` (right-handed about GA→GB), `STRESSES IN ROD ELEMENTS` prints `AXIAL STRESS
+= P/A` and `TORSIONAL STRESS = T·C/J` (`03_static_analysis.md`). Rods never appear in the
+`CBAR` force or stress tables.
+
+**Example:**
+```
+$ Pylon strut from wing grid 2 to engine grid 20
+CROD, 21, 3, 2, 20
+```
+
+---
+
+### CONROD — Rod Element with Inline Properties
+
+A `CROD` whose section and material are written on the element card instead of a `PROD`.
+Physically identical to `CROD`; stored in `bulk.conrods` and printed under its own
+`( C O N R O D )` f06 heading.
+
+**Format:**
+```
+CONROD, EID, GA, GB, MID, A, J, C, NSM
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| EID | `eid` | int | Element ID (unique across `CBAR`, `CROD`, `CONROD`, `CBUSH`) | required |
+| GA | `ga` | int | End A grid ID | required |
+| GB | `gb` | int | End B grid ID (≠ GA) | required |
+| MID | `mid` | int | Material ID (references MAT1) | required |
+| A | `A` | float | Cross-sectional area (> 0) | required |
+| J | `J` | float | Torsional constant (≥ 0) | `0.0` |
+| C | `c` | float | Torsional stress coefficient: `τ = T·C/J` | `0.0` |
+| NSM | `nsm` | float | Non-structural mass per unit length | `0.0` |
+
+All `CROD` rules apply (axis, mass, rod-only grids, output). Validation adds `A > 0`,
+`J ≥ 0` and MID → `MAT1`.
+
+**Example:**
+```
+$ Same strut as the CROD above, section inline
+CONROD, 22, 4, 20, 1, 5.0e-4, 1.0e-7, 5.0e-3
 ```
 
 ---
@@ -2214,6 +2330,7 @@ are the exception: they refer to **element local axes** (1 = axial, 4 = torsion,
 | CBAR | Offsets (W1A/W2A) not supported |
 | CBAR | Orientation must be the X1–X3 vector form; the G0 (grid-ID) form is not supported |
 | CBAR | Pin-release digits (PA/PB) are in element local axes |
+| CROD / CONROD | A grid touched only by rods has free rotations (no bending stiffness; no AUTOSPC): SPC them, e.g. `SPC1, sid, 456, grid`, or the stiffness matrix is singular. Rod mass carries no torsional inertia |
 | CBUSH | CID must be `0` or blank |
 | CBUSH | Damping (PBUSH `B` keyword) deferred to Phase 3 |
 | CBUSH | Massless; orientation vector required when GA/GB are coincident |

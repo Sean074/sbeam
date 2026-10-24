@@ -27,6 +27,25 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   columns must be retired.
 
 ### Added
+- **`CROD` / `PROD` / `CONROD` rod element and a minimal line-element interface** (#38,
+  Tier L; design note `docs/30_future/designs/rod_element_crod.md`). Axial `EA/L` + torsion
+  `GJ/L` along GA→GB, no orientation vector, consistent translational mass with no
+  torsional inertia (MSC/NASTRAN-95 rod convention), `CONROD` held natively behind a
+  `rod_section` accessor. New `sbeam/assembly/elements.py` registry (`iter_line_elements`,
+  `line_element`, mass helpers) now drives stiffness/mass assembly and GPWG, and
+  `sbeam/solver/element_recovery.py::recover_line_elements` replaces the four per-solver
+  CBAR recovery loops (SOL 101, SOL 144 trim/static, MLOADS); rodless decks are
+  bit-identical. Results gain `rod_forces`/`rod_stresses` (`RodForce`, `RodStress`); the
+  f06 prints NASTRAN `FORCES / STRESSES IN ROD ELEMENTS` blocks for `( C R O D )` and
+  `( C O N R O D )` after the CBAR blocks (`AXIAL FORCE`, `TORQUE`; `AXIAL STRESS = P/A`,
+  `TORSIONAL STRESS = T·C/J`). Viewer: dashed rod traces, rod table, "Rod Forces" tab and a
+  pre-solve warning for rod-only grids with free rotations (no AUTOSPC); the half-span
+  mirror tool unfolds rods. Element EIDs are now checked unique across CBAR/CROD/CONROD/
+  CBUSH and PIDs across PBAR/PROD (the docs already claimed the CBAR check). Gates
+  V24–V27 (δ = PL/EA, θ = TL/GJ; two-strut statics; CONM2-on-struts 2-DOF modes; CROD ≡
+  CBAR `PA=PB=56`), NASTRAN-95 `srod1.f`/`srod2.f` term-by-term mapping, registry
+  coverage, parser errors, and the new `sample/pylon_strut_engine.bdf` free-body gate.
+  Rod CSV export is deferred to #31.
 - **`MONPNT1`/`MONPNT3` on transient (MLOADS) maneuvers** (#2). The deck's monitor points
   are now evaluated at every output sample, not only on static trims:
   `ManeuverStep.monitor_loads`, an f06 `MONITOR POINT INTEGRATED LOADS ( SAMPLE n … )`

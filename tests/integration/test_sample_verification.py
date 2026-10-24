@@ -35,7 +35,13 @@ from typing import NamedTuple
 
 import pytest
 
-from sbeam.assembly.load_vector import build_grid_index
+import numpy as np
+
+from sbeam.assembly.load_vector import assemble_load_vector, build_grid_index
+from sbeam.assembly.stiffness import transform_matrix
+from sbeam.gpwg import compute_gpwg
+from sbeam.parser.case_control import CaseControl
+from sbeam.results.f06_writer import build_f06_sol101_text
 from sbeam.model.bulk_data import BulkData
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.results.results import Sol101Result, Sol103Result
@@ -304,3 +310,80 @@ class TestValCantileverOffsetMassModes:
         torsion = result.mode_shapes[:, 1]
         assert abs(bending[tip + 3]) < 1.0e-8 * abs(bending[tip + 2])
         assert abs(torsion[tip + 2]) < 1.0e-8 * abs(torsion[tip + 3])
+
+
+# ---------------------------------------------------------------------------
+# sample/pylon_strut_engine.bdf — strut-braced engine pylon (#38, Tier L deliverable 6)
+# ---------------------------------------------------------------------------
+
+PylonFixture = tuple[CaseControl, BulkData, dict[int, Sol101Result]]
+
+
+@pytest.fixture(scope="module")
+def pylon() -> PylonFixture:
+    cc, bulk = parse_bdf(str(SAMPLE_DIR / "pylon_strut_engine.bdf"))
+    assert cc.sol == 101
+    return cc, bulk, {sc.subcase_id: run_sol101(bulk, sc) for sc in cc.subcases}
+
+
+class TestValPylonStrutEngine:
+    """Free body of the engine grid: the two rod forces, the spine's end-B force and the
+    applied load (GRAV on the CONM2 + element mass, thrust) sum to zero; the root
+    reactions carry the whole applied load; the CONROD strut behaves like the CROD."""
+
+    ENGINE = 20
+    SPINE = 10
+
+    def _rod_axis(self, bulk: BulkData, rod) -> FloatArray:
+        ga, gb = bulk.grids[rod.ga], bulk.grids[rod.gb]
+        e = np.array([gb.x - ga.x, gb.y - ga.y, gb.z - ga.z])
+        return e / np.linalg.norm(e)
+
+    @pytest.mark.parametrize("subcase_id", [1, 2])
+    def test_engine_grid_free_body(self, pylon: PylonFixture, subcase_id: int) -> None:
+        cc, bulk, results = pylon
+        result = results[subcase_id]
+        sc = next(s for s in cc.subcases if s.subcase_id == subcase_id)
+        gi = build_grid_index(bulk)
+        f = assemble_load_vector(bulk, sc.load_sid)
+        applied = f[6 * gi[self.ENGINE]: 6 * gi[self.ENGINE] + 3]
+        total = applied.copy()
+        # A rod in tension pulls its end-B node toward end A: force on node = -N e_x.
+        for eid, rf in result.rod_forces.items():
+            rod = bulk.crods.get(eid) or bulk.conrods[eid]
+            assert rod.gb == self.ENGINE
+            total += -rf.axial * self._rod_axis(bulk, rod)
+        # The spine's +x-face end-B resultant is the force the node exerts on the element.
+        bf = result.bar_forces[self.SPINE]
+        R = transform_matrix(bulk.cbars[self.SPINE], bulk.grids)[:3, :3]
+        total += -R.T @ np.array([bf.axial, bf.v1, bf.v2])
+        assert np.linalg.norm(total) <= 1e-9 * np.linalg.norm(applied)
+
+    def test_root_reactions_carry_the_applied_load(self, pylon: PylonFixture) -> None:
+        _, bulk, results = pylon
+        weight = compute_gpwg(bulk).total_mass * 9.81
+        r1, r2 = results[1].reactions[1], results[2].reactions[1]
+        assert r1[2] == pytest.approx(weight, rel=1e-9)
+        assert r2[2] == pytest.approx(weight, rel=1e-9)
+        assert r1[0] == pytest.approx(-4000.0, rel=1e-9)
+        assert r2[0] == pytest.approx(0.0, abs=1e-9 * weight)
+
+    def test_conrod_and_crod_both_recovered(self, pylon: PylonFixture) -> None:
+        _, bulk, results = pylon
+        result = results[2]
+        assert set(result.rod_forces) == {21, 22}
+        prod = bulk.prods[bulk.crods[21].pid]
+        for eid, A in ((21, prod.A), (22, bulk.conrods[22].A)):
+            assert result.rod_stresses[eid].axial == pytest.approx(
+                result.rod_forces[eid].axial / A, rel=1e-12)
+        # 1g alone: no torque reaches the struts; thrust (subcase 1) twists them.
+        assert result.rod_stresses[21].torsional == 0.0
+        assert results[1].rod_forces[21].torque != 0.0
+
+    def test_f06_carries_both_rod_blocks(self, pylon: PylonFixture) -> None:
+        cc, bulk, results = pylon
+        text = build_f06_sol101_text(cc, bulk, results[1], 1)
+        assert "F O R C E S   I N   R O D   E L E M E N T S      ( C R O D )" in text
+        assert "F O R C E S   I N   R O D   E L E M E N T S      ( C O N R O D )" in text
+        assert "S T R E S S E S   I N   R O D   E L E M E N T S      ( C R O D )" in text
+        assert "S T R E S S E S   I N   R O D   E L E M E N T S      ( C O N R O D )" in text

@@ -9,6 +9,7 @@ import numpy as np
 from sbeam.model.bulk_data import BulkData
 from sbeam.results.results import (
     BarForce, BarStress, ManeuverResult, MonitorEnvelope, MonitorLoad,
+    RodForce, RodStress,
     SectionCutEnvelope, SectionCutResult,
     Sol101Result, Sol103Result, Sol144TrimResult, Sol144DivergResult,
     peak_grid_force,
@@ -126,6 +127,55 @@ def _bar_forces_block(
                 f"{_fmt(bf.v1)}{_fmt(bf.v2)}{_fmt(bf.axial)}{_fmt(bf.torque)}"
             )
     lines.append("")
+
+
+def _rod_forces_block(
+    lines: list[str], bulk: BulkData, rod_forces: dict[int, RodForce]
+) -> None:
+    """Append the NASTRAN ``FORCES IN ROD ELEMENTS`` blocks, CROD then CONROD (#38).
+
+    Nothing is written for a deck without rods, so rodless listings are
+    unchanged. One element per row on ``_hdr`` (DEF-M13); values are +x-face
+    resultants, tension / right-hand torque positive (:class:`RodForce`).
+    """
+    for kind, title, coll in (("CROD", "( C R O D )", bulk.crods),
+                              ("CONROD", "( C O N R O D )", bulk.conrods)):
+        eids = [e for e in sorted(coll.keys()) if e in rod_forces]
+        if not eids:
+            continue
+        lines.append(f"                                     F O R C E S   I N   R O D   E L E M E N T S      {title}")
+        lines.append("")
+        lines.append(_hdr(f"{'ELEMENT':>14}  ", "AXIAL"))
+        lines.append(_hdr(f"{'ID.':>14}  ", "FORCE", "TORQUE"))
+        for eid in eids:
+            rf = rod_forces[eid]
+            lines.append(f"{eid:>14}  {_fmt(rf.axial)}{_fmt(rf.torque)}")
+        lines.append("")
+
+
+def _rod_stresses_block(
+    lines: list[str], bulk: BulkData, rod_stresses: dict[int, RodStress]
+) -> None:
+    """Append the NASTRAN ``STRESSES IN ROD ELEMENTS`` blocks, CROD then CONROD (#38).
+
+    ``AXIAL STRESS = P/A`` and ``TORSIONAL STRESS = T·C/J``; the two ``SAFETY
+    MARGIN`` columns are header-only blank (no allowables are parsed), as the
+    CBAR ``M.S.`` columns are.
+    """
+    blank = " " * _FIELD_W
+    for kind, title, coll in (("CROD", "( C R O D )", bulk.crods),
+                              ("CONROD", "( C O N R O D )", bulk.conrods)):
+        eids = [e for e in sorted(coll.keys()) if e in rod_stresses]
+        if not eids:
+            continue
+        lines.append(f"                                   S T R E S S E S   I N   R O D   E L E M E N T S      {title}")
+        lines.append("")
+        lines.append(_hdr(f"{'ELEMENT':>14}  ", "AXIAL", "SAFETY", "TORSIONAL", "SAFETY"))
+        lines.append(_hdr(f"{'ID.':>14}  ", "STRESS", "MARGIN", "STRESS", "MARGIN"))
+        for eid in eids:
+            rs = rod_stresses[eid]
+            lines.append(f"{eid:>14}  {_fmt(rs.axial)}{blank}{_fmt(rs.torsional)}{blank}")
+        lines.append("")
 
 
 def _monitor_block(
@@ -449,6 +499,10 @@ def _build_f06_sol101_text(
 
     # ---- BAR STRESSES section ----
     _bar_stresses_block(lines, bulk, result.bar_stresses)
+
+    # ---- ROD FORCES / STRESSES (CROD, CONROD; only when the deck has rods) ----
+    _rod_forces_block(lines, bulk, result.rod_forces)
+    _rod_stresses_block(lines, bulk, result.rod_stresses)
 
     # ---- CBUSH FORCES section ----
     if result.cbush_forces:
@@ -830,6 +884,8 @@ def _build_f06_sol144_text(
     _displacement_block(lines, result.displacements, bulk, grid_index, gids_sorted)
     _bar_forces_block(lines, bulk, result.bar_forces)
     _bar_stresses_block(lines, bulk, result.bar_stresses)
+    _rod_forces_block(lines, bulk, result.rod_forces)
+    _rod_stresses_block(lines, bulk, result.rod_stresses)
 
     # ---- AERODYNAMIC BOX PRESSURES AND FORCES (AEROF / APRES) ----
     # BOX ID is the global 1-based box index (= AeroModel box k + 1).
@@ -1070,6 +1126,7 @@ def _build_f06_sol144_maneuver_text(
 
     _displacement_block(lines, crit.displacements, bulk, grid_index, gids_sorted)
     _bar_forces_block(lines, bulk, crit.bar_forces)
+    _rod_forces_block(lines, bulk, crit.rod_forces)
 
     # MONPNT1/MONPNT3 integrated loads at the critical sample, with the
     # contribution split (#2).  The per-sample history goes to the maneuver

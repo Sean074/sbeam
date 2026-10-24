@@ -62,6 +62,34 @@ class BarStress:
 
 
 @dataclass
+class RodForce:
+    """CROD / CONROD forces in the NASTRAN ``FORCES IN ROD ELEMENTS`` layout (#38).
+
+    +x-face internal resultants in the element frame, from the same
+    ``bar_internal_resultants`` helper as the CBAR table (``09_conventions.md``
+    §8/§9): ``axial = P`` tension positive, ``torque = T`` right-handed about the
+    GA→GB axis. A rod carries nothing else.
+    """
+    eid: int
+    axial: float = 0.0
+    torque: float = 0.0
+
+
+@dataclass
+class RodStress:
+    """CROD / CONROD stresses in the NASTRAN ``STRESSES IN ROD ELEMENTS`` layout (#38).
+
+    ``axial = P/A`` (tension positive); ``torsional = T·C/J`` with the PROD /
+    CONROD torsional stress coefficient ``C`` (0 when ``J = 0`` or ``C = 0``, as
+    NASTRAN-95 ``srod1.f`` sets ``C/J = 0`` for ``J = 0``). Margins of safety are
+    not computed (no allowables are parsed).
+    """
+    eid: int
+    axial: float = 0.0
+    torsional: float = 0.0
+
+
+@dataclass
 class MonitorLoad:
     """Integrated section load at a monitor point (MONPNT1 / MONPNT3).
 
@@ -219,6 +247,8 @@ class Sol101Result:
     bar_stresses: dict[int, BarStress] = field(default_factory=dict)   # {eid: BarStress}
     # Note: cbush_forces are in global coordinates (unlike bar_forces which are local)
     cbush_forces: dict[int, FloatArray] = field(default_factory=dict)  # forces at GB (GA if grounded)
+    rod_forces: dict[int, RodForce] = field(default_factory=dict)      # {eid: RodForce} CROD + CONROD (#38)
+    rod_stresses: dict[int, RodStress] = field(default_factory=dict)   # {eid: RodStress}
 
 
 @dataclass
@@ -249,6 +279,8 @@ class Sol144Result:
     phi_free: Optional[FloatArray] = None       # (n_a, n_modes); None when ROM not used
     k_hh: Optional[FloatArray] = None           # (n_modes, n_modes) modal structural stiffness
     q_hh: Optional[FloatArray] = None           # (n_modes, n_modes) modal GAF matrix
+    rod_forces: dict[int, RodForce] = field(default_factory=dict)      # {eid: RodForce} (#38)
+    rod_stresses: dict[int, RodStress] = field(default_factory=dict)   # {eid: RodStress}
 
 
 @dataclass
@@ -299,6 +331,8 @@ class Sol144TrimResult:
     massset_label: str = "BASELINE"           # mass-case name for output headers
     massset_mass: float = 0.0                 # total case mass (GPWG) for this configuration
     massset_cg: Optional[tuple[float, float, float]] = None   # CG of the case mass
+    rod_forces: dict[int, RodForce] = field(default_factory=dict)      # {eid: RodForce} CROD + CONROD (#38)
+    rod_stresses: dict[int, RodStress] = field(default_factory=dict)   # {eid: RodStress}
 
 
 @dataclass
@@ -366,6 +400,7 @@ class ManeuverStep:
     section_loads: Optional[dict[str, "SectionCutResult"]] = None
     # {name: MonitorLoad} MONPNT1/MONPNT3 integrated loads at this sample (#2).
     monitor_loads: Optional[dict[str, "MonitorLoad"]] = None
+    rod_forces: dict[int, RodForce] = field(default_factory=dict)   # {eid: RodForce} (#38)
 
 
 def peak_grid_force(step: "ManeuverStep") -> float:

@@ -206,8 +206,10 @@ The route came out of the 2026-10-02 NASTRAN-95 review. NASTRAN-95 (github.com/n
 NOSA 1.3) is used as a theory and benchmark reference only: no code is copied, and decks are
 rebuilt from published numbers.
 
-**Activated 2026-10-02:** the element interface and CROD/PROD/CONROD (consumer: engine pylon
-struts) moved to issue #38 (v0.3.0) — the write-up lives there.
+**Activated 2026-10-02, delivered 2026-10-24:** the element interface (`assembly/elements.py`
+line-element registry) and CROD/PROD/CONROD (consumer: engine pylon struts) shipped under
+issue #38 (v0.3.0); design note `designs/rod_element_crod.md`, history
+`40_history/02_sol101_static.md`.
 
 ### Model reduction — ASET/OMIT (Guyan), then Craig–Bampton (near)
 

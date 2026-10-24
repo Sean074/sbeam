@@ -39,7 +39,8 @@ from sbeam.aero.integration import (
 from sbeam.results.results import Sol144TrimResult
 from sbeam.results.monitor_points import compute_monitor_loads
 from sbeam.results.section_cuts import compute_section_cuts
-from sbeam.solver.sol101 import recover_bar_forces, recover_bar_stresses, recover_reactions
+from sbeam.solver.sol101 import recover_reactions
+from sbeam.solver.element_recovery import recover_line_elements
 from sbeam.types import FloatArray, LuFactor
 from sbeam.model.aero import require_aeros
 from sbeam.model.gust import Gustlf
@@ -266,6 +267,8 @@ class _TrimState:
     displacements: FloatArray = field(init=False)
     bar_forces: dict[int, Any] = field(init=False)
     bar_stresses: dict[int, Any] = field(init=False)
+    rod_forces: dict[int, Any] = field(init=False)
+    rod_stresses: dict[int, Any] = field(init=False)
 
     # _stage_refine_yaw_rate (Step 67a)
     f_box_yaw: Optional[FloatArray] = field(init=False)
@@ -743,18 +746,13 @@ def _stage_recover_displacements(st: _TrimState) -> None:
     displacements = expand_to_g(u_a, T, free_local, len(red_dofs))
 
     # ------------------------------------------------------------------ #
-    # CBAR force / stress recovery
+    # Line-element force / stress recovery (CBAR + CROD/CONROD, #38)
     # ------------------------------------------------------------------ #
-    bar_forces   = {}
-    bar_stresses = {}
-    for cbar in bulk.cbars.values():
-        bar_forces[cbar.eid]   = recover_bar_forces(
-            cbar, bulk.grids, bulk.pbars, bulk.mat1s, displacements, grid_index)
-        bar_stresses[cbar.eid] = recover_bar_stresses(
-            cbar, bulk.grids, bulk.pbars, bulk.mat1s, displacements, grid_index)
+    elems = recover_line_elements(bulk, displacements, grid_index)
 
     st.displacements = displacements
-    st.bar_forces, st.bar_stresses = bar_forces, bar_stresses
+    st.bar_forces, st.bar_stresses = elems.bar_forces, elems.bar_stresses
+    st.rod_forces, st.rod_stresses = elems.rod_forces, elems.rod_stresses
 
 
 #: Step 67a yaw-rate fixed point: iteration cap and the relative trim-variable
@@ -1115,6 +1113,8 @@ def _pack_trim_result(st: _TrimState) -> Sol144TrimResult:
         displacements=st.displacements,
         bar_forces=st.bar_forces,
         bar_stresses=st.bar_stresses,
+        rod_forces=st.rod_forces,
+        rod_stresses=st.rod_stresses,
         q_aa=st.Q_aa,
         free_dofs=st.free_dofs,
         rigid_derivs=st.rigid_derivs,

@@ -1,0 +1,37 @@
+$ V24: Single CROD, clamped at GA, axial force + torque at GB — SOL 101 rod verification
+$ delta = P L / E A = 1000*2/(2e11*1e-4) = 1.0e-4 m
+$ theta = T L / G J = 10*2/(8e10*2e-8)   = 1.25e-2 rad
+$ AXIAL = +1000 (tension), TORQUE = +10 (right-handed about +x)
+$ sigma = P/A = 1.0e7, tau = T C / J = 10*2e-3/2e-8 = 1.0e6
+$ Grid 2 keeps only Tx and Rx free (a rod has no transverse or bending stiffness).
+$ Units: SI. E=2.0e11, G=8.0e10, A=1.0e-4, J=2.0e-8, C=2.0e-3, L=2.0
+$ Gate for designs/rod_element_crod.md (#38): G1
+$
+SOL 101
+$
+SUBCASE 1
+  TITLE = Rod axial + torsion (CROD)
+  SPC = 1
+  LOAD = 10
+  DISPLACEMENT = ALL
+  SPCFORCE = ALL
+  FORCE = ALL
+  STRESS = ALL
+$
+BEGIN BULK
+$
+GRID, 1, , 0.0, 0.0, 0.0
+GRID, 2, , 2.0, 0.0, 0.0
+$
+MAT1, 1, 2.0e11, 8.0e10, 0.25, 7850.0
+PROD, 1, 1, 1.0e-4, 2.0e-8, 2.0e-3
+$
+CROD, 1, 1, 1, 2
+$
+SPC1, 1, 123456, 1
+SPC1, 1, 2356, 2
+$
+FORCE, 10, 2, 0, 1000.0, 1.0, 0.0, 0.0
+MOMENT, 10, 2, 0, 10.0, 1.0, 0.0, 0.0
+$
+ENDDATA

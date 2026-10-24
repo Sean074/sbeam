@@ -105,7 +105,8 @@ matrix; uniform torsion GJ/L. Derivations: `docs/20_theory/00_beam_methods.ipynb
 
 Field-level reference (authoritative): `docs/10_standard/02_card_reference.md`.
 
-- **Structure:** CORD2R, GRID, CBAR, PLOTEL, RBE3, RBE2, RBAR, CBUSH, PBAR, PBUSH, MAT1
+- **Structure:** CORD2R, GRID, CBAR, CROD, CONROD, PLOTEL, RBE3, RBE2, RBAR, CBUSH, PBAR, PROD,
+  PBUSH, MAT1
 - **Mass:** CONM2, MASSSET
 - **Constraints/loads:** SPC, SPC1, FORCE, MOMENT, LOAD, GRAV
 - **Eigenvalue:** EIGRL

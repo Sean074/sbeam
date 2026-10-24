@@ -77,8 +77,8 @@ def render_sol101_results(bulk: BulkData, results: dict[int, Sol101Result]) -> N
     st.plotly_chart(fig, use_container_width=True)
 
     # Results tables
-    tab_disp, tab_rxn, tab_force, tab_stress, tab_cbush = st.tabs(
-        ["Displacements", "Reactions", "Bar Forces", "Bar Stresses", "CBUSH Forces"]
+    tab_disp, tab_rxn, tab_force, tab_stress, tab_rod, tab_cbush = st.tabs(
+        ["Displacements", "Reactions", "Bar Forces", "Bar Stresses", "Rod Forces", "CBUSH Forces"]
     )
 
     with tab_disp:
@@ -148,6 +148,24 @@ def render_sol101_results(bulk: BulkData, results: dict[int, Sol101Result]) -> N
             st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
         else:
             st.info("No bar stresses.")
+
+    with tab_rod:
+        if result.rod_forces:
+            rows = []
+            for eid in sorted(result.rod_forces.keys()):
+                rf = result.rod_forces[eid]
+                rs = result.rod_stresses.get(eid)
+                rows.append({
+                    "EID": eid,
+                    "Type": "CONROD" if eid in bulk.conrods else "CROD",
+                    "Axial": rf.axial,
+                    "Torque": rf.torque,
+                    "Axial stress": rs.axial if rs else 0.0,
+                    "Torsional stress": rs.torsional if rs else 0.0,
+                })
+            st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
+        else:
+            st.info("No CROD / CONROD elements.")
 
     with tab_cbush:
         if result.cbush_forces:

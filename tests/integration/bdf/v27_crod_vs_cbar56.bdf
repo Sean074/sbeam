@@ -1,0 +1,46 @@
+$ V27: CROD vs CBAR PA=PB=56 equivalence — SOL 101
+$ Two identical clamped members along +x (L = 2), same A, J, E, G. Member 1 is a CROD,
+$ member 11 a CBAR with both bending rotations released at both ends. GB keeps only Tx and
+$ Rx free; both get Px = 1000, Mx = 10. A transverse force Py = 300 at GB goes straight
+$ into the SPC and must leave both elements' response unchanged.
+$ Expected: identical delta, theta, AXIAL, TORQUE (1e-12); CBAR bending and shear columns 0.
+$ Units: SI. E=2.0e11, G=8.0e10, A=1.0e-4, J=2.0e-8, I1=I2=1.0e-8
+$ Gate for designs/rod_element_crod.md (#38): G4
+$
+SOL 101
+$
+SUBCASE 1
+  TITLE = CROD vs CBAR 56 equivalence
+  SPC = 1
+  LOAD = 10
+  DISPLACEMENT = ALL
+  SPCFORCE = ALL
+  FORCE = ALL
+  STRESS = ALL
+$
+BEGIN BULK
+$
+GRID, 1, , 0.0, 0.0, 0.0
+GRID, 2, , 2.0, 0.0, 0.0
+GRID, 11, , 0.0, 0.0, 5.0
+GRID, 12, , 2.0, 0.0, 5.0
+$
+MAT1, 1, 2.0e11, 8.0e10, 0.25, 7850.0
+PROD, 1, 1, 1.0e-4, 2.0e-8, 2.0e-3
+PBAR, 2, 1, 1.0e-4, 1.0e-8, 1.0e-8, 2.0e-8
+$
+CROD, 1, 1, 1, 2
+CBAR, 11, 2, 11, 12, 0.0, 1.0, 0.0
++, 56, 56
+$
+SPC1, 1, 123456, 1, 11
+SPC1, 1, 2356, 2, 12
+$
+FORCE, 10, 2, 0, 1000.0, 1.0, 0.0, 0.0
+MOMENT, 10, 2, 0, 10.0, 1.0, 0.0, 0.0
+FORCE, 10, 2, 0, 300.0, 0.0, 1.0, 0.0
+FORCE, 10, 12, 0, 1000.0, 1.0, 0.0, 0.0
+MOMENT, 10, 12, 0, 10.0, 1.0, 0.0, 0.0
+FORCE, 10, 12, 0, 300.0, 0.0, 1.0, 0.0
+$
+ENDDATA

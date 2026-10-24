@@ -44,6 +44,25 @@ The local matrix is transformed to global coordinates via:
 
 Where `[T]` is the 12×12 transformation matrix built from the element direction cosines.
 
+### Rod element (CROD / CONROD)
+
+A rod (#38, `30_future/designs/rod_element_crod.md`) is the second line element. Its local
+12×12 stiffness is `EA/L` on the axial pair (DOFs 0, 6) and `GJ/L` on the torsional pair
+(DOFs 3, 9), zero elsewhere, so in the basic frame it is `(EA/L)·n nᵀ` on the translations
+and `(GJ/L)·n nᵀ` on the rotations with `n = (GB − GA)/L` (NASTRAN-95 `mis/krod.f`). There
+is no orientation vector; `rod_frame` picks a deterministic local y/z that the result does
+not depend on. `CROD` reads its section from a `PROD`, `CONROD` carries it inline;
+`rod_section` (`assembly/elements.py`) is the only code that tells them apart.
+
+### The line-element registry
+
+Every loop that used to read `bulk.cbars` now iterates `iter_line_elements(bulk)` and asks
+`line_element(elem, bulk)` for a `LineElement` record (EID, kind, GA, GB, L, released local
+`K`, transform `T`); `line_element_mass_global` / `line_element_mass_per_length` are the
+mass side (`assembly/elements.py`). The CBAR entry wraps `released_local_stiffness`,
+`transform_matrix` and `element_mass_global` unchanged, so a deck without rods assembles
+bit-identically. Only CBAR and CROD/CONROD are registered; CBUSH keeps its own path.
+
 ---
 
 ## Global Assembly
@@ -51,7 +70,7 @@ Where `[T]` is the 12×12 transformation matrix built from the element direction
 Global DOF index for grid `i` (0-based), local DOF `d` (0–5): `idx = 6*i + d`
 
 1. Initialise `K_global` as a `(6N × 6N)` zero matrix where N = number of grids.
-2. For each CBAR element: compute `[K_e_global]` and scatter into `K_global` at the DOF rows/columns corresponding to GA and GB.
+2. For each line element (CBAR, CROD, CONROD through `iter_line_elements`): compute `[K_e_global] = Tᵀ K_local T` and scatter into `K_global` at the DOF rows/columns corresponding to GA and GB.
 3. For each CONM2 mass (SOL 101 only relevant if inertia relief is needed — not in phase 1): no stiffness contribution.
 
 ---
@@ -274,6 +293,22 @@ MSC-trained reader would have added the axial term twice.
 
 ---
 
+### Rod Forces and Stresses (CROD / CONROD)
+
+Rods go through the same `f_local = K_local·T·u` product (`solver/element_recovery.py`
+`local_end_forces`) and the same `bar_internal_resultants` sign helper: `AXIAL = P = +f[6]`
+(tension positive) and `TORQUE = T = +f[9]` (right-handed about GA→GB), identical to the
+CBAR `AXIAL`/`TORQUE` columns. `RodForce(eid, axial, torque)`; `RodStress(eid, axial,
+torsional)` with `axial = P/A` and `torsional = T·C/J` (`C` from the PROD/CONROD; 0 when
+`J = 0` or `C = 0`, as NASTRAN-95 `srod1.f` sets `C/J = 0` for `J = 0`). In terms of the
+displacements this is `P = A·(E/L)·n·(u_B − u_A)` and `T = (GJ/L)·n·(θ_B − θ_A)`
+(`srod2.f`), gated term by term in `tests/solver/test_rod_recovery.py`. Rods never
+populate `bar_forces`/`bar_stresses`; they fill `rod_forces`/`rod_stresses` on
+`Sol101Result`, `Sol144Result`, `Sol144TrimResult`, and `rod_forces` on `ManeuverStep`.
+One function, `recover_line_elements`, serves SOL 101, both SOL 144 paths and MLOADS.
+
+---
+
 ## .f06 Output (SOL 101)
 
 Output sections written to `results.f06`:
@@ -304,6 +339,29 @@ Output sections written to `results.f06`:
    ```
 
    Both blocks are shared verbatim by SOL 144 (trim) and the MLOADS critical-sample f06.
+
+7. **Rod Forces** — only when the deck has rods (#38): the NASTRAN `FORCES IN ROD ELEMENTS`
+   block, one row per element, first `( C R O D )` then `( C O N R O D )`. Values per "Rod
+   Forces and Stresses" above (tension / right-hand torque positive).
+
+   ```
+          ELEMENT          AXIAL
+              ID.          FORCE       TORQUE
+                1   1.000000E+03 1.000000E+01
+   ```
+
+8. **Rod Stresses** — `STRESSES IN ROD ELEMENTS`, same split by card type. `AXIAL STRESS =
+   P/A`, `TORSIONAL STRESS = T·C/J`; the two `SAFETY MARGIN` columns are header-only blank
+   (no allowables are parsed), as the CBAR `M.S.` columns are.
+
+   ```
+          ELEMENT          AXIAL       SAFETY    TORSIONAL       SAFETY
+              ID.         STRESS       MARGIN       STRESS       MARGIN
+                1   1.000000E+07              1.000000E+06
+   ```
+
+   The rod blocks follow the CBAR blocks under the same `FORCE`/`STRESS` requests in SOL
+   101, SOL 144 (trim and static) and the MLOADS critical-sample f06 (forces only there).
 
 ---
 
@@ -409,6 +467,15 @@ def assemble_load_vector(bulk: BulkData, load_sid: int) -> np.ndarray:
 def recover_bar_forces(cbar, grids, pbars, mat1s,
                        displacements, grid_index) -> BarForce:
     ...
+
+# solver/element_recovery.py — the one loop over every line element (#38)
+def recover_line_elements(bulk, displacements, grid_index,
+                          stresses=True) -> ElementResults:
+    ...   # .bar_forces, .bar_stresses, .rod_forces, .rod_stresses
+
+# assembly/elements.py — the line-element registry
+def iter_line_elements(bulk) -> Iterator[Cbar | Crod | Conrod]: ...
+def line_element(elem, bulk) -> LineElement: ...   # K_local, T, L, ga, gb
 ```
 
 `run_sol101` accepts `subcase.load_sid = None` as a valid zero-load subcase;

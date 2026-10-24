@@ -6,8 +6,8 @@ from typing import Optional
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.coordinate_system import Cord2r
 from sbeam.model.grid import Grid
-from sbeam.model.element import Cbar, Plotel, Rbe3, Rbe2, Cbush, Rbar
-from sbeam.model.property import Pbar, Pbush
+from sbeam.model.element import Cbar, Conrod, Crod, Plotel, Rbe3, Rbe2, Cbush, Rbar
+from sbeam.model.property import Pbar, Pbush, Prod
 from sbeam.model.material import Mat1
 from sbeam.model.mass import Conm2, Massset
 from sbeam.model.load import Force, Moment, Load, Grav, Eigrl
@@ -129,7 +129,7 @@ def _handle_grid(fields: list[str], bulk: BulkData) -> None:
 
 def _handle_pbar(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -> None:
     pid = _to_int(fields[1])
-    if pid in bulk.pbars:
+    if pid in bulk.pbars or pid in bulk.prods:
         raise ValueError(f"Duplicate PID {pid}")
     mid = _to_int(fields[2])
     A   = _to_float(fields[3])
@@ -164,6 +164,74 @@ def _handle_mat1(fields: list[str], bulk: BulkData) -> None:
     bulk.mat1s[mid] = Mat1(mid=mid, E=E, G=G, nu=nu, rho=rho)
 
 
+def _check_unique_eid(bulk: BulkData, card: str, eid: int) -> None:
+    """Element IDs share one space across the structural element cards (#38 D7)."""
+    for name, coll in (("CBAR", bulk.cbars), ("CROD", bulk.crods),
+                       ("CONROD", bulk.conrods), ("CBUSH", bulk.cbushs)):
+        if eid in coll:
+            raise ValueError(f"{card} {eid}: duplicate element ID (already defined by {name} {eid})")
+
+
+def _check_rod_grids(card: str, eid: int, ga: int, gb: int, bulk: BulkData) -> None:
+    if ga not in bulk.grids:
+        raise ValueError(f"{card} {eid}: grid GA={ga} not found")
+    if gb not in bulk.grids:
+        raise ValueError(f"{card} {eid}: grid GB={gb} not found")
+    if ga == gb:
+        raise ValueError(f"{card} {eid}: GA and GB must be different grids")
+
+
+def _check_rod_section(card: str, ident: int, A: float, J: float) -> None:
+    if A <= 0.0:
+        raise ValueError(f"{card} {ident}: A must be positive (got {A})")
+    if J < 0.0:
+        raise ValueError(f"{card} {ident}: J must be non-negative (got {J})")
+
+
+def _handle_prod(fields: list[str], bulk: BulkData) -> None:
+    pid = _to_int(fields[1])
+    if pid in bulk.prods or pid in bulk.pbars:
+        raise ValueError(f"Duplicate PID {pid}")
+    mid = _to_int(fields[2])
+    A   = _to_float(fields[3])
+    J   = _to_float(fields[4]) if len(fields) > 4 else 0.0
+    c   = _to_float(fields[5]) if len(fields) > 5 else 0.0
+    nsm = _to_float(fields[6]) if len(fields) > 6 else 0.0
+    _check_rod_section("PROD", pid, A, J)
+    bulk.prods[pid] = Prod(pid=pid, mid=mid, A=A, J=J, c=c, nsm=nsm)
+
+
+def _handle_crod(fields: list[str], bulk: BulkData) -> None:
+    eid = _to_int(fields[1])
+    pid = _to_int(fields[2])
+    ga  = _to_int(fields[3])
+    gb  = _to_int(fields[4])
+    _check_unique_eid(bulk, "CROD", eid)
+    _check_rod_grids("CROD", eid, ga, gb, bulk)
+    if pid not in bulk.prods:
+        raise ValueError(f"CROD {eid}: property PID={pid} not found (PROD)")
+    if bulk.prods[pid].mid not in bulk.mat1s:
+        raise ValueError(f"CROD {eid}: PROD {pid} material MID={bulk.prods[pid].mid} not found")
+    bulk.crods[eid] = Crod(eid=eid, pid=pid, ga=ga, gb=gb)
+
+
+def _handle_conrod(fields: list[str], bulk: BulkData) -> None:
+    eid = _to_int(fields[1])
+    ga  = _to_int(fields[2])
+    gb  = _to_int(fields[3])
+    mid = _to_int(fields[4])
+    A   = _to_float(fields[5])
+    J   = _to_float(fields[6]) if len(fields) > 6 else 0.0
+    c   = _to_float(fields[7]) if len(fields) > 7 else 0.0
+    nsm = _to_float(fields[8]) if len(fields) > 8 else 0.0
+    _check_unique_eid(bulk, "CONROD", eid)
+    _check_rod_grids("CONROD", eid, ga, gb, bulk)
+    if mid not in bulk.mat1s:
+        raise ValueError(f"CONROD {eid}: material MID={mid} not found")
+    _check_rod_section("CONROD", eid, A, J)
+    bulk.conrods[eid] = Conrod(eid=eid, ga=ga, gb=gb, mid=mid, A=A, J=J, c=c, nsm=nsm)
+
+
 def _handle_cbar(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -> None:
     eid  = _to_int(fields[1])
     pid  = _to_int(fields[2])
@@ -176,6 +244,7 @@ def _handle_cbar(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -
     pa   = cont[1] if cont is not None and len(cont) > 1 else ""
     pb   = cont[2] if cont is not None and len(cont) > 2 else ""
 
+    _check_unique_eid(bulk, "CBAR", eid)
     if ga not in bulk.grids:
         raise ValueError(f"CBAR {eid}: grid GA={ga} not found")
     if gb not in bulk.grids:
@@ -1327,6 +1396,12 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
             _handle_cbush(fields, cont, bulk)
         elif keyword == "CBAR":
             _handle_cbar(fields, cont, bulk)
+        elif keyword == "PROD":
+            _handle_prod(fields, bulk)
+        elif keyword == "CROD":
+            _handle_crod(fields, bulk)
+        elif keyword == "CONROD":
+            _handle_conrod(fields, bulk)
         elif keyword == "PLOTEL":
             _handle_plotel(fields, bulk)
         elif keyword == "RBE3":

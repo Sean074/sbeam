@@ -327,6 +327,17 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
             st.dataframe(style_numeric(pd.DataFrame(cbar_rows)), width="stretch")
         else:
             st.info("No CBAR elements.")
+        rod_rows = []
+        for kind, coll in (("CROD", bulk.crods), ("CONROD", bulk.conrods)):
+            for r in coll.values():
+                ga = bulk.grids.get(r.ga)
+                gb = bulk.grids.get(r.gb)
+                L = math.sqrt((gb.x - ga.x) ** 2 + (gb.y - ga.y) ** 2 + (gb.z - ga.z) ** 2) if ga and gb else 0.0
+                rod_rows.append({"EID": r.eid, "Type": kind, "PID": getattr(r, "pid", ""),
+                                 "GA": r.ga, "GB": r.gb, "L": L})
+        if rod_rows:
+            st.markdown("**Rod elements (CROD / CONROD)**")
+            st.dataframe(style_numeric(pd.DataFrame(rod_rows)), width="stretch")
         if bulk.rbe3s:
             st.markdown("**RBE3 elements**")
             rbe3_rows = []
@@ -405,6 +416,43 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
             st.info("No constraints.")
 
 
+def _rod_only_grids_without_rotation_spc(bulk: BulkData) -> list[int]:
+    """Grids touched only by rods whose three rotations are not all SPC'd (#38 D7)."""
+    rod_grids: set[int] = set()
+    for coll in (bulk.crods, bulk.conrods):
+        for r in coll.values():
+            rod_grids.update((r.ga, r.gb))
+    if not rod_grids:
+        return []
+    stiff_grids: set[int] = set()
+    for c in bulk.cbars.values():
+        stiff_grids.update((c.ga, c.gb))
+    for c in bulk.cbushs.values():
+        stiff_grids.add(c.ga)
+        if c.gb is not None:
+            stiff_grids.add(c.gb)
+    for r in bulk.rbars.values():
+        stiff_grids.update((r.ga, r.gb))
+    for r in bulk.rbe2s.values():
+        stiff_grids.add(r.gn)
+        stiff_grids.update(r.gm)
+    for r in bulk.rbe3s.values():
+        stiff_grids.add(r.refgrid)
+    spc_rot: dict[int, set[str]] = {}
+    for gid, g in bulk.grids.items():
+        spc_rot[gid] = set(ch for ch in (g.ps or "") if ch in "456")
+    for spcs in bulk.spcs.values():
+        for spc in spcs:
+            spc_rot.setdefault(spc.g1, set()).update(ch for ch in str(spc.c1) if ch in "456")
+            if spc.g2 is not None and spc.c2 is not None:
+                spc_rot.setdefault(spc.g2, set()).update(ch for ch in str(spc.c2) if ch in "456")
+    for spc1s in bulk.spc1s.values():
+        for spc1 in spc1s:
+            for gid in spc1.grids:
+                spc_rot.setdefault(gid, set()).update(ch for ch in str(spc1.c) if ch in "456")
+    return sorted(g for g in rod_grids - stiff_grids if len(spc_rot.get(g, set())) < 3)
+
+
 def _get_pre_solve_warnings(
     bulk: BulkData, cc: Optional[CaseControl], parse_warnings: list[str]
 ) -> list[str]:
@@ -433,10 +481,28 @@ def _get_pre_solve_warnings(
             )
             if L == 0.0:
                 zero_eids.append(eid)
+    for coll in (bulk.crods, bulk.conrods):
+        for eid, rod in coll.items():
+            ga = bulk.grids.get(rod.ga)
+            gb = bulk.grids.get(rod.gb)
+            if ga and gb and (ga.x, ga.y, ga.z) == (gb.x, gb.y, gb.z):
+                zero_eids.append(eid)
     if zero_eids:
         msgs.append(
-            f"Zero-length CBAR element(s) detected: EID {zero_eids}. "
+            f"Zero-length CBAR/CROD/CONROD element(s) detected: EID {zero_eids}. "
             "These produce a singular stiffness matrix and will cause the solver to fail."
+        )
+
+    # 1b. Rod-only grids (#38): a rod has no bending stiffness, so a grid that
+    #     only rods touch has free rotations unless the deck SPCs them (no AUTOSPC).
+    rod_only = _rod_only_grids_without_rotation_spc(bulk)
+    if rod_only:
+        msgs.append(
+            f"Grid(s) {rod_only} are connected only by CROD/CONROD elements and have "
+            "rotations that no SPC constrains. A rod carries no bending, so those rotations "
+            "have no stiffness (except torsion about each rod axis) and the stiffness matrix "
+            "will be singular. SPC the free rotations (e.g. SPC1, sid, 456, grid); sbeam has "
+            "no AUTOSPC."
         )
 
     # 2. SPC coverage

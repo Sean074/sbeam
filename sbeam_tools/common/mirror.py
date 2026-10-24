@@ -80,7 +80,7 @@ def mirror_halfspan(bulk: BulkData, tol: float = 1e-9) -> BulkData:
     present = [name for attr, name in _UNSUPPORTED.items() if getattr(bulk, attr)]
     if present:
         raise NotImplementedError(
-            "mirror_halfspan only unfolds GRID/CBAR/CONM2/RBAR/RBE2/CAERO1 "
+            "mirror_halfspan only unfolds GRID/CBAR/CROD/CONROD/CONM2/RBAR/RBE2/CAERO1 "
             "geometry. These cards need a manual full-span rebuild: "
             + ", ".join(sorted(set(present)))
             + ". (A symmetric half-model's plane-of-symmetry SPC must be "
@@ -96,6 +96,8 @@ def mirror_halfspan(bulk: BulkData, tol: float = 1e-9) -> BulkData:
         [0]
         + list(bulk.grids)
         + list(bulk.cbars)
+        + list(bulk.crods)
+        + list(bulk.conrods)
         + list(bulk.conm2s)
         + list(bulk.rbars)
         + list(bulk.rbe2s)
@@ -136,6 +138,19 @@ def mirror_halfspan(bulk: BulkData, tol: float = 1e-9) -> BulkData:
             ga=mir_gid(c.ga), gb=mir_gid(c.gb),
             x1=c.x1, x2=-c.x2, x3=c.x3,   # orientation vector reflects in y
         )
+
+    # --- CROD / CONROD: no orientation vector, so a plain grid remap (#38).
+    #     PROD is a section card and stays shared. ---
+    for eid, r in bulk.crods.items():
+        if on_centerline(r.ga) and on_centerline(r.gb):
+            continue
+        out.crods[eid + off] = replace(
+            r, eid=eid + off, ga=mir_gid(r.ga), gb=mir_gid(r.gb))
+    for eid, r in bulk.conrods.items():
+        if on_centerline(r.ga) and on_centerline(r.gb):
+            continue
+        out.conrods[eid + off] = replace(
+            r, eid=eid + off, ga=mir_gid(r.ga), gb=mir_gid(r.gb))
 
     # --- CONM2: mirror off-centerline point masses ---
     for eid, m in bulk.conm2s.items():

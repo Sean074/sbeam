@@ -107,8 +107,8 @@ sbeam/
 ├── model/
 │   ├── bulk_data.py          # BulkData container dataclass
 │   ├── grid.py               # Grid dataclass (includes cp, cd fields)
-│   ├── element.py            # Cbar, Plotel, Rbe3, Rbe2, Rbar dataclasses
-│   ├── property.py           # Pbar, Pbush dataclasses
+│   ├── element.py            # Cbar, Crod, Conrod, Cbush, Plotel, Rbe3, Rbe2, Rbar dataclasses
+│   ├── property.py           # Pbar, Prod, Pbush dataclasses
 │   ├── material.py           # Mat1 dataclass
 │   ├── load.py               # Force, Moment, Load, Grav dataclasses
 │   ├── constraint.py         # Spc, Spc1 dataclasses
@@ -119,7 +119,8 @@ sbeam/
 │   ├── maneuver.py           # ZAERO MLOADS card set (Mloads, Mldtrim, Mldcomd, Mldtime, Mldprnt, Tabled1) for Phase G0
 │   └── maneuver_presets.py   # Balanced-maneuver TRIM authoring presets (load factor / steady rate → AESTAT values, Step 53)
 ├── assembly/
-│   ├── stiffness.py          # Global stiffness matrix assembly
+│   ├── elements.py           # Line-element registry: CBAR + CROD/CONROD records, rod frame/stiffness/mass, rod_section (#38)
+│   ├── stiffness.py          # Global stiffness matrix assembly (CBAR helpers + CBUSH)
 │   ├── mass_matrix.py        # Global consistent mass matrix assembly
 │   ├── load_vector.py        # Load vector assembly (FORCE, MOMENT, GRAV)
 │   ├── rbe3.py               # RBE3, RBE2, and RBAR DOF transformation matrix
@@ -127,7 +128,8 @@ sbeam/
 │   ├── rigid_body.py         # Geometric rigid-body vectors on the g-set — the single derivation shared by Φ_r (modal_basis) and M_ax (sol144)
 │   └── coord_transform.py    # CORD2R rotation matrices; input/output transforms
 ├── solver/
-│   ├── sol101.py         # Static analysis
+│   ├── sol101.py         # Static analysis (CBAR recovery, bar_internal_resultants)
+│   ├── element_recovery.py # Rod recovery + recover_line_elements, the one loop shared by SOL 101/144/MLOADS (#38)
 │   ├── sol103.py         # Normal modes
 │   ├── sol144.py         # Static aeroelastic trim orchestrator + import facade (P13 split below)
 │   ├── sol144_util.py    # AeroCache, URDD frame rotations, load resultants, M_ax, SUPORT indexing
@@ -389,8 +391,12 @@ Tests mirror the `sbeam/` module structure under `tests/`. Each assembly, solver
 | V21 | `v21_fixed_pinned_tip_load.bdf` | 101 | Pin release `PB=6`: δ = PL³/3EI, root moment = −PL, released end-B moment exactly 0 (DEF-M17 G1) | 1e-10 rel; 0 abs |
 | V22 | `v22_clamped_pinned_modal_n20.bdf` | 103 | 20 elements, grid ends clamped, last element `PB=56`: f₁ = (3.92660²/2π)√(EI/ρAL⁴) = 11.30667 Hz, double root (DEF-M17 G2) | < 0.01% |
 | V23 | `v23_clamped_pinned_modal_n4.bdf` | 103 | Same at N=4: 11.31450 Hz regression value pinning the congruent mass condensation (DEF-M17 G2b) | 1e-6 rel |
+| V24 | `v24_rod_axial_torsion.bdf` | 101 | Single CROD, clamped at GA: δ = PL/EA = 1.0e-4, θ = TL/GJ = 1.25e-2, AXIAL = +P, TORQUE = +T, σ = P/A, τ = TC/J (#38 G1) | 1e-10 rel |
+| V25 | `v25_strut_pylon_statics.bdf` | 101 | Planar two-strut pylon (CROD + CONROD) under Px = 500, Pz = −1000: N1 = 750√2, N2 = 250√2 by joint equilibrium; reactions balance (#38 G2) | 1e-9 rel |
+| V26 | `v26_engine_on_struts_modes.bdf` | 103 | CONM2 100 kg on two massless struts at ±30°: f_x = 35.588127 Hz, f_z = 61.640444 Hz exact 2-DOF closed form; ρ > 0 lowers the pair by < 1 % (#38 G3) | 1e-8 rel |
+| V27 | `v27_crod_vs_cbar56.bdf` | 101 | CROD vs CBAR `PA=PB=56` with the same A, J: identical δ, θ, AXIAL, TORQUE; CBAR bending/shear columns 0 (#38 G4) | 1e-12 rel |
 
-V1–V7 use: E=2.0×10¹¹ Pa, ρ=7850 kg/m³, A=0.05 m², I=8.333×10⁻⁴ m⁴, L=1.0 m, 10 CBAR elements. V8–V23 use parameters defined in their BDF files; see `tests/integration/test_verification.py` for exact values.
+V1–V7 use: E=2.0×10¹¹ Pa, ρ=7850 kg/m³, A=0.05 m², I=8.333×10⁻⁴ m⁴, L=1.0 m, 10 CBAR elements. V8–V27 use parameters defined in their BDF files; see `tests/integration/test_verification.py` for exact values.
 
 ### Integration tests — shipped sample decks (VAL2)
 
@@ -403,6 +409,7 @@ The V-suite above gates its own decks under `tests/integration/bdf/` (L = 1 m, A
 | `val_cantilever_modes.bdf` | 103 | f₁ (β₁ = 1.875104) ≈ 2.578 Hz; f₂ (β₂ = 4.694091) ≈ 16.159 Hz; ascending order | rel 1e-5 / 2e-4 |
 | `val_free_free_modes.bdf` | 103 | Six rigid-body modes < 1e-3 Hz; mode 7 elastic (>1e3 separation); f₇ (β = 4.730041) ≈ 16.407 Hz | 1e-3 Hz / rel 2e-4 |
 | `val_cantilever_offset_mass_modes.bdf` | 103 | Coupled bending-torsion pair from a transverse-offset tip CONM2: f₁ ≈ 0.1489 Hz, f₂ ≈ 0.7466 Hz vs the tip-dominant 2-DOF closed form (Rayleigh beam-mass corrections); twist participation Rx·d/Tz ≈ +0.10 / −0.99; zeroing the offset decouples the families | rel 2e-3 |
+| `pylon_strut_engine.bdf` | 101 | Strut-braced engine pylon (CBAR wing + spine, CROD + CONROD struts, CONM2 engine; 1g + thrust and 1g): free body of the engine grid closes to 1e-9 (rod forces + spine end-B force + applied load = 0), root reactions = GPWG weight and thrust, CONROD stress = P/A like the CROD, both rod f06 blocks present (#38) | 1e-9 rel |
 
 Two conventions differ from the V-suite and matter when reading the module:
 
@@ -491,6 +498,7 @@ restrictions there first, then link them here.
 | `CBAR` offsets not supported | `W1A`/`W2A` are not honoured; use a short rigid element (`RBAR`/`RBE2`) to model the offset |
 | `CBAR` orientation vector form only | The `G0` grid-ID orientation form is not supported — use `X1/X2/X3` |
 | `CBUSH` restrictions | `CID` must be `0` or blank; element offsets unsupported; massless; `PBUSH` damping (`B1`–`B6`) is deferred to the dynamic solvers |
+| `CROD`/`CONROD` rod-only grids | No AUTOSPC: a grid touched only by rods has free rotations and must have them SPC'd; rod mass carries no torsional inertia; no `PLOAD1`/thermal element loads (#38) |
 | `MAT1` thermal fields ignored | `A`, `TREF` and `GE` are parsed but unused — there is no thermal load path |
 
 **Propulsion**
@@ -523,6 +531,7 @@ card table. Open defects and unresolved questions are tracked in
 | 1 | SOL 103 Normal modes | Complete |
 | 1 | BDF cards: CORD2R, GRID, CBAR, PBAR, MAT1, SPC/SPC1, FORCE, MOMENT, LOAD, PLOTEL, CONM2, EIGRL | Complete |
 | 2 | BDF cards: RBE2, RBE3, CBUSH, PBUSH, RBAR | Complete |
+| 3 | BDF cards: CROD, PROD, CONROD — rod element behind the line-element registry (`assembly/elements.py`), engine-pylon struts (#38) | Complete |
 | 2 | BDF card: GRAV (gravity body load; CID=0; f = M×a via consistent mass matrix) | Complete |
 | A | Steady VLM aeroelastics: card parsing, panel meshing, AIC + integration matrices, AIC corrections (Wkk, WT2), section force/moment correction synthesis, body-panel total-moment corrections | Steps 39–45 + A9 (cruciform) + A10 (decoupled strip) complete; A7/A8 warnings open |
 | B | Structural coupling splines: SPLINE2/ATTACH/SPLINE0 → g_slope/g_disp/g_load; flexible aero stiffness Q_aa | Complete (Step 48 SPLINE1 surface spline deferred) |

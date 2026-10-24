@@ -14,8 +14,6 @@ from sbeam.assembly.stiffness import (
     assemble_global_stiffness,
     get_spc_dofs,
     check_spc_enforced_displacements,
-    released_local_stiffness,
-    transform_matrix,
     cbush_stiffness_global,
 )
 from sbeam.assembly.load_vector import assemble_load_vector, build_grid_index
@@ -75,32 +73,16 @@ def _element_local_forces(
     cbar: Cbar, grids: dict[int, Grid], pbars: dict[int, Pbar],
     mat1s: dict[int, Mat1], displacements: FloatArray, grid_index: dict[int, int],
 ) -> FloatArray:
-    """Compute 12-vector of local end forces for a CBAR element."""
-    pbar = pbars[cbar.pid]
-    mat1 = mat1s[pbar.mid]
+    """Compute 12-vector of local end forces for a CBAR element.
 
-    ia = grid_index[cbar.ga]
-    ib = grid_index[cbar.gb]
-
-    dofs_a = [6 * ia + d for d in range(6)]
-    dofs_b = [6 * ib + d for d in range(6)]
-    dofs = dofs_a + dofs_b
-
-    u_global_elem = displacements[dofs]
-
-    ga = grids[cbar.ga]
-    gb = grids[cbar.gb]
-    L = float(np.linalg.norm(
-        np.array([gb.x - ga.x, gb.y - ga.y, gb.z - ga.z])
-    ))
-
-    K_local, _ = released_local_stiffness(pbar, mat1, L, cbar.pa, cbar.pb)
-    T = transform_matrix(cbar, grids)
-
-    u_local = T @ u_global_elem
-    f_local = K_local @ u_local
-
-    return f_local
+    Kept on the explicit dict signature (section-cut tests call it directly);
+    the matrices come from the line-element registry (#38) and the product is
+    the shared ``local_end_forces``.
+    """
+    from sbeam.assembly.elements import cbar_line_element
+    from sbeam.solver.element_recovery import local_end_forces
+    le = cbar_line_element(cbar, grids, pbars, mat1s)
+    return local_end_forces(le, displacements, grid_index)
 
 
 @dataclass(frozen=True)
@@ -339,16 +321,9 @@ def run_sol101(bulk: BulkData, subcase: SubcaseControl) -> Sol101Result:
     u_a = solve_static(K_aa, f_aa, list(range(n_a)), n_a)
     displacements = red.expand_to_g(u_a)
 
-    # Recover bar forces and stresses
-    bar_forces = {}
-    bar_stresses = {}
-    for cbar in bulk.cbars.values():
-        bar_forces[cbar.eid] = recover_bar_forces(
-            cbar, bulk.grids, bulk.pbars, bulk.mat1s, displacements, grid_index
-        )
-        bar_stresses[cbar.eid] = recover_bar_stresses(
-            cbar, bulk.grids, bulk.pbars, bulk.mat1s, displacements, grid_index
-        )
+    # Recover line-element forces and stresses (CBAR + CROD/CONROD, #38)
+    from sbeam.solver.element_recovery import recover_line_elements
+    elems = recover_line_elements(bulk, displacements, grid_index)
 
     # Recover CBUSH forces
     cbush_forces = {}
@@ -367,7 +342,9 @@ def run_sol101(bulk: BulkData, subcase: SubcaseControl) -> Sol101Result:
     return Sol101Result(
         displacements=displacements,
         reactions=reactions,
-        bar_forces=bar_forces,
-        bar_stresses=bar_stresses,
+        bar_forces=elems.bar_forces,
+        bar_stresses=elems.bar_stresses,
         cbush_forces=cbush_forces,
+        rod_forces=elems.rod_forces,
+        rod_stresses=elems.rod_stresses,
     )

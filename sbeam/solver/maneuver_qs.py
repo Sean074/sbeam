@@ -67,7 +67,8 @@ from sbeam.results.monitor_points import (
 from sbeam.results.section_envelope import (
     build_monitor_envelope, build_section_envelope,
 )
-from sbeam.solver.sol101 import recover_bar_forces, recover_reactions
+from sbeam.solver.sol101 import recover_reactions
+from sbeam.solver.element_recovery import recover_line_elements
 from sbeam.assembly.reduction import AsetReduction, expand_to_g
 from sbeam.solver.sol144 import run_sol144_trim
 from sbeam.solver.sol144_util import (
@@ -269,11 +270,9 @@ def recover_step(
         u_a[li] = u_l[li_idx]
     displacements = expand_to_g(u_a, ops.T, ops.free_local, len(ops.red_dofs))
 
-    # CBAR force recovery (reuses sol101 unchanged).
-    bar_forces = {}
-    for cbar in bulk.cbars.values():
-        bar_forces[cbar.eid] = recover_bar_forces(
-            cbar, bulk.grids, bulk.pbars, bulk.mat1s, displacements, grid_index)
+    # Line-element force recovery (CBAR + CROD/CONROD, #38; forces only per sample).
+    elems = recover_line_elements(bulk, displacements, grid_index, stresses=False)
+    bar_forces = elems.bar_forces
 
     # Instantaneous aero box forces at this state (steady VLM, Level 1).
     w_struct = ops.djk @ (aero.require_g_slope() @ displacements)
@@ -364,7 +363,7 @@ def recover_step(
 
     return ManeuverStep(
         t=t, trim_vars=dict(vals), displacements=displacements,
-        bar_forces=bar_forces, grid_loads=grid_loads,
+        bar_forces=bar_forces, rod_forces=elems.rod_forces, grid_loads=grid_loads,
         inertial_loads=inertial_loads, net_loads=net_loads, closure=closure,
         Fz_aero=Fz_aero, My_aero=My_aero, modal_coords=modal_coords,
         xi_r=xi_r, xi_r_dot=xi_r_dot, xi_r_ddot=xi_r_ddot, nz_rel=nz_rel,
