@@ -709,7 +709,7 @@ P_V21 = 1000.0
 
 
 class TestV21FixedPinnedTipLoad:
-    """G1: clamped at GA, PB=6 at GB. δ = PL³/3EI, root moment −PL, end-B moment exactly 0."""
+    """G1: clamped at GA, PB=6 at GB. δ = PL³/3EI, root reaction moment −PL (M1A = +PL), end-B moment exactly 0."""
 
     @pytest.fixture(scope="class")
     def solved(self) -> tuple[Sol101Result, dict[int, int], BulkData]:
@@ -729,8 +729,9 @@ class TestV21FixedPinnedTipLoad:
     def test_released_end_moment_zero(self, solved) -> None:
         result, _, _ = solved
         bf = result.bar_forces[1]
-        assert bf.bm2_b == 0.0
-        assert bf.bm2_a == pytest.approx(-P_V21 * L, rel=1e-10)
+        assert bf.m1_b == 0.0
+        # Force table is on the +x face since #21: root M1A = +P·L (reaction is −P·L).
+        assert bf.m1_a == pytest.approx(P_V21 * L, rel=1e-10)
 
 
 L_V22 = 10.0

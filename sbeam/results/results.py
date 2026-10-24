@@ -10,31 +10,55 @@ from sbeam.types import FloatArray, LuFactor, SparseMatrix
 
 @dataclass
 class BarForce:
+    """CBAR end forces in the NASTRAN/MSC ``FORCES IN BAR ELEMENTS`` layout (DEF-M18, #21).
+
+    All values are internal resultants on the positive (+x) face of the section
+    in the element local frame (``bar_internal_resultants``; ``09_conventions.md``
+    §9). Plane 1 is the element x–y plane (bending about local z, PBAR ``I1``);
+    plane 2 is the x–z plane (bending about local y, PBAR ``I2``). The plane
+    moments carry the NASTRAN sign: ``M1 = +Mz⁺`` and ``M2 = −My⁺``, so both are
+    positive when they put the +y / +z fibres in compression and the bending
+    stress is ``σ = −M1·y/I1 − M2·z/I2`` (NASTRAN-95 ``sbar2.f``). On a
+    cantilever with tip loads +Py, +Pz: ``M1(x) = Py(L−x)``, ``M2(x) = Pz(L−x)``.
+    """
     eid: int
-    # End forces and moments in element LOCAL coordinates
-    axial: float = 0.0    # Fx at end B (positive = tension)
-    shear1: float = 0.0   # Vy at end B (positive = in local y)
-    shear2: float = 0.0   # Vz at end B (positive = in local z)
-    torque: float = 0.0   # Mx (torsion)
-    bm1_a: float = 0.0    # My at end A (bending in xz plane)
-    bm2_a: float = 0.0    # Mz at end A (bending in xy plane)
-    bm1_b: float = 0.0    # My at end B
-    bm2_b: float = 0.0    # Mz at end B
+    m1_a: float = 0.0    # BEND-MOMENT END-A PLANE 1  (= +Mz on the +x face at end A)
+    m2_a: float = 0.0    # BEND-MOMENT END-A PLANE 2  (= −My on the +x face at end A)
+    m1_b: float = 0.0    # BEND-MOMENT END-B PLANE 1  (= +Mz on the +x face at end B)
+    m2_b: float = 0.0    # BEND-MOMENT END-B PLANE 2  (= −My on the +x face at end B)
+    v1: float = 0.0      # SHEAR PLANE 1  (Vy, along local +y; constant without element loads)
+    v2: float = 0.0      # SHEAR PLANE 2  (Vz, along local +z)
+    axial: float = 0.0   # AXIAL FORCE    (tension positive)
+    torque: float = 0.0  # TORQUE         (right-handed about local +x)
 
 
 @dataclass
 class BarStress:
+    """CBAR stresses in the NASTRAN/MSC ``STRESSES IN BAR ELEMENTS`` layout (DEF-M18, #21).
+
+    ``sa1``–``sa4`` / ``sb1``–``sb4`` are the **bending-only** fibre stresses at
+    PBAR recovery points C, D, E, F at ends A and B,
+    ``σ_b = −M1·y/I1 − M2·z/I2`` on the :class:`BarForce` plane moments. A point
+    left at (0, 0) carries zero bending stress, as in NASTRAN. ``axial`` is
+    ``P/A``; ``sa_max``/``sa_min`` (and ``sb_*``) are ``axial`` plus the
+    max/min over the four bending values, i.e. the extreme **total** stress at
+    that end. Tension is positive. Margins of safety are not computed (no
+    allowables are parsed).
+    """
     eid: int
+    sa1: float = 0.0
+    sa2: float = 0.0
+    sa3: float = 0.0
+    sa4: float = 0.0
+    sb1: float = 0.0
+    sb2: float = 0.0
+    sb3: float = 0.0
+    sb4: float = 0.0
     axial: float = 0.0
-    sa: float = 0.0   # Bending stress at recovery point C (end A)
-    sb: float = 0.0   # Bending stress at recovery point C (end B)
-    # Additional recovery points
-    sa_d: float = 0.0  # At recovery point D, end A
-    sb_d: float = 0.0  # At recovery point D, end B
-    sa_e: float = 0.0  # At recovery point E, end A
-    sb_e: float = 0.0  # At recovery point E, end B
-    sa_f: float = 0.0  # At recovery point F, end A
-    sb_f: float = 0.0  # At recovery point F, end B
+    sa_max: float = 0.0
+    sa_min: float = 0.0
+    sb_max: float = 0.0
+    sb_min: float = 0.0
 
 
 @dataclass

@@ -20,7 +20,7 @@
   </style>
 
   <!-- ===================== PANEL A — CBAR recovery ===================== -->
-  <text class="ttl" x="24" y="30">A — CBAR force recovery: raw K·u, reported at end B</text>
+  <text class="ttl" x="24" y="30">A — CBAR force output: +x-face resultants, NASTRAN planes</text>
   <text class="sub" x="24" y="48">Element local frame: e_x = GB−GA; e_y from the orientation vector;</text>
   <text class="sub" x="24" y="64">e_z = e_x × e_y (out of page when e_y is drawn up).</text>
 
@@ -31,19 +31,19 @@
   <text class="lbl" x="58" y="206">GA</text>
   <text class="lbl" x="302" y="206">GB</text>
 
-  <!-- end-A moment caveat -->
-  <path d="M 92,146 A 26,26 0 0 1 118,130" fill="none" stroke="#c0392b" stroke-width="1.8" marker-end="url(#scl-arR)"/>
-  <text class="lbl red" x="24" y="106">bm1_a = My_A, bm2_a = Mz_A</text>
-  <text class="sub red" x="24" y="122">raw nodal K·u — face NOT defined (⚠)</text>
+  <!-- end-A plane moments, same +x face as end B -->
+  <path d="M 92,146 A 26,26 0 0 1 118,130" fill="none" stroke="#1f6feb" stroke-width="1.8" marker-end="url(#scl-ar)"/>
+  <text class="lbl blue" x="24" y="106">M1_A = +Mz⁺, M2_A = −My⁺</text>
+  <text class="sub" x="24" y="122">+x-face resultants at end A too (#37, #21)</text>
 
   <!-- end-B arrows -->
   <line x1="310" y1="180" x2="382" y2="180" stroke="#1f6feb" stroke-width="2.2" marker-end="url(#scl-ar)"/>
   <text class="lbl blue" x="388" y="184">axial</text>
   <line x1="310" y1="180" x2="310" y2="120" stroke="#1f6feb" stroke-width="2.2" marker-end="url(#scl-ar)"/>
-  <text class="lbl blue" x="318" y="116">shear1</text>
+  <text class="lbl blue" x="318" y="116">V1</text>
   <circle cx="342" cy="212" r="10" fill="none" stroke="#1f6feb" stroke-width="1.8"/>
   <circle cx="342" cy="212" r="2" fill="#1f6feb"/>
-  <text class="lbl blue" x="358" y="216">shear2 ⊙</text>
+  <text class="lbl blue" x="358" y="216">V2 ⊙</text>
   <path d="M 244,152 A 24,24 0 0 1 272,140" fill="none" stroke="#1f6feb" stroke-width="1.8" marker-end="url(#scl-ar)"/>
   <text class="lbl blue" x="188" y="134">torque</text>
 
@@ -55,20 +55,20 @@
   <text class="sub" x="112" y="248">e_z ⊙ out of page</text>
 
   <!-- component legend -->
-  <text class="mono" x="220" y="252" xml:space="preserve">axial  = Fx_B  tension +</text>
-  <text class="mono" x="220" y="270" xml:space="preserve">shear1 = Fy_B  along +e_y</text>
-  <text class="mono" x="220" y="288" xml:space="preserve">shear2 = Fz_B  along +e_z</text>
-  <text class="mono" x="220" y="306" xml:space="preserve">torque = Mx_B  RH about +e_x</text>
-  <text class="sub" x="24" y="306">Fx_A is the negated reaction —</text>
-  <text class="sub" x="24" y="321">never used.</text>
+  <text class="mono" x="220" y="252" xml:space="preserve">AXIAL  = P   tension +</text>
+  <text class="mono" x="220" y="270" xml:space="preserve">V1     = Vy  along +e_y (plane 1)</text>
+  <text class="mono" x="220" y="288" xml:space="preserve">V2     = Vz  along +e_z (plane 2)</text>
+  <text class="mono" x="220" y="306" xml:space="preserve">TORQUE = T   RH about +e_x</text>
+  <text class="sub" x="24" y="306">End B: nodal K·u as-is;</text>
+  <text class="sub" x="24" y="321">end A: negated nodal K·u.</text>
 
-  <!-- MSC caveat block -->
-  <rect x="24" y="344" width="464" height="100" fill="#fdf3f2" stroke="#c0392b" stroke-width="1"/>
-  <text class="lbl red" x="36" y="366">⚠ f06 plane labels vs MSC NASTRAN (DEF-M18)</text>
-  <text class="mono" x="36" y="388" xml:space="preserve">SHEAR-1   = Fy = MSC plane 1   (agrees)</text>
-  <text class="mono" x="36" y="406" xml:space="preserve">BENDING-1 = My = MSC plane 2   (SWAPPED)</text>
-  <text class="sub" x="36" y="426">Column order also differs; do not reuse an MSC f06</text>
-  <text class="sub" x="36" y="440">parser unchecked.</text>
+  <!-- NASTRAN plane block -->
+  <rect x="24" y="344" width="464" height="100" fill="#eef5ff" stroke="#1f6feb" stroke-width="1"/>
+  <text class="lbl blue" x="36" y="366">f06 = NASTRAN/MSC layout (DEF-M18, #21)</text>
+  <text class="mono" x="36" y="388" xml:space="preserve">plane 1 = x–y (I1):  M1 = +Mz⁺   V1 = Vy⁺</text>
+  <text class="mono" x="36" y="406" xml:space="preserve">plane 2 = x–z (I2):  M2 = −My⁺   V2 = Vz⁺</text>
+  <text class="sub" x="36" y="426">M1, M2 &gt; 0 compress the +y / +z fibres: σ_b = −M1·y/I1 − M2·z/I2.</text>
+  <text class="sub" x="36" y="440">Tip +Py, +Pz on a cantilever: M1 = Py(L−x), M2 = Pz(L−x).</text>
 
   <!-- ===================== PANEL B — section cut / SMT ===================== -->
   <line x1="520" y1="22" x2="520" y2="518" stroke="#d0d7de" stroke-width="1.2"/>

@@ -206,13 +206,16 @@ it to this table.
 Figure: `../figures/sign_conventions_internal_loads.svg`; cut geometry:
 `../figures/section_cut.svg`.
 
-- **CBAR force recovery is the raw element-frame `K·u` 12-vector**
-  (`solver/sol101.py:73-125`; same routine feeds SOL 144 and the transient). Reported
-  components: axial/shear1/shear2/torque are the **end-B** nodal values — axial
-  tension-positive, shears along local +y/+z, torque right-handed about local +x. The
-  end-A `Fx` is the negated reaction and is deliberately not used
-  (`sol101.py:155-156`). Element local frame: `e_x = GB−GA`, `e_y` from the orientation
-  vector, `e_z = e_x × e_y` (`assembly/stiffness.py:99-122`).
+- **CBAR force output is the NASTRAN/MSC `FORCES IN BAR ELEMENTS` layout on +x-face
+  internal resultants** (`BarForce`, `recover_bar_forces` in `solver/sol101.py`; same
+  routine feeds SOL 144 and the transient; DEF-M18 #21). Plane 1 = element x–y (about
+  local z, PBAR `I1`), plane 2 = x–z (about local y, `I2`). `M1 = +Mz⁺`, `M2 = −My⁺`,
+  `V1 = Vy⁺`, `V2 = Vz⁺`, `AXIAL = P` (tension +), `TORQUE = T` (right-handed about +x).
+  Both plane moments are **positive when they compress the +y / +z fibres**; a cantilever
+  with tip +Py, +Pz has `M1 = Py(L−x)`, `M2 = Pz(L−x)` > 0, decaying to the tip. The f06
+  block is column-for-column MSC's, so an MSC-trained f06 reader can be used as is.
+  Element local frame: `e_x = GB−GA`, `e_y` from the orientation vector, `e_z = e_x × e_y`
+  (`assembly/stiffness.py:99-122`).
 - **CBAR internal resultants and fibre stress are on the +x face at both ends**
   (`bar_internal_resultants`, `solver/sol101.py`; DEF-M21 #37): end-B values are the
   nodal `K·u` values as they stand, end-A values are the negated nodal values, so
@@ -222,12 +225,13 @@ Figure: `../figures/sign_conventions_internal_loads.svg`; cut geometry:
   I2 ↔ x–z plane about y); +Py compresses +y fibres. The same fibre at a shared node
   reads the same from both elements (`tests/solver/test_cbar_stress_sign.py`). NASTRAN-95
   `sbar2.f` agrees term by term; its plane-2 moment is `−My`.
-- **⚠ The force-table end-A bending moments `bm1_a`/`bm2_a` are still reported raw**
-  (nodal, the opposite face from the stresses above) until #21 moves `recover_bar_forces`
-  onto the same helper. **⚠ f06 plane labels are internally inconsistent and half-swapped vs MSC:**
-  `SHEAR-1 = Fy` matches MSC plane 1, but `BENDING-1 = My` is MSC's plane **2**
-  (DEF-M18; `sol101.py:117-124`). Do not map an MSC-trained f06 parser onto sbeam
-  columns without checking.
+- **CBAR stress output is the NASTRAN/MSC `STRESSES IN BAR ELEMENTS` layout** (`BarStress`;
+  DEF-M18 #21): `SA1–4`/`SB1–4` are **bending-only** at C, D, E, F,
+  `σ_b = −M1·y/I1 − M2·z/I2` on the force-table plane moments; `AXIAL = P/A`;
+  `SA-MAX/MIN = AXIAL + max/min(SA1–4)` are the extreme **totals**. A point left at (0, 0)
+  contributes 0.0 and bounds MAX/MIN, as in NASTRAN. Stress and force tables are on the
+  same face and plane convention by construction
+  (`tests/solver/test_cbar_force_layout.py` G5).
 - **MONSECT/section-cut sign = the CBAR end-B sign, with no flip:** the cut reports the
   resultant of all applied loads (aero + inertia + reaction, each column signed alike)
   on the **outboard** side, about the cut plane's axis intercept, rotated into the cut

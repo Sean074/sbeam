@@ -119,14 +119,14 @@ def render_sol101_results(bulk: BulkData, results: dict[int, Sol101Result]) -> N
                 bf = result.bar_forces[eid]
                 rows.append({
                     "EID": eid,
+                    "M1_A": bf.m1_a,
+                    "M2_A": bf.m2_a,
+                    "M1_B": bf.m1_b,
+                    "M2_B": bf.m2_b,
+                    "V1": bf.v1,
+                    "V2": bf.v2,
                     "Axial": bf.axial,
-                    "Shear1": bf.shear1,
-                    "Shear2": bf.shear2,
                     "Torque": bf.torque,
-                    "BM1_A": bf.bm1_a,
-                    "BM2_A": bf.bm2_a,
-                    "BM1_B": bf.bm1_b,
-                    "BM2_B": bf.bm2_b,
                 })
             st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
         else:
@@ -139,15 +139,11 @@ def render_sol101_results(bulk: BulkData, results: dict[int, Sol101Result]) -> N
                 bs = result.bar_stresses[eid]
                 rows.append({
                     "EID": eid,
+                    "SA1": bs.sa1, "SA2": bs.sa2, "SA3": bs.sa3, "SA4": bs.sa4,
+                    "SB1": bs.sb1, "SB2": bs.sb2, "SB3": bs.sb3, "SB4": bs.sb4,
                     "Axial": bs.axial,
-                    "SA_C": bs.sa,
-                    "SB_C": bs.sb,
-                    "SA_D": bs.sa_d,
-                    "SB_D": bs.sb_d,
-                    "SA_E": bs.sa_e,
-                    "SB_E": bs.sb_e,
-                    "SA_F": bs.sa_f,
-                    "SB_F": bs.sb_f,
+                    "SA_MAX": bs.sa_max, "SA_MIN": bs.sa_min,
+                    "SB_MAX": bs.sb_max, "SB_MIN": bs.sb_min,
                 })
             st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
         else:

@@ -71,14 +71,6 @@ def _collect_grav_loads(bulk: BulkData, load_sid: int) -> list[Grav]:
     return gravs
 
 
-_STRESS_PTS = [
-    ("C", "sa",   "sb",   "c1", "c2"),
-    ("D", "sa_d", "sb_d", "d1", "d2"),
-    ("E", "sa_e", "sb_e", "e1", "e2"),
-    ("F", "sa_f", "sb_f", "f1", "f2"),
-]
-
-
 def _displacement_block(
     lines: list[str], displacements: FloatArray, bulk: BulkData,
     grid_index: dict[int, int], gids_sorted: list[int],
@@ -102,21 +94,36 @@ def _displacement_block(
 def _bar_forces_block(
     lines: list[str], bulk: BulkData, bar_forces: dict[int, BarForce]
 ) -> None:
-    """Append a NASTRAN FORCES IN BAR ELEMENTS (CBAR) block (shared by SOL 101 / 144)."""
+    """Append the NASTRAN ``FORCES IN BAR ELEMENTS (CBAR)`` block (shared by SOL 101 / 144).
+
+    Two-line header and column order as NASTRAN-95 / MSC (DEF-M18, #21): plane
+    moments at end A and end B, plane shears, axial force, torque. Values are
+    +x-face internal resultants with ``M1 = +Mz``, ``M2 = −My`` (see
+    :class:`BarForce`). The group labels on line 1 are centred over their two
+    cells; every per-column label on line 2 is laid out on ``_hdr`` (DEF-M13).
+    """
+    lead = f"{'ELEMENT':>14}  "
     lines.append("                                  F O R C E S   I N   B A R   E L E M E N T S         ( C B A R )")
     lines.append("")
+    lines.append(
+        lead
+        + f"{'BEND-MOMENT END-A':^{2 * _FIELD_W}}"
+        + f"{'BEND-MOMENT END-B':^{2 * _FIELD_W}}"
+        + f"{'- SHEAR -':^{2 * _FIELD_W}}"
+        + f"{'AXIAL':>{_FIELD_W}}"
+    )
     lines.append(_hdr(
-        f"{'ELEMENT ID.':>14}  ",
-        "AXIAL FORCE", "SHEAR-1", "SHEAR-2", "TORQUE",
-        "BENDING-1 A", "BENDING-2 A", "BENDING-1 B", "BENDING-2 B",
+        f"{'ID.':>14}  ",
+        "PLANE 1", "PLANE 2", "PLANE 1", "PLANE 2", "PLANE 1", "PLANE 2",
+        "FORCE", "TORQUE",
     ))
     for eid in sorted(bulk.cbars.keys()):
         if eid in bar_forces:
             bf = bar_forces[eid]
             lines.append(
                 f"{eid:>14}"
-                f"  {_fmt(bf.axial)}{_fmt(bf.shear1)}{_fmt(bf.shear2)}{_fmt(bf.torque)}"
-                f"{_fmt(bf.bm1_a)}{_fmt(bf.bm2_a)}{_fmt(bf.bm1_b)}{_fmt(bf.bm2_b)}"
+                f"  {_fmt(bf.m1_a)}{_fmt(bf.m2_a)}{_fmt(bf.m1_b)}{_fmt(bf.m2_b)}"
+                f"{_fmt(bf.v1)}{_fmt(bf.v2)}{_fmt(bf.axial)}{_fmt(bf.torque)}"
             )
     lines.append("")
 
@@ -341,33 +348,33 @@ def _section_envelope_block(
 def _bar_stresses_block(
     lines: list[str], bulk: BulkData, bar_stresses: dict[int, BarStress]
 ) -> None:
-    """Append a NASTRAN STRESSES IN BAR ELEMENTS (CBAR) block (shared by SOL 101 / 144)."""
+    """Append the NASTRAN ``STRESSES IN BAR ELEMENTS (CBAR)`` block (shared by SOL 101 / 144).
+
+    Two rows per element as NASTRAN-95 / MSC (DEF-M18, #21): row 1 carries the
+    end-A bending stresses ``SA1–SA4`` at C, D, E, F, the axial stress and
+    ``SA-MAX/SA-MIN``; row 2 the end-B values. All four points print, a point
+    left at (0, 0) as ``0.0`` bending. The ``M.S.-T``/``M.S.-C`` columns are
+    reserved and left blank (no allowables are parsed).
+    """
     lines.append("                                 S T R E S S E S   I N   B A R   E L E M E N T S        ( C B A R )")
     lines.append("")
-    lines.append(
-        _hdr(f"{'ELEMENT ID.':>14}  ", "AXIAL") + f"{'PT':>5}  "
-        + _hdr("", "SA(END-A)", "SB(END-B)")
-    )
+    lines.append(_hdr(f"{'ELEMENT':>14}  ", "SA1", "SA2", "SA3", "SA4",
+                      "AXIAL", "SA-MAX", "SA-MIN") + "    M.S.-T")
+    lines.append(_hdr(f"{'ID.':>14}  ", "SB1", "SB2", "SB3", "SB4",
+                      "STRESS", "SB-MAX", "SB-MIN") + "    M.S.-C")
+    blank = " " * _FIELD_W
     for eid in sorted(bulk.cbars.keys()):
         if eid not in bar_stresses:
             continue
         bs = bar_stresses[eid]
-        pbar = bulk.pbars[bulk.cbars[eid].pid]
-        first = True
-        for pt, sa_attr, sb_attr, y_attr, z_attr in _STRESS_PTS:
-            if getattr(pbar, y_attr) == 0.0 and getattr(pbar, z_attr) == 0.0:
-                continue
-            sa = getattr(bs, sa_attr)
-            sb = getattr(bs, sb_attr)
-            if first:
-                lines.append(
-                    f"{eid:>14}  {_fmt(bs.axial)}    {pt}  {_fmt(sa)}{_fmt(sb)}"
-                )
-                first = False
-            else:
-                lines.append(
-                    f"{'':>14}  {'':13}    {pt}  {_fmt(sa)}{_fmt(sb)}"
-                )
+        lines.append(
+            f"{eid:>14}  {_fmt(bs.sa1)}{_fmt(bs.sa2)}{_fmt(bs.sa3)}{_fmt(bs.sa4)}"
+            f"{_fmt(bs.axial)}{_fmt(bs.sa_max)}{_fmt(bs.sa_min)}"
+        )
+        lines.append(
+            f"{'':>14}  {_fmt(bs.sb1)}{_fmt(bs.sb2)}{_fmt(bs.sb3)}{_fmt(bs.sb4)}"
+            f"{blank}{_fmt(bs.sb_max)}{_fmt(bs.sb_min)}"
+        )
     lines.append("")
 
 

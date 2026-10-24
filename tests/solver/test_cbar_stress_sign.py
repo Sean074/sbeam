@@ -41,8 +41,17 @@ POINTS = {
     "E": (-C_PT, -C_PT),
     "F": (+C_PT, -C_PT),
 }
-SA = {"C": "sa", "D": "sa_d", "E": "sa_e", "F": "sa_f"}
-SB = {"C": "sb", "D": "sb_d", "E": "sb_e", "F": "sb_f"}
+# Bending-only fields in the NASTRAN layout (#21); total = bs.axial + bending.
+SA = {"C": "sa1", "D": "sa2", "E": "sa3", "F": "sa4"}
+SB = {"C": "sb1", "D": "sb2", "E": "sb3", "F": "sb4"}
+
+
+def _tot_a(bs, pt):
+    return bs.axial + getattr(bs, SA[pt])
+
+
+def _tot_b(bs, pt):
+    return bs.axial + getattr(bs, SB[pt])
 
 
 def _bulk(px: float = 0.0, py: float = 0.0, pz: float = 0.0) -> BulkData:
@@ -97,7 +106,7 @@ class TestG1TwoPlaneClosedForm:
     def test_end_a(self, result, eid, pt):
         y, z = POINTS[pt]
         x_a = float(eid - 1)
-        got = getattr(result.bar_stresses[eid], SA[pt])
+        got = _tot_a(result.bar_stresses[eid], pt)
         assert got == pytest.approx(_closed_form(x_a, y, z, PX, PY, PZ), rel=1e-9)
 
     @pytest.mark.parametrize("eid", [1, 5, 6, 9])
@@ -105,16 +114,16 @@ class TestG1TwoPlaneClosedForm:
     def test_end_b(self, result, eid, pt):
         y, z = POINTS[pt]
         x_b = float(eid)
-        got = getattr(result.bar_stresses[eid], SB[pt])
+        got = _tot_b(result.bar_stresses[eid], pt)
         assert got == pytest.approx(_closed_form(x_b, y, z, PX, PY, PZ), rel=1e-9)
 
     def test_design_note_table_values(self, result):
         """The §1 'closed form' column of the design note (C = 0.15811)."""
         bs5 = result.bar_stresses[5]
-        assert bs5.sb == pytest.approx(_closed_form(5.0, C_PT, C_PT, PX, PY, PZ), rel=1e-12)
-        assert bs5.sb < 0.0 and bs5.sb_e > 0.0
+        assert _tot_b(bs5, "C") == pytest.approx(_closed_form(5.0, C_PT, C_PT, PX, PY, PZ), rel=1e-12)
+        assert bs5.sb1 < 0.0 and bs5.sb3 > 0.0
         bs6 = result.bar_stresses[6]
-        assert bs6.sa == pytest.approx(bs5.sb, rel=1e-12)
+        assert _tot_a(bs6, "C") == pytest.approx(_tot_b(bs5, "C"), rel=1e-12)
 
 
 class TestG2SignAnchors:
@@ -125,27 +134,29 @@ class TestG2SignAnchors:
         for eid in (1, 5, 9):
             bs = res.bar_stresses[eid]
             # C and F have y > 0 → compression; D and E have y < 0 → tension.
-            assert bs.sa < 0 and bs.sb < 0
-            assert bs.sa_f < 0 and bs.sb_f < 0
-            assert bs.sa_d > 0 and bs.sb_d > 0
-            assert bs.sa_e > 0 and bs.sb_e > 0
+            assert bs.sa1 < 0 and bs.sb1 < 0
+            assert bs.sa4 < 0 and bs.sb4 < 0
+            assert bs.sa2 > 0 and bs.sb2 > 0
+            assert bs.sa3 > 0 and bs.sb3 > 0
 
     def test_pz_only(self):
         res, _ = _run(pz=PZ)
         for eid in (1, 5, 9):
             bs = res.bar_stresses[eid]
             # C and D have z > 0 → compression; E and F have z < 0 → tension.
-            assert bs.sa < 0 and bs.sb < 0
-            assert bs.sa_d < 0 and bs.sb_d < 0
-            assert bs.sa_e > 0 and bs.sb_e > 0
-            assert bs.sa_f > 0 and bs.sb_f > 0
+            assert bs.sa1 < 0 and bs.sb1 < 0
+            assert bs.sa2 < 0 and bs.sb2 < 0
+            assert bs.sa3 > 0 and bs.sb3 > 0
+            assert bs.sa4 > 0 and bs.sb4 > 0
 
     def test_px_only_uniform_tension(self):
         res, _ = _run(px=PX)
         for bs in res.bar_stresses.values():
             for pt in POINTS:
-                assert getattr(bs, SA[pt]) == pytest.approx(PX / A, rel=1e-12)
-                assert getattr(bs, SB[pt]) == pytest.approx(PX / A, rel=1e-12)
+                assert getattr(bs, SA[pt]) == pytest.approx(0.0, abs=1e-9)
+                assert getattr(bs, SB[pt]) == pytest.approx(0.0, abs=1e-9)
+            assert bs.axial == pytest.approx(PX / A, rel=1e-12)
+            assert bs.sa_max == bs.sa_min == pytest.approx(PX / A, rel=1e-12)
 
 
 class TestG3Continuity:
@@ -160,8 +171,8 @@ class TestG3Continuity:
             left = res.bar_stresses[e]
             right = res.bar_stresses[e + 1]
             for pt in POINTS:
-                sb = getattr(left, SB[pt])
-                sa = getattr(right, SA[pt])
+                sb = _tot_b(left, pt)
+                sa = _tot_a(right, pt)
                 assert sa == pytest.approx(sb, rel=1e-9, abs=1e-6), (e, pt)
 
 
@@ -194,7 +205,10 @@ class TestG4EquilibriumIdentity:
 
 
 class TestG5EndANonRegression:
-    """End-A stresses are bit-identical to the pre-#37 formula on raw nodal values."""
+    """End-A total stresses equal the pre-#37 formula on raw nodal values.
+
+    Bit-identity held through #37; #21 reorders the sum (axial added to a
+    bending-only value) so the comparison is at 1e-14 relative."""
 
     def test_end_a_exact(self):
         res, bulk = _run(PX, PY, PZ)
@@ -208,7 +222,7 @@ class TestG5EndANonRegression:
                 old += f[6] / A
                 old += f[5] * y / I1
                 old -= f[4] * z / I2
-                assert getattr(bs, SA[pt]) == old
+                assert _tot_a(bs, pt) == pytest.approx(old, rel=1e-14)
 
     def test_end_b_is_the_face_value_not_the_raw_nodal_value(self):
         res, bulk = _run(PX, PY, PZ)
@@ -219,5 +233,5 @@ class TestG5EndANonRegression:
         y, z = POINTS["C"]
         raw = f[6] / A + f[11] * y / I1 - f[10] * z / I2
         face = f[6] / A - f[11] * y / I1 + f[10] * z / I2
-        assert res.bar_stresses[5].sb == pytest.approx(face, rel=1e-12)
-        assert res.bar_stresses[5].sb != pytest.approx(raw, rel=1e-3)
+        assert _tot_b(res.bar_stresses[5], "C") == pytest.approx(face, rel=1e-12)
+        assert _tot_b(res.bar_stresses[5], "C") != pytest.approx(raw, rel=1e-3)

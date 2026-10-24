@@ -53,8 +53,8 @@ _SAMPLE = Path(__file__).parent.parent.parent / "sample"
 FLAGSHIP_MLOADS = _SAMPLE / "cessna210_flagship_mloads.bdf"
 
 LOAD_SID = 9301          # any sid the sample decks do not use
-_BAR_FIELDS = ("axial", "shear1", "shear2", "torque",
-               "bm1_a", "bm2_a", "bm1_b", "bm2_b")
+_BAR_FIELDS = ("m1_a", "m2_a", "m1_b", "m2_b",
+               "v1", "v2", "axial", "torque")
 
 
 # --------------------------------------------------------------------------- #

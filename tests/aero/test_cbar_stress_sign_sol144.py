@@ -26,7 +26,8 @@ from sbeam.solver.sol101 import _element_local_forces
 from sbeam.solver.sol144 import run_sol144_trim
 
 BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
-PAIRS = {"C": ("sa", "sb"), "D": ("sa_d", "sb_d"), "E": ("sa_e", "sb_e"), "F": ("sa_f", "sb_f")}
+# Bending-only fields in the NASTRAN layout (#21); the jump is taken on the total = axial + bending.
+PAIRS = {"C": ("sa1", "sb1"), "D": ("sa2", "sb2"), "E": ("sa3", "sb3"), "F": ("sa4", "sb4")}
 
 
 @pytest.fixture(scope="module")
@@ -73,7 +74,7 @@ def test_stress_jump_equals_nodal_load_on_trimmed_airplane(trimmed):
     result, bulk, gi = trimmed
     pairs = _collinear_same_section_pairs(bulk)
     scale = max(abs(v) for bs in result.bar_stresses.values()
-                for v in (bs.sa, bs.sb, bs.sa_d, bs.sb_d, bs.sa_e, bs.sb_e, bs.sa_f, bs.sb_f))
+                for v in (bs.sa1, bs.sb1, bs.sa2, bs.sb2, bs.sa3, bs.sb3, bs.sa4, bs.sb4))
     assert scale > 0.0
     loaded_nodes = 0
     for left, right in pairs:
@@ -94,24 +95,24 @@ def test_stress_jump_equals_nodal_load_on_trimmed_airplane(trimmed):
             y, z = pts[pt]
             # Face moments: Mz_A(right) − Mz_B(left) = −fr[5] − fl[11] = −n_mz, etc.
             expected_jump = (-n_p) / pbar.A - (-n_mz) * y / pbar.I1 + (-n_my) * z / pbar.I2
-            jump = getattr(br, sa) - getattr(bl, sb)
+            jump = (br.axial + getattr(br, sa)) - (bl.axial + getattr(bl, sb))
             assert jump == pytest.approx(expected_jump, rel=1e-9, abs=1e-9 * scale), (left, right, pt)
     # The gate is only meaningful if the trimmed model actually loads shared nodes.
     assert loaded_nodes >= 1
 
 
 def test_end_a_unchanged_on_sol144(trimmed):
-    """End-A values equal the pre-#37 raw-nodal formula bit for bit."""
+    """End-A totals equal the pre-#37 raw-nodal formula (1e-14: #21 reorders the sum)."""
     result, bulk, gi = trimmed
     for cbar in bulk.cbars.values():
         pbar = bulk.pbars[cbar.pid]
         f = _element_local_forces(
             cbar, bulk.grids, bulk.pbars, bulk.mat1s, result.displacements, gi)
         bs = result.bar_stresses[cbar.eid]
-        for (y, z), attr in (((pbar.c1, pbar.c2), "sa"), ((pbar.d1, pbar.d2), "sa_d"),
-                             ((pbar.e1, pbar.e2), "sa_e"), ((pbar.f1, pbar.f2), "sa_f")):
+        for (y, z), attr in (((pbar.c1, pbar.c2), "sa1"), ((pbar.d1, pbar.d2), "sa2"),
+                             ((pbar.e1, pbar.e2), "sa3"), ((pbar.f1, pbar.f2), "sa4")):
             old = 0.0
             old += f[6] / pbar.A
             old += f[5] * y / pbar.I1
             old -= f[4] * z / pbar.I2
-            assert getattr(bs, attr) == old
+            assert bs.axial + getattr(bs, attr) == pytest.approx(old, rel=1e-14, abs=1e-14)

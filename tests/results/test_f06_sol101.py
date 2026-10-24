@@ -110,16 +110,31 @@ class TestF06Sol101:
     def test_end_of_job_marker(self):
         assert "END OF JOB" in self.content
 
-    def test_bar_stress_only_c_point_when_d_e_f_zero(self):
-        """With only c1 set, only one stress row per element (point C) should appear."""
-        # Extract the BAR STRESSES block
+    def test_bar_stress_undefined_points_print_zero(self):
+        """NASTRAN layout (#21): all four points print; D, E, F left at (0, 0)
+        carry 0.0 bending on both rows, and SA-MAX/MIN still include them."""
         stress_start = self.content.find("S T R E S S E S   I N   B A R")
-        stress_block = self.content[stress_start:]
-        # The existing cantilever PBAR has c1=0.1, d1=d2=e1=e2=f1=f2=0
-        # So only one row (C) should appear per element
-        pt_lines = [l for l in stress_block.splitlines() if "   C  " in l or "   D  " in l or "   E  " in l or "   F  " in l]
-        assert len(pt_lines) == 1, f"Expected 1 recovery point row, got {len(pt_lines)}: {pt_lines}"
-        assert "   C  " in pt_lines[0]
+        rows = _data_rows(self.content[stress_start:])
+        assert len(rows) == 2
+        sa_row, sb_row = rows
+        bs = self.result.bar_stresses[1]
+        assert sa_row[0] == pytest.approx(bs.sa1, rel=1e-5)
+        assert sa_row[1:4] == [0.0, 0.0, 0.0]
+        assert sb_row[1:4] == [0.0, 0.0, 0.0]
+        # Root fibre C is compressed (+P in +y), so the row max is the 0.0 point.
+        assert bs.sa1 < 0 and sa_row[5] == pytest.approx(bs.axial, abs=1e-6)
+        assert sa_row[6] == pytest.approx(bs.axial + bs.sa1, rel=1e-5)
+
+
+def _data_rows(block: str) -> list[list[float]]:
+    """The 13-wide numeric cells of each data row of a CBAR stress block, in order."""
+    rows = []
+    for line in block.splitlines()[4:]:
+        if not line.strip():
+            break
+        cells = [line[16 + 13 * k:16 + 13 * (k + 1)] for k in range(7)]
+        rows.append([float(c) for c in cells if c.strip()])
+    return rows
 
 
 def make_cantilever_all_recovery_pts():
@@ -176,40 +191,39 @@ class TestF06BarStressAllRecoveryPoints:
         start = self.content.find("S T R E S S E S   I N   B A R")
         return self.content[start:]
 
-    def test_all_four_recovery_points_present(self):
-        block = self._stress_block()
-        for pt in ("C", "D", "E", "F"):
-            assert f"   {pt}  " in block, f"Recovery point {pt} not found in stress block"
+    def test_nastran_two_line_header(self):
+        """G6 (#21): the NASTRAN-95 / MSC header text and order."""
+        lines = self._stress_block().splitlines()
+        assert lines[2].split() == ["ELEMENT", "SA1", "SA2", "SA3", "SA4", "AXIAL", "SA-MAX", "SA-MIN", "M.S.-T"]
+        assert lines[3].split() == ["ID.", "SB1", "SB2", "SB3", "SB4", "STRESS", "SB-MAX", "SB-MIN", "M.S.-C"]
 
-    def test_exactly_four_stress_rows_for_single_element(self):
-        block = self._stress_block()
-        pt_lines = [l for l in block.splitlines()
-                    if any(f"   {p}  " in l for p in ("C", "D", "E", "F"))]
-        assert len(pt_lines) == 4, f"Expected 4 recovery point rows, got {len(pt_lines)}"
+    def test_two_rows_per_element(self):
+        """Row 1 carries EID + SA1–4 + AXIAL + SA-MAX/MIN; row 2 SB1–4 + SB-MAX/MIN
+        with the EID and AXIAL cells blank."""
+        lines = []
+        for l in self._stress_block().splitlines()[4:]:
+            if not l.strip():
+                break
+            lines.append(l)
+        assert len(lines) == 2
+        assert lines[0][:14].strip() == "1"
+        assert lines[1][:14].strip() == ""
+        assert lines[1][16 + 13 * 4:16 + 13 * 5].strip() == ""
+        rows = _data_rows(self._stress_block())
+        assert len(rows[0]) == 7 and len(rows[1]) == 6
 
-    def test_axial_only_on_first_row(self):
-        """EID and axial stress appear on the first (C) row; continuation rows have blanks."""
-        block = self._stress_block()
-        pt_lines = [l for l in block.splitlines()
-                    if any(f"   {p}  " in l for p in ("C", "D", "E", "F"))]
-        c_line = next(l for l in pt_lines if "   C  " in l)
-        assert "1" in c_line[:20]  # EID appears on C row
-        for l in pt_lines:
-            if "   C  " not in l:
-                assert l[:20].strip() == "", f"Non-C row should have blank EID prefix: {l!r}"
-
-    def test_d_point_stress_numeric_roundtrip(self):
-        """Parse the D-point SA stress from f06 and compare to result.bar_stresses."""
-        block = self._stress_block()
-        pt_lines = [l for l in block.splitlines() if "   D  " in l]
-        assert len(pt_lines) == 1
-        # Format: "...    D  <_fmt(sa)><_fmt(sb)>"
-        # _fmt produces 13-char fields; find them after "   D  "
-        d_idx = pt_lines[0].index("   D  ")
-        vals_str = pt_lines[0][d_idx + 6:]  # skip "   D  "
-        sa_parsed = float(vals_str[:13].strip())
-        expected = self.result.bar_stresses[1].sa_d
-        assert sa_parsed == pytest.approx(expected, rel=1e-5)
+    def test_numeric_roundtrip_all_cells(self):
+        """Every printed cell parses back to its BarStress field (G6)."""
+        rows = _data_rows(self._stress_block())
+        bs = self.result.bar_stresses[1]
+        exp_a = [bs.sa1, bs.sa2, bs.sa3, bs.sa4, bs.axial, bs.sa_max, bs.sa_min]
+        exp_b = [bs.sb1, bs.sb2, bs.sb3, bs.sb4, bs.sb_max, bs.sb_min]
+        for got, exp in zip(rows[0], exp_a):
+            assert got == pytest.approx(exp, rel=1e-5, abs=1e-9)
+        for got, exp in zip(rows[1], exp_b):
+            assert got == pytest.approx(exp, rel=1e-5, abs=1e-9)
+        # D = (−0.1, 0) is the tension fibre under +P in +y.
+        assert bs.sa2 > 0 and bs.sa2 == pytest.approx(-bs.sa1, rel=1e-12)
 
 
 # ---------------------------------------------------------------------------

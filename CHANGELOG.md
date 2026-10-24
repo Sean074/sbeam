@@ -9,6 +9,23 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Breaking changes
+- **CBAR force and stress output moved to the NASTRAN/MSC layout** (DEF-M18, #21; pre-1.0
+  MINOR break per `08_release_process.md` §1). f06 `FORCES IN BAR ELEMENTS` now carries the
+  two-line MSC header and order `BEND-MOMENT END-A/END-B (PLANE 1, PLANE 2) | SHEAR (PLANE 1,
+  PLANE 2) | AXIAL FORCE | TORQUE`, with every value a +x-face internal resultant and the
+  NASTRAN plane signs `M1 = +Mz`, `M2 = −My` (both positive when they compress the +y/+z
+  fibres). `STRESSES IN BAR ELEMENTS` is the two-row-per-element MSC block: **bending-only**
+  `SA1–SA4`/`SB1–SB4` at C, D, E, F (all four always printed, (0, 0) points as 0.0), `AXIAL`,
+  and `SA/SB-MAX/MIN = AXIAL + max/min(bending)`; the old single-row `SA(END-A)/SB(END-B)`
+  **total**-stress table is gone. `BarForce` fields are renamed, not redefined:
+  `m1_a, m2_a, m1_b, m2_b, v1, v2, axial, torque` (was `bm1_a`…`shear1`…, where `bm1_a` was
+  the raw nodal **My**, i.e. MSC plane 2, and end-A moments were on the opposite face from
+  end B). `BarStress` is `sa1–sa4, sb1–sb4, axial, sa_max, sa_min, sb_max, sb_min` (was
+  `sa, sa_d, …` totals). Viewer force/stress tables follow the same columns. An
+  MSC-trained f06 reader can now be used unchanged; one that was mapped onto the old sbeam
+  columns must be retired.
+
 ### Added
 - **`MONPNT1`/`MONPNT3` on transient (MLOADS) maneuvers** (#2). The deck's monitor points
   are now evaluated at every output sample, not only on static trims:
@@ -76,6 +93,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     import gate.
 
 ### Fixed
+- **DEF-M18 — CBAR force table on raw nodal moments with half-swapped plane labels** (#21,
+  Tier M). `recover_bar_forces` now goes through `bar_internal_resultants` (#37), so end-A
+  moments are on the same +x face as end B and as the stresses; `BENDING-1` no longer
+  labels My (MSC plane 2). Stress and force are consistent by construction
+  (`SAi = −M1·yᵢ/I1 − M2·zᵢ/I2` on the printed moments). Gates G1–G7 in
+  `tests/solver/test_cbar_force_layout.py`, `tests/results/test_f06_sol101.py` and the
+  DEF-M13 alignment gate; NASTRAN-95 `sbar2.f` field mapping asserted on the nodal vector.
+  Design note `docs/30_future/designs/cbar_force_stress_output_layout.md`.
 - **DEF-M21** (#37) — CBAR fibre stress at **end B** had the bending term sign-flipped: the
   one stress formula was applied to raw nodal moments at both ends, and only end A's nodal
   moment happens to be the negated face moment. Stresses are now recovered from +x-face

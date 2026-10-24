@@ -23,6 +23,11 @@ sbeam uses **semantic versioning**: `MAJOR.MINOR.PATCH`
 The current version is recorded in `pyproject.toml` under `version =`. Never publish an
 unversioned build.
 
+**Before 1.0.0** (SemVer §4: `0.y.z` makes no stability promise), a breaking change to the
+f06 layout or the BDF/case-control syntax ships in the next **MINOR** release and is listed
+under a **Breaking changes** heading in `CHANGELOG.md`; the `MAJOR` rule above applies from
+the v1.0.0 interface-stability promise onward (decided 2026-10-02 with #21, D4).
+
 ---
 
 ## 2. What Constitutes a Release (milestone model, 2026-09-05)

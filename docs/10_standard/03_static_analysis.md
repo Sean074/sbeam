@@ -213,14 +213,33 @@ the MONPNT3 integrators — depend on them staying in basic.
 For each element:
 1. Extract nodal displacements at GA and GB from `u_global`.
 2. Transform to local element coordinates: `u_local = [T] @ u_element`.
-3. Compute local end forces: `f_local = [k_e] @ u_local`.
-4. Report as: Axial (F1), Shear Y (F2), Shear Z (F3), Torque (M1), Bending Y (M2), Bending Z (M3) at ends A and B.
+3. Compute local end forces: `f_local = [k_e] @ u_local` (the forces the nodes exert on the
+   element).
+4. Convert to **+x-face internal resultants** with `bar_internal_resultants` (below).
+5. Report in the **NASTRAN/MSC layout** (`BarForce`, DEF-M18 #21): plane-1 and plane-2 bending
+   moments at ends A and B, plane-1 and plane-2 shears, axial force, torque.
+
+Plane 1 is the element x–y plane (bending about local z, PBAR `I1`); plane 2 is the x–z plane
+(bending about local y, PBAR `I2`). The plane moments carry the NASTRAN sign:
+
+```
+M1 = +Mz⁺      M2 = −My⁺      V1 = Vy⁺      V2 = Vz⁺      AXIAL = P (tension +)      TORQUE = T
+```
+
+(⁺ = +x-face internal resultant). Both plane moments are therefore **positive when they put
+the +y / +z fibres in compression**. Closed-form anchor: a cantilever with tip loads +Py, +Pz
+gives `M1(x) = Py·(L−x)` and `M2(x) = Pz·(L−x)`, both positive and decaying to zero at the tip;
+at a shared node `M1B(e) = M1A(e+1)`. The mapping is NASTRAN-95 `mis/sbar2.f`
+(`M1A = −FA(6)`, `M2A = +FA(5)`, `V1 = −FA(2)`, `FX = −FA(1)`, `M1B = M1A − V1·L`,
+`M2B = M2A − V2·L`), which MSC prints in the same layout. Gates G1–G3 and G5 are in
+`tests/solver/test_cbar_force_layout.py`.
 
 ### CBAR Stress at Recovery Points
 
 The nodal 12-vector `f_local = [k_e] @ u_local` is first converted to **internal resultants on
 the positive (+x) face** of the section by `bar_internal_resultants` (`solver/sol101.py`), the
-single place where the nodal-to-internal sign conversion happens (DEF-M21, #37):
+single place where the nodal-to-internal sign conversion happens (DEF-M21, #37), and from there
+to the plane moments above:
 
 ```
 end A (x = 0):  P = -f[0]   Vy = -f[1]   Vz = -f[2]   T = -f[3]   My_A = -f[4]   Mz_A = -f[5]
@@ -228,25 +247,30 @@ end B (x = L):  P = +f[6]   Vy = +f[7]   Vz = +f[8]   T = +f[9]   My_B = +f[10] 
 ```
 
 This is the section-cut / CBAR end-B sign of `09_conventions.md` §9 applied to both ends: at
-end B the nodal value already is the +x-face resultant; at end A it is the negated one. For
-each recovery point (C, D, E, F) on the PBAR, with (y, z) the point coordinates in the element
-frame, the same formula is then evaluated at both ends:
+end B the nodal value already is the +x-face resultant; at end A it is the negated one. The
+stress output is the **NASTRAN/MSC layout** (`BarStress`, DEF-M18 #21). For each recovery point
+C, D, E, F on the PBAR, with (y, z) the point coordinates in the element frame, the
+**bending-only** stress is evaluated at both ends from the same plane moments the force table
+prints:
 
 ```
-sigma = P/A  -  Mz * y / I1  +  My * z / I2
+SAi = -M1A * y_i / I1  -  M2A * z_i / I2        SBi = -M1B * y_i / I1  -  M2B * z_i / I2
+AXIAL = P / A
+SA-MAX / SA-MIN = AXIAL + max / min (SA1..SA4)   (likewise SB-MAX / SB-MIN)
 ```
 
-Tension is positive; I12 = 0. A +y tip load on a cantilever therefore puts the +y fibres in
-compression at every station. The same fibre at a shared node reads the same stress from end B
-of one element and end A of the next (gate G3), and NASTRAN-95 `sbar2.f` gives the same number
-term by term (its plane-2 moment is the negated +x-face My, so it writes `σ = −M1·y/I1 −
-M2·z/I2`). Torsional shear stress is not computed.
+Tension is positive; I12 = 0. With `M1 = Mz⁺`, `M2 = −My⁺` this is `σ_b = −Mz·y/I1 + My·z/I2` on
+the +x-face resultants, so a +y tip load on a cantilever puts the +y fibres in compression at
+every station, and the same fibre at a shared node reads the same total stress from end B of one
+element and end A of the next (gate G3). This is NASTRAN-95 `sbar2.f` term by term
+(`K1 = −M1/I1`, `K2 = −M2/I2`, `SIG = K1·C1 + K2·C2`, `SIGAMX = SIGAX + AMAX1(SIG1A..SIG4A)`).
+All four points are always evaluated; a point left at (0, 0) contributes 0.0 bending and
+therefore bounds MAX/MIN, exactly as in NASTRAN. `M.S.-T`/`M.S.-C` are not computed (MAT1
+`ST`/`SC` are not parsed). Torsional shear stress is not computed.
 
-**SA/SB are total stresses** (axial + bending) at ends A and B. NASTRAN's `SA1–4` are
-bending-only with `SA-MAX/SA-MIN` carrying the total; that layout, together with the f06 plane
-labels and the force-table faces, is issue #21 (DEF-M18). Until #21 lands the `BarForce` moments
-`bm1_a`/`bm2_a`/`bm1_b`/`bm2_b` are still the raw nodal values, so the force table and the
-stress table are on different sign conventions at end A (`09_conventions.md` §9).
+**Reading the table:** `SA1–4`/`SB1–4` are bending only — add `AXIAL` to get a fibre total, or
+read `SA-MAX`/`SA-MIN` directly. Before #21 sbeam's `SA/SB` columns were total stresses; an
+MSC-trained reader would have added the axial term twice.
 
 ---
 
@@ -258,18 +282,28 @@ Output sections written to `results.f06`:
 2. **Applied Load Vector (OLOAD)** — echo of assembled load vector
 3. **Nodal Displacements** — GID, T1, T2, T3, R1, R2, R3 per subcase
 4. **SPC Reaction Forces** — GID, DOF, value per constrained DOF
-5. **CBAR Forces** — EID, end A forces/moments, end B forces/moments
-6. **CBAR Stresses** — multi-row per element: one row per defined recovery point (those with non-zero PBAR coordinates). First row includes EID and axial stress; subsequent rows continue with point label and stresses only.
+5. **CBAR Forces** — the NASTRAN/MSC `FORCES IN BAR ELEMENTS (CBAR)` block, one row per
+   element (DEF-M18 #21; values per "CBAR End Forces and Moments" above):
 
    ```
-         ELEMENT ID.    AXIAL          PT      SA(END-A)      SB(END-B)
-                  1   1.234567E+01     C    1.234567E+01   1.234567E+01
-                                       D   -1.234567E+01  -1.234567E+01
-                                       E    5.000000E+00   5.000000E+00
-                                       F   -5.000000E+00  -5.000000E+00
+          ELEMENT      BEND-MOMENT END-A         BEND-MOMENT END-B             - SHEAR -                 AXIAL
+              ID.        PLANE 1      PLANE 2      PLANE 1      PLANE 2      PLANE 1      PLANE 2        FORCE       TORQUE
+                1   1.000000E+04 2.000000E+04 9.000000E+03 1.800000E+04 1.000000E+03 2.000000E+03 5.000000E+03 0.000000E+00
    ```
 
-   Recovery points with zero (y, z) coordinates in the PBAR card are omitted.
+6. **CBAR Stresses** — the NASTRAN/MSC `STRESSES IN BAR ELEMENTS (CBAR)` block, **two rows per
+   element**: row 1 = EID, bending-only `SA1–SA4` at C, D, E, F, `AXIAL`, `SA-MAX`, `SA-MIN`;
+   row 2 = `SB1–SB4`, (blank), `SB-MAX`, `SB-MIN`. All four points print; a point left at
+   (0, 0) prints `0.000000E+00`. The `M.S.-T`/`M.S.-C` columns are reserved and blank.
+
+   ```
+          ELEMENT            SA1          SA2          SA3          SA4        AXIAL       SA-MAX       SA-MIN    M.S.-T
+              ID.            SB1          SB2          SB3          SB4       STRESS       SB-MAX       SB-MIN    M.S.-C
+                1  -5.692188E+06-1.897396E+06 5.692188E+06 1.897396E+06 5.000000E+04 5.742188E+06-5.642188E+06
+                   -5.122969E+06-1.707656E+06 5.122969E+06 1.707656E+06              5.172969E+06-5.072969E+06
+   ```
+
+   Both blocks are shared verbatim by SOL 144 (trim) and the MLOADS critical-sample f06.
 
 ---
 

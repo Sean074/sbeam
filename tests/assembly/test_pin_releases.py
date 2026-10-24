@@ -265,9 +265,10 @@ class TestG1FixedPinned:
         assert f_local[11] == 0.0
         bf = recover_bar_forces(bulk.cbars[1], bulk.grids, bulk.pbars, bulk.mat1s,
                                 result.displacements, gi)
-        assert bf.bm2_b == 0.0
-        assert bf.bm2_a == pytest.approx(-self.P * L, rel=1e-10)
-        assert bf.shear1 == pytest.approx(self.P, rel=1e-10)
+        assert bf.m1_b == 0.0
+        # +x-face plane-1 moment at the root is +P·L (NASTRAN M1A; #21).
+        assert bf.m1_a == pytest.approx(self.P * L, rel=1e-10)
+        assert bf.v1 == pytest.approx(self.P, rel=1e-10)
 
 
 # ---------------------------------------------------------------------------

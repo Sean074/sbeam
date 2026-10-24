@@ -135,8 +135,8 @@ class TestQZeroMatchesSol101:
         for eid in result_101.bar_forces:
             bf_101 = result_101.bar_forces[eid]
             bf_144 = result_144.bar_forces[eid]
-            assert abs(bf_101.bm2_a - bf_144.bm2_a) < 1e-8, (
-                f"CBAR {eid} bm2_a mismatch at q=0"
+            assert abs(bf_101.m1_a - bf_144.m1_a) < 1e-8, (
+                f"CBAR {eid} m1_a mismatch at q=0"
             )
 
 
@@ -263,7 +263,7 @@ class TestModeAccelerationConvergence:
             bulk, aero, subcase, Q_TEST, sol103_result, n_modes_quarter
         )
 
-        # CBAR 1 root bending moment (Mz at end A, local index bm2_a)
+        # CBAR 1 root bending moment (plane-1 moment Mz at end A, m1_a)
         # — most sensitive to load convergence for a tip-loaded cantilever
         from sbeam.solver.sol101 import recover_bar_forces
         cbar1 = bulk.cbars[1]
@@ -272,12 +272,12 @@ class TestModeAccelerationConvergence:
         bf_md = recover_bar_forces(cbar1, bulk.grids, bulk.pbars, bulk.mat1s, u_md, grid_index)
         bf_ma = recover_bar_forces(cbar1, bulk.grids, bulk.pbars, bulk.mat1s, u_ma, grid_index)
 
-        ref_val = abs(bf_ref.bm2_a)
+        ref_val = abs(bf_ref.m1_a)
         if ref_val < 1e-12:
             pytest.skip("Reference bending moment is near-zero; skip convergence test")
 
-        error_md = abs(bf_md.bm2_a - bf_ref.bm2_a) / ref_val
-        error_ma = abs(bf_ma.bm2_a - bf_ref.bm2_a) / ref_val
+        error_md = abs(bf_md.m1_a - bf_ref.m1_a) / ref_val
+        error_ma = abs(bf_ma.m1_a - bf_ref.m1_a) / ref_val
 
         assert error_ma < error_md, (
             f"Mode-acceleration error ({error_ma:.4f}) is not less than "

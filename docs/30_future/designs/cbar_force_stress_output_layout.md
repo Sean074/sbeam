@@ -1,6 +1,6 @@
 # CBAR force and stress output in the NASTRAN layout — design note for issue #21
 
-**Status:** ✅ **agreed 2026-10-02** (CLAUDE.md rule 1): D3 NASTRAN stress layout, D2 field renames and D4 pre-1.0 MINOR breaking change all accepted as recommended; not yet implemented.
+**Status:** ✅ **agreed 2026-10-02** (CLAUDE.md rule 1): D3 NASTRAN stress layout, D2 field renames and D4 pre-1.0 MINOR breaking change all accepted as recommended. ✅ **Implemented 2026-10-24** (#21, DEF-M18); implementation decisions in §7.
 - **Milestone:** [v0.3.0](https://github.com/Sean074/sbeam/milestone/1).
 - **Tier M:** behaviour change to existing outputs. No new card and no new physics.
 - **Issue:** [#21](https://github.com/Sean074/sbeam/issues/21) (DEF-M18):
@@ -165,3 +165,34 @@ line (DEF-M18), and `08_release_process.md` §1 (D4).
 2. **D2:** rename the `BarForce`/`BarStress` fields, as recommended.
 3. **D4:** ship as a pre-1.0 MINOR breaking change, with the `08_release_process.md` §1
    clarification landing in the implementation commit, as recommended.
+
+## 7. Implementation decisions (2026-10-24)
+
+1. **`BarStress` uses scalar fields `sa1…sa4`, `sb1…sb4`** (the NASTRAN column names), not
+   two 4-tuples as §2 D3 sketched: a flat dataclass keeps the f06 writer, the viewer table and
+   the gates one attribute per cell, and the G7 legacy-name check stays a set comparison.
+2. **One mapping function.** `_bar_force_from_internal(eid, BarInternal) -> BarForce` applies
+   `M1 = +mz`, `M2 = −my` once; `recover_bar_forces` and `recover_bar_stresses` both call it,
+   and the stress uses `_bending_stress(m1, m2, y, z, I1, I2) = −M1·y/I1 − M2·z/I2` on the
+   `BarForce` values. G5 (stress/force consistency from the printed moments) is therefore
+   true by construction, and asserted anyway at 1e-12.
+3. **All four points always evaluated**, including (0, 0) ones, so `SA-MAX/MIN` are bounded
+   by 0.0 bending exactly as NASTRAN-95 prints them (`demoout/d01101a.out:377`, where SA1 = 0.0
+   for an undefined C point and SA-MAX picks it up). The old "omit zero points" f06 rule is
+   gone.
+4. **f06 headers.** The group labels on force-block line 1 (`BEND-MOMENT END-A`, `- SHEAR -`)
+   are centred over two `_FIELD_W` cells by hand because `_hdr` truncates to one cell; every
+   per-column label (`PLANE 1`, `FORCE`, `SA1`, …) is on `_hdr`, and the DEF-M13 alignment
+   gate's label set was moved to the new names so it keeps checking both blocks.
+   `M.S.-T`/`M.S.-C` are header-only.
+5. **End-A stress non-regression is now 1e-14 relative, not bit-identical** (`#37` G5 and the
+   SOL 144 twin): the total is formed as `axial + bending` instead of accumulating from `P/A`,
+   so the last bit can move. The G6 jump gate on HA144A is taken on the totals.
+6. **Sign flip in two existing gates.** V21 / `test_pin_releases` asserted the root moment as
+   `bm2_a = −P·L` (raw nodal); the +x-face `M1A` is `+P·L`. Reactions are unchanged.
+7. **Measured reference values** (production code, 2026-10-24) match §4 to the printed digits:
+   el 5 `M1A = 6000`, `M2A = 12000`, `M1B = 5000`, `M2B = 10000`; el 6 end A `SA1 = −2.846094e6`,
+   `SA2 = −9.48698e5`, `SA3 = +2.846094e6`, `SA4 = +9.48698e5`, `AXIAL = 5.0e4`,
+   `SA-MAX = 2.896094e6`, `SA-MIN = −2.796094e6`.
+8. **Not done here (D6):** no CSV export of bar forces (#31), no margins, no element interface
+   (#38). The `08_release_process.md` §1 pre-1.0 sentence landed in this commit (D4).
