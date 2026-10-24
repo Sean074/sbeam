@@ -143,7 +143,7 @@ Two top-level entry points exist in `parser/bdf_reader.py`:
 | `parse_bdf(filepath)` | Full run file (SOL + SUBCASE + bulk data) | Yes — raises `ValueError` if no `SOL` found |
 | `parse_bulk_file(filepath)` | Bulk-data-only file (geometry, loads, constraints) | No |
 
-The viewer calls `parse_bulk_file()` when uploading a model file before case control has been defined. The solver always receives data from `parse_bdf()`.
+The viewer calls `parse_bulk_file()` when uploading a model file before case control has been defined. The solver always receives data from `parse_bdf()`. Both are public entry points; the complete programmatic surface (parse → run → results → write) is `11_python_api.md`.
 
 ### `parse_bulk_file(filepath) -> BulkData`
 

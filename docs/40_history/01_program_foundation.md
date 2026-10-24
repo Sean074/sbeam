@@ -257,6 +257,7 @@ The two top-level functions serve distinct use cases:
 
 ## Resolved defects (documentation / model)
 
+- **#47 (Tier S, 2026-10-24)** — No documentation of calling sbeam from Python although sloads' round-trip gate already depended on `parse_bdf` / `run_sol101` / `compute_gpwg`; new `10_standard/11_python_api.md` names the public entry points per layer, the result fields, the SOL 144 build-once pattern and the public-vs-internal rule; gate `tests/docs/test_python_api_guide.py` imports every listed name, cross-checks the CLI's imports and runs both examples.
 - **#45 (Tier M, 2026-10-24)** — `PLOAD1` and every other known-but-unsupported NASTRAN card now refuse the deck at parse with one counted `ValueError` (`_UNSUPPORTED_CARDS`, `bdf_reader.py`) instead of being dropped behind an uncollected `UserWarning`; the CLI prints remaining unknown-card warnings; viewer check 3 reports unrecognised cards only; gate `tests/parser/test_unsupported_cards.py`.
 
 ### Aero-correction ingestion moved to sbeam_tools (Tier M, issue #32) ✅ COMPLETE (2026-09-05)

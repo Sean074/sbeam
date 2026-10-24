@@ -31,6 +31,7 @@ are the day-to-day references; higher numbers are planning and historical record
 | [`08_release_process.md`](10_standard/08_release_process.md) | Versioning and release process (slim gate + cadence rule, 2026-08-04) |
 | [`09_conventions.md`](10_standard/09_conventions.md) | **Conventions charter** — signs, axes, frames, reference points, units; cite before writing physics code |
 | [`10_export_schemas.md`](10_standard/10_export_schemas.md) | **Export contract** — exact headers, types, sentinels and ordering of every exported CSV and load BDF (#31); gated by `tests/results/test_export_schema.py` |
+| [`11_python_api.md`](10_standard/11_python_api.md) | **Python API** — the public entry points for calling sbeam from code (parse → run → results → write), what is internal, the SOL 144 orchestration pattern (#47); gated by `tests/docs/test_python_api_guide.py` |
 
 ## 20_theory — Theory, test cases & worked examples
 

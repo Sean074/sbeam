@@ -334,6 +334,14 @@ Column contract for every CSV/BDF above: `10_export_schemas.md`.
 
 Exit codes: 0 on success; 1 on parse or solver error (message printed to stderr). Omitting the argument prints usage and exits with code 2.
 
+### Python (programmatic)
+
+Scripts, notebooks and external tools call the same functions the CLI does: parse
+(`parse_bdf`), run (`run_sol101` / `run_sol103` / the SOL 144 family), read the result
+dataclasses, write (`build_f06_*_text`, the CSV/BDF writers). The public surface, the
+public-versus-internal rule and the SOL 144 build-once pattern are in `11_python_api.md`
+(#47), gated by `tests/docs/test_python_api_guide.py`.
+
 ---
 
 ## Dependency Requirements

@@ -46,6 +46,7 @@ them instead:
 - **Solver behavior and outputs:** the per-solver guides `03`/`04`/`05a`–`05c`
 - **Known limitations:** index in `00_program_overview.md`
 - **Export schemas (CSV / load BDF):** `docs/10_standard/10_export_schemas.md`
+- **Public Python entry points (public vs internal):** `docs/10_standard/11_python_api.md`
 
 ## Step Completion Requirement (tiered)
 

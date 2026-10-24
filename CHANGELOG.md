@@ -36,6 +36,19 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   columns must be retired.
 
 ### Added
+- **Python API guide** (#47). `docs/10_standard/11_python_api.md` names the public
+  programmatic entry points by layer — parse (`parse_bdf`, `parse_bulk_file`, …), model
+  queries (`compute_gpwg`, `resolve_mass_case`, `build_grid_index`), run (`run_sol101`,
+  `run_sol103`, `build_aero_model`, `AeroCache`, `run_sol144_trim`, `run_sol144_diverg`,
+  `run_maneuver_qs`, `run_maneuver_modal`, `ManeuverBasisCache`), the result dataclasses
+  and their key fields, and the f06/CSV/BDF writers — with the DOF-layout rule, the
+  error contract, the CLI's SOL 144 build-once orchestration as a runnable example, and
+  an explicit rule that everything else under `sbeam/` is internal (no stability promise;
+  a listed name or field changing is a CHANGELOG breaking change). Gate
+  `tests/docs/test_python_api_guide.py`: every import in the guide resolves, every name
+  the CLI imports is in the guide, every listed result field exists, both examples run.
+  Pointers from `00_INDEX.md`, `00_program_overview.md` (Entry Points), `01_beam_model.md`
+  and `CLAUDE.md`.
 - **Export schema guide and gates** (#31). `docs/10_standard/10_export_schemas.md` is the
   authoritative contract for the six CSVs and three load BDFs (headers, types, `massset`
   sentinel, row ordering, BDF comment header, a reserved element-force CSV schema for #36);
