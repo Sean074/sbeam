@@ -460,6 +460,10 @@ Streamlit layer). Card serialisation lives in `sbeam/model/card_writers.py` — 
 free-field writers for all 15 families, every real through `parser/bdf_field.fmt_real8`
 (8-char safe, DEF-M12 compliant), round-trip tested against the parser.
 
+The AESURF form carries both hinge halves — `CID1`/`ALID1` and `CID2`/`ALID2` (an aileron
+pair is one label; charter §6) — and refuses a half-specified second pair; before #9 it
+dropped `CID2`/`ALID2` on re-save.
+
 **Layout:** four sub-tabs — *Surfaces & States* (AESTAT/AESURF/AELIST/SUPORT), *Trim
 Conditions* (presets + TRIM/TRIMVAR/TRIMOBJ/TRIMCON/DIVERG), *Maneuver (MLOADS)*
 (two-pass command builder + MLDTRIM/MLDTIME/MLDCOMD/MLDPRNT/MLOADS), *Tables* (shape

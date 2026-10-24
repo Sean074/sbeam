@@ -154,6 +154,21 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     import gate.
 
 ### Fixed
+- **DEF-M16 — AESURF `CID2`/`ALID2` were parsed, validated and written back, then ignored**
+  (#9, Tier M; design note `docs/30_future/designs/lateral_cases_aileron_rudder.md`). The
+  second hinge/AELIST pair — NASTRAN's mechanism for the opposite half of an antisymmetric
+  aileron — loaded nothing in `build_djx` and produced no hinge moment, silently, and the
+  viewer's AESURF form dropped the fields on re-save. Both halves are now consumed through
+  one geometry owner, `aesurf_hinges` (each half rotates about its own CID +y through its
+  own origin; the hinge moment is summed over halves and reported once per label); the
+  form has CID2/ALID2 widgets; the parser requires CID2 and ALID2 together, both CIDs to
+  exist in CORD2R, and no box in both halves. **Convention decided (charter §6):** an
+  aileron pair is authored `CID1` = starboard, `CID2` = port, both hinge +y outboard;
+  positive `AIL` = starboard TE-down / port TE-up = roll toward port = `+CMX` (textbook δa,
+  ZAERO `ANTISYM` semantics). Gates `tests/aero/test_aesurf_pair.py`: pair ≡ two single-half
+  labels box for box and in hinge moment, antisymmetric column, `CMX_δa > 0` with every other
+  rigid coefficient zero on the planar wing (the first absolute lateral sign pinned), and the
+  parser rules. No shipped deck uses the second pair, so no shipped number changes.
 - **DEF-M15 — lateral rate scales had the wrong sign, and the rate columns were planar-wing
   shortcuts** (#8, Tier M; design note `docs/30_future/designs/lateral_cases_aileron_rudder.md`).
   `rigid_rate_scales` mapped sway/roll/yaw body rates (basic +y/+x/+z) to `+SIDES`, `+ROLL`,

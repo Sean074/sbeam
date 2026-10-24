@@ -1633,8 +1633,10 @@ AESTAT, 101, PITCH
 
 ### AESURF — Aerodynamic control surface
 
-Defines a control surface by name, hinge-line coordinate system, and the AELIST of aero
-boxes that deflect with the surface.
+Defines a control surface by name, one or two hinge-line coordinate systems, and the
+AELIST(s) of aero boxes that deflect with the surface. One label drives both halves: the
+second pair `CID2`/`ALID2` is NASTRAN's mechanism for the opposite half of an
+antisymmetric aileron (#9; equivalent to ZAERO `AESURFZ … ANTISYM` on a full-span deck).
 
 **Format:**
 ```
@@ -1644,19 +1646,36 @@ AESURF  ID  LABEL  CID1  ALID1  CID2  ALID2  EFF
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | ID | int | — | Unique identifier |
-| LABEL | str | — | Control surface name (e.g. `AILERON`) |
-| CID1 | int | — | Coordinate system defining the hinge axis — the **y-axis** of this CORD2R is the hinge line (`integration.build_djx` takes `R[:, 1]`), matching the SPLINE2 spline-axis convention |
-| ALID1 | int | — | AELIST SID listing boxes on this surface |
-| CID2 | int | 0 | Optional second hinge CID (0 = unused) |
-| ALID2 | int | 0 | Optional second AELIST SID (0 = unused) |
-| EFF | float | 1.0 | Control-surface effectiveness factor |
+| LABEL | str | — | Control surface name (e.g. `AIL`, `RUD`, `ELEV`); the trim-variable label |
+| CID1 | int | — | Hinge coordinate system of the first half — the **y-axis** of this CORD2R is the hinge line (`aesurf_hinges` takes `R[:, 1]`), matching the SPLINE2 spline-axis convention. `0` = basic |
+| ALID1 | int | — | AELIST SID listing the first half's boxes |
+| CID2 | int | 0 | Hinge CID of the second half (0 = no second half) |
+| ALID2 | int | 0 | AELIST SID of the second half (0 = no second half) |
+| EFF | float | 1.0 | Control-surface effectiveness factor, applied to both halves |
 
-**Example:**
+**Sign (conventions charter §6):** positive deflection is a right-hand rotation about each
+half's own CID +y axis, i.e. lift-increasing (TE-down for a spanwise +y hinge). The
+deflection enters `D_jx` as `−(ĥ_i × n̂)·x̂·EFF` per box of half `i`; the hinge moment is
+`Σ_i Σ_{j∈ALID_i} [(r_j − o_i) × F_j]·ĥ_i` about each half's own origin and axis, summed and
+reported once per label.
+
+**Authoring rule for an aileron pair:** `CID1` = starboard half, `CID2` = port half, **both
+hinge +y pointing outboard** (starboard CID +y = +Y basic, port CID +y = −Y basic). Positive
+`AIL` is then starboard TE-down / port TE-up = roll toward port = `+CMX` in the basic frame
+and a negative `ROLL` label in a steady roll (textbook δa). Two single-half AESURF labels
+remain legal and give the identical loading (gate `tests/aero/test_aesurf_pair.py`); the
+pair is the documented form because one label is what a determined steady-roll trim needs.
+
+**Examples:**
 ```
-AESURF, 200, AILERON, 10, 50
+AESURF, 505, ELEV, 995, 3100                     $ one spanwise hinge for both tailplane halves
+AESURF, 601, AIL, 11, 301, 12, 302               $ aileron pair: CID 11 starboard, CID 12 port
+AESURF, 602, RUD, 13, 303                        $ rudder: CID 13 +y up ⇒ positive = TE-port
 ```
 
-**Cross-reference:** ALID1 (and ALID2 if non-zero) must exist in AELIST.
+**Cross-reference (parse errors):** `ALID1` must exist in AELIST and `CID1` in CORD2R (or be
+0); `CID2` and `ALID2` are given together or not at all, and when given must exist likewise;
+no box may appear in both `ALID1` and `ALID2` of one surface.
 
 ---
 

@@ -176,6 +176,21 @@ def _aesurf_form(bulk: BulkData, card: Optional[Aesurf], default_id: int):
         index=alids.index(card.alid1) if card and card.alid1 in alids else 0,
         key="auth_aesurf_alid1",
     ) if alids else None
+    # Second hinge half (#9): an antisymmetric aileron pair is ONE label with
+    # CID1 = starboard half, CID2 = port half, both hinge +y pointing outboard.
+    col3, col4 = st.columns(2)
+    cid2 = col3.selectbox(
+        "Second hinge CID (CID2, 0 = none)", cids,
+        index=cids.index(card.cid2) if card and card.cid2 in cids else 0,
+        key="auth_aesurf_cid2",
+        help="Port half of an aileron pair: its own CORD2R with +y outboard (charter §6).",
+    )
+    alid2_opts = [0] + alids
+    alid2 = col4.selectbox(
+        "Second box list (ALID2, 0 = none)", alid2_opts,
+        index=alid2_opts.index(card.alid2) if card and card.alid2 in alid2_opts else 0,
+        key="auth_aesurf_alid2",
+    )
     eff = st.number_input("Effectiveness (EFF)", value=(card.eff if card else 1.0),
                           key="auth_aesurf_eff")
     if not label:
@@ -184,8 +199,11 @@ def _aesurf_form(bulk: BulkData, card: Optional[Aesurf], default_id: int):
     if alid1 is None:
         st.warning("Define an AELIST first — AESURF needs a box list.")
         return None
+    if bool(cid2) != bool(alid2):
+        st.warning("CID2 and ALID2 go together — give both or neither.")
+        return None
     return Aesurf(id=int(aid), label=label, cid1=int(cid1), alid1=int(alid1),
-                  eff=float(eff))
+                  cid2=int(cid2), alid2=int(alid2), eff=float(eff))
 
 
 def _aelist_form(bulk: BulkData, card: Optional[Aelist], default_id: int):

@@ -824,11 +824,11 @@ def _build_f06_sol144_text(
         )
     lines.append("")
 
-    # ---- HINGE-MOMENT DERIVATIVES (about each AESURF cid1 hinge axis) ----
+    # ---- HINGE-MOMENT DERIVATIVES (about each AESURF hinge axis, CID1 + CID2 halves) ----
     if result.hinge_moments:
         lines.append("                          H I N G E   M O M E N T   D E R I V A T I V E S")
         lines.append("")
-        lines.append("      (moment about each control's cid1 hinge axis, at the trim dynamic pressure)")
+        lines.append("      (moment about each control's hinge axis, CID1 and CID2 halves summed, at the trim dynamic pressure)")
         lines.append("")
         for surf in sorted(result.hinge_moments):
             entry = result.hinge_moments[surf]

@@ -12,7 +12,7 @@ NASTRAN convention (positive = nose-up incidence, like ANGLEA), so ``build_wg``
 applies the same negation when assembling the internal ``w_g``.
 """
 
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import numpy as np
 
@@ -21,7 +21,7 @@ from sbeam.aero.vlm import box_circulation, trefftz_box_drag
 from sbeam.model.bulk_data import BulkData
 from sbeam.assembly.coord_transform import get_transform
 from sbeam.types import FloatArray
-from sbeam.model.aero import W2gj, require_aeros
+from sbeam.model.aero import Aesurf, W2gj, require_aeros
 
 
 def build_skj(boxes: list[AeroBox]) -> FloatArray:
@@ -422,21 +422,50 @@ def build_djx(
             pass  # zero — no direct aerodynamic effect
 
         else:
-            # AESURF label: control deflection rotates the box about the hinge
-            # axis (cid1 y-axis).  The induced streamwise normalwash is
-            # −(h_hat × n)·x_hat; for a spanwise hinge (h_hat = global y) this is
-            # exactly −n_z, recovering the flat-plate flap result.
+            # AESURF label: control deflection rotates each half's boxes about
+            # that half's hinge axis (CID1 / CID2 y-axis).  The induced
+            # streamwise normalwash is −(h_hat × n)·x_hat; for a spanwise hinge
+            # (h_hat = global y) this is exactly −n_z, the flat-plate flap result.
+            # An antisymmetric aileron pair is one label with both hinge +y axes
+            # pointing outboard (#9, charter §6).
             for aesurf in bulk.aesurfs.values():
                 if aesurf.label.upper() != ul:
                     continue
-                eff    = aesurf.eff
-                _o, R  = get_transform(aesurf.cid1, bulk.cord2rs)
-                h_hat  = R[:, 1]                       # hinge axis = cid1 y-axis
-                aelist = bulk.aelists.get(aesurf.alid1)
-                if aelist is None:
-                    continue
-                for bid in aelist.elements:
-                    k = nastran_id_to_k.get(bid)
-                    if k is not None:
-                        djx[k, col] = -np.cross(h_hat, boxes[k].normal)[0] * eff
+                for half in aesurf_hinges(aesurf, bulk, nastran_id_to_k):
+                    for k in half.ks:
+                        djx[k, col] = -np.cross(half.h_hat, boxes[k].normal)[0] * aesurf.eff
     return djx
+
+
+class HingeHalf(NamedTuple):
+    """One hinge of an AESURF: origin and +y axis of its CID, and the global box
+    indices of its AELIST (charter §6, #9)."""
+    origin: FloatArray
+    h_hat: FloatArray
+    ks: list[int]
+
+
+def aesurf_hinges(
+    aesurf: Aesurf, bulk: BulkData, id_to_k: dict[int, int],
+) -> list[HingeHalf]:
+    """The hinge halves of an AESURF — THE single derivation of control-surface
+    geometry (charter §8), shared by ``build_djx`` and ``compute_hinge_moments``.
+
+    Half 1 is ``(CID1, ALID1)``; half 2 is ``(CID2, ALID2)`` when the card
+    carries them (NASTRAN's second pair, used for an antisymmetric aileron:
+    CID1 = starboard half, CID2 = port half, both +y outboard; design note
+    ``lateral_cases_aileron_rudder.md`` D1).  Each half rotates about its own
+    CID +y through its own CID origin.  Boxes absent from ``id_to_k`` are
+    skipped (the parser has already range-checked the AELIST).
+    """
+    halves: list[HingeHalf] = []
+    for cid, alid in ((aesurf.cid1, aesurf.alid1), (aesurf.cid2, aesurf.alid2)):
+        if not alid:
+            continue
+        aelist = bulk.aelists.get(alid)
+        if aelist is None:
+            continue
+        origin, R = get_transform(cid, bulk.cord2rs)
+        ks = [id_to_k[bid] for bid in aelist.elements if bid in id_to_k]
+        halves.append(HingeHalf(np.asarray(origin, dtype=float), np.asarray(R[:, 1], dtype=float), ks))
+    return halves

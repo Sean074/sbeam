@@ -240,7 +240,9 @@ All trim objects live in `sbeam/model/aero.py` and are stored in `BulkData` as:
 
 ### Cross-reference validation (in `parse_bulk_data()`)
 
-1. **AESURF → AELIST**: `alid1` (and `alid2` if non-zero) must exist in `bulk.aelists`.
+1. **AESURF → AELIST / CORD2R**: `alid1` must exist in `bulk.aelists` and `cid1` in
+   `bulk.cord2rs` (or be 0); `cid2`/`alid2` are given together or not at all and must exist
+   likewise; no box may be in both halves' lists (#9 — both halves are consumed).
 2. **AELIST → CAERO1 box range**: every element ID must fall within
    `[caero.eid, caero.eid + nspan×nchord − 1]` for at least one CAERO1.
 3. **TRIM label**: every key in `trim.vars` must be defined by an AESTAT or AESURF card.

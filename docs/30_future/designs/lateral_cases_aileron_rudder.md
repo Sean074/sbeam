@@ -312,3 +312,16 @@ CHANGELOG **Added** + **Changed**; `40_history/06` **full step format** +
    panels lost the same spurious `CY_q = −0.27`; flagship `TRIM 2` ELEV −0.16824 → −0.16910,
    ANGLEA +0.002 %, total CY 5.3e-3 → 9e-7, CMZ 2.3e-3 → −5e-7, whole-aircraft aero monitor
    Fy 202.6 N → 0.03 N; wing-root section loads < 0.01 %. All pinned tests passed unchanged.
+
+**#9 (closed 2026-10-24):**
+1. `aesurf_hinges(aesurf, bulk, id_to_k) -> list[HingeHalf(origin, h_hat, ks)]` lives in
+   `aero/integration.py` next to `build_djx`; `compute_hinge_moments` imports it and no longer
+   calls `get_transform` itself. A half is emitted only when its ALID is non-zero.
+2. Parser: `CID1` is now checked against CORD2R too (0 = basic allowed) — it used to fail
+   late inside `get_transform` at solve time with no card named.
+3. The viewer form offers `CID2`/`ALID2` as selectboxes with 0 = none and refuses a
+   half-specified pair; it does not check list overlap (the parser does on the next load).
+4. G6 hinge-moment equivalence is asserted on the *trimmed-loading* entry (`'total'` at the
+   unit-AIL loading) because the per-label derivative of a single-half surface sees only its
+   own half's column; both halves of the pair carry the same-sign hinge moment, negative for
+   a positive (TE-down-starboard) deflection.

@@ -14,9 +14,8 @@ import scipy.linalg
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.assembly.reduction import expand_to_g
-from sbeam.assembly.coord_transform import get_transform
 from sbeam.aero.aero_model import AeroModel
-from sbeam.aero.integration import build_djk
+from sbeam.aero.integration import aesurf_hinges, build_djk
 from sbeam.model.aero import require_aeros
 from sbeam.solver.sol144_util import pitch_moment, aero_moment_resultant
 from sbeam.types import FloatArray, LuFactor
@@ -113,10 +112,12 @@ def compute_hinge_moments(
 ) -> dict[str, dict[str, float]]:
     """Hinge-moment derivatives and trimmed hinge moment per AESURF control.
 
-    The hinge moment is the moment of the aero box forces on a surface's AELIST
-    boxes about its hinge axis ĥ (the cid1 y-axis) through the hinge origin o:
+    The hinge moment is the moment of the aero box forces on each hinge half's
+    AELIST boxes about that half's hinge axis ĥ_i (the CID_i y-axis) through
+    its origin o_i, summed over the halves (CID1/ALID1 and, when present,
+    CID2/ALID2 — the antisymmetric aileron pair, #9):
 
-        HM = Σ_{j∈AELIST} [(r_j − o) × F_j] · ĥ          (r_j = box force point)
+        HM = Σ_i Σ_{j∈ALID_i} [(r_j − o_i) × F_j] · ĥ_i      (r_j = box force point)
 
     Returns ``{label: {'total': HM_trim, <trim_label>: dHM/dδ, ...}}`` where each
     ``dHM/dδ`` uses the rigid box forces from that label's normalwash column
@@ -130,20 +131,17 @@ def compute_hinge_moments(
 
     hinge_moments: dict[str, dict[str, float]] = {}
     for aesurf in bulk.aesurfs.values():
-        aelist = bulk.aelists.get(aesurf.alid1)
-        if aelist is None:
+        halves = aesurf_hinges(aesurf, bulk, id_to_k)
+        if not halves:
             continue
-        o, R = get_transform(aesurf.cid1, bulk.cord2rs)
-        h_hat = R[:, 1]                                   # hinge axis = cid1 y-axis
-        ks = [id_to_k[bid] for bid in aelist.elements if bid in id_to_k]
 
-        def _hm(f_box: FloatArray, _ks: list[int] = ks,
-                _o: FloatArray = o, _h: FloatArray = h_hat) -> float:
+        def _hm(f_box: FloatArray, _halves: list = halves) -> float:
             total = 0.0
-            for k in _ks:
-                F = f_box[3 * k:3 * k + 3]
-                r = aero.boxes[k].force_point - _o
-                total += float(np.dot(np.cross(r, F), _h))
+            for half in _halves:
+                for k in half.ks:
+                    F = f_box[3 * k:3 * k + 3]
+                    r = aero.boxes[k].force_point - half.origin
+                    total += float(np.dot(np.cross(r, F), half.h_hat))
             return total
 
         entry = {'total': _hm(f_box_trim)}

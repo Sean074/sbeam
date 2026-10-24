@@ -165,13 +165,23 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
   TE-up, `tests/aero/test_cessna210_flagship.py:259-266`); on the HA144A canard
   (surface forward of the CG) positive is nose-up. "Positive elevator" has no
   airframe-independent pitch sense — only the lift-increasing rule is universal.
-- **GAP — aileron and rudder:** no deck, doc, or test defines either. The sign a rudder
-  or aileron gets is entirely set by how the deck author orients cid1 +y; nothing
-  validates the intent. An antisymmetric aileron pair currently requires two AESURF
-  labels: **`CID2`/`ALID2` are parsed and validated but silently ignored by
-  `build_djx` and the hinge-moment sum** (DEF-M16; `aero/integration.py:403`,
-  `solver/sol144_derivs.py:133-136`), so the NASTRAN second-half mechanism loads
-  nothing.
+- **Two hinge halves, one label** (#9, DEF-M16 closed 2026-10-24): an AESURF may carry a
+  second pair `CID2`/`ALID2`; each half rotates about **its own** CID +y through its own
+  origin, and the hinge moment is the sum over halves. The geometry has one owner,
+  `aesurf_hinges` (§8), consumed by `build_djx` and `compute_hinge_moments`. Two single-half
+  labels give the identical loading (gate `tests/aero/test_aesurf_pair.py` G6).
+- **Aileron (D1, design note `30_future/designs/lateral_cases_aileron_rudder.md`):** the
+  lift-increasing rule applied **per half**. Authoring: `CID1` = starboard half, `CID2` =
+  port half, **both hinge +y pointing outboard** (NASTRAN CID1/CID2 practice; ZAERO
+  `AESURFZ … ANTISYM`). Positive `AIL` = starboard TE-down, port TE-up = roll **toward
+  port** = `+CMX` in basic (moment about +x, x aft) = a **negative `ROLL` label** in a steady
+  roll. This is the textbook δa: `C_lδa`, `C_mδe` and `C_nδr` share one sign family. Gate:
+  `test_aesurf_pair.py` G7 — the first absolute lateral sign pinned in the repo (`CMX_δa > 0`,
+  all other rigid coefficients zero on a planar wing).
+- **Rudder (D2):** the same rule, hinge CID +y **up** (= +z basic). Positive `RUD` =
+  TE-to-port = `+Fy` on the fin (starboard-pointing sideforce at the tail) = nose-to-port =
+  `+CMZ` in basic = a negative `YAW` label. Textbook δr. Gate lands with the lateral
+  validation deck (#10, G10).
 
 ## 7. Units
 
@@ -211,6 +221,7 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
 | `pitch_moment` | The nose-up-positive pitch arm (AE1 Step E) | `solver/sol144_util.py:255` |
 | `aero_moment_resultant` | Full 3-component moment about a reference (Step 58) | `solver/sol144_util.py:280` |
 | `_rate_column` / `_RATE_LABEL_AXIS` | The rate-column kinematics: `(2/L)·n̂·(ê × (r − r_ref))` about the RCSID origin, and the label axes `+ŷ / −x̂ / −ẑ` (#8) | `aero/integration.py` |
+| `aesurf_hinges` | Control-surface hinge geometry: per half `(origin, ĥ = CID +y, boxes)` for CID1/ALID1 and CID2/ALID2 (#9) | `aero/integration.py` |
 | `rigid_rate_scales` | Physical rate (basic +x/+y/+z) → label value: `−1/V, −1/V, −b/2V, +c/2V, −b/2V` for DOFs 2–6 (#8) | `aero/integration.py` |
 | `load_factor_to_urdd3` | The load-factor → `URDD3` sign (`−n_z·g`), for maneuvers and gusts alike | `model/maneuver_presets.py:24` |
 | `mass_ratio` / `alleviation_factor` / `gust_increment` | The Pratt gust formula (μ, `K_g`, Δn). Deliberately **outside** the solver — dimensional, see §7 | `sbeam_tools/cases/gust.py` |

@@ -448,7 +448,7 @@ def _render_sol144_trim(bulk: BulkData, result: Sol144TrimResult) -> None:
 
     # ---- Hinge moments ----
     if result.hinge_moments:
-        st.markdown("**Hinge-moment derivatives** (about each AESURF cid1 hinge axis)")
+        st.markdown("**Hinge-moment derivatives** (about each AESURF hinge axis; CID1 and CID2 halves summed)")
         for surf in sorted(result.hinge_moments):
             entry = result.hinge_moments[surf]
             rows = [

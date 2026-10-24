@@ -1852,12 +1852,29 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
                     f"LOAD {load_sid}: component SID {comp_sid} not found in FORCE, MOMENT, or GRAV sets"
                 )
 
-    # Validate AESURF → AELIST references
+    # Validate AESURF → AELIST / CORD2R references (#9: the CID2/ALID2 second
+    # hinge half is consumed, so it is checked like the first; a box may not
+    # belong to both halves of one surface).
     for aid, aesurf in bulk.aesurfs.items():
         if aesurf.alid1 not in bulk.aelists:
             raise ValueError(f"AESURF {aid}: ALID1={aesurf.alid1} not found in AELIST")
-        if aesurf.alid2 and aesurf.alid2 not in bulk.aelists:
-            raise ValueError(f"AESURF {aid}: ALID2={aesurf.alid2} not found in AELIST")
+        if aesurf.cid1 and aesurf.cid1 not in bulk.cord2rs:
+            raise ValueError(f"AESURF {aid}: hinge CID1={aesurf.cid1} not found in CORD2R")
+        if bool(aesurf.cid2) != bool(aesurf.alid2):
+            raise ValueError(
+                f"AESURF {aid}: CID2={aesurf.cid2} and ALID2={aesurf.alid2} must be given "
+                "together (the second hinge half needs both its hinge CID and its AELIST)")
+        if aesurf.alid2:
+            if aesurf.alid2 not in bulk.aelists:
+                raise ValueError(f"AESURF {aid}: ALID2={aesurf.alid2} not found in AELIST")
+            if aesurf.cid2 not in bulk.cord2rs:
+                raise ValueError(f"AESURF {aid}: hinge CID2={aesurf.cid2} not found in CORD2R")
+            both = sorted(set(bulk.aelists[aesurf.alid1].elements)
+                          & set(bulk.aelists[aesurf.alid2].elements))
+            if both:
+                raise ValueError(
+                    f"AESURF {aid}: box(es) {both[:5]} appear in both ALID1={aesurf.alid1} "
+                    f"and ALID2={aesurf.alid2}; a box deflects about one hinge only")
 
     # Validate AELIST box IDs fall within declared CAERO1 ranges
     if bulk.aelists and bulk.caero1s:
