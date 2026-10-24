@@ -325,7 +325,8 @@ def _warn_if_mass_coverage_incomplete(
     per-wing cut.  The signature of the real defect is narrower: a monitor that
     integrates *all* of the aero but only *some* of the mass.  Such a monitor
     reports a spurious force imbalance on a balanced trim — the shipped HA144A
-    deck omitted one 93.24-slug grid and showed ~+3000 lb of phantom lift.
+    deck omitted one mass grid (3 % of the mass) and showed ~0.5 % of the
+    weight as phantom lift.
 
     So the aero coverage is what qualifies a monitor as whole-aircraft in scope;
     only then is its mass coverage checked.

@@ -531,7 +531,7 @@ def compute_structural_loads(
     Args:
         aero_model: AeroModel with g_load populated (build_aero_model called
                     with a grid_index argument).
-        q:          Dynamic pressure (Pa or consistent units).
+        q:          Dynamic pressure (consistent units).
         alpha:      Angle of attack (rad).
 
     Returns:

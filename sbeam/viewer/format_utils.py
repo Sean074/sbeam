@@ -46,7 +46,7 @@ def fmt(x: Any, sig: int = 5) -> str:
 
 
 def fmt_mass(x: Any) -> str:
-    """Format a mass at 0.1-unit precision (e.g. kg reported to ±0.1)."""
+    """Format a mass at 0.1-unit precision (model mass units)."""
     try:
         return f"{float(x):.1f}"
     except (TypeError, ValueError):

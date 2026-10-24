@@ -129,6 +129,15 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     import gate.
 
 ### Fixed
+- **Unit-system leaks removed from `sbeam/`** (#30, Tier S). The viewer's preset gravity
+  defaulted to `32.174` under a "model units" label (an SI user got a load factor ~3.3×
+  wrong); it now prefills from a "Deck unit system" selector (`sbeam_tools.common.units`)
+  and stays editable. The `TRIM.velocity()` error no longer tells SI users to type
+  `0.002377`; `aero_model` no longer names `Pa`; two slug/lb/kg docstrings reworded.
+  Charter §7 now cites the executable CHORDCP conversion site and the tolerance constant
+  by name, says `sbeam_tools/` not `scripts/`, and states the no-unit-constant rule.
+  New gate `tests/tools/test_unit_neutrality.py` greps every `sbeam/` module for unit
+  constants and unit words (allow-list guarded).
 - **DEF-M18 — CBAR force table on raw nodal moments with half-swapped plane labels** (#21,
   Tier M). `recover_bar_forces` now goes through `bar_internal_resultants` (#37), so end-A
   moments are on the same +x face as end B and as the stresses; `BENDING-1` no longer

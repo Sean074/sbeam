@@ -480,7 +480,7 @@ the parser raises on duplicate SIDs, so an inline card duplicating an INCLUDE-de
 would make the exported deck unparseable. The form shows a **Save as new SID** button for
 file-sourced cards; `snapshot_family_ids` at upload (`file_card_sids`) backs the check.
 
-**Presets:** the three balanced-maneuver recipes from `model/maneuver_presets.py`
+**Presets:** (gravity is prefilled from a "Deck unit system" selector — `SI` / `IMPERIAL` from `sbeam_tools.common.units` — and stays editable; the solver itself never knows units, #30) the three balanced-maneuver recipes from `model/maneuver_presets.py`
 (symmetric pull-up via `load_factor_to_urdd3`, steady roll, steady sideslip) pre-fill the
 TRIM form and offer one-click creation of missing AESTAT labels.
 

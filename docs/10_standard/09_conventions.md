@@ -175,16 +175,23 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
   architecture boundary.**
 - **Preprocessing tools may know units; the solver may not (2026-09-05, issue #1).**
   This rule binds `sbeam/` — card fields and solver arithmetic. Tools under
-  `scripts/` that *generate* decks are outside it, and are where dimensional
+  `sbeam_tools/` that *generate* decks are outside it, and are where dimensional
   regulatory content belongs: `sbeam_tools/cases/gust.py` owns the ISA atmosphere,
   the FAR/CS 23.333(c) `U_de` schedule in feet, and `ρ₀`, then hands the solver a
   dimensionless load factor on a `GUSTLF` card. Nothing dimensional crosses the
   boundary. Prefer this split to adding a unit-aware field.
 - **User-defined consistent units throughout** — sbeam never converts. The two deliberate
-  exceptions (card-field degrees → stored radians): CHORDCP `alpha_ref`
-  (`model/aero.py:119`) and its tolerance constant `_CHORDCP_ALPHA_TOL = 0.035 rad`
-  (`solver/sol144.py:174-175`). Do not add new unit-converting fields without recording
-  them here.
+  exceptions (card-field degrees → stored radians): the CHORDCP `ALPHREF` conversion
+  `math.radians(...)` in `parser/bdf_reader.py::_handle_chordcp` (stored as
+  `Chordcp.alpha_ref`, `model/aero.py`) and its tolerance constant
+  `_CHORDCP_ALPHA_TOL = 0.035 rad` (`solver/sol144.py`, cited by name — line numbers
+  drift). Do not add new unit-converting fields without recording them here.
+- **No unit-system constant may appear in `sbeam/`** (#30, 2026-10-24) — no `9.81`,
+  `32.174`, `0.002377`, `1.225`, no `slug`/`lbf`/`kg/m³`/`Pa`/`ft/s` in messages,
+  defaults or docstrings. The viewer declares a unit system from
+  `sbeam_tools.common.units.UNIT_SYSTEMS` when it needs `g`; error text says "in the
+  deck's own units". Gate: `tests/tools/test_unit_neutrality.py`, with an explicit
+  allow-list for prose that *explains* the boundary (`model/gust.py`).
 
 ## 8. Single-source helpers (use these; never re-derive)
 

@@ -26,6 +26,7 @@ from sbeam.model.card_writers import write_authored_block
 from sbeam.viewer import sol144_authoring as logic
 from sbeam.parser.case_control import CaseControl
 from sbeam.viewer.case_control_ui import export_bdf_text
+from sbeam_tools.common.units import UNIT_SYSTEMS
 
 
 def export_sol144_bdf(cc: CaseControl, bulk: BulkData,
@@ -568,10 +569,18 @@ def _render_preset_panel(bulk: BulkData) -> None:
         col1, col2 = st.columns(2)
         param = col1.number_input(preset.param_label, value=preset.param_default,
                                   key="auth_preset_param", format="%.4g")
-        g = col2.number_input(
-            "Gravity g (model units)", value=32.174, key="auth_preset_g",
-            format="%.6g",
-        ) if preset.uses_g else 0.0
+        g = 0.0
+        if preset.uses_g:
+            # #30: the solver is unit-neutral (charter §7), so the deck's unit
+            # system must be declared to prefill g; the value stays editable.
+            # Keyed per system so switching re-prefills instead of keeping the
+            # previous system's number under a new label.
+            units = UNIT_SYSTEMS[col2.selectbox(
+                "Deck unit system", list(UNIT_SYSTEMS), key="auth_preset_units")]
+            g = col2.number_input(
+                f"Gravity g ({units.length_unit}/s², {units.name})", value=units.g,
+                key=f"auth_preset_g_{units.name}", format="%.6g",
+            )
         missing = logic.missing_preset_labels(bulk, preset)
         if missing:
             st.warning(f"Missing AESTAT labels: {', '.join(missing)}")

@@ -2501,6 +2501,7 @@ every value recomputed from the parsed deck. End-to-end, `lift == n·W` to 1e-6.
 
 ## Resolved defects (SOL 144 static aeroelastics)
 
+- **#30 (Tier S, 2026-10-24)** — unit-system leaks: viewer preset `g` via a unit-system selector (`sbeam_tools.common.units.UNIT_SYSTEMS`), RHOREF message and `aero_model` docstring made unit-neutral, two prose leaks reworded, charter §7 citations fixed (`_handle_chordcp` `math.radians`, `_CHORDCP_ALPHA_TOL` by name, `sbeam_tools/`), gate `tests/tools/test_unit_neutrality.py`.
 - **#31 (Tier M, 2026-10-24)** — exported CSVs and load BDFs hardened as a public interface: integer `massset` (`0` = baseline) via one `_massset_fields` helper, `mass_case` added to the four MLOADS CSVs, named header constants, fixed-shape `$ MASSSET=` comment line on all three load BDFs (`massset_comment`), new guide `10_export_schemas.md` (incl. the reserved element-force CSV from the #38 deferral) and gate `tests/results/test_export_schema.py`; release process §1 names the schemas.
 
 ### DEF-M20 — `URDD3 = −n_z·g` had no RCSID-orientation guard (issue #23) ✅ COMPLETE (2026-09-05)

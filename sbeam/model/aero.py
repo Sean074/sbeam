@@ -227,7 +227,8 @@ class Trim:
     """Static trim condition — prescribed values for a subset of trim variables.
 
     ``rhoref`` is an sbeam extension (Step 61) entered as a pseudo-label in the
-    LABEL/VALUE pair list (``TRIM, 1, 0.9, 1200.0, RHOREF, 0.002377, ...``).  It
+    LABEL/VALUE pair list (``TRIM, 1, 0.9, 1200.0, RHOREF, <rho>, ...``, ``<rho>``
+    in the deck's own consistent units — charter §7).  It
     is the freestream density for this flight condition and exists solely to map
     the dynamic pressure to a true airspeed ``V = sqrt(2q/rho)``; the static trim
     (Step 52/53) never needs it.  ``0.0`` means "not supplied".
@@ -250,7 +251,8 @@ class Trim:
             raise ValueError(
                 f"TRIM {self.sid}: a freestream velocity is required but RHOREF "
                 "is not set on the card.  Add the RHOREF pseudo-label "
-                "(e.g. 'TRIM, {sid}, MACH, Q, RHOREF, 0.002377, ...') so "
+                "(e.g. 'TRIM, {sid}, MACH, Q, RHOREF, <rho>, ...', with <rho> the "
+                "freestream density in the deck's own consistent units) so "
                 "V = sqrt(2q/rho) can be formed.".replace("{sid}", str(self.sid))
             )
         return float(math.sqrt(2.0 * self.q / self.rhoref))
