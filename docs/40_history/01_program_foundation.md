@@ -257,6 +257,8 @@ The two top-level functions serve distinct use cases:
 
 ## Resolved defects (documentation / model)
 
+- **#45 (Tier M, 2026-10-24)** — `PLOAD1` and every other known-but-unsupported NASTRAN card now refuse the deck at parse with one counted `ValueError` (`_UNSUPPORTED_CARDS`, `bdf_reader.py`) instead of being dropped behind an uncollected `UserWarning`; the CLI prints remaining unknown-card warnings; viewer check 3 reports unrecognised cards only; gate `tests/parser/test_unsupported_cards.py`.
+
 ### Aero-correction ingestion moved to sbeam_tools (Tier M, issue #32) ✅ COMPLETE (2026-09-05)
 
 `sbeam/aero/section_data.py` → `sbeam_tools/corrections/`, taking `split_total_rows` /

@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+import warnings
 from pathlib import Path
 from typing import Any, Callable, Dict
 
@@ -30,9 +31,14 @@ def main() -> None:
     f06_path = bdf_path.with_suffix(".f06")
 
     try:
-        cc, bulk = parse_bdf(str(bdf_path))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            cc, bulk = parse_bdf(str(bdf_path))
     except Exception as exc:
         sys.exit(f"Parse error: {exc}")
+    for w in caught:
+        # Unknown-card skips and TRIM advisories: visible, never fatal (#45).
+        print(f"Parser warning: {w.message}", file=sys.stderr)
 
     sol144_results = None
     maneuver_results: Dict[int, Any] = {}

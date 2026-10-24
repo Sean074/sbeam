@@ -2317,6 +2317,40 @@ are the exception: they refer to **element local axes** (1 = axial, 4 = torsion,
 
 ---
 
+## Unsupported cards
+
+**A deck carrying a known-but-unsupported NASTRAN card is refused at parse** (#45,
+2026-10-24). Solving with such a card silently dropped would change the answer, so the
+parser counts every occurrence and raises one `ValueError` listing them all:
+
+```
+Unsupported bulk data card(s): CBEAM x1 (beam element), PLOAD1 x2 (distributed CBAR load).
+sbeam would solve with these cards dropped; remove them or model the content with
+supported cards (02_card_reference.md, 'Unsupported cards').
+```
+
+The CLI exits with `Parse error: ...` and writes no f06; the viewer shows the same text as
+the parse error. The authoritative set is `_UNSUPPORTED_CARDS` in
+`sbeam/parser/bdf_reader.py`; a gate (`tests/parser/test_unsupported_cards.py`) asserts
+that every entry below is in that set, that none has a handler, and that no card listed
+under "Supported Cards" in `CLAUDE.md` is refused.
+
+| Group | Refused cards | Model it instead with |
+|-------|---------------|-----------------------|
+| Distributed / element loads | `PLOAD`, `PLOAD1`, `PLOAD2`, `PLOAD4` | Equivalent nodal `FORCE`/`MOMENT` at the grids (PLOAD1 support is parked: `docs/30_future/02_parked.md`) |
+| Other static loads | `RFORCE`, `SLOAD`, `ACCEL`, `ACCEL1`, `TEMP`, `TEMPD`, `DEFORM`, `SPCD` | `GRAV` for a uniform body acceleration; `FORCE`/`MOMENT` otherwise |
+| Dynamic loads | `DLOAD`, `DAREA`, `TLOAD1`, `TLOAD2`, `RLOAD1`, `RLOAD2` | Transient maneuvers use the `MLOADS` family; no SOL 109/111 |
+| Elements / properties / materials | `CBEAM`, `PBEAM`, `PBEAML`, `PBARL`, `CTUBE`, `PTUBE`, `CELAS1`, `CELAS2`, `PELAS`, `CONM1`, `CQUAD4`, `CTRIA3`, `PSHELL`, `MAT2`, `MAT8` | `CBAR`/`PBAR` (explicit A, I1, I2, J), `CROD`/`PROD`, `CBUSH`/`PBUSH`, `CONM2`, `MAT1` |
+| Coordinate systems | `CORD1R`, `CORD1C`, `CORD1S`, `CORD2C`, `CORD2S` | `CORD2R` |
+| Constraints | `MPC`, `MPCADD`, `SPCADD`, `RBE1` | `RBE2`, `RBAR`, `RBE3`; one `SPC`/`SPC1` set per subcase |
+
+Keywords **not** in this table and not implemented (typos, output requests such as
+`PARAM`, vendor extensions) are skipped with a `UserWarning` `Unknown BDF card 'X' —
+skipped`; the CLI prints each as `Parser warning: ...` on stderr and the viewer lists them
+under "Parser warnings" and in the pre-solve checks.
+
+---
+
 ## Constraints and Limitations
 
 | Card | Constraint |

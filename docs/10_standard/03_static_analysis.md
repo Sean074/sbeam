@@ -82,6 +82,8 @@ Global DOF index for grid `i` (0-based), local DOF `d` (0–5): `idx = 6*i + d`
 3. For each MOMENT card: rotate the direction vector from CID into global, then apply `M × n_global` to DOFs 3–5 of the referenced grid.
 4. If a LOAD combination card is active, scale each component set and superpose.
 
+`FORCE`, `MOMENT`, `LOAD` and `GRAV` are the only load cards. Distributed and pressure loads (`PLOAD1`, `PLOAD4`, …) are refused at parse rather than dropped (#45, `02_card_reference.md` "Unsupported cards"); model them as equivalent nodal loads.
+
 ---
 
 ## RBE3 Constraint Assembly

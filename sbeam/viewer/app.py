@@ -453,6 +453,9 @@ def _rod_only_grids_without_rotation_spc(bulk: BulkData) -> list[int]:
     return sorted(g for g in rod_grids - stiff_grids if len(spc_rot.get(g, set())) < 3)
 
 
+_UNKNOWN_CARD_RE = re.compile(r"Unknown BDF card '([A-Z0-9]+)'")
+
+
 def _get_pre_solve_warnings(
     bulk: BulkData, cc: Optional[CaseControl], parse_warnings: list[str]
 ) -> list[str]:
@@ -462,7 +465,8 @@ def _get_pre_solve_warnings(
     - Zero-length CBAR elements (singular stiffness matrix).
     - No SPC/SPC1 constraints (unconstrained model; bad for SOL 101).
     - SPC SID referenced in case control but absent from bulk.
-    - Unsupported load cards present (e.g. PLOAD1), silently dropped by parser.
+    - Unrecognised cards skipped by the parser (known-unsupported cards such as
+      PLOAD1 are refused at parse instead, #45).
     - MAT1 rho=0 for SOL 103 (mass matrix will be zero → unreliable frequencies).
     - E-value range >1000x across materials (possible unit inconsistency).
     """
@@ -532,22 +536,15 @@ def _get_pre_solve_warnings(
                         "in case control but not found in bulk data."
                     )
 
-    # 3. Unsupported load cards present (captured as parser warnings)
-    _UNSUPPORTED_LOAD_CARDS = frozenset({
-        "PLOAD", "PLOAD1", "PLOAD2", "PLOAD4",
-        "RFORCE", "DLOAD", "TLOAD1", "TLOAD2",
-        "RLOAD1", "RLOAD2", "ACCEL", "ACCEL1", "SLOAD",
-    })
-    found_unsupported: set[str] = set()
-    for msg in parse_warnings:
-        for card in _UNSUPPORTED_LOAD_CARDS:
-            if card in msg:
-                found_unsupported.add(card)
-    if found_unsupported:
-        card_list = ", ".join(sorted(found_unsupported))
+    # 3. Unrecognised cards skipped by the parser (captured as parser warnings).
+    #    Known-unsupported cards (PLOAD1, CBEAM, ...) never reach here: the parser
+    #    refuses the deck (#45), so only typos / vendor cards remain to flag.
+    skipped = sorted({m.group(1) for msg in parse_warnings
+                      for m in [_UNKNOWN_CARD_RE.search(msg)] if m})
+    if skipped:
         msgs.append(
-            f"Unsupported load card(s) present: {card_list}. "
-            "These were ignored during parsing and do not contribute to the load vector."
+            f"Unrecognised card(s) skipped: {', '.join(skipped)}. "
+            "They are not sbeam cards (check the spelling) and contribute nothing to the model."
         )
 
     # 4. Zero density for SOL 103

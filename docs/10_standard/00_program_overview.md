@@ -499,6 +499,7 @@ restrictions there first, then link them here.
 | `CBAR` orientation vector form only | The `G0` grid-ID orientation form is not supported — use `X1/X2/X3` |
 | `CBUSH` restrictions | `CID` must be `0` or blank; element offsets unsupported; massless; `PBUSH` damping (`B1`–`B6`) is deferred to the dynamic solvers |
 | `CROD`/`CONROD` rod-only grids | No AUTOSPC: a grid touched only by rods has free rotations and must have them SPC'd; rod mass carries no torsional inertia; no `PLOAD1`/thermal element loads (#38) |
+| Known-unsupported cards refuse the deck | `PLOAD1`/`PLOAD4`, `CBEAM`/`PBEAM`/`PBARL`, `CORD2C`, `MPC`, dynamic loads, … are counted and the parse raises one `ValueError` instead of dropping them silently (#45). Table and alternatives: `02_card_reference.md` "Unsupported cards"; PLOAD1 support itself is parked |
 | `MAT1` thermal fields ignored | `A`, `TREF` and `GE` are parsed but unused — there is no thermal load path |
 
 **Propulsion**

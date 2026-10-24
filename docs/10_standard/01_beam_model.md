@@ -185,7 +185,8 @@ Accepts a list of BDF text lines (bulk data section only). Supports:
 
 Cards recognised: `CORD2R`, `GRID`, `PBAR`, `PROD`, `PBUSH`, `MAT1`, `CBAR`, `CROD`, `CONROD`, `CBUSH`, `PLOTEL`, `CONM2`, `MASSSET`, `RBE3`, `RBE2`, `RBAR`, `SPC`, `SPC1`, `FORCE`, `MOMENT`, `LOAD`, `GRAV`, `EIGRL`, `SUPORT`, plus the aero/trim/monitor/maneuver families: `AEROS`, `AEFACT`, `PAERO1`, `PSTRIP`, `STRIPK`, `CAERO1`, `W2GJ`, `WKK`, `AECORR`, `SET1`, `SPLINE0`, `SPLINE1`, `SPLINE2`, `ATTACH`, `AESTAT`, `AESURF`, `AELIST`, `TRIM`, `DIVERG`, `TRIMVAR`, `TRIMOBJ`, `TRIMCON`, `AECOMP`, `MONPNT1`, `MONPNT3`, `MLOADS`, `MLDTRIM`, `MLDTIME`, `MLDCOMD`, `MLDPRNT`, `TABLED1` (full list with fields in `02_card_reference.md`).
 Structural markers `BEGIN BULK` / `ENDDATA` are silently skipped.
-All other keywords issue `warnings.warn(…, UserWarning)` and are skipped.
+Known-but-unsupported NASTRAN cards (`PLOAD1`, `CBEAM`, `CORD2C`, `MPC`, … — the `_UNSUPPORTED_CARDS` set) **refuse the deck** with one counted `ValueError` (#45; table in `02_card_reference.md` "Unsupported cards").
+All other keywords issue `warnings.warn(…, UserWarning)` and are skipped; the CLI echoes them as `Parser warning:` on stderr.
 Duplicate GID, PID (one space across PBAR and PROD), MID (MAT1), element EID (one space across CBAR, CROD, CONROD and CBUSH), or LOAD SID raises `ValueError`.
 
 **Ordering constraints:** PBAR and MAT1 must appear before the CBAR elements that reference them. PROD and MAT1 must appear before the CROD elements, and MAT1 before the CONROD elements, that reference them. PBUSH must appear before the CBUSH elements that reference it. CORD2R cards may appear in any order relative to each other; cycles in `RID` references raise `ValueError`.

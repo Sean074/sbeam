@@ -152,6 +152,17 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   warning on every generated gust case.
 
 ### Changed
+- **Decks carrying known-but-unsupported NASTRAN cards are refused at parse** (#45). `PLOAD1`
+  (and `PLOAD`/`PLOAD2`/`PLOAD4`, `RFORCE`, `SPCD`, dynamic loads, `CBEAM`/`PBEAM`/`PBARL`,
+  `CTUBE`, `CELAS*`, `CONM1`, shells, `MAT2`/`MAT8`, `CORD1*`/`CORD2C`/`CORD2S`, `MPC`,
+  `SPCADD`, `RBE1` — the `_UNSUPPORTED_CARDS` set) used to parse, solve and report with the
+  card silently dropped behind a generic `UserWarning` nobody collected. The parser now
+  counts them and raises one `ValueError` listing every offender
+  (`Unsupported bulk data card(s): PLOAD1 x2 (distributed CBAR load), ...`); the CLI exits
+  with `Parse error:` and no f06, the viewer shows the parse error. Truly unknown keywords
+  still warn and skip, and the CLI now prints those as `Parser warning:` on stderr. Table
+  and alternatives: `02_card_reference.md` "Unsupported cards"; a gate keeps the set,
+  the handlers, `CLAUDE.md` Supported Cards and the doc table consistent.
 - **Transient `net_loads` is now the full applied load** — aero + rigid inertia + elastic
   d'Alembert + damping (#3). The exported `<stem>.maneuver_qs_loads.bdf` cards, the closure
   and the DEF-M5 critical-sample metric all read it, so the cards applied statically to the

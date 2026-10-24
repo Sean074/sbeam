@@ -672,7 +672,7 @@ Before the **Run Analysis** button in the Results tab, `_show_pre_solve_warnings
 | No SPC (SOL 101) | `bulk.spcs` and `bulk.spc1s` both empty, SOL 101 | Unconstrained model → singular K |
 | No SPC (SOL 103) | Same but SOL 103 | Valid for free-free; warns first 6 modes ~0 Hz |
 | SPC SID missing | `sc.spc_sid` not in bulk | Subcase references non-existent constraint set |
-| Unsupported load card | Parser warning contains PLOAD1 / PLOAD2 / PLOAD4 / RFORCE / DLOAD / TLOAD1 / TLOAD2 / RLOAD1 / RLOAD2 / ACCEL / ACCEL1 / SLOAD | Card silently dropped; load vector incomplete |
+| Unrecognised card | Parser warning `Unknown BDF card 'X' — skipped` | Typo or vendor card contributes nothing. Known-unsupported cards (`PLOAD1`, `CBEAM`, …) never reach this check: the parser refuses the deck and the viewer shows the parse error (#45) |
 | Zero density (SOL 103) | `mat1.rho == 0` for any material, SOL 103 | Mass matrix zero → unreliable frequencies |
 | E-value range | `max(E) / min(E) > 1000` across materials | Possible unit system mismatch |
 

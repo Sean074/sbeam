@@ -1,6 +1,7 @@
 import os
 import math
 import warnings
+from collections import Counter
 from typing import Optional
 
 from sbeam.model.bulk_data import BulkData
@@ -24,6 +25,39 @@ from sbeam.types import StrPath
 from sbeam.parser.case_control import CaseControl, parse_case_control
 
 _IGNORED_KEYWORDS = frozenset({"BEGIN", "BEGINBULK", "ENDDATA"})
+
+#: NASTRAN bulk cards sbeam recognises but does not implement (issue #45).  A deck
+#: carrying any of them is **refused** at parse: solving with the card silently dropped
+#: would change the answer (missing loads, elements, constraints or frames).  The value
+#: is what the deck would lose.  Keywords not listed here and not handled below are
+#: skipped with a ``UserWarning`` (typos, output requests, vendor extensions).
+#: Field reference: ``docs/10_standard/02_card_reference.md`` "Unsupported cards".
+_UNSUPPORTED_CARDS: dict[str, str] = {
+    # distributed / element loads
+    "PLOAD": "pressure load", "PLOAD1": "distributed CBAR load",
+    "PLOAD2": "pressure load", "PLOAD4": "pressure load",
+    # other static loads
+    "RFORCE": "rotational inertia load", "SLOAD": "scalar load",
+    "ACCEL": "acceleration load", "ACCEL1": "acceleration load",
+    "TEMP": "thermal load", "TEMPD": "thermal load", "DEFORM": "enforced deformation",
+    "SPCD": "enforced displacement",
+    # dynamic loads
+    "DLOAD": "dynamic load", "DAREA": "dynamic load scale",
+    "TLOAD1": "transient load", "TLOAD2": "transient load",
+    "RLOAD1": "frequency-response load", "RLOAD2": "frequency-response load",
+    # elements / properties / materials
+    "CBEAM": "beam element", "PBEAM": "beam property", "PBEAML": "beam property",
+    "PBARL": "bar property by shape", "CTUBE": "tube element", "PTUBE": "tube property",
+    "CELAS1": "spring element", "CELAS2": "spring element", "PELAS": "spring property",
+    "CONM1": "mass element", "CQUAD4": "shell element", "CTRIA3": "shell element",
+    "PSHELL": "shell property", "MAT2": "anisotropic material", "MAT8": "orthotropic material",
+    # coordinate systems
+    "CORD1R": "coordinate system", "CORD1C": "coordinate system", "CORD1S": "coordinate system",
+    "CORD2C": "coordinate system", "CORD2S": "coordinate system",
+    # constraints
+    "MPC": "multipoint constraint", "MPCADD": "constraint set", "SPCADD": "constraint set",
+    "RBE1": "rigid element",
+}
 
 
 def _split_free_field(line: str) -> list[str]:
@@ -1339,9 +1373,11 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
 
     Supports free-field (comma-separated) and fixed-field (8-character column) formats.
     Issues UserWarning for unrecognised card keywords.
-    Raises ValueError for duplicate GIDs, invalid DOF strings, and unresolved LOAD references.
+    Raises ValueError for cards in ``_UNSUPPORTED_CARDS`` (known NASTRAN cards sbeam does
+    not implement, #45), duplicate GIDs, invalid DOF strings, and unresolved LOAD references.
     """
     bulk = BulkData()
+    unsupported: Counter[str] = Counter()
 
     # Strip $ comments; a $ anywhere on the line starts a comment
     processed = []
@@ -1365,6 +1401,12 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
         keyword = fields[0].upper()
 
         if keyword in _IGNORED_KEYWORDS:
+            i += 1
+            continue
+
+        if keyword in _UNSUPPORTED_CARDS:
+            # Counted, not raised: the deck is refused once with the full list below.
+            unsupported[keyword] += 1
             i += 1
             continue
 
@@ -1754,6 +1796,14 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
             warnings.warn(f"Unknown BDF card '{keyword}' — skipped", UserWarning, stacklevel=2)
 
         i += 1
+
+    if unsupported:
+        listing = ", ".join(f"{kw} x{n} ({_UNSUPPORTED_CARDS[kw]})"
+                            for kw, n in sorted(unsupported.items()))
+        raise ValueError(
+            f"Unsupported bulk data card(s): {listing}. sbeam would solve with these "
+            "cards dropped; remove them or model the content with supported cards "
+            "(02_card_reference.md, 'Unsupported cards').")
 
     # CAERO1 cards require an AEROS card to provide reference geometry
     if bulk.caero1s and bulk.aeros is None:
