@@ -511,7 +511,9 @@ subcase with prescribed `AESTAT` accelerations/rates — a load factor maps to `
 NASTRAN convention). After the trim solve the inertial g-set load `M_ax·a` (final trim URDD,
 prescribed + solved-free) is recovered as `result.inertial_loads` and added to the aero load to
 give `result.net_loads` — the net deliverable for stress and the non-zero inertia column for
-MONPNT3. `write_maneuver_load_cards` writes these as `<stem>.maneuver_loads.bdf`.
+MONPNT3. `write_maneuver_load_cards` writes these as `<stem>.maneuver_loads.bdf`. Every load-BDF
+block carries a fixed four-line comment header ending `$ MASSSET=<sid> (<label>)` —
+`$ MASSSET=0 (BASELINE)` when the subcase selects no mass case (#31; `10_export_schemas.md` §4).
 `result.maneuver_closure` is the body-frame 6-resultant of the net load; for a free aircraft
 (SUPORT, no SPC) it must balance to ≈ 0 (a non-zero residual warns — gravity/mass-model guard,
 KC9). Recipes: symmetric pull-up/push-over (prescribe `URDD3`, `PITCH=0`), steady roll
@@ -876,10 +878,9 @@ under Step 68.
   (name, label, type, axes, cid, reference) + the six totals per monitor per subcase, annotated
   `*WHOLE-AIRPLANE*` when parity ≠ 1.
 - **CSV** `<stem>.monitor_loads.csv` (`results/load_export.py`, written by `main.py`): one row per
-  monitor per subcase. Columns:
-  `case, name, type, label, axes, cid, x_ref, y_ref, z_ref, Fx, Fy, Fz, Mx, My, Mz,
-  Fz_aero, Fz_inertia, Fz_react, parity, whole_airplane`. The `Fz_*` diagnostic breakdown is the
-  fastest way to debug a wrong sum.
+  monitor per subcase — identity block `case, massset, mass_case`, then name/type/label/frame,
+  the six totals and the `Fz_aero` / `Fz_inertia` / `Fz_react` diagnostic breakdown (the fastest
+  way to debug a wrong sum). Exact header, types and ordering: `10_export_schemas.md` §3.1.
 - **HDF5** hierarchical export is a deferred follow-on (f06 + CSV shipped).
 
 ### Validation
@@ -1026,7 +1027,8 @@ raw components, so no consumer has to reconstruct it.
   columns, the labelled components *and* their names (`comp_1..comp_6`), the raw
   `Fx..Mz`, the aero / inertia / reaction split, `n_members`, and the `d*_ds` running-load
   differences. The contribution split is the section-cut analogue of the monitor CSV's
-  `Fz_*` diagnostic — the fastest way to find a wrong sum.
+  `Fz_*` diagnostic — the fastest way to find a wrong sum. Exact header:
+  `10_export_schemas.md` §3.2.
 - **Viewer**: a "Section-cut running loads" panel per cut — the station table plus a
   spanwise chart with selectable components and contribution (total / aero / inertia /
   reaction).
@@ -1134,11 +1136,11 @@ that. Ties resolve to the earliest sample.
   `SECTION CUT ENVELOPE` block. The full per-sample history is deliberately **not** in the
   f06 — samples × stations × cuts would swamp it.
 - **CSV** `<stem>.maneuver_section_loads.csv`: one row per cut per station per sample. The
-  static `section_loads.csv` schema verbatim, with `mloads` / `sample` (1-based) / `time` /
-  `critical` inserted up front and `c*_elastic` / `c*_damping` appended. A tool that reads
-  the static file reads this one; a pivot on station × time is the running-load history.
+  static `section_loads.csv` schema verbatim, with `mloads` / `mass_case` / `sample` (1-based) /
+  `time` / `critical` inserted up front and `c*_elastic` / `c*_damping` appended. A tool that
+  reads the static file reads this one; a pivot on station × time is the running-load history.
 - **CSV** `<stem>.maneuver_section_envelope.csv`: the envelope, with `max_sample` /
-  `min_sample` / `critical_sample` side by side.
+  `min_sample` / `critical_sample` side by side. Exact headers: `10_export_schemas.md` §3.3, §3.6.
 - **Viewer**: the station table at the sample the existing slider selects, a
   cut × station × component time-history chart marking both the critical and the driving
   sample, the envelope table, and both CSVs as downloads.
@@ -1210,7 +1212,7 @@ sample.
   `critical` up front, then `Fz_elastic` / `Fz_damping` beside the static `Fz_*` diagnostics
   and the full six-component split of all five sources as `aero_Fx … react_Mz`.
 - **CSV** `<stem>.maneuver_monitor_envelope.csv`: the envelope with `max_sample` /
-  `min_sample` / `critical_sample` side by side.
+  `min_sample` / `critical_sample` side by side. Exact headers: `10_export_schemas.md` §3.4, §3.5.
 - **Viewer**: the monitor table at the selected sample with the Fz split, the envelope
   table, and both CSVs as downloads.
 

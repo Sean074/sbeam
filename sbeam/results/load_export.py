@@ -67,6 +67,16 @@ def emit_force_moment_cards(
     return lines
 
 
+def massset_comment(sid: Optional[int], label: str, mass: Optional[float] = None) -> str:
+    """The ``$ MASSSET=<int> (<label>)[  MASS=<m>]`` comment line of a load BDF (#31).
+
+    Written for every block, baseline included (``MASSSET=0 (BASELINE)``), so the
+    comment header has one shape a reader can rely on.
+    """
+    line = f"$ MASSSET={BASELINE_MASSSET if sid is None else sid} ({label})"
+    return line if mass is None else f"{line}  MASS={mass:g}"
+
+
 def build_aero_load_cards_text(
     bulk: BulkData,
     result: Sol144TrimResult,
@@ -98,12 +108,8 @@ def build_aero_load_cards_text(
         f"$ SOL 144 trimmed aerodynamic flight loads — subcase {result.subcase_id}, SID {sid}",
         f"$ TRIM={result.trim_sid}  Q={result.q:g}  MACH={result.mach:g}  CZ={result.total_cl:.6f}",
         "$ FORCE/MOMENT set sums to the total trimmed lift/moment (plain trim).",
+        massset_comment(result.massset_sid, result.massset_label, result.massset_mass),
     ]
-    if result.massset_sid is not None:
-        lines.append(
-            f"$ MASSSET={result.massset_sid} ({result.massset_label})  "
-            f"MASS={result.massset_mass:g}"
-        )
     lines += emit_force_moment_cards(result.grid_loads, bulk, grid_index, sid)
     return "\n".join(lines) + "\n"
 
@@ -135,12 +141,9 @@ def build_maneuver_load_cards_text(
         f"$ SOL 144 balanced maneuver loads (aero + inertia relief) — subcase {result.subcase_id}, SID {sid}",
         f"$ TRIM={result.trim_sid}  Q={result.q:g}  MACH={result.mach:g}  CZ={result.total_cl:.6f}",
         "$ FORCE/MOMENT set is the net (aero + inertial) maneuver load for stress (Step 53).",
+        # Always present (#31): MASSSET=0 (BASELINE) when the subcase selects no mass case.
+        massset_comment(result.massset_sid, result.massset_label, result.massset_mass),
     ]
-    if result.massset_sid is not None:
-        lines.append(
-            f"$ MASSSET={result.massset_sid} ({result.massset_label})  "
-            f"MASS={result.massset_mass:g}"
-        )
     lines += emit_force_moment_cards(result.net_loads, bulk, grid_index, sid)
     return "\n".join(lines) + "\n"
 
@@ -164,6 +167,30 @@ def write_aero_load_cards(
         fh.write("\n".join(blocks))
 
 
+# ---------------------------------------------------------------------------
+# Exported CSV / BDF contract (#31) — ``docs/10_standard/10_export_schemas.md``
+# is the authoritative description; ``tests/results/test_export_schema.py``
+# gates the header constants below and the identity block.  Every CSV starts
+# with the case identity ``case, [mloads,] massset, mass_case``; ``massset`` is
+# always an integer (``0`` = baseline, so the column keeps one dtype across a
+# baseline run and a MASSSET sweep) and ``mass_case`` is its label.
+# ---------------------------------------------------------------------------
+
+#: ``massset`` value written for a subcase that selects no MASSSET.
+BASELINE_MASSSET = 0
+
+
+def _massset_fields(result: object) -> tuple[int, str]:
+    """``(massset, mass_case)`` identity cells for any result object.
+
+    ``getattr`` keeps the writers usable with the lightweight result stubs the
+    output tests build (no mass-case fields at all).
+    """
+    sid = getattr(result, "massset_sid", None)
+    return (BASELINE_MASSSET if sid is None else int(sid),
+            getattr(result, "massset_label", "BASELINE"))
+
+
 _MONITOR_CSV_HEADER = [
     "case", "massset", "mass_case", "name", "type", "label", "axes", "cid",
     "x_ref", "y_ref", "z_ref",
@@ -171,6 +198,9 @@ _MONITOR_CSV_HEADER = [
     "Fz_aero", "Fz_inertia", "Fz_react",
     "parity", "whole_airplane",
 ]
+
+#: Identity columns shared by the four transient (MLOADS) CSVs.
+_MANEUVER_IDENTITY = ["case", "mloads", "massset", "mass_case"]
 
 
 def write_monitor_csv(filepath: str, results: dict[int, Sol144TrimResult]) -> None:
@@ -190,18 +220,11 @@ def write_monitor_csv(filepath: str, results: dict[int, Sol144TrimResult]) -> No
         for sc_id, result in results.items():
             if not result.monitor_loads:
                 continue
+            massset = _massset_fields(result)
             for name in sorted(result.monitor_loads.keys()):
                 ml = result.monitor_loads[name]
-                # Mass case (Step 60); getattr keeps the writer usable with the
-                # lightweight result stubs the monitor tests build.
-                ms_sid = getattr(result, "massset_sid", None)
                 # MONPNT1 has no inertia/reaction split — _monitor_row reports 0.0 there.
-                writer.writerow([
-                    sc_id,
-                    ms_sid if ms_sid is not None else "",
-                    getattr(result, "massset_label", "BASELINE"),
-                    *_monitor_row(ml),
-                ])
+                writer.writerow([sc_id, *massset, *_monitor_row(ml)])
 
 
 # Column block shared by the static and transient section-load CSVs, so the two
@@ -222,6 +245,12 @@ _SECTION_CUT_COLUMNS = [
     "n_members",
     "dc1_ds", "dc2_ds", "dc3_ds", "dc4_ds", "dc5_ds", "dc6_ds",
 ]
+_SECTION_LOADS_CSV_HEADER = ["case", "massset", "mass_case"] + _SECTION_CUT_COLUMNS
+_MANEUVER_SECTION_CSV_HEADER = (
+    _MANEUVER_IDENTITY + ["sample", "time", "critical"]
+    + _SECTION_CUT_COLUMNS
+    + [f"c{i}_elastic" for i in range(1, 7)]
+    + [f"c{i}_damping" for i in range(1, 7)])
 
 
 def _section_cut_row(sc: "SectionCutResult", st: "SectionCutStation") -> list[Union[str, int]]:
@@ -259,24 +288,18 @@ def write_section_loads_csv(filepath: str, results: dict[int, Sol144TrimResult])
         filepath: Output ``*.section_loads.csv`` path.
         results:  {subcase_id: Sol144TrimResult}.
     """
-    header = ["case", "massset", "mass_case"] + _SECTION_CUT_COLUMNS
     with open(filepath, "w", newline="") as fh:
         writer = csv.writer(fh)
-        writer.writerow(header)
+        writer.writerow(_SECTION_LOADS_CSV_HEADER)
         for sc_id, result in results.items():
             section_loads = result.section_loads
             if not section_loads:
                 continue
-            ms_sid = getattr(result, "massset_sid", None)
+            massset = _massset_fields(result)
             for name in sorted(section_loads.keys()):
                 sc = section_loads[name]
                 for st in sc.stations:
-                    writer.writerow([
-                        sc_id,
-                        ms_sid if ms_sid is not None else "",
-                        getattr(result, "massset_label", "BASELINE"),
-                        *_section_cut_row(sc, st),
-                    ])
+                    writer.writerow([sc_id, *massset, *_section_cut_row(sc, st)])
 
 
 def write_maneuver_section_loads_csv(
@@ -318,14 +341,10 @@ def build_maneuver_section_loads_csv_text(
 
 
 def _write_maneuver_section_loads(fh: TextIO, results: dict[int, "ManeuverResult"]) -> None:
-    header = (["case", "mloads", "massset", "sample", "time", "critical"]
-              + _SECTION_CUT_COLUMNS
-              + [f"c{i}_elastic" for i in range(1, 7)]
-              + [f"c{i}_damping" for i in range(1, 7)])
     writer = csv.writer(fh)
-    writer.writerow(header)
+    writer.writerow(_MANEUVER_SECTION_CSV_HEADER)
     for sc_id, result in results.items():
-        ms_sid = result.massset_sid
+        massset = _massset_fields(result)
         for i, step in enumerate(result.steps):
             if not step.section_loads:
                 continue
@@ -336,8 +355,7 @@ def _write_maneuver_section_loads(fh: TextIO, results: dict[int, "ManeuverResult
                           else np.zeros(6))
                     da = st.damping if st.damping is not None else np.zeros(6)
                     writer.writerow([
-                        sc_id, result.mloads_sid,
-                        ms_sid if ms_sid is not None else "",
+                        sc_id, result.mloads_sid, *massset,
                         i + 1, f"{step.t:.6E}",
                         int(i == result.crit_index),
                         *_section_cut_row(sc, st),
@@ -354,6 +372,24 @@ _MONITOR_COLUMNS = _MONITOR_CSV_HEADER[3:]
 _MONITOR_SPLIT_COLUMNS = [
     f"{src}_{c}" for src in ("aero", "inertia", "elastic", "damping", "react")
     for c in ("Fx", "Fy", "Fz", "Mx", "My", "Mz")
+]
+_MANEUVER_MONITOR_CSV_HEADER = (
+    _MANEUVER_IDENTITY + ["sample", "time", "critical"]
+    + _MONITOR_COLUMNS + ["Fz_elastic", "Fz_damping"]
+    + _MONITOR_SPLIT_COLUMNS)
+_MANEUVER_MONITOR_ENVELOPE_HEADER = _MANEUVER_IDENTITY + [
+    "name", "type", "label", "axes", "cid",
+    "whole_airplane", "n_samples", "critical_sample",
+    "comp_index", "comp_name",
+    "max", "max_sample", "max_time",
+    "min", "min_sample", "min_time", "absmax",
+]
+_MANEUVER_SECTION_ENVELOPE_HEADER = _MANEUVER_IDENTITY + [
+    "name", "label", "comp", "listtype",
+    "cid", "axis", "side", "half_model", "n_samples", "critical_sample",
+    "station", "comp_index", "comp_name",
+    "max", "max_sample", "max_time",
+    "min", "min_sample", "min_time", "absmax",
 ]
 
 
@@ -401,14 +437,11 @@ def build_maneuver_monitor_csv_text(results: dict[int, "ManeuverResult"]) -> str
 
 
 def _write_maneuver_monitor(fh: TextIO, results: dict[int, "ManeuverResult"]) -> None:
-    header = (["case", "mloads", "massset", "sample", "time", "critical"]
-              + _MONITOR_COLUMNS + ["Fz_elastic", "Fz_damping"]
-              + _MONITOR_SPLIT_COLUMNS)
     writer = csv.writer(fh)
-    writer.writerow(header)
+    writer.writerow(_MANEUVER_MONITOR_CSV_HEADER)
     zero = np.zeros(6)
     for sc_id, result in results.items():
-        ms_sid = result.massset_sid
+        massset = _massset_fields(result)
         for i, step in enumerate(result.steps):
             if not step.monitor_loads:
                 continue
@@ -421,8 +454,7 @@ def _write_maneuver_monitor(fh: TextIO, results: dict[int, "ManeuverResult"]) ->
                          el, da,
                          ml.reaction if ml.reaction is not None else zero]
                 writer.writerow([
-                    sc_id, result.mloads_sid,
-                    ms_sid if ms_sid is not None else "",
+                    sc_id, result.mloads_sid, *massset,
                     i + 1, f"{step.t:.6E}", int(i == result.crit_index),
                     *_monitor_row(ml),
                     f"{el[2]:.6E}", f"{da[2]:.6E}",
@@ -456,26 +488,18 @@ def build_maneuver_monitor_envelope_csv_text(
 def _write_maneuver_monitor_envelope(
     fh: TextIO, results: dict[int, "ManeuverResult"]
 ) -> None:
-    header = [
-        "case", "mloads", "massset", "name", "type", "label", "axes", "cid",
-        "whole_airplane", "n_samples", "critical_sample",
-        "comp_index", "comp_name",
-        "max", "max_sample", "max_time",
-        "min", "min_sample", "min_time", "absmax",
-    ]
     comp_names = ("Fx", "Fy", "Fz", "Mx", "My", "Mz")
     writer = csv.writer(fh)
-    writer.writerow(header)
+    writer.writerow(_MANEUVER_MONITOR_ENVELOPE_HEADER)
     for sc_id, result in results.items():
         if not result.monitor_envelope:
             continue
-        ms_sid = result.massset_sid
+        massset = _massset_fields(result)
         for name in sorted(result.monitor_envelope.keys()):
             env = result.monitor_envelope[name]
             for e in env.entries:
                 writer.writerow([
-                    sc_id, result.mloads_sid,
-                    ms_sid if ms_sid is not None else "",
+                    sc_id, result.mloads_sid, *massset,
                     env.name, env.mtype, env.label, env.axes, env.cid,
                     int(env.whole_airplane), env.n_samples, result.crit_index + 1,
                     e.comp + 1, comp_names[e.comp],
@@ -514,26 +538,18 @@ def build_maneuver_section_envelope_csv_text(
 
 
 def _write_maneuver_section_envelope(fh: TextIO, results: dict[int, "ManeuverResult"]) -> None:
-    header = [
-        "case", "mloads", "massset", "name", "label", "comp", "listtype",
-        "cid", "axis", "side", "half_model", "n_samples", "critical_sample",
-        "station", "comp_index", "comp_name",
-        "max", "max_sample", "max_time",
-        "min", "min_sample", "min_time", "absmax",
-    ]
     writer = csv.writer(fh)
-    writer.writerow(header)
+    writer.writerow(_MANEUVER_SECTION_ENVELOPE_HEADER)
     for sc_id, result in results.items():
         if not result.section_envelope:
             continue
-        ms_sid = result.massset_sid
+        massset = _massset_fields(result)
         for name in sorted(result.section_envelope.keys()):
             env = result.section_envelope[name]
             names = component_names(env.axis)
             for e in env.entries:
                 writer.writerow([
-                    sc_id, result.mloads_sid,
-                    ms_sid if ms_sid is not None else "",
+                    sc_id, result.mloads_sid, *massset,
                     env.name, env.label, env.comp, env.listtype,
                     env.cid, env.axis, env.side, int(env.half_model),
                     env.n_samples, result.crit_index + 1,

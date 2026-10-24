@@ -440,6 +440,7 @@ class ManeuverResult:
     crit_index: int                       # index into steps of the peak_grid_force sample
     mldprnt_items: list[str] = field(default_factory=list)  # requested ASCII-print keywords
     massset_sid: Optional[int] = None     # MASSSET mass case (None = baseline)
+    massset_label: str = "BASELINE"       # mass-case name for the exports (#31)
     n_modes_used: Optional[int] = None    # retained elastic modes (Step 62 solver; None = direct l-set)
     # Step 62 basis summary for the f06 (n_r, n_e, n_available, freqs_hz,
     # orthogonality_residual, n_massless); None for the direct l-set solver.

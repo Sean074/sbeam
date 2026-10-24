@@ -81,8 +81,10 @@ package's. The loads process is delivered by both halves together.
 
 **Consequences to respect:**
 
-- **The exported CSVs are an interface.** Once a tool parses `monitor_loads.csv` /
-  `section_loads.csv`, a column rename is a breaking change. Their headers are gated.
+- **The exported CSVs and load BDFs are an interface.** Once a tool parses
+  `monitor_loads.csv` / `section_loads.csv`, a column rename is a breaking change. The
+  contract (headers, `massset` integer sentinel, ordering, BDF comment header) is
+  `10_export_schemas.md`; `tests/results/test_export_schema.py` gates it (#31).
 - **The case index is the join.** Case-construction tools emit an index keyed by subcase
   ID carrying *why* each case exists; results carry `case`/`massset`/`mass_case`. The
   post-processor joins the two, so the solver needs no case-construction knowledge.
@@ -322,10 +324,13 @@ For SOL 144 each subcase is routed by its case-control requests: `TRIM` → stat
 | `<stem>.aero_loads.bdf` | Trimmed aero flight loads as `FORCE`/`MOMENT` cards (SID = subcase id) | Any trim subcase |
 | `<stem>.maneuver_loads.bdf` | Net (aero + inertial) balanced-maneuver loads (Step 53) | Any trim subcase |
 | `<stem>.monitor_loads.csv` | MONPNT1/MONPNT3 integrated section loads across subcases | Trim subcases with monitor points |
+| `<stem>.section_loads.csv` | MONSECT section-cut running loads across subcases | Trim subcases with `MONSECT` cards |
 | `<stem>.mldprnt.txt` | MLDPRNT ASCII maneuver time histories | Any `MLOADS` subcase |
 | `<stem>.maneuver_qs_loads.bdf` | Critical-sample net-load `FORCE`/`MOMENT` export | Any `MLOADS` subcase |
 | `<stem>.maneuver_monitor_loads.csv` / `<stem>.maneuver_monitor_envelope.csv` | MONPNT1/MONPNT3 loads at every output sample, and their per-component envelope (#2) | `MLOADS` subcases with monitor points |
 | `<stem>.maneuver_section_loads.csv` / `<stem>.maneuver_section_envelope.csv` | MONSECT running loads at every output sample, and their per-station envelope (Step 68) | `MLOADS` subcases with `MONSECT` cards |
+
+Column contract for every CSV/BDF above: `10_export_schemas.md`.
 
 Exit codes: 0 on success; 1 on parse or solver error (message printed to stderr). Omitting the argument prints usage and exits with code 2.
 

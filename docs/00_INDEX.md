@@ -30,6 +30,7 @@ are the day-to-day references; higher numbers are planning and historical record
 | [`07_code_review_process.md`](10_standard/07_code_review_process.md) | Critical code-review process (tiered S/M/L, 2026-08-04) |
 | [`08_release_process.md`](10_standard/08_release_process.md) | Versioning and release process (slim gate + cadence rule, 2026-08-04) |
 | [`09_conventions.md`](10_standard/09_conventions.md) | **Conventions charter** — signs, axes, frames, reference points, units; cite before writing physics code |
+| [`10_export_schemas.md`](10_standard/10_export_schemas.md) | **Export contract** — exact headers, types, sentinels and ordering of every exported CSV and load BDF (#31); gated by `tests/results/test_export_schema.py` |
 
 ## 20_theory — Theory, test cases & worked examples
 

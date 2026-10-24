@@ -185,7 +185,7 @@ def test_maneuver_csv_shares_the_static_column_names():
     for col in _SECTION_CUT_COLUMNS:
         assert col in header
     # The identity columns lead, so a sort on the raw file is time-ordered.
-    assert header[:6] == ["case", "mloads", "massset", "sample", "time", "critical"]
+    assert header[:7] == ["case", "mloads", "massset", "mass_case", "sample", "time", "critical"]
 
 
 def test_maneuver_csv_text_matches_the_written_file(tmp_path):

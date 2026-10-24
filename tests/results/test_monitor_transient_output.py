@@ -164,8 +164,8 @@ def test_maneuver_monitor_csv_rows_and_columns(tmp_path):
         fh.seek(0)
         rows = list(csv.DictReader(fh))
     assert len(header) == len(set(header)), "duplicate column names"
-    assert header[:6] == ["case", "mloads", "massset", "sample", "time", "critical"]
-    assert header[6:11] == ["name", "type", "label", "axes", "cid"]     # static schema verbatim
+    assert header[:7] == ["case", "mloads", "massset", "mass_case", "sample", "time", "critical"]
+    assert header[7:12] == ["name", "type", "label", "axes", "cid"]     # static schema verbatim
     assert "Fz_elastic" in header and "elastic_Fz" in header and "react_Mz" in header
     assert len(rows) == 3 * 2
     r = next(x for x in rows if x["name"] == "MA" and x["sample"] == "2")

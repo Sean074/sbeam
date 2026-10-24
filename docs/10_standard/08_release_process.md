@@ -15,7 +15,7 @@ sbeam uses **semantic versioning**: `MAJOR.MINOR.PATCH`
 
 | Component | When to increment |
 |---|---|
-| `MAJOR` | Breaking change to the BDF input format, case control syntax, or f06 output format |
+| `MAJOR` | Breaking change to the BDF input format, case control syntax, f06 output format, or the exported CSV / load-BDF schemas (`10_export_schemas.md`) |
 | `MINOR` | A milestone completes (§2) — new BDF card support, new solver (SOL), new viewer capability |
 | `PATCH` | Hotfix to a released version that does not change the public interface (§6) |
 | `X.Y.0-beta.N` | Interim regression baseline cut on a release branch mid-milestone (§2) |
@@ -24,7 +24,7 @@ The current version is recorded in `pyproject.toml` under `version =`. Never pub
 unversioned build.
 
 **Before 1.0.0** (SemVer §4: `0.y.z` makes no stability promise), a breaking change to the
-f06 layout or the BDF/case-control syntax ships in the next **MINOR** release and is listed
+f06 layout, the exported CSV / load-BDF schemas, or the BDF/case-control syntax ships in the next **MINOR** release and is listed
 under a **Breaking changes** heading in `CHANGELOG.md`; the `MAJOR` rule above applies from
 the v1.0.0 interface-stability promise onward (decided 2026-10-02 with #21, D4).
 

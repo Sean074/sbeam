@@ -45,6 +45,7 @@ them instead:
 - **Sign/axis/frame/reference-point conventions:** `docs/10_standard/09_conventions.md`
 - **Solver behavior and outputs:** the per-solver guides `03`/`04`/`05a`–`05c`
 - **Known limitations:** index in `00_program_overview.md`
+- **Export schemas (CSV / load BDF):** `docs/10_standard/10_export_schemas.md`
 
 ## Step Completion Requirement (tiered)
 

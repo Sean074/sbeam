@@ -10,6 +10,15 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Breaking changes
+- **Exported CSV identity block aligned and `massset` made an integer** (#31; pre-1.0 MINOR
+  break per `08_release_process.md` §1). Every CSV now starts `case, [mloads,] massset,
+  mass_case`: the four transient (MLOADS) files gain the `mass_case` column after `massset`,
+  and `massset` is written as `0` for a baseline subcase instead of an empty cell, so the
+  column keeps one dtype across a baseline run and a MASSSET sweep (it flipped between
+  `float64`-NaN and `int64` before). The three load BDFs (`aero_loads`, `maneuver_loads`,
+  `maneuver_qs_loads`) always carry a fourth comment line `$ MASSSET=<sid> (<label>)`
+  (`MASSSET=0 (BASELINE)` for baseline; `maneuver_qs_loads.bdf` had no mass-case line at
+  all). Numbers are unchanged. Contract: new `docs/10_standard/10_export_schemas.md`.
 - **CBAR force and stress output moved to the NASTRAN/MSC layout** (DEF-M18, #21; pre-1.0
   MINOR break per `08_release_process.md` §1). f06 `FORCES IN BAR ELEMENTS` now carries the
   two-line MSC header and order `BEND-MOMENT END-A/END-B (PLANE 1, PLANE 2) | SHEAR (PLANE 1,
@@ -27,6 +36,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   columns must be retired.
 
 ### Added
+- **Export schema guide and gates** (#31). `docs/10_standard/10_export_schemas.md` is the
+  authoritative contract for the six CSVs and three load BDFs (headers, types, `massset`
+  sentinel, row ordering, BDF comment header, a reserved element-force CSV schema for #36);
+  `tests/results/test_export_schema.py` asserts every header constant, every written first
+  line, the identity block, the integer `massset` in baseline and MASSSET runs, the BDF
+  `$ MASSSET=` line, and that every column is named in the guide. `08_release_process.md`
+  §1 names the export schemas beside the f06 format; `ManeuverResult` gains
+  `massset_label`; the CLI output table lists `section_loads.csv`.
 - **`CROD` / `PROD` / `CONROD` rod element and a minimal line-element interface** (#38,
   Tier L; design note `docs/30_future/designs/rod_element_crod.md`). Axial `EA/L` + torsion
   `GJ/L` along GA→GB, no orientation vector, consistent translational mass with no

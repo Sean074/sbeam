@@ -78,6 +78,7 @@ from sbeam.solver.sol144_util import (
     pitch_moment,
 )
 from sbeam.types import FloatArray, SparseMatrix
+from sbeam.model.mass_overlay import resolve_mass_case
 
 
 @dataclass
@@ -529,6 +530,7 @@ def run_maneuver_qs(
         crit_index=crit_index,
         mldprnt_items=(mldprnt.items if mldprnt is not None else []),
         massset_sid=subcase.massset_sid,
+        massset_label=resolve_mass_case(bulk, subcase.massset_sid).label,
     )
     result.section_envelope = build_section_envelope(result)
     result.monitor_envelope = build_monitor_envelope(result)

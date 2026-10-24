@@ -20,7 +20,7 @@ import numpy as np
 from sbeam.model.bulk_data import BulkData
 from sbeam.results.results import ManeuverResult, peak_grid_force
 from sbeam.assembly.load_vector import build_grid_index
-from sbeam.results.load_export import emit_force_moment_cards
+from sbeam.results.load_export import emit_force_moment_cards, massset_comment
 
 
 def build_maneuver_time_history_text(result: ManeuverResult) -> str:
@@ -86,6 +86,7 @@ def build_maneuver_critical_load_cards_text(
         f"MACH={result.mach:g}  t={step.t:g}",
         f"$ Full applied load at the peak |net grid force| sample "
         f"({result.crit_index + 1} of {len(result.steps)}).",
+        massset_comment(result.massset_sid, result.massset_label),
     ]
     lines += emit_force_moment_cards(step.net_loads, bulk, grid_index, sid)
     return "\n".join(lines) + "\n"
