@@ -36,6 +36,25 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   columns must be retired.
 
 ### Added
+- **Lateral trim cases: aileron pair + rudder validation deck, conventions and gates**
+  (#10, Tier L; design note `docs/30_future/designs/lateral_cases_aileron_rudder.md`,
+  closes the v0.3.0 "including lateral" promise with #8/#9). New
+  `sample/val_lateral_aileron_rudder.bdf` — the AR 8 reference wing plus a vertical fin on a
+  stiff spine, an aileron pair as one `AESURF` (`CID1` starboard / `CID2` port, both hinge
+  +y outboard), a rudder (hinge +y **down**, so positive = TE-port = +Fy), `SUPORT 46`,
+  monitors and a section cut, and two determined trims: steady roll (`ROLL` prescribed,
+  `AIL`/`RUD` free) and steady sideslip (`SIDES` prescribed). Gates V-LAT2
+  (`tests/aero/test_lateral_cases.py`): rudder `CY_δr > 0`, `CMZ_δr > 0`, `CMZ/CY` = the
+  force-centroid arm (1e-10), `CY_δr/CY_β,fin` within ±15 % of the thin-airfoil flap factor
+  τ(0.25) = 0.609 (measured 1.05 τ); aileron `C_lδa` in the strip-theory band [0.6, 1.0]
+  (measured 0.66) and the pair hinge moment = 2 × one half; both trims equal the 2×2 solve
+  of the solver's restrained derivative table (1e-8), `AIL < 0` for `ROLL > 0`, `RUD < 0`
+  for `SIDES > 0`; lateral monitors non-zero; CLI writes f06 + both CSVs. **Rudder
+  convention (charter §6):** positive = TE-port = nose-port = `+CMZ` basic (textbook δr);
+  the authoring consequence is a *downward* hinge +y — the issue's "+y up" candidate gives
+  the mirror. Docs: charter §5 lateral recipes + §6 rudder, `05c` "Lateral trim cases"
+  subsection and corrected recipes paragraph (V-C5 never gated them), overview VAL2 row,
+  card reference examples, backlog decision map.
 - **First-analysis tutorial** (#46). `docs/20_theory/03_first_analysis_tutorial.md` takes a
   new user from an empty folder to a plotted SOL 101 result in ten minutes: a six-grid steel
   cantilever typed in by hand with every card explained, one CLI run, the four f06 blocks
@@ -241,6 +260,17 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   warning on every generated gust case.
 
 ### Changed
+- **Sign-wording hygiene batch closed** (#24, Tier S, four items from the 2026-08-09
+  sign-convention review, landed with #8/#10): (1) the flagship MLOADS comment called a
+  +2° ELEV ramp a "nose-up pull" — on this aft tail +ELEV is nose-down (the deck's own 2.5 g
+  gate trims more TE-up); reworded to "elevator TE-down step (restrained: tail-lift
+  increase)" in `sample/cessna210_flagship_bulk.bdf` and its test echo, and the stale
+  "(CID 995 x-axis)" hinge note corrected to the y-axis; (2) the viewer steady-roll preset
+  labelled its parameter "rad/s" — ROLL is the reduced rate `pb/2V`, label and default
+  fixed, both lateral presets now say which `SUPORT` DOF they need; (3) the preset guidance
+  said a pull-up carries `PITCH = 0` — it carries `PITCH = (n − 1)·g·c/(2V²)` as the
+  flagship `TRIM 2` does (`model/maneuver_presets.py`, `05c`); (4) the ROLL spanwise
+  reference, decided in #8 (RCSID origin).
 - **Decks carrying known-but-unsupported NASTRAN cards are refused at parse** (#45). `PLOAD1`
   (and `PLOAD`/`PLOAD2`/`PLOAD4`, `RFORCE`, `SPCD`, dynamic loads, `CBEAM`/`PBEAM`/`PBARL`,
   `CTUBE`, `CELAS*`, `CONM1`, shells, `MAT2`/`MAT8`, `CORD1*`/`CORD2C`/`CORD2S`, `MPC`,

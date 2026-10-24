@@ -2499,6 +2499,54 @@ every value recomputed from the parsed deck. End-to-end, `lift == n·W` to 1e-6.
    23.423 formula but **no numeric worked example** (verified 2026-09-05 — every
    "example" in it is a plot). The `498` identity replaced it.
 
+### Issue #10 — Lateral trim cases: aileron pair + rudder deck, conventions, gates (Tier L) ✅ COMPLETE (2026-10-24)
+
+Design note: `30_future/designs/lateral_cases_aileron_rudder.md` (one note for #8 → #9 →
+#10, agreed in chat 2026-10-24 before code; #24 folded in).
+
+**Objective:** make "SOL 144 engineering-complete **including lateral**" true: trusted
+steady-roll and steady-sideslip trims end to end — aileron pair and rudder with decided sign
+conventions, running through monitor and section loads like any symmetric case, validated
+against closed forms and exact identities. Prerequisites closed first: #8 (rate scales and
+kinematic rate columns) and #9 (AESURF second hinge half).
+
+**Deliverables:**
+- `sample/val_lateral_aileron_rudder.bdf` — the AR 8 reference wing + a vertical fin on a
+  stiff beam spine; aileron pair as one `AESURF 601 AIL 11 301 12 302` (CID 11 starboard
+  +y = +Y, CID 12 port +y = −Y, both outboard); rudder `AESURF 602 RUD 13 303` with CID 13
+  +y = −Z (down); `SUPORT 90, 46`, RCSID 100 z-down at the root; `MONPNT1`/`MONPNT3`/`MONSECT`;
+  `TRIM 1` steady roll (`ROLL = 0.05`, `AIL`/`RUD` free), `TRIM 2` steady sideslip
+  (`SIDES = 0.05`). Header documents every convention the deck pins.
+- `tests/aero/test_lateral_cases.py` (V-LAT2, G10–G12) — see Test/Acceptance.
+- Viewer presets (`viewer/sol144_authoring.py`): steady-roll parameter is `pb/2V`, both
+  lateral presets name their `SUPORT` DOF; `model/maneuver_presets.py` recipes corrected
+  (pull-up `PITCH = (n − 1)·g·c/(2V²)`, lateral recipes with SUPORT DOFs).
+- Flagship comments: MLOADS "nose-up pull" → "elevator TE-down step", hinge "x-axis" →
+  "y-axis"; test echo reworded (#24 items 1–3; item 4 landed with #8).
+- Docs: charter §5 lateral recipes + §6 rudder entry (with the +y-down correction), `05c`
+  "Lateral trim cases" subsection + recipes paragraph (V-C5 never gated them), overview VAL2
+  row, card reference examples, `00_backlog.md` decision map, design note §9.
+
+**Test/Acceptance (all passing):**
+- G10 rudder: `CY_δr = +0.447 > 0`, `CMZ_δr = +0.241 > 0`; `CMZ_δr/CY_δr` equals the box-force
+  sideforce centroid arm over `b` (rel 1e-10); hinge axis asserted `(0, 0, −1)`;
+  `CY_δr / CY_β,fin = 1.05·τ` with τ(E = 0.25) = 0.609 (band ±15 %).
+- G11 aileron: `C_lδa = +0.302` vs strip theory `2·CLα·τ·∫c·y dy/(S·b) = 0.454` (ratio 0.66 in
+  [0.6, 1.0]); pair hinge moment = 2 × one half (rel 1e-12), negative.
+- G12 trims: both free pairs equal the 2×2 solve of the solver's restrained table (rel 1e-8);
+  `AIL = −0.0891 < 0` for `ROLL = +0.05`; `RUD = −0.0721 < 0` for `SIDES = +0.05`;
+  `maneuver_closure` vanishes in `Mx`, `Mz`; monitors carry `Fy`/`Mx`/`Mz` with zero lift and
+  pitch; the CLI writes the f06, `monitor_loads.csv` (both monitors, both cases) and
+  `section_loads.csv`.
+
+**Key decisions:** D1 aileron = lift-increasing per half, both hinges +y outboard (NASTRAN
+CID1/CID2, ZAERO ANTISYM), positive = port roll; D2 rudder = lift-increasing, positive =
+TE-port = +Fy = nose-port — authored with hinge +y **down** (the issue's "+y up" candidate
+was found to give the mirror while building the deck; the sign outcome agreed in chat was
+kept, the geometry corrected in the note, charter and card reference); D4 dedicated deck,
+flagship untouched (a flagship lateral family arrives with the v0.7.0 case matrix); no AVL
+dependency — exact identities plus two closed-form bands stated as such.
+
 ## Resolved defects (SOL 144 static aeroelastics)
 
 - **DEF-M16** (#9, 2026-10-24, Tier M) — AESURF `CID2`/`ALID2` stored, cross-checked and written back but ignored by `build_djx` and `compute_hinge_moments` (and dropped by the viewer form on re-save); both halves now load through the single-source `aesurf_hinges` helper, hinge moment summed over halves, parser requires CID2⇔ALID2 / existing CIDs / disjoint lists, viewer form gains the widgets. Aileron convention decided (charter §6): CID1 starboard, CID2 port, both +y outboard, positive = port roll. Gates `tests/aero/test_aesurf_pair.py` G6–G8, viewer G9. Design note `30_future/designs/lateral_cases_aileron_rudder.md`.

@@ -195,15 +195,20 @@ MANEUVER_PRESETS: list[ManeuverPreset] = [
     ),
     ManeuverPreset(
         name="Steady roll",
-        description="Prescribe ROLL = p and URDD4 = 0; the aileron trims free.",
-        param_label="Roll rate p (rad/s)",
-        param_default=1.0,
+        description="Prescribe ROLL = pb/2V (reduced rate; positive = starboard wing down) "
+                    "and URDD4 = 0; the aileron trims free. Needs SUPORT 4 (or 46 with the "
+                    "rudder free and SIDES = YAW = URDD6 = 0 prescribed) — see "
+                    "sample/val_lateral_aileron_rudder.bdf.",
+        param_label="Reduced roll rate pb/2V (–)",
+        param_default=0.05,
         required_labels=["ROLL", "URDD4"],
         surface_role="aileron",
     ),
     ManeuverPreset(
         name="Steady sideslip",
-        description="Prescribe SIDES = beta and YAW = 0; the rudder trims free.",
+        description="Prescribe SIDES = beta (positive = wind from PORT, i.e. −β textbook) and "
+                    "YAW = 0; the rudder trims free. Needs SUPORT 6 (or 46 with the aileron "
+                    "free and ROLL = URDD4 = URDD6 = 0 prescribed).",
         param_label="Sideslip beta (rad)",
         param_default=0.05,
         required_labels=["SIDES", "YAW"],

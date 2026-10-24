@@ -10,14 +10,22 @@ pull-up the prescribed vertical acceleration is ``URDD3 = -n_z * g`` in the
 RCSID frame (z-down), so the inertia-relief load ``-M*a`` carries the full
 ``n_z * W`` weight reaction and no separate ``GRAV`` term is added in trim.
 
-Recipes (prescribe these labels on the TRIM card; leave the rest free):
+Recipes (prescribe these labels on the TRIM card; leave the rest free; one free
+label per SUPORT DOF for a determined trim — ``docs/10_standard/05c_sol144_maneuver.md``
+"Lateral trim cases", ``sample/val_lateral_aileron_rudder.bdf``):
 
-  * Symmetric pull-up / push-over:  URDD3 = load_factor_to_urdd3(n_z, g),
-    PITCH = 0.  Free: ANGLEA + elevator AESURF (balance lift & pitch).
-  * Steady roll:  ROLL = p (nondimensional roll rate), URDD4 = 0 (steady).
-    Free: aileron AESURF.  Roll damping comes from the antisymmetric VLM
-    (build_djx ROLL column).
-  * Steady sideslip:  SIDES = beta, YAW = 0.  Free: rudder AESURF.
+  * Symmetric pull-up / push-over (SUPORT 35):  URDD3 = load_factor_to_urdd3(n_z, g),
+    URDD5 = 0, and PITCH = (n_z − 1)·g·c_ref/(2V²) — the steady pitch rate of the
+    pull-up as a reduced rate (0 only for level flight; a push-over at n_z < 1 has
+    a negative rate).  Free: ANGLEA + elevator AESURF (balance lift & pitch).
+    The flagship ``TRIM 2`` carries this value.
+  * Steady roll (SUPORT 4):  ROLL = pb/2V (reduced rate, positive = starboard
+    wing down), URDD4 = 0.  Free: aileron AESURF (one label — the CID1/CID2
+    pair).  Roll damping comes from the antisymmetric VLM (build_djx ROLL column).
+  * Steady sideslip (SUPORT 6):  SIDES = beta (positive = wind from port, −β
+    textbook), YAW = 0.  Free: rudder AESURF.
+  * Both together (SUPORT 46, the validation deck): prescribe ROLL or SIDES plus
+    the other lateral labels, free AIL and RUD.
 """
 
 

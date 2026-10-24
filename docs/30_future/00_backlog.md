@@ -56,7 +56,10 @@ them when adjacent, and close them like any other issue.
 **Required convention decisions** (aileron/rudder signs, end-A moment face, prop
 handedness, ROLL reference) are checklist blocks inside their consuming issues (#6, #8,
 #9, #10, #21) — each is made in the design note of the first step that consumes it, never
-invented ad hoc, and lands in `09_conventions.md` with a gate. **Bank-angle scope** was
+invented ad hoc, and lands in `09_conventions.md` with a gate. *Decided 2026-10-24:* ROLL
+reference (#8), aileron and rudder signs (#9/#10) — design note
+[`designs/lateral_cases_aileron_rudder.md`](designs/lateral_cases_aileron_rudder.md); end-A
+face (#21, 2026-10-24). Open: prop handedness (#6). **Bank-angle scope** was
 decided 2026-09-05 ([`designs/vn_matrix_23337.md`](designs/vn_matrix_23337.md) O2): out of
 scope as a case family, since a steady coordinated turn at load factor n is
 aerodynamically identical to a symmetric pull-up at n on this model, and the part that is

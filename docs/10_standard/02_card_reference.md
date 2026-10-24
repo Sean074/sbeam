@@ -1670,7 +1670,7 @@ pair is the documented form because one label is what a determined steady-roll t
 ```
 AESURF, 505, ELEV, 995, 3100                     $ one spanwise hinge for both tailplane halves
 AESURF, 601, AIL, 11, 301, 12, 302               $ aileron pair: CID 11 starboard, CID 12 port
-AESURF, 602, RUD, 13, 303                        $ rudder: CID 13 +y up ⇒ positive = TE-port
+AESURF, 602, RUD, 13, 303                        $ rudder: CID 13 +y DOWN ⇒ positive = TE-port (+Fy)
 ```
 
 **Cross-reference (parse errors):** `ALID1` must exist in AELIST and `CID1` in CORD2R (or be

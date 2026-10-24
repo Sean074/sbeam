@@ -178,10 +178,21 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
   roll. This is the textbook δa: `C_lδa`, `C_mδe` and `C_nδr` share one sign family. Gate:
   `test_aesurf_pair.py` G7 — the first absolute lateral sign pinned in the repo (`CMX_δa > 0`,
   all other rigid coefficients zero on a planar wing).
-- **Rudder (D2):** the same rule, hinge CID +y **up** (= +z basic). Positive `RUD` =
-  TE-to-port = `+Fy` on the fin (starboard-pointing sideforce at the tail) = nose-to-port =
-  `+CMZ` in basic = a negative `YAW` label. Textbook δr. Gate lands with the lateral
-  validation deck (#10, G10).
+- **Rudder (D2, #10):** the same rule. The fin normal is +y (starboard), so lift-increasing
+  is `+Fy` = TE-to-**port**, and a right-hand rotation that moves the trailing edge to port
+  is about a **downward** axis: author the rudder hinge CID with **+y = −z basic (down)**.
+  (With +y up, positive deflection is TE-starboard — the mirror of the intended sign; the
+  #10 issue candidate "+y up ⇒ TE-port" was wrong about the geometry.) Positive `RUD` =
+  TE-port = `+Fy` at the tail = nose-to-port = `+CMZ` in basic = a negative `YAW` label.
+  Textbook δr. Gate: `tests/aero/test_lateral_cases.py` G10 (`CY_δr > 0`, `CMZ_δr > 0`,
+  hinge axis asserted `(0, 0, −1)` on `sample/val_lateral_aileron_rudder.bdf`).
+- **Lateral trim recipes** (V-LAT2, `sample/val_lateral_aileron_rudder.bdf`; one free label
+  per SUPORT DOF): steady roll — `SUPORT 4`, prescribe `ROLL = pb/2V`, `URDD4 = 0`, free
+  `AIL`; steady sideslip — `SUPORT 6`, prescribe `SIDES`, `YAW = 0`, free `RUD`; both at
+  once — `SUPORT 46`, prescribe one of `ROLL`/`SIDES` and zero the other lateral labels
+  (`SIDES`/`ROLL`, `YAW`, `URDD4`, `URDD6`), free `AIL` and `RUD`. Under D1/D2 a positive
+  `ROLL` trims a **negative** `AIL` (starboard TE-up) and a positive `SIDES` a **negative**
+  `RUD`; both are the textbook outcomes and are gated (G12).
 
 ## 7. Units
 

@@ -390,7 +390,8 @@ def test_t5c_ramp_is_tracked_and_settles(maneuver):
     assert last.trim_vars["ELEV"] == pytest.approx(held_value, abs=1e-12)
     scale = np.abs(last.displacements).max()
     assert np.abs(last.displacements - prev.displacements).max() < 1e-3 * scale
-    # a nose-up pull raises the aero load above the 1g trim
+    # the TE-down elevator step raises the tail lift; the restrained (l-set)
+    # transient has no rigid pitch, so the total aero load rises above the 1g trim
     assert last.Fz_aero > mr.steps[0].Fz_aero
 
 

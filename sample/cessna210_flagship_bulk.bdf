@@ -401,7 +401,8 @@ $
 $ --------------------------------------------------------- CONTROL SURFACE
 $ ELEV is a PART-CHORD elevator: the aft two of the six chordwise box rows on
 $ each HTP panel, i.e. the aft third of the chord, hinged on the straight
-$ two-thirds-chord line x = 7.60 (CID 995 x-axis).  Box IDs are
+$ two-thirds-chord line x = 7.60 (CID 995 y-axis — the AESURF hinge is the CID
+$ y-axis, see CID 995 above).  Box IDs are
 $ EID + i_span*NCHORD + j_chord with NCHORD = 6, so the hinged rows are
 $ j_chord = 4 and 5: 3000+6s+{4,5} and 4000+6s+{4,5} for s = 0..7.
 AESURF, 505, ELEV, 995, 3100
@@ -461,8 +462,10 @@ $ run cessna210_flagship_trim.bdf first, read the trimmed ELEV out of the
 $ SUBCASE 1 f06 block, then write it in here.  Start the table at 0.0 instead
 $ and the airplane takes a 3.8 deg step elevator input at t = 0.
 $
-$ Trimmed 1g ELEV = -0.06599247 rad (-3.78108 deg).  Nose-up pull: ramp +2 deg
-$ (+0.03490659 rad) over 0.3 s to -0.03108589 rad, then hold to 1.0 s.
+$ Trimmed 1g ELEV = -0.06599247 rad (-3.78108 deg).  Elevator TE-DOWN step: ramp
+$ +2 deg (+0.03490659 rad) over 0.3 s to -0.03108589 rad, then hold to 1.0 s.
+$ On this aft tail +ELEV is NOSE-DOWN (the 2.5g trim needs MORE TE-up, T3 gate);
+$ the restrained l-set transient sees only the tail-lift increase, so Fz rises.
 $ Carried to 8 decimals deliberately: the transient reads t = 0 straight off
 $ this table, so the authored precision here IS the precision to which the
 $ initial condition reproduces the trim.  Test T5 re-solves the trim and

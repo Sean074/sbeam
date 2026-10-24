@@ -1,7 +1,8 @@
 # Lateral cases — rate-column kinematics, the AESURF pair, aileron and rudder conventions — design note for issues #8, #9, #10
 
-**Status:** ✅ **agreed 2026-10-24** (CLAUDE.md rule 1): D1–D6 below accepted in chat as
-recommended; implementation decisions appended in §9 as each issue closes.
+**Status:** ✅ **agreed 2026-10-24**, ✅ **implemented 2026-10-24** (#8, #9, #10, #24 all closed
+the same day; CLAUDE.md rule 1): D1–D6 below accepted in chat as recommended; D2's authoring
+geometry corrected during implementation (§2.3, §9); implementation decisions in §9.
 - **Milestone:** [v0.3.0](https://github.com/Sean074/sbeam/milestone/1) — "SOL 144
   engineering-complete **including lateral**".
 - **Issues, in closure order:** [#8](https://github.com/Sean074/sbeam/issues/8) DEF-M15
@@ -157,9 +158,13 @@ about the CID +y axis*. Applied per half:
   port** → **+CMX** in basic (moment about +x, x aft) → in a steady roll the ROLL label
   (positive = starboard-down) comes out **negative**. This is the textbook δa (Etkin,
   Nelson): `C_lδa`, `C_mδe`, `C_nδr` share one sign family.
-- **Rudder (D2).** Hinge CID +y **up** (= +z basic). Positive RUD = TE-to-**port** →
-  +Fy on the fin (starboard-pointing sideforce at the tail) → nose-to-port → **+CMZ**
-  in basic → negative YAW label. Textbook δr.
+- **Rudder (D2).** The fin normal is +y, so lift-increasing is +Fy = TE-to-**port**; a
+  right-hand rotation that moves the TE to port is about a **downward** axis, so the
+  rudder hinge CID is authored with **+y = −z (down)**. *(Corrected 2026-10-24 while
+  building the deck: the issue's candidate and the first draft of this note said "+y up",
+  which gives TE-starboard. The sign outcome agreed in chat is unchanged; the authoring
+  geometry that produces it is the opposite.)* Positive RUD → +Fy at the tail →
+  nose-to-port → **+CMZ** in basic → negative YAW label. Textbook δr.
 - **Elevator** unchanged (`ELEV` positive = TE-down; nose sense depends on the airframe).
 
 The "lift-increasing per half" statement is what goes into the charter; the physical
@@ -187,7 +192,7 @@ table is what the solver actually uses (G12 compares against the solver's own
 | # | Decision | Alternative rejected | Why |
 |---|---|---|---|
 | **D1** | Aileron: lift-increasing rule per half; CID1 starboard, CID2 port, both +y outboard; positive = port roll | "Positive AIL = right-roll command" (issue #9 candidate) | Extends the one rule the charter already has; NASTRAN and ZAERO practice; textbook δa; no second sign rule to teach |
-| **D2** | Rudder: hinge +y up; positive = TE-port = nose-port | — (follows from the same rule) | Textbook δr; matches the #10 candidate |
+| **D2** | Rudder: lift-increasing = TE-port = nose-port; authored with hinge +y **down** (−z) | — (follows from the same rule) | Textbook δr; the #10 candidate's "+y up" geometry was wrong, its sign outcome is kept |
 | **D3** | ROLL about the RCSID origin's y (`suport_pos[1]`) | keep `y = 0` and document | Same point as PITCH and the yaw term; what `Φ_r` rotates about, so the kinematic gate is exact; bit-identical on every shipped deck |
 | **D4** | Dedicated `sample/val_lateral_aileron_rudder.bdf`; flagship untouched | add AIL/RUD to the flagship bulk | Eight driver decks and many pinned tests share the bulk; a flagship lateral family arrives with the v0.7.0 case matrix that consumes it (rule 5) |
 | **D5** | Fold all four #24 items; close #24 with #10 | leave #24 open | Two of the four live in code this chain edits |
@@ -325,3 +330,23 @@ CHANGELOG **Added** + **Changed**; `40_history/06` **full step format** +
    unit-AIL loading) because the per-label derivative of a single-half surface sees only its
    own half's column; both halves of the pair carry the same-sign hinge moment, negative for
    a positive (TE-down-starboard) deflection.
+
+**#10 (closed 2026-10-24):**
+1. **Rudder hinge +y points down.** Laying out CID 13 showed that a right-hand rotation about
+   an *upward* axis moves the fin's trailing edge to starboard; the agreed outcome (positive =
+   TE-port = +Fy, textbook δr) therefore needs +y = −z. The note, charter §6 and the card
+   reference were corrected; G10 asserts the axis `(0, 0, −1)` and `CY_δr > 0`.
+2. The deck frees roll and yaw together (`SUPORT 46`) so one deck covers both recipes; each
+   trim is determined with `AIL` and `RUD` free. Measured: `C_lp = 0.549`, `C_lδa = 0.302`
+   (0.66 × strip), `CY_δr = 0.447`, `CMZ_δr = 0.241`, `CY_δr/CY_β,fin = 1.05 τ`; steady roll
+   `AIL = −0.0891`, `RUD = +0.0105` at `ROLL = 0.05`; sideslip `AIL = +0.0011`, `RUD = −0.0721`
+   at `SIDES = 0.05`.
+3. G10's flap-effectiveness band is ±15 % of the 2-D τ (the finite-AR fin comes out 5 %
+   *above* τ on this mesh, not below as the first draft assumed); G11 keeps [0.6, 1.0].
+4. `maneuver_closure` is asserted in `Mx` and `Mz` only: sway is SPC-reacted, not trimmed,
+   so `Fy` is legitimately non-zero (−0.17 N in the roll case).
+5. The two trims are compared against the solver's **restrained** derivative table, which is
+   the linearisation the trim actually solves, so rel 1e-8 is exact linear algebra and the
+   spine stiffness never enters the tolerance.
+6. All four #24 items closed here: flagship comments (1), preset label `pb/2V` (2), pull-up
+   `PITCH` guidance (3); item 4 with #8.

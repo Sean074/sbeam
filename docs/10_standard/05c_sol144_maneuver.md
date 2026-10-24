@@ -422,6 +422,33 @@ convention-independent content. Gate: `tests/aero/test_lateral_derivs.py` (V-LAT
 damping magnitude in the lifting-line band, clean ROLL↔Fz/My/Mz decoupling on a planar wing,
 and the `C_lβ` sign-flip between `val_vlm_dihedral`/`val_vlm_anhedral` (zero on the planar deck).
 
+### Lateral trim cases — steady roll and steady sideslip (V-LAT2, #10)
+
+A lateral case is an ordinary determined trim: one free label per `SUPORT` DOF, the other
+lateral labels prescribed. The shipped validation deck `sample/val_lateral_aileron_rudder.bdf`
+(AR 8 wing + vertical fin on a stiff spine; aileron pair as **one** `AESURF` with
+`CID1`/`ALID1` starboard and `CID2`/`ALID2` port, both hinge +y outboard; rudder with hinge
++y **down**; `SUPORT 90, 46`; RCSID z-down at the root) runs both:
+
+| Case | Prescribed | Free | Check (`tests/aero/test_lateral_cases.py`) |
+|---|---|---|---|
+| Steady roll | `ROLL = 0.05`, `SIDES = YAW = 0`, `URDD4 = URDD6 = 0` | `AIL`, `RUD` | `[CMX_δa CMX_δr; CMZ_δa CMZ_δr]·[δa; δr] = −[CMX_p; CMZ_p]·ROLL` from the solver's own restrained derivatives (rel 1e-8); `AIL < 0` (starboard TE-up for a right roll, charter §6 D1) |
+| Steady sideslip | `SIDES = 0.05`, `ROLL = YAW = 0`, `URDD4 = URDD6 = 0` | `AIL`, `RUD` | same matrix, RHS from `[C_lβ, C_nβ]`; `RUD < 0` (TE-starboard holds the nose against the weathercock) |
+
+With a single lateral `SUPORT` DOF the recipes reduce to `SUPORT 4` + `ROLL`, `URDD4 = 0`,
+aileron free, and `SUPORT 6` + `SIDES`, `YAW = 0`, rudder free (the viewer presets; the
+steady-roll parameter is the reduced rate `pb/2V`). Both trims are exact linear algebra on
+the restrained table because the equilibrium is linear in the labels and the prescribed
+accelerations are zero; the flexible spine changes the coefficients, not the identity.
+The rigid control derivatives on this deck: rudder `CY_δr = +0.447`, `CMZ_δr = +0.241`
+(`CMZ/CY` = the force-centroid arm exactly; `CY_δr / CY_β,fin = 1.05·τ(0.25)`, τ = 0.609 the
+thin-airfoil flap factor), aileron `C_lδa = +0.302` against the strip estimate
+`2·CLα·τ·∫c·y dy/(S·b) = 0.454` (ratio 0.66, the lifting-line band), `C_lp = 0.549`.
+Monitor points and section cuts carry `Fy`, `Mx`, `Mz` through the same path as the
+symmetric cases; the CLI writes `monitor_loads.csv` and `section_loads.csv` for both.
+The sway force `Fy` is reacted by the SPC (no `SUPORT 2`), so `maneuver_closure` vanishes in
+`Mx` and `Mz` only. Conventions: charter §5 (recipes), §6 (aileron, rudder).
+
 ### Over-determined trim solve — redundant controls (Step 52)
 
 When `n_free > n_suport` (more free trim variables than equilibrium equations, e.g. redundant
@@ -523,9 +550,11 @@ block carries a fixed four-line comment header ending `$ MASSSET=<sid> (<label>)
 `$ MASSSET=0 (BASELINE)` when the subcase selects no mass case (#31; `10_export_schemas.md` §4).
 `result.maneuver_closure` is the body-frame 6-resultant of the net load; for a free aircraft
 (SUPORT, no SPC) it must balance to ≈ 0 (a non-zero residual warns — gravity/mass-model guard,
-KC9). Recipes: symmetric pull-up/push-over (prescribe `URDD3`, `PITCH=0`), steady roll
-(prescribe `ROLL` rate, `URDD4=0`; aileron free), steady sideslip (prescribe `SIDES`, `YAW=0`;
-rudder free). Gated by **V-C5** (`tests/aero/test_maneuver_loads.py`).
+KC9). Recipes: symmetric pull-up/push-over (prescribe `URDD3`, `PITCH`, `URDD5 = 0`; ANGLEA and the
+elevator free; a steady pull-up carries `PITCH = (n − 1)·g·c_ref/(2V²)`, not 0 — see the
+flagship `TRIM 2`), gated by **V-C5** (`tests/aero/test_maneuver_loads.py`); steady roll and
+steady sideslip as in "Lateral trim cases" below, gated by **V-LAT2**
+(`tests/aero/test_lateral_cases.py`).
 
 **Transient maneuver loads — Phase G0 increment 1 (DLM-free quasi-steady).** A SOL 144 subcase that
 carries an `MLOADS = sid` request runs a transient maneuver solve instead of the static trim:
