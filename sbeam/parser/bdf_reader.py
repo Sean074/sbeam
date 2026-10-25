@@ -1378,6 +1378,9 @@ def _handle_param(fields: list[str], bulk: BulkData) -> None:
                 f"PARAM,WTMASS,{value:g} is not supported: sbeam does not scale mass; "
                 "enter mass in the deck's consistent mass unit (charter §7)"
             )
+        return
+    # Every other PARAM is still ignored, and says so like any unhandled card (#45 class)
+    warnings.warn(f"Unknown BDF card 'PARAM,{name}' — skipped", UserWarning, stacklevel=3)
 
 
 def parse_bulk_data(lines: list[str]) -> BulkData:

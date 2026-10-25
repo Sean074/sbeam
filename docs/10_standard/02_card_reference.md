@@ -2411,7 +2411,7 @@ under "Supported cards at a glance" (top of this file) is refused.
 | Constraints | `MPC`, `MPCADD`, `SPCADD`, `RBE1` | `RBE2`, `RBAR`, `RBE3`; one `SPC`/`SPC1` set per subcase |
 
 Keywords **not** in this table and not implemented (typos, output requests such as
-`PARAM`, vendor extensions) are skipped with a `UserWarning` `Unknown BDF card 'X' —
+`PARAM` other than `WTMASS`, vendor extensions) are skipped with a `UserWarning` `Unknown BDF card 'X' —
 skipped`; the CLI prints each as `Parser warning: ...` on stderr and the viewer lists them
 under "Parser warnings" and in the pre-solve checks.
 
@@ -2443,6 +2443,7 @@ under "Parser warnings" and in the pre-solve checks.
 | GRAV | CID must be `0` (global frame only) in Phase 1–2 |
 | MAT1 | Thermal fields (A, TREF, GE) parsed but ignored in Phase 1–2 |
 | PAERO1 | Phase A stub only; body interference support deferred |
+| PARAM | Only `WTMASS` is read: a value other than 1.0 raises `ValueError` (sbeam never scales mass, charter §7); every other `PARAM` is skipped with the unknown-card warning |
 | SPC | Enforced displacement D must be `0.0` in Phase 1–2 |
 | W2GJ | Data length must equal NSPAN×NCHORD for the referenced CAERO1 |
 | WKK | Data length must equal NSPAN×NCHORD for the referenced CAERO1 |

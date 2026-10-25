@@ -218,6 +218,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     import gate.
 
 ### Fixed
+- **`PARAM,WTMASS` other than 1.0 refuses the deck at parse** (#39, DEF-M22; PR #40). A
+  weight-unit deck used to run with mass and `GRAV` loads wrong by a factor of g behind an
+  unknown-card warning. Every other `PARAM` is still skipped with the `Unknown BDF card
+  'PARAM,<name>' — skipped` warning (the PR had made them silent).
 - **WT2 aero correction made a symmetric airplane asymmetric when it had a fin** (#52, Tier M).
   WT2 pressure matching calibrated every box against a normalwash of −1 on *every* box, which
   is a sideslip on a vertical surface. On `cessna210_flagship_bulk.bdf` the fin's reference
