@@ -2,9 +2,17 @@ $ =========================================================================
 $ HA144A.bdf — FSW Airplane in Level Flight (Static Aeroelastic, SOL 144)
 $
 $ ARCHIVE — NOT RUNNABLE BY DESIGN.  This is the verbatim MSC listing, kept as the
-$ reference record of the published problem and its Table 7-1 values; it uses MSC
-$ cards sbeam does not implement and fails at parse (CBAR 101: property PID=100 not
-$ found).  The runnable sbeam transcription is sample/ha144a_fullspan_sbeam.bdf.
+$ reference record of the published problem and its Table 7-1 values.  To RUN the
+$ case use sample/ha144a_fullspan_sbeam.bdf (the full-span sbeam transcription).
+$ Why this deck does not run (see "sbeam support status" below):
+$   1. It stops at parse with "CBAR 101: property PID=100 not found" — the CBARs
+$      precede their PBAR, and sbeam's parser is card-order dependent (defect
+$      #51; NASTRAN is not).  This is NOT an unsupported-card error.
+$   2. Past that, it is a HALF-SPAN model (AEROS SYMXZ=1); sbeam runs full-span
+$      only (sbeam_tools.common.mirror.mirror_halfspan converts).
+$   3. Its aero corrections are MSC DMI matrices, which sbeam skips with an
+$      "Unknown BDF card" warning — the 0.1 deg wing incidence (W2GJ) would be
+$      lost.  sbeam uses native WKK / W2GJ cards instead.
 $
 $ Faithful transcription of MSC Nastran example HA144A from:
 $   MSC Nastran 2021.3 Aeroelastic Analysis User's Guide, Chapter 7,
@@ -15,9 +23,9 @@ $
 $ PURPOSE (sbeam): canonical static-aeroelastic VALIDATION BENCHMARK for the
 $   Phase B (spline) + Phase C (SOL 144 trim / divergence / stability
 $   derivatives) work.  It is the "HA144A-class" case named in static_aero_plan.md
-$   (validation V-C1).  This deck is NOT runnable in sbeam today — see the
-$   "sbeam support status" note below.  It is committed as the reference model
-$   and as the source of the expected answers tabulated below.
+$   (validation V-C1).  This deck itself is not runnable (see above); it is
+$   committed as the reference model and as the source of the expected answers
+$   tabulated below, which the runnable transcription is gated against.
 $
 $ MODEL  : 30-deg FORWARD-swept wing + canard, HALF-SPAN symmetric model.
 $          Idealised beam ("stick") structure with dumbbell point masses.
@@ -59,17 +67,21 @@ $   Cz_q   -12.074    -12.087    -12.158    -12.856     -16.100
 $   Cm_q    -9.954     -9.956    -10.007    -10.274     -12.499
 $
 $ ------------------------------------------------------ sbeam support status
-$ Supported now (Phase A): GRID, CBAR, PBAR, MAT1, CONM2, RBAR, SPC1, CORD2R,
-$   CAERO1, PAERO1, AEROS.
-$ NOT yet supported (needed to run this case):
-$   - SOL 144 + TRIM/AESTAT/AESURF/AELIST/SUPORT  -> Phase C (case-control
-$     currently rejects SOL 144).
-$   - SPLINE2 + SET1                              -> Phase B (structure<->aero spline).
-$   - DMI WKK / W2GJ / FA2J  -> sbeam uses native WKK / W2GJ cards, NOT DMI.
-$     Here WKK = identity (no correction) and W2GJ = 0.1 deg (0.0017453 rad)
-$     on the 32 wing boxes, 0 on the 8 canard boxes; FA2J = 0.
-$   - PARAM AUNITS/LDSUM/SDCSV/XYUNIT/SDUNIT; monitor points (AECOMP, MONPNT1/2,
-$     MONSUM, MONDSP1, MONCNCM) — output requests, omitted (see note at end).
+$ (Updated 2026-10-25.)  sbeam now supports every structural, aero, spline and
+$ trim card this deck uses — GRID, CBAR, PBAR, MAT1, CONM2, RBAR, SPC1, CORD2R,
+$ CAERO1, PAERO1, AEROS, SPLINE2, SET1, AELIST, AESTAT, AESURF, TRIM, SUPORT —
+$ and SOL 144 (trim, divergence, stability derivatives).  What still prevents
+$ THIS listing from running:
+$   - Card order: CBARs before their PBAR  -> parse error until #51 is fixed.
+$   - AEROS SYMXZ=1 half-span model        -> sbeam is full-span only.
+$   - DMI WKK / W2GJ / FA2J -> skipped with a warning; sbeam uses native WKK /
+$     W2GJ cards.  Here WKK = identity (no correction) and W2GJ = 0.1 deg
+$     (0.0017453 rad) on the 32 wing boxes, 0 on the 8 canard boxes; FA2J = 0.
+$   - ASSIGN, ID, TIME, PARAM WTMASS/AUNITS/... -> MSC executive/PARAM entries
+$     sbeam does not use (units must be consistent; there is no WTMASS).
+$   - Monitor points in MSC syntax (MONPNT2, MONSUM, MONDSP1, MONCNCM) were
+$     omitted from this transcription (see note at end).
+$ All of these are resolved in sample/ha144a_fullspan_sbeam.bdf.
 $ =========================================================================
 ASSIGN USERFILE='HA144CSVT.CSV' STATUS=UNKNOWN FORM=FORMATTED UNIT=52
 ASSIGN USERFILE='HA144CSVS.CSV' STATUS=UNKNOWN FORM=FORMATTED UNIT=51

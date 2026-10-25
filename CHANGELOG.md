@@ -300,6 +300,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   warning on every generated gust case.
 
 ### Changed
+- **`sample/HA144A.bdf` header corrected** (Tier S, raised with #51). The archive note blamed
+  its parse failure on unsupported MSC cards and still listed SOL 144 and SPLINE2 as
+  unsupported. It now gives the real reasons the verbatim listing does not run: card order
+  (CBARs before their PBAR — the order-dependence defect #51), the half-span `SYMXZ=1`
+  model, and DMI aero corrections that sbeam skips. It points to
+  `sample/ha144a_fullspan_sbeam.bdf` for running the case. Comments only; no card changed.
 - **Sign-wording hygiene batch closed** (#24, Tier S, four items from the 2026-08-09
   sign-convention review, landed with #8/#10): (1) the flagship MLOADS comment called a
   +2° ELEV ramp a "nose-up pull" — on this aft tail +ELEV is nose-down (the deck's own 2.5 g
