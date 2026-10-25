@@ -19,20 +19,20 @@ from sbeam.results.results import (
     ManeuverResult, Sol144DivergResult, Sol144TrimResult,
 )
 from sbeam.gpwg import compute_gpwg
-from sbeam.viewer.geometry import build_model_figure
-from sbeam.viewer.case_control_ui import render_case_control_panel
-from sbeam.viewer.results_view import (
+from sbeam_tools.viewer.geometry import build_model_figure
+from sbeam_tools.viewer.case_control_ui import render_case_control_panel
+from sbeam_tools.viewer.results_view import (
     render_sol101_results, render_sol103_results, render_sol144_results,
 )
-from sbeam.viewer.aero_view import (
+from sbeam_tools.viewer.aero_view import (
     build_aero_box_figure, build_span_loading_figure, rigid_derivative_table,
 )
-from sbeam.viewer.aero_correction_view import render_aero_correction_tab
-from sbeam.viewer.sol144_authoring_ui import render_sol144_authoring
-from sbeam.viewer.sol144_authoring import (
+from sbeam_tools.viewer.aero_correction_view import render_aero_correction_tab
+from sbeam_tools.viewer.sol144_authoring_ui import render_sol144_authoring
+from sbeam_tools.viewer.sol144_authoring import (
     snapshot_family_ids, validate_sol144_authoring,
 )
-from sbeam.viewer.format_utils import fmt, fmt_mass, style_numeric
+from sbeam_tools.viewer.format_utils import fmt, fmt_mass, style_numeric
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.vlm import solve_rigid_cl
 
@@ -327,6 +327,17 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
             st.dataframe(style_numeric(pd.DataFrame(cbar_rows)), width="stretch")
         else:
             st.info("No CBAR elements.")
+        rod_rows = []
+        for kind, coll in (("CROD", bulk.crods), ("CONROD", bulk.conrods)):
+            for r in coll.values():
+                ga = bulk.grids.get(r.ga)
+                gb = bulk.grids.get(r.gb)
+                L = math.sqrt((gb.x - ga.x) ** 2 + (gb.y - ga.y) ** 2 + (gb.z - ga.z) ** 2) if ga and gb else 0.0
+                rod_rows.append({"EID": r.eid, "Type": kind, "PID": getattr(r, "pid", ""),
+                                 "GA": r.ga, "GB": r.gb, "L": L})
+        if rod_rows:
+            st.markdown("**Rod elements (CROD / CONROD)**")
+            st.dataframe(style_numeric(pd.DataFrame(rod_rows)), width="stretch")
         if bulk.rbe3s:
             st.markdown("**RBE3 elements**")
             rbe3_rows = []
@@ -405,6 +416,46 @@ def _show_model_data_tabs(bulk: BulkData) -> None:
             st.info("No constraints.")
 
 
+def _rod_only_grids_without_rotation_spc(bulk: BulkData) -> list[int]:
+    """Grids touched only by rods whose three rotations are not all SPC'd (#38 D7)."""
+    rod_grids: set[int] = set()
+    for coll in (bulk.crods, bulk.conrods):
+        for r in coll.values():
+            rod_grids.update((r.ga, r.gb))
+    if not rod_grids:
+        return []
+    stiff_grids: set[int] = set()
+    for c in bulk.cbars.values():
+        stiff_grids.update((c.ga, c.gb))
+    for c in bulk.cbushs.values():
+        stiff_grids.add(c.ga)
+        if c.gb is not None:
+            stiff_grids.add(c.gb)
+    for r in bulk.rbars.values():
+        stiff_grids.update((r.ga, r.gb))
+    for r in bulk.rbe2s.values():
+        stiff_grids.add(r.gn)
+        stiff_grids.update(r.gm)
+    for r in bulk.rbe3s.values():
+        stiff_grids.add(r.refgrid)
+    spc_rot: dict[int, set[str]] = {}
+    for gid, g in bulk.grids.items():
+        spc_rot[gid] = set(ch for ch in (g.ps or "") if ch in "456")
+    for spcs in bulk.spcs.values():
+        for spc in spcs:
+            spc_rot.setdefault(spc.g1, set()).update(ch for ch in str(spc.c1) if ch in "456")
+            if spc.g2 is not None and spc.c2 is not None:
+                spc_rot.setdefault(spc.g2, set()).update(ch for ch in str(spc.c2) if ch in "456")
+    for spc1s in bulk.spc1s.values():
+        for spc1 in spc1s:
+            for gid in spc1.grids:
+                spc_rot.setdefault(gid, set()).update(ch for ch in str(spc1.c) if ch in "456")
+    return sorted(g for g in rod_grids - stiff_grids if len(spc_rot.get(g, set())) < 3)
+
+
+_UNKNOWN_CARD_RE = re.compile(r"Unknown BDF card '([A-Z0-9]+)'")
+
+
 def _get_pre_solve_warnings(
     bulk: BulkData, cc: Optional[CaseControl], parse_warnings: list[str]
 ) -> list[str]:
@@ -414,7 +465,8 @@ def _get_pre_solve_warnings(
     - Zero-length CBAR elements (singular stiffness matrix).
     - No SPC/SPC1 constraints (unconstrained model; bad for SOL 101).
     - SPC SID referenced in case control but absent from bulk.
-    - Unsupported load cards present (e.g. PLOAD1), silently dropped by parser.
+    - Unrecognised cards skipped by the parser (known-unsupported cards such as
+      PLOAD1 are refused at parse instead, #45).
     - MAT1 rho=0 for SOL 103 (mass matrix will be zero → unreliable frequencies).
     - E-value range >1000x across materials (possible unit inconsistency).
     """
@@ -433,10 +485,28 @@ def _get_pre_solve_warnings(
             )
             if L == 0.0:
                 zero_eids.append(eid)
+    for coll in (bulk.crods, bulk.conrods):
+        for eid, rod in coll.items():
+            ga = bulk.grids.get(rod.ga)
+            gb = bulk.grids.get(rod.gb)
+            if ga and gb and (ga.x, ga.y, ga.z) == (gb.x, gb.y, gb.z):
+                zero_eids.append(eid)
     if zero_eids:
         msgs.append(
-            f"Zero-length CBAR element(s) detected: EID {zero_eids}. "
+            f"Zero-length CBAR/CROD/CONROD element(s) detected: EID {zero_eids}. "
             "These produce a singular stiffness matrix and will cause the solver to fail."
+        )
+
+    # 1b. Rod-only grids (#38): a rod has no bending stiffness, so a grid that
+    #     only rods touch has free rotations unless the deck SPCs them (no AUTOSPC).
+    rod_only = _rod_only_grids_without_rotation_spc(bulk)
+    if rod_only:
+        msgs.append(
+            f"Grid(s) {rod_only} are connected only by CROD/CONROD elements and have "
+            "rotations that no SPC constrains. A rod carries no bending, so those rotations "
+            "have no stiffness (except torsion about each rod axis) and the stiffness matrix "
+            "will be singular. SPC the free rotations (e.g. SPC1, sid, 456, grid); sbeam has "
+            "no AUTOSPC."
         )
 
     # 2. SPC coverage
@@ -466,22 +536,15 @@ def _get_pre_solve_warnings(
                         "in case control but not found in bulk data."
                     )
 
-    # 3. Unsupported load cards present (captured as parser warnings)
-    _UNSUPPORTED_LOAD_CARDS = frozenset({
-        "PLOAD", "PLOAD1", "PLOAD2", "PLOAD4",
-        "RFORCE", "DLOAD", "TLOAD1", "TLOAD2",
-        "RLOAD1", "RLOAD2", "ACCEL", "ACCEL1", "SLOAD",
-    })
-    found_unsupported: set[str] = set()
-    for msg in parse_warnings:
-        for card in _UNSUPPORTED_LOAD_CARDS:
-            if card in msg:
-                found_unsupported.add(card)
-    if found_unsupported:
-        card_list = ", ".join(sorted(found_unsupported))
+    # 3. Unrecognised cards skipped by the parser (captured as parser warnings).
+    #    Known-unsupported cards (PLOAD1, CBEAM, ...) never reach here: the parser
+    #    refuses the deck (#45), so only typos / vendor cards remain to flag.
+    skipped = sorted({m.group(1) for msg in parse_warnings
+                      for m in [_UNKNOWN_CARD_RE.search(msg)] if m})
+    if skipped:
         msgs.append(
-            f"Unsupported load card(s) present: {card_list}. "
-            "These were ignored during parsing and do not contribute to the load vector."
+            f"Unrecognised card(s) skipped: {', '.join(skipped)}. "
+            "They are not sbeam cards (check the spelling) and contribute nothing to the model."
         )
 
     # 4. Zero density for SOL 103

@@ -10,15 +10,16 @@ import pandas as pd
 import streamlit as st
 
 from sbeam.model.bulk_data import BulkData
+from sbeam.types import FloatArray
 from sbeam.results.results import (
-    ManeuverResult, ManeuverStep, SectionCutResult, Sol101Result, Sol103Result,
-    Sol144DivergResult, Sol144TrimResult, peak_grid_force,
+    ManeuverResult, ManeuverStep, MonitorLoad, SectionCutResult, Sol101Result,
+    Sol103Result, Sol144DivergResult, Sol144TrimResult, peak_grid_force,
 )
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.results.section_cuts import component_legend, component_names, labelled
-from sbeam.viewer.geometry import build_deformed_figure, build_mode_figure
-from sbeam.viewer.aero_view import build_aero_box_figure
-from sbeam.viewer.format_utils import fmt, style_numeric
+from sbeam_tools.viewer.geometry import build_deformed_figure, build_mode_figure
+from sbeam_tools.viewer.aero_view import build_aero_box_figure
+from sbeam_tools.viewer.format_utils import fmt, style_numeric
 
 
 # ---------------------------------------------------------------------------
@@ -76,8 +77,8 @@ def render_sol101_results(bulk: BulkData, results: dict[int, Sol101Result]) -> N
     st.plotly_chart(fig, use_container_width=True)
 
     # Results tables
-    tab_disp, tab_rxn, tab_force, tab_stress, tab_cbush = st.tabs(
-        ["Displacements", "Reactions", "Bar Forces", "Bar Stresses", "CBUSH Forces"]
+    tab_disp, tab_rxn, tab_force, tab_stress, tab_rod, tab_cbush = st.tabs(
+        ["Displacements", "Reactions", "Bar Forces", "Bar Stresses", "Rod Forces", "CBUSH Forces"]
     )
 
     with tab_disp:
@@ -118,14 +119,14 @@ def render_sol101_results(bulk: BulkData, results: dict[int, Sol101Result]) -> N
                 bf = result.bar_forces[eid]
                 rows.append({
                     "EID": eid,
+                    "M1_A": bf.m1_a,
+                    "M2_A": bf.m2_a,
+                    "M1_B": bf.m1_b,
+                    "M2_B": bf.m2_b,
+                    "V1": bf.v1,
+                    "V2": bf.v2,
                     "Axial": bf.axial,
-                    "Shear1": bf.shear1,
-                    "Shear2": bf.shear2,
                     "Torque": bf.torque,
-                    "BM1_A": bf.bm1_a,
-                    "BM2_A": bf.bm2_a,
-                    "BM1_B": bf.bm1_b,
-                    "BM2_B": bf.bm2_b,
                 })
             st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
         else:
@@ -138,19 +139,33 @@ def render_sol101_results(bulk: BulkData, results: dict[int, Sol101Result]) -> N
                 bs = result.bar_stresses[eid]
                 rows.append({
                     "EID": eid,
+                    "SA1": bs.sa1, "SA2": bs.sa2, "SA3": bs.sa3, "SA4": bs.sa4,
+                    "SB1": bs.sb1, "SB2": bs.sb2, "SB3": bs.sb3, "SB4": bs.sb4,
                     "Axial": bs.axial,
-                    "SA_C": bs.sa,
-                    "SB_C": bs.sb,
-                    "SA_D": bs.sa_d,
-                    "SB_D": bs.sb_d,
-                    "SA_E": bs.sa_e,
-                    "SB_E": bs.sb_e,
-                    "SA_F": bs.sa_f,
-                    "SB_F": bs.sb_f,
+                    "SA_MAX": bs.sa_max, "SA_MIN": bs.sa_min,
+                    "SB_MAX": bs.sb_max, "SB_MIN": bs.sb_min,
                 })
             st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
         else:
             st.info("No bar stresses.")
+
+    with tab_rod:
+        if result.rod_forces:
+            rows = []
+            for eid in sorted(result.rod_forces.keys()):
+                rf = result.rod_forces[eid]
+                rs = result.rod_stresses.get(eid)
+                rows.append({
+                    "EID": eid,
+                    "Type": "CONROD" if eid in bulk.conrods else "CROD",
+                    "Axial": rf.axial,
+                    "Torque": rf.torque,
+                    "Axial stress": rs.axial if rs else 0.0,
+                    "Torsional stress": rs.torsional if rs else 0.0,
+                })
+            st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
+        else:
+            st.info("No CROD / CONROD elements.")
 
     with tab_cbush:
         if result.cbush_forces:
@@ -433,7 +448,7 @@ def _render_sol144_trim(bulk: BulkData, result: Sol144TrimResult) -> None:
 
     # ---- Hinge moments ----
     if result.hinge_moments:
-        st.markdown("**Hinge-moment derivatives** (about each AESURF cid1 hinge axis)")
+        st.markdown("**Hinge-moment derivatives** (about each AESURF hinge axis; CID1 and CID2 halves summed)")
         for surf in sorted(result.hinge_moments):
             entry = result.hinge_moments[surf]
             rows = [
@@ -447,16 +462,7 @@ def _render_sol144_trim(bulk: BulkData, result: Sol144TrimResult) -> None:
     # ---- Monitor-point integrated loads ----
     if result.monitor_loads:
         st.markdown("**Monitor-point integrated loads**")
-        rows = []
-        for name in sorted(result.monitor_loads):
-            ml = result.monitor_loads[name]
-            t = ml.totals
-            rows.append({
-                "Monitor": name, "Label": ml.label, "Type": ml.mtype,
-                "Fx": t[0], "Fy": t[1], "Fz": t[2],
-                "Mx": t[3], "My": t[4], "Mz": t[5],
-            })
-        st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
+        _render_monitor_table(result.monitor_loads)
 
     # ---- MONSECT section-cut running loads (Monitor Phase 2) ----
     if result.section_loads:
@@ -465,7 +471,7 @@ def _render_sol144_trim(bulk: BulkData, result: Sol144TrimResult) -> None:
 
     # ---- Maneuver closure (balanced-maneuver net load resultant) ----
     if result.maneuver_closure is not None:
-        st.markdown("**Maneuver load closure** (net aero+inertia resultant; ≈0 when balanced)")
+        st.markdown("**Maneuver load closure** (net aero + inertia + applied-LOAD resultant; ≈0 when balanced)")
         c = result.maneuver_closure
         cc = st.columns(6)
         for i, lab in enumerate(["Fx", "Fy", "Fz", "Mx", "My", "Mz"]):
@@ -493,12 +499,15 @@ def _render_section_cuts(
         names = component_names(sc.axis)
         half = "  ·  HALF-MODEL (loads per side)" if sc.half_model else ""
         transient = any(s.elastic_inertia is not None for s in sc.stations)
+        applied = any(getattr(s, "applied", None) is not None for s in sc.stations)
         if sc.listtype == "AELIST":
             src = "aero only"
         else:
             src = "aero + inertia + reaction"
             if transient:
                 src += " + elastic inertia + damping"
+            if applied:
+                src += " + applied LOAD"
         with st.expander(f"{name} — {sc.label}", expanded=True):
             st.caption(
                 f"COMP {sc.comp} ({sc.listtype}, {src})  ·  CID {sc.cid}  ·  "
@@ -526,6 +535,9 @@ def _render_section_cuts(
                 choices += ["Elastic inertia", "Damping"]
                 attrs["Elastic inertia"] = "elastic_inertia"
                 attrs["Damping"] = "damping"
+            if applied:
+                choices.append("Applied")
+                attrs["Applied"] = "applied"
             source = st.radio(
                 "Contribution", choices,
                 horizontal=True, key=f"{key_prefix}_{name}_src",
@@ -597,6 +609,60 @@ def _render_section_time_history(result: ManeuverResult, step: ManeuverStep) -> 
             height=320, margin=dict(l=0, r=0, t=20, b=0),
         )
         st.plotly_chart(fig, use_container_width=True)
+
+
+def _render_monitor_table(monitor_loads: dict[str, MonitorLoad],
+                          contributions: bool = False) -> None:
+    """One row per monitor: the six cp-frame totals.
+
+    With ``contributions`` (a transient sample, #2) the per-source Fz split is
+    appended so the elastic d'Alembert share is visible, as in the f06 block.
+    """
+    rows = []
+    for name in sorted(monitor_loads):
+        ml = monitor_loads[name]
+        t = ml.totals
+        row = {
+            "Monitor": name, "Label": ml.label, "Type": ml.mtype,
+            "Fx": t[0], "Fy": t[1], "Fz": t[2],
+            "Mx": t[3], "My": t[4], "Mz": t[5],
+        }
+        if contributions:
+            def _fz(v: Optional[FloatArray]) -> float:
+                return float(v[2]) if v is not None else 0.0
+            row.update({
+                "Fz aero": _fz(ml.aero), "Fz inertia (rigid)": _fz(ml.inertia),
+                "Fz elastic": _fz(ml.elastic_inertia),
+                "Fz damping": _fz(ml.damping), "Fz reaction": _fz(ml.reaction),
+                "Fz applied": _fz(getattr(ml, "applied", None)),
+            })
+        rows.append(row)
+    st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
+
+
+def _render_monitor_envelope(result: ManeuverResult) -> None:
+    """Per-monitor, per-component max/min table with the driving sample (#2)."""
+    st.markdown("**Monitor-point envelope** (max/min over the output samples)")
+    st.caption(
+        f"The driving sample is per monitor and component and need not be the "
+        f"critical sample ({result.crit_index + 1}), which is selected by peak "
+        f"|net grid force| over the whole model."
+    )
+    envelope = result.monitor_envelope
+    if not envelope:  # caller-guarded; keeps the narrowing local
+        return
+    comp_names = ("Fx", "Fy", "Fz", "Mx", "My", "Mz")
+    rows = []
+    for name in sorted(envelope):
+        env = envelope[name]
+        for e in env.entries:
+            rows.append({
+                "Monitor": name, "Type": env.mtype, "Component": comp_names[e.comp],
+                "Max": e.max_value, "Max sample": e.max_sample, "t max": e.max_time,
+                "Min": e.min_value, "Min sample": e.min_sample, "t min": e.min_time,
+                "Abs max": e.absmax,
+            })
+    st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
 
 
 def _render_section_envelope(result: ManeuverResult) -> None:
@@ -741,6 +807,17 @@ def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
     fig_struct = build_deformed_figure(bulk, step.displacements, grid_index, scale)
     st.plotly_chart(fig_struct, use_container_width=True)
 
+    # ---- MONPNT1/MONPNT3 integrated loads at the selected sample (#2) ----
+    if step.monitor_loads:
+        crit = " (critical sample)" if sample - 1 == result.crit_index else ""
+        st.markdown(
+            f"**Monitor-point integrated loads** — sample {sample}, "
+            f"t = {fmt(step.t)}{crit}"
+        )
+        _render_monitor_table(step.monitor_loads, contributions=True)
+    if result.monitor_envelope:
+        _render_monitor_envelope(result)
+
     # ---- MONSECT running loads at the selected sample (Step 68) ----
     if step.section_loads:
         crit = " (critical sample)" if sample - 1 == result.crit_index else ""
@@ -775,6 +852,27 @@ def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
             file_name=f"{stem}.maneuver_qs_loads.bdf",
             mime="text/plain",
             key=f"dl_qs_loads_{result.subcase_id}",
+        )
+    # #2: the per-sample monitor table and its envelope — the CLI's files.
+    if any(s.monitor_loads for s in result.steps):
+        from sbeam.results.load_export import build_maneuver_monitor_csv_text
+        st.download_button(
+            label="Download monitor-point loads, all samples (CSV)",
+            data=build_maneuver_monitor_csv_text({result.subcase_id: result}),
+            file_name=f"{stem}.maneuver_monitor_loads.csv",
+            mime="text/csv",
+            key=f"dl_tmon_{result.subcase_id}",
+        )
+    if result.monitor_envelope:
+        from sbeam.results.load_export import (
+            build_maneuver_monitor_envelope_csv_text)
+        st.download_button(
+            label="Download monitor-point envelope (CSV)",
+            data=build_maneuver_monitor_envelope_csv_text(
+                {result.subcase_id: result}),
+            file_name=f"{stem}.maneuver_monitor_envelope.csv",
+            mime="text/csv",
+            key=f"dl_tmonenv_{result.subcase_id}",
         )
     # Step 68: the full per-sample MONSECT table — the same file the CLI writes.
     if any(s.section_loads for s in result.steps):

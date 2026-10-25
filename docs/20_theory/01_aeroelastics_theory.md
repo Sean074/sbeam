@@ -653,7 +653,10 @@ mechanisms working together, because no single one can do it (§3.3 note):
 
 The two compose exactly in the governing solve, $c_p=(A_{jj}^\ast)^{-1}(w_\alpha+w_g)$, with the
 correction in the operator and $w_g$ in the normalwash (§2, Eq. 6/9). Because the $W_{T2}$ ratio
-is calibrated on the unit-incidence reference $w_\text{ref}=-\mathbf 1$ and is therefore
+is calibrated on a unit-incidence reference — $w_\text{ref}=-\mathbf 1$ on the boxes of the
+surface's own incidence axis ($\alpha$ for a horizontal surface, $\beta$ for a vertical one) and
+$0$ on the other axis's, so a fin is never sideslipped by the tailplane's $\alpha$ calibration
+(#52) — and is therefore
 **independent of $w_g$**, the synthesis is a single pass: size $W_{T2}$ from the slope pair, then
 size $W_{2GJ}$ for the offset pair *through the corrected operator* (which also scales the camber
 load).
@@ -1254,7 +1257,12 @@ $$
 \tag{25}
 $$
 
-Resolving the three rates for a conventional configuration (Figure 6):
+Equation (25) is what the code implements for all three rate labels (`_rate_column`,
+`aero/integration.py`, #8): the body velocity $\boldsymbol\Omega\times\Delta\mathbf r$ about the
+AEROS RCSID origin, projected on the box normal, so a vertical fin sees no pitch-rate normalwash
+and a fin above the roll axis sees roll-rate sidewash. Equations (26)–(27) are its planar-wing
+specializations ($\hat{\mathbf n} = \hat{\mathbf z}$), written for a conventional configuration
+(Figure 6):
 
 $$
 \text{pitch rate:}\quad \Delta\alpha(x) = \frac{q\,(x-x_\text{ref})}{V_\infty}
@@ -1265,7 +1273,7 @@ a streamwise-linear incidence — stations aft of the CG see more incidence, whi
 horizontal tail dominates the pitch-damping derivative $C_{m_q}$;
 
 $$
-\text{roll rate:}\quad \Delta\alpha(y) = \frac{p\,y}{V_\infty}
+\text{roll rate:}\quad \Delta\alpha(y) = \frac{p\,(y-y_\text{ref})}{V_\infty}
 \tag{27}
 $$
 
@@ -1375,15 +1383,23 @@ f_\text{inertial} = -\,M_{aa}\,a ,
 $$
 
 the structural mass matrix times the rigid-body acceleration field of the maneuver (a load
-factor $n_z$, an angular acceleration). Adding $f_\text{inertial}$ to the trim right-hand side
-of §5.3 and solving gives the **balanced maneuver loads**; the recovered net (aero + inertial)
-grid loads are the deliverable for stress. This is a purely static computation built on §5 — no
+factor $n_z$, an angular acceleration). Adding $f_\text{inertial}$ — and any applied structural
+load $f_\text{ext}$ of Eq. (18), e.g. thrust or engine torque — to the trim right-hand side
+of §5.3 and solving gives the **balanced maneuver loads**; the recovered net (aero + inertial
++ applied) grid loads are the deliverable for stress. This is a purely static computation built on §5 — no
 time integration and no unsteady aero.
 
 *Implemented (Step 53, see `docs/10_standard/05c_sol144_maneuver.md`):* the inertia-relief column
 $M_{ax}$ is built per unit URDD acceleration; the net load is `Sol144TrimResult.net_loads`, with
 per-case force/moment closure (V-C5) and a `<stem>.maneuver_loads.bdf` export. Gravity is folded
-into the load factor ($\text{URDD3} = -n_z g$), so no separate body-force term enters the trim.
+into the load factor ($\text{URDD3} = -n_z g$), so no separate body-force term enters the trim
+(a `GRAV` in a trim `LOAD` set is refused). *Implemented (#6, 2026-10-24):* $f_\text{ext}$ is the
+subcase `LOAD` set (`FORCE`/`MOMENT`), un-scaled by $q$, reduced through the same Schur
+partition as the aero baseline; which free label balances it follows from the trim card — a
+free `URDD1` turns thrust into a surge acceleration whose inertia relief acts at the CG, so the
+pitch balance sees the thrust moment about the CG; with surge SPC'd it sees the moment about
+the support point. Design note `30_future/designs/thrust_in_trim_applied_load.md`; gates
+`tests/aero/test_thrust_trim.py`.
 
 *Implemented (Phase G0 increment 1, `solver/maneuver_qs.py`):* the **transient** counterpart
 time-integrates a prescribed (open-loop) pilot-command history from this balanced trim as the

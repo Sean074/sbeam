@@ -114,12 +114,14 @@ fails today on any sample with meaningful elastic acceleration and passes after.
   belongs with the sweep post-processing, alongside the identical static gap.
 - **`MONPNT1`/`MONPNT3` on transient.** Same enabling work (the per-sample integrand
   inputs) but a separate output surface. Cheap once this lands (~0.5 d); deliberately not
-  bundled so this step has one output design to get right. Log as **P8c**.
+  bundled so this step has one output design to get right. Log as **P8c**. **Delivered 2026-09-06 as issue #2** (`ManeuverStep.monitor_loads`, f06 block at the critical sample with the contribution split, `maneuver_monitor_loads.csv`, per-component envelope; gates V-TMON1–3).
 - **Changing `net_loads` / `closure` / the critical-sample metric.** The elastic-inertia
   term is added as a *separate* contribution and is **not** folded into `net_loads`.
   Folding it in would change the exported `maneuver_qs_loads.bdf` cards, the closure
   diagnostic and the DEF-M5 severity metric all at once — a much larger and separately
-  arguable change. See §7.2 (open question O1).
+  arguable change. See §7.2 (open question O1). **Superseded 2026-09-05:** issue #3 made
+  exactly that change — `net_loads` is now the full applied load
+  ([`transient_net_loads_elastic_inertia.md`](transient_net_loads_elastic_inertia.md)).
 - **HDF5 export, `AXES` masking, stress recovery.** Inherited exclusions from the P8
   design; unchanged.
 - **New card fields.** No `MLOADS`/`MLDPRNT` field is added; the presence of `MONSECT`
@@ -344,7 +346,7 @@ reactions_fn=None` — all optional, so the direct solver's existing behaviour w
 | `sbeam/results/f06_writer.py` | `_section_cut_block(..., title=...)`; critical-sample block in `_build_f06_sol144_maneuver_text`; envelope block | 1 / 2 |
 | `sbeam/results/load_export.py` | `write_maneuver_section_loads_csv` (shares the static row builder) | 1 / 2 |
 | `sbeam/main.py` | write the two new CSVs when any maneuver result carries section loads | 1 / 2 |
-| `sbeam/viewer/results_view.py` | `_render_section_cuts(section_loads, key_prefix)` signature change; wire into `_render_sol144_maneuver`; time-history plot; envelope table; download buttons | 1 / 2 |
+| `sbeam_tools/viewer/results_view.py` | `_render_section_cuts(section_loads, key_prefix)` signature change; wire into `_render_sol144_maneuver`; time-history plot; envelope table; download buttons | 1 / 2 |
 | `sample/cessna210_flagship_mloads.bdf` | no card change needed — it already `INCLUDE`s the bulk file carrying `SECRW`/`SECRWA`; add a header comment noting the transient cuts now come out | 1 |
 | `sample/ha144a_fullspan_mloads.bdf` | add one `MONSECT` + `AECOMP`/`SET1` so the direct-solver path has cut coverage too | 1 |
 
@@ -521,7 +523,10 @@ it is the integrand's *inputs* that are incomplete on a transient sample.
 
 ## 9. Open questions
 
-- **O1 — should `net_loads` include the elastic inertia?** Physically the exported
+- **O1 — should `net_loads` include the elastic inertia?** *Resolved 2026-09-05 by #3:
+  yes, with the damping term too —
+  [`transient_net_loads_elastic_inertia.md`](transient_net_loads_elastic_inertia.md).*
+  Original text: Physically the exported
   critical-sample `FORCE`/`MOMENT` cards are the load a stress model should see, and that
   load *does* include `M·ü_e`. This design deliberately does **not** change `net_loads`,
   because doing so simultaneously moves the exported cards, the closure diagnostic and the

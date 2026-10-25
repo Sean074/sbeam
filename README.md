@@ -23,16 +23,22 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 Install the package and its dependencies in editable mode:
 
 ```bash
-pip install -e .
+pip install -e ".[viewer]"
 ```
+
+`pip install -e .` alone installs the **solver and the loads toolchain** (numpy, scipy,
+pandas). The `[viewer]` extra adds Streamlit and Plotly — omit it for a batch or CI
+install that never opens the GUI.
 
 The editable install registers `sbeam` into the active environment so it is importable from anywhere — including inside Streamlit.
 
 ## Running the Viewer
 
 ```bash
-streamlit run sbeam/viewer/app.py
+sbeam-view
 ```
+
+(`sbeam-view` is `streamlit run sbeam_tools/viewer/app.py`; extra arguments go to `streamlit run`.)
 
 The viewer opens in your browser. Upload a `*.dat` bulk data file to inspect model geometry, define case control, and launch analyses.
 
@@ -46,11 +52,40 @@ python -m sbeam.main path/to/model.bdf
 
 The solver reads the case control file (`.bdf`), which uses `INCLUDE` to reference the bulk data file (`.dat`). Results are written to a `.f06` file in NASTRAN format.
 
+## Running the Loads Tools
+
+`sbeam` is a solver: it analyses the cases a deck gives it. Deciding *which* cases exist,
+and reducing results across them, is the job of the `sbeam_tools` package that ships
+alongside it — which, unlike the solver, is allowed to know about physical units,
+standard atmospheres and regulatory constants.
+
+Generate the FAR/CS 23.341 quasi-static gust design cases for a deck:
+
+```bash
+sbeam-cases sample/cessna210_flagship_trim.bdf --units SI --trim-template 1 --vc 86.0 --vd 105.0 --massset 10,20,30 -o gust_cases.bdf
+```
+
+It reads the reference geometry, the weight of each mass case and the rigid lift-curve
+slope out of the deck itself, applies the gust schedule and the Pratt formula, and writes
+a runnable driver deck plus a summary table. Run the result with `sbeam` like any other
+deck.
+
+See `docs/10_standard/00_program_overview.md` (Architecture) for the boundary between the
+two packages, and `docs/10_standard/05c_sol144_maneuver.md` for the gust workflow.
+
 ## Running Tests
 
 ```bash
 pytest
 ```
+
+## First analysis in ten minutes
+
+New here? [`docs/20_theory/03_first_analysis_tutorial.md`](docs/20_theory/03_first_analysis_tutorial.md)
+takes you from an empty folder to a plotted SOL 101 result: a six-grid cantilever typed
+in by hand, one CLI run, the f06 read block by block against the closed-form deflection
+and stress, then the deflected shape in the viewer and from a ten-line Python script.
+Calling the solver from your own code: [`docs/10_standard/11_python_api.md`](docs/10_standard/11_python_api.md).
 
 ## Documentation
 
@@ -72,18 +107,18 @@ code standard (`10_standard/`), theory & worked examples (`20_theory/`), future 
 | Category | Cards |
 |---|---|
 | Geometry | `GRID`, `CORD2R` |
-| Elements | `CBAR`, `CBUSH`, `PLOTEL`, `RBE2`, `RBE3`, `RBAR` |
-| Properties | `PBAR`, `PBUSH` |
+| Elements | `CBAR`, `CROD`, `CONROD`, `CBUSH`, `PLOTEL`, `RBE2`, `RBE3`, `RBAR` |
+| Properties | `PBAR`, `PROD`, `PBUSH` |
 | Material | `MAT1` |
-| Mass | `CONM2` |
+| Mass | `CONM2`, `MASSSET` |
 | Constraints | `SPC`, `SPC1`, `SUPORT` |
 | Loads | `FORCE`, `MOMENT`, `LOAD`, `GRAV` |
 | Eigenvalue | `EIGRL` |
 | Aero geometry | `AEROS`, `CAERO1`, `PAERO1`, `AEFACT`, `PSTRIP`, `STRIPK` |
-| Aero corrections | `W2GJ`, `WKK`, `AECORR` |
+| Aero corrections | `W2GJ`, `WKK`, `AECORR`, `CHORDCP` |
 | Splining | `SET1`, `SPLINE0`, `SPLINE1`*, `SPLINE2`, `ATTACH` |
-| Trim / divergence | `AESTAT`, `AESURF`, `AELIST`, `TRIM`, `DIVERG`, `TRIMVAR`, `TRIMOBJ`, `TRIMCON` |
-| Monitor points | `MONPNT1`, `MONPNT3`, `AECOMP` |
+| Trim / divergence / gust | `AESTAT`, `AESURF`, `AELIST`, `TRIM`, `DIVERG`, `TRIMVAR`, `TRIMOBJ`, `TRIMCON`, `GUSTLF` |
+| Monitor points / section cuts | `MONPNT1`, `MONPNT3`, `MONSECT`, `AECOMP` |
 | Transient maneuver | `MLOADS`, `MLDTRIM`, `MLDTIME`, `MLDCOMD`, `MLDPRNT`, `TABLED1` |
 
 \* `SPLINE1` is parsed but not yet implemented (use `SPLINE2`).
@@ -94,7 +129,7 @@ Full field-by-field definitions: [`docs/10_standard/02_card_reference.md`](docs/
 
 - **SOL 101** — Linear statics: nodal displacements, SPC reactions, CBAR end forces/moments, stress recovery, CBUSH element forces
 - **SOL 103** — Normal modes: natural frequencies (Hz and rad/s), normalised mode shapes, modal mass fractions
-- **SOL 144** — Static aeroelastic trim (steady VLM): determined and over-determined trim, rigid + elastic-restrained stability derivatives, hinge-moment derivatives, divergence dynamic pressure (`DIVERG`), balanced maneuver loads with inertia relief, monitor-point integrated section loads, trimmed flight-load export
+- **SOL 144** — Static aeroelastic trim (steady VLM): determined and over-determined trim, rigid + elastic-restrained stability derivatives, hinge-moment derivatives, divergence dynamic pressure (`DIVERG`), balanced maneuver loads with inertia relief, applied structural loads in the trim (thrust, engine torque via `LOAD`), monitor-point integrated section loads, trimmed flight-load export
 - **SOL 144 + `MLOADS`** — DLM-free quasi-steady transient maneuver loads (Phase G0, Level 1): open-loop commanded control histories integrated by Newmark-β from a trimmed initial condition, with time-history output and critical-sample load export
 
 ## Known Limitations
@@ -112,7 +147,7 @@ Full field-by-field definitions: [`docs/10_standard/02_card_reference.md`](docs/
 - **`CBUSH` requires CID=0** — element offsets are not supported.
 
 ### Loads
-- **`PLOAD1` not supported** — distributed beam loads are not implemented. A `PLOAD1` card in the BDF is currently silently dropped with no user-visible warning. Do not use `PLOAD1`; a pre-solve validator warning is planned for a future release.
+- **`PLOAD1` not supported** — distributed beam loads are not implemented. A deck carrying `PLOAD1` (or any other known-but-unsupported NASTRAN card) is refused at parse with a counted list; replace it with equivalent `FORCE`/`MOMENT` cards. Table of refused cards and alternatives: `docs/10_standard/02_card_reference.md`, "Unsupported cards".
 
 ### Solvers
 - **SOL 101, SOL 103, and SOL 144 only** — frequency response (SOL 108 / SOL 111), transient response (SOL 109 / SOL 112), and buckling (SOL 105) are not yet implemented.
@@ -136,7 +171,7 @@ Bug reports and pull requests are welcome via the GitHub issue tracker.
 
 `sbeam` implements standard, well-published finite element methods (Euler-Bernoulli beam theory, consistent mass matrix, direct stiffness assembly) using established numerical libraries. It is intended as an educational and exploratory engineering tool.
 
-Results are **not certified** for safety-critical or regulated structural design. The implementation uses simplified assumptions (uniform cross-sections, no shear deformation, global coordinate frame, dense direct solver). Verify any results against an established commercial solver and competent engineering judgement before relying on them for design decisions.
+Results are **not certified** for safety-critical or regulated structural design. The implementation uses simplified assumptions (uniform cross-sections, no shear deformation, global coordinate frame, sparse direct solver for the structure and dense influence-coefficient matrices for the aerodynamics). Verify any results against an established commercial solver and competent engineering judgement before relying on them for design decisions.
 
 The software is provided "as is", without warranty of any kind. See the [LICENSE](LICENSE) file for the full disclaimer of liability.
 

@@ -86,7 +86,73 @@ force/stress recovery, f06 output, GPWG, and resolved SOL 101 defects.
 ---
 
 
+## Issue #38: CROD / PROD / CONROD rod element + line-element registry ✅ COMPLETE (2026-10-24)
+
+**Tier L** (new cards, new element physics, first per-element interface). Milestone v0.3.0.
+Design note agreed before code per CLAUDE.md rule 1:
+`docs/30_future/designs/rod_element_crod.md`. Activated from the Structural-fidelity route
+of `30_future/02_parked.md` (consumer: engine-pylon struts, previously `CBAR PA=PB=56`).
+
+**Objective:** a true axial + torsion rod (`EA/L`, `GJ/L` along GA→GB, no bending, no
+orientation vector) and the minimal per-element interface that lets assembly, GPWG,
+recovery and the f06 pick up a second line element without another hard-coded loop.
+
+**Deliverables:**
+- `sbeam/model/element.py` (`Crod`, `Conrod`), `model/property.py` (`Prod`),
+  `model/bulk_data.py` (`crods`, `conrods`, `prods`); parser handlers `_handle_prod`,
+  `_handle_crod`, `_handle_conrod`, shared `_check_unique_eid` (EIDs one space across
+  CBAR/CROD/CONROD/CBUSH) and the PBAR/PROD PID space.
+- `sbeam/assembly/elements.py` — the registry: `LineElement` record, `line_element`,
+  `iter_line_elements`, `line_element_mass_global`, `line_element_mass_per_length`,
+  `rod_frame`, `rod_local_stiffness`, `rod_local_mass`, `rod_section`. `stiffness.py`,
+  `mass_matrix.py` and `gpwg.py` loop through it (CBAR entry wraps the #20 helpers, bit-identical).
+- `sbeam/solver/element_recovery.py` — `local_end_forces`, `rod_force_from_local`,
+  `rod_stress_from_force`, `recover_line_elements`; the four solver loops (SOL 101, SOL 144
+  trim, SOL 144 static, MLOADS) collapsed onto it. `RodForce`/`RodStress` and
+  `rod_forces`/`rod_stresses` on every result type.
+- `results/f06_writer.py` — `FORCES / STRESSES IN ROD ELEMENTS` blocks (`( C R O D )`,
+  `( C O N R O D )`), emitted only when rods exist, after the CBAR blocks, in SOL 101, SOL
+  144 and the MLOADS critical sample.
+- Viewer: dashed rod traces (model, deformed, mode views), rod table, "Rod Forces" tab,
+  rod-only-grid rotation warning. `sbeam_tools/common/mirror.py` unfolds CROD/CONROD.
+- `sample/pylon_strut_engine.bdf` — wing stick + CBAR spine + CROD and CONROD struts +
+  CONM2 engine, 1g + thrust and 1g subcases.
+- Docs: card reference (PROD, CROD, CONROD + limitation row), `03`/`04` guides,
+  `01_beam_model.md`, `00_program_overview.md` (tree, V24–V27, limitations, phase table),
+  `09_conventions.md` §8 row + §9 bullet, `CLAUDE.md`, `00_INDEX.md`, `02_parked.md`.
+
+**Test/acceptance:** all design-note gates green on first run with the predicted numbers.
+V24 δ = 1.0e-4, θ = 1.25e-2, σ = 1.0e7, τ = 1.0e6 (1e-10); V25 N1 = 1060.660172,
+N2 = 353.553391 (1e-9); V26 35.588127 / 61.640444 Hz exact (1e-8), 35.403 / 61.320 Hz with
+ρ = 7850 (−0.5 %); V27 CROD ≡ CBAR 56 at 1e-12. `tests/assembly/test_rod_element.py` (G5
+invariants, G5b frame independence, registry bit-identity, G7 assembly coverage),
+`tests/solver/test_rod_recovery.py` (G6 `srod1.f`/`srod2.f` mapping at 1e-13, G7 recovery
+coverage), `tests/parser/test_rod_cards.py` (G8), `tests/results/test_f06_rod_blocks.py`
+(labels, DEF-M13 alignment, rodless listing unchanged), `TestValPylonStrutEngine`
+(engine-grid free body to 1e-9, reactions = GPWG weight and thrust, both rod blocks).
+Non-regression: the seven shipped sample outputs (f06, loads BDF, CSV) byte-identical to
+`0108f76`; `TestG5SingleSource` and the import-boundary gate untouched.
+
+**Key decisions:**
+
+1. **Registry, not Protocol (D1).** Per-type functions in `assembly/`, model dataclasses
+   stay plain data; the CBAR entry is the old arithmetic verbatim.
+2. **Rod frame independence (D2).** Full 12-DOF frame with a deterministic `e_y`; the rod's
+   `K` and `M` make the global matrices independent of it (gate G5b), so the rod reuses the
+   scatter, `K·T·u` recovery and `bar_internal_resultants` unchanged.
+3. **Consistent translational mass, no torsional inertia (D3).** MSC `COUPMASS` form; a
+   strut and its CBAR spine share one mass formulation.
+4. **CONROD natively (D4).** `rod_section` is the only code that knows the difference; no
+   synthetic PIDs.
+5. **Rod-only grids are the user's SPC (D7).** No AUTOSPC; documented in three places and
+   flagged by the viewer.
+6. **Rod CSV deferred to #31 (D8);** no CBAR element-force CSV exists either.
+
 ## Resolved defects
+
+- **DEF-M18** (#21, 2026-10-24, Tier M) — CBAR force table printed raw nodal moments (end A on the opposite face from end B) under half-swapped plane labels (`BENDING-1` = My = MSC plane 2), and the stress table printed totals under NASTRAN's bending-only column names; both outputs moved to the NASTRAN/MSC layout on `bar_internal_resultants` (`M1 = +Mz⁺`, `M2 = −My⁺`; bending-only `SA1–4` + `AXIAL` + `SA/SB-MAX/MIN`), fields renamed (`BarForce.m1_a…`, `BarStress.sa1…`), shipped as a pre-1.0 MINOR breaking change; gates G1–G7 in `tests/solver/test_cbar_force_layout.py` + f06 tests. Design note `30_future/designs/cbar_force_stress_output_layout.md`.
+- **DEF-M21** (#37, 2026-10-23, Tier M) — CBAR end-B bending stress sign flipped (one formula on raw nodal moments at both ends) and PBAR I1/I2 planes mislabelled in the card reference; stresses now from +x-face internal resultants via `bar_internal_resultants`, `σ = P/A − Mz·y/I1 + My·z/I2` at both ends, end A bit-identical; gates G1–G6 in `tests/solver/test_cbar_stress_sign.py` and `tests/aero/test_cbar_stress_sign_sol144.py`. Design note `30_future/designs/cbar_stress_recovery_sign.md`.
+- **DEF-M17** (#20, 2026-10-23, Tier M) — CBAR PA/PB releases zeroed instead of condensed (element over-stiff, released end forces non-zero); replaced by static condensation of K and congruent M from one helper shared by assembly and recovery, D5 both-ends mechanism check at parse time, gates V21–V23 + 121-combination invariants. Design note `30_future/designs/cbar_pin_release_condensation.md`.
 
 ### Q1 — SPC reactions written in basic CID 0 instead of the grid CD frame ✅ FIXED (2026-08-03)
 

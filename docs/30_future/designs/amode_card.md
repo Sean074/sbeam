@@ -199,8 +199,8 @@ The assumed-mode coordinate `q` has no *direct* inertia of its own; all inertia 
 | `sbeam/solver/sol103.py` | Compose `build_rbe3_transformation` (existing) with `build_amode_transformation` (new). Order: RBE2/3/RBAR reduce *first*, then AMODE. Cycle detection: any grid in an AMODE SET that is already a `dep_dof` from RBE2/3/RBAR raises `ValueError`. |
 | `sbeam/results/results.py` | Extend `Sol103Result` with `amode_participations: dict[int, np.ndarray]` — per AMODE ID, the q-component of every mode shape, shape `(n_modes,)`. |
 | `sbeam/results/f06_writer.py` | Add "A S S U M E D   M O D E   P A R T I C I P A T I O N" table after the eigenvalue table. Columns: MODE NO., AMODE ID, q AMPLITUDE, % OF MODE NORM. |
-| `sbeam/viewer/geometry.py` | `_amode_grid_coords(...)` to compute the rotating-set displacements from `Φ_i · q` for visualisation. |
-| `sbeam/viewer/results_view.py` | Add an "AMODE Participation" panel under SOL 103 results showing the `Sol103Result.amode_participations` table. |
+| `sbeam_tools/viewer/geometry.py` | `_amode_grid_coords(...)` to compute the rotating-set displacements from `Φ_i · q` for visualisation. |
+| `sbeam_tools/viewer/results_view.py` | Add an "AMODE Participation" panel under SOL 103 results showing the `Sol103Result.amode_participations` table. |
 | `docs/10_standard/01_beam_model.md` | Add AMODE and SET1 to the bulk-data card reference. |
 | `docs/10_standard/02_card_reference.md` | Add full field-layout tables for AMODE and SET1. |
 | `docs/10_standard/04_modal_analysis.md` | Add a section explaining the augmented-system formulation and where AMODE inserts in `run_sol103`. |

@@ -36,11 +36,11 @@ Results   (cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, CDi, e, per_su
 | `sbeam/aero/integration.py` | `Skj` force integration matrix, `Djk` downwash matrix, `wg` baseline normalwash |
 | `sbeam/aero/corrections.py` | `Wkk` diagonal correction, `WT2` pressure-match (`WT1` per-strip force-match removed — DEF-R7) |
 | `sbeam/aero/section_correction.py` | Synthesise a per-surface `W2GJ`+`WT2` card pair matching section force **and** moment (slope + α=0 offset): `build_section_correction_multi` (engine, all surfaces at once), `build_section_correction` (single-surface wrapper), `cards_to_bdf()` |
-| `sbeam/aero/section_data.py` | Spanwise section-coefficient table ingestion (tidy CSV) → strip targets → builder: `validate_section_data`, `available_conditions`, `template_dataframe`, `build_from_section_data` (single), `build_from_section_data_multi` (per-surface at one flight point), `operating_region` |
+| `sbeam_tools/corrections/section_data.py` | Spanwise section-coefficient table ingestion (tidy CSV) → strip targets → builder: `validate_section_data`, `available_conditions`, `template_dataframe`, `build_from_section_data` (single), `build_from_section_data_multi` (per-surface at one flight point), `operating_region` |
 | `sbeam/aero/body_correction.py` | **Step A9** — cruciform body-panel total-aircraft moment match: `build_body_correction` (direct linear solve: joint WT2 slope + joint W2GJ offset on the body panels so the TOTAL Cm_α/Cm0, Cn_β/Cn0, Cl_β/Cl0 hit targets), `BodyTargets`, `split_total_rows` / `parse_body_targets` (CSV `TOTAL` block), `body_cards_to_bdf`; **Step A10** — `build_strip_body_correction` / `strip_body_cards_to_bdf` (decoupled strip body: STRIPK slope + W2GJ Δα) |
 | `sbeam/aero/strip.py` | **Step A10** — decoupled strip body panels (PSTRIP/STRIPK): `is_strip_caero`, `strip_box_mask`, `strip_box_slopes` (diagonal, zero-coupling ΔCp operator block — cannot contaminate the lifting surfaces) |
 | `sbeam/aero/aero_model.py` | `AeroModel` container + `build_aero_model()` factory (block-diagonal strip body block via `_assemble_vlm_operator`) |
-| `sbeam/aero/mirror.py` | Half-span → full-span model mirroring (symmetry deprecation; raises on unsupported cards) |
+| `sbeam_tools/common/mirror.py` | Half-span → full-span model mirroring (symmetry deprecation; raises on unsupported cards) |
 | `sbeam/aero/spline.py` | **Phase B** — `build_spline_operators()`: builds `g_slope` (n_box×n_g), `g_disp` and `g_load` (3n_box×n_g) from `SPLINE2` + `ATTACH` + `SPLINE0` cards; `g_load` adds the Step 64 rigid load injection for structurally-uncoupled boxes |
 | `sbeam/aero/coupling.py` | `build_qaa` flexible aero stiffness `Q_aa = G_dispᵀ S_kj (A_jj*)⁻¹ D_jk G_slope`; `build_fg` baseline aero load; `build_gaf` modal GAF `Q_hh = Φᵀ Q_aa Φ` |
 | `sbeam/solver/sol144.py` | `run_sol144_trim` — the trim orchestrator (`_TrimState` + stage helpers, P13) — plus a facade re-exporting every public and test-pinned name from the split modules below, so `from sbeam.solver.sol144 import …` keeps working for all of them |
@@ -57,11 +57,11 @@ Results   (cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, CDi, e, per_su
 | `sbeam/model/mass_overlay.py` | **Step 60** — `resolve_mass_case` / `effective_conm2s`: MASSSET payload-case resolution (baseline scaling + ADD/REPLACE/DELETE overlay) |
 | `sbeam/results/f06_writer.py` | `build_f06_sol144_text` / `write_f06_sol144` — SOL 144 trim f06 blocks (shares displacement/CBAR helpers with SOL 101) |
 | `sbeam/results/load_export.py` | `write_aero_load_cards` — trimmed flight loads as `FORCE`/`MOMENT` bulk cards |
-| `sbeam/results/monitor_points.py` | `integrate_monpnt1` / `integrate_monpnt3` — monitor-point integrated section loads |
+| `sbeam/results/monitor_points.py` | `prepare_monitor_points` (once per run) + `evaluate_monitor_point` (per load state) — monitor-point integrated section loads; `compute_monitor_loads` / `integrate_monpnt1` / `integrate_monpnt3` are the one-shot forms. **#2** takes them at every transient sample |
 | `sbeam/results/section_cuts.py` | **Monitor Phase 2** — `compute_section_cuts`: MONSECT per-station running loads (the Phase 1 integrand swept over cut planes). **Step 68** splits it into `prepare_section_cuts` (geometry/masks/warnings, once per run) + `evaluate_section_cut` (masked sums per sample) for the transient path |
 | `sbeam/results/section_envelope.py` | **Step 68** — `build_section_envelope`: per-station max/min of a transient maneuver's cuts with the driving sample |
 | `sbeam/results/maneuver_output.py` | MLDPRNT ASCII time-history + critical-sample `FORCE`/`MOMENT` export |
-| `sbeam/viewer/aero_view.py` | Plotly box mesh, cp colour map, section-load strip chart |
+| `sbeam_tools/viewer/aero_view.py` | Plotly box mesh, cp colour map, section-load strip chart |
 
 ---
 
@@ -91,11 +91,13 @@ thrust, no propeller, no actuator disc, no slipstream. Powered aerodynamics ente
 as a correction (`W2GJ`/`WT2`/`CHORDCP`) built from powered CFD or flight-test data, and
 are frozen at the single power setting and advance ratio they were built for — nothing
 warns when a trim leaves that condition, and one-engine-out requires its own correction
-set rather than a scaled symmetric one. The thrust-line pitching moment has no card at all,
-and a SOL 144 trim subcase carrying both `TRIM` and `LOAD` is refused (DEF-M4). Full
-guidance, including which powered effect lands on which card and the workarounds for the
-thrust moment: `docs/20_theory/02_realistic_airplane_sol144.md` §7, summarised at card
-level in [`05a_aero_vlm.md`](05a_aero_vlm.md).
+set rather than a scaled symmetric one. Thrust and engine torque are **not** aerodynamic
+and do not go through the corrections: they are ordinary `FORCE`/`MOMENT` cards selected by
+`LOAD` in the trim subcase, entering the trim balance beside the aerodynamic and inertial
+loads (#6, `05c` "Applied structural load in a trim"; propeller handedness rule in charter
+§10). Full guidance on which powered effect lands on which card:
+`docs/20_theory/02_realistic_airplane_sol144.md` §7, summarised at card level in
+[`05a_aero_vlm.md`](05a_aero_vlm.md).
 
 **AE14 closed (2026-07-05, Step AC7):** two root causes found and fixed. (1) The full-span
 HA144A deck had NOT doubled the centreline fuselage PBAR when mirroring (masses were

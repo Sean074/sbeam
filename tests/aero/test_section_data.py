@@ -1,6 +1,6 @@
 """Spanwise section-data ingestion (Option A GUI backend) — acceptance tests.
 
-Covers ``sbeam.aero.section_data``: schema validation, condition listing, the
+Covers ``sbeam_tools.corrections.section_data``: schema validation, condition listing, the
 per-deg/local-chord/¼c → builder-target conversion, spanwise interpolation onto strips,
 Mach/region selection (v1), and the operating-region helper.
 """
@@ -17,7 +17,7 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.aero.panel import mesh_caero1
 from sbeam.aero.vlm import build_ajj
 from sbeam.aero.aero_model import build_aero_model
-from sbeam.aero import section_data as sd
+from sbeam_tools.corrections import section_data as sd
 
 PAERO = Paero1(pid=1)
 CAERO_EID = 1
@@ -325,7 +325,7 @@ class TestValidationBindings:
         Since Step 66 there is one shipped section table: the flagship's, which
         carries both the flying rows and the body-panel TOTAL block.
         """
-        from sbeam.aero.body_correction import split_total_rows
+        from sbeam_tools.corrections import split_total_rows
         root = Path(__file__).parent.parent.parent / "sample"
         flying, totals = split_total_rows(
             pd.read_csv(root / "cessna210_flagship_section_data.csv"))

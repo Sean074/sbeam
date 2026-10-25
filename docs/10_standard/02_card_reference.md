@@ -2,6 +2,22 @@
 
 All BDF cards supported in Phases 1–2 (structures), Phases A–C (aeroelastics, including splining and trim), and Phase G0 (transient maneuver loads). For each card: field layout, variable names and types, defaults, and a minimal example.
 
+## Supported cards at a glance
+
+Every card and case-control keyword sbeam reads; the sections below give each card's fields. Gate: `tests/parser/test_unsupported_cards.py` asserts no card listed here is in the refused set (moved here from `CLAUDE.md`, 2026-10-25).
+
+- **Structure:** CORD2R, GRID, CBAR, CROD, CONROD, PLOTEL, RBE3, RBE2, RBAR, CBUSH, PBAR, PROD,
+  PBUSH, MAT1
+- **Mass:** CONM2, MASSSET
+- **Constraints/loads:** SPC, SPC1, FORCE, MOMENT, LOAD, GRAV
+- **Eigenvalue:** EIGRL
+- **Aero (Phase A/C):** AEROS, CAERO1, PAERO1, AEFACT, W2GJ, WKK, AECORR, CHORDCP,
+  PSTRIP, STRIPK, SPLINE0/2 (+ ATTACH), SET1, AELIST, AESTAT, AESURF, TRIM, TRIMVAR,
+  TRIMCON, TRIMOBJ, SUPORT, DIVERG, MONPNT1, MONPNT3, MONSECT, AECOMP, GUSTLF
+- **Transient maneuver (G0):** MLOADS, MLDTRIM, MLDCOMD, MLDTIME, MLDPRNT, TABLED1
+- **Case control:** SOL, SUBCASE, LOAD, SPC, METHOD, TRIM, MLOADS, MASSSET, GUSTLF,
+  DISPLACEMENT, SPCFORCE, OLOAD, FORCE, STRESS, BEGIN BULK, ENDDATA
+
 ---
 
 ## File Structure
@@ -218,8 +234,8 @@ The continuation line is optional (stress recovery points default to 0).
 | PID | `pid` | int | Property ID (unique) | required |
 | MID | `mid` | int | Material ID (references MAT1) | required |
 | A | `A` | float | Cross-sectional area | required |
-| I1 | `I1` | float | Moment of inertia about element y-axis (bending in XZ plane) | required |
-| I2 | `I2` | float | Moment of inertia about element z-axis (bending in XY plane) | required |
+| I1 | `I1` | float | Area moment of inertia for bending in the element x–y plane (plane 1, the plane containing the orientation vector; about local z) | required |
+| I2 | `I2` | float | Area moment of inertia for bending in the element x–z plane (plane 2; about local y) | required |
 | J | `J` | float | Torsional constant | required |
 | NSM | `nsm` | float | Non-structural mass per unit length | `0.0` |
 | C1, C2 | `c1`, `c2` | float | y, z of stress recovery point C | `0.0` |
@@ -233,6 +249,38 @@ $ Solid square cross-section: side=0.316 m → A=0.1, I=8.333e-4, J=1.406e-3
 PBAR, 1, 1, 0.1, 8.333e-4, 8.333e-4, 1.406e-3
 $ Stress recovery at corners (y=±0.158, z=±0.158)
 +,    0.15811, 0.15811, -0.15811, 0.15811, -0.15811, -0.15811, 0.15811, -0.15811
+```
+
+---
+
+### PROD — Rod Property
+
+Defines the section of `CROD` elements: area, torsional constant, torsional stress
+coefficient and non-structural mass (#38). A rod has no bending or shear properties.
+
+**Format:**
+```
+PROD, PID, MID, A, J, C, NSM
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| PID | `pid` | int | Property ID (unique across `PBAR` and `PROD`) | required |
+| MID | `mid` | int | Material ID (references MAT1) | required |
+| A | `A` | float | Cross-sectional area (> 0) | required |
+| J | `J` | float | Torsional constant (≥ 0; `0.0` = no torsional stiffness) | `0.0` |
+| C | `c` | float | Torsional stress coefficient: `τ = T·C/J` | `0.0` |
+| NSM | `nsm` | float | Non-structural mass per unit length | `0.0` |
+
+`A ≤ 0` or `J < 0` raises `ValueError`. The MID is checked against MAT1 when a `CROD`
+references the property, so `MAT1` and `PROD` must both precede the element.
+
+**Example:**
+```
+$ Strut: A = 5 cm², J = 1e-7, tau = T * 5e-3 / J
+PROD, 3, 1, 5.0e-4, 1.0e-7, 5.0e-3
 ```
 
 ---
@@ -306,8 +354,11 @@ is read as a vector component, not a grid reference.
 
 Pin-release DOF digits (PA/PB) are in **element local axes** (1 = axial, 4 = torsion,
 5/6 = local bending rotations), not the global DOFs of the DOF Reference table.
-Releases zero the corresponding rows/columns of the local 12×12 stiffness before
-transformation to global.
+Released DOFs are removed by static condensation of the local 12×12 stiffness (and,
+congruently, the consistent mass) before transformation to global; a released end
+reports exactly zero force in that component (`03_static_analysis.md` "Pin Releases").
+Releasing the same digit 1–4 at both ends raises `ValueError` (internal mechanism);
+use `56` for a two-force member.
 
 **Example:**
 ```
@@ -316,6 +367,90 @@ CBAR, 1, 1, 1, 2, 0.0, 1.0, 0.0
 $ Pin release: Ry and Rz released at both ends (moment-free = truss)
 CBAR, 5, 1, 5, 6, 0.0, 1.0, 0.0
 +,    56, 56
+```
+
+---
+
+### CROD — Rod Element (axial + torsion)
+
+Two-node rod element: axial stiffness `EA/L` and torsional stiffness `GJ/L` along the
+element axis GA→GB, no bending or shear (#38; design note
+`30_future/designs/rod_element_crod.md`). The consumer is pin-ended struts such as
+engine-pylon braces, which were previously modelled as `CBAR` with `PA=PB=56`.
+
+**Format:**
+```
+CROD, EID, PID, GA, GB
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| EID | `eid` | int | Element ID (unique across `CBAR`, `CROD`, `CONROD`, `CBUSH`) | required |
+| PID | `pid` | int | Property ID (references `PROD`) | required |
+| GA | `ga` | int | End A grid ID | required |
+| GB | `gb` | int | End B grid ID (≠ GA) | required |
+
+No orientation vector: the element x-axis is GA→GB and the rod's response does not depend
+on the choice of local y/z (`assembly/elements.py` `rod_frame`). Mass is the consistent
+translational `(ρA + NSM)·L/6·[2 1; 1 2]` on each translation pair, with **no torsional or
+rotary inertia** (MSC / NASTRAN-95 rod convention; `04_modal_analysis.md`). GPWG counts
+`(ρA + NSM)·L` at the midpoint.
+
+Validation at parse time: GA, GB exist and differ; PID → `PROD` exists; the `PROD` MID →
+`MAT1` exists; the EID is not already used by another structural element. Coincident grids
+raise at assembly.
+
+**A grid connected only by rods has no rotational stiffness** apart from torsion about each
+rod's axis. sbeam has no AUTOSPC, so SPC the free rotations yourself (`SPC1, sid, 456,
+grid`), or the stiffness matrix is singular. A rod meeting a `CBAR`, `CBUSH` or rigid
+element at the grid needs nothing. The viewer's pre-solve check lists offending grids.
+
+Output: the f06 `FORCES IN ROD ELEMENTS` block prints `AXIAL FORCE` (tension positive)
+and `TORQUE` (right-handed about GA→GB), `STRESSES IN ROD ELEMENTS` prints `AXIAL STRESS
+= P/A` and `TORSIONAL STRESS = T·C/J` (`03_static_analysis.md`). Rods never appear in the
+`CBAR` force or stress tables.
+
+**Example:**
+```
+$ Pylon strut from wing grid 2 to engine grid 20
+CROD, 21, 3, 2, 20
+```
+
+---
+
+### CONROD — Rod Element with Inline Properties
+
+A `CROD` whose section and material are written on the element card instead of a `PROD`.
+Physically identical to `CROD`; stored in `bulk.conrods` and printed under its own
+`( C O N R O D )` f06 heading.
+
+**Format:**
+```
+CONROD, EID, GA, GB, MID, A, J, C, NSM
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| EID | `eid` | int | Element ID (unique across `CBAR`, `CROD`, `CONROD`, `CBUSH`) | required |
+| GA | `ga` | int | End A grid ID | required |
+| GB | `gb` | int | End B grid ID (≠ GA) | required |
+| MID | `mid` | int | Material ID (references MAT1) | required |
+| A | `A` | float | Cross-sectional area (> 0) | required |
+| J | `J` | float | Torsional constant (≥ 0) | `0.0` |
+| C | `c` | float | Torsional stress coefficient: `τ = T·C/J` | `0.0` |
+| NSM | `nsm` | float | Non-structural mass per unit length | `0.0` |
+
+All `CROD` rules apply (axis, mass, rod-only grids, output). Validation adds `A > 0`,
+`J ≥ 0` and MID → `MAT1`.
+
+**Example:**
+```
+$ Same strut as the CROD above, section inline
+CONROD, 22, 4, 20, 1, 5.0e-4, 1.0e-7, 5.0e-3
 ```
 
 ---
@@ -764,6 +899,12 @@ FORCE, SID, GID, CID, F, N1, N2, N3
 
 Applied force vector = `F × [N1, N2, N3]`. Multiple FORCE cards with the same SID are summed.
 
+**In a SOL 144 trim subcase (#6):** a `FORCE` set selected by `LOAD` is an applied structural
+load in the trim balance — body-fixed, basic-frame, not scaled by `q` (thrust at the
+engine-mount grid is the canonical use). It flows into `net_loads`, the closure, the
+monitor/section `applied` column and `maneuver_loads.bdf`. See `05c_sol144_maneuver.md`
+"Applied structural load in a trim" and charter §9/§10.
+
 **Example:**
 ```
 $ 1000 N in –Z at GID 6, global frame
@@ -797,6 +938,10 @@ MOMENT, SID, GID, CID, M, N1, N2, N3
 
 Applied moment vector = `M × [N1, N2, N3]`.
 
+**In a SOL 144 trim subcase (#6):** as for `FORCE`. Engine torque reaction is a `MOMENT`
+about `x` at the mount: `+Mx` (`N1 = 1`) for a propeller turning clockwise as seen from
+behind, `−Mx` for counter-clockwise — charter §10.
+
 **Example:**
 ```
 $ 200 N·m about +Z at GID 6
@@ -824,6 +969,9 @@ LOAD, SID, S, S1, L1, S2, L2, S3, L3, ...
 | L1, L2, … | (in `components`) | int | Load set ID for component load i (references FORCE, MOMENT, or GRAV SID) | required |
 
 `components` is a list of `(scale: float, load_sid: int)` pairs. Applied load = `S × Σᵢ(Sᵢ × Loadᵢ)`.
+
+In a SOL 144 **trim** subcase the combination may reference `FORCE`/`MOMENT` sets only: a
+`GRAV` component raises (gravity enters a trim through `URDD3`; #6).
 
 **Example:**
 ```
@@ -856,6 +1004,10 @@ GRAV, SID, CID, G, N1, N2, N3
 The gravity load vector is computed as `f_grav = M_global × a_field`, where `a_field` has `G × [N1, N2, N3]` at every translational DOF and zero at rotational DOFs. Both CBAR distributed mass and CONM2 point masses contribute naturally through the assembled consistent mass matrix.
 
 GRAV SIDs may appear as component loads in a `LOAD` card, mixed freely with `FORCE` and `MOMENT` SIDs. CID ≠ 0 raises a parse error in Phase 1–2.
+
+**Refused in a SOL 144 trim subcase (#6):** a `GRAV` selected directly or through the `LOAD`
+combination of a `TRIM` subcase raises — the load factor already carries gravity
+(`URDD3 = −n·g`, theory §7.3), and a `GRAV` beside it would double-count the weight.
 
 > **Reaction recovery:** SPC reactions are computed as
 > `R = K[spc, :] @ u − f_applied[spc]`. The `f_applied[spc]` term subtracts the
@@ -935,7 +1087,7 @@ AEROS  ACSID  RCSID  CREF  BREF  SREF  SYMXZ  SYMXY  [MACH]
 
 > **Full-span only:** sbeam does not support half-span / symmetry models. `SYMXZ`/`SYMXY` are
 > parsed so legacy decks load, but `build_aero_model` raises `ValueError` for any non-zero
-> value. Unfold a legacy half-span deck with `sbeam.aero.mirror.mirror_halfspan()`.
+> value. Unfold a legacy half-span deck with `sbeam_tools.common.mirror.mirror_halfspan()`.
 
 One AEROS card per model. A second card raises `ValueError("Duplicate AEROS card")`.
 CAERO1 cards without an AEROS card raise `ValueError("CAERO1 card(s) present but no AEROS card found")`.
@@ -1181,8 +1333,14 @@ AECORR  SID  METHOD  CAERO_EID  T1  T2  T3  T4  T5
 | CAERO_EID | `caero_eid` | int | EID of the CAERO1 this correction applies to | required |
 | T1–TN | `target` | list[float] | Target cp per box (row-major) | required |
 
-Reference normalwash: `w_ref = -ones(n)` (uniform unit incidence, same as
-`solve_rigid_cl` at `alpha=1`).
+Reference loading: **per incidence axis** (#52, `corrections.wt2_reference_cp`). Each
+CAERO1 whose boxes' dominant normal is `y` (a fin, a vertical body panel) is a β surface;
+every other surface is an α surface. A box's target is matched against the VLM loading at
+unit incidence on its own axis with the other axis's surfaces at zero (`w = −1` on that
+axis's boxes, `0` elsewhere). With no β surface this is the uniform `w_ref = -ones(n)`
+(same as `solve_rigid_cl` at `alpha=1`). Before #52 the uniform `-ones` was used on every
+deck, which sideslipped any fin in the reference and made the corrected tailplane
+port/starboard asymmetric at β = 0.
 
 **Examples:**
 ```
@@ -1514,8 +1672,10 @@ AESTAT, 101, PITCH
 
 ### AESURF — Aerodynamic control surface
 
-Defines a control surface by name, hinge-line coordinate system, and the AELIST of aero
-boxes that deflect with the surface.
+Defines a control surface by name, one or two hinge-line coordinate systems, and the
+AELIST(s) of aero boxes that deflect with the surface. One label drives both halves: the
+second pair `CID2`/`ALID2` is NASTRAN's mechanism for the opposite half of an
+antisymmetric aileron (#9; equivalent to ZAERO `AESURFZ … ANTISYM` on a full-span deck).
 
 **Format:**
 ```
@@ -1525,19 +1685,36 @@ AESURF  ID  LABEL  CID1  ALID1  CID2  ALID2  EFF
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | ID | int | — | Unique identifier |
-| LABEL | str | — | Control surface name (e.g. `AILERON`) |
-| CID1 | int | — | Coordinate system defining the hinge axis — the **y-axis** of this CORD2R is the hinge line (`integration.build_djx` takes `R[:, 1]`), matching the SPLINE2 spline-axis convention |
-| ALID1 | int | — | AELIST SID listing boxes on this surface |
-| CID2 | int | 0 | Optional second hinge CID (0 = unused) |
-| ALID2 | int | 0 | Optional second AELIST SID (0 = unused) |
-| EFF | float | 1.0 | Control-surface effectiveness factor |
+| LABEL | str | — | Control surface name (e.g. `AIL`, `RUD`, `ELEV`); the trim-variable label |
+| CID1 | int | — | Hinge coordinate system of the first half — the **y-axis** of this CORD2R is the hinge line (`aesurf_hinges` takes `R[:, 1]`), matching the SPLINE2 spline-axis convention. `0` = basic |
+| ALID1 | int | — | AELIST SID listing the first half's boxes |
+| CID2 | int | 0 | Hinge CID of the second half (0 = no second half) |
+| ALID2 | int | 0 | AELIST SID of the second half (0 = no second half) |
+| EFF | float | 1.0 | Control-surface effectiveness factor, applied to both halves |
 
-**Example:**
+**Sign (conventions charter §6):** positive deflection is a right-hand rotation about each
+half's own CID +y axis, i.e. lift-increasing (TE-down for a spanwise +y hinge). The
+deflection enters `D_jx` as `−(ĥ_i × n̂)·x̂·EFF` per box of half `i`; the hinge moment is
+`Σ_i Σ_{j∈ALID_i} [(r_j − o_i) × F_j]·ĥ_i` about each half's own origin and axis, summed and
+reported once per label.
+
+**Authoring rule for an aileron pair:** `CID1` = starboard half, `CID2` = port half, **both
+hinge +y pointing outboard** (starboard CID +y = +Y basic, port CID +y = −Y basic). Positive
+`AIL` is then starboard TE-down / port TE-up = roll toward port = `+CMX` in the basic frame
+and a negative `ROLL` label in a steady roll (textbook δa). Two single-half AESURF labels
+remain legal and give the identical loading (gate `tests/aero/test_aesurf_pair.py`); the
+pair is the documented form because one label is what a determined steady-roll trim needs.
+
+**Examples:**
 ```
-AESURF, 200, AILERON, 10, 50
+AESURF, 505, ELEV, 995, 3100                     $ one spanwise hinge for both tailplane halves
+AESURF, 601, AIL, 11, 301, 12, 302               $ aileron pair: CID 11 starboard, CID 12 port
+AESURF, 602, RUD, 13, 303                        $ rudder: CID 13 +y DOWN ⇒ positive = TE-port (+Fy)
 ```
 
-**Cross-reference:** ALID1 (and ALID2 if non-zero) must exist in AELIST.
+**Cross-reference (parse errors):** `ALID1` must exist in AELIST and `CID1` in CORD2R (or be
+0); `CID2` and `ALID2` are given together or not at all, and when given must exist likewise;
+no box may appear in both `ALID1` and `ALID2` of one surface.
 
 ---
 
@@ -1600,6 +1777,9 @@ TRIM, 11, 0.3, 1500.0, RHOREF, 2.377-3, PITCH, 0.0
   (it would collide with the reserved pseudo-label).
 - DOF-count diagnostic: warns if all labels are prescribed (nothing to solve) or if the
   system is over-determined and no TRIMOBJ card is present.
+- A `TRIM` subcase may also select `LOAD = sid` (applied structural load in the trim RHS,
+  #6): `FORCE`/`MOMENT` sets and `LOAD` combinations of them; `GRAV` raises. An `MLOADS`
+  subcase or a `DIVERG`-only subcase carrying `LOAD` raises (the load would be dropped).
 
 ---
 
@@ -1661,6 +1841,10 @@ blank DOF string after a GID raises `ValueError`. Each pair is appended to
 ```
 $ Support plunge and pitch at the reference grid 1
 SUPORT, 1, 35
+$ Surge, plunge and pitch free (URDD1 a trim label): the x-force balance is trimmed,
+$ so an applied thrust accelerates the aircraft and its pitch moment is taken about
+$ the CG; with SUPORT 35 the thrust x-component is reacted at the SPC instead (#6)
+SUPORT, 90, 135
 ```
 
 ---
@@ -1741,6 +1925,89 @@ TRIMCON, 31, CM, LE, 0.02
 
 ---
 
+### GUSTLF — Quasi-static gust load case (sbeam extension)
+
+Applies a precomputed FAR/CS 23.341 gust load factor to a referenced `TRIM`, and
+records the derivation that produced it. Selected by case control `GUSTLF = sid`.
+
+**Only `TRIMID`, `N` and `G` affect the solution** — the card prescribes
+`URDD3 = −N·G` on the referenced TRIM. Every other field is *provenance*: echoed to
+the f06 and never entering an equation.
+
+That split is deliberate. The gust calculation is dimensional (`U_de` is 50 ft/s,
+the schedule is keyed to altitude in feet) while sbeam's card fields are unit-neutral
+by charter (`09_conventions.md` §7) and the solver has no atmosphere model. The
+dimensional half therefore lives in **`sbeam_tools/cases/gust.py`**, which reads a
+deck and writes these cards; the solver receives only a dimensionless load factor.
+**sbeam does not compute, and cannot verify, the gust derivation** — the f06 block
+says so in the listing.
+
+**Format:**
+```
+GUSTLF, SID, TRIMID, N, G, UDE, VEAS, KG, MU
++,      A, ASRC, ALT
+```
+
+**Fields:**
+
+| Field | Variable | Type | Description | Default |
+|-------|----------|------|-------------|---------|
+| SID | `sid` | int | Set ID (unique; referenced by case control `GUSTLF =`) | required |
+| TRIMID | `trimid` | int | TRIM SID supplying Q, MACH and every prescribed label **except URDD3** | required |
+| N | `n` | float | Gust load factor. **Used** — prescribes `URDD3 = −N·G`. Negative for a down-gust that overcomes 1 g | required |
+| G | `g` | float | Gravitational acceleration, model units. **Used** | required |
+| UDE | `ude` | float | Derived gust velocity `U_de` (EAS). Recorded only | `0.0` (not recorded) |
+| VEAS | `veas` | float | Equivalent airspeed. Recorded only | `0.0` |
+| KG | `kg` | float | Gust alleviation factor `K_g`. Recorded only | `0.0` |
+| MU | `mu` | float | Mass ratio `μ`. Recorded only | `0.0` |
+| A | `a` | float | Airplane normal-force curve slope, per radian. Recorded only | `0.0` |
+| ASRC | `asrc` | str | Which derivative set `A` came from: `RIGID` or `RESTRAINED`. Recorded only | `RIGID` |
+| ALT | `alt` | float | Altitude. Recorded only. **Optional** — blank means not recorded | blank |
+
+**Why `ALT` is the one blank-able field.** The other provenance fields use `0.0` to
+mean "not recorded", which is unambiguous because a zero gust velocity, airspeed,
+alleviation factor, mass ratio or lift slope is physically meaningless. Sea level is
+a *real* condition, so `ALT` needs a distinct absence and is left blank instead.
+
+**The load factor** goes through `load_factor_to_urdd3` (`09_conventions.md` §5/§8),
+so it inherits the z-DOWN RCSID presumption — and the DEF-M20 guard, which warns when
+a negative `URDD3` meets an absent or z-up RCSID.
+
+**Pitch is not set by this card.** A steady pull-up carries
+`PITCH = (n−1)·g·c̄/(2V²)`, but a gust is an instantaneous plunge with no steady pitch
+rate: the referenced TRIM authors `PITCH` (normally `0.0`).
+
+**FAR/CS 23.333(c) `U_de` values**, for authoring by hand — the script applies these
+automatically, including the taper above 20,000 ft:
+
+| Design speed | ≤ 20,000 ft | 50,000 ft |
+|---|---|---|
+| V_C | 50 fps (15.24 m/s) | 25 fps (7.62 m/s) |
+| V_D | 25 fps (7.62 m/s) | 12.5 fps (3.81 m/s) |
+| V_B (commuter) | 66 fps (20.12 m/s) | 38 fps (11.58 m/s) |
+
+Cross-reference validation (post-parse): TRIMID must name an existing TRIM which must
+**not** prescribe `URDD3` (two sources for one quantity — cf. DEF-M4); an `AESTAT`
+must define `URDD3`; at most one GUSTLF may drive a given TRIM; `G > 0`; `N` finite;
+`ASRC ∈ {RIGID, RESTRAINED}`; recorded `UDE`/`VEAS`/`MU`/`A` ≥ 0; and recorded `KG`
+must satisfy `0 < KG < 0.88` — the strict range of `K_g = 0.88μ/(5.3+μ)`, and the one
+part of the derivation the parser can falsify without owning the arithmetic — else
+`ValueError`.
+
+**Example:**
+```
+$ +50 fps gust at V_C, sea level, generated by sbeam_tools/cases/gust.py
+GUSTLF, 9000, 9000, 5.425060, 9.810000, 15.24000, 86.00000, 0.621831, 12.76566
++,      5.333485, RIGID, 0.0
+$ ... and its down-gust partner (note N < 0: the gust overcomes 1 g)
+GUSTLF, 9001, 9001, -3.425060, 9.810000, 15.24000, 86.00000, 0.621831, 12.76566
++,      5.333485, RIGID, 0.0
+$ hand-authored: the load factor only, no derivation recorded
+GUSTLF, 700, 1, 2.5, 9.81
+```
+
+---
+
 ## Monitor Points (SOL 144)
 
 Integrated section-load output for the structures/loads handoff. See
@@ -1786,8 +2053,9 @@ MONPNT1  NAME  LABEL  AXES  COMP  CP  X  Y  Z
 ### MONPNT3 — Aero + inertia + reaction integrated load
 
 Same field layout as MONPNT1, but `COMP` must resolve to a `SET1`-type AECOMP; the
-load is summed over the structural grids (aero splined to grids + inertia + SPC/SUPORT
-reaction).
+load is summed over the structural grids (aero splined to grids + inertia + the subcase's
+applied `LOAD` set when one is selected (#6) + SPC/SUPORT reaction). Each contribution is
+its own column (`aero`, `inertia`, `applied`, `reaction`) under the total.
 
 **Format (single line):**
 ```
@@ -2115,6 +2383,40 @@ are the exception: they refer to **element local axes** (1 = axial, 4 = torsion,
 
 ---
 
+## Unsupported cards
+
+**A deck carrying a known-but-unsupported NASTRAN card is refused at parse** (#45,
+2026-10-24). Solving with such a card silently dropped would change the answer, so the
+parser counts every occurrence and raises one `ValueError` listing them all:
+
+```
+Unsupported bulk data card(s): CBEAM x1 (beam element), PLOAD1 x2 (distributed CBAR load).
+sbeam would solve with these cards dropped; remove them or model the content with
+supported cards (02_card_reference.md, 'Unsupported cards').
+```
+
+The CLI exits with `Parse error: ...` and writes no f06; the viewer shows the same text as
+the parse error. The authoritative set is `_UNSUPPORTED_CARDS` in
+`sbeam/parser/bdf_reader.py`; a gate (`tests/parser/test_unsupported_cards.py`) asserts
+that every entry below is in that set, that none has a handler, and that no card listed
+under "Supported cards at a glance" (top of this file) is refused.
+
+| Group | Refused cards | Model it instead with |
+|-------|---------------|-----------------------|
+| Distributed / element loads | `PLOAD`, `PLOAD1`, `PLOAD2`, `PLOAD4` | Equivalent nodal `FORCE`/`MOMENT` at the grids (PLOAD1 support is parked: `docs/30_future/02_parked.md`) |
+| Other static loads | `RFORCE`, `SLOAD`, `ACCEL`, `ACCEL1`, `TEMP`, `TEMPD`, `DEFORM`, `SPCD` | `GRAV` for a uniform body acceleration; `FORCE`/`MOMENT` otherwise |
+| Dynamic loads | `DLOAD`, `DAREA`, `TLOAD1`, `TLOAD2`, `RLOAD1`, `RLOAD2` | Transient maneuvers use the `MLOADS` family; no SOL 109/111 |
+| Elements / properties / materials | `CBEAM`, `PBEAM`, `PBEAML`, `PBARL`, `CTUBE`, `PTUBE`, `CELAS1`, `CELAS2`, `PELAS`, `CONM1`, `CQUAD4`, `CTRIA3`, `PSHELL`, `MAT2`, `MAT8` | `CBAR`/`PBAR` (explicit A, I1, I2, J), `CROD`/`PROD`, `CBUSH`/`PBUSH`, `CONM2`, `MAT1` |
+| Coordinate systems | `CORD1R`, `CORD1C`, `CORD1S`, `CORD2C`, `CORD2S` | `CORD2R` |
+| Constraints | `MPC`, `MPCADD`, `SPCADD`, `RBE1` | `RBE2`, `RBAR`, `RBE3`; one `SPC`/`SPC1` set per subcase |
+
+Keywords **not** in this table and not implemented (typos, output requests such as
+`PARAM` other than `WTMASS`, vendor extensions) are skipped with a `UserWarning` `Unknown BDF card 'X' —
+skipped`; the CLI prints each as `Parser warning: ...` on stderr and the viewer lists them
+under "Parser warnings" and in the pre-solve checks.
+
+---
+
 ## Constraints and Limitations
 
 | Card | Constraint |
@@ -2128,6 +2430,7 @@ are the exception: they refer to **element local axes** (1 = axial, 4 = torsion,
 | CBAR | Offsets (W1A/W2A) not supported |
 | CBAR | Orientation must be the X1–X3 vector form; the G0 (grid-ID) form is not supported |
 | CBAR | Pin-release digits (PA/PB) are in element local axes |
+| CROD / CONROD | A grid touched only by rods has free rotations (no bending stiffness; no AUTOSPC): SPC them, e.g. `SPC1, sid, 456, grid`, or the stiffness matrix is singular. Rod mass carries no torsional inertia |
 | CBUSH | CID must be `0` or blank |
 | CBUSH | Damping (PBUSH `B` keyword) deferred to Phase 3 |
 | CBUSH | Massless; orientation vector required when GA/GB are coincident |
@@ -2140,6 +2443,7 @@ are the exception: they refer to **element local axes** (1 = axial, 4 = torsion,
 | GRAV | CID must be `0` (global frame only) in Phase 1–2 |
 | MAT1 | Thermal fields (A, TREF, GE) parsed but ignored in Phase 1–2 |
 | PAERO1 | Phase A stub only; body interference support deferred |
+| PARAM | Only `WTMASS` is read: a value other than 1.0 raises `ValueError` (sbeam never scales mass, charter §7); every other `PARAM` is skipped with the unknown-card warning |
 | SPC | Enforced displacement D must be `0.0` in Phase 1–2 |
 | W2GJ | Data length must equal NSPAN×NCHORD for the referenced CAERO1 |
 | WKK | Data length must equal NSPAN×NCHORD for the referenced CAERO1 |

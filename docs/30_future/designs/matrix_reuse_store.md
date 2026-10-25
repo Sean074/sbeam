@@ -250,7 +250,7 @@ The **single seam** is `AeroCache.get`'s miss-handler: point it at `build_aero_m
 | `sbeam/solver/sol144.py` | **New** `DiskAeroCache(AeroCache)` overriding only the miss-handler. `store: Optional[MatrixStore]=None` on `run_sol144_trim` (`:753`) and `run_aeroelastic_static`; the `K_gg` load-or-build interception (`:110`); the `AeroCache`-vs-`DiskAeroCache` choice at `:847`. |
 | `sbeam/assembly/reduction.py` | **DONE — landed with Step 59 (2026-07-06).** `reduce_to_aset(...)` extracted from `sol144._build_qaa_aset` / `_compute_aset_data`; behaviour-preserving, verified bit-identical against the SOL 144 + SOL 103 suites. Both this design and the exporter now simply consume it. |
 | `sbeam/main.py` | **Phase 0:** `cc.sol == 144` dispatch branch looping subcases with one shared `AeroCache`. Add the `generate-matrices` subcommand and `--reuse-matrices`/`--save-matrices` flags. |
-| `sbeam/viewer/app.py` | **Phase 0:** SOL 144 run path with the shared cache (mirror `main.py`). |
+| `sbeam_tools/viewer/app.py` | **Phase 0:** SOL 144 run path with the shared cache (mirror `main.py`). |
 | `sbeam/results/f06_writer.py` | **Phase 0:** `Sol144TrimResult` `.f06`/text writer (none exists today). |
 | `sbeam/model/aero.py`, `sbeam/parser/bdf_reader.py`, `sbeam/model/bulk_data.py` | `MKAERO1` card (shared with `matrix_gaf_export` §3.2; `k = 0.0` enforced). |
 | `sbeam/parser/case_control.py` | **Phase 4 (optional):** parse `ASSIGN MATRIX=DIR` executive directive. |

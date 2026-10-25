@@ -12,7 +12,7 @@ NASTRAN convention (positive = nose-up incidence, like ANGLEA), so ``build_wg``
 applies the same negation when assembling the internal ``w_g``.
 """
 
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import numpy as np
 
@@ -21,7 +21,7 @@ from sbeam.aero.vlm import box_circulation, trefftz_box_drag
 from sbeam.model.bulk_data import BulkData
 from sbeam.assembly.coord_transform import get_transform
 from sbeam.types import FloatArray
-from sbeam.model.aero import W2gj, require_aeros
+from sbeam.model.aero import Aesurf, W2gj, require_aeros
 
 
 def build_skj(boxes: list[AeroBox]) -> FloatArray:
@@ -140,8 +140,42 @@ _RIGID_RATE_LABEL = {1: None, 2: "SIDES", 3: "ANGLEA",
                      4: "ROLL", 5: "PITCH", 6: "YAW"}
 
 
+#: Rate-label kinematics (design note ``lateral_cases_aileron_rudder.md`` §2.1,
+#: charter §5): the body-rate axis each reduced-rate label is defined about,
+#: and its reference length.  PITCH is nose-up = right-handed about basic +y;
+#: ROLL is starboard-wing-DOWN = right-handed about basic −x; YAW is
+#: nose-STARBOARD = right-handed about basic −z.
+_RATE_LABEL_AXIS: dict[str, tuple[tuple[float, float, float], str]] = {
+    "PITCH": ((0.0, 1.0, 0.0), "cref"),
+    "ROLL":  ((-1.0, 0.0, 0.0), "bref"),
+    "YAW":   ((0.0, 0.0, -1.0), "bref"),
+}
+
+
+def _rate_column(
+    boxes: list[AeroBox], axis: FloatArray, ref: FloatArray, two_over_l: float,
+) -> FloatArray:
+    """Normalwash per unit reduced rate about ``axis`` through ``ref``.
+
+    THE single derivation of the rate-column geometry (charter §8).  A rigid
+    body rate ``ω`` about unit ``axis`` gives the collocation point the body
+    velocity ``v = ω·(axis × (r − ref))``; the relative wind is ``−v``; with the
+    ``D_jx`` sign convention fixed by ANGLEA (``−n_z`` for ``U∞·[1, β, α]``) the
+    entry is ``+n̂·v/V``, and for the reduced rate ``ω·L/(2V)`` that is
+
+        D_jx[j] = (2/L) · n̂_j · (axis × (r_j − ref)).
+
+    Projected on the box normal, so a vertical fin sees no pitch rate and a
+    fin above the roll axis sees roll-rate sidewash (DEF-M15 sweep, #8).
+    """
+    out = np.zeros(len(boxes))
+    for box in boxes:
+        out[box.k] = two_over_l * float(np.dot(box.normal, np.cross(axis, box.colloc - ref)))
+    return out
+
+
 def rigid_rate_scales(bulk: BulkData, v_inf: float) -> dict[int, float]:
-    """Physical rigid rate (DOF 1-6) -> equivalent steady-trim-label value.
+    """Physical rigid rate (DOF 1-6, about basic +x/+y/+z) -> steady-trim-label value.
 
     The single owner of the quasi-steady rate nondimensionalization: the same
     factors convert a ``build_djx`` label column into a physical rate column
@@ -149,17 +183,27 @@ def rigid_rate_scales(bulk: BulkData, v_inf: float) -> dict[int, float]:
     increment the free-flight recovery feeds through ``D_jx`` (Step 63) — by
     construction the two paths then agree exactly.
 
-    See the sign discussion in ``build_dj_rigidrate``; DOF 3 carries the
-    ``α = θ − ḣ/V`` plunge-rate sign.
+    Every entry is fixed by the one kinematic identity in ``_rate_column``:
+    the label value whose normalwash equals that of a unit body rate about the
+    basic axis of the DOF.  Translations: the relative wind is minus the body
+    velocity, so a plunge rate ``ḣ`` is ``ANGLEA = −ḣ/V`` (``α = θ − ḣ/V``) and
+    a sway rate ``v`` is ``SIDES = −v/V`` (SIDES is the freestream's +y
+    fraction, charter §5).  Rotations: PITCH is defined about +y, so DOF 5 is
+    ``+c/2V``; ROLL and YAW are defined about −x and −z (starboard-down,
+    nose-starboard), so DOFs 4 and 6 are ``−b/2V``.  DOF 1 (surge) has no steady
+    label — a speed change is a dynamic-pressure change, not a normalwash.
+    DOFs 2/4/6 carried the opposite sign until #8 (DEF-M15); gate
+    ``tests/aero/test_rate_column_kinematics.py`` derives all five from
+    ``assembly/rigid_body.py`` independently of this table.
     """
     if v_inf <= 0.0:
         raise ValueError(
             f"rigid_rate_scales: v_inf must be positive; got {v_inf}")
     c_ref = require_aeros(bulk).cref
     b_ref = require_aeros(bulk).bref
-    return {1: 0.0, 2: 1.0 / v_inf, 3: -1.0 / v_inf,
-            4: b_ref / (2.0 * v_inf), 5: c_ref / (2.0 * v_inf),
-            6: b_ref / (2.0 * v_inf)}
+    return {1: 0.0, 2: -1.0 / v_inf, 3: -1.0 / v_inf,
+            4: -b_ref / (2.0 * v_inf), 5: c_ref / (2.0 * v_inf),
+            6: -b_ref / (2.0 * v_inf)}
 
 
 def build_dj_rigidrate(
@@ -178,20 +222,20 @@ def build_dj_rigidrate(
     exactly one place:
 
     ===== ==================== ==========================================
-    DOF   build_djx label      physical column
+    DOF   build_djx label      physical column (``rigid_rate_scales``)
     ===== ==================== ==========================================
     1 Tx  —                    0 (streamwise rate has no k=0 normalwash)
-    2 Ty  SIDES  (−n_y)        SIDES / V      (sideslip β = v/V)
+    2 Ty  SIDES  (−n_y)        −SIDES / V     (sway +y ⇒ relative wind −y)
     3 Tz  ANGLEA (−n_z)        −ANGLEA / V    (α = −ḣ/V, plunge-rate −1/V)
-    4 Rx  ROLL   (−2y/b_ref)   ROLL · b_ref/(2V)
-    5 Ry  PITCH  (−2(x−x_r)/c) PITCH · c_ref/(2V)
-    6 Rz  YAW    (−2(x−x_r)n_y/b) YAW · b_ref/(2V)
+    4 Rx  ROLL   (about −x)    −ROLL · b_ref/(2V)
+    5 Ry  PITCH  (about +y)    +PITCH · c_ref/(2V)
+    6 Rz  YAW    (about −z)    −YAW · b_ref/(2V)
     ===== ==================== ==========================================
 
-    The sign on DOF 3 is the one physical subtlety: a positive plunge *rate*
-    (``ḣ`` up) reduces the angle of attack (``α = θ − ḣ/V``), so its column is
-    the negative of the ANGLEA column scaled by 1/V.  Positive ``v`` (DOF 2) is
-    a positive sideslip velocity and keeps the SIDES sign.
+    Every column equals ``(1/V)·n̂_j·v_k(r_j)`` with ``v_k`` the unit rigid-body
+    velocity field of ``assembly/rigid_body.py`` about the RCSID origin — the
+    identity gate ``tests/aero/test_rate_column_kinematics.py`` checks this
+    without reference to the table above (#8, DEF-M15).
 
     Elastic-rate normalwash (the ``ḣ`` of the deformation itself) is zero at
     Level 1 — the G0-d unsteady-correction hook.
@@ -324,12 +368,15 @@ def build_djx(
     ----------------
     ANGLEA  -nz[j]
     SIDES   -ny[j]  (for vertical surfaces)
-    PITCH   -(2/cref)*(x_ctrl[j] - x_ref)
-    ROLL    -(2/bref)*y_ctrl[j]
-    YAW     -(2/bref)*(x_ctrl[j] - x_ref)*ny[j]  (yaw-rate sidewash on vertical
-            panels; vanishes on horizontal/z-normal panels.  The wing's
+    PITCH   (2/cref)·n̂·(+ŷ × (r − r_ref))   = −(2/cref)(x − x_ref) on a planar wing
+    ROLL    (2/bref)·n̂·(−x̂ × (r − r_ref))   = −(2/bref)(y − y_ref) on a planar wing
+    YAW     (2/bref)·n̂·(−ẑ × (r − r_ref))   = −(2/bref)(x − x_ref)·ny on a fin
+            All three are the one kinematic rule of ``_rate_column`` (#8): the
+            normalwash of a rigid rate about the RCSID origin ``r_ref``, projected
+            on the box normal, so a fin sees no pitch rate and a fin above the
+            roll axis sees roll-rate sidewash.  The wing's yaw-rate
             dynamic-pressure asymmetry is the force-side ``build_fjx_yaw``
-            companion — a normalwash column cannot represent it, Step 67a)
+            companion — a normalwash column cannot represent it (Step 67a).
     URDD1–6  0  (inertial — structural only, no direct aerodynamic effect)
     AESURF  -(h_hat × n[j])·x_hat * eff for boxes in the AELIST, 0 elsewhere,
             where h_hat is the hinge axis (cid1 y-axis); reduces to -nz[j]*eff
@@ -340,15 +387,15 @@ def build_djx(
     djx      = np.zeros((n_box, n_labels))
 
     aeros   = require_aeros(bulk)
-    c_ref   = aeros.cref
-    b_ref   = aeros.bref
+    ref_len = {"cref": aeros.cref, "bref": aeros.bref}
 
-    # Reference point for pitch rate: origin of RCSID in basic CID 0
+    # Reference point for the rate columns: origin of RCSID in basic CID 0 —
+    # the trim solver's moment reference and SUPORT point (sol144.py).
     if aeros.rcsid:
-        x_ref_pt, _ = get_transform(aeros.rcsid, bulk.cord2rs)
-        x_ref = float(x_ref_pt[0])
+        r_ref, _ = get_transform(aeros.rcsid, bulk.cord2rs)
+        r_ref = np.asarray(r_ref, dtype=float)
     else:
-        x_ref = 0.0
+        r_ref = np.zeros(3)
 
     # NASTRAN-box-ID → global-k reverse map (for AESURF/AELIST columns).  One
     # shared, collision-checked derivation (F1); callers holding an AeroModel
@@ -366,45 +413,59 @@ def build_djx(
             for box in boxes:
                 djx[box.k, col] = -box.normal[1]
 
-        elif ul == "PITCH":
-            for box in boxes:
-                x_ctrl = box.colloc[0]
-                djx[box.k, col] = -(2.0 / c_ref) * (x_ctrl - x_ref)
-
-        elif ul == "ROLL":
-            for box in boxes:
-                y_ctrl = box.colloc[1]
-                djx[box.k, col] = -(2.0 / b_ref) * y_ctrl
-
-        elif ul == "YAW":
-            # Yaw rate r about z induces lateral sidewash v_y = r*(x − x_ref),
-            # an effective local sideslip sensed only through the box y-normal
-            # (matching SIDES = −n_y).  Horizontal (z-normal) panels have n_y = 0
-            # and see no yaw-rate normalwash, so the column vanishes there;
-            # nondimensionalised by 2/bref like the other rate columns.
-            for box in boxes:
-                x_ctrl = box.colloc[0]
-                djx[box.k, col] = -(2.0 / b_ref) * (x_ctrl - x_ref) * box.normal[1]
+        elif ul in _RATE_LABEL_AXIS:
+            axis, length = _RATE_LABEL_AXIS[ul]
+            djx[:, col] = _rate_column(
+                boxes, np.asarray(axis), r_ref, 2.0 / ref_len[length])
 
         elif ul.startswith("URDD"):
             pass  # zero — no direct aerodynamic effect
 
         else:
-            # AESURF label: control deflection rotates the box about the hinge
-            # axis (cid1 y-axis).  The induced streamwise normalwash is
-            # −(h_hat × n)·x_hat; for a spanwise hinge (h_hat = global y) this is
-            # exactly −n_z, recovering the flat-plate flap result.
+            # AESURF label: control deflection rotates each half's boxes about
+            # that half's hinge axis (CID1 / CID2 y-axis).  The induced
+            # streamwise normalwash is −(h_hat × n)·x_hat; for a spanwise hinge
+            # (h_hat = global y) this is exactly −n_z, the flat-plate flap result.
+            # An antisymmetric aileron pair is one label with both hinge +y axes
+            # pointing outboard (#9, charter §6).
             for aesurf in bulk.aesurfs.values():
                 if aesurf.label.upper() != ul:
                     continue
-                eff    = aesurf.eff
-                _o, R  = get_transform(aesurf.cid1, bulk.cord2rs)
-                h_hat  = R[:, 1]                       # hinge axis = cid1 y-axis
-                aelist = bulk.aelists.get(aesurf.alid1)
-                if aelist is None:
-                    continue
-                for bid in aelist.elements:
-                    k = nastran_id_to_k.get(bid)
-                    if k is not None:
-                        djx[k, col] = -np.cross(h_hat, boxes[k].normal)[0] * eff
+                for half in aesurf_hinges(aesurf, bulk, nastran_id_to_k):
+                    for k in half.ks:
+                        djx[k, col] = -np.cross(half.h_hat, boxes[k].normal)[0] * aesurf.eff
     return djx
+
+
+class HingeHalf(NamedTuple):
+    """One hinge of an AESURF: origin and +y axis of its CID, and the global box
+    indices of its AELIST (charter §6, #9)."""
+    origin: FloatArray
+    h_hat: FloatArray
+    ks: list[int]
+
+
+def aesurf_hinges(
+    aesurf: Aesurf, bulk: BulkData, id_to_k: dict[int, int],
+) -> list[HingeHalf]:
+    """The hinge halves of an AESURF — THE single derivation of control-surface
+    geometry (charter §8), shared by ``build_djx`` and ``compute_hinge_moments``.
+
+    Half 1 is ``(CID1, ALID1)``; half 2 is ``(CID2, ALID2)`` when the card
+    carries them (NASTRAN's second pair, used for an antisymmetric aileron:
+    CID1 = starboard half, CID2 = port half, both +y outboard; design note
+    ``lateral_cases_aileron_rudder.md`` D1).  Each half rotates about its own
+    CID +y through its own CID origin.  Boxes absent from ``id_to_k`` are
+    skipped (the parser has already range-checked the AELIST).
+    """
+    halves: list[HingeHalf] = []
+    for cid, alid in ((aesurf.cid1, aesurf.alid1), (aesurf.cid2, aesurf.alid2)):
+        if not alid:
+            continue
+        aelist = bulk.aelists.get(alid)
+        if aelist is None:
+            continue
+        origin, R = get_transform(cid, bulk.cord2rs)
+        ks = [id_to_k[bid] for bid in aelist.elements if bid in id_to_k]
+        halves.append(HingeHalf(np.asarray(origin, dtype=float), np.asarray(R[:, 1], dtype=float), ks))
+    return halves

@@ -44,6 +44,25 @@ The local matrix is transformed to global coordinates via:
 
 Where `[T]` is the 12×12 transformation matrix built from the element direction cosines.
 
+### Rod element (CROD / CONROD)
+
+A rod (#38, `30_future/designs/rod_element_crod.md`) is the second line element. Its local
+12×12 stiffness is `EA/L` on the axial pair (DOFs 0, 6) and `GJ/L` on the torsional pair
+(DOFs 3, 9), zero elsewhere, so in the basic frame it is `(EA/L)·n nᵀ` on the translations
+and `(GJ/L)·n nᵀ` on the rotations with `n = (GB − GA)/L` (NASTRAN-95 `mis/krod.f`). There
+is no orientation vector; `rod_frame` picks a deterministic local y/z that the result does
+not depend on. `CROD` reads its section from a `PROD`, `CONROD` carries it inline;
+`rod_section` (`assembly/elements.py`) is the only code that tells them apart.
+
+### The line-element registry
+
+Every loop that used to read `bulk.cbars` now iterates `iter_line_elements(bulk)` and asks
+`line_element(elem, bulk)` for a `LineElement` record (EID, kind, GA, GB, L, released local
+`K`, transform `T`); `line_element_mass_global` / `line_element_mass_per_length` are the
+mass side (`assembly/elements.py`). The CBAR entry wraps `released_local_stiffness`,
+`transform_matrix` and `element_mass_global` unchanged, so a deck without rods assembles
+bit-identically. Only CBAR and CROD/CONROD are registered; CBUSH keeps its own path.
+
 ---
 
 ## Global Assembly
@@ -51,7 +70,7 @@ Where `[T]` is the 12×12 transformation matrix built from the element direction
 Global DOF index for grid `i` (0-based), local DOF `d` (0–5): `idx = 6*i + d`
 
 1. Initialise `K_global` as a `(6N × 6N)` zero matrix where N = number of grids.
-2. For each CBAR element: compute `[K_e_global]` and scatter into `K_global` at the DOF rows/columns corresponding to GA and GB.
+2. For each line element (CBAR, CROD, CONROD through `iter_line_elements`): compute `[K_e_global] = Tᵀ K_local T` and scatter into `K_global` at the DOF rows/columns corresponding to GA and GB.
 3. For each CONM2 mass (SOL 101 only relevant if inertia relief is needed — not in phase 1): no stiffness contribution.
 
 ---
@@ -62,6 +81,8 @@ Global DOF index for grid `i` (0-based), local DOF `d` (0–5): `idx = 6*i + d`
 2. For each FORCE card in the active load set: rotate the direction vector `[N1, N2, N3]` from the card's CID into global CID 0 (no-op if CID=0), then apply `F × n_global` to DOFs 0–2 of the referenced grid.
 3. For each MOMENT card: rotate the direction vector from CID into global, then apply `M × n_global` to DOFs 3–5 of the referenced grid.
 4. If a LOAD combination card is active, scale each component set and superpose.
+
+`FORCE`, `MOMENT`, `LOAD` and `GRAV` are the only load cards. Distributed and pressure loads (`PLOAD1`, `PLOAD4`, …) are refused at parse rather than dropped (#45, `02_card_reference.md` "Unsupported cards"); model them as equivalent nodal loads.
 
 ---
 
@@ -129,12 +150,29 @@ the model solved with the DOF free to follow its master and no reaction reported
 
 ## Pin Releases (PA, PB)
 
-Pin releases on a CBAR element free specified DOFs at end A (PA) or end B (PB) before the element stiffness contributes to global assembly.
+Pin releases on a CBAR element free specified DOFs at end A (PA) or end B (PB). A released
+DOF carries **no force**: it is removed from the element by **static condensation** (the
+Schur complement, i.e. Guyan reduction at element level, exact for statics), not by zeroing.
+Zeroing discards the coupling of the released DOF into the retained ones and leaves the
+element over-stiff (DEF-M17: a fixed–pinned element came out 4× too stiff). Design note:
+`docs/30_future/designs/cbar_pin_release_condensation.md`.
 
-**Implementation** (`apply_pin_releases(K_local, pa, pb)` in `assembly/stiffness.py`):
-- For each DOF code `d` in PA: zero row and column `d-1` (0-based) of the 12×12 local K.
-- For each DOF code `d` in PB: zero row and column `d-1+6` (0-based) of the 12×12 local K.
-- Pin releases are applied after `local_stiffness()` and before the coordinate transformation.
+**Implementation** (`released_local_stiffness(pbar, mat1, L, pa, pb)` → `(K', T)` and
+`condense_released_dofs(K, released)` in `assembly/stiffness.py`):
+- Released local indices: digit `d` in PA → `d-1`, in PB → `d+5` (`release_indices`).
+- One released DOF *i* at a time, in element local axes before the coordinate
+  transformation (the NASTRAN-95 `kbar.f` form, order-independent):
+  `K ← K − K[:,i]·K[i,:] / K[i,i]`, then zero row and column *i*. If
+  `|K[i,i]| ≤ 1e-12·max|diag K|` (e.g. I1 = 0 or J = 0) the row/column is only zeroed.
+- `T` is the transformation with `u_released = −K[i,r]·u_r / K[i,i]`, so `K' = TᵀKT`.
+  The consistent mass is condensed congruently with the same `T` (`M' = TᵀMT`,
+  `assembly/mass_matrix.py`; see `04_modal_analysis.md`), and any future fixed-end load
+  vector must be condensed as `f' = Tᵀf`.
+- The **same `K'`** is used for assembly and for every force-recovery path
+  (`_element_local_forces` in `solver/sol101.py`, serving SOL 101, SOL 144 and MLOADS).
+  Released rows of `K'` are zero, so the recovered force at a released DOF is **exactly
+  zero** by construction. A test asserts that nothing else in `sbeam/` builds the
+  unreleased CBAR matrices.
 
 **DOF code mapping (1-based):**
 
@@ -147,9 +185,19 @@ Pin releases on a CBAR element free specified DOFs at end A (PA) or end B (PB) b
 | 5 | 4, 10 | Bending moment (Ry) |
 | 6 | 5, 11 | Bending moment (Rz) |
 
-**Typical use:** PA=PB="456" releases torsion and both bending moments at both ends, making the element behave as a pure truss member (only transmits axial and transverse shear). When combined with SPC constraints that fix rotational DOFs at all free joints, the element provides exactly the truss stiffness matrix.
+**Typical use:** `PA=PB="56"` releases both bending rotations at both ends, making the
+element a **two-force member**: it transmits axial force (and torsion) only — once both end
+moments are released, no transverse shear can survive. Releasing a single bending rotation
+at one end (`PB=6`) gives a fixed–pinned member.
 
-**Note:** Released DOFs that are not otherwise constrained (by SPC or connected elements) will produce zero-stiffness rows in the global K, causing a singular matrix. Always SPC rotational DOFs at all free joints when using PA=PB="456" truss members.
+**Validation:** releasing the same translation or torsion digit (1–4) at **both** ends
+leaves an internal mechanism (the element cannot carry that load and its rigid mass in that
+direction is undefined), so the parser refuses it with a `ValueError` naming the element and
+digit. `PA=PB="456"` is therefore an error; use `"56"`. Rotations 5/6 at both ends are
+allowed.
+
+**Note:** a released grid DOF that no other element or SPC stiffens is a singular row of
+the global K. Constrain rotational DOFs at free joints of `PA=PB="56"` truss members.
 
 ---
 
@@ -186,23 +234,80 @@ the MONPNT3 integrators — depend on them staying in basic.
 For each element:
 1. Extract nodal displacements at GA and GB from `u_global`.
 2. Transform to local element coordinates: `u_local = [T] @ u_element`.
-3. Compute local end forces: `f_local = [k_e] @ u_local`.
-4. Report as: Axial (F1), Shear Y (F2), Shear Z (F3), Torque (M1), Bending Y (M2), Bending Z (M3) at ends A and B.
+3. Compute local end forces: `f_local = [k_e] @ u_local` (the forces the nodes exert on the
+   element).
+4. Convert to **+x-face internal resultants** with `bar_internal_resultants` (below).
+5. Report in the **NASTRAN/MSC layout** (`BarForce`, DEF-M18 #21): plane-1 and plane-2 bending
+   moments at ends A and B, plane-1 and plane-2 shears, axial force, torque.
+
+Plane 1 is the element x–y plane (bending about local z, PBAR `I1`); plane 2 is the x–z plane
+(bending about local y, PBAR `I2`). The plane moments carry the NASTRAN sign:
+
+```
+M1 = +Mz⁺      M2 = −My⁺      V1 = Vy⁺      V2 = Vz⁺      AXIAL = P (tension +)      TORQUE = T
+```
+
+(⁺ = +x-face internal resultant). Both plane moments are therefore **positive when they put
+the +y / +z fibres in compression**. Closed-form anchor: a cantilever with tip loads +Py, +Pz
+gives `M1(x) = Py·(L−x)` and `M2(x) = Pz·(L−x)`, both positive and decaying to zero at the tip;
+at a shared node `M1B(e) = M1A(e+1)`. The mapping is NASTRAN-95 `mis/sbar2.f`
+(`M1A = −FA(6)`, `M2A = +FA(5)`, `V1 = −FA(2)`, `FX = −FA(1)`, `M1B = M1A − V1·L`,
+`M2B = M2A − V2·L`), which MSC prints in the same layout. Gates G1–G3 and G5 are in
+`tests/solver/test_cbar_force_layout.py`.
 
 ### CBAR Stress at Recovery Points
 
-For each recovery point (C, D, E, F) on the PBAR:
+The nodal 12-vector `f_local = [k_e] @ u_local` is first converted to **internal resultants on
+the positive (+x) face** of the section by `bar_internal_resultants` (`solver/sol101.py`), the
+single place where the nodal-to-internal sign conversion happens (DEF-M21, #37), and from there
+to the plane moments above:
 
 ```
-sigma = P/A  +  Mz * y / I1  -  My * z / I2
+end A (x = 0):  P = -f[0]   Vy = -f[1]   Vz = -f[2]   T = -f[3]   My_A = -f[4]   Mz_A = -f[5]
+end B (x = L):  P = +f[6]   Vy = +f[7]   Vz = +f[8]   T = +f[9]   My_B = +f[10]  Mz_B = +f[11]
 ```
 
-Where y and z are the recovery point coordinates from the PBAR card. Torsional shear stress is not computed in phase 1.
+This is the section-cut / CBAR end-B sign of `09_conventions.md` §9 applied to both ends: at
+end B the nodal value already is the +x-face resultant; at end A it is the negated one. The
+stress output is the **NASTRAN/MSC layout** (`BarStress`, DEF-M18 #21). For each recovery point
+C, D, E, F on the PBAR, with (y, z) the point coordinates in the element frame, the
+**bending-only** stress is evaluated at both ends from the same plane moments the force table
+prints:
 
-**Axial sign convention:** The internal axial force P is taken from `f_local[6]` (Fx at end B,
-tension-positive). This value is the same at both ends A and B for a prismatic element with no
-intermediate axial loads. `f_local[0]` (Fx at end A) is the nodal reaction and has the opposite
-sign; it must not be used for stress recovery.
+```
+SAi = -M1A * y_i / I1  -  M2A * z_i / I2        SBi = -M1B * y_i / I1  -  M2B * z_i / I2
+AXIAL = P / A
+SA-MAX / SA-MIN = AXIAL + max / min (SA1..SA4)   (likewise SB-MAX / SB-MIN)
+```
+
+Tension is positive; I12 = 0. With `M1 = Mz⁺`, `M2 = −My⁺` this is `σ_b = −Mz·y/I1 + My·z/I2` on
+the +x-face resultants, so a +y tip load on a cantilever puts the +y fibres in compression at
+every station, and the same fibre at a shared node reads the same total stress from end B of one
+element and end A of the next (gate G3). This is NASTRAN-95 `sbar2.f` term by term
+(`K1 = −M1/I1`, `K2 = −M2/I2`, `SIG = K1·C1 + K2·C2`, `SIGAMX = SIGAX + AMAX1(SIG1A..SIG4A)`).
+All four points are always evaluated; a point left at (0, 0) contributes 0.0 bending and
+therefore bounds MAX/MIN, exactly as in NASTRAN. `M.S.-T`/`M.S.-C` are not computed (MAT1
+`ST`/`SC` are not parsed). Torsional shear stress is not computed.
+
+**Reading the table:** `SA1–4`/`SB1–4` are bending only — add `AXIAL` to get a fibre total, or
+read `SA-MAX`/`SA-MIN` directly. Before #21 sbeam's `SA/SB` columns were total stresses; an
+MSC-trained reader would have added the axial term twice.
+
+---
+
+### Rod Forces and Stresses (CROD / CONROD)
+
+Rods go through the same `f_local = K_local·T·u` product (`solver/element_recovery.py`
+`local_end_forces`) and the same `bar_internal_resultants` sign helper: `AXIAL = P = +f[6]`
+(tension positive) and `TORQUE = T = +f[9]` (right-handed about GA→GB), identical to the
+CBAR `AXIAL`/`TORQUE` columns. `RodForce(eid, axial, torque)`; `RodStress(eid, axial,
+torsional)` with `axial = P/A` and `torsional = T·C/J` (`C` from the PROD/CONROD; 0 when
+`J = 0` or `C = 0`, as NASTRAN-95 `srod1.f` sets `C/J = 0` for `J = 0`). In terms of the
+displacements this is `P = A·(E/L)·n·(u_B − u_A)` and `T = (GJ/L)·n·(θ_B − θ_A)`
+(`srod2.f`), gated term by term in `tests/solver/test_rod_recovery.py`. Rods never
+populate `bar_forces`/`bar_stresses`; they fill `rod_forces`/`rod_stresses` on
+`Sol101Result`, `Sol144Result`, `Sol144TrimResult`, and `rod_forces` on `ManeuverStep`.
+One function, `recover_line_elements`, serves SOL 101, both SOL 144 paths and MLOADS.
 
 ---
 
@@ -214,18 +319,51 @@ Output sections written to `results.f06`:
 2. **Applied Load Vector (OLOAD)** — echo of assembled load vector
 3. **Nodal Displacements** — GID, T1, T2, T3, R1, R2, R3 per subcase
 4. **SPC Reaction Forces** — GID, DOF, value per constrained DOF
-5. **CBAR Forces** — EID, end A forces/moments, end B forces/moments
-6. **CBAR Stresses** — multi-row per element: one row per defined recovery point (those with non-zero PBAR coordinates). First row includes EID and axial stress; subsequent rows continue with point label and stresses only.
+5. **CBAR Forces** — the NASTRAN/MSC `FORCES IN BAR ELEMENTS (CBAR)` block, one row per
+   element (DEF-M18 #21; values per "CBAR End Forces and Moments" above):
 
    ```
-         ELEMENT ID.    AXIAL          PT      SA(END-A)      SB(END-B)
-                  1   1.234567E+01     C    1.234567E+01   1.234567E+01
-                                       D   -1.234567E+01  -1.234567E+01
-                                       E    5.000000E+00   5.000000E+00
-                                       F   -5.000000E+00  -5.000000E+00
+          ELEMENT      BEND-MOMENT END-A         BEND-MOMENT END-B             - SHEAR -                 AXIAL
+              ID.        PLANE 1      PLANE 2      PLANE 1      PLANE 2      PLANE 1      PLANE 2        FORCE       TORQUE
+                1   1.000000E+04 2.000000E+04 9.000000E+03 1.800000E+04 1.000000E+03 2.000000E+03 5.000000E+03 0.000000E+00
    ```
 
-   Recovery points with zero (y, z) coordinates in the PBAR card are omitted.
+6. **CBAR Stresses** — the NASTRAN/MSC `STRESSES IN BAR ELEMENTS (CBAR)` block, **two rows per
+   element**: row 1 = EID, bending-only `SA1–SA4` at C, D, E, F, `AXIAL`, `SA-MAX`, `SA-MIN`;
+   row 2 = `SB1–SB4`, (blank), `SB-MAX`, `SB-MIN`. All four points print; a point left at
+   (0, 0) prints `0.000000E+00`. The `M.S.-T`/`M.S.-C` columns are reserved and blank.
+
+   ```
+          ELEMENT            SA1          SA2          SA3          SA4        AXIAL       SA-MAX       SA-MIN    M.S.-T
+              ID.            SB1          SB2          SB3          SB4       STRESS       SB-MAX       SB-MIN    M.S.-C
+                1  -5.692188E+06-1.897396E+06 5.692188E+06 1.897396E+06 5.000000E+04 5.742188E+06-5.642188E+06
+                   -5.122969E+06-1.707656E+06 5.122969E+06 1.707656E+06              5.172969E+06-5.072969E+06
+   ```
+
+   Both blocks are shared verbatim by SOL 144 (trim) and the MLOADS critical-sample f06.
+
+7. **Rod Forces** — only when the deck has rods (#38): the NASTRAN `FORCES IN ROD ELEMENTS`
+   block, one row per element, first `( C R O D )` then `( C O N R O D )`. Values per "Rod
+   Forces and Stresses" above (tension / right-hand torque positive).
+
+   ```
+          ELEMENT          AXIAL
+              ID.          FORCE       TORQUE
+                1   1.000000E+03 1.000000E+01
+   ```
+
+8. **Rod Stresses** — `STRESSES IN ROD ELEMENTS`, same split by card type. `AXIAL STRESS =
+   P/A`, `TORSIONAL STRESS = T·C/J`; the two `SAFETY MARGIN` columns are header-only blank
+   (no allowables are parsed), as the CBAR `M.S.` columns are.
+
+   ```
+          ELEMENT          AXIAL       SAFETY    TORSIONAL       SAFETY
+              ID.         STRESS       MARGIN       STRESS       MARGIN
+                1   1.000000E+07              1.000000E+06
+   ```
+
+   The rod blocks follow the CBAR blocks under the same `FORCE`/`STRESS` requests in SOL
+   101, SOL 144 (trim and static) and the MLOADS critical-sample f06 (forces only there).
 
 ---
 
@@ -331,6 +469,15 @@ def assemble_load_vector(bulk: BulkData, load_sid: int) -> np.ndarray:
 def recover_bar_forces(cbar, grids, pbars, mat1s,
                        displacements, grid_index) -> BarForce:
     ...
+
+# solver/element_recovery.py — the one loop over every line element (#38)
+def recover_line_elements(bulk, displacements, grid_index,
+                          stresses=True) -> ElementResults:
+    ...   # .bar_forces, .bar_stresses, .rod_forces, .rod_stresses
+
+# assembly/elements.py — the line-element registry
+def iter_line_elements(bulk) -> Iterator[Cbar | Crod | Conrod]: ...
+def line_element(elem, bulk) -> LineElement: ...   # K_local, T, L, ga, gb
 ```
 
 `run_sol101` accepts `subcase.load_sid = None` as a valid zero-load subcase;

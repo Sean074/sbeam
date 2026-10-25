@@ -22,6 +22,16 @@ class Pbar:
 
 
 @dataclass
+class Prod:
+    pid: int
+    mid: int
+    A: float          # Cross-sectional area
+    J: float = 0.0    # Torsional constant
+    c: float = 0.0    # Torsional stress coefficient: tau = T * C / J
+    nsm: float = 0.0  # Non-structural mass per unit length
+
+
+@dataclass
 class Pbush:
     pid: int
     k1: float = 0.0  # Translational stiffness along local x

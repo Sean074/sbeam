@@ -257,11 +257,61 @@ The two top-level functions serve distinct use cases:
 
 ## Resolved defects (documentation / model)
 
+- **#46 (Tier S, 2026-10-24)** — No path from the README to a first plotted result; new `20_theory/03_first_analysis_tutorial.md` (hand-typed cantilever deck, CLI run, f06 read against PL³/3EI, PL and Mc/I, plot in viewer and via the API), linked from the README above the guide index; gate `tests/docs/test_first_analysis_tutorial.py` runs the page's deck and script and asserts its quoted numbers and links. README `PLOAD1` text and supported-card table brought up to date on the way.
+- **#47 (Tier S, 2026-10-24)** — No documentation of calling sbeam from Python although sloads' round-trip gate already depended on `parse_bdf` / `run_sol101` / `compute_gpwg`; new `10_standard/11_python_api.md` names the public entry points per layer, the result fields, the SOL 144 build-once pattern and the public-vs-internal rule; gate `tests/docs/test_python_api_guide.py` imports every listed name, cross-checks the CLI's imports and runs both examples.
+- **#34 (Tier M, 2026-10-25)** — Viewer relocated `sbeam/viewer/` → `sbeam_tools/viewer/` (import paths only), `sbeam-view` entry point (`sbeam_tools/viewer/launch.py`), import-boundary gate exclusion removed so it covers all of `sbeam/`; unit-neutrality gate keeps scanning the viewer.
+- **#54 (Tier S, 2026-10-25)** — CI red on `release/0.3.0` for 13 pushes (pinned pyright, 8 errors), so pytest never ran in CI, and the 3.9 job failed at setup (`ubuntu-latest` → 26.04 has no 3.9; runner pinned to `ubuntu-24.04`); errors fixed, flagship body warning gate scoped to UserWarning, `08_release_process.md` §2a now makes a red run a blocker.
+- **#39 / DEF-M22 (Tier S, 2026-10-25)** — `PARAM,WTMASS` ≠ 1.0 was skipped with a warning, so a weight-unit deck ran with mass and GRAV wrong by g; now refused at parse (`_handle_param`, PR #40), other `PARAM`s keep the unknown-card warning; gate `tests/parser/test_param_wtmass.py`.
+- **#45 (Tier M, 2026-10-24)** — `PLOAD1` and every other known-but-unsupported NASTRAN card now refuse the deck at parse with one counted `ValueError` (`_UNSUPPORTED_CARDS`, `bdf_reader.py`) instead of being dropped behind an uncollected `UserWarning`; the CLI prints remaining unknown-card warnings; viewer check 3 reports unrecognised cards only; gate `tests/parser/test_unsupported_cards.py`.
+
+### Aero-correction ingestion moved to sbeam_tools (Tier M, issue #32) ✅ COMPLETE (2026-09-05)
+
+`sbeam/aero/section_data.py` → `sbeam_tools/corrections/`, taking `split_total_rows` /
+`parse_body_targets` out of `body_correction.py` with it; `mirror.py` →
+`sbeam_tools/common/`. Removed an undeclared charter §7 exception (six deg↔rad conversion
+sites, degrees-based public API) instead of declaring it, and left `sbeam/` free of pandas
+outside the viewer — now asserted by the import gate. The correction solvers stayed: the
+line is that ingesting external dimensional data is tooling, while serialising a computed
+result (`cards_to_bdf`, `load_export`) is not.
+
+
+### sbeam_tools/ package split (Tier M, issue #33) ✅ COMPLETE (2026-09-05)
+
+The pre/post toolchain became a sibling package `sbeam_tools/{common,cases,report}`;
+`scripts/` retired, gust generator migrated (output byte-identical, S-GUST gates unchanged
+but for an import line), `sbeam-cases` console command added. Fixed two defects the
+architecture audit surfaced: the toolchain was excluded from the wheel (`include =
+["sbeam*"]`), and `streamlit`/`plotly` were hard dependencies of every install — now the
+`viewer` extra. Boundary enforced by `tests/tools/test_import_boundary.py`; `sbeam/viewer/`
+is a declared exception until #34 relocates it.
+
+
 ### Process migration to GitHub milestones/issues (Tier S, process) ✅ COMPLETE (2026-09-05)
 
 Backlog migrated to GitHub issues #1–#28 under milestones v0.3.0–v1.0.0; release-branch
 model + sloads-review best practices recorded in `08_release_process.md` §§2–2a; issue
 numbers replace step numbers for new work (Step 1–68 references stand).
+
+### Loads process defined and re-sequenced to v0.7.0 (Tier S, process) ✅ COMPLETE (2026-09-05)
+
+The end-to-end loads process was written down for the first time
+(`docs/30_future/loads_process.md`, five stages from design-case matrix to the stress
+delivery package) and the exercise found five gaps in issues about to be implemented: the
+delivery package was unspecified, downselect had been conflated with enveloping, units had
+no route to stress, the f06 named a regulation the solver cannot know is true, and #2/#31
+were mis-prioritised (both sit *under* the stress hand-off once the LRA is defined as
+`MONPNT3` monitor points, not beside it). #35 (`sbeam-critic` downselect) and #36 (LRA
+delivery package) filed; the V-n design note written
+(`docs/30_future/designs/vn_matrix_23337.md`) with certification-basis selection across
+FAR/CS-23 and -25.
+
+**Re-sequenced:** the process is too large for v0.3.0, whose aim is a **mature solver**.
+New milestone **v0.7.0** takes #4/#5/#35/#36, landing after the dynamic-gust work (#16,
+v0.6.0) so the toolchain is built once against the complete set of case families rather
+than retrofitted twice. Mission statement updated in `CLAUDE.md` and `00_backlog.md`
+(solver first, process second; scope broadened to Part 25). #11 retargeted to the v0.3.0
+*solver*; #31 reframed as solver output maturity and #29 confirmed as solver trim posing,
+both staying in v0.3.0.
 
 ### AJJ bit-for-bit test gates hardware-dependent (Tier S, v0.2.0 CI) ✅ COMPLETE (2026-09-05)
 

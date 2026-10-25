@@ -89,7 +89,7 @@ def test_cbar_loads_scale_linearly():
     r1, _, _ = _run(1.0)
     r25, _, _ = _run(2.5)
     # Pick the dominant CBAR force component across all bars to avoid near-zero ratios.
-    comps = ("axial", "shear1", "shear2", "torque", "bm1_a", "bm2_a", "bm1_b", "bm2_b")
+    comps = ("m1_a", "m2_a", "m1_b", "m2_b", "v1", "v2", "axial", "torque")
     eid, comp, mag = max(
         ((e, c, abs(getattr(r1.bar_forces[e], c))) for e in r1.bar_forces for c in comps),
         key=lambda t: t[2],

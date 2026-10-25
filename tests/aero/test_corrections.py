@@ -9,6 +9,8 @@ Covers:
   - build_aero_model: WKK correction wired end-to-end
   - WT1 removal (DEF-R7): an ``AECORR METHOD=WT1`` card is rejected at read time
   - WKK per-surface binding (DEF-M8b) on a two-surface deck
+  - WT2 per-axis reference (#52): a fin no longer makes the corrected tailplane
+    asymmetric at beta = 0; decks without a vertical surface are unchanged
 """
 
 
@@ -20,7 +22,9 @@ from sbeam.model.aero import Caero1, Paero1, Wkk, Aecorr
 from sbeam.model.bulk_data import BulkData
 from sbeam.aero.panel import mesh_caero1
 from sbeam.aero.vlm import build_ajj, solve_rigid_cl
-from sbeam.aero.corrections import apply_wkk, apply_wt2
+from pathlib import Path
+
+from sbeam.aero.corrections import apply_wkk, apply_wt2, wt2_reference_cp
 from sbeam.aero.aero_model import build_aero_model
 
 # ---------------------------------------------------------------------------
@@ -428,3 +432,66 @@ class TestWkkSurfaceBinding:
                                    b.bound_b[2] - b.bound_a[2]) for b in model.boxes]
             ))[:, None],
             rtol=1e-10)
+
+
+# ---------------------------------------------------------------------------
+# WT2 per-axis reference (#52)
+# ---------------------------------------------------------------------------
+
+_SAMPLE = Path(__file__).parent.parent.parent / "sample"
+
+
+class TestWt2PerAxisReference:
+    """The WT2 ratio is calibrated per incidence axis, never by sideslipping a fin.
+
+    Before #52 the reference was a normalwash of -1 on EVERY box.  On the flagship's
+    vertical fin that is a sideslip; the fin's side load induced an antisymmetric
+    normalwash on the HTP, so the corrected HTP at alpha = 3 deg, beta = 0 carried 55 %
+    more load on the port side than the starboard (strip sums 7.70 vs 4.98).
+    """
+
+    @pytest.mark.parametrize("deck", ["cessna210_flagship_trim.bdf",
+                                      "cessna210_flagship_body.bdf"])
+    def test_corrected_loading_is_symmetric_at_zero_sideslip(self, deck):
+        from sbeam.assembly.load_vector import build_grid_index
+        from sbeam.parser.bdf_reader import parse_bdf
+
+        _cc, bulk = parse_bdf(str(_SAMPLE / deck))
+        assert bulk.aecorrs, "deck must carry WT2 cards for this gate to mean anything"
+        aero = build_aero_model(bulk, grid_index=build_grid_index(bulk))
+        eid = np.array([b.caero_eid for b in aero.boxes])
+        isp = np.array([b.i_span for b in aero.boxes])
+        ich = np.array([b.j_chord for b in aero.boxes])
+        nz = np.array([b.normal[2] for b in aero.boxes])
+        cp = aero.ajj_inv_corr @ (-np.radians(3.0) * nz + aero.wg)
+
+        # Port/starboard partners share (i_span, i_chord): wing 1000/2000, HTP 3000/4000.
+        for stbd, port in ((1000, 2000), (3000, 4000)):
+            for s, c in zip(isp[eid == stbd], ich[eid == stbd]):
+                a = cp[(eid == stbd) & (isp == s) & (ich == c)]
+                b = cp[(eid == port) & (isp == s) & (ich == c)]
+                assert a == pytest.approx(b, abs=1e-10), (
+                    f"CAERO {stbd}/{port} box ({s},{c}) asymmetric at beta = 0")
+        assert abs(cp[eid == 5000].sum()) < 1e-10, "fin loaded at beta = 0"
+
+    def test_no_vertical_surface_reference_is_the_uniform_one(self):
+        """Invariant: with no y-dominant surface the per-axis rule IS -ones, exactly."""
+        boxes = _rect_wing(4, 3)
+        _ajj, ajj_inv = _ajj_and_inv(boxes)
+        np.testing.assert_array_equal(wt2_reference_cp(boxes, ajj_inv),
+                                      ajj_inv @ -np.ones(len(boxes)))
+
+    def test_vertical_surface_is_calibrated_in_beta(self):
+        """A y-normal surface takes its reference from w_beta, the wing from w_alpha."""
+        wing = _rect_wing(4, 3)
+        fin = mesh_caero1(Caero1(
+            eid=2, pid=1, cp=0, nspan=3, nchord=3, lspan=0, lchord=0, igid=0,
+            p1=(3.0, 0.0, 0.2), x12=1.0, p4=(3.0, 0.0, 1.7), x43=1.0,
+        ), PAERO, NO_AEFACTS, NO_CORD2RS, start_k=len(wing))
+        boxes = wing + fin
+        _ajj, ajj_inv = _ajj_and_inv(boxes)
+        is_fin = np.array([b.caero_eid == 2 for b in boxes])
+        ref = wt2_reference_cp(boxes, ajj_inv)
+        np.testing.assert_allclose(ref[~is_fin], (ajj_inv @ np.where(is_fin, 0.0, -1.0))[~is_fin])
+        np.testing.assert_allclose(ref[is_fin], (ajj_inv @ np.where(is_fin, -1.0, 0.0))[is_fin])
+

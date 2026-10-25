@@ -1,12 +1,14 @@
 import os
+import math
 import warnings
+from collections import Counter
 from typing import Optional
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.coordinate_system import Cord2r
 from sbeam.model.grid import Grid
-from sbeam.model.element import Cbar, Plotel, Rbe3, Rbe2, Cbush, Rbar
-from sbeam.model.property import Pbar, Pbush
+from sbeam.model.element import Cbar, Conrod, Crod, Plotel, Rbe3, Rbe2, Cbush, Rbar
+from sbeam.model.property import Pbar, Pbush, Prod
 from sbeam.model.material import Mat1
 from sbeam.model.mass import Conm2, Massset
 from sbeam.model.load import Force, Moment, Load, Grav, Eigrl
@@ -16,12 +18,46 @@ from sbeam.model.aero import (
     Spline2, Attach, Spline0, Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
     Aecomp, Monpnt1, Monpnt3, Monsect,
 )
+from sbeam.model.gust import Gustlf, KG_MAX
 from sbeam.model.maneuver import Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads
 from sbeam.parser.bdf_field import parse_real
 from sbeam.types import StrPath
 from sbeam.parser.case_control import CaseControl, parse_case_control
 
 _IGNORED_KEYWORDS = frozenset({"BEGIN", "BEGINBULK", "ENDDATA"})
+
+#: NASTRAN bulk cards sbeam recognises but does not implement (issue #45).  A deck
+#: carrying any of them is **refused** at parse: solving with the card silently dropped
+#: would change the answer (missing loads, elements, constraints or frames).  The value
+#: is what the deck would lose.  Keywords not listed here and not handled below are
+#: skipped with a ``UserWarning`` (typos, output requests, vendor extensions).
+#: Field reference: ``docs/10_standard/02_card_reference.md`` "Unsupported cards".
+_UNSUPPORTED_CARDS: dict[str, str] = {
+    # distributed / element loads
+    "PLOAD": "pressure load", "PLOAD1": "distributed CBAR load",
+    "PLOAD2": "pressure load", "PLOAD4": "pressure load",
+    # other static loads
+    "RFORCE": "rotational inertia load", "SLOAD": "scalar load",
+    "ACCEL": "acceleration load", "ACCEL1": "acceleration load",
+    "TEMP": "thermal load", "TEMPD": "thermal load", "DEFORM": "enforced deformation",
+    "SPCD": "enforced displacement",
+    # dynamic loads
+    "DLOAD": "dynamic load", "DAREA": "dynamic load scale",
+    "TLOAD1": "transient load", "TLOAD2": "transient load",
+    "RLOAD1": "frequency-response load", "RLOAD2": "frequency-response load",
+    # elements / properties / materials
+    "CBEAM": "beam element", "PBEAM": "beam property", "PBEAML": "beam property",
+    "PBARL": "bar property by shape", "CTUBE": "tube element", "PTUBE": "tube property",
+    "CELAS1": "spring element", "CELAS2": "spring element", "PELAS": "spring property",
+    "CONM1": "mass element", "CQUAD4": "shell element", "CTRIA3": "shell element",
+    "PSHELL": "shell property", "MAT2": "anisotropic material", "MAT8": "orthotropic material",
+    # coordinate systems
+    "CORD1R": "coordinate system", "CORD1C": "coordinate system", "CORD1S": "coordinate system",
+    "CORD2C": "coordinate system", "CORD2S": "coordinate system",
+    # constraints
+    "MPC": "multipoint constraint", "MPCADD": "constraint set", "SPCADD": "constraint set",
+    "RBE1": "rigid element",
+}
 
 
 def _split_free_field(line: str) -> list[str]:
@@ -127,7 +163,7 @@ def _handle_grid(fields: list[str], bulk: BulkData) -> None:
 
 def _handle_pbar(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -> None:
     pid = _to_int(fields[1])
-    if pid in bulk.pbars:
+    if pid in bulk.pbars or pid in bulk.prods:
         raise ValueError(f"Duplicate PID {pid}")
     mid = _to_int(fields[2])
     A   = _to_float(fields[3])
@@ -162,6 +198,74 @@ def _handle_mat1(fields: list[str], bulk: BulkData) -> None:
     bulk.mat1s[mid] = Mat1(mid=mid, E=E, G=G, nu=nu, rho=rho)
 
 
+def _check_unique_eid(bulk: BulkData, card: str, eid: int) -> None:
+    """Element IDs share one space across the structural element cards (#38 D7)."""
+    for name, coll in (("CBAR", bulk.cbars), ("CROD", bulk.crods),
+                       ("CONROD", bulk.conrods), ("CBUSH", bulk.cbushs)):
+        if eid in coll:
+            raise ValueError(f"{card} {eid}: duplicate element ID (already defined by {name} {eid})")
+
+
+def _check_rod_grids(card: str, eid: int, ga: int, gb: int, bulk: BulkData) -> None:
+    if ga not in bulk.grids:
+        raise ValueError(f"{card} {eid}: grid GA={ga} not found")
+    if gb not in bulk.grids:
+        raise ValueError(f"{card} {eid}: grid GB={gb} not found")
+    if ga == gb:
+        raise ValueError(f"{card} {eid}: GA and GB must be different grids")
+
+
+def _check_rod_section(card: str, ident: int, A: float, J: float) -> None:
+    if A <= 0.0:
+        raise ValueError(f"{card} {ident}: A must be positive (got {A})")
+    if J < 0.0:
+        raise ValueError(f"{card} {ident}: J must be non-negative (got {J})")
+
+
+def _handle_prod(fields: list[str], bulk: BulkData) -> None:
+    pid = _to_int(fields[1])
+    if pid in bulk.prods or pid in bulk.pbars:
+        raise ValueError(f"Duplicate PID {pid}")
+    mid = _to_int(fields[2])
+    A   = _to_float(fields[3])
+    J   = _to_float(fields[4]) if len(fields) > 4 else 0.0
+    c   = _to_float(fields[5]) if len(fields) > 5 else 0.0
+    nsm = _to_float(fields[6]) if len(fields) > 6 else 0.0
+    _check_rod_section("PROD", pid, A, J)
+    bulk.prods[pid] = Prod(pid=pid, mid=mid, A=A, J=J, c=c, nsm=nsm)
+
+
+def _handle_crod(fields: list[str], bulk: BulkData) -> None:
+    eid = _to_int(fields[1])
+    pid = _to_int(fields[2])
+    ga  = _to_int(fields[3])
+    gb  = _to_int(fields[4])
+    _check_unique_eid(bulk, "CROD", eid)
+    _check_rod_grids("CROD", eid, ga, gb, bulk)
+    if pid not in bulk.prods:
+        raise ValueError(f"CROD {eid}: property PID={pid} not found (PROD)")
+    if bulk.prods[pid].mid not in bulk.mat1s:
+        raise ValueError(f"CROD {eid}: PROD {pid} material MID={bulk.prods[pid].mid} not found")
+    bulk.crods[eid] = Crod(eid=eid, pid=pid, ga=ga, gb=gb)
+
+
+def _handle_conrod(fields: list[str], bulk: BulkData) -> None:
+    eid = _to_int(fields[1])
+    ga  = _to_int(fields[2])
+    gb  = _to_int(fields[3])
+    mid = _to_int(fields[4])
+    A   = _to_float(fields[5])
+    J   = _to_float(fields[6]) if len(fields) > 6 else 0.0
+    c   = _to_float(fields[7]) if len(fields) > 7 else 0.0
+    nsm = _to_float(fields[8]) if len(fields) > 8 else 0.0
+    _check_unique_eid(bulk, "CONROD", eid)
+    _check_rod_grids("CONROD", eid, ga, gb, bulk)
+    if mid not in bulk.mat1s:
+        raise ValueError(f"CONROD {eid}: material MID={mid} not found")
+    _check_rod_section("CONROD", eid, A, J)
+    bulk.conrods[eid] = Conrod(eid=eid, ga=ga, gb=gb, mid=mid, A=A, J=J, c=c, nsm=nsm)
+
+
 def _handle_cbar(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -> None:
     eid  = _to_int(fields[1])
     pid  = _to_int(fields[2])
@@ -174,12 +278,26 @@ def _handle_cbar(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -
     pa   = cont[1] if cont is not None and len(cont) > 1 else ""
     pb   = cont[2] if cont is not None and len(cont) > 2 else ""
 
+    _check_unique_eid(bulk, "CBAR", eid)
     if ga not in bulk.grids:
         raise ValueError(f"CBAR {eid}: grid GA={ga} not found")
     if gb not in bulk.grids:
         raise ValueError(f"CBAR {eid}: grid GB={gb} not found")
     if pid not in bulk.pbars:
         raise ValueError(f"CBAR {eid}: property PID={pid} not found")
+    if pa:
+        _validate_dof(pa, f"CBAR {eid} PA")
+    if pb:
+        _validate_dof(pb, f"CBAR {eid} PB")
+    # Releasing the same translation or torsion at both ends leaves an internal
+    # mechanism (designs/cbar_pin_release_condensation.md D5).
+    for d in "1234":
+        if d in pa and d in pb:
+            raise ValueError(
+                f"CBAR {eid}: DOF {d} released at both ends (PA={pa}, PB={pb}) leaves "
+                f"an internal mechanism; release only bending rotations (e.g. PA=PB=56) "
+                f"for a two-force member"
+            )
     bulk.cbars[eid] = Cbar(eid=eid, pid=pid, ga=ga, gb=gb,
                            x1=x1, x2=x2, x3=x3, offt=offt, pa=pa, pb=pb)
 
@@ -1137,6 +1255,67 @@ def _handle_mloads(fields: list[str], bulk: BulkData) -> None:
     )
 
 
+def _handle_gustlf(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
+    """GUSTLF — quasi-static gust load-factor case (FAR/CS 23.341).
+
+    SID TRIMID N G [UDE] [VEAS] [KG] [MU] / [A] [ASRC] [ALT]
+
+    Only TRIMID, N and G affect the solution (``URDD3 = -N*G`` on the referenced
+    TRIM); every other field is provenance recorded by
+    ``sbeam_tools/cases/gust.py`` and echoed to the f06.  The card carries no
+    dimensional semantics sbeam acts on — see ``model/gust.py``.
+    """
+    vals = list(fields[1:])
+    for cont in conts:
+        vals += list(cont[1:])
+
+    def _opt_float(idx: int) -> float:
+        return _to_float(vals[idx]) if len(vals) > idx and vals[idx].strip() else 0.0
+
+    if len(vals) < 4 or not all(v.strip() for v in vals[:4]):
+        raise ValueError("GUSTLF: SID, TRIMID, N and G are required")
+
+    sid    = _to_int(vals[0])
+    trimid = _to_int(vals[1])
+    n      = _to_float(vals[2])
+    g      = _to_float(vals[3])
+    ude    = _opt_float(4)
+    veas   = _opt_float(5)
+    kg     = _opt_float(6)
+    mu     = _opt_float(7)
+    a      = _opt_float(8)
+    asrc   = vals[9].strip().upper() if len(vals) > 9 and vals[9].strip() else "RIGID"
+    # ALT is Optional, unlike the other provenance fields: sea level is a real
+    # condition, so 0.0 cannot double as "not recorded" here (see model/gust.py).
+    alt    = _to_float_or_none(vals[10]) if len(vals) > 10 else None
+
+    if sid in bulk.gustlfs:
+        raise ValueError(f"Duplicate GUSTLF SID {sid}")
+    if not math.isfinite(n):
+        raise ValueError(f"GUSTLF {sid}: N must be finite; got {n}")
+    if g <= 0.0:
+        raise ValueError(f"GUSTLF {sid}: G must be > 0; got {g}")
+    if asrc not in ("RIGID", "RESTRAINED"):
+        raise ValueError(
+            f"GUSTLF {sid}: ASRC must be RIGID or RESTRAINED; got {asrc!r}"
+        )
+    for name, value in (("UDE", ude), ("VEAS", veas), ("MU", mu), ("A", a)):
+        if value < 0.0:
+            raise ValueError(f"GUSTLF {sid}: {name} must be >= 0 when recorded; got {value}")
+    # K_g = 0.88 mu / (5.3 + mu) is strictly inside (0, 0.88); a recorded value
+    # outside it cannot have come from the regulation's formula.  This is the one
+    # part of the derivation the parser can falsify without owning the arithmetic.
+    if kg != 0.0 and not (0.0 < kg < KG_MAX):
+        raise ValueError(
+            f"GUSTLF {sid}: KG must lie in (0, {KG_MAX}) when recorded; got {kg}"
+        )
+
+    bulk.gustlfs[sid] = Gustlf(
+        sid=sid, trimid=trimid, n=n, g=g, ude=ude, veas=veas,
+        kg=kg, mu=mu, a=a, asrc=asrc, alt=alt,
+    )
+
+
 def _handle_trimvar(fields: list[str], bulk: BulkData) -> None:
     vid   = _to_int(fields[1])
     label = fields[2].strip().upper() if len(fields) > 2 else ""
@@ -1199,6 +1378,9 @@ def _handle_param(fields: list[str], bulk: BulkData) -> None:
                 f"PARAM,WTMASS,{value:g} is not supported: sbeam does not scale mass; "
                 "enter mass in the deck's consistent mass unit (charter §7)"
             )
+        return
+    # Every other PARAM is still ignored, and says so like any unhandled card (#45 class)
+    warnings.warn(f"Unknown BDF card 'PARAM,{name}' — skipped", UserWarning, stacklevel=3)
 
 
 def parse_bulk_data(lines: list[str]) -> BulkData:
@@ -1206,9 +1388,11 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
 
     Supports free-field (comma-separated) and fixed-field (8-character column) formats.
     Issues UserWarning for unrecognised card keywords.
-    Raises ValueError for duplicate GIDs, invalid DOF strings, and unresolved LOAD references.
+    Raises ValueError for cards in ``_UNSUPPORTED_CARDS`` (known NASTRAN cards sbeam does
+    not implement, #45), duplicate GIDs, invalid DOF strings, and unresolved LOAD references.
     """
     bulk = BulkData()
+    unsupported: Counter[str] = Counter()
 
     # Strip $ comments; a $ anywhere on the line starts a comment
     processed = []
@@ -1232,6 +1416,12 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
         keyword = fields[0].upper()
 
         if keyword in _IGNORED_KEYWORDS:
+            i += 1
+            continue
+
+        if keyword in _UNSUPPORTED_CARDS:
+            # Counted, not raised: the deck is refused once with the full list below.
+            unsupported[keyword] += 1
             i += 1
             continue
 
@@ -1263,6 +1453,12 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
             _handle_cbush(fields, cont, bulk)
         elif keyword == "CBAR":
             _handle_cbar(fields, cont, bulk)
+        elif keyword == "PROD":
+            _handle_prod(fields, bulk)
+        elif keyword == "CROD":
+            _handle_crod(fields, bulk)
+        elif keyword == "CONROD":
+            _handle_conrod(fields, bulk)
         elif keyword == "PLOTEL":
             _handle_plotel(fields, bulk)
         elif keyword == "RBE3":
@@ -1483,6 +1679,20 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
                 else:
                     break
             _handle_trim(fields, trim_conts, bulk)
+        elif keyword == "GUSTLF":
+            gustlf_conts: list[list[str]] = []
+            k = i + 1
+            while k < len(processed):
+                if not processed[k].strip():
+                    k += 1
+                    continue
+                nf = _split_line(processed[k])
+                if _is_continuation(nf):
+                    gustlf_conts.append(nf)
+                    k += 1
+                else:
+                    break
+            _handle_gustlf(fields, gustlf_conts, bulk)
         elif keyword == "DIVERG":
             diverg_conts: list[list[str]] = []
             k = i + 1
@@ -1604,6 +1814,14 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
 
         i += 1
 
+    if unsupported:
+        listing = ", ".join(f"{kw} x{n} ({_UNSUPPORTED_CARDS[kw]})"
+                            for kw, n in sorted(unsupported.items()))
+        raise ValueError(
+            f"Unsupported bulk data card(s): {listing}. sbeam would solve with these "
+            "cards dropped; remove them or model the content with supported cards "
+            "(02_card_reference.md, 'Unsupported cards').")
+
     # CAERO1 cards require an AEROS card to provide reference geometry
     if bulk.caero1s and bulk.aeros is None:
         raise ValueError("CAERO1 card(s) present but no AEROS card found")
@@ -1651,12 +1869,29 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
                     f"LOAD {load_sid}: component SID {comp_sid} not found in FORCE, MOMENT, or GRAV sets"
                 )
 
-    # Validate AESURF → AELIST references
+    # Validate AESURF → AELIST / CORD2R references (#9: the CID2/ALID2 second
+    # hinge half is consumed, so it is checked like the first; a box may not
+    # belong to both halves of one surface).
     for aid, aesurf in bulk.aesurfs.items():
         if aesurf.alid1 not in bulk.aelists:
             raise ValueError(f"AESURF {aid}: ALID1={aesurf.alid1} not found in AELIST")
-        if aesurf.alid2 and aesurf.alid2 not in bulk.aelists:
-            raise ValueError(f"AESURF {aid}: ALID2={aesurf.alid2} not found in AELIST")
+        if aesurf.cid1 and aesurf.cid1 not in bulk.cord2rs:
+            raise ValueError(f"AESURF {aid}: hinge CID1={aesurf.cid1} not found in CORD2R")
+        if bool(aesurf.cid2) != bool(aesurf.alid2):
+            raise ValueError(
+                f"AESURF {aid}: CID2={aesurf.cid2} and ALID2={aesurf.alid2} must be given "
+                "together (the second hinge half needs both its hinge CID and its AELIST)")
+        if aesurf.alid2:
+            if aesurf.alid2 not in bulk.aelists:
+                raise ValueError(f"AESURF {aid}: ALID2={aesurf.alid2} not found in AELIST")
+            if aesurf.cid2 not in bulk.cord2rs:
+                raise ValueError(f"AESURF {aid}: hinge CID2={aesurf.cid2} not found in CORD2R")
+            both = sorted(set(bulk.aelists[aesurf.alid1].elements)
+                          & set(bulk.aelists[aesurf.alid2].elements))
+            if both:
+                raise ValueError(
+                    f"AESURF {aid}: box(es) {both[:5]} appear in both ALID1={aesurf.alid1} "
+                    f"and ALID2={aesurf.alid2}; a box deflects about one hinge only")
 
     # Validate AELIST box IDs fall within declared CAERO1 ranges
     if bulk.aelists and bulk.caero1s:
@@ -1715,6 +1950,35 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
             "AESTAT/AESURF label 'RHOREF' collides with the reserved TRIM "
             "density pseudo-label — rename the trim variable"
         )
+    # A TRIM named by a GUSTLF has URDD3 supplied by that card (issue #1), so it
+    # is prescribed for DOF-counting even though it is absent from TRIM.vars.
+    # Without this the generated gust decks warn "over-determined" on every case.
+    gust_trims: dict[int, int] = {}
+    for gsid, gust in bulk.gustlfs.items():
+        if gust.trimid not in bulk.trims:
+            raise ValueError(
+                f"GUSTLF {gsid}: TRIMID {gust.trimid} not found in any TRIM card"
+            )
+        trim = bulk.trims[gust.trimid]
+        if "URDD3" in trim.vars:
+            raise ValueError(
+                f"GUSTLF {gsid}: TRIM {gust.trimid} also prescribes URDD3 — the gust "
+                "card supplies it, so the TRIM must leave it free (two sources for "
+                "one quantity; cf. DEF-M4)"
+            )
+        if "URDD3" not in all_trim_labels:
+            raise ValueError(
+                f"GUSTLF {gsid}: no AESTAT defines URDD3 — a gust load factor cannot "
+                "be applied without it"
+            )
+        prior = gust_trims.get(gust.trimid)
+        if prior is not None:
+            raise ValueError(
+                f"GUSTLF {gsid}: TRIM {gust.trimid} is already driven by GUSTLF {prior} "
+                "— one gust case per TRIM"
+            )
+        gust_trims[gust.trimid] = gsid
+
     for sid, trim in bulk.trims.items():
         for lbl in trim.vars:
             if lbl not in all_trim_labels:
@@ -1722,6 +1986,8 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
                     f"TRIM {sid}: label '{lbl}' not defined in any AESTAT or AESURF card"
                 )
         prescribed = set(trim.vars.keys())
+        if sid in gust_trims:
+            prescribed.add("URDD3")
         free = all_trim_labels - prescribed
         if len(free) == 0:
             warnings.warn(

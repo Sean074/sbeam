@@ -27,7 +27,7 @@ import numpy as np
 from sbeam.model.bulk_data import BulkData
 from sbeam.parser.case_control import SubcaseControl
 from sbeam.assembly.stiffness import assemble_global_stiffness, get_spc_dofs
-from sbeam.assembly.load_vector import build_grid_index
+from sbeam.assembly.load_vector import assemble_load_vector, build_grid_index
 from sbeam.assembly.reduction import reduce_to_aset, expand_to_g
 from sbeam.assembly.coord_transform import get_transform
 from sbeam.assembly.mass_matrix import assemble_global_mass
@@ -39,9 +39,11 @@ from sbeam.aero.integration import (
 from sbeam.results.results import Sol144TrimResult
 from sbeam.results.monitor_points import compute_monitor_loads
 from sbeam.results.section_cuts import compute_section_cuts
-from sbeam.solver.sol101 import recover_bar_forces, recover_bar_stresses, recover_reactions
+from sbeam.solver.sol101 import recover_reactions
+from sbeam.solver.element_recovery import recover_line_elements
 from sbeam.types import FloatArray, LuFactor
 from sbeam.model.aero import require_aeros
+from sbeam.model.gust import Gustlf
 
 # Facade re-exports (P13/DEF-R1/R3) — the split modules; every name stays
 # importable from its historic home here.  Import order follows the dependency
@@ -200,6 +202,7 @@ class _TrimState:
     trim_sid: int = field(init=False)
     trim_card: Any = field(init=False)
     q_dyn: float = field(init=False)
+    load_sid: Optional[int] = field(init=False)     # applied structural LOAD set (#6)
 
     # _stage_resolve_massset_and_mach
     massset_sid: Optional[int] = field(init=False)
@@ -208,6 +211,9 @@ class _TrimState:
     grid_index: dict[int, int] = field(init=False)
     spc_sid: Optional[int] = field(init=False)
     mach: float = field(init=False)
+
+    # _stage_validate_inputs — None unless the subcase names a GUSTLF (issue #1)
+    gustlf: Optional[Gustlf] = field(init=False)
 
     # _stage_build_labels
     all_labels: list[str] = field(init=False)
@@ -241,6 +247,7 @@ class _TrimState:
     M_gg: Any = field(init=False)
     M_ax_g: FloatArray = field(init=False)
     f_rhs_a: FloatArray = field(init=False)
+    applied_loads: Optional[FloatArray] = field(init=False)   # (n_g,) f_struct, None without LOAD
     M_ax_a: FloatArray = field(init=False)
     suport_local: list[int] = field(init=False)
     over_determined: bool = field(init=False)
@@ -262,6 +269,8 @@ class _TrimState:
     displacements: FloatArray = field(init=False)
     bar_forces: dict[int, Any] = field(init=False)
     bar_stresses: dict[int, Any] = field(init=False)
+    rod_forces: dict[int, Any] = field(init=False)
+    rod_stresses: dict[int, Any] = field(init=False)
 
     # _stage_refine_yaw_rate (Step 67a)
     f_box_yaw: Optional[FloatArray] = field(init=False)
@@ -300,34 +309,73 @@ class _TrimState:
     section_loads: Any = field(init=False)
 
 
+def _refuse_grav_in_trim_load(bulk: BulkData, load_sid: int, subcase_id: int,
+                              trim_sid: int) -> None:
+    """Refuse a GRAV card in a trim LOAD set (#6, decision D2).
+
+    Gravity enters a SOL 144 trim through URDD3 only (theory §7.3: the load
+    factor carries it).  A GRAV beside it would be a second source for one
+    quantity — the double count the maneuver-closure warning exists to catch.
+    """
+    sids = [load_sid]
+    if load_sid in bulk.loads:
+        sids += [sid for _, sid in bulk.loads[load_sid].components]
+    gravs = sorted({s for s in sids if s in bulk.gravs})
+    if gravs:
+        raise ValueError(
+            f"run_sol144_trim: subcase {subcase_id} (TRIM={trim_sid}) selects "
+            f"LOAD={load_sid}, which references GRAV {gravs}.  Gravity enters a "
+            "SOL 144 trim through the URDD3 load factor only (URDD3 = -n*g); a "
+            "GRAV card beside it would double-count the weight.  Remove the GRAV "
+            "from the trim LOAD set — FORCE/MOMENT (thrust, torque, payload) are "
+            "the applied loads a trim takes."
+        )
+
+
 def _stage_validate_inputs(st: _TrimState) -> None:
-    """SUPORT/TRIM presence + DEF-M4 LOAD refusal; picks up the TRIM card."""
+    """SUPORT/TRIM presence, applied-LOAD resolution (GRAV refused); picks up the TRIM card."""
     bulk, subcase = st.bulk, st.subcase
 
     if not bulk.supports:
         raise ValueError("run_sol144_trim: no SUPORT card found in model")
 
+    # A GUSTLF subcase names its TRIM through the gust card (issue #1), so the
+    # subcase need not repeat it.  When it does, the two must agree — a silent
+    # disagreement would run a different flight condition than the deck reads as.
+    gustlf: Optional[Gustlf] = None
+    if subcase.gustlf_sid is not None:
+        gustlf = bulk.gustlfs.get(subcase.gustlf_sid)
+        if gustlf is None:
+            raise ValueError(
+                f"run_sol144_trim: GUSTLF SID {subcase.gustlf_sid} not found"
+            )
+
     trim_sid = subcase.trim_sid
+    if gustlf is not None:
+        if trim_sid is not None and trim_sid != gustlf.trimid:
+            raise ValueError(
+                f"run_sol144_trim: subcase {subcase.subcase_id} requests "
+                f"TRIM={trim_sid} but GUSTLF {gustlf.sid} names TRIM={gustlf.trimid}"
+            )
+        trim_sid = gustlf.trimid
     if trim_sid is None or trim_sid not in bulk.trims:
         raise ValueError(f"run_sol144_trim: TRIM SID {trim_sid} not found")
 
-    # DEF-M4 — the trim RHS is aero + inertia only; it has no f_struct term, so a
-    # LOAD request here would be read, discarded and never mentioned.  Refuse it
-    # rather than silently solving a different problem than the deck asked for.
-    if subcase.load_sid is not None:
-        raise ValueError(
-            f"run_sol144_trim: subcase {subcase.subcase_id} requests both "
-            f"TRIM={trim_sid} and LOAD={subcase.load_sid}, but SOL 144 trim "
-            "applies aerodynamic and inertial loads only — the LOAD would be "
-            "silently ignored.  Remove the LOAD request, or use the restrained "
-            "static path (run_aeroelastic_static), which does combine a LOAD "
-            "set with the aero load."
-        )
+    # #6 — an applied structural load (FORCE/MOMENT, or a LOAD combination)
+    # selected by the subcase enters the trim RHS beside the aerodynamic and
+    # inertial loads (design note thrust_in_trim_applied_load.md); the DEF-M4
+    # refusal of TRIM + LOAD is retired.  GRAV is refused (D2): the load factor
+    # already carries gravity through URDD3.
+    load_sid = subcase.load_sid
+    if load_sid is not None:
+        _refuse_grav_in_trim_load(bulk, load_sid, subcase.subcase_id, trim_sid)
 
     trim_card = bulk.trims[trim_sid]
     q_dyn  = trim_card.q
 
     st.trim_sid, st.trim_card, st.q_dyn = trim_sid, trim_card, q_dyn
+    st.load_sid = load_sid
+    st.gustlf = gustlf
 
 
 def _stage_resolve_massset_and_mach(st: _TrimState) -> None:
@@ -411,6 +459,17 @@ def _stage_build_labels(st: _TrimState) -> None:
 
     # Separate free (to solve for) vs prescribed (given in TRIM card)
     prescribed_dict = {k.upper(): v for k, v in trim_card.vars.items()}
+    # GUSTLF supplies the load factor as URDD3 = -n*g (issue #1).  The card is the
+    # single source for it — the parser refuses a TRIM that also prescribes URDD3
+    # (two sources for one quantity, cf. DEF-M4) — and the sign goes through
+    # load_factor_to_urdd3 (charter §5/§8), never re-derived here.
+    if st.gustlf is not None:
+        if "URDD3" not in all_labels:
+            raise ValueError(
+                f"GUSTLF {st.gustlf.sid}: no AESTAT defines URDD3 — a gust load "
+                "factor cannot be applied without it"
+            )
+        prescribed_dict["URDD3"] = st.gustlf.urdd3
     free_labels   = [l for l in all_labels if l not in prescribed_dict]
 
     st.all_labels, st.chordcp_alpha_ref = all_labels, chordcp_alpha_ref
@@ -435,6 +494,35 @@ def _stage_resolve_ref_geometry(st: _TrimState) -> None:
         suport_pos = np.zeros(3)
 
     st.aeros, st.x_ref, st.R_rcsid, st.suport_pos = aeros, x_ref, R_rcsid, suport_pos
+
+    # ------------------------------------------------------------------ #
+    # DEF-M20 — RCSID orientation guard for the load-factor convention
+    # ------------------------------------------------------------------ #
+    # `URDD3 = -n_z*g` (charter §5) presumes a z-DOWN (stability-axes) RCSID:
+    # the rotation to basic turns -g into an upward reaction and positive
+    # trimmed lift.  With RCSID absent or z-UP the identical value is a
+    # genuinely downward acceleration and the deck trims INVERTED lift, with
+    # nothing to say so.  Gust cases (issue #1) make this reachable in normal
+    # work because a down-gust prescribes a positive URDD3, so the guard lands
+    # with them.  `sample/val_dihedral_trim.bdf` does this deliberately and is
+    # expected to warn.
+    urdd3 = st.prescribed_dict.get("URDD3")
+    if urdd3 is not None and urdd3 < 0.0:
+        # Third column of R_rcsid is the RCSID z-axis expressed in basic.
+        rcsid_z_in_basic_z = float(R_rcsid[2, 2])
+        if rcsid_z_in_basic_z >= 0.0:
+            why = (
+                "the AEROS card names no RCSID, so the trim frame is basic (z-UP)"
+                if not aeros.rcsid
+                else f"the RCSID {aeros.rcsid} z-axis does not point down in basic"
+            )
+            warnings.warn(
+                f"TRIM {st.trim_sid}: URDD3 = {urdd3:.6g} is negative, which encodes "
+                f"a positive load factor only for a z-DOWN RCSID, but {why} — so this "
+                "trims INVERTED lift.  See docs/10_standard/09_conventions.md §5 "
+                "(DEF-M20).",
+                UserWarning, stacklevel=2,
+            )
 
 
 def _stage_echo_chordcp(st: _TrimState) -> None:
@@ -510,7 +598,7 @@ def _stage_build_downwash_and_reduce(st: _TrimState) -> None:
     Q_aa = red.reduce_matrix(Q_gg)
 
     # ------------------------------------------------------------------ #
-    # Build combined RHS: q*f_g (baseline aero) + inertial load
+    # Build combined RHS: q*f_g (baseline aero) + inertial load + applied load
     # ------------------------------------------------------------------ #
     f_aero_g = q_dyn * build_fg(aero, aero.require_g_load())   # (n_g,) baseline aero (whole-airplane)
 
@@ -538,6 +626,17 @@ def _stage_build_downwash_and_reduce(st: _TrimState) -> None:
     pres_inertial_g = M_ax_g @ pres_values_basic     # (n_g,) — free URDD entry = 0
 
     f_rhs_g = f_aero_g + pres_aero_g + pres_inertial_g  # (n_g,)
+
+    # #6 — applied structural load from the subcase LOAD set (FORCE/MOMENT and
+    # LOAD combinations, used exactly as authored in the body-fixed basic
+    # frame, NOT scaled by q).  One more right-hand-side vector: the Schur
+    # reduction below carries both its rigid moment about the reference and
+    # its elastic aero coupling through K_ll = K - q*Q_ll, and whichever free
+    # label (aero or URDD) balances it is decided by the trim card alone.
+    applied_g: Optional[FloatArray] = None
+    if st.load_sid is not None:
+        applied_g = assemble_load_vector(bulk, st.load_sid)   # (n_g,)
+        f_rhs_g = f_rhs_g + applied_g
 
     # Reduce f_rhs to a-set
     f_rhs_a = red.reduce_vector(f_rhs_g)   # (n_a,)
@@ -572,6 +671,7 @@ def _stage_build_downwash_and_reduce(st: _TrimState) -> None:
     st.f_aero_g, st.label_to_col = f_aero_g, label_to_col
     st.pres_values_basic, st.M_gg, st.M_ax_g = pres_values_basic, M_gg, M_ax_g
     st.f_rhs_a, st.M_ax_a = f_rhs_a, M_ax_a
+    st.applied_loads = applied_g
     st.suport_local, st.over_determined = suport_local, over_determined
     st.n_free, st.n_suport, st.free_label_cols = n_free, n_suport, free_label_cols
 
@@ -680,18 +780,13 @@ def _stage_recover_displacements(st: _TrimState) -> None:
     displacements = expand_to_g(u_a, T, free_local, len(red_dofs))
 
     # ------------------------------------------------------------------ #
-    # CBAR force / stress recovery
+    # Line-element force / stress recovery (CBAR + CROD/CONROD, #38)
     # ------------------------------------------------------------------ #
-    bar_forces   = {}
-    bar_stresses = {}
-    for cbar in bulk.cbars.values():
-        bar_forces[cbar.eid]   = recover_bar_forces(
-            cbar, bulk.grids, bulk.pbars, bulk.mat1s, displacements, grid_index)
-        bar_stresses[cbar.eid] = recover_bar_stresses(
-            cbar, bulk.grids, bulk.pbars, bulk.mat1s, displacements, grid_index)
+    elems = recover_line_elements(bulk, displacements, grid_index)
 
     st.displacements = displacements
-    st.bar_forces, st.bar_stresses = bar_forces, bar_stresses
+    st.bar_forces, st.bar_stresses = elems.bar_forces, elems.bar_stresses
+    st.rod_forces, st.rod_stresses = elems.rod_forces, elems.rod_stresses
 
 
 #: Step 67a yaw-rate fixed point: iteration cap and the relative trim-variable
@@ -948,18 +1043,21 @@ def _stage_flight_and_net_loads(st: _TrimState) -> None:
     # The inertial g-set load is M_ax · a using the FINAL trim accelerations
     # (prescribed AND solved-free URDD), not just the prescribed ones — the
     # free URDD already entered the displacement solve via the M_ax_a column.
-    # Net (aero + inertial) grid loads are the deliverable for stress and the
-    # non-zero inertia column consumed by MONPNT3 (MON3).  For a 1g determined
-    # trim with URDD≈0 these reduce to the aero-only / zero case.
+    # Net (aero + inertial + applied) grid loads are the deliverable for stress
+    # and the non-zero inertia / applied columns consumed by MONPNT3 (MON3).
+    # For a 1g determined trim with URDD≈0 and no LOAD these reduce to the
+    # aero-only / zero case.
     # ------------------------------------------------------------------ #
     delta_all_basic = urdd_rcsid_to_basic(
         delta_all, label_to_col, R_rcsid, bool(aeros.rcsid)
     )
     inertial_loads = M_ax_g @ delta_all_basic     # (n_g,)
     net_loads = grid_loads + inertial_loads       # (n_g,)
+    if st.applied_loads is not None:
+        net_loads = net_loads + st.applied_loads  # (#6) the full applied load
 
     # Force/moment closure (V-C5 / KC9): body-frame resultant of the net
-    # (aero + inertial) load about the moment reference.  For a true free
+    # (aero + inertial + applied) load about the moment reference.  For a true free
     # aircraft (SUPORT, no SPC) this must balance to ≈ 0 — a non-zero residual
     # flags a gravity double-count or a lumped-vs-consistent mass mismatch.  For
     # an SPC'd (e.g. half-span) model the residual legitimately equals the
@@ -974,7 +1072,7 @@ def _stage_flight_and_net_loads(st: _TrimState) -> None:
         if (np.linalg.norm(maneuver_closure[:3]) > 1e-6 * f_scale or
                 np.linalg.norm(maneuver_closure[3:]) > 1e-6 * m_scale):
             warnings.warn(
-                f"SOL 144 maneuver closure: free-aircraft net (aero+inertial) "
+                f"SOL 144 maneuver closure: free-aircraft net (aero+inertial+applied) "
                 f"resultant is non-zero (F={maneuver_closure[:3]}, "
                 f"M={maneuver_closure[3:]}) — check inertia relief / load factor "
                 f"(KC9).",
@@ -1003,7 +1101,8 @@ def _stage_monitor_outputs(st: _TrimState) -> None:
     # ------------------------------------------------------------------ #
     # MON2/MON3 — monitor-point integrated section loads.
     # The reaction column needs the SPC/SUPORT reaction that balances the net
-    # (aero + inertial) load; recovered the same way as SOL 101 (R = K·u − f).
+    # (aero + inertial + applied) load; recovered the same way as SOL 101
+    # (R = K·u − f).  The applied LOAD (#6) is its own column, like inertia.
     # ------------------------------------------------------------------ #
     monitor_loads = None
     section_loads = None
@@ -1028,13 +1127,13 @@ def _stage_monitor_outputs(st: _TrimState) -> None:
         if bulk.monpnt1s or bulk.monpnt3s:
             monitor_loads = compute_monitor_loads(
                 bulk, aero, box_forces, grid_loads, inertial_loads, grid_index,
-                reactions, massset_sid
+                reactions, massset_sid, applied_loads=st.applied_loads,
             )
         # MONSECT — the same integrand swept over cut planes (Monitor Phase 2).
         if bulk.monsects:
             section_loads = compute_section_cuts(
                 bulk, aero, box_forces, grid_loads, inertial_loads, grid_index,
-                reactions
+                reactions, applied_loads=st.applied_loads,
             )
 
     st.monitor_loads, st.section_loads = monitor_loads, section_loads
@@ -1052,6 +1151,8 @@ def _pack_trim_result(st: _TrimState) -> Sol144TrimResult:
         displacements=st.displacements,
         bar_forces=st.bar_forces,
         bar_stresses=st.bar_stresses,
+        rod_forces=st.rod_forces,
+        rod_stresses=st.rod_stresses,
         q_aa=st.Q_aa,
         free_dofs=st.free_dofs,
         rigid_derivs=st.rigid_derivs,
@@ -1070,6 +1171,8 @@ def _pack_trim_result(st: _TrimState) -> Sol144TrimResult:
         box_forces=st.box_forces,
         grid_loads=st.grid_loads,
         inertial_loads=st.inertial_loads,
+        applied_loads=st.applied_loads,
+        load_sid=st.load_sid,
         net_loads=st.net_loads,
         maneuver_closure=st.maneuver_closure,
         q_div=st.q_div,
@@ -1078,6 +1181,16 @@ def _pack_trim_result(st: _TrimState) -> Sol144TrimResult:
         monitor_loads=st.monitor_loads,
         section_loads=st.section_loads,
         chordcp_echo=st.chordcp_echo,
+        gust_echo=(
+            {
+                "sid": st.gustlf.sid, "trimid": st.gustlf.trimid,
+                "n": st.gustlf.n, "g": st.gustlf.g, "urdd3": st.gustlf.urdd3,
+                "sense": st.gustlf.sense, "ude": st.gustlf.ude,
+                "veas": st.gustlf.veas, "kg": st.gustlf.kg, "mu": st.gustlf.mu,
+                "a": st.gustlf.a, "asrc": st.gustlf.asrc, "alt": st.gustlf.alt,
+            }
+            if st.gustlf is not None else None
+        ),
         load_injection_echo=st.load_injection_echo,
         yaw_rate_iters=st.yaw_rate_iters,
         massset_sid=st.massset_sid,
@@ -1103,7 +1216,9 @@ def run_sol144_trim(
 
     Args:
         bulk:       Parsed BulkData — must include SUPORT and TRIM cards.
-        subcase:    SubcaseControl — uses spc_sid and trim_sid.
+        subcase:    SubcaseControl — uses spc_sid, trim_sid and load_sid (an
+                    applied structural LOAD set entering the trim RHS, #6;
+                    GRAV refused).
         aero:       AeroModel with g_slope, g_disp, ajj_inv_corr, skj, wg
                     populated.  Used directly when its Mach matches the TRIM
                     Mach; otherwise it seeds the AeroCache and the AIC is rebuilt

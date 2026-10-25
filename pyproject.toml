@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sbeam"
-version = "0.2.0"
+version = "0.3.0"
 description = "Simple beam finite element analysis (SOL 101 / SOL 103) with NASTRAN BDF input."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -25,11 +25,16 @@ dependencies = [
     "numpy",
     "scipy",
     "pandas",
-    "plotly",
-    "streamlit",
 ]
 
 [project.optional-dependencies]
+# The GUI's dependencies are an extra, not a base requirement: a solver run in
+# CI or a batch pipeline has no use for a web framework.  Enforced by
+# tests/tools/test_import_boundary.py, which fails if sbeam/ imports either.
+viewer = [
+    "plotly",
+    "streamlit",
+]
 dev = [
     "pytest",
     "pytest-cov",
@@ -39,16 +44,19 @@ dev = [
 
 [project.scripts]
 sbeam = "sbeam.main:main"
+sbeam-cases = "sbeam_tools.cases.cli:main"
+sbeam-view = "sbeam_tools.viewer.launch:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["sbeam*"]
+include = ["sbeam*", "sbeam_tools*"]
 
 [tool.ruff]
 line-length = 120
+target-version = "py39"   # the declared minimum (requires-python)
 
 [tool.ruff.lint]
-select = ["E", "F", "W"]
+select = ["E", "F", "W", "FA102"]   # FA102: X | Y annotations that break on 3.9 (#54)
 ignore = [
     "E702",  # semicolons in matrix assignments — intentional paired style
     "E501",  # NASTRAN fixed-width format strings make a hard line limit impractical
@@ -59,11 +67,11 @@ ignore = [
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
-addopts = "--cov=sbeam --cov-report=term-missing"
+addopts = "--cov=sbeam --cov=sbeam_tools --cov-report=term-missing"
 
 [tool.coverage.run]
 branch = true
-source = ["sbeam"]
+source = ["sbeam", "sbeam_tools"]
 
 [tool.coverage.report]
 show_missing = true

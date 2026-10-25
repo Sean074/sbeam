@@ -7,7 +7,7 @@ import pytest
 from sbeam.model.maneuver import Mloads
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.parser.case_control import CaseControl, SubcaseControl
-from sbeam.viewer.sol144_authoring import (
+from sbeam_tools.viewer.sol144_authoring import (
     IncrementSpec, snapshot_family_ids, validate_sol144_authoring,
 )
 
@@ -62,10 +62,39 @@ def test_mloads_with_trim_conflicts(fullspan):
     assert any("cannot combine" in e for e in _errors(bulk, cc))
 
 
-def test_load_refused(fullspan):
+def test_load_allowed_on_a_trim_subcase_when_the_set_exists(fullspan):
+    """#6: a TRIM subcase takes a LOAD set (applied structural load)."""
+    from sbeam.model.load import Force
+    cc, bulk = fullspan
+    bulk.forces[5] = [Force(sid=5, gid=90, cid=0, f=100.0, n1=-1.0, n2=0.0, n3=0.0)]
+    cc.subcases[0].load_sid = 5
+    assert not any("LOAD" in e for e in _errors(bulk, cc))
+
+
+def test_dangling_load_reference(fullspan):
     cc, bulk = fullspan
     cc.subcases[0].load_sid = 5
-    assert any("LOAD does not combine" in e for e in _errors(bulk, cc))
+    assert any("LOAD 5 not found" in e for e in _errors(bulk, cc))
+
+
+def test_load_refused_on_mloads_and_diverg_only(fullspan):
+    """#6 D1: the transient and the divergence sweep drop a LOAD, so the viewer
+    says so before the solver does."""
+    from sbeam.model.load import Force
+    cc, bulk = fullspan
+    bulk.forces[5] = [Force(sid=5, gid=90, cid=0, f=100.0, n1=-1.0, n2=0.0, n3=0.0)]
+    cc.subcases[1].load_sid = 5                      # the MLOADS subcase
+    assert any("LOAD combines only with a TRIM subcase" in e for e in _errors(bulk, cc))
+
+
+def test_grav_in_a_trim_load_set_refused(fullspan):
+    from sbeam.model.load import Grav, Load
+    cc, bulk = fullspan
+    bulk.gravs[7] = Grav(sid=7, cid=0, g=32.174, n1=0.0, n2=0.0, n3=-1.0)
+    bulk.loads[8] = Load(sid=8, s=1.0, components=[(1.0, 7)])
+    cc.subcases[0].load_sid = 8
+    errs = _errors(bulk, cc)
+    assert any("references GRAV [7]" in e for e in errs)
 
 
 def test_dangling_trim_reference(fullspan):

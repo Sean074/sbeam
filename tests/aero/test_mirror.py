@@ -5,10 +5,11 @@ import pytest
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.aero import Aeros, Caero1, Paero1, Set1
 from sbeam.model.grid import Grid
-from sbeam.model.element import Cbar
+from sbeam.model.element import Cbar, Conrod, Crod
 from sbeam.model.mass import Conm2
+from sbeam.model.property import Prod
 from sbeam.aero.aero_model import build_aero_model
-from sbeam.aero.mirror import mirror_halfspan
+from sbeam_tools.common.mirror import mirror_halfspan
 
 
 def _half_deck() -> BulkData:
@@ -63,6 +64,19 @@ class TestMirrorHalfspan:
         assert cm.gid == 1002
         assert cm.x2 == pytest.approx(-0.3)   # y offset reflected
         assert cm.i21 == pytest.approx(-0.7)  # product of inertia reflected
+
+    def test_rods_mirrored_and_prod_shared(self):
+        """#38: CROD/CONROD unfold like CBAR (no orientation vector); PROD is shared."""
+        bulk = _half_deck()
+        bulk.grids[3] = Grid(gid=3, x=0.0, y=2.0, z=-1.0)
+        bulk.prods[7] = Prod(pid=7, mid=1, A=1e-4, J=1e-8)
+        bulk.crods[20] = Crod(eid=20, pid=7, ga=1, gb=3)
+        bulk.conrods[21] = Conrod(eid=21, ga=2, gb=3, mid=1, A=1e-4)
+        out = mirror_halfspan(bulk)
+        assert out.crods[1020].ga == 1 and out.crods[1020].gb == 1003
+        assert out.conrods[1021].ga == 1002 and out.conrods[1021].gb == 1003
+        assert out.crods[1020].pid == 7 and set(out.prods) == {7}
+        assert set(out.crods) == {20, 1020} and set(out.conrods) == {21, 1021}
 
     def test_caero1_mirrored_and_buildable(self):
         out = mirror_halfspan(_half_deck())

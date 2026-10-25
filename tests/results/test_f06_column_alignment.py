@@ -35,9 +35,9 @@ _NUMERIC_LABELS = {
     "T1", "T2", "T3", "R1", "R2", "R3",
     "F1", "F2", "F3", "M1", "M2", "M3",
     "FX", "FY", "FZ", "MX", "MY", "MZ",
-    "AXIAL FORCE", "SHEAR-1", "SHEAR-2", "TORQUE",
-    "BENDING-1 A", "BENDING-2 A", "BENDING-1 B", "BENDING-2 B",
-    "AXIAL", "SA(END-A)", "SB(END-B)",
+    "PLANE 1", "PLANE 2", "FORCE", "TORQUE", "AXIAL", "STRESS",
+    "SA1", "SA2", "SA3", "SA4", "SA-MAX", "SA-MIN",
+    "SB1", "SB2", "SB3", "SB4", "SB-MAX", "SB-MIN",
     "DELTA-CP",
 }
 

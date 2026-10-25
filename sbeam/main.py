@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+import warnings
 from pathlib import Path
 from typing import Any, Callable, Dict
 
@@ -30,9 +31,14 @@ def main() -> None:
     f06_path = bdf_path.with_suffix(".f06")
 
     try:
-        cc, bulk = parse_bdf(str(bdf_path))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            cc, bulk = parse_bdf(str(bdf_path))
     except Exception as exc:
         sys.exit(f"Parse error: {exc}")
+    for w in caught:
+        # Unknown-card skips and TRIM advisories: visible, never fatal (#45).
+        print(f"Parser warning: {w.message}", file=sys.stderr)
 
     sol144_results = None
     maneuver_results: Dict[int, Any] = {}
@@ -144,6 +150,19 @@ def main() -> None:
             str(bdf_path.with_suffix("")), bulk, maneuver_results)
         print(f"Written: {mldprnt_path}")
         print(f"Written: {qs_loads_path}")
+        # #2: MONPNT1/MONPNT3 integrated loads at every output sample, plus
+        # their per-component envelope — only when the deck carries monitors.
+        if any(s.monitor_loads for r in maneuver_results.values() for s in r.steps):
+            from sbeam.results.load_export import (
+                write_maneuver_monitor_csv,
+                write_maneuver_monitor_envelope_csv,
+            )
+            tmon_path = bdf_path.with_suffix(".maneuver_monitor_loads.csv")
+            write_maneuver_monitor_csv(str(tmon_path), maneuver_results)
+            print(f"Written: {tmon_path}")
+            menv_path = bdf_path.with_suffix(".maneuver_monitor_envelope.csv")
+            write_maneuver_monitor_envelope_csv(str(menv_path), maneuver_results)
+            print(f"Written: {menv_path}")
         # Step 68: MONSECT running loads at every output sample (one CSV across
         # subcases), written only when the deck actually carries MONSECT cards.
         if any(s.section_loads for r in maneuver_results.values() for s in r.steps):

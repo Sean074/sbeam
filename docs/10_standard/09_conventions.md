@@ -93,27 +93,54 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
   the §1 axis reversal in mind.
 - **Rate-label senses** (figure `../figures/maneuver_rates.svg`): positive PITCH =
   nose-up q (textbook); positive ROLL = starboard-wing-down (right roll); positive YAW =
-  nose-starboard (right yaw) (`aero/integration.py:369-387`). ROLL and YAW are thus
-  right-handed about the **nose (−x)** and **down (−z)** directions — the opposite
-  handedness of CMX/CMZ (§1). The ROLL column has **no spanwise reference**: it is always
-  about the deck's y = 0 plane, unlike PITCH (RCSID-origin `x_ref`) and the yaw-drag
-  force term (`y_ref = suport_pos[1]`).
-- Plunge-rate sign: α = θ − ḣ/V, so the DOF-3 rate column is −ANGLEA/V
-  (`aero/integration.py:185-194`). **⚠ Known defect (DEF-M15):** the same
-  relative-wind negation is *missing* from the DOF-2/4/6 entries of
-  `rigid_rate_scales` (`aero/integration.py:160-162`) — latent while free-flight scope
-  is symmetric-only; do not cite those scales as a convention until it is resolved.
+  nose-starboard (right yaw). ROLL and YAW are thus right-handed about the **nose (−x)**
+  and **down (−z)** directions — the opposite handedness of CMX/CMZ (§1). In code the
+  three senses are the axes `ê_PITCH = +ŷ`, `ê_ROLL = −x̂`, `ê_YAW = −ẑ` of
+  `_RATE_LABEL_AXIS` (`aero/integration.py`).
+- **Every rate column is one kinematic rule** (#8, DEF-M15 closed 2026-10-24; design note
+  `30_future/designs/lateral_cases_aileron_rudder.md` §2.1): the normalwash of a rigid
+  rate about the **RCSID origin** `r_ref`, projected on the box normal,
+  `D_jx = (2/L_ref)·n̂·(ê × (r_colloc − r_ref))` (`_rate_column`, §8). On a planar wing it
+  reduces to the familiar `−(2/c)(x − x_ref)` and `−(2/b)(y − y_ref)`; on a vertical fin
+  PITCH is zero and ROLL is `(2/b)·n_y·(z − z_ref)`. **ROLL, PITCH and the yaw-drag force
+  term all reference the same point**, the RCSID origin (= `suport_pos`), which every
+  shipped deck puts on the centreline. Before #8 the PITCH and ROLL columns were the planar
+  formulas unprojected, so a vertical fin was loaded under pitch rate (flagship: CY = 1.88
+  per unit PITCH, pitch damping 3.3 % low) and ROLL was hard-wired to y = 0.
+- **Physical rates → labels** (`rigid_rate_scales`, §8): the label value whose normalwash
+  equals a unit body rate about basic +x/+y/+z. Relative wind = −body velocity, so plunge
+  ḣ → `ANGLEA = −ḣ/V` (α = θ − ḣ/V) and sway v → `SIDES = −v/V`; rotations follow the
+  axes above: `PITCH = +q·c/2V`, `ROLL = −p·b/2V`, `YAW = −r·b/2V` with p, q, r about
+  basic +x, +y, +z. Gate: `tests/aero/test_rate_column_kinematics.py` derives all five from
+  `assembly/rigid_body.py` with no reference to the label table. (Until #8 DOFs 2/4/6 had
+  the opposite sign, which would have anti-damped a free-flight lateral rate.)
 - **Load factor: `URDD3 = −n_z·g` authored in the RCSID frame** (1g level flight = −g;
   2.5g pull-up = −2.5g); gravity is folded into the load factor
   (`model/maneuver_presets.py:24-38`). **This presumes a z-DOWN (stability-axes) RCSID**,
   which every shipped aircraft deck uses (`sample/HA144A.bdf:187-188`,
   `sample/cessna210_flagship_bulk.bdf:80-82`) — the URDD rotation to basic z-up turns −g
   into an upward +g reaction and positive trimmed lift. With RCSID absent or z-up, the
-  same value is a genuinely downward acceleration and trims **inverted lift** with no
-  warning (`sample/val_dihedral_trim.bdf` does exactly this, deliberately — see its
+  same value is a genuinely downward acceleration and trims **inverted lift**
+  (`sample/val_dihedral_trim.bdf` does exactly this, deliberately — see its
   header). *A 2026-08-04 charter note claiming the `maneuver_presets.py:25` "(RCSID
   z-down)" docstring was misleading was itself wrong and is retracted (2026-08-09); the
-  docstring is correct. Guard defect filed (DEF-M20).*
+  docstring is correct.* **DEF-M20 closed 2026-09-05 (issue #23, with #1):**
+  `_stage_resolve_ref_geometry` (`solver/sol144.py`) now warns when a prescribed
+  negative `URDD3` meets an absent or z-up RCSID, so the case is loud rather than
+  silent; `val_dihedral_trim.bdf` is expected to warn. Gate: `V-GUST7`
+  (`tests/aero/test_gust_cases.py`).
+- **Gust load factors (FAR/CS 23.341) enter through the same helper.** A `GUSTLF`
+  card carries a dimensionless load factor `N` and prescribes `URDD3 = −N·G` via
+  `load_factor_to_urdd3`; a down-gust with `N < 0` therefore prescribes a **positive**
+  `URDD3`, which is correct and is not what DEF-M20 guards. **Decision (2026-09-05,
+  issue #1):** the lift-curve slope in the Pratt formula is the **rigid** `CZ_α` —
+  the body-axis normal-force slope, which is the regulation's `C_NA` (§2), not
+  wind-axis `CL_α`. Pratt is a rigid-airplane derivation in plunge, so an elastic
+  slope would mix a flexible quantity into a rigid-body formula whose empirical
+  constants were calibrated on the rigid basis; `K_g` alleviates rigid-body plunge
+  during gust penetration plus unsteady lift growth, and is **not** a
+  structural-flexibility correction. The whole dimensional calculation lives outside
+  the solver in `sbeam_tools/cases/gust.py` (§7).
 - **URDD labels are the only trim labels rotated RCSID→basic** (`sol144_util.py:54-121`);
   the aero labels (ANGLEA/SIDES/rates) never rotate. Under the standard z-down RCSID,
   authored URDD4/5/6 are therefore textbook stability-axis angular accelerations
@@ -138,21 +165,67 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
   TE-up, `tests/aero/test_cessna210_flagship.py:259-266`); on the HA144A canard
   (surface forward of the CG) positive is nose-up. "Positive elevator" has no
   airframe-independent pitch sense — only the lift-increasing rule is universal.
-- **GAP — aileron and rudder:** no deck, doc, or test defines either. The sign a rudder
-  or aileron gets is entirely set by how the deck author orients cid1 +y; nothing
-  validates the intent. An antisymmetric aileron pair currently requires two AESURF
-  labels: **`CID2`/`ALID2` are parsed and validated but silently ignored by
-  `build_djx` and the hinge-moment sum** (DEF-M16; `aero/integration.py:403`,
-  `solver/sol144_derivs.py:133-136`), so the NASTRAN second-half mechanism loads
-  nothing.
+- **Two hinge halves, one label** (#9, DEF-M16 closed 2026-10-24): an AESURF may carry a
+  second pair `CID2`/`ALID2`; each half rotates about **its own** CID +y through its own
+  origin, and the hinge moment is the sum over halves. The geometry has one owner,
+  `aesurf_hinges` (§8), consumed by `build_djx` and `compute_hinge_moments`. Two single-half
+  labels give the identical loading (gate `tests/aero/test_aesurf_pair.py` G6).
+- **Aileron (D1, design note `30_future/designs/lateral_cases_aileron_rudder.md`):** the
+  lift-increasing rule applied **per half**. Authoring: `CID1` = starboard half, `CID2` =
+  port half, **both hinge +y pointing outboard** (NASTRAN CID1/CID2 practice; ZAERO
+  `AESURFZ … ANTISYM`). Positive `AIL` = starboard TE-down, port TE-up = roll **toward
+  port** = `+CMX` in basic (moment about +x, x aft) = a **negative `ROLL` label** in a steady
+  roll. This is the textbook δa: `C_lδa`, `C_mδe` and `C_nδr` share one sign family. Gate:
+  `test_aesurf_pair.py` G7 — the first absolute lateral sign pinned in the repo (`CMX_δa > 0`,
+  all other rigid coefficients zero on a planar wing).
+- **Rudder (D2, #10):** the same rule. The fin normal is +y (starboard), so lift-increasing
+  is `+Fy` = TE-to-**port**, and a right-hand rotation that moves the trailing edge to port
+  is about a **downward** axis: author the rudder hinge CID with **+y = −z basic (down)**.
+  (With +y up, positive deflection is TE-starboard — the mirror of the intended sign; the
+  #10 issue candidate "+y up ⇒ TE-port" was wrong about the geometry.) Positive `RUD` =
+  TE-port = `+Fy` at the tail = nose-to-port = `+CMZ` in basic = a negative `YAW` label.
+  Textbook δr. Gate: `tests/aero/test_lateral_cases.py` G10 (`CY_δr > 0`, `CMZ_δr > 0`,
+  hinge axis asserted `(0, 0, −1)` on `sample/val_lateral_aileron_rudder.bdf`).
+- **Lateral trim recipes** (V-LAT2, `sample/val_lateral_aileron_rudder.bdf`; one free label
+  per SUPORT DOF): steady roll — `SUPORT 4`, prescribe `ROLL = pb/2V`, `URDD4 = 0`, free
+  `AIL`; steady sideslip — `SUPORT 6`, prescribe `SIDES`, `YAW = 0`, free `RUD`; both at
+  once — `SUPORT 46`, prescribe one of `ROLL`/`SIDES` and zero the other lateral labels
+  (`SIDES`/`ROLL`, `YAW`, `URDD4`, `URDD6`), free `AIL` and `RUD`. Under D1/D2 a positive
+  `ROLL` trims a **negative** `AIL` (starboard TE-up) and a positive `SIDES` a **negative**
+  `RUD`; both are the textbook outcomes and are gated (G12). Engine torque — `SUPORT 46`,
+  all lateral labels zero, `LOAD` selecting a `MOMENT` about `x` at the mount, free `AIL`
+  and `RUD` (§10 for the sign; gated G8, #6).
 
 ## 7. Units
 
+- **The section-data CSV was an undeclared exception, and was removed rather than
+  declared (2026-09-05, issue #32).** `section_data.py` converted degrees↔radians in six
+  places and carried a degrees-based public API, inside `sbeam/aero/`. It moved to
+  `sbeam_tools/corrections/`, taking the `TOTAL`-block ingestion from
+  `body_correction.py` with it. The solver kept only the min-norm solve that consumes the
+  resulting targets — and with the DataFrames went `pandas`, so `sbeam/` (outside the
+  viewer) no longer reads tabular data at all. **The general rule: when a §7 exception is
+  proposed, first check whether the converting code belongs on the other side of the
+  architecture boundary.**
+- **Preprocessing tools may know units; the solver may not (2026-09-05, issue #1).**
+  This rule binds `sbeam/` — card fields and solver arithmetic. Tools under
+  `sbeam_tools/` that *generate* decks are outside it, and are where dimensional
+  regulatory content belongs: `sbeam_tools/cases/gust.py` owns the ISA atmosphere,
+  the FAR/CS 23.333(c) `U_de` schedule in feet, and `ρ₀`, then hands the solver a
+  dimensionless load factor on a `GUSTLF` card. Nothing dimensional crosses the
+  boundary. Prefer this split to adding a unit-aware field.
 - **User-defined consistent units throughout** — sbeam never converts. The two deliberate
-  exceptions (card-field degrees → stored radians): CHORDCP `alpha_ref`
-  (`model/aero.py:119`) and its tolerance constant `_CHORDCP_ALPHA_TOL = 0.035 rad`
-  (`solver/sol144.py:174-175`). Do not add new unit-converting fields without recording
-  them here.
+  exceptions (card-field degrees → stored radians): the CHORDCP `ALPHREF` conversion
+  `math.radians(...)` in `parser/bdf_reader.py::_handle_chordcp` (stored as
+  `Chordcp.alpha_ref`, `model/aero.py`) and its tolerance constant
+  `_CHORDCP_ALPHA_TOL = 0.035 rad` (`solver/sol144.py`, cited by name — line numbers
+  drift). Do not add new unit-converting fields without recording them here.
+- **No unit-system constant may appear in `sbeam/`** (#30, 2026-10-24) — no `9.81`,
+  `32.174`, `0.002377`, `1.225`, no `slug`/`lbf`/`kg/m³`/`Pa`/`ft/s` in messages,
+  defaults or docstrings. The viewer declares a unit system from
+  `sbeam_tools.common.units.UNIT_SYSTEMS` when it needs `g`; error text says "in the
+  deck's own units". Gate: `tests/tools/test_unit_neutrality.py`, with an explicit
+  allow-list for prose that *explains* the boundary (`model/gust.py`).
 
 ## 8. Single-source helpers (use these; never re-derive)
 
@@ -160,9 +233,15 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
 |---|---|---|
 | `pitch_moment` | The nose-up-positive pitch arm (AE1 Step E) | `solver/sol144_util.py:255` |
 | `aero_moment_resultant` | Full 3-component moment about a reference (Step 58) | `solver/sol144_util.py:280` |
-| `rigid_rate_scales` | PITCH/ROLL/YAW rate nondimensionalization | `aero/integration.py:143` |
+| `_rate_column` / `_RATE_LABEL_AXIS` | The rate-column kinematics: `(2/L)·n̂·(ê × (r − r_ref))` about the RCSID origin, and the label axes `+ŷ / −x̂ / −ẑ` (#8) | `aero/integration.py` |
+| `aesurf_hinges` | Control-surface hinge geometry: per half `(origin, ĥ = CID +y, boxes)` for CID1/ALID1 and CID2/ALID2 (#9) | `aero/integration.py` |
+| `rigid_rate_scales` | Physical rate (basic +x/+y/+z) → label value: `−1/V, −1/V, −b/2V, +c/2V, −b/2V` for DOFs 2–6 (#8) | `aero/integration.py` |
+| `load_factor_to_urdd3` | The load-factor → `URDD3` sign (`−n_z·g`), for maneuvers and gusts alike | `model/maneuver_presets.py:24` |
+| `load_resultant` / `grid_resultant` | The 6-component resultant of a g-set load about a reference (undeformed grid positions, basic): the maneuver closure, the f06 `APPLIED STRUCTURAL LOAD` line (#6), the MONPNT3 sums | `solver/sol144_util.py`, `results/monitor_points.py` |
+| `mass_ratio` / `alleviation_factor` / `gust_increment` | The Pratt gust formula (μ, `K_g`, Δn). Deliberately **outside** the solver — dimensional, see §7 | `sbeam_tools/cases/gust.py` |
 | `build_box_id_map` | The NASTRAN box-ID derivation (F1) | `aero/panel.py:43` |
 | `build_wg` / card writers | W2GJ sign flip (assembly negates; writers negate back) | `aero/integration.py:61`, `model/aero.py:88` |
+| `bar_internal_resultants` | The nodal `K·u` → +x-face internal-resultant sign (CBAR `P, V, T, M`; rod `P, T` via `rod_force_from_local`) (#37, #38) | `solver/sol101.py`, `solver/element_recovery.py` |
 
 When a new sign-sensitive quantity appears, create its single-source helper first and add
 it to this table.
@@ -172,19 +251,38 @@ it to this table.
 Figure: `../figures/sign_conventions_internal_loads.svg`; cut geometry:
 `../figures/section_cut.svg`.
 
-- **CBAR force recovery is the raw element-frame `K·u` 12-vector**
-  (`solver/sol101.py:73-125`; same routine feeds SOL 144 and the transient). Reported
-  components: axial/shear1/shear2/torque are the **end-B** nodal values — axial
-  tension-positive, shears along local +y/+z, torque right-handed about local +x. The
-  end-A `Fx` is the negated reaction and is deliberately not used
-  (`sol101.py:155-156`). Element local frame: `e_x = GB−GA`, `e_y` from the orientation
-  vector, `e_z = e_x × e_y` (`assembly/stiffness.py:99-122`).
-- **⚠ End-A bending moments `bm1_a`/`bm2_a` are reported raw** — no statement anywhere
-  fixes which face they are on (the end-B trap called out for axial is not applied to
-  them). **⚠ f06 plane labels are internally inconsistent and half-swapped vs MSC:**
-  `SHEAR-1 = Fy` matches MSC plane 1, but `BENDING-1 = My` is MSC's plane **2**
-  (DEF-M18; `sol101.py:117-124`). Do not map an MSC-trained f06 parser onto sbeam
-  columns without checking.
+- **CBAR force output is the NASTRAN/MSC `FORCES IN BAR ELEMENTS` layout on +x-face
+  internal resultants** (`BarForce`, `recover_bar_forces` in `solver/sol101.py`; same
+  routine feeds SOL 144 and the transient; DEF-M18 #21). Plane 1 = element x–y (about
+  local z, PBAR `I1`), plane 2 = x–z (about local y, `I2`). `M1 = +Mz⁺`, `M2 = −My⁺`,
+  `V1 = Vy⁺`, `V2 = Vz⁺`, `AXIAL = P` (tension +), `TORQUE = T` (right-handed about +x).
+  Both plane moments are **positive when they compress the +y / +z fibres**; a cantilever
+  with tip +Py, +Pz has `M1 = Py(L−x)`, `M2 = Pz(L−x)` > 0, decaying to the tip. The f06
+  block is column-for-column MSC's, so an MSC-trained f06 reader can be used as is.
+  Element local frame: `e_x = GB−GA`, `e_y` from the orientation vector, `e_z = e_x × e_y`
+  (`assembly/stiffness.py:99-122`).
+- **CBAR internal resultants and fibre stress are on the +x face at both ends**
+  (`bar_internal_resultants`, `solver/sol101.py`; DEF-M21 #37): end-B values are the
+  nodal `K·u` values as they stand, end-A values are the negated nodal values, so
+  `P = −f[0] = +f[6]`, `Mz_A = −f[5]`, `Mz_B = +f[11]`, etc. This is the section-cut
+  sign below extended to end A. Stress at a recovery point (y, z) is
+  `σ = P/A − Mz·y/I1 + My·z/I2` at both ends (tension-positive, I1 ↔ x–y plane about z,
+  I2 ↔ x–z plane about y); +Py compresses +y fibres. The same fibre at a shared node
+  reads the same from both elements (`tests/solver/test_cbar_stress_sign.py`). NASTRAN-95
+  `sbar2.f` agrees term by term; its plane-2 moment is `−My`.
+- **CBAR stress output is the NASTRAN/MSC `STRESSES IN BAR ELEMENTS` layout** (`BarStress`;
+  DEF-M18 #21): `SA1–4`/`SB1–4` are **bending-only** at C, D, E, F,
+  `σ_b = −M1·y/I1 − M2·z/I2` on the force-table plane moments; `AXIAL = P/A`;
+  `SA-MAX/MIN = AXIAL + max/min(SA1–4)` are the extreme **totals**. A point left at (0, 0)
+  contributes 0.0 and bounds MAX/MIN, as in NASTRAN. Stress and force tables are on the
+  same face and plane convention by construction
+  (`tests/solver/test_cbar_force_layout.py` G5).
+- **CROD/CONROD force output is the NASTRAN `FORCES IN ROD ELEMENTS` layout on the same
+  +x-face resultants** (`RodForce`, `solver/element_recovery.py`; #38): `AXIAL = P = +f[6]`
+  (tension +), `TORQUE = T = +f[9]` (right-handed about `e_x = GB−GA`), through the same
+  `bar_internal_resultants` helper as CBAR, so a rod and a `PA=PB=56` CBAR print identical
+  columns (V27). `STRESSES IN ROD ELEMENTS`: `AXIAL STRESS = P/A`, `TORSIONAL STRESS =
+  T·C/J`. A rod has no orientation vector; its local y/z are irrelevant to every output.
 - **MONSECT/section-cut sign = the CBAR end-B sign, with no flip:** the cut reports the
   resultant of all applied loads (aero + inertia + reaction, each column signed alike)
   on the **outboard** side, about the cut plane's axis intercept, rotated into the cut
@@ -208,8 +306,16 @@ Figure: `../figures/sign_conventions_internal_loads.svg`; cut geometry:
   (DEF-M19).
 - **Applied loads are used exactly as authored** (FORCE/MOMENT/GRAV: no hidden sign,
   right-hand rule about the given axis, GRAV direction vector must itself point down;
-  `assembly/load_vector.py:20-81`). Exported FORCE/MOMENT trim loads are physical CID-0
-  loads, verbatim (`results/load_export.py:45-63`).
+  `assembly/load_vector.py:20-81`) — in SOL 101, in the restrained aeroelastic path and,
+  since #6, in a SOL 144 **trim**, where the subcase `LOAD` set is a body-fixed basic-frame
+  load added to the trim RHS un-scaled by `q` (ANGLEA is a flow angle; the body never
+  rotates, so a body-axis thrust line stays a body-axis thrust line — no follower term).
+  `GRAV` is refused in a trim `LOAD` set: gravity enters a trim through `URDD3` only (§5).
+  Exported FORCE/MOMENT trim loads are physical CID-0 loads, verbatim
+  (`results/load_export.py:45-63`); `maneuver_loads.bdf` carries aero + inertial + applied.
+- **Monitor / section-cut `applied` column** (#6): the subcase `LOAD` set summed like the
+  inertia column, same sign, same frame; present only when the subcase selected a `LOAD`
+  (f06 source line `+ APPLIED`; CSV `Fz_applied`, `c*_applied` are `0.0` otherwise).
 - **⚠ CONM2 products of inertia are the direct tensor entries, POSITIVE off-diagonals**
   — `I_cid = [[i11,i21,i31],[i21,i22,i32],[i31,i32,i33]]`
   (`assembly/mass_matrix.py:130-134`, gated `tests/aero/test_trim_urdd.py:265-279`).
@@ -219,18 +325,37 @@ Figure: `../figures/sign_conventions_internal_loads.svg`; cut geometry:
 
 ## 10. Engines and powered effects
 
-- **There is no propulsion model of any kind** — no thrust, engine-torque, gyroscopic,
-  or slipstream term exists in code (Known Limitations,
-  `00_program_overview.md`). Powered aero enters **only** through the ordinary
-  correction cards (W2GJ/WT2/CHORDCP + body TOTAL rows) built from powered data —
-  the "corrections position", theory `02_realistic_airplane_sol144.md` §7.
-- **Thrust cannot enter a SOL 144 trim:** a subcase with both `TRIM` and `LOAD` raises
-  (DEF-M4 guard, `solver/sol144.py:314-325`); the restrained static path is the
-  workaround. Follow-on backlog item: applied structural load in the trim RHS.
-- **GAP — propeller handedness:** no convention anywhere fixes which sign of swirl
-  correction corresponds to which rotation direction; the user tabulates per-strip
-  signs by hand (theory §7). Engine torque / gyroscopic case sets (23.361/.363) are
-  declared out of scope (`30_future/02_parked.md`).
+- **There is no propulsion *model*** — no actuator disc, slipstream or gyroscopic term
+  exists in code (Known Limitations, `00_program_overview.md`). Powered **aero** enters
+  **only** through the ordinary correction cards (W2GJ/WT2/CHORDCP + body TOTAL rows)
+  built from powered data — the "corrections position", theory
+  `02_realistic_airplane_sol144.md` §7.
+- **Thrust and engine torque enter a SOL 144 trim as applied structural loads** (#6,
+  2026-10-24; design note `30_future/designs/thrust_in_trim_applied_load.md`): `FORCE` /
+  `MOMENT` cards at the engine-mount grid, selected by `LOAD` in the trim subcase, added to
+  the trim RHS beside the aerodynamic and inertial loads (§9 bullet). Which free label
+  balances them is decided by the trim card: with `SUPORT 35` the thrust x-component is
+  reacted at the SPC and the pitch trim sees `T·(z_ref − z_T)`; with `SUPORT 135` and a
+  free `URDD1` the surge is trimmed (`m·URDD1 = T + Fx_aero`) and the pitch trim sees the
+  thrust moment **about the CG**, `T·(z_cg − z_T)`. Gates: `tests/aero/test_thrust_trim.py`
+  (V-THR, `sample/val_thrust_trim.bdf`). A thrust moment is never folded into a `cm0`.
+- **Propeller handedness** (decided 2026-10-24 with #6, consumed by the torque trim on
+  `sample/val_lateral_aileron_rudder.bdf` `SUBCASE 3`): a propeller is **clockwise** when it
+  turns clockwise as seen **from behind** (the pilot's view; Lycoming, Continental, PT6) —
+  its rotation vector is along basic **−x** (forward). Consequences, all for clockwise
+  (counter-clockwise flips every sign):
+  - **Torque reaction on the airframe = `+Mx` basic** of magnitude `Q = P/Ω` at the mount
+    (`MOMENT sid gid 0 Q 1. 0. 0.`): starboard wing up, the textbook roll toward **port**.
+    Wings level therefore trims a **negative** `AIL` (starboard TE-up, §6 D1). Gate:
+    `tests/aero/test_lateral_cases.py` G8 (`AIL = −0.0351` for `Q = 35`, `AIL < 0`).
+  - **Swirl in a powered correction:** the slipstream rotates with the propeller — downwash
+    (`Δα < 0`) on the **starboard** side of the nacelle, upwash on the port side, written
+    into the per-strip `a0`/`W2GJ` increments with the §3 sign rule; a fin above the
+    slipstream sees a `+y` crossflow, i.e. `+Fy` at the tail, i.e. nose-to-port = `+CMZ`
+    basic (§6 D2) — the familiar left-turning tendency. Documented rule, **ungated** until a
+    powered correction deck exists.
+  Engine torque / gyroscopic *case sets* (23.361/.363) remain out of scope
+  (`30_future/02_parked.md`); the single torque trim above is the convention's consumer.
 
 ## 11. Convention figures
 

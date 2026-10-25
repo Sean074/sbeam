@@ -11,9 +11,18 @@ deprecated by DEF-H2/H3 (2026-07-31) for delivering ``f_target/β²`` at Mach an
 for aliasing strips across CAERO1s, and ``WT2`` plus the section-correction path
 (``sbeam.aero.section_correction``) are correct and strictly more capable.
 
-Reference normalwash convention (WT2):
-  w_ref = -np.ones(n)  (uniform unit incidence, alpha = 1, same rhs as solve_rigid_cl).
-  All corrections are relative to the VLM solution at that reference incidence.
+Reference normalwash convention (WT2) — per incidence axis (#52):
+  every CAERO1 is calibrated at unit incidence on ITS OWN axis, with the other axis's
+  surfaces at zero.  A surface whose boxes' dominant normal is y (a fin, a vertical body
+  panel) is a β surface; every other surface is an α surface.  Box k's reference is
+      cp_ref_k = (AJJ⁻¹ @ w_α)_k   for an α surface,   w_α = −1 on α boxes, 0 elsewhere
+      cp_ref_k = (AJJ⁻¹ @ w_β)_k   for a β surface,    w_β = −1 on β boxes, 0 elsewhere
+  (``wt2_reference_cp``).  A uniform −1 on every box, the pre-#52 rule, is a SIDESLIP on
+  a vertical surface: on a deck with a fin it loaded the fin sideways in the reference,
+  whose vortex system made the tailplane reference — and so every WT2 ratio there —
+  port/starboard asymmetric at β = 0.  On a deck with no y-dominant surface the two rules
+  coincide exactly (w_α = −ones), so such decks are unchanged.
+  All corrections are relative to the VLM solution at that reference.
 
 Return types:
   apply_wkk  →  corrected AJJ*  (caller inverts via np.linalg.solve)
@@ -130,20 +139,50 @@ def apply_wkk(
     return np.diag(w) @ ajj
 
 
+def wt2_reference_cp(boxes: Sequence[AeroBox], ajj_inv: FloatArray) -> FloatArray:
+    """Per-axis WT2 reference loading (Γ-units), the single source for builder and solver.
+
+    Each CAERO1 is assigned an axis from the mean absolute normal of its boxes: a
+    y-dominant surface is a β surface, every other surface an α surface.  α surfaces
+    take their reference from ``AJJ⁻¹ @ w_α`` (−1 on α boxes, 0 on β boxes), β surfaces
+    from ``AJJ⁻¹ @ w_β`` — so a fin is never sideslipped by the α calibration of the
+    tailplane beside it (#52).  With no β surface this is exactly ``AJJ⁻¹ @ −ones``.
+    """
+    n = len(boxes)
+    by_surface: dict[int, list[int]] = {}
+    for k, box in enumerate(boxes):
+        by_surface.setdefault(box.caero_eid, []).append(k)
+    is_beta = np.zeros(n, dtype=bool)
+    for idxs in by_surface.values():
+        mean_abs = np.mean([np.abs(boxes[k].normal) for k in idxs], axis=0)
+        if mean_abs[1] > mean_abs[2]:
+            is_beta[idxs] = True
+    w_alpha = np.where(is_beta, 0.0, -1.0)
+    cp_ref = ajj_inv @ w_alpha
+    if is_beta.any():
+        cp_beta = ajj_inv @ np.where(is_beta, -1.0, 0.0)
+        cp_ref = np.where(is_beta, cp_beta, cp_ref)
+    return np.asarray(cp_ref)
+
+
 def apply_wt2(
-    ajj: FloatArray, cp_target: FloatArray, ajj_inv: Optional[FloatArray] = None
+    ajj: FloatArray, cp_target: FloatArray, ajj_inv: Optional[FloatArray] = None,
+    cp_ref: Optional[FloatArray] = None,
 ) -> FloatArray:
     """Pressure-matching correction.  Returns corrected AJJ*⁻¹.
 
     Finds a diagonal scaling r such that the corrected A*⁻¹ = diag(r) @ AJJ⁻¹
-    reproduces cp_target when applied to the unit-incidence reference normalwash
-    w_ref = -ones(n):
+    reproduces cp_target on the reference loading cp_ref:
 
-        cp_vlm_ref  = AJJ⁻¹ @ w_ref          (VLM at unit incidence)
-        r_k         = cp_target_k / cp_vlm_ref_k
+        r_k         = cp_target_k / cp_ref_k
         A*⁻¹        = diag(r) @ AJJ⁻¹
 
-    Boxes where |cp_vlm_ref_k| < _RATIO_TOL keep r_k = 1 (no correction applied).
+    ``cp_ref`` is the per-axis reference from ``wt2_reference_cp`` (#52); callers with
+    the box geometry must pass it.  When omitted it falls back to the uniform
+    ``AJJ⁻¹ @ −ones`` — identical to the per-axis rule only when no surface is
+    y-dominant (no fin), which is all a geometry-free caller can assume.
+
+    Boxes where |cp_ref_k| < _RATIO_TOL keep r_k = 1 (no correction applied).
     ``ajj_inv`` may be supplied by a caller that already inverted AJJ (DEF-R6:
     ``_assemble_vlm_operator`` computes it for the WT2 target baseline, and its
     ``check_conditioning`` already covered the matrix); when omitted, this
@@ -152,10 +191,11 @@ def apply_wt2(
     n = ajj.shape[0]
     if ajj_inv is None:
         lu_piv = check_conditioning(ajj)
-        ajj_inv = np.asarray(lu_solve(lu_piv, np.eye(n)))
-    w_ref = -np.ones(n)
-    cp_vlm_ref = ajj_inv @ w_ref
+        inv = np.asarray(lu_solve(lu_piv, np.eye(n)))
+    else:
+        inv = ajj_inv
+    cp_vlm_ref = inv @ -np.ones(n) if cp_ref is None else np.asarray(cp_ref)
     with np.errstate(divide="ignore", invalid="ignore"):
         ratio = np.where(cp_vlm_ref != 0.0, cp_target / cp_vlm_ref, 1.0)
     r = np.where(np.abs(cp_vlm_ref) > _RATIO_TOL, ratio, 1.0)
-    return np.diag(r) @ ajj_inv
+    return np.diag(r) @ inv

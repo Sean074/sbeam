@@ -217,7 +217,7 @@ Use case: workflows that consume `Φᵀ M Φ = I` as a precondition (some modal-
 | `sbeam/solver/sol103.py` | After eigensolve + full-DOF reconstruction, if `bulk.rbmref is not None`, call `apply_rbm_rebase`. The M_global the rebase needs is the full pre-reduction global mass; pass through. |
 | `sbeam/results/results.py` | Extend `Sol103Result` with `rbm_metadata: Optional[RbmMetadata] = None`. New `@dataclass RbmMetadata(cid, norm, labels, gen_masses, inertia_tensor, cg_offset, ref_point_global)`. |
 | `sbeam/results/f06_writer.py` | Insert the "R I G I D   B O D Y   M O D E S" block before the eigenvalue table when `result.rbm_metadata is not None`. |
-| `sbeam/viewer/results_view.py` | Mode-selector labels for the first `NRBM` modes use SURGE/SWAY/HEAVE/ROLL/PITCH/YAW instead of "Mode 1, Mode 2, …" when `rbm_metadata` is present. |
+| `sbeam_tools/viewer/results_view.py` | Mode-selector labels for the first `NRBM` modes use SURGE/SWAY/HEAVE/ROLL/PITCH/YAW instead of "Mode 1, Mode 2, …" when `rbm_metadata` is present. |
 | `docs/10_standard/01_beam_model.md` | Add RBMREF under bulk cards. |
 | `docs/10_standard/02_card_reference.md` | Add the RBMREF field table. |
 | `docs/10_standard/04_modal_analysis.md` | Add a "Rigid-body mode rebase" section describing the math and `NORM` options. |

@@ -103,9 +103,13 @@ from sbeam.parser.case_control import SubcaseControl
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.aero.aero_model import AeroModel
 from sbeam.gpwg import compute_gpwg
+from sbeam.model.mass_overlay import resolve_mass_case
 from sbeam.results.results import ManeuverStep, ManeuverResult, peak_grid_force
-from sbeam.results.section_envelope import build_section_envelope
+from sbeam.results.section_envelope import (
+    build_monitor_envelope, build_section_envelope,
+)
 from sbeam.solver.maneuver_qs import (
+    refuse_load_in_mloads,
     assemble_operators,
     delta_of_t,
     force_l,
@@ -266,6 +270,7 @@ def run_maneuver_modal(
         raise ValueError(
             f"run_maneuver_modal: unknown recovery '{recovery}' "
             "(expected 'acceleration' or 'displacement')")
+    refuse_load_in_mloads("run_maneuver_modal", subcase)
     if subcase.mloads_sid is None or subcase.mloads_sid not in bulk.mloads:
         raise ValueError(
             f"run_maneuver_modal: MLOADS SID {subcase.mloads_sid} not found")
@@ -544,6 +549,7 @@ def run_maneuver_modal(
         crit_index=crit_index,
         mldprnt_items=(mldprnt.items if mldprnt is not None else []),
         massset_sid=subcase.massset_sid,
+        massset_label=resolve_mass_case(bulk, subcase.massset_sid).label,
         n_modes_used=n_e,
         basis_info={
             "n_r": n_r,
@@ -559,4 +565,5 @@ def run_maneuver_modal(
         },
     )
     result.section_envelope = build_section_envelope(result)
+    result.monitor_envelope = build_monitor_envelope(result)
     return result

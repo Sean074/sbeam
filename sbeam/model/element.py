@@ -17,6 +17,36 @@ class Cbar:
 
 
 @dataclass
+class Crod:
+    """Rod element: axial ``EA/L`` and torsion ``GJ/L`` along GA→GB, no bending.
+
+    No orientation vector: the element frame's ``e_y``/``e_z`` are irrelevant to a rod
+    (``designs/rod_element_crod.md`` D2). Section data comes from the PROD.
+    """
+    eid: int
+    pid: int
+    ga: int    # End A grid ID
+    gb: int    # End B grid ID
+
+
+@dataclass
+class Conrod:
+    """Rod element with inline section and material (NASTRAN ``CONROD``).
+
+    Physically identical to :class:`Crod`; ``rod_section`` in ``assembly/elements.py``
+    is the only code that distinguishes the two (D4).
+    """
+    eid: int
+    ga: int
+    gb: int
+    mid: int
+    A: float          # Cross-sectional area
+    J: float = 0.0    # Torsional constant
+    c: float = 0.0    # Torsional stress coefficient: tau = T * C / J
+    nsm: float = 0.0  # Non-structural mass per unit length
+
+
+@dataclass
 class Plotel:
     eid: int
     g1: int

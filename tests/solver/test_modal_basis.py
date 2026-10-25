@@ -351,3 +351,36 @@ def test_hset_gafs_requires_a_velocity(basis_fixture):
     bulk, gi, aero, ops, basis = basis_fixture
     with pytest.raises(ValueError, match="v_inf"):
         build_hset_gafs(bulk, ops, basis, aero, 0.0)
+
+
+# ---------------------------------------------------------------------------
+# G3 (#8, DEF-M15) — free-flight lateral rate aerodynamics damp, not drive
+# ---------------------------------------------------------------------------
+
+def test_b_hh_rigid_rate_diagonal_is_damping_for_every_free_flight_dof():
+    """Free the flagship in sway, plunge, roll, pitch and yaw (SUPORT 23456) and
+    project the rate aerodynamics: the EOM damping is ``C = C_struct − q·B_hh``
+    (maneuver_modal), so every rigid diagonal of ``B_hh`` must be NEGATIVE.
+    Before #8 the DOF-2/4/6 rate scales carried the wrong sign, which would have
+    made a free lateral rate anti-damped — the flagship fin makes all three
+    lateral entries non-zero, so the sign is observable here."""
+    from sbeam.model.constraint import Suport
+    _cc, bulk = parse_bdf(str(SAMPLE / "cessna210_flagship_mloads.bdf"))
+    for spc1 in bulk.spc1s[1]:
+        if 900 in spc1.grids:
+            spc1.c = "1"                 # keep only surge pinned
+    bulk.supports = [Suport(gid=900, dofs="23456")]
+    gi = build_grid_index(bulk)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        aero = build_aero_model(bulk, grid_index=gi)
+        ops = assemble_aset_operators(bulk, SubcaseControl(subcase_id=1, spc_sid=1, trim_sid=1), aero)
+        basis = build_maneuver_basis(bulk, ops)
+    assert ops.rigid_dofs == [2, 3, 4, 5, 6]
+    gafs = build_hset_gafs(bulk, ops, basis, aero, bulk.trims[1].velocity())
+    diag = {dof: float(gafs.B_hh[i, i]) for i, dof in enumerate(basis.rigid_dofs)}
+    for dof, val in diag.items():
+        assert val < 0.0, f"rigid DOF {dof}: B_hh diagonal {val:+.4e} would anti-damp (C = C_s − q·B_hh)"
+    # Order of magnitude sanity: lateral entries are real (fin), not round-off.
+    assert abs(diag[4]) > 1e-3 * abs(diag[5]) and abs(diag[6]) > 1e-3 * abs(diag[5])
+    assert abs(diag[2]) > 1e-3 * abs(diag[3])

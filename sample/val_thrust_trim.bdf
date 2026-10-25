@@ -1,0 +1,208 @@
+$ =========================================================================
+$ val_thrust_trim.bdf — V-THR: applied structural load in a SOL 144 trim (issue #6)
+$
+$ The AR = 8 rectangular wing of val_vlm_rect_ar8 (b = 8, c = 1, S = 8) plus a
+$ horizontal tail with an elevator, carried on a stiff beam spine, with an ENGINE
+$ grid hung 0.5 below the nose on a rigid pylon (RBAR).  Thrust is an ordinary
+$ FORCE card selected by LOAD in the trim subcase — the applied structural load
+$ enters the trim right-hand side beside the aerodynamic and inertial loads
+$ (design note 30_future/designs/thrust_in_trim_applied_load.md).
+$
+$ Three subcases share ONE trim card (PITCH = 0, URDD3 = -g, URDD5 = 0; ANGLEA,
+$ ELEV and URDD1 free against SUPORT 135):
+$   SUBCASE 1  no applied load                      — the reference trim
+$   SUBCASE 2  LOAD 710 = 1.0 x FORCE 701 (thrust)   — the LOAD-combination path
+$   SUBCASE 3  LOAD 701 directly                     — must equal SUBCASE 2 exactly
+$
+$ Conventions this deck PINS (charter 09_conventions.md §9/§10; note D1–D6):
+$   thrust  — a FORCE in the basic (body) frame, used exactly as authored: here
+$             T = 40 along -X (forward) at grid 70, 0.5 BELOW the reference line.
+$             Its only entry into the pitch balance is the moment about the
+$             reference point, +My = T * 0.5 (nose-UP: a low thrust line pitches
+$             up), so the trim answers with a more nose-down elevator.
+$   surge   — SUPORT 135 with URDD1 free: the x-force balance is TRIMMED, so
+$             m * URDD1 = T + Fx_aero exactly and the closure vanishes in all six
+$             components.  (With the ordinary SUPORT 35 / SPC 1246 recipe the
+$             thrust x-component is reacted at the SPC instead; the pitch answer
+$             is the same on this planar deck — gated in tests/aero/test_thrust_trim.py.)
+$   gravity — enters through URDD3 only.  A GRAV card in a trim LOAD set is REFUSED.
+$   RCSID 100 is z-DOWN stability axes at the reference, so URDD1/URDD3/URDD5 are
+$             textbook body accelerations (URDD3 = -9.81 is 1 g).
+$
+$ Geometry (basic frame: x aft, y starboard, z up; consistent units, SI-like):
+$   wing LE at x = 0, chord 1, span ±4; 20 span × 8 chord boxes per half.
+$   tail  LE at x = 4, chord 1, span ±1.5, z = 0.5 (clear of the wing wake);
+$         6 span × 8 chord boxes per half; elevator = aft 2 rows (E = 0.25),
+$         hinge CID 21 at x = 4.75 with +y = +Y (lift-increasing = TE-down).
+$   spine: nose grid 10 (-1.5, 0, 0); engine grid 70 (-1.5, 0, -0.5) on RBAR 70;
+$         reference grid 90 (0.25, 0, 0) = RCSID origin = SUPORT point; wing EA
+$         grids at y = ±2, ±4; tail grid 500 (4.25, 0, 0).  Total mass 10,
+$         CG (0.30, 0, -0.05).
+$
+$ ACCEPTANCE (V-THR, tests/aero/test_thrust_trim.py G1–G7):
+$   G1  trim(2) - trim(1) equals the solver's own Schur reduction of the applied
+$       load alone (exact linear algebra, 1e-10); same for the displacements.
+$   G2  on a stiffened copy the shift equals the rigid 2x2 solve with
+$       dCm = My(thrust about the reference)/(q S c) = 40*0.5/(51*8*1) = 0.0490.
+$   G3  SUBCASE 3 == SUBCASE 2 bit for bit; doubling T doubles every shift.
+$   G4  closure ≈ 0 in all six components; m*URDD1 = T + Fx_aero exactly.
+$   G5  the nose cut (SECNOSE) carries c1_applied = -T and c5_applied = +0.5 T;
+$       every-grid MONPNT3: aero + inertia + applied + reaction = 0.
+$   G6  rigid / restrained / unrestrained derivatives identical across subcases.
+$ =========================================================================
+$
+SOL 144
+TITLE = Thrust in trim — applied structural load in the SOL 144 RHS (V-THR)
+SUBCASE 1
+  LABEL = 1g level trim, no applied load
+  TRIM = 1
+  SPC  = 1
+  DISPLACEMENT = ALL
+  FORCE = ALL
+SUBCASE 2
+  LABEL = 1g level trim with thrust (LOAD combination)
+  TRIM = 1
+  LOAD = 710
+  SPC  = 1
+  DISPLACEMENT = ALL
+  FORCE = ALL
+SUBCASE 3
+  LABEL = 1g level trim with thrust (direct FORCE set)
+  TRIM = 1
+  LOAD = 701
+  SPC  = 1
+  DISPLACEMENT = ALL
+  FORCE = ALL
+BEGIN BULK
+$
+$ ----------------------------------------------------------- AERO REFERENCE
+$ ACSID RCSID  CREF  BREF  SREF  SYMXZ SYMXY
+AEROS,  0,  100,  1.0,  8.0,  8.0,  0,  0
+$
+$ ----------------------------------------------------------- COORD SYSTEMS
+$ CID 100 — RCSID, stability axes z-DOWN at the reference: z = −Z, x = −X (forward),
+$ hence y = z × x = +Y (starboard).  Origin = moment reference = SUPORT point.
+CORD2R, 100, 0, 0.25, 0.0, 0.0, 0.25, 0.0, -1.0
++, -0.75, 0.0, 0.0
+$ CID 2 — starboard wing spline axis (SPLINE2: axis = CID y): z = +Z, x = +X, y = +Y
+CORD2R, 2, 0, 0.25, 0.0, 0.0, 0.25, 0.0, 1.0
++, 1.25, 0.0, 0.0
+$ CID 3 — port wing spline axis: z = +Z, x = −X, y = −Y
+CORD2R, 3, 0, 0.25, 0.0, 0.0, 0.25, 0.0, 1.0
++, -0.75, 0.0, 0.0
+$ CID 21 — ELEVATOR hinge at x = 4.75, +y = +Y (both halves share it): z = +Z, x = +X
+CORD2R, 21, 0, 4.75, 0.0, 0.5, 4.75, 0.0, 1.5
++, 5.75, 0.0, 0.5
+$
+$ ----------------------------------------------------------- GRIDS
+GRID, 10,  , -1.5, 0.0, 0.0
+GRID, 70,  , -1.5, 0.0, -0.5
+GRID, 90,  , 0.25, 0.0, 0.0
+GRID, 110, , 0.25, 2.0, 0.0
+GRID, 120, , 0.25, 4.0, 0.0
+GRID, 210, , 0.25, -2.0, 0.0
+GRID, 220, , 0.25, -4.0, 0.0
+GRID, 500, , 4.25, 0.0, 0.0
+$
+$ ----------------------------------------------------------- PROPERTY / MATERIAL
+$ Stiff spine: the gates compare the trim against the solver's own Schur reduction,
+$ so flexibility is allowed but kept small.
+PBAR, 100, 1, 1.0-2, 1.0-3, 1.0-3, 2.0-3
+MAT1, 1, 7.0+10, 2.6+10
+$
+$ ----------------------------------------------------------- STRUCTURE
+CBAR, 10,  100, 10,  90,  0.0, 0.0, 1.0
+CBAR, 110, 100, 90,  110, 1.0, 0.0, 0.0
+CBAR, 120, 100, 110, 120, 1.0, 0.0, 0.0
+CBAR, 210, 100, 90,  210, 1.0, 0.0, 0.0
+CBAR, 220, 100, 210, 220, 1.0, 0.0, 0.0
+CBAR, 500, 100, 90,  500, 0.0, 0.0, 1.0
+$ Engine pylon: grid 70 rides rigidly on the nose grid 10 (0.5 below it).
+RBAR, 70, 10, 70, 123456
+$
+$ ----------------------------------------------------------- POINT MASSES (total 10)
+CONM2, 10,  10,  0, 1.0
+CONM2, 70,  70,  0, 1.0
+CONM2, 90,  90,  0, 3.0
+CONM2, 110, 110, 0, 1.0
+CONM2, 120, 120, 0, 1.0
+CONM2, 210, 210, 0, 1.0
+CONM2, 220, 220, 0, 1.0
+CONM2, 500, 500, 0, 1.0
+$
+$ ----------------------------------------------------------- CONSTRAINTS
+$ Pin sway, roll and yaw at the reference; SUPORT frees surge (1), plunge (3), pitch (5).
+SPC1, 1, 246, 90
+SUPORT, 90, 135
+$
+$ ----------------------------------------------------------- APPLIED LOADS
+$ Thrust: 40 along -X (forward) at the engine grid, 0.5 below the reference line.
+FORCE, 701, 70, 0, 40.0, -1.0, 0.0, 0.0
+$ The same thrust through a LOAD combination (exercises the superposition path).
+LOAD, 710, 1.0, 1.0, 701
+$
+$ ----------------------------------------------------------- AERO PANELS
+PAERO1, 1
+$ Starboard wing: root LE (0,0,0) -> tip LE (0,4,0); boxes 1000 + 8*i_span + j_chord
+CAERO1, 1000, 1, 0, 20, 8, 0, 0, 1
++, 0.0, 0.0, 0.0, 1.0, 0.0, 4.0, 0.0, 1.0
+$ Port wing: root LE (0,0,0) -> tip LE (0,-4,0); boxes 2000 + 8*i_span + j_chord
+CAERO1, 2000, 1, 0, 20, 8, 0, 0, 1
++, 0.0, 0.0, 0.0, 1.0, 0.0, -4.0, 0.0, 1.0
+$ Starboard tail: root LE (4,0,0.5) -> tip LE (4,1.5,0.5); boxes 3000 + 8*i + j
+CAERO1, 3000, 1, 0, 6, 8, 0, 0, 1
++, 4.0, 0.0, 0.5, 1.0, 4.0, 1.5, 0.5, 1.0
+$ Port tail: root LE (4,0,0.5) -> tip LE (4,-1.5,0.5); boxes 4000 + 8*i + j
+CAERO1, 4000, 1, 0, 6, 8, 0, 0, 1
++, 4.0, 0.0, 0.5, 1.0, 4.0, -1.5, 0.5, 1.0
+$
+$ ----------------------------------------------------------- SPLINES
+$ Wing halves: SPLINE2 on the EA grids (CID 2 / 3); tail halves: rigid ATTACH to 500.
+SPLINE2, 1601, 1000, 1000, 1159, 1100, 0.0, 1.0, 2
++, -1.0, 0.0
+SPLINE2, 2601, 2000, 2000, 2159, 2100, 0.0, 1.0, 3
++, -1.0, 0.0
+ATTACH, 1603, 3000, 3000, 3047, 500, 0
+ATTACH, 1604, 4000, 4000, 4047, 500, 0
+SET1, 1100, 90, 110, 120
+SET1, 2100, 90, 210, 220
+$
+$ ----------------------------------------------------------- CONTROL SURFACES
+$ Elevator: aft 2 rows (j_chord 6, 7) of both tail halves on one hinge axis.
+AELIST, 301, 3006, 3007, 3014, 3015, 3022, 3023, 3030, 3031
++, 3038, 3039, 3046, 3047, 4006, 4007, 4014, 4015
++, 4022, 4023, 4030, 4031, 4038, 4039, 4046, 4047
+AESURF, 601, ELEV, 21, 301
+$
+$ ----------------------------------------------------------- TRIM VARIABLES
+AESTAT, 501, ANGLEA
+AESTAT, 502, PITCH
+AESTAT, 503, URDD1
+AESTAT, 504, URDD3
+AESTAT, 505, URDD5
+$
+$ ----------------------------------------------------------- MONITORS
+AELIST, 1400, 1000, THRU, 1159, 2000, THRU, 2159, 3000, THRU, 3047
++, 4000, THRU, 4047
+AECOMP, ALLAERO, AELIST, 1400
+MONPNT1, MAERO, AERO TOTAL, 123456, ALLAERO, 0, 0.25, 0.0, 0.0
+SET1, 1310, 10, 70, 90, 110, 120, 210, 220, 500
+AECOMP, ALLGRID, SET1, 1310
+MONPNT3, MALL, WHOLE AIRPLANE BALANCE, 123456, ALLGRID, 0, 0.25, 0.0, 0.0
+$ Nose free body: cut planes normal to x ahead of the reference; SIDE = NEG keeps
+$ the members forward of the cut (grids 10 and 70 — the engine and its pylon).
+SET1, 1300, 10, 70
+AECOMP, NOSE, SET1, 1300
+MONSECT, SECNOSE, NOSE AND PYLON LOADS, NOSE, 0, 1, NEG
++, -1.0, -0.5
+SET1, 1301, 110, 120
+AECOMP, RWINGEA, SET1, 1301
+MONSECT, SECRW, RIGHT WING LOADS, RWINGEA, 2
++, 1.0, 3.0
+$
+$ ----------------------------------------------------------- TRIM CASE
+$ 1 g level flight: PITCH = 0, URDD3 = -g (RCSID z-down), URDD5 = 0;
+$ ANGLEA, ELEV and URDD1 free against the three SUPORT equations (determined).
+TRIM, 1, 0.0, 51.0, PITCH, 0.0, URDD3, -9.81, URDD5, 0.0
+$
+ENDDATA

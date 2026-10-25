@@ -376,13 +376,17 @@ def test_prescribed_rigid_closure_is_carried_by_the_reaction():
     assert dynamic, "no sample is out of rigid balance; pick a stronger command"
     for step in dynamic:
         st = step.section_loads["SECALL"].stations[0]
-        # closure = aero + rigid inertia only; the free body adds elastic +
-        # damping + reaction and lands on zero.  Forces only: the cut takes
+        # closure = the full applied load (aero + rigid + elastic inertia +
+        # damping, #3); the free body adds the reaction and lands on zero, so
+        # the closure IS minus the reaction.  Forces only: the cut takes
         # moments about its own plane/reference-line intercept while the closure
         # takes them about the SUPORT point, so the two moment sets differ by a
         # transfer term and are not comparable term-by-term.
-        assert np.allclose(st.aero[:3] + st.inertia[:3], step.closure[:3],
+        applied = st.aero[:3] + st.inertia[:3] + st.elastic_inertia[:3] + st.damping[:3]
+        assert np.allclose(applied, step.closure[:3],
                            rtol=1e-8, atol=1e-6 * abs(step.closure[2]))
+        assert np.allclose(step.closure[:3] + st.reaction[:3], 0.0,
+                           atol=1e-6 * abs(step.closure[2]))
         assert abs(st.reaction[2]) > 0.0
 
 

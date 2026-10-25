@@ -33,6 +33,13 @@ Each CBAR element contributes a 12×12 local consistent mass matrix `[m_e]` base
 - Translational inertia: `rho * A * L` terms distributed via cubic Hermite shape functions
 - Rotational inertia: second-order terms (can be optionally included or excluded)
 
+A `CROD`/`CONROD` (#38) contributes the consistent **translational** rod mass only:
+`(ρA + NSM)·L/6·[2 1; 1 2]` on each of the three translation pairs (the 3D-truss consistent
+mass, what MSC `COUPMASS` gives for a rod) and **no torsional or rotary inertia**, as in MSC
+and NASTRAN-95 — a rod has no `I1`/`I2` for the CBAR `ρ(I1+I2)` term and `J` is a stiffness
+constant. Rigid-body mass is exactly `(ρA + NSM)·L`. Gate: V26 (`CONM2` on two massless
+struts, exact 2-DOF closed form; with `ρ > 0` the pair drops by < 1 %).
+
 CONM2 concentrated masses contribute a full 6×6 symmetric block to the global mass matrix at the referenced grid's DOFs: translational mass `m·I₃`, offset-induced translation-rotation coupling `−m·skew(r)`, and rotational inertia from the parallel axis theorem plus the CM inertia tensor (I11–I33). When the CONM2 CID field is non-zero, the offset vector `r` and inertia tensor `I` are rotated from the CID frame into global CID 0 before assembly (`R @ r` and `R @ I @ Rᵀ`). For zero offset and no inertia tensor, only the translational diagonal is affected.
 
 ---
@@ -40,7 +47,7 @@ CONM2 concentrated masses contribute a full 6×6 symmetric block to the global m
 ## Global Mass Assembly
 
 1. Initialise `M_global` as a `(6N × 6N)` zero matrix.
-2. For each CBAR element: compute local consistent mass matrix `[m_e]` and transform to global coordinates using the same `[T]` as used for the stiffness matrix.
+2. For each line element (CBAR, CROD, CONROD through `iter_line_elements`, `assembly/elements.py`): compute the local consistent mass matrix `[m_e]` and transform to global coordinates using the same `[T]` as used for the stiffness matrix. On a pin-flagged element (PA/PB) the local mass is first condensed congruently with the stiffness release transformation, `M' = TᵀMT` (NASTRAN-95 `bard.f`), so the released DOF follows the static deflected shape; on a 4-element clamped–pinned span this is the difference between +1.5 % and +0.07 % on f₁ (V23).
 3. Scatter into `M_global` at DOF positions of GA and GB.
 4. For each CONM2: assemble the full 6×6 symmetric mass block into `M_global` at the referenced grid's DOF base. Block includes: `m·I₃` (translational), `−m·skew(r)` / `m·skew(r)ᵀ` (coupling, non-zero only when offset r ≠ 0), and `I_cm + m·(|r|²·I₃ − r·rᵀ)` (rotational, parallel axis + CM inertia).
 

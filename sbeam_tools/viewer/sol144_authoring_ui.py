@@ -23,9 +23,10 @@ from sbeam.model.maneuver import (
     Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads,
 )
 from sbeam.model.card_writers import write_authored_block
-from sbeam.viewer import sol144_authoring as logic
+from sbeam_tools.viewer import sol144_authoring as logic
 from sbeam.parser.case_control import CaseControl
-from sbeam.viewer.case_control_ui import export_bdf_text
+from sbeam_tools.viewer.case_control_ui import export_bdf_text
+from sbeam_tools.common.units import UNIT_SYSTEMS
 
 
 def export_sol144_bdf(cc: CaseControl, bulk: BulkData,
@@ -175,6 +176,21 @@ def _aesurf_form(bulk: BulkData, card: Optional[Aesurf], default_id: int):
         index=alids.index(card.alid1) if card and card.alid1 in alids else 0,
         key="auth_aesurf_alid1",
     ) if alids else None
+    # Second hinge half (#9): an antisymmetric aileron pair is ONE label with
+    # CID1 = starboard half, CID2 = port half, both hinge +y pointing outboard.
+    col3, col4 = st.columns(2)
+    cid2 = col3.selectbox(
+        "Second hinge CID (CID2, 0 = none)", cids,
+        index=cids.index(card.cid2) if card and card.cid2 in cids else 0,
+        key="auth_aesurf_cid2",
+        help="Port half of an aileron pair: its own CORD2R with +y outboard (charter §6).",
+    )
+    alid2_opts = [0] + alids
+    alid2 = col4.selectbox(
+        "Second box list (ALID2, 0 = none)", alid2_opts,
+        index=alid2_opts.index(card.alid2) if card and card.alid2 in alid2_opts else 0,
+        key="auth_aesurf_alid2",
+    )
     eff = st.number_input("Effectiveness (EFF)", value=(card.eff if card else 1.0),
                           key="auth_aesurf_eff")
     if not label:
@@ -183,8 +199,11 @@ def _aesurf_form(bulk: BulkData, card: Optional[Aesurf], default_id: int):
     if alid1 is None:
         st.warning("Define an AELIST first — AESURF needs a box list.")
         return None
+    if bool(cid2) != bool(alid2):
+        st.warning("CID2 and ALID2 go together — give both or neither.")
+        return None
     return Aesurf(id=int(aid), label=label, cid1=int(cid1), alid1=int(alid1),
-                  eff=float(eff))
+                  cid2=int(cid2), alid2=int(alid2), eff=float(eff))
 
 
 def _aelist_form(bulk: BulkData, card: Optional[Aelist], default_id: int):
@@ -568,10 +587,18 @@ def _render_preset_panel(bulk: BulkData) -> None:
         col1, col2 = st.columns(2)
         param = col1.number_input(preset.param_label, value=preset.param_default,
                                   key="auth_preset_param", format="%.4g")
-        g = col2.number_input(
-            "Gravity g (model units)", value=32.174, key="auth_preset_g",
-            format="%.6g",
-        ) if preset.uses_g else 0.0
+        g = 0.0
+        if preset.uses_g:
+            # #30: the solver is unit-neutral (charter §7), so the deck's unit
+            # system must be declared to prefill g; the value stays editable.
+            # Keyed per system so switching re-prefills instead of keeping the
+            # previous system's number under a new label.
+            units = UNIT_SYSTEMS[col2.selectbox(
+                "Deck unit system", list(UNIT_SYSTEMS), key="auth_preset_units")]
+            g = col2.number_input(
+                f"Gravity g ({units.length_unit}/s², {units.name})", value=units.g,
+                key=f"auth_preset_g_{units.name}", format="%.6g",
+            )
         missing = logic.missing_preset_labels(bulk, preset)
         if missing:
             st.warning(f"Missing AESTAT labels: {', '.join(missing)}")

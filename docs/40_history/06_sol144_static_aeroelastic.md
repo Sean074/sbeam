@@ -2433,3 +2433,220 @@ force-mapping spline (`SPLINEF`) is backlogged.
 as written; it simply is no longer forced by the ATTACH limitation.)*
 
 ---
+
+---
+
+## Issue #1: Quasi-static gust load cases (Pratt, FAR/CS 23.341) ✅ COMPLETE (2026-09-05)
+
+**Tier L** (new capability, new card, new physics). Milestone v0.3.0. Design note
+agreed before code per CLAUDE.md rule 1:
+`docs/30_future/designs/gust_pratt_23341.md`.
+
+**Objective:** deliver the mandatory FAR/CS-23 vertical-gust design cases as ordinary
+balanced-maneuver trims, with no DLM and no unsteady aerodynamics. 23.341 collapses
+the airplane's 1-cosine gust response into a closed-form alleviation factor and
+applies the result as an incremental load factor — precisely the input the Step-53
+balanced-maneuver path already accepts.
+
+**Deliverables:**
+- `sbeam_tools/cases/gust.py` — ISA atmosphere, the 23.333(c) `U_de` schedule
+  (V_C/V_D/V_B, tapering above 20,000 ft), the Pratt helpers (`mass_ratio`,
+  `alleviation_factor`, `gust_increment`), a deck reader and a BDF emitter, behind a
+  CLI. Reads `S`/`c̄` from `AEROS`, `W` from GPWG per `MASSSET`, and rigid `CZ_α` from
+  a structure-free derivative run.
+- `sbeam/model/gust.py` (`Gustlf`), parser handler + cross-reference validation,
+  `write_gustlf` + `FAMILIES` entry, `gustlf_sid` on `SubcaseControl`, the solver
+  stage that injects `URDD3`, `gust_echo` on `Sol144TrimResult`, and the f06
+  provenance block.
+- `sample/cessna210_flagship_gust.bdf` — generated 12-case deck.
+- 40 gates (S-GUST1–6a, V-GUST1–7, P-GUST1–6); `scripts/` added to the ruff and
+  pyright scopes.
+
+**Test/acceptance:** the external anchor is **S-GUST1** — a consistent-units
+implementation fed Imperial inputs must reproduce the regulation's own constant
+`498` to within 0.2 % (measured 0.11 %), because `498 ≡ 2/(ρ₀ · 1.6878)`. ISA density
+matches published tables to 0.001 %. The flagship reproduces the design note's worked
+table (μ = 13.855, `K_g` = 0.6365, `n` = +3.996 / −1.996 at the cruise point) with
+every value recomputed from the parsed deck. End-to-end, `lift == n·W` to 1e-6.
+
+**Key decisions:**
+
+1. **The dimensional calculation lives outside the solver.** The regulation is
+   dimensional; sbeam's card fields are unit-neutral by charter (§7) and the solver
+   has no atmosphere model. Rather than breach the charter, the script owns units and
+   the solver receives a dimensionless load factor. Charter §7 gained a rule making
+   this the preferred pattern over adding unit-aware fields.
+2. **`GUSTLF` is a provenance card.** Only `TRIMID`, `N` and `G` reach the solution;
+   the derivation is recorded and echoed so the f06 is self-describing for a
+   certification artefact, without sbeam owning arithmetic it cannot verify. The f06
+   block states that limitation in the listing. The one falsifiable check is
+   `0 < K_g < 0.88`, the strict range of `0.88μ/(5.3+μ)`.
+3. **Rigid `CZ_α`.** Pratt is a rigid-airplane derivation in plunge; an elastic slope
+   would mix a flexible quantity into a formula whose empirical constants were
+   calibrated on the rigid basis. `K_g` alleviates rigid-body plunge plus unsteady
+   lift growth — it is *not* a flexibility correction, and the note records that
+   explicitly because the opposite rationale had been proposed. Rigid is also
+   single-pass: `compute_rigid_derivs` needs no structure, mass or `q`.
+4. **`ALT` is the one blank-able provenance field.** Zero is physically meaningless
+   for gust velocity, airspeed, `K_g`, `μ` and lift slope, so `0.0` safely means "not
+   recorded" for those; sea level is a real condition, so altitude needed a distinct
+   absence. Caught by the f06 printing a sea-level case as "NOT RECORDED".
+5. **Balanced posing; 23.423 split out.** Applying `n` as a balanced maneuver is what
+   23.341 asks for. Horizontal-tail gust loads need a controls-fixed posing and their
+   own formula, and were filed as their own v0.3.0 issue rather than left unplanned.
+6. **The acceptance criterion on the issue was corrected.** It cited a worked example
+   in the FAR-23 guidance material; that document carries the regulation text and the
+   23.423 formula but **no numeric worked example** (verified 2026-09-05 — every
+   "example" in it is a plot). The `498` identity replaced it.
+
+### Issue #10 — Lateral trim cases: aileron pair + rudder deck, conventions, gates (Tier L) ✅ COMPLETE (2026-10-24)
+
+Design note: `30_future/designs/lateral_cases_aileron_rudder.md` (one note for #8 → #9 →
+#10, agreed in chat 2026-10-24 before code; #24 folded in).
+
+**Objective:** make "SOL 144 engineering-complete **including lateral**" true: trusted
+steady-roll and steady-sideslip trims end to end — aileron pair and rudder with decided sign
+conventions, running through monitor and section loads like any symmetric case, validated
+against closed forms and exact identities. Prerequisites closed first: #8 (rate scales and
+kinematic rate columns) and #9 (AESURF second hinge half).
+
+**Deliverables:**
+- `sample/val_lateral_aileron_rudder.bdf` — the AR 8 reference wing + a vertical fin on a
+  stiff beam spine; aileron pair as one `AESURF 601 AIL 11 301 12 302` (CID 11 starboard
+  +y = +Y, CID 12 port +y = −Y, both outboard); rudder `AESURF 602 RUD 13 303` with CID 13
+  +y = −Z (down); `SUPORT 90, 46`, RCSID 100 z-down at the root; `MONPNT1`/`MONPNT3`/`MONSECT`;
+  `TRIM 1` steady roll (`ROLL = 0.05`, `AIL`/`RUD` free), `TRIM 2` steady sideslip
+  (`SIDES = 0.05`). Header documents every convention the deck pins.
+- `tests/aero/test_lateral_cases.py` (V-LAT2, G10–G12) — see Test/Acceptance.
+- Viewer presets (`viewer/sol144_authoring.py`): steady-roll parameter is `pb/2V`, both
+  lateral presets name their `SUPORT` DOF; `model/maneuver_presets.py` recipes corrected
+  (pull-up `PITCH = (n − 1)·g·c/(2V²)`, lateral recipes with SUPORT DOFs).
+- Flagship comments: MLOADS "nose-up pull" → "elevator TE-down step", hinge "x-axis" →
+  "y-axis"; test echo reworded (#24 items 1–3; item 4 landed with #8).
+- Docs: charter §5 lateral recipes + §6 rudder entry (with the +y-down correction), `05c`
+  "Lateral trim cases" subsection + recipes paragraph (V-C5 never gated them), overview VAL2
+  row, card reference examples, `00_backlog.md` decision map, design note §9.
+
+**Test/Acceptance (all passing):**
+- G10 rudder: `CY_δr = +0.447 > 0`, `CMZ_δr = +0.241 > 0`; `CMZ_δr/CY_δr` equals the box-force
+  sideforce centroid arm over `b` (rel 1e-10); hinge axis asserted `(0, 0, −1)`;
+  `CY_δr / CY_β,fin = 1.05·τ` with τ(E = 0.25) = 0.609 (band ±15 %).
+- G11 aileron: `C_lδa = +0.302` vs strip theory `2·CLα·τ·∫c·y dy/(S·b) = 0.454` (ratio 0.66 in
+  [0.6, 1.0]); pair hinge moment = 2 × one half (rel 1e-12), negative.
+- G12 trims: both free pairs equal the 2×2 solve of the solver's restrained table (rel 1e-8);
+  `AIL = −0.0891 < 0` for `ROLL = +0.05`; `RUD = −0.0721 < 0` for `SIDES = +0.05`;
+  `maneuver_closure` vanishes in `Mx`, `Mz`; monitors carry `Fy`/`Mx`/`Mz` with zero lift and
+  pitch; the CLI writes the f06, `monitor_loads.csv` (both monitors, both cases) and
+  `section_loads.csv`.
+
+**Key decisions:** D1 aileron = lift-increasing per half, both hinges +y outboard (NASTRAN
+CID1/CID2, ZAERO ANTISYM), positive = port roll; D2 rudder = lift-increasing, positive =
+TE-port = +Fy = nose-port — authored with hinge +y **down** (the issue's "+y up" candidate
+was found to give the mirror while building the deck; the sign outcome agreed in chat was
+kept, the geometry corrected in the note, charter and card reference); D4 dedicated deck,
+flagship untouched (a flagship lateral family arrives with the v0.7.0 case matrix); no AVL
+dependency — exact identities plus two closed-form bands stated as such.
+
+### Issue #6 — Applied structural load in the SOL 144 trim RHS: thrust and engine torque in a trim (Tier L) ✅ COMPLETE (2026-10-24)
+
+Design note: `30_future/designs/thrust_in_trim_applied_load.md` (agreed in chat 2026-10-24
+before code; prototype numbers in its §6).
+
+**Objective:** give the thrust-line moment — and any other applied structural load — a clean
+home in a free-flight trim, closing the DEF-M4 follow-on: a `TRIM` subcase takes a `LOAD` set
+beside the aerodynamic and inertial loads, with the two physics questions of the issue
+answered from the linear algebra rather than by a new rule: the applied load is one more
+right-hand-side vector through the existing Schur reduction (rigid moment about the reference
+plus elastic aero coupling, automatically), which free label balances it follows from the
+trim card, and `maneuver_closure` is the full net load (aero + inertial + applied), ≈ 0 in the
+SUPORT directions, minus the reaction elsewhere. Decide the propeller handedness convention on
+the way, with a consumer.
+
+**Deliverables:**
+- `solver/sol144.py`: `_stage_validate_inputs` resolves `subcase.load_sid` and refuses `GRAV`
+  (D2, `_refuse_grav_in_trim_load`); `_stage_build_downwash_and_reduce` adds
+  `assemble_load_vector(bulk, load_sid)` to the g-set RHS un-scaled by `q`;
+  `_stage_flight_and_net_loads` sums it into `net_loads`; `_stage_monitor_outputs` passes it as
+  the `applied_loads` column; `Sol144TrimResult.applied_loads` / `.load_sid`.
+- `results/monitor_points.py`, `results/section_cuts.py`: `applied_loads` gathered like the
+  inertia column; `MonitorLoad.applied`, `SectionCutStation.applied` (None without a `LOAD`,
+  so the static three-way split is untouched); `results/f06_writer.py`: new
+  `APPLIED STRUCTURAL LOAD (LOAD=<sid>)` block (six-component resultant about the reference via
+  `grid_resultant`), `+ APPLIED` source text on monitor/section blocks only when present;
+  `results/load_export.py`: `Fz_applied`, `c1_applied … c6_applied`, `maneuver_loads.bdf`
+  header naming the `LOAD` set; viewer contribution selector gains "Applied".
+- D1 refusals: `maneuver_qs._refuse_load_in_mloads` (direct and modal transient),
+  `run_sol144_diverg` for a `DIVERG`-only subcase.
+- `sample/val_thrust_trim.bdf` (V-THR): AR 8 wing + horizontal tail (z = 0.5) with elevator,
+  stiff spine, engine grid 70 at (−1.5, 0, −0.5) on `RBAR 70`, `SUPORT 90, 135`, `SPC1 1 246 90`,
+  RCSID z-down, total mass 10 at CG (0.30, 0, −0.05); one `TRIM` (PITCH 0, URDD3 −9.81,
+  URDD5 0) in three subcases — no load, `LOAD 710 = 1.0 × FORCE 701`, `LOAD 701`; `T = 40`
+  forward; `MONPNT1 MAERO`, every-grid `MONPNT3 MALL`, nose `MONSECT SECNOSE` (axis x, SIDE
+  NEG), wing `MONSECT SECRW`.
+- `sample/val_lateral_aileron_rudder.bdf` `SUBCASE 3` / `TRIM 3` / `MOMENT 701` (+Mx = 35,
+  clockwise-propeller torque reaction), all lateral labels zero, `AIL` and `RUD` free.
+- Docs: `05c` governing-equation box rewritten + new "Applied structural load in a trim"
+  subsection + Step 53 / monitor / section text; charter §9 (applied loads in the trim, the
+  `applied` column), §10 rewritten (thrust in trim, **handedness rule**), §5 torque recipe, §8
+  `load_resultant` row; card reference `FORCE`/`MOMENT`/`LOAD`/`GRAV`/`SUPORT`/`TRIM`/`MONPNT3`;
+  `10_export_schemas.md` + CHANGELOG Breaking; overview Propulsion limitations rewritten, VAL2
+  rows; theory `01` §7.3 and `02` §7.1/§7.2/§8 (the thrust moment now has a home); `05`/`05a`
+  propulsion paragraphs; `11_python_api.md`, `06_viewer.md`, README; `00_backlog.md` decision
+  map and `02_parked.md`; design note §9.
+
+**Test/Acceptance (all passing; `tests/aero/test_thrust_trim.py`, `tests/aero/test_lateral_cases.py` G8):**
+- G1 the trim shift (ANGLEA, ELEV) and the displacement shift equal the solver's own
+  `build_trim_schur` / `recover_u_a` fed the applied load alone (rel 1e-10) — on the shipped
+  deck and on the `SUPORT 35` / `SPC 1246` variant.
+- G2 rigid closed form on a stiffened copy (E, G × 1e6), rel 1e-6: surge free,
+  `ΔCm = T·(z_cg − z_T)/(qSc) = 0.044118` (the thrust moment **about the CG**: the surge
+  inertia relief acts there); `SUPORT 35`, `ΔCm = T·(z_ref − z_T)/(qSc) = 0.049020`. Δδe > 0
+  (TE-down for a low thrust line). The shipped deck is within 1e-3 of the rigid number.
+- G3 direct `FORCE` set ≡ `LOAD` combination bit for bit; doubling `T` doubles every shift (1e-10).
+- G4 closure ≈ 0 in all six components (1e-9·scale); `URDD1 = (T + Fx_aero)/m = 4.0` (1e-12);
+  `CMY` shift = −0.044118; on the 35 variant the MONPNT3 reaction carries `+T` and the closure
+  `Fx = −T` (reacted, not trimmed); Δδe ratio 35 : 135 = 20/18 (1e-3).
+- G5 `SECNOSE` `applied = (−40, 0, 0, 0, +20, 0)` at both stations, totals = aero + inertia +
+  reaction + applied; every-grid `MONPNT3` totals ≈ 0 with the applied column; `applied is None`
+  without a `LOAD` and on every `MONPNT1`.
+- G6 rigid / restrained / unrestrained derivatives, intercepts and hinge-moment derivatives
+  identical across the three subcases.
+- G7 `GRAV` direct and via `LOAD` → `ValueError` naming URDD3; `MLOADS` + `LOAD` → `ValueError`
+  (direct and modal); `DIVERG`-only + `LOAD` → `ValueError`; `tests/aero/test_trim_urdd.py`
+  `TestTrimAppliedLoad` replaces the DEF-M4 class.
+- G8 torque: `AIL = −0.035139` (−2.01°), `RUD = +0.002240` equal the 2×2 restrained solve
+  against `−[Q/(qSb), 0]` (1e-8); `AIL < 0`; `total_cmx = −CMX_applied`; `MLATB.applied = (0, 0, 0, 35, 0, 0)`.
+- G9 bit-identity: all 13 shipped SOL 144 driver decks re-run single-threaded before and after
+  — f06 / `aero_loads.bdf` / `maneuver_loads.bdf` differ only in time stamps and the #49
+  round-off noise (max |Δ| 7e-10 on O(1e4) values); CSVs differ only by the new zero columns.
+- G10 CLI writes the f06 block (twice), `+ APPLIED` source lines, both CSVs with the new
+  columns and `maneuver_loads.bdf` with the `LOAD` named in the header. Schema gate extended.
+
+**Key decisions:** D1 trim-only scope, MLOADS/DIVERG silent drop closed by refusal (carry-through
+filed as #50); D2 `GRAV` refused; D3 body-fixed loads, no follower term; D4
+derivatives and intercepts aero-only, the applied load reported as its own resultant; D5
+`applied` column + schema break recorded; D6 propeller handedness decided and gated through the
+torque trim; D7 dedicated deck, flagship untouched; found while gating: the free-surge recipe
+balances the thrust moment about the **CG**, the SPC'd recipe about the support point — both
+documented as different problems, not as a discrepancy.
+
+## Resolved defects (SOL 144 static aeroelastics)
+
+- **#53 (2026-10-25, Tier S)** — symmetry invariant gate (`tests/integration/test_symmetry_invariants.py`): symmetric decks at β = 0 must give zero lateral resultant, mirror-equal box forces/displacements/net loads, zero off-axis derivatives; auto-detected decks, label parity from D_jx, fails on the pre-#52 tree. Review P1 (`50_reviews/2026-10-25_wt2_reference_defect_review.md`).
+- **#52 (2026-10-25, Tier M)** — WT2 corrections calibrated every box against a uniform −1 normalwash, which sideslips any vertical surface: the flagship fin's reference side load made the corrected HTP 55 % heavier to port at α = 3°, β = 0 (plus a spurious 116 N·m 1g roll and −39 N side force on the vertical body panel). Fixed with one per-axis reference (`corrections.wt2_reference_cp`) shared by `apply_wt2`, `aero_model` and both correction builders; flagship flying and body cards regenerated, `TOTAL` targets re-derived from the new bare airplane (Cm_α −1.6087 + 0.20). Gates `tests/aero/test_corrections.py` `TestWt2PerAxisReference`.
+- **#6 (DEF-M4 class, 2026-10-24)** — `LOAD` in an `MLOADS` or `DIVERG`-only subcase was silently dropped (the initial-condition subcase was rebuilt without `load_sid`; the divergence sweep never read it); both raise now (`maneuver_qs._refuse_load_in_mloads`, `run_sol144_diverg`). Found while designing #6; gated in `tests/aero/test_thrust_trim.py` G7.
+- **DEF-M16** (#9, 2026-10-24, Tier M) — AESURF `CID2`/`ALID2` stored, cross-checked and written back but ignored by `build_djx` and `compute_hinge_moments` (and dropped by the viewer form on re-save); both halves now load through the single-source `aesurf_hinges` helper, hinge moment summed over halves, parser requires CID2⇔ALID2 / existing CIDs / disjoint lists, viewer form gains the widgets. Aileron convention decided (charter §6): CID1 starboard, CID2 port, both +y outboard, positive = port roll. Gates `tests/aero/test_aesurf_pair.py` G6–G8, viewer G9. Design note `30_future/designs/lateral_cases_aileron_rudder.md`.
+- **DEF-M15** (#8, 2026-10-24, Tier M) — `rigid_rate_scales` DOFs 2/4/6 carried the body-rate sign instead of the wind-relative label sign (free-flight lateral anti-damping); fixed to `−1/V, −b/2V, −b/2V` and, generalized, the PITCH/ROLL/YAW `build_djx` columns became one normal-projected kinematic rule about the RCSID origin (`_rate_column`): the old PITCH column loaded the flagship fin (`CY_q = 1.88`, pitch damping 3.3 % low), ROLL was about y = 0 (now `suport_pos[1]`, charter GAP closed). Gates `tests/aero/test_rate_column_kinematics.py` (identity against `rigid_body.py`), `B_hh` damping sign on SUPORT 23456 (`tests/solver/test_modal_basis.py`). Design note `30_future/designs/lateral_cases_aileron_rudder.md`.
+- **#30 (Tier S, 2026-10-24)** — unit-system leaks: viewer preset `g` via a unit-system selector (`sbeam_tools.common.units.UNIT_SYSTEMS`), RHOREF message and `aero_model` docstring made unit-neutral, two prose leaks reworded, charter §7 citations fixed (`_handle_chordcp` `math.radians`, `_CHORDCP_ALPHA_TOL` by name, `sbeam_tools/`), gate `tests/tools/test_unit_neutrality.py`.
+- **#31 (Tier M, 2026-10-24)** — exported CSVs and load BDFs hardened as a public interface: integer `massset` (`0` = baseline) via one `_massset_fields` helper, `mass_case` added to the four MLOADS CSVs, named header constants, fixed-shape `$ MASSSET=` comment line on all three load BDFs (`massset_comment`), new guide `10_export_schemas.md` (incl. the reserved element-force CSV from the #38 deferral) and gate `tests/results/test_export_schema.py`; release process §1 names the schemas.
+
+### DEF-M20 — `URDD3 = −n_z·g` had no RCSID-orientation guard (issue #23) ✅ COMPLETE (2026-09-05)
+
+Closed inside issue #1. A prescribed negative `URDD3` encodes a positive load factor
+only under a z-DOWN RCSID; with RCSID absent or z-up the same value is a genuinely
+downward acceleration and trimmed **inverted lift** with nothing to say so.
+`_stage_resolve_ref_geometry` now warns, naming the frame and pointing at
+`09_conventions.md` §5. Closed with the gust work because that is what makes the trap
+reachable in ordinary use: a down-gust is a real negative-`n` design case.
+`sample/val_dihedral_trim.bdf` does this deliberately and is expected to warn.
+Gate: V-GUST7.

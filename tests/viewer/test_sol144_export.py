@@ -12,8 +12,8 @@ import pytest
 
 from sbeam.model.card_writers import FAMILIES
 from sbeam.parser.bdf_reader import parse_bdf
-from sbeam.viewer.sol144_authoring import snapshot_family_ids
-from sbeam.viewer.sol144_authoring_ui import export_sol144_bdf
+from sbeam_tools.viewer.sol144_authoring import snapshot_family_ids
+from sbeam_tools.viewer.sol144_authoring_ui import export_sol144_bdf
 
 SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
 
@@ -107,7 +107,7 @@ def test_authoring_form_applies_card_through_ui():
     from streamlit.testing.v1 import AppTest
 
     def _app():
-        from sbeam.viewer.app import main
+        from sbeam_tools.viewer.app import main
         main()
 
     cc, bulk = parse_bdf(SAMPLE_DIR / "ha144a_fullspan_mloads.bdf")
@@ -133,3 +133,40 @@ def test_authoring_form_applies_card_through_ui():
     assert 901 in bulk_after.aestats
     assert bulk_after.aestats[901].label == "SIDES"
     assert 901 in at.session_state["authored_cards"]["aestat"]
+
+
+def test_aesurf_form_keeps_the_second_hinge_half():
+    """G9 (#9): CID2/ALID2 authored through the AESURF form land on the card — the
+    form used to rebuild the Aesurf without them, so re-saving an aileron pair
+    silently dropped its port half."""
+    from streamlit.testing.v1 import AppTest
+
+    def _app():
+        from sbeam_tools.viewer.app import main
+        main()
+
+    cc, bulk = parse_bdf(SAMPLE_DIR / "ha144a_fullspan_mloads.bdf")
+    at = AppTest.from_function(_app, default_timeout=30)
+    at.run()
+    at.session_state["bulk_data"] = bulk
+    at.session_state["case_control"] = cc
+    at.session_state["_loaded_from_file_cc"] = cc
+    at.session_state["cc_subcases"] = None
+    at.session_state["selected_subcase_id"] = cc.subcases[0].subcase_id
+    at.session_state["_uploaded_filename"] = "ha144a_fullspan_mloads.bdf"
+    at.run()
+    assert not at.exception, [str(e) for e in at.exception]
+
+    at.number_input(key="auth_aesurf_id").set_value(506)
+    at.text_input(key="auth_aesurf_label").set_value("AILT")
+    at.selectbox(key="auth_aesurf_cid1").select(1)
+    at.selectbox(key="auth_aesurf_alid1").select(1000)
+    at.selectbox(key="auth_aesurf_cid2").select(2)
+    at.selectbox(key="auth_aesurf_alid2").select(1400)
+    apply_btn = next(b for b in at.button
+                     if getattr(b, "key", "") == "FormSubmitter:auth_form_aesurf-Apply")
+    apply_btn.click()
+    at.run()
+    assert not at.exception, [str(e) for e in at.exception]
+    card = at.session_state["bulk_data"].aesurfs[506]
+    assert (card.cid1, card.alid1, card.cid2, card.alid2) == (1, 1000, 2, 1400)

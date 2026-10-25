@@ -30,6 +30,8 @@ are the day-to-day references; higher numbers are planning and historical record
 | [`07_code_review_process.md`](10_standard/07_code_review_process.md) | Critical code-review process (tiered S/M/L, 2026-08-04) |
 | [`08_release_process.md`](10_standard/08_release_process.md) | Versioning and release process (slim gate + cadence rule, 2026-08-04) |
 | [`09_conventions.md`](10_standard/09_conventions.md) | **Conventions charter** — signs, axes, frames, reference points, units; cite before writing physics code |
+| [`10_export_schemas.md`](10_standard/10_export_schemas.md) | **Export contract** — exact headers, types, sentinels and ordering of every exported CSV and load BDF (#31); gated by `tests/results/test_export_schema.py` |
+| [`11_python_api.md`](10_standard/11_python_api.md) | **Python API** — the public entry points for calling sbeam from code (parse → run → results → write), what is internal, the SOL 144 orchestration pattern (#47); gated by `tests/docs/test_python_api_guide.py` |
 
 ## 20_theory — Theory, test cases & worked examples
 
@@ -37,6 +39,7 @@ are the day-to-day references; higher numbers are planning and historical record
 |------|-------|
 | [`00_beam_methods.ipynb`](20_theory/00_beam_methods.ipynb) | Euler-Bernoulli theory; stiffness/mass matrix derivations; worked example |
 | [`01_aeroelastics_theory.md`](20_theory/01_aeroelastics_theory.md) | VLM, AIC corrections, splining, SOL 144 theory |
+| [`03_first_analysis_tutorial.md`](20_theory/03_first_analysis_tutorial.md) | **Start here** — ten-minute first analysis: a six-grid cantilever deck typed by hand, one SOL 101 run, the f06 read block by block against PL³/3EI and Mc/I, the deflected shape plotted in the viewer and from Python (#46); gated by `tests/docs/test_first_analysis_tutorial.py` |
 | [`02_realistic_airplane_sol144.md`](20_theory/02_realistic_airplane_sol144.md) | Tutorial: the Cessna 210 flagship SOL 144 sample family — the deck layer by layer (structure, mass, mesh, splines, corrections, trim, monitors, mass cases, transient, body panels), then the f06 read block by block against hand-check anchors |
 | [`aeroelastic_derivatives.md`](20_theory/aeroelastic_derivatives.md) | Tutorial: rigid vs elastic-restrained vs elastic-unrestrained (mean-axis) stability derivatives + the ZAERO modal form — new-engineer level |
 | [`studies/a1_spanwise_spacing.md`](20_theory/studies/a1_spanwise_spacing.md) | VLM lift-slope spanwise-spacing convergence diagnostic |
@@ -46,9 +49,20 @@ are the day-to-day references; higher numbers are planning and historical record
 
 | File | Scope |
 |------|-------|
-| [`00_backlog.md`](30_future/00_backlog.md) | **Mission & milestone map** — mission statement (FAR/CS-23 loads process) + the release-milestone ladder to 1.0.0; the working backlog itself is [GitHub issues](https://github.com/Sean074/sbeam/issues) (migrated 2026-09-05) |
+| [`00_backlog.md`](30_future/00_backlog.md) | **Mission & milestone map** — mission statement (FAR/CS-23 and -25 loads process; solver first, process second) + the release-milestone ladder to 1.0.0; the working backlog itself is [GitHub issues](https://github.com/Sean074/sbeam/issues) (migrated 2026-09-05) |
+| [`loads_process.md`](30_future/loads_process.md) | **The loads process, end to end** (v0.7.0) — the five stages an external loads engineer runs, from design-case matrix to the LRA delivery package for stress; the tool boundaries, the case-index contract and the artefacts that are public interfaces |
 | [`01_static_aero_plan.md`](30_future/01_static_aero_plan.md) | Static-aero architecture reference (Phases A–C complete): layer diagram, matrix nomenclature, delivered-step map, references, validation-case index |
 | [`02_parked.md`](30_future/02_parked.md) | **Parked items** — real but off the mission path (Phase 2/3 enhancements, fidelity follow-ons, tooling ideas, declared out-of-scope); deliberately not issues — activation opens one |
+| [`designs/gust_pratt_23341.md`](30_future/designs/gust_pratt_23341.md) | Quasi-static gust load cases (Pratt, FAR/CS 23.341) — **AGREED** design note for issue #1: preprocessing script + GUSTLF provenance card |
+| [`designs/vn_matrix_23337.md`](30_future/designs/vn_matrix_23337.md) | V-n design-case matrix, maneuver corner points (23.337 / 25.337) — design note for issue #4 (v0.7.0): certification-basis selection across Parts 23 and 25, corner-point generation, the case index |
+| [`designs/cbar_pin_release_condensation.md`](30_future/designs/cbar_pin_release_condensation.md) | CBAR pin releases by static condensation — **agreed** design note for issue #20 (v0.3.0): K and congruent M condensation, single-source recovery, same-DOF-both-ends validation error, gates G1–G6 |
+| [`designs/cbar_stress_recovery_sign.md`](30_future/designs/cbar_stress_recovery_sign.md) | CBAR stress recovery from face-consistent internal moments — **agreed** design note for issue #37 (v0.3.0): end-B stress sign fix, positive-face internal-resultant helper shared with #21, PBAR I1/I2 doc fix, gates G1–G6 |
+| [`designs/cbar_force_stress_output_layout.md`](30_future/designs/cbar_force_stress_output_layout.md) | CBAR force and stress output in the NASTRAN layout — **agreed** design note for issue #21 (v0.3.0): plane-1/2 moments on the internal face, field renames, bending-only SA1–4 + SA-MAX/MIN, pre-1.0 breaking-change policy, gates G1–G7 |
+| [`designs/rod_element_crod.md`](30_future/designs/rod_element_crod.md) | CROD / PROD / CONROD rod element behind a line-element registry — **implemented** design note for issue #38 (v0.3.0): registry D1, rod frame D2, consistent translational mass without torsional inertia D3, native CONROD D4, NASTRAN rod f06 blocks, gates G1–G8 |
+| [`designs/lateral_cases_aileron_rudder.md`](30_future/designs/lateral_cases_aileron_rudder.md) | Lateral cases — kinematic rate columns and physical-rate scales (DEF-M15), the AESURF CID1/CID2 pair (DEF-M16), aileron/rudder sign conventions and the lateral validation deck — **agreed** design note for issues #8, #9, #10 (+#24) (v0.3.0): decisions D1–D6, gates G1–G12 |
+| [`designs/thrust_in_trim_applied_load.md`](30_future/designs/thrust_in_trim_applied_load.md) | Applied structural load in the SOL 144 trim RHS — thrust and engine torque as ordinary `LOAD` sets in a free-flight trim, closure as the full net load, GRAV refusal, propeller handedness rule — **implemented** design note for issue #6 (v0.3.0): decisions D1–D8, gates G1–G10 |
+| [`designs/htail_gust_23425.md`](30_future/designs/htail_gust_23425.md) | Horizontal-tail gust loads — controls-fixed gust posing (`GUSTHT`), 1g balancing load + increment, load factor at the CG — **draft** design note for issue #29 (v0.3.0): decisions D1–D8 pending, gates V-HTG1–8 |
+| [`designs/transient_net_loads_elastic_inertia.md`](30_future/designs/transient_net_loads_elastic_inertia.md) | Transient `net_loads` carries the elastic inertia + damping — **implemented** design note for issue #3 (v0.3.0): decision B, quantification on both sample decks, the static re-apply gate G1 |
 | [`designs/amode_card.md`](30_future/designs/amode_card.md) | AMODE assumed-mode card — design proposal |
 | [`designs/rbmref_card.md`](30_future/designs/rbmref_card.md) | RBMREF rigid-body-mode reference card — design proposal |
 | [`designs/spline9_hermite_beam_spline.md`](30_future/designs/spline9_hermite_beam_spline.md) | SPLINE9 FE-consistent Hermite beam spline (sbeam extension) — design proposal |
@@ -75,6 +89,7 @@ are the day-to-day references; higher numbers are planning and historical record
 | File | Scope |
 |------|-------|
 | [`2026-08-04_development_process_review.md`](50_reviews/2026-08-04_development_process_review.md) | Full-depth development-process audit (May–Aug 2026): findings F1–F8, recommendations R1–R17 behind the 2026-08-04 process changes |
+| [`2026-10-25_wt2_reference_defect_review.md`](50_reviews/2026-10-25_wt2_reference_defect_review.md) | #52 defect review: how the WT2 reference sideslipped the fin for 4.4 months undetected, what it affected, and the process changes P1–P6 it adopted (agreed 2026-10-25) |
 
 ---
 

@@ -24,3 +24,9 @@ def test_param_wtmass_refused_unless_one():
         bulk = parse_bulk_data(no_op)
     assert 1 in bulk.conm2s
     assert not any("PARAM" in str(w.message) for w in caught)
+
+
+def test_other_params_still_warn():
+    # Only WTMASS is understood; any other PARAM is skipped with the unknown-card warning
+    with pytest.warns(UserWarning, match="PARAM,AUNITS"):
+        parse_bulk_data(["PARAM, AUNITS, 0.1", "GRID, 1, , 0.0, 0.0, 0.0"])

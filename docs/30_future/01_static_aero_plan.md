@@ -100,7 +100,7 @@ sbeam/aero/       aero_model.py, panel.py, vlm.py, integration.py, corrections.p
 sbeam/solver/     sol144.py (trim/derivatives/divergence/maneuver), maneuver_qs.py
                   (Phase G0 increment 1), sol103.py (modal basis), sol101.py
 sbeam/results/    f06_writer.py, load_export.py, monitor_points.py, maneuver_output.py
-sbeam/viewer/     aero_view.py, aero_correction_view.py, case_control_ui.py
+sbeam_tools/viewer/     aero_view.py, aero_correction_view.py, case_control_ui.py
 ```
 
 The parser/data-model surface (cards, `BulkData` dicts, case control) is documented in

@@ -9,7 +9,414 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+---
+
+## [0.3.0] — 2026-10-25
+
+Milestone v0.3.0, **solver capability mature**. SOL 144 + MLOADS engineering-complete including
+lateral, with thrust in trim, stable documented output schemas, the CBAR and rod element defects
+closed, and the solver/viewer import boundary enforced. Deferred at the cut: #7 (Trefftz CDi)
+to v0.5.0, #29 (tail-gust posing) to v0.7.0, #51 (parser card order) to v0.4.0.
+
+### Breaking changes
+- **Monitor and section-cut CSVs gain an `applied` block** (#6; pre-1.0 MINOR break per
+  `08_release_process.md` §1, same release as the #31 stabilisation so no released consumer
+  breaks). `monitor_loads.csv` gains `Fz_applied` after `Fz_react`; `section_loads.csv` (and,
+  through the shared block, `maneuver_section_loads.csv`) gains `c1_applied … c6_applied`
+  after the `_react` block; `maneuver_monitor_loads.csv` carries `Fz_applied` through the
+  shared monitor columns. The new columns are `0.0` on every subcase without a `LOAD`, so all
+  existing numbers are unchanged. Contract: `10_export_schemas.md` §3.
+- **Exported CSV identity block aligned and `massset` made an integer** (#31; pre-1.0 MINOR
+  break per `08_release_process.md` §1). Every CSV now starts `case, [mloads,] massset,
+  mass_case`: the four transient (MLOADS) files gain the `mass_case` column after `massset`,
+  and `massset` is written as `0` for a baseline subcase instead of an empty cell, so the
+  column keeps one dtype across a baseline run and a MASSSET sweep (it flipped between
+  `float64`-NaN and `int64` before). The three load BDFs (`aero_loads`, `maneuver_loads`,
+  `maneuver_qs_loads`) always carry a fourth comment line `$ MASSSET=<sid> (<label>)`
+  (`MASSSET=0 (BASELINE)` for baseline; `maneuver_qs_loads.bdf` had no mass-case line at
+  all). Numbers are unchanged. Contract: new `docs/10_standard/10_export_schemas.md`.
+- **CBAR force and stress output moved to the NASTRAN/MSC layout** (DEF-M18, #21; pre-1.0
+  MINOR break per `08_release_process.md` §1). f06 `FORCES IN BAR ELEMENTS` now carries the
+  two-line MSC header and order `BEND-MOMENT END-A/END-B (PLANE 1, PLANE 2) | SHEAR (PLANE 1,
+  PLANE 2) | AXIAL FORCE | TORQUE`, with every value a +x-face internal resultant and the
+  NASTRAN plane signs `M1 = +Mz`, `M2 = −My` (both positive when they compress the +y/+z
+  fibres). `STRESSES IN BAR ELEMENTS` is the two-row-per-element MSC block: **bending-only**
+  `SA1–SA4`/`SB1–SB4` at C, D, E, F (all four always printed, (0, 0) points as 0.0), `AXIAL`,
+  and `SA/SB-MAX/MIN = AXIAL + max/min(bending)`; the old single-row `SA(END-A)/SB(END-B)`
+  **total**-stress table is gone. `BarForce` fields are renamed, not redefined:
+  `m1_a, m2_a, m1_b, m2_b, v1, v2, axial, torque` (was `bm1_a`…`shear1`…, where `bm1_a` was
+  the raw nodal **My**, i.e. MSC plane 2, and end-A moments were on the opposite face from
+  end B). `BarStress` is `sa1–sa4, sb1–sb4, axial, sa_max, sa_min, sb_max, sb_min` (was
+  `sa, sa_d, …` totals). Viewer force/stress tables follow the same columns. An
+  MSC-trained f06 reader can now be used unchanged; one that was mapped onto the old sbeam
+  columns must be retired.
+
+### Added
+- **Symmetry invariant gate** (#53, Tier S, gates only).
+  `tests/integration/test_symmetry_invariants.py` covers every mirror-symmetric SOL 144
+  sample and every symmetric subcase, MLOADS transients included. Each must have zero lateral
+  net-load resultant (so nothing for a lateral pin or SUPORT to react), mirror-equal box
+  forces, displacements and net nodal loads, zero off-axis derivatives, and antisymmetric free
+  labels that solve to zero. Symmetry is detected from the deck (grids, CAERO1 surfaces paired
+  before boxes, elements, CONM2s per mass case). Labels are classified by the parity of their
+  D_jx column, so new decks and surfaces are gated with no edits, and a pinned
+  `EXPECTED_SYMMETRIC` set fails loudly if detection drifts. Run against the pre-#52 tree it
+  fails on all seven flagship runs; a permanent test restores the old uniform WT2 reference and
+  asserts the gate fires. Tolerance 1e-9 relative (fixed code ≤ 1e-13). About 6 s.
+- **Applied structural load in the SOL 144 trim RHS — thrust and engine torque in a trim**
+  (#6, Tier L; design note `docs/30_future/designs/thrust_in_trim_applied_load.md`, agreed
+  2026-10-24). A `TRIM` subcase may select a `LOAD` set (`FORCE`/`MOMENT`, or a `LOAD`
+  combination of them): `assemble_load_vector` adds it to the trim RHS beside the aerodynamic
+  and inertial loads, un-scaled by `q`, and the existing Schur reduction carries both its rigid
+  moment about the reference and its elastic aero coupling. Which free label balances it
+  follows from the trim card alone — with `SUPORT 135` and `URDD1` free the thrust accelerates
+  the aircraft (`m·URDD1 = T + Fx_aero`) and the pitch trim sees the thrust moment about the
+  CG; with `SUPORT 35` the x-component is reacted at the SPC and the pitch trim sees the moment
+  about that point. `net_loads` = aero + inertial + applied (so `maneuver_closure` is the full
+  net load and `maneuver_loads.bdf` carries it, header naming the `LOAD` set); new f06 block
+  `APPLIED STRUCTURAL LOAD (LOAD=<sid>)` with the six-component resultant about the reference;
+  `MonitorLoad.applied` / `SectionCutStation.applied` columns (f06 source line `+ APPLIED`,
+  viewer contribution "Applied") present only when the subcase selected a `LOAD`, so every
+  shipped f06 is byte-identical. `Sol144TrimResult.applied_loads`, `.load_sid`. The DEF-M4
+  refusal of `TRIM` + `LOAD` is retired; `GRAV` in a trim `LOAD` set is refused (gravity enters
+  through `URDD3`). **Propeller handedness decided** (charter §10): clockwise seen from behind
+  ⇒ torque reaction `+Mx` basic (roll toward port), swirl downwash on the starboard side. New
+  deck `sample/val_thrust_trim.bdf` (V-THR: wing + tail + elevator, engine grid on an `RBAR`
+  pylon 0.5 below the nose, surge free) and `SUBCASE 3` of `sample/val_lateral_aileron_rudder.bdf`
+  (engine-torque `MOMENT`, `AIL = −2.01°`). Gates `tests/aero/test_thrust_trim.py` (Schur
+  identity 1e-10, rigid 2×2 closed form 1e-6 on a stiffened copy for both recipes, linearity,
+  closure/surge, nose section cut and every-grid MONPNT3, derivatives untouched, refusals,
+  CLI) and `tests/aero/test_lateral_cases.py` G8 (torque trim = 2×2 restrained solve, `AIL < 0`).
+  Docs: `05c` "Applied structural load in a trim", charter §9/§10, card reference
+  (`FORCE`/`MOMENT`/`LOAD`/`GRAV`/`SUPORT`/`TRIM`/`MONPNT3`), export schemas, overview
+  (limitations, VAL2), theory `01` §7.3 and `02` §7.2 rewritten.
+- **Lateral trim cases: aileron pair + rudder validation deck, conventions and gates**
+  (#10, Tier L; design note `docs/30_future/designs/lateral_cases_aileron_rudder.md`,
+  closes the v0.3.0 "including lateral" promise with #8/#9). New
+  `sample/val_lateral_aileron_rudder.bdf` — the AR 8 reference wing plus a vertical fin on a
+  stiff spine, an aileron pair as one `AESURF` (`CID1` starboard / `CID2` port, both hinge
+  +y outboard), a rudder (hinge +y **down**, so positive = TE-port = +Fy), `SUPORT 46`,
+  monitors and a section cut, and two determined trims: steady roll (`ROLL` prescribed,
+  `AIL`/`RUD` free) and steady sideslip (`SIDES` prescribed). Gates V-LAT2
+  (`tests/aero/test_lateral_cases.py`): rudder `CY_δr > 0`, `CMZ_δr > 0`, `CMZ/CY` = the
+  force-centroid arm (1e-10), `CY_δr/CY_β,fin` within ±15 % of the thin-airfoil flap factor
+  τ(0.25) = 0.609 (measured 1.05 τ); aileron `C_lδa` in the strip-theory band [0.6, 1.0]
+  (measured 0.66) and the pair hinge moment = 2 × one half; both trims equal the 2×2 solve
+  of the solver's restrained derivative table (1e-8), `AIL < 0` for `ROLL > 0`, `RUD < 0`
+  for `SIDES > 0`; lateral monitors non-zero; CLI writes f06 + both CSVs. **Rudder
+  convention (charter §6):** positive = TE-port = nose-port = `+CMZ` basic (textbook δr);
+  the authoring consequence is a *downward* hinge +y — the issue's "+y up" candidate gives
+  the mirror. Docs: charter §5 lateral recipes + §6 rudder, `05c` "Lateral trim cases"
+  subsection and corrected recipes paragraph (V-C5 never gated them), overview VAL2 row,
+  card reference examples, backlog decision map.
+- **First-analysis tutorial** (#46). `docs/20_theory/03_first_analysis_tutorial.md` takes a
+  new user from an empty folder to a plotted SOL 101 result in ten minutes: a six-grid steel
+  cantilever typed in by hand with every card explained, one CLI run, the four f06 blocks
+  read line by line against the closed-form tip deflection, root reaction and root stress
+  (all three reproduced to the printed digit), the deflected shape in the viewer and from a
+  short Python script through the public API, and where to go next (SOL 103 variant with
+  its expected first frequency, the Cessna 210 tutorial). Linked from the README above the
+  guide index and first in the `00_INDEX.md` theory table. Gate
+  `tests/docs/test_first_analysis_tutorial.py` lifts the deck and the script out of the page,
+  runs them and asserts every quoted number, the modal frequency and every relative link.
+  README on the way: `PLOAD1` limitation text updated to the #45 refusal, supported-card
+  table gains `CROD`/`CONROD`/`PROD`, `MASSSET`, `CHORDCP`, `GUSTLF`, `MONSECT`.
+- **Python API guide** (#47). `docs/10_standard/11_python_api.md` names the public
+  programmatic entry points by layer — parse (`parse_bdf`, `parse_bulk_file`, …), model
+  queries (`compute_gpwg`, `resolve_mass_case`, `build_grid_index`), run (`run_sol101`,
+  `run_sol103`, `build_aero_model`, `AeroCache`, `run_sol144_trim`, `run_sol144_diverg`,
+  `run_maneuver_qs`, `run_maneuver_modal`, `ManeuverBasisCache`), the result dataclasses
+  and their key fields, and the f06/CSV/BDF writers — with the DOF-layout rule, the
+  error contract, the CLI's SOL 144 build-once orchestration as a runnable example, and
+  an explicit rule that everything else under `sbeam/` is internal (no stability promise;
+  a listed name or field changing is a CHANGELOG breaking change). Gate
+  `tests/docs/test_python_api_guide.py`: every import in the guide resolves, every name
+  the CLI imports is in the guide, every listed result field exists, both examples run.
+  Pointers from `00_INDEX.md`, `00_program_overview.md` (Entry Points), `01_beam_model.md`
+  and `CLAUDE.md`.
+- **Export schema guide and gates** (#31). `docs/10_standard/10_export_schemas.md` is the
+  authoritative contract for the six CSVs and three load BDFs (headers, types, `massset`
+  sentinel, row ordering, BDF comment header, a reserved element-force CSV schema for #36);
+  `tests/results/test_export_schema.py` asserts every header constant, every written first
+  line, the identity block, the integer `massset` in baseline and MASSSET runs, the BDF
+  `$ MASSSET=` line, and that every column is named in the guide. `08_release_process.md`
+  §1 names the export schemas beside the f06 format; `ManeuverResult` gains
+  `massset_label`; the CLI output table lists `section_loads.csv`.
+- **`CROD` / `PROD` / `CONROD` rod element and a minimal line-element interface** (#38,
+  Tier L; design note `docs/30_future/designs/rod_element_crod.md`). Axial `EA/L` + torsion
+  `GJ/L` along GA→GB, no orientation vector, consistent translational mass with no
+  torsional inertia (MSC/NASTRAN-95 rod convention), `CONROD` held natively behind a
+  `rod_section` accessor. New `sbeam/assembly/elements.py` registry (`iter_line_elements`,
+  `line_element`, mass helpers) now drives stiffness/mass assembly and GPWG, and
+  `sbeam/solver/element_recovery.py::recover_line_elements` replaces the four per-solver
+  CBAR recovery loops (SOL 101, SOL 144 trim/static, MLOADS); rodless decks are
+  bit-identical. Results gain `rod_forces`/`rod_stresses` (`RodForce`, `RodStress`); the
+  f06 prints NASTRAN `FORCES / STRESSES IN ROD ELEMENTS` blocks for `( C R O D )` and
+  `( C O N R O D )` after the CBAR blocks (`AXIAL FORCE`, `TORQUE`; `AXIAL STRESS = P/A`,
+  `TORSIONAL STRESS = T·C/J`). Viewer: dashed rod traces, rod table, "Rod Forces" tab and a
+  pre-solve warning for rod-only grids with free rotations (no AUTOSPC); the half-span
+  mirror tool unfolds rods. Element EIDs are now checked unique across CBAR/CROD/CONROD/
+  CBUSH and PIDs across PBAR/PROD (the docs already claimed the CBAR check). Gates
+  V24–V27 (δ = PL/EA, θ = TL/GJ; two-strut statics; CONM2-on-struts 2-DOF modes; CROD ≡
+  CBAR `PA=PB=56`), NASTRAN-95 `srod1.f`/`srod2.f` term-by-term mapping, registry
+  coverage, parser errors, and the new `sample/pylon_strut_engine.bdf` free-body gate.
+  Rod CSV export is deferred to #31.
+- **`MONPNT1`/`MONPNT3` on transient (MLOADS) maneuvers** (#2). The deck's monitor points
+  are now evaluated at every output sample, not only on static trims:
+  `ManeuverStep.monitor_loads`, an f06 `MONITOR POINT INTEGRATED LOADS ( SAMPLE n … )`
+  block at the critical sample printing the per-source rows (`AERO`, `INERTIA (RIGID)`,
+  `ELASTIC INERTIA`, `DAMPING`, `REACTION`) under `TOTAL`, a `MONITOR POINT ENVELOPE`
+  block, `<stem>.maneuver_monitor_loads.csv` (the static `monitor_loads.csv` schema
+  verbatim with sample/time identity columns and the full contribution split) and
+  `<stem>.maneuver_monitor_envelope.csv`; viewer table, envelope and downloads.
+  `MonitorLoad` gains `elastic_inertia` / `damping` columns (transient samples only).
+  `monitor_points.py` is split into `prepare_monitor_points` + `evaluate_monitor_point`
+  (static outputs byte-identical). Gates V-TMON1–3: held at trim equals the static
+  monitor; an every-grid `MONPNT3` equals the sample closure and closes with the
+  reaction; a monitor over the members outboard of a cut station equals the section-cut
+  row column by column, and fails without the elastic column.
+- **Quasi-static gust load cases (FAR/CS 23.341)** — the mandatory certification gust
+  cases, delivered as ordinary balanced-maneuver trims with no DLM dependency (#1).
+  - `sbeam_tools/cases/gust.py` — preprocessing tool, deliberately **outside** the
+    solver package: it owns the ISA atmosphere, the 23.333(c) `U_de` altitude schedule
+    and `ρ₀` in a declared unit system, reads `S`/`c̄`/`W`/rigid `CZ_α` out of the deck
+    itself, and emits a runnable SOL 144 driver of `TRIM` + `GUSTLF` pairs.
+  - `GUSTLF` card + `GUSTLF =` case-control command — a **provenance card**: only
+    `TRIMID`, `N` and `G` reach the solution (`URDD3 = −N·G` through the existing
+    `load_factor_to_urdd3`); `U_de`, `V_EAS`, `K_g`, `μ`, `a`, `ASRC` and altitude are
+    recorded and echoed to a new f06 block, never entering an equation. This keeps the
+    regulation's dimensional content out of a solver whose card fields are unit-neutral
+    by charter (§7), and the f06 block states that sbeam does not compute the gust.
+  - `sample/cessna210_flagship_gust.bdf` — generated 12-case deck (V_C/V_D × three mass
+    cases × ±), showing gust cases exceeding the deck's 2.5 g maneuver condition.
+  - 40 gates: S-GUST1–6a, V-GUST1–7, P-GUST1–6. The external anchor is the regulation's
+    own Imperial constant — a consistent-units implementation must reproduce `498` to
+    0.11 %, since `498 ≡ 2/(ρ₀·1.6878)`.
+- **`sbeam_tools/` — the pre/post toolchain becomes a first-class half of the product**
+  (#33). `sbeam_tools/{common,cases,report}` sits beside the solver: `common/` holds the
+  unit systems, ISA atmosphere and deck reader; `cases/` holds case construction (the
+  gust family, with the 23.337 maneuver points to follow in #4); `report/` is the
+  placeholder for cross-run reduction (#5). `scripts/` is retired and the gust generator
+  moved into it — output verified byte-identical, and its S-GUST gates pass with only an
+  import-path change.
+  - New console command **`sbeam-cases`** replaces `python scripts/gust_load_factor.py`.
+  - **The toolchain now ships.** `pyproject.toml` packaged `sbeam*` only, so a built
+    wheel contained no tools at all; `scripts/` worked purely because an editable
+    install puts the repo root on `sys.path`.
+  - **`streamlit` and `plotly` are no longer mandatory.** They were hard dependencies of
+    every install, so a solver run in CI or a batch pipeline pulled in a web framework;
+    they are now the `viewer` extra (`pip install sbeam[viewer]`).
+  - **The boundary is enforced, not just documented** — `tests/tools/test_import_boundary.py`
+    fails if anything under `sbeam/` imports `sbeam_tools`, `streamlit` or `plotly`.
+    Relocation alone enforces nothing; Python imports across any boundary. `sbeam/viewer/`
+    is the one declared exception until it relocates in v0.4.0 (#34), and a second gate
+    fails if that exception list grows.
+- `sbeam_tools/` is linted and type-checked in CI (ruff invocation and pyright `include`
+  both widened), so the tools ship gated rather than untyped.
+- **Aero-correction data ingestion moved out of the solver** (#32). `section_data.py` — the
+  section-coefficient CSV schema, its validation, its degree↔radian conversions and the
+  condition/Mach selection — is now `sbeam_tools/corrections/`, together with the
+  `TOTAL`-block readers (`split_total_rows`, `parse_body_targets`) that had been sitting in
+  `sbeam/aero/body_correction.py`. `mirror_halfspan` moved to `sbeam_tools/common/mirror.py`.
+  The solver keeps the correction **solvers**, whose min-norm solve against the global AIC
+  genuinely needs solver data.
+  - This removed an **undeclared** charter §7 exception rather than declaring it: six
+    unit-conversion sites and a degrees-based public API were inside the solver package.
+  - `sbeam/` (outside the viewer) is now free of **pandas** as well as streamlit and
+    plotly — nothing in the solver reads tabular data any more. All three are in the
+    import gate.
+
+### Fixed
+- **CI green again on the release branch** (#54). Pinned pyright had failed every push since
+  2026-10-21 (8 errors: unused loop variables, Optional narrowing defeated by `getattr`, a
+  private cross-module import now `maneuver_qs.refuse_load_in_mloads`, two annotations), so
+  pytest had not run in CI. The flagship body "no warnings" gate now counts UserWarnings only,
+  so spurious BLAS FP flags no longer trip it. The CI runner is pinned to `ubuntu-24.04`:
+  `ubuntu-latest` moved to 26.04, which has no Python 3.9, so the 3.9 job had failed at setup
+  on the same pushes. Restoring 3.9 exposed one 3.9-incompatible `X | Y` annotation in
+  `tests/solver/test_rod_recovery.py` (#38), now `Union`. No behaviour change.
+- **`PARAM,WTMASS` other than 1.0 refuses the deck at parse** (#39, DEF-M22; PR #40). A
+  weight-unit deck used to run with mass and `GRAV` loads wrong by a factor of g behind an
+  unknown-card warning. Every other `PARAM` is still skipped with the `Unknown BDF card
+  'PARAM,<name>' — skipped` warning (the PR had made them silent).
+- **WT2 aero correction made a symmetric airplane asymmetric when it had a fin** (#52, Tier M).
+  WT2 pressure matching calibrated every box against a normalwash of −1 on *every* box, which
+  is a sideslip on a vertical surface. On `cessna210_flagship_bulk.bdf` the fin's reference
+  side load induced an antisymmetric normalwash on the tailplane, so the corrected HTP at
+  α = 3°, β = 0 carried 55 % more load to port than to starboard. The same bug produced a
+  116 N·m rolling moment in the 1g trim, nonzero `CMX` derivatives from pure pitch inputs, and a
+  −39 N side force on the cruciform's vertical body panel. Each surface is now calibrated on
+  its own incidence axis (`corrections.wt2_reference_cp`: α for horizontal surfaces, β for
+  y-normal ones), and `apply_wt2`, the operator assembly and both correction builders share
+  that one helper. Decks with no vertical surface are unchanged bit-for-bit. Regenerated: the
+  flagship W2GJ/AECORR block, both body overlays, the MLOADS `TABLED1 300` initial elevator,
+  and `cessna210_flagship_gust.bdf`. The CSV `TOTAL` targets were re-derived from the
+  corrected bare airplane (Cm_α −1.6087 + 0.20 → −1.4087; Cl_β −0.0367). Flagship numbers
+  move: rigid CZ_α 5.3335 → 5.3079, Cm_α −1.692 → −1.609, 1g ELEV −3.78° → −3.89°.
+  `test_pair_straddles_one_g` now uses the 8-character card-field tolerance it always needed.
+- **`LOAD` in an `MLOADS` or `DIVERG`-only subcase was silently dropped** (#6, DEF-M4 class,
+  found in review). The transient solvers rebuilt their initial-condition subcase without
+  `load_sid` and the divergence sweep never read it, so a payload or thrust `LOAD` on such a
+  subcase vanished without a word. Both now raise, naming the subcase and the SIDs
+  (`maneuver_qs._refuse_load_in_mloads`, shared by the modal solver; `run_sol144_diverg`).
+  Carry-through of a constant applied load into the transient is filed as #50.
+- **DEF-M16 — AESURF `CID2`/`ALID2` were parsed, validated and written back, then ignored**
+  (#9, Tier M; design note `docs/30_future/designs/lateral_cases_aileron_rudder.md`). The
+  second hinge/AELIST pair — NASTRAN's mechanism for the opposite half of an antisymmetric
+  aileron — loaded nothing in `build_djx` and produced no hinge moment, silently, and the
+  viewer's AESURF form dropped the fields on re-save. Both halves are now consumed through
+  one geometry owner, `aesurf_hinges` (each half rotates about its own CID +y through its
+  own origin; the hinge moment is summed over halves and reported once per label); the
+  form has CID2/ALID2 widgets; the parser requires CID2 and ALID2 together, both CIDs to
+  exist in CORD2R, and no box in both halves. **Convention decided (charter §6):** an
+  aileron pair is authored `CID1` = starboard, `CID2` = port, both hinge +y outboard;
+  positive `AIL` = starboard TE-down / port TE-up = roll toward port = `+CMX` (textbook δa,
+  ZAERO `ANTISYM` semantics). Gates `tests/aero/test_aesurf_pair.py`: pair ≡ two single-half
+  labels box for box and in hinge moment, antisymmetric column, `CMX_δa > 0` with every other
+  rigid coefficient zero on the planar wing (the first absolute lateral sign pinned), and the
+  parser rules. No shipped deck uses the second pair, so no shipped number changes.
+- **DEF-M15 — lateral rate scales had the wrong sign, and the rate columns were planar-wing
+  shortcuts** (#8, Tier M; design note `docs/30_future/designs/lateral_cases_aileron_rudder.md`).
+  `rigid_rate_scales` mapped sway/roll/yaw body rates (basic +y/+x/+z) to `+SIDES`, `+ROLL`,
+  `+YAW` although the labels are defined wind-relative and about −x/−z (charter §5); a
+  free-flight lateral rate would have been anti-damped through `B_hh`. DOFs 2/4/6 are now
+  `−1/V`, `−b/2V`, `−b/2V`, and the force-side yaw-rate wing term inherits the sign
+  (`+2(y/V)·f_ref`). Generalized on first find: the PITCH/ROLL/YAW `build_djx` columns are now
+  one kinematic rule, `(2/L_ref)·n̂·(ê × (r − r_ref))` about the RCSID origin
+  (`_rate_column`), instead of `−(2/c)(x−x_ref)` / `−(2/b)·y` unprojected. The old PITCH
+  column loaded every **vertical** panel under pitch rate — on the flagship a sideforce
+  coefficient of 1.88 per unit PITCH on the fin, a yawing moment of 0.79, and pitch damping
+  3.3 % low; the HA144A body-panel deck had the same spurious `CY_q = −0.27`. ROLL now
+  references the RCSID origin's y (was hard-wired to y = 0; identical on every shipped deck)
+  and sees a fin's height (`C_yp`), and dihedral panels carry `n_z` in both columns.
+  **Shipped numbers:** HA144A, the planar wing and every PITCH = 0 case are bit-identical;
+  the flagship 2.5 g pull-up (`TRIM 2`, PITCH = 0.00284) moves ANGLEA by +0.002 %, ELEV by
+  +0.5 % (−0.16824 → −0.16910 rad), total CY from 5.3e-3 to 9e-7, and the whole-aircraft
+  aero monitor loses a 203 N spurious sideforce; wing-root section loads change by < 0.01 %.
+  V-LAT dihedral `C_lp` 0.5300 → 0.5381 (cos Γ). Gates: `tests/aero/test_rate_column_kinematics.py`
+  (every physical-rate column equals `(1/V)·n̂·v` built from `assembly/rigid_body.py`, fin
+  pitch-rate column exactly zero, ROLL follows the RCSID origin) and a free-flight gate that
+  every rigid diagonal of `B_hh` is damping with SUPORT 23456 on the flagship
+  (`tests/solver/test_modal_basis.py`). Closes #24 item 4 (ROLL reference).
+- **Unit-system leaks removed from `sbeam/`** (#30, Tier S). The viewer's preset gravity
+  defaulted to `32.174` under a "model units" label (an SI user got a load factor ~3.3×
+  wrong); it now prefills from a "Deck unit system" selector (`sbeam_tools.common.units`)
+  and stays editable. The `TRIM.velocity()` error no longer tells SI users to type
+  `0.002377`; `aero_model` no longer names `Pa`; two slug/lb/kg docstrings reworded.
+  Charter §7 now cites the executable CHORDCP conversion site and the tolerance constant
+  by name, says `sbeam_tools/` not `scripts/`, and states the no-unit-constant rule.
+  New gate `tests/tools/test_unit_neutrality.py` greps every `sbeam/` module for unit
+  constants and unit words (allow-list guarded).
+- **DEF-M18 — CBAR force table on raw nodal moments with half-swapped plane labels** (#21,
+  Tier M). `recover_bar_forces` now goes through `bar_internal_resultants` (#37), so end-A
+  moments are on the same +x face as end B and as the stresses; `BENDING-1` no longer
+  labels My (MSC plane 2). Stress and force are consistent by construction
+  (`SAi = −M1·yᵢ/I1 − M2·zᵢ/I2` on the printed moments). Gates G1–G7 in
+  `tests/solver/test_cbar_force_layout.py`, `tests/results/test_f06_sol101.py` and the
+  DEF-M13 alignment gate; NASTRAN-95 `sbar2.f` field mapping asserted on the nodal vector.
+  Design note `docs/30_future/designs/cbar_force_stress_output_layout.md`.
+- **DEF-M21** (#37) — CBAR fibre stress at **end B** had the bending term sign-flipped: the
+  one stress formula was applied to raw nodal moments at both ends, and only end A's nodal
+  moment happens to be the negated face moment. Stresses are now recovered from +x-face
+  internal resultants (`bar_internal_resultants`, the single nodal-to-internal conversion),
+  with `σ = P/A − Mz·y/I1 + My·z/I2` at both ends. End-A stresses are bit-identical; end-B
+  bending stresses change sign on every deck with a non-zero end-B moment (SOL 101 and SOL
+  144 f06/viewer). Gates: signed two-plane closed form on the cantilever, per-plane sign
+  anchors, stress continuity at every shared node, the end-B equilibrium identity, and the
+  nodal-load jump condition on the trimmed HA144A. The PBAR `I1`/`I2` rows in the card
+  reference had the planes swapped (code was right): I1 is bending in the element x–y plane
+  (about z), I2 in x–z (about y). `SA/SB` stay total (axial + bending) stresses; the NASTRAN
+  bending-only layout and the force-table faces are #21.
+- **DEF-M17** (#20) — CBAR pin releases (PA/PB) are now **statically condensed** instead of
+  zeroed, in assembly and in every force-recovery path from one helper
+  (`released_local_stiffness`); the consistent mass is condensed congruently with the same
+  transformation. Zeroing left every pin-flagged element over-stiff (fixed–pinned 4× too
+  stiff; a clamped–pinned span reported the clamped–clamped frequency) and recovered
+  non-zero forces at released DOFs. Released end forces are now exactly zero. Releasing the
+  same translation/torsion digit (1–4) at both ends is refused at parse time (internal
+  mechanism; use `56` for a two-force member) — `PA=PB=456` decks must change to `56`.
+  Gates V21–V23 (δ = PL³/3EI, clamped–pinned 11.30667 Hz, N=4 mass-condensation
+  regression) and a 121-combination invariant test. No shipped deck used pin flags.
+- **DEF-M20** (#23) — a prescribed negative `URDD3` against an absent or z-up RCSID now
+  warns instead of silently trimming inverted lift. Closed with #1, which is what makes
+  the trap reachable in ordinary work: a down-gust is a genuine negative-`n` case.
+- The f06 trim-variable table reported `URDD3` as `FREE` on a gust subcase, because the
+  prescribed set was read from the TRIM card alone; a `GUSTLF`-supplied value is now
+  reported `PRESCRIBED`.
+- The parse-time DOF diagnostic counted a `GUSTLF`-driven TRIM as over-determined,
+  warning on every generated gust case.
+
 ### Changed
+- **The viewer moved from `sbeam/viewer/` to `sbeam_tools/viewer/`** (#34), and the import
+  boundary gate (`tests/tools/test_import_boundary.py`) now covers **all** of `sbeam/` with no
+  exclusion: the solver package contains no GUI code and never imports `streamlit`, `plotly`
+  or `sbeam_tools`. Launch with the new `sbeam-view` console command (the same as
+  `streamlit run sbeam_tools/viewer/app.py`; needs the `viewer` extra). Python imports change
+  from `sbeam.viewer.*` to `sbeam_tools.viewer.*` (internal per `11_python_api.md`). The move is
+  import paths only, with no logic changes. The unit-neutrality gate still scans the viewer, and
+  the default coverage report now includes `sbeam_tools`.
+- **Process changes from the #52 defect review** (`docs/50_reviews/2026-10-25_wt2_reference_defect_review.md`).
+  CLAUDE.md rules 1–3 gain the † clauses: design notes list the assumptions that stop
+  holding when code is extended; closure, regeneration and target-achieved gates don't
+  count as benchmarks; rule-3 sweeps target the broken assumption. New rule 6, "explain
+  before you gate". The symmetry invariant gate is filed as #53. The "Supported Cards" list
+  moved from `CLAUDE.md` to the top of `02_card_reference.md` (keeps CLAUDE.md inside its
+  ~150-line budget), and its no-refused-card gate now reads it there.
+- **`sample/HA144A.bdf` header corrected** (Tier S, raised with #51). The archive note blamed
+  its parse failure on unsupported MSC cards and still listed SOL 144 and SPLINE2 as
+  unsupported. It now gives the real reasons the verbatim listing does not run: card order
+  (CBARs before their PBAR — the order-dependence defect #51), the half-span `SYMXZ=1`
+  model, and DMI aero corrections that sbeam skips. It points to
+  `sample/ha144a_fullspan_sbeam.bdf` for running the case. Comments only; no card changed.
+- **Sign-wording hygiene batch closed** (#24, Tier S, four items from the 2026-08-09
+  sign-convention review, landed with #8/#10): (1) the flagship MLOADS comment called a
+  +2° ELEV ramp a "nose-up pull" — on this aft tail +ELEV is nose-down (the deck's own 2.5 g
+  gate trims more TE-up); reworded to "elevator TE-down step (restrained: tail-lift
+  increase)" in `sample/cessna210_flagship_bulk.bdf` and its test echo, and the stale
+  "(CID 995 x-axis)" hinge note corrected to the y-axis; (2) the viewer steady-roll preset
+  labelled its parameter "rad/s" — ROLL is the reduced rate `pb/2V`, label and default
+  fixed, both lateral presets now say which `SUPORT` DOF they need; (3) the preset guidance
+  said a pull-up carries `PITCH = 0` — it carries `PITCH = (n − 1)·g·c/(2V²)` as the
+  flagship `TRIM 2` does (`model/maneuver_presets.py`, `05c`); (4) the ROLL spanwise
+  reference, decided in #8 (RCSID origin).
+- **Decks carrying known-but-unsupported NASTRAN cards are refused at parse** (#45). `PLOAD1`
+  (and `PLOAD`/`PLOAD2`/`PLOAD4`, `RFORCE`, `SPCD`, dynamic loads, `CBEAM`/`PBEAM`/`PBARL`,
+  `CTUBE`, `CELAS*`, `CONM1`, shells, `MAT2`/`MAT8`, `CORD1*`/`CORD2C`/`CORD2S`, `MPC`,
+  `SPCADD`, `RBE1` — the `_UNSUPPORTED_CARDS` set) used to parse, solve and report with the
+  card silently dropped behind a generic `UserWarning` nobody collected. The parser now
+  counts them and raises one `ValueError` listing every offender
+  (`Unsupported bulk data card(s): PLOAD1 x2 (distributed CBAR load), ...`); the CLI exits
+  with `Parse error:` and no f06, the viewer shows the parse error. Truly unknown keywords
+  still warn and skip, and the CLI now prints those as `Parser warning:` on stderr. Table
+  and alternatives: `02_card_reference.md` "Unsupported cards"; a gate keeps the set,
+  the handlers, `CLAUDE.md` Supported Cards and the doc table consistent.
+- **Transient `net_loads` is now the full applied load** — aero + rigid inertia + elastic
+  d'Alembert + damping (#3). The exported `<stem>.maneuver_qs_loads.bdf` cards, the closure
+  and the DEF-M5 critical-sample metric all read it, so the cards applied statically to the
+  same model reproduce the sample's internal loads (new gate G1, 1.6e-14 direct/modal, 4.6e-7
+  through the 8-character cards; fails by 1.5 % without the terms). Free-flight closure is
+  unchanged (the terms have zero resultant); on the direct solver the closure and the
+  critical sample can move — on the shipped C210 deck the critical sample is now 9, not 21,
+  a 1e-5 near-tie. Transient f06/card labels name all four terms.
+- **The loads process is defined, and re-sequenced to a new v0.7.0 milestone
+  (2026-09-05).** `docs/30_future/loads_process.md` writes down the five stages an
+  external loads engineer runs — model, declare, generate, run, report/downselect,
+  deliver — with the tool boundaries, the case-index contract and the artefacts that are
+  now public interfaces. Writing it found five gaps in issues about to be implemented,
+  including an f06 block citing a regulation the solver cannot know is true, and #2/#31
+  being mis-prioritised once the **LRA is defined as `MONPNT3` monitor points** (which
+  also cancels the load-transfer capability the delivery package was assumed to need).
+  - **v0.3.0's aim is now a mature *solver*.** The process (#4, #5, and new #35
+    `sbeam-critic` downselect, #36 LRA delivery package) moves to
+    [v0.7.0](https://github.com/Sean074/sbeam/milestone/6), after the dynamic-gust work
+    (#16) so the toolchain is built once against the complete set of case families rather
+    than retrofitted twice. Mission statement updated: **solver first, process second**,
+    scope broadened to FAR/CS-25 alongside -23.
+  - `docs/30_future/designs/vn_matrix_23337.md` — V-n design note (#4): certification-basis
+    selection across Parts 23 and 25 (the rulesets share their envelope *shape*, differing
+    only in `n_max`'s floor and `n_min`'s definition), applicability guards, corner-point
+    generation and the case index. Its end-to-end anchor is the flagship deck's own
+    hand-authored `PITCH = 2.8402e-3` at 2.5 g, written before the tool existed.
 - **Development process moved to GitHub milestones + issues (2026-09-05).** Milestones =
   planned releases (v0.3.0 → v1.0.0 ladder); the backlog's 28 open items migrated to
   issues #1–#28 with full bodies; `docs/30_future/00_backlog.md` reduced to the mission +

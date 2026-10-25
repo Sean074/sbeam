@@ -10,7 +10,7 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.model.element import Cbar
 from sbeam.model.load import Force, Grav, Moment
 from sbeam.assembly.coord_transform import build_transform
-from sbeam.viewer.format_utils import fmt_mass
+from sbeam_tools.viewer.format_utils import fmt_mass
 from sbeam.types import FloatArray
 
 #: {gid: (x, y, z)} nodal positions in CID 0 (optionally deformed).
@@ -45,6 +45,7 @@ def build_model_figure(
     spc_map = _get_spc_map(bulk)
     _add_grid_trace(fig, bulk, selected_gid, spc_map)
     _add_cbar_traces(fig, bulk, selected_eid)
+    _add_rod_traces(fig, bulk, selected_eid)
     _add_cbush_traces(fig, bulk)
     _add_plotel_trace(fig, bulk)
     _add_rbe3_trace(fig, bulk)
@@ -70,6 +71,7 @@ def build_deformed_figure(
     """3D figure showing undeformed ghost + deformed overlay for SOL 101."""
     fig = go.Figure()
     _add_ghost_cbar_lines(fig, bulk)
+    _add_ghost_rod_lines(fig, bulk)
     _add_ghost_plotel_lines(fig, bulk)
     _add_ghost_rbe3_lines(fig, bulk)
     _add_ghost_rbe2_lines(fig, bulk)
@@ -83,6 +85,7 @@ def build_deformed_figure(
         line=dict(color="#ff7f0e", width=4),
         name="Deformed",
     ))
+    _add_deformed_rod_lines(fig, bulk, def_coords, "Deformed rods")
     gids_sorted = sorted(bulk.grids.keys())
     gxs, gys, gzs = _grid_coord_lists(bulk, def_coords)
     spc_map = _get_spc_map(bulk)
@@ -173,6 +176,7 @@ def build_mode_figure(
 
     fig = go.Figure()
     _add_ghost_cbar_lines(fig, bulk)
+    _add_ghost_rod_lines(fig, bulk)
     _add_ghost_plotel_lines(fig, bulk)
     _add_ghost_rbe3_lines(fig, bulk)
     _add_ghost_rbe2_lines(fig, bulk)
@@ -193,6 +197,7 @@ def build_mode_figure(
         line=dict(color="#ff7f0e", width=4),
         name="Mode shape",
     ))
+    _add_deformed_rod_lines(fig, bulk, def_coords, "Mode shape rods")
     fig.add_trace(go.Scatter3d(
         x=gxs, y=gys, z=gzs,
         mode="markers",
@@ -762,6 +767,131 @@ def _add_ghost_cbar_lines(fig: go.Figure, bulk: BulkData) -> None:
         line=dict(color="#cccccc", width=2),
         name="Undeformed",
         opacity=0.5,
+    ))
+
+
+def _rod_elements(bulk: BulkData) -> list[tuple[str, Any]]:
+    """(kind, card) for every CROD and CONROD, CRODs first (#38)."""
+    rods: list[tuple[str, Any]] = [("CROD", c) for c in bulk.crods.values()]
+    return rods + [("CONROD", c) for c in bulk.conrods.values()]
+
+
+def _rod_line_coords(bulk: BulkData, coords: GridCoords) -> CoordLists:
+    """Return (xs, ys, zs) lists for CROD/CONROD lines using given grid coords."""
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
+    for _, rod in _rod_elements(bulk):
+        xa, ya, za = coords[rod.ga]
+        xb, yb, zb = coords[rod.gb]
+        xs += [xa, xb, None]
+        ys += [ya, yb, None]
+        zs += [za, zb, None]
+    return xs, ys, zs
+
+
+def _add_deformed_rod_lines(
+    fig: go.Figure, bulk: BulkData, coords: GridCoords, name: str
+) -> None:
+    if not (bulk.crods or bulk.conrods):
+        return
+    xs, ys, zs = _rod_line_coords(bulk, coords)
+    fig.add_trace(go.Scatter3d(
+        x=xs, y=ys, z=zs,
+        mode="lines",
+        line=dict(color="#ff7f0e", width=3, dash="dash"),
+        name=name,
+    ))
+
+
+def _add_ghost_rod_lines(fig: go.Figure, bulk: BulkData) -> None:
+    if not (bulk.crods or bulk.conrods):
+        return
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
+    for _, rod in _rod_elements(bulk):
+        ga = bulk.grids[rod.ga]
+        gb = bulk.grids[rod.gb]
+        xs += [ga.x, gb.x, None]
+        ys += [ga.y, gb.y, None]
+        zs += [ga.z, gb.z, None]
+    fig.add_trace(go.Scatter3d(
+        x=xs, y=ys, z=zs,
+        mode="lines",
+        line=dict(color="#cccccc", width=2, dash="dash"),
+        name="Undeformed rods",
+        opacity=0.5,
+    ))
+
+
+def _add_rod_traces(
+    fig: go.Figure,
+    bulk: BulkData,
+    selected_eid: Optional[int] = None,
+) -> None:
+    """CROD / CONROD struts: dashed lines plus a midpoint hover marker (#38)."""
+    rods = _rod_elements(bulk)
+    if not rods:
+        return
+    from sbeam.assembly.elements import rod_section
+
+    xs: list[Optional[float]] = []
+    ys: list[Optional[float]] = []
+    zs: list[Optional[float]] = []
+    sel: tuple[list[float], list[float], list[float]] = ([], [], [])
+    mx: list[float] = []
+    my: list[float] = []
+    mz: list[float] = []
+    customdata: list[list[Any]] = []
+    for kind, rod in rods:
+        ga = bulk.grids[rod.ga]
+        gb = bulk.grids[rod.gb]
+        xs += [ga.x, gb.x, None]
+        ys += [ga.y, gb.y, None]
+        zs += [ga.z, gb.z, None]
+        if selected_eid is not None and rod.eid == selected_eid:
+            sel[0].extend([ga.x, gb.x]); sel[1].extend([ga.y, gb.y]); sel[2].extend([ga.z, gb.z])
+        L = math.sqrt((gb.x - ga.x) ** 2 + (gb.y - ga.y) ** 2 + (gb.z - ga.z) ** 2)
+        try:
+            sec = rod_section(rod, bulk)
+            a_txt, j_txt, mid_txt = f"{sec.A:.4g}", f"{sec.J:.4g}", str(sec.mid)
+        except KeyError:
+            a_txt = j_txt = mid_txt = "—"
+        mx.append((ga.x + gb.x) / 2)
+        my.append((ga.y + gb.y) / 2)
+        mz.append((ga.z + gb.z) / 2)
+        customdata.append([kind, rod.eid, getattr(rod, "pid", "—"), mid_txt,
+                           a_txt, j_txt, f"{L:.4g}"])
+
+    fig.add_trace(go.Scatter3d(
+        x=xs, y=ys, z=zs,
+        mode="lines",
+        line=dict(color="#2ca02c", width=4, dash="dash"),
+        name="CROD / CONROD",
+    ))
+    if sel[0]:
+        fig.add_trace(go.Scatter3d(
+            x=sel[0], y=sel[1], z=sel[2],
+            mode="lines",
+            line=dict(color="#ff7f0e", width=8),
+            name=f"Selected EID {selected_eid}",
+        ))
+    hover = (
+        "<b>%{customdata[0]} %{customdata[1]}</b><br>"
+        "PID: %{customdata[2]},  MID: %{customdata[3]}<br>"
+        "A: %{customdata[4]},  J: %{customdata[5]}<br>"
+        "L: %{customdata[6]}"
+        "<extra></extra>"
+    )
+    fig.add_trace(go.Scatter3d(
+        x=mx, y=my, z=mz,
+        mode="markers",
+        marker=dict(size=8, opacity=0, color="#ffffff"),
+        customdata=customdata,
+        hovertemplate=hover,
+        name="Rod hover",
+        showlegend=False,
     ))
 
 

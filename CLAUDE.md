@@ -9,13 +9,27 @@ tables live in `docs/` (budget: keep this file under ~150 lines; move prose out,
 `sbeam` (Simple Beam FEA) is a Python-based finite element analysis program for beams using
 standard NASTRAN BDF input format. It is **not** related to RAM SBeam.
 
-**Mission (2026-08-04):** a FAR/CS-23-style **loads process** on a beam-stick aeroelastic
-model — generate maneuver + gust design cases, trim/integrate them, and deliver
-monitor/section loads with a traceable critical-case report for stress. SOL 145 flutter +
-DLM is the declared phase after loads sufficiency. New work must serve this mission or be
-parked (`docs/30_future/02_parked.md`); the working backlog is **GitHub issues**
-(milestones = planned releases; mission + milestone map: `docs/30_future/00_backlog.md`;
-workflow: `docs/10_standard/08_release_process.md` §2a).
+**Mission (2026-08-04; re-sequenced 2026-09-05):** a FAR/CS-23 and -25 **loads process** on a
+beam-stick aeroelastic model — generate maneuver + gust design cases, trim/integrate them, and
+deliver monitor/section loads with a traceable critical-case report for stress. Route: **solver
+first, process second** — mature the solver (v0.3.0), then flutter/DLM (v0.5.0) and dynamic
+gust (v0.6.0), then build the process once on the complete set of case families (v0.7.0;
+`docs/30_future/loads_process.md`). New work must serve this mission or be parked
+(`docs/30_future/02_parked.md`); the working backlog is **GitHub issues** (milestones =
+planned releases; mission + milestone map: `docs/30_future/00_backlog.md`; workflow:
+`docs/10_standard/08_release_process.md` §2a).
+
+## Architecture boundary (2026-09-05)
+
+**The solver reads a deck and writes results for the cases it is given. It never decides
+which cases exist, and it never reduces across runs.** `sbeam/` is the NASTRAN-style
+solver core (unit-neutral card fields, per-case physics, within-run envelopes);
+`sbeam_tools/{common,cases,report,viewer}` is the pre/post tooling (case construction,
+cross-run reduction, reporting, GUI) and *may* know units, atmospheres and regulatory
+constants. `sbeam/` must never import `sbeam_tools/`, `streamlit` or `plotly` — a CI gate
+asserts it. Both ship in one distribution; the mission above is the repository's, not the
+solver package's. Rationale, layout and migration status:
+`docs/10_standard/00_program_overview.md` (Architecture).
 
 ## Documentation Map
 
@@ -25,12 +39,14 @@ designs), `40_history/` (completed steps + resolved defects), `50_reviews/` (pro
 reviews). Authoritative single sources — never duplicate their content elsewhere, link to
 them instead:
 
-- **Card fields/defaults/validation:** `docs/10_standard/02_card_reference.md`
+- **Supported-card list, card fields/defaults/validation:** `docs/10_standard/02_card_reference.md`
 - **Module/file structure:** `docs/10_standard/00_program_overview.md` (Project Structure)
 - **Verification-case tables (V-suite, VAL2):** `docs/10_standard/00_program_overview.md`
 - **Sign/axis/frame/reference-point conventions:** `docs/10_standard/09_conventions.md`
 - **Solver behavior and outputs:** the per-solver guides `03`/`04`/`05a`–`05c`
 - **Known limitations:** index in `00_program_overview.md`
+- **Export schemas (CSV / load BDF):** `docs/10_standard/10_export_schemas.md`
+- **Public Python entry points (public vs internal):** `docs/10_standard/11_python_api.md`
 
 ## Step Completion Requirement (tiered)
 
@@ -46,21 +62,28 @@ Never batch or defer closure to a later session.**
 | **M** | Behavior change to an existing capability | Tier S + update the affected `docs/10_standard/` section(s) |
 | **L** | New capability, new card, new physics | Tier S + affected standard docs + **full step format** (Objective, Deliverables, Test/Acceptance, key decisions) in the matching `docs/40_history/` area file + its index `00_completed_development.md` |
 
-Additional rules (from the 2026-08-04 process review — rationale in
-`docs/50_reviews/2026-08-04_development_process_review.md`):
+Additional rules (rationale: `docs/50_reviews/2026-08-04_development_process_review.md`;
+rules marked † from `docs/50_reviews/2026-10-25_wt2_reference_defect_review.md`):
 
 1. **Design note before code (physics/L steps):** a short note — theory reference,
    conventions-charter citations (`09_conventions.md`), validation target with expected
    numbers, acceptance tolerances — agreed in chat **before** implementation starts.
+   † When extending existing code, list its assumptions and say which stop holding.
 2. **Benchmark-first definition of done:** a physics step is not done until an end-to-end
    benchmark number (closed-form, NASTRAN, or AVL) passes in CI, written **with** the
-   feature. Green unit tests alone are demonstrated insufficient (AE13).
+   feature. Green unit tests alone are demonstrated insufficient (AE13). † Closure,
+   regeneration and target-achieved gates prove consistency only; add one gate at the
+   real operating condition, scored outside the builder (#52).
 3. **Generalize on first find:** a defect fix must sweep the same defect class across the
-   codebase in the same change, and add an invariant gate where feasible.
+   codebase in the same change, and add an invariant gate where feasible. † Sweep for the
+   broken *assumption* (e.g. "normal = +z"), not just the function family (#52 vs DEF-M15).
 4. **Review findings are filed with bodies** in the same session they are raised — a name
    list is not a finding (DEF-L lesson).
 5. **No speculative features:** nothing is built without a named validation target or a
    named load case that consumes it (WT1 lesson).
+6. **† Explain before you gate:** a gate asserting a non-zero effect needs an independent
+   prediction of its size, and printed output quoted in docs is checked against the case's
+   invariants (β = 0 ⇒ no side force) — B4 once gated #52's own symptom.
 
 ## Development Status
 
@@ -87,21 +110,6 @@ matrix; uniform torsion GJ/L. Derivations: `docs/20_theory/00_beam_methods.ipynb
 - Per-solver output details: `03_static_analysis.md`, `04_modal_analysis.md`,
   `05c_sol144_maneuver.md` (SOL 144 trim, MLOADS transient, monitor/section loads)
 
-## Supported Cards
-
-Field-level reference (authoritative): `docs/10_standard/02_card_reference.md`.
-
-- **Structure:** CORD2R, GRID, CBAR, PLOTEL, RBE3, RBE2, RBAR, CBUSH, PBAR, PBUSH, MAT1
-- **Mass:** CONM2, MASSSET
-- **Constraints/loads:** SPC, SPC1, FORCE, MOMENT, LOAD, GRAV
-- **Eigenvalue:** EIGRL
-- **Aero (Phase A/C):** AEROS, CAERO1, PAERO1, AEFACT, W2GJ, WKK, AECORR, CHORDCP,
-  PSTRIP, STRIPK, SPLINE0/2 (+ ATTACH), SET1, AELIST, AESTAT, AESURF, TRIM, TRIMVAR,
-  TRIMCON, TRIMOBJ, SUPORT, DIVERG, MONPNT1, MONPNT3, MONSECT, AECOMP
-- **Transient maneuver (G0):** MLOADS, MLDTRIM, MLDCOMD, MLDTIME, MLDPRNT, TABLED1
-- **Case control:** SOL, SUBCASE, LOAD, SPC, METHOD, TRIM, MLOADS, MASSSET,
-  DISPLACEMENT, SPCFORCE, OLOAD, FORCE, STRESS, BEGIN BULK, ENDDATA
-
 ## Key Constraints
 
 - Sparse solvers throughout — no hard element limit; memory/time are the practical bounds
@@ -113,9 +121,9 @@ Field-level reference (authoritative): `docs/10_standard/02_card_reference.md`.
 
 ## Module Structure
 
-Packages: `parser/`, `model/`, `assembly/`, `solver/`, `results/`, `aero/`, `viewer/`,
+Packages: `parser/`, `model/`, `assembly/`, `solver/`, `results/`, `aero/`,
 plus `gpwg.py`, `types.py`, `linalg_utils.py`. Import direction:
-viewer → solver → assembly → model → parser. The annotated file-level tree is in
+solver → assembly → model → parser; `sbeam_tools/` (incl. the viewer) → `sbeam/`. Tree in
 `docs/10_standard/00_program_overview.md` (Project Structure) — keep it there only.
 
 ## Verification

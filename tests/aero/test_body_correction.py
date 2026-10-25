@@ -20,16 +20,15 @@ import pytest
 
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.aero.aero_model import build_aero_model
-from sbeam.aero import section_data as sd
+from sbeam_tools.corrections import section_data as sd
 from sbeam.aero.body_correction import (
     BodyTargets,
     build_body_correction,
-    parse_body_targets,
-    split_total_rows,
     RATIO_WARN,
     _ref_geometry,
     _total_metrics,
 )
+from sbeam_tools.corrections import parse_body_targets, split_total_rows
 from sbeam.aero.integration import build_djx
 from sbeam.model.aero import Aecorr, W2gj
 from sbeam.solver.sol144 import pitch_moment
@@ -84,8 +83,8 @@ def test_split_and_parse_total_block():
     tgt = parse_body_targets(df, mach=0.0)
     # Realistic totals = flying-surface baseline + a small fuselage increment (mild
     # destabilising pitch/yaw, ~0 roll); see the deck header and 05_aeroelastics.md.
-    assert tgt == BodyTargets(cm_alpha=-1.4921, cm0=-0.0404, cn_beta=0.0772, cn0=0.0,
-                              cl_beta=-0.0364, cl0=0.0)
+    assert tgt == BodyTargets(cm_alpha=-1.4087, cm0=-0.0404, cn_beta=0.0772, cn0=0.0,
+                              cl_beta=-0.0367, cl0=0.0)
     assert parse_body_targets(df, mach=0.7) is None   # no TOTAL row at this Mach
 
 

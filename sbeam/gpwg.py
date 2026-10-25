@@ -7,6 +7,7 @@ import numpy as np
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.assembly.coord_transform import build_transform
+from sbeam.assembly.elements import iter_line_elements, line_element_mass_per_length
 
 
 @dataclass
@@ -20,9 +21,9 @@ class GpwgResult:
 
 
 def compute_gpwg(bulk: BulkData, massset_sid: Optional[int] = None) -> GpwgResult:
-    """Compute total mass and centre of gravity from CBAR elements and CONM2 masses.
+    """Compute total mass and centre of gravity from line elements and CONM2 masses.
 
-    CBAR mass = (rho * A + nsm) * L, distributed at element midpoint.
+    CBAR / CROD / CONROD mass = (rho * A + nsm) * L, placed at the element midpoint.
     CONM2 mass = Conm2.m at grid location + offset (x1, x2, x3).
 
     ``massset_sid`` (Step 60) selects a MASSSET payload / mass case; ``None``
@@ -33,17 +34,17 @@ def compute_gpwg(bulk: BulkData, massset_sid: Optional[int] = None) -> GpwgResul
 
     mass_contributions = []  # list of (mass, x, y, z)
 
-    # CBAR elements
-    for cbar in bulk.cbars.values():
-        pbar = bulk.pbars.get(cbar.pid)
-        if pbar is None:
-            continue
-        mat1 = bulk.mat1s.get(pbar.mid)
-        if mat1 is None:
+    # Line elements: CBAR, CROD, CONROD (assembly/elements.py registry, #38).
+    # Elements whose property, material or grids are missing are skipped, as
+    # before: the viewer calls this on partially valid decks.
+    for elem in iter_line_elements(bulk):
+        try:
+            m_lin = line_element_mass_per_length(elem, bulk)
+        except KeyError:
             continue
 
-        ga = bulk.grids.get(cbar.ga)
-        gb = bulk.grids.get(cbar.gb)
+        ga = bulk.grids.get(elem.ga)
+        gb = bulk.grids.get(elem.gb)
         if ga is None or gb is None:
             continue
 
@@ -51,7 +52,7 @@ def compute_gpwg(bulk: BulkData, massset_sid: Optional[int] = None) -> GpwgResul
         gb_pos = np.array([gb.x, gb.y, gb.z])
         L = np.linalg.norm(gb_pos - ga_pos)
 
-        elem_mass = case.scale * (mat1.rho * pbar.A + pbar.nsm) * L
+        elem_mass = case.scale * m_lin * L
 
         midpoint = 0.5 * (ga_pos + gb_pos)
         mass_contributions.append((elem_mass, midpoint[0], midpoint[1], midpoint[2]))

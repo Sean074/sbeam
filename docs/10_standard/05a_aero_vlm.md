@@ -520,12 +520,20 @@ LU factorization returned by `check_conditioning` (`scipy.linalg.lu_solve`).
 Simplest correction; can absorb empirical scale factors or stall nonlinearity.
 Issues a `UserWarning` if the condition estimate of `AJJ*` exceeds 1e10.
 
-### `apply_wt2(ajj, cp_target, ajj_inv=None) -> np.ndarray`
+### `apply_wt2(ajj, cp_target, ajj_inv=None, cp_ref=None) -> np.ndarray`
 
 Pressure-matching correction. Returns corrected `AJJ*⁻¹` by scaling each row of
-`AJJ⁻¹` by `cp_target_k / cp_vlm_ref_k`, where the reference normalwash is
-`w_ref = -ones(n)` (uniform unit incidence). The fixed reference state is required:
-deriving `w_ref` from `cp_target` itself yields a trivial identity correction. Boxes
+`AJJ⁻¹` by `cp_target_k / cp_ref_k`. The reference loading `cp_ref` is **per incidence
+axis** (#52): `wt2_reference_cp(boxes, ajj_inv)` calibrates every α surface at unit α
+(`w = −1` on α boxes, `0` on β boxes) and every β surface — a CAERO1 whose boxes' dominant
+normal is `y` — at unit β. `_assemble_vlm_operator` and both correction builders
+(`section_correction`, `body_correction`) use that one helper, so the cards and the solver
+cannot disagree. When `cp_ref` is omitted `apply_wt2` falls back to the uniform
+`w_ref = -ones(n)`, which is identical only on a deck with no vertical surface. (Before #52
+the uniform reference was used everywhere: it sideslipped the fin, whose vortex system made
+the flagship's corrected HTP 55 % heavier on the port side at α = 3°, β = 0.) The fixed
+reference state is required: deriving it from `cp_target` itself yields a trivial identity
+correction. Boxes
 with near-zero `cp_vlm_ref` (tolerance `_RATIO_TOL = 1e-12`) keep a ratio of 1.0.
 `ajj_inv` may be supplied by a caller that already inverted AJJ
 (`_assemble_vlm_operator` does, DEF-R6 — one factorization serves the conditioning
@@ -658,7 +666,8 @@ wrapper over `model/card_writers.write_card`: every real routes through
 `parser/bdf_field.fmt_real8`, so each free-field token fits the strict 8-character NASTRAN
 field (DEF-M12) and NaN/inf raise rather than being written out.
 
-**Algorithm.** The WT2 ratio is calibrated on `w_ref = −ones` and is therefore independent
+**Algorithm.** The WT2 ratio is calibrated on the per-axis reference (`wt2_reference_cp`,
+#52 — `w_ref = −ones` on a deck with no vertical surface) and is therefore independent
 of `w_g`, so the build is one pass: (1) **per strip across all surfaces**, a uniform scale
 `r̄ = f_slope/f_slope_vlm` hits the force with **no shape change**, plus a minimum-norm
 per-box perturbation orthogonal to the force (`Σ δ·g0 = 0`) supplies only the moment/a.c.
@@ -703,10 +712,12 @@ Two consequences worth stating at card level:
   same limitation as the single operating region above, with a stronger α-nonlinearity.
   Build one correction set per flight condition. One-engine-out is a *different* set, not a
   scaled one.
-- **The thrust-line pitching moment has no card.** It is not aerodynamic, and a SOL 144
-  trim subcase carrying both `TRIM` and `LOAD` is refused (DEF-M4). See
-  `docs/20_theory/02_realistic_airplane_sol144.md` §7.2 for the two honest workarounds and
-  the one that quietly corrupts your wing torsion.
+- **The thrust-line pitching moment is not a correction.** It is not aerodynamic: author
+  the thrust as a `FORCE` (and the torque reaction as a `MOMENT`) at the engine-mount grid
+  and select it with `LOAD` in the trim subcase — it enters the trim balance directly and
+  scales with thrust, not with `q` (#6; `05c` "Applied structural load in a trim";
+  `docs/20_theory/02_realistic_airplane_sol144.md` §7.2). Never fold it into a wing strip's
+  `cm0`: that corrupts the wing torsion the section loads exist to report.
 
 Full modelling guidance, including the build workflow and the failure modes:
 `docs/20_theory/02_realistic_airplane_sol144.md` §7.
@@ -1063,7 +1074,7 @@ rebuild). Multiple subsonic subcases at different Mach therefore trim correctly.
 
 ## Viewer — Aero Tab (S44)
 
-`sbeam/viewer/aero_view.py` provides Plotly figure builders for the aerodynamic mesh
+`sbeam_tools/viewer/aero_view.py` provides Plotly figure builders for the aerodynamic mesh
 and pressure-coefficient visualisation. The Streamlit app (`app.py`) shows an "Aero"
 tab automatically when `bulk.caero1s` is non-empty.
 

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.parser.case_control import CaseControl, SubcaseControl, parse_case_control
-from sbeam.viewer.case_control_ui import export_bdf_text
+from sbeam_tools.viewer.case_control_ui import export_bdf_text
 
 
 def _make_sol101_cc() -> CaseControl:

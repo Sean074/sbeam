@@ -4,7 +4,8 @@ This is increment 1 of Phase G0 (the realistic, DLM-free path to a ZAERO
 ``MLOADS``-style transient maneuver capability).  It time-integrates the elastic
 response of the airframe to a prescribed (open-loop) pilot-command history,
 starting from a Step 53 static balanced-trim initial condition, and recovers the
-net (aero + inertial) maneuver loads at each output time.
+net applied maneuver loads (aero + rigid inertia + elastic inertia + damping, #3)
+at each output time.
 
 Level-1 quasi-steady aerodynamics
 ---------------------------------
@@ -60,8 +61,14 @@ from sbeam.results.results import ManeuverStep, ManeuverResult, peak_grid_force
 from sbeam.results.section_cuts import (
     SectionCutPlan, evaluate_section_cut, prepare_section_cuts,
 )
-from sbeam.results.section_envelope import build_section_envelope
-from sbeam.solver.sol101 import recover_bar_forces, recover_reactions
+from sbeam.results.monitor_points import (
+    MonitorPlan, evaluate_monitor_point, prepare_monitor_points,
+)
+from sbeam.results.section_envelope import (
+    build_monitor_envelope, build_section_envelope,
+)
+from sbeam.solver.sol101 import recover_reactions
+from sbeam.solver.element_recovery import recover_line_elements
 from sbeam.assembly.reduction import AsetReduction, expand_to_g
 from sbeam.solver.sol144 import run_sol144_trim
 from sbeam.solver.sol144_util import (
@@ -71,6 +78,7 @@ from sbeam.solver.sol144_util import (
     pitch_moment,
 )
 from sbeam.types import FloatArray, SparseMatrix
+from sbeam.model.mass_overlay import resolve_mass_case
 
 
 @dataclass
@@ -111,6 +119,8 @@ class Operators:
     # empty when the deck has no MONSECT cards, which is the whole opt-in.
     cut_plans: dict[str, SectionCutPlan] = field(default_factory=dict)
     constrained_dofs: list[int] = field(default_factory=list)  # SPC + SUPORT g-set DOFs
+    # #2: MONPNT1/MONPNT3 plans, resolved once like the cut plans.
+    monitor_plans: dict[str, MonitorPlan] = field(default_factory=dict)
 
 
 def assemble_operators(
@@ -169,20 +179,28 @@ def assemble_operators(
     # otherwise rebuild them (and re-warn) 2000 times.
     grid_index = ops.grid_index
     cut_plans: dict[str, SectionCutPlan] = {}
+    monitor_plans: dict[str, MonitorPlan] = {}
     constrained_dofs: list[int] = []
     if bulk.monsects:
         cut_plans = prepare_section_cuts(bulk, aero, grid_index)
-        # A SET1-backed cut spanning a constrained grid carries its reaction
-        # across the plane — the same reason run_sol144_trim recovers reactions
-        # for MONPNT3.  Aero-only (AELIST) cuts never need them.
-        if any(p.listtype == "SET1" for p in cut_plans.values()):
-            if subcase.spc_sid:
-                constrained_dofs += list(
-                    get_spc_dofs(bulk, subcase.spc_sid, grid_index))
-            for sup in bulk.supports:
-                if sup.gid in grid_index:
-                    base = grid_index[sup.gid] * 6
-                    constrained_dofs += [base + (int(ch) - 1) for ch in sup.dofs]
+    if bulk.monpnt1s or bulk.monpnt3s:
+        # #2: the DEF-M10 mass-coverage warning is NOT re-issued here — the IC
+        # trim this run starts from has already computed (and warned on) the
+        # same monitors, so a 2000-sample run warns exactly once.
+        monitor_plans = prepare_monitor_points(bulk, aero, grid_index)
+    # A SET1-backed cut spanning a constrained grid carries its reaction across
+    # the plane, and a MONPNT3 over a constrained grid carries it in the sum —
+    # the same reason run_sol144_trim recovers reactions for both.  Aero-only
+    # (AELIST) cuts and MONPNT1s never need them.
+    if (any(p.listtype == "SET1" for p in cut_plans.values())
+            or bool(bulk.monpnt3s)):
+        if subcase.spc_sid:
+            constrained_dofs += list(
+                get_spc_dofs(bulk, subcase.spc_sid, grid_index))
+        for sup in bulk.supports:
+            if sup.gid in grid_index:
+                base = grid_index[sup.gid] * 6
+                constrained_dofs += [base + (int(ch) - 1) for ch in sup.dofs]
 
     return Operators(
         all_labels=all_labels, label_to_col=label_to_col,
@@ -193,6 +211,7 @@ def assemble_operators(
         q=q, x_ref=x_ref, suport_pos=suport_pos, R_rcsid=R_rcsid, has_rcsid=has_rcsid,
         red=red, M_gg=ops.M_gg, K_gg=ops.K_gg,
         cut_plans=cut_plans, constrained_dofs=constrained_dofs,
+        monitor_plans=monitor_plans,
     )
 
 
@@ -226,7 +245,7 @@ def recover_step(
     elastic_accel_a: Optional[FloatArray] = None,
     damping_rate_a: Optional[FloatArray] = None,
 ) -> ManeuverStep:
-    """Recover per-step displacements, CBAR loads, and net (aero+inertial) loads.
+    """Recover per-step displacements, CBAR loads, and the net applied load.
 
     The optional ``xi_r*``/``nz_rel`` fields are the Step 63 free-flight rigid
     states, passed through untouched — the recovery itself sees rigid motion
@@ -240,7 +259,8 @@ def recover_step(
     force.  They are what a **section cut** needs and the global closure does
     not: mean-axis orthogonality makes the rigid-row resultant of ``M·Φ_e ξ̈_e``
     exactly zero, so a whole-airplane resultant is blind to a term that a local
-    free body carries in full.
+    free body carries in full.  Both are also folded into ``net_loads`` (#3),
+    which is the full applied load at the sample.
     """
     aero = ops.aero
     # Scatter l-set displacement into the a-set (r-set = 0), expand to g-set so
@@ -251,11 +271,9 @@ def recover_step(
         u_a[li] = u_l[li_idx]
     displacements = expand_to_g(u_a, ops.T, ops.free_local, len(ops.red_dofs))
 
-    # CBAR force recovery (reuses sol101 unchanged).
-    bar_forces = {}
-    for cbar in bulk.cbars.values():
-        bar_forces[cbar.eid] = recover_bar_forces(
-            cbar, bulk.grids, bulk.pbars, bulk.mat1s, displacements, grid_index)
+    # Line-element force recovery (CBAR + CROD/CONROD, #38; forces only per sample).
+    elems = recover_line_elements(bulk, displacements, grid_index, stresses=False)
+    bar_forces = elems.bar_forces
 
     # Instantaneous aero box forces at this state (steady VLM, Level 1).
     w_struct = ops.djk @ (aero.require_g_slope() @ displacements)
@@ -270,8 +288,6 @@ def recover_step(
     delta_basic = urdd_rcsid_to_basic(
         delta_arr, ops.label_to_col, ops.R_rcsid, ops.has_rcsid)
     inertial_loads = ops.M_ax_g @ delta_basic
-    net_loads = grid_loads + inertial_loads
-    closure = load_resultant(net_loads, bulk, grid_index, ops.suport_pos)
 
     # ---- Step 68: elastic-inertia and damping loads (g-set) ---- #
     # Same d'Alembert sign as the rigid column: M_ax_g IS −M_gg·Φ_r, so the
@@ -285,52 +301,97 @@ def recover_step(
     if damping_rate_a is not None:
         damping_loads = -(ops.M_gg @ ops.red.expand_to_g(damping_rate_a))
 
-    # ---- Step 68: MONSECT section cuts at this sample ---- #
+    # ---- The net load: the FULL applied load at this sample (#3) ---- #
+    # K·u = F_aero − M·ü_rigid − M·ü_elastic − C·u̇, and ``net_loads`` is the
+    # right-hand side entire: the exported FORCE/MOMENT cards, the closure and
+    # the DEF-M5 critical-sample metric all read this one vector, so a stress
+    # model that applies the cards statically recovers this sample's internal
+    # loads (gate G1, tests/aero/test_maneuver_reapply.py).  The elastic and
+    # damping terms are kept as separate fields as well because the section
+    # cuts report them as their own columns.
+    net_loads = grid_loads + inertial_loads
+    if elastic_inertial_loads is not None:
+        net_loads = net_loads + elastic_inertial_loads
+    if damping_loads is not None:
+        net_loads = net_loads + damping_loads
+    closure = load_resultant(net_loads, bulk, grid_index, ops.suport_pos)
+
+    # ---- Step 68 / #2: MONSECT section cuts and monitor points at this sample ---- #
     section_loads = None
-    if ops.cut_plans:
+    monitor_loads = None
+    if ops.cut_plans or ops.monitor_plans:
         reactions = {}
         if ops.constrained_dofs:
-            # R = K·u − f_applied, and f_applied here is the FULL applied load,
-            # not ``net_loads``: the elastic d'Alembert and damping forces act on
-            # the constrained DOFs too, and omitting them would leave that
-            # difference sitting in the reaction.
+            # R = K·u − f_applied, with ``net_loads`` the full applied load
+            # (aero + rigid + elastic inertia + damping): the elastic d'Alembert
+            # and damping forces act on the constrained DOFs too, and omitting
+            # them would leave that difference sitting in the reaction.
             #
             # NOTE: no current sample deck exercises this.  It only bites when a
             # constrained grid carries mass; on HA144A the SPC/SUPORT grid 90 is
-            # massless, so the two forms agree to 0.0 there.  Written in the
-            # correct form deliberately rather than to match a passing test.
-            f_applied = net_loads
-            if elastic_inertial_loads is not None:
-                f_applied = f_applied + elastic_inertial_loads
-            if damping_loads is not None:
-                f_applied = f_applied + damping_loads
+            # massless, so it is 0.0 there.  Written in the correct form
+            # deliberately rather than to match a passing test.
             reactions = recover_reactions(
                 bulk, displacements, ops.constrained_dofs, ops.K_gg,
-                grid_index, f_applied)
+                grid_index, net_loads)
         box_forces = (ops.q * f_box_vec).reshape(-1, 3)
         zero_g = np.zeros_like(net_loads)
-        section_loads = {
-            name: evaluate_section_cut(
-                plan, box_forces, grid_loads, inertial_loads, grid_index,
-                reactions,
-                elastic_inertial_loads=(elastic_inertial_loads
-                                        if elastic_inertial_loads is not None
-                                        else zero_g),
-                damping_loads=(damping_loads if damping_loads is not None
-                               else zero_g),
-            )
-            for name, plan in ops.cut_plans.items()
-        }
+        # On a transient sample the two extra columns are always *present*
+        # (computed-and-zero when the solver has no elastic acceleration, e.g.
+        # held at trim), as opposed to absent on a static trim — the
+        # distinction the static outputs draw.
+        elastic_g = (elastic_inertial_loads if elastic_inertial_loads is not None
+                     else zero_g)
+        damping_g = damping_loads if damping_loads is not None else zero_g
+        if ops.cut_plans:
+            section_loads = {
+                name: evaluate_section_cut(
+                    plan, box_forces, grid_loads, inertial_loads, grid_index,
+                    reactions,
+                    elastic_inertial_loads=elastic_g, damping_loads=damping_g,
+                )
+                for name, plan in ops.cut_plans.items()
+            }
+        if ops.monitor_plans:
+            monitor_loads = {
+                name: evaluate_monitor_point(
+                    plan, box_forces, grid_loads, inertial_loads, reactions,
+                    grid_index,
+                    elastic_inertial_loads=elastic_g, damping_loads=damping_g,
+                )
+                for name, plan in ops.monitor_plans.items()
+            }
 
     return ManeuverStep(
         t=t, trim_vars=dict(vals), displacements=displacements,
-        bar_forces=bar_forces, grid_loads=grid_loads,
+        bar_forces=bar_forces, rod_forces=elems.rod_forces, grid_loads=grid_loads,
         inertial_loads=inertial_loads, net_loads=net_loads, closure=closure,
         Fz_aero=Fz_aero, My_aero=My_aero, modal_coords=modal_coords,
         xi_r=xi_r, xi_r_dot=xi_r_dot, xi_r_ddot=xi_r_ddot, nz_rel=nz_rel,
         elastic_inertial_loads=elastic_inertial_loads,
         damping_loads=damping_loads, section_loads=section_loads,
+        monitor_loads=monitor_loads,
     )
+
+
+def refuse_load_in_mloads(where: str, subcase: SubcaseControl) -> None:
+    """Refuse a LOAD request in an MLOADS subcase (#6, decision D1).
+
+    An applied structural load enters a SOL 144 TRIM subcase, but the transient
+    solvers rebuild their initial-condition subcase without it and carry no
+    constant-load term, so the request would be read and silently dropped from
+    the time history — the DEF-M4 failure mode.  Carry-through is issue
+    #50; until then the combination is an error, not a surprise.
+    """
+    if subcase.load_sid is not None:
+        raise ValueError(
+            f"{where}: subcase {subcase.subcase_id} requests both "
+            f"MLOADS={subcase.mloads_sid} and LOAD={subcase.load_sid}.  An applied "
+            "structural load is supported in a SOL 144 TRIM subcase (#6) but is not "
+            "carried through the transient maneuver, so it would be silently "
+            "dropped from the time history.  Remove the LOAD request from the "
+            "MLOADS subcase."
+        )
 
 
 def run_maneuver_qs(
@@ -356,6 +417,7 @@ def run_maneuver_qs(
     Returns:
         ManeuverResult with one ManeuverStep per output sample.
     """
+    refuse_load_in_mloads("run_maneuver_qs", subcase)
     if subcase.mloads_sid is None or subcase.mloads_sid not in bulk.mloads:
         raise ValueError(
             f"run_maneuver_qs: MLOADS SID {subcase.mloads_sid} not found")
@@ -489,6 +551,8 @@ def run_maneuver_qs(
         crit_index=crit_index,
         mldprnt_items=(mldprnt.items if mldprnt is not None else []),
         massset_sid=subcase.massset_sid,
+        massset_label=resolve_mass_case(bulk, subcase.massset_sid).label,
     )
     result.section_envelope = build_section_envelope(result)
+    result.monitor_envelope = build_monitor_envelope(result)
     return result

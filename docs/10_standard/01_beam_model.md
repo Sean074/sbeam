@@ -20,6 +20,8 @@ One dataclass per card type; parsed instances are stored in `BulkData` (see belo
 | `GRID` | Grid point (node); `CP` = input frame for coordinates, `CD` = output frame for results |
 | `CBAR` | Two-node Euler-Bernoulli beam element (orientation vector, OFFT, pin releases) |
 | `PBAR` | Uniform beam cross-section property (A, I1, I2, J, NSM, stress recovery points C/D/E/F) |
+| `CROD` / `PROD` | Two-node rod element (axial `EA/L` + torsion `GJ/L`, no bending, no orientation vector) and its section (A, J, C, NSM) — engine-pylon struts (#38) |
+| `CONROD` | Rod element with the section and material inline (MID, A, J, C, NSM) |
 | `MAT1` | Isotropic material (E, G, NU, RHO; G auto-derived from E and NU when blank) |
 | `PLOTEL` | Plot-only line element — visualisation, no stiffness or mass |
 | `CBUSH` / `PBUSH` | Two-node or grounded diagonal spring element and its K1–K6 stiffness property |
@@ -68,12 +70,15 @@ The parser produces a `BulkData` dataclass containing:
 class BulkData:
     grids: dict[int, Grid]
     cbars: dict[int, Cbar]
+    crods: dict[int, Crod]
+    conrods: dict[int, Conrod]
     cbushs: dict[int, Cbush]
     plotels: dict[int, Plotel]
     rbe3s: dict[int, Rbe3]
     rbe2s: dict[int, Rbe2]
     rbars: dict[int, Rbar]
     pbars: dict[int, Pbar]
+    prods: dict[int, Prod]
     pbushs: dict[int, Pbush]
     mat1s: dict[int, Mat1]
     conm2s: dict[int, Conm2]
@@ -138,7 +143,7 @@ Two top-level entry points exist in `parser/bdf_reader.py`:
 | `parse_bdf(filepath)` | Full run file (SOL + SUBCASE + bulk data) | Yes — raises `ValueError` if no `SOL` found |
 | `parse_bulk_file(filepath)` | Bulk-data-only file (geometry, loads, constraints) | No |
 
-The viewer calls `parse_bulk_file()` when uploading a model file before case control has been defined. The solver always receives data from `parse_bdf()`.
+The viewer calls `parse_bulk_file()` when uploading a model file before case control has been defined. The solver always receives data from `parse_bdf()`. Both are public entry points; the complete programmatic surface (parse → run → results → write) is `11_python_api.md`.
 
 ### `parse_bulk_file(filepath) -> BulkData`
 
@@ -178,16 +183,23 @@ Accepts a list of BDF text lines (bulk data section only). Supports:
 - **Inline `$` comments** — everything from `$` to end of line is ignored
 - **Continuation lines** — lines whose first field starts with `+`; consumed by the preceding card handler (e.g. PBAR recovery points, SPC1 with >6 grids)
 
-Cards recognised: `CORD2R`, `GRID`, `PBAR`, `PBUSH`, `MAT1`, `CBAR`, `CBUSH`, `PLOTEL`, `CONM2`, `MASSSET`, `RBE3`, `RBE2`, `RBAR`, `SPC`, `SPC1`, `FORCE`, `MOMENT`, `LOAD`, `GRAV`, `EIGRL`, `SUPORT`, plus the aero/trim/monitor/maneuver families: `AEROS`, `AEFACT`, `PAERO1`, `PSTRIP`, `STRIPK`, `CAERO1`, `W2GJ`, `WKK`, `AECORR`, `SET1`, `SPLINE0`, `SPLINE1`, `SPLINE2`, `ATTACH`, `AESTAT`, `AESURF`, `AELIST`, `TRIM`, `DIVERG`, `TRIMVAR`, `TRIMOBJ`, `TRIMCON`, `AECOMP`, `MONPNT1`, `MONPNT3`, `MLOADS`, `MLDTRIM`, `MLDTIME`, `MLDCOMD`, `MLDPRNT`, `TABLED1` (full list with fields in `02_card_reference.md`).
+Cards recognised: `CORD2R`, `GRID`, `PBAR`, `PROD`, `PBUSH`, `MAT1`, `CBAR`, `CROD`, `CONROD`, `CBUSH`, `PLOTEL`, `CONM2`, `MASSSET`, `RBE3`, `RBE2`, `RBAR`, `SPC`, `SPC1`, `FORCE`, `MOMENT`, `LOAD`, `GRAV`, `EIGRL`, `SUPORT`, plus the aero/trim/monitor/maneuver families: `AEROS`, `AEFACT`, `PAERO1`, `PSTRIP`, `STRIPK`, `CAERO1`, `W2GJ`, `WKK`, `AECORR`, `SET1`, `SPLINE0`, `SPLINE1`, `SPLINE2`, `ATTACH`, `AESTAT`, `AESURF`, `AELIST`, `TRIM`, `DIVERG`, `TRIMVAR`, `TRIMOBJ`, `TRIMCON`, `AECOMP`, `MONPNT1`, `MONPNT3`, `MLOADS`, `MLDTRIM`, `MLDTIME`, `MLDCOMD`, `MLDPRNT`, `TABLED1` (full list with fields in `02_card_reference.md`).
 Structural markers `BEGIN BULK` / `ENDDATA` are silently skipped.
-All other keywords issue `warnings.warn(…, UserWarning)` and are skipped.
-Duplicate GID, PID (PBAR), MID (MAT1), or LOAD SID raises `ValueError`.
+Known-but-unsupported NASTRAN cards (`PLOAD1`, `CBEAM`, `CORD2C`, `MPC`, … — the `_UNSUPPORTED_CARDS` set) **refuse the deck** with one counted `ValueError` (#45; table in `02_card_reference.md` "Unsupported cards").
+All other keywords issue `warnings.warn(…, UserWarning)` and are skipped; the CLI echoes them as `Parser warning:` on stderr.
+Duplicate GID, PID (one space across PBAR and PROD), MID (MAT1), element EID (one space across CBAR, CROD, CONROD and CBUSH), or LOAD SID raises `ValueError`.
 
-**Ordering constraints:** PBAR and MAT1 must appear before the CBAR elements that reference them. PBUSH must appear before the CBUSH elements that reference it. CORD2R cards may appear in any order relative to each other; cycles in `RID` references raise `ValueError`.
+**Ordering constraints:** PBAR and MAT1 must appear before the CBAR elements that reference them. PROD and MAT1 must appear before the CROD elements, and MAT1 before the CONROD elements, that reference them. PBUSH must appear before the CBUSH elements that reference it. CORD2R cards may appear in any order relative to each other; cycles in `RID` references raise `ValueError`.
 
 **CBAR cross-reference validation** (at parse time):
 - `GA` or `GB` not in `bulk.grids` → `ValueError`
 - `PID` not in `bulk.pbars` → `ValueError`
+
+**CROD / CONROD cross-reference validation** (at parse time, #38):
+- `GA` or `GB` not in `bulk.grids`, or `GA == GB` → `ValueError`
+- `CROD` `PID` not in `bulk.prods`, or the PROD's `MID` not in `bulk.mat1s` → `ValueError`
+- `CONROD` `MID` not in `bulk.mat1s`, `A ≤ 0` or `J < 0` → `ValueError`
+
 **DOF string validation** (SPC and SPC1 cards):
 - Any character outside `1–6` (including `"0"`) → `ValueError`
 
@@ -205,8 +217,10 @@ Duplicate GID, PID (PBAR), MID (MAT1), or LOAD SID raises `ValueError`.
 
 A valid model must satisfy:
 - Every CBAR references an existing PBAR (by PID) and two existing GRIDs.
+- Every CROD references an existing PROD and two distinct existing GRIDs; every CONROD an existing MAT1.
 - Every PBAR references an existing MAT1 (by MID).
 - No duplicate GIDs, EIDs, PIDs, MIDs, or LOAD SIDs.
-- No zero-length CBAR elements.
+- No zero-length CBAR, CROD or CONROD elements.
+- Every grid connected only by rods has its rotations SPC'd (no AUTOSPC; rods carry no bending).
 - At least one SPC set defined (SOL 101).
 - No hard CBAR element limit (sparse solver); memory and runtime are the practical constraint.

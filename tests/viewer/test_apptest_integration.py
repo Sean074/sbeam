@@ -14,7 +14,7 @@ from streamlit.testing.v1 import AppTest
 
 def _sbeam_app():
     """Entry point for AppTest — imports main locally so the temp script is self-contained."""
-    from sbeam.viewer.app import main
+    from sbeam_tools.viewer.app import main
     main()
 
 

@@ -24,13 +24,35 @@ SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
 
 # Scaffolding so cross-reference validation passes when parsing writer output.
 _SCAFFOLD = [
+    # Hinge CIDs for the AESURF round-trips: the parser checks CID1/CID2 exist (#9).
+    "CORD2R,7,0,0.0,0.0,0.0,0.0,0.0,1.0",
+    "+,1.0,0.0,0.0",
+    "CORD2R,8,0,0.0,0.0,0.0,0.0,0.0,1.0",
+    "+,-1.0,0.0,0.0",
     "AESTAT,1,ANGLEA",
     "AESTAT,2,PITCH",
     "AESTAT,3,URDD3",
     "AESTAT,4,URDD5",
     "AESURF,10,ELEV,0,100",
     "AELIST,100,1,THRU,4",
+    "AELIST,101,5,THRU,8",
 ]
+
+
+def _cord2r_lines(path):
+    """The CORD2R cards (with continuations) of a sample deck — the authoring families
+    reference hinge CIDs, which the parser now checks exist (#9)."""
+    out, take = [], False
+    for raw in Path(path).read_text().splitlines():
+        line = raw.split("$")[0].strip()
+        if line.upper().startswith("CORD2R"):
+            out.append(line)
+            take = True
+        elif take and line.startswith("+"):
+            out.append(line)
+        else:
+            take = False
+    return out
 
 
 def _reparse(lines, scaffold=True):
@@ -51,7 +73,7 @@ def test_aesurf_roundtrip_defaults_omitted():
 
 
 def test_aesurf_roundtrip_full():
-    a = Aesurf(id=505, label="RUDDER", cid1=7, alid1=100, cid2=8, alid2=100, eff=0.85)
+    a = Aesurf(id=505, label="AIL", cid1=7, alid1=100, cid2=8, alid2=101, eff=0.85)
     assert _reparse(cw.write_aesurf(a)).aesurfs[505] == a
 
 
@@ -171,7 +193,7 @@ _FAMILY_ATTRS = [a for a, _ in cw.FAMILIES.values()]
                                   "ha144a_mloads_massset.bdf"])
 def test_sample_deck_golden_roundtrip(deck):
     _, bulk = parse_bdf(SAMPLE_DIR / deck)
-    lines: list[str] = []
+    lines: list[str] = _cord2r_lines(SAMPLE_DIR / deck)
     for family, (attr, writer) in cw.FAMILIES.items():
         store = getattr(bulk, attr)
         if family == "suport":

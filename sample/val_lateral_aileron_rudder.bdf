@@ -1,0 +1,207 @@
+$ =========================================================================
+$ val_lateral_aileron_rudder.bdf — V-LAT2: lateral trim validation deck (issue #10)
+$
+$ The AR = 8 rectangular wing of val_vlm_rect_ar8 (b = 8, c = 1, S = 8; the C_lp
+$ reference planform) plus a vertical fin, carried on a stiff beam spine, with an
+$ antisymmetric AILERON PAIR authored as ONE AESURF (CID1/ALID1 starboard, CID2/ALID2
+$ port — the NASTRAN second-half mechanism, #9) and a RUDDER.  Two determined lateral
+$ trims: steady roll and steady sideslip (SUPORT 46: roll and yaw free).
+$
+$ Conventions this deck PINS (charter 09_conventions.md §5/§6; design note
+$ 30_future/designs/lateral_cases_aileron_rudder.md D1–D3):
+$   AIL  — both hinge CIDs have +y pointing OUTBOARD (11: +Y basic on the starboard
+$          wing, 12: −Y basic on the port wing).  Positive AIL = right-hand rotation
+$          about each half's own +y = starboard TE-down, port TE-up (lift-increasing
+$          on the CID1 half) = roll TOWARD PORT = +CMX in basic = negative ROLL label.
+$   RUD  — the fin normal is +y (starboard); lift-increasing = +Fy = TE-to-PORT, which
+$          is a right-hand rotation about a DOWNWARD hinge axis, so CID 13 has +y = −Z.
+$          Positive RUD = TE-port = +Fy at the tail = nose-to-port = +CMZ in basic =
+$          negative YAW label.  (Textbook delta_r; see charter §6 for why "+y up"
+$          would have flipped it.)
+$   ROLL — reduced rate pb/2V, positive = starboard-wing-DOWN, about the RCSID origin.
+$   RCSID 100 is z-DOWN stability axes at the root (x forward, y starboard), so
+$          URDD4/URDD6 are textbook roll/yaw accelerations.
+$
+$ Geometry (basic frame: x aft, y starboard, z up; consistent units, SI-like):
+$   wing LE at x = 0, chord 1, span ±4; 20 span × 8 chord boxes per half.
+$   aileron: outer 8 strips (eta 0.6…1.0) × aft 2 chord rows (E = 0.25), hinge x = 0.75.
+$   fin: LE x = 4, chord 1, z = 0…2, 6 span × 8 chord boxes (normal +y);
+$        rudder: all 6 strips × aft 2 rows (E = 0.25), hinge x = 4.75.
+$   spine: root grid 90 (0.25, 0, 0) = RCSID origin = SUPORT point; wing EA grids at
+$        y = ±2, ±4; tail grid 500 (4.25, 0, 0); fin grids 510/520 at z = 1, 2.
+$
+$ ACCEPTANCE (V-LAT2, tests/aero/test_lateral_cases.py G10–G12):
+$   rudder   CY_dr > 0, CMZ_dr > 0; CMZ_dr / CY_dr = force-centroid arm (1e-10);
+$            CY_dr / CY_beta,fin in [0.8, 1.0] × tau(E = 0.25) = 0.609 (thin-airfoil
+$            flap effectiveness, a 2-D band).
+$   aileron  |C_l,da| / C_l,da,strip in [0.6, 1.0] with the VLM's own CL_alpha
+$            (lifting-line band, as the C_lp gate); pair hinge moment = 2 × one half.
+$   trims    SUBCASE 1 (ROLL = 0.05): free AIL, RUD equal the 2×2 solve of the
+$            solver's restrained derivative table (1e-8); AIL < 0 for ROLL > 0.
+$            SUBCASE 2 (SIDES = 0.05): likewise from [C_l,beta, C_n,beta];
+$            maneuver_closure ≈ 0; monitor Fy/Mx/Mz non-zero; CSVs written.
+$ =========================================================================
+$
+SOL 144
+TITLE = Lateral trim validation — aileron pair + rudder (V-LAT2)
+SUBCASE 1
+  LABEL = Steady roll: ROLL = 0.05 prescribed, AIL and RUD free
+  TRIM = 1
+  SPC  = 1
+  DISPLACEMENT = ALL
+  FORCE = ALL
+SUBCASE 2
+  LABEL = Steady sideslip: SIDES = 0.05 prescribed, AIL and RUD free
+  TRIM = 2
+  SPC  = 1
+  DISPLACEMENT = ALL
+  FORCE = ALL
+SUBCASE 3
+  LABEL = Engine torque reaction (clockwise prop): wings level, AIL and RUD free
+  TRIM = 3
+  LOAD = 701
+  SPC  = 1
+  DISPLACEMENT = ALL
+  FORCE = ALL
+BEGIN BULK
+$
+$ ----------------------------------------------------------- AERO REFERENCE
+$ ACSID RCSID  CREF  BREF  SREF  SYMXZ SYMXY
+AEROS,  0,  100,  1.0,  8.0,  8.0,  0,  0
+$
+$ ----------------------------------------------------------- COORD SYSTEMS
+$ CID 100 — RCSID, stability axes z-DOWN at the root: z = −Z, x = −X (forward),
+$ hence y = z × x = +Y (starboard).  Origin = moment reference = SUPORT point.
+CORD2R, 100, 0, 0.25, 0.0, 0.0, 0.25, 0.0, -1.0
++, -0.75, 0.0, 0.0
+$ CID 2 — starboard wing spline axis (SPLINE2: axis = CID y): z = +Z, x = +X, y = +Y
+CORD2R, 2, 0, 0.25, 0.0, 0.0, 0.25, 0.0, 1.0
++, 1.25, 0.0, 0.0
+$ CID 3 — port wing spline axis: z = +Z, x = −X, y = −Y
+CORD2R, 3, 0, 0.25, 0.0, 0.0, 0.25, 0.0, 1.0
++, -0.75, 0.0, 0.0
+$ CID 11 — STARBOARD aileron hinge at x = 0.75, +y OUTBOARD (= +Y): z = +Z, x = +X
+CORD2R, 11, 0, 0.75, 0.0, 0.0, 0.75, 0.0, 1.0
++, 1.75, 0.0, 0.0
+$ CID 12 — PORT aileron hinge at x = 0.75, +y OUTBOARD (= −Y): z = +Z, x = −X
+CORD2R, 12, 0, 0.75, 0.0, 0.0, 0.75, 0.0, 1.0
++, -0.25, 0.0, 0.0
+$ CID 13 — RUDDER hinge at x = 4.75, +y DOWN (= −Z): z = −X, x = +Y, y = z × x = −Z
+CORD2R, 13, 0, 4.75, 0.0, 0.0, 3.75, 0.0, 0.0
++, 4.75, 1.0, 0.0
+$
+$ ----------------------------------------------------------- GRIDS
+GRID, 90,  , 0.25, 0.0, 0.0
+GRID, 110, , 0.25, 2.0, 0.0
+GRID, 120, , 0.25, 4.0, 0.0
+GRID, 210, , 0.25, -2.0, 0.0
+GRID, 220, , 0.25, -4.0, 0.0
+GRID, 500, , 4.25, 0.0, 0.0
+GRID, 510, , 4.25, 0.0, 1.0
+GRID, 520, , 4.25, 0.0, 2.0
+$
+$ ----------------------------------------------------------- PROPERTY / MATERIAL
+$ Stiff spine: the lateral gates compare the trim against the solver's own restrained
+$ derivatives, so flexibility is allowed but kept small.
+PBAR, 100, 1, 1.0-2, 1.0-3, 1.0-3, 2.0-3
+MAT1, 1, 7.0+10, 2.6+10
+$
+$ ----------------------------------------------------------- STRUCTURE
+CBAR, 110, 100, 90,  110, 1.0, 0.0, 0.0
+CBAR, 120, 100, 110, 120, 1.0, 0.0, 0.0
+CBAR, 210, 100, 90,  210, 1.0, 0.0, 0.0
+CBAR, 220, 100, 210, 220, 1.0, 0.0, 0.0
+CBAR, 500, 100, 90,  500, 0.0, 0.0, 1.0
+CBAR, 510, 100, 500, 510, 1.0, 0.0, 0.0
+CBAR, 520, 100, 510, 520, 1.0, 0.0, 0.0
+$
+$ ----------------------------------------------------------- POINT MASSES (total 10)
+CONM2, 90,  90,  0, 4.0
+CONM2, 110, 110, 0, 1.0
+CONM2, 120, 120, 0, 1.0
+CONM2, 210, 210, 0, 1.0
+CONM2, 220, 220, 0, 1.0
+CONM2, 500, 500, 0, 1.0
+CONM2, 510, 510, 0, 0.5
+CONM2, 520, 520, 0, 0.5
+$
+$ ----------------------------------------------------------- CONSTRAINTS
+$ Pin surge, sway, plunge and pitch at the reference; SUPORT frees ROLL (4) and YAW (6).
+SPC1, 1, 1235, 90
+SUPORT, 90, 46
+$
+$ ----------------------------------------------------------- APPLIED LOADS (#6)
+$ Engine torque reaction for a CLOCKWISE (seen from behind) propeller — charter §10:
+$ the engine drives the propeller about -X (forward), so the airframe feels +Mx basic
+$ of magnitude Q = P/Omega: starboard wing up, i.e. the textbook roll toward PORT.
+$ Holding wings level needs roll toward starboard = starboard TE-UP = NEGATIVE AIL.
+MOMENT, 701, 90, 0, 35.0, 1.0, 0.0, 0.0
+$
+$ ----------------------------------------------------------- AERO PANELS
+PAERO1, 1
+$ Starboard wing: root LE (0,0,0) -> tip LE (0,4,0); boxes 1000 + 8*i_span + j_chord
+CAERO1, 1000, 1, 0, 20, 8, 0, 0, 1
++, 0.0, 0.0, 0.0, 1.0, 0.0, 4.0, 0.0, 1.0
+$ Port wing: root LE (0,0,0) -> tip LE (0,-4,0); boxes 2000 + 8*i_span + j_chord
+CAERO1, 2000, 1, 0, 20, 8, 0, 0, 1
++, 0.0, 0.0, 0.0, 1.0, 0.0, -4.0, 0.0, 1.0
+$ Fin: root LE (4,0,0) -> tip LE (4,0,2), chord 1, normal +y; boxes 5000 + 8*i + j
+CAERO1, 5000, 1, 0, 6, 8, 0, 0, 1
++, 4.0, 0.0, 0.0, 1.0, 4.0, 0.0, 2.0, 1.0
+$
+$ ----------------------------------------------------------- SPLINES
+$ Wing halves: SPLINE2 on the EA grids (CID 2 / 3); fin: rigid ATTACH to grid 510.
+SPLINE2, 1601, 1000, 1000, 1159, 1100, 0.0, 1.0, 2
++, -1.0, 0.0
+SPLINE2, 2601, 2000, 2000, 2159, 2100, 0.0, 1.0, 3
++, -1.0, 0.0
+ATTACH, 1605, 5000, 5000, 5047, 510, 0
+SET1, 1100, 90, 110, 120
+SET1, 2100, 90, 210, 220
+$
+$ ----------------------------------------------------------- CONTROL SURFACES
+$ Aileron pair: one label, CID1/ALID1 = starboard half, CID2/ALID2 = port half.
+$ Outer 8 strips (i_span 12..19) × aft 2 rows (j_chord 6, 7).
+AELIST, 301, 1102, 1103, 1110, 1111, 1118, 1119, 1126, 1127
++, 1134, 1135, 1142, 1143, 1150, 1151, 1158, 1159
+AELIST, 302, 2102, 2103, 2110, 2111, 2118, 2119, 2126, 2127
++, 2134, 2135, 2142, 2143, 2150, 2151, 2158, 2159
+AESURF, 601, AIL, 11, 301, 12, 302
+$ Rudder: all 6 fin strips × aft 2 rows.
+AELIST, 303, 5006, 5007, 5014, 5015, 5022, 5023, 5030, 5031
++, 5038, 5039, 5046, 5047
+AESURF, 602, RUD, 13, 303
+$
+$ ----------------------------------------------------------- TRIM VARIABLES
+AESTAT, 501, SIDES
+AESTAT, 502, ROLL
+AESTAT, 503, YAW
+AESTAT, 504, URDD4
+AESTAT, 505, URDD6
+$
+$ ----------------------------------------------------------- MONITORS
+AELIST, 1400, 1000, THRU, 1159, 2000, THRU, 2159, 5000, THRU, 5047
+AECOMP, ALLAERO, AELIST, 1400
+MONPNT1, MLAT, LATERAL AERO TOTAL, 123456, ALLAERO, 0, 0.25, 0.0, 0.0
+SET1, 1310, 90, 110, 120, 210, 220, 500, 510, 520
+AECOMP, ALLGRID, SET1, 1310
+MONPNT3, MLATB, LATERAL BALANCE, 123456, ALLGRID, 0, 0.25, 0.0, 0.0
+SET1, 1300, 110, 120
+AECOMP, RWINGEA, SET1, 1300
+MONSECT, SECRW, RIGHT WING LOADS, RWINGEA, 2
++, 1.0, 3.0
+$
+$ ----------------------------------------------------------- TRIM CASES
+$ Steady roll: ROLL prescribed, no angular acceleration; AIL and RUD trim free
+$ against the roll and yaw equations (determined: 2 free = 2 SUPORT DOFs).
+TRIM, 1, 0.0, 51.0, ROLL, 0.05, SIDES, 0.0, YAW, 0.0
++, URDD4, 0.0, URDD6, 0.0
+$ Steady sideslip: SIDES prescribed; AIL and RUD trim free.
+TRIM, 2, 0.0, 51.0, SIDES, 0.05, ROLL, 0.0, YAW, 0.0
++, URDD4, 0.0, URDD6, 0.0
+$ Engine torque reaction (#6): wings level, no rates, no sideslip — AIL and RUD trim
+$ free against the applied MOMENT 701 selected by LOAD in SUBCASE 3.
+TRIM, 3, 0.0, 51.0, ROLL, 0.0, SIDES, 0.0, YAW, 0.0
++, URDD4, 0.0, URDD6, 0.0
+$
+ENDDATA

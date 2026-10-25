@@ -36,7 +36,7 @@ from sbeam.aero.aero_model import AeroModel
 from sbeam.aero.coupling import build_qaa, build_fg, build_gaf
 from sbeam.results.results import Sol144Result, Sol103Result
 from sbeam.linalg_utils import estimate_cond_1norm
-from sbeam.solver.sol101 import recover_bar_forces, recover_bar_stresses
+from sbeam.solver.element_recovery import recover_line_elements
 from sbeam.solver.sol103 import run_sol103
 from sbeam.types import FloatArray, LuFactor
 
@@ -273,21 +273,15 @@ def run_aeroelastic_static(
         for local_idx, g_dof in enumerate(free_dofs):
             displacements[g_dof] = u_free_corrected[local_idx]
 
-    # CBAR force and stress recovery (reuses sol101 functions unchanged)
-    bar_forces = {}
-    bar_stresses = {}
-    for cbar in bulk.cbars.values():
-        bar_forces[cbar.eid] = recover_bar_forces(
-            cbar, bulk.grids, bulk.pbars, bulk.mat1s, displacements, grid_index
-        )
-        bar_stresses[cbar.eid] = recover_bar_stresses(
-            cbar, bulk.grids, bulk.pbars, bulk.mat1s, displacements, grid_index
-        )
+    # Line-element force and stress recovery (CBAR + CROD/CONROD, #38)
+    elems = recover_line_elements(bulk, displacements, grid_index)
 
     return Sol144Result(
         displacements=displacements,
-        bar_forces=bar_forces,
-        bar_stresses=bar_stresses,
+        bar_forces=elems.bar_forces,
+        bar_stresses=elems.bar_stresses,
+        rod_forces=elems.rod_forces,
+        rod_stresses=elems.rod_stresses,
         q_aa=Q_aa,
         q=q,
         free_dofs=free_dofs,

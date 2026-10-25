@@ -10,31 +10,83 @@ from sbeam.types import FloatArray, LuFactor, SparseMatrix
 
 @dataclass
 class BarForce:
+    """CBAR end forces in the NASTRAN/MSC ``FORCES IN BAR ELEMENTS`` layout (DEF-M18, #21).
+
+    All values are internal resultants on the positive (+x) face of the section
+    in the element local frame (``bar_internal_resultants``; ``09_conventions.md``
+    §9). Plane 1 is the element x–y plane (bending about local z, PBAR ``I1``);
+    plane 2 is the x–z plane (bending about local y, PBAR ``I2``). The plane
+    moments carry the NASTRAN sign: ``M1 = +Mz⁺`` and ``M2 = −My⁺``, so both are
+    positive when they put the +y / +z fibres in compression and the bending
+    stress is ``σ = −M1·y/I1 − M2·z/I2`` (NASTRAN-95 ``sbar2.f``). On a
+    cantilever with tip loads +Py, +Pz: ``M1(x) = Py(L−x)``, ``M2(x) = Pz(L−x)``.
+    """
     eid: int
-    # End forces and moments in element LOCAL coordinates
-    axial: float = 0.0    # Fx at end B (positive = tension)
-    shear1: float = 0.0   # Vy at end B (positive = in local y)
-    shear2: float = 0.0   # Vz at end B (positive = in local z)
-    torque: float = 0.0   # Mx (torsion)
-    bm1_a: float = 0.0    # My at end A (bending in xz plane)
-    bm2_a: float = 0.0    # Mz at end A (bending in xy plane)
-    bm1_b: float = 0.0    # My at end B
-    bm2_b: float = 0.0    # Mz at end B
+    m1_a: float = 0.0    # BEND-MOMENT END-A PLANE 1  (= +Mz on the +x face at end A)
+    m2_a: float = 0.0    # BEND-MOMENT END-A PLANE 2  (= −My on the +x face at end A)
+    m1_b: float = 0.0    # BEND-MOMENT END-B PLANE 1  (= +Mz on the +x face at end B)
+    m2_b: float = 0.0    # BEND-MOMENT END-B PLANE 2  (= −My on the +x face at end B)
+    v1: float = 0.0      # SHEAR PLANE 1  (Vy, along local +y; constant without element loads)
+    v2: float = 0.0      # SHEAR PLANE 2  (Vz, along local +z)
+    axial: float = 0.0   # AXIAL FORCE    (tension positive)
+    torque: float = 0.0  # TORQUE         (right-handed about local +x)
 
 
 @dataclass
 class BarStress:
+    """CBAR stresses in the NASTRAN/MSC ``STRESSES IN BAR ELEMENTS`` layout (DEF-M18, #21).
+
+    ``sa1``–``sa4`` / ``sb1``–``sb4`` are the **bending-only** fibre stresses at
+    PBAR recovery points C, D, E, F at ends A and B,
+    ``σ_b = −M1·y/I1 − M2·z/I2`` on the :class:`BarForce` plane moments. A point
+    left at (0, 0) carries zero bending stress, as in NASTRAN. ``axial`` is
+    ``P/A``; ``sa_max``/``sa_min`` (and ``sb_*``) are ``axial`` plus the
+    max/min over the four bending values, i.e. the extreme **total** stress at
+    that end. Tension is positive. Margins of safety are not computed (no
+    allowables are parsed).
+    """
+    eid: int
+    sa1: float = 0.0
+    sa2: float = 0.0
+    sa3: float = 0.0
+    sa4: float = 0.0
+    sb1: float = 0.0
+    sb2: float = 0.0
+    sb3: float = 0.0
+    sb4: float = 0.0
+    axial: float = 0.0
+    sa_max: float = 0.0
+    sa_min: float = 0.0
+    sb_max: float = 0.0
+    sb_min: float = 0.0
+
+
+@dataclass
+class RodForce:
+    """CROD / CONROD forces in the NASTRAN ``FORCES IN ROD ELEMENTS`` layout (#38).
+
+    +x-face internal resultants in the element frame, from the same
+    ``bar_internal_resultants`` helper as the CBAR table (``09_conventions.md``
+    §8/§9): ``axial = P`` tension positive, ``torque = T`` right-handed about the
+    GA→GB axis. A rod carries nothing else.
+    """
     eid: int
     axial: float = 0.0
-    sa: float = 0.0   # Bending stress at recovery point C (end A)
-    sb: float = 0.0   # Bending stress at recovery point C (end B)
-    # Additional recovery points
-    sa_d: float = 0.0  # At recovery point D, end A
-    sb_d: float = 0.0  # At recovery point D, end B
-    sa_e: float = 0.0  # At recovery point E, end A
-    sb_e: float = 0.0  # At recovery point E, end B
-    sa_f: float = 0.0  # At recovery point F, end A
-    sb_f: float = 0.0  # At recovery point F, end B
+    torque: float = 0.0
+
+
+@dataclass
+class RodStress:
+    """CROD / CONROD stresses in the NASTRAN ``STRESSES IN ROD ELEMENTS`` layout (#38).
+
+    ``axial = P/A`` (tension positive); ``torsional = T·C/J`` with the PROD /
+    CONROD torsional stress coefficient ``C`` (0 when ``J = 0`` or ``C = 0``, as
+    NASTRAN-95 ``srod1.f`` sets ``C/J = 0`` for ``J = 0``). Margins of safety are
+    not computed (no allowables are parsed).
+    """
+    eid: int
+    axial: float = 0.0
+    torsional: float = 0.0
 
 
 @dataclass
@@ -55,9 +107,51 @@ class MonitorLoad:
     aero: Optional[FloatArray] = None      # (6,) aero contribution in cp frame
     inertia: Optional[FloatArray] = None   # (6,) inertia contribution (MONPNT3; zero for plain trim)
     reaction: Optional[FloatArray] = None  # (6,) SPC/SUPORT reaction contribution (MONPNT3)
+    applied: Optional[FloatArray] = None   # (6,) applied structural LOAD contribution (#6); None without a LOAD
     parity: float = 1.0             # symmetry doubling factor applied to all components
     whole_airplane: bool = False    # True when parity≠1 (annotate output to avoid double-up)
     source_ids: list[int] = field(default_factory=list)   # AELIST or SET1 SIDs
+    # Transient (MLOADS) contributions, cp frame (#2); None on a static trim,
+    # where the structure has no elastic acceleration — as opposed to zero.
+    # ``totals`` includes them when present; ``inertia`` stays the RIGID
+    # inertia, exactly as on ``SectionCutStation``.
+    elastic_inertia: Optional[FloatArray] = None   # (6,) −M·ü_e, the elastic d'Alembert load
+    damping: Optional[FloatArray] = None           # (6,) −M·w, the damping force (ζ/α ≠ 0 only)
+
+
+@dataclass
+class MonitorEnvelopeEntry:
+    """Max/min of one component of one monitor over a maneuver (#2).
+
+    ``max_sample``/``min_sample`` are 1-based, matching the f06 SAMPLE column
+    and the MLDPRNT numbering (DEF-M5).  They are the **driving** samples and
+    are generally not the run's critical sample.
+    """
+    comp: int                       # 0..5, index into [Fx, Fy, Fz, Mx, My, Mz] (cp frame)
+    max_value: float
+    max_sample: int
+    max_time: float
+    min_value: float
+    min_sample: int
+    min_time: float
+
+    @property
+    def absmax(self) -> float:
+        """The larger magnitude of the two extremes (the sizing number)."""
+        return max(abs(self.max_value), abs(self.min_value))
+
+
+@dataclass
+class MonitorEnvelope:
+    """Per-component max/min envelope of one monitor point over a maneuver (#2)."""
+    name:  str
+    label: str
+    mtype: str
+    axes:  int
+    cid:   int
+    whole_airplane: bool = False
+    n_samples: int = 0              # samples the envelope was reduced over
+    entries: list[MonitorEnvelopeEntry] = field(default_factory=list)
 
 
 @dataclass
@@ -81,6 +175,9 @@ class SectionCutStation:
     # (6,) d/ds of the labelled components vs the previous station — the running
     # load in the per-unit-span sense.  None at the first station.
     d_ds: Optional[FloatArray] = None
+    # Applied structural LOAD contribution (#6), cid frame; None when the
+    # subcase carries no LOAD.  ``totals`` includes it when present.
+    applied: Optional[FloatArray] = None
     # Step 68 transient contributions, cid frame; None on a static trim (where
     # the structure has no elastic acceleration, so there is no such column to
     # report — as opposed to a zero one).  ``totals`` includes them when present.
@@ -154,6 +251,8 @@ class Sol101Result:
     bar_stresses: dict[int, BarStress] = field(default_factory=dict)   # {eid: BarStress}
     # Note: cbush_forces are in global coordinates (unlike bar_forces which are local)
     cbush_forces: dict[int, FloatArray] = field(default_factory=dict)  # forces at GB (GA if grounded)
+    rod_forces: dict[int, RodForce] = field(default_factory=dict)      # {eid: RodForce} CROD + CONROD (#38)
+    rod_stresses: dict[int, RodStress] = field(default_factory=dict)   # {eid: RodStress}
 
 
 @dataclass
@@ -184,6 +283,8 @@ class Sol144Result:
     phi_free: Optional[FloatArray] = None       # (n_a, n_modes); None when ROM not used
     k_hh: Optional[FloatArray] = None           # (n_modes, n_modes) modal structural stiffness
     q_hh: Optional[FloatArray] = None           # (n_modes, n_modes) modal GAF matrix
+    rod_forces: dict[int, RodForce] = field(default_factory=dict)      # {eid: RodForce} (#38)
+    rod_stresses: dict[int, RodStress] = field(default_factory=dict)   # {eid: RodStress}
 
 
 @dataclass
@@ -217,7 +318,9 @@ class Sol144TrimResult:
     grid_loads: Optional[FloatArray] = None   # (n_dofs,) g-set aero flight-load vector = g_disp^T (q * f_box)
     # --- Step 53 outputs (balanced maneuver loads & inertia relief) ---
     inertial_loads: Optional[FloatArray] = None  # (n_dofs,) g-set inertial load = M_ax @ a_all (final trim URDD); feeds MONPNT3 inertia column
-    net_loads: Optional[FloatArray] = None       # (n_dofs,) g-set net maneuver load = grid_loads + inertial_loads (the stress deliverable)
+    applied_loads: Optional[FloatArray] = None   # (n_dofs,) g-set applied structural load from the subcase LOAD set (#6); None without a LOAD
+    load_sid: Optional[int] = None               # the LOAD set the subcase selected (#6); None without a LOAD
+    net_loads: Optional[FloatArray] = None       # (n_dofs,) g-set net maneuver load = grid_loads + inertial_loads + applied_loads (the stress deliverable)
     maneuver_closure: Optional[FloatArray] = None  # (6,) body-frame resultant (Fx,Fy,Fz,Mx,My,Mz) of net_loads about the moment ref; ≈0 for a balanced free-aircraft maneuver (V-C5/KC9)
     q_div: Optional[float] = None             # critical divergence dynamic pressure (restrained l-set); None if none
     hinge_moments: Optional[dict[str, dict[str, float]]] = None      # {AESURF label: {'total': HM/q at trim, <trim_label>: dHM/dδ}} about cid1 hinge axis
@@ -225,6 +328,7 @@ class Sol144TrimResult:
     monitor_loads: Optional[dict[str, MonitorLoad]] = None      # {name: MonitorLoad} integrated section loads (MON1–MON3)
     section_loads: Optional[dict[str, SectionCutResult]] = None  # {name: SectionCutResult} MONSECT running loads
     chordcp_echo: Optional[dict[str, Any]] = None       # Step 54 injected-operating-point echo: {'alpha_ref', 'data_machs', 'surfaces': {eid: {'FZ_Q','MY_Q','FZ_Q_VLM'}}}
+    gust_echo: Optional[dict[str, Any]] = None          # Issue #1 GUSTLF provenance: {'sid','trimid','n','g','urdd3','sense','ude','veas','kg','mu','a','asrc','alt'} — recorded by sbeam_tools/cases/gust.py, echoed only (sbeam does not compute the gust)
     load_injection_echo: Optional[list[dict[str, Any]]] = None  # Step 64 SPLINE0/un-splined load injection: [{'source','master_grid','n_boxes','force','moment'}]; None/[] = no injection
     # --- Step 67a (quasi-steady yaw-rate wing term) ---
     yaw_rate_iters: int = 0                   # fixed-point iterations spent on the loading-scaled yaw-rate force column; 0 = term not active (no YAW label, or zero yaw rate)
@@ -233,6 +337,8 @@ class Sol144TrimResult:
     massset_label: str = "BASELINE"           # mass-case name for output headers
     massset_mass: float = 0.0                 # total case mass (GPWG) for this configuration
     massset_cg: Optional[tuple[float, float, float]] = None   # CG of the case mass
+    rod_forces: dict[int, RodForce] = field(default_factory=dict)      # {eid: RodForce} CROD + CONROD (#38)
+    rod_stresses: dict[int, RodStress] = field(default_factory=dict)   # {eid: RodStress}
 
 
 @dataclass
@@ -272,8 +378,11 @@ class ManeuverStep:
     displacements: FloatArray             # (n_dofs,) g-set; SPC/SUPORT DOFs zeroed
     bar_forces: dict[int, BarForce]                      # {eid: BarForce}
     grid_loads: FloatArray                # (n_dofs,) g-set aero flight load at this instant
-    inertial_loads: FloatArray            # (n_dofs,) g-set inertial load = M_ax · a_urdd(t)
-    net_loads: FloatArray                 # (n_dofs,) net (aero + inertial) load — stress deliverable
+    inertial_loads: FloatArray            # (n_dofs,) g-set RIGID inertial load = M_ax · a_urdd(t)
+    # (n_dofs,) the FULL applied load at this sample — aero + rigid inertia +
+    # elastic inertia + damping (#3).  The stress deliverable: applied
+    # statically to the same model it reproduces this sample's internal loads.
+    net_loads: FloatArray
     closure: FloatArray                   # (6,) body-frame resultant (Fx..Mz) of net_loads about the ref
     Fz_aero: float = 0.0                  # instantaneous aero Fz (force/q · q) = lift
     My_aero: float = 0.0                  # instantaneous aero pitching moment about x_ref
@@ -289,21 +398,23 @@ class ManeuverStep:
     # free-flight or when the IC has no vertical acceleration to normalize by.
     nz_rel: Optional[float] = None
     # Step 68 — the elastic d'Alembert load −M·ü_e and the damping force −M·w,
-    # g-set.  Deliberately NOT folded into net_loads: that vector feeds the
-    # exported FORCE/MOMENT cards, the closure diagnostic and the DEF-M5
-    # critical-sample metric, and moving all three at once is a separate
-    # decision (see designs/monsect_transient_section_cuts.md §9 O1).
+    # g-set.  Both are INCLUDED in net_loads (#3); they are carried separately
+    # as well because the section cuts report them as their own columns.
     elastic_inertial_loads: Optional[FloatArray] = None
     damping_loads: Optional[FloatArray] = None
     # {name: SectionCutResult} MONSECT running loads at this sample.
     section_loads: Optional[dict[str, "SectionCutResult"]] = None
+    # {name: MonitorLoad} MONPNT1/MONPNT3 integrated loads at this sample (#2).
+    monitor_loads: Optional[dict[str, "MonitorLoad"]] = None
+    rod_forces: dict[int, RodForce] = field(default_factory=dict)   # {eid: RodForce} (#38)
 
 
 def peak_grid_force(step: "ManeuverStep") -> float:
     """Severity metric for one maneuver sample: peak per-grid net force.
 
-    The maximum over grids of the net (aero + inertial) translational force
-    magnitude ``‖F‖`` at that grid.
+    The maximum over grids of the net applied translational force magnitude
+    ``‖F‖`` at that grid (aero + rigid inertia + elastic inertia + damping on a
+    transient sample, #3).
 
     This is the single metric that selects the critical sample, fills the f06
     and MLDPRNT columns, and labels both (DEF-M5).  It is deliberately *not*:
@@ -335,6 +446,7 @@ class ManeuverResult:
     crit_index: int                       # index into steps of the peak_grid_force sample
     mldprnt_items: list[str] = field(default_factory=list)  # requested ASCII-print keywords
     massset_sid: Optional[int] = None     # MASSSET mass case (None = baseline)
+    massset_label: str = "BASELINE"       # mass-case name for the exports (#31)
     n_modes_used: Optional[int] = None    # retained elastic modes (Step 62 solver; None = direct l-set)
     # Step 62 basis summary for the f06 (n_r, n_e, n_available, freqs_hz,
     # orthogonality_residual, n_massless); None for the direct l-set solver.
@@ -342,3 +454,6 @@ class ManeuverResult:
     # Step 68 — {name: SectionCutEnvelope} per-station max/min over the run's
     # samples.  None when the deck has no MONSECT cards.
     section_envelope: Optional[dict[str, "SectionCutEnvelope"]] = None
+    # #2 — {name: MonitorEnvelope} per-component max/min over the run's
+    # samples.  None when the deck has no MONPNT1/MONPNT3 cards.
+    monitor_envelope: Optional[dict[str, "MonitorEnvelope"]] = None

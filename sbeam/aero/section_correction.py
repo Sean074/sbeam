@@ -33,8 +33,9 @@ is the engine; ``build_section_correction`` is the single-surface convenience wr
 
 Decoupling
 ----------
-The WT2 ratio is calibrated on the unit-incidence reference w_ref = -1 and is therefore
-independent of w_g. So the build is one pass: size WT2 from the slope pair first (per strip,
+The WT2 ratio is calibrated on the per-axis unit-incidence reference
+(``corrections.wt2_reference_cp``: −1 on the surfaces of each box's own axis, α or β, 0 on
+the other axis's surfaces — #52) and is therefore independent of w_g. So the build is one pass: size WT2 from the slope pair first (per strip,
 on the global reference circulation), then size W2GJ for the offset pair *through the
 WT2-corrected operator* (which also scales the camber load).
 
@@ -65,6 +66,7 @@ from typing import Any, Optional, Union
 import numpy as np
 from scipy.linalg import lu_solve
 
+from sbeam.aero.corrections import wt2_reference_cp
 from sbeam.aero.panel import AeroBox
 from sbeam.linalg_utils import estimate_cond_1norm
 from sbeam.model.aero import W2gj, Aecorr
@@ -195,7 +197,8 @@ def build_section_correction_multi(
         )
 
     ajj_inv   = lu_solve(lu_piv, np.eye(n))
-    gamma_ref = ajj_inv @ (-np.ones(n))          # PG circulation (Γ-units; no 1/β)
+    # Per-axis reference (#52) — the same one aero_model hands apply_wt2.
+    gamma_ref = wt2_reference_cp(boxes, ajj_inv)  # PG circulation (Γ-units; no 1/β)
     chord_box = np.array([_box_chord(b) for b in boxes])
     area_box  = np.array([b.area for b in boxes])
     x_box     = np.array([b.force_point[0] for b in boxes])

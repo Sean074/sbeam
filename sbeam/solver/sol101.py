@@ -1,5 +1,6 @@
 """SOL 101 static analysis solver."""
 
+from dataclasses import dataclass
 from typing import Optional, Union, cast
 
 import numpy as np
@@ -13,8 +14,6 @@ from sbeam.assembly.stiffness import (
     assemble_global_stiffness,
     get_spc_dofs,
     check_spc_enforced_displacements,
-    local_stiffness,
-    transform_matrix,
     cbush_stiffness_global,
 )
 from sbeam.assembly.load_vector import assemble_load_vector, build_grid_index
@@ -74,69 +73,108 @@ def _element_local_forces(
     cbar: Cbar, grids: dict[int, Grid], pbars: dict[int, Pbar],
     mat1s: dict[int, Mat1], displacements: FloatArray, grid_index: dict[int, int],
 ) -> FloatArray:
-    """Compute 12-vector of local end forces for a CBAR element."""
-    pbar = pbars[cbar.pid]
-    mat1 = mat1s[pbar.mid]
+    """Compute 12-vector of local end forces for a CBAR element.
 
-    ia = grid_index[cbar.ga]
-    ib = grid_index[cbar.gb]
+    Kept on the explicit dict signature (section-cut tests call it directly);
+    the matrices come from the line-element registry (#38) and the product is
+    the shared ``local_end_forces``.
+    """
+    from sbeam.assembly.elements import cbar_line_element
+    from sbeam.solver.element_recovery import local_end_forces
+    le = cbar_line_element(cbar, grids, pbars, mat1s)
+    return local_end_forces(le, displacements, grid_index)
 
-    dofs_a = [6 * ia + d for d in range(6)]
-    dofs_b = [6 * ib + d for d in range(6)]
-    dofs = dofs_a + dofs_b
 
-    u_global_elem = displacements[dofs]
+@dataclass(frozen=True)
+class BarInternal:
+    """CBAR internal resultants on the positive (+x) face of the section.
 
-    ga = grids[cbar.ga]
-    gb = grids[cbar.gb]
-    L = float(np.linalg.norm(
-        np.array([gb.x - ga.x, gb.y - ga.y, gb.z - ga.z])
-    ))
+    The face convention is the section-cut / CBAR end-B sign of
+    ``09_conventions.md`` §9: each value is the force or moment that the part
+    of the element beyond the station exerts on the station, in the element
+    local frame. Axial ``p`` is tension-positive; ``vy``/``vz`` act along local
+    +y/+z; ``t``, ``my_*``, ``mz_*`` are right-handed about local +x/+y/+z.
+    Without element loads ``p``, ``vy``, ``vz`` and ``t`` are constant along the
+    element, so one value each is kept; the bending moments differ between
+    the ends and are kept per end.
+    """
+    p: float
+    vy: float
+    vz: float
+    t: float
+    my_a: float
+    mz_a: float
+    my_b: float
+    mz_b: float
 
-    K_local = local_stiffness(pbar, mat1, L)
-    T = transform_matrix(cbar, grids)
 
-    u_local = T @ u_global_elem
-    f_local = K_local @ u_local
+def bar_internal_resultants(f_local: FloatArray) -> BarInternal:
+    """Convert the element-frame nodal 12-vector ``f_local = K·u`` to +x-face
+    internal resultants (DEF-M21, #37).
 
-    return f_local
+    ``f_local`` holds the forces the nodes exert on the element:
+    ``[Fx_A, Fy_A, Fz_A, Mx_A, My_A, Mz_A, Fx_B, Fy_B, Fz_B, Mx_B, My_B, Mz_B]``.
+    At end B the nodal value *is* the +x-face internal resultant; at end A the
+    +x-face resultant is the negated nodal value. This is the only place in
+    the solver where that nodal-to-internal sign conversion happens; stress
+    recovery and force recovery both consume it (#37, #21).
+
+    End-B moments are read directly from ``f_local[10]``/``f_local[11]``, not
+    rebuilt from end A by equilibrium. Without element loads the two agree
+    (``Mz_B = Mz_A − Vy·L``, ``My_B = My_A + Vz·L``; gate G4 of
+    ``docs/30_future/designs/cbar_stress_recovery_sign.md``). A future PLOAD1
+    implementation must revisit this function.
+    """
+    return BarInternal(
+        p=float(f_local[6]),
+        vy=float(f_local[7]),
+        vz=float(f_local[8]),
+        t=float(f_local[9]),
+        my_a=-float(f_local[4]),
+        mz_a=-float(f_local[5]),
+        my_b=float(f_local[10]),
+        mz_b=float(f_local[11]),
+    )
+
+
+def _bar_force_from_internal(eid: int, r: BarInternal) -> BarForce:
+    """Map +x-face internal resultants onto the NASTRAN force layout.
+
+    ``M1 = +Mz⁺`` (plane 1, x–y) and ``M2 = −My⁺`` (plane 2, x–z): NASTRAN-95
+    ``sbar2.f`` forms ``M1A = −FA(6)``, ``M2A = +FA(5)`` from the end-A nodal
+    forces, which is exactly ``mz_a = −f[5]`` and ``−my_a = +f[4]``. Defined
+    this way both plane moments are positive when they compress the +y / +z
+    fibres.
+    """
+    return BarForce(
+        eid=eid,
+        m1_a=r.mz_a, m2_a=-r.my_a,
+        m1_b=r.mz_b, m2_b=-r.my_b,
+        v1=r.vy, v2=r.vz,
+        axial=r.p, torque=r.t,
+    )
 
 
 def recover_bar_forces(
     cbar: Cbar, grids: dict[int, Grid], pbars: dict[int, Pbar],
     mat1s: dict[int, Mat1], displacements: FloatArray, grid_index: dict[int, int],
 ) -> BarForce:
-    """Recover CBAR end forces in local coordinates."""
+    """Recover CBAR end forces as +x-face internal resultants in the NASTRAN
+    plane layout (DEF-M18, #21). See :class:`BarForce` for signs."""
     f_local = _element_local_forces(cbar, grids, pbars, mat1s, displacements, grid_index)
-
-    # f_local indices:
-    # 0: Fx_A, 1: Fy_A, 2: Fz_A, 3: Mx_A, 4: My_A, 5: Mz_A
-    # 6: Fx_B, 7: Fy_B, 8: Fz_B, 9: Mx_B, 10: My_B, 11: Mz_B
-    return BarForce(
-        eid=cbar.eid,
-        axial=f_local[6],        # Fx at end B (tension positive)
-        shear1=f_local[7],       # Fy at end B (local y)
-        shear2=f_local[8],       # Fz at end B (local z)
-        torque=f_local[9],       # Mx (torsion)
-        bm1_a=f_local[4],        # My at end A
-        bm2_a=f_local[5],        # Mz at end A
-        bm1_b=f_local[10],       # My at end B
-        bm2_b=f_local[11],       # Mz at end B
-    )
+    return _bar_force_from_internal(cbar.eid, bar_internal_resultants(f_local))
 
 
-def _stress_at_point(
-    fx_a: float, mz_a: float, my_a: float,
-    y: float, z: float, A: float, I1: float, I2: float,
-) -> float:
-    """σ = Fx/A + Mz*y/I1 - My*z/I2"""
+def _bending_stress(m1: float, m2: float, y: float, z: float, I1: float, I2: float) -> float:
+    """Bending-only fibre stress ``σ_b = −M1·y/I1 − M2·z/I2`` (NASTRAN-95
+    ``sbar2.f``; I12 = 0) on the :class:`BarForce` plane moments. With
+    ``M1 = Mz⁺`` and ``M2 = −My⁺`` this is ``−Mz·y/I1 + My·z/I2`` on the
+    +x-face resultants (DEF-M21). Tension positive."""
     stress = 0.0
-    if A > 0:
-        stress += fx_a / A
     if I1 > 0:
-        stress += mz_a * y / I1
+        stress -= m1 * y / I1
     if I2 > 0:
-        stress -= my_a * z / I2
+        stress -= m2 * z / I2
     return stress
 
 
@@ -144,49 +182,28 @@ def recover_bar_stresses(
     cbar: Cbar, grids: dict[int, Grid], pbars: dict[int, Pbar],
     mat1s: dict[int, Mat1], displacements: FloatArray, grid_index: dict[int, int],
 ) -> BarStress:
-    """Recover CBAR stresses at PBAR recovery points."""
+    """Recover CBAR stresses at the PBAR recovery points in the NASTRAN layout:
+    bending-only ``SA1–4``/``SB1–4`` at C, D, E, F, ``AXIAL = P/A``, and
+    ``SA/SB-MAX/MIN = AXIAL + max/min(bending)`` (DEF-M18, #21). The bending
+    values come from the same plane moments the force table prints, so the two
+    tables are consistent by construction."""
     f_local = _element_local_forces(cbar, grids, pbars, mat1s, displacements, grid_index)
+    bf = _bar_force_from_internal(cbar.eid, bar_internal_resultants(f_local))
 
     pbar = pbars[cbar.pid]
-    A = pbar.A
-    I1 = pbar.I1
-    I2 = pbar.I2
-
-    # f_local[6] = Fx at end B = internal axial force P, tension-positive.
-    # f_local[0] = Fx at end A is sign-negated (reaction) — do not use for stress.
-    p_axial = f_local[6]
-    my_a = f_local[4]
-    mz_a = f_local[5]
-    my_b = f_local[10]
-    mz_b = f_local[11]
-
-    recovery_pts = {
-        "C": (pbar.c1, pbar.c2),
-        "D": (pbar.d1, pbar.d2),
-        "E": (pbar.e1, pbar.e2),
-        "F": (pbar.f1, pbar.f2),
-    }
-    stresses = {
-        pt: (
-            _stress_at_point(p_axial, mz_a, my_a, y, z, A, I1, I2),
-            _stress_at_point(p_axial, mz_b, my_b, y, z, A, I1, I2),
-        )
-        for pt, (y, z) in recovery_pts.items()
-    }
-
-    axial_stress = p_axial / A if A > 0 else 0.0
+    A, I1, I2 = pbar.A, pbar.I1, pbar.I2
+    pts = ((pbar.c1, pbar.c2), (pbar.d1, pbar.d2), (pbar.e1, pbar.e2), (pbar.f1, pbar.f2))
+    sa = [_bending_stress(bf.m1_a, bf.m2_a, y, z, I1, I2) for y, z in pts]
+    sb = [_bending_stress(bf.m1_b, bf.m2_b, y, z, I1, I2) for y, z in pts]
+    axial = bf.axial / A if A > 0 else 0.0
 
     return BarStress(
         eid=cbar.eid,
-        axial=axial_stress,
-        sa=stresses["C"][0],
-        sb=stresses["C"][1],
-        sa_d=stresses["D"][0],
-        sb_d=stresses["D"][1],
-        sa_e=stresses["E"][0],
-        sb_e=stresses["E"][1],
-        sa_f=stresses["F"][0],
-        sb_f=stresses["F"][1],
+        sa1=sa[0], sa2=sa[1], sa3=sa[2], sa4=sa[3],
+        sb1=sb[0], sb2=sb[1], sb3=sb[2], sb4=sb[3],
+        axial=axial,
+        sa_max=axial + max(sa), sa_min=axial + min(sa),
+        sb_max=axial + max(sb), sb_min=axial + min(sb),
     )
 
 
@@ -304,16 +321,9 @@ def run_sol101(bulk: BulkData, subcase: SubcaseControl) -> Sol101Result:
     u_a = solve_static(K_aa, f_aa, list(range(n_a)), n_a)
     displacements = red.expand_to_g(u_a)
 
-    # Recover bar forces and stresses
-    bar_forces = {}
-    bar_stresses = {}
-    for cbar in bulk.cbars.values():
-        bar_forces[cbar.eid] = recover_bar_forces(
-            cbar, bulk.grids, bulk.pbars, bulk.mat1s, displacements, grid_index
-        )
-        bar_stresses[cbar.eid] = recover_bar_stresses(
-            cbar, bulk.grids, bulk.pbars, bulk.mat1s, displacements, grid_index
-        )
+    # Recover line-element forces and stresses (CBAR + CROD/CONROD, #38)
+    from sbeam.solver.element_recovery import recover_line_elements
+    elems = recover_line_elements(bulk, displacements, grid_index)
 
     # Recover CBUSH forces
     cbush_forces = {}
@@ -332,7 +342,9 @@ def run_sol101(bulk: BulkData, subcase: SubcaseControl) -> Sol101Result:
     return Sol101Result(
         displacements=displacements,
         reactions=reactions,
-        bar_forces=bar_forces,
-        bar_stresses=bar_stresses,
+        bar_forces=elems.bar_forces,
+        bar_stresses=elems.bar_stresses,
         cbush_forces=cbush_forces,
+        rod_forces=elems.rod_forces,
+        rod_stresses=elems.rod_stresses,
     )

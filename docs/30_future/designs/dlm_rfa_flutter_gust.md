@@ -578,7 +578,7 @@ SORT2 frequency-response tables (DISP/VELO/ACCE, complex as real/imag), transien
 | `sbeam/main.py` | D3/D5 | Dispatch SOL 145 → sol145, SOL 146 → sol146; parity wired from AERO.SYMXZ (AE10 closure for dynamics) |
 | `sbeam/results/results.py` | D3/D5 | `Sol145Result`, `Sol146Result` |
 | `sbeam/results/f06_writer.py` | D3/D5 | FLUTTER SUMMARY block (NASTRAN format), crossing table, SORT2 freq/time tables, PSDF + Ā/N₀ block |
-| `sbeam/viewer/results_view.py` | D3/D6 | V-g/V-f plots; PSD plots (D6) |
+| `sbeam_tools/viewer/results_view.py` | D3/D6 | V-g/V-f plots; PSD plots (D6) |
 | `docs/10_standard/02_card_reference.md` | all | every §4 card field table |
 | `docs/10_standard/05_aeroelastics.md` | all | Phase D sections per sub-phase |
 | `docs/20_theory/01_aeroelastics_theory.md` | all | DLM kernel + quadrature, PK/KE math, Roger RFA + state space, gust/PSD theory (the §5–§9 content in full) |

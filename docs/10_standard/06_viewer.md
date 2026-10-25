@@ -8,10 +8,11 @@ The sbeam viewer is a **Streamlit** web application providing:
 - Case control definition and BDF export
 - Results display (post-processing)
 
-The viewer is launched with:
+The viewer lives in the toolchain package, `sbeam_tools/viewer/` (moved from `sbeam/viewer/`
+by #34), and needs the `viewer` extra (`pip install -e .[viewer]`). Launch it with:
 
 ```
-streamlit run viewer/app.py
+sbeam-view          # = streamlit run sbeam_tools/viewer/app.py
 ```
 
 ---
@@ -19,7 +20,8 @@ streamlit run viewer/app.py
 ## Module Structure
 
 ```
-viewer/
+sbeam_tools/viewer/
+├── launch.py           # `sbeam-view` console entry point
 ├── app.py              # Main Streamlit app; routing and session state
 ├── geometry.py         # 3D model display functions (Plotly)
 ├── results_view.py     # Results post-processing display
@@ -202,7 +204,7 @@ All three keys are reset to `None` on new file upload (same pattern as `sol101_r
 
 Present only when `bulk.caero1s` is non-empty (the tab immediately right of **Aero**).
 Implemented in `aero_correction_view.py` (`render_aero_correction_tab(bulk)`); a front end over
-`sbeam.aero.section_data` / `section_correction` that turns a table of **experimental / CFD section
+`sbeam_tools.corrections.section_data` / `sbeam.aero.section_correction` that turns a table of **experimental / CFD section
 coefficients** into **W2GJ + AECORR(WT2)** correction cards for one flight **condition** (Mach +
 operating α and β) and injects them into the in-session model so the **Aero** tab runs the corrected
 solve, and/or exports a self-contained corrected BDF.
@@ -373,7 +375,7 @@ and [SOL 144 — Static Aeroelastic Results](#sol-144--static-aeroelastic-result
 | Field | Layout | Condition |
 |-------|--------|-----------|
 | Subcase title | Full-width text input | Always |
-| LOAD SID | Left column selectbox | Not SOL 144 (LOAD is refused in SOL 144 subcases, DEF-M4) |
+| LOAD SID | Left column selectbox | Always. In SOL 144 it is the applied structural load of a **Trim** subcase (thrust, engine torque; #6) — `_apply_sol144_kind` clears it for the Maneuver (MLOADS) and Divergence-only kinds, and `validate_sol144_authoring` flags a LOAD on those, a dangling LOAD SID, or a GRAV in the trim LOAD set |
 | SPC SID | Right column selectbox | Always |
 | Analysis kind radio (Trim / Divergence only / Maneuver (MLOADS)) | Horizontal radio | SOL 144 only |
 | TRIM / TRIMOBJ / DIVERG / MLOADS / MASSSET SIDs | Selectboxes, three-up | SOL 144 only |
@@ -460,6 +462,10 @@ Streamlit layer). Card serialisation lives in `sbeam/model/card_writers.py` — 
 free-field writers for all 15 families, every real through `parser/bdf_field.fmt_real8`
 (8-char safe, DEF-M12 compliant), round-trip tested against the parser.
 
+The AESURF form carries both hinge halves — `CID1`/`ALID1` and `CID2`/`ALID2` (an aileron
+pair is one label; charter §6) — and refuses a half-specified second pair; before #9 it
+dropped `CID2`/`ALID2` on re-save.
+
 **Layout:** four sub-tabs — *Surfaces & States* (AESTAT/AESURF/AELIST/SUPORT), *Trim
 Conditions* (presets + TRIM/TRIMVAR/TRIMOBJ/TRIMCON/DIVERG), *Maneuver (MLOADS)*
 (two-pass command builder + MLDTRIM/MLDTIME/MLDCOMD/MLDPRNT/MLOADS), *Tables* (shape
@@ -480,7 +486,7 @@ the parser raises on duplicate SIDs, so an inline card duplicating an INCLUDE-de
 would make the exported deck unparseable. The form shows a **Save as new SID** button for
 file-sourced cards; `snapshot_family_ids` at upload (`file_card_sids`) backs the check.
 
-**Presets:** the three balanced-maneuver recipes from `model/maneuver_presets.py`
+**Presets:** (gravity is prefilled from a "Deck unit system" selector — `SI` / `IMPERIAL` from `sbeam_tools.common.units` — and stays editable; the solver itself never knows units, #30) the three balanced-maneuver recipes from `model/maneuver_presets.py` (the steady-roll parameter is the reduced rate `pb/2V`, not rad/s, and each lateral preset states the `SUPORT` DOF it needs — #24, #10)
 (symmetric pull-up via `load_factor_to_urdd3`, steady roll, steady sideslip) pre-fill the
 TRIM form and offer one-click creation of missing AESTAT labels.
 
@@ -572,8 +578,9 @@ renders whichever result types it produced:
   (`_render_section_cuts`, Monitor Phase 2) — one expander per `MONSECT` with the
   per-station table in the cut's own labelled components (the legend is rendered with it,
   since only `N`/`Mt` are role names) plus a spanwise chart whose components and
-  contribution (total / aero / inertia / reaction — plus elastic inertia and damping on a
-  transient sample) are selectable; maneuver-closure
+  contribution (total / aero / inertia / reaction — plus applied when the subcase selected
+  a `LOAD` (#6), and elastic inertia and damping on a transient sample) are selectable;
+  the monitor table carries an `Fz applied` column; maneuver-closure
   resultant. Layout mirrors the
   f06 blocks in `results/f06_writer.py::_build_f06_sol144_text`.
 - **Deflected shape + canted aero boxes** (`_render_sol144_deflected`): a deflection-scale
@@ -609,6 +616,14 @@ renders whichever result types it produced:
   `<stem>.maneuver_section_loads.csv` and `<stem>.maneuver_section_envelope.csv`, built by
   the same `load_export` writers the CLI uses (gated byte-for-byte against the written
   files).
+
+  **Monitor points on the maneuver (#2).** When the deck carries `MONPNT1`/`MONPNT3` cards
+  the panel adds, above the section cuts: the **monitor table at the selected sample**
+  (`_render_monitor_table(…, contributions=True)` — the static panel's renderer with the
+  per-source Fz split appended: aero, rigid inertia, elastic, damping, reaction) and the
+  **monitor envelope table** (`_render_monitor_envelope`) of per-component max/min with the
+  driving sample. Two download buttons offer `<stem>.maneuver_monitor_loads.csv` and
+  `<stem>.maneuver_monitor_envelope.csv`, built by the CLI's writers.
 
 Run wiring lives in `app.py::_run_sol144` (mirrors `main.py` routing — one shared `AeroModel`
 + `AeroCache`, per-subcase dispatch to `run_sol144_trim` / `run_sol144_diverg` /
@@ -664,7 +679,7 @@ Before the **Run Analysis** button in the Results tab, `_show_pre_solve_warnings
 | No SPC (SOL 101) | `bulk.spcs` and `bulk.spc1s` both empty, SOL 101 | Unconstrained model → singular K |
 | No SPC (SOL 103) | Same but SOL 103 | Valid for free-free; warns first 6 modes ~0 Hz |
 | SPC SID missing | `sc.spc_sid` not in bulk | Subcase references non-existent constraint set |
-| Unsupported load card | Parser warning contains PLOAD1 / PLOAD2 / PLOAD4 / RFORCE / DLOAD / TLOAD1 / TLOAD2 / RLOAD1 / RLOAD2 / ACCEL / ACCEL1 / SLOAD | Card silently dropped; load vector incomplete |
+| Unrecognised card | Parser warning `Unknown BDF card 'X' — skipped` | Typo or vendor card contributes nothing. Known-unsupported cards (`PLOAD1`, `CBEAM`, …) never reach this check: the parser refuses the deck and the viewer shows the parse error (#45) |
 | Zero density (SOL 103) | `mat1.rho == 0` for any material, SOL 103 | Mass matrix zero → unreliable frequencies |
 | E-value range | `max(E) / min(E) > 1000` across materials | Possible unit system mismatch |
 

@@ -5,7 +5,7 @@ from sbeam.model.grid import Grid
 from sbeam.model.material import Mat1
 from sbeam.model.constraint import Spc1
 from sbeam.parser.case_control import CaseControl, SubcaseControl
-from sbeam.viewer.app import _get_pre_solve_warnings
+from sbeam_tools.viewer.app import _get_pre_solve_warnings
 
 
 # ---------------------------------------------------------------------------
@@ -97,32 +97,40 @@ def test_spc_sid_present_no_warning():
 
 
 # ---------------------------------------------------------------------------
-# 3. Unsupported load cards
+# 3. Unrecognised cards (known-unsupported ones are refused at parse, #45)
 # ---------------------------------------------------------------------------
 
-def test_pload1_in_parse_warnings():
-    bulk = _two_node_bulk()
-    parse_warnings = ["Unknown BDF card 'PLOAD1' — skipped"]
-    msgs = _get_pre_solve_warnings(bulk, _sol101_cc(), parse_warnings)
-    assert any("PLOAD1" in m for m in msgs)
-    assert any("ignored during parsing" in m for m in msgs)
-
-
-def test_multiple_unsupported_load_cards():
+def test_unknown_cards_are_summarised():
     bulk = _two_node_bulk()
     parse_warnings = [
-        "Unknown BDF card 'PLOAD1' — skipped",
-        "Unknown BDF card 'RFORCE' — skipped",
+        "Unknown BDF card 'SOMECARD' — skipped",
+        "Unknown BDF card 'OTHER1' — skipped",
+        "Unknown BDF card 'SOMECARD' — skipped",
     ]
     msgs = _get_pre_solve_warnings(bulk, _sol101_cc(), parse_warnings)
-    assert any("PLOAD1" in m and "RFORCE" in m for m in msgs)
+    hits = [m for m in msgs if "Unrecognised card(s) skipped" in m]
+    assert len(hits) == 1 and "OTHER1, SOMECARD" in hits[0]
 
 
-def test_unknown_non_load_card_not_flagged():
+def test_non_card_warnings_not_flagged():
     bulk = _two_node_bulk()
-    parse_warnings = ["Unknown BDF card 'SOMECARD' — skipped"]
-    msgs = _get_pre_solve_warnings(bulk, _sol101_cc(), parse_warnings)
-    assert not any("SOMECARD" in m for m in msgs)
+    msgs = _get_pre_solve_warnings(bulk, _sol101_cc(), ["TRIM 1: some advisory"])
+    assert not any("Unrecognised" in m for m in msgs)
+
+
+def test_pload1_deck_is_refused_before_the_viewer_sees_it(tmp_path):
+    """The old 'silently dropped' warning path is gone: the parser raises (#45)."""
+    import pytest
+    from sbeam.parser.bdf_reader import parse_bdf
+    f = tmp_path / "p.bdf"
+    f.write_text(
+        "SOL 101\nSUBCASE 1\n  SPC = 1\nBEGIN BULK\n"
+        "GRID, 1, , 0., 0., 0.\nGRID, 2, , 1., 0., 0.\n"
+        "MAT1, 1, 2.e11, 8.e10, 0.25, 7850.\nPBAR, 1, 1, 1.e-4, 1.e-8, 1.e-8, 2.e-8\n"
+        "CBAR, 1, 1, 1, 2, 0., 1., 0.\nSPC1, 1, 123456, 1\n"
+        "PLOAD1, 10, 1, FY, FR, 0., -100., 1., -100.\nENDDATA\n")
+    with pytest.raises(ValueError, match=r"Unsupported bulk data card\(s\): PLOAD1 x1"):
+        parse_bdf(str(f))
 
 
 # ---------------------------------------------------------------------------

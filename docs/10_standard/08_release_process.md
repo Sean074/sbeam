@@ -15,13 +15,18 @@ sbeam uses **semantic versioning**: `MAJOR.MINOR.PATCH`
 
 | Component | When to increment |
 |---|---|
-| `MAJOR` | Breaking change to the BDF input format, case control syntax, or f06 output format |
+| `MAJOR` | Breaking change to the BDF input format, case control syntax, f06 output format, or the exported CSV / load-BDF schemas (`10_export_schemas.md`) |
 | `MINOR` | A milestone completes (§2) — new BDF card support, new solver (SOL), new viewer capability |
 | `PATCH` | Hotfix to a released version that does not change the public interface (§6) |
 | `X.Y.0-beta.N` | Interim regression baseline cut on a release branch mid-milestone (§2) |
 
 The current version is recorded in `pyproject.toml` under `version =`. Never publish an
 unversioned build.
+
+**Before 1.0.0** (SemVer §4: `0.y.z` makes no stability promise), a breaking change to the
+f06 layout, the exported CSV / load-BDF schemas, or the BDF/case-control syntax ships in the next **MINOR** release and is listed
+under a **Breaking changes** heading in `CHANGELOG.md`; the `MAJOR` rule above applies from
+the v1.0.0 interface-stability promise onward (decided 2026-10-02 with #21, D4).
 
 ---
 
@@ -77,7 +82,10 @@ open the next milestone's branch.
 **and** `release/**`): the full ruff → pyright → pytest matrix, same as `main`. Without
 this the beta gate would be unverifiable — a branch CI never sees is a branch no gate
 covers *(the sloads CI-shape lesson, adapted: sbeam's full matrix is ~3 min, so no
-fast/full split is needed)*.
+fast/full split is needed)*. **A red run blocks the next item** (#54: pyright failed
+for 13 pushes, so pytest never ran in CI, while the drifted local `.venv` showed only
+noise). Check `gh run list` for the previous push before closing an item, and reproduce
+failures on the `requirements-ci.txt` toolchain, not the local venv.
 
 **Git roles (standing practice, now written down):** the AI commits and tags locally and
 verifies; the user performs every `git push` (branches and tags) and is the author of

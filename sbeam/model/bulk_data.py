@@ -7,27 +7,31 @@ from .aero import (
     Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
     Aecomp, Monpnt1, Monpnt3, Monsect,
 )
+from .gust import Gustlf
 from .maneuver import Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads
 from .mass import Massset, Conm2
 from .constraint import Spc, Spc1, Suport
 from .coordinate_system import Cord2r
-from .element import Cbar, Cbush, Plotel, Rbe3, Rbe2, Rbar
+from .element import Cbar, Cbush, Conrod, Crod, Plotel, Rbe3, Rbe2, Rbar
 from .grid import Grid
 from .load import Force, Moment, Load, Grav, Eigrl
 from .material import Mat1
-from .property import Pbar, Pbush
+from .property import Pbar, Pbush, Prod
 
 
 @dataclass
 class BulkData:
     grids: dict[int, Grid] = field(default_factory=dict)
     cbars: dict[int, Cbar] = field(default_factory=dict)
+    crods: dict[int, Crod] = field(default_factory=dict)       # #38 rod elements
+    conrods: dict[int, Conrod] = field(default_factory=dict)   # #38 rods with inline section
     cbushs: dict[int, Cbush] = field(default_factory=dict)
     plotels: dict[int, Plotel] = field(default_factory=dict)
     rbe3s: dict[int, Rbe3] = field(default_factory=dict)
     rbe2s: dict[int, Rbe2] = field(default_factory=dict)
     rbars: dict[int, Rbar] = field(default_factory=dict)
     pbars: dict[int, Pbar] = field(default_factory=dict)
+    prods: dict[int, Prod] = field(default_factory=dict)
     pbushs: dict[int, Pbush] = field(default_factory=dict)
     mat1s: dict[int, Mat1] = field(default_factory=dict)
     conm2s: dict[int, Conm2] = field(default_factory=dict)
@@ -66,6 +70,7 @@ class BulkData:
     trimvars: dict[int, Trimvar] = field(default_factory=dict)
     trimobjs: dict[int, Trimobj] = field(default_factory=dict)
     trimcons: dict[int, list[Trimcon]] = field(default_factory=dict)
+    gustlfs:  dict[int, Gustlf] = field(default_factory=dict)
     aecomps:  dict[str, Aecomp] = field(default_factory=dict)
     monpnt1s: dict[str, Monpnt1] = field(default_factory=dict)
     monpnt3s: dict[str, Monpnt3] = field(default_factory=dict)

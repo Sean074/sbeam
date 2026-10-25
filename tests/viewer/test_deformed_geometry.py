@@ -5,7 +5,7 @@ import pytest
 import plotly.graph_objects as go
 
 from sbeam.assembly.load_vector import build_grid_index
-from sbeam.viewer.geometry import build_deformed_figure, build_mode_figure
+from sbeam_tools.viewer.geometry import build_deformed_figure, build_mode_figure
 
 
 class TestBuildDeformedFigure:

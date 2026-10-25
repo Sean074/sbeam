@@ -66,14 +66,14 @@ class TestBarForceRecovery:
         """Fixed-end Mz (bending moment about z) = P*L."""
         bf = self.result.bar_forces[1]
         expected_mz = P * L
-        # bm2_a = Mz at end A (fixed end)
-        assert abs(bf.bm2_a) == pytest.approx(expected_mz, rel=1e-3)
+        # m1_a = plane-1 (Mz) moment at end A on the +x face: +P·L for +P in +y (#21)
+        assert bf.m1_a == pytest.approx(expected_mz, rel=1e-9)
 
     def test_shear_along_beam(self):
         """Shear force (Fy) = P along beam."""
         bf = self.result.bar_forces[1]
-        # shear1 is Fy at end B; for a cantilever with tip load P, shear = P
-        assert abs(bf.shear1) == pytest.approx(P, rel=1e-3)
+        # v1 is the plane-1 shear Vy; for a cantilever with tip load P, shear = P
+        assert bf.v1 == pytest.approx(P, rel=1e-9)
 
     def test_axial_near_zero(self):
         """No axial load applied → axial force near zero."""
@@ -111,19 +111,24 @@ class TestBarStressRecovery:
     def setup_method(self):
         self.result, self.bulk = _run_cantilever()
 
-    def test_bending_stress_at_fixed_end(self):
-        """Bending stress at recovery point C at end A: σ = Mz*c1/I1."""
+    def test_bending_stress_at_fixed_end_signed(self):
+        """+P in +y at the tip: root fibre C (y = +c1) is in compression,
+        SA1 = −P·L·c1/I1 (DEF-M21 G2: signed, not magnitude)."""
+        bs = self.result.bar_stresses[1]
+        expected_stress = -P * L * c1_val / I1
+        assert bs.sa1 == pytest.approx(expected_stress, rel=1e-9)
+
+    def test_end_a_matches_force_table_moment(self):
+        """SA1 = −M1A·c1/I1 on the printed plane-1 moment (#21 G5)."""
         bs = self.result.bar_stresses[1]
         bf = self.result.bar_forces[1]
-        mz_a = abs(bf.bm2_a)
-        expected_stress = mz_a * c1_val / I1
-        assert abs(bs.sa) == pytest.approx(expected_stress, rel=1e-3)
+        assert bs.sa1 == pytest.approx(-bf.m1_a * c1_val / I1, rel=1e-12)
 
-    def test_stress_end_b_smaller(self):
-        """Tip stress should be smaller than fixed-end stress for cantilever."""
+    def test_stress_end_b_zero_moment(self):
+        """At the free end B the moment is zero → bending stress is zero."""
         bs = self.result.bar_stresses[1]
-        # At end B (tip), moment is zero → stress near zero
-        assert abs(bs.sb) < abs(bs.sa)
+        assert bs.sb1 == pytest.approx(0.0, abs=1e-9 * abs(bs.sa1))
+        assert bs.sb_max == pytest.approx(bs.axial, abs=1e-9 * abs(bs.sa1))
 
 
 F_AXIAL = 5000.0  # tension force in X at tip
@@ -142,24 +147,35 @@ def _run_cantilever_combined():
 
 
 class TestBarStressCombinedLoading:
-    """R4 regression: axial stress at end A must use P (tension-positive), not Fx_A (negated)."""
+    """R4 regression: axial stress must use P (tension-positive), not Fx_A (negated).
+
+    Since #21 the layout is NASTRAN's: SA1–4 are bending-only, so adding axial
+    tension leaves them unchanged and shows up in AXIAL and SA/SB-MAX/MIN.
+    """
 
     def setup_method(self):
         self.result_combined = _run_cantilever_combined()
         self.result_bending, _ = _run_cantilever()
 
+    def test_bending_only_unchanged_by_axial(self):
+        bc = self.result_combined.bar_stresses[1]
+        bb = self.result_bending.bar_stresses[1]
+        assert bc.sa1 == pytest.approx(bb.sa1, rel=1e-9)
+        assert bc.sb1 == pytest.approx(bb.sb1, abs=1e-9 * abs(bb.sa1))
+
     def test_end_a_axial_contribution_is_positive(self):
-        """Adding axial tension F shifts end-A stress by +F/A (not -F/A)."""
-        sa_combined = self.result_combined.bar_stresses[1].sa
-        sa_bending = self.result_bending.bar_stresses[1].sa
-        axial_contribution = sa_combined - sa_bending
-        assert axial_contribution == pytest.approx(F_AXIAL / A, rel=1e-3)
+        """Adding axial tension F shifts the end-A total by +F/A (not -F/A)."""
+        bc = self.result_combined.bar_stresses[1]
+        bb = self.result_bending.bar_stresses[1]
+        assert bc.axial == pytest.approx(F_AXIAL / A, rel=1e-9)
+        assert bc.sa_max - bb.sa_max == pytest.approx(F_AXIAL / A, rel=1e-9)
+        assert bc.sa_min - bb.sa_min == pytest.approx(F_AXIAL / A, rel=1e-9)
 
     def test_end_b_axial_only(self):
-        """End B has zero moment → stress = F/A only."""
+        """End B has zero moment → total stress = F/A only."""
         bs = self.result_combined.bar_stresses[1]
-        expected_sb = F_AXIAL / A
-        assert bs.sb == pytest.approx(expected_sb, rel=1e-3)
+        assert bs.sb_max == pytest.approx(F_AXIAL / A, rel=1e-9)
+        assert bs.sb_min == pytest.approx(F_AXIAL / A, rel=1e-9)
 
 
 class TestRunSol101:

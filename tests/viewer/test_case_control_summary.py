@@ -1,7 +1,7 @@
 """Unit tests for the SOL-aware case-control summary (Step 57)."""
 from __future__ import annotations
 
-from sbeam.viewer.case_control_ui import summarize_case_control
+from sbeam_tools.viewer.case_control_ui import summarize_case_control
 
 
 def test_summary_sol101(cantilever_sol101_parsed):

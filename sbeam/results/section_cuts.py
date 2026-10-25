@@ -303,8 +303,13 @@ def evaluate_section_cut(
     reactions: Optional[dict[int, FloatArray]] = None,
     elastic_inertial_loads: Optional[FloatArray] = None,
     damping_loads: Optional[FloatArray] = None,
+    applied_loads: Optional[FloatArray] = None,
 ) -> SectionCutResult:
     """Sum one prepared cut against a load state — masked sums, no geometry.
+
+    ``applied_loads`` is the applied structural LOAD of a trim subcase (#6):
+    None when the subcase carries none, otherwise its own ``applied`` column
+    included in ``totals`` (an AELIST cut has none by construction).
 
     ``elastic_inertial_loads``/``damping_loads`` are the Step 68 transient
     contributions (``M·ü_e`` and the modal-damping force).  They are zero on a
@@ -321,14 +326,17 @@ def evaluate_section_cut(
         f_in, m_in = _gather_grid_load(inertial_loads, plan.rows)
         f_el, m_el = _gather_grid_load(elastic_inertial_loads, plan.rows)
         f_da, m_da = _gather_grid_load(damping_loads, plan.rows)
+        f_ap, m_ap = _gather_grid_load(applied_loads, plan.rows)
         react_g = _scatter_reactions(reactions, grid_index, plan.n_dofs)
         f_re, m_re = _gather_grid_load(react_g, plan.rows)
+        has_applied = applied_loads is not None
     else:
         forces = (np.asarray(box_forces)[plan.member_ids] if plan.member_ids
                   else np.zeros((0, 3)))
         f_aero, m_aero = forces, np.zeros_like(forces)
         z = np.zeros_like(forces)
-        f_in = m_in = f_re = m_re = f_el = m_el = f_da = m_da = z
+        f_in = m_in = f_re = m_re = f_el = m_el = f_da = m_da = f_ap = m_ap = z
+        has_applied = False
 
     has_extra = elastic_inertial_loads is not None or damping_loads is not None
 
@@ -346,6 +354,10 @@ def evaluate_section_cut(
         inert6 = to_cid(_resultant(f_in, m_in, pos, ref, mask))
         react6 = to_cid(_resultant(f_re, m_re, pos, ref, mask))
         totals = aero6 + inert6 + react6
+        applied6 = None
+        if has_applied:
+            applied6 = to_cid(_resultant(f_ap, m_ap, pos, ref, mask))
+            totals = totals + applied6
         elastic6 = damp6 = None
         if has_extra:
             elastic6 = to_cid(_resultant(f_el, m_el, pos, ref, mask))
@@ -361,7 +373,7 @@ def evaluate_section_cut(
         stations.append(SectionCutStation(
             station=float(s), ref=ref, totals=totals, aero=aero6,
             inertia=inert6, reaction=react6, n_members=int(mask.sum()),
-            d_ds=d_ds, elastic_inertia=elastic6, damping=damp6,
+            d_ds=d_ds, applied=applied6, elastic_inertia=elastic6, damping=damp6,
         ))
 
     return SectionCutResult(
@@ -389,10 +401,11 @@ def compute_section_cuts(
     grid_loads: Optional[FloatArray], inertial_loads: Optional[FloatArray],
     grid_index: dict[int, int],
     reactions: Optional[dict[int, FloatArray]] = None,
+    applied_loads: Optional[FloatArray] = None,
 ) -> dict[str, SectionCutResult]:
     """Build ``{name: SectionCutResult}`` for every MONSECT card in the model."""
     return {
         name: evaluate_section_cut(plan, box_forces, grid_loads, inertial_loads,
-                                   grid_index, reactions)
+                                   grid_index, reactions, applied_loads=applied_loads)
         for name, plan in prepare_section_cuts(bulk, aero, grid_index).items()
     }

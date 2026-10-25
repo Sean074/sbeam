@@ -123,23 +123,68 @@ def transform_matrix(cbar: Cbar, grids: dict[int, Grid]) -> FloatArray:
     return T
 
 
-def apply_pin_releases(K: FloatArray, pa: str, pb: str) -> FloatArray:
-    """Return a copy of local 12×12 K with released DOF rows/columns zeroed.
+def release_indices(pa: str, pb: str) -> list[int]:
+    """Local 12-DOF indices released by CBAR PA/PB digit strings.
 
-    PA/PB are strings of DOF codes 1–6 to release at end A / end B.
-    Code d at end A → local DOF index d-1 (0-based, indices 0–5).
-    Code d at end B → local DOF index d-1+6 (indices 6–11).
+    Digit d (1–6, element local axes) at end A → index d-1; at end B → index d+5.
     """
+    idx = [int(c) - 1 for c in (pa or "")] + [int(c) + 5 for c in (pb or "")]
+    return sorted(set(idx))
+
+
+#: Relative pivot threshold below which a released DOF is only zeroed (D4 of
+#: ``designs/cbar_pin_release_condensation.md``): catches I1 = 0 / J = 0 sections.
+_PIVOT_REL_TOL = 1e-12
+
+
+def condense_released_dofs(
+    K: FloatArray, released: list[int]
+) -> tuple[FloatArray, FloatArray]:
+    """Static condensation of released DOFs in a local element stiffness matrix.
+
+    Successive single-DOF Schur complements in the NASTRAN-95 ``kbar.f`` form
+    (order-independent): ``K ← K − K[:,i]·K[i,:]/K[i,i]`` then zero row/column i.
+    If the pivot is numerically zero the row/column is only zeroed.
+
+    Returns ``(K', T)`` where ``K' = Tᵀ K T``.  The same ``T`` condenses the
+    consistent mass (``M' = Tᵀ M T``) and any fixed-end load vector (``f' = Tᵀ f``).
+    Released rows/columns of ``K'`` are exactly zero, so forces recovered as
+    ``K' u`` vanish at released DOFs by construction.
+    """
+    n = K.shape[0]
     K = K.copy()
-    for c in (pa or ""):
-        d = int(c) - 1          # end-A local DOF index (0-based)
-        K[d, :] = 0.0
-        K[:, d] = 0.0
-    for c in (pb or ""):
-        d = int(c) - 1 + 6      # end-B local DOF index (0-based)
-        K[d, :] = 0.0
-        K[:, d] = 0.0
-    return K
+    T = np.eye(n)
+    scale = float(np.max(np.abs(np.diag(K)))) if n else 0.0
+    for i in released:
+        k_ii = K[i, i]
+        Ti = np.eye(n)
+        Ti[i, i] = 0.0
+        if abs(k_ii) > _PIVOT_REL_TOL * scale:
+            row = K[i, :].copy()
+            # u_i = −K[i,r]·u_r / K[i,i]: row i of Tᵢ maps the retained DOFs onto the
+            # released one; column i is zero (the released DOF is no longer an input).
+            Ti[i, :] = -row / k_ii
+            Ti[i, i] = 0.0
+            K -= np.outer(row, row) / k_ii
+        K[i, :] = 0.0
+        K[:, i] = 0.0
+        T = T @ Ti
+    return K, T
+
+
+def released_local_stiffness(
+    pbar: Pbar, mat1: Mat1, L: float, pa: str, pb: str
+) -> tuple[FloatArray, FloatArray]:
+    """Local CBAR stiffness with PA/PB releases condensed: ``(K', T)``.
+
+    The single source of the released local stiffness for assembly and every
+    force-recovery path (``designs/cbar_pin_release_condensation.md`` D2).
+    """
+    K = local_stiffness(pbar, mat1, L)
+    rel = release_indices(pa, pb)
+    if not rel:
+        return K, np.eye(K.shape[0])
+    return condense_released_dofs(K, rel)
 
 
 def element_stiffness_global(
@@ -158,23 +203,27 @@ def element_stiffness_global(
     gb_pos = np.array([gb.x, gb.y, gb.z])
     L = float(np.linalg.norm(gb_pos - ga_pos))
 
-    K_local = local_stiffness(pbar, mat1, L)
-    if cbar.pa or cbar.pb:
-        K_local = apply_pin_releases(K_local, cbar.pa or "", cbar.pb or "")
+    K_local, _ = released_local_stiffness(pbar, mat1, L, cbar.pa, cbar.pb)
     T = transform_matrix(cbar, grids)
 
     return T.T @ K_local @ T
 
 
 def assemble_global_stiffness(bulk: BulkData) -> SparseMatrix:
-    """Assemble the (6N x 6N) global stiffness matrix from all CBAR and CBUSH elements."""
+    """Assemble the (6N x 6N) global stiffness matrix from every line element
+    (CBAR, CROD, CONROD through the ``assembly/elements.py`` registry, #38) and
+    every CBUSH."""
+    # Local import: elements.py builds on this module's CBAR helpers.
+    from sbeam.assembly.elements import iter_line_elements, line_element
+
     grid_index = {gid: i for i, gid in enumerate(sorted(bulk.grids.keys()))}
     n = 6 * len(grid_index)
     rows, cols, data = [], [], []
 
-    for cbar in bulk.cbars.values():
-        K_e = element_stiffness_global(cbar, bulk.grids, bulk.pbars, bulk.mat1s)
-        dofs = node_dofs(cbar.ga, grid_index) + node_dofs(cbar.gb, grid_index)
+    for elem in iter_line_elements(bulk):
+        le = line_element(elem, bulk)
+        K_e = le.global_stiffness()
+        dofs = node_dofs(le.ga, grid_index) + node_dofs(le.gb, grid_index)
         ii, jj = np.meshgrid(dofs, dofs, indexing="ij")
         rows.extend(ii.ravel())
         cols.extend(jj.ravel())

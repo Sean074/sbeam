@@ -1,4 +1,4 @@
-"""Step 24: End-to-end integration verification tests (V1–V20).
+"""Step 24: End-to-end integration verification tests (V1–V23).
 
 Each test reads a BDF file through parse_bdf, runs the solver, and checks
 the result against a closed-form analytical value.
@@ -697,3 +697,184 @@ class TestV20CbushGroundedSpring:
         assert 1 in result.cbush_forces
         f_cbush = result.cbush_forces[1][0]
         assert abs(f_cbush) == pytest.approx(K_V20 * tx, rel=1e-4)
+
+
+# ---------------------------------------------------------------------------
+# V21–V23 — CBAR pin releases by static condensation (DEF-M17 / #20)
+# Design note: docs/30_future/designs/cbar_pin_release_condensation.md (G1, G2, G2b)
+# ---------------------------------------------------------------------------
+
+A_V21 = 0.1
+P_V21 = 1000.0
+
+
+class TestV21FixedPinnedTipLoad:
+    """G1: clamped at GA, PB=6 at GB. δ = PL³/3EI, root reaction moment −PL (M1A = +PL), end-B moment exactly 0."""
+
+    @pytest.fixture(scope="class")
+    def solved(self) -> tuple[Sol101Result, dict[int, int], BulkData]:
+        cc, bulk = parse_bdf(BDF_DIR / "v21_fixed_pinned_tip_load.bdf")
+        result = run_sol101(bulk, cc.subcases[0])
+        return result, build_grid_index(bulk), bulk
+
+    def test_tip_deflection(self, solved) -> None:
+        result, gi, _ = solved
+        ty = result.displacements[6 * gi[2] + 1]
+        assert ty == pytest.approx(P_V21 * L**3 / (3 * E * I), rel=1e-10)
+
+    def test_root_moment(self, solved) -> None:
+        result, gi, _ = solved
+        assert result.reactions[1][5] == pytest.approx(-P_V21 * L, rel=1e-10)
+
+    def test_released_end_moment_zero(self, solved) -> None:
+        result, _, _ = solved
+        bf = result.bar_forces[1]
+        assert bf.m1_b == 0.0
+        # Force table is on the +x face since #21: root M1A = +P·L (reaction is −P·L).
+        assert bf.m1_a == pytest.approx(P_V21 * L, rel=1e-10)
+
+
+L_V22 = 10.0
+F1_CLAMPED_PINNED = (3.92660 ** 2 / (2 * math.pi)) * math.sqrt(E * I / (rho * A_V21 * L_V22 ** 4))
+
+
+class TestV22ClampedPinnedModalN20:
+    """G2: 20 elements, both grid ends clamped, last element PB=56 → clamped–pinned in both
+    planes. f₁ = (3.92660²/2π)√(EI/ρAL⁴) = 11.30667 Hz as a double root."""
+
+    def test_first_pair_matches_closed_form(self) -> None:
+        cc, bulk = parse_bdf(BDF_DIR / "v22_clamped_pinned_modal_n20.bdf")
+        result = run_sol103(bulk, cc.subcases[0])
+        assert result.frequencies_hz[0] == pytest.approx(F1_CLAMPED_PINNED, rel=1e-4)
+        assert result.frequencies_hz[1] == pytest.approx(F1_CLAMPED_PINNED, rel=1e-4)
+
+
+class TestV23ClampedPinnedModalN4:
+    """G2b: the N=4 regression value pins the congruent mass condensation (D3).
+    Condensed K with the raw consistent mass gives 11.47135 Hz; zeroing gives 16.4 Hz."""
+
+    def test_first_pair_regression(self) -> None:
+        cc, bulk = parse_bdf(BDF_DIR / "v23_clamped_pinned_modal_n4.bdf")
+        result = run_sol103(bulk, cc.subcases[0])
+        assert result.frequencies_hz[0] == pytest.approx(11.31450, rel=1e-6)
+        assert result.frequencies_hz[1] == pytest.approx(11.31450, rel=1e-6)
+        assert result.frequencies_hz[0] == pytest.approx(F1_CLAMPED_PINNED, rel=1e-3)
+
+
+# ---------------------------------------------------------------------------
+# V24–V27 — CROD / PROD / CONROD rod element (#38)
+# Design note: docs/30_future/designs/rod_element_crod.md (G1–G4)
+# ---------------------------------------------------------------------------
+
+E_ROD, G_ROD, A_ROD, J_ROD, C_ROD, L_ROD = 2.0e11, 8.0e10, 1.0e-4, 2.0e-8, 2.0e-3, 2.0
+P_ROD, T_ROD = 1000.0, 10.0
+
+
+class TestV24RodAxialTorsion:
+    """G1: single CROD clamped at GA; δ = PL/EA, θ = TL/GJ, σ = P/A, τ = TC/J."""
+
+    @pytest.fixture(scope="class")
+    def solved(self) -> tuple[Sol101Result, dict[int, int], BulkData]:
+        cc, bulk = parse_bdf(BDF_DIR / "v24_rod_axial_torsion.bdf")
+        result = run_sol101(bulk, cc.subcases[0])
+        return result, build_grid_index(bulk), bulk
+
+    def test_axial_extension(self, solved) -> None:
+        result, gi, _ = solved
+        assert result.displacements[6 * gi[2]] == pytest.approx(
+            P_ROD * L_ROD / (E_ROD * A_ROD), rel=1e-10)
+
+    def test_twist(self, solved) -> None:
+        result, gi, _ = solved
+        assert result.displacements[6 * gi[2] + 3] == pytest.approx(
+            T_ROD * L_ROD / (G_ROD * J_ROD), rel=1e-10)
+
+    def test_rod_forces_tension_and_torque_positive(self, solved) -> None:
+        result, _, _ = solved
+        rf = result.rod_forces[1]
+        assert rf.axial == pytest.approx(P_ROD, rel=1e-10)
+        assert rf.torque == pytest.approx(T_ROD, rel=1e-10)
+        assert 1 not in result.bar_forces
+
+    def test_rod_stresses(self, solved) -> None:
+        result, _, _ = solved
+        rs = result.rod_stresses[1]
+        assert rs.axial == pytest.approx(P_ROD / A_ROD, rel=1e-10)
+        assert rs.torsional == pytest.approx(T_ROD * C_ROD / J_ROD, rel=1e-10)
+
+    def test_reactions_balance(self, solved) -> None:
+        result, _, _ = solved
+        assert result.reactions[1][0] == pytest.approx(-P_ROD, rel=1e-10)
+        assert result.reactions[1][3] == pytest.approx(-T_ROD, rel=1e-10)
+
+
+class TestV25StrutPylonStatics:
+    """G2: planar V of one CROD and one CONROD; member forces by joint equilibrium."""
+
+    @pytest.fixture(scope="class")
+    def solved(self) -> Sol101Result:
+        cc, bulk = parse_bdf(BDF_DIR / "v25_strut_pylon_statics.bdf")
+        return run_sol101(bulk, cc.subcases[0])
+
+    def test_member_forces(self, solved) -> None:
+        assert solved.rod_forces[1].axial == pytest.approx(750.0 * math.sqrt(2.0), rel=1e-9)
+        assert solved.rod_forces[2].axial == pytest.approx(250.0 * math.sqrt(2.0), rel=1e-9)
+        assert solved.rod_forces[1].torque == pytest.approx(0.0, abs=1e-9)
+        assert solved.rod_forces[2].torque == pytest.approx(0.0, abs=1e-9)
+
+    def test_reactions_balance_the_apex_load(self, solved) -> None:
+        total = solved.reactions[1] + solved.reactions[2]
+        assert total[0] == pytest.approx(-500.0, rel=1e-9)
+        assert total[2] == pytest.approx(1000.0, rel=1e-9)
+
+    def test_conrod_matches_crod_physics(self, solved) -> None:
+        # Both members share the section; the CONROD carries exactly N2 = N1/3.
+        assert solved.rod_forces[2].axial * 3.0 == pytest.approx(solved.rod_forces[1].axial, rel=1e-9)
+
+
+M_ENGINE, K_STRUT = 100.0, 2.0e11 * 1.0e-4 / 2.0   # EA/L of each strut
+F_Z_STRUTS = math.sqrt(2.0 * K_STRUT * math.cos(math.radians(30)) ** 2 / M_ENGINE) / (2 * math.pi)
+F_X_STRUTS = math.sqrt(2.0 * K_STRUT * math.sin(math.radians(30)) ** 2 / M_ENGINE) / (2 * math.pi)
+
+
+class TestV26EngineOnStrutsModes:
+    """G3: CONM2 on two massless struts at ±30°; exact 2-DOF closed form (61.640 / 35.588 Hz)."""
+
+    def test_massless_struts_exact(self) -> None:
+        cc, bulk = parse_bdf(BDF_DIR / "v26_engine_on_struts_modes.bdf")
+        result = run_sol103(bulk, cc.subcases[0])
+        assert result.frequencies_hz[0] == pytest.approx(F_X_STRUTS, rel=1e-8)
+        assert result.frequencies_hz[1] == pytest.approx(F_Z_STRUTS, rel=1e-8)
+
+    def test_strut_mass_lowers_the_pair_slightly(self) -> None:
+        cc, bulk = parse_bdf(BDF_DIR / "v26_engine_on_struts_modes.bdf")
+        bulk.mat1s[1].rho = 7850.0
+        result = run_sol103(bulk, cc.subcases[0])
+        for f, f0 in zip(result.frequencies_hz[:2], (F_X_STRUTS, F_Z_STRUTS)):
+            assert f < f0
+            assert f == pytest.approx(f0, rel=1e-2)
+
+
+class TestV27CrodVsCbar56:
+    """G4: a CROD and a CBAR with PA=PB=56 and the same A, J respond identically."""
+
+    @pytest.fixture(scope="class")
+    def solved(self) -> tuple[Sol101Result, dict[int, int]]:
+        cc, bulk = parse_bdf(BDF_DIR / "v27_crod_vs_cbar56.bdf")
+        return run_sol101(bulk, cc.subcases[0]), build_grid_index(bulk)
+
+    def test_displacements_identical(self, solved) -> None:
+        result, gi = solved
+        for d in (0, 3):
+            assert result.displacements[6 * gi[12] + d] == pytest.approx(
+                result.displacements[6 * gi[2] + d], rel=1e-12)
+        assert result.displacements[6 * gi[2]] == pytest.approx(P_ROD * L_ROD / (E_ROD * A_ROD), rel=1e-10)
+
+    def test_forces_identical_and_cbar_bending_zero(self, solved) -> None:
+        result, _ = solved
+        rf, bf = result.rod_forces[1], result.bar_forces[11]
+        assert bf.axial == pytest.approx(rf.axial, rel=1e-12)
+        assert bf.torque == pytest.approx(rf.torque, rel=1e-12)
+        for v in (bf.m1_a, bf.m2_a, bf.m1_b, bf.m2_b, bf.v1, bf.v2):
+            assert v == pytest.approx(0.0, abs=1e-9)
+        assert not hasattr(rf, "m1_a")

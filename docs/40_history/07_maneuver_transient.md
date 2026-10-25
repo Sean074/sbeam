@@ -537,11 +537,52 @@ the correct form deliberately rather than to match a passing test.
 physically belongs there — the exported critical-sample `FORCE`/`MOMENT` cards are what a stress
 model consumes — but folding it in moves the exported cards, the closure diagnostic and the DEF-M5
 critical-sample selection simultaneously. The data now sits on `ManeuverStep` to quantify the
-difference first. Recorded in the backlog as its own item.
+difference first. Recorded in the backlog as its own item — **resolved by #3 (2026-09-05),
+see Resolved defects below.**
+
+### #2 (P8c) — `MONPNT1`/`MONPNT3` on transient (MLOADS) maneuvers (Tier M) ✅ COMPLETE (2026-09-06)
+
+The Step 68 follow-on it declared: the per-sample integrand existed, only the monitor output
+surface was missing. `monitor_points.py` gained the same prepare/evaluate split as the section
+cuts (`MonitorPlan` resolved once in `build_operators`, `evaluate_monitor_point` per sample; the
+static entry points are the two in sequence and the static f06/CSV are byte-identical).
+`MonitorLoad` carries `elastic_inertia` / `damping` as its own columns (present-and-zero held at
+trim, `None` on a static trim; `inertia` stays rigid, as on `SectionCutStation`). Reactions are
+now recovered whenever a `MONPNT3` exists, against the full applied load (#3); the DEF-M10
+warning fires once per run (IC trim), not per sample. Output: `ManeuverStep.monitor_loads`, an
+f06 `MONITOR POINT INTEGRATED LOADS ( SAMPLE n … )` block at the critical sample with the
+per-source rows printed under `TOTAL`, a `MONITOR POINT ENVELOPE` block
+(`build_monitor_envelope`, per component with the driving sample), `maneuver_monitor_loads.csv`
+(static schema verbatim + identity columns + the full five-source split) and
+`maneuver_monitor_envelope.csv`; viewer table, envelope and downloads. Gates
+(`tests/aero/test_monitor_transient.py`, `tests/results/test_monitor_transient_output.py`, 22
+tests): **V-TMON1** held at trim == static monitor on both solvers; **V-TMON2** an every-grid
+`MONPNT3` equals the closure to 1e-8·lift and closes with the reaction on the direct solver
+(with and without α-damping) and closes to 1e-6·lift in free flight; **V-TMON3** a monitor over
+the members outboard of `SECRW` station 8 equals that section-cut row column by column
+(1e-10) with a companion that fails without the elastic column; the shipped C210 deck's
+`MALLEA` closes to ~1e-10 at every sample.
 
 ---
 
 ## Resolved defects
+
+### #3 — transient `net_loads` carries the elastic inertia and damping (Tier M) ✅ COMPLETE (2026-09-05)
+
+`ManeuverStep.net_loads` was aero + rigid inertia; the exported critical-sample cards therefore
+disagreed with the section-cut `totals` for the same sample by the terms V-TSEC3 had proved
+necessary. Decision B of `docs/30_future/designs/transient_net_loads_elastic_inertia.md`:
+`net_loads = grid_loads + inertial_loads + elastic_inertial_loads + damping_loads`, formed once
+in `recover_step`; the cards, the closure and the DEF-M5 metric all read it. Quantified first on
+both sample decks (elastic term ≤ 0.6 % per grid, ≤ 1.5 % of root-cut bending on the shipped
+ramps; free-flight closure unchanged to 8e-15; direct-solver critical-sample flips are near-ties).
+Load-bearing gate **G1** (`tests/aero/test_maneuver_reapply.py`): a sample's `net_loads`
+re-applied as SOL 101 with the SUPORT DOFs fixed reproduces its CBAR forces to **1.6e-14** on
+both solvers, **4.6e-7** through the exported cards (DEF-M6 floor), **3.2e-7** on the shipped
+C210 MLOADS deck (whose critical sample moves 21 → 9, a 1e-5 near-tie); the companion fails by
+**1.55 %** without the terms. Modal `displacement` recovery: exact with all modes, **1.49 %** at
+`NMODES=2`, 0.77 % at 4 — the measured truncation error of that recovery mode. f06/card labels
+name all four terms.
 
 ### Free-URDD trim variables reported in the wrong frame on RCSID decks (`run_sol144_trim`) ✅ COMPLETE (2026-08-02)
 

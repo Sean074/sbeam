@@ -10,7 +10,7 @@ from sbeam.model.property import Pbar
 from sbeam.model.material import Mat1
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.grid import Grid
-from sbeam.assembly.stiffness import transform_matrix, node_dofs
+from sbeam.assembly.stiffness import transform_matrix, node_dofs, released_local_stiffness
 from sbeam.types import FloatArray, SparseMatrix
 from sbeam.assembly.coord_transform import build_transform
 
@@ -80,6 +80,11 @@ def element_mass_global(
     L = float(np.linalg.norm(dx))
 
     M_local = local_mass(pbar, mat1, L)
+    if cbar.pa or cbar.pb:
+        # Congruent condensation with the stiffness transform (NASTRAN-95 bard.f):
+        # the released DOF follows the static deflected shape.
+        _, T_rel = released_local_stiffness(pbar, mat1, L, cbar.pa, cbar.pb)
+        M_local = T_rel.T @ M_local @ T_rel
     T = transform_matrix(cbar, grids)
 
     return T.T @ M_local @ T
@@ -91,7 +96,8 @@ def assemble_global_mass(
 ) -> SparseMatrix:
     """Assemble the (6N x 6N) global consistent mass matrix.
 
-    Includes CBAR element contributions and CONM2 point masses.
+    Includes every line element (CBAR consistent mass; CROD/CONROD consistent
+    translational mass, #38) and CONM2 point masses.
     CONM2 contributes the full 6x6 symmetric block: translational mass,
     offset-induced translation-rotation coupling, parallel-axis rotational
     inertia, and CM inertia tensor (I11-I33).
@@ -108,11 +114,14 @@ def assemble_global_mass(
     n = 6 * len(grid_index)
     rows, cols, data = [], [], []
 
-    for cbar in bulk.cbars.values():
-        M_e = element_mass_global(cbar, bulk.grids, bulk.pbars, bulk.mat1s)
+    # Local import: elements.py builds on this module's CBAR helper.
+    from sbeam.assembly.elements import iter_line_elements, line_element_mass_global
+
+    for elem in iter_line_elements(bulk):
+        M_e = line_element_mass_global(elem, bulk)
         if case.scale != 1.0:
             M_e = case.scale * M_e   # SCALE applies to the baseline structural mass
-        dofs = node_dofs(cbar.ga, grid_index) + node_dofs(cbar.gb, grid_index)
+        dofs = node_dofs(elem.ga, grid_index) + node_dofs(elem.gb, grid_index)
         ii, jj = np.meshgrid(dofs, dofs, indexing="ij")
         rows.extend(ii.ravel())
         cols.extend(jj.ravel())

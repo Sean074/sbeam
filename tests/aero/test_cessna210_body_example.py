@@ -20,13 +20,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sbeam.aero import section_data as sd
-from sbeam.aero.body_correction import (
-    build_body_correction,
-    parse_body_targets,
-    split_total_rows,
-    RATIO_WARN,
-)
+from sbeam_tools.corrections import section_data as sd
+from sbeam.aero.body_correction import build_body_correction, RATIO_WARN
+from sbeam_tools.corrections import parse_body_targets, split_total_rows
 
 _ROOT = Path(__file__).parent.parent.parent / "sample"
 BDF_PATH = _ROOT / "cessna210_flagship_body.bdf"
@@ -113,9 +109,9 @@ def test_two_stage_correction_reaches_total_targets(deck):
     # Note what `baseline` means: the totals with the body panels PRESENT but
     # UNCORRECTED, not the bodiless airplane.  On the flagship those differ — a
     # flat-plate cruciform is destabilising in pitch all by itself.  The committed
-    # +0.20 /rad increment is measured from the bare airplane (Cm_alpha -1.6921 ->
-    # -1.4921) and splits roughly +0.133 from merely adding the panels and +0.067
-    # from the correction, which is what this delta sees.
+    # +0.20 /rad increment is measured from the bare airplane (Cm_alpha -1.6087 ->
+    # -1.4087, re-derived for #52) and splits roughly +0.131 from merely adding the
+    # panels and +0.070 from the correction, which is what this delta sees.
     assert abs(out.achieved.cm_alpha - out.baseline.cm_alpha) > 0.05   # pitch destabilised
     assert abs(out.achieved.cn_beta - out.baseline.cn_beta) > 0.01     # yaw destabilised
     # ratio_max is NOT a contamination metric: WT2 is a post-inverse diagonal on the body
