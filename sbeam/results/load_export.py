@@ -121,8 +121,8 @@ def build_maneuver_load_cards_text(
 ) -> str:
     """Return FORCE/MOMENT card text for one trimmed subcase's net maneuver load.
 
-    Emits ``result.net_loads`` (aero + inertia-relief, Step 53) — the stress
-    deliverable for a balanced maneuver.  Card form is identical to the aero-only
+    Emits ``result.net_loads`` (aero + inertia-relief + the subcase's applied
+    LOAD set, Step 53 / #6) — the stress deliverable for a balanced maneuver.  Card form is identical to the aero-only
     export; only the load content differs.
 
     Raises:
@@ -137,10 +137,17 @@ def build_maneuver_load_cards_text(
     sid = sid if sid is not None else result.subcase_id
     grid_index = build_grid_index(bulk)
 
+    # #6: name the applied LOAD set in the header when the subcase carried one;
+    # every other deck's header is unchanged (byte-identical).
+    load_sid = getattr(result, "load_sid", None)
+    what = ("aero + inertia relief + applied LOAD" if load_sid is not None
+            else "aero + inertia relief")
+    net = (f"aero + inertial + applied LOAD={load_sid}" if load_sid is not None
+           else "aero + inertial")
     lines = [
-        f"$ SOL 144 balanced maneuver loads (aero + inertia relief) — subcase {result.subcase_id}, SID {sid}",
+        f"$ SOL 144 balanced maneuver loads ({what}) — subcase {result.subcase_id}, SID {sid}",
         f"$ TRIM={result.trim_sid}  Q={result.q:g}  MACH={result.mach:g}  CZ={result.total_cl:.6f}",
-        "$ FORCE/MOMENT set is the net (aero + inertial) maneuver load for stress (Step 53).",
+        f"$ FORCE/MOMENT set is the net ({net}) maneuver load for stress (Step 53).",
         # Always present (#31): MASSSET=0 (BASELINE) when the subcase selects no mass case.
         massset_comment(result.massset_sid, result.massset_label, result.massset_mass),
     ]
@@ -195,7 +202,7 @@ _MONITOR_CSV_HEADER = [
     "case", "massset", "mass_case", "name", "type", "label", "axes", "cid",
     "x_ref", "y_ref", "z_ref",
     "Fx", "Fy", "Fz", "Mx", "My", "Mz",
-    "Fz_aero", "Fz_inertia", "Fz_react",
+    "Fz_aero", "Fz_inertia", "Fz_react", "Fz_applied",
     "parity", "whole_airplane",
 ]
 
@@ -242,6 +249,8 @@ _SECTION_CUT_COLUMNS = [
     "c1_inertia", "c2_inertia", "c3_inertia", "c4_inertia", "c5_inertia",
     "c6_inertia",
     "c1_react", "c2_react", "c3_react", "c4_react", "c5_react", "c6_react",
+    "c1_applied", "c2_applied", "c3_applied", "c4_applied", "c5_applied",
+    "c6_applied",
     "n_members",
     "dc1_ds", "dc2_ds", "dc3_ds", "dc4_ds", "dc5_ds", "dc6_ds",
 ]
@@ -267,6 +276,9 @@ def _section_cut_row(sc: "SectionCutResult", st: "SectionCutStation") -> list[Un
         *(f"{v:.6E}" for v in labelled(st.aero, sc.comp_map)),
         *(f"{v:.6E}" for v in labelled(st.inertia, sc.comp_map)),
         *(f"{v:.6E}" for v in labelled(st.reaction, sc.comp_map)),
+        *(f"{v:.6E}" for v in labelled(
+            st.applied if getattr(st, "applied", None) is not None else np.zeros(6),
+            sc.comp_map)),
         st.n_members,
         *(("" if d is None else f"{v:.6E}")
           for v in (d if d is not None else range(6))),
@@ -402,6 +414,7 @@ def _monitor_row(ml: "MonitorLoad") -> list[Union[str, int]]:
         f"{(ml.aero[2] if ml.aero is not None else 0.0):.6E}",
         f"{(ml.inertia[2] if ml.inertia is not None else 0.0):.6E}",
         f"{(ml.reaction[2] if ml.reaction is not None else 0.0):.6E}",
+        f"{(ml.applied[2] if getattr(ml, 'applied', None) is not None else 0.0):.6E}",
         f"{ml.parity:g}", int(ml.whole_airplane),
     ]
 

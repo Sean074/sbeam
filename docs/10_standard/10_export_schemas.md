@@ -57,13 +57,15 @@ downloaded file is byte-identical to the CLI's. SOL 101/103 write the f06 only.
 ### 3.1 `monitor_loads.csv` — `_MONITOR_CSV_HEADER`
 
 `case`, `massset`, `mass_case`, `name`, `type`, `label`, `axes`, `cid`, `x_ref`, `y_ref`,
-`z_ref`, `Fx`, `Fy`, `Fz`, `Mx`, `My`, `Mz`, `Fz_aero`, `Fz_inertia`, `Fz_react`, `parity`,
-`whole_airplane`
+`z_ref`, `Fx`, `Fy`, `Fz`, `Mx`, `My`, `Mz`, `Fz_aero`, `Fz_inertia`, `Fz_react`,
+`Fz_applied`, `parity`, `whole_airplane`
 
 One row per monitor per `TRIM` subcase. `type` is `MONPNT1` / `MONPNT3`; `Fx..Mz` are the
 six totals in the monitor's `cid` frame about (`x_ref`, `y_ref`, `z_ref`); `Fz_*` is the
-diagnostic split (`MONPNT1` reports `0.0` for inertia and reaction); `parity` is the
-half-model factor applied and `whole_airplane` whether it was applied. Physics:
+diagnostic split (`MONPNT1` reports `0.0` for inertia, reaction and applied; `Fz_applied`
+is the subcase's applied `LOAD` set, `0.0` when the subcase selected none — #6,
+2026-10-24); `parity` is the half-model factor applied and `whole_airplane` whether it was
+applied. Physics:
 `05c_sol144_maneuver.md` "Output (MON4)".
 
 ### 3.2 `section_loads.csv` — `_SECTION_LOADS_CSV_HEADER`
@@ -79,12 +81,15 @@ half-model factor applied and `whole_airplane` whether it was applied. Physics:
 `c1_aero`, `c2_aero`, `c3_aero`, `c4_aero`, `c5_aero`, `c6_aero`,
 `c1_inertia`, `c2_inertia`, `c3_inertia`, `c4_inertia`, `c5_inertia`, `c6_inertia`,
 `c1_react`, `c2_react`, `c3_react`, `c4_react`, `c5_react`, `c6_react`,
+`c1_applied`, `c2_applied`, `c3_applied`, `c4_applied`, `c5_applied`, `c6_applied`,
 `n_members`, `dc1_ds`, `dc2_ds`, `dc3_ds`, `dc4_ds`, `dc5_ds`, `dc6_ds`
 
 One row per cut per station per subcase. `comp_1..comp_6` name the labelled components
 (`N`, `Vy`, `Mt`, … depending on `axis`) that `c1..c6` carry; `Fx..Mz` are the same loads
-in the raw `cid` frame; the `_aero/_inertia/_react` blocks split `c1..c6`; `dc*_ds` is the
-backward running-load difference per unit station. Physics: `05c` "Output" (MONSECT).
+in the raw `cid` frame; the `_aero/_inertia/_react/_applied` blocks split `c1..c6`
+(`_applied` is the subcase's applied `LOAD` set, `0.0` when none was selected and on every
+`AELIST` cut — #6, 2026-10-24); `dc*_ds` is the backward running-load difference per unit
+station. Physics: `05c` "Output" (MONSECT).
 
 ### 3.3 `maneuver_section_loads.csv` — `_MANEUVER_SECTION_CSV_HEADER`
 
@@ -95,7 +100,8 @@ backward running-load difference per unit station. Physics: `05c` "Output" (MONS
 
 One row per cut per station per output sample. A reader of `section_loads.csv` reads this
 file: same names, same order, with the sample identity in front and the two transient
-contributions behind. `critical = 1` marks the run's critical sample (DEF-M5).
+contributions behind (the `_applied` block is carried and is always `0.0`: an `MLOADS`
+subcase cannot select a `LOAD`, #6). `critical = 1` marks the run's critical sample (DEF-M5).
 
 ### 3.4 `maneuver_monitor_loads.csv` — `_MANEUVER_MONITOR_CSV_HEADER`
 

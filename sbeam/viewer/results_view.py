@@ -471,7 +471,7 @@ def _render_sol144_trim(bulk: BulkData, result: Sol144TrimResult) -> None:
 
     # ---- Maneuver closure (balanced-maneuver net load resultant) ----
     if result.maneuver_closure is not None:
-        st.markdown("**Maneuver load closure** (net aero+inertia resultant; ≈0 when balanced)")
+        st.markdown("**Maneuver load closure** (net aero + inertia + applied-LOAD resultant; ≈0 when balanced)")
         c = result.maneuver_closure
         cc = st.columns(6)
         for i, lab in enumerate(["Fx", "Fy", "Fz", "Mx", "My", "Mz"]):
@@ -499,12 +499,15 @@ def _render_section_cuts(
         names = component_names(sc.axis)
         half = "  ·  HALF-MODEL (loads per side)" if sc.half_model else ""
         transient = any(s.elastic_inertia is not None for s in sc.stations)
+        applied = any(getattr(s, "applied", None) is not None for s in sc.stations)
         if sc.listtype == "AELIST":
             src = "aero only"
         else:
             src = "aero + inertia + reaction"
             if transient:
                 src += " + elastic inertia + damping"
+            if applied:
+                src += " + applied LOAD"
         with st.expander(f"{name} — {sc.label}", expanded=True):
             st.caption(
                 f"COMP {sc.comp} ({sc.listtype}, {src})  ·  CID {sc.cid}  ·  "
@@ -532,6 +535,9 @@ def _render_section_cuts(
                 choices += ["Elastic inertia", "Damping"]
                 attrs["Elastic inertia"] = "elastic_inertia"
                 attrs["Damping"] = "damping"
+            if applied:
+                choices.append("Applied")
+                attrs["Applied"] = "applied"
             source = st.radio(
                 "Contribution", choices,
                 horizontal=True, key=f"{key_prefix}_{name}_src",
@@ -628,6 +634,7 @@ def _render_monitor_table(monitor_loads: dict[str, MonitorLoad],
                 "Fz aero": _fz(ml.aero), "Fz inertia (rigid)": _fz(ml.inertia),
                 "Fz elastic": _fz(ml.elastic_inertia),
                 "Fz damping": _fz(ml.damping), "Fz reaction": _fz(ml.reaction),
+                "Fz applied": _fz(getattr(ml, "applied", None)),
             })
         rows.append(row)
     st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")

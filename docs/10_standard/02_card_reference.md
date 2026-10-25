@@ -883,6 +883,12 @@ FORCE, SID, GID, CID, F, N1, N2, N3
 
 Applied force vector = `F × [N1, N2, N3]`. Multiple FORCE cards with the same SID are summed.
 
+**In a SOL 144 trim subcase (#6):** a `FORCE` set selected by `LOAD` is an applied structural
+load in the trim balance — body-fixed, basic-frame, not scaled by `q` (thrust at the
+engine-mount grid is the canonical use). It flows into `net_loads`, the closure, the
+monitor/section `applied` column and `maneuver_loads.bdf`. See `05c_sol144_maneuver.md`
+"Applied structural load in a trim" and charter §9/§10.
+
 **Example:**
 ```
 $ 1000 N in –Z at GID 6, global frame
@@ -916,6 +922,10 @@ MOMENT, SID, GID, CID, M, N1, N2, N3
 
 Applied moment vector = `M × [N1, N2, N3]`.
 
+**In a SOL 144 trim subcase (#6):** as for `FORCE`. Engine torque reaction is a `MOMENT`
+about `x` at the mount: `+Mx` (`N1 = 1`) for a propeller turning clockwise as seen from
+behind, `−Mx` for counter-clockwise — charter §10.
+
 **Example:**
 ```
 $ 200 N·m about +Z at GID 6
@@ -943,6 +953,9 @@ LOAD, SID, S, S1, L1, S2, L2, S3, L3, ...
 | L1, L2, … | (in `components`) | int | Load set ID for component load i (references FORCE, MOMENT, or GRAV SID) | required |
 
 `components` is a list of `(scale: float, load_sid: int)` pairs. Applied load = `S × Σᵢ(Sᵢ × Loadᵢ)`.
+
+In a SOL 144 **trim** subcase the combination may reference `FORCE`/`MOMENT` sets only: a
+`GRAV` component raises (gravity enters a trim through `URDD3`; #6).
 
 **Example:**
 ```
@@ -975,6 +988,10 @@ GRAV, SID, CID, G, N1, N2, N3
 The gravity load vector is computed as `f_grav = M_global × a_field`, where `a_field` has `G × [N1, N2, N3]` at every translational DOF and zero at rotational DOFs. Both CBAR distributed mass and CONM2 point masses contribute naturally through the assembled consistent mass matrix.
 
 GRAV SIDs may appear as component loads in a `LOAD` card, mixed freely with `FORCE` and `MOMENT` SIDs. CID ≠ 0 raises a parse error in Phase 1–2.
+
+**Refused in a SOL 144 trim subcase (#6):** a `GRAV` selected directly or through the `LOAD`
+combination of a `TRIM` subcase raises — the load factor already carries gravity
+(`URDD3 = −n·g`, theory §7.3), and a `GRAV` beside it would double-count the weight.
 
 > **Reaction recovery:** SPC reactions are computed as
 > `R = K[spc, :] @ u − f_applied[spc]`. The `f_applied[spc]` term subtracts the
@@ -1738,6 +1755,9 @@ TRIM, 11, 0.3, 1500.0, RHOREF, 2.377-3, PITCH, 0.0
   (it would collide with the reserved pseudo-label).
 - DOF-count diagnostic: warns if all labels are prescribed (nothing to solve) or if the
   system is over-determined and no TRIMOBJ card is present.
+- A `TRIM` subcase may also select `LOAD = sid` (applied structural load in the trim RHS,
+  #6): `FORCE`/`MOMENT` sets and `LOAD` combinations of them; `GRAV` raises. An `MLOADS`
+  subcase or a `DIVERG`-only subcase carrying `LOAD` raises (the load would be dropped).
 
 ---
 
@@ -1799,6 +1819,10 @@ blank DOF string after a GID raises `ValueError`. Each pair is appended to
 ```
 $ Support plunge and pitch at the reference grid 1
 SUPORT, 1, 35
+$ Surge, plunge and pitch free (URDD1 a trim label): the x-force balance is trimmed,
+$ so an applied thrust accelerates the aircraft and its pitch moment is taken about
+$ the CG; with SUPORT 35 the thrust x-component is reacted at the SPC instead (#6)
+SUPORT, 90, 135
 ```
 
 ---
@@ -2007,8 +2031,9 @@ MONPNT1  NAME  LABEL  AXES  COMP  CP  X  Y  Z
 ### MONPNT3 — Aero + inertia + reaction integrated load
 
 Same field layout as MONPNT1, but `COMP` must resolve to a `SET1`-type AECOMP; the
-load is summed over the structural grids (aero splined to grids + inertia + SPC/SUPORT
-reaction).
+load is summed over the structural grids (aero splined to grids + inertia + the subcase's
+applied `LOAD` set when one is selected (#6) + SPC/SUPORT reaction). Each contribution is
+its own column (`aero`, `inertia`, `applied`, `reaction`) under the total.
 
 **Format (single line):**
 ```

@@ -373,7 +373,7 @@ and [SOL 144 — Static Aeroelastic Results](#sol-144--static-aeroelastic-result
 | Field | Layout | Condition |
 |-------|--------|-----------|
 | Subcase title | Full-width text input | Always |
-| LOAD SID | Left column selectbox | Not SOL 144 (LOAD is refused in SOL 144 subcases, DEF-M4) |
+| LOAD SID | Left column selectbox | Always. In SOL 144 it is the applied structural load of a **Trim** subcase (thrust, engine torque; #6) — `_apply_sol144_kind` clears it for the Maneuver (MLOADS) and Divergence-only kinds, and `validate_sol144_authoring` flags a LOAD on those, a dangling LOAD SID, or a GRAV in the trim LOAD set |
 | SPC SID | Right column selectbox | Always |
 | Analysis kind radio (Trim / Divergence only / Maneuver (MLOADS)) | Horizontal radio | SOL 144 only |
 | TRIM / TRIMOBJ / DIVERG / MLOADS / MASSSET SIDs | Selectboxes, three-up | SOL 144 only |
@@ -576,8 +576,9 @@ renders whichever result types it produced:
   (`_render_section_cuts`, Monitor Phase 2) — one expander per `MONSECT` with the
   per-station table in the cut's own labelled components (the legend is rendered with it,
   since only `N`/`Mt` are role names) plus a spanwise chart whose components and
-  contribution (total / aero / inertia / reaction — plus elastic inertia and damping on a
-  transient sample) are selectable; maneuver-closure
+  contribution (total / aero / inertia / reaction — plus applied when the subcase selected
+  a `LOAD` (#6), and elastic inertia and damping on a transient sample) are selectable;
+  the monitor table carries an `Fz applied` column; maneuver-closure
   resultant. Layout mirrors the
   f06 blocks in `results/f06_writer.py::_build_f06_sol144_text`.
 - **Deflected shape + canted aero boxes** (`_render_sol144_deflected`): a deflection-scale

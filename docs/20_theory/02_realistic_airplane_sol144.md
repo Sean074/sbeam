@@ -616,7 +616,7 @@ them as one lump is the most common way to get a powered deck subtly wrong.
 | 1 | **Slipstream dynamic pressure** | Axial induction raises local q on the washed strips — `q_s/q∞ ≈ (1+a)²`. More load, same shape. | Force **slope** on the washed strips: `cn_a` in the section table → `WT2` |
 | 2 | **Swirl** | The disc imparts rotation: upwash on the up-going-blade side, downwash on the other. A local Δα, **antisymmetric about the nacelle**. | Zero-lift incidence per strip: `a0` in the section table → `W2GJ` |
 | 3 | **Propeller normal force** | A disc at incidence carries a side/normal force in its own plane. Ahead of the CG it is **destabilising** — a real `Cm_α` increment. | Body/nacelle correction `TOTAL` row: `cn_a`, `cm_a` |
-| 4 | **Thrust-line offset moment** | `T × z_offset`. Not aerodynamic at all. | **Nothing clean — see §7.2** |
+| 4 | **Thrust-line offset moment** | `T × z_offset`. Not aerodynamic at all. | Not a correction: a `FORCE` at the engine-mount grid selected by `LOAD` in the trim subcase (#6) — see §7.2 |
 | 5 | **Slipstream on the tail** | A conventional tail sits in the washed flow; a T-tail (ATR42) largely does not. Changes tail q *and* the downwash reaching it. | The tail surface's own section-table rows |
 
 Effects 1 and 2 are the ones people remember, and they behave very differently. The q
@@ -628,38 +628,42 @@ every power setting, which is precisely the trim asymmetry a powered deck exists
 Tabulate it per strip with the correct sign on each side of each nacelle, or you have built
 a symmetric airplane with extra steps.
 
-### 7.2 The thrust moment has no clean home — read this before you fake it
+### 7.2 The thrust moment is an applied load, not a correction
 
-Effect 4 is the awkward one, and the deck will not let you do the obvious thing.
+Effect 4 is not aerodynamic, so it does not belong on any correction card. Since #6
+(2026-10-24) it has a clean home: **author the thrust as a `FORCE` at the engine-mount grid
+(and the torque reaction as a `MOMENT` about `x`), select the set with `LOAD` in the trim
+subcase, and the trim balances it beside the aerodynamic and inertial loads.** The load is
+body-fixed and un-scaled by `q`, so it scales with thrust, as it should; it flows into the net
+loads, the closure, the monitor and section-cut `applied` column and `maneuver_loads.bdf`.
+Design note `30_future/designs/thrust_in_trim_applied_load.md`; the mechanics in
+`05c_sol144_maneuver.md` "Applied structural load in a trim".
 
-**You cannot apply thrust as a `FORCE`/`MOMENT` in a SOL 144 trim subcase.** A subcase
-carrying both `TRIM` and `LOAD` is *refused* with an error naming both SIDs (DEF-M4). The
-trim RHS is aerodynamic + inertial only — there is no applied-structural-load term — and
-rather than read a `LOAD` request and silently discard it, the solver stops. That refusal is
-protecting you: a deck that "trimmed with thrust" while ignoring the thrust card is exactly
-the failure mode that looks plausible and is wrong.
+Three things to get right, because they are the ones that look plausible when wrong:
 
-That leaves two honest routes and one temptation:
+1. **Put the force where the thrust line is.** A `FORCE` acts at a grid. If the thrust line
+   is off the spine, give it a grid there on an `RBAR` (the validation deck's pylon), or apply
+   the equivalent `FORCE` + `MOMENT` pair at the mount grid. A thrust `FORCE` at a spine grid
+   on the reference line has **no** pitching moment, however the drawing looks.
+2. **Decide what reacts the x-force.** With the usual `SUPORT 35` / `SPC 1246` the thrust
+   x-component is reacted at the SPC grid and the pitch trim sees the thrust moment *about
+   that point*. With `SUPORT 135` and `URDD1` free the aircraft accelerates (`m·URDD1 = T +
+   Fx_aero`), the inertia relief of that acceleration acts at the CG, and the pitch trim sees
+   the thrust moment *about the CG* — the textbook statement. Both are right; they answer
+   different questions, and on a deck whose CG sits off the reference line they differ by
+   `T·(z_ref − z_cg)`.
+3. **No `GRAV` in the trim `LOAD` set.** The load factor already carries gravity through
+   `URDD3`; a `GRAV` beside it double-counts the weight, and the solver refuses it.
 
-1. **Fold the thrust moment into the aerodynamic correction** — add `T·z_offset`, expressed
-   as a `cm0` increment, to the body correction's `TOTAL` row. The airplane then trims
-   against an *aerodynamic* moment standing in for a *propulsive* one.
-   > **The catch, and it is not small.** A correction moment scales with `q·S·c̄`. Thrust
-   > moment does not — it scales with thrust, which at fixed power roughly *falls* with
-   > speed. Build the fudge at one condition and it is exact there and wrong everywhere
-   > else, in the direction that flatters you at low speed. If you take this route, build
-   > one correction set **per flight condition** and never sweep speed inside one.
-2. **Use the restrained static path** (`run_aeroelastic_static`), which *does* combine a
-   `LOAD` set with the aero load, and apply thrust as ordinary `FORCE`/`MOMENT` cards. You
-   give up free-flight trim and inertia relief to get it — a fair trade for a stress case at
-   a known attitude, not for a maneuver.
-3. **Do not** put the thrust moment into a wing section's `cm0` to "make the trim come out".
-   It lands as a distributed aerodynamic moment on the wing strips, so your wing torsion —
-   the thing the section loads exist to report — is wrong by the amount you fudged.
+And the one temptation that remains a temptation: **do not** put the thrust moment into a
+wing section's `cm0` to "make the trim come out". It lands as a distributed aerodynamic
+moment on the wing strips, so your wing torsion — the thing the section loads exist to
+report — is wrong by the amount you fudged, and it scales with `q` instead of with thrust.
 
-The real fix is an applied-load term in the trim RHS, which is a capability change with
-undecided physics (does an applied load participate in inertia relief, and what does
-`maneuver_closure` mean once it does?), not a defect. It is on the backlog.
+Engine torque enters the same way, as a `MOMENT` about `x` at the mount, with the sign fixed
+by the propeller-handedness rule of the conventions charter §10: a propeller turning
+clockwise as seen from behind puts `+Mx` (roll toward port) on the airframe. The lateral
+validation deck trims it with the ailerons (`AIL < 0`, the gate on the convention).
 
 ### 7.3 What a frozen correction cannot do
 
@@ -725,7 +729,7 @@ Nothing above needs a card sbeam does not have. It needs data sbeam cannot gener
 | The body correction matches moments only; body lift is unconstrained (§6.1) | constrained-CZ body solve (backlog) |
 | A cruciform body redistributes the wing loading it corrects (§6.4) | use the strip variant for loads; image-fence method for interference |
 | No propeller model — powered effects only via corrections, frozen at one power setting (§7) | no native slipstream model planned; a correction set per condition is the method |
-| Thrust cannot be applied in a trim subcase (`TRIM` + `LOAD` is refused, DEF-M4) (§7.2) | applied-load term in the trim RHS (backlog) |
+| Applied loads (thrust, torque) are not carried through an `MLOADS` transient — the subcase raises (§7.2, #6) | constant-load carry-through (#50) |
 | Steady aerodynamics only (VLM at k = 0); no unsteady, no flutter | Phase D — DLM, SOL 145 |
 | Direct-solver transient is restrained and open-loop; ANGLEA/PITCH/URDD frozen | Delivered: the Step 63 free-flight modal solver (MLOADS NMODES/METHOD/ZETA) integrates them |
 | One correction operating region per surface, no warning on exit | `section_data` v2; T3b gates it meanwhile |

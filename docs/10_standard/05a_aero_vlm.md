@@ -703,10 +703,12 @@ Two consequences worth stating at card level:
   same limitation as the single operating region above, with a stronger α-nonlinearity.
   Build one correction set per flight condition. One-engine-out is a *different* set, not a
   scaled one.
-- **The thrust-line pitching moment has no card.** It is not aerodynamic, and a SOL 144
-  trim subcase carrying both `TRIM` and `LOAD` is refused (DEF-M4). See
-  `docs/20_theory/02_realistic_airplane_sol144.md` §7.2 for the two honest workarounds and
-  the one that quietly corrupts your wing torsion.
+- **The thrust-line pitching moment is not a correction.** It is not aerodynamic: author
+  the thrust as a `FORCE` (and the torque reaction as a `MOMENT`) at the engine-mount grid
+  and select it with `LOAD` in the trim subcase — it enters the trim balance directly and
+  scales with thrust, not with `q` (#6; `05c` "Applied structural load in a trim";
+  `docs/20_theory/02_realistic_airplane_sol144.md` §7.2). Never fold it into a wing strip's
+  `cm0`: that corrupts the wing torsion the section loads exist to report.
 
 Full modelling guidance, including the build workflow and the failure modes:
 `docs/20_theory/02_realistic_airplane_sol144.md` §7.

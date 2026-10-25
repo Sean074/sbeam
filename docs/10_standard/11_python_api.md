@@ -132,7 +132,7 @@ commented at its definition, and the ones below are the ones consumers read.
 |---|---|
 | `Sol101Result` | `displacements` (n_dofs,), `reactions {gid: (6,)}`, `bar_forces {eid: BarForce}`, `bar_stresses {eid: BarStress}`, `rod_forces`, `rod_stresses`, `cbush_forces {eid: (6,)}` |
 | `Sol103Result` | `frequencies_hz` (n_modes,), `mode_shapes` (n_dofs, n_modes), `eigenvalues`, `generalized_masses` |
-| `Sol144TrimResult` | `trim_vars {label: value}`, `q`, `mach`, `displacements`, `bar_forces`, `bar_stresses`, `rigid_derivs` / `restrained_derivs` / `unrestrained_derivs {label: {coef: value}}`, `total_cl`, `total_cm`, `grid_loads`, `inertial_loads`, `net_loads` (n_dofs,), `monitor_loads {name: MonitorLoad}`, `section_loads {name: SectionCutResult}`, `massset_sid`, `massset_label`, `hinge_moments`, `q_div` |
+| `Sol144TrimResult` | `trim_vars {label: value}`, `q`, `mach`, `displacements`, `bar_forces`, `bar_stresses`, `rigid_derivs` / `restrained_derivs` / `unrestrained_derivs {label: {coef: value}}`, `total_cl`, `total_cm`, `grid_loads`, `inertial_loads`, `applied_loads` (n_dofs, or None without a subcase `LOAD`; #6), `load_sid`, `net_loads` (n_dofs,), `monitor_loads {name: MonitorLoad}`, `section_loads {name: SectionCutResult}`, `massset_sid`, `massset_label`, `hinge_moments`, `q_div` |
 | `Sol144DivergResult` | `mach_results: list[DivergMachResult(mach, roots: list[DivergRoot(q_div, v_div, mode_shape)])]` |
 | `ManeuverResult` | `times` (n_out,), `steps: list[ManeuverStep]`, `crit_index`, `labels`, `massset_sid`, `massset_label`, `monitor_envelope`, `section_envelope` |
 | `ManeuverStep` | `t`, `trim_vars`, `displacements`, `bar_forces`, `grid_loads`, `inertial_loads`, `net_loads`, `closure` (6,), `monitor_loads`, `section_loads` |

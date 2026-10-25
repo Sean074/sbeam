@@ -374,6 +374,26 @@ def recover_step(
     )
 
 
+def _refuse_load_in_mloads(where: str, subcase: SubcaseControl) -> None:
+    """Refuse a LOAD request in an MLOADS subcase (#6, decision D1).
+
+    An applied structural load enters a SOL 144 TRIM subcase, but the transient
+    solvers rebuild their initial-condition subcase without it and carry no
+    constant-load term, so the request would be read and silently dropped from
+    the time history — the DEF-M4 failure mode.  Carry-through is issue
+    #50; until then the combination is an error, not a surprise.
+    """
+    if subcase.load_sid is not None:
+        raise ValueError(
+            f"{where}: subcase {subcase.subcase_id} requests both "
+            f"MLOADS={subcase.mloads_sid} and LOAD={subcase.load_sid}.  An applied "
+            "structural load is supported in a SOL 144 TRIM subcase (#6) but is not "
+            "carried through the transient maneuver, so it would be silently "
+            "dropped from the time history.  Remove the LOAD request from the "
+            "MLOADS subcase."
+        )
+
+
 def run_maneuver_qs(
     bulk: BulkData,
     subcase: SubcaseControl,
@@ -397,6 +417,7 @@ def run_maneuver_qs(
     Returns:
         ManeuverResult with one ManeuverStep per output sample.
     """
+    _refuse_load_in_mloads("run_maneuver_qs", subcase)
     if subcase.mloads_sid is None or subcase.mloads_sid not in bulk.mloads:
         raise ValueError(
             f"run_maneuver_qs: MLOADS SID {subcase.mloads_sid} not found")

@@ -472,9 +472,28 @@ def validate_sol144_authoring(
                                           or sc.diverg_sid is not None):
             errors.append(f"{tag}: MLOADS cannot combine with TRIM/DIVERG "
                           "in one subcase.")
+        # #6: a TRIM subcase takes a LOAD set (applied structural load in the
+        # trim RHS); MLOADS and DIVERG-only subcases do not (the solver raises).
         if sc.load_sid is not None:
-            errors.append(f"{tag}: LOAD does not combine with SOL 144 "
-                          "(the aeroelastic drivers supply the loading).")
+            if sc.trim_sid is None:
+                errors.append(f"{tag}: LOAD combines only with a TRIM subcase "
+                              "(an applied structural load enters the trim "
+                              "balance; MLOADS and DIVERG-only subcases drop "
+                              "it, so the solver refuses the request).")
+            else:
+                sids = [sc.load_sid]
+                if sc.load_sid in bulk.loads:
+                    sids += [s for _, s in bulk.loads[sc.load_sid].components]
+                known = (set(bulk.loads) | set(bulk.forces) | set(bulk.moments)
+                         | set(bulk.gravs))
+                if sc.load_sid not in known:
+                    errors.append(f"{tag}: LOAD {sc.load_sid} not found in the "
+                                  "bulk data.")
+                gravs = sorted({s for s in sids if s in bulk.gravs})
+                if gravs:
+                    errors.append(f"{tag}: LOAD {sc.load_sid} references GRAV "
+                                  f"{gravs}; gravity enters a trim through URDD3 "
+                                  "only, so a GRAV in the trim LOAD set is refused.")
         for sid, family, name in [
             (sc.trim_sid, "trim", "TRIM"), (sc.trimobj_sid, "trimobj", "TRIMOBJ"),
             (sc.diverg_sid, "diverg", "DIVERG"), (sc.mloads_sid, "mloads", "MLOADS"),

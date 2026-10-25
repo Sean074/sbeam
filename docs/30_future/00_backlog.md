@@ -59,7 +59,9 @@ handedness, ROLL reference) are checklist blocks inside their consuming issues (
 invented ad hoc, and lands in `09_conventions.md` with a gate. *Decided 2026-10-24:* ROLL
 reference (#8), aileron and rudder signs (#9/#10) — design note
 [`designs/lateral_cases_aileron_rudder.md`](designs/lateral_cases_aileron_rudder.md); end-A
-face (#21, 2026-10-24). Open: prop handedness (#6). **Bank-angle scope** was
+face (#21, 2026-10-24); propeller handedness (#6, 2026-10-24) — design note
+[`designs/thrust_in_trim_applied_load.md`](designs/thrust_in_trim_applied_load.md) D6, charter
+§10. None open. **Bank-angle scope** was
 decided 2026-09-05 ([`designs/vn_matrix_23337.md`](designs/vn_matrix_23337.md) O2): out of
 scope as a case family, since a steady coordinated turn at load factor n is
 aerodynamically identical to a symmetric pull-up at n on this model, and the part that is

@@ -1,8 +1,10 @@
 # Applied structural load in the SOL 144 trim RHS — design note for issue #6
 
-**Status:** ✅ **agreed 2026-10-24** (CLAUDE.md rule 1): D1 trim-only scope with the MLOADS /
-DIVERG silent-drop closed by refusal, D6 propeller handedness decided through a torque case,
-D7 dedicated validation deck — all accepted as recommended. Implementation decisions in §9.
+**Status:** ✅ **agreed 2026-10-24**, ✅ **implemented 2026-10-24** (CLAUDE.md rule 1): D1
+trim-only scope with the MLOADS / DIVERG silent-drop closed by refusal, D6 propeller
+handedness decided through a torque case, D7 dedicated validation deck — all accepted as
+recommended. Implementation decisions in §9 (including the correction of the §6 "10 %
+elastic" reading).
 - **Milestone:** [v0.3.0](https://github.com/Sean074/sbeam/milestone/1) ("thrust-in-trim" is
   named in its definition of done).
 - **Tier L:** new capability and new physics in the trim balance (an applied-load term), a
@@ -200,9 +202,9 @@ URDD4 = URDD6 = 0, `LOAD 701`; AIL and RUD free).
 | Gate | Statement | Tolerance |
 |---|---|---|
 | **G1** Schur identity | `δ(SC2) − δ(SC1)` equals `solve(schur_A, f_r − K_rl K_ll⁻¹ f_l)` built by `build_trim_schur` from the solver's own `K_aa, Q_aa, Q_ax_a, M_ax_a` with `f_rhs = reduce(f_struct)` alone; `u_a` likewise through `recover_u_a` | rel 1e-10 |
-| **G2** rigid closed form | on a stiffened copy (E, G × 1e6) Δα, Δδe equal the rigid 2 × 2 solve of §2.3 with `ΔCm = 0.049020`; Δδe > 0 | rel 1e-6 |
+| **G2** rigid closed form | on a stiffened copy (E, G × 1e6) Δα, Δδe equal the rigid 2 × 2 solve of §2.3 — surge free with `ΔCm = T·(z_cg − z_T)/(qSc) = 0.044118` (about the **CG**, §9), `SUPORT 35` variant with `ΔCm = T·(z_ref − z_T)/(qSc) = 0.049020`; Δδe > 0 | rel 1e-6 |
 | **G3** linearity | SC3 ≡ SC2 bit for bit; T × 2 (in-test) doubles every shift | 1e-10 / exact |
-| **G4** closure / surge | `maneuver_closure` ≈ 0 in all six components; `m·URDD1 = T + Fx_aero`; in-test `SUPORT 35` + `SPC 1246` variant: SPC x-reaction = −(T + Fx_aero), ANGLEA/ELEV shifts identical to the 135 case | 1e-9·‖aero‖ / rel 1e-12 |
+| **G4** closure / surge | `maneuver_closure` ≈ 0 in all six components; `m·URDD1 = T + Fx_aero`; in-test `SUPORT 35` + `SPC 1246` variant: MONPNT3 reaction `Fx = +T`, closure `Fx = −T` (reacted, not trimmed), Schur identity holds, and the ELEV shift is 20/18 of the free-surge one (moment about the reference vs about the CG, §9) | 1e-9·‖aero‖ / rel 1e-12 / 1e-3 |
 | **G5** load path | `SECNOSE` carries `c1_applied = −T`, `c5_applied = +0.5·T` at both stations; every-grid `MONPNT3`: aero + inertia + applied + reaction = 0; both CSV headers match the constants (schema gate extended) | 1e-12·T / 1e-9 |
 | **G6** derivatives untouched | rigid, restrained, unrestrained derivatives and intercepts identical across SC1–SC3 | exact |
 | **G7** refusals | `GRAV` direct and via `LOAD` → `ValueError` naming URDD3; `MLOADS` + `LOAD` → `ValueError` (direct and modal); `DIVERG`-only + `LOAD` → `ValueError`; the no-LOAD trim is unaffected | — |
@@ -224,11 +226,13 @@ Deck as in §5; q = 51, W = 98.1, `W/(qS) = 0.240441`.
 | applied resultant about ref | — | (−40, 0, 0, 0, +20, 0) | ΔCm = 20/408 = 0.049020 |
 | closure (aero + inertia + applied) | 1e-13 | 1e-13 | — |
 
-Rigid 2 × 2 with `CZ_α = 5.5819, CM_α = −3.4807, CZ_δe = 0.80291, CM_δe = −3.2963`:
-Δα = −2.522e-3, Δδe = +1.7534e-2 — 10 % from the elastic deck because the spine is
-deliberately flexible (G2 therefore runs on the stiffened copy). SC1's CMY = −0.012022 is
-the CG 0.05 aft of the reference (98.1 × 0.05 / 408), and SC2 adds exactly −0.049118 ≈
-−ΔCm: the applied moment is balanced by aero, as it must be.
+Rigid 2 × 2 with `CZ_α = 5.5819, CM_α = −3.4807, CZ_δe = 0.80291, CM_δe = −3.2963` and
+`ΔCm = 0.049020` (about the reference): Δα = −2.522e-3, Δδe = +1.7534e-2 — 10 % from the
+deck. *Read at prototype time as elasticity; corrected while gating (§9): the 10 % is the
+surge-inertia relief, and with `ΔCm = T·(z_cg − z_T)/(qSc) = 0.044118` (about the CG) the
+rigid solve reproduces the deck to 1e-3; the stiffened copy to 1e-6.* SC1's CMY = −0.012022
+is the CG 0.05 aft of the reference (98.1 × 0.05 / 408), and SC2 adds exactly −0.044118:
+the aero balances the thrust moment about the CG, as it must in free flight.
 
 Torque on the lateral deck, Q = 35 (`CMX_applied = 0.010723`): restrained
 `C_lδa = 0.301626, C_nδa = 0.015358, C_lδr = −0.055411, C_nδr = 0.240912` →
@@ -269,6 +273,34 @@ and `02` §7.1/§7.2/§8, `11_python_api.md`, `06_viewer.md`, README, CHANGELOG,
 | Flagship powered driver? | Not shipped; the flagship bulk is unchanged. The recipe (FORCE + MOMENT at the engine-mount grid, or a thrust-line grid on an RBAR) is in `05c` |
 | `URDD1` as a free label | Already supported by `build_inertial_cols`; first exercised here (`SUPORT 135`) |
 
-## 9. Implementation decisions
+## 9. Implementation decisions (2026-10-24, at close)
 
-*(appended at close)*
+1. **Thrust moment about the CG, not the reference, when surge is free.** The prototype's
+   "10 % elastic" gap (§6) was the surge-inertia relief: with `URDD1` free the thrust
+   accelerates the aircraft at `T/m`, the inertia relief `−M·a` acts at the CG (0.05 below the
+   reference on the deck), and its pitching moment `T·(z_ref − z_cg) = 2` opposes the thrust
+   moment about the reference (20). The trim therefore balances `T·(z_cg − z_T) = 18` — the
+   thrust moment **about the CG**, the textbook statement. With `SUPORT 35` / `SPC 1246` the
+   x-component is reacted at the SPC grid and the trim balances the moment about that point
+   (20). G2 gates both on stiffened copies (1e-6); the shipped flexible deck is within 1e-3 of
+   the rigid number, so the spine's flexibility is a 1e-3 effect, not 10 %. The two recipes are
+   documented in `05c` as different problems with different answers, not as a discrepancy.
+2. **G4's "identical ANGLEA/ELEV on the 35 variant" was wrong** for the same reason and is
+   replaced by the 20/18 ratio and the Schur identity on that variant.
+3. **GRAV detection** walks one level: the direct SID and the components of a `LOAD` card
+   (nested `LOAD` cards are not a thing in `assemble_load_vector`).
+4. **f06 reference point** for the applied-load resultant is the RCSID origin (basic origin
+   when `RCSID = 0`) through `grid_resultant`, the same point the moment coefficients and
+   `maneuver_closure` use; `results/` imports it locally to avoid a `results ↔ solver` cycle.
+5. **Schema:** `Fz_applied` after `Fz_react`; `c*_applied` after the `_react` block; the
+   transient CSVs carry them as zeros through the shared column blocks (a transient cannot
+   select a `LOAD`). `maneuver_loads.bdf` names the `LOAD` set in its header only when one was
+   applied, so every other deck's header is byte-identical.
+6. **Bit-identity verified** on all 13 shipped SOL 144 driver decks (single-threaded BLAS,
+   before/after): only time stamps, the new zero columns, and the #49 round-off noise
+   (max |Δ| 7e-10 on O(1e4) values; noise-driven envelope sample indices) differ.
+7. **Deck geometry:** the horizontal tail sits at z = 0.5 so its collocation points are
+   clear of the wing's wake filaments (an in-plane tail 0.025 from a trailing leg is a
+   near-singular VLM configuration, not a physics point).
+8. **Follow-on filed as [#50](https://github.com/Sean074/sbeam/issues/50):** constant applied load carried through the MLOADS transient (the IC
+   trim takes it, the time history keeps it, transient monitors gain the column).

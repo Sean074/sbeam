@@ -27,13 +27,15 @@ where:
 Step 50 solves this equation without trim variables (Steps 51–52 add trim card
 parsing and the full SOL 144 solve with `Q_ax·δ_x`).
 
-> **`LOAD` applies to the restrained static path only.** `run_aeroelastic_static`
-> combines a `LOAD` set with the aero load as above. The **trim** RHS
-> (`run_sol144_trim`) is aero + inertia only — there is no `f_struct` term — so a
-> subcase carrying both `TRIM` and `LOAD` now **raises** rather than silently
-> ignoring the load request (DEF-M4). Adding `f_struct` to the trim RHS is a
-> capability change, not a defect fix: on a free-flight SUPORT trim it enters the
-> force balance and changes what `maneuver_closure` means. Backlogged separately.
+> **`LOAD` applies to both paths.** `run_aeroelastic_static` combines a `LOAD` set with
+> the aero load as above, and since #6 (2026-10-24; design note
+> `30_future/designs/thrust_in_trim_applied_load.md`) so does the **trim**: the subcase's
+> `LOAD` set enters the trim RHS beside the aerodynamic and inertial loads, un-scaled by
+> `q`, and flows into `net_loads`, the closure, the monitor/section `applied` column and
+> the `maneuver_loads.bdf` export. `GRAV` is refused in a trim `LOAD` set (gravity enters
+> through `URDD3`). The DEF-M4 refusal of `TRIM` + `LOAD` is retired; an `MLOADS` or
+> `DIVERG`-only subcase carrying `LOAD` raises instead of dropping it. See "Applied
+> structural load in a trim" under Step 52.
 
 ---
 
@@ -311,7 +313,8 @@ derivative blocks in `sol144_derivs.py` (see the module map in `05_aeroelastics.
    reducing to `−n_z·eff` for a spanwise hinge) and `Q_ax = G_dispᵀ S_kj A_jj*⁻¹ D_jx` on the
    g-set.
 2. Reduce `Q_ax`, `K`, and the RHS (baseline `q·f_g` + prescribed-variable aero + URDD
-   inertial load) to the a-set via the same RBE3 + SPC partition as SOL 101.
+   inertial load + the subcase's applied `LOAD` set `f_struct`, #6) to the a-set via the
+   same RBE3 + SPC partition as SOL 101.
 3. Partition the a-set into l-set / r-set (SUPORT DOFs), set `u_r = 0`, and solve the
    Schur-complement system for the free trim variables and `u_l`.
 3a. **Yaw-rate wing term** (Step 67a, `_stage_refine_yaw_rate`). The wing half of the
@@ -449,6 +452,71 @@ symmetric cases; the CLI writes `monitor_loads.csv` and `section_loads.csv` for 
 The sway force `Fy` is reacted by the SPC (no `SUPORT 2`), so `maneuver_closure` vanishes in
 `Mx` and `Mz` only. Conventions: charter §5 (recipes), §6 (aileron, rudder).
 
+### Applied structural load in a trim — thrust and engine torque (V-THR, #6)
+
+A `TRIM` subcase may select a `LOAD` set (`FORCE`/`MOMENT` cards or a `LOAD` combination).
+`_stage_validate_inputs` resolves it (refusing any `GRAV`, directly or through the
+combination — gravity enters through `URDD3`, theory §7.3), `_stage_build_downwash_and_reduce`
+adds `assemble_load_vector(bulk, load_sid)` to the g-set RHS **un-scaled by `q`**, and the
+Schur reduction does the rest: `schur_b = f_rhs_r − K_rl·K_ll⁻¹·f_rhs_l` carries both the
+load's rigid moment about the reference and its elastic aero coupling (the structure deflects
+under the load, the deflection changes the normalwash) because `K_ll = K − q·Q_ll`. Nothing
+decides separately whether the load "participates in inertia relief": the trim card does.
+
+| Label state in the load's direction | What balances the applied load |
+|---|---|
+| a free aero label (`ANGLEA`, `ELEV`, `AIL`, …) | that label's aerodynamic increment |
+| a free `URDD` label | the rigid-body acceleration — a free surge gives `m·URDD1 = T + Fx_aero` exactly |
+| a prescribed `URDD`, or no label | nothing in the trim: the component is reacted at the SPC that restrains that rigid DOF, and shows in the closure and the MONPNT3 reaction column |
+
+The loads are body-fixed basic-frame loads used exactly as authored (charter §9): `ANGLEA`
+is a flow angle, the body never rotates in the solve, so a thrust line along body −x stays
+along body −x at every trimmed α. Derivatives and the unrestrained intercepts are
+sensitivities and do not change; the applied load is reported as its own six-component
+resultant about the reference in the f06 (`APPLIED STRUCTURAL LOAD (LOAD=<sid>)`), as the
+`applied` column of every `MONPNT3`/`MONSECT`, and inside `net_loads`.
+
+**Two recipes, two moments.** With the ordinary `SUPORT 35` / `SPC 1246` the thrust
+x-component is reacted at the SPC grid and only its moment **about that point** enters the
+pitch trim: `ΔCm = T·(z_ref − z_T)/(q·S·c)`. With `SUPORT 135` and `URDD1` free the aircraft
+also accelerates at `(T + Fx_aero)/m`; the inertia relief of that acceleration acts at the
+CG, so the pitch trim sees the thrust moment **about the CG**, `ΔCm = T·(z_cg − z_T)/(q·S·c)`
+— the textbook statement — and the closure vanishes in all six components. Both are correct
+statements of different problems; the deck below gates both. Engine torque is a `MOMENT`
+about `x` at the mount, with the sign fixed by the propeller handedness rule (charter §10):
+a clockwise-seen-from-behind propeller puts `+Mx` basic on the airframe.
+
+The shipped deck `sample/val_thrust_trim.bdf` (AR 8 wing + horizontal tail with elevator on
+a stiff spine; engine grid 0.5 below the nose on an `RBAR` pylon; `SUPORT 90, 135`,
+`SPC1 1 246 90`, RCSID z-down at the reference; total mass 10, CG 0.05 below the reference;
+one `TRIM` shared by three subcases — no load, `LOAD 710 = 1.0 × FORCE 701`, `LOAD 701`
+directly; `T = 40` forward) measures, at `q = 51`:
+
+| Quantity | No load | Thrust | Shift |
+|---|---|---|---|
+| `ANGLEA` (rad) | 5.01709e-2 | 4.79010e-2 | −2.2699e-3 |
+| `ELEV` (rad) | −4.93314e-2 | −3.35498e-2 | **+1.5782e-2** (TE-down: a low thrust line pitches up) |
+| `URDD1` (RCSID, forward +) | 0 | **4.0** = T/m | |
+| `CMY` (aero, about the reference) | −0.012022 | −0.056140 | −0.044118 = −T·0.45/(qSc), the moment about the CG |
+
+Gates (`tests/aero/test_thrust_trim.py`): the shift equals the solver's own Schur reduction
+of the applied load alone (rel 1e-10) and, on a stiffened copy, the rigid 2×2 solve with
+`ΔCm` about the CG (surge free) or about the reference (`SUPORT 35` variant, in-test), rel
+1e-6; the direct `FORCE` set equals the `LOAD` combination bit for bit and doubling `T`
+doubles every shift; closure ≈ 0 in all six components and `m·URDD1 = T + Fx_aero`; the nose
+`MONSECT` carries `c1_applied = −T`, `c5_applied = +0.5·T` and the every-grid `MONPNT3`
+closes with the applied column in the sum; derivatives identical across the subcases; `GRAV`,
+`MLOADS` + `LOAD` and `DIVERG`-only + `LOAD` raise; the CLI writes the f06 block, both CSVs
+(with the `applied` columns) and `maneuver_loads.bdf`. The torque case lives on the lateral
+deck: `sample/val_lateral_aileron_rudder.bdf` `SUBCASE 3` applies `MOMENT 701` (`+Mx = 35`,
+a clockwise propeller) with all lateral labels zero and trims `AIL = −0.0351` (−2.01°),
+`RUD = +0.0022` — the 2×2 solve of the restrained table against `−[Q/(qSb), 0]` (rel 1e-8),
+with `AIL < 0` the charter gate.
+
+Not carried through the transient: an `MLOADS` subcase with `LOAD` raises (the
+initial-condition trim would take it and the time history would drop it); constant-load
+carry-through is filed as #50.
+
 ### Over-determined trim solve — redundant controls (Step 52)
 
 When `n_free > n_suport` (more free trim variables than equilibrium equations, e.g. redundant
@@ -543,18 +611,22 @@ since they share `emit_force_moment_cards`.
 subcase with prescribed `AESTAT` accelerations/rates — a load factor maps to `URDD3 = −n_z·g`
 (`sbeam/model/maneuver_presets.load_factor_to_urdd3`; gravity folded into the load factor,
 NASTRAN convention). After the trim solve the inertial g-set load `M_ax·a` (final trim URDD,
-prescribed + solved-free) is recovered as `result.inertial_loads` and added to the aero load to
-give `result.net_loads` — the net deliverable for stress and the non-zero inertia column for
-MONPNT3. `write_maneuver_load_cards` writes these as `<stem>.maneuver_loads.bdf`. Every load-BDF
+prescribed + solved-free) is recovered as `result.inertial_loads` and added to the aero load
+and to the subcase's applied `LOAD` set (`result.applied_loads`, #6; None without a `LOAD`) to
+give `result.net_loads` — the net deliverable for stress and the non-zero inertia / applied
+columns for MONPNT3. `write_maneuver_load_cards` writes these as `<stem>.maneuver_loads.bdf`
+(the header names the `LOAD` set when one was applied). Every load-BDF
 block carries a fixed four-line comment header ending `$ MASSSET=<sid> (<label>)` —
 `$ MASSSET=0 (BASELINE)` when the subcase selects no mass case (#31; `10_export_schemas.md` §4).
-`result.maneuver_closure` is the body-frame 6-resultant of the net load; for a free aircraft
-(SUPORT, no SPC) it must balance to ≈ 0 (a non-zero residual warns — gravity/mass-model guard,
-KC9). Recipes: symmetric pull-up/push-over (prescribe `URDD3`, `PITCH`, `URDD5 = 0`; ANGLEA and the
+`result.maneuver_closure` is the body-frame 6-resultant of the net load (aero + inertial +
+applied); for a free aircraft (SUPORT, no SPC) it must balance to ≈ 0 (a non-zero residual
+warns — gravity/mass-model guard, KC9), and in an SPC'd direction it equals minus the
+reaction. Recipes: symmetric pull-up/push-over (prescribe `URDD3`, `PITCH`, `URDD5 = 0`; ANGLEA and the
 elevator free; a steady pull-up carries `PITCH = (n − 1)·g·c_ref/(2V²)`, not 0 — see the
 flagship `TRIM 2`), gated by **V-C5** (`tests/aero/test_maneuver_loads.py`); steady roll and
 steady sideslip as in "Lateral trim cases" below, gated by **V-LAT2**
-(`tests/aero/test_lateral_cases.py`).
+(`tests/aero/test_lateral_cases.py`); thrust and engine torque as applied `LOAD` sets as in
+"Applied structural load in a trim" below, gated by **V-THR** (`tests/aero/test_thrust_trim.py`).
 
 **Transient maneuver loads — Phase G0 increment 1 (DLM-free quasi-steady).** A SOL 144 subcase that
 carries an `MLOADS = sid` request runs a transient maneuver solve instead of the static trim:
@@ -875,12 +947,13 @@ MONPNT3, NAME, LABEL, AXES, COMP, CP, X, Y, Z          $ aero + inertia + reacti
   over the AELIST boxes (NASTRAN box ID → global box index via the shared,
   collision-checked `panel.build_box_id_map`, reached as `aero.require_box_id_to_k()`).
   `box_forces` is the trimmed per-box physical force already on `Sol144TrimResult`.
-- **`MONPNT3` (aero + inertia + reaction):** per SET1 grid, sum the 6-DOF block from
+- **`MONPNT3` (aero + inertia + applied + reaction):** per SET1 grid, sum the 6-DOF block from
   `grid_loads` (aero, splined to grids — inherits RBE3/RBAR pass-through), `inertial_loads`
-  (inertia; zero for a plain trim, non-zero for a balanced maneuver / 1g gravity trim), and the
-  recovered SPC/SUPORT reaction (only for constrained grids inside the collection; balances the net
-  aero + inertial load via `sol101.recover_reactions`, R = K·u − f). Forces add directly; moments add
-  `m_grid + (r_grid − ref) × f_grid`.
+  (inertia; zero for a plain trim, non-zero for a balanced maneuver / 1g gravity trim), the
+  subcase's applied `LOAD` set (`applied_loads`, #6; its own `applied` column, None without a
+  `LOAD`), and the recovered SPC/SUPORT reaction (only for constrained grids inside the
+  collection; balances the net aero + inertial + applied load via `sol101.recover_reactions`,
+  R = K·u − f). Forces add directly; moments add `m_grid + (r_grid − ref) × f_grid`.
 - **Parity:** a single `SYMXZ` factor (from the post-mirror `AEROS`) scales every component — 1.0 for
   the normal full-span pipeline (mirror zeros SYMXZ), 2.0 with a `*WHOLE-AIRPLANE*` annotation if a
   half model is fed directly. The full 3-component force is carried (no Fz-only projection), so
@@ -901,7 +974,8 @@ MONPNT3, NAME, LABEL, AXES, COMP, CP, X, Y, Z          $ aero + inertia + reacti
   target set.
 
 The results are attached as `Sol144TrimResult.monitor_loads = {name: MonitorLoad}`, where
-`MonitorLoad` carries `totals` plus the per-contribution `aero` / `inertia` / `reaction` 6-vectors.
+`MonitorLoad` carries `totals` plus the per-contribution `aero` / `inertia` / `reaction` 6-vectors
+(and `applied` when the subcase selected a `LOAD`, #6).
 The integrator is split into a state-free `MonitorPlan` (`prepare_monitor_points`, once per
 run) and `evaluate_monitor_point` (per load state); `compute_monitor_loads` is the two in
 sequence. On a transient (`MLOADS`) subcase the same monitors are taken at **every output
@@ -915,8 +989,10 @@ under Step 68.
   `*WHOLE-AIRPLANE*` when parity ≠ 1.
 - **CSV** `<stem>.monitor_loads.csv` (`results/load_export.py`, written by `main.py`): one row per
   monitor per subcase — identity block `case, massset, mass_case`, then name/type/label/frame,
-  the six totals and the `Fz_aero` / `Fz_inertia` / `Fz_react` diagnostic breakdown (the fastest
-  way to debug a wrong sum). Exact header, types and ordering: `10_export_schemas.md` §3.1.
+  the six totals and the `Fz_aero` / `Fz_inertia` / `Fz_react` / `Fz_applied` diagnostic
+  breakdown (the fastest way to debug a wrong sum; `Fz_applied` is `0.0` without a `LOAD`).
+  The f06 source line reads `+ APPLIED` only when the subcase selected a `LOAD`. Exact header,
+  types and ordering: `10_export_schemas.md` §3.1.
 - **HDF5** hierarchical export is a deferred follow-on (f06 + CSV shipped).
 
 ### Validation
@@ -1056,18 +1132,19 @@ raw components, so no consumer has to reconstruct it.
 
 - **f06 block** `SECTION CUT RUNNING LOADS` (`results/f06_writer.py:_section_cut_block`):
   per cut, a header with the collection, frame, axis, side and source
-  (`AERO ONLY` / `AERO + INERTIA + REACTION`), the explicit component legend, then one
-  row per station with the reference point and the six labelled components.
+  (`AERO ONLY` / `AERO + INERTIA + REACTION`, `+ APPLIED` when the subcase selected a
+  `LOAD`, #6), the explicit component legend, then one row per station with the reference
+  point and the six labelled components.
 - **CSV** `<stem>.section_loads.csv` (`results/load_export.py:write_section_loads_csv`,
   written by `main.py`): one row per cut per station per subcase. Carries the mass-case
   columns, the labelled components *and* their names (`comp_1..comp_6`), the raw
-  `Fx..Mz`, the aero / inertia / reaction split, `n_members`, and the `d*_ds` running-load
-  differences. The contribution split is the section-cut analogue of the monitor CSV's
+  `Fx..Mz`, the aero / inertia / reaction / applied split (`c*_applied` is `0.0` without a
+  `LOAD`), `n_members`, and the `d*_ds` running-load differences. The contribution split is the section-cut analogue of the monitor CSV's
   `Fz_*` diagnostic — the fastest way to find a wrong sum. Exact header:
   `10_export_schemas.md` §3.2.
 - **Viewer**: a "Section-cut running loads" panel per cut — the station table plus a
   spanwise chart with selectable components and contribution (total / aero / inertia /
-  reaction).
+  reaction, plus applied when the subcase selected a `LOAD`).
 
 ### Validation
 

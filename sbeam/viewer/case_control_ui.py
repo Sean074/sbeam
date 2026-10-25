@@ -362,20 +362,22 @@ def _render_case_control_editor(
                 )
 
                 col_load, col_spc = st.columns(2)
-                if sol != 144:
-                    load_opts: list[Optional[int]] = [None] + load_sids
-                    load_idx = load_opts.index(sc_data["load_sid"]) if sc_data["load_sid"] in load_opts else 0
-                    sc_data["load_sid"] = col_load.selectbox(
-                        "LOAD SID",
-                        load_opts,
-                        index=load_idx,
-                        format_func=lambda v: "— none —" if v is None else str(v),
-                        key=f"sc_load_{idx}",
-                    )
-                else:
-                    # DEF-M4: LOAD is refused in a SOL 144 trim subcase; the
-                    # aeroelastic drivers below supply the loading instead.
-                    col_load.caption("LOAD does not apply to SOL 144 subcases.")
+                load_opts: list[Optional[int]] = [None] + load_sids
+                load_idx = load_opts.index(sc_data["load_sid"]) if sc_data["load_sid"] in load_opts else 0
+                sc_data["load_sid"] = col_load.selectbox(
+                    "LOAD SID",
+                    load_opts,
+                    index=load_idx,
+                    format_func=lambda v: "— none —" if v is None else str(v),
+                    key=f"sc_load_{idx}",
+                    # #6: in SOL 144 the LOAD set is an applied structural load
+                    # (thrust, engine torque) in the TRIM balance; the Trim kind
+                    # keeps it, MLOADS / Divergence-only drop it (_apply_sol144_kind).
+                    help=("SOL 144: applied structural load (FORCE/MOMENT) added to the "
+                          "TRIM balance — thrust, engine torque; GRAV is refused. Not "
+                          "available for MLOADS or divergence-only subcases.")
+                    if sol == 144 else None,
+                )
                 spc_opts: list[Optional[int]] = [None] + spc_sids
                 spc_idx = spc_opts.index(sc_data["spc_sid"]) if sc_data["spc_sid"] in spc_opts else 0
                 sc_data["spc_sid"] = col_spc.selectbox(
@@ -579,13 +581,14 @@ def _render_sol144_subcase_fields(
 def _apply_sol144_kind(sc_data: dict[str, Any], kind: str) -> dict[str, Any]:
     """Return subcase fields filtered to the selected SOL 144 driver kind."""
     out = dict(sc_data)
-    out["load_sid"] = None      # DEF-M4: LOAD never combines with SOL 144
     out["method_sid"] = None
     if kind == _SC_KIND_MLOADS:
         out["trim_sid"] = out["trimobj_sid"] = out["diverg_sid"] = None
+        out["load_sid"] = None   # #6 D1: not carried through the transient
     elif kind == _SC_KIND_DIVERG:
         out["trim_sid"] = out["trimobj_sid"] = out["mloads_sid"] = None
-    else:                        # Trim (DIVERG allowed as add-on sweep)
+        out["load_sid"] = None   # homogeneous eigenproblem — nothing to apply
+    else:                        # Trim (DIVERG allowed as add-on sweep); LOAD kept (#6)
         out["mloads_sid"] = None
     return out
 

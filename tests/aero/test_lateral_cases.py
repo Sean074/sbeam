@@ -45,7 +45,8 @@ def _flap_effectiveness(E: float) -> float:
 @pytest.fixture(scope="module")
 def model():
     cc, bulk = parse_bdf(str(DECK))
-    assert cc.sol == 144 and [sc.trim_sid for sc in cc.subcases] == [1, 2]
+    assert cc.sol == 144 and [sc.trim_sid for sc in cc.subcases] == [1, 2, 3]
+    assert [sc.load_sid for sc in cc.subcases] == [None, None, 701]
     gi = build_grid_index(bulk)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -193,6 +194,37 @@ def test_steady_sideslip_trim_is_the_2x2_solve_and_rudder_opposes_weathercock(tr
     assert abs(r.maneuver_closure[3]) < 1e-9 * scale and abs(r.maneuver_closure[5]) < 1e-9 * scale
 
 
+# ---------------------------------------------------------------------------
+# G8 (#6) — engine torque reaction: the propeller-handedness convention
+# ---------------------------------------------------------------------------
+
+def test_engine_torque_trim_needs_starboard_te_up_for_a_clockwise_prop(model, trims):
+    """Charter §10 (#6 D6): a clockwise-seen-from-behind propeller puts +Mx basic
+    (roll toward port) on the airframe; wings level then needs roll toward starboard
+    = starboard TE-up = NEGATIVE AIL.  Magnitude: the 2×2 solve of the solver's own
+    restrained derivatives against −[Q/(qSb), 0] (exact linear algebra, 1e-8)."""
+    cc, bulk, aero, ref, djx, rigid = model
+    r = trims[3]
+    a = require_aeros(bulk)
+    mom, = bulk.moments[701]
+    assert mom.gid == 90 and (mom.n1, mom.n2, mom.n3) == (1.0, 0.0, 0.0) and mom.m > 0
+    cmx_applied = mom.m / (r.q * a.sref * a.bref)
+    assert r.load_sid == 701
+    assert r.trim_vars["ROLL"] == 0.0 and r.trim_vars["SIDES"] == 0.0 and r.trim_vars["YAW"] == 0.0
+    rd = r.restrained_derivs
+    A = np.array([[rd["AIL"]["CMX"], rd["RUD"]["CMX"]], [rd["AIL"]["CMZ"], rd["RUD"]["CMZ"]]])
+    da, dr = np.linalg.solve(A, -np.array([cmx_applied, 0.0]))
+    assert r.trim_vars["AIL"] == pytest.approx(da, rel=1e-8)
+    assert r.trim_vars["RUD"] == pytest.approx(dr, rel=1e-8)
+    assert r.trim_vars["AIL"] < 0                       # the handedness gate
+    assert abs(r.trim_vars["RUD"]) < 0.1 * abs(r.trim_vars["AIL"])
+    # The aerodynamic roll moment cancels the applied torque; closure in Mx, Mz.
+    assert r.total_cmx == pytest.approx(-cmx_applied, rel=1e-8)
+    scale = np.abs(r.net_loads).max() * 8.0
+    assert abs(r.maneuver_closure[3]) < 1e-9 * scale and abs(r.maneuver_closure[5]) < 1e-9 * scale
+    np.testing.assert_allclose(r.monitor_loads["MLATB"].applied, [0, 0, 0, mom.m, 0, 0], atol=1e-12)
+
+
 def test_lateral_monitors_carry_fy_mx_mz(trims):
     for r in trims.values():
         m = r.monitor_loads["MLAT"]
@@ -209,5 +241,5 @@ def test_cli_writes_f06_and_both_csvs(tmp_path):
     assert (tmp_path / "val_lateral_aileron_rudder.f06").exists()
     with open(tmp_path / "val_lateral_aileron_rudder.monitor_loads.csv") as fh:
         rows = list(csv.DictReader(fh))
-    assert {r["case"] for r in rows} == {"1", "2"} and {r["name"] for r in rows} == {"MLAT", "MLATB"}
+    assert {r["case"] for r in rows} == {"1", "2", "3"} and {r["name"] for r in rows} == {"MLAT", "MLATB"}
     assert (tmp_path / "val_lateral_aileron_rudder.section_loads.csv").exists()

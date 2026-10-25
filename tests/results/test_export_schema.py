@@ -41,11 +41,12 @@ _SECTION_BODY = [
     "c1_aero", "c2_aero", "c3_aero", "c4_aero", "c5_aero", "c6_aero",
     "c1_inertia", "c2_inertia", "c3_inertia", "c4_inertia", "c5_inertia", "c6_inertia",
     "c1_react", "c2_react", "c3_react", "c4_react", "c5_react", "c6_react",
+    "c1_applied", "c2_applied", "c3_applied", "c4_applied", "c5_applied", "c6_applied",
     "n_members", "dc1_ds", "dc2_ds", "dc3_ds", "dc4_ds", "dc5_ds", "dc6_ds",
 ]
 _MONITOR_BODY = [
     "name", "type", "label", "axes", "cid", "x_ref", "y_ref", "z_ref",
-    "Fx", "Fy", "Fz", "Mx", "My", "Mz", "Fz_aero", "Fz_inertia", "Fz_react",
+    "Fx", "Fy", "Fz", "Mx", "My", "Mz", "Fz_aero", "Fz_inertia", "Fz_react", "Fz_applied",
     "parity", "whole_airplane",
 ]
 _SPLIT = [f"{s}_{c}" for s in ("aero", "inertia", "elastic", "damping", "react")

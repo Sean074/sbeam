@@ -19,8 +19,8 @@ mission statement changes:
 
 - **Ground / landing loads** (23.471–.511 / 25.473–.511) — needs landing-gear modeling sbeam does not have; sgear's domain.
 - **Engine torque / gyroscopic load cases** (23.361/.363 / 25.361/.363) as a case set — the enabling
-  thrust-in-trim item (DEF-M4 follow-on) *is* in the backlog; the certification case matrix
-  around it is not planned.
+  capability (thrust and torque as applied `LOAD` sets in a trim, #6) shipped 2026-10-24 with
+  one torque trim as the handedness gate; the certification case matrix around it is not planned.
 - **Unsymmetric gust and one-engine-out lateral case sets** (25.427, 25.367) — beyond the
   steady sideslip/yaw-rate trim capability already delivered.
 - **Closed-loop control / ASE** — see G0-e below; deferred with Phase G.

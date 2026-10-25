@@ -440,36 +440,44 @@ class TestTrimSignAe5:
         )
 
 
-class TestTrimRejectsLoadRequest:
-    """DEF-M4 — a LOAD in a TRIM subcase must be refused, not silently dropped.
+class TestTrimAppliedLoad:
+    """#6 — a LOAD in a TRIM subcase is an applied structural load in the trim RHS.
 
-    The trim RHS is aero + inertia only; there is no ``f_struct`` term, so a
-    payload or thrust FORCE requested via ``LOAD`` in a SOL 144 trim subcase used
-    to be read into the subcase and then never consulted.  The restrained static
-    path (``run_aeroelastic_static``) does support it, so the error names it.
+    DEF-M4 (2026-08-01) refused the combination because the RHS had no ``f_struct``
+    term; the term now exists (design note ``thrust_in_trim_applied_load.md``), so
+    the refusal is retired.  What stays refused is GRAV (D2): gravity enters a trim
+    through URDD3 only.  The physics gates live in ``tests/aero/test_thrust_trim.py``.
     """
 
-    def test_load_in_trim_subcase_raises(self, trim_setup):
+    def test_unknown_load_sid_still_raises(self, trim_setup):
         bulk, aero, subcase = trim_setup
         bad = dataclasses.replace(subcase, load_sid=42)
-        with pytest.raises(ValueError, match=r"TRIM=.*and LOAD=42"):
+        with pytest.raises(ValueError, match=r"Load SID 42 not found"):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 run_sol144_trim(bulk, bad, aero)
 
-    def test_error_points_at_the_path_that_supports_load(self, trim_setup):
+    def test_grav_in_the_trim_load_set_is_refused(self, trim_setup):
+        from sbeam.model.load import Grav
         bulk, aero, subcase = trim_setup
-        bad = dataclasses.replace(subcase, load_sid=42)
-        with pytest.raises(ValueError) as exc:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                run_sol144_trim(bulk, bad, aero)
-        assert "run_aeroelastic_static" in str(exc.value)
+        bulk.gravs[77] = Grav(sid=77, cid=0, g=32.174, n1=0.0, n2=0.0, n3=-1.0)
+        bad = dataclasses.replace(subcase, load_sid=77)
+        try:
+            with pytest.raises(ValueError, match=r"GRAV \[77\].*URDD3"):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    run_sol144_trim(bulk, bad, aero)
+        finally:
+            del bulk.gravs[77]
 
     def test_trim_without_load_is_unaffected(self, trim_setup):
-        """The guard must not fire on the ordinary no-LOAD trim subcase."""
+        """The ordinary no-LOAD trim subcase carries no applied load."""
         bulk, aero, subcase = trim_setup
         assert subcase.load_sid is None
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            assert run_sol144_trim(bulk, subcase, aero) is not None
+            result = run_sol144_trim(bulk, subcase, aero)
+        assert result.load_sid is None and result.applied_loads is None
+        np.testing.assert_array_equal(result.net_loads, result.grid_loads + result.inertial_loads)
+
+

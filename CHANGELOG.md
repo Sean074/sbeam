@@ -10,6 +10,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Breaking changes
+- **Monitor and section-cut CSVs gain an `applied` block** (#6; pre-1.0 MINOR break per
+  `08_release_process.md` §1, same release as the #31 stabilisation so no released consumer
+  breaks). `monitor_loads.csv` gains `Fz_applied` after `Fz_react`; `section_loads.csv` (and,
+  through the shared block, `maneuver_section_loads.csv`) gains `c1_applied … c6_applied`
+  after the `_react` block; `maneuver_monitor_loads.csv` carries `Fz_applied` through the
+  shared monitor columns. The new columns are `0.0` on every subcase without a `LOAD`, so all
+  existing numbers are unchanged. Contract: `10_export_schemas.md` §3.
 - **Exported CSV identity block aligned and `massset` made an integer** (#31; pre-1.0 MINOR
   break per `08_release_process.md` §1). Every CSV now starts `case, [mloads,] massset,
   mass_case`: the four transient (MLOADS) files gain the `mass_case` column after `massset`,
@@ -36,6 +43,33 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   columns must be retired.
 
 ### Added
+- **Applied structural load in the SOL 144 trim RHS — thrust and engine torque in a trim**
+  (#6, Tier L; design note `docs/30_future/designs/thrust_in_trim_applied_load.md`, agreed
+  2026-10-24). A `TRIM` subcase may select a `LOAD` set (`FORCE`/`MOMENT`, or a `LOAD`
+  combination of them): `assemble_load_vector` adds it to the trim RHS beside the aerodynamic
+  and inertial loads, un-scaled by `q`, and the existing Schur reduction carries both its rigid
+  moment about the reference and its elastic aero coupling. Which free label balances it
+  follows from the trim card alone — with `SUPORT 135` and `URDD1` free the thrust accelerates
+  the aircraft (`m·URDD1 = T + Fx_aero`) and the pitch trim sees the thrust moment about the
+  CG; with `SUPORT 35` the x-component is reacted at the SPC and the pitch trim sees the moment
+  about that point. `net_loads` = aero + inertial + applied (so `maneuver_closure` is the full
+  net load and `maneuver_loads.bdf` carries it, header naming the `LOAD` set); new f06 block
+  `APPLIED STRUCTURAL LOAD (LOAD=<sid>)` with the six-component resultant about the reference;
+  `MonitorLoad.applied` / `SectionCutStation.applied` columns (f06 source line `+ APPLIED`,
+  viewer contribution "Applied") present only when the subcase selected a `LOAD`, so every
+  shipped f06 is byte-identical. `Sol144TrimResult.applied_loads`, `.load_sid`. The DEF-M4
+  refusal of `TRIM` + `LOAD` is retired; `GRAV` in a trim `LOAD` set is refused (gravity enters
+  through `URDD3`). **Propeller handedness decided** (charter §10): clockwise seen from behind
+  ⇒ torque reaction `+Mx` basic (roll toward port), swirl downwash on the starboard side. New
+  deck `sample/val_thrust_trim.bdf` (V-THR: wing + tail + elevator, engine grid on an `RBAR`
+  pylon 0.5 below the nose, surge free) and `SUBCASE 3` of `sample/val_lateral_aileron_rudder.bdf`
+  (engine-torque `MOMENT`, `AIL = −2.01°`). Gates `tests/aero/test_thrust_trim.py` (Schur
+  identity 1e-10, rigid 2×2 closed form 1e-6 on a stiffened copy for both recipes, linearity,
+  closure/surge, nose section cut and every-grid MONPNT3, derivatives untouched, refusals,
+  CLI) and `tests/aero/test_lateral_cases.py` G8 (torque trim = 2×2 restrained solve, `AIL < 0`).
+  Docs: `05c` "Applied structural load in a trim", charter §9/§10, card reference
+  (`FORCE`/`MOMENT`/`LOAD`/`GRAV`/`SUPORT`/`TRIM`/`MONPNT3`), export schemas, overview
+  (limitations, VAL2), theory `01` §7.3 and `02` §7.2 rewritten.
 - **Lateral trim cases: aileron pair + rudder validation deck, conventions and gates**
   (#10, Tier L; design note `docs/30_future/designs/lateral_cases_aileron_rudder.md`,
   closes the v0.3.0 "including lateral" promise with #8/#9). New
@@ -173,6 +207,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     import gate.
 
 ### Fixed
+- **`LOAD` in an `MLOADS` or `DIVERG`-only subcase was silently dropped** (#6, DEF-M4 class,
+  found in review). The transient solvers rebuilt their initial-condition subcase without
+  `load_sid` and the divergence sweep never read it, so a payload or thrust `LOAD` on such a
+  subcase vanished without a word. Both now raise, naming the subcase and the SIDs
+  (`maneuver_qs._refuse_load_in_mloads`, shared by the modal solver; `run_sol144_diverg`).
+  Carry-through of a constant applied load into the transient is filed as #50.
 - **DEF-M16 — AESURF `CID2`/`ALID2` were parsed, validated and written back, then ignored**
   (#9, Tier M; design note `docs/30_future/designs/lateral_cases_aileron_rudder.md`). The
   second hinge/AELIST pair — NASTRAN's mechanism for the opposite half of an antisymmetric

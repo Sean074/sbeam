@@ -107,6 +107,7 @@ class MonitorLoad:
     aero: Optional[FloatArray] = None      # (6,) aero contribution in cp frame
     inertia: Optional[FloatArray] = None   # (6,) inertia contribution (MONPNT3; zero for plain trim)
     reaction: Optional[FloatArray] = None  # (6,) SPC/SUPORT reaction contribution (MONPNT3)
+    applied: Optional[FloatArray] = None   # (6,) applied structural LOAD contribution (#6); None without a LOAD
     parity: float = 1.0             # symmetry doubling factor applied to all components
     whole_airplane: bool = False    # True when parity≠1 (annotate output to avoid double-up)
     source_ids: list[int] = field(default_factory=list)   # AELIST or SET1 SIDs
@@ -174,6 +175,9 @@ class SectionCutStation:
     # (6,) d/ds of the labelled components vs the previous station — the running
     # load in the per-unit-span sense.  None at the first station.
     d_ds: Optional[FloatArray] = None
+    # Applied structural LOAD contribution (#6), cid frame; None when the
+    # subcase carries no LOAD.  ``totals`` includes it when present.
+    applied: Optional[FloatArray] = None
     # Step 68 transient contributions, cid frame; None on a static trim (where
     # the structure has no elastic acceleration, so there is no such column to
     # report — as opposed to a zero one).  ``totals`` includes them when present.
@@ -314,7 +318,9 @@ class Sol144TrimResult:
     grid_loads: Optional[FloatArray] = None   # (n_dofs,) g-set aero flight-load vector = g_disp^T (q * f_box)
     # --- Step 53 outputs (balanced maneuver loads & inertia relief) ---
     inertial_loads: Optional[FloatArray] = None  # (n_dofs,) g-set inertial load = M_ax @ a_all (final trim URDD); feeds MONPNT3 inertia column
-    net_loads: Optional[FloatArray] = None       # (n_dofs,) g-set net maneuver load = grid_loads + inertial_loads (the stress deliverable)
+    applied_loads: Optional[FloatArray] = None   # (n_dofs,) g-set applied structural load from the subcase LOAD set (#6); None without a LOAD
+    load_sid: Optional[int] = None               # the LOAD set the subcase selected (#6); None without a LOAD
+    net_loads: Optional[FloatArray] = None       # (n_dofs,) g-set net maneuver load = grid_loads + inertial_loads + applied_loads (the stress deliverable)
     maneuver_closure: Optional[FloatArray] = None  # (6,) body-frame resultant (Fx,Fy,Fz,Mx,My,Mz) of net_loads about the moment ref; ≈0 for a balanced free-aircraft maneuver (V-C5/KC9)
     q_div: Optional[float] = None             # critical divergence dynamic pressure (restrained l-set); None if none
     hinge_moments: Optional[dict[str, dict[str, float]]] = None      # {AESURF label: {'total': HM/q at trim, <trim_label>: dHM/dδ}} about cid1 hinge axis

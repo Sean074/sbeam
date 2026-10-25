@@ -91,11 +91,13 @@ thrust, no propeller, no actuator disc, no slipstream. Powered aerodynamics ente
 as a correction (`W2GJ`/`WT2`/`CHORDCP`) built from powered CFD or flight-test data, and
 are frozen at the single power setting and advance ratio they were built for — nothing
 warns when a trim leaves that condition, and one-engine-out requires its own correction
-set rather than a scaled symmetric one. The thrust-line pitching moment has no card at all,
-and a SOL 144 trim subcase carrying both `TRIM` and `LOAD` is refused (DEF-M4). Full
-guidance, including which powered effect lands on which card and the workarounds for the
-thrust moment: `docs/20_theory/02_realistic_airplane_sol144.md` §7, summarised at card
-level in [`05a_aero_vlm.md`](05a_aero_vlm.md).
+set rather than a scaled symmetric one. Thrust and engine torque are **not** aerodynamic
+and do not go through the corrections: they are ordinary `FORCE`/`MOMENT` cards selected by
+`LOAD` in the trim subcase, entering the trim balance beside the aerodynamic and inertial
+loads (#6, `05c` "Applied structural load in a trim"; propeller handedness rule in charter
+§10). Full guidance on which powered effect lands on which card:
+`docs/20_theory/02_realistic_airplane_sol144.md` §7, summarised at card level in
+[`05a_aero_vlm.md`](05a_aero_vlm.md).
 
 **AE14 closed (2026-07-05, Step AC7):** two root causes found and fixed. (1) The full-span
 HA144A deck had NOT doubled the centreline fuselage PBAR when mirroring (masses were

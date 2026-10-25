@@ -126,6 +126,17 @@ def run_sol144_diverg(
     if not bulk.supports:
         raise ValueError("run_sol144_diverg: no SUPORT card found in model")
 
+    # #6 / D1: a DIVERG-only subcase has no load path — the divergence
+    # eigenproblem is homogeneous — so a LOAD request here would be silently
+    # ignored.  (A TRIM + DIVERG subcase routes the LOAD to its trim.)
+    if subcase.load_sid is not None and subcase.trim_sid is None:
+        raise ValueError(
+            f"run_sol144_diverg: subcase {subcase.subcase_id} requests "
+            f"LOAD={subcase.load_sid} with DIVERG={subcase.diverg_sid} and no TRIM; "
+            "divergence is a homogeneous eigenproblem and applies no load.  "
+            "Remove the LOAD request, or add a TRIM to the subcase."
+        )
+
     diverg_sid = subcase.diverg_sid
     if diverg_sid is None or diverg_sid not in bulk.divergs:
         raise ValueError(f"run_sol144_diverg: DIVERG SID {diverg_sid} not found")

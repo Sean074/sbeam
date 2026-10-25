@@ -32,6 +32,37 @@ def _fmt(val: float) -> str:
     return f"{val:{_FIELD_W}.6E}"
 
 
+def _applied_load_block(
+    lines: list[str], bulk: BulkData, result: Sol144TrimResult,
+    applied: FloatArray, grid_index: dict[int, int],
+) -> None:
+    """Append the APPLIED STRUCTURAL LOAD block of a trim subcase (#6).
+
+    The six-component resultant of the subcase's LOAD set about the trim
+    reference point (the RCSID origin — the same point the moment coefficients
+    and the maneuver closure use), so a reader sees at once what the trim
+    balanced beside the aerodynamic and inertial loads.  Not scaled by q.
+    """
+    from sbeam.assembly.coord_transform import get_transform
+    from sbeam.results.monitor_points import grid_resultant
+
+    rcsid = bulk.aeros.rcsid if bulk.aeros is not None else 0
+    ref = (np.asarray(get_transform(rcsid, bulk.cord2rs)[0], dtype=float)
+           if rcsid else np.zeros(3))
+    res6 = grid_resultant(applied, sorted(bulk.grids.keys()), bulk, grid_index, ref)
+    lines.append("                               A P P L I E D   S T R U C T U R A L   L O A D")
+    lines.append("")
+    lines.append(
+        f"      LOAD = {result.load_sid}   RESULTANT ABOUT THE REFERENCE POINT (BASIC):"
+        f"  X ={_fmt(ref[0])}  Y ={_fmt(ref[1])}  Z ={_fmt(ref[2])}"
+    )
+    lines.append(_hdr(" " * 8, "FX", "FY", "FZ", "MX", "MY", "MZ"))
+    lines.append("        " + "".join(_fmt(v) for v in res6))
+    lines.append("      ENTERS THE TRIM BALANCE BESIDE THE AERODYNAMIC AND INERTIAL LOADS "
+                 "(NOT SCALED BY Q); INCLUDED IN THE NET LOADS AND THE APPLIED COLUMN.")
+    lines.append("")
+
+
 def _hdr(lead: str, *labels: str) -> str:
     """Lay column labels out on ``_FIELD_W`` so they cannot drift off their data.
 
@@ -228,6 +259,11 @@ def _monitor_block(
                 if ml.damping is not None and np.any(ml.damping):
                     src += " + DAMPING"
                     rows.append(("DAMPING", ml.damping))
+            # #6: the applied structural LOAD is its own column, printed only
+            # when the subcase carries one so every other f06 is byte-identical.
+            if getattr(ml, "applied", None) is not None:
+                src += " + APPLIED"
+                rows.append(("APPLIED", ml.applied))
             rows.append(("REACTION", ml.reaction))
         lines.append(f"        SOURCE: {src}")
         lines.append(_hdr(" " * 24, "FX", "FY", "FZ", "MX", "MY", "MZ"))
@@ -324,6 +360,8 @@ def _section_cut_block(
                 if any(s.damping is not None and np.any(s.damping)
                        for s in sc.stations):
                     src += " + DAMPING"
+            if any(getattr(s, "applied", None) is not None for s in sc.stations):
+                src += " + APPLIED"        # (#6) the trim subcase's LOAD set
         lines.append(f"        SOURCE: {src}      COMPONENTS: {component_legend(sc.axis)}")
         if sc.normal is not None:
             lines.append(
@@ -858,6 +896,11 @@ def _build_f06_sol144_text(
         f"TOTAL CMZ (YAW) = {_fmt(getattr(result, 'total_cmz', 0.0))}"
     )
     lines.append("")
+
+    # ---- APPLIED STRUCTURAL LOAD (#6) — only when the subcase selects a LOAD ----
+    applied = getattr(result, "applied_loads", None)
+    if applied is not None:
+        _applied_load_block(lines, bulk, result, applied, grid_index)
 
     # ---- AERODYNAMIC DIVERGENCE ----
     lines.append("                                  A E R O D Y N A M I C   D I V E R G E N C E")

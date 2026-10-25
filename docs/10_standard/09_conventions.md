@@ -192,7 +192,9 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
   once — `SUPORT 46`, prescribe one of `ROLL`/`SIDES` and zero the other lateral labels
   (`SIDES`/`ROLL`, `YAW`, `URDD4`, `URDD6`), free `AIL` and `RUD`. Under D1/D2 a positive
   `ROLL` trims a **negative** `AIL` (starboard TE-up) and a positive `SIDES` a **negative**
-  `RUD`; both are the textbook outcomes and are gated (G12).
+  `RUD`; both are the textbook outcomes and are gated (G12). Engine torque — `SUPORT 46`,
+  all lateral labels zero, `LOAD` selecting a `MOMENT` about `x` at the mount, free `AIL`
+  and `RUD` (§10 for the sign; gated G8, #6).
 
 ## 7. Units
 
@@ -235,6 +237,7 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
 | `aesurf_hinges` | Control-surface hinge geometry: per half `(origin, ĥ = CID +y, boxes)` for CID1/ALID1 and CID2/ALID2 (#9) | `aero/integration.py` |
 | `rigid_rate_scales` | Physical rate (basic +x/+y/+z) → label value: `−1/V, −1/V, −b/2V, +c/2V, −b/2V` for DOFs 2–6 (#8) | `aero/integration.py` |
 | `load_factor_to_urdd3` | The load-factor → `URDD3` sign (`−n_z·g`), for maneuvers and gusts alike | `model/maneuver_presets.py:24` |
+| `load_resultant` / `grid_resultant` | The 6-component resultant of a g-set load about a reference (undeformed grid positions, basic): the maneuver closure, the f06 `APPLIED STRUCTURAL LOAD` line (#6), the MONPNT3 sums | `solver/sol144_util.py`, `results/monitor_points.py` |
 | `mass_ratio` / `alleviation_factor` / `gust_increment` | The Pratt gust formula (μ, `K_g`, Δn). Deliberately **outside** the solver — dimensional, see §7 | `sbeam_tools/cases/gust.py` |
 | `build_box_id_map` | The NASTRAN box-ID derivation (F1) | `aero/panel.py:43` |
 | `build_wg` / card writers | W2GJ sign flip (assembly negates; writers negate back) | `aero/integration.py:61`, `model/aero.py:88` |
@@ -303,8 +306,16 @@ Figure: `../figures/sign_conventions_internal_loads.svg`; cut geometry:
   (DEF-M19).
 - **Applied loads are used exactly as authored** (FORCE/MOMENT/GRAV: no hidden sign,
   right-hand rule about the given axis, GRAV direction vector must itself point down;
-  `assembly/load_vector.py:20-81`). Exported FORCE/MOMENT trim loads are physical CID-0
-  loads, verbatim (`results/load_export.py:45-63`).
+  `assembly/load_vector.py:20-81`) — in SOL 101, in the restrained aeroelastic path and,
+  since #6, in a SOL 144 **trim**, where the subcase `LOAD` set is a body-fixed basic-frame
+  load added to the trim RHS un-scaled by `q` (ANGLEA is a flow angle; the body never
+  rotates, so a body-axis thrust line stays a body-axis thrust line — no follower term).
+  `GRAV` is refused in a trim `LOAD` set: gravity enters a trim through `URDD3` only (§5).
+  Exported FORCE/MOMENT trim loads are physical CID-0 loads, verbatim
+  (`results/load_export.py:45-63`); `maneuver_loads.bdf` carries aero + inertial + applied.
+- **Monitor / section-cut `applied` column** (#6): the subcase `LOAD` set summed like the
+  inertia column, same sign, same frame; present only when the subcase selected a `LOAD`
+  (f06 source line `+ APPLIED`; CSV `Fz_applied`, `c*_applied` are `0.0` otherwise).
 - **⚠ CONM2 products of inertia are the direct tensor entries, POSITIVE off-diagonals**
   — `I_cid = [[i11,i21,i31],[i21,i22,i32],[i31,i32,i33]]`
   (`assembly/mass_matrix.py:130-134`, gated `tests/aero/test_trim_urdd.py:265-279`).
@@ -314,18 +325,37 @@ Figure: `../figures/sign_conventions_internal_loads.svg`; cut geometry:
 
 ## 10. Engines and powered effects
 
-- **There is no propulsion model of any kind** — no thrust, engine-torque, gyroscopic,
-  or slipstream term exists in code (Known Limitations,
-  `00_program_overview.md`). Powered aero enters **only** through the ordinary
-  correction cards (W2GJ/WT2/CHORDCP + body TOTAL rows) built from powered data —
-  the "corrections position", theory `02_realistic_airplane_sol144.md` §7.
-- **Thrust cannot enter a SOL 144 trim:** a subcase with both `TRIM` and `LOAD` raises
-  (DEF-M4 guard, `solver/sol144.py:314-325`); the restrained static path is the
-  workaround. Follow-on backlog item: applied structural load in the trim RHS.
-- **GAP — propeller handedness:** no convention anywhere fixes which sign of swirl
-  correction corresponds to which rotation direction; the user tabulates per-strip
-  signs by hand (theory §7). Engine torque / gyroscopic case sets (23.361/.363) are
-  declared out of scope (`30_future/02_parked.md`).
+- **There is no propulsion *model*** — no actuator disc, slipstream or gyroscopic term
+  exists in code (Known Limitations, `00_program_overview.md`). Powered **aero** enters
+  **only** through the ordinary correction cards (W2GJ/WT2/CHORDCP + body TOTAL rows)
+  built from powered data — the "corrections position", theory
+  `02_realistic_airplane_sol144.md` §7.
+- **Thrust and engine torque enter a SOL 144 trim as applied structural loads** (#6,
+  2026-10-24; design note `30_future/designs/thrust_in_trim_applied_load.md`): `FORCE` /
+  `MOMENT` cards at the engine-mount grid, selected by `LOAD` in the trim subcase, added to
+  the trim RHS beside the aerodynamic and inertial loads (§9 bullet). Which free label
+  balances them is decided by the trim card: with `SUPORT 35` the thrust x-component is
+  reacted at the SPC and the pitch trim sees `T·(z_ref − z_T)`; with `SUPORT 135` and a
+  free `URDD1` the surge is trimmed (`m·URDD1 = T + Fx_aero`) and the pitch trim sees the
+  thrust moment **about the CG**, `T·(z_cg − z_T)`. Gates: `tests/aero/test_thrust_trim.py`
+  (V-THR, `sample/val_thrust_trim.bdf`). A thrust moment is never folded into a `cm0`.
+- **Propeller handedness** (decided 2026-10-24 with #6, consumed by the torque trim on
+  `sample/val_lateral_aileron_rudder.bdf` `SUBCASE 3`): a propeller is **clockwise** when it
+  turns clockwise as seen **from behind** (the pilot's view; Lycoming, Continental, PT6) —
+  its rotation vector is along basic **−x** (forward). Consequences, all for clockwise
+  (counter-clockwise flips every sign):
+  - **Torque reaction on the airframe = `+Mx` basic** of magnitude `Q = P/Ω` at the mount
+    (`MOMENT sid gid 0 Q 1. 0. 0.`): starboard wing up, the textbook roll toward **port**.
+    Wings level therefore trims a **negative** `AIL` (starboard TE-up, §6 D1). Gate:
+    `tests/aero/test_lateral_cases.py` G8 (`AIL = −0.0351` for `Q = 35`, `AIL < 0`).
+  - **Swirl in a powered correction:** the slipstream rotates with the propeller — downwash
+    (`Δα < 0`) on the **starboard** side of the nacelle, upwash on the port side, written
+    into the per-strip `a0`/`W2GJ` increments with the §3 sign rule; a fin above the
+    slipstream sees a `+y` crossflow, i.e. `+Fy` at the tail, i.e. nose-to-port = `+CMZ`
+    basic (§6 D2) — the familiar left-turning tendency. Documented rule, **ungated** until a
+    powered correction deck exists.
+  Engine torque / gyroscopic *case sets* (23.361/.363) remain out of scope
+  (`30_future/02_parked.md`); the single torque trim above is the convention's consumer.
 
 ## 11. Convention figures
 

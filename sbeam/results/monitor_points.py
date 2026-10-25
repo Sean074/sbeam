@@ -209,8 +209,13 @@ def evaluate_monitor_point(
     grid_index: Optional[dict[int, int]] = None,
     elastic_inertial_loads: Optional[FloatArray] = None,
     damping_loads: Optional[FloatArray] = None,
+    applied_loads: Optional[FloatArray] = None,
 ) -> MonitorLoad:
     """Sum one prepared monitor against a load state — no geometry, no lookups.
+
+    ``applied_loads`` is the applied structural LOAD of a trim subcase (#6):
+    None when the subcase carries none (so the static three-way split is
+    untouched), otherwise its own ``applied`` column included in ``totals``.
 
     ``elastic_inertial_loads``/``damping_loads`` are the transient contributions
     (``−M·ü_e`` and ``−M·w``, #2).  They are absent (None) on a static trim and
@@ -253,6 +258,12 @@ def evaluate_monitor_point(
     react6 = cp(_resultant_about(f_r, m_r, plan.pos, ref))
     totals = aero6 + inert6 + react6
 
+    applied6 = None
+    if applied_loads is not None:
+        f_p, m_p = _gather(applied_loads, plan.rows)
+        applied6 = cp(_resultant_about(f_p, m_p, plan.pos, ref))
+        totals = totals + applied6
+
     elastic6 = damp6 = None
     if elastic_inertial_loads is not None or damping_loads is not None:
         f_e, m_e = _gather(elastic_inertial_loads, plan.rows)
@@ -264,7 +275,7 @@ def evaluate_monitor_point(
     return MonitorLoad(
         name=plan.name, label=plan.label, mtype="MONPNT3", axes=plan.axes,
         cid=plan.cid, ref=ref, totals=totals,
-        aero=aero6, inertia=inert6, reaction=react6,
+        aero=aero6, inertia=inert6, reaction=react6, applied=applied6,
         parity=par, whole_airplane=(par != 1.0),
         source_ids=list(plan.source_ids),
         elastic_inertia=elastic6, damping=damp6,
@@ -378,13 +389,14 @@ def compute_monitor_loads(
     grid_index: dict[int, int],
     reactions: Optional[dict[int, FloatArray]] = None,
     massset_sid: Optional[int] = None,
+    applied_loads: Optional[FloatArray] = None,
 ) -> dict[str, MonitorLoad]:
     """Build {name: MonitorLoad} for all MONPNT1/MONPNT3 cards in the model."""
     out: dict[str, MonitorLoad] = {}
     for name, plan in prepare_monitor_points(bulk, aero, grid_index).items():
         out[name] = evaluate_monitor_point(
             plan, box_forces, grid_loads, inertial_loads, reactions or {},
-            grid_index)
+            grid_index, applied_loads=applied_loads)
         if plan.mtype == "MONPNT3":
             _warn_if_mass_coverage_incomplete(
                 name, bulk.monpnt3s[name], bulk, grid_loads, grid_index,

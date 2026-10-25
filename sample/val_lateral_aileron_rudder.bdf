@@ -56,6 +56,13 @@ SUBCASE 2
   SPC  = 1
   DISPLACEMENT = ALL
   FORCE = ALL
+SUBCASE 3
+  LABEL = Engine torque reaction (clockwise prop): wings level, AIL and RUD free
+  TRIM = 3
+  LOAD = 701
+  SPC  = 1
+  DISPLACEMENT = ALL
+  FORCE = ALL
 BEGIN BULK
 $
 $ ----------------------------------------------------------- AERO REFERENCE
@@ -123,6 +130,13 @@ $ Pin surge, sway, plunge and pitch at the reference; SUPORT frees ROLL (4) and 
 SPC1, 1, 1235, 90
 SUPORT, 90, 46
 $
+$ ----------------------------------------------------------- APPLIED LOADS (#6)
+$ Engine torque reaction for a CLOCKWISE (seen from behind) propeller — charter §10:
+$ the engine drives the propeller about -X (forward), so the airframe feels +Mx basic
+$ of magnitude Q = P/Omega: starboard wing up, i.e. the textbook roll toward PORT.
+$ Holding wings level needs roll toward starboard = starboard TE-UP = NEGATIVE AIL.
+MOMENT, 701, 90, 0, 35.0, 1.0, 0.0, 0.0
+$
 $ ----------------------------------------------------------- AERO PANELS
 PAERO1, 1
 $ Starboard wing: root LE (0,0,0) -> tip LE (0,4,0); boxes 1000 + 8*i_span + j_chord
@@ -184,6 +198,10 @@ TRIM, 1, 0.0, 51.0, ROLL, 0.05, SIDES, 0.0, YAW, 0.0
 +, URDD4, 0.0, URDD6, 0.0
 $ Steady sideslip: SIDES prescribed; AIL and RUD trim free.
 TRIM, 2, 0.0, 51.0, SIDES, 0.05, ROLL, 0.0, YAW, 0.0
++, URDD4, 0.0, URDD6, 0.0
+$ Engine torque reaction (#6): wings level, no rates, no sideslip — AIL and RUD trim
+$ free against the applied MOMENT 701 selected by LOAD in SUBCASE 3.
+TRIM, 3, 0.0, 51.0, ROLL, 0.0, SIDES, 0.0, YAW, 0.0
 +, URDD4, 0.0, URDD6, 0.0
 $
 ENDDATA
