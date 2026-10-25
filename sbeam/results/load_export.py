@@ -277,7 +277,7 @@ def _section_cut_row(sc: "SectionCutResult", st: "SectionCutStation") -> list[Un
         *(f"{v:.6E}" for v in labelled(st.inertia, sc.comp_map)),
         *(f"{v:.6E}" for v in labelled(st.reaction, sc.comp_map)),
         *(f"{v:.6E}" for v in labelled(
-            st.applied if getattr(st, "applied", None) is not None else np.zeros(6),
+            st.applied if st.applied is not None else np.zeros(6),
             sc.comp_map)),
         st.n_members,
         *(("" if d is None else f"{v:.6E}")
@@ -414,7 +414,7 @@ def _monitor_row(ml: "MonitorLoad") -> list[Union[str, int]]:
         f"{(ml.aero[2] if ml.aero is not None else 0.0):.6E}",
         f"{(ml.inertia[2] if ml.inertia is not None else 0.0):.6E}",
         f"{(ml.reaction[2] if ml.reaction is not None else 0.0):.6E}",
-        f"{(ml.applied[2] if getattr(ml, 'applied', None) is not None else 0.0):.6E}",
+        f"{(ml.applied[2] if ml.applied is not None else 0.0):.6E}",
         f"{ml.parity:g}", int(ml.whole_airplane),
     ]
 

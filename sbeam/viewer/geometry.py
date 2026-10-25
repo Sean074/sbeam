@@ -772,8 +772,8 @@ def _add_ghost_cbar_lines(fig: go.Figure, bulk: BulkData) -> None:
 
 def _rod_elements(bulk: BulkData) -> list[tuple[str, Any]]:
     """(kind, card) for every CROD and CONROD, CRODs first (#38)."""
-    return [("CROD", c) for c in bulk.crods.values()] + \
-           [("CONROD", c) for c in bulk.conrods.values()]
+    rods: list[tuple[str, Any]] = [("CROD", c) for c in bulk.crods.values()]
+    return rods + [("CONROD", c) for c in bulk.conrods.values()]
 
 
 def _rod_line_coords(bulk: BulkData, coords: GridCoords) -> CoordLists:

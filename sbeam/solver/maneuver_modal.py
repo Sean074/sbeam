@@ -109,7 +109,7 @@ from sbeam.results.section_envelope import (
     build_monitor_envelope, build_section_envelope,
 )
 from sbeam.solver.maneuver_qs import (
-    _refuse_load_in_mloads,
+    refuse_load_in_mloads,
     assemble_operators,
     delta_of_t,
     force_l,
@@ -270,7 +270,7 @@ def run_maneuver_modal(
         raise ValueError(
             f"run_maneuver_modal: unknown recovery '{recovery}' "
             "(expected 'acceleration' or 'displacement')")
-    _refuse_load_in_mloads("run_maneuver_modal", subcase)
+    refuse_load_in_mloads("run_maneuver_modal", subcase)
     if subcase.mloads_sid is None or subcase.mloads_sid not in bulk.mloads:
         raise ValueError(
             f"run_maneuver_modal: MLOADS SID {subcase.mloads_sid} not found")

@@ -374,7 +374,7 @@ def recover_step(
     )
 
 
-def _refuse_load_in_mloads(where: str, subcase: SubcaseControl) -> None:
+def refuse_load_in_mloads(where: str, subcase: SubcaseControl) -> None:
     """Refuse a LOAD request in an MLOADS subcase (#6, decision D1).
 
     An applied structural load enters a SOL 144 TRIM subcase, but the transient
@@ -417,7 +417,7 @@ def run_maneuver_qs(
     Returns:
         ManeuverResult with one ManeuverStep per output sample.
     """
-    _refuse_load_in_mloads("run_maneuver_qs", subcase)
+    refuse_load_in_mloads("run_maneuver_qs", subcase)
     if subcase.mloads_sid is None or subcase.mloads_sid not in bulk.mloads:
         raise ValueError(
             f"run_maneuver_qs: MLOADS SID {subcase.mloads_sid} not found")

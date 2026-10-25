@@ -15,7 +15,7 @@ import scipy.linalg
 from sbeam.model.bulk_data import BulkData
 from sbeam.assembly.reduction import expand_to_g
 from sbeam.aero.aero_model import AeroModel
-from sbeam.aero.integration import aesurf_hinges, build_djk
+from sbeam.aero.integration import HingeHalf, aesurf_hinges, build_djk
 from sbeam.model.aero import require_aeros
 from sbeam.solver.sol144_util import pitch_moment, aero_moment_resultant
 from sbeam.types import FloatArray, LuFactor
@@ -135,7 +135,7 @@ def compute_hinge_moments(
         if not halves:
             continue
 
-        def _hm(f_box: FloatArray, _halves: list = halves) -> float:
+        def _hm(f_box: FloatArray, _halves: list[HingeHalf] = halves) -> float:
             total = 0.0
             for half in _halves:
                 for k in half.ks:

@@ -52,7 +52,10 @@ def _load(path: StrPath, *, strip_body_cards: bool = False) -> Deck:
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         aero = build_aero_model(bulk, grid_index=grid_index)
-    return cc, bulk, aero, grid_index, [str(w.message) for w in caught]
+    # UserWarnings only (mesh, spline, injection): some BLAS builds raise spurious
+    # RuntimeWarning FP flags inside a finite matmul (numpy 2.0 + macOS Accelerate)
+    return cc, bulk, aero, grid_index, [
+        str(w.message) for w in caught if issubclass(w.category, UserWarning)]
 
 
 @pytest.fixture(scope="session")

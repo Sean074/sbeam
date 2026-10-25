@@ -169,8 +169,8 @@ def _rod_forces_block(
     unchanged. One element per row on ``_hdr`` (DEF-M13); values are +x-face
     resultants, tension / right-hand torque positive (:class:`RodForce`).
     """
-    for kind, title, coll in (("CROD", "( C R O D )", bulk.crods),
-                              ("CONROD", "( C O N R O D )", bulk.conrods)):
+    for title, coll in (("( C R O D )", bulk.crods),
+                        ("( C O N R O D )", bulk.conrods)):
         eids = [e for e in sorted(coll.keys()) if e in rod_forces]
         if not eids:
             continue
@@ -194,8 +194,8 @@ def _rod_stresses_block(
     CBAR ``M.S.`` columns are.
     """
     blank = " " * _FIELD_W
-    for kind, title, coll in (("CROD", "( C R O D )", bulk.crods),
-                              ("CONROD", "( C O N R O D )", bulk.conrods)):
+    for title, coll in (("( C R O D )", bulk.crods),
+                        ("( C O N R O D )", bulk.conrods)):
         eids = [e for e in sorted(coll.keys()) if e in rod_stresses]
         if not eids:
             continue

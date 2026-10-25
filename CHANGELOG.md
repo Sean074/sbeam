@@ -218,6 +218,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     import gate.
 
 ### Fixed
+- **CI green again on the release branch** (#54). Pinned pyright had failed every push since
+  2026-10-21 (8 errors: unused loop variables, Optional narrowing defeated by `getattr`, a
+  private cross-module import now `maneuver_qs.refuse_load_in_mloads`, two annotations), so
+  pytest had not run in CI. The flagship body "no warnings" gate now counts UserWarnings only,
+  so spurious BLAS FP flags no longer trip it. No behaviour change.
 - **`PARAM,WTMASS` other than 1.0 refuses the deck at parse** (#39, DEF-M22; PR #40). A
   weight-unit deck used to run with mass and `GRAV` loads wrong by a factor of g behind an
   unknown-card warning. Every other `PARAM` is still skipped with the `Unknown BDF card

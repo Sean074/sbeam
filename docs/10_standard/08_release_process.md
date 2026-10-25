@@ -82,7 +82,10 @@ open the next milestone's branch.
 **and** `release/**`): the full ruff → pyright → pytest matrix, same as `main`. Without
 this the beta gate would be unverifiable — a branch CI never sees is a branch no gate
 covers *(the sloads CI-shape lesson, adapted: sbeam's full matrix is ~3 min, so no
-fast/full split is needed)*.
+fast/full split is needed)*. **A red run blocks the next item** (#54: pyright failed
+for 13 pushes, so pytest never ran in CI, while the drifted local `.venv` showed only
+noise). Check `gh run list` for the previous push before closing an item, and reproduce
+failures on the `requirements-ci.txt` toolchain, not the local venv.
 
 **Git roles (standing practice, now written down):** the AI commits and tags locally and
 verifies; the user performs every `git push` (branches and tags) and is the author of
