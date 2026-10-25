@@ -19,7 +19,7 @@ the examples in §2 and §4, so this page cannot name something that does not ex
   (`08_release_process.md` §1), after 1.0 as a MAJOR.
 - **Internal** is everything else under `sbeam/`: the assembly layer, the solver stage
   functions, the parser card handlers, the `sol144.py` facade beyond the three names
-  listed below, and the whole of `sbeam/viewer/`. `sbeam_tools/` reaches into internals
+  listed below. The viewer (`sbeam_tools/viewer/`, since #34) is internal too. `sbeam_tools/` reaches into internals
   by design (`00_program_overview.md`, Architecture); it ships in the same distribution and
   is fixed in the same commit. External code that imports an internal name gets no
   stability promise and no CHANGELOG line when it moves.

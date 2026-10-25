@@ -5,7 +5,7 @@ import math
 
 import pandas as pd
 
-from sbeam.viewer.format_utils import fmt, fmt_mass, style_numeric
+from sbeam_tools.viewer.format_utils import fmt, fmt_mass, style_numeric
 
 
 def test_fmt_decimal_vs_scientific():

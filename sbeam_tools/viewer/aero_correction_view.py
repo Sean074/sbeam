@@ -36,8 +36,8 @@ from sbeam_tools.corrections.section_data import MultiSectionDataBuildResult
 from sbeam.types import FloatArray
 from sbeam.aero.section_correction import cards_to_bdf
 from sbeam.aero.strip import is_strip_caero
-from sbeam.viewer.aero_view import build_section_correction_figure, surface_dihedral_deg
-from sbeam.viewer.format_utils import style_numeric
+from sbeam_tools.viewer.aero_view import build_section_correction_figure, surface_dihedral_deg
+from sbeam_tools.viewer.format_utils import style_numeric
 
 # Reserved SID range for tool-generated cards (kept clear of typical user SIDs so the
 # Apply step can find and replace its own cards on a rebuild).

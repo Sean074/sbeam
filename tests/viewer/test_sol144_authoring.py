@@ -9,7 +9,7 @@ from sbeam.model.aero import Trim, Trimcon
 from sbeam.model.constraint import Suport
 from sbeam.model.maneuver_presets import load_factor_to_urdd3
 from sbeam.parser.bdf_reader import parse_bdf
-from sbeam.viewer import sol144_authoring as logic
+from sbeam_tools.viewer import sol144_authoring as logic
 
 SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
 
@@ -115,7 +115,7 @@ class TestLabelOptions:
 # ---------------------------------------------------------------------------
 
 def _sbeam_app():
-    from sbeam.viewer.app import main
+    from sbeam_tools.viewer.app import main
     main()
 
 

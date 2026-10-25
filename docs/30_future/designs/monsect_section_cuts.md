@@ -322,8 +322,8 @@ from the same table, not an independent quantity.
 | `sbeam/results/f06_writer.py` | `_section_cut_block`, called from the same place as `_monitor_block` (~line 535), gated on `result.section_loads`. |
 | `sbeam/results/load_export.py` | `write_section_loads_csv`. |
 | `sbeam/main.py` (~113) | Write `<stem>.section_loads.csv` when any subcase has `section_loads`, beside the existing `.monitor_loads.csv`. |
-| `sbeam/viewer/results_view.py` (~447) | "Section cuts" expander below the monitor table. |
-| `sbeam/viewer/case_control_ui.py` (~110) | Add "section loads" to the SOL 144 outputs summary string when `MONSECT` cards are present. |
+| `sbeam_tools/viewer/results_view.py` (~447) | "Section cuts" expander below the monitor table. |
+| `sbeam_tools/viewer/case_control_ui.py` (~110) | Add "section loads" to the SOL 144 outputs summary string when `MONSECT` cards are present. |
 
 ### 5.2 Output formats
 

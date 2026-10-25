@@ -219,7 +219,7 @@ run: before trusting a solver on a model you cannot check, make it reproduce one
 ### 5.1 In the viewer
 
 ```bash
-streamlit run sbeam/viewer/app.py
+sbeam-view
 ```
 
 A browser tab opens. Upload `cantilever.bdf` in the sidebar; because it carries case

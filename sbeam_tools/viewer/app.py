@@ -19,20 +19,20 @@ from sbeam.results.results import (
     ManeuverResult, Sol144DivergResult, Sol144TrimResult,
 )
 from sbeam.gpwg import compute_gpwg
-from sbeam.viewer.geometry import build_model_figure
-from sbeam.viewer.case_control_ui import render_case_control_panel
-from sbeam.viewer.results_view import (
+from sbeam_tools.viewer.geometry import build_model_figure
+from sbeam_tools.viewer.case_control_ui import render_case_control_panel
+from sbeam_tools.viewer.results_view import (
     render_sol101_results, render_sol103_results, render_sol144_results,
 )
-from sbeam.viewer.aero_view import (
+from sbeam_tools.viewer.aero_view import (
     build_aero_box_figure, build_span_loading_figure, rigid_derivative_table,
 )
-from sbeam.viewer.aero_correction_view import render_aero_correction_tab
-from sbeam.viewer.sol144_authoring_ui import render_sol144_authoring
-from sbeam.viewer.sol144_authoring import (
+from sbeam_tools.viewer.aero_correction_view import render_aero_correction_tab
+from sbeam_tools.viewer.sol144_authoring_ui import render_sol144_authoring
+from sbeam_tools.viewer.sol144_authoring import (
     snapshot_family_ids, validate_sol144_authoring,
 )
-from sbeam.viewer.format_utils import fmt, fmt_mass, style_numeric
+from sbeam_tools.viewer.format_utils import fmt, fmt_mass, style_numeric
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.vlm import solve_rigid_cl
 

@@ -8,10 +8,11 @@ The sbeam viewer is a **Streamlit** web application providing:
 - Case control definition and BDF export
 - Results display (post-processing)
 
-The viewer is launched with:
+The viewer lives in the toolchain package, `sbeam_tools/viewer/` (moved from `sbeam/viewer/`
+by #34), and needs the `viewer` extra (`pip install -e .[viewer]`). Launch it with:
 
 ```
-streamlit run viewer/app.py
+sbeam-view          # = streamlit run sbeam_tools/viewer/app.py
 ```
 
 ---
@@ -19,7 +20,8 @@ streamlit run viewer/app.py
 ## Module Structure
 
 ```
-viewer/
+sbeam_tools/viewer/
+├── launch.py           # `sbeam-view` console entry point
 ├── app.py              # Main Streamlit app; routing and session state
 ├── geometry.py         # 3D model display functions (Plotly)
 ├── results_view.py     # Results post-processing display

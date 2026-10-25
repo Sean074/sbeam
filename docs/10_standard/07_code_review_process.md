@@ -220,7 +220,7 @@ Coordinate system errors are silent and affect every result.
 - [ ] **Function length:** functions longer than ~60 lines should be decomposed. A single function doing parsing + assembly + solving + output is a design defect.
 - [ ] **No magic numbers:** DOF counts, stiffness scale factors, default eigenvalue tolerances must be named constants.
 - [ ] **No mutable default arguments:** `def f(x, results=[])` is a Python antipattern; flag any occurrence.
-- [ ] **Import hygiene:** `solver/` must not import from `viewer/`; `assembly/` must not import from `solver/`. The dependency graph is: `viewer → solver → assembly → model → parser`, with `model` as a pure data layer.
+- [ ] **Import hygiene:** `sbeam/` must not import `sbeam_tools/` (which holds the viewer since #34), `streamlit` or `plotly` (gated by `tests/tools/test_import_boundary.py`); `assembly/` must not import from `solver/`. The dependency graph is: `sbeam_tools → solver → assembly → model → parser`, with `model` as a pure data layer.
 
 ---
 

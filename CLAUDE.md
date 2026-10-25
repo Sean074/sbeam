@@ -121,9 +121,9 @@ matrix; uniform torsion GJ/L. Derivations: `docs/20_theory/00_beam_methods.ipynb
 
 ## Module Structure
 
-Packages: `parser/`, `model/`, `assembly/`, `solver/`, `results/`, `aero/`, `viewer/`,
+Packages: `parser/`, `model/`, `assembly/`, `solver/`, `results/`, `aero/`,
 plus `gpwg.py`, `types.py`, `linalg_utils.py`. Import direction:
-viewer → solver → assembly → model → parser. The annotated file-level tree is in
+solver → assembly → model → parser; `sbeam_tools/` (incl. the viewer) → `sbeam/`. Tree in
 `docs/10_standard/00_program_overview.md` (Project Structure) — keep it there only.
 
 ## Verification

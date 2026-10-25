@@ -9,7 +9,7 @@ from streamlit.delta_generator import DeltaGenerator
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.parser.case_control import CaseControl, SubcaseControl
-from sbeam.viewer.sol144_authoring import validate_sol144_authoring
+from sbeam_tools.viewer.sol144_authoring import validate_sol144_authoring
 
 
 # ---------------------------------------------------------------------------

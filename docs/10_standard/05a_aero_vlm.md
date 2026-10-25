@@ -1074,7 +1074,7 @@ rebuild). Multiple subsonic subcases at different Mach therefore trim correctly.
 
 ## Viewer — Aero Tab (S44)
 
-`sbeam/viewer/aero_view.py` provides Plotly figure builders for the aerodynamic mesh
+`sbeam_tools/viewer/aero_view.py` provides Plotly figure builders for the aerodynamic mesh
 and pressure-coefficient visualisation. The Streamlit app (`app.py`) shows an "Aero"
 tab automatically when `bulk.caero1s` is non-empty.
 

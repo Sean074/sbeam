@@ -4,9 +4,9 @@
 sbeam never converts*, and tools, not the solver, may know units. The 2026-09-05
 architecture audit found four leaks anyway (a `32.174` gravity default under a
 "model units" label, a `0.002377` density in an error message, `Pa` in a docstring,
-stale §7 citations). This gate greps every module under `sbeam/` — the viewer
-included, since a GUI default is the leak most likely to produce a wrong deck — for
-unit-system constants and unit words.
+stale §7 citations). This gate greps every module under `sbeam/`, plus the viewer
+(`sbeam_tools/viewer/` since #34), since a GUI default is the leak most likely to
+produce a wrong deck, for unit-system constants and unit words.
 
 Patterns are word-bounded so the known false positives stay quiet: `lb` is the
 TRIMVAR lower bound, `kg` the GUSTLF gust factor `K_g`, "lift/sideforce" contains
@@ -20,6 +20,7 @@ import pytest
 
 REPO = Path(__file__).parent.parent.parent
 SOLVER = REPO / "sbeam"
+VIEWER = REPO / "sbeam_tools" / "viewer"   # relocated by #34, still unit-neutral
 
 #: Unit-system constants and unit words that must not appear in solver code,
 #: messages, defaults or docstrings.  Each entry: (name, compiled regex).
@@ -45,7 +46,8 @@ _ALLOWED = {
 
 
 def _solver_modules() -> list[Path]:
-    out = [p for p in sorted(SOLVER.rglob("*.py")) if "__pycache__" not in p.parts]
+    out = [p for root in (SOLVER, VIEWER) for p in sorted(root.rglob("*.py"))
+           if "__pycache__" not in p.parts]
     assert out, "no solver modules found — the gate would pass vacuously"
     return out
 
@@ -55,9 +57,13 @@ def _hits(path: Path) -> set[str]:
     return {name for name, rx in _FORBIDDEN if rx.search(text)}
 
 
-@pytest.mark.parametrize("module", _solver_modules(), ids=lambda p: str(p.relative_to(SOLVER)))
+def _rel(path: Path) -> str:
+    return str(path.relative_to(SOLVER if SOLVER in path.parents else REPO))
+
+
+@pytest.mark.parametrize("module", _solver_modules(), ids=_rel)
 def test_solver_module_names_no_unit_system(module: Path) -> None:
-    rel = str(module.relative_to(SOLVER))
+    rel = _rel(module)
     leaks = {n for n in _hits(module) if (rel, n) not in _ALLOWED}
     assert not leaks, (
         f"{rel} mentions {sorted(leaks)}: the solver is unit-neutral (charter §7). Say "
@@ -71,9 +77,9 @@ def test_allow_list_entries_are_still_needed() -> None:
 
 
 def test_the_gate_covers_the_viewer() -> None:
-    """Unlike the import gate (#33), the viewer is in scope: a GUI default is the
-    most likely place for a unit constant to produce a wrong deck."""
-    assert any("viewer" in p.parts for p in _solver_modules())
+    """The viewer left sbeam/ (#34) but stays in scope: a GUI default is the most
+    likely place for a unit constant to produce a wrong deck."""
+    assert any(VIEWER in p.parents for p in _solver_modules())
 
 
 def test_tools_still_own_the_constants() -> None:

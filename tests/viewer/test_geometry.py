@@ -7,7 +7,7 @@ from sbeam.model.grid import Grid
 from sbeam.model.mass import Conm2
 from sbeam.model.material import Mat1
 from sbeam.model.property import Pbar
-from sbeam.viewer.geometry import build_model_figure
+from sbeam_tools.viewer.geometry import build_model_figure
 
 
 # ---------------------------------------------------------------------------

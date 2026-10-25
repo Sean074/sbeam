@@ -35,8 +35,10 @@ The editable install registers `sbeam` into the active environment so it is impo
 ## Running the Viewer
 
 ```bash
-streamlit run sbeam/viewer/app.py
+sbeam-view
 ```
+
+(`sbeam-view` is `streamlit run sbeam_tools/viewer/app.py`; extra arguments go to `streamlit run`.)
 
 The viewer opens in your browser. Upload a `*.dat` bulk data file to inspect model geometry, define case control, and launch analyses.
 

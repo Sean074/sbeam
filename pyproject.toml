@@ -45,6 +45,7 @@ dev = [
 [project.scripts]
 sbeam = "sbeam.main:main"
 sbeam-cases = "sbeam_tools.cases.cli:main"
+sbeam-view = "sbeam_tools.viewer.launch:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -65,11 +66,11 @@ ignore = [
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
-addopts = "--cov=sbeam --cov-report=term-missing"
+addopts = "--cov=sbeam --cov=sbeam_tools --cov-report=term-missing"
 
 [tool.coverage.run]
 branch = true
-source = ["sbeam"]
+source = ["sbeam", "sbeam_tools"]
 
 [tool.coverage.report]
 show_missing = true

@@ -5,7 +5,7 @@ from sbeam.model.grid import Grid
 from sbeam.model.material import Mat1
 from sbeam.model.constraint import Spc1
 from sbeam.parser.case_control import CaseControl, SubcaseControl
-from sbeam.viewer.app import _get_pre_solve_warnings
+from sbeam_tools.viewer.app import _get_pre_solve_warnings
 
 
 # ---------------------------------------------------------------------------

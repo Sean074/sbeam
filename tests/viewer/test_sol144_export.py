@@ -12,8 +12,8 @@ import pytest
 
 from sbeam.model.card_writers import FAMILIES
 from sbeam.parser.bdf_reader import parse_bdf
-from sbeam.viewer.sol144_authoring import snapshot_family_ids
-from sbeam.viewer.sol144_authoring_ui import export_sol144_bdf
+from sbeam_tools.viewer.sol144_authoring import snapshot_family_ids
+from sbeam_tools.viewer.sol144_authoring_ui import export_sol144_bdf
 
 SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
 
@@ -107,7 +107,7 @@ def test_authoring_form_applies_card_through_ui():
     from streamlit.testing.v1 import AppTest
 
     def _app():
-        from sbeam.viewer.app import main
+        from sbeam_tools.viewer.app import main
         main()
 
     cc, bulk = parse_bdf(SAMPLE_DIR / "ha144a_fullspan_mloads.bdf")
@@ -142,7 +142,7 @@ def test_aesurf_form_keeps_the_second_hinge_half():
     from streamlit.testing.v1 import AppTest
 
     def _app():
-        from sbeam.viewer.app import main
+        from sbeam_tools.viewer.app import main
         main()
 
     cc, bulk = parse_bdf(SAMPLE_DIR / "ha144a_fullspan_mloads.bdf")

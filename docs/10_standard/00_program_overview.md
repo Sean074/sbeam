@@ -42,12 +42,12 @@ sbeam_tools/
     cases/                case construction  →  sbeam-cases      (#4)
     corrections/          external CFD/test data → aero correction cards
     report/               envelope + critical-case report  →  sbeam-report   (#5)
-    viewer/               the Streamlit GUI  →  sbeam-view       (relocated at v0.4.0)
+    viewer/               the Streamlit GUI  →  sbeam-view       (relocated by #34)
 ```
 
 One distribution, so the toolchain ships with every release. The GUI's `streamlit` /
 `plotly` become an **extra** (`pip install sbeam[viewer]`) rather than hard dependencies of
-everyone who installs the solver — today they are mandatory even for a batch run.
+everyone who installs the solver, so a batch or CI install pulls no web framework.
 
 **Naming is host-first** (`sbeam_tools.cases`, command `sbeam-cases`), matching Python
 convention and keeping the packages together alphabetically. Names say what the tool
@@ -63,10 +63,9 @@ the solver is still growing.
 *Migration status (2026-09-05):* `sbeam_tools/{common,cases,corrections,report}` exist;
 the gust generator (#1) and the section-data CSV ingestion (#32) have moved into them, and
 `scripts/` is retired. The solver is now free of `pandas` as well as `streamlit`/`plotly`,
-and the import gate asserts all three. **`sbeam/viewer/` has not moved
-yet** — it relocates at the start of v0.4.0 (#34) as a mechanical import-path change,
-before #11 rewrites its authoring layer. Until then the import gate excludes it, which is
-the one live exception to the rule above.
+and the import gate asserts all three. *(2026-10-25, #34):* the viewer moved to
+`sbeam_tools/viewer/` as a mechanical import-path change, ahead of #11 rewriting its
+authoring layer, and the import gate now covers all of `sbeam/` with no exclusion.
 
 **Why.** sbeam declares NASTRAN BDF compatibility, so adopting NASTRAN's own
 decomposition (solver + pre/post) keeps generated decks portable and keeps the solver's
@@ -147,26 +146,18 @@ sbeam/
 │   ├── monitor_points.py # MONPNT1/MONPNT3 integrated section loads (prepare/evaluate split; static + per transient sample)
 │   └── maneuver_output.py # Phase G0 MLDPRNT ASCII time histories + critical-step net-load export
 ├── gpwg.py               # Mass and centre-of-gravity calculation
-├── aero/
-│   ├── __init__.py
-│   ├── panel.py          # AeroBox dataclass + mesh_caero1() trapezoidal box meshing
-│   ├── vlm.py            # Biot–Savart, horseshoe influence, vectorized (broadcast) build_ajj, solve_rigid_cl
-│   ├── integration.py    # build_skj, build_djk, build_wg integration matrices
-│   ├── corrections.py    # apply_wkk, apply_wt2, apply_wt1 AIC corrections
-│   ├── section_correction.py # W2GJ+WT2 card-pair synthesis matching section force and moment
-│   ├── body_correction.py # Cruciform (A9) + decoupled-strip (A10) body-panel total-aircraft moment match
-│   ├── strip.py          # Decoupled strip body panels (PSTRIP/STRIPK; zero-coupling diagonal AIC block)
-│   ├── spline.py         # build_spline_operators(): g_slope / g_disp / g_load from SPLINE2 + ATTACH + SPLINE0
-│   ├── coupling.py       # build_qaa (flexible aero stiffness), build_fg, build_gaf (modal GAF Qhh)
-│   └── aero_model.py     # AeroModel dataclass + build_aero_model() factory
-└── viewer/
-    ├── app.py            # Streamlit app entry point
-    ├── geometry.py       # 3D Plotly model display
-    ├── results_view.py   # Post-processing display
-    ├── case_control_ui.py # Case control form → BDF export
-    ├── aero_view.py      # Aero box mesh + cp colour maps, span loading, S&C derivative tables
-    ├── aero_correction_view.py # Aero Correction tab: CFD/test section data → correction cards + corrected-BDF export
-    └── format_utils.py   # Shared 5-sig-fig table/metric formatting (fmt / fmt_mass / style_numeric)
+└── aero/
+    ├── __init__.py
+    ├── panel.py          # AeroBox dataclass + mesh_caero1() trapezoidal box meshing
+    ├── vlm.py            # Biot–Savart, horseshoe influence, vectorized (broadcast) build_ajj, solve_rigid_cl
+    ├── integration.py    # build_skj, build_djk, build_wg integration matrices
+    ├── corrections.py    # apply_wkk, apply_wt2, apply_wt1 AIC corrections
+    ├── section_correction.py # W2GJ+WT2 card-pair synthesis matching section force and moment
+    ├── body_correction.py # Cruciform (A9) + decoupled-strip (A10) body-panel total-aircraft moment match
+    ├── strip.py          # Decoupled strip body panels (PSTRIP/STRIPK; zero-coupling diagonal AIC block)
+    ├── spline.py         # build_spline_operators(): g_slope / g_disp / g_load from SPLINE2 + ATTACH + SPLINE0
+    ├── coupling.py       # build_qaa (flexible aero stiffness), build_fg, build_gaf (modal GAF Qhh)
+    └── aero_model.py     # AeroModel dataclass + build_aero_model() factory
 ```
 
 The **pre/post toolchain** is a sibling package, not part of the solver core (see
@@ -185,7 +176,17 @@ sbeam_tools/
 │   └── cli.py            # `sbeam-cases` entry point
 ├── corrections/          # External CFD/test data → aero correction cards
 │   └── section_data.py   # Section-coefficient CSV: schema, validation, deg↔rad, TOTAL block
-└── report/               # Cross-run reduction + critical-case report (#5) — placeholder
+├── report/               # Cross-run reduction + critical-case report (#5) — placeholder
+└── viewer/               # Streamlit GUI (moved from sbeam/viewer/ by #34) — `sbeam-view`
+    ├── launch.py         # `sbeam-view` entry point (= streamlit run app.py)
+    ├── app.py            # Streamlit app entry point
+    ├── geometry.py       # 3D Plotly model display
+    ├── results_view.py   # Post-processing display
+    ├── case_control_ui.py # Case control form → BDF export
+    ├── aero_view.py      # Aero box mesh + cp colour maps, span loading, S&C derivative tables
+    ├── aero_correction_view.py # Aero Correction tab: CFD/test section data → correction cards + corrected-BDF export
+    ├── sol144_authoring.py / sol144_authoring_ui.py # SOL 144 / MLOADS card authoring (logic / UI)
+    └── format_utils.py   # Shared 5-sig-fig table/metric formatting (fmt / fmt_mass / style_numeric)
 ```
 
 `studies/` at the repo root holds one-off diagnostic scripts (A1 spanwise-spacing study,
@@ -295,7 +296,7 @@ Results are output in the same units as input. The `.f06` header should echo any
 ### Viewer (primary)
 
 ```
-streamlit run viewer/app.py
+sbeam-view          # = streamlit run sbeam_tools/viewer/app.py; needs pip install sbeam[viewer]
 ```
 
 The Streamlit viewer is the **primary entry point** for all interactive use. It handles both file types:
@@ -374,7 +375,7 @@ pytest -v --tb=short         # test suite
 
 ### Unit tests
 
-Tests mirror the `sbeam/` module structure under `tests/`. Each assembly, solver, parser, results, and viewer sub-package has a corresponding test module.
+Tests mirror the `sbeam/` module structure under `tests/`. Each assembly, solver, parser and results sub-package has a corresponding test module; the viewer (`sbeam_tools/viewer/`) is tested under `tests/viewer/`.
 
 ### Integration tests — verification suite
 
@@ -473,7 +474,7 @@ To enforce the ≥85% floor on the three gated modules (`solver/`, `assembly/`, 
 pytest --cov=sbeam/solver --cov=sbeam/assembly --cov=sbeam/parser --cov-fail-under=85
 ```
 
-`viewer/` coverage is included in the default report for visibility but is **not** subject to the 85% floor — it requires Streamlit `AppTest` integration tests (TEST1) to reach a meaningful level.
+`sbeam_tools/viewer/` coverage is included in the default report for visibility but is **not** subject to the 85% floor — it requires Streamlit `AppTest` integration tests (TEST1) to reach a meaningful level.
 
 ---
 

@@ -17,9 +17,9 @@ from sbeam.results.results import (
 )
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.results.section_cuts import component_legend, component_names, labelled
-from sbeam.viewer.geometry import build_deformed_figure, build_mode_figure
-from sbeam.viewer.aero_view import build_aero_box_figure
-from sbeam.viewer.format_utils import fmt, style_numeric
+from sbeam_tools.viewer.geometry import build_deformed_figure, build_mode_figure
+from sbeam_tools.viewer.aero_view import build_aero_box_figure
+from sbeam_tools.viewer.format_utils import fmt, style_numeric
 
 
 # ---------------------------------------------------------------------------

@@ -346,7 +346,7 @@ reactions_fn=None` — all optional, so the direct solver's existing behaviour w
 | `sbeam/results/f06_writer.py` | `_section_cut_block(..., title=...)`; critical-sample block in `_build_f06_sol144_maneuver_text`; envelope block | 1 / 2 |
 | `sbeam/results/load_export.py` | `write_maneuver_section_loads_csv` (shares the static row builder) | 1 / 2 |
 | `sbeam/main.py` | write the two new CSVs when any maneuver result carries section loads | 1 / 2 |
-| `sbeam/viewer/results_view.py` | `_render_section_cuts(section_loads, key_prefix)` signature change; wire into `_render_sol144_maneuver`; time-history plot; envelope table; download buttons | 1 / 2 |
+| `sbeam_tools/viewer/results_view.py` | `_render_section_cuts(section_loads, key_prefix)` signature change; wire into `_render_sol144_maneuver`; time-history plot; envelope table; download buttons | 1 / 2 |
 | `sample/cessna210_flagship_mloads.bdf` | no card change needed — it already `INCLUDE`s the bulk file carrying `SECRW`/`SECRWA`; add a header comment noting the transient cuts now come out | 1 |
 | `sample/ha144a_fullspan_mloads.bdf` | add one `MONSECT` + `AECOMP`/`SET1` so the direct-solver path has cut coverage too | 1 |
 

@@ -7,7 +7,7 @@ import pytest
 from sbeam.model.maneuver import Mloads
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.parser.case_control import CaseControl, SubcaseControl
-from sbeam.viewer.sol144_authoring import (
+from sbeam_tools.viewer.sol144_authoring import (
     IncrementSpec, snapshot_family_ids, validate_sol144_authoring,
 )
 

@@ -18,7 +18,7 @@ from sbeam.model.aero import Aeros, Caero1, Paero1
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.vlm import solve_rigid_cl
 from sbeam.parser.bdf_reader import parse_bdf
-from sbeam.viewer.aero_view import (
+from sbeam_tools.viewer.aero_view import (
     build_aero_box_figure, build_span_loading_figure, rigid_derivative_table,
 )
 
@@ -252,7 +252,7 @@ def test_build_aero_box_figure_cp_diff_diverging(aero_bulk):
 
 
 def _sbeam_app():
-    from sbeam.viewer.app import main
+    from sbeam_tools.viewer.app import main
     main()
 
 

@@ -10,10 +10,9 @@ happily import across any boundary you draw. This gate is what actually holds
 the line: the dependency runs one way, and the solver stays free of the GUI's
 dependencies so `pip install sbeam` needs no web framework.
 
-**Scope note.** `sbeam/viewer/` is deliberately excluded until it relocates to
-`sbeam_tools/viewer/` (issue #34). Tightening this gate to cover all of `sbeam/`
-is that issue's acceptance criterion — the moment the boundary stops having an
-exception.
+**Scope.** Every module under `sbeam/`, with no exceptions. The viewer was
+excluded until it relocated to `sbeam_tools/viewer/` (issue #34); since then the
+boundary has no hole.
 """
 
 import ast
@@ -24,10 +23,6 @@ import pytest
 REPO = Path(__file__).parent.parent.parent
 SOLVER = REPO / "sbeam"
 
-# Relocates to sbeam_tools/viewer/ under #34; until then it is the one part of
-# sbeam/ allowed to import streamlit/plotly.
-_EXCLUDED = {"viewer"}
-
 # `pandas` joined this list with issue #32: once the section-data CSV ingestion
 # moved to sbeam_tools/corrections/, nothing in the solver read a DataFrame. The
 # solver works in numpy arrays and BDF cards; a DataFrame arriving in `sbeam/` now
@@ -36,11 +31,7 @@ _FORBIDDEN_IN_SOLVER = {"sbeam_tools", "streamlit", "plotly", "pandas"}
 
 
 def _solver_modules() -> list[Path]:
-    out = [
-        p for p in sorted(SOLVER.rglob("*.py"))
-        if not any(part in _EXCLUDED for part in p.relative_to(SOLVER).parts)
-        and "__pycache__" not in p.parts
-    ]
+    out = [p for p in sorted(SOLVER.rglob("*.py")) if "__pycache__" not in p.parts]
     assert out, "found no solver modules — the gate would pass vacuously"
     return out
 
@@ -62,7 +53,7 @@ def _imported_roots(path: Path) -> set[str]:
 
 @pytest.mark.parametrize("module", _solver_modules(), ids=lambda p: str(p.name))
 def test_solver_does_not_import_tools_or_gui(module: Path) -> None:
-    """No module under sbeam/ (excluding the viewer) may import the forbidden roots."""
+    """No module under sbeam/ may import the forbidden roots."""
     offending = _imported_roots(module) & _FORBIDDEN_IN_SOLVER
     rel = module.relative_to(REPO)
     assert not offending, (
@@ -72,12 +63,11 @@ def test_solver_does_not_import_tools_or_gui(module: Path) -> None:
     )
 
 
-def test_the_gate_covers_the_whole_solver_but_the_viewer() -> None:
-    """Guard the guard: the exclusion list must not quietly grow."""
-    assert _EXCLUDED == {"viewer"}, (
-        "the import-boundary exclusion list changed — every entry is a hole in "
-        "the architecture rule and needs its own issue"
-    )
+def test_the_viewer_lives_in_the_toolchain() -> None:
+    """Guard the guard (#34): the GUI is not in the solver package, so the gate
+    above covers all of sbeam/ without an exclusion list to grow back."""
+    assert not (SOLVER / "viewer").exists(), "sbeam/viewer/ is back inside the solver"
+    assert (REPO / "sbeam_tools" / "viewer" / "app.py").is_file()
 
 
 def test_tools_may_import_the_solver() -> None:

@@ -23,9 +23,9 @@ from sbeam.model.maneuver import (
     Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads,
 )
 from sbeam.model.card_writers import write_authored_block
-from sbeam.viewer import sol144_authoring as logic
+from sbeam_tools.viewer import sol144_authoring as logic
 from sbeam.parser.case_control import CaseControl
-from sbeam.viewer.case_control_ui import export_bdf_text
+from sbeam_tools.viewer.case_control_ui import export_bdf_text
 from sbeam_tools.common.units import UNIT_SYSTEMS
 
 

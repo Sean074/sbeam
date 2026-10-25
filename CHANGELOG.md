@@ -335,6 +335,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   warning on every generated gust case.
 
 ### Changed
+- **The viewer moved from `sbeam/viewer/` to `sbeam_tools/viewer/`** (#34), and the import
+  boundary gate (`tests/tools/test_import_boundary.py`) now covers **all** of `sbeam/` with no
+  exclusion: the solver package contains no GUI code and never imports `streamlit`, `plotly`
+  or `sbeam_tools`. Launch with the new `sbeam-view` console command (the same as
+  `streamlit run sbeam_tools/viewer/app.py`; needs the `viewer` extra). Python imports change
+  from `sbeam.viewer.*` to `sbeam_tools.viewer.*` (internal per `11_python_api.md`). The move is
+  import paths only, with no logic changes. The unit-neutrality gate still scans the viewer, and
+  the default coverage report now includes `sbeam_tools`.
 - **Process changes from the #52 defect review** (`docs/50_reviews/2026-10-25_wt2_reference_defect_review.md`).
   CLAUDE.md rules 1–3 gain the † clauses: design notes list the assumptions that stop
   holding when code is extended; closure, regeneration and target-achieved gates don't

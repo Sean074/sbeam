@@ -10,7 +10,7 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.model.element import Cbar
 from sbeam.model.load import Force, Grav, Moment
 from sbeam.assembly.coord_transform import build_transform
-from sbeam.viewer.format_utils import fmt_mass
+from sbeam_tools.viewer.format_utils import fmt_mass
 from sbeam.types import FloatArray
 
 #: {gid: (x, y, z)} nodal positions in CID 0 (optionally deformed).

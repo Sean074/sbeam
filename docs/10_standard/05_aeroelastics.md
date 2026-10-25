@@ -61,7 +61,7 @@ Results   (cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, CDi, e, per_su
 | `sbeam/results/section_cuts.py` | **Monitor Phase 2** — `compute_section_cuts`: MONSECT per-station running loads (the Phase 1 integrand swept over cut planes). **Step 68** splits it into `prepare_section_cuts` (geometry/masks/warnings, once per run) + `evaluate_section_cut` (masked sums per sample) for the transient path |
 | `sbeam/results/section_envelope.py` | **Step 68** — `build_section_envelope`: per-station max/min of a transient maneuver's cuts with the driving sample |
 | `sbeam/results/maneuver_output.py` | MLDPRNT ASCII time-history + critical-sample `FORCE`/`MOMENT` export |
-| `sbeam/viewer/aero_view.py` | Plotly box mesh, cp colour map, section-load strip chart |
+| `sbeam_tools/viewer/aero_view.py` | Plotly box mesh, cp colour map, section-load strip chart |
 
 ---
 

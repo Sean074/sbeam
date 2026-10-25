@@ -141,7 +141,7 @@ def test_correction_takes_effect_through_operator(model_and_data, uncorrected):
 def test_rigid_derivative_table_and_span_figure(model_and_data):
     """Aero-tab rigid S&C table + 5-surface span loading on the worked example."""
     from sbeam.aero.vlm import solve_rigid_cl
-    from sbeam.viewer.aero_view import (
+    from sbeam_tools.viewer.aero_view import (
         rigid_derivative_table, build_span_loading_figure,
     )
     bulk, model, _df = model_and_data
@@ -161,7 +161,7 @@ def test_rigid_derivative_table_and_span_figure(model_and_data):
 
 
 def test_section_preview_figure(model_and_data):
-    from sbeam.viewer.aero_view import build_section_correction_figure
+    from sbeam_tools.viewer.aero_view import build_section_correction_figure
     _bulk, model, df = model_and_data
     res = sd.build_from_section_data_multi(
         model.boxes, model.ajj, df, mach=0.0, incidence_deg=_ALPHA_REF,

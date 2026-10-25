@@ -27,10 +27,10 @@ from sbeam_tools.corrections import section_data as sd
 from sbeam.aero.section_correction import cards_to_bdf
 from sbeam.parser.bdf_field import FIELD_WIDTH
 from sbeam.parser.bdf_reader import parse_bulk_file
-from sbeam.viewer.aero_view import surface_dihedral_deg
+from sbeam_tools.viewer.aero_view import surface_dihedral_deg
 from sbeam.aero import body_correction as bc
 from sbeam.aero.integration import build_djx
-from sbeam.viewer.aero_correction_view import (
+from sbeam_tools.viewer.aero_correction_view import (
     _template_csv, _W2GJ_BASE, _AECORR_BASE,
     _BODY_W2GJ_BASE, _BODY_AECORR_BASE, _BODY_STRIPK_BASE, _guess_body_panels,
     build_corrected_bdf, suggest_corrected_name,
@@ -142,7 +142,7 @@ def test_built_cards_change_corrected_solve(aero_bulk):
 # ---- AppTest smoke ----------------------------------------------------------
 
 def _sbeam_app():
-    from sbeam.viewer.app import main
+    from sbeam_tools.viewer.app import main
     main()
 
 
