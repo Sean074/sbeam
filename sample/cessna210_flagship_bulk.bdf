@@ -260,7 +260,10 @@ $ Full-span free-flight support, NOT a ground mount.  Pin the four non-trim
 $ rigid-body modes (Tx, Ty, Rx, Rz) at the single reference point GRID 900;
 $ SUPORT carries the two symmetric trim DOFs (Tz, Ry).  Under symmetric loads
 $ the antisymmetric DOFs come out ~0 with no SPC needed, so the airframe
-$ deforms freely and both wings react through the fuselage.
+$ deforms freely and both wings react through the fuselage.  That "~0" is
+$ asserted, not assumed: tests/integration/test_symmetry_invariants.py (#53)
+$ fails if these pins react any Fy/Mx/Mz in a symmetric case (before #52 they
+$ silently reacted up to 171 N.m of spurious aero roll).
 SPC1, 1, 1246, 900
 SUPORT, 900, 35
 $

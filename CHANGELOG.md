@@ -43,6 +43,17 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   columns must be retired.
 
 ### Added
+- **Symmetry invariant gate** (#53, Tier S, gates only).
+  `tests/integration/test_symmetry_invariants.py` covers every mirror-symmetric SOL 144
+  sample and every symmetric subcase, MLOADS transients included. Each must have zero lateral
+  net-load resultant (so nothing for a lateral pin or SUPORT to react), mirror-equal box
+  forces, displacements and net nodal loads, zero off-axis derivatives, and antisymmetric free
+  labels that solve to zero. Symmetry is detected from the deck (grids, CAERO1 surfaces paired
+  before boxes, elements, CONM2s per mass case). Labels are classified by the parity of their
+  D_jx column, so new decks and surfaces are gated with no edits, and a pinned
+  `EXPECTED_SYMMETRIC` set fails loudly if detection drifts. Run against the pre-#52 tree it
+  fails on all seven flagship runs; a permanent test restores the old uniform WT2 reference and
+  asserts the gate fires. Tolerance 1e-9 relative (fixed code ≤ 1e-13). About 6 s.
 - **Applied structural load in the SOL 144 trim RHS — thrust and engine torque in a trim**
   (#6, Tier L; design note `docs/30_future/designs/thrust_in_trim_applied_load.md`, agreed
   2026-10-24). A `TRIM` subcase may select a `LOAD` set (`FORCE`/`MOMENT`, or a `LOAD`
