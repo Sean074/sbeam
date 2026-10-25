@@ -9,6 +9,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **Release checklist §5 pointed at a removed CLAUDE.md card table** (#56). The item now
+  confirms new cards in `02_card_reference.md` and solver types in `00_program_overview.md`,
+  the single sources.
+
 ---
 
 ## [0.3.0] — 2026-10-25

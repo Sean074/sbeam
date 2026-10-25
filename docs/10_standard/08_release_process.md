@@ -168,8 +168,10 @@ sufficient). This provides a permanent regression baseline for future releases.
 - [ ] Update `docs/40_history/00_completed_development.md` — confirm the release tag and
   date are noted under the relevant entries.
 - [ ] Open the next milestone's `release/X.Y.0` branch (§2a).
-- [ ] If the release introduced any new BDF cards or solver types, update the supported
-  card table in `CLAUDE.md`.
+- [ ] If the release introduced any new BDF cards or solver types, confirm they appear in
+  `docs/10_standard/02_card_reference.md` (supported-card list) and
+  `docs/10_standard/00_program_overview.md` (solver types). The per-change Tier M/L closure
+  should already have done this; never copy the list into `CLAUDE.md`.
 
 ---
 
