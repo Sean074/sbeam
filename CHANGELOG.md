@@ -315,6 +315,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   warning on every generated gust case.
 
 ### Changed
+- **Process changes from the #52 defect review** (`docs/50_reviews/2026-10-25_wt2_reference_defect_review.md`).
+  CLAUDE.md rules 1–3 gain the † clauses: design notes list the assumptions that stop
+  holding when code is extended; closure, regeneration and target-achieved gates don't
+  count as benchmarks; rule-3 sweeps target the broken assumption. New rule 6, "explain
+  before you gate". The symmetry invariant gate is filed as #53. The "Supported Cards" list
+  moved from `CLAUDE.md` to the top of `02_card_reference.md` (keeps CLAUDE.md inside its
+  ~150-line budget), and its no-refused-card gate now reads it there.
 - **`sample/HA144A.bdf` header corrected** (Tier S, raised with #51). The archive note blamed
   its parse failure on unsupported MSC cards and still listed SOL 144 and SPLINE2 as
   unsupported. It now gives the real reasons the verbatim listing does not run: card order

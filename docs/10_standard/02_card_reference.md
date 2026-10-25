@@ -2,6 +2,22 @@
 
 All BDF cards supported in Phases 1–2 (structures), Phases A–C (aeroelastics, including splining and trim), and Phase G0 (transient maneuver loads). For each card: field layout, variable names and types, defaults, and a minimal example.
 
+## Supported cards at a glance
+
+Every card and case-control keyword sbeam reads; the sections below give each card's fields. Gate: `tests/parser/test_unsupported_cards.py` asserts no card listed here is in the refused set (moved here from `CLAUDE.md`, 2026-10-25).
+
+- **Structure:** CORD2R, GRID, CBAR, CROD, CONROD, PLOTEL, RBE3, RBE2, RBAR, CBUSH, PBAR, PROD,
+  PBUSH, MAT1
+- **Mass:** CONM2, MASSSET
+- **Constraints/loads:** SPC, SPC1, FORCE, MOMENT, LOAD, GRAV
+- **Eigenvalue:** EIGRL
+- **Aero (Phase A/C):** AEROS, CAERO1, PAERO1, AEFACT, W2GJ, WKK, AECORR, CHORDCP,
+  PSTRIP, STRIPK, SPLINE0/2 (+ ATTACH), SET1, AELIST, AESTAT, AESURF, TRIM, TRIMVAR,
+  TRIMCON, TRIMOBJ, SUPORT, DIVERG, MONPNT1, MONPNT3, MONSECT, AECOMP, GUSTLF
+- **Transient maneuver (G0):** MLOADS, MLDTRIM, MLDCOMD, MLDTIME, MLDPRNT, TABLED1
+- **Case control:** SOL, SUBCASE, LOAD, SPC, METHOD, TRIM, MLOADS, MASSSET, GUSTLF,
+  DISPLACEMENT, SPCFORCE, OLOAD, FORCE, STRESS, BEGIN BULK, ENDDATA
+
 ---
 
 ## File Structure
@@ -2383,7 +2399,7 @@ The CLI exits with `Parse error: ...` and writes no f06; the viewer shows the sa
 the parse error. The authoritative set is `_UNSUPPORTED_CARDS` in
 `sbeam/parser/bdf_reader.py`; a gate (`tests/parser/test_unsupported_cards.py`) asserts
 that every entry below is in that set, that none has a handler, and that no card listed
-under "Supported Cards" in `CLAUDE.md` is refused.
+under "Supported cards at a glance" (top of this file) is refused.
 
 | Group | Refused cards | Model it instead with |
 |-------|---------------|-----------------------|

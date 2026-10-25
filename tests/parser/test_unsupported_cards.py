@@ -88,9 +88,9 @@ class TestSetHygiene:
         assert not handled & set(_UNSUPPORTED_CARDS), (
             "a card is both handled and refused; remove it from _UNSUPPORTED_CARDS")
 
-    def test_claude_md_supported_cards_are_not_refused(self):
-        text = (REPO / "CLAUDE.md").read_text()
-        block = text[text.index("## Supported Cards"):text.index("## Key Constraints")]
+    def test_supported_cards_list_is_not_refused(self):
+        text = (REPO / "docs/10_standard/02_card_reference.md").read_text()
+        block = text[text.index("## Supported cards at a glance"):text.index("## File Structure")]
         supported = set(re.findall(r"\b[A-Z][A-Z0-9]{2,}\b", block))
         assert not supported & set(_UNSUPPORTED_CARDS)
 
