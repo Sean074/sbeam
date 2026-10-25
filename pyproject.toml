@@ -53,9 +53,10 @@ include = ["sbeam*", "sbeam_tools*"]
 
 [tool.ruff]
 line-length = 120
+target-version = "py39"   # the declared minimum (requires-python)
 
 [tool.ruff.lint]
-select = ["E", "F", "W"]
+select = ["E", "F", "W", "FA102"]   # FA102: X | Y annotations that break on 3.9 (#54)
 ignore = [
     "E702",  # semicolons in matrix assignments — intentional paired style
     "E501",  # NASTRAN fixed-width format strings make a hard line limit impractical
