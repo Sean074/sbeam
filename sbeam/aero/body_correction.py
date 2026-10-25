@@ -93,6 +93,7 @@ from typing import Iterable, Optional, Union
 import numpy as np
 
 from sbeam.aero.aero_model import AeroModel, build_aero_model
+from sbeam.aero.corrections import wt2_reference_cp
 from sbeam.model.bulk_data import BulkData
 from sbeam.aero.panel import AeroBox
 from sbeam.types import FloatArray, IntArray
@@ -441,8 +442,9 @@ def build_body_correction(
      a_base, cp_a, cp_b) = _body_panel_geometry(bulk, aero0)
     panel_idx, body_idx = _body_panel_indices(boxes, panel_eids, "build_body_correction")
 
-    # Bare-VLM reference circulation (Γ-units) for the WT2 card target.
-    gamma_ref = np.linalg.solve(aero0.ajj, -np.ones(n))
+    # Bare-VLM reference circulation (Γ-units) for the WT2 card target — the per-axis
+    # reference aero_model hands apply_wt2 (#52): the vertical panel is calibrated in β.
+    gamma_ref = wt2_reference_cp(boxes, np.linalg.inv(aero0.ajj))
 
     # Joint minimum-norm WT2-ratio + W2GJ-offset solves over the body boxes (the
     # flying surfaces stay untouched: r is a post-inverse diagonal, so only

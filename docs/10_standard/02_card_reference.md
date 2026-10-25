@@ -1317,8 +1317,14 @@ AECORR  SID  METHOD  CAERO_EID  T1  T2  T3  T4  T5
 | CAERO_EID | `caero_eid` | int | EID of the CAERO1 this correction applies to | required |
 | T1–TN | `target` | list[float] | Target cp per box (row-major) | required |
 
-Reference normalwash: `w_ref = -ones(n)` (uniform unit incidence, same as
-`solve_rigid_cl` at `alpha=1`).
+Reference loading: **per incidence axis** (#52, `corrections.wt2_reference_cp`). Each
+CAERO1 whose boxes' dominant normal is `y` (a fin, a vertical body panel) is a β surface;
+every other surface is an α surface. A box's target is matched against the VLM loading at
+unit incidence on its own axis with the other axis's surfaces at zero (`w = −1` on that
+axis's boxes, `0` elsewhere). With no β surface this is the uniform `w_ref = -ones(n)`
+(same as `solve_rigid_cl` at `alpha=1`). Before #52 the uniform `-ones` was used on every
+deck, which sideslipped any fin in the reference and made the corrected tailplane
+port/starboard asymmetric at β = 0.
 
 **Examples:**
 ```

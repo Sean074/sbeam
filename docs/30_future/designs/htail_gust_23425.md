@@ -18,13 +18,13 @@ No code until they are agreed in chat.
 #1 applies the 23.341 Pratt load factor as a **balanced** maneuver: `URDD3 = −n·g` with
 `ANGLEA` and `ELEV` free. That is what 23.341 asks for and it gives the correct airplane load
 factor — but it re-trims the elevator for the gust, so the horizontal tail ends up carrying
-only the balance load for `n`. On the flagship at V_C / MTOW the tail carries **+264 N**.
+only the balance load for `n`. On the flagship at V_C / MTOW the tail carries **+248 N**.
 
 The horizontal-surface gust requirement is a different problem: the gust strikes an airplane
 whose controls are **fixed** at the 1g trim, the incremental tail load is "reacted by the
 angular inertia of the airplane in a rational or conservative manner" (FAR-23 Loads User
 Guide §12.2.4b), and the total is the **1g balancing tail load plus the gust increment**. On
-the same flagship condition that gives **+3664 N** (up-gust) and **−5162 N** (down-gust) —
+the same flagship condition that gives **+3435 N** (up-gust) and **−4937 N** (down-gust) —
 about 14× the balanced figure. The tail sizing case is missing today.
 
 ## 2. Scope
@@ -89,8 +89,8 @@ this has never mattered. With `URDD5` free they don't:
 a_cg = a_ref + θ̈ × r_(cg/ref)      →     n_cg = n_ref + (x_cg − x_ref)·θ̈ / g   (flagship geometry)
 ```
 
-Prototype (rigid limit, §8): `n_ref = 4.108774`, `θ̈ = URDD5 = 4.46833`,
-`x_cg − x_ref = 2.55100 − 2.4375` → **`n_cg = 4.160470`**, Pratt's `4.16047` to seven
+Prototype (rigid limit, §8): `n_ref = 4.100019`, `θ̈ = URDD5 = 4.18807`,
+`x_cg − x_ref = 2.55100 − 2.4375` → **`n_cg = 4.148473`**, Pratt's `4.148473` to seven
 digits. The cross-check #29 promises holds — **at the CG only**. The implementation uses the
 rigid-body kinematics in `assembly/rigid_body.py` through a new helper (§5), never a
 hand-written sign.
@@ -106,8 +106,8 @@ note was drafted) — D1.
 
 ### 3.5 Finding F3 — the elastic airplane exceeds Pratt
 
-On the elastic flagship the same Δα gives `n_cg = 4.368` — Δn 6.6 % above Pratt — because
-the elastic slope is larger (`CZ_α`: rigid 5.333, restrained 5.709, unrestrained 5.754).
+On the elastic flagship the same Δα gives `n_cg = 4.356` — Δn 6.6 % above Pratt — because
+the elastic slope is larger (`CZ_α`: rigid 5.308, restrained 5.684, unrestrained 5.728).
 Pratt and `K_g` are rigid-airplane constructions (#1 D1). D4 proposes reporting the
 difference, not correcting it.
 
@@ -189,10 +189,10 @@ construction):
              H O R I Z O N T A L   T A I L   G U S T   (GUSTHT, FAR/CS 23.425)
 
       GUSTHT = 9100     TRIM = 9100     SENSE = UP-GUST     CONTROLS FIXED AT 1G
-      1G REFERENCE:  ANGLEA = 2.688E-02     ELEV = -4.082E-02
-      DALPHA = 1.233E-01     ANGLEA = 1.501E-01
+      1G REFERENCE:  ANGLEA = 2.689E-02     ELEV = -4.196E-02
+      DALPHA = 1.234E-01     ANGLEA = 1.503E-01
       URDD3 (REF PT) = ...     URDD5 = ...     N (REF PT) = ...     N (CG) = ...
-      PRATT N (RECORDED) = 4.160E+00     N(CG)/PRATT = ...
+      PRATT N (RECORDED) = 4.148E+00     N(CG)/PRATT = ...
       MHTAERO  CZ FORCE:  1G = ...   GUST = ...   INCREMENT = ...   FORMULA DLHT (RECORDED) = ...
 
       RECORDED PROVENANCE ONLY — DALPHA AND G ENTER THE SOLUTION; SBEAM DOES NOT COMPUTE THE GUST.
@@ -234,23 +234,25 @@ level, generated output with the generating command in its header. An HT `AECOMP
 
 In-memory runs of the current solver on `sample/cessna210_flagship_gust.bdf` SUBCASE 9004
 (V_C = 86.0 m/s EAS, sea level, MTOW): `q = 4530.05`, `m = 1560.03 kg`, `g = 9.81`,
-`U_de = 15.24`, `K_g = 0.69561`, Pratt `n = 4.16047`.
+`U_de = 15.24`, `K_g = 0.69631`, Pratt `n = 4.148473`.
+*Recomputed 2026-10-25 after the #52 WT2 correction fix (the first draft's numbers were
+taken on the asymmetric correction).*
 
 | Quantity | Rigid limit (E, G ×1e6) | Elastic flagship |
 |---|---|---|
-| `Δα` | 0.123269 rad (7.063°) | same |
-| `α₁g` / `δ₁g` (rad) | — | 0.026880 / −0.040819 |
-| `n_ref` (−URDD3/g) | 4.108774 | 4.317502 |
-| `URDD5` | 4.46833 | 4.36926 |
-| `n_cg` | **4.160470** | 4.368 |
-| 1g tail load (N) | −752.6 | −748.9 |
-| tail increment ΔL_ht (N) | **4435.35** | ±4412.74 |
-| `a_ht(1−dε/dα)·S_ht` (m²/rad) | 7.94279 | 7.90229 |
-| tail total, up / down (N) | — | **+3663.9 / −5161.6** |
-| balanced 23.341 case tail (N), for contrast | — | +263.9 |
+| `Δα` | 0.123393 rad (7.070°) | same |
+| `α₁g` / `δ₁g` (rad) | — | 0.026893 / −0.041956 |
+| `n_ref` (−URDD3/g) | 4.100019 | 4.308920 |
+| `URDD5` | 4.18807 | 4.09006 |
+| `n_cg` | **4.148473** | 4.356 |
+| 1g tail load (N) | −754.6 | −751.0 |
+| tail increment ΔL_ht (N) | **4207.54** | ±4185.81 |
+| `a_ht(1−dε/dα)·S_ht` (m²/rad) | 7.52725 | 7.48837 |
+| tail total, up / down (N) | — | **+3434.8 / −4936.8** |
+| balanced 23.341 case tail (N), for contrast | — | +247.9 |
 
-With `S_ht = 3.114 m²` the implied `a_ht(1 − dε/dα) = 2.551 /rad`; against a Helmbold
-isolated-tail slope of ≈ 3.81 /rad that is `dε/dα ≈ 0.33` — physically plausible for this
+With `S_ht = 3.114 m²` the implied `a_ht(1 − dε/dα) = 2.417 /rad`; against a Helmbold
+isolated-tail slope of ≈ 3.81 /rad that is `dε/dα ≈ 0.37` — physically plausible for this
 layout.
 
 ### 8.2 Gates
@@ -259,8 +261,8 @@ layout.
 |---|---|---|
 | **S-HTG1** | Consistent-units ΔL_ht reproduces the regulation's `498` form | 0.2 % |
 | **S-HTG2** | `DALPHA = K_g·U_de/V`; the emitted deck parses **clean** | exact / no warning |
-| **V-HTG1** | Rigid limit: `n_cg` = Pratt `n` (4.160470 vs 4.16047) — the non-circular cross-check | rel 1e-5 |
-| **V-HTG2** | Rigid limit: tail increment = tool's DLHT (4435.35 N) | rel 1e-5 |
+| **V-HTG1** | Rigid limit: `n_cg` = Pratt `n` (4.148473 vs 4.148473) — the non-circular cross-check | rel 1e-5 |
+| **V-HTG2** | Rigid limit: tail increment = tool's DLHT (4207.54 N) | rel 1e-5 |
 | **V-HTG3** | `n_cg − n_ref = (x_cg − x_ref)·URDD5/g` (guards F1) | rel 1e-9 |
 | **V-HTG4** | Controls held: `ELEV = δ₁g` exactly, `ANGLEA = α₁g + Δα`; Fz/My closure ≈ 0 | abs 1e-6 |
 | **V-HTG5** | Linearity: ± increments equal and opposite | rel 1e-9 |

@@ -83,8 +83,8 @@ def test_split_and_parse_total_block():
     tgt = parse_body_targets(df, mach=0.0)
     # Realistic totals = flying-surface baseline + a small fuselage increment (mild
     # destabilising pitch/yaw, ~0 roll); see the deck header and 05_aeroelastics.md.
-    assert tgt == BodyTargets(cm_alpha=-1.4921, cm0=-0.0404, cn_beta=0.0772, cn0=0.0,
-                              cl_beta=-0.0364, cl0=0.0)
+    assert tgt == BodyTargets(cm_alpha=-1.4087, cm0=-0.0404, cn_beta=0.0772, cn0=0.0,
+                              cl_beta=-0.0367, cl0=0.0)
     assert parse_body_targets(df, mach=0.7) is None   # no TOTAL row at this Mach
 
 

@@ -228,7 +228,7 @@ class TestSGust5Flagship:
         """S, cbar and the rigid slope come from the model, not from constants."""
         assert flagship.sref == pytest.approx(16.24)
         assert flagship.cref == pytest.approx(1.4707)
-        assert flagship.cz_alpha == pytest.approx(5.3335, abs=5e-4)
+        assert flagship.cz_alpha == pytest.approx(5.3079, abs=5e-4)
         assert flagship.includes == ["cessna210_flagship_bulk.bdf"]
 
     def test_the_template_contributes_everything_but_urdd3(self, flagship):
@@ -259,13 +259,17 @@ class TestSGust5Flagship:
         assert flagship_cases[1].n == pytest.approx(1.0 - dn, rel=1e-12)
 
     def test_design_note_numbers(self, flagship_cases):
-        """Regression anchor: the worked table in the design note §7.3."""
+        """Regression anchor: the worked table in the design note §7.3.
+
+        Re-anchored 2026-10-25 for #52 (per-axis WT2 reference): the rigid CZ_alpha
+        fell 5.3335 -> 5.3079 when the fin stopped distorting the tailplane correction.
+        """
         up, down = flagship_cases
-        assert up.mu == pytest.approx(13.855, abs=5e-3)
-        assert up.kg == pytest.approx(0.6365, abs=5e-4)
-        assert up.dn == pytest.approx(2.9956, abs=5e-4)
-        assert up.n == pytest.approx(3.996, abs=1e-3)
-        assert down.n == pytest.approx(-1.996, abs=1e-3)
+        assert up.mu == pytest.approx(13.922, abs=5e-3)
+        assert up.kg == pytest.approx(0.6374, abs=5e-4)
+        assert up.dn == pytest.approx(2.9852, abs=5e-4)
+        assert up.n == pytest.approx(3.985, abs=1e-3)
+        assert down.n == pytest.approx(-1.985, abs=1e-3)
 
     def test_gust_case_is_more_critical_than_the_deck_manoeuvre(self, flagship_cases):
         """The reason the omission mattered: n = 4.0 beats the deck's 2.5 g case."""

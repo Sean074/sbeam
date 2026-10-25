@@ -25,7 +25,7 @@ from sbeam.aero.panel import AeroBox, mesh_caero1, build_box_id_map
 from sbeam.aero.vlm import build_ajj, prandtl_glauert_boxes
 from sbeam.aero.integration import build_skj, build_djk, build_wg_all
 from sbeam.aero.corrections import (
-    apply_wkk, apply_wt2, apply_chordcp, check_conditioning,
+    apply_wkk, apply_wt2, apply_chordcp, check_conditioning, wt2_reference_cp,
 )
 from sbeam.aero.spline import LoadInjection, build_spline_operators
 from sbeam.aero.strip import strip_box_mask, strip_box_slopes, is_strip_caero
@@ -167,7 +167,9 @@ def _assemble_vlm_operator(
         # the target baseline, and apply_wt2 all share the same factorization.
         lu = check_conditioning(ajj)
         ajj_inv_raw = lu_solve(lu, np.eye(n))
-        cp_target = ajj_inv_raw @ (-np.ones(n))
+        # Per-axis reference (#52): uncorrected boxes keep it as their target (r = 1).
+        cp_ref = wt2_reference_cp(op_boxes, ajj_inv_raw)
+        cp_target = cp_ref.copy()
         for card in wt2_cards:
             surf_idx = [k for k, b in enumerate(op_boxes) if b.caero_eid == card.caero_eid]
             tgt = np.asarray(card.target, dtype=float)
@@ -177,7 +179,7 @@ def _assemble_vlm_operator(
                     f"{tgt.shape[0]} != {len(surf_idx)} boxes on that surface"
                 )
             cp_target[surf_idx] = tgt
-        ajj_inv_corr = apply_wt2(ajj, cp_target, ajj_inv=ajj_inv_raw)
+        ajj_inv_corr = apply_wt2(ajj, cp_target, ajj_inv=ajj_inv_raw, cp_ref=cp_ref)
     else:
         lu = check_conditioning(ajj)
         ajj_inv_corr = lu_solve(lu, np.eye(n))

@@ -224,7 +224,7 @@ def test_b2_total_block_is_separate_from_the_flying_rows(targets):
     flying, totals = sd.split_total_rows(pd.read_csv(CSV_PATH))
     assert len(totals) == 1
     assert set(flying["var"].str.upper()) == {"ALPHA", "BETA"}
-    assert targets.cm_alpha == pytest.approx(-1.4921)
+    assert targets.cm_alpha == pytest.approx(-1.4087)
 
 
 # --------------------------------------------------------------------------- #
@@ -300,15 +300,25 @@ def test_b4_strip_does_not_contaminate_the_flying_surfaces(strip, bare):
 
 def test_b4_cruciform_does_contaminate_the_flying_surfaces(cruciform, bare):
     """The same geometry on PAERO1 is a real VLM surface, and a body box 0.95 m
-    under the wing genuinely loads it: the flying-box DCp response moves by
-    O(0.1), tens of percent of a typical box DCp.  The corrected TOTALS are still
-    exact — which is the trap.  Totals agreeing is not the load distribution
-    agreeing."""
+    under the wing genuinely loads it: off the flying surfaces' WT2 calibration
+    axis the flying-box DCp response moves by O(0.1), tens of percent of a typical
+    box DCp.  The corrected TOTALS are still exact — which is the trap.  Totals
+    agreeing is not the load distribution agreeing.
+
+    ON the calibration axis the contamination is absorbed, and that is WT2 working
+    as designed: the per-box ratio pins each wing/HTP box's unit-ANGLEA response to
+    its section target whatever else is in the AIC.  So the contrast lives in SIDES
+    and in the W2GJ baseline.  (Until #52 the alpha response was contaminated too,
+    by O(0.45) — but that was the defect: the all-boxes reference sideslipped the
+    vertical body panel and the fin, so the ratio was calibrated on a loading the
+    airplane never flies at beta = 0.)
+    """
     _c1, bulk_c, aero_c, _g1, _w1 = cruciform
     _c2, bulk_b, aero_b, _g2, _w2 = bare
     c, b = _flying_response(bulk_c, aero_c), _flying_response(bulk_b, aero_b)
-    assert np.abs(c["alpha"] - b["alpha"]).max() > 0.1
+    assert np.abs(c["alpha"] - b["alpha"]).max() < 1e-3
     assert np.abs(c["beta"] - b["beta"]).max() > 0.1
+    assert np.abs(c["baseline"] - b["baseline"]).max() > 0.01
 
 
 def test_b4_both_variants_still_reach_the_same_total_moments(cruciform_trims,

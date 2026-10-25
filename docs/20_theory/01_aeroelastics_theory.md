@@ -653,7 +653,10 @@ mechanisms working together, because no single one can do it (§3.3 note):
 
 The two compose exactly in the governing solve, $c_p=(A_{jj}^\ast)^{-1}(w_\alpha+w_g)$, with the
 correction in the operator and $w_g$ in the normalwash (§2, Eq. 6/9). Because the $W_{T2}$ ratio
-is calibrated on the unit-incidence reference $w_\text{ref}=-\mathbf 1$ and is therefore
+is calibrated on a unit-incidence reference — $w_\text{ref}=-\mathbf 1$ on the boxes of the
+surface's own incidence axis ($\alpha$ for a horizontal surface, $\beta$ for a vertical one) and
+$0$ on the other axis's, so a fin is never sideslipped by the tailplane's $\alpha$ calibration
+(#52) — and is therefore
 **independent of $w_g$**, the synthesis is a single pass: size $W_{T2}$ from the slope pair, then
 size $W_{2GJ}$ for the offset pair *through the corrected operator* (which also scales the camber
 load).

@@ -98,8 +98,8 @@ needed, so both wings react through the fuselage rather than against a rigid cen
 
 19 `CONM2` cards carry powerplant, systems, furnishing and payload; the `MAT1` density is
 live, so the CBARs carry ≈ 349 kg of distributed structural mass as well. Together:
-1081.0 kg with the CG at 22.0 % MAC, ≈ 31 points of static margin against a neutral point
-near 53 % MAC.
+1081.0 kg with the CG at 22.0 % MAC, ≈ 30 points of static margin against a neutral point
+near 52 % MAC.
 
 The single most important number in the mass model is the **cross-section area**, and it
 is easy to forget that `A` is a mass property as well as a stiffness property. The
@@ -306,18 +306,18 @@ Run `sbeam sample/cessna210_flagship_trim.bdf`.
 
 ```
 SUBCASE 1     TRIM = 1     MACH = 0.0000     Q = 2.334000E+03
-      ANGLEA          FREE           4.171998E-02      (=  2.3904 deg)
-      ELEV            FREE          -6.599247E-02      (= -3.7811 deg)
+      ANGLEA          FREE           4.174227E-02      (=  2.3917 deg)
+      ELEV            FREE          -6.792834E-02      (= -3.8920 deg)
 ```
 
-α = 2.39° at 1g. Check it: CL must be 0.280, the airplane's slope is ≈ 5.33 /rad, and the
-camber already supplies CL₀ ≈ 0.09, so α ≈ (0.280 − 0.090)/5.33 = 0.036 rad = 2.0° before
+α = 2.39° at 1g. Check it: CL must be 0.280, the airplane's slope is ≈ 5.31 /rad, and the
+camber already supplies CL₀ ≈ 0.09, so α ≈ (0.280 − 0.090)/5.31 = 0.036 rad = 2.0° before
 the tail download is accounted for. The solver's 2.39° is the same number with the tail
 carried properly.
 
-SUBCASE 2 gives α = 7.08°, ELEV = −9.64°. Both trims sit inside the baked −4…8° block.
+SUBCASE 2 gives α = 7.09°, ELEV = −9.85°. Both trims sit inside the baked −4…8° block.
 
-**Elevator per g** = (−9.639 − (−3.781))/1.5 = **−3.91 °/g**. Trailing edge up with
+**Elevator per g** = (−9.852 − (−3.892))/1.5 = **−3.97 °/g**. Trailing edge up with
 increasing load factor, as it must be for a statically stable airplane.
 
 ### 3.2 Stability derivatives
@@ -325,12 +325,12 @@ increasing load factor, as it must be for a statically stable airplane.
 ```
                   --------- RIGID ---------   -- ELASTIC RESTRAINED --   - ELASTIC UNRESTRAINED -
       LABEL          CZ          CMY             CZ          CMY            CZ          CMY
-      ANGLEA     5.333485E+00 -1.692080E+00   5.518806E+00 -1.688459E+00  5.570403E+00 -1.708297E+00
-      ELEV       6.103003E-01 -1.965806E+00   6.084772E-01 -1.958088E+00  6.103798E-01 -1.959628E+00
+      ANGLEA     5.307898E+00 -1.608650E+00   5.493350E+00 -1.605425E+00  5.544577E+00 -1.624168E+00
+      ELEV       5.788172E-01 -1.858583E+00   5.772651E-01 -1.851684E+00  5.790626E-01 -1.853072E+00
 ```
 
-- **CZ_α = 5.33 /rad rigid.** Helmbold gives 4.86 for the wing; the tail adds the rest.
-- **Cm_α = −1.69 /rad**, i.e. statically stable. The tail contributes roughly
+- **CZ_α = 5.31 /rad rigid.** Helmbold gives 4.86 for the wing; the tail adds the rest.
+- **Cm_α = −1.61 /rad**, i.e. statically stable. The tail contributes roughly
   −V_H·CL_α,t·(1−dε/dα)·η ≈ −1.3 and the CG-ahead-of-ac term the balance.
 - **Elastic restrained is +3.5 % on rigid.** The wing washes *in* under load here rather
   than out, so flexibility increases the lift slope.
@@ -343,8 +343,8 @@ increasing load factor, as it must be for a statically stable airplane.
 ### 3.3 Aerodynamic totals and divergence
 
 ```
-      TOTAL CZ (BODY) =  2.797810E-01        TOTAL CL (WIND) =  2.795375E-01
-      CRITICAL DIVERGENCE DYNAMIC PRESSURE  Q-DIV =  5.373038E+04   Q / Q-DIV = 4.343911E-02
+      TOTAL CZ (BODY) =  2.797810E-01        TOTAL CL (WIND) =  2.795373E-01
+      CRITICAL DIVERGENCE DYNAMIC PRESSURE  Q-DIV =  5.373047E+04   Q / Q-DIV = 4.343904E-02
 ```
 
 CZ = 0.27978 against the hand value W/(qS) = 0.27978. At 2.5g it is 0.69945 — exactly
@@ -355,25 +355,25 @@ aeroelastic feedback (§3.2) and nowhere near losing it.
 
 ```
       MONITOR MALLAR   (MONPNT1, aero only)      FZ =  1.060486E+04
-      MONITOR MALLEA   (MONPNT3, aero+inertia+reaction)  FZ =  1.455192E-11
+      MONITOR MALLEA   (MONPNT3, aero+inertia+reaction)  FZ = -5.048000E-11
 ```
 
 The whole-airplane **aero-only** vertical force is 10 604.9 N. The weight is
-1081.0 × 9.81 = 10 604.9 N. The whole-airplane **balanced** force is 1.5 × 10⁻¹¹ N.
+1081.0 × 9.81 = 10 604.9 N. The whole-airplane **balanced** force is 5 × 10⁻¹¹ N.
 
 That pair is the cheapest end-to-end statement that the trim really closed: lift equals
 weight, and once inertia and the support reaction are added back the airplane is in
 equilibrium. If `MALLEA` is not ~0, either the trim did not converge or the `SET1` is
 missing mass grids (§2.8).
 
-`MWROOT` gives the starboard wing-root bending, Mx = 8352 N·m at 1g.
+`MWROOT` gives the starboard wing-root bending, Mx = 8356 N·m at 1g.
 
 ### 3.5 Deflections
 
 | | wing-tip Uz | % semispan | tip rotation |
 |---|---|---|---|
 | 1g | 85.1 mm | 1.52 % | +1.10° |
-| 2.5g | 250.2 mm | 4.47 % | +3.28° |
+| 2.5g | 250.4 mm | 4.47 % | +3.29° |
 
 Believable for a GA wing, and the nose-up tip rotation under load is the wash-in that
 raises the elastic lift slope in §3.2.
@@ -386,21 +386,21 @@ Run `sbeam sample/cessna210_flagship_massset.bdf`.
 
 | Case | Mass (kg) | ANGLEA | MONPNT1 Fz (N) | n·W (N) | Root Mx / W |
 |---|---|---|---|---|---|
-| FERRY | 996.0 | 2.152° | 9 771.0 | 9 771.0 | 0.760 |
-| CRUISE | 1201.0 | 2.736° | 11 782.1 | 11 782.1 | 0.635 |
-| MTOW | 1560.0 | 3.680° | 15 303.9 | 15 303.9 | 0.586 |
+| FERRY | 996.0 | 2.153° | 9 771.0 | 9 771.0 | 0.760 |
+| CRUISE | 1201.0 | 2.737° | 11 782.1 | 11 782.1 | 0.636 |
+| MTOW | 1560.0 | 3.681° | 15 303.9 | 15 303.9 | 0.587 |
 
 Two readings.
 
 **ANGLEA rises monotonically with weight.** Same q, more lift needed, more incidence.
 
 **Wing-root bending *per unit aircraft weight* falls as fuel goes into the wing:** 0.760 →
-0.635 → 0.586. This is **inertia relief**. Wing fuel is carried outboard of the root cut,
+0.636 → 0.587. This is **inertia relief**. Wing fuel is carried outboard of the root cut,
 so its weight acts downward on the same span the lift acts upward on, and the two partly
 cancel *before* reaching the root. The heaviest airplane is not the most critical one for
 the wing root — which is why a loads engineer certifies the zero-fuel case.
 
-Note the elevator does *not* move monotonically (−3.69°, −3.95°, −3.74°): the MTOW case
+Note the elevator does *not* move monotonically (−3.81°, −4.06°, −3.79°): the MTOW case
 also moves the CG, via the offset cabin mass, and CG position competes with weight in
 setting the trim elevator.
 
@@ -414,15 +414,15 @@ critical sample.
 
 ```
      TIME        ANGLEA         ELEV          FZ_AERO
-  0.00000e+00  4.17200e-02  -6.59925e-02   1.06049e+04
-  1.50000e-01  4.17200e-02  -4.85390e-02   1.10074e+04
-  3.00000e-01  4.17200e-02  -3.10859e-02   1.14100e+04
-  1.00000e+00  4.17200e-02  -3.10859e-02   1.14100e+04
+  0.00000e+00  4.17423e-02  -6.79283e-02   1.06049e+04
+  1.50000e-01  4.17423e-02  -5.04751e-02   1.09868e+04
+  3.00000e-01  4.17423e-02  -3.30218e-02   1.13686e+04
+  1.00000e+00  4.17423e-02  -3.30218e-02   1.13687e+04
 ```
 
 At t = 0 every recovered quantity equals the SUBCASE 1 trim — the initial condition *is*
 that trim. The elevator tracks the absolute table linearly to the held value and the
-response settles. `FZ_AERO` rises from 10 605 N (= W) to 11 410 N.
+response settles. `FZ_AERO` rises from 10 605 N (= W) to 11 369 N.
 
 **ANGLEA does not change, and that is the model, not a bug.** This is Level-1: open-loop,
 with the rigid-body DOFs *restrained*. The airplane does not fly away in response to the
@@ -470,7 +470,7 @@ section-data CSV the flying surfaces use:
 
 ```
 caero,eta,mach,var,a_lo,a_hi,cn_a,a0,cm_a,cm0,xref,cl_a,cl0
-0,0.00,0.0,TOTAL,-4.0,8.0,0.0772,0.000,-1.4921,-0.0404,0.25,-0.0364,0.0
+0,0.00,0.0,TOTAL,-4.0,8.0,0.0772,0.000,-1.4087,-0.0404,0.25,-0.0367,0.0
 ```
 
 The column names are re-used, not renamed: on a `TOTAL` row `cm_a` is Cm_α, `cn_a` is
@@ -479,7 +479,7 @@ the `AEROS` RCSID origin — here the ¼-MAC at (2.4375, 0, 0.60), *not* the bas
 `TOTAL` row copied from a deck with a different reference point is meaningless; moment
 coefficients are only defined with respect to a point.
 
-Cm_α = −1.4921 against the bare airplane's −1.6921 is the whole fuselage story: a
+Cm_α = −1.4087 against the bare airplane's −1.6087 is the whole fuselage story: a
 **+0.20 /rad destabilising increment**, about 12 % of the airplane's pitch stiffness. The
 static margin shrinks and the airplane stays comfortably stable, which is what a fuselage
 does.
@@ -491,7 +491,7 @@ trims out carrying **1168 N — 11 % of the airplane's weight — on the fuselag
 still closes, every total is still exact, and the answer is still wrong for loads work:
 11 % of the weight has been taken off the wing and put somewhere it does not belong. The
 committed deck sets `PSTRIP, 20, 0.35`, which brings the strip body to 237 N (2.2 %),
-matching the cruciform's 216 N (2.0 %).
+matching the cruciform's 200 N (1.9 %).
 
 If you take one thing from this section: **check what your body panels carry, not just what
 they correct.**
@@ -505,9 +505,14 @@ coupling", and their force reaches the structure as a rigid load at a named mast
                     I N J E C T E D   A E R O   L O A D S   (SPLINE0 / UN-SPLINED)
 
       SOURCE          MASTER GRID   BOXES        FX        FY        FZ        MX        MY
-      SPLINE0 9400            900      16       0.0       0.0   2.156E+02  -1.417E+01  1.054E+03
-      SPLINE0 9500            900      32       0.0  -3.943E+01       0.0  -1.298E+01       0.0
+      SPLINE0 9400            900      16       0.0       0.0   2.005E+02       0.0   1.147E+03
+      SPLINE0 9500            900      32       0.0       0.0       0.0       0.0       0.0
 ```
+
+The vertical panel (9500) carries nothing: at β = 0 a symmetric airplane has no side force.
+(Until #52 this block showed −39 N of side force and −13 N·m of roll on that panel — the
+WT2 reference sideslipped every vertical surface. If a symmetric trim ever shows side force
+here again, suspect the correction before the physics.)
 
 Before Step 64 this force appeared in the printed totals but not in the force balance, and
 a body-panel trim silently did not close. The gate that it does now is the same one as
@@ -525,11 +530,11 @@ The bulk's `AELIST 1400` covers the 324 flying boxes. It was correct in §3.4 an
 quietly wrong now:
 
 ```
-      MONITOR MALLAR    (324 flying boxes)      FZ = 1.038922E+04
+      MONITOR MALLAR    (324 flying boxes)      FZ = 1.040439E+04
       MONITOR MALLARB   (all 372 boxes)         FZ = 1.060486E+04     <- = n*W
 ```
 
-The shortfall is 215.6 N — exactly the injected body force above. Nothing warns you. An
+The shortfall is 200.5 N — exactly the injected body force above. Nothing warns you. An
 `AELIST` is a list of box IDs, so boxes added later are simply not in it, and the monitor
 goes on returning a confident, slightly wrong number. The overlay adds `AELIST 1401` over
 all 372 boxes and keeps both, so the difference is visible rather than hypothetical.
@@ -552,12 +557,18 @@ They were tuned to the same targets and matched on body-lift share, so they trim
 
 ```
 max change in flying-surface DCp response vs the bare airplane
-  strip      1.8e-15      (machine precision)
-  cruciform  4.5e-01      (tens of percent of a typical box DCp)
+                   unit ANGLEA   unit SIDES   W2GJ baseline
+  strip            0             0            0             (exactly)
+  cruciform        2.2e-04       2.2e-01      2.7e-02       (tens of percent off-axis)
 ```
 
 The horizontal panel sits 0.95 m under the wing. For the cruciform that is a genuine VLM
-surface loading its neighbour; for the strip it is invisible. **Both airplanes have exactly
+surface loading its neighbour; for the strip it is invisible. The cruciform's ANGLEA column
+is almost untouched because that is the axis the flying surfaces' WT2 is calibrated on: the
+per-box ratio pins each wing and tail box's unit-α response to its section target whatever
+else is in the AIC. The interference has nowhere to hide on the other axis and in the
+camber baseline. (Before #52 the ANGLEA column showed 0.45 as well, but that was the defect
+— the reference sideslipped the vertical panel and the fin.) **Both airplanes have exactly
 the right total moments.** One of them has substantially redistributed the spanwise wing
 loading to get there.
 

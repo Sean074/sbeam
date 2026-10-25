@@ -92,7 +92,11 @@ class TestVGust2ThePair:
         up = bulk.gustlfs[_cc_subcase(model, _UP).gustlf_sid]
         down = bulk.gustlfs[_cc_subcase(model, _DOWN).gustlf_sid]
         assert up.n > 1.0 > down.n
-        assert up.n - 1.0 == pytest.approx(1.0 - down.n, rel=1e-9)
+        # Tolerance is the card text, not the maths: N is an 8-character field
+        # (fmt_real8, DEF-M12), so a negative value carries one digit fewer than a
+        # positive one (5.410038 vs -3.41004).  rel=1e-9 only ever passed while
+        # that seventh digit happened to be 0 (it surfaced with #52's re-anchor).
+        assert up.n - 1.0 == pytest.approx(1.0 - down.n, abs=1e-5)
 
     def test_incidence_is_ordered_by_load_factor(self, pair):
         """Relative gate: more load factor, more incidence.  Never an absolute sign."""

@@ -394,6 +394,11 @@ rigid `CZ_α = 5.3335`:
 | `Δn` | 2.9956 |
 | `n` (up / down) | **+3.996 / −1.996** |
 
+*Re-anchored 2026-10-25 (#52).* The per-axis WT2 reference fix stopped the fin distorting
+the tailplane correction, and the rigid slope fell to `CZ_α = 5.3079`. On the same condition
+that gives `μ = 13.922`, `K_g = 0.6374`, `Δn = 2.9852`, `n = +3.985 / −1.985`. The S-GUST5
+gate carries the new values; the table above is kept as the 2026-09-05 record.
+
 Two observations that matter:
 
 1. The gust case at this condition is **far more critical than the 2.5 g maneuver case** the

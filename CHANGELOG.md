@@ -207,6 +207,21 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     import gate.
 
 ### Fixed
+- **WT2 aero correction made a symmetric airplane asymmetric when it had a fin** (#52, Tier M).
+  WT2 pressure matching calibrated every box against a normalwash of −1 on *every* box, which
+  is a sideslip on a vertical surface. On `cessna210_flagship_bulk.bdf` the fin's reference
+  side load induced an antisymmetric normalwash on the tailplane, so the corrected HTP at
+  α = 3°, β = 0 carried 55 % more load to port than to starboard. The same bug produced a
+  116 N·m rolling moment in the 1g trim, nonzero `CMX` derivatives from pure pitch inputs, and a
+  −39 N side force on the cruciform's vertical body panel. Each surface is now calibrated on
+  its own incidence axis (`corrections.wt2_reference_cp`: α for horizontal surfaces, β for
+  y-normal ones), and `apply_wt2`, the operator assembly and both correction builders share
+  that one helper. Decks with no vertical surface are unchanged bit-for-bit. Regenerated: the
+  flagship W2GJ/AECORR block, both body overlays, the MLOADS `TABLED1 300` initial elevator,
+  and `cessna210_flagship_gust.bdf`. The CSV `TOTAL` targets were re-derived from the
+  corrected bare airplane (Cm_α −1.6087 + 0.20 → −1.4087; Cl_β −0.0367). Flagship numbers
+  move: rigid CZ_α 5.3335 → 5.3079, Cm_α −1.692 → −1.609, 1g ELEV −3.78° → −3.89°.
+  `test_pair_straddles_one_g` now uses the 8-character card-field tolerance it always needed.
 - **`LOAD` in an `MLOADS` or `DIVERG`-only subcase was silently dropped** (#6, DEF-M4 class,
   found in review). The transient solvers rebuilt their initial-condition subcase without
   `load_sid` and the divergence sweep never read it, so a payload or thrust `LOAD` on such a

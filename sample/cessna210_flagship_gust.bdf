@@ -8,14 +8,14 @@ $ factor N (which the solver uses, as URDD3 = -N*G) plus the derivation that
 $ produced it (which the solver only echoes to the f06).
 $
 $ Units: SI (lengths m, speeds m/s); g = 9.81 (overriding the 9.80665 standard)
-$ Rigid CZ_alpha = 5.33349 /rad, S = 16.24, cbar = 1.4707
+$ Rigid CZ_alpha = 5.3079 /rad, S = 16.24, cbar = 1.4707
 $
 SOL 144
 TITLE = Cessna 210 flagship - FAR/CS 23.341 gust cases at V_C and V_D
 INCLUDE 'cessna210_flagship_bulk.bdf'
 $
 SUBCASE 9000
-  TITLE   = +15.24 m/s gust at VC, alt 0 m, FERRY, n = 5.425
+  TITLE   = +15.24 m/s gust at VC, alt 0 m, FERRY, n = 5.41
   GUSTLF  = 9000
   MASSSET = 10
   SPC     = 1
@@ -23,7 +23,7 @@ SUBCASE 9000
   FORCE        = ALL
 $
 SUBCASE 9001
-  TITLE   = -15.24 m/s gust at VC, alt 0 m, FERRY, n = -3.425
+  TITLE   = -15.24 m/s gust at VC, alt 0 m, FERRY, n = -3.41
   GUSTLF  = 9001
   MASSSET = 10
   SPC     = 1
@@ -31,7 +31,7 @@ SUBCASE 9001
   FORCE        = ALL
 $
 SUBCASE 9002
-  TITLE   = +15.24 m/s gust at VC, alt 0 m, CRUISE, n = 4.863
+  TITLE   = +15.24 m/s gust at VC, alt 0 m, CRUISE, n = 4.849
   GUSTLF  = 9002
   MASSSET = 20
   SPC     = 1
@@ -39,7 +39,7 @@ SUBCASE 9002
   FORCE        = ALL
 $
 SUBCASE 9003
-  TITLE   = -15.24 m/s gust at VC, alt 0 m, CRUISE, n = -2.863
+  TITLE   = -15.24 m/s gust at VC, alt 0 m, CRUISE, n = -2.849
   GUSTLF  = 9003
   MASSSET = 20
   SPC     = 1
@@ -47,7 +47,7 @@ SUBCASE 9003
   FORCE        = ALL
 $
 SUBCASE 9004
-  TITLE   = +15.24 m/s gust at VC, alt 0 m, MTOW, n = 4.16
+  TITLE   = +15.24 m/s gust at VC, alt 0 m, MTOW, n = 4.148
   GUSTLF  = 9004
   MASSSET = 30
   SPC     = 1
@@ -55,7 +55,7 @@ SUBCASE 9004
   FORCE        = ALL
 $
 SUBCASE 9005
-  TITLE   = -15.24 m/s gust at VC, alt 0 m, MTOW, n = -2.16
+  TITLE   = -15.24 m/s gust at VC, alt 0 m, MTOW, n = -2.148
   GUSTLF  = 9005
   MASSSET = 30
   SPC     = 1
@@ -63,7 +63,7 @@ SUBCASE 9005
   FORCE        = ALL
 $
 SUBCASE 9006
-  TITLE   = +7.62 m/s gust at VD, alt 0 m, FERRY, n = 3.701
+  TITLE   = +7.62 m/s gust at VD, alt 0 m, FERRY, n = 3.692
   GUSTLF  = 9006
   MASSSET = 10
   SPC     = 1
@@ -71,7 +71,7 @@ SUBCASE 9006
   FORCE        = ALL
 $
 SUBCASE 9007
-  TITLE   = -7.62 m/s gust at VD, alt 0 m, FERRY, n = -1.701
+  TITLE   = -7.62 m/s gust at VD, alt 0 m, FERRY, n = -1.692
   GUSTLF  = 9007
   MASSSET = 10
   SPC     = 1
@@ -79,7 +79,7 @@ SUBCASE 9007
   FORCE        = ALL
 $
 SUBCASE 9008
-  TITLE   = +7.62 m/s gust at VD, alt 0 m, CRUISE, n = 3.358
+  TITLE   = +7.62 m/s gust at VD, alt 0 m, CRUISE, n = 3.35
   GUSTLF  = 9008
   MASSSET = 20
   SPC     = 1
@@ -87,7 +87,7 @@ SUBCASE 9008
   FORCE        = ALL
 $
 SUBCASE 9009
-  TITLE   = -7.62 m/s gust at VD, alt 0 m, CRUISE, n = -1.358
+  TITLE   = -7.62 m/s gust at VD, alt 0 m, CRUISE, n = -1.35
   GUSTLF  = 9009
   MASSSET = 20
   SPC     = 1
@@ -95,7 +95,7 @@ SUBCASE 9009
   FORCE        = ALL
 $
 SUBCASE 9010
-  TITLE   = +7.62 m/s gust at VD, alt 0 m, MTOW, n = 2.929
+  TITLE   = +7.62 m/s gust at VD, alt 0 m, MTOW, n = 2.922
   GUSTLF  = 9010
   MASSSET = 30
   SPC     = 1
@@ -103,7 +103,7 @@ SUBCASE 9010
   FORCE        = ALL
 $
 SUBCASE 9011
-  TITLE   = -7.62 m/s gust at VD, alt 0 m, MTOW, n = -0.9294
+  TITLE   = -7.62 m/s gust at VD, alt 0 m, MTOW, n = -0.922
   GUSTLF  = 9011
   MASSSET = 30
   SPC     = 1
@@ -112,88 +112,88 @@ SUBCASE 9011
 $
 BEGIN BULK
 $
-$ +15.24 m/s gust at VC, alt 0 m, FERRY, n = 5.425
-$   mu = 12.7657   K_g = 0.621831   dn = 4.42506   W = 9771.01
+$ +15.24 m/s gust at VC, alt 0 m, FERRY, n = 5.41
+$   mu = 12.8272   K_g = 0.622707   dn = 4.41004   W = 9771.01
 TRIM, 9000, 0.0, 4530.050, RHOREF, 1.225000, PITCH, 0.0, URDD5
 +, 0.0
-GUSTLF, 9000, 9000, 5.425060, 9.810000, 15.24000, 86.00000, 0.621831, 12.76566
-+, 5.333485, RIGID, 0.0
+GUSTLF, 9000, 9000, 5.410038, 9.810000, 15.24000, 86.00000, 0.622707, 12.82720
++, 5.307898, RIGID, 0.0
 $
-$ -15.24 m/s gust at VC, alt 0 m, FERRY, n = -3.425
-$   mu = 12.7657   K_g = 0.621831   dn = 4.42506   W = 9771.01
+$ -15.24 m/s gust at VC, alt 0 m, FERRY, n = -3.41
+$   mu = 12.8272   K_g = 0.622707   dn = 4.41004   W = 9771.01
 TRIM, 9001, 0.0, 4530.050, RHOREF, 1.225000, PITCH, 0.0, URDD5
 +, 0.0
-GUSTLF, 9001, 9001, -3.42506, 9.810000, 15.24000, 86.00000, 0.621831, 12.76566
-+, 5.333485, RIGID, 0.0
+GUSTLF, 9001, 9001, -3.41004, 9.810000, 15.24000, 86.00000, 0.622707, 12.82720
++, 5.307898, RIGID, 0.0
 $
-$ +15.24 m/s gust at VC, alt 0 m, CRUISE, n = 4.863
-$   mu = 15.3931   K_g = 0.65461   dn = 3.86321   W = 11782.1
+$ +15.24 m/s gust at VC, alt 0 m, CRUISE, n = 4.849
+$   mu = 15.4673   K_g = 0.655416   dn = 3.84941   W = 11782.1
 TRIM, 9002, 0.0, 4530.050, RHOREF, 1.225000, PITCH, 0.0, URDD5
 +, 0.0
-GUSTLF, 9002, 9002, 4.863209, 9.810000, 15.24000, 86.00000, 0.654610, 15.39306
-+, 5.333485, RIGID, 0.0
+GUSTLF, 9002, 9002, 4.849406, 9.810000, 15.24000, 86.00000, 0.655416, 15.46727
++, 5.307898, RIGID, 0.0
 $
-$ -15.24 m/s gust at VC, alt 0 m, CRUISE, n = -2.863
-$   mu = 15.3931   K_g = 0.65461   dn = 3.86321   W = 11782.1
+$ -15.24 m/s gust at VC, alt 0 m, CRUISE, n = -2.849
+$   mu = 15.4673   K_g = 0.655416   dn = 3.84941   W = 11782.1
 TRIM, 9003, 0.0, 4530.050, RHOREF, 1.225000, PITCH, 0.0, URDD5
 +, 0.0
-GUSTLF, 9003, 9003, -2.86321, 9.810000, 15.24000, 86.00000, 0.654610, 15.39306
-+, 5.333485, RIGID, 0.0
+GUSTLF, 9003, 9003, -2.84941, 9.810000, 15.24000, 86.00000, 0.655416, 15.46727
++, 5.307898, RIGID, 0.0
 $
-$ +15.24 m/s gust at VC, alt 0 m, MTOW, n = 4.16
-$   mu = 19.9942   K_g = 0.69561   dn = 3.16047   W = 15303.9
+$ +15.24 m/s gust at VC, alt 0 m, MTOW, n = 4.148
+$   mu = 20.0906   K_g = 0.69631   dn = 3.14847   W = 15303.9
 TRIM, 9004, 0.0, 4530.050, RHOREF, 1.225000, PITCH, 0.0, URDD5
 +, 0.0
-GUSTLF, 9004, 9004, 4.160470, 9.810000, 15.24000, 86.00000, 0.695610, 19.99422
-+, 5.333485, RIGID, 0.0
+GUSTLF, 9004, 9004, 4.148473, 9.810000, 15.24000, 86.00000, 0.696310, 20.09060
++, 5.307898, RIGID, 0.0
 $
-$ -15.24 m/s gust at VC, alt 0 m, MTOW, n = -2.16
-$   mu = 19.9942   K_g = 0.69561   dn = 3.16047   W = 15303.9
+$ -15.24 m/s gust at VC, alt 0 m, MTOW, n = -2.148
+$   mu = 20.0906   K_g = 0.69631   dn = 3.14847   W = 15303.9
 TRIM, 9005, 0.0, 4530.050, RHOREF, 1.225000, PITCH, 0.0, URDD5
 +, 0.0
-GUSTLF, 9005, 9005, -2.16047, 9.810000, 15.24000, 86.00000, 0.695610, 19.99422
-+, 5.333485, RIGID, 0.0
+GUSTLF, 9005, 9005, -2.14847, 9.810000, 15.24000, 86.00000, 0.696310, 20.09060
++, 5.307898, RIGID, 0.0
 $
-$ +7.62 m/s gust at VD, alt 0 m, FERRY, n = 3.701
-$   mu = 12.7657   K_g = 0.621831   dn = 2.70134   W = 9771.01
+$ +7.62 m/s gust at VD, alt 0 m, FERRY, n = 3.692
+$   mu = 12.8272   K_g = 0.622707   dn = 2.69217   W = 9771.01
 TRIM, 9006, 0.0, 6752.812, RHOREF, 1.225000, PITCH, 0.0, URDD5
 +, 0.0
-GUSTLF, 9006, 9006, 3.701345, 9.810000, 7.620000, 105.0000, 0.621831, 12.76566
-+, 5.333485, RIGID, 0.0
+GUSTLF, 9006, 9006, 3.692174, 9.810000, 7.620000, 105.0000, 0.622707, 12.82720
++, 5.307898, RIGID, 0.0
 $
-$ -7.62 m/s gust at VD, alt 0 m, FERRY, n = -1.701
-$   mu = 12.7657   K_g = 0.621831   dn = 2.70134   W = 9771.01
+$ -7.62 m/s gust at VD, alt 0 m, FERRY, n = -1.692
+$   mu = 12.8272   K_g = 0.622707   dn = 2.69217   W = 9771.01
 TRIM, 9007, 0.0, 6752.812, RHOREF, 1.225000, PITCH, 0.0, URDD5
 +, 0.0
-GUSTLF, 9007, 9007, -1.70134, 9.810000, 7.620000, 105.0000, 0.621831, 12.76566
-+, 5.333485, RIGID, 0.0
+GUSTLF, 9007, 9007, -1.69217, 9.810000, 7.620000, 105.0000, 0.622707, 12.82720
++, 5.307898, RIGID, 0.0
 $
-$ +7.62 m/s gust at VD, alt 0 m, CRUISE, n = 3.358
-$   mu = 15.3931   K_g = 0.65461   dn = 2.35835   W = 11782.1
+$ +7.62 m/s gust at VD, alt 0 m, CRUISE, n = 3.35
+$   mu = 15.4673   K_g = 0.655416   dn = 2.34993   W = 11782.1
 TRIM, 9008, 0.0, 6752.812, RHOREF, 1.225000, PITCH, 0.0, URDD5
 +, 0.0
-GUSTLF, 9008, 9008, 3.358354, 9.810000, 7.620000, 105.0000, 0.654610, 15.39306
-+, 5.333485, RIGID, 0.0
+GUSTLF, 9008, 9008, 3.349928, 9.810000, 7.620000, 105.0000, 0.655416, 15.46727
++, 5.307898, RIGID, 0.0
 $
-$ -7.62 m/s gust at VD, alt 0 m, CRUISE, n = -1.358
-$   mu = 15.3931   K_g = 0.65461   dn = 2.35835   W = 11782.1
+$ -7.62 m/s gust at VD, alt 0 m, CRUISE, n = -1.35
+$   mu = 15.4673   K_g = 0.655416   dn = 2.34993   W = 11782.1
 TRIM, 9009, 0.0, 6752.812, RHOREF, 1.225000, PITCH, 0.0, URDD5
 +, 0.0
-GUSTLF, 9009, 9009, -1.35835, 9.810000, 7.620000, 105.0000, 0.654610, 15.39306
-+, 5.333485, RIGID, 0.0
+GUSTLF, 9009, 9009, -1.34993, 9.810000, 7.620000, 105.0000, 0.655416, 15.46727
++, 5.307898, RIGID, 0.0
 $
-$ +7.62 m/s gust at VD, alt 0 m, MTOW, n = 2.929
-$   mu = 19.9942   K_g = 0.69561   dn = 1.92936   W = 15303.9
+$ +7.62 m/s gust at VD, alt 0 m, MTOW, n = 2.922
+$   mu = 20.0906   K_g = 0.69631   dn = 1.92203   W = 15303.9
 TRIM, 9010, 0.0, 6752.812, RHOREF, 1.225000, PITCH, 0.0, URDD5
 +, 0.0
-GUSTLF, 9010, 9010, 2.929357, 9.810000, 7.620000, 105.0000, 0.695610, 19.99422
-+, 5.333485, RIGID, 0.0
+GUSTLF, 9010, 9010, 2.922033, 9.810000, 7.620000, 105.0000, 0.696310, 20.09060
++, 5.307898, RIGID, 0.0
 $
-$ -7.62 m/s gust at VD, alt 0 m, MTOW, n = -0.9294
-$   mu = 19.9942   K_g = 0.69561   dn = 1.92936   W = 15303.9
+$ -7.62 m/s gust at VD, alt 0 m, MTOW, n = -0.922
+$   mu = 20.0906   K_g = 0.69631   dn = 1.92203   W = 15303.9
 TRIM, 9011, 0.0, 6752.812, RHOREF, 1.225000, PITCH, 0.0, URDD5
 +, 0.0
-GUSTLF, 9011, 9011, -0.92936, 9.810000, 7.620000, 105.0000, 0.695610, 19.99422
-+, 5.333485, RIGID, 0.0
+GUSTLF, 9011, 9011, -0.92203, 9.810000, 7.620000, 105.0000, 0.696310, 20.09060
++, 5.307898, RIGID, 0.0
 $
 ENDDATA
