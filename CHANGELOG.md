@@ -233,7 +233,8 @@ to v0.5.0, #29 (tail-gust posing) to v0.7.0, #51 (parser card order) to v0.4.0.
   pytest had not run in CI. The flagship body "no warnings" gate now counts UserWarnings only,
   so spurious BLAS FP flags no longer trip it. The CI runner is pinned to `ubuntu-24.04`:
   `ubuntu-latest` moved to 26.04, which has no Python 3.9, so the 3.9 job had failed at setup
-  on the same pushes. No behaviour change.
+  on the same pushes. Restoring 3.9 exposed one 3.9-incompatible `X | Y` annotation in
+  `tests/solver/test_rod_recovery.py` (#38), now `Union`. No behaviour change.
 - **`PARAM,WTMASS` other than 1.0 refuses the deck at parse** (#39, DEF-M22; PR #40). A
   weight-unit deck used to run with mass and `GRAV` loads wrong by a factor of g behind an
   unknown-card warning. Every other `PARAM` is still skipped with the `Unknown BDF card

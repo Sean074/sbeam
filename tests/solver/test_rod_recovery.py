@@ -3,6 +3,8 @@ and G7 (every solver path fills the rod dicts), design note
 ``docs/30_future/designs/rod_element_crod.md``.
 """
 
+from typing import Union
+
 import numpy as np
 import pytest
 
@@ -21,7 +23,7 @@ from sbeam.solver.sol101 import run_sol101
 from tests.assembly.test_rod_element import A, C, E, G, J, MIXED_DECK
 
 
-def _rod_bulk(ga_xyz, gb_xyz, kind="CONROD") -> tuple[BulkData, Crod | Conrod]:
+def _rod_bulk(ga_xyz, gb_xyz, kind="CONROD") -> tuple[BulkData, Union[Crod, Conrod]]:
     bulk = BulkData()
     bulk.grids[1] = Grid(gid=1, x=ga_xyz[0], y=ga_xyz[1], z=ga_xyz[2])
     bulk.grids[2] = Grid(gid=2, x=gb_xyz[0], y=gb_xyz[1], z=gb_xyz[2])
