@@ -9,6 +9,15 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+---
+
+## [0.3.0] — 2026-10-25
+
+Milestone v0.3.0, **solver capability mature**. SOL 144 + MLOADS engineering-complete including
+lateral, with thrust in trim, stable documented output schemas, the CBAR and rod element defects
+closed, and the solver/viewer import boundary enforced. Deferred at the cut: #7 (Trefftz CDi)
+to v0.5.0, #29 (tail-gust posing) to v0.7.0, #51 (parser card order) to v0.4.0.
+
 ### Breaking changes
 - **Monitor and section-cut CSVs gain an `applied` block** (#6; pre-1.0 MINOR break per
   `08_release_process.md` §1, same release as the #31 stabilisation so no released consumer

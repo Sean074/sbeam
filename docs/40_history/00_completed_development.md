@@ -7,6 +7,10 @@ Test/Acceptance, key decisions). When a backlog item is closed, its entry is **a
 matching area file** (and this index's list is updated), per the step-completion rule in
 `CLAUDE.md`.
 
+**Releases:** `v0.2.0` (2026-09-05), `v0.3.0` (2026-10-25, milestone v0.3.0 — solver
+capability mature). Per-release contents: `CHANGELOG.md`; numerical baselines:
+`docs/verification/`.
+
 ## File map
 
 | File | Area | Contents |
