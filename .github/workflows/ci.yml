@@ -8,7 +8,9 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: the 26.04 image has no Python 3.9 build, and 3.9 is
+    # the declared minimum (pyproject, pyrightconfig). Revisit when 3.9 is dropped (#54).
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
