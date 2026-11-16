@@ -2,7 +2,9 @@
 
 **Status:** findings filed 2026-11-16 as #63–#94 (label `audit-2026-11`); roadmap findings
 posted as comments on #4, #5, #7, #12–#18, #25–#28, #36, #41–#44, #50, #62. Milestone
-assignment of the v0.4.0 defects awaits triage.
+assignment of the v0.4.0 defects awaits triage. Process changes P1–P7 (§7) agreed
+2026-11-16 and adopted as CLAUDE.md rules 1–3 (‡) and new rules 7–8; documentation changes
+D1–D4 (§7.3) are proposed, not yet made.
 
 **Scope:** where sbeam's input, methods and output differ from MSC NASTRAN and ZAERO, which
 open sbeam problems MSC/ZAERO already solve, and what NASTRAN-95 and pyNastran offer as
@@ -154,3 +156,45 @@ structural, A aero cards, C case control, O output, M methods, P pyNastran, N NA
 3. **The answer-changers:** #71, #73, #74, #77, #66, #65 (refuse CD ≠ 0 now).
 4. **#82** (output labels), then #93 (comparison tooling) and the #94 BAH SOL 103 gate.
 5. **The decisions** #84, #86 and #87, before #16 and the v1.0 freeze.
+
+## 7. Process changes (agreed 2026-11-16)
+
+### 7.1 Why the findings were there to find
+
+| Cause | Evidence |
+|---|---|
+| **C1. Sweeps read sbeam's code, not the external spec.** A sweep finds only the pattern it already knows. | #58 missed DIVERG field 4 and CBAR G0 with zeros; #55 missed INREL/LMODES and all of case control (§5.1) |
+| **C2. Rules were quoted from memory.** | #62's CBUSH table; the WKK "10 % uplift" text (§5.2) |
+| **C3. Cards were built field by field as needed,** with no account of the fields a handler does not read. | #63, #64, #65, #67, #68, #70, #75, #76 |
+| **C4. "Refuse what you don't act on" was applied per issue, not per input surface.** | bulk data got the rule (#55); case control, file structure and most PARAMs did not (#69, #79–#81) |
+| **C5. Vendor names were reused with different layouts or meanings.** | MASSSET, the MLOADS family, TRIMVAR, MONPNT1/3, WKK (#71, #77, #78, #86, #87) |
+| **C6. Benchmarks were closed-form or self-consistent, never the vendor's printed number.** | WKK reciprocal, SPLINE2 axis, IGID, CONM2 sign and the CZ frame all passed CI (#66, #71, #74, #76, #82) |
+| **C7. Designs invented what the vendors already define.** | an RFA card, an illegal MKAERO1 k = 0 rule, an x-axis hinge (§3.3: #16, #12, #13) |
+
+### 7.2 Rules adopted
+
+| # | Change | Answers | CLAUDE.md |
+|---|---|---|---|
+| P1 | A sweep lists the members of the class from the external manual or an independent parser, not from sbeam's code | C1 | rule 3 ‡ |
+| P2 | A NASTRAN/ZAERO rule in code, docs or an issue carries the manual and PDF page; from memory it is labelled *unverified* and cannot justify a refusal, a gate or a doc statement | C2 | rule 8 |
+| P3 | A design note opens with what MSC and ZAERO already do, with citations, before a new card or method is proposed | C7 | rule 1 ‡ |
+| P4 | Each field of a vendor card is read, refused if non-blank, or documented as ignored with the reason | C3 | rule 7 |
+| P5 | A vendor card name keeps the vendor layout (a subset with refusals is fine); an sbeam extension takes a name and fields no vendor defines | C5 | rule 7 |
+| P6 | A vendor-named capability is gated on the vendor's published number where the manuals print one | C6 | rule 2 ‡ |
+| P7 | Input that is not acted on is refused on every input surface: executive control, case control, bulk data, PARAM, file structure | C4 | rule 7 |
+
+P4 and P1 have mechanical gates already: the unread-line refusal (#63) and the pyNastran
+cross-parse (#83). The rules cover what those gates cannot see: a field read with the wrong
+meaning, and a surface the gates do not parse.
+
+The rules apply to new and changed work. Existing breaches are the open audit issues;
+#86 and #87 decide how P5 applies to the cards already shipped.
+
+### 7.3 Documentation changes proposed, not yet made
+
+| # | Change | Supports |
+|---|---|---|
+| D1 | **Deviation register**: a single-source document in `10_standard/`, one row per known difference from MSC/ZAERO (card and field, sbeam behaviour, vendor behaviour, citation, refused / warned / different by design, issue). A known difference missing from it is a defect | P2, P5 |
+| D2 | **Field-disposition table per card** in `02_card_reference.md` | P4 |
+| D3 | **"External reference" column** in the verification tables in `00_program_overview.md`: MSC, ZAERO, NASTRAN-95, closed-form or none | P6 |
+| D4 | **Release gate** (`08_release_process.md` §3): the register is reviewed for every card touched in the milestone; each sample deck is tagged MSC-runnable or sbeam-extension | D1, §5.3 |

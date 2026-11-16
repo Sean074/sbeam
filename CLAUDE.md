@@ -63,20 +63,24 @@ Never batch or defer closure to a later session.**
 | **L** | New capability, new card, new physics | Tier S + affected standard docs + **full step format** (Objective, Deliverables, Test/Acceptance, key decisions) in the matching `docs/40_history/` area file + its index `00_completed_development.md` |
 
 Additional rules (rationale: `docs/50_reviews/2026-08-04_development_process_review.md`;
-rules marked † from `docs/50_reviews/2026-10-25_wt2_reference_defect_review.md`):
+† from `docs/50_reviews/2026-10-25_wt2_reference_defect_review.md`; ‡ from
+`docs/50_reviews/2026-11-16_nastran_zaero_audit.md` §7):
 
 1. **Design note before code (physics/L steps):** a short note — theory reference,
    conventions-charter citations (`09_conventions.md`), validation target with expected
    numbers, acceptance tolerances — agreed in chat **before** implementation starts.
    † When extending existing code, list its assumptions and say which stop holding.
+   ‡ Open with what MSC/ZAERO already do (cited) before proposing a new card or method.
 2. **Benchmark-first definition of done:** a physics step is not done until an end-to-end
    benchmark number (closed-form, NASTRAN, or AVL) passes in CI, written **with** the
    feature. Green unit tests alone are demonstrated insufficient (AE13). † Closure,
    regeneration and target-achieved gates prove consistency only; add one gate at the
-   real operating condition, scored outside the builder (#52).
+   real operating condition, scored outside the builder (#52). ‡ A vendor-named
+   capability is gated on the vendor's published number where the manuals print one.
 3. **Generalize on first find:** a defect fix must sweep the same defect class across the
    codebase in the same change, and add an invariant gate where feasible. † Sweep for the
    broken *assumption* (e.g. "normal = +z"), not just the function family (#52 vs DEF-M15).
+   ‡ List the class from the external manual or an independent parser, not sbeam's code.
 4. **Review findings are filed with bodies** in the same session they are raised — a name
    list is not a finding (DEF-L lesson).
 5. **No speculative features:** nothing is built without a named validation target or a
@@ -84,6 +88,13 @@ rules marked † from `docs/50_reviews/2026-10-25_wt2_reference_defect_review.md
 6. **† Explain before you gate:** a gate asserting a non-zero effect needs an independent
    prediction of its size, and printed output quoted in docs is checked against the case's
    invariants (β = 0 ⇒ no side force) — B4 once gated #52's own symptom.
+7. **‡ Refuse input that is not acted on,** on every input surface: executive control,
+   case control, bulk data, PARAM, file structure. Each field of a vendor card is read,
+   refused if non-blank, or documented as ignored with the reason. A vendor card name
+   keeps the vendor layout; an sbeam extension takes a name and fields no vendor defines.
+8. **‡ Cite or mark unverified:** a NASTRAN/ZAERO rule in code, docs or an issue carries
+   the manual and PDF page. From memory it is labelled *unverified* and cannot justify a
+   refusal, a gate or a doc statement (#62, WKK).
 
 ## Development Status
 
