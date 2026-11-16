@@ -23,6 +23,15 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and warnings, before and after.
 
 ### Fixed
+- **Duplicate PLOTEL, RBE2, RBE3, CONM2 and EIGRL IDs are refused** (#57). These five
+  cards had no duplicate check, so a second card with the same ID silently replaced the
+  first. **A reused CONM2 EID dropped a mass without a word**, and a reused RBE2 EID
+  untied the first card's dependent grids. Each now raises `Duplicate <CARD> EID/SID n`,
+  like every other ID-keyed card. ID spaces are unchanged: CONM2 may still share an EID
+  with a CBAR, as MSC's HA144A does, and rigid elements and PLOTEL keep their own spaces.
+  A new invariant gate reads every ID-keyed card type twice and expects a refusal, so a
+  new card type cannot skip the check. The TRIMOBJ example in the card reference did not
+  parse (its continuation line had no comma after the `+`) and is corrected.
 - **Bulk data is order-independent, and every reference between cards is checked** (#51).
   - **Card order.** A deck that defined an element before its GRIDs, property or material
     failed at parse (e.g. `sample/HA144A.bdf`: `CBAR 101: property PID=100 not found`).

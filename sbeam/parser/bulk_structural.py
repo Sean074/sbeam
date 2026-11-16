@@ -190,6 +190,8 @@ def _handle_plotel(fields: list[str], bulk: BulkData) -> None:
     eid = to_int(fields[1])
     g1  = to_int(fields[2])
     g2  = to_int(fields[3])
+    if eid in bulk.plotels:
+        raise ValueError(f"Duplicate PLOTEL EID {eid}")
     bulk.plotels[eid] = Plotel(eid=eid, g1=g1, g2=g2)
 
 
@@ -221,6 +223,8 @@ def _handle_rbe3(fields: list[str], conts: list[list[str]], bulk: BulkData) -> N
                 k += 1
         wt_gc.append((wt, c, grids))
 
+    if eid in bulk.rbe3s:
+        raise ValueError(f"Duplicate RBE3 EID {eid}")
     bulk.rbe3s[eid] = Rbe3(eid=eid, refgrid=refgrid, refc=refc, wt_gc=wt_gc)
 
 
@@ -239,6 +243,8 @@ def _handle_rbe2(fields: list[str], conts: list[list[str]], bulk: BulkData) -> N
             if f.strip():
                 gm.append(to_int(f))
 
+    if eid in bulk.rbe2s:
+        raise ValueError(f"Duplicate RBE2 EID {eid}")
     bulk.rbe2s[eid] = Rbe2(eid=eid, gn=gn, cm=cm, gm=gm)
 
 
@@ -280,6 +286,9 @@ def _handle_conm2(fields: list[str], cont: Optional[list[str]], bulk: BulkData) 
                 return to_float(cont[k])
         return 0.0
 
+    # Own ID space: MSC's HA144A gives CONM2 100 and CBAR 100 the same EID (#57)
+    if eid in bulk.conm2s:
+        raise ValueError(f"Duplicate CONM2 EID {eid}")
     bulk.conm2s[eid] = Conm2(
         eid=eid, gid=gid, cid=cid, m=m, x1=x1, x2=x2, x3=x3,
         i11=_gi(8), i21=_gi(9), i22=_gi(10),
@@ -502,6 +511,8 @@ def _handle_eigrl(fields: list[str], bulk: BulkData) -> None:
     nd   = to_int_or_none(fields[4]) if len(fields) > 4 else None
     # fields[5–7] are MSGLVL, MAXSET, SHFSCL — not used in phase 1
     norm = fields[8].strip() if len(fields) > 8 and fields[8].strip() else "MASS"
+    if sid in bulk.eigrls:
+        raise ValueError(f"Duplicate EIGRL SID {sid}")
     bulk.eigrls[sid] = Eigrl(sid=sid, v1=v1, v2=v2, nd=nd, norm=norm)
 
 

@@ -95,6 +95,12 @@ Names and IDs that must be unique **across** card types are also checked after t
 - PIDs across PBAR and PROD, and across PAERO1 and PSTRIP;
 - monitor names across MONPNT1, MONPNT3 and MONSECT.
 
+Every other ID-keyed card is unique within its own card type only, and a second card with
+an ID already in use refuses the deck (#57); cards that share a SID by design (FORCE,
+MOMENT, SPC, SPC1, SUPORT, TRIMCON) accumulate. CONM2 EIDs are their own space: MSC's
+HA144A gives CONM2 100 and CBAR 100 the same EID. RBAR, RBE2, RBE3 and PLOTEL also keep
+their own spaces; whether NASTRAN puts them in the element space has not been confirmed.
+
 When a deck has several faults, the first one reported may depend on where the cards sit,
 but the deck is refused either way.
 
@@ -547,7 +553,7 @@ PLOTEL, EID, G1, G2
 
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
-| EID | `eid` | int | Element ID (unique) | required |
+| EID | `eid` | int | Element ID (unique among `PLOTEL` cards; a separate space from the line elements) | required |
 | G1 | `g1` | int | Grid point 1 | required |
 | G2 | `g2` | int | Grid point 2 | required |
 
@@ -575,7 +581,7 @@ Additional dependent grids may span continuation lines.
 
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
-| EID | `eid` | int | Element ID (unique) | required |
+| EID | `eid` | int | Element ID (unique among `RBE2` cards; a separate space from the line elements) | required |
 | GN | `gn` | int | Independent grid ID | required |
 | CM | `cm` | str | DOF string coupling GN to all GMs (e.g., `"123456"`) | required |
 | GM1–GMn | `gm` | list[int] | Dependent grid IDs | required |
@@ -629,7 +635,7 @@ RBAR, EID, GA, GB, CNA, CNB, CMA, CMB
 
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
-| EID | `eid` | int | Element ID (unique) | required |
+| EID | `eid` | int | Element ID (unique among `RBAR` cards; a separate space from the line elements) | required |
 | GA | `ga` | int | End A grid (independent) | required |
 | GB | `gb` | int | End B grid (dependent) | required |
 | CNA | `cna` | str | Independent DOF components at GA | `"123456"` |
@@ -678,7 +684,7 @@ Each weight group `(WTi, Ci, Gi_1, Gi_2, ...)` may span continuation lines.
 
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
-| EID | `eid` | int | Element ID (unique) | required |
+| EID | `eid` | int | Element ID (unique among `RBE3` cards; a separate space from the line elements) | required |
 | (blank) | — | — | Field 2 must be blank | — |
 | REFGRID | `refgrid` | int | Dependent reference grid ID | required |
 | REFC | `refc` | str | DOF string for the dependent grid | required |
@@ -723,7 +729,7 @@ The continuation line is optional (all inertia terms default to 0).
 
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
-| EID | `eid` | int | Element ID (unique) | required |
+| EID | `eid` | int | Element ID (unique among `CONM2` cards; may equal a line element's EID, as in MSC's HA144A) | required |
 | GID | `gid` | int | Grid point where mass is attached | required |
 | CID | `cid` | int | Coordinate system for offset vector and inertia tensor | `0` |
 | M | `m` | float | Mass value | `0.0` |
@@ -1072,7 +1078,7 @@ EIGRL, SID, V1, V2, ND, MSGLVL, MAXSET, SHFSCL, NORM
 
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
-| SID | `sid` | int | Set ID (referenced by `METHOD` in case control) | required |
+| SID | `sid` | int | Set ID (unique; referenced by `METHOD` in case control) | required |
 | V1 | `v1` | float or None | Lower frequency bound (Hz); blank = no lower limit | `None` |
 | V2 | `v2` | float or None | Upper frequency bound (Hz); blank = no upper limit | `None` |
 | ND | `nd` | int or None | Number of modes to extract; blank = all in [V1,V2] | `None` |
@@ -1933,7 +1939,7 @@ TRIMOBJ  SID  L1  W1  L2  W2  L3  W3  L4  W4
 **Example:**
 ```
 TRIMOBJ, 20, ANGLEA, 1.0, CL, 0.5
-+        CM, 0.1
++,       CM, 0.1
 ```
 
 ---
