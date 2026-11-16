@@ -60,7 +60,7 @@ def to_int_or_none(s: str) -> Optional[int]:
 def is_continuation(fields: list[str]) -> bool:
     if not fields:
         return False
-    if fields[0].startswith("+"):
+    if fields[0].startswith(("+", "*")):
         return True
     # Unnamed continuation: blank first field with subsequent non-blank content
     if not fields[0].strip() and any(f.strip() for f in fields[1:]):
@@ -92,34 +92,98 @@ def expand_int_list_with_thru(tokens: list[str]) -> list[int]:
     return result
 
 
+#: Data fields per physical line: fields 2–9 of a small-field line, or fields 2–5 (6–9 on
+#: the next line) of a 16-column large-field line.  Field 10 never holds data (QRG p.1048).
+_SMALL, _LARGE = 8, 4
+
+
+def _is_marker(token: str) -> bool:
+    """A field-10 token is a continuation marker if it starts with + or * and is not a number."""
+    if not token.startswith(("+", "*")):
+        return False
+    try:
+        parse_real(token)
+    except ValueError:
+        return True
+    return False
+
+
+def _physical_line(line: str) -> tuple[str, list[str], int]:
+    """Split one physical line into ``(field 1, data fields, capacity)``.
+
+    Capacity is 8 for small field and 4 for large field (field 1 ends ``*`` on a parent,
+    starts ``*`` on a continuation).  A free-field line may carry more data than one line
+    holds: the data runs on in capacity-sized rows, and a token in a row's field-10 slot
+    is dropped when it is a continuation marker (QRG p.1049–1051: ``SPC1,100,12456,1,...,10``
+    continues automatically; ``MATT9,...,8 ,+P101`` ends with a marker).  The data is
+    padded to whole rows, so the next physical line starts a new row.
+    """
+    if "," in line:
+        tokens = _split_free_field(line)
+        name, rest = tokens[0], tokens[1:]
+        capacity = _LARGE if name.endswith("*") or name.startswith("*") else _SMALL
+        data: list[str] = []
+        k = 0
+        while k < len(rest):
+            if data and len(data) % capacity == 0 and _is_marker(rest[k]):
+                k += 1
+                continue
+            data.append(rest[k])
+            k += 1
+        while data and not data[-1]:
+            data.pop()
+    else:
+        padded = line.ljust(72)
+        name = padded[:8].strip()
+        capacity = _LARGE if name.endswith("*") or name.startswith("*") else _SMALL
+        width = 64 // capacity
+        data = [padded[8 + i * width: 8 + (i + 1) * width].strip() for i in range(capacity)]
+    rows = max(1, -(-len(data) // capacity))
+    return name, data + [""] * (rows * capacity - len(data)), capacity
+
+
 def iter_cards(lines: list[str]) -> Iterator[tuple[str, list[str], list[list[str]]]]:
     """Yield ``(KEYWORD, fields, continuations)`` for every card in bulk-data lines.
 
-    A ``$`` anywhere on a line starts a comment.  ``continuations`` holds the split
-    continuation lines that directly follow the card, blank lines between them skipped.
-    Continuation lines are never yielded on their own, so an orphan continuation is
-    dropped silently.
+    Every card is normalised to NASTRAN's 10-field layout whatever its input format
+    (free, small or large field; #64): ``fields`` is ``[KEYWORD, field 2 … field 9]`` and
+    each continuation is ``["+", field 2 … field 9]`` — always 9 entries, field 10 dropped.
+    A free-field line longer than 10 fields runs on into automatic continuations, and a
+    large-field keyword loses its ``*``.  A ``$`` anywhere on a line starts a comment;
+    blank lines between a card and its continuations are skipped.
+
+    Raises ``ValueError`` for a continuation line with no card before it, and for a card
+    that switches between large and small field in the middle of a row (the QRG's own
+    examples do not settle where its fields land).
     """
     processed = []
     for raw in lines:
         idx = raw.find("$")
         processed.append(raw[:idx].rstrip() if idx >= 0 else raw.rstrip())
 
-    for i, line in enumerate(processed):
+    card: Optional[tuple[str, list[str]]] = None
+    for line in processed:
         if not line.strip():
             continue
-        fields = split_line(line)
-        if not fields or not fields[0] or is_continuation(fields):
-            continue
-        conts: list[list[str]] = []
-        k = i + 1
-        while k < len(processed):
-            if not processed[k].strip():
-                k += 1
+        name, data, capacity = _physical_line(line)
+        if not is_continuation([name, *data]):
+            if card is not None:
+                yield _card(*card)
+            if not name:
                 continue
-            nf = split_line(processed[k])
-            if not is_continuation(nf):
-                break
-            conts.append(nf)
-            k += 1
-        yield fields[0].upper(), fields, conts
+            card = (name.rstrip("*").upper(), data)
+            continue
+        if card is None:
+            raise ValueError(f"Continuation line with no card before it: '{line.strip()}'")
+        if capacity == _SMALL and len(card[1]) % _SMALL:
+            raise ValueError(f"{card[0]}: a small-field continuation follows half a "
+                             "large-field row; write the card in one field format")
+        card[1].extend(data)
+    if card is not None:
+        yield _card(*card)
+
+
+def _card(keyword: str, data: list[str]) -> tuple[str, list[str], list[list[str]]]:
+    data = data + [""] * (-len(data) % _SMALL)
+    rows = [data[i:i + _SMALL] for i in range(0, len(data), _SMALL)]
+    return keyword, [keyword, *rows[0]], [["+", *row] for row in rows[1:]]

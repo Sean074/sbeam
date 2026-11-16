@@ -10,6 +10,25 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Breaking changes
+- **Every card is read in NASTRAN's 10-field layout, whatever its input format** (#64;
+  pre-1.0 MINOR break). A free-field line longer than 10 fields used to keep all its
+  tokens on one line, so handlers read past field 9 and put values in the wrong place:
+  `CONM2,1,2,,10.,0.,0.,0.,,1.,0.,2.,0.,0.,3.` gave I21 = 1, I31 = 2 where NASTRAN reads
+  I11 = 1, I22 = 2, I33 = 3, and `CBAR,...,,56,56` lost its pin flags. The data now runs on
+  into automatic continuations 8 fields at a time (QRG p.1049–1051).
+  - Large-field cards (`GRID*`, `*` continuations, fixed or free) are read.
+  - A field-10 continuation marker (`+L1`, `+`, `*`) on a free-field line is accepted
+    for every card; it used to fail with `could not convert '+L1'`.
+  - **CONM2 refuses a non-blank field 9.** sbeam used to read I11 there; NASTRAN leaves
+    it blank, so `CONM2, 1, 2, 0, m, x1, x2, x3, I11` must become
+    `CONM2, 1, 2, 0, m, x1, x2, x3, , I11`. Two repo decks and the card-reference example
+    are converted; `v9_conm2_offset_bending.bdf`, which relied on the misread, is
+    rewritten so its numbers do not change.
+  - A continuation line with no card before it, and a card that switches from large to
+    small field mid-row, are refused.
+  - TRIMVAR LB/UB and DIVERG NROOT take their defaults when the field is blank. Fixed
+    field used to give TRIMVAR LB = UB = 0.0, pinning the variable (part of #77).
+
 - **Unknown bulk-data cards refuse the deck instead of being skipped** (#55; pre-1.0 MINOR
   break). An unknown keyword used to be skipped with a `UserWarning`, so a typo (`FROCE`)
   silently dropped a load, and MSC's `DMI,W2GJ` silently dropped HA144A's 0.1° wing

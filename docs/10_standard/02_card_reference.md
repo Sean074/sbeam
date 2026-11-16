@@ -44,15 +44,29 @@ A bulk-only file (`.dat`) contains only the bulk data cards (no case control, no
 |---------|--------|
 | Free-field | Comma-separated fields: `GRID, 1, , 0.0, 0.0, 0.0` |
 | Fixed-field | Standard NASTRAN 8-column fields (no commas) |
-| Continuation | Next line starts with `+` (or blank first field in fixed format) |
+| Continuation | Next line starts with `+` or `*`, or has a blank first field (`,` first in free field) |
+| Large field | `NAME*` with 16-column fields 2–5, then a `*` line with fields 6–9 (fixed or free) |
 | Comment | `$` anywhere on a line — rest of line is ignored |
 | Blank field | Leave empty between commas or use double comma: `GRID, 1, , 0.0` |
 
-Both free-field and fixed-field formats are supported. Continuation lines must immediately follow their parent card. Large-field (16-character, `NAME*`) format is **not** supported.
+Free, small and large field are all supported. Continuation lines must immediately follow their parent card.
+
+**Field layout (#64).** Every card is read in NASTRAN's 10-field layout whatever its input
+format (QRG p.1048–1052): field 1 is the name or continuation marker, fields 2–9 hold data,
+and field 10 never holds data. A free-field line with more than 8 data fields **runs on into
+automatic continuations**, 8 fields per line: `SPC1,100,12456,1,2,3,4,5,6,7,8,9,10` is SPC1
+with grids 1–6 on the first line and 7–10 on a continuation. A token in a row's field-10
+position is a continuation marker only if it starts with `+` or `*` and is not a number
+(`+L1`, `+`, `*G1`); otherwise it is data. A physical continuation line always starts a new
+row. Refused: a continuation line with no card before it, and a card that switches from
+large to small field mid-row (the QRG's examples do not settle where its fields land).
+Cards whose field 9 is unused in NASTRAN keep it blank in free field too: a one-line CONM2
+needs `, ,` before I11 (see CONM2).
 
 **Real number fields.** A NASTRAN data field is **8 characters wide**, in free field as well as
-fixed field — a strict reader truncates each comma-delimited field to its first 8 characters.
-sbeam's own reader does not enforce that width on input. Implicit-exponent reals (`1.44+9`,
+fixed field — MSC rounds a longer free-field real to 8 characters (`1.2345678+2` becomes
+`123.4568`, QRG p.1048), and other readers may truncate it. sbeam's own reader keeps full
+precision on input. Implicit-exponent reals (`1.44+9`,
 `-2.31-4`, `1.5+03`) are accepted on read alongside ordinary Python float literals;
 `parser/bdf_field.parse_real` is the single read-side implementation and
 `parser/bdf_field.fmt_real8` the matching write side.
@@ -762,7 +776,10 @@ CONM2, EID, GID, CID, M, X1, X2, X3
 +,     I11, I21, I22, I31, I32, I33
 ```
 
-The continuation line is optional (all inertia terms default to 0).
+The continuation line is optional (all inertia terms default to 0). Field 9 of the first
+line is unused in NASTRAN and must be blank; a non-blank field 9 is refused (#64 — sbeam
+used to read I11 there). On one free-field line write `, ,` before I11, and the inertia runs
+on to the continuation.
 
 **Fields:**
 
@@ -809,8 +826,9 @@ When CID ≠ 0, the offset and inertia tensor are rotated to global before assem
 ```
 $ 100 kg point mass at GID 7, no offset, no inertia
 CONM2, 30, 7, 0, 100.0
-$ 0.001 kg mass with torsional inertia I11=2.0 kg·m² (inline continuation)
-CONM2, 1, 2, 0, 0.001, 0.0, 0.0, 0.0, 2.0
+$ 0.001 kg mass with torsional inertia I11=2.0 kg·m² (one free-field line: field 9 is
+$ blank, so I11 is the 10th field and runs on to the continuation; #64)
+CONM2, 1, 2, 0, 0.001, 0.0, 0.0, 0.0, , 2.0
 $ Mass with full inertia tensor on continuation line
 CONM2, 2, 5, 0, 50.0, 0.1, 0.0, 0.0
 +,     1.5, 0.0, 2.0, 0.0, 0.0, 3.0

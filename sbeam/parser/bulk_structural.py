@@ -342,23 +342,22 @@ def _handle_conm2(fields: list[str], cont: Optional[list[str]], bulk: BulkData) 
     x2  = to_float(fields[6]) if len(fields) > 6 else 0.0
     x3  = to_float(fields[7]) if len(fields) > 7 else 0.0
 
-    # Inertia tensor: fields 8-13 in free-field, or continuation line fields 1-6 in fixed-field
-    def _gi(n: int) -> float:
-        if len(fields) > n and fields[n].strip():
-            return to_float(fields[n])
-        if cont is not None:
-            k = n - 7  # fields[8] → cont[1], ..., fields[13] → cont[6]
-            if len(cont) > k:
-                return to_float(cont[k])
-        return 0.0
+    # Inertia tensor: continuation fields 2-7.  A long free-field line arrives here
+    # already split (field 9 of the parent is blank in NASTRAN; #64)
+    def _gi(k: int) -> float:
+        return to_float(cont[k]) if cont is not None else 0.0
 
+    if fields[8].strip():
+        # sbeam once read I11 here; NASTRAN leaves field 9 blank (QRG p.1449), so a
+        # one-line free-field CONM2 needs ', ,' before I11 (#64)
+        raise ValueError(f"CONM2 {eid}: field 9 must be blank; I11 starts the continuation")
     # Own ID space: MSC's HA144A gives CONM2 100 and CBAR 100 the same EID (#57)
     if eid in bulk.conm2s:
         raise ValueError(f"Duplicate CONM2 EID {eid}")
     bulk.conm2s[eid] = Conm2(
         eid=eid, gid=gid, cid=cid, m=m, x1=x1, x2=x2, x3=x3,
-        i11=_gi(8), i21=_gi(9), i22=_gi(10),
-        i31=_gi(11), i32=_gi(12), i33=_gi(13),
+        i11=_gi(1), i21=_gi(2), i22=_gi(3),
+        i31=_gi(4), i32=_gi(5), i33=_gi(6),
     )
 
 
@@ -582,7 +581,7 @@ def _handle_param(fields: list[str], bulk: BulkData) -> None:
     name = fields[1].strip().upper() if len(fields) > 1 else ""
     if name == "WTMASS":
         # WTMASS scales the mass matrix in Nastran; sbeam never converts units (charter §7)
-        value = to_float(fields[2]) if len(fields) > 2 else 1.0
+        value = to_float(fields[2]) if fields[2].strip() else 1.0
         if value != 1.0:
             raise ValueError(
                 f"PARAM,WTMASS,{value:g} is not supported: sbeam does not scale mass; "
@@ -592,7 +591,7 @@ def _handle_param(fields: list[str], bulk: BulkData) -> None:
     if name == "AUNITS":
         # AUNITS (MSC) makes TRIM URDD* read in g; ignored, URDD3 = 1.0 would trim at
         # 1.0 model-unit/s² instead of 1 g (#55; same charter §7 rule as WTMASS)
-        value = to_float(fields[2]) if len(fields) > 2 else 1.0
+        value = to_float(fields[2]) if fields[2].strip() else 1.0
         if value != 1.0:
             raise ValueError(
                 f"PARAM,AUNITS,{value:g} is not supported: sbeam does not convert "

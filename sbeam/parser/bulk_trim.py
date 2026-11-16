@@ -78,7 +78,7 @@ def _handle_diverg(fields: list[str], conts: list[list[str]], bulk: BulkData) ->
     # DIVERG  SID  NROOTS  RHOREF  M1  M2  ...   (RHOREF is an sbeam extension in
     # field 4 used only to map q_div -> V_div; leave blank/0.0 to omit V_div).
     sid    = to_int(fields[1])
-    nroots = to_int(fields[2]) if len(fields) > 2 else 1
+    nroots = to_int(fields[2]) if fields[2].strip() else 1  # QRG p.1603: Default = 1
     if nroots < 1:
         raise ValueError(f"DIVERG {sid}: NROOTS must be >= 1, got {nroots}")
     rhoref = to_float(fields[3]) if len(fields) > 3 and fields[3].strip() else 0.0
@@ -283,8 +283,10 @@ def _handle_trimvar(fields: list[str], bulk: BulkData) -> None:
     vid   = to_int(fields[1])
     label = fields[2].strip().upper() if len(fields) > 2 else ""
     init  = to_float(fields[3]) if len(fields) > 3 else 0.0
-    lb    = to_float(fields[4]) if len(fields) > 4 else -1.0e30
-    ub    = to_float(fields[5]) if len(fields) > 5 else  1.0e30
+    # Blank, not absent: every line arrives padded to 9 fields (#64), and a blank bound
+    # read as 0.0 would pin the variable (#77)
+    lb    = to_float(fields[4]) if fields[4].strip() else -1.0e30
+    ub    = to_float(fields[5]) if fields[5].strip() else  1.0e30
     if not label:
         raise ValueError(f"TRIMVAR {vid}: LABEL must not be blank")
     if vid in bulk.trimvars:

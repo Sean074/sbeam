@@ -136,7 +136,7 @@ class TestResolve:
     def test_scale_applies_to_inertia_tensor(self):
         bulk = parse_bulk_data((
             "GRID, 1, , 0.0, 0.0, 0.0\n"
-            "CONM2, 11, 1, 0, 10.0, 0.0, 0.0, 0.0, 3.0, 0.0, 4.0, 0.0, 0.0, 5.0\n"
+            "CONM2, 11, 1, 0, 10.0, 0.0, 0.0, 0.0, , 3.0, 0.0, 4.0, 0.0, 0.0, 5.0\n"
             "CONM2, 12, 1, 0, 1.0\n"
             "MASSSET, 10, HEAVY, 2.0\n+, DELETE, 12\n"
         ).splitlines())

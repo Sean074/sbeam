@@ -41,7 +41,8 @@ def test_matrix_and_damping_cards_are_refused(cards, match):
 
 @pytest.mark.parametrize("card, match", [
     ("FROCE, 10, 2, 0, 1.0, 0.0, 0.0, -1.0", r"FROCE x1 \(did you mean FORCE\?\)"),
-    ("GRID*, 3, , 2.0, 0.0", r"GRID\* x1 \(did you mean GRID\?\)"),
+    # large field is read since #64; an unknown keyword in it is still refused, without the *
+    ("FROCE*, 10, 2, 0, 1.0", r"FROCE x1 \(did you mean FORCE\?\)"),
     ("NSML, 1, PBAR, 10, 2.5", r"NSML x1"),
     ("AELINK, 1, ELEV, , AILL, 1.0", r"AELINK x1"),
 ], ids=["typo", "large-field", "nonstructural-mass", "aelink"])
