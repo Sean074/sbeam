@@ -220,6 +220,8 @@ class TestConm2:
     def test_conm2_nonzero_cid_stored(self):
         """CID != 0 is stored without warning (CORD2R now supported)."""
         lines = [
+            "CORD2R, 5, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0",
+            "+, 1.0, 0.0, 0.0",
             "GRID, 1, , 0.0, 0.0, 0.0",
             "CONM2, 1, 1, 5, 10.0",
         ]

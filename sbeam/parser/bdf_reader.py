@@ -67,18 +67,18 @@ assert len(HANDLED_CARDS) == len(_FIELD_HANDLERS) + len(_CONT_HANDLERS) + len(_M
     "a bulk keyword is registered by more than one handler table"
 
 
-def parse_bulk_data(lines: list[str]) -> BulkData:
-    """Parse BDF bulk data lines into a BulkData object.
+def _read_cards(lines: list[str]) -> BulkData:
+    """Read every card into a BulkData, checking each card on its own (phase 1 of 2).
 
-    Supports free-field (comma-separated) and fixed-field (8-character column) formats.
-    Issues UserWarning for unrecognised card keywords.
-    Raises ValueError for cards in ``_UNSUPPORTED_CARDS`` (known NASTRAN cards sbeam does
-    not implement, #45), duplicate GIDs, invalid DOF strings, and unresolved LOAD references.
+    No reference between cards is checked here: that is ``cross_reference``, once every
+    card is read, which is what makes the deck order-independent (#51).  Called on its
+    own only by tests that read a card fragment with no model around it.
     """
     bulk = BulkData()
     unsupported: Counter[str] = Counter()
 
-    # Handlers are called directly from this frame: their warnings' stacklevel counts on it.
+    # Handlers are called directly from this frame, which parse_bulk_data calls: their
+    # warnings' stacklevel counts both frames, so it points at parse_bulk_data's caller.
     for keyword, fields, conts in iter_cards(lines):
         if keyword in _IGNORED_KEYWORDS:
             continue
@@ -92,7 +92,7 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
         elif keyword in _MULTI_HANDLERS:
             _MULTI_HANDLERS[keyword](fields, conts, bulk)
         else:
-            warnings.warn(f"Unknown BDF card '{keyword}' — skipped", UserWarning, stacklevel=2)
+            warnings.warn(f"Unknown BDF card '{keyword}' — skipped", UserWarning, stacklevel=3)
 
     if unsupported:
         listing = ", ".join(f"{kw} x{n} ({_UNSUPPORTED_CARDS[kw]})"
@@ -101,7 +101,20 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
             f"Unsupported bulk data card(s): {listing}. sbeam would solve with these "
             "cards dropped; remove them or model the content with supported cards "
             "(02_card_reference.md, 'Unsupported cards').")
+    return bulk
 
+
+def parse_bulk_data(lines: list[str]) -> BulkData:
+    """Parse BDF bulk data lines into a BulkData object.
+
+    Supports free-field (comma-separated) and fixed-field (8-character column) formats,
+    with cards in any order.
+    Issues UserWarning for unrecognised card keywords.
+    Raises ValueError for cards in ``_UNSUPPORTED_CARDS`` (known NASTRAN cards sbeam does
+    not implement, #45), duplicate IDs, invalid DOF strings, and any reference to a card
+    the deck does not define (#51).
+    """
+    bulk = _read_cards(lines)
     cross_reference(bulk)
 
     # Resolve all grid positions from their CP system into global CID 0

@@ -106,11 +106,7 @@ def _check_unique_eid(bulk: BulkData, card: str, eid: int) -> None:
             raise ValueError(f"{card} {eid}: duplicate element ID (already defined by {name} {eid})")
 
 
-def _check_rod_grids(card: str, eid: int, ga: int, gb: int, bulk: BulkData) -> None:
-    if ga not in bulk.grids:
-        raise ValueError(f"{card} {eid}: grid GA={ga} not found")
-    if gb not in bulk.grids:
-        raise ValueError(f"{card} {eid}: grid GB={gb} not found")
+def _check_distinct_ends(card: str, eid: int, ga: int, gb: Optional[int]) -> None:
     if ga == gb:
         raise ValueError(f"{card} {eid}: GA and GB must be different grids")
 
@@ -141,11 +137,7 @@ def _handle_crod(fields: list[str], bulk: BulkData) -> None:
     ga  = to_int(fields[3])
     gb  = to_int(fields[4])
     _check_unique_eid(bulk, "CROD", eid)
-    _check_rod_grids("CROD", eid, ga, gb, bulk)
-    if pid not in bulk.prods:
-        raise ValueError(f"CROD {eid}: property PID={pid} not found (PROD)")
-    if bulk.prods[pid].mid not in bulk.mat1s:
-        raise ValueError(f"CROD {eid}: PROD {pid} material MID={bulk.prods[pid].mid} not found")
+    _check_distinct_ends("CROD", eid, ga, gb)
     bulk.crods[eid] = Crod(eid=eid, pid=pid, ga=ga, gb=gb)
 
 
@@ -159,9 +151,7 @@ def _handle_conrod(fields: list[str], bulk: BulkData) -> None:
     c   = to_float(fields[7]) if len(fields) > 7 else 0.0
     nsm = to_float(fields[8]) if len(fields) > 8 else 0.0
     _check_unique_eid(bulk, "CONROD", eid)
-    _check_rod_grids("CONROD", eid, ga, gb, bulk)
-    if mid not in bulk.mat1s:
-        raise ValueError(f"CONROD {eid}: material MID={mid} not found")
+    _check_distinct_ends("CONROD", eid, ga, gb)
     _check_rod_section("CONROD", eid, A, J)
     bulk.conrods[eid] = Conrod(eid=eid, ga=ga, gb=gb, mid=mid, A=A, J=J, c=c, nsm=nsm)
 
@@ -179,12 +169,6 @@ def _handle_cbar(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -
     pb   = cont[2] if cont is not None and len(cont) > 2 else ""
 
     _check_unique_eid(bulk, "CBAR", eid)
-    if ga not in bulk.grids:
-        raise ValueError(f"CBAR {eid}: grid GA={ga} not found")
-    if gb not in bulk.grids:
-        raise ValueError(f"CBAR {eid}: grid GB={gb} not found")
-    if pid not in bulk.pbars:
-        raise ValueError(f"CBAR {eid}: property PID={pid} not found")
     if pa:
         validate_dof(pa, f"CBAR {eid} PA")
     if pb:
@@ -206,10 +190,6 @@ def _handle_plotel(fields: list[str], bulk: BulkData) -> None:
     eid = to_int(fields[1])
     g1  = to_int(fields[2])
     g2  = to_int(fields[3])
-    if g1 not in bulk.grids:
-        raise ValueError(f"PLOTEL {eid}: grid G1={g1} not found")
-    if g2 not in bulk.grids:
-        raise ValueError(f"PLOTEL {eid}: grid G2={g2} not found")
     bulk.plotels[eid] = Plotel(eid=eid, g1=g1, g2=g2)
 
 
@@ -259,12 +239,6 @@ def _handle_rbe2(fields: list[str], conts: list[list[str]], bulk: BulkData) -> N
             if f.strip():
                 gm.append(to_int(f))
 
-    if gn not in bulk.grids:
-        raise ValueError(f"RBE2 {eid}: independent grid GN={gn} not found")
-    for dep_gid in gm:
-        if dep_gid not in bulk.grids:
-            raise ValueError(f"RBE2 {eid}: dependent grid GM={dep_gid} not found")
-
     bulk.rbe2s[eid] = Rbe2(eid=eid, gn=gn, cm=cm, gm=gm)
 
 
@@ -280,12 +254,7 @@ def _handle_rbar(fields: list[str], bulk: BulkData) -> None:
             f"RBAR {eid}: only CNA=123456/CNB=blank supported in Phase 1 "
             f"(got CNA={cna!r}, CNB={cnb!r})"
         )
-    if ga not in bulk.grids:
-        raise ValueError(f"RBAR {eid}: grid GA={ga} not found")
-    if gb not in bulk.grids:
-        raise ValueError(f"RBAR {eid}: grid GB={gb} not found")
-    if ga == gb:
-        raise ValueError(f"RBAR {eid}: GA and GB must be different grids")
+    _check_distinct_ends("RBAR", eid, ga, gb)
     if eid in bulk.rbars:
         raise ValueError(f"Duplicate RBAR EID {eid}")
 
@@ -494,14 +463,10 @@ def _handle_cbush(fields: list[str], cont: Optional[list[str]], bulk: BulkData) 
         x2 = to_float(cont[2]) if len(cont) > 2 else 0.0
         x3 = to_float(cont[3]) if len(cont) > 3 else 0.0
 
-    if ga not in bulk.grids:
-        raise ValueError(f"CBUSH {eid}: grid GA={ga} not found")
-    if gb is not None and gb not in bulk.grids:
-        raise ValueError(f"CBUSH {eid}: grid GB={gb} not found")
-    if ga == gb:
-        raise ValueError(f"CBUSH {eid}: GA and GB must be different grids")
-    if pid not in bulk.pbushs:
-        raise ValueError(f"CBUSH {eid}: property PID={pid} not found (PBUSH must precede CBUSH)")
+    # CBUSH shares the element-ID space; it used to skip this check, so a CBUSH
+    # after a CBAR of the same EID was accepted while the reverse order was not (#51)
+    _check_unique_eid(bulk, "CBUSH", eid)
+    _check_distinct_ends("CBUSH", eid, ga, gb)
 
     bulk.cbushs[eid] = Cbush(eid=eid, pid=pid, ga=ga, gb=gb, x1=x1, x2=x2, x3=x3)
 
@@ -552,7 +517,7 @@ def _handle_param(fields: list[str], bulk: BulkData) -> None:
             )
         return
     # Every other PARAM is still ignored, and says so like any unhandled card (#45 class)
-    warnings.warn(f"Unknown BDF card 'PARAM,{name}' — skipped", UserWarning, stacklevel=3)
+    warnings.warn(f"Unknown BDF card 'PARAM,{name}' — skipped", UserWarning, stacklevel=4)
 
 
 # Dispatch registration (#48): every keyword handled in this module, in one table each.

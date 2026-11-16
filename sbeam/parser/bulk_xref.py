@@ -1,8 +1,12 @@
-"""Bulk-data cross-reference checks, run once every card has been read (#48).
+"""Bulk-data cross-reference checks, run once every card has been read (#48, #51).
 
 Each check reads only resolved cards, so it is independent of card order in the deck.
 ``cross_reference`` runs them in a fixed order; the order decides only which error a deck
 with several faults reports first.
+
+The split with the card handlers is a rule: a handler checks only its own card's fields
+and duplicates within its own card type; anything that looks at another card belongs
+here.  A check in a handler sees only the cards above it in the deck (#51).
 """
 import warnings
 
@@ -11,13 +15,126 @@ from sbeam.model.bulk_data import BulkData
 
 def cross_reference(bulk: BulkData) -> None:
     """Check every cross-card reference in ``bulk``; raise ValueError on the first failure."""
+    _check_frames(bulk)
+    _check_line_elements(bulk)
+    _check_rigid_elements(bulk)
+    _check_properties(bulk)
+    _check_mass_constraints_loads(bulk)
     _check_aero_panels(bulk)
+    _check_aero_references(bulk)
     _check_load_combinations(bulk)
     _check_control_surfaces(bulk)
     _check_monitors(bulk)
     all_trim_labels = _check_trim(bulk)
     _check_maneuver_loads(bulk, all_trim_labels)
     _check_massset(bulk)
+
+
+def _check_frame(card: str, ident: object, field: str, cid: int, bulk: BulkData) -> None:
+    """A non-zero CID must name a CORD2R (sbeam has no CORD1x/2C/2S and no negative CIDs)."""
+    if cid and cid not in bulk.cord2rs:
+        raise ValueError(f"{card} {ident}: {field}={cid} not found in CORD2R")
+
+
+def _check_grid(card: str, ident: object, field: str, gid: int, bulk: BulkData) -> None:
+    if gid not in bulk.grids:
+        raise ValueError(f"{card} {ident}: grid {field}={gid} not found")
+
+
+# Structural references.  Before #51 the element checks ran inside the handlers, so a
+# CBAR above its PBAR failed; the frame, mass, constraint and load references were not
+# checked at all, and a FORCE or CONM2 on a missing grid was dropped from the solve.
+
+def _check_frames(bulk: BulkData) -> None:
+    """CORD2R RID and GRID CD frames."""
+    for cid, cord in bulk.cord2rs.items():
+        _check_frame("CORD2R", cid, "RID", cord.rid, bulk)
+    for gid, grid in bulk.grids.items():
+        # CP is resolved (and checked) by resolve_grid_positions after this pass
+        _check_frame("GRID", gid, "CD", grid.cd, bulk)
+
+
+def _check_line_elements(bulk: BulkData) -> None:
+    """CBAR, CROD, CONROD and CBUSH grids and properties."""
+    for eid, bar in bulk.cbars.items():
+        _check_grid("CBAR", eid, "GA", bar.ga, bulk)
+        _check_grid("CBAR", eid, "GB", bar.gb, bulk)
+        if bar.pid not in bulk.pbars:
+            raise ValueError(f"CBAR {eid}: property PID={bar.pid} not found")
+    for eid, rod in bulk.crods.items():
+        _check_grid("CROD", eid, "GA", rod.ga, bulk)
+        _check_grid("CROD", eid, "GB", rod.gb, bulk)
+        if rod.pid not in bulk.prods:
+            raise ValueError(f"CROD {eid}: property PID={rod.pid} not found (PROD)")
+        if bulk.prods[rod.pid].mid not in bulk.mat1s:
+            raise ValueError(f"CROD {eid}: PROD {rod.pid} material MID={bulk.prods[rod.pid].mid} not found")
+    for eid, conrod in bulk.conrods.items():
+        _check_grid("CONROD", eid, "GA", conrod.ga, bulk)
+        _check_grid("CONROD", eid, "GB", conrod.gb, bulk)
+        if conrod.mid not in bulk.mat1s:
+            raise ValueError(f"CONROD {eid}: material MID={conrod.mid} not found")
+    for eid, bush in bulk.cbushs.items():
+        _check_grid("CBUSH", eid, "GA", bush.ga, bulk)
+        if bush.gb is not None:
+            _check_grid("CBUSH", eid, "GB", bush.gb, bulk)
+        if bush.pid not in bulk.pbushs:
+            raise ValueError(f"CBUSH {eid}: property PID={bush.pid} not found")
+
+
+def _check_rigid_elements(bulk: BulkData) -> None:
+    """PLOTEL, RBE2, RBAR and RBE3 grids."""
+    for eid, plotel in bulk.plotels.items():
+        _check_grid("PLOTEL", eid, "G1", plotel.g1, bulk)
+        _check_grid("PLOTEL", eid, "G2", plotel.g2, bulk)
+    for eid, rbe2 in bulk.rbe2s.items():
+        if rbe2.gn not in bulk.grids:
+            raise ValueError(f"RBE2 {eid}: independent grid GN={rbe2.gn} not found")
+        for dep_gid in rbe2.gm:
+            if dep_gid not in bulk.grids:
+                raise ValueError(f"RBE2 {eid}: dependent grid GM={dep_gid} not found")
+    for eid, rbar in bulk.rbars.items():
+        _check_grid("RBAR", eid, "GA", rbar.ga, bulk)
+        _check_grid("RBAR", eid, "GB", rbar.gb, bulk)
+    for eid, rbe3 in bulk.rbe3s.items():
+        _check_grid("RBE3", eid, "REFGRID", rbe3.refgrid, bulk)
+        for _wt, _c, grids in rbe3.wt_gc:
+            for gid in grids:
+                _check_grid("RBE3", eid, "Gi", gid, bulk)
+
+
+def _check_properties(bulk: BulkData) -> None:
+    """PBAR and PROD materials, including unused properties.  Runs after the elements,
+    so a property an element uses keeps the element-specific message."""
+    for pid, pbar in bulk.pbars.items():
+        if pbar.mid not in bulk.mat1s:
+            raise ValueError(f"PBAR {pid}: material MID={pbar.mid} not found")
+    for pid, prod in bulk.prods.items():
+        if prod.mid not in bulk.mat1s:
+            raise ValueError(f"PROD {pid}: material MID={prod.mid} not found")
+
+
+def _check_mass_constraints_loads(bulk: BulkData) -> None:
+    """CONM2, SPC/SPC1/SUPORT and FORCE/MOMENT grids and frames."""
+    for eid, conm2 in bulk.conm2s.items():
+        _check_grid("CONM2", eid, "GID", conm2.gid, bulk)
+        _check_frame("CONM2", eid, "CID", conm2.cid, bulk)
+    for sid, spcs in bulk.spcs.items():
+        for spc in spcs:
+            _check_grid("SPC", sid, "G1", spc.g1, bulk)
+            if spc.g2 is not None:
+                _check_grid("SPC", sid, "G2", spc.g2, bulk)
+    for sid, spc1s in bulk.spc1s.items():
+        for spc1 in spc1s:
+            for gid in spc1.grids:
+                _check_grid("SPC1", sid, "Gi", gid, bulk)
+    for sup in bulk.supports:
+        if sup.gid not in bulk.grids:
+            raise ValueError(f"SUPORT: grid GID={sup.gid} not found")
+    for card, sets in (("FORCE", bulk.forces), ("MOMENT", bulk.moments)):
+        for sid, loads in sets.items():
+            for load in loads:
+                _check_grid(card, sid, "GID", load.gid, bulk)
+                _check_frame(card, sid, "CID", load.cid, bulk)
 
 
 def _check_aero_panels(bulk: BulkData) -> None:
@@ -58,6 +175,37 @@ def _check_aero_panels(bulk: BulkData) -> None:
         for gid in s1.grids:
             if gid not in bulk.grids:
                 raise ValueError(f"SET1 {sid}: grid ID {gid} not found in GRID")
+
+    # A PSTRIP and a PAERO1 may not share a PID (was checked by PSTRIP only, #51)
+    for pid in sorted(set(bulk.pstrips) & set(bulk.paero1s)):
+        raise ValueError(f"PSTRIP PID {pid} collides with a PAERO1 of the same PID")
+
+
+def _check_aero_references(bulk: BulkData) -> None:
+    """Aero frames and the CAERO1 / GRID targets of splines and per-panel cards (#51)."""
+    if bulk.aeros is not None:
+        _check_frame("AEROS", "card", "ACSID", bulk.aeros.acsid, bulk)
+        _check_frame("AEROS", "card", "RCSID", bulk.aeros.rcsid, bulk)
+    for eid, caero in bulk.caero1s.items():
+        _check_frame("CAERO1", eid, "CP", caero.cp, bulk)
+    for eid, sp in bulk.spline2s.items():
+        _check_frame("SPLINE2", eid, "CID", sp.cid, bulk)
+    for eid, sp0 in bulk.spline0s.items():
+        if sp0.caero not in bulk.caero1s:
+            raise ValueError(f"SPLINE0 {eid}: CAERO={sp0.caero} not found in CAERO1")
+        if sp0.grid:   # 0 = the SUPORT grid
+            _check_grid("SPLINE0", eid, "GRID", sp0.grid, bulk)
+    for eid, att in bulk.attaches.items():
+        if att.caero not in bulk.caero1s:
+            raise ValueError(f"ATTACH {eid}: CAERO={att.caero} not found in CAERO1")
+        _check_grid("ATTACH", eid, "GRID", att.grid, bulk)
+        _check_frame("ATTACH", eid, "CID", att.cid, bulk)
+    # Per-panel cards are applied by matching CAERO1 EID; an unknown EID was dropped
+    for card, coll in (("W2GJ", bulk.w2gjs), ("WKK", bulk.wkks),
+                       ("AECORR", bulk.aecorrs), ("CHORDCP", bulk.chordcps)):
+        for sid, entry in coll.items():
+            if entry.caero_eid not in bulk.caero1s:
+                raise ValueError(f"{card} {sid}: CAERO1 {entry.caero_eid} not found")
 
 
 def _check_load_combinations(bulk: BulkData) -> None:
@@ -115,6 +263,18 @@ def _check_control_surfaces(bulk: BulkData) -> None:
 
 def _check_monitors(bulk: BulkData) -> None:
     """AECOMP list references and MONPNT1/MONPNT3/MONSECT components and frames."""
+    # Monitor names are unique across all monitor cards (#51: MONSECT checked only
+    # names above it, and MONPNT1 against MONPNT3 was not checked at all)
+    for name in sorted(set(bulk.monpnt1s) & set(bulk.monpnt3s)):
+        raise ValueError(
+            f"MONPNT3 {name}: NAME collides with an existing MONPNT1 — "
+            "monitor names must be unique across all monitor cards"
+        )
+    for name in sorted(set(bulk.monsects) & (set(bulk.monpnt1s) | set(bulk.monpnt3s))):
+        raise ValueError(
+            f"MONSECT {name}: NAME collides with an existing MONPNT1/MONPNT3 — "
+            "monitor names must be unique across all monitor cards"
+        )
     # Validate AECOMP list references and MONPNT1/MONPNT3 cross-references
     for name, aecomp in bulk.aecomps.items():
         target = bulk.aelists if aecomp.listtype == "AELIST" else bulk.set1s

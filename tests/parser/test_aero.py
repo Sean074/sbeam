@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from sbeam.parser.bdf_reader import parse_bulk_data
+from sbeam.parser.bdf_reader import _read_cards, parse_bulk_data
 
 # ---------------------------------------------------------------------------
 # AEROS — reference geometry + symmetry flags
@@ -44,7 +44,8 @@ def defaults_bulk():
 
 @pytest.fixture(scope="module")
 def antisym_bulk():
-    return parse_bulk_data(_AEROS_ANTISYM)
+    # Field-storage test: ACSID=2 / RCSID=3 name no CORD2R here, so skip the model checks
+    return _read_cards(_AEROS_ANTISYM)
 
 
 class TestAerosRoundTrip:
@@ -395,7 +396,7 @@ CHORDCP, 5, 100, 1.0, , 0.5, 0.4, 0.3, 0.2
 class TestSpline0Parser:
 
     def test_explicit_master_grid(self):
-        bulk = parse_bulk_data("SPLINE0, 9400, 400, 400, 415, 98".splitlines())
+        bulk = _read_cards("SPLINE0, 9400, 400, 400, 415, 98".splitlines())
         sp = bulk.spline0s[9400]
         assert (sp.caero, sp.id1, sp.id2, sp.grid) == (400, 400, 415, 98)
 
@@ -403,7 +404,7 @@ class TestSpline0Parser:
         """Blank/absent field 5 = 0 = 'default to the SUPORT grid'."""
         for line in ("SPLINE0, 9500, 500, 500, 531",
                      "SPLINE0, 9600, 500, 500, 531, "):
-            bulk = parse_bulk_data([line])
+            bulk = _read_cards([line])
             assert next(iter(bulk.spline0s.values())).grid == 0
 
     def test_duplicate_eid_raises(self):

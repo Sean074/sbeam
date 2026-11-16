@@ -18,7 +18,7 @@ from sbeam.model.maneuver import (
     Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads,
 )
 from sbeam.model import card_writers as cw
-from sbeam.parser.bdf_reader import parse_bulk_data, parse_bdf
+from sbeam.parser.bdf_reader import _read_cards, parse_bulk_data, parse_bdf
 
 SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
 
@@ -29,6 +29,8 @@ _SCAFFOLD = [
     "+,1.0,0.0,0.0",
     "CORD2R,8,0,0.0,0.0,0.0,0.0,0.0,1.0",
     "+,-1.0,0.0,0.0",
+    # The SUPORT grid: SUPORT GIDs are cross-referenced like any other grid (#51).
+    "GRID,90,,0.0,0.0,0.0",
     "AESTAT,1,ANGLEA",
     "AESTAT,2,PITCH",
     "AESTAT,3,URDD3",
@@ -202,7 +204,8 @@ def test_sample_deck_golden_roundtrip(deck):
             lines += [ln for cons in store.values() for c in cons for ln in writer(c)]
         else:
             lines += [ln for card in store.values() for ln in writer(card)]
-    reparsed = parse_bulk_data(lines)
+    # The writer families carry no GRIDs or panels: read the cards, skip the model checks
+    reparsed = _read_cards(lines)
     for attr in _FAMILY_ATTRS:
         assert getattr(reparsed, attr) == getattr(bulk, attr), attr
 

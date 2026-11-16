@@ -189,16 +189,16 @@ Known-but-unsupported NASTRAN cards (`PLOAD1`, `CBEAM`, `CORD2C`, `MPC`, … —
 All other keywords issue `warnings.warn(…, UserWarning)` and are skipped; the CLI echoes them as `Parser warning:` on stderr.
 Duplicate GID, PID (one space across PBAR and PROD), MID (MAT1), element EID (one space across CBAR, CROD, CONROD and CBUSH), or LOAD SID raises `ValueError`.
 
-**Ordering constraints:** PBAR and MAT1 must appear before the CBAR elements that reference them. PROD and MAT1 must appear before the CROD elements, and MAT1 before the CONROD elements, that reference them. PBUSH must appear before the CBUSH elements that reference it. CORD2R cards may appear in any order relative to each other; cycles in `RID` references raise `ValueError`.
+**Card order:** bulk cards may appear in any order (#51). `parse_bulk_data` works in two phases:
+1. It reads every card and checks each one on its own: field values, DOF strings, `GA == GB`,
+   `A ≤ 0`, and duplicates within one card type.
+2. It then checks every reference between cards (`parser/bulk_xref.py`). A reference to an
+   undefined card raises `ValueError`, including CBAR → GRID/PBAR, CROD → PROD → MAT1,
+   CONROD → MAT1, CONM2/FORCE/MOMENT/SPC → GRID, and any non-zero CID → CORD2R.
 
-**CBAR cross-reference validation** (at parse time):
-- `GA` or `GB` not in `bulk.grids` → `ValueError`
-- `PID` not in `bulk.pbars` → `ValueError`
-
-**CROD / CONROD cross-reference validation** (at parse time, #38):
-- `GA` or `GB` not in `bulk.grids`, or `GA == GB` → `ValueError`
-- `CROD` `PID` not in `bulk.prods`, or the PROD's `MID` not in `bulk.mat1s` → `ValueError`
-- `CONROD` `MID` not in `bulk.mat1s`, `A ≤ 0` or `J < 0` → `ValueError`
+The complete table is in `02_card_reference.md`, Format Rules, "Card order and
+cross-references". CORD2R cycles in `RID` references raise `ValueError` when grid positions
+are resolved.
 
 **DOF string validation** (SPC and SPC1 cards):
 - Any character outside `1–6` (including `"0"`) → `ValueError`

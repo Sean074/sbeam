@@ -63,6 +63,41 @@ On the write side `fmt_real8` is used by the **load-card exports** (`FORCE`/`MOM
 (`W2GJ`/`AECORR`/`STRIPK` from `aero/section_correction.py` / `aero/body_correction.py`, which
 delegates to `card_writers.write_card` — DEF-M12, fixed 2026-08-02).
 
+**Card order and cross-references (#51).** Bulk cards may appear in **any order**, as in
+NASTRAN. The reader checks each card on its own as it reads it (field values, DOF strings,
+duplicates within its card type). Every reference *between* cards is checked once all cards are
+read (`parser/bulk_xref.py`). A reference to a card the deck does not define **refuses the
+deck** with a `ValueError` naming the card, the field and the missing ID. Nothing is dropped
+silently. Before #51 a FORCE or CONM2 on a missing grid was ignored and the run completed
+without that load or mass. A non-zero CID must name a CORD2R. Structural references checked
+after the read:
+
+| Card | Field → must exist in |
+|---|---|
+| CORD2R | RID → CORD2R |
+| GRID | CP, CD → CORD2R |
+| CBAR | GA, GB → GRID; PID → PBAR |
+| CROD | GA, GB → GRID; PID → PROD; the PROD's MID → MAT1 |
+| CONROD | GA, GB → GRID; MID → MAT1 |
+| CBUSH | GA, GB (if given) → GRID; PID → PBUSH |
+| PLOTEL, RBAR | grids → GRID |
+| RBE2 | GN and every GM → GRID |
+| RBE3 | REFGRID and every Gi → GRID |
+| PBAR, PROD | MID → MAT1, including properties no element uses |
+| CONM2 | GID → GRID; CID → CORD2R |
+| SPC, SPC1, SUPORT | every grid → GRID |
+| FORCE, MOMENT | GID → GRID; CID → CORD2R |
+
+The aero, spline, trim, monitor and maneuver-loads references are listed with each card below.
+Names and IDs that must be unique **across** card types are also checked after the read:
+
+- element EIDs across CBAR, CROD, CONROD and CBUSH;
+- PIDs across PBAR and PROD, and across PAERO1 and PSTRIP;
+- monitor names across MONPNT1, MONPNT3 and MONSECT.
+
+When a deck has several faults, the first one reported may depend on where the cards sit,
+but the deck is refused either way.
+
 ---
 
 ## Case Control Keywords
@@ -274,8 +309,8 @@ PROD, PID, MID, A, J, C, NSM
 | C | `c` | float | Torsional stress coefficient: `τ = T·C/J` | `0.0` |
 | NSM | `nsm` | float | Non-structural mass per unit length | `0.0` |
 
-`A ≤ 0` or `J < 0` raises `ValueError`. The MID is checked against MAT1 when a `CROD`
-references the property, so `MAT1` and `PROD` must both precede the element.
+`A ≤ 0` or `J < 0` raises `ValueError`. The MID must exist in MAT1. It is checked after the
+read, in any card order (see Format Rules, "Card order and cross-references").
 
 **Example:**
 ```
@@ -1221,7 +1256,10 @@ The continuation line (P1/X12/P4/X43) is required. Exactly one of NSPAN/LSPAN mu
 non-zero; exactly one of NCHORD/LCHORD must be non-zero.
 
 Cross-reference validation (post-parse): PID not in `bulk.paero1s` → `ValueError`;
-LSPAN/LCHORD not in `bulk.aefacts` → `ValueError`; CAERO1 present, no AEROS → `ValueError`.
+LSPAN/LCHORD not in `bulk.aefacts` → `ValueError`; CP (if non-zero) not in CORD2R →
+`ValueError`; CAERO1 present, no AEROS → `ValueError`. Every `W2GJ`, `WKK`, `AECORR` and
+`CHORDCP` must name an existing CAERO1 (#51). Before #51 a `WKK` or `AECORR` on an unknown
+CAERO1 was silently not applied.
 
 Mesh-quality warnings (A7/A8, pre-solve in `build_aero_model`, VLM panels only): fewer
 than 4 chordwise boxes, or any box aspect ratio (spanwise/streamwise edge) outside

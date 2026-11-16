@@ -337,7 +337,8 @@ class TestMultiSurface:
         assert res.wg[tail_idx] == pytest.approx(np.zeros(len(tail_idx)), abs=1e-12)
 
     def test_cards_to_bdf_multi_round_trips(self):
-        from sbeam.parser.bdf_reader import parse_bulk_data
+        # Correction cards alone, without their CAERO1s: read them, skip the model checks
+        from sbeam.parser.bdf_reader import _read_cards as parse_bulk_data
         wing, tail, boxes = _two_surface_parts()
         ajj = build_ajj(boxes)
         tW = SurfaceTargets(1000, f_slope=np.full(4, 0.9), alpha_0=np.full(4, np.deg2rad(-1.0)),
@@ -357,7 +358,7 @@ class TestBdfRoundTrip:
         # rel=5e-4 is the NASTRAN 8-character field width (DEF-M6/DEF-M12
         # `fmt_real8` floor — worst case 3.5e-4 for negatives, where the sign
         # consumes a character), not exporter slop.
-        from sbeam.parser.bdf_reader import parse_bulk_data
+        from sbeam.parser.bdf_reader import _read_cards as parse_bulk_data
 
         boxes = _rect_wing(4, 3)
         ajj = build_ajj(boxes)

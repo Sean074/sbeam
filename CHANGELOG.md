@@ -23,6 +23,27 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and warnings, before and after.
 
 ### Fixed
+- **Bulk data is order-independent, and every reference between cards is checked** (#51).
+  - **Card order.** A deck that defined an element before its GRIDs, property or material
+    failed at parse (e.g. `sample/HA144A.bdf`: `CBAR 101: property PID=100 not found`).
+    NASTRAN bulk data has no such rule. Cards are now read first and cross-referenced once
+    all are read (`parser/bulk_xref.py`), so any order parses.
+  - **One-sided uniqueness checks.** Three were enforced by only one of the two cards
+    involved: CBUSH did not join the shared element-ID check, PAERO1 did not check
+    PSTRIP, and MONPNT1/MONPNT3 did not check MONSECT. A clash was therefore caught in one
+    card order only. All three are now checked both ways, and MONPNT1 against MONPNT3 too.
+  - **Silent drops.** Several references were never checked. **A FORCE, MOMENT or CONM2 on
+    an undefined grid was dropped and the run completed** without that load or mass (a
+    SOL 101 deck with its only FORCE on a missing grid wrote all-zero displacements).
+    SPC/SPC1/SUPORT/RBE3 grids were also unchecked, as were GRID CD, CORD2R RID, unused
+    PBAR/PROD MIDs, CONM2/FORCE/MOMENT/CAERO1/SPLINE2/ATTACH/AEROS frames and SPLINE0/ATTACH
+    targets. A `WKK` or `AECORR` on an unknown CAERO1 was silently not applied. Every one
+    now refuses the deck at parse with the card, field and missing ID. The table is in
+    `02_card_reference.md`, Format Rules.
+  - **Effect on existing decks.** A deck with several faults may now report a different
+    error first. No shipped deck is affected: all 61 parse to an identical `BulkData`,
+    except HA144A, which now gets past the card-order error and stops at its
+    weight-unit `PARAM,WTMASS` (#39).
 - **Release checklist §5 pointed at a removed CLAUDE.md card table** (#56). The item now
   confirms new cards in `02_card_reference.md` and solver types in `00_program_overview.md`,
   the single sources.

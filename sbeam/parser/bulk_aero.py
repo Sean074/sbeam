@@ -124,8 +124,6 @@ def _handle_pstrip(fields: list[str], bulk: BulkData) -> None:
     pid = to_int(fields[1])
     if pid in bulk.pstrips:
         raise ValueError(f"Duplicate PSTRIP PID {pid}")
-    if pid in bulk.paero1s:
-        raise ValueError(f"PSTRIP PID {pid} collides with a PAERO1 of the same PID")
     slope_field = fields[2].strip() if len(fields) > 2 else ""
     if slope_field:
         bulk.pstrips[pid] = Pstrip(pid=pid, slope0=to_float(slope_field))
@@ -341,11 +339,6 @@ def _handle_monsect(fields: list[str], conts: list[list[str]], bulk: BulkData) -
         raise ValueError("MONSECT: NAME must not be blank")
     if name in bulk.monsects:
         raise ValueError(f"Duplicate MONSECT NAME {name}")
-    if name in bulk.monpnt1s or name in bulk.monpnt3s:
-        raise ValueError(
-            f"MONSECT {name}: NAME collides with an existing MONPNT1/MONPNT3 — "
-            "monitor names must be unique across all monitor cards"
-        )
     if axis not in (1, 2, 3):
         raise ValueError(f"MONSECT {name}: AXIS must be 1, 2 or 3 (got {axis})")
     if side not in ("POS", "NEG"):

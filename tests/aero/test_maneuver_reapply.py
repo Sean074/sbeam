@@ -35,7 +35,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from sbeam.parser.bdf_reader import parse_bdf, parse_bulk_data
+from sbeam.parser.bdf_reader import _read_cards, parse_bdf
 from sbeam.parser.case_control import SubcaseControl
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.assembly.load_vector import build_grid_index
@@ -90,7 +90,8 @@ def _apply_vector(bulk, gi, load_g, spc_sid=1):
 def _apply_cards(bulk, cards_text, sid, spc_sid=1):
     """SOL 101 on the deck with the exported cards parsed back in."""
     b = _static_model(bulk, spc_sid)
-    parsed = parse_bulk_data(cards_text.splitlines())
+    # The exported load cards alone, without their GRIDs: read them, skip the model checks
+    parsed = _read_cards(cards_text.splitlines())
     b.forces[sid] = parsed.forces.get(sid, [])
     b.moments[sid] = parsed.moments.get(sid, [])
     return run_sol101(b, SubcaseControl(subcase_id=1, load_sid=sid, spc_sid=spc_sid))

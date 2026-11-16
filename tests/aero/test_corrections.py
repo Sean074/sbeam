@@ -332,7 +332,10 @@ class TestWt1Removed:
             parse_bulk_data(wt1)
 
     def test_parser_still_accepts_wt2_card(self):
-        wt2 = ["AECORR, 30, WT2, 100, 0.80, 0.75, 0.65, 0.50"]
+        # The CAERO1 it corrects must exist: an AECORR on an unknown panel is refused (#51)
+        wt2 = ["AEROS, 0, 0, 1.0, 4.0, 4.0", "PAERO1, 1",
+               "CAERO1, 100, 1, 0, 4, 1, 0, 0, 1", "+, 0., 0., 0., 1., 0., 4., 0., 1.",
+               "AECORR, 30, WT2, 100, 0.80, 0.75, 0.65, 0.50"]
         bulk = parse_bulk_data(wt2)
         assert bulk.aecorrs[30].method == "WT2"
 
