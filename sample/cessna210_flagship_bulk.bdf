@@ -360,15 +360,16 @@ $ CONM2-bearing grid.  Grids 1, 900, 3, 5, 31 and 32 carry mass but take no
 $ spline load; leaving any of them out silently drops that share of the
 $ inertia and the "MONPNT3 ~ 0" balance check stops meaning anything.
 $ Overlay (MASSSET) CONM2s live on grids 2, 11, 12, 111, 112 — already here.
-SET1, 1310, 1, 900, 2, 3, 4, 5, 10, 11
-+, 12, 111, 112, 20, 21, 22, 121, 122
-+, 30, 31, 32
+SET1, 1310, 1, 900, 2, 3, 4, 5, 10
++, 11, 12, 111, 112, 20, 21, 22, 121
++, 122, 30, 31, 32
 AECOMP, ALLGRID, SET1, 1310
 MONPNT3, MALLEA, WHOLE AIRCRAFT, 35, ALLGRID, 0, 2.4375, 0.0, 0.60
 $
 $ ---- Whole-aircraft aero, and starboard-wing aero (aero-only).
-AELIST, 1400, 1000, THRU, 1095, 2000, THRU, 2095, 3000, THRU, 3047
-+, 4000, THRU, 4047, 5000, THRU, 5035
+AELIST, 1400, 1000, THRU, 1095, 2000, THRU, 2095, 3000
++, 3001, THRU, 3047, 4000, THRU, 4047, 5000, 5001
++, 5002, THRU, 5035
 AECOMP, ALLAERO, AELIST, 1400
 MONPNT1, MALLAR, AIRCRAFT AERO, 35, ALLAERO, 0, 2.4375, 0.0, 0.60
 AELIST, 1410, 1000, THRU, 1095
@@ -411,9 +412,9 @@ $ j_chord = 4 and 5: 3000+6s+{4,5} and 4000+6s+{4,5} for s = 0..7.
 AESURF, 505, ELEV, 995, 3100
 AELIST, 3100, 3004, 3005, 3010, 3011, 3016, 3017, 3022
 +, 3023, 3028, 3029, 3034, 3035, 3040, 3041, 3046
-+, 3047
-+, 4004, 4005, 4010, 4011, 4016, 4017, 4022, 4023
-+, 4028, 4029, 4034, 4035, 4040, 4041, 4046, 4047
++, 3047, 4004, 4005, 4010, 4011, 4016, 4017, 4022
++, 4023, 4028, 4029, 4034, 4035, 4040, 4041, 4046
++, 4047
 $
 $ ================================================================ TRIM CARDS
 $ Cruise condition: q = 2334 Pa at sea level (rho = 1.225) gives

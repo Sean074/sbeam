@@ -379,6 +379,14 @@ pyright                      # type check, config in pyrightconfig.json
 pytest -v --tb=short         # test suite
 ```
 
+A second job, `compat`, cross-parses every repo deck with pyNastran (#83,
+`tests/compat/test_pynastran_crossparse.py`): each field both readers read must agree, each
+field pyNastran stores and sbeam does not read must hold NASTRAN's default, and every card
+pyNastran cannot parse must be a listed sbeam extension with its issue. It has its own
+lockfile, `requirements-compat.txt` (pyNastran 1.4.1 needs numpy < 2). In the main job the
+module skips itself; locally, run it from a venv built from that file
+(`pytest tests/compat --no-cov`). pyNastran is test-only and `sbeam/` never imports it.
+
 ### Unit tests
 
 Tests mirror the `sbeam/` module structure under `tests/`. Each assembly, solver, parser and results sub-package has a corresponding test module; the viewer (`sbeam_tools/viewer/`) is tested under `tests/viewer/`.

@@ -79,7 +79,8 @@ record *(sloads)*) → §4 cut → close the milestone on GitHub → delete the 
 open the next milestone's branch.
 
 **CI runs on release branches** (`.github/workflows/ci.yml` triggers on push to `main`
-**and** `release/**`): the full ruff → pyright → pytest matrix, same as `main`. Without
+**and** `release/**`): the full ruff → pyright → pytest matrix, same as `main`, plus the
+`compat` job (pyNastran cross-parse of every repo deck, #83, `requirements-compat.txt`). Without
 this the beta gate would be unverifiable — a branch CI never sees is a branch no gate
 covers *(the sloads CI-shape lesson, adapted: sbeam's full matrix is ~3 min, so no
 fast/full split is needed)*. **A red run blocks the next item** (#54: pyright failed

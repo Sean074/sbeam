@@ -58,6 +58,18 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Every repo deck that parsed before still parses. Decks with vendor or tool-specific
   cards must drop them.
 
+### Added
+- **CI cross-parses every repo deck with pyNastran** (#83). A new `compat` job reads the
+  exact bulk lines sbeam parses with pyNastran 1.4.1 (an independent MSC-format reader,
+  BSD-3, test-only) and requires every field both read to agree, every field sbeam does
+  not read (CBAR offsets, PBAR I12/K1/K2, RBAR CMA/CMB, PBUSH B/GE …) to hold NASTRAN's
+  default, and every card pyNastran rejects to be a listed sbeam extension with its issue.
+  Open disagreements are listed with their issues and fail when fixed (strict xfail /
+  stale-entry check). Own lockfile `requirements-compat.txt`, since pyNastran needs
+  numpy < 2. Ten sample decks had SET1/AELIST lists that NASTRAN would read with blank
+  fields mid-list (a long free-field line followed by a continuation); they are reflowed
+  into full rows, with the same lists.
+
 ### Documentation
 - **NASTRAN rules cited from the COSMIC manual; the no-copy rule's reason recorded** (#61).
   The RBE3 deviation table and the element-ID paragraph in the card reference now cite

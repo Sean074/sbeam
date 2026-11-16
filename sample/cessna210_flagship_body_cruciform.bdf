@@ -68,9 +68,10 @@ $ The bulk's AELIST 1400 covers the 324 FLYING boxes only.  With body panels
 $ active that monitor no longer returns n*W — it falls short by exactly the body
 $ resultant.  This adds the whole-airplane collection so the aero-only = n*W
 $ identity still holds; keeping BOTH makes the shortfall measurable.
-AELIST, 1401, 1000, THRU, 1095, 2000, THRU, 2095, 3000, THRU, 3047
-+, 4000, THRU, 4047, 5000, THRU, 5035, 6000, THRU, 6015
-+, 7000, THRU, 7031
+AELIST, 1401, 1000, THRU, 1095, 2000, THRU, 2095, 3000
++, 3001, THRU, 3047, 4000, THRU, 4047, 5000, 5001
++, 5002, THRU, 5035, 6000, THRU, 6015, 7000, 7001
++, 7002, THRU, 7031
 AECOMP, ALLAERB, AELIST, 1401
 MONPNT1, MALLARB, AIRCRAFT AERO INC BODY, 35, ALLAERB, 0, 2.4375, 0.0, 0.60
 $
