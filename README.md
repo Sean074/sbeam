@@ -143,7 +143,7 @@ Full field-by-field definitions: [`docs/10_standard/02_card_reference.md`](docs/
 - **`GRAV` requires CID=0** — a non-zero CID on a `GRAV` card raises a parse error.
 
 ### Elements
-- **`RBE3` simplified** — uses same-DOF weighted averaging; rotation-to-translation lever-arm coupling across an offset is not applied. Use `RBAR` for kinematically exact rigid connections when grid offsets are present.
+- **`RBE3` simplified** — uses same-DOF weighted averaging; rotation-to-translation lever-arm coupling across an offset is not applied. Use `RBAR` for kinematically exact rigid connections when grid offsets are present. An offset RBE3 warns, and a REFC DOF in no Ci (e.g. `REFC=123456` with `Ci=123`) is refused.
 - **`CBUSH` requires CID=0** — element offsets are not supported.
 
 ### Loads

@@ -103,6 +103,19 @@ T[p, q_i] = w_i / W    where W = Σ w_i
 
 All other rows of T are identity. Dependent DOF columns are then removed: `T = T_full[:, red_dofs]`.
 
+**Every dependent DOF must have a valid source (#60).** Building T raises a `ValueError` when:
+- an RBE3 REFC DOF is in no Ci (e.g. `REFC=123456` with `Ci=123`; there is no lever arm to
+  derive rotations from translations);
+- the REFC weights for a DOF sum to zero;
+- one DOF is made dependent by two rigid elements (the second would overwrite the first's
+  row of T);
+- a DOF that an RBE3 reads from an independent grid is dependent on another rigid element
+  (removing that column would drop its share). RBE2 GN and RBAR GA already refuse this.
+
+An RBE3 with an independent grid offset from REFGRID (more than 1e-6 of the model's size)
+warns, because sbeam's same-DOF average then differs from NASTRAN (see the RBE3
+limitation in `02_card_reference.md`).
+
 **Insertion point in `run_sol101`** — between full assembly and SPC partitioning:
 
 ```

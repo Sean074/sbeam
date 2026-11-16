@@ -1,9 +1,41 @@
 """RBE3/RBE2/RBAR constraint transformation matrix."""
 
+import math
+import warnings
+
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.types import FloatArray
+
+
+def _model_size(bulk: BulkData) -> float:
+    """Bounding-box diagonal of the grids (1.0 for a single point), for a relative tolerance."""
+    if not bulk.grids:
+        return 1.0
+    xs = [(g.x, g.y, g.z) for g in bulk.grids.values()]
+    size = math.dist(tuple(map(min, zip(*xs))), tuple(map(max, zip(*xs))))
+    return size if size > 0.0 else 1.0
+
+
+def _warn_rbe3_offset(bulk: BulkData, eid: int, refgrid: int,
+                      grids: list[int], tol: float) -> None:
+    """Warn when an independent grid is offset from REFGRID: sbeam then differs from
+    NASTRAN, which applies the lever arm (#60)."""
+    ref = bulk.grids[refgrid]
+    offsets = [(math.dist((ref.x, ref.y, ref.z), (g.x, g.y, g.z)), gid)
+               for gid in grids if (g := bulk.grids.get(gid)) is not None]
+    if not offsets:
+        return
+    off, gid = max(offsets)
+    if off > tol:
+        warnings.warn(
+            f"RBE3 {eid}: independent grid {gid} is {off:.4g} from REFGRID {refgrid}; "
+            f"sbeam averages same-numbered DOFs with no lever arm, so results differ "
+            f"from NASTRAN for offset grids (use RBAR for a rigid offset link; see the "
+            f"RBE3 limitation in 02_card_reference.md)",
+            UserWarning, stacklevel=4,
+        )
 
 
 def _build_rigid_transform(
@@ -31,6 +63,12 @@ def _build_rigid_transform(
         owner_label = ""
 
         def add(self, dof: int) -> None:
+            # A second owner would overwrite the first's row of T without a word (#60)
+            if dof in dep_owner:
+                raise ValueError(
+                    f"{self.owner_label}: this DOF is already a dependent DOF of "
+                    f"{dep_owner[dof]}; a DOF may be dependent in one rigid element only"
+                )
             dep_owner[dof] = self.owner_label
 
         def __contains__(self, dof: object) -> bool:
@@ -43,10 +81,24 @@ def _build_rigid_transform(
     # kinematics) is NOT applied.  This is the common simplified formulation and is exact when
     # the independent grids are collocated or the reference point moves rigidly with the
     # independent set.  Use RBAR for kinematically exact rigid connections with an offset.
+    # NASTRAN fits a rigid-body motion with lever arms instead, so a DOF no Ci covers (it
+    # would derive REFC=456 from Ci=123) is refused, and an offset grid warns (#60).
+    tol = 1e-6 * _model_size(bulk)
     for rbe3 in bulk.rbe3s.values():
         if rbe3.refgrid not in grid_index:
             continue
         ref_idx = grid_index[rbe3.refgrid]
+        _warn_rbe3_offset(bulk, rbe3.eid, rbe3.refgrid,
+                          [g for _w, _c, grids in rbe3.wt_gc for g in grids], tol)
+
+        uncovered = [c for c in str(rbe3.refc)
+                     if not any(c in str(dofs) for _w, dofs, _g in rbe3.wt_gc)]
+        if uncovered:
+            raise ValueError(
+                f"RBE3 {rbe3.eid}: REFC DOF {', '.join(uncovered)} is not in any Ci; sbeam "
+                f"averages same-numbered DOFs only and cannot derive it (NASTRAN would, "
+                f"from the other DOFs across the offsets; see the RBE3 limitation)"
+            )
 
         for d_char in str(rbe3.refc):
             d = int(d_char) - 1  # 0-based offset within a grid's 6 DOFs
@@ -60,12 +112,11 @@ def _build_rigid_transform(
                         if gid in grid_index:
                             pairs.append((weight, gid))
 
-            if not pairs:
-                continue
-
             W = sum(w for w, _ in pairs)
             if W == 0.0:
-                continue
+                raise ValueError(
+                    f"RBE3 {rbe3.eid}: the weights for REFC DOF {d_char} sum to zero"
+                )
 
             T_full[p, :] = 0.0
             for weight, gid in pairs:
@@ -148,6 +199,20 @@ def _build_rigid_transform(
                 T_full[dep_dof, 6 * ga_idx + k] = R[d, k]
             dep_set.owner_label = f"RBAR {rbar.eid} (GB {rbar.gb}, C{d + 1})"
             dep_set.add(dep_dof)
+
+    # An RBE3 independent DOF must not be a dependent DOF either: T[:, red_dofs] would drop
+    # its column, and the RBE3 row would lose that grid's share without a word (#60).
+    for rbe3 in bulk.rbe3s.values():
+        for _w, dofs_str, grids in rbe3.wt_gc:
+            for d_char in str(dofs_str):
+                if d_char not in str(rbe3.refc):
+                    continue  # not used: same-numbered DOFs only
+                for gid in grids:
+                    if gid in grid_index and (6 * grid_index[gid] + int(d_char) - 1) in dep_set:
+                        raise ValueError(
+                            f"RBE3 {rbe3.eid}: independent grid {gid} DOF {d_char} is a "
+                            f"dependent DOF of {dep_owner[6 * grid_index[gid] + int(d_char) - 1]}"
+                        )
 
     # GA of an RBAR must not be a dependent DOF of another constraint element.
     for rbar in bulk.rbars.values():

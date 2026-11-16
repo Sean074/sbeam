@@ -717,6 +717,22 @@ formulation is exact when the independent grids are collocated with the referenc
 point or the independent set moves rigidly. When the offset lever-arm effect matters,
 use RBAR (kinematically exact rigid connection) instead.
 
+**Deviations from NASTRAN (#60).** NASTRAN fits a weighted least-squares rigid-body
+motion with lever arms. sbeam does not, so it either refuses or warns when the two would
+differ:
+
+| Case | NASTRAN | sbeam |
+|---|---|---|
+| REFC DOF in no Ci (e.g. `REFC=123456`, `Ci=123`) | Derives it from the other DOFs across the offsets | **Refused** |
+| REFC weights summing to zero | Believed to be an error (not confirmed) | Refused |
+| A DOF dependent in two rigid elements | Error | Refused |
+| An independent DOF that another rigid element makes dependent (chained rigid elements) | Allowed; solved together | Refused (as for RBE2 GN / RBAR GA) |
+| Independent grid offset from REFGRID | Lever arm applied | Same-DOF average; **warns**, naming the largest offset |
+| Independent grids at REFGRID | Same-DOF average | Same; **matches** |
+
+Full NASTRAN kinematics is parked (`docs/30_future/02_parked.md`, "RBE3 — NASTRAN
+kinematics").
+
 **Example:**
 ```
 $ REFGRID=7 follows the average motion of GID 6, equal weight, all 6 DOFs

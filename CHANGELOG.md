@@ -23,6 +23,19 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and warnings, before and after.
 
 ### Fixed
+- **Every rigid-element dependent DOF must have a valid source; offset RBE3s warn** (#60).
+  Four cases were skipped without a word when building the rigid-element transform. **An
+  RBE3 REFC DOF that no Ci covers was left unconstrained**, so the usual NASTRAN RBE3
+  (`REFC=123456`, `Ci=123`) had free reference rotations. REFC weights summing to zero
+  were skipped the same way. A DOF made dependent by two rigid elements kept only the
+  last one's constraint. An RBE3 independent DOF that another element made dependent lost
+  its share of the average. All four are now refused. An RBE3 with independent grids
+  offset from REFGRID now warns, since sbeam applies no lever arm there and NASTRAN does.
+  The two sample decks that used such an RBE3 now use an RBAR. `beam_vib1.bdf`'s spectrum
+  changes from 1.0334 / 1.0334 / 11.80 / 11.80 / 37.28 Hz to 1.0168 / 1.0239 / 9.1735 /
+  9.5743 / 20.861 Hz, now including the offset mass's torsional inertia; it equals the
+  same mass placed at the tip with CONM2 X2 = 1.0. `simple_beam.bdf`'s results at grids
+  1–6 are unchanged. Full NASTRAN RBE3 kinematics is parked.
 - **RBE3 is read strictly by field type, and nothing is skipped** (#59). The handler
   guessed where weight groups started and skipped any field it could not read as an
   integer. A typo grid vanished, a `UM` section became independent grids, and REFC/Ci
