@@ -195,33 +195,87 @@ def _handle_plotel(fields: list[str], bulk: BulkData) -> None:
     bulk.plotels[eid] = Plotel(eid=eid, g1=g1, g2=g2)
 
 
+def _field_kind(token: str) -> str:
+    """'int', 'real' or 'other' — the NASTRAN field type (RBE3 tells a WT from a grid ID
+    by it)."""
+    try:
+        int(token)
+        return "int"
+    except ValueError:
+        pass
+    try:
+        to_float(token)
+        return "real"
+    except ValueError:
+        return "other"
+
+
+def _rbe3_tokens(fields: list[str], conts: list[list[str]]) -> list[str]:
+    """Non-blank fields after REFC, with continuation markers (a non-numeric ``+...``
+    in the last field of a line) dropped."""
+    tokens: list[str] = []
+    for line in [fields[5:], *(cont[1:] for cont in conts)]:
+        line = [f.strip() for f in line if f.strip()]
+        if line and line[-1].startswith("+") and _field_kind(line[-1]) == "other":
+            line.pop()
+        tokens += line
+    return tokens
+
+
 def _handle_rbe3(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
+    """RBE3 read strictly by field type, as NASTRAN does (#59): each group is a real WT,
+    a DOF string C and at least one grid ID.  Any field that fits nowhere refuses the
+    card; nothing is skipped."""
     eid     = to_int(fields[1])
-    # fields[2] is always blank on an RBE3 card
+    if len(fields) > 2 and fields[2].strip():
+        raise ValueError(f"RBE3 {eid}: field 2 must be blank (got {fields[2].strip()!r})")
     refgrid = to_int(fields[3])
-    refc    = fields[4].strip()
+    refc    = fields[4].strip() if len(fields) > 4 else ""
+    validate_dof(refc, f"RBE3 {eid} REFC")
 
-    all_fields = [f.strip() for f in fields[5:] if f.strip()]
-    for cont in conts:
-        all_fields += [f.strip() for f in cont[1:] if f.strip()]
-
+    tokens = _rbe3_tokens(fields, conts)
     wt_gc: list[tuple[float, str, list[int]]] = []
     k = 0
-    while k < len(all_fields):
-        wt = to_float(all_fields[k]); k += 1
-        if k >= len(all_fields):
+    while k < len(tokens):
+        tok = tokens[k]
+        key = tok.upper()
+        if key == "UM":
+            raise ValueError(f"RBE3 {eid}: the UM section is not supported; "
+                             f"the dependent DOFs must be REFGRID's REFC")
+        if key == "ALPHA":
+            # "ALPHA", ALPHA, TREF ends the card; both are thermal and sbeam has none
+            rest = [t for t in tokens[k + 1:] if t.upper() != "TREF"]
+            if len(rest) > 2 or any(_field_kind(t) == "other" for t in rest):
+                raise ValueError(f"RBE3 {eid}: cannot read the ALPHA section {tokens[k:]!r}; "
+                                 f"it must be the last section: ALPHA, value[, TREF]")
+            warnings.warn(f"RBE3 {eid}: ALPHA/TREF ignored (sbeam has no thermal loads)",
+                          UserWarning, stacklevel=4)
             break
-        c = all_fields[k].strip(); k += 1
+        group = len(wt_gc) + 1
+        kind = _field_kind(tok)
+        if kind != "real":
+            hint = (" (an integer here would be a grid ID; NASTRAN requires a real WT, "
+                    "e.g. 1.0)" if kind == "int" else "")
+            raise ValueError(f"RBE3 {eid}: expected weight WT{group}, got {tok!r}{hint}")
+        wt = to_float(tok)
+        if k + 1 >= len(tokens):
+            raise ValueError(f"RBE3 {eid}: weight WT{group} has no DOF string C{group}")
+        c = tokens[k + 1]
+        validate_dof(c, f"RBE3 {eid} C{group}")
+        k += 2
         grids: list[int] = []
-        while k < len(all_fields):
-            f = all_fields[k]
-            if '.' in f or 'e' in f.lower() or 'E' in f:
-                break  # next WT value (float)
-            try:
-                grids.append(int(f)); k += 1
-            except ValueError:
-                k += 1
+        while k < len(tokens) and _field_kind(tokens[k]) == "int":
+            grids.append(int(tokens[k]))
+            k += 1
+        if k < len(tokens) and _field_kind(tokens[k]) == "other" \
+                and tokens[k].upper() not in ("UM", "ALPHA"):
+            raise ValueError(f"RBE3 {eid}: cannot read {tokens[k]!r} in group {group} "
+                             f"(expected a grid ID, a real WT, UM or ALPHA)")
+        if not grids:
+            raise ValueError(f"RBE3 {eid}: group {group} (WT={tok}, C={c}) has no grids")
         wt_gc.append((wt, c, grids))
+    if not wt_gc:
+        raise ValueError(f"RBE3 {eid}: no independent grids (WT, C, G...) given")
 
     if eid in bulk.rbe3s:
         raise ValueError(f"Duplicate RBE3 EID {eid}")
@@ -456,15 +510,11 @@ def _handle_cbush(fields: list[str], cont: Optional[list[str]], bulk: BulkData) 
     gb  = to_int_or_none(fields[4]) if len(fields) > 4 else None
     # fields[5] = S (spring location ratio) — ignored
     # fields[6] = CID — must be 0 or blank
+    # A CID that is not an integer used to be swallowed and read as 0 (#59 sweep)
     if len(fields) > 6 and fields[6].strip():
         cid_val = fields[6].strip()
-        if cid_val not in ("0",):
-            try:
-                if int(cid_val) != 0:
-                    raise ValueError(f"CBUSH {eid}: CID={cid_val} not supported; only CID=0 is implemented")
-            except ValueError as exc:
-                if "not supported" in str(exc):
-                    raise
+        if _field_kind(cid_val) != "int" or int(cid_val) != 0:
+            raise ValueError(f"CBUSH {eid}: CID={cid_val} not supported; only CID=0 is implemented")
     # Orientation vector from continuation line
     x1 = x2 = x3 = 0.0
     if cont is not None:

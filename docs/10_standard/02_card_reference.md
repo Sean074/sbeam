@@ -517,7 +517,7 @@ Both the inline fields after CID and the continuation line are optional.
 | GA | `ga` | int | Node A grid ID | required |
 | GB | `gb` | int or None | Node B grid ID; blank/omitted = grounded at GA | `None` |
 | S | — | — | Spring location ratio — read and ignored | — |
-| CID | — | int | Orientation CID — must be `0` or blank | `0` |
+| CID | — | int | Orientation CID — must be `0` or blank; anything else is refused | `0` |
 | X1–X3 | `x1`–`x3` | float | Orientation vector (continuation) | `0.0` |
 
 For a grounded element (GB blank), stiffness acts only on GA DOFs. For a two-node element, symmetric stiffness couples GA and GB.
@@ -679,6 +679,20 @@ RBE3, EID, (blank), REFGRID, REFC, WT1, C1, G1_1, G1_2, ...
 ```
 
 Each weight group `(WTi, Ci, Gi_1, Gi_2, ...)` may span continuation lines.
+
+**Reading rules (#59).** Groups are read by field type, as in NASTRAN: a **real** starts a
+group, the next field is its DOF string, and the **integers** after that are its grids,
+up to the next real. Every field must fit; nothing is skipped. The card is refused when a
+field cannot be read, a group has no grids, a WT has no C, REFC or a Ci is not a DOF
+string, field 2 is not blank, or there are no groups. A non-numeric `+...` in the last
+field of a line is taken as a continuation marker.
+
+- **Write every WT as a real (`1.0`, not `1`).** An integer in the first WT position is
+  refused, but an integer after a group's grids *is* a grid ID by field type, in NASTRAN
+  too, so the next group merges into this one without an error.
+- **`UM`** (moving the dependent DOFs off REFGRID) is not supported and is refused.
+- **`ALPHA`, value[, TREF]** is read and ignored with a `UserWarning`: sbeam has no
+  thermal loads. It must be the last section.
 
 **Fields:**
 

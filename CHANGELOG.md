@@ -23,6 +23,17 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and warnings, before and after.
 
 ### Fixed
+- **RBE3 is read strictly by field type, and nothing is skipped** (#59). The handler
+  guessed where weight groups started and skipped any field it could not read as an
+  integer. A typo grid vanished, a `UM` section became independent grids, and REFC/Ci
+  were never checked as DOF strings, so **a REFC digit `7` silently constrained DOF 1 of
+  the next grid in the index**. Groups are now read as in NASTRAN (a real WT, a DOF
+  string C, at least one grid), and a field that fits nowhere refuses the card. `UM` is
+  refused as not supported. `ALPHA`/`TREF` are ignored with a warning, since sbeam has no
+  thermal loads. Note: an integer weight after a group's grids still reads as a grid
+  ID, as it does in NASTRAN; the card reference says to write every WT as a real.
+  Found in the same sweep: a non-integer CBUSH CID (`A`, `1.5`) was swallowed and read
+  as 0; it is now refused.
 - **Duplicate PLOTEL, RBE2, RBE3, CONM2 and EIGRL IDs are refused** (#57). These five
   cards had no duplicate check, so a second card with the same ID silently replaced the
   first. **A reused CONM2 EID dropped a mass without a word**, and a reused RBE2 EID
