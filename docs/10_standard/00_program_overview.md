@@ -103,7 +103,13 @@ sbeam/
 ├── types.py              # Shared type aliases (FloatArray, SparseMatrix, LuFactor, …)
 ├── linalg_utils.py       # Shared dense linear-algebra helpers (estimate_cond_1norm — LU + gecon 1-norm condition estimate, DEF-R6)
 ├── parser/
-│   ├── bdf_reader.py     # Bulk data section parser → BulkData object
+│   ├── bdf_reader.py     # Entry points (parse_bdf/parse_bulk_file/parse_bulk_data), unsupported-card refusal, keyword dispatch (#48)
+│   ├── bulk_fields.py    # Line splitting, field conversion, card + continuation iterator, handler signatures
+│   ├── bulk_structural.py # Card handlers: CORD2R, GRID, properties, materials, elements, mass, SPC/SUPORT, static loads, EIGRL, PARAM
+│   ├── bulk_aero.py      # Card handlers: AEROS, CAERO1, corrections, splines, AELIST/AECOMP, MONPNT1/3, MONSECT
+│   ├── bulk_trim.py      # Card handlers: AESTAT/AESURF, TRIM*, DIVERG, GUSTLF, TABLED1, MLOADS family
+│   ├── bulk_xref.py      # Cross-card reference checks, run after every card is read
+│   ├── bdf_field.py      # BDF real-field write formatter + matching read (parse_real)
 │   └── case_control.py   # Case control section parser → CaseControl object
 ├── model/
 │   ├── bulk_data.py          # BulkData container dataclass

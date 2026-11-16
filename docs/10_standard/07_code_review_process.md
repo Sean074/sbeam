@@ -98,7 +98,7 @@ blocks approval but is not the same severity class as wrong results.
 
 ### Step 2 — BDF Parser and Data Model Review
 
-The parser (`parser/bdf_reader.py`) is the model gateway. Errors here corrupt every downstream result.
+The parser (`parser/bdf_reader.py` and its `bulk_*.py` card modules) is the model gateway. Errors here corrupt every downstream result.
 
 - [ ] Every supported card in CLAUDE.md has a corresponding parser branch. Any card not in the supported list must either raise a clear warning or be silently skipped — never silently accepted with wrong field counts.
 - [ ] Field indices are zero-based free-format or fixed 8-column NASTRAN format — verify the field-slicing logic matches the card definition in `docs/10_standard/01_beam_model.md`.

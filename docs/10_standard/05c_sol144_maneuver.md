@@ -600,7 +600,7 @@ Free field does not exempt a card from that width — a strict reader truncates 
 comma-delimited field to its first 8 characters, which would turn `4.715932E+03` into
 `4.715932`. `fmt_real8` builds both a fixed-point spelling (`4715.932`) and a NASTRAN
 implicit-exponent spelling (`4.716+3`) and keeps whichever reproduces the value more
-closely; `bdf_field.parse_real` is the matching read side, which `bdf_reader._to_float`
+closely; `bdf_field.parse_real` is the matching read side, which `bulk_fields.to_float`
 delegates to so the two cannot drift. Non-finite values raise rather than being written.
 Precision is therefore bounded by the field width: 6-7 significant figures across the
 physical load range, fewer for very large or very small magnitudes, and one fewer for a

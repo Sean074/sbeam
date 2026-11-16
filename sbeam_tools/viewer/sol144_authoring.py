@@ -14,7 +14,7 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.model.card_writers import FAMILIES
 from sbeam.model.maneuver import Mldcomd, Mloads, Tabled1
 from sbeam.model.maneuver_presets import load_factor_to_urdd3
-from sbeam.parser.bdf_reader import expand_int_list_with_thru
+from sbeam.parser.bulk_fields import expand_int_list_with_thru
 from sbeam.parser.case_control import CaseControl, SubcaseControl
 from sbeam.results.results import ManeuverResult, Sol144TrimResult
 

@@ -216,7 +216,7 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
   boundary. Prefer this split to adding a unit-aware field.
 - **User-defined consistent units throughout** — sbeam never converts. The two deliberate
   exceptions (card-field degrees → stored radians): the CHORDCP `ALPHREF` conversion
-  `math.radians(...)` in `parser/bdf_reader.py::_handle_chordcp` (stored as
+  `math.radians(...)` in `parser/bulk_aero.py::_handle_chordcp` (stored as
   `Chordcp.alpha_ref`, `model/aero.py`) and its tolerance constant
   `_CHORDCP_ALPHA_TOL = 0.035 rad` (`solver/sol144.py`, cited by name — line numbers
   drift). Do not add new unit-converting fields without recording them here.

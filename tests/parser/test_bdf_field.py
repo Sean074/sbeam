@@ -105,11 +105,11 @@ def test_parse_real_accepts_nastran_notations(text, expected):
 
 
 def test_reader_uses_the_same_parser():
-    """bdf_reader._to_float must stay one source of truth with the formatter."""
-    from sbeam.parser.bdf_reader import _to_float
+    """bulk_fields.to_float must stay one source of truth with the formatter."""
+    from sbeam.parser.bulk_fields import to_float
     for val in _ALL:
         s = fmt_real8(val)
-        assert _to_float(s) == parse_real(s)
+        assert to_float(s) == parse_real(s)
 
 
 def test_width_holds_over_the_full_representable_range():

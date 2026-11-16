@@ -82,9 +82,8 @@ class TestSetHygiene:
     """The set cannot drift: nothing in it has a handler, nothing supported is in it."""
 
     def test_no_unsupported_keyword_has_a_handler(self):
-        src = (REPO / "sbeam/parser/bdf_reader.py").read_text()
-        handled = set(re.findall(r'keyword == "([A-Z0-9]+)"', src))
-        assert handled, "dispatch scan found nothing — the gate would pass vacuously"
+        handled = bdf_reader.HANDLED_CARDS
+        assert handled, "dispatch table is empty — the gate would pass vacuously"
         assert not handled & set(_UNSUPPORTED_CARDS), (
             "a card is both handled and refused; remove it from _UNSUPPORTED_CARDS")
 
@@ -102,7 +101,7 @@ class TestSetHygiene:
 
     def test_pload1_stays_unsupported_until_its_parked_item_lands(self):
         assert "PLOAD1" in _UNSUPPORTED_CARDS
-        assert not hasattr(bdf_reader, "_handle_pload1")
+        assert "PLOAD1" not in bdf_reader.HANDLED_CARDS
 
 
 class TestCli:

@@ -393,7 +393,7 @@ def test_selects_modal_truth_table():
 
 def test_parser_method_sentinel():
     """METHOD=-1 parses; METHOD=-2 rejects; the all-zeros card stays legacy."""
-    from sbeam.parser.bdf_reader import _handle_mloads
+    from sbeam.parser.bulk_trim import _handle_mloads
     from sbeam.model.bulk_data import BulkData
 
     bulk = BulkData()

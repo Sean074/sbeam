@@ -13,7 +13,7 @@ fixed-point candidate (``4715.932``) and a NASTRAN implicit-exponent candidate
 usually wins in the normal load range, implicit exponent wins for very large or
 very small magnitudes.
 
-``parse_real`` is the matching read side, and ``bdf_reader._to_float``
+``parse_real`` is the matching read side, and ``bulk_fields.to_float``
 delegates to it, so the format sbeam writes and the format it accepts are one
 definition and cannot drift apart.
 """

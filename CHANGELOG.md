@@ -9,6 +9,19 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **Bulk-data parser split into a dispatch table and family modules** (#48; no behaviour
+  change). `parse_bulk_data` (McCabe complexity 212, in a 2,161-line module) is now a
+  ~20-line loop over one card iterator, which replaces ~20 copies of the
+  continuation-collecting loop. It dispatches through per-family handler tables
+  (`bulk_structural`, `bulk_aero`, `bulk_trim`), then runs the cross-card checks in
+  `bulk_xref`. A new card is now one handler plus one table entry. The public entry points
+  (`parse_bdf`, `parse_bulk_file`, `parse_bulk_data`) are unchanged. Internal moves:
+  `expand_int_list_with_thru` and the field helpers (`to_float`, …) are now in
+  `sbeam.parser.bulk_fields`, and the supported keyword set is `bdf_reader.HANDLED_CARDS`.
+  Every sample and integration deck (61) parses to an identical `BulkData`, with identical
+  errors and warnings, before and after.
+
 ### Fixed
 - **Release checklist §5 pointed at a removed CLAUDE.md card table** (#56). The item now
   confirms new cards in `02_card_reference.md` and solver types in `00_program_overview.md`,
