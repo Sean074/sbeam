@@ -90,6 +90,7 @@ are the day-to-day references; higher numbers are planning and historical record
 |------|-------|
 | [`2026-08-04_development_process_review.md`](50_reviews/2026-08-04_development_process_review.md) | Full-depth development-process audit (May–Aug 2026): findings F1–F8, recommendations R1–R17 behind the 2026-08-04 process changes |
 | [`2026-10-25_wt2_reference_defect_review.md`](50_reviews/2026-10-25_wt2_reference_defect_review.md) | #52 defect review: how the WT2 reference sideslipped the fin for 4.4 months undetected, what it affected, and the process changes P1–P6 it adopted (agreed 2026-10-25) |
+| [`2026-11-16_nastran_zaero_audit.md`](50_reviews/2026-11-16_nastran_zaero_audit.md) | Compatibility audit against MSC NASTRAN, ZAERO, NASTRAN-95 and pyNastran: silent misreads, formulation differences, name clashes and roadmap reuse; filed as #63–#94 plus comments on roadmap issues |
 
 ---
 
