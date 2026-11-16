@@ -10,6 +10,18 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Breaking changes
+- **A card with data on a line sbeam does not read is refused** (#63; pre-1.0 MINOR
+  break). Handlers that read one line (or one continuation) used to drop any further line
+  without a message. The dispatcher now refuses such a card, naming the line. Found this
+  way by the 2026-11-16 audit:
+  - `LOAD` reads every continuation; a 3-line LOAD used to lose its last components.
+  - `PBAR` reads its third line: non-blank K1/K2 (shear factors) and I12 ≠ 0 are refused.
+  - `PBUSH` reads its flag lines in any order: K is read, RCV ignored, and non-zero B,
+    GE, M or T refused. `PBUSH 1 M 5.` used to give K1 = 5.
+  - `AESURF` refuses `NOLDW` (field 9) and MSC's limits continuation.
+  - `EIGRL` option lines (`NORM=MAX`) and MSC's two-line `MONPNT1` are refused.
+  No repo deck changes.
+
 - **Every card is read in NASTRAN's 10-field layout, whatever its input format** (#64;
   pre-1.0 MINOR break). A free-field line longer than 10 fields used to keep all its
   tokens on one line, so handlers read past field 9 and put values in the wrong place:

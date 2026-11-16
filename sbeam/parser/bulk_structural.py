@@ -67,7 +67,7 @@ def _handle_grid(fields: list[str], bulk: BulkData) -> None:
     bulk.grids[gid] = Grid(gid=gid, x=x, y=y, z=z, ps=ps, cp=cp, cd=cd)
 
 
-def _handle_pbar(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -> None:
+def _handle_pbar(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     pid = to_int(fields[1])
     if pid in bulk.pbars or pid in bulk.prods:
         raise ValueError(f"Duplicate PID {pid}")
@@ -79,10 +79,21 @@ def _handle_pbar(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -
     nsm = to_float(fields[7]) if len(fields) > 7 else 0.0
 
     c1 = c2 = d1 = d2 = e1 = e2 = f1 = f2 = 0.0
-    if cont is not None:
-        def g(n: int) -> float:
-            return to_float(cont[n]) if len(cont) > n else 0.0
-        c1, c2, d1, d2, e1, e2, f1, f2 = g(1), g(2), g(3), g(4), g(5), g(6), g(7), g(8)
+    if conts:
+        c1, c2, d1, d2, e1, e2, f1, f2 = (to_float(f) for f in conts[0][1:9])
+    if len(conts) > 1:
+        # K1, K2 (shear area factors, NASTRAN default infinite = no shear flexibility) and
+        # I12 (coupled bending) used to be dropped with the line (QRG p.2431; #63)
+        k1, k2, i12 = conts[1][1:4]
+        if k1.strip() or k2.strip():
+            raise ValueError(f"PBAR {pid}: K1/K2 shear factors are not supported "
+                             "(Euler-Bernoulli only); leave them blank")
+        if i12.strip() and to_float(i12) != 0.0:
+            raise ValueError(f"PBAR {pid}: I12 = {i12} (coupled bending) is not supported")
+        if any(f.strip() for f in conts[1][4:]):
+            raise ValueError(f"PBAR {pid}: fields after I12 on the third line must be blank")
+    if len(conts) > 2:
+        raise ValueError(f"PBAR {pid}: more than three lines; PBAR has two continuations")
 
     bulk.pbars[pid] = Pbar(
         pid=pid, mid=mid, A=A, I1=I1, I2=I2, J=J, nsm=nsm,
@@ -481,13 +492,14 @@ def _handle_moment(fields: list[str], bulk: BulkData) -> None:
     bulk.moments[sid].append(Moment(sid=sid, gid=gid, cid=cid, m=m, n1=n1, n2=n2, n3=n3))
 
 
-def _handle_load(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -> None:
+def _handle_load(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     sid = to_int(fields[1])
     if sid in bulk.loads:
         raise ValueError(f"Duplicate LOAD SID {sid}")
     s   = to_float(fields[2])
+    # Any number of continuations (QRG p.2008); only the first was read before #63
     raw = list(fields[3:])
-    if cont is not None:
+    for cont in conts:
         raw += list(cont[1:])
     components = []
     for k in range(0, len(raw) - 1, 2):
@@ -497,21 +509,43 @@ def _handle_load(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -
     bulk.loads[sid] = Load(sid=sid, s=s, components=components)
 
 
-def _handle_pbush(fields: list[str], bulk: BulkData) -> None:
+#: PBUSH flag lines sbeam cannot honour: any non-zero value refuses the card (#63)
+_PBUSH_UNSUPPORTED = {"B": "viscous damping", "GE": "structural damping",
+                      "M": "lumped mass (use a CONM2)", "T": "thermal properties"}
+
+
+def _handle_pbush(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
+    """PBUSH — flag lines K, B, GE, RCV, M, T in any order (QRG p.2493–2494, remark 6).
+
+    The flag is field 3 of every line and its values fields 4–9.  K is read; RCV (stress
+    and strain recovery) is output only and ignored; B, GE, M and T are refused unless all
+    their values are blank or zero.  Before #63 fields 4–9 of the first line were read as
+    K whatever the flag (``PBUSH 1 M 5.`` gave K1 = 5) and every continuation was dropped.
+    """
     pid = to_int(fields[1])
     if pid in bulk.pbushs:
         raise ValueError(f"Duplicate PBUSH PID {pid}")
-    # Field layout: PBUSH, PID, K, K1, K2, K3, K4, K5, K6
-    # fields[2] is the literal "K" keyword; K values start at fields[3]
-    if len(fields) > 2 and fields[2].strip().upper() == "B":
-        raise ValueError(f"PBUSH {pid}: B (damping) keyword not supported in Phase 2")
-    k1 = to_float(fields[3]) if len(fields) > 3 else 0.0
-    k2 = to_float(fields[4]) if len(fields) > 4 else 0.0
-    k3 = to_float(fields[5]) if len(fields) > 5 else 0.0
-    k4 = to_float(fields[6]) if len(fields) > 6 else 0.0
-    k5 = to_float(fields[7]) if len(fields) > 7 else 0.0
-    k6 = to_float(fields[8]) if len(fields) > 8 else 0.0
-    bulk.pbushs[pid] = Pbush(pid=pid, k1=k1, k2=k2, k3=k3, k4=k4, k5=k5, k6=k6)
+    k = [0.0] * 6
+    seen: set[str] = set()
+    for row in [fields, *conts]:
+        flag = row[2].strip().upper()
+        values = row[3:9]
+        if not flag:
+            if any(f.strip() for f in row[1:]):
+                raise ValueError(f"PBUSH {pid}: a line with values has no K/B/GE/RCV/M/T flag")
+            continue
+        if flag in seen:
+            raise ValueError(f"PBUSH {pid}: flag {flag} given twice")
+        seen.add(flag)
+        if flag == "K":
+            k = [to_float(f) for f in values]
+        elif flag in _PBUSH_UNSUPPORTED:
+            if any(f.strip() and to_float(f) != 0.0 for f in values):
+                raise ValueError(f"PBUSH {pid}: {flag} ({_PBUSH_UNSUPPORTED[flag]}) is "
+                                 "not supported; only K is honoured")
+        elif flag != "RCV":
+            raise ValueError(f"PBUSH {pid}: unknown flag '{flag}' (K, B, GE, RCV, M or T)")
+    bulk.pbushs[pid] = Pbush(pid=pid, k1=k[0], k2=k[1], k3=k[2], k4=k[3], k5=k[4], k6=k[5])
 
 
 def _handle_cbush(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -> None:
@@ -617,7 +651,6 @@ def _handle_param(fields: list[str], bulk: BulkData) -> None:
 FIELD_HANDLERS: dict[str, FieldHandler] = {
     "GRID": _handle_grid,
     "MAT1": _handle_mat1,
-    "PBUSH": _handle_pbush,
     "PROD": _handle_prod,
     "CROD": _handle_crod,
     "CONROD": _handle_conrod,
@@ -633,13 +666,14 @@ FIELD_HANDLERS: dict[str, FieldHandler] = {
 }
 CONT_HANDLERS: dict[str, ContHandler] = {
     "CORD2R": _handle_cord2r,
-    "PBAR": _handle_pbar,
     "CBUSH": _handle_cbush,
     "CBAR": _handle_cbar,
     "CONM2": _handle_conm2,
-    "LOAD": _handle_load,
 }
 MULTI_HANDLERS: dict[str, MultiHandler] = {
+    "PBAR": _handle_pbar,
+    "PBUSH": _handle_pbush,
+    "LOAD": _handle_load,
     "RBE3": _handle_rbe3,
     "RBE2": _handle_rbe2,
     "MASSSET": _handle_massset,

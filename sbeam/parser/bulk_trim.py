@@ -30,8 +30,13 @@ def _handle_aesurf(fields: list[str], bulk: BulkData) -> None:
     cid2  = to_int_opt(fields[5]) if len(fields) > 5 and fields[5].strip() else 0
     alid2 = to_int_opt(fields[6]) if len(fields) > 6 and fields[6].strip() else 0
     eff   = to_float(fields[7]) if len(fields) > 7 and fields[7].strip() else 1.0
+    ldw   = fields[8].strip().upper() or "LDW"
     if not label:
         raise ValueError(f"AESURF {aid}: LABEL must not be blank")
+    if ldw != "LDW":
+        # NOLDW: the user supplies the control's induced forces (QRG p.1156 remark 2); sbeam
+        # always derives them from the deflected boxes.  Field 9 was never read (#63)
+        raise ValueError(f"AESURF {aid}: LDW = '{ldw}' is not supported (only LDW)")
     if aid in bulk.aesurfs:
         raise ValueError(f"Duplicate AESURF ID {aid}")
     bulk.aesurfs[aid] = Aesurf(id=aid, label=label, cid1=cid1, alid1=alid1,

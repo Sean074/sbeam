@@ -63,6 +63,12 @@ large to small field mid-row (the QRG's examples do not settle where its fields 
 Cards whose field 9 is unused in NASTRAN keep it blank in free field too: a one-line CONM2
 needs `, ,` before I11 (see CONM2).
 
+**Every line is read or the card is refused (#63).** A card with data on a continuation
+line that sbeam does not read is refused, naming the card and the line. Most cards read only
+their first line (or one continuation); cards that take more say so in their section. Blank
+continuation lines are harmless. Before #63 such lines were dropped without a message (LOAD
+components past the second line, AESURF limits, EIGRL options, MSC's second MONPNT1 line).
+
 **Real number fields.** A NASTRAN data field is **8 characters wide**, in free field as well as
 fixed field — MSC rounds a longer free-field real to 8 characters (`1.2345678+2` becomes
 `123.4568`, QRG p.1048), and other readers may truncate it. sbeam's own reader keeps full
@@ -283,9 +289,14 @@ Defines uniform cross-section properties for CBAR elements.
 ```
 PBAR, PID, MID, A, I1, I2, J, NSM
 +,    C1, C2, D1, D2, E1, E2, F1, F2
++,    K1, K2, I12
 ```
 
-The continuation line is optional (stress recovery points default to 0).
+The continuation lines are optional (stress recovery points default to 0). The third line
+must be blank apart from `I12 = 0.0`: non-blank **K1/K2** (shear area factors; NASTRAN's
+default is infinite, i.e. no shear flexibility) and **I12 ≠ 0** (coupled bending) are refused,
+since sbeam is Euler–Bernoulli with uncoupled bending planes (#63 — the line used to be
+dropped). A fourth line is refused.
 
 **Fields:**
 
@@ -351,10 +362,20 @@ Defines stiffness (and optionally damping) for CBUSH elements.
 
 **Format:**
 ```
-PBUSH, PID, K, K1, K2, K3, K4, K5, K6
+PBUSH, PID, K,   K1, K2, K3, K4, K5, K6
++,     ,    B,   B1, B2, B3, B4, B5, B6
++,     ,    GE,  GE1, …
++,     ,    RCV, SA, ST, EA, ET
++,     ,    M,   M
++,     ,    T,   ALPHA, TREF, COINL
 ```
 
-The literal keyword `K` identifies the stiffness group.
+Each line starts with a flag in field 3, and the flag lines may come in any order (QRG
+p.2494 remark 6). `K` is read. `RCV` (stress/strain recovery coefficients) only affects
+output and is ignored. `B`, `GE`, `M` and `T` are refused unless every value on the line is
+blank or zero; a flag given twice, an unknown flag, or a line of values with no flag is
+refused (#63 — before, fields 4–9 of the first line were read as K whatever the flag, so
+`PBUSH 1 M 5.` gave K1 = 5, and continuation lines were dropped).
 
 **Fields:**
 
@@ -369,7 +390,7 @@ The literal keyword `K` identifies the stiffness group.
 | K5 | `k5` | float | Stiffness for DOF 5 (Ry) | `0.0` |
 | K6 | `k6` | float | Stiffness for DOF 6 (Rz) | `0.0` |
 
-Only the `K` keyword is supported in Phase 1–2. The `B` (damping) keyword raises `ValueError`.
+Only the `K` values are honoured (see above).
 
 **Example:**
 ```
@@ -1054,8 +1075,11 @@ Defines a combined load as a linear combination of FORCE/MOMENT load sets.
 
 **Format:**
 ```
-LOAD, SID, S, S1, L1, S2, L2, S3, L3, ...
+LOAD, SID, S, S1, L1, S2, L2, S3, L3
++,    S4, L4, S5, L5, ...
 ```
+
+Any number of continuation lines (QRG p.2008); before #63 only the first was read.
 
 **Fields:**
 
@@ -1781,8 +1805,12 @@ antisymmetric aileron (#9; equivalent to ZAERO `AESURFZ … ANTISYM` on a full-s
 
 **Format:**
 ```
-AESURF  ID  LABEL  CID1  ALID1  CID2  ALID2  EFF
+AESURF  ID  LABEL  CID1  ALID1  CID2  ALID2  EFF  LDW
 ```
+
+Field 9 `LDW` must be blank or `LDW`; `NOLDW` (user-supplied control forces) is refused. MSC's
+continuation line (CREFC, CREFS, position and hinge-moment limits) is refused until those
+values are honoured (#63; #44).
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -1793,6 +1821,7 @@ AESURF  ID  LABEL  CID1  ALID1  CID2  ALID2  EFF
 | CID2 | int | 0 | Hinge CID of the second half (0 = no second half) |
 | ALID2 | int | 0 | AELIST SID of the second half (0 = no second half) |
 | EFF | float | 1.0 | Control-surface effectiveness factor, applied to both halves |
+| LDW | str | LDW | Linear downwash; only `LDW` is supported |
 
 **Sign (conventions charter §6):** positive deflection is a right-hand rotation about each
 half's own CID +y axis, i.e. lift-increasing (TE-down for a spanwise +y hinge). The

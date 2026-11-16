@@ -104,8 +104,10 @@ def _read_cards(lines: list[str]) -> BulkData:
             # Counted, not raised: the deck is refused once with the full list below.
             unsupported[keyword] += 1
         elif keyword in _FIELD_HANDLERS:
+            _refuse_unread(keyword, fields, conts, 0)
             _FIELD_HANDLERS[keyword](fields, bulk)
         elif keyword in _CONT_HANDLERS:
+            _refuse_unread(keyword, fields, conts, 1)
             _CONT_HANDLERS[keyword](fields, conts[0] if conts else None, bulk)
         elif keyword in _MULTI_HANDLERS:
             _MULTI_HANDLERS[keyword](fields, conts, bulk)
@@ -130,6 +132,24 @@ def _read_cards(lines: list[str]) -> BulkData:
             "correct a misspelt keyword, or model the content with supported cards "
             "(02_card_reference.md, 'Unsupported cards').")
     return bulk
+
+
+def _refuse_unread(keyword: str, fields: list[str], conts: list[list[str]], reads: int) -> None:
+    """Refuse a card with data on a continuation line its handler does not read (#63).
+
+    A FIELD handler reads the first line only and a CONT handler one continuation; before
+    #63 any further line was dropped without a message (LOAD components past the second
+    line, AESURF limits, EIGRL options, MSC's second MONPNT1 line).  Blank rows are fine.
+    """
+    for n, cont in enumerate(conts[reads:], start=reads + 1):
+        if any(f.strip() for f in cont[1:]):
+            ident = fields[1].strip() if len(fields) > 1 else ""
+            raise ValueError(
+                f"{keyword} {ident}: continuation line {n} "
+                f"({', '.join(f.strip() for f in cont[1:]).rstrip(', ')}) is not read by sbeam "
+                f"and would be dropped; {keyword} takes "
+                f"{'no continuation' if reads == 0 else 'one continuation line'} here "
+                "(02_card_reference.md)")
 
 
 def _did_you_mean(keyword: str) -> str:
