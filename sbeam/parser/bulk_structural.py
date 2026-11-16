@@ -58,6 +58,12 @@ def _handle_grid(fields: list[str], bulk: BulkData) -> None:
     z   = to_float(fields[5]) if len(fields) > 5 else 0.0
     cd  = to_int_opt(fields[6]) if len(fields) > 6 else 0
     ps  = fields[7].strip() if len(fields) > 7 else ""
+    # SEID was documented "must be blank" but never read, so a superelement grid
+    # silently joined the residual structure (#58 sweep); 0 is the residual, as in NASTRAN
+    seid = fields[8].strip() if len(fields) > 8 else ""
+    if seid and seid != "0":
+        raise ValueError(f"GRID {gid}: SEID={seid} not supported; sbeam has no "
+                         f"superelements (leave SEID blank or 0)")
     bulk.grids[gid] = Grid(gid=gid, x=x, y=y, z=z, ps=ps, cp=cp, cd=cd)
 
 
@@ -161,6 +167,12 @@ def _handle_cbar(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -
     pid  = to_int(fields[2])
     ga   = to_int(fields[3])
     gb   = to_int(fields[4])
+    # G0 form: an integer X1 with X2/X3 blank is a grid ID in NASTRAN.  It used to be read
+    # as the vector (G0, 0, 0), a silently wrong orientation (#58 sweep).
+    if len(fields) > 5 and _field_kind(fields[5].strip()) == "int" \
+            and not any(f.strip() for f in fields[6:8]):
+        raise ValueError(f"CBAR {eid}: the G0 (grid-ID) orientation form is not supported; "
+                         f"give the orientation vector X1, X2, X3 as reals")
     x1   = to_float(fields[5]) if len(fields) > 5 else 0.0
     x2   = to_float(fields[6]) if len(fields) > 6 else 0.0
     x3   = to_float(fields[7]) if len(fields) > 7 else 0.0

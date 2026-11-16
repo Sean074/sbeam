@@ -9,8 +9,11 @@ and duplicates within its own card type; anything that looks at another card bel
 here.  A check in a handler sees only the cards above it in the deck (#51).
 """
 import warnings
+from typing import Callable
 
 from sbeam.model.bulk_data import BulkData
+from sbeam.model.coordinate_system import Cord2r
+from sbeam.types import FloatArray
 
 
 def cross_reference(bulk: BulkData) -> None:
@@ -28,6 +31,34 @@ def cross_reference(bulk: BulkData) -> None:
     all_trim_labels = _check_trim(bulk)
     _check_maneuver_loads(bulk, all_trim_labels)
     _check_massset(bulk)
+
+
+def check_frame_orientations(
+    bulk: BulkData,
+    get_transform: Callable[[int, dict[int, Cord2r]], tuple[FloatArray, FloatArray]],
+) -> None:
+    """Checks that need a resolved CORD2R chain, run after ``cross_reference``.
+
+    ``get_transform`` is passed in by ``parse_bulk_data`` so the parser does not import the
+    assembly layer here.
+
+    AEROS ACSID (#58): sbeam takes the freestream along basic +x and never reads ACSID, so an
+    ACSID whose axes are parallel to basic is equivalent to 0 (HA144A's CORD2R 1 is basic
+    moved to x = 12.5). A rotated ACSID would put NASTRAN's flow elsewhere, so it is refused.
+    """
+    if bulk.aeros is None or not bulk.aeros.acsid:
+        return
+    acsid = bulk.aeros.acsid
+    _origin, rot = get_transform(acsid, bulk.cord2rs)
+    deviation = max(abs(float(rot[i, j]) - (1.0 if i == j else 0.0))
+                    for i in range(3) for j in range(3))
+    if deviation > 1e-6:
+        raise ValueError(
+            f"AEROS ACSID={acsid}: CORD2R {acsid} is rotated relative to basic; sbeam takes "
+            f"the freestream along basic +x and does not rotate the aero model into ACSID. "
+            f"Orient the model so the flow is along basic +x (CAERO1 CP can still place "
+            f"panels in any frame), or use an ACSID with axes parallel to basic"
+        )
 
 
 def _check_frame(card: str, ident: object, field: str, cid: int, bulk: BulkData) -> None:

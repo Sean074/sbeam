@@ -25,8 +25,8 @@ AEROS  ACSID  RCSID  CREF  BREF  SREF  SYMXZ  SYMXY
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| ACSID | int | 0 | Aerodynamic coordinate system (0 = basic) |
-| RCSID | int | 0 | Reference coordinate system for rigid body motion |
+| ACSID | int | 0 | Aerodynamic coordinate system; 0 or a CORD2R with axes parallel to basic (freestream along basic +x; a rotated ACSID is refused, #58) |
+| RCSID | int | 0 | Reference coordinate system for rigid body motion (origin = reference point; axes = trim-acceleration frame; see `02_card_reference.md`) |
 | CREF | float | — | Reference chord length (consistent model units) |
 | BREF | float | — | Reference span (full span, even for symmetric models) |
 | SREF | float | — | Reference area (full area) |

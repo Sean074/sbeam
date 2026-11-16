@@ -43,6 +43,8 @@ def _handle_trim(fields: list[str], conts: list[list[str]], bulk: BulkData) -> N
     q    = to_float(fields[3]) if len(fields) > 3 else 0.0
     if sid in bulk.trims:
         raise ValueError(f"Duplicate TRIM SID {sid}")
+    if mach < 0.0:  # β = √(1−M²) would silently run |M| (#58 sweep)
+        raise ValueError(f"TRIM {sid}: MACH={mach} must be non-negative")
     # Collect alternating LABEL/VALUE pairs from remainder of base line + continuations
     raw_pairs: list[str] = list(fields[4:])
     for cont in conts:
@@ -85,6 +87,8 @@ def _handle_diverg(fields: list[str], conts: list[list[str]], bulk: BulkData) ->
         machs += [to_float(f) for f in cont[1:] if f.strip()]
     if sid in bulk.divergs:
         raise ValueError(f"Duplicate DIVERG SID {sid}")
+    if any(m < 0.0 for m in machs):
+        raise ValueError(f"DIVERG {sid}: every Mach must be non-negative (got {machs})")
     bulk.divergs[sid] = Diverg(sid=sid, nroots=nroots, rhoref=rhoref, machs=machs)
 
 # ---------------------------------------------------------------------------

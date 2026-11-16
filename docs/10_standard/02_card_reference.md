@@ -216,7 +216,7 @@ GRID, GID, CP, X1, X2, X3, CD, PS, SEID
 | X3 | `z` | float | Z coordinate in CP frame | required |
 | CD | `cd` | int | Output coordinate system for displacement results (`0` = global) | `0` |
 | PS | `ps` | str | Permanent SPC DOF string (e.g., `"123456"`) | `""` |
-| SEID | — | — | Superelement ID — must be blank | — |
+| SEID | — | — | Superelement ID — must be blank or `0`; anything else is refused (#58) | — |
 
 Coordinates are transformed to global CID 0 during parsing; CP and CD are stored for output.
 
@@ -395,8 +395,10 @@ The continuation line is optional.
 | PB | `pb` | str | Pin releases at end B (DOF digits 1–6) | `""` |
 
 The orientation vector `[X1, X2, X3]` defines the element y-axis and must not be parallel to the element axis (GA→GB). Only the vector form is supported — the NASTRAN
-G0 (grid-ID) form of the orientation field is **not** supported; an integer in field 5
-is read as a vector component, not a grid reference.
+G0 (grid-ID) form of the orientation field is **not** supported: an integer X1 with X2
+and X3 blank is the G0 form in NASTRAN and is refused (#58; it used to be read as the
+vector (G0, 0, 0)). Integer components with X2/X3 present (`0, 1, 0`) are read as a
+vector, which is more lenient than NASTRAN; write them as reals.
 
 Pin-release DOF digits (PA/PB) are in **element local axes** (1 = axial, 4 = torsion,
 5/6 = local bending rotations), not the global DOFs of the DOF Reference table.
@@ -1116,15 +1118,16 @@ EIGRL, SID, V1, V2, ND, MSGLVL, MAXSET, SHFSCL, NORM
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
 | SID | `sid` | int | Set ID (unique; referenced by `METHOD` in case control) | required |
-| V1 | `v1` | float or None | Lower frequency bound (Hz); blank = no lower limit | `None` |
-| V2 | `v2` | float or None | Upper frequency bound (Hz); blank = no upper limit | `None` |
-| ND | `nd` | int or None | Number of modes to extract; blank = all in [V1,V2] | `None` |
+| V1 | `v1` | float or None | Lower frequency bound (Hz) — **not applied**: a `UserWarning`, and ND modes are returned regardless | `None` |
+| V2 | `v2` | float or None | Upper frequency bound (Hz) — **not applied** (as V1) | `None` |
+| ND | `nd` | int or None | Number of modes to extract; blank = all modes | `None` |
 | MSGLVL | — | — | Message level — ignored | — |
 | MAXSET | — | — | Maximum Lanczos set size — ignored | — |
 | SHFSCL | — | — | Shift scale — ignored | — |
 | NORM | `norm` | str | Mode shape normalisation: `"MASS"` or `"MAX"` | `"MASS"` |
 
-At least one of ND or V2 must be specified to bound the extraction.
+Use ND to bound the extraction: sbeam does not apply V1/V2, and without ND every mode is
+returned. (This section used to say ND or V2 must be given; that was never enforced, #58.)
 
 **Examples:**
 ```
@@ -1152,14 +1155,14 @@ AEROS  ACSID  RCSID  CREF  BREF  SREF  SYMXZ  SYMXY  [MACH]
 
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
-| ACSID | `acsid` | int | Aerodynamic coordinate system (Phase A: must be 0) | `0` |
-| RCSID | `rcsid` | int | Reference coordinate system for rigid-body motion (Phase A: must be 0) | `0` |
+| ACSID | `acsid` | int | Aerodynamic coordinate system. sbeam takes the freestream along basic +x and never reads ACSID, so it must be `0` or a CORD2R with axes **parallel to basic** (any origin, e.g. HA144A's CORD2R 1). A rotated ACSID is refused (#58) | `0` |
+| RCSID | `rcsid` | int | Rigid-body reference frame. Its **origin** is the reference point for rigid-body motion, stability derivatives and moments; its **axes** are the frame the trim accelerations (URDD*) are authored in, conventionally z-down as in MSC decks: there `URDD3 = −n_z·g` (1g level flight = −g). With RCSID = 0 (basic, z-up) a negative URDD3 trims inverted lift and warns (`09_conventions.md` §5, DEF-M20) | `0` |
 | CREF | `cref` | float | Reference chord (consistent model units) | required |
 | BREF | `bref` | float | Reference span — full span | required |
 | SREF | `sref` | float | Reference area — full area | required |
 | SYMXZ | `symxz` | int | Parsed for NASTRAN compatibility; **must be 0** — `build_aero_model` rejects non-zero (half-span) | `0` |
 | SYMXY | `symxy` | int | Parsed for NASTRAN compatibility; **must be 0** — `build_aero_model` rejects non-zero (half-span) | `0` |
-| MACH | `mach` | float | **sbeam extension** — freestream Mach number for Prandtl–Glauert / Göthert compressibility correction (§2.8 of theory doc). Omit or set to 0.0 for incompressible. Capped at 0.99; must be subsonic. | `0.0` |
+| MACH | `mach` | float | **sbeam extension** — freestream Mach number for Prandtl–Glauert / Göthert compressibility correction (§2.8 of theory doc). Omit or set to 0.0 for incompressible. Must be in [0, 1): a negative value is refused at parse (#58), and M ≥ 1 when the aero model is built. | `0.0` |
 
 > **Note:** The MACH field (field 8) is an sbeam extension. The NASTRAN AEROS card has no MACH field; in MSC Nastran, Mach appears on the TRIM card (Phase C).
 
@@ -2503,13 +2506,13 @@ under "Parser warnings" and in the pre-solve checks.
 | Card | Constraint |
 |------|-----------|
 | AECORR | METHOD must be `'WT2'`; any other value raises `ValueError`. `'WT1'` was removed at the release boundary (DEF-R7) and raises a `ValueError` naming its removal |
-| AEROS | Only one per model; ACSID and RCSID must be `0` in Phase A |
+| AEROS | Only one per model; ACSID must be `0` or a CORD2R parallel to basic (a rotated ACSID is refused); MACH must be ≥ 0. RCSID is any defined CORD2R (see the AEROS table) |
 | AEROS | Required whenever CAERO1 cards are present |
 | CAERO1 | Exactly one of NSPAN/LSPAN must be non-zero |
 | CAERO1 | Exactly one of NCHORD/LCHORD must be non-zero |
 | CAERO1 | Requires PAERO1 reference; PID not in `bulk.paero1s` raises `ValueError` |
 | CBAR | Offsets (W1A/W2A) not supported |
-| CBAR | Orientation must be the X1–X3 vector form; the G0 (grid-ID) form is not supported |
+| CBAR | Orientation must be the X1–X3 vector form; the G0 form (integer X1, X2/X3 blank) is refused |
 | CBAR | Pin-release digits (PA/PB) are in element local axes |
 | CROD / CONROD | A grid touched only by rods has free rotations (no bending stiffness; no AUTOSPC): SPC them, e.g. `SPC1, sid, 456, grid`, or the stiffness matrix is singular. Rod mass carries no torsional inertia |
 | CBUSH | CID must be `0` or blank |

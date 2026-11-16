@@ -120,7 +120,7 @@ All internal computation is in global CID 0. After parsing, `resolve_grid_positi
 | Quantity | Limit | Reason |
 |----------|-------|--------|
 | CBAR elements | No hard limit | Sparse solver used; memory and compute time are the practical constraint |
-| AEROS ACSID/RCSID | 0 only (Phase A) | Non-zero aerodynamic coordinate systems deferred |
+| AEROS ACSID | 0 or a CORD2R parallel to basic | Freestream is along basic +x; a rotated ACSID raises `ValueError` (#58). RCSID may be any CORD2R |
 | AEROS | One per model | Duplicate raises `ValueError` |
 | CAERO1 NSPAN/LSPAN | Exactly one non-zero | Both zero or both non-zero raises `ValueError` |
 | CAERO1 NCHORD/LCHORD | Exactly one non-zero | Both zero or both non-zero raises `ValueError` |

@@ -33,6 +33,23 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and warnings, before and after.
 
 ### Fixed
+- **A rotated AEROS ACSID is refused; documented "must be" rules are enforced** (#58).
+  sbeam takes the freestream along basic +x and never reads ACSID, so **a deck whose
+  ACSID was rotated relative to basic ran with the flow in the wrong direction**. ACSID
+  must now be 0 or a CORD2R with axes parallel to basic. Any origin is accepted, so
+  HA144A's `AEROS, 1, 100` (basic moved to x = 12.5) still runs, and gives results
+  identical to ACSID = 0. The card reference said RCSID "must be 0"; it now describes
+  what RCSID does. A sweep of every documented "must be" rule found more that were not
+  enforced, now refused:
+  - a GRID SEID ≠ 0 was ignored, so the grid silently joined the residual structure;
+  - the CBAR G0 orientation form (integer X1, X2/X3 blank) was read as the vector
+    (G0, 0, 0);
+  - a negative AEROS, TRIM or DIVERG Mach ran as |M|.
+  
+  The EIGRL text claimed V1/V2 bound the extraction and that ND or V2 was required;
+  neither was true, and it now describes the behaviour (V1/V2 warn and are not applied,
+  no ND returns all modes). Also found and filed as #62: NASTRAN-layout CBUSH cards lose
+  their orientation.
 - **Every rigid-element dependent DOF must have a valid source; offset RBE3s warn** (#60).
   Four cases were skipped without a word when building the rigid-element transform. **An
   RBE3 REFC DOF that no Ci covers was left unconstrained**, so the usual NASTRAN RBE3

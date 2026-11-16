@@ -22,6 +22,9 @@ def _handle_aeros(fields: list[str], bulk: BulkData) -> None:
     symxy = to_int_opt(fields[7]) if len(fields) > 7 else 0
     # Field 8 is an sbeam extension; NASTRAN AEROS has no MACH field.
     mach  = to_float(fields[8])   if len(fields) > 8 else 0.0
+    # β = √(1−M²) is even in M, so a negative Mach was silently run as |M| (#58 sweep)
+    if mach < 0.0:
+        raise ValueError(f"AEROS card: MACH={mach} must be non-negative")
     bulk.aeros = Aeros(
         acsid=acsid, rcsid=rcsid, cref=cref, bref=bref,
         sref=sref, symxz=symxz, symxy=symxy, mach=mach,

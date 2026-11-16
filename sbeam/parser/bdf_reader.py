@@ -12,7 +12,7 @@ from collections import Counter
 from sbeam.model.bulk_data import BulkData
 from sbeam.parser import bulk_aero, bulk_structural, bulk_trim
 from sbeam.parser.bulk_fields import ContHandler, FieldHandler, MultiHandler, iter_cards
-from sbeam.parser.bulk_xref import cross_reference
+from sbeam.parser.bulk_xref import check_frame_orientations, cross_reference
 from sbeam.types import StrPath
 from sbeam.parser.case_control import CaseControl, parse_case_control
 
@@ -117,9 +117,11 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
     bulk = _read_cards(lines)
     cross_reference(bulk)
 
-    # Resolve all grid positions from their CP system into global CID 0
-    from sbeam.assembly.coord_transform import resolve_grid_positions
+    # Resolve all grid positions from their CP system into global CID 0; frame checks
+    # that need a resolved CORD2R chain run here too (the parser's one assembly import)
+    from sbeam.assembly.coord_transform import get_transform, resolve_grid_positions
     resolve_grid_positions(bulk)
+    check_frame_orientations(bulk, get_transform)
 
     return bulk
 

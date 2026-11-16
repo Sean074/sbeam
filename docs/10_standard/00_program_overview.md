@@ -537,7 +537,7 @@ restrictions there first, then link them here.
 |------------|--------|
 | Results frames | The `.f06` DISPLACEMENT and SPCFORCE blocks are written in each grid's `CD` frame (NASTRAN's "global" system). CBAR element forces are in element local axes; CBUSH forces are in basic CID 0. The viewer result tables report basic CID 0 throughout |
 
-For aeroelastic limitations (`SPLINE1` not implemented, `AEROS` `ACSID`/`RCSID` must be `0`,
+For aeroelastic limitations (`SPLINE1` not implemented, `AEROS` `ACSID` must be parallel to basic,
 `ATTACH` `CID = 0`, body-panel geometry rules) see
 [`05_aeroelastics.md`](05_aeroelastics.md#validation-status--known-limitations) and the
 card table. Open defects and unresolved questions are tracked in
