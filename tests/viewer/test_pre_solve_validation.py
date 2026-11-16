@@ -112,6 +112,19 @@ def test_unknown_cards_are_summarised():
     assert len(hits) == 1 and "OTHER1, SOMECARD" in hits[0]
 
 
+def test_skipped_params_and_ignored_cards_are_summarised():
+    """The warnings the parser still emits after #55, as it words them."""
+    import warnings
+    from sbeam.parser.bdf_reader import parse_bulk_data
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        parse_bulk_data(["GRID, 1, , 0.0, 0.0, 0.0", "PARAM, POST, -1", "ECHOOFF"])
+    msgs = _get_pre_solve_warnings(_two_node_bulk(), _sol101_cc(),
+                                   [str(w.message) for w in caught])
+    hits = [m for m in msgs if "Unrecognised card(s) skipped" in m]
+    assert len(hits) == 1 and "ECHOOFF, PARAM,POST" in hits[0]
+
+
 def test_non_card_warnings_not_flagged():
     bulk = _two_node_bulk()
     msgs = _get_pre_solve_warnings(bulk, _sol101_cc(), ["TRIM 1: some advisory"])

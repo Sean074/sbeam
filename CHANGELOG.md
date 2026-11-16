@@ -9,6 +9,24 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Breaking changes
+- **Unknown bulk-data cards refuse the deck instead of being skipped** (#55; pre-1.0 MINOR
+  break). An unknown keyword used to be skipped with a `UserWarning`, so a typo (`FROCE`)
+  silently dropped a load, and MSC's `DMI,W2GJ` silently dropped HA144A's 0.1° wing
+  incidence. Any keyword that is not implemented now refuses the deck in one
+  `ValueError`, which lists every offending card and suggests the nearest supported
+  keyword (`FROCE x1 (did you mean FORCE?)`). Only listing-only cards (`ECHOON`,
+  `ECHOOFF`) are still ignored with a warning, as are PARAMs sbeam does not read.
+  - `DMI`, `DMIG`, `DMIAX`, `DMIJ`, `DMIJI`, `DMIK` and `TABDMP1` are listed as
+    unsupported. The DMI message points to the native `W2GJ`/`WKK` cards.
+  - `PARAM,AUNITS` ≠ 1 is refused like `WTMASS`: MSC reads TRIM URDD* in g with it, and
+    sbeam would have trimmed at 1 model-unit/s².
+  - `PARAM,COUPMASS` ≤ 0 is refused: it asks for lumped mass, and sbeam always uses
+    consistent mass. `COUPMASS > 0` is accepted.
+  
+  Every repo deck that parsed before still parses. Decks with vendor or tool-specific
+  cards must drop them.
+
 ### Documentation
 - **NASTRAN rules cited from the COSMIC manual; the no-copy rule's reason recorded** (#61).
   The RBE3 deviation table and the element-ID paragraph in the card reference now cite

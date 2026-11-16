@@ -11,9 +11,9 @@ $      stopped earlier, on its CBARs preceding their PBAR; card order no longer
 $      matters.)
 $   2. Past that, it is a HALF-SPAN model (AEROS SYMXZ=1); sbeam runs full-span
 $      only (sbeam_tools.common.mirror.mirror_halfspan converts).
-$   3. Its aero corrections are MSC DMI matrices, which sbeam skips with an
-$      "Unknown BDF card" warning — the 0.1 deg wing incidence (W2GJ) would be
-$      lost.  sbeam uses native WKK / W2GJ cards instead.
+$   3. Its aero corrections are MSC DMI matrices, which sbeam refuses (#55)
+$      rather than drop the 0.1 deg wing incidence (W2GJ).  sbeam uses native
+$      WKK / W2GJ cards instead.
 $
 $ Faithful transcription of MSC Nastran example HA144A from:
 $   MSC Nastran 2021.3 Aeroelastic Analysis User's Guide, Chapter 7,
@@ -76,11 +76,12 @@ $ THIS listing from running:
 $   - PARAM WTMASS = .031081 (weight units) -> refused at parse (#39).
 $     (Card order -- CBARs before their PBAR -- no longer matters since #51.)
 $   - AEROS SYMXZ=1 half-span model        -> sbeam is full-span only.
-$   - DMI WKK / W2GJ / FA2J -> skipped with a warning; sbeam uses native WKK /
+$   - DMI WKK / W2GJ / FA2J -> refused at parse (#55); sbeam uses native WKK /
 $     W2GJ cards.  Here WKK = identity (no correction) and W2GJ = 0.1 deg
 $     (0.0017453 rad) on the 32 wing boxes, 0 on the 8 canard boxes; FA2J = 0.
-$   - ASSIGN, ID, TIME, PARAM AUNITS/... -> MSC executive/PARAM entries sbeam
-$     does not use (units must be consistent; WTMASS other than 1 is refused).
+$   - PARAM AUNITS = .031081 (URDD* in g) -> refused at parse (#55), like WTMASS.
+$   - ASSIGN, ID, TIME, other PARAMs -> MSC executive/output entries sbeam does
+$     not use (skipped with a warning; units must be consistent).
 $   - Monitor points in MSC syntax (MONPNT2, MONSUM, MONDSP1, MONCNCM) were
 $     omitted from this transcription (see note at end).
 $ All of these are resolved in sample/ha144a_fullspan_sbeam.bdf.

@@ -27,6 +27,7 @@ def test_param_wtmass_refused_unless_one():
 
 
 def test_other_params_still_warn():
-    # Only WTMASS is understood; any other PARAM is skipped with the unknown-card warning
-    with pytest.warns(UserWarning, match="PARAM,AUNITS"):
-        parse_bulk_data(["PARAM, AUNITS, 0.1", "GRID, 1, , 0.0, 0.0, 0.0"])
+    # PARAMs sbeam does not read are skipped with the unknown-card warning; the ones that
+    # change the answer (WTMASS, AUNITS, COUPMASS <= 0) are refused (#39, #55)
+    with pytest.warns(UserWarning, match="PARAM,POST"):
+        parse_bulk_data(["PARAM, POST, -1", "GRID, 1, , 0.0, 0.0, 0.0"])

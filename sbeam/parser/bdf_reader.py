@@ -5,6 +5,7 @@
 (``bulk_structural``, ``bulk_aero``, ``bulk_trim``); cross-card checks run once every card
 is read (``bulk_xref``); field utilities are in ``bulk_fields`` (#48).
 """
+import difflib
 import os
 import warnings
 from collections import Counter
@@ -21,9 +22,10 @@ _IGNORED_KEYWORDS = frozenset({"BEGIN", "BEGINBULK", "ENDDATA"})
 #: NASTRAN bulk cards sbeam recognises but does not implement (issue #45).  A deck
 #: carrying any of them is **refused** at parse: solving with the card silently dropped
 #: would change the answer (missing loads, elements, constraints or frames).  The value
-#: is what the deck would lose.  Keywords not listed here and not handled below are
-#: skipped with a ``UserWarning`` (typos, output requests, vendor extensions).
-#: Field reference: ``docs/10_standard/02_card_reference.md`` "Unsupported cards".
+#: is what the deck would lose.  Since #55 any keyword that is neither handled nor in
+#: ``_HARMLESS_CARDS`` is refused too, as an unknown card (a typo such as FROCE is a
+#: dropped load).  Field reference: ``docs/10_standard/02_card_reference.md``
+#: "Unsupported cards".
 _UNSUPPORTED_CARDS: dict[str, str] = {
     # distributed / element loads
     "PLOAD": "pressure load", "PLOAD1": "distributed CBAR load",
@@ -49,6 +51,21 @@ _UNSUPPORTED_CARDS: dict[str, str] = {
     # constraints
     "MPC": "multipoint constraint", "MPCADD": "constraint set", "SPCADD": "constraint set",
     "RBE1": "rigid element",
+    # direct matrix input (#55): MSC decks carry aero corrections this way
+    "DMI": "direct matrix input (for W2GJ/WKK aero corrections use the native W2GJ/WKK cards)",
+    "DMIG": "direct matrix input at grid points", "DMIAX": "direct matrix input",
+    "DMIJ": "aero direct matrix input (use the native W2GJ/WKK cards)",
+    "DMIJI": "aero direct matrix input (use the native W2GJ/WKK cards)",
+    "DMIK": "aero direct matrix input (use the native W2GJ/WKK cards)",
+    # damping
+    "TABDMP1": "modal damping table (the MLOADS transient takes its damping from ZETA)",
+}
+
+#: Bulk keywords that only control listing or output and never change an answer: these
+#: are ignored with a ``UserWarning``.  Anything else unknown is refused (#55).  Add a
+#: keyword here only with that justification.
+_HARMLESS_CARDS: dict[str, str] = {
+    "ECHOON": "bulk-data echo control", "ECHOOFF": "bulk-data echo control",
 }
 
 _FAMILIES = (bulk_structural, bulk_aero, bulk_trim)
@@ -76,6 +93,7 @@ def _read_cards(lines: list[str]) -> BulkData:
     """
     bulk = BulkData()
     unsupported: Counter[str] = Counter()
+    unknown: Counter[str] = Counter()
 
     # Handlers are called directly from this frame, which parse_bulk_data calls: their
     # warnings' stacklevel counts both frames, so it points at parse_bulk_data's caller.
@@ -91,17 +109,33 @@ def _read_cards(lines: list[str]) -> BulkData:
             _CONT_HANDLERS[keyword](fields, conts[0] if conts else None, bulk)
         elif keyword in _MULTI_HANDLERS:
             _MULTI_HANDLERS[keyword](fields, conts, bulk)
+        elif keyword in _HARMLESS_CARDS:
+            warnings.warn(f"BDF card '{keyword}' ignored ({_HARMLESS_CARDS[keyword]})",
+                          UserWarning, stacklevel=3)
         else:
-            warnings.warn(f"Unknown BDF card '{keyword}' — skipped", UserWarning, stacklevel=3)
+            # Unknown: a typo or a card sbeam has never heard of.  Skipping it used to be a
+            # warning, which a dropped load or matrix hid behind (#55).
+            unknown[keyword] += 1
 
+    parts = []
     if unsupported:
-        listing = ", ".join(f"{kw} x{n} ({_UNSUPPORTED_CARDS[kw]})"
-                            for kw, n in sorted(unsupported.items()))
+        parts.append("Unsupported bulk data card(s): " + ", ".join(
+            f"{kw} x{n} ({_UNSUPPORTED_CARDS[kw]})" for kw, n in sorted(unsupported.items())))
+    if unknown:
+        parts.append("Unknown bulk data card(s): " + ", ".join(
+            f"{kw} x{n}{_did_you_mean(kw)}" for kw, n in sorted(unknown.items())))
+    if parts:
         raise ValueError(
-            f"Unsupported bulk data card(s): {listing}. sbeam would solve with these "
-            "cards dropped; remove them or model the content with supported cards "
+            ". ".join(parts) + ". sbeam would solve with these cards dropped; remove them, "
+            "correct a misspelt keyword, or model the content with supported cards "
             "(02_card_reference.md, 'Unsupported cards').")
     return bulk
+
+
+def _did_you_mean(keyword: str) -> str:
+    close = difflib.get_close_matches(keyword, sorted(HANDLED_CARDS | set(_HARMLESS_CARDS)),
+                                      n=1, cutoff=0.7)
+    return f" (did you mean {close[0]}?)" if close else ""
 
 
 def parse_bulk_data(lines: list[str]) -> BulkData:
@@ -109,10 +143,11 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
 
     Supports free-field (comma-separated) and fixed-field (8-character column) formats,
     with cards in any order.
-    Issues UserWarning for unrecognised card keywords.
+    Issues UserWarning for the listing-only cards in ``_HARMLESS_CARDS`` and for PARAMs
+    sbeam does not read.
     Raises ValueError for cards in ``_UNSUPPORTED_CARDS`` (known NASTRAN cards sbeam does
-    not implement, #45), duplicate IDs, invalid DOF strings, and any reference to a card
-    the deck does not define (#51).
+    not implement, #45), any other unknown keyword (#55), duplicate IDs, invalid DOF
+    strings, and any reference to a card the deck does not define (#51).
     """
     bulk = _read_cards(lines)
     cross_reference(bulk)

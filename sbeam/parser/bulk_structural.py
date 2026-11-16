@@ -589,7 +589,28 @@ def _handle_param(fields: list[str], bulk: BulkData) -> None:
                 "enter mass in the deck's consistent mass unit (charter §7)"
             )
         return
-    # Every other PARAM is still ignored, and says so like any unhandled card (#45 class)
+    if name == "AUNITS":
+        # AUNITS (MSC) makes TRIM URDD* read in g; ignored, URDD3 = 1.0 would trim at
+        # 1.0 model-unit/s² instead of 1 g (#55; same charter §7 rule as WTMASS)
+        value = to_float(fields[2]) if len(fields) > 2 else 1.0
+        if value != 1.0:
+            raise ValueError(
+                f"PARAM,AUNITS,{value:g} is not supported: sbeam does not convert "
+                "accelerations; enter URDD* in the deck's consistent units (charter §7)"
+            )
+        return
+    if name == "COUPMASS":
+        # NASTRAN's default (-1) and any value <= 0 ask for lumped mass; sbeam always
+        # assembles the consistent mass matrix, which is what a positive value asks for (#55)
+        value = to_int(fields[2]) if len(fields) > 2 and fields[2].strip() else -1
+        if value <= 0:
+            raise ValueError(
+                f"PARAM,COUPMASS,{value} asks for lumped mass; sbeam always uses the "
+                "consistent mass matrix (remove the PARAM, or set it to 1)"
+            )
+        return
+    # Every other PARAM is still ignored and says so: output and solution-control PARAMs
+    # are common in tool-written decks, so a PARAM is refused only when listed above
     warnings.warn(f"Unknown BDF card 'PARAM,{name}' — skipped", UserWarning, stacklevel=4)
 
 

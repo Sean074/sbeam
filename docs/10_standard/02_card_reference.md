@@ -2493,10 +2493,42 @@ under "Supported cards at a glance" (top of this file) is refused.
 | Elements / properties / materials | `CBEAM`, `PBEAM`, `PBEAML`, `PBARL`, `CTUBE`, `PTUBE`, `CELAS1`, `CELAS2`, `PELAS`, `CONM1`, `CQUAD4`, `CTRIA3`, `PSHELL`, `MAT2`, `MAT8` | `CBAR`/`PBAR` (explicit A, I1, I2, J), `CROD`/`PROD`, `CBUSH`/`PBUSH`, `CONM2`, `MAT1` |
 | Coordinate systems | `CORD1R`, `CORD1C`, `CORD1S`, `CORD2C`, `CORD2S` | `CORD2R` |
 | Constraints | `MPC`, `MPCADD`, `SPCADD`, `RBE1` | `RBE2`, `RBAR`, `RBE3`; one `SPC`/`SPC1` set per subcase |
+| Direct matrix input (#55) | `DMI`, `DMIG`, `DMIAX`, `DMIJ`, `DMIJI`, `DMIK` | For aero corrections (MSC's `DMI,W2GJ` / `DMI,WKK`), the native `W2GJ` / `WKK` cards |
+| Damping (#55) | `TABDMP1` | The MLOADS transient's `ZETA`; no SDAMP |
 
-Keywords **not** in this table and not implemented (typos, output requests such as
-`PARAM` other than `WTMASS`, vendor extensions) are skipped with a `UserWarning` `Unknown BDF card 'X' —
-skipped`; the CLI prints each as `Parser warning: ...` on stderr and the viewer lists them
+**Unknown keywords are refused too** (#55, 2026-11-15). A keyword that is neither
+implemented, nor in this table, nor a listing-only card below refuses the deck in the
+same `ValueError`, with the nearest supported keyword suggested:
+
+```
+Unknown bulk data card(s): FROCE x1 (did you mean FORCE?). sbeam would solve with these
+cards dropped; remove them, correct a misspelt keyword, or model the content with
+supported cards (02_card_reference.md, 'Unsupported cards').
+```
+
+Until #55 such cards were skipped with a warning, so a typo silently dropped a load and
+an MSC `DMI,W2GJ` silently dropped the wing incidence. Large-field keywords (`GRID*`)
+are unknown, as large-field format is not supported.
+
+**Ignored with a `UserWarning`** (they control listing only and never change an answer):
+`ECHOON`, `ECHOOFF` (`_HARMLESS_CARDS` in `bdf_reader.py`; add a keyword only with that
+justification). The warning reads `BDF card 'X' ignored (...)`.
+
+**PARAM is warn-by-default**: tool-written decks carry many output and solution-control
+PARAMs, so a PARAM sbeam does not read is skipped with `Unknown BDF card 'PARAM,X' —
+skipped`. The PARAMs that would change the answer are refused:
+
+| PARAM | Refused when | Why |
+|---|---|---|
+| `WTMASS` | value ≠ 1 | sbeam never scales mass (charter §7, #39) |
+| `AUNITS` | value ≠ 1 | MSC reads TRIM URDD* in g with it; sbeam never converts accelerations (charter §7, #55) |
+| `COUPMASS` | value ≤ 0 or blank (NASTRAN's default −1 is lumped mass) | sbeam always uses the consistent mass matrix; `COUPMASS > 0` asks for that and is accepted (#55) |
+
+A NASTRAN deck *without* `PARAM,COUPMASS` uses lumped mass in NASTRAN and consistent mass
+in sbeam. That is a modelling difference, not a dropped card, so it is not refused; it
+shows up in modal results.
+
+The CLI prints each warning as `Parser warning: ...` on stderr, and the viewer lists them
 under "Parser warnings" and in the pre-solve checks.
 
 ---

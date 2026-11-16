@@ -1,5 +1,3 @@
-import warnings
-
 import pytest
 
 from sbeam.parser.bdf_reader import parse_bulk_data
@@ -216,21 +214,11 @@ class TestMat1GDerivation:
 
 
 class TestUnknownCard:
-    def test_unknown_card_warns(self):
+    def test_unknown_card_is_refused(self):
+        # Skipped with a warning until #55; now the deck is refused
         lines = [
             "GRID, 1, , 0.0, 0.0, 0.0",
             "UNKNWN, 42, some, data",
         ]
-        with pytest.warns(UserWarning, match="UNKNWN"):
+        with pytest.raises(ValueError, match=r"Unknown bulk data card\(s\): UNKNWN x1"):
             parse_bulk_data(lines)
-
-    def test_unknown_card_data_not_stored(self):
-        lines = [
-            "GRID, 1, , 0.0, 0.0, 0.0",
-            "UNKNWN, 42, some, data",
-        ]
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            bulk = parse_bulk_data(lines)
-        assert len(bulk.grids) == 1
-        assert len(bulk.cbars) == 0
