@@ -133,13 +133,20 @@ but the deck is refused either way.
 
 ## Case Control Keywords
 
-Case control appears between the `SOL` line and `BEGIN BULK`. Keywords are not order-sensitive except that `SUBCASE` groups the lines that follow it.
+Case control appears between the `SOL` line and `BEGIN BULK`. `SUBCASE` groups the lines that follow it; the rules for lines outside a subcase are (#79):
+
+- **Defaults above the first `SUBCASE`.** A selector (`LOAD`, `SPC`, `METHOD`, `TRIM`, `TRIMOBJ`, `DIVERG`, `MLOADS`, `GUSTLF`, `MASSSET`) or output request above the first `SUBCASE` applies to every subcase. The same keyword inside a subcase overrides it for that subcase only. MSC: such requests "apply to all the subcases until they are cancelled" (AAUG 2023.1, PDF p.752).
+- **`= NONE` cancels an output request**, so a subcase can switch a default off (`DISPLACEMENT = NONE`). Any other value turns the request on.
+- **No `SUBCASE`.** The commands run as one subcase. sbeam numbers it 1; that number is sbeam's choice, not a cited MSC rule. The deck shape is MSC's own (QRG 2024.1, PDF p.465, INCLUDE example).
+- **Nothing to run.** A deck with no `SUBCASE`, no selector and no output request still parses, so it can be read for its bulk data. The `sbeam` command refuses to run it and writes no f06.
+- **`SUBCASE` IDs** are positive integers, each greater than every earlier one (QRG 2024.1, PDF p.651, SUBCASE remark 1). A repeated or descending ID is refused.
+- **`TITLE`** above the first `SUBCASE` is the run title; inside a subcase it is that subcase's title. It is not inherited.
 
 | Keyword | Type | Description |
 |---------|------|-------------|
 | `SOL` | int | Solution type. `101` = static, `103` = normal modes, `144` = static aeroelastic trim |
 | `TITLE` | str | Analysis title — echoed to `.f06` output |
-| `SUBCASE` | int | Opens a subcase block; all lines until the next `SUBCASE` belong to it |
+| `SUBCASE` | int | Opens a subcase block, starting from the defaults above the first `SUBCASE`; all lines until the next `SUBCASE` belong to it. The ID must be greater than every earlier one |
 | `LOAD` | int | Load set ID (references `FORCE`/`MOMENT`/`LOAD` bulk cards) |
 | `SPC` | int | Constraint set ID (references `SPC`/`SPC1` bulk cards) |
 | `METHOD` | int | Eigenvalue method SID (references `EIGRL` bulk card; SOL 103 only) |
@@ -148,7 +155,7 @@ Case control appears between the `SOL` line and `BEGIN BULK`. Keywords are not o
 | `DIVERG` | int | Divergence condition SID (references `DIVERG` bulk card; SOL 144 only) |
 | `MLOADS` | int | Transient maneuver-loads SID (references `MLOADS` bulk card; runs the Step 63 free-flight modal solver `solver/maneuver_modal.py` when the card's NMODES/METHOD/ZETA select it, else the prescribed-rigid direct solver `solver/maneuver_qs.py`; SOL 144, Phase G0) |
 | `MASSSET` | int | Payload / mass case SID (references `MASSSET` bulk card, Step 60); the subcase runs at the resolved mass configuration — baseline when absent |
-| `DISPLACEMENT` | — | Request nodal displacement output (`= ALL` or `= PRINT`) |
+| `DISPLACEMENT` | — | Request nodal displacement output (`= ALL` or `= PRINT`; `= NONE` cancels, as for every output request below) |
 | `SPCFORCE` | — | Request SPC reaction force output |
 | `OLOAD` | — | Request applied load echo output |
 | `FORCE` | — | Request CBAR/CBUSH element force output |

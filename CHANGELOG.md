@@ -10,6 +10,22 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Breaking changes
+- **Case control above the first `SUBCASE` is read, and `SUBCASE` IDs must increase** (#79;
+  pre-1.0 MINOR break). Selectors and output requests were stored only inside a subcase;
+  anything above the first `SUBCASE` was dropped without a message. Found by the
+  2026-11-16 audit:
+  - `SPC = 1` and `LOAD = 10` above `SUBCASE 1` ran an unconstrained, unloaded model.
+    They are now defaults for every subcase, and a subcase's own line overrides them
+    (MSC AAUG 2023.1 PDF p.752).
+  - A deck with no `SUBCASE` wrote a 0-byte f06 and printed "Written". Its commands now
+    run as subcase 1. A deck with nothing to run is refused by the `sbeam` command, and
+    no f06 is written; `parse_bdf` still reads it for its bulk data.
+  - A repeated or descending `SUBCASE` ID is refused (QRG 2024.1 PDF p.651 remark 1). A
+    repeated ID used to overwrite the earlier subcase's results.
+  - `= NONE` on an output request now cancels it; it used to turn the request on.
+  No repo deck changes: only the archive listing `sample/HA144A.bdf` has commands above
+  its subcases, and it is not runnable.
+
 - **A card with data on a line sbeam does not read is refused** (#63; pre-1.0 MINOR
   break). Handlers that read one line (or one continuation) used to drop any further line
   without a message. The dispatcher now refuses such a card, naming the line. Found this

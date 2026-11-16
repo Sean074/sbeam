@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional
 
 
@@ -73,17 +73,69 @@ def _cc_include_path(line: str) -> str:
 
 _SUPPORTED_SOLS = frozenset({101, 103, 144})
 
+# Set selectors (keyword -> SubcaseControl attribute); the value is a set ID.
+_SELECTORS = {
+    "LOAD": "load_sid",
+    "SPC": "spc_sid",
+    "METHOD": "method_sid",
+    "TRIM": "trim_sid",
+    "TRIMOBJ": "trimobj_sid",
+    "DIVERG": "diverg_sid",
+    "MLOADS": "mloads_sid",
+    "GUSTLF": "gustlf_sid",
+    "MASSSET": "massset_sid",
+}
+
+# Output requests (keyword -> SubcaseControl attribute); `= NONE` cancels one.
+_OUTPUT_REQUESTS = {
+    "DISPLACEMENT": "displacement",
+    "SPCFORCE": "spcforce",
+    "OLOAD": "oload",
+    "FORCE": "force",
+    "STRESS": "stress",
+    "AEROF": "aerof",
+    "APRES": "apres",
+}
+
+
+def _cc_subcase_id(value: str, previous: Optional[int]) -> int:
+    """Read a SUBCASE ID: a positive integer greater than every earlier one.
+
+    MSC QRG 2024.1 PDF p.651, SUBCASE remark 1.  Results are keyed by this ID,
+    so a repeated ID would overwrite the earlier subcase's results.
+    """
+    try:
+        subcase_id = int(value)
+    except ValueError:
+        raise ValueError(f"SUBCASE {value!r}: the ID must be an integer") from None
+    if subcase_id <= 0:
+        raise ValueError(f"SUBCASE {subcase_id}: the ID must be greater than 0")
+    if previous is not None and subcase_id <= previous:
+        raise ValueError(
+            f"SUBCASE {subcase_id} follows SUBCASE {previous}: each subcase ID "
+            f"must be greater than all previous subcase IDs")
+    return subcase_id
+
 
 def parse_case_control(lines: list[str]) -> CaseControl:
     """Parse case control lines (above BEGIN BULK) into a CaseControl object.
 
-    Raises ValueError if no SOL card is found or SOL value is not one of the
-    supported solutions (101, 103, 144).
+    Selectors and output requests above the first SUBCASE are defaults: every
+    subcase starts from them and its own lines override (MSC AAUG 2023.1 PDF
+    p.752).  A deck with no SUBCASE runs those commands as one subcase, which
+    sbeam numbers 1.  A section with neither returns no subcases: that is a
+    deck read for its bulk data, and `sbeam.main` refuses to run it.
+
+    Raises ValueError if no SOL card is found, the SOL value is not one of the
+    supported solutions (101, 103, 144), or a SUBCASE ID is not greater than
+    every earlier one.
     """
     sol = None
     title = ""
     subcases = []
     includes: list[str] = []
+    defaults = SubcaseControl(subcase_id=1)
+    has_defaults = False
     current_sc = None
 
     for raw in lines:
@@ -105,9 +157,11 @@ def parse_case_control(lines: list[str]) -> CaseControl:
                 title = value
 
         elif keyword == "SUBCASE":
+            previous = current_sc.subcase_id if current_sc is not None else None
             if current_sc is not None:
                 subcases.append(current_sc)
-            current_sc = SubcaseControl(subcase_id=int(value))
+            current_sc = replace(defaults,
+                                 subcase_id=_cc_subcase_id(value, previous))
 
         elif keyword == "INCLUDE":
             includes.append(_cc_include_path(stripped))
@@ -115,42 +169,20 @@ def parse_case_control(lines: list[str]) -> CaseControl:
         elif keyword == "BEGIN":
             break
 
-        elif current_sc is not None:
-            if keyword == "LOAD":
-                current_sc.load_sid = int(value)
-            elif keyword == "SPC":
-                current_sc.spc_sid = int(value)
-            elif keyword == "METHOD":
-                current_sc.method_sid = int(value)
-            elif keyword == "TRIM":
-                current_sc.trim_sid = int(value)
-            elif keyword == "TRIMOBJ":
-                current_sc.trimobj_sid = int(value)
-            elif keyword == "DIVERG":
-                current_sc.diverg_sid = int(value)
-            elif keyword == "MLOADS":
-                current_sc.mloads_sid = int(value)
-            elif keyword == "GUSTLF":
-                current_sc.gustlf_sid = int(value)
-            elif keyword == "MASSSET":
-                current_sc.massset_sid = int(value)
-            elif keyword == "DISPLACEMENT":
-                current_sc.displacement = True
-            elif keyword == "SPCFORCE":
-                current_sc.spcforce = True
-            elif keyword == "OLOAD":
-                current_sc.oload = True
-            elif keyword == "FORCE":
-                current_sc.force = True
-            elif keyword == "STRESS":
-                current_sc.stress = True
-            elif keyword == "AEROF":
-                current_sc.aerof = True
-            elif keyword == "APRES":
-                current_sc.apres = True
+        elif keyword in _SELECTORS or keyword in _OUTPUT_REQUESTS:
+            target = current_sc if current_sc is not None else defaults
+            if keyword in _SELECTORS:
+                setattr(target, _SELECTORS[keyword], int(value))
+            else:
+                setattr(target, _OUTPUT_REQUESTS[keyword],
+                        value.upper() != "NONE")
+            if current_sc is None:
+                has_defaults = True
 
     if current_sc is not None:
         subcases.append(current_sc)
+    elif has_defaults:
+        subcases.append(defaults)
 
     if sol is None:
         raise ValueError("Case control section contains no SOL statement")

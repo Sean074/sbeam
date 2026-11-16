@@ -170,7 +170,7 @@ Raises `FileNotFoundError` if any INCLUDE file does not exist.
 
 ### `parse_case_control(lines) -> CaseControl` — `parser/case_control.py`
 
-Parses the case control section (lines above `BEGIN BULK`). Uses space/equals keyword syntax — not the comma/fixed-field bulk format. Recognises: `SOL`, `TITLE`, `SUBCASE`, `LOAD`, `SPC`, `METHOD`, `TRIM`, `DIVERG`, `MLOADS`, `MASSSET`, `AEROF`, `APRES`, `DISPLACEMENT`, `SPCFORCE`, `OLOAD`, `FORCE`, `STRESS`, `INCLUDE`.
+Parses the case control section (lines above `BEGIN BULK`). Uses space/equals keyword syntax — not the comma/fixed-field bulk format. Recognises: `SOL`, `TITLE`, `SUBCASE`, `LOAD`, `SPC`, `METHOD`, `TRIM`, `DIVERG`, `MLOADS`, `MASSSET`, `AEROF`, `APRES`, `DISPLACEMENT`, `SPCFORCE`, `OLOAD`, `FORCE`, `STRESS`, `INCLUDE`. Selectors and output requests above the first `SUBCASE` are defaults for every subcase, and a deck with no `SUBCASE` runs them as subcase 1 (#79; rules in `02_card_reference.md`, Case Control Keywords).
 
 Raises `ValueError` if `SOL` is absent or not one of 101/103/144.
 
