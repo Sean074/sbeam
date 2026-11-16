@@ -9,6 +9,16 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Documentation
+- **NASTRAN rules cited from the COSMIC manual; the no-copy rule's reason recorded** (#61).
+  The RBE3 deviation table and the element-ID paragraph in the card reference now cite
+  the COSMIC NASTRAN User's Manual (NASTRAN-93 `um/BULK.TXT`), in place of rules stated
+  from memory. Chained rigid elements are allowed there, and double dependency is not.
+  Element IDs are documented as unique across all elements, which sbeam does not enforce
+  (MSC's HA144A shares a CBAR/CONM2 EID). `02_parked.md` records why COSMIC code is
+  never copied (licence, benchmark independence) and cites `crspls.f` as the theory
+  source for the parked RBE3 kinematics.
+
 ### Changed
 - **Bulk-data parser split into a dispatch table and family modules** (#48; no behaviour
   change). `parse_bulk_data` (McCabe complexity 212, in a 2,161-line module) is now a

@@ -99,7 +99,12 @@ Every other ID-keyed card is unique within its own card type only, and a second 
 an ID already in use refuses the deck (#57); cards that share a SID by design (FORCE,
 MOMENT, SPC, SPC1, SUPORT, TRIMCON) accumulate. CONM2 EIDs are their own space: MSC's
 HA144A gives CONM2 100 and CBAR 100 the same EID. RBAR, RBE2, RBE3 and PLOTEL also keep
-their own spaces; whether NASTRAN puts them in the element space has not been confirmed.
+their own spaces. This is more lenient than the documented NASTRAN rule: the COSMIC
+manual's CONM2, CRBAR, CRBE2 and CRBE3 entries all say "Each element identification
+number must be unique with respect to all other element identification numbers"
+(NASTRAN-93 `um/BULK.TXT`, #61). MSC does not enforce this for CONM2 (HA144A). sbeam
+documents the rule but does not enforce it (decided 2026-11-15); give rigid elements
+their own EIDs if a deck must also run in NASTRAN.
 
 When a deck has several faults, the first one reported may depend on where the cards sit,
 but the deck is refused either way.
@@ -719,14 +724,16 @@ use RBAR (kinematically exact rigid connection) instead.
 
 **Deviations from NASTRAN (#60).** NASTRAN fits a weighted least-squares rigid-body
 motion with lever arms. sbeam does not, so it either refuses or warns when the two would
-differ:
+differ. The "remark" citations are to the COSMIC manual's CRBE3 entry (NASTRAN-93
+`um/BULK.TXT`; COSMIC names the card CRBE3, #61):
 
 | Case | NASTRAN | sbeam |
 |---|---|---|
-| REFC DOF in no Ci (e.g. `REFC=123456`, `Ci=123`) | Derives it from the other DOFs across the offsets | **Refused** |
-| REFC weights summing to zero | Believed to be an error (not confirmed) | Refused |
-| A DOF dependent in two rigid elements | Error | Refused |
-| An independent DOF that another rigid element makes dependent (chained rigid elements) | Allowed; solved together | Refused (as for RBE2 GN / RBAR GA) |
+| REFC DOF in no Ci (e.g. `REFC=123456`, `Ci=123`) | Derives it from the other DOFs across the offsets; the manual's own example is `IC=1234`, `C1=123` | **Refused** |
+| REFC weights summing to zero | Presumably the singular-fit fatal error (COSMIC `crspls.f`, message 38; inferred, not confirmed) | Refused |
+| A DOF dependent in two rigid elements | Not allowed (remark 4) | Refused |
+| An independent DOF that another rigid element makes dependent (chained rigid elements) | Allowed (remark 4) | Refused (as for RBE2 GN / RBAR GA) |
+| `UM` section | Supported (remark 3: as many UM components as IC, a subset, nonsingular) | Refused (#59) |
 | Independent grid offset from REFGRID | Lever arm applied | Same-DOF average; **warns**, naming the largest offset |
 | Independent grids at REFGRID | Same-DOF average | Same; **matches** |
 
