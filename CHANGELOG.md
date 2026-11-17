@@ -10,6 +10,28 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Breaking changes
+- **An unknown case-control command is refused** (#80; pre-1.0 MINOR break). The parser
+  dropped every line above `BEGIN BULK` that it did not know, without a message. Found
+  by the 2026-11-16 audit. Page numbers are PDF pages of the MSC QRG 2024.1:
+  - Any line that is not a known command now stops the run and is named in the error.
+    A misspelt `LOAD` or `SPC` used to run an unloaded or unconstrained model.
+  - `PARAM,name,value` in case control (p.570) follows the bulk rules, so
+    `PARAM,AUNITS` and `PARAM,WTMASS` are refused there too.
+  - `AESYMXZ` and `AESYMXY` are refused. In MSC they decide the symmetry (p.252);
+    sbeam reads it from `AEROS` only.
+  - `SUBCOM`, `SYMCOM`, `SYM`, `REPCASE`, `SUBSEQ` and `SYMSEQ` are refused (p.210). A
+    `SUBCOM`'s lines used to overwrite the previous `SUBCASE`.
+  - `SOL SESTATIC`, `SEMODES` and `AESTAT` are read as 101, 103 and 144 (p.186–187);
+    they used to crash. DMAP (`COMPILE`, `ALTER`) is refused.
+  - Commands may be abbreviated to four or more characters when unique (p.209), and
+    MSC's names `SPCFORCES`, `ELFORCE`, `ELSTRESS` and `APRESSURE` are read. `DISP = ALL`
+    and `SPCFORCES = ALL` used to be dropped. This part was moved here from #85.
+  - A selector or output request with describers, such as
+    `DISPLACEMENT(PRINT,PUNCH) = ALL`, is refused until #85 settles them; it used to be
+    dropped.
+  - Headings and executive statements (`ID`, `TIME`, `CEND`, `ECHO`, `SUBTITLE`, `LABEL`,
+    `MONITOR`, …) are accepted and ignored; `GPFORCE` and `TRIMF` are accepted with a
+    warning. The full tables are in `docs/10_standard/02_card_reference.md`.
 - **Case control above the first `SUBCASE` is read, and `SUBCASE` IDs must increase** (#79;
   pre-1.0 MINOR break). Selectors and output requests were stored only inside a subcase;
   anything above the first `SUBCASE` was dropped without a message. Found by the

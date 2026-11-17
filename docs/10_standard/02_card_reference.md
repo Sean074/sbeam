@@ -142,9 +142,16 @@ Case control appears between the `SOL` line and `BEGIN BULK`. `SUBCASE` groups t
 - **`SUBCASE` IDs** are positive integers, each greater than every earlier one (QRG 2024.1, PDF p.651, SUBCASE remark 1). A repeated or descending ID is refused.
 - **`TITLE`** above the first `SUBCASE` is the run title; inside a subcase it is that subcase's title. It is not inherited.
 
+Every line above `BEGIN BULK` must be a command in the tables below; any other line is refused (#80). Page numbers are PDF pages of the MSC Nastran 2024.1 Quick Reference Guide (QRG).
+
+- **Line format.** The command name ends at the first blank, `=`, `,` or `(`. A line ending in a comma continues on the next line (QRG p.209); `TITLE`, `SUBTITLE` and `LABEL` are never continued, which is sbeam's choice (*unverified* against MSC).
+- **Abbreviations.** A command may be shortened to its first four or more characters when that is unique (QRG p.209): `DISP`, `SPCF`, `METH`, `SUBT`. Uniqueness is checked against the commands in these tables, not MSC's full list. `SUBC` is refused as ambiguous (`SUBCASE`, `SUBCOM`).
+- **Describers.** A selector or output request with describers in parentheses (`DISPLACEMENT(PRINT,PUNCH) = ALL`) is refused; #85 will decide which describers are read.
+- **`CEND`** is accepted and not required. sbeam does not separate the executive section from case control.
+
 | Keyword | Type | Description |
 |---------|------|-------------|
-| `SOL` | int | Solution type. `101` = static, `103` = normal modes, `144` = static aeroelastic trim |
+| `SOL` | int or name | Solution type. `101` = static, `103` = normal modes, `144` = static aeroelastic trim. MSC's names `SESTATIC`, `SEMODES` and `AESTAT` are read as 101, 103 and 144 (QRG p.186–187); any other solution is refused |
 | `TITLE` | str | Analysis title — echoed to `.f06` output |
 | `SUBCASE` | int | Opens a subcase block, starting from the defaults above the first `SUBCASE`; all lines until the next `SUBCASE` belong to it. The ID must be greater than every earlier one |
 | `LOAD` | int | Load set ID (references `FORCE`/`MOMENT`/`LOAD` bulk cards) |
@@ -156,13 +163,39 @@ Case control appears between the `SOL` line and `BEGIN BULK`. `SUBCASE` groups t
 | `MLOADS` | int | Transient maneuver-loads SID (references `MLOADS` bulk card; runs the Step 63 free-flight modal solver `solver/maneuver_modal.py` when the card's NMODES/METHOD/ZETA select it, else the prescribed-rigid direct solver `solver/maneuver_qs.py`; SOL 144, Phase G0) |
 | `MASSSET` | int | Payload / mass case SID (references `MASSSET` bulk card, Step 60); the subcase runs at the resolved mass configuration — baseline when absent |
 | `DISPLACEMENT` | — | Request nodal displacement output (`= ALL` or `= PRINT`; `= NONE` cancels, as for every output request below) |
-| `SPCFORCE` | — | Request SPC reaction force output |
+| `SPCFORCES` | — | Request SPC reaction force output (MSC's full name, QRG p.634; `SPCFORCE` and `SPCF` are abbreviations) |
 | `OLOAD` | — | Request applied load echo output |
-| `FORCE` | — | Request CBAR/CBUSH element force output |
-| `STRESS` | — | Request CBAR stress output at recovery points |
+| `FORCE` | — | Request CBAR/CBUSH element force output. `ELFORCE` is equivalent (QRG p.413) |
+| `STRESS` | — | Request CBAR stress output at recovery points. `ELSTRESS` is equivalent (QRG p.646) |
 | `AEROF` | — | Request per-box aerodynamic force output (SOL 144; emits the AERODYNAMIC BOX PRESSURES AND FORCES block) |
-| `APRES` | — | Request per-box aerodynamic pressure (ΔCp) output (SOL 144; same output block as `AEROF`) |
+| `APRESSURE` | — | Request per-box aerodynamic pressure (ΔCp) output (SOL 144; same output block as `AEROF`). Usually written `APRES` (QRG p.263) |
 | `INCLUDE` | str | Path to a bulk data file: `INCLUDE 'model.dat'`. May appear **several times** — the bulk is the concatenation of every included file, in order, followed by any inline bulk after `BEGIN BULK`. Used to layer an overlay over a shared bulk (`sample/cessna210_flagship_body.bdf`) |
+| `PARAM` | — | `PARAM,name,value` (QRG p.570). Follows the bulk `PARAM` rules: the same refusals (`WTMASS`, `AUNITS`, `COUPMASS`) and the same warning for a PARAM sbeam does not read |
+
+**Accepted and ignored** (no message; none changes a result):
+
+| Command | Why it is ignored |
+|---------|-------------------|
+| `ID`, `TIME`, `DIAG`, `CEND`, `NASTRAN` | Executive statements with no effect on sbeam's results |
+| `ASSIGN` | File assignment; sbeam names its own output files |
+| `ECHO`, `ECHOON`, `ECHOOFF` | Listing control |
+| `SUBTITLE`, `LABEL` | Page headings; sbeam prints `TITLE` only |
+| `LINE`, `MAXLINES` | Page length and output line limit |
+| `MONITOR` | sbeam prints monitor results in every run that defines monitor points. MSC itself ignores `MONITOR` in SOL 144 (QRG p.524 remark 2) |
+
+**Accepted with a warning** (the output is not written): `GPFORCE` (QRG p.434), `TRIMF` (QRG p.683).
+
+**Refused by name:**
+
+| Command | Reason |
+|---------|--------|
+| `AESYMXZ`, `AESYMXY` | In MSC these decide the aerodynamic symmetry when present (QRG p.252 remark 1, p.251). sbeam reads the symmetry from `AEROS` only, so the command is refused instead of dropped |
+| `SUBCOM`, `SYMCOM`, `SYM`, `REPCASE` | Subcase delimiters other than `SUBCASE` (QRG p.210). Dropped, their lines would land in the previous `SUBCASE` |
+| `SUBSEQ`, `SYMSEQ` | Subcase combination coefficients (QRG p.654, p.667) |
+| `COMPILE`, `ALTER`, `MALTER`, `ENDALTER` | DMAP |
+| `GUST` | MSC's SOL 146 gust selector (QRG p.452); refused so that it is not read as an abbreviation of sbeam's `GUSTLF` |
+
+Any other command, including every MSC command not listed here (`MPC`, `SET`, `STRAIN`, …), is refused as unknown.
 
 **Example case control section:**
 

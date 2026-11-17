@@ -612,6 +612,15 @@ def _handle_eigrl(fields: list[str], bulk: BulkData) -> None:
 
 
 def _handle_param(fields: list[str], bulk: BulkData) -> None:
+    check_param(fields)
+
+
+def check_param(fields: list[str]) -> None:
+    """Refuse or warn about one PARAM; nothing is stored.
+
+    Shared by the bulk card and the case-control PARAM command (#80), so both
+    places apply the same rules.
+    """
     name = fields[1].strip().upper() if len(fields) > 1 else ""
     if name == "WTMASS":
         # WTMASS scales the mass matrix in Nastran; sbeam never converts units (charter §7)
@@ -644,7 +653,7 @@ def _handle_param(fields: list[str], bulk: BulkData) -> None:
         return
     # Every other PARAM is still ignored and says so: output and solution-control PARAMs
     # are common in tool-written decks, so a PARAM is refused only when listed above
-    warnings.warn(f"Unknown BDF card 'PARAM,{name}' — skipped", UserWarning, stacklevel=4)
+    warnings.warn(f"Unknown BDF card 'PARAM,{name}' — skipped", UserWarning, stacklevel=5)
 
 
 # Dispatch registration (#48): every keyword handled in this module, in one table each.
