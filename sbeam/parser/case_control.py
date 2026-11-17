@@ -34,12 +34,10 @@ class CaseControl:
     title: str = ""
     subcases: list["SubcaseControl"] = field(default_factory=list)
     include: Optional[str] = None  # First INCLUDE path (back-compat; see `includes`)
-    # All INCLUDE paths, in file order.  A deck may name several — the bulk is the
-    # concatenation of every included file followed by any inline bulk data (the
-    # NASTRAN behaviour).  This is what lets a driver deck compose a shared bulk
-    # file with a small overlay, e.g. the Cessna 210 flagship + its body panels.
-    # `include` stays the first entry so existing single-INCLUDE callers are
-    # unaffected.
+    # The files the main deck INCLUDEs below BEGIN BULK, in file order.  Set by
+    # `parse_bdf`, which expands every INCLUDE (#81); a driver deck composes a shared
+    # bulk file with a small overlay this way, e.g. the Cessna 210 flagship + its body
+    # panels.  `include` stays the first entry so single-INCLUDE callers are unaffected.
     includes: list[str] = field(default_factory=list)
 
 
@@ -189,11 +187,12 @@ def _cc_resolve(keyword: str) -> Optional[str]:
     return matches[0] if matches else None
 
 
-def _cc_include_path(value: str) -> str:
-    """Strip the surrounding quotes from an INCLUDE path."""
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
-        return value[1:-1]
-    return value
+def case_control_command(keyword: str) -> Optional[str]:
+    """The case-control command ``keyword`` names (or abbreviates), else None."""
+    try:
+        return _cc_resolve(keyword.upper())
+    except ValueError:  # an ambiguous abbreviation still names a command
+        return keyword
 
 
 def _cc_sol(value: str) -> int:
@@ -264,8 +263,8 @@ def parse_case_control(lines: list[str]) -> CaseControl:
 
     Raises ValueError if no SOL statement is found, the SOL is not one of the
     supported solutions (101, 103, 144), a line is not a known command, a
-    command is one sbeam refuses, or a SUBCASE ID is not greater than every
-    earlier one.
+    command is one sbeam refuses, a SUBCASE ID is not greater than every
+    earlier one, or a line is an INCLUDE (``parse_bdf`` expands those first).
     """
     commands = [c for c in (_cc_strip_comment(raw) for raw in lines) if c]
 
@@ -277,7 +276,6 @@ def parse_case_control(lines: list[str]) -> CaseControl:
     sol = None
     title = ""
     subcases = []
-    includes: list[str] = []
     defaults = SubcaseControl(subcase_id=1)
     has_defaults = False
     current_sc = None
@@ -316,7 +314,10 @@ def parse_case_control(lines: list[str]) -> CaseControl:
                                  subcase_id=_cc_subcase_id(value, previous))
 
         elif command == "INCLUDE":
-            includes.append(_cc_include_path(value))
+            raise ValueError(
+                f"Case control {line!r}: INCLUDE inserts a file, which parse_bdf does "
+                "before the case control is read (#81); parse_case_control reads text "
+                "with every INCLUDE already expanded")
 
         elif command == "BEGIN":
             break
@@ -356,6 +357,4 @@ def parse_case_control(lines: list[str]) -> CaseControl:
     if sol is None:
         raise ValueError("Case control section contains no SOL statement")
 
-    return CaseControl(sol=sol, title=title, subcases=subcases,
-                       include=includes[0] if includes else None,
-                       includes=includes)
+    return CaseControl(sol=sol, title=title, subcases=subcases)

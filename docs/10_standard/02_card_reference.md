@@ -31,10 +31,35 @@ SUBCASE 1
   ...
 BEGIN BULK            ← marks start of bulk data section
   ...
-ENDDATA               ← marks end of file
+ENDDATA               ← ends the bulk data (optional)
 ```
 
 A bulk-only file (`.dat`) contains only the bulk data cards (no case control, no `BEGIN BULK` / `ENDDATA`).
+
+The file is read as NASTRAN reads it (#81). Page numbers are PDF pages of the MSC Nastran
+2024.1 Quick Reference Guide (QRG).
+
+- **`INCLUDE 'file'` inserts the file's text where the statement stands**, anywhere in the
+  input (QRG p.465, p.1984). A bulk data file is therefore INCLUDEd **below** `BEGIN BULK`
+  (the QRG's own example, p.1984); a driver composes a shared bulk with an overlay by
+  INCLUDEing both there (`sample/cessna210_flagship_body.bdf`). A file INCLUDEd above
+  `BEGIN BULK` is case control: a case-control fragment works, and a file holding bulk cards
+  there is refused, naming the file. (The case-control INCLUDE page, p.465, captions its
+  example "obtain the Bulk Data" with the INCLUDE above `BEGIN BULK`; the File Management
+  and Bulk Data pages, p.131 and p.1984, place it below. sbeam follows the insertion rule.)
+- **Filenames.** Quoted with `'` or `"`, or unquoted. A quoted name may run over several
+  lines, which join with no separator (QRG p.1984 remark 2). A relative name is resolved
+  against the directory of the file holding the `INCLUDE` — sbeam's rule; the QRG leaves
+  filenames to the installation.
+- **Nesting.** An INCLUDEd file may INCLUDE others, at most 10 deep (QRG p.1984 remark 1).
+  Deeper nesting and a file that INCLUDEs itself are refused.
+- **`ENDDATA` ends the bulk data** (QRG p.1808); it is optional. A card after it is refused
+  rather than read or dropped, so a file INCLUDEd ahead of more bulk data must not end in
+  `ENDDATA`. Comments and blank lines after it are harmless.
+- **`BEGIN BULK` only.** `BEGIN SUPER=n`, `BEGIN BULK TRMC=n`, `BEGIN AUXMODEL=n` and the
+  other forms that open a separate Bulk Data Section (QRG p.286–287) are refused; sbeam
+  reads one bulk data section. A repeated plain `BEGIN BULK` is skipped.
+- `CaseControl.includes` lists the files the main deck INCLUDEs below `BEGIN BULK`, in order.
 
 ---
 
@@ -169,7 +194,7 @@ Every line above `BEGIN BULK` must be a command in the tables below; any other l
 | `STRESS` | — | Request CBAR stress output at recovery points. `ELSTRESS` is equivalent (QRG p.646) |
 | `AEROF` | — | Request per-box aerodynamic force output (SOL 144; emits the AERODYNAMIC BOX PRESSURES AND FORCES block) |
 | `APRESSURE` | — | Request per-box aerodynamic pressure (ΔCp) output (SOL 144; same output block as `AEROF`). Usually written `APRES` (QRG p.263) |
-| `INCLUDE` | str | Path to a bulk data file: `INCLUDE 'model.dat'`. May appear **several times** — the bulk is the concatenation of every included file, in order, followed by any inline bulk after `BEGIN BULK`. Used to layer an overlay over a shared bulk (`sample/cessna210_flagship_body.bdf`) |
+| `INCLUDE` | str | Inserts a file where it stands (see File Structure). Above `BEGIN BULK` it may bring in case control; a bulk data file is INCLUDEd below `BEGIN BULK` (#81) |
 | `PARAM` | — | `PARAM,name,value` (QRG p.570). Follows the bulk `PARAM` rules: the same refusals (`WTMASS`, `AUNITS`, `COUPMASS`) and the same warning for a PARAM sbeam does not read |
 
 **Accepted and ignored** (no message; none changes a result):

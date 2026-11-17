@@ -44,17 +44,6 @@ SUBCASE 2
 BEGIN BULK
 """.splitlines()
 
-_INCLUDE_CC = """\
-SOL 101
-TITLE = My Model
-SUBCASE 1
-  LOAD = 10
-  SPC  = 1
-  DISPLACEMENT = ALL
-INCLUDE 'model.dat'
-BEGIN BULK
-""".splitlines()
-
 # ---------------------------------------------------------------------------
 # Inline BDF content for integration tests (parse_bdf via tmp_path)
 # ---------------------------------------------------------------------------
@@ -82,8 +71,8 @@ SUBCASE 1
   SPC  = 1
   LOAD = 10
   DISPLACEMENT = ALL
-INCLUDE 'model.dat'
 BEGIN BULK
+INCLUDE 'model.dat'
 ENDDATA
 """
 
@@ -95,7 +84,6 @@ MAT1, 1, 2.0e11, 7.692e10, 0.3, 7850.0
 CBAR, 1, 1, 1, 2, 0.0, 1.0, 0.0
 SPC1, 1, 123456, 1
 FORCE, 10, 2, 0, 1000.0, 0.0, 1.0, 0.0
-ENDDATA
 """
 
 
@@ -116,11 +104,6 @@ def cc_modal():
 @pytest.fixture(scope="module")
 def cc_multi():
     return parse_case_control(_MULTI_CC)
-
-
-@pytest.fixture(scope="module")
-def cc_include():
-    return parse_case_control(_INCLUDE_CC)
 
 
 # ---------------------------------------------------------------------------
@@ -273,41 +256,17 @@ class TestMultipleSubcases:
 # ---------------------------------------------------------------------------
 
 class TestIncludeParsing:
-    def test_include_path_set(self, cc_include):
-        assert cc_include.include == "model.dat"
+    """INCLUDE is expanded by parse_bdf (#81); filename forms: test_file_structure.py."""
 
-    def test_include_single_quotes(self):
-        cc = parse_case_control(["SOL 101", "INCLUDE 'data/model.dat'", "SUBCASE 1"])
-        assert cc.include == "data/model.dat"
-
-    def test_include_double_quotes(self):
-        cc = parse_case_control(["SOL 101", 'INCLUDE "data/model.dat"', "SUBCASE 1"])
-        assert cc.include == "data/model.dat"
-
-    def test_include_unquoted(self):
-        cc = parse_case_control(["SOL 101", "INCLUDE model.dat", "SUBCASE 1"])
-        assert cc.include == "model.dat"
+    def test_parse_case_control_refuses_an_unexpanded_include(self):
+        with pytest.raises(ValueError, match="parse_bdf does before the case control"):
+            parse_case_control(["SOL 101", "INCLUDE 'model.dat'", "SUBCASE 1"])
 
     def test_no_include_is_none(self, cc_static):
         assert cc_static.include is None
 
-    def test_single_include_populates_both_fields(self, cc_include):
-        assert cc_include.includes == ["model.dat"]
-
     def test_no_include_is_empty_list(self, cc_static):
         assert cc_static.includes == []
-
-    def test_multiple_includes_kept_in_order(self):
-        """A driver deck may compose a shared bulk with an overlay."""
-        cc = parse_case_control([
-            "SOL 144",
-            "INCLUDE 'bulk.bdf'",
-            "INCLUDE 'overlay.bdf'",
-            "SUBCASE 1",
-        ])
-        assert cc.includes == ["bulk.bdf", "overlay.bdf"]
-        # `include` stays the FIRST entry, so single-INCLUDE callers are unaffected.
-        assert cc.include == "bulk.bdf"
 
 
 # ---------------------------------------------------------------------------
@@ -475,7 +434,7 @@ class TestParseBulkFile:
 # ---------------------------------------------------------------------------
 
 class TestIncludeComposition:
-    """`parse_bdf` concatenates every INCLUDE, then any inline bulk.
+    """`parse_bdf` reads every INCLUDE below BEGIN BULK in order, with inline bulk.
 
     This is what lets a driver deck compose a shared bulk file with a small
     overlay instead of duplicating the shared part.
@@ -487,41 +446,30 @@ class TestIncludeComposition:
             "MAT1, 1, 2.0e11, 8.0e10, 0.3, 7850.0\n"
             "GRID, 1, , 0.0, 0.0, 0.0\n"
             "GRID, 2, , 1.0, 0.0, 0.0\n"
-            "ENDDATA\n"
         )
         (tmp_path / "overlay.bdf").write_text(
             "GRID, 3, , 2.0, 0.0, 0.0\n"
-            "ENDDATA\n"
         )
 
     def test_two_includes_are_concatenated(self, tmp_path):
         self._write(tmp_path)
         drv = tmp_path / "drv.bdf"
         drv.write_text(
-            "SOL 101\nINCLUDE 'bulk.bdf'\nINCLUDE 'overlay.bdf'\n"
-            "SUBCASE 1\n  SPC = 1\nBEGIN BULK\nENDDATA\n"
+            "SOL 101\nSUBCASE 1\n  SPC = 1\n"
+            "BEGIN BULK\nINCLUDE 'bulk.bdf'\nINCLUDE 'overlay.bdf'\nENDDATA\n"
         )
-        _cc, bulk = parse_bdf(str(drv))
+        cc, bulk = parse_bdf(str(drv))
         assert sorted(bulk.grids) == [1, 2, 3]
-
-    def test_enddata_midstream_does_not_truncate(self, tmp_path):
-        """The first file ends in ENDDATA; the overlay behind it must survive."""
-        self._write(tmp_path)
-        drv = tmp_path / "drv.bdf"
-        drv.write_text(
-            "SOL 101\nINCLUDE 'bulk.bdf'\nINCLUDE 'overlay.bdf'\n"
-            "SUBCASE 1\nBEGIN BULK\nENDDATA\n"
-        )
-        _cc, bulk = parse_bdf(str(drv))
-        assert 3 in bulk.grids
+        assert cc.includes == ["bulk.bdf", "overlay.bdf"]
+        assert cc.include == "bulk.bdf"   # the first, for single-INCLUDE callers
 
     def test_inline_bulk_survives_alongside_an_include(self, tmp_path):
         """Cards typed into the driver used to be silently discarded."""
         self._write(tmp_path)
         drv = tmp_path / "drv.bdf"
         drv.write_text(
-            "SOL 101\nINCLUDE 'bulk.bdf'\n"
-            "SUBCASE 1\nBEGIN BULK\nGRID, 9, , 9.0, 0.0, 0.0\nENDDATA\n"
+            "SOL 101\nSUBCASE 1\n"
+            "BEGIN BULK\nINCLUDE 'bulk.bdf'\nGRID, 9, , 9.0, 0.0, 0.0\nENDDATA\n"
         )
         _cc, bulk = parse_bdf(str(drv))
         assert sorted(bulk.grids) == [1, 2, 9]
@@ -530,8 +478,8 @@ class TestIncludeComposition:
         self._write(tmp_path)
         drv = tmp_path / "drv.bdf"
         drv.write_text(
-            "SOL 101\nINCLUDE 'bulk.bdf'\nINCLUDE 'nope.bdf'\n"
-            "SUBCASE 1\nBEGIN BULK\nENDDATA\n"
+            "SOL 101\nSUBCASE 1\n"
+            "BEGIN BULK\nINCLUDE 'bulk.bdf'\nINCLUDE 'nope.bdf'\nENDDATA\n"
         )
         with pytest.raises(FileNotFoundError, match="nope.bdf"):
             parse_bdf(str(drv))

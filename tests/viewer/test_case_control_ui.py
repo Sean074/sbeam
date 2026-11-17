@@ -246,12 +246,17 @@ class TestSol144Export:
         text = export_bdf_text(_make_sol144_cc())
         assert "INCLUDE 'model.dat'" in text
         assert "INCLUDE 'overlay.dat'" in text
-        # INCLUDE lines must sit above BEGIN BULK where the parser reads them.
-        assert text.index("INCLUDE 'overlay.dat'") < text.index("BEGIN BULK")
+        # An INCLUDE inserts its file where it stands: bulk files go below BEGIN BULK (#81).
+        assert text.index("BEGIN BULK") < text.index("INCLUDE 'model.dat'")
+        assert text.index("INCLUDE 'overlay.dat'") < text.index("ENDDATA")
 
-    def test_sol144_round_trip_zero_loss(self):
+    def test_sol144_round_trip_zero_loss(self, tmp_path):
         cc = _make_sol144_cc()
-        cc2 = parse_case_control(export_bdf_text(cc).splitlines())
+        for name in cc.includes:
+            (tmp_path / name).write_text("$ stand-in bulk file\n")
+        deck = tmp_path / "run.bdf"
+        deck.write_text(export_bdf_text(cc))
+        cc2, _ = parse_bdf(deck)
         assert cc2.sol == 144
         assert cc2.includes == cc.includes
         assert cc2.subcases == cc.subcases

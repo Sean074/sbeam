@@ -244,8 +244,8 @@ solve, and/or exports a self-contained corrected BDF.
    cards into the originally uploaded model text (before `ENDDATA`) with a provenance header (source
    CSV, date, Mach/α/β, corrected CAEROs) — a self-contained, re-parseable model. The filename input
    defaults to `suggest_corrected_name` (`<stem>_M0p30_A2p0_B0p0.bdf`); build one per Mach. A
-   separate-correction-file + `INCLUDE` layout is *not* used because sbeam's parser honours only a
-   single whole-bulk INCLUDE (`bdf_reader.parse_bdf`).
+   separate-correction-file + `INCLUDE` layout is not used, so each export is one
+   self-contained deck.
 6. **Body panels — total-aircraft moment match (Step A9)** — shown only when the model has a
    plausible body panel (`_guess_body_panels` finds the largest-chord +Z / +Y surfaces — the
    fuselage cruciform). After the flying surfaces are matched (step 5), the body panels absorb the
@@ -417,8 +417,8 @@ reruns. Add/Remove handlers run after the form closes and call `st.rerun()`.
 `export_bdf_text(cc: CaseControl, include_paths: list[str] | None = None,
 authored_block: str = "") -> str` in `case_control_ui.py` serialises a `CaseControl` to a
 parseable driver BDF: full SOL 144 keyword surface (TRIM/TRIMOBJ/DIVERG/MLOADS/MASSSET +
-AEROF/APRES), one `INCLUDE` per entry (INCLUDE lines sit above `BEGIN BULK`, where the
-parser reads them), and any viewer-authored bulk cards inline after `BEGIN BULK`.
+AEROF/APRES), `BEGIN BULK`, one `INCLUDE` per entry (an INCLUDE inserts its file where it
+stands, so bulk INCLUDEs sit below `BEGIN BULK`, #81), and any viewer-authored bulk cards.
 Example output:
 
 ```
@@ -428,8 +428,8 @@ SUBCASE 1
   SPC = 1
   TRIM = 1
   DISPLACEMENT = ALL
-INCLUDE 'model.dat'
 BEGIN BULK
+INCLUDE 'model.dat'
 $ Authored in the sbeam viewer (SOL 144 / MLOADS authoring tab)
 TRIM, 1, 0.9, 40.0, RHOREF, 2.3769-3, PITCH, 0.0
 ENDDATA

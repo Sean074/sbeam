@@ -230,7 +230,6 @@ def emit_deck(
         "SOL 144",
         f"TITLE = {title}",
     ]
-    lines += [f"INCLUDE '{inc}'" for inc in airplane.includes]
     lines.append("$")
 
     for case in cases:
@@ -246,6 +245,7 @@ def emit_deck(
         lines.append("$")
 
     lines.append("BEGIN BULK")
+    lines += [f"INCLUDE '{inc}'" for inc in airplane.includes]
     lines.append("$")
     for case in cases:
         lines.append(f"$ {case.title}")

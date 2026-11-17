@@ -25,7 +25,6 @@ $ Units: SI (m, N, kg, Pa, s)
 $
 SOL 144
 TITLE = Cessna 210 flagship — payload / mass-case sweep at 1g
-INCLUDE 'cessna210_flagship_bulk.bdf'
 $
 SUBCASE 1
   TITLE   = FERRY
@@ -46,4 +45,5 @@ SUBCASE 3
   MASSSET = 30
 $
 BEGIN BULK
+INCLUDE 'cessna210_flagship_bulk.bdf'
 ENDDATA

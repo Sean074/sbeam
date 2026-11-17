@@ -69,9 +69,9 @@ def export_bdf_text(
 ) -> str:
     """Return a BDF driver file as a string, parseable by parse_bdf.
 
-    Layout: executive/case control, one INCLUDE per bulk file (INCLUDE lines
-    must sit above BEGIN BULK — that is where the parser reads them), then any
-    authored bulk cards inline after BEGIN BULK, then ENDDATA.
+    Layout: executive/case control, BEGIN BULK, one INCLUDE per bulk file (an
+    INCLUDE inserts its file where it stands, so bulk INCLUDEs sit below BEGIN
+    BULK, #81), then any authored bulk cards, then ENDDATA.
 
     Args:
         cc:             Case control to serialize (all SOL 144 keywords included).
@@ -110,9 +110,9 @@ def export_bdf_text(
         ]:
             if flag:
                 lines.append(f"  {keyword} = ALL")
+    lines.append("BEGIN BULK")
     for path in include_paths:
         lines.append(f"INCLUDE '{path}'")
-    lines.append("BEGIN BULK")
     if authored_block:
         lines.extend(authored_block.rstrip("\n").splitlines())
     lines.append("ENDDATA")

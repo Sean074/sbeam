@@ -24,8 +24,8 @@ building and reading a **model**.*
 | `sample/cessna210_flagship_body_cruciform.bdf` | body-panel overlay (not standalone) |
 | `sample/cessna210_flagship_body_strip.bdf` | body-panel overlay (not standalone) |
 
-The drivers are thin: a `SOL 144` line, a `TITLE`, one or more case-control `INCLUDE`s of
-the shared bulk (plus, in §6, a body overlay), and their subcases. Everything physical
+The drivers are thin: a `SOL 144` line, a `TITLE`, their subcases, and below `BEGIN BULK`
+one or more `INCLUDE`s of the shared bulk (plus, in §6, a body overlay). Everything physical
 lives in one place — and layers are added by `INCLUDE`, never by editing the bulk.
 
 Gated by `tests/aero/test_cessna210_flagship.py` (24 checks),
@@ -454,6 +454,7 @@ sbeam sample/cessna210_flagship_body_strip_drv.bdf  # strip      (PSTRIP)
 Both drivers are three lines of aerodynamics on top of the deck you already have:
 
 ```
+BEGIN BULK
 INCLUDE 'cessna210_flagship_bulk.bdf'
 INCLUDE 'cessna210_flagship_body_cruciform.bdf'
 ```

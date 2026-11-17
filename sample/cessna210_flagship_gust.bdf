@@ -12,7 +12,6 @@ $ Rigid CZ_alpha = 5.3079 /rad, S = 16.24, cbar = 1.4707
 $
 SOL 144
 TITLE = Cessna 210 flagship - FAR/CS 23.341 gust cases at V_C and V_D
-INCLUDE 'cessna210_flagship_bulk.bdf'
 $
 SUBCASE 9000
   TITLE   = +15.24 m/s gust at VC, alt 0 m, FERRY, n = 5.41
@@ -111,6 +110,7 @@ SUBCASE 9011
   FORCE        = ALL
 $
 BEGIN BULK
+INCLUDE 'cessna210_flagship_bulk.bdf'
 $
 $ +15.24 m/s gust at VC, alt 0 m, FERRY, n = 5.41
 $   mu = 12.8272   K_g = 0.622707   dn = 4.41004   W = 9771.01

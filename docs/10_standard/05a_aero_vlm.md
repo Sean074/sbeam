@@ -813,8 +813,8 @@ Aero tab's **Cp view** toggle then compares corrected / uncorrected / Δcp on bo
 pressure and the span-load curves. **Download cards (.bdf)** emits the pairs via `cards_to_bdf`;
 **Full corrected BDF** (`build_corrected_bdf`) splices them into the uploaded model text before
 `ENDDATA` with a provenance header (source CSV, date, Mach/α/β), giving a self-contained,
-re-parseable model — one per Mach. A separate-file + `INCLUDE` layout is not used: sbeam's parser
-honours only a single whole-bulk INCLUDE. Pre-existing **WKK** (which takes precedence over WT2 in
+re-parseable model — one per Mach. A separate-file + `INCLUDE` layout is not used, so each export
+is one self-contained deck. Pre-existing **WKK** (which takes precedence over WT2 in
 `build_aero_model`) or a non-generated WT2 on a corrected surface are flagged as warnings.
 
 ## Cruciform body panels — total-aircraft moment correction (`body_correction.py`, Step A9)

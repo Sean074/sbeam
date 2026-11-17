@@ -104,7 +104,7 @@ The parser (`parser/bdf_reader.py` and its `bulk_*.py` card modules) is the mode
 - [ ] Field indices are zero-based free-format or fixed 8-column NASTRAN format — verify the field-slicing logic matches the card definition in `docs/10_standard/01_beam_model.md`.
 - [ ] Integer IDs (GID, EID, PID, MID, SID) are stored as `int`, not `str`. Mixed types break dictionary lookups silently.
 - [ ] `BulkData` container stores each card type in its dedicated dict/list — verify no card is appended to the wrong collection.
-- [ ] INCLUDE file resolution: confirm the parser resolves the path relative to the main BDF file, not the current working directory.
+- [ ] INCLUDE file resolution: confirm the parser resolves the path relative to the file holding the INCLUDE, not the current working directory, and that bulk INCLUDEs sit below `BEGIN BULK` (#81).
 - [ ] Duplicate IDs: does the parser warn on duplicate GRID/CBAR/PBAR/MAT1 IDs, or silently overwrite?
 - [ ] `CORD2R` chained RID: verify the coordinate system is resolved recursively before any GRID using that CID is transformed.
 

@@ -149,22 +149,22 @@ The viewer calls `parse_bulk_file()` when uploading a model file before case con
 
 Reads a bulk-data-only file. Behaviour:
 
-1. Reads all lines from the file.
+1. Reads the file with every `INCLUDE` expanded, as `parse_bdf` does.
 2. If a `BEGIN BULK` line is present, discards everything before it.
-3. Passes remaining lines to `parse_bulk_data`.
+3. Passes the lines up to `ENDDATA` to `parse_bulk_data`.
 4. Returns `BulkData`. Does not call `parse_case_control`.
 
 ### `parse_bdf(filepath) -> (CaseControl, BulkData)` — run file entry point
 
-`parse_bdf` reads a complete run file. It:
+`parse_bdf` reads a complete run file as NASTRAN reads it (#81). It:
 
-1. Reads the file and splits on the `BEGIN BULK` line.
-2. Passes the case control section (before `BEGIN BULK`) to `parse_case_control`.
-3. Loads every path in `CaseControl.includes`, in the order the `INCLUDE` lines appear, and concatenates them; the lines after `BEGIN BULK` are appended to that.
-4. Passes the bulk data lines to `parse_bulk_data`.
+1. Reads the file and replaces every `INCLUDE` with the text of its file, wherever it stands, nested up to 10 deep.
+2. Splits the result on the `BEGIN BULK` line and passes the case control (above it) to `parse_case_control`. A file holding bulk cards INCLUDEd above `BEGIN BULK` is refused, naming the file.
+3. Passes the bulk data lines, up to `ENDDATA`, to `parse_bulk_data`. A card after `ENDDATA` is refused.
+4. Sets `CaseControl.includes` to the files the main deck INCLUDEs below `BEGIN BULK`, in order; `CaseControl.include` is the first, for callers that expect a single path.
 5. Returns `(CaseControl, BulkData)`.
 
-**Several `INCLUDE`s are allowed** (Step 66), which is how a driver deck composes a shared bulk with an overlay without duplicating the shared part — see `sample/cessna210_flagship_body.bdf`. `ENDDATA` is an ignored keyword rather than a terminator, so an included file ending in one does not truncate the files behind it. `CaseControl.include` remains as the first entry for callers that expect a single path.
+**Several `INCLUDE`s are allowed** (Step 66), which is how a driver deck composes a shared bulk with an overlay without duplicating the shared part — see `sample/cessna210_flagship_body.bdf`. The included bulk files carry no `ENDDATA`. File-structure rules and QRG citations: `02_card_reference.md` (File Structure).
 
 Raises `FileNotFoundError` if any INCLUDE file does not exist.
 

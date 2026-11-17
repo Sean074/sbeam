@@ -26,8 +26,6 @@ $ Units: SI (m, N, kg, Pa, s)
 $
 SOL 144
 TITLE = Cessna 210 flagship — cruciform body panels, 1g and 2.5g
-INCLUDE 'cessna210_flagship_bulk.bdf'
-INCLUDE 'cessna210_flagship_body_cruciform.bdf'
 $
 SUBCASE 1
   TITLE = 1g cruise with body panels, q = 2334 Pa
@@ -44,4 +42,6 @@ SUBCASE 2
   FORCE        = ALL
 $
 BEGIN BULK
+INCLUDE 'cessna210_flagship_bulk.bdf'
+INCLUDE 'cessna210_flagship_body_cruciform.bdf'
 ENDDATA

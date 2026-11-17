@@ -10,6 +10,27 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Breaking changes
+- **The input file is read as NASTRAN reads it: INCLUDE, ENDDATA, BEGIN BULK** (#81;
+  pre-1.0 MINOR break). Found by the 2026-11-16 audit (C7, C8, P11). Page numbers are
+  PDF pages of the MSC QRG 2024.1:
+  - `INCLUDE` inserts its file where it stands, anywhere in the input, nested up to 10
+    deep (p.465, p.1984). A bulk data file is INCLUDEd **below** `BEGIN BULK`. sbeam used
+    to read an INCLUDE above `BEGIN BULK` as bulk data, where MSC and pyNastran read it as
+    case control and lose the model. A file of bulk cards INCLUDEd there is now refused,
+    naming the file, and an INCLUDE after `BEGIN BULK` (refused before as an unknown card)
+    is read. A quoted filename may span lines (p.1984 remark 2).
+  - `ENDDATA` ends the bulk data (p.1808). sbeam read on, and applied a FORCE placed after
+    it; a card after `ENDDATA` is now refused. A file INCLUDEd ahead of more bulk data
+    must not end in `ENDDATA`.
+  - `BEGIN SUPER=n`, `BEGIN BULK TRMC=n` and the other partitioned-section forms
+    (p.286–287) are refused; they used to be merged into the main bulk.
+  - `parse_case_control` refuses an `INCLUDE`; `parse_bdf` expands them first and sets
+    `CaseControl.includes` to the main deck's bulk INCLUDEs. `parse_bulk_file` expands
+    INCLUDEs too.
+  - **Migrate a deck:** move bulk `INCLUDE` lines below `BEGIN BULK`, and delete `ENDDATA`
+    from INCLUDEd bulk files. The Cessna 210 flagship drivers and overlays were migrated;
+    the viewer export and `sbeam-cases` gust decks now write INCLUDEs below `BEGIN BULK`.
+    No shipped number changes.
 - **An unknown case-control command is refused** (#80; pre-1.0 MINOR break). The parser
   dropped every line above `BEGIN BULK` that it did not know, without a message. Found
   by the 2026-11-16 audit. Page numbers are PDF pages of the MSC QRG 2024.1:

@@ -89,7 +89,7 @@ will be solved on (`sbeam_tools/common/deck.py`):
 | W per mass case | `compute_gpwg(bulk, massset).total_mass × g` |
 | rigid C_Nα (`CZ_α`) | `compute_rigid_derivs` — no trim solve |
 | prescribed labels to inherit | the template `TRIM`, minus `URDD3` |
-| SPC, INCLUDEs | the driver's case control |
+| SPC; INCLUDEs | the driver's case control; its bulk-data INCLUDEs |
 
 **cg is not a separate input axis.** A forward-cg and an aft-cg condition are two `MASSSET`s,
 so cg variation rides on the mass-case list exactly as weight does.

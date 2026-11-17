@@ -454,3 +454,47 @@ def test_crafted_cards_agree(lines, tmp_path):
 @pytest.mark.xfail(strict=True, reason="open audit issue; fix flips this to a pass")
 def test_crafted_cards_open_issues(lines, issue, tmp_path):
     assert _crafted(_GRIDS + lines, tmp_path) == [], issue
+
+
+# ---------------------------------------------------------------------------
+# file structure: pyNastran reads each multi-file deck itself (#81)
+# ---------------------------------------------------------------------------
+
+MULTI_FILE = [d for d in PARSEABLE if parse_bdf(d)[0].includes]
+
+
+def _for_pynastran(src: Path, dst: Path) -> None:
+    """Copy a deck without the cards pyNastran raises on; CEND after SOL for a driver."""
+    out = []
+    for line in src.read_text().splitlines():
+        body = line.split("$", 1)[0].strip()
+        if body and split_line(body)[0].upper() in _NOT_FOR_PYNASTRAN:
+            continue
+        out.append(line)
+        if body.upper().startswith("SOL "):
+            out.append("CEND")
+    dst.write_text("\n".join(out) + "\n")
+
+
+def test_enough_multi_file_decks():
+    assert len(MULTI_FILE) >= 6
+
+
+@pytest.mark.parametrize("deck", MULTI_FILE, ids=lambda p: p.name)
+def test_multi_file_deck_reads_the_same_model_in_pynastran(deck, tmp_path):
+    """INCLUDE placement and ENDDATA as NASTRAN reads them (QRG p.465, p.1808).
+
+    Before #81 the drivers INCLUDEd their bulk above BEGIN BULK and the included bulk
+    ended in ENDDATA: pyNastran found no grids, and stopped before any overlay.
+    """
+    cc, bulk = parse_bdf(deck)
+    for name in cc.includes:
+        _for_pynastran(deck.parent / name, tmp_path / name)
+    _for_pynastran(deck, tmp_path / deck.name)
+    model = BDF(debug=None)
+    model.set_error_storage(nparse_errors=10000, stop_on_parsing_error=False)
+    model.read_bdf(str(tmp_path / deck.name), xref=False, validate=False)
+    assert sorted(model.nodes) == sorted(bulk.grids)
+    assert sorted(model.caeros) == sorted(bulk.caero1s)
+    assert sorted(model.masses) == sorted(bulk.conm2s)
+    assert sorted(k for k, e in model.elements.items() if e.type == "CBAR") == sorted(bulk.cbars)

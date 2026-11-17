@@ -50,7 +50,7 @@ A sample model is provided at `sample/simple_beam.dat` — a 10 m steel cantilev
 python -m sbeam.main path/to/model.bdf
 ```
 
-The solver reads the case control file (`.bdf`), which uses `INCLUDE` to reference the bulk data file (`.dat`). Results are written to a `.f06` file in NASTRAN format.
+The solver reads the run file (`.bdf`): case control, then `BEGIN BULK`, where an `INCLUDE` may bring in the bulk data file (`.dat`). Results are written to a `.f06` file in NASTRAN format.
 
 ## Running the Loads Tools
 
