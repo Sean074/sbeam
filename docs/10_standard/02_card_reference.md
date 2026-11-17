@@ -1466,9 +1466,15 @@ W2GJ, 5, 100, 0.0349, 0.0349, 0.0349, 0.0349, 0.0349, 0.0349
 
 ### WKK — Diagonal AIC Correction
 
-Lowest-fidelity AIC correction: scales each row of the AIC matrix by a per-box
-weight. The corrected AIC is `AJJ* = diag(w) @ AJJ`; the caller inverts it via
-`np.linalg.lstsq`.
+Lowest-fidelity AIC correction: multiplies each box's lift (force and moment) by a per-box
+weight after the pressure solve, `AJJ*⁻¹ = diag(w) @ AJJ⁻¹` — MSC's placement,
+`{P_k} = q[W_kk][S_kj][A_jj]⁻¹{w_j}` (MSC AAUG 2023.1 PDF p.40 eq 2-21, p.70 eq 2-106; NX
+Nastran identical). A weight of 1.1 is 10% more lift on that box; 0 removes it. **Before #71
+the weight acted as its reciprocal** (1.1 gave 0.909× the lift); see `05a_aero_vlm.md`.
+
+**An sbeam extension.** MSC has no WKK bulk card: it enters WKK as a DMI matrix on the k-set
+with separate force and moment terms (AAUG PDF p.144), and sbeam refuses DMI (#55). sbeam's
+card takes one weight per box of one CAERO1; unlisted surfaces take weight 1.
 
 **Format:**
 ```

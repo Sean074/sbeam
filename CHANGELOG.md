@@ -10,6 +10,15 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Breaking changes
+- **WKK multiplies each box's lift, as in MSC** (#71; pre-1.0 MINOR break). sbeam inverted
+  `diag(w)·AJJ`, which applied the weight as `1/w` on the downwash side: WKK = 1.1 gave
+  0.909× the lift, and a non-uniform weight moved load onto neighbouring boxes. The
+  corrected operator is now `diag(w)·AJJ⁻¹`, MSC's `{P_k} = q[W_kk][S_kj][A_jj]⁻¹{w_j}`
+  (AAUG 2023.1 PDF p.40 eq 2-21, p.70 eq 2-106; NX Nastran identical). A zero weight is
+  accepted and removes that box's lift; it used to be refused as singular. **Migrate a
+  deck:** replace each WKK weight `w` with `1/w` to keep the old answer for a uniform
+  weight. No repo deck used WKK; no shipped number changes. Found by the 2026-11-16
+  audit (M1, A1).
 - **The input file is read as NASTRAN reads it: INCLUDE, ENDDATA, BEGIN BULK** (#81;
   pre-1.0 MINOR break). Found by the 2026-11-16 audit (C7, C8, P11). Page numbers are
   PDF pages of the MSC QRG 2024.1:

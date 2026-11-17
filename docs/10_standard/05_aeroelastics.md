@@ -127,7 +127,7 @@ Reproduction script for the original review: `studies/_review_ha144a_check.py`.
 | `PAERO1` | Aerodynamic panel properties (stub in Phase A) | S40 |
 | `AEFACT` | Arbitrary span/chord fraction lists for non-uniform meshing | S40 |
 | `W2GJ` | Per-box baseline normalwash slopes | S42 |
-| `WKK` | Diagonal AIC correction multipliers | S43 |
+| `WKK` | Per-box lift weights, MSC placement (#71) | S43 |
 | `AECORR` | Pressure-matching AIC correction (WT2 only; WT1 removed by DEF-R7, deprecated by DEF-H2/H3 2026-07-31) | S43 |
 | `CHORDCP` | Injected CFD/WT steady-Cp mean flow at a reference AOA (sbeam extension) | S54 |
 | `SET1` | List of structural grid IDs for spline input | S45 |

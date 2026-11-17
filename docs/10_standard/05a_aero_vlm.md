@@ -442,7 +442,7 @@ Phase A provides two correction tiers to match VLM predictions to higher-fidelit
 CFD or wind-tunnel data. The correction precedence in `build_aero_model()` is:
 
 ```
-WKK card present   →  apply_wkk  (caller inverts via np.linalg.solve; per-CAERO1 scatter)
+WKK card present   →  apply_wkk  (returns diag(w)·AJJ⁻¹, MSC placement #71; per-CAERO1 scatter)
 AECORR WT2 present →  apply_wt2  (returns AJJ*⁻¹) — ALL WT2 cards combined (multi-surface)
 No correction      →  np.linalg.solve(AJJ, I)
 ```
@@ -456,7 +456,7 @@ closes. All checks are card-labelled (`CARDNAME sid: …`, the CHORDCP house sty
 | Card | Rejected |
 |------|----------|
 | `W2GJ` | two cards on one CAERO1; data length ≠ that surface's box count (either direction); a `caero_eid` with no meshed boxes |
-| `WKK` | two cards on one CAERO1; length ≠ that surface's box count; any **zero weight** (it zeroes an AJJ* row, making the corrected AIC singular) |
+| `WKK` | two cards on one CAERO1; length ≠ that surface's box count. A zero weight is accepted since #71: it removes that box's lift (MSC's factor), where it used to make the corrected AIC singular |
 | `AECORR` (WT2) | target length ≠ that surface's box count |
 | `STRIPK` | two cards on one CAERO1; length ≠ that surface's box count (omit the card entirely to take the PSTRIP `SLOPE0` default) |
 | section-data CSV | `caero` not in the model (when the caller supplies the model); duplicate `eta` within one `(caero, var, mach, a_lo, a_hi)` curve |
@@ -513,12 +513,20 @@ AECORR  SID  METHOD  CAERO_EID  T1  T2  T3  T4  T5
 | AECORR CAERO_EID | CAERO1 EID this correction applies to |
 | AECORR T1–TN | Target values; see below |
 
-### `apply_wkk(ajj, wkk_data) -> np.ndarray`
+### `apply_wkk(ajj_inv, wkk_data) -> np.ndarray`
 
-Returns `AJJ* = diag(w) @ AJJ`. The caller (`build_aero_model`) inverts it via the
-LU factorization returned by `check_conditioning` (`scipy.linalg.lu_solve`).
-Simplest correction; can absorb empirical scale factors or stall nonlinearity.
-Issues a `UserWarning` if the condition estimate of `AJJ*` exceeds 1e10.
+Returns `AJJ*⁻¹ = diag(w) @ AJJ⁻¹`: each box's lift (force and moment) is multiplied by its
+weight after the pressure solve, MSC's placement — `{P_k} = q[W_kk][S_kj][A_jj]⁻¹{w_j}` (MSC
+AAUG 2023.1 PDF p.40 eq 2-21, p.70 eq 2-106; NX Nastran identical). WKK = 1.1 raises that
+box's lift 10% and no other box changes; it applies to the W2GJ baseline as well as the
+elastic and trim normalwash, as in MSC. `build_aero_model` inverts the raw AJJ (warning if
+its condition estimate exceeds 1e10) and passes the inverse in.
+
+**Before #71** `apply_wkk` returned `diag(w) @ AJJ` for the caller to invert, which applied
+`1/w` on the downwash side: a uniform 1.1 gave 0.909× the lift, and a non-uniform weight
+redistributed load to the neighbouring boxes. No repo deck used WKK. sbeam's `WKK` card is
+an sbeam extension: MSC enters WKK as a DMI matrix on the k-set with separate force and
+moment terms (AAUG PDF p.144); sbeam takes one weight per box.
 
 ### `apply_wt2(ajj, cp_target, ajj_inv=None, cp_ref=None) -> np.ndarray`
 

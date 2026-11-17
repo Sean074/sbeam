@@ -516,15 +516,22 @@ correct *unsteady* (out-of-phase) pressure from a steady correction is a separat
 
 ### 3.1 Diagonal weighting $W_{kk}$
 
-The cheapest correction multiplies each box's influence by a scalar, tuning the local
-lift-curve slope or sweep effect:
+The cheapest correction multiplies each box's **lift** by a scalar, after the pressures are
+solved, tuning the local lift-curve slope or sweep effect. MSC applies it to the box forces,
+$\{P_k\} = q\,[W_{kk}][S_{kj}][A_{jj}]^{-1}\{w_j\}$ (MSC Nastran 2023.1 Aeroelastic Analysis
+User's Guide, PDF p.40 eq 2-21 and p.70 eq 2-106; NX Nastran identical, Aeroelastic Analysis
+User's Guide 2014, PDF p.147), so on the pressure operator:
 
 $$
-A_{jj}^\ast = W_{kk}\,A_{jj}, \qquad W_{kk}=\operatorname{diag}(w_1,\dots,w_N) .
+A_{jj}^{\ast\,-1} = W_{kk}\,A_{jj}^{-1}, \qquad W_{kk}=\operatorname{diag}(w_1,\dots,w_N) .
 \tag{11}
 $$
 
-With $W_{kk}=I$ the inviscid result is recovered. A diagonal weighting cannot reshape a load
+A weight of 1.1 raises that box's lift by 10% and leaves every other box unchanged. Until #71
+sbeam wrote this as $A_{jj}^\ast = W_{kk}A_{jj}$ and inverted it, which applies $1/w$ on the
+downwash side: 1.1 gave 0.909× the lift. sbeam's weight is one value per box and scales the
+box's force and moment together; MSC's `WKK` is a k-set matrix with separate force and moment
+entries (AAUG PDF p.144). With $W_{kk}=I$ the inviscid result is recovered. A diagonal weighting cannot reshape a load
 distribution — it only scales box-by-box — so it is a local tuning tool, not a way to match a
 full CFD/WT load.
 
@@ -543,6 +550,12 @@ $$
 
 This matches the surface pressure field directly and is the right choice when a chordwise/
 spanwise $c_p$ map is available.
+
+**As implemented, sbeam's WT2 is not Eq. (12).** `apply_wt2` scales the *rows* of
+$A_{jj}^{-1}$, $A_{jj}^{\ast\,-1} = \operatorname{diag}(r)\,A_{jj}^{-1}$ with
+$r_k = c_{p,k}^\text{target}/c_{p,k}^\text{ref}$: the pressure side, the placement of Eq. (11).
+It is a $W_{kk}$ whose weights are generated from the target, not the downwash-side
+Pitt–Goodman matrix of Eq. (12).
 
 ### 3.3 Force/moment matching $W_{T1}$ (Giesing method)
 
@@ -578,8 +591,10 @@ multi-surface deck it rescales strips it was never pointed at. The theory of Eq.
 unaffected — the defects are in the sbeam implementation, and the remedy is the §3.5 synthesiser,
 which applies the $1/\beta$ factor correctly and is scoped per surface.
 
-These match the ZAERO *Theoretical Manual* §4 forms (its Eqs. 4.55–4.58); $W_{kk}$ is the
-diagonal special case of $W_{T2}$.
+Eqs. (12) and (13) are the ZAERO *Theoretical Manual* §4 forms (its Eqs. 4.55–4.58, PDF
+p.119–120), where ZAERO's AIC is the pressure-from-downwash matrix, $[A_{jj}]^{-1}$ here. On the
+box set, $W_{kk}$ is the diagonal special case of the force-side $W_{T1}$, not of the
+downwash-side $W_{T2}$.
 
 ### 3.4 Using the correction at the operating point
 

@@ -157,7 +157,7 @@ sbeam/
     ├── panel.py          # AeroBox dataclass + mesh_caero1() trapezoidal box meshing
     ├── vlm.py            # Biot–Savart, horseshoe influence, vectorized (broadcast) build_ajj, solve_rigid_cl
     ├── integration.py    # build_skj, build_djk, build_wg integration matrices
-    ├── corrections.py    # apply_wkk, apply_wt2, apply_wt1 AIC corrections
+    ├── corrections.py    # apply_wkk, apply_wt2 AIC corrections
     ├── section_correction.py # W2GJ+WT2 card-pair synthesis matching section force and moment
     ├── body_correction.py # Cruciform (A9) + decoupled-strip (A10) body-panel total-aircraft moment match
     ├── strip.py          # Decoupled strip body panels (PSTRIP/STRIPK; zero-coupling diagonal AIC block)

@@ -56,7 +56,7 @@ All three are assembled as a DOF transformation matrix **T** (`n_dof × n_red`) 
 | `PAERO1` | Aerodynamic panel property (Phase A stub) |
 | `AEFACT` | Fraction list for non-uniform span/chord panel spacing |
 | `W2GJ` | Per-box baseline normalwash slopes (geometric incidence) |
-| `WKK` | Diagonal AIC correction weights |
+| `WKK` | Per-box lift weights, applied after the pressure solve (MSC placement, #71) |
 | `AECORR` | WT2 pressure-matching AIC correction (WT1 force-matching removed at the release boundary — DEF-R7) |
 
 ---

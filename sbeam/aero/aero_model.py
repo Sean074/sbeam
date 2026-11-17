@@ -150,18 +150,9 @@ def _assemble_vlm_operator(
                     f"WKK {card.sid} (CAERO1 {card.caero_eid}): {data.shape[0]} "
                     f"weights for {len(surf_idx)} boxes on that surface."
                 )
-            if np.any(data == 0.0):
-                zeros = [i for i, v in enumerate(data) if v == 0.0]
-                raise ValueError(
-                    f"WKK {card.sid} (CAERO1 {card.caero_eid}): zero weight at "
-                    f"box index(es) {zeros[:5]}{'...' if len(zeros) > 5 else ''}. "
-                    "A zero weight makes the corrected AIC singular — use a small "
-                    "non-zero weight to suppress a box's influence."
-                )
             w[surf_idx] = data
-        ajj_star = apply_wkk(ajj, w)
-        lu_star = check_conditioning(ajj_star)
-        ajj_inv_corr = lu_solve(lu_star, np.eye(n))
+        lu = check_conditioning(ajj)
+        ajj_inv_corr = apply_wkk(lu_solve(lu, np.eye(n)), w)
     elif wt2_cards:
         # Factor AJJ once (DEF-R6): the conditioning check, the raw inverse for
         # the target baseline, and apply_wt2 all share the same factorization.
