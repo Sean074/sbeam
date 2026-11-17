@@ -570,7 +570,7 @@ emitted in every trim subcase's `AERODYNAMIC DIVERGENCE` block.
 
 **Divergence sweep (`DIVERG` card, Step 55).** A SOL 144 subcase with `DIVERG = sid`
 runs `sol144.run_sol144_diverg`, which solves the same restrained-l-set eigenproblem
-`K_ll φ = q·Q_ll φ` but returns the lowest `NROOTS` positive divergence pressures and
+`K_ll φ = q·Q_ll φ` but returns the lowest `NROOT` positive divergence pressures and
 their **mode shapes** at each Mach on the card:
 
 - `_divergence_roots(K_ll, Q_ll, nroots)` solves `(K_ll⁻¹ Q_ll) x = (1/q) x` (dense
@@ -580,13 +580,15 @@ their **mode shapes** at each Mach on the card:
   `divergence_dynamic_pressure` exactly.
 - Each l-set eigenvector is scattered to the a-set (SUPORT DOFs zero) and expanded to the
   g-set via the RBE3/RBAR `T` matrix (`_expand_to_g`), then max-abs normalised for output.
-- With the `RHOREF` sbeam-extension density on the card, each root reports
-  `V_div = √(2·q_div/ρ)`.
+- Dynamic pressures only, as MSC prints (QRG 2024.1 p.1603 remark 2). The card has no
+  density (#73: field 4 is the first Mach); the speed `V = √(2·q_div/ρ)` and the
+  Mach-matched divergence point are worked out from the q's — theory §5.5.1. The viewer's
+  roots table does the first at a density the user enters.
 - The sweep depends only on `K_aa`/`Q_aa`, so a DIVERG subcase needs no TRIM card; a
   subcase carrying both runs the trim and the sweep. Output: `Sol144DivergResult`
   (`mach_results → DivergMachResult → DivergRoot`), rendered by
   `f06_writer.build_f06_sol144_diverg_text` as a per-Mach `AERODYNAMIC DIVERGENCE` table
-  (root no., `Q-DIV`, `V-DIV`) plus a divergence mode-shape block per root.
+  (root no., `Q-DIV`) plus a divergence mode-shape block per root.
 
 **Flight-load export (`results/load_export.py`).** `write_aero_load_cards` writes
 `<stem>.aero_loads.bdf` — comma free-field `FORCE`/`MOMENT` cards (unit scale factor;

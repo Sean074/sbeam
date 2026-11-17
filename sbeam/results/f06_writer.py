@@ -997,7 +997,7 @@ def _build_f06_sol144_diverg_text(
 ) -> str:
     """Return a SOL 144 DIVERG-card divergence sweep .f06 block (Step 55).
 
-    One AERODYNAMIC DIVERGENCE table per Mach (root no., Q-DIV, V-DIV) followed by
+    One AERODYNAMIC DIVERGENCE table per Mach (root no., Q-DIV) followed by
     the max-abs-normalised divergence mode shape for each root.
     """
     grid_index = build_grid_index(bulk)
@@ -1011,26 +1011,19 @@ def _build_f06_sol144_diverg_text(
     lines.append(f"     SOL 144 AEROELASTIC DIVERGENCE   SUBCASE {subcase_id}   {now}")
     lines.append("")
 
-    has_v = result.rhoref > 0.0
     for mr in result.mach_results:
         lines.append(
             "                                  A E R O D Y N A M I C   D I V E R G E N C E"
         )
-        lines.append(f"      MACH = {_fmt(mr.mach)}        REF DENSITY (RHOREF) = {_fmt(result.rhoref)}")
+        lines.append(f"      MACH = {_fmt(mr.mach)}")
         lines.append("")
         if not mr.roots:
             lines.append("      NO DIVERGENCE FOUND (NO POSITIVE REAL ROOT)")
             lines.append("")
             continue
-        header = "      ROOT NO.        Q-DIV"
-        if has_v:
-            header += "          V-DIV"
-        lines.append(header)
+        lines.append("      ROOT NO.        Q-DIV")
         for i, root in enumerate(mr.roots, start=1):
-            row = f"{i:>14}  {_fmt(root.q_div)}"
-            if has_v and root.v_div is not None:
-                row += f"{_fmt(root.v_div)}"
-            lines.append(row)
+            lines.append(f"{i:>14}  {_fmt(root.q_div)}")
         lines.append("")
 
         # Divergence mode shape(s) — max-abs normalised g-set eigenvector.

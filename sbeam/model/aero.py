@@ -260,11 +260,10 @@ class Trim:
 
 @dataclass
 class Diverg:
-    """Divergence speed analysis parameters."""
+    """DIVERG — divergence analysis data (QRG 2024.1 p.1603)."""
     sid:    int
-    nroots: int          # number of divergence roots to find
-    rhoref: float = 0.0  # sbeam extension: reference density for V_div (0.0 ⇒ V_div omitted)
-    machs:  list[float] = field(default_factory=list)   # Mach values
+    nroots: int          # NROOT: number of divergence roots to output
+    machs:  list[float] = field(default_factory=list)   # M1, M2, ... (fields 4+)
 
 
 # ---------------------------------------------------------------------------

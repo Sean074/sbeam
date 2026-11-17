@@ -10,6 +10,20 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Breaking changes
+- **DIVERG is read in MSC's layout; the solver reports divergence q only** (#73; pre-1.0
+  MINOR break). sbeam read field 4 as an sbeam-only `RHOREF` density and started the Mach
+  list in field 5, so MSC's own example `DIVERG,70,2,.5,.8,.9` lost Mach 0.5 and gave a
+  V_div from a "density" of 0.5, and AAUG 2023.1 p.148's `DIVERG 100 5 0.0` ran at the
+  AEROS Mach instead of 0.0. Fields 4 onward are now Mach numbers (QRG 2024.1 PDF p.1603);
+  a Mach after a blank field (remark 4) and duplicate Machs (remark 3) are refused; Mach 0.0
+  is accepted, as in MSC's example. Like MSC (remark 2) the f06 prints `Q-DIV` only:
+  `DivergRoot.v_div`, `Diverg.rhoref` and `Sol144DivergResult.rhoref` are removed. The
+  viewer's divergence table takes a density to show `V = √(2q/ρ)`; theory §5.5.1 explains
+  the conversion, units and the Mach-matched point. Sweep (QRG blank-field rules on list
+  cards): AEFACT (p.1141 remark 2) and AELIST (p.1145 remark 3) now refuse an embedded
+  blank that was skipped. **Migrate a deck:** delete the density from field 4 of each
+  DIVERG card. No repo deck used DIVERG; no shipped number changes. Found by the
+  2026-11-16 audit (M5, A2, P5).
 - **WKK multiplies each box's lift, as in MSC** (#71; pre-1.0 MINOR break). sbeam inverted
   `diag(w)·AJJ`, which applied the weight as `1/w` on the downwash side: WKK = 1.1 gave
   0.909× the lift, and a non-uniform weight moved load onto neighbouring boxes. The

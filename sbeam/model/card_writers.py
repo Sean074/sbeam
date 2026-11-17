@@ -101,7 +101,7 @@ def write_trimcon(c: Trimcon) -> list[str]:
 
 
 def write_diverg(d: Diverg) -> list[str]:
-    return write_card("DIVERG", [d.sid, d.nroots, d.rhoref] + list(d.machs))
+    return write_card("DIVERG", [d.sid, d.nroots] + list(d.machs))
 
 
 def write_gustlf(gu: Gustlf) -> list[str]:

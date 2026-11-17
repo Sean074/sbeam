@@ -76,7 +76,7 @@ _HAND_WRITTEN = {
     "AEFACT": ["AEFACT, 10, 0.0, 0.333, 0.667, 1.0"],
     "CHORDCP": ["CHORDCP, 40, 100, 2.0, 0.9, 0.52, 0.31, 0.21, 0.14",
                 "+,       0.52, 0.31, 0.21, 0.14"],
-    "DIVERG": ["DIVERG, 20, 2, 1.225, 0.4, 0.6, 0.8"],
+    "DIVERG": ["DIVERG, 20, 2, 0.4, 0.6, 0.8"],
     # No sample deck has an RBE3 since #60 moved beam_vib1/simple_beam to RBAR
     "RBE3": ["RBE3, 30, , 10, 123, 2.0, 123, 1, 2, 1.0, 123, 3"],
     "TRIMOBJ": ["TRIMOBJ, 20, ANGLEA, 1.0, CL, 0.5", "+,       CM, 0.1"],

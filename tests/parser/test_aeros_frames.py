@@ -74,7 +74,7 @@ def test_ha144a_translated_acsid_equals_basic():
     (["CBAR, 1, 10, 1, 2, 3", "GRID, 3, , 0.0, 1.0, 0.0"], r"CBAR 1: the G0 \(grid-ID\) orientation form"),
     ([_AEROS.format(acsid=0) + ", -0.3"], r"AEROS card: MACH=-0.3 must be non-negative"),
     (["TRIM, 1, -0.5, 1000.0, ANGLEA, 0.1"], r"TRIM 1: MACH=-0.5 must be non-negative"),
-    (["DIVERG, 1, 2, , 0.3, -0.5"], r"DIVERG 1: every Mach must be non-negative"),
+    (["DIVERG, 1, 2, 0.3, -0.5"], r"DIVERG 1: every Mach must be non-negative"),
 ], ids=["GRID-SEID", "CBAR-G0", "AEROS-Mach", "TRIM-Mach", "DIVERG-Mach"])
 def test_documented_rules_are_enforced(card, match):
     with pytest.raises(ValueError, match=match):

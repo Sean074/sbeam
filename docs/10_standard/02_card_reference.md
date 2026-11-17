@@ -1366,6 +1366,8 @@ AEFACT  SID  D1  D2  D3  D4  D5  D6  D7
 | D1–DN | `data` | list[float] | Decimal fractions 0.0–1.0; must start at 0.0 and end at 1.0 | required |
 
 Multiple continuation lines are supported. The list must have NSPAN+1 or NCHORD+1 values.
+An embedded blank field is refused (QRG 2024.1 p.1141 remark 2; #73 — it used to be
+skipped); trailing blanks are harmless.
 
 **Examples:**
 ```
@@ -1940,7 +1942,7 @@ AELIST  SID  E1  E2  E3  ...
 AELIST, 50, 1001, 1002, 1003, 1004
 ```
 
-**Validation:** Every box ID must fall within the range `[CAERO1.EID, CAERO1.EID + NSPAN×NCHORD − 1]` of at least one CAERO1.
+**Validation:** Every box ID must fall within the range `[CAERO1.EID, CAERO1.EID + NSPAN×NCHORD − 1]` of at least one CAERO1. An intervening blank field is refused (QRG 2024.1 p.1145 remark 3; #73 — it used to be skipped); trailing blanks are harmless.
 
 ---
 
@@ -1985,34 +1987,44 @@ TRIM, 11, 0.3, 1500.0, RHOREF, 2.377-3, PITCH, 0.0
 
 ---
 
-### DIVERG — Divergence speed analysis
+### DIVERG — Divergence analysis data
 
-Specifies the number of divergence roots to find and the Mach values at which to
-evaluate the divergence eigenvalue problem (Step 55). For each Mach the solver returns
-the lowest `NROOTS` positive divergence dynamic pressures `q_div`, their mode shapes, and
-— when `RHOREF` is given — the divergence speeds `V_div = √(2·q_div/ρ)`.
+MSC layout (QRG 2024.1 p.1603). Lists the Mach numbers at which the divergence eigenvalue
+problem is solved (Step 55). For each Mach the solver returns the lowest `NROOT` positive
+divergence dynamic pressures `q_div` and their mode shapes. Like MSC (remark 2) it reports
+dynamic pressures only: the divergence speed at a chosen density, `V = √(2·q_div/ρ)`, and the
+Mach-matched divergence point are worked out afterwards — theory §5.5.1
+(`docs/20_theory/01_aeroelastics_theory.md`).
 
 **Format:**
 ```
-DIVERG  SID  NROOTS  RHOREF  M1  M2  ...
-+       M7   M8      ...
+DIVERG  SID  NROOT  M1  M2  M3  M4  M5  M6
++       M7   M8     ...
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
 | SID | int | Unique identifier (referenced by case control `DIVERG=`) |
-| NROOTS | int | Number of divergence roots to find |
-| RHOREF | float | **sbeam extension** (field 4): reference density used to map `q_div → V_div`. Leave blank/`0.0` to omit `V_div`. |
-| M1, M2, … | float | Mach values (field 5 onward; continuation lines allowed). When omitted the AEROS Mach is used as a single point. |
+| NROOT | int | Number of divergence roots to output, ≥ 1. Default 1 |
+| M1, M2, … | float | Mach numbers, field 4 onward and on continuation lines. ≥ 0.0 and distinct (remark 3). A blank field ends the list (remark 4). With no Mach number the AEROS Mach is used as a single point (sbeam behaviour; what MSC does is *unverified*) |
 
-**Example:**
+**Examples** (MSC's own):
 ```
-DIVERG, 20, 2, 1.225, 0.4, 0.6, 0.8
+DIVERG, 70, 2, .5, .8, .9          $ QRG p.1603: three Machs, two roots each
+DIVERG     100      5       0.0    $ AAUG 2023.1 p.148: incompressible, five roots
 ```
 
-> **Note** — `RHOREF` occupies field 4; the Mach list begins in field 5. A DIVERG
-> subcase does not require a TRIM card: divergence depends only on `K_aa` and `Q_aa`,
-> not on the trim right-hand side.
+**Validation:**
+- A Mach after a blank field is refused: MSC stops reading at the blank (remark 4), so the
+  value would be ignored there. Trailing blanks are harmless.
+- Duplicate Mach numbers (remark 3), a negative Mach and `NROOT` < 1 are refused.
+- Mach 0.0 is accepted. The QRG says Mi > 0.0, but MSC's own divergence example (AAUG 2023.1
+  p.148) enters 0.0 for incompressible aerodynamics.
+
+> **Note** — before #73 sbeam read field 4 as an sbeam-only `RHOREF` density and started the
+> Mach list in field 5, so MSC decks lost their first Mach. A deck written for the old layout
+> now reads its density as a Mach number; remove it. A DIVERG subcase does not require a TRIM
+> card: divergence depends only on `K_aa` and `Q_aa`, not on the trim right-hand side.
 
 ---
 

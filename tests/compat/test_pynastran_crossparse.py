@@ -44,7 +44,6 @@ DECKS = sorted([*(REPO / "sample").glob("*.bdf"), *(REPO / "sample").glob("*.dat
 _SBEAM_EXTENSIONS = {
     "AEROS": "#87: sbeam reads MACH from field 9, blank in MSC",
     "TRIM": "#87/#88: sbeam's RHOREF pseudo-label and label pairs in field 9 (MSC AEQR)",
-    "DIVERG": "#73: sbeam's RHOREF in field 4, MSC's first Mach",
     "MASSSET": "#78: MSC name, different layout",
 }
 
@@ -201,6 +200,7 @@ def _sbeam_view(b: BulkData) -> dict[str, dict[Any, dict[str, Any]]]:
         "TRIM": {k: dict(mach=t.mach, q=t.q, vars=sorted(t.vars.items()))
                  for k, t in b.trims.items()},
         "TABLED1": {k: dict(x=list(t.xs), y=list(t.ys)) for k, t in b.tabled1s.items()},
+        "DIVERG": {k: dict(nroots=d.nroots, machs=list(d.machs)) for k, d in b.divergs.items()},
         "SPC": {"all": dict(v=_sbeam_spcs(b))},
         "SUPORT": {"all": dict(v=sorted((s.gid, s.dofs) for s in b.supports))},
     }
@@ -293,6 +293,7 @@ def _pyn_view(m: Any) -> dict[str, dict[Any, dict[str, Any]]]:
                  for k, t in m.trims.items()}
     v["TABLED1"] = {k: dict(x=_f(t.x), y=_f(t.y))
                     for k, t in m.tables_d.items() if t.type == "TABLED1"}
+    v["DIVERG"] = {k: dict(nroots=d.nroots, machs=_f(d.machs)) for k, d in m.divergs.items()}
     spcs = set()
     for sid, L in m.spcs.items():
         for c in L:
@@ -441,7 +442,10 @@ def _crafted(lines: list[str], tmp: Path) -> list[str]:
     ["PBUSH,7,K,1.,2.", "+,,RCV,1.,1."],                                  # #63 flags
     ["GRID*,20,,1.0,-2.0,*G", "*G,3.0,,136"],                              # #64 large field
     ["SPC1,100,12456,1,2,13"],
-], ids=["conm2-overflow", "cbar-pins", "load-3-lines", "pbush-flags", "grid-large", "spc1"])
+    ["DIVERG,70,2,.5,.8,.9"],                                             # #73 QRG p.1603
+    ["DIVERG     100      5       0.0"],                                  # #73 AAUG p.148
+], ids=["conm2-overflow", "cbar-pins", "load-3-lines", "pbush-flags", "grid-large", "spc1",
+        "diverg-qrg", "diverg-aaug"])
 def test_crafted_cards_agree(lines, tmp_path):
     assert _crafted(_GRIDS + lines, tmp_path) == []
 

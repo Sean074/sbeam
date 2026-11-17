@@ -92,6 +92,22 @@ def expand_int_list_with_thru(tokens: list[str]) -> list[int]:
     return result
 
 
+def list_fields(first: list[str], conts: list[list[str]], card: str, rule: str) -> list[str]:
+    """The values of a list card (``first`` then each continuation's data fields).
+
+    Trailing blanks are dropped; a blank followed by more values is refused with the
+    card's own ``rule`` (its QRG remark), never skipped (#73).
+    """
+    raw = list(first) + [f for cont in conts for f in cont[1:]]
+    while raw and not raw[-1].strip():
+        raw.pop()
+    for k, f in enumerate(raw):
+        if not f.strip():
+            after = [g.strip() for g in raw[k + 1:]]
+            raise ValueError(f"{card}: {rule}; remove the blank field before {after}")
+    return [f.strip() for f in raw]
+
+
 #: Data fields per physical line: fields 2–9 of a small-field line, or fields 2–5 (6–9 on
 #: the next line) of a 16-column large-field line.  Field 10 never holds data (QRG p.1048).
 _SMALL, _LARGE = 8, 4

@@ -7,7 +7,7 @@ from sbeam.model.aero import (
     Aeros, Caero1, Paero1, Pstrip, Stripk, Aefact, W2gj, Wkk, Aecorr, Chordcp, Set1,
     Spline2, Attach, Spline0, Aelist, Aecomp, Monpnt1, Monpnt3, Monsect,
 )
-from sbeam.parser.bulk_fields import FieldHandler, ContHandler, MultiHandler, to_float, to_int, to_int_opt, expand_int_list_with_thru
+from sbeam.parser.bulk_fields import FieldHandler, ContHandler, MultiHandler, to_float, to_int, to_int_opt, expand_int_list_with_thru, list_fields
 
 
 def _handle_aeros(fields: list[str], bulk: BulkData) -> None:
@@ -35,9 +35,9 @@ def _handle_aefact(fields: list[str], conts: list[list[str]], bulk: BulkData) ->
     sid = to_int(fields[1])
     if sid in bulk.aefacts:
         raise ValueError(f"Duplicate AEFACT SID {sid}")
-    data = [to_float(f) for f in fields[2:] if f.strip()]
-    for cont in conts:
-        data += [to_float(f) for f in cont[1:] if f.strip()]
+    data = [to_float(f) for f in list_fields(
+        fields[2:], conts, f"AEFACT {sid}",
+        "embedded blank fields are not allowed (QRG p.1141 remark 2)")]
     bulk.aefacts[sid] = Aefact(sid=sid, data=data)
 
 
@@ -254,9 +254,8 @@ def _handle_spline1(fields: list[str], bulk: BulkData) -> None:
 
 def _handle_aelist(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     sid    = to_int(fields[1])
-    tokens = [f for f in fields[2:]]
-    for cont in conts:
-        tokens += list(cont[1:])
+    tokens = list_fields(fields[2:], conts, f"AELIST {sid}",
+                         "intervening blank fields are not allowed (QRG p.1145 remark 3)")
     elements = expand_int_list_with_thru(tokens)
     if sid in bulk.aelists:
         raise ValueError(f"Duplicate AELIST SID {sid}")

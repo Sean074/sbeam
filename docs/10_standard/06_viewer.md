@@ -591,7 +591,8 @@ renders whichever result types it produced:
   colour is shown only when the subcase requested AEROF/APRES (`result.box_cp`); the cached
   `aero_model_144` supplies `g_disp` and the box geometry.
 - **Divergence sweep** (`Sol144DivergResult`, `_render_sol144_diverg`): per-Mach roots table
-  (root #, q-div, V-div when RHOREF > 0).
+  (root #, q-div). A density input above it (deck units, 0 = off) adds a V-div column,
+  `√(2·q_div/ρ)` — theory §5.5.1; the solver itself reports q only (#73).
 - **Transient maneuver** (`ManeuverResult`, `_render_sol144_maneuver`): time histories of
   Fz_aero, My_aero, and peak grid force (`results.peak_grid_force`, the DEF-M5 severity metric) with the critical sample marked; a 1-based sample slider scrubs
   the per-step deflected shape. An **Exports** row (AC5) offers two download buttons built

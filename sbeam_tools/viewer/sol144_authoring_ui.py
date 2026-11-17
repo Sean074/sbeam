@@ -375,16 +375,13 @@ def _trimcon_form(bulk: BulkData, cards: Optional[list[Trimcon]],
 
 
 def _diverg_form(bulk: BulkData, card: Optional[Diverg], default_id: int):
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     sid = col1.number_input("SID", min_value=1,
                             value=(card.sid if card else default_id),
                             key="auth_diverg_sid")
     nroots = col2.number_input("Roots (NROOTS)", min_value=1,
                                value=(card.nroots if card else 1),
                                key="auth_diverg_nroots")
-    rhoref = col3.number_input("RHOREF (0 = omit V_div)", min_value=0.0,
-                               value=(card.rhoref if card else 0.0),
-                               key="auth_diverg_rhoref", format="%.6g")
     machs_text = st.text_input(
         "Mach list", value=(" ".join(f"{m:g}" for m in card.machs) if card else "0.0"),
         key="auth_diverg_machs",
@@ -397,8 +394,10 @@ def _diverg_form(bulk: BulkData, card: Optional[Diverg], default_id: int):
     if not machs:
         st.warning("DIVERG needs at least one Mach number.")
         return None
-    return Diverg(sid=int(sid), nroots=int(nroots), rhoref=float(rhoref),
-                  machs=machs)
+    if len(set(machs)) != len(machs):
+        st.warning("DIVERG Mach numbers must be distinct (QRG p.1603 remark 3).")
+        return None
+    return Diverg(sid=int(sid), nroots=int(nroots), machs=machs)
 
 
 # ---------------------------------------------------------------------------

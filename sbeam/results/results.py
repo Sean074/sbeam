@@ -345,7 +345,6 @@ class Sol144TrimResult:
 class DivergRoot:
     """One divergence root (Step 55)."""
     q_div: float                          # divergence dynamic pressure (positive real root)
-    v_div: Optional[float] = None         # divergence speed = sqrt(2*q_div/rho); None when no RHOREF
     mode_shape: Optional[FloatArray] = None  # (n_dofs,) g-set divergence eigenvector (max-abs normalised)
 
 
@@ -366,7 +365,6 @@ class Sol144DivergResult:
     subcase_id: int
     diverg_sid: int
     nroots: int
-    rhoref: float                         # reference density for V_div (0.0 ⇒ V_div omitted)
     mach_results: list["DivergMachResult"]
 
 

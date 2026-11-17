@@ -5,7 +5,7 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.model.aero import Aestat, Aesurf, Trim, Diverg, Trimvar, Trimobj, Trimcon
 from sbeam.model.gust import Gustlf, KG_MAX
 from sbeam.model.maneuver import Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads
-from sbeam.parser.bulk_fields import FieldHandler, ContHandler, MultiHandler, to_float, to_int, to_int_opt, to_float_or_none
+from sbeam.parser.bulk_fields import FieldHandler, ContHandler, MultiHandler, to_float, to_int, to_int_opt, to_float_or_none, list_fields
 
 
 # ---------------------------------------------------------------------------
@@ -80,21 +80,27 @@ def _handle_trim(fields: list[str], conts: list[list[str]], bulk: BulkData) -> N
 
 
 def _handle_diverg(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
-    # DIVERG  SID  NROOTS  RHOREF  M1  M2  ...   (RHOREF is an sbeam extension in
-    # field 4 used only to map q_div -> V_div; leave blank/0.0 to omit V_div).
+    # DIVERG  SID  NROOT  M1  M2  M3 ... (QRG 2024.1 p.1603).  Every field from 4 on is
+    # a Mach number; a blank Mach field terminates the input (remark 4), so a Mach after
+    # a blank is refused rather than read (#73: field 4 used to be an sbeam RHOREF).
     sid    = to_int(fields[1])
-    nroots = to_int(fields[2]) if fields[2].strip() else 1  # QRG p.1603: Default = 1
+    nroots = to_int(fields[2]) if len(fields) > 2 and fields[2].strip() else 1  # Default = 1
     if nroots < 1:
-        raise ValueError(f"DIVERG {sid}: NROOTS must be >= 1, got {nroots}")
-    rhoref = to_float(fields[3]) if len(fields) > 3 and fields[3].strip() else 0.0
-    machs  = [to_float(f) for f in fields[4:] if f.strip()]
-    for cont in conts:
-        machs += [to_float(f) for f in cont[1:] if f.strip()]
+        raise ValueError(f"DIVERG {sid}: NROOT must be >= 1, got {nroots}")
+    machs = [to_float(f) for f in list_fields(
+        fields[3:], conts, f"DIVERG {sid}",
+        "a blank Mach field terminates the input (QRG p.1603 remark 4), so MSC "
+        "would not read the Mach numbers after it")]
     if sid in bulk.divergs:
         raise ValueError(f"Duplicate DIVERG SID {sid}")
+    # QRG p.1603 says Mi > 0.0, but MSC's own divergence example (AAUG 2023.1 p.148)
+    # enters 0.0 for incompressible aerodynamics, so 0.0 is accepted.
     if any(m < 0.0 for m in machs):
         raise ValueError(f"DIVERG {sid}: every Mach must be non-negative (got {machs})")
-    bulk.divergs[sid] = Diverg(sid=sid, nroots=nroots, rhoref=rhoref, machs=machs)
+    if len(set(machs)) != len(machs):
+        raise ValueError(f"DIVERG {sid}: Mach numbers must be distinct (QRG p.1603 "
+                         f"remark 3); got {machs}")
+    bulk.divergs[sid] = Diverg(sid=sid, nroots=nroots, machs=machs)
 
 # ---------------------------------------------------------------------------
 # Phase G0 — ZAERO-style transient maneuver-loads cards

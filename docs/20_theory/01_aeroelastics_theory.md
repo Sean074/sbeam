@@ -1123,8 +1123,8 @@ Rewritten as the standard problem $(K_{ll}^{-1}Q_{ll})\,x = (1/q)\,x$, the eigen
 $1/q$; the lowest $\texttt{NROOTS}$ divergence pressures are the reciprocals of the largest
 real-positive eigenvalues, taken in ascending $q$. This is the `DIVERG`-card sweep
 (`sol144.run_sol144_diverg` / `_divergence_roots`); each retained eigenvector $\phi$ is the
-divergence mode shape, expanded back to the g-set, and $V_\text{div}=\sqrt{2\,q_\text{div}/\rho}$
-when a reference density `RHOREF` is supplied.
+divergence mode shape, expanded back to the g-set. Like MSC, the solver reports dynamic
+pressures only (QRG 2024.1 p.1603, remark 2); the speed is worked out from them as in §5.5.1.
 
 ![Divergence amplification](../figures/divergence.svg)
 
@@ -1134,6 +1134,64 @@ static-aeroelastic instability.*
 
 The closed-form checks are the uniform cantilever wing (Bisplinghoff analytical $q_\text{div}$)
 and the Goland wing.
+
+#### 5.5.1 Divergence speed from a density
+
+Equation (21) fixes a dynamic pressure, not a speed: $K_{ll}$ and $Q_{ll}$ contain no density.
+A speed needs the density of a flight condition, which the deck does not define, so the
+`DIVERG` card carries Mach numbers only and the conversion is done afterwards (#73). From
+$q=\tfrac12\rho V^2$,
+
+$$
+V_\text{div} = \sqrt{\frac{2\,q_\text{div}}{\rho}} .
+\tag{21a}
+$$
+
+**Units.** $q_\text{div}$ is in the deck's pressure unit, so $\rho$ must be in the matching
+*mass* unit per volume — as MSC requires of its own reference density ("RHOREF must be input in
+mass units", AERO card, QRG 2024.1 p.1150, remark 4). At sea-level ISA:
+
+| Deck units | $q_\text{div}$ | $\rho_0$ | $V_\text{div}$ |
+|---|---|---|---|
+| N, m, kg | 20 000 Pa | 1.225 kg/m³ | 180.7 m/s |
+| lbf, ft, slug | 500 lbf/ft² | 0.0023769 slug/ft³ | 648.6 ft/s |
+| lbf, in | 3.472 lbf/in² (= 500 lbf/ft²) | 1.1463×10⁻⁷ lbf·s²/in⁴ (= slug/ft³ ÷ 12⁴) | 7783.5 in/s (= 648.6 ft/s) |
+
+The lbf-in density is the usual trap: entering the slug/ft³ value 0.0023769 in an lbf-in deck
+makes $\rho$ $12^4 = 20\,736$ times too large and the speed $\sqrt{20\,736}=144$ times too small
+(54.1 in/s).
+
+**True or equivalent airspeed.** With the density at altitude, Equation (21a) gives the true
+airspeed (TAS). With the sea-level density $\rho_0$ it gives the equivalent airspeed (EAS),
+$V_E=\sqrt{2\,q_\text{div}/\rho_0}$, which depends on $q_\text{div}$ alone and is the same at
+every altitude for a given Mach.
+
+**Matching the Mach number.** $q_\text{div}$ is computed at the Mach on the card. Subsonic
+compressibility (Prandtl–Glauert) raises the lift slope, so $q_\text{div}$ normally falls as
+Mach rises. A speed from Equation (21a) is only a flight condition
+if the aircraft flying at that speed and altitude is at the Mach used. At altitude $h$ with
+speed of sound $a$ and static pressure $p$, flight at Mach $M$ has
+
+$$
+q_\text{fly}(M) = \tfrac12\,\rho\,a^2 M^2 = \tfrac{\gamma}{2}\,p\,M^2 \quad(\gamma = 1.4),
+\tag{21b}
+$$
+
+which rises with $M$, while $q_\text{div}(M)$ falls. The matched divergence point is the Mach
+$M^*$ where they cross, $q_\text{fly}(M^*) = q_\text{div}(M^*)$:
+
+1. List enough Mach numbers on `DIVERG` to bracket the crossing (e.g. 0.0, 0.5, 0.7, 0.8, 0.9).
+2. For each, compute $q_\text{fly}(M_i)$ at the altitude and compare with the lowest root
+   $q_\text{div}(M_i)$.
+3. Interpolate $q_\text{div}-q_\text{fly}$ to zero for $M^*$; then
+   $V_\text{div,TAS} = M^*a$ and $V_\text{div,EAS} = \sqrt{2\,q_\text{div}(M^*)/\rho_0}$.
+
+A speed taken at a single card Mach with an unrelated density — for instance Mach 0.0 with
+the sea-level density for a high-subsonic aircraft — ignores the drop in $q_\text{div}$ with
+Mach and overstates the divergence speed. Repeat at each altitude of interest; the lowest
+matched speed over the flight envelope is the one to compare with the airworthiness margin,
+a process-tier check (`docs/30_future/loads_process.md`). The viewer's divergence table
+applies Equation (21a) at a density the user enters (`06_viewer.md`).
 
 ---
 

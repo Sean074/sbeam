@@ -124,8 +124,10 @@ def test_trimcon_multicard_same_sid():
     assert _reparse(lines).trimcons[5] == cons
 
 
-def test_diverg_roundtrip():
-    d = Diverg(sid=6, nroots=2, rhoref=1.225, machs=[0.0, 0.5, 0.8])
+@pytest.mark.parametrize("machs", [[0.0, 0.5, 0.8], [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]],
+                         ids=["one-line", "continuation"])
+def test_diverg_roundtrip(machs):
+    d = Diverg(sid=6, nroots=2, machs=machs)
     assert _reparse(cw.write_diverg(d)).divergs[6] == d
 
 

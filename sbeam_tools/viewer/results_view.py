@@ -743,7 +743,11 @@ def _render_sol144_deflected(bulk: BulkData, result: Sol144TrimResult) -> None:
 def _render_sol144_diverg(result: Sol144DivergResult) -> None:
     """Per-Mach divergence roots table (Step 55 DIVERG sweep)."""
     st.subheader("Aerodynamic divergence sweep")
-    has_v = result.rhoref > 0.0
+    # The solver reports q only, as MSC does (#73); the speed needs a density, which
+    # is the user's flight condition: V = sqrt(2 q / rho) in the deck's units.
+    rho = st.number_input(
+        "Density for V-div (deck units; 0 = omit)", min_value=0.0, value=0.0,
+        format="%.6g", key=f"diverg_rho_{result.subcase_id}")
     for mr in result.mach_results:
         st.markdown(f"**Mach {mr.mach:.4g}**")
         if not mr.roots:
@@ -752,8 +756,8 @@ def _render_sol144_diverg(result: Sol144DivergResult) -> None:
         rows = []
         for i, root in enumerate(mr.roots, start=1):
             row = {"Root": i, "q-div": root.q_div}
-            if has_v and root.v_div is not None:
-                row["V-div"] = root.v_div
+            if rho > 0.0:
+                row["V-div"] = float(np.sqrt(2.0 * root.q_div / rho))
             rows.append(row)
         st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
 
