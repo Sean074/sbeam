@@ -220,6 +220,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and warnings, before and after.
 
 ### Fixed
+- **A deck with more than one CAERO1 interference group is refused** (#76). MSC:
+  "aerodynamic elements with different IGIDs are uncoupled" (QRG 2024.1 PDF p.1343; AAUG
+  2023.1 p.122). sbeam parsed IGID and never read it, so panels in different groups still
+  interfered and the result differed from MSC's with no message. All CAERO1 cards must
+  now share one IGID. Uncoupling the AIC blocks was the alternative; nothing consumes it
+  (rule 5). No repo deck uses two groups. Found by the 2026-11-16 audit (M6, A6).
 - **SPLINE2 `USAGE = FORCE` / `DISP` and out-of-range `DZ` / `DTOR` are refused** (#75).
   MSC: a FORCE or DISP spline is in only one of the force and displacement transforms
   (QRG 2024.1 PDF p.2848 remark 5, p.2850 remark 9). sbeam stored the word and solved

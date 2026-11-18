@@ -1479,7 +1479,7 @@ CAERO1  EID  PID  CP  NSPAN  NCHORD  LSPAN  LCHORD  IGID
 | NCHORD | `nchord` | int | Number of equal chordwise boxes (0 if LCHORD used) | `0` |
 | LSPAN | `lspan` | int | AEFACT SID for non-uniform span breakpoints (0 if NSPAN used) | `0` |
 | LCHORD | `lchord` | int | AEFACT SID for non-uniform chord breakpoints (0 if NCHORD used) | `0` |
-| IGID | `igid` | int | Interference group ID (ignored in Phase A) | `0` |
+| IGID | `igid` | int | Interference group ID. **All CAERO1 cards must share one value.** MSC: "aerodynamic elements with different IGIDs are uncoupled" (QRG 2024.1 PDF p.1343); sbeam builds one AIC over every panel, so a deck with more than one IGID is refused (#76; the field used to be ignored) | `0` |
 | X1, Y1, Z1 | `p1` | float×3 | Root leading-edge point, in CP coordinate system | required |
 | X12 | `x12` | float | Root chord length in freestream +X direction | required |
 | X4, Y4, Z4 | `p4` | float×3 | Tip leading-edge point, in CP coordinate system | required |

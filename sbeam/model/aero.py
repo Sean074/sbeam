@@ -27,7 +27,7 @@ class Caero1:
     nchord: int          # chordwise box divisions (0 when LCHORD used)
     lspan:  int          # AEFACT sid for span fractions (0 when NSPAN used)
     lchord: int          # AEFACT sid for chord fractions (0 when NCHORD used)
-    igid:   int          # interference group ID (ignored in Phase A)
+    igid:   int          # interference group; one group per deck (the parser refuses a second, #76)
     p1:     tuple[float, float, float]   # root leading-edge in CP frame
     x12:    float        # root chord length
     p4:     tuple[float, float, float]   # tip leading-edge in CP frame

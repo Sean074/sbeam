@@ -286,6 +286,20 @@ def _check_aero_panels(bulk: BulkData) -> None:
     if bulk.caero1s and bulk.aeros is None:
         raise ValueError("CAERO1 card(s) present but no AEROS card found")
 
+    # "aerodynamic elements with different IGIDs are uncoupled" (MSC Nastran 2024.1 QRG
+    # PDF p.1343).  sbeam builds one AIC over every panel, so two groups would still
+    # interfere; it parsed IGID and never read it (#76)
+    groups: dict[int, list[int]] = {}
+    for eid, caero in bulk.caero1s.items():
+        groups.setdefault(caero.igid, []).append(eid)
+    if len(groups) > 1:
+        listing = "; ".join(f"IGID {g}: CAERO1 {', '.join(str(e) for e in sorted(eids))}"
+                            for g, eids in sorted(groups.items()))
+        raise ValueError(
+            f"CAERO1 cards use {len(groups)} interference groups ({listing}). NASTRAN "
+            "uncouples panels in different groups (QRG p.1343); sbeam couples every panel "
+            "with every other. Give all panels the same IGID")
+
     # Validate CAERO1 cross-references (deferred because AEFACT/PAERO1/PSTRIP may
     # appear after CAERO1).  A CAERO1 PID resolves to either a PAERO1 (ordinary VLM
     # panel) or a PSTRIP (decoupled strip body panel).

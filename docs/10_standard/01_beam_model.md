@@ -124,7 +124,7 @@ All internal computation is in global CID 0. After parsing, `resolve_grid_positi
 | AEROS | One per model | Duplicate raises `ValueError` |
 | CAERO1 NSPAN/LSPAN | Exactly one non-zero | Both zero or both non-zero raises `ValueError` |
 | CAERO1 NCHORD/LCHORD | Exactly one non-zero | Both zero or both non-zero raises `ValueError` |
-| CAERO1 IGID | Ignored in Phase A | Interference group support deferred |
+| CAERO1 IGID | One group per deck | Every panel interferes with every other; a deck with two IGIDs is refused (#76) |
 | PAERO1 | Phase A stub | Body element support deferred |
 | W2GJ/WKK/AECORR | One correction tier active | WKK overrides WT2 if both present |
 | Coordinate systems | CORD2R only (rectangular) | CORD2C, CORD2S, CORD1R not implemented |

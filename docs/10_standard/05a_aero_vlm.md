@@ -101,7 +101,7 @@ CAERO1  EID  PID  CP  NSPAN  NCHORD  LSPAN  LCHORD  IGID
 | CAERO1 NCHORD | Number of equal chordwise boxes (0 if LCHORD used) |
 | CAERO1 LSPAN | AEFACT SID for non-uniform span breakpoints (0 if NSPAN used) |
 | CAERO1 LCHORD | AEFACT SID for non-uniform chord breakpoints (0 if NCHORD used) |
-| CAERO1 IGID | Interference group ID (ignored in Phase A) |
+| CAERO1 IGID | Interference group ID. One group per deck: every panel interferes with every other, and a second IGID is refused (#76; MSC uncouples different groups, QRG 2024.1 PDF p.1343) |
 | X1, Y1, Z1 | Root leading-edge point P1, in CP coordinate system |
 | X12 | Root chord length in freestream +X direction |
 | X4, Y4, Z4 | Tip leading-edge point P4, in CP coordinate system |
