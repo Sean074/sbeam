@@ -83,11 +83,12 @@ $ convention, and it is what makes URDD3 = -g a 1g pull (see the TRIM cards).
 CORD2R, 990, 0, 2.4375, 0.0, 0.60, 2.4375, 0.0, -9.40
 +, 12.4375, 0.0, 0.60
 $
-$ CIDs 991-994 — SPLINE2 axis systems.  MSC convention: the spline axis is
-$ the CID *y*-axis, the x-axis is the chord / rigid-arm direction and the
-$ z-axis the deflection direction.  Each is built from the elastic axis it
-$ serves: y = unit(root EA -> tip EA), z = global +Z made orthogonal to y
-$ (so the 1.5 deg wing dihedral is carried exactly), x = y cross z.
+$ CIDs 991-994 — SPLINE2 axis systems.  MSC convention (QRG SPLINE2 remark
+$ 2): the spline axis is the CID *y*-axis projected onto the plane of the
+$ panel; the deflection direction is the panel normal.  Only the y-axis and
+$ the origin of each CID are read (#74).  Each is built from the elastic
+$ axis it serves: y = unit(root EA -> tip EA), z = global +Z made orthogonal
+$ to y, x = y cross z.
 $ CID 991 — RIGHT wing spline axis, y = (-0.016064, 0.999527, 0.026238)
 CORD2R, 991, 0, 2.70000, 0.00000, 1.25000, 2.70422, -0.26234, 11.24656
 +, 12.69871, 0.16069, 1.25000
@@ -466,8 +467,8 @@ $ run cessna210_flagship_trim.bdf first, read the trimmed ELEV out of the
 $ SUBCASE 1 f06 block, then write it in here.  Start the table at 0.0 instead
 $ and the airplane takes a 3.8 deg step elevator input at t = 0.
 $
-$ Trimmed 1g ELEV = -0.06792834 rad (-3.89201 deg).  Elevator TE-DOWN step: ramp
-$ +2 deg (+0.03490659 rad) over 0.3 s to -0.03302176 rad, then hold to 1.0 s.
+$ Trimmed 1g ELEV = -0.06796414 rad (-3.89406 deg).  Elevator TE-DOWN step: ramp
+$ +2 deg (+0.03490659 rad) over 0.3 s to -0.03305755 rad, then hold to 1.0 s.
 $ On this aft tail +ELEV is NOSE-DOWN (the 2.5g trim needs MORE TE-up, T3 gate);
 $ the restrained l-set transient sees only the tail-lift increase, so Fz rises.
 $ Carried to 8 decimals deliberately: the transient reads t = 0 straight off
@@ -481,7 +482,7 @@ $ case it was authored for.  Selecting a MASSSET alongside MLOADS shifts the
 $ trimmed elevator, so this first point is no longer that case's equilibrium
 $ and the run starts with a step input (see test T6).
 TABLED1, 300
-+, 0.0, -0.06792834, 0.3, -0.03302176, 1.0, -0.03302176, ENDT
++, 0.0, -0.06796414, 0.3, -0.03305755, 1.0, -0.03305755, ENDT
 $
 $ --------------------------------------------------------------------
 $ sbeam aero correction  —  cessna210_flagship_bulk.bdf

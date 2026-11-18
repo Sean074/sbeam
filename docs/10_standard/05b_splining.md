@@ -89,9 +89,9 @@ SPLINE2  EID  CAERO  ID1  ID2  SETG  DZ  DTOR  CID
 | SETG  | —       | SET1 SID listing the structural grids |
 | DZ    | 0.0     | Linear (deflection) attachment flexibility: 0 = rigid, > 0 = spring; negative warns and is treated as rigid |
 | DTOR  | 1.0     | Torsional flexibility ratio **EI/GJ** — now USED (only the ratio matters); ≤ 0 warns and falls back to 1.0 |
-| CID   | 0       | CORD2R SID; **the CID *y*-axis is the spline axis** (MSC convention; QRG SPLINE2 remark 2). The CID x-axis is the chord / rigid-arm direction, the z-axis the deflection direction |
-| DTHX  | 0.0     | Bending-slope (rotation about CID x) attachment flexibility: 0 = rigid, > 0 = spring, negative = not attached |
-| DTHY  | 0.0     | Torsion (rotation about CID y = spline axis) attachment flexibility (same convention) |
+| CID   | 0       | CORD2R SID. **The spline axis is the CID *y*-axis projected onto the plane of the panel** (QRG 2024.1 PDF p.2849, SPLINE2 remark 2). Only the y-axis and the origin are read: the deflection direction is the panel normal and the chord / rigid-arm direction is axis × normal (#74). A y-axis normal to the panel is refused |
+| DTHX  | 0.0     | Bending-slope (rotation about the spline's x-axis, ĉ) attachment flexibility: 0 = rigid, > 0 = spring, negative = not attached |
+| DTHY  | 0.0     | Torsion (rotation about the spline axis ŝ) attachment flexibility (same convention) |
 | USAGE | BOTH    | FORCE / DISP / BOTH (informational; not filtered in Phase B) |
 
 **Formulation.** Each SET1 grid attaches its *deflection* `w_g = u·ẑ` to an infinite beam
@@ -146,16 +146,29 @@ columns, hinge moments, `MONPNT1`) and **raises on any ID collision** — a CAER
 overlap and one box's load is attributed to another. `build_aero_model` validates it
 immediately after meshing; `AeroModel.require_box_id_to_k()` hands out the validated map.
 
-### CID-aware DOF projection
+### The spline frame: panel plane + projected CID y-axis (#74)
 
-All structural DOFs are in global CID 0. The spline CID provides the projections:
+All structural DOFs are in global CID 0. The spline frame comes from the **panel** and the
+**y-axis of CID** (`spline._spline2_frame`), as MSC defines it: "The spline axis for panels
+is the projection of the y-axis of coordinate system CID, projected onto the plane of the
+panel" (QRG 2024.1 PDF p.2849, SPLINE2 remark 2).
 
 ```
 origin, R_cid = get_transform(spline2.cid, cord2rs)
-c_hat = R_cid[:, 0]   # chord / rigid-arm direction (CID x)
-s_hat = R_cid[:, 1]   # spline axis (CID y) — MSC convention
-z_hat = R_cid[:, 2]   # deflection direction (CID z)
+z_hat = normal of the covered boxes            # deflection and box-force direction
+s_hat = unit(R_cid[:, 1] − (R_cid[:, 1]·z_hat) z_hat)   # spline axis, in the panel plane
+c_hat = s_hat × z_hat                          # chord / rigid-arm direction
 ```
+
+The CID x- and z-axes are not read. A dihedral or canted panel therefore needs no
+hand-canted CID: `CID = 0` on a 10° dihedral wing gives the axis `(0, cos Γ, sin Γ)` and
+the deflection direction `(0, −sin Γ, cos Γ)`. Before #74 the CID z-axis was the
+deflection direction, so that deck transferred `F·ẑ_basic` only and lost the whole side
+force of the wing without a message; a CID whose z-axis was slightly off the panel normal
+(the flagship wing, 0.024°) put a small chordwise force on the structure. The origin is
+the CID origin: the spline lies along the projected axis through it, and a point's
+distance from the panel plane does not enter. A CID y-axis normal to the panel has no
+projection and is refused; so is a box range whose boxes do not share one plane.
 
 Per grid: deflection DOF value = `u·ẑ` (translation columns weighted by `z_hat[d]`);
 bending-slope DOF = `ω·ĉ` (rotation columns via `c_hat[d−3]`, if DTHX ≥ 0); torsion DOF =

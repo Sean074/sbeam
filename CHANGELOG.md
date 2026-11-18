@@ -176,6 +176,23 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and warnings, before and after.
 
 ### Fixed
+- **SPLINE2 projects its axis into the panel plane, as MSC does; a dihedral wing splined
+  with CID 0 no longer loses its side force** (#74). MSC: "The spline axis for panels is
+  the projection of the y-axis of coordinate system CID, projected onto the plane of the
+  panel" (QRG 2024.1 PDF p.2849, SPLINE2 remark 2). sbeam took the CID z-axis as the
+  deflection and force direction, so `sample/val_dihedral_trim.bdf` with CID 0 (legal in
+  MSC) transferred Fz only: 100 % of each semi-span's side force was dropped with no
+  message. The deflection direction is now the panel normal, the axis is CID y projected
+  into the panel, and the CID x- and z-axes are not read. A y-axis normal to the panel is
+  refused. **Numbers that move:** decks whose CID z was already the panel normal are
+  unchanged (HA144A family, lateral, thrust, dihedral sample). The flagship wing's CIDs
+  991/992 had z 0.024° off the panel normal, which put a chordwise force of 4.2e-4 × Fz
+  on the wing; its operators move by 4.2e-4, 1g ELEV −0.06792834 → −0.06796414 rad,
+  ANGLEA 0.04174227 → 0.04174605 rad, Q-DIV 5.373047E+04 → 5.373092E+04, and the
+  wing-root monitor FX 1.48 N → 0. The MLOADS deck's absolute elevator table is re-baked
+  to the new trim. Invariant gate: on every repo deck each rigid-body motion moves every
+  SPLINE2 box along its own normal. Design note
+  `docs/30_future/designs/spline2_panel_plane.md`. Found by the 2026-11-16 audit (M3, A15).
 - **A rotated AEROS ACSID is refused; documented "must be" rules are enforced** (#58).
   sbeam takes the freestream along basic +x and never reads ACSID, so **a deck whose
   ACSID was rotated relative to basic ran with the flow in the wrong direction**. ACSID

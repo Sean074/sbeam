@@ -1703,9 +1703,9 @@ The continuation line is optional (DTHX/DTHY default 0.0 = rigid attachment).
 | SETG | `setg` | int | SET1 SID listing the structural grids | required |
 | DZ | `dz` | float | Linear (deflection) attachment flexibility: `0.0` = rigid, > 0 = spring; negative warns and is treated as rigid | `0.0` |
 | DTOR | `dtor` | float | Torsional flexibility ratio **EI/GJ** (used; only the ratio matters); ≤ 0 warns and falls back to 1.0 | `1.0` |
-| CID | `cid` | int | CORD2R CID; the **y-axis** is the spline axis, the x-axis the chord/rigid-arm direction, the z-axis the deflection direction (MSC convention) | `0` |
-| DTHX | `dthx` | float | Bending-slope (rotation about CID x) attachment flexibility: `0.0` = rigid, > 0 = spring, negative = not attached | `0.0` |
-| DTHY | `dthy` | float | Torsion (rotation about CID y = spline axis) attachment flexibility, same convention | `0.0` |
+| CID | `cid` | int | CORD2R CID. The spline axis is its **y-axis projected onto the plane of the panel** (QRG 2024.1 PDF p.2849 remark 2); the deflection direction is the panel normal and the chord/rigid-arm direction is axis × normal. The CID x- and z-axes are not read (#74). A y-axis normal to the panel is refused | `0` |
+| DTHX | `dthx` | float | Bending-slope (rotation about the spline's x-axis: axis × normal) attachment flexibility: `0.0` = rigid, > 0 = spring, negative = not attached | `0.0` |
+| DTHY | `dthy` | float | Torsion (rotation about the spline axis) attachment flexibility, same convention | `0.0` |
 | USAGE | `usage` | str | `FORCE` / `DISP` / `BOTH` (informational; not filtered in Phase B) | `"BOTH"` |
 
 Note the blank field before USAGE on the continuation line (field 4).
