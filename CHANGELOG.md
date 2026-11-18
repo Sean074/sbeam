@@ -232,6 +232,24 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and warnings, before and after.
 
 ### Fixed
+- **SOL 144 f06 labels that misled a comparison with MSC** (#82). Checked against MSC's
+  own HA144A listing (AAUG 2023.1 PDF p.233–237):
+  - **Coefficient frame.** sbeam prints coefficients in basic axes; MSC prints the AEROS
+    reference frame, so on HA144A CZα is +5.070976 in sbeam and −5.070975 in MSC. The
+    header said just "CZ". The STABILITY DERIVATIVES block now states the frame and
+    prints MSC's "TRANSFORMATION FROM BASIC TO REFERENCE COORDINATES". No number moves.
+  - **URDD rows were per unit basic acceleration**, while the trim variable of that name
+    is a reference-frame component. They are now per unit of the label: restrained URDD3
+    on HA144A is CZ −1.0097e-4, CMY +7.691e-5 (was +/−; MSC −9.804e-5, +7.362e-5).
+    A deck with no RCSID is unchanged.
+  - **Hinge moments.** The per-variable rows were rigid and the "TOTAL (TRIM)" row
+    elastic, in one column. The derivative block now has RIGID and RESTRAINED columns
+    (new: `Sol144TrimResult.hinge_moments_restrained`), and the trimmed moment moves to
+    its own CONTROL SURFACE POSITION AND HINGE MOMENT block. HA144A: restrained/rigid
+    ratios within 1e-3 of MSC's, trimmed ELEV moment 5083.0 against 2 × 2544.685.
+  - **AEROF/APRES `BOX ID`** was a running index 1..N; it is the NASTRAN box ID (1000,
+    1001 …), as in MSC's force listing (new: `Sol144TrimResult.box_ids`).
+  Found by the 2026-11-16 audit (O1–O4).
 - **A deck with more than one CAERO1 interference group is refused** (#76). MSC:
   "aerodynamic elements with different IGIDs are uncoupled" (QRG 2024.1 PDF p.1343; AAUG
   2023.1 p.122). sbeam parsed IGID and never read it, so panels in different groups still

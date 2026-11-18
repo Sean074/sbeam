@@ -50,6 +50,7 @@ from sbeam.model.gust import Gustlf
 # layering (util has no sol144-internal imports; derivs/diverg import util).
 from sbeam.solver.sol144_util import (  # noqa: F401
     AeroCache, urdd_rcsid_to_basic, urdd_basic_to_rcsid, load_resultant,
+    urdd_derivs_to_label_frame,
     build_inertial_cols, get_suport_local, pitch_moment, aero_moment_resultant,
     URDD_DOF,
 )
@@ -60,6 +61,7 @@ from sbeam.solver.sol144_trim_solve import (  # noqa: F401
 from sbeam.solver.sol144_derivs import (  # noqa: F401
     compute_rigid_derivs, compute_hinge_moments,
     compute_restrained_derivs, compute_unrestrained_derivs,
+    compute_restrained_hinge_moments,
 )
 from sbeam.solver.sol144_diverg import (  # noqa: F401
     run_sol144_diverg, divergence_dynamic_pressure, divergence_roots,
@@ -293,6 +295,7 @@ class _TrimState:
     total_cmx: float = field(init=False)
     total_cmz: float = field(init=False)
     hinge_moments: Any = field(init=False)
+    hinge_moments_restrained: Any = field(init=False)
 
     # _stage_flight_and_net_loads
     box_forces: FloatArray = field(init=False)
@@ -916,13 +919,22 @@ def _stage_compute_derivs(st: _TrimState) -> None:
     # ------------------------------------------------------------------ #
     # Elastic restrained derivatives (finite difference, u_r = 0)
     # ------------------------------------------------------------------ #
+    rest_box_forces: dict[str, FloatArray] = {}
     rest_derivs = compute_restrained_derivs(
         K_ll_lu, l_idx, Q_ax_a, M_ax_a, all_labels,
         aero, D_jx,
         T, free_local, len(red_dofs),
         bulk, x_ref, q_dyn, suport_pos,
         f_box_yaw=st.f_box_yaw,
+        box_force_derivs=rest_box_forces,
     )
+    # The URDD rows come out per unit basic acceleration; the trim variable of that
+    # name is an RCSID component, and the f06 prints its value in that frame (#82)
+    has_rcsid = bool(st.aeros.rcsid)
+    rest_derivs = urdd_derivs_to_label_frame(rest_derivs, st.R_rcsid, has_rcsid)
+    st.hinge_moments_restrained = urdd_derivs_to_label_frame(
+        _by_label(compute_restrained_hinge_moments(aero, bulk, rest_box_forces)),
+        st.R_rcsid, has_rcsid)
 
     # ------------------------------------------------------------------ #
     # Unrestrained (mean-axis / inertia-relief) derivatives — AE8b
@@ -1178,6 +1190,9 @@ def _pack_trim_result(st: _TrimState) -> Sol144TrimResult:
         maneuver_closure=st.maneuver_closure,
         q_div=st.q_div,
         hinge_moments=st.hinge_moments,
+        hinge_moments_restrained=_by_surface(st.hinge_moments_restrained),
+        box_ids=[bid for bid, _k in sorted(st.aero.require_box_id_to_k().items(),
+                                           key=lambda item: item[1])],
         trim_mode=st.trim_mode,
         monitor_loads=st.monitor_loads,
         section_loads=st.section_loads,
@@ -1199,6 +1214,18 @@ def _pack_trim_result(st: _TrimState) -> Sol144TrimResult:
         massset_mass=mass_case_gpwg.total_mass,
         massset_cg=(mass_case_gpwg.cg_x, mass_case_gpwg.cg_y, mass_case_gpwg.cg_z),
     )
+
+
+def _by_label(table: dict[str, dict[str, float]]) -> dict[str, dict[str, float]]:
+    """Transpose ``{surface: {label: value}}`` to ``{label: {surface: value}}``."""
+    out: dict[str, dict[str, float]] = {}
+    for outer, row in table.items():
+        for inner, value in row.items():
+            out.setdefault(inner, {})[outer] = value
+    return out
+
+
+_by_surface = _by_label          # the transpose is its own inverse
 
 
 def run_sol144_trim(

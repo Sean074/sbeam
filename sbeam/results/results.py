@@ -324,6 +324,8 @@ class Sol144TrimResult:
     maneuver_closure: Optional[FloatArray] = None  # (6,) body-frame resultant (Fx,Fy,Fz,Mx,My,Mz) of net_loads about the moment ref; ≈0 for a balanced free-aircraft maneuver (V-C5/KC9)
     q_div: Optional[float] = None             # critical divergence dynamic pressure (restrained l-set); None if none
     hinge_moments: Optional[dict[str, dict[str, float]]] = None      # {AESURF label: {'total': HM/q at trim, <trim_label>: dHM/dδ}} about cid1 hinge axis
+    hinge_moments_restrained: Optional[dict[str, dict[str, float]]] = None  # {AESURF label: {<trim_label>: elastic-restrained dHM/dδ}}, same units as hinge_moments (#82)
+    box_ids: Optional[list[int]] = None       # NASTRAN box ID of each box, in box_cp / box_forces order (#82)
     trim_mode: str = "determined"             # "determined" or "over-determined" (Step 52)
     monitor_loads: Optional[dict[str, MonitorLoad]] = None      # {name: MonitorLoad} integrated section loads (MON1–MON3)
     section_loads: Optional[dict[str, SectionCutResult]] = None  # {name: SectionCutResult} MONSECT running loads

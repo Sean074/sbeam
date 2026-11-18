@@ -575,7 +575,7 @@ renders whichever result types it produced:
   trim); trim-variable table (FREE/PRESCRIBED, value); stability-derivative table with
   rigid, elastic-restrained, and elastic-unrestrained (mean-axis, AE8b) columns
   (CZ/CMY/CX/CY/CMX/CMZ; unrestrained CZ/CMY blank on URDD rows); `q_div` readout with q/q_div ratio
-  ("No divergence found" when `None`); per-AESURF hinge-moment table; monitor-point integrated
+  ("No divergence found" when `None`); per-AESURF hinge-moment table (rigid and elastic-restrained derivatives, and the trimmed moment on its own row group, #82); monitor-point integrated
   loads (Fx…Mz, from `MonitorLoad.totals`); **section-cut running loads**
   (`_render_section_cuts`, Monitor Phase 2) — one expander per `MONSECT` with the
   per-station table in the cut's own labelled components (the legend is rendered with it,

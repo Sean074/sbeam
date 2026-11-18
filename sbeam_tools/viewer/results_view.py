@@ -449,15 +449,23 @@ def _render_sol144_trim(bulk: BulkData, result: Sol144TrimResult) -> None:
     # ---- Hinge moments ----
     if result.hinge_moments:
         st.markdown("**Hinge-moment derivatives** (about each AESURF hinge axis; CID1 and CID2 halves summed)")
+        restrained = result.hinge_moments_restrained or {}
         for surf in sorted(result.hinge_moments):
             entry = result.hinge_moments[surf]
             rows = [
-                {"Trim variable": k, "d(HM)/d(var)": result.q * entry[k]}
+                {"Trim variable": k, "Rigid d(HM)/d(var)": result.q * entry[k],
+                 "Restrained d(HM)/d(var)": (result.q * restrained[surf][k]
+                                              if k in restrained.get(surf, {}) else None)}
                 for k in sorted(k for k in entry if k != "total")
             ]
-            rows.append({"Trim variable": "TOTAL (trim)", "d(HM)/d(var)": result.q * entry["total"]})
             st.caption(f"Surface: {surf}")
             st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
+        # The trimmed moment is a result of the elastic trim, not a derivative row (#82)
+        st.markdown("**Control-surface position and hinge moment** (trimmed)")
+        st.dataframe(style_numeric(pd.DataFrame([
+            {"Surface": surf, "Position": result.trim_vars.get(surf, 0.0),
+             "Hinge moment": result.q * result.hinge_moments[surf]["total"]}
+            for surf in sorted(result.hinge_moments)])), width="stretch")
 
     # ---- Monitor-point integrated loads ----
     if result.monitor_loads:

@@ -36,7 +36,15 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
   downstream.
 - **URDD card values are given in the RCSID frame** and rotated to basic before use;
   URDD1–6 are rigid accelerations of the whole airframe about the SUPORT point
-  (`solver/sol144_util.py:54-121, 161-171`).
+  (`solver/sol144_util.py:54-121, 161-171`). **Derivative rows for a URDD label are per
+  unit of that RCSID component** (`urdd_derivs_to_label_frame`, #82): the coefficient is
+  in basic axes like every other row, the variable is the label. Until #82 the rows were
+  per unit basic acceleration, so on a z-down RCSID the restrained URDD3 row had the
+  opposite sign to MSC's (AAUG 2023.1 PDF p.234).
+- **The f06 states this frame** (#82). The STABILITY DERIVATIVES block prints MSC's
+  "TRANSFORMATION FROM BASIC TO REFERENCE COORDINATES"; a coefficient triple in MSC's
+  reference frame is `[T]` times sbeam's. On HA144A `[T] = diag(−1, 1, −1)`: sbeam
+  CZα = +5.070976, MSC −5.070975 (AAUG p.233).
 
 ## 2. Aerodynamic forces and moments
 
@@ -159,7 +167,10 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
   axis, i.e. trailing-edge-down for a spanwise (+y) hinge. Deflections in radians
   (flat-plate column, same units as ANGLEA) (`aero/integration.py:334-336, 393-409`).
 - Hinge moment: `HM = Σ_{j∈AELIST} [(r_j−o)×F_j]·ĥ`, in force/q units, about the same
-  cid1 +y axis as positive deflection (`solver/sol144_derivs.py:114-125`).
+  cid1 +y axis as positive deflection (`solver/sol144_derivs.py`). The f06 prints the
+  derivatives in RIGID and RESTRAINED columns and the trimmed moment in its own block
+  (#82); HA144A matches MSC's listing (AAUG 2023.1 PDF p.234–235) with the factor of two
+  between the full-span deck and MSC's half model.
 - **Elevator (the only surface any deck defines, always labelled `ELEV`):** positive =
   TE-down. On the Cessna aft tail that is **nose-down** (the 2.5g gate trims more
   TE-up, `tests/aero/test_cessna210_flagship.py:259-266`); on the HA144A canard

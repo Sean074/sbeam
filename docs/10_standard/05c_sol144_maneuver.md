@@ -566,11 +566,13 @@ half-span decks), seeds an `AeroCache` shared across subcases, and calls
 | Block | Source |
 |-------|--------|
 | TRIM VARIABLES (free vs prescribed) | `result.trim_vars` + the TRIM card |
-| STABILITY DERIVATIVES (rigid + elastic restrained) | `result.rigid_derivs`, `result.restrained_derivs` |
+| STABILITY DERIVATIVES (rigid + elastic restrained + unrestrained) | `result.rigid_derivs`, `result.restrained_derivs`, `result.unrestrained_derivs`. The block opens by stating the frame: coefficients are in **basic axes**, and MSC's "TRANSFORMATION FROM BASIC TO REFERENCE COORDINATES" (`[T]` and offset) is printed so a comparison can convert, `{C}REF = [T]{C}BAS` (#82; MSC prints the RCSID frame, AAUG 2023.1 PDF p.233). URDD rows are per unit of the URDD trim variable, an RCSID component |
+| HINGE MOMENT DERIVATIVES (RIGID and RESTRAINED columns per AESURF) | `result.hinge_moments[surf][label]` (rigid) and `result.hinge_moments_restrained[surf][label]` (elastic restrained), both × q. Dimensional: q × MSC's coefficient for CREFC = CREFS = 1 (AAUG p.234) |
+| CONTROL SURFACE POSITION AND HINGE MOMENT (trimmed) | `result.trim_vars[surf]` and `q × result.hinge_moments[surf]['total']`, the hinge moment of the elastic trim loads. Until #82 this was a "TOTAL (TRIM)" row under the rigid derivatives (AAUG p.235) |
 | AERODYNAMIC TOTALS (CZ body / CL wind / CMY) | `result.total_cl` (body CZ), `result.total_cl_wind` (wind CL = CZ·cosα − CX·sinα at trim α), `result.total_cm` |
 | AERODYNAMIC DIVERGENCE (`q_div`, `q/q_div`) | `result.q_div` (restrained l-set; see below) |
 | DISPLACEMENT / BAR FORCES / BAR STRESSES | shared helpers, reused from the SOL 101 writer |
-| AERODYNAMIC BOX PRESSURES AND FORCES | `result.box_cp`, `result.box_forces` — **only when the subcase requests `AEROF` or `APRES`** |
+| AERODYNAMIC BOX PRESSURES AND FORCES | `result.box_cp`, `result.box_forces`, keyed by `result.box_ids` — **only when the subcase requests `AEROF` or `APRES`**. `BOX ID` is the NASTRAN box ID (1000, 1001 …), as in MSC's force listing (AAUG p.237); until #82 it was a running index |
 
 **Divergence diagnostic.** `sol144_diverg.divergence_dynamic_pressure(K_ll, Q_ll)` returns the
 single critical divergence dynamic pressure — the reciprocal of the largest positive-real

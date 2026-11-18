@@ -16,7 +16,7 @@ from sbeam.results.results import (
 )
 from sbeam.results.section_cuts import component_legend, component_names, labelled
 from sbeam.assembly.load_vector import build_grid_index
-from sbeam.assembly.coord_transform import build_transform
+from sbeam.assembly.coord_transform import build_transform, get_transform
 from sbeam.types import FloatArray
 from sbeam.parser.case_control import CaseControl
 from sbeam.model.load import Grav
@@ -89,6 +89,37 @@ def _transform_to_cd(t: FloatArray, r: FloatArray, gid: int, bulk: BulkData):
         t = R.T @ t
         r = R.T @ r
     return t, r
+
+
+def _coefficient_frame_block(lines: list[str], bulk: BulkData) -> None:
+    """State the frame of every force and moment coefficient in the trim block (#82).
+
+    sbeam prints coefficients in basic axes (conventions charter §1-2).  MSC prints them
+    in the AEROS RCSID reference frame after "TRANSFORMATION FROM BASIC TO REFERENCE
+    COORDINATES" (MSC Nastran 2023.1 Aeroelastic Analysis User's Guide PDF p.233), so on
+    a deck whose RCSID has z down (HA144A) sbeam's CZ and MSC's CZ have opposite signs.
+    The header used to say just "CZ".  This prints MSC's transformation so a comparison
+    can convert: a coefficient triple in the reference frame is [T] times the basic one.
+    """
+    aeros = bulk.aeros
+    rcsid = aeros.rcsid if aeros is not None else 0
+    origin, rot = (np.zeros(3), np.eye(3))
+    if rcsid:
+        origin, rot = get_transform(rcsid, bulk.cord2rs)
+    t_mat = np.asarray(rot).T                     # basic -> reference
+    offset = -t_mat @ np.asarray(origin, dtype=float)
+    lines.append("      FORCE AND MOMENT COEFFICIENTS IN THIS BLOCK ARE IN BASIC AXES (CX, CY, CZ ALONG BASIC +X, +Y, +Z).")
+    lines.append(f"      MSC NASTRAN PRINTS THEM IN THE AEROS REFERENCE FRAME (RCSID = {rcsid}): "
+                 "{C}REF = [T] {C}BAS, WITH [T] BELOW.")
+    lines.append("      URDD ROWS ARE PER UNIT OF THE URDD TRIM VARIABLE, WHICH IS A REFERENCE-FRAME COMPONENT.")
+    lines.append("")
+    lines.append("      TRANSFORMATION FROM BASIC TO REFERENCE COORDINATES:")
+    for name, row, off, eq in zip("XYZ", t_mat, offset, ("   ", " = ", "   ")):
+        cells = "  ".join(f"{v + 0.0:8.4f}" for v in row)
+        suffix = "REF" if name == "Z" else "   "
+        lines.append(f"      {{ {name} }}{suffix} {eq} [ {cells} ]  {{ {name} }}{'BAS' if name == 'Z' else '   '}"
+                     f"  +  {{ {_fmt(off + 0.0).strip():>13} }}")
+    lines.append("")
 
 
 def _collect_grav_loads(bulk: BulkData, load_sid: int) -> list[Grav]:
@@ -819,6 +850,7 @@ def _build_f06_sol144_text(
     unrest = result.unrestrained_derivs or {}
     lines.append("                              S T A B I L I T Y   D E R I V A T I V E S")
     lines.append("")
+    _coefficient_frame_block(lines, bulk)
     lines.append("                          --------------- RIGID ---------------    ----- ELASTIC RESTRAINED -----    ---- ELASTIC UNRESTRAINED ----")
     lines.append("      LABEL              CZ            CMY            CX            CY            CZ            CMY            CZ            CMY")
     for label in sorted(result.trim_vars.keys()):
@@ -863,19 +895,37 @@ def _build_f06_sol144_text(
     lines.append("")
 
     # ---- HINGE-MOMENT DERIVATIVES (about each AESURF hinge axis, CID1 + CID2 halves) ----
+    # Two columns, as MSC prints them (AAUG 2023.1 PDF p.234): RIGID is the box force of
+    # the variable's normalwash alone; ELASTIC RESTRAINED adds the structure's response
+    # with the SUPORT DOFs held.  The trimmed hinge moment is a separate block (p.235):
+    # until #82 it sat under the rigid derivatives as "TOTAL (TRIM)".
     if result.hinge_moments:
+        restrained = result.hinge_moments_restrained or {}
         lines.append("                          H I N G E   M O M E N T   D E R I V A T I V E S")
         lines.append("")
-        lines.append("      (moment about each control's hinge axis, CID1 and CID2 halves summed, at the trim dynamic pressure)")
+        lines.append("      (d(HM)/d(VAR) about each control's hinge axis, CID1 and CID2 halves summed, at the trim dynamic")
+        lines.append("       pressure: dimensional, Q x the MSC coefficient for CREFC = CREFS = 1; URDD rows per unit RCSID label)")
         lines.append("")
         for surf in sorted(result.hinge_moments):
             entry = result.hinge_moments[surf]
             lines.append(f"      SURFACE: {surf}")
-            lines.append("        TRIM VARIABLE      d(HM)/d(VAR)")
+            lines.append(_hdr(f"{'        TRIM VARIABLE':<22}", "RIGID", "RESTRAINED"))
             for label in sorted(k for k in entry if k != "total"):
-                lines.append(f"        {label:<14}{_fmt(result.q * entry[label])}")
-            lines.append(f"        {'TOTAL (TRIM)':<14}{_fmt(result.q * entry['total'])}")
+                el = restrained.get(surf, {}).get(label)
+                el_str = _fmt(result.q * el) if el is not None else f"{'N/A':>{_FIELD_W}}"
+                lines.append(f"        {label:<14}{_fmt(result.q * entry[label])}{el_str}")
             lines.append("")
+
+        lines.append("            C O N T R O L   S U R F A C E   P O S I T I O N   A N D   H I N G E   M O M E N T")
+        lines.append("")
+        lines.append("      (trimmed: the hinge moment of the elastic trim loads, all trim variables at their trim values)")
+        lines.append("")
+        lines.append(_hdr(f"{'      SURFACE':<22}", "POSITION", "HINGE MOMENT"))
+        for surf in sorted(result.hinge_moments):
+            position = result.trim_vars.get(surf, 0.0)
+            lines.append(f"      {surf:<16}{_fmt(position)}"
+                         f"{_fmt(result.q * result.hinge_moments[surf]['total'])}")
+        lines.append("")
 
     # ---- AERODYNAMIC TOTALS ----
     lines.append("                                     A E R O D Y N A M I C   T O T A L S")
@@ -931,7 +981,10 @@ def _build_f06_sol144_text(
     _rod_stresses_block(lines, bulk, result.rod_stresses)
 
     # ---- AERODYNAMIC BOX PRESSURES AND FORCES (AEROF / APRES) ----
-    # BOX ID is the global 1-based box index (= AeroModel box k + 1).
+    # BOX ID is the NASTRAN box ID (CAERO1 EID + position), as MSC lists the box forces
+    # ("GRID ID" 1000, 1001 ...; AAUG 2023.1 PDF p.237).  Until #82 it was a running
+    # index 1..N, so sbeam's row 9 was MSC's box 1100.  (MSC's pressure table, p.236,
+    # does use a running index: its row n is the n-th row here.)
     if want_aero and result.box_forces is not None and result.box_cp is not None:
         lines.append("                      A E R O D Y N A M I C   B O X   P R E S S U R E S   A N D   F O R C E S")
         lines.append("")
@@ -942,8 +995,9 @@ def _build_f06_sol144_text(
         for k in range(len(result.box_forces)):
             cp = result.box_cp[k]
             fx, fy, fz = result.box_forces[k]
+            box_id = result.box_ids[k] if result.box_ids else k + 1
             lines.append(
-                f"{k + 1:>12}  {_fmt(cp)}  {_fmt(fx)}{_fmt(fy)}{_fmt(fz)}"
+                f"{box_id:>12}  {_fmt(cp)}  {_fmt(fx)}{_fmt(fy)}{_fmt(fz)}"
             )
         lines.append("")
 
