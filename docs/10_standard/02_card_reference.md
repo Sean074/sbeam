@@ -300,7 +300,7 @@ GRID, GID, CP, X1, X2, X3, CD, PS, SEID
 | X2 | `y` | float | Y coordinate in CP frame | required |
 | X3 | `z` | float | Z coordinate in CP frame | required |
 | CD | `cd` | int | Displacement coordinate system. sbeam solves every grid in basic and uses CD **only to print** that grid's displacements, eigenvectors and SPC forces in the CD frame. A card that names a direction at a CD ≠ 0 grid is refused — see below | `0` |
-| PS | `ps` | str | Permanent SPC DOF string (e.g., `"123456"`) | `""` |
+| PS | `ps` | str | Permanent SPC DOF string (e.g., `"123456"`): unique digits 1–6 (QRG 2024.1 PDF p.1944); anything else is refused (#68) | `""` |
 | SEID | — | — | Superelement ID — must be blank or `0`; anything else is refused (#58) | — |
 
 **CD ≠ 0 (#65).** MSC defines CD as the "coordinate system in which the displacements,
@@ -340,22 +340,35 @@ Defines a linear elastic isotropic material.
 
 **Format:**
 ```
-MAT1, MID, E, G, NU, RHO
+MAT1, MID, E, G, NU, RHO, A, TREF, GE
 ```
+
+Fields 7–9 (`A`, `TREF`, `GE`) are accepted and **ignored**: sbeam has no thermal loads,
+and no supported solution uses structural damping. The stress-limit continuation
+(`ST SC SS MCSID`) is refused, as any unread line is (#63).
 
 **Fields:**
 
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
 | MID | `mid` | int | Material ID (unique) | required |
-| E | `E` | float | Young's modulus | required |
-| G | `G` | float | Shear modulus | `0.0` |
-| NU | `nu` | float | Poisson's ratio | `0.0` |
+| E | `E` | float | Young's modulus (> 0.0 or blank) | see below |
+| G | `G` | float | Shear modulus (> 0.0 or blank) | see below |
+| NU | `nu` | float | Poisson's ratio (−1.0 < NU < 0.5, or blank) | see below |
 | RHO | `rho` | float | Mass density | `0.0` |
 
-If both G and NU are non-zero, G takes precedence. When G is blank or zero (and both
-E and NU are non-zero), G is derived from the isotropic relationship
-`G = E / (2·(1 + ν))` at parse time. RHO is required for SOL 103 unless CONM2 supplies all mass.
+**Blank E, G or NU follow MSC's rules** (QRG 2024.1 PDF p.2020–2021, remark 2; #68):
+
+- E and G may not both be blank — refused.
+- If NU and E, or NU and G, are both blank, both are set to 0.0 (`MAT1,1,1.e7` has no
+  shear stiffness: G = 0).
+- If exactly one of E, G, NU is blank it is computed from `E = 2(1 + NU)G`.
+- If all three are given they are used as written (G is not re-derived).
+
+A value outside the ranges above is refused, including an explicit `0.0` for E or G —
+leave the field blank. Before #68 a blank E stayed 0.0 (`MAT1,1,,4.e6,0.3` gave E = 0
+where MSC computes 1.04e7), E and G both blank was accepted, and NU was never derived.
+RHO is required for SOL 103 unless CONM2 supplies all mass.
 
 **Example:**
 ```
@@ -769,10 +782,14 @@ RBAR, EID, GA, GB, CNA, CNB, CMA, CMB
 | GB | `gb` | int | End B grid (dependent) | required |
 | CNA | `cna` | str | Independent DOF components at GA | `"123456"` |
 | CNB | `cnb` | str | Independent DOF components at GB | `""` (blank) |
-| CMA | — | — | Dependent DOF components at GA (auto-computed; stored in BDF, not in dataclass) | blank |
-| CMB | — | — | Dependent DOF components at GB (auto-computed; stored in BDF, not in dataclass) | blank |
+| CMA | — | — | Dependent DOF components at GA. Must be blank or `0` | blank |
+| CMB | — | — | Dependent DOF components at GB. Must be blank, `0` or `123456` | blank |
 
 **Phase 1 constraint:** CNA=`"123456"`, CNB=blank only. Non-default combinations raise `ValueError`.
+sbeam makes all six DOFs of GB dependent, which is NASTRAN's rule only "if both CMA and CMB
+are zero or blank" (QRG 2024.1 PDF p.2692, remark 4). A partial set such as `CMB = 123` makes
+only those DOFs dependent in NASTRAN; it was ignored and is now refused (#68) — use an RBE2
+with `CM` for a partial set. Fields 9–10 (`ALPHA`, `TREF`) are thermal and ignored.
 
 **Constraint equations:**
 
@@ -1028,7 +1045,7 @@ geometry.
 
 ### SPC — Single-Point Constraint (Grid Pairs)
 
-Applies zero (or enforced) displacement to individual grid DOFs.
+Holds individual grid DOFs at zero. Enforced displacement is not supported.
 
 **Format:**
 ```
@@ -1042,10 +1059,10 @@ SPC, SID, G1, C1, D1, G2, C2, D2
 | SID | `sid` | int | Constraint set ID (referenced in case control) | required |
 | G1 | `g1` | int | Grid ID 1 | required |
 | C1 | `c1` | str | DOF string for G1 (e.g., `"13"`, `"123456"`) | required |
-| D1 | `d1` | float | Enforced displacement for G1 — must be `0.0` in Phase 1 | `0.0` |
+| D1 | `d1` | float | Enforced displacement for G1 — must be `0.0` or blank; any other value is **refused at parse** (#68; SOL 144 and MLOADS used to take it as zero without a message) | `0.0` |
 | G2 | `g2` | int or None | Grid ID 2 (optional) | `None` |
 | C2 | `c2` | str or None | DOF string for G2 | `None` |
-| D2 | `d2` | float | Enforced displacement for G2 | `0.0` |
+| D2 | `d2` | float | Enforced displacement for G2 — must be `0.0` or blank | `0.0` |
 
 DOF digits: `1`=Tx, `2`=Ty, `3`=Tz, `4`=Rx, `5`=Ry, `6`=Rz. Multiple SPC cards with the same SID are merged.
 
@@ -1183,6 +1200,8 @@ Any number of continuation lines (QRG p.2008); before #63 only the first was rea
 | L1, L2, … | (in `components`) | int | Load set ID for component load i (references FORCE, MOMENT, or GRAV SID) | required |
 
 `components` is a list of `(scale: float, load_sid: int)` pairs. Applied load = `S × Σᵢ(Sᵢ × Loadᵢ)`.
+The `Lᵢ` must be unique (QRG 2024.1 PDF p.2008, remark 2): a repeated set was summed twice
+and is now refused, as is a pair with only one of `Sᵢ`, `Lᵢ` given (#68).
 
 In a SOL 144 **trim** subcase the combination may reference `FORCE`/`MOMENT` sets only: a
 `GRAV` component raises (gravity enters a trim through `URDD3`; #6).
@@ -1217,7 +1236,7 @@ GRAV, SID, CID, G, N1, N2, N3
 
 The gravity load vector is computed as `f_grav = M_global × a_field`, where `a_field` has `G × [N1, N2, N3]` at every translational DOF and zero at rotational DOFs. Both CBAR distributed mass and CONM2 point masses contribute naturally through the assembled consistent mass matrix.
 
-GRAV SIDs may appear as component loads in a `LOAD` card, mixed freely with `FORCE` and `MOMENT` SIDs. CID ≠ 0 raises a parse error in Phase 1–2.
+GRAV SIDs may appear as component loads in a `LOAD` card, mixed freely with `FORCE` and `MOMENT` SIDs. A GRAV may **not** share its SID with a FORCE or MOMENT card: gravity is combined with simple loads "only by specification on a LOAD entry" (QRG 2024.1 PDF p.1941, remark 3). sbeam summed the two and now refuses the deck (#68). CID ≠ 0 raises a parse error in Phase 1–2.
 
 **Refused in a SOL 144 trim subcase (#6):** a `GRAV` selected directly or through the `LOAD`
 combination of a `TRIM` subcase raises — the load factor already carries gravity
@@ -2074,8 +2093,10 @@ SUPORT, G1, C1, G2, C2, ...
 | G1, G2, … | `gid` | int | Grid ID of a support point | required |
 | C1, C2, … | `dofs` | str | DOF string for the preceding grid (e.g. `"35"`, `"123456"`) | required |
 
-GID/DOF pairs repeat across the card; parsing stops at the first blank GID field. A
-blank DOF string after a GID raises `ValueError`. Each pair is appended to
+Up to four ID/C pairs per card (QRG 2024.1 PDF p.2870). Each `C` must be unique digits
+1–6: `0` and `7` used to index a DOF of a neighbouring grid and are refused (#68). A blank
+pair with data after it is refused; before #68 the read stopped there and dropped the
+later pairs. A blank DOF string after a GID raises `ValueError`. Each pair is appended to
 `bulk.supports` — multiple SUPORT cards accumulate.
 
 **Example:**

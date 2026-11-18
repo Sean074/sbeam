@@ -188,6 +188,22 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and warnings, before and after.
 
 ### Fixed
+- **Structural field rules are enforced** (#68; page numbers are QRG 2024.1 PDF pages).
+  - **MAT1 blanks** (p.2020–2021 remark 2): a blank E, G or NU is computed from
+    `E = 2(1+NU)G`; E and G both blank is refused; NU with one modulus blank sets both
+    to 0.0. `MAT1,1,,4.e6,0.3` gave E = 0.0 where MSC computes 1.04e7. E ≤ 0, G ≤ 0 and
+    NU outside (−1, 0.5) are refused. Repo decks: only the stored NU changes (now derived
+    from E and G; nothing computes with it).
+  - **RBAR CMA/CMB** (p.2692 remark 4): a partial dependent set (`CMB = 123`) was ignored
+    and all six GB DOFs made dependent; it is refused.
+  - **GRID PS, SUPORT C** must be unique digits 1–6 (p.1944, p.2870): `PS = 7` constrained
+    T1 of the next grid and SUPORT `C = 0` indexed the previous grid's R3. A SUPORT pair
+    after a blank pair was dropped and is refused.
+  - **SPC D ≠ 0** is refused at parse; SOL 144 and MLOADS took it as zero silently.
+  - **LOAD**: a repeated Li was summed twice (p.2008 remark 2, "must be unique"); a pair
+    with only S or only L was skipped. **GRAV** sharing a SID with FORCE or MOMENT was
+    summed (p.1941 remark 3 forbids it). All refused.
+  Found by the 2026-11-16 audit (S8, S9, S10, S11, S20, P3, P14).
 - **CBAR is read by MSC's field rules: offsets refused, OFFT validated, G0 decided by
   field 6, PID defaults to EID** (#67; QRG 2024.1 PDF p.1360–1363). (1) The offsets
   W1A–W3B on the continuation were dropped without a message; any non-zero offset is now

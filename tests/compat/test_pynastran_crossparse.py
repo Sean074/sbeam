@@ -55,9 +55,7 @@ _NOT_FOR_PYNASTRAN = {
 }
 
 #: (card, field) disagreements left open, with the issue fixing each.
-_KNOWN: dict[tuple[str, str], str] = {
-    ("MAT1", "nu"): "#68: MSC derives NU from E and G when blank; sbeam keeps 0.0",
-}
+_KNOWN: dict[tuple[str, str], str] = {}
 
 
 # ---------------------------------------------------------------------------

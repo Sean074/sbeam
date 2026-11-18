@@ -1,5 +1,6 @@
 """Structural bulk-card handlers: frames, grids, properties, materials, elements,
 mass, constraints, static loads and solver parameters (#48)."""
+import math
 import warnings
 from typing import Optional
 
@@ -58,6 +59,10 @@ def _handle_grid(fields: list[str], bulk: BulkData) -> None:
     z   = to_float(fields[5]) if len(fields) > 5 else 0.0
     cd  = to_int_opt(fields[6]) if len(fields) > 6 else 0
     ps  = fields[7].strip() if len(fields) > 7 else ""
+    if ps:
+        # "Any of the Integers 1 through 6 with no embedded blanks, or blank" (QRG PDF
+        # p.1944).  PS = 7 used to constrain DOF 1 of the next grid (#68)
+        validate_dof(ps, f"GRID {gid} PS")
     # SEID was documented "must be blank" but never read, so a superelement grid
     # silently joined the residual structure (#58 sweep); 0 is the residual, as in NASTRAN
     seid = fields[8].strip() if len(fields) > 8 else ""
@@ -105,13 +110,38 @@ def _handle_mat1(fields: list[str], bulk: BulkData) -> None:
     mid = to_int(fields[1])
     if mid in bulk.mat1s:
         raise ValueError(f"Duplicate MID {mid}")
-    E   = to_float(fields[2])
-    G   = to_float(fields[3]) if len(fields) > 3 else 0.0
-    nu  = to_float(fields[4]) if len(fields) > 4 else 0.0
+    # E, G and NU by MSC's blank rules (QRG 2024.1 PDF p.2020-2021, remark 2).  Before
+    # #68 a blank E stayed 0.0 (MSC computes it), E and G both blank was accepted, and NU
+    # was not derived from E and G.
+    def _blank_or(k: int, name: str, low: float, high: float) -> Optional[float]:
+        if len(fields) <= k or not fields[k].strip():
+            return None
+        value = to_float(fields[k])
+        if not low < value < high:
+            limits = "> 0.0" if high == math.inf else f"between {low:g} and {high:g}"
+            raise ValueError(f"MAT1 {mid}: {name}={value:g} must be {limits} or blank "
+                             "(QRG p.2020)")
+        return value
+
+    E_in = _blank_or(2, "E", 0.0, math.inf)
+    G_in = _blank_or(3, "G", 0.0, math.inf)
+    nu_in = _blank_or(4, "NU", -1.0, 0.5)
     rho = to_float(fields[5]) if len(fields) > 5 else 0.0
-    # When G is not supplied, derive from the isotropic material relationship G = E / (2(1+ν))
-    if G == 0.0 and nu != 0.0 and E != 0.0:
-        G = E / (2.0 * (1.0 + nu))
+    if E_in is None and G_in is None:
+        raise ValueError(f"MAT1 {mid}: E and G may not both be blank (QRG p.2020 remark 2)")
+    if nu_in is None and (E_in is None or G_in is None):
+        # "If NU and E, or NU and G, are both blank, then both are set to 0.0"
+        E, G, nu = E_in or 0.0, G_in or 0.0, 0.0
+    elif E_in is None:
+        assert G_in is not None and nu_in is not None
+        E, G, nu = 2.0 * (1.0 + nu_in) * G_in, G_in, nu_in     # E = 2(1+NU)G
+    elif G_in is None:
+        assert nu_in is not None
+        E, G, nu = E_in, E_in / (2.0 * (1.0 + nu_in)), nu_in
+    elif nu_in is None:
+        E, G, nu = E_in, G_in, E_in / (2.0 * G_in) - 1.0
+    else:
+        E, G, nu = E_in, G_in, nu_in
     bulk.mat1s[mid] = Mat1(mid=mid, E=E, G=G, nu=nu, rho=rho)
 
 
@@ -354,11 +384,22 @@ def _handle_rbar(fields: list[str], bulk: BulkData) -> None:
     gb  = to_int(fields[3])
     cna = fields[4].strip() if len(fields) > 4 and fields[4].strip() else "123456"
     cnb = fields[5].strip() if len(fields) > 5 and fields[5].strip() else ""
+    cma = fields[6].strip() if len(fields) > 6 else ""
+    cmb = fields[7].strip() if len(fields) > 7 else ""
 
     if cna != "123456" or cnb not in ("", "0"):
         raise ValueError(
             f"RBAR {eid}: only CNA=123456/CNB=blank supported in Phase 1 "
             f"(got CNA={cna!r}, CNB={cnb!r})"
+        )
+    # sbeam makes all six DOFs of GB dependent.  That is NASTRAN's rule only "if both CMA
+    # and CMB are zero or blank" (QRG 2024.1 PDF p.2692 remark 4), or when CMB lists all
+    # six; CMB = 123 makes only those three dependent and was ignored (#68)
+    if cma not in ("", "0") or cmb not in ("", "0", "123456"):
+        raise ValueError(
+            f"RBAR {eid}: CMA={cma or 'blank'}, CMB={cmb or 'blank'} selects a partial set of "
+            "dependent DOFs, which is not supported; sbeam makes all six DOFs of GB "
+            "dependent (leave CMA and CMB blank, or use an RBE2 with CM for a partial set)"
         )
     _check_distinct_ends("RBAR", eid, ga, gb)
     if eid in bulk.rbars:
@@ -472,6 +513,13 @@ def _handle_spc(fields: list[str], bulk: BulkData) -> None:
     if c2:
         validate_dof(c2, f"SPC {sid}")
     d2  = to_float(fields[7]) if len(fields) > 7 else 0.0
+    # No solver applies an enforced displacement.  SOL 101 and 103 refused it at run
+    # time; SOL 144 and MLOADS took D = 0 without a message (#68)
+    for gid, d in ((g1, d1), (g2, d2)):
+        if d != 0.0:
+            raise ValueError(
+                f"SPC {sid}: enforced displacement D={d:g} on grid {gid} is not supported; "
+                "sbeam constraints hold the DOF at zero")
     if sid not in bulk.spcs:
         bulk.spcs[sid] = []
     bulk.spcs[sid].append(Spc(sid=sid, g1=g1, c1=c1, d1=d1, g2=g2, c2=c2, d2=d2))
@@ -527,8 +575,19 @@ def _handle_load(fields: list[str], conts: list[list[str]], bulk: BulkData) -> N
     components = []
     for k in range(0, len(raw) - 1, 2):
         sf, lf = raw[k].strip(), raw[k + 1].strip()
+        if bool(sf) != bool(lf):
+            raise ValueError(
+                f"LOAD {sid}: pair {k // 2 + 1} has S='{sf}' and L='{lf}'; give both the "
+                "scale factor and the load set ID")
         if sf and lf:
-            components.append((to_float(sf), to_int(lf)))
+            lid = to_int(lf)
+            # "Load set IDs (Li) must be unique" (QRG 2024.1 PDF p.2008 remark 2); a
+            # repeated Li used to be summed twice (#68)
+            if any(lid == other for _, other in components):
+                raise ValueError(
+                    f"LOAD {sid}: load set {lid} is listed twice; the Li must be unique "
+                    "(QRG p.2008 remark 2)")
+            components.append((to_float(sf), lid))
     bulk.loads[sid] = Load(sid=sid, s=s, components=components)
 
 
@@ -613,14 +672,23 @@ def _handle_grav(fields: list[str], bulk: BulkData) -> None:
 
 def _handle_suport(fields: list[str], bulk: BulkData) -> None:
     """SUPORT card — pairs of GID/DOF starting at fields[1]."""
-    i = 1
-    while i + 1 < len(fields) and fields[i].strip():
-        gid  = to_int(fields[i])
-        dofs = fields[i + 1].strip()
+    # Up to four ID/C pairs (QRG 2024.1 PDF p.2870).  The read used to stop at the first
+    # blank ID, dropping any pair after it, and C was not checked: C = 0 or 7 indexed a
+    # DOF of the neighbouring grid (#68)
+    pairs = [(fields[i].strip(), fields[i + 1].strip()) for i in range(1, 9, 2)]
+    while pairs and pairs[-1] == ("", ""):
+        pairs.pop()
+    for k, (gid_s, dofs) in enumerate(pairs):
+        if not gid_s:
+            raise ValueError(
+                "SUPORT: blank ID in pair "
+                f"{k + 1} with data after it ({', '.join(g for g, _ in pairs[k + 1:] if g)}); "
+                "remove the blank fields")
+        gid = to_int(gid_s)
         if not dofs:
             raise ValueError(f"SUPORT: blank DOF string for GID {gid}")
+        validate_dof(dofs, f"SUPORT grid {gid}")
         bulk.supports.append(Suport(gid=gid, dofs=dofs))
-        i += 2
 
 def _handle_eigrl(fields: list[str], bulk: BulkData) -> None:
     sid  = to_int(fields[1])

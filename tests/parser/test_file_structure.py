@@ -89,9 +89,9 @@ class TestInclude:
     def test_include_splits_a_card_from_its_continuation(self, tmp_path):
         """Textual insertion: the included line continues the card before the INCLUDE."""
         deck = _deck(tmp_path, _CC + "BEGIN BULK\n" + _MODEL + _FORCE
-                     + "LOAD,20,1.,1.,10\nINCLUDE 'more.dat'\n",
-                     **{"more.dat": "+,2.,10\n"})
-        assert parse_bdf(deck)[1].loads[20].components == [(1.0, 10), (2.0, 10)]
+                     + "FORCE,11,2,,500.,0.,0.,1.\nLOAD,20,1.,1.,10\nINCLUDE 'more.dat'\n",
+                     **{"more.dat": "+,2.,11\n"})
+        assert parse_bdf(deck)[1].loads[20].components == [(1.0, 10), (2.0, 11)]
 
     @pytest.mark.parametrize("statement", [
         "INCLUDE 'model.dat'", 'INCLUDE "model.dat"', "INCLUDE model.dat",

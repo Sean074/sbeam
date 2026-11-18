@@ -69,7 +69,10 @@ def is_continuation(fields: list[str]) -> bool:
 
 
 def validate_dof(c: str, context: str) -> None:
-    if not c or any(ch not in "123456" for ch in c):
+    """Component numbers: "any unique combination of the Integers 1 through 6 ... with no
+    embedded blanks" (MSC Nastran 2024.1 QRG PDF p.2870, SUPORT; the same wording on
+    GRID PS, SPC and the rigid elements)."""
+    if not c or any(ch not in "123456" for ch in c) or len(set(c)) != len(c):
         raise ValueError(f"{context}: invalid DOF string '{c}'")
 
 def expand_int_list_with_thru(tokens: list[str]) -> list[int]:

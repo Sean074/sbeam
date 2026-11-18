@@ -325,6 +325,15 @@ def _check_load_combinations(bulk: BulkData) -> None:
                 raise ValueError(
                     f"LOAD {load_sid}: component SID {comp_sid} not found in FORCE, MOMENT, or GRAV sets"
                 )
+    # "the SID on a GRAV entry may not be the same as that on a simple load entry" (MSC
+    # Nastran 2024.1 QRG PDF p.1941, GRAV remark 3); sbeam summed the two (#68)
+    for sid in bulk.gravs:
+        for card, sets in (("FORCE", bulk.forces), ("MOMENT", bulk.moments)):
+            if sid in sets:
+                raise ValueError(
+                    f"GRAV {sid}: a {card} card has the same SID. Gravity is combined with "
+                    "FORCE and MOMENT loads only through a LOAD card (QRG p.1941 remark 3): "
+                    "give the GRAV its own SID and name both on a LOAD")
 
 
 def _check_control_surfaces(bulk: BulkData) -> None:
