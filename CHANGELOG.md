@@ -209,6 +209,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   into full rows, with the same lists.
 
 ### Documentation
+- **Draft scope for the v0.4.0 GUI work** (#11, not agreed):
+  `docs/30_future/designs/v040_gui_scope.md` — four decisions to make, a survey of what
+  the viewer can author, run and review against the solver's capabilities, the boundary
+  debt to clear first, and twelve proposed child issues in order. Written from a code
+  survey, not a hand walk. One defect found by the survey is filed as #98 (the viewer
+  drops the GUSTLF selector on case-control export).
 - **NASTRAN rules cited from the COSMIC manual; the no-copy rule's reason recorded** (#61).
   The RBE3 deviation table and the element-ID paragraph in the card reference now cite
   the COSMIC NASTRAN User's Manual (NASTRAN-93 `um/BULK.TXT`), in place of rules stated
