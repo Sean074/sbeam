@@ -1003,7 +1003,12 @@ $$
   effectors). The solution minimises a user objective $\text{Obj}=\sum_i (C_{1i}F_i - S_{1i})^{e_{1i}}\!+\dots$
   over the trim functions $F_i$, subject to inequality constraints $G_i = (F_i-S_i)^{e_i}\lessgtr V_i$,
   with bounds and an initial guess on each variable. The square case is the special case with no
-  free objective. (This is the ZAERO `TRIMOBJ`/`TRIMCON`/`TRIMVAR` formulation.) *sbeam
+  free objective. (This is the ZAERO formulation: `TRIMOBJ` and `TRIMCON` build the
+  objective and the constraints from trim *functions* defined on `TRIMFNC` cards, ZAERO 9.2
+  User's Manual PDF p.510, p.501, p.504.) **sbeam's cards share the three names but not the
+  formulation or the layouts** (#77): its objective is a weighted sum of squares of the trim
+  *variables* themselves, its TRIMCON is a bound on one variable, and its TRIMVAR fields
+  are in a different order (p.511). *sbeam
   implementation:* the equilibrium equations are eliminated by a null-space reduction
   $\delta=\delta_p + N z$ ($N=\operatorname{null}(\text{schur}_A)$, so equilibrium holds for any
   $z$); the redundancy coordinate $z$ then minimises the convex weighted-L2 objective

@@ -300,6 +300,10 @@ def _handle_trimvar(fields: list[str], bulk: BulkData) -> None:
     ub    = to_float(fields[5]) if fields[5].strip() else  1.0e30
     if not label:
         raise ValueError(f"TRIMVAR {vid}: LABEL must not be blank")
+    if not lb < ub:
+        # Equal bounds would pin the variable, which is what a TRIM value is for (#77)
+        raise ValueError(
+            f"TRIMVAR {vid} ({label}): LB={lb:g} must be less than UB={ub:g}")
     if vid in bulk.trimvars:
         raise ValueError(f"Duplicate TRIMVAR ID {vid}")
     bulk.trimvars[vid] = Trimvar(id=vid, label=label, init=init, lb=lb, ub=ub)
@@ -315,11 +319,20 @@ def _handle_trimobj(fields: list[str], conts: list[list[str]], bulk: BulkData) -
     raw_pairs = [f for f in raw_pairs if f.strip()]
     if len(raw_pairs) % 2 != 0:
         raise ValueError(f"TRIMOBJ {sid}: odd number of LABEL/WEIGHT tokens — must be paired")
+    if not raw_pairs:
+        raise ValueError(f"TRIMOBJ {sid}: no LABEL/WEIGHT pair — the objective is empty")
     labels:  list[str] = []
     weights: list[float] = []
     for i in range(0, len(raw_pairs), 2):
-        labels.append(raw_pairs[i].strip().upper())
-        weights.append(to_float(raw_pairs[i + 1]))
+        label = raw_pairs[i].strip().upper()
+        weight = to_float(raw_pairs[i + 1])
+        if label in labels:
+            raise ValueError(f"TRIMOBJ {sid}: label '{label}' is listed twice")
+        if weight < 0.0:
+            # A negative weight makes the objective non-convex: no unique minimum (#77)
+            raise ValueError(f"TRIMOBJ {sid}: weight {weight:g} on '{label}' must be >= 0")
+        labels.append(label)
+        weights.append(weight)
     bulk.trimobjs[sid] = Trimobj(sid=sid, labels=labels, weights=weights)
 
 

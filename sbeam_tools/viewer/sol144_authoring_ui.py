@@ -316,6 +316,9 @@ def _trimvar_form(bulk: BulkData, card: Optional[Trimvar], default_id: int):
     if label is None:
         st.warning("Define AESTAT/AESURF labels first.")
         return None
+    if not lb < ub:
+        st.warning("The lower bound must be less than the upper bound.")
+        return None
     return Trimvar(id=int(vid), label=label, init=float(init),
                    lb=float(lb), ub=float(ub))
 

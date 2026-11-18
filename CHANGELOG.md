@@ -176,6 +176,22 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and warnings, before and after.
 
 ### Fixed
+- **TRIMVAR, TRIMOBJ and TRIMCON are checked and acted on, or refused** (#77). The solver
+  skipped any of these cards whose label was not a free trim variable, so a misspelt
+  label, and the card reference's own `CL` / `CM` examples, dropped the bound, weight or
+  constraint with no message. Now: every label must be an AESTAT or AESURF label;
+  TRIMVAR needs `LB < UB` and one card per label; a TRIMOBJ needs at least one pair,
+  no repeated label and weights ≥ 0. **Every trim is checked against the TRIMVAR bounds
+  and the TRIMCON set**, not only an over-determined one with redundancy to spend: a
+  determined trim or a prescribed value outside a limit refuses the run. A TRIMOBJ whose
+  weighted labels leave the redundancy undetermined is refused; it used to fall back to
+  unit weights on every free variable. TRIMCON cards under more than one SID are refused:
+  no command selects a set, and cards of every SID were applied to every trim. The blank
+  `LB`/`UB` defect in fixed-field (bounds read as 0.0, pinning the variable) was fixed
+  with #64 and is now gated. The docs no longer call this ZAERO's formulation: ZAERO's
+  TRIMVAR is `IDVAR LABEL LOWER UPPER …` (ZUM 9.2 PDF p.511) and its objective is built
+  from TRIMFNC functions; the layout decision is #87. No repo deck uses these cards; no
+  shipped number changes. Found by the 2026-11-16 audit (P6, A11, A12, M10).
 - **SPLINE2 projects its axis into the panel plane, as MSC does; a dihedral wing splined
   with CID 0 no longer loses its side force** (#74). MSC: "The spline axis for panels is
   the projection of the y-axis of coordinate system CID, projected onto the plane of the

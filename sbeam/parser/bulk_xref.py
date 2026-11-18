@@ -339,6 +339,41 @@ def _check_monitors(bulk: BulkData) -> None:
             raise ValueError(f"MONSECT {name}: CID={cut.cid} not found in CORD2R")
 
 
+def _check_trim_optimisation(bulk: BulkData, all_trim_labels: set[str]) -> None:
+    """TRIMVAR / TRIMOBJ / TRIMCON labels and sets (#77).
+
+    The solver used to skip any of these whose label was not a trim variable, so a
+    misspelt label, or the card reference's own ``CL`` / ``CM`` examples, dropped the
+    bound, weight or constraint without a message.
+    """
+    def _known(card: str, label: str) -> None:
+        if label not in all_trim_labels:
+            raise ValueError(
+                f"{card}: label '{label}' not defined in any AESTAT or AESURF card")
+
+    bounded: dict[str, int] = {}
+    for vid, tv in bulk.trimvars.items():
+        _known(f"TRIMVAR {vid}", tv.label)
+        if tv.label in bounded:
+            raise ValueError(
+                f"TRIMVAR {vid}: label '{tv.label}' already has bounds on TRIMVAR "
+                f"{bounded[tv.label]}")
+        bounded[tv.label] = vid
+    for sid, obj in bulk.trimobjs.items():
+        for label in obj.labels:
+            _known(f"TRIMOBJ {sid}", label)
+    for sid, cons in bulk.trimcons.items():
+        for con in cons:
+            _known(f"TRIMCON {sid}", con.label)
+    if len(bulk.trimcons) > 1:
+        # No command selects a TRIMCON set, so every card was applied to every
+        # over-determined trim whatever its SID.  One set per deck is what is acted on.
+        raise ValueError(
+            f"TRIMCON cards use {len(bulk.trimcons)} different SIDs "
+            f"({', '.join(str(s) for s in sorted(bulk.trimcons))}): sbeam has no command "
+            "that selects a TRIMCON set, so all TRIMCON cards must share one SID")
+
+
 def _check_trim(bulk: BulkData) -> set[str]:
     """TRIM and GUSTLF labels against AESTAT/AESURF, with DOF-count diagnostics.
 
@@ -356,6 +391,7 @@ def _check_trim(bulk: BulkData) -> set[str]:
             "AESTAT/AESURF label 'RHOREF' collides with the reserved TRIM "
             "density pseudo-label — rename the trim variable"
         )
+    _check_trim_optimisation(bulk, all_trim_labels)
     # A TRIM named by a GUSTLF has URDD3 supplied by that card (issue #1), so it
     # is prescribed for DOF-counting even though it is absent from TRIM.vars.
     # Without this the generated gust decks warn "over-determined" on every case.

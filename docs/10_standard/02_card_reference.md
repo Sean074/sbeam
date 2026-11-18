@@ -2063,11 +2063,18 @@ SUPORT, 90, 135
 
 ---
 
-### TRIMVAR — Per-variable bounds (sbeam-defined, over-determined trim)
+### TRIMVAR — Per-variable bounds (sbeam-defined)
 
-When a trim problem has more free variables than equilibrium equations, TRIMVAR defines
-bounds and an initial guess for each variable so that the over-determined system can be
-solved as a constrained least-squares problem (minimising the TRIMOBJ objective).
+TRIMVAR bounds one trim variable. In an over-determined trim (more free variables than
+equilibrium equations) the optimiser keeps the variable inside the bounds and starts from
+`INIT`. **Every trim is checked against the bounds** (#77): a determined trim, or a value
+the TRIM card prescribes, that lies outside them refuses the run naming the TRIM, the
+variable and the TRIMVAR.
+
+> **Not ZAERO's layout.** ZAERO's TRIMVAR is `IDVAR LABEL LOWER UPPER TRIMLNK DMI SYM
+> INITIAL` (ZAERO 9.2 User's Manual, PDF p.511). sbeam's is `ID LABEL INIT LB UB`, so a
+> ZAERO card is misread: `TRIMVAR,1,ANGLEA,-0.3,0.3` gives INIT = −0.3, LB = 0.3 and no
+> upper bound. Whether sbeam adopts ZAERO's order or renames the card is open in #87.
 
 **Format:**
 ```
@@ -2079,8 +2086,11 @@ TRIMVAR  ID  LABEL  INIT  LB  UB
 | ID | int | — | Unique identifier |
 | LABEL | str | — | AESTAT or AESURF label this bound applies to |
 | INIT | float | 0.0 | Initial guess |
-| LB | float | −1×10³⁰ | Lower bound |
-| UB | float | +1×10³⁰ | Upper bound |
+| LB | float | −1×10³⁰ | Lower bound. Blank = unbounded, in fixed-field as in free-field |
+| UB | float | +1×10³⁰ | Upper bound. Blank = unbounded |
+
+**Validation:** `LB` must be less than `UB` (equal bounds would pin the variable, which a
+TRIM value does). `LABEL` must be an AESTAT or AESURF label. One TRIMVAR per label.
 
 **Example:**
 ```
@@ -2092,8 +2102,10 @@ TRIMVAR, 11, AILERON, 0.0, -0.5, 0.5
 
 ### TRIMOBJ — Weighted objective function (sbeam-defined, over-determined trim)
 
-Defines the weighted least-squares objective for the over-determined trim solve.
-Label/weight pairs are summed: `J = Σ wᵢ·(xᵢ − x̄ᵢ)²`.
+Defines the weighted least-squares objective for the over-determined trim solve,
+`J = Σ wᵢ·δᵢ²` over the listed **trim variables** δᵢ (AESTAT / AESURF labels). It is not
+an objective on coefficients: `CL` or `CM` are not labels and are refused. Selected by
+case control `TRIMOBJ = sid`; a single defined TRIMOBJ is used when none is named.
 
 **Format:**
 ```
@@ -2106,18 +2118,30 @@ TRIMOBJ  SID  L1  W1  L2  W2  L3  W3  L4  W4
 | SID | int | Unique identifier |
 | L1, W1, … | str, float | Label/weight pairs (continuation lines allowed) |
 
+**Validation (#77):** each label must be an AESTAT or AESURF label, listed once, with a
+weight ≥ 0; at least one pair is required. A label the selected TRIM prescribes only adds
+a constant and is left out. A free variable that is not listed has weight 0. The weighted
+variables must determine the redundancy: if they leave a combination of the free
+variables unrestrained, the trim is refused naming the free variables. (Before #77 an
+objective with no free label fell back, without a message, to unit weights on every
+variable.)
+
 **Example:**
 ```
-TRIMOBJ, 20, ANGLEA, 1.0, CL, 0.5
-+,       CM, 0.1
+TRIMOBJ, 20, ELEV, 1.0, CANARD, 0.5
++,       FLAP, 0.1
 ```
 
 ---
 
 ### TRIMCON — Inequality constraint (sbeam-defined, over-determined trim)
 
-Adds a scalar inequality constraint to the over-determined trim optimisation.
-Multiple TRIMCON cards may share the same SID; they are collected as a list.
+Adds an inequality on one **trim variable** (an AESTAT / AESURF label; `CL` or `CM` are
+not labels and are refused). All TRIMCON cards of a deck form one set and must share one
+SID: no command selects a TRIMCON set, so a second SID is refused (#77; before, cards of
+every SID were applied to every trim). The optimiser enforces the set in an
+over-determined trim, and **every trim is checked against it**: a determined trim that
+violates a TRIMCON refuses the run.
 
 **Format:**
 ```
@@ -2133,8 +2157,8 @@ TRIMCON  SID  LABEL  SENSE  RHS
 
 **Example:**
 ```
-TRIMCON, 30, CL, GE, 0.3
-TRIMCON, 31, CM, LE, 0.02
+TRIMCON, 30, ELEV, GE, -0.3
+TRIMCON, 30, ELEV, LE, 0.3
 ```
 
 ---

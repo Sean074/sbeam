@@ -110,6 +110,40 @@ def solve_trim_determined(
     return u_a, delta_free_arr, K_ll_lu, l_idx, r_idx
 
 
+def check_trim_limits(
+    trim_vars: dict[str, float],
+    trimvars: dict[int, Trimvar],
+    trimcons: list[Trimcon],
+    trim_sid: int,
+) -> None:
+    """Refuse a trim whose solution lies outside a TRIMVAR bound or a TRIMCON (#77).
+
+    Applied to every trim.  The optimiser enforces the limits only while it has a
+    redundancy to spend; a determined trim, an over-determined one whose null space
+    is empty, and a variable the TRIM card prescribes were never compared with them.
+    """
+    def _tol(limit: float) -> float:
+        return 1e-6 * max(1.0, abs(limit))
+
+    for tv in trimvars.values():
+        value = trim_vars.get(tv.label)
+        if value is None:
+            continue
+        if value < tv.lb - _tol(tv.lb) or value > tv.ub + _tol(tv.ub):
+            raise ValueError(
+                f"TRIM {trim_sid}: {tv.label} = {value:.6g} is outside the TRIMVAR "
+                f"{tv.id} bounds [{tv.lb:g}, {tv.ub:g}]")
+    for tc in trimcons:
+        value = trim_vars.get(tc.label)
+        if value is None:
+            continue
+        low = tc.sense == "GE"
+        if (low and value < tc.rhs - _tol(tc.rhs)) or (not low and value > tc.rhs + _tol(tc.rhs)):
+            raise ValueError(
+                f"TRIM {trim_sid}: {tc.label} = {value:.6g} violates TRIMCON {tc.sid} "
+                f"({tc.label} {tc.sense} {tc.rhs:g})")
+
+
 def solve_trim_overdetermined(
     K_aa: FloatArray,
     Q_aa: FloatArray,
@@ -162,18 +196,13 @@ def solve_trim_overdetermined(
 
     label_to_idx = {lbl: i for i, lbl in enumerate(free_labels)}
 
-    # Weighted-L2 objective from TRIMOBJ (default weight 1.0 on every free var
-    # when no TRIMOBJ label matches, so the solve is always well-posed).
-    weights = np.ones(n_free)
-    if trimobj is not None and trimobj.labels:
-        w_obj = np.zeros(n_free)
-        matched = False
+    # Weighted-L2 objective from TRIMOBJ.  A label this TRIM prescribes adds a constant
+    # to the objective and is left out; a free variable not listed has weight 0.
+    weights = np.zeros(n_free)
+    if trimobj is not None:
         for lbl, w in zip(trimobj.labels, trimobj.weights):
             if lbl in label_to_idx:
-                w_obj[label_to_idx[lbl]] = w
-                matched = True
-        if matched:
-            weights = w_obj
+                weights[label_to_idx[lbl]] = w
 
     # Particular (least-norm) equilibrium solution and the null-space basis.
     delta_p, *_ = np.linalg.lstsq(schur_A, schur_b, rcond=None)
@@ -196,8 +225,23 @@ def solve_trim_overdetermined(
 
     if nz == 0:
         # No redundancy left after the equilibrium constraint — δ is determined.
+        # The caller checks the TRIMVAR / TRIMCON limits (check_trim_limits).
         delta_free_arr = delta_p
     else:
+        # The objective must fix the redundancy: its Hessian on the null space,
+        # 2 Nᵀ diag(w) N, has to be positive definite.  With no weighted label free in
+        # this TRIM the old code fell back to unit weights on every variable (#77).
+        hess = N.T @ (weights[:, None] * N)
+        eig = np.linalg.eigvalsh(hess)
+        if eig[0] <= 1e-12 * max(float(eig[-1]), float(weights.max()), 1e-300):
+            sid = trimobj.sid if trimobj is not None else "(none)"
+            listed = ", ".join(trimobj.labels) if trimobj is not None else ""
+            raise ValueError(
+                f"TRIMOBJ {sid} ({listed}) does not determine the over-determined trim: "
+                f"the free variables are {', '.join(free_labels)}, and the weighted ones "
+                "leave a combination of them unrestrained. Give a positive weight to "
+                "more of the free variables.")
+
         def objective(z: FloatArray) -> float:
             d = delta_p + N @ z
             return float(np.sum(weights * d * d))

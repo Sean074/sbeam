@@ -283,13 +283,23 @@ the problem is over-determined. sbeam uses three sbeam-defined cards to handle t
 
 | Card | Role |
 |------|------|
-| `TRIMVAR` | Per-variable initial guess and bounds (`lb`, `ub`) |
-| `TRIMOBJ` | Weighted-L2 objective `J = Σ wᵢ·δᵢ²` over the listed labels |
-| `TRIMCON` | Scalar inequality constraints (`LE` or `GE`) |
+| `TRIMVAR` | Per-variable initial guess and bounds (`lb < ub`) |
+| `TRIMOBJ` | Weighted-L2 objective `J = Σ wᵢ·δᵢ²` over the listed trim-variable labels |
+| `TRIMCON` | Inequality on one trim variable (`LE` or `GE`); one set (one SID) per deck |
 
-These cards are consumed by `run_sol144_trim` when `n_free > n_suport` — see
-**Over-determined trim solve** below. The case-control `TRIMOBJ = sid` selects the objective
-for a subcase (`SubcaseControl.trimobj_sid`); a single defined `TRIMOBJ` is used by default.
+The optimiser uses these cards when `n_free > n_suport` — see **Over-determined trim
+solve** below. The case-control `TRIMOBJ = sid` selects the objective for a subcase
+(`SubcaseControl.trimobj_sid`); a single defined `TRIMOBJ` is used by default.
+
+Since #77 none of the three is skipped without a message:
+
+- Every label must be an AESTAT or AESURF label (checked after the read). Coefficient
+  names such as `CL` are not labels.
+- **Every trim is checked against the TRIMVAR bounds and the TRIMCON set**
+  (`check_trim_limits`), including a determined trim, an over-determined trim with no
+  redundancy left, and a value the TRIM card prescribes. A violation refuses the run.
+- A TRIMOBJ whose weighted labels do not fix the redundancy is refused. It used to fall
+  back to unit weights on every free variable.
 
 ---
 

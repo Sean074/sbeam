@@ -55,7 +55,7 @@ from sbeam.solver.sol144_util import (  # noqa: F401
 )
 from sbeam.solver.sol144_trim_solve import (  # noqa: F401
     build_trim_schur, recover_u_a,
-    solve_trim_determined, solve_trim_overdetermined,
+    solve_trim_determined, solve_trim_overdetermined, check_trim_limits,
 )
 from sbeam.solver.sol144_derivs import (  # noqa: F401
     compute_rigid_derivs, compute_hinge_moments,
@@ -691,6 +691,8 @@ def _stage_solve_trim(st: _TrimState) -> None:
     # ------------------------------------------------------------------ #
     # Schur-complement trim solve (determined or over-determined)
     # ------------------------------------------------------------------ #
+    # One TRIMCON set per deck (the cross-reference pass refuses a second SID, #77)
+    trimcons = [con for cons in bulk.trimcons.values() for con in cons]
     if over_determined:
         # Resolve the TRIMOBJ/TRIMCON/TRIMVAR sets referenced by this subcase.
         trimobj = bulk.trimobjs.get(subcase.trimobj_sid) if subcase.trimobj_sid else None
@@ -702,9 +704,6 @@ def _stage_solve_trim(st: _TrimState) -> None:
                 f"Over-determined trim (n_free={n_free} > n_suport={n_suport}) "
                 "requires a TRIMOBJ card to specify the weighted objective."
             )
-        trimcons = []
-        for cons in bulk.trimcons.values():
-            trimcons.extend(cons)
         u_a, delta_free_arr, K_ll_lu, l_idx, r_idx = solve_trim_overdetermined(
             K_aa, Q_aa, Q_ax_a, M_ax_a, f_rhs_a, q_dyn, suport_local,
             free_labels, free_label_cols, trimobj, trimcons, bulk.trimvars,
@@ -741,6 +740,8 @@ def _stage_solve_trim(st: _TrimState) -> None:
             urdd_full_basic, label_to_col, R_rcsid, True)
         for lbl in free_urdd:
             trim_vars[lbl] = float(urdd_full_rcsid[label_to_col[lbl]])
+
+    check_trim_limits(trim_vars, bulk.trimvars, trimcons, st.trim_sid)
 
     # Full delta_all vector (ordered by all_labels)
     delta_all = np.array([trim_vars.get(l, 0.0) for l in all_labels])
