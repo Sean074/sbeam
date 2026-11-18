@@ -47,6 +47,7 @@ def check_frame_orientations(
     ACSID whose axes are parallel to basic is equivalent to 0 (HA144A's CORD2R 1 is basic
     moved to x = 12.5). A rotated ACSID would put NASTRAN's flow elsewhere, so it is refused.
     """
+    _check_cbush_axes(bulk)
     if bulk.aeros is None or not bulk.aeros.acsid:
         return
     acsid = bulk.aeros.acsid
@@ -60,6 +61,40 @@ def check_frame_orientations(
             f"Orient the model so the flow is along basic +x (CAERO1 CP can still place "
             f"panels in any frame), or use an ACSID with axes parallel to basic"
         )
+
+
+def _check_cbush_axes(bulk: BulkData) -> None:
+    """A CBUSH must define its element axes the way NASTRAN requires (#62).
+
+    MSC Nastran 2024.1 QRG PDF p.1379.  Remark 6: "If the distance between GA and GB is
+    less than .0001, or if GB is blank, then CID must be specified."  Remark 5: with no
+    CID and no orientation the line GA-GB is the element x-axis, which "is valid only
+    when K1 ... or K4 ... or both on the PBUSH entry are specified"; any of K2, K3, K5,
+    K6 is fatal.  sbeam used to pick basic y or z for the missing axes.  Grid positions
+    are resolved before this runs.
+    """
+    for eid, bush in bulk.cbushs.items():
+        if bush.cid is not None:
+            continue
+        ga = bulk.grids[bush.ga]
+        gb = bulk.grids[bush.gb] if bush.gb is not None else None
+        if gb is None:
+            raise ValueError(
+                f"CBUSH {eid}: GB is blank (a grounded spring), so CID must be specified "
+                "in field 9 (QRG p.1379 remark 6); CID 0 puts K1-K6 along the basic axes")
+        dist = ((gb.x - ga.x) ** 2 + (gb.y - ga.y) ** 2 + (gb.z - ga.z) ** 2) ** 0.5
+        if dist < 1.0e-4:
+            raise ValueError(
+                f"CBUSH {eid}: GA and GB are {dist:g} apart (less than .0001), so CID must "
+                "be specified in field 9 (QRG p.1379 remark 6)")
+        if bush.x1 == bush.x2 == bush.x3 == 0.0:
+            pbush = bulk.pbushs[bush.pid]
+            lateral = [f"K{k}" for k in (2, 3, 5, 6) if getattr(pbush, f"k{k}") != 0.0]
+            if lateral:
+                raise ValueError(
+                    f"CBUSH {eid}: no orientation vector and no CID, so only the line "
+                    f"GA-GB is defined, but PBUSH {bush.pid} has {', '.join(lateral)}. Give "
+                    "X1, X2, X3 in fields 6-8 or a CID (QRG p.1379 remark 5)")
 
 
 def _check_frame(card: str, ident: object, field: str, cid: int, bulk: BulkData) -> None:
@@ -185,6 +220,8 @@ def _check_line_elements(bulk: BulkData) -> None:
             _check_grid("CBUSH", eid, "GB", bush.gb, bulk)
         if bush.pid not in bulk.pbushs:
             raise ValueError(f"CBUSH {eid}: property PID={bush.pid} not found")
+        if bush.cid is not None:
+            _check_frame("CBUSH", eid, "CID", bush.cid, bulk)
 
 
 def _check_rigid_elements(bulk: BulkData) -> None:

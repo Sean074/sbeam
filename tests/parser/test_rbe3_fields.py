@@ -77,11 +77,12 @@ def test_well_formed_rbe3_reads_without_warning():
         _rbe3("RBE3, 30, , 10, 123, 1.0, 123, 1, 2")
 
 
-@pytest.mark.parametrize("cid", ["A", "1.5", "2"])
-def test_cbush_cid_must_be_zero(cid):
-    """Rule-3 sweep: a non-integer CBUSH CID was swallowed and read as 0."""
-    with pytest.raises(ValueError, match=rf"CBUSH 4: CID={cid} not supported"):
-        parse_bulk_data(_GRIDS + [f"CBUSH, 4, 40, 1, 2, , {cid}", "+, 0., 1., 0."])
+@pytest.mark.parametrize("cid", ["A", "1.5", "-1"])
+def test_cbush_cid_must_be_an_integer(cid):
+    """Rule-3 sweep: a non-integer CBUSH CID was swallowed and read as 0.  CID is field
+    9 since #62 (MSC's layout)."""
+    with pytest.raises(ValueError, match=rf"CBUSH 4: CID={cid} must be an integer >= 0"):
+        parse_bulk_data(_GRIDS + [f"CBUSH, 4, 40, 1, 2, 0., 1., 0., {cid}"])
 
 
 def test_integer_weight_after_grids_reads_as_grids_as_in_nastran():

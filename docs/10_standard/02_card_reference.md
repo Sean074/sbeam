@@ -640,44 +640,66 @@ CONROD, 22, 4, 20, 1, 5.0e-4, 1.0e-7, 5.0e-3
 
 ### CBUSH — Spring-Damper Element
 
-Defines a two-node (or grounded one-node) spring-damper element.
+Defines a two-node (or grounded one-node) spring element. **The layout is MSC's** (MSC
+Nastran 2024.1 QRG, PDF p.1378–1380; #62).
 
 **Format:**
 ```
-CBUSH, EID, PID, GA, GB, S, CID
-+,     X1, X2, X3
+CBUSH, EID, PID, GA, GB, GO/X1, X2, X3, CID
++,     S, OCID, S1, S2, S3
 ```
 
-Both the inline fields after CID and the continuation line are optional.
+The continuation line is optional.
 
 **Fields:**
 
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
 | EID | `eid` | int | Element ID (unique) | required |
-| PID | `pid` | int | Property ID (references PBUSH) | required |
+| PID | `pid` | int | Property ID (references PBUSH) | EID (QRG p.1378) |
 | GA | `ga` | int | Node A grid ID | required |
-| GB | `gb` | int or None | Node B grid ID; blank/omitted = grounded at GA | `None` |
-| S | — | — | Spring location ratio — read and ignored | — |
-| CID | — | int | Orientation CID — must be `0` or blank; anything else is refused | `0` |
-| X1–X3 | `x1`–`x3` | float | Orientation vector (continuation) | `0.0` |
+| GB | `gb` | int or None | Node B grid ID; blank or `0` = grounded at GA | `None` |
+| X1–X3 | `x1`–`x3` | float | Orientation vector `v` (fields 6–8), in the element x-y plane. Write reals: an **integer in field 6 is the grid GO**, which is not supported and is refused | `0.0` |
+| CID | `cid` | int or None | Element coordinate system (field 9). `0` = basic; `> 0` = a CORD2R; blank = axes from the line GA–GB and `v` | blank |
+| S | — | float | Spring location along GA–GB. Must be blank or `0.5`; anything else is refused | `0.5` |
+| OCID | — | int | Spring-offset coordinate system. Must be blank or `-1`; anything else is refused | `-1` |
+| S1–S3 | — | float | Spring offset in OCID. Ignored, as in MSC when OCID is −1 (remark 9) | — |
+
+**Element axes** (QRG p.1379, remarks 3–6); K1–K6 of the PBUSH act along and about them:
+
+| Card gives | Element axes |
+|---|---|
+| `CID ≥ 0` | x, y, z along T1, T2, T3 of CID. Overrides the vector and the line GA–GB (remark 3) |
+| no CID, GA ≠ GB, `v` given | x = line GA–GB; `v` lies in the x-y plane (remark 4) |
+| no CID, GA ≠ GB, no `v` | x = line GA–GB. Allowed only when the PBUSH has K1 and K4 alone; with K2, K3, K5 or K6 the deck is refused (remark 5). sbeam used to pick basic y |
+| no CID, GB blank or GA–GB closer than 0.0001 | **refused**: "CID must be specified" (remark 6) |
 
 For a grounded element (GB blank), stiffness acts only on GA DOFs. For a two-node element, symmetric stiffness couples GA and GB.
 
 CBUSH is **massless** — it contributes stiffness only. To model mass at a spring
 connection point, add a CONM2 at the grid.
 
-The orientation vector X1–X3 (CBAR convention: defines the element XZ plane) is
-**required** when GA and GB are coincident — a coincident two-node CBUSH without it
-raises `ValueError`. For a grounded element the orientation vector defines the local
-x-axis.
+> **⚠ Known defect (#97): a two-grid CBUSH with K2, K3, K5 or K6 between separated grids
+> resists rigid-body rotation.** sbeam forms the element on the relative grid motions with
+> no arm to the spring location, where MSC places the spring at `S` along the line. Use
+> coincident grids (with a CID) or K1/K4 only until #97 is fixed.
+
+> **Before #62** sbeam read its own layout: `CBUSH, EID, PID, GA, GB, S, CID` with the
+> vector on the continuation. A NASTRAN card's GO and CID were dropped and the default
+> orientation used without a message. **Migrate a deck:** move X1, X2, X3 from the
+> continuation to fields 6–8; give a grounded spring `CID 0` in field 9. An old-layout
+> card is refused with a message that says so.
 
 **Example:**
 ```
-$ Two-node spring between grids 1 and 2
+$ Axial spring between grids 1 and 2 (PBUSH with K1 only)
 CBUSH, 1, 10, 1, 2
-$ Grounded spring at grid 3 (no GB)
-CBUSH, 2, 10, 3
+$ Spring between grids 1 and 2, v = basic y
+CBUSH, 2, 11, 1, 2, 0., 1., 0.
+$ Grounded spring at grid 3, K1-K6 along the basic axes
+CBUSH, 3, 11, 3, , , , , 0
+$ Grounded spring at grid 4 with its axes in CORD2R 7
+CBUSH, 4, 11, 4, , , , , 7
 ```
 
 ---

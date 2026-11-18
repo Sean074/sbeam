@@ -85,6 +85,9 @@ class Cbush:
     pid: int
     ga: int            # End A grid ID
     gb: Optional[int]  # End B grid ID; None = grounded at GA
-    x1: float = 0.0   # Orientation vector (XZ-plane definition, same role as CBAR)
+    x1: float = 0.0   # Orientation vector v (element x-y plane, as on a CBAR)
     x2: float = 0.0
     x3: float = 0.0
+    # Element coordinate system (MSC CBUSH field 9): None = blank, the element axes come
+    # from the line GA-GB and v; 0 = basic; > 0 = that CORD2R's axes
+    cid: Optional[int] = None

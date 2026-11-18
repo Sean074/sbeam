@@ -130,7 +130,7 @@ All internal computation is in global CID 0. After parsing, `resolve_grid_positi
 | Coordinate systems | CORD2R only (rectangular) | CORD2C, CORD2S, CORD1R not implemented |
 | Tapered sections | Not supported | PBAR is uniform cross-section only |
 | CBAR offsets | Not supported | W1A/W2A/etc. offset fields are ignored |
-| CBUSH CID | 0 only | User-defined CID deferred to Phase 3 |
+| CBUSH CID | 0 or a CORD2R (field 9, MSC layout; #62) | GO, spring location `S ≠ 0.5` and `OCID` are refused |
 
 ---
 

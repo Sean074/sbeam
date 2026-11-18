@@ -631,30 +631,51 @@ def _handle_pbush(fields: list[str], conts: list[list[str]], bulk: BulkData) -> 
 
 
 def _handle_cbush(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -> None:
+    """CBUSH in MSC's layout (MSC Nastran 2024.1 QRG PDF p.1378-1380; #62).
+
+    ``CBUSH EID PID GA GB GO/X1 X2 X3 CID`` / ``S OCID S1 S2 S3``.  Until #62 sbeam read
+    its own layout: field 7 as CID, the orientation vector from the continuation, and
+    fields 6, 8 and 9 not at all, so a NASTRAN card's GO and CID were dropped.
+    """
     eid = to_int(fields[1])
-    pid = to_int(fields[2])
+    pid = to_int_opt(fields[2], eid)             # "Default = EID" (p.1378)
     ga  = to_int(fields[3])
-    gb  = to_int_or_none(fields[4]) if len(fields) > 4 else None
-    # fields[5] = S (spring location ratio) — ignored
-    # fields[6] = CID — must be 0 or blank
-    # A CID that is not an integer used to be swallowed and read as 0 (#59 sweep)
-    if len(fields) > 6 and fields[6].strip():
-        cid_val = fields[6].strip()
-        if _field_kind(cid_val) != "int" or int(cid_val) != 0:
-            raise ValueError(f"CBUSH {eid}: CID={cid_val} not supported; only CID=0 is implemented")
-    # Orientation vector from continuation line
-    x1 = x2 = x3 = 0.0
+    gb  = to_int_or_none(fields[4]) or None      # blank or 0: grounded
+    orient = [f.strip() for f in fields[5:8]]
+    # The type of field 6 decides GO or X1, as on the CBAR
+    if _field_kind(orient[0]) == "int":
+        raise ValueError(
+            f"CBUSH {eid}: field 6 is the integer {orient[0]}, which NASTRAN reads as the "
+            "grid GO (QRG p.1378); the GO orientation form is not supported. Give the "
+            "orientation vector X1, X2, X3 as reals (with a decimal point), or a CID")
+    x1, x2, x3 = (to_float(f) if f else 0.0 for f in orient)
+    cid: Optional[int] = None
+    cid_s = fields[8].strip()
+    if cid_s:
+        if _field_kind(cid_s) != "int" or int(cid_s) < 0:
+            raise ValueError(f"CBUSH {eid}: CID={cid_s} must be an integer >= 0 or blank")
+        cid = int(cid_s)
+
     if cont is not None:
-        x1 = to_float(cont[1]) if len(cont) > 1 else 0.0
-        x2 = to_float(cont[2]) if len(cont) > 2 else 0.0
-        x3 = to_float(cont[3]) if len(cont) > 3 else 0.0
+        old = ("sbeam's layout before #62 put the orientation vector X1 X2 X3 on this "
+               "line; it now goes in fields 6-8 of the first line, as in NASTRAN")
+        s_loc, ocid = cont[1].strip(), cont[2].strip()
+        if s_loc and to_float(s_loc) != 0.5:
+            raise ValueError(
+                f"CBUSH {eid}: S={s_loc} is not supported; sbeam has no spring-location "
+                f"offset (leave S blank or 0.5). Note: {old}")
+        if ocid and (_field_kind(ocid) != "int" or int(ocid) != -1):
+            raise ValueError(
+                f"CBUSH {eid}: OCID={ocid} is not supported; sbeam has no spring offset "
+                f"(leave OCID blank or -1). Note: {old}")
+        # S1-S3 are ignored when OCID is -1 or blank (p.1379 remark 9), as here
 
     # CBUSH shares the element-ID space; it used to skip this check, so a CBUSH
     # after a CBAR of the same EID was accepted while the reverse order was not (#51)
     _check_unique_eid(bulk, "CBUSH", eid)
     _check_distinct_ends("CBUSH", eid, ga, gb)
 
-    bulk.cbushs[eid] = Cbush(eid=eid, pid=pid, ga=ga, gb=gb, x1=x1, x2=x2, x3=x3)
+    bulk.cbushs[eid] = Cbush(eid=eid, pid=pid, ga=ga, gb=gb, x1=x1, x2=x2, x3=x3, cid=cid)
 
 
 def _handle_grav(fields: list[str], bulk: BulkData) -> None:

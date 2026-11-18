@@ -23,6 +23,7 @@ from sbeam.model.element import Cbar, Cbush
 from sbeam.results.results import BarForce, BarStress, Sol101Result
 from sbeam.types import FloatArray, SparseMatrix
 from sbeam.model.grid import Grid
+from sbeam.model.coordinate_system import Cord2r
 from sbeam.model.property import Pbar, Pbush
 from sbeam.model.material import Mat1
 
@@ -213,6 +214,7 @@ def recover_cbush_forces(
     pbushs: dict[int, Pbush],
     displacements: FloatArray,
     grid_index: dict[int, int],
+    cord2rs: Optional[dict[int, Cord2r]] = None,
 ) -> FloatArray:
     """Return 6-vector of spring forces in global coordinates for a CBUSH element.
 
@@ -227,12 +229,12 @@ def recover_cbush_forces(
         dofs_b = [6 * ib + d for d in range(6)]
         dofs = dofs_a + dofs_b
         u_e = displacements[dofs]
-        K_e = cbush_stiffness_global(cbush, grids, pbushs)  # 12×12
+        K_e = cbush_stiffness_global(cbush, grids, pbushs, cord2rs)  # 12×12
         f_e = K_e @ u_e
         return f_e[6:12]  # forces at GB end
     else:
         u_a = displacements[dofs_a]
-        K_e = cbush_stiffness_global(cbush, grids, pbushs)  # 6×6
+        K_e = cbush_stiffness_global(cbush, grids, pbushs, cord2rs)  # 6×6
         return K_e @ u_a
 
 
@@ -329,7 +331,7 @@ def run_sol101(bulk: BulkData, subcase: SubcaseControl) -> Sol101Result:
     cbush_forces = {}
     for cbush in bulk.cbushs.values():
         cbush_forces[cbush.eid] = recover_cbush_forces(
-            cbush, bulk.grids, bulk.pbushs, displacements, grid_index
+            cbush, bulk.grids, bulk.pbushs, displacements, grid_index, bulk.cord2rs
         )
 
     # Recover reactions: R = K[spc,:] @ u - f[spc].

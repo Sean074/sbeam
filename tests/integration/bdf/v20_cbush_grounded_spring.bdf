@@ -21,8 +21,9 @@ $ ------------------------------------------------------------- PROPERTIES
 PBUSH, 10, K, 5000.0
 $
 $ --------------------------------------------------------------- ELEMENTS
-$ Grounded CBUSH: GB blank → spring between node 1 and ground
-CBUSH, 1, 10, 1, , , , , ,
+$ Grounded CBUSH: GB blank → spring between node 1 and ground.  A grounded CBUSH
+$ takes its axes from CID (field 9; MSC QRG CBUSH remark 6): 0 = K1-K6 along basic.
+CBUSH, 1, 10, 1, , , , , 0
 $
 $ ----------------------------------------------------------- CONSTRAINTS
 $ Constrain all DOFs except Tx (DOF 1) so only axial spring DOF is free

@@ -119,8 +119,7 @@ _FORWARD_REFERENCES = """\
 CBAR, 1, 10, 1, 2, 0., 1., 0.
 CROD, 2, 20, 1, 2
 CONROD, 3, 1, 2, 30, 1.0e-4
-CBUSH, 4, 40, 1, 2
-+, 0., 1., 0.
+CBUSH, 4, 40, 1, 2, 0., 1., 0.
 PLOTEL, 5, 1, 2
 RBE2, 6, 2, 123456, 3
 RBAR, 7, 1, 3
@@ -159,11 +158,11 @@ _BASE = ["GRID, 1, , 0.0, 0.0, 0.0", "GRID, 2, , 1.0, 0.0, 0.0",
 
 
 @pytest.mark.parametrize("first, second, match", [
-    (["CBAR, 4, 10, 1, 2, 0., 1., 0."], ["CBUSH, 4, 40, 1, 2", "+, 0., 1., 0."],
+    (["CBAR, 4, 10, 1, 2, 0., 1., 0."], ["CBUSH, 4, 40, 1, 2, 0., 1., 0."],
      r"CBUSH 4: duplicate element ID \(already defined by CBAR 4\)"),
-    (["CBUSH, 4, 40, 1, 2", "+, 0., 1., 0."], ["CBAR, 4, 10, 1, 2, 0., 1., 0."],
+    (["CBUSH, 4, 40, 1, 2, 0., 1., 0."], ["CBAR, 4, 10, 1, 2, 0., 1., 0."],
      r"CBAR 4: duplicate element ID \(already defined by CBUSH 4\)"),
-    (["CBUSH, 4, 40, 1, 2", "+, 0., 1., 0."], ["CBUSH, 4, 40, 1, 2", "+, 0., 1., 0."],
+    (["CBUSH, 4, 40, 1, 2, 0., 1., 0."], ["CBUSH, 4, 40, 1, 2, 0., 1., 0."],
      r"CBUSH 4: duplicate element ID"),
     (["PAERO1, 7"], ["PSTRIP, 7"], "PSTRIP PID 7 collides with a PAERO1"),
     (["PSTRIP, 7"], ["PAERO1, 7"], "PSTRIP PID 7 collides with a PAERO1"),

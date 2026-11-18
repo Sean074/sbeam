@@ -11,6 +11,8 @@ from sbeam.model.property import Pbar, Pbush
 from sbeam.model.material import Mat1
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.grid import Grid
+from sbeam.model.coordinate_system import Cord2r
+from sbeam.assembly.coord_transform import build_transform
 from sbeam.types import FloatArray, SparseMatrix
 
 
@@ -230,7 +232,7 @@ def assemble_global_stiffness(bulk: BulkData) -> SparseMatrix:
         data.extend(K_e.ravel())
 
     for cbush in bulk.cbushs.values():
-        K_e = cbush_stiffness_global(cbush, bulk.grids, bulk.pbushs)
+        K_e = cbush_stiffness_global(cbush, bulk.grids, bulk.pbushs, bulk.cord2rs)
         dofs_a = node_dofs(cbush.ga, grid_index)
         dofs = dofs_a + node_dofs(cbush.gb, grid_index) if cbush.gb is not None else dofs_a
         ii, jj = np.meshgrid(dofs, dofs, indexing="ij")
@@ -249,58 +251,71 @@ def cbush_local_stiffness(pbush: Pbush) -> FloatArray:
     return np.diag([pbush.k1, pbush.k2, pbush.k3, pbush.k4, pbush.k5, pbush.k6])
 
 
-def cbush_transform_matrix(cbush: Cbush, grids: dict[int, Grid]) -> FloatArray:
-    """3×3 rotation matrix R for a CBUSH element.
+def cbush_transform_matrix(
+    cbush: Cbush, grids: dict[int, Grid], cord2rs: Optional[dict[int, Cord2r]] = None,
+) -> FloatArray:
+    """3×3 rotation matrix R for a CBUSH element: rows are the element axes in basic.
 
-    Rows are local axes expressed in the global frame.
-    When gb is None (grounded), the orientation vector (x1/x2/x3) defines the
-    local x-axis direction directly. When gb is set, e_x = GA→GB unit vector.
+    MSC Nastran 2024.1 QRG PDF p.1379:
+
+    * CID ≥ 0 "overrides GO and Xi.  Then the element x-axis is along T1, the element
+      y-axis is along T2, and the element z-axis is along T3 of the CID coordinate
+      system" (remark 3); CID 0 is basic.
+    * CID blank, GA ≠ GB, v given: "the line AB is the element x-axis and the
+      orientation vector v lies in the x-y plane" (remark 4).
+    * CID blank, GA ≠ GB, no v: the line AB is the element x-axis (remark 5).  The parser
+      allows this only for a PBUSH with K1 and K4 alone, so y and z carry no stiffness.
+
+    A grounded or coincident CBUSH needs a CID (remark 6); the parser refuses one without.
     """
-    if cbush.gb is not None:
-        ga = grids[cbush.ga]
-        gb = grids[cbush.gb]
-        dx = np.array([gb.x - ga.x, gb.y - ga.y, gb.z - ga.z], dtype=float)
-        L = float(np.linalg.norm(dx))
-        if L < 1e-12:
-            raise ValueError(
-                f"CBUSH {cbush.eid}: nodes GA and GB are coincident; X1/X2/X3 orientation is required"
-            )
-        e_x = dx / L
-    else:
-        # Grounded: use the orientation vector as the local x-axis
-        e_x_raw = np.array([cbush.x1, cbush.x2, cbush.x3], dtype=float)
-        norm_ex = np.linalg.norm(e_x_raw)
-        if norm_ex < 1e-12:
-            e_x = np.array([1.0, 0.0, 0.0])
-        else:
-            e_x = e_x_raw / norm_ex
+    if cbush.cid is not None:
+        if cbush.cid == 0:
+            return np.eye(3)
+        if cord2rs is None:
+            raise ValueError(f"CBUSH {cbush.eid}: CID={cbush.cid} needs the CORD2R table")
+        return build_transform(cbush.cid, cord2rs).T
 
-    # Orientation vector defines the XZ-plane (same role as CBAR v-vector)
+    if cbush.gb is None:
+        raise ValueError(
+            f"CBUSH {cbush.eid}: GB is blank, so CID must be specified (QRG p.1379 remark 6)")
+    ga = grids[cbush.ga]
+    gb = grids[cbush.gb]
+    dx = np.array([gb.x - ga.x, gb.y - ga.y, gb.z - ga.z], dtype=float)
+    L = float(np.linalg.norm(dx))
+    if L < CBUSH_COINCIDENT:
+        raise ValueError(
+            f"CBUSH {cbush.eid}: GA and GB are closer than {CBUSH_COINCIDENT:g}, so CID "
+            "must be specified (QRG p.1379 remark 6)")
+    e_x = dx / L
+
     v = np.array([cbush.x1, cbush.x2, cbush.x3], dtype=float)
     v_perp = v - np.dot(v, e_x) * e_x
-    norm_v = np.linalg.norm(v_perp)
-
-    if norm_v < 1e-12:
-        # Default: try global Y; fall back to global Z if parallel to e_x
+    norm_v = float(np.linalg.norm(v_perp))
+    if not v.any():
+        # No orientation: any y, z will do because only K1 and K4 are non-zero
         for candidate in ([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]):
             vc = np.array(candidate)
-            vp = vc - np.dot(vc, e_x) * e_x
-            if np.linalg.norm(vp) > 1e-12:
-                v_perp = vp
-                norm_v = np.linalg.norm(v_perp)
+            v_perp = vc - np.dot(vc, e_x) * e_x
+            norm_v = float(np.linalg.norm(v_perp))
+            if norm_v > 1e-6:
                 break
-        else:
-            raise ValueError(
-                f"CBUSH {cbush.eid}: cannot determine local y-axis — element axis is degenerate"
-            )
+    elif norm_v < 1e-9 * float(np.linalg.norm(v)):
+        raise ValueError(
+            f"CBUSH {cbush.eid}: the orientation vector is parallel to the line GA-GB")
 
     e_y = v_perp / norm_v
     e_z = np.cross(e_x, e_y)
     return np.array([e_x, e_y, e_z])
 
 
+#: "If the distance between GA and GB is less than .0001 ... then CID must be specified"
+#: (MSC Nastran 2024.1 QRG PDF p.1379, CBUSH remark 6)
+CBUSH_COINCIDENT = 1.0e-4
+
+
 def cbush_stiffness_global(
-    cbush: Cbush, grids: dict[int, Grid], pbushs: dict[int, Pbush]
+    cbush: Cbush, grids: dict[int, Grid], pbushs: dict[int, Pbush],
+    cord2rs: Optional[dict[int, Cord2r]] = None,
 ) -> FloatArray:
     """Global stiffness contribution for a CBUSH element.
 
@@ -310,7 +325,7 @@ def cbush_stiffness_global(
     """
     pbush = pbushs[cbush.pid]
     K6 = cbush_local_stiffness(pbush)
-    R = cbush_transform_matrix(cbush, grids)
+    R = cbush_transform_matrix(cbush, grids, cord2rs)
     T6 = block_diag(R, R)  # 6×6: two blocks for translational + rotational DOFs
 
     if cbush.gb is not None:

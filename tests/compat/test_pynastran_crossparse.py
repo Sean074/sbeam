@@ -157,7 +157,8 @@ def _sbeam_view(b: BulkData) -> dict[str, dict[Any, dict[str, Any]]]:
         "GRID": {k: dict(cp=g.cp, x=g.x, y=g.y, z=g.z, cd=g.cd, ps=g.ps) for k, g in b.grids.items()},
         "CBAR": {k: dict(pid=e.pid, ga=e.ga, gb=e.gb, x=[e.x1, e.x2, e.x3], offt=e.offt,
                          pa=e.pa, pb=e.pb) for k, e in b.cbars.items()},
-        "CBUSH": {k: dict(pid=e.pid, ga=e.ga, gb=e.gb, x=[e.x1, e.x2, e.x3])
+        "CBUSH": {k: dict(pid=e.pid, ga=e.ga, gb=e.gb, cid=e.cid,
+                          x=[e.x1, e.x2, e.x3] if e.cid is None else None)
                   for k, e in b.cbushs.items()},
         "CROD": {k: dict(pid=e.pid, ga=e.ga, gb=e.gb) for k, e in b.crods.items()},
         "CONROD": {k: dict(ga=e.ga, gb=e.gb, mid=e.mid, A=e.A, J=e.J, c=e.c, nsm=e.nsm)
@@ -228,7 +229,9 @@ def _pyn_view(m: Any) -> dict[str, dict[Any, dict[str, Any]]]:
             v["CBAR"][k] = dict(pid=e.pid, ga=e.ga, gb=e.gb, x=_f(e.x), offt=e.offt,
                                 pa=e.pa, pb=e.pb)
         elif e.type == "CBUSH":
-            v["CBUSH"][k] = dict(pid=e.pid, ga=e.nodes[0], gb=e.nodes[1], x=_f(e.x))
+            # CID >= 0 overrides the vector (QRG p.1379 remark 3), so compare one of them
+            v["CBUSH"][k] = dict(pid=e.pid, ga=e.nodes[0], gb=e.nodes[1], cid=e.cid,
+                                 x=_f(e.x) if e.cid is None else None)
         elif e.type == "CROD":
             v["CROD"][k] = dict(pid=e.pid, ga=e.nodes[0], gb=e.nodes[1])
         elif e.type == "CONROD":
@@ -330,7 +333,8 @@ _UNREAD: list[tuple[str, Callable[[Any], bool], str]] = [
     ("CBAR", lambda e: _blank(e.wa) and _blank(e.wb), "offsets W1A-W3B"),
     ("CBAR", lambda e: _blank(e.g0), "orientation grid G0"),
     ("CBUSH", lambda e: _blank(e.g0), "orientation grid GO"),
-    ("CBUSH", lambda e: _blank(e.cid), "element CID"),
+    ("CBUSH", lambda e: e.ocid in (None, -1), "spring offset OCID"),
+    ("CBUSH", lambda e: e.s in (None, 0.5), "spring location S"),
     ("PBAR", lambda p: _blank(p.i12), "I12"),
     # pyNastran 1.4.1 stores a blank K1/K2 as 1e8 (NASTRAN: infinite)
     ("PBAR", lambda p: all(k is None or k >= 1.0e8 for k in (p.k1, p.k2)), "K1/K2"),
@@ -442,20 +446,36 @@ def _crafted(lines: list[str], tmp: Path) -> list[str]:
     ["SPC1,100,12456,1,2,13"],
     ["DIVERG,70,2,.5,.8,.9"],                                             # #73 QRG p.1603
     ["DIVERG     100      5       0.0"],                                  # #73 AAUG p.148
+    ["PBUSH,7,K,1.,2.,3.", "CBUSH,4,7,1,2,0.,1.,0."],                      # #62 vector
+    ["PBUSH,7,K,1.,2.,3.", "CBUSH,4,7,1,,,,,0"],                           # #62 QRG example 2
+    ["PBUSH,7,K,1.,2.,3.", "CBUSH,4,7,1,2,,,,6",                           # #62 CID, field 9
+     "CORD2R,6,0,0.,0.,0.,0.,0.,1.", "+,0.,1.,0."],
+    ["PBUSH,7,K,1.,2.,3.", "CBUSH,7,,1,2,0.,1.,0.", "+,0.5,-1"],            # #62 PID, S, OCID
+    ["CBAR,1,,1,2,0.,1.,0.,BGG"],                                         # #67 PID, OFFT
 ], ids=["conm2-overflow", "cbar-pins", "load-3-lines", "pbush-flags", "grid-large", "spc1",
-        "diverg-qrg", "diverg-aaug"])
+        "diverg-qrg", "diverg-aaug", "cbush-vector", "cbush-grounded-cid0", "cbush-cid",
+        "cbush-defaults", "cbar-pid-offt"])
 def test_crafted_cards_agree(lines, tmp_path):
     assert _crafted(_GRIDS + lines, tmp_path) == []
 
 
-@pytest.mark.parametrize("lines, issue", [
-    (["CBAR,1,1,1,2,13,0,0"], "#67: G0 written with zeros is read as a vector"),
-    (["CBAR,1,1,1,2,0.,1.,0.", "+,,,0.,0.,5.,0.,0.,5."], "#67: offsets dropped"),
-    (["RBAR,5,1,2,123456,,,123"], "#68: RBAR CMB ignored"),
-], ids=["cbar-g0-zeros", "cbar-offsets", "rbar-cmb"])
-@pytest.mark.xfail(strict=True, reason="open audit issue; fix flips this to a pass")
-def test_crafted_cards_open_issues(lines, issue, tmp_path):
-    assert _crafted(_GRIDS + lines, tmp_path) == [], issue
+@pytest.mark.parametrize("lines, match", [
+    (["CBAR,1,1,1,2,13,0,0"], "reads as the grid G0"),                    # #67
+    (["CBAR,1,1,1,2,0.,1.,0.", "+,,,0.,0.,5.,0.,0.,5."], "offset W3A"),    # #67
+    (["RBAR,5,1,2,123456,,,123"], "partial set of dependent DOFs"),       # #68
+    (["PBUSH,7,K,1.", "CBUSH,4,7,1,2,13"], "reads as the grid GO"),        # #62
+    (["PBUSH,7,K,1.", "CBUSH,4,7,1,2,0.,1.,0.", "+,0.25,10,0.,1.,1."], "S=0.25"),   # #62
+], ids=["cbar-g0-zeros", "cbar-offsets", "rbar-cmb", "cbush-go", "cbush-offset"])
+def test_cards_pynastran_reads_and_sbeam_cannot_honour_are_refused(lines, match, tmp_path):
+    """pyNastran stores a value here that sbeam has no model for.  These were silent
+    disagreements (the audit's probes); sbeam now refuses the card."""
+    deck = tmp_path / "crafted.bdf"
+    deck.write_text("SOL 101\nCEND\nSUBCASE 1\nBEGIN BULK\n" + "\n".join(_GRIDS + lines)
+                    + "\nENDDATA\n")
+    _model, failed = _pynastran(_GRIDS + lines, tmp_path)
+    assert not failed, f"pyNastran could not parse {sorted(failed)}"
+    with pytest.raises(ValueError, match=match):
+        parse_bdf(deck)
 
 
 # ---------------------------------------------------------------------------

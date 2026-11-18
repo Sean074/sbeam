@@ -10,6 +10,22 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Breaking changes
+- **CBUSH is read in MSC's layout** (#62; pre-1.0 MINOR break). MSC: `CBUSH EID PID GA GB
+  GO/X1 X2 X3 CID` / `S OCID S1 S2 S3` (QRG 2024.1 PDF p.1378–1380). sbeam read field 7
+  as CID, took the orientation vector from the continuation and did not read fields 6, 8
+  and 9, so `CBUSH,4,40,1,2,3` (GO) and a CID in field 9 were accepted and dropped: a
+  NASTRAN spring got the default orientation, which with unequal K1–K3 changes the
+  answer. Now: the vector is fields 6–8; an integer in field 6 is GO and is refused (not
+  supported); CID in field 9 is read, `0` = basic and `> 0` = a CORD2R (new: it was
+  "0 only"); PID defaults to EID; `S ≠ 0.5` and `OCID` are refused. MSC's axis rules are
+  enforced (p.1379 remarks 5–6): a grounded or coincident-grid spring needs a CID, and a
+  spring with no vector and no CID may have K1 and K4 only — sbeam used to pick basic y.
+  **Migrate a deck:** move X1 X2 X3 from the continuation to fields 6–8, and give a
+  grounded spring `CID 0` in field 9; an old-layout card is refused with that advice.
+  One repo deck changed (`v20_cbush_grounded_spring.bdf`, CID 0 added; same answer).
+  pyNastran reads the same PID, grids, vector and CID from four crafted cards. Found in
+  the #58 sweep; confirmed by the 2026-11-16 audit. A separate defect found on the way,
+  a two-grid CBUSH with lateral stiffness resisting rigid rotation, is filed as #97.
 - **CONM2 products of inertia take NASTRAN's sign** (#66; pre-1.0 MINOR break, **silent**).
   MSC: the fields are `I21 = ∫ρ x₁x₂ dV`, `I31`, `I32`, and "the negative signs for the
   off-diagonal terms are supplied automatically" (QRG 2024.1 PDF p.1449–1450, remark 5).
