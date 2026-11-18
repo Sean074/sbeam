@@ -188,6 +188,16 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and warnings, before and after.
 
 ### Fixed
+- **CBAR is read by MSC's field rules: offsets refused, OFFT validated, G0 decided by
+  field 6, PID defaults to EID** (#67; QRG 2024.1 PDF p.1360–1363). (1) The offsets
+  W1A–W3B on the continuation were dropped without a message; any non-zero offset is now
+  refused. (2) OFFT accepted any text; it must be one of MSC's eight codes, and `B..`
+  (orientation in basic) is honoured on a grid with a CD. (3) "If an integer is specified
+  in field 6, then G0 is used" (p.1362): `CBAR 1 1 1 2 13 0 0` was read as the vector
+  (13, 0, 0) and is now refused as the unsupported G0 form; so is the integer vector
+  `0, 1, 0`, which sbeam accepted — **write vector components as reals.** (4) A blank PID
+  failed with `int('')`; it now defaults to the EID on CBAR and CROD (p.1360, p.1522).
+  No repo deck is affected. Found by the 2026-11-16 audit (S2, S17, P2, P7, N1).
 - **A GRID CD that would change the answer is refused** (#65). MSC: CD is the frame "in
   which the displacements, degrees-of-freedom, constraints, and solution vectors are
   defined at the grid point" (QRG 2024.1 PDF p.1944). sbeam uses CD only to rotate the

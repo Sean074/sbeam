@@ -71,7 +71,7 @@ def test_ha144a_translated_acsid_equals_basic():
 
 @pytest.mark.parametrize("card, match", [
     (["GRID, 3, , 2.0, 0.0, 0.0, , , 5"], r"GRID 3: SEID=5 not supported"),
-    (["CBAR, 1, 10, 1, 2, 3", "GRID, 3, , 0.0, 1.0, 0.0"], r"CBAR 1: the G0 \(grid-ID\) orientation form"),
+    (["CBAR, 1, 10, 1, 2, 3", "GRID, 3, , 0.0, 1.0, 0.0"], r"CBAR 1: field 6 is the integer 3, which NASTRAN reads as the grid G0"),
     ([_AEROS.format(acsid=0) + ", -0.3"], r"AEROS card: MACH=-0.3 must be non-negative"),
     (["TRIM, 1, -0.5, 1000.0, ANGLEA, 0.1"], r"TRIM 1: MACH=-0.5 must be non-negative"),
     (["DIVERG, 1, 2, 0.3, -0.5"], r"DIVERG 1: every Mach must be non-negative"),
@@ -83,5 +83,5 @@ def test_documented_rules_are_enforced(card, match):
 
 def test_allowed_neighbours_still_parse():
     bulk = parse_bulk_data(_BASE + ["GRID, 3, , 2.0, 0.0, 0.0, , , 0",
-                                    "CBAR, 1, 10, 1, 2, 0, 1, 0"])
+                                    "CBAR, 1, 10, 1, 2, 0., 1., 0."])
     assert bulk.cbars[1].x2 == 1.0

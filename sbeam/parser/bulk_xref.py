@@ -150,8 +150,10 @@ def _check_displacement_frames(bulk: BulkData) -> None:
             for gid in [rbe3.refgrid, *grids]:
                 _components(gid, f"RBE3 {eid}", comps)
     for eid, bar in bulk.cbars.items():
-        if bar.ga in rotated:
-            _refuse(bar.ga, f"CBAR {eid} takes its orientation vector at this grid (GA)")
+        # OFFT B..: the vector is in basic, which is what sbeam uses (QRG p.1363)
+        if bar.ga in rotated and bar.offt.startswith("G"):
+            _refuse(bar.ga, f"CBAR {eid} takes its orientation vector at this grid (GA, "
+                            f"OFFT={bar.offt})")
     for eid, bush in bulk.cbushs.items():
         for gid in (bush.ga, bush.gb):
             if gid in rotated:

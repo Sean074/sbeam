@@ -493,31 +493,34 @@ Defines a two-node beam element with uniform cross-section.
 **Format:**
 ```
 CBAR, EID, PID, GA, GB, X1, X2, X3, OFFT
-+,    PA, PB
++,    PA, PB, W1A, W2A, W3A, W1B, W2B, W3B
 ```
 
-The continuation line is optional.
+The continuation line is optional. The layout is MSC's (QRG 2024.1 PDF p.1360–1363).
 
 **Fields:**
 
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
 | EID | `eid` | int | Element ID (unique) | required |
-| PID | `pid` | int | Property ID (references PBAR) | required |
+| PID | `pid` | int | Property ID (references PBAR) | EID (QRG p.1360; sbeam has no BAROR) |
 | GA | `ga` | int | End A grid ID | required |
 | GB | `gb` | int | End B grid ID | required |
 | X1 | `x1` | float | Orientation vector component 1 | required |
 | X2 | `x2` | float | Orientation vector component 2 | required |
 | X3 | `x3` | float | Orientation vector component 3 | required |
-| OFFT | `offt` | str | Offset flag | `"GGG"` |
+| OFFT | `offt` | str | One of `GGG BGG GGO BGO GOG BOG GOO BOO` (QRG p.1363 remark 7); anything else is refused. The first letter says whether X1–X3 are in GA's displacement system (`G`) or basic (`B`); the two are the same unless GA has `CD ≠ 0`, where `G` is refused (#65). The offset letters have no effect because offsets are refused | `"GGG"` |
 | PA | `pa` | str | Pin releases at end A (DOF digits 1–6) | `""` |
 | PB | `pb` | str | Pin releases at end B (DOF digits 1–6) | `""` |
+| W1A–W3B | — | float | End offsets. **Not supported: any non-zero value is refused** (#67). They used to be dropped without a message | `0.0` |
 
 The orientation vector `[X1, X2, X3]` defines the element y-axis and must not be parallel to the element axis (GA→GB). Only the vector form is supported — the NASTRAN
-G0 (grid-ID) form of the orientation field is **not** supported: an integer X1 with X2
-and X3 blank is the G0 form in NASTRAN and is refused (#58; it used to be read as the
-vector (G0, 0, 0)). Integer components with X2/X3 present (`0, 1, 0`) are read as a
-vector, which is more lenient than NASTRAN; write them as reals.
+G0 (grid-ID) form of the orientation field is **not** supported. As in NASTRAN, the
+type of field 6 alone decides: "If an integer is specified in field 6, then G0 is used; if
+field 6 is blank or real, then X1, X2, X3 is used" (QRG p.1362). An integer in field 6 is
+therefore refused whatever X2 and X3 hold (#67): `13 0 0` is G0 = 13, and was read as the
+vector (13, 0, 0); `0, 1, 0` was read as a vector and is now refused too. Write vector
+components as reals, `0., 1., 0.`.
 
 Pin-release DOF digits (PA/PB) are in **element local axes** (1 = axial, 4 = torsion,
 5/6 = local bending rotations), not the global DOFs of the DOF Reference table.
@@ -555,7 +558,7 @@ CROD, EID, PID, GA, GB
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
 | EID | `eid` | int | Element ID (unique across `CBAR`, `CROD`, `CONROD`, `CBUSH`) | required |
-| PID | `pid` | int | Property ID (references `PROD`) | required |
+| PID | `pid` | int | Property ID (references `PROD`) | EID (QRG 2024.1 PDF p.1522) |
 | GA | `ga` | int | End A grid ID | required |
 | GB | `gb` | int | End B grid ID (≠ GA) | required |
 

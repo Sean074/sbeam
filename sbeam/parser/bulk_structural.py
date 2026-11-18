@@ -150,7 +150,7 @@ def _handle_prod(fields: list[str], bulk: BulkData) -> None:
 
 def _handle_crod(fields: list[str], bulk: BulkData) -> None:
     eid = to_int(fields[1])
-    pid = to_int(fields[2])
+    pid = to_int_opt(fields[2], eid)   # "Default = EID" (QRG 2024.1 PDF p.1522)
     ga  = to_int(fields[3])
     gb  = to_int(fields[4])
     _check_unique_eid(bulk, "CROD", eid)
@@ -175,21 +175,38 @@ def _handle_conrod(fields: list[str], bulk: BulkData) -> None:
 
 def _handle_cbar(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -> None:
     eid  = to_int(fields[1])
-    pid  = to_int(fields[2])
+    # "Default = EID unless BAROR entry has nonzero entry in field 3" (QRG 2024.1 PDF
+    # p.1360); sbeam has no BAROR.  A blank PID used to fail with int('') (#67)
+    pid  = to_int_opt(fields[2], eid)
     ga   = to_int(fields[3])
     gb   = to_int(fields[4])
-    # G0 form: an integer X1 with X2/X3 blank is a grid ID in NASTRAN.  It used to be read
-    # as the vector (G0, 0, 0), a silently wrong orientation (#58 sweep).
-    if len(fields) > 5 and _field_kind(fields[5].strip()) == "int" \
-            and not any(f.strip() for f in fields[6:8]):
-        raise ValueError(f"CBAR {eid}: the G0 (grid-ID) orientation form is not supported; "
-                         f"give the orientation vector X1, X2, X3 as reals")
+    # "If an integer is specified in field 6, then G0 is used; if field 6 is blank or
+    # real, then X1, X2, X3 is used" (QRG p.1362).  The type of field 6 alone decides:
+    # `13 0 0` is G0 = 13, which the X2/X3-blank test of #58 read as the vector (13, 0, 0).
+    if len(fields) > 5 and _field_kind(fields[5].strip()) == "int":
+        raise ValueError(
+            f"CBAR {eid}: field 6 is the integer {fields[5].strip()}, which NASTRAN reads "
+            "as the grid G0 (QRG p.1362); the G0 orientation form is not supported. Give "
+            "the orientation vector X1, X2, X3 as reals (with a decimal point)")
     x1   = to_float(fields[5]) if len(fields) > 5 else 0.0
     x2   = to_float(fields[6]) if len(fields) > 6 else 0.0
     x3   = to_float(fields[7]) if len(fields) > 7 else 0.0
-    offt = fields[8] if len(fields) > 8 and fields[8] else "GGG"
+    offt = fields[8].strip().upper() if len(fields) > 8 and fields[8].strip() else "GGG"
+    if offt not in _CBAR_OFFT:
+        raise ValueError(
+            f"CBAR {eid}: OFFT='{offt}' is not one of {', '.join(sorted(_CBAR_OFFT))} "
+            "(QRG p.1363 remark 7)")
     pa   = cont[1] if cont is not None and len(cont) > 1 else ""
     pb   = cont[2] if cont is not None and len(cont) > 2 else ""
+    # Offsets W1A W2A W3A W1B W2B W3B (continuation fields 4-9, QRG p.1360-1361) move the
+    # bar's ends off its grids; sbeam has no offsets, and dropped them without a message
+    if cont is not None:
+        for name, value in zip(("W1A", "W2A", "W3A", "W1B", "W2B", "W3B"), cont[3:9]):
+            if value.strip() and to_float(value) != 0.0:
+                raise ValueError(
+                    f"CBAR {eid}: offset {name}={value.strip()} is not supported; sbeam "
+                    "bars run grid to grid. Move the grids to the bar's ends, or join each "
+                    "end to its grid with an RBAR")
 
     _check_unique_eid(bulk, "CBAR", eid)
     if pa:
@@ -207,6 +224,12 @@ def _handle_cbar(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -
             )
     bulk.cbars[eid] = Cbar(eid=eid, pid=pid, ga=ga, gb=gb,
                            x1=x1, x2=x2, x3=x3, offt=offt, pa=pa, pb=pb)
+
+
+# QRG 2024.1 PDF p.1363 remark 7.  First letter: orientation vector in the displacement
+# (G) or basic (B) system; second and third: end A / end B offset in the displacement
+# (G) or offset (O) system.  Offsets are refused, so only the first letter matters.
+_CBAR_OFFT = frozenset({"GGG", "BGG", "GGO", "BGO", "GOG", "BOG", "GOO", "BOO"})
 
 
 def _handle_plotel(fields: list[str], bulk: BulkData) -> None:
