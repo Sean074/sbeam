@@ -111,6 +111,13 @@ def _handle_tabled1(fields: list[str], conts: list[list[str]], bulk: BulkData) -
     tid   = to_int(fields[1])
     xaxis = fields[2].strip().upper() if len(fields) > 2 and fields[2].strip() else "LINEAR"
     yaxis = fields[3].strip().upper() if len(fields) > 3 and fields[3].strip() else "LINEAR"
+    for name, axis in (("XAXIS", xaxis), ("YAXIS", yaxis)):
+        # LOG interpolates on ln x or ln y (QRG 2024.1 PDF p.2897); sbeam evaluated a
+        # LOG table linearly without a message (#70)
+        if axis != "LINEAR":
+            raise ValueError(
+                f"TABLED1 {tid}: {name}={axis} is not supported; only LINEAR "
+                "interpolation is implemented (leave the field blank)")
     if tid in bulk.tabled1s:
         raise ValueError(f"Duplicate TABLED1 TID {tid}")
     # Data pairs live entirely on the continuation line(s); fields[4:] of the

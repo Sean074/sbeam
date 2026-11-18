@@ -712,12 +712,33 @@ def _handle_suport(fields: list[str], bulk: BulkData) -> None:
         bulk.supports.append(Suport(gid=gid, dofs=dofs))
 
 def _handle_eigrl(fields: list[str], bulk: BulkData) -> None:
+    """EIGRL: sbeam finds the lowest ND modes (MSC Nastran 2024.1 QRG PDF p.1801-1803).
+
+    MSC selects roots from V1, V2 and ND together (p.1802, Table 9-13).  sbeam has only
+    the "blank, blank, ND" row, so the other rows are refused: until #70 V1/V2 were
+    warned and not applied, and a blank ND returned every mode where MSC returns the
+    lowest root.  MSGLVL, MAXSET and SHFSCL (fields 6-8) are diagnostic and
+    performance settings and are ignored.
+    """
     sid  = to_int(fields[1])
     v1   = to_float_or_none(fields[2]) if len(fields) > 2 else None
     v2   = to_float_or_none(fields[3]) if len(fields) > 3 else None
     nd   = to_int_or_none(fields[4]) if len(fields) > 4 else None
-    # fields[5–7] are MSGLVL, MAXSET, SHFSCL — not used in phase 1
-    norm = fields[8].strip() if len(fields) > 8 and fields[8].strip() else "MASS"
+    norm = fields[8].strip().upper() if len(fields) > 8 and fields[8].strip() else "MASS"
+    for name, value in (("V1", v1), ("V2", v2)):
+        if value is not None:
+            raise ValueError(
+                f"EIGRL {sid}: {name}={value:g} is not supported; sbeam returns the lowest "
+                "ND modes and does not select by frequency range (QRG p.1802, Table "
+                f"9-13). Leave {name} blank and set ND")
+    if nd is None:
+        raise ValueError(
+            f"EIGRL {sid}: ND is blank. NASTRAN then returns the lowest root only (QRG "
+            "p.1802, Table 9-13); give the number of modes wanted in ND")
+    if nd < 1:
+        raise ValueError(f"EIGRL {sid}: ND={nd} must be > 0 (QRG p.1801)")
+    if norm not in ("MASS", "MAX"):
+        raise ValueError(f"EIGRL {sid}: NORM='{norm}' must be MASS or MAX (QRG p.1801)")
     if sid in bulk.eigrls:
         raise ValueError(f"Duplicate EIGRL SID {sid}")
     bulk.eigrls[sid] = Eigrl(sid=sid, v1=v1, v2=v2, nd=nd, norm=norm)

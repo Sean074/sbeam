@@ -657,8 +657,10 @@ the Mach-correct AIC was built twice.
   references `MLDTRIM` (the initial-condition `TRIM` sid), `MLDTIME` (`t0/tend/dt/tout`), `MLDCOMD`
   (one or more `(label, TABLED1)` command pairs — any AESTAT/AESURF label; uncommanded labels hold
   their trim value), and `MLDPRNT` (ASCII output request). `TABLED1` is the general tabular
-  time→value function (linear interpolation; held/constant extrapolation beyond the table, so a
-  command ramps to a deflection and then holds).
+  time→value function (linear interpolation; **linear extrapolation beyond the table from its
+  end points**, MSC QRG 2024.1 PDF p.2897 remark 6, #70 — end a table with two points of equal y
+  to hold a command; the solvers warn when a table is extrapolated at a non-zero slope inside the
+  run window).
 - **Method:** like the trim, the SUPORT r-set is held at the mean axis (`u_r = 0`) and the elastic
   l-set is integrated with Newmark-β (β=¼, γ=½):
   `M_ll ü + C_ll u̇ + (K_ll − q·Q_ll) u = f_aero_l + q·Q_ax_l·δ(t) + M_ax_l·a(t)`. The steady VLM is

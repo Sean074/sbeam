@@ -26,28 +26,40 @@ import numpy as np
 
 @dataclass
 class Tabled1:
-    """Tabular function y(x) with linear interpolation (NASTRAN/ZAERO TABLED1).
+    """Tabular function y(x) with linear interpolation (NASTRAN TABLED1).
 
     For pilot-command time histories ``x`` is time and ``y`` is the commanded
-    value (e.g. a control-surface deflection or a load-factor target).  Values
-    are held constant (clamped) outside the tabulated range — appropriate for a
-    pilot input that ramps to a steady deflection and then holds.
+    value (e.g. a control-surface deflection or a load-factor target).
+
+    Outside the table the value is **extrapolated linearly from the two end
+    points**, as MSC does: "interpolation within the table and extrapolation
+    outside the table using the two starting or end points" (MSC Nastran 2024.1
+    QRG PDF p.2896-2897, remark 6).  To hold a value, end the table with two
+    points of equal y.  Until #70 sbeam held the end value instead.
     """
     tid:   int
     xs:    list[float] = field(default_factory=list)   # abscissae (time)
     ys:    list[float] = field(default_factory=list)   # ordinates (command)
-    xaxis: str = "LINEAR"                         # LINEAR or LOG (only LINEAR honoured)
+    xaxis: str = "LINEAR"                         # the parser refuses LOG (#70)
     yaxis: str = "LINEAR"
 
+    def end_slopes(self) -> tuple[float, float]:
+        """Slopes of the first and last segments, which carry on outside the table."""
+        xs, ys = self.xs, self.ys
+        if len(xs) < 2:
+            return 0.0, 0.0
+        return ((ys[1] - ys[0]) / (xs[1] - xs[0]), (ys[-1] - ys[-2]) / (xs[-1] - xs[-2]))
+
     def evaluate(self, x: float) -> float:
-        """Linear interpolation with constant (held) extrapolation at the ends."""
+        """Linear interpolation inside the table, linear extrapolation outside it."""
         xs = self.xs
         if not xs:
             return 0.0
+        first, last = self.end_slopes()
         if x <= xs[0]:
-            return self.ys[0]
+            return self.ys[0] + first * (x - xs[0])
         if x >= xs[-1]:
-            return self.ys[-1]
+            return self.ys[-1] + last * (x - xs[-1])
         # xs are assumed monotonically increasing (validated at parse time)
         return float(np.interp(x, xs, self.ys))
 

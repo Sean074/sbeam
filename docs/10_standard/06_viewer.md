@@ -492,6 +492,8 @@ TRIM form and offer one-click creation of missing AESTAT labels.
 
 **TABLED1 generators:** cosine ramp (default — clamped-linear slope jumps ring the
 highest retained mode under the modal solver), linear ramp, step, smooth sine doublet.
+Each generated table ends with a hold point (two end points of equal y), because TABLED1
+extrapolates linearly beyond its last point (#70).
 
 **Two-pass command builder:** MLDCOMD tables are absolute and mass-case specific, so the
 builder authors them as *increments from trim* (`IncrementSpec` per MLOADS/label pair,

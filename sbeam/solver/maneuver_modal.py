@@ -112,6 +112,7 @@ from sbeam.solver.maneuver_qs import (
     refuse_load_in_mloads,
     assemble_operators,
     delta_of_t,
+    warn_extrapolated_commands,
     force_l,
     recover_step,
 )
@@ -439,6 +440,7 @@ def run_maneuver_modal(
     # Δξ = Δξ̇ = 0 exactly.  Δξ̈₀ = M⁻¹·RHS(t0) is zero whenever the command
     # tables start at their trim values (M is invertible: M_rr ≻ 0 and the
     # elastic block is positive definite by construction).
+    warn_extrapolated_commands(commands, bulk.tabled1s, t0, tend)
     F_ext0, delta_tot0 = _rhs_ext(t0)
     xi = np.zeros(n_h)
     vxi = np.zeros(n_h)

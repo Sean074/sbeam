@@ -180,7 +180,8 @@ class TestGenerators:
     def test_ramp(self):
         pts = logic.gen_ramp(0.1, 0.3, 0.0, 0.5)
         self._check_monotone(pts)
-        assert pts[-1] == (0.3, 0.5)
+        # the ramp ends at (0.3, 0.5) and a hold point keeps it there (#70)
+        assert pts[-2] == (0.3, 0.5) and pts[-1] == (0.6, 0.5)
         with pytest.raises(ValueError):
             logic.gen_ramp(0.3, 0.1, 0.0, 0.5)
 

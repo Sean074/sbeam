@@ -49,7 +49,8 @@ def to_int_opt(s: str, default: int = 0) -> int:
 
 def to_float_or_none(s: str) -> Optional[float]:
     s = s.strip()
-    return float(s) if s else None
+    # to_float, not float(): NASTRAN reals such as 1.-1 (#70)
+    return to_float(s) if s else None
 
 
 def to_int_or_none(s: str) -> Optional[int]:

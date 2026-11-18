@@ -47,13 +47,10 @@ def solve_modes(
     norm = "MASS" if eigrl is None else eigrl.norm
 
     if eigrl is not None and (eigrl.v1 is not None or eigrl.v2 is not None):
-        warnings.warn(
-            "EIGRL V1/V2 frequency bounds are not supported in sbeam Phase 1; "
-            "all requested ND modes will be returned regardless of V1/V2. "
-            "Remove V1/V2 from the EIGRL card or use ND to limit the mode count.",
-            UserWarning,
-            stacklevel=2,
-        )
+        # The parser refuses V1/V2 (#70); this covers an Eigrl built in memory
+        raise ValueError(
+            f"EIGRL {eigrl.sid}: V1/V2 frequency bounds are not supported; sbeam returns "
+            "the lowest ND modes")
 
     # Use sparse eigsh only when the model is large enough to benefit and K is
     # well-conditioned (SPCs applied). Models at or below the old 200-element

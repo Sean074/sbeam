@@ -233,17 +233,29 @@ def _prehold(t1: float, y0: float) -> list[tuple[float, float]]:
     return [(0.0, y0)] if t1 > 0.0 else []
 
 
+def _posthold(pts: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Append a point that holds the last value.
+
+    TABLED1 extrapolates linearly from its last two points (MSC QRG 2024.1 PDF p.2897
+    remark 6), so a shape that ends on a slope would keep going.  Two end points of
+    equal y make the extrapolation flat; the hold point sits one shape-length later.
+    """
+    t_end, y_end = pts[-1]
+    span = max(t_end - pts[0][0], 1.0e-3)
+    return pts + [(t_end + span, y_end)]
+
+
 def gen_step(t1: float, y0: float, y1: float,
              rise: float = 1.0e-3) -> list[tuple[float, float]]:
-    """Near-instant step from y0 to y1 at t1 (TABLED1 is piecewise linear)."""
-    return _prehold(t1, y0) + [(t1, y0), (t1 + rise, y1)]
+    """Near-instant step from y0 to y1 at t1 (TABLED1 is piecewise linear), then held."""
+    return _posthold(_prehold(t1, y0) + [(t1, y0), (t1 + rise, y1)])
 
 
 def gen_ramp(t1: float, t2: float, y0: float, y1: float) -> list[tuple[float, float]]:
-    """Linear ramp y0 -> y1 over [t1, t2], held clamped outside."""
+    """Linear ramp y0 -> y1 over [t1, t2], then held."""
     if t2 <= t1:
         raise ValueError("ramp needs t2 > t1")
-    return _prehold(t1, y0) + [(t1, y0), (t2, y1)]
+    return _posthold(_prehold(t1, y0) + [(t1, y0), (t2, y1)])
 
 
 def gen_cosine_ramp(t1: float, t2: float, y0: float, y1: float,
@@ -257,7 +269,7 @@ def gen_cosine_ramp(t1: float, t2: float, y0: float, y1: float,
         t = t1 + s * (t2 - t1)
         y = y0 + (y1 - y0) * 0.5 * (1.0 - math.cos(math.pi * s))
         pts.append((t, y))
-    return pts
+    return _posthold(pts)
 
 
 def gen_doublet(t1: float, t2: float, amp: float, y0: float,
@@ -270,7 +282,8 @@ def gen_doublet(t1: float, t2: float, amp: float, y0: float,
         s = i / (n - 1)
         t = t1 + s * (t2 - t1)
         pts.append((t, y0 + amp * math.sin(2.0 * math.pi * s)))
-    return pts
+    pts[-1] = (pts[-1][0], y0)          # sin(2π) is not exactly zero in floating point
+    return _posthold(pts)
 
 
 # ---------------------------------------------------------------------------

@@ -1293,23 +1293,33 @@ EIGRL, SID, V1, V2, ND, MSGLVL, MAXSET, SHFSCL, NORM
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
 | SID | `sid` | int | Set ID (unique; referenced by `METHOD` in case control) | required |
-| V1 | `v1` | float or None | Lower frequency bound (Hz) — **not applied**: a `UserWarning`, and ND modes are returned regardless | `None` |
-| V2 | `v2` | float or None | Upper frequency bound (Hz) — **not applied** (as V1) | `None` |
-| ND | `nd` | int or None | Number of modes to extract; blank = all modes | `None` |
+| V1 | `v1` | — | Lower bound of the frequency range. **Must be blank; a value is refused** (#70) | blank |
+| V2 | `v2` | — | Upper bound of the frequency range. **Must be blank; a value is refused** | blank |
+| ND | `nd` | int | Number of modes to extract (> 0). **Required; blank is refused** | required |
 | MSGLVL | — | — | Message level — ignored | — |
 | MAXSET | — | — | Maximum Lanczos set size — ignored | — |
 | SHFSCL | — | — | Shift scale — ignored | — |
-| NORM | `norm` | str | Mode shape normalisation: `"MASS"` or `"MAX"` | `"MASS"` |
+| NORM | `norm` | str | Mode shape normalisation: `"MASS"` or `"MAX"`; any other word is refused (it used to be read as MASS) | `"MASS"` |
 
-Use ND to bound the extraction: sbeam does not apply V1/V2, and without ND every mode is
-returned. (This section used to say ND or V2 must be given; that was never enforced, #58.)
+**sbeam returns the lowest ND modes.** MSC selects roots from V1, V2 and ND together
+(QRG 2024.1 PDF p.1802, Table 9-13); sbeam implements the row "V1 blank, V2 blank, ND
+given: lowest ND roots" and refuses the others (#70):
+
+| Card | MSC (Table 9-13) | sbeam |
+|---|---|---|
+| ND only | lowest ND roots | the same |
+| V1 and/or V2 | roots in the range | **refused**; they used to be warned and not applied, so `V1 = 0.1` still returned the rigid-body modes |
+| all blank | the lowest root | **refused**; sbeam used to return every mode |
+
+Reals may be written in NASTRAN's short form (`1.-1`). The option continuation
+(`NORM=MAX`) is refused as an unread line (#63); put NORM in field 9.
 
 **Examples:**
 ```
-$ Extract 10 modes, MASS normalisation, no frequency filter
+$ Extract 10 modes, MASS normalisation
 EIGRL, 20, , , 10, , , , MASS
-$ Extract all modes between 1 Hz and 100 Hz, MAX normalisation
-EIGRL, 30, 1.0, 100.0, , , , , MAX
+$ Extract 6 modes, MAX normalisation
+EIGRL, 30, , , 6, , , , MAX
 ```
 
 ---
@@ -2639,8 +2649,15 @@ MLDPRNT, 400
 ### TABLED1 — Tabular Function
 
 General tabular function y(x) with linear interpolation, referenced by MLDCOMD for
-pilot-command time histories (x = time, y = commanded value). Values are clamped
-(held constant) outside the tabulated range.
+pilot-command time histories (x = time, y = commanded value).
+
+**Outside the table the value is extrapolated linearly from the two end points**, as in
+MSC: "interpolation within the table and extrapolation outside the table using the two
+starting or end points" (QRG 2024.1 PDF p.2896–2897, remark 6). A ramp that stops before
+the end of the run keeps ramping. **To hold a value, end the table with two points of
+equal y** (the example below). Until #70 sbeam held the end value; a deck that relied on
+that now gets a `UserWarning` from the transient solver naming the table, the run window
+and the end slope. The viewer's shape generators add the hold point.
 
 **Format:**
 ```
@@ -2656,8 +2673,8 @@ line are reserved/blank in the NASTRAN layout. The list is terminated by `ENDT`.
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
 | TID | `tid` | int | Table ID (unique; referenced by MLDCOMD TABID) | required |
-| XAXIS | `xaxis` | str | Abscissa axis type — only `LINEAR` honoured | `"LINEAR"` |
-| YAXIS | `yaxis` | str | Ordinate axis type — only `LINEAR` honoured | `"LINEAR"` |
+| XAXIS | `xaxis` | str | `LINEAR` or blank. `LOG` is refused: it was accepted and evaluated linearly (#70) | `"LINEAR"` |
+| YAXIS | `yaxis` | str | `LINEAR` or blank. `LOG` is refused | `"LINEAR"` |
 | X1, Y1, … | `xs`, `ys` | float pairs | (x, y) data points; at least two pairs; abscissae strictly increasing | required |
 
 Validation at parse time: a dangling abscissa with no ordinate, fewer than two

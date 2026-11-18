@@ -10,6 +10,22 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Breaking changes
+- **TABLED1 extrapolates linearly outside the table, as MSC does; it used to hold the end
+  value** (#70; pre-1.0 MINOR break). MSC: "interpolation within the table and
+  extrapolation outside the table using the two starting or end points" (QRG 2024.1 PDF
+  p.2896–2897, remark 6). A command ramp that stops before the end of an MLOADS run now
+  keeps ramping. **Migrate a deck:** end each table with two points of equal y to hold the
+  value. The transient solvers warn, naming the table, when one is extrapolated at a
+  non-zero slope inside the run window (MSC gives no message). No repo deck is affected:
+  every table covers its run and ends flat. The viewer's shape generators now add the
+  hold point. `XAXIS`/`YAXIS = LOG` was accepted and evaluated linearly; it is refused.
+- **EIGRL: V1/V2 and a blank ND are refused** (#70). MSC selects roots from V1, V2 and ND
+  together (QRG p.1802, Table 9-13). sbeam returns the lowest ND modes only: V1/V2 were
+  warned and not applied (`V1 = 0.1` still returned the rigid-body modes), and with ND
+  blank sbeam returned every mode where MSC returns the lowest root. Both are refused, as
+  is a NORM other than MASS or MAX (`POINT` was read as MASS). NASTRAN short reals
+  (`1.-1`) are now read in EIGRL and GUSTLF `ALT`. Every repo EIGRL gives ND only.
+  Found by the 2026-11-16 audit (S12, S13, A14, P13).
 - **CBUSH is read in MSC's layout** (#62; pre-1.0 MINOR break). MSC: `CBUSH EID PID GA GB
   GO/X1 X2 X3 CID` / `S OCID S1 S2 S3` (QRG 2024.1 PDF p.1378–1380). sbeam read field 7
   as CID, took the orientation vector from the continuation and did not read fields 6, 8
