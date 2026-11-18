@@ -759,7 +759,7 @@ def _render_aero_tab(bulk: BulkData) -> None:
             alpha_rad = np.radians(alpha_deg)
             beta_rad  = np.radians(beta_deg)
             # Corrected solve on aero_model.ajj_inv_corr — any AIC correction
-            # (WKK / WT2) and Prandtl–Glauert are honoured, matching the
+            # (WKK) and Prandtl–Glauert are honoured, matching the
             # SOL 144 path; the W2GJ baseline normalwash (camber/twist/built-in
             # incidence) is folded into the RHS with the SOL 144 sign.
             result = solve_rigid_cl(
@@ -774,7 +774,7 @@ def _render_aero_tab(bulk: BulkData) -> None:
             # is something to overlay; otherwise the two solves coincide.  Skipped for
             # decks with decoupled strip body panels: a raw VLM solve cannot represent
             # them (no horseshoe vortex), so there is no meaningful uncorrected overlay.
-            if (bulk.wkks or bulk.aecorrs) and not bulk.pstrips:
+            if bulk.wkks and not bulk.pstrips:
                 result_unc = solve_rigid_cl(
                     aero_model.boxes, alpha_rad,
                     beta=beta_rad,
@@ -831,12 +831,10 @@ def _render_aero_tab(bulk: BulkData) -> None:
                     "ℹ️ W2GJ baseline incidence (camber/twist) folded into the "
                     "solve — CL/cp include the built-in twist."
                 )
-            if bulk.wkks or bulk.aecorrs:
-                methods = (["WKK"] if bulk.wkks else []) + \
-                    sorted({c.method for c in bulk.aecorrs.values()})
+            if bulk.wkks:
                 st.caption(
-                    f"ℹ️ AIC correction ({', '.join(methods)}) applied — CL/CM/cp "
-                    "reflect the corrected operator."
+                    "ℹ️ AIC correction (WKK) applied — CL/CM/cp reflect the corrected "
+                    "operator."
                 )
 
     # Resolve the displayed cp field and span-plot mode from the Cp-view toggle.

@@ -183,7 +183,7 @@ def test_b1_body_boxes_are_spline0_covered(name, request):
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize(
     "name,builder,card_attr,value_attr",
-    [("cruciform", bc.build_body_correction, "aecorrs", "target"),
+    [("cruciform", bc.build_body_correction, "wkks", "data"),
      ("strip", bc.build_strip_body_correction, "stripks", "data")],
 )
 def test_b2_committed_body_cards_regenerate(name, builder, card_attr, value_attr,

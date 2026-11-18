@@ -122,14 +122,6 @@ class Chordcp:
 
 
 @dataclass
-class Aecorr:
-    sid:       int
-    method:    str           # 'WT2' (pressure matching) — the only method supported
-    caero_eid: int           # which CAERO1 element this applies to
-    target: list[float] = field(default_factory=list)  # per-box cp (WT2)
-
-
-@dataclass
 class Set1:
     sid:   int
     grids: list[int] = field(default_factory=list)   # structural grid IDs

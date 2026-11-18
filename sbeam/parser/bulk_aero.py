@@ -4,7 +4,7 @@ from typing import Optional
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.aero import (
-    Aeros, Caero1, Paero1, Pstrip, Stripk, Aefact, W2gj, Wkk, Aecorr, Chordcp, Set1,
+    Aeros, Caero1, Paero1, Pstrip, Stripk, Aefact, W2gj, Wkk, Chordcp, Set1,
     Spline2, Attach, Spline0, Aelist, Aecomp, Monpnt1, Monpnt3, Monsect,
 )
 from sbeam.parser.bulk_fields import FieldHandler, ContHandler, MultiHandler, to_float, to_int, to_int_opt, expand_int_list_with_thru, list_fields
@@ -64,27 +64,22 @@ def _handle_wkk(fields: list[str], conts: list[list[str]], bulk: BulkData) -> No
 
 
 def _handle_aecorr(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
-    sid       = to_int(fields[1])
-    method    = fields[2].strip().upper() if len(fields) > 2 else ""
-    caero_eid = to_int(fields[3]) if len(fields) > 3 else 0
-    if method == "WT1":
-        # DEF-R7 (release boundary): WT1 was deprecated by DEF-H2/H3 (2026-07-31)
-        # and is now removed — it achieved f_target/beta^2 instead of f_target at
-        # Mach > 0 (DEF-H2), and on multi-CAERO1 decks it rescaled strips on every
-        # surface sharing an i_span index (DEF-H3).
-        raise ValueError(
-            f"AECORR {sid}: METHOD WT1 has been removed — it produced wrong numbers "
-            "(f_target/beta^2 at Mach > 0, and strip aliasing across CAERO1s). Use "
-            "METHOD WT2 or the section-correction path instead."
-        )
-    if method != "WT2":
-        raise ValueError(f"AECORR {sid}: METHOD must be WT2, got '{method}'")
-    if sid in bulk.aecorrs:
-        raise ValueError(f"Duplicate AECORR SID {sid}")
-    target = [to_float(f) for f in fields[4:] if f.strip()]
-    for cont in conts:
-        target += [to_float(f) for f in cont[1:] if f.strip()]
-    bulk.aecorrs[sid] = Aecorr(sid=sid, method=method, caero_eid=caero_eid, target=target)
+    """AECORR is refused (#72): the correction it carried is now a WKK card.
+
+    AECORR WT2 held an absolute target in circulation units at the Mach it was built
+    for, with no Mach field; the solver re-formed the ratio at every TRIM Mach, and any
+    WKK card switched it off (#96).  The builders write the ratio itself as WKK, MSC's
+    per-box weight, which is the same at every Mach.
+    """
+    sid = fields[1].strip()
+    method = fields[2].strip().upper() if len(fields) > 2 else ""
+    raise ValueError(
+        f"AECORR {sid} (METHOD {method or 'blank'}) is no longer read. The pressure-matching "
+        "correction is now stored as its per-box ratio on a WKK card, which is the same "
+        "at every Mach. Regenerate the correction cards with the correction builder "
+        "(viewer Aero Correction tab, or sbeam.aero.section_correction), which writes "
+        "W2GJ + WKK; a hand conversion is WKK weight = AECORR target / the uncorrected "
+        "VLM circulation of that box at unit incidence")
 
 
 def _handle_chordcp(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:

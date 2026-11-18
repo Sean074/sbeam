@@ -3,7 +3,7 @@
 Build order:
   1. Mesh all CAERO1 elements into AeroBox lists.
   2. Build the raw VLM AIC matrix AJJ.
-  3. Apply whichever correction is present (Wkk → WT2 → none).
+  3. Apply the WKK correction where a surface has one.
   4. Build Skj, Djk, and the baseline normalwash wg.
   5. Package everything into AeroModel.
 
@@ -24,9 +24,7 @@ from sbeam.model.aero import Caero1, Chordcp, Paero1, Aeros, require_aeros
 from sbeam.aero.panel import AeroBox, mesh_caero1, build_box_id_map
 from sbeam.aero.vlm import build_ajj, prandtl_glauert_boxes
 from sbeam.aero.integration import build_skj, build_djk, build_wg_all
-from sbeam.aero.corrections import (
-    apply_wkk, apply_wt2, apply_chordcp, check_conditioning, wt2_reference_cp,
-)
+from sbeam.aero.corrections import apply_wkk, apply_chordcp, check_conditioning
 from sbeam.aero.spline import LoadInjection, build_spline_operators
 from sbeam.aero.strip import strip_box_mask, strip_box_slopes, is_strip_caero
 from sbeam.types import BoolArray, FloatArray
@@ -109,7 +107,7 @@ def _assemble_vlm_operator(
     """Build the raw AIC and the corrected ΔCp operator over a box subset.
 
     Returns ``(ajj, ajj_inv_corr)`` for ``op_boxes`` — the ordinary horseshoe-vortex
-    VLM path (PG compression, WKK/WT2 correction precedence, Göthert 1/β, and the
+    VLM path (PG compression, the WKK correction, Göthert 1/β, and the
     Γ→ΔCp chord conversion).  Strip body panels are *excluded* by the caller, so the
     wing/tail inverse is the inverse of the lifting-surface-only AIC (the strip boxes
     contribute a separate diagonal block — see ``build_aero_model``).
@@ -120,11 +118,11 @@ def _assemble_vlm_operator(
     # Build raw AIC on PG-compressed geometry
     ajj = build_ajj(prandtl_glauert_boxes(op_boxes, mach))
 
-    # Correction precedence over the boxes present here — WKK, then WT2.
+    # The one correction: a WKK weight per box.  The cross-reference pass has already
+    # refused a second WKK on a surface and a WKK on a strip body panel (#72), so no
+    # correction card in the deck is left out here.
     op_eids = sorted({b.caero_eid for b in op_boxes})
     wkk_cards = [c for c in bulk.wkks.values() if c.caero_eid in op_eids]
-    wt2_cards = [c for c in bulk.aecorrs.values()
-                 if c.method == "WT2" and c.caero_eid in op_eids]
 
     if wkk_cards:
         # Per-surface scatter onto a unit baseline (DEF-M8b).  WKK used to be
@@ -153,24 +151,6 @@ def _assemble_vlm_operator(
             w[surf_idx] = data
         lu = check_conditioning(ajj)
         ajj_inv_corr = apply_wkk(lu_solve(lu, np.eye(n)), w)
-    elif wt2_cards:
-        # Factor AJJ once (DEF-R6): the conditioning check, the raw inverse for
-        # the target baseline, and apply_wt2 all share the same factorization.
-        lu = check_conditioning(ajj)
-        ajj_inv_raw = lu_solve(lu, np.eye(n))
-        # Per-axis reference (#52): uncorrected boxes keep it as their target (r = 1).
-        cp_ref = wt2_reference_cp(op_boxes, ajj_inv_raw)
-        cp_target = cp_ref.copy()
-        for card in wt2_cards:
-            surf_idx = [k for k, b in enumerate(op_boxes) if b.caero_eid == card.caero_eid]
-            tgt = np.asarray(card.target, dtype=float)
-            if tgt.shape[0] != len(surf_idx):
-                raise ValueError(
-                    f"AECORR {card.sid} (WT2, CAERO {card.caero_eid}): target length "
-                    f"{tgt.shape[0]} != {len(surf_idx)} boxes on that surface"
-                )
-            cp_target[surf_idx] = tgt
-        ajj_inv_corr = apply_wt2(ajj, cp_target, ajj_inv=ajj_inv_raw, cp_ref=cp_ref)
     else:
         lu = check_conditioning(ajj)
         ajj_inv_corr = lu_solve(lu, np.eye(n))
@@ -356,21 +336,15 @@ def build_aero_model(
     transonic/supersonic regime, so an effective Mach ≥ 1 is rejected here rather
     than silently clamped.
 
-    Correction precedence (first match wins):
-      1. WKK card present  → diagonal multiplicative: AJJ* = diag(wkk) @ AJJ,
-                              AJJ*⁻¹ computed via np.linalg.solve; each WKK card
-                              applies to its own CAERO1 (weight 1 elsewhere).
-      2. AECORR WT2 present → pressure-matching correction (apply_wt2). **Multi-surface:**
-                              all WT2 cards are combined into one global Γ-unit target —
-                              each card fills its own CAERO1's boxes (row-major), boxes on
-                              uncorrected surfaces default to ratio 1.
-      3. No correction       → AJJ*⁻¹ = solve(AJJ).
+    Correction: each WKK card scales the lift of its own CAERO1's boxes,
+    ``AJJ*⁻¹ = diag(w) @ AJJ⁻¹`` (MSC AAUG 2023.1 PDF p.40 eq 2-21; #71); boxes on a
+    surface with no WKK card take weight 1.  WKK is the only correction card: the
+    builders that match section or total-aircraft data write their ratios as WKK (#72),
+    and the weights are the same at every Mach.
 
     When multiple CAERO1 elements are present, all boxes are concatenated into a single
     list and a single AIC is built for the combined surface.  W2GJ (baseline normalwash)
-    is already accumulated per CAERO1, WT2 corrections are combined per surface, and WKK
-    scatters per surface onto a unit baseline (boxes on surfaces with no WKK card take
-    weight 1).
+    is accumulated per CAERO1.
 
     Decoupled strip body panels (CAERO1 PID → PSTRIP) bypass all of the above: they are
     excluded from the VLM AIC inversion and contribute a diagonal block to ``ajj_inv_corr``

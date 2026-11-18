@@ -15,7 +15,7 @@ passed through unchanged; ``AEROS`` is copied with ``SYMXZ = SYMXY = 0``.
 This is a best-effort *geometric* unfold.  Cards whose correct full-span form
 depends on model-specific intent — splines (``SPLINE0/1/2``, ``ATTACH``),
 control surfaces (``AESURF``/``AELIST``), per-box data (``W2GJ``/``WKK``/
-``AECORR``), constraints (``SPC``/``SPC1``/``SUPORT``) and loads — are NOT
+``WKK``), constraints (``SPC``/``SPC1``/``SUPORT``) and loads — are NOT
 auto-converted.  If any are present ``mirror_halfspan`` raises
 ``NotImplementedError`` listing them, so they can be reviewed and rebuilt by
 hand.  In particular a symmetric half-model's plane-of-symmetry SPC must be
@@ -35,7 +35,7 @@ from sbeam.model.aero import require_aeros
 _UNSUPPORTED = {
     "spline2s": "SPLINE2", "spline1s": "SPLINE1", "spline0s": "SPLINE0",
     "attaches": "ATTACH", "aesurfs": "AESURF", "aelists": "AELIST",
-    "set1s": "SET1", "w2gjs": "W2GJ", "wkks": "WKK", "aecorrs": "AECORR",
+    "set1s": "SET1", "w2gjs": "W2GJ", "wkks": "WKK",
     "chordcps": "CHORDCP",
     "spcs": "SPC", "spc1s": "SPC1", "forces": "FORCE", "moments": "MOMENT",
     "loads": "LOAD", "gravs": "GRAV", "trims": "TRIM", "aestats": "AESTAT",

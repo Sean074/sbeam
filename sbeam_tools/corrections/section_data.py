@@ -271,7 +271,7 @@ def build_from_section_data(
     mach: float,
     region: tuple[float, float],
     sid_w2gj: int,
-    sid_aecorr: int,
+    sid_wkk: int,
     mach_tol: float = 1e-6,
 ) -> SectionDataBuildResult:
     """Single-surface build: interpolate the selected (caero, mach, region) block onto the
@@ -299,7 +299,7 @@ def build_from_section_data(
     corr = build_section_correction(
         boxes, ajj,
         f_slope=tgt.f_slope, alpha_0=tgt.alpha_0, m_slope=tgt.m_slope, m_0=tgt.m_0,
-        caero_eid=caero_eid, sid_w2gj=sid_w2gj, sid_aecorr=sid_aecorr,
+        caero_eid=caero_eid, sid_w2gj=sid_w2gj, sid_wkk=sid_wkk,
         moment_ref=tgt.moment_ref, beta=_beta_pg(mach),
     )
     cond = Condition(caero_eid, float(mach), var, a_lo, a_hi, len(sel))
@@ -336,7 +336,7 @@ def build_from_section_data_multi(
     alpha_deg: Optional[float] = None,
     beta_deg: Optional[float] = None,
     sid_w2gj_base: int,
-    sid_aecorr_base: int,
+    sid_wkk_base: int,
     caeros: Optional[Iterable[int]] = None,
     mach_tol: float = 1e-6,
 ) -> MultiSectionDataBuildResult:
@@ -402,7 +402,7 @@ def build_from_section_data_multi(
 
     corr = build_section_correction_multi(
         boxes, ajj, targets,
-        sid_w2gj_base=sid_w2gj_base, sid_aecorr_base=sid_aecorr_base, beta=_beta_pg(mach),
+        sid_w2gj_base=sid_w2gj_base, sid_wkk_base=sid_wkk_base, beta=_beta_pg(mach),
     )
     return MultiSectionDataBuildResult(correction=corr, conditions=conditions,
                                        extrapolated=extrap, skipped=skipped)

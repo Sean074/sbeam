@@ -1,12 +1,12 @@
-"""Aero Correction tab — CFD/test section data → W2GJ + AECORR(WT2) cards.
+"""Aero Correction tab — CFD/test section data → W2GJ + WKK cards.
 
 Front end (Option A GUI) over ``sbeam_tools.corrections.section_data`` / ``section_correction``: the
 user downloads a mesh-seeded CSV template, fills it with section lift/moment coefficients,
 uploads it, picks a flight **condition** (Mach + operating α and β), and builds one
-**W2GJ (camber/zero-α offset) + AECORR/WT2 (slope & a.c.)** card pair per lifting surface.
+**W2GJ (camber/zero-α offset) + WKK (slope & a.c. ratios)** card pair per lifting surface.
 Each surface is corrected on one axis chosen by its table ``var`` (ALPHA→α, BETA→β). The
 cards can be injected into the in-session model — the Aero tab keys off
-``bulk.wkks``/``bulk.aecorrs`` so the corrected solve runs with no further wiring — and/or
+``bulk.w2gjs``/``bulk.wkks`` so the corrected solve runs with no further wiring — and/or
 downloaded as a bulk-data snippet or a full self-contained corrected BDF.
 
 v1 limits (inherited from the engine): exact-Mach match (no Mach interpolation); one
@@ -42,10 +42,10 @@ from sbeam_tools.viewer.format_utils import style_numeric
 # Reserved SID range for tool-generated cards (kept clear of typical user SIDs so the
 # Apply step can find and replace its own cards on a rebuild).
 _W2GJ_BASE = 9001
-_AECORR_BASE = 9101
+_WKK_BASE = 9101
 # Body-panel cards live in a separate reserved range (Stage 6).
 _BODY_W2GJ_BASE = 9301
-_BODY_AECORR_BASE = 9401
+_BODY_WKK_BASE = 9401
 _BODY_STRIPK_BASE = 9501
 
 # A surface whose mean dihedral magnitude falls in this band is "canted" — neither
@@ -85,37 +85,36 @@ def _template_csv(aero_model: AeroModel) -> str:
 
 
 def _warn_conflicts(bulk: BulkData, eids: list[int]) -> None:
-    """Surface correction-card clashes that ``build_aero_model`` would resolve silently."""
+    """Warn of a WKK card this tool did not generate on a surface it is about to correct.
+
+    A surface takes one WKK card (the solver refuses a second), and the generated card
+    is the correction's ratio, so a card already there has to go first.
+    """
     own = st.session_state.get("aero_corr_sids", set())
     for eid in eids:
-        if any(c.caero_eid == eid for c in bulk.wkks.values()):
-            st.warning(
-                f"CAERO {eid}: a WKK card is already in the model — build_aero_model applies "
-                "WKK before WT2, so the generated WT2 would be ignored. Remove the WKK to use "
-                "this correction."
-            )
-        clashing = [c.sid for c in bulk.aecorrs.values()
-                    if c.caero_eid == eid and c.method == "WT2" and c.sid not in own]
+        clashing = [c.sid for c in bulk.wkks.values()
+                    if c.caero_eid == eid and c.sid not in own]
         if clashing:
             st.warning(
-                f"CAERO {eid}: a non-generated WT2 AECORR (sid {clashing}) is already present; "
-                "applying adds another WT2 on the same surface."
+                f"CAERO {eid}: a WKK card not generated here (sid {clashing}) is already in "
+                "the model. A surface takes one WKK card, so applying this correction "
+                "would be refused by the solver. Remove that WKK first."
             )
 
 
 def _apply_cards(bulk: BulkData, res: MultiSectionDataBuildResult) -> int:
-    """Inject the generated W2GJ/AECORR pairs into the in-session model.
+    """Inject the generated W2GJ/WKK pairs into the in-session model.
 
     Removes any cards this tool injected on a previous build (tracked SIDs), adds the new
     pairs, and clears the Aero-tab results so the corrected solve recomputes.
     """
     for sid in st.session_state.get("aero_corr_sids", set()):
         bulk.w2gjs.pop(sid, None)
-        bulk.aecorrs.pop(sid, None)
+        bulk.wkks.pop(sid, None)
     new_sids: set[int] = set()
     for _eid, (w2, ac) in res.correction.cards.items():
         bulk.w2gjs[w2.sid] = w2
-        bulk.aecorrs[ac.sid] = ac
+        bulk.wkks[ac.sid] = ac
         new_sids.update((w2.sid, ac.sid))
     st.session_state.aero_corr_sids = new_sids
     # Force the Aero tab to rebuild the operator with the new cards.
@@ -152,7 +151,7 @@ def _splice_cards(source_text: str, block: str) -> str:
 def build_corrected_bdf(source_text: str, cards_text: str, *, source_csv: str,
                         mach: float, alpha: float, beta: float, eids: list[int],
                         out_name: str, date: Optional[str] = None) -> str:
-    """Splice the W2GJ/AECORR cards into the uploaded model with a provenance header.
+    """Splice the W2GJ/WKK cards into the uploaded model with a provenance header.
 
     Produces a self-contained corrected BDF (the loaded model + correction cards).
     The cards are spliced into the model rather than written to a separate include
@@ -207,16 +206,16 @@ def _apply_body_cards(
 ) -> int:
     """Inject the flying-surface pairs (idempotent) and the body-panel pairs.
 
-    The body card pair is (W2GJ, AECORR-WT2) for a cruciform VLM panel or
+    The body card pair is (W2GJ, WKK) for a cruciform VLM panel or
     (W2GJ, STRIPK) for a decoupled strip panel; the second card is routed to
-    ``bulk.aecorrs`` or ``bulk.stripks`` by type.
+    ``bulk.wkks`` or ``bulk.stripks`` by type.
     """
     from sbeam.model.aero import Stripk
     if res is not None:
         _apply_cards(bulk, res)   # flying cards + clears the Aero-tab cache
     for sid in st.session_state.get("aero_body_sids", set()):
         bulk.w2gjs.pop(sid, None)
-        bulk.aecorrs.pop(sid, None)
+        bulk.wkks.pop(sid, None)
         bulk.stripks.pop(sid, None)
     new_sids: set[int] = set()
     for _eid, (w2, second) in bres.cards.items():
@@ -224,7 +223,7 @@ def _apply_body_cards(
         if isinstance(second, Stripk):
             bulk.stripks[second.sid] = second
         else:
-            bulk.aecorrs[second.sid] = second
+            bulk.wkks[second.sid] = second
         new_sids.update((w2.sid, second.sid))
     st.session_state.aero_body_sids = new_sids
     st.session_state.aero_model = None
@@ -313,7 +312,7 @@ def _render_body_stage(
                 fw2 = {w.sid: w for (w, _a) in flying.values()}
                 fac = {a.sid: a for (_w, a) in flying.values()}
                 bulk_f = dataclasses.replace(
-                    bulk, w2gjs={**bulk.w2gjs, **fw2}, aecorrs={**bulk.aecorrs, **fac})
+                    bulk, w2gjs={**bulk.w2gjs, **fw2}, wkks={**bulk.wkks, **fac})
                 aero_f = build_aero_model(bulk_f, mach=mach_c)
                 tgt = bc.BodyTargets(cm_alpha=t_cma, cm0=t_cm0,
                                      cn_beta=t_cnb, cn0=t_cn0,
@@ -327,7 +326,7 @@ def _render_body_stage(
                     st.session_state.aero_body_result = bc.build_body_correction(
                         bulk_f, horiz_eid=horiz or None, vert_eid=vert or None,
                         targets=tgt, mach=mach_c, aero=aero_f,
-                        sid_w2gj_base=_BODY_W2GJ_BASE, sid_aecorr_base=_BODY_AECORR_BASE)
+                        sid_w2gj_base=_BODY_W2GJ_BASE, sid_wkk_base=_BODY_WKK_BASE)
                 st.session_state.aero_body_is_strip = body_is_strip
                 # Remembered so the Aero tab can colour-distinguish the body
                 # panels (cruciform boxes carry no per-box flag — AC5).
@@ -387,7 +386,7 @@ def _render_body_stage(
 def render_aero_correction_tab(bulk: BulkData) -> None:
     st.subheader("Aero correction — section force/moment cards from CFD / test data")
     st.caption(
-        "Build W2GJ (camber / zero-α offset) + AECORR/WT2 (slope & a.c.) correction cards "
+        "Build W2GJ (camber / zero-α offset) + WKK (slope & a.c. ratios) correction cards "
         "from a table of section coefficients for one flight condition (Mach + α/β), "
         "then add them to the model so the **Aero** tab runs the corrected solve."
     )
@@ -511,7 +510,7 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
             st.session_state.aero_corr_result = sd.build_from_section_data_multi(
                 aero_model.boxes, ajj, df,
                 mach=mach, alpha_deg=alpha, beta_deg=beta,
-                sid_w2gj_base=_W2GJ_BASE, sid_aecorr_base=_AECORR_BASE,
+                sid_w2gj_base=_W2GJ_BASE, sid_wkk_base=_WKK_BASE,
             )
             st.session_state.aero_corr_cond = (float(mach), float(alpha), float(beta))
         except Exception as exc:

@@ -1,18 +1,26 @@
-"""AIC correction methods — steady (k=0) rescaling of the VLM aerodynamic influence matrix.
+"""AIC correction — steady (k=0) rescaling of the VLM aerodynamic influence matrix.
 
-Two tiers, in increasing data requirement:
+One mechanism, MSC's: a diagonal weight on each box's lift,
 
-  Wkk   — diagonal weighting of each box's lift: AJJ*⁻¹ = diag(w) @ AJJ⁻¹ (MSC, #71).
-  WT2   — pressure matching: per-box cp scaling to reproduce a target cp distribution;
-          a generated diagonal WKK (the same placement, r_k from the target).
+    AJJ*⁻¹ = diag(w) @ AJJ⁻¹        (``apply_wkk``; WKK card, #71)
+
+The weights of a WKK card are **ratios**: "a single vector that applies to all
+subcases" (MSC Nastran 2023.1 Aeroelastic Analysis User's Guide PDF p.144), so the same
+card serves every TRIM Mach and the VLM's own Mach trend is kept.
+
+Pressure matching (the WT2 method) is how the correction builders *generate* those
+ratios: ``r_k = cp_target_k / cp_ref_k`` on the reference loading below
+(``sbeam.aero.section_correction``, ``sbeam.aero.body_correction``).  They write
+``r`` as a WKK card.  Until #72 they wrote the absolute target on an ``AECORR WT2``
+card, in circulation units at the build Mach, and the solver re-formed the ratio against
+its own reference at each TRIM Mach: the VLM's three-dimensional Mach trend was replaced
+by a bare 1/β, a hand-written card in physical ΔCp was wrong by 2/(c·β), and any WKK
+card switched every AECORR off (#96).  AECORR is now refused.
 
 A third tier, force/moment matching by per-strip lift scaling (``AECORR
-METHOD=WT1``), was removed at the first SOL 144 loads release (DEF-R7): it was
-deprecated by DEF-H2/H3 (2026-07-31) for delivering ``f_target/β²`` at Mach and
-for aliasing strips across CAERO1s, and ``WT2`` plus the section-correction path
-(``sbeam.aero.section_correction``) are correct and strictly more capable.
+METHOD=WT1``), was removed at the first SOL 144 loads release (DEF-R7).
 
-Reference normalwash convention (WT2) — per incidence axis (#52):
+Reference normalwash convention (the ratio's reference) — per incidence axis (#52):
   every CAERO1 is calibrated at unit incidence on ITS OWN axis, with the other axis's
   surfaces at zero.  A surface whose boxes' dominant normal is y (a fin, a vertical body
   panel) is a β surface; every other surface is an α surface.  Box k's reference is
@@ -20,21 +28,15 @@ Reference normalwash convention (WT2) — per incidence axis (#52):
       cp_ref_k = (AJJ⁻¹ @ w_β)_k   for a β surface,    w_β = −1 on β boxes, 0 elsewhere
   (``wt2_reference_cp``).  A uniform −1 on every box, the pre-#52 rule, is a SIDESLIP on
   a vertical surface: on a deck with a fin it loaded the fin sideways in the reference,
-  whose vortex system made the tailplane reference — and so every WT2 ratio there —
+  whose vortex system made the tailplane reference — and so every ratio there —
   port/starboard asymmetric at β = 0.  On a deck with no y-dominant surface the two rules
   coincide exactly (w_α = −ones), so such decks are unchanged.
-  All corrections are relative to the VLM solution at that reference.
-
-Return types:
-  apply_wkk  →  corrected AJJ*⁻¹
-  apply_wt2  →  corrected AJJ*⁻¹
 """
 
 import warnings
 from typing import Optional, Sequence, Union
 
 import numpy as np
-from scipy.linalg import lu_solve
 
 from sbeam.aero.panel import AeroBox
 from sbeam.linalg_utils import estimate_cond_1norm
@@ -145,7 +147,7 @@ def apply_wkk(
 
 
 def wt2_reference_cp(boxes: Sequence[AeroBox], ajj_inv: FloatArray) -> FloatArray:
-    """Per-axis WT2 reference loading (Γ-units), the single source for builder and solver.
+    """Per-axis reference loading (Γ-units) the correction builders form their ratios on.
 
     Each CAERO1 is assigned an axis from the mean absolute normal of its boxes: a
     y-dominant surface is a β surface, every other surface an α surface.  α surfaces
@@ -168,39 +170,3 @@ def wt2_reference_cp(boxes: Sequence[AeroBox], ajj_inv: FloatArray) -> FloatArra
         cp_beta = ajj_inv @ np.where(is_beta, -1.0, 0.0)
         cp_ref = np.where(is_beta, cp_beta, cp_ref)
     return np.asarray(cp_ref)
-
-
-def apply_wt2(
-    ajj: FloatArray, cp_target: FloatArray, ajj_inv: Optional[FloatArray] = None,
-    cp_ref: Optional[FloatArray] = None,
-) -> FloatArray:
-    """Pressure-matching correction.  Returns corrected AJJ*⁻¹.
-
-    Finds a diagonal scaling r such that the corrected A*⁻¹ = diag(r) @ AJJ⁻¹
-    reproduces cp_target on the reference loading cp_ref:
-
-        r_k         = cp_target_k / cp_ref_k
-        A*⁻¹        = diag(r) @ AJJ⁻¹
-
-    ``cp_ref`` is the per-axis reference from ``wt2_reference_cp`` (#52); callers with
-    the box geometry must pass it.  When omitted it falls back to the uniform
-    ``AJJ⁻¹ @ −ones`` — identical to the per-axis rule only when no surface is
-    y-dominant (no fin), which is all a geometry-free caller can assume.
-
-    Boxes where |cp_ref_k| < _RATIO_TOL keep r_k = 1 (no correction applied).
-    ``ajj_inv`` may be supplied by a caller that already inverted AJJ (DEF-R6:
-    ``_assemble_vlm_operator`` computes it for the WT2 target baseline, and its
-    ``check_conditioning`` already covered the matrix); when omitted, this
-    function factors and inverts AJJ itself and warns if cond(AJJ) > 1e10.
-    """
-    n = ajj.shape[0]
-    if ajj_inv is None:
-        lu_piv = check_conditioning(ajj)
-        inv = np.asarray(lu_solve(lu_piv, np.eye(n)))
-    else:
-        inv = ajj_inv
-    cp_vlm_ref = inv @ -np.ones(n) if cp_ref is None else np.asarray(cp_ref)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        ratio = np.where(cp_vlm_ref != 0.0, cp_target / cp_vlm_ref, 1.0)
-    r = np.where(np.abs(cp_vlm_ref) > _RATIO_TOL, ratio, 1.0)
-    return np.diag(r) @ inv

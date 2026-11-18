@@ -44,7 +44,7 @@ back into the slope (the slope metric is ``wg``-free), the build is **non-iterat
 and exact**.  The vertical panel relies on ``n_z = 0`` (planar in XZ) for clean
 pitch/roll separation; matching Cl_β needs enough spanwise (z) resolution on it.
 
-The body cards are ordinary ``W2gj`` / ``Aecorr`` (WT2) cards on the body CAERO1 EIDs;
+The body cards are ordinary ``W2gj`` / ``Wkk`` cards on the body CAERO1 EIDs;
 ``build_aero_model`` composes them with the flying-surface cards unchanged.
 
 Geometry, the WT2 ratio, and the cruciform's limits
@@ -93,14 +93,13 @@ from typing import Iterable, Optional, Union
 import numpy as np
 
 from sbeam.aero.aero_model import AeroModel, build_aero_model
-from sbeam.aero.corrections import wt2_reference_cp
 from sbeam.model.bulk_data import BulkData
 from sbeam.aero.panel import AeroBox
 from sbeam.types import FloatArray, IntArray
 from sbeam.aero.integration import build_djx
 from sbeam.aero.strip import is_strip_caero, strip_box_slopes
 from sbeam.assembly.coord_transform import get_transform
-from sbeam.model.aero import Aecorr, Stripk, W2gj, require_aeros
+from sbeam.model.aero import Stripk, W2gj, Wkk, require_aeros
 from sbeam.solver.sol144_derivs import compute_rigid_derivs
 from sbeam.solver.sol144_util import pitch_moment, aero_moment_resultant
 
@@ -130,9 +129,9 @@ class BodyTargets:
 @dataclass
 class BodyCorrectionResult:
     """Body-panel cards + achieved-vs-target diagnostics."""
-    # Cruciform builds pair the W2GJ with an AECORR (WT2 ratios); the strip-body
+    # Cruciform builds pair the W2GJ with a WKK (the WT2 ratios); the strip-body
     # builder pairs it with a STRIPK (per-box slopes) instead.
-    cards:      dict[int, tuple[W2gj, Union[Aecorr, Stripk]]]
+    cards:      dict[int, tuple[W2gj, Union[Wkk, Stripk]]]
     target:     BodyTargets
     achieved:   BodyTargets   # total airplane after the body correction
     baseline:   BodyTargets   # total airplane before the body correction (flying only)
@@ -142,12 +141,12 @@ class BodyCorrectionResult:
 
 
 def body_cards_to_bdf(result: "BodyCorrectionResult") -> str:
-    """Format the body-panel W2GJ + AECORR(WT2) cards as bulk-data text."""
+    """Format the body-panel W2GJ + WKK cards as bulk-data text."""
     from sbeam.aero.section_correction import pair_to_bdf
-    header = "$ Cruciform body-panel total-aircraft moment correction (W2GJ + WT2)\n"
+    header = "$ Cruciform body-panel total-aircraft moment correction (W2GJ + WKK ratios)\n"
     body = "".join(pair_to_bdf(w2, ac)
                    for _eid, (w2, ac) in sorted(result.cards.items())
-                   if isinstance(ac, Aecorr))
+                   if isinstance(ac, Wkk))
     return header + body
 
 
@@ -386,7 +385,7 @@ def build_body_correction(
     mach: Optional[float] = None,
     aero: Optional[AeroModel] = None,
     sid_w2gj_base: int = 9301,
-    sid_aecorr_base: int = 9401,
+    sid_wkk_base: int = 9401,
     grid_index: Optional[dict[int, int]] = None,
     tol: float = 1e-4,
 ) -> BodyCorrectionResult:
@@ -394,7 +393,7 @@ def build_body_correction(
 
     Args:
         bulk:        BulkData with the flying-surface corrections already applied
-                     (their W2GJ/WT2 cards in ``bulk.w2gjs`` / ``bulk.aecorrs``).
+                     (their W2GJ/WKK cards in ``bulk.w2gjs`` / ``bulk.wkks``).
         horiz_eid:   CAERO1 EID(s) of the horizontal body panel(s) that match Cm_α, Cm0
                      — an ``int`` or a list of ``int`` (define the horizontal body plane
                      with several panels). ``None``/empty skips the pitch match.
@@ -407,7 +406,7 @@ def build_body_correction(
         mach:        Mach override (default: AEROS field-8 Mach), for PG consistency.
         aero:        optional pre-built flying-corrected AeroModel for ``bulk`` (avoids
                      an AIC rebuild); must be consistent with ``bulk``/``mach``.
-        sid_w2gj_base / sid_aecorr_base: SID bases for the emitted body cards; each panel
+        sid_w2gj_base / sid_wkk_base: SID bases for the emitted body cards; each panel
                      gets ``base + i`` (horizontal panels first, then vertical, in the
                      order given).
         grid_index:  optional g-set index, passed through to ``build_aero_model``.
@@ -442,10 +441,6 @@ def build_body_correction(
      a_base, cp_a, cp_b) = _body_panel_geometry(bulk, aero0)
     panel_idx, body_idx = _body_panel_indices(boxes, panel_eids, "build_body_correction")
 
-    # Bare-VLM reference circulation (Γ-units) for the WT2 card target — the per-axis
-    # reference aero_model hands apply_wt2 (#52): the vertical panel is calibrated in β.
-    gamma_ref = wt2_reference_cp(boxes, np.linalg.inv(aero0.ajj))
-
     # Joint minimum-norm WT2-ratio + W2GJ-offset solves over the body boxes (the
     # flying surfaces stay untouched: r is a post-inverse diagonal, so only
     # body-box Cp changes).
@@ -454,15 +449,15 @@ def build_body_correction(
         w_pitch, w_yaw, w_roll, cp_a, cp_b, a_base, aero0.wg, body_idx, n,
     )
 
-    # ---- emit body cards (ordinary W2GJ + WT2 on the body CAERO1s) -------------
+    # ---- emit body cards (ordinary W2GJ + WKK on the body CAERO1s) -------------
     cards = {}
     for i, eid in enumerate(panel_eids):
         idx = panel_idx[eid]
         # Card data is NASTRAN-convention (positive = incidence); the internal
         # normalwash ``wg_body`` is the negated sense — see ``build_wg``.
         w2 = W2gj(sid=sid_w2gj_base + i, caero_eid=eid, data=(-wg_body[idx]).tolist())
-        ac = Aecorr(sid=sid_aecorr_base + i, method="WT2", caero_eid=eid,
-                    target=(r[idx] * gamma_ref[idx]).tolist())
+        # The ratio itself, as a WKK weight (#72); it was written as r x reference on AECORR
+        ac = Wkk(sid=sid_wkk_base + i, caero_eid=eid, data=r[idx].tolist())
         cards[eid] = (w2, ac)
 
     # Achieved totals are analytic to ~1e-13 (the body WT2 ratio is a

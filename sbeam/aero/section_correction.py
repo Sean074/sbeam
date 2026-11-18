@@ -1,7 +1,8 @@
 """Section force + moment correction synthesis (Option A).
 
-Generate a **W2GJ** baseline-normalwash card *and* a **WT2** (AECORR) AIC-correction
-card per lifting surface that together reproduce a target *section* aerodynamic line —
+Generate a **W2GJ** baseline-normalwash card *and* a **WKK** AIC-correction card (the
+per-box ratios of the WT2 pressure-matching method; an AECORR card until #72) per
+lifting surface that together reproduce a target *section* aerodynamic line —
 both the slope **and** the zero-incidence offset of force and pitching moment — while
 perturbing the uncorrected VLM chordwise load distribution as little as possible.
 
@@ -15,7 +16,7 @@ These split into two pairs, each handled by the mechanism that can do it without
 disturbing the other:
 
   * **slope pair** (dF/dα, dM/dα → force-curve slope *and* aerodynamic-centre):
-    needs to reshape the α-driven chordwise load, so it is a per-box **WT2** ratio.
+    needs to reshape the α-driven chordwise load, so it is a per-box ratio (a **WKK** weight).
   * **offset pair** (F₀, M₀ → zero-α lift offset *and* camber pitching moment):
     is a load that exists at α=0, so it is a baseline **W2GJ** normalwash (camber line).
 
@@ -69,11 +70,11 @@ from scipy.linalg import lu_solve
 from sbeam.aero.corrections import wt2_reference_cp
 from sbeam.aero.panel import AeroBox
 from sbeam.linalg_utils import estimate_cond_1norm
-from sbeam.model.aero import W2gj, Aecorr
+from sbeam.model.aero import W2gj, Wkk
 from sbeam.model.card_writers import write_card
 from sbeam.types import FloatArray
 
-_RATIO_TOL = 1e-12   # near-zero reference circulation guard (mirrors apply_wt2)
+_RATIO_TOL = 1e-12   # near-zero reference circulation guard: such a box keeps r = 1
 _COND_WARN = 1e10    # ill-conditioning warning threshold
 
 
@@ -102,7 +103,7 @@ class SurfaceDiagnostics:
 @dataclass
 class MultiSectionCorrectionResult:
     """Per-surface cards + global operators + per-surface diagnostics."""
-    cards:       dict[int, tuple[W2gj, Aecorr]]
+    cards:       dict[int, tuple[W2gj, Wkk]]
     r:           FloatArray           # global per-box WT2 multiplier (length n_box)
     wg:          FloatArray           # global per-box W2GJ normalwash (length n_box)
     per_surface: dict[int, SurfaceDiagnostics] = field(default_factory=dict)
@@ -112,7 +113,7 @@ class MultiSectionCorrectionResult:
 class SectionCorrectionResult:
     """Single-surface result (the wrapper return type); global r/wg restricted to it."""
     w2gj:             W2gj
-    aecorr:           Aecorr
+    wkk:              Wkk
     r:                FloatArray
     wg:               FloatArray
     moment_ref:       FloatArray
@@ -153,7 +154,7 @@ def build_section_correction_multi(
     targets: list[SurfaceTargets],
     *,
     sid_w2gj_base: int,
-    sid_aecorr_base: int,
+    sid_wkk_base: int,
     beta: float = 1.0,
 ) -> MultiSectionCorrectionResult:
     """Synthesise a per-surface W2GJ + WT2 card pair for one or more surfaces at once.
@@ -164,14 +165,14 @@ def build_section_correction_multi(
                  ``build_aero_model`` builds it at the correction Mach. Do *not* pre-scale
                  by β — pass β separately.
         targets: iterable of SurfaceTargets, one per CAERO1 to correct.
-        sid_w2gj_base / sid_aecorr_base: SIDs are assigned ``base + i`` in the order the
+        sid_w2gj_base / sid_wkk_base: SIDs are assigned ``base + i`` in the order the
                  surfaces appear in ``targets``.
         beta:    Prandtl–Glauert factor √(1−M²) at the correction Mach. The physical
-                 force carries the solver's 1/β scaling, while the emitted WT2 target
-                 stays in pure Γ-units (what ``apply_wt2`` reconstructs from). β=1 at M=0.
+                 force carries the solver's 1/β scaling; the emitted WKK ratio is
+                 dimensionless and carries none. β=1 at M=0.
 
     Returns:
-        MultiSectionCorrectionResult with ``cards[eid] = (W2gj, Aecorr)``, the global
+        MultiSectionCorrectionResult with ``cards[eid] = (W2gj, Wkk)``, the global
         per-box ``r``/``wg``, and per-surface diagnostics.
 
     Raises:
@@ -197,7 +198,7 @@ def build_section_correction_multi(
         )
 
     ajj_inv   = lu_solve(lu_piv, np.eye(n))
-    # Per-axis reference (#52) — the same one aero_model hands apply_wt2.
+    # Per-axis reference (#52) the ratios are formed on.
     gamma_ref = wt2_reference_cp(boxes, ajj_inv)  # PG circulation (Γ-units; no 1/β)
     chord_box = np.array([_box_chord(b) for b in boxes])
     area_box  = np.array([b.area for b in boxes])
@@ -270,7 +271,6 @@ def build_section_correction_multi(
 
     tiny = np.abs(gamma_ref) <= _RATIO_TOL
     r[tiny] = 1.0
-    cp_target = r * gamma_ref                     # Γ-units WT2 target (no 1/β)
     # Physical ΔCp operator the solver uses: diag(2r/chord)·(1/β)·AJJ⁻¹.
     b_op = (2.0 * r / chord_box / beta)[:, np.newaxis] * ajj_inv
 
@@ -305,7 +305,7 @@ def build_section_correction_multi(
     # ----------------------------------------------------------- emit cards + diagnostics
     cp_off = b_op @ wg
     fbox_off = area_box * cp_off
-    cards: dict[int, tuple[W2gj, Aecorr]] = {}
+    cards: dict[int, tuple[W2gj, Wkk]] = {}
     per_surface: dict[int, SurfaceDiagnostics] = {}
     for i, (T, strips, x_mref) in enumerate(surface_meta):
         n_strip = len(strips)
@@ -323,8 +323,8 @@ def build_section_correction_multi(
         # normalwash ``wg`` is the negated sense — see ``build_wg``.
         w2 = W2gj(sid=sid_w2gj_base + i, caero_eid=T.caero_eid,
                   data=(-wg[surf_idx]).tolist())
-        ac = Aecorr(sid=sid_aecorr_base + i, method="WT2", caero_eid=T.caero_eid,
-                    target=cp_target[surf_idx].tolist())
+        # The ratio itself, as MSC's per-box lift weight: the same card at every Mach (#72)
+        ac = Wkk(sid=sid_wkk_base + i, caero_eid=T.caero_eid, data=r[surf_idx].tolist())
         cards[T.caero_eid] = (w2, ac)
         per_surface[T.caero_eid] = SurfaceDiagnostics(
             caero_eid=T.caero_eid, moment_ref=x_mref,
@@ -345,7 +345,7 @@ def build_section_correction(
     m_0: FloatArray,
     caero_eid: int,
     sid_w2gj: int,
-    sid_aecorr: int,
+    sid_wkk: int,
     moment_ref: Optional[FloatArray] = None,
     beta: float = 1.0,
 ) -> SectionCorrectionResult:
@@ -375,12 +375,12 @@ def build_section_correction(
         moment_ref=None if moment_ref is None else np.asarray(moment_ref, dtype=float),
     )
     multi = build_section_correction_multi(
-        boxes, ajj, [tgt], sid_w2gj_base=sid_w2gj, sid_aecorr_base=sid_aecorr, beta=beta,
+        boxes, ajj, [tgt], sid_w2gj_base=sid_w2gj, sid_wkk_base=sid_wkk, beta=beta,
     )
     w2, ac = multi.cards[caero_eid]
     d = multi.per_surface[caero_eid]
     return SectionCorrectionResult(
-        w2gj=w2, aecorr=ac, r=multi.r, wg=multi.wg, moment_ref=d.moment_ref,
+        w2gj=w2, wkk=ac, r=multi.r, wg=multi.wg, moment_ref=d.moment_ref,
         achieved_f_slope=d.achieved_f_slope, achieved_m_slope=d.achieved_m_slope,
         achieved_f0=d.achieved_f0, achieved_m0=d.achieved_m0,
     )
@@ -396,23 +396,23 @@ def card_lines(name: str, head: list[Any], values: list[float]) -> str:
     return "\n".join(write_card(name, list(head) + [float(v) for v in values]))
 
 
-def pair_to_bdf(w2: W2gj, ac: Aecorr) -> str:
+def pair_to_bdf(w2: W2gj, wk: Wkk) -> str:
     return (f"{card_lines('W2GJ', [w2.sid, w2.caero_eid], w2.data)}\n"
-            f"{card_lines('AECORR', [ac.sid, ac.method, ac.caero_eid], ac.target)}\n")
+            f"{card_lines('WKK', [wk.sid, wk.caero_eid], wk.data)}\n")
 
 
 def cards_to_bdf(
     result: Union[SectionCorrectionResult, MultiSectionCorrectionResult]
 ) -> str:
-    """Format the generated W2GJ + AECORR(WT2) cards as bulk-data text.
+    """Format the generated W2GJ + WKK cards as bulk-data text.
 
     Accepts a single-surface ``SectionCorrectionResult`` or a multi-surface
     ``MultiSectionCorrectionResult`` (all surfaces concatenated).
     """
-    header = "$ Section force+moment correction (W2GJ camber offset + WT2 slope/a.c.)\n"
+    header = "$ Section force+moment correction (W2GJ camber offset + WKK slope/a.c. ratios)\n"
     if isinstance(result, MultiSectionCorrectionResult):
         body = "".join(pair_to_bdf(w2, ac)
                        for _, (w2, ac) in sorted(result.cards.items()))
     else:
-        body = pair_to_bdf(result.w2gj, result.aecorr)
+        body = pair_to_bdf(result.w2gj, result.wkk)
     return header + body

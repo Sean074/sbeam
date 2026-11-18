@@ -359,10 +359,26 @@ def _check_aero_references(bulk: BulkData) -> None:
         _check_frame("ATTACH", eid, "CID", att.cid, bulk)
     # Per-panel cards are applied by matching CAERO1 EID; an unknown EID was dropped
     for card, coll in (("W2GJ", bulk.w2gjs), ("WKK", bulk.wkks),
-                       ("AECORR", bulk.aecorrs), ("CHORDCP", bulk.chordcps)):
+                       ("CHORDCP", bulk.chordcps)):
         for sid, entry in coll.items():
             if entry.caero_eid not in bulk.caero1s:
                 raise ValueError(f"{card} {sid}: CAERO1 {entry.caero_eid} not found")
+    # Every WKK card must be acted on (#72, #96).  A second card on a surface was refused
+    # only when the operator was assembled; a card on a strip body panel was dropped,
+    # because strip panels are not in the VLM operator a WKK scales.
+    weighted: dict[int, int] = {}
+    for sid, wkk in bulk.wkks.items():
+        if wkk.caero_eid in weighted:
+            raise ValueError(
+                f"WKK {sid}: CAERO1 {wkk.caero_eid} already has a WKK card (SID "
+                f"{weighted[wkk.caero_eid]}); a surface takes one WKK card. Multiply the "
+                "two sets of weights box by box into one card")
+        weighted[wkk.caero_eid] = sid
+        if bulk.caero1s[wkk.caero_eid].pid in bulk.pstrips:
+            raise ValueError(
+                f"WKK {sid}: CAERO1 {wkk.caero_eid} is a strip body panel (PSTRIP "
+                f"{bulk.caero1s[wkk.caero_eid].pid}), which has no VLM lift for a WKK to "
+                "scale; set its lift slope with STRIPK")
 
 
 def _check_load_combinations(bulk: BulkData) -> None:

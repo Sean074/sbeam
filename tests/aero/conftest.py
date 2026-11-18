@@ -37,7 +37,7 @@ BODY_EIDS = (6000, 7000)
 def _load(path: StrPath, *, strip_body_cards: bool = False) -> Deck:
     """Parse a flagship driver and build its AeroModel.
 
-    With ``strip_body_cards`` the committed body W2GJ/AECORR/STRIPK are removed
+    With ``strip_body_cards`` the committed body W2GJ/WKK/STRIPK are removed
     first, leaving the flying-surface correction in place and the body panels
     UNCORRECTED — the state the body-correction builders expect as input.  Solving
     against the already-corrected deck would be circular: the builder measures its
@@ -45,7 +45,7 @@ def _load(path: StrPath, *, strip_body_cards: bool = False) -> Deck:
     """
     cc, bulk = parse_bdf(str(path))
     if strip_body_cards:
-        for store in (bulk.w2gjs, bulk.aecorrs, bulk.stripks):
+        for store in (bulk.w2gjs, bulk.wkks, bulk.stripks):
             for sid in [s for s, c in store.items() if c.caero_eid in BODY_EIDS]:
                 del store[sid]
     grid_index = build_grid_index(bulk)
