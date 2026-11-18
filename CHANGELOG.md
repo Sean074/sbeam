@@ -238,6 +238,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and warnings, before and after.
 
 ### Fixed
+- **The viewer no longer drops the GUSTLF selector** (#98). The case-control export and
+  the subcase editor wrote a fixed list of selectors that did not include `GUSTLF`, so
+  `cessna210_flagship_gust.bdf` came back from the viewer with no driver on any of its
+  subcases and no message. The selector is now carried through, with a `GUSTLF SID`
+  picker beside `MASSCASE SID`, a line in the analysis summary, and the gust load
+  condition (n, Δn, URDD3) on the SOL 144 results page. Gates: the export round-trips a
+  subcase built from every `SubcaseControl` field, so a selector added to the parser
+  later cannot be dropped the same way, and round-trips every repo driver deck.
 - **SOL 144 f06 labels that misled a comparison with MSC** (#82). Checked against MSC's
   own HA144A listing (AAUG 2023.1 PDF p.233–237):
   - **Coefficient frame.** sbeam prints coefficients in basic axes; MSC prints the AEROS

@@ -378,7 +378,7 @@ and [SOL 144 — Static Aeroelastic Results](#sol-144--static-aeroelastic-result
 | LOAD SID | Left column selectbox | Always. In SOL 144 it is the applied structural load of a **Trim** subcase (thrust, engine torque; #6) — `_apply_sol144_kind` clears it for the Maneuver (MLOADS) and Divergence-only kinds, and `validate_sol144_authoring` flags a LOAD on those, a dangling LOAD SID, or a GRAV in the trim LOAD set |
 | SPC SID | Right column selectbox | Always |
 | Analysis kind radio (Trim / Divergence only / Maneuver (MLOADS)) | Horizontal radio | SOL 144 only |
-| TRIM / TRIMOBJ / DIVERG / MLOADS / MASSCASE SIDs | Selectboxes, three-up | SOL 144 only |
+| TRIM / TRIMOBJ / DIVERG / MLOADS / MASSCASE / GUSTLF SIDs | Selectboxes, three-up | SOL 144 only. GUSTLF (a static gust case, which names its own TRIM) is kept for a Trim subcase and cleared for MLOADS and DIVERG kinds (#98) |
 | METHOD (EIGRL) SID | Full-width selectbox | SOL 103 only |
 | Output requests | One checkbox per field, equal columns | SOL defined in `_SOL_OUTPUT_FIELDS` |
 | Auto-output info | Info banner | SOLs not in `_SOL_OUTPUT_FIELDS` (e.g. SOL 103) |

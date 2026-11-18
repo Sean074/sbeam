@@ -446,6 +446,18 @@ def _render_sol144_trim(bulk: BulkData, result: Sol144TrimResult) -> None:
         dc[0].metric("Critical q-div", fmt(result.q_div))
         dc[1].metric("q / q-div", fmt(ratio))
 
+    # ---- Gust load condition (GUSTLF, #1): the f06 prints this block; shown here too (#98)
+    if result.gust_echo:
+        gust = result.gust_echo
+        st.markdown(f"**Gust load condition** (GUSTLF {gust['sid']} on TRIM {gust['trimid']}, "
+                    f"{gust['sense']})")
+        gc = st.columns(3)
+        gc[0].metric("Load factor n", fmt(float(gust["n"])))
+        gc[1].metric("Δn (n − 1)", fmt(float(gust["n"]) - 1.0))
+        gc[2].metric("URDD3", fmt(float(gust["urdd3"])))
+        st.caption("Recorded provenance only: n and g enter the solution; sbeam does not "
+                   "compute the gust.")
+
     # ---- Hinge moments ----
     if result.hinge_moments:
         st.markdown("**Hinge-moment derivatives** (about each AESURF hinge axis; CID1 and CID2 halves summed)")

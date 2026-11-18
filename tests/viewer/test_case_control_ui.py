@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.parser.case_control import CaseControl, SubcaseControl, parse_case_control
 from sbeam_tools.viewer.case_control_ui import export_bdf_text
@@ -277,3 +279,57 @@ class TestSampleDeckCaseControlRoundTrip:
             cc2 = parse_case_control(export_bdf_text(cc).splitlines())
             assert cc2.sol == cc.sol, deck
             assert cc2.subcases == cc.subcases, deck
+
+
+# ---------------------------------------------------------------------------
+# #98 — the export keeps every selector the parser reads
+# ---------------------------------------------------------------------------
+
+def _case_control_lines(text: str) -> list[str]:
+    return text.split("BEGIN BULK")[0].splitlines()
+
+
+def _every_field_set() -> SubcaseControl:
+    """A subcase with every SubcaseControl field given a distinct, non-default value."""
+    import dataclasses
+    values: dict = {}
+    for k, f in enumerate(dataclasses.fields(SubcaseControl)):
+        if f.name == "subcase_id":
+            values[f.name] = 7
+        elif f.name == "title":
+            values[f.name] = "every field"
+        elif f.type in (bool, "bool"):
+            values[f.name] = True
+        else:
+            values[f.name] = 100 + k
+    return SubcaseControl(**values)
+
+
+def test_export_round_trips_every_subcase_field():
+    """A selector the parser reads and the export does not write is a silent drop: the
+    viewer lost GUSTLF this way (#98).  Built from the dataclass fields, so a selector
+    added to the parser later fails here until the export carries it."""
+    from sbeam.parser.case_control import parse_case_control
+    subcase = _every_field_set()
+    text = export_bdf_text(CaseControl(sol=144, subcases=[subcase]))
+    assert parse_case_control(_case_control_lines(text)).subcases == [subcase]
+
+
+@pytest.mark.parametrize("deck", sorted(
+    p for p in (Path(__file__).parent.parent.parent / "sample").glob("*.bdf")
+    if "\nSOL " in "\n" + p.read_text()), ids=lambda p: p.name)
+def test_export_round_trips_every_repo_driver(deck):
+    """`cessna210_flagship_gust.bdf` came back with no GUSTLF, so with no driver."""
+    import warnings
+
+    from sbeam.parser.bdf_reader import parse_bdf
+    from sbeam.parser.case_control import parse_case_control
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            cc, _bulk = parse_bdf(str(deck))
+        except ValueError:
+            pytest.skip("not a runnable deck (a refused MSC original)")
+    again = parse_case_control(_case_control_lines(export_bdf_text(cc)))
+    assert again.subcases == cc.subcases
+    assert (again.sol, again.title) == (cc.sol, cc.title)
