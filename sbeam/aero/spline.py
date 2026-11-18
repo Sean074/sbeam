@@ -181,25 +181,17 @@ def _build_spline2_block(
 
     # --- Attachment flexibilities (QRG SPLINE2 remark 3) ---
     #   0 → rigid, > 0 → spring flexibility, negative → not attached.
-    dz_flex = sp.dz if sp.dz > 0.0 else 0.0
+    # The parser refuses DZ < 0 and DTOR <= 0 (#75); these guard a card built in memory
     if sp.dz < 0.0:
-        warnings.warn(
-            f"SPLINE2 {sp.eid}: DZ={sp.dz} < 0 is invalid; treating as rigid (0.0)",
-            UserWarning,
-            stacklevel=3,
-        )
+        raise ValueError(f"SPLINE2 {sp.eid}: DZ={sp.dz} must be >= 0.0")
+    dz_flex = sp.dz
     dthx_attached = sp.dthx >= 0.0    # bending-slope rotation about c_hat
     dthy_attached = sp.dthy >= 0.0    # torsion rotation about s_hat
 
     # DTOR = EI/GJ (torsional flexibility ratio; only the ratio matters)
     dtor = sp.dtor
     if dtor <= 0.0:
-        warnings.warn(
-            f"SPLINE2 {sp.eid}: DTOR={sp.dtor} must be > 0; using 1.0",
-            UserWarning,
-            stacklevel=3,
-        )
-        dtor = 1.0
+        raise ValueError(f"SPLINE2 {sp.eid}: DTOR={sp.dtor} must be > 0.0")
     EI = 1.0
     GJ = 1.0 / dtor
 
@@ -640,6 +632,8 @@ def build_spline_operators(
     Raises ValueError if:
       - A box is covered by more than one spline
       - A SPLINE2 SET1 has fewer than 2 grids
+      - A SPLINE2 has DZ < 0 or DTOR <= 0 (refused at parse, #75), its CID y-axis is
+        normal to the panel, or its boxes are not in one plane (#74)
       - A named injection master GRID is not in the structural model
     Issues UserWarning if:
       - A SPLINE2 / SPLINE0 / ATTACH box range contains no boxes
@@ -648,10 +642,6 @@ def build_spline_operators(
         those box forces stay dropped
       - The model has several SUPORT grids (the first is used)
       - A box collocation point extrapolates >10% beyond the SET1 span range
-      - SPLINE2 DTHX carries a non-±1 value (treated as detached)
-      - SPLINE2 DTOR ≠ 1.0 (torsional flexibility ratio ignored)
-      - SPLINE2 DTHZ carries a value other than 0.0 / −1.0 (Rz attachment not
-        modelled; treated as detached)
     """
     has_splines = bool(bulk.spline2s or bulk.attaches or bulk.spline0s)
     if not has_splines:

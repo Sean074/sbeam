@@ -220,6 +220,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and warnings, before and after.
 
 ### Fixed
+- **SPLINE2 `USAGE = FORCE` / `DISP` and out-of-range `DZ` / `DTOR` are refused** (#75).
+  MSC: a FORCE or DISP spline is in only one of the force and displacement transforms
+  (QRG 2024.1 PDF p.2848 remark 5, p.2850 remark 9). sbeam stored the word and solved
+  every spline as BOTH, and accepted any other word (`XYZ`). `DZ < 0` and `DTOR ≤ 0`
+  (p.2849: DZ ≥ 0.0, DTOR > 0.0) were replaced by 0.0 and 1.0 with a warning while the
+  spline was built; they are refused at parse. A value in the blank field of the
+  continuation is refused. No repo deck is affected. Honouring FORCE/DISP stays with
+  #28. Found by the 2026-11-16 audit (M4, A5, A18).
 - **PARAMs that change NASTRAN's answer are refused** (#69; completes the #55 sweep).
   `PARAM,INREL` (inertia relief, QRG 2024.1 PDF p.888), `G` (p.884), `W3`/`W4` (p.956) and
   `LMODES` (p.895) were skipped with the unknown-card warning and the run continued; any

@@ -1779,12 +1779,12 @@ The continuation line is optional (DTHX/DTHY default 0.0 = rigid attachment).
 | ID1 | `id1` | int | First NASTRAN box ID in the range | required |
 | ID2 | `id2` | int | Last NASTRAN box ID in the range | required |
 | SETG | `setg` | int | SET1 SID listing the structural grids | required |
-| DZ | `dz` | float | Linear (deflection) attachment flexibility: `0.0` = rigid, > 0 = spring; negative warns and is treated as rigid | `0.0` |
-| DTOR | `dtor` | float | Torsional flexibility ratio **EI/GJ** (used; only the ratio matters); ≤ 0 warns and falls back to 1.0 | `1.0` |
+| DZ | `dz` | float | Linear (deflection) attachment flexibility: `0.0` = rigid, > 0 = spring; negative is refused (QRG 2024.1 PDF p.2849, #75) | `0.0` |
+| DTOR | `dtor` | float | Torsional flexibility ratio **EI/GJ** (used; only the ratio matters); ≤ 0 is refused (QRG p.2849, #75) | `1.0` |
 | CID | `cid` | int | CORD2R CID. The spline axis is its **y-axis projected onto the plane of the panel** (QRG 2024.1 PDF p.2849 remark 2); the deflection direction is the panel normal and the chord/rigid-arm direction is axis × normal. The CID x- and z-axes are not read (#74). A y-axis normal to the panel is refused | `0` |
 | DTHX | `dthx` | float | Bending-slope (rotation about the spline's x-axis: axis × normal) attachment flexibility: `0.0` = rigid, > 0 = spring, negative = not attached | `0.0` |
 | DTHY | `dthy` | float | Torsion (rotation about the spline axis) attachment flexibility, same convention | `0.0` |
-| USAGE | `usage` | str | `FORCE` / `DISP` / `BOTH` (informational; not filtered in Phase B) | `"BOTH"` |
+| USAGE | `usage` | str | Must be `BOTH` or blank. NASTRAN's `FORCE` and `DISP` (QRG 2024.1 PDF p.2848 remark 5, p.2850 remark 9) are **refused**: sbeam uses every spline for both transforms, and used to solve them as BOTH without a message (#75). Any other word is refused | `"BOTH"` |
 
 Note the blank field before USAGE on the continuation line (field 4).
 

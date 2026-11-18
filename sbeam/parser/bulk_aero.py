@@ -214,7 +214,30 @@ def _handle_spline2(fields: list[str], cont: Optional[list[str]], bulk: BulkData
     if cont is not None:
         dthx  = to_float(cont[1]) if len(cont) > 1 and cont[1].strip() else 0.0
         dthy  = to_float(cont[2]) if len(cont) > 2 and cont[2].strip() else 0.0
-        usage = cont[4].strip() if len(cont) > 4 and cont[4].strip() else "BOTH"
+        if cont[3].strip():
+            raise ValueError(
+                f"SPLINE2 {eid}: field 4 of the continuation holds '{cont[3].strip()}'; "
+                "that field is blank in NASTRAN's layout (DTHX, DTHY, blank, USAGE; QRG "
+                "2024.1 PDF p.2849)")
+        usage = cont[4].strip().upper() if len(cont) > 4 and cont[4].strip() else "BOTH"
+    # MSC Nastran 2024.1 QRG PDF p.2849: "DZ ... (Real >= 0.0)", "DTOR ... (Real > 0.0)".
+    # The spline builder used to replace an out-of-range value with a warning (#75)
+    if dz < 0.0:
+        raise ValueError(f"SPLINE2 {eid}: DZ={dz:g} must be >= 0.0 (QRG p.2849)")
+    if dtor <= 0.0:
+        raise ValueError(f"SPLINE2 {eid}: DTOR={dtor:g} must be > 0.0 (QRG p.2849)")
+    # USAGE = FORCE or DISP puts the spline in only one of the two transforms (QRG
+    # p.2848 remark 5, p.2850 remark 9).  sbeam uses every spline for both, so either
+    # would be solved as BOTH; any other word is not a NASTRAN value
+    if usage in ("FORCE", "DISP"):
+        raise ValueError(
+            f"SPLINE2 {eid}: USAGE={usage} is not supported; sbeam uses every spline for "
+            "both the force and the displacement transform (USAGE=BOTH). A force-only "
+            "surface can be carried with SPLINE0")
+    if usage != "BOTH":
+        raise ValueError(
+            f"SPLINE2 {eid}: USAGE='{usage}' must be BOTH or blank (NASTRAN also has FORCE "
+            "and DISP, which sbeam does not support; QRG p.2850 remark 9)")
     if eid in bulk.spline2s:
         raise ValueError(f"Duplicate SPLINE2 EID {eid}")
     bulk.spline2s[eid] = Spline2(

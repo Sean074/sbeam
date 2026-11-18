@@ -87,12 +87,12 @@ SPLINE2  EID  CAERO  ID1  ID2  SETG  DZ  DTOR  CID
 | ID1   | —       | First NASTRAN box ID in the range |
 | ID2   | —       | Last NASTRAN box ID in the range |
 | SETG  | —       | SET1 SID listing the structural grids |
-| DZ    | 0.0     | Linear (deflection) attachment flexibility: 0 = rigid, > 0 = spring; negative warns and is treated as rigid |
-| DTOR  | 1.0     | Torsional flexibility ratio **EI/GJ** — now USED (only the ratio matters); ≤ 0 warns and falls back to 1.0 |
+| DZ    | 0.0     | Linear (deflection) attachment flexibility: 0 = rigid, > 0 = spring; negative is refused (QRG 2024.1 PDF p.2849, #75) |
+| DTOR  | 1.0     | Torsional flexibility ratio **EI/GJ** — now USED (only the ratio matters); ≤ 0 is refused (QRG p.2849, #75) |
 | CID   | 0       | CORD2R SID. **The spline axis is the CID *y*-axis projected onto the plane of the panel** (QRG 2024.1 PDF p.2849, SPLINE2 remark 2). Only the y-axis and the origin are read: the deflection direction is the panel normal and the chord / rigid-arm direction is axis × normal (#74). A y-axis normal to the panel is refused |
 | DTHX  | 0.0     | Bending-slope (rotation about the spline's x-axis, ĉ) attachment flexibility: 0 = rigid, > 0 = spring, negative = not attached |
 | DTHY  | 0.0     | Torsion (rotation about the spline axis ŝ) attachment flexibility (same convention) |
-| USAGE | BOTH    | FORCE / DISP / BOTH (informational; not filtered in Phase B) |
+| USAGE | BOTH    | Must be `BOTH` or blank. `FORCE` and `DISP` put the spline in only one of the two transforms (QRG 2024.1 PDF p.2848 remark 5, p.2850 remark 9); sbeam uses every spline for both, so they are **refused** (#75; they used to be stored and solved as BOTH). A force-only surface is `SPLINE0` |
 
 **Formulation.** Each SET1 grid attaches its *deflection* `w_g = u·ẑ` to an infinite beam
 at axis station `t = (r−origin)·ŷ_cid` with rigid chord arm `χ = (r−origin)·x̂_cid`.
