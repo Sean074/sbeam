@@ -204,6 +204,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and warnings, before and after.
 
 ### Fixed
+- **PARAMs that change NASTRAN's answer are refused** (#69; completes the #55 sweep).
+  `PARAM,INREL` (inertia relief, QRG 2024.1 PDF p.888), `G` (p.884), `W3`/`W4` (p.956) and
+  `LMODES` (p.895) were skipped with the unknown-card warning and the run continued; any
+  value but the NASTRAN default now refuses the deck, in bulk data and in case control.
+  A deck relying on `INREL` ran constrained or singular in SOL 101. Listed output and
+  solution-control PARAMs (`POST`, `PRTMAXIM`, `GRDPNT`, `AUTOSPC`, `MAXRATIO`, `BAILOUT`)
+  are accepted with `BDF card 'PARAM,X' ignored (reason)`; any other PARAM keeps the
+  unknown-card warning. No repo deck is refused. Found by the 2026-11-16 audit (S18).
 - **Structural field rules are enforced** (#68; page numbers are QRG 2024.1 PDF pages).
   - **MAT1 blanks** (p.2020–2021 remark 2): a blank E, G or NU is computed from
     `E = 2(1+NU)G`; E and G both blank is refused; NU with one modulus blank sets both

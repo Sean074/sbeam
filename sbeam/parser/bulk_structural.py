@@ -763,9 +763,56 @@ def check_param(fields: list[str]) -> None:
                 "consistent mass matrix (remove the PARAM, or set it to 1)"
             )
         return
-    # Every other PARAM is still ignored and says so: output and solution-control PARAMs
-    # are common in tool-written decks, so a PARAM is refused only when listed above
+    value_s = fields[2].strip() if len(fields) > 2 else ""
+    if name in _REFUSED_PARAMS:
+        default, what = _REFUSED_PARAMS[name]
+        try:
+            value = to_float(value_s) if value_s else default
+        except ValueError:
+            value = math.nan                      # not a number: not the default either
+        if value != default:
+            raise ValueError(
+                f"PARAM,{name},{value_s} is not supported: {what}. sbeam would run "
+                "without it and give a different answer from NASTRAN; remove the PARAM "
+                "if the model does not need it")
+        return
+    if name in _IGNORED_PARAMS:
+        warnings.warn(f"BDF card 'PARAM,{name}' ignored ({_IGNORED_PARAMS[name]})",
+                      UserWarning, stacklevel=5)
+        return
+    # Any other PARAM is skipped and says so: tool-written decks carry many output and
+    # solution-control PARAMs, so a PARAM is refused only when listed above
     warnings.warn(f"Unknown BDF card 'PARAM,{name}' — skipped", UserWarning, stacklevel=5)
+
+
+# PARAMs that change NASTRAN's answer and that sbeam has no counterpart for (#69): any
+# value but the default is refused.  name -> (NASTRAN default, what it asks for).  Page
+# numbers are PDF pages of the MSC Nastran 2024.1 Quick Reference Guide, Parameters.
+_REFUSED_PARAMS: dict[str, tuple[float, str]] = {
+    "INREL": (0.0, "INREL = -1, -2 or -4 requests inertia relief in static analysis "
+                   "(QRG p.888), and sbeam's SOL 101 has none"),
+    "G": (0.0, "G is the uniform structural damping coefficient (QRG p.884), and sbeam "
+               "has no structural damping"),
+    "W3": (0.0, "W3 converts structural damping to viscous damping in transient analysis "
+                "(QRG p.956), and sbeam has no structural damping"),
+    "W4": (0.0, "W4 converts element structural damping to viscous damping in transient "
+                "analysis (QRG p.956), and sbeam has no structural damping"),
+    "LMODES": (0.0, "LMODES is the number of lowest modes kept in a modal formulation "
+                    "(QRG p.895); sbeam takes the mode count from EIGRL ND"),
+}
+
+# PARAMs that change no result sbeam computes: accepted with a warning that names why.
+_IGNORED_PARAMS: dict[str, str] = {
+    "POST": "post-processor output files, QRG p.922; sbeam writes its own f06, CSV and BDF",
+    "PRTMAXIM": "printout of maximum loads and displacements, QRG p.929",
+    "GRDPNT": "grid point weight generator request, QRG p.885; sbeam always prints its "
+              "mass and CG summary",
+    "AUTOSPC": "automatic constraint of singular DOFs, QRG p.850; sbeam has none and "
+               "reports a singular stiffness",
+    "MAXRATIO": "singularity threshold of the stiffness factor, QRG p.897; sbeam uses its "
+                "own conditioning check",
+    "BAILOUT": "continue past a near-singular matrix, QRG p.851 and p.897",
+}
 
 
 # Dispatch registration (#48): every keyword handled in this module, in one table each.

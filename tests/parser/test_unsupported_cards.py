@@ -126,4 +126,4 @@ class TestCli:
                            capture_output=True, text=True, cwd=REPO)
         assert r.returncode == 0, r.stderr
         assert "Parser warning: BDF card 'ECHOOFF' ignored" in r.stderr
-        assert "Parser warning: Unknown BDF card 'PARAM,POST' — skipped" in r.stderr
+        assert "Parser warning: BDF card 'PARAM,POST' ignored (post-processor output files" in r.stderr

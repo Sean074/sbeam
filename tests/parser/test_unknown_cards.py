@@ -91,8 +91,8 @@ def test_params_that_ask_for_what_sbeam_does_are_accepted(param):
 
 
 def test_other_params_still_warn():
-    with pytest.warns(UserWarning, match=r"Unknown BDF card 'PARAM,GRDPNT' — skipped"):
-        parse_bulk_data(_GRIDS + ["PARAM, GRDPNT, 1"])
+    with pytest.warns(UserWarning, match=r"Unknown BDF card 'PARAM,NEWSEQ' — skipped"):
+        parse_bulk_data(_GRIDS + ["PARAM, NEWSEQ, -1"])
 
 
 def test_ha144a_archive_still_stops_at_wtmass_first():

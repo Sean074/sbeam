@@ -195,7 +195,7 @@ Every line above `BEGIN BULK` must be a command in the tables below; any other l
 | `AEROF` | — | Request per-box aerodynamic force output (SOL 144; emits the AERODYNAMIC BOX PRESSURES AND FORCES block) |
 | `APRESSURE` | — | Request per-box aerodynamic pressure (ΔCp) output (SOL 144; same output block as `AEROF`). Usually written `APRES` (QRG p.263) |
 | `INCLUDE` | str | Inserts a file where it stands (see File Structure). Above `BEGIN BULK` it may bring in case control; a bulk data file is INCLUDEd below `BEGIN BULK` (#81) |
-| `PARAM` | — | `PARAM,name,value` (QRG p.570). Follows the bulk `PARAM` rules: the same refusals (`WTMASS`, `AUNITS`, `COUPMASS`) and the same warning for a PARAM sbeam does not read |
+| `PARAM` | — | `PARAM,name,value` (QRG p.570). Follows the bulk `PARAM` rules: the same refusals (`WTMASS`, `AUNITS`, `COUPMASS`, `INREL`, `G`, `W3`, `W4`, `LMODES`) and the same warnings for a PARAM sbeam does not read |
 
 **Accepted and ignored** (no message; none changes a result):
 
@@ -2740,13 +2740,29 @@ justification). The warning reads `BDF card 'X' ignored (...)`.
 
 **PARAM is warn-by-default**: tool-written decks carry many output and solution-control
 PARAMs, so a PARAM sbeam does not read is skipped with `Unknown BDF card 'PARAM,X' —
-skipped`. The PARAMs that would change the answer are refused:
+skipped`. The PARAMs that would change the answer are refused (page numbers are PDF pages
+of the MSC Nastran 2024.1 QRG):
 
 | PARAM | Refused when | Why |
 |---|---|---|
 | `WTMASS` | value ≠ 1 | sbeam never scales mass (charter §7, #39) |
 | `AUNITS` | value ≠ 1 | MSC reads TRIM URDD* in g with it; sbeam never converts accelerations (charter §7, #55) |
 | `COUPMASS` | value ≤ 0 or blank (NASTRAN's default −1 is lumped mass) | sbeam always uses the consistent mass matrix; `COUPMASS > 0` asks for that and is accepted (#55) |
+| `INREL` | value ≠ 0 | −1, −2, −4 request inertia relief in static analysis (p.888); sbeam's SOL 101 has none, so the deck would run constrained or singular (#69) |
+| `G` | value ≠ 0 | uniform structural damping coefficient (p.884); sbeam has no structural damping (#69) |
+| `W3`, `W4` | value ≠ 0 | convert structural damping to viscous damping in transient analysis (p.956) (#69) |
+| `LMODES` | value ≠ 0 | number of lowest modes kept in a modal formulation (p.895); sbeam takes the mode count from EIGRL `ND` (#69) |
+
+These PARAMs change no result sbeam computes and are accepted with the warning
+`BDF card 'PARAM,X' ignored (reason)`:
+
+| PARAM | Why it is ignored |
+|---|---|
+| `POST` | post-processor output files (p.922); sbeam writes its own f06, CSV and BDF |
+| `PRTMAXIM` | printout of maximum loads and displacements (p.929) |
+| `GRDPNT` | grid point weight generator request (p.885); sbeam always prints its mass and CG summary |
+| `AUTOSPC` | automatic constraint of singular DOFs (p.850); sbeam has none and reports a singular stiffness |
+| `MAXRATIO`, `BAILOUT` | singularity threshold and continue-on-singularity (p.897, p.851); sbeam uses its own conditioning check |
 
 A NASTRAN deck *without* `PARAM,COUPMASS` uses lumped mass in NASTRAN and consistent mass
 in sbeam. That is a modelling difference, not a dropped card, so it is not refused; it
@@ -2783,7 +2799,7 @@ under "Parser warnings" and in the pre-solve checks.
 | GRAV | CID must be `0` (global frame only) in Phase 1–2 |
 | MAT1 | Thermal fields (A, TREF, GE) parsed but ignored in Phase 1–2 |
 | PAERO1 | Phase A stub only; body interference support deferred |
-| PARAM | Only `WTMASS` is read: a value other than 1.0 raises `ValueError` (sbeam never scales mass, charter §7); every other `PARAM` is skipped with the unknown-card warning |
+| PARAM | No PARAM changes an sbeam result. Answer-changing ones are refused (`WTMASS`, `AUNITS`, `COUPMASS`, `INREL`, `G`, `W3`, `W4`, `LMODES`), listed output ones are ignored with a named reason, and any other is skipped with the unknown-card warning — see "PARAM" under Unsupported cards |
 | SPC | Enforced displacement D must be `0.0` in Phase 1–2 |
 | W2GJ | Data length must equal NSPAN×NCHORD for the referenced CAERO1 |
 | WKK | Data length must equal NSPAN×NCHORD for the referenced CAERO1 |
