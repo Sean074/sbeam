@@ -274,8 +274,9 @@ class TestInertialColsFullMassModel:
         grid_index = {1: 0}
         M = build_inertial_cols(bulk, ['URDD6'], grid_index, np.zeros(3))
         _F, Mo = _resultant(M[:, 0], bulk, grid_index, np.zeros(3))
-        # M = -I @ (0,0,1) = -(I13, I23, I33) = -(i31, i32, i33)
-        assert abs(Mo[0] - (-i31)) < 1e-12, "roll moment from I31 is missing"
+        # M = -I @ (0,0,1) = -(I13, I23, I33), and the tensor entry I13 is -i31: the
+        # CONM2 field is the product of inertia, negated in the matrix (#66, QRG p.1450)
+        assert abs(Mo[0] - (+i31)) < 1e-12, "roll moment from I31 is missing"
         assert abs(Mo[2] - (-4.0)) < 1e-12
 
     def test_conm2_cid_rotates_the_inertia_tensor(self):

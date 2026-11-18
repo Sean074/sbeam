@@ -879,10 +879,10 @@ on to the continuation.
 | X2 | `x2` | float | Offset from grid to CG, component 2 in CID | `0.0` |
 | X3 | `x3` | float | Offset from grid to CG, component 3 in CID | `0.0` |
 | I11 | `i11` | float | Moment of inertia about CID axis 1 at CG | `0.0` |
-| I21 | `i21` | float | Product of inertia, axes 2–1 | `0.0` |
+| I21 | `i21` | float | Product of inertia `∫ρ x₁x₂ dV` (entered positive as computed; negated in the matrix) | `0.0` |
 | I22 | `i22` | float | Moment of inertia about CID axis 2 at CG | `0.0` |
-| I31 | `i31` | float | Product of inertia, axes 3–1 | `0.0` |
-| I32 | `i32` | float | Product of inertia, axes 3–2 | `0.0` |
+| I31 | `i31` | float | Product of inertia `∫ρ x₁x₃ dV` | `0.0` |
+| I32 | `i32` | float | Product of inertia `∫ρ x₂x₃ dV` | `0.0` |
 | I33 | `i33` | float | Moment of inertia about CID axis 3 at CG | `0.0` |
 
 **Assembly:** each CONM2 contributes a full symmetric 6×6 block at its grid:
@@ -895,13 +895,18 @@ on to the continuation.
 When CID ≠ 0, the offset and inertia tensor are rotated to global before assembly:
 `r = R @ r_cid`, `I = R @ I_cid @ Rᵀ`.
 
-> **⚠ Sign convention differs from MSC NASTRAN:** sbeam uses the off-diagonal fields as
-> the **direct (positive) tensor entries** —
-> `I_cid = [[I11, I21, I31], [I21, I22, I32], [I31, I32, I33]]`
-> (`assembly/mass_matrix.py:130-134`, gated by `tests/aero/test_trim_urdd.py:265-279`).
-> MSC NASTRAN's CONM2 fields are the **negated** products of inertia. A NASTRAN deck
-> with nonzero I21/I31/I32 therefore imports into sbeam with flipped inertia coupling —
-> negate those three fields when porting. See `09_conventions.md` §9.
+> **Products of inertia follow MSC NASTRAN (#66).** The fields are the products
+> themselves, `I21 = ∫ρ x₁x₂ dV`, `I31 = ∫ρ x₁x₃ dV`, `I32 = ∫ρ x₂x₃ dV`, measured at the
+> mass CG in the CID frame, and the matrix is
+> `I_cid = [[I11, −I21, −I31], [−I21, I22, −I32], [−I31, −I32, I33]]`:
+> "The negative signs for the off-diagonal terms are supplied automatically" (MSC
+> Nastran 2024.1 QRG, PDF p.1449–1450, remark 5). A NASTRAN deck's values are used as
+> written. Gate: a CONM2 carrying the inertia of a set of point masses gives the same
+> 6×6 mass as those point masses (`tests/assembly/test_conm2_products_of_inertia.py`).
+>
+> **Before #66 sbeam used the three fields unnegated.** A deck written for the old rule
+> must negate I21, I31 and I32; nothing can detect an unconverted deck, since both signs
+> are legal input. See `09_conventions.md` §9.
 
 > **Singular mass warning (SOL 103):** a CONM2 with zero offset and zero inertia on a
 > model with `rho = 0.0` MAT1s populates only the three translational DOFs at its grid

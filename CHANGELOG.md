@@ -10,6 +10,18 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Breaking changes
+- **CONM2 products of inertia take NASTRAN's sign** (#66; pre-1.0 MINOR break, **silent**).
+  MSC: the fields are `I21 = ∫ρ x₁x₂ dV`, `I31`, `I32`, and "the negative signs for the
+  off-diagonal terms are supplied automatically" (QRG 2024.1 PDF p.1449–1450, remark 5).
+  sbeam put the three fields into the inertia matrix unnegated, so every ported NASTRAN
+  deck with a product of inertia had its inertia coupling reversed; the card reference
+  said to negate them by hand but nothing refused or warned. The matrix is now
+  `[[I11, −I21, −I31], [−I21, I22, −I32], [−I31, −I32, I33]]`. **Migrate a deck written
+  for the old rule: negate I21, I31 and I32 on every CONM2.** Both signs are legal input,
+  so sbeam cannot detect an unconverted deck. No repo deck sets a product of inertia; no
+  shipped number changes. Gate: one CONM2 carrying the NASTRAN-defined inertia of four
+  point masses gives the same 6×6 mass as the four offset point masses, in basic and in
+  a rotated CID. Found by the 2026-11-16 audit (S3).
 - **DIVERG is read in MSC's layout; the solver reports divergence q only** (#73; pre-1.0
   MINOR break). sbeam read field 4 as an sbeam-only `RHOREF` density and started the Mach
   list in field 5, so MSC's own example `DIVERG,70,2,.5,.8,.9` lost Mach 0.5 and gave a

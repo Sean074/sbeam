@@ -36,7 +36,7 @@ class Conm2:
     x2: float = field(default=0.0)  # Offset from grid to CG, Y component
     x3: float = field(default=0.0)  # Offset from grid to CG, Z component
     i11: float = field(default=0.0)  # Moment of inertia about axis 1 at CG
-    i21: float = field(default=0.0)  # Product of inertia, axes 2-1
+    i21: float = field(default=0.0)  # Product of inertia ∫ρ x1 x2 dV; enters the matrix negated (#66)
     i22: float = field(default=0.0)  # Moment of inertia about axis 2 at CG
     i31: float = field(default=0.0)  # Product of inertia, axes 3-1
     i32: float = field(default=0.0)  # Product of inertia, axes 3-2

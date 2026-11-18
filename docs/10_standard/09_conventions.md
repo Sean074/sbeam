@@ -316,12 +316,13 @@ Figure: `../figures/sign_conventions_internal_loads.svg`; cut geometry:
 - **Monitor / section-cut `applied` column** (#6): the subcase `LOAD` set summed like the
   inertia column, same sign, same frame; present only when the subcase selected a `LOAD`
   (f06 source line `+ APPLIED`; CSV `Fz_applied`, `c*_applied` are `0.0` otherwise).
-- **⚠ CONM2 products of inertia are the direct tensor entries, POSITIVE off-diagonals**
-  — `I_cid = [[i11,i21,i31],[i21,i22,i32],[i31,i32,i33]]`
-  (`assembly/mass_matrix.py:130-134`, gated `tests/aero/test_trim_urdd.py:265-279`).
-  **This is the opposite of MSC NASTRAN**, whose CONM2 fields are the *negated*
-  products; a NASTRAN deck with nonzero I21/I31/I32 imports with flipped inertia
-  coupling. Single source for the field meanings: `02_card_reference.md` (CONM2).
+- **CONM2 products of inertia are NASTRAN's (#66):** the fields are the products
+  `I21 = ∫ρ x₁x₂ dV` etc. and the matrix carries them negated,
+  `I_cid = [[i11,−i21,−i31],[−i21,i22,−i32],[−i31,−i32,i33]]` (MSC Nastran 2024.1 QRG
+  PDF p.1449–1450, remark 5; `assembly/mass_matrix.py`, gated by
+  `tests/assembly/test_conm2_products_of_inertia.py`). Until #66 sbeam used the fields
+  unnegated; a deck written for that rule must negate I21/I31/I32. Single source for the
+  field meanings: `02_card_reference.md` (CONM2).
 
 ## 10. Engines and powered effects
 
