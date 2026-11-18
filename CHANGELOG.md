@@ -188,6 +188,19 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and warnings, before and after.
 
 ### Fixed
+- **A GRID CD that would change the answer is refused** (#65). MSC: CD is the frame "in
+  which the displacements, degrees-of-freedom, constraints, and solution vectors are
+  defined at the grid point" (QRG 2024.1 PDF p.1944). sbeam uses CD only to rotate the
+  printed results and applied everything else along the basic axes, so `SPC1,1,1,2` on a
+  grid with a rotated CD constrained basic T1 where NASTRAN constrains CD-x, with no
+  message. A grid with CD ≠ 0 is now refused when a card names a direction at it: a
+  partial component set on GRID PS, SPC, SPC1, SUPORT, RBE2, RBAR or RBE3; a CBAR
+  orientation vector at GA (QRG p.1360); any CBUSH (p.1378). Whole triads (`123`, `456`,
+  `123456`) mean the same in every frame and stay accepted, as do FORCE, MOMENT and CONM2
+  (own CID) and rods, so CD as an output frame keeps working (V-CS3, the SPCFORCE frame
+  gate). The issue proposed refusing every CD ≠ 0; this narrower rule refuses exactly the
+  cases where sbeam and NASTRAN would solve different models. No repo deck is refused.
+  Found by the 2026-11-16 audit (S1).
 - **TRIMVAR, TRIMOBJ and TRIMCON are checked and acted on, or refused** (#77). The solver
   skipped any of these cards whose label was not a free trim variable, so a misspelt
   label, and the card reference's own `CL` / `CM` examples, dropped the bound, weight or

@@ -302,7 +302,8 @@ Figure: `../figures/sign_conventions_internal_loads.svg`; cut geometry:
   (`R = K·u − f_applied` at the SPC DOFs, `solver/sol101.py:221-264`). Stored in basic;
   **printed in the grid CD frame** (Q1) — so the f06 SPCFORCE block and the monitor
   reaction column (which consumes the stored basic vectors) can differ in frame on a
-  CD≠0 model. **⚠ OLOAD prints only a GRAV echo today** — no applied-load block exists
+  CD≠0 model. A constraint, rigid element, CBAR orientation or CBUSH that names a
+  direction at a CD≠0 grid is refused (#65), so the frames differ in print only. **⚠ OLOAD prints only a GRAV echo today** — no applied-load block exists
   (DEF-M19).
 - **Applied loads are used exactly as authored** (FORCE/MOMENT/GRAV: no hidden sign,
   right-hand rule about the given axis, GRAV direction vector must itself point down;

@@ -31,6 +31,7 @@ def cross_reference(bulk: BulkData) -> None:
     all_trim_labels = _check_trim(bulk)
     _check_maneuver_loads(bulk, all_trim_labels)
     _check_massset(bulk)
+    _check_displacement_frames(bulk)
 
 
 def check_frame_orientations(
@@ -83,6 +84,78 @@ def _check_frames(bulk: BulkData) -> None:
     for gid, grid in bulk.grids.items():
         # CP is resolved (and checked) by resolve_grid_positions after this pass
         _check_frame("GRID", gid, "CD", grid.cd, bulk)
+
+
+def _frame_free(components: str) -> bool:
+    """True when a component set means the same in every rectangular frame.
+
+    A whole triad does: T1-T3 together span all translations and R1-R3 all rotations,
+    whatever the axes.  A partial triad (``1``, ``35``, ``1245`` ...) names directions.
+    """
+    digits = set(components)
+    return (digits & set("123") in (set(), set("123"))
+            and digits & set("456") in (set(), set("456")))
+
+
+def _check_displacement_frames(bulk: BulkData) -> None:
+    """Refuse a GRID CD that would change the answer (#65).
+
+    MSC: CD is the "coordinate system in which the displacements, degrees-of-freedom,
+    constraints, and solution vectors are defined at the grid point" (MSC Nastran
+    2024.1 QRG PDF p.1944), and a CBAR or CBUSH orientation vector is "in the
+    displacement coordinate system at GA" (p.1360, p.1378).  sbeam solves every grid in
+    basic and uses CD only to rotate the printed displacements, eigenvectors and SPC
+    forces.  That is the whole of NASTRAN's meaning for a grid that nothing addresses
+    by component number or orients from.  Where a card does, sbeam would apply it along
+    the basic axes instead, so the deck is refused naming the card.
+    """
+    rotated = {gid: g.cd for gid, g in bulk.grids.items() if g.cd}
+    if not rotated:
+        return
+
+    def _refuse(gid: int, what: str) -> None:
+        raise ValueError(
+            f"GRID {gid}: CD={rotated[gid]} is used only to print results in that frame, "
+            f"but {what}. NASTRAN would take this in the CD frame (QRG p.1944) and sbeam "
+            "takes it in basic, so the two would solve different models. Remove the CD, "
+            "or state the card in basic terms on a grid without one.")
+
+    def _components(gid: int, card: str, comps: str) -> None:
+        if gid in rotated and comps and not _frame_free(comps):
+            _refuse(gid, f"{card} names components {comps} at it")
+
+    for gid in rotated:
+        _components(gid, "its own PS field", bulk.grids[gid].ps)
+    for sid, spcs in bulk.spcs.items():
+        for spc in spcs:
+            _components(spc.g1, f"SPC {sid}", spc.c1)
+            if spc.g2 is not None:
+                _components(spc.g2, f"SPC {sid}", spc.c2 or "")
+    for sid, spc1s in bulk.spc1s.items():
+        for spc1 in spc1s:
+            for gid in spc1.grids:
+                _components(gid, f"SPC1 {sid}", spc1.c)
+    for sup in bulk.supports:
+        _components(sup.gid, "SUPORT", sup.dofs)
+    for eid, rbe2 in bulk.rbe2s.items():
+        for gid in [rbe2.gn, *rbe2.gm]:
+            _components(gid, f"RBE2 {eid}", rbe2.cm)
+    for eid, rbar in bulk.rbars.items():
+        for gid in (rbar.ga, rbar.gb):
+            _components(gid, f"RBAR {eid}", rbar.cna)
+            _components(gid, f"RBAR {eid}", rbar.cnb)
+    for eid, rbe3 in bulk.rbe3s.items():
+        _components(rbe3.refgrid, f"RBE3 {eid}", rbe3.refc)
+        for _wt, comps, grids in rbe3.wt_gc:
+            for gid in [rbe3.refgrid, *grids]:
+                _components(gid, f"RBE3 {eid}", comps)
+    for eid, bar in bulk.cbars.items():
+        if bar.ga in rotated:
+            _refuse(bar.ga, f"CBAR {eid} takes its orientation vector at this grid (GA)")
+    for eid, bush in bulk.cbushs.items():
+        for gid in (bush.ga, bush.gb):
+            if gid in rotated:
+                _refuse(gid, f"CBUSH {eid} takes its spring axes at this grid")
 
 
 def _check_line_elements(bulk: BulkData) -> None:

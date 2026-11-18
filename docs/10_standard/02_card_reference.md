@@ -299,9 +299,28 @@ GRID, GID, CP, X1, X2, X3, CD, PS, SEID
 | X1 | `x` | float | X coordinate in CP frame | required |
 | X2 | `y` | float | Y coordinate in CP frame | required |
 | X3 | `z` | float | Z coordinate in CP frame | required |
-| CD | `cd` | int | Output coordinate system for displacement results (`0` = global) | `0` |
+| CD | `cd` | int | Displacement coordinate system. sbeam solves every grid in basic and uses CD **only to print** that grid's displacements, eigenvectors and SPC forces in the CD frame. A card that names a direction at a CD ≠ 0 grid is refused — see below | `0` |
 | PS | `ps` | str | Permanent SPC DOF string (e.g., `"123456"`) | `""` |
 | SEID | — | — | Superelement ID — must be blank or `0`; anything else is refused (#58) | — |
+
+**CD ≠ 0 (#65).** MSC defines CD as the "coordinate system in which the displacements,
+degrees-of-freedom, constraints, and solution vectors are defined at the grid point" (QRG
+2024.1 PDF p.1944). sbeam does not rotate the grid's degrees of freedom, so it accepts a
+CD only where rotating the printed results is all that NASTRAN's rule amounts to, and
+**refuses the deck** when any of these addresses the grid:
+
+| Card | Refused when |
+|---|---|
+| GRID `PS`, SPC, SPC1, SUPORT | the component set is a partial triad (`3`, `35`, `1245` …) |
+| RBE2, RBAR, RBE3 | a component field of the element is a partial triad and the grid is one of its grids |
+| CBAR | the grid is GA and the orientation is a vector: X1–X3 are "in the displacement coordinate system at GA" (QRG p.1360) |
+| CBUSH | the grid is GA or GB: the orientation vector and the default spring axes are in GA's displacement system (QRG p.1378) |
+
+A whole triad (`123`, `456`, `123456`) is the same constraint in every rectangular frame
+and is accepted, as are FORCE, MOMENT and CONM2 (each has its own CID), CROD/CONROD (no
+orientation) and a CBAR's GB. Before #65 all of these were accepted and applied along the
+basic axes, so `SPC1,1,1,2` on a rotated grid constrained basic T1 where NASTRAN
+constrains CD-x.
 
 Coordinates are transformed to global CID 0 during parsing; CP and CD are stored for output.
 

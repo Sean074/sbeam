@@ -517,7 +517,7 @@ restrictions there first, then link them here.
 |------------|--------|
 | `CORD2R` only | `CORD2C`, `CORD2S` and `CORD1R` are not supported; the parser raises `ValueError` |
 | All computation in basic CID 0 | `CP` and `CD` are input/output transforms only. See [DOF Numbering Convention](#dof-numbering-convention) |
-| SPC directions are basic-frame | `SPC`/`SPC1` DOF digits always refer to basic CID 0, **not** the grid's `CD` frame — a constrained grid with `CD ≠ 0` is restrained along basic axes even though its results are reported in `CD` |
+| SPC and element directions are basic-frame; a rotated `CD` is refused where it matters | sbeam does not rotate a grid's degrees of freedom into its `CD` frame. A grid with `CD ≠ 0` is accepted only when nothing names a direction at it: a partial component set on GRID `PS`, SPC, SPC1, SUPORT, RBE2, RBAR or RBE3, a CBAR orientation vector at GA, or any CBUSH **refuses the deck** (#65; MSC QRG 2024.1 PDF p.1944). Whole triads (`123`, `456`, `123456`) are frame-free and accepted. `CD` then only rotates the printed displacements, eigenvectors and SPC forces |
 
 **Loads and constraints**
 
