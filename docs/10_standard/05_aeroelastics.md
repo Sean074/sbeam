@@ -50,11 +50,11 @@ Results   (cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, CDi, e, per_su
 | `sbeam/solver/sol144_diverg.py` | `run_sol144_diverg` (DIVERG-card divergence sweep + mode shape), `divergence_dynamic_pressure`, `divergence_roots` |
 | `sbeam/solver/sol144_static.py` | `run_aeroelastic_static` — the Step-50 no-trim reference path (test scaffolding; no production callers, DEF-R3) |
 | `sbeam/solver/maneuver_qs.py` | **Phase G0** — `run_maneuver_qs`: Level-1 quasi-steady, open-loop, restrained l-set Newmark-β transient maneuver integration (the direct solver / regression anchor) |
-| `sbeam/solver/maneuver_modal.py` | **Phase G0 Steps 62–63** — `run_maneuver_modal`: the free-flight modal transient solver (coupled h-set EOM, `B_hh` engaged, rigid trim labels as outputs, self-balancing closure), mode-acceleration recovery, fixed-Φ MASSSET cases with case-mean-axis correction, job-level `ManeuverBasisCache` |
+| `sbeam/solver/maneuver_modal.py` | **Phase G0 Steps 62–63** — `run_maneuver_modal`: the free-flight modal transient solver (coupled h-set EOM, `B_hh` engaged, rigid trim labels as outputs, self-balancing closure), mode-acceleration recovery, fixed-Φ MASSCASE cases with case-mean-axis correction, job-level `ManeuverBasisCache` |
 | `sbeam/solver/modal_basis.py` | **Phase G0 Step 61** — free-free maneuver basis `Φ = [Φ_r | Φ_e]`, h-set operators, shared a-set assembly |
 | `sbeam/model/maneuver.py` | Dataclasses for the ZAERO `MLOADS`/`MLDTRIM`/`MLDTIME`/`MLDCOMD`/`MLDPRNT` + `TABLED1` card set |
 | `sbeam/model/maneuver_presets.py` | Canned pilot-command history presets |
-| `sbeam/model/mass_overlay.py` | **Step 60** — `resolve_mass_case` / `effective_conm2s`: MASSSET payload-case resolution (baseline scaling + ADD/REPLACE/DELETE overlay) |
+| `sbeam/model/mass_overlay.py` | **Step 60** — `resolve_mass_case` / `effective_conm2s`: MASSCASE payload-case resolution (baseline scaling + ADD/REPLACE/DELETE overlay) |
 | `sbeam/results/f06_writer.py` | `build_f06_sol144_text` / `write_f06_sol144` — SOL 144 trim f06 blocks (shares displacement/CBAR helpers with SOL 101) |
 | `sbeam/results/load_export.py` | `write_aero_load_cards` — trimmed flight loads as `FORCE`/`MOMENT` bulk cards |
 | `sbeam/results/monitor_points.py` | `prepare_monitor_points` (once per run) + `evaluate_monitor_point` (per load state) — monitor-point integrated section loads; `compute_monitor_loads` / `integrate_monpnt1` / `integrate_monpnt3` are the one-shot forms. **#2** takes them at every transient sample |
@@ -156,5 +156,5 @@ Reproduction script for the original review: `studies/_review_ha144a_check.py`.
 | `MLDTIME` | Integration window t0/tend/dt/tout | G0 |
 | `MLDPRNT` | ASCII time-history output request | G0 |
 | `TABLED1` | Tabular function of time (command histories) | G0 |
-| `MASSSET` | Payload / mass case (ADD/REPLACE/DELETE CONM2 ops + SCALE) | S60 |
+| `MASSCASE` | Payload / mass case (ADD/REPLACE/DELETE CONM2 ops + SCALE) | S60 |
 

@@ -343,7 +343,7 @@ def _warn_if_mass_coverage_incomplete(
     only then is its mass coverage checked.
 
     Masses are taken from the *active* mass case, not from every CONM2 card:
-    a MASSSET deck carries mutually exclusive overlays (half fuel / full fuel),
+    a MASSCASE deck carries mutually exclusive overlays (half fuel / full fuel),
     and counting them all would report a fraction the run never had.
     """
     conm2s = effective_conm2s(bulk, massset_sid)

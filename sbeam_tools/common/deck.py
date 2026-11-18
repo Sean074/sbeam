@@ -95,7 +95,7 @@ def read_airplane(
         label = "BASELINE" if sid is None else resolve_mass_case(bulk, sid).label
         mass = compute_gpwg(bulk, sid).total_mass
         if mass <= 0.0:
-            raise ValueError(f"MASSSET {sid}: total mass is {mass} — cannot form a weight")
+            raise ValueError(f"MASSCASE {sid}: total mass is {mass} — cannot form a weight")
         cases.append(MassCase(sid=sid, label=label, mass=mass))
 
     return Airplane(

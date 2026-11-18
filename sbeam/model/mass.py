@@ -3,9 +3,9 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Massset:
-    """MASSSET — a named payload / mass configuration (Step 60).
+    """MASSCASE — a named payload / mass configuration (Step 60).
 
-    Selected per subcase by the case-control ``MASSSET = sid`` request.  The
+    Selected per subcase by the case-control ``MASSCASE = sid`` request.  The
     case mass is built from the baseline model mass (CBAR distributed mass +
     baseline CONM2s), multiplied by ``scale``, then modified by the three ops:
 

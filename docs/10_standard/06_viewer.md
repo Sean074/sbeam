@@ -364,7 +364,7 @@ and `_SOL_OUTPUT_FIELDS` in `case_control_ui.py`.
 
 **SOL 144 is fully editor-authored since P12** (this supersedes the Step 57/AC5 "BDF-authored
 only" convention): the editor authors the SOL 144 case control (TRIM/TRIMOBJ/DIVERG/MLOADS/
-MASSSET selection per subcase plus AEROF/APRES output requests), and the **Aeroelastic
+MASSCASE selection per subcase plus AEROF/APRES output requests), and the **Aeroelastic
 Authoring** tab (below) authors the condition bulk cards themselves. The run path is
 unchanged — `app.py::_run_sol144`; see [Run Analysis from Viewer](#run-analysis-from-viewer)
 and [SOL 144 — Static Aeroelastic Results](#sol-144--static-aeroelastic-results-step-57).
@@ -378,7 +378,7 @@ and [SOL 144 — Static Aeroelastic Results](#sol-144--static-aeroelastic-result
 | LOAD SID | Left column selectbox | Always. In SOL 144 it is the applied structural load of a **Trim** subcase (thrust, engine torque; #6) — `_apply_sol144_kind` clears it for the Maneuver (MLOADS) and Divergence-only kinds, and `validate_sol144_authoring` flags a LOAD on those, a dangling LOAD SID, or a GRAV in the trim LOAD set |
 | SPC SID | Right column selectbox | Always |
 | Analysis kind radio (Trim / Divergence only / Maneuver (MLOADS)) | Horizontal radio | SOL 144 only |
-| TRIM / TRIMOBJ / DIVERG / MLOADS / MASSSET SIDs | Selectboxes, three-up | SOL 144 only |
+| TRIM / TRIMOBJ / DIVERG / MLOADS / MASSCASE SIDs | Selectboxes, three-up | SOL 144 only |
 | METHOD (EIGRL) SID | Full-width selectbox | SOL 103 only |
 | Output requests | One checkbox per field, equal columns | SOL defined in `_SOL_OUTPUT_FIELDS` |
 | Auto-output info | Info banner | SOLs not in `_SOL_OUTPUT_FIELDS` (e.g. SOL 103) |
@@ -416,7 +416,7 @@ reruns. Add/Remove handlers run after the form closes and call `st.rerun()`.
 
 `export_bdf_text(cc: CaseControl, include_paths: list[str] | None = None,
 authored_block: str = "") -> str` in `case_control_ui.py` serialises a `CaseControl` to a
-parseable driver BDF: full SOL 144 keyword surface (TRIM/TRIMOBJ/DIVERG/MLOADS/MASSSET +
+parseable driver BDF: full SOL 144 keyword surface (TRIM/TRIMOBJ/DIVERG/MLOADS/MASSCASE +
 AEROF/APRES), `BEGIN BULK`, one `INCLUDE` per entry (an INCLUDE inserts its file where it
 stands, so bulk INCLUDEs sit below `BEGIN BULK`, #81), and any viewer-authored bulk cards.
 Example output:
@@ -452,7 +452,7 @@ data, so the user can click Apply immediately without any manual selection.
 Shown when the model has CAERO1 panels (same gate as the Aero tabs). Authors the full
 SOL 144 / MLOADS condition-card surface in the browser: **AESTAT, AESURF, AELIST, SUPORT,
 TRIM (incl. the RHOREF pseudo-label), TRIMVAR, TRIMOBJ, TRIMCON, DIVERG, MLOADS, MLDTRIM,
-MLDTIME, MLDCOMD, MLDPRNT, TABLED1**. MASSSET remains select-only (chosen per subcase in
+MLDTIME, MLDCOMD, MLDPRNT, TABLED1**. MASSCASE remains select-only (chosen per subcase in
 the Case Control editor; mass cases themselves stay BDF-authored).
 
 Modules: `viewer/sol144_authoring.py` (pure logic — SID allocation, clash detection,
@@ -501,7 +501,7 @@ held in `st.session_state.mldcomd_increments`). After a solve, **Resolve → abs
 TABLED1s** reads the solved trim control value per mass case (`Sol144TrimResult.trim_vars`
 or `ManeuverResult.steps[0].trim_vars`), writes one absolute TABLED1 per pair, and
 rewrites the owning MLDCOMD (allocating one when the MLOADS had none). Unresolved
-increments block export. An MLOADS shared by subcases with different MASSSETs is refused
+increments block export. An MLOADS shared by subcases with different MASSCASEs is refused
 (give each mass case its own MLOADS — the sample-deck convention).
 
 **Validation:** `validate_sol144_authoring(bulk, cc, …) -> (errors, warnings)` re-implements
@@ -510,7 +510,7 @@ preconditions: exactly one driver per subcase, no LOAD, dangling SID references,
 MLDCOMD labels AESURF-only, RHOREF required on a modal IC TRIM, SUPORT required with
 MLOADS, MLDTIME/TABLED1 well-formedness, AELIST boxes inside CAERO1 ranges. Errors
 disable ▶ Launch Analysis and the BDF downloads; warnings (over-/fully-determined trim,
-fixed-Φ MASSSET note, sparse modal command tables) surface with the pre-solve warnings.
+fixed-Φ MASSCASE note, sparse modal command tables) surface with the pre-solve warnings.
 
 **Export:** two buttons at the tab foot — *Download run BDF (driver + INCLUDEs)*
 (`export_sol144_bdf`: provenance header + case control + authored cards inline +

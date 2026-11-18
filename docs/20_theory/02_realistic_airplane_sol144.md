@@ -266,9 +266,9 @@ its resultant is the starboard wing-root shear and bending.
 ### 2.9 Mass cases
 
 ```
-MASSSET, 10, FERRY,  1.0   +, DELETE, 7
-MASSSET, 20, CRUISE, 1.0   +, ADD, 6001, 6002, 6003, 6004
-MASSSET, 30, MTOW,   1.0   +, ADD, 6011, 6012, 6013, 6014
+MASSCASE, 10, FERRY,  1.0   +, DELETE, 7
+MASSCASE, 20, CRUISE, 1.0   +, ADD, 6001, 6002, 6003, 6004
+MASSCASE, 30, MTOW,   1.0   +, ADD, 6011, 6012, 6013, 6014
                            +, REPLACE, 7, 6020
 ```
 
@@ -291,7 +291,7 @@ integration from the 1g trim and ramps the elevator +2° over 0.3 s, then holds.
 > driver, read the trimmed ELEV out of the f06, write it into the table. Start the table
 > at 0.0 instead and the airplane takes a 3.8° step input at t = 0.
 >
-> The same property makes the table **mass-case specific**. Pair `MLOADS` with a `MASSSET`
+> The same property makes the table **mass-case specific**. Pair `MLOADS` with a `MASSCASE`
 > and the trimmed elevator moves, so a table authored for the baseline no longer starts at
 > equilibrium for that case. Re-run the trim for the mass case and re-bake the first point;
 > do that and the initial condition is reproduced to machine precision.

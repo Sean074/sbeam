@@ -8,14 +8,14 @@ Every card and case-control keyword sbeam reads; the sections below give each ca
 
 - **Structure:** CORD2R, GRID, CBAR, CROD, CONROD, PLOTEL, RBE3, RBE2, RBAR, CBUSH, PBAR, PROD,
   PBUSH, MAT1
-- **Mass:** CONM2, MASSSET
+- **Mass:** CONM2, MASSCASE
 - **Constraints/loads:** SPC, SPC1, FORCE, MOMENT, LOAD, GRAV
 - **Eigenvalue:** EIGRL
 - **Aero (Phase A/C):** AEROS, CAERO1, PAERO1, AEFACT, W2GJ, WKK, AECORR, CHORDCP,
   PSTRIP, STRIPK, SPLINE0/2 (+ ATTACH), SET1, AELIST, AESTAT, AESURF, TRIM, TRIMVAR,
   TRIMCON, TRIMOBJ, SUPORT, DIVERG, MONPNT1, MONPNT3, MONSECT, AECOMP, GUSTLF
 - **Transient maneuver (G0):** MLOADS, MLDTRIM, MLDCOMD, MLDTIME, MLDPRNT, TABLED1
-- **Case control:** SOL, SUBCASE, LOAD, SPC, METHOD, TRIM, MLOADS, MASSSET, GUSTLF,
+- **Case control:** SOL, SUBCASE, LOAD, SPC, METHOD, TRIM, MLOADS, MASSCASE, GUSTLF,
   DISPLACEMENT, SPCFORCE, OLOAD, FORCE, STRESS, BEGIN BULK, ENDDATA
 
 ---
@@ -160,7 +160,7 @@ but the deck is refused either way.
 
 Case control appears between the `SOL` line and `BEGIN BULK`. `SUBCASE` groups the lines that follow it; the rules for lines outside a subcase are (#79):
 
-- **Defaults above the first `SUBCASE`.** A selector (`LOAD`, `SPC`, `METHOD`, `TRIM`, `TRIMOBJ`, `DIVERG`, `MLOADS`, `GUSTLF`, `MASSSET`) or output request above the first `SUBCASE` applies to every subcase. The same keyword inside a subcase overrides it for that subcase only. MSC: such requests "apply to all the subcases until they are cancelled" (AAUG 2023.1, PDF p.752).
+- **Defaults above the first `SUBCASE`.** A selector (`LOAD`, `SPC`, `METHOD`, `TRIM`, `TRIMOBJ`, `DIVERG`, `MLOADS`, `GUSTLF`, `MASSCASE`) or output request above the first `SUBCASE` applies to every subcase. The same keyword inside a subcase overrides it for that subcase only. MSC: such requests "apply to all the subcases until they are cancelled" (AAUG 2023.1, PDF p.752).
 - **`= NONE` cancels an output request**, so a subcase can switch a default off (`DISPLACEMENT = NONE`). Any other value turns the request on.
 - **No `SUBCASE`.** The commands run as one subcase. sbeam numbers it 1; that number is sbeam's choice, not a cited MSC rule. The deck shape is MSC's own (QRG 2024.1, PDF p.465, INCLUDE example).
 - **Nothing to run.** A deck with no `SUBCASE`, no selector and no output request still parses, so it can be read for its bulk data. The `sbeam` command refuses to run it and writes no f06.
@@ -186,7 +186,7 @@ Every line above `BEGIN BULK` must be a command in the tables below; any other l
 | `TRIMOBJ` | int | Trim objective SID (references `TRIMOBJ` bulk card; over-determined SOL 144 trim) |
 | `DIVERG` | int | Divergence condition SID (references `DIVERG` bulk card; SOL 144 only) |
 | `MLOADS` | int | Transient maneuver-loads SID (references `MLOADS` bulk card; runs the Step 63 free-flight modal solver `solver/maneuver_modal.py` when the card's NMODES/METHOD/ZETA select it, else the prescribed-rigid direct solver `solver/maneuver_qs.py`; SOL 144, Phase G0) |
-| `MASSSET` | int | Payload / mass case SID (references `MASSSET` bulk card, Step 60); the subcase runs at the resolved mass configuration — baseline when absent |
+| `MASSCASE` | int | Payload / mass case SID (references `MASSCASE` bulk card, Step 60); the subcase runs at the resolved mass configuration — baseline when absent |
 | `DISPLACEMENT` | — | Request nodal displacement output (`= ALL` or `= PRINT`; `= NONE` cancels, as for every output request below) |
 | `SPCFORCES` | — | Request SPC reaction force output (MSC's full name, QRG p.634; `SPCFORCE` and `SPCF` are abbreviations) |
 | `OLOAD` | — | Request applied load echo output |
@@ -219,6 +219,7 @@ Every line above `BEGIN BULK` must be a command in the tables below; any other l
 | `SUBSEQ`, `SYMSEQ` | Subcase combination coefficients (QRG p.654, p.667) |
 | `COMPILE`, `ALTER`, `MALTER`, `ENDALTER` | DMAP |
 | `GUST` | MSC's SOL 146 gust selector (QRG p.452); refused so that it is not read as an abbreviation of sbeam's `GUSTLF` |
+| `MASSSET` | MSC's mass-combination selector (QRG p.482). sbeam's mass case is selected with `MASSCASE = n`, which had this name before #78; refused with that advice. `MASS` is therefore not a usable abbreviation |
 
 Any other command, including every MSC command not listed here (`MPC`, `SET`, `STRAIN`, …), is refused as unknown.
 
@@ -988,15 +989,25 @@ CONM2, 2, 5, 0, 50.0, 0.1, 0.0, 0.0
 
 ---
 
-### MASSSET — Payload / Mass Case (Step 60)
+### MASSCASE — Payload / Mass Case (sbeam extension; Step 60)
 
 Defines a named mass configuration built from the baseline model mass. Selected per
-subcase with the case-control request `MASSSET = sid` (SOL 144 static trim, balanced
+subcase with the case-control request `MASSCASE = sid` (SOL 144 static trim, balanced
 maneuvers, and the Phase G0 transient maneuver solver).
+
+> **Named `MASSSET` until #78.** MSC has a `MASSSET` bulk entry of its own, the Mass
+> Combination Definition `MASSSET ID S0 S1 ID1 S2 ID2 …` (QRG 2024.1 PDF p.2018), selected
+> by a case-control `MASSSET = n` (p.482). sbeam's card had that name with a different
+> layout, so MSC's `MASSSET,11,1.0,1.0,0,1.0,101` was read as label `1.0`, scale 1.0, with
+> the rest dropped. The sbeam card and command are now `MASSCASE`, a name no MSC or ZAERO
+> manual in the reference library defines. `MASSSET` is refused in bulk data and in case
+> control with a message naming `MASSCASE`. **Migrate a deck:** rename the card and the
+> command; the fields are unchanged. The Python names (`Massset`, `bulk.masssets`,
+> `massset_sid`, `massset_label`) are unchanged.
 
 **Format:**
 ```
-MASSSET, SID, LABEL, SCALE
+MASSCASE, SID, LABEL, SCALE
 +,       ADD,     e1, e2, ...
 +,       REPLACE, old1, new1, old2, new2, ...
 +,       DELETE,  e1, e2, ...
@@ -1010,7 +1021,7 @@ row). Any number of rows of any op may appear, in any order.
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
 | SID | `sid` | int | Mass-case ID (referenced in case control) | required |
-| LABEL | `label` | str | Case name used in output headers | `MASSSET <sid>` |
+| LABEL | `label` | str | Case name used in output headers | `MASSCASE <sid>` |
 | SCALE | `scale` | float | Multiplies the **baseline** mass (must be ≥ 0) | `1.0` |
 
 **Ops:**
@@ -1026,7 +1037,7 @@ EID named by an `ADD` or by the *overlay* (second) slot of a `REPLACE` pair is m
 **overlay-only** and is excluded from the baseline mass — it enters only the cases that
 name it. Every EID named by a `DELETE` or by the *baseline* (first) slot of a `REPLACE`
 pair is a **baseline** EID. An EID must be one or the other; using it as both is an error.
-A CONM2 named by no MASSSET at all is an ordinary baseline mass present in every case.
+A CONM2 named by no MASSCASE at all is an ordinary baseline mass present in every case.
 
 **SCALE** applies to the whole baseline mass — CBAR distributed mass (`rho·A + nsm`) and
 baseline CONM2 mass and inertia alike — and is applied *before* the ops. Overlay cards
@@ -1039,9 +1050,9 @@ and the whole `AeroCache` are geometry/Mach-only and are **shared untouched** ac
 mass sweep.
 
 **Errors:** an EID not defined by any CONM2 card (`ADD`/`REPLACE`/`DELETE`); an EID
-referenced more than once within one MASSSET; an EID used as both overlay and baseline;
+referenced more than once within one MASSCASE; an EID used as both overlay and baseline;
 an odd EID count on a `REPLACE` row; an unknown op keyword; a negative `SCALE`; a
-duplicate MASSSET SID; a case-control `MASSSET` selecting an undefined SID.
+duplicate MASSCASE SID; a case-control `MASSCASE` selecting an undefined SID.
 
 **Not supported (v1):** MAT1 `rho` overlays (structural-density cases) — use `SCALE`,
 or author a separate deck.
@@ -1050,16 +1061,16 @@ or author a separate deck.
 ```
 $ Baseline includes the 500 lb baggage CONM2 5000; 6001-6004, 6011-6014
 $ and 6020 are overlay-only and enter only where named.
-MASSSET, 10, EMPTY, 1.0
+MASSCASE, 10, EMPTY, 1.0
 +, DELETE, 5000
-MASSSET, 20, HALFFUEL, 1.0
+MASSCASE, 20, HALFFUEL, 1.0
 +, ADD, 6001, 6002, 6003, 6004
-MASSSET, 30, FULLFUEL, 1.0
+MASSCASE, 30, FULLFUEL, 1.0
 +, ADD, 6011, 6012, 6013, 6014
 +, REPLACE, 5000, 6020
 ```
 
-**Not mirrored:** `mirror_halfspan` rejects a deck containing MASSSET cards — whether a
+**Not mirrored:** `mirror_halfspan` rejects a deck containing MASSCASE cards — whether a
 payload item mirrors (wing fuel) or does not (a centreline store) is model intent, not
 geometry.
 
@@ -2733,6 +2744,7 @@ under "Supported cards at a glance" (top of this file) is refused.
 | Dynamic loads | `DLOAD`, `DAREA`, `TLOAD1`, `TLOAD2`, `RLOAD1`, `RLOAD2` | Transient maneuvers use the `MLOADS` family; no SOL 109/111 |
 | Elements / properties / materials | `CBEAM`, `PBEAM`, `PBEAML`, `PBARL`, `CTUBE`, `PTUBE`, `CELAS1`, `CELAS2`, `PELAS`, `CONM1`, `CQUAD4`, `CTRIA3`, `PSHELL`, `MAT2`, `MAT8` | `CBAR`/`PBAR` (explicit A, I1, I2, J), `CROD`/`PROD`, `CBUSH`/`PBUSH`, `CONM2`, `MAT1` |
 | Coordinate systems | `CORD1R`, `CORD1C`, `CORD1S`, `CORD2C`, `CORD2S` | `CORD2R` |
+| Mass combinations | `MASSSET` | MSC's Mass Combination entry (QRG 2024.1 PDF p.2018). sbeam's payload / mass-case card is `MASSCASE`; it was named `MASSSET` before #78, so rename an old sbeam card |
 | Constraints | `MPC`, `MPCADD`, `SPCADD`, `RBE1` | `RBE2`, `RBAR`, `RBE3`; one `SPC`/`SPC1` set per subcase |
 | Direct matrix input (#55) | `DMI`, `DMIG`, `DMIAX`, `DMIJ`, `DMIJI`, `DMIK` | For aero corrections (MSC's `DMI,W2GJ` / `DMI,WKK`), the native `W2GJ` / `WKK` cards |
 | Damping (#55) | `TABDMP1` | The MLOADS transient's `ZETA`; no SDAMP |

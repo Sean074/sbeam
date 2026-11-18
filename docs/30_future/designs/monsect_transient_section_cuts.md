@@ -109,7 +109,7 @@ fails today on any sample with meaningful elastic acceleration and passes after.
 ### 2.2 Out of scope (record as follow-ons if wanted)
 
 - **Cross-subcase / cross-mass-case envelopes.** The envelope here is over *samples within
-  one subcase*. Enveloping across subcases and `MASSSET` cases is a pure pivot over the
+  one subcase*. Enveloping across subcases and `MASSCASE` cases is a pure pivot over the
   CSV (the schema carries `case` and `massset` columns precisely so it is one groupby) and
   belongs with the sweep post-processing, alongside the identical static gap.
 - **`MONPNT1`/`MONPNT3` on transient.** Same enabling work (the per-sample integrand
@@ -437,7 +437,7 @@ worse").
 | **V-TSEC5** | **Free-flight closure consistency.** Step 63 solver, whole-airplane cut, every sample. | Cut total (incl. elastic inertia + damping) ≈ `step.closure` ≈ 0 to the same tolerance the Step 63 closure gate uses. Simultaneously pins the sign convention (§3.1). |
 | **V-TSEC6** | Envelope correctness. | `build_section_envelope` max/min/driving-sample match a brute-force numpy reduction over `[s.section_loads for s in steps]`; driving sample is 1-based and consistent with the f06 and CSV. |
 | **V-TSEC7** | Half model. | `SYMXZ ≠ 0` deck: transient cut is **not** doubled; `half_model` flag propagates to the f06 and both CSVs. Inherits V-SEC9's intent into the transient path. |
-| **V-TSEC8** | `MASSSET` sweep. | Two mass cases over the same maneuver produce different inertia columns and different envelopes; the CSV `massset`/`mass_case` columns identify them. Extends `tests/aero/test_section_cuts_massset.py` to the transient path. |
+| **V-TSEC8** | `MASSCASE` sweep. | Two mass cases over the same maneuver produce different inertia columns and different envelopes; the CSV `massset`/`mass_case` columns identify them. Extends `tests/aero/test_section_cuts_massset.py` to the transient path. |
 | **V-TSEC9** | **Static non-regression.** | Every existing static `MONSECT` test (`tests/results/test_section_cuts.py`, `tests/aero/test_section_cuts_sol144.py`, `..._massset.py`, `tests/results/test_section_cut_output.py`) passes unchanged, and the on-plane `UserWarning` still fires exactly once per cut per run (`pytest.warns` count), not once per sample. |
 | **V-TSEC10** | Cost. | Flagship `MLOADS` deck with 4 cuts: wall-clock increase < 10 % versus the same deck with the `MONSECT` cards removed. Guards against an accidental per-sample geometry rebuild. |
 | **V-TSEC11** | Both solvers. | Direct (`maneuver_qs`) and modal free-flight (`maneuver_modal`) paths both produce cuts; V-TSEC1 runs on both. Prevents the feature landing on one solver only. |

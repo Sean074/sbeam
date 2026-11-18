@@ -43,7 +43,7 @@ and regulatory constants; the solver may not.
 ## 2. The five stages
 
 ```
-0  MODEL      bulk deck: structure, mass (MASSSET per weight/cg), aero,
+0  MODEL      bulk deck: structure, mass (MASSCASE per weight/cg), aero,
    [done]     MONPNT3 at the LRA, MONSECT stations, one template TRIM
 
 1  DECLARE    certification basis, category, gust method, design speeds,
@@ -91,7 +91,7 @@ will be solved on (`sbeam_tools/common/deck.py`):
 | prescribed labels to inherit | the template `TRIM`, minus `URDD3` |
 | SPC; INCLUDEs | the driver's case control; its bulk-data INCLUDEs |
 
-**cg is not a separate input axis.** A forward-cg and an aft-cg condition are two `MASSSET`s,
+**cg is not a separate input axis.** A forward-cg and an aft-cg condition are two `MASSCASE`s,
 so cg variation rides on the mass-case list exactly as weight does.
 
 ### 3.2 What the user declares
@@ -104,7 +104,7 @@ so cg variation rides on the mass-case list exactly as weight does.
 | V_A | not derivable — a linear VLM has no C_Nmax (§3.4) |
 | V_B, V_C, V_D | V_B required under Part 25 (25.335(d)); commuter-only under Part 23 |
 | altitudes | swept; the `U_de` schedule and ISA density follow |
-| mass cases | `MASSSET` SIDs |
+| mass cases | `MASSCASE` SIDs |
 | design max takeoff weight | the W in the 23.337/25.337 formula — *not* the weight of each case |
 
 ### 3.3 The two rulesets

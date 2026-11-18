@@ -233,7 +233,7 @@ def assemble_aset_operators(
     yaw-rate wing term is scaled from.  Passing it adds the force-side ``YAW``
     column into ``Q_ax_a``; omitting it reproduces the pre-Step-67 operators
     exactly.  The reference loading is **frozen at the IC trim** for the whole
-    time history — the same fixed-Φ discipline the ``MASSSET`` mass cases use,
+    time history — the same fixed-Φ discipline the ``MASSCASE`` mass cases use,
     and an approximation that is exact to the order the Level-1 quasi-steady
     model already works to.
     """

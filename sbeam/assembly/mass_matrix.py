@@ -102,7 +102,7 @@ def assemble_global_mass(
     offset-induced translation-rotation coupling, parallel-axis rotational
     inertia, and CM inertia tensor (I11-I33).
 
-    ``massset_sid`` (Step 60) selects a MASSSET payload / mass case: the
+    ``massset_sid`` (Step 60) selects a MASSCASE payload / mass case: the
     baseline mass is scaled by the card's SCALE and the effective CONM2 set is
     the baseline set with the ADD / REPLACE / DELETE ops applied.  ``None``
     gives the baseline configuration, unchanged from pre-Step-60 behaviour.

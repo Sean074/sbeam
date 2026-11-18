@@ -110,7 +110,7 @@ code standard (`10_standard/`), theory & worked examples (`20_theory/`), future 
 | Elements | `CBAR`, `CROD`, `CONROD`, `CBUSH`, `PLOTEL`, `RBE2`, `RBE3`, `RBAR` |
 | Properties | `PBAR`, `PROD`, `PBUSH` |
 | Material | `MAT1` |
-| Mass | `CONM2`, `MASSSET` |
+| Mass | `CONM2`, `MASSCASE` |
 | Constraints | `SPC`, `SPC1`, `SUPORT` |
 | Loads | `FORCE`, `MOMENT`, `LOAD`, `GRAV` |
 | Eigenvalue | `EIGRL` |

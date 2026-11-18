@@ -36,7 +36,7 @@ class BulkData:
     mat1s: dict[int, Mat1] = field(default_factory=dict)
     conm2s: dict[int, Conm2] = field(default_factory=dict)
     masssets: dict[int, Massset] = field(default_factory=dict)   # Step 60 mass cases
-    # CONM2 EIDs named by a MASSSET ADD / REPLACE-overlay slot: ordinary CONM2
+    # CONM2 EIDs named by a MASSCASE ADD / REPLACE-overlay slot: ordinary CONM2
     # cards that are overlay-only and therefore excluded from the baseline mass.
     overlay_conm2_eids: set[int] = field(default_factory=set)
     spcs: dict[int, list[Spc]] = field(default_factory=dict)

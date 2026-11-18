@@ -120,7 +120,7 @@ sbeam/
 │   ├── load.py               # Force, Moment, Load, Grav dataclasses
 │   ├── constraint.py         # Spc, Spc1 dataclasses
 │   ├── mass.py               # Conm2, Massset dataclasses
-│   ├── mass_overlay.py       # MASSSET payload/mass-case resolution (Step 60)
+│   ├── mass_overlay.py       # MASSCASE payload/mass-case resolution (Step 60)
 │   ├── coordinate_system.py  # Cord2r dataclass
 │   ├── aero.py               # Aero/trim card dataclasses (Aeros, Caero1, Paero1, Pstrip, Stripk, Aefact, W2gj, Wkk, Aecorr, Set1, Spline0/1/2, Attach, Aestat, Aesurf, Aelist, Trim, Diverg, …)
 │   ├── maneuver.py           # ZAERO MLOADS card set (Mloads, Mldtrim, Mldcomd, Mldtime, Mldprnt, Tabled1) for Phase G0
@@ -175,7 +175,7 @@ sbeam_tools/
 ├── common/
 │   ├── atmosphere.py     # ISA standard atmosphere, SI (no dependency on units — one-way)
 │   ├── units.py          # UnitSystem / UNIT_SYSTEMS; isa_density in model units
-│   ├── deck.py           # Read S, cbar, W per MASSSET and rigid CZ_alpha out of a deck
+│   ├── deck.py           # Read S, cbar, W per MASSCASE and rigid CZ_alpha out of a deck
 │   └── mirror.py         # mirror_halfspan(): half-span (SYMXZ) deck → full-span unfold
 ├── cases/                # Case construction — what the solver never decides
 │   ├── gust.py           # FAR/CS 23.341 Pratt gust family + 23.333(c) U_de schedule (#1)
@@ -324,7 +324,7 @@ sbeam run.bdf
 
 Reads a run file (case control required), determines SOL, runs analysis, and writes `run.f06` **to the same directory as the input file**. Supports SOL 101, SOL 103, and SOL 144; multiple subcases are written sequentially to a single `.f06` file.
 
-For SOL 144 each subcase is routed by its case-control requests: `TRIM` → static aeroelastic trim, `DIVERG` (without `TRIM`) → divergence sweep, `MLOADS` → Phase G0 quasi-steady transient maneuver loads. A subcase may additionally carry `MASSSET = sid` (Step 60) to run at a named payload / mass case; stiffness, splines and the VLM AIC are shared across a mass sweep, only the mass-derived operators are rebuilt. Besides the `.f06` (trim + divergence blocks), the CLI writes additional files next to the input:
+For SOL 144 each subcase is routed by its case-control requests: `TRIM` → static aeroelastic trim, `DIVERG` (without `TRIM`) → divergence sweep, `MLOADS` → Phase G0 quasi-steady transient maneuver loads. A subcase may additionally carry `MASSCASE = sid` (Step 60) to run at a named payload / mass case; stiffness, splines and the VLM AIC are shared across a mass sweep, only the mass-derived operators are rebuilt. Besides the `.f06` (trim + divergence blocks), the CLI writes additional files next to the input:
 
 | File | Content | Written when |
 |------|---------|--------------|
@@ -567,7 +567,7 @@ card table. Open defects and unresolved questions are tracked in
 | A | Steady VLM aeroelastics: card parsing, panel meshing, AIC + integration matrices, AIC corrections (Wkk, WT2), section force/moment correction synthesis, body-panel total-moment corrections | Steps 39–45 + A9 (cruciform) + A10 (decoupled strip) complete; A7/A8 warnings open |
 | B | Structural coupling splines: SPLINE2/ATTACH/SPLINE0 → g_slope/g_disp/g_load; flexible aero stiffness Q_aa | Complete (Step 48 SPLINE1 surface spline deferred) |
 | C | SOL 144 static aeroelastic trim: Schur trim solve, rigid + elastic-restrained derivatives, hinge moments, divergence sweep, balanced-maneuver loads (Step 53), monitor points, load exports | Essentially complete (AE8b unrestrained mean-axis derivatives + optional Step 54 CHORDCP open) |
-| G0 | DLM-free transient maneuver loads (ZAERO MLOADS card set): direct restrained solver + free-flight modal solver, MASSSET sweeps, per-sample section loads + envelopes | Complete (Steps 59–63, 68; G0-d unsteady corrections conditional, G0-e closed-loop parked) |
+| G0 | DLM-free transient maneuver loads (ZAERO MLOADS card set): direct restrained solver + free-flight modal solver, MASSCASE sweeps, per-sample section loads + envelopes | Complete (Steps 59–63, 68; G0-d unsteady corrections conditional, G0-e closed-loop parked) |
 
 The authoritative open-items list is GitHub issues (mission + milestone map:
 `docs/30_future/00_backlog.md`; parked items in `02_parked.md`). SOL 108/109/111/112 are parked —

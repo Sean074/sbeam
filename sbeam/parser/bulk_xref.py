@@ -627,12 +627,12 @@ def _check_maneuver_loads(bulk: BulkData, all_trim_labels: set[str]) -> None:
 
 
 def _check_massset(bulk: BulkData) -> None:
-    """MASSSET CONM2 references; records the overlay-only CONM2 EIDs on ``bulk``."""
-    # Validate MASSSET (Step 60) cross-references and mark overlay-only CONM2s.
+    """MASSCASE CONM2 references; records the overlay-only CONM2 EIDs on ``bulk``."""
+    # Validate MASSCASE (Step 60) cross-references and mark overlay-only CONM2s.
     # An EID is either baseline (DELETE target / REPLACE old slot) or overlay
     # (ADD / REPLACE new slot) — never both, or the case mass is ill-defined.
     overlay_eids: set[int] = set()
-    baseline_eids: dict[int, int] = {}   # eid -> MASSSET sid using it as a baseline EID
+    baseline_eids: dict[int, int] = {}   # eid -> MASSCASE sid using it as a baseline EID
     for sid, ms in bulk.masssets.items():
         refs = (
             [(e, "ADD") for e in ms.add]
@@ -643,7 +643,7 @@ def _check_massset(bulk: BulkData) -> None:
         for eid, op in refs:
             if eid not in bulk.conm2s:
                 raise ValueError(
-                    f"MASSSET {sid}: {op} references CONM2 EID {eid}, which is not "
+                    f"MASSCASE {sid}: {op} references CONM2 EID {eid}, which is not "
                     "defined by any CONM2 card"
                 )
         for eid in ms.add:
@@ -655,8 +655,8 @@ def _check_massset(bulk: BulkData) -> None:
             baseline_eids.setdefault(eid, sid)
     for eid in sorted(overlay_eids & set(baseline_eids)):
         raise ValueError(
-            f"MASSSET: CONM2 EID {eid} is named as an overlay (ADD / REPLACE new slot) "
-            f"and also as a baseline EID by MASSSET {baseline_eids[eid]} — an EID must "
+            f"MASSCASE: CONM2 EID {eid} is named as an overlay (ADD / REPLACE new slot) "
+            f"and also as a baseline EID by MASSCASE {baseline_eids[eid]} — an EID must "
             "be one or the other"
         )
     bulk.overlay_conm2_eids = overlay_eids

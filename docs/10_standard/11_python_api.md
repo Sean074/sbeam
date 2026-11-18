@@ -99,7 +99,7 @@ Parser behaviour (formats, ordering rules, cross-reference validation): `01_beam
 | `BulkData` | `from sbeam.model.bulk_data import BulkData` | The parsed deck: one `dict[int, Card]` per card family (`grids`, `cbars`, `pbars`, `mat1s`, `forces`, `trims`, …) plus `aeros` and `supports`. Dataclass map: `01_beam_model.md`. |
 | `CaseControl`, `SubcaseControl` | `from sbeam.parser.case_control import CaseControl, SubcaseControl` | `sol`, `subcases`; per subcase the selected set IDs (`load_sid`, `spc_sid`, `method_sid`, `trim_sid`, `diverg_sid`, `mloads_sid`, `massset_sid`, …) and output flags. Build one by hand to run a subcase the deck does not contain. |
 | `build_grid_index` | `from sbeam.assembly.load_vector import build_grid_index` | `(bulk) -> dict[int, int]`, the DOF layout key above. |
-| `compute_gpwg`, `GpwgResult` | `from sbeam.gpwg import compute_gpwg, GpwgResult` | `(bulk, massset_sid=None) -> GpwgResult(total_mass, cg_x, cg_y, cg_z, massset_sid, massset_label)`. Mass and CG of the baseline or a `MASSSET` case. |
+| `compute_gpwg`, `GpwgResult` | `from sbeam.gpwg import compute_gpwg, GpwgResult` | `(bulk, massset_sid=None) -> GpwgResult(total_mass, cg_x, cg_y, cg_z, massset_sid, massset_label)`. Mass and CG of the baseline or a `MASSCASE` case. |
 | `resolve_mass_case`, `MassCase` | `from sbeam.model.mass_overlay import resolve_mass_case, MassCase` | `(bulk, massset_sid=None) -> MassCase(sid, label, scale, conm2s)`. Which CONM2s a mass case contains and its label. |
 
 ### 3.3 Run
@@ -197,7 +197,7 @@ for sid, r in trim.items():
 ```
 
 `trim`, `diverg` and `maneuver` are the `{subcase_id: result}` dictionaries every writer in
-§3.5 takes. A `MASSSET = sid` on a subcase changes only the mass-derived operators; the
+§3.5 takes. A `MASSCASE = sid` on a subcase changes only the mass-derived operators; the
 stiffness, splines and `AeroCache` entries are reused across the sweep.
 
 ---

@@ -18,7 +18,7 @@ class SubcaseControl:
     diverg_sid: Optional[int] = None  # DIVERG set ID for SOL 144
     mloads_sid: Optional[int] = None  # MLOADS set ID (Phase G0 transient maneuver loads)
     gustlf_sid: Optional[int] = None  # GUSTLF set ID (FAR/CS 23.341 gust load case)
-    massset_sid: Optional[int] = None # MASSSET set ID (Step 60 payload / mass case)
+    massset_sid: Optional[int] = None # MASSCASE set ID (Step 60 payload / mass case)
     displacement: bool = False        # Request DISPLACEMENT output
     spcforce: bool = False            # Request SPCFORCE output
     oload: bool = False               # Request OLOAD output
@@ -64,7 +64,7 @@ _SELECTORS = {
     "DIVERG": "diverg_sid",
     "MLOADS": "mloads_sid",
     "GUSTLF": "gustlf_sid",
-    "MASSSET": "massset_sid",
+    "MASSCASE": "massset_sid",
 }
 
 # Output requests (command -> SubcaseControl attribute); `= NONE` cancels one.
@@ -133,6 +133,11 @@ _REFUSED = {
     # is not taken as an abbreviation of sbeam's GUSTLF.
     "GUST": "is the SOL 146 gust selector, which sbeam does not support "
             "(sbeam's static gust case is GUSTLF)",
+    # MSC's MASSSET selects a MASSSET bulk entry, a mass combination (QRG PDF p.482).
+    # sbeam's mass-case selector had this name until #78.
+    "MASSSET": "selects an MSC mass combination, which sbeam does not support; sbeam's "
+               "mass case is selected with MASSCASE = n (named MASSSET before #78: "
+               "rename the command)",
 }
 
 _COMMANDS = (frozenset(_SELECTORS) | frozenset(_OUTPUT_REQUESTS) | _STRUCTURE

@@ -1,11 +1,11 @@
-"""Step 60 — MASSSET payload / mass-case sweep for static SOL 144.
+"""Step 60 — MASSCASE payload / mass-case sweep for static SOL 144.
 
 Gates, on `sample/ha144a_massset_sweep.bdf` (one deck, one TRIM, three payload
 conditions):
 
-  * **equivalence** — a MASSSET case is identical to a hand-edited deck carrying
+  * **equivalence** — a MASSCASE case is identical to a hand-edited deck carrying
     the same final CONM2 set: same M_gg, same GPWG, same trim (machine precision);
-  * **baseline unchanged** — with no MASSSET selected every mass-derived operator
+  * **baseline unchanged** — with no MASSCASE selected every mass-derived operator
     is bit-identical to the pre-Step-60 result, and the EMPTY case reproduces the
     unmodified full-span HA144A deck exactly;
   * **closure** — each mass case is a balanced maneuver (Step 53 closure ≈ 0);
@@ -56,13 +56,13 @@ def sweep():
 
 
 # ---------------------------------------------------------------------------
-# Equivalence: MASSSET overlay == hand-edited deck
+# Equivalence: MASSCASE overlay == hand-edited deck
 # ---------------------------------------------------------------------------
 
 def _hand_edited(bulk, massset_sid):
     """A copy of ``bulk`` whose baseline CONM2 set IS the mass case's set.
 
-    The MASSSET machinery is stripped out, so running it with no MASSSET
+    The MASSCASE machinery is stripped out, so running it with no MASSCASE
     selected is the hand-edited deck the user would otherwise have authored.
     """
     case = resolve_mass_case(bulk, massset_sid)
@@ -106,12 +106,12 @@ def test_massset_case_equals_hand_edited_deck(sweep, massset_sid):
 
 
 # ---------------------------------------------------------------------------
-# Baseline (no MASSSET selected) is unchanged
+# Baseline (no MASSCASE selected) is unchanged
 # ---------------------------------------------------------------------------
 
 class TestBaselineUnchanged:
     def test_deck_without_masssets_is_identical(self):
-        """A deck with no MASSSET card: every mass operator matches the None path."""
+        """A deck with no MASSCASE card: every mass operator matches the None path."""
         _cc, bulk = parse_bdf(str(FULLSPAN_BDF))
         assert bulk.masssets == {} and bulk.overlay_conm2_eids == set()
         assert resolve_mass_case(bulk, None).conm2s == bulk.conm2s
@@ -119,7 +119,7 @@ class TestBaselineUnchanged:
                               assemble_global_mass(bulk, None).toarray())
 
     def test_empty_case_reproduces_the_unmodified_deck(self, sweep):
-        """MASSSET 10 (EMPTY) is the original 16000 lb HA144A: same trim, exactly.
+        """MASSCASE 10 (EMPTY) is the original 16000 lb HA144A: same trim, exactly.
 
         The sweep deck adds a 500 lb baggage CONM2 to the baseline and deletes it
         again in the EMPTY case, so the EMPTY trim must equal the untouched

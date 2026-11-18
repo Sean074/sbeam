@@ -238,7 +238,7 @@ class TestSol144Export:
     def test_all_keywords_emitted(self):
         text = export_bdf_text(_make_sol144_cc())
         for expected in ["SOL 144", "TRIM = 10", "TRIMOBJ = 11", "DIVERG = 12",
-                         "MLOADS = 30", "MASSSET = 20", "MASSSET = 21",
+                         "MLOADS = 30", "MASSCASE = 20", "MASSCASE = 21",
                          "AEROF = ALL", "APRES = ALL"]:
             assert expected in text, expected
 

@@ -99,7 +99,7 @@ def export_bdf_text(
             (sc.load_sid, "LOAD"), (sc.spc_sid, "SPC"), (sc.method_sid, "METHOD"),
             (sc.trim_sid, "TRIM"), (sc.trimobj_sid, "TRIMOBJ"),
             (sc.diverg_sid, "DIVERG"), (sc.mloads_sid, "MLOADS"),
-            (sc.massset_sid, "MASSSET"),
+            (sc.massset_sid, "MASSCASE"),
         ]:
             if sid is not None:
                 lines.append(f"  {keyword} = {sid}")
@@ -161,7 +161,7 @@ def _summarize_sol144(sc: SubcaseControl, bulk: BulkData) -> str:
     if sc.massset_sid is not None:
         ms = bulk.masssets.get(sc.massset_sid)
         label = f" {ms.label}" if ms is not None else ""
-        mass_case = f" [mass case MASSSET {sc.massset_sid}{label}]"
+        mass_case = f" [mass case MASSCASE {sc.massset_sid}{label}]"
     if sc.mloads_sid is not None:
         outputs = "time histories, MLDPRNT export, critical-sample loads"
         if has_monitors:
@@ -574,7 +574,7 @@ def _render_sol144_subcase_fields(
     col4, col5, _ = st.columns(3)
     _sid_box(col4, "MLOADS SID", "mloads_sid", mloads_sids,
              "Transient maneuver driver (Phase G0).")
-    _sid_box(col5, "MASSSET SID", "massset_sid", massset_sids,
+    _sid_box(col5, "MASSCASE SID", "massset_sid", massset_sids,
              "Payload / mass case (baseline when none).")
 
 

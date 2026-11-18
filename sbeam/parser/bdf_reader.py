@@ -32,6 +32,11 @@ _INCLUDE = re.compile(r"\s*INCLUDE\b", re.IGNORECASE)
 #: dropped load).  Field reference: ``docs/10_standard/02_card_reference.md``
 #: "Unsupported cards".
 _UNSUPPORTED_CARDS: dict[str, str] = {
+    # MSC's Mass Combination card (QRG 2024.1 PDF p.2018): ID S0 S1 ID1 S2 ID2 ...  sbeam's
+    # payload card had this name with another layout until #78 and read an MSC card as
+    # label and scale; it is now MASSCASE
+    "MASSSET": "MSC mass combination, not implemented; sbeam's payload / mass-case card "
+               "is MASSCASE, which was named MASSSET before #78: rename the card",
     # distributed / element loads
     "PLOAD": "pressure load", "PLOAD1": "distributed CBAR load",
     "PLOAD2": "pressure load", "PLOAD4": "pressure load",

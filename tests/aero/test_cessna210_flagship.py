@@ -14,10 +14,10 @@ Gate map (T-numbers as in the Step 65 plan):
   T2  regenerating the correction from the CSV reproduces the committed cards
   T3  both trims close; lift = n*W; corrected CL_alpha in band
   T3b both trimmed incidences fall inside the baked correction region
-  T4  MASSSET sweep: ANGLEA monotone in weight, and wing-root bending per unit weight
+  T4  MASSCASE sweep: ANGLEA monotone in weight, and wing-root bending per unit weight
       FALLS with wing fuel (inertia relief)
   T5  MLOADS: t=0 is the trim; a command held at trim moves nothing; the ramp holds
-  T6  MLOADS x MASSSET (first coverage of the pairing anywhere)
+  T6  MLOADS x MASSCASE (first coverage of the pairing anywhere)
   T7  the fin ATTACH resolves from file and transfers side force + yaw moment
   T8  divergence dynamic pressure keeps a wide margin over the cruise q
 """
@@ -46,7 +46,7 @@ from sbeam.solver.sol144 import run_sol144_trim
 _SAMPLE = Path(__file__).parent.parent.parent / "sample"
 BULK_PATH = _SAMPLE / "cessna210_flagship_bulk.bdf"
 TRIM_PATH = _SAMPLE / "cessna210_flagship_trim.bdf"
-MASSSET_PATH = _SAMPLE / "cessna210_flagship_massset.bdf"
+MASSCASE_PATH = _SAMPLE / "cessna210_flagship_massset.bdf"
 MLOADS_PATH = _SAMPLE / "cessna210_flagship_mloads.bdf"
 CSV_PATH = _SAMPLE / "cessna210_flagship_section_data.csv"
 
@@ -117,7 +117,7 @@ def maneuver():
 # --------------------------------------------------------------------------- #
 # T1 — the family loads
 # --------------------------------------------------------------------------- #
-@pytest.mark.parametrize("path", [TRIM_PATH, MASSSET_PATH, MLOADS_PATH])
+@pytest.mark.parametrize("path", [TRIM_PATH, MASSCASE_PATH, MLOADS_PATH])
 def test_t1_drivers_parse_via_include(path):
     """Each thin driver pulls the shared bulk in through a case-control INCLUDE."""
     cc, bulk = parse_bdf(str(path))
@@ -292,7 +292,7 @@ def test_t8_divergence_margin(trims):
 # --------------------------------------------------------------------------- #
 @pytest.fixture(scope="module")
 def massset_sweep():
-    cc, bulk = parse_bdf(str(MASSSET_PATH))
+    cc, bulk = parse_bdf(str(MASSCASE_PATH))
     aero = build_aero_model(bulk, grid_index=build_grid_index(bulk))
     return [run_sol144_trim(bulk, sc, aero) for sc in cc.subcases]
 
@@ -396,7 +396,7 @@ def test_t5c_ramp_is_tracked_and_settles(maneuver):
 
 
 # --------------------------------------------------------------------------- #
-# T6 — MLOADS x MASSSET (first coverage of the pairing anywhere)
+# T6 — MLOADS x MASSCASE (first coverage of the pairing anywhere)
 # --------------------------------------------------------------------------- #
 def test_t6_mloads_with_massset_is_exact_when_the_table_matches_the_case(maneuver):
     """The transient honours the mass case — but the command table is case-specific.

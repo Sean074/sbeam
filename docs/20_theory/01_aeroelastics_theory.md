@@ -1571,7 +1571,7 @@ opposite sides.
 
 *Implemented (Monitor Phase 2, `results/section_cuts.py`, card `MONSECT`):* see
 `docs/10_standard/05c_sol144_maneuver.md`. Because the inertia term of Equation (30a) is the
-§7.3 net load, a `MASSSET` payload sweep produces a station table per mass case with no
+§7.3 net load, a `MASSCASE` payload sweep produces a station table per mass case with no
 additional input — which is how the classic **wing-fuel bending relief** (fuel outboard reduces
 the net root bending even as the airplane gets heavier) falls out of the tables directly.
 
@@ -1756,7 +1756,7 @@ $$
 re-normalised so $\phi_e^{\mathsf T} M_{aa}\phi_e = 1$. Then $\Phi_e^{\mathsf T} M_{aa}\Phi_r=0$
 by construction, which *is* the mean-axis condition (ZAERO Ch. 12, Eqs. 12.9–12.16) — the same
 physics as the unrestrained (mean-axis) stability derivatives of §5. At the baseline mass case
-$M_{hh}$ is block diagonal, $\operatorname{diag}(M_{rr}, I)$; off the baseline (a MASSSET case
+$M_{hh}$ is block diagonal, $\operatorname{diag}(M_{rr}, I)$; off the baseline (a MASSCASE case
 with $\Phi$ held fixed) it is full, and that coupling is the whole content of the fixed-basis
 approximation.
 
@@ -1892,7 +1892,7 @@ solution. With a cosine-sampled ramp the peak-CBAR-force error decays monotonica
 NMODES $\in \{2, 4, 8, \text{all}\}$ and mode-acceleration beats mode-displacement recovery by
 $\gg 10\times$.
 
-**Fixed-$\Phi$ mass cases.** A MASSSET subcase swaps only the mass side — $M_{ll,i}$,
+**Fixed-$\Phi$ mass cases.** A MASSCASE subcase swaps only the mass side — $M_{ll,i}$,
 $M_{ax,i}$ and the IC trim, through the same subcase-threaded assembly both solvers share —
 while $\Phi$, the AIC, splines and all aero operators are reused untouched. With all modes
 retained the fixed-$\Phi$ off-baseline solution still matches the direct solver on the same
@@ -1929,7 +1929,7 @@ steady label paths reproduce the EOM's rigid terms exactly:
   drops the elastic modes' rigid aero — both measured before the identity converged.)
 
 The recovered closure is then the *discrete Newmark residual* — round-off at every $\Delta t$ —
-which is the G0-b self-balancing gate. Under a MASSSET the baseline mean axis is not the case
+which is the G0-b self-balancing gate. Under a MASSCASE the baseline mean axis is not the case
 mean axis ($\Phi_r^{\mathsf T}M_{\text{case}}\Phi_e \neq 0$), which would give the elastic
 inertia a rigid-row resultant the labels cannot carry; the solver therefore re-orthogonalizes
 $\Phi_e \leftarrow \Phi_e - \Phi_r M_{rr,\text{case}}^{-1}(\Phi_r^{\mathsf T}

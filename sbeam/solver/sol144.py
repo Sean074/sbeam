@@ -379,16 +379,16 @@ def _stage_validate_inputs(st: _TrimState) -> None:
 
 
 def _stage_resolve_massset_and_mach(st: _TrimState) -> None:
-    """MASSSET mass case (Step 60) + flight-Mach / AeroCache resolution (AE9)."""
+    """MASSCASE mass case (Step 60) + flight-Mach / AeroCache resolution (AE9)."""
     bulk, subcase, aero, aero_cache = st.bulk, st.subcase, st.aero, st.aero_cache
     trim_card = st.trim_card
 
     # ------------------------------------------------------------------ #
-    # Mass case (Step 60) — MASSSET payload configuration for this subcase
+    # Mass case (Step 60) — MASSCASE payload configuration for this subcase
     # ------------------------------------------------------------------ #
     # Every mass-derived operator below (M_ax, M_aa, GPWG) is built for this
     # case; nothing else changes.  The AIC, splines and the whole AeroCache are
-    # geometry/Mach-only and are reused across mass cases untouched — a MASSSET
+    # geometry/Mach-only and are reused across mass cases untouched — a MASSCASE
     # sweep must never invalidate the aero cache.
     from sbeam.gpwg import compute_gpwg
     from sbeam.model.mass_overlay import resolve_mass_case

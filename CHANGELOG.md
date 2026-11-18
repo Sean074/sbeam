@@ -10,6 +10,18 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Breaking changes
+- **The sbeam mass-case card and command are renamed `MASSSET` → `MASSCASE`** (#78; pre-1.0
+  MINOR break). MSC has its own `MASSSET` bulk entry, `MASSSET ID S0 S1 ID1 S2 ID2 …` (Mass
+  Combination Definition, QRG 2024.1 PDF p.2018), and a case-control `MASSSET = n` that
+  selects it (p.482). sbeam's payload card had the same name and a different layout, so
+  MSC's `MASSSET,11,1.0,1.0,0,1.0,101` was read as label `1.0`, scale 1.0, with ID1/S2/ID2
+  dropped, and `MASSSET 12 2.0 0.5 0` scaled the mass by 0.5 where MSC scales it by 1.0. An
+  sbeam extension takes a name no vendor defines (rule 7): `MASSCASE` appears in none of
+  the nine MSC and ZAERO manuals in the reference library. `MASSSET` is now refused in
+  bulk data and in case control, naming `MASSCASE`. **Migrate a deck:** rename the bulk
+  card and the case-control command; the fields are unchanged. The five repo decks are
+  renamed and give identical results. The Python names (`Massset`, `bulk.masssets`,
+  `massset_sid`) are unchanged. Found by the 2026-11-16 audit (A8, C9).
 - **TABLED1 extrapolates linearly outside the table, as MSC does; it used to hold the end
   value** (#70; pre-1.0 MINOR break). MSC: "interpolation within the table and
   extrapolation outside the table using the two starting or end points" (QRG 2024.1 PDF

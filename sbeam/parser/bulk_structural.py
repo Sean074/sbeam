@@ -437,12 +437,12 @@ def _handle_conm2(fields: list[str], cont: Optional[list[str]], bulk: BulkData) 
 
 
 def _handle_massset(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
-    """MASSSET — payload / mass case (Step 60).
+    """MASSCASE — payload / mass case (Step 60).
 
-    ``MASSSET SID LABEL SCALE`` followed by continuation rows of
+    ``MASSCASE SID LABEL SCALE`` followed by continuation rows of
     ``op-keyword + EIDs``:
 
-        MASSSET  10      FULLFUEL 1.0
+        MASSCASE  10      FULLFUEL 1.0
         +        ADD     9301    9302
         +        REPLACE 21      9021    22      9022
         +        DELETE  45
@@ -452,11 +452,11 @@ def _handle_massset(fields: list[str], conts: list[list[str]], bulk: BulkData) -
     """
     sid = to_int(fields[1])
     if sid in bulk.masssets:
-        raise ValueError(f"Duplicate MASSSET SID {sid}")
-    label = fields[2].strip() if len(fields) > 2 and fields[2].strip() else f"MASSSET {sid}"
+        raise ValueError(f"Duplicate MASSCASE SID {sid}")
+    label = fields[2].strip() if len(fields) > 2 and fields[2].strip() else f"MASSCASE {sid}"
     scale = to_float(fields[3]) if len(fields) > 3 and fields[3].strip() else 1.0
     if scale < 0.0:
-        raise ValueError(f"MASSSET {sid}: SCALE must be >= 0, got {scale}")
+        raise ValueError(f"MASSCASE {sid}: SCALE must be >= 0, got {scale}")
 
     add: list[int] = []
     replace: list[tuple[int, int]] = []
@@ -470,16 +470,16 @@ def _handle_massset(fields: list[str], conts: list[list[str]], bulk: BulkData) -
         op = entries[0].upper()
         if op not in ("ADD", "REPLACE", "DELETE"):
             raise ValueError(
-                f"MASSSET {sid}: unknown op '{entries[0]}' "
+                f"MASSCASE {sid}: unknown op '{entries[0]}' "
                 "(expected ADD, REPLACE, or DELETE)"
             )
         eids = [to_int(f) for f in entries[1:]]
         if not eids:
-            raise ValueError(f"MASSSET {sid}: {op} row lists no CONM2 EIDs")
+            raise ValueError(f"MASSCASE {sid}: {op} row lists no CONM2 EIDs")
         for eid in eids:
             if eid in seen:
                 raise ValueError(
-                    f"MASSSET {sid}: CONM2 EID {eid} referenced more than once "
+                    f"MASSCASE {sid}: CONM2 EID {eid} referenced more than once "
                     f"(already named by {seen[eid]})"
                 )
             seen[eid] = op
@@ -491,7 +491,7 @@ def _handle_massset(fields: list[str], conts: list[list[str]], bulk: BulkData) -
         else:
             if len(eids) % 2 != 0:
                 raise ValueError(
-                    f"MASSSET {sid}: REPLACE takes (baseline EID, overlay EID) pairs — "
+                    f"MASSCASE {sid}: REPLACE takes (baseline EID, overlay EID) pairs — "
                     f"got an odd count ({len(eids)}) on one row"
                 )
             replace.extend(zip(eids[0::2], eids[1::2]))
@@ -865,6 +865,6 @@ MULTI_HANDLERS: dict[str, MultiHandler] = {
     "LOAD": _handle_load,
     "RBE3": _handle_rbe3,
     "RBE2": _handle_rbe2,
-    "MASSSET": _handle_massset,
+    "MASSCASE": _handle_massset,
     "SPC1": _handle_spc1,
 }

@@ -1,11 +1,11 @@
 $ cessna210_flagship_massset.bdf — SOL 144 payload sweep driver (Step 65)
 $
 $ One airframe, one flight condition (TRIM 1: 1g, q = 2334 Pa), three payload
-$ conditions selected per subcase with the case-control MASSSET request:
+$ conditions selected per subcase with the case-control MASSCASE request:
 $
-$   SUBCASE 1  MASSSET 10  FERRY    996.0 kg  baseline less rear-seat payload
-$   SUBCASE 2  MASSSET 20  CRUISE  1201.0 kg  + 120 kg half wing fuel
-$   SUBCASE 3  MASSSET 30  MTOW    1560.0 kg  + 240 kg full wing fuel
+$   SUBCASE 1  MASSCASE 10  FERRY    996.0 kg  baseline less rear-seat payload
+$   SUBCASE 2  MASSCASE 20  CRUISE  1201.0 kg  + 120 kg half wing fuel
+$   SUBCASE 3  MASSCASE 30  MTOW    1560.0 kg  + 240 kg full wing fuel
 $                                             + rear-seat payload 85 -> 324 kg
 $
 $ The AIC, splines, stiffness and the whole AeroCache are geometry/Mach-only
@@ -30,19 +30,19 @@ SUBCASE 1
   TITLE   = FERRY
   TRIM    = 1
   SPC     = 1
-  MASSSET = 10
+  MASSCASE = 10
 $
 SUBCASE 2
   TITLE   = CRUISE
   TRIM    = 1
   SPC     = 1
-  MASSSET = 20
+  MASSCASE = 20
 $
 SUBCASE 3
   TITLE   = MTOW
   TRIM    = 1
   SPC     = 1
-  MASSSET = 30
+  MASSCASE = 30
 $
 BEGIN BULK
 INCLUDE 'cessna210_flagship_bulk.bdf'

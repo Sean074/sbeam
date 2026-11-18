@@ -20,7 +20,7 @@ numbers are assigned.
 **A FAR/CS-23 and -25 loads process on a beam-stick aeroelastic model:** generate the
 maneuver + gust design cases from the flight envelope, trim/integrate each one, and
 deliver monitor/section loads with a traceable critical-case report for downstream stress
-work. Delivered so far: SOL 144 trim + derivatives, balanced maneuvers, MASSSET payload
+work. Delivered so far: SOL 144 trim + derivatives, balanced maneuvers, MASSCASE payload
 sweeps, quasi-steady + free-flight modal transient maneuvers (MLOADS), monitor points and
 section-cut running loads with per-maneuver envelopes, correction-matched aerodynamics
 validated on HA144A and an ATR42-class flagship, and the first design-case family

@@ -4,7 +4,7 @@ $ (Step 65).  Bulk data ONLY — no case control.  Pulled in by the three thin
 $ drivers via a case-control INCLUDE:
 $
 $   cessna210_flagship_trim.bdf     SC1 1g cruise + SC2 2.5g pull-up
-$   cessna210_flagship_massset.bdf  one TRIM x three MASSSET payload cases
+$   cessna210_flagship_massset.bdf  one TRIM x three MASSCASE payload cases
 $   cessna210_flagship_mloads.bdf   trim + elevator-ramp transient (MLOADS)
 $
 $ Companion section-coefficient table: cessna210_flagship_section_data.csv.
@@ -179,14 +179,14 @@ $ THIS IS A LUMPED STICK IDEALISATION.  GRID 1 is the engine-mount station
 $ and its 313 kg stands for the whole powerplant installation (engine,
 $ propeller, spinner, cowling, nose gear, firewall accessories) — ~29% of
 $ the aircraft mass on the nose, which is what puts the CG at 22% MAC on
-$ this airframe.  The MASSSET cases below move the payload, not this group.
+$ this airframe.  The MASSCASE cases below move the payload, not this group.
 $
 $ Fuselage
 CONM2, 1, 1, 0, 312.8
 CONM2, 2, 900, 0, 203.6
 CONM2, 3, 2, 0, 45.0
 $ CONM2 7 — rear-seat occupants + baggage.  Split out of the GRID 2 lump so
-$ the MASSSET cases have a payload card to DELETE / REPLACE; 45 + 85 = the
+$ the MASSCASE cases have a payload card to DELETE / REPLACE; 45 + 85 = the
 $ 130 kg this station carries in the baseline, so the baseline is unchanged.
 CONM2, 7, 2, 0, 85.0
 CONM2, 4, 3, 0, 8.0
@@ -210,21 +210,21 @@ CONM2, 31, 31, 0, 1.5
 CONM2, 32, 32, 0, 1.0
 $
 $ ------------------------------------------------------ OVERLAY POINT MASSES
-$ Referenced by a MASSSET ADD or by the overlay slot of a REPLACE, so they are
+$ Referenced by a MASSCASE ADD or by the overlay slot of a REPLACE, so they are
 $ EXCLUDED from the baseline mass and enter only the cases that name them.
 $ Ordinary CONM2 cards in every other respect.
 $
-$ Wing fuel, half tanks (MASSSET 20 CRUISE) — 120 kg at the wing EA stations
+$ Wing fuel, half tanks (MASSCASE 20 CRUISE) — 120 kg at the wing EA stations
 CONM2, 6001, 11, 0, 40.0
 CONM2, 6002, 111, 0, 40.0
 CONM2, 6003, 12, 0, 20.0
 CONM2, 6004, 112, 0, 20.0
-$ Wing fuel, full tanks (MASSSET 30 MTOW) — 240 kg
+$ Wing fuel, full tanks (MASSCASE 30 MTOW) — 240 kg
 CONM2, 6011, 11, 0, 80.0
 CONM2, 6012, 111, 0, 80.0
 CONM2, 6013, 12, 0, 40.0
 CONM2, 6014, 112, 0, 40.0
-$ Full cabin (MASSSET 30 MTOW) — four occupants + baggage, REPLACING the
+$ Full cabin (MASSCASE 30 MTOW) — four occupants + baggage, REPLACING the
 $ 85 kg baseline card 7.  This one carries an OFFSET: its CG sits 0.35 m aft
 $ of and 0.10 m below GRID 2, so the deck exercises the CONM2 offset path
 $ (translation-rotation coupling and the parallel-axis transfer) inside a
@@ -236,23 +236,23 @@ $ Three payload conditions over one airframe.  Stiffness, splines and the
 $ whole VLM AeroCache are geometry/Mach-only and are built ONCE and shared;
 $ only M_gg, M_ax, GPWG and the trim solve are rebuilt per case.
 $
-$   MASSSET 10  FERRY    996.0 kg   baseline less the rear-seat payload
-$   MASSSET 20  CRUISE  1201.0 kg   baseline + 120 kg half wing fuel
-$   MASSSET 30  MTOW    1560.0 kg   baseline + 240 kg full wing fuel
+$   MASSCASE 10  FERRY    996.0 kg   baseline less the rear-seat payload
+$   MASSCASE 20  CRUISE  1201.0 kg   baseline + 120 kg half wing fuel
+$   MASSCASE 30  MTOW    1560.0 kg   baseline + 240 kg full wing fuel
 $                                   + rear-seat payload 85 -> 324 kg
 $
-$ The bare deck (no MASSSET selected) is the 1081.0 kg baseline.  All three
+$ The bare deck (no MASSCASE selected) is the 1081.0 kg baseline.  All three
 $ ops are exercised: DELETE by 10, ADD by 20 and 30, REPLACE by 30.
 $
 $ Physics the sweep demonstrates: heavier cases must trim to a larger ANGLEA
 $ at the same q, AND the wing-root bending per unit aircraft weight must FALL
 $ as fuel goes into the wing — inertia relief, because wing fuel is carried
 $ outboard of the root cut and its weight cancels part of the lift there.
-MASSSET, 10, FERRY, 1.0
+MASSCASE, 10, FERRY, 1.0
 +, DELETE, 7
-MASSSET, 20, CRUISE, 1.0
+MASSCASE, 20, CRUISE, 1.0
 +, ADD, 6001, 6002, 6003, 6004
-MASSSET, 30, MTOW, 1.0
+MASSCASE, 30, MTOW, 1.0
 +, ADD, 6011, 6012, 6013, 6014
 +, REPLACE, 7, 6020
 $
@@ -360,7 +360,7 @@ $ DEF-M10 RULE: this SET1 must list EVERY spline-load grid AND EVERY
 $ CONM2-bearing grid.  Grids 1, 900, 3, 5, 31 and 32 carry mass but take no
 $ spline load; leaving any of them out silently drops that share of the
 $ inertia and the "MONPNT3 ~ 0" balance check stops meaning anything.
-$ Overlay (MASSSET) CONM2s live on grids 2, 11, 12, 111, 112 — already here.
+$ Overlay (MASSCASE) CONM2s live on grids 2, 11, 12, 111, 112 — already here.
 SET1, 1310, 1, 900, 2, 3, 4, 5, 10
 +, 11, 12, 111, 112, 20, 21, 22, 121
 +, 122, 30, 31, 32
@@ -386,7 +386,7 @@ $ its y-axis is the elastic axis, so the default AXIS=2 measures stations along
 $ the EA and every cut's moment reference lands on it.  Stations are chosen
 $ clear of the EA grids (11 at 2.801, 12 at 5.603) so no cut lands on a grid;
 $ 6.50 is outboard of the tip and must return exactly zero.
-$ Under a MASSSET case the wing-fuel CONM2s on grids 11/12 enter the inertia
+$ Under a MASSCASE case the wing-fuel CONM2s on grids 11/12 enter the inertia
 $ column automatically, so the table is per mass case with no extra cards.
 MONSECT, SECRW, RIGHT WING LOADS, RWINGEA, 991
 +, 0.30, 1.50, 4.20, 6.50
@@ -478,7 +478,7 @@ $ compares, so a stale number fails the suite rather than quietly producing a
 $ slightly-wrong transient.
 $
 $ CASE-SPECIFIC.  Because the table is absolute it is also tied to the mass
-$ case it was authored for.  Selecting a MASSSET alongside MLOADS shifts the
+$ case it was authored for.  Selecting a MASSCASE alongside MLOADS shifts the
 $ trimmed elevator, so this first point is no longer that case's equilibrium
 $ and the run starts with a step input (see test T6).
 TABLED1, 300

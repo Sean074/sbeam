@@ -44,7 +44,7 @@ DECKS = sorted([*(REPO / "sample").glob("*.bdf"), *(REPO / "sample").glob("*.dat
 _SBEAM_EXTENSIONS = {
     "AEROS": "#87: sbeam reads MACH from field 9, blank in MSC",
     "TRIM": "#87/#88: sbeam's RHOREF pseudo-label and label pairs in field 9 (MSC AEQR)",
-    "MASSSET": "#78: MSC name, different layout",
+    "MASSCASE": "sbeam extension (named MASSSET, MSC's name, until #78)",
 }
 
 #: sbeam cards pyNastran cannot read at all (it raises instead of storing an error): they

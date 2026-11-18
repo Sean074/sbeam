@@ -41,8 +41,8 @@ downloaded file is byte-identical to the CLI's. SOL 101/103 write the f06 only.
 | Encoding / dialect | `csv.writer` defaults: comma, `\n` line ends, no quoting unless a label needs it, UTF-8 |
 | Header | Exactly one header row, the lists in §3; no comment lines, no units row |
 | **Identity block** | Every file starts `case, massset, mass_case` (static) or `case, mloads, massset, mass_case` (transient). `case` is the subcase id, `mloads` the `MLOADS` SID |
-| **`massset`** | **Always an integer.** `0` = the subcase selects no `MASSSET` (baseline); otherwise the `MASSSET` SID. Never empty, so the column keeps one dtype whether or not a run (or a concatenation of runs) contains a baseline case. Constant `BASELINE_MASSSET` in `load_export.py` |
-| `mass_case` | The mass-case label: `BASELINE` for `massset = 0`, else the `MASSSET` label |
+| **`massset`** | **Always an integer.** `0` = the subcase selects no `MASSCASE` (baseline); otherwise the `MASSCASE` SID. Never empty, so the column keeps one dtype whether or not a run (or a concatenation of runs) contains a baseline case. Constant `BASELINE_MASSCASE` in `load_export.py` |
+| `mass_case` | The mass-case label: `BASELINE` for `massset = 0`, else the `MASSCASE` label |
 | Reals | `%.6E` (e.g. `-1.234567E+03`); the `parity` column is `%g` |
 | Integers | ids, `cid`, `axes`, `sample`, `n_members`, `n_samples`, `comp_index`, `*_sample` |
 | Flags | `whole_airplane`, `half_model`, `critical` are `0` / `1` |
@@ -148,23 +148,23 @@ separated by a blank line, each block a fixed comment header followed by
 | Cards | `FORCE, SID, GID, 0, 1.0, Fx, Fy, Fz` and `MOMENT, SID, GID, 0, 1.0, Mx, My, Mz`; `SID` = subcase id (the `sid=` argument); CID `0`; unit scale factor so the components carry the load |
 | Grid order | Ascending GID; a card is omitted when all three components are below `1e-9` |
 | Reals | `parser/bdf_field.fmt_real8` — fits the NASTRAN 8-character field (DEF-M6; precision note in `05c` "Field format") |
-| Comment header | Exactly four `$` lines for the trim exports, four for the MLOADS export (below). Line 4 is **always** `$ MASSSET=<int> (<label>)` — `$ MASSSET=0 (BASELINE)` for a baseline subcase — so a reader can key the block to the CSV identity without special-casing the baseline |
+| Comment header | Exactly four `$` lines for the trim exports, four for the MLOADS export (below). Line 4 is **always** `$ MASSCASE=<int> (<label>)` — `$ MASSCASE=0 (BASELINE)` for a baseline subcase — so a reader can key the block to the CSV identity without special-casing the baseline |
 
 ```
 $ SOL 144 trimmed aerodynamic flight loads — subcase <case>, SID <sid>          (aero_loads.bdf)
 $ TRIM=<trim_sid>  Q=<q>  MACH=<mach>  CZ=<total_cl:.6f>
 $ FORCE/MOMENT set sums to the total trimmed lift/moment (plain trim).
-$ MASSSET=<massset> (<mass_case>)  MASS=<total mass>
+$ MASSCASE=<massset> (<mass_case>)  MASS=<total mass>
 
 $ SOL 144 balanced maneuver loads (aero + inertia relief) — subcase <case>, SID <sid>   (maneuver_loads.bdf)
 $ TRIM=<trim_sid>  Q=<q>  MACH=<mach>  CZ=<total_cl:.6f>
 $ FORCE/MOMENT set is the net (aero + inertial) maneuver load for stress (Step 53).
-$ MASSSET=<massset> (<mass_case>)  MASS=<total mass>
+$ MASSCASE=<massset> (<mass_case>)  MASS=<total mass>
 
 $ Phase G0 critical maneuver loads (aero + inertia + elastic inertia + damping) — subcase <case>, SID <sid>   (maneuver_qs_loads.bdf)
 $ MLOADS=<mloads>  IC TRIM=<trim_sid>  Q=<q>  MACH=<mach>  t=<time>
 $ Full applied load at the peak |net grid force| sample (<critical_sample> of <n_samples>).
-$ MASSSET=<massset> (<mass_case>)
+$ MASSCASE=<massset> (<mass_case>)
 ```
 
 `massset_comment()` in `load_export.py` is the single source of line 4.

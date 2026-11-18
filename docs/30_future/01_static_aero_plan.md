@@ -145,7 +145,7 @@ migration; mission + milestone map: `docs/30_future/00_backlog.md`; parked items
 `02_parked.md`). Per-phase design detail:
 
 - **Loads-process completion (gust cases, case matrix, envelope/report)** — backlog
-  near-term items; Steps 59–63 (free-free modal basis, `MASSSET` mass cases, free-flight
+  near-term items; Steps 59–63 (free-free modal basis, `MASSCASE` mass cases, free-flight
   coupling) are closed, see `docs/40_history/07_maneuver_transient.md`.
 - **Phase D (DLM) + SOL 145 flutter + SOL 146 gust** — backlog Phase D chain;
   full design in `designs/dlm_rfa_flutter_gust.md` (kernel, GAFs, PK/KE, RFA, gust). The

@@ -370,7 +370,7 @@ def resolve_increment_tables(
         if len(mass_sids) > 1:
             errors.append(
                 f"MLOADS {spec.mloads_sid} is shared by subcases with different "
-                "MASSSETs — command tables are mass-case specific, so give "
+                "MASSCASEs — command tables are mass-case specific, so give "
                 "each mass case its own MLOADS (the sample-deck convention)."
             )
             continue
@@ -514,7 +514,7 @@ def validate_sol144_authoring(
             if sid is not None and sid not in family_store(bulk, family):
                 errors.append(f"{tag}: {name} {sid} not found in the bulk data.")
         if sc.massset_sid is not None and sc.massset_sid not in bulk.masssets:
-            errors.append(f"{tag}: MASSSET {sc.massset_sid} not found in the "
+            errors.append(f"{tag}: MASSCASE {sc.massset_sid} not found in the "
                           "bulk data.")
 
     # --- TRIM cards (parser parity: labels, DOF-count warnings) ---
@@ -601,7 +601,7 @@ def validate_sol144_authoring(
             if sc.mloads_sid == sid and sc.massset_sid is not None \
                     and ml.selects_modal:
                 warns.append(
-                    f"Subcase {sc.subcase_id}: MASSSET {sc.massset_sid} with "
+                    f"Subcase {sc.subcase_id}: MASSCASE {sc.massset_sid} with "
                     "the modal solver uses the fixed baseline basis (fixed-Φ); "
                     "the solver warns if the case CG shifts more than 5% of "
                     "c_ref.")

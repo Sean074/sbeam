@@ -269,7 +269,7 @@ SOL 144
 SUBCASE 1
   TRIM    = 10
   DIVERG  = 20
-  MASSSET = 30
+  MASSCASE = 30
 ```
 
 `SubcaseControl` gains `trim_sid` and `diverg_sid` fields (both `Optional[int]`, default `None`),
@@ -628,8 +628,8 @@ and to the subcase's applied `LOAD` set (`result.applied_loads`, #6; None withou
 give `result.net_loads` — the net deliverable for stress and the non-zero inertia / applied
 columns for MONPNT3. `write_maneuver_load_cards` writes these as `<stem>.maneuver_loads.bdf`
 (the header names the `LOAD` set when one was applied). Every load-BDF
-block carries a fixed four-line comment header ending `$ MASSSET=<sid> (<label>)` —
-`$ MASSSET=0 (BASELINE)` when the subcase selects no mass case (#31; `10_export_schemas.md` §4).
+block carries a fixed four-line comment header ending `$ MASSCASE=<sid> (<label>)` —
+`$ MASSCASE=0 (BASELINE)` when the subcase selects no mass case (#31; `10_export_schemas.md` §4).
 `result.maneuver_closure` is the body-frame 6-resultant of the net load (aero + inertial +
 applied); for a free aircraft (SUPORT, no SPC) it must balance to ≈ 0 (a non-zero residual
 warns — gravity/mass-model guard, KC9), and in an SPC'd direction it equals minus the
@@ -774,7 +774,7 @@ restrained decomposition, reused per-step in recovery) of
   nonsingular — free flight is simply the unconstrained rigid partition, no Schur, no re-trim).
   The Δ-form keeps gravity and the trim forcing implicit: a zero-command free response stays at
   the trim equilibrium to round-off. `C_s` is built from the case `M_hh` columns
-  (`M_hh[:,e]·2ζω`), not `HsetGafs.C_hh`, so the damping force is exact under a MASSSET.
+  (`M_hh[:,e]·2ζω`), not `HsetGafs.C_hh`, so the damping force is exact under a MASSCASE.
 - **δ bookkeeping:** commanded **AESURF controls are the only inputs** (`MLDCOMD`); the rigid
   trim labels (ANGLEA/PITCH/URDD…) are **outputs** computed from the rigid states. Commanding a
   rigid-state label under this solver is a hard `ValueError` naming the label — at parse time
@@ -795,7 +795,7 @@ restrained decomposition, reused per-step in recovery) of
   start independently of truncation. `recovery="displacement"` remains a test/reference mode.
 - **Fixed-Φ mass cases (D3):** basis built once per job from the **baseline** mass
   (`ManeuverBasisCache`, keyed `spc_sid` + EIGRL sid; `main.py` and the viewer share one across
-  subcases — a MASSSET sweep builds Φ exactly once). A MASSSET subcase swaps only the mass side
+  subcases — a MASSCASE sweep builds Φ exactly once). A MASSCASE subcase swaps only the mass side
   (`M_hh = ΦᵀM_aa,caseΦ`, `M_ax,case`) and the IC trim. **Case-mean-axis correction (Step 63):**
   before building the h-set operators the elastic columns are re-orthogonalized against `Φ_r`
   under the CASE mass (`Φ_e ← Φ_e − Φ_r·M_rr,case⁻¹(Φ_rᵀM_caseΦ_e)` — a cheap projection, same
@@ -816,7 +816,7 @@ restrained decomposition, reused per-step in recovery) of
   `FREE FLIGHT: V = …  RIGID STATES = … (OUTPUTS)` line, and per-step
   `ManeuverStep.xi_r/xi_r_dot/xi_r_ddot` (mean-axis rigid states) / `nz_rel`;
   `modal_coords` holds the full Δξ (n_h). Sample deck:
-  `sample/ha144a_mloads_massset.bdf` — the free-flight elevator maneuver × 3-MASSSET payload
+  `sample/ha144a_mloads_massset.bdf` — the free-flight elevator maneuver × 3-MASSCASE payload
   sweep (heavier ⇒ lower settled NZ_REL; CG-balanced fuel tanks so the sweep is a pure mass
   effect).
 - **Scope limits (documented):** linear inertial-frame rigid coordinates at fixed V — the steady
@@ -833,27 +833,27 @@ restrained decomposition, reused per-step in recovery) of
   and RHOREF errors; sample-deck end-to-end sweep. `tests/solver/test_maneuver_modal.py`
   (mechanics): free-flight closure on both mass variants; NMODES convergence and
   mode-acceleration ≥ 10× vs mode-displacement against the full-basis free-flight reference;
-  hold-at-trim = Step 53; ζ decays the elastic tail (second-difference metric); fixed-Φ MASSSET
+  hold-at-trim = Step 53; ζ decays the elastic tail (second-difference metric); fixed-Φ MASSCASE
   hold-at-trim/closure exactness and the +10 % fuel truncated approximation gate; cache
   builds-once; equilibrium-start truncation independence; D4 threshold; selection truth table;
   f06 blocks.
 
 ---
 
-## Mass cases — MASSSET payload conditions (Step 60)
+## Mass cases — MASSCASE payload conditions (Step 60)
 
 ZAERO-style payload sweeps for the static capability: **one deck, N subcases**, each
-pairing a `MASSSET` with its `TRIM` (or Step 53 balanced-maneuver) case. This is the
+pairing a `MASSCASE` with its `TRIM` (or Step 53 balanced-maneuver) case. This is the
 early-design payload deliverable — different payload conditions analysed without
 duplicating the model.
 
 ### Card and selection
 
-The `MASSSET` bulk card (fields and ops in
-[`02_card_reference.md`](02_card_reference.md#massset--payload--mass-case-step-60)) names
+The `MASSCASE` bulk card (fields and ops in
+[`02_card_reference.md`](02_card_reference.md#masscase--payload--mass-case-step-60)) names
 a mass configuration built from the baseline model mass: `SCALE` multiplies the baseline,
 then `ADD` / `REPLACE` / `DELETE` overlay, swap, or drop CONM2 cards. A subcase selects it
-MSC-style with a case-control `MASSSET = sid` request (like `SPC`/`METHOD`) — deliberately
+with a case-control `MASSCASE = sid` request (like `SPC`/`METHOD`) — deliberately
 *not* a TRIM or MLDTRIM field, so the static and transient solvers share one mechanism.
 
 ### Resolution — `model/mass_overlay.py`
@@ -865,7 +865,7 @@ effective set is built by iterating `bulk.conm2s`, so it keeps **deck (card) ord
 mass case sums its contributions in the same order a hand-edited deck would.
 
 `massset_sid=None` is the baseline configuration: every CONM2 that is not overlay-only,
-unscaled. With no MASSSET cards in the deck that is exactly `bulk.conm2s`, and every
+unscaled. With no MASSCASE cards in the deck that is exactly `bulk.conm2s`, and every
 operator below is unchanged from pre-Step-60 behaviour.
 
 ### What is rebuilt, and what is not
@@ -878,7 +878,7 @@ operator below is unchanged from pre-Step-60 behaviour.
 | The trim solve and its recovered loads | the whole `AeroCache` |
 
 > **Invariant — no AeroCache invalidation.** The AIC is a function of geometry and Mach
-> only. A MASSSET sweep must never rebuild or invalidate it; `test_sweep_shares_one_aero_model`
+> only. A MASSCASE sweep must never rebuild or invalidate it; `test_sweep_shares_one_aero_model`
 > asserts object identity across the three subcases of the sample deck.
 
 `SCALE` applies to the whole baseline mass — CBAR distributed mass (`rho·A + nsm`) and
@@ -889,17 +889,17 @@ parallel-axis terms. MAT1 `rho` overlays are out of scope for v1.
 ### Output
 
 `Sol144TrimResult` gains `massset_sid`, `massset_label`, `massset_mass` and `massset_cg`.
-When a MASSSET is selected the f06 subcase header gains a `MASSSET = / LABEL = / MASS =`
+When a MASSCASE is selected the f06 subcase header gains a `MASSCASE = / LABEL = / MASS =`
 line plus a `CG =` line (omitted entirely for baseline runs, so pre-Step-60 decks produce
 byte-identical f06 output). The `*.monitor_loads.csv` gains `massset` and `mass_case`
 columns, and both load-card exports stamp the mass case in their comment block. The viewer's
-GPWG panel offers a mass-case selector when the deck defines MASSSET cards, and the
+GPWG panel offers a mass-case selector when the deck defines MASSCASE cards, and the
 analysis-plan summary names the case per subcase.
 
 ### Transient maneuvers
 
 Both maneuver solvers thread `subcase.massset_sid` into their `M_gg`/`M_ax` build **and**
-into the initial-condition trim, so an `MLOADS` subcase carrying a `MASSSET` runs the whole
+into the initial-condition trim, so an `MLOADS` subcase carrying a `MASSCASE` runs the whole
 maneuver at that payload condition. The fixed-Φ modal interaction (swap the mass side only,
 reuse the basis — with exactness/approximation gates and the D4 CG-shift warning) landed with
 Step 62; see the Step 62 section above.
@@ -908,7 +908,7 @@ Step 62; see the Step 62 section above.
 > incremental, so a `TABLED1` authored to start at one case's trimmed control angle is not
 > that angle in another case: the trim shifts with the payload, and the run then begins with
 > a step input instead of at equilibrium. This is a deck-authoring property, not a solver
-> defect — pairing `MASSSET` with `MLOADS` means re-running the trim for that mass case and
+> defect — pairing `MASSCASE` with `MLOADS` means re-running the trim for that mass case and
 > re-baking the table's first point. First covered at Step 65 by
 > `tests/aero/test_cessna210_flagship.py::test_t6_mloads_with_massset_is_exact_when_the_table_matches_the_case`,
 > which pins down both halves: stale table ⇒ the initial condition is not the trim;
@@ -921,9 +921,9 @@ payload conditions (EMPTY 16000 lb / HALFFUEL 18500 lb / FULLFUEL 21000 lb), exe
 three ops. Gated by `tests/parser/test_massset.py` (card round-trip, overlay marking, SCALE,
 negative cases) and `tests/aero/test_massset_sweep.py`:
 
-- **equivalence** — each MASSSET case matches a hand-edited deck carrying the same final
+- **equivalence** — each MASSCASE case matches a hand-edited deck carrying the same final
   CONM2 set: identical `M_gg`, identical GPWG, identical trim (machine precision);
-- **baseline unchanged** — no MASSSET selected reproduces the pre-Step-60 operators, and the
+- **baseline unchanged** — no MASSCASE selected reproduces the pre-Step-60 operators, and the
   EMPTY case reproduces the untouched `ha144a_fullspan_sbeam.bdf` trim exactly;
 - **closure** — per-case Step 53 balanced-maneuver closure ≈ 0, and trimmed lift equals the
   case weight;
@@ -979,7 +979,7 @@ MONPNT3, NAME, LABEL, AXES, COMP, CP, X, Y, Z          $ aero + inertia + reacti
   covers only part of the model, so the check qualifies on **aero** scope first: only a monitor
   whose z-force matches the model total (within 1 %) is treated as whole-aircraft, and only then is
   its grid set compared against the CONM2-bearing grids. Wing-root and per-wing cuts therefore never
-  trigger it. Masses come from the **active MASSSET case** (`mass_overlay.effective_conm2s`), not
+  trigger it. Masses come from the **active MASSCASE case** (`mass_overlay.effective_conm2s`), not
   from every `CONM2` card, so mutually exclusive overlays are not double-counted. The warning names
   the omitted grids, their mass and the omitted fraction.
 
@@ -1132,7 +1132,7 @@ raw components, so no consumer has to reconstruct it.
 3. **An empty outboard set is a zero row, not an error.** A station outboard of every
    member is a legitimate closure check — it must return exactly zero.
 4. **Mass cases come for free.** The inertia column is built from `inertial_loads`, which
-   already reflects the active `MASSSET` (Step 60), so a payload sweep produces a table
+   already reflects the active `MASSCASE` (Step 60), so a payload sweep produces a table
    per mass case with no extra cards.
 
 > **A `SET1` does not follow the mesh either.** `MONSECT` recomputes *membership* from
@@ -1169,7 +1169,7 @@ raw components, so no consumer has to reconstruct it.
 | V-SEC3 | Cut inboard of everything == whole-aircraft `MONPNT3` (transferred to the cut reference) | `tests/aero/test_section_cuts_sol144.py` |
 | V-SEC4 | Station outboard of every member returns exact zero | both |
 | V-SEC5 | Whole-model net (aero+inertia+reaction) ≈ 0, reproducing the maneuver closure | `tests/aero/test_section_cuts_sol144.py` |
-| V-SEC6 | **Wing-fuel bending relief** across three `MASSSET` cases | `tests/aero/test_section_cuts_massset.py` |
+| V-SEC6 | **Wing-fuel bending relief** across three `MASSCASE` cases | `tests/aero/test_section_cuts_massset.py` |
 | V-SEC7 | `AELIST` cut == `SET1` cut aero over a whole collection (spline conservation) | `tests/aero/test_section_cuts_sol144.py` |
 | V-SEC8 | `NORMAL` override reassigns members by geometry; reference stays on the EA and on the plane | `tests/results/test_section_cuts.py` |
 | V-SEC9 | Half model is annotated, never doubled | `tests/results/test_section_cuts.py` |
@@ -1395,7 +1395,7 @@ sbeam-cases sample/cessna210_flagship_trim.bdf \
 ```
 
 The tool reads reference area and mean chord from `AEROS`, the weight from GPWG for
-each `MASSSET`, and the **rigid** `CZ_α` from a structure-free derivative run — so it
+each `MASSCASE`, and the **rigid** `CZ_α` from a structure-free derivative run — so it
 needs no trim solve and adds no second source for any number already in the deck. It
 emits one `TRIM` + `GUSTLF` pair and one subcase per
 `(design speed × altitude × mass case × sense)`, reusing the input deck's `INCLUDE`

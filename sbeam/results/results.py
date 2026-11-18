@@ -332,8 +332,8 @@ class Sol144TrimResult:
     load_injection_echo: Optional[list[dict[str, Any]]] = None  # Step 64 SPLINE0/un-splined load injection: [{'source','master_grid','n_boxes','force','moment'}]; None/[] = no injection
     # --- Step 67a (quasi-steady yaw-rate wing term) ---
     yaw_rate_iters: int = 0                   # fixed-point iterations spent on the loading-scaled yaw-rate force column; 0 = term not active (no YAW label, or zero yaw rate)
-    # --- Step 60 (MASSSET payload / mass case) ---
-    massset_sid: Optional[int] = None         # MASSSET SID selected by the subcase; None = baseline
+    # --- Step 60 (MASSCASE payload / mass case) ---
+    massset_sid: Optional[int] = None         # MASSCASE SID selected by the subcase; None = baseline
     massset_label: str = "BASELINE"           # mass-case name for output headers
     massset_mass: float = 0.0                 # total case mass (GPWG) for this configuration
     massset_cg: Optional[tuple[float, float, float]] = None   # CG of the case mass
@@ -443,7 +443,7 @@ class ManeuverResult:
     steps: list["ManeuverStep"]            # one per output sample
     crit_index: int                       # index into steps of the peak_grid_force sample
     mldprnt_items: list[str] = field(default_factory=list)  # requested ASCII-print keywords
-    massset_sid: Optional[int] = None     # MASSSET mass case (None = baseline)
+    massset_sid: Optional[int] = None     # MASSCASE mass case (None = baseline)
     massset_label: str = "BASELINE"       # mass-case name for the exports (#31)
     n_modes_used: Optional[int] = None    # retained elastic modes (Step 62 solver; None = direct l-set)
     # Step 62 basis summary for the f06 (n_r, n_e, n_available, freqs_hz,

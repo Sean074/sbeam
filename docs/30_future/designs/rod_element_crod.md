@@ -97,7 +97,7 @@ three translation pairs; zero on every rotation. This matches MSC `COUPMASS` for
 sbeam's always-consistent CBAR convention (there is no COUPMASS switch). No torsional or
 rotary inertia term, as in MSC and NASTRAN-95: a rod has no `I1`/`I2` for the CBAR
 `ρ(I1+I2)` term, and `J` is a stiffness constant, not a mass moment. GPWG: `m·L` at the
-midpoint. MASSSET scale applies as for CBAR.
+midpoint. MASSCASE scale applies as for CBAR.
 - *Alternative rejected:* lumped `m·L/2` per end (NASTRAN-95 default). A strut and its CBAR
   spine would then use two mass formulations in one model.
 

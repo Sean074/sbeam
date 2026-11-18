@@ -189,7 +189,7 @@ def build_inertial_cols(
         all_labels:  trim labels, in column order.
         grid_index:  {gid: i} — must be the g-set ordering ``M_gg`` was built on.
         suport_pos:  rigid-acceleration reference point, basic coordinates.
-        massset_sid: MASSSET mass case (Step 60); ignored when ``M_gg`` is given.
+        massset_sid: MASSCASE mass case (Step 60); ignored when ``M_gg`` is given.
         M_gg:        pre-assembled global mass matrix for this mass case.  Pass
                      it when the caller already has one — it is the single most
                      expensive object here.  When ``None`` it is assembled from

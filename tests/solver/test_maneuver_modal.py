@@ -18,7 +18,7 @@ references:
   * ELEV-ramp closure ≈ 0 on both mass variants (the free-flight
     self-balancing identity; the physics gates live in
     ``test_maneuver_freeflight.py``);
-  * fixed-Φ MASSSET machinery (hold-at-trim on the mass case; fixed vs
+  * fixed-Φ MASSCASE machinery (hold-at-trim on the mass case; fixed vs
     re-solved basis approximation; D4 CG-shift warning);
   * solver selection (D1) and the f06 basis/FREE FLIGHT summary block.
 
@@ -286,11 +286,11 @@ def test_zeta_decays_elastic_oscillation():
 
 
 # ---------------------------------------------------------------------------
-# Gate 4 — fixed-Φ mass-case gates (Step 60 MASSSET)
+# Gate 4 — fixed-Φ mass-case gates (Step 60 MASSCASE)
 # ---------------------------------------------------------------------------
 
 def _add_fuel_overlay(bulk, frac):
-    """MASSSET 100: symmetric overlay CONM2s adding ``frac`` of the inboard
+    """MASSCASE 100: symmetric overlay CONM2s adding ``frac`` of the inboard
     wing masses (CONM2 311/411, one per side)."""
     eids = []
     for i, src in enumerate((311, 411)):
@@ -304,7 +304,7 @@ def _add_fuel_overlay(bulk, frac):
 
 
 def test_fixed_phi_hold_at_trim_and_closure():
-    """Off-baseline MASSSET, all modes: the fixed-Φ machinery is exact —
+    """Off-baseline MASSCASE, all modes: the fixed-Φ machinery is exact —
     zero-command holds the mass case's own Step 53 trim, and an ELEV ramp
     keeps closure ≈ 0 (Φ spans the a-set, so no truncation error)."""
     bulk, gi = _build(rho=RHO, tend=0.3)

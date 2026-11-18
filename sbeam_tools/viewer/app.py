@@ -196,12 +196,12 @@ def _show_warnings() -> None:
 
 def _show_gpwg(bulk: BulkData) -> None:
     st.markdown("**GPWG — Mass & CG**")
-    # Step 60: when the deck defines MASSSET payload cases, report GPWG for the
-    # selected case (baseline = no MASSSET selected).
+    # Step 60: when the deck defines MASSCASE payload cases, report GPWG for the
+    # selected case (baseline = no MASSCASE selected).
     massset_sid = None
     if bulk.masssets:
         massset_sid = st.selectbox(
-            "Mass case (MASSSET)",
+            "Mass case (MASSCASE)",
             [None] + sorted(bulk.masssets.keys()),
             format_func=lambda s: (
                 "— baseline —" if s is None
@@ -649,7 +649,7 @@ def _run_sol144(bulk: BulkData, cc: CaseControl) -> None:
         aero = build_aero_model(bulk, grid_index=grid_index)
         cache = AeroCache(bulk, grid_index, seed=aero)
         # Step 62/63 (D3): one free-free basis per job, shared across every
-        # modal MLOADS subcase (MASSSET sweeps swap M only, never Phi).
+        # modal MLOADS subcase (MASSCASE sweeps swap M only, never Phi).
         basis_cache = ManeuverBasisCache(bulk, aero)
         for sc in cc.subcases:
             if sc.mloads_sid is not None:
