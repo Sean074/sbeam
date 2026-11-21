@@ -209,6 +209,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   into full rows, with the same lists.
 
 ### Documentation
+- Mission re-stated and the milestone map re-cut (#99): sbeam is a NASTRAN/ZAERO-format beam
+  aeroelastic solver that exports a modal model (OP4 + Universal 55, for sgear) and GAFs for
+  flutter, solved externally in Flaps (`Sean074/flaps_env`); SOL 145 dropped from #14; v0.4.0
+  re-described as *faithful NASTRAN input*, new v0.4.1 (viewer + modal export #100), v0.5.0
+  DLM + GAF export gated through Flaps; #101, #102 filed. `00_backlog.md`, `CLAUDE.md`.
 - **Draft scope for the v0.4.0 GUI work** (#11, not agreed):
   `docs/30_future/designs/v040_gui_scope.md` — four decisions to make, a survey of what
   the viewer can author, run and review against the solver's capabilities, the boundary
