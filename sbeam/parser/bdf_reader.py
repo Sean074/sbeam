@@ -240,7 +240,22 @@ def parse_bdf(filepath: StrPath) -> tuple[CaseControl, BulkData]:
     cc.include = cc.includes[0] if cc.includes else None
     bulk = parse_bulk_data(_bulk_section(lines[begin + 1:], origins[begin + 1:]))
     _check_mass_case_selectors(cc, bulk)
+    _merge_grdpnt(cc, bulk)
     return cc, bulk
+
+
+def _merge_grdpnt(cc: CaseControl, bulk: BulkData) -> None:
+    """One PARAM,GRDPNT for the run: the case-control one, the bulk one, or both if equal (#90).
+
+    The QRG states no precedence between a case-control and a bulk PARAM (p.570), so two
+    different values are refused rather than one chosen.
+    """
+    if cc.grdpnt is None:
+        return
+    if bulk.grdpnt != -1 and bulk.grdpnt != cc.grdpnt:
+        raise ValueError(f"PARAM,GRDPNT is {cc.grdpnt} in case control and {bulk.grdpnt} in "
+                         "the bulk data; give it once (the QRG states no precedence, p.570)")
+    bulk.grdpnt = cc.grdpnt
 
 
 def _check_mass_case_selectors(cc: CaseControl, bulk: BulkData) -> None:

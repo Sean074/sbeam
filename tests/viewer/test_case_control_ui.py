@@ -296,8 +296,8 @@ def _every_field_set() -> SubcaseControl:
     for k, f in enumerate(dataclasses.fields(SubcaseControl)):
         if f.name == "subcase_id":
             values[f.name] = 7
-        elif f.name == "title":
-            values[f.name] = "every field"
+        elif f.name in ("title", "subtitle", "label"):
+            values[f.name] = f"every field {f.name}"
         elif f.name == "mass_card":
             values[f.name] = "MASSSET"            # the non-default command (#102)
         elif f.type in (bool, "bool"):

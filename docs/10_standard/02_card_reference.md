@@ -200,7 +200,7 @@ Case control appears between the `SOL` line and `BEGIN BULK`. `SUBCASE` groups t
 - **No `SUBCASE`.** The commands run as one subcase. sbeam numbers it 1; that number is sbeam's choice, not a cited MSC rule. The deck shape is MSC's own (QRG 2024.1, PDF p.465, INCLUDE example).
 - **Nothing to run.** A deck with no `SUBCASE`, no selector and no output request still parses, so it can be read for its bulk data. The `sbeam` command refuses to run it and writes no f06.
 - **`SUBCASE` IDs** are positive integers, each greater than every earlier one (QRG 2024.1, PDF p.651, SUBCASE remark 1). A repeated or descending ID is refused.
-- **`TITLE`** above the first `SUBCASE` is the run title; inside a subcase it is that subcase's title. It is not inherited.
+- **`TITLE`, `SUBTITLE`, `LABEL`** (#90). Under a `SUBCASE` each is that subcase's page heading. Above every `SUBCASE`, `TITLE` and `SUBTITLE` head every subcase that gives none (QRG p.679, p.658 remarks 1–2), while `LABEL` heads only output that is not tied to a subcase — the GPWG block (p.471 remark 2). An absent `SUBTITLE` or `LABEL` prints no line.
 
 Every line above `BEGIN BULK` must be a command in the tables below; any other line is refused (#80). Page numbers are PDF pages of the MSC Nastran 2024.1 Quick Reference Guide (QRG).
 
@@ -212,7 +212,9 @@ Every line above `BEGIN BULK` must be a command in the tables below; any other l
 | Keyword | Type | Description |
 |---------|------|-------------|
 | `SOL` | int or name | Solution type. `101` = static, `103` = normal modes, `144` = static aeroelastic trim. MSC's names `SESTATIC`, `SEMODES` and `AESTAT` are read as 101, 103 and 144 (QRG p.186–187); any other solution is refused |
-| `TITLE` | str | Analysis title — echoed to `.f06` output |
+| `TITLE` | str | First page-heading line of the `.f06` (QRG p.679) |
+| `SUBTITLE` | str | Second heading line (QRG p.658) |
+| `LABEL` | str | Third heading line (QRG p.471) |
 | `SUBCASE` | int | Opens a subcase block, starting from the defaults above the first `SUBCASE`; all lines until the next `SUBCASE` belong to it. The ID must be greater than every earlier one |
 | `LOAD` | int | Load set ID (references `FORCE`/`MOMENT`/`LOAD` bulk cards) |
 | `SPC` | int | Constraint set ID (references `SPC`/`SPC1` bulk cards) |
@@ -241,11 +243,10 @@ Every line above `BEGIN BULK` must be a command in the tables below; any other l
 | `ID`, `TIME`, `DIAG`, `CEND`, `NASTRAN` | Executive statements with no effect on sbeam's results |
 | `ASSIGN` | File assignment; sbeam names its own output files |
 | `ECHO`, `ECHOON`, `ECHOOFF` | Listing control |
-| `SUBTITLE`, `LABEL` | Page headings; sbeam prints `TITLE` only |
 | `LINE`, `MAXLINES` | Page length and output line limit |
 | `MONITOR` | sbeam prints monitor results in every run that defines monitor points. MSC itself ignores `MONITOR` in SOL 144 (QRG p.524 remark 2) |
 
-**Accepted with a warning** (the output is not written): `GPFORCE` (QRG p.434), `TRIMF` (QRG p.683).
+**Accepted with a warning** (the output is not written): `GPFORCE` (QRG p.434), `TRIMF` (QRG p.683; its describers, SET and rigid load sets are #105).
 
 **Refused by name:**
 
@@ -2976,9 +2977,19 @@ These PARAMs change no result sbeam computes and are accepted with the warning
 |---|---|
 | `POST` | post-processor output files (p.922); sbeam writes its own f06, CSV and BDF |
 | `PRTMAXIM` | printout of maximum loads and displacements (p.929) |
-| `GRDPNT` | grid point weight generator request (p.885); sbeam always prints its mass and CG summary |
 | `AUTOSPC` | automatic constraint of singular DOFs (p.850); sbeam has none and reports a singular stiffness |
 | `MAXRATIO`, `BAILOUT` | singularity threshold and continue-on-singularity (p.897, p.851); sbeam uses its own conditioning check |
+
+**`GRDPNT` is read** (#90). `PARAM,GRDPNT,n` with n > −1 prints MSC's GRID POINT WEIGHT
+GENERATOR block once, ahead of the subcase output (QRG p.885; layout after AAUG 2023.1 PDF
+p.269): the reference point, MO = DᵀMD about it in basic axes, S, the mass and C.G. per
+direction, I(S), I(Q) and Q. n = 0, or an n that is not a grid, is the basic origin; −1 (the
+default) prints nothing. It may be given in the bulk data or in case control; two different
+values are refused, since the QRG states no precedence (p.570). S is the identity, as every
+sbeam mass is the same in each translation. MO comes from the consistent mass matrix, so
+the inertias include each CBAR's distributed rotary inertia, where MSC's default lumped mass
+would not; mass and C.G. are the same either way. The reduction to C.G. and inertias is
+gated on MSC's HA144B printout (`tests/results/test_gpwg_print.py`).
 
 A NASTRAN deck *without* `PARAM,COUPMASS` uses lumped mass in NASTRAN and consistent mass
 in sbeam. That is a modelling difference, not a dropped card, so it is not refused; it

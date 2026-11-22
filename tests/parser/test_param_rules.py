@@ -39,7 +39,6 @@ def test_the_nastran_default_is_accepted_silently(param):
 @pytest.mark.parametrize("param, reason", [
     ("PARAM, POST, -1", "post-processor output files"),
     ("PARAM, PRTMAXIM, YES", "printout of maximum loads"),
-    ("PARAM, GRDPNT, 0", "grid point weight generator"),
     ("PARAM, AUTOSPC, YES", "automatic constraint of singular DOFs"),
     ("PARAM, MAXRATIO, 1.+8", "singularity threshold"),
     ("PARAM, BAILOUT, -1", "continue past a near-singular matrix"),

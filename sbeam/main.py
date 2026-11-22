@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict
 
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.results.f06_writer import (
+    build_f06_gpwg_text,
     build_f06_sol101_text,
     build_f06_sol103_text,
     build_f06_sol144_text,
@@ -115,6 +116,7 @@ def main() -> None:
         sys.exit(f"Solver error: {exc}")
 
     with open(f06_path, "w") as fh:
+        fh.write(build_f06_gpwg_text(bulk, cc))       # PARAM,GRDPNT (#90); "" when not set
         for sc_id, result in results.items():
             fh.write(build_text(cc, bulk, result, sc_id))
         if cc.sol == 144:

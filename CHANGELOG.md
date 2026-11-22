@@ -70,6 +70,34 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   solver feature (`docs/30_future/02_parked.md`).
 
 ### Changed
+- **The f06 follows MSC's layouts where a consumer can compare it** (#90; audit O5–O8,
+  C11). All numbers are unchanged; only the presentation moves. Every sample deck's
+  CSV and load-BDF output is identical to before.
+  - **SOL 103.** The real-eigenvalue table gains MSC's EXTRACTION ORDER and GENERALIZED
+    STIFFNESS columns (φᵀKφ), and each eigenvector carries MSC's `EIGENVALUE =` /
+    `CYCLES = … R E A L   E I G E N V E C T O R   N O .` heading (AAUG 2023.1 PDF p.437).
+    **Breaks text parsers of the old table:** Sean074/smodal#12 is filed for smodal's
+    `parse_f06`, which would otherwise read RADIANS as Hz.
+  - **PARAM,GRDPNT** now prints MSC's GRID POINT WEIGHT GENERATOR block once per run
+    (QRG p.885). It shows MO = DᵀMD about the reference point, S, the mass and C.G. per
+    direction, I(S), I(Q) and Q. The reduction reproduces MSC's HA144B printout
+    (AAUG p.269). It used to be ignored with a warning. GRDPNT may be given in bulk data
+    or case control; two different values are refused.
+  - **Page headings.** A subcase's own TITLE, plus SUBTITLE and LABEL, reach the f06,
+    following MSC's rules (QRG p.679, p.658, p.471). The subcase TITLE used to be stored
+    and dropped, and SUBTITLE and LABEL were ignored. The viewer's case-control export
+    writes all three.
+  - **Trim variables** print MSC's ID, TYPE (RIGID BODY / CONTROL SURFACE), TRIM STATUS
+    (FIXED / FREE), value and units, with MSC's INTERCEPT row (AAUG p.235). This replaces
+    PRESCRIBED / FREE.
+  - **Stability derivatives.** One table, in MSC's layout (AAUG p.233): six coefficients
+    per trim variable, with RIGID, ELASTIC RESTRAINED and ELASTIC UNRESTRAINED columns.
+    The elastic columns now carry CX and CY (new in `restrained_derivs` and
+    `unrestrained_derivs`). The separate LATERAL/DIRECTIONAL block is gone.
+  - **Static-trim monitors** print the AERO / INERTIA / APPLIED / REACTION breakdown
+    under each structural monitor's total, as the transient blocks did.
+  - TRIMF stays accepted with a warning: its describers, SET and rigid load sets need
+    #85, #100 and #103 (filed as #105).
 - **AESTAT refuses a label that is not one of MSC's standard rigid-body labels** (#91).
   MSC reads ANGLEA, SIDES, ROLL, PITCH, YAW and URDD1–URDD6 (QRG 2024.1 PDF p.1153, Table 1)
   and gives any other label its forces through AELINK or DMI (p.1154 remark 3), which sbeam

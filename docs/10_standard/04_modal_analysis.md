@@ -162,10 +162,15 @@ Effective mass output is optional in phase 1.
 
 Output sections written to `results.f06`:
 
-1. **Real Eigenvalue Table** — mode number, eigenvalue (rad²/s²), radians/s, frequency (Hz),
-   generalised mass. MSC's EXTRACTION ORDER and GENERALIZED STIFFNESS columns are not
-   printed yet (#90)
-2. **Mode Shape Table** — for each mode: GID, T1, T2, T3, R1, R2, R3 (normalised per NORM setting)
+0. **Grid Point Weight Generator** — only with `PARAM,GRDPNT` (#90; see `02_card_reference.md`, PARAM)
+1. **Real Eigenvalue Table** — MSC's columns (AAUG 2023.1 PDF p.437; #90): MODE NO., EXTRACTION
+   ORDER (equal to the mode number: the modes are extracted in ascending order), EIGENVALUE
+   (rad²/s²), RADIANS, CYCLES (Hz), GENERALIZED MASS, GENERALIZED STIFFNESS (φᵀKφ from the
+   a-set matrices)
+2. **Mode Shape Table** — per mode, MSC's heading `EIGENVALUE = …` / `CYCLES = …   R E A L   E I G E N
+   V E C T O R   N O .   n`, then GID, T1, T2, T3, R1, R2, R3 (normalised per NORM setting).
+   Before v0.4.1 the heading was `E I G E N V E C T O R   NO. n   FREQ = … Hz` and the table had
+   no EXTRACTION ORDER or GENERALIZED STIFFNESS; Sean074/smodal#12 tracks its parser
 
 No effective-mass table is written.
 

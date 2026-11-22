@@ -329,6 +329,7 @@ One function, `recover_line_elements`, serves SOL 101, both SOL 144 paths and MA
 
 Output sections written to `results.f06`:
 
+0. **Grid Point Weight Generator** — only with `PARAM,GRDPNT` (#90; see `02_card_reference.md`, PARAM)
 1. **Applied Load Vector (OLOAD)** — echo of assembled load vector, only when the subcase
    requests `OLOAD` (GRAV loads print as an APPLIED GRAVITY LOADS block)
 2. **Nodal Displacements** — GID, T1, T2, T3, R1, R2, R3 per subcase

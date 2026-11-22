@@ -685,7 +685,7 @@ def _run_sol144(bulk: BulkData, cc: CaseControl) -> None:
 def _render_f06_export(bulk: BulkData) -> None:
     """Show f06 export controls after a successful analysis."""
     from sbeam.results.f06_writer import (
-        build_f06_sol101_text, build_f06_sol103_text,
+        build_f06_gpwg_text, build_f06_sol101_text, build_f06_sol103_text,
         build_f06_sol144_text, build_f06_sol144_diverg_text,
         build_f06_sol144_maneuver_text,
     )
@@ -707,8 +707,8 @@ def _render_f06_export(bulk: BulkData) -> None:
     st.divider()
     st.subheader("Export F06")
 
-    # Build combined f06 text for all subcases
-    parts = []
+    # Build combined f06 text for all subcases, after the GPWG block (PARAM,GRDPNT; #90)
+    parts = [build_f06_gpwg_text(bulk, cc)]
     if sol101 is not None:
         for sc_id, result in sorted(sol101.items()):
             parts.append(build_f06_sol101_text(cc, bulk, result, sc_id))

@@ -10,6 +10,8 @@ from sbeam.parser.bulk_structural import check_param
 class SubcaseControl:
     subcase_id: int
     title: str = ""
+    subtitle: str = ""                # page headings (QRG p.658, p.471; #90)
+    label: str = ""
     load_sid: Optional[int] = None    # LOAD set ID
     spc_sid: Optional[int] = None     # SPC set ID
     method_sid: Optional[int] = None  # METHOD (EIGRL) SID for SOL 103
@@ -33,6 +35,8 @@ class SubcaseControl:
 class CaseControl:
     sol: int
     title: str = ""
+    subtitle: str = ""                # above every SUBCASE: each subcase without its own
+    label: str = ""                   # above every SUBCASE: output not tied to a subcase
     subcases: list["SubcaseControl"] = field(default_factory=list)
     include: Optional[str] = None  # First INCLUDE path (back-compat; see `includes`)
     # The files the main deck INCLUDEs below BEGIN BULK, in file order.  Set by
@@ -40,6 +44,9 @@ class CaseControl:
     # bulk file with a small overlay this way, e.g. the Cessna 210 flagship + its body
     # panels.  `include` stays the first entry so single-INCLUDE callers are unaffected.
     includes: list[str] = field(default_factory=list)
+    # A case-control PARAM,GRDPNT (QRG p.570); one that disagrees with the bulk value is
+    # refused by parse_bdf: the QRG states no precedence between the two
+    grdpnt: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +93,8 @@ _OUTPUT_REQUESTS = {
 }
 
 # Read by the parser's own branches.
-_STRUCTURE = frozenset({"SOL", "TITLE", "SUBCASE", "INCLUDE", "BEGIN", "PARAM"})
+_STRUCTURE = frozenset({"SOL", "TITLE", "SUBTITLE", "LABEL", "SUBCASE", "INCLUDE", "BEGIN",
+                        "PARAM"})
 
 # Accepted and ignored without a message: none of these changes a result.
 _IGNORED = {
@@ -99,8 +107,6 @@ _IGNORED = {
     "ECHO": "bulk-data listing control",
     "ECHOON": "case-control listing control",
     "ECHOOFF": "case-control listing control",
-    "SUBTITLE": "page heading",
-    "LABEL": "page heading",
     "LINE": "lines per printed page",
     "MAXLINES": "output line limit",
     # MSC itself ignores MONITOR in SOL 144 (QRG PDF p.524, remark 2); sbeam prints
@@ -225,11 +231,11 @@ def _cc_set_id(command: str, value: str) -> int:
         ) from None
 
 
-def _cc_param(value: str) -> None:
-    """Apply the bulk PARAM rules to a case-control PARAM (QRG PDF p.570)."""
+def _cc_param(value: str) -> Optional[int]:
+    """Apply the bulk PARAM rules to a case-control PARAM (QRG PDF p.570); GRDPNT's value."""
     fields = ["PARAM"] + [f.strip() for f in value.split(",")]
     fields += [""] * (4 - len(fields))
-    check_param(fields)
+    return check_param(fields)
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +286,8 @@ def parse_case_control(lines: list[str]) -> CaseControl:
         raise ValueError("Case control section contains no SOL statement")
 
     sol = None
-    title = ""
+    headings = {"title": "", "subtitle": "", "label": ""}
+    grdpnt: Optional[int] = None
     subcases = []
     defaults = SubcaseControl(subcase_id=1)
     has_defaults = False
@@ -307,11 +314,12 @@ def parse_case_control(lines: list[str]) -> CaseControl:
         if command == "SOL":
             sol = _cc_sol(value)
 
-        elif command == "TITLE":
+        elif command in _TEXT_COMMANDS:
+            # Page headings (QRG p.679, p.658, p.471): a subcase's own, or the run's
             if current_sc is not None:
-                current_sc.title = value
+                setattr(current_sc, command.lower(), value)
             else:
-                title = value
+                headings[command.lower()] = value
 
         elif command == "SUBCASE":
             previous = current_sc.subcase_id if current_sc is not None else None
@@ -330,7 +338,9 @@ def parse_case_control(lines: list[str]) -> CaseControl:
             break
 
         elif command == "PARAM":
-            _cc_param(value)
+            grdpnt_cc = _cc_param(value)
+            if grdpnt_cc is not None:
+                grdpnt = grdpnt_cc
 
         elif command in _SELECTORS or command in _OUTPUT_REQUESTS:
             if describers:
@@ -373,4 +383,4 @@ def parse_case_control(lines: list[str]) -> CaseControl:
     if sol is None:
         raise ValueError("Case control section contains no SOL statement")
 
-    return CaseControl(sol=sol, title=title, subcases=subcases)
+    return CaseControl(sol=sol, subcases=subcases, grdpnt=grdpnt, **headings)

@@ -89,12 +89,14 @@ def export_bdf_text(
             include_paths = ["model.dat"]
     lines: list[str] = []
     lines.append(f"SOL {cc.sol}")
-    if cc.title:
-        lines.append(f"TITLE = {cc.title}")
+    for command in ("TITLE", "SUBTITLE", "LABEL"):          # page headings (#90)
+        if getattr(cc, command.lower()):
+            lines.append(f"{command} = {getattr(cc, command.lower())}")
     for sc in cc.subcases:
         lines.append(f"SUBCASE {sc.subcase_id}")
-        if sc.title:
-            lines.append(f"  TITLE = {sc.title}")
+        for command in ("TITLE", "SUBTITLE", "LABEL"):
+            if getattr(sc, command.lower()):
+                lines.append(f"  {command} = {getattr(sc, command.lower())}")
         for sid, keyword in [
             (sc.load_sid, "LOAD"), (sc.spc_sid, "SPC"), (sc.method_sid, "METHOD"),
             (sc.trim_sid, "TRIM"), (sc.trimobj_sid, "TRIMWGT"),

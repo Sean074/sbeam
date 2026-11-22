@@ -497,6 +497,38 @@ def _bar_stresses_block(
     lines.append("")
 
 
+
+def _headings(case_control: CaseControl, subcase_id: int, default: str) -> tuple[str, list[str]]:
+    """The subcase's page title and its SUBTITLE / LABEL lines (#90).
+
+    TITLE and SUBTITLE under a SUBCASE are that subcase's; above every SUBCASE they apply
+    to each subcase that gives none (QRG 2024.1 PDF p.679, p.658).  A LABEL above every
+    SUBCASE labels only output that is not subcase-dependent (p.471), so a subcase prints
+    its own LABEL only.  An absent subtitle or label prints no line, as before.
+    """
+    sc = next((c for c in getattr(case_control, "subcases", []) if c.subcase_id == subcase_id),
+              None)
+    title = (getattr(sc, "title", "") or getattr(case_control, "title", "") or default)
+    subtitle = getattr(sc, "subtitle", "") or getattr(case_control, "subtitle", "")
+    label = getattr(sc, "label", "")
+    return title, [t for t in (subtitle, label) if t]
+
+
+def _trim_units(label: str) -> str:
+    """The units column of MSC's trim table (AAUG 2023.1 PDF p.235).
+
+    MSC prints URDD in g ("LOAD FACTOR", "RAD/S/S PER G") because its decks set AUNITS;
+    sbeam refuses AUNITS (charter §7), so URDD values are in the deck's own units and are
+    labelled so (sbeam's wording).
+    """
+    if label in ("ROLL", "PITCH", "YAW"):
+        return "NONDIMEN. RATE"
+    if label in ("URDD1", "URDD2", "URDD3"):
+        return "LENGTH/TIME**2"
+    if label in ("URDD4", "URDD5", "URDD6"):
+        return "RADIANS/TIME**2"
+    return "RADIANS"                        # ANGLEA, SIDES and every control surface
+
 def _build_f06_sol101_text(
     case_control: CaseControl,
     bulk: BulkData,
@@ -508,7 +540,7 @@ def _build_f06_sol101_text(
     gids_sorted = sorted(bulk.grids.keys())
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    title = getattr(case_control, "title", "") or "sbeam SOL 101"
+    title, heading_lines = _headings(case_control, subcase_id, "sbeam SOL 101")
 
     lines = []
 
@@ -516,6 +548,7 @@ def _build_f06_sol101_text(
     lines.append(f"1                                                                           {'sbeam':>20}")
     lines.append("                                          SOL 101 STATIC ANALYSIS")
     lines.append(f"                                          {title}")
+    lines += [f"                                          {h}" for h in heading_lines]
     lines.append(f"                                          DATE: {now}")
     lines.append("")
 
@@ -595,6 +628,19 @@ def _build_f06_sol101_text(
     return "\n".join(lines) + "\n"
 
 
+# SOL 103 eigenvalue-table prefix: f"{mode:>10}{order:>12}" — 22 characters.
+_EIG_LEAD_1 = f"{'MODE':>10}{'EXTRACTION':>12}"
+_EIG_LEAD_2 = f"{'NO.':>10}{'ORDER':>12}"
+
+
+def _generalized_stiffness(result: Sol103Result) -> FloatArray:
+    """φᵢᵀ K φᵢ per mode, from the retained a-set matrices (equal to λᵢ·mᵢ to round-off)."""
+    if result.phi_free is not None and result.K_free is not None:
+        phi = np.asarray(result.phi_free)
+        return np.einsum("ij,ij->j", phi, np.asarray(result.K_free @ phi))
+    return np.asarray(result.eigenvalues) * np.asarray(result.generalized_masses)
+
+
 def _build_f06_sol103_text(
     case_control: CaseControl,
     bulk: BulkData,
@@ -606,7 +652,7 @@ def _build_f06_sol103_text(
     gids_sorted = sorted(bulk.grids.keys())
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    title = getattr(case_control, "title", "") or "sbeam SOL 103"
+    title, heading_lines = _headings(case_control, subcase_id, "sbeam SOL 103")
 
     lines = []
 
@@ -614,33 +660,36 @@ def _build_f06_sol103_text(
     lines.append(f"1                                                                           {'sbeam':>20}")
     lines.append("                                          SOL 103 NORMAL MODES")
     lines.append(f"                                          {title}")
+    lines += [f"                                          {h}" for h in heading_lines]
     lines.append(f"                                          DATE: {now}")
     lines.append("")
     lines.append(f"                           SUBCASE {subcase_id}")
     lines.append("")
 
-    # Real Eigenvalue Table
+    # Real Eigenvalue Table — MSC's columns (AAUG 2023.1 PDF p.437; #90).  EXTRACTION ORDER
+    # equals the mode number: sbeam's eigensolvers return the modes in ascending order.
+    gen_k = _generalized_stiffness(result)
     lines.append("                                          R E A L   E I G E N V A L U E S")
     lines.append("")
-    lines.append(
-        "   MODE NO.      EIGENVALUE            RADIANS             CYCLES             GENERALIZED MASS"
-    )
+    lines.append(_hdr(_EIG_LEAD_1, "EIGENVALUE", "RADIANS", "CYCLES", "GENERALIZED", "GENERALIZED"))
+    lines.append(_hdr(_EIG_LEAD_2, "", "", "", "MASS", "STIFFNESS"))
 
-    for i, (freq, lam, gm) in enumerate(
-        zip(result.frequencies_hz, result.eigenvalues, result.generalized_masses), start=1
+    for i, (freq, lam, gm, gk) in enumerate(
+        zip(result.frequencies_hz, result.eigenvalues, result.generalized_masses, gen_k), start=1
     ):
-        omega = 2.0 * 3.141592653589793 * freq
+        omega = 2.0 * math.pi * freq
         lines.append(
-            f"{i:>10}  {_fmt(lam)}  {_fmt(omega)}  {_fmt(freq)}  {_fmt(gm)}"
+            f"{i:>10}{i:>12}{_fmt(lam)}{_fmt(omega)}{_fmt(freq)}{_fmt(gm)}{_fmt(gk)}"
         )
 
     lines.append("")
 
-    # Mode shape tables
+    # Mode shape tables — MSC's two-line heading (AAUG 2023.1 PDF p.437)
     for mode_idx in range(result.mode_shapes.shape[1]):
-        freq = result.frequencies_hz[mode_idx]
+        lines.append(f"      EIGENVALUE = {_fmt(result.eigenvalues[mode_idx]).strip()}")
         lines.append(
-            f"                          E I G E N V E C T O R   NO. {mode_idx + 1}     FREQ = {freq:.6E} Hz"
+            f"          CYCLES = {_fmt(result.frequencies_hz[mode_idx]).strip()}"
+            f"         R E A L   E I G E N V E C T O R   N O .   {mode_idx + 1:>8}"
         )
         lines.append("")
         lines.append(_DISP_HDR)
@@ -681,7 +730,7 @@ def _build_f06_sol144_text(
     gids_sorted = sorted(bulk.grids.keys())
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    title = getattr(case_control, "title", "") or "sbeam SOL 144"
+    title, heading_lines = _headings(case_control, subcase_id, "sbeam SOL 144")
 
     # Locate the matching subcase to read AEROF/APRES output requests.
     subcase_obj = None
@@ -709,6 +758,7 @@ def _build_f06_sol144_text(
     lines.append(f"1                                                                           {'sbeam':>20}")
     lines.append("                                  SOL 144 STATIC AEROELASTIC RESPONSE")
     lines.append(f"                                          {title}")
+    lines += [f"                                          {h}" for h in heading_lines]
     lines.append(f"                                          DATE: {now}")
     lines.append("")
     lines.append(
@@ -775,15 +825,22 @@ def _build_f06_sol144_text(
         )
         lines.append("")
 
-    # ---- TRIM VARIABLES ----
+    # ---- TRIM VARIABLES — MSC's AEROELASTIC TRIM VARIABLES table (AAUG 2023.1 PDF p.235;
+    # #90): card ID, TYPE RIGID BODY / CONTROL SURFACE, TRIM STATUS FIXED / FREE, units.
+    # The INTERCEPT row is MSC's unit multiplier of the baseline (W2GJ) loading.
     lines.append("                                          T R I M   V A R I A B L E S")
     lines.append("")
     lines.append(f"      TRIM SOLUTION: {result.trim_mode.upper()}")
     lines.append("")
-    lines.append("      LABEL           TYPE             VALUE")
-    for label in sorted(result.trim_vars.keys()):
-        kind = "PRESCRIBED" if label.upper() in prescribed else "FREE"
-        lines.append(f"      {label:<12}    {kind:<12}  {_fmt(result.trim_vars[label])}")
+    lines.append(f"{'ID':>10}   {'LABEL':<12}{'TYPE':<18}{'TRIM STATUS':<14}{'VALUE OF UX':>13}")
+    lines.append(f"{'':>10}   {'INTERCEPT':<12}{'RIGID BODY':<18}{'FIXED':<14}{_fmt(1.0)}")
+    card_ids = {a.label: (a.id, "RIGID BODY") for a in bulk.aestats.values()}
+    card_ids.update({a.label: (a.id, "CONTROL SURFACE") for a in bulk.aesurfs.values()})
+    for label in sorted(result.trim_vars, key=lambda lb: (card_ids.get(lb, (0, ""))[0], lb)):
+        cid, kind = card_ids.get(label, (0, "RIGID BODY"))
+        status = "FIXED" if label.upper() in prescribed else "FREE"
+        lines.append(f"{cid:>10}   {label:<12}{kind:<18}{status:<14}"
+                     f"{_fmt(result.trim_vars[label])}   {_trim_units(label)}")
     lines.append("")
     # Step 67a — the yaw-rate wing term is scaled by the trim loading, so the
     # trim is a fixed point rather than a single linear solve.  Echoed only when
@@ -851,23 +908,22 @@ def _build_f06_sol144_text(
     lines.append("                              S T A B I L I T Y   D E R I V A T I V E S")
     lines.append("")
     _coefficient_frame_block(lines, bulk)
-    lines.append("                          --------------- RIGID ---------------    ----- ELASTIC RESTRAINED -----    ---- ELASTIC UNRESTRAINED ----")
-    lines.append("      LABEL              CZ            CMY            CX            CY            CZ            CMY            CZ            CMY")
+    # MSC's layout (AAUG 2023.1 PDF p.233; #90): six coefficients per trim variable in
+    # one table.  sbeam's RIGID column is MSC's RIGID UNSPLINED (box forces of the
+    # variable's normalwash); sbeam has no RIGID SPLINED column.  URDD columns have no
+    # unrestrained entry (they are the mean-axis accelerations): N/A.  CX/CY/CZ and CMY
+    # are /(Q·SREF) and /(Q·SREF·CREF); CMX and CMZ /(Q·SREF·BREF).
+    lines.append(f"      {'TRIM VARIABLE':<16}{'COEFFICIENT':<13}{'RIGID':>13}"
+                 f"{'ELASTIC':>13}{'ELASTIC':>13}")
+    lines.append(f"      {'':<29}{'':>13}{'RESTRAINED':>13}{'UNRESTRAINED':>13}")
     for label in sorted(result.trim_vars.keys()):
         rg = result.rigid_derivs.get(label, {})
         el = result.restrained_derivs.get(label, {})
         un = unrest.get(label)
-        # URDD acceleration columns have no unrestrained entry (they are the
-        # mean-axis ü_r unknowns); print N/A there.
-        un_cz = _fmt(un['CZ']) if un else "          N/A"
-        un_cm = _fmt(un['CMY']) if un else "          N/A"
-        lines.append(
-            f"      {label:<12}  "
-            f"{_fmt(rg.get('CZ', 0.0))}{_fmt(rg.get('CMY', 0.0))}"
-            f"{_fmt(rg.get('CX', 0.0))}{_fmt(rg.get('CY', 0.0))}"
-            f"{_fmt(el.get('CZ', 0.0))}{_fmt(el.get('CMY', 0.0))}"
-            f"{un_cz}{un_cm}"
-        )
+        for k, coeff in enumerate(("CX", "CY", "CZ", "CMX", "CMY", "CMZ")):
+            un_v = _fmt(un.get(coeff, 0.0)) if un else "          N/A"
+            lines.append(f"      {label if k == 0 else '':<16}{coeff:<13}"
+                         f"{_fmt(rg.get(coeff, 0.0))}{_fmt(el.get(coeff, 0.0))}{un_v}")
     lines.append("")
     if result.unrestrained_intercepts:
         ic = result.unrestrained_intercepts
@@ -876,23 +932,6 @@ def _build_f06_sol144_text(
             f"CZ0 ={_fmt(ic.get('CZ0', 0.0))}    CMY0 ={_fmt(ic.get('CMY0', 0.0))}"
         )
         lines.append("")
-
-    # ---- LATERAL / DIRECTIONAL DERIVATIVES (roll/yaw moments, Step 52) ----
-    # CMX = rolling-moment coeff (C_lp from ROLL, C_lβ from SIDES); CMZ = yawing-
-    # moment coeff (C_nr from YAW).  Both about the AERO reference, /(S_ref·b_ref).
-    lines.append("                    L A T E R A L / D I R E C T I O N A L   D E R I V A T I V E S")
-    lines.append("")
-    lines.append("                          ------- RIGID -------    -- ELASTIC RESTRAINED --")
-    lines.append("      LABEL              CMX           CMZ            CMX           CMZ")
-    for label in sorted(result.trim_vars.keys()):
-        rg = result.rigid_derivs.get(label, {})
-        el = result.restrained_derivs.get(label, {})
-        lines.append(
-            f"      {label:<12}  "
-            f"{_fmt(rg.get('CMX', 0.0))}{_fmt(rg.get('CMZ', 0.0))}"
-            f"{_fmt(el.get('CMX', 0.0))}{_fmt(el.get('CMZ', 0.0))}"
-        )
-    lines.append("")
 
     # ---- HINGE-MOMENT DERIVATIVES (about each AESURF hinge axis, CID1 + CID2 halves) ----
     # Two columns, as MSC prints them (AAUG 2023.1 PDF p.234): RIGID is the box force of
@@ -967,7 +1006,7 @@ def _build_f06_sol144_text(
 
     # ---- MONITOR POINT INTEGRATED LOADS (MON4) ----
     if result.monitor_loads:
-        _monitor_block(lines, result.monitor_loads)
+        _monitor_block(lines, result.monitor_loads, contributions=True)   # #90: as transients
 
     # ---- SECTION CUT RUNNING LOADS (MONSECT, Monitor Phase 2) ----
     if result.section_loads:
@@ -1059,10 +1098,11 @@ def _build_f06_sol144_diverg_text(
     gids_sorted = sorted(bulk.grids.keys())
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    title = getattr(case_control, "title", "") or "sbeam SOL 144"
+    title, heading_lines = _headings(case_control, subcase_id, "sbeam SOL 144")
 
     lines = []
     lines.append(f"1    {title}")
+    lines += [f"     {h}" for h in heading_lines]
     lines.append(f"     SOL 144 AEROELASTIC DIVERGENCE   SUBCASE {subcase_id}   {now}")
     lines.append("")
 
@@ -1122,10 +1162,11 @@ def _build_f06_sol144_maneuver_text(
     gids_sorted = sorted(bulk.grids.keys())
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    title = getattr(case_control, "title", "") or "sbeam SOL 144"
+    title, heading_lines = _headings(case_control, subcase_id, "sbeam SOL 144")
 
     lines = []
     lines.append(f"1    {title}")
+    lines += [f"     {h}" for h in heading_lines]
     lines.append(
         f"     SOL 144 TRANSIENT MANEUVER LOADS (QUASI-STEADY)   "
         f"SUBCASE {subcase_id}   {now}"
@@ -1254,3 +1295,42 @@ build_f06_sol103_text = _build_f06_sol103_text
 build_f06_sol144_text = _build_f06_sol144_text
 build_f06_sol144_diverg_text = _build_f06_sol144_diverg_text
 build_f06_sol144_maneuver_text = _build_f06_sol144_maneuver_text
+
+
+def build_f06_gpwg_text(bulk: BulkData, case_control: Optional[CaseControl] = None) -> str:
+    """MSC's grid point weight generator block, or "" when PARAM,GRDPNT is not set (#90).
+
+    Layout after MSC's printout (AAUG 2023.1 PDF p.269); written once per run, ahead of
+    the subcase output.  Values are in the deck's mass units (sbeam has no WTMASS).  It is
+    not subcase-dependent output, so it carries the run's TITLE, SUBTITLE and LABEL
+    (QRG p.471 remark 2).
+    """
+    from sbeam.gpwg import compute_gpwg_table
+    table = compute_gpwg_table(bulk)
+    if table is None:
+        return ""
+    pad = " " * 40
+
+    def matrix(name: str, rows: np.ndarray) -> list[str]:
+        out = [f"{pad}{name:^{_FIELD_W * len(rows[0]) + 4}}".rstrip()]
+        out += [f"{pad}*{''.join(_fmt(v) for v in row)} *" for row in rows]
+        return out
+
+    run_headings = ([case_control.title, case_control.subtitle, case_control.label]
+                    if case_control is not None else [])
+    lines = ["1" + " " * 75 + f"{'sbeam':>20}",
+             *(f"{' ' * 42}{h}" for h in run_headings if h),
+             "                         O U T P U T   F R O M   G R I D   P O I N T   "
+             "W E I G H T   G E N E R A T O R",
+             f"{pad}{'REFERENCE POINT =':>40}{table.reference_point:>10}"]
+    lines += matrix("M O", table.mo)
+    lines += matrix("S", table.s)
+    lines.append(f"{pad}  DIRECTION")
+    lines.append(f"{pad}  MASS AXIS SYSTEM (S)" + _hdr("", "MASS", "X-C.G.", "Y-C.G.", "Z-C.G."))
+    for axis, m, cg in zip("XYZ", table.mass, table.cg):
+        lines.append(f"{pad}{axis:>12}{'':10}" + "".join(_fmt(v) for v in (m, *cg)))
+    lines += matrix("I(S)", table.i_s)
+    lines += matrix("I(Q)", np.diag(table.i_q))
+    lines += matrix("Q", table.q)
+    lines.append("")
+    return "\n".join(lines) + "\n"

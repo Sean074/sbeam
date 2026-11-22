@@ -148,6 +148,7 @@ commented at its definition, and the ones below are the ones consumers read.
 | Name | Import | Signature |
 |---|---|---|
 | `build_f06_sol101_text`, `build_f06_sol103_text`, `build_f06_sol144_text`, `build_f06_sol144_diverg_text`, `build_f06_sol144_maneuver_text` | `from sbeam.results.f06_writer import …` | `(case_control, bulk, result, subcase_id) -> str`, one f06 block per subcase; concatenate for a multi-subcase file as the CLI does. |
+| `build_f06_gpwg_text` | `from sbeam.results.f06_writer import build_f06_gpwg_text` | `(bulk, case_control=None) -> str` | MSC's grid point weight generator block for `PARAM,GRDPNT` (#90), `""` when GRDPNT is unset; the CLI writes it once, ahead of the subcase blocks. |
 | `write_f06_sol101`, `write_f06_sol103`, `write_f06_sol144` | `from sbeam.results.f06_writer import …` | `(filepath, case_control, bulk, result, subcase_id=1) -> None`, single-subcase convenience wrappers. |
 | `write_aero_load_cards`, `write_maneuver_load_cards` | `from sbeam.results.load_export import …` | `(filepath, bulk, results: dict[int, Sol144TrimResult]) -> None` |
 | `write_monitor_csv`, `write_section_loads_csv` | `from sbeam.results.load_export import …` | `(filepath, results: dict[int, Sol144TrimResult]) -> None` |

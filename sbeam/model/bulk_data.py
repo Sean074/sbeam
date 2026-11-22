@@ -21,6 +21,8 @@ from .property import Pbar, Pbush, Prod
 
 @dataclass
 class BulkData:
+    # PARAM,GRDPNT (QRG p.885; #90): -1 = no GPWG printout, 0 = basic origin, > 0 = grid
+    grdpnt: int = -1
     grids: dict[int, Grid] = field(default_factory=dict)
     cbars: dict[int, Cbar] = field(default_factory=dict)
     crods: dict[int, Crod] = field(default_factory=dict)       # #38 rod elements

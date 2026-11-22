@@ -10,7 +10,7 @@ V-GUST2    The +/- pair straddles 1 g, with incidence ordered by n —
            signs relative to each other, never absolute (charter §6).
 V-GUST3    The negative-n (down-gust) case solves and its URDD3 is positive.
 V-GUST4    Monitor and section-cut loads flow through unchanged.
-V-GUST5    The f06 provenance block, and URDD3 reported as PRESCRIBED.
+V-GUST5    The f06 provenance block, and URDD3 reported as FIXED (prescribed).
 V-GUST6    A deck without GUSTLF emits no gust block.
 V-GUST7    DEF-M20 (#23): a negative URDD3 against an absent or z-up RCSID
            warns rather than silently trimming inverted lift.
@@ -162,9 +162,9 @@ class TestVGust5F06Block:
 
     def test_urdd3_is_reported_prescribed(self, f06):
         """It comes from GUSTLF, not the TRIM card — but it is not a solved unknown."""
-        urdd3_rows = [ln for ln in f06.splitlines() if ln.strip().startswith("URDD3 ")]
+        urdd3_rows = [ln for ln in f06.splitlines() if " URDD3 " in ln and "RIGID BODY" in ln]
         assert urdd3_rows, "no URDD3 row in the trim-variable table"
-        assert "PRESCRIBED" in urdd3_rows[0], urdd3_rows[0]
+        assert " FIXED " in urdd3_rows[0], urdd3_rows[0]        # MSC's TRIM STATUS (#90)
 
     def test_delta_n_is_n_minus_one(self, model, f06):
         _cc, bulk, _aero, _cache = model
