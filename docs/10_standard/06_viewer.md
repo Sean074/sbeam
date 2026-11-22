@@ -238,8 +238,8 @@ solve, and/or exports a self-contained corrected BDF.
    `bulk.w2gjs` / `bulk.aecorrs`, **clearing any cards this tool injected on a prior build** (tracked
    in `aero_corr_sids`) so re-applies replace rather than stack, then nulls `aero_model` /
    `aero_result` / `aero_result_unc` so the Aero tab recomputes. `_warn_conflicts` flags a
-   pre-existing **WKK** on a corrected surface (WKK precedence in `build_aero_model` shadows WT2) or a
-   non-generated WT2 on the same surface. **Download cards (.bdf)** emits the bulk-data snippet via
+   pre-existing **WKK** on a corrected surface or a non-generated WT2 on the same surface, both of
+   which the solver refuses (#96). **Download cards (.bdf)** emits the bulk-data snippet via
    `section_correction.cards_to_bdf`. **Full corrected BDF** (`build_corrected_bdf`) splices those
    cards into the originally uploaded model text (before `ENDDATA`) with a provenance header (source
    CSV, date, Mach/α/β, corrected CAEROs) — a self-contained, re-parseable model. The filename input

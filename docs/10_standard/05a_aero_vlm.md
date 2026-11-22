@@ -438,14 +438,19 @@ W2GJ  SID  CAERO_EID  D1  D2  D3  D4  D5  D6
 
 ## AIC Corrections (Wkk, WT2)
 
-Phase A provides two correction tiers to match VLM predictions to higher-fidelity
-CFD or wind-tunnel data. The correction precedence in `build_aero_model()` is:
+Phase A provides two corrections to match VLM predictions to higher-fidelity CFD or
+wind-tunnel data. Each acts on its own CAERO1 surfaces, and both act after the solve
+(#71), so `build_aero_model()` combines them across surfaces (#96):
 
 ```
-WKK card present   →  apply_wkk  (returns diag(w)·AJJ⁻¹, MSC placement #71; per-CAERO1 scatter)
-AECORR WT2 present →  diag(r)·AJJ⁻¹, r = target / reference at each card's MACH (#72) — all WT2 cards combined
-No correction      →  np.linalg.solve(AJJ, I)
+AJJ*⁻¹ = diag(w) · diag(r) · AJJ⁻¹
+  w = WKK weight on WKK surfaces, 1 elsewhere          (apply_wkk, MSC placement #71)
+  r = target / reference at each AECORR's MACH on WT2 surfaces, 1 elsewhere   (#72)
 ```
+
+A surface carrying both a WKK and a WT2 AECORR is refused, naming both cards: a WKK
+scaling a WT2 surface would move it off its target. **Before #96** the code read `if WKK
+… elif WT2`, so any WKK card, on any surface, dropped every WT2 card without a message.
 
 ### Card binding is validated, not lenient (DEF-M8 / DEF-L1)
 
@@ -457,7 +462,7 @@ closes. All checks are card-labelled (`CARDNAME sid: …`, the CHORDCP house sty
 |------|----------|
 | `W2GJ` | two cards on one CAERO1; data length ≠ that surface's box count (either direction); a `caero_eid` with no meshed boxes |
 | `WKK` | two cards on one CAERO1; length ≠ that surface's box count. A zero weight is accepted since #71: it removes that box's lift (MSC's factor), where it used to make the corrected AIC singular |
-| `AECORR` (WT2) | target length ≠ that surface's box count (the message names the #72 layout); MACH blank or outside [0, 1) |
+| `AECORR` (WT2) | target length ≠ that surface's box count (the message names the #72 layout); MACH blank or outside [0, 1); two WT2 cards on one CAERO1 (the second used to overwrite the first); a WKK on the same CAERO1 (#96) |
 | `STRIPK` | two cards on one CAERO1; length ≠ that surface's box count (omit the card entirely to take the PSTRIP `SLOPE0` default) |
 | section-data CSV | `caero` not in the model (when the caller supplies the model); duplicate `eta` within one `(caero, var, mach, a_lo, a_hi)` curve |
 | body TOTAL row | blank/NaN in a **required** column (`cm_a`, `cm0`, `cn_a`, `a0`); only the roll columns `cl_a`/`cl0` default to 0 |
@@ -823,8 +828,8 @@ pressure and the span-load curves. **Download cards (.bdf)** emits the pairs via
 **Full corrected BDF** (`build_corrected_bdf`) splices them into the uploaded model text before
 `ENDDATA` with a provenance header (source CSV, date, Mach/α/β), giving a self-contained,
 re-parseable model — one per Mach. A separate-file + `INCLUDE` layout is not used, so each export
-is one self-contained deck. Pre-existing **WKK** (which takes precedence over WT2 in
-`build_aero_model`) or a non-generated WT2 on a corrected surface are flagged as warnings.
+is one self-contained deck. A pre-existing **WKK** or non-generated WT2 on a corrected
+surface is flagged as a warning before applying, since the solver refuses either (#96).
 
 ## Cruciform body panels — total-aircraft moment correction (`body_correction.py`, Step A9)
 
@@ -1019,7 +1024,7 @@ Factory function that orchestrates the full Phase A assembly pipeline:
 1. Reject half-span models — raise `ValueError` if `AEROS SYMXZ ≠ 0` or `SYMXY ≠ 0`
 2. Mesh all CAERO1 elements in ascending EID order → concatenated `AeroBox` list
 3. Build raw AIC matrix via `build_ajj(boxes)`
-4. Apply correction at highest available tier (WKK → WT2 → identity)
+4. Apply the corrections, each on its own surfaces: `diag(w)·diag(r)·AJJ⁻¹` (#96)
 5. Build `Skj`, `Djk`, and `wg` integration quantities
 6. Package into `AeroModel` and return
 

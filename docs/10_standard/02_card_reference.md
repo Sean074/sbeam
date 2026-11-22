@@ -1662,7 +1662,9 @@ AECORR, 20, WT2, 100, 0.0, 0.45, 0.30, 0.22, 0.18
 
 ```
 
-**Correction precedence** in `build_aero_model()`: WKK → WT2 → identity lstsq.
+**Corrections combine across surfaces** in `build_aero_model()` (#96): WKK weights its
+surfaces, WT2 its own; one CAERO1 may carry one of them, and a WKK plus a WT2 (or two WT2
+cards) on one surface is refused. Before #96 any WKK card dropped every WT2 card.
 Strip body panels (CAERO1 PID → PSTRIP) bypass this entirely — see `STRIPK`.
 
 ---

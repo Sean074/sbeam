@@ -258,6 +258,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and warnings, before and after.
 
 ### Fixed
+- **A WKK card no longer switches off every AECORR WT2 card** (#96). The operator was built
+  with `if WKK … elif WT2`, so a WKK on any surface, even a unit weight on the wing, left the
+  tail's WT2 calibration unapplied without a message (the viewer warned; the solver and the
+  `sbeam` command did not). Both corrections act after the solve since #71, so they now
+  combine across surfaces: `diag(w)·diag(r)·AJJ⁻¹`. A surface carrying both is refused,
+  naming the two cards, and so is a second WT2 card on one surface, which used to overwrite
+  the first. Decks with one kind of correction are bit-identical. Gates in
+  `tests/aero/test_corrections.py::TestWkkAndWt2Together` (the issue's probe, bit-exact).
 - **A two-grid CBUSH between separated grids no longer resists rigid-body rotation** (#97).
   The element acted on the relative grid motions with no arm to the spring, so a PBUSH with
   K2, K3, K5 or K6 between grids 2 apart gave ∓4.0e6 at Ty for a rigid rotation of 1 rad,

@@ -524,3 +524,71 @@ class TestWkkAtTheOperatingPoint:
         np.testing.assert_allclose(with_wkk.displacements, ref.displacements,
                                    rtol=1e-8, atol=1e-14)
         np.testing.assert_allclose(with_wkk.net_loads, ref.net_loads, rtol=1e-8, atol=1e-8)
+
+
+class TestWkkAndWt2Together:
+    """#96 — a WKK card used to switch off every AECORR WT2 card, on every surface.
+
+    ``if wkk_cards: … elif wt2_cards: …`` meant a unit-weight WKK on the wing left the
+    tail's WT2 calibration unapplied without a message.  Both corrections act after the
+    solve (#71), so they now combine across surfaces; one surface takes one of them.
+    """
+
+    @staticmethod
+    def _tail_wt2(bulk, base):
+        tail = [k for k, b in enumerate(base.boxes) if b.caero_eid == TAIL_EID]
+        bulk.aecorrs[20] = Aecorr(sid=20, method="WT2", caero_eid=TAIL_EID, mach=0.0,
+                                  target=[5.0] * len(tail))
+        return tail
+
+    def test_wt2_on_the_tail_survives_a_wkk_on_the_wing(self):
+        """The issue's probe: tail rows equal the WT2-alone rows, wing rows the WKK ones."""
+        nspan = nchord = 3
+        base = build_aero_model(_wing_and_tail_bulk(nspan, nchord), mach=0.0)
+        alone = _wing_and_tail_bulk(nspan, nchord)
+        tail = self._tail_wt2(alone, base)
+        wt2_only = build_aero_model(alone, mach=0.0)
+        both = _wing_and_tail_bulk(nspan, nchord)
+        self._tail_wt2(both, base)
+        both.wkks[10] = Wkk(sid=10, caero_eid=CAERO_EID, data=[1.0] * nspan * nchord)
+        model = build_aero_model(both, mach=0.0)
+        assert not np.allclose(wt2_only.ajj_inv_corr[tail], base.ajj_inv_corr[tail])
+        np.testing.assert_array_equal(model.ajj_inv_corr, wt2_only.ajj_inv_corr)
+
+    def test_a_non_unit_wkk_scales_only_its_own_surface(self):
+        nspan = nchord = 3
+        base = build_aero_model(_wing_and_tail_bulk(nspan, nchord), mach=0.0)
+        alone = _wing_and_tail_bulk(nspan, nchord)
+        tail = self._tail_wt2(alone, base)
+        wt2_only = build_aero_model(alone, mach=0.0)
+        both = _wing_and_tail_bulk(nspan, nchord)
+        self._tail_wt2(both, base)
+        both.wkks[10] = Wkk(sid=10, caero_eid=CAERO_EID, data=[0.5] * nspan * nchord)
+        model = build_aero_model(both, mach=0.0)
+        wing = [k for k, b in enumerate(model.boxes) if b.caero_eid == CAERO_EID]
+        np.testing.assert_allclose(model.ajj_inv_corr[tail], wt2_only.ajj_inv_corr[tail],
+                                   rtol=1e-12)
+        np.testing.assert_allclose(model.ajj_inv_corr[wing], 0.5 * base.ajj_inv_corr[wing],
+                                   rtol=1e-12)
+
+    def test_wkk_and_wt2_on_one_surface_are_refused(self):
+        nspan = nchord = 3
+        base = build_aero_model(_wing_and_tail_bulk(nspan, nchord), mach=0.0)
+        bulk = _wing_and_tail_bulk(nspan, nchord)
+        self._tail_wt2(bulk, base)
+        bulk.wkks[10] = Wkk(sid=10, caero_eid=TAIL_EID, data=[1.0] * nspan * nchord)
+        with pytest.raises(ValueError, match=r"AECORR 20 \(WT2\) and WKK 10 both correct "
+                                             r"CAERO1 1000"):
+            build_aero_model(bulk, mach=0.0)
+
+    def test_two_wt2_cards_on_one_surface_are_refused(self):
+        """The second card used to overwrite the first without a message."""
+        nspan = nchord = 3
+        base = build_aero_model(_wing_and_tail_bulk(nspan, nchord), mach=0.0)
+        bulk = _wing_and_tail_bulk(nspan, nchord)
+        tail = self._tail_wt2(bulk, base)
+        bulk.aecorrs[21] = Aecorr(sid=21, method="WT2", caero_eid=TAIL_EID, mach=0.0,
+                                  target=[4.0] * len(tail))
+        with pytest.raises(ValueError, match=r"AECORR 21: CAERO1 1000 already has a WT2 "
+                                             r"AECORR \(SID 20\)"):
+            build_aero_model(bulk, mach=0.0)
