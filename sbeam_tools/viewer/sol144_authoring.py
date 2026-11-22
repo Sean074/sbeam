@@ -1,4 +1,4 @@
-"""Streamlit-free logic for the viewer's SOL 144 / MLOADS authoring tab (P12).
+"""Streamlit-free logic for the viewer's SOL 144 / MANVR authoring tab (P12).
 
 Everything here is plain-Python and unit-testable: SID allocation and clash
 detection, CAERO1 box-range bounds for AELIST authoring, THRU-aware integer
@@ -141,7 +141,7 @@ def parse_float_list(text: str) -> list[float]:
 
 
 def label_options(bulk: BulkData, modal_only: bool = False) -> list[str]:
-    """Trim-variable labels an MLDCOMD/TRIM row may use.
+    """Trim-variable labels an MANCMD/TRIM row may use.
 
     ``modal_only`` restricts to AESURF labels — under the modal (free-flight)
     solver, rigid-state AESTAT labels are outputs and commanding one is a
@@ -287,10 +287,10 @@ def gen_doublet(t1: float, t2: float, amp: float, y0: float,
 
 
 # ---------------------------------------------------------------------------
-# Two-pass MLDCOMD automation (S4): tables authored as increments relative to
+# Two-pass MANCMD automation (S4): tables authored as increments relative to
 # trim, resolved to absolute TABLED1 cards once a solve supplies the trim
 # control values (per mass case — command tables are absolute AND mass-case
-# specific, so each MLOADS/mass-case pair gets its own table).
+# specific, so each MANVR/mass-case pair gets its own table).
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -336,11 +336,11 @@ def resolve_increment_tables(
     trim_results: Optional[dict[int, Sol144TrimResult]] = None,
     maneuver_results: Optional[dict[int, ManeuverResult]] = None,
 ) -> tuple[list[tuple[str, Any]], list[str], list[str], list["IncrementSpec"]]:
-    """Resolve increment command specs into absolute TABLED1/MLDCOMD/MLOADS cards.
+    """Resolve increment command specs into absolute TABLED1/MANCMD/MANVR cards.
 
     Returns ``(cards, report, errors, resolved)`` where ``cards`` is a list of
     ``(family, card)`` pairs ready for ``apply_card`` (tables first, then the
-    rewritten MLDCOMDs, then any MLOADS whose MLDCOMD reference changed),
+    rewritten MLDCOMDs, then any MANVR whose MANCMD reference changed),
     ``report`` describes the offsets used, ``errors`` lists specs that could
     not be resolved (nothing is returned for a spec that errors), and
     ``resolved`` is the subset of ``specs`` that produced cards.
@@ -352,7 +352,7 @@ def resolve_increment_tables(
 
     next_tid = next_free_sid(bulk, "tabled1")
     next_comd = next_free_sid(bulk, "mldcomd")
-    # Pending MLDCOMD command maps, keyed by mloads sid (specs may stack
+    # Pending MANCMD command maps, keyed by mloads sid (specs may stack
     # several labels onto one driver).
     pending: dict[int, dict[str, int]] = {}
     comd_sids: dict[int, int] = {}
@@ -360,31 +360,31 @@ def resolve_increment_tables(
     for spec in specs:
         mloads = bulk.mloads.get(spec.mloads_sid)
         if mloads is None:
-            errors.append(f"MLOADS {spec.mloads_sid} not found.")
+            errors.append(f"MANVR {spec.mloads_sid} not found.")
             continue
         subcases = [sc for sc in cc.subcases if sc.mloads_sid == spec.mloads_sid]
         if not subcases:
-            errors.append(f"No subcase selects MLOADS {spec.mloads_sid}.")
+            errors.append(f"No subcase selects MANVR {spec.mloads_sid}.")
             continue
         mass_sids = {sc.massset_sid for sc in subcases}
         if len(mass_sids) > 1:
             errors.append(
-                f"MLOADS {spec.mloads_sid} is shared by subcases with different "
+                f"MANVR {spec.mloads_sid} is shared by subcases with different "
                 "MASSCASEs — command tables are mass-case specific, so give "
-                "each mass case its own MLOADS (the sample-deck convention)."
+                "each mass case its own MANVR (the sample-deck convention)."
             )
             continue
         sc = subcases[0]
         if len(spec.points) < 2:
             errors.append(
-                f"MLOADS {spec.mloads_sid} {spec.label}: an increment history "
+                f"MANVR {spec.mloads_sid} {spec.label}: an increment history "
                 "needs at least two points.")
             continue
         trim_val = _trim_value_for_subcase(
             bulk, sc, mloads, spec.label, trim_results, maneuver_results)
         if trim_val is None:
             errors.append(
-                f"MLOADS {spec.mloads_sid} {spec.label}: no solved trim value — "
+                f"MANVR {spec.mloads_sid} {spec.label}: no solved trim value — "
                 "run the trim/maneuver solve first (or author the table as "
                 "absolute values).")
             continue
@@ -393,7 +393,7 @@ def resolve_increment_tables(
         ys = [trim_val + dy for _, dy in spec.points]
         if any(xs[i + 1] <= xs[i] for i in range(len(xs) - 1)):
             errors.append(
-                f"MLOADS {spec.mloads_sid} {spec.label}: increment abscissae "
+                f"MANVR {spec.mloads_sid} {spec.label}: increment abscissae "
                 "must be strictly increasing.")
             continue
         table = Tabled1(tid=next_tid, xs=xs, ys=ys)
@@ -412,7 +412,7 @@ def resolve_increment_tables(
         mass_label = (bulk.masssets[sc.massset_sid].label
                       if sc.massset_sid in bulk.masssets else "BASELINE")
         report.append(
-            f"MLOADS {spec.mloads_sid} ({mass_label}) {spec.label}: trim value "
+            f"MANVR {spec.mloads_sid} ({mass_label}) {spec.label}: trim value "
             f"{trim_val:.6g} + increments -> TABLED1 {table.tid}"
         )
         resolved.append(spec)
@@ -479,19 +479,19 @@ def validate_sol144_authoring(
         drivers = [d for d in (sc.trim_sid, sc.diverg_sid, sc.mloads_sid)
                    if d is not None]
         if not drivers:
-            errors.append(f"{tag}: no TRIM, DIVERG, or MLOADS selected — "
+            errors.append(f"{tag}: no TRIM, DIVERG, or MANVR selected — "
                           "a SOL 144 subcase needs a driver.")
         if sc.mloads_sid is not None and (sc.trim_sid is not None
                                           or sc.diverg_sid is not None):
-            errors.append(f"{tag}: MLOADS cannot combine with TRIM/DIVERG "
+            errors.append(f"{tag}: MANVR cannot combine with TRIM/DIVERG "
                           "in one subcase.")
         # #6: a TRIM subcase takes a LOAD set (applied structural load in the
-        # trim RHS); MLOADS and DIVERG-only subcases do not (the solver raises).
+        # trim RHS); MANVR and DIVERG-only subcases do not (the solver raises).
         if sc.load_sid is not None:
             if sc.trim_sid is None:
                 errors.append(f"{tag}: LOAD combines only with a TRIM subcase "
                               "(an applied structural load enters the trim "
-                              "balance; MLOADS and DIVERG-only subcases drop "
+                              "balance; MANVR and DIVERG-only subcases drop "
                               "it, so the solver refuses the request).")
             else:
                 sids = [sc.load_sid]
@@ -508,8 +508,8 @@ def validate_sol144_authoring(
                                   f"{gravs}; gravity enters a trim through URDD3 "
                                   "only, so a GRAV in the trim LOAD set is refused.")
         for sid, family, name in [
-            (sc.trim_sid, "trim", "TRIM"), (sc.trimobj_sid, "trimobj", "TRIMOBJ"),
-            (sc.diverg_sid, "diverg", "DIVERG"), (sc.mloads_sid, "mloads", "MLOADS"),
+            (sc.trim_sid, "trim", "TRIM"), (sc.trimobj_sid, "trimobj", "TRIMWGT"),
+            (sc.diverg_sid, "diverg", "DIVERG"), (sc.mloads_sid, "mloads", "MANVR"),
         ]:
             if sid is not None and sid not in family_store(bulk, family):
                 errors.append(f"{tag}: {name} {sid} not found in the bulk data.")
@@ -530,13 +530,13 @@ def validate_sol144_authoring(
                          "no DOFs remain to solve.")
         elif len(free) > len(prescribed) and not bulk.trimobjs:
             warns.append(f"TRIM {sid}: over-determined ({len(free)} free vs "
-                         f"{len(prescribed)} prescribed) with no TRIMOBJ card.")
+                         f"{len(prescribed)} prescribed) with no TRIMWGT card.")
 
-    # --- MLOADS family cross-references + solver preconditions ---
+    # --- MANVR family cross-references + solver preconditions ---
     mloads_selected = [sc.mloads_sid for sc in cc.subcases
                        if sc.mloads_sid is not None]
     if mloads_selected and not bulk.supports:
-        errors.append("An MLOADS subcase needs a SUPORT card (free-flight "
+        errors.append("An MANVR subcase needs a SUPORT card (free-flight "
                       "r-set) — none is defined.")
     for sid in mloads_selected:
         ml = bulk.mloads.get(sid)
@@ -544,44 +544,43 @@ def validate_sol144_authoring(
             continue
         mldtrim = bulk.mldtrims.get(ml.mldtrim)
         if mldtrim is None:
-            errors.append(f"MLOADS {sid}: MLDTRIM {ml.mldtrim} not found.")
+            errors.append(f"MANVR {sid}: MANTRIM {ml.mldtrim} not found.")
         elif mldtrim.trim_sid not in bulk.trims:
-            errors.append(f"MLDTRIM {mldtrim.sid}: TRIM {mldtrim.trim_sid} "
+            errors.append(f"MANTRIM {mldtrim.sid}: TRIM {mldtrim.trim_sid} "
                           "not found.")
-        elif ml.selects_modal and bulk.trims[mldtrim.trim_sid].rhoref <= 0.0:
+        elif ml.selects_modal and mldtrim.rho <= 0.0:
             errors.append(
-                f"MLOADS {sid}: the modal (free-flight) solver needs RHOREF "
-                f"on the initial-condition TRIM {mldtrim.trim_sid} "
-                "(V = sqrt(2q/rho)).")
+                f"MANVR {sid}: the modal (free-flight) solver needs RHO "
+                f"on MANTRIM {mldtrim.sid} (V = sqrt(2q/rho)).")
         mldtime = bulk.mldtimes.get(ml.mldtime)
         if mldtime is None:
-            errors.append(f"MLOADS {sid}: MLDTIME {ml.mldtime} not found.")
+            errors.append(f"MANVR {sid}: MANTIME {ml.mldtime} not found.")
         elif mldtime.dt <= 0.0 or mldtime.tend <= mldtime.t0:
-            errors.append(f"MLDTIME {mldtime.sid}: needs DT > 0 and TEND > T0.")
+            errors.append(f"MANTIME {mldtime.sid}: needs DT > 0 and TEND > T0.")
         if ml.mldprnt and ml.mldprnt not in bulk.mldprnts:
-            errors.append(f"MLOADS {sid}: MLDPRNT {ml.mldprnt} not found.")
+            errors.append(f"MANVR {sid}: MANPRNT {ml.mldprnt} not found.")
         if ml.method > 0 and ml.method not in bulk.eigrls:
-            errors.append(f"MLOADS {sid}: METHOD {ml.method} is not an EIGRL "
+            errors.append(f"MANVR {sid}: METHOD {ml.method} is not an EIGRL "
                           "SID.")
         if ml.mldcomd:
             comd = bulk.mldcomds.get(ml.mldcomd)
             if comd is None:
-                errors.append(f"MLOADS {sid}: MLDCOMD {ml.mldcomd} not found.")
+                errors.append(f"MANVR {sid}: MANCMD {ml.mldcomd} not found.")
             else:
                 for label, tabid in comd.commands:
                     if label not in all_labels:
-                        errors.append(f"MLDCOMD {comd.sid}: label '{label}' "
+                        errors.append(f"MANCMD {comd.sid}: label '{label}' "
                                       "not defined in any AESTAT or AESURF "
                                       "card.")
                     elif ml.selects_modal and label not in aesurf_labels:
                         errors.append(
-                            f"MLOADS {sid}: MLDCOMD {comd.sid} commands "
+                            f"MANVR {sid}: MANCMD {comd.sid} commands "
                             f"rigid-state label '{label}' — under the modal "
                             "solver rigid states are outputs; command AESURF "
                             "controls only.")
                     table = bulk.tabled1s.get(tabid)
                     if table is None:
-                        errors.append(f"MLDCOMD {comd.sid}: TABLED1 {tabid} "
+                        errors.append(f"MANCMD {comd.sid}: TABLED1 {tabid} "
                                       "not found.")
                     else:
                         if len(table.xs) < 2:
@@ -593,7 +592,7 @@ def validate_sol144_authoring(
                                           "be strictly increasing.")
                         elif ml.selects_modal and len(table.xs) < 5:
                             warns.append(
-                                f"TABLED1 {tabid} (modal MLOADS {sid}): "
+                                f"TABLED1 {tabid} (modal MANVR {sid}): "
                                 "sparse clamped-linear table — slope jumps "
                                 "ring the highest retained mode; consider a "
                                 "densely-sampled cosine ramp.")
@@ -618,7 +617,7 @@ def validate_sol144_authoring(
     for key in (unresolved_increments or []):
         msid, label = key.mloads_sid, key.label
         errors.append(
-            f"MLOADS {msid} {label}: unresolved increment command — resolve "
+            f"MANVR {msid} {label}: unresolved increment command — resolve "
             "to absolute TABLED1s (after a solve) before exporting.")
     if file_sids and authored:
         for family, ids in authored.items():

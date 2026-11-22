@@ -79,10 +79,10 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
   ANGLEA). `build_wg` negates on assembly; the card writers negate on emission so decks
   round-trip (AE8a, fixed 2026-07-05; `aero/integration.py:61-68,104`,
   `model/aero.py:88-93`). **Never hand-add a sign between card and assembly.**
-- CHORDCP: `data` = signed per-box dΔCp/dα_local; `alpha_ref` is **degrees on the card,
+- CPINJ: `data` = signed per-box dΔCp/dα_local; `alpha_ref` is **degrees on the card,
   radians in storage** (`model/aero.py:119`).
 - **Signed per-box card data is along MSC's element normal, not the solve normal**
-  (#84): W2GJ, AECORR WT2 targets and CHORDCP Cp are read as `msc_sign · value`, and
+  (#84): W2GJ, AECORR WT2 targets and CPINJ Cp are read as `msc_sign · value`, and
   the f06 `DELTA-CP` column prints `msc_sign · ΔCp`. The downwash is the box's "normal
   velocity" (AAUG 2023.1 PDF p.30, eq 2-1/2-2) and W2GJ its static part (p.144), so the
   card's sign follows the element normal of Figure 9-5. `result.box_cp` stays along the
@@ -239,7 +239,7 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
   dimensionless load factor on a `GUSTLF` card. Nothing dimensional crosses the
   boundary. Prefer this split to adding a unit-aware field.
 - **User-defined consistent units throughout** — sbeam never converts. The two deliberate
-  exceptions (card-field degrees → stored radians): the CHORDCP `ALPHREF` conversion
+  exceptions (card-field degrees → stored radians): the CPINJ `ALPHREF` conversion
   `math.radians(...)` in `parser/bulk_aero.py::_handle_chordcp` (stored as
   `Chordcp.alpha_ref`, `model/aero.py`) and its tolerance constant
   `_CHORDCP_ALPHA_TOL = 0.035 rad` (`solver/sol144.py`, cited by name — line numbers
@@ -353,7 +353,7 @@ Figure: `../figures/sign_conventions_internal_loads.svg`; cut geometry:
 
 - **There is no propulsion *model*** — no actuator disc, slipstream or gyroscopic term
   exists in code (Known Limitations, `00_program_overview.md`). Powered **aero** enters
-  **only** through the ordinary correction cards (W2GJ/WT2/CHORDCP + body TOTAL rows)
+  **only** through the ordinary correction cards (W2GJ/WT2/CPINJ + body TOTAL rows)
   built from powered data — the "corrections position", theory
   `02_realistic_airplane_sol144.md` §7.
 - **Thrust and engine torque enter a SOL 144 trim as applied structural loads** (#6,

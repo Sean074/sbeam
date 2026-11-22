@@ -16,9 +16,9 @@ Gate map (T-numbers as in the Step 65 plan):
   T3b both trimmed incidences fall inside the baked correction region
   T4  MASSCASE sweep: ANGLEA monotone in weight, and wing-root bending per unit weight
       FALLS with wing fuel (inertia relief)
-  T5  MLOADS: t=0 is the trim; a command held at trim moves nothing; the ramp holds
-  T6  MLOADS x MASSCASE (first coverage of the pairing anywhere)
-  T7  the fin ATTACH resolves from file and transfers side force + yaw moment
+  T5  MANVR: t=0 is the trim; a command held at trim moves nothing; the ramp holds
+  T6  MANVR x MASSCASE (first coverage of the pairing anywhere)
+  T7  the fin BODYATT resolves from file and transfers side force + yaw moment
   T8  divergence dynamic pressure keeps a wide margin over the cruise q
 """
 
@@ -106,7 +106,7 @@ def baked_alpha_deg():
 
 @pytest.fixture(scope="module")
 def maneuver():
-    """The ramped MLOADS run plus its initial-condition trim."""
+    """The ramped MANVR run plus its initial-condition trim."""
     cc, bulk = parse_bdf(str(MLOADS_PATH))
     aero = build_aero_model(bulk, grid_index=build_grid_index(bulk))
     ic = run_sol144_trim(bulk, cc.subcases[0], aero)
@@ -359,7 +359,7 @@ def test_t5b_command_held_at_trim_produces_no_motion(maneuver):
     """A command table that just holds the trimmed elevator must move nothing at all.
 
     This isolates the integrator and the table lookup from the physics: if the absolute
-    MLDCOMD table is read correctly and the IC really is an equilibrium, every sample of
+    MANCMD table is read correctly and the IC really is an equilibrium, every sample of
     a constant-at-trim run equals the trim to machine precision.
     """
     cc, bulk, aero, ic, _mr = maneuver
@@ -382,7 +382,7 @@ def test_t5c_ramp_is_tracked_and_settles(maneuver):
     table = bulk.tabled1s[300]
     assert table.ys[0] == pytest.approx(ic.trim_vars["ELEV"], abs=5e-6), (
         "TABLED1 300 no longer starts at the trimmed ELEV — re-run the trim driver "
-        "and re-bake the first table point (MLDCOMD tables are ABSOLUTE)")
+        "and re-bake the first table point (MANCMD tables are ABSOLUTE)")
     held_value = table.ys[-1]
     assert held_value == pytest.approx(table.ys[0] + math.radians(2.0), abs=1e-5)
 
@@ -396,12 +396,12 @@ def test_t5c_ramp_is_tracked_and_settles(maneuver):
 
 
 # --------------------------------------------------------------------------- #
-# T6 — MLOADS x MASSCASE (first coverage of the pairing anywhere)
+# T6 — MANVR x MASSCASE (first coverage of the pairing anywhere)
 # --------------------------------------------------------------------------- #
 def test_t6_mloads_with_massset_is_exact_when_the_table_matches_the_case(maneuver):
     """The transient honours the mass case — but the command table is case-specific.
 
-    MLDCOMD tables are ABSOLUTE, so the committed TABLED1 (authored for the baseline
+    MANCMD tables are ABSOLUTE, so the committed TABLED1 (authored for the baseline
     trim) does NOT start at the MTOW case's trimmed elevator: run it as-is and the
     airplane takes a step input at t = 0.  That is a deck-authoring property, not a
     solver defect, and this test pins both halves of it down: re-author the table for
@@ -431,17 +431,17 @@ def test_t6_mloads_with_massset_is_exact_when_the_table_matches_the_case(maneuve
 
 
 # --------------------------------------------------------------------------- #
-# T7 — the fin ATTACH, exercised from file for the first time
+# T7 — the fin BODYATT, exercised from file for the first time
 # --------------------------------------------------------------------------- #
 def test_t7_fin_attach_resolves_from_file(model):
-    """The ATTACH card covers all 36 fin boxes and slaves them to the fin-root grid."""
+    """The BODYATT card covers all 36 fin boxes and slaves them to the fin-root grid."""
     _cc, bulk, aero = model
     attach = [a for a in bulk.attaches.values() if a.caero == FIN_EID]
     assert len(attach) == 1
     card = attach[0]
     assert (card.id1, card.id2) == (5000, 5035)
     assert card.grid == FIN_GRID
-    assert card.cid == 0                       # ATTACH requires the basic frame
+    assert card.cid == 0                       # BODYATT requires the basic frame
 
     ops = build_spline_operators(bulk, aero.boxes, build_grid_index(bulk))
     gi = build_grid_index(bulk)
@@ -459,7 +459,7 @@ def test_t7_fin_attach_resolves_from_file(model):
 def test_t7_fin_attach_transfers_side_force_and_yaw_moment(model):
     """A sideslipped fin delivers exact side force plus roll/yaw to the master grid.
 
-    Before DEF-M11 a vertical ATTACH panel transferred nothing at all, because g_disp
+    Before DEF-M11 a vertical BODYATT panel transferred nothing at all, because g_disp
     carried only its z-row.  The transfer is now the exact rigid-body identity
     F = sum(f_j), M = sum(r_j x f_j), so the fin's own side force must arrive at the
     root grid undiminished and bring a non-zero yaw moment with it.

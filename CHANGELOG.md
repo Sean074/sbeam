@@ -9,6 +9,66 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Breaking changes
+- **sbeam's ZAERO-named cards are renamed; ZAERO's and MSC's cards keep their vendor
+  layouts** (#87; pre-1.0 MINOR break). sbeam had borrowed ZAERO card names with its own
+  layouts and meanings. ZAERO's MLOADS family, for example, drives an aeroservoelastic
+  state-space run (ZAERO 9.2 UM PDF p.383–400), so a ZAERO deck was refused with confusing
+  messages or misread (MLDTIME field 6). CLAUDE.md rule 7: a vendor name keeps the vendor
+  layout, and an sbeam extension takes a name no vendor defines. None of the new names
+  appears in the MSC 2024.1 QRG or the ZAERO 9.2 UM.
+
+  | Old | New |
+  |---|---|
+  | `MLOADS` (bulk and case control) | `MANVR` |
+  | `MLDTRIM` | `MANTRIM` |
+  | `MLDTIME` | `MANTIME` |
+  | `MLDCOMD` | `MANCMD` |
+  | `MLDPRNT` | `MANPRNT` |
+  | `CHORDCP` | `CPINJ` |
+  | `SPLINE0` | `LOADINJ` |
+  | `ATTACH` | `BODYATT` |
+  | `TRIMOBJ` (bulk and case control) | `TRIMWGT` |
+  | `TRIMCON` | `TRIMINEQ` |
+
+  The old names are refused, with a message naming the new card. A new "sbeam-only
+  cards" table in `02_card_reference.md` lists every card no vendor defines, its nearest
+  vendor card and why that card is not used. Each card's own section is headed
+  **sbeam-only card**.
+
+  Vendor layouts now read as the vendor writes them:
+  - **TRIMVAR** is read in ZAERO's layout, `IDVAR LABEL LOWER UPPER TRIMLNK DMI SYM
+    INITIAL` (PDF p.511). TRIMLNK, DMI and user-input derivatives are refused; SYM is
+    ignored.
+  - **TRIM** is read in MSC's layout (QRG PDF p.2992): two pairs on line 1, **AEQR** in
+    field 9 (blank or 1.0; any other value is refused), then the pairs continue.
+  - **The `RHOREF` pseudo-label is refused.** The density moves to a new field 4, `RHO`,
+    on `MANTRIM`; the modal maneuver solver needs it.
+  - **AEROS field 9 (sbeam's MACH) is refused** (MSC's AEROS ends at SYMXY, QRG p.1151).
+    The Mach is TRIM's. `build_aero_model` without `mach=` builds at M = 0. The `sbeam`
+    command and the viewer build the seed model at the first subcase's flight Mach, through
+    the new `sbeam.solver.sol144_util.flight_mach`, so a one-Mach job still builds one AIC.
+    The seed Mach changes no result; a modal maneuver run was checked to be bit-identical
+    with seeds at M = 0 and M = 0.9.
+  - **DIVERG without a Mach is refused.** It used to run at the AEROS Mach.
+
+  Unread fields are now refused on MANTIME (fields 7–9), MANTRIM (5–9), BODYATT (8–9),
+  LOADINJ (7–9) and TRIMINEQ (6–9).
+
+  pyNastran now reads AEROS and TRIM in every repo deck and agrees field by field, so
+  both left the compat suite's allowance list. Every sample deck's f06/CSV output is
+  identical apart from the card names printed.
+
+  **Migrate a deck:**
+  - rename the cards above;
+  - move `RHOREF, ρ` from the TRIM to field 4 of its MANTRIM;
+  - put a third TRIM pair on the continuation;
+  - delete AEROS field 9 and give the Mach on TRIM;
+  - write TRIMVAR as `ID, LABEL, LB, UB, , , , INIT`.
+
+  sbeam→MSC conversion is recorded as a parked command-line tool in `sbeam_tools/`, not a
+  solver feature (`docs/30_future/02_parked.md`).
+
 ### Changed
 - **AESTAT refuses a label that is not one of MSC's standard rigid-body labels** (#91).
   MSC reads ANGLEA, SIDES, ROLL, PITCH, YAW and URDD1–URDD6 (QRG 2024.1 PDF p.1153, Table 1)

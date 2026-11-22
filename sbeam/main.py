@@ -70,17 +70,19 @@ def main() -> None:
             from sbeam.solver.sol144 import (
                 run_sol144_trim, run_sol144_diverg, AeroCache,
             )
+            from sbeam.solver.sol144_util import flight_mach
             from sbeam.solver.maneuver_qs import run_maneuver_qs
             from sbeam.solver.maneuver_modal import (
                 run_maneuver_modal, ManeuverBasisCache,
             )
             grid_index = build_grid_index(bulk)
-            aero = build_aero_model(bulk, grid_index=grid_index)
+            aero = build_aero_model(bulk, grid_index=grid_index,
+                                    mach=flight_mach(cc, bulk))
             cache = AeroCache(bulk, grid_index, seed=aero)
             # Step 62 (D3): one free-free basis per job, shared across every
-            # modal MLOADS subcase (MASSCASE sweeps swap M only, never Phi).
+            # modal MANVR subcase (MASSCASE sweeps swap M only, never Phi).
             basis_cache = ManeuverBasisCache(bulk, aero)
-            # An MLOADS subcase runs the Phase G0 transient maneuver-loads solver
+            # An MANVR subcase runs the Phase G0 transient maneuver-loads solver
             # (the Step 62 modal solver when the card requests it via
             # NMODES/METHOD/ZETA, the increment-1 direct l-set solver otherwise);
             # a DIVERG subcase runs the Step 55 divergence sweep (no TRIM needed);
@@ -148,7 +150,7 @@ def main() -> None:
             write_section_loads_csv(str(sec_path), sol144_results)
             print(f"Written: {sec_path}")
 
-    # Phase G0: transient maneuver-loads time histories (MLDPRNT) + critical-step
+    # Phase G0: transient maneuver-loads time histories (MANPRNT) + critical-step
     # net (aero + inertial) FORCE/MOMENT export.
     if maneuver_results:
         from sbeam.results.maneuver_output import write_maneuver_outputs

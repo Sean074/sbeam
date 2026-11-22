@@ -111,7 +111,7 @@ class MonitorLoad:
     parity: float = 1.0             # symmetry doubling factor applied to all components
     whole_airplane: bool = False    # True when parity≠1 (annotate output to avoid double-up)
     source_ids: list[int] = field(default_factory=list)   # AELIST or SET1 SIDs
-    # Transient (MLOADS) contributions, cp frame (#2); None on a static trim,
+    # Transient (MANVR) contributions, cp frame (#2); None on a static trim,
     # where the structure has no elastic acceleration — as opposed to zero.
     # ``totals`` includes them when present; ``inertia`` stays the RIGID
     # inertia, exactly as on ``SectionCutStation``.
@@ -124,7 +124,7 @@ class MonitorEnvelopeEntry:
     """Max/min of one component of one monitor over a maneuver (#2).
 
     ``max_sample``/``min_sample`` are 1-based, matching the f06 SAMPLE column
-    and the MLDPRNT numbering (DEF-M5).  They are the **driving** samples and
+    and the MANPRNT numbering (DEF-M5).  They are the **driving** samples and
     are generally not the run's critical sample.
     """
     comp: int                       # 0..5, index into [Fx, Fy, Fz, Mx, My, Mz] (cp frame)
@@ -208,7 +208,7 @@ class SectionCutEnvelopeEntry:
     """Max/min of one labelled component at one station over a maneuver.
 
     ``max_sample``/``min_sample`` are 1-based, matching the f06 SAMPLE column and
-    the MLDPRNT numbering (DEF-M5).  They are the **driving** samples and are
+    the MANPRNT numbering (DEF-M5).  They are the **driving** samples and are
     generally not the run's critical sample — see
     :mod:`sbeam.results.section_envelope`.
     """
@@ -334,7 +334,7 @@ class Sol144TrimResult:
     section_loads: Optional[dict[str, SectionCutResult]] = None  # {name: SectionCutResult} MONSECT running loads
     chordcp_echo: Optional[dict[str, Any]] = None       # Step 54 injected-operating-point echo: {'alpha_ref', 'data_machs', 'surfaces': {eid: {'FZ_Q','MY_Q','FZ_Q_VLM'}}}
     gust_echo: Optional[dict[str, Any]] = None          # Issue #1 GUSTLF provenance: {'sid','trimid','n','g','urdd3','sense','ude','veas','kg','mu','a','asrc','alt'} — recorded by sbeam_tools/cases/gust.py, echoed only (sbeam does not compute the gust)
-    load_injection_echo: Optional[list[dict[str, Any]]] = None  # Step 64 SPLINE0/un-splined load injection: [{'source','master_grid','n_boxes','force','moment'}]; None/[] = no injection
+    load_injection_echo: Optional[list[dict[str, Any]]] = None  # Step 64 LOADINJ/un-splined load injection: [{'source','master_grid','n_boxes','force','moment'}]; None/[] = no injection
     # --- Step 67a (quasi-steady yaw-rate wing term) ---
     yaw_rate_iters: int = 0                   # fixed-point iterations spent on the loading-scaled yaw-rate force column; 0 = term not active (no YAW label, or zero yaw rate)
     # --- Step 60 (MASSCASE payload / mass case) ---
@@ -420,7 +420,7 @@ def peak_grid_force(step: "ManeuverStep") -> float:
     transient sample, #3).
 
     This is the single metric that selects the critical sample, fills the f06
-    and MLDPRNT columns, and labels both (DEF-M5).  It is deliberately *not*:
+    and MANPRNT columns, and labels both (DEF-M5).  It is deliberately *not*:
 
     * ``‖closure[:3]‖`` — the resultant about the reference point, i.e. the
       aero/inertia balance residual.  On a converged balanced maneuver that is
@@ -440,7 +440,7 @@ class ManeuverResult:
     """Result of a Phase G0 (DLM-free quasi-steady) transient maneuver subcase."""
     subcase_id: int
     mloads_sid: int
-    trim_sid: int                         # initial-condition TRIM sid (via MLDTRIM)
+    trim_sid: int                         # initial-condition TRIM sid (via MANTRIM)
     q: float                              # dynamic pressure
     mach: float
     labels: list[str]                          # all trim-variable labels (column order)

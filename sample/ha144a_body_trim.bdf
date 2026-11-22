@@ -2,9 +2,9 @@ $ HA144A — FULL-SPAN + DECOUPLED STRIP BODY PANELS (Step 64 / DEF-M1 gate)
 $ Ref: MSC Nastran 2021.3 Aeroelastic Analysis User's Guide, Listing 7-1
 $
 $ ha144a_fullspan_sbeam.bdf plus a cruciform pair of DECOUPLED strip body panels
-$ (PSTRIP) carried by SPLINE0 — the A10 body-load stand-in.  Those boxes have no
+$ (PSTRIP) carried by LOADINJ — the A10 body-load stand-in.  Those boxes have no
 $ structural spline: their force reaches the structure only through the Step 64
-$ rigid load injection at the SPLINE0 master grid.  The horizontal panel names
+$ rigid load injection at the LOADINJ master grid.  The horizontal panel names
 $ its master explicitly (GRID 98, mid-fuselage); the vertical panel leaves the
 $ field blank and defaults to the SUPORT grid (90).
 $
@@ -38,7 +38,7 @@ $
 $ ============================================================
 $ REFERENCE GEOMETRY  (SYMXZ=0 full-span; sref=400 = full wing area)
 $ ============================================================
-AEROS, 1, 100, 10.0, 40.0, 400.0, 0, 0, 0.9
+AEROS, 1, 100, 10.0, 40.0, 400.0, 0, 0
 $
 $ ============================================================
 $ COORDINATE SYSTEMS
@@ -228,11 +228,11 @@ SET1, 1000, 98, 99
 SET1, 2100, 99, 100, 211, 212, 221, 222
 SET1, 2000, 98, 99
 $
-$ Body panels: SPLINE0 — no structural coupling.  Field 5 (GRID) names the
+$ Body panels: LOADINJ — no structural coupling.  Field 5 (GRID) names the
 $ master grid that carries the panel's aerodynamic load (Step 64); blank
 $ defaults to the SUPORT grid, which is GRID 90 here.
-SPLINE0, 9400, 400, 400, 415, 98
-SPLINE0, 9500, 500, 500, 531
+LOADINJ, 9400, 400, 400, 415, 98
+LOADINJ, 9500, 500, 500, 531
 $
 $ ============================================================
 $ MONITOR POINTS (MON1-MON4 / V-MON1) — integrated section loads
@@ -246,7 +246,7 @@ $ the left wing + canard splines, so per-wing attribution keeps them out)
 SET1, 1320, 111, 112, 121, 122
 AECOMP, WINGEA, SET1, 1320
 $ Whole-aircraft spline-load grids (every grid any spline transfers force to)
-$ (includes the SPLINE0 master grids 90/98 so the body load is inside the cut)
+$ (includes the LOADINJ master grids 90/98 so the body load is inside the cut)
 SET1, 1310, 90, 97, 98, 99, 100, 111, 112
 +, 121, 122, 211, 212, 221, 222
 AECOMP, ALLGRID, SET1, 1310

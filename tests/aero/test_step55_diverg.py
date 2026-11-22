@@ -68,14 +68,14 @@ def ha144a():
     gi = build_grid_index(bulk)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        aero = build_aero_model(bulk, grid_index=gi)
+        aero = build_aero_model(bulk, grid_index=gi, mach=bulk.trims[1].mach)
     return bulk, aero
 
 
 def _sweep(bulk, aero, nroots=3, machs=None, card=None):
     """Run DIVERG SID 10, built from ``nroots``/``machs`` or read from ``card`` text."""
     if card is None:
-        card = Diverg(sid=10, nroots=nroots, machs=machs or [bulk.aeros.mach])
+        card = Diverg(sid=10, nroots=nroots, machs=machs or [aero.mach])
     bulk.divergs[10] = card
     sc = SubcaseControl(subcase_id=2, spc_sid=1, diverg_sid=10)
     with warnings.catch_warnings():
@@ -135,20 +135,24 @@ class TestDivergSweep:
         card = parse_bulk_data(["DIVERG,10,5,0.0"]).divergs[10]
         res = _sweep(bulk, aero, card=card)
         assert [mr.mach for mr in res.mach_results] == [0.0]
-        assert bulk.aeros.mach != 0.0      # the old reading would have run at this Mach
+        assert aero.mach != 0.0            # the old reading would have run at this Mach
 
 
 # --------------------------------------------------------------------------- #
 # DIVERG bulk-card parser: MSC layout, Mach numbers from field 4 (#73)
 # --------------------------------------------------------------------------- #
 class TestDivergParser:
+    def test_no_mach_is_refused(self):
+        """#87: an empty list ran at the sbeam-only AEROS Mach, which is gone."""
+        with pytest.raises(ValueError, match="DIVERG 7: no Mach number given"):
+            parse_bulk_data(["DIVERG,7,2"])
+
     @pytest.mark.parametrize("line, sid, nroots, machs", [
         ("DIVERG,70,2,.5,.8,.9", 70, 2, [0.5, 0.8, 0.9]),       # QRG p.1603 example
         ("DIVERG     100      5       0.0", 100, 5, [0.0]),     # AAUG p.148 example
         ("DIVERG,7,,.6", 7, 1, [0.6]),                          # NROOT default = 1
-        ("DIVERG,7,2", 7, 2, []),                               # no Mach: AEROS Mach
         ("DIVERG,7,2,.5,.8,,", 7, 2, [0.5, 0.8]),               # trailing blanks
-    ], ids=["qrg", "aaug", "nroot-default", "no-mach", "trailing-blank"])
+    ], ids=["qrg", "aaug", "nroot-default", "trailing-blank"])
     def test_fields(self, line, sid, nroots, machs):
         d = parse_bulk_data([line]).divergs[sid]
         assert (d.nroots, d.machs) == (nroots, pytest.approx(machs))

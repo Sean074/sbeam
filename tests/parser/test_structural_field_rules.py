@@ -109,7 +109,7 @@ class TestEnforcedDisplacement:
     @pytest.mark.parametrize("card, grid", [("SPC, 1, 1, 3, 0.5", 1),
                                             ("SPC, 1, 1, 3, 0., 2, 3, 0.1", 2)])
     def test_spc_d_is_refused_at_parse(self, card, grid):
-        """Audit S11: SOL 144 and MLOADS took D = 0 without a message."""
+        """Audit S11: SOL 144 and MANVR took D = 0 without a message."""
         with pytest.raises(ValueError, match=f"SPC 1: enforced displacement D=.* on grid {grid}"):
             _parse(card)
 

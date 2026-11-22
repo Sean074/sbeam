@@ -1,6 +1,6 @@
 """Step 61 — free-free maneuver modal basis and h-set operator gates.
 
-Fixture: the full-span HA144A MLOADS deck (SPC1 1246 pins the antisymmetric DOFs
+Fixture: the full-span HA144A MANVR deck (SPC1 1246 pins the antisymmetric DOFs
 on GRID 90, SUPORT 35 frees the symmetric rigid DOFs — so n_r = 2: plunge and
 pitch about the RCSID origin).  Gates, in the order the Step 61 spec lists them:
 
@@ -211,7 +211,7 @@ def test_m_ax_identity_exact_with_consistent_cbar_mass():
 def test_q_hh_matches_static_rom_projection(basis_fixture):
     """build_hset_gafs' Q_hh is the same object sol144's ROM forms for a basis."""
     bulk, gi, aero, ops, basis = basis_fixture
-    v_inf = bulk.trims[1].velocity()
+    v_inf = bulk.mldtrims[1].velocity(bulk.trims[1].q)
     gafs = build_hset_gafs(bulk, ops, basis, aero, v_inf)
     f_aa = ops.red.reduce_vector(bulk.trims[1].q * ops.f_aero_g_unit)
     with warnings.catch_warnings():
@@ -306,7 +306,7 @@ def test_no_suport_raises():
 
 def test_hset_gafs_shapes_and_control_columns(basis_fixture):
     bulk, gi, aero, ops, basis = basis_fixture
-    gafs = build_hset_gafs(bulk, ops, basis, aero, bulk.trims[1].velocity())
+    gafs = build_hset_gafs(bulk, ops, basis, aero, bulk.mldtrims[1].velocity(bulk.trims[1].q))
     n_h = basis.n_h
     assert gafs.Q_hh.shape == (n_h, n_h)
     assert gafs.Q_hx.shape == (n_h, len(ops.all_labels))
@@ -323,7 +323,7 @@ def test_b_hh_rigid_rate_columns_are_the_rescaled_steady_columns(basis_fixture):
     Elastic-rate columns are zero at Level 1 (the G0-d hook).
     """
     bulk, gi, aero, ops, basis = basis_fixture
-    v = bulk.trims[1].velocity()
+    v = bulk.mldtrims[1].velocity(bulk.trims[1].q)
     gafs = build_hset_gafs(bulk, ops, basis, aero, v)
     c_ref = bulk.aeros.cref
 
@@ -336,7 +336,7 @@ def test_b_hh_rigid_rate_columns_are_the_rescaled_steady_columns(basis_fixture):
 
 def test_c_hh_modal_damping(basis_fixture):
     bulk, gi, aero, ops, basis = basis_fixture
-    v = bulk.trims[1].velocity()
+    v = bulk.mldtrims[1].velocity(bulk.trims[1].q)
     assert np.abs(build_hset_gafs(bulk, ops, basis, aero, v, zeta=0.0).C_hh).max() == 0.0
 
     zeta = 0.02
@@ -377,7 +377,7 @@ def test_b_hh_rigid_rate_diagonal_is_damping_for_every_free_flight_dof():
         ops = assemble_aset_operators(bulk, SubcaseControl(subcase_id=1, spc_sid=1, trim_sid=1), aero)
         basis = build_maneuver_basis(bulk, ops)
     assert ops.rigid_dofs == [2, 3, 4, 5, 6]
-    gafs = build_hset_gafs(bulk, ops, basis, aero, bulk.trims[1].velocity())
+    gafs = build_hset_gafs(bulk, ops, basis, aero, bulk.mldtrims[1].velocity(bulk.trims[1].q))
     diag = {dof: float(gafs.B_hh[i, i]) for i, dof in enumerate(basis.rigid_dofs)}
     for dof, val in diag.items():
         assert val < 0.0, f"rigid DOF {dof}: B_hh diagonal {val:+.4e} would anti-damp (C = C_s − q·B_hh)"

@@ -1,6 +1,6 @@
 """Serialize aeroelastic input cards back to comma free-field BDF text.
 
-The viewer's SOL 144 / MLOADS authoring UI (P12) builds model dataclasses in
+The viewer's SOL 144 / MANVR authoring UI (P12) builds model dataclasses in
 memory; these writers turn them into card text the parser reads back
 identically, so an authored deck round-trips with zero loss.  The module is
 Streamlit-free and importable from the CLI or scripts.
@@ -9,9 +9,9 @@ Every real field goes through ``parser.bdf_field.fmt_real8`` — a strict reader
 truncates each free-field token to 8 characters, so ``%.6E`` output would be
 silently corrupt (DEF-M12).
 
-Covered families (the full SOL 144 + MLOADS authoring surface): AESTAT,
-AESURF, AELIST, SUPORT, TRIM, TRIMVAR, TRIMOBJ, TRIMCON, DIVERG, MLOADS,
-MLDTRIM, MLDTIME, MLDCOMD, MLDPRNT, TABLED1.
+Covered families (the full SOL 144 + MANVR authoring surface): AESTAT,
+AESURF, AELIST, SUPORT, TRIM, TRIMVAR, TRIMWGT, TRIMINEQ, DIVERG, MANVR,
+MANTRIM, MANTIME, MANCMD, MANPRNT, TABLED1.
 """
 
 from typing import TYPE_CHECKING, Sequence, Union
@@ -77,27 +77,30 @@ def write_suport(s: Suport) -> list[str]:
 
 
 def write_trim(t: Trim) -> list[str]:
-    fields: list[Field] = [t.sid, t.mach, t.q]
-    if t.rhoref:
-        fields += ["RHOREF", t.rhoref]
-    for label, value in t.vars.items():
-        fields += [label, value]
+    # MSC's layout: two pairs on the first line, field 9 is AEQR (left blank = 1.0)
+    pairs: list[Field] = [x for label, value in t.vars.items() for x in (label, value)]
+    fields: list[Field] = [t.sid, t.mach, t.q, *pairs[:4]]
+    if len(pairs) > 4:
+        fields += [""] * (7 - len(fields)) + [""] + pairs[4:]
     return write_card("TRIM", fields)
 
 
 def write_trimvar(v: Trimvar) -> list[str]:
-    return write_card("TRIMVAR", [v.id, v.label, v.init, v.lb, v.ub])
+    # ZAERO's layout: IDVAR LABEL LOWER UPPER TRIMLNK DMI SYM INITIAL (blank bound = ∓1E30)
+    return write_card("TRIMVAR", [v.id, v.label,
+                                  "" if v.lb <= -1.0e30 else v.lb,
+                                  "" if v.ub >= 1.0e30 else v.ub, "", "", "", v.init])
 
 
 def write_trimobj(o: Trimobj) -> list[str]:
     fields: list[Field] = [o.sid]
     for label, weight in zip(o.labels, o.weights):
         fields += [label, weight]
-    return write_card("TRIMOBJ", fields)
+    return write_card("TRIMWGT", fields)
 
 
 def write_trimcon(c: Trimcon) -> list[str]:
-    return write_card("TRIMCON", [c.sid, c.label, c.sense, c.rhs])
+    return write_card("TRIMINEQ", [c.sid, c.label, c.sense, c.rhs])
 
 
 def write_diverg(d: Diverg) -> list[str]:
@@ -107,7 +110,7 @@ def write_diverg(d: Diverg) -> list[str]:
 def write_gustlf(gu: Gustlf) -> list[str]:
     """GUSTLF — the provenance fields are always written, defaults included.
 
-    Unlike MLOADS this does *not* trim trailing defaults: the recorded
+    Unlike MANVR this does *not* trim trailing defaults: the recorded
     derivation is the card's reason for existing, and a card that silently
     dropped ``ALT = 0.0`` (sea level — a real, common condition) would read as
     "not recorded" on the way back in.
@@ -126,29 +129,29 @@ def write_mloads(m: Mloads) -> list[str]:
     # Trim trailing defaults (0 / 0.0) for a compact card; parser re-defaults.
     while len(fields) > 3 and not fields[-1]:
         fields.pop()
-    return write_card("MLOADS", fields)
+    return write_card("MANVR", fields)
 
 
 def write_mldtrim(m: Mldtrim) -> list[str]:
-    return write_card("MLDTRIM", [m.sid, m.trim_sid])
+    return write_card("MANTRIM", [m.sid, m.trim_sid, *([m.rho] if m.rho else [])])
 
 
 def write_mldtime(m: Mldtime) -> list[str]:
     fields: list[Field] = [m.sid, m.t0, m.tend, m.dt]
     if m.tout:
         fields.append(m.tout)
-    return write_card("MLDTIME", fields)
+    return write_card("MANTIME", fields)
 
 
 def write_mldcomd(m: Mldcomd) -> list[str]:
     fields: list[Field] = [m.sid]
     for label, tabid in m.commands:
         fields += [label, tabid]
-    return write_card("MLDCOMD", fields)
+    return write_card("MANCMD", fields)
 
 
 def write_mldprnt(m: Mldprnt) -> list[str]:
-    return write_card("MLDPRNT", [m.sid] + list(m.items))
+    return write_card("MANPRNT", [m.sid] + list(m.items))
 
 
 def write_tabled1(t: Tabled1) -> list[str]:

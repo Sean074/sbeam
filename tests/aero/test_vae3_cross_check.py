@@ -28,7 +28,7 @@ Why the two paths are comparable:
     baseline.  HA144A HAS a W2GJ (wg != 0), so Path A is driven with the ANGLEA
     column ALONE (= -n_z), excluding aero.wg.  The system is linear, so
     alpha = 1 rad is exact, not a small-angle approximation.
-  * Mach must match: effective Mach = bulk.aeros.mach (HA144A 0.9, rect_ar8 0.0)
+  * Mach must match: effective Mach = aero.mach (the model's build Mach)
     is passed to solve_rigid_cl so the beta_pg scaling is identical on both paths.
 
 (Named to avoid collision with the unrelated "V-AE3a" trim-lift gate in
@@ -77,14 +77,16 @@ def model(request):
     grid_index = build_grid_index(bulk)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
-        aero = build_aero_model(bulk, grid_index=grid_index)
+        # The deck's flight Mach (HA144A 0.9, rect_ar8 0.0): on the TRIM since #87
+        mach = min(bulk.trims.items())[1].mach if bulk.trims else 0.0
+        aero = build_aero_model(bulk, grid_index=grid_index, mach=mach)
     return request.param, bulk, aero
 
 
 def _cross_check(bulk, aero):
     """Return (Fz_coupling, Fz_indep, My_coupling, My_indep) at unit q, alpha=1."""
     x_ref = _x_ref(bulk)
-    mach = bulk.aeros.mach
+    mach = aero.mach
 
     # Path B (independent) — Kutta-Joukowski resultants from solve_rigid_cl.
     res = solve_rigid_cl(aero.boxes, alpha=1.0, beta=0.0,

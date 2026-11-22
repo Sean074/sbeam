@@ -110,11 +110,12 @@ Parser behaviour (formats, ordering rules, cross-reference validation): `01_beam
 | `run_sol103` | `from sbeam.solver.sol103 import run_sol103` | `(bulk, subcase)` | `Sol103Result` |
 | `build_aero_model` | `from sbeam.aero.aero_model import build_aero_model` | `(bulk, grid_index=None, mach=None)` | `AeroModel` — the VLM mesh, AIC and splines; built once per deck. |
 | `AeroCache` | `from sbeam.solver.sol144 import AeroCache` | `(bulk, grid_index, seed=aero)`; `.get(mach)` | Mach-keyed store of `AeroModel`s so a multi-Mach deck builds each AIC once. Pass the same instance to every SOL 144 call. |
+| `flight_mach` | `from sbeam.solver.sol144_util import flight_mach` | `(cc, bulk)` → float | The first subcase's flight Mach (its TRIM, via MANTRIM for a maneuver, or its DIVERG list). Build the seed `AeroModel` at it so a single-Mach job builds one AIC: AEROS carries no Mach (#87). The seed Mach changes no result. |
 | `run_sol144_trim` | `from sbeam.solver.sol144 import run_sol144_trim` | `(bulk, subcase, aero, aero_cache=None)` | `Sol144TrimResult`; `hinge_moments` / `hinge_moments_restrained {surface: {label: dHM/dδ per q}}` and `box_ids` (NASTRAN box ID of each `box_cp` / `box_forces` row) (#82) |
 | `run_sol144_diverg` | `from sbeam.solver.sol144 import run_sol144_diverg` | `(bulk, subcase, aero, aero_cache=None)` | `Sol144DivergResult` |
 | `run_maneuver_qs` | `from sbeam.solver.maneuver_qs import run_maneuver_qs` | `(bulk, subcase, aero, aero_cache=None)` | `ManeuverResult` — direct l-set transient solver. |
 | `run_maneuver_modal` | `from sbeam.solver.maneuver_modal import run_maneuver_modal` | `(bulk, subcase, aero, aero_cache=None, basis_cache=None)` | `ManeuverResult` — modal transient solver. |
-| `ManeuverBasisCache` | `from sbeam.solver.maneuver_modal import ManeuverBasisCache` | `(bulk, aero)` | One free-free modal basis per job, shared across modal `MLOADS` subcases. |
+| `ManeuverBasisCache` | `from sbeam.solver.maneuver_modal import ManeuverBasisCache` | `(bulk, aero)` | One free-free modal basis per job, shared across modal `MANVR` subcases. |
 
 A SOL 144 subcase is routed by its case-control requests, exactly as the CLI does it:
 `mloads_sid` set → a maneuver solver (`bulk.mloads[sid].selects_modal` picks modal over
@@ -171,10 +172,11 @@ from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.solver.maneuver_modal import ManeuverBasisCache, run_maneuver_modal
 from sbeam.solver.maneuver_qs import run_maneuver_qs
 from sbeam.solver.sol144 import AeroCache, run_sol144_diverg, run_sol144_trim
+from sbeam.solver.sol144_util import flight_mach
 
 case_control, bulk = parse_bdf(deck_path)
 grid_index = build_grid_index(bulk)
-aero = build_aero_model(bulk, grid_index=grid_index)
+aero = build_aero_model(bulk, grid_index=grid_index, mach=flight_mach(case_control, bulk))
 cache = AeroCache(bulk, grid_index, seed=aero)
 basis_cache = ManeuverBasisCache(bulk, aero)
 

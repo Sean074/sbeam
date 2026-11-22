@@ -21,7 +21,7 @@
 >   collection the deck does not have, since `AECOMP ALLGRID` omits the SUPORT grid.
 > * Effort ran ~3 d as re-estimated in §8, against the backlog's ~2 d.
 
-**Backlog item:** P8b (Tier 1) — the transient (`MLOADS`) follow-on to Monitor Phase 2.
+**Backlog item:** P8b (Tier 1) — the transient (`MANVR`) follow-on to Monitor Phase 2.
 **Predecessor design:** `designs/monsect_section_cuts.md` (P8, closed 2026-08-02, static only)
 — §2.2 of that document records this work as its declared out-of-scope follow-on.
 **Step number:** **68** (64–66 used; 67 is reserved by the backlog for the Tier 4 yaw-rate
@@ -45,7 +45,7 @@ over the whole time history so it knows no other instant is worse at any other s
 
 Today sbeam delivers:
 
-| | static SOL 144 trim | transient `MLOADS` maneuver |
+| | static SOL 144 trim | transient `MANVR` maneuver |
 |---|---|---|
 | Integrated monitor loads (`MONPNT1/3`) | ✅ | ❌ |
 | Section-cut running loads (`MONSECT`) | ✅ f06 block + CSV + viewer | ❌ |
@@ -124,8 +124,8 @@ fails today on any sample with meaningful elastic acceleration and passes after.
   ([`transient_net_loads_elastic_inertia.md`](transient_net_loads_elastic_inertia.md)).
 - **HDF5 export, `AXES` masking, stress recovery.** Inherited exclusions from the P8
   design; unchanged.
-- **New card fields.** No `MLOADS`/`MLDPRNT` field is added; the presence of `MONSECT`
-  cards in a deck with an `MLOADS` subcase is the request, exactly as for static trim.
+- **New card fields.** No `MANVR`/`MANPRNT` field is added; the presence of `MONSECT`
+  cards in a deck with an `MANVR` subcase is the request, exactly as for static trim.
 
 ---
 
@@ -153,7 +153,7 @@ inertia_elastic(t) = M_gg · ü_g,elastic(t)          (§4.3)
 damping(t)         = M_gg · (2ζω · u̇_g,elastic(t))  (modal damping, ζ ≠ 0 only)
 ```
 
-The damping term is included because when `MLOADS ZETA ≠ 0` the modal solver applies
+The damping term is included because when `MANVR ZETA ≠ 0` the modal solver applies
 `C = M Φ (2ζω) Φᵀ M`-equivalent damping in the h-set, and that force is genuinely carried
 across a cut plane. It is separated from the inertia column in the CSV so a user can see
 it is small (or switch it off by running ζ = 0) rather than wondering where the residual
@@ -387,7 +387,7 @@ reads this one. Written as a **separate file** from the static `section_loads.cs
 label, cid, axis, side, half_model, station, comp_index, comp_name, max, max_sample,
 max_time, min, min_sample, min_time, absmax`.
 
-**MLDPRNT (`.mldprnt.txt`)** — left alone. Its column set is the DEF-M5/DEF-M7 stabilised
+**MANPRNT (`.mldprnt.txt`)** — left alone. Its column set is the DEF-M5/DEF-M7 stabilised
 state history; section cuts are a table per sample, not a column.
 
 **Viewer** — `_render_section_cuts` is generalised to take `(section_loads, key_prefix)`
@@ -396,7 +396,7 @@ why the prefix is a parameter). In `_render_sol144_maneuver`, below the existing
 slider: the station table/plot for the selected sample; a cut × station × component
 time-history chart with the critical-sample vline; and (increment 2) the envelope table
 plus min/max band on the station plot. Two more download buttons alongside the existing
-MLDPRNT/BDF pair.
+MANPRNT/BDF pair.
 
 ---
 
@@ -439,7 +439,7 @@ worse").
 | **V-TSEC7** | Half model. | `SYMXZ ≠ 0` deck: transient cut is **not** doubled; `half_model` flag propagates to the f06 and both CSVs. Inherits V-SEC9's intent into the transient path. |
 | **V-TSEC8** | `MASSCASE` sweep. | Two mass cases over the same maneuver produce different inertia columns and different envelopes; the CSV `massset`/`mass_case` columns identify them. Extends `tests/aero/test_section_cuts_massset.py` to the transient path. |
 | **V-TSEC9** | **Static non-regression.** | Every existing static `MONSECT` test (`tests/results/test_section_cuts.py`, `tests/aero/test_section_cuts_sol144.py`, `..._massset.py`, `tests/results/test_section_cut_output.py`) passes unchanged, and the on-plane `UserWarning` still fires exactly once per cut per run (`pytest.warns` count), not once per sample. |
-| **V-TSEC10** | Cost. | Flagship `MLOADS` deck with 4 cuts: wall-clock increase < 10 % versus the same deck with the `MONSECT` cards removed. Guards against an accidental per-sample geometry rebuild. |
+| **V-TSEC10** | Cost. | Flagship `MANVR` deck with 4 cuts: wall-clock increase < 10 % versus the same deck with the `MONSECT` cards removed. Guards against an accidental per-sample geometry rebuild. |
 | **V-TSEC11** | Both solvers. | Direct (`maneuver_qs`) and modal free-flight (`maneuver_modal`) paths both produce cuts; V-TSEC1 runs on both. Prevents the feature landing on one solver only. |
 
 Test files: extend `tests/aero/test_maneuver_qs.py` and add
@@ -516,7 +516,7 @@ it is the integrand's *inputs* that are incomplete on a transient sample.
    V-TSEC9 requires bit-identity, and the refactor lands as its own commit so a bisect is
    one step.
 6. **Memory on long runs.** Bounded and documented (§4.2); if a deck ever exceeds comfort,
-   the escape hatch is a `MLDPRNT` item keyword to store only the critical sample — noted,
+   the escape hatch is a `MANPRNT` item keyword to store only the critical sample — noted,
    not built.
 
 ---
@@ -545,7 +545,7 @@ it is the integrand's *inputs* that are incomplete on a transient sample.
 
 ## 10. Acceptance criteria
 
-1. A deck with `MONSECT` cards and an `MLOADS` subcase produces section-cut running loads
+1. A deck with `MONSECT` cards and an `MANVR` subcase produces section-cut running loads
    at every output sample, under **both** transient solvers.
 2. V-TSEC1 passes: holding commands at trim reproduces the static `MONSECT` table to ~1e-8.
 3. V-TSEC3 passes: on a dynamic sample the cut equals the CBAR internal force — documented

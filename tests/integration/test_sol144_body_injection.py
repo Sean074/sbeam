@@ -1,9 +1,9 @@
-"""V-M1 — SPLINE0 / un-splined box loads in the SOL 144 trim (Step 64 / DEF-M1).
+"""V-M1 — LOADINJ / un-splined box loads in the SOL 144 trim (Step 64 / DEF-M1).
 
 `sample/ha144a_body_trim.bdf` is the full-span HA144A deck plus a cruciform pair
-of decoupled strip body panels (PSTRIP) carried by SPLINE0 — boxes with no
+of decoupled strip body panels (PSTRIP) carried by LOADINJ — boxes with no
 structural spline.  Their aerodynamic force reaches the structure only through
-the Step 64 rigid load injection at the SPLINE0 master grid.
+the Step 64 rigid load injection at the LOADINJ master grid.
 
 The defining gate is the load-factor identity: the *all-box* trimmed lift must
 equal the weight.  Before Step 64 the body force was in the printed totals but
@@ -62,7 +62,7 @@ class TestInjectionSetup:
     def test_both_spline0_panels_inject(self, body_trim):
         _r, _b, _gi, aero, _cc = body_trim
         got = [(i.source, i.master_grid, len(i.boxes)) for i in aero.load_injections]
-        assert got == [("SPLINE0 9400", 98, 16), ("SPLINE0 9500", 90, 32)], got
+        assert got == [("LOADINJ 9400", 98, 16), ("LOADINJ 9500", 90, 32)], got
 
     def test_explicit_and_default_master(self, body_trim):
         """Panel 6000 names GRID 98; panel 7000 leaves the field blank → SUPORT 90."""
@@ -148,7 +148,7 @@ class TestOutputs:
         result, bulk, _gi, _aero, cc = body_trim
         text = _build_f06_sol144_text(cc, bulk, result, subcase_id=1)
         assert "I N J E C T E D   A E R O   L O A D S" in text
-        assert "SPLINE0 9400" in text
+        assert "LOADINJ 9400" in text
 
     def test_f06_block_absent_without_injection(self, base_trim):
         result, bulk, _gi, _aero, cc = base_trim
@@ -175,7 +175,7 @@ class TestOutputs:
 class TestNoSuportDecksStillBuild:
     """A body panel with no master grid AND no SUPORT — warn, never raise.
 
-    The master grid resolves from SPLINE0 field 5, falling back to the SUPORT grid.
+    The master grid resolves from LOADINJ field 5, falling back to the SUPORT grid.
     With neither, the body force has nowhere to go: the build must say so loudly and
     drop the injection rather than raise or silently keep it.
 
@@ -186,7 +186,7 @@ class TestNoSuportDecksStillBuild:
     """
 
     _MIN_DECK = """\
-AEROS, 0, 0, 1.0, 2.0, 2.0, 0, 0, 0.0
+AEROS, 0, 0, 1.0, 2.0, 2.0, 0, 0
 PAERO1, 10
 MAT1, 1, 7.0e10, 2.69e10, 0.3, 2700.0
 PBAR, 1, 1, 0.01, 1.0e-5, 1.0e-5, 2.0e-5
@@ -195,7 +195,7 @@ GRID, 2, , 1.0, 0.0, 0.0
 CBAR, 1, 1, 1, 2, 0.0, 0.0, 1.0
 CAERO1, 400, 10, 0, 2, 2, 0, 0, 1
 +, 0.0, -0.5, 0.0, 1.0, 0.0, 0.5, 0.0, 1.0
-SPLINE0, 9400, 400, 400, 403
+LOADINJ, 9400, 400, 400, 403
 """
 
     def _bulk(self):
@@ -203,7 +203,7 @@ SPLINE0, 9400, 400, 400, 403
         bulk = parse_bulk_data(self._MIN_DECK.splitlines())
         assert not bulk.supports, "precondition: this deck must have no SUPORT"
         assert bulk.spline0s[9400].grid in (None, 0), \
-            "precondition: SPLINE0 must not name a master grid"
+            "precondition: LOADINJ must not name a master grid"
         return bulk
 
     def test_builds_with_warning(self):

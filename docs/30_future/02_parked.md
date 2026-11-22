@@ -34,7 +34,7 @@ mission statement changes:
 **Objective:** Discrete control-law update `δ_c[n+1] = f(sensor(ξ, ξ̇, ξ̈))` inside the time loop;
 actuator lag as a first-order appended state; sensors at grids via the existing spline/recovery
 operators. Enables commanded-Nz and the over-determined transient control allocation (reusing the
-`TRIMOBJ` null-space QP pattern). ZAERO-ASE-flavoured cards designed at promotion. Bridges to the
+`TRIMWGT` null-space QP pattern). ZAERO-ASE-flavoured cards designed at promotion. Bridges to the
 full Phase G ASE system. Acceptance sketch: proportional pitch-rate damper reduces short-period
 overshoot vs open loop; zero-gain identity to Step 63.
 
@@ -119,12 +119,12 @@ a mild increment — or use the decoupled strip body (A10), which is placement-f
 - **A9-d — multi-Mach body targets.** Extend the CSV `TOTAL` block to a per-Mach sweep consistent
   with the flying-surface per-Mach corrected-BDF export.
 
-### CHORDCP (Step 54) — follow-ons
+### CPINJ (Step 54) — follow-ons
 
-- **S54-a — partial per-surface coverage.** v1 requires every VLM CAERO1 to carry a CHORDCP card
+- **S54-a — partial per-surface coverage.** v1 requires every VLM CAERO1 to carry a CPINJ card
   (one shared ALPHREF). CFD-wing-only injection with the tail on its W2GJ baseline mixes two
   operating points — needs a documented approximation + warning before it can ship.
-- **S54-b — viewer CHORDCP authoring.** A path from a per-box Cp table (CSV) to CHORDCP cards +
+- **S54-b — viewer CPINJ authoring.** A path from a per-box Cp table (CSV) to CPINJ cards +
   corrected-BDF export, parallel to the existing W2GJ+WT2 synthesis in
   `aero_correction_view.py`. Includes the deferred injected-vs-computed mean-flow overlay.
 
@@ -279,6 +279,7 @@ biconvex section: 36 CSHEAR, 48 CROD/CONROD, 17 membranes, with reference output
 | Model pre-solve validator | Pre-run checks: zero-length elements, missing SPC, unsupported cards, inconsistent units, unreferenced SIDs — viewer warning panel. | Viewer complete |
 | Sample model library | Curated BDF examples (cantilever, portal frame, truss, airplane stick, …) for tutorials and regression. | Verification suite |
 | Deploy to Streamlit Community Cloud | Live demo URL for the README (nice-to-have). | Viewer complete |
+| sbeam → MSC deck converter (#87, 2026-11-22) | A command-line script in `sbeam_tools/` (never imported by `sbeam/`; pattern `sbeam_tools/cases/cli.py`) that writes an MSC-runnable deck from an sbeam deck: copies the MSC cards, maps what has an MSC equivalent, and lists what has none (MANVR family, CPINJ, LOADINJ, BODYATT, TRIMWGT/TRIMINEQ, GUSTLF, MONSECT, PSTRIP/STRIPK, AECORR) instead of dropping it silently. Purpose: an independent MSC benchmark of the same airplane (rule 2). No ZAERO converter: a ZAERO deck needs flutter, RFA and control-system data sbeam has none of. | Activate when a named MSC validation run needs it (rule 5) |
 
 ---
 

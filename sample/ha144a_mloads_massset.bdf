@@ -2,7 +2,7 @@ $ HA144A full-span — Step 63 free-flight maneuver x MASSCASE payload sweep
 $
 $ Purpose: the full "maneuvers x payload conditions" demonstration (G0-b).
 $ One deck, one elevator ramp-and-hold command shape, three payload conditions
-$ — each subcase runs the FREE-FLIGHT modal transient solver (MLOADS
+$ — each subcase runs the FREE-FLIGHT modal transient solver (MANVR
 $ METHOD=-1): the rigid states (ANGLEA/PITCH/URDD3/URDD5) are integrated, not
 $ prescribed, so the maneuver self-balances (closure ~ 0) and each mass case
 $ settles at its own load factor.  The fuel tanks sit at the baseline CG
@@ -14,8 +14,8 @@ $   MASSCASE 10  EMPTY     16000 lb   baggage DELETEd
 $   MASSCASE 20  HALFFUEL  18500 lb   + 2500 lb fuselage fuel (ADD)
 $   MASSCASE 30  FULLFUEL  21000 lb   + 5000 lb fuel + baggage 500->1000 (REPLACE)
 $
-$ MLDCOMD tables are ABSOLUTE and therefore mass-case-specific: each subcase
-$ has its own MLOADS/MLDCOMD/TABLED1 whose t=0 value is that case's trim ELEV
+$ MANCMD tables are ABSOLUTE and therefore mass-case-specific: each subcase
+$ has its own MANVR/MANCMD/TABLED1 whose t=0 value is that case's trim ELEV
 $ (two-pass authoring — trim first, then author the table from the trim value).
 $
 $ Bulk model: ha144a_fullspan_sbeam.bdf + Step 60 mass cases; TRIM 1 carries
@@ -27,20 +27,20 @@ $
 $ Units: ft, lb, slug, s
 $
 SOL 144
-TITLE = HA144A free-flight MLOADS x MASSCASE sweep
+TITLE = HA144A free-flight MANVR x MASSCASE sweep
 $ Subcase 1 — EMPTY (MASSCASE 10)
 SUBCASE 1
-  MLOADS  = 10
+  MANVR  = 10
   SPC     = 1
   MASSCASE = 10
 $ Subcase 2 — HALF FUEL (MASSCASE 20)
 SUBCASE 2
-  MLOADS  = 20
+  MANVR  = 20
   SPC     = 1
   MASSCASE = 20
 $ Subcase 3 — FULL FUEL (MASSCASE 30)
 SUBCASE 3
-  MLOADS  = 30
+  MANVR  = 30
   SPC     = 1
   MASSCASE = 30
 BEGIN BULK
@@ -48,7 +48,7 @@ $
 $ ============================================================
 $ REFERENCE GEOMETRY  (SYMXZ=0 full-span; sref=400 = full wing area)
 $ ============================================================
-AEROS, 1, 100, 10.0, 40.0, 400.0, 0, 0, 0.9
+AEROS, 1, 100, 10.0, 40.0, 400.0, 0, 0
 $
 $ ============================================================
 $ COORDINATE SYSTEMS
@@ -318,34 +318,34 @@ $ RHOREF (sbeam extension, Step 61) is the freestream density: it plays no part
 $ in the static trim and exists only so V = sqrt(2q/rho) is available to the
 $ transient maneuver rate terms.  2.3769-3 slug/ft^3 = sea-level standard day.
 $ ============================================================
-TRIM, 1, 0.9, 40.0, RHOREF, 2.3769-3, PITCH, 0.0
-+, URDD3, -32.174, URDD5, 0.0
-TRIM, 2, 0.9, 1200.0, RHOREF, 2.3769-3, PITCH, 0.0
-+, URDD3, -32.174, URDD5, 0.0
+TRIM, 1, 0.9, 40.0, PITCH, 0.0, URDD3, -32.174
++, URDD5, 0.0
+TRIM, 2, 0.9, 1200.0, PITCH, 0.0, URDD3, -32.174
++, URDD5, 0.0
 $
 $
 $ PHASE G0 — FREE-FLIGHT TRANSIENT MANEUVER LOADS (Step 63)
 $ ============================================================
-$ One MLOADS per mass case (the ABSOLUTE command tables are case-specific).
+$ One MANVR per mass case (the ABSOLUTE command tables are case-specific).
 $ METHOD=-1 selects the free-flight modal solver with the internal default
 $ EIGRL (all elastic modes); ZETA = 0.02 uniform elastic modal damping.
 $ Integrate 0 -> 2.0 s at dt=0.01, output every 0.1 s, from the 1g TRIM 1.
-MLDTRIM, 1, 1
-MLDTIME, 1, 0.0, 2.0, 0.01, 0.1
-MLDPRNT, 1
+MANTRIM, 1, 1, 2.3769-3
+MANTIME, 1, 0.0, 2.0, 0.01, 0.1
+MANPRNT, 1
 $ --- EMPTY: trim ELEV 0.491711 rad -> +0.1 ramp over 0.2 s, hold
-MLOADS, 10, 1, 1, 11, 1, 0, -1, 0.02
-MLDCOMD, 11, ELEV, 310
+MANVR, 10, 1, 1, 11, 1, 0, -1, 0.02
+MANCMD, 11, ELEV, 310
 TABLED1, 310
 +, 0.0, 0.491711, 0.2, 0.591711, 2.0, 0.591711, ENDT
 $ --- HALFFUEL: trim ELEV 0.602953 rad -> +0.1 ramp over 0.2 s, hold
-MLOADS, 20, 1, 1, 21, 1, 0, -1, 0.02
-MLDCOMD, 21, ELEV, 320
+MANVR, 20, 1, 1, 21, 1, 0, -1, 0.02
+MANCMD, 21, ELEV, 320
 TABLED1, 320
 +, 0.0, 0.602953, 0.2, 0.702953, 2.0, 0.702953, ENDT
 $ --- FULLFUEL: trim ELEV 0.714195 rad -> +0.1 ramp over 0.2 s, hold
-MLOADS, 30, 1, 1, 31, 1, 0, -1, 0.02
-MLDCOMD, 31, ELEV, 330
+MANVR, 30, 1, 1, 31, 1, 0, -1, 0.02
+MANCMD, 31, ELEV, 330
 TABLED1, 330
 +, 0.0, 0.714195, 0.2, 0.814195, 2.0, 0.814195, ENDT
 ENDDATA

@@ -181,7 +181,7 @@ def _show_parse_summary(bulk: BulkData) -> None:
         st.caption("No case control loaded — define analysis via Case Control tab.")
     if bulk.chordcps:
         st.caption(
-            f"ℹ️ CHORDCP steady-pressure injection active ({len(bulk.chordcps)} "
+            f"ℹ️ CPINJ steady-pressure injection active ({len(bulk.chordcps)} "
             "card(s)) — the SOL 144 mean flow is supplied from CFD/test data."
         )
 
@@ -638,6 +638,7 @@ def _run_sol144(bulk: BulkData, cc: CaseControl) -> None:
     from sbeam.aero.aero_model import build_aero_model
     from sbeam.assembly.load_vector import build_grid_index
     from sbeam.solver.sol144 import run_sol144_trim, run_sol144_diverg, AeroCache
+    from sbeam.solver.sol144_util import flight_mach
     from sbeam.solver.maneuver_qs import run_maneuver_qs
     from sbeam.solver.maneuver_modal import run_maneuver_modal, ManeuverBasisCache
 
@@ -646,10 +647,10 @@ def _run_sol144(bulk: BulkData, cc: CaseControl) -> None:
     maneuver_results: dict[int, ManeuverResult] = {}
     with st.spinner("Running SOL 144…"):
         grid_index = build_grid_index(bulk)
-        aero = build_aero_model(bulk, grid_index=grid_index)
+        aero = build_aero_model(bulk, grid_index=grid_index, mach=flight_mach(cc, bulk))
         cache = AeroCache(bulk, grid_index, seed=aero)
         # Step 62/63 (D3): one free-free basis per job, shared across every
-        # modal MLOADS subcase (MASSCASE sweeps swap M only, never Phi).
+        # modal MANVR subcase (MASSCASE sweeps swap M only, never Phi).
         basis_cache = ManeuverBasisCache(bulk, aero)
         for sc in cc.subcases:
             if sc.mloads_sid is not None:
@@ -751,11 +752,14 @@ def _render_aero_tab(bulk: BulkData) -> None:
     with col_ctrl:
         alpha_deg = st.number_input("AoA α (°)", value=3.0, step=0.5, key="aero_alpha")
         beta_deg  = st.number_input("Sideslip β (°)", value=0.0, step=0.5, key="aero_beta")
+        # AEROS carries no Mach in MSC's layout (#87): the flight Mach is entered here
+        mach = st.number_input("Mach", value=0.0, min_value=0.0, max_value=0.99, step=0.05,
+                               key="aero_mach")
         compute_btn = st.button("Compute Aero", type="primary", key="aero_compute")
 
     if compute_btn:
         with st.spinner("Building AIC and solving…"):
-            aero_model = build_aero_model(bulk)
+            aero_model = build_aero_model(bulk, mach=float(mach))
             alpha_rad = np.radians(alpha_deg)
             beta_rad  = np.radians(beta_deg)
             # Corrected solve on aero_model.ajj_inv_corr — any AIC correction
@@ -821,7 +825,7 @@ def _render_aero_tab(bulk: BulkData) -> None:
             )
             if aero_model.chordcp_alpha_ref is not None:
                 st.caption(
-                    "ℹ️ CHORDCP steady-pressure injection active — the mean flow "
+                    "ℹ️ CPINJ steady-pressure injection active — the mean flow "
                     "is the injected CFD/test Cp distribution (reference AOA "
                     f"{np.degrees(aero_model.chordcp_alpha_ref):.3f}°), not the "
                     "program-computed W2GJ baseline."

@@ -1,6 +1,6 @@
 # sbeam — Simple Beam FEA
 
-A Python finite element analysis tool for beam structures using NASTRAN BDF input format. Supports static analysis (SOL 101) and normal modes (SOL 103) via Euler-Bernoulli beam theory, plus static aeroelastics (SOL 144): steady vortex-lattice aerodynamics, flexible trim, stability derivatives, divergence, monitor-point section loads, and DLM-free quasi-steady transient maneuver loads (ZAERO-style `MLOADS`).
+A Python finite element analysis tool for beam structures using NASTRAN BDF input format. Supports static analysis (SOL 101) and normal modes (SOL 103) via Euler-Bernoulli beam theory, plus static aeroelastics (SOL 144): steady vortex-lattice aerodynamics, flexible trim, stability derivatives, divergence, monitor-point section loads, and DLM-free quasi-steady transient maneuver loads (sbeam's `MANVR` card set).
 
 **License:** MIT (see [LICENSE](LICENSE)) — free to use, modify, and redistribute, including commercially.
 
@@ -115,11 +115,11 @@ code standard (`10_standard/`), theory & worked examples (`20_theory/`), future 
 | Loads | `FORCE`, `MOMENT`, `LOAD`, `GRAV` |
 | Eigenvalue | `EIGRL` |
 | Aero geometry | `AEROS`, `CAERO1`, `PAERO1`, `AEFACT`, `PSTRIP`, `STRIPK` |
-| Aero corrections | `W2GJ`, `WKK`, `AECORR`, `CHORDCP` |
-| Splining | `SET1`, `SPLINE0`, `SPLINE1`*, `SPLINE2`, `ATTACH` |
-| Trim / divergence / gust | `AESTAT`, `AESURF`, `AELIST`, `TRIM`, `DIVERG`, `TRIMVAR`, `TRIMOBJ`, `TRIMCON`, `GUSTLF` |
+| Aero corrections | `W2GJ`, `WKK`, `AECORR`, `CPINJ` |
+| Splining | `SET1`, `LOADINJ`, `SPLINE1`*, `SPLINE2`, `BODYATT` |
+| Trim / divergence / gust | `AESTAT`, `AESURF`, `AELIST`, `TRIM`, `DIVERG`, `TRIMVAR`, `TRIMWGT`, `TRIMINEQ`, `GUSTLF` |
 | Monitor points / section cuts | `MONPNT1`, `MONPNT3`, `MONSECT`, `AECOMP` |
-| Transient maneuver | `MLOADS`, `MLDTRIM`, `MLDTIME`, `MLDCOMD`, `MLDPRNT`, `TABLED1` |
+| Transient maneuver | `MANVR`, `MANTRIM`, `MANTIME`, `MANCMD`, `MANPRNT`, `TABLED1` |
 
 \* `SPLINE1` is parsed but not yet implemented (use `SPLINE2`).
 
@@ -130,7 +130,7 @@ Full field-by-field definitions: [`docs/10_standard/02_card_reference.md`](docs/
 - **SOL 101** — Linear statics: nodal displacements, SPC reactions, CBAR end forces/moments, stress recovery, CBUSH element forces
 - **SOL 103** — Normal modes: natural frequencies (Hz and rad/s), normalised mode shapes, modal mass fractions
 - **SOL 144** — Static aeroelastic trim (steady VLM): determined and over-determined trim, rigid + elastic-restrained stability derivatives, hinge-moment derivatives, divergence dynamic pressure (`DIVERG`), balanced maneuver loads with inertia relief, applied structural loads in the trim (thrust, engine torque via `LOAD`), monitor-point integrated section loads, trimmed flight-load export
-- **SOL 144 + `MLOADS`** — DLM-free quasi-steady transient maneuver loads (Phase G0, Level 1): open-loop commanded control histories integrated by Newmark-β from a trimmed initial condition, with time-history output and critical-sample load export
+- **SOL 144 + `MANVR`** — DLM-free quasi-steady transient maneuver loads (Phase G0, Level 1): open-loop commanded control histories integrated by Newmark-β from a trimmed initial condition, with time-history output and critical-sample load export
 
 ## Known Limitations
 

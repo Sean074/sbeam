@@ -330,9 +330,9 @@ def test_grav_in_a_trim_load_set_is_refused(model):
 def test_load_in_an_mloads_subcase_is_refused_by_both_transient_solvers(model):
     cc, bulk, aero, gi = model
     sc = SubcaseControl(subcase_id=9, mloads_sid=1, load_sid=701, spc_sid=1)
-    with pytest.raises(ValueError, match=r"MLOADS=1 and LOAD=701"):
+    with pytest.raises(ValueError, match=r"MANVR=1 and LOAD=701"):
         run_maneuver_qs(bulk, sc, aero)
-    with pytest.raises(ValueError, match=r"MLOADS=1 and LOAD=701"):
+    with pytest.raises(ValueError, match=r"MANVR=1 and LOAD=701"):
         run_maneuver_modal(bulk, sc, aero)
 
 

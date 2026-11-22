@@ -99,8 +99,8 @@ def test_orphan_continuation_is_refused():
 
 
 @pytest.mark.parametrize("fmt, lines", [
-    ("fixed", ["TRIMVAR 1       ANGLEA  0.0"]),
-    ("free", ["TRIMVAR,1,ANGLEA,0.0"]),
+    ("fixed", ["TRIMVAR 1       ANGLEA                                          0.0"]),
+    ("free", ["TRIMVAR,1,ANGLEA,,,,,,0.0"]),
 ])
 def test_trimvar_blank_bounds_are_open_in_every_format(fmt, lines):
     """Audit P6: fixed field gave lb = ub = 0.0, pinning the variable (#77 part 1)."""

@@ -469,18 +469,18 @@ class TestEnergyRoundTrip:
 
 
 # ---------------------------------------------------------------------------
-# V-B3: ATTACH rigid-body gate + SPLINE0 zero-force (machine-precision)
+# V-B3: BODYATT rigid-body gate + LOADINJ zero-force (machine-precision)
 # ---------------------------------------------------------------------------
 
 def _build_attach_bulk(p4=(0.0, 2.0, 0.0), master=(0.0, 0.0, 0.0)):
-    """Minimal BulkData for ATTACH tests.
+    """Minimal BulkData for BODYATT tests.
 
     Geometry (default, planar):
       GRID 1 at (0, 0, 0) — master structural grid
       CAERO1 EID=200: span along Y (0..2), chord along X (0..1), 2span×1chord
         Box 200: force_point ≈ (0.25, 0.5, 0),  lever r = (0.25, 0.5, 0)
         Box 201: force_point ≈ (0.25, 1.5, 0),  lever r = (0.25, 1.5, 0)
-      ATTACH EID=300: covers boxes 200–201, master GRID=1, CID=0
+      BODYATT EID=300: covers boxes 200–201, master GRID=1, CID=0
 
     ``p4`` moves the panel tip so the same geometry can be canted (dihedral,
     e.g. ``(0, 2, 2)`` → 45°) or made a pure vertical fin (``(0, 0, 2)`` →
@@ -508,10 +508,10 @@ def _build_attach_bulk(p4=(0.0, 2.0, 0.0), master=(0.0, 0.0, 0.0)):
 
 
 def _build_spline0_bulk():
-    """Minimal BulkData for SPLINE0 zero-force test.
+    """Minimal BulkData for LOADINJ zero-force test.
 
-    Same geometry as _build_attach_bulk() but using SPLINE0 instead of ATTACH.
-    GRID 1 exists only so grid_index is non-empty; SPLINE0 leaves all rows zero.
+    Same geometry as _build_attach_bulk() but using LOADINJ instead of BODYATT.
+    GRID 1 exists only so grid_index is non-empty; LOADINJ leaves all rows zero.
     """
     bulk = BulkData()
     bulk.grids[1] = Grid(gid=1, cp=0, x=0.0, y=0.0, z=0.0, cd=0)
@@ -533,7 +533,7 @@ def _build_spline0_bulk():
 
 @pytest.fixture(scope="module")
 def attach_operators():
-    """Build g_slope and g_disp for the ATTACH test geometry."""
+    """Build g_slope and g_disp for the BODYATT test geometry."""
     from sbeam.aero.panel import mesh_caero1
     bulk = _build_attach_bulk()
     caero = bulk.caero1s[200]
@@ -547,7 +547,7 @@ def attach_operators():
 
 @pytest.fixture(scope="module")
 def spline0_operators():
-    """Build g_slope and g_disp for the SPLINE0 test geometry (all rows zero)."""
+    """Build g_slope and g_disp for the LOADINJ test geometry (all rows zero)."""
     from sbeam.aero.panel import mesh_caero1
     bulk = _build_spline0_bulk()
     caero = bulk.caero1s[200]
@@ -560,7 +560,7 @@ def spline0_operators():
 
 
 class TestAttachRigidBodyGate:
-    """V-B3: ATTACH lever-arm kinematics must hold to machine precision."""
+    """V-B3: BODYATT lever-arm kinematics must hold to machine precision."""
 
     def test_v_b3a_rigid_tz_zero_incidence(self, attach_operators):
         """V-B3a: Rigid Tz translation → zero incidence (plunge has zero slope)."""
@@ -570,12 +570,12 @@ class TestAttachRigidBodyGate:
         u[6 * 0 + 2] = 1.0  # Tz at grid index 0
         incidence = g_slope @ u
         assert np.allclose(incidence, 0.0, atol=1e-14), (
-            f"ATTACH rigid Tz must give zero incidence; "
+            f"BODYATT rigid Tz must give zero incidence; "
             f"max |a|={np.max(np.abs(incidence)):.2e}"
         )
 
     def test_v_b3b_rigid_ry_uniform_incidence(self, attach_operators):
-        """V-B3b: Rigid Ry pitch → uniform incidence = +1 at all ATTACH boxes.
+        """V-B3b: Rigid Ry pitch → uniform incidence = +1 at all BODYATT boxes.
 
         g_slope carries streamwise incidence, nose-up positive (build_djk = −I
         converts it to normalwash), so a nose-up master rotation must produce
@@ -588,7 +588,7 @@ class TestAttachRigidBodyGate:
         u[6 * 0 + 4] = 1.0  # Ry at grid index 0
         incidence = g_slope @ u
         assert np.allclose(incidence, 1.0, atol=1e-14), (
-            f"ATTACH rigid Ry pitch must give uniform incidence=+1; values: {incidence}"
+            f"BODYATT rigid Ry pitch must give uniform incidence=+1; values: {incidence}"
         )
 
     def test_v_b3e_rigid_rx_zero_incidence(self, attach_operators):
@@ -604,16 +604,16 @@ class TestAttachRigidBodyGate:
         u[6 * 0 + 3] = 1.0  # Rx at grid index 0
         incidence = g_slope @ u
         assert np.allclose(incidence, 0.0, atol=1e-14), (
-            f"ATTACH rigid Rx roll must give zero incidence; values: {incidence}"
+            f"BODYATT rigid Rx roll must give zero incidence; values: {incidence}"
         )
 
     def test_v_b3f_matches_spline2_under_rigid_rotation(self, attach_operators):
-        """V-B3f: ATTACH and SPLINE2 must give the same incidence for rigid motion.
+        """V-B3f: BODYATT and SPLINE2 must give the same incidence for rigid motion.
 
-        Same panel, two splining routes: ATTACH to a master GRID at the origin
+        Same panel, two splining routes: BODYATT to a master GRID at the origin
         versus SPLINE2 over two grids on the span axis.  A rigid-body motion is
         applied to both (u = ω×r at each grid, rotation = ω), so §4.5 rigid-body
-        exactness requires identical incidence fields.  This ties the ATTACH
+        exactness requires identical incidence fields.  This ties the BODYATT
         convention to the already-validated SPLINE2 path instead of to a
         hand-written constant (DEF-H1).
         """
@@ -621,7 +621,7 @@ class TestAttachRigidBodyGate:
 
         omega = np.array([0.3, -0.7, 0.45])   # general rigid rotation
 
-        # --- ATTACH route: single master grid at the origin
+        # --- BODYATT route: single master grid at the origin
         g_slope_att, _, _, grid_index_att, _ = attach_operators
         u_att = np.zeros(6 * len(grid_index_att))
         u_att[3:6] = omega                     # master at origin → no translation
@@ -657,7 +657,7 @@ class TestAttachRigidBodyGate:
         inc_sp2 = g_slope_sp2 @ u_sp2
 
         assert np.allclose(inc_att, inc_sp2, atol=1e-12), (
-            f"ATTACH vs SPLINE2 rigid-rotation incidence mismatch: "
+            f"BODYATT vs SPLINE2 rigid-rotation incidence mismatch: "
             f"{inc_att} vs {inc_sp2}"
         )
         # Analytic value for a z-normal panel: a = w_y*n_z - w_z*n_y = omega_y
@@ -718,12 +718,12 @@ class TestAttachRigidBodyGate:
             g_z_only[3 * k + 1, :] = 0.0     # drop the y-displacement row
 
         assert np.array_equal(g_disp.T @ force_vec, g_z_only.T @ force_vec), (
-            "z-normal ATTACH transfer must be unchanged by the DEF-M11 rows"
+            "z-normal BODYATT transfer must be unchanged by the DEF-M11 rows"
         )
 
 
 def _attach_ops(p4, master=(0.0, 0.0, 0.0)):
-    """Build (g_disp, boxes, bulk, master_pos) for an ATTACH panel with tip *p4*."""
+    """Build (g_disp, boxes, bulk, master_pos) for an BODYATT panel with tip *p4*."""
     from sbeam.aero.panel import mesh_caero1
     bulk = _build_attach_bulk(p4=p4, master=master)
     boxes = mesh_caero1(
@@ -736,7 +736,7 @@ def _attach_ops(p4, master=(0.0, 0.0, 0.0)):
 
 
 class TestAttachInPlaneForceTransfer:
-    """DEF-M11 — ATTACH ``g_disp`` carries the full rigid transform, not the z-row.
+    """DEF-M11 — BODYATT ``g_disp`` carries the full rigid transform, not the z-row.
 
     Before the fix ``g_disp`` filled only the z-displacement row, so the in-plane
     Fx/Fy of a canted or vertical panel never reached the master grid (and the
@@ -761,7 +761,7 @@ class TestAttachInPlaneForceTransfer:
         return F_got, M_got, F_exp, M_exp
 
     def test_v_b3d_dih_force_transfer_canted_panel(self):
-        """V-B3d-DIH: dihedral ATTACH panel — Fy and Mz must survive transfer.
+        """V-B3d-DIH: dihedral BODYATT panel — Fy and Mz must survive transfer.
 
         Chord along x, span (0, 2, 1) → Γ = 26.57°, so n̂ = (0, −1, 2)/√5 and each
         box force carries Fy = −Fz/2.  The pre-DEF-M11 operator returned
@@ -791,7 +791,7 @@ class TestAttachInPlaneForceTransfer:
         assert np.allclose(M_got, M_exp, atol=1e-14), f"moment {M_got} vs {M_exp}"
 
     def test_v_b3d_vert_force_transfer_fin_panel(self):
-        """V-B3d-VERT: vertical (fin) ATTACH panel — the whole load is in-plane.
+        """V-B3d-VERT: vertical (fin) BODYATT panel — the whole load is in-plane.
 
         Span along ẑ gives a y-normal panel (n̂ = +ŷ under the dominant-component
         orientation of ``panel.py:220``), so the box force is pure Fy.  The
@@ -837,7 +837,7 @@ class TestAttachInPlaneForceTransfer:
 
 
 class TestSpline0ZeroForce:
-    """V-B3c: SPLINE0 contributes no displacement coupling and no downwash.
+    """V-B3c: LOADINJ contributes no displacement coupling and no downwash.
 
     Its aerodynamic force is not lost, though — it is injected rigidly at the
     master grid through ``g_load`` (Step 64 / DEF-M1, see
@@ -846,7 +846,7 @@ class TestSpline0ZeroForce:
     """
 
     def test_v_b3c_zero_force_contribution(self, spline0_operators):
-        """SPLINE0 boxes: g_disp.T @ any_pressure_force = 0 for all structural DOFs."""
+        """LOADINJ boxes: g_disp.T @ any_pressure_force = 0 for all structural DOFs."""
         from sbeam.aero.integration import build_skj
         _, g_disp, boxes, grid_index, _ = spline0_operators
         n_k = len(boxes)
@@ -857,14 +857,14 @@ class TestSpline0ZeroForce:
         f_g = g_disp.T @ force_vec
 
         assert np.allclose(f_g, 0.0, atol=1e-14), (
-            f"SPLINE0 must give zero structural force; max |f|={np.max(np.abs(f_g)):.2e}"
+            f"LOADINJ must give zero structural force; max |f|={np.max(np.abs(f_g)):.2e}"
         )
 
     def test_v_b3c_g_slope_zero(self, spline0_operators):
-        """SPLINE0 boxes: g_slope rows are zero (no incidence coupling)."""
+        """LOADINJ boxes: g_slope rows are zero (no incidence coupling)."""
         g_slope, _, boxes, grid_index, _ = spline0_operators
         assert np.allclose(g_slope, 0.0, atol=1e-14), (
-            f"SPLINE0 g_slope must be all-zero; max |w|={np.max(np.abs(g_slope)):.2e}"
+            f"LOADINJ g_slope must be all-zero; max |w|={np.max(np.abs(g_slope)):.2e}"
         )
 
 
@@ -878,7 +878,7 @@ def _build_injection_bulk(spline0_grid=1, master_pos=(0.0, 0.0, 0.0),
 
     A CANTED panel (dihedral 30°) so all three force components are non-zero —
     a z-row-only transfer would silently drop Fy.  ``spline0_grid = 0`` leaves
-    the SPLINE0 GRID field blank so the default (SUPORT) path is exercised.
+    the LOADINJ GRID field blank so the default (SUPORT) path is exercised.
     """
     bulk = BulkData()
     bulk.grids[1] = Grid(gid=1, cp=0, x=master_pos[0], y=master_pos[1],
@@ -924,7 +924,7 @@ def _resultant_at(f_g, grid_index, gid):
 
 
 class TestSpline0Injection:
-    """V-M1 — SPLINE0 / un-splined box forces reach the structure via g_load."""
+    """V-M1 — LOADINJ / un-splined box forces reach the structure via g_load."""
 
     def test_v_m1a_closed_form_resultant(self):
         """g_load.T f == [ΣF, Σ r×F] at the master grid, zero elsewhere."""
@@ -995,7 +995,7 @@ class TestSpline0Injection:
         assert np.allclose(M1, M2, atol=1e-14)
 
     def test_v_m1c_defaults_to_suport_grid(self):
-        """A blank SPLINE0 GRID field falls back to the SUPORT grid."""
+        """A blank LOADINJ GRID field falls back to the SUPORT grid."""
         bulk = _build_injection_bulk(spline0_grid=0, with_suport=True, suport_gid=2)
         ops, _boxes, _gi = _ops(bulk)
         assert [i.master_grid for i in ops.injections] == [2]

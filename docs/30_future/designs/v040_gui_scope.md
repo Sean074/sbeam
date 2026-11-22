@@ -24,9 +24,9 @@ found", and a capability listed as present means "code and at least one test exi
 
 From `docs/10_standard/02_card_reference.md` and the per-solver guides: SOL 101 static,
 SOL 103 modes, SOL 144 trim (determined and over-determined, longitudinal and lateral,
-thrust in trim), divergence sweep, MASSCASE mass cases, MLOADS transient maneuvers (direct
+thrust in trim), divergence sweep, MASSCASE mass cases, MANVR transient maneuvers (direct
 and modal), GUSTLF static gust cases, monitor points (MONPNT1/3) and section cuts
-(MONSECT), aero corrections (W2GJ, WKK/AECORR, CHORDCP, STRIPK body panels), and the f06,
+(MONSECT), aero corrections (W2GJ, WKK/AECORR, CPINJ, STRIPK body panels), and the f06,
 CSV and load-BDF outputs.
 
 ## 3. Survey: present and missing
@@ -36,21 +36,21 @@ CSV and load-BDF outputs.
 | Capability | State | Evidence |
 |---|---|---|
 | AESTAT, AESURF (both hinge halves), AELIST, SUPORT | Present | `_family_editor` forms; `test_sol144_authoring.py` |
-| TRIM, TRIMVAR, TRIMOBJ, TRIMCON, DIVERG | Present | forms; DIVERG form updated for #73 |
-| MLDTRIM, MLDTIME, MLDCOMD, MLDPRNT, MLOADS, TABLED1 + shape generators, increment builder | Present | forms; generators hold their end value since #70 |
-| Case control: SOL, subcases, LOAD/SPC/METHOD/TRIM/TRIMOBJ/DIVERG/MLOADS/MASSCASE selectors, output requests | Present | `test_case_control_ui.py` |
+| TRIM, TRIMVAR, TRIMWGT, TRIMINEQ, DIVERG | Present | forms; DIVERG form updated for #73 |
+| MANTRIM, MANTIME, MANCMD, MANPRNT, MANVR, TABLED1 + shape generators, increment builder | Present | forms; generators hold their end value since #70 |
+| Case control: SOL, subcases, LOAD/SPC/METHOD/TRIM/TRIMWGT/DIVERG/MANVR/MASSCASE selectors, output requests | Present | `test_case_control_ui.py` |
 | Aero corrections from section data; cruciform and strip body corrections | Present | `test_aero_correction_view.py` |
 | **MASSCASE card** (label, scale, ADD / REPLACE / DELETE rows) | **Missing** | selector only; no form |
 | **MONPNT1, MONPNT3, MONSECT, AECOMP** placement | **Missing** | no form |
 | **GUSTLF** card and selector | **Missing, and dropped on export** | filed as #98 |
-| **CHORDCP** | **Missing** | no form |
+| **CPINJ** | **Missing** | no form |
 | Thrust in trim (a LOAD set on a TRIM subcase) | Present in case control; FORCE/MOMENT cards themselves are model input (D1) | `_apply_sol144_kind` keeps LOAD for trim |
 
 **Running** (`app.py`)
 
 | Capability | State |
 |---|---|
-| SOL 101, 103, 144 trim, divergence, MLOADS from the Run button, all subcases | Present (flows A–E) |
+| SOL 101, 103, 144 trim, divergence, MANVR from the Run button, all subcases | Present (flows A–E) |
 | Parse errors and parser warnings shown; pre-solve checks | Present (`test_pre_solve_validation.py`) |
 | Progress within a long run | A spinner per solve; **no per-subcase or per-time-step progress** |
 | A list of the bundled examples to open | **Missing**: upload only. #11's journey test needs "every bundled example loaded" |
@@ -62,15 +62,15 @@ CSV and load-BDF outputs.
 | SOL 101 deformed shape, reactions, bar forces and stresses, rod and CBUSH forces | Present |
 | SOL 103 mode shapes, modal mass | Present |
 | SOL 144 trim variables, three derivative columns, divergence q, hinge moments (rigid, restrained, trimmed since #82), monitor loads, section cuts, deflected shape | Present |
-| MLOADS time histories, sample slider, monitor and section envelopes, exports | Present |
+| MANVR time histories, sample slider, monitor and section envelopes, exports | Present |
 | Divergence sweep roots, with a density input for speed (#73) | Present |
 | **Gust condition block** (`gust_echo`) | **Missing** (#98) |
-| **Injected operating point** (CHORDCP echo), **injected aero loads** (SPLINE0), **applied structural load** (#6) | **Missing**: printed in the f06, not shown |
+| **Injected operating point** (CPINJ echo), **injected aero loads** (LOADINJ), **applied structural load** (#6) | **Missing**: printed in the f06, not shown |
 | **The coefficient frame** (basic axes, and MSC's transformation, #82) | **Missing**: the f06 states it, the results page does not |
 
 **Tests**
 
-Five AppTest flows exist (A: SOL 101, B: SOL 103, C: SOL 144 dihedral, D: MLOADS, E:
+Five AppTest flows exist (A: SOL 101, B: SOL 103, C: SOL 144 dihedral, D: MANVR, E:
 free-flight modal dispatch) plus tab-render tests. None loads every bundled example, none
 visits every step, and none asserts the project unchanged after a no-op interaction.
 
@@ -97,7 +97,7 @@ Sizes are rough: S under a day, M a few days, L a week or more.
 | 7 | Monitor placement: MONPNT1 / MONPNT3 / MONSECT / AECOMP forms, with the cut or reference point drawn on the model | L | 4 |
 | 8 | GUSTLF form and gust condition block on the results page; a button that calls `sbeam_tools/cases/gust.py` | M | 1, 5 |
 | 9 | Results page: coefficient-frame statement, injected operating point, injected aero loads, applied structural load | S | — |
-| 10 | CHORDCP form (steady-pressure injection from a table) | M | 4 |
+| 10 | CPINJ form (steady-pressure injection from a table) | M | 4 |
 | 11 | Per-subcase and per-time-step progress for long runs | S | — |
 | 12 | Hand walk and release cut (§6) | S | all |
 

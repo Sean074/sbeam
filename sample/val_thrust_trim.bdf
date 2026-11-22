@@ -157,13 +157,13 @@ CAERO1, 4000, 1, 0, 6, 8, 0, 0, 1
 +, 4.0, 0.0, 0.5, 1.0, 4.0, -1.5, 0.5, 1.0
 $
 $ ----------------------------------------------------------- SPLINES
-$ Wing halves: SPLINE2 on the EA grids (CID 2 / 3); tail halves: rigid ATTACH to 500.
+$ Wing halves: SPLINE2 on the EA grids (CID 2 / 3); tail halves: rigid BODYATT to 500.
 SPLINE2, 1601, 1000, 1000, 1159, 1100, 0.0, 1.0, 2
 +, -1.0, 0.0
 SPLINE2, 2601, 2000, 2000, 2159, 2100, 0.0, 1.0, 3
 +, -1.0, 0.0
-ATTACH, 1603, 3000, 3000, 3047, 500, 0
-ATTACH, 1604, 4000, 4000, 4047, 500, 0
+BODYATT, 1603, 3000, 3000, 3047, 500, 0
+BODYATT, 1604, 4000, 4000, 4047, 500, 0
 SET1, 1100, 90, 110, 120
 SET1, 2100, 90, 210, 220
 $
@@ -206,6 +206,7 @@ $
 $ ----------------------------------------------------------- TRIM CASE
 $ 1 g level flight: PITCH = 0, URDD3 = -g (RCSID z-down), URDD5 = 0;
 $ ANGLEA, ELEV and URDD1 free against the three SUPORT equations (determined).
-TRIM, 1, 0.0, 51.0, PITCH, 0.0, URDD3, -9.81, URDD5, 0.0
+TRIM, 1, 0.0, 51.0, PITCH, 0.0, URDD3, -9.81
++, URDD5, 0.0
 $
 ENDDATA

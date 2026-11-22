@@ -398,11 +398,11 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
 
     if bulk.chordcps:
         st.error(
-            "This model carries CHORDCP steady-pressure injection cards: the "
+            "This model carries CPINJ steady-pressure injection cards: the "
             "baseline normalwash already holds the injected CFD/test mean flow, "
             "so a correction derivation here would compute its W2GJ/WT2 (and "
             "body-correction) baselines from the injected state, not from the "
-            "program's own aerodynamics. Remove the CHORDCP cards before "
+            "program's own aerodynamics. Remove the CPINJ cards before "
             "deriving correction cards."
         )
         return

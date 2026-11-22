@@ -13,7 +13,7 @@ duplicated.  ``PBAR``/``PBUSH``/``MAT1``/``PAERO1``/``AEFACT``/``CORD2R`` are
 passed through unchanged; ``AEROS`` is copied with ``SYMXZ = SYMXY = 0``.
 
 This is a best-effort *geometric* unfold.  Cards whose correct full-span form
-depends on model-specific intent — splines (``SPLINE0/1/2``, ``ATTACH``),
+depends on model-specific intent — splines (``LOADINJ/1/2``, ``BODYATT``),
 control surfaces (``AESURF``/``AELIST``), per-box data (``W2GJ``/``WKK``/
 ``AECORR``), constraints (``SPC``/``SPC1``/``SUPORT``) and loads — are NOT
 auto-converted.  If any are present ``mirror_halfspan`` raises
@@ -33,14 +33,14 @@ from sbeam.model.aero import require_aeros
 # Collections that the geometric unfold cannot safely auto-convert.  Mapping of
 # BulkData attribute name → human-readable card name for the error message.
 _UNSUPPORTED = {
-    "spline2s": "SPLINE2", "spline1s": "SPLINE1", "spline0s": "SPLINE0",
-    "attaches": "ATTACH", "aesurfs": "AESURF", "aelists": "AELIST",
+    "spline2s": "SPLINE2", "spline1s": "SPLINE1", "spline0s": "LOADINJ",
+    "attaches": "BODYATT", "aesurfs": "AESURF", "aelists": "AELIST",
     "set1s": "SET1", "w2gjs": "W2GJ", "wkks": "WKK", "aecorrs": "AECORR",
-    "chordcps": "CHORDCP",
+    "chordcps": "CPINJ",
     "spcs": "SPC", "spc1s": "SPC1", "forces": "FORCE", "moments": "MOMENT",
     "loads": "LOAD", "gravs": "GRAV", "trims": "TRIM", "aestats": "AESTAT",
-    "divergs": "DIVERG", "trimvars": "TRIMVAR", "trimobjs": "TRIMOBJ",
-    "trimcons": "TRIMCON", "rbe3s": "RBE3", "cbushs": "CBUSH",
+    "divergs": "DIVERG", "trimvars": "TRIMVAR", "trimobjs": "TRIMWGT",
+    "trimcons": "TRIMINEQ", "rbe3s": "RBE3", "cbushs": "CBUSH",
     "plotels": "PLOTEL",
     # A MASSCASE names CONM2 EIDs; whether a payload item mirrors (wing fuel)
     # or does not (a single centreline store) is model intent, not geometry.

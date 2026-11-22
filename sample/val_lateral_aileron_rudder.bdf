@@ -150,12 +150,12 @@ CAERO1, 5000, 1, 0, 6, 8, 0, 0, 1
 +, 4.0, 0.0, 0.0, 1.0, 4.0, 0.0, 2.0, 1.0
 $
 $ ----------------------------------------------------------- SPLINES
-$ Wing halves: SPLINE2 on the EA grids (CID 2 / 3); fin: rigid ATTACH to grid 510.
+$ Wing halves: SPLINE2 on the EA grids (CID 2 / 3); fin: rigid BODYATT to grid 510.
 SPLINE2, 1601, 1000, 1000, 1159, 1100, 0.0, 1.0, 2
 +, -1.0, 0.0
 SPLINE2, 2601, 2000, 2000, 2159, 2100, 0.0, 1.0, 3
 +, -1.0, 0.0
-ATTACH, 1605, 5000, 5000, 5047, 510, 0
+BODYATT, 1605, 5000, 5000, 5047, 510, 0
 SET1, 1100, 90, 110, 120
 SET1, 2100, 90, 210, 220
 $
@@ -198,14 +198,14 @@ $
 $ ----------------------------------------------------------- TRIM CASES
 $ Steady roll: ROLL prescribed, no angular acceleration; AIL and RUD trim free
 $ against the roll and yaw equations (determined: 2 free = 2 SUPORT DOFs).
-TRIM, 1, 0.0, 51.0, ROLL, 0.05, SIDES, 0.0, YAW, 0.0
-+, URDD4, 0.0, URDD6, 0.0
+TRIM, 1, 0.0, 51.0, ROLL, 0.05, SIDES, 0.0
++, YAW, 0.0, URDD4, 0.0, URDD6, 0.0
 $ Steady sideslip: SIDES prescribed; AIL and RUD trim free.
-TRIM, 2, 0.0, 51.0, SIDES, 0.05, ROLL, 0.0, YAW, 0.0
-+, URDD4, 0.0, URDD6, 0.0
+TRIM, 2, 0.0, 51.0, SIDES, 0.05, ROLL, 0.0
++, YAW, 0.0, URDD4, 0.0, URDD6, 0.0
 $ Engine torque reaction (#6): wings level, no rates, no sideslip — AIL and RUD trim
 $ free against the applied MOMENT 701 selected by LOAD in SUBCASE 3.
-TRIM, 3, 0.0, 51.0, ROLL, 0.0, SIDES, 0.0, YAW, 0.0
-+, URDD4, 0.0, URDD6, 0.0
+TRIM, 3, 0.0, 51.0, ROLL, 0.0, SIDES, 0.0
++, YAW, 0.0, URDD4, 0.0, URDD6, 0.0
 $
 ENDDATA

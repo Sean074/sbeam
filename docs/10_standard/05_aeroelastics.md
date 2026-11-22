@@ -7,9 +7,9 @@
 
 | File | Scope |
 |------|-------|
-| [`05a_aero_vlm.md`](05a_aero_vlm.md) | **Phase A — aerodynamics**: AEROS/CAERO1 cards, VLM AIC, integration matrices, AIC corrections (WKK/WT2), CHORDCP, section force/moment synthesiser, body panels (cruciform + decoupled strip), compressibility, viewer aero tab |
-| [`05b_splining.md`](05b_splining.md) | **Phase B — structure ↔ aero splining**: SPLINE2 (NASTRAN infinite beam), ATTACH, SPLINE0, `build_g_spline` API, `compute_structural_loads` |
-| [`05c_sol144_maneuver.md`](05c_sol144_maneuver.md) | **Phases C + G0 — SOL 144 & maneuver loads**: governing equation, coupling, trim card set, trim solver + derivatives, running & output (f06, load export, balanced maneuvers, transient MLOADS), monitor points, MONSECT section-cut running loads |
+| [`05a_aero_vlm.md`](05a_aero_vlm.md) | **Phase A — aerodynamics**: AEROS/CAERO1 cards, VLM AIC, integration matrices, AIC corrections (WKK/WT2), CPINJ, section force/moment synthesiser, body panels (cruciform + decoupled strip), compressibility, viewer aero tab |
+| [`05b_splining.md`](05b_splining.md) | **Phase B — structure ↔ aero splining**: SPLINE2 (NASTRAN infinite beam), BODYATT, LOADINJ, `build_g_spline` API, `compute_structural_loads` |
+| [`05c_sol144_maneuver.md`](05c_sol144_maneuver.md) | **Phases C + G0 — SOL 144 & maneuver loads**: governing equation, coupling, trim card set, trim solver + derivatives, running & output (f06, load export, balanced maneuvers, transient MANVR), monitor points, MONSECT section-cut running loads |
 
 ## Architecture Overview
 
@@ -41,18 +41,18 @@ Results   (cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, CDi, e, per_su
 | `sbeam/aero/strip.py` | **Step A10** — decoupled strip body panels (PSTRIP/STRIPK): `is_strip_caero`, `strip_box_mask`, `strip_box_slopes` (diagonal, zero-coupling ΔCp operator block — cannot contaminate the lifting surfaces) |
 | `sbeam/aero/aero_model.py` | `AeroModel` container + `build_aero_model()` factory (block-diagonal strip body block via `_assemble_vlm_operator`) |
 | `sbeam_tools/common/mirror.py` | Half-span → full-span model mirroring (symmetry deprecation; raises on unsupported cards) |
-| `sbeam/aero/spline.py` | **Phase B** — `build_spline_operators()`: builds `g_slope` (n_box×n_g), `g_disp` and `g_load` (3n_box×n_g) from `SPLINE2` + `ATTACH` + `SPLINE0` cards; `g_load` adds the Step 64 rigid load injection for structurally-uncoupled boxes |
+| `sbeam/aero/spline.py` | **Phase B** — `build_spline_operators()`: builds `g_slope` (n_box×n_g), `g_disp` and `g_load` (3n_box×n_g) from `SPLINE2` + `BODYATT` + `LOADINJ` cards; `g_load` adds the Step 64 rigid load injection for structurally-uncoupled boxes |
 | `sbeam/aero/coupling.py` | `build_qaa` flexible aero stiffness `Q_aa = G_dispᵀ S_kj (A_jj*)⁻¹ D_jk G_slope`; `build_fg` baseline aero load; `build_gaf` modal GAF `Q_hh = Φᵀ Q_aa Φ` |
 | `sbeam/solver/sol144.py` | `run_sol144_trim` — the trim orchestrator (`_TrimState` + stage helpers, P13) — plus a facade re-exporting every public and test-pinned name from the split modules below, so `from sbeam.solver.sol144 import …` keeps working for all of them |
 | `sbeam/solver/sol144_util.py` | `AeroCache` (Mach-keyed AeroModel cache, AE9), URDD frame rotations (`urdd_rcsid_to_basic`/`urdd_basic_to_rcsid`), `load_resultant`, `build_inertial_cols` (M_ax, Q4/DEF-M3), `get_suport_local`, `pitch_moment`, `aero_moment_resultant` |
-| `sbeam/solver/sol144_trim_solve.py` | SUPORT Schur partition (`build_trim_schur`) + determined and over-determined (TRIMOBJ/TRIMCON null-space weighted-L2) trim solvers |
+| `sbeam/solver/sol144_trim_solve.py` | SUPORT Schur partition (`build_trim_schur`) + determined and over-determined (TRIMWGT/TRIMINEQ null-space weighted-L2) trim solvers |
 | `sbeam/solver/sol144_derivs.py` | `compute_rigid_derivs`, restrained (`u_r = 0`) and unrestrained (mean-axis AE8b) derivative blocks, AESURF hinge moments (AE11) |
 | `sbeam/solver/sol144_diverg.py` | `run_sol144_diverg` (DIVERG-card divergence sweep + mode shape), `divergence_dynamic_pressure`, `divergence_roots` |
 | `sbeam/solver/sol144_static.py` | `run_aeroelastic_static` — the Step-50 no-trim reference path (test scaffolding; no production callers, DEF-R3) |
 | `sbeam/solver/maneuver_qs.py` | **Phase G0** — `run_maneuver_qs`: Level-1 quasi-steady, open-loop, restrained l-set Newmark-β transient maneuver integration (the direct solver / regression anchor) |
 | `sbeam/solver/maneuver_modal.py` | **Phase G0 Steps 62–63** — `run_maneuver_modal`: the free-flight modal transient solver (coupled h-set EOM, `B_hh` engaged, rigid trim labels as outputs, self-balancing closure), mode-acceleration recovery, fixed-Φ MASSCASE cases with case-mean-axis correction, job-level `ManeuverBasisCache` |
 | `sbeam/solver/modal_basis.py` | **Phase G0 Step 61** — free-free maneuver basis `Φ = [Φ_r | Φ_e]`, h-set operators, shared a-set assembly |
-| `sbeam/model/maneuver.py` | Dataclasses for the ZAERO `MLOADS`/`MLDTRIM`/`MLDTIME`/`MLDCOMD`/`MLDPRNT` + `TABLED1` card set |
+| `sbeam/model/maneuver.py` | Dataclasses for the sbeam `MANVR`/`MANTRIM`/`MANTIME`/`MANCMD`/`MANPRNT` + `TABLED1` card set |
 | `sbeam/model/maneuver_presets.py` | Canned pilot-command history presets |
 | `sbeam/model/mass_overlay.py` | **Step 60** — `resolve_mass_case` / `effective_conm2s`: MASSCASE payload-case resolution (baseline scaling + ADD/REPLACE/DELETE overlay) |
 | `sbeam/results/f06_writer.py` | `build_f06_sol144_text` / `write_f06_sol144` — SOL 144 trim f06 blocks (shares displacement/CBAR helpers with SOL 101) |
@@ -60,7 +60,7 @@ Results   (cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, CDi, e, per_su
 | `sbeam/results/monitor_points.py` | `prepare_monitor_points` (once per run) + `evaluate_monitor_point` (per load state) — monitor-point integrated section loads; `compute_monitor_loads` / `integrate_monpnt1` / `integrate_monpnt3` are the one-shot forms. **#2** takes them at every transient sample |
 | `sbeam/results/section_cuts.py` | **Monitor Phase 2** — `compute_section_cuts`: MONSECT per-station running loads (the Phase 1 integrand swept over cut planes). **Step 68** splits it into `prepare_section_cuts` (geometry/masks/warnings, once per run) + `evaluate_section_cut` (masked sums per sample) for the transient path |
 | `sbeam/results/section_envelope.py` | **Step 68** — `build_section_envelope`: per-station max/min of a transient maneuver's cuts with the driving sample |
-| `sbeam/results/maneuver_output.py` | MLDPRNT ASCII time-history + critical-sample `FORCE`/`MOMENT` export |
+| `sbeam/results/maneuver_output.py` | MANPRNT ASCII time-history + critical-sample `FORCE`/`MOMENT` export |
 | `sbeam_tools/viewer/aero_view.py` | Plotly box mesh, cp colour map, section-load strip chart |
 
 ---
@@ -88,7 +88,7 @@ One documented, accepted residual remains (Study A2,
 
 **Modelling position — powered (propeller) effects.** There is no propulsion model: no
 thrust, no propeller, no actuator disc, no slipstream. Powered aerodynamics enter **only**
-as a correction (`W2GJ`/`WT2`/`CHORDCP`) built from powered CFD or flight-test data, and
+as a correction (`W2GJ`/`WT2`/`CPINJ`) built from powered CFD or flight-test data, and
 are frozen at the single power setting and advance ratio they were built for — nothing
 warns when a trim leaves that condition, and one-engine-out requires its own correction
 set rather than a scaled symmetric one. Thrust and engine torque are **not** aerodynamic
@@ -129,11 +129,11 @@ Reproduction script for the original review: `studies/_review_ha144a_check.py`.
 | `W2GJ` | Per-box baseline normalwash slopes | S42 |
 | `WKK` | Per-box lift weights, MSC placement (#71) | S43 |
 | `AECORR` | Pressure-matching AIC correction (WT2 only; WT1 removed by DEF-R7, deprecated by DEF-H2/H3 2026-07-31) | S43 |
-| `CHORDCP` | Injected CFD/WT steady-Cp mean flow at a reference AOA (sbeam extension) | S54 |
+| `CPINJ` | Injected CFD/WT steady-Cp mean flow at a reference AOA (sbeam extension) | S54 |
 | `SET1` | List of structural grid IDs for spline input | S45 |
 | `SPLINE2` | NASTRAN infinite beam spline: links CAERO1 box range to SET1 grids (rigid chord arms, DTOR/DTHX/DTHY flexibilities) | S45–46, AC7 |
-| `ATTACH` | Rigid attachment of box group to single master grid (Step 47, complete; slope-row signs corrected by DEF-H1 2026-07-31) | S45–47 |
-| `SPLINE0` | Zero-displacement constraint — box rows in g_slope/g_disp remain zero; load injected at the master `GRID` (field 5, default SUPORT) via `g_load` | S45–47, S64 |
+| `BODYATT` | Rigid attachment of box group to single master grid (Step 47, complete; slope-row signs corrected by DEF-H1 2026-07-31) | S45–47 |
+| `LOADINJ` | Zero-displacement constraint — box rows in g_slope/g_disp remain zero; load injected at the master `GRID` (field 5, default SUPORT) via `g_load` | S45–47, S64 |
 | `SPLINE1` | Harder–Desmarais IPS surface spline (parse raises NotImplementedError; Step 48) | S45 |
 | `AESTAT` | Rigid-body trim DOF label (ANGLEA, PITCH, ROLL, YAW, URDD2–URDD6) | S51 |
 | `AESURF` | Aerodynamic control surface — hinge line + AELIST of active boxes | S51 |
@@ -141,20 +141,20 @@ Reproduction script for the original review: `studies/_review_ha144a_check.py`.
 | `TRIM` | Trim condition — Mach, q, and prescribed label/value pairs | S51 |
 | `DIVERG` | Divergence analysis — NROOT and Mach sweep (MSC layout, #73) | S51 / S55 |
 | `TRIMVAR` | Per-variable bounds + initial guess (sbeam-defined; over-determined trim) | S51 |
-| `TRIMOBJ` | Weighted objective function (sbeam-defined; over-determined trim) | S51 |
-| `TRIMCON` | Inequality constraint (sbeam-defined; over-determined trim) | S51 |
+| `TRIMWGT` | Weighted objective function (sbeam-defined; over-determined trim) | S51 |
+| `TRIMINEQ` | Inequality constraint (sbeam-defined; over-determined trim) | S51 |
 | `SUPORT` | Rigid-body support DOFs (r-set) for the trim Schur partition | S52 |
 | `PSTRIP` | Decoupled strip body panel property (nominal per-box slope, default π) | A10 |
 | `STRIPK` | Per-box slope override for strip body panels | A10 |
 | `AECOMP` | Named collection of AELIST boxes or SET1 grids for monitor points | MON1 |
 | `MONPNT1` | Integrated section load at a reference point, MSC two-line layout (#86): aero-only on an AELIST AECOMP, aero + inertia + applied + reaction (the `MONPNT3` integrator) on a SET1 AECOMP | MON1 |
 | `MONPNT3` | Refused: MSC's grid point force monitor is not implemented (#103) | #86 |
-| `MONSECT` | Section-cut running loads — per-station shear/bending/torque table (sbeam extension). Static trim **and** transient MLOADS (per sample + envelope, Step 68) | MON2 / Step 68 |
-| `MLOADS` | Transient maneuver driver (Phase G0; ZAERO card set) | G0 |
-| `MLDTRIM` | Initial-condition TRIM sid for the maneuver | G0 |
-| `MLDCOMD` | Pilot command label → `TABLED1` history | G0 |
-| `MLDTIME` | Integration window t0/tend/dt/tout | G0 |
-| `MLDPRNT` | ASCII time-history output request | G0 |
+| `MONSECT` | Section-cut running loads — per-station shear/bending/torque table (sbeam extension). Static trim **and** transient MANVR (per sample + envelope, Step 68) | MON2 / Step 68 |
+| `MANVR` | Transient maneuver driver (Phase G0; sbeam-only card, formerly `MLOADS`) | G0 |
+| `MANTRIM` | Initial-condition TRIM sid for the maneuver | G0 |
+| `MANCMD` | Pilot command label → `TABLED1` history | G0 |
+| `MANTIME` | Integration window t0/tend/dt/tout | G0 |
+| `MANPRNT` | ASCII time-history output request | G0 |
 | `TABLED1` | Tabular function of time (command histories) | G0 |
 | `MASSCASE` | Payload / mass case (ADD/REPLACE/DELETE CONM2 ops + SCALE) | S60 |
 

@@ -68,20 +68,20 @@ def test_separate_id_spaces_may_reuse_an_eid():
 
 # Several cards share one SID by design (the set is their union); PARAM stores nothing,
 # and SPLINE1 and MONPNT3 (#86) are refused outright as not implemented.
-_ACCUMULATING = {"FORCE", "MOMENT", "SPC", "SPC1", "SUPORT", "TRIMCON"}
+_ACCUMULATING = {"FORCE", "MOMENT", "SPC", "SPC1", "SUPORT", "TRIMINEQ"}
 _NOT_STORED = {"PARAM", "SPLINE1", "MONPNT3"}
 
 # ID-keyed cards no repository deck uses (examples from 02_card_reference.md)
 _HAND_WRITTEN = {
     "AEFACT": ["AEFACT, 10, 0.0, 0.333, 0.667, 1.0"],
-    "CHORDCP": ["CHORDCP, 40, 100, 2.0, 0.9, 0.52, 0.31, 0.21, 0.14",
+    "CPINJ": ["CPINJ, 40, 100, 2.0, 0.9, 0.52, 0.31, 0.21, 0.14",
                 "+,       0.52, 0.31, 0.21, 0.14"],
     "DIVERG": ["DIVERG, 20, 2, 0.4, 0.6, 0.8"],
     "MASSSET": ["MASSSET, 11, 1.0, 1.0, 0"],          # MSC mass combination (#102)
     # No sample deck has an RBE3 since #60 moved beam_vib1/simple_beam to RBAR
     "RBE3": ["RBE3, 30, , 10, 123, 2.0, 123, 1, 2, 1.0, 123, 3"],
-    "TRIMOBJ": ["TRIMOBJ, 20, ANGLEA, 1.0, CL, 0.5", "+,       CM, 0.1"],
-    "TRIMVAR": ["TRIMVAR, 10, ANGLEA, 0.05, -0.3, 0.3"],
+    "TRIMWGT": ["TRIMWGT, 20, ANGLEA, 1.0, CL, 0.5", "+,       CM, 0.1"],
+    "TRIMVAR": ["TRIMVAR, 10, ANGLEA, -0.3, 0.3, , , , 0.05"],
     "WKK": ["WKK, 10, 100, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1", "+,   1.1, 1.1"],
 }
 

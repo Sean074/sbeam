@@ -1,4 +1,4 @@
-"""Aeroelastic Authoring tab — SOL 144 / MLOADS bulk-card editors (P12).
+"""Aeroelastic Authoring tab — SOL 144 / MANVR bulk-card editors (P12).
 
 Each card family gets a top-level expander holding a selectbox ("— new —" or
 an existing ID, outside the form so switching reruns and pre-fills) and one
@@ -35,7 +35,7 @@ def export_sol144_bdf(cc: CaseControl, bulk: BulkData,
                       title_comment: str = "") -> str:
     """Full driver deck: provenance header + case control + authored cards
     inline + every INCLUDE.  Pure — reused by the export tests."""
-    header = "Authored in the sbeam viewer (SOL 144 / MLOADS authoring tab)"
+    header = "Authored in the sbeam viewer (SOL 144 / MANVR authoring tab)"
     if title_comment:
         header += f"\n{title_comment}"
     block = write_authored_block(bulk, authored, header)
@@ -252,7 +252,7 @@ def _suport_form(bulk: BulkData, card: Optional[Suport], default_id: int):
 # ---------------------------------------------------------------------------
 
 def _trim_form(bulk: BulkData, card: Optional[Trim], default_id: int):
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     sid = col1.number_input("SID", min_value=1,
                             value=(card.sid if card else default_id),
                             key="auth_trim_sid")
@@ -260,12 +260,6 @@ def _trim_form(bulk: BulkData, card: Optional[Trim], default_id: int):
                              key="auth_trim_mach", format="%.4f")
     q = col3.number_input("Dynamic pressure Q", value=(card.q if card else 0.0),
                           key="auth_trim_q", format="%.6g")
-    rhoref = col4.number_input(
-        "RHOREF (0 = unset)", value=(card.rhoref if card else 0.0),
-        key="auth_trim_rhoref", format="%.6g", min_value=0.0,
-        help="Freestream density; required for the modal MLOADS initial "
-             "condition (V = sqrt(2q/rho)).",
-    )
     labels = logic.label_options(bulk)
     prefill: Optional[dict[str, float]] = st.session_state.get("auth_trim_prefill")
     if card is not None:
@@ -291,8 +285,7 @@ def _trim_form(bulk: BulkData, card: Optional[Trim], default_id: int):
     if not labels:
         st.warning("Define AESTAT/AESURF labels first.")
         return None
-    return Trim(sid=int(sid), mach=float(mach), q=float(q), vars=vars_,
-                rhoref=float(rhoref))
+    return Trim(sid=int(sid), mach=float(mach), q=float(q), vars=vars_)
 
 
 def _trimvar_form(bulk: BulkData, card: Optional[Trimvar], default_id: int):
@@ -344,7 +337,7 @@ def _trimobj_form(bulk: BulkData, card: Optional[Trimobj], default_id: int):
             out_labels.append(label.strip().upper())
             weights.append(float(row["weight"] or 0.0))
     if not out_labels:
-        st.warning("TRIMOBJ needs at least one label/weight pair.")
+        st.warning("TRIMWGT needs at least one label/weight pair.")
         return None
     return Trimobj(sid=int(sid), labels=out_labels, weights=weights)
 
@@ -372,7 +365,7 @@ def _trimcon_form(bulk: BulkData, cards: Optional[list[Trimcon]],
             cons.append(Trimcon(sid=int(sid), label=label.strip().upper(),
                                 sense=str(row["sense"]), rhs=float(row["rhs"] or 0.0)))
     if not cons:
-        st.warning("TRIMCON needs at least one constraint row.")
+        st.warning("TRIMINEQ needs at least one constraint row.")
         return None
     return cons
 
@@ -404,7 +397,7 @@ def _diverg_form(bulk: BulkData, card: Optional[Diverg], default_id: int):
 
 
 # ---------------------------------------------------------------------------
-# Panel 3 — Maneuver (MLOADS family)
+# Panel 3 — Maneuver (MANVR family)
 # ---------------------------------------------------------------------------
 
 def _mloads_form(bulk: BulkData, card: Optional[Mloads], default_id: int):
@@ -417,21 +410,21 @@ def _mloads_form(bulk: BulkData, card: Optional[Mloads], default_id: int):
     prnts = [0] + sorted(bulk.mldprnts.keys())
     col1, col2 = st.columns(2)
     mldtrim = col1.selectbox(
-        "MLDTRIM (initial condition)", trims,
+        "MANTRIM (initial condition)", trims,
         index=trims.index(card.mldtrim) if card and card.mldtrim in trims else 0,
         key="auth_mloads_mldtrim") if trims else None
     mldtime = col2.selectbox(
-        "MLDTIME (integration window)", times,
+        "MANTIME (integration window)", times,
         index=times.index(card.mldtime) if card and card.mldtime in times else 0,
         key="auth_mloads_mldtime") if times else None
     col3, col4 = st.columns(2)
     mldcomd = col3.selectbox(
-        "MLDCOMD (0 = hold trim)", comds,
+        "MANCMD (0 = hold trim)", comds,
         index=comds.index(card.mldcomd) if card and card.mldcomd in comds else 0,
         format_func=lambda v: "— none (hold trim) —" if v == 0 else str(v),
         key="auth_mloads_mldcomd")
     mldprnt = col4.selectbox(
-        "MLDPRNT (0 = no ASCII print)", prnts,
+        "MANPRNT (0 = no ASCII print)", prnts,
         index=prnts.index(card.mldprnt) if card and card.mldprnt in prnts else 0,
         format_func=lambda v: "— none —" if v == 0 else str(v),
         key="auth_mloads_mldprnt")
@@ -439,8 +432,8 @@ def _mloads_form(bulk: BulkData, card: Optional[Mloads], default_id: int):
         "Solver selection: any of NMODES/METHOD/ZETA nonzero runs the "
         "free-flight modal solver (METHOD = −1 is the all-defaults-modal "
         "sentinel); all zeros runs the direct restrained l-set solver.  The "
-        "modal solver only accepts AESURF labels in MLDCOMD and needs RHOREF "
-        "on the IC TRIM."
+        "modal solver only accepts AESURF labels in MANCMD and needs RHO "
+        "on the MANTRIM."
     )
     col5, col6, col7 = st.columns(3)
     nmodes = col5.number_input("NMODES (0 = all elastic)", min_value=0,
@@ -456,7 +449,7 @@ def _mloads_form(bulk: BulkData, card: Optional[Mloads], default_id: int):
                              value=(card.zeta if card else 0.0),
                              key="auth_mloads_zeta", format="%.4f")
     if mldtrim is None or mldtime is None:
-        st.warning("Define an MLDTRIM and an MLDTIME first.")
+        st.warning("Define an MANTRIM and an MANTIME first.")
         return None
     return Mloads(sid=int(sid), mldtrim=int(mldtrim), mldtime=int(mldtime),
                   mldcomd=int(mldcomd), mldprnt=int(mldprnt),
@@ -471,14 +464,17 @@ def _mldtrim_form(bulk: BulkData, card: Optional[Mldtrim], default_id: int):
     trim_sid = st.selectbox(
         "TRIM SID (steady initial condition)", trims,
         index=trims.index(card.trim_sid) if card and card.trim_sid in trims else 0,
-        format_func=lambda v: (
-            f"{v} (q={bulk.trims[v].q:g}, M={bulk.trims[v].mach:g}"
-            + ("" if bulk.trims[v].rhoref else ", no RHOREF") + ")"),
+        format_func=lambda v: f"{v} (q={bulk.trims[v].q:g}, M={bulk.trims[v].mach:g})",
         key="auth_mldtrim_trim") if trims else None
+    rho = st.number_input(
+        "RHO (0 = unset)", value=(card.rho if card else 0.0),
+        key="auth_mldtrim_rho", format="%.6g", min_value=0.0,
+        help="Freestream density; required by the modal (free-flight) MANVR "
+             "solver for V = sqrt(2q/rho).")
     if trim_sid is None:
         st.warning("Define a TRIM condition first.")
         return None
-    return Mldtrim(sid=int(sid), trim_sid=int(trim_sid))
+    return Mldtrim(sid=int(sid), trim_sid=int(trim_sid), rho=float(rho))
 
 
 def _mldtime_form(bulk: BulkData, card: Optional[Mldtime], default_id: int):
@@ -496,7 +492,7 @@ def _mldtime_form(bulk: BulkData, card: Optional[Mldtime], default_id: int):
                              value=(card.tout if card else 0.0),
                              key="auth_mldtime_tout", format="%.4g")
     if dt <= 0.0 or tend <= t0:
-        st.warning("MLDTIME needs DT > 0 and TEND > T0.")
+        st.warning("MANTIME needs DT > 0 and TEND > T0.")
         return None
     return Mldtime(sid=int(sid), t0=float(t0), tend=float(tend),
                    dt=float(dt), tout=float(tout))
@@ -506,13 +502,13 @@ def _mldcomd_form(bulk: BulkData, card: Optional[Mldcomd], default_id: int):
     sid = st.number_input("SID", min_value=1,
                           value=(card.sid if card else default_id),
                           key="auth_mldcomd_sid")
-    # Restrict to AESURF labels when any modal MLOADS references this card —
+    # Restrict to AESURF labels when any modal MANVR references this card —
     # rigid-state commands under the modal solver are a hard parse error.
     modal_owner = any(m.mldcomd == (card.sid if card else 0) and m.selects_modal
                       for m in bulk.mloads.values())
     labels = logic.label_options(bulk, modal_only=modal_owner)
     if modal_owner:
-        st.caption("A modal MLOADS references this card — AESURF labels only.")
+        st.caption("A modal MANVR references this card — AESURF labels only.")
     tabids = sorted(bulk.tabled1s.keys())
     rows = ([{"label": l, "tabid": t} for l, t in card.commands]
             if card else
@@ -532,7 +528,7 @@ def _mldcomd_form(bulk: BulkData, card: Optional[Mldcomd], default_id: int):
         st.warning("Define AESURF/AESTAT labels and at least one TABLED1 first.")
         return None
     if not commands:
-        st.warning("MLDCOMD needs at least one label/table pair.")
+        st.warning("MANCMD needs at least one label/table pair.")
         return None
     return Mldcomd(sid=int(sid), commands=commands)
 
@@ -682,7 +678,7 @@ def _render_table_generator(bulk: BulkData) -> None:
 
 
 def _render_increment_builder(bulk: BulkData) -> None:
-    """Two-pass MLDCOMD authoring: increments now, absolute tables post-solve."""
+    """Two-pass MANCMD authoring: increments now, absolute tables post-solve."""
     with st.expander("Two-pass command builder (increments from trim)",
                      expanded=False):
         st.caption(
@@ -697,10 +693,10 @@ def _render_increment_builder(bulk: BulkData) -> None:
         mloads_sids = sorted(bulk.mloads.keys())
         surf_labels = logic.label_options(bulk, modal_only=True)
         if not mloads_sids or not surf_labels:
-            st.info("Define an MLOADS driver and at least one AESURF first.")
+            st.info("Define an MANVR driver and at least one AESURF first.")
             return
         col1, col2 = st.columns(2)
-        msid = col1.selectbox("MLOADS", mloads_sids, key="auth_inc_mloads")
+        msid = col1.selectbox("MANVR", mloads_sids, key="auth_inc_mloads")
         label = col2.selectbox("Control (AESURF label)", surf_labels,
                                key="auth_inc_label")
         shape = st.selectbox("Increment shape (Δ from trim)", _GENERATORS,
@@ -719,7 +715,7 @@ def _render_increment_builder(bulk: BulkData) -> None:
                 col_a, col_b = st.columns([4, 1])
                 dys = [dy for _, dy in spec.points]
                 col_a.markdown(
-                    f"- MLOADS {m} · {l}: {len(spec.points)} points, "
+                    f"- MANVR {m} · {l}: {len(spec.points)} points, "
                     f"Δ ∈ [{min(dys):g}, {max(dys):g}]")
                 if col_b.button("Remove", key=f"auth_inc_rm_{m}_{l}"):
                     del specs[(m, l)]
@@ -764,12 +760,12 @@ def _render_increment_builder(bulk: BulkData) -> None:
 def render_sol144_authoring(bulk: BulkData) -> None:
     st.subheader("Aeroelastic Authoring")
     st.caption(
-        "Author the SOL 144 / MLOADS condition cards, apply them to the "
+        "Author the SOL 144 / MANVR condition cards, apply them to the "
         "in-session model, then reference them from the Case Control tab.  "
         "Applied cards are exported inline in the driver BDF."
     )
     tab_surf, tab_trim, tab_mloads, tab_tables = st.tabs(
-        ["Surfaces & States", "Trim Conditions", "Maneuver (MLOADS)", "Tables"]
+        ["Surfaces & States", "Trim Conditions", "Maneuver (MANVR)", "Tables"]
     )
     with tab_surf:
         _family_editor(bulk, "aestat", "AESTAT — rigid-body trim variable", _aestat_form)
@@ -780,16 +776,16 @@ def render_sol144_authoring(bulk: BulkData) -> None:
         _render_preset_panel(bulk)
         _family_editor(bulk, "trim", "TRIM — static trim condition", _trim_form)
         _family_editor(bulk, "trimvar", "TRIMVAR — variable bounds (over-determined)", _trimvar_form)
-        _family_editor(bulk, "trimobj", "TRIMOBJ — weighted objective (over-determined)", _trimobj_form)
-        _family_editor(bulk, "trimcon", "TRIMCON — inequality constraints (over-determined)", _trimcon_form)
+        _family_editor(bulk, "trimobj", "TRIMWGT — weighted objective (over-determined)", _trimobj_form)
+        _family_editor(bulk, "trimcon", "TRIMINEQ — inequality constraints (over-determined)", _trimcon_form)
         _family_editor(bulk, "diverg", "DIVERG — divergence sweep", _diverg_form)
     with tab_mloads:
         _render_increment_builder(bulk)
-        _family_editor(bulk, "mldtrim", "MLDTRIM — initial-condition trim", _mldtrim_form)
-        _family_editor(bulk, "mldtime", "MLDTIME — integration window", _mldtime_form)
-        _family_editor(bulk, "mldcomd", "MLDCOMD — pilot command histories", _mldcomd_form)
-        _family_editor(bulk, "mldprnt", "MLDPRNT — ASCII time-history output", _mldprnt_form)
-        _family_editor(bulk, "mloads", "MLOADS — transient maneuver driver", _mloads_form)
+        _family_editor(bulk, "mldtrim", "MANTRIM — initial-condition trim", _mldtrim_form)
+        _family_editor(bulk, "mldtime", "MANTIME — integration window", _mldtime_form)
+        _family_editor(bulk, "mldcomd", "MANCMD — pilot command histories", _mldcomd_form)
+        _family_editor(bulk, "mldprnt", "MANPRNT — ASCII time-history output", _mldprnt_form)
+        _family_editor(bulk, "mloads", "MANVR — transient maneuver driver", _mloads_form)
     with tab_tables:
         _render_table_generator(bulk)
         _family_editor(bulk, "tabled1", "TABLED1 — tabular time function", _tabled1_form)
@@ -833,7 +829,7 @@ def _render_authoring_export(bulk: BulkData) -> None:
         "Download authored cards only (.bdf snippet)",
         data=write_authored_block(
             bulk, authored,
-            "Authored in the sbeam viewer (SOL 144 / MLOADS authoring tab)"),
+            "Authored in the sbeam viewer (SOL 144 / MANVR authoring tab)"),
         file_name=f"{stem}_authored_cards.bdf",
         mime="text/plain",
         key="auth_export_cards",

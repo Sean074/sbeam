@@ -81,7 +81,7 @@ class BulkData:
     monpnt3s: dict[str, Monpnt3] = field(default_factory=dict)
     monsects: dict[str, Monsect] = field(default_factory=dict)
     supports: list[Suport] = field(default_factory=list)
-    # Phase G0 — ZAERO-style transient maneuver-loads cards
+    # Phase G0 — sbeam-only transient maneuver-loads cards (MANVR family; #87)
     tabled1s: dict[int, Tabled1] = field(default_factory=dict)
     mldtimes: dict[int, Mldtime] = field(default_factory=dict)
     mldcomds: dict[int, Mldcomd] = field(default_factory=dict)

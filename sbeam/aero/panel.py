@@ -38,7 +38,7 @@ class AeroBox:
     # element system is right-handed with x along the airstream and y from P1 toward P4
     # (QRG 2024.1 PDF p.1344, CAERO1 remark 4, Figure 9-5), so a fin or a port panel
     # drawn root to tip has z_elem opposite to sbeam's +y/+z ``normal``.  Signed per-box
-    # card data (W2GJ, AECORR, CHORDCP) and printed ΔCp are in MSC's frame:
+    # card data (W2GJ, AECORR, CPINJ) and printed ΔCp are in MSC's frame:
     # value_sbeam = msc_sign · value_card.
     msc_sign:   float = 1.0
 
@@ -76,7 +76,7 @@ def build_box_id_map(boxes: list[AeroBox]) -> dict[int, int]:
 
     Because a CAERO1 consumes the ``NSPAN * NCHORD`` consecutive IDs starting at
     its EID, two CAERO1s numbered closer together than that overlap.  The map is
-    what ``SPLINE2``/``ATTACH`` box ranges, ``AELIST`` control-surface boxes and
+    what ``SPLINE2``/``BODYATT`` box ranges, ``AELIST`` control-surface boxes and
     ``MONPNT1`` integrate through, so an overlap silently attributes one box's
     load to another — or drops it entirely.  Detect it once, here, rather than
     letting each consumer resolve a wrong ``k``.
@@ -100,7 +100,7 @@ def build_box_id_map(boxes: list[AeroBox]) -> dict[int, int]:
                 "are EID + i_span*NCHORD + j_chord, so each CAERO1 must be "
                 "numbered at least NSPAN*NCHORD above the previous one — "
                 f"renumber CAERO1 {second} to {first + n_first} or higher and "
-                "shift its SPLINE/ATTACH/AELIST/MONPNT box ranges by the same "
+                "shift its SPLINE/BODYATT/AELIST/MONPNT box ranges by the same "
                 "delta."
             )
         owner[bid] = box

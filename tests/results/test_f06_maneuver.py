@@ -59,7 +59,7 @@ def test_maneuver_block_content():
         SimpleNamespace(title="AC5 test"), bulk, _result(steps), subcase_id=2)
 
     assert "SOL 144 TRANSIENT MANEUVER LOADS" in text
-    assert "MLOADS = 5" in text and "TRIM = 7" in text
+    assert "MANVR = 5" in text and "TRIM = 7" in text
     assert "M A N E U V E R   T I M E   H I S T O R Y" in text
     assert "ELEV" in text and "ANGLEA" in text
     assert "OUTPUT SAMPLES = 3" in text

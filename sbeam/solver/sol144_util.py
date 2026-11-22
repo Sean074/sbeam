@@ -8,7 +8,7 @@ All names remain importable from ``sbeam.solver.sol144`` (facade).
 """
 
 import warnings
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 
@@ -17,6 +17,29 @@ from sbeam.assembly.mass_matrix import assemble_global_mass
 from sbeam.aero.aero_model import AeroModel, build_aero_model
 from sbeam.aero.panel import AeroBox
 from sbeam.types import FloatArray
+
+if TYPE_CHECKING:
+    from sbeam.parser.case_control import CaseControl
+
+
+def flight_mach(cc: "CaseControl", bulk: BulkData) -> float:
+    """The first subcase's flight Mach: the Mach a job's seed AeroModel is built at.
+
+    Every subcase fetches the AIC for its own Mach from the AeroCache, so the seed Mach
+    changes no result; seeding at a Mach the job flies saves building an AIC it never
+    uses.  Until #87 the seed was the sbeam-only AEROS Mach; the Mach now comes from the
+    TRIM (via MANTRIM for a maneuver) or the DIVERG list, as in MSC.
+    """
+    for sc in cc.subcases:
+        trim_sid = sc.trim_sid
+        if sc.mloads_sid is not None and sc.mloads_sid in bulk.mloads:
+            mldtrim = bulk.mldtrims.get(bulk.mloads[sc.mloads_sid].mldtrim)
+            trim_sid = mldtrim.trim_sid if mldtrim is not None else None
+        if trim_sid is not None and trim_sid in bulk.trims:
+            return bulk.trims[trim_sid].mach
+        if sc.diverg_sid is not None and sc.diverg_sid in bulk.divergs:
+            return bulk.divergs[sc.diverg_sid].machs[0]
+    return 0.0
 
 
 class AeroCache:
@@ -28,7 +51,7 @@ class AeroCache:
     build-once fixture pattern still holds across subcases at the same Mach.
 
     The cache is seeded with a prebuilt AeroModel so existing callers that pass a
-    model built at ``AEROS.mach`` incur no rebuild when ``TRIM.mach`` matches.
+    model built at the flight Mach incur no rebuild when ``TRIM.mach`` matches.
     """
 
     _MACH_DP = 6

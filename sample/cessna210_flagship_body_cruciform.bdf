@@ -53,15 +53,15 @@ CAERO1, 7000, 10, 0, 2, 16, 0, 0, 1
 +, 0.30, 0.0, 0.05, 4.70, 0.30, 0.0, 0.45, 4.70
 $
 $ ------------------------------------------------------------------ SPLINING
-$ SPLINE0 = no structural coupling: body elasticity is negligible, so the
+$ LOADINJ = no structural coupling: body elasticity is negligible, so the
 $ panels add no deformation.  Field 5 names the master GRID that carries their
 $ resultant into the structure (Step 64).  GRID 900 is the trim reference,
 $ spliced into the fuselage CBAR chain and already listed in SET1 1310, so the
 $ injected body load lands inside the whole-aircraft MONPNT3 cut.  Naming it
 $ explicitly rather than defaulting to the SUPORT grid documents the intent
 $ (here they are the same grid).
-SPLINE0, 9400, 6000, 6000, 6015, 900
-SPLINE0, 9500, 7000, 7000, 7031, 900
+LOADINJ, 9400, 6000, 6000, 6015, 900
+LOADINJ, 9500, 7000, 7000, 7031, 900
 $
 $ ------------------------------------------------------- MONITOR (ALL 372 BOXES)
 $ The bulk's AELIST 1400 covers the 324 FLYING boxes only.  With body panels

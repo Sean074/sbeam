@@ -17,7 +17,9 @@ from sbeam_tools.viewer.sol144_authoring_ui import export_sol144_bdf
 
 SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
 
-_CARD_NAMES = {fam.upper() for fam in FAMILIES}
+# The card each family writes (family keys are internal names; #87 renamed the cards)
+_CARD_NAMES = {fam.upper() for fam in FAMILIES} | {
+    "MANTRIM", "MANTIME", "MANCMD", "MANPRNT", "MANVR", "TRIMWGT", "TRIMINEQ"}
 
 
 def _split_sample(deck_path: Path) -> tuple[str, str]:

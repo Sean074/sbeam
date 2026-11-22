@@ -63,7 +63,19 @@ _UNSUPPORTED_CARDS: dict[str, str] = {
     "DMIJI": "aero direct matrix input (use the native W2GJ/WKK cards)",
     "DMIK": "aero direct matrix input (use the native W2GJ/WKK cards)",
     # damping
-    "TABDMP1": "modal damping table (the MLOADS transient takes its damping from ZETA)",
+    "TABDMP1": "modal damping table (the MANVR transient takes its damping from ZETA)",
+    # ZAERO cards whose names sbeam borrowed with its own layout until v0.4.1 (#87).  ZAERO's
+    # meaning is not implemented; sbeam's cards now carry names no vendor defines
+    "MLOADS": "ZAERO maneuver loads (ASE state space); sbeam's transient driver is now MANVR (#87)",
+    "MLDTRIM": "ZAERO maneuver trim state; sbeam's initial-condition card is now MANTRIM (#87)",
+    "MLDTIME": "ZAERO maneuver time window; sbeam's is now MANTIME (#87)",
+    "MLDCOMD": "ZAERO pilot command via EXTINP; sbeam's command card is now MANCMD (#87)",
+    "MLDPRNT": "ZAERO maneuver output; sbeam's output request is now MANPRNT (#87)",
+    "CHORDCP": "ZAERO thickness Cp for ZTAIC; sbeam's pressure injection is now CPINJ (#87)",
+    "SPLINE0": "ZAERO zero-displacement spline on a PANLST; sbeam's card is now LOADINJ (#87)",
+    "ATTACH": "ZAERO panel attachment on a PANLST; sbeam's rigid attachment is now BODYATT (#87)",
+    "TRIMOBJ": "ZAERO objective on TRIMFNC functions; sbeam's variable weights are now TRIMWGT (#87)",
+    "TRIMCON": "ZAERO constraint on TRIMFNC functions; sbeam's variable bound is now TRIMINEQ (#87)",
 }
 
 #: Bulk keywords that only control listing or output and never change an answer: these

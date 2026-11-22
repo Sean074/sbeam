@@ -555,7 +555,7 @@ def _handle_spc(fields: list[str], bulk: BulkData) -> None:
         validate_dof(c2, f"SPC {sid}")
     d2  = to_float(fields[7]) if len(fields) > 7 else 0.0
     # No solver applies an enforced displacement.  SOL 101 and 103 refused it at run
-    # time; SOL 144 and MLOADS took D = 0 without a message (#68)
+    # time; SOL 144 and MANVR took D = 0 without a message (#68)
     for gid, d in ((g1, d1), (g2, d2)):
         if d != 0.0:
             raise ValueError(

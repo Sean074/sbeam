@@ -458,7 +458,7 @@ scaling a WT2 surface would move it off its target. **Before #96** the code read
 
 A correction card that cannot be applied is an error, never a silent no-op — the builder
 reporting "converged" while production never sees the card was the defect class this
-closes. All checks are card-labelled (`CARDNAME sid: …`, the CHORDCP house style):
+closes. All checks are card-labelled (`CARDNAME sid: …`, the CPINJ house style):
 
 | Card | Rejected |
 |------|----------|
@@ -582,9 +582,9 @@ a lift-curve-slope quantity, **not** an absolute force at an operating incidence
 produces zero load at α=0 (built-in incidence/camber must come from `W2GJ`). To match a
 section *moment* (a.c.) as well, use the section-correction synthesiser below.
 
-## CHORDCP — CFD/WT steady-pressure injection (Step 54)
+## CPINJ — CFD/WT steady-pressure injection (Step 54)
 
-The corrections above **rescale** the VLM operator toward measured data; `CHORDCP`
+The corrections above **rescale** the VLM operator toward measured data; `CPINJ`
 goes one step further and **replaces the mean flow entirely**: the per-box physical
 steady Cp distribution of every VLM lifting surface, measured (CFD or wind tunnel)
 at a stated reference angle of attack `ALPHREF`, becomes the SOL 144 baseline load,
@@ -619,7 +619,7 @@ wg_eff = lstsq(ajj_inv_corr_vlm_block, Cp_inj) + n_z·α_ref
 
 ### Usage rules (v1)
 
-- **Full coverage:** when any CHORDCP is present, every VLM CAERO1 must carry exactly
+- **Full coverage:** when any CPINJ is present, every VLM CAERO1 must carry exactly
   one card and all cards must state the same ALPHREF (degrees on the card, stored in
   radians). Partial per-surface injection is a deferred follow-on (mixed operating
   points have ambiguous interference bookkeeping).
@@ -627,8 +627,8 @@ wg_eff = lstsq(ajj_inv_corr_vlm_block, Cp_inj) + n_z·α_ref
   contain the camber/incidence — and any body-correction-derived W2GJ offsets — that
   W2GJ would have supplied.
 - A nonzero ALPHREF requires an `ANGLEA` AESTAT label (error otherwise).
-- `mirror_halfspan` rejects CHORDCP decks (box data is not auto-mirrored).
-- Deriving new correction cards (Aero Correction viewer tab) on a CHORDCP deck is
+- `mirror_halfspan` rejects CPINJ decks (box data is not auto-mirrored).
+- Deriving new correction cards (Aero Correction viewer tab) on a CPINJ deck is
   blocked — the derivation baselines would read the injected wash and change meaning.
 
 ### Operating-point bookkeeping & KC7 warnings
@@ -710,7 +710,7 @@ sbeam has **no propulsion model**: no thrust, no propeller, no actuator disc, no
 The VLM solves one freestream over the whole model. Powered aerodynamics therefore enter
 through **this** machinery and nowhere else — a section table built from *powered* CFD or
 flight test, synthesised into the ordinary `W2GJ` + `WT2` pair (or injected wholesale with
-`CHORDCP`). No card, solver path or option is specific to propellers, and none is needed.
+`CPINJ`). No card, solver path or option is specific to propellers, and none is needed.
 
 What lands where:
 
@@ -919,7 +919,7 @@ interference — need a true **slender-body element** (see `docs/30_future/02_pa
 aerodynamic panels (slender body)"); the `Cl_β` match capability remains in the code but a clean
 cruciform is expected to drive it to ≈0.
 
-**SPLINE0 for body panels.** Body panels carry zero structural coupling (`SPLINE0`): body elastic
+**LOADINJ for body panels.** Body panels carry zero structural coupling (`LOADINJ`): body elastic
 aero effects are negligible, and a flexible spline would smear the *fictitious* correction load onto
 the fuselage beam as spurious bending. The body still drives the **total / trim Cm,Cn and all rigid
 + restrained derivatives**, because those integrate every box directly via `skj·(A⁻¹·w)` —
@@ -929,7 +929,7 @@ does not distribute along the fuselage beam, so it produces no local bending the
 **The body load is in the trim balance (Step 64, 2026-07-31).** Until Step 64 the body force was
 *only* in those direct integrals — it never entered the trim force balance or the `FORCE`/`MOMENT`
 export, so a body-panel trim was silently not closed (the printed totals and the load path disagreed;
-31 % lift error measured on `sample/ha144a_body_trim.bdf`). `SPLINE0` field 5 now names a master
+31 % lift error measured on `sample/ha144a_body_trim.bdf`). `LOADINJ` field 5 now names a master
 `GRID` (default: the SUPORT grid) at which the panel's 6-component resultant is injected as a rigid
 load, and every force transfer runs through `g_load` instead of `g_disp`. The f06 `INJECTED AERO
 LOADS` block echoes each panel's resultant. See `05b_splining.md` "Load injection".
@@ -1057,11 +1057,11 @@ Ajj_pg⁻¹ = (1/β) · Ajj(β · geometry)⁻¹
 ```
 
 **Input:** the flight Mach is a property of the **flight condition** — the `TRIM`
-card (AE9). `AEROS` field 8 still carries a Mach, used as the **default/fallback**
-when a TRIM card omits it; a genuine TRIM-vs-AEROS disagreement is warned about.
+card (AE9), as in MSC. Until #87 an sbeam-only Mach in `AEROS` field 9 was the fallback;
+that field is now refused, so `build_aero_model` without a `mach=` builds at M = 0.
 
 ```
-AEROS, 0, 0, 2.0, 10.0, 20.0, 1, 0, 0.6   $ AEROS Mach 0.6 (fallback)
+AEROS, 0, 0, 2.0, 10.0, 20.0, 1, 0         $ no Mach on AEROS (MSC layout)
 TRIM,  1, 0.9, 40.0, ...                    $ this subcase flies at Mach 0.9
 ```
 
@@ -1071,8 +1071,8 @@ mach=…)` takes a Mach override, and `sbeam.solver.sol144.AeroCache` memoizes o
 AeroModel per Mach so the build-once pattern still holds across subcases.
 `run_sol144_trim(bulk, subcase, aero, aero_cache=None)` resolves the TRIM Mach,
 seeds the cache with the prebuilt `aero`, and fetches/builds the AIC for that Mach
-(existing 3-arg callers are unchanged — their TRIM Mach matches AEROS, so no
-rebuild). Multiple subsonic subcases at different Mach therefore trim correctly.
+(the `sbeam` command seeds it at the first subcase's flight Mach, so a single-Mach deck
+builds one AIC). Multiple subsonic subcases at different Mach therefore trim correctly.
 
 **Key design decisions:**
 - `skj`, `djk`, and `wg` are built from the **physical** (unscaled) boxes — only

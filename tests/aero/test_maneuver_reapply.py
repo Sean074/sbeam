@@ -15,7 +15,7 @@ recovered CBAR forces against ``step.bar_forces``.
   terms removed, so the gate is demonstrably load-bearing (V-TSEC3 pattern).
 * **G1b** — the same through the exported ``FORCE``/``MOMENT`` cards: 1e-5, the
   NASTRAN 8-character field floor (DEF-M6).  Also run on the Cessna 210 flagship
-  MLOADS sample deck, which is the file a stress office actually receives.
+  MANVR sample deck, which is the file a stress office actually receives.
 * **G1c** — the modal solver under ``displacement`` recovery: exact with every
   elastic mode retained, and a MEASURED truncation error otherwise (the
   residual ``F − Mü − Cu̇ − Ku`` is orthogonal to the retained modes, not zero).
@@ -131,7 +131,7 @@ def modal_run():
 
 @pytest.fixture(scope="module")
 def flagship_run():
-    """The shipped Cessna 210 MLOADS deck, exactly as the CLI runs it."""
+    """The shipped Cessna 210 MANVR deck, exactly as the CLI runs it."""
     cc, bulk = parse_bdf(str(FLAGSHIP_MLOADS))
     gi = build_grid_index(bulk)
     with warnings.catch_warnings():

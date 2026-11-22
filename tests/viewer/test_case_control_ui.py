@@ -239,8 +239,8 @@ def _make_sol144_cc() -> CaseControl:
 class TestSol144Export:
     def test_all_keywords_emitted(self):
         text = export_bdf_text(_make_sol144_cc())
-        for expected in ["SOL 144", "TRIM = 10", "TRIMOBJ = 11", "DIVERG = 12",
-                         "MLOADS = 30", "MASSCASE = 20", "MASSCASE = 21",
+        for expected in ["SOL 144", "TRIM = 10", "TRIMWGT = 11", "DIVERG = 12",
+                         "MANVR = 30", "MASSCASE = 20", "MASSCASE = 21",
                          "AEROF = ALL", "APRES = ALL"]:
             assert expected in text, expected
 
@@ -273,7 +273,7 @@ class TestSol144Export:
 
 class TestSampleDeckCaseControlRoundTrip:
     def test_sample_decks_round_trip(self):
-        """The two MLOADS sample decks' case control survives export → parse."""
+        """The two MANVR sample decks' case control survives export → parse."""
         for deck in ("ha144a_fullspan_mloads.bdf", "ha144a_mloads_massset.bdf"):
             cc, _ = parse_bdf(_SAMPLE_DIR / deck)
             cc2 = parse_case_control(export_bdf_text(cc).splitlines())

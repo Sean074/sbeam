@@ -1,9 +1,10 @@
-"""ZAERO-style transient maneuver-loads card set (Phase G0).
+"""sbeam's transient maneuver-loads card set (Phase G0): MANVR, MANTRIM, MANTIME, MANCMD, MANPRNT.
 
 These cards drive the DLM-free quasi-steady transient maneuver-loads solver
-(`sbeam/solver/maneuver_qs.py`).  They adopt ZAERO's ``MLOADS`` vocabulary so a
-deck author familiar with ZAERO transient maneuver analysis recognises the
-inputs, but the implementation is restricted to Phase G0 increment 1:
+(`sbeam/solver/maneuver_qs.py`).  They are sbeam-only cards.  Until #87 they borrowed
+ZAERO's MLOADS/MLD* names with a different layout and meaning (ZAERO's drive an
+aeroservoelastic state-space model, ZAERO 9.2 UM PDF p.383-400); those names are now
+refused.  The implementation is restricted to Phase G0 increment 1:
 
   * Level 1 quasi-steady aerodynamics (steady VLM evaluated at the instantaneous
     rigid-body rates / attitude — no DLM, no lag/apparent-mass states), and
@@ -12,13 +13,14 @@ inputs, but the implementation is restricted to Phase G0 increment 1:
 
 Card orchestration::
 
-    MLOADS  ──references──▶ MLDTRIM (steady-state initial condition = a TRIM sid)
-        │                   MLDTIME (integration window t0/tend/dt/tout)
-        │                   MLDCOMD (pilot command label → TABLED1 time history)
-        └─────────────────▶ MLDPRNT (ASCII time-history output request)
+    MANVR  ──references──▶ MANTRIM (steady-state initial condition = a TRIM sid)
+        │                   MANTIME (integration window t0/tend/dt/tout)
+        │                   MANCMD (pilot command label → TABLED1 time history)
+        └─────────────────▶ MANPRNT (ASCII time-history output request)
 
 ``TABLED1`` is the general tabular (time → value) function the commands point to.
 """
+import math
 
 from dataclasses import dataclass, field
 import numpy as np
@@ -99,9 +101,30 @@ class Mldprnt:
 
 @dataclass
 class Mldtrim:
-    """Steady-state initial condition — references a static TRIM sid (Step 53)."""
+    """MANTRIM — steady-state initial condition: a static TRIM sid and the freestream density.
+
+    ``rho`` exists solely to map the TRIM's dynamic pressure to a true airspeed
+    ``V = sqrt(2q/rho)`` for the free-flight solver's rigid-rate aerodynamics, in the
+    deck's own consistent units (charter §7).  ``0.0`` means "not supplied".  Until #87
+    it was an ``RHOREF`` pseudo-label on the TRIM card, which MSC's TRIM does not have.
+    """
     sid:      int
     trim_sid: int
+    rho:      float = 0.0
+
+    def velocity(self, q: float) -> float:
+        """True airspeed V = sqrt(2q/rho) at dynamic pressure ``q``.
+
+        Raises:
+            ValueError if RHO was not given — the transient maneuver rate terms
+            (Step 61 ``build_dj_rigidrate``) are undefined without a physical velocity.
+        """
+        if self.rho <= 0.0:
+            raise ValueError(
+                f"MANTRIM {self.sid}: a freestream velocity is required but RHO (field 4) "
+                "is blank; give the freestream density in the deck's own consistent "
+                "units so V = sqrt(2q/rho) can be formed")
+        return float(math.sqrt(2.0 * q / self.rho))
 
 
 @dataclass
@@ -119,10 +142,10 @@ class Mloads:
     solver (``maneuver_qs``), kept permanently as the regression anchor.
     """
     sid:        int
-    mldtrim:    int            # MLDTRIM sid (initial condition)
-    mldtime:    int            # MLDTIME sid (integration window)
-    mldcomd:    int = 0        # MLDCOMD sid (0 ⇒ no commands; hold trim)
-    mldprnt:    int = 0        # MLDPRNT sid (0 ⇒ no ASCII print)
+    mldtrim:    int            # MANTRIM sid (initial condition)
+    mldtime:    int            # MANTIME sid (integration window)
+    mldcomd:    int = 0        # MANCMD sid (0 ⇒ no commands; hold trim)
+    mldprnt:    int = 0        # MANPRNT sid (0 ⇒ no ASCII print)
     nmodes:     int = 0        # retained ELASTIC modes (0 ⇒ all available)
     method:     int = 0        # EIGRL sid for the basis solve (0 ⇒ internal
                                # default; -1 ⇒ internal default + modal solver)

@@ -43,10 +43,8 @@ DECKS = sorted([*(REPO / "sample").glob("*.bdf"), *(REPO / "sample").glob("*.dat
 #: Cards whose sbeam form puts an sbeam-only value in a field MSC defines, so pyNastran
 #: rightly rejects them.  Tracked for alignment or renaming.
 _SBEAM_EXTENSIONS = {
-    "AEROS": "#87: sbeam reads MACH from field 9, blank in MSC",
-    "TRIM": "#87/#88: sbeam's RHOREF pseudo-label and label pairs in field 9 (MSC AEQR)",
     "MASSCASE": "sbeam extension (named MASSSET, MSC's name, until #78)",
-}
+}   # AEROS (field-9 MACH) and TRIM (RHOREF, a label in AEQR) left with #87
 
 #: sbeam cards pyNastran cannot read at all (it raises instead of storing an error): they
 #: are removed before pyNastran reads the deck.
@@ -317,9 +315,7 @@ def _pyn_view(m: Any) -> dict[str, dict[Any, dict[str, Any]]]:
     v["AESTAT"] = {k: dict(label=a.label) for k, a in m.aestats.items()}
     v["AESURF"] = {k: dict(label=a.label, cid1=a.cid1, alid1=a.aelist_id1, cid2=a.cid2,
                            alid2=a.aelist_id2, eff=a.eff) for k, a in m.aesurf.items()}
-    # RHOREF is sbeam's pseudo-label, not a trim variable (#87)
-    v["TRIM"] = {k: dict(mach=t.mach, q=t.q, vars=sorted(
-        (lbl, ux) for lbl, ux in zip(t.labels, _f(t.uxs)) if lbl != "RHOREF"))
+    v["TRIM"] = {k: dict(mach=t.mach, q=t.q, vars=sorted(zip(t.labels, _f(t.uxs))))
                  for k, t in m.trims.items()}
     v["TABLED1"] = {k: dict(x=_f(t.x), y=_f(t.y))
                     for k, t in m.tables_d.items() if t.type == "TABLED1"}

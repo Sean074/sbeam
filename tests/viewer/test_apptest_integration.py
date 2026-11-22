@@ -133,7 +133,7 @@ def test_flow_b_sol103_render_and_run(cantilever_sol103_parsed):
 
 
 def test_flow_d_sol144_mloads_render_and_run():
-    """Flow D (AC5): MLOADS sample deck → trim + maneuver run → results UI renders.
+    """Flow D (AC5): MANVR sample deck → trim + maneuver run → results UI renders.
 
     Acceptance: six trim totals visible on the trim subcase; switching to the
     maneuver subcase renders the time-history view, sample slider, and export
@@ -160,7 +160,7 @@ def test_flow_d_sol144_mloads_render_and_run():
     assert not at.exception, [str(e) for e in at.exception]
     assert not at.error, [e.value for e in at.error]
     assert isinstance(at.session_state["sol144_result"], dict)      # trim (subcase 1)
-    assert isinstance(at.session_state["maneuver_result"], dict)    # MLOADS (subcase 2)
+    assert isinstance(at.session_state["maneuver_result"], dict)    # MANVR (subcase 2)
 
     # Trim subcase (default selection) shows all six aero totals (AC5).
     labels = [m.label for m in at.metric]
@@ -179,7 +179,7 @@ def test_flow_d_sol144_mloads_render_and_run():
 
 
 def test_flow_e_sol144_free_flight_modal_dispatch():
-    """Flow E (Step 63): a modal MLOADS deck routes to the FREE-FLIGHT modal
+    """Flow E (Step 63): a modal MANVR deck routes to the FREE-FLIGHT modal
     solver in the viewer (not the direct solver, which would silently run the
     prescribed-rigid physics).
 

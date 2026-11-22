@@ -12,7 +12,7 @@ use.  Gates:
     the new state, with the net force/moment closing to ≈ 0.
   * Per-step closure: for a consistent (trimmed) command history the net
     (aero + inertial) resultant stays balanced at every sample (no drift).
-  * Output: the MLDPRNT time history and the critical-step FORCE/MOMENT export
+  * Output: the MANPRNT time history and the critical-step FORCE/MOMENT export
     reproduce the recovered net loads.
 """
 
@@ -57,7 +57,7 @@ def _trim(n_z):
 
 def _maneuver(n_z, commands_builder, tend=0.5, dt=0.01, tout=0.1,
               damping_alpha=0.0, mldprnt_items=None):
-    """Build an MLOADS deck on the n_z trim IC and run the transient solver.
+    """Build an MANVR deck on the n_z trim IC and run the transient solver.
 
     ``commands_builder(bulk, labels, trim_vars)`` returns a list of
     ``(label, tabid)`` command pairs after registering its TABLED1 cards on
@@ -310,7 +310,7 @@ def test_f06_time_history_columns_align_with_their_headers():
 
 
 def test_mldprnt_numbering_matches_the_f06():
-    """MLDPRNT printed the 0-based index while the f06 printed 1-based."""
+    """MANPRNT printed the 0-based index while the f06 printed 1-based."""
     res, _ic, _b, _gi = _transient_maneuver()
     text = build_maneuver_time_history_text(res)
     hdr = next(ln for ln in text.splitlines() if "critical sample=" in ln)

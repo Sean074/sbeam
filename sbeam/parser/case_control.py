@@ -14,9 +14,9 @@ class SubcaseControl:
     spc_sid: Optional[int] = None     # SPC set ID
     method_sid: Optional[int] = None  # METHOD (EIGRL) SID for SOL 103
     trim_sid: Optional[int] = None    # TRIM set ID for SOL 144
-    trimobj_sid: Optional[int] = None # TRIMOBJ set ID (over-determined trim objective)
+    trimobj_sid: Optional[int] = None # TRIMWGT set ID (over-determined trim objective)
     diverg_sid: Optional[int] = None  # DIVERG set ID for SOL 144
-    mloads_sid: Optional[int] = None  # MLOADS set ID (Phase G0 transient maneuver loads)
+    mloads_sid: Optional[int] = None  # MANVR set ID (Phase G0 transient maneuver loads)
     gustlf_sid: Optional[int] = None  # GUSTLF set ID (FAR/CS 23.341 gust load case)
     massset_sid: Optional[int] = None # mass case: MASSCASE SID or MSC MASSSET ID (#102)
     mass_card: str = "MASSCASE"       # which command selected it: MASSCASE or MASSSET
@@ -61,9 +61,9 @@ _SELECTORS = {
     "SPC": "spc_sid",
     "METHOD": "method_sid",
     "TRIM": "trim_sid",
-    "TRIMOBJ": "trimobj_sid",
+    "TRIMWGT": "trimobj_sid",
     "DIVERG": "diverg_sid",
-    "MLOADS": "mloads_sid",
+    "MANVR": "mloads_sid",
     "GUSTLF": "gustlf_sid",
     "MASSCASE": "massset_sid",
     # MSC's mass combination selector (QRG 2024.1 PDF p.482; #102)
@@ -136,6 +136,9 @@ _REFUSED = {
     # is not taken as an abbreviation of sbeam's GUSTLF.
     "GUST": "is the SOL 146 gust selector, which sbeam does not support "
             "(sbeam's static gust case is GUSTLF)",
+    # sbeam's selectors until v0.4.1, renamed with their bulk cards (#87)
+    "MLOADS": "is ZAERO's name; sbeam's transient maneuver selector is now MANVR (#87)",
+    "TRIMOBJ": "is ZAERO's name; sbeam's trim-weight selector is now TRIMWGT (#87)",
 }
 
 _COMMANDS = (frozenset(_SELECTORS) | frozenset(_OUTPUT_REQUESTS) | _STRUCTURE

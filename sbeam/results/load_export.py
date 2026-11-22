@@ -13,7 +13,7 @@ Maneuver-balanced (aero + inertial) net loads (Step 53) are emitted by
 ``build_maneuver_load_cards_text`` from ``result.net_loads`` — the same card
 form, but the set sums to the trimmed lift minus the inertia-relief reaction
 (i.e. the constraint reaction for the balanced maneuver).  On a transient
-(MLOADS) sample the exported ``net_loads`` additionally carries the elastic
+(MANVR) sample the exported ``net_loads`` additionally carries the elastic
 d'Alembert and damping loads (#3) — ``results/maneuver_output.py``.
 """
 
@@ -206,7 +206,7 @@ _MONITOR_CSV_HEADER = [
     "parity", "whole_airplane",
 ]
 
-#: Identity columns shared by the four transient (MLOADS) CSVs.
+#: Identity columns shared by the four transient (MANVR) CSVs.
 _MANEUVER_IDENTITY = ["case", "mloads", "massset", "mass_case"]
 
 

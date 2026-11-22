@@ -18,7 +18,6 @@ from sbeam.assembly.load_vector import build_grid_index
 from sbeam.assembly.reduction import reduce_to_aset, expand_to_g
 from sbeam.aero.aero_model import AeroModel
 from sbeam.aero.coupling import build_qaa
-from sbeam.model.aero import require_aeros
 from sbeam.results.results import Sol144DivergResult, DivergMachResult, DivergRoot
 from sbeam.solver.sol144_util import AeroCache, get_suport_local
 from sbeam.types import ComplexArray, FloatArray
@@ -149,9 +148,8 @@ def run_sol144_diverg(
     if aero_cache is None:
         aero_cache = AeroCache(bulk, grid_index, seed=aero)
 
-    # Mach list: the DIVERG card's, else the seed/AEROS Mach (single point).
-    aeros_mach = require_aeros(bulk).mach if bulk.aeros else 0.0
-    machs = diverg.machs if diverg.machs else [aeros_mach]
+    # Mach list: the DIVERG card's; the parser refuses an empty one (#87).
+    machs = diverg.machs
 
     # ------------------------------------------------------------------ #
     # Mach-independent structural reduction: a-set partition + K_aa + l-set.

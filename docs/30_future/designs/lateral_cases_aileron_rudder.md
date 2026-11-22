@@ -226,7 +226,7 @@ full-span only, the CID2 pair is the full-span equivalent).
 | **G1** | #8 | `build_dj_rigidrate` column k == `(1/V)·n̂·v_k` from `rigid_body` vectors, DOFs 2–6, flagship (wing+HTP+fin, dihedral, off-origin RCSID) and AR8 wing; PITCH column exactly 0 on fin boxes; ROLL on fin boxes == `(2/b)·n_y·Δz` | rtol 1e-12 |
 | **G2** | #8 | existing scale/sign pins updated: `test_integration.py` expected scales, `test_yaw_rate_wing.py` force term `+2(y/V)f` | as today |
 | **G3** | #8 | free-flight lateral damping sign: on a lateral free-free basis, `−q·B_hh` rigid rate block has damping sign on DOF 4 and DOF 6 diagonals; DOF-2 column opposes sway | sign |
-| **G4** | #8 | bit-identity: HA144A SC1/SC2, V-LAT planar, every MLOADS pinned number, flagship TRIM 1; flagship TRIM 2 and dihedral `C_lp`/`CZ_q` deltas recorded in CHANGELOG | 0 / recorded |
+| **G4** | #8 | bit-identity: HA144A SC1/SC2, V-LAT planar, every MANVR pinned number, flagship TRIM 1; flagship TRIM 2 and dihedral `C_lp`/`CZ_q` deltas recorded in CHANGELOG | 0 / recorded |
 | **G5** | #8 | V-LAT `C_lp(dih) = C_lp(anh)`; `≈ planar` | 1e-6 / 5 % |
 | **G6** | #9 | one AESURF (CID1/CID2) column == box-for-box sum of two single-half AESURFs with the same CIDs; hinge-moment entry == sum of halves | atol 1e-15 |
 | **G7** | #9 | AIL column antisymmetric in y; rigid CZ, CMY, CY, CMZ from AIL vanish on the planar wing; **CMX > 0** (first absolute lateral sign pinned) | abs 1e-9 / sign |
@@ -309,7 +309,7 @@ CHANGELOG **Added** + **Changed**; `40_history/06` **full step format** +
    point and calling `build_rigid_vectors_g` — the literal `rigid_body.py` primitive, not a
    re-derivation. Parametrized over the flagship (fin, dihedral, off-origin RCSID), the planar
    AR 8 wing and the dihedral wing.
-3. G3 frees the flagship MLOADS deck in `SUPORT 23456` in-test (SPC1 reduced to surge) and
+3. G3 frees the flagship MANVR deck in `SUPORT 23456` in-test (SPC1 reduced to surge) and
    asserts every rigid diagonal of `B_hh` is negative (`C = C_struct − q·B_hh`); the fin makes
    the three lateral entries observable. The pre-#8 scales fail it on DOFs 2, 4, 6.
 4. Measured impact (before/after on all twelve SOL 144 samples, single-threaded BLAS): HA144A

@@ -1,7 +1,7 @@
 # Applied structural load in the SOL 144 trim RHS — design note for issue #6
 
 **Status:** ✅ **agreed 2026-10-24**, ✅ **implemented 2026-10-24** (CLAUDE.md rule 1): D1
-trim-only scope with the MLOADS / DIVERG silent-drop closed by refusal, D6 propeller
+trim-only scope with the MANVR / DIVERG silent-drop closed by refusal, D6 propeller
 handedness decided through a torque case, D7 dedicated validation deck — all accepted as
 recommended. Implementation decisions in §9 (including the correction of the §6 "10 %
 elastic" reading).
@@ -36,7 +36,7 @@ free-flight trim). The issue asked two physics questions before any code:
 1. does an applied load participate in inertia relief, and
 2. what does `maneuver_closure` mean once it enters the balance?
 
-**Found in review (same defect class, swept here).** An `MLOADS` subcase carrying `LOAD`
+**Found in review (same defect class, swept here).** An `MANVR` subcase carrying `LOAD`
 is silently dropped today: `maneuver_qs.py:415` and `maneuver_modal.py:302` rebuild the
 initial-condition subcase without `load_sid`, so the DEF-M4 guard never sees it. A
 `DIVERG`-only subcase with `LOAD` is likewise ignored.
@@ -126,7 +126,7 @@ term exists or is needed.
 ## 3. Decisions
 
 - **D1 Scope — TRIM subcases only.** Plain, over-determined and GUSTLF trims take the
-  `LOAD`. An `MLOADS` subcase with `LOAD` **raises** (DEF-M4 wording: the load would enter
+  `LOAD`. An `MANVR` subcase with `LOAD` **raises** (DEF-M4 wording: the load would enter
   the initial-condition trim and then be dropped from the time history); carry-through as
   a constant load is filed as a follow-on with a body, for the v0.7.0 case matrix if a
   powered time history ever needs it. A `DIVERG`-only subcase with `LOAD` raises
@@ -207,7 +207,7 @@ URDD4 = URDD6 = 0, `LOAD 701`; AIL and RUD free).
 | **G4** closure / surge | `maneuver_closure` ≈ 0 in all six components; `m·URDD1 = T + Fx_aero`; in-test `SUPORT 35` + `SPC 1246` variant: MONPNT3 reaction `Fx = +T`, closure `Fx = −T` (reacted, not trimmed), Schur identity holds, and the ELEV shift is 20/18 of the free-surge one (moment about the reference vs about the CG, §9) | 1e-9·‖aero‖ / rel 1e-12 / 1e-3 |
 | **G5** load path | `SECNOSE` carries `c1_applied = −T`, `c5_applied = +0.5·T` at both stations; every-grid `MONPNT3`: aero + inertia + applied + reaction = 0; both CSV headers match the constants (schema gate extended) | 1e-12·T / 1e-9 |
 | **G6** derivatives untouched | rigid, restrained, unrestrained derivatives and intercepts identical across SC1–SC3 | exact |
-| **G7** refusals | `GRAV` direct and via `LOAD` → `ValueError` naming URDD3; `MLOADS` + `LOAD` → `ValueError` (direct and modal); `DIVERG`-only + `LOAD` → `ValueError`; the no-LOAD trim is unaffected | — |
+| **G7** refusals | `GRAV` direct and via `LOAD` → `ValueError` naming URDD3; `MANVR` + `LOAD` → `ValueError` (direct and modal); `DIVERG`-only + `LOAD` → `ValueError`; the no-LOAD trim is unaffected | — |
 | **G8** torque / handedness | lateral SC3: AIL, RUD equal the 2 × 2 solve of the restrained derivatives against `−[Q/(qSb), 0]`; **AIL < 0**; closure in Mx, Mz ≈ 0 | rel 1e-8 |
 | **G9** bit-identity | every shipped SOL 144 f06 / `aero_loads.bdf` / `maneuver_loads.bdf` byte-identical to the pre-change run; flagship pins unchanged; only the two CSV headers differ (zero-filled new columns) | diff |
 | **G10** CLI | `python -m sbeam.main sample/val_thrust_trim.bdf` writes the f06 with the APPLIED block, both CSVs and `maneuver_loads.bdf`; import-boundary gate green | — |
@@ -302,5 +302,5 @@ and `02` §7.1/§7.2/§8, `11_python_api.md`, `06_viewer.md`, README, CHANGELOG,
 7. **Deck geometry:** the horizontal tail sits at z = 0.5 so its collocation points are
    clear of the wing's wake filaments (an in-plane tail 0.025 from a trailing leg is a
    near-singular VLM configuration, not a physics point).
-8. **Follow-on filed as [#50](https://github.com/Sean074/sbeam/issues/50):** constant applied load carried through the MLOADS transient (the IC
+8. **Follow-on filed as [#50](https://github.com/Sean074/sbeam/issues/50):** constant applied load carried through the MANVR transient (the IC
    trim takes it, the time history keeps it, transient monitors gain the column).

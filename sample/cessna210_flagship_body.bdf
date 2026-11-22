@@ -18,7 +18,7 @@ $
 $ Outputs: .f06 (trim variables, three stability-derivative columns, hinge
 $ moments, aero totals, divergence q, displacements, CBAR loads, monitor
 $ point integrated loads including the INJECTED AERO LOADS block for the
-$ SPLINE0 body panels), <stem>.aero_loads.bdf, <stem>.maneuver_loads.bdf
+$ LOADINJ body panels), <stem>.aero_loads.bdf, <stem>.maneuver_loads.bdf
 $ and <stem>.monitor_loads.csv.
 $
 $ Walk-through: docs/20_theory/02_realistic_airplane_sol144.md section 8

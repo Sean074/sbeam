@@ -133,7 +133,7 @@ class TestAbbreviations:
             _parse("SUBC 1")
 
     def test_exact_name_wins_over_a_longer_command(self):
-        # TRIM is also the start of TRIMOBJ and TRIMF.
+        # TRIM is also the start of TRIMWGT and TRIMF.
         assert _parse("TRIM = 7").subcases[0].trim_sid == 7
 
 

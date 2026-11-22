@@ -46,7 +46,7 @@ def sweep():
     grid_index = build_grid_index(bulk)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        aero = build_aero_model(bulk, grid_index=grid_index)
+        aero = build_aero_model(bulk, grid_index=grid_index, mach=bulk.trims[1].mach)
         cache = AeroCache(bulk, grid_index, seed=aero)
         results = {
             sc.subcase_id: run_sol144_trim(bulk, sc, aero, aero_cache=cache)

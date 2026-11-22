@@ -795,11 +795,11 @@ def _build_f06_sol144_text(
         )
         lines.append("")
 
-    # ---- INJECTED OPERATING POINT (CHORDCP, Step 54) ----
+    # ---- INJECTED OPERATING POINT (CPINJ, Step 54) ----
     if result.chordcp_echo:
         echo = result.chordcp_echo
         a_rad = echo['alpha_ref']
-        lines.append("                          I N J E C T E D   O P E R A T I N G   P O I N T   (CHORDCP)")
+        lines.append("                          I N J E C T E D   O P E R A T I N G   P O I N T   (CPINJ)")
         lines.append("")
         mach_str = (", ".join(f"{m:.4f}" for m in echo['data_machs'])
                     if echo['data_machs'] else "NOT STATED")
@@ -824,11 +824,11 @@ def _build_f06_sol144_text(
         lines.append("")
 
     # ---- INJECTED BODY / UN-SPLINED BOX LOADS (Step 64) ----
-    # Boxes with no structural coupling (SPLINE0 body panels, un-splined boxes)
+    # Boxes with no structural coupling (LOADINJ body panels, un-splined boxes)
     # deliver their force to the structure as a rigid load at a master grid.
     # Emitted only when such boxes exist, so other decks are unaffected.
     if result.load_injection_echo:
-        lines.append("                    I N J E C T E D   A E R O   L O A D S   (SPLINE0 / UN-SPLINED)")
+        lines.append("                    I N J E C T E D   A E R O   L O A D S   (LOADINJ / UN-SPLINED)")
         lines.append("")
         lines.append(_hdr(
             f"      {'SOURCE':<14}  {'MASTER GRID':>11}  {'BOXES':>6}  ",
@@ -1112,11 +1112,11 @@ def _build_f06_sol144_maneuver_text(
 ) -> str:
     """Return a SOL 144 transient maneuver loads .f06 block (Phase G0, AC5).
 
-    Blocks: run summary (MLOADS/MLDTRIM sids, q, Mach, sample count, critical
+    Blocks: run summary (MANVR/MANTRIM sids, q, Mach, sample count, critical
     sample), a per-output-time MANEUVER TIME HISTORY table (trim variables,
     aero Fz/My, peak |net| grid force), and the critical-sample detail — net
     load closure resultant plus the shared DISPLACEMENT / BAR FORCE blocks.
-    The full per-sample field output stays in the MLDPRNT ASCII export.
+    The full per-sample field output stays in the MANPRNT ASCII export.
     """
     grid_index = build_grid_index(bulk)
     gids_sorted = sorted(bulk.grids.keys())
@@ -1132,7 +1132,7 @@ def _build_f06_sol144_maneuver_text(
     )
     lines.append("")
     lines.append(
-        f"                           SUBCASE {subcase_id}     MLOADS = {result.mloads_sid}"
+        f"                           SUBCASE {subcase_id}     MANVR = {result.mloads_sid}"
         f"     TRIM = {result.trim_sid}     MACH = {result.mach:.4f}"
         f"     Q = {_fmt(result.q).strip()}"
     )

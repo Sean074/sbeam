@@ -44,7 +44,7 @@ def test_summary_sol144_advertises_hinge_and_monitor_outputs():
 
 
 def test_summary_sol144_maneuver_advertises_exports():
-    """AC5: MLOADS summary lists the time-history and critical-load exports."""
+    """AC5: MANVR summary lists the time-history and critical-load exports."""
     import warnings
     from pathlib import Path
     from sbeam.parser.bdf_reader import parse_bdf
@@ -54,6 +54,6 @@ def test_summary_sol144_maneuver_advertises_exports():
         warnings.simplefilter("ignore")
         cc, bulk = parse_bdf(sample)
     lines = summarize_case_control(cc, bulk)
-    man_line = next(ln for ln in lines if "MLOADS" in ln)
-    assert "MLDPRNT" in man_line
+    man_line = next(ln for ln in lines if "MANVR" in ln)
+    assert "MANPRNT" in man_line
     assert "critical-sample loads" in man_line

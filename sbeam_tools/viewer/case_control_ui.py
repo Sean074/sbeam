@@ -41,11 +41,11 @@ _OUTPUT_LABELS: dict[str, str] = {
 }
 
 # SOL 144 subcase driver kinds — each subcase selects exactly one, matching the
-# solver routing (MLOADS wins; DIVERG without TRIM = divergence-only; else TRIM,
+# solver routing (MANVR wins; DIVERG without TRIM = divergence-only; else TRIM,
 # with DIVERG as an optional add-on sweep).
 _SC_KIND_TRIM   = "Trim"
 _SC_KIND_DIVERG = "Divergence only"
-_SC_KIND_MLOADS = "Maneuver (MLOADS)"
+_SC_KIND_MLOADS = "Maneuver (MANVR)"
 _SC_KINDS = [_SC_KIND_TRIM, _SC_KIND_DIVERG, _SC_KIND_MLOADS]
 
 
@@ -78,7 +78,7 @@ def export_bdf_text(
         include_paths:  Bulk-data file paths; defaults to ``cc.includes`` (or
                         ``['model.dat']`` when the deck names none).
         authored_block: Optional bulk-card text emitted inline after BEGIN BULK
-                        (the viewer-authored TRIM/MLOADS/… card block).
+                        (the viewer-authored TRIM/MANVR/… card block).
     """
     if include_paths is None:
         if cc.includes:
@@ -97,8 +97,8 @@ def export_bdf_text(
             lines.append(f"  TITLE = {sc.title}")
         for sid, keyword in [
             (sc.load_sid, "LOAD"), (sc.spc_sid, "SPC"), (sc.method_sid, "METHOD"),
-            (sc.trim_sid, "TRIM"), (sc.trimobj_sid, "TRIMOBJ"),
-            (sc.diverg_sid, "DIVERG"), (sc.mloads_sid, "MLOADS"),
+            (sc.trim_sid, "TRIM"), (sc.trimobj_sid, "TRIMWGT"),
+            (sc.diverg_sid, "DIVERG"), (sc.mloads_sid, "MANVR"),
             (sc.gustlf_sid, "GUSTLF"), (sc.massset_sid, sc.mass_card),
         ]:
             if sid is not None:
@@ -163,10 +163,10 @@ def _summarize_sol144(sc: SubcaseControl, bulk: BulkData) -> str:
         label = f" {ms.label}" if ms is not None else ""
         mass_case = f" [mass case {sc.mass_card} {sc.massset_sid}{label}]"
     if sc.mloads_sid is not None:
-        outputs = "time histories, MLDPRNT export, critical-sample loads"
+        outputs = "time histories, MANPRNT export, critical-sample loads"
         if has_monitors:
             outputs += ", monitor loads"
-        return (f"Transient maneuver loads (MLOADS {sc.mloads_sid}){mass_case}; "
+        return (f"Transient maneuver loads (MANVR {sc.mloads_sid}){mass_case}; "
                 f"outputs {outputs}")
     parts: list[str] = []
     if sc.trim_sid is not None:
@@ -176,7 +176,7 @@ def _summarize_sol144(sc: SubcaseControl, bulk: BulkData) -> str:
         else:
             parts.append(f"trim (TRIM {sc.trim_sid})")
         if sc.trimobj_sid is not None:
-            parts.append(f"over-determined (TRIMOBJ {sc.trimobj_sid})")
+            parts.append(f"over-determined (TRIMWGT {sc.trimobj_sid})")
     if sc.gustlf_sid is not None:
         gust = bulk.gustlfs.get(sc.gustlf_sid)
         detail = f", n = {gust.n:g} on TRIM {gust.trimid}" if gust is not None else ""
@@ -378,10 +378,10 @@ def _render_case_control_editor(
                     key=f"sc_load_{idx}",
                     # #6: in SOL 144 the LOAD set is an applied structural load
                     # (thrust, engine torque) in the TRIM balance; the Trim kind
-                    # keeps it, MLOADS / Divergence-only drop it (_apply_sol144_kind).
+                    # keeps it, MANVR / Divergence-only drop it (_apply_sol144_kind).
                     help=("SOL 144: applied structural load (FORCE/MOMENT) added to the "
                           "TRIM balance — thrust, engine torque; GRAV is refused. Not "
-                          "available for MLOADS or divergence-only subcases.")
+                          "available for MANVR or divergence-only subcases.")
                     if sol == 144 else None,
                 )
                 spc_opts: list[Optional[int]] = [None] + spc_sids
@@ -518,7 +518,7 @@ def _render_case_control_editor(
         from sbeam.model.card_writers import write_authored_block
         authored_block = write_authored_block(
             bulk, st.session_state.get("authored_cards") or {},
-            "Authored in the sbeam viewer (SOL 144 / MLOADS authoring tab)",
+            "Authored in the sbeam viewer (SOL 144 / MANVR authoring tab)",
         )
         bdf_text = export_bdf_text(cc_current, include_paths=include_paths,
                                    authored_block=authored_block)
@@ -577,13 +577,13 @@ def _render_sol144_subcase_fields(
 
     col1, col2, col3 = st.columns(3)
     _sid_box(col1, "TRIM SID", "trim_sid", trim_sids)
-    _sid_box(col2, "TRIMOBJ SID", "trimobj_sid", trimobj_sids,
+    _sid_box(col2, "TRIMWGT SID", "trimobj_sid", trimobj_sids,
              "Over-determined trim objective (optional).")
     _sid_box(col3, "DIVERG SID", "diverg_sid", diverg_sids,
              "Sole driver for a divergence-only subcase, or an add-on sweep "
              "after a trim.")
     col4, col5, col6 = st.columns(3)
-    _sid_box(col4, "MLOADS SID", "mloads_sid", mloads_sids,
+    _sid_box(col4, "MANVR SID", "mloads_sid", mloads_sids,
              "Transient maneuver driver (Phase G0).")
     _sid_box(col5, "MASSCASE SID", "massset_sid", massset_sids,
              "Payload / mass case (baseline when none).")

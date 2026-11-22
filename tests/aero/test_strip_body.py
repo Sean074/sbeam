@@ -53,7 +53,7 @@ def _parse(text: str):
 
 def test_pstrip_default_slope():
     bulk = _parse(
-        "AEROS, 0, 0, 1.0, 1.0, 1.0, 0, 0, 0.0\n"
+        "AEROS, 0, 0, 1.0, 1.0, 1.0, 0, 0\n"
         "PSTRIP, 20\n"
         "CAERO1, 400, 20, 0, 1, 1, 0, 0, 1\n"
         "+, 0.0, -0.5, 0.0, 1.0, 0.0, 0.5, 0.0, 1.0\n"
@@ -64,7 +64,7 @@ def test_pstrip_default_slope():
 
 def test_pstrip_explicit_slope_and_stripk():
     bulk = _parse(
-        "AEROS, 0, 0, 1.0, 1.0, 1.0, 0, 0, 0.0\n"
+        "AEROS, 0, 0, 1.0, 1.0, 1.0, 0, 0\n"
         "PSTRIP, 20, 2.5\n"
         "CAERO1, 400, 20, 0, 1, 2, 0, 0, 1\n"
         "+, 0.0, -0.5, 0.0, 1.0, 0.0, 0.5, 0.0, 1.0\n"
@@ -78,7 +78,7 @@ def test_pstrip_explicit_slope_and_stripk():
 def test_stripk_must_target_a_strip_panel():
     with pytest.raises(ValueError, match="not a strip panel"):
         _parse(
-            "AEROS, 0, 0, 1.0, 1.0, 1.0, 0, 0, 0.0\n"
+            "AEROS, 0, 0, 1.0, 1.0, 1.0, 0, 0\n"
             "PAERO1, 10\n"
             "CAERO1, 100, 10, 0, 1, 1, 0, 0, 1\n"
             "+, 0.0, -0.5, 0.0, 1.0, 0.0, 0.5, 0.0, 1.0\n"
@@ -89,7 +89,7 @@ def test_stripk_must_target_a_strip_panel():
 def test_caero_pid_must_resolve_to_paero1_or_pstrip():
     with pytest.raises(ValueError, match="not found in PAERO1 or PSTRIP"):
         _parse(
-            "AEROS, 0, 0, 1.0, 1.0, 1.0, 0, 0, 0.0\n"
+            "AEROS, 0, 0, 1.0, 1.0, 1.0, 0, 0\n"
             "CAERO1, 100, 99, 0, 1, 1, 0, 0, 1\n"
             "+, 0.0, -0.5, 0.0, 1.0, 0.0, 0.5, 0.0, 1.0\n"
         )
@@ -98,7 +98,7 @@ def test_caero_pid_must_resolve_to_paero1_or_pstrip():
 def test_pstrip_pid_collision_with_paero1():
     with pytest.raises(ValueError, match="collides with a PAERO1"):
         _parse(
-            "AEROS, 0, 0, 1.0, 1.0, 1.0, 0, 0, 0.0\n"
+            "AEROS, 0, 0, 1.0, 1.0, 1.0, 0, 0\n"
             "PAERO1, 20\n"
             "PSTRIP, 20\n"
         )
@@ -182,7 +182,7 @@ def test_overlap_is_harmless(strip_model):
 def test_pi_slope_gives_sectional_cl_slope_pi():
     """A nominal π-slope horizontal strip ⇒ sectional lift-curve slope π."""
     bulk = _parse(
-        "AEROS, 0, 0, 1.0, 2.0, 2.0, 0, 0, 0.0\n"
+        "AEROS, 0, 0, 1.0, 2.0, 2.0, 0, 0\n"
         "PSTRIP, 20\n"
         "CAERO1, 400, 20, 0, 2, 4, 0, 0, 1\n"
         "+, 0.0, -1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0\n"
@@ -203,7 +203,7 @@ def test_raw_solve_rejects_strip_without_operator(strip_model):
 
 def test_strip_box_slopes_uses_stripk_override():
     bulk = _parse(
-        "AEROS, 0, 0, 1.0, 1.0, 1.0, 0, 0, 0.0\n"
+        "AEROS, 0, 0, 1.0, 1.0, 1.0, 0, 0\n"
         "PSTRIP, 20, 2.0\n"
         "CAERO1, 400, 20, 0, 1, 3, 0, 0, 1\n"
         "+, 0.0, -0.5, 0.0, 1.0, 0.0, 0.5, 0.0, 1.0\n"
@@ -317,7 +317,7 @@ def test_strip_correction_does_not_touch_flying_surfaces(strip_model, strip_base
 # --------------------------------------------------------------------------- #
 
 _STRIP_DECK = (
-    "AEROS, 0, 0, 1.0, 1.0, 1.0, 0, 0, 0.0\n"
+    "AEROS, 0, 0, 1.0, 1.0, 1.0, 0, 0\n"
     "PSTRIP, 20, 2.5\n"
     "CAERO1, 400, 20, 0, 1, 4, 0, 0, 1\n"
     "+, 0.0, -0.5, 0.0, 1.0, 0.0, 0.5, 0.0, 1.0\n"

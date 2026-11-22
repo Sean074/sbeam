@@ -29,7 +29,7 @@ attached to anything is never shown moving.
 
 #### Load injection (Step 64 / DEF-M1, 2026-07-31)
 
-Boxes with no structural coupling — `SPLINE0`-declared body panels and boxes no spline
+Boxes with no structural coupling — `LOADINJ`-declared body panels and boxes no spline
 card covers — still generate aerodynamic force. Before Step 64 that force was multiplied
 by zero `g_disp` rows: it appeared in the printed totals, the rigid derivatives and
 MONPNT1, but never in the trim force balance or the load export, so a body-panel trim was
@@ -49,17 +49,17 @@ much as a wing panel's `Fz`). Read forward the same rows are the rigid-body disp
 interpolation `u_k = u_m + θ_m × r_k`, so injection and transfer are a virtual-work pair.
 
 `g_slope` deliberately stays zero on injected boxes: they load the structure but take no
-downwash from it — the `SPLINE0` contract ("body elasticity negligible"). `Q_aa` therefore
+downwash from it — the `LOADINJ` contract ("body elasticity negligible"). `Q_aa` therefore
 gains rows at the master grid but no columns, making an already unsymmetric matrix more so;
 nothing downstream assumes symmetry (the trim Schur solve and the divergence eigensolve are
 both general).
 
-Master-grid resolution: `SPLINE0` field 5 (`GRID`) if given, else the first SUPORT grid.
+Master-grid resolution: `LOADINJ` field 5 (`GRID`) if given, else the first SUPORT grid.
 With neither, a `UserWarning` reports the dropped load and the rows stay zero
 (`tests/integration/test_sol144_body_injection.py::TestNoSuportDecksStillBuild`).
 
 The flagship body overlays (`sample/cessna210_flagship_body_cruciform.bdf`,
-`..._strip.bdf`) name the grid explicitly — `SPLINE0, 9400, 6000, 6000, 6015, 900` — even
+`..._strip.bdf`) name the grid explicitly — `LOADINJ, 9400, 6000, 6000, 6015, 900` — even
 though GRID 900 is also the SUPORT grid, so the intent is on the card rather than implied.
 Two conditions on that grid: it must be in the structural load path (GRID 900 is spliced
 into the fuselage CBAR chain, not floated on an RBE2), and it must appear in the
@@ -92,7 +92,7 @@ SPLINE2  EID  CAERO  ID1  ID2  SETG  DZ  DTOR  CID
 | CID   | 0       | CORD2R SID. **The spline axis is the CID *y*-axis projected onto the plane of the panel** (QRG 2024.1 PDF p.2849, SPLINE2 remark 2). Only the y-axis and the origin are read: the deflection direction is the panel normal and the chord / rigid-arm direction is axis × normal (#74). A y-axis normal to the panel is refused |
 | DTHX  | 0.0     | Bending-slope (rotation about the spline's x-axis, ĉ) attachment flexibility: 0 = rigid, > 0 = spring, negative = not attached |
 | DTHY  | 0.0     | Torsion (rotation about the spline axis ŝ) attachment flexibility (same convention) |
-| USAGE | BOTH    | Must be `BOTH` or blank. `FORCE` and `DISP` put the spline in only one of the two transforms (QRG 2024.1 PDF p.2848 remark 5, p.2850 remark 9); sbeam uses every spline for both, so they are **refused** (#75; they used to be stored and solved as BOTH). A force-only surface is `SPLINE0` |
+| USAGE | BOTH    | Must be `BOTH` or blank. `FORCE` and `DISP` put the spline in only one of the two transforms (QRG 2024.1 PDF p.2848 remark 5, p.2850 remark 9); sbeam uses every spline for both, so they are **refused** (#75; they used to be stored and solved as BOTH). A force-only surface is `LOADINJ` |
 
 **Formulation.** Each SET1 grid attaches its *deflection* `w_g = u·ẑ` to an infinite beam
 at axis station `t = (r−origin)·ŷ_cid` with rigid chord arm `χ = (r−origin)·x̂_cid`.
@@ -210,23 +210,23 @@ ranges, DTOR ≤ 0, or DZ < 0.
 `aero_model.g_load` and `aero_model.load_injections` when
 `build_aero_model` is called with a `grid_index` dict.
 
-### ATTACH — Rigid Attachment (Step 47)
+### BODYATT — Rigid Attachment (Step 47)
 
 **Sample deck (Step 65).** `sample/cessna210_flagship_bulk.bdf` slaves all 36 vertical-fin
-boxes to the fin-root grid with `ATTACH, 1005, 5000, 5000, 5035, 30, 0` — the first (and
-currently only) `ATTACH` card in any `.bdf`/`.dat` in the repo, so the card now has
+boxes to the fin-root grid with `BODYATT, 1005, 5000, 5000, 5035, 30, 0` — the first (and
+currently only) `BODYATT` card in any `.bdf`/`.dat` in the repo, so the card now has
 file → parse → solve coverage rather than only Python-built fixtures. It is also the
 configuration DEF-M11 fixed: `tests/aero/test_cessna210_flagship.py::test_t7_*` gates that a
 sideslipped fin delivers its side force to the master grid *exactly* (`F = Σ f_j`) and brings
 non-zero roll and yaw moments with it.
 
-`ATTACH` rigidly couples a group of aero boxes to a single master structural GRID.
+`BODYATT` rigidly couples a group of aero boxes to a single master structural GRID.
 It is an sbeam extension (ZAERO-inspired). All boxes in the covered ID range move
 as a rigid body with the master grid.
 
 **Card format:**
 ```
-ATTACH  EID  CAERO  ID1  ID2  GRID  CID
+BODYATT  EID  CAERO  ID1  ID2  GRID  CID
 ```
 
 | Field | Description |
@@ -276,14 +276,14 @@ g_disp[3j+2, col_Ry] = -rx
 **DEF-H1 — resolved 2026-07-31:** the `Ry` row previously read `-1.0` and `Rx` a spurious
 `+1.0`. Nose-up pitch of a master grid therefore produced washout, and unit roll injected
 a full unit of false incidence, sign-inverting the aeroelastic feedback in `Q_aa`, trim and
-divergence for every ATTACH deck. The `Ry`/`Rz` rows are now built from the box normal, so
+divergence for every BODYATT deck. The `Ry`/`Rz` rows are now built from the box normal, so
 dihedral and vertical panels are handled as well as flat ones.
 
 Energy consistency: `α = -∂u_z/∂x = -∂(-rx·θ_y)/∂x = +θ_y = g_slope[j, col_Ry]` for a
 z-normal box (virtual work ✓ — `g_disp` supplies `u_z = -rx·θ_y`).
 
 **DEF-M11 — resolved 2026-08-01:** `g_disp` previously filled only the z-row (`Tz`, and the
-z-component of `ω×r`), so the in-plane `Fx`/`Fy` of a canted or vertical ATTACH panel never
+z-component of `ω×r`), so the in-plane `Fx`/`Fy` of a canted or vertical BODYATT panel never
 reached the master grid and the roll/yaw moments they generate were lost with them — a
 26.57° dihedral panel dropped 50% of `Fz` as side force and all of `Mz`; a fin panel
 transferred nothing at all. All three rows now carry the full rigid-body transform
@@ -305,13 +305,13 @@ result is bit-identical.
   transfer intact (< 1e-14) (DEF-M11)
 - V-B3d kinematics: `g_disp @ u` reproduces `t + ω×r` per box for arbitrary rigid motion
   (< 1e-14) — pins the operator itself, not only its transpose (DEF-M11)
-- V-B3g (`tests/aero/test_attach_sol144.py`) ATTACH and SPLINE2 give the same flexible
+- V-B3g (`tests/aero/test_attach_sol144.py`) BODYATT and SPLINE2 give the same flexible
   lift within 3% through the SOL 144 static aeroelastic solve, and both converge to the
   rigid lift (1e-6) in the stiff limit
 
-### SPLINE0 — Zero-Displacement Constraint (Step 47)
+### LOADINJ — Zero-Displacement Constraint (Step 47)
 
-`SPLINE0` registers a box range as "covered" without adding any structural coupling.
+`LOADINJ` registers a box range as "covered" without adding any structural coupling.
 All `g_slope` and `g_disp` rows for the covered boxes remain zero — but their aerodynamic
 force is injected at the master grid through `g_load` (see *Load injection* above). Used to suppress
 un-splined warnings for boxes that are intentionally uncoupled (e.g. control surfaces
@@ -319,7 +319,7 @@ or far-field boxes that do not deflect structurally).
 
 **Card format:**
 ```
-SPLINE0  EID  CAERO  ID1  ID2  GRID
+LOADINJ  EID  CAERO  ID1  ID2  GRID
 ```
 
 `g_disp.T @ (any pressure force)` = 0 for all structural DOFs (V-B3c verified), while

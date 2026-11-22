@@ -18,7 +18,7 @@ finalized 2026-08-02):
      lower steady load-factor increment for the same elevator command;
   6. commanding a rigid-state label under the modal solver is a hard error
      (solver and parser);
-  7. free flight without RHOREF on the IC TRIM is a hard error;
+  7. free flight without RHO on the MANTRIM is a hard error;
   8. the shipped sample deck ``ha144a_mloads_massset.bdf`` runs end-to-end
      (three free-flight mass cases; NZ_REL trend; f06 FREE FLIGHT block).
 
@@ -64,14 +64,14 @@ ELEV_RAMP = ([0.0, 0.1, 60.0], [0.0, 0.05, 0.05])   # ramp-and-hold increment
 # ---------------------------------------------------------------------------
 
 def test_zero_command_free_response_stays_at_equilibrium():
-    """No MLDCOMD: the coupled free system starts and stays exactly at the
+    """No MANCMD: the coupled free system starts and stays exactly at the
     Step 53 trim — Δξ ≈ 0, every label and every net load unchanged."""
     bulk, gi = _build(rho=RHO, tend=0.5)
     sc = SubcaseControl(subcase_id=1, spc_sid=1)
     sc.mloads_sid = 1
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        aero = build_aero_model(bulk, grid_index=gi)
+        aero = build_aero_model(bulk, grid_index=gi, mach=bulk.trims[1].mach)
         ic = run_sol144_trim(
             bulk, SubcaseControl(subcase_id=1, spc_sid=1, trim_sid=1), aero)
         mod = run_maneuver_modal(bulk, sc, aero)
@@ -162,8 +162,7 @@ def test_settled_state_reproduces_step53_elev_prescribed():
         sid=3, mach=bulk.trims[1].mach, q=bulk.trims[1].q,
         vars={"ELEV": end.trim_vars["ELEV"],
               "PITCH": end.trim_vars["PITCH"],
-              "URDD5": 0.0},
-        rhoref=RHOREF)
+              "URDD5": 0.0})
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         ref = run_sol144_trim(
@@ -192,7 +191,7 @@ def test_short_period_matches_2dof_handcalc():
     sc = SubcaseControl(subcase_id=1, spc_sid=1)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        aero = build_aero_model(bulk, grid_index=gi)
+        aero = build_aero_model(bulk, grid_index=gi, mach=bulk.trims[1].mach)
         ic = run_sol144_trim(
             bulk, SubcaseControl(subcase_id=1, spc_sid=1, trim_sid=1), aero)
         ops = assemble_aset_operators(bulk, sc, aero)
@@ -250,7 +249,7 @@ def test_massset_heavier_gives_lower_steady_load_factor():
         bulk.masssets[sid] = Massset(sid=sid, label=f"S{scl}", scale=scl)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        aero = build_aero_model(bulk, grid_index=gi)
+        aero = build_aero_model(bulk, grid_index=gi, mach=bulk.trims[1].mach)
         cache = ManeuverBasisCache(bulk, aero)
         d_nz = {}
         for sid in (110, 120, 130):
@@ -268,7 +267,7 @@ def test_massset_heavier_gives_lower_steady_load_factor():
 
 
 # ---------------------------------------------------------------------------
-# Gates 6/7 — hard errors: rigid-state command, missing RHOREF
+# Gates 6/7 — hard errors: rigid-state command, missing MANTRIM RHO
 # ---------------------------------------------------------------------------
 
 def test_mldcomd_rigid_label_raises_in_solver():
@@ -281,37 +280,37 @@ def test_mldcomd_rigid_label_raises_in_solver():
     sc.mloads_sid = 1
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        aero = build_aero_model(bulk, grid_index=gi)
+        aero = build_aero_model(bulk, grid_index=gi, mach=bulk.trims[1].mach)
         with pytest.raises(ValueError, match="ANGLEA"):
             run_maneuver_modal(bulk, sc, aero)
 
 
 def test_mldcomd_rigid_label_raises_in_parser(tmp_path):
-    """Deck-time mirror: a modal MLOADS whose MLDCOMD commands an AESTAT
+    """Deck-time mirror: a modal MANVR whose MANCMD commands an AESTAT
     label fails at parse; the same deck with an all-zeros (direct-solver)
-    MLOADS parses."""
+    MANVR parses."""
     src = SAMPLE_DECK.read_text()
-    bad = src.replace("MLDCOMD, 11, ELEV, 310", "MLDCOMD, 11, ANGLEA, 310")
+    bad = src.replace("MANCMD, 11, ELEV, 310", "MANCMD, 11, ANGLEA, 310")
     p = tmp_path / "bad.bdf"
     p.write_text(bad)
     with pytest.raises(ValueError, match="ANGLEA"):
         parse_bdf(str(p))
-    ok = bad.replace("MLOADS, 10, 1, 1, 11, 1, 0, -1, 0.02",
-                     "MLOADS, 10, 1, 1, 11, 1")
+    ok = bad.replace("MANVR, 10, 1, 1, 11, 1, 0, -1, 0.02",
+                     "MANVR, 10, 1, 1, 11, 1")
     p2 = tmp_path / "ok.bdf"
     p2.write_text(ok)
     parse_bdf(str(p2))   # direct solver may prescribe rigid states
 
 
-def test_missing_rhoref_raises():
+def test_missing_rho_raises():
     bulk, gi = _build(rho=None, tend=0.05)
-    bulk.trims[1].rhoref = 0.0
+    bulk.mldtrims[1].rho = 0.0
     sc = SubcaseControl(subcase_id=1, spc_sid=1)
     sc.mloads_sid = 1
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        aero = build_aero_model(bulk, grid_index=gi)
-        with pytest.raises(ValueError, match="RHOREF"):
+        aero = build_aero_model(bulk, grid_index=gi, mach=bulk.trims[1].mach)
+        with pytest.raises(ValueError, match="RHO on MANTRIM 1"):
             run_maneuver_modal(bulk, sc, aero)
 
 
@@ -332,7 +331,7 @@ def test_sample_deck_free_flight_massset_sweep():
     gi = build_grid_index(bulk)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        aero = build_aero_model(bulk, grid_index=gi)
+        aero = build_aero_model(bulk, grid_index=gi, mach=bulk.trims[1].mach)
         cache = AeroCache(bulk, gi, seed=aero)
         basis_cache = ManeuverBasisCache(bulk, aero)
         results = {}
@@ -351,4 +350,4 @@ def test_sample_deck_free_flight_massset_sweep():
     txt = build_f06_sol144_maneuver_text(
         CaseControl(sol=144), bulk, results[1], 1)
     assert "FREE FLIGHT: V =" in txt
-    assert "NZ_REL" not in txt   # NZ_REL lives in the MLDPRNT export
+    assert "NZ_REL" not in txt   # NZ_REL lives in the MANPRNT export

@@ -1,10 +1,10 @@
-$ HA144A full-span — Phase G0 transient maneuver loads (MLOADS) sample
+$ HA144A full-span — Phase G0 transient maneuver loads (MANVR) sample
 $
-$ Purpose: end-to-end MLOADS demonstration deck (AC5). The bulk model is an
+$ Purpose: end-to-end MANVR demonstration deck (AC5). The bulk model is an
 $ exact copy of ha144a_fullspan_sbeam.bdf (see that file's header for the
 $ model provenance); this deck adds the ZAERO-style maneuver card set:
-$   MLOADS 1 -> MLDTRIM 1 (IC = TRIM 1, 1g @ q=40) + MLDTIME 1 + MLDCOMD 1
-$              + MLDPRNT 1
+$   MANVR 1 -> MANTRIM 1 (IC = TRIM 1, 1g @ q=40) + MANTIME 1 + MANCMD 1
+$              + MANPRNT 1
 $   TABLED1 300 ramps ELEV from its trimmed value (0.492457 rad, NASTRAN
 $   Listing 7-2) up by +0.1 rad over 0.2 s, then holds — an open-loop
 $   quasi-steady pitch-up.
@@ -15,19 +15,19 @@ $
 $ Units: ft, lb, slug, s
 $
 SOL 144
-TITLE = HA144A full-span MLOADS pitch-up
+TITLE = HA144A full-span MANVR pitch-up
 SUBCASE 1
   TRIM   = 1
   SPC    = 1
 SUBCASE 2
-  MLOADS = 1
+  MANVR = 1
   SPC    = 1
 BEGIN BULK
 $
 $ ============================================================
 $ REFERENCE GEOMETRY  (SYMXZ=0 full-span; sref=400 = full wing area)
 $ ============================================================
-AEROS, 1, 100, 10.0, 40.0, 400.0, 0, 0, 0.9
+AEROS, 1, 100, 10.0, 40.0, 400.0, 0, 0
 $
 $ ============================================================
 $ COORDINATE SYSTEMS
@@ -240,7 +240,7 @@ $ cut's moment reference lands on it.  Present here so the DIRECT (l-set,
 $ prescribed-rigid) transient solver has section-cut coverage in a sample deck
 $ — the modal free-flight path is covered by ha144a_mloads_massset.bdf.
 $
-$ On an MLOADS subcase the table is produced at EVERY output sample: the f06
+$ On an MANVR subcase the table is produced at EVERY output sample: the f06
 $ carries the critical sample, and .maneuver_section_loads.csv the full history.
 $ The transient table has two columns the steady one does not — the elastic
 $ d'Alembert load and the modal/Rayleigh damping force.  They are what make the
@@ -286,25 +286,25 @@ $ RHOREF (sbeam extension, Step 61) is the freestream density: it plays no part
 $ in the static trim and exists only so V = sqrt(2q/rho) is available to the
 $ transient maneuver rate terms.  2.3769-3 slug/ft^3 = sea-level standard day.
 $ ============================================================
-TRIM, 1, 0.9, 40.0, RHOREF, 2.3769-3, PITCH, 0.0
-+, URDD3, -32.174, URDD5, 0.0
-TRIM, 2, 0.9, 1200.0, RHOREF, 2.3769-3, PITCH, 0.0
-+, URDD3, -32.174, URDD5, 0.0
+TRIM, 1, 0.9, 40.0, PITCH, 0.0, URDD3, -32.174
++, URDD5, 0.0
+TRIM, 2, 0.9, 1200.0, PITCH, 0.0, URDD3, -32.174
++, URDD5, 0.0
 $
 $
 $ ============================================================
-$ PHASE G0 — TRANSIENT MANEUVER LOADS (MLOADS)
+$ PHASE G0 — TRANSIENT MANEUVER LOADS (MANVR)
 $ ============================================================
 $ Driver: IC trim 1, window 1, commands 1, ASCII print 1
-MLOADS, 1, 1, 1, 1, 1
+MANVR, 1, 1, 1, 1, 1
 $ Initial condition = static TRIM 1 (1g, q=40)
-MLDTRIM, 1, 1
+MANTRIM, 1, 1, 2.3769-3
 $ Integrate 0 -> 1.0 s at dt=0.01, output every 0.1 s
-MLDTIME, 1, 0.0, 1.0, 0.01, 0.1
+MANTIME, 1, 0.0, 1.0, 0.01, 0.1
 $ Pilot command: ELEV follows TABLED1 300 (labels not listed hold trim)
-MLDCOMD, 1, ELEV, 300
+MANCMD, 1, ELEV, 300
 $ ASCII time-history print (increment 1 prints the full column set)
-MLDPRNT, 1
+MANPRNT, 1
 $ ELEV command: trim value 0.492457 rad -> +0.1 rad ramp over 0.2 s, hold
 TABLED1, 300
 +, 0.0, 0.492457, 0.2, 0.592457, 1.0, 0.592457, ENDT

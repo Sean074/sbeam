@@ -83,7 +83,7 @@ def test_load_refused_on_mloads_and_diverg_only(fullspan):
     from sbeam.model.load import Force
     cc, bulk = fullspan
     bulk.forces[5] = [Force(sid=5, gid=90, cid=0, f=100.0, n1=-1.0, n2=0.0, n3=0.0)]
-    cc.subcases[1].load_sid = 5                      # the MLOADS subcase
+    cc.subcases[1].load_sid = 5                      # the MANVR subcase
     assert any("LOAD combines only with a TRIM subcase" in e for e in _errors(bulk, cc))
 
 
@@ -124,10 +124,10 @@ def test_fully_prescribed_trim_warns(fullspan):
                for w in _warnings(bulk, cc))
 
 
-def test_modal_needs_rhoref(massset):
+def test_modal_needs_mantrim_rho(massset):
     cc, bulk = massset
-    bulk.trims[1].rhoref = 0.0
-    assert any("needs RHOREF" in e for e in _errors(bulk, cc))
+    bulk.mldtrims[1].rho = 0.0
+    assert any("needs RHO on MANTRIM 1" in e for e in _errors(bulk, cc))
 
 
 def test_mloads_needs_suport(massset):

@@ -791,7 +791,7 @@ def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
     cols[0].metric("Dynamic pressure q", fmt(result.q))
     cols[1].metric("Mach", fmt(result.mach))
     cols[2].metric("Output samples", len(result.steps))
-    # 1-based, matching the f06 SAMPLE column and the MLDPRNT header (DEF-M5).
+    # 1-based, matching the f06 SAMPLE column and the MANPRNT header (DEF-M5).
     cols[3].metric("Critical sample", result.crit_index + 1)
 
     times = result.times
@@ -863,7 +863,7 @@ def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
     stem = Path(st.session_state.get("_uploaded_filename") or "results.bdf").stem
     ec1, ec2 = st.columns(2)
     ec1.download_button(
-        label="Download MLDPRNT time history",
+        label="Download MANPRNT time history",
         data=build_maneuver_time_history_text(result),
         file_name=f"{stem}.mldprnt.txt",
         mime="text/plain",

@@ -375,7 +375,7 @@ def test_symmetric_maneuvers_have_no_lateral_load(name):
         pytest.skip("not mirror-symmetric")
     subcases = list(symmetric_mloads_subcases(d))
     if not subcases:
-        pytest.skip("no symmetric MLOADS subcase")
+        pytest.skip("no symmetric MANVR subcase")
     basis = None
     fails = []
     for sc in subcases:

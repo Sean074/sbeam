@@ -9,7 +9,7 @@ No code until they are agreed in chat.
 - **Owner:** Sean O'Meara
 - **Related:** #1 (`GUSTLF`, the Pratt helpers in `sbeam_tools/cases/gust.py`, design note
   `gust_pratt_23341.md` D2, which split this item out); #4 / v0.7.0 (systematic case-family
-  generation); MLOADS `NZ_REL` (charter §5 — same defect class as finding F1, D5).
+  generation); MANVR `NZ_REL` (charter §5 — same defect class as finding F1, D5).
 
 ---
 
@@ -145,7 +145,7 @@ prescribe `URDD3` (the card supplies it, DEF-M4 single-source rule); the TRIM pr
 `{ANGLEA} ∪ {≥ 1 AESURF label}` and nothing else; SUPORT is exactly the symmetric pair
 (3, 5); `G > 0`; `DALPHA` finite and nonzero (**warn** when `|DALPHA| > 0.35 rad`, the
 linear-VLM range); `KG`, when recorded, in `(0, 0.88)`; `HTMON`, when given, names an
-existing MONPNT1. The parse-time "over-determined but no TRIMOBJ" diagnostic is taught about
+existing MONPNT1. The parse-time "over-determined but no TRIMWGT" diagnostic is taught about
 GUSTHT exactly as it was about GUSTLF (#1 §6.1a), and a gate asserts the generated deck parses
 clean.
 

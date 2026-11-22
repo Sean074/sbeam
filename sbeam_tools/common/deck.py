@@ -74,7 +74,8 @@ def read_airplane(
         None,
     )
 
-    aero = build_aero_model(bulk)
+    # CZ_alpha at the template TRIM's Mach (the AEROS Mach until #87)
+    aero = build_aero_model(bulk, mach=template.mach)
     djx = build_djx(aero.boxes, ["ANGLEA"], bulk, id_to_k=aero.require_box_id_to_k())
     if aeros.rcsid:
         ref_pt, _r = get_transform(aeros.rcsid, bulk.cord2rs)

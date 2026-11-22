@@ -1,4 +1,4 @@
-"""V-TMON — MONPNT1/MONPNT3 on transient (MLOADS) maneuvers (#2).
+"""V-TMON — MONPNT1/MONPNT3 on transient (MANVR) maneuvers (#2).
 
 The per-sample monitor integrand (box forces, splined aero, rigid inertia,
 elastic d'Alembert load, damping, reactions) existed since Step 68; this is
@@ -344,7 +344,7 @@ FLAGSHIP = Path(__file__).parent.parent.parent / "sample" / "cessna210_flagship_
 
 
 def test_flagship_whole_aircraft_monitor_closes_at_every_sample():
-    """On the shipped C210 MLOADS deck the whole-aircraft MONPNT3 (whose SET1
+    """On the shipped C210 MANVR deck the whole-aircraft MONPNT3 (whose SET1
     includes the SUPORT grid) is a closed free body at every sample: the f06
     TOTAL row of MALLEA is ~1e-10 against a 1e4 lift."""
     cc, bulk = parse_bdf(str(FLAGSHIP))

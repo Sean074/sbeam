@@ -251,11 +251,11 @@ def emit_deck(
         lines.append(f"$ {case.title}")
         lines.append(
             f"$   mu = {case.mu:.6g}   K_g = {case.kg:.6g}   "
-            f"dn = {case.dn:.6g}   W = {case.weight:.6g}"
+            f"dn = {case.dn:.6g}   W = {case.weight:.6g}   rho = {case.rho:.6g}"
         )
         trim = Trim(
             sid=case.sid, mach=airplane.mach, q=case.q,
-            vars=dict(airplane.template_vars), rhoref=case.rho,
+            vars=dict(airplane.template_vars),
         )
         lines += write_trim(trim)
         lines += write_gustlf_card(case)

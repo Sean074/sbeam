@@ -219,7 +219,7 @@ and for the down-gust partner, hand-authored with no provenance recorded:
 
 **Format rules obeyed.** Scalars use `_fmt(...).strip()` — the established pattern for inline
 values in the header (`Q = …`, `MASS = …`) and the divergence block. Unrecorded optional
-fields print `NOT RECORDED`, following CHORDCP's `DATA MACH = NOT STATED` precedent. Fields
+fields print `NOT RECORDED`, following CPINJ's `DATA MACH = NOT STATED` precedent. Fields
 are separated by five spaces so the alignment gate's token regex cannot run two together.
 
 **`SENSE` and `DELTA-N` are labels, not physics** — `SENSE` is `n > 1`, `DELTA-N` is `n − 1`.
@@ -325,7 +325,7 @@ and touches no lateral rate column, stated explicitly per the charter's DEF-M15 
 A generated deck currently parses with a spurious diagnostic:
 
 ```
-UserWarning: TRIM 9000: over-determined (3 free vs 2 equations) but no TRIMOBJ
+UserWarning: TRIM 9000: over-determined (3 free vs 2 equations) but no TRIMWGT
 ```
 
 The referenced TRIM deliberately leaves `URDD3` unprescribed (§4.1), so at parse
@@ -467,8 +467,8 @@ here so the D1 decision is auditable rather than invisible.
 - `sbeam/model/maneuver_presets.py:24` — `load_factor_to_urdd3`, the `n → URDD3` helper.
 - `sbeam/solver/sol144_derivs.py:42` — `compute_rigid_derivs` (structure-free, single-pass).
 - `sbeam/gpwg.py:22` — `compute_gpwg`, mass per MASSCASE case.
-- `docs/10_standard/02_card_reference.md` MLOADS/MLDTRIM — the driver-references-TRIM pattern.
-- `sbeam/results/f06_writer.py:540` — the CHORDCP echo block, template for the provenance block.
+- `docs/10_standard/02_card_reference.md` MANVR/MANTRIM — the driver-references-TRIM pattern.
+- `sbeam/results/f06_writer.py:540` — the CPINJ echo block, template for the provenance block.
 - `tests/aero/test_cessna210_flagship.py` T3 — the trim-closure gate this suite mirrors.
 - `tests/integration/test_sample_verification.py` — the VAL2 recompute-from-the-deck discipline.
 

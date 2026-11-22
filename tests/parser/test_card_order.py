@@ -83,7 +83,7 @@ def _reordered(lines: list[str], order: str) -> list[str]:
 
 def _canonical(bulk) -> dict:
     """BulkData with card order removed: dicts compare unordered already; the lists of
-    whole cards (SUPORT, and the per-SID FORCE/MOMENT/SPC/SPC1/TRIMCON lists) are sorted."""
+    whole cards (SUPORT, and the per-SID FORCE/MOMENT/SPC/SPC1/TRIMINEQ lists) are sorted."""
     out = {}
     for f in fields(bulk):
         value = getattr(bulk, f.name)
@@ -246,23 +246,23 @@ _SPLINE = "SPLINE2, 1601, 1100, 1100, 1131, 1100, 0.0, 1.0, 2"
      "CAERO1 1100: CP=7 not found in CORD2R"),
     (_SPLINE, "SPLINE2, 1601, 1100, 1100, 1131, 1100, 0.0, 1.0, 7",
      "SPLINE2 1601: CID=7 not found in CORD2R"),
-    (_SPLINE, "SPLINE0, 1601, 1199, 1100, 1131, 90",
-     "SPLINE0 1601: CAERO=1199 not found in CAERO1"),
-    (_SPLINE, "SPLINE0, 1601, 1100, 1100, 1131, 99", "SPLINE0 1601: grid GRID=99 not found"),
-    (_SPLINE, "ATTACH, 1601, 1199, 1100, 1131, 90", "ATTACH 1601: CAERO=1199 not found in CAERO1"),
-    (_SPLINE, "ATTACH, 1601, 1100, 1100, 1131, 99", "ATTACH 1601: grid GRID=99 not found"),
-    (_SPLINE, "ATTACH, 1601, 1100, 1100, 1131, 90, 7", "ATTACH 1601: CID=7 not found in CORD2R"),
+    (_SPLINE, "LOADINJ, 1601, 1199, 1100, 1131, 90",
+     "LOADINJ 1601: CAERO=1199 not found in CAERO1"),
+    (_SPLINE, "LOADINJ, 1601, 1100, 1100, 1131, 99", "LOADINJ 1601: grid GRID=99 not found"),
+    (_SPLINE, "BODYATT, 1601, 1199, 1100, 1131, 90", "BODYATT 1601: CAERO=1199 not found in CAERO1"),
+    (_SPLINE, "BODYATT, 1601, 1100, 1100, 1131, 99", "BODYATT 1601: grid GRID=99 not found"),
+    (_SPLINE, "BODYATT, 1601, 1100, 1100, 1131, 90, 7", "BODYATT 1601: CID=7 not found in CORD2R"),
     ("SET1, 1100, 90, 110, 120", "SET1, 1100, 90, 110, 120\nW2GJ, 1, 1199, 0.0",
      "W2GJ 1: CAERO1 1199 not found"),
     ("SET1, 1100, 90, 110, 120", "SET1, 1100, 90, 110, 120\nWKK, 1, 1199, 1.0",
      "WKK 1: CAERO1 1199 not found"),
     ("SET1, 1100, 90, 110, 120", "SET1, 1100, 90, 110, 120\nAECORR, 1, WT2, 1199, 0.0, 6.0",
      "AECORR 1: CAERO1 1199 not found"),
-    ("SET1, 1100, 90, 110, 120", "SET1, 1100, 90, 110, 120\nCHORDCP, 1, 1199, 2.0, 0.0, 0.1",
-     "CHORDCP 1: CAERO1 1199 not found"),
-], ids=["AEROS-ACSID", "AEROS-RCSID", "CAERO1-CP", "SPLINE2-CID", "SPLINE0-CAERO",
-        "SPLINE0-GRID", "ATTACH-CAERO", "ATTACH-GRID", "ATTACH-CID", "W2GJ-CAERO",
-        "WKK-CAERO", "AECORR-CAERO", "CHORDCP-CAERO"])
+    ("SET1, 1100, 90, 110, 120", "SET1, 1100, 90, 110, 120\nCPINJ, 1, 1199, 2.0, 0.0, 0.1",
+     "CPINJ 1: CAERO1 1199 not found"),
+], ids=["AEROS-ACSID", "AEROS-RCSID", "CAERO1-CP", "SPLINE2-CID", "LOADINJ-CAERO",
+        "LOADINJ-GRID", "BODYATT-CAERO", "BODYATT-GRID", "BODYATT-CID", "W2GJ-CAERO",
+        "WKK-CAERO", "AECORR-CAERO", "CPINJ-CAERO"])
 def test_dangling_aero_reference_is_refused(old, new, match):
     with pytest.raises(ValueError, match=match):
         parse_bulk_data(_aero_deck(old, new))

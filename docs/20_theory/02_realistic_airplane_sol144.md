@@ -134,7 +134,7 @@ by construction. 6000 and 7000 are reserved for the Step 66 body panels.
 
 ### 2.4 Splining — and why the fin is different
 
-Four `SPLINE2` beam splines (wing L/R, HTP L/R) and one `ATTACH` (the fin).
+Four `SPLINE2` beam splines (wing L/R, HTP L/R) and one `BODYATT` (the fin).
 
 Each `SPLINE2` needs a spline-axis `CORD2R`. **The spline axis is the CID *y*-axis** (MSC
 convention): x is the chord/rigid-arm direction, z the deflection direction. The four here
@@ -149,10 +149,10 @@ stringer *pairs*, which supply twist through their deflection difference. A pure
 model has no such pairs, so torsion must attach rigidly to the beam's own rotation —
 which is exactly right, because the beam's Rx/Ry *is* the only twist DOF that exists.
 
-The fin gets `ATTACH, 1005, 5000, 5000, 5035, 30, 0` — all 36 boxes rigidly slaved to the
+The fin gets `BODYATT, 1005, 5000, 5000, 5035, 30, 0` — all 36 boxes rigidly slaved to the
 fin-root grid. Two reasons: a `SPLINE2` would need a spline-axis CORD2R whose y-axis runs
 along global **Z**, the awkward case; and the fin's own bending is negligible next to the
-tailcone bending that carries it, so rigid slaving is the honest idealisation. `ATTACH`
+tailcone bending that carries it, so rigid slaving is the honest idealisation. `BODYATT`
 requires `CID = 0`.
 
 > **What breaks.** A singular spline raises at operator build, which is survivable. The
@@ -226,8 +226,8 @@ CSV as the selectable second region, but neither trim uses them.
 ### 2.7 Trim
 
 ```
-TRIM, 1, 0.0, 2334.0, RHOREF, 1.225, PITCH, 0.0
-+, URDD3, -9.81, URDD5, 0.0
+TRIM, 1, 0.0, 2334.0, PITCH, 0.0, URDD3, -9.81
++, URDD5, 0.0
 ```
 
 Four `AESTAT` labels (ANGLEA, PITCH, URDD3, URDD5) plus the `AESURF` ELEV. TRIM prescribes
@@ -243,8 +243,9 @@ PITCH = q̇·c/(2V) = (n−1)g·c/(2V²) = 1.5 × 9.81 × 1.4707 / (2 × 3810.2)
 and you have trimmed a 2.5g pull with no rotation — a different and unphysical manoeuvre
 that also drops the tail damping term setting the real elevator-per-g gradient.
 
-`RHOREF` takes no part in the static trim. It exists so that V = √(2q/ρ) is available to
-the transient solver's rate terms.
+The density (1.225) is not on the TRIM: MSC's TRIM has none. It is on the `MANTRIM` card that
+starts the transient run (`MANTRIM, 1, 1, 1.225`), where V = √(2q/ρ) feeds the rate terms
+(#87; a `RHOREF` pseudo-label on TRIM before).
 
 ### 2.8 Monitor points
 
@@ -282,16 +283,16 @@ and shared; only `M_gg`, `M_ax`, GPWG and the trim solve are rebuilt per case.
 
 ### 2.10 Transient
 
-The `MLOADS` chain seeds a Level-1 quasi-steady, open-loop, restrained-l-set Newmark-β
+The `MANVR` chain seeds a Level-1 quasi-steady, open-loop, restrained-l-set Newmark-β
 integration from the 1g trim and ramps the elevator +2° over 0.3 s, then holds.
 
-> **What breaks — `MLDCOMD` tables are ABSOLUTE.** The `TABLED1` does not carry a
+> **What breaks — `MANCMD` tables are ABSOLUTE.** The `TABLED1` does not carry a
 > perturbation; it carries the commanded angle itself. It must therefore **start at the
 > trimmed elevator angle**, which makes the deck a two-pass authoring job: run the trim
 > driver, read the trimmed ELEV out of the f06, write it into the table. Start the table
 > at 0.0 instead and the airplane takes a 3.8° step input at t = 0.
 >
-> The same property makes the table **mass-case specific**. Pair `MLOADS` with a `MASSCASE`
+> The same property makes the table **mass-case specific**. Pair `MANVR` with a `MASSCASE`
 > and the trimmed elevator moves, so a table authored for the baseline no longer starts at
 > equilibrium for that case. Re-run the trim for the mass case and re-bake the first point;
 > do that and the initial condition is reproduced to machine precision.
@@ -429,7 +430,7 @@ with the rigid-body DOFs *restrained*. The airplane does not fly away in respons
 elevator; the extra load is reacted by the support. What the run gives you is the
 structural load path responding to a time-varying control input at a frozen flight state.
 Free-flight rigid-body coupling — where ANGLEA, PITCH and URDD3 evolve — is the Step 63
-modal solver (select it with MLOADS METHOD=-1; this flagship deck deliberately runs the
+modal solver (select it with MANVR METHOD=-1; this flagship deck deliberately runs the
 prescribed-rigid direct solver).
 
 The same restraint explains why the aero/inertia closure residual, machine-small at t = 0,
@@ -499,15 +500,15 @@ they correct.**
 
 ### 6.2 Reading the body in the `.f06`
 
-Body boxes have no structural spline — they carry `SPLINE0`, which means "no elastic
+Body boxes have no structural spline — they carry `LOADINJ`, which means "no elastic
 coupling", and their force reaches the structure as a rigid load at a named master grid:
 
 ```
-                    I N J E C T E D   A E R O   L O A D S   (SPLINE0 / UN-SPLINED)
+                    I N J E C T E D   A E R O   L O A D S   (LOADINJ / UN-SPLINED)
 
       SOURCE          MASTER GRID   BOXES        FX        FY        FZ        MX        MY
-      SPLINE0 9400            900      16       0.0       0.0   2.005E+02       0.0   1.147E+03
-      SPLINE0 9500            900      32       0.0       0.0       0.0       0.0       0.0
+      LOADINJ 9400            900      16       0.0       0.0   2.005E+02       0.0   1.147E+03
+      LOADINJ 9500            900      32       0.0       0.0       0.0       0.0       0.0
 ```
 
 The vertical panel (9500) carries nothing: at β = 0 a symmetric airplane has no side force.
@@ -519,7 +520,7 @@ Before Step 64 this force appeared in the printed totals but not in the force ba
 a body-panel trim silently did not close. The gate that it does now is the same one as
 always — all-box lift equals n·W — and it is worth re-checking whenever you add panels.
 
-`SPLINE0` field 5 names the master grid; left blank it falls back to the `SUPORT` grid, and
+`LOADINJ` field 5 names the master grid; left blank it falls back to the `SUPORT` grid, and
 with neither you get a warning and the body force is **dropped**. The deck names GRID 900
 explicitly. Two things have to be true of that grid: it must be in the structural load path
 (GRID 900 is spliced into the fuselage CBAR chain), and it must be inside your
@@ -610,7 +611,7 @@ release this document supports claims maneuver loads on a twin-turboprop.
 **sbeam has no propeller.** No actuator disc, no slipstream tube, no thrust. The VLM sees
 one freestream, one dynamic pressure, one Mach, over the whole model. Powered effects enter
 by exactly one route: **the same correction cards you have already met — `W2GJ`, `WT2`,
-`CHORDCP` — built from powered data instead of unpowered data.** There is no third option
+`CPINJ` — built from powered data instead of unpowered data.** There is no third option
 and no partial one. If your correction table came from an unpowered source, your airplane
 is unpowered no matter what the thrust line in your drawing says.
 
@@ -741,9 +742,9 @@ Nothing above needs a card sbeam does not have. It needs data sbeam cannot gener
 | The body correction matches moments only; body lift is unconstrained (§6.1) | constrained-CZ body solve (backlog) |
 | A cruciform body redistributes the wing loading it corrects (§6.4) | use the strip variant for loads; image-fence method for interference |
 | No propeller model — powered effects only via corrections, frozen at one power setting (§7) | no native slipstream model planned; a correction set per condition is the method |
-| Applied loads (thrust, torque) are not carried through an `MLOADS` transient — the subcase raises (§7.2, #6) | constant-load carry-through (#50) |
+| Applied loads (thrust, torque) are not carried through an `MANVR` transient — the subcase raises (§7.2, #6) | constant-load carry-through (#50) |
 | Steady aerodynamics only (VLM at k = 0); no unsteady, no flutter | Phase D — DLM, SOL 145 |
-| Direct-solver transient is restrained and open-loop; ANGLEA/PITCH/URDD frozen | Delivered: the Step 63 free-flight modal solver (MLOADS NMODES/METHOD/ZETA) integrates them |
+| Direct-solver transient is restrained and open-loop; ANGLEA/PITCH/URDD frozen | Delivered: the Step 63 free-flight modal solver (MANVR NMODES/METHOD/ZETA) integrates them |
 | One correction operating region per surface, no warning on exit | `section_data` v2; T3b gates it meanwhile |
 | Mach matched exactly, no interpolation | as above |
 | Euler–Bernoulli beams, no shear flexibility | Phase 2 (Timoshenko) |

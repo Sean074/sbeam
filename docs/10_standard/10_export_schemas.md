@@ -24,10 +24,10 @@ All files are written next to the input by `sbeam/main.py`, as `<stem>.<name>`.
 | `maneuver_loads.bdf` | `load_export.write_maneuver_load_cards` | any `TRIM` subcase |
 | `monitor_loads.csv` | `load_export.write_monitor_csv` | a `TRIM` subcase has `MONPNT1`/`MONPNT3` |
 | `section_loads.csv` | `load_export.write_section_loads_csv` | a `TRIM` subcase has `MONSECT` |
-| `mldprnt.txt` | `maneuver_output.write_maneuver_outputs` | any `MLOADS` subcase (fixed-width text, not a CSV; columns in `05c` §MLDPRNT) |
-| `maneuver_qs_loads.bdf` | `maneuver_output.write_maneuver_outputs` | any `MLOADS` subcase |
-| `maneuver_monitor_loads.csv`, `maneuver_monitor_envelope.csv` | `load_export.write_maneuver_monitor_csv`, `..._envelope_csv` | an `MLOADS` subcase has monitor points |
-| `maneuver_section_loads.csv`, `maneuver_section_envelope.csv` | `load_export.write_maneuver_section_loads_csv`, `..._envelope_csv` | an `MLOADS` subcase has `MONSECT` |
+| `mldprnt.txt` | `maneuver_output.write_maneuver_outputs` | any `MANVR` subcase (fixed-width text, not a CSV; columns in `05c` §MANPRNT) |
+| `maneuver_qs_loads.bdf` | `maneuver_output.write_maneuver_outputs` | any `MANVR` subcase |
+| `maneuver_monitor_loads.csv`, `maneuver_monitor_envelope.csv` | `load_export.write_maneuver_monitor_csv`, `..._envelope_csv` | an `MANVR` subcase has monitor points |
+| `maneuver_section_loads.csv`, `maneuver_section_envelope.csv` | `load_export.write_maneuver_section_loads_csv`, `..._envelope_csv` | an `MANVR` subcase has `MONSECT` |
 
 The viewer's download buttons call the `build_*_text` twin of each maneuver writer, so a
 downloaded file is byte-identical to the CLI's. SOL 101/103 write the f06 only.
@@ -40,7 +40,7 @@ downloaded file is byte-identical to the CLI's. SOL 101/103 write the f06 only.
 |------|----------|
 | Encoding / dialect | `csv.writer` defaults: comma, `\n` line ends, no quoting unless a label needs it, UTF-8 |
 | Header | Exactly one header row, the lists in §3; no comment lines, no units row |
-| **Identity block** | Every file starts `case, massset, mass_case` (static) or `case, mloads, massset, mass_case` (transient). `case` is the subcase id, `mloads` the `MLOADS` SID |
+| **Identity block** | Every file starts `case, massset, mass_case` (static) or `case, mloads, massset, mass_case` (transient). `case` is the subcase id, `mloads` the `MANVR` SID |
 | **`massset`** | **Always an integer.** `0` = the subcase selects no mass case (baseline); otherwise the `MASSCASE` SID or the MSC `MASSSET` ID (#102; the two share one ID space). Never empty, so the column keeps one dtype whether or not a run (or a concatenation of runs) contains a baseline case. Constant `BASELINE_MASSCASE` in `load_export.py` |
 | `mass_case` | The mass-case label: `BASELINE` for `massset = 0`, else the `MASSCASE` label, or `MASSSET <ID>` for an MSC combination |
 | Reals | `%.6E` (e.g. `-1.234567E+03`); the `parity` column is `%g` |
@@ -102,7 +102,7 @@ station. Physics: `05c` "Output" (MONSECT).
 
 One row per cut per station per output sample. A reader of `section_loads.csv` reads this
 file: same names, same order, with the sample identity in front and the two transient
-contributions behind (the `_applied` block is carried and is always `0.0`: an `MLOADS`
+contributions behind (the `_applied` block is carried and is always `0.0`: an `MANVR`
 subcase cannot select a `LOAD`, #6). `critical = 1` marks the run's critical sample (DEF-M5).
 
 ### 3.4 `maneuver_monitor_loads.csv` — `_MANEUVER_MONITOR_CSV_HEADER`
@@ -150,7 +150,7 @@ separated by a blank line, each block a fixed comment header followed by
 | Cards | `FORCE, SID, GID, 0, 1.0, Fx, Fy, Fz` and `MOMENT, SID, GID, 0, 1.0, Mx, My, Mz`; `SID` = subcase id (the `sid=` argument); CID `0`; unit scale factor so the components carry the load |
 | Grid order | Ascending GID; a card is omitted when all three components are below `1e-9` |
 | Reals | `parser/bdf_field.fmt_real8` — fits the NASTRAN 8-character field (DEF-M6; precision note in `05c` "Field format") |
-| Comment header | Exactly four `$` lines for the trim exports, four for the MLOADS export (below). Line 4 is **always** `$ MASSCASE=<int> (<label>)` — `$ MASSCASE=0 (BASELINE)` for a baseline subcase — so a reader can key the block to the CSV identity without special-casing the baseline |
+| Comment header | Exactly four `$` lines for the trim exports, four for the MANVR export (below). Line 4 is **always** `$ MASSCASE=<int> (<label>)` — `$ MASSCASE=0 (BASELINE)` for a baseline subcase — so a reader can key the block to the CSV identity without special-casing the baseline |
 
 ```
 $ SOL 144 trimmed aerodynamic flight loads — subcase <case>, SID <sid>          (aero_loads.bdf)
@@ -164,7 +164,7 @@ $ FORCE/MOMENT set is the net (aero + inertial) maneuver load for stress (Step 5
 $ MASSCASE=<massset> (<mass_case>)  MASS=<total mass>
 
 $ Phase G0 critical maneuver loads (aero + inertia + elastic inertia + damping) — subcase <case>, SID <sid>   (maneuver_qs_loads.bdf)
-$ MLOADS=<mloads>  IC TRIM=<trim_sid>  Q=<q>  MACH=<mach>  t=<time>
+$ MANVR=<mloads>  IC TRIM=<trim_sid>  Q=<q>  MACH=<mach>  t=<time>
 $ Full applied load at the peak |net grid force| sample (<critical_sample> of <n_samples>).
 $ MASSCASE=<massset> (<mass_case>)
 ```

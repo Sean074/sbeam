@@ -375,7 +375,7 @@ def trim_setup():
 
     # Override AEROS with RCSID pointing to z-down coordinate system
     bulk.aeros = Aeros(acsid=0, rcsid=100, cref=1.0, bref=4.0, sref=4.0,
-                       symxz=0, symxy=0, mach=0.0)
+                       symxz=0, symxy=0)
 
     # CORD2R 100: z-down (local z = -z_basic)
     bulk.cord2rs[100] = _z_down_cord2r(100)

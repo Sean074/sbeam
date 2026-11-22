@@ -90,7 +90,7 @@ unaffected wherever mean-axis orthogonality holds, exactly as the theory says.
 ## 5. Gates
 
 **G1 — static re-apply (load-bearing, the rule-2 benchmark).** Take the critical sample of an
-MLOADS run; apply its load as a SOL 101 case on the same deck with the SPC plus the SUPORT
+MANVR run; apply its load as a SOL 101 case on the same deck with the SPC plus the SUPORT
 DOFs fixed; recover CBAR forces; compare with `step.bar_forces`.
 
 - G1a: the g-set `net_loads` vector applied directly → **1e-8 rel** on the direct solver and

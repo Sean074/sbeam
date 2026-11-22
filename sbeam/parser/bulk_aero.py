@@ -7,7 +7,7 @@ from sbeam.model.aero import (
     Aeros, Caero1, Paero1, Pstrip, Stripk, Aefact, W2gj, Wkk, Aecorr, Chordcp, Set1,
     Spline2, Attach, Spline0, Aelist, Aecomp, Monpnt1, Monsect,
 )
-from sbeam.parser.bulk_fields import FieldHandler, ContHandler, MultiHandler, to_float, to_int, to_int_opt, expand_int_list_with_thru, list_fields
+from sbeam.parser.bulk_fields import FieldHandler, ContHandler, MultiHandler, to_float, to_int, to_int_opt, expand_int_list_with_thru, list_fields, refuse_after
 
 
 def _handle_aeros(fields: list[str], bulk: BulkData) -> None:
@@ -20,14 +20,16 @@ def _handle_aeros(fields: list[str], bulk: BulkData) -> None:
     sref  = to_float(fields[5])   if len(fields) > 5 else 0.0
     symxz = to_int_opt(fields[6]) if len(fields) > 6 else 0
     symxy = to_int_opt(fields[7]) if len(fields) > 7 else 0
-    # Field 8 is an sbeam extension; NASTRAN AEROS has no MACH field.
-    mach  = to_float(fields[8])   if len(fields) > 8 else 0.0
-    # β = √(1−M²) is even in M, so a negative Mach was silently run as |M| (#58 sweep)
-    if mach < 0.0:
-        raise ValueError(f"AEROS card: MACH={mach} must be non-negative")
+    # MSC's AEROS ends at SYMXY (QRG 2024.1 PDF p.1151).  Field 9 was an sbeam-only
+    # MACH until #87; the Mach is TRIM's (or DIVERG's), as in MSC.
+    if len(fields) > 8 and fields[8].strip():
+        raise ValueError(
+            f"AEROS: field 9 ({fields[8].strip()!r}) must be blank — MSC's AEROS ends at "
+            "SYMXY (QRG p.1151). sbeam read an sbeam-only MACH there until v0.4.1 (#87); "
+            "give the Mach on the TRIM card (or the DIVERG Mach list) instead")
     bulk.aeros = Aeros(
         acsid=acsid, rcsid=rcsid, cref=cref, bref=bref,
-        sref=sref, symxz=symxz, symxy=symxy, mach=mach,
+        sref=sref, symxz=symxz, symxy=symxy,
     )
 
 
@@ -100,7 +102,7 @@ def _handle_aecorr(fields: list[str], conts: list[list[str]], bulk: BulkData) ->
 
 
 def _handle_chordcp(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
-    """CHORDCP, SID, CAERO_EID, ALPHREF, [MACH] / +, CP1, CP2, ... (row-major).
+    """CPINJ, SID, CAERO_EID, ALPHREF, [MACH] / +, CP1, CP2, ... (row-major).
 
     ALPHREF (degrees, REQUIRED) is the reference angle of attack the injected
     Cp distribution was measured at; stored in radians on the dataclass.
@@ -109,11 +111,11 @@ def _handle_chordcp(fields: list[str], conts: list[list[str]], bulk: BulkData) -
     sid       = to_int(fields[1])
     caero_eid = to_int(fields[2])
     if sid in bulk.chordcps:
-        raise ValueError(f"Duplicate CHORDCP SID {sid}")
+        raise ValueError(f"Duplicate CPINJ SID {sid}")
     alphref_field = fields[3].strip() if len(fields) > 3 else ""
     if not alphref_field:
         raise ValueError(
-            f"CHORDCP {sid}: ALPHREF (reference angle of attack, degrees) is required"
+            f"CPINJ {sid}: ALPHREF (reference angle of attack, degrees) is required"
         )
     alpha_ref = math.radians(to_float(alphref_field))
     mach = to_float(fields[4]) if len(fields) > 4 and fields[4].strip() else 0.0
@@ -121,7 +123,7 @@ def _handle_chordcp(fields: list[str], conts: list[list[str]], bulk: BulkData) -
     for cont in conts:
         data += [to_float(f) for f in cont[1:] if f.strip()]
     if not data:
-        raise ValueError(f"CHORDCP {sid}: no Cp data fields found")
+        raise ValueError(f"CPINJ {sid}: no Cp data fields found")
     bulk.chordcps[sid] = Chordcp(
         sid=sid, caero_eid=caero_eid, alpha_ref=alpha_ref, mach=mach, data=data
     )
@@ -245,7 +247,7 @@ def _handle_spline2(fields: list[str], cont: Optional[list[str]], bulk: BulkData
         raise ValueError(
             f"SPLINE2 {eid}: USAGE={usage} is not supported; sbeam uses every spline for "
             "both the force and the displacement transform (USAGE=BOTH). A force-only "
-            "surface can be carried with SPLINE0")
+            "surface can be carried with LOADINJ")
     if usage != "BOTH":
         raise ValueError(
             f"SPLINE2 {eid}: USAGE='{usage}' must be BOTH or blank (NASTRAN also has FORCE "
@@ -265,8 +267,9 @@ def _handle_attach(fields: list[str], bulk: BulkData) -> None:
     id2   = to_int(fields[4])
     grid  = to_int(fields[5])
     cid   = to_int_opt(fields[6]) if len(fields) > 6 else 0
+    refuse_after(fields, 7, f"BODYATT {eid}")
     if eid in bulk.attaches:
-        raise ValueError(f"Duplicate ATTACH EID {eid}")
+        raise ValueError(f"Duplicate BODYATT EID {eid}")
     bulk.attaches[eid] = Attach(eid=eid, caero=caero, id1=id1, id2=id2, grid=grid, cid=cid)
 
 
@@ -276,15 +279,16 @@ def _handle_spline0(fields: list[str], bulk: BulkData) -> None:
     id1   = to_int(fields[3])
     id2   = to_int(fields[4])
     grid  = to_int_opt(fields[5]) if len(fields) > 5 else 0
+    refuse_after(fields, 6, f"LOADINJ {eid}")
     if eid in bulk.spline0s:
-        raise ValueError(f"Duplicate SPLINE0 EID {eid}")
+        raise ValueError(f"Duplicate LOADINJ EID {eid}")
     bulk.spline0s[eid] = Spline0(eid=eid, caero=caero, id1=id1, id2=id2, grid=grid)
 
 
 def _handle_spline1(fields: list[str], bulk: BulkData) -> None:
     raise NotImplementedError(
         "SPLINE1 (Harder–Desmarais infinite-plate spline) is not yet implemented; "
-        "use SPLINE2 or ATTACH instead"
+        "use SPLINE2 or BODYATT instead"
     )
 
 def _handle_aelist(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
@@ -459,8 +463,8 @@ FIELD_HANDLERS: dict[str, FieldHandler] = {
     "AEROS": _handle_aeros,
     "PAERO1": _handle_paero1,
     "PSTRIP": _handle_pstrip,
-    "ATTACH": _handle_attach,
-    "SPLINE0": _handle_spline0,
+    "BODYATT": _handle_attach,
+    "LOADINJ": _handle_spline0,
     "SPLINE1": _handle_spline1,
 }
 CONT_HANDLERS: dict[str, ContHandler] = {
@@ -473,7 +477,7 @@ MULTI_HANDLERS: dict[str, MultiHandler] = {
     "W2GJ": _handle_w2gj,
     "WKK": _handle_wkk,
     "AECORR": _handle_aecorr,
-    "CHORDCP": _handle_chordcp,
+    "CPINJ": _handle_chordcp,
     "STRIPK": _handle_stripk,
     "SET1": _handle_set1,
     "AELIST": _handle_aelist,

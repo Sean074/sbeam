@@ -1,6 +1,6 @@
-"""V-B3g — solver-level ATTACH regression (DEF-H1, 2026-07-31).
+"""V-B3g — solver-level BODYATT regression (DEF-H1, 2026-07-31).
 
-The V-B3 operator gates in ``test_spline.py`` pin the ATTACH ``g_slope`` rows;
+The V-B3 operator gates in ``test_spline.py`` pin the BODYATT ``g_slope`` rows;
 this module gates what those rows are *for* — the aeroelastic feedback that
 reaches the SOL 144 flexible solve through
 ``(K_aa − q·Q_aa) u = q·f_g``.
@@ -11,7 +11,7 @@ in-memory as a ``W2GJ`` so the baseline load ``f_g`` is non-zero.  The panel is
 splined two ways:
 
   * SPLINE2 — the validated NASTRAN beam spline over all 5 grids;
-  * ATTACH  — one card per box, each rigidly tied to the nearest grid.
+  * BODYATT  — one card per box, each rigidly tied to the nearest grid.
 
 Both sample the same underlying rigid-body kinematics, so the flexible lift
 must move the same way.  The elastic axis sits at the leading edge (x=0) and
@@ -19,7 +19,7 @@ the ¼-chord force line at x=0.25, i.e. *aft* of it, so the aero moment is
 nose-down and both routes must produce WASHOUT (flexible lift below rigid).
 
 DEF-H1 regression value: with the pre-fix ``g_slope`` rows (Ry=−1, Rx=+1) the
-ATTACH route produced washIN — L/L_rigid = 1.071 at q=800 against the SPLINE2
+BODYATT route produced washIN — L/L_rigid = 1.071 at q=800 against the SPLINE2
 route's 0.988, a 7% lift error of the wrong sign, plus sign-inverted divergence
 and trim behaviour.  ``test_attach_matches_spline2_flexible_sign`` fails on that
 code.
@@ -100,7 +100,7 @@ def ratios():
 
 
 class TestAttachFlexibleFeedback:
-    """V-B3g: ATTACH aeroelastic feedback must agree with SPLINE2."""
+    """V-B3g: BODYATT aeroelastic feedback must agree with SPLINE2."""
 
     def test_spline2_route_washes_out(self, ratios):
         """Baseline: the validated SPLINE2 route gives washout on this deck."""
@@ -109,18 +109,18 @@ class TestAttachFlexibleFeedback:
         )
 
     def test_attach_matches_spline2_flexible_sign(self, ratios):
-        """ATTACH must wash out too, and by a comparable amount (DEF-H1).
+        """BODYATT must wash out too, and by a comparable amount (DEF-H1).
 
         Sign agreement is the load-bearing assertion — the pre-fix code washed
         IN.  The 3% magnitude band allows for the two routes' different span
         discretisation (piecewise-constant per-box attachment vs beam spline).
         """
         assert ratios["attach"] < 1.0, (
-            f"ATTACH must wash out like SPLINE2, not wash in; "
+            f"BODYATT must wash out like SPLINE2, not wash in; "
             f"ratio={ratios['attach']:.5f} (SPLINE2 {ratios['spline2']:.5f})"
         )
         assert ratios["attach"] == pytest.approx(ratios["spline2"], rel=0.03), (
-            f"ATTACH flexible lift {ratios['attach']:.5f} disagrees with "
+            f"BODYATT flexible lift {ratios['attach']:.5f} disagrees with "
             f"SPLINE2 {ratios['spline2']:.5f} by more than 3%"
         )
 

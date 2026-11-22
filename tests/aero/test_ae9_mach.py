@@ -5,7 +5,8 @@ the AIC was built once from ``AEROS.mach`` and ``TRIM.mach`` was silently
 ignored, so multiple subsonic subcases at different Mach were impossible and a
 supersonic Mach was silently clamped to 0.99.  These tests lock the fix:
 
-  1. an AEROS-vs-TRIM Mach disagreement warns (and the TRIM Mach is used);
+  1. the TRIM Mach is the flight Mach; AEROS has no Mach field (MSC; #87 refused
+     the sbeam-only field 9 that used to be the fallback);
   2. two subsonic subcases at different Mach give different β-scaled AICs and
      therefore different trim;
   3. a supersonic Mach is rejected (no silent clamp);
@@ -28,31 +29,37 @@ BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbe
 
 
 def _load():
-    """Fresh parse + grid_index + AeroModel (AEROS Mach) for a single test."""
+    """Fresh parse + grid_index + AeroModel at the deck's TRIM Mach (0.9)."""
     _cc, bulk = parse_bdf(str(BDF_PATH))
     grid_index = build_grid_index(bulk)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
-        aero = build_aero_model(bulk, grid_index=grid_index)
+        aero = build_aero_model(bulk, grid_index=grid_index, mach=0.9)
     return bulk, grid_index, aero
 
 
-def test_aeros_mach_is_subsonic():
-    """Sanity: the deck's AEROS Mach is the subsonic value the tests assume."""
+def test_deck_trim_mach_is_subsonic():
+    """Sanity: the deck's TRIM Mach is the subsonic value the tests assume."""
     bulk, _gi, aero = _load()
-    assert bulk.aeros.mach == pytest.approx(0.9)
+    assert bulk.trims[1].mach == pytest.approx(0.9)
     assert aero.mach == pytest.approx(0.9)
 
 
-def test_trim_mach_mismatch_warns():
-    """A TRIM Mach differing from AEROS Mach warns and uses the TRIM Mach."""
+def test_trim_mach_is_the_flight_mach():
+    """The AIC is built at the TRIM Mach whatever Mach the seed model was built at."""
     bulk, _gi, aero = _load()
-    bulk.trims[1].mach = 0.5  # AEROS is 0.9 — genuine disagreement
+    bulk.trims[1].mach = 0.5
     subcase = SubcaseControl(subcase_id=1, spc_sid=1, trim_sid=1)
-    with pytest.warns(UserWarning, match="disagrees with AEROS"):
-        result = run_sol144_trim(bulk, subcase, aero)
-    # The result records the Mach actually used for the AIC (the TRIM Mach).
+    result = run_sol144_trim(bulk, subcase, aero)
     assert result.mach == pytest.approx(0.5)
+
+
+def test_aeros_mach_field_is_refused():
+    """#87: MSC's AEROS ends at SYMXY (QRG p.1151); field 9 was an sbeam-only Mach."""
+    from sbeam.parser.bdf_reader import parse_bulk_data
+    with pytest.raises(ValueError, match="AEROS: field 9 .* must be blank"):
+        parse_bulk_data(["AEROS, 0, 0, 1.0, 1.0, 1.0, 0, 0, 0.9"])
+    assert parse_bulk_data(["AEROS, 0, 0, 1.0, 1.0, 1.0, 0, 0"]).aeros is not None
 
 
 def test_distinct_subsonic_mach_gives_distinct_trim():

@@ -28,7 +28,7 @@ NASTRAN rod (`CROD` + `PROD`, `CONROD` with inline properties): axial `EA/L` and
 
 The enabler is a **minimal per-element interface**. Assembly (`assemble_global_stiffness`,
 `assemble_global_mass`), GPWG, the four recovery loops (SOL 101, SOL 144 trim, SOL 144
-static, MLOADS) and both f06 element blocks all iterate `bulk.cbars` directly; CBUSH is a
+static, MANVR) and both f06 element blocks all iterate `bulk.cbars` directly; CBUSH is a
 second hard-coded path. Nothing in `sbeam/` abstracts an element. The rod is the second
 line element, so this is the first time the abstraction earns its keep (rule 5: no element
 types beyond CBAR and CROD/CONROD are added).
@@ -76,7 +76,7 @@ mass is `m·L` exactly; the rotational rows are zero.
 - `line_element(elem, bulk) -> LineElement`, dispatching on `type(elem)` through a dict
   `{Cbar, Crod, Conrod}`. `line_element_mass_global(elem, bulk)` and
   `line_element_mass_per_length(elem, bulk)` are the mass side, kept separate so recovery
-  (called per MLOADS time step) never builds a mass matrix.
+  (called per MANVR time step) never builds a mass matrix.
 - `iter_line_elements(bulk)` yields CBARs, then CRODs, then CONRODs, each in deck order.
 - The CBAR entry calls `released_local_stiffness`, `transform_matrix` and
   `element_mass_global` exactly as today, so a rodless deck is **bit-identical** and the #20
@@ -115,7 +115,7 @@ single-source helper, so rod and CBAR signs cannot diverge. Rods never populate
 four recovery loops collapse into one `recover_line_elements` (rule 3).
 
 **D6. f06 layout.** New blocks, emitted only when the deck has rods, after the CBAR blocks,
-under the same FORCE/STRESS requests, in SOL 101, both SOL 144 paths and the MLOADS
+under the same FORCE/STRESS requests, in SOL 101, both SOL 144 paths and the MANVR
 critical-sample f06:
 
 ```
@@ -208,7 +208,7 @@ limitations, phase table), `09_conventions.md` §8/§9, `CLAUDE.md` Supported Ca
 
 1. **Record split:** `LineElement` carries geometry, released `K_local` and `T` only; the
    mass side is `line_element_mass_global` / `line_element_mass_per_length`. Recovery runs
-   per MLOADS sample and must never build a mass matrix, so D1's "M_local in the record" was
+   per MANVR sample and must never build a mass matrix, so D1's "M_local in the record" was
    dropped.
 2. **CBAR entry = the old arithmetic verbatim**, including the `np.array` position
    subtraction for `L`, so the seven shipped sample outputs are byte-identical to `0108f76`

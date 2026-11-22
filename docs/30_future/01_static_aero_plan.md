@@ -19,7 +19,7 @@ This document is retained for what stays useful after completion:
 
 **Application context that drove the priorities:** subsonic, conventional airplane
 configuration, with aerodynamic corrections supplied from high-fidelity CFD or wind-tunnel
-test — the correction layer (`Wkk`/`WT1`/`WT2`/`W2GJ`/`CHORDCP`) was a first-class
+test — the correction layer (`Wkk`/`WT1`/`WT2`/`W2GJ`/`CPINJ`) was a first-class
 deliverable, not an afterthought. Scope discipline held throughout: flat lifting surfaces
 (`CAERO1`), subsonic only, SPLINE2 beam spline primary, steady (k = 0) corrections,
 educational/exploratory (not a means of compliance).
@@ -121,20 +121,20 @@ solver/output surface in `docs/10_standard/05_aeroelastics.md`.
 | 44 | Viewer rigid-aero visualisation |
 | 45 | `SET1` + `SPLINE2` parsing |
 | 46 | SPLINE2 beam-spline matrix (`spline.py`; rewritten as the NASTRAN infinite beam spline at AC7) |
-| 47 | `ATTACH` rigid-body spline + `SPLINE0` zero-displacement |
+| 47 | `BODYATT` rigid-body spline + `LOADINJ` zero-displacement |
 | 48 | `SPLINE1` surface spline — **deferred** (stub raises; see backlog Tier 4) |
 | 49 | Force transfer & coupled smoke test |
 | 50 | Aero stiffness `Q_aa` + modal-truncation ROM with mode-acceleration recovery |
-| 51 | Trim card set parsing (AESTAT/AESURF/AELIST/TRIM/DIVERG + TRIMVAR/TRIMOBJ/TRIMCON) |
+| 51 | Trim card set parsing (AESTAT/AESURF/AELIST/TRIM/DIVERG + TRIMVAR/TRIMWGT/TRIMINEQ) |
 | 52 | SOL 144 trim solve (determined + over-determined) + flexible derivatives + `Ω×r` rate aero |
 | 53 | Balanced maneuver loads & inertia relief (net aero + inertial load export) |
-| 54 | `CHORDCP` CFD/WT steady-pressure injection (closed as AC6) |
+| 54 | `CPINJ` CFD/WT steady-pressure injection (closed as AC6) |
 | 55 | Aeroelastic divergence (`DIVERG` sweep, `q_div`/`V_div`) |
 | 56 | SOL 144 f06 output + flight/maneuver-load export (with AE10 CLI dispatch) |
 | 57 | Viewer SOL 144 results + case-control rework |
 | 58 | Dihedral / anhedral (±Γ) correctness |
-| AC1–AC8 | Steady close-out: doc scrub, AE8a/AE8b unrestrained derivatives, warnings, viewer gaps, CHORDCP, AE14 fidelity (fuselage PBAR + SPLINE2 rewrite), AE15 accepted residual (Study A2) |
-| G0 inc. 1 | DLM-free quasi-steady transient maneuver loads (`MLOADS` card set, `maneuver_qs.py`) |
+| AC1–AC8 | Steady close-out: doc scrub, AE8a/AE8b unrestrained derivatives, warnings, viewer gaps, CPINJ, AE14 fidelity (fuselage PBAR + SPLINE2 rewrite), AE15 accepted residual (Study A2) |
+| G0 inc. 1 | DLM-free quasi-steady transient maneuver loads (`MANVR` card set, `maneuver_qs.py`) |
 
 ---
 
@@ -153,7 +153,7 @@ migration; mission + milestone map: `docs/30_future/00_backlog.md`; parked items
   correction layer.
 - **Matrix/GAF export and reuse** — backlog Phase D chain; `designs/matrix_gaf_export.md`
   and `designs/matrix_reuse_store.md`.
-- **Phase G (full unsteady MLOADS + ASE)** — gated on Phase D; outline parked
+- **Phase G (full unsteady MANVR + ASE)** — gated on Phase D; outline parked
   (`02_parked.md` G0-e) and the Phase G notes inside `designs/dlm_rfa_flutter_gust.md`.
 
 ---
@@ -192,7 +192,7 @@ migration; mission + milestone map: `docs/30_future/00_backlog.md`; parked items
   the unrestrained (mean-axis) algorithm Eqs. 2-111…2-134, and the HA144 test-problem
   library (canonical verification models).
 - ZONA Technology, *ZAERO User's Manual* §1.10, §5.8 (modal trim; over-determined trim via
-  `TRIMOBJ`/`TRIMCON`/`TRIMVAR`; longitudinal/lateral DOF rules) and *Theoretical Manual*
+  `TRIMWGT`/`TRIMINEQ`/`TRIMVAR`; longitudinal/lateral DOF rules) and *Theoretical Manual*
   Ch. 12 (modal mean-axis derivatives — the sbeam cross-check).
 - Bisplinghoff, R. L., Ashley, H., Halfman, R. L., *Aeroelasticity*, Addison-Wesley, 1955
   (divergence closed forms; the **BAH wing** reference model).
@@ -218,11 +218,11 @@ migration; mission + milestone map: `docs/30_future/00_backlog.md`; parked items
 | **V-A4** | Camber/twist/incidence baseline (`w_g`) | `w_g` rigid-load contribution |
 | **V-B1** | Spline rigid-body + linear-twist recovery | `G_kg` exactness (machine-precision gate) |
 | **V-B2** | Uniform pressure / `w_g` → grid loads round-trip | `G_kgᵀ` energy consistency |
-| **V-B3** | ATTACH/SPLINE0 rigid-body recovery | rigid-attachment exactness |
+| **V-B3** | BODYATT/LOADINJ rigid-body recovery | rigid-attachment exactness |
 | **V-C1** | Flexible wing trim, derivative ratios | SOL 144 trim vs MSC **HA144A** |
 | **V-C2** | Goland wing + idealised swept cantilever | Divergence `q_div` |
 | **V-C3** | q→0 reduction; modal ROM vs direct; mode-count convergence | SOL 144 → SOL 101 identity; mode-acceleration recovery |
-| **V-C4** | Over-determined trim (redundant effectors) | `TRIMOBJ`/`TRIMCON` minimization |
+| **V-C4** | Over-determined trim (redundant effectors) | `TRIMWGT`/`TRIMINEQ` minimization |
 | **V-C5** | Balanced maneuver (symmetric pull-up at `n_z`) | inertia-relief balance, net-load export |
 | **V-C6** | Rate (damping) derivatives from `Ω×r` incidence | quasi-steady `C_mq`/`C_lp`/`C_nr` |
 

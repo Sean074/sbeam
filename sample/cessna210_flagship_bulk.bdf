@@ -5,7 +5,7 @@ $ drivers via a case-control INCLUDE:
 $
 $   cessna210_flagship_trim.bdf     SC1 1g cruise + SC2 2.5g pull-up
 $   cessna210_flagship_massset.bdf  one TRIM x three MASSCASE payload cases
-$   cessna210_flagship_mloads.bdf   trim + elevator-ramp transient (MLOADS)
+$   cessna210_flagship_mloads.bdf   trim + elevator-ramp transient (MANVR)
 $
 $ Companion section-coefficient table: cessna210_flagship_section_data.csv.
 $ Tutorial walk-through: docs/20_theory/02_realistic_airplane_sol144.md.
@@ -273,7 +273,7 @@ $ Reference geometry (full-span): CREF = wing MAC, BREF = wing span,
 $ SREF = wing area.  RCSID = 990 puts the rigid-body motion and the reported
 $ moments in the z-down stability axis at the quarter-MAC.
 $ Field 8 (sbeam extension) is the default Mach for Prandtl-Glauert.
-AEROS, 0, 990, 1.4707, 11.20, 16.24, 0, 0, 0.0
+AEROS, 0, 990, 1.4707, 11.20, 16.24, 0, 0
 $
 $ Aerodynamic panel property
 PAERO1, 10
@@ -306,7 +306,7 @@ CAERO1, 5000, 10, 0, 6, 6, 0, 0, 1
 +, 6.60, 0.0, 0.80, 1.50, 7.10, 0.0, 2.30, 0.85
 $
 $ ================================================================== SPLINES
-$ Four SPLINE2 beam splines (wing L/R, HTP L/R) plus one ATTACH (fin).
+$ Four SPLINE2 beam splines (wing L/R, HTP L/R) plus one BODYATT (fin).
 $
 $ DTHY MUST BE 0.0 ON EVERY SPLINE2 HERE.  Each SET1 lists elastic-axis grids
 $ only, and those are collinear along the spline axis, so the beam spline has
@@ -330,14 +330,14 @@ $ ---- LEFT HTP: boxes 4000-4047 to the port HTP EA, axis CID 994
 SET1, 1040, 20, 121, 122
 SPLINE2, 1004, 4000, 4000, 4047, 1040, 0.0, 1.0, 994
 $
-$ ---- VTP: ATTACH, not SPLINE2.
+$ ---- VTP: BODYATT, not SPLINE2.
 $ The fin is short, stiff and vertical.  Two reasons it gets the rigid
 $ attachment instead of a beam spline: (a) a SPLINE2 would need a spline-axis
 $ CORD2R whose y-axis runs along global Z, the awkward case; (b) the fin's
 $ own bending is negligible next to the tailcone bending that carries it, so
 $ rigidly slaving all 36 fin boxes to the fin-root grid is the physically
-$ honest idealisation.  ATTACH requires CID = 0.
-ATTACH, 1005, 5000, 5000, 5035, 30, 0
+$ honest idealisation.  BODYATT requires CID = 0.
+BODYATT, 1005, 5000, 5000, 5035, 30, 0
 $
 $ ============================================================ MONITOR POINTS
 $ Integrated section loads for the structures/loads handoff.  Two flavours:
@@ -432,11 +432,11 @@ $ level pull is a -9.81 vertical acceleration in that frame.
 $
 $ RHOREF (sbeam extension) is the freestream density.  It takes no part in
 $ the static trim; it exists only so V = sqrt(2q/rho) is available to the
-$ transient maneuver rate terms in the MLOADS driver.
+$ transient maneuver rate terms in the MANVR driver.
 $
 $ TRIM 1 — 1g cruise.  Expected CL = W/(q*S) = 1081*9.81/(2334*16.24) = 0.280.
-TRIM, 1, 0.0, 2334.0, RHOREF, 1.225, PITCH, 0.0
-+, URDD3, -9.81, URDD5, 0.0
+TRIM, 1, 0.0, 2334.0, PITCH, 0.0, URDD3, -9.81
++, URDD5, 0.0
 $
 $ TRIM 2 — 2.5g symmetric pull-up at the same q.  A steady pull-up is a
 $ constant pitch RATE as well as a load factor: the nondimensional rate is
@@ -445,26 +445,26 @@ $   PITCH = (n-1)*g*c/(2V^2) = 1.5*9.81*1.4707/(2*3810.2) = 2.8402e-3.
 $ Leaving PITCH at 0 would trim a 2.5g *pull* with no *rotation* — a
 $ different (and unphysical) manoeuvre, and it would drop the tail damping
 $ contribution that sets the real elevator-per-g gradient.
-TRIM, 2, 0.0, 2334.0, RHOREF, 1.225, PITCH, 2.8402-3
-+, URDD3, -24.525, URDD5, 0.0
+TRIM, 2, 0.0, 2334.0, PITCH, 2.8402-3, URDD3, -24.525
++, URDD5, 0.0
 $
-$ ============================================ TRANSIENT MANEUVER (MLOADS)
+$ ============================================ TRANSIENT MANEUVER (MANVR)
 $ Phase G0 quasi-steady, open-loop, restrained-l-set Newmark-beta run.  Used
 $ by cessna210_flagship_mloads.bdf; inert in the other two drivers.
 $
-$ Driver: IC = MLDTRIM 1, window = MLDTIME 1, commands = MLDCOMD 1,
-$ ASCII print = MLDPRNT 1.
-MLOADS, 1, 1, 1, 1, 1
+$ Driver: IC = MANTRIM 1, window = MANTIME 1, commands = MANCMD 1,
+$ ASCII print = MANPRNT 1.
+MANVR, 1, 1, 1, 1, 1
 $ Initial condition = the static 1g cruise trim (TRIM 1).
-MLDTRIM, 1, 1
+MANTRIM, 1, 1, 1.225
 $ Integrate 0 -> 1.0 s at dt = 0.005 s, output every 0.05 s (21 samples).
-MLDTIME, 1, 0.0, 1.0, 0.005, 0.05
+MANTIME, 1, 0.0, 1.0, 0.005, 0.05
 $ Pilot command: ELEV follows TABLED1 300.  Labels not listed hold trim.
-MLDCOMD, 1, ELEV, 300
+MANCMD, 1, ELEV, 300
 $ ASCII time-history print.
-MLDPRNT, 1
+MANPRNT, 1
 $
-$ MLDCOMD TABLES ARE ABSOLUTE, NOT INCREMENTAL.  The table below therefore
+$ MANCMD TABLES ARE ABSOLUTE, NOT INCREMENTAL.  The table below therefore
 $ STARTS at the trimmed elevator angle and ramps up from there — it is not a
 $ perturbation about the trim.  That makes the deck a TWO-PASS authoring job:
 $ run cessna210_flagship_trim.bdf first, read the trimmed ELEV out of the
@@ -482,7 +482,7 @@ $ compares, so a stale number fails the suite rather than quietly producing a
 $ slightly-wrong transient.
 $
 $ CASE-SPECIFIC.  Because the table is absolute it is also tied to the mass
-$ case it was authored for.  Selecting a MASSCASE alongside MLOADS shifts the
+$ case it was authored for.  Selecting a MASSCASE alongside MANVR shifts the
 $ trimmed elevator, so this first point is no longer that case's equilibrium
 $ and the run starts with a step input (see test T6).
 TABLED1, 300

@@ -1,4 +1,4 @@
-"""CHORDCP steady-pressure injection (Step 54) — mean-flow trim about a measured point.
+"""CPINJ steady-pressure injection (Step 54) — mean-flow trim about a measured point.
 
 Backlog AC6 acceptance criteria:
   1. Identity — injecting the program's own inviscid mean flow (the Cp the VLM
@@ -34,6 +34,7 @@ from sbeam.model.aero import Chordcp
 from sbeam.solver.sol144 import run_sol144_trim
 
 BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+_MACH = 0.9   # the deck's TRIM Mach (AEROS carried it too until #87)
 
 
 # --------------------------------------------------------------------------- #
@@ -45,7 +46,7 @@ def _load_ha144a():
     grid_index = build_grid_index(bulk)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
-        aero = build_aero_model(bulk, grid_index=grid_index)
+        aero = build_aero_model(bulk, grid_index=grid_index, mach=_MACH)
     return bulk, aero, grid_index
 
 
@@ -58,7 +59,7 @@ def _mean_flow_cp(aero, alpha_ref: float) -> np.ndarray:
 
 def _add_chordcp_cards(bulk, aero, cp: np.ndarray, alpha_ref: float,
                        mach: float = 0.0, sid0: int = 9000) -> None:
-    """One CHORDCP per CAERO1 from a global per-box Cp vector (box order).
+    """One CPINJ per CAERO1 from a global per-box Cp vector (box order).
 
     ``cp`` is along each box's normal; the card is along MSC's element normal (#84).
     """
@@ -136,7 +137,7 @@ class TestIdentity:
         _add_chordcp_cards(bulk, aero_ref, cp, alpha_ref)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
-            aero_inj = build_aero_model(bulk, grid_index=gi)
+            aero_inj = build_aero_model(bulk, grid_index=gi, mach=_MACH)
         assert aero_inj.chordcp_alpha_ref == pytest.approx(alpha_ref)
         # the equivalent wash must recover the pre-injection baseline exactly
         assert aero_inj.wg == pytest.approx(aero_ref.wg, abs=1e-10)
@@ -158,7 +159,7 @@ class TestIdentity:
             gi = build_grid_index(bulk)
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", UserWarning)
-                aero_raw = build_aero_model(bulk, grid_index=gi)
+                aero_raw = build_aero_model(bulk, grid_index=gi, mach=_MACH)
             gamma_ref = np.linalg.solve(aero_raw.ajj, -np.ones(len(aero_raw.boxes)))
             from sbeam.model.aero import Aecorr
             for i, eid in enumerate(sorted(bulk.caero1s)):
@@ -170,7 +171,7 @@ class TestIdentity:
                 )
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", UserWarning)
-                aero = build_aero_model(bulk, grid_index=gi)
+                aero = build_aero_model(bulk, grid_index=gi, mach=_MACH)
             return bulk, aero, gi
 
         bulk0, aero0, _ = _with_wt2(None)
@@ -181,7 +182,7 @@ class TestIdentity:
         _add_chordcp_cards(bulk, aero_ref, cp, alpha_ref)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
-            aero_inj = build_aero_model(bulk, grid_index=gi)
+            aero_inj = build_aero_model(bulk, grid_index=gi, mach=_MACH)
 
         res = _trim(bulk, aero_inj)
         for lbl, val in base.trim_vars.items():
@@ -208,7 +209,7 @@ class TestScaledInjection:
         _add_chordcp_cards(bulk, aero_ref, s * cp, alpha_ref)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
-            aero_inj = build_aero_model(bulk, grid_index=gi)
+            aero_inj = build_aero_model(bulk, grid_index=gi, mach=_MACH)
 
         wg_expected = s * aero_ref.wg + (1.0 - s) * n_z * alpha_ref
         assert aero_inj.wg == pytest.approx(wg_expected, abs=1e-10)
@@ -223,7 +224,7 @@ class TestScaledInjection:
         _add_chordcp_cards(bulk, aero_ref, s * cp, alpha_ref)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
-            aero_inj = build_aero_model(bulk, grid_index=gi)
+            aero_inj = build_aero_model(bulk, grid_index=gi, mach=_MACH)
         res = _trim(bulk, aero_inj)
 
         assert res.trim_vars["ANGLEA"] < base.trim_vars["ANGLEA"]
@@ -241,7 +242,7 @@ class TestIntegralMatch:
         _add_chordcp_cards(bulk, aero_ref, cp, alpha_ref)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
-            aero = build_aero_model(bulk, grid_index=gi)
+            aero = build_aero_model(bulk, grid_index=gi, mach=_MACH)
 
         # Reconstruct the rigid state at the injected operating point
         n_z = np.array([b.normal[2] for b in aero.boxes])
@@ -269,7 +270,7 @@ class TestValidation:
         bulk.chordcps[9000] = Chordcp(
             sid=9000, caero_eid=eid, alpha_ref=0.0, data=[0.1] * len(local))
         with pytest.raises(ValueError, match="full coverage"):
-            build_aero_model(bulk, grid_index=gi)
+            build_aero_model(bulk, grid_index=gi, mach=_MACH)
 
     def test_alphref_mismatch_raises(self):
         bulk, aero, gi = _load_ha144a()
@@ -278,7 +279,7 @@ class TestValidation:
         first = next(iter(bulk.chordcps))
         bulk.chordcps[first].alpha_ref = 0.01
         with pytest.raises(ValueError, match="disagree on ALPHREF"):
-            build_aero_model(bulk, grid_index=gi)
+            build_aero_model(bulk, grid_index=gi, mach=_MACH)
 
     def test_duplicate_surface_raises(self):
         bulk, aero, gi = _load_ha144a()
@@ -288,13 +289,13 @@ class TestValidation:
         bulk.chordcps[9999] = Chordcp(
             sid=9999, caero_eid=first.caero_eid, alpha_ref=0.0, data=list(first.data))
         with pytest.raises(ValueError, match="already covered"):
-            build_aero_model(bulk, grid_index=gi)
+            build_aero_model(bulk, grid_index=gi, mach=_MACH)
 
     def test_unknown_caero_raises(self):
         bulk, aero, gi = _load_ha144a()
         bulk.chordcps[9000] = Chordcp(sid=9000, caero_eid=777, alpha_ref=0.0, data=[0.1])
         with pytest.raises(ValueError, match="not found"):
-            build_aero_model(bulk, grid_index=gi)
+            build_aero_model(bulk, grid_index=gi, mach=_MACH)
 
     def test_data_length_mismatch_raises(self):
         bulk, aero, gi = _load_ha144a()
@@ -303,7 +304,7 @@ class TestValidation:
         first = bulk.chordcps[next(iter(bulk.chordcps))]
         first.data = first.data[:-1]
         with pytest.raises(ValueError, match="data length"):
-            build_aero_model(bulk, grid_index=gi)
+            build_aero_model(bulk, grid_index=gi, mach=_MACH)
 
     def test_w2gj_discard_warns(self):
         bulk, aero, gi = _load_ha144a()
@@ -312,7 +313,7 @@ class TestValidation:
         cp = _mean_flow_cp(aero, 0.0)
         _add_chordcp_cards(bulk, aero, cp, 0.0)
         with pytest.warns(UserWarning, match="replaces the W2GJ baseline"):
-            build_aero_model(bulk, grid_index=gi)
+            build_aero_model(bulk, grid_index=gi, mach=_MACH)
 
     def test_missing_anglea_with_nonzero_alphref_raises(self):
         bulk, aero, gi = _load_ha144a()
@@ -320,7 +321,7 @@ class TestValidation:
         _add_chordcp_cards(bulk, aero, cp, math.radians(1.0))
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
-            aero_inj = build_aero_model(bulk, grid_index=gi)
+            aero_inj = build_aero_model(bulk, grid_index=gi, mach=_MACH)
         # Remove the ANGLEA AESTAT; prescribe it on the TRIM card is not enough —
         # injection needs the AOA normalwash column.
         for aid in [a for a, st in bulk.aestats.items() if st.label == "ANGLEA"]:
@@ -337,9 +338,9 @@ class TestValidation:
         _add_chordcp_cards(bulk, aero, cp, 0.0, mach=0.5)   # TRIM Mach is 0.9
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
-            aero_inj = build_aero_model(bulk, grid_index=gi)
+            aero_inj = build_aero_model(bulk, grid_index=gi, mach=_MACH)
         subcase = SubcaseControl(subcase_id=1, spc_sid=1, trim_sid=1)
-        with pytest.warns(UserWarning, match="CHORDCP data Mach"):
+        with pytest.warns(UserWarning, match="CPINJ data Mach"):
             run_sol144_trim(bulk, subcase, aero_inj)
 
     def test_far_from_reference_aoa_warns(self):
@@ -349,9 +350,9 @@ class TestValidation:
         _add_chordcp_cards(bulk, aero, cp, 0.0)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
-            aero_inj = build_aero_model(bulk, grid_index=gi)
+            aero_inj = build_aero_model(bulk, grid_index=gi, mach=_MACH)
         subcase = SubcaseControl(subcase_id=1, spc_sid=1, trim_sid=1)
-        with pytest.warns(UserWarning, match="CHORDCP reference AOA"):
+        with pytest.warns(UserWarning, match="CPINJ reference AOA"):
             run_sol144_trim(bulk, subcase, aero_inj)
 
     def test_mirror_halfspan_rejects_chordcp(self):
@@ -360,9 +361,9 @@ class TestValidation:
             "PAERO1, 1\n"
             "CAERO1, 100, 1, , 2, 2, , , 0\n"
             "+, 0.0, 0.0, 0.0, 2.0, 0.0, 4.0, 0.0, 2.0\n"
-            "CHORDCP, 1, 100, 0.0, , 0.1, 0.1, 0.1, 0.1\n".splitlines()
+            "CPINJ, 1, 100, 0.0, , 0.1, 0.1, 0.1, 0.1\n".splitlines()
         )
-        with pytest.raises(NotImplementedError, match="CHORDCP"):
+        with pytest.raises(NotImplementedError, match="CPINJ"):
             mirror_halfspan(bulk)
 
 
@@ -371,7 +372,7 @@ class TestValidation:
 # --------------------------------------------------------------------------- #
 
 _STRIP_MIX_DECK = """\
-AEROS, 0, 0, 1.0, 4.0, 4.0, 0, 0, 0.0
+AEROS, 0, 0, 1.0, 4.0, 4.0, 0, 0
 PAERO1, 10
 CAERO1, 100, 10, 0, 4, 4, 0, 0, 1
 +, 0.0, -2.0, 0.0, 1.0, 0.0, 2.0, 0.0, 1.0
@@ -416,7 +417,7 @@ class TestStripCoexistence:
         _add_chordcp_cards(bulk, aero_ref, cp, alpha_ref, mach=0.9)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
-            aero_inj = build_aero_model(bulk, grid_index=gi)
+            aero_inj = build_aero_model(bulk, grid_index=gi, mach=_MACH)
         res = _trim(bulk, aero_inj)
 
         assert res.chordcp_echo is not None

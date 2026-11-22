@@ -226,7 +226,7 @@ class TestResolveIncrementTables:
         table = cards[0][1]
         assert table.ys == pytest.approx([0.491711, 0.591711, 0.591711])
         comd = cards[1][1]
-        assert comd.sid == bulk.mloads[10].mldcomd     # existing MLDCOMD reused
+        assert comd.sid == bulk.mloads[10].mldcomd     # existing MANCMD reused
         assert ("ELEV", table.tid) in comd.commands
 
     def test_resolves_from_trim_result_matching_massset(self, massset_deck):
@@ -254,11 +254,11 @@ class TestResolveIncrementTables:
         spec = logic.IncrementSpec(mloads_sid=999, label="ELEV",
                                    points=[(0.0, 0.0), (1.0, 0.1)])
         _, _, errors, _ = logic.resolve_increment_tables(bulk, cc, [spec])
-        assert errors == ["MLOADS 999 not found."]
+        assert errors == ["MANVR 999 not found."]
 
     def test_shared_mloads_across_mass_cases_errors(self, massset_deck):
         cc, bulk = massset_deck
-        # Point two subcases with different MASSCASEs at the same MLOADS.
+        # Point two subcases with different MASSCASEs at the same MANVR.
         cc.subcases[1].mloads_sid = 10
         spec = logic.IncrementSpec(mloads_sid=10, label="ELEV",
                                    points=[(0.0, 0.0), (1.0, 0.1)])

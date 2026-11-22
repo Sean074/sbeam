@@ -109,7 +109,7 @@ model on every run and cannot go stale.
 
 ### 2.2 Out of scope (follow-ons, to be recorded in the backlog as P8b)
 
-- **Transient (`MLOADS`) section cuts.** ✅ **DELIVERED 2026-08-02 as Step 68** — see
+- **Transient (`MANVR`) section cuts.** ✅ **DELIVERED 2026-08-02 as Step 68** — see
   `designs/monsect_transient_section_cuts.md` and
   `docs/40_history/07_maneuver_transient.md`. Note this section's premise was only half
   right: the *integration* was reusable verbatim, but its *inputs* were not. A transient

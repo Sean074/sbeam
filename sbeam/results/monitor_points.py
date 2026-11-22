@@ -10,7 +10,7 @@ scaled by the AEROS symmetry parity.
 
 Split into a state-free :class:`MonitorPlan` (geometry, index rows, frame,
 parity — built once per run by :func:`prepare_monitor_points`) and a per-load
-:func:`evaluate_monitor_point`, so a transient (MLOADS) maneuver can take the
+:func:`evaluate_monitor_point`, so a transient (MANVR) maneuver can take the
 same monitors at every output sample without re-resolving the collection
 (#2, the pattern Step 68 set for ``MONSECT``).  On a transient sample the
 evaluation additionally carries the elastic d'Alembert and damping loads as
