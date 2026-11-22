@@ -221,9 +221,9 @@ All tests in `tests/aero/test_step50_qaa.py`:
 
 ## Step 51 — Trim Card Set Parsing
 
-Step 51 adds BDF-parsing support for the static aeroelastic trim card set. No solver is
-added; these cards are parsed, stored in `BulkData`, and cross-referenced so that the
-Step 52+ trim solver can consume them directly.
+Step 51 added BDF-parsing support for the static aeroelastic trim card set: the cards are
+parsed, stored in `BulkData`, and cross-referenced. The trim solver that consumes them
+arrived in Step 52 (below).
 
 ### Data model
 
@@ -567,13 +567,19 @@ half-span decks), seeds an `AeroCache` shared across subcases, and calls
 
 | Block | Source |
 |-------|--------|
+| Subcase header (SUBCASE, TRIM, MACH, Q; MASSCASE label, mass and CG when a mass case is selected) | the subcase and `result.massset_*` |
+| GUST LOAD CONDITION — only for a `GUSTLF` subcase | `result.gust_echo` |
 | TRIM VARIABLES (free vs prescribed) | `result.trim_vars` + the TRIM card |
+| INJECTED OPERATING POINT (CHORDCP) / INJECTED AERO LOADS (SPLINE0) — only when present | the CHORDCP and SPLINE0 cards |
 | STABILITY DERIVATIVES (rigid + elastic restrained + unrestrained) | `result.rigid_derivs`, `result.restrained_derivs`, `result.unrestrained_derivs`. The block opens by stating the frame: coefficients are in **basic axes**, and MSC's "TRANSFORMATION FROM BASIC TO REFERENCE COORDINATES" (`[T]` and offset) is printed so a comparison can convert, `{C}REF = [T]{C}BAS` (#82; MSC prints the RCSID frame, AAUG 2023.1 PDF p.233). URDD rows are per unit of the URDD trim variable, an RCSID component |
+| LATERAL/DIRECTIONAL DERIVATIVES (CMX, CMZ; rigid and elastic restrained) | `result.rigid_derivs`, `result.restrained_derivs` |
 | HINGE MOMENT DERIVATIVES (RIGID and RESTRAINED columns per AESURF) | `result.hinge_moments[surf][label]` (rigid) and `result.hinge_moments_restrained[surf][label]` (elastic restrained), both × q. Dimensional: q × MSC's coefficient for CREFC = CREFS = 1 (AAUG p.234) |
 | CONTROL SURFACE POSITION AND HINGE MOMENT (trimmed) | `result.trim_vars[surf]` and `q × result.hinge_moments[surf]['total']`, the hinge moment of the elastic trim loads. Until #82 this was a "TOTAL (TRIM)" row under the rigid derivatives (AAUG p.235) |
 | AERODYNAMIC TOTALS (CZ body / CL wind / CMY) | `result.total_cl` (body CZ), `result.total_cl_wind` (wind CL = CZ·cosα − CX·sinα at trim α), `result.total_cm` |
+| APPLIED STRUCTURAL LOAD — only when the TRIM subcase carries a `LOAD` | the subcase LOAD set |
 | AERODYNAMIC DIVERGENCE (`q_div`, `q/q_div`) | `result.q_div` (restrained l-set; see below) |
-| DISPLACEMENT / BAR FORCES / BAR STRESSES | shared helpers, reused from the SOL 101 writer |
+| MONITOR POINT INTEGRATED LOADS / SECTION CUT RUNNING LOADS — when MONPNT1 / MONSECT are defined | `result.monitor_loads`, `result.section_loads` |
+| DISPLACEMENT / BAR FORCES / BAR STRESSES / ROD FORCES / ROD STRESSES | shared helpers, reused from the SOL 101 writer |
 | AERODYNAMIC BOX PRESSURES AND FORCES | `result.box_cp`, `result.box_forces`, keyed by `result.box_ids` — **only when the subcase requests `AEROF` or `APRES`**. `BOX ID` is the NASTRAN box ID (1000, 1001 …), as in MSC's force listing (AAUG p.237); until #82 it was a running index. `DELTA-CP` is along MSC's element normal, `result.box_msc_sign · result.box_cp` (#84; CAERO1 Figure 9-5): a port wing or fin drawn root to tip prints the opposite sign to `result.box_cp`, which stays along sbeam's +z/+y normal. FX/FY/FZ are basic and unaffected |
 
 **Divergence diagnostic.** `sol144_diverg.divergence_dynamic_pressure(K_ll, Q_ll)` returns the

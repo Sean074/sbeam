@@ -12,11 +12,24 @@ from sbeam.parser.bulk_fields import FieldHandler, ContHandler, MultiHandler, to
 # Trim card set handlers (Step 51)
 # ---------------------------------------------------------------------------
 
+# MSC's standard rigid-body labels (QRG 2024.1 PDF p.1153, AESTAT remark 1, Table 1)
+AESTAT_STANDARD_LABELS = frozenset((
+    "ANGLEA", "SIDES", "ROLL", "PITCH", "YAW",
+    "URDD1", "URDD2", "URDD3", "URDD4", "URDD5", "URDD6"))
+
+
 def _handle_aestat(fields: list[str], bulk: BulkData) -> None:
     aid   = to_int(fields[1])
     label = fields[2].strip().upper() if len(fields) > 2 else ""
     if not label:
         raise ValueError(f"AESTAT {aid}: LABEL must not be blank")
+    # MSC gives any other label its forces through AELINK or DMI (PDF p.1154 remark 3);
+    # sbeam reads neither, and before #91 such a label got a silent zero aero column
+    if label not in AESTAT_STANDARD_LABELS:
+        raise ValueError(
+            f"AESTAT {aid}: LABEL {label!r} is not a standard rigid-body label "
+            f"({', '.join(sorted(AESTAT_STANDARD_LABELS))}); MSC needs AELINK or DMI "
+            "data for any other label (QRG p.1154 remark 3), and sbeam reads neither")
     if aid in bulk.aestats:
         raise ValueError(f"Duplicate AESTAT ID {aid}")
     bulk.aestats[aid] = Aestat(id=aid, label=label)

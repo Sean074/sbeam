@@ -392,15 +392,15 @@ the deflection–downwash matrix $[D_{jk}]$ are built from the **physical** (uns
 boxes — the correction affects only the AIC, not the structural coupling geometry.
 
 **Validity.** The rule is linear and subsonic: $M < 1$ strictly, and accuracy
-degrades as $M \to 1$ where non-linear transonic effects dominate. sbeam caps
-the input at $M = 0.99$ ($\beta_{PG} \ge 0.14$) and does not apply any transonic
-or supersonic correction. For $M < 0.3$ the correction is $< 5\%$ (less than
+degrades as $M \to 1$ where non-linear transonic effects dominate. sbeam
+refuses $M \ge 1$ and does not apply any transonic or supersonic correction. For $M < 0.3$ the correction is $< 5\%$ (less than
 typical VLM modelling error) and can be omitted.
 
-**Input.** Mach is supplied via field 8 of the `AEROS` bulk-data card — an
-sbeam extension not present in NASTRAN (where Mach lives on the `TRIM` card).
-Default is $M = 0$ (incompressible, $\beta_{PG} = 1$), giving identical results
-to the uncorrected solver.
+**Input.** Mach is read from the `TRIM` card, as in NASTRAN. When the TRIM Mach is
+blank, sbeam falls back to field 9 of the `AEROS` card (an sbeam extension, to be
+removed under #87), with a warning if the two disagree (`solver/sol144.py`). With
+neither, $M = 0$ (incompressible, $\beta_{PG} = 1$), giving identical results to the
+uncorrected solver.
 
 ---
 

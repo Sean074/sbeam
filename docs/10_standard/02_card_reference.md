@@ -188,14 +188,15 @@ Every line above `BEGIN BULK` must be a command in the tables below; any other l
 | `TRIMOBJ` | int | Trim objective SID (references `TRIMOBJ` bulk card; over-determined SOL 144 trim) |
 | `DIVERG` | int | Divergence condition SID (references `DIVERG` bulk card; SOL 144 only) |
 | `MLOADS` | int | Transient maneuver-loads SID (references `MLOADS` bulk card; runs the Step 63 free-flight modal solver `solver/maneuver_modal.py` when the card's NMODES/METHOD/ZETA select it, else the prescribed-rigid direct solver `solver/maneuver_qs.py`; SOL 144, Phase G0) |
+| `GUSTLF` | int | Gust load-factor case SID (references `GUSTLF` bulk card; FAR/CS 23.341 gust case run as a SOL 144 trim; sbeam extension) |
 | `MASSCASE` | int | Payload / mass case SID (references `MASSCASE` bulk card, Step 60); the subcase runs at the resolved mass configuration — baseline when absent |
 | `MASSSET` | int | MSC mass combination ID (references an MSC `MASSSET` bulk entry; QRG p.482; #102). One of `MASSCASE`/`MASSSET` per subcase; each must select its own kind of card. `MASS` is not a usable abbreviation |
-| `DISPLACEMENT` | — | Request nodal displacement output (`= ALL` or `= PRINT`; `= NONE` cancels, as for every output request below) |
-| `SPCFORCES` | — | Request SPC reaction force output (MSC's full name, QRG p.634; `SPCFORCE` and `SPCF` are abbreviations) |
-| `OLOAD` | — | Request applied load echo output |
-| `FORCE` | — | Request CBAR/CBUSH element force output. `ELFORCE` is equivalent (QRG p.413) |
-| `STRESS` | — | Request CBAR stress output at recovery points. `ELSTRESS` is equivalent (QRG p.646) |
-| `AEROF` | — | Request per-box aerodynamic force output (SOL 144; emits the AERODYNAMIC BOX PRESSURES AND FORCES block) |
+| `DISPLACEMENT` | — | Accepted; displacements are **always printed** whatever its value (`= NONE` included). sbeam reads the request but no output depends on it (#91) |
+| `SPCFORCES` | — | Accepted; SPC reactions are **always printed** (#91). MSC's full name, QRG p.634; `SPCFORCE` and `SPCF` are abbreviations |
+| `OLOAD` | — | Request applied load echo output (SOL 101; printed only when requested; `= NONE` cancels) |
+| `FORCE` | — | Accepted; CBAR/CBUSH element forces are **always printed** (#91). `ELFORCE` is equivalent (QRG p.413) |
+| `STRESS` | — | Accepted; CBAR stresses at recovery points are **always printed** (#91). `ELSTRESS` is equivalent (QRG p.646) |
+| `AEROF` | — | Request per-box aerodynamic force output (SOL 144; printed only when requested; emits the AERODYNAMIC BOX PRESSURES AND FORCES block) |
 | `APRESSURE` | — | Request per-box aerodynamic pressure (ΔCp) output (SOL 144; same output block as `AEROF`). Usually written `APRES` (QRG p.263) |
 | `INCLUDE` | str | Inserts a file where it stands (see File Structure). Above `BEGIN BULK` it may bring in case control; a bulk data file is INCLUDEd below `BEGIN BULK` (#81) |
 | `PARAM` | — | `PARAM,name,value` (QRG p.570). Follows the bulk `PARAM` rules: the same refusals (`WTMASS`, `AUNITS`, `COUPMASS`, `INREL`, `G`, `W3`, `W4`, `LMODES`) and the same warnings for a PARAM sbeam does not read |
@@ -1510,7 +1511,7 @@ AEFACT  SID  D1  D2  D3  D4  D5  D6  D7
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
 | SID | `sid` | int | Set ID (unique; referenced by CAERO1 LSPAN or LCHORD) | required |
-| D1–DN | `data` | list[float] | Decimal fractions 0.0–1.0; must start at 0.0 and end at 1.0 | required |
+| D1–DN | `data` | list[float] | Division points as fractions of the span or chord, used as given. MSC allows endpoints other than 0.0 and 1.0 (QRG 2024.1 p.1344, CAERO1 remark 2); sbeam does not check them (#91) | required |
 
 Multiple continuation lines are supported. The list must have NSPAN+1 or NCHORD+1 values.
 An embedded blank field is refused (QRG 2024.1 p.1141 remark 2; #73 — it used to be
@@ -1996,23 +1997,26 @@ SPLINE1 (Harder–Desmarais infinite-plate spline) is not yet implemented;
 use SPLINE2 or ATTACH instead
 ```
 
-The `Spline1` dataclass (EID, CAERO, ID1, ID2, SETG, DZ, CID) exists in
-`sbeam/model/aero.py` as a placeholder for the future implementation.
+The `Spline1` dataclass in `sbeam/model/aero.py` is a placeholder for a future
+implementation. MSC's layout is `SPLINE1 EID CAERO BOX1 BOX2 SETG DZ METH USAGE` /
+`NELEM MELEM` (QRG 2024.1 PDF p.2847); the whole card is refused today.
 
 ---
 
 ## Trim Card Set (SOL 144)
 
-The following cards define the static aeroelastic trim problem. They are parsed and
-cross-referenced by the BDF reader but are not yet consumed by a solver (solver deferred
-to Step 52+).
+The following cards define the static aeroelastic trim problem. They are parsed,
+cross-referenced, and solved by SOL 144 (`05c_sol144_maneuver.md`).
 
 ---
 
 ### AESTAT — Rigid-body aerodynamic extra point
 
 Defines a rigid-body trim DOF label. Each AESTAT card declares one label that can be
-prescribed or solved in a TRIM condition.
+prescribed or solved in a TRIM condition. Only MSC's standard labels below are read
+(QRG 2024.1 PDF p.1153, Table 1). Any other label is refused: MSC needs AELINK or DMI
+data to give it forces (p.1154 remark 3), and sbeam reads neither. Before #91 such a
+label (e.g. `THRUST`) got a zero aerodynamic column with no message.
 
 **Standard labels:**
 
@@ -2023,6 +2027,7 @@ prescribed or solved in a TRIM condition.
 | `ROLL` | Roll rate p |
 | `PITCH` | Pitch rate q |
 | `YAW` | Yaw rate r |
+| `URDD1` | Longitudinal acceleration ẍ |
 | `URDD2` | Lateral acceleration ÿ |
 | `URDD3` | Normal acceleration z̈ |
 | `URDD4` | Roll angular acceleration |
@@ -2586,7 +2591,9 @@ MONSECT, SECRW, RIGHT WING LOADS, RWINGEA, 991
 
 ## Transient Maneuver Loads (Phase G0)
 
-ZAERO-style card set for the DLM-free quasi-steady transient maneuver-loads solver
+**sbeam's own layout, not ZAERO's** (#91; renamed under #87). ZAERO's MLOADS family drives
+an aeroservoelastic state-space model (ZAERO 9.2 UM PDF p.383–400); these cards share its
+names only. Card set for the DLM-free quasi-steady transient maneuver-loads solver
 (`solver/maneuver_qs.py`). A SOL 144 subcase requests a run with `MLOADS = sid` in
 case control. Card orchestration:
 
@@ -2923,7 +2930,7 @@ under "Parser warnings" and in the pre-solve checks.
 | CAERO1 | Exactly one of NSPAN/LSPAN must be non-zero |
 | CAERO1 | Exactly one of NCHORD/LCHORD must be non-zero |
 | CAERO1 | Requires PAERO1 reference; PID not in `bulk.paero1s` raises `ValueError` |
-| CBAR | Offsets (W1A/W2A) not supported |
+| CBAR | Non-zero offsets (W1A–W3B) are refused (#67) |
 | CBAR | Orientation must be the X1–X3 vector form; the G0 form (integer X1, X2/X3 blank) is refused |
 | CBAR | Pin-release digits (PA/PB) are in element local axes |
 | CROD / CONROD | A grid touched only by rods has free rotations (no bending stiffness; no AUTOSPC): SPC them, e.g. `SPC1, sid, 456, grid`, or the stiffness matrix is singular. Rod mass carries no torsional inertia |
@@ -2935,7 +2942,7 @@ under "Parser warnings" and in the pre-solve checks.
 | CORD2R | Points A, B, C must be non-collinear (checked when the transform is resolved) |
 | RBE2 | GN must not be a dependent DOF of another constraint element |
 | CORD2R | CORD2C/CORD2S/CORD1R not supported |
-| EIGRL | V1/V2 filtering applied in Hz |
+| EIGRL | V1/V2 frequency limits are refused (#70); use ND |
 | GRAV | CID must be `0` (global frame only) in Phase 1–2 |
 | MAT1 | Thermal fields (A, TREF, GE) parsed but ignored in Phase 1–2 |
 | PAERO1 | Phase A stub only; body interference support deferred |

@@ -9,6 +9,32 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **AESTAT refuses a label that is not one of MSC's standard rigid-body labels** (#91).
+  MSC reads ANGLEA, SIDES, ROLL, PITCH, YAW and URDD1–URDD6 (QRG 2024.1 PDF p.1153, Table 1)
+  and gives any other label its forces through AELINK or DMI (p.1154 remark 3), which sbeam
+  does not read. Before, a label such as `THRUST` got a zero aerodynamic column with no
+  message. No repo deck uses one.
+
+### Documentation
+- **Docs that contradicted the code or MSC corrected** (#91, audit S19/A19/M14/C12/M11).
+  `02_card_reference.md`:
+  - the case-control table now says that DISPLACEMENT, SPCFORCES, FORCE and STRESS are
+    accepted but always printed, and it lists GUSTLF;
+  - AEFACT endpoints are not constrained, as in MSC (CAERO1 remark 2);
+  - URDD1 was added to the AESTAT labels;
+  - the stale "trim cards not yet consumed" wording is gone;
+  - the SPLINE1 field list is MSC's;
+  - the constraints table says CBAR offsets and EIGRL V1/V2 are refused;
+  - the MLOADS family is marked as sbeam's own layout, not ZAERO's.
+
+  Theory §2.8: Mach comes from TRIM, with AEROS as the fallback, and M ≥ 1 is refused (not
+  capped at 0.99). The SOL 101/103 output lists in `03` and `04` drop a case-control echo
+  that is never written, and give the SPC-force layout and the eigenvalue columns actually
+  printed. The `05c` SOL 144 f06 table lists every block. Items the audit raised that v0.4.0
+  had already fixed: the PARAM list, the EIGRL example, GRID CD, the order-sensitivity claim,
+  the keyword list in `01`, and the `bdf_field.py` docstring.
+
 ---
 
 ## [0.4.0] — 2026-11-22

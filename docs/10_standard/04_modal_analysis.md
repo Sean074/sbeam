@@ -162,10 +162,12 @@ Effective mass output is optional in phase 1.
 
 Output sections written to `results.f06`:
 
-1. **NASTRAN Executive and Case Control echo** (abbreviated)
-2. **Real Eigenvalue Table** — mode number, eigenvalue (rad²/s²), frequency (Hz), generalised mass, generalised stiffness
-3. **Mode Shape Table** — for each mode: GID, T1, T2, T3, R1, R2, R3 (normalised per NORM setting)
-4. **Effective Mass Fractions** (optional) — per mode and per direction
+1. **Real Eigenvalue Table** — mode number, eigenvalue (rad²/s²), radians/s, frequency (Hz),
+   generalised mass. MSC's EXTRACTION ORDER and GENERALIZED STIFFNESS columns are not
+   printed yet (#90)
+2. **Mode Shape Table** — for each mode: GID, T1, T2, T3, R1, R2, R3 (normalised per NORM setting)
+
+No effective-mass table is written.
 
 ---
 

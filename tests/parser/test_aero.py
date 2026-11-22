@@ -414,3 +414,20 @@ SPLINE0, 9400, 400, 400, 415
 """.splitlines()
         with pytest.raises(ValueError, match="Duplicate SPLINE0 EID"):
             parse_bulk_data(lines)
+
+
+# ---------------------------------------------------------------------------
+# AESTAT labels (#91): MSC's standard set only (QRG 2024.1 PDF p.1153-1154)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("label", ["ANGLEA", "SIDES", "ROLL", "PITCH", "YAW",
+                                   "URDD1", "URDD2", "URDD3", "URDD4", "URDD5", "URDD6"])
+def test_aestat_standard_labels_are_read(label):
+    bulk = parse_bulk_data([f"AESTAT, 1, {label}"])
+    assert bulk.aestats[1].label == label
+
+
+def test_aestat_nonstandard_label_is_refused():
+    """Before #91 a label such as THRUST got a zero aero column with no message."""
+    with pytest.raises(ValueError, match=r"AESTAT 7: LABEL 'THRUST' is not a standard"):
+        parse_bulk_data(["AESTAT, 7, THRUST"])

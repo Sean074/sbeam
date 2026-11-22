@@ -329,11 +329,12 @@ One function, `recover_line_elements`, serves SOL 101, both SOL 144 paths and ML
 
 Output sections written to `results.f06`:
 
-1. **NASTRAN Executive and Case Control echo** (abbreviated)
-2. **Applied Load Vector (OLOAD)** — echo of assembled load vector
-3. **Nodal Displacements** — GID, T1, T2, T3, R1, R2, R3 per subcase
-4. **SPC Reaction Forces** — GID, DOF, value per constrained DOF
-5. **CBAR Forces** — the NASTRAN/MSC `FORCES IN BAR ELEMENTS (CBAR)` block, one row per
+1. **Applied Load Vector (OLOAD)** — echo of assembled load vector, only when the subcase
+   requests `OLOAD` (GRAV loads print as an APPLIED GRAVITY LOADS block)
+2. **Nodal Displacements** — GID, T1, T2, T3, R1, R2, R3 per subcase
+3. **SPC Reaction Forces** — one row per constrained grid, T1, T2, T3, R1, R2, R3
+   (`FORCES OF SINGLE-POINT CONSTRAINT`)
+4. **CBAR Forces** — the NASTRAN/MSC `FORCES IN BAR ELEMENTS (CBAR)` block, one row per
    element (DEF-M18 #21; values per "CBAR End Forces and Moments" above):
 
    ```
