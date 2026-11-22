@@ -1,7 +1,7 @@
 """Run-to-run reproducibility of the flagship SOL 144 outputs (#49).
 
 The same code run twice on the same deck must write the same f06 and CSV, byte for
-byte apart from the f06 DATE stamp, so a regression diff of the shipped decks shows
+byte apart from the run date and time, so a regression diff of the shipped decks shows
 only real changes.  #49 saw ~1e-10 noise in the zero-level antisymmetric monitor
 components of the gust deck; it does not reproduce on Accelerate or OpenBLAS
 (threaded or single-threaded) or across PYTHONHASHSEED values at the closing commit.
@@ -10,6 +10,7 @@ thread scheduling and set/dict iteration order both get a chance to differ.
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -19,6 +20,8 @@ import pytest
 
 SAMPLE_DIR = Path(__file__).parent.parent.parent / "sample"
 DECKS = ["cessna210_flagship_gust.bdf", "cessna210_flagship_mloads.bdf"]
+# Run stamps: the f06 DATE line and the date-time on the transient subcase headers
+_STAMP = re.compile(r"DATE.*|\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
 
 
 def _run(deck: str, workdir: Path, hashseed: str) -> dict[str, list[str]]:
@@ -32,7 +35,7 @@ def _run(deck: str, workdir: Path, hashseed: str) -> dict[str, list[str]]:
         if path.name == deck:
             continue
         lines = path.read_text().splitlines()
-        out[path.name] = [ln for ln in lines if "DATE" not in ln]
+        out[path.name] = [_STAMP.sub("", ln) for ln in lines]
     return out
 
 
