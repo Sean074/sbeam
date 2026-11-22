@@ -323,12 +323,14 @@ def build_section_correction_multi(
             af0[s] = float(fbox_off[idx].sum())
             am0[s] = float((-fbox_off[idx] * arm).sum())
         surf_idx = [k for k, b in enumerate(boxes) if b.caero_eid == T.caero_eid]
-        # Card data is NASTRAN-convention (positive = incidence); the internal
-        # normalwash ``wg`` is the negated sense — see ``build_wg``.
+        # Card data is NASTRAN-convention (positive = incidence) along MSC's element
+        # normal (#84); the internal normalwash ``wg`` is the negated sense along the
+        # box normal — see ``build_wg``.
+        sign = np.array([boxes[k].msc_sign for k in surf_idx])
         w2 = W2gj(sid=sid_w2gj_base + i, caero_eid=T.caero_eid,
-                  data=(-wg[surf_idx]).tolist())
+                  data=(-wg[surf_idx] * sign).tolist())
         ac = Aecorr(sid=sid_aecorr_base + i, method="WT2", caero_eid=T.caero_eid,
-                    mach=card_mach, target=cp_target[surf_idx].tolist())
+                    mach=card_mach, target=(cp_target[surf_idx] * sign).tolist())
         cards[T.caero_eid] = (w2, ac)
         per_surface[T.caero_eid] = SurfaceDiagnostics(
             caero_eid=T.caero_eid, moment_ref=x_mref,

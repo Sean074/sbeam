@@ -1534,6 +1534,17 @@ the VLM angle of attack (wing incidence, twist, camber line, CFD/WT Δα correct
 **NASTRAN sign convention** (MSC Aeroelastic UG Eq. 2-104; HA144A example): **positive
 = leading-edge-up incidence → more lift**, the same nose-up-positive sense as ANGLEA.
 `build_wg` negates card data into sbeam's internal washout-positive normalwash.
+
+**Sign along MSC's element normal (#84).** "Positive" is along the box's MSC element
+normal, z_elem = x_aero × (P4 − P1) (QRG 2024.1 PDF p.1344, CAERO1 Figure 9-5), as for
+MSC's downwash (AAUG 2023.1 PDF p.30, p.144). A starboard wing drawn root to tip has
++z; a **port wing drawn root to tip has −z and a fin drawn root to tip has −y**, so on
+those surfaces positive W2GJ is leading-edge-*down* relative to +z / +y. The same sign
+rule applies to AECORR targets and CHORDCP Cp, and to the f06 `DELTA-CP` column.
+**Before #84** the data was read along sbeam's +z/+y normal on every surface. **Migrate
+a deck:** negate the W2GJ, AECORR and CHORDCP data of every CAERO1 whose MSC normal is
+opposite (port surfaces and fins drawn root to tip); the repo decks are converted and
+give identical results.
 (Convention corrected 2026-07-05 — AE8a root cause.)
 
 **Format:**
@@ -1548,7 +1559,7 @@ W2GJ  SID  CAERO_EID  D1  D2  D3  D4  D5  D6
 |-------|----------|------|-------------|---------|
 | SID | `sid` | int | Set ID | required |
 | CAERO_EID | `caero_eid` | int | EID of the CAERO1 this incidence applies to | required |
-| D1–DN | `data` | list[float] | Built-in incidence per box (rad), nose-up positive (NASTRAN convention), row-major order | required |
+| D1–DN | `data` | list[float] | Built-in incidence per box (rad), positive = more lift along MSC's element normal (NASTRAN convention, #84), row-major order | required |
 
 Row-major order: span index slowest, chord index fastest — matching `mesh_caero1()` box ordering.
 
@@ -1627,7 +1638,7 @@ AECORR  SID  METHOD  CAERO_EID  MACH  T1  T2  T3  T4
 | METHOD | `method` | str | `'WT2'` — the only accepted value; `'WT1'` raises a `ValueError` naming its removal (DEF-R7), any other value raises `ValueError` | required |
 | CAERO_EID | `caero_eid` | int | EID of the CAERO1 this correction applies to | required |
 | MACH | `mach` | float | Build Mach: the Mach the targets were computed at, `0 ≤ MACH < 1`. Blank is refused (#72) | required |
-| T1–TN | `target` | list[float] | Target loading per box (row-major), in **circulation units on the Prandtl–Glauert-compressed geometry at MACH** — the units of `corrections.wt2_reference_cp`, which the correction builders write. **Not** physical ΔCp: a box's ΔCp is `2·T/(c_box·β)`. One value per box of the surface | required |
+| T1–TN | `target` | list[float] | Target loading per box (row-major), in **circulation units on the Prandtl–Glauert-compressed geometry at MACH** — the units of `corrections.wt2_reference_cp`, which the correction builders write — signed along MSC's element normal (#84; see W2GJ). **Not** physical ΔCp: a box's ΔCp is `2·T/(c_box·β)`. One value per box of the surface | required |
 
 **MACH and the TRIM Mach (#72).** The solver forms the ratio `r = T / reference` once per
 box, at the card's MACH, against the reference loading of the model being solved, and
@@ -1693,7 +1704,7 @@ CHORDCP  SID  CAERO_EID  ALPHREF  MACH
 | CAERO_EID | `caero_eid` | int | EID of the CAERO1 the pressures apply to (must be a VLM surface, not PSTRIP) | required |
 | ALPHREF | `alpha_ref` | float | Reference angle of attack the data was measured at, **degrees** (stored internally in radians) | **required** |
 | MACH | `mach` | float | Mach the data was measured at; validation only (warned against the TRIM Mach) | blank = not stated |
-| CP1–CPN | `data` | list[float] | Physical steady Cp per box, row-major (span slowest, chord fastest — same ordering as W2GJ) | required |
+| CP1–CPN | `data` | list[float] | Physical steady ΔCp per box along MSC's element normal (#84; see W2GJ), row-major (span slowest, chord fastest — same ordering as W2GJ) | required |
 
 **Coverage rule (v1):** when any CHORDCP card is present, **every** VLM CAERO1 must
 carry exactly one, and all cards must state the same ALPHREF. PSTRIP strip body panels

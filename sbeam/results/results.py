@@ -326,6 +326,9 @@ class Sol144TrimResult:
     hinge_moments: Optional[dict[str, dict[str, float]]] = None      # {AESURF label: {'total': HM/q at trim, <trim_label>: dHM/dδ}} about cid1 hinge axis
     hinge_moments_restrained: Optional[dict[str, dict[str, float]]] = None  # {AESURF label: {<trim_label>: elastic-restrained dHM/dδ}}, same units as hinge_moments (#82)
     box_ids: Optional[list[int]] = None       # NASTRAN box ID of each box, in box_cp / box_forces order (#82)
+    # +1/−1 per box: MSC's element normal along/against the box normal (#84).  box_cp is
+    # along the box normal; the f06 prints msc_sign · box_cp, ΔCp along MSC's normal
+    box_msc_sign: Optional[list[float]] = None
     trim_mode: str = "determined"             # "determined" or "over-determined" (Step 52)
     monitor_loads: Optional[dict[str, MonitorLoad]] = None      # {name: MonitorLoad} integrated section loads (MON1–MON3)
     section_loads: Optional[dict[str, SectionCutResult]] = None  # {name: SectionCutResult} MONSECT running loads

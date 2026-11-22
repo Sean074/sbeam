@@ -413,7 +413,9 @@ direction. A per-surface `CD0` input is backlogged.
 Baseline normalwash vector from the W2GJ BDF card. Card values follow the **NASTRAN
 convention** (MSC Aeroelastic UG Eq. 2-104; HA144A: `W2GJ = +0.001745 rad` is "+0.1 deg
 wing incidence"): **positive = leading-edge-up incidence/camber → more lift**, the same
-nose-up-positive sense as ANGLEA. `build_wg` **negates** the card data into the internal
+nose-up-positive sense as ANGLEA, **along the box's MSC element normal** (CAERO1 Figure
+9-5; #84): on a port panel or fin drawn root to tip that normal is −z / −y, and `build_wg`
+multiplies by `AeroBox.msc_sign` (see charter §3). `build_wg` **negates** the card data into the internal
 washout-positive normalwash — the same negation the ANGLEA column (`−n_z`) and
 `build_djk` (`−I`) apply — so internally positive `wg` remains washout/less lift. One
 value per box, row-major (span slowest, chord fastest). Returns a zero vector if no

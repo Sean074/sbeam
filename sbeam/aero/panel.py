@@ -34,6 +34,13 @@ class AeroBox:
     span_frac:  float         # spanwise fraction at box mid-span [0, 1]
     is_strip:   bool = False  # True ⇒ decoupled strip body box (no AIC coupling; set
                               # by build_aero_model from the CAERO1 PID → PSTRIP)
+    # +1 when MSC's element normal is ``normal``, −1 when it is opposite (#84).  MSC's
+    # element system is right-handed with x along the airstream and y from P1 toward P4
+    # (QRG 2024.1 PDF p.1344, CAERO1 remark 4, Figure 9-5), so a fin or a port panel
+    # drawn root to tip has z_elem opposite to sbeam's +y/+z ``normal``.  Signed per-box
+    # card data (W2GJ, AECORR, CHORDCP) and printed ΔCp are in MSC's frame:
+    # value_sbeam = msc_sign · value_card.
+    msc_sign:   float = 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +172,9 @@ def mesh_caero1(
 
     # Freestream direction: +X in CID 0 (ACSID=0 assumed in Phase A)
     x_hat = np.array([1.0, 0.0, 0.0])
+    # MSC's element z: x_aero × (P4 − P1) (Figure 9-5); only its sign against each
+    # box's normal is used
+    z_msc = np.cross(x_hat, p4 - p1)
 
     def _le(e: float) -> FloatArray:
         """Leading-edge point at span fraction e."""
@@ -246,6 +256,7 @@ def mesh_caero1(
                 normal=normal,
                 chord=float(chord),
                 span_frac=float(eta_mid),
+                msc_sign=1.0 if float(np.dot(z_msc, normal)) > 0.0 else -1.0,
             ))
             k += 1
 

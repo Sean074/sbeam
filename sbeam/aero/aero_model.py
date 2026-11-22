@@ -179,6 +179,7 @@ def _assemble_vlm_operator(
         r = np.ones(n)
         for card in wt2_cards:
             surf_idx = [k for k, b in enumerate(op_boxes) if b.caero_eid == card.caero_eid]
+            # Card targets are along MSC's element normal (#84)
             tgt = np.asarray(card.target, dtype=float)
             if tgt.shape[0] != len(surf_idx):
                 raise ValueError(
@@ -190,7 +191,8 @@ def _assemble_vlm_operator(
                 ajj_m = build_ajj(prandtl_glauert_boxes(op_boxes, card.mach))
                 ref_at[card.mach] = wt2_reference_cp(
                     op_boxes, lu_solve(check_conditioning(ajj_m), np.eye(n)))
-            r[surf_idx] = wt2_ratio(tgt, ref_at[card.mach][surf_idx])
+            sign = np.array([op_boxes[k].msc_sign for k in surf_idx])
+            r[surf_idx] = wt2_ratio(sign * tgt, ref_at[card.mach][surf_idx])
         ajj_inv_corr = np.diag(r) @ ajj_inv_corr
     if wkk_cards:
         ajj_inv_corr = apply_wkk(ajj_inv_corr, w)
@@ -295,7 +297,8 @@ def _apply_chordcp_injection(
                 f"CHORDCP {card.sid}: data length {len(card.data)} != "
                 f"{len(local)} boxes on CAERO1 {eid} (NSPAN×NCHORD)"
             )
-        cp_inj[local] = card.data
+        # Card Cp is along MSC's element normal (#84)
+        cp_inj[local] = np.asarray(card.data) * [vlm_boxes[k].msc_sign for k in local]
 
     block = ajj_inv_corr[np.ix_(vlm_idx, vlm_idx)]
     wg[vlm_idx] = apply_chordcp(block, vlm_boxes, cp_inj, alpha_ref)

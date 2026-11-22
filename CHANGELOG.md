@@ -10,6 +10,24 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Breaking changes
+- **Signed per-box aero data is along MSC's element normal** (#84; pre-1.0 MINOR break,
+  **silent for an unconverted deck**). MSC's CAERO1 element system has y from P1 toward P4
+  and z = x × y (QRG 2024.1 PDF p.1344, remark 4, Figure 9-5), and the downwash is the
+  box's normal velocity (AAUG 2023.1 PDF p.30, p.144), so a W2GJ on a port wing or a fin
+  drawn root to tip is signed along −z or −y. sbeam read W2GJ, AECORR targets and CHORDCP
+  Cp along its own +z/+y normal on every surface, so the same W2GJ on a port wing gave
+  the same lift whichever way the wing was drawn. Now each box carries `msc_sign` (+1 or
+  −1), the three cards are read as `msc_sign · value`, the correction builders write
+  values in MSC's frame, and the f06 `DELTA-CP` column prints along MSC's normal
+  (`result.box_cp` stays along sbeam's normal; new `result.box_msc_sign`). WKK and STRIPK
+  are ratios and unchanged. The solve normal is unchanged. **Migrate a deck:** negate the
+  W2GJ, AECORR and CHORDCP data of every CAERO1 whose MSC normal opposes sbeam's (port
+  surfaces and fins drawn root to tip). The 15 such cards in nine repo decks are
+  converted (flagship port wing, port tailplane, fin and vertical body panels; HA144A
+  full-span port wing; the twisted-wing validation deck) and every sample output is
+  bit-identical. Gates `tests/aero/test_msc_element_normal.py` and
+  `tests/results/test_f06_sol144_labels.py::TestDeltaCpFrame`. Charter §2–§3 amended.
+  Found by the 2026-11-16 audit (A7).
 - **AECORR carries its build Mach in field 5; the targets start in field 6** (#72; pre-1.0
   MINOR break). The WT2 target is a loading in circulation units on the Prandtl–Glauert
   geometry at the Mach it was built at, but the card had no Mach and the card reference

@@ -993,7 +993,8 @@ def _build_f06_sol144_text(
             + _hdr("", "FX", "FY", "FZ")
         )
         for k in range(len(result.box_forces)):
-            cp = result.box_cp[k]
+            # ΔCp along MSC's element normal, as MSC prints it (#84)
+            cp = result.box_cp[k] * (result.box_msc_sign[k] if result.box_msc_sign else 1.0)
             fx, fy, fz = result.box_forces[k]
             box_id = result.box_ids[k] if result.box_ids else k + 1
             lines.append(

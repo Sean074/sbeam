@@ -175,3 +175,31 @@ class TestBoxIds:
         k = result.box_ids.index(box_id)
         assert result.box_cp[k] == pytest.approx(msc_cp, rel=1e-2)
         assert result.box_forces[k][2] == pytest.approx(msc_fz, rel=1e-2)
+
+
+class TestDeltaCpFrame:
+    """#84: the printed ΔCp is along MSC's element normal (QRG 2024.1 PDF p.1344, CAERO1
+    Figure 9-5).  The full-span HA144A port wing (CAERO1 2000) is drawn root to tip,
+    so its MSC normal is −z: box 2000 mirrors box 1000 (MSC 4.784523, AAUG p.236) and
+    prints the same magnitude with the opposite sign.  ``result.box_cp`` stays along
+    sbeam's normal (+z on both wings)."""
+
+    def _printed(self, f06, box_id):
+        block = f06[f06.index("A E R O D Y N A M I C   B O X   P R E S S U R E S"):]
+        for line in block.splitlines():
+            parts = line.split()
+            if parts and parts[0] == str(box_id):
+                return float(line[14:27])
+        raise AssertionError(box_id)
+
+    def test_result_is_along_the_box_normal_on_both_wings(self, ha144a):
+        result = ha144a[2]
+        k1, k2 = result.box_ids.index(1000), result.box_ids.index(2000)
+        assert result.box_msc_sign[k1] == 1.0 and result.box_msc_sign[k2] == -1.0
+        assert result.box_cp[k2] == pytest.approx(result.box_cp[k1], rel=1e-9)
+
+    def test_f06_prints_the_port_box_along_msc_normal(self, ha144a, f06):
+        result = ha144a[2]
+        k1 = result.box_ids.index(1000)
+        assert self._printed(f06, 1000) == pytest.approx(result.box_cp[k1], rel=1e-6)
+        assert self._printed(f06, 2000) == pytest.approx(-result.box_cp[k1], rel=1e-6)

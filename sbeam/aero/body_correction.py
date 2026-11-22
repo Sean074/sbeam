@@ -458,11 +458,14 @@ def build_body_correction(
     cards = {}
     for i, eid in enumerate(panel_eids):
         idx = panel_idx[eid]
-        # Card data is NASTRAN-convention (positive = incidence); the internal
-        # normalwash ``wg_body`` is the negated sense — see ``build_wg``.
-        w2 = W2gj(sid=sid_w2gj_base + i, caero_eid=eid, data=(-wg_body[idx]).tolist())
+        # Card data is NASTRAN-convention (positive = incidence) along MSC's element
+        # normal (#84); the internal normalwash ``wg_body`` is the negated sense along
+        # the box normal — see ``build_wg``.
+        sign = np.array([boxes[k].msc_sign for k in idx])
+        w2 = W2gj(sid=sid_w2gj_base + i, caero_eid=eid,
+                  data=(-wg_body[idx] * sign).tolist())
         ac = Aecorr(sid=sid_aecorr_base + i, method="WT2", caero_eid=eid,
-                    mach=aero0.mach, target=(r[idx] * gamma_ref[idx]).tolist())
+                    mach=aero0.mach, target=(r[idx] * gamma_ref[idx] * sign).tolist())
         cards[eid] = (w2, ac)
 
     # Achieved totals are analytic to ~1e-13 (the body WT2 ratio is a
@@ -582,8 +585,11 @@ def build_strip_body_correction(
     cards = {}
     for i, eid in enumerate(panel_eids):
         idx = panel_idx[eid]
-        # Card data is NASTRAN-convention (positive = incidence) — see ``build_wg``.
-        w2 = W2gj(sid=sid_w2gj_base + i, caero_eid=eid, data=(-wg_body[idx]).tolist())
+        # Card data is NASTRAN-convention (positive = incidence) along MSC's element
+        # normal (#84) — see ``build_wg``.
+        sign = np.array([boxes[k].msc_sign for k in idx])
+        w2 = W2gj(sid=sid_w2gj_base + i, caero_eid=eid,
+                  data=(-wg_body[idx] * sign).tolist())
         sk = Stripk(sid=sid_stripk_base + i, caero_eid=eid,
                     data=(r[idx] * slope0[idx]).tolist())
         cards[eid] = (w2, sk)

@@ -51,7 +51,11 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
 - **Box force acts along the geometric panel normal** (not body-z, not wind axis):
   `F_j = q·A_j·ΔCp_j·n̂_j`; no leading-edge suction, no in-plane force (DEF-M2;
   `aero/integration.py:27-42`). Panel normals are oriented so the dominant component is
-  positive: horizontal panels → +z, vertical panels → +y (`aero/panel.py:220-225`).
+  positive: horizontal panels → +z, vertical panels → +y (`aero/panel.py:220-225`). This
+  is the **solve** normal. **MSC's element normal** is z_elem = x_aero × (P4 − P1), from
+  the point order (QRG 2024.1 PDF p.1344, CAERO1 remark 4, Figure 9-5): a fin drawn
+  root to tip has −y, a port panel drawn root to tip has −z. `AeroBox.msc_sign` is +1
+  where the two agree and −1 where they are opposite (#84); see §3 for what it signs.
 - **The SOL 144 `gamma` variable is ΔCp, not circulation.** True circulation
   Γ = cp·area/(2·width) (`aero/vlm.py:219-231`).
 - **¼-chord = force point** (bound vortex / Kutta–Joukowski); **¾-chord mid-span =
@@ -77,6 +81,15 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
   `model/aero.py:88-93`). **Never hand-add a sign between card and assembly.**
 - CHORDCP: `data` = signed per-box dΔCp/dα_local; `alpha_ref` is **degrees on the card,
   radians in storage** (`model/aero.py:119`).
+- **Signed per-box card data is along MSC's element normal, not the solve normal**
+  (#84): W2GJ, AECORR WT2 targets and CHORDCP Cp are read as `msc_sign · value`, and
+  the f06 `DELTA-CP` column prints `msc_sign · ΔCp`. The downwash is the box's "normal
+  velocity" (AAUG 2023.1 PDF p.30, eq 2-1/2-2) and W2GJ its static part (p.144), so the
+  card's sign follows the element normal of Figure 9-5. `result.box_cp` stays along the
+  solve normal. Ratios of two values in the same frame (WKK, STRIPK slopes) carry no
+  sign. **Before #84** the cards were read along the solve normal, so a port wing's W2GJ
+  meant the same thing whichever way the wing was drawn, and the "NASTRAN sign" above
+  held only for surfaces whose element normal is +z or +y.
 
 ## 4. Splining
 
@@ -251,7 +264,7 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
 | `load_resultant` / `grid_resultant` | The 6-component resultant of a g-set load about a reference (undeformed grid positions, basic): the maneuver closure, the f06 `APPLIED STRUCTURAL LOAD` line (#6), the MONPNT3 sums | `solver/sol144_util.py`, `results/monitor_points.py` |
 | `mass_ratio` / `alleviation_factor` / `gust_increment` | The Pratt gust formula (μ, `K_g`, Δn). Deliberately **outside** the solver — dimensional, see §7 | `sbeam_tools/cases/gust.py` |
 | `build_box_id_map` | The NASTRAN box-ID derivation (F1) | `aero/panel.py:43` |
-| `build_wg` / card writers | W2GJ sign flip (assembly negates; writers negate back) | `aero/integration.py:61`, `model/aero.py:88` |
+| `build_wg` / card writers | W2GJ sign flip (assembly negates; writers negate back), and the MSC element-frame sign `AeroBox.msc_sign` on every signed per-box card (#84) | `aero/integration.py:61`, `aero/panel.py` (`msc_sign`), `model/aero.py:88` |
 | `bar_internal_resultants` | The nodal `K·u` → +x-face internal-resultant sign (CBAR `P, V, T, M`; rod `P, T` via `rod_force_from_local`) (#37, #38) | `solver/sol101.py`, `solver/element_recovery.py` |
 
 When a new sign-sensitive quantity appears, create its single-source helper first and add

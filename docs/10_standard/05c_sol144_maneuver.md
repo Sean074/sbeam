@@ -572,7 +572,7 @@ half-span decks), seeds an `AeroCache` shared across subcases, and calls
 | AERODYNAMIC TOTALS (CZ body / CL wind / CMY) | `result.total_cl` (body CZ), `result.total_cl_wind` (wind CL = CZ·cosα − CX·sinα at trim α), `result.total_cm` |
 | AERODYNAMIC DIVERGENCE (`q_div`, `q/q_div`) | `result.q_div` (restrained l-set; see below) |
 | DISPLACEMENT / BAR FORCES / BAR STRESSES | shared helpers, reused from the SOL 101 writer |
-| AERODYNAMIC BOX PRESSURES AND FORCES | `result.box_cp`, `result.box_forces`, keyed by `result.box_ids` — **only when the subcase requests `AEROF` or `APRES`**. `BOX ID` is the NASTRAN box ID (1000, 1001 …), as in MSC's force listing (AAUG p.237); until #82 it was a running index |
+| AERODYNAMIC BOX PRESSURES AND FORCES | `result.box_cp`, `result.box_forces`, keyed by `result.box_ids` — **only when the subcase requests `AEROF` or `APRES`**. `BOX ID` is the NASTRAN box ID (1000, 1001 …), as in MSC's force listing (AAUG p.237); until #82 it was a running index. `DELTA-CP` is along MSC's element normal, `result.box_msc_sign · result.box_cp` (#84; CAERO1 Figure 9-5): a port wing or fin drawn root to tip prints the opposite sign to `result.box_cp`, which stays along sbeam's +z/+y normal. FX/FY/FZ are basic and unaffected |
 
 **Divergence diagnostic.** `sol144_diverg.divergence_dynamic_pressure(K_ll, Q_ll)` returns the
 single critical divergence dynamic pressure — the reciprocal of the largest positive-real

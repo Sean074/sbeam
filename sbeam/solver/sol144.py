@@ -546,7 +546,8 @@ def _stage_echo_chordcp(st: _TrimState) -> None:
         for card in sorted(bulk.chordcps.values(), key=lambda c: c.caero_eid):
             idxs = np.array([j for j, b in enumerate(aero.boxes)
                              if b.caero_eid == card.caero_eid])
-            cp   = np.asarray(card.data, dtype=float)
+            # Card Cp is along MSC's element normal (#84)
+            cp   = np.asarray(card.data, dtype=float) * [aero.boxes[j].msc_sign for j in idxs]
             area = np.array([aero.boxes[j].area for j in idxs])
             nz   = n_z_all[idxs]
             xfp  = np.array([aero.boxes[j].force_point[0] for j in idxs])
@@ -1193,6 +1194,7 @@ def _pack_trim_result(st: _TrimState) -> Sol144TrimResult:
         hinge_moments_restrained=_by_surface(st.hinge_moments_restrained),
         box_ids=[bid for bid, _k in sorted(st.aero.require_box_id_to_k().items(),
                                            key=lambda item: item[1])],
+        box_msc_sign=[b.msc_sign for b in st.aero.boxes],
         trim_mode=st.trim_mode,
         monitor_loads=st.monitor_loads,
         section_loads=st.section_loads,
