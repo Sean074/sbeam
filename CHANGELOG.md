@@ -9,6 +9,20 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+---
+
+## [0.4.0] — 2026-11-22
+
+Milestone v0.4.0, **faithful NASTRAN input** (#99). The deck is read as MSC NASTRAN lays it
+out, with ZAERO's layout where only ZAERO has the card and pyNastran as the independent
+parse gate: MSC field layouts (CBUSH, CONM2, TABLED1, EIGRL, MONPNT1, AECORR, mass
+combinations), input that is refused rather than skipped on every surface, order-independent
+bulk data, and a pyNastran cross-parse of every repo deck in CI. Found by the 2026-11-16
+MSC/ZAERO/NASTRAN-95/pyNastran compatibility audit and closed with it: #48, #49, #51,
+#55–#84, #86, #96–#98, #102. Several entries change what a deck means: see Breaking changes
+(notably #84, silent for an unconverted deck). Filed out of scope: #103 (MSC monitor output
+form, v0.7.0).
+
 ### Breaking changes
 - **MONPNT1 is read in MSC's two-line layout and is aerodynamic or structural by its
   AECOMP; MONPNT3 is refused** (#86; pre-1.0 MINOR break). MSC: `MONPNT1 NAME LABEL`
