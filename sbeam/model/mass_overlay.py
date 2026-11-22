@@ -71,7 +71,8 @@ def resolve_mass_case(bulk: BulkData, massset_sid: Optional[int] = None) -> Mass
 
     ms = bulk.masssets.get(massset_sid)
     if ms is None:
-        raise ValueError(f"MASSCASE {massset_sid} selected in case control but not defined")
+        raise ValueError(f"Mass case {massset_sid} (MASSCASE or MASSSET) selected in case "
+                         "control but not defined")
 
     dropped = set(ms.delete) | {old for old, _ in ms.replace}
     overlays = set(ms.add) | {new for _, new in ms.replace}
@@ -82,7 +83,8 @@ def resolve_mass_case(bulk: BulkData, massset_sid: Optional[int] = None) -> Mass
     conm2s: dict[int, Conm2] = {}
     for eid, c in bulk.conm2s.items():
         if eid in overlays:
-            conm2s[eid] = c                       # overlay — unscaled
+            # MASSCASE overlay unscaled; MSC mass increment scaled by S0·Si (#102)
+            conm2s[eid] = _scaled(c, ms.add_scale.get(eid, 1.0))
         elif eid in bulk.overlay_conm2_eids or eid in dropped:
             continue                              # another case's overlay, or dropped here
         else:

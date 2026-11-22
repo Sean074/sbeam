@@ -274,7 +274,9 @@ SUBCASE 1
 
 `SubcaseControl` gains `trim_sid` and `diverg_sid` fields (both `Optional[int]`, default `None`),
 plus `massset_sid` for the Step 60 payload / mass case (see
-[Mass cases](#mass-cases--masset-payload-conditions-step-60)).
+[Mass cases](#mass-cases--masset-payload-conditions-step-60)). `MASSSET = n` selects an MSC
+mass combination into the same field (#102; `mass_card` records which command was used;
+card reference "MASSSET — MSC mass combination").
 
 ### Over-determined trim (sbeam-defined cards)
 

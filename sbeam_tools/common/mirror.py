@@ -45,6 +45,8 @@ _UNSUPPORTED = {
     # A MASSCASE names CONM2 EIDs; whether a payload item mirrors (wing fuel)
     # or does not (a single centreline store) is model intent, not geometry.
     "masssets": "MASSCASE",
+    # MSC mass combinations and their BEGIN MASSID sections (#102): the same intent
+    "mass_combinations": "MASSSET", "mass_increments": "BEGIN MASSID",
 }
 
 

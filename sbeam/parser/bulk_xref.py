@@ -13,6 +13,7 @@ from dataclasses import asdict
 from typing import Callable
 
 from sbeam.model.aero import Monpnt3
+from sbeam.model.mass import Massset
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.coordinate_system import Cord2r
 from sbeam.types import FloatArray
@@ -655,4 +656,45 @@ def _check_massset(bulk: BulkData) -> None:
             f"and also as a baseline EID by MASSCASE {baseline_eids[eid]} — an EID must "
             "be one or the other"
         )
-    bulk.overlay_conm2_eids = overlay_eids
+    _resolve_mass_combinations(bulk)
+    increment_eids = {e for eids in bulk.mass_increments.values() for e in eids}
+    for sid, ms in bulk.masssets.items():
+        named = set(ms.add) | set(ms.delete) | {e for pair in ms.replace for e in pair}
+        if not ms.msc and named & increment_eids:
+            raise ValueError(
+                f"MASSCASE {sid}: names CONM2 {sorted(named & increment_eids)}, which is "
+                "in a BEGIN MASSID section; select a mass increment with an MSC MASSSET")
+    bulk.overlay_conm2_eids = overlay_eids | increment_eids
+
+
+def _resolve_mass_combinations(bulk: BulkData) -> None:
+    """Build each MSC MASSSET into a mass case on ``bulk.masssets`` (#102).
+
+    ``M_ID = S0 · Σ Si·M_IDi`` (QRG 2024.1 PDF p.2018): the base (``IDi = 0``) is scaled by
+    S0 times its Si, and absent from the combination when not listed; each BEGIN MASSID
+    section's CONM2s by S0·Si.  A repeated IDi adds, as the sum does.  "ID's of mass
+    combinations defined by MASSSET bulk data entry and mass increments defined by
+    MASSID bulk data sections should be unique" (p.2018), and an ID shared with a
+    MASSCASE would make ``MASSCASE = n`` / ``MASSSET = n`` ambiguous: both are refused.
+    """
+    for sid, mc in bulk.mass_combinations.items():
+        if sid in bulk.mass_increments:
+            raise ValueError(f"MASSSET {sid}: the ID is also a BEGIN MASSID section; mass "
+                             "combination and increment IDs must differ (QRG p.2018)")
+        if sid in bulk.masssets:
+            raise ValueError(f"MASSSET {sid}: the ID is also a MASSCASE SID; the two share "
+                             "sbeam's mass-case table, so give them different IDs")
+    for sid, mc in bulk.mass_combinations.items():
+        base = 0.0
+        add_scale: dict[int, float] = {}
+        for si, massid in mc.terms:
+            if massid == 0:
+                base += si
+                continue
+            if massid not in bulk.mass_increments:
+                raise ValueError(f"MASSSET {sid}: mass increment {massid} is not defined "
+                                 "by a BEGIN MASSID section")
+            for eid in bulk.mass_increments[massid]:
+                add_scale[eid] = add_scale.get(eid, 0.0) + mc.s0 * si
+        bulk.masssets[sid] = Massset(sid=sid, label=f"MASSSET {sid}", scale=mc.s0 * base,
+                                     add=sorted(add_scale), add_scale=add_scale, msc=True)

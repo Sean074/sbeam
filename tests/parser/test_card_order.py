@@ -61,12 +61,24 @@ def _cards(lines: list[str]) -> list[list[str]]:
 
 
 def _reordered(lines: list[str], order: str) -> list[str]:
+    """Reorder the cards within each section: a BEGIN MASSID line starts a new section
+    (#102), whose membership is position, so cards never cross one."""
     head, *cards = _cards(lines)
-    if order == "reversed":
-        cards.reverse()
-    else:
-        random.Random(int(order)).shuffle(cards)
-    return head + [line for card in cards for line in card]
+    segments: list[list[list[str]]] = [[]]
+    for card in cards:
+        if card[0].strip().upper().startswith("BEGIN"):
+            segments.append([card])
+        else:
+            segments[-1].append(card)
+    out = list(head)
+    for k, segment in enumerate(segments):
+        begin, body = (segment[:1], segment[1:]) if k else ([], segment)
+        if order == "reversed":
+            body.reverse()
+        else:
+            random.Random(int(order) + k).shuffle(body)
+        out += [line for card in begin + body for line in card]
+    return out
 
 
 def _canonical(bulk) -> dict:

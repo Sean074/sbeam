@@ -565,6 +565,58 @@ the members outboard of `SECRW` station 8 equals that section-cut row column by 
 
 ---
 
+### #102 — MSC multiple mass combination: `BEGIN MASSID` + `MASSSET` (Tier L) ✅ COMPLETE (2026-11-22)
+
+**Objective.** Read MSC's own mass-case construction so a deck written for MSC (and the
+sloads export, sloads #436) runs in sbeam unchanged: `BEGIN MASSID=n [LABEL=…]` incremental
+mass sections (QRG 2024.1 PDF p.286–287), the bulk `MASSSET ID S0 S1 ID1 …` combination
+`M_ID = S0 · Σ Si·M_IDi` (p.2018) and the case-control `MASSSET = n` (p.482). Decided in
+#99/#102 under "MSC's layout where MSC has the card"; MASSCASE (Step 60) stays as a
+documented sbeam extension for DELETE/REPLACE.
+
+**Prior art cited.** MSC's MMC (QRG pages above). NX Nastran 11's QRG and ZAERO 9.2's
+User's Manual define no equivalent (ZAERO takes mass only through the imported modal
+solution, `ASSIGN FEM=`, PDF p.52–54). pyNastran 1.4.1 reads the sections behind
+`use_new_deck_parser` (commit `c9554297`) and keeps the bulk MASSSET unread
+(`MISSING_CARDS`).
+
+**Assumptions of the Step 60 code that stopped holding.** One bulk section (the reader
+refused every other BEGIN); overlay CONM2s enter unscaled; the case control has one
+mass-case command.
+
+**Deliverables.**
+- Reader: `bdf_reader._split_mass_increments` / `_read_mass_increments` (CONM2 only in a
+  section, everything else refused; unique EIDs and massids); `BEGIN SUPER … MASSID`
+  still refused.
+- Bulk `MASSSET` handler (`bulk_structural._handle_mass_combination`): S ≥ 0, IDi required,
+  defaults per the QRG; an old sbeam-layout `MASSSET` refused naming MASSCASE.
+- `bulk_xref._resolve_mass_combinations`: each combination becomes a `Massset` with
+  `msc=True`, base scale `S0·S(ID 0)` and per-increment `add_scale = S0·Si`; increment
+  CONM2s are overlay-only; ID clashes with MASSID sections or MASSCASE SIDs refused.
+- `mass_overlay.resolve_mass_case` scales an overlay by `add_scale` (MASSCASE overlays
+  unchanged, bit for bit).
+- Case control `MASSSET = n` → `massset_sid` + `mass_card`; one of MASSCASE/MASSSET per
+  subcase; `parse_bdf` refuses a selector naming the other kind of card. Viewer export and
+  editor carry `mass_card`; the half-span mirror refuses the new collections.
+- Sample `ha144a_mass_combination_sweep.bdf` (MSC twin of the MASSCASE sweep).
+
+**Test / acceptance.**
+- `tests/aero/test_mass_combination.py`: MASSSET 10/20/30 give the same CONM2 set in the
+  same order, GPWG, M_gg, trim variables and displacements **bit-identical** to MASSCASE
+  10/20/30; MASSSET 40 (S0 = 2.0, 0.5·base + 0.25·HALFFUEL) = 16000 + 1000 lb, mass and
+  CG to 1e-12 against a hand sum over the grid positions; base runs without increments;
+  10 refusal cases; a repeated IDi adds; a combination without ID 0 has no base mass.
+- `tests/compat`: pyNastran 1.4.1 (new deck parser) agrees on every increment CONM2, the
+  section IDs and labels and the case-control MASSSET per subcase; the whole compat
+  suite passes with the switch on.
+- Full suite, sample-deck regression (every pre-existing output bit-identical).
+
+**Key decisions.** Increment sections hold CONM2 only (MSC also takes element/material
+changes, not needed by any named case — rule 5). MSC ignores grids/PARAMs in a section;
+sbeam refuses them (rule 7). MASSSET and MASSCASE IDs share one table and must differ.
+The bulk MASSSET has no independent reader (pyNastran stores it unread); its fields are
+gated by the hand check only.
+
 ## Resolved defects
 
 ### #3 — transient `net_loads` carries the elastic inertia and damping (Tier M) ✅ COMPLETE (2026-09-05)

@@ -56,9 +56,11 @@ The file is read as NASTRAN reads it (#81). Page numbers are PDF pages of the MS
 - **`ENDDATA` ends the bulk data** (QRG p.1808); it is optional. A card after it is refused
   rather than read or dropped, so a file INCLUDEd ahead of more bulk data must not end in
   `ENDDATA`. Comments and blank lines after it are harmless.
-- **`BEGIN BULK` only.** `BEGIN SUPER=n`, `BEGIN BULK TRMC=n`, `BEGIN AUXMODEL=n` and the
-  other forms that open a separate Bulk Data Section (QRG p.286–287) are refused; sbeam
-  reads one bulk data section. A repeated plain `BEGIN BULK` is skipped.
+- **`BEGIN BULK`, and `BEGIN MASSID` sections.** `BEGIN [BULK] MASSID=n [LABEL=text]` opens
+  an incremental mass section (QRG p.286–287), read to the next `BEGIN MASSID` or the end of
+  the bulk data; see [MASSSET](#massset--msc-mass-combination-102) (#102). `BEGIN SUPER=n`
+  (with or without MASSID), `BEGIN BULK TRMC=n`, `BEGIN AUXMODEL=n` and the other forms that
+  open a separate Bulk Data Section are refused. A repeated plain `BEGIN BULK` is skipped.
 - `CaseControl.includes` lists the files the main deck INCLUDEs below `BEGIN BULK`, in order.
 
 ---
@@ -187,6 +189,7 @@ Every line above `BEGIN BULK` must be a command in the tables below; any other l
 | `DIVERG` | int | Divergence condition SID (references `DIVERG` bulk card; SOL 144 only) |
 | `MLOADS` | int | Transient maneuver-loads SID (references `MLOADS` bulk card; runs the Step 63 free-flight modal solver `solver/maneuver_modal.py` when the card's NMODES/METHOD/ZETA select it, else the prescribed-rigid direct solver `solver/maneuver_qs.py`; SOL 144, Phase G0) |
 | `MASSCASE` | int | Payload / mass case SID (references `MASSCASE` bulk card, Step 60); the subcase runs at the resolved mass configuration — baseline when absent |
+| `MASSSET` | int | MSC mass combination ID (references an MSC `MASSSET` bulk entry; QRG p.482; #102). One of `MASSCASE`/`MASSSET` per subcase; each must select its own kind of card. `MASS` is not a usable abbreviation |
 | `DISPLACEMENT` | — | Request nodal displacement output (`= ALL` or `= PRINT`; `= NONE` cancels, as for every output request below) |
 | `SPCFORCES` | — | Request SPC reaction force output (MSC's full name, QRG p.634; `SPCFORCE` and `SPCF` are abbreviations) |
 | `OLOAD` | — | Request applied load echo output |
@@ -219,7 +222,6 @@ Every line above `BEGIN BULK` must be a command in the tables below; any other l
 | `SUBSEQ`, `SYMSEQ` | Subcase combination coefficients (QRG p.654, p.667) |
 | `COMPILE`, `ALTER`, `MALTER`, `ENDALTER` | DMAP |
 | `GUST` | MSC's SOL 146 gust selector (QRG p.452); refused so that it is not read as an abbreviation of sbeam's `GUSTLF` |
-| `MASSSET` | MSC's mass-combination selector (QRG p.482). sbeam's mass case is selected with `MASSCASE = n`, which had this name before #78; refused with that advice. `MASS` is therefore not a usable abbreviation |
 
 Any other command, including every MSC command not listed here (`MPC`, `SET`, `STRAIN`, …), is refused as unknown.
 
@@ -996,6 +998,52 @@ CONM2, 2, 5, 0, 50.0, 0.1, 0.0, 0.0
 
 ---
 
+### MASSSET — MSC mass combination (#102)
+
+MSC's multiple mass combination (MMC), read as MSC lays it out (MSC Nastran 2024.1 QRG:
+BEGIN statement PDF p.286–287, case-control `MASSSET` p.482, bulk `MASSSET` p.2018):
+
+```
+MASSSET  ID  S0  S1  ID1  S2  ID2  S3  ID3
++        S4  ID4 ...
+...
+BEGIN MASSID=101 LABEL='FUEL'
+CONM2, 6001, 110, 0, 15.5405
+BEGIN MASSID=102 LABEL='BAGGAGE'
+CONM2, 5000, 98, 0, 15.5405
+```
+
+`M_ID = S0 · Σ Si·M_IDi`: `IDi = 0` is the base mass (the main bulk data: CBAR/CROD
+distributed mass and every CONM2 outside a MASSID section), `IDi > 0` a `BEGIN MASSID`
+section. Selected per subcase by `MASSSET = ID`; a subcase without one runs at the base
+mass, and no increment enters it.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| ID | int > 0 | required | Combination ID. Must differ from every MASSID and from every MASSCASE SID (they share sbeam's mass-case table) |
+| S0 | real ≥ 0 | 0.0 | Scales the whole combination |
+| Si | real ≥ 0 | 0.0 | Scale of mass case IDi |
+| IDi | int ≥ 0 | required | 0 = base; > 0 = a BEGIN MASSID section. A repeated IDi adds, as the sum does |
+
+**What follows from MSC's rule.** Combinations only add (Si ≥ 0): an item some cases leave
+out goes in an increment, not the base. A combination that does not list `IDi = 0`
+contains no base mass at all, structure included. S0 scales base and increments alike.
+
+**Increment sections.** sbeam reads `CONM2` in a MASSID section and refuses every other
+card. MSC also takes element mass properties and materials there and ignores grids and
+parameters (p.482 remark 2); sbeam does neither, and refuses rather than drops them. An
+increment CONM2 EID must be unique across the deck. `BEGIN SUPER=n MASSID=m` is refused.
+
+**Output.** A combination's mass case is labelled `MASSSET <ID>` in GPWG, the f06 and the
+CSV `mass_case` column.
+
+**pyNastran.** 1.4.1 reads the sections (with its `use_new_deck_parser` switch, which the
+compat job sets) and the case-control `MASSSET`; it stores the bulk `MASSSET` unread
+(`MISSING_CARDS`), so S0/Si/IDi are gated by sbeam's own GPWG hand check.
+
+**Example:** `sample/ha144a_mass_combination_sweep.bdf`, the MSC twin of
+`ha144a_massset_sweep.bdf`.
+
 ### MASSCASE — Payload / Mass Case (sbeam extension; Step 60)
 
 Defines a named mass configuration built from the baseline model mass. Selected per
@@ -1007,9 +1055,12 @@ maneuvers, and the Phase G0 transient maneuver solver).
 > by a case-control `MASSSET = n` (p.482). sbeam's card had that name with a different
 > layout, so MSC's `MASSSET,11,1.0,1.0,0,1.0,101` was read as label `1.0`, scale 1.0, with
 > the rest dropped. The sbeam card and command are now `MASSCASE`, a name no MSC or ZAERO
-> manual in the reference library defines. `MASSSET` is refused in bulk data and in case
-> control with a message naming `MASSCASE`. **Migrate a deck:** rename the card and the
-> command; the fields are unchanged. The Python names (`Massset`, `bulk.masssets`,
+> manual in the reference library defines. Since #102 MSC's `MASSSET` is read (next
+> section); an old sbeam `MASSSET, SID, LABEL, SCALE` is refused because its LABEL is not
+> a number, with a message naming `MASSCASE`. **Migrate a deck:** rename the card and the
+> command; the fields are unchanged. **Portability:** MASSCASE is sbeam-only, and its
+> overlay CONM2s are ordinary bulk CONM2s, so another NASTRAN would put every one of them
+> in the base mass; MSC's construction (next section) is the portable one. The Python names (`Massset`, `bulk.masssets`,
 > `massset_sid`, `massset_label`) are unchanged.
 
 **Format:**
@@ -2805,7 +2856,6 @@ under "Supported cards at a glance" (top of this file) is refused.
 | Dynamic loads | `DLOAD`, `DAREA`, `TLOAD1`, `TLOAD2`, `RLOAD1`, `RLOAD2` | Transient maneuvers use the `MLOADS` family; no SOL 109/111 |
 | Elements / properties / materials | `CBEAM`, `PBEAM`, `PBEAML`, `PBARL`, `CTUBE`, `PTUBE`, `CELAS1`, `CELAS2`, `PELAS`, `CONM1`, `CQUAD4`, `CTRIA3`, `PSHELL`, `MAT2`, `MAT8` | `CBAR`/`PBAR` (explicit A, I1, I2, J), `CROD`/`PROD`, `CBUSH`/`PBUSH`, `CONM2`, `MAT1` |
 | Coordinate systems | `CORD1R`, `CORD1C`, `CORD1S`, `CORD2C`, `CORD2S` | `CORD2R` |
-| Mass combinations | `MASSSET` | MSC's Mass Combination entry (QRG 2024.1 PDF p.2018). sbeam's payload / mass-case card is `MASSCASE`; it was named `MASSSET` before #78, so rename an old sbeam card |
 | Constraints | `MPC`, `MPCADD`, `SPCADD`, `RBE1` | `RBE2`, `RBAR`, `RBE3`; one `SPC`/`SPC1` set per subcase |
 | Direct matrix input (#55) | `DMI`, `DMIG`, `DMIAX`, `DMIJ`, `DMIJI`, `DMIK` | For aero corrections (MSC's `DMI,W2GJ` / `DMI,WKK`), the native `W2GJ` / `WKK` cards |
 | Damping (#55) | `TABDMP1` | The MLOADS transient's `ZETA`; no SDAMP |

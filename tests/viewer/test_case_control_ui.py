@@ -298,6 +298,8 @@ def _every_field_set() -> SubcaseControl:
             values[f.name] = 7
         elif f.name == "title":
             values[f.name] = "every field"
+        elif f.name == "mass_card":
+            values[f.name] = "MASSSET"            # the non-default command (#102)
         elif f.type in (bool, "bool"):
             values[f.name] = True
         else:

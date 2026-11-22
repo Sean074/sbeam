@@ -10,7 +10,7 @@ from sbeam.model.grid import Grid
 from sbeam.model.element import Cbar, Conrod, Crod, Plotel, Rbe3, Rbe2, Cbush, Rbar
 from sbeam.model.property import Pbar, Pbush, Prod
 from sbeam.model.material import Mat1
-from sbeam.model.mass import Conm2, Massset
+from sbeam.model.mass import Conm2, MassCombination, Massset
 from sbeam.model.load import Force, Moment, Load, Grav, Eigrl
 from sbeam.model.constraint import Spc, Spc1, Suport
 from sbeam.parser.bulk_fields import (
@@ -434,6 +434,47 @@ def _handle_conm2(fields: list[str], cont: Optional[list[str]], bulk: BulkData) 
         i11=_gi(1), i21=_gi(2), i22=_gi(3),
         i31=_gi(4), i32=_gi(5), i33=_gi(6),
     )
+
+
+def _handle_mass_combination(fields: list[str], conts: list[list[str]],
+                             bulk: BulkData) -> None:
+    """MSC MASSSET, a mass combination (MSC Nastran 2024.1 QRG PDF p.2018; #102).
+
+    ``MASSSET ID S0 S1 ID1 S2 ID2 S3 ID3`` / ``S4 ID4 ...``: ``M_ID = S0 · Σ Si·M_IDi``,
+    ``IDi = 0`` the base mass and ``IDi > 0`` a BEGIN MASSID section.  S0 and Si are
+    "Real >= 0.0; Default = 0.0", IDi "Integer > 0; No Default" (0 names the base, per
+    the formula's i = 0).  The IDs are checked against the sections in ``bulk_xref``.
+    """
+    sid = to_int(fields[1])
+    if sid <= 0:
+        raise ValueError(f"MASSSET {sid}: ID must be an integer > 0 (QRG p.2018)")
+    if fields[2].strip() and _field_kind(fields[2].strip()) == "other":
+        raise ValueError(
+            f"MASSSET {sid}: S0={fields[2].strip()} is not a number. MASSSET is MSC's mass "
+            "combination (ID S0 S1 ID1 ..., QRG p.2018); sbeam's payload card "
+            "(MASSSET SID LABEL SCALE before #78) is MASSCASE: rename the card")
+    s0 = to_float(fields[2]) if fields[2].strip() else 0.0
+    rest = [f.strip() for f in fields[3:]] + [f.strip() for c in conts for f in c[1:]]
+    while rest and not rest[-1]:
+        rest.pop()
+    if len(rest) % 2:
+        rest.append("")
+    terms: list[tuple[float, int]] = []
+    for k in range(0, len(rest), 2):
+        s_txt, id_txt = rest[k], rest[k + 1]
+        if not s_txt and not id_txt:
+            continue
+        if not id_txt:
+            raise ValueError(f"MASSSET {sid}: S{k // 2 + 1}={s_txt} has no ID "
+                             "(IDi has no default, QRG p.2018)")
+        terms.append((to_float(s_txt) if s_txt else 0.0, to_int(id_txt)))
+    if s0 < 0.0 or any(si < 0.0 for si, _ in terms):
+        raise ValueError(f"MASSSET {sid}: scale factors must be >= 0.0 (QRG p.2018)")
+    if not terms:
+        raise ValueError(f"MASSSET {sid}: no mass case is combined")
+    if sid in bulk.mass_combinations:
+        raise ValueError(f"Duplicate MASSSET ID {sid}")
+    bulk.mass_combinations[sid] = MassCombination(sid=sid, s0=s0, terms=terms)
 
 
 def _handle_massset(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
@@ -866,5 +907,6 @@ MULTI_HANDLERS: dict[str, MultiHandler] = {
     "RBE3": _handle_rbe3,
     "RBE2": _handle_rbe2,
     "MASSCASE": _handle_massset,
+    "MASSSET": _handle_mass_combination,
     "SPC1": _handle_spc1,
 }

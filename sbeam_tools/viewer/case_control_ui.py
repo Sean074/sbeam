@@ -99,7 +99,7 @@ def export_bdf_text(
             (sc.load_sid, "LOAD"), (sc.spc_sid, "SPC"), (sc.method_sid, "METHOD"),
             (sc.trim_sid, "TRIM"), (sc.trimobj_sid, "TRIMOBJ"),
             (sc.diverg_sid, "DIVERG"), (sc.mloads_sid, "MLOADS"),
-            (sc.gustlf_sid, "GUSTLF"), (sc.massset_sid, "MASSCASE"),
+            (sc.gustlf_sid, "GUSTLF"), (sc.massset_sid, sc.mass_card),
         ]:
             if sid is not None:
                 lines.append(f"  {keyword} = {sid}")
@@ -161,7 +161,7 @@ def _summarize_sol144(sc: SubcaseControl, bulk: BulkData) -> str:
     if sc.massset_sid is not None:
         ms = bulk.masssets.get(sc.massset_sid)
         label = f" {ms.label}" if ms is not None else ""
-        mass_case = f" [mass case MASSCASE {sc.massset_sid}{label}]"
+        mass_case = f" [mass case {sc.mass_card} {sc.massset_sid}{label}]"
     if sc.mloads_sid is not None:
         outputs = "time histories, MLDPRNT export, critical-sample loads"
         if has_monitors:
@@ -482,6 +482,9 @@ def _render_case_control_editor(
                 mloads_sid=fields["mloads_sid"],
                 gustlf_sid=fields.get("gustlf_sid"),
                 massset_sid=fields["massset_sid"],
+                # #102: an MSC mass combination is selected with MASSSET
+                mass_card=("MASSSET" if fields["massset_sid"] in bulk.masssets
+                           and bulk.masssets[fields["massset_sid"]].msc else "MASSCASE"),
                 displacement=st.session_state.get(f"sc_displacement_{idx}", s["displacement"]),
                 spcforce=st.session_state.get(f"sc_spcforce_{idx}", s["spcforce"]),
                 oload=st.session_state.get(f"sc_oload_{idx}", s["oload"]),

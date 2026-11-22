@@ -247,6 +247,22 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   cards must drop them.
 
 ### Added
+- **MSC's multiple mass combination is read: `BEGIN MASSID` sections, the bulk `MASSSET`
+  and the case-control `MASSSET`** (#102). MSC builds a mass case as `M_ID = S0 · Σ
+  Si·M_IDi` from the base model (ID 0) and incremental sections `BEGIN MASSID=n` (QRG
+  2024.1 PDF p.286–287, p.482, p.2018). sbeam refused all three; its own mass case is the
+  sbeam-only MASSCASE, whose overlay CONM2s another NASTRAN would put in the base mass. Now
+  a section's CONM2s are increments that enter only the combinations naming them, scaled by
+  S0·Si, and `MASSSET = n` selects a combination per subcase. sbeam reads CONM2 in a section
+  and refuses any other card (MSC also takes element and material changes, and ignores
+  grids and parameters there). MASSCASE is unchanged and stays for DELETE/REPLACE; IDs of
+  the two must differ, and each selector must name its own kind of card. New sample
+  `ha144a_mass_combination_sweep.bdf` reproduces the MASSCASE sweep bit for bit and adds an
+  S0 = 2.0 combination checked by hand. pyNastran 1.4.1 reads the sections with its
+  `use_new_deck_parser` switch (now set in the compat job) and agrees on every increment
+  CONM2 and selector; it stores the bulk MASSSET unread, so S0/Si/IDi have no independent
+  reader. An old sbeam-layout `MASSSET, SID, LABEL, SCALE` is refused naming MASSCASE.
+  Gates `tests/aero/test_mass_combination.py`.
 - **CI cross-parses every repo deck with pyNastran** (#83). A new `compat` job reads the
   exact bulk lines sbeam parses with pyNastran 1.4.1 (an independent MSC-format reader,
   BSD-3, test-only) and requires every field both read to agree, every field sbeam does

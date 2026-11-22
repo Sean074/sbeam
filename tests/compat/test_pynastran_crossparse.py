@@ -32,7 +32,8 @@ from pyNastran.bdf.bdf import BDF  # noqa: E402
 
 from sbeam.model.bulk_data import BulkData  # noqa: E402
 from sbeam.parser import bdf_reader  # noqa: E402
-from sbeam.parser.bdf_reader import _read_cards, parse_bdf  # noqa: E402
+from sbeam.parser.bdf_reader import (  # noqa: E402
+    _read_cards, _read_mass_increments, _split_mass_increments, parse_bdf)
 from sbeam.parser.bulk_fields import is_continuation, split_line  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
@@ -111,11 +112,18 @@ def _pynastran(lines: list[str], tmp: Path) -> tuple[Any, set[str]]:
             skip = name in _NOT_FOR_PYNASTRAN or body.strip().upper() in ("BEGIN BULK", "ENDDATA")
         if not skip:
             kept.extend(_qrg_overflow(line))
-    path = tmp / "bulk.pch"
-    path.write_text("\n".join(kept) + "\n")
+    # pyNastran's punch (bulk-only) read refuses BEGIN sections: a deck with BEGIN MASSID
+    # sections (#102) is read as a whole deck with an empty case control
+    sections = any(k.strip().upper().startswith("BEGIN") for k in kept)
+    path = tmp / ("bulk.bdf" if sections else "bulk.pch")    # .pch reads as punch
+    path.write_text(("SOL 101\nCEND\nBEGIN BULK\n" if sections else "")
+                    + "\n".join(kept) + "\n")
     model = BDF(debug=None)
+    # pyNastran 1.4.1 reads BEGIN MASSID sections only with its newer deck parser, off by
+    # default (commit c9554297, 2024-01-05); every other card reads the same with it (#102)
+    model.use_new_deck_parser = True
     model.set_error_storage(nparse_errors=10000, stop_on_parsing_error=False)
-    model.read_bdf(str(path), punch=True, xref=False, validate=False)
+    model.read_bdf(str(path), punch=not sections, xref=False, validate=False)
     failed = {err[0] for err in getattr(model, "_stored_parse_errors", [])}
     return model, failed
 
@@ -147,6 +155,14 @@ def _f(x: Any) -> Any:
     if isinstance(x, (list, tuple)):
         return [_f(v) for v in x]
     return x
+
+
+def _sbeam_bulk(lines: list[str]) -> BulkData:
+    """sbeam's read of bulk lines, BEGIN MASSID sections included (#102)."""
+    main, increments = _split_mass_increments(lines)
+    bulk = _read_cards(main)
+    _read_mass_increments(bulk, increments)
+    return bulk
 
 
 def _squeeze(text: str) -> str:
@@ -261,8 +277,13 @@ def _pyn_view(m: Any) -> dict[str, dict[Any, dict[str, Any]]]:
             v["PBUSH"][k] = dict(k=_f(p.Ki))
     v["MAT1"] = {k: dict(E=x.e, G=x.g, nu=x.nu, rho=x.rho)
                  for k, x in m.materials.items() if x.type == "MAT1"}
+    # BEGIN MASSID sections (#102) are separate models keyed ('MASSID', id, LABEL)
+    masses = dict(m.masses)
+    for key, sub in getattr(m, "superelement_models", {}).items():
+        if key[0] == "MASSID":
+            masses.update(sub.masses)
     v["CONM2"] = {k: dict(gid=c.nid, cid=c.cid, m=c.mass, x=_f(c.X), I=_f(c.I))
-                  for k, c in m.masses.items() if c.type == "CONM2"}
+                  for k, c in masses.items() if c.type == "CONM2"}
     v["FORCE"], v["MOMENT"], v["LOAD"], v["GRAV"] = {}, {}, {}, {}
     for sid, loads in m.loads.items():
         for x in loads:
@@ -371,7 +392,7 @@ def _eq(a: Any, b: Any) -> bool:
 
 def _diffs(deck: Path, tmp: Path) -> tuple[list[str], set[str]]:
     lines = _bulk_lines(deck)
-    sb = _sbeam_view(_read_cards(lines))
+    sb = _sbeam_view(_sbeam_bulk(lines))
     model, failed = _pynastran(lines, tmp)
     pn = _pyn_view(model)
     out: list[str] = []
@@ -423,7 +444,7 @@ def test_known_disagreements_still_exist(tmp_path):
         sub = tmp_path / str(i)
         sub.mkdir()
         lines = _bulk_lines(deck)
-        sb = _sbeam_view(_read_cards(lines))
+        sb = _sbeam_view(_sbeam_bulk(lines))
         pn = _pyn_view(_pynastran(lines, sub)[0])
         for card, name in _KNOWN:
             for key, fields in sb.get(card, {}).items():
@@ -526,9 +547,38 @@ def test_multi_file_deck_reads_the_same_model_in_pynastran(deck, tmp_path):
         _for_pynastran(deck.parent / name, tmp_path / name)
     _for_pynastran(deck, tmp_path / deck.name)
     model = BDF(debug=None)
+    # pyNastran 1.4.1 reads BEGIN MASSID sections only with its newer deck parser, off by
+    # default (commit c9554297, 2024-01-05); every other card reads the same with it (#102)
+    model.use_new_deck_parser = True
     model.set_error_storage(nparse_errors=10000, stop_on_parsing_error=False)
     model.read_bdf(str(tmp_path / deck.name), xref=False, validate=False)
     assert sorted(model.nodes) == sorted(bulk.grids)
     assert sorted(model.caeros) == sorted(bulk.caero1s)
     assert sorted(model.masses) == sorted(bulk.conm2s)
     assert sorted(k for k, e in model.elements.items() if e.type == "CBAR") == sorted(bulk.cbars)
+
+
+def test_mass_combination_deck_reads_the_same_sections_and_selectors(tmp_path):
+    """#102: MSC's multiple mass combination (QRG 2024.1 PDF p.286-287, p.482, p.2018).
+
+    pyNastran reads each BEGIN MASSID section as its own model and the case-control
+    MASSSET per subcase.  It stores the bulk MASSSET entry unread (``MISSING_CARDS`` in
+    1.4.1), so S0/Si/IDi have no independent reader: they are gated by the GPWG hand
+    check in ``tests/aero/test_mass_combination.py``.
+    """
+    deck = REPO / "sample" / "ha144a_mass_combination_sweep.bdf"
+    cc, bulk = parse_bdf(deck)
+    # pyNastran finds the case control after CEND, which sbeam decks do not carry
+    (tmp_path / deck.name).write_text(deck.read_text().replace("\nSOL 144\n", "\nSOL 144\nCEND\n", 1))
+    model = BDF(debug=None)
+    model.use_new_deck_parser = True
+    model.set_error_storage(nparse_errors=10000, stop_on_parsing_error=False)
+    model.read_bdf(str(tmp_path / deck.name), xref=False, validate=False)
+    sections = {key[1]: (key[2], sorted(sub.masses))
+                for key, sub in model.superelement_models.items() if key[0] == "MASSID"}
+    assert sections == {mid: (bulk.mass_increment_labels[mid].upper(), sorted(eids))
+                        for mid, eids in bulk.mass_increments.items()}
+    pyn_cc = {k: v.params["MASSSET"][0] for k, v in model.case_control_deck.subcases.items()
+              if "MASSSET" in v.params}
+    assert pyn_cc == {sc.subcase_id: sc.massset_sid for sc in cc.subcases}
+    assert model.card_count["MASSSET"] == len(bulk.mass_combinations)

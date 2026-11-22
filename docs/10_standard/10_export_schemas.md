@@ -41,8 +41,8 @@ downloaded file is byte-identical to the CLI's. SOL 101/103 write the f06 only.
 | Encoding / dialect | `csv.writer` defaults: comma, `\n` line ends, no quoting unless a label needs it, UTF-8 |
 | Header | Exactly one header row, the lists in §3; no comment lines, no units row |
 | **Identity block** | Every file starts `case, massset, mass_case` (static) or `case, mloads, massset, mass_case` (transient). `case` is the subcase id, `mloads` the `MLOADS` SID |
-| **`massset`** | **Always an integer.** `0` = the subcase selects no `MASSCASE` (baseline); otherwise the `MASSCASE` SID. Never empty, so the column keeps one dtype whether or not a run (or a concatenation of runs) contains a baseline case. Constant `BASELINE_MASSCASE` in `load_export.py` |
-| `mass_case` | The mass-case label: `BASELINE` for `massset = 0`, else the `MASSCASE` label |
+| **`massset`** | **Always an integer.** `0` = the subcase selects no mass case (baseline); otherwise the `MASSCASE` SID or the MSC `MASSSET` ID (#102; the two share one ID space). Never empty, so the column keeps one dtype whether or not a run (or a concatenation of runs) contains a baseline case. Constant `BASELINE_MASSCASE` in `load_export.py` |
+| `mass_case` | The mass-case label: `BASELINE` for `massset = 0`, else the `MASSCASE` label, or `MASSSET <ID>` for an MSC combination |
 | Reals | `%.6E` (e.g. `-1.234567E+03`); the `parity` column is `%g` |
 | Integers | ids, `cid`, `axes`, `sample`, `n_members`, `n_samples`, `comp_index`, `*_sample` |
 | Flags | `whole_airplane`, `half_model`, `critical` are `0` / `1` |

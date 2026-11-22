@@ -155,33 +155,33 @@ class TestResolve:
 
     def test_unknown_sid_raises(self):
         bulk = _parse("")
-        with pytest.raises(ValueError, match="MASSCASE 99 selected"):
+        with pytest.raises(ValueError, match="Mass case 99 .MASSCASE or MASSSET. selected"):
             resolve_mass_case(bulk, 99)
 
 
 class TestOldNameIsRefused:
     """#78: MASSSET is MSC's Mass Combination entry (MSC Nastran 2024.1 QRG PDF p.2018:
     ``MASSSET ID S0 S1 ID1 S2 ID2 ...``; case control p.482).  sbeam's card had the name
-    with another layout until it was renamed MASSCASE."""
+    with another layout until it was renamed MASSCASE; since #102 MSC's card is read
+    (``tests/parser/test_mass_combination.py``)."""
 
-    def test_msc_bulk_card_is_refused(self):
+    def test_msc_bulk_card_is_read(self):
         """Audit A8: read as label '1.0', scale 1.0, with ID1/S2/ID2 dropped."""
         from sbeam.parser.bdf_reader import parse_bulk_data
-        with pytest.raises(ValueError, match=r"MASSSET x1 \(MSC mass combination, not "
-                                             r"implemented; sbeam's payload / mass-case card "
-                                             r"is MASSCASE"):
-            parse_bulk_data(["GRID, 1, , 0., 0., 0.", "MASSSET,11,1.0,1.0,0,1.0,101"])
+        bulk = parse_bulk_data(["GRID, 1, , 0., 0., 0.", "MASSSET,11,1.0,1.0,0",
+                                "BEGIN MASSID=101", "CONM2, 5, 1, , 2.0"])
+        assert bulk.mass_combinations[11].terms == [(1.0, 0)]
 
-    def test_old_sbeam_card_is_refused_the_same_way(self):
+    def test_old_sbeam_card_is_refused_naming_masscase(self):
         from sbeam.parser.bdf_reader import parse_bulk_data
-        with pytest.raises(ValueError, match="rename the card"):
+        with pytest.raises(ValueError, match="MASSSET 10: S0=EMPTY is not a number.*is "
+                                             "MASSCASE: rename the card"):
             parse_bulk_data(["GRID, 1, , 0., 0., 0.", "MASSSET, 10, EMPTY, 1.0"])
 
-    def test_case_control_command_is_refused(self):
+    def test_case_control_command_selects_an_msc_combination(self):
         from sbeam.parser.case_control import parse_case_control
-        with pytest.raises(ValueError, match="Case control MASSSET selects an MSC mass "
-                                             "combination.*MASSCASE = n"):
-            parse_case_control(["SOL 144", "SUBCASE 1", "  MASSSET = 11"])
+        sc = parse_case_control(["SOL 144", "SUBCASE 1", "  MASSSET = 11"]).subcases[0]
+        assert (sc.massset_sid, sc.mass_card) == (11, "MASSSET")
 
     def test_new_command_selects_the_mass_case(self):
         from sbeam.parser.case_control import parse_case_control

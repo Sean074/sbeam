@@ -24,6 +24,23 @@ class Massset:
     add: list[int] = field(default_factory=list)                    # overlay EIDs
     replace: list[tuple[int, int]] = field(default_factory=list)    # (baseline, overlay)
     delete: list[int] = field(default_factory=list)                 # baseline EIDs
+    # MSC mass combinations (#102) resolve to a Massset too: ``add`` lists the CONM2s of
+    # the selected BEGIN MASSID sections, each scaled by ``add_scale`` (S0·Si); MASSCASE
+    # overlays enter unscaled.  ``msc`` marks a case built from an MSC MASSSET entry
+    msc: bool = False
+    add_scale: dict[int, float] = field(default_factory=dict)
+
+
+@dataclass
+class MassCombination:
+    """MSC MASSSET bulk entry: a mass combination (MSC Nastran 2024.1 QRG PDF p.2018).
+
+    ``M_ID = S0 · Σ Si·M_IDi``; ``IDi = 0`` is the base mass, ``IDi > 0`` a BEGIN MASSID
+    section.  Selected per subcase by the case-control ``MASSSET = ID`` (p.482).
+    """
+    sid: int
+    s0: float
+    terms: list[tuple[float, int]] = field(default_factory=list)   # (Si, IDi)
 
 
 @dataclass

@@ -32,11 +32,6 @@ _INCLUDE = re.compile(r"\s*INCLUDE\b", re.IGNORECASE)
 #: dropped load).  Field reference: ``docs/10_standard/02_card_reference.md``
 #: "Unsupported cards".
 _UNSUPPORTED_CARDS: dict[str, str] = {
-    # MSC's Mass Combination card (QRG 2024.1 PDF p.2018): ID S0 S1 ID1 S2 ID2 ...  sbeam's
-    # payload card had this name with another layout until #78 and read an MSC card as
-    # label and scale; it is now MASSCASE
-    "MASSSET": "MSC mass combination, not implemented; sbeam's payload / mass-case card "
-               "is MASSCASE, which was named MASSSET before #78: rename the card",
     # distributed / element loads
     "PLOAD": "pressure load", "PLOAD1": "distributed CBAR load",
     "PLOAD2": "pressure load", "PLOAD4": "pressure load",
@@ -179,7 +174,9 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
     strings, any reference to a card the deck does not define (#51), a card after
     ENDDATA and a BEGIN line that opens any section but the main bulk data (#81).
     """
-    bulk = _read_cards(_bulk_section(lines))
+    main, increments = _split_mass_increments(_bulk_section(lines))
+    bulk = _read_cards(main)
+    _read_mass_increments(bulk, increments)
     cross_reference(bulk)
 
     # Resolve all grid positions from their CP system into global CID 0; frame checks
@@ -230,7 +227,23 @@ def parse_bdf(filepath: StrPath) -> tuple[CaseControl, BulkData]:
     cc.includes = [name for at, name in includes if at > begin]
     cc.include = cc.includes[0] if cc.includes else None
     bulk = parse_bulk_data(_bulk_section(lines[begin + 1:], origins[begin + 1:]))
+    _check_mass_case_selectors(cc, bulk)
     return cc, bulk
+
+
+def _check_mass_case_selectors(cc: CaseControl, bulk: BulkData) -> None:
+    """A ``MASSCASE = n`` must select a MASSCASE card and ``MASSSET = n`` an MSC MASSSET (#102)."""
+    for sc in cc.subcases:
+        if sc.massset_sid is None:
+            continue
+        ms = bulk.masssets.get(sc.massset_sid)
+        if ms is None:
+            continue                  # refused when the case is resolved (mass_overlay)
+        if ms.msc != (sc.mass_card == "MASSSET"):
+            card = "an MSC MASSSET" if ms.msc else "a MASSCASE"
+            raise ValueError(f"Subcase {sc.subcase_id}: {sc.mass_card} = {sc.massset_sid} "
+                             f"selects {card}; select it with "
+                             f"{'MASSSET' if ms.msc else 'MASSCASE'} = {sc.massset_sid}")
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +262,70 @@ def _begin_bulk_index(lines: list[str]) -> Optional[int]:
             _refuse_partitioned_bulk(line)
             return i
     return None
+
+
+#: ``BEGIN [BULK] MASSID = massid [LABEL = masslabel]`` opens an incremental mass case
+#: Bulk Data Section (MSC Nastran 2024.1 QRG PDF p.286–287; #102)
+_MASSID = re.compile(r"^BEGIN\s+(?:BULK\s+)?MASSID\s*=\s*(\S+?)"
+                     r"(?:\s+LABEL\s*=\s*(.*))?$", re.IGNORECASE)
+
+
+def _split_mass_increments(lines: list[str]) -> tuple[list[str], list[tuple[int, str, list[str]]]]:
+    """Split the main bulk data from its ``BEGIN MASSID`` sections (#102).
+
+    A section runs to the next BEGIN MASSID or the end of the bulk data.  Returns the main
+    lines and ``(massid, label, lines)`` per section.
+    """
+    main: list[str] = []
+    sections: list[tuple[int, str, list[str]]] = []
+    current: Optional[list[str]] = None
+    for line in lines:
+        m = _MASSID.match(_strip_comment(line))
+        if m:
+            try:
+                massid = int(m.group(1))
+            except ValueError:
+                massid = 0
+            if massid <= 0:
+                raise ValueError(f"{line.strip()!r}: massid must be an integer > 0 "
+                                 "(QRG p.287)")
+            label = (m.group(2) or "").strip().strip("'\"")
+            current = []
+            sections.append((massid, label, current))
+            continue
+        (main if current is None else current).append(line)
+    return main, sections
+
+
+def _read_mass_increments(bulk: BulkData,
+                          sections: list[tuple[int, str, list[str]]]) -> None:
+    """Read each BEGIN MASSID section's CONM2s into ``bulk`` as an increment (#102).
+
+    MSC uses "element connections and element mass properties including materials" from
+    a section and ignores its parameters and grid data (QRG 2024.1 PDF p.482, MASSSET
+    remark 2).  sbeam reads CONM2 there and refuses every other card, ignored ones
+    included, rather than drop it.
+    """
+    for massid, label, lines in sections:
+        if massid in bulk.mass_increments:
+            raise ValueError(f"BEGIN MASSID={massid}: a second section with this massid")
+        for keyword, _fields, _conts in iter_cards(lines):
+            if keyword != "CONM2":
+                raise ValueError(
+                    f"BEGIN MASSID={massid}: {keyword} in an incremental mass section. "
+                    "sbeam reads CONM2 there; MSC ignores grid data and parameters in the "
+                    "section and also takes element mass properties and materials (QRG "
+                    "p.482 remark 2), which sbeam does not. Put the card in the main bulk "
+                    "data or remove it")
+        increment = _read_cards(lines)
+        for eid, conm2 in increment.conm2s.items():
+            if eid in bulk.conm2s:
+                raise ValueError(
+                    f"BEGIN MASSID={massid}: CONM2 {eid} is already defined "
+                    "(in the main bulk data or another mass section)")
+            bulk.conm2s[eid] = conm2
+        bulk.mass_increments[massid] = list(increment.conm2s)
+        bulk.mass_increment_labels[massid] = label
 
 
 def _refuse_partitioned_bulk(line: str) -> None:
@@ -367,6 +444,8 @@ def _bulk_section(lines: list[str], origins: Optional[list[str]] = None) -> list
     for i, line in enumerate(lines):
         clean = _strip_comment(line)
         if clean.upper().startswith("BEGIN"):
+            if _MASSID.match(clean):
+                continue                      # an incremental mass section (#102)
             _refuse_partitioned_bulk(line)
             lines[i] = ""
             continue

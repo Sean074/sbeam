@@ -18,7 +18,8 @@ class SubcaseControl:
     diverg_sid: Optional[int] = None  # DIVERG set ID for SOL 144
     mloads_sid: Optional[int] = None  # MLOADS set ID (Phase G0 transient maneuver loads)
     gustlf_sid: Optional[int] = None  # GUSTLF set ID (FAR/CS 23.341 gust load case)
-    massset_sid: Optional[int] = None # MASSCASE set ID (Step 60 payload / mass case)
+    massset_sid: Optional[int] = None # mass case: MASSCASE SID or MSC MASSSET ID (#102)
+    mass_card: str = "MASSCASE"       # which command selected it: MASSCASE or MASSSET
     displacement: bool = False        # Request DISPLACEMENT output
     spcforce: bool = False            # Request SPCFORCE output
     oload: bool = False               # Request OLOAD output
@@ -65,6 +66,8 @@ _SELECTORS = {
     "MLOADS": "mloads_sid",
     "GUSTLF": "gustlf_sid",
     "MASSCASE": "massset_sid",
+    # MSC's mass combination selector (QRG 2024.1 PDF p.482; #102)
+    "MASSSET": "massset_sid",
 }
 
 # Output requests (command -> SubcaseControl attribute); `= NONE` cancels one.
@@ -133,11 +136,6 @@ _REFUSED = {
     # is not taken as an abbreviation of sbeam's GUSTLF.
     "GUST": "is the SOL 146 gust selector, which sbeam does not support "
             "(sbeam's static gust case is GUSTLF)",
-    # MSC's MASSSET selects a MASSSET bulk entry, a mass combination (QRG PDF p.482).
-    # sbeam's mass-case selector had this name until #78.
-    "MASSSET": "selects an MSC mass combination, which sbeam does not support; sbeam's "
-               "mass case is selected with MASSCASE = n (named MASSSET before #78: "
-               "rename the command)",
 }
 
 _COMMANDS = (frozenset(_SELECTORS) | frozenset(_OUTPUT_REQUESTS) | _STRUCTURE
@@ -283,6 +281,7 @@ def parse_case_control(lines: list[str]) -> CaseControl:
     subcases = []
     defaults = SubcaseControl(subcase_id=1)
     has_defaults = False
+    mass_cmd: dict[int, str] = {}     # id(subcase block) -> MASSCASE/MASSSET written there
     current_sc = None
 
     i = 0
@@ -336,6 +335,15 @@ def parse_case_control(lines: list[str]) -> CaseControl:
                     f"Case control {command}{describers}: describers in "
                     f"parentheses are not supported; write {command} = {value}")
             target = current_sc if current_sc is not None else defaults
+            if command in ("MASSCASE", "MASSSET"):
+                # One mass case per subcase; a subcase may override the default's
+                other = mass_cmd.get(id(target))
+                if other is not None and other != command:
+                    raise ValueError(
+                        f"Case control: {other} and {command} in one subcase select two "
+                        "mass cases; keep one")
+                mass_cmd[id(target)] = command
+                target.mass_card = command
             if command in _SELECTORS:
                 setattr(target, _SELECTORS[command], _cc_set_id(command, value))
             else:
