@@ -200,7 +200,12 @@ def apply_wt2(
     else:
         inv = ajj_inv
     cp_vlm_ref = inv @ -np.ones(n) if cp_ref is None else np.asarray(cp_ref)
+    return np.diag(wt2_ratio(cp_target, cp_vlm_ref)) @ inv
+
+
+def wt2_ratio(cp_target: FloatArray, cp_ref: FloatArray) -> FloatArray:
+    """Per-box WT2 ratio r = target / reference; 1 where |reference| < _RATIO_TOL."""
+    cp_ref = np.asarray(cp_ref, dtype=float)
     with np.errstate(divide="ignore", invalid="ignore"):
-        ratio = np.where(cp_vlm_ref != 0.0, cp_target / cp_vlm_ref, 1.0)
-    r = np.where(np.abs(cp_vlm_ref) > _RATIO_TOL, ratio, 1.0)
-    return np.diag(r) @ inv
+        ratio = np.where(cp_ref != 0.0, cp_target / cp_ref, 1.0)
+    return np.where(np.abs(cp_ref) > _RATIO_TOL, ratio, 1.0)

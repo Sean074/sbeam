@@ -155,6 +155,7 @@ def build_section_correction_multi(
     sid_w2gj_base: int,
     sid_aecorr_base: int,
     beta: float = 1.0,
+    mach: Optional[float] = None,
 ) -> MultiSectionCorrectionResult:
     """Synthesise a per-surface W2GJ + WT2 card pair for one or more surfaces at once.
 
@@ -169,6 +170,8 @@ def build_section_correction_multi(
         beta:    Prandtl–Glauert factor √(1−M²) at the correction Mach. The physical
                  force carries the solver's 1/β scaling, while the emitted WT2 target
                  stays in pure Γ-units (what ``apply_wt2`` reconstructs from). β=1 at M=0.
+        mach:    the correction Mach, written to the AECORR MACH field (#72). When
+                 omitted it is recovered from β; pass it to keep it exact.
 
     Returns:
         MultiSectionCorrectionResult with ``cards[eid] = (W2gj, Aecorr)``, the global
@@ -180,6 +183,7 @@ def build_section_correction_multi(
     """
     targets = list(targets)
     n = len(boxes)
+    card_mach = math.sqrt(max(0.0, 1.0 - beta * beta)) if mach is None else float(mach)
     if ajj.shape != (n, n):
         raise ValueError(
             f"build_section_correction_multi: ajj is {ajj.shape}, expected ({n}, {n}) "
@@ -324,7 +328,7 @@ def build_section_correction_multi(
         w2 = W2gj(sid=sid_w2gj_base + i, caero_eid=T.caero_eid,
                   data=(-wg[surf_idx]).tolist())
         ac = Aecorr(sid=sid_aecorr_base + i, method="WT2", caero_eid=T.caero_eid,
-                    target=cp_target[surf_idx].tolist())
+                    mach=card_mach, target=cp_target[surf_idx].tolist())
         cards[T.caero_eid] = (w2, ac)
         per_surface[T.caero_eid] = SurfaceDiagnostics(
             caero_eid=T.caero_eid, moment_ref=x_mref,
@@ -348,6 +352,7 @@ def build_section_correction(
     sid_aecorr: int,
     moment_ref: Optional[FloatArray] = None,
     beta: float = 1.0,
+    mach: Optional[float] = None,
 ) -> SectionCorrectionResult:
     """Single-surface convenience wrapper around ``build_section_correction_multi``.
 
@@ -376,6 +381,7 @@ def build_section_correction(
     )
     multi = build_section_correction_multi(
         boxes, ajj, [tgt], sid_w2gj_base=sid_w2gj, sid_aecorr_base=sid_aecorr, beta=beta,
+        mach=mach,
     )
     w2, ac = multi.cards[caero_eid]
     d = multi.per_surface[caero_eid]
@@ -398,7 +404,7 @@ def card_lines(name: str, head: list[Any], values: list[float]) -> str:
 
 def pair_to_bdf(w2: W2gj, ac: Aecorr) -> str:
     return (f"{card_lines('W2GJ', [w2.sid, w2.caero_eid], w2.data)}\n"
-            f"{card_lines('AECORR', [ac.sid, ac.method, ac.caero_eid], ac.target)}\n")
+            f"{card_lines('AECORR', [ac.sid, ac.method, ac.caero_eid, ac.mach], ac.target)}\n")
 
 
 def cards_to_bdf(

@@ -126,7 +126,12 @@ class Aecorr:
     sid:       int
     method:    str           # 'WT2' (pressure matching) — the only method supported
     caero_eid: int           # which CAERO1 element this applies to
-    target: list[float] = field(default_factory=list)  # per-box cp (WT2)
+    # Build Mach: the ratio target/reference is formed once at this Mach, in the model
+    # being solved, and applied at every TRIM Mach (#72)
+    mach:      float
+    # Per-box target loading in circulation units on the Prandtl–Glauert-compressed
+    # geometry at ``mach`` (what ``wt2_reference_cp`` returns), not physical ΔCp
+    target: list[float] = field(default_factory=list)
 
 
 @dataclass

@@ -25,7 +25,7 @@ from sbeam.aero.panel import AeroBox, mesh_caero1, build_box_id_map
 from sbeam.aero.vlm import build_ajj, prandtl_glauert_boxes
 from sbeam.aero.integration import build_skj, build_djk, build_wg_all
 from sbeam.aero.corrections import (
-    apply_wkk, apply_wt2, apply_chordcp, check_conditioning, wt2_reference_cp,
+    apply_wkk, apply_chordcp, check_conditioning, wt2_ratio, wt2_reference_cp,
 )
 from sbeam.aero.spline import LoadInjection, build_spline_operators
 from sbeam.aero.strip import strip_box_mask, strip_box_slopes, is_strip_caero
@@ -158,9 +158,14 @@ def _assemble_vlm_operator(
         # the target baseline, and apply_wt2 all share the same factorization.
         lu = check_conditioning(ajj)
         ajj_inv_raw = lu_solve(lu, np.eye(n))
-        # Per-axis reference (#52): uncorrected boxes keep it as their target (r = 1).
-        cp_ref = wt2_reference_cp(op_boxes, ajj_inv_raw)
-        cp_target = cp_ref.copy()
+        # The ratio target/reference is formed at each card's build MACH, against the
+        # per-axis reference (#52) of the model being solved, and applied here at the
+        # TRIM Mach (#72) — as an MSC WKK is one vector for all subcases (AAUG 2023.1
+        # p.144).  Forming it against this model keeps a flying surface's calibration
+        # pinned when body panels are added (gate B4).  At the build Mach this is the
+        # same arithmetic as before; elsewhere it costs one AIC build per card Mach.
+        ref_at = {mach: wt2_reference_cp(op_boxes, ajj_inv_raw)}
+        r = np.ones(n)
         for card in wt2_cards:
             surf_idx = [k for k, b in enumerate(op_boxes) if b.caero_eid == card.caero_eid]
             tgt = np.asarray(card.target, dtype=float)
@@ -168,9 +173,14 @@ def _assemble_vlm_operator(
                 raise ValueError(
                     f"AECORR {card.sid} (WT2, CAERO {card.caero_eid}): target length "
                     f"{tgt.shape[0]} != {len(surf_idx)} boxes on that surface"
+                    " (since #72 field 5 is MACH and the targets start in field 6)"
                 )
-            cp_target[surf_idx] = tgt
-        ajj_inv_corr = apply_wt2(ajj, cp_target, ajj_inv=ajj_inv_raw, cp_ref=cp_ref)
+            if card.mach not in ref_at:
+                ajj_m = build_ajj(prandtl_glauert_boxes(op_boxes, card.mach))
+                ref_at[card.mach] = wt2_reference_cp(
+                    op_boxes, lu_solve(check_conditioning(ajj_m), np.eye(n)))
+            r[surf_idx] = wt2_ratio(tgt, ref_at[card.mach][surf_idx])
+        ajj_inv_corr = np.diag(r) @ ajj_inv_raw
     else:
         lu = check_conditioning(ajj)
         ajj_inv_corr = lu_solve(lu, np.eye(n))

@@ -81,10 +81,22 @@ def _handle_aecorr(fields: list[str], conts: list[list[str]], bulk: BulkData) ->
         raise ValueError(f"AECORR {sid}: METHOD must be WT2, got '{method}'")
     if sid in bulk.aecorrs:
         raise ValueError(f"Duplicate AECORR SID {sid}")
-    target = [to_float(f) for f in fields[4:] if f.strip()]
+    # MACH (field 5, #72): the Mach the target was built at.  It used to be absent, so the
+    # target was re-ratioed against the reference at each TRIM Mach.
+    mach_s = fields[4].strip() if len(fields) > 4 else ""
+    if not mach_s:
+        raise ValueError(
+            f"AECORR {sid}: MACH (field 5) is blank; give the Mach the WT2 target was "
+            "built at. Before #72 the targets started in field 5: insert the build Mach "
+            "there and shift the targets one field right")
+    mach = to_float(mach_s)
+    if not 0.0 <= mach < 1.0:
+        raise ValueError(f"AECORR {sid}: MACH={mach_s} must be in [0, 1)")
+    target = [to_float(f) for f in fields[5:] if f.strip()]
     for cont in conts:
         target += [to_float(f) for f in cont[1:] if f.strip()]
-    bulk.aecorrs[sid] = Aecorr(sid=sid, method=method, caero_eid=caero_eid, target=target)
+    bulk.aecorrs[sid] = Aecorr(sid=sid, method=method, caero_eid=caero_eid, mach=mach,
+                               target=target)
 
 
 def _handle_chordcp(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:

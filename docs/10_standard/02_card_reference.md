@@ -1602,7 +1602,7 @@ WKK, 10, 100, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1
 Higher-fidelity AIC correction that matches VLM predictions to CFD or wind-tunnel
 target data at a reference condition. One method:
 
-- **WT2** (pressure matching): per-box `cp` targets.
+- **WT2** (pressure matching): per-box target loading at a stated build Mach.
 
 A second method, **WT1** (force/moment matching, per-strip lift targets), was
 **removed at the first SOL 144 loads release (DEF-R7)**; `METHOD=WT1` now raises a
@@ -1615,8 +1615,8 @@ the wing missed its own target. Use **WT2** or the section-correction path
 
 **Format:**
 ```
-AECORR  SID  METHOD  CAERO_EID  T1  T2  T3  T4  T5
-+       T6   T7  ...
+AECORR  SID  METHOD  CAERO_EID  MACH  T1  T2  T3  T4
++       T5   T6  ...
 ```
 
 **Fields:**
@@ -1626,7 +1626,24 @@ AECORR  SID  METHOD  CAERO_EID  T1  T2  T3  T4  T5
 | SID | `sid` | int | Set ID | required |
 | METHOD | `method` | str | `'WT2'` — the only accepted value; `'WT1'` raises a `ValueError` naming its removal (DEF-R7), any other value raises `ValueError` | required |
 | CAERO_EID | `caero_eid` | int | EID of the CAERO1 this correction applies to | required |
-| T1–TN | `target` | list[float] | Target cp per box (row-major) | required |
+| MACH | `mach` | float | Build Mach: the Mach the targets were computed at, `0 ≤ MACH < 1`. Blank is refused (#72) | required |
+| T1–TN | `target` | list[float] | Target loading per box (row-major), in **circulation units on the Prandtl–Glauert-compressed geometry at MACH** — the units of `corrections.wt2_reference_cp`, which the correction builders write. **Not** physical ΔCp: a box's ΔCp is `2·T/(c_box·β)`. One value per box of the surface | required |
+
+**MACH and the TRIM Mach (#72).** The solver forms the ratio `r = T / reference` once per
+box, at the card's MACH, against the reference loading of the model being solved, and
+applies `diag(r)·AJJ⁻¹` at every TRIM Mach — as MSC applies a WKK, "a single vector that
+applies to all subcases" (AAUG 2023.1 PDF p.144). A TRIM at another Mach therefore keeps the
+VLM's own Mach trend scaled by the calibration, at the cost of one extra AIC build per
+card Mach. Forming `r` against the current model, not storing it, is what keeps a flying
+surface's calibration in place when body panels are added (gate B4).
+
+> **Before #72** the card had no MACH: the targets started in field 5, were described as
+> "target cp per box", and were re-ratioed against the reference at each TRIM Mach, so a
+> card built at M1 gave the bare `1/β` trend at M2 instead of the VLM's (1.2247 against
+> 1.1292 for M 0.2 → 0.6 on a 20 × 4 rectangular wing). **Migrate a deck:** insert the
+> build Mach in field 5 and shift the targets one field right; an old card is refused by
+> the target-length check, which names the new layout. The repo decks were built at
+> Mach 0 and give identical results.
 
 Reference loading: **per incidence axis** (#52, `corrections.wt2_reference_cp`). Each
 CAERO1 whose boxes' dominant normal is `y` (a fin, a vertical body panel) is a β surface;
@@ -1639,8 +1656,9 @@ port/starboard asymmetric at β = 0.
 
 **Examples:**
 ```
-$ WT2: pressure-matching targets for an 8-box panel
-AECORR, 20, WT2, 100, 0.45, 0.30, 0.22, 0.18, 0.45, 0.30, 0.22, 0.18
+$ WT2: targets for an 8-box panel, built at Mach 0
+AECORR, 20, WT2, 100, 0.0, 0.45, 0.30, 0.22, 0.18
++, 0.45, 0.30, 0.22, 0.18
 
 ```
 

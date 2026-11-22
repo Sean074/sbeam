@@ -160,7 +160,7 @@ class TestIdentity:
             for i, eid in enumerate(sorted(bulk.caero1s)):
                 local = [k for k, b in enumerate(aero_raw.boxes) if b.caero_eid == eid]
                 bulk.aecorrs[8000 + i] = Aecorr(
-                    sid=8000 + i, method="WT2", caero_eid=eid,
+                    sid=8000 + i, method="WT2", caero_eid=eid, mach=aero_raw.mach,
                     target=(1.15 * gamma_ref[local]).tolist(),
                 )
             with warnings.catch_warnings():

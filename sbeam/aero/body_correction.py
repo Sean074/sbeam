@@ -462,7 +462,7 @@ def build_body_correction(
         # normalwash ``wg_body`` is the negated sense — see ``build_wg``.
         w2 = W2gj(sid=sid_w2gj_base + i, caero_eid=eid, data=(-wg_body[idx]).tolist())
         ac = Aecorr(sid=sid_aecorr_base + i, method="WT2", caero_eid=eid,
-                    target=(r[idx] * gamma_ref[idx]).tolist())
+                    mach=aero0.mach, target=(r[idx] * gamma_ref[idx]).tolist())
         cards[eid] = (w2, ac)
 
     # Achieved totals are analytic to ~1e-13 (the body WT2 ratio is a

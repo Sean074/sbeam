@@ -10,6 +10,21 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Breaking changes
+- **AECORR carries its build Mach in field 5; the targets start in field 6** (#72; pre-1.0
+  MINOR break). The WT2 target is a loading in circulation units on the Prandtl–Glauert
+  geometry at the Mach it was built at, but the card had no Mach and the card reference
+  called it "target cp per box". The solver re-ratioed it against the reference at each
+  TRIM Mach, so a card built at M1 gave the bare `1/β` trend at M2 instead of the VLM's
+  three-dimensional one (1.2247 against 1.1292 for M 0.2 → 0.6 on a 20 × 4 wing). The
+  ratio is now formed once at the card's MACH, against the model being solved, and applied
+  at every TRIM Mach, as MSC applies a WKK (AAUG 2023.1 PDF p.144). Storing the ratio
+  itself on the card was tried and rejected: it let the cruciform body panels load the
+  wing (flying-box ΔCp moved by up to 1.08, gate B4; branch `wip/72-wkk-ratios`). The
+  card reference now states the units. **Migrate a deck:** insert the build Mach in
+  field 5; an old card is refused by the target-length check, which says so. The two repo
+  decks (built at Mach 0) are reflowed with the same target tokens and give identical
+  results; the correction builders write MACH. Gate `tests/aero/test_aecorr_mach.py`.
+  Found by the 2026-11-16 audit (M2).
 - **The sbeam mass-case card and command are renamed `MASSSET` → `MASSCASE`** (#78; pre-1.0
   MINOR break). MSC has its own `MASSSET` bulk entry, `MASSSET ID S0 S1 ID1 S2 ID2 …` (Mass
   Combination Definition, QRG 2024.1 PDF p.2018), and a case-control `MASSSET = n` that
