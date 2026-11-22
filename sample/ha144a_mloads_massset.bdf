@@ -1,4 +1,4 @@
-$ HA144A full-span — Step 63 free-flight maneuver x MASSSET payload sweep
+$ HA144A full-span — Step 63 free-flight maneuver x MASSCASE payload sweep
 $
 $ Purpose: the full "maneuvers x payload conditions" demonstration (G0-b).
 $ One deck, one elevator ramp-and-hold command shape, three payload conditions
@@ -10,9 +10,9 @@ $ (fwd/aft fuselage split), so the sweep is a near-pure mass change and the
 $ physics check holds: heavier case => lower steady NZ_REL for the same
 $ elevator increment.
 $
-$   MASSSET 10  EMPTY     16000 lb   baggage DELETEd
-$   MASSSET 20  HALFFUEL  18500 lb   + 2500 lb fuselage fuel (ADD)
-$   MASSSET 30  FULLFUEL  21000 lb   + 5000 lb fuel + baggage 500->1000 (REPLACE)
+$   MASSCASE 10  EMPTY     16000 lb   baggage DELETEd
+$   MASSCASE 20  HALFFUEL  18500 lb   + 2500 lb fuselage fuel (ADD)
+$   MASSCASE 30  FULLFUEL  21000 lb   + 5000 lb fuel + baggage 500->1000 (REPLACE)
 $
 $ MLDCOMD tables are ABSOLUTE and therefore mass-case-specific: each subcase
 $ has its own MLOADS/MLDCOMD/TABLED1 whose t=0 value is that case's trim ELEV
@@ -27,22 +27,22 @@ $
 $ Units: ft, lb, slug, s
 $
 SOL 144
-TITLE = HA144A free-flight MLOADS x MASSSET sweep
-$ Subcase 1 — EMPTY (MASSSET 10)
+TITLE = HA144A free-flight MLOADS x MASSCASE sweep
+$ Subcase 1 — EMPTY (MASSCASE 10)
 SUBCASE 1
   MLOADS  = 10
   SPC     = 1
-  MASSSET = 10
-$ Subcase 2 — HALF FUEL (MASSSET 20)
+  MASSCASE = 10
+$ Subcase 2 — HALF FUEL (MASSCASE 20)
 SUBCASE 2
   MLOADS  = 20
   SPC     = 1
-  MASSSET = 20
-$ Subcase 3 — FULL FUEL (MASSSET 30)
+  MASSCASE = 20
+$ Subcase 3 — FULL FUEL (MASSCASE 30)
 SUBCASE 3
   MLOADS  = 30
   SPC     = 1
-  MASSSET = 30
+  MASSCASE = 30
 BEGIN BULK
 $
 $ ============================================================
@@ -151,11 +151,11 @@ CONM2, 411, 211, 0, 18.647
 CONM2, 421, 221, 0, 18.647
 CONM2, 412, 212, 0, 12.431
 CONM2, 422, 222, 0, 12.431
-$ Baggage — a BASELINE mass (500 lb): DELETEd by MASSSET 10, REPLACEd by 30.
+$ Baggage — a BASELINE mass (500 lb): DELETEd by MASSCASE 10, REPLACEd by 30.
 CONM2, 5000, 98, 0, 15.5405
 $
 $ ------------------------------------------------------------------
-$ OVERLAY CONM2s — referenced by a MASSSET ADD / REPLACE-overlay slot,
+$ OVERLAY CONM2s — referenced by a MASSCASE ADD / REPLACE-overlay slot,
 $ so they are excluded from the baseline mass and only enter the cases
 $ that name them.  The fwd (GRID 98, x=10) / aft (GRID 99, x=20) tank
 $ split is 30/70 so the fuel CG sits at the baseline CG (x ~ 17) — the
@@ -171,13 +171,13 @@ $ Heavy baggage (1000 lb) — replaces baseline CONM2 5000 in the FULL case
 CONM2, 6020, 98, 0, 31.0810
 $
 $ ============================================================
-$ MASS CASES (Step 60) — selected per subcase by case-control MASSSET
+$ MASS CASES (Step 60) — selected per subcase by case-control MASSCASE
 $ ============================================================
-MASSSET, 10, EMPTY, 1.0
+MASSCASE, 10, EMPTY, 1.0
 +, DELETE, 5000
-MASSSET, 20, HALFFUEL, 1.0
+MASSCASE, 20, HALFFUEL, 1.0
 +, ADD, 6001, 6002
-MASSSET, 30, FULLFUEL, 1.0
+MASSCASE, 30, FULLFUEL, 1.0
 +, ADD, 6011, 6012
 +, REPLACE, 5000, 6020
 $
@@ -266,17 +266,21 @@ SET1, 1320, 111, 112, 121, 122
 AECOMP, WINGEA, SET1, 1320
 $ Whole-aircraft monitor grids.  Every spline-load grid AND every CONM2-bearing grid — grid 97 carries mass
 $ but no spline load; omitting it lost 18.75 % of the inertia (DEF-M10).
-SET1, 1310, 97, 98, 99, 100, 111, 112, 121, 122, 211,
-+, 212, 221, 222
+SET1, 1310, 97, 98, 99, 100, 111, 112, 121
++, 122, 211, 212, 221, 222
 AECOMP, ALLGRID, SET1, 1310
 $ Whole-aircraft aero boxes (all 4 CAERO1 panels)
 AELIST, 1400, 1000, THRU, 1007, 1100, THRU, 1131, 2000, THRU, 2007, 2100, THRU, 2131
 AECOMP, ALLAERO, AELIST, 1400
 $ MONPNT3 section cuts (aero + inertia + reaction) and MONPNT1 aero-only:
-MONPNT3, MWINGRT, WING ROOT, 35, WINGROOT, 0, 15.0, 0.0, 0.0
-MONPNT3, MWINGEA, RIGHT WING, 35, WINGEA, 0, 15.0, 0.0, 0.0
-MONPNT3, MALLEA, WHOLE AIRCRAFT, 35, ALLGRID, 0, 15.0, 0.0, 0.0
-MONPNT1, MALLAR, AIRCRAFT AERO, 35, ALLAERO, 0, 15.0, 0.0, 0.0
+MONPNT1 MWINGRT WING ROOT
++, 35, WINGROOT, 0, 15.0, 0.0, 0.0
+MONPNT1 MWINGEA RIGHT WING
++, 35, WINGEA, 0, 15.0, 0.0, 0.0
+MONPNT1 MALLEA  WHOLE AIRCRAFT
++, 35, ALLGRID, 0, 15.0, 0.0, 0.0
+MONPNT1 MALLAR  AIRCRAFT AERO
++, 35, ALLAERO, 0, 15.0, 0.0, 0.0
 $
 $ ============================================================
 $ AERODYNAMIC TRIM VARIABLES
@@ -303,10 +307,10 @@ W2GJ, 1, 1100
 +, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
 +, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
 W2GJ, 2, 2100
-+, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
-+, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
-+, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
-+, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
++, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3
++, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3
++, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3
++, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3
 $
 $ ============================================================
 $ TRIM CARDS — q=40 (SC1) and q=1200 (SC2), both M=0.9, 1g (URDD3=-32.174)

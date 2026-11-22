@@ -50,7 +50,7 @@ A sample model is provided at `sample/simple_beam.dat` — a 10 m steel cantilev
 python -m sbeam.main path/to/model.bdf
 ```
 
-The solver reads the case control file (`.bdf`), which uses `INCLUDE` to reference the bulk data file (`.dat`). Results are written to a `.f06` file in NASTRAN format.
+The solver reads the run file (`.bdf`): case control, then `BEGIN BULK`, where an `INCLUDE` may bring in the bulk data file (`.dat`). Results are written to a `.f06` file in NASTRAN format.
 
 ## Running the Loads Tools
 
@@ -110,7 +110,7 @@ code standard (`10_standard/`), theory & worked examples (`20_theory/`), future 
 | Elements | `CBAR`, `CROD`, `CONROD`, `CBUSH`, `PLOTEL`, `RBE2`, `RBE3`, `RBAR` |
 | Properties | `PBAR`, `PROD`, `PBUSH` |
 | Material | `MAT1` |
-| Mass | `CONM2`, `MASSSET` |
+| Mass | `CONM2`, `MASSCASE` |
 | Constraints | `SPC`, `SPC1`, `SUPORT` |
 | Loads | `FORCE`, `MOMENT`, `LOAD`, `GRAV` |
 | Eigenvalue | `EIGRL` |
@@ -143,7 +143,7 @@ Full field-by-field definitions: [`docs/10_standard/02_card_reference.md`](docs/
 - **`GRAV` requires CID=0** — a non-zero CID on a `GRAV` card raises a parse error.
 
 ### Elements
-- **`RBE3` simplified** — uses same-DOF weighted averaging; rotation-to-translation lever-arm coupling across an offset is not applied. Use `RBAR` for kinematically exact rigid connections when grid offsets are present.
+- **`RBE3` simplified** — uses same-DOF weighted averaging; rotation-to-translation lever-arm coupling across an offset is not applied. Use `RBAR` for kinematically exact rigid connections when grid offsets are present. An offset RBE3 warns, and a REFC DOF in no Ci (e.g. `REFC=123456` with `Ci=123`) is refused.
 - **`CBUSH` requires CID=0** — element offsets are not supported.
 
 ### Loads

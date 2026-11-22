@@ -516,15 +516,22 @@ correct *unsteady* (out-of-phase) pressure from a steady correction is a separat
 
 ### 3.1 Diagonal weighting $W_{kk}$
 
-The cheapest correction multiplies each box's influence by a scalar, tuning the local
-lift-curve slope or sweep effect:
+The cheapest correction multiplies each box's **lift** by a scalar, after the pressures are
+solved, tuning the local lift-curve slope or sweep effect. MSC applies it to the box forces,
+$\{P_k\} = q\,[W_{kk}][S_{kj}][A_{jj}]^{-1}\{w_j\}$ (MSC Nastran 2023.1 Aeroelastic Analysis
+User's Guide, PDF p.40 eq 2-21 and p.70 eq 2-106; NX Nastran identical, Aeroelastic Analysis
+User's Guide 2014, PDF p.147), so on the pressure operator:
 
 $$
-A_{jj}^\ast = W_{kk}\,A_{jj}, \qquad W_{kk}=\operatorname{diag}(w_1,\dots,w_N) .
+A_{jj}^{\ast\,-1} = W_{kk}\,A_{jj}^{-1}, \qquad W_{kk}=\operatorname{diag}(w_1,\dots,w_N) .
 \tag{11}
 $$
 
-With $W_{kk}=I$ the inviscid result is recovered. A diagonal weighting cannot reshape a load
+A weight of 1.1 raises that box's lift by 10% and leaves every other box unchanged. Until #71
+sbeam wrote this as $A_{jj}^\ast = W_{kk}A_{jj}$ and inverted it, which applies $1/w$ on the
+downwash side: 1.1 gave 0.909× the lift. sbeam's weight is one value per box and scales the
+box's force and moment together; MSC's `WKK` is a k-set matrix with separate force and moment
+entries (AAUG PDF p.144). With $W_{kk}=I$ the inviscid result is recovered. A diagonal weighting cannot reshape a load
 distribution — it only scales box-by-box — so it is a local tuning tool, not a way to match a
 full CFD/WT load.
 
@@ -543,6 +550,12 @@ $$
 
 This matches the surface pressure field directly and is the right choice when a chordwise/
 spanwise $c_p$ map is available.
+
+**As implemented, sbeam's WT2 is not Eq. (12).** `apply_wt2` scales the *rows* of
+$A_{jj}^{-1}$, $A_{jj}^{\ast\,-1} = \operatorname{diag}(r)\,A_{jj}^{-1}$ with
+$r_k = c_{p,k}^\text{target}/c_{p,k}^\text{ref}$: the pressure side, the placement of Eq. (11).
+It is a $W_{kk}$ whose weights are generated from the target, not the downwash-side
+Pitt–Goodman matrix of Eq. (12).
 
 ### 3.3 Force/moment matching $W_{T1}$ (Giesing method)
 
@@ -578,8 +591,10 @@ multi-surface deck it rescales strips it was never pointed at. The theory of Eq.
 unaffected — the defects are in the sbeam implementation, and the remedy is the §3.5 synthesiser,
 which applies the $1/\beta$ factor correctly and is scoped per surface.
 
-These match the ZAERO *Theoretical Manual* §4 forms (its Eqs. 4.55–4.58); $W_{kk}$ is the
-diagonal special case of $W_{T2}$.
+Eqs. (12) and (13) are the ZAERO *Theoretical Manual* §4 forms (its Eqs. 4.55–4.58, PDF
+p.119–120), where ZAERO's AIC is the pressure-from-downwash matrix, $[A_{jj}]^{-1}$ here. On the
+box set, $W_{kk}$ is the diagonal special case of the force-side $W_{T1}$, not of the
+downwash-side $W_{T2}$.
 
 ### 3.4 Using the correction at the operating point
 
@@ -988,7 +1003,12 @@ $$
   effectors). The solution minimises a user objective $\text{Obj}=\sum_i (C_{1i}F_i - S_{1i})^{e_{1i}}\!+\dots$
   over the trim functions $F_i$, subject to inequality constraints $G_i = (F_i-S_i)^{e_i}\lessgtr V_i$,
   with bounds and an initial guess on each variable. The square case is the special case with no
-  free objective. (This is the ZAERO `TRIMOBJ`/`TRIMCON`/`TRIMVAR` formulation.) *sbeam
+  free objective. (This is the ZAERO formulation: `TRIMOBJ` and `TRIMCON` build the
+  objective and the constraints from trim *functions* defined on `TRIMFNC` cards, ZAERO 9.2
+  User's Manual PDF p.510, p.501, p.504.) **sbeam's cards share the three names but not the
+  formulation or the layouts** (#77): its objective is a weighted sum of squares of the trim
+  *variables* themselves, its TRIMCON is a bound on one variable, and its TRIMVAR fields
+  are in a different order (p.511). *sbeam
   implementation:* the equilibrium equations are eliminated by a null-space reduction
   $\delta=\delta_p + N z$ ($N=\operatorname{null}(\text{schur}_A)$, so equilibrium holds for any
   $z$); the redundancy coordinate $z$ then minimises the convex weighted-L2 objective
@@ -1108,8 +1128,8 @@ Rewritten as the standard problem $(K_{ll}^{-1}Q_{ll})\,x = (1/q)\,x$, the eigen
 $1/q$; the lowest $\texttt{NROOTS}$ divergence pressures are the reciprocals of the largest
 real-positive eigenvalues, taken in ascending $q$. This is the `DIVERG`-card sweep
 (`sol144.run_sol144_diverg` / `_divergence_roots`); each retained eigenvector $\phi$ is the
-divergence mode shape, expanded back to the g-set, and $V_\text{div}=\sqrt{2\,q_\text{div}/\rho}$
-when a reference density `RHOREF` is supplied.
+divergence mode shape, expanded back to the g-set. Like MSC, the solver reports dynamic
+pressures only (QRG 2024.1 p.1603, remark 2); the speed is worked out from them as in §5.5.1.
 
 ![Divergence amplification](../figures/divergence.svg)
 
@@ -1119,6 +1139,64 @@ static-aeroelastic instability.*
 
 The closed-form checks are the uniform cantilever wing (Bisplinghoff analytical $q_\text{div}$)
 and the Goland wing.
+
+#### 5.5.1 Divergence speed from a density
+
+Equation (21) fixes a dynamic pressure, not a speed: $K_{ll}$ and $Q_{ll}$ contain no density.
+A speed needs the density of a flight condition, which the deck does not define, so the
+`DIVERG` card carries Mach numbers only and the conversion is done afterwards (#73). From
+$q=\tfrac12\rho V^2$,
+
+$$
+V_\text{div} = \sqrt{\frac{2\,q_\text{div}}{\rho}} .
+\tag{21a}
+$$
+
+**Units.** $q_\text{div}$ is in the deck's pressure unit, so $\rho$ must be in the matching
+*mass* unit per volume — as MSC requires of its own reference density ("RHOREF must be input in
+mass units", AERO card, QRG 2024.1 p.1150, remark 4). At sea-level ISA:
+
+| Deck units | $q_\text{div}$ | $\rho_0$ | $V_\text{div}$ |
+|---|---|---|---|
+| N, m, kg | 20 000 Pa | 1.225 kg/m³ | 180.7 m/s |
+| lbf, ft, slug | 500 lbf/ft² | 0.0023769 slug/ft³ | 648.6 ft/s |
+| lbf, in | 3.472 lbf/in² (= 500 lbf/ft²) | 1.1463×10⁻⁷ lbf·s²/in⁴ (= slug/ft³ ÷ 12⁴) | 7783.5 in/s (= 648.6 ft/s) |
+
+The lbf-in density is the usual trap: entering the slug/ft³ value 0.0023769 in an lbf-in deck
+makes $\rho$ $12^4 = 20\,736$ times too large and the speed $\sqrt{20\,736}=144$ times too small
+(54.1 in/s).
+
+**True or equivalent airspeed.** With the density at altitude, Equation (21a) gives the true
+airspeed (TAS). With the sea-level density $\rho_0$ it gives the equivalent airspeed (EAS),
+$V_E=\sqrt{2\,q_\text{div}/\rho_0}$, which depends on $q_\text{div}$ alone and is the same at
+every altitude for a given Mach.
+
+**Matching the Mach number.** $q_\text{div}$ is computed at the Mach on the card. Subsonic
+compressibility (Prandtl–Glauert) raises the lift slope, so $q_\text{div}$ normally falls as
+Mach rises. A speed from Equation (21a) is only a flight condition
+if the aircraft flying at that speed and altitude is at the Mach used. At altitude $h$ with
+speed of sound $a$ and static pressure $p$, flight at Mach $M$ has
+
+$$
+q_\text{fly}(M) = \tfrac12\,\rho\,a^2 M^2 = \tfrac{\gamma}{2}\,p\,M^2 \quad(\gamma = 1.4),
+\tag{21b}
+$$
+
+which rises with $M$, while $q_\text{div}(M)$ falls. The matched divergence point is the Mach
+$M^*$ where they cross, $q_\text{fly}(M^*) = q_\text{div}(M^*)$:
+
+1. List enough Mach numbers on `DIVERG` to bracket the crossing (e.g. 0.0, 0.5, 0.7, 0.8, 0.9).
+2. For each, compute $q_\text{fly}(M_i)$ at the altitude and compare with the lowest root
+   $q_\text{div}(M_i)$.
+3. Interpolate $q_\text{div}-q_\text{fly}$ to zero for $M^*$; then
+   $V_\text{div,TAS} = M^*a$ and $V_\text{div,EAS} = \sqrt{2\,q_\text{div}(M^*)/\rho_0}$.
+
+A speed taken at a single card Mach with an unrelated density — for instance Mach 0.0 with
+the sea-level density for a high-subsonic aircraft — ignores the drop in $q_\text{div}$ with
+Mach and overstates the divergence speed. Repeat at each altitude of interest; the lowest
+matched speed over the flight envelope is the one to compare with the airworthiness margin,
+a process-tier check (`docs/30_future/loads_process.md`). The viewer's divergence table
+applies Equation (21a) at a density the user enters (`06_viewer.md`).
 
 ---
 
@@ -1493,7 +1571,7 @@ opposite sides.
 
 *Implemented (Monitor Phase 2, `results/section_cuts.py`, card `MONSECT`):* see
 `docs/10_standard/05c_sol144_maneuver.md`. Because the inertia term of Equation (30a) is the
-§7.3 net load, a `MASSSET` payload sweep produces a station table per mass case with no
+§7.3 net load, a `MASSCASE` payload sweep produces a station table per mass case with no
 additional input — which is how the classic **wing-fuel bending relief** (fuel outboard reduces
 the net root bending even as the airplane gets heavier) falls out of the tables directly.
 
@@ -1678,7 +1756,7 @@ $$
 re-normalised so $\phi_e^{\mathsf T} M_{aa}\phi_e = 1$. Then $\Phi_e^{\mathsf T} M_{aa}\Phi_r=0$
 by construction, which *is* the mean-axis condition (ZAERO Ch. 12, Eqs. 12.9–12.16) — the same
 physics as the unrestrained (mean-axis) stability derivatives of §5. At the baseline mass case
-$M_{hh}$ is block diagonal, $\operatorname{diag}(M_{rr}, I)$; off the baseline (a MASSSET case
+$M_{hh}$ is block diagonal, $\operatorname{diag}(M_{rr}, I)$; off the baseline (a MASSCASE case
 with $\Phi$ held fixed) it is full, and that coupling is the whole content of the fixed-basis
 approximation.
 
@@ -1814,7 +1892,7 @@ solution. With a cosine-sampled ramp the peak-CBAR-force error decays monotonica
 NMODES $\in \{2, 4, 8, \text{all}\}$ and mode-acceleration beats mode-displacement recovery by
 $\gg 10\times$.
 
-**Fixed-$\Phi$ mass cases.** A MASSSET subcase swaps only the mass side — $M_{ll,i}$,
+**Fixed-$\Phi$ mass cases.** A MASSCASE subcase swaps only the mass side — $M_{ll,i}$,
 $M_{ax,i}$ and the IC trim, through the same subcase-threaded assembly both solvers share —
 while $\Phi$, the AIC, splines and all aero operators are reused untouched. With all modes
 retained the fixed-$\Phi$ off-baseline solution still matches the direct solver on the same
@@ -1851,7 +1929,7 @@ steady label paths reproduce the EOM's rigid terms exactly:
   drops the elastic modes' rigid aero — both measured before the identity converged.)
 
 The recovered closure is then the *discrete Newmark residual* — round-off at every $\Delta t$ —
-which is the G0-b self-balancing gate. Under a MASSSET the baseline mean axis is not the case
+which is the G0-b self-balancing gate. Under a MASSCASE the baseline mean axis is not the case
 mean axis ($\Phi_r^{\mathsf T}M_{\text{case}}\Phi_e \neq 0$), which would give the elastic
 inertia a rigid-row resultant the labels cannot carry; the solver therefore re-orthogonalizes
 $\Phi_e \leftarrow \Phi_e - \Phi_r M_{rr,\text{case}}^{-1}(\Phi_r^{\mathsf T}

@@ -68,12 +68,12 @@ def emit_force_moment_cards(
 
 
 def massset_comment(sid: Optional[int], label: str, mass: Optional[float] = None) -> str:
-    """The ``$ MASSSET=<int> (<label>)[  MASS=<m>]`` comment line of a load BDF (#31).
+    """The ``$ MASSCASE=<int> (<label>)[  MASS=<m>]`` comment line of a load BDF (#31).
 
-    Written for every block, baseline included (``MASSSET=0 (BASELINE)``), so the
+    Written for every block, baseline included (``MASSCASE=0 (BASELINE)``), so the
     comment header has one shape a reader can rely on.
     """
-    line = f"$ MASSSET={BASELINE_MASSSET if sid is None else sid} ({label})"
+    line = f"$ MASSCASE={BASELINE_MASSCASE if sid is None else sid} ({label})"
     return line if mass is None else f"{line}  MASS={mass:g}"
 
 
@@ -148,7 +148,7 @@ def build_maneuver_load_cards_text(
         f"$ SOL 144 balanced maneuver loads ({what}) — subcase {result.subcase_id}, SID {sid}",
         f"$ TRIM={result.trim_sid}  Q={result.q:g}  MACH={result.mach:g}  CZ={result.total_cl:.6f}",
         f"$ FORCE/MOMENT set is the net ({net}) maneuver load for stress (Step 53).",
-        # Always present (#31): MASSSET=0 (BASELINE) when the subcase selects no mass case.
+        # Always present (#31): MASSCASE=0 (BASELINE) when the subcase selects no mass case.
         massset_comment(result.massset_sid, result.massset_label, result.massset_mass),
     ]
     lines += emit_force_moment_cards(result.net_loads, bulk, grid_index, sid)
@@ -180,11 +180,11 @@ def write_aero_load_cards(
 # gates the header constants below and the identity block.  Every CSV starts
 # with the case identity ``case, [mloads,] massset, mass_case``; ``massset`` is
 # always an integer (``0`` = baseline, so the column keeps one dtype across a
-# baseline run and a MASSSET sweep) and ``mass_case`` is its label.
+# baseline run and a MASSCASE sweep) and ``mass_case`` is its label.
 # ---------------------------------------------------------------------------
 
-#: ``massset`` value written for a subcase that selects no MASSSET.
-BASELINE_MASSSET = 0
+#: ``massset`` value written for a subcase that selects no MASSCASE.
+BASELINE_MASSCASE = 0
 
 
 def _massset_fields(result: object) -> tuple[int, str]:
@@ -194,7 +194,7 @@ def _massset_fields(result: object) -> tuple[int, str]:
     output tests build (no mass-case fields at all).
     """
     sid = getattr(result, "massset_sid", None)
-    return (BASELINE_MASSSET if sid is None else int(sid),
+    return (BASELINE_MASSCASE if sid is None else int(sid),
             getattr(result, "massset_label", "BASELINE"))
 
 

@@ -85,21 +85,21 @@ def _template_csv(aero_model: AeroModel) -> str:
 
 
 def _warn_conflicts(bulk: BulkData, eids: list[int]) -> None:
-    """Surface correction-card clashes that ``build_aero_model`` would resolve silently."""
+    """Warn before applying cards that ``build_aero_model`` would refuse (#96)."""
     own = st.session_state.get("aero_corr_sids", set())
     for eid in eids:
         if any(c.caero_eid == eid for c in bulk.wkks.values()):
             st.warning(
-                f"CAERO {eid}: a WKK card is already in the model — build_aero_model applies "
-                "WKK before WT2, so the generated WT2 would be ignored. Remove the WKK to use "
-                "this correction."
+                f"CAERO {eid}: a WKK card is already in the model, and a surface takes one "
+                "correction — the solver refuses WKK and WT2 on the same CAERO1. Remove the "
+                "WKK to use this correction."
             )
         clashing = [c.sid for c in bulk.aecorrs.values()
                     if c.caero_eid == eid and c.method == "WT2" and c.sid not in own]
         if clashing:
             st.warning(
                 f"CAERO {eid}: a non-generated WT2 AECORR (sid {clashing}) is already present; "
-                "applying adds another WT2 on the same surface."
+                "the solver refuses two WT2 cards on one surface. Remove it to use this one."
             )
 
 

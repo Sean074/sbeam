@@ -22,7 +22,9 @@ def _make_simple_bulk(k1=0.0, k2=0.0, k3=0.0, k4=0.0, k5=0.0, k6=0.0, grounded=F
     bulk.grids[2] = Grid(gid=2, x=1.0, y=0.0, z=0.0)
     bulk.pbushs[10] = Pbush(pid=10, k1=k1, k2=k2, k3=k3, k4=k4, k5=k5, k6=k6)
     gb = None if grounded else 2
-    bulk.cbushs[1] = Cbush(eid=1, pid=10, ga=1, gb=gb, x1=0.0, x2=1.0, x3=0.0)
+    # A grounded CBUSH takes its axes from a CID (QRG p.1379 remark 6); 0 = basic
+    bulk.cbushs[1] = Cbush(eid=1, pid=10, ga=1, gb=gb, x1=0.0, x2=1.0, x3=0.0,
+                           cid=0 if grounded else None)
     return bulk
 
 
@@ -62,7 +64,7 @@ class TestCbushTransformMatrix:
             1: Grid(gid=1, x=0.5, y=0.5, z=0.5),
             2: Grid(gid=2, x=0.5, y=0.5, z=0.5),
         }
-        with pytest.raises(ValueError, match="coincident"):
+        with pytest.raises(ValueError, match="closer than 0.0001, so CID must be specified"):
             cbush_transform_matrix(cbush, grids)
 
     def test_default_orientation_when_vector_zero(self):
@@ -211,7 +213,7 @@ class TestCbushGroundedSolver:
         lines = [
             "GRID, 1, 0, 0.0, 0.0, 0.0",
             "PBUSH, 10, K, {K1}".format(K1=K1),
-            "CBUSH, 1, 10, 1,  ,  ,  ,  ,  ,  ",
+            "CBUSH, 1, 10, 1,  ,  ,  ,  , 0",
             "SPC1, 1, 23456, 1",
             "FORCE, 2, 1, 0, {F}, 1.0, 0.0, 0.0".format(F=F),
         ]
@@ -261,7 +263,7 @@ class TestCbushMixed:
             "CBAR, 2, 1, 2, 3, 0.0, 1.0, 0.0",
             # CBUSH spring at mid-node (node 2) in Y direction
             "PBUSH, 10, K, 0.0, {Ks}".format(Ks=K_spring),
-            "CBUSH, 10, 10, 2,  ,  ,  ,  ,  ,  ",
+            "CBUSH, 10, 10, 2,  ,  ,  ,  , 0",
             # Fixed support at node 1
             "SPC1, 1, 123456, 1",
             # Constrain the CBUSH grounded node (Ty only constrained by spring, other DOFs free)

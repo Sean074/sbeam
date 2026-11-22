@@ -1,0 +1,10 @@
+# Compat lockfile — the pyNastran cross-parse gate (#83, tests/compat/), run in its own CI
+# job.  pyNastran 1.4.1 requires numpy < 2 and scipy < 2, which conflicts with the main
+# lockfile (requirements-ci.txt pins numpy 2.0.2), so this environment is separate.
+# pyNastran is a test-only dependency: sbeam/ never imports it.  Update deliberately and
+# re-run `pytest tests/compat --no-cov` in a fresh venv built from this file.
+pyNastran==1.4.1
+numpy==1.26.4
+scipy==1.13.1
+pytest==8.4.2
+pytest-cov==7.1.0

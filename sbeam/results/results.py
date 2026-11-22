@@ -324,6 +324,11 @@ class Sol144TrimResult:
     maneuver_closure: Optional[FloatArray] = None  # (6,) body-frame resultant (Fx,Fy,Fz,Mx,My,Mz) of net_loads about the moment ref; ≈0 for a balanced free-aircraft maneuver (V-C5/KC9)
     q_div: Optional[float] = None             # critical divergence dynamic pressure (restrained l-set); None if none
     hinge_moments: Optional[dict[str, dict[str, float]]] = None      # {AESURF label: {'total': HM/q at trim, <trim_label>: dHM/dδ}} about cid1 hinge axis
+    hinge_moments_restrained: Optional[dict[str, dict[str, float]]] = None  # {AESURF label: {<trim_label>: elastic-restrained dHM/dδ}}, same units as hinge_moments (#82)
+    box_ids: Optional[list[int]] = None       # NASTRAN box ID of each box, in box_cp / box_forces order (#82)
+    # +1/−1 per box: MSC's element normal along/against the box normal (#84).  box_cp is
+    # along the box normal; the f06 prints msc_sign · box_cp, ΔCp along MSC's normal
+    box_msc_sign: Optional[list[float]] = None
     trim_mode: str = "determined"             # "determined" or "over-determined" (Step 52)
     monitor_loads: Optional[dict[str, MonitorLoad]] = None      # {name: MonitorLoad} integrated section loads (MON1–MON3)
     section_loads: Optional[dict[str, SectionCutResult]] = None  # {name: SectionCutResult} MONSECT running loads
@@ -332,8 +337,8 @@ class Sol144TrimResult:
     load_injection_echo: Optional[list[dict[str, Any]]] = None  # Step 64 SPLINE0/un-splined load injection: [{'source','master_grid','n_boxes','force','moment'}]; None/[] = no injection
     # --- Step 67a (quasi-steady yaw-rate wing term) ---
     yaw_rate_iters: int = 0                   # fixed-point iterations spent on the loading-scaled yaw-rate force column; 0 = term not active (no YAW label, or zero yaw rate)
-    # --- Step 60 (MASSSET payload / mass case) ---
-    massset_sid: Optional[int] = None         # MASSSET SID selected by the subcase; None = baseline
+    # --- Step 60 (MASSCASE payload / mass case) ---
+    massset_sid: Optional[int] = None         # MASSCASE SID selected by the subcase; None = baseline
     massset_label: str = "BASELINE"           # mass-case name for output headers
     massset_mass: float = 0.0                 # total case mass (GPWG) for this configuration
     massset_cg: Optional[tuple[float, float, float]] = None   # CG of the case mass
@@ -345,7 +350,6 @@ class Sol144TrimResult:
 class DivergRoot:
     """One divergence root (Step 55)."""
     q_div: float                          # divergence dynamic pressure (positive real root)
-    v_div: Optional[float] = None         # divergence speed = sqrt(2*q_div/rho); None when no RHOREF
     mode_shape: Optional[FloatArray] = None  # (n_dofs,) g-set divergence eigenvector (max-abs normalised)
 
 
@@ -366,7 +370,6 @@ class Sol144DivergResult:
     subcase_id: int
     diverg_sid: int
     nroots: int
-    rhoref: float                         # reference density for V_div (0.0 ⇒ V_div omitted)
     mach_results: list["DivergMachResult"]
 
 
@@ -445,7 +448,7 @@ class ManeuverResult:
     steps: list["ManeuverStep"]            # one per output sample
     crit_index: int                       # index into steps of the peak_grid_force sample
     mldprnt_items: list[str] = field(default_factory=list)  # requested ASCII-print keywords
-    massset_sid: Optional[int] = None     # MASSSET mass case (None = baseline)
+    massset_sid: Optional[int] = None     # MASSCASE mass case (None = baseline)
     massset_label: str = "BASELINE"       # mass-case name for the exports (#31)
     n_modes_used: Optional[int] = None    # retained elastic modes (Step 62 solver; None = direct l-set)
     # Step 62 basis summary for the f06 (n_r, n_e, n_available, freqs_hz,

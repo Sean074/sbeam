@@ -102,7 +102,7 @@ def assemble_global_mass(
     offset-induced translation-rotation coupling, parallel-axis rotational
     inertia, and CM inertia tensor (I11-I33).
 
-    ``massset_sid`` (Step 60) selects a MASSSET payload / mass case: the
+    ``massset_sid`` (Step 60) selects a MASSCASE payload / mass case: the
     baseline mass is scaled by the card's SCALE and the effective CONM2 set is
     the baseline set with the ADD / REPLACE / DELETE ops applied.  ``None``
     gives the baseline configuration, unchanged from pre-Step-60 behaviour.
@@ -134,12 +134,16 @@ def assemble_global_mass(
         base = 6 * idx
         m = conm2.m
 
-        # Offset vector and inertia tensor in CONM2 CID frame
+        # Offset vector and inertia tensor in CONM2 CID frame.  The fields are the
+        # products of inertia themselves, I21 = ∫ρ x1 x2 dV, and enter the matrix
+        # negated: "The negative signs for the off-diagonal terms are supplied
+        # automatically" (MSC Nastran 2024.1 QRG PDF p.1449-1450, CONM2 remark 5).
+        # sbeam used them unnegated until #66.
         r_cid = np.array([conm2.x1, conm2.x2, conm2.x3])
         I_cid = np.array([
-            [conm2.i11, conm2.i21, conm2.i31],
-            [conm2.i21, conm2.i22, conm2.i32],
-            [conm2.i31, conm2.i32, conm2.i33],
+            [conm2.i11, -conm2.i21, -conm2.i31],
+            [-conm2.i21, conm2.i22, -conm2.i32],
+            [-conm2.i31, -conm2.i32, conm2.i33],
         ])
 
         # Rotate to global frame when CID != 0

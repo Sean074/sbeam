@@ -17,7 +17,7 @@ $
 $ History: this deck once carried GRID 7 + RBE3 (and later RBE2) with the mass offset
 $ to node 7; those cards were removed in 516016a and the header was not updated, which
 $ is why it described a model this file has not contained since.  beam_vib1.bdf is the
-$ surviving offset-mass-via-RBE3 variant.
+$ offset-mass variant (an RBAR since #60; it was an RBE3, which has no lever arm).
 $
 SOL 103
 $
@@ -66,7 +66,7 @@ SPC1, 1, 123456, 1
 $
 $ --------------------------------------------------------------- POINT MASS
 $ CONM2, EID, GID, CID, M
-$ 100 kg concentrated mass at node 7 (tip, connected to node 6 via RBE3)
+$ 100 000 kg concentrated mass directly on node 6 (the tip)
 CONM2, 30, 6, 0, 100000.0
 $
 $ --------------------------------------------------------- EIGENVALUE METHOD

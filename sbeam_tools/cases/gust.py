@@ -230,7 +230,6 @@ def emit_deck(
         "SOL 144",
         f"TITLE = {title}",
     ]
-    lines += [f"INCLUDE '{inc}'" for inc in airplane.includes]
     lines.append("$")
 
     for case in cases:
@@ -238,7 +237,7 @@ def emit_deck(
         lines.append(f"  TITLE   = {case.title}")
         lines.append(f"  GUSTLF  = {case.sid}")
         if case.mass_case.sid is not None:
-            lines.append(f"  MASSSET = {case.mass_case.sid}")
+            lines.append(f"  MASSCASE = {case.mass_case.sid}")
         if airplane.template_spc is not None:
             lines.append(f"  SPC     = {airplane.template_spc}")
         lines.append("  DISPLACEMENT = ALL")
@@ -246,6 +245,7 @@ def emit_deck(
         lines.append("$")
 
     lines.append("BEGIN BULK")
+    lines += [f"INCLUDE '{inc}'" for inc in airplane.includes]
     lines.append("$")
     for case in cases:
         lines.append(f"$ {case.title}")

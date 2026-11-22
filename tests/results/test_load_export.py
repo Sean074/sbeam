@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from sbeam.parser.bdf_reader import parse_bdf, parse_bulk_file
+from sbeam.parser.bdf_reader import _read_cards, parse_bdf
 from sbeam.parser.case_control import SubcaseControl
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.assembly.load_vector import build_grid_index
@@ -62,7 +62,8 @@ class TestLoadExport:
         bulk, result = trim
         out = tmp_path / "loads.bdf"
         write_aero_load_cards(str(out), bulk, {1: result})
-        reparsed = parse_bulk_file(str(out))
+        # The exported FORCE cards alone, without their GRIDs: read, skip the model checks
+        reparsed = _read_cards(out.read_text().splitlines())
         forces = reparsed.forces.get(1, [])
         assert forces, "no FORCE cards re-parsed"
         fz = sum(f.f * f.n3 for f in forces)

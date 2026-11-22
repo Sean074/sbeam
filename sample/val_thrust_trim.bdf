@@ -169,9 +169,10 @@ SET1, 2100, 90, 210, 220
 $
 $ ----------------------------------------------------------- CONTROL SURFACES
 $ Elevator: aft 2 rows (j_chord 6, 7) of both tail halves on one hinge axis.
-AELIST, 301, 3006, 3007, 3014, 3015, 3022, 3023, 3030, 3031
-+, 3038, 3039, 3046, 3047, 4006, 4007, 4014, 4015
-+, 4022, 4023, 4030, 4031, 4038, 4039, 4046, 4047
+AELIST, 301, 3006, 3007, 3014, 3015, 3022, 3023, 3030
++, 3031, 3038, 3039, 3046, 3047, 4006, 4007, 4014
++, 4015, 4022, 4023, 4030, 4031, 4038, 4039, 4046
++, 4047
 AESURF, 601, ELEV, 21, 301
 $
 $ ----------------------------------------------------------- TRIM VARIABLES
@@ -182,13 +183,15 @@ AESTAT, 504, URDD3
 AESTAT, 505, URDD5
 $
 $ ----------------------------------------------------------- MONITORS
-AELIST, 1400, 1000, THRU, 1159, 2000, THRU, 2159, 3000, THRU, 3047
-+, 4000, THRU, 4047
+AELIST, 1400, 1000, THRU, 1159, 2000, THRU, 2159, 3000
++, 3001, THRU, 3047, 4000, THRU, 4047
 AECOMP, ALLAERO, AELIST, 1400
-MONPNT1, MAERO, AERO TOTAL, 123456, ALLAERO, 0, 0.25, 0.0, 0.0
+MONPNT1 MAERO   AERO TOTAL
++, 123456, ALLAERO, 0, 0.25, 0.0, 0.0
 SET1, 1310, 10, 70, 90, 110, 120, 210, 220, 500
 AECOMP, ALLGRID, SET1, 1310
-MONPNT3, MALL, WHOLE AIRPLANE BALANCE, 123456, ALLGRID, 0, 0.25, 0.0, 0.0
+MONPNT1 MALL    WHOLE AIRPLANE BALANCE
++, 123456, ALLGRID, 0, 0.25, 0.0, 0.0
 $ Nose free body: cut planes normal to x ahead of the reference; SIDE = NEG keeps
 $ the members forward of the cut (grids 10 and 70 — the engine and its pylon).
 SET1, 1300, 10, 70

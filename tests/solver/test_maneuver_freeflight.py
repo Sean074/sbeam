@@ -14,7 +14,7 @@ finalized 2026-08-02):
      settled kinematic identity ΔURDD3_basic ≈ V·Δθ̇ (α̇ = 0 in the pull-up);
   4. the short-period eigenpair of the assembled h-set system matches a rigid
      2-DOF hand calculation from the Step 53 AE8b unrestrained derivatives;
-  5. mass-case physics sanity: heavier MASSSET (uniform SCALE, CG-neutral) ⇒
+  5. mass-case physics sanity: heavier MASSCASE (uniform SCALE, CG-neutral) ⇒
      lower steady load-factor increment for the same elevator command;
   6. commanding a rigid-state label under the modal solver is a hard error
      (solver and parser);

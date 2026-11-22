@@ -25,8 +25,8 @@ AEROS  ACSID  RCSID  CREF  BREF  SREF  SYMXZ  SYMXY
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| ACSID | int | 0 | Aerodynamic coordinate system (0 = basic) |
-| RCSID | int | 0 | Reference coordinate system for rigid body motion |
+| ACSID | int | 0 | Aerodynamic coordinate system; 0 or a CORD2R with axes parallel to basic (freestream along basic +x; a rotated ACSID is refused, #58) |
+| RCSID | int | 0 | Reference coordinate system for rigid body motion (origin = reference point; axes = trim-acceleration frame; see `02_card_reference.md`) |
 | CREF | float | — | Reference chord length (consistent model units) |
 | BREF | float | — | Reference span (full span, even for symmetric models) |
 | SREF | float | — | Reference area (full area) |
@@ -101,7 +101,7 @@ CAERO1  EID  PID  CP  NSPAN  NCHORD  LSPAN  LCHORD  IGID
 | CAERO1 NCHORD | Number of equal chordwise boxes (0 if LCHORD used) |
 | CAERO1 LSPAN | AEFACT SID for non-uniform span breakpoints (0 if NSPAN used) |
 | CAERO1 LCHORD | AEFACT SID for non-uniform chord breakpoints (0 if NCHORD used) |
-| CAERO1 IGID | Interference group ID (ignored in Phase A) |
+| CAERO1 IGID | Interference group ID. One group per deck: every panel interferes with every other, and a second IGID is refused (#76; MSC uncouples different groups, QRG 2024.1 PDF p.1343) |
 | X1, Y1, Z1 | Root leading-edge point P1, in CP coordinate system |
 | X12 | Root chord length in freestream +X direction |
 | X4, Y4, Z4 | Tip leading-edge point P4, in CP coordinate system |
@@ -413,7 +413,9 @@ direction. A per-surface `CD0` input is backlogged.
 Baseline normalwash vector from the W2GJ BDF card. Card values follow the **NASTRAN
 convention** (MSC Aeroelastic UG Eq. 2-104; HA144A: `W2GJ = +0.001745 rad` is "+0.1 deg
 wing incidence"): **positive = leading-edge-up incidence/camber → more lift**, the same
-nose-up-positive sense as ANGLEA. `build_wg` **negates** the card data into the internal
+nose-up-positive sense as ANGLEA, **along the box's MSC element normal** (CAERO1 Figure
+9-5; #84): on a port panel or fin drawn root to tip that normal is −z / −y, and `build_wg`
+multiplies by `AeroBox.msc_sign` (see charter §3). `build_wg` **negates** the card data into the internal
 washout-positive normalwash — the same negation the ANGLEA column (`−n_z`) and
 `build_djk` (`−I`) apply — so internally positive `wg` remains washout/less lift. One
 value per box, row-major (span slowest, chord fastest). Returns a zero vector if no
@@ -438,14 +440,19 @@ W2GJ  SID  CAERO_EID  D1  D2  D3  D4  D5  D6
 
 ## AIC Corrections (Wkk, WT2)
 
-Phase A provides two correction tiers to match VLM predictions to higher-fidelity
-CFD or wind-tunnel data. The correction precedence in `build_aero_model()` is:
+Phase A provides two corrections to match VLM predictions to higher-fidelity CFD or
+wind-tunnel data. Each acts on its own CAERO1 surfaces, and both act after the solve
+(#71), so `build_aero_model()` combines them across surfaces (#96):
 
 ```
-WKK card present   →  apply_wkk  (caller inverts via np.linalg.solve; per-CAERO1 scatter)
-AECORR WT2 present →  apply_wt2  (returns AJJ*⁻¹) — ALL WT2 cards combined (multi-surface)
-No correction      →  np.linalg.solve(AJJ, I)
+AJJ*⁻¹ = diag(w) · diag(r) · AJJ⁻¹
+  w = WKK weight on WKK surfaces, 1 elsewhere          (apply_wkk, MSC placement #71)
+  r = target / reference at each AECORR's MACH on WT2 surfaces, 1 elsewhere   (#72)
 ```
+
+A surface carrying both a WKK and a WT2 AECORR is refused, naming both cards: a WKK
+scaling a WT2 surface would move it off its target. **Before #96** the code read `if WKK
+… elif WT2`, so any WKK card, on any surface, dropped every WT2 card without a message.
 
 ### Card binding is validated, not lenient (DEF-M8 / DEF-L1)
 
@@ -456,8 +463,8 @@ closes. All checks are card-labelled (`CARDNAME sid: …`, the CHORDCP house sty
 | Card | Rejected |
 |------|----------|
 | `W2GJ` | two cards on one CAERO1; data length ≠ that surface's box count (either direction); a `caero_eid` with no meshed boxes |
-| `WKK` | two cards on one CAERO1; length ≠ that surface's box count; any **zero weight** (it zeroes an AJJ* row, making the corrected AIC singular) |
-| `AECORR` (WT2) | target length ≠ that surface's box count |
+| `WKK` | two cards on one CAERO1; length ≠ that surface's box count. A zero weight is accepted since #71: it removes that box's lift (MSC's factor), where it used to make the corrected AIC singular |
+| `AECORR` (WT2) | target length ≠ that surface's box count (the message names the #72 layout); MACH blank or outside [0, 1); two WT2 cards on one CAERO1 (the second used to overwrite the first); a WKK on the same CAERO1 (#96) |
 | `STRIPK` | two cards on one CAERO1; length ≠ that surface's box count (omit the card entirely to take the PSTRIP `SLOPE0` default) |
 | section-data CSV | `caero` not in the model (when the caller supplies the model); duplicate `eta` within one `(caero, var, mach, a_lo, a_hi)` curve |
 | body TOTAL row | blank/NaN in a **required** column (`cm_a`, `cm0`, `cn_a`, `a0`); only the roll columns `cl_a`/`cl0` default to 0 |
@@ -499,8 +506,8 @@ baseline normalwash is already accumulated per CAERO1, so the section force+mome
 WKK     SID  CAERO_EID  W1  W2  W3  W4  W5  W6
 +       W7   W8  ...
 
-AECORR  SID  METHOD  CAERO_EID  T1  T2  T3  T4  T5
-+       T6   T7  ...
+AECORR  SID  METHOD  CAERO_EID  MACH  T1  T2  T3  T4
++       T5   T6  ...
 ```
 
 | Field | Description |
@@ -511,14 +518,23 @@ AECORR  SID  METHOD  CAERO_EID  T1  T2  T3  T4  T5
 | AECORR SID | Set ID |
 | AECORR METHOD | `WT2` (pressure matching) — the only accepted value; `WT1` raises a `ValueError` (removed, DEF-R7) |
 | AECORR CAERO_EID | CAERO1 EID this correction applies to |
-| AECORR T1–TN | Target values; see below |
+| AECORR MACH | Build Mach of the targets (#72); the ratio target/reference is formed at this Mach and applied at every TRIM Mach |
+| AECORR T1–TN | Target values (Γ-units on the PG geometry at MACH); see below |
 
-### `apply_wkk(ajj, wkk_data) -> np.ndarray`
+### `apply_wkk(ajj_inv, wkk_data) -> np.ndarray`
 
-Returns `AJJ* = diag(w) @ AJJ`. The caller (`build_aero_model`) inverts it via the
-LU factorization returned by `check_conditioning` (`scipy.linalg.lu_solve`).
-Simplest correction; can absorb empirical scale factors or stall nonlinearity.
-Issues a `UserWarning` if the condition estimate of `AJJ*` exceeds 1e10.
+Returns `AJJ*⁻¹ = diag(w) @ AJJ⁻¹`: each box's lift (force and moment) is multiplied by its
+weight after the pressure solve, MSC's placement — `{P_k} = q[W_kk][S_kj][A_jj]⁻¹{w_j}` (MSC
+AAUG 2023.1 PDF p.40 eq 2-21, p.70 eq 2-106; NX Nastran identical). WKK = 1.1 raises that
+box's lift 10% and no other box changes; it applies to the W2GJ baseline as well as the
+elastic and trim normalwash, as in MSC. `build_aero_model` inverts the raw AJJ (warning if
+its condition estimate exceeds 1e10) and passes the inverse in.
+
+**Before #71** `apply_wkk` returned `diag(w) @ AJJ` for the caller to invert, which applied
+`1/w` on the downwash side: a uniform 1.1 gave 0.909× the lift, and a non-uniform weight
+redistributed load to the neighbouring boxes. No repo deck used WKK. sbeam's `WKK` card is
+an sbeam extension: MSC enters WKK as a DMI matrix on the k-set with separate force and
+moment terms (AAUG PDF p.144); sbeam takes one weight per box.
 
 ### `apply_wt2(ajj, cp_target, ajj_inv=None, cp_ref=None) -> np.ndarray`
 
@@ -813,9 +829,9 @@ Aero tab's **Cp view** toggle then compares corrected / uncorrected / Δcp on bo
 pressure and the span-load curves. **Download cards (.bdf)** emits the pairs via `cards_to_bdf`;
 **Full corrected BDF** (`build_corrected_bdf`) splices them into the uploaded model text before
 `ENDDATA` with a provenance header (source CSV, date, Mach/α/β), giving a self-contained,
-re-parseable model — one per Mach. A separate-file + `INCLUDE` layout is not used: sbeam's parser
-honours only a single whole-bulk INCLUDE. Pre-existing **WKK** (which takes precedence over WT2 in
-`build_aero_model`) or a non-generated WT2 on a corrected surface are flagged as warnings.
+re-parseable model — one per Mach. A separate-file + `INCLUDE` layout is not used, so each export
+is one self-contained deck. A pre-existing **WKK** or non-generated WT2 on a corrected
+surface is flagged as a warning before applying, since the solver refuses either (#96).
 
 ## Cruciform body panels — total-aircraft moment correction (`body_correction.py`, Step A9)
 
@@ -1010,7 +1026,7 @@ Factory function that orchestrates the full Phase A assembly pipeline:
 1. Reject half-span models — raise `ValueError` if `AEROS SYMXZ ≠ 0` or `SYMXY ≠ 0`
 2. Mesh all CAERO1 elements in ascending EID order → concatenated `AeroBox` list
 3. Build raw AIC matrix via `build_ajj(boxes)`
-4. Apply correction at highest available tier (WKK → WT2 → identity)
+4. Apply the corrections, each on its own surfaces: `diag(w)·diag(r)·AJJ⁻¹` (#96)
 5. Build `Skj`, `Djk`, and `wg` integration quantities
 6. Package into `AeroModel` and return
 

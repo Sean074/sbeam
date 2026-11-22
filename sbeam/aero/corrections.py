@@ -2,8 +2,9 @@
 
 Two tiers, in increasing data requirement:
 
-  Wkk   — diagonal multiplicative weighting: AJJ* = diag(w) @ AJJ.
-  WT2   — pressure matching: per-box cp scaling to reproduce a target cp distribution.
+  Wkk   — diagonal weighting of each box's lift: AJJ*⁻¹ = diag(w) @ AJJ⁻¹ (MSC, #71).
+  WT2   — pressure matching: per-box cp scaling to reproduce a target cp distribution;
+          a generated diagonal WKK (the same placement, r_k from the target).
 
 A third tier, force/moment matching by per-strip lift scaling (``AECORR
 METHOD=WT1``), was removed at the first SOL 144 loads release (DEF-R7): it was
@@ -25,7 +26,7 @@ Reference normalwash convention (WT2) — per incidence axis (#52):
   All corrections are relative to the VLM solution at that reference.
 
 Return types:
-  apply_wkk  →  corrected AJJ*  (caller inverts via np.linalg.solve)
+  apply_wkk  →  corrected AJJ*⁻¹
   apply_wt2  →  corrected AJJ*⁻¹
 """
 
@@ -125,18 +126,22 @@ def apply_chordcp(
 
 
 def apply_wkk(
-    ajj: FloatArray, wkk_data: Union[Sequence[float], FloatArray]
+    ajj_inv: FloatArray, wkk_data: Union[Sequence[float], FloatArray]
 ) -> FloatArray:
-    """Diagonal multiplicative AIC correction.
+    """Diagonal WKK correction of each box's lift.  Returns AJJ*⁻¹ = diag(w) @ AJJ⁻¹.
 
-    Returns AJJ* = diag(wkk_data) @ AJJ.
-    Caller is responsible for inverting AJJ* — ``_assemble_vlm_operator`` uses
-    ``np.linalg.solve``, which requires AJJ* to be non-singular.  A zero entry
-    in ``wkk_data`` zeroes a whole row and makes it singular, so the caller
-    rejects zero weights rather than letting LAPACK raise.
+    MSC applies WKK to the box forces, after the pressures are solved:
+    ``{P_k} = q [W_kk][S_kj][A_jj]⁻¹{w_j}`` (MSC Nastran 2023.1 Aeroelastic Analysis
+    User's Guide PDF p.40 eq 2-21, p.70 eq 2-106; NX Nastran Aeroelastic Analysis User's
+    Guide (2014) PDF p.147, ``[WSKJ] = [WKK][SKL]``).  A weight of 1.1 raises that box's
+    lift by 10% and leaves every other box unchanged; 0 removes its lift.  sbeam's
+    diagonal per-box weight scales a box's force and moment together.
+
+    Before #71 this returned ``diag(w) @ AJJ`` for the caller to invert, so the
+    weight acted on the downwash side as its reciprocal: 1.1 gave 0.909× the lift.
     """
     w = np.asarray(wkk_data, dtype=float)
-    return np.diag(w) @ ajj
+    return w[:, np.newaxis] * ajj_inv
 
 
 def wt2_reference_cp(boxes: Sequence[AeroBox], ajj_inv: FloatArray) -> FloatArray:
@@ -195,7 +200,12 @@ def apply_wt2(
     else:
         inv = ajj_inv
     cp_vlm_ref = inv @ -np.ones(n) if cp_ref is None else np.asarray(cp_ref)
+    return np.diag(wt2_ratio(cp_target, cp_vlm_ref)) @ inv
+
+
+def wt2_ratio(cp_target: FloatArray, cp_ref: FloatArray) -> FloatArray:
+    """Per-box WT2 ratio r = target / reference; 1 where |reference| < _RATIO_TOL."""
+    cp_ref = np.asarray(cp_ref, dtype=float)
     with np.errstate(divide="ignore", invalid="ignore"):
-        ratio = np.where(cp_vlm_ref != 0.0, cp_target / cp_vlm_ref, 1.0)
-    r = np.where(np.abs(cp_vlm_ref) > _RATIO_TOL, ratio, 1.0)
-    return np.diag(r) @ inv
+        ratio = np.where(cp_ref != 0.0, cp_target / cp_ref, 1.0)
+    return np.where(np.abs(cp_ref) > _RATIO_TOL, ratio, 1.0)

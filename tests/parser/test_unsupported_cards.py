@@ -2,14 +2,13 @@
 
 Before this gate a ``PLOAD1`` deck parsed, solved and reported with the load absent and
 only a generic ``UserWarning`` nobody collected.  Now every keyword in
-``_UNSUPPORTED_CARDS`` is counted and the deck is refused once with the full list;
-unlisted keywords keep the warning (typos, output requests, vendor cards).
+``_UNSUPPORTED_CARDS`` is counted and the deck is refused once with the full list.
+Since #55 unlisted keywords are refused too, as unknown cards (``test_unknown_cards.py``).
 """
 
 import re
 import subprocess
 import sys
-import warnings
 from pathlib import Path
 
 import pytest
@@ -70,21 +69,20 @@ class TestRefusal:
         cc, bulk = parse_bdf(_deck(tmp_path, ""))
         assert set(bulk.cbars) == {1}
 
-    def test_unknown_keyword_still_warns_and_parses(self, tmp_path):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            cc, bulk = parse_bdf(_deck(tmp_path, "FOOBAR, 1, 2, 3\n"))
-        assert set(bulk.cbars) == {1}
-        assert any("Unknown BDF card 'FOOBAR'" in str(w.message) for w in caught)
+    def test_unknown_keyword_is_refused_with_the_unsupported_ones(self, tmp_path):
+        # One refusal names both kinds (#55)
+        body = "FOOBAR, 1, 2, 3\nPLOAD1, 10, 1, FY, FR, 0.0, -100.0, 1.0, -100.0\n"
+        with pytest.raises(ValueError, match=r"Unsupported bulk data card\(s\): PLOAD1 x1 .*"
+                                             r"Unknown bulk data card\(s\): FOOBAR x1"):
+            parse_bdf(_deck(tmp_path, body))
 
 
 class TestSetHygiene:
     """The set cannot drift: nothing in it has a handler, nothing supported is in it."""
 
     def test_no_unsupported_keyword_has_a_handler(self):
-        src = (REPO / "sbeam/parser/bdf_reader.py").read_text()
-        handled = set(re.findall(r'keyword == "([A-Z0-9]+)"', src))
-        assert handled, "dispatch scan found nothing — the gate would pass vacuously"
+        handled = bdf_reader.HANDLED_CARDS
+        assert handled, "dispatch table is empty — the gate would pass vacuously"
         assert not handled & set(_UNSUPPORTED_CARDS), (
             "a card is both handled and refused; remove it from _UNSUPPORTED_CARDS")
 
@@ -102,7 +100,7 @@ class TestSetHygiene:
 
     def test_pload1_stays_unsupported_until_its_parked_item_lands(self):
         assert "PLOAD1" in _UNSUPPORTED_CARDS
-        assert not hasattr(bdf_reader, "_handle_pload1")
+        assert "PLOAD1" not in bdf_reader.HANDLED_CARDS
 
 
 class TestCli:
@@ -114,9 +112,18 @@ class TestCli:
         assert "Parse error: Unsupported bulk data card(s): PLOAD1 x1" in r.stderr
         assert not Path(deck).with_suffix(".f06").exists()
 
-    def test_cli_prints_unknown_card_warnings(self, tmp_path):
-        deck = _deck(tmp_path, "FOOBAR, 1\n")
+    def test_cli_exits_on_an_unknown_card(self, tmp_path):
+        deck = _deck(tmp_path, "FROCE, 10, 2, 0, 1.0, 0.0, 0.0, -1.0\n")
+        r = subprocess.run([sys.executable, "-m", "sbeam", deck],
+                           capture_output=True, text=True, cwd=REPO)
+        assert r.returncode != 0
+        assert "Unknown bulk data card(s): FROCE x1 (did you mean FORCE?)" in r.stderr
+        assert not Path(deck).with_suffix(".f06").exists()
+
+    def test_cli_prints_ignored_card_warnings(self, tmp_path):
+        deck = _deck(tmp_path, "ECHOOFF\nPARAM, POST, -1\n")
         r = subprocess.run([sys.executable, "-m", "sbeam", deck],
                            capture_output=True, text=True, cwd=REPO)
         assert r.returncode == 0, r.stderr
-        assert "Parser warning: Unknown BDF card 'FOOBAR' — skipped" in r.stderr
+        assert "Parser warning: BDF card 'ECHOOFF' ignored" in r.stderr
+        assert "Parser warning: BDF card 'PARAM,POST' ignored (post-processor output files" in r.stderr

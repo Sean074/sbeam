@@ -186,10 +186,10 @@ class TestConm2:
         assert c.i33 == pytest.approx(0.0)
 
     def test_conm2_inertia_free_field(self):
-        """Inertia tensor fields parsed correctly from free-field (all on one line)."""
+        """One free-field line: field 9 is blank and I11 runs on to the continuation (#64)."""
         lines = [
             "GRID, 1, , 0.0, 0.0, 0.0",
-            "CONM2, 5, 1, 0, 10.0, 0.0, 0.0, 0.0, 1.1, 2.2, 3.3, 4.4, 5.5, 6.6",
+            "CONM2, 5, 1, 0, 10.0, 0.0, 0.0, 0.0, , 1.1, 2.2, 3.3, 4.4, 5.5, 6.6",
         ]
         bulk = parse_bulk_data(lines)
         c = bulk.conm2s[5]
@@ -220,6 +220,8 @@ class TestConm2:
     def test_conm2_nonzero_cid_stored(self):
         """CID != 0 is stored without warning (CORD2R now supported)."""
         lines = [
+            "CORD2R, 5, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0",
+            "+, 1.0, 0.0, 0.0",
             "GRID, 1, , 0.0, 0.0, 0.0",
             "CONM2, 1, 1, 5, 10.0",
         ]

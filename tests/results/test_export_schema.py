@@ -3,8 +3,8 @@
 Contract: ``docs/10_standard/10_export_schemas.md``.  These gates hold the exact
 header of every CSV ``sbeam/results/load_export.py`` writes, the shared identity
 block (``case, [mloads,] massset, mass_case``), the integer ``massset`` sentinel
-(``0`` = baseline — one dtype across a baseline run and a MASSSET sweep), and the
-fixed-shape ``$ MASSSET=`` comment line of the three load BDFs.
+(``0`` = baseline — one dtype across a baseline run and a MASSCASE sweep), and the
+fixed-shape ``$ MASSCASE=`` comment line of the three load BDFs.
 """
 
 import csv
@@ -18,7 +18,7 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.model.grid import Grid
 from sbeam.results import load_export as le
 from sbeam.results.load_export import (
-    BASELINE_MASSSET, build_aero_load_cards_text, build_maneuver_load_cards_text,
+    BASELINE_MASSCASE, build_aero_load_cards_text, build_maneuver_load_cards_text,
     build_maneuver_monitor_csv_text, build_maneuver_monitor_envelope_csv_text,
     build_maneuver_section_envelope_csv_text, build_maneuver_section_loads_csv_text,
     massset_comment, write_monitor_csv, write_section_loads_csv,
@@ -137,7 +137,7 @@ class TestHeaders:
         base = list(csv.DictReader(_written(tmp_path, name).splitlines()))
         swept = list(csv.DictReader(_written(tmp_path / "s", name, 20, "CRUISE").splitlines()))
         assert base and swept
-        assert {r["massset"] for r in base} == {str(BASELINE_MASSSET)}
+        assert {r["massset"] for r in base} == {str(BASELINE_MASSCASE)}
         assert {r["mass_case"] for r in base} == {"BASELINE"}
         assert {r["massset"] for r in swept} == {"20"}
         assert {r["mass_case"] for r in swept} == {"CRUISE"}
@@ -163,7 +163,7 @@ class TestRowContract:
 
 
 class TestLoadBdfComment:
-    """The three load BDFs always carry ``$ MASSSET=<int> (<label>)`` (#31)."""
+    """The three load BDFs always carry ``$ MASSCASE=<int> (<label>)`` (#31)."""
 
     @staticmethod
     def _bulk():
@@ -186,12 +186,12 @@ class TestLoadBdfComment:
             steps=[step], crit_index=0, massset_sid=massset_sid, massset_label=label)
 
     def test_massset_comment_shape(self):
-        assert massset_comment(None, "BASELINE") == "$ MASSSET=0 (BASELINE)"
-        assert massset_comment(20, "CRUISE", 1234.5) == "$ MASSSET=20 (CRUISE)  MASS=1234.5"
+        assert massset_comment(None, "BASELINE") == "$ MASSCASE=0 (BASELINE)"
+        assert massset_comment(20, "CRUISE", 1234.5) == "$ MASSCASE=20 (CRUISE)  MASS=1234.5"
 
     @pytest.mark.parametrize("sid, label, expect", [
-        (None, "BASELINE", r"^\$ MASSSET=0 \(BASELINE\)  MASS=250$"),
-        (20, "CRUISE", r"^\$ MASSSET=20 \(CRUISE\)  MASS=250$"),
+        (None, "BASELINE", r"^\$ MASSCASE=0 \(BASELINE\)  MASS=250$"),
+        (20, "CRUISE", r"^\$ MASSCASE=20 \(CRUISE\)  MASS=250$"),
     ])
     def test_trim_bdfs_always_carry_the_line(self, sid, label, expect):
         bulk = self._bulk()
@@ -204,10 +204,10 @@ class TestLoadBdfComment:
     def test_mloads_bdf_carries_the_line(self):
         bulk = self._bulk()
         lines = build_maneuver_critical_load_cards_text(bulk, self._mloads(), sid=2).splitlines()
-        assert lines[3] == "$ MASSSET=0 (BASELINE)"
+        assert lines[3] == "$ MASSCASE=0 (BASELINE)"
         lines = build_maneuver_critical_load_cards_text(
             bulk, self._mloads(30, "FERRY"), sid=2).splitlines()
-        assert lines[3] == "$ MASSSET=30 (FERRY)"
+        assert lines[3] == "$ MASSCASE=30 (FERRY)"
         assert lines[4].startswith("FORCE, 2, 2, 0, 1.0,")
 
 
@@ -220,4 +220,4 @@ class TestSchemaGuideTracksTheCode:
             assert f"`{name}`" in guide, name
             missing = [c for c in header if f"`{c}`" not in guide]
             assert not missing, f"{name}: columns missing from 10_export_schemas.md: {missing}"
-        assert "`$ MASSSET=0 (BASELINE)`" in guide
+        assert "`$ MASSCASE=0 (BASELINE)`" in guide

@@ -53,7 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--altitude", type=float, action="append", metavar="ALT",
                    help="altitude in model units; repeatable (default: 0)")
     p.add_argument("--massset", type=str, metavar="SIDS",
-                   help="comma-separated MASSSET SIDs (default: the baseline mass)")
+                   help="comma-separated MASSCASE SIDs (default: the baseline mass)")
     p.add_argument("--g", type=float, dest="gravity",
                    help="gravitational acceleration (default: the unit system's standard)")
     p.add_argument("--sid-base", type=int, default=9000,

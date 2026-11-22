@@ -24,8 +24,8 @@ building and reading a **model**.*
 | `sample/cessna210_flagship_body_cruciform.bdf` | body-panel overlay (not standalone) |
 | `sample/cessna210_flagship_body_strip.bdf` | body-panel overlay (not standalone) |
 
-The drivers are thin: a `SOL 144` line, a `TITLE`, one or more case-control `INCLUDE`s of
-the shared bulk (plus, in §6, a body overlay), and their subcases. Everything physical
+The drivers are thin: a `SOL 144` line, a `TITLE`, their subcases, and below `BEGIN BULK`
+one or more `INCLUDE`s of the shared bulk (plus, in §6, a body overlay). Everything physical
 lives in one place — and layers are added by `INCLUDE`, never by editing the bulk.
 
 Gated by `tests/aero/test_cessna210_flagship.py` (24 checks),
@@ -266,9 +266,9 @@ its resultant is the starboard wing-root shear and bending.
 ### 2.9 Mass cases
 
 ```
-MASSSET, 10, FERRY,  1.0   +, DELETE, 7
-MASSSET, 20, CRUISE, 1.0   +, ADD, 6001, 6002, 6003, 6004
-MASSSET, 30, MTOW,   1.0   +, ADD, 6011, 6012, 6013, 6014
+MASSCASE, 10, FERRY,  1.0   +, DELETE, 7
+MASSCASE, 20, CRUISE, 1.0   +, ADD, 6001, 6002, 6003, 6004
+MASSCASE, 30, MTOW,   1.0   +, ADD, 6011, 6012, 6013, 6014
                            +, REPLACE, 7, 6020
 ```
 
@@ -291,7 +291,7 @@ integration from the 1g trim and ramps the elevator +2° over 0.3 s, then holds.
 > driver, read the trimmed ELEV out of the f06, write it into the table. Start the table
 > at 0.0 instead and the airplane takes a 3.8° step input at t = 0.
 >
-> The same property makes the table **mass-case specific**. Pair `MLOADS` with a `MASSSET`
+> The same property makes the table **mass-case specific**. Pair `MLOADS` with a `MASSCASE`
 > and the trimmed elevator moves, so a table authored for the baseline no longer starts at
 > equilibrium for that case. Re-run the trim for the mass case and re-bake the first point;
 > do that and the initial condition is reproduced to machine precision.
@@ -306,8 +306,8 @@ Run `sbeam sample/cessna210_flagship_trim.bdf`.
 
 ```
 SUBCASE 1     TRIM = 1     MACH = 0.0000     Q = 2.334000E+03
-      ANGLEA          FREE           4.174227E-02      (=  2.3917 deg)
-      ELEV            FREE          -6.792834E-02      (= -3.8920 deg)
+      ANGLEA          FREE           4.174605E-02      (=  2.3917 deg)
+      ELEV            FREE          -6.796414E-02      (= -3.8941 deg)
 ```
 
 α = 2.39° at 1g. Check it: CL must be 0.280, the airplane's slope is ≈ 5.31 /rad, and the
@@ -315,9 +315,9 @@ camber already supplies CL₀ ≈ 0.09, so α ≈ (0.280 − 0.090)/5.31 = 0.036
 the tail download is accounted for. The solver's 2.39° is the same number with the tail
 carried properly.
 
-SUBCASE 2 gives α = 7.09°, ELEV = −9.85°. Both trims sit inside the baked −4…8° block.
+SUBCASE 2 gives α = 7.09°, ELEV = −9.86°. Both trims sit inside the baked −4…8° block.
 
-**Elevator per g** = (−9.852 − (−3.892))/1.5 = **−3.97 °/g**. Trailing edge up with
+**Elevator per g** = (−9.857 − (−3.894))/1.5 = **−3.97 °/g**. Trailing edge up with
 increasing load factor, as it must be for a statically stable airplane.
 
 ### 3.2 Stability derivatives
@@ -325,8 +325,8 @@ increasing load factor, as it must be for a statically stable airplane.
 ```
                   --------- RIGID ---------   -- ELASTIC RESTRAINED --   - ELASTIC UNRESTRAINED -
       LABEL          CZ          CMY             CZ          CMY            CZ          CMY
-      ANGLEA     5.307898E+00 -1.608650E+00   5.493350E+00 -1.605425E+00  5.544577E+00 -1.624168E+00
-      ELEV       5.788172E-01 -1.858583E+00   5.772651E-01 -1.851684E+00  5.790626E-01 -1.853072E+00
+      ANGLEA     5.307898E+00 -1.608650E+00   5.493348E+00 -1.605425E+00  5.544578E+00 -1.625212E+00
+      ELEV       5.788172E-01 -1.858583E+00   5.772650E-01 -1.851684E+00  5.790626E-01 -1.853079E+00
 ```
 
 - **CZ_α = 5.31 /rad rigid.** Helmbold gives 4.86 for the wing; the tail adds the rest.
@@ -343,8 +343,8 @@ increasing load factor, as it must be for a statically stable airplane.
 ### 3.3 Aerodynamic totals and divergence
 
 ```
-      TOTAL CZ (BODY) =  2.797810E-01        TOTAL CL (WIND) =  2.795373E-01
-      CRITICAL DIVERGENCE DYNAMIC PRESSURE  Q-DIV =  5.373047E+04   Q / Q-DIV = 4.343904E-02
+      TOTAL CZ (BODY) =  2.797810E-01        TOTAL CL (WIND) =  2.795372E-01
+      CRITICAL DIVERGENCE DYNAMIC PRESSURE  Q-DIV =  5.373092E+04   Q / Q-DIV = 4.343868E-02
 ```
 
 CZ = 0.27978 against the hand value W/(qS) = 0.27978. At 2.5g it is 0.69945 — exactly
@@ -366,7 +366,7 @@ weight, and once inertia and the support reaction are added back the airplane is
 equilibrium. If `MALLEA` is not ~0, either the trim did not converge or the `SET1` is
 missing mass grids (§2.8).
 
-`MWROOT` gives the starboard wing-root bending, Mx = 8356 N·m at 1g.
+`MWROOT` gives the starboard wing-root bending, Mx = 8357 N·m at 1g.
 
 ### 3.5 Deflections
 
@@ -414,10 +414,10 @@ critical sample.
 
 ```
      TIME        ANGLEA         ELEV          FZ_AERO
-  0.00000e+00  4.17423e-02  -6.79283e-02   1.06049e+04
-  1.50000e-01  4.17423e-02  -5.04751e-02   1.09868e+04
-  3.00000e-01  4.17423e-02  -3.30218e-02   1.13686e+04
-  1.00000e+00  4.17423e-02  -3.30218e-02   1.13687e+04
+  0.00000e+00  4.17460e-02  -6.79641e-02   1.06049e+04
+  1.50000e-01  4.17460e-02  -5.05108e-02   1.09868e+04
+  3.00000e-01  4.17460e-02  -3.30575e-02   1.13686e+04
+  1.00000e+00  4.17460e-02  -3.30575e-02   1.13687e+04
 ```
 
 At t = 0 every recovered quantity equals the SUBCASE 1 trim — the initial condition *is*
@@ -454,6 +454,7 @@ sbeam sample/cessna210_flagship_body_strip_drv.bdf  # strip      (PSTRIP)
 Both drivers are three lines of aerodynamics on top of the deck you already have:
 
 ```
+BEGIN BULK
 INCLUDE 'cessna210_flagship_bulk.bdf'
 INCLUDE 'cessna210_flagship_body_cruciform.bdf'
 ```
@@ -530,7 +531,7 @@ The bulk's `AELIST 1400` covers the 324 flying boxes. It was correct in §3.4 an
 quietly wrong now:
 
 ```
-      MONITOR MALLAR    (324 flying boxes)      FZ = 1.040439E+04
+      MONITOR MALLAR    (324 flying boxes)      FZ = 1.040438E+04
       MONITOR MALLARB   (all 372 boxes)         FZ = 1.060486E+04     <- = n*W
 ```
 

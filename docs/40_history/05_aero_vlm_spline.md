@@ -1061,6 +1061,8 @@ the `ATTACH` card; confirm `SPLINE0` boxes correctly contribute zero rows.
 
 ## Resolved defects (conventions)
 
+- **#84 (2026-11-22, Tier M)** — Signed per-box data (W2GJ, AECORR targets, CHORDCP Cp, f06 DELTA-CP) was read along sbeam's +z/+y solve normal, where MSC signs it along the element normal z = x × (P4 − P1) (QRG p.1344 Fig. 9-5; AAUG p.30, p.144). `AeroBox.msc_sign` now converts at every card read, builder write and the f06 print; `result.box_cp` unchanged, `box_msc_sign` added. 15 repo cards converted (port surfaces and fins drawn root to tip); all sample outputs bit-identical. Charter §2–§3 amended. Gates `tests/aero/test_msc_element_normal.py`, `TestDeltaCpFrame`. Audit A7.
+
 ### DEF-M12 (P1, release-required) — correction-card export field width ✅ COMPLETE (2026-08-02)
 
 **Objective:** `sbeam/aero/section_correction.py` `card_lines` wrote every value as

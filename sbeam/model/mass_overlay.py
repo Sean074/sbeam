@@ -1,11 +1,11 @@
-"""MASSSET mass-case resolution (Step 60).
+"""MASSCASE mass-case resolution (Step 60).
 
-Resolves a case-control ``MASSSET = sid`` request into the effective CONM2 set
+Resolves a case-control ``MASSCASE = sid`` request into the effective CONM2 set
 and structural-mass scale factor used by the mass-derived operators
 (``assemble_global_mass``, ``compute_gpwg``, ``build_inertial_cols``).
 
 The case mass is the baseline model mass — CBAR distributed mass plus the
-baseline CONM2s — multiplied by ``SCALE``, then modified by the MASSSET ops:
+baseline CONM2s — multiplied by ``SCALE``, then modified by the MASSCASE ops:
 ADD overlays new CONM2s, REPLACE swaps a baseline card for an overlay card,
 DELETE drops a baseline card.  Overlay cards are *not* scaled: SCALE is a
 baseline-mass factor, and the overlay is the payload the user is defining
@@ -14,7 +14,7 @@ explicitly.
 **Invariant — no AeroCache invalidation.**  Nothing here touches geometry or
 Mach, so the AIC (``ajj`` / ``ajj_inv_corr``), the spline matrices, and every
 other entry of the ``AeroCache`` are mass-independent and are reused verbatim
-across mass cases.  A MASSSET sweep rebuilds only mass-derived quantities.
+across mass cases.  A MASSCASE sweep rebuilds only mass-derived quantities.
 """
 
 from dataclasses import dataclass, replace
@@ -27,7 +27,7 @@ from sbeam.model.mass import Conm2
 @dataclass
 class MassCase:
     """Resolved mass configuration for one subcase."""
-    sid: Optional[int]   # MASSSET SID, or None for the baseline configuration
+    sid: Optional[int]   # MASSCASE SID, or None for the baseline configuration
     label: str           # case name for output headers
     scale: float         # multiplies the baseline (CBAR + baseline CONM2) mass
     conm2s: dict[int, Conm2]   # baseline members already scaled
@@ -57,10 +57,10 @@ def resolve_mass_case(bulk: BulkData, massset_sid: Optional[int] = None) -> Mass
     """Resolve ``massset_sid`` into a MassCase.
 
     ``massset_sid=None`` returns the baseline configuration: every CONM2 that
-    is not overlay-only, unscaled.  With no MASSSET cards in the deck this is
+    is not overlay-only, unscaled.  With no MASSCASE cards in the deck this is
     exactly ``bulk.conm2s`` and every downstream operator is unchanged.
 
-    Raises ValueError if ``massset_sid`` names no MASSSET card.
+    Raises ValueError if ``massset_sid`` names no MASSCASE card.
     """
     if massset_sid is None:
         baseline = {
@@ -71,7 +71,8 @@ def resolve_mass_case(bulk: BulkData, massset_sid: Optional[int] = None) -> Mass
 
     ms = bulk.masssets.get(massset_sid)
     if ms is None:
-        raise ValueError(f"MASSSET {massset_sid} selected in case control but not defined")
+        raise ValueError(f"Mass case {massset_sid} (MASSCASE or MASSSET) selected in case "
+                         "control but not defined")
 
     dropped = set(ms.delete) | {old for old, _ in ms.replace}
     overlays = set(ms.add) | {new for _, new in ms.replace}
@@ -82,7 +83,8 @@ def resolve_mass_case(bulk: BulkData, massset_sid: Optional[int] = None) -> Mass
     conm2s: dict[int, Conm2] = {}
     for eid, c in bulk.conm2s.items():
         if eid in overlays:
-            conm2s[eid] = c                       # overlay — unscaled
+            # MASSCASE overlay unscaled; MSC mass increment scaled by S0·Si (#102)
+            conm2s[eid] = _scaled(c, ms.add_scale.get(eid, 1.0))
         elif eid in bulk.overlay_conm2_eids or eid in dropped:
             continue                              # another case's overlay, or dropped here
         else:

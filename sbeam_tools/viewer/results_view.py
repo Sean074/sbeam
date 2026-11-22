@@ -446,18 +446,38 @@ def _render_sol144_trim(bulk: BulkData, result: Sol144TrimResult) -> None:
         dc[0].metric("Critical q-div", fmt(result.q_div))
         dc[1].metric("q / q-div", fmt(ratio))
 
+    # ---- Gust load condition (GUSTLF, #1): the f06 prints this block; shown here too (#98)
+    if result.gust_echo:
+        gust = result.gust_echo
+        st.markdown(f"**Gust load condition** (GUSTLF {gust['sid']} on TRIM {gust['trimid']}, "
+                    f"{gust['sense']})")
+        gc = st.columns(3)
+        gc[0].metric("Load factor n", fmt(float(gust["n"])))
+        gc[1].metric("Δn (n − 1)", fmt(float(gust["n"]) - 1.0))
+        gc[2].metric("URDD3", fmt(float(gust["urdd3"])))
+        st.caption("Recorded provenance only: n and g enter the solution; sbeam does not "
+                   "compute the gust.")
+
     # ---- Hinge moments ----
     if result.hinge_moments:
         st.markdown("**Hinge-moment derivatives** (about each AESURF hinge axis; CID1 and CID2 halves summed)")
+        restrained = result.hinge_moments_restrained or {}
         for surf in sorted(result.hinge_moments):
             entry = result.hinge_moments[surf]
             rows = [
-                {"Trim variable": k, "d(HM)/d(var)": result.q * entry[k]}
+                {"Trim variable": k, "Rigid d(HM)/d(var)": result.q * entry[k],
+                 "Restrained d(HM)/d(var)": (result.q * restrained[surf][k]
+                                              if k in restrained.get(surf, {}) else None)}
                 for k in sorted(k for k in entry if k != "total")
             ]
-            rows.append({"Trim variable": "TOTAL (trim)", "d(HM)/d(var)": result.q * entry["total"]})
             st.caption(f"Surface: {surf}")
             st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
+        # The trimmed moment is a result of the elastic trim, not a derivative row (#82)
+        st.markdown("**Control-surface position and hinge moment** (trimmed)")
+        st.dataframe(style_numeric(pd.DataFrame([
+            {"Surface": surf, "Position": result.trim_vars.get(surf, 0.0),
+             "Hinge moment": result.q * result.hinge_moments[surf]["total"]}
+            for surf in sorted(result.hinge_moments)])), width="stretch")
 
     # ---- Monitor-point integrated loads ----
     if result.monitor_loads:
@@ -743,7 +763,11 @@ def _render_sol144_deflected(bulk: BulkData, result: Sol144TrimResult) -> None:
 def _render_sol144_diverg(result: Sol144DivergResult) -> None:
     """Per-Mach divergence roots table (Step 55 DIVERG sweep)."""
     st.subheader("Aerodynamic divergence sweep")
-    has_v = result.rhoref > 0.0
+    # The solver reports q only, as MSC does (#73); the speed needs a density, which
+    # is the user's flight condition: V = sqrt(2 q / rho) in the deck's units.
+    rho = st.number_input(
+        "Density for V-div (deck units; 0 = omit)", min_value=0.0, value=0.0,
+        format="%.6g", key=f"diverg_rho_{result.subcase_id}")
     for mr in result.mach_results:
         st.markdown(f"**Mach {mr.mach:.4g}**")
         if not mr.roots:
@@ -752,8 +776,8 @@ def _render_sol144_diverg(result: Sol144DivergResult) -> None:
         rows = []
         for i, root in enumerate(mr.roots, start=1):
             row = {"Root": i, "q-div": root.q_div}
-            if has_v and root.v_div is not None:
-                row["V-div"] = root.v_div
+            if rho > 0.0:
+                row["V-div"] = float(np.sqrt(2.0 * root.q_div / rho))
             rows.append(row)
         st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
 

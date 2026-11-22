@@ -12,7 +12,7 @@ With Δξ = ξ − ξ_trim on the Step 61 free-free basis Φ = [Φ_r | Φ_e]::
 
     M_hh Δξ̈ + (C_s − q·B_hh) Δξ̇ + (K_hh − q·Q_hh) Δξ = q·Q_hc·Δδ_c(t)
 
-    M_hh = Φᵀ M_aa Φ     (subcase mass case — fixed-Φ MASSSET rule, Step 60/62)
+    M_hh = Φᵀ M_aa Φ     (subcase mass case — fixed-Φ MASSCASE rule, Step 60/62)
     K_hh = Φᵀ K_aa Φ     (rigid rows/cols ≡ 0: free flight = the rigid
                           partition is simply not constrained — no Schur
                           complement and no per-step re-trim; K̂ stays
@@ -23,7 +23,7 @@ With Δξ = ξ − ξ_trim on the Step 61 free-free basis Φ = [Φ_r | Φ_e]::
     C_s[:, e-cols] = M_hh[:, e-cols]·diag(2 ζ ω_i)
                          (uniform elastic modal damping; built from the
                           case M_hh, NOT ``HsetGafs.C_hh``, so the damping
-                          force is exactly M Φ_e (2ζω ξ̇_e) under a MASSSET)
+                          force is exactly M Φ_e (2ζω ξ̇_e) under a MASSCASE)
 
 The Δ-form keeps gravity and the trim forcing implicit: at Δδ_c = 0 the trim
 IS the equilibrium, so the run starts exactly at rest (Δξ = Δξ̇ = 0) and a
@@ -76,9 +76,9 @@ full Φ would double-count it).  At t0 (Δξ = 0) this is the Step 53 static
 solution, truncation-independent; at a settled state it is the static trim
 solve at the settled δ.
 
-Fixed-Φ mass cases (Step 60 MASSSET)
+Fixed-Φ mass cases (Step 60 MASSCASE)
 ------------------------------------
-The basis Φ is built once from the BASELINE mass case; a MASSSET subcase swaps
+The basis Φ is built once from the BASELINE mass case; a MASSCASE subcase swaps
 only the mass side (M_hh = Φᵀ M_aa,case Φ, M_ax,case) and the IC trim.  K_hh
 and the aero operators (Q_hh/Q_hc/B_hh) depend only on geometry and Mach and
 are reused.  ``ManeuverBasisCache`` holds the untruncated basis per
@@ -112,6 +112,7 @@ from sbeam.solver.maneuver_qs import (
     refuse_load_in_mloads,
     assemble_operators,
     delta_of_t,
+    warn_extrapolated_commands,
     force_l,
     recover_step,
 )
@@ -133,7 +134,7 @@ from sbeam.solver.sol144_util import (
 from sbeam.types import FloatArray
 
 # CG shift (fraction of c_ref) beyond which the frozen mean axis of the
-# baseline basis is considered materially wrong for a MASSSET case (D4).
+# baseline basis is considered materially wrong for a MASSCASE case (D4).
 _CG_SHIFT_WARN_FRAC = 0.05
 
 
@@ -141,7 +142,7 @@ class ManeuverBasisCache:
     """Job-level cache of the untruncated free-free basis (decision D3).
 
     One basis per (spc_sid, EIGRL sid), always built from the BASELINE mass
-    case (the fixed-Φ rule: MASSSET subcases swap M, never Φ).  ``n_builds``
+    case (the fixed-Φ rule: MASSCASE subcases swap M, never Φ).  ``n_builds``
     counts eigensolves — the build-once gate asserts it stays at 1 across a
     multi-subcase mass sweep.
     """
@@ -172,7 +173,7 @@ def _build_basis(
 
 
 def _warn_cg_shift(bulk: BulkData, massset_sid: int) -> None:
-    """D4: warn when a MASSSET overlay moves the CG > 5 % of c_ref."""
+    """D4: warn when a MASSCASE overlay moves the CG > 5 % of c_ref."""
     base = compute_gpwg(bulk, None)
     case = compute_gpwg(bulk, massset_sid)
     shift = float(np.linalg.norm([
@@ -180,7 +181,7 @@ def _warn_cg_shift(bulk: BulkData, massset_sid: int) -> None:
     cref = require_aeros(bulk).cref
     if cref > 0.0 and shift > _CG_SHIFT_WARN_FRAC * cref:
         warnings.warn(
-            f"run_maneuver_modal: MASSSET {massset_sid} moves the CG by "
+            f"run_maneuver_modal: MASSCASE {massset_sid} moves the CG by "
             f"{shift:.4g} ({shift / cref:.1%} of c_ref) from the baseline; the "
             f"fixed-Phi mean axis is only trustworthy below "
             f"{_CG_SHIFT_WARN_FRAC:.0%} — re-solve the basis for this mass "
@@ -334,7 +335,7 @@ def run_maneuver_modal(
 
     _warn_unrepresented_labels(basis, ops.label_to_col)
 
-    # Case-mean-axis correction (MASSSET): the baseline Φ_e is mass-orthogonal
+    # Case-mean-axis correction (MASSCASE): the baseline Φ_e is mass-orthogonal
     # to Φ_r under the BASELINE mass only; under a mass case Φ_rᵀ M_case Φ_e ≠ 0
     # and the elastic inertia would acquire a rigid-row resultant the recovery
     # (whose only inertia channel is M_ax·URDD = −M Φ_r·δ̈) cannot represent —
@@ -387,14 +388,14 @@ def run_maneuver_modal(
     psi_e = phi_e - phi_r @ coeff                           # (n_a, n_e)
 
     # ---- Coupled h-set operators (dense n_h × n_h) ----
-    # Mass from the SUBCASE M_aa (fixed-Φ MASSSET rule: baseline Φ, case mass).
+    # Mass from the SUBCASE M_aa (fixed-Φ MASSCASE rule: baseline Φ, case mass).
     M = phi.T @ ops_a.M_aa @ phi
     omega = 2.0 * np.pi * basis.elastic_freqs_hz            # (n_e,)
     c_rate = 2.0 * mload.zeta * omega                       # per-mode damping rate
     C_struct = np.zeros((n_h, n_h))
     if mload.zeta:
         # Physical damping force M Φ_e (2ζω Δξ̇_e), projected — exact under a
-        # MASSSET where the elastic mass block is no longer identity.
+        # MASSCASE where the elastic mass block is no longer identity.
         C_struct[:, n_r:] = M[:, n_r:] * c_rate[np.newaxis, :]
     C = C_struct - q * gafs.B_hh                            # unsymmetric
     K = basis.K_hh - q * gafs.Q_hh
@@ -439,6 +440,7 @@ def run_maneuver_modal(
     # Δξ = Δξ̇ = 0 exactly.  Δξ̈₀ = M⁻¹·RHS(t0) is zero whenever the command
     # tables start at their trim values (M is invertible: M_rr ≻ 0 and the
     # elastic block is positive definite by construction).
+    warn_extrapolated_commands(commands, bulk.tabled1s, t0, tend)
     F_ext0, delta_tot0 = _rhs_ext(t0)
     xi = np.zeros(n_h)
     vxi = np.zeros(n_h)

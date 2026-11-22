@@ -14,7 +14,7 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.model.card_writers import FAMILIES
 from sbeam.model.maneuver import Mldcomd, Mloads, Tabled1
 from sbeam.model.maneuver_presets import load_factor_to_urdd3
-from sbeam.parser.bdf_reader import expand_int_list_with_thru
+from sbeam.parser.bulk_fields import expand_int_list_with_thru
 from sbeam.parser.case_control import CaseControl, SubcaseControl
 from sbeam.results.results import ManeuverResult, Sol144TrimResult
 
@@ -233,17 +233,29 @@ def _prehold(t1: float, y0: float) -> list[tuple[float, float]]:
     return [(0.0, y0)] if t1 > 0.0 else []
 
 
+def _posthold(pts: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Append a point that holds the last value.
+
+    TABLED1 extrapolates linearly from its last two points (MSC QRG 2024.1 PDF p.2897
+    remark 6), so a shape that ends on a slope would keep going.  Two end points of
+    equal y make the extrapolation flat; the hold point sits one shape-length later.
+    """
+    t_end, y_end = pts[-1]
+    span = max(t_end - pts[0][0], 1.0e-3)
+    return pts + [(t_end + span, y_end)]
+
+
 def gen_step(t1: float, y0: float, y1: float,
              rise: float = 1.0e-3) -> list[tuple[float, float]]:
-    """Near-instant step from y0 to y1 at t1 (TABLED1 is piecewise linear)."""
-    return _prehold(t1, y0) + [(t1, y0), (t1 + rise, y1)]
+    """Near-instant step from y0 to y1 at t1 (TABLED1 is piecewise linear), then held."""
+    return _posthold(_prehold(t1, y0) + [(t1, y0), (t1 + rise, y1)])
 
 
 def gen_ramp(t1: float, t2: float, y0: float, y1: float) -> list[tuple[float, float]]:
-    """Linear ramp y0 -> y1 over [t1, t2], held clamped outside."""
+    """Linear ramp y0 -> y1 over [t1, t2], then held."""
     if t2 <= t1:
         raise ValueError("ramp needs t2 > t1")
-    return _prehold(t1, y0) + [(t1, y0), (t2, y1)]
+    return _posthold(_prehold(t1, y0) + [(t1, y0), (t2, y1)])
 
 
 def gen_cosine_ramp(t1: float, t2: float, y0: float, y1: float,
@@ -257,7 +269,7 @@ def gen_cosine_ramp(t1: float, t2: float, y0: float, y1: float,
         t = t1 + s * (t2 - t1)
         y = y0 + (y1 - y0) * 0.5 * (1.0 - math.cos(math.pi * s))
         pts.append((t, y))
-    return pts
+    return _posthold(pts)
 
 
 def gen_doublet(t1: float, t2: float, amp: float, y0: float,
@@ -270,7 +282,8 @@ def gen_doublet(t1: float, t2: float, amp: float, y0: float,
         s = i / (n - 1)
         t = t1 + s * (t2 - t1)
         pts.append((t, y0 + amp * math.sin(2.0 * math.pi * s)))
-    return pts
+    pts[-1] = (pts[-1][0], y0)          # sin(2π) is not exactly zero in floating point
+    return _posthold(pts)
 
 
 # ---------------------------------------------------------------------------
@@ -357,7 +370,7 @@ def resolve_increment_tables(
         if len(mass_sids) > 1:
             errors.append(
                 f"MLOADS {spec.mloads_sid} is shared by subcases with different "
-                "MASSSETs — command tables are mass-case specific, so give "
+                "MASSCASEs — command tables are mass-case specific, so give "
                 "each mass case its own MLOADS (the sample-deck convention)."
             )
             continue
@@ -501,7 +514,7 @@ def validate_sol144_authoring(
             if sid is not None and sid not in family_store(bulk, family):
                 errors.append(f"{tag}: {name} {sid} not found in the bulk data.")
         if sc.massset_sid is not None and sc.massset_sid not in bulk.masssets:
-            errors.append(f"{tag}: MASSSET {sc.massset_sid} not found in the "
+            errors.append(f"{tag}: MASSCASE {sc.massset_sid} not found in the "
                           "bulk data.")
 
     # --- TRIM cards (parser parity: labels, DOF-count warnings) ---
@@ -588,7 +601,7 @@ def validate_sol144_authoring(
             if sc.mloads_sid == sid and sc.massset_sid is not None \
                     and ml.selects_modal:
                 warns.append(
-                    f"Subcase {sc.subcase_id}: MASSSET {sc.massset_sid} with "
+                    f"Subcase {sc.subcase_id}: MASSCASE {sc.massset_sid} with "
                     "the modal solver uses the fixed baseline basis (fixed-Φ); "
                     "the solver warns if the case CG shifts more than 5% of "
                     "c_ref.")

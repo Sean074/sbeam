@@ -50,16 +50,18 @@ from sbeam.model.gust import Gustlf
 # layering (util has no sol144-internal imports; derivs/diverg import util).
 from sbeam.solver.sol144_util import (  # noqa: F401
     AeroCache, urdd_rcsid_to_basic, urdd_basic_to_rcsid, load_resultant,
+    urdd_derivs_to_label_frame,
     build_inertial_cols, get_suport_local, pitch_moment, aero_moment_resultant,
     URDD_DOF,
 )
 from sbeam.solver.sol144_trim_solve import (  # noqa: F401
     build_trim_schur, recover_u_a,
-    solve_trim_determined, solve_trim_overdetermined,
+    solve_trim_determined, solve_trim_overdetermined, check_trim_limits,
 )
 from sbeam.solver.sol144_derivs import (  # noqa: F401
     compute_rigid_derivs, compute_hinge_moments,
     compute_restrained_derivs, compute_unrestrained_derivs,
+    compute_restrained_hinge_moments,
 )
 from sbeam.solver.sol144_diverg import (  # noqa: F401
     run_sol144_diverg, divergence_dynamic_pressure, divergence_roots,
@@ -293,6 +295,7 @@ class _TrimState:
     total_cmx: float = field(init=False)
     total_cmz: float = field(init=False)
     hinge_moments: Any = field(init=False)
+    hinge_moments_restrained: Any = field(init=False)
 
     # _stage_flight_and_net_loads
     box_forces: FloatArray = field(init=False)
@@ -379,16 +382,16 @@ def _stage_validate_inputs(st: _TrimState) -> None:
 
 
 def _stage_resolve_massset_and_mach(st: _TrimState) -> None:
-    """MASSSET mass case (Step 60) + flight-Mach / AeroCache resolution (AE9)."""
+    """MASSCASE mass case (Step 60) + flight-Mach / AeroCache resolution (AE9)."""
     bulk, subcase, aero, aero_cache = st.bulk, st.subcase, st.aero, st.aero_cache
     trim_card = st.trim_card
 
     # ------------------------------------------------------------------ #
-    # Mass case (Step 60) — MASSSET payload configuration for this subcase
+    # Mass case (Step 60) — MASSCASE payload configuration for this subcase
     # ------------------------------------------------------------------ #
     # Every mass-derived operator below (M_ax, M_aa, GPWG) is built for this
     # case; nothing else changes.  The AIC, splines and the whole AeroCache are
-    # geometry/Mach-only and are reused across mass cases untouched — a MASSSET
+    # geometry/Mach-only and are reused across mass cases untouched — a MASSCASE
     # sweep must never invalidate the aero cache.
     from sbeam.gpwg import compute_gpwg
     from sbeam.model.mass_overlay import resolve_mass_case
@@ -543,7 +546,8 @@ def _stage_echo_chordcp(st: _TrimState) -> None:
         for card in sorted(bulk.chordcps.values(), key=lambda c: c.caero_eid):
             idxs = np.array([j for j, b in enumerate(aero.boxes)
                              if b.caero_eid == card.caero_eid])
-            cp   = np.asarray(card.data, dtype=float)
+            # Card Cp is along MSC's element normal (#84)
+            cp   = np.asarray(card.data, dtype=float) * [aero.boxes[j].msc_sign for j in idxs]
             area = np.array([aero.boxes[j].area for j in idxs])
             nz   = n_z_all[idxs]
             xfp  = np.array([aero.boxes[j].force_point[0] for j in idxs])
@@ -691,6 +695,8 @@ def _stage_solve_trim(st: _TrimState) -> None:
     # ------------------------------------------------------------------ #
     # Schur-complement trim solve (determined or over-determined)
     # ------------------------------------------------------------------ #
+    # One TRIMCON set per deck (the cross-reference pass refuses a second SID, #77)
+    trimcons = [con for cons in bulk.trimcons.values() for con in cons]
     if over_determined:
         # Resolve the TRIMOBJ/TRIMCON/TRIMVAR sets referenced by this subcase.
         trimobj = bulk.trimobjs.get(subcase.trimobj_sid) if subcase.trimobj_sid else None
@@ -702,9 +708,6 @@ def _stage_solve_trim(st: _TrimState) -> None:
                 f"Over-determined trim (n_free={n_free} > n_suport={n_suport}) "
                 "requires a TRIMOBJ card to specify the weighted objective."
             )
-        trimcons = []
-        for cons in bulk.trimcons.values():
-            trimcons.extend(cons)
         u_a, delta_free_arr, K_ll_lu, l_idx, r_idx = solve_trim_overdetermined(
             K_aa, Q_aa, Q_ax_a, M_ax_a, f_rhs_a, q_dyn, suport_local,
             free_labels, free_label_cols, trimobj, trimcons, bulk.trimvars,
@@ -741,6 +744,8 @@ def _stage_solve_trim(st: _TrimState) -> None:
             urdd_full_basic, label_to_col, R_rcsid, True)
         for lbl in free_urdd:
             trim_vars[lbl] = float(urdd_full_rcsid[label_to_col[lbl]])
+
+    check_trim_limits(trim_vars, bulk.trimvars, trimcons, st.trim_sid)
 
     # Full delta_all vector (ordered by all_labels)
     delta_all = np.array([trim_vars.get(l, 0.0) for l in all_labels])
@@ -915,13 +920,22 @@ def _stage_compute_derivs(st: _TrimState) -> None:
     # ------------------------------------------------------------------ #
     # Elastic restrained derivatives (finite difference, u_r = 0)
     # ------------------------------------------------------------------ #
+    rest_box_forces: dict[str, FloatArray] = {}
     rest_derivs = compute_restrained_derivs(
         K_ll_lu, l_idx, Q_ax_a, M_ax_a, all_labels,
         aero, D_jx,
         T, free_local, len(red_dofs),
         bulk, x_ref, q_dyn, suport_pos,
         f_box_yaw=st.f_box_yaw,
+        box_force_derivs=rest_box_forces,
     )
+    # The URDD rows come out per unit basic acceleration; the trim variable of that
+    # name is an RCSID component, and the f06 prints its value in that frame (#82)
+    has_rcsid = bool(st.aeros.rcsid)
+    rest_derivs = urdd_derivs_to_label_frame(rest_derivs, st.R_rcsid, has_rcsid)
+    st.hinge_moments_restrained = urdd_derivs_to_label_frame(
+        _by_label(compute_restrained_hinge_moments(aero, bulk, rest_box_forces)),
+        st.R_rcsid, has_rcsid)
 
     # ------------------------------------------------------------------ #
     # Unrestrained (mean-axis / inertia-relief) derivatives — AE8b
@@ -1177,6 +1191,10 @@ def _pack_trim_result(st: _TrimState) -> Sol144TrimResult:
         maneuver_closure=st.maneuver_closure,
         q_div=st.q_div,
         hinge_moments=st.hinge_moments,
+        hinge_moments_restrained=_by_surface(st.hinge_moments_restrained),
+        box_ids=[bid for bid, _k in sorted(st.aero.require_box_id_to_k().items(),
+                                           key=lambda item: item[1])],
+        box_msc_sign=[b.msc_sign for b in st.aero.boxes],
         trim_mode=st.trim_mode,
         monitor_loads=st.monitor_loads,
         section_loads=st.section_loads,
@@ -1198,6 +1216,18 @@ def _pack_trim_result(st: _TrimState) -> Sol144TrimResult:
         massset_mass=mass_case_gpwg.total_mass,
         massset_cg=(mass_case_gpwg.cg_x, mass_case_gpwg.cg_y, mass_case_gpwg.cg_z),
     )
+
+
+def _by_label(table: dict[str, dict[str, float]]) -> dict[str, dict[str, float]]:
+    """Transpose ``{surface: {label: value}}`` to ``{label: {surface: value}}``."""
+    out: dict[str, dict[str, float]] = {}
+    for outer, row in table.items():
+        for inner, value in row.items():
+            out.setdefault(inner, {})[outer] = value
+    return out
+
+
+_by_surface = _by_label          # the transpose is its own inverse
 
 
 def run_sol144_trim(

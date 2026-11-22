@@ -188,6 +188,7 @@ tests), and SOL 111/112 share the modal machinery Steps 61–62 built.
 | Shear-center offset / bend–twist coupling (PBAR I12) | The elastic axis is the grid line by construction: a transverse `FORCE` at a grid produces no twist, which is wrong for sections whose shear center is off the section reference (channels, open sections), and `PBAR` carries no I12, so unsymmetric-section cross-plane bending coupling is absent. Needs the coupled 12-DOF stiffness (I12 terms) and a shear-center eccentricity in the element formulation; until then, model the eccentricity with rigid links. Found in the 2026-08-01 torsion-capability review. | New element formulation |
 | Restrained warping (open thin-walled sections) | Torsion is uniform St. Venant `GJ/L` only — no warping DOF, so restrained torsion of open thin-walled sections (I, channel, Z) is predicted too flexible, and warping-driven torsional frequencies come out low. Needs a 7th warping DOF per node (14-DOF element, PBEAM CWA/CWB-style warping constant) or stays a documented limitation. Found in the 2026-08-01 torsion-capability review. | New element formulation |
 | SOL 105 — Buckling | Solve `([K] + λ[K_G]){φ} = 0`; requires geometric stiffness from SOL 101 axial forces. Stress-adjacent — the first parked item to revisit once the loads process feeds a stress model. **Validation target (2026-10-02, NASTRAN-95 demo D13-01-1A, `inp/d13011a.inp`):** 100-CBAR hinged–hinged beam, L = 100, A = 2.0, I = 0.666667, E = 10.4e6, ρ = 2.0e-4, axial compression F = 3423.17 (≈ P_cr/2, P_cr = π²EI/L² = 6842.93); prestressed modes f_n = f₀ₙ·√(1 − F/(n²P_cr)) = 14.6197 / 77.3766 / 180.878 Hz (N95: 14.61968 / 77.37659 / 180.8778) — a K + K_G modal gate (rebuild the deck from these numbers; N95 is NOSA 1.3, reference only). | SOL 101 complete |
+| RBE3 — NASTRAN kinematics | sbeam's RBE3 averages same-numbered DOFs with no lever arm. NASTRAN instead fits a weighted least-squares rigid-body motion to the independent grids, with lever arms (theory source: COSMIC `mis/crspls.f`, a 6×6 normal-equation solve, and the CRBE3 entry in NASTRAN-93 `um/BULK.TXT`, whose example derives rotation 4 from translations 123; #61). Recent MSC versions also scale rotational-DOF weights by a characteristic length (from memory, not checked). With NASTRAN kinematics, `REFC=123456` with `Ci=123` (rotations derived from translations) would become legal, and offset independent grids would give NASTRAN's answer. Since #60 (2026-11-15) the first case is refused and the second warns, so neither is silent. Activating this is a physics step (Tier L): it needs a consuming load case (rule 5), e.g. an offset RBE3 spreading a pylon or store load, and a closed-form or NASTRAN benchmark (rule 2). | — |
 | PBARL | Define PBAR cross-section by standard shape (ROD, BAR, BOX, I, L, T, …) with auto-computed A, I, J. | Parser |
 | MAT1 thermal fields | GE (structural damping) parsed but unused; A and TREF for thermal expansion. | SOL 108 for GE |
 | CBEND | Curved beam element. | New element formulation |
@@ -204,7 +205,22 @@ this route.
 
 The route came out of the 2026-10-02 NASTRAN-95 review. NASTRAN-95 (github.com/nasa/NASTRAN-95,
 NOSA 1.3) is used as a theory and benchmark reference only: no code is copied, and decks are
-rebuilt from published numbers.
+rebuilt from published numbers. NASTRAN-93 (github.com/nasa/NASTRAN-93, also NOSA 1.3) is
+the earlier COSMIC release, and its `um/BULK.TXT` User's Manual is cited for card rules
+(#61). NASTRAN-95 stays the benchmark source, since only it ships reference outputs
+(`demoout/`).
+
+**Why no code is copied** (recorded 2026-11-15, #61):
+- **Licensing.** sbeam is MIT; NOSA 1.3 keeps distributed modifications under NOSA, with
+  its own notice and source terms. Copied or translated code would not be MIT, and its
+  provenance would be hard to audit. (Not legal advice; read the NOSA text before
+  relying on this.) Reading the source to understand a method, citing it, and quoting
+  short passages with attribution are reference use, not copying.
+- **Benchmark independence.** A translated reference cannot check the implementation.
+  Matching NASTRAN-95 would only show the translation was faithful, bugs included. An
+  independent implementation that reproduces its numbers is evidence (rule 2: scored
+  outside the builder, #52). Rebuilding decks from published numbers keeps the inputs
+  independent too.
 
 **Activated 2026-10-02, delivered 2026-10-24:** the element interface (`assembly/elements.py`
 line-element registry) and CROD/PROD/CONROD (consumer: engine pylon struts) shipped under

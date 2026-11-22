@@ -40,6 +40,12 @@ def main() -> None:
         # Unknown-card skips and TRIM advisories: visible, never fatal (#45).
         print(f"Parser warning: {w.message}", file=sys.stderr)
 
+    if not cc.subcases:
+        # No SUBCASE and no selector or output request above BEGIN BULK (#79):
+        # there is nothing to solve, and an empty f06 would read as success.
+        sys.exit("Error: the case control defines nothing to run "
+                 "(no SUBCASE and no selector or output request)")
+
     sol144_results = None
     maneuver_results: Dict[int, Any] = {}
     diverg_results: Dict[int, Any] = {}
@@ -72,7 +78,7 @@ def main() -> None:
             aero = build_aero_model(bulk, grid_index=grid_index)
             cache = AeroCache(bulk, grid_index, seed=aero)
             # Step 62 (D3): one free-free basis per job, shared across every
-            # modal MLOADS subcase (MASSSET sweeps swap M only, never Phi).
+            # modal MLOADS subcase (MASSCASE sweeps swap M only, never Phi).
             basis_cache = ManeuverBasisCache(bulk, aero)
             # An MLOADS subcase runs the Phase G0 transient maneuver-loads solver
             # (the Step 62 modal solver when the card requests it via

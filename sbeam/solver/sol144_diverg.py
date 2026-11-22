@@ -106,8 +106,9 @@ def run_sol144_diverg(
     shapes, at each Mach listed on the ``DIVERG`` card.  Divergence depends only
     on ``K_aa`` and ``Q_aa`` (no trim RHS), so no TRIM card is required.
 
-    With the sbeam-extension ``RHOREF`` density on the DIVERG card, each root is
-    mapped to a divergence speed ``V_div = sqrt(2·q_div/ρ)``.
+    Like MSC (QRG 2024.1 p.1603 remark 2) the result is divergence dynamic
+    pressures only; the speed at a chosen density is ``V = sqrt(2·q_div/ρ)``
+    (theory: ``docs/20_theory/01_aeroelastics_theory.md``), left to the caller (#73).
 
     Args:
         bulk:       Parsed BulkData — must include a SUPORT card and the DIVERG
@@ -169,8 +170,6 @@ def run_sol144_diverg(
     l_idx = [i for i in range(K_aa.shape[0]) if i not in set(r_idx)]
     K_ll = K_aa[np.ix_(l_idx, l_idx)]
 
-    rho = diverg.rhoref
-
     mach_results = []
     for mach in machs:
         aero_m = aero_cache.get(mach)
@@ -189,8 +188,7 @@ def run_sol144_diverg(
             peak = np.max(np.abs(mode_g))
             if peak > 0.0:
                 mode_g = mode_g / peak
-            v_div = float(np.sqrt(2.0 * q_div / rho)) if rho > 0.0 else None
-            roots.append(DivergRoot(q_div=q_div, v_div=v_div, mode_shape=mode_g))
+            roots.append(DivergRoot(q_div=q_div, mode_shape=mode_g))
 
         mach_results.append(DivergMachResult(mach=float(mach), roots=roots))
 
@@ -198,7 +196,6 @@ def run_sol144_diverg(
         subcase_id=subcase.subcase_id,
         diverg_sid=diverg_sid,
         nroots=diverg.nroots,
-        rhoref=rho,
         mach_results=mach_results,
     )
 

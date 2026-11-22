@@ -1,9 +1,9 @@
 """NASTRAN bulk-data real-field format — both directions.
 
 A NASTRAN small/free-field data field is **8 characters wide**.  Free-field
-(comma-separated) input is not exempt: a strict reader still truncates each
-comma-delimited field to its first 8 characters, so a token such as
-``4.715932E+03`` is read as ``4.715932`` — a silent factor-of-1000 corruption.
+(comma-separated) input is not exempt: MSC rounds a longer real to 8 characters
+(QRG p.1048), and a strict reader may instead truncate it, so a token such as
+``4.715932E+03`` can be read as ``4.715932`` — a silent factor-of-1000 corruption.
 Exported load cards are the advertised handoff to an external stress code, so
 every real this program writes into a card field must fit in 8 characters.
 
@@ -13,7 +13,7 @@ fixed-point candidate (``4715.932``) and a NASTRAN implicit-exponent candidate
 usually wins in the normal load range, implicit exponent wins for very large or
 very small magnitudes.
 
-``parse_real`` is the matching read side, and ``bdf_reader._to_float``
+``parse_real`` is the matching read side, and ``bulk_fields.to_float``
 delegates to it, so the format sbeam writes and the format it accepts are one
 definition and cannot drift apart.
 """

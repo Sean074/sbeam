@@ -9,7 +9,7 @@ from .aero import (
 )
 from .gust import Gustlf
 from .maneuver import Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads
-from .mass import Massset, Conm2
+from .mass import Massset, MassCombination, Conm2
 from .constraint import Spc, Spc1, Suport
 from .coordinate_system import Cord2r
 from .element import Cbar, Cbush, Conrod, Crod, Plotel, Rbe3, Rbe2, Rbar
@@ -36,7 +36,12 @@ class BulkData:
     mat1s: dict[int, Mat1] = field(default_factory=dict)
     conm2s: dict[int, Conm2] = field(default_factory=dict)
     masssets: dict[int, Massset] = field(default_factory=dict)   # Step 60 mass cases
-    # CONM2 EIDs named by a MASSSET ADD / REPLACE-overlay slot: ordinary CONM2
+    # MSC multiple mass combination (#102): MASSSET bulk entries and the CONM2 EIDs of each
+    # BEGIN MASSID section ({massid: [eid, ...]}, labels alongside)
+    mass_combinations: dict[int, MassCombination] = field(default_factory=dict)
+    mass_increments: dict[int, list[int]] = field(default_factory=dict)
+    mass_increment_labels: dict[int, str] = field(default_factory=dict)
+    # CONM2 EIDs named by a MASSCASE ADD / REPLACE-overlay slot: ordinary CONM2
     # cards that are overlay-only and therefore excluded from the baseline mass.
     overlay_conm2_eids: set[int] = field(default_factory=set)
     spcs: dict[int, list[Spc]] = field(default_factory=dict)

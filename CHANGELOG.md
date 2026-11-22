@@ -11,6 +11,544 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.0] — 2026-11-22
+
+Milestone v0.4.0, **faithful NASTRAN input** (#99). The deck is read as MSC NASTRAN lays it
+out, with ZAERO's layout where only ZAERO has the card and pyNastran as the independent
+parse gate: MSC field layouts (CBUSH, CONM2, TABLED1, EIGRL, MONPNT1, AECORR, mass
+combinations), input that is refused rather than skipped on every surface, order-independent
+bulk data, and a pyNastran cross-parse of every repo deck in CI. Found by the 2026-11-16
+MSC/ZAERO/NASTRAN-95/pyNastran compatibility audit and closed with it: #48, #49, #51,
+#55–#84, #86, #96–#98, #102. Several entries change what a deck means: see Breaking changes
+(notably #84, silent for an unconverted deck). Filed out of scope: #103 (MSC monitor output
+form, v0.7.0).
+
+### Breaking changes
+- **MONPNT1 is read in MSC's two-line layout and is aerodynamic or structural by its
+  AECOMP; MONPNT3 is refused** (#86; pre-1.0 MINOR break). MSC: `MONPNT1 NAME LABEL`
+  (LABEL in fields 3–9) / `AXES COMP CP X Y Z CD`, "either an aerodynamic or a structural
+  MONPNT1, depending on the data provided in the COMP field" (QRG 2024.1 PDF p.2303–2304,
+  remark 2). sbeam read its own one-line layout, aero-only, and had a structural `MONPNT3`
+  with the same layout, where MSC's MONPNT3 is a grid point force cut (p.2307); MSC-form
+  decks failed with misleading messages. Now a MONPNT1 on a SET1 AECOMP runs the structural
+  integrator sbeam's MONPNT3 ran; MSC's MONPNT3 is refused (grid point forces are not
+  computed; #103); a one-line MONPNT1 is refused with migration advice; CD other than CP
+  and an aerodynamic/structural pair sharing a NAME (allowed by MSC, but sbeam keys output
+  by name) are refused. LABEL keeps its spaces across fixed-field columns. Output is
+  unchanged: the f06 and `monitor_loads.csv` still label the kinds `MONPNT1`/`MONPNT3`
+  (#103 takes up MSC's naming and rigid/elastic columns). **Migrate a deck:** move AXES … Z
+  to a continuation and write `MONPNT3` as `MONPNT1`; write line 1 in small field, as
+  NASTRAN and pyNastran need for a label over 8 characters. The 30 cards in ten repo decks
+  are converted; every output is bit-identical. pyNastran now reads every repo MONPNT1 and
+  agrees field for field (`tests/compat`). Found by the 2026-11-16 audit (M8, A9, P10).
+- **Signed per-box aero data is along MSC's element normal** (#84; pre-1.0 MINOR break,
+  **silent for an unconverted deck**). MSC's CAERO1 element system has y from P1 toward P4
+  and z = x × y (QRG 2024.1 PDF p.1344, remark 4, Figure 9-5), and the downwash is the
+  box's normal velocity (AAUG 2023.1 PDF p.30, p.144), so a W2GJ on a port wing or a fin
+  drawn root to tip is signed along −z or −y. sbeam read W2GJ, AECORR targets and CHORDCP
+  Cp along its own +z/+y normal on every surface, so the same W2GJ on a port wing gave
+  the same lift whichever way the wing was drawn. Now each box carries `msc_sign` (+1 or
+  −1), the three cards are read as `msc_sign · value`, the correction builders write
+  values in MSC's frame, and the f06 `DELTA-CP` column prints along MSC's normal
+  (`result.box_cp` stays along sbeam's normal; new `result.box_msc_sign`). WKK and STRIPK
+  are ratios and unchanged. The solve normal is unchanged. **Migrate a deck:** negate the
+  W2GJ, AECORR and CHORDCP data of every CAERO1 whose MSC normal opposes sbeam's (port
+  surfaces and fins drawn root to tip). The 15 such cards in nine repo decks are
+  converted (flagship port wing, port tailplane, fin and vertical body panels; HA144A
+  full-span port wing; the twisted-wing validation deck) and every sample output is
+  bit-identical. Gates `tests/aero/test_msc_element_normal.py` and
+  `tests/results/test_f06_sol144_labels.py::TestDeltaCpFrame`. Charter §2–§3 amended.
+  Found by the 2026-11-16 audit (A7).
+- **AECORR carries its build Mach in field 5; the targets start in field 6** (#72; pre-1.0
+  MINOR break). The WT2 target is a loading in circulation units on the Prandtl–Glauert
+  geometry at the Mach it was built at, but the card had no Mach and the card reference
+  called it "target cp per box". The solver re-ratioed it against the reference at each
+  TRIM Mach, so a card built at M1 gave the bare `1/β` trend at M2 instead of the VLM's
+  three-dimensional one (1.2247 against 1.1292 for M 0.2 → 0.6 on a 20 × 4 wing). The
+  ratio is now formed once at the card's MACH, against the model being solved, and applied
+  at every TRIM Mach, as MSC applies a WKK (AAUG 2023.1 PDF p.144). Storing the ratio
+  itself on the card was tried and rejected: it let the cruciform body panels load the
+  wing (flying-box ΔCp moved by up to 1.08, gate B4; branch `wip/72-wkk-ratios`). The
+  card reference now states the units. **Migrate a deck:** insert the build Mach in
+  field 5; an old card is refused by the target-length check, which says so. The two repo
+  decks (built at Mach 0) are reflowed with the same target tokens and give identical
+  results; the correction builders write MACH. Gate `tests/aero/test_aecorr_mach.py`.
+  Found by the 2026-11-16 audit (M2).
+- **The sbeam mass-case card and command are renamed `MASSSET` → `MASSCASE`** (#78; pre-1.0
+  MINOR break). MSC has its own `MASSSET` bulk entry, `MASSSET ID S0 S1 ID1 S2 ID2 …` (Mass
+  Combination Definition, QRG 2024.1 PDF p.2018), and a case-control `MASSSET = n` that
+  selects it (p.482). sbeam's payload card had the same name and a different layout, so
+  MSC's `MASSSET,11,1.0,1.0,0,1.0,101` was read as label `1.0`, scale 1.0, with ID1/S2/ID2
+  dropped, and `MASSSET 12 2.0 0.5 0` scaled the mass by 0.5 where MSC scales it by 1.0. An
+  sbeam extension takes a name no vendor defines (rule 7): `MASSCASE` appears in none of
+  the nine MSC and ZAERO manuals in the reference library. `MASSSET` is now refused in
+  bulk data and in case control, naming `MASSCASE`. **Migrate a deck:** rename the bulk
+  card and the case-control command; the fields are unchanged. The five repo decks are
+  renamed and give identical results. The Python names (`Massset`, `bulk.masssets`,
+  `massset_sid`) are unchanged. Found by the 2026-11-16 audit (A8, C9).
+- **TABLED1 extrapolates linearly outside the table, as MSC does; it used to hold the end
+  value** (#70; pre-1.0 MINOR break). MSC: "interpolation within the table and
+  extrapolation outside the table using the two starting or end points" (QRG 2024.1 PDF
+  p.2896–2897, remark 6). A command ramp that stops before the end of an MLOADS run now
+  keeps ramping. **Migrate a deck:** end each table with two points of equal y to hold the
+  value. The transient solvers warn, naming the table, when one is extrapolated at a
+  non-zero slope inside the run window (MSC gives no message). No repo deck is affected:
+  every table covers its run and ends flat. The viewer's shape generators now add the
+  hold point. `XAXIS`/`YAXIS = LOG` was accepted and evaluated linearly; it is refused.
+- **EIGRL: V1/V2 and a blank ND are refused** (#70). MSC selects roots from V1, V2 and ND
+  together (QRG p.1802, Table 9-13). sbeam returns the lowest ND modes only: V1/V2 were
+  warned and not applied (`V1 = 0.1` still returned the rigid-body modes), and with ND
+  blank sbeam returned every mode where MSC returns the lowest root. Both are refused, as
+  is a NORM other than MASS or MAX (`POINT` was read as MASS). NASTRAN short reals
+  (`1.-1`) are now read in EIGRL and GUSTLF `ALT`. Every repo EIGRL gives ND only.
+  Found by the 2026-11-16 audit (S12, S13, A14, P13).
+- **CBUSH is read in MSC's layout** (#62; pre-1.0 MINOR break). MSC: `CBUSH EID PID GA GB
+  GO/X1 X2 X3 CID` / `S OCID S1 S2 S3` (QRG 2024.1 PDF p.1378–1380). sbeam read field 7
+  as CID, took the orientation vector from the continuation and did not read fields 6, 8
+  and 9, so `CBUSH,4,40,1,2,3` (GO) and a CID in field 9 were accepted and dropped: a
+  NASTRAN spring got the default orientation, which with unequal K1–K3 changes the
+  answer. Now: the vector is fields 6–8; an integer in field 6 is GO and is refused (not
+  supported); CID in field 9 is read, `0` = basic and `> 0` = a CORD2R (new: it was
+  "0 only"); PID defaults to EID; `S ≠ 0.5` and `OCID` are refused. MSC's axis rules are
+  enforced (p.1379 remarks 5–6): a grounded or coincident-grid spring needs a CID, and a
+  spring with no vector and no CID may have K1 and K4 only — sbeam used to pick basic y.
+  **Migrate a deck:** move X1 X2 X3 from the continuation to fields 6–8, and give a
+  grounded spring `CID 0` in field 9; an old-layout card is refused with that advice.
+  One repo deck changed (`v20_cbush_grounded_spring.bdf`, CID 0 added; same answer).
+  pyNastran reads the same PID, grids, vector and CID from four crafted cards. Found in
+  the #58 sweep; confirmed by the 2026-11-16 audit. A separate defect found on the way,
+  a two-grid CBUSH with lateral stiffness resisting rigid rotation, is filed as #97.
+- **CONM2 products of inertia take NASTRAN's sign** (#66; pre-1.0 MINOR break, **silent**).
+  MSC: the fields are `I21 = ∫ρ x₁x₂ dV`, `I31`, `I32`, and "the negative signs for the
+  off-diagonal terms are supplied automatically" (QRG 2024.1 PDF p.1449–1450, remark 5).
+  sbeam put the three fields into the inertia matrix unnegated, so every ported NASTRAN
+  deck with a product of inertia had its inertia coupling reversed; the card reference
+  said to negate them by hand but nothing refused or warned. The matrix is now
+  `[[I11, −I21, −I31], [−I21, I22, −I32], [−I31, −I32, I33]]`. **Migrate a deck written
+  for the old rule: negate I21, I31 and I32 on every CONM2.** Both signs are legal input,
+  so sbeam cannot detect an unconverted deck. No repo deck sets a product of inertia; no
+  shipped number changes. Gate: one CONM2 carrying the NASTRAN-defined inertia of four
+  point masses gives the same 6×6 mass as the four offset point masses, in basic and in
+  a rotated CID. Found by the 2026-11-16 audit (S3).
+- **DIVERG is read in MSC's layout; the solver reports divergence q only** (#73; pre-1.0
+  MINOR break). sbeam read field 4 as an sbeam-only `RHOREF` density and started the Mach
+  list in field 5, so MSC's own example `DIVERG,70,2,.5,.8,.9` lost Mach 0.5 and gave a
+  V_div from a "density" of 0.5, and AAUG 2023.1 p.148's `DIVERG 100 5 0.0` ran at the
+  AEROS Mach instead of 0.0. Fields 4 onward are now Mach numbers (QRG 2024.1 PDF p.1603);
+  a Mach after a blank field (remark 4) and duplicate Machs (remark 3) are refused; Mach 0.0
+  is accepted, as in MSC's example. Like MSC (remark 2) the f06 prints `Q-DIV` only:
+  `DivergRoot.v_div`, `Diverg.rhoref` and `Sol144DivergResult.rhoref` are removed. The
+  viewer's divergence table takes a density to show `V = √(2q/ρ)`; theory §5.5.1 explains
+  the conversion, units and the Mach-matched point. Sweep (QRG blank-field rules on list
+  cards): AEFACT (p.1141 remark 2) and AELIST (p.1145 remark 3) now refuse an embedded
+  blank that was skipped. **Migrate a deck:** delete the density from field 4 of each
+  DIVERG card. No repo deck used DIVERG; no shipped number changes. Found by the
+  2026-11-16 audit (M5, A2, P5).
+- **WKK multiplies each box's lift, as in MSC** (#71; pre-1.0 MINOR break). sbeam inverted
+  `diag(w)·AJJ`, which applied the weight as `1/w` on the downwash side: WKK = 1.1 gave
+  0.909× the lift, and a non-uniform weight moved load onto neighbouring boxes. The
+  corrected operator is now `diag(w)·AJJ⁻¹`, MSC's `{P_k} = q[W_kk][S_kj][A_jj]⁻¹{w_j}`
+  (AAUG 2023.1 PDF p.40 eq 2-21, p.70 eq 2-106; NX Nastran identical). A zero weight is
+  accepted and removes that box's lift; it used to be refused as singular. **Migrate a
+  deck:** replace each WKK weight `w` with `1/w` to keep the old answer for a uniform
+  weight. No repo deck used WKK; no shipped number changes. Found by the 2026-11-16
+  audit (M1, A1).
+- **The input file is read as NASTRAN reads it: INCLUDE, ENDDATA, BEGIN BULK** (#81;
+  pre-1.0 MINOR break). Found by the 2026-11-16 audit (C7, C8, P11). Page numbers are
+  PDF pages of the MSC QRG 2024.1:
+  - `INCLUDE` inserts its file where it stands, anywhere in the input, nested up to 10
+    deep (p.465, p.1984). A bulk data file is INCLUDEd **below** `BEGIN BULK`. sbeam used
+    to read an INCLUDE above `BEGIN BULK` as bulk data, where MSC and pyNastran read it as
+    case control and lose the model. A file of bulk cards INCLUDEd there is now refused,
+    naming the file, and an INCLUDE after `BEGIN BULK` (refused before as an unknown card)
+    is read. A quoted filename may span lines (p.1984 remark 2).
+  - `ENDDATA` ends the bulk data (p.1808). sbeam read on, and applied a FORCE placed after
+    it; a card after `ENDDATA` is now refused. A file INCLUDEd ahead of more bulk data
+    must not end in `ENDDATA`.
+  - `BEGIN SUPER=n`, `BEGIN BULK TRMC=n` and the other partitioned-section forms
+    (p.286–287) are refused; they used to be merged into the main bulk.
+  - `parse_case_control` refuses an `INCLUDE`; `parse_bdf` expands them first and sets
+    `CaseControl.includes` to the main deck's bulk INCLUDEs. `parse_bulk_file` expands
+    INCLUDEs too.
+  - **Migrate a deck:** move bulk `INCLUDE` lines below `BEGIN BULK`, and delete `ENDDATA`
+    from INCLUDEd bulk files. The Cessna 210 flagship drivers and overlays were migrated;
+    the viewer export and `sbeam-cases` gust decks now write INCLUDEs below `BEGIN BULK`.
+    No shipped number changes.
+- **An unknown case-control command is refused** (#80; pre-1.0 MINOR break). The parser
+  dropped every line above `BEGIN BULK` that it did not know, without a message. Found
+  by the 2026-11-16 audit. Page numbers are PDF pages of the MSC QRG 2024.1:
+  - Any line that is not a known command now stops the run and is named in the error.
+    A misspelt `LOAD` or `SPC` used to run an unloaded or unconstrained model.
+  - `PARAM,name,value` in case control (p.570) follows the bulk rules, so
+    `PARAM,AUNITS` and `PARAM,WTMASS` are refused there too.
+  - `AESYMXZ` and `AESYMXY` are refused. In MSC they decide the symmetry (p.252);
+    sbeam reads it from `AEROS` only.
+  - `SUBCOM`, `SYMCOM`, `SYM`, `REPCASE`, `SUBSEQ` and `SYMSEQ` are refused (p.210). A
+    `SUBCOM`'s lines used to overwrite the previous `SUBCASE`.
+  - `SOL SESTATIC`, `SEMODES` and `AESTAT` are read as 101, 103 and 144 (p.186–187);
+    they used to crash. DMAP (`COMPILE`, `ALTER`) is refused.
+  - Commands may be abbreviated to four or more characters when unique (p.209), and
+    MSC's names `SPCFORCES`, `ELFORCE`, `ELSTRESS` and `APRESSURE` are read. `DISP = ALL`
+    and `SPCFORCES = ALL` used to be dropped. This part was moved here from #85.
+  - A selector or output request with describers, such as
+    `DISPLACEMENT(PRINT,PUNCH) = ALL`, is refused until #85 settles them; it used to be
+    dropped.
+  - Headings and executive statements (`ID`, `TIME`, `CEND`, `ECHO`, `SUBTITLE`, `LABEL`,
+    `MONITOR`, …) are accepted and ignored; `GPFORCE` and `TRIMF` are accepted with a
+    warning. The full tables are in `docs/10_standard/02_card_reference.md`.
+- **Case control above the first `SUBCASE` is read, and `SUBCASE` IDs must increase** (#79;
+  pre-1.0 MINOR break). Selectors and output requests were stored only inside a subcase;
+  anything above the first `SUBCASE` was dropped without a message. Found by the
+  2026-11-16 audit:
+  - `SPC = 1` and `LOAD = 10` above `SUBCASE 1` ran an unconstrained, unloaded model.
+    They are now defaults for every subcase, and a subcase's own line overrides them
+    (MSC AAUG 2023.1 PDF p.752).
+  - A deck with no `SUBCASE` wrote a 0-byte f06 and printed "Written". Its commands now
+    run as subcase 1. A deck with nothing to run is refused by the `sbeam` command, and
+    no f06 is written; `parse_bdf` still reads it for its bulk data.
+  - A repeated or descending `SUBCASE` ID is refused (QRG 2024.1 PDF p.651 remark 1). A
+    repeated ID used to overwrite the earlier subcase's results.
+  - `= NONE` on an output request now cancels it; it used to turn the request on.
+  No repo deck changes: only the archive listing `sample/HA144A.bdf` has commands above
+  its subcases, and it is not runnable.
+
+- **A card with data on a line sbeam does not read is refused** (#63; pre-1.0 MINOR
+  break). Handlers that read one line (or one continuation) used to drop any further line
+  without a message. The dispatcher now refuses such a card, naming the line. Found this
+  way by the 2026-11-16 audit:
+  - `LOAD` reads every continuation; a 3-line LOAD used to lose its last components.
+  - `PBAR` reads its third line: non-blank K1/K2 (shear factors) and I12 ≠ 0 are refused.
+  - `PBUSH` reads its flag lines in any order: K is read, RCV ignored, and non-zero B,
+    GE, M or T refused. `PBUSH 1 M 5.` used to give K1 = 5.
+  - `AESURF` refuses `NOLDW` (field 9) and MSC's limits continuation.
+  - `EIGRL` option lines (`NORM=MAX`) and MSC's two-line `MONPNT1` are refused.
+  No repo deck changes.
+
+- **Every card is read in NASTRAN's 10-field layout, whatever its input format** (#64;
+  pre-1.0 MINOR break). A free-field line longer than 10 fields used to keep all its
+  tokens on one line, so handlers read past field 9 and put values in the wrong place:
+  `CONM2,1,2,,10.,0.,0.,0.,,1.,0.,2.,0.,0.,3.` gave I21 = 1, I31 = 2 where NASTRAN reads
+  I11 = 1, I22 = 2, I33 = 3, and `CBAR,...,,56,56` lost its pin flags. The data now runs on
+  into automatic continuations 8 fields at a time (QRG p.1049–1051).
+  - Large-field cards (`GRID*`, `*` continuations, fixed or free) are read.
+  - A field-10 continuation marker (`+L1`, `+`, `*`) on a free-field line is accepted
+    for every card; it used to fail with `could not convert '+L1'`.
+  - **CONM2 refuses a non-blank field 9.** sbeam used to read I11 there; NASTRAN leaves
+    it blank, so `CONM2, 1, 2, 0, m, x1, x2, x3, I11` must become
+    `CONM2, 1, 2, 0, m, x1, x2, x3, , I11`. Two repo decks and the card-reference example
+    are converted; `v9_conm2_offset_bending.bdf`, which relied on the misread, is
+    rewritten so its numbers do not change.
+  - A continuation line with no card before it, and a card that switches from large to
+    small field mid-row, are refused.
+  - TRIMVAR LB/UB and DIVERG NROOT take their defaults when the field is blank. Fixed
+    field used to give TRIMVAR LB = UB = 0.0, pinning the variable (part of #77).
+
+- **Unknown bulk-data cards refuse the deck instead of being skipped** (#55; pre-1.0 MINOR
+  break). An unknown keyword used to be skipped with a `UserWarning`, so a typo (`FROCE`)
+  silently dropped a load, and MSC's `DMI,W2GJ` silently dropped HA144A's 0.1° wing
+  incidence. Any keyword that is not implemented now refuses the deck in one
+  `ValueError`, which lists every offending card and suggests the nearest supported
+  keyword (`FROCE x1 (did you mean FORCE?)`). Only listing-only cards (`ECHOON`,
+  `ECHOOFF`) are still ignored with a warning, as are PARAMs sbeam does not read.
+  - `DMI`, `DMIG`, `DMIAX`, `DMIJ`, `DMIJI`, `DMIK` and `TABDMP1` are listed as
+    unsupported. The DMI message points to the native `W2GJ`/`WKK` cards.
+  - `PARAM,AUNITS` ≠ 1 is refused like `WTMASS`: MSC reads TRIM URDD* in g with it, and
+    sbeam would have trimmed at 1 model-unit/s².
+  - `PARAM,COUPMASS` ≤ 0 is refused: it asks for lumped mass, and sbeam always uses
+    consistent mass. `COUPMASS > 0` is accepted.
+  
+  Every repo deck that parsed before still parses. Decks with vendor or tool-specific
+  cards must drop them.
+
+### Added
+- **MSC's multiple mass combination is read: `BEGIN MASSID` sections, the bulk `MASSSET`
+  and the case-control `MASSSET`** (#102). MSC builds a mass case as `M_ID = S0 · Σ
+  Si·M_IDi` from the base model (ID 0) and incremental sections `BEGIN MASSID=n` (QRG
+  2024.1 PDF p.286–287, p.482, p.2018). sbeam refused all three; its own mass case is the
+  sbeam-only MASSCASE, whose overlay CONM2s another NASTRAN would put in the base mass. Now
+  a section's CONM2s are increments that enter only the combinations naming them, scaled by
+  S0·Si, and `MASSSET = n` selects a combination per subcase. sbeam reads CONM2 in a section
+  and refuses any other card (MSC also takes element and material changes, and ignores
+  grids and parameters there). MASSCASE is unchanged and stays for DELETE/REPLACE; IDs of
+  the two must differ, and each selector must name its own kind of card. New sample
+  `ha144a_mass_combination_sweep.bdf` reproduces the MASSCASE sweep bit for bit and adds an
+  S0 = 2.0 combination checked by hand. pyNastran 1.4.1 reads the sections with its
+  `use_new_deck_parser` switch (now set in the compat job) and agrees on every increment
+  CONM2 and selector; it stores the bulk MASSSET unread, so S0/Si/IDi have no independent
+  reader. An old sbeam-layout `MASSSET, SID, LABEL, SCALE` is refused naming MASSCASE.
+  Gates `tests/aero/test_mass_combination.py`.
+- **CI cross-parses every repo deck with pyNastran** (#83). A new `compat` job reads the
+  exact bulk lines sbeam parses with pyNastran 1.4.1 (an independent MSC-format reader,
+  BSD-3, test-only) and requires every field both read to agree, every field sbeam does
+  not read (CBAR offsets, PBAR I12/K1/K2, RBAR CMA/CMB, PBUSH B/GE …) to hold NASTRAN's
+  default, and every card pyNastran rejects to be a listed sbeam extension with its issue.
+  Open disagreements are listed with their issues and fail when fixed (strict xfail /
+  stale-entry check). Own lockfile `requirements-compat.txt`, since pyNastran needs
+  numpy < 2. Ten sample decks had SET1/AELIST lists that NASTRAN would read with blank
+  fields mid-list (a long free-field line followed by a continuation); they are reflowed
+  into full rows, with the same lists.
+
+### Documentation
+- Mission re-stated and the milestone map re-cut (#99): sbeam is a NASTRAN/ZAERO-format beam
+  aeroelastic solver that exports a modal model (OP4 + Universal 55, for sgear) and GAFs for
+  flutter, solved externally in Flaps (`Sean074/flaps_env`); SOL 145 dropped from #14; v0.4.0
+  re-described as *faithful NASTRAN input*, new v0.4.1 (viewer + modal export #100), v0.5.0
+  DLM + GAF export gated through Flaps; #101, #102 filed. `00_backlog.md`, `CLAUDE.md`.
+- **Draft scope for the v0.4.0 GUI work** (#11, not agreed):
+  `docs/30_future/designs/v040_gui_scope.md` — four decisions to make, a survey of what
+  the viewer can author, run and review against the solver's capabilities, the boundary
+  debt to clear first, and twelve proposed child issues in order. Written from a code
+  survey, not a hand walk. One defect found by the survey is filed as #98 (the viewer
+  drops the GUSTLF selector on case-control export).
+- **NASTRAN rules cited from the COSMIC manual; the no-copy rule's reason recorded** (#61).
+  The RBE3 deviation table and the element-ID paragraph in the card reference now cite
+  the COSMIC NASTRAN User's Manual (NASTRAN-93 `um/BULK.TXT`), in place of rules stated
+  from memory. Chained rigid elements are allowed there, and double dependency is not.
+  Element IDs are documented as unique across all elements, which sbeam does not enforce
+  (MSC's HA144A shares a CBAR/CONM2 EID). `02_parked.md` records why COSMIC code is
+  never copied (licence, benchmark independence) and cites `crspls.f` as the theory
+  source for the parked RBE3 kinematics.
+
+### Changed
+- **Bulk-data parser split into a dispatch table and family modules** (#48; no behaviour
+  change). `parse_bulk_data` (McCabe complexity 212, in a 2,161-line module) is now a
+  ~20-line loop over one card iterator, which replaces ~20 copies of the
+  continuation-collecting loop. It dispatches through per-family handler tables
+  (`bulk_structural`, `bulk_aero`, `bulk_trim`), then runs the cross-card checks in
+  `bulk_xref`. A new card is now one handler plus one table entry. The public entry points
+  (`parse_bdf`, `parse_bulk_file`, `parse_bulk_data`) are unchanged. Internal moves:
+  `expand_int_list_with_thru` and the field helpers (`to_float`, …) are now in
+  `sbeam.parser.bulk_fields`, and the supported keyword set is `bdf_reader.HANDLED_CARDS`.
+  Every sample and integration deck (61) parses to an identical `BulkData`, with identical
+  errors and warnings, before and after.
+
+### Fixed
+- **A WKK card no longer switches off every AECORR WT2 card** (#96). The operator was built
+  with `if WKK … elif WT2`, so a WKK on any surface, even a unit weight on the wing, left the
+  tail's WT2 calibration unapplied without a message (the viewer warned; the solver and the
+  `sbeam` command did not). Both corrections act after the solve since #71, so they now
+  combine across surfaces: `diag(w)·diag(r)·AJJ⁻¹`. A surface carrying both is refused,
+  naming the two cards, and so is a second WT2 card on one surface, which used to overwrite
+  the first. Decks with one kind of correction are bit-identical. Gates in
+  `tests/aero/test_corrections.py::TestWkkAndWt2Together` (the issue's probe, bit-exact).
+- **A two-grid CBUSH between separated grids no longer resists rigid-body rotation** (#97).
+  The element acted on the relative grid motions with no arm to the spring, so a PBUSH with
+  K2, K3, K5 or K6 between grids 2 apart gave ∓4.0e6 at Ty for a rigid rotation of 1 rad,
+  and a free-free model with such a spring (an engine mount, a pylon attachment) lost
+  rigid-body modes. MSC places the spring at P = GA + S·(GB − GA) and joins it to the grids
+  by rigid links (QRG 2024.1 PDF p.1378 field S, p.1380 Figure 9-20, p.1381 remark 11); sbeam now does the
+  same, and **reads `S`** where it was refused. Force recovery follows. Coincident and
+  grounded springs are bit-identical; K1/K4-only springs along GA–GB give the same answer;
+  every sample deck is unchanged. `OCID` (the S1–S3 offset) is still refused. Gates
+  `tests/assembly/test_cbush_rigid_link.py`: hand-derived 12×12, the six rigid motions for
+  any K, S and axes, and a free-free two-mass SOL 103 model with six rigid modes and the
+  closed-form elastic frequencies.
+- **Run-to-run reproducibility of the flagship SOL 144 outputs is gated** (#49). The
+  ~1e-10 noise seen on 2026-10-24 in the zero-level monitor components of the gust deck
+  does not reproduce at this commit, nor at the commit where it was found (`6882c1f`):
+  two runs of the gust and MLOADS decks write identical f06, CSV and load-BDF files on
+  Apple Accelerate and on OpenBLAS (numpy 1.26.4), threaded and single-threaded, and across
+  `PYTHONHASHSEED` values. No thread pin or print floor is added without a cause. New gate
+  `tests/integration/test_run_reproducibility.py` runs each deck in two processes with
+  different hash seeds and requires byte-identical output apart from the DATE line, so
+  CI's Linux/OpenBLAS job catches the noise if it returns.
+- **The viewer no longer drops the GUSTLF selector** (#98). The case-control export and
+  the subcase editor wrote a fixed list of selectors that did not include `GUSTLF`, so
+  `cessna210_flagship_gust.bdf` came back from the viewer with no driver on any of its
+  subcases and no message. The selector is now carried through, with a `GUSTLF SID`
+  picker beside `MASSCASE SID`, a line in the analysis summary, and the gust load
+  condition (n, Δn, URDD3) on the SOL 144 results page. Gates: the export round-trips a
+  subcase built from every `SubcaseControl` field, so a selector added to the parser
+  later cannot be dropped the same way, and round-trips every repo driver deck.
+- **SOL 144 f06 labels that misled a comparison with MSC** (#82). Checked against MSC's
+  own HA144A listing (AAUG 2023.1 PDF p.233–237):
+  - **Coefficient frame.** sbeam prints coefficients in basic axes; MSC prints the AEROS
+    reference frame, so on HA144A CZα is +5.070976 in sbeam and −5.070975 in MSC. The
+    header said just "CZ". The STABILITY DERIVATIVES block now states the frame and
+    prints MSC's "TRANSFORMATION FROM BASIC TO REFERENCE COORDINATES". No number moves.
+  - **URDD rows were per unit basic acceleration**, while the trim variable of that name
+    is a reference-frame component. They are now per unit of the label: restrained URDD3
+    on HA144A is CZ −1.0097e-4, CMY +7.691e-5 (was +/−; MSC −9.804e-5, +7.362e-5).
+    A deck with no RCSID is unchanged.
+  - **Hinge moments.** The per-variable rows were rigid and the "TOTAL (TRIM)" row
+    elastic, in one column. The derivative block now has RIGID and RESTRAINED columns
+    (new: `Sol144TrimResult.hinge_moments_restrained`), and the trimmed moment moves to
+    its own CONTROL SURFACE POSITION AND HINGE MOMENT block. HA144A: restrained/rigid
+    ratios within 1e-3 of MSC's, trimmed ELEV moment 5083.0 against 2 × 2544.685.
+  - **AEROF/APRES `BOX ID`** was a running index 1..N; it is the NASTRAN box ID (1000,
+    1001 …), as in MSC's force listing (new: `Sol144TrimResult.box_ids`).
+  Found by the 2026-11-16 audit (O1–O4).
+- **A deck with more than one CAERO1 interference group is refused** (#76). MSC:
+  "aerodynamic elements with different IGIDs are uncoupled" (QRG 2024.1 PDF p.1343; AAUG
+  2023.1 p.122). sbeam parsed IGID and never read it, so panels in different groups still
+  interfered and the result differed from MSC's with no message. All CAERO1 cards must
+  now share one IGID. Uncoupling the AIC blocks was the alternative; nothing consumes it
+  (rule 5). No repo deck uses two groups. Found by the 2026-11-16 audit (M6, A6).
+- **SPLINE2 `USAGE = FORCE` / `DISP` and out-of-range `DZ` / `DTOR` are refused** (#75).
+  MSC: a FORCE or DISP spline is in only one of the force and displacement transforms
+  (QRG 2024.1 PDF p.2848 remark 5, p.2850 remark 9). sbeam stored the word and solved
+  every spline as BOTH, and accepted any other word (`XYZ`). `DZ < 0` and `DTOR ≤ 0`
+  (p.2849: DZ ≥ 0.0, DTOR > 0.0) were replaced by 0.0 and 1.0 with a warning while the
+  spline was built; they are refused at parse. A value in the blank field of the
+  continuation is refused. No repo deck is affected. Honouring FORCE/DISP stays with
+  #28. Found by the 2026-11-16 audit (M4, A5, A18).
+- **PARAMs that change NASTRAN's answer are refused** (#69; completes the #55 sweep).
+  `PARAM,INREL` (inertia relief, QRG 2024.1 PDF p.888), `G` (p.884), `W3`/`W4` (p.956) and
+  `LMODES` (p.895) were skipped with the unknown-card warning and the run continued; any
+  value but the NASTRAN default now refuses the deck, in bulk data and in case control.
+  A deck relying on `INREL` ran constrained or singular in SOL 101. Listed output and
+  solution-control PARAMs (`POST`, `PRTMAXIM`, `GRDPNT`, `AUTOSPC`, `MAXRATIO`, `BAILOUT`)
+  are accepted with `BDF card 'PARAM,X' ignored (reason)`; any other PARAM keeps the
+  unknown-card warning. No repo deck is refused. Found by the 2026-11-16 audit (S18).
+- **Structural field rules are enforced** (#68; page numbers are QRG 2024.1 PDF pages).
+  - **MAT1 blanks** (p.2020–2021 remark 2): a blank E, G or NU is computed from
+    `E = 2(1+NU)G`; E and G both blank is refused; NU with one modulus blank sets both
+    to 0.0. `MAT1,1,,4.e6,0.3` gave E = 0.0 where MSC computes 1.04e7. E ≤ 0, G ≤ 0 and
+    NU outside (−1, 0.5) are refused. Repo decks: only the stored NU changes (now derived
+    from E and G; nothing computes with it).
+  - **RBAR CMA/CMB** (p.2692 remark 4): a partial dependent set (`CMB = 123`) was ignored
+    and all six GB DOFs made dependent; it is refused.
+  - **GRID PS, SUPORT C** must be unique digits 1–6 (p.1944, p.2870): `PS = 7` constrained
+    T1 of the next grid and SUPORT `C = 0` indexed the previous grid's R3. A SUPORT pair
+    after a blank pair was dropped and is refused.
+  - **SPC D ≠ 0** is refused at parse; SOL 144 and MLOADS took it as zero silently.
+  - **LOAD**: a repeated Li was summed twice (p.2008 remark 2, "must be unique"); a pair
+    with only S or only L was skipped. **GRAV** sharing a SID with FORCE or MOMENT was
+    summed (p.1941 remark 3 forbids it). All refused.
+  Found by the 2026-11-16 audit (S8, S9, S10, S11, S20, P3, P14).
+- **CBAR is read by MSC's field rules: offsets refused, OFFT validated, G0 decided by
+  field 6, PID defaults to EID** (#67; QRG 2024.1 PDF p.1360–1363). (1) The offsets
+  W1A–W3B on the continuation were dropped without a message; any non-zero offset is now
+  refused. (2) OFFT accepted any text; it must be one of MSC's eight codes, and `B..`
+  (orientation in basic) is honoured on a grid with a CD. (3) "If an integer is specified
+  in field 6, then G0 is used" (p.1362): `CBAR 1 1 1 2 13 0 0` was read as the vector
+  (13, 0, 0) and is now refused as the unsupported G0 form; so is the integer vector
+  `0, 1, 0`, which sbeam accepted — **write vector components as reals.** (4) A blank PID
+  failed with `int('')`; it now defaults to the EID on CBAR and CROD (p.1360, p.1522).
+  No repo deck is affected. Found by the 2026-11-16 audit (S2, S17, P2, P7, N1).
+- **A GRID CD that would change the answer is refused** (#65). MSC: CD is the frame "in
+  which the displacements, degrees-of-freedom, constraints, and solution vectors are
+  defined at the grid point" (QRG 2024.1 PDF p.1944). sbeam uses CD only to rotate the
+  printed results and applied everything else along the basic axes, so `SPC1,1,1,2` on a
+  grid with a rotated CD constrained basic T1 where NASTRAN constrains CD-x, with no
+  message. A grid with CD ≠ 0 is now refused when a card names a direction at it: a
+  partial component set on GRID PS, SPC, SPC1, SUPORT, RBE2, RBAR or RBE3; a CBAR
+  orientation vector at GA (QRG p.1360); any CBUSH (p.1378). Whole triads (`123`, `456`,
+  `123456`) mean the same in every frame and stay accepted, as do FORCE, MOMENT and CONM2
+  (own CID) and rods, so CD as an output frame keeps working (V-CS3, the SPCFORCE frame
+  gate). The issue proposed refusing every CD ≠ 0; this narrower rule refuses exactly the
+  cases where sbeam and NASTRAN would solve different models. No repo deck is refused.
+  Found by the 2026-11-16 audit (S1).
+- **TRIMVAR, TRIMOBJ and TRIMCON are checked and acted on, or refused** (#77). The solver
+  skipped any of these cards whose label was not a free trim variable, so a misspelt
+  label, and the card reference's own `CL` / `CM` examples, dropped the bound, weight or
+  constraint with no message. Now: every label must be an AESTAT or AESURF label;
+  TRIMVAR needs `LB < UB` and one card per label; a TRIMOBJ needs at least one pair,
+  no repeated label and weights ≥ 0. **Every trim is checked against the TRIMVAR bounds
+  and the TRIMCON set**, not only an over-determined one with redundancy to spend: a
+  determined trim or a prescribed value outside a limit refuses the run. A TRIMOBJ whose
+  weighted labels leave the redundancy undetermined is refused; it used to fall back to
+  unit weights on every free variable. TRIMCON cards under more than one SID are refused:
+  no command selects a set, and cards of every SID were applied to every trim. The blank
+  `LB`/`UB` defect in fixed-field (bounds read as 0.0, pinning the variable) was fixed
+  with #64 and is now gated. The docs no longer call this ZAERO's formulation: ZAERO's
+  TRIMVAR is `IDVAR LABEL LOWER UPPER …` (ZUM 9.2 PDF p.511) and its objective is built
+  from TRIMFNC functions; the layout decision is #87. No repo deck uses these cards; no
+  shipped number changes. Found by the 2026-11-16 audit (P6, A11, A12, M10).
+- **SPLINE2 projects its axis into the panel plane, as MSC does; a dihedral wing splined
+  with CID 0 no longer loses its side force** (#74). MSC: "The spline axis for panels is
+  the projection of the y-axis of coordinate system CID, projected onto the plane of the
+  panel" (QRG 2024.1 PDF p.2849, SPLINE2 remark 2). sbeam took the CID z-axis as the
+  deflection and force direction, so `sample/val_dihedral_trim.bdf` with CID 0 (legal in
+  MSC) transferred Fz only: 100 % of each semi-span's side force was dropped with no
+  message. The deflection direction is now the panel normal, the axis is CID y projected
+  into the panel, and the CID x- and z-axes are not read. A y-axis normal to the panel is
+  refused. **Numbers that move:** decks whose CID z was already the panel normal are
+  unchanged (HA144A family, lateral, thrust, dihedral sample). The flagship wing's CIDs
+  991/992 had z 0.024° off the panel normal, which put a chordwise force of 4.2e-4 × Fz
+  on the wing; its operators move by 4.2e-4, 1g ELEV −0.06792834 → −0.06796414 rad,
+  ANGLEA 0.04174227 → 0.04174605 rad, Q-DIV 5.373047E+04 → 5.373092E+04, and the
+  wing-root monitor FX 1.48 N → 0. The MLOADS deck's absolute elevator table is re-baked
+  to the new trim. Invariant gate: on every repo deck each rigid-body motion moves every
+  SPLINE2 box along its own normal. Design note
+  `docs/30_future/designs/spline2_panel_plane.md`. Found by the 2026-11-16 audit (M3, A15).
+- **A rotated AEROS ACSID is refused; documented "must be" rules are enforced** (#58).
+  sbeam takes the freestream along basic +x and never reads ACSID, so **a deck whose
+  ACSID was rotated relative to basic ran with the flow in the wrong direction**. ACSID
+  must now be 0 or a CORD2R with axes parallel to basic. Any origin is accepted, so
+  HA144A's `AEROS, 1, 100` (basic moved to x = 12.5) still runs, and gives results
+  identical to ACSID = 0. The card reference said RCSID "must be 0"; it now describes
+  what RCSID does. A sweep of every documented "must be" rule found more that were not
+  enforced, now refused:
+  - a GRID SEID ≠ 0 was ignored, so the grid silently joined the residual structure;
+  - the CBAR G0 orientation form (integer X1, X2/X3 blank) was read as the vector
+    (G0, 0, 0);
+  - a negative AEROS, TRIM or DIVERG Mach ran as |M|.
+  
+  The EIGRL text claimed V1/V2 bound the extraction and that ND or V2 was required;
+  neither was true, and it now describes the behaviour (V1/V2 warn and are not applied,
+  no ND returns all modes). Also found and filed as #62: NASTRAN-layout CBUSH cards lose
+  their orientation.
+- **Every rigid-element dependent DOF must have a valid source; offset RBE3s warn** (#60).
+  Four cases were skipped without a word when building the rigid-element transform. **An
+  RBE3 REFC DOF that no Ci covers was left unconstrained**, so the usual NASTRAN RBE3
+  (`REFC=123456`, `Ci=123`) had free reference rotations. REFC weights summing to zero
+  were skipped the same way. A DOF made dependent by two rigid elements kept only the
+  last one's constraint. An RBE3 independent DOF that another element made dependent lost
+  its share of the average. All four are now refused. An RBE3 with independent grids
+  offset from REFGRID now warns, since sbeam applies no lever arm there and NASTRAN does.
+  The two sample decks that used such an RBE3 now use an RBAR. `beam_vib1.bdf`'s spectrum
+  changes from 1.0334 / 1.0334 / 11.80 / 11.80 / 37.28 Hz to 1.0168 / 1.0239 / 9.1735 /
+  9.5743 / 20.861 Hz, now including the offset mass's torsional inertia; it equals the
+  same mass placed at the tip with CONM2 X2 = 1.0. `simple_beam.bdf`'s results at grids
+  1–6 are unchanged. Full NASTRAN RBE3 kinematics is parked.
+- **RBE3 is read strictly by field type, and nothing is skipped** (#59). The handler
+  guessed where weight groups started and skipped any field it could not read as an
+  integer. A typo grid vanished, a `UM` section became independent grids, and REFC/Ci
+  were never checked as DOF strings, so **a REFC digit `7` silently constrained DOF 1 of
+  the next grid in the index**. Groups are now read as in NASTRAN (a real WT, a DOF
+  string C, at least one grid), and a field that fits nowhere refuses the card. `UM` is
+  refused as not supported. `ALPHA`/`TREF` are ignored with a warning, since sbeam has no
+  thermal loads. Note: an integer weight after a group's grids still reads as a grid
+  ID, as it does in NASTRAN; the card reference says to write every WT as a real.
+  Found in the same sweep: a non-integer CBUSH CID (`A`, `1.5`) was swallowed and read
+  as 0; it is now refused.
+- **Duplicate PLOTEL, RBE2, RBE3, CONM2 and EIGRL IDs are refused** (#57). These five
+  cards had no duplicate check, so a second card with the same ID silently replaced the
+  first. **A reused CONM2 EID dropped a mass without a word**, and a reused RBE2 EID
+  untied the first card's dependent grids. Each now raises `Duplicate <CARD> EID/SID n`,
+  like every other ID-keyed card. ID spaces are unchanged: CONM2 may still share an EID
+  with a CBAR, as MSC's HA144A does, and rigid elements and PLOTEL keep their own spaces.
+  A new invariant gate reads every ID-keyed card type twice and expects a refusal, so a
+  new card type cannot skip the check. The TRIMOBJ example in the card reference did not
+  parse (its continuation line had no comma after the `+`) and is corrected.
+- **Bulk data is order-independent, and every reference between cards is checked** (#51).
+  - **Card order.** A deck that defined an element before its GRIDs, property or material
+    failed at parse (e.g. `sample/HA144A.bdf`: `CBAR 101: property PID=100 not found`).
+    NASTRAN bulk data has no such rule. Cards are now read first and cross-referenced once
+    all are read (`parser/bulk_xref.py`), so any order parses.
+  - **One-sided uniqueness checks.** Three were enforced by only one of the two cards
+    involved: CBUSH did not join the shared element-ID check, PAERO1 did not check
+    PSTRIP, and MONPNT1/MONPNT3 did not check MONSECT. A clash was therefore caught in one
+    card order only. All three are now checked both ways, and MONPNT1 against MONPNT3 too.
+  - **Silent drops.** Several references were never checked. **A FORCE, MOMENT or CONM2 on
+    an undefined grid was dropped and the run completed** without that load or mass (a
+    SOL 101 deck with its only FORCE on a missing grid wrote all-zero displacements).
+    SPC/SPC1/SUPORT/RBE3 grids were also unchecked, as were GRID CD, CORD2R RID, unused
+    PBAR/PROD MIDs, CONM2/FORCE/MOMENT/CAERO1/SPLINE2/ATTACH/AEROS frames and SPLINE0/ATTACH
+    targets. A `WKK` or `AECORR` on an unknown CAERO1 was silently not applied. Every one
+    now refuses the deck at parse with the card, field and missing ID. The table is in
+    `02_card_reference.md`, Format Rules.
+  - **Effect on existing decks.** A deck with several faults may now report a different
+    error first. No shipped deck is affected: all 61 parse to an identical `BulkData`,
+    except HA144A, which now gets past the card-order error and stops at its
+    weight-unit `PARAM,WTMASS` (#39).
+- **Release checklist §5 pointed at a removed CLAUDE.md card table** (#56). The item now
+  confirms new cards in `02_card_reference.md` and solver types in `00_program_overview.md`,
+  the single sources.
+
+---
+
 ## [0.3.0] — 2026-10-25
 
 Milestone v0.3.0, **solver capability mature**. SOL 144 + MLOADS engineering-complete including

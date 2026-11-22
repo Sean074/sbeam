@@ -215,17 +215,21 @@ AECOMP, WINGEA, SET1, 1320
 $ Whole-aircraft spline-load grids (every grid any spline transfers force to,
 $ and every CONM2-bearing grid — grid 97 carries mass but no spline load, and
 $ omitting it made this monitor miss 18.75 % of the model inertia; DEF-M10)
-SET1, 1310, 97, 98, 99, 100, 111, 112, 121, 122, 211,
-+, 212, 221, 222
+SET1, 1310, 97, 98, 99, 100, 111, 112, 121
++, 122, 211, 212, 221, 222
 AECOMP, ALLGRID, SET1, 1310
 $ Whole-aircraft aero boxes (all 4 CAERO1 panels)
 AELIST, 1400, 1000, THRU, 1007, 1100, THRU, 1131, 2000, THRU, 2007, 2100, THRU, 2131
 AECOMP, ALLAERO, AELIST, 1400
 $ MONPNT3 section cuts (aero + inertia + reaction) and MONPNT1 aero-only:
-MONPNT3, MWINGRT, WING ROOT, 35, WINGROOT, 0, 15.0, 0.0, 0.0
-MONPNT3, MWINGEA, RIGHT WING, 35, WINGEA, 0, 15.0, 0.0, 0.0
-MONPNT3, MALLEA, WHOLE AIRCRAFT, 35, ALLGRID, 0, 15.0, 0.0, 0.0
-MONPNT1, MALLAR, AIRCRAFT AERO, 35, ALLAERO, 0, 15.0, 0.0, 0.0
+MONPNT1 MWINGRT WING ROOT
++, 35, WINGROOT, 0, 15.0, 0.0, 0.0
+MONPNT1 MWINGEA RIGHT WING
++, 35, WINGEA, 0, 15.0, 0.0, 0.0
+MONPNT1 MALLEA  WHOLE AIRCRAFT
++, 35, ALLGRID, 0, 15.0, 0.0, 0.0
+MONPNT1 MALLAR  AIRCRAFT AERO
++, 35, ALLAERO, 0, 15.0, 0.0, 0.0
 $
 $ ------------------------------------------------------------
 $ SECTION-CUT RUNNING LOADS (MONSECT, Monitor Phase 2 / V-SEC)
@@ -270,10 +274,10 @@ W2GJ, 1, 1100
 +, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
 +, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
 W2GJ, 2, 2100
-+, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
-+, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
-+, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
-+, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
++, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3
++, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3
++, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3
++, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3
 $
 $ ============================================================
 $ TRIM CARDS — q=40 (SC1) and q=1200 (SC2), both M=0.9, 1g (URDD3=-32.174)

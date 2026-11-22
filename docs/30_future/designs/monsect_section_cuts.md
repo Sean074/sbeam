@@ -13,7 +13,7 @@ remaining sections describe what shipped.  The user-facing reference is
 **Last updated:** 2026-08-02
 **Related:** Monitor Points Phase 1 (MON1–MON4) — `sbeam/results/monitor_points.py`,
 `docs/10_standard/05c_sol144_maneuver.md` §"Monitor Points — Integrated Section Loads";
-Step 53 balanced maneuver loads; Step 60 `MASSSET` mass cases.
+Step 53 balanced maneuver loads; Step 60 `MASSCASE` mass cases.
 
 This document is the design proposal for a non-standard sbeam BDF card, `MONSECT`, that
 produces **per-station section-cut running loads** — the per-station shear / bending /
@@ -38,7 +38,7 @@ a cut plane, for every trim condition and every mass case.
 Today a user producing that table has to export the net grid loads, load them into a
 spreadsheet or a script, decide for each grid which side of each station it falls on, sum
 the forces, transfer the moments to a reference on the elastic axis, and repeat the whole
-thing per subcase and per `MASSSET`. It is exactly the kind of manual post-processing that
+thing per subcase and per `MASSCASE`. It is exactly the kind of manual post-processing that
 silently goes wrong when a grid is added to the model.
 
 ### 1.2 Why this is nearly free inside sbeam
@@ -82,7 +82,7 @@ model on every run and cannot go stale.
 - Per station: the six-component resultant in the cut frame, split into aero / inertia /
   reaction contributions, about the **elastic-axis intercept** of the cut plane.
 - Automatic coverage of every SOL 144 static trim subcase, including Step 53 balanced
-  maneuvers and Step 60 `MASSSET` mass cases — the inertia column already tracks the
+  maneuvers and Step 60 `MASSCASE` mass cases — the inertia column already tracks the
   active mass case, so payload sweeps produce their tables for free.
 - f06 block, a machine-readable per-station CSV, and a spanwise viewer plot.
 - Discretisation-aware behaviour: on-plane grids handled by a stated convention, and a
@@ -400,7 +400,7 @@ failure there is the integrand and nothing else):
 | **V-SEC3** | Cut inboard of every grid over the whole-aircraft `AECOMP`. | Equals the existing `MONPNT3` totals from `test_monitor_ha144a.py` (shared fixture) — Phase 2 degenerates to Phase 1. |
 | **V-SEC4** | Station outboard of every member. | Exactly zero, all six components, `n_members = 0`. |
 | **V-SEC5** | Step 53 balanced maneuver, whole-model cut. | Net (aero+inertia+reaction) resultant ≈ 0, reproducing `maneuver_closure` to its own tolerance. |
-| **V-SEC6** | Flagship, two `MASSSET` cases (reuse `test_massset_sweep.py` fixture). | Wing-root `My` differs between cases while the `*_aero` columns are identical — the mass case enters only through the inertia column. |
+| **V-SEC6** | Flagship, two `MASSCASE` cases (reuse `test_massset_sweep.py` fixture). | Wing-root `My` differs between cases while the `*_aero` columns are identical — the mass case enters only through the inertia column. |
 | **V-SEC7** | `AELIST`-type `MONSECT` vs `SET1`-type on a collection with exclusive spline coupling. | Aero columns agree (force to machine precision, moment ~1e-6 relative), mirroring the Phase 1 MON1==MON3 argument. |
 | **V-SEC8** | `NORMAL` override at 15° to the axis, vs an equivalent rotated CID with the default normal. | Same resultants to ~1e-10 — the override is a reparametrisation, not new physics. |
 | **V-SEC9** | Half-model deck (`SYMXZ ≠ 0`). | Wing cut is **not** doubled; f06 carries the `HALF-MODEL` annotation. Guards decision §4.6.2 against a future refactor re-inheriting `_apply_symmetry`. |

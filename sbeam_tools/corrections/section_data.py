@@ -300,7 +300,7 @@ def build_from_section_data(
         boxes, ajj,
         f_slope=tgt.f_slope, alpha_0=tgt.alpha_0, m_slope=tgt.m_slope, m_0=tgt.m_0,
         caero_eid=caero_eid, sid_w2gj=sid_w2gj, sid_aecorr=sid_aecorr,
-        moment_ref=tgt.moment_ref, beta=_beta_pg(mach),
+        moment_ref=tgt.moment_ref, beta=_beta_pg(mach), mach=float(mach),
     )
     cond = Condition(caero_eid, float(mach), var, a_lo, a_hi, len(sel))
     return SectionDataBuildResult(correction=corr, condition=cond,
@@ -403,6 +403,7 @@ def build_from_section_data_multi(
     corr = build_section_correction_multi(
         boxes, ajj, targets,
         sid_w2gj_base=sid_w2gj_base, sid_aecorr_base=sid_aecorr_base, beta=_beta_pg(mach),
+        mach=float(mach),
     )
     return MultiSectionDataBuildResult(correction=corr, conditions=conditions,
                                        extrapolated=extrap, skipped=skipped)

@@ -103,7 +103,13 @@ sbeam/
 ├── types.py              # Shared type aliases (FloatArray, SparseMatrix, LuFactor, …)
 ├── linalg_utils.py       # Shared dense linear-algebra helpers (estimate_cond_1norm — LU + gecon 1-norm condition estimate, DEF-R6)
 ├── parser/
-│   ├── bdf_reader.py     # Bulk data section parser → BulkData object
+│   ├── bdf_reader.py     # Entry points (parse_bdf/parse_bulk_file/parse_bulk_data), unsupported-card refusal, keyword dispatch (#48)
+│   ├── bulk_fields.py    # Line splitting, field conversion, card + continuation iterator, handler signatures
+│   ├── bulk_structural.py # Card handlers: CORD2R, GRID, properties, materials, elements, mass, SPC/SUPORT, static loads, EIGRL, PARAM
+│   ├── bulk_aero.py      # Card handlers: AEROS, CAERO1, corrections, splines, AELIST/AECOMP, MONPNT1/3, MONSECT
+│   ├── bulk_trim.py      # Card handlers: AESTAT/AESURF, TRIM*, DIVERG, GUSTLF, TABLED1, MLOADS family
+│   ├── bulk_xref.py      # Cross-card reference checks, run after every card is read
+│   ├── bdf_field.py      # BDF real-field write formatter + matching read (parse_real)
 │   └── case_control.py   # Case control section parser → CaseControl object
 ├── model/
 │   ├── bulk_data.py          # BulkData container dataclass
@@ -114,7 +120,7 @@ sbeam/
 │   ├── load.py               # Force, Moment, Load, Grav dataclasses
 │   ├── constraint.py         # Spc, Spc1 dataclasses
 │   ├── mass.py               # Conm2, Massset dataclasses
-│   ├── mass_overlay.py       # MASSSET payload/mass-case resolution (Step 60)
+│   ├── mass_overlay.py       # MASSCASE payload/mass-case resolution (Step 60)
 │   ├── coordinate_system.py  # Cord2r dataclass
 │   ├── aero.py               # Aero/trim card dataclasses (Aeros, Caero1, Paero1, Pstrip, Stripk, Aefact, W2gj, Wkk, Aecorr, Set1, Spline0/1/2, Attach, Aestat, Aesurf, Aelist, Trim, Diverg, …)
 │   ├── maneuver.py           # ZAERO MLOADS card set (Mloads, Mldtrim, Mldcomd, Mldtime, Mldprnt, Tabled1) for Phase G0
@@ -151,7 +157,7 @@ sbeam/
     ├── panel.py          # AeroBox dataclass + mesh_caero1() trapezoidal box meshing
     ├── vlm.py            # Biot–Savart, horseshoe influence, vectorized (broadcast) build_ajj, solve_rigid_cl
     ├── integration.py    # build_skj, build_djk, build_wg integration matrices
-    ├── corrections.py    # apply_wkk, apply_wt2, apply_wt1 AIC corrections
+    ├── corrections.py    # apply_wkk, apply_wt2 AIC corrections
     ├── section_correction.py # W2GJ+WT2 card-pair synthesis matching section force and moment
     ├── body_correction.py # Cruciform (A9) + decoupled-strip (A10) body-panel total-aircraft moment match
     ├── strip.py          # Decoupled strip body panels (PSTRIP/STRIPK; zero-coupling diagonal AIC block)
@@ -169,7 +175,7 @@ sbeam_tools/
 ├── common/
 │   ├── atmosphere.py     # ISA standard atmosphere, SI (no dependency on units — one-way)
 │   ├── units.py          # UnitSystem / UNIT_SYSTEMS; isa_density in model units
-│   ├── deck.py           # Read S, cbar, W per MASSSET and rigid CZ_alpha out of a deck
+│   ├── deck.py           # Read S, cbar, W per MASSCASE and rigid CZ_alpha out of a deck
 │   └── mirror.py         # mirror_halfspan(): half-span (SYMXZ) deck → full-span unfold
 ├── cases/                # Case construction — what the solver never decides
 │   ├── gust.py           # FAR/CS 23.341 Pratt gust family + 23.333(c) U_de schedule (#1)
@@ -318,7 +324,7 @@ sbeam run.bdf
 
 Reads a run file (case control required), determines SOL, runs analysis, and writes `run.f06` **to the same directory as the input file**. Supports SOL 101, SOL 103, and SOL 144; multiple subcases are written sequentially to a single `.f06` file.
 
-For SOL 144 each subcase is routed by its case-control requests: `TRIM` → static aeroelastic trim, `DIVERG` (without `TRIM`) → divergence sweep, `MLOADS` → Phase G0 quasi-steady transient maneuver loads. A subcase may additionally carry `MASSSET = sid` (Step 60) to run at a named payload / mass case; stiffness, splines and the VLM AIC are shared across a mass sweep, only the mass-derived operators are rebuilt. Besides the `.f06` (trim + divergence blocks), the CLI writes additional files next to the input:
+For SOL 144 each subcase is routed by its case-control requests: `TRIM` → static aeroelastic trim, `DIVERG` (without `TRIM`) → divergence sweep, `MLOADS` → Phase G0 quasi-steady transient maneuver loads. A subcase may additionally carry `MASSCASE = sid` (Step 60) to run at a named payload / mass case; stiffness, splines and the VLM AIC are shared across a mass sweep, only the mass-derived operators are rebuilt. Besides the `.f06` (trim + divergence blocks), the CLI writes additional files next to the input:
 
 | File | Content | Written when |
 |------|---------|--------------|
@@ -372,6 +378,14 @@ ruff check sbeam/ tests/     # lint (E, F, W)
 pyright                      # type check, config in pyrightconfig.json
 pytest -v --tb=short         # test suite
 ```
+
+A second job, `compat`, cross-parses every repo deck with pyNastran (#83,
+`tests/compat/test_pynastran_crossparse.py`): each field both readers read must agree, each
+field pyNastran stores and sbeam does not read must hold NASTRAN's default, and every card
+pyNastran cannot parse must be a listed sbeam extension with its issue. It has its own
+lockfile, `requirements-compat.txt` (pyNastran 1.4.1 needs numpy < 2). In the main job the
+module skips itself; locally, run it from a venv built from that file
+(`pytest tests/compat --no-cov`). pyNastran is test-only and `sbeam/` never imports it.
 
 ### Unit tests
 
@@ -503,7 +517,7 @@ restrictions there first, then link them here.
 |------------|--------|
 | `CORD2R` only | `CORD2C`, `CORD2S` and `CORD1R` are not supported; the parser raises `ValueError` |
 | All computation in basic CID 0 | `CP` and `CD` are input/output transforms only. See [DOF Numbering Convention](#dof-numbering-convention) |
-| SPC directions are basic-frame | `SPC`/`SPC1` DOF digits always refer to basic CID 0, **not** the grid's `CD` frame — a constrained grid with `CD ≠ 0` is restrained along basic axes even though its results are reported in `CD` |
+| SPC and element directions are basic-frame; a rotated `CD` is refused where it matters | sbeam does not rotate a grid's degrees of freedom into its `CD` frame. A grid with `CD ≠ 0` is accepted only when nothing names a direction at it: a partial component set on GRID `PS`, SPC, SPC1, SUPORT, RBE2, RBAR or RBE3, a CBAR orientation vector at GA, or any CBUSH **refuses the deck** (#65; MSC QRG 2024.1 PDF p.1944). Whole triads (`123`, `456`, `123456`) are frame-free and accepted. `CD` then only rotates the printed displacements, eigenvectors and SPC forces |
 
 **Loads and constraints**
 
@@ -513,7 +527,7 @@ restrictions there first, then link them here.
 | `SPC` enforced displacement must be `0.0` | Non-zero `D` is rejected; enforced-motion support is a Phase 3 item |
 | `CBAR` offsets not supported | `W1A`/`W2A` are not honoured; use a short rigid element (`RBAR`/`RBE2`) to model the offset |
 | `CBAR` orientation vector form only | The `G0` grid-ID orientation form is not supported — use `X1/X2/X3` |
-| `CBUSH` restrictions | `CID` must be `0` or blank; element offsets unsupported; massless; `PBUSH` damping (`B1`–`B6`) is deferred to the dynamic solvers |
+| `CBUSH` restrictions | MSC layout (#62). `CID` 0 or a CORD2R; a grounded or coincident-grid spring needs a `CID`; GO and `OCID` are refused; the spring sits at `S` along GA–GB on rigid links (#97); massless; `PBUSH` damping (`B1`–`B6`) is deferred to the dynamic solvers |
 | `CROD`/`CONROD` rod-only grids | No AUTOSPC: a grid touched only by rods has free rotations and must have them SPC'd; rod mass carries no torsional inertia; no `PLOAD1`/thermal element loads (#38) |
 | Known-unsupported cards refuse the deck | `PLOAD1`/`PLOAD4`, `CBEAM`/`PBEAM`/`PBARL`, `CORD2C`, `MPC`, dynamic loads, … are counted and the parse raises one `ValueError` instead of dropping them silently (#45). Table and alternatives: `02_card_reference.md` "Unsupported cards"; PLOAD1 support itself is parked |
 | `MAT1` thermal fields ignored | `A`, `TREF` and `GE` are parsed but unused — there is no thermal load path |
@@ -531,7 +545,7 @@ restrictions there first, then link them here.
 |------------|--------|
 | Results frames | The `.f06` DISPLACEMENT and SPCFORCE blocks are written in each grid's `CD` frame (NASTRAN's "global" system). CBAR element forces are in element local axes; CBUSH forces are in basic CID 0. The viewer result tables report basic CID 0 throughout |
 
-For aeroelastic limitations (`SPLINE1` not implemented, `AEROS` `ACSID`/`RCSID` must be `0`,
+For aeroelastic limitations (`SPLINE1` not implemented, `AEROS` `ACSID` must be parallel to basic,
 `ATTACH` `CID = 0`, body-panel geometry rules) see
 [`05_aeroelastics.md`](05_aeroelastics.md#validation-status--known-limitations) and the
 card table. Open defects and unresolved questions are tracked in
@@ -553,7 +567,7 @@ card table. Open defects and unresolved questions are tracked in
 | A | Steady VLM aeroelastics: card parsing, panel meshing, AIC + integration matrices, AIC corrections (Wkk, WT2), section force/moment correction synthesis, body-panel total-moment corrections | Steps 39–45 + A9 (cruciform) + A10 (decoupled strip) complete; A7/A8 warnings open |
 | B | Structural coupling splines: SPLINE2/ATTACH/SPLINE0 → g_slope/g_disp/g_load; flexible aero stiffness Q_aa | Complete (Step 48 SPLINE1 surface spline deferred) |
 | C | SOL 144 static aeroelastic trim: Schur trim solve, rigid + elastic-restrained derivatives, hinge moments, divergence sweep, balanced-maneuver loads (Step 53), monitor points, load exports | Essentially complete (AE8b unrestrained mean-axis derivatives + optional Step 54 CHORDCP open) |
-| G0 | DLM-free transient maneuver loads (ZAERO MLOADS card set): direct restrained solver + free-flight modal solver, MASSSET sweeps, per-sample section loads + envelopes | Complete (Steps 59–63, 68; G0-d unsteady corrections conditional, G0-e closed-loop parked) |
+| G0 | DLM-free transient maneuver loads (ZAERO MLOADS card set): direct restrained solver + free-flight modal solver, MASSCASE sweeps, per-sample section loads + envelopes | Complete (Steps 59–63, 68; G0-d unsteady corrections conditional, G0-e closed-loop parked) |
 
 The authoritative open-items list is GitHub issues (mission + milestone map:
 `docs/30_future/00_backlog.md`; parked items in `02_parked.md`). SOL 108/109/111/112 are parked —

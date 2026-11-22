@@ -10,9 +10,14 @@ Implements the MSC formulation exactly (MSC Aeroelastic Analysis User's Guide,
 "Theory of Infinite Beam Splines" + "Summary of Matrices for Infinite Surface
 and Beam Spline Interpolation", Eqs. 2-48…2-63):
 
-  * Spline axis = the **CID y-axis** (MSC convention; QRG SPLINE2 remark 2).
-    ŝ = R_cid[:,1] (axis), ĉ = R_cid[:,0] (chord / rigid-arm direction),
-    ẑ = R_cid[:,2] (deflection direction).
+  * Spline axis = the **CID y-axis projected onto the plane of the panel** (MSC
+    Nastran 2024.1 QRG p.2849, SPLINE2 remark 2), so only the y-axis of CID is
+    read (#74).  ẑ = the panel normal (deflection and box-force direction),
+    ŝ = CID y less its component along ẑ, normalised (axis), ĉ = ŝ × ẑ (chord /
+    rigid-arm direction).  A CID with its y-axis in the panel plane and its
+    z-axis on the normal gives the same frame as before #74; CID 0 on a
+    dihedral panel used to take basic z as the deflection direction, which
+    dropped the side force of every box.
   * Each SET1 grid attaches its DEFLECTION w_g = u·ẑ at axis station
     t = (r−origin)·ŝ with rigid chord arm χ = (r−origin)·ĉ.  Off-axis grids
     are legal — the rigid arm converts their deflection into twist information
@@ -82,6 +87,47 @@ def _covered_gk_for_range(
 # SPLINE2 block builder
 # ---------------------------------------------------------------------------
 
+# Boxes of one CAERO1 share a plane; normals further apart than this are not one panel
+_PLANE_TOL = 1e-6
+# sin of the smallest angle between CID y and the panel normal that still defines an axis
+_AXIS_TOL = 1e-6
+
+
+def _spline2_frame(
+    sp: Spline2, bulk: BulkData, panel_boxes: list[AeroBox]
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
+    """Return (origin, ĉ, ŝ, ẑ) of the spline: the panel plane and the axis in it.
+
+    MSC Nastran 2024.1 QRG p.2849, SPLINE2 remark 2: "The spline axis for panels is
+    the projection of the y-axis of coordinate system CID, projected onto the plane
+    of the panel."  ẑ is the panel normal, ŝ the projected axis and ĉ = ŝ × ẑ.  The
+    origin is the CID origin; a point's distance from the panel plane does not enter
+    the spline, which reads only its ŝ and ĉ coordinates.
+    """
+    origin, R_cid = get_transform(sp.cid, bulk.cord2rs)
+    normals = np.array([b.normal for b in panel_boxes])
+    z_hat = normals.mean(axis=0)
+    z_hat /= np.linalg.norm(z_hat)
+    if np.abs(normals - z_hat).max() > _PLANE_TOL:
+        raise ValueError(
+            f"SPLINE2 {sp.eid}: boxes {sp.id1}-{sp.id2} of CAERO1 {sp.caero} do not lie "
+            "in one plane, so the spline axis has no single panel plane to be projected "
+            "onto (QRG p.2849 remark 2)"
+        )
+    y_cid = R_cid[:, 1]
+    s_vec = y_cid - (y_cid @ z_hat) * z_hat
+    s_len = float(np.linalg.norm(s_vec))
+    if s_len < _AXIS_TOL:
+        raise ValueError(
+            f"SPLINE2 {sp.eid}: the y-axis of CID {sp.cid} is normal to the panel "
+            f"(CAERO1 {sp.caero}), so it has no projection onto the panel plane to act "
+            "as the spline axis (QRG p.2849 remark 2)"
+        )
+    s_hat = s_vec / s_len
+    c_hat = np.cross(s_hat, z_hat)
+    return origin, c_hat, s_hat, z_hat
+
+
 def _build_spline2_block(
     sp: Spline2,
     bulk: BulkData,
@@ -97,12 +143,6 @@ def _build_spline2_block(
     AE4 fix — corrected sweep projection, nodal-slope sign, and DTHX semantics.
     AE6 fix — g_disp evaluated at box.force_point (¼-chord), not box.colloc (¾-chord).
     """
-
-    # Spline coordinate frame (MSC convention: axis = CID y-axis)
-    origin, R_cid = get_transform(sp.cid, bulk.cord2rs)
-    c_hat = R_cid[:, 0]   # chord / rigid-arm direction (CID x)
-    s_hat = R_cid[:, 1]   # spline axis (CID y)
-    z_hat = R_cid[:, 2]   # deflection direction (CID z)
 
     # Identify covered boxes
     covered_gk = _covered_gk_for_range(sp.caero, sp.id1, sp.id2, boxes, id_to_k)
@@ -122,6 +162,8 @@ def _build_spline2_block(
             )
         covered[gk] = True
 
+    origin, c_hat, s_hat, z_hat = _spline2_frame(sp, bulk, [boxes[gk] for gk in covered_gk])
+
     # --- SET1 grid stations and rigid-arm offsets ---
     set1 = bulk.set1s[sp.setg]
     if len(set1.grids) < 2:
@@ -139,25 +181,17 @@ def _build_spline2_block(
 
     # --- Attachment flexibilities (QRG SPLINE2 remark 3) ---
     #   0 → rigid, > 0 → spring flexibility, negative → not attached.
-    dz_flex = sp.dz if sp.dz > 0.0 else 0.0
+    # The parser refuses DZ < 0 and DTOR <= 0 (#75); these guard a card built in memory
     if sp.dz < 0.0:
-        warnings.warn(
-            f"SPLINE2 {sp.eid}: DZ={sp.dz} < 0 is invalid; treating as rigid (0.0)",
-            UserWarning,
-            stacklevel=3,
-        )
+        raise ValueError(f"SPLINE2 {sp.eid}: DZ={sp.dz} must be >= 0.0")
+    dz_flex = sp.dz
     dthx_attached = sp.dthx >= 0.0    # bending-slope rotation about c_hat
     dthy_attached = sp.dthy >= 0.0    # torsion rotation about s_hat
 
     # DTOR = EI/GJ (torsional flexibility ratio; only the ratio matters)
     dtor = sp.dtor
     if dtor <= 0.0:
-        warnings.warn(
-            f"SPLINE2 {sp.eid}: DTOR={sp.dtor} must be > 0; using 1.0",
-            UserWarning,
-            stacklevel=3,
-        )
-        dtor = 1.0
+        raise ValueError(f"SPLINE2 {sp.eid}: DTOR={sp.dtor} must be > 0.0")
     EI = 1.0
     GJ = 1.0 / dtor
 
@@ -598,6 +632,8 @@ def build_spline_operators(
     Raises ValueError if:
       - A box is covered by more than one spline
       - A SPLINE2 SET1 has fewer than 2 grids
+      - A SPLINE2 has DZ < 0 or DTOR <= 0 (refused at parse, #75), its CID y-axis is
+        normal to the panel, or its boxes are not in one plane (#74)
       - A named injection master GRID is not in the structural model
     Issues UserWarning if:
       - A SPLINE2 / SPLINE0 / ATTACH box range contains no boxes
@@ -606,10 +642,6 @@ def build_spline_operators(
         those box forces stay dropped
       - The model has several SUPORT grids (the first is used)
       - A box collocation point extrapolates >10% beyond the SET1 span range
-      - SPLINE2 DTHX carries a non-±1 value (treated as detached)
-      - SPLINE2 DTOR ≠ 1.0 (torsional flexibility ratio ignored)
-      - SPLINE2 DTHZ carries a value other than 0.0 / −1.0 (Rz attachment not
-        modelled; treated as detached)
     """
     has_splines = bool(bulk.spline2s or bulk.attaches or bulk.spline0s)
     if not has_splines:

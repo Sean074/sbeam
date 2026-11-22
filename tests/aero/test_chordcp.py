@@ -58,12 +58,16 @@ def _mean_flow_cp(aero, alpha_ref: float) -> np.ndarray:
 
 def _add_chordcp_cards(bulk, aero, cp: np.ndarray, alpha_ref: float,
                        mach: float = 0.0, sid0: int = 9000) -> None:
-    """One CHORDCP per CAERO1 from a global per-box Cp vector (box order)."""
+    """One CHORDCP per CAERO1 from a global per-box Cp vector (box order).
+
+    ``cp`` is along each box's normal; the card is along MSC's element normal (#84).
+    """
     for i, eid in enumerate(sorted(bulk.caero1s)):
         local = [k for k, b in enumerate(aero.boxes) if b.caero_eid == eid]
+        sign = np.array([aero.boxes[k].msc_sign for k in local])
         bulk.chordcps[sid0 + i] = Chordcp(
             sid=sid0 + i, caero_eid=eid, alpha_ref=alpha_ref, mach=mach,
-            data=cp[local].tolist(),
+            data=(cp[local] * sign).tolist(),
         )
 
 
@@ -159,9 +163,10 @@ class TestIdentity:
             from sbeam.model.aero import Aecorr
             for i, eid in enumerate(sorted(bulk.caero1s)):
                 local = [k for k, b in enumerate(aero_raw.boxes) if b.caero_eid == eid]
+                sign = np.array([aero_raw.boxes[k].msc_sign for k in local])  # #84
                 bulk.aecorrs[8000 + i] = Aecorr(
-                    sid=8000 + i, method="WT2", caero_eid=eid,
-                    target=(1.15 * gamma_ref[local]).tolist(),
+                    sid=8000 + i, method="WT2", caero_eid=eid, mach=aero_raw.mach,
+                    target=(1.15 * gamma_ref[local] * sign).tolist(),
                 )
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", UserWarning)

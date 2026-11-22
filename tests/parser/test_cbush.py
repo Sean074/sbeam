@@ -15,7 +15,7 @@ class TestPbushParser:
             "GRID, 1, 0, 0.0, 0.0, 0.0",
             "GRID, 2, 0, 1.0, 0.0, 0.0",
             "PBUSH, 10, K, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0",
-            "CBUSH, 1, 10, 1, 2",
+            "CBUSH, 1, 10, 1, 2, 0., 1., 0.",
         ]
         bulk = _parse(lines)
         p = bulk.pbushs[10]
@@ -75,18 +75,18 @@ class TestCbushParser:
         lines = [
             "GRID, 1, 0, 0.0, 0.0, 0.0",
             "PBUSH, 10, K, 5000.0",
-            "CBUSH, 1, 10, 1,  ,  ,  ,  ,  ,  ",
+            "CBUSH, 1, 10, 1,  ,  ,  ,  , 0",
         ]
         bulk = _parse(lines)
         assert bulk.cbushs[1].gb is None
 
-    def test_cbush_orientation_from_continuation(self):
+    def test_cbush_orientation_in_fields_six_to_eight(self):
+        """MSC's layout (#62); sbeam used to read the vector from the continuation."""
         lines = [
             "GRID,1,,0.0,0.0,0.0",
             "GRID,2,,1.0,0.0,0.0",
             "PBUSH,10,K,1000.0",
-            "CBUSH,1,10,1,2",
-            "+,0.0,1.0,0.0",
+            "CBUSH,1,10,1,2,0.0,1.0,0.0",
         ]
         bulk = _parse(lines)
         c = bulk.cbushs[1]
@@ -121,14 +121,14 @@ class TestCbushParser:
         with pytest.raises(ValueError, match="GB=99"):
             _parse(lines)
 
-    def test_cbush_nonzero_cid_raises(self):
+    def test_cbush_undefined_cid_raises(self):
         lines = [
             "GRID, 1, 0, 0.0, 0.0, 0.0",
             "GRID, 2, 0, 1.0, 0.0, 0.0",
             "PBUSH, 10, K, 1000.0",
-            "CBUSH, 1, 10, 1, 2, , 5",
+            "CBUSH, 1, 10, 1, 2, , , , 5",
         ]
-        with pytest.raises(ValueError, match="CID=5"):
+        with pytest.raises(ValueError, match="CBUSH 1: CID=5 not found in CORD2R"):
             _parse(lines)
 
     def test_cbush_ga_equals_gb_raises(self):

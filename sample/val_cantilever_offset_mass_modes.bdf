@@ -92,7 +92,7 @@ $ CONM2, EID, GID, CID, M,      X1,  X2,  X3,  I11
 $ 5000 kg pod, CG offset 1.5 m in +Y off the elastic axis,
 $ I11 = 5000 kg.m^2 about its own CG. The offset generates the
 $ translation-rotation coupling and the m*d^2 parallel-axis inertia.
-CONM2, 1, 11, 0, 5000.0, 0.0, 1.5, 0.0, 5000.0
+CONM2, 1, 11, 0, 5000.0, 0.0, 1.5, 0.0, , 5000.0
 $
 $ ----------------------------------------------------------- CONSTRAINTS
 $ SPC1, SID, C, G

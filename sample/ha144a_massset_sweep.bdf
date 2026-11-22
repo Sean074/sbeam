@@ -1,40 +1,40 @@
-$ HA144A MASSSET SWEEP — payload / mass-case demonstration (Step 60)
+$ HA144A MASSCASE SWEEP — payload / mass-case demonstration (Step 60)
 $ Derived from ha144a_fullspan_sbeam.bdf (full-span HA144A, MSC Listing 7-1).
 $
 $ Purpose: one deck, one TRIM card, three payload conditions selected per
-$ subcase with the case-control MASSSET request.  The AIC, splines, stiffness
+$ subcase with the case-control MASSCASE request.  The AIC, splines, stiffness
 $ and the whole AeroCache are geometry/Mach-only and are built ONCE and shared;
 $ only the mass-derived operators (M_gg, M_ax, GPWG, the trim solve) are
 $ rebuilt per case.
 $
-$   MASSSET 10  EMPTY     16000 lb   baseline aircraft, baggage DELETEd
-$   MASSSET 20  HALFFUEL  18500 lb   + 2000 lb wing fuel (ADD)
-$   MASSSET 30  FULLFUEL  21000 lb   + 4000 lb wing fuel (ADD)
+$   MASSCASE 10  EMPTY     16000 lb   baseline aircraft, baggage DELETEd
+$   MASSCASE 20  HALFFUEL  18500 lb   + 2000 lb wing fuel (ADD)
+$   MASSCASE 30  FULLFUEL  21000 lb   + 4000 lb wing fuel (ADD)
 $                                    + baggage 500 -> 1000 lb (REPLACE)
 $
-$ The bare deck (no MASSSET selected) is the 16500 lb baseline: the 16000 lb
+$ The bare deck (no MASSCASE selected) is the 16500 lb baseline: the 16000 lb
 $ aircraft plus the 500 lb baggage CONM2 5000.  All three ops are exercised.
 $ Heavier cases must trim to a larger ANGLEA at the same q — the physics check.
 $
 $ Units: ft, lb, slug, s
 $
 SOL 144
-TITLE = HA144A MASSSET payload sweep
-$ Subcase 1 — EMPTY (MASSSET 10)
+TITLE = HA144A MASSCASE payload sweep
+$ Subcase 1 — EMPTY (MASSCASE 10)
 SUBCASE 1
   TRIM    = 1
   SPC     = 1
-  MASSSET = 10
-$ Subcase 2 — HALF FUEL (MASSSET 20)
+  MASSCASE = 10
+$ Subcase 2 — HALF FUEL (MASSCASE 20)
 SUBCASE 2
   TRIM    = 1
   SPC     = 1
-  MASSSET = 20
-$ Subcase 3 — FULL FUEL (MASSSET 30)
+  MASSCASE = 20
+$ Subcase 3 — FULL FUEL (MASSCASE 30)
 SUBCASE 3
   TRIM    = 1
   SPC     = 1
-  MASSSET = 30
+  MASSCASE = 30
 BEGIN BULK
 $
 $ ============================================================
@@ -143,11 +143,11 @@ CONM2, 411, 211, 0, 18.647
 CONM2, 421, 221, 0, 18.647
 CONM2, 412, 212, 0, 12.431
 CONM2, 422, 222, 0, 12.431
-$ Baggage — a BASELINE mass (500 lb): DELETEd by MASSSET 10, REPLACEd by 30.
+$ Baggage — a BASELINE mass (500 lb): DELETEd by MASSCASE 10, REPLACEd by 30.
 CONM2, 5000, 98, 0, 15.5405
 $
 $ ------------------------------------------------------------------
-$ OVERLAY CONM2s — referenced by a MASSSET ADD / REPLACE-overlay slot,
+$ OVERLAY CONM2s — referenced by a MASSCASE ADD / REPLACE-overlay slot,
 $ so they are excluded from the baseline mass and only enter the cases
 $ that name them.  Ordinary CONM2 cards otherwise.
 $ ------------------------------------------------------------------
@@ -165,17 +165,17 @@ $ Heavy baggage (1000 lb) — replaces baseline CONM2 5000 in the FULL case
 CONM2, 6020, 98, 0, 31.0810
 $
 $ ============================================================
-$ MASS CASES (Step 60) — selected per subcase by case-control MASSSET
-$   MASSSET  SID  LABEL  SCALE
+$ MASS CASES (Step 60) — selected per subcase by case-control MASSCASE
+$   MASSCASE  SID  LABEL  SCALE
 $   +        ADD      <overlay EIDs ...>
 $   +        REPLACE  <baseline EID> <overlay EID> ...   (pairs)
 $   +        DELETE   <baseline EIDs ...>
 $ ============================================================
-MASSSET, 10, EMPTY, 1.0
+MASSCASE, 10, EMPTY, 1.0
 +, DELETE, 5000
-MASSSET, 20, HALFFUEL, 1.0
+MASSCASE, 20, HALFFUEL, 1.0
 +, ADD, 6001, 6002, 6003, 6004
-MASSSET, 30, FULLFUEL, 1.0
+MASSCASE, 30, FULLFUEL, 1.0
 +, ADD, 6011, 6012, 6013, 6014
 +, REPLACE, 5000, 6020
 $
@@ -265,17 +265,22 @@ AECOMP, WINGEA, SET1, 1320
 $ Whole-aircraft monitor grids.  Every spline-load grid AND every CONM2-bearing grid (DEF-M10).  Grid 97
 $ carries baseline mass, and 110/120/210/220 carry the fuel overlay masses —
 $ none of them take spline load, so all five were missing from this monitor.
-SET1, 1310, 97, 98, 99, 100, 110, 111, 112, 120, 121,
-+, 122, 210, 211, 212, 220, 221, 222
+SET1, 1310, 97, 98, 99, 100, 110, 111, 112
++, 120, 121, 122, 210, 211, 212, 220, 221
++, 222
 AECOMP, ALLGRID, SET1, 1310
 $ Whole-aircraft aero boxes (all 4 CAERO1 panels)
 AELIST, 1400, 1000, THRU, 1007, 1100, THRU, 1131, 2000, THRU, 2007, 2100, THRU, 2131
 AECOMP, ALLAERO, AELIST, 1400
 $ MONPNT3 section cuts (aero + inertia + reaction) and MONPNT1 aero-only:
-MONPNT3, MWINGRT, WING ROOT, 35, WINGROOT, 0, 15.0, 0.0, 0.0
-MONPNT3, MWINGEA, RIGHT WING, 35, WINGEA, 0, 15.0, 0.0, 0.0
-MONPNT3, MALLEA, WHOLE AIRCRAFT, 35, ALLGRID, 0, 15.0, 0.0, 0.0
-MONPNT1, MALLAR, AIRCRAFT AERO, 35, ALLAERO, 0, 15.0, 0.0, 0.0
+MONPNT1 MWINGRT WING ROOT
++, 35, WINGROOT, 0, 15.0, 0.0, 0.0
+MONPNT1 MWINGEA RIGHT WING
++, 35, WINGEA, 0, 15.0, 0.0, 0.0
+MONPNT1 MALLEA  WHOLE AIRCRAFT
++, 35, ALLGRID, 0, 15.0, 0.0, 0.0
+MONPNT1 MALLAR  AIRCRAFT AERO
++, 35, ALLAERO, 0, 15.0, 0.0, 0.0
 $
 $ ============================================================
 $ AERODYNAMIC TRIM VARIABLES
@@ -302,10 +307,10 @@ W2GJ, 1, 1100
 +, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
 +, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
 W2GJ, 2, 2100
-+, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
-+, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
-+, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
-+, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3, 1.745-3
++, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3
++, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3
++, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3
++, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3, -1.745-3
 $
 $ ============================================================
 $ TRIM CARD — one card shared by all three mass cases: q=40, M=0.9,

@@ -79,7 +79,8 @@ record *(sloads)*) → §4 cut → close the milestone on GitHub → delete the 
 open the next milestone's branch.
 
 **CI runs on release branches** (`.github/workflows/ci.yml` triggers on push to `main`
-**and** `release/**`): the full ruff → pyright → pytest matrix, same as `main`. Without
+**and** `release/**`): the full ruff → pyright → pytest matrix, same as `main`, plus the
+`compat` job (pyNastran cross-parse of every repo deck, #83, `requirements-compat.txt`). Without
 this the beta gate would be unverifiable — a branch CI never sees is a branch no gate
 covers *(the sloads CI-shape lesson, adapted: sbeam's full matrix is ~3 min, so no
 fast/full split is needed)*. **A red run blocks the next item** (#54: pyright failed
@@ -168,8 +169,10 @@ sufficient). This provides a permanent regression baseline for future releases.
 - [ ] Update `docs/40_history/00_completed_development.md` — confirm the release tag and
   date are noted under the relevant entries.
 - [ ] Open the next milestone's `release/X.Y.0` branch (§2a).
-- [ ] If the release introduced any new BDF cards or solver types, update the supported
-  card table in `CLAUDE.md`.
+- [ ] If the release introduced any new BDF cards or solver types, confirm they appear in
+  `docs/10_standard/02_card_reference.md` (supported-card list) and
+  `docs/10_standard/00_program_overview.md` (solver types). The per-change Tier M/L closure
+  should already have done this; never copy the list into `CLAUDE.md`.
 
 ---
 

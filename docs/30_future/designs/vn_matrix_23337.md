@@ -264,7 +264,7 @@ test can see it.
 ### 6.4 Sample deck
 
 `sample/cessna210_flagship_vn.bdf`, FAR23 normal, V_A 60 / V_C 86 / V_D 105 m/s, three
-MASSSETs, sea level. V_A is illustrative for a sample — it follows from a stated
+MASSCASEs, sea level. V_A is illustrative for a sample — it follows from a stated
 `V_S1 ≈ 30.9 m/s` as `30.9·√3.8 = 60.2`, and is not a measured certification number.
 
 ---

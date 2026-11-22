@@ -3,7 +3,8 @@ $ val_dihedral_trim.bdf — STEP 58 (V-C-DIH) minimal STRUCTURED dihedral trim
 $
 $ A small symmetric rectangular wing canted at Gamma = +10 deg dihedral, with a
 $ flexible CBAR spar along each canted elastic axis, a SPLINE2 per semi-span
-$ (canted CID so z_hat = surface normal), point masses, and a determined plunge
+$ (canted CID; since #74 only its y-axis is read and CID 0 works too — the
+$ deflection direction is the panel normal), point masses, and a determined plunge
 $ trim (ANGLEA free against a 1g URDD3, Tz supported).  Purpose: exercise the
 $ FULL VLM -> spline -> force -> trim chain OUT OF THE xy-PLANE.
 $

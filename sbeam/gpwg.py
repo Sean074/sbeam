@@ -16,7 +16,7 @@ class GpwgResult:
     cg_x: float
     cg_y: float
     cg_z: float
-    massset_sid: Optional[int] = None   # MASSSET SID for this case (None = baseline)
+    massset_sid: Optional[int] = None   # MASSCASE SID for this case (None = baseline)
     massset_label: str = "BASELINE"
 
 
@@ -26,7 +26,7 @@ def compute_gpwg(bulk: BulkData, massset_sid: Optional[int] = None) -> GpwgResul
     CBAR / CROD / CONROD mass = (rho * A + nsm) * L, placed at the element midpoint.
     CONM2 mass = Conm2.m at grid location + offset (x1, x2, x3).
 
-    ``massset_sid`` (Step 60) selects a MASSSET payload / mass case; ``None``
+    ``massset_sid`` (Step 60) selects a MASSCASE payload / mass case; ``None``
     gives the baseline configuration.
     """
     from sbeam.model.mass_overlay import resolve_mass_case

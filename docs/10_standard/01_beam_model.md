@@ -56,7 +56,7 @@ All three are assembled as a DOF transformation matrix **T** (`n_dof × n_red`) 
 | `PAERO1` | Aerodynamic panel property (Phase A stub) |
 | `AEFACT` | Fraction list for non-uniform span/chord panel spacing |
 | `W2GJ` | Per-box baseline normalwash slopes (geometric incidence) |
-| `WKK` | Diagonal AIC correction weights |
+| `WKK` | Per-box lift weights, applied after the pressure solve (MSC placement, #71) |
 | `AECORR` | WT2 pressure-matching AIC correction (WT1 force-matching removed at the release boundary — DEF-R7) |
 
 ---
@@ -120,17 +120,17 @@ All internal computation is in global CID 0. After parsing, `resolve_grid_positi
 | Quantity | Limit | Reason |
 |----------|-------|--------|
 | CBAR elements | No hard limit | Sparse solver used; memory and compute time are the practical constraint |
-| AEROS ACSID/RCSID | 0 only (Phase A) | Non-zero aerodynamic coordinate systems deferred |
+| AEROS ACSID | 0 or a CORD2R parallel to basic | Freestream is along basic +x; a rotated ACSID raises `ValueError` (#58). RCSID may be any CORD2R |
 | AEROS | One per model | Duplicate raises `ValueError` |
 | CAERO1 NSPAN/LSPAN | Exactly one non-zero | Both zero or both non-zero raises `ValueError` |
 | CAERO1 NCHORD/LCHORD | Exactly one non-zero | Both zero or both non-zero raises `ValueError` |
-| CAERO1 IGID | Ignored in Phase A | Interference group support deferred |
+| CAERO1 IGID | One group per deck | Every panel interferes with every other; a deck with two IGIDs is refused (#76) |
 | PAERO1 | Phase A stub | Body element support deferred |
 | W2GJ/WKK/AECORR | One correction tier active | WKK overrides WT2 if both present |
 | Coordinate systems | CORD2R only (rectangular) | CORD2C, CORD2S, CORD1R not implemented |
 | Tapered sections | Not supported | PBAR is uniform cross-section only |
 | CBAR offsets | Not supported | W1A/W2A/etc. offset fields are ignored |
-| CBUSH CID | 0 only | User-defined CID deferred to Phase 3 |
+| CBUSH CID | 0 or a CORD2R (field 9, MSC layout; #62) | GO, spring location `S ≠ 0.5` and `OCID` are refused |
 
 ---
 
@@ -149,28 +149,28 @@ The viewer calls `parse_bulk_file()` when uploading a model file before case con
 
 Reads a bulk-data-only file. Behaviour:
 
-1. Reads all lines from the file.
+1. Reads the file with every `INCLUDE` expanded, as `parse_bdf` does.
 2. If a `BEGIN BULK` line is present, discards everything before it.
-3. Passes remaining lines to `parse_bulk_data`.
+3. Passes the lines up to `ENDDATA` to `parse_bulk_data`.
 4. Returns `BulkData`. Does not call `parse_case_control`.
 
 ### `parse_bdf(filepath) -> (CaseControl, BulkData)` — run file entry point
 
-`parse_bdf` reads a complete run file. It:
+`parse_bdf` reads a complete run file as NASTRAN reads it (#81). It:
 
-1. Reads the file and splits on the `BEGIN BULK` line.
-2. Passes the case control section (before `BEGIN BULK`) to `parse_case_control`.
-3. Loads every path in `CaseControl.includes`, in the order the `INCLUDE` lines appear, and concatenates them; the lines after `BEGIN BULK` are appended to that.
-4. Passes the bulk data lines to `parse_bulk_data`.
+1. Reads the file and replaces every `INCLUDE` with the text of its file, wherever it stands, nested up to 10 deep.
+2. Splits the result on the `BEGIN BULK` line and passes the case control (above it) to `parse_case_control`. A file holding bulk cards INCLUDEd above `BEGIN BULK` is refused, naming the file.
+3. Passes the bulk data lines, up to `ENDDATA`, to `parse_bulk_data`. A card after `ENDDATA` is refused.
+4. Sets `CaseControl.includes` to the files the main deck INCLUDEs below `BEGIN BULK`, in order; `CaseControl.include` is the first, for callers that expect a single path.
 5. Returns `(CaseControl, BulkData)`.
 
-**Several `INCLUDE`s are allowed** (Step 66), which is how a driver deck composes a shared bulk with an overlay without duplicating the shared part — see `sample/cessna210_flagship_body.bdf`. `ENDDATA` is an ignored keyword rather than a terminator, so an included file ending in one does not truncate the files behind it. `CaseControl.include` remains as the first entry for callers that expect a single path.
+**Several `INCLUDE`s are allowed** (Step 66), which is how a driver deck composes a shared bulk with an overlay without duplicating the shared part — see `sample/cessna210_flagship_body.bdf`. The included bulk files carry no `ENDDATA`. File-structure rules and QRG citations: `02_card_reference.md` (File Structure).
 
 Raises `FileNotFoundError` if any INCLUDE file does not exist.
 
 ### `parse_case_control(lines) -> CaseControl` — `parser/case_control.py`
 
-Parses the case control section (lines above `BEGIN BULK`). Uses space/equals keyword syntax — not the comma/fixed-field bulk format. Recognises: `SOL`, `TITLE`, `SUBCASE`, `LOAD`, `SPC`, `METHOD`, `TRIM`, `DIVERG`, `MLOADS`, `MASSSET`, `AEROF`, `APRES`, `DISPLACEMENT`, `SPCFORCE`, `OLOAD`, `FORCE`, `STRESS`, `INCLUDE`.
+Parses the case control section (lines above `BEGIN BULK`). Uses space/equals keyword syntax — not the comma/fixed-field bulk format. Every line must be a command the parser reads, ignores for a stated reason or refuses by name; any other line raises `ValueError` (#80). The command tables, the four-character abbreviation rule and the case-control `PARAM` are in `02_card_reference.md` (Case Control Keywords). Selectors and output requests above the first `SUBCASE` are defaults for every subcase, and a deck with no `SUBCASE` runs them as subcase 1 (#79; rules in `02_card_reference.md`, Case Control Keywords).
 
 Raises `ValueError` if `SOL` is absent or not one of 101/103/144.
 
@@ -183,22 +183,22 @@ Accepts a list of BDF text lines (bulk data section only). Supports:
 - **Inline `$` comments** — everything from `$` to end of line is ignored
 - **Continuation lines** — lines whose first field starts with `+`; consumed by the preceding card handler (e.g. PBAR recovery points, SPC1 with >6 grids)
 
-Cards recognised: `CORD2R`, `GRID`, `PBAR`, `PROD`, `PBUSH`, `MAT1`, `CBAR`, `CROD`, `CONROD`, `CBUSH`, `PLOTEL`, `CONM2`, `MASSSET`, `RBE3`, `RBE2`, `RBAR`, `SPC`, `SPC1`, `FORCE`, `MOMENT`, `LOAD`, `GRAV`, `EIGRL`, `SUPORT`, plus the aero/trim/monitor/maneuver families: `AEROS`, `AEFACT`, `PAERO1`, `PSTRIP`, `STRIPK`, `CAERO1`, `W2GJ`, `WKK`, `AECORR`, `SET1`, `SPLINE0`, `SPLINE1`, `SPLINE2`, `ATTACH`, `AESTAT`, `AESURF`, `AELIST`, `TRIM`, `DIVERG`, `TRIMVAR`, `TRIMOBJ`, `TRIMCON`, `AECOMP`, `MONPNT1`, `MONPNT3`, `MLOADS`, `MLDTRIM`, `MLDTIME`, `MLDCOMD`, `MLDPRNT`, `TABLED1` (full list with fields in `02_card_reference.md`).
+Cards recognised: `CORD2R`, `GRID`, `PBAR`, `PROD`, `PBUSH`, `MAT1`, `CBAR`, `CROD`, `CONROD`, `CBUSH`, `PLOTEL`, `CONM2`, `MASSCASE`, `RBE3`, `RBE2`, `RBAR`, `SPC`, `SPC1`, `FORCE`, `MOMENT`, `LOAD`, `GRAV`, `EIGRL`, `SUPORT`, plus the aero/trim/monitor/maneuver families: `AEROS`, `AEFACT`, `PAERO1`, `PSTRIP`, `STRIPK`, `CAERO1`, `W2GJ`, `WKK`, `AECORR`, `SET1`, `SPLINE0`, `SPLINE1`, `SPLINE2`, `ATTACH`, `AESTAT`, `AESURF`, `AELIST`, `TRIM`, `DIVERG`, `TRIMVAR`, `TRIMOBJ`, `TRIMCON`, `AECOMP`, `MONPNT1`, `MONPNT3`, `MLOADS`, `MLDTRIM`, `MLDTIME`, `MLDCOMD`, `MLDPRNT`, `TABLED1` (full list with fields in `02_card_reference.md`).
 Structural markers `BEGIN BULK` / `ENDDATA` are silently skipped.
 Known-but-unsupported NASTRAN cards (`PLOAD1`, `CBEAM`, `CORD2C`, `MPC`, … — the `_UNSUPPORTED_CARDS` set) **refuse the deck** with one counted `ValueError` (#45; table in `02_card_reference.md` "Unsupported cards").
-All other keywords issue `warnings.warn(…, UserWarning)` and are skipped; the CLI echoes them as `Parser warning:` on stderr.
+Any other unknown keyword refuses the deck in the same `ValueError`, with the nearest supported keyword suggested (#55). Only the listing-only cards `ECHOON`/`ECHOOFF`, and PARAMs sbeam does not read, are skipped with a `UserWarning` (the CLI echoes them as `Parser warning:` on stderr). `PARAM,WTMASS`/`AUNITS` ≠ 1 and `PARAM,COUPMASS` ≤ 0 are refused.
 Duplicate GID, PID (one space across PBAR and PROD), MID (MAT1), element EID (one space across CBAR, CROD, CONROD and CBUSH), or LOAD SID raises `ValueError`.
 
-**Ordering constraints:** PBAR and MAT1 must appear before the CBAR elements that reference them. PROD and MAT1 must appear before the CROD elements, and MAT1 before the CONROD elements, that reference them. PBUSH must appear before the CBUSH elements that reference it. CORD2R cards may appear in any order relative to each other; cycles in `RID` references raise `ValueError`.
+**Card order:** bulk cards may appear in any order (#51). `parse_bulk_data` works in two phases:
+1. It reads every card and checks each one on its own: field values, DOF strings, `GA == GB`,
+   `A ≤ 0`, and duplicates within one card type.
+2. It then checks every reference between cards (`parser/bulk_xref.py`). A reference to an
+   undefined card raises `ValueError`, including CBAR → GRID/PBAR, CROD → PROD → MAT1,
+   CONROD → MAT1, CONM2/FORCE/MOMENT/SPC → GRID, and any non-zero CID → CORD2R.
 
-**CBAR cross-reference validation** (at parse time):
-- `GA` or `GB` not in `bulk.grids` → `ValueError`
-- `PID` not in `bulk.pbars` → `ValueError`
-
-**CROD / CONROD cross-reference validation** (at parse time, #38):
-- `GA` or `GB` not in `bulk.grids`, or `GA == GB` → `ValueError`
-- `CROD` `PID` not in `bulk.prods`, or the PROD's `MID` not in `bulk.mat1s` → `ValueError`
-- `CONROD` `MID` not in `bulk.mat1s`, `A ≤ 0` or `J < 0` → `ValueError`
+The complete table is in `02_card_reference.md`, Format Rules, "Card order and
+cross-references". CORD2R cycles in `RID` references raise `ValueError` when grid positions
+are resolved.
 
 **DOF string validation** (SPC and SPC1 cards):
 - Any character outside `1–6` (including `"0"`) → `ValueError`

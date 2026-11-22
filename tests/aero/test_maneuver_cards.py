@@ -60,9 +60,9 @@ def test_tabled1_evaluate():
     bulk = _parse(_DECK)
     t = bulk.tabled1s[201]              # (0,0) -> (2,5), slope 2.5
     assert t.evaluate(1.0) == pytest.approx(2.5)
-    # constant (held) extrapolation outside the range
-    assert t.evaluate(-1.0) == pytest.approx(0.0)
-    assert t.evaluate(10.0) == pytest.approx(5.0)
+    # linear extrapolation from the end points (QRG 2024.1 PDF p.2897 remark 6; #70)
+    assert t.evaluate(-1.0) == pytest.approx(-2.5)
+    assert t.evaluate(10.0) == pytest.approx(25.0)
 
 
 def test_mldtime_roundtrip():

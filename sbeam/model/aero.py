@@ -27,7 +27,7 @@ class Caero1:
     nchord: int          # chordwise box divisions (0 when LCHORD used)
     lspan:  int          # AEFACT sid for span fractions (0 when NSPAN used)
     lchord: int          # AEFACT sid for chord fractions (0 when NCHORD used)
-    igid:   int          # interference group ID (ignored in Phase A)
+    igid:   int          # interference group; one group per deck (the parser refuses a second, #76)
     p1:     tuple[float, float, float]   # root leading-edge in CP frame
     x12:    float        # root chord length
     p4:     tuple[float, float, float]   # tip leading-edge in CP frame
@@ -126,7 +126,12 @@ class Aecorr:
     sid:       int
     method:    str           # 'WT2' (pressure matching) — the only method supported
     caero_eid: int           # which CAERO1 element this applies to
-    target: list[float] = field(default_factory=list)  # per-box cp (WT2)
+    # Build Mach: the ratio target/reference is formed once at this Mach, in the model
+    # being solved, and applied at every TRIM Mach (#72)
+    mach:      float
+    # Per-box target loading in circulation units on the Prandtl–Glauert-compressed
+    # geometry at ``mach`` (what ``wt2_reference_cp`` returns), not physical ΔCp
+    target: list[float] = field(default_factory=list)
 
 
 @dataclass
@@ -260,11 +265,10 @@ class Trim:
 
 @dataclass
 class Diverg:
-    """Divergence speed analysis parameters."""
+    """DIVERG — divergence analysis data (QRG 2024.1 p.1603)."""
     sid:    int
-    nroots: int          # number of divergence roots to find
-    rhoref: float = 0.0  # sbeam extension: reference density for V_div (0.0 ⇒ V_div omitted)
-    machs:  list[float] = field(default_factory=list)   # Mach values
+    nroots: int          # NROOT: number of divergence roots to output
+    machs:  list[float] = field(default_factory=list)   # M1, M2, ... (fields 4+)
 
 
 # ---------------------------------------------------------------------------

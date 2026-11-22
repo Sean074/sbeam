@@ -30,7 +30,7 @@ about 14× the balanced figure. The tail sizing case is missing today.
 ## 2. Scope
 
 **In scope**
-- Symmetric vertical gust at V_C and V_D, positive and negative, per mass case (MASSSET),
+- Symmetric vertical gust at V_C and V_D, positive and negative, per mass case (MASSCASE),
   aft horizontal tail.
 - The 1g balancing state and the gust state in one subcase; total = 1g + increment.
 - Tail-load recovery (a named MONPNT1), and the airplane-`n` cross-check against Pratt.
@@ -155,7 +155,7 @@ clean.
 SUBCASE 9100
   TITLE   = +15.24 m/s tail gust at VC, alt 0 m, MTOW
   GUSTHT  = 9100
-  MASSSET = 30
+  MASSCASE = 30
   SPC     = 1
 ```
 
@@ -181,7 +181,7 @@ In `sbeam/solver/sol144.py`:
 in `sbeam/model/maneuver_presets.py`, beside `load_factor_to_urdd3`, using the rigid-body
 transfer from `assembly/rigid_body.py`.
 
-**f06 block**, after the subcase/MASSSET header and before `T R I M   V A R I A B L E S`,
+**f06 block**, after the subcase/MASSCASE header and before `T R I M   V A R I A B L E S`,
 prose-formatted like the GUSTLF block (out of the column-alignment gate's scope by
 construction):
 
@@ -210,7 +210,7 @@ Cost: two trim solves per GUSTHT subcase; the aero cache is shared.
   `SHT` from the CAERO1 geometry of the named AELIST; `DLHT = q·DALPHA·AHTE·SHT`.
 - Emits `TRIM` + `GUSTHT` pairs, one per (speed × altitude × mass case × sense).
 
-**Sample:** `sample/cessna210_flagship_tailgust.bdf` — V_C/V_D × ± × three MASSSET cases, sea
+**Sample:** `sample/cessna210_flagship_tailgust.bdf` — V_C/V_D × ± × three MASSCASE cases, sea
 level, generated output with the generating command in its header. An HT `AECOMP`/`MONPNT1`
 (`MHTAERO`, boxes 3000–3047 and 4000–4047) is added to the shared flagship bulk (D7).
 

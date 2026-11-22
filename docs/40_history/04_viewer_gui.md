@@ -75,6 +75,8 @@ and resolved viewer defects.
 
 ## Resolved defects (Phase 1 viewer)
 
+- **#98 (Tier M, 2026-11-18)** — `case_control_ui.export_bdf_text` and the subcase editor wrote a fixed selector list without `GUSTLF`, so a gust deck's subcases lost their only driver when the viewer exported or rebuilt case control (`cessna210_flagship_gust.bdf`: SUBCASE 9000 came back with `SPC` and `MASSCASE` only). Found by the #11 survey. Fix: `gustlf_sid` carried through the export, the session dictionaries, `_apply_sol144_kind` (cleared for MLOADS and DIVERG kinds) and the `SubcaseControl` rebuild; a `GUSTLF SID` picker; the analysis summary names the gust case; the results page shows the gust load condition. Sweep (rule 3): the export is gated on a subcase built from every `SubcaseControl` dataclass field and on every repo driver deck, so the next selector cannot be dropped; both gates fail on the old code.
+
 ### B1: Viewer — Case Control UI Export ✅ FIXED
 
 **Root cause:** The case control panel uses `st.form()`. On form submission Streamlit

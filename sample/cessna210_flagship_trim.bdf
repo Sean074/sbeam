@@ -16,7 +16,6 @@ $ Units: SI (m, N, kg, Pa, s)
 $
 SOL 144
 TITLE = Cessna 210 flagship — 1g cruise and 2.5g pull-up
-INCLUDE 'cessna210_flagship_bulk.bdf'
 $
 SUBCASE 1
   TITLE = 1g cruise, q = 2334 Pa
@@ -33,4 +32,5 @@ SUBCASE 2
   FORCE        = ALL
 $
 BEGIN BULK
+INCLUDE 'cessna210_flagship_bulk.bdf'
 ENDDATA

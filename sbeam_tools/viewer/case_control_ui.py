@@ -69,9 +69,9 @@ def export_bdf_text(
 ) -> str:
     """Return a BDF driver file as a string, parseable by parse_bdf.
 
-    Layout: executive/case control, one INCLUDE per bulk file (INCLUDE lines
-    must sit above BEGIN BULK — that is where the parser reads them), then any
-    authored bulk cards inline after BEGIN BULK, then ENDDATA.
+    Layout: executive/case control, BEGIN BULK, one INCLUDE per bulk file (an
+    INCLUDE inserts its file where it stands, so bulk INCLUDEs sit below BEGIN
+    BULK, #81), then any authored bulk cards, then ENDDATA.
 
     Args:
         cc:             Case control to serialize (all SOL 144 keywords included).
@@ -99,7 +99,7 @@ def export_bdf_text(
             (sc.load_sid, "LOAD"), (sc.spc_sid, "SPC"), (sc.method_sid, "METHOD"),
             (sc.trim_sid, "TRIM"), (sc.trimobj_sid, "TRIMOBJ"),
             (sc.diverg_sid, "DIVERG"), (sc.mloads_sid, "MLOADS"),
-            (sc.massset_sid, "MASSSET"),
+            (sc.gustlf_sid, "GUSTLF"), (sc.massset_sid, sc.mass_card),
         ]:
             if sid is not None:
                 lines.append(f"  {keyword} = {sid}")
@@ -110,9 +110,9 @@ def export_bdf_text(
         ]:
             if flag:
                 lines.append(f"  {keyword} = ALL")
+    lines.append("BEGIN BULK")
     for path in include_paths:
         lines.append(f"INCLUDE '{path}'")
-    lines.append("BEGIN BULK")
     if authored_block:
         lines.extend(authored_block.rstrip("\n").splitlines())
     lines.append("ENDDATA")
@@ -161,7 +161,7 @@ def _summarize_sol144(sc: SubcaseControl, bulk: BulkData) -> str:
     if sc.massset_sid is not None:
         ms = bulk.masssets.get(sc.massset_sid)
         label = f" {ms.label}" if ms is not None else ""
-        mass_case = f" [mass case MASSSET {sc.massset_sid}{label}]"
+        mass_case = f" [mass case {sc.mass_card} {sc.massset_sid}{label}]"
     if sc.mloads_sid is not None:
         outputs = "time histories, MLDPRNT export, critical-sample loads"
         if has_monitors:
@@ -177,6 +177,10 @@ def _summarize_sol144(sc: SubcaseControl, bulk: BulkData) -> str:
             parts.append(f"trim (TRIM {sc.trim_sid})")
         if sc.trimobj_sid is not None:
             parts.append(f"over-determined (TRIMOBJ {sc.trimobj_sid})")
+    if sc.gustlf_sid is not None:
+        gust = bulk.gustlfs.get(sc.gustlf_sid)
+        detail = f", n = {gust.n:g} on TRIM {gust.trimid}" if gust is not None else ""
+        parts.append(f"static gust case (GUSTLF {sc.gustlf_sid}{detail})")
     if sc.diverg_sid is not None:
         parts.append(f"divergence sweep (DIVERG {sc.diverg_sid})")
     head = "; ".join(parts) if parts else "aeroelastic"
@@ -300,6 +304,7 @@ def _render_case_control_editor(
     diverg_sids  = sorted(bulk.divergs.keys())
     mloads_sids  = sorted(bulk.mloads.keys())
     massset_sids = sorted(bulk.masssets.keys())
+    gustlf_sids  = sorted(bulk.gustlfs.keys())
 
     # Initialise editable subcase list
     if not st.session_state.get("cc_subcases"):
@@ -315,6 +320,7 @@ def _render_case_control_editor(
                     "trimobj_sid":  sc.trimobj_sid,
                     "diverg_sid":   sc.diverg_sid,
                     "mloads_sid":   sc.mloads_sid,
+                    "gustlf_sid":   sc.gustlf_sid,
                     "massset_sid":  sc.massset_sid,
                     "displacement": sc.displacement,
                     "spcforce":     sc.spcforce,
@@ -391,7 +397,7 @@ def _render_case_control_editor(
                 if sol == 144:
                     _render_sol144_subcase_fields(
                         sc_data, idx, trim_sids, trimobj_sids, diverg_sids,
-                        mloads_sids, massset_sids,
+                        mloads_sids, massset_sids, gustlf_sids,
                     )
 
                 if sol == 103:
@@ -455,13 +461,13 @@ def _render_case_control_editor(
             fields = dict(s)
             if sol == 144:
                 for key in ("trim_sid", "trimobj_sid", "diverg_sid",
-                            "mloads_sid", "massset_sid"):
+                            "mloads_sid", "gustlf_sid", "massset_sid"):
                     fields[key] = st.session_state.get(f"sc_{key}_{idx}", s.get(key))
                 kind = st.session_state.get(f"sc_kind_{idx}", _subcase_kind(fields))
                 fields = _apply_sol144_kind(fields, kind)
             else:
                 for key in ("trim_sid", "trimobj_sid", "diverg_sid",
-                            "mloads_sid", "massset_sid"):
+                            "mloads_sid", "gustlf_sid", "massset_sid"):
                     fields[key] = None
             subcases.append(SubcaseControl(
                 subcase_id=s["id"],
@@ -474,7 +480,11 @@ def _render_case_control_editor(
                 trimobj_sid=fields["trimobj_sid"],
                 diverg_sid=fields["diverg_sid"],
                 mloads_sid=fields["mloads_sid"],
+                gustlf_sid=fields.get("gustlf_sid"),
                 massset_sid=fields["massset_sid"],
+                # #102: an MSC mass combination is selected with MASSSET
+                mass_card=("MASSSET" if fields["massset_sid"] in bulk.masssets
+                           and bulk.masssets[fields["massset_sid"]].msc else "MASSCASE"),
                 displacement=st.session_state.get(f"sc_displacement_{idx}", s["displacement"]),
                 spcforce=st.session_state.get(f"sc_spcforce_{idx}", s["spcforce"]),
                 oload=st.session_state.get(f"sc_oload_{idx}", s["oload"]),
@@ -533,6 +543,7 @@ def _render_sol144_subcase_fields(
     diverg_sids: list[int],
     mloads_sids: list[int],
     massset_sids: list[int],
+    gustlf_sids: list[int],
 ) -> None:
     """SOL 144 driver selection widgets for one subcase (inside the cc form).
 
@@ -571,11 +582,14 @@ def _render_sol144_subcase_fields(
     _sid_box(col3, "DIVERG SID", "diverg_sid", diverg_sids,
              "Sole driver for a divergence-only subcase, or an add-on sweep "
              "after a trim.")
-    col4, col5, _ = st.columns(3)
+    col4, col5, col6 = st.columns(3)
     _sid_box(col4, "MLOADS SID", "mloads_sid", mloads_sids,
              "Transient maneuver driver (Phase G0).")
-    _sid_box(col5, "MASSSET SID", "massset_sid", massset_sids,
+    _sid_box(col5, "MASSCASE SID", "massset_sid", massset_sids,
              "Payload / mass case (baseline when none).")
+    _sid_box(col6, "GUSTLF SID", "gustlf_sid", gustlf_sids,
+             "Static gust load case (#1); it names its own TRIM, so TRIM SID may stay "
+             "empty. Kept for a Trim subcase only.")
 
 
 def _apply_sol144_kind(sc_data: dict[str, Any], kind: str) -> dict[str, Any]:
@@ -583,10 +597,10 @@ def _apply_sol144_kind(sc_data: dict[str, Any], kind: str) -> dict[str, Any]:
     out = dict(sc_data)
     out["method_sid"] = None
     if kind == _SC_KIND_MLOADS:
-        out["trim_sid"] = out["trimobj_sid"] = out["diverg_sid"] = None
+        out["trim_sid"] = out["trimobj_sid"] = out["diverg_sid"] = out["gustlf_sid"] = None
         out["load_sid"] = None   # #6 D1: not carried through the transient
     elif kind == _SC_KIND_DIVERG:
-        out["trim_sid"] = out["trimobj_sid"] = out["mloads_sid"] = None
+        out["trim_sid"] = out["trimobj_sid"] = out["mloads_sid"] = out["gustlf_sid"] = None
         out["load_sid"] = None   # homogeneous eigenproblem — nothing to apply
     else:                        # Trim (DIVERG allowed as add-on sweep); LOAD kept (#6)
         out["mloads_sid"] = None
@@ -604,6 +618,7 @@ def _default_subcase(subcase_id: int) -> dict[str, Any]:
         "trimobj_sid":  None,
         "diverg_sid":   None,
         "mloads_sid":   None,
+        "gustlf_sid":   None,
         "massset_sid":  None,
         "displacement": True,
         "spcforce":     True,

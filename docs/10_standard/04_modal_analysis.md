@@ -253,7 +253,9 @@ Placing a CONM2 on an RBE2 **dependent (GM) node** is implicitly handled by the 
 
 Placing a CONM2 at an RBE3-dependent node does **not** correctly transfer torsional inertia from an offset mass. The RBE3 transformation in sbeam uses DOF-by-DOF interpolation (`u_dep = u_indep` for each DOF independently) and does not include rigid-body offset kinematics. As a result, the translational mass at the dependent node maps only to the same translational DOFs on the independent node, with no torsional coupling.
 
-**Correct approach for offset mass:** specify the CG offset directly in the CONM2 `X1/X2/X3` fields at the beam-tip node. The CONM2 assembly applies the parallel-axis theorem automatically, giving `M[Rx,Rx] += m·(X2²+X3²)` torsional inertia.
+**Correct approach for offset mass:** specify the CG offset directly in the CONM2 `X1/X2/X3` fields at the beam-tip node. The CONM2 assembly applies the parallel-axis theorem automatically, giving `M[Rx,Rx] += m·(X2²+X3²)` torsional inertia. Alternatively, put the mass on the offset node and tie it to the tip with an RBAR, which is an exact rigid link. `sample/beam_vib1.bdf` does this, and its spectrum equals the offset-CONM2 one to round-off (gate `tests/assembly/test_rbe3_dependency.py`).
+
+Since #60 an RBE3 whose independent grids are offset from REFGRID **warns**. Until then `beam_vib1.bdf` carried its mass through an RBE3 and gave 1.0334 / 11.80 / 37.28 Hz with no torsional inertia from the offset. With the RBAR it gives 1.0168 / 1.0239 / 9.1735 / 9.5743 / 20.861 Hz.
 
 ---
 

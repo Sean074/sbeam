@@ -79,6 +79,35 @@ def urdd_rcsid_to_basic(
     return out
 
 
+def urdd_derivs_to_label_frame(
+    derivs: dict[str, dict[str, float]], R_rcsid: FloatArray, has_rcsid: bool,
+) -> dict[str, dict[str, float]]:
+    """Express URDD derivative rows per unit of the URDD *label*, an RCSID component (#82).
+
+    The inertial sensitivity ``M_ax`` is built per unit basic acceleration, so a
+    derivative taken from its URDD column is per unit basic +x/+y/+z.  The trim variable
+    of that name, and the value the f06 prints for it, are in the RCSID frame
+    (``a_basic = R_rcsid @ a_rcsid``).  On HA144A (RCSID z down) the two differ in sign:
+    MSC prints the restrained URDD3 derivative with the sign of the RCSID label (MSC
+    Nastran 2023.1 Aeroelastic Analysis User's Guide PDF p.234).
+
+        d(.)/d(URDD_j, RCSID) = Σ_i d(.)/d(URDD_i, basic) · R[i, j]
+
+    Only the URDD labels present take part, as in ``urdd_rcsid_to_basic``; other rows
+    pass through.  Returns a new dict.
+    """
+    out = {label: dict(row) for label, row in derivs.items()}
+    if not has_rcsid:
+        return out
+    for triple in (['URDD1', 'URDD2', 'URDD3'], ['URDD4', 'URDD5', 'URDD6']):
+        present = [(i, lbl) for i, lbl in enumerate(triple) if lbl in derivs]
+        for j, lbl_j in present:
+            for key in derivs[lbl_j]:
+                out[lbl_j][key] = float(sum(
+                    derivs[lbl_i].get(key, 0.0) * R_rcsid[i, j] for i, lbl_i in present))
+    return out
+
+
 def urdd_basic_to_rcsid(
     vec: FloatArray, label_to_col: dict[str, int], R_rcsid: FloatArray, has_rcsid: bool
 ) -> FloatArray:
@@ -189,7 +218,7 @@ def build_inertial_cols(
         all_labels:  trim labels, in column order.
         grid_index:  {gid: i} — must be the g-set ordering ``M_gg`` was built on.
         suport_pos:  rigid-acceleration reference point, basic coordinates.
-        massset_sid: MASSSET mass case (Step 60); ignored when ``M_gg`` is given.
+        massset_sid: MASSCASE mass case (Step 60); ignored when ``M_gg`` is given.
         M_gg:        pre-assembled global mass matrix for this mass case.  Pass
                      it when the caller already has one — it is the single most
                      expensive object here.  When ``None`` it is assembled from

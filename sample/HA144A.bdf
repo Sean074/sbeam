@@ -5,14 +5,15 @@ $ ARCHIVE — NOT RUNNABLE BY DESIGN.  This is the verbatim MSC listing, kept as
 $ reference record of the published problem and its Table 7-1 values.  To RUN the
 $ case use sample/ha144a_fullspan_sbeam.bdf (the full-span sbeam transcription).
 $ Why this deck does not run (see "sbeam support status" below):
-$   1. It stops at parse with "CBAR 101: property PID=100 not found" — the CBARs
-$      precede their PBAR, and sbeam's parser is card-order dependent (defect
-$      #51; NASTRAN is not).  This is NOT an unsupported-card error.
+$   1. It stops at parse with "PARAM,WTMASS,0.031081 is not supported": the deck
+$      is in weight units and sbeam never scales mass (#39).  (Before #51 it
+$      stopped earlier, on its CBARs preceding their PBAR; card order no longer
+$      matters.)
 $   2. Past that, it is a HALF-SPAN model (AEROS SYMXZ=1); sbeam runs full-span
 $      only (sbeam_tools.common.mirror.mirror_halfspan converts).
-$   3. Its aero corrections are MSC DMI matrices, which sbeam skips with an
-$      "Unknown BDF card" warning — the 0.1 deg wing incidence (W2GJ) would be
-$      lost.  sbeam uses native WKK / W2GJ cards instead.
+$   3. Its aero corrections are MSC DMI matrices, which sbeam refuses (#55)
+$      rather than drop the 0.1 deg wing incidence (W2GJ).  sbeam uses native
+$      WKK / W2GJ cards instead.
 $
 $ Faithful transcription of MSC Nastran example HA144A from:
 $   MSC Nastran 2021.3 Aeroelastic Analysis User's Guide, Chapter 7,
@@ -72,13 +73,15 @@ $ trim card this deck uses — GRID, CBAR, PBAR, MAT1, CONM2, RBAR, SPC1, CORD2R
 $ CAERO1, PAERO1, AEROS, SPLINE2, SET1, AELIST, AESTAT, AESURF, TRIM, SUPORT —
 $ and SOL 144 (trim, divergence, stability derivatives).  What still prevents
 $ THIS listing from running:
-$   - Card order: CBARs before their PBAR  -> parse error until #51 is fixed.
+$   - PARAM WTMASS = .031081 (weight units) -> refused at parse (#39).
+$     (Card order -- CBARs before their PBAR -- no longer matters since #51.)
 $   - AEROS SYMXZ=1 half-span model        -> sbeam is full-span only.
-$   - DMI WKK / W2GJ / FA2J -> skipped with a warning; sbeam uses native WKK /
+$   - DMI WKK / W2GJ / FA2J -> refused at parse (#55); sbeam uses native WKK /
 $     W2GJ cards.  Here WKK = identity (no correction) and W2GJ = 0.1 deg
 $     (0.0017453 rad) on the 32 wing boxes, 0 on the 8 canard boxes; FA2J = 0.
-$   - ASSIGN, ID, TIME, PARAM WTMASS/AUNITS/... -> MSC executive/PARAM entries
-$     sbeam does not use (units must be consistent; there is no WTMASS).
+$   - PARAM AUNITS = .031081 (URDD* in g) -> refused at parse (#55), like WTMASS.
+$   - ASSIGN, ID, TIME, other PARAMs -> MSC executive/output entries sbeam does
+$     not use (skipped with a warning; units must be consistent).
 $   - Monitor points in MSC syntax (MONPNT2, MONSUM, MONDSP1, MONCNCM) were
 $     omitted from this transcription (see note at end).
 $ All of these are resolved in sample/ha144a_fullspan_sbeam.bdf.

@@ -21,7 +21,8 @@ CAERO1,1001,1,,4,2,,,0
 +,0.0,0.0,0.0,2.0,8.0,0.0,2.0,0.0
 AELIST,200,1001,THRU,1008
 AECOMP,WINGAERO,AELIST,200
-MONPNT1,MW,WING,123456,WINGAERO,0,0.0,0.0,0.0
+MONPNT1 MW      WING
++, 123456, WINGAERO, 0, 0.0, 0.0, 0.0
 """.splitlines()
 
 
@@ -86,7 +87,7 @@ def test_monpnt1_cp_frame_transform(wing_bulk, wing_boxes):
     lines = _WING + [
         "CORD2R,9,0,0.0,0.0,0.0,1.0,0.0,0.0",
         "+,1.0,0.0,1.0",
-        "MONPNT1,MCP,WING,123456,WINGAERO,9,0.0,0.0,0.0",
+        "MONPNT1,MCP,WING", "+,123456,WINGAERO,9,0.0,0.0,0.0",
     ]
     bulk = parse_bulk_data(lines)
     n = len(wing_boxes.boxes)
@@ -108,7 +109,8 @@ GRID,110,,0.0,4.0,0.0
 GRID,120,,0.0,8.0,0.0
 SET1,300,100,110,120
 AECOMP,WINGGRID,SET1,300
-MONPNT3,MWING,WING,123456,WINGGRID,0,0.0,0.0,0.0
+MONPNT1 MWING   WING
++, 123456, WINGGRID, 0, 0.0, 0.0, 0.0
 """.splitlines()
 
 

@@ -272,13 +272,46 @@ class TestSpline2Parse:
         from sbeam.parser.bdf_reader import parse_bulk_data
         lines = self._minimal_aero_lines() + [
             "SPLINE2, 200, 100, 100, 101, 20, 0.0, 1.0, 0",
-            "+, 0.5, 0.1, , FORCE",
+            "+, 0.5, 0.1, , both",
         ]
         bulk = parse_bulk_data(lines)
         sp = bulk.spline2s[200]
         assert sp.dthx == pytest.approx(0.5)
         assert sp.dthy == pytest.approx(0.1)
-        assert sp.usage == "FORCE"
+        assert sp.usage == "BOTH"
+
+    @pytest.mark.parametrize("usage, match", [
+        ("FORCE", "USAGE=FORCE is not supported"), ("DISP", "USAGE=DISP is not supported"),
+        ("XYZ", "USAGE='XYZ' must be BOTH or blank"),
+    ])
+    def test_usage_other_than_both_is_refused(self, usage, match):
+        """QRG 2024.1 PDF p.2848 remark 5, p.2850 remark 9: a FORCE or DISP spline is in
+        one transform only.  sbeam stored the word and solved every spline as BOTH (#75)."""
+        from sbeam.parser.bdf_reader import parse_bulk_data
+        lines = self._minimal_aero_lines() + [
+            "SPLINE2, 200, 100, 100, 101, 20, 0.0, 1.0, 0", f"+, 0.5, 0.1, , {usage}"]
+        with pytest.raises(ValueError, match=f"SPLINE2 200: {match}"):
+            parse_bulk_data(lines)
+
+    @pytest.mark.parametrize("dz, dtor, match", [
+        ("-1.0", "1.0", r"DZ=-1 must be >= 0.0"), ("0.0", "0.0", r"DTOR=0 must be > 0.0"),
+        ("0.0", "-2.0", r"DTOR=-2 must be > 0.0"),
+    ])
+    def test_dz_and_dtor_ranges_are_refused_at_parse(self, dz, dtor, match):
+        """QRG p.2849: DZ Real >= 0.0, DTOR Real > 0.0.  They were replaced by 0.0 and
+        1.0 with a warning when the spline was built (#75)."""
+        from sbeam.parser.bdf_reader import parse_bulk_data
+        lines = self._minimal_aero_lines() + [f"SPLINE2, 200, 100, 100, 101, 20, {dz}, {dtor}, 0"]
+        with pytest.raises(ValueError, match=f"SPLINE2 200: {match}"):
+            parse_bulk_data(lines)
+
+    def test_data_in_the_blank_continuation_field_is_refused(self):
+        """The continuation is DTHX, DTHY, blank, USAGE (QRG p.2849)."""
+        from sbeam.parser.bdf_reader import parse_bulk_data
+        lines = self._minimal_aero_lines() + [
+            "SPLINE2, 200, 100, 100, 101, 20, 0.0, 1.0, 0", "+, 0.5, 0.1, BOTH"]
+        with pytest.raises(ValueError, match="SPLINE2 200: field 4 of the continuation holds 'BOTH'"):
+            parse_bulk_data(lines)
 
     def test_missing_set1_raises(self):
         from sbeam.parser.bdf_reader import parse_bulk_data
@@ -1651,14 +1684,15 @@ class TestSpline2FlexWarnings:
         grid_index = {gid: i for i, gid in enumerate(gids_sorted)}
         return bulk, boxes, grid_index
 
-    def test_dtor_nonpositive_warns(self):
+    def test_dtor_nonpositive_is_refused(self):
+        """A card built in memory bypasses the parser's check (#75)."""
         bulk, boxes, grid_index = self._build(dtor=-2.0)
-        with pytest.warns(UserWarning, match=r"SPLINE2 1601: DTOR=-2\.0"):
+        with pytest.raises(ValueError, match=r"SPLINE2 1601: DTOR=-2\.0 must be > 0"):
             build_g_spline(bulk, boxes, grid_index)
 
-    def test_negative_dz_warns(self):
+    def test_negative_dz_is_refused(self):
         bulk, boxes, grid_index = self._build(dz=-1.0)
-        with pytest.warns(UserWarning, match=r"SPLINE2 1601: DZ=-1\.0"):
+        with pytest.raises(ValueError, match=r"SPLINE2 1601: DZ=-1\.0 must be >= 0"):
             build_g_spline(bulk, boxes, grid_index)
 
     @pytest.mark.parametrize("dtor,dthy", [(1.0, 0.0), (0.5, 0.0), (2.0, 1.0)])

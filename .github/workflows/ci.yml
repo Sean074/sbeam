@@ -44,3 +44,26 @@ jobs:
         env:
           STREAMLIT_SERVER_HEADLESS: "true"
         run: pytest -v --tb=short
+
+  compat:
+    # pyNastran cross-parse of every repo deck (#83, tests/compat/).  Its own job and
+    # lockfile: pyNastran 1.4.1 requires numpy < 2, the matrix above pins numpy 2.0.2.
+    # In the main job tests/compat skips itself (pyNastran is not installed there).
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-compat.txt
+          pip install -e . --no-deps
+
+      - name: Cross-parse with pyNastran (pytest)
+        run: pytest tests/compat -v --tb=short --no-cov

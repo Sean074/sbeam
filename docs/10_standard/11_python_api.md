@@ -99,7 +99,7 @@ Parser behaviour (formats, ordering rules, cross-reference validation): `01_beam
 | `BulkData` | `from sbeam.model.bulk_data import BulkData` | The parsed deck: one `dict[int, Card]` per card family (`grids`, `cbars`, `pbars`, `mat1s`, `forces`, `trims`, …) plus `aeros` and `supports`. Dataclass map: `01_beam_model.md`. |
 | `CaseControl`, `SubcaseControl` | `from sbeam.parser.case_control import CaseControl, SubcaseControl` | `sol`, `subcases`; per subcase the selected set IDs (`load_sid`, `spc_sid`, `method_sid`, `trim_sid`, `diverg_sid`, `mloads_sid`, `massset_sid`, …) and output flags. Build one by hand to run a subcase the deck does not contain. |
 | `build_grid_index` | `from sbeam.assembly.load_vector import build_grid_index` | `(bulk) -> dict[int, int]`, the DOF layout key above. |
-| `compute_gpwg`, `GpwgResult` | `from sbeam.gpwg import compute_gpwg, GpwgResult` | `(bulk, massset_sid=None) -> GpwgResult(total_mass, cg_x, cg_y, cg_z, massset_sid, massset_label)`. Mass and CG of the baseline or a `MASSSET` case. |
+| `compute_gpwg`, `GpwgResult` | `from sbeam.gpwg import compute_gpwg, GpwgResult` | `(bulk, massset_sid=None) -> GpwgResult(total_mass, cg_x, cg_y, cg_z, massset_sid, massset_label)`. Mass and CG of the baseline or a `MASSCASE` case. |
 | `resolve_mass_case`, `MassCase` | `from sbeam.model.mass_overlay import resolve_mass_case, MassCase` | `(bulk, massset_sid=None) -> MassCase(sid, label, scale, conm2s)`. Which CONM2s a mass case contains and its label. |
 
 ### 3.3 Run
@@ -110,7 +110,7 @@ Parser behaviour (formats, ordering rules, cross-reference validation): `01_beam
 | `run_sol103` | `from sbeam.solver.sol103 import run_sol103` | `(bulk, subcase)` | `Sol103Result` |
 | `build_aero_model` | `from sbeam.aero.aero_model import build_aero_model` | `(bulk, grid_index=None, mach=None)` | `AeroModel` — the VLM mesh, AIC and splines; built once per deck. |
 | `AeroCache` | `from sbeam.solver.sol144 import AeroCache` | `(bulk, grid_index, seed=aero)`; `.get(mach)` | Mach-keyed store of `AeroModel`s so a multi-Mach deck builds each AIC once. Pass the same instance to every SOL 144 call. |
-| `run_sol144_trim` | `from sbeam.solver.sol144 import run_sol144_trim` | `(bulk, subcase, aero, aero_cache=None)` | `Sol144TrimResult` |
+| `run_sol144_trim` | `from sbeam.solver.sol144 import run_sol144_trim` | `(bulk, subcase, aero, aero_cache=None)` | `Sol144TrimResult`; `hinge_moments` / `hinge_moments_restrained {surface: {label: dHM/dδ per q}}` and `box_ids` (NASTRAN box ID of each `box_cp` / `box_forces` row) (#82) |
 | `run_sol144_diverg` | `from sbeam.solver.sol144 import run_sol144_diverg` | `(bulk, subcase, aero, aero_cache=None)` | `Sol144DivergResult` |
 | `run_maneuver_qs` | `from sbeam.solver.maneuver_qs import run_maneuver_qs` | `(bulk, subcase, aero, aero_cache=None)` | `ManeuverResult` — direct l-set transient solver. |
 | `run_maneuver_modal` | `from sbeam.solver.maneuver_modal import run_maneuver_modal` | `(bulk, subcase, aero, aero_cache=None, basis_cache=None)` | `ManeuverResult` — modal transient solver. |
@@ -133,7 +133,7 @@ commented at its definition, and the ones below are the ones consumers read.
 | `Sol101Result` | `displacements` (n_dofs,), `reactions {gid: (6,)}`, `bar_forces {eid: BarForce}`, `bar_stresses {eid: BarStress}`, `rod_forces`, `rod_stresses`, `cbush_forces {eid: (6,)}` |
 | `Sol103Result` | `frequencies_hz` (n_modes,), `mode_shapes` (n_dofs, n_modes), `eigenvalues`, `generalized_masses` |
 | `Sol144TrimResult` | `trim_vars {label: value}`, `q`, `mach`, `displacements`, `bar_forces`, `bar_stresses`, `rigid_derivs` / `restrained_derivs` / `unrestrained_derivs {label: {coef: value}}`, `total_cl`, `total_cm`, `grid_loads`, `inertial_loads`, `applied_loads` (n_dofs, or None without a subcase `LOAD`; #6), `load_sid`, `net_loads` (n_dofs,), `monitor_loads {name: MonitorLoad}`, `section_loads {name: SectionCutResult}`, `massset_sid`, `massset_label`, `hinge_moments`, `q_div` |
-| `Sol144DivergResult` | `mach_results: list[DivergMachResult(mach, roots: list[DivergRoot(q_div, v_div, mode_shape)])]` |
+| `Sol144DivergResult` | `mach_results: list[DivergMachResult(mach, roots: list[DivergRoot(q_div, mode_shape)])]` |
 | `ManeuverResult` | `times` (n_out,), `steps: list[ManeuverStep]`, `crit_index`, `labels`, `massset_sid`, `massset_label`, `monitor_envelope`, `section_envelope` |
 | `ManeuverStep` | `t`, `trim_vars`, `displacements`, `bar_forces`, `grid_loads`, `inertial_loads`, `net_loads`, `closure` (6,), `monitor_loads`, `section_loads` |
 | `BarForce` | `m1_a, m2_a, m1_b, m2_b, v1, v2, axial, torque` — +x-face internal resultants, NASTRAN plane signs (`09_conventions.md` §9) |
@@ -197,7 +197,7 @@ for sid, r in trim.items():
 ```
 
 `trim`, `diverg` and `maneuver` are the `{subcase_id: result}` dictionaries every writer in
-§3.5 takes. A `MASSSET = sid` on a subcase changes only the mass-derived operators; the
+§3.5 takes. A `MASSCASE = sid` on a subcase changes only the mass-derived operators; the
 stiffness, splines and `AeroCache` entries are reused across the sweep.
 
 ---

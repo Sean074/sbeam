@@ -2,7 +2,7 @@
 
 Covers:
   - No correction: AJJ*⁻¹ @ AJJ ≈ I (identity round-trip)
-  - apply_wkk non-unit weight: corrected cp scales by weight factor
+  - apply_wkk: MSC placement — a box's lift scales by its weight, others unchanged (#71)
   - apply_wt2 round-trip: feed VLM cp as target → corrected cp reproduced to tol
   - apply_wt2 conditioning warning: near-singular AJJ triggers UserWarning
   - build_aero_model: identity (no correction) — AJJ*⁻¹ @ AJJ ≈ I
@@ -69,40 +69,34 @@ class TestNoCorrection:
 # ---------------------------------------------------------------------------
 
 class TestApplyWkk:
-    def test_unit_weights_returns_ajj_unchanged(self):
-        boxes = _rect_wing(4, 4)
-        ajj, _ = _ajj_and_inv(boxes)
-        n = len(boxes)
-        ajj_star = apply_wkk(ajj, [1.0] * n)
-        assert ajj_star == pytest.approx(ajj, rel=1e-12)
+    """WKK multiplies box forces after the pressure solve (#71).
 
-    def test_first_box_scaled_by_1_5(self):
-        """Scaling box 0 row by 1.5 must multiply that box's cp contribution by 1.5."""
-        boxes = _rect_wing(2, 2)
-        ajj, _ = _ajj_and_inv(boxes)
-        n = len(boxes)
-        alpha = 0.05
-        w_ref = -np.full(n, alpha)
+    MSC: ``{P_k} = q [W_kk][S_kj][A_jj]⁻¹{w_j}`` (MSC Nastran 2023.1 Aeroelastic Analysis
+    User's Guide PDF p.40 eq 2-21, p.70 eq 2-106).  Before #71 sbeam inverted
+    ``diag(w) @ AJJ``, which applied 1/w on the downwash side.
+    """
 
-        # Uncorrected solve
-        cp_ref, *_ = np.linalg.lstsq(ajj, w_ref, rcond=None)
+    def test_unit_weights_return_the_inverse_unchanged(self):
+        _, ajj_inv = _ajj_and_inv(_rect_wing(4, 4))
+        n = ajj_inv.shape[0]
+        assert apply_wkk(ajj_inv, [1.0] * n) == pytest.approx(ajj_inv, rel=1e-12)
 
-        weights = [1.5] + [1.0] * (n - 1)
-        ajj_star = apply_wkk(ajj, weights)
-        cp_corr, *_ = np.linalg.lstsq(ajj_star, w_ref, rcond=None)
+    def test_first_box_lift_scales_by_1_5_and_no_other_box_changes(self):
+        """The Step 43 plan's own acceptance test, which its tests replaced with algebra."""
+        _, ajj_inv = _ajj_and_inv(_rect_wing(2, 2))
+        n = ajj_inv.shape[0]
+        w_ref = -np.full(n, 0.05)
+        cp_ref = ajj_inv @ w_ref
+        cp_corr = apply_wkk(ajj_inv, [1.5] + [1.0] * (n - 1)) @ w_ref
+        assert cp_corr[0] == pytest.approx(1.5 * cp_ref[0], rel=1e-12)
+        assert cp_corr[1:] == pytest.approx(cp_ref[1:], rel=1e-12)
 
-        # Box 0 row of AJJ* is 1.5× the original; the corrected cp[0] should
-        # reflect the changed influence — verify AJJ* rows are correctly scaled
-        assert ajj_star[0] == pytest.approx(1.5 * ajj[0], rel=1e-12)
-        for i in range(1, n):
-            assert ajj_star[i] == pytest.approx(ajj[i], rel=1e-12)
-
-    def test_shape_preserved(self):
-        boxes = _rect_wing(3, 3)
-        ajj = build_ajj(boxes)
-        n = len(boxes)
-        ajj_star = apply_wkk(ajj, [2.0] * n)
-        assert ajj_star.shape == (n, n)
+    def test_zero_weight_removes_that_box_lift(self):
+        """Zero is a legal MSC factor; it used to make the corrected AIC singular."""
+        _, ajj_inv = _ajj_and_inv(_rect_wing(2, 2))
+        n = ajj_inv.shape[0]
+        cp = apply_wkk(ajj_inv, [0.0] + [1.0] * (n - 1)) @ -np.ones(n)
+        assert cp[0] == 0.0 and cp[1:] == pytest.approx((ajj_inv @ -np.ones(n))[1:])
 
 
 # ---------------------------------------------------------------------------
@@ -189,7 +183,7 @@ class TestBuildAeroModel:
         assert cl_model == pytest.approx(r["CL"], rel=1e-8)
 
     def test_wkk_correction_applied(self):
-        """WKK = 1.5 on every box halves the corrected CL by factor 1.5 vs no-correction."""
+        """Uniform WKK = 1.5 raises the corrected total lift by 1.5 (#71; was ÷ 1.5)."""
         nspan, nchord = 2, 2
         bulk_base = _rect_bulk(nspan, nchord)
         bulk_wkk  = _rect_bulk(nspan, nchord)
@@ -202,8 +196,7 @@ class TestBuildAeroModel:
         w_ref = -np.ones(n)
         fz_base = (model_base.skj @ (model_base.ajj_inv_corr @ w_ref))[2::3].sum()
         fz_wkk  = (model_wkk.skj  @ (model_wkk.ajj_inv_corr  @ w_ref))[2::3].sum()
-        # Uniform WKK=1.5: AJJ* = 1.5·AJJ → Γ* = Γ/1.5 → CL* = CL/1.5
-        assert fz_wkk == pytest.approx(fz_base / 1.5, rel=1e-8)
+        assert fz_wkk == pytest.approx(1.5 * fz_base, rel=1e-8)
 
     def test_model_shapes(self):
         nspan, nchord = 3, 3
@@ -229,7 +222,7 @@ class TestBuildAeroModel:
         gamma_ref = ajj_inv @ (-np.ones(n))     # Γ at unit incidence (WT2 target unit)
 
         bulk.aecorrs[20] = Aecorr(
-            sid=20, method="WT2", caero_eid=CAERO_EID,
+            sid=20, method="WT2", caero_eid=CAERO_EID, mach=0.0,
             target=gamma_ref.tolist(),           # Γ-unit target (identity correction)
         )
         model = build_aero_model(bulk)
@@ -259,7 +252,7 @@ class TestSolveRigidClCorrectedOperator:
         assert corr["cp"] == pytest.approx(plain["cp"], rel=1e-10)
 
     def test_wkk_scales_cl(self):
-        """Uniform WKK=1.5 → corrected-operator CL is the uncorrected CL / 1.5."""
+        """Uniform WKK=1.5 → corrected-operator CL is 1.5 × the uncorrected CL (#71)."""
         nspan, nchord = 3, 3
         n = nspan * nchord
         bulk = _rect_bulk(nspan, nchord)
@@ -271,7 +264,7 @@ class TestSolveRigidClCorrectedOperator:
         model_wkk = build_aero_model(bulk)
         cl_wkk = solve_rigid_cl(model_wkk.boxes, alpha=0.05, aeros=bulk.aeros,
                                 cp_operator=model_wkk.ajj_inv_corr)["CL"]
-        assert cl_wkk == pytest.approx(cl_base / 1.5, rel=1e-8)
+        assert cl_wkk == pytest.approx(1.5 * cl_base, rel=1e-8)
 
     def test_cp_operator_shape_validated(self):
         boxes = _rect_wing(2, 2)
@@ -332,7 +325,10 @@ class TestWt1Removed:
             parse_bulk_data(wt1)
 
     def test_parser_still_accepts_wt2_card(self):
-        wt2 = ["AECORR, 30, WT2, 100, 0.80, 0.75, 0.65, 0.50"]
+        # The CAERO1 it corrects must exist: an AECORR on an unknown panel is refused (#51)
+        wt2 = ["AEROS, 0, 0, 1.0, 4.0, 4.0", "PAERO1, 1",
+               "CAERO1, 100, 1, 0, 4, 1, 0, 0, 1", "+, 0., 0., 0., 1., 0., 4., 0., 1.",
+               "AECORR, 30, WT2, 100, 0.0, 0.80, 0.75, 0.65, 0.50"]
         bulk = parse_bulk_data(wt2)
         assert bulk.aecorrs[30].method == "WT2"
 
@@ -368,15 +364,21 @@ class TestWkkSurfaceBinding:
             "WKK on the non-primary CAERO1 had no effect"
 
     def test_wkk_on_one_surface_leaves_the_other_rows_alone(self):
-        """Unlisted surfaces get weight 1, so AJJ* rows there are untouched."""
+        """Unlisted surfaces get weight 1, so their rows of AJJ*⁻¹ are untouched.
+
+        This compared the raw ``ajj`` before #71, which WKK never changes.
+        """
         nspan = nchord = 3
         n_surf = nspan * nchord
         bulk = self._two_surface(nspan, nchord)
         bulk.wkks[10] = Wkk(sid=10, caero_eid=CAERO_EID, data=[0.5] * n_surf)
         corr = build_aero_model(bulk, mach=0.0)
-        tail_rows = [k for k, b in enumerate(corr.boxes) if b.caero_eid == TAIL_EID]
         base = build_aero_model(self._two_surface(nspan, nchord), mach=0.0)
-        np.testing.assert_allclose(corr.ajj[tail_rows], base.ajj[tail_rows], rtol=1e-12)
+        wing = [k for k, b in enumerate(corr.boxes) if b.caero_eid == CAERO_EID]
+        tail = [k for k, b in enumerate(corr.boxes) if b.caero_eid == TAIL_EID]
+        np.testing.assert_allclose(corr.ajj_inv_corr[tail], base.ajj_inv_corr[tail], rtol=1e-12)
+        np.testing.assert_allclose(corr.ajj_inv_corr[wing], 0.5 * base.ajj_inv_corr[wing],
+                                   rtol=1e-12)
 
     def test_multi_surface_wkk_no_longer_shape_errors(self):
         """Two WKK cards, one per surface — used to be a raw numpy shape error."""
@@ -404,34 +406,16 @@ class TestWkkSurfaceBinding:
         with pytest.raises(ValueError, match=r"already has a WKK card"):
             build_aero_model(bulk, mach=0.0)
 
-    def test_zero_weight_raises_instead_of_bare_linalgerror(self):
-        """A zero weight zeroes an AJJ* row → singular; solve() would raise raw."""
+    def test_zero_weight_is_accepted(self):
+        """MSC's factor 0 removes a box's lift (#71); it used to be refused as singular."""
         nspan = nchord = 3
         n_surf = nspan * nchord
         data = [0.9] * n_surf
         data[2] = 0.0
         bulk = self._two_surface(nspan, nchord)
         bulk.wkks[10] = Wkk(sid=10, caero_eid=CAERO_EID, data=data)
-        with pytest.raises(ValueError, match=r"WKK 10 .*zero weight at box index"):
-            build_aero_model(bulk, mach=0.0)
-
-    def test_single_surface_wkk_is_unchanged(self):
-        """The pre-existing single-CAERO1 path must be bit-identical."""
-        nspan = nchord = 3
-        n_surf = nspan * nchord
-        bulk = _rect_bulk(nspan, nchord)
-        bulk.wkks[10] = Wkk(sid=10, caero_eid=CAERO_EID, data=[0.8] * n_surf)
         model = build_aero_model(bulk, mach=0.0)
-        expect = apply_wkk(build_ajj(mesh_caero1(
-            bulk.caero1s[CAERO_EID], bulk.paero1s[1], {}, {}, start_k=0)),
-            [0.8] * n_surf)
-        np.testing.assert_allclose(
-            model.ajj_inv_corr,
-            np.linalg.solve(expect, np.eye(n_surf)) * (2.0 / np.array(
-                [b.area / np.hypot(b.bound_b[1] - b.bound_a[1],
-                                   b.bound_b[2] - b.bound_a[2]) for b in model.boxes]
-            ))[:, None],
-            rtol=1e-10)
+        assert not model.ajj_inv_corr[2].any()
 
 
 # ---------------------------------------------------------------------------
@@ -495,3 +479,116 @@ class TestWt2PerAxisReference:
         np.testing.assert_allclose(ref[~is_fin], (ajj_inv @ np.where(is_fin, 0.0, -1.0))[~is_fin])
         np.testing.assert_allclose(ref[is_fin], (ajj_inv @ np.where(is_fin, -1.0, 0.0))[is_fin])
 
+
+
+class TestWkkAtTheOperatingPoint:
+    """End-to-end gate (#71): a flexible SOL 144 trim of MSC's HA144A airplane.
+
+    MSC's aero forces are ``q [W_kk][S_kj][A_jj]⁻¹{w_j}`` (AAUG 2023.1 PDF p.70 eq 2-106),
+    so a uniform WKK = w on every box is the same airplane at dynamic pressure q·w.
+    Scored against a run with no WKK at all, so the reference never touches WKK.
+    """
+
+    W = 1.25
+
+    @staticmethod
+    def _trim(bulk, subcase):
+        import warnings
+
+        from sbeam.assembly.load_vector import build_grid_index
+        from sbeam.solver.sol144 import run_sol144_trim
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            aero = build_aero_model(bulk, grid_index=build_grid_index(bulk))
+            return run_sol144_trim(bulk, subcase, aero)
+
+    def test_uniform_wkk_equals_scaled_dynamic_pressure(self):
+        from sbeam.parser.bdf_reader import parse_bdf
+        deck = Path(__file__).resolve().parents[2] / "sample/ha144a_fullspan_sbeam.bdf"
+        cc, bulk = parse_bdf(deck)
+        sc = cc.subcases[0]
+        q = bulk.trims[sc.trim_sid].q
+
+        model = build_aero_model(bulk)
+        for sid, eid in enumerate(sorted(bulk.caero1s), start=900):
+            n_boxes = sum(b.caero_eid == eid for b in model.boxes)
+            bulk.wkks[sid] = Wkk(sid=sid, caero_eid=eid, data=[self.W] * n_boxes)
+        with_wkk = self._trim(bulk, sc)
+
+        _, ref_bulk = parse_bdf(deck)
+        ref_bulk.trims[sc.trim_sid].q = q * self.W
+        ref = self._trim(ref_bulk, sc)
+
+        for label, value in ref.trim_vars.items():
+            assert with_wkk.trim_vars[label] == pytest.approx(value, rel=1e-8, abs=1e-12), label
+        np.testing.assert_allclose(with_wkk.displacements, ref.displacements,
+                                   rtol=1e-8, atol=1e-14)
+        np.testing.assert_allclose(with_wkk.net_loads, ref.net_loads, rtol=1e-8, atol=1e-8)
+
+
+class TestWkkAndWt2Together:
+    """#96 — a WKK card used to switch off every AECORR WT2 card, on every surface.
+
+    ``if wkk_cards: … elif wt2_cards: …`` meant a unit-weight WKK on the wing left the
+    tail's WT2 calibration unapplied without a message.  Both corrections act after the
+    solve (#71), so they now combine across surfaces; one surface takes one of them.
+    """
+
+    @staticmethod
+    def _tail_wt2(bulk, base):
+        tail = [k for k, b in enumerate(base.boxes) if b.caero_eid == TAIL_EID]
+        bulk.aecorrs[20] = Aecorr(sid=20, method="WT2", caero_eid=TAIL_EID, mach=0.0,
+                                  target=[5.0] * len(tail))
+        return tail
+
+    def test_wt2_on_the_tail_survives_a_wkk_on_the_wing(self):
+        """The issue's probe: tail rows equal the WT2-alone rows, wing rows the WKK ones."""
+        nspan = nchord = 3
+        base = build_aero_model(_wing_and_tail_bulk(nspan, nchord), mach=0.0)
+        alone = _wing_and_tail_bulk(nspan, nchord)
+        tail = self._tail_wt2(alone, base)
+        wt2_only = build_aero_model(alone, mach=0.0)
+        both = _wing_and_tail_bulk(nspan, nchord)
+        self._tail_wt2(both, base)
+        both.wkks[10] = Wkk(sid=10, caero_eid=CAERO_EID, data=[1.0] * nspan * nchord)
+        model = build_aero_model(both, mach=0.0)
+        assert not np.allclose(wt2_only.ajj_inv_corr[tail], base.ajj_inv_corr[tail])
+        np.testing.assert_array_equal(model.ajj_inv_corr, wt2_only.ajj_inv_corr)
+
+    def test_a_non_unit_wkk_scales_only_its_own_surface(self):
+        nspan = nchord = 3
+        base = build_aero_model(_wing_and_tail_bulk(nspan, nchord), mach=0.0)
+        alone = _wing_and_tail_bulk(nspan, nchord)
+        tail = self._tail_wt2(alone, base)
+        wt2_only = build_aero_model(alone, mach=0.0)
+        both = _wing_and_tail_bulk(nspan, nchord)
+        self._tail_wt2(both, base)
+        both.wkks[10] = Wkk(sid=10, caero_eid=CAERO_EID, data=[0.5] * nspan * nchord)
+        model = build_aero_model(both, mach=0.0)
+        wing = [k for k, b in enumerate(model.boxes) if b.caero_eid == CAERO_EID]
+        np.testing.assert_allclose(model.ajj_inv_corr[tail], wt2_only.ajj_inv_corr[tail],
+                                   rtol=1e-12)
+        np.testing.assert_allclose(model.ajj_inv_corr[wing], 0.5 * base.ajj_inv_corr[wing],
+                                   rtol=1e-12)
+
+    def test_wkk_and_wt2_on_one_surface_are_refused(self):
+        nspan = nchord = 3
+        base = build_aero_model(_wing_and_tail_bulk(nspan, nchord), mach=0.0)
+        bulk = _wing_and_tail_bulk(nspan, nchord)
+        self._tail_wt2(bulk, base)
+        bulk.wkks[10] = Wkk(sid=10, caero_eid=TAIL_EID, data=[1.0] * nspan * nchord)
+        with pytest.raises(ValueError, match=r"AECORR 20 \(WT2\) and WKK 10 both correct "
+                                             r"CAERO1 1000"):
+            build_aero_model(bulk, mach=0.0)
+
+    def test_two_wt2_cards_on_one_surface_are_refused(self):
+        """The second card used to overwrite the first without a message."""
+        nspan = nchord = 3
+        base = build_aero_model(_wing_and_tail_bulk(nspan, nchord), mach=0.0)
+        bulk = _wing_and_tail_bulk(nspan, nchord)
+        tail = self._tail_wt2(bulk, base)
+        bulk.aecorrs[21] = Aecorr(sid=21, method="WT2", caero_eid=TAIL_EID, mach=0.0,
+                                  target=[4.0] * len(tail))
+        with pytest.raises(ValueError, match=r"AECORR 21: CAERO1 1000 already has a WT2 "
+                                             r"AECORR \(SID 20\)"):
+            build_aero_model(bulk, mach=0.0)

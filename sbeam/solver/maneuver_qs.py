@@ -42,6 +42,7 @@ Public API:
 """
 
 from dataclasses import dataclass, field
+import warnings
 from typing import Optional
 
 import numpy as np
@@ -213,6 +214,29 @@ def assemble_operators(
         cut_plans=cut_plans, constrained_dofs=constrained_dofs,
         monitor_plans=monitor_plans,
     )
+
+
+def warn_extrapolated_commands(
+    commands: list[tuple[str, int]], tabled1s: dict[int, Tabled1], t0: float, tend: float,
+) -> None:
+    """Warn when a command table is extrapolated over part of the run (#70).
+
+    TABLED1 extrapolates linearly from its end points (MSC Nastran 2024.1 QRG PDF
+    p.2897 remark 6), so a ramp that stops before ``tend`` keeps ramping.  sbeam held
+    the end value until #70; MSC itself gives no message.
+    """
+    for label, tabid in commands:
+        table = tabled1s[tabid]
+        first, last = table.end_slopes()
+        for slope, edge, beyond in ((first, table.xs[0], t0 < table.xs[0]),
+                                    (last, table.xs[-1], tend > table.xs[-1])):
+            if beyond and slope != 0.0:
+                warnings.warn(
+                    f"TABLED1 {tabid} ({label}) covers x = {table.xs[0]:g} to "
+                    f"{table.xs[-1]:g} but the run is t = {t0:g} to {tend:g}: beyond "
+                    f"x = {edge:g} it is extrapolated at its end slope {slope:g} (QRG "
+                    "p.2897 remark 6), not held. Add a point with the same y to hold it.",
+                    UserWarning, stacklevel=3)
 
 
 def delta_of_t(
@@ -490,6 +514,7 @@ def run_maneuver_qs(
     # begins at equilibrium (MLDTRIM = steady-state initial condition).  At
     # equilibrium K·u = F and v = 0, so the initial acceleration is exactly zero
     # (M·a = F − K·u = 0) — no M⁻¹ needed.
+    warn_extrapolated_commands(commands, bulk.tabled1s, t0, tend)
     delta0 = delta_of_t(t0, base_delta, commands, bulk.tabled1s, ops.all_labels)
     F0 = force_l(ops, delta0)
     u = scipy.linalg.solve(K, F0)                    # static l-set displacement

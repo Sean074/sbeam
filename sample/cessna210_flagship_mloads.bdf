@@ -27,7 +27,6 @@ $ Units: SI (m, N, kg, Pa, s)
 $
 SOL 144
 TITLE = Cessna 210 flagship — elevator-ramp pull-up (MLOADS)
-INCLUDE 'cessna210_flagship_bulk.bdf'
 $
 SUBCASE 1
   TITLE = 1g cruise trim (MLOADS initial condition)
@@ -40,4 +39,5 @@ SUBCASE 2
   SPC    = 1
 $
 BEGIN BULK
+INCLUDE 'cessna210_flagship_bulk.bdf'
 ENDDATA

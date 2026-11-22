@@ -196,12 +196,12 @@ def _show_warnings() -> None:
 
 def _show_gpwg(bulk: BulkData) -> None:
     st.markdown("**GPWG — Mass & CG**")
-    # Step 60: when the deck defines MASSSET payload cases, report GPWG for the
-    # selected case (baseline = no MASSSET selected).
+    # Step 60: when the deck defines MASSCASE payload cases, report GPWG for the
+    # selected case (baseline = no MASSCASE selected).
     massset_sid = None
     if bulk.masssets:
         massset_sid = st.selectbox(
-            "Mass case (MASSSET)",
+            "Mass case (MASSCASE)",
             [None] + sorted(bulk.masssets.keys()),
             format_func=lambda s: (
                 "— baseline —" if s is None
@@ -453,7 +453,10 @@ def _rod_only_grids_without_rotation_spc(bulk: BulkData) -> list[int]:
     return sorted(g for g in rod_grids - stiff_grids if len(spc_rot.get(g, set())) < 3)
 
 
-_UNKNOWN_CARD_RE = re.compile(r"Unknown BDF card '([A-Z0-9]+)'")
+# Since #55 an unknown card refuses the deck, so the warnings left are skipped PARAMs
+# ("Unknown BDF card 'PARAM,POST' — skipped") and listing-only cards ("BDF card 'ECHOON'
+# ignored (...)").
+_UNKNOWN_CARD_RE = re.compile(r"(?:Unknown BDF card|BDF card) '([A-Z0-9,]+)'(?: —)? (?:skipped|ignored)")
 
 
 def _get_pre_solve_warnings(
@@ -465,8 +468,8 @@ def _get_pre_solve_warnings(
     - Zero-length CBAR elements (singular stiffness matrix).
     - No SPC/SPC1 constraints (unconstrained model; bad for SOL 101).
     - SPC SID referenced in case control but absent from bulk.
-    - Unrecognised cards skipped by the parser (known-unsupported cards such as
-      PLOAD1 are refused at parse instead, #45).
+    - PARAMs and listing-only cards the parser skipped (unsupported and unknown cards
+      are refused at parse instead, #45/#55).
     - MAT1 rho=0 for SOL 103 (mass matrix will be zero → unreliable frequencies).
     - E-value range >1000x across materials (possible unit inconsistency).
     """
@@ -536,15 +539,15 @@ def _get_pre_solve_warnings(
                         "in case control but not found in bulk data."
                     )
 
-    # 3. Unrecognised cards skipped by the parser (captured as parser warnings).
-    #    Known-unsupported cards (PLOAD1, CBEAM, ...) never reach here: the parser
-    #    refuses the deck (#45), so only typos / vendor cards remain to flag.
+    # 3. PARAMs and listing-only cards skipped by the parser (captured as parser
+    #    warnings).  Unsupported (#45) and unknown (#55) cards never reach here: the
+    #    parser refuses the deck.
     skipped = sorted({m.group(1) for msg in parse_warnings
                       for m in [_UNKNOWN_CARD_RE.search(msg)] if m})
     if skipped:
         msgs.append(
             f"Unrecognised card(s) skipped: {', '.join(skipped)}. "
-            "They are not sbeam cards (check the spelling) and contribute nothing to the model."
+            "sbeam does not read them; they contribute nothing to the model."
         )
 
     # 4. Zero density for SOL 103
@@ -646,7 +649,7 @@ def _run_sol144(bulk: BulkData, cc: CaseControl) -> None:
         aero = build_aero_model(bulk, grid_index=grid_index)
         cache = AeroCache(bulk, grid_index, seed=aero)
         # Step 62/63 (D3): one free-free basis per job, shared across every
-        # modal MLOADS subcase (MASSSET sweeps swap M only, never Phi).
+        # modal MLOADS subcase (MASSCASE sweeps swap M only, never Phi).
         basis_cache = ManeuverBasisCache(bulk, aero)
         for sc in cc.subcases:
             if sc.mloads_sid is not None:

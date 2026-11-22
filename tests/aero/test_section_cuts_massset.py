@@ -1,4 +1,4 @@
-"""V-SEC6 — MONSECT section cuts across MASSSET payload cases (Step 60 + Phase 2).
+"""V-SEC6 — MONSECT section cuts across MASSCASE payload cases (Step 60 + Phase 2).
 
 `sample/cessna210_flagship_massset.bdf` runs one TRIM at three payload
 conditions whose difference is **wing fuel** (CONM2 overlays on the wing EA

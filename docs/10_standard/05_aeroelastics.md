@@ -47,14 +47,14 @@ Results   (cp, cl_section, CL≡CZ, CX, CL_wind, CD_wind, CY, CM, CDi, e, per_su
 | `sbeam/solver/sol144_util.py` | `AeroCache` (Mach-keyed AeroModel cache, AE9), URDD frame rotations (`urdd_rcsid_to_basic`/`urdd_basic_to_rcsid`), `load_resultant`, `build_inertial_cols` (M_ax, Q4/DEF-M3), `get_suport_local`, `pitch_moment`, `aero_moment_resultant` |
 | `sbeam/solver/sol144_trim_solve.py` | SUPORT Schur partition (`build_trim_schur`) + determined and over-determined (TRIMOBJ/TRIMCON null-space weighted-L2) trim solvers |
 | `sbeam/solver/sol144_derivs.py` | `compute_rigid_derivs`, restrained (`u_r = 0`) and unrestrained (mean-axis AE8b) derivative blocks, AESURF hinge moments (AE11) |
-| `sbeam/solver/sol144_diverg.py` | `run_sol144_diverg` (DIVERG-card divergence sweep + mode shape + V_div), `divergence_dynamic_pressure`, `divergence_roots` |
+| `sbeam/solver/sol144_diverg.py` | `run_sol144_diverg` (DIVERG-card divergence sweep + mode shape), `divergence_dynamic_pressure`, `divergence_roots` |
 | `sbeam/solver/sol144_static.py` | `run_aeroelastic_static` — the Step-50 no-trim reference path (test scaffolding; no production callers, DEF-R3) |
 | `sbeam/solver/maneuver_qs.py` | **Phase G0** — `run_maneuver_qs`: Level-1 quasi-steady, open-loop, restrained l-set Newmark-β transient maneuver integration (the direct solver / regression anchor) |
-| `sbeam/solver/maneuver_modal.py` | **Phase G0 Steps 62–63** — `run_maneuver_modal`: the free-flight modal transient solver (coupled h-set EOM, `B_hh` engaged, rigid trim labels as outputs, self-balancing closure), mode-acceleration recovery, fixed-Φ MASSSET cases with case-mean-axis correction, job-level `ManeuverBasisCache` |
+| `sbeam/solver/maneuver_modal.py` | **Phase G0 Steps 62–63** — `run_maneuver_modal`: the free-flight modal transient solver (coupled h-set EOM, `B_hh` engaged, rigid trim labels as outputs, self-balancing closure), mode-acceleration recovery, fixed-Φ MASSCASE cases with case-mean-axis correction, job-level `ManeuverBasisCache` |
 | `sbeam/solver/modal_basis.py` | **Phase G0 Step 61** — free-free maneuver basis `Φ = [Φ_r | Φ_e]`, h-set operators, shared a-set assembly |
 | `sbeam/model/maneuver.py` | Dataclasses for the ZAERO `MLOADS`/`MLDTRIM`/`MLDTIME`/`MLDCOMD`/`MLDPRNT` + `TABLED1` card set |
 | `sbeam/model/maneuver_presets.py` | Canned pilot-command history presets |
-| `sbeam/model/mass_overlay.py` | **Step 60** — `resolve_mass_case` / `effective_conm2s`: MASSSET payload-case resolution (baseline scaling + ADD/REPLACE/DELETE overlay) |
+| `sbeam/model/mass_overlay.py` | **Step 60** — `resolve_mass_case` / `effective_conm2s`: MASSCASE payload-case resolution (baseline scaling + ADD/REPLACE/DELETE overlay) |
 | `sbeam/results/f06_writer.py` | `build_f06_sol144_text` / `write_f06_sol144` — SOL 144 trim f06 blocks (shares displacement/CBAR helpers with SOL 101) |
 | `sbeam/results/load_export.py` | `write_aero_load_cards` — trimmed flight loads as `FORCE`/`MOMENT` bulk cards |
 | `sbeam/results/monitor_points.py` | `prepare_monitor_points` (once per run) + `evaluate_monitor_point` (per load state) — monitor-point integrated section loads; `compute_monitor_loads` / `integrate_monpnt1` / `integrate_monpnt3` are the one-shot forms. **#2** takes them at every transient sample |
@@ -127,7 +127,7 @@ Reproduction script for the original review: `studies/_review_ha144a_check.py`.
 | `PAERO1` | Aerodynamic panel properties (stub in Phase A) | S40 |
 | `AEFACT` | Arbitrary span/chord fraction lists for non-uniform meshing | S40 |
 | `W2GJ` | Per-box baseline normalwash slopes | S42 |
-| `WKK` | Diagonal AIC correction multipliers | S43 |
+| `WKK` | Per-box lift weights, MSC placement (#71) | S43 |
 | `AECORR` | Pressure-matching AIC correction (WT2 only; WT1 removed by DEF-R7, deprecated by DEF-H2/H3 2026-07-31) | S43 |
 | `CHORDCP` | Injected CFD/WT steady-Cp mean flow at a reference AOA (sbeam extension) | S54 |
 | `SET1` | List of structural grid IDs for spline input | S45 |
@@ -139,7 +139,7 @@ Reproduction script for the original review: `studies/_review_ha144a_check.py`.
 | `AESURF` | Aerodynamic control surface — hinge line + AELIST of active boxes | S51 |
 | `AELIST` | Ordered list of CAERO1 box IDs forming a control surface | S51 |
 | `TRIM` | Trim condition — Mach, q, and prescribed label/value pairs | S51 |
-| `DIVERG` | Divergence analysis — NROOTS, RHOREF (V_div), and Mach sweep | S51 / S55 |
+| `DIVERG` | Divergence analysis — NROOT and Mach sweep (MSC layout, #73) | S51 / S55 |
 | `TRIMVAR` | Per-variable bounds + initial guess (sbeam-defined; over-determined trim) | S51 |
 | `TRIMOBJ` | Weighted objective function (sbeam-defined; over-determined trim) | S51 |
 | `TRIMCON` | Inequality constraint (sbeam-defined; over-determined trim) | S51 |
@@ -147,8 +147,8 @@ Reproduction script for the original review: `studies/_review_ha144a_check.py`.
 | `PSTRIP` | Decoupled strip body panel property (nominal per-box slope, default π) | A10 |
 | `STRIPK` | Per-box slope override for strip body panels | A10 |
 | `AECOMP` | Named collection of AELIST boxes or SET1 grids for monitor points | MON1 |
-| `MONPNT1` | Aero-only integrated section load at a reference point | MON1 |
-| `MONPNT3` | Aero + inertia + reaction integrated section load (splined to grids) | MON1 |
+| `MONPNT1` | Integrated section load at a reference point, MSC two-line layout (#86): aero-only on an AELIST AECOMP, aero + inertia + applied + reaction (the `MONPNT3` integrator) on a SET1 AECOMP | MON1 |
+| `MONPNT3` | Refused: MSC's grid point force monitor is not implemented (#103) | #86 |
 | `MONSECT` | Section-cut running loads — per-station shear/bending/torque table (sbeam extension). Static trim **and** transient MLOADS (per sample + envelope, Step 68) | MON2 / Step 68 |
 | `MLOADS` | Transient maneuver driver (Phase G0; ZAERO card set) | G0 |
 | `MLDTRIM` | Initial-condition TRIM sid for the maneuver | G0 |
@@ -156,5 +156,5 @@ Reproduction script for the original review: `studies/_review_ha144a_check.py`.
 | `MLDTIME` | Integration window t0/tend/dt/tout | G0 |
 | `MLDPRNT` | ASCII time-history output request | G0 |
 | `TABLED1` | Tabular function of time (command histories) | G0 |
-| `MASSSET` | Payload / mass case (ADD/REPLACE/DELETE CONM2 ops + SCALE) | S60 |
+| `MASSCASE` | Payload / mass case (ADD/REPLACE/DELETE CONM2 ops + SCALE) | S60 |
 

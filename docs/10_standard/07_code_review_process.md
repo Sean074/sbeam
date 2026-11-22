@@ -98,13 +98,13 @@ blocks approval but is not the same severity class as wrong results.
 
 ### Step 2 — BDF Parser and Data Model Review
 
-The parser (`parser/bdf_reader.py`) is the model gateway. Errors here corrupt every downstream result.
+The parser (`parser/bdf_reader.py` and its `bulk_*.py` card modules) is the model gateway. Errors here corrupt every downstream result.
 
 - [ ] Every supported card in CLAUDE.md has a corresponding parser branch. Any card not in the supported list must either raise a clear warning or be silently skipped — never silently accepted with wrong field counts.
 - [ ] Field indices are zero-based free-format or fixed 8-column NASTRAN format — verify the field-slicing logic matches the card definition in `docs/10_standard/01_beam_model.md`.
 - [ ] Integer IDs (GID, EID, PID, MID, SID) are stored as `int`, not `str`. Mixed types break dictionary lookups silently.
 - [ ] `BulkData` container stores each card type in its dedicated dict/list — verify no card is appended to the wrong collection.
-- [ ] INCLUDE file resolution: confirm the parser resolves the path relative to the main BDF file, not the current working directory.
+- [ ] INCLUDE file resolution: confirm the parser resolves the path relative to the file holding the INCLUDE, not the current working directory, and that bulk INCLUDEs sit below `BEGIN BULK` (#81).
 - [ ] Duplicate IDs: does the parser warn on duplicate GRID/CBAR/PBAR/MAT1 IDs, or silently overwrite?
 - [ ] `CORD2R` chained RID: verify the coordinate system is resolved recursively before any GRID using that CID is transformed.
 

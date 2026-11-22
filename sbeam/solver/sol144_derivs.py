@@ -135,23 +135,47 @@ def compute_hinge_moments(
         if not halves:
             continue
 
-        def _hm(f_box: FloatArray, _halves: list[HingeHalf] = halves) -> float:
-            total = 0.0
-            for half in _halves:
-                for k in half.ks:
-                    F = f_box[3 * k:3 * k + 3]
-                    r = aero.boxes[k].force_point - half.origin
-                    total += float(np.dot(np.cross(r, F), half.h_hat))
-            return total
-
-        entry = {'total': _hm(f_box_trim)}
+        entry = {'total': _hinge_moment(aero, halves, f_box_trim)}
         for col, lbl in enumerate(all_labels):
             f_box_col = (aero.skj @ (aero.ajj_inv_corr @ D_jx[:, col])
                          + yaw_force_column(lbl, f_box_yaw, len(aero.boxes)))
-            entry[lbl] = _hm(f_box_col)
+            entry[lbl] = _hinge_moment(aero, halves, f_box_col)
         hinge_moments[aesurf.label.upper()] = entry
 
     return hinge_moments
+
+
+def _hinge_moment(aero: AeroModel, halves: list[HingeHalf], f_box: FloatArray) -> float:
+    """Moment of the box forces on each hinge half about that half's hinge axis."""
+    total = 0.0
+    for half in halves:
+        for k in half.ks:
+            F = f_box[3 * k:3 * k + 3]
+            r = aero.boxes[k].force_point - half.origin
+            total += float(np.dot(np.cross(r, F), half.h_hat))
+    return total
+
+
+def compute_restrained_hinge_moments(
+    aero: AeroModel, bulk: BulkData, box_force_derivs: dict[str, FloatArray],
+) -> dict[str, dict[str, float]]:
+    """Elastic-restrained hinge-moment derivatives per AESURF control (#82).
+
+    ``box_force_derivs`` is each trim label's restrained box-force derivative from
+    ``compute_restrained_derivs`` (force/q).  Returns ``{surface: {label: dHM/dδ}}`` in
+    the units of ``compute_hinge_moments`` (multiply by q for the physical moment).
+    MSC prints this column beside the rigid one (MSC Nastran 2023.1 Aeroelastic Analysis
+    User's Guide PDF p.234, "HINGE MOMENT DERIVATIVE COEFFICIENTS").
+    """
+    id_to_k = aero.require_box_id_to_k()
+    out: dict[str, dict[str, float]] = {}
+    for aesurf in bulk.aesurfs.values():
+        halves = aesurf_hinges(aesurf, bulk, id_to_k)
+        if halves:
+            out[aesurf.label.upper()] = {
+                label: _hinge_moment(aero, halves, f_box)
+                for label, f_box in box_force_derivs.items()}
+    return out
 
 
 def compute_restrained_derivs(
@@ -170,8 +194,13 @@ def compute_restrained_derivs(
     q: float,
     ref_pt: FloatArray,
     f_box_yaw: Optional[FloatArray] = None,
+    box_force_derivs: Optional[dict[str, FloatArray]] = None,
 ) -> dict[str, dict[str, float]]:
     """Elastic restrained stability derivatives — exact analytic form (AE1 Step G).
+
+    ``box_force_derivs``, when given, receives each label's restrained box-force
+    derivative (3·n_box, force/q) so the caller can integrate it again, e.g. about a
+    control-surface hinge (#82).
 
     Restrained means the SUPORT (r-set) DOFs are held at zero; the l-set responds
     elastically.  The trim problem is linear in each label δ, so the derivative is
@@ -229,6 +258,8 @@ def compute_restrained_derivs(
         df_box = (aero.skj @ dgamma
                   + yaw_force_column(label, f_box_yaw, n_box))  # (3·n_box,) force/q
 
+        if box_force_derivs is not None:
+            box_force_derivs[label] = df_box
         Mx, _, Mz = aero_moment_resultant(
             df_box.reshape(n_box, 3), boxes, ref_pt)
         rest_derivs[label] = {

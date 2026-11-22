@@ -106,7 +106,7 @@ def test_dangling_trim_reference(fullspan):
 def test_dangling_massset_reference(massset):
     cc, bulk = massset
     cc.subcases[0].massset_sid = 999
-    assert any("MASSSET 999" in e for e in _errors(bulk, cc))
+    assert any("MASSCASE 999" in e for e in _errors(bulk, cc))
 
 
 def test_trim_label_not_defined(fullspan):

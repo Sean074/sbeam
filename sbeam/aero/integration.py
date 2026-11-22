@@ -63,7 +63,9 @@ def build_wg(boxes: list[AeroBox], w2gjs: dict[int, W2gj], caero_eid: int) -> Fl
 
     W2GJ card data follows the NASTRAN convention (MSC Aeroelastic UG Eq 2-104,
     HA144A example): POSITIVE = leading-edge-up incidence/camber → MORE lift —
-    the same nose-up-positive sense as ANGLEA.  Like the ANGLEA column (-n_z)
+    the same nose-up-positive sense as ANGLEA — on a box whose MSC element normal
+    (CAERO1 Figure 9-5) is sbeam's ``normal``.  Where the two are opposite (a fin, a
+    port panel drawn root to tip) the card value is negated first (#84).  Like the ANGLEA column (-n_z)
     and ``build_djk`` (-I), the card values are NEGATED here to form the
     internal normalwash slope (positive = washout).
 
@@ -100,8 +102,9 @@ def build_wg(boxes: list[AeroBox], w2gjs: dict[int, W2gj], caero_eid: int) -> Fl
             f"{caero_eid}, which meshes to {len(surf_idx)} boxes.  W2GJ data is "
             "one value per box, row-major (span slowest, chord fastest)."
         )
+    # The card value is along MSC's element normal (#84), the solve's along ``normal``
     for local_k, global_j in enumerate(surf_idx):
-        wg[global_j] = -w2gj.data[local_k]
+        wg[global_j] = -w2gj.data[local_k] * boxes[global_j].msc_sign
     return wg
 
 

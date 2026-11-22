@@ -103,6 +103,19 @@ T[p, q_i] = w_i / W    where W = Σ w_i
 
 All other rows of T are identity. Dependent DOF columns are then removed: `T = T_full[:, red_dofs]`.
 
+**Every dependent DOF must have a valid source (#60).** Building T raises a `ValueError` when:
+- an RBE3 REFC DOF is in no Ci (e.g. `REFC=123456` with `Ci=123`; there is no lever arm to
+  derive rotations from translations);
+- the REFC weights for a DOF sum to zero;
+- one DOF is made dependent by two rigid elements (the second would overwrite the first's
+  row of T);
+- a DOF that an RBE3 reads from an independent grid is dependent on another rigid element
+  (removing that column would drop its share). RBE2 GN and RBAR GA already refuse this.
+
+An RBE3 with an independent grid offset from REFGRID (more than 1e-6 of the model's size)
+warns, because sbeam's same-DOF average then differs from NASTRAN (see the RBE3
+limitation in `02_card_reference.md`).
+
 **Insertion point in `run_sol101`** — between full assembly and SPC partitioning:
 
 ```
@@ -222,8 +235,9 @@ f_spc = K_global @ u_global - f_global
 Extract values at constrained DOF indices.
 
 **Output frame.** Reactions are recovered — and stored in `Sol101Result.reactions` — in
-basic CID 0, which is the frame the SPC itself acts in (SPC DOF digits are always basic;
-see the Known Limitations index in `00_program_overview.md`). They are rotated into the
+basic CID 0, which is the frame the SPC itself acts in. A partial component set on a grid
+with `CD ≠ 0` is refused at parse (#65), so every SPC that reaches the solver means the
+same in basic and in the CD frame. They are rotated into the
 grid's `CD` frame at f06 **write** time only, exactly like the displacement block, because
 NASTRAN's "global" output system is the assembly of the per-grid `CD` frames rather than
 basic CID 0. Downstream consumers of the stored vectors — `results/section_cuts.py` and
@@ -441,7 +455,7 @@ Output sections written to `results.f06`:
 
 ### CBUSH — Unit-Level Stiffness Coverage
 
-CBUSH stiffness and force recovery are verified at unit level in `tests/assembly/test_cbush.py` (axial, torsional, grounded-spring, 45° orientation, and mixed-DOF cases). An end-to-end BDF + SOL 101 integration test (`v20_cbush_grounded_spring.bdf`) asserting `F = K × u` is tracked as R20.
+CBUSH stiffness and force recovery are verified at unit level in `tests/assembly/test_cbush.py` (axial, torsional, grounded-spring, 45° orientation, and mixed-DOF cases). The spring location `S` and its rigid links (#97) are gated in `tests/assembly/test_cbush_rigid_link.py`: the hand-derived 12×12 of a lateral spring (coupling K2·L/2, K2·L²/4), zero force under all six rigid motions for any K, S and axes, and a free-free two-mass SOL 103 model with six rigid modes and the closed-form elastic frequencies. An end-to-end BDF + SOL 101 integration test (`v20_cbush_grounded_spring.bdf`) asserting `F = K × u` is tracked as R20.
 
 ---
 

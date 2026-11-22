@@ -3,7 +3,7 @@
 Build order:
   1. Mesh all CAERO1 elements into AeroBox lists.
   2. Build the raw VLM AIC matrix AJJ.
-  3. Apply whichever correction is present (Wkk → WT2 → none).
+  3. Apply the corrections, each on its own surfaces (WKK, WT2; #96).
   4. Build Skj, Djk, and the baseline normalwash wg.
   5. Package everything into AeroModel.
 
@@ -25,7 +25,7 @@ from sbeam.aero.panel import AeroBox, mesh_caero1, build_box_id_map
 from sbeam.aero.vlm import build_ajj, prandtl_glauert_boxes
 from sbeam.aero.integration import build_skj, build_djk, build_wg_all
 from sbeam.aero.corrections import (
-    apply_wkk, apply_wt2, apply_chordcp, check_conditioning, wt2_reference_cp,
+    apply_wkk, apply_chordcp, check_conditioning, wt2_ratio, wt2_reference_cp,
 )
 from sbeam.aero.spline import LoadInjection, build_spline_operators
 from sbeam.aero.strip import strip_box_mask, strip_box_slopes, is_strip_caero
@@ -120,69 +120,82 @@ def _assemble_vlm_operator(
     # Build raw AIC on PG-compressed geometry
     ajj = build_ajj(prandtl_glauert_boxes(op_boxes, mach))
 
-    # Correction precedence over the boxes present here — WKK, then WT2.
+    # Corrections per surface (#96): WKK on its surfaces, WT2 on its surfaces, both
+    # acting after the solve (#71).  A surface may carry one of them, never both —
+    # "if wkk … elif wt2" used to drop every WT2 card, on every surface, once any WKK
+    # was present.
     op_eids = sorted({b.caero_eid for b in op_boxes})
     wkk_cards = [c for c in bulk.wkks.values() if c.caero_eid in op_eids]
     wt2_cards = [c for c in bulk.aecorrs.values()
                  if c.method == "WT2" and c.caero_eid in op_eids]
 
-    if wkk_cards:
-        # Per-surface scatter onto a unit baseline (DEF-M8b).  WKK used to be
-        # selected for the primary CAERO1 only and then applied to *every* box in
-        # the operator, so on a multi-surface deck the diag() was the wrong size
-        # and numpy raised a bare shape error, while a WKK on a non-primary
-        # surface was ignored outright.  Unlisted surfaces get weight 1 — a
-        # no-op — so single-surface decks are unchanged.
-        w = np.ones(n)
-        seen: dict[int, int] = {}
-        for card in wkk_cards:
-            if card.caero_eid in seen:
-                raise ValueError(
-                    f"WKK {card.sid}: CAERO1 {card.caero_eid} already has a WKK "
-                    f"card (SID {seen[card.caero_eid]}); only one WKK per CAERO1 "
-                    "is supported."
-                )
-            seen[card.caero_eid] = card.sid
-            surf_idx = [k for k, b in enumerate(op_boxes) if b.caero_eid == card.caero_eid]
-            data = np.asarray(card.data, dtype=float)
-            if data.shape[0] != len(surf_idx):
-                raise ValueError(
-                    f"WKK {card.sid} (CAERO1 {card.caero_eid}): {data.shape[0]} "
-                    f"weights for {len(surf_idx)} boxes on that surface."
-                )
-            if np.any(data == 0.0):
-                zeros = [i for i, v in enumerate(data) if v == 0.0]
-                raise ValueError(
-                    f"WKK {card.sid} (CAERO1 {card.caero_eid}): zero weight at "
-                    f"box index(es) {zeros[:5]}{'...' if len(zeros) > 5 else ''}. "
-                    "A zero weight makes the corrected AIC singular — use a small "
-                    "non-zero weight to suppress a box's influence."
-                )
-            w[surf_idx] = data
-        ajj_star = apply_wkk(ajj, w)
-        lu_star = check_conditioning(ajj_star)
-        ajj_inv_corr = lu_solve(lu_star, np.eye(n))
-    elif wt2_cards:
-        # Factor AJJ once (DEF-R6): the conditioning check, the raw inverse for
-        # the target baseline, and apply_wt2 all share the same factorization.
-        lu = check_conditioning(ajj)
-        ajj_inv_raw = lu_solve(lu, np.eye(n))
-        # Per-axis reference (#52): uncorrected boxes keep it as their target (r = 1).
-        cp_ref = wt2_reference_cp(op_boxes, ajj_inv_raw)
-        cp_target = cp_ref.copy()
+    w = np.ones(n)
+    wkk_on: dict[int, int] = {}
+    for card in wkk_cards:
+        # Per-surface scatter onto a unit baseline (DEF-M8b); unlisted surfaces get
+        # weight 1, a no-op
+        if card.caero_eid in wkk_on:
+            raise ValueError(
+                f"WKK {card.sid}: CAERO1 {card.caero_eid} already has a WKK "
+                f"card (SID {wkk_on[card.caero_eid]}); only one WKK per CAERO1 "
+                "is supported."
+            )
+        wkk_on[card.caero_eid] = card.sid
+        surf_idx = [k for k, b in enumerate(op_boxes) if b.caero_eid == card.caero_eid]
+        data = np.asarray(card.data, dtype=float)
+        if data.shape[0] != len(surf_idx):
+            raise ValueError(
+                f"WKK {card.sid} (CAERO1 {card.caero_eid}): {data.shape[0]} "
+                f"weights for {len(surf_idx)} boxes on that surface."
+            )
+        w[surf_idx] = data
+    wt2_on: dict[int, int] = {}
+    for card in wt2_cards:
+        if card.caero_eid in wkk_on:
+            raise ValueError(
+                f"AECORR {card.sid} (WT2) and WKK {wkk_on[card.caero_eid]} both correct "
+                f"CAERO1 {card.caero_eid}; a surface takes one correction. Keep the one "
+                "you mean (a WKK scaling a WT2 surface would move it off its target)"
+            )
+        if card.caero_eid in wt2_on:
+            raise ValueError(
+                f"AECORR {card.sid}: CAERO1 {card.caero_eid} already has a WT2 AECORR "
+                f"(SID {wt2_on[card.caero_eid]}); only one per CAERO1 is supported"
+            )
+        wt2_on[card.caero_eid] = card.sid
+
+    # Factor AJJ once (DEF-R6): the conditioning check, the raw inverse for the WT2
+    # reference, and the corrected operator all share the same factorization.
+    lu = check_conditioning(ajj)
+    ajj_inv_corr = lu_solve(lu, np.eye(n))
+    if wt2_cards:
+        # The ratio target/reference is formed at each card's build MACH, against the
+        # per-axis reference (#52) of the model being solved, and applied here at the
+        # TRIM Mach (#72) — as an MSC WKK is one vector for all subcases (AAUG 2023.1
+        # p.144).  Forming it against this model keeps a flying surface's calibration
+        # pinned when body panels are added (gate B4).  At the build Mach this is the
+        # same arithmetic as before; elsewhere it costs one AIC build per card Mach.
+        ref_at = {mach: wt2_reference_cp(op_boxes, ajj_inv_corr)}
+        r = np.ones(n)
         for card in wt2_cards:
             surf_idx = [k for k, b in enumerate(op_boxes) if b.caero_eid == card.caero_eid]
+            # Card targets are along MSC's element normal (#84)
             tgt = np.asarray(card.target, dtype=float)
             if tgt.shape[0] != len(surf_idx):
                 raise ValueError(
                     f"AECORR {card.sid} (WT2, CAERO {card.caero_eid}): target length "
                     f"{tgt.shape[0]} != {len(surf_idx)} boxes on that surface"
+                    " (since #72 field 5 is MACH and the targets start in field 6)"
                 )
-            cp_target[surf_idx] = tgt
-        ajj_inv_corr = apply_wt2(ajj, cp_target, ajj_inv=ajj_inv_raw, cp_ref=cp_ref)
-    else:
-        lu = check_conditioning(ajj)
-        ajj_inv_corr = lu_solve(lu, np.eye(n))
+            if card.mach not in ref_at:
+                ajj_m = build_ajj(prandtl_glauert_boxes(op_boxes, card.mach))
+                ref_at[card.mach] = wt2_reference_cp(
+                    op_boxes, lu_solve(check_conditioning(ajj_m), np.eye(n)))
+            sign = np.array([op_boxes[k].msc_sign for k in surf_idx])
+            r[surf_idx] = wt2_ratio(sign * tgt, ref_at[card.mach][surf_idx])
+        ajj_inv_corr = np.diag(r) @ ajj_inv_corr
+    if wkk_cards:
+        ajj_inv_corr = apply_wkk(ajj_inv_corr, w)
 
     # Göthert 1/β scaling (boundary-condition factor from §2.8 Eq. 14)
     if beta_pg != 1.0:
@@ -284,7 +297,8 @@ def _apply_chordcp_injection(
                 f"CHORDCP {card.sid}: data length {len(card.data)} != "
                 f"{len(local)} boxes on CAERO1 {eid} (NSPAN×NCHORD)"
             )
-        cp_inj[local] = card.data
+        # Card Cp is along MSC's element normal (#84)
+        cp_inj[local] = np.asarray(card.data) * [vlm_boxes[k].msc_sign for k in local]
 
     block = ajj_inv_corr[np.ix_(vlm_idx, vlm_idx)]
     wg[vlm_idx] = apply_chordcp(block, vlm_boxes, cp_inj, alpha_ref)
@@ -365,15 +379,12 @@ def build_aero_model(
     transonic/supersonic regime, so an effective Mach ≥ 1 is rejected here rather
     than silently clamped.
 
-    Correction precedence (first match wins):
-      1. WKK card present  → diagonal multiplicative: AJJ* = diag(wkk) @ AJJ,
-                              AJJ*⁻¹ computed via np.linalg.solve; each WKK card
-                              applies to its own CAERO1 (weight 1 elsewhere).
-      2. AECORR WT2 present → pressure-matching correction (apply_wt2). **Multi-surface:**
-                              all WT2 cards are combined into one global Γ-unit target —
-                              each card fills its own CAERO1's boxes (row-major), boxes on
-                              uncorrected surfaces default to ratio 1.
-      3. No correction       → AJJ*⁻¹ = solve(AJJ).
+    Corrections, each on its own surfaces (#96; both act after the solve, #71):
+      * WKK   → AJJ*⁻¹ = diag(w) @ AJJ⁻¹; each WKK card weights its own CAERO1's boxes.
+      * AECORR WT2 → AJJ*⁻¹ = diag(r) @ AJJ⁻¹, r = target / reference formed at the
+                card's MACH (#72); each card fills its own CAERO1's boxes (row-major).
+      Boxes on uncorrected surfaces keep weight and ratio 1.  A surface carrying both a
+      WKK and a WT2 card, or two of either, is refused.
 
     When multiple CAERO1 elements are present, all boxes are concatenated into a single
     list and a single AIC is built for the combined surface.  W2GJ (baseline normalwash)
