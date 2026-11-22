@@ -147,8 +147,8 @@ Reproduction script for the original review: `studies/_review_ha144a_check.py`.
 | `PSTRIP` | Decoupled strip body panel property (nominal per-box slope, default π) | A10 |
 | `STRIPK` | Per-box slope override for strip body panels | A10 |
 | `AECOMP` | Named collection of AELIST boxes or SET1 grids for monitor points | MON1 |
-| `MONPNT1` | Aero-only integrated section load at a reference point | MON1 |
-| `MONPNT3` | Aero + inertia + reaction integrated section load (splined to grids) | MON1 |
+| `MONPNT1` | Integrated section load at a reference point, MSC two-line layout (#86): aero-only on an AELIST AECOMP, aero + inertia + applied + reaction (the `MONPNT3` integrator) on a SET1 AECOMP | MON1 |
+| `MONPNT3` | Refused: MSC's grid point force monitor is not implemented (#103) | #86 |
 | `MONSECT` | Section-cut running loads — per-station shear/bending/torque table (sbeam extension). Static trim **and** transient MLOADS (per sample + envelope, Step 68) | MON2 / Step 68 |
 | `MLOADS` | Transient maneuver driver (Phase G0; ZAERO card set) | G0 |
 | `MLDTRIM` | Initial-condition TRIM sid for the maneuver | G0 |

@@ -9,8 +9,10 @@ and duplicates within its own card type; anything that looks at another card bel
 here.  A check in a handler sees only the cards above it in the deck (#51).
 """
 import warnings
+from dataclasses import asdict
 from typing import Callable
 
+from sbeam.model.aero import Monpnt3
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.coordinate_system import Cord2r
 from sbeam.types import FloatArray
@@ -449,24 +451,18 @@ def _check_monitors(bulk: BulkData) -> None:
                 raise ValueError(
                     f"AECOMP {name}: {aecomp.listtype} SID {lid} not found"
                 )
-    for name, mon in bulk.monpnt1s.items():
+    # MSC: one MONPNT1 card, aerodynamic or structural by its COMP (QRG 2024.1 PDF
+    # p.2303 remark 2; #86).  A SET1-type AECOMP files it with the structural
+    # integrator (``bulk.monpnt3s``, named after sbeam's pre-#86 card)
+    for name, mon in list(bulk.monpnt1s.items()):
         if mon.comp not in bulk.aecomps:
-            raise ValueError(f"MONPNT1 {name}: COMP '{mon.comp}' not found in AECOMP")
-        if bulk.aecomps[mon.comp].listtype != "AELIST":
-            raise ValueError(
-                f"MONPNT1 {name}: COMP '{mon.comp}' must reference an AELIST-type AECOMP"
-            )
+            raise ValueError(f"MONPNT1 {name}: COMP '{mon.comp}' not found in AECOMP "
+                             "(AECOMPL is not supported)")
         if mon.cp and mon.cp not in bulk.cord2rs:
             raise ValueError(f"MONPNT1 {name}: CP={mon.cp} not found in CORD2R")
-    for name, mon in bulk.monpnt3s.items():
-        if mon.comp not in bulk.aecomps:
-            raise ValueError(f"MONPNT3 {name}: COMP '{mon.comp}' not found in AECOMP")
-        if bulk.aecomps[mon.comp].listtype != "SET1":
-            raise ValueError(
-                f"MONPNT3 {name}: COMP '{mon.comp}' must reference a SET1-type AECOMP"
-            )
-        if mon.cp and mon.cp not in bulk.cord2rs:
-            raise ValueError(f"MONPNT3 {name}: CP={mon.cp} not found in CORD2R")
+        if bulk.aecomps[mon.comp].listtype == "SET1":
+            del bulk.monpnt1s[name]
+            bulk.monpnt3s[name] = Monpnt3(**asdict(mon))
     for name, cut in bulk.monsects.items():
         if cut.comp not in bulk.aecomps:
             raise ValueError(f"MONSECT {name}: COMP '{cut.comp}' not found in AECOMP")

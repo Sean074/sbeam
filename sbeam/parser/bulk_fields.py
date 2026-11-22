@@ -19,6 +19,20 @@ def _split_free_field(line: str) -> list[str]:
     return [f.strip() for f in line.split(",")]
 
 
+class RawField(str):
+    """A stripped fixed-field value that keeps its 8-character slice in ``raw``.
+
+    Every handler reads the stripped value; a text field that spans several fields
+    (MONPNT1 LABEL, fields 3-9) joins the ``raw`` slices to keep its spaces (#86).
+    """
+    raw: str
+
+    def __new__(cls, raw: str) -> "RawField":
+        obj = super().__new__(cls, raw.strip())
+        obj.raw = raw
+        return obj
+
+
 def _split_fixed_field(line: str) -> list[str]:
     line = line.ljust(72)
     return [line[i : i + 8].strip() for i in range(0, 72, 8)]
@@ -157,7 +171,7 @@ def _physical_line(line: str) -> tuple[str, list[str], int]:
         name = padded[:8].strip()
         capacity = _LARGE if name.endswith("*") or name.startswith("*") else _SMALL
         width = 64 // capacity
-        data = [padded[8 + i * width: 8 + (i + 1) * width].strip() for i in range(capacity)]
+        data = [RawField(padded[8 + i * width: 8 + (i + 1) * width]) for i in range(capacity)]
     rows = max(1, -(-len(data) // capacity))
     return name, data + [""] * (rows * capacity - len(data)), capacity
 

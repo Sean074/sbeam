@@ -13,7 +13,7 @@ Every card and case-control keyword sbeam reads; the sections below give each ca
 - **Eigenvalue:** EIGRL
 - **Aero (Phase A/C):** AEROS, CAERO1, PAERO1, AEFACT, W2GJ, WKK, AECORR, CHORDCP,
   PSTRIP, STRIPK, SPLINE0/2 (+ ATTACH), SET1, AELIST, AESTAT, AESURF, TRIM, TRIMVAR,
-  TRIMCON, TRIMOBJ, SUPORT, DIVERG, MONPNT1, MONPNT3, MONSECT, AECOMP, GUSTLF
+  TRIMCON, TRIMOBJ, SUPORT, DIVERG, MONPNT1, MONSECT, AECOMP, GUSTLF
 - **Transient maneuver (G0):** MLOADS, MLDTRIM, MLDCOMD, MLDTIME, MLDPRNT, TABLED1
 - **Case control:** SOL, SUBCASE, LOAD, SPC, METHOD, TRIM, MLOADS, MASSCASE, GUSTLF,
   DISPLACEMENT, SPCFORCE, OLOAD, FORCE, STRESS, BEGIN BULK, ENDDATA
@@ -138,7 +138,7 @@ Names and IDs that must be unique **across** card types are also checked after t
 
 - element EIDs across CBAR, CROD, CONROD and CBUSH;
 - PIDs across PBAR and PROD, and across PAERO1 and PSTRIP;
-- monitor names across MONPNT1, MONPNT3 and MONSECT.
+- monitor names across MONPNT1 and MONSECT.
 
 Every other ID-keyed card is unique within its own card type only, and a second card with
 an ID already in use refuses the deck (#57); cards that share a SID by design (FORCE,
@@ -1774,7 +1774,7 @@ in declaration order, which is the recommended convention.
 ### SET1 — Structural Grid List
 
 Lists the structural grid IDs a SPLINE2 interpolates from (referenced by SETG). Also
-referenced by `SET1`-type AECOMP cards for MONPNT3 grid collections.
+referenced by `SET1`-type AECOMP cards for structural MONPNT1 grid collections.
 
 **Format:**
 ```
@@ -1895,7 +1895,7 @@ decoupled-strip (A10) workflows.
 Their aerodynamic **load is not discarded**: since Step 64 it is injected into the
 structure as a rigid load (net force plus the moment of the box forces) at the
 master grid named in field 5, through the `g_load` force-transfer operator. That
-load enters the SOL 144 trim force balance, the `FORCE`/`MOMENT` export, MONPNT3
+load enters the SOL 144 trim force balance, the `FORCE`/`MOMENT` export, structural MONPNT1
 and the maneuver solvers. Leave the field blank to use the SUPORT grid.
 
 **Format:**
@@ -2159,7 +2159,7 @@ DIVERG     100      5       0.0    $ AAUG 2023.1 p.148: incompressible, five roo
 
 Declares the rigid-body reference (r-set) DOFs for a free-flight trim: the a-set is
 partitioned into l-set / r-set at these DOFs and the trim solver holds `u_r = 0`
-(mean-axis constraint). Also used by MONPNT3 reaction recovery and the Phase G0
+(mean-axis constraint). Also used by structural MONPNT1 reaction recovery and the Phase G0
 restrained-l-set integration.
 
 **Format:**
@@ -2379,13 +2379,13 @@ GUSTLF, 700, 1, 2.5, 9.81
 
 Integrated section-load output for the structures/loads handoff. See
 `docs/10_standard/05c_sol144_maneuver.md` for the integration semantics.
-`MONPNT1`/`MONPNT3` give one resultant per named collection; `MONSECT` (Phase 2) sweeps
+`MONPNT1` gives one resultant per named collection; `MONSECT` (Phase 2) sweeps
 that same integrand over a list of cut planes for per-station running loads.
 
 ### AECOMP — Named box / grid collection
 
 Resolves a monitor's component name to either an AELIST box collection (for MONPNT1)
-or a SET1 grid collection (for MONPNT3). `MONSECT` accepts either type. Continuations
+or a SET1 grid collection (for a structural MONPNT1). `MONSECT` accepts either type. Continuations
 add more list IDs.
 
 **Format:**
@@ -2395,54 +2395,77 @@ AECOMP  NAME  LISTTYPE  LISTID1  LISTID2  ...
 
 | Field | Type | Description |
 |-------|------|-------------|
-| NAME | str | Component name (referenced by MONPNT1/MONPNT3/MONSECT `COMP`) |
+| NAME | str | Component name (referenced by MONPNT1/MONSECT `COMP`) |
 | LISTTYPE | str | `AELIST` (box IDs) or `SET1` (grid IDs) |
 | LISTID1… | int | One or more AELIST SIDs or SET1 SIDs |
 
 **Cross-reference:** every list ID must exist in the matching AELIST/SET1 table.
 
-### MONPNT1 — Aero-only integrated load
+### MONPNT1 — Integrated load monitor point (MSC layout, #86)
 
-**Format (single line):**
+MSC's layout and meaning (MSC Nastran 2024.1 QRG PDF p.2303–2304). The card is
+"either an aerodynamic or a structural MONPNT1, depending on the data provided in the
+COMP field" (remark 2):
+
+| COMP is an AECOMP of type | Monitor | Sums | Output `type` |
+|---|---|---|---|
+| `AELIST` (aero box IDs) | aerodynamic | the aero box forces | `MONPNT1` |
+| `SET1` (grid IDs) | structural | over the grids: aero splined to the grids + inertia + the subcase's applied `LOAD` set when one is selected (#6) + SPC/SUPORT reaction, each its own column under the total | `MONPNT3` |
+
+**Format (two lines; the first in small field, LABEL in fields 3–9):**
 ```
-MONPNT1  NAME  LABEL  AXES  COMP  CP  X  Y  Z
+MONPNT1  NAME    LABEL
+         AXES    COMP    CP      X       Y       Z       CD
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| NAME | str | — | Monitor name |
-| LABEL | str | — | Descriptive label |
-| AXES | int | 0 | Component axes (e.g. 123456); echoed to output |
-| COMP | str | — | AECOMP name (must be `AELIST` type) |
-| CP | int | 0 | CORD2R (or 0) frame the loads are reported in |
+| NAME | str | — | Monitor name, up to 8 characters |
+| LABEL | str | blank | Up to 56 characters in fields 3–9, spaces kept. Write this line in **small (fixed) field**: a free-field token is limited to 8 characters in NASTRAN, and pyNastran rebuilds the label from 8-column slices |
+| AXES | int | required | Component axes (e.g. 123456); echoed to output |
+| COMP | str | required | AECOMP name (`AELIST` or `SET1` type; AECOMPL is not supported) |
+| CP | int | 0 | CORD2R (or 0) of X, Y, Z; the loads are output in this frame |
 | X, Y, Z | float | 0.0 | Reference point in the CP frame |
+| CD | int | CP | Output frame. Must be blank or equal to CP: sbeam outputs in CP, MSC's default |
 
-### MONPNT3 — Aero + inertia + reaction integrated load
+**Names.** MSC lets an aerodynamic and a structural MONPNT1 share a NAME (remark 2);
+sbeam keys monitor output by name and refuses it. Names are unique across MONPNT1 and
+MONSECT.
 
-Same field layout as MONPNT1, but `COMP` must resolve to a `SET1`-type AECOMP; the
-load is summed over the structural grids (aero splined to grids + inertia + the subcase's
-applied `LOAD` set when one is selected (#6) + SPC/SUPORT reaction). Each contribution is
-its own column (`aero`, `inertia`, `applied`, `reaction`) under the total.
+**Output `type`.** The `MONPNT1`/`MONPNT3` label in the f06 monitor block and the
+`monitor_loads.csv` `type` column names the integrator, as before #86: `MONPNT3` is now
+a structural MONPNT1 (MSC's "STRUCTURAL MONITOR POINT", AAUG 2023.1 PDF p.238). The
+output layout, with MSC's rigid/elastic columns, is #103.
 
-**Format (single line):**
+**Example (QRG p.2303, small field):**
 ```
-MONPNT3  NAME  LABEL  AXES  COMP  CP  X  Y  Z
-```
-
-**Cross-reference:** `COMP` must exist in AECOMP with the correct list type; `CP` (if
-non-zero) must exist in CORD2R.
-
-**Example:**
-```
+AECOMP,  WING,    AELIST, 6
+MONPNT1 WING155                 Wing Integrated Load to Butline 155
+        34      WING            0.0     155.0   15.0
 AECOMP,  WINGEA,  SET1,  1100
-MONPNT3, MWINGEA, RIGHT WING, 35, WINGEA, 0, 15.0, 0.0, 0.0
+MONPNT1 MWINGEA RIGHT WING
++, 35, WINGEA, 0, 15.0, 0.0, 0.0
 ```
+
+> **Before #86** sbeam read its own one-line layout, `MONPNT1 NAME LABEL AXES COMP CP X
+> Y Z`, aero-only, and a structural `MONPNT3` with the same layout. MSC-form decks failed
+> with misleading messages. **Migrate a deck:** move AXES … Z to a continuation line,
+> and write a `MONPNT3` as a `MONPNT1` (its SET1 AECOMP makes it structural). A one-line
+> MONPNT1 is refused with that advice; the repo decks are converted and give identical
+> results.
+
+### MONPNT3 — refused (#86)
+
+MSC's MONPNT3 "sums select Grid Point Forces to a user chosen monitor point" (`NAME
+LABEL` / `AXES GRIDSET ELEMSET CP X Y Z XFLAG` / `CD`; QRG 2024.1 PDF p.2307–2308).
+sbeam computes no grid point forces (GPFORCE), so the card is refused, with a message
+pointing a structural sum at MONPNT1. Supporting it is #103.
 
 ### MONSECT — Section-cut running loads (sbeam extension)
 
-Sweeps the MONPNT1/MONPNT3 integrand over a list of cut planes, producing the
+Sweeps the MONPNT1 integrand over a list of cut planes, producing the
 per-station `{shear, bending, torque}` table a stress group sizes a surface from.
-Where a `MONPNT3` gives **one** resultant, a `MONSECT` gives **one per station**.
+Where a structural `MONPNT1` gives **one** resultant, a `MONSECT` gives **one per station**.
 
 ![Section-cut geometry and component labelling](../figures/section_cut.svg)
 
@@ -2456,7 +2479,7 @@ MONSECT  NAME  LABEL  COMP  CID  AXIS  SIDE  TOL
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| NAME | str | — | Monitor name; unique across **MONPNT1, MONPNT3 and MONSECT** |
+| NAME | str | — | Monitor name; unique across **MONPNT1 and MONSECT** |
 | LABEL | str | blank | Descriptive label |
 | COMP | str | — | AECOMP name. `SET1` type ⇒ aero + inertia + reaction; `AELIST` type ⇒ aero only |
 | CID | int | — | CORD2R (or 0) defining the cut frame; stations and reported components are in it |
@@ -2488,7 +2511,7 @@ bending moment. The f06 block prints the mapping in use in its header.
   `s > station + TOL` for `SIDE = POS`). A grid load is a point load, so a cut *at* a
   node must exclude it for the outboard free body's resultant to equal the beam internal
   force there. Any member inside `TOL` raises a warning naming it and the station.
-- **No symmetry parity is ever applied.** Unlike `MONPNT1`/`MONPNT3`, a `MONSECT` is
+- **No symmetry parity is ever applied.** Unlike `MONPNT1`, a `MONSECT` is
   never doubled for an `AEROS SYMXZ ≠ 0` half model: a wing cut is already the physical
   per-side load. Output is annotated `HALF-MODEL (LOADS PER SIDE)` instead.
 - A station outboard of every member returns an exact zero row, not an error — a useful
@@ -2881,8 +2904,8 @@ under "Parser warnings" and in the pre-solve checks.
 | TRIM | Every label must be defined by AESTAT or AESURF; duplicate labels raise `ValueError`; `RHOREF` is a reserved pseudo-label (must be positive; no AESTAT/AESURF may use the name) |
 | TRIMCON | SENSE must be `LE` or `GE`; any other value raises `ValueError` |
 | AECOMP | LISTTYPE must be `AELIST` or `SET1`; every list ID must exist in that table |
-| MONPNT1 | COMP must exist in AECOMP as an `AELIST`-type collection; CP (if non-zero) must exist in CORD2R |
-| MONPNT3 | COMP must exist in AECOMP as a `SET1`-type collection; CP (if non-zero) must exist in CORD2R |
+| MONPNT1 | Two-line MSC layout; COMP must exist in AECOMP (AELIST: aerodynamic, SET1: structural); CP (if non-zero) must exist in CORD2R; CD blank or = CP; an aerodynamic and a structural MONPNT1 may not share a NAME |
+| MONPNT3 | Refused: MSC's grid-point-force monitor is not implemented (#103) |
 | MONSECT | COMP must exist in AECOMP (either list type); CID (if non-zero) must exist in CORD2R; AXIS ∈ {1,2,3}; SIDE ∈ {POS,NEG}; ≥ 1 strictly increasing station; NAME unique across all monitor cards; NORMAL (if given) non-degenerate against the station axis |
 | TABLED1 | At least two (x, y) points; abscissae strictly increasing; only `LINEAR` axes honoured |
 | MLDTIME | DT must be positive; TEND must exceed T0 |

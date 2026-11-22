@@ -22,9 +22,12 @@ SET1,310,100
 AECOMP,WINGAERO,AELIST,200
 AECOMP,WINGGRID,SET1,300
 AECOMP,ROOTGRID,SET1,310
-MONPNT1,MWAERO,WING AERO,123456,WINGAERO,0,1.0,2.0,3.0
-MONPNT3,MWING,FULL WING,123456,WINGGRID,0,1.5,0.0,0.0
-MONPNT3,MROOT,WING ROOT,123,ROOTGRID,7,0.0,0.0,0.0
+MONPNT1 MWAERO  WING AERO
++, 123456, WINGAERO, 0, 1.0, 2.0, 3.0
+MONPNT1 MWING   FULL WING
++, 123456, WINGGRID, 0, 1.5, 0.0, 0.0
+MONPNT1 MROOT   WING ROOT
++, 123, ROOTGRID, 7, 0.0, 0.0, 0.0
 """.splitlines()
 
 
@@ -67,15 +70,46 @@ def test_monpnt3_parsed_cord2r(bulk):
     assert (m.x, m.y, m.z) == (0.0, 0.0, 0.0)
 
 
-def test_monpnt1_bad_comp_type_rejected():
-    bad = _BDF + ["MONPNT1,MBAD,LBL,123456,WINGGRID,0,0.0,0.0,0.0"]
-    with pytest.raises(ValueError, match="must reference an AELIST"):
+def test_monpnt1_on_a_set1_aecomp_is_structural():
+    """#86: MSC's MONPNT1 is aerodynamic or structural by its COMP (QRG p.2303 remark 2)."""
+    bulk = parse_bulk_data(_BDF + ["MONPNT1,MSTR,LBL", "+,123456,WINGGRID,0,0.0,0.0,0.0"])
+    assert "MSTR" in bulk.monpnt3s and "MSTR" not in bulk.monpnt1s
+
+
+def test_monpnt1_missing_comp_rejected():
+    bad = _BDF + ["MONPNT1,MBAD,LBL", "+,123456,NOPE,0,0.0,0.0,0.0"]
+    with pytest.raises(ValueError, match="not found in AECOMP"):
         parse_bulk_data(bad)
 
 
-def test_monpnt3_missing_comp_rejected():
-    bad = _BDF + ["MONPNT3,MBAD,LBL,123456,NOPE,0,0.0,0.0,0.0"]
-    with pytest.raises(ValueError, match="not found in AECOMP"):
+def test_the_old_one_line_monpnt1_is_refused():
+    bad = _BDF + ["MONPNT1,MBAD,LBL,123456,WINGAERO,0,0.0,0.0,0.0"]
+    with pytest.raises(ValueError, match="MONPNT1 MBAD: the second line .* is missing.*#86"):
+        parse_bulk_data(bad)
+
+
+@pytest.mark.parametrize("lines", [
+    ["MONPNT3,MBAD,LBL,123456,WINGGRID,0,0.0,0.0,0.0"],               # sbeam's old card
+    ["MONPNT3,T0,Fuselage station 1105", "+,123456,1,2,0,30.0,,,ASM"],  # QRG p.2307 example
+])
+def test_monpnt3_is_refused(lines):
+    with pytest.raises(ValueError, match="MONPNT3 .*: not supported.*grid point forces"):
+        parse_bulk_data(_BDF + lines)
+
+
+def test_qrg_example_label_spans_fields_3_to_9():
+    """QRG p.2303 example, small field: LABEL keeps its spaces across field edges."""
+    f8 = "".join
+    lines = _BDF + [f8(f"{x:<8}" for x in ("MONPNT1", "WING155")) + "Wing Integrated Load to Butline 155",
+                    f8(f"{x:<8}" for x in ("", "34", "WINGAERO", "", "0.0", "155.0", "15.0"))]
+    m = parse_bulk_data(lines).monpnt1s["WING155"]
+    assert (m.label, m.axes, m.comp, m.cp, m.y, m.z) == (
+        "Wing Integrated Load to Butline 155", 34, "WINGAERO", 0, 155.0, 15.0)
+
+
+def test_cd_other_than_cp_is_refused():
+    bad = _BDF + ["MONPNT1,MBAD,LBL", "+,123456,WINGAERO,0,0.0,0.0,0.0,7"]
+    with pytest.raises(ValueError, match="MONPNT1 MBAD: CD=7 differs from CP=0"):
         parse_bulk_data(bad)
 
 

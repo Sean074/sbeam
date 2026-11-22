@@ -60,7 +60,9 @@ downloaded file is byte-identical to the CLI's. SOL 101/103 write the f06 only.
 `z_ref`, `Fx`, `Fy`, `Fz`, `Mx`, `My`, `Mz`, `Fz_aero`, `Fz_inertia`, `Fz_react`,
 `Fz_applied`, `parity`, `whole_airplane`
 
-One row per monitor per `TRIM` subcase. `type` is `MONPNT1` / `MONPNT3`; `Fx..Mz` are the
+One row per monitor per `TRIM` subcase. `type` is `MONPNT1` (aerodynamic: an MSC MONPNT1 on
+an AELIST AECOMP) or `MONPNT3` (structural: an MSC MONPNT1 on a SET1 AECOMP — the name of
+sbeam's pre-#86 card, kept so the schema did not change; MSC's naming is #103); `Fx..Mz` are the
 six totals in the monitor's `cid` frame about (`x_ref`, `y_ref`, `z_ref`); `Fz_*` is the
 diagnostic split (`MONPNT1` reports `0.0` for inertia, reaction and applied; `Fz_applied`
 is the subcase's applied `LOAD` set, `0.0` when the subcase selected none — #6,

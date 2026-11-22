@@ -166,17 +166,19 @@ _BASE = ["GRID, 1, , 0.0, 0.0, 0.0", "GRID, 2, , 1.0, 0.0, 0.0",
      r"CBUSH 4: duplicate element ID"),
     (["PAERO1, 7"], ["PSTRIP, 7"], "PSTRIP PID 7 collides with a PAERO1"),
     (["PSTRIP, 7"], ["PAERO1, 7"], "PSTRIP PID 7 collides with a PAERO1"),
-    (["MONPNT1, M1, L, 123456, C1"], ["MONPNT3, M1, L, 123456, C3"],
-     "MONPNT3 M1: NAME collides with an existing MONPNT1"),
-    (["MONPNT3, M1, L, 123456, C3"], ["MONPNT1, M1, L, 123456, C1"],
-     "MONPNT3 M1: NAME collides with an existing MONPNT1"),
-    (["MONPNT1, S1, L, 123456, C1"], ["MONSECT, S1, L, C1, 0, 2, POS", "+, 0.5"],
+    # #86: one MONPNT1 card, aerodynamic (C1, AELIST) or structural (C3, SET1); MSC
+    # lets the two kinds share a name, sbeam keys output by name and refuses it
+    (["MONPNT1, M1, L", "+, 123456, C1"], ["MONPNT1, M1, L", "+, 123456, C3"],
+     "Duplicate MONPNT1 NAME M1. MSC lets an aerodynamic and a structural"),
+    (["MONPNT1, M1, L", "+, 123456, C3"], ["MONPNT1, M1, L", "+, 123456, C1"],
+     "Duplicate MONPNT1 NAME M1. MSC lets an aerodynamic and a structural"),
+    (["MONPNT1, S1, L", "+, 123456, C1"], ["MONSECT, S1, L, C1, 0, 2, POS", "+, 0.5"],
      "MONSECT S1: NAME collides with an existing MONPNT1/MONPNT3"),
-    (["MONSECT, S1, L, C1, 0, 2, POS", "+, 0.5"], ["MONPNT3, S1, L, 123456, C3"],
+    (["MONSECT, S1, L, C1, 0, 2, POS", "+, 0.5"], ["MONPNT1, S1, L", "+, 123456, C3"],
      "MONSECT S1: NAME collides with an existing MONPNT1/MONPNT3"),
 ], ids=["CBUSH-after-CBAR", "CBAR-after-CBUSH", "CBUSH-twice", "PSTRIP-after-PAERO1",
-        "PAERO1-after-PSTRIP", "MONPNT3-after-MONPNT1", "MONPNT1-after-MONPNT3",
-        "MONSECT-after-MONPNT1", "MONPNT3-after-MONSECT"])
+        "PAERO1-after-PSTRIP", "MONPNT1-struct-after-aero", "MONPNT1-aero-after-struct",
+        "MONSECT-after-MONPNT1", "MONPNT1-struct-after-MONSECT"])
 def test_cross_type_uniqueness_in_either_order(first, second, match):
     with pytest.raises(ValueError, match=match):
         parse_bulk_data(_BASE + first + second)

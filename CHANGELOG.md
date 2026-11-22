@@ -10,6 +10,23 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Breaking changes
+- **MONPNT1 is read in MSC's two-line layout and is aerodynamic or structural by its
+  AECOMP; MONPNT3 is refused** (#86; pre-1.0 MINOR break). MSC: `MONPNT1 NAME LABEL`
+  (LABEL in fields 3–9) / `AXES COMP CP X Y Z CD`, "either an aerodynamic or a structural
+  MONPNT1, depending on the data provided in the COMP field" (QRG 2024.1 PDF p.2303–2304,
+  remark 2). sbeam read its own one-line layout, aero-only, and had a structural `MONPNT3`
+  with the same layout, where MSC's MONPNT3 is a grid point force cut (p.2307); MSC-form
+  decks failed with misleading messages. Now a MONPNT1 on a SET1 AECOMP runs the structural
+  integrator sbeam's MONPNT3 ran; MSC's MONPNT3 is refused (grid point forces are not
+  computed; #103); a one-line MONPNT1 is refused with migration advice; CD other than CP
+  and an aerodynamic/structural pair sharing a NAME (allowed by MSC, but sbeam keys output
+  by name) are refused. LABEL keeps its spaces across fixed-field columns. Output is
+  unchanged: the f06 and `monitor_loads.csv` still label the kinds `MONPNT1`/`MONPNT3`
+  (#103 takes up MSC's naming and rigid/elastic columns). **Migrate a deck:** move AXES … Z
+  to a continuation and write `MONPNT3` as `MONPNT1`; write line 1 in small field, as
+  NASTRAN and pyNastran need for a label over 8 characters. The 30 cards in ten repo decks
+  are converted; every output is bit-identical. pyNastran now reads every repo MONPNT1 and
+  agrees field for field (`tests/compat`). Found by the 2026-11-16 audit (M8, A9, P10).
 - **Signed per-box aero data is along MSC's element normal** (#84; pre-1.0 MINOR break,
   **silent for an unconverted deck**). MSC's CAERO1 element system has y from P1 toward P4
   and z = x × y (QRG 2024.1 PDF p.1344, remark 4, Figure 9-5), and the downwash is the

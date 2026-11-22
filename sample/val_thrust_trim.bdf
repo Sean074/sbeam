@@ -186,10 +186,12 @@ $ ----------------------------------------------------------- MONITORS
 AELIST, 1400, 1000, THRU, 1159, 2000, THRU, 2159, 3000
 +, 3001, THRU, 3047, 4000, THRU, 4047
 AECOMP, ALLAERO, AELIST, 1400
-MONPNT1, MAERO, AERO TOTAL, 123456, ALLAERO, 0, 0.25, 0.0, 0.0
+MONPNT1 MAERO   AERO TOTAL
++, 123456, ALLAERO, 0, 0.25, 0.0, 0.0
 SET1, 1310, 10, 70, 90, 110, 120, 210, 220, 500
 AECOMP, ALLGRID, SET1, 1310
-MONPNT3, MALL, WHOLE AIRPLANE BALANCE, 123456, ALLGRID, 0, 0.25, 0.0, 0.0
+MONPNT1 MALL    WHOLE AIRPLANE BALANCE
++, 123456, ALLGRID, 0, 0.25, 0.0, 0.0
 $ Nose free body: cut planes normal to x ahead of the reference; SIDE = NEG keeps
 $ the members forward of the cut (grids 10 and 70 — the engine and its pylon).
 SET1, 1300, 10, 70

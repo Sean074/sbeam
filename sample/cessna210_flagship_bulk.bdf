@@ -353,7 +353,8 @@ $ (2.70, 0, 1.25), the resultant of grids 11 and 12 IS the starboard
 $ wing-root shear and bending moment.
 SET1, 1300, 11, 12
 AECOMP, RWINGEA, SET1, 1300
-MONPNT3, MWROOT, RIGHT WING ROOT, 35, RWINGEA, 0, 2.70, 0.0, 1.25
+MONPNT1 MWROOT  RIGHT WING ROOT
++, 35, RWINGEA, 0, 2.70, 0.0, 1.25
 $
 $ ---- Whole aircraft.
 $ DEF-M10 RULE: this SET1 must list EVERY spline-load grid AND EVERY
@@ -365,17 +366,20 @@ SET1, 1310, 1, 900, 2, 3, 4, 5, 10
 +, 11, 12, 111, 112, 20, 21, 22, 121
 +, 122, 30, 31, 32
 AECOMP, ALLGRID, SET1, 1310
-MONPNT3, MALLEA, WHOLE AIRCRAFT, 35, ALLGRID, 0, 2.4375, 0.0, 0.60
+MONPNT1 MALLEA  WHOLE AIRCRAFT
++, 35, ALLGRID, 0, 2.4375, 0.0, 0.60
 $
 $ ---- Whole-aircraft aero, and starboard-wing aero (aero-only).
 AELIST, 1400, 1000, THRU, 1095, 2000, THRU, 2095, 3000
 +, 3001, THRU, 3047, 4000, THRU, 4047, 5000, 5001
 +, 5002, THRU, 5035
 AECOMP, ALLAERO, AELIST, 1400
-MONPNT1, MALLAR, AIRCRAFT AERO, 35, ALLAERO, 0, 2.4375, 0.0, 0.60
+MONPNT1 MALLAR  AIRCRAFT AERO
++, 35, ALLAERO, 0, 2.4375, 0.0, 0.60
 AELIST, 1410, 1000, THRU, 1095
 AECOMP, RWAERO, AELIST, 1410
-MONPNT1, MRWAER, RIGHT WING AERO, 35, RWAERO, 0, 2.70, 0.0, 1.25
+MONPNT1 MRWAER  RIGHT WING AERO
++, 35, RWAERO, 0, 2.70, 0.0, 1.25
 $
 $ ---- Section-cut running loads (MONSECT, Monitor Phase 2).
 $ Where a MONPNT3 gives ONE resultant, a MONSECT sweeps the same sum over a

@@ -49,10 +49,7 @@ _SBEAM_EXTENSIONS = {
 
 #: sbeam cards pyNastran cannot read at all (it raises instead of storing an error): they
 #: are removed before pyNastran reads the deck.
-_NOT_FOR_PYNASTRAN = {
-    "MONPNT1": "#86: sbeam's one-line layout; MSC's has a label line",
-    "MONPNT3": "#86: sbeam's one-line layout; MSC's is a grid-point-force monitor",
-}
+_NOT_FOR_PYNASTRAN: dict[str, str] = {}
 
 #: (card, field) disagreements left open, with the issue fixing each.
 _KNOWN: dict[tuple[str, str], str] = {}
@@ -152,6 +149,10 @@ def _f(x: Any) -> Any:
     return x
 
 
+def _squeeze(text: str) -> str:
+    return "".join(text.split())
+
+
 def _sbeam_view(b: BulkData) -> dict[str, dict[Any, dict[str, Any]]]:
     v: dict[str, dict[Any, dict[str, Any]]] = {
         "GRID": {k: dict(cp=g.cp, x=g.x, y=g.y, z=g.z, cd=g.cd, ps=g.ps) for k, g in b.grids.items()},
@@ -202,6 +203,12 @@ def _sbeam_view(b: BulkData) -> dict[str, dict[Any, dict[str, Any]]]:
         "DIVERG": {k: dict(nroots=d.nroots, machs=list(d.machs)) for k, d in b.divergs.items()},
         "SPC": {"all": dict(v=_sbeam_spcs(b))},
         "SUPORT": {"all": dict(v=sorted((s.gid, s.dofs) for s in b.supports))},
+        # #86: MSC's MONPNT1, aerodynamic or structural by its AECOMP; CD = CP in sbeam
+        # LABEL compared without blanks: pyNastran 1.4.1 strips each 8-column slice of
+        # fields 3-9, so "AIRCRAFT AERO" reads back as "AIRCRAFTAERO"
+        "MONPNT1": {k: dict(label=_squeeze(mp.label), axes=str(mp.axes), comp=mp.comp, cp=mp.cp,
+                            xyz=[mp.x, mp.y, mp.z], cd=mp.cp)
+                    for k, mp in {**b.monpnt1s, **b.monpnt3s}.items()},
     }
     return v
 
@@ -307,6 +314,10 @@ def _pyn_view(m: Any) -> dict[str, dict[Any, dict[str, Any]]]:
     v["SPC"] = {"all": dict(v=sorted(spcs))}
     v["SUPORT"] = {"all": dict(v=sorted((g, str(c)) for s in m.suport
                                         for g, c in zip(s.nodes, s.Cs)))}
+    v["MONPNT1"] = {mp.name: dict(label=_squeeze(mp.label), axes=str(mp.axes), comp=mp.comp,
+                                  cp=mp.cp,
+                                  xyz=_f(mp.xyz), cd=mp.cd)
+                    for mp in m.monitor_points if mp.type == "MONPNT1"}
     return v
 
 

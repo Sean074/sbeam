@@ -944,14 +944,19 @@ resultant `[Fx, Fy, Fz, Mx, My, Mz]` about a reference point, in a chosen coordi
 ### Cards
 
 ```
-$ Named collection: AELIST (box IDs) for MONPNT1, or SET1 (grid IDs) for MONPNT3
+$ Named collection: AELIST (box IDs) or SET1 (grid IDs)
 AECOMP,  NAME, LISTTYPE, LISTID1, LISTID2, ...        $ LISTTYPE = AELIST | SET1
-$ Monitor point definition (single line):
-MONPNT1, NAME, LABEL, AXES, COMP, CP, X, Y, Z          $ aero-only
-MONPNT3, NAME, LABEL, AXES, COMP, CP, X, Y, Z          $ aero + inertia + reaction
+$ Monitor point, MSC's two-line MONPNT1 (QRG 2024.1 PDF p.2303; #86); line 1 in small field
+MONPNT1 NAME    LABEL (fields 3-9)
++, AXES, COMP, CP, X, Y, Z                             $ CD blank (= CP)
 ```
 
-- `COMP` is an `AECOMP` name. `MONPNT1` requires an `AELIST`-type AECOMP; `MONPNT3` a `SET1`-type.
+- `COMP` is an `AECOMP` name. An `AELIST`-type AECOMP makes an **aerodynamic** monitor
+  (aero-only); a `SET1`-type makes a **structural** one (aero + inertia + applied + reaction)
+  — MSC's rule (QRG p.2303 remark 2). In this guide and in the output, `MONPNT1` names the
+  aerodynamic integrator and `MONPNT3` the structural one, as they were named before #86,
+  when the structural kind was an sbeam card of its own; MSC's `MONPNT3` (a grid point
+  force cut) is refused (#103).
 - `CP` is the CORD2R (or 0/basic) frame the loads are reported in; `X,Y,Z` is the reference point in
   that frame. The reference is resolved to basic CID 0 for the moment summation, then the resultant
   is rotated into `CP`.

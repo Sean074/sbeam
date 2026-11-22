@@ -73,7 +73,8 @@ AELIST, 1401, 1000, THRU, 1095, 2000, THRU, 2095, 3000
 +, 5002, THRU, 5035, 6000, THRU, 6015, 7000, 7001
 +, 7002, THRU, 7031
 AECOMP, ALLAERB, AELIST, 1401
-MONPNT1, MALLARB, AIRCRAFT AERO INC BODY, 35, ALLAERB, 0, 2.4375, 0.0, 0.60
+MONPNT1 MALLARB AIRCRAFT AERO INC BODY
++, 35, ALLAERB, 0, 2.4375, 0.0, 0.60
 $
 $ --------------------------------------------------------------------
 $ sbeam body-panel correction  —  cruciform

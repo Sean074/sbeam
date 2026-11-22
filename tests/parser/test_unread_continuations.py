@@ -105,7 +105,12 @@ class TestCardsTheAuditFound:
         with pytest.raises(ValueError, match="EIGRL 1: continuation line 1 .*NORM=MAX"):
             _read_cards(["EIGRL,1,,,6", "+,NORM=MAX"])
 
-    def test_msc_two_line_monpnt1_is_refused(self):
-        """Audit A9/P10: MSC's MONPNT1 data line was dropped, leaving AXES/COMP blank."""
-        with pytest.raises(ValueError, match="MONPNT1 WRBM: continuation line 1"):
-            _read_cards(["MONPNT1,WRBM,Wing root bending", "+,123456,WING,0,0.,10.,0."])
+    def test_msc_two_line_monpnt1_is_read(self):
+        """Audit A9/P10: MSC's MONPNT1 data line was dropped; refused by #63, read by #86."""
+        bulk = _read_cards(["MONPNT1,WRBM,Wing root bending", "+,123456,WING,0,0.,10.,0."])
+        assert (bulk.monpnt1s["WRBM"].comp, bulk.monpnt1s["WRBM"].y) == ("WING", 10.0)
+
+    def test_a_third_monpnt1_line_is_refused(self):
+        with pytest.raises(ValueError, match="MONPNT1 WRBM: continuation line 2"):
+            _read_cards(["MONPNT1,WRBM,Wing root bending", "+,123456,WING,0,0.,10.,0.",
+                         "+,1"])

@@ -5,7 +5,7 @@ from typing import Optional
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.aero import (
     Aeros, Caero1, Paero1, Pstrip, Stripk, Aefact, W2gj, Wkk, Aecorr, Chordcp, Set1,
-    Spline2, Attach, Spline0, Aelist, Aecomp, Monpnt1, Monpnt3, Monsect,
+    Spline2, Attach, Spline0, Aelist, Aecomp, Monpnt1, Monsect,
 )
 from sbeam.parser.bulk_fields import FieldHandler, ContHandler, MultiHandler, to_float, to_int, to_int_opt, expand_int_list_with_thru, list_fields
 
@@ -315,40 +315,63 @@ def _handle_aecomp(fields: list[str], conts: list[list[str]], bulk: BulkData) ->
         raise ValueError(f"Duplicate AECOMP NAME {name}")
     bulk.aecomps[name] = Aecomp(name=name, listtype=listtype, list_ids=list_ids)
 
-def _handle_monpnt1(fields: list[str], bulk: BulkData) -> None:
-    """MONPNT1 NAME LABEL AXES COMP CP X Y Z (aero-only integrated load)."""
-    name  = fields[1].strip()
-    label = fields[2].strip() if len(fields) > 2 else ""
-    axes  = to_int(fields[3]) if len(fields) > 3 and fields[3].strip() else 0
-    comp  = fields[4].strip() if len(fields) > 4 else ""
-    cp    = to_int_opt(fields[5]) if len(fields) > 5 else 0
-    x     = to_float(fields[6]) if len(fields) > 6 and fields[6].strip() else 0.0
-    y     = to_float(fields[7]) if len(fields) > 7 and fields[7].strip() else 0.0
-    z     = to_float(fields[8]) if len(fields) > 8 and fields[8].strip() else 0.0
+def _handle_monpnt1(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -> None:
+    """MONPNT1 in MSC's two-line layout (MSC Nastran 2024.1 QRG PDF p.2303-2304; #86).
+
+    ``MONPNT1 NAME LABEL`` (LABEL in fields 3-9) / ``AXES COMP CP X Y Z CD``.  MSC makes
+    it "either an aerodynamic or a structural MONPNT1, depending on the data provided in
+    the COMP field" (remark 2): an AELIST-type AECOMP sums aero box loads, a SET1-type
+    AECOMP sums the structural loads on its grids.  The cross-reference pass files each
+    one by its AECOMP (``bulk_xref._check_monitors``).  Until #86 sbeam read its own
+    one-line layout, and the structural kind was a card of its own, ``MONPNT3``.
+    """
+    name = fields[1].strip()
     if not name:
         raise ValueError("MONPNT1: NAME must not be blank")
+    if cont is None or not any(f.strip() for f in cont[1:]):
+        raise ValueError(
+            f"MONPNT1 {name}: the second line (AXES COMP CP X Y Z CD) is missing. MONPNT1 "
+            "is read in MSC's two-line layout (QRG p.2303): `MONPNT1, NAME, LABEL` then "
+            "`+, AXES, COMP, CP, X, Y, Z`. Before #86 sbeam read AXES-Z on the first line; "
+            "move them to the continuation")
+    # LABEL spans fields 3-9 (56 characters); fixed-field slices keep their spaces
+    label = "".join(getattr(f, "raw", f) for f in fields[2:9]).strip()
+    if not cont[1].strip() or not cont[2].strip():
+        raise ValueError(f"MONPNT1 {name}: AXES and COMP are required (QRG p.2303)")
+    axes = to_int(cont[1])
+    comp = cont[2].strip()
+    cp   = to_int_opt(cont[3]) if len(cont) > 3 else 0
+    x, y, z = (to_float(cont[i]) if len(cont) > i and cont[i].strip() else 0.0
+               for i in (4, 5, 6))
+    cd_s = cont[7].strip() if len(cont) > 7 else ""
+    if cd_s and to_int(cd_s) != cp:
+        raise ValueError(
+            f"MONPNT1 {name}: CD={cd_s} differs from CP={cp}; sbeam outputs a monitor's "
+            "loads in its CP frame (MSC's default, CD = CP). Leave CD blank")
     if name in bulk.monpnt1s:
-        raise ValueError(f"Duplicate MONPNT1 NAME {name}")
+        raise ValueError(
+            f"Duplicate MONPNT1 NAME {name}. MSC lets an aerodynamic and a structural "
+            "MONPNT1 share a name (QRG p.2303 remark 2); sbeam keys monitor output by "
+            "name, so rename one")
     bulk.monpnt1s[name] = Monpnt1(name=name, label=label, axes=axes, comp=comp,
                                   cp=cp, x=x, y=y, z=z)
 
 
-def _handle_monpnt3(fields: list[str], bulk: BulkData) -> None:
-    """MONPNT3 NAME LABEL AXES COMP CP X Y Z (aero + inertia + reaction)."""
-    name  = fields[1].strip()
-    label = fields[2].strip() if len(fields) > 2 else ""
-    axes  = to_int(fields[3]) if len(fields) > 3 and fields[3].strip() else 0
-    comp  = fields[4].strip() if len(fields) > 4 else ""
-    cp    = to_int_opt(fields[5]) if len(fields) > 5 else 0
-    x     = to_float(fields[6]) if len(fields) > 6 and fields[6].strip() else 0.0
-    y     = to_float(fields[7]) if len(fields) > 7 and fields[7].strip() else 0.0
-    z     = to_float(fields[8]) if len(fields) > 8 and fields[8].strip() else 0.0
-    if not name:
-        raise ValueError("MONPNT3: NAME must not be blank")
-    if name in bulk.monpnt3s:
-        raise ValueError(f"Duplicate MONPNT3 NAME {name}")
-    bulk.monpnt3s[name] = Monpnt3(name=name, label=label, axes=axes, comp=comp,
-                                  cp=cp, x=x, y=y, z=z)
+def _handle_monpnt3(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
+    """MONPNT3 is refused (#86).
+
+    MSC's MONPNT3 "Sums select Grid Point Forces to a user chosen monitor point":
+    ``NAME LABEL`` / ``AXES GRIDSET ELEMSET CP X Y Z XFLAG`` / ``CD`` (QRG 2024.1 PDF
+    p.2307-2308).  sbeam has no grid point force output.  sbeam's own MONPNT3 (a
+    structural sum over SET1 grids) is MSC's structural MONPNT1.
+    """
+    name = fields[1].strip() if len(fields) > 1 else ""
+    raise ValueError(
+        f"MONPNT3 {name}: not supported. MSC's MONPNT3 sums grid point forces at a cut "
+        "(QRG p.2307), which sbeam does not compute. For the structural sum sbeam's "
+        "MONPNT3 used to give (aero + inertia + applied + reaction over SET1 grids), "
+        "write an MSC MONPNT1 whose COMP is a SET1-type AECOMP: `MONPNT1, NAME, LABEL` "
+        "then `+, AXES, COMP, CP, X, Y, Z` (#86)")
 
 
 def _handle_monsect(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
@@ -439,10 +462,9 @@ FIELD_HANDLERS: dict[str, FieldHandler] = {
     "ATTACH": _handle_attach,
     "SPLINE0": _handle_spline0,
     "SPLINE1": _handle_spline1,
-    "MONPNT1": _handle_monpnt1,
-    "MONPNT3": _handle_monpnt3,
 }
 CONT_HANDLERS: dict[str, ContHandler] = {
+    "MONPNT1": _handle_monpnt1,
     "CAERO1": _handle_caero1,
     "SPLINE2": _handle_spline2,
 }
@@ -457,4 +479,7 @@ MULTI_HANDLERS: dict[str, MultiHandler] = {
     "AELIST": _handle_aelist,
     "AECOMP": _handle_aecomp,
     "MONSECT": _handle_monsect,
+    # Refused whatever its lines hold (#86); multi-line so MSC's three-line card gets
+    # this message rather than the generic unread-continuation one
+    "MONPNT3": _handle_monpnt3,
 }
