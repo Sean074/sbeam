@@ -243,6 +243,15 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and warnings, before and after.
 
 ### Fixed
+- **Run-to-run reproducibility of the flagship SOL 144 outputs is gated** (#49). The
+  ~1e-10 noise seen on 2026-10-24 in the zero-level monitor components of the gust deck
+  does not reproduce at this commit, nor at the commit where it was found (`6882c1f`):
+  two runs of the gust and MLOADS decks write identical f06, CSV and load-BDF files on
+  Apple Accelerate and on OpenBLAS (numpy 1.26.4), threaded and single-threaded, and across
+  `PYTHONHASHSEED` values. No thread pin or print floor is added without a cause. New gate
+  `tests/integration/test_run_reproducibility.py` runs each deck in two processes with
+  different hash seeds and requires byte-identical output apart from the DATE line, so
+  CI's Linux/OpenBLAS job catches the noise if it returns.
 - **The viewer no longer drops the GUSTLF selector** (#98). The case-control export and
   the subcase editor wrote a fixed list of selectors that did not include `GUSTLF`, so
   `cessna210_flagship_gust.bdf` came back from the viewer with no driver on any of its
