@@ -243,6 +243,18 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and warnings, before and after.
 
 ### Fixed
+- **A two-grid CBUSH between separated grids no longer resists rigid-body rotation** (#97).
+  The element acted on the relative grid motions with no arm to the spring, so a PBUSH with
+  K2, K3, K5 or K6 between grids 2 apart gave ∓4.0e6 at Ty for a rigid rotation of 1 rad,
+  and a free-free model with such a spring (an engine mount, a pylon attachment) lost
+  rigid-body modes. MSC places the spring at P = GA + S·(GB − GA) and joins it to the grids
+  by rigid links (QRG 2024.1 PDF p.1378 field S, p.1380 Figure 9-20, p.1381 remark 11); sbeam now does the
+  same, and **reads `S`** where it was refused. Force recovery follows. Coincident and
+  grounded springs are bit-identical; K1/K4-only springs along GA–GB give the same answer;
+  every sample deck is unchanged. `OCID` (the S1–S3 offset) is still refused. Gates
+  `tests/assembly/test_cbush_rigid_link.py`: hand-derived 12×12, the six rigid motions for
+  any K, S and axes, and a free-free two-mass SOL 103 model with six rigid modes and the
+  closed-form elastic frequencies.
 - **Run-to-run reproducibility of the flagship SOL 144 outputs is gated** (#49). The
   ~1e-10 noise seen on 2026-10-24 in the zero-level monitor components of the gust deck
   does not reproduce at this commit, nor at the commit where it was found (`6882c1f`):

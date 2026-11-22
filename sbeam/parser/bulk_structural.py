@@ -656,18 +656,17 @@ def _handle_cbush(fields: list[str], cont: Optional[list[str]], bulk: BulkData) 
             raise ValueError(f"CBUSH {eid}: CID={cid_s} must be an integer >= 0 or blank")
         cid = int(cid_s)
 
+    s = 0.5                                       # "Default = 0.5" (p.1378)
     if cont is not None:
         old = ("sbeam's layout before #62 put the orientation vector X1 X2 X3 on this "
                "line; it now goes in fields 6-8 of the first line, as in NASTRAN")
         s_loc, ocid = cont[1].strip(), cont[2].strip()
-        if s_loc and to_float(s_loc) != 0.5:
-            raise ValueError(
-                f"CBUSH {eid}: S={s_loc} is not supported; sbeam has no spring-location "
-                f"offset (leave S blank or 0.5). Note: {old}")
+        if s_loc:
+            s = to_float(s_loc)       # the spring point is GA + S·(GB − GA) (Figure 9-20)
         if ocid and (_field_kind(ocid) != "int" or int(ocid) != -1):
             raise ValueError(
-                f"CBUSH {eid}: OCID={ocid} is not supported; sbeam has no spring offset "
-                f"(leave OCID blank or -1). Note: {old}")
+                f"CBUSH {eid}: OCID={ocid} is not supported; sbeam places the spring on "
+                f"the line GA-GB at S (leave OCID blank or -1). Note: {old}")
         # S1-S3 are ignored when OCID is -1 or blank (p.1379 remark 9), as here
 
     # CBUSH shares the element-ID space; it used to skip this check, so a CBUSH
@@ -675,7 +674,8 @@ def _handle_cbush(fields: list[str], cont: Optional[list[str]], bulk: BulkData) 
     _check_unique_eid(bulk, "CBUSH", eid)
     _check_distinct_ends("CBUSH", eid, ga, gb)
 
-    bulk.cbushs[eid] = Cbush(eid=eid, pid=pid, ga=ga, gb=gb, x1=x1, x2=x2, x3=x3, cid=cid)
+    bulk.cbushs[eid] = Cbush(eid=eid, pid=pid, ga=ga, gb=gb, x1=x1, x2=x2, x3=x3, cid=cid,
+                             s=s)
 
 
 def _handle_grav(fields: list[str], bulk: BulkData) -> None:

@@ -322,6 +322,12 @@ def cbush_stiffness_global(
     Returns a 12×12 array for two-node elements or a 6×6 array for grounded
     (GB=None) elements. The assembly loop must branch on cbush.gb to scatter
     the correct shape into the global matrix.
+
+    The spring of a two-node element sits at P = GA + S·(GB − GA), joined to each grid
+    by a rigid link: "For noncoincident grids, internal rigid links connect the bush
+    location to the grid locations" (MSC Nastran 2024.1 QRG PDF p.1381, remark 11).
+    The spring sees the relative motion of the two link ends, u_P = u + θ × (P − grid),
+    so a rigid-body motion of GA and GB gives no force (#97).
     """
     pbush = pbushs[cbush.pid]
     K6 = cbush_local_stiffness(pbush)
@@ -332,10 +338,36 @@ def cbush_stiffness_global(
         # Two-node: assemble symmetric 12×12 spring-pair matrix then transform
         K12_local = np.block([[K6, -K6], [-K6, K6]])
         T12 = block_diag(R, R, R, R)
-        return T12.T @ K12_local @ T12
+        K12 = T12.T @ K12_local @ T12
+        # Rigid links GA→P and GB→P.  A zero arm is an exact identity, so coincident
+        # grids are unchanged bit for bit
+        E = block_diag(_rigid_link(grids[cbush.ga], cbush, grids),
+                       _rigid_link(grids[cbush.gb], cbush, grids))
+        return E.T @ K12 @ E
     else:
         # Grounded: only GA contributes — 6×6
         return T6.T @ K6 @ T6
+
+
+def _cbush_spring_point(cbush: Cbush, grids: dict[int, Grid]) -> FloatArray:
+    """Basic position of a two-node CBUSH's spring: GA + S·(GB − GA) (QRG p.1380 Fig. 9-20)."""
+    assert cbush.gb is not None, "a grounded CBUSH has no spring arm"
+    ga, gb = grids[cbush.ga], grids[cbush.gb]
+    xa = np.array([ga.x, ga.y, ga.z], dtype=float)
+    xb = np.array([gb.x, gb.y, gb.z], dtype=float)
+    return xa + cbush.s * (xb - xa)
+
+
+def _rigid_link(grid: Grid, cbush: Cbush, grids: dict[int, Grid]) -> FloatArray:
+    """6×6 map from a grid's (u, θ) to the motion of the spring point P on a rigid link.
+
+    u_P = u + θ × r = u − [r]× θ with r = P − grid; θ_P = θ.
+    """
+    r = _cbush_spring_point(cbush, grids) - np.array([grid.x, grid.y, grid.z], dtype=float)
+    skew = np.array([[0.0, -r[2], r[1]], [r[2], 0.0, -r[0]], [-r[1], r[0], 0.0]])
+    E = np.eye(6)
+    E[0:3, 3:6] = -skew
+    return E
 
 
 def get_spc_dofs(

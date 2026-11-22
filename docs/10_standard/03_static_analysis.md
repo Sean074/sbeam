@@ -455,7 +455,7 @@ Output sections written to `results.f06`:
 
 ### CBUSH — Unit-Level Stiffness Coverage
 
-CBUSH stiffness and force recovery are verified at unit level in `tests/assembly/test_cbush.py` (axial, torsional, grounded-spring, 45° orientation, and mixed-DOF cases). An end-to-end BDF + SOL 101 integration test (`v20_cbush_grounded_spring.bdf`) asserting `F = K × u` is tracked as R20.
+CBUSH stiffness and force recovery are verified at unit level in `tests/assembly/test_cbush.py` (axial, torsional, grounded-spring, 45° orientation, and mixed-DOF cases). The spring location `S` and its rigid links (#97) are gated in `tests/assembly/test_cbush_rigid_link.py`: the hand-derived 12×12 of a lateral spring (coupling K2·L/2, K2·L²/4), zero force under all six rigid motions for any K, S and axes, and a free-free two-mass SOL 103 model with six rigid modes and the closed-form elastic frequencies. An end-to-end BDF + SOL 101 integration test (`v20_cbush_grounded_spring.bdf`) asserting `F = K × u` is tracked as R20.
 
 ---
 

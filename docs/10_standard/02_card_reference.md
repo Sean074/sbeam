@@ -662,8 +662,8 @@ The continuation line is optional.
 | GB | `gb` | int or None | Node B grid ID; blank or `0` = grounded at GA | `None` |
 | X1–X3 | `x1`–`x3` | float | Orientation vector `v` (fields 6–8), in the element x-y plane. Write reals: an **integer in field 6 is the grid GO**, which is not supported and is refused | `0.0` |
 | CID | `cid` | int or None | Element coordinate system (field 9). `0` = basic; `> 0` = a CORD2R; blank = axes from the line GA–GB and `v` | blank |
-| S | — | float | Spring location along GA–GB. Must be blank or `0.5`; anything else is refused | `0.5` |
-| OCID | — | int | Spring-offset coordinate system. Must be blank or `-1`; anything else is refused | `-1` |
+| S | `s` | float | Spring location: the spring sits at GA + S·(GB − GA) (Figure 9-20), joined to each grid by a rigid link (#97). Ignored for a grounded spring | `0.5` |
+| OCID | — | int | Spring-offset coordinate system. Must be blank or `-1`; anything else is refused (the S1–S3 offset is not supported) | `-1` |
 | S1–S3 | — | float | Spring offset in OCID. Ignored, as in MSC when OCID is −1 (remark 9) | — |
 
 **Element axes** (QRG p.1379, remarks 3–6); K1–K6 of the PBUSH act along and about them:
@@ -675,15 +675,22 @@ The continuation line is optional.
 | no CID, GA ≠ GB, no `v` | x = line GA–GB. Allowed only when the PBUSH has K1 and K4 alone; with K2, K3, K5 or K6 the deck is refused (remark 5). sbeam used to pick basic y |
 | no CID, GB blank or GA–GB closer than 0.0001 | **refused**: "CID must be specified" (remark 6) |
 
-For a grounded element (GB blank), stiffness acts only on GA DOFs. For a two-node element, symmetric stiffness couples GA and GB.
+For a grounded element (GB blank), stiffness acts only on GA DOFs. For a two-node element, the
+spring acts at P = GA + S·(GB − GA) on the relative motion of two rigid links, one from each
+grid to P: `u_P = u + θ × (P − grid)`. MSC: "internal rigid links connect the bush location
+to the grid locations. This results in coupling between translational and rotational
+degrees-of-freedom at the grids even when no rotational springs or dampers are specified"
+(QRG 2024.1 PDF p.1381, remark 11). A rigid-body motion of GA and GB therefore gives no
+force. For coincident grids the links have zero length and the element is the plain
+`[[K, −K], [−K, K]]`.
 
 CBUSH is **massless** — it contributes stiffness only. To model mass at a spring
 connection point, add a CONM2 at the grid.
 
-> **⚠ Known defect (#97): a two-grid CBUSH with K2, K3, K5 or K6 between separated grids
-> resists rigid-body rotation.** sbeam forms the element on the relative grid motions with
-> no arm to the spring location, where MSC places the spring at `S` along the line. Use
-> coincident grids (with a CID) or K1/K4 only until #97 is fixed.
+> **Before #97** the two-node element had no links: it acted on the relative grid motions
+> directly, so a spring with K2, K3, K5 or K6 between separated grids resisted a rigid
+> rotation (a free-free model lost rigid-body modes) and `S` was refused. Decks with
+> coincident grids, grounded springs, or K1/K4 only along GA–GB give the same answer.
 
 > **Before #62** sbeam read its own layout: `CBUSH, EID, PID, GA, GB, S, CID` with the
 > vector on the continuation. A NASTRAN card's GO and CID were dropped and the default
@@ -2816,9 +2823,9 @@ under "Parser warnings" and in the pre-solve checks.
 | CBAR | Orientation must be the X1–X3 vector form; the G0 form (integer X1, X2/X3 blank) is refused |
 | CBAR | Pin-release digits (PA/PB) are in element local axes |
 | CROD / CONROD | A grid touched only by rods has free rotations (no bending stiffness; no AUTOSPC): SPC them, e.g. `SPC1, sid, 456, grid`, or the stiffness matrix is singular. Rod mass carries no torsional inertia |
-| CBUSH | CID must be `0` or blank |
+| CBUSH | CID blank, `0` or a CORD2R; GO and OCID refused; a grounded or coincident-grid spring needs a CID (QRG p.1379 remark 6) |
 | CBUSH | Damping (PBUSH `B` keyword) deferred to Phase 3 |
-| CBUSH | Massless; orientation vector required when GA/GB are coincident |
+| CBUSH | Massless |
 | CONM2 | CID must reference a defined CORD2R or be `0` |
 | CORD2R | CID must be > 0; chained RID references supported; cycles raise `ValueError` |
 | CORD2R | Points A, B, C must be non-collinear (checked when the transform is resolved) |

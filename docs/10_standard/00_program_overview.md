@@ -527,7 +527,7 @@ restrictions there first, then link them here.
 | `SPC` enforced displacement must be `0.0` | Non-zero `D` is rejected; enforced-motion support is a Phase 3 item |
 | `CBAR` offsets not supported | `W1A`/`W2A` are not honoured; use a short rigid element (`RBAR`/`RBE2`) to model the offset |
 | `CBAR` orientation vector form only | The `G0` grid-ID orientation form is not supported — use `X1/X2/X3` |
-| `CBUSH` restrictions | MSC layout (#62). `CID` 0 or a CORD2R; a grounded or coincident-grid spring needs a `CID`; GO, `S ≠ 0.5` and `OCID` are refused; a two-grid spring with K2/K3/K5/K6 between separated grids resists rigid rotation (#97); massless; `PBUSH` damping (`B1`–`B6`) is deferred to the dynamic solvers |
+| `CBUSH` restrictions | MSC layout (#62). `CID` 0 or a CORD2R; a grounded or coincident-grid spring needs a `CID`; GO and `OCID` are refused; the spring sits at `S` along GA–GB on rigid links (#97); massless; `PBUSH` damping (`B1`–`B6`) is deferred to the dynamic solvers |
 | `CROD`/`CONROD` rod-only grids | No AUTOSPC: a grid touched only by rods has free rotations and must have them SPC'd; rod mass carries no torsional inertia; no `PLOAD1`/thermal element loads (#38) |
 | Known-unsupported cards refuse the deck | `PLOAD1`/`PLOAD4`, `CBEAM`/`PBEAM`/`PBARL`, `CORD2C`, `MPC`, dynamic loads, … are counted and the parse raises one `ValueError` instead of dropping them silently (#45). Table and alternatives: `02_card_reference.md` "Unsupported cards"; PLOAD1 support itself is parked |
 | `MAT1` thermal fields ignored | `A`, `TREF` and `GE` are parsed but unused — there is no thermal load path |

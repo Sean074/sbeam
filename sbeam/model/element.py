@@ -91,3 +91,6 @@ class Cbush:
     # Element coordinate system (MSC CBUSH field 9): None = blank, the element axes come
     # from the line GA-GB and v; 0 = basic; > 0 = that CORD2R's axes
     cid: Optional[int] = None
+    # Spring location along GA-GB as a fraction from GA (MSC CBUSH field S, default 0.5):
+    # rigid links join the spring point to the grids (QRG 2024.1 PDF p.1381 remark 11)
+    s: float = 0.5

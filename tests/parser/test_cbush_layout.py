@@ -65,7 +65,8 @@ class TestQrgExamples:
         assert bulk.cbushs[39].cid == 6
 
     def test_example_4_spring_offset_is_refused(self):
-        with pytest.raises(ValueError, match="CBUSH 39: S=0.25 is not supported"):
+        """S is read (#97); the OCID offset (S1, S2, S3) is not supported."""
+        with pytest.raises(ValueError, match="CBUSH 39: OCID=10 is not supported"):
             _parse("CBUSH   39      6       1       100",
                    "        0.25    10      0.      10.     10.")
 
@@ -83,14 +84,20 @@ class TestFieldRules:
         bush = _parse("CBUSH, 4, 40, 1, 2, 0., 1., 0.", "+, 0.5, -1").cbushs[4]
         assert bush.x2 == 1.0
 
+    def test_s_is_read(self):
+        """#97: the spring sits at GA + S·(GB − GA) (p.1378, Figure 9-20)."""
+        assert _parse("CBUSH, 4, 40, 1, 2, 0., 1., 0.", "+, 0.25").cbushs[4].s == 0.25
+        assert _parse("CBUSH, 4, 40, 1, 2, 0., 1., 0.").cbushs[4].s == 0.5
+
     def test_ocid_is_refused(self):
         with pytest.raises(ValueError, match="CBUSH 4: OCID=10 is not supported"):
             _parse("CBUSH, 4, 40, 1, 2, 0., 1., 0.", "+, , 10, 0., 1., 1.")
 
     def test_the_old_sbeam_layout_is_refused_with_the_way_out(self):
         """Vector on the continuation: its first value now sits in the S field."""
-        with pytest.raises(ValueError, match="CBUSH 4: S=0. is not supported.*orientation vector "
-                                             "X1 X2 X3 on this line; it now goes in fields 6-8"):
+        with pytest.raises(ValueError, match="CBUSH 4: OCID=1. is not supported.*orientation "
+                                             "vector X1 X2 X3 on this line; it now goes in "
+                                             "fields 6-8"):
             _parse("CBUSH, 4, 40, 1, 2", "+, 0., 1., 0.")
 
     def test_grounded_needs_a_cid(self):
