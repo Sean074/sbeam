@@ -6,6 +6,7 @@ from typing import Optional
 import numpy as np
 
 from sbeam.model.bulk_data import BulkData
+from sbeam.types import FloatArray
 from sbeam.assembly.coord_transform import build_transform
 from sbeam.assembly.elements import iter_line_elements, line_element_mass_per_length
 
@@ -108,16 +109,16 @@ class GpwgTable:
     (columns).
     """
     reference_point: int
-    mo: np.ndarray
-    s: np.ndarray
-    mass: np.ndarray
-    cg: np.ndarray
-    i_s: np.ndarray
-    i_q: np.ndarray
-    q: np.ndarray
+    mo: FloatArray
+    s: FloatArray
+    mass: FloatArray
+    cg: FloatArray
+    i_s: FloatArray
+    i_q: FloatArray
+    q: FloatArray
 
 
-def rigid_body_mass_matrix(bulk: BulkData, reference_point: int) -> np.ndarray:
+def rigid_body_mass_matrix(bulk: BulkData, reference_point: int) -> FloatArray:
     """MO = Dᵀ M D: the 6×6 rigid-body mass matrix about the reference point, basic axes.
 
     D maps the reference point's six rigid motions to every grid's six DOFs (sbeam carries
@@ -143,7 +144,7 @@ def rigid_body_mass_matrix(bulk: BulkData, reference_point: int) -> np.ndarray:
     return np.asarray(d.T @ (m @ d))
 
 
-def reduce_rigid_body_mass(mo: np.ndarray, reference_point: int) -> GpwgTable:
+def reduce_rigid_body_mass(mo: FloatArray, reference_point: int) -> GpwgTable:
     """MSC's reduction of MO to directional masses, C.G.s and inertias (AAUG p.269 numbers).
 
     S is the identity: every sbeam mass (CBAR, CROD, CONROD, CONM2) is the same in each

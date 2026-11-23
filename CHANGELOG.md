@@ -107,6 +107,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   None; PLOTEL names them G1/G2, so each PLOTEL was skipped with no message. Each family
   now has an explicit accessor. Trace lines are also split into datasets 82 of at most 250
   entries, the limit other UFF readers apply (*unverified*; Flaps ignores it).
+- **CI type check red since #90** (follow-up to #90). `gpwg.py` and the f06 GPWG matrix
+  printer annotated arrays as bare `np.ndarray`, which strict pyright rejects under CI's
+  pinned numpy 2.0.2 (13 errors). pytest was skipped as a result, so the #90/#100/#106/#107
+  tests had not run in CI. They now use `sbeam.types.FloatArray`. `.gitignore` now also
+  covers every output `sbeam <deck>` writes; #100's `.op4`, `.uf` and `_dofmap.csv`
+  showed as untracked files.
 
 ### Changed
 - **The f06 follows MSC's layouts where a consumer can compare it** (#90; audit O5–O8,

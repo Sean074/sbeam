@@ -1311,7 +1311,7 @@ def build_f06_gpwg_text(bulk: BulkData, case_control: Optional[CaseControl] = No
         return ""
     pad = " " * 40
 
-    def matrix(name: str, rows: np.ndarray) -> list[str]:
+    def matrix(name: str, rows: FloatArray) -> list[str]:
         out = [f"{pad}{name:^{_FIELD_W * len(rows[0]) + 4}}".rstrip()]
         out += [f"{pad}*{''.join(_fmt(v) for v in row)} *" for row in rows]
         return out
