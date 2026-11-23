@@ -88,6 +88,19 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sbeam→MSC conversion is recorded as a parked command-line tool in `sbeam_tools/`, not a
   solver feature (`docs/30_future/02_parked.md`).
 
+### Documentation
+- **Stick models carry a visualisation outline for mode animation** (#107, from the Flaps
+  hand check). Flaps `amviz` draws translations only, so the Goland torsion mode animated
+  as bending. `sample/goland_wing_modes.bdf` now ends with massless LE/TE grids on RBE2s
+  and 37 PLOTELs. They are outside the MODEXP SET, so frequencies and PHIX are unchanged,
+  and its mode 5 now visibly twists the tip chord. The idiom (standard cards, no export
+  option) and the patched-Flaps requirement for real-mode dataset 55 are in `04` and `10`.
+  Gates check four things:
+  - frequencies and PHIX match the deck without the outline;
+  - every outline T3 equals T3 − R2·x;
+  - the tip LE and TE move in opposite senses in torsion and together in flap;
+  - dataset 82 has 49 segments.
+
 ### Fixed
 - **MODEXP's Universal file drew no PLOTEL** (#106, found by the Flaps hand check,
   flaps_env#1). The trace builder read every element's grids as GA/GB with a default of

@@ -230,6 +230,11 @@ rigid modes were replaced), then `matrix,row,grid,component` for every PHIA and 
   displacement, real single, NDV 6); `2, 4, 1, mode` `(4I10)`; frequency (Hz), modal mass,
   0, 0 `(4E13.5)`; then per grid its ID `(I10)` and T1…R3 `(6E13.5)`.
 
+The `.uf` holds every grid of the model, not only the SET grids. A stick model meant for
+animation should carry a massless RBE2 + PLOTEL outline (`04_modal_analysis.md`, MODEXP;
+#107), because Flaps `amviz` draws translations only. Upstream Flaps 2.3.4 rejects a
+real-mode dataset 55; flaps_env's `flaps:2.3.4-local` image reads it (flaps_env#1).
+
 The dataset-55 normal-mode records are *unverified* against a UF specification (none in
 the library). They follow the Flaps-written `fma.nodal.uf` (complex modes, analysis type 3);
 the manual Flaps `import` is the check.

@@ -12,7 +12,8 @@ $ sbeam's (goland.fp gives 0, a massless in-plane rotation); it moves only in-pl
 $ EA = 2.0e5 is goland.fp's and gives an axial mode near 3 Hz: pick the flap and torsion
 $ modes by shape, not by order.  Units: m, kg, s, N.
 $
-$ Gates: tests/results/test_modal_export.py (G1 closed form, G2 Flaps, G3, G4).
+$ The deck ends with a massless LE/TE outline for animation (#107): see that block.
+$ Gates: tests/results/test_modal_export.py (G1 closed form, G2 Flaps, G3, G4, outline).
 $
 SOL 103
 TITLE = Goland wing - Flaps demo model
@@ -77,4 +78,87 @@ CBAR, 9, 1, 9, 10, 1.0, 0.0, 0.0
 CBAR, 10, 1, 10, 11, 1.0, 0.0, 0.0
 CBAR, 11, 1, 11, 12, 1.0, 0.0, 0.0
 CBAR, 12, 1, 12, 13, 1.0, 0.0, 0.0
+$ ---- VISUALISATION OUTLINE (#107) — massless, carries no load; delete freely ----
+$ Flaps amviz draws translations only, so on beam-axis grids the torsion mode would
+$ animate as bending.  LE (x = -0.33c) and TE (x = +0.67c) grids, c = 1.8288 m with the
+$ beam on the 33 % chord line, ride on RBE2s (u + theta x r) and PLOTELs draw the LE
+$ line, the TE line and a chord at every station.  They are not in SET 1, so PHIX is
+$ unchanged; frequencies are unchanged (tests/results/test_modal_export.py).
+GRID, 201, , -0.603504, 0.000000, 0.0
+GRID, 301, , 1.225296, 0.000000, 0.0
+GRID, 202, , -0.603504, 0.508000, 0.0
+GRID, 302, , 1.225296, 0.508000, 0.0
+GRID, 203, , -0.603504, 1.016000, 0.0
+GRID, 303, , 1.225296, 1.016000, 0.0
+GRID, 204, , -0.603504, 1.524000, 0.0
+GRID, 304, , 1.225296, 1.524000, 0.0
+GRID, 205, , -0.603504, 2.032000, 0.0
+GRID, 305, , 1.225296, 2.032000, 0.0
+GRID, 206, , -0.603504, 2.540000, 0.0
+GRID, 306, , 1.225296, 2.540000, 0.0
+GRID, 207, , -0.603504, 3.048000, 0.0
+GRID, 307, , 1.225296, 3.048000, 0.0
+GRID, 208, , -0.603504, 3.556000, 0.0
+GRID, 308, , 1.225296, 3.556000, 0.0
+GRID, 209, , -0.603504, 4.064000, 0.0
+GRID, 309, , 1.225296, 4.064000, 0.0
+GRID, 210, , -0.603504, 4.572000, 0.0
+GRID, 310, , 1.225296, 4.572000, 0.0
+GRID, 211, , -0.603504, 5.080000, 0.0
+GRID, 311, , 1.225296, 5.080000, 0.0
+GRID, 212, , -0.603504, 5.588000, 0.0
+GRID, 312, , 1.225296, 5.588000, 0.0
+GRID, 213, , -0.603504, 6.096000, 0.0
+GRID, 313, , 1.225296, 6.096000, 0.0
+RBE2, 401, 1, 123456, 201, 301
+RBE2, 402, 2, 123456, 202, 302
+RBE2, 403, 3, 123456, 203, 303
+RBE2, 404, 4, 123456, 204, 304
+RBE2, 405, 5, 123456, 205, 305
+RBE2, 406, 6, 123456, 206, 306
+RBE2, 407, 7, 123456, 207, 307
+RBE2, 408, 8, 123456, 208, 308
+RBE2, 409, 9, 123456, 209, 309
+RBE2, 410, 10, 123456, 210, 310
+RBE2, 411, 11, 123456, 211, 311
+RBE2, 412, 12, 123456, 212, 312
+RBE2, 413, 13, 123456, 213, 313
+PLOTEL, 501, 201, 202
+PLOTEL, 502, 202, 203
+PLOTEL, 503, 203, 204
+PLOTEL, 504, 204, 205
+PLOTEL, 505, 205, 206
+PLOTEL, 506, 206, 207
+PLOTEL, 507, 207, 208
+PLOTEL, 508, 208, 209
+PLOTEL, 509, 209, 210
+PLOTEL, 510, 210, 211
+PLOTEL, 511, 211, 212
+PLOTEL, 512, 212, 213
+PLOTEL, 513, 301, 302
+PLOTEL, 514, 302, 303
+PLOTEL, 515, 303, 304
+PLOTEL, 516, 304, 305
+PLOTEL, 517, 305, 306
+PLOTEL, 518, 306, 307
+PLOTEL, 519, 307, 308
+PLOTEL, 520, 308, 309
+PLOTEL, 521, 309, 310
+PLOTEL, 522, 310, 311
+PLOTEL, 523, 311, 312
+PLOTEL, 524, 312, 313
+PLOTEL, 525, 201, 301
+PLOTEL, 526, 202, 302
+PLOTEL, 527, 203, 303
+PLOTEL, 528, 204, 304
+PLOTEL, 529, 205, 305
+PLOTEL, 530, 206, 306
+PLOTEL, 531, 207, 307
+PLOTEL, 532, 208, 308
+PLOTEL, 533, 209, 309
+PLOTEL, 534, 210, 310
+PLOTEL, 535, 211, 311
+PLOTEL, 536, 212, 312
+PLOTEL, 537, 213, 313
+$ ---- END VISUALISATION OUTLINE ----
 ENDDATA

@@ -106,6 +106,8 @@ interface grid set, as MSC OUTPUT4 ASCII plus a Universal file for animation (#9
 
 ## Resolved defects
 
+- **#107 (Tier S, 2026-11-23)** — The Flaps G5 hand check could not show torsion: `amviz` draws translations only, and on the Goland beam-axis grids the 14.119 Hz mode animates as bending. No export change was made: `sample/goland_wing_modes.bdf` gains a massless LE/TE outline (RBE2 123456 + 37 PLOTELs) outside the MODEXP SET, and the idiom is documented in `04_modal_analysis.md` and `10_export_schemas.md`. Inventing viz nodes in MODEXP was rejected: RBE2 kinematics already give u + θ × r (V13/V18). Measured: tip T3 LE +0.1820 / TE −0.1717 in mode 5, against T3 − R2·x. Gates: `tests/results/test_modal_export.py::TestVisualisationOutline`. Needed #106.
+
 - **#106 (Tier M, 2026-11-23)** — MODEXP's `.uf` dataset 82 dropped every PLOTEL: `_element_traces` read `ga`/`gb` through `getattr(…, None)`, and `Plotel` names its grids `g1`/`g2`. #100's test counted datasets but not their contents. Fix: an explicit accessor per element family (a renamed field now fails loudly), and trace lines split at 250 entries (other UFF readers' limit, unverified). Sweep: no other `getattr` element-grid access in `sbeam/`. Gates: `tests/results/test_modal_export.py::TestTraceLines`.
 
 ### DD-3 (P3, release hygiene batch) — `beam_vib` deck headers and the RBE2 doc pointer ✅ COMPLETE (2026-08-03)

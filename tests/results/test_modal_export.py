@@ -201,3 +201,61 @@ class TestTraceLines:
         assert [t for t, _ in traces] == [1, 2, 3]
         assert all(len(v) <= 250 and len(v) % 3 == 0 for _, v in traces)
         assert sum(len(v) for _, v in traces) == 3 * n
+
+
+class TestVisualisationOutline:
+    """#107: the Goland sample's massless LE/TE outline (RBE2 + PLOTEL) shows torsion in
+    a translations-only animator and changes nothing else."""
+
+    @staticmethod
+    def _run(text, tmp_path, name):
+        deck = tmp_path / name
+        deck.write_text(text)
+        cc, bulk = _quiet(parse_bdf, deck)
+        sc = cc.subcases[0]
+        r = run_sol103(bulk, sc)
+        return bulk, r, _quiet(build_modal_model, cc, bulk, sc, r)
+
+    @pytest.fixture(scope="class")
+    def pair(self, tmp_path_factory):
+        tmp = tmp_path_factory.mktemp("viz")
+        text = (SAMPLE / "goland_wing_modes.bdf").read_text()
+        start = text.index("$ ---- VISUALISATION OUTLINE")
+        end = text.index("$ ---- END VISUALISATION OUTLINE ----\n") + len(
+            "$ ---- END VISUALISATION OUTLINE ----\n")
+        return (self._run(text, tmp, "with.bdf"),
+                self._run(text[:start] + text[end:], tmp, "without.bdf"))
+
+    def test_frequencies_and_phix_unchanged(self, pair):
+        (_b1, r1, m1), (_b0, r0, m0) = pair
+        assert r1.frequencies_hz == pytest.approx(r0.frequencies_hz, rel=1e-9)
+        assert m1.x_rows == m0.x_rows
+        signs = np.sign(np.sum(m1.phix * m0.phix, axis=0))   # eigenvector sign is free
+        assert np.allclose(m1.phix, m0.phix * signs, atol=1e-9)
+
+    def test_outline_follows_rigid_kinematics(self, pair):
+        """RBE2: T3 at x is T3_beam − R2_beam·x for every station and mode (u + θ × r)."""
+        (bulk, _r, mm), _ = pair
+        gi = build_grid_index(bulk)
+        for k in range(13):
+            beam = 6 * gi[k + 1]
+            for off in (200, 300):
+                g = bulk.grids[off + k + 1]
+                pred = mm.phi_g[beam + 2] - mm.phi_g[beam + 4] * g.x
+                assert np.allclose(mm.phi_g[6 * gi[off + k + 1] + 2], pred, rtol=1e-9, atol=1e-12)
+
+    def test_torsion_twists_the_tip_chord(self, pair):
+        """Mode 5 (14.119 Hz): tip LE and TE move in opposite senses; mode 2 (flap) does not."""
+        (bulk, r, mm), _ = pair
+        gi = build_grid_index(bulk)
+        le, te = 6 * gi[213] + 2, 6 * gi[313] + 2
+        assert r.frequencies_hz[4] == pytest.approx(14.119, rel=5e-3)
+        assert mm.phi_g[le, 4] * mm.phi_g[te, 4] < 0.0
+        assert mm.phi_g[le, 1] * mm.phi_g[te, 1] > 0.0
+
+    def test_universal_file_draws_beam_and_outline(self, pair, tmp_path):
+        (bulk, _r, mm), _ = pair
+        from sbeam.results.modal_export import write_universal
+        write_universal(str(tmp_path / "v.uf"), bulk, mm)
+        traces = TestTraceLines._ds82((tmp_path / "v.uf").read_text())
+        assert len(traces) == 1 and len(traces[0][1]) == 3 * (12 + 37)

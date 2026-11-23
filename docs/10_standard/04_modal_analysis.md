@@ -192,10 +192,24 @@ airframe) and Flaps read; files and layouts in `10_export_schemas.md` §7.
   elastic modes; MHH = I and the rigid KHH block is zero. A partly restrained model keeps
   the eigensolver's zero-frequency modes, with a warning.
 - **Units** are the deck's own; nothing is converted.
+- **Animating a stick model (#107).** The `.uf` carries every grid, with its full g-set
+  shape. Flaps `amviz` draws translations only, so on beam-axis grids a torsion mode
+  animates as bending. Give the deck a massless outline with standard cards:
+  - leading- and trailing-edge grids on `RBE2 … 123456` to the beam grids, so they move as
+    u + θ × r;
+  - `PLOTEL`s along the LE and TE lines and across each chord.
+
+  Leave the outline grids out of the MODEXP SET and PHIX is unchanged; so are the
+  frequencies, since the grids carry no mass. `sample/goland_wing_modes.bdf` carries one:
+  its torsion mode 5 twists the tip chord (LE +0.182, TE −0.172 against beam T3 0.065).
+- **Flaps import.** Upstream Flaps 2.3.4 reads the `.op4` but rejects a real-mode
+  dataset 55 (it takes complex modes only). The `.uf` imports and animates on flaps_env's
+  patched `flaps:2.3.4-local` image (I/O and `amviz` fixes only; Sean074/flaps_env#1).
 
 Benchmark: `sample/goland_wing_modes.bdf` is the Flaps demo Goland wing (equal lumping
 over grids 1–13, inertia about the C.G.: inferred from the match). Its flap and torsion
-modes are 7.370 / 14.119 Hz, Flaps 2.3.4's printout, to 4 figures. The same wing with
+modes are 7.370 / 14.119 Hz, Flaps 2.3.4's printout, to 4 figures, with or without its
+visualisation outline. The same wing with
 tributary lumping and cg = 0 gives 49.32 / 87.05 rad/s against the closed form's
 49.48 / 87.10 (`tests/results/test_modal_export.py`, 0.5 %). goland.fp's EA = 2.0e5 N
 puts an axial mode near 3 Hz, so modes are picked by shape. pyNastran reads the OP4 back
