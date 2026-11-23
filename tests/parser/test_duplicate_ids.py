@@ -66,9 +66,10 @@ def test_separate_id_spaces_may_reuse_an_eid():
         assert set(getattr(bulk, family)) == {7}, family
 
 
-# Several cards share one SID by design (the set is their union); PARAM stores nothing,
-# and SPLINE1 and MONPNT3 (#86) are refused outright as not implemented.
-_ACCUMULATING = {"FORCE", "MOMENT", "SPC", "SPC1", "SUPORT", "TRIMINEQ"}
+# Several cards share one SID by design (the set is their union; a DMIJ/DMIK matrix is
+# its header plus column entries, its repeats tested in test_aero_matrices); PARAM
+# stores nothing, and SPLINE1 and MONPNT3 (#86) are refused outright as not implemented.
+_ACCUMULATING = {"FORCE", "MOMENT", "SPC", "SPC1", "SUPORT", "TRIMINEQ", "DMIJ", "DMIK"}
 _NOT_STORED = {"PARAM", "SPLINE1", "MONPNT3"}
 
 # ID-keyed cards no repository deck uses (examples from 02_card_reference.md)

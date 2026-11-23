@@ -11,9 +11,10 @@ $      stopped earlier, on its CBARs preceding their PBAR; card order no longer
 $      matters.)
 $   2. Past that, it is a HALF-SPAN model (AEROS SYMXZ=1); sbeam runs full-span
 $      only (sbeam_tools.common.mirror.mirror_halfspan converts).
-$   3. Its aero corrections are MSC DMI matrices, which sbeam refuses (#55)
-$      rather than drop the 0.1 deg wing incidence (W2GJ).  sbeam uses native
-$      WKK / W2GJ cards instead.
+$   3. Its aero corrections are MSC DMI matrices (row numbers), which sbeam
+$      refuses (#55, #104): the row order across CAERO1 entries is not stated
+$      in the manuals.  sbeam reads the box-ID forms DMIJ W2GJ / DMIK WKK
+$      (sample/ha144a_fullspan_dmij.bdf) and its native WKK / W2GJ cards.
 $
 $ Faithful transcription of MSC Nastran example HA144A from:
 $   MSC Nastran 2021.3 Aeroelastic Analysis User's Guide, Chapter 7,
@@ -76,8 +77,8 @@ $ THIS listing from running:
 $   - PARAM WTMASS = .031081 (weight units) -> refused at parse (#39).
 $     (Card order -- CBARs before their PBAR -- no longer matters since #51.)
 $   - AEROS SYMXZ=1 half-span model        -> sbeam is full-span only.
-$   - DMI WKK / W2GJ / FA2J -> refused at parse (#55); sbeam uses native WKK /
-$     W2GJ cards.  Here WKK = identity (no correction) and W2GJ = 0.1 deg
+$   - DMI WKK / W2GJ / FA2J -> refused at parse (#55, #104); sbeam reads
+$     DMIJ W2GJ / DMIK WKK on box IDs, or native WKK / W2GJ cards.  Here WKK = identity (no correction) and W2GJ = 0.1 deg
 $     (0.0017453 rad) on the 32 wing boxes, 0 on the 8 canard boxes; FA2J = 0.
 $   - PARAM AUNITS = .031081 (URDD* in g) -> refused at parse (#55), like WTMASS.
 $   - ASSIGN, ID, TIME, other PARAMs -> MSC executive/output entries sbeam does

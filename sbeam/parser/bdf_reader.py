@@ -13,7 +13,7 @@ from collections import Counter
 from typing import Optional
 
 from sbeam.model.bulk_data import BulkData
-from sbeam.parser import bulk_aero, bulk_structural, bulk_trim
+from sbeam.parser import bulk_aero, bulk_dmi, bulk_structural, bulk_trim
 from sbeam.parser.bulk_fields import ContHandler, FieldHandler, MultiHandler, iter_cards, split_line
 from sbeam.parser.bulk_xref import check_frame_orientations, cross_reference
 from sbeam.types import StrPath
@@ -57,11 +57,12 @@ _UNSUPPORTED_CARDS: dict[str, str] = {
     "MPC": "multipoint constraint", "MPCADD": "constraint set", "SPCADD": "constraint set",
     "RBE1": "rigid element",
     # direct matrix input (#55): MSC decks carry aero corrections this way
-    "DMI": "direct matrix input (for W2GJ/WKK aero corrections use the native W2GJ/WKK cards)",
+    # (#104: DMIJ W2GJ and DMIK WKK are read, bulk_dmi).  DMI's row numbers need the
+    # order of the CAERO1 entries in the j/k-set, which the manuals do not state
+    "DMI": "direct matrix input (for W2GJ/WKK give the box-ID forms DMIJ W2GJ / DMIK WKK, "
+           "or the native W2GJ/WKK cards)",
     "DMIG": "direct matrix input at grid points", "DMIAX": "direct matrix input",
-    "DMIJ": "aero direct matrix input (use the native W2GJ/WKK cards)",
-    "DMIJI": "aero direct matrix input (use the native W2GJ/WKK cards)",
-    "DMIK": "aero direct matrix input (use the native W2GJ/WKK cards)",
+    "DMIJI": "aero direct matrix input on interference bodies (sbeam has no CAERO2)",
     # damping
     "TABDMP1": "modal damping table (the MANVR transient takes its damping from ZETA)",
     # ZAERO cards whose names sbeam borrowed with its own layout until v0.4.1 (#87).  ZAERO's
@@ -85,7 +86,7 @@ _HARMLESS_CARDS: dict[str, str] = {
     "ECHOON": "bulk-data echo control", "ECHOOFF": "bulk-data echo control",
 }
 
-_FAMILIES = (bulk_structural, bulk_aero, bulk_trim)
+_FAMILIES = (bulk_structural, bulk_aero, bulk_trim, bulk_dmi)
 _FIELD_HANDLERS: dict[str, FieldHandler] = {}
 _CONT_HANDLERS: dict[str, ContHandler] = {}
 _MULTI_HANDLERS: dict[str, MultiHandler] = {}
@@ -190,6 +191,8 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
     bulk = _read_cards(main)
     _read_mass_increments(bulk, increments)
     cross_reference(bulk)
+    # DMIJ W2GJ / DMIK WKK onto the native per-CAERO1 data: needs every CAERO1 and AEFACT
+    bulk_dmi.map_aero_matrices(bulk)
 
     # Resolve all grid positions from their CP system into global CID 0; frame checks
     # that need a resolved CORD2R chain run here too (the parser's one assembly import)

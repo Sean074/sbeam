@@ -366,6 +366,15 @@ def _check_aero_references(bulk: BulkData) -> None:
         for sid, entry in coll.items():
             if entry.caero_eid not in bulk.caero1s:
                 raise ValueError(f"{card} {sid}: CAERO1 {entry.caero_eid} not found")
+    # WKK and WT2 scale the VLM operator, which strip panels are not in: on a PSTRIP
+    # panel they changed nothing and said nothing (#104; CPINJ already refused)
+    for card, coll in (("WKK", bulk.wkks), ("AECORR", bulk.aecorrs)):
+        for sid, entry in coll.items():
+            if bulk.caero1s[entry.caero_eid].pid in bulk.pstrips:
+                raise ValueError(
+                    f"{card} {sid}: CAERO1 {entry.caero_eid} is a PSTRIP strip panel; "
+                    f"{card} corrects VLM lifting surfaces only. Correct a strip panel's "
+                    "slope with STRIPK")
 
 
 def _check_load_combinations(bulk: BulkData) -> None:

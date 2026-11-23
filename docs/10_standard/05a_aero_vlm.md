@@ -533,8 +533,9 @@ its condition estimate exceeds 1e10) and passes the inverse in.
 **Before #71** `apply_wkk` returned `diag(w) @ AJJ` for the caller to invert, which applied
 `1/w` on the downwash side: a uniform 1.1 gave 0.909× the lift, and a non-uniform weight
 redistributed load to the neighbouring boxes. No repo deck used WKK. sbeam's `WKK` card is
-an sbeam extension: MSC enters WKK as a DMI matrix on the k-set with separate force and
-moment terms (AAUG PDF p.144); sbeam takes one weight per box.
+an sbeam extension: MSC enters WKK as a matrix on the k-set with separate force and
+moment terms (AAUG PDF p.144); sbeam takes one weight per box, and reads MSC's `DMIK WKK`
+form when the two are equal (#104, `02_card_reference.md` DMIJ / DMIK).
 
 ### `apply_wt2(ajj, cp_target, ajj_inv=None, cp_ref=None) -> np.ndarray`
 

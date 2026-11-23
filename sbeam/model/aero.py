@@ -102,6 +102,22 @@ class Wkk:
 
 
 @dataclass
+class AeroMatrix:
+    """MSC's DMIJ (W2GJ) or DMIK (WKK) direct matrix input, as read (#104).
+
+    QRG 2024.1 PDF p.1617–1619 (DMIJ), p.1623–1625 (DMIK).  ``header`` is None until the
+    header entry is read (the deck is order-independent).  ``terms`` maps
+    (GJ, CJ, Gi, Ci) — column grid and component, row grid and component, the grids
+    being aero box IDs — to the real term Ai.  ``map_aero_matrices`` turns it into the
+    native per-CAERO1 W2GJ / WKK data once every card is read.
+    """
+    card: str                # "DMIJ" or "DMIK"
+    name: str                # "W2GJ" or "WKK"
+    header: Optional[tuple[int, int, Optional[int]]] = None   # (IFO, TIN, NCOL)
+    terms: dict[tuple[int, int, int, int], float] = field(default_factory=dict)
+
+
+@dataclass
 class Chordcp:
     """CFD/wind-tunnel steady-pressure injection (Step 54, sbeam extension).
 

@@ -224,6 +224,12 @@ def _sbeam_view(b: BulkData) -> dict[str, dict[Any, dict[str, Any]]]:
                             xyz=[mp.x, mp.y, mp.z], cd=mp.cp)
                     for k, mp in {**b.monpnt1s, **b.monpnt3s}.items()},
     }
+    # #104: MSC's DMIJ W2GJ / DMIK WKK, header and every term (TOUT is precision only)
+    for card in ("DMIJ", "DMIK"):
+        v[card] = {m.name: dict(form=(m.header or (None,) * 3)[0], tin=(m.header or (None,) * 3)[1],
+                                ncol=(m.header or (None,) * 3)[2],
+                                terms=sorted([*key, a] for key, a in m.terms.items()))
+                   for m in b.aero_matrices.values() if m.card == card}
     return v
 
 
@@ -335,6 +341,11 @@ def _pyn_view(m: Any) -> dict[str, dict[Any, dict[str, Any]]]:
                                   cp=mp.cp,
                                   xyz=_f(mp.xyz), cd=mp.cd)
                     for mp in m.monitor_points if mp.type == "MONPNT1"}
+    for card, mats in (("DMIJ", m.dmij), ("DMIK", m.dmik)):
+        v[card] = {k: dict(form=d.matrix_form, tin=d.tin, ncol=d.ncols,
+                           terms=sorted([int(cj[0]), int(cj[1]), int(ci[0]), int(ci[1]), float(a)]
+                                        for cj, ci, a in zip(d.GCj, d.GCi, d.Real)))
+                   for k, d in mats.items()}
     return v
 
 

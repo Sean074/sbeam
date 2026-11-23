@@ -28,14 +28,19 @@ FIELD_WIDTH = 8
 # followed by a signed integer at end of field — '1.44+9', '-2.31-4', '1.5+03'.
 NASTRAN_SCI = re.compile(r'([^eEdD+\-])([+-]\d+)$')
 
+# Double-precision exponent: 'D' in place of 'E' ('1.0D0', '1.5D-3').  MSC requires it
+# for double-precision matrix terms (QRG 2024.1 PDF p.1619 DMIJ remark 9, p.1625 DMIK).
+_D_EXPONENT = re.compile(r'[dD](?=[+-]?\d+$)')
+
 
 def parse_real(s: str) -> float:
     """Convert a BDF real field to float — the read side of ``fmt_real8``.
 
-    Handles NASTRAN implicit-exponent notation ('1.44+9' -> 1.44e9) in addition
-    to standard Python float literals.  An empty field reads as 0.0.
+    Handles NASTRAN implicit-exponent notation ('1.44+9' -> 1.44e9) and the
+    double-precision 'D' exponent ('1.0D0') in addition to standard Python float
+    literals.  An empty field reads as 0.0.
     """
-    s = s.strip()
+    s = _D_EXPONENT.sub('e', s.strip())
     if not s:
         return 0.0
     m = NASTRAN_SCI.search(s)

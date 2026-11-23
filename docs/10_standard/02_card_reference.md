@@ -11,7 +11,7 @@ Every card and case-control keyword sbeam reads; the sections below give each ca
 - **Mass:** CONM2, MASSCASE
 - **Constraints/loads:** SPC, SPC1, FORCE, MOMENT, LOAD, GRAV
 - **Eigenvalue:** EIGRL
-- **Aero (Phase A/C):** AEROS, CAERO1, PAERO1, AEFACT, W2GJ, WKK, AECORR, CPINJ,
+- **Aero (Phase A/C):** AEROS, CAERO1, PAERO1, AEFACT, W2GJ, WKK, DMIJ (W2GJ), DMIK (WKK), AECORR, CPINJ,
   PSTRIP, STRIPK, SPLINE2, LOADINJ, BODYATT, SET1, AELIST, AESTAT, AESURF, TRIM, TRIMVAR,
   TRIMINEQ, TRIMWGT, SUPORT, DIVERG, MONPNT1, MONSECT, AECOMP, GUSTLF
 - **Transient maneuver (G0):** MANVR, MANTRIM, MANCMD, MANTIME, MANPRNT, TABLED1
@@ -186,7 +186,7 @@ cards (parked: `docs/30_future/02_parked.md`).
 | `PSTRIP`, `STRIPK` | Decoupled strip body panels and their slopes | MSC `PAERO2` slender bodies | — |
 | `AECORR` | Force/pressure AIC correction to a target | MSC `WKK`/`FA2J` matrices via DMI | — |
 | `MODEXP` (case control) | Reduced modal model export (OP4 + Universal file) for sgear and Flaps | MSC writes such matrices by DMAP `OUTPUT4` / `PARAM,EXTOUT`, not by one command | — |
-| `W2GJ`, `WKK` | Baseline downwash and diagonal AIC weights as cards | MSC enters the same data as `DMI` matrices named W2GJ and WKK (refused today) | — |
+| `W2GJ`, `WKK` | Baseline downwash and diagonal AIC weights as cards | MSC enters the same data as matrices named W2GJ and WKK: `DMIJ`/`DMIK` (read, #104 — [DMIJ / DMIK](#dmij--dmik--msc-aero-correction-matrices-w2gj-wkk)) or `DMI` (refused) | — |
 
 `TRIMVAR` is not in this table: it is ZAERO's card and is read in ZAERO's layout (#87).
 
@@ -1619,6 +1619,8 @@ CAERO1, 100, 1, 0, 4, 10, 0, 0, 0
 
 Per-box built-in incidence/camber angles (rad) representing geometry not captured by
 the VLM angle of attack (wing incidence, twist, camber line, CFD/WT Δα corrections).
+MSC has no W2GJ bulk card; its `DMIJ W2GJ` matrix is also read, with the same sign
+(see [DMIJ / DMIK](#dmij--dmik--msc-aero-correction-matrices-w2gj-wkk), #104).
 **NASTRAN sign convention** (MSC Aeroelastic UG Eq. 2-104; HA144A example): **positive
 = leading-edge-up incidence → more lift**, the same nose-up-positive sense as ANGLEA.
 `build_wg` negates card data into sbeam's internal washout-positive normalwash.
@@ -1669,9 +1671,12 @@ weight after the pressure solve, `AJJ*⁻¹ = diag(w) @ AJJ⁻¹` — MSC's plac
 Nastran identical). A weight of 1.1 is 10% more lift on that box; 0 removes it. **Before #71
 the weight acted as its reciprocal** (1.1 gave 0.909× the lift); see `05a_aero_vlm.md`.
 
-**An sbeam extension.** MSC has no WKK bulk card: it enters WKK as a DMI matrix on the k-set
-with separate force and moment terms (AAUG PDF p.144), and sbeam refuses DMI (#55). sbeam's
-card takes one weight per box of one CAERO1; unlisted surfaces take weight 1.
+**An sbeam extension.** MSC has no WKK bulk card: it enters WKK as a matrix on the k-set
+with separate force and moment terms (AAUG PDF p.144). sbeam reads MSC's `DMIK WKK` form
+(see [DMIJ / DMIK](#dmij--dmik--msc-aero-correction-matrices-w2gj-wkk), #104) and refuses
+`DMI`. sbeam's card takes one weight per box of one CAERO1; unlisted surfaces take weight 1.
+A WKK (or a WT2 `AECORR`) on a PSTRIP strip panel is refused: it scales the VLM operator,
+which strip panels are not in, and before #104 it changed nothing (use `STRIPK`).
 
 **Format:**
 ```
@@ -1693,6 +1698,50 @@ $ Uniform 10% uplift on a 4×2 panel (8 boxes)
 WKK, 10, 100, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1
 +,   1.1, 1.1
 ```
+
+---
+
+### DMIJ / DMIK — MSC aero correction matrices (W2GJ, WKK)
+
+MSC's own way to enter the W2GJ downwash and the WKK weights (AAUG 2023.1 PDF p.144):
+matrices with those reserved names on aero box IDs (#104). sbeam maps them onto the
+native per-CAERO1 `W2GJ` / `WKK` data above, so a deck may use either form, not both for
+the same matrix. Layout as MSC (QRG 2024.1 PDF p.1617–1619 DMIJ, p.1623–1625 DMIK):
+
+```
+DMIJ  NAME  "0"  IFO  TIN  TOUT  POLAR        NCOL     header
+DMIJ  NAME  GJ   CJ        G1    C1     A1    B1       column entry
++     G2    C2   A2   B2   G3    C3     A3    B3       ...
+```
+
+`DMIK` has the same layout. Gi is an aero box ID: a CAERO1's boxes are numbered from its
+EID, consecutively, chordwise fastest (AAUG p.28), which is the native cards' order.
+
+| Field | Read as | Rule |
+|-------|---------|------|
+| NAME | `W2GJ` on DMIJ, `WKK` on DMIK | Any other name refused (FA2J, WTFACT, AEDW/AEPRESS/AEFORCE inputs are not implemented) |
+| IFO | W2GJ: 9 or 2 (one column); WKK: 1 or 6 (square) | Others refused |
+| TIN | 1 or 2 (real) | 3, 4 (complex) refused; TIN 2 terms take a `D` exponent (`1.0D0`, remark 9) |
+| TOUT | ignored | Output precision only; sbeam computes in double |
+| POLAR | blank or 0 | Non-zero refused (complex only) |
+| field 8 | blank | Non-blank refused |
+| NCOL | W2GJ: blank or 1 | Other values, or more than one column, refused |
+| GJ, CJ | W2GJ: the one column; WKK: must equal the row | A WKK term off the diagonal refused |
+| Gi, Ci | box ID; W2GJ C = 3, WKK C = 3 (force) and 5 (moment) | Box on no CAERO1 refused. A non-zero term on another component is refused: MSC drops it without a warning (remark 2) |
+| Ai | the value | Required; a term given twice refused (remark 3) |
+| Bi | blank | Non-blank refused (real matrix) |
+
+- **A term not entered is zero, as in MSC.** A W2GJ box with no term has no downwash, and
+  a **WKK box with no term has weight 0 — no lift**; give `1.0` for an uncorrected box.
+- **WKK force and moment weights must be equal** per box: sbeam applies one weight to a
+  box's force and moment. A DMIK WKK in a model with PSTRIP strip panels is refused.
+- **DMI is refused** for W2GJ/WKK: its row numbers need the order of the CAERO1 entries in
+  the j- and k-sets, which the manuals give only within one ACPT record (AAUG p.134–136,
+  Figures 3-7 and 3-8). Rewrite `DMI` rows as `DMIJ`/`DMIK` terms on box IDs.
+- Each surface gets one native entry with SID = its CAERO1 EID.
+- Gate: `sample/ha144a_fullspan_dmij.bdf` trims to `ha144a_fullspan_sbeam.bdf`'s numbers
+  to round-off (`tests/aero/test_aero_matrices.py`); pyNastran reads every term to the
+  same value (`tests/compat`).
 
 ---
 
@@ -2936,7 +2985,7 @@ under "Supported cards at a glance" (top of this file) is refused.
 | Elements / properties / materials | `CBEAM`, `PBEAM`, `PBEAML`, `PBARL`, `CTUBE`, `PTUBE`, `CELAS1`, `CELAS2`, `PELAS`, `CONM1`, `CQUAD4`, `CTRIA3`, `PSHELL`, `MAT2`, `MAT8` | `CBAR`/`PBAR` (explicit A, I1, I2, J), `CROD`/`PROD`, `CBUSH`/`PBUSH`, `CONM2`, `MAT1` |
 | Coordinate systems | `CORD1R`, `CORD1C`, `CORD1S`, `CORD2C`, `CORD2S` | `CORD2R` |
 | Constraints | `MPC`, `MPCADD`, `SPCADD`, `RBE1` | `RBE2`, `RBAR`, `RBE3`; one `SPC`/`SPC1` set per subcase |
-| Direct matrix input (#55) | `DMI`, `DMIG`, `DMIAX`, `DMIJ`, `DMIJI`, `DMIK` | For aero corrections (MSC's `DMI,W2GJ` / `DMI,WKK`), the native `W2GJ` / `WKK` cards |
+| Direct matrix input (#55) | `DMI`, `DMIG`, `DMIAX`, `DMIJI`; `DMIJ`/`DMIK` with any name but W2GJ/WKK | For W2GJ/WKK: `DMIJ W2GJ` / `DMIK WKK` on box IDs (#104) or the native `W2GJ` / `WKK` cards. `DMI` rows need a CAERO1 order the manuals do not state |
 | Damping (#55) | `TABDMP1` | The MANVR transient's `ZETA`; no SDAMP |
 | ZAERO cards sbeam once borrowed (#87) | `MLOADS`, `MLDTRIM`, `MLDTIME`, `MLDCOMD`, `MLDPRNT`, `CHORDCP`, `SPLINE0`, `ATTACH`, `TRIMOBJ`, `TRIMCON` | sbeam's own cards, renamed in v0.4.1 — see [sbeam-only cards](#sbeam-only-cards). ZAERO's meaning of these names is not implemented |
 

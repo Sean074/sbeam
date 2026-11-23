@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from .aero import (
-    Aeros, Caero1, Paero1, Pstrip, Stripk, Aefact, W2gj, Wkk, Chordcp, Aecorr, Set1,
+    Aeros, Caero1, Paero1, Pstrip, Stripk, Aefact, W2gj, Wkk, AeroMatrix, Chordcp, Aecorr, Set1,
     Spline2, Attach, Spline0, Spline1,
     Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
     Aecomp, Monpnt1, Monpnt3, Monsect,
@@ -62,6 +62,8 @@ class BulkData:
     aefacts: dict[int, Aefact] = field(default_factory=dict)
     w2gjs:   dict[int, W2gj] = field(default_factory=dict)
     wkks:    dict[int, Wkk] = field(default_factory=dict)
+    # MSC DMIJ W2GJ / DMIK WKK as read, keyed by NAME; mapped onto w2gjs / wkks (#104)
+    aero_matrices: dict[str, AeroMatrix] = field(default_factory=dict)
     aecorrs:  dict[int, Aecorr] = field(default_factory=dict)
     chordcps: dict[int, Chordcp] = field(default_factory=dict)  # injected steady Cp
     set1s:    dict[int, Set1] = field(default_factory=dict)

@@ -27,6 +27,20 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     - on a free-free beam, MHH = I and KHH = diag(ω²) to 1e-8;
     - pyNastran reads the OP4 back to 1e-12 with no warnings.
   - The Flaps `import` / `amviz` check is manual.
+- **MSC's aero correction matrices `DMIJ W2GJ` and `DMIK WKK` are read** (#104, Tier M).
+  MSC has no W2GJ or WKK card; it enters them as matrices on aero box IDs (AAUG 2023.1
+  p.144; QRG 2024.1 p.1617, p.1623). sbeam maps them onto its native per-CAERO1 W2GJ / WKK
+  data. A term not entered is zero, as in MSC, so a WKK box with no term has no lift.
+  - **Refused:** any other matrix name (FA2J, WTFACT, …); complex terms; a W2GJ with more
+    than one column; a WKK term off the diagonal; a box whose force and moment weights
+    differ; a term on a DOF the box does not have (MSC drops it silently); a deck giving
+    both the matrix and native cards; a DMIK WKK in a model with PSTRIP panels.
+  - **`DMI` stays refused.** Its row numbers need the order of the CAERO1 entries in the
+    j-set, which the manuals do not state. `sample/HA144A.bdf` therefore still does not run.
+  - Real fields now accept the double-precision `D` exponent (`1.0D0`, QRG p.1619 remark 9).
+  - **Gates:** the new `sample/ha144a_fullspan_dmij.bdf` trims to `ha144a_fullspan_sbeam.bdf`'s
+    numbers (rel 1e-12; f06 and load BDF identical). A non-uniform DMIK WKK gives the native
+    WKK's operator bit for bit. pyNastran reads all 224 terms to the same values.
 
 ### Breaking changes
 - **sbeam's ZAERO-named cards are renamed; ZAERO's and MSC's cards keep their vendor
@@ -113,6 +127,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   tests had not run in CI. They now use `sbeam.types.FloatArray`. `.gitignore` now also
   covers every output `sbeam <deck>` writes; #100's `.op4`, `.uf` and `_dofmap.csv`
   showed as untracked files.
+- **A WKK or WT2 `AECORR` on a PSTRIP strip panel did nothing** (#104). Both scale the VLM
+  operator, which strip panels are not part of, so the card was dropped with no message
+  (WKK = 0 left the operator unchanged). Both are now refused; correct a strip panel's
+  slope with `STRIPK`. `CPINJ` already refused strip panels. No repo deck is affected.
 
 ### Changed
 - **The f06 follows MSC's layouts where a consumer can compare it** (#90; audit O5–O8,
