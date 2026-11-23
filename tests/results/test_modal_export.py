@@ -154,3 +154,50 @@ class TestCaseControl:
         r = run_sol103(bulk, _cc.subcases[0])
         with pytest.raises(ValueError, match="names no SET 9"):
             build_modal_model(cc, bulk, cc.subcases[0], r)
+
+
+class TestTraceLines:
+    """Dataset 82 (#106): every two-grid element is drawn; PLOTEL was dropped."""
+
+    @staticmethod
+    def _ds82(text):
+        """[(trace number, [entries])] for every dataset 82 in a Universal file."""
+        lines, out, k = text.splitlines(), [], 0
+        while k < len(lines):
+            if lines[k] == "    82":
+                num, n = int(lines[k + 1][:10]), int(lines[k + 1][10:20])
+                vals, j = [], k + 3
+                while len(vals) < n:
+                    vals += [int(lines[j][i:i + 10]) for i in range(0, len(lines[j]), 10)]
+                    j += 1
+                out.append((num, vals))
+                k = j
+            else:
+                k += 1
+        return out
+
+    def _uf(self, bulk, tmp_path):
+        from sbeam.results.modal_export import ModalModel, write_universal
+        n = 6 * len(bulk.grids)
+        mm = ModalModel(mhh=np.eye(1), khh=np.eye(1), phia=np.zeros((0, 1)),
+                        phix=np.zeros((0, 1)), frequencies_hz=np.ones(1), a_rows=[],
+                        x_rows=[], phi_g=np.zeros((n, 1)), rigid_replaced=False)
+        write_universal(str(tmp_path / "t.uf"), bulk, mm)
+        return (tmp_path / "t.uf").read_text()
+
+    def test_cbar_crod_plotel_each_give_a_segment(self, tmp_path):
+        bulk = _quiet(parse_bulk_data, [
+            "GRID, 1, , 0., 0., 0.", "GRID, 2, , 1., 0., 0.", "GRID, 3, , 2., 0., 0.",
+            "GRID, 4, , 3., 0., 0.", "MAT1, 1, 1.e7, , 0.3", "PBAR, 1, 1, 1., 1., 1., 1.",
+            "PROD, 2, 1, 1.", "CBAR, 10, 1, 1, 2, 0., 0., 1.", "CROD, 20, 2, 2, 3",
+            "PLOTEL, 30, 3, 4"])
+        assert self._ds82(self._uf(bulk, tmp_path)) == [(1, [1, 2, 0, 2, 3, 0, 3, 4, 0])]
+
+    def test_long_traces_split_at_250_entries(self, tmp_path):
+        n = 200
+        lines = [f"GRID, {k}, , {float(k)!r}, 0., 0." for k in range(1, n + 2)]
+        lines += [f"PLOTEL, {k}, {k}, {k + 1}" for k in range(1, n + 1)]
+        traces = self._ds82(self._uf(_quiet(parse_bulk_data, lines), tmp_path))
+        assert [t for t, _ in traces] == [1, 2, 3]
+        assert all(len(v) <= 250 and len(v) % 3 == 0 for _, v in traces)
+        assert sum(len(v) for _, v in traces) == 3 * n

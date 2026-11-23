@@ -88,6 +88,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sbeam→MSC conversion is recorded as a parked command-line tool in `sbeam_tools/`, not a
   solver feature (`docs/30_future/02_parked.md`).
 
+### Fixed
+- **MODEXP's Universal file drew no PLOTEL** (#106, found by the Flaps hand check,
+  flaps_env#1). The trace builder read every element's grids as GA/GB with a default of
+  None; PLOTEL names them G1/G2, so each PLOTEL was skipped with no message. Each family
+  now has an explicit accessor. Trace lines are also split into datasets 82 of at most 250
+  entries, the limit other UFF readers apply (*unverified*; Flaps ignores it).
+
 ### Changed
 - **The f06 follows MSC's layouts where a consumer can compare it** (#90; audit O5–O8,
   C11). All numbers are unchanged; only the presentation moves. Every sample deck's

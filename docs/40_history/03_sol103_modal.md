@@ -106,6 +106,8 @@ interface grid set, as MSC OUTPUT4 ASCII plus a Universal file for animation (#9
 
 ## Resolved defects
 
+- **#106 (Tier M, 2026-11-23)** — MODEXP's `.uf` dataset 82 dropped every PLOTEL: `_element_traces` read `ga`/`gb` through `getattr(…, None)`, and `Plotel` names its grids `g1`/`g2`. #100's test counted datasets but not their contents. Fix: an explicit accessor per element family (a renamed field now fails loudly), and trace lines split at 250 entries (other UFF readers' limit, unverified). Sweep: no other `getattr` element-grid access in `sbeam/`. Gates: `tests/results/test_modal_export.py::TestTraceLines`.
+
 ### DD-3 (P3, release hygiene batch) — `beam_vib` deck headers and the RBE2 doc pointer ✅ COMPLETE (2026-08-03)
 
 **Objective:** The 2026-07-31 sample review filed `beam_vib1.bdf` for deletion ("zero

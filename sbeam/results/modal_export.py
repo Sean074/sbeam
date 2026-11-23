@@ -200,13 +200,25 @@ def write_dofmap(path: str, model: ModalModel) -> None:
                 w.writerow([name, k, gid, comp])
 
 
+#: Most entries one dataset-82 trace line may hold, pen-up zeros included.  The limit is
+#: other UFF readers' (reported by flaps_env, #106); no UFF specification is in the library,
+#: so it is *unverified*.  Flaps itself does not enforce it.
+_TRACE_LINE_MAX = 250
+
+
 def _element_traces(bulk: BulkData) -> list[tuple[int, int]]:
+    """Grid pairs of every two-grid element, in family then element-ID order.
+
+    One explicit accessor per family: PLOTEL names its grids G1/G2, the others GA/GB, and
+    a ``getattr`` with a default dropped every PLOTEL without a message (#106).  A
+    grounded CBUSH (GB blank) has no segment to draw.
+    """
     pairs: list[tuple[int, int]] = []
-    for coll in (bulk.cbars, bulk.crods, bulk.conrods, bulk.plotels, bulk.cbushs):
-        for e in coll.values():
-            ga, gb = getattr(e, "ga", None), getattr(e, "gb", None)
-            if ga is not None and gb is not None and ga in bulk.grids and gb in bulk.grids:
-                pairs.append((ga, gb))
+    pairs += [(e.ga, e.gb) for _, e in sorted(bulk.cbars.items())]
+    pairs += [(e.ga, e.gb) for _, e in sorted(bulk.crods.items())]
+    pairs += [(e.ga, e.gb) for _, e in sorted(bulk.conrods.items())]
+    pairs += [(e.g1, e.g2) for _, e in sorted(bulk.plotels.items())]
+    pairs += [(e.ga, e.gb) for _, e in sorted(bulk.cbushs.items()) if e.gb is not None]
     return pairs
 
 
@@ -219,13 +231,15 @@ def write_universal(path: str, bulk: BulkData, model: ModalModel,
         g = bulk.grids[gid]
         lines.append(f"{gid:10d}{0:10d}{0:10d}{1:10d}{g.x:13.5e}{g.y:13.5e}{g.z:13.5e}")
     lines.append("    -1")
-    trace: list[int] = []
-    for ga, gb in _element_traces(bulk):
-        trace += [ga, gb, 0]
-    if trace:
-        lines += ["    -1", "    82", f"{1:10d}{len(trace):10d}{1:10d}", title[:80]]
+    # One dataset 82 per trace line, split at segment boundaries so no line passes
+    # _TRACE_LINE_MAX entries (each segment is GA, GB, pen-up 0)
+    per_line = _TRACE_LINE_MAX // 3
+    segments = _element_traces(bulk)
+    for n, k0 in enumerate(range(0, len(segments), per_line), start=1):
+        trace = [g for ga, gb in segments[k0:k0 + per_line] for g in (ga, gb, 0)]
+        lines += ["    -1", "    82", f"{n:10d}{len(trace):10d}{1:10d}", title[:80]]
         for k in range(0, len(trace), 8):
-            lines.append("".join(f"{n:10d}" for n in trace[k:k + 8]))
+            lines.append("".join(f"{v:10d}" for v in trace[k:k + 8]))
         lines.append("    -1")
     for m in range(model.phi_g.shape[1]):
         lines += ["    -1", "    55"] + [title[:80]] * 5

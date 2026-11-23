@@ -220,8 +220,12 @@ rigid modes were replaced), then `matrix,row,grid,component` for every PHIA and 
 
 **`<stem>.uf`** — Universal file, fixed width, `-1` delimited datasets:
 - 15 (grids): `node, 0, 0, 1` `(4I10)` then x, y, z `(3E13.5)`, basic.
-- 82 (one trace line): `1, n_entries, 1` `(3I10)`, a title line, then grid pairs of every
-  CBAR/CROD/CONROD/PLOTEL/CBUSH each followed by 0 (pen up), `(8I10)`.
+- 82 (trace lines): `line, n_entries, 1` `(3I10)`, a title line, then grid pairs of every
+  CBAR, CROD, CONROD, PLOTEL and two-grid CBUSH, in that order and by element ID, each pair
+  followed by 0 (pen up), `(8I10)`. A trace line holds at most 250 entries, so a large
+  model writes several datasets 82, numbered from 1. The 250 is other UFF readers' limit as
+  flaps_env reports it (*unverified*: no UFF specification in the library); Flaps ignores
+  it. Until #106 every PLOTEL was dropped and all segments went into one line.
 - 55 (one per mode): five title lines; `1, 2, 3, 8, 2, 6` (structural, normal mode, 6 DOF,
   displacement, real single, NDV 6); `2, 4, 1, mode` `(4I10)`; frequency (Hz), modal mass,
   0, 0 `(4E13.5)`; then per grid its ID `(I10)` and T1…R3 `(6E13.5)`.
