@@ -62,6 +62,16 @@ def main() -> None:
             from sbeam.solver.sol103 import run_sol103
             results = {sc.subcase_id: run_sol103(bulk, sc) for sc in cc.subcases}
             build_text = build_f06_sol103_text
+            # MODEXP (#100): the reduced modal model for sgear / Flaps
+            exports = [sc for sc in cc.subcases if sc.modexp_set is not None]
+            if exports:
+                from sbeam.results.modal_export import export_modal_model
+                for sc in exports:
+                    stem = str(bdf_path.with_suffix("")) + (
+                        f"_sc{sc.subcase_id}" if len(exports) > 1 else "")
+                    for path in export_modal_model(stem, cc, bulk, sc,
+                                                   results[sc.subcase_id]):
+                        print(f"Written: {path}")
         elif cc.sol == 144:
             # SOL 144 needs a prebuilt AeroModel + grid_index (not the two-arg
             # solver pattern of 101/103). Build the aero model once, share an

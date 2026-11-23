@@ -1,0 +1,80 @@
+$ Goland wing — the Flaps demo model (flaps_env/work/demo/goland.fp), SOL 103 normal modes
+$ with the reduced modal model export (MODEXP, #100) that sgear and Flaps read.
+$
+$ Model: Goland (1945) / Bisplinghoff, Ashley & Halfman (1955) section 9.3, as goland.fp
+$ builds it: 13 grids along +y (span 6.096 m), root grid 1 clamped; EI_flap = 9.773e6,
+$ EI_chord = 3.0e7, GJ = 9.876e5, EA = 2.0e5 (all N, m; E = G = 1 so PBAR carries the
+$ stiffness); 217.74 kg and a torsional inertia of 52.68 kg m^2 spread EQUALLY over grids
+$ 1-13 (Flaps conmass node=(1:13)), the C.G. 0.183 m aft of the beam (+x), inertia about
+$ the C.G.  That lumping is inferred: it reproduces Flaps 2.3.4's printed coupled modes,
+$ 7.370 / 14.119 Hz (flaps_env/docs/demo_results.md), to 4 figures.  Izz = 1.0 kg m^2 is
+$ sbeam's (goland.fp gives 0, a massless in-plane rotation); it moves only in-plane modes.
+$ EA = 2.0e5 is goland.fp's and gives an axial mode near 3 Hz: pick the flap and torsion
+$ modes by shape, not by order.  Units: m, kg, s, N.
+$
+$ Gates: tests/results/test_modal_export.py (G1 closed form, G2 Flaps, G3, G4).
+$
+SOL 103
+TITLE = Goland wing - Flaps demo model
+SET 1 = 1 THRU 13
+SUBCASE 1
+  SPC    = 1
+  METHOD = 1
+  MODEXP(OP4,UF) = 1
+BEGIN BULK
+MAT1, 1, 1.0, 1.0, , 0.0
+PBAR, 1, 1, 2.0e5, 3.0e7, 9.773e6, 9.876e5
+EIGRL, 1, , , 10
+SPC1, 1, 123456, 1
+GRID, 1, , 0.0, 0.000000, 0.0
+GRID, 2, , 0.0, 0.508000, 0.0
+GRID, 3, , 0.0, 1.016000, 0.0
+GRID, 4, , 0.0, 1.524000, 0.0
+GRID, 5, , 0.0, 2.032000, 0.0
+GRID, 6, , 0.0, 2.540000, 0.0
+GRID, 7, , 0.0, 3.048000, 0.0
+GRID, 8, , 0.0, 3.556000, 0.0
+GRID, 9, , 0.0, 4.064000, 0.0
+GRID, 10, , 0.0, 4.572000, 0.0
+GRID, 11, , 0.0, 5.080000, 0.0
+GRID, 12, , 0.0, 5.588000, 0.0
+GRID, 13, , 0.0, 6.096000, 0.0
+CONM2, 100, 1, , 16.74923077, 0.183, 0.0, 0.0
++, 0.07692307692, 0.0, 4.052307692, 0.0, 0.0, 0.07692307692
+CONM2, 101, 2, , 16.74923077, 0.183, 0.0, 0.0
++, 0.07692307692, 0.0, 4.052307692, 0.0, 0.0, 0.07692307692
+CONM2, 102, 3, , 16.74923077, 0.183, 0.0, 0.0
++, 0.07692307692, 0.0, 4.052307692, 0.0, 0.0, 0.07692307692
+CONM2, 103, 4, , 16.74923077, 0.183, 0.0, 0.0
++, 0.07692307692, 0.0, 4.052307692, 0.0, 0.0, 0.07692307692
+CONM2, 104, 5, , 16.74923077, 0.183, 0.0, 0.0
++, 0.07692307692, 0.0, 4.052307692, 0.0, 0.0, 0.07692307692
+CONM2, 105, 6, , 16.74923077, 0.183, 0.0, 0.0
++, 0.07692307692, 0.0, 4.052307692, 0.0, 0.0, 0.07692307692
+CONM2, 106, 7, , 16.74923077, 0.183, 0.0, 0.0
++, 0.07692307692, 0.0, 4.052307692, 0.0, 0.0, 0.07692307692
+CONM2, 107, 8, , 16.74923077, 0.183, 0.0, 0.0
++, 0.07692307692, 0.0, 4.052307692, 0.0, 0.0, 0.07692307692
+CONM2, 108, 9, , 16.74923077, 0.183, 0.0, 0.0
++, 0.07692307692, 0.0, 4.052307692, 0.0, 0.0, 0.07692307692
+CONM2, 109, 10, , 16.74923077, 0.183, 0.0, 0.0
++, 0.07692307692, 0.0, 4.052307692, 0.0, 0.0, 0.07692307692
+CONM2, 110, 11, , 16.74923077, 0.183, 0.0, 0.0
++, 0.07692307692, 0.0, 4.052307692, 0.0, 0.0, 0.07692307692
+CONM2, 111, 12, , 16.74923077, 0.183, 0.0, 0.0
++, 0.07692307692, 0.0, 4.052307692, 0.0, 0.0, 0.07692307692
+CONM2, 112, 13, , 16.74923077, 0.183, 0.0, 0.0
++, 0.07692307692, 0.0, 4.052307692, 0.0, 0.0, 0.07692307692
+CBAR, 1, 1, 1, 2, 1.0, 0.0, 0.0
+CBAR, 2, 1, 2, 3, 1.0, 0.0, 0.0
+CBAR, 3, 1, 3, 4, 1.0, 0.0, 0.0
+CBAR, 4, 1, 4, 5, 1.0, 0.0, 0.0
+CBAR, 5, 1, 5, 6, 1.0, 0.0, 0.0
+CBAR, 6, 1, 6, 7, 1.0, 0.0, 0.0
+CBAR, 7, 1, 7, 8, 1.0, 0.0, 0.0
+CBAR, 8, 1, 8, 9, 1.0, 0.0, 0.0
+CBAR, 9, 1, 9, 10, 1.0, 0.0, 0.0
+CBAR, 10, 1, 10, 11, 1.0, 0.0, 0.0
+CBAR, 11, 1, 11, 12, 1.0, 0.0, 0.0
+CBAR, 12, 1, 12, 13, 1.0, 0.0, 0.0
+ENDDATA

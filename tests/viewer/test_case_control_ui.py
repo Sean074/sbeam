@@ -300,6 +300,10 @@ def _every_field_set() -> SubcaseControl:
             values[f.name] = f"every field {f.name}"
         elif f.name == "mass_card":
             values[f.name] = "MASSSET"            # the non-default command (#102)
+        elif f.name == "modexp_formats":
+            values[f.name] = ("UF",)              # not the default pair (#100)
+        elif f.name == "sets":
+            values[f.name] = {5: [1, 2, 3, 7], 6: None}
         elif f.type in (bool, "bool"):
             values[f.name] = True
         else:
@@ -313,7 +317,8 @@ def test_export_round_trips_every_subcase_field():
     added to the parser later fails here until the export carries it."""
     from sbeam.parser.case_control import parse_case_control
     subcase = _every_field_set()
-    text = export_bdf_text(CaseControl(sol=144, subcases=[subcase]))
+    # SOL 103: MODEXP is refused in any other solution (#100)
+    text = export_bdf_text(CaseControl(sol=103, subcases=[subcase]))
     assert parse_case_control(_case_control_lines(text)).subcases == [subcase]
 
 

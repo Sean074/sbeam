@@ -29,6 +29,12 @@ class SubcaseControl:
     stress: bool = False              # Request STRESS output
     aerof: bool = False               # Request AEROF output (SOL 144 aero box forces)
     apres: bool = False               # Request APRES output (SOL 144 aero box pressures)
+    # MODEXP(OP4,UF) = n (sbeam-only, #100): reduced modal model at the grids of SET n
+    modexp_set: Optional[int] = None
+    modexp_formats: tuple[str, ...] = ()
+    # SETs defined under this SUBCASE, recognised for it only (QRG p.625); id -> grid IDs,
+    # or None for SET n = ALL
+    sets: dict[int, Optional[list[int]]] = field(default_factory=dict)
 
 
 @dataclass
@@ -44,6 +50,8 @@ class CaseControl:
     # bulk file with a small overlay this way, e.g. the Cessna 210 flagship + its body
     # panels.  `include` stays the first entry so single-INCLUDE callers are unaffected.
     includes: list[str] = field(default_factory=list)
+    # SETs defined above every SUBCASE (QRG p.625): id -> IDs, None for ALL
+    sets: dict[int, Optional[list[int]]] = field(default_factory=dict)
     # A case-control PARAM,GRDPNT (QRG p.570); one that disagrees with the bulk value is
     # refused by parse_bdf: the QRG states no precedence between the two
     grdpnt: Optional[int] = None
@@ -94,7 +102,10 @@ _OUTPUT_REQUESTS = {
 
 # Read by the parser's own branches.
 _STRUCTURE = frozenset({"SOL", "TITLE", "SUBTITLE", "LABEL", "SUBCASE", "INCLUDE", "BEGIN",
-                        "PARAM"})
+                        "PARAM", "SET", "MODEXP"})
+
+# MODEXP's describers: the files the reduced modal model is written to (#100)
+_MODEXP_FORMATS = ("OP4", "UF")
 
 # Accepted and ignored without a message: none of these changes a result.
 _IGNORED = {
@@ -178,6 +189,58 @@ def _cc_split(line: str) -> tuple[str, str, str]:
     if match is None:
         return "", "", line
     return match.group(1).upper(), match.group(2) or "", match.group(3).strip()
+
+
+def _cc_set(value: str) -> tuple[int, Optional[list[int]]]:
+    """``SET n = i1, i2, i3 THRU i4 EXCEPT i5 …`` or ``SET n = ALL`` (QRG 2024.1 PDF p.625).
+
+    Integer lists only: sbeam's one use is a grid list (MODEXP, #100).  EXCEPT drops the
+    numbers that follow it while they lie inside the preceding THRU range; a number
+    outside it is a member again (remark 3).  Real, component (``101/T1``) and literal
+    forms are refused.
+    """
+    head, sep, body = value.partition("=")
+    if not sep or not head.strip().isdigit():
+        raise ValueError(f"Case control SET {value!r}: write SET n = list (QRG p.625)")
+    set_id = int(head)
+    tokens = body.replace(",", " ").upper().split()
+    if tokens == ["ALL"]:
+        return set_id, None
+    members: list[int] = []
+    last_range: Optional[tuple[int, int]] = None
+    excepting = False
+    k = 0
+    while k < len(tokens):
+        tok = tokens[k]
+        if tok == "THRU":
+            if not members or k + 1 >= len(tokens) or not tokens[k + 1].isdigit():
+                raise ValueError(f"Case control SET {set_id}: THRU needs a number on each "
+                                 "side (QRG p.625 remark 1)")
+            lo, hi = members.pop(), int(tokens[k + 1])
+            if hi < lo:
+                raise ValueError(f"Case control SET {set_id}: {lo} THRU {hi} is descending")
+            members.extend(range(lo, hi + 1))
+            last_range, excepting, k = (lo, hi), False, k + 2
+            continue
+        if tok == "EXCEPT":
+            if last_range is None:
+                raise ValueError(f"Case control SET {set_id}: EXCEPT must follow a THRU range")
+            excepting, k = True, k + 1
+            continue
+        if not tok.isdigit():
+            raise ValueError(f"Case control SET {set_id}: {tok!r} is not supported — sbeam "
+                             "reads integer lists with THRU / EXCEPT, or ALL (QRG p.625)")
+        x = int(tok)
+        if excepting and last_range is not None and last_range[0] <= x <= last_range[1]:
+            if x in members:
+                members.remove(x)
+        else:
+            excepting = False
+            members.append(x)
+        k += 1
+    if not members:
+        raise ValueError(f"Case control SET {set_id}: the set is empty")
+    return set_id, list(dict.fromkeys(members))
 
 
 def _cc_resolve(keyword: str) -> Optional[str]:
@@ -287,6 +350,7 @@ def parse_case_control(lines: list[str]) -> CaseControl:
 
     sol = None
     headings = {"title": "", "subtitle": "", "label": ""}
+    run_sets: dict[int, Optional[list[int]]] = {}
     grdpnt: Optional[int] = None
     subcases = []
     defaults = SubcaseControl(subcase_id=1)
@@ -337,6 +401,24 @@ def parse_case_control(lines: list[str]) -> CaseControl:
         elif command == "BEGIN":
             break
 
+        elif command == "SET":
+            set_id, members = _cc_set(value)
+            target_sets = current_sc.sets if current_sc is not None else run_sets
+            target_sets[set_id] = members          # a SET may be redefined (QRG p.625)
+
+        elif command == "MODEXP":
+            formats = tuple(f.strip().upper() for f in describers.strip("()").split(",")
+                            if f.strip()) or _MODEXP_FORMATS
+            bad = [f for f in formats if f not in _MODEXP_FORMATS]
+            if bad:
+                raise ValueError(f"Case control MODEXP{describers}: unknown describer(s) "
+                                 f"{bad}; MODEXP takes {', '.join(_MODEXP_FORMATS)}")
+            target = current_sc if current_sc is not None else defaults
+            target.modexp_set = _cc_set_id("MODEXP", value)
+            target.modexp_formats = formats
+            if current_sc is None:
+                has_defaults = True
+
         elif command == "PARAM":
             grdpnt_cc = _cc_param(value)
             if grdpnt_cc is not None:
@@ -382,5 +464,10 @@ def parse_case_control(lines: list[str]) -> CaseControl:
 
     if sol is None:
         raise ValueError("Case control section contains no SOL statement")
+    if sol != 103 and any(sc.modexp_set is not None for sc in subcases):
+        raise ValueError(f"Case control MODEXP needs SOL 103 (the deck is SOL {sol}); "
+                         "the reduced modal model comes from the normal modes (#100)")
 
-    return CaseControl(sol=sol, subcases=subcases, grdpnt=grdpnt, **headings)
+    return CaseControl(sol=sol, subcases=subcases, grdpnt=grdpnt, sets=run_sets,
+                       title=headings["title"], subtitle=headings["subtitle"],
+                       label=headings["label"])

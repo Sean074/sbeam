@@ -29,8 +29,11 @@ All files are written next to the input by `sbeam/main.py`, as `<stem>.<name>`.
 | `maneuver_monitor_loads.csv`, `maneuver_monitor_envelope.csv` | `load_export.write_maneuver_monitor_csv`, `..._envelope_csv` | an `MANVR` subcase has monitor points |
 | `maneuver_section_loads.csv`, `maneuver_section_envelope.csv` | `load_export.write_maneuver_section_loads_csv`, `..._envelope_csv` | an `MANVR` subcase has `MONSECT` |
 
+| `<stem>.op4`, `<stem>_dofmap.csv`, `<stem>.uf` | `modal_export.export_modal_model` | a SOL 103 subcase has `MODEXP` (§7). With MODEXP in several subcases the stem gains `_sc<id>` |
+
 The viewer's download buttons call the `build_*_text` twin of each maneuver writer, so a
-downloaded file is byte-identical to the CLI's. SOL 101/103 write the f06 only.
+downloaded file is byte-identical to the CLI's. SOL 101/103 write the f06 only, unless a
+SOL 103 subcase asks for MODEXP.
 
 ---
 
@@ -194,6 +197,38 @@ subcase when the static path adopts it):
   `iter_line_elements` (CBARs, then CRODs, then CONRODs, deck order).
 
 ---
+
+## 7. Reduced modal model (MODEXP, #100)
+
+**`<stem>.op4`** — MSC OUTPUT4, ASCII, real double precision. Per matrix, a header
+`NCOL NROW FORM TYPE NAME FORMAT` written `(4I8, A8, A)` with TYPE 2 and FORMAT
+`1P,3E23.16`; then, per column with a non-zero entry, `ICOL IROW NW` `(3I8)` with IROW the
+first non-zero row and NW the count to the last non-zero row, and the NW values three per
+line (`E23.16`); then a terminator `NCOL+1 1 1` and one value. The layout follows the
+MSC-written `flaps_env/work/demo/ha145b.op4`, at higher precision.
+
+| Matrix | Shape | FORM | Content |
+|---|---|---|---|
+| `MHH` | n × n | 6 (symmetric) | ΦᵀMΦ — the identity for mass-normalised modes |
+| `KHH` | n × n | 6 | ΦᵀKΦ — diag(ω²), rigid block zero |
+| `PHIA` | n_a × n | 2 (1 if square) | a-set modes; rows in `dofmap.csv` |
+| `PHIX` | 6·n_grids × n | 2 (1 if square) | modes at the SET n grids, SET order, T1 T2 T3 R1 R2 R3, basic |
+
+**`<stem>_dofmap.csv`** — three `#` header lines (normalisation, units = the deck's, whether
+rigid modes were replaced), then `matrix,row,grid,component` for every PHIA and PHIX row
+(rows from 1).
+
+**`<stem>.uf`** — Universal file, fixed width, `-1` delimited datasets:
+- 15 (grids): `node, 0, 0, 1` `(4I10)` then x, y, z `(3E13.5)`, basic.
+- 82 (one trace line): `1, n_entries, 1` `(3I10)`, a title line, then grid pairs of every
+  CBAR/CROD/CONROD/PLOTEL/CBUSH each followed by 0 (pen up), `(8I10)`.
+- 55 (one per mode): five title lines; `1, 2, 3, 8, 2, 6` (structural, normal mode, 6 DOF,
+  displacement, real single, NDV 6); `2, 4, 1, mode` `(4I10)`; frequency (Hz), modal mass,
+  0, 0 `(4E13.5)`; then per grid its ID `(I10)` and T1…R3 `(6E13.5)`.
+
+The dataset-55 normal-mode records are *unverified* against a UF specification (none in
+the library). They follow the Flaps-written `fma.nodal.uf` (complex modes, analysis type 3);
+the manual Flaps `import` is the check.
 
 ## 6. Changing a schema
 

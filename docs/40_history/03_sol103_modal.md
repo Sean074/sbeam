@@ -47,6 +47,63 @@ f06 output, and resolved SOL 103 defects.
 ---
 
 
+### #100 — Reduced modal model export: MHH, KHH, PHIA, PHIX as OP4 + Universal file (Tier L) ✅ COMPLETE (2026-11-22)
+
+**Objective.** Write the SOL 103 modal model that sgear (C-1 flexible airframe, sgear#34)
+and Flaps read: generalized mass and stiffness, the a-set modes, and the modes at a named
+interface grid set, as MSC OUTPUT4 ASCII plus a Universal file for animation (#99 mission;
+`flaps_env/docs/sbeam_handoff.md`). The design note was agreed in chat on 2026-11-22.
+
+**Prior art cited.**
+- MSC names the matrices MHH, KHH and PHIA (a-set modes) and writes them by DMAP OUTPUT4.
+- Flaps reads OP4 ASCII as MSC writes it (`flaps_env/work/demo/ha145b.op4`) and UF
+  datasets 15/55/82 (its own `fma.nodal.uf`).
+- The case-control `SET` is MSC's (QRG 2024.1 PDF p.625).
+
+**Assumptions of the existing code that stopped holding.**
+- `run_sol103` kept a diagonal generalized mass only; the export forms MHH and KHH in full.
+- A free-free model's zero-frequency modes were an arbitrary mixture of rigid motions.
+- Case control had no `SET`, and every command with describers was refused.
+
+**Key decisions (Q-12 to Q-18 of the v0.4.1 plan).**
+- sbeam's own ASCII OP4 writer; pyNastran stays a test-only dependency.
+- PHIA keeps MSC's a-set meaning; the interface set is a separate `PHIX`, with a
+  `dofmap.csv`.
+- MSC `SET` plus an sbeam-only `MODEXP(OP4,UF) = n`.
+- Free-free rigid modes are replaced by geometric motions about the C.G., Löwdin
+  mass-orthonormalised.
+- NORM = MASS is required.
+- Units are the deck's.
+- No Matrix Market bundle in this step (`designs/matrix_gaf_export.md` keeps it).
+
+**Deliverables.**
+- `sbeam/results/modal_export.py`: `build_modal_model`, `write_op4`, `write_dofmap`,
+  `write_universal`, `export_modal_model`.
+- Case control: `SET` (integers, THRU, EXCEPT, ALL; run- or subcase-scoped) and `MODEXP`.
+  MODEXP is refused outside SOL 103.
+- The CLI writes the files; the viewer's case-control export carries SET and MODEXP.
+- `sample/goland_wing_modes.bdf`.
+
+**Test / Acceptance.**
+- **G1:** tributary-lumped Goland, cg = 0. Flap and torsion are 49.32 / 87.05 rad/s
+  against the closed form's 49.48 / 87.10 (0.5 %).
+- **G2:** the Flaps model gives 7.3698 / 14.1192 Hz against Flaps 2.3.4's 7.370 / 14.119 Hz.
+  This match is also what identified Flaps' `conmass` rule (equal over grids 1–13, inertia
+  about the C.G.).
+- **G3:** a free-free beam gives MHH = I and KHH = diag(ω²) to 1e-8, and its rigid columns
+  lie in the geometric rigid span. PHIX is the SET rows.
+- **G4:** pyNastran `read_op4` reads all four matrices, with no warnings, to 1e-12, and
+  MHH/KHH rebuilt from the PHIA it read match.
+- **G5:** Flaps `import` + `amviz` — manual, the user's.
+- `tests/results/test_modal_export.py`, `tests/compat/test_op4_roundtrip.py`.
+
+**Found on the way.**
+- goland.fp's EA = 2.0e5 N gives an axial mode near 3 Hz, so modes are picked by shape.
+- Its Izz = 0 leaves a massless in-plane rotation once the mass is offset, which a dense
+  `eigh` refuses. The sample gives Izz = 1 kg·m², which moves only in-plane modes.
+- The UF dataset-55 normal-mode records are *unverified* against a specification, since
+  none is in the library.
+
 ## Resolved defects
 
 ### DD-3 (P3, release hygiene batch) — `beam_vib` deck headers and the RBE2 doc pointer ✅ COMPLETE (2026-08-03)

@@ -9,6 +9,25 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Reduced modal model export, `MODEXP`** (#100, Tier L). In a SOL 103 subcase,
+  `MODEXP(OP4,UF) = n` writes `<deck>.op4` and `<deck>_dofmap.csv`, which give each PHIA and
+  PHIX row's grid and component, plus `<deck>.uf`. sgear and Flaps read these files.
+  - **`.op4`** is MSC OUTPUT4 ASCII in double precision. It holds MHH = ΦᵀMΦ,
+    KHH = ΦᵀKΦ, PHIA (the a-set modes) and PHIX (the modes at the grids of SET n).
+  - **`.uf`** is a Universal file with datasets 15, 82 and 55.
+  - **Free-free models** have their rigid modes replaced by geometric motions about the
+    C.G., mass-orthonormalised. Mass normalisation is required.
+  - **Case-control `SET`** is MSC's own (QRG p.625: THRU, EXCEPT, ALL; run- or
+    subcase-scoped). `MODEXP` is sbeam-only.
+  - **Gates:**
+    - the new `sample/goland_wing_modes.bdf` (the Flaps demo Goland wing) gives Flaps
+      2.3.4's 7.370 / 14.119 Hz to 4 figures;
+    - a tributary-lumped variant gives the closed form's 49.48 / 87.10 rad/s within 0.3 %;
+    - on a free-free beam, MHH = I and KHH = diag(ω²) to 1e-8;
+    - pyNastran reads the OP4 back to 1e-12 with no warnings.
+  - The Flaps `import` / `amviz` check is manual.
+
 ### Breaking changes
 - **sbeam's ZAERO-named cards are renamed; ZAERO's and MSC's cards keep their vendor
   layouts** (#87; pre-1.0 MINOR break). sbeam had borrowed ZAERO card names with its own

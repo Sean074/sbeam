@@ -62,6 +62,22 @@ def _subcase_kind(sc_data: dict[str, Any]) -> str:
 # BDF export
 # ---------------------------------------------------------------------------
 
+
+def _set_line(n: int, members: Optional[list[int]]) -> str:
+    """A case-control SET (QRG p.625), wrapped so no line grows past 72 characters."""
+    if members is None:
+        return f"SET {n} = ALL"
+    items = [str(m) for m in members]
+    rows, row = [], f"SET {n} ="
+    for k, item in enumerate(items):
+        piece = f" {item}" + ("," if k < len(items) - 1 else "")
+        if len(row) + len(piece) > 72:
+            rows.append(row)
+            row = "   "
+        row += piece
+    rows.append(row)
+    return "\n".join(rows)
+
 def export_bdf_text(
     cc: CaseControl,
     include_paths: Optional[list[str]] = None,
@@ -92,11 +108,15 @@ def export_bdf_text(
     for command in ("TITLE", "SUBTITLE", "LABEL"):          # page headings (#90)
         if getattr(cc, command.lower()):
             lines.append(f"{command} = {getattr(cc, command.lower())}")
+    lines += [_set_line(n, members) for n, members in getattr(cc, "sets", {}).items()]
     for sc in cc.subcases:
         lines.append(f"SUBCASE {sc.subcase_id}")
         for command in ("TITLE", "SUBTITLE", "LABEL"):
             if getattr(sc, command.lower()):
                 lines.append(f"  {command} = {getattr(sc, command.lower())}")
+        lines += [f"  {_set_line(n, members)}" for n, members in sc.sets.items()]
+        if sc.modexp_set is not None:                       # #100
+            lines.append(f"  MODEXP({','.join(sc.modexp_formats)}) = {sc.modexp_set}")
         for sid, keyword in [
             (sc.load_sid, "LOAD"), (sc.spc_sid, "SPC"), (sc.method_sid, "METHOD"),
             (sc.trim_sid, "TRIM"), (sc.trimobj_sid, "TRIMWGT"),

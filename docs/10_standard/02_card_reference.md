@@ -185,6 +185,7 @@ cards (parked: `docs/30_future/02_parked.md`).
 | `MONSECT` | Section-cut running loads | MSC `MONPNT1` gives one point, not a cut | — |
 | `PSTRIP`, `STRIPK` | Decoupled strip body panels and their slopes | MSC `PAERO2` slender bodies | — |
 | `AECORR` | Force/pressure AIC correction to a target | MSC `WKK`/`FA2J` matrices via DMI | — |
+| `MODEXP` (case control) | Reduced modal model export (OP4 + Universal file) for sgear and Flaps | MSC writes such matrices by DMAP `OUTPUT4` / `PARAM,EXTOUT`, not by one command | — |
 | `W2GJ`, `WKK` | Baseline downwash and diagonal AIC weights as cards | MSC enters the same data as `DMI` matrices named W2GJ and WKK (refused today) | — |
 
 `TRIMVAR` is not in this table: it is ZAERO's card and is read in ZAERO's layout (#87).
@@ -224,6 +225,8 @@ Every line above `BEGIN BULK` must be a command in the tables below; any other l
 | `DIVERG` | int | Divergence condition SID (references `DIVERG` bulk card; SOL 144 only) |
 | `MANVR` | int | Transient maneuver-loads SID (references `MANVR` bulk card; runs the Step 63 free-flight modal solver `solver/maneuver_modal.py` when the card's NMODES/METHOD/ZETA select it, else the prescribed-rigid direct solver `solver/maneuver_qs.py`; SOL 144, Phase G0) |
 | `GUSTLF` | int | Gust load-factor case SID (references `GUSTLF` bulk card; FAR/CS 23.341 gust case run as a SOL 144 trim; sbeam extension) |
+| `SET` | list | `SET n = i1, i2, i3 THRU i4 EXCEPT i5 …` or `SET n = ALL` (QRG p.625; #100). Integer lists only, used by `MODEXP`; a SET under a `SUBCASE` is that subcase's. EXCEPT drops numbers inside the preceding THRU range; numbers outside it are members (remark 3). Real, `101/T1` and literal forms are refused. A SET may be redefined |
+| `MODEXP` | int | **sbeam-only command** (#100): `MODEXP(OP4,UF) = n` writes the reduced modal model of a SOL 103 subcase at the grids of SET n — `<deck>.op4` (MHH, KHH, PHIA, PHIX), `<deck>_dofmap.csv`, `<deck>.uf`; schema in `10_export_schemas.md` §7. Describers `OP4`, `UF` choose the files (both when none). Refused outside SOL 103, with EIGRL NORM = MAX, or naming no SET |
 | `MASSCASE` | int | Payload / mass case SID (references `MASSCASE` bulk card, Step 60); the subcase runs at the resolved mass configuration — baseline when absent |
 | `MASSSET` | int | MSC mass combination ID (references an MSC `MASSSET` bulk entry; QRG p.482; #102). One of `MASSCASE`/`MASSSET` per subcase; each must select its own kind of card. `MASS` is not a usable abbreviation |
 | `DISPLACEMENT` | — | Accepted; displacements are **always printed** whatever its value (`= NONE` included). sbeam reads the request but no output depends on it (#91) |
@@ -259,7 +262,7 @@ Every line above `BEGIN BULK` must be a command in the tables below; any other l
 | `GUST` | MSC's SOL 146 gust selector (QRG p.452); refused so that it is not read as an abbreviation of sbeam's `GUSTLF` |
 | `MLOADS`, `TRIMOBJ` | sbeam's selectors until v0.4.1, renamed with their cards to `MANVR` and `TRIMWGT` (#87); the message names the new command |
 
-Any other command, including every MSC command not listed here (`MPC`, `SET`, `STRAIN`, …), is refused as unknown.
+Any other command, including every MSC command not listed here (`MPC`, `STRAIN`, …), is refused as unknown.
 
 **Example case control section:**
 

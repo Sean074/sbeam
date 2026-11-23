@@ -176,6 +176,32 @@ No effective-mass table is written.
 
 ---
 
+## Reduced Modal Model Export (MODEXP, #100)
+
+`MODEXP(OP4,UF) = n` in a SOL 103 subcase writes the modal model sgear (C-1 flexible
+airframe) and Flaps read; files and layouts in `10_export_schemas.md` §7.
+
+- **MHH = ΦᵀMΦ, KHH = ΦᵀKΦ** on the a-set, formed explicitly (never assumed to be I and
+  diag(ω²)). The modes must be mass-normalised: EIGRL NORM = MAX is refused.
+- **PHIA** is the a-set modes (MSC's meaning). **PHIX** is the modes at the grids of SET n,
+  six rows per grid in SET order, basic axes. A SET member that is not a grid is skipped
+  with a warning, as MSC ignores it (QRG p.625).
+- **Free-free models** (no SPC, six zero-frequency modes) have the eigensolver's rigid
+  modes, an arbitrary mixture, replaced by the geometric rigid motions about the C.G.
+  (from the GPWG MO, #90), mass-orthonormalised (Löwdin). They stay M-orthogonal to the
+  elastic modes; MHH = I and the rigid KHH block is zero. A partly restrained model keeps
+  the eigensolver's zero-frequency modes, with a warning.
+- **Units** are the deck's own; nothing is converted.
+
+Benchmark: `sample/goland_wing_modes.bdf` is the Flaps demo Goland wing (equal lumping
+over grids 1–13, inertia about the C.G.: inferred from the match). Its flap and torsion
+modes are 7.370 / 14.119 Hz, Flaps 2.3.4's printout, to 4 figures. The same wing with
+tributary lumping and cg = 0 gives 49.32 / 87.05 rad/s against the closed form's
+49.48 / 87.10 (`tests/results/test_modal_export.py`, 0.5 %). goland.fp's EA = 2.0e5 N
+puts an axial mode near 3 Hz, so modes are picked by shape. pyNastran reads the OP4 back
+to 1e-12 (`tests/compat/test_op4_roundtrip.py`). The Flaps `import` and `amviz` animation
+check is manual.
+
 ## Verification Cases
 
 ### Case 1 — Cantilever Beam, Fundamental Frequency
