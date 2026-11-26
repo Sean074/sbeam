@@ -507,7 +507,9 @@ increments block export. An MANVR shared by subcases with different MASSCASEs is
 
 **Validation:** `validate_sol144_authoring(bulk, cc, …) -> (errors, warnings)` re-implements
 the parser's deck-time cross-reference pass (authored cards bypass it) plus the solver
-preconditions: exactly one driver per subcase, no LOAD, dangling SID references, modal
+preconditions: exactly one driver per subcase (TRIM, DIVERG, MANVR or GUSTLF; a GUSTLF
+subcase is a trim subcase whose TRIM the card names, #122), LOAD only with a trim subcase,
+dangling SID references, modal
 MANCMD labels AESURF-only, RHO required on the MANTRIM of a modal MANVR, SUPORT required with
 MANVR, MANTIME/TABLED1 well-formedness, AELIST boxes inside CAERO1 ranges. Errors
 disable ▶ Launch Analysis and the BDF downloads; warnings (over-/fully-determined trim,

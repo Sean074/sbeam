@@ -192,3 +192,31 @@ def test_authored_duplicate_of_file_sid_blocks_export(fullspan):
     assert any("Save it as a new SID" in e for e in errs)
     # A genuinely new SID does not trip the gate.
     assert _errors(bulk, cc, file_sids=file_sids, authored={"trim": {50}}) == []
+
+
+# --- GUSTLF subcases (found by #111) ---------------------------------------
+
+@pytest.fixture()
+def gust():
+    return parse_bdf(sample_path("cessna210_flagship_gust.bdf"))
+
+
+def test_a_gustlf_subcase_is_a_driven_trim_subcase(gust):
+    """GUSTLF names its own TRIM, so a subcase with only GUSTLF is complete."""
+    cc, bulk = gust
+    assert all(sc.trim_sid is None and sc.gustlf_sid is not None for sc in cc.subcases)
+    assert _errors(bulk, cc) == []
+
+
+def test_gustlf_selector_errors(gust):
+    cc, bulk = gust
+    sc = cc.subcases[0]
+    right_trim = bulk.gustlfs[sc.gustlf_sid].trimid
+    other_trim = next(t for t in bulk.trims if t != right_trim)
+
+    sc.trim_sid = other_trim                       # disagrees with the card's TRIM
+    assert any("names TRIM" in e for e in _errors(bulk, cc))
+    sc.trim_sid = right_trim                       # agreeing is allowed (solver rule)
+    assert _errors(bulk, cc) == []
+    sc.trim_sid, sc.gustlf_sid = None, 987654      # dangling selector
+    assert any("GUSTLF 987654 not found" in e for e in _errors(bulk, cc))

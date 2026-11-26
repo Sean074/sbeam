@@ -170,6 +170,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - dataset 82 has 49 segments.
 
 ### Fixed
+- **The viewer refused to run a gust subcase (#122).** Its pre-launch check counted only
+  TRIM, DIVERG and MANVR as subcase drivers, so every subcase of
+  `cessna210_flagship_gust.bdf` was blocked with "needs a driver", though `GUSTLF` names its
+  own TRIM and the command line runs the deck. A GUSTLF subcase is now a trim subcase in the
+  viewer's checks, a missing GUSTLF or a TRIM selector that disagrees with the card is
+  reported, and a gust run's suggested file name ends `_gust`. Found by #111's test that
+  opens every sample deck.
 - **MODEXP's Universal file drew no PLOTEL** (#106, found by the Flaps hand check,
   flaps_env#1). The trace builder read every element's grids as GA/GB with a default of
   None; PLOTEL names them G1/G2, so each PLOTEL was skipped with no message. Each family

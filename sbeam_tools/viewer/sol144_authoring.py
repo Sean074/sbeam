@@ -476,19 +476,30 @@ def validate_sol144_authoring(
     # --- per-subcase driver / reference checks ---
     for sc in cc.subcases:
         tag = f"Subcase {sc.subcase_id}"
-        drivers = [d for d in (sc.trim_sid, sc.diverg_sid, sc.mloads_sid)
-                   if d is not None]
+        # A GUSTLF subcase is a trim subcase: the card names its own TRIM, so the
+        # TRIM selector may be blank (run_sol144_trim, #1; found by #111).
+        has_trim = sc.trim_sid is not None or sc.gustlf_sid is not None
+        drivers = [d for d in (sc.trim_sid, sc.diverg_sid, sc.mloads_sid,
+                               sc.gustlf_sid) if d is not None]
         if not drivers:
-            errors.append(f"{tag}: no TRIM, DIVERG, or MANVR selected — "
+            errors.append(f"{tag}: no TRIM, DIVERG, MANVR or GUSTLF selected — "
                           "a SOL 144 subcase needs a driver.")
-        if sc.mloads_sid is not None and (sc.trim_sid is not None
+        if sc.gustlf_sid is not None:
+            gust = bulk.gustlfs.get(sc.gustlf_sid)
+            if gust is None:
+                errors.append(f"{tag}: GUSTLF {sc.gustlf_sid} not found in the "
+                              "bulk data.")
+            elif sc.trim_sid is not None and sc.trim_sid != gust.trimid:
+                errors.append(f"{tag}: TRIM = {sc.trim_sid} but GUSTLF "
+                              f"{gust.sid} names TRIM {gust.trimid}.")
+        if sc.mloads_sid is not None and (has_trim
                                           or sc.diverg_sid is not None):
-            errors.append(f"{tag}: MANVR cannot combine with TRIM/DIVERG "
+            errors.append(f"{tag}: MANVR cannot combine with TRIM/GUSTLF/DIVERG "
                           "in one subcase.")
         # #6: a TRIM subcase takes a LOAD set (applied structural load in the
         # trim RHS); MANVR and DIVERG-only subcases do not (the solver raises).
         if sc.load_sid is not None:
-            if sc.trim_sid is None:
+            if not has_trim:
                 errors.append(f"{tag}: LOAD combines only with a TRIM subcase "
                               "(an applied structural load enters the trim "
                               "balance; MANVR and DIVERG-only subcases drop "
@@ -639,6 +650,8 @@ def suggest_run_name(stem: str, cc: Optional[CaseControl]) -> str:
     for sc in (cc.subcases if cc is not None else []):
         if sc.mloads_sid is not None:
             kinds.add("mloads")
+        elif sc.gustlf_sid is not None:
+            kinds.add("gust")
         elif sc.diverg_sid is not None and sc.trim_sid is None:
             kinds.add("diverg")
         elif sc.trim_sid is not None:
