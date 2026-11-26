@@ -381,8 +381,8 @@ The Schur partition structure is equivalent to the MSC r-set/l-set method. The r
 defects (AE1–AE7, AE9, AE10) are all resolved; the HA144A benchmark passes on both subcases
 within the ≤1%-full-scale gate (measured ≤0.4% FS — see "Validation status & known
 limitations" at the top of this document). Step 52 closed 2026-06-14 with the
-over-determined trim and the lateral rate derivatives (`C_lp`/`C_nr`/`C_lβ`); the only open
-derivative work is the unrestrained (mean-axis) column, tracked as **AE8b** in the backlog.
+over-determined trim and the lateral rate derivatives (`C_lp`/`C_nr`/`C_lβ`). The
+unrestrained (mean-axis) column, **AE8b**, closed on 2026-07-05 (`05_aeroelastics.md`).
 
 ### Trim acceptance gates — V-AE1f and V-AE1d (`tests/aero/test_ae1_fullspan.py`)
 

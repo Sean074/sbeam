@@ -8,7 +8,7 @@ Every card and case-control keyword sbeam reads; the sections below give each ca
 
 - **Structure:** CORD2R, GRID, CBAR, CROD, CONROD, PLOTEL, RBE3, RBE2, RBAR, CBUSH, PBAR, PROD,
   PBUSH, MAT1
-- **Mass:** CONM2, MASSCASE
+- **Mass:** CONM2, MASSCASE, MASSSET (MSC)
 - **Constraints/loads:** SPC, SPC1, FORCE, MOMENT, LOAD, GRAV
 - **Eigenvalue:** EIGRL
 - **Aero (Phase A/C):** AEROS, CAERO1, PAERO1, AEFACT, W2GJ, WKK, DMIJ (W2GJ), DMIK (WKK), AECORR, CPINJ,

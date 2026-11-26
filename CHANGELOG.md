@@ -158,6 +158,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   solver feature (`docs/30_future/02_parked.md`).
 
 ### Documentation
+- **README brought up to date.** It listed `MONPNT3` as supported (refused since #86), said
+  PBAR K1/K2 are silently ignored (refused), said CBUSH needs CID = 0 (a CORD2R is read,
+  #62), said unrestrained derivatives are not computed (AE8b, 2026-07-05), and said SOL 144
+  cases are authored in the BDF and decks are opened by upload only (#111 to #117). Added:
+  `MASSSET`, `DMIJ`/`DMIK`, `MODEXP`, the `[dev]` extra the tests need, the `sbeam`
+  command, and the check before a SOL 144 run (#124). One stale sentence on AE8b in
+  `05c_sol144_maneuver.md` is corrected, and `MASSSET` joins the "at a glance" list in
+  `02_card_reference.md`.
 - **Deviation register** (#95, part D1). The new `docs/10_standard/12_deviation_register.md`
   lists every known difference between sbeam and MSC NASTRAN / ZAERO in one place: sbeam's
   behaviour, the vendor's, the manual and PDF page, and a disposition (refused, warned,
