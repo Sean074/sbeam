@@ -1,3 +1,4 @@
+$ COMPAT: MSC-runnable
 
 $ Validation: Cantilever beam — fundamental bending frequency (SOL 103)
 $ Euler-Bernoulli closed-form: f1 = (1.875^2 / 2*pi) * sqrt(E*I / (rho*A*L^4))

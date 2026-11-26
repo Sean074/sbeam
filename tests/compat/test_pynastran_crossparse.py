@@ -35,7 +35,10 @@ from sbeam.parser import bdf_reader  # noqa: E402
 from sbeam.parser.bdf_reader import (  # noqa: E402
     _read_cards, _read_mass_increments, _split_mass_increments, parse_bdf)
 from sbeam.parser.bulk_fields import is_continuation, split_line  # noqa: E402
-from tests.samples import sample_decks, sample_path
+from tests.samples import (
+    MSC_RUNNABLE, SBEAM_EXTENSION, SBEAM_ONLY_COMMANDS, compat_tags, deck_names, sample_decks,
+    sample_path,
+)
 
 REPO = Path(__file__).resolve().parents[2]
 DECKS = sorted([*sample_decks("*.bdf"), *sample_decks("*.dat"),
@@ -590,3 +593,52 @@ def test_mass_combination_deck_reads_the_same_sections_and_selectors(tmp_path):
               if "MASSSET" in v.params}
     assert pyn_cc == {sc.subcase_id: sc.massset_sid for sc in cc.subcases}
     assert model.card_count["MASSSET"] == len(bulk.mass_combinations)
+
+
+# ---------------------------------------------------------------------------
+# $ COMPAT: header tag of each sample deck (#95 D4)
+# ---------------------------------------------------------------------------
+
+SAMPLES = [*sample_decks("*.bdf"), *sample_decks("*.dat")]
+
+#: MSC cards pyNastran 1.4.1 raises on, removed before it reads a sample: the archived
+#: HA144A.bdf enters DMI columns as "1.0, THRU, 80" (KeyError in pyNastran's DMI reader).
+_MSC_CARDS_PYNASTRAN_RAISES_ON = {"DMI"}
+
+#: MSC cards pyNastran 1.4.1 does not know (its ``MISSING_CARDS``): a rejection of one of
+#: these says nothing about the deck.  MASSSET: QRG 2024.1 PDF p.2018 (#102).
+_MSC_CARDS_PYNASTRAN_LACKS = {"MASSSET"}
+
+
+def _sample_bulk(path: Path) -> list[str]:
+    """Bulk lines of a sample and its INCLUDEs, parsed by sbeam or not (HA144A.bdf is not)."""
+    text = path.read_text().splitlines()
+    in_bulk = not any(ln.split("$", 1)[0].strip().upper() == "BEGIN BULK" for ln in text)
+    out: list[str] = []
+    skip = False
+    for line in text:
+        body = line.split("$", 1)[0].strip()
+        if body.upper() == "BEGIN BULK":
+            in_bulk = True
+        elif body.upper().startswith("INCLUDE"):
+            out += _sample_bulk(path.parent / body.split(None, 1)[1].strip().strip("'\""))
+        elif in_bulk:
+            fields = split_line(line.split("$", 1)[0]) if body else []
+            if fields and not is_continuation(fields):
+                skip = fields[0].strip().upper() in _MSC_CARDS_PYNASTRAN_RAISES_ON
+            if not skip:
+                out.append(line)
+    return out
+
+
+@pytest.mark.parametrize("deck", SAMPLES, ids=lambda p: p.name)
+def test_sample_compat_tag_agrees_with_pynastran(deck, tmp_path):
+    """MSC-runnable: pyNastran knows every bulk card.  sbeam-extension: it rejects one, or
+    the deck uses an sbeam-only case-control command (pyNastran does not check those)."""
+    model, failed = _pynastran(_sample_bulk(deck), tmp_path)
+    unknown = (set(model.reject_count) | failed) - _MSC_CARDS_PYNASTRAN_LACKS
+    own_commands = deck_names(deck)[0] & SBEAM_ONLY_COMMANDS
+    expected = SBEAM_EXTENSION if unknown or own_commands else MSC_RUNNABLE
+    assert compat_tags(deck) == [expected], (
+        f"{deck.name}: pyNastran rejects {sorted(unknown)}, sbeam-only commands "
+        f"{sorted(own_commands)}")

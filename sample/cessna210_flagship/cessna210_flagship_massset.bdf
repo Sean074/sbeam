@@ -1,3 +1,4 @@
+$ COMPAT: sbeam-extension
 $ cessna210_flagship_massset.bdf — SOL 144 payload sweep driver (Step 65)
 $
 $ One airframe, one flight condition (TRIM 1: 1g, q = 2334 Pa), three payload

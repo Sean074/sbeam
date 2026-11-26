@@ -1,3 +1,4 @@
+$ COMPAT: MSC-runnable
 
 $ Validation: Free-free beam — rigid body modes (SOL 103)
 $ A completely unconstrained beam must have exactly 6 zero-frequency modes,

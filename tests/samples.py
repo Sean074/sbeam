@@ -45,3 +45,57 @@ def sample_decks(pattern: str = "*.bdf") -> list[Path]:
     if not decks:
         raise RuntimeError(f"no sample file matches {pattern!r} under {SAMPLE_ROOT}")
     return decks
+
+
+# ---------------------------------------------------------------------------
+# $ COMPAT: tag in each deck header (#95 D4)
+# ---------------------------------------------------------------------------
+
+MSC_RUNNABLE, SBEAM_EXTENSION = "MSC-runnable", "sbeam-extension"
+
+#: Case-control commands no vendor defines (``02_card_reference.md``, "sbeam-only cards").
+SBEAM_ONLY_COMMANDS = {"MODEXP", "MASSCASE", "GUSTLF", "MANVR", "TRIMWGT"}
+
+_TAG = "$ COMPAT:"
+
+
+def compat_tags(path: Path) -> list[str]:
+    """Every ``$ COMPAT: <tag>`` value in the comment block that opens the file."""
+    tags = []
+    for line in path.read_text().splitlines():
+        if line.strip() and not line.lstrip().startswith("$"):
+            break
+        if line.startswith(_TAG):
+            tags.append(line[len(_TAG):].strip())
+    return tags
+
+
+def deck_names(path: Path) -> tuple[set[str], set[str]]:
+    """(case-control commands, bulk card names) of a deck and the files it INCLUDEs.
+
+    A file with no ``BEGIN BULK`` is bulk data (the bulk-only and overlay samples).
+    """
+    from sbeam.parser.bulk_fields import is_continuation, split_line
+
+    commands: set[str] = set()
+    cards: set[str] = set()
+    text = path.read_text().splitlines()
+    in_bulk = not any(ln.split("$", 1)[0].strip().upper() == "BEGIN BULK" for ln in text)
+    for line in text:
+        body = line.split("$", 1)[0]
+        if not body.strip():
+            continue
+        upper = body.strip().upper()
+        if upper == "BEGIN BULK":
+            in_bulk = True
+        elif upper.startswith("INCLUDE"):
+            inner = deck_names(path.parent / body.split(None, 1)[1].strip().strip("'\""))
+            commands |= inner[0]
+            cards |= inner[1]
+        elif not in_bulk:
+            commands.add(upper.replace("=", " ").replace("(", " ").split()[0])
+        else:
+            fields = split_line(body)
+            if not is_continuation(fields):
+                cards.add(fields[0].strip().upper().rstrip("*"))
+    return commands, cards - {"ENDDATA"}

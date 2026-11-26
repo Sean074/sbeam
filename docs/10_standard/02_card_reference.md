@@ -221,7 +221,7 @@ Every line above `BEGIN BULK` must be a command in the tables below; any other l
 - **Line format.** The command name ends at the first blank, `=`, `,` or `(`. A line ending in a comma continues on the next line (QRG p.209); `TITLE`, `SUBTITLE` and `LABEL` are never continued, which is sbeam's choice (*unverified* against MSC).
 - **Abbreviations.** A command may be shortened to its first four or more characters when that is unique (QRG p.209): `DISP`, `SPCF`, `METH`, `SUBT`. Uniqueness is checked against the commands in these tables, not MSC's full list. `SUBC` is refused as ambiguous (`SUBCASE`, `SUBCOM`).
 - **Describers.** A selector or output request with describers in parentheses (`DISPLACEMENT(PRINT,PUNCH) = ALL`) is refused; #85 will decide which describers are read.
-- **`CEND`** is accepted and not required. sbeam does not separate the executive section from case control.
+- **`CEND`** is accepted and not required (it is optional in MSC too: QRG 2024.1 PDF p.150, remark 1). sbeam does not separate the executive section from case control.
 
 | Keyword | Type | Description |
 |---------|------|-------------|

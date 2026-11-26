@@ -1,3 +1,4 @@
+$ COMPAT: MSC-runnable
 
 $ Cantilever beam — SOL 103 normal modes, tip-mass dominated (zero beam density)
 $ Based on sample/beam/simple_beam.bdf (10 m, 5 CBAR elements, 6 nodes)

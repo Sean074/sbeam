@@ -1,3 +1,4 @@
+$ COMPAT: sbeam-extension
 $ =========================================================================
 $ val_thrust_trim.bdf — V-THR: applied structural load in a SOL 144 trim (issue #6)
 $

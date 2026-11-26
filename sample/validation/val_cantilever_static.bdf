@@ -1,3 +1,4 @@
+$ COMPAT: MSC-runnable
 
 $ Validation: Cantilever beam — tip point load (SOL 101)
 $ Euler-Bernoulli closed-form: delta_tip = P*L^3 / (3*E*I)

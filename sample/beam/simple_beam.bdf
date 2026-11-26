@@ -1,3 +1,4 @@
+$ COMPAT: MSC-runnable
 
 $ Simple cantilever beam — sbeam sample model
 $ 10 m long, 5 equal CBAR elements (2 m each), 6 nodes

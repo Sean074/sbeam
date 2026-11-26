@@ -108,6 +108,11 @@ time. Each item is a hard gate (for a `-beta.N` tag, the first two items suffice
 - [ ] **No open `[CRITICAL]`/`[MAJOR]` review findings** (see `07_code_review_process.md`).
 - [ ] **Milestone empty:** every issue on the milestone is closed (spot-check the
   milestone page, not an audit).
+- [ ] **Deviation register reviewed** (`12_deviation_register.md`, #95): for every card or
+  case-control command touched in the milestone, its rows say what the code now does, and
+  every row marked *defect* names an open issue. List the touched cards from the milestone's
+  closed issues, not from memory. The sample-deck `$ COMPAT:` tags need no review here:
+  CI holds them (`tests/docs/test_sample_compat_tags.py`, and the `compat` job).
 - [ ] **`CHANGELOG.md` entry cut** for this version: features, fixes, breaking changes.
 - [ ] **Viewer smoke test** — only if viewer code changed since the last tag: app starts,
   a representative model loads/solves/displays. *(From v0.4.0 on, the scripted GUI

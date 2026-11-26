@@ -44,7 +44,7 @@ Manual; COSMIC = NASTRAN-93 `um/BULK.TXT`.
 
 | Item | sbeam | Vendor | Citation | Disposition | Issue |
 |---|---|---|---|---|---|
-| Executive section | Not separated from case control. `CEND` is accepted and not required; `ID`, `TIME`, `DIAG`, `NASTRAN`, `ASSIGN` are skipped | Executive control ends at `CEND` | *unverified* | ignored | — |
+| Executive section | Not separated from case control. `CEND` is accepted and not required; `ID`, `TIME`, `DIAG`, `NASTRAN`, `ASSIGN` are skipped | Executive control ends at `CEND`, which is optional: "If CEND is not specified, then the program will automatically insert one" | QRG p.150 | ignored | — |
 | `INCLUDE` relative filename | Resolved against the directory of the file holding the `INCLUDE` | Left to the installation | QRG p.1984 | by design | — |
 | Bulk cards in a file INCLUDEd above `BEGIN BULK` | Refused, naming the file | The case-control INCLUDE page shows this form; the File Management and Bulk Data pages place the INCLUDE below `BEGIN BULK` | QRG p.465, p.131, p.1984 | refused | — |
 | Card after `ENDDATA` | Refused | `ENDDATA` ends the bulk data; what MSC does with a later card is not stated | QRG p.1808 | refused | — |

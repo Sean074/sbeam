@@ -1,3 +1,4 @@
+$ COMPAT: sbeam-extension
 $ Goland wing — the Flaps demo model (flaps_env/work/demo/goland.fp), SOL 103 normal modes
 $ with the reduced modal model export (MODEXP, #100) that sgear and Flaps read.
 $

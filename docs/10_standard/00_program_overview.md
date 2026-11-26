@@ -390,6 +390,11 @@ lockfile, `requirements-compat.txt` (pyNastran 1.4.1 needs numpy < 2). In the ma
 module skips itself; locally, run it from a venv built from that file
 (`pytest tests/compat --no-cov`). pyNastran is test-only and `sbeam/` never imports it.
 
+Every sample deck's first line is `$ COMPAT: MSC-runnable` or `$ COMPAT: sbeam-extension`
+(#95; meaning: `sample/README.md`). `tests/docs/test_sample_compat_tags.py` holds the tag to
+the sbeam-only names the deck uses, in the main job; the `compat` job holds it to the cards
+pyNastran does not know.
+
 ### Unit tests
 
 Tests mirror the `sbeam/` module structure under `tests/`. Each assembly, solver, parser and results sub-package has a corresponding test module; the viewer (`sbeam_tools/viewer/`) is tested under `tests/viewer/`.

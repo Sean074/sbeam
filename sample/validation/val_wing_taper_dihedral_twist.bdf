@@ -1,3 +1,4 @@
+$ COMPAT: sbeam-extension
 $ =========================================================================
 $ val_wing_taper_dihedral_twist.bdf
 $ Example wing — 5 deg dihedral, taper 0.80, linear washout root 0 deg -> tip -2 deg

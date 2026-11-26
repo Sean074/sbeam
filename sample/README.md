@@ -23,6 +23,23 @@ Results (`.f06` and the per-run CSV/BDF exports) are written beside the deck and
 git. An `INCLUDE` is resolved relative to the deck that names it, so a family folder has to be
 copied or moved as a whole.
 
+## Which decks MSC NASTRAN could read
+
+The first line of every deck is one of two tags:
+
+- `$ COMPAT: MSC-runnable` — every bulk card and case-control command in the deck, and in the
+  files it `INCLUDE`s, is one MSC NASTRAN defines.
+- `$ COMPAT: sbeam-extension` — the deck uses at least one
+  [sbeam-only card or command](../docs/10_standard/02_card_reference.md#sbeam-only-cards)
+  (`W2GJ`, `MONSECT`, `MANVR`, `MODEXP` …). MSC will not run it.
+
+The tag is about card names and layouts. **No deck here has been run in MSC NASTRAN**, and
+"MSC-runnable" does not say MSC would give sbeam's numbers: the known differences are in the
+[deviation register](../docs/10_standard/12_deviation_register.md). 17 files carry the first
+tag and 20 the second. Of the SOL 144 decks only `val_dihedral_trim.bdf` and the MSC archive
+listing `HA144A.bdf` are MSC-runnable; sbeam refuses the archive listing. Two tests hold the tags: one against sbeam's own
+list of sbeam-only names, one against the cards pyNastran does not know (#83, #95).
+
 Four kinds of file here are **not** decks to run on their own; the tables mark them:
 
 - **bulk only**: no case control; a driver deck `INCLUDE`s it.

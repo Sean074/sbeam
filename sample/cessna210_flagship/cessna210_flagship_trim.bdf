@@ -1,3 +1,4 @@
+$ COMPAT: sbeam-extension
 $ cessna210_flagship_trim.bdf — SOL 144 static trim driver (Step 65)
 $
 $ Thin case-control driver over the shared flagship bulk model.  Two symmetric

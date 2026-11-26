@@ -131,6 +131,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   **None** when the gate compares sbeam with itself. No V-suite or gust row is checked against
   an MSC or ZAERO number. A short table lists the SOL 144 gates that do carry one (HA144A,
   AAUG 2023.1 PDF p.233–237).
+- **Release gate item and sample-deck compatibility tags (#95, part D4; closes #95).** The
+  pre-release gate (`08_release_process.md` §3) now requires the deviation register to be
+  reviewed for every card touched in the milestone. The first line of every sample deck is
+  `$ COMPAT: MSC-runnable` (17 files: only cards and commands MSC defines) or
+  `$ COMPAT: sbeam-extension` (20 files); `sbeam-cases` writes the tag on a generated gust
+  deck. Two tests hold the tags, one against sbeam's list of sbeam-only names and one against
+  the cards pyNastran does not know. No sample deck has been run in MSC. `CEND` being optional
+  in MSC is now cited (QRG 2024.1 PDF p.150).
 - **`sample/` is one folder per model family, with a README** (#108, Tier S). The 38 sample
   files move, names unchanged, into `sample/beam/`, `sample/validation/`,
   `sample/goland_wing/`, `sample/ha144a/` and `sample/cessna210_flagship/`. The new

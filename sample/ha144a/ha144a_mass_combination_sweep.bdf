@@ -1,3 +1,4 @@
+$ COMPAT: sbeam-extension
 $ HA144A MASS COMBINATION SWEEP — MSC multiple mass combination (#102)
 $ The twin of ha144a_massset_sweep.bdf in MSC's construction (MSC Nastran 2024.1 QRG
 $ PDF p.286-287 BEGIN MASSID, p.482 case-control MASSSET, p.2018 bulk MASSSET):

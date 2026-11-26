@@ -1,3 +1,4 @@
+$ COMPAT: MSC-runnable
 
 $ Validation: Simply supported beam — mid-span point load (SOL 101)
 $ Euler-Bernoulli closed-form: delta_mid = P*L^3 / (48*E*I)

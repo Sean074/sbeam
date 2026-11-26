@@ -1,3 +1,4 @@
+$ COMPAT: MSC-runnable
 
 $ Cantilever beam — SOL 103 normal modes, offset point mass carried through an RBAR
 $ Based on sample/beam/simple_beam.bdf (10 m, 5 CBAR elements, 6 nodes + node 7)
