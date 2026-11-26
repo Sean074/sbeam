@@ -4,8 +4,9 @@ Three things are held here:
 
 1. **The parser owns the card rules.**  ``validate_sol144_authoring`` re-implemented
    them for cards the viewer put into the model in memory.  It is gone; this file
-   records, rule by rule, that the parser refuses each one, and which checks the
-   parser does not make (they stay in ``check_case_control``).
+   records, rule by rule, that the parser refuses each one.  The rules the parser
+   does not make, case control against the model, are the solver package's
+   (``sbeam.solver.precheck``, ``tests/solver/test_precheck.py``, #124).
 2. **A card survives the round trip** form -> text -> parser for every card family.
 3. **What runs is what exports**: after an edit the session model equals the parse of
    the export.
@@ -21,10 +22,12 @@ import pytest
 from sbeam.model.aero import Diverg, Trimcon, Trimobj, Trimvar
 from sbeam.model.card_writers import FAMILIES
 from sbeam.parser.bdf_reader import parse_bdf
+from sbeam.solver import precheck
 from sbeam_tools.viewer import session_deck
 from sbeam_tools.viewer import sol144_authoring as logic
 from sbeam_tools.viewer.sol144_authoring import check_case_control
 from tests.samples import sample_path
+from tests.solver.test_precheck import NOT_RUNNABLE
 from tests.viewer.journey_helpers import _open, differences
 
 MLOADS = sample_path("ha144a_fullspan_mloads.bdf")
@@ -93,35 +96,6 @@ PARSER_OWNS = {
         _mutated(add="TABLED1, 300\n+, 0.0, 0.0, 1.0, 1.0, ENDT"), "Duplicate TABLED1 TID 300"),
 }
 
-# What the parser accepts and the viewer reports before Launch (check_case_control).
-VIEWER_KEEPS = {
-    "subcase with no driver": (_mutated(("  TRIM   = 1\n", "")), "needs a driver"),
-    "TRIM selector names no card": (
-        _mutated(("  TRIM   = 1", "  TRIM   = 77")), "TRIM 77 not found"),
-    "MANVR selector names no card": (
-        _mutated(("  MANVR = 1", "  MANVR = 77")), "MANVR 77 not found"),
-    "MANVR with TRIM in one subcase": (
-        _mutated(("  MANVR = 1", "  MANVR = 1\n  TRIM = 1")), "cannot combine"),
-    "LOAD selector names no set": (
-        _mutated(("  TRIM   = 1", "  TRIM   = 1\n  LOAD = 777")), "LOAD 777 not found"),
-    "LOAD on a MANVR subcase": (
-        _mutated(("  MANVR = 1", "  MANVR = 1\n  LOAD = 777")),
-        "LOAD combines only with a TRIM subcase"),
-    "MASSCASE selector names no card": (
-        _mutated(("  TRIM   = 1", "  TRIM   = 1\n  MASSCASE = 777")), "MASSCASE 777 not found"),
-    "GUSTLF selector names no card": (
-        _mutated(("  TRIM   = 1", "  GUSTLF = 777")), "GUSTLF 777 not found"),
-    "DIVERG selector names no card": (
-        _mutated(("  TRIM   = 1", "  DIVERG = 777")), "DIVERG 777 not found"),
-    "TRIMWGT selector names no card": (
-        _mutated(("  TRIM   = 1", "  TRIM   = 1\n  TRIMWGT = 777")), "TRIMWGT 777 not found"),
-    "MANVR subcase with no SUPORT": (
-        _mutated(("SUPORT, 90, 35", "$SUPORT, 90, 35")), "needs a SUPORT card"),
-    "modal MANVR, MANTRIM without RHO": (
-        _mutated(_MODAL, ("MANTRIM, 1, 1, 2.3769-3", "MANTRIM, 1, 1")), "needs RHO"),
-}
-
-
 @pytest.mark.parametrize("rule", sorted(PARSER_OWNS))
 def test_the_parser_refuses_each_card_rule_the_viewer_used_to_restate(rule):
     text, fragment = PARSER_OWNS[rule]
@@ -130,11 +104,13 @@ def test_the_parser_refuses_each_card_rule_the_viewer_used_to_restate(rule):
     assert fragment in str(refusal.value)
 
 
-@pytest.mark.parametrize("rule", sorted(VIEWER_KEEPS))
-def test_what_the_parser_accepts_the_viewer_reports_before_launch(rule):
-    text, fragment = VIEWER_KEEPS[rule]
-    cc, bulk = parse_bdf(MLOADS, text=text)            # the parser does not check this
+@pytest.mark.parametrize("rule", sorted(NOT_RUNNABLE))
+def test_the_viewer_reports_the_solver_packages_case_control_rules(rule):
+    """The viewer states none of these: it shows ``sbeam.solver.precheck``'s list (#124)."""
+    text, fragment = NOT_RUNNABLE[rule]
+    cc, bulk = parse_bdf(MLOADS, text=text)
     errors, _ = check_case_control(bulk, cc)
+    assert errors == precheck.check_case_control(cc, bulk)[0]
     assert any(fragment in e for e in errors), errors
 
 

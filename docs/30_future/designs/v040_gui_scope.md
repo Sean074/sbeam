@@ -111,7 +111,7 @@ Found while working these, all filed with bodies:
 |---|---|---|
 | #122 | The viewer refused to run a GUSTLF subcase | Closed |
 | #123 | A no-op in the viewer changed the deck (case-control Apply, export, card forms, second deck) | Closed |
-| #124 | Case control is not checked against the model before a run; the viewer keeps its own copy of 12 solver rules | Open, v0.4.1 |
+| #124 | Case control was not checked against the model before a run; the viewer kept its own copy of the solver's rules | Closed |
 | #125 | Two SUPORT cards on one grid are accepted without a message | Open, opportunistic |
 | #126 | `test_run_reproducibility` fails intermittently on round-off in near-zero outputs | Open |
 | #127 | The pull-up trim recipe prescribed PITCH = 0 at every load factor | Closed |

@@ -13,6 +13,7 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.model.card_writers import FAMILIES, write_authored_block
 from sbeam.parser.bulk_fields import expand_int_list_with_thru
 from sbeam.parser.case_control import CaseControl
+from sbeam.solver import precheck
 from sbeam_tools.cases.maneuver import IncrementSpec
 
 # Canonical AESTAT rigid-body trim-variable labels.
@@ -228,16 +229,9 @@ def label_options(bulk: BulkData, modal_only: bool = False) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Pre-launch check of the case control against the model.
-#
-# Card rules are the parser's: every card the viewer authors is written as text and
-# the deck is re-parsed (#113), so a label that no AESTAT defines, a MANVR that names
-# a missing MANTIME, a TABLED1 out of order, an AELIST box outside every CAERO1 and a
-# duplicate ID are all refused with the parser's own message.  What is left here is
-# what the parser does not look at: whether each subcase's selectors name cards that
-# exist and make one runnable case.  The solver raises on these at run time; the
-# viewer reports them before Launch.  (They are solver rules restated, the class of
-# #122; #124 moves them into the solver package so there is one statement.)
+# Pre-launch check.  Card rules are the parser's (every authored card is re-parsed,
+# #113) and case-control rules are the solver package's (#124); the viewer states
+# neither.
 # ---------------------------------------------------------------------------
 
 def snapshot_family_ids(bulk: BulkData) -> dict[str, set[int]]:
@@ -259,122 +253,18 @@ def check_case_control(
 ) -> tuple[list[str], list[str]]:
     """Return ``(errors, warnings)`` for a SOL 144 case control against its model.
 
-    Errors block Launch and export; warnings inform.  Card-level rules are not
-    checked here: they are the parser's, applied when the deck is re-parsed.
+    Errors block Launch and export; warnings inform.  The rules are the solver
+    package's (``sbeam.solver.precheck``, #124), the same ones the command line applies
+    before a run.  The one check added here is viewer state: a command still written
+    as an increment from trim, which the two-pass builder has not yet resolved.
     """
-    errors: list[str] = []
-    warns: list[str] = []
-    if cc is None or cc.sol != 144:
-        return errors, warns
-
-    # --- per-subcase driver / reference checks ---
-    for sc in cc.subcases:
-        tag = f"Subcase {sc.subcase_id}"
-        # A GUSTLF subcase is a trim subcase: the card names its own TRIM, so the
-        # TRIM selector may be blank (run_sol144_trim, #1; found by #111).
-        has_trim = sc.trim_sid is not None or sc.gustlf_sid is not None
-        drivers = [d for d in (sc.trim_sid, sc.diverg_sid, sc.mloads_sid,
-                               sc.gustlf_sid) if d is not None]
-        if not drivers:
-            errors.append(f"{tag}: no TRIM, DIVERG, MANVR or GUSTLF selected — "
-                          "a SOL 144 subcase needs a driver.")
-        if sc.gustlf_sid is not None:
-            gust = bulk.gustlfs.get(sc.gustlf_sid)
-            if gust is None:
-                errors.append(f"{tag}: GUSTLF {sc.gustlf_sid} not found in the "
-                              "bulk data.")
-            elif sc.trim_sid is not None and sc.trim_sid != gust.trimid:
-                errors.append(f"{tag}: TRIM = {sc.trim_sid} but GUSTLF "
-                              f"{gust.sid} names TRIM {gust.trimid}.")
-        if sc.mloads_sid is not None and (has_trim
-                                          or sc.diverg_sid is not None):
-            errors.append(f"{tag}: MANVR cannot combine with TRIM/GUSTLF/DIVERG "
-                          "in one subcase.")
-        # #6: a TRIM subcase takes a LOAD set (applied structural load in the
-        # trim RHS); MANVR and DIVERG-only subcases do not (the solver raises).
-        if sc.load_sid is not None:
-            if not has_trim:
-                errors.append(f"{tag}: LOAD combines only with a TRIM subcase "
-                              "(an applied structural load enters the trim "
-                              "balance; MANVR and DIVERG-only subcases drop "
-                              "it, so the solver refuses the request).")
-            else:
-                sids = [sc.load_sid]
-                if sc.load_sid in bulk.loads:
-                    sids += [s for _, s in bulk.loads[sc.load_sid].components]
-                known = (set(bulk.loads) | set(bulk.forces) | set(bulk.moments)
-                         | set(bulk.gravs))
-                if sc.load_sid not in known:
-                    errors.append(f"{tag}: LOAD {sc.load_sid} not found in the "
-                                  "bulk data.")
-                gravs = sorted({s for s in sids if s in bulk.gravs})
-                if gravs:
-                    errors.append(f"{tag}: LOAD {sc.load_sid} references GRAV "
-                                  f"{gravs}; gravity enters a trim through URDD3 "
-                                  "only, so a GRAV in the trim LOAD set is refused.")
-        for sid, family, name in [
-            (sc.trim_sid, "trim", "TRIM"), (sc.trimobj_sid, "trimobj", "TRIMWGT"),
-            (sc.diverg_sid, "diverg", "DIVERG"), (sc.mloads_sid, "mloads", "MANVR"),
-        ]:
-            if sid is not None and sid not in family_store(bulk, family):
-                errors.append(f"{tag}: {name} {sid} not found in the bulk data.")
-        if sc.massset_sid is not None and sc.massset_sid not in bulk.masssets:
-            errors.append(f"{tag}: MASSCASE {sc.massset_sid} not found in the "
-                          "bulk data.")
-
-    # --- trim determinacy: information, not a rule ---
-    all_labels = ({a.label for a in bulk.aestats.values()}
-                  | {s.label for s in bulk.aesurfs.values()})
-    for sid, trim in bulk.trims.items():
-        prescribed = set(trim.vars.keys()) & all_labels
-        free = all_labels - prescribed
-        if all_labels and not free:
-            warns.append(f"TRIM {sid}: all trim variables are prescribed — "
-                         "no DOFs remain to solve.")
-        elif len(free) > len(prescribed) and not bulk.trimobjs:
-            warns.append(f"TRIM {sid}: over-determined ({len(free)} free vs "
-                         f"{len(prescribed)} prescribed) with no TRIMWGT card.")
-
-    # --- MANVR subcases: what the solver needs that no card rule states ---
-    mloads_selected = [sc.mloads_sid for sc in cc.subcases
-                       if sc.mloads_sid is not None]
-    if mloads_selected and not bulk.supports:
-        errors.append("An MANVR subcase needs a SUPORT card (free-flight "
-                      "r-set) — none is defined.")
-    for sid in dict.fromkeys(mloads_selected):
-        ml = bulk.mloads.get(sid)
-        if ml is None:
-            continue
-        mldtrim = bulk.mldtrims.get(ml.mldtrim)
-        if mldtrim is not None and ml.selects_modal and mldtrim.rho <= 0.0:
-            errors.append(
-                f"MANVR {sid}: the modal (free-flight) solver needs RHO "
-                f"on MANTRIM {mldtrim.sid} (V = sqrt(2q/rho)).")
-        comd = bulk.mldcomds.get(ml.mldcomd) if ml.mldcomd else None
-        for _label, tabid in (comd.commands if comd is not None else []):
-            table = bulk.tabled1s.get(tabid)
-            if table is not None and ml.selects_modal and len(table.xs) < 5:
-                warns.append(
-                    f"TABLED1 {tabid} (modal MANVR {sid}): "
-                    "sparse clamped-linear table — slope jumps "
-                    "ring the highest retained mode; consider a "
-                    "densely-sampled cosine ramp.")
-        for sc in cc.subcases:
-            if sc.mloads_sid == sid and sc.massset_sid is not None \
-                    and ml.selects_modal:
-                warns.append(
-                    f"Subcase {sc.subcase_id}: MASSCASE {sc.massset_sid} with "
-                    "the modal solver uses the fixed baseline basis (fixed-Φ); "
-                    "the solver warns if the case CG shifts more than 5% of "
-                    "c_ref.")
-
-    # --- viewer state: a command still written as an increment from trim ---
+    if cc is None:
+        return [], []
+    errors, warns = precheck.check_case_control(cc, bulk)
     for key in (unresolved_increments or []):
-        msid, label = key.mloads_sid, key.label
         errors.append(
-            f"MANVR {msid} {label}: unresolved increment command — resolve "
+            f"MANVR {key.mloads_sid} {key.label}: unresolved increment command — resolve "
             "to absolute TABLED1s (after a solve) before exporting.")
-
     return errors, warns
 
 

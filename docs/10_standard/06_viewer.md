@@ -667,21 +667,21 @@ convention). Gate: run from a script on `ha144a_mloads_massset.bdf`, the builder
 the deck's hand-written TABLED1 310 from the solved trim elevator (0.4917114 against the
 deck's 0.491711).
 
-**Pre-launch check:** `check_case_control(bulk, cc, …) -> (errors, warnings)` checks the
-case control against the model: exactly one driver per subcase (TRIM, DIVERG, MANVR or
-GUSTLF; a GUSTLF subcase is a trim subcase whose TRIM the card names, #122), LOAD only with
-a trim subcase and naming a set that exists with no GRAV in it, every selector naming a card
-that exists, a SUPORT in the deck for a MANVR subcase, RHO on the MANTRIM of a modal MANVR,
-and no command left as an unresolved increment. Errors disable ▶ Launch Analysis and the
-BDF downloads; warnings (over-/fully-determined trim, fixed-Φ MASSCASE note, sparse modal
-command tables) surface with the pre-solve warnings.
+**Pre-launch check:** the viewer shows the solver package's own list,
+`sbeam.solver.precheck.check_case_control(cc, bulk)` (#124), the one the command line
+applies before a run: exactly one driver per subcase (TRIM, DIVERG, MANVR or GUSTLF; a
+GUSTLF subcase is a trim subcase whose TRIM the card names, #122), LOAD only with a trim
+subcase and naming a set that exists with no GRAV in it, every selector naming a card that
+exists, a SUPORT in the deck for a MANVR subcase, and RHO on the MANTRIM of a modal MANVR.
+The viewer's `check_case_control(bulk, cc, …)` adds one check of its own state: a command
+left as an unresolved increment. Errors disable ▶ Launch Analysis and the BDF downloads;
+warnings (over-/fully-determined trim, fixed-Φ MASSCASE note, sparse modal command tables)
+surface with the pre-solve warnings.
 
-It holds no card rule. Those are the parser's and are applied by the re-parse above; the
-function that restated them, `validate_sol144_authoring`, is deleted.
-`tests/viewer/test_reparse_authoring.py` records the split rule by rule: 18 card rules the
-parser refuses (`PARSER_OWNS`), and 12 case-control rules the parser does not look at
-(`VIEWER_KEEPS`). The 12 are solver rules restated in the viewer; #124 moves them into the
-solver package so the command line reports them before a run too.
+The viewer states no rule of its own. Card rules are the parser's, applied by the re-parse
+above (`validate_sol144_authoring`, which restated them, is deleted, #113); case-control
+rules are the solver package's (#124). `tests/viewer/test_reparse_authoring.py` lists the 18
+card rules the parser refuses, and `tests/solver/test_precheck.py` the case-control faults.
 
 **Export:** two buttons at the tab foot — *Download run BDF (driver + INCLUDEs)*
 (case control, the loaded deck's bulk section unchanged, then the authored cards and any

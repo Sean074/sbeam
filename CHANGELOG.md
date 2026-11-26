@@ -86,6 +86,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     WKK's operator bit for bit. pyNastran reads all 224 terms to the same values.
 
 ### Breaking changes
+- **Two SOL 144 decks that ran are now refused (#124).** A subcase with both `MANVR` and
+  `TRIM` (or `GUSTLF`, or `DIVERG`) ran the maneuver and ignored the rest; a `TRIMWGT = n`
+  naming no TRIMWGT card ran the trim with no objective. Neither gave a message. Both now
+  stop before the run. **Fix a deck:** keep one driver per subcase, and delete a `TRIMWGT`
+  selector that names no card.
 - **Viewer: a card of the loaded deck is no longer edited in place (#113).** Choosing a loaded
   card, changing a field and pressing Apply is refused with a message. Use **Save as new
   SID**, which adds the edit as a new card, then select that card in the case control.
@@ -288,6 +293,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   slope with `STRIPK`. `CPINJ` already refused strip panels. No repo deck is affected.
 
 ### Changed
+- **The case control is checked against the model before any subcase is solved (#124).**
+  `sbeam.solver.precheck.check_case_control` holds the rules once: a selector that names no
+  card, a subcase with no driver, MANVR combined with TRIM, a LOAD on a subcase that drops
+  it, a MANVR subcase with no SUPORT, a modal MANVR without RHO. The command line stops with
+  every fault listed. Before, most of these failed from inside the solver when the subcase
+  was reached, one at a time, after the earlier subcases had been solved. The viewer shows
+  the same list before Launch and no longer holds its own copy of these rules. `parse_bdf`
+  is unchanged: a deck that cannot yet run can still be read.
 - **Maneuver case construction moved from the viewer to `sbeam_tools/cases/maneuver.py`
   (#114).** The trim recipes (`MANEUVER_PRESETS`), the command-history shapes (`gen_*`) and
   the two-pass command builder (`resolve_increment_tables`) are now a tool a script can call;

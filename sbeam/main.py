@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict
 
 from sbeam.parser.bdf_reader import parse_bdf
+from sbeam.solver.precheck import require_runnable
 from sbeam.results.f06_writer import (
     build_f06_gpwg_text,
     build_f06_sol101_text,
@@ -46,6 +47,13 @@ def main() -> None:
         # there is nothing to solve, and an empty f06 would read as success.
         sys.exit("Error: the case control defines nothing to run "
                  "(no SUBCASE and no selector or output request)")
+
+    # Every fault of the case control against the model is reported before any
+    # subcase is solved (#124), not one at a time from inside the solver.
+    try:
+        require_runnable(cc, bulk)
+    except ValueError as exc:
+        sys.exit(f"Error: {exc}")
 
     sol144_results = None
     maneuver_results: Dict[int, Any] = {}

@@ -278,6 +278,31 @@ plus `massset_sid` for the Step 60 payload / mass case (see
 mass combination into the same field (#102; `mass_card` records which command was used;
 card reference "MASSSET — MSC mass combination").
 
+**The case control is checked against the model before any subcase is solved (#124).**
+`sbeam.solver.precheck.check_case_control(cc, bulk)` returns every fault, and the command
+line (`require_runnable`) stops with the whole list:
+
+| Fault | Message |
+|---|---|
+| A subcase selects no TRIM, DIVERG, MANVR or GUSTLF | "needs a driver" |
+| `TRIM`, `TRIMWGT`, `DIVERG`, `MANVR`, `GUSTLF`, `MASSCASE` = n with no such card | "… n not found in the bulk data" |
+| `MANVR` with `TRIM`, `GUSTLF` or `DIVERG` in one subcase | "MANVR cannot combine with …" |
+| `LOAD` on a MANVR or divergence-only subcase | "LOAD combines only with a TRIM subcase" |
+| `LOAD` = n with no such set, or a set that holds a GRAV | "LOAD n not found" / "references GRAV" |
+| `TRIM` = n beside a `GUSTLF` whose card names another TRIM | "names TRIM m" |
+| A MANVR subcase and no SUPORT in the deck | "needs a SUPORT card" |
+| A modal MANVR whose MANTRIM has no RHO | "needs RHO on MANTRIM" |
+
+The parser does not make these checks: it checks cards against cards, and such a deck
+parses. Before #124 most of them stopped the run from inside the solver when the subcase
+was reached, with the earlier subcases' work lost. Two did not stop it at all: `MANVR` with
+`TRIM` in one subcase ran the maneuver and ignored the TRIM, and `TRIMWGT = n` naming no
+card ran the trim with no objective. Both are now refused (input that is not acted on is
+refused, CLAUDE.md rule 7). The check is not part of `parse_bdf`, so a deck that cannot yet
+run can still be read, which is how the viewer opens one to complete it. These are sbeam's
+own consistency rules; no MSC rule is claimed for them. Only SOL 144 is checked: SOL 101
+and 103 report a missing LOAD, SPC or METHOD from the solver.
+
 ### Over-determined trim (sbeam-defined cards)
 
 When the number of free trim variables exceeds the number of equilibrium equations,

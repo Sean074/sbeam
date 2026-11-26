@@ -142,6 +142,7 @@ sbeam/
 │   ├── sol103.py         # Normal modes
 │   ├── sol144.py         # Static aeroelastic trim orchestrator + import facade (P13 split below)
 │   ├── sol144_util.py    # AeroCache, URDD frame rotations, load resultants, M_ax, SUPORT indexing
+│   ├── precheck.py       # Case control against the model, before any solve: check_case_control, require_runnable (#124)
 │   ├── sol144_trim_solve.py  # Schur partition + determined/over-determined trim solvers
 │   ├── sol144_derivs.py  # Rigid/restrained/unrestrained + hinge-moment derivatives
 │   ├── sol144_diverg.py  # Divergence eigenproblems + DIVERG-card sweep
