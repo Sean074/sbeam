@@ -36,13 +36,71 @@ def mloads_bulk():
 class TestPresets:
     def test_pullup_matches_load_factor_helper(self):
         preset = maneuver.MANEUVER_PRESETS[0]
-        vars_ = preset.prescribed_vars(2.5, g=32.174)
+        vars_ = preset.prescribed_vars(2.5, g=32.174, v_true=400.0, c_ref=10.0)
         assert vars_["URDD3"] == load_factor_to_urdd3(2.5, 32.174)
-        assert vars_["PITCH"] == 0.0 and vars_["URDD5"] == 0.0
+        assert vars_["URDD5"] == 0.0
+        assert vars_["PITCH"] == pytest.approx(1.5 * 32.174 * 10.0 / (2 * 400.0 ** 2))
 
     def test_no_regulatory_number_is_a_default(self):
         """The load factor of a case is the caller's input; 1.0 is level flight (#114)."""
         assert maneuver.MANEUVER_PRESETS[0].param_default == 1.0
+
+    # --- #127: a steady pull-up carries a pitch rate ---
+
+    def test_pitch_rate_is_the_flagships_hand_written_value(self):
+        """The flagship's TRIM 2 was written by hand as a 2.5 g steady pull-up.  Its
+        PITCH is the independent number; V comes from the same deck's q (TRIM 2) and
+        density (MANTRIM 1), and c_ref from its AEROS.
+
+        The deck's 2.8402e-3 was worked with V rounded (its comment uses V^2 = 3810.2
+        where 2q/rho is 3810.61), so the two agree to 2e-4, not to the last digit.
+        """
+        _, bulk = parse_bdf(sample_path("cessna210_flagship_trim.bdf"))
+        trim = bulk.trims[2]
+        g = 9.81
+        assert trim.vars["URDD3"] == pytest.approx(-2.5 * g)
+        v_true = (2.0 * trim.q / bulk.mldtrims[1].rho) ** 0.5
+        assert v_true == pytest.approx(61.73, abs=0.01)
+        got = maneuver.MANEUVER_PRESETS[0].prescribed_vars(
+            2.5, g, v_true=v_true, c_ref=bulk.aeros.cref)
+        assert got["PITCH"] == pytest.approx(trim.vars["PITCH"], rel=3e-4)
+        assert got["URDD3"] == pytest.approx(trim.vars["URDD3"])
+        assert got["URDD5"] == trim.vars["URDD5"] == 0.0
+
+    def test_pitch_rate_sign_and_level_flight(self):
+        rate = maneuver.steady_pull_up_pitch_rate
+        assert rate(1.0, 9.81, 60.0, 1.5) == 0.0                    # level flight: no rotation
+        assert rate(2.5, 9.81, 60.0, 1.5) > 0.0                     # pull-up: nose up
+        assert rate(0.0, 9.81, 60.0, 1.5) < 0.0                     # push-over: nose down
+        assert rate(-1.0, 9.81, 60.0, 1.5) == pytest.approx(-rate(3.0, 9.81, 60.0, 1.5))
+        # q = (n - 1) g / V, and PITCH = q c / 2V: built the long way round
+        q = (2.5 - 1.0) * 9.81 / 60.0
+        assert rate(2.5, 9.81, 60.0, 1.5) == pytest.approx(q * 1.5 / (2.0 * 60.0))
+
+    @pytest.mark.parametrize("v_true, c_ref", [(None, 1.5), (0.0, 1.5), (-5.0, 1.5),
+                                               (60.0, None), (60.0, 0.0)])
+    def test_the_speed_and_the_chord_are_required(self, v_true, c_ref):
+        """No default and no silent zero: without V the recipe refuses."""
+        with pytest.raises(ValueError, match="true airspeed and the reference chord"):
+            maneuver.MANEUVER_PRESETS[0].prescribed_vars(2.5, 9.81, v_true=v_true, c_ref=c_ref)
+
+    def test_the_pitch_rate_moves_the_elevator_the_way_the_standard_says(self):
+        """An independent check of the effect: the tail's pitch-rate (damping) load
+        opposes the rotation, so holding the pull-up takes more nose-up elevator than
+        the same load factor with no rotation.  On the flagship, elevator trailing
+        edge up is negative, so ELEV is more negative with the pitch rate."""
+        import copy
+        cc, bulk = parse_bdf(sample_path("cessna210_flagship_trim.bdf"))
+        subcase = next(sc for sc in cc.subcases if sc.trim_sid == 2)
+        elevator = {}
+        for tag, pitch in (("steady", bulk.trims[2].vars["PITCH"]), ("no rotation", 0.0)):
+            model = copy.deepcopy(bulk)
+            model.trims[2].vars["PITCH"] = pitch
+            aero = build_aero_model(model, grid_index=build_grid_index(model))
+            elevator[tag] = run_sol144_trim(model, subcase, aero).trim_vars["ELEV"]
+        assert elevator["steady"] < elevator["no rotation"] < 0.0
+        # The size (1.35 degrees here) is the solver's own number and is not gated:
+        # only the direction has a prediction made outside the solver.
 
     def test_roll_and_sideslip(self):
         roll = next(p for p in maneuver.MANEUVER_PRESETS if p.name == "Steady roll")

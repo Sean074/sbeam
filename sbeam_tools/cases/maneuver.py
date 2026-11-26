@@ -56,11 +56,21 @@ class ManeuverPreset:
     required_labels: list[str] # AESTAT labels the recipe prescribes or frees
     surface_role: str          # which AESURF stays free ('elevator', ...)
     uses_g: bool = False       # parameter needs the gravity constant
+    uses_speed: bool = False   # recipe needs the true airspeed and the reference chord
 
-    def prescribed_vars(self, param: float, g: float = 0.0) -> dict[str, float]:
+    def prescribed_vars(self, param: float, g: float = 0.0,
+                        v_true: Optional[float] = None,
+                        c_ref: Optional[float] = None) -> dict[str, float]:
+        """The TRIM variables the recipe prescribes for ``param``.
+
+        The pull-up also needs ``g``, the true airspeed ``v_true`` and the reference
+        chord ``c_ref`` (AEROS), all in the deck's units; there is no default for the
+        speed, and the recipe refuses to guess one.
+        """
         if self.name == "Symmetric pull-up / push-over":
             return {"URDD3": load_factor_to_urdd3(param, g),
-                    "PITCH": 0.0, "URDD5": 0.0}
+                    "PITCH": steady_pull_up_pitch_rate(param, g, v_true, c_ref),
+                    "URDD5": 0.0}
         if self.name == "Steady roll":
             return {"ROLL": param, "URDD4": 0.0}
         if self.name == "Steady sideslip":
@@ -68,11 +78,38 @@ class ManeuverPreset:
         raise ValueError(f"unknown preset {self.name!r}")
 
 
+def steady_pull_up_pitch_rate(n_z: float, g: float, v_true: Optional[float],
+                              c_ref: Optional[float]) -> float:
+    """``PITCH`` of a steady pull-up or push-over: ``(n_z - 1) g c_ref / (2 V^2)``.
+
+    An airplane holding ``n_z`` on a curved path is rotating: the lift beyond the
+    weight, ``(n_z - 1) W``, is the centripetal force, so the pitch rate is
+    ``q = (n_z - 1) g / V``.  The TRIM variable ``PITCH`` is the reduced rate
+    ``q c / 2V`` (charter §5).  It is zero only at ``n_z = 1`` and negative in a
+    push-over.
+
+    ZAERO states the same value for its ``QRATE`` trim variable: "QRATE can be
+    pre-determined by QRATE = ((Nz - 1) g / V) (C / 2V)" (ZAERO 9.2 User's Manual,
+    TRIMVAR, PDF p.512).  sbeam's standard: ``05c_sol144_maneuver.md``.  Until #127
+    the recipe prescribed 0 at every load factor: a pull with no rotation, which on
+    the flagship at 2.5 g trims with 1.35 degrees too little elevator.
+
+    All arguments are in the deck's units.  ``v_true`` is the **true** airspeed,
+    ``sqrt(2 q / rho)`` for the TRIM's dynamic pressure.
+    """
+    if v_true is None or c_ref is None or v_true <= 0.0 or c_ref <= 0.0:
+        raise ValueError(
+            "a steady pull-up needs the true airspeed and the reference chord, both "
+            f"positive, for its pitch rate (got V = {v_true}, c_ref = {c_ref})")
+    return (n_z - 1.0) * g * c_ref / (2.0 * v_true * v_true)
+
+
 MANEUVER_PRESETS: list[ManeuverPreset] = [
     ManeuverPreset(
         name="Symmetric pull-up / push-over",
-        description="Prescribe URDD3 = -n_z·g and PITCH = URDD5 = 0; "
-                    "ANGLEA and the elevator trim free.",
+        description="Steady pull-up or push-over. Prescribe URDD3 = -n_z·g, "
+                    "PITCH = (n_z - 1)·g·c_ref/(2V²) (the pitch rate of the curved "
+                    "path, as qc/2V) and URDD5 = 0; ANGLEA and the elevator trim free.",
         param_label="Load factor n_z",
         # 1.0 is level flight.  The limit load factor of a case is the caller's
         # input (it comes from the airplane's category and weight); no regulatory
@@ -81,6 +118,7 @@ MANEUVER_PRESETS: list[ManeuverPreset] = [
         required_labels=["ANGLEA", "PITCH", "URDD3", "URDD5"],
         surface_role="elevator",
         uses_g=True,
+        uses_speed=True,
     ),
     ManeuverPreset(
         name="Steady roll",

@@ -644,7 +644,9 @@ applied); for a free aircraft (SUPORT, no SPC) it must balance to ≈ 0 (a non-z
 warns — gravity/mass-model guard, KC9), and in an SPC'd direction it equals minus the
 reaction. Recipes: symmetric pull-up/push-over (prescribe `URDD3`, `PITCH`, `URDD5 = 0`; ANGLEA and the
 elevator free; a steady pull-up carries `PITCH = (n − 1)·g·c_ref/(2V²)`, not 0 — see the
-flagship `TRIM 2`), gated by **V-C5** (`tests/aero/test_maneuver_loads.py`); steady roll and
+flagship `TRIM 2`; ZAERO gives the same value for its `QRATE`, ZAERO 9.2 User's Manual,
+TRIMVAR, PDF p.512; `sbeam_tools.cases.maneuver.steady_pull_up_pitch_rate` computes it and
+the viewer's pull-up preset writes it, #127), gated by **V-C5** (`tests/aero/test_maneuver_loads.py`); steady roll and
 steady sideslip as in "Lateral trim cases" below, gated by **V-LAT2**
 (`tests/aero/test_lateral_cases.py`); thrust and engine torque as applied `LOAD` sets as in
 "Applied structural load in a trim" below, gated by **V-THR** (`tests/aero/test_thrust_trim.py`).

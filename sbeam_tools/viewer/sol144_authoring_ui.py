@@ -643,6 +643,15 @@ def _render_preset_panel(bulk: BulkData) -> None:
                 f"Gravity g ({units.length_unit}/s², {units.name})", value=units.g,
                 key=wk(f"auth_preset_g_{units.name}"), format="%.6g",
             )
+        v_true: Optional[float] = None
+        c_ref = bulk.aeros.cref if bulk.aeros is not None else None
+        if preset.uses_speed:
+            # #127: a steady pull-up has a pitch rate, which needs V and c_ref.
+            v_true = st.number_input(
+                "True airspeed V (deck units; V = sqrt(2q/ρ) for the TRIM's Q)",
+                value=0.0, min_value=0.0, key=wk("auth_preset_v"), format="%.6g")
+            st.caption(f"Reference chord c_ref = {c_ref if c_ref is not None else 'none'} "
+                       "(AEROS). PITCH = (n_z − 1)·g·c_ref/(2V²).")
         missing = maneuver.missing_preset_labels(bulk, preset)
         if missing:
             st.warning(f"Missing AESTAT labels: {', '.join(missing)}")
@@ -657,7 +666,12 @@ def _render_preset_panel(bulk: BulkData) -> None:
             st.warning(f"The {preset.surface_role} (an AESURF) must exist and "
                        "stay un-prescribed so it can trim free.")
         if st.button("Pre-fill TRIM form", key=wk("auth_preset_fill")):
-            st.session_state["auth_trim_prefill"] = preset.prescribed_vars(param, g)
+            try:
+                prefill = preset.prescribed_vars(param, g, v_true=v_true, c_ref=c_ref)
+            except ValueError as exc:
+                st.error(f"Not pre-filled: {exc}")
+                return
+            st.session_state["auth_trim_prefill"] = prefill
             st.session_state["auth_trim_vars_ver"] = \
                 st.session_state.get("auth_trim_vars_ver", 0) + 1
             st.session_state[wk("auth_sel_trim")] = _NEW

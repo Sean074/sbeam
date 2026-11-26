@@ -582,8 +582,11 @@ from `sbeam_tools.common.units`) and stays editable; the recipe itself takes g a
 and knows no unit (#30). The steady-roll parameter is the reduced rate `pb/2V`, not rad/s,
 and each lateral preset states the `SUPORT` DOF it needs (#24, #10). The load factor
 defaults to 1.0, level flight: the limit load factor of a case is the user's input, and no
-regulatory number is a default. **Known defect:** the pull-up recipe prescribes `PITCH = 0`
-at every load factor, where a steady pull-up carries `(n − 1)·g·c_ref/(2V²)` (#127).
+regulatory number is a default. **The pull-up is the steady pull-up (#127):** it prescribes
+`PITCH = (n − 1)·g·c_ref/(2V²)`, the pitch rate of the curved path as `qc/2V`
+(`maneuver.steady_pull_up_pitch_rate`), so the panel asks for the true airspeed V and reads
+`c_ref` from AEROS. V has no default: without it the form is not pre-filled. Until #127 the
+recipe wrote `PITCH = 0` at every load factor. There is no zero-rate recipe.
 
 **Monitors (#116).** Four editors: AECOMP, MONPNT1 with an AELIST component (aerodynamic),
 MONPNT1 with a SET1 component (structural), and MONSECT. The two MONPNT1 editors are one

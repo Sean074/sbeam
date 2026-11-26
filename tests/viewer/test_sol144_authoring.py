@@ -165,3 +165,29 @@ def test_authoring_tab_renders(mloads_bulk):
     assert 1 in trim_sel.options or "1" in trim_sel.options
     assert at.selectbox(key="auth_sel_mloads") is not None
     assert at.selectbox(key="auth_sel_tabled1") is not None
+
+
+def test_pull_up_preset_prefills_the_steady_pitch_rate():
+    """#127: the preset asks for the true airspeed and writes (n − 1)·g·c_ref/(2V²)."""
+    from tests.viewer.journey_helpers import _open
+
+    at = _open("cessna210_flagship/cessna210_flagship_trim.bdf")
+    c_ref = at.session_state["bulk_data"].aeros.cref
+    at.number_input(key="auth_preset_param").set_value(2.5)
+    at.number_input(key="auth_preset_g_SI").set_value(9.81)
+    at.button(key="auth_preset_fill").click()
+    at.run()
+    assert any("needs the true airspeed" in e.value for e in at.error)   # no V: refused
+    assert at.session_state["auth_trim_prefill"] is None
+
+    at.number_input(key="auth_preset_v").set_value(61.73)
+    at.button(key="auth_preset_fill").click()
+    at.run()
+    assert not at.error, [e.value for e in at.error]
+    prefill = at.session_state["auth_trim_prefill"]
+    assert prefill["URDD3"] == pytest.approx(-2.5 * 9.81) and prefill["URDD5"] == 0.0
+    assert prefill["PITCH"] == pytest.approx(1.5 * 9.81 * c_ref / (2 * 61.73 ** 2))
+    # the deck's hand-written TRIM 2 is this case
+    assert prefill["PITCH"] == pytest.approx(
+        at.session_state["bulk_data"].trims[2].vars["PITCH"], rel=3e-4)
+

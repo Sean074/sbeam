@@ -229,6 +229,16 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - dataset 82 has 49 segments.
 
 ### Fixed
+- **The pull-up preset prescribed no pitch rate (#127).** The "Symmetric pull-up" recipe
+  wrote `PITCH = 0` at every load factor. An airplane holding n g on a curved path is
+  rotating at q = (n − 1)·g/V, so the TRIM carries `PITCH = (n − 1)·g·c_ref/(2V²)`; this is
+  the repo's own standard (`05c_sol144_maneuver.md`, the flagship's `TRIM 2`) and ZAERO's
+  stated value for `QRATE` (User's Manual PDF p.512). The recipe now writes it, and the
+  viewer panel asks for the true airspeed, which has no default. On the flagship at 2.5 g
+  the old value trimmed with 1.35° too little elevator and a hinge moment 12% low; wing
+  root bending moved 0.1%. **A TRIM pre-filled from this preset before this change at
+  n ≠ 1 has `PITCH = 0` and should be corrected.** Decks are not changed; the zero-rate
+  case is not kept as a recipe.
 - **`cessna210_flagship_gust.bdf` was not what its generator writes (#117).** The deck is
   marked "GENERATED, do not hand-edit; regenerate", but twelve comment lines lacked the
   `rho = …` the emitter prints. It is regenerated, and a test now regenerates it from the
@@ -289,8 +299,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - The pull-up recipe's load factor defaults to 1.0 (level flight), not 2.5: the limit load
     factor is the user's input.
 
-  Not changed, and wrong: the pull-up recipe prescribes `PITCH = 0` at every load factor
-  (#127).
+  The pull-up recipe's `PITCH = 0` was moved as it was and is fixed under #127.
 - **The viewer re-parses the deck after every card edit (#113).** The session model is the
   parser's reading of one text: the loaded deck's bulk section, the authored cards, and the
   aero-correction cards. An edit is written into that text and parsed; if the parser refuses,

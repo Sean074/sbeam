@@ -114,7 +114,7 @@ Found while working these, all filed with bodies:
 | #124 | Case control is not checked against the model before a run; the viewer keeps its own copy of 12 solver rules | Open, v0.4.1 |
 | #125 | Two SUPORT cards on one grid are accepted without a message | Open, opportunistic |
 | #126 | `test_run_reproducibility` fails intermittently on round-off in near-zero outputs | Open |
-| #127 | The pull-up trim recipe prescribes PITCH = 0 at every load factor | Open, v0.4.1 |
+| #127 | The pull-up trim recipe prescribed PITCH = 0 at every load factor | Closed |
 
 Already done from the draft's list: #98 (GUSTLF carried through case-control export, with
 the gust condition block on the results page), closed 2026-11-18.
