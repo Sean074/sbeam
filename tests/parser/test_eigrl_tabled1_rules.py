@@ -10,7 +10,7 @@ import pytest
 from sbeam.model.maneuver import Tabled1
 from sbeam.parser.bdf_reader import parse_bdf, parse_bulk_data
 from sbeam.solver.maneuver_qs import warn_extrapolated_commands
-from sbeam_tools.viewer import sol144_authoring as logic
+from sbeam_tools.cases import maneuver
 from tests.samples import sample_decks
 
 
@@ -113,11 +113,11 @@ class TestExtrapolationIsAnnounced:
 
 
 @pytest.mark.parametrize("points", [
-    logic.gen_step(0.1, 0.0, 0.5), logic.gen_ramp(0.1, 0.3, 0.0, 0.5),
-    logic.gen_cosine_ramp(0.0, 1.0, 0.0, 1.0), logic.gen_doublet(0.1, 0.5, 0.2, 1.0),
+    maneuver.gen_step(0.1, 0.0, 0.5), maneuver.gen_ramp(0.1, 0.3, 0.0, 0.5),
+    maneuver.gen_cosine_ramp(0.0, 1.0, 0.0, 1.0), maneuver.gen_doublet(0.1, 0.5, 0.2, 1.0),
 ], ids=["step", "ramp", "cosine", "doublet"])
 def test_generated_shapes_hold_their_last_value(points):
-    """Each viewer generator ends with two points of equal y, so the table is flat
+    """Each command-shape generator ends with two points of equal y, so the table is flat
     beyond its end under linear extrapolation."""
     table = Tabled1(tid=1, xs=[p[0] for p in points], ys=[p[1] for p in points])
     assert table.end_slopes()[1] == 0.0
