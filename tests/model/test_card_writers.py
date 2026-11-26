@@ -8,6 +8,8 @@ MANVR sample decks.
 
 from pathlib import Path
 
+import dataclasses
+
 import pytest
 
 from sbeam.model.aero import (
@@ -216,7 +218,17 @@ def test_sample_deck_golden_roundtrip(deck):
     # The writer families carry no GRIDs or panels: read the cards, skip the model checks
     reparsed = _read_cards(lines)
     for attr in _FAMILY_ATTRS:
+        if attr in ("monpnt1s", "monpnt3s"):
+            continue
         assert getattr(reparsed, attr) == getattr(bulk, attr), attr
+    # A structural MONPNT1 is filed apart from an aerodynamic one by the cross-reference
+    # pass (by its AECOMP's type, #86), which ``_read_cards`` does not run.  Both kinds are
+    # written as MONPNT1, so compare the two stores together, card for card.
+    def monitors(model):
+        both = {**model.monpnt1s, **model.monpnt3s}
+        return {name: dataclasses.astuple(card) for name, card in both.items()}
+    assert monitors(reparsed) == monitors(bulk)
+    assert monitors(bulk), "the sample deck has monitors, so the comparison is not empty"
 
 
 def test_write_authored_block_header_and_specials():

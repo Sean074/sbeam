@@ -19,7 +19,7 @@ from sbeam.results.results import (
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.results.f06_writer import applied_load_resultant, coefficient_frame
 from sbeam.results.section_cuts import component_legend, component_names, labelled
-from sbeam_tools.viewer.geometry import build_deformed_figure, build_mode_figure
+from sbeam_tools.viewer.geometry import build_deformed_figure, build_mode_figure, model_span
 from sbeam_tools.viewer.aero_view import build_aero_box_figure
 from sbeam_tools.viewer.format_utils import fmt, style_numeric
 
@@ -336,18 +336,6 @@ def _render_modal_mass_chart(
 # ---------------------------------------------------------------------------
 # SOL 144 results display (Step 57)
 # ---------------------------------------------------------------------------
-
-def _model_span(bulk: BulkData) -> float:
-    """Largest model extent across X/Y/Z (used to scale deflection sliders)."""
-    if not bulk.grids:
-        return 1.0
-    coords = [(g.x, g.y, g.z) for g in bulk.grids.values()]
-    span = max(
-        max(c[i] for c in coords) - min(c[i] for c in coords)
-        for i in range(3)
-    )
-    return span if span > 0 else 1.0
-
 
 def render_sol144_results(
     bulk: BulkData,
@@ -816,7 +804,7 @@ def _render_sol144_deflected(bulk: BulkData, result: Sol144TrimResult) -> None:
     max_disp = float(np.max(np.abs(result.displacements))) if result.displacements.size else 1.0
     if max_disp == 0.0:
         max_disp = 1.0
-    suggested = _model_span(bulk) * 0.1 / max_disp
+    suggested = model_span(bulk) * 0.1 / max_disp
     scale = st.slider(
         "Deflection scale",
         min_value=0.0,
@@ -915,7 +903,7 @@ def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
     max_disp = float(np.max(np.abs(step.displacements))) if step.displacements.size else 1.0
     if max_disp == 0.0:
         max_disp = 1.0
-    suggested = _model_span(bulk) * 0.1 / max_disp
+    suggested = model_span(bulk) * 0.1 / max_disp
     scale = st.slider(
         "Deflection scale", min_value=0.0, max_value=float(suggested * 10),
         value=float(suggested), format="%.2g", key=wk("sol144_man_scale"),

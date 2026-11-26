@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import copy
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -213,7 +214,7 @@ def test_save_as_new_for_every_family_the_deck_has(tmp_path):
     name = "ha144a/ha144a_mloads_massset.bdf"
     at = _open(name)
     loaded = copy.deepcopy(at.session_state["bulk_data"])
-    made: dict[str, int] = {}
+    made: dict[str, Any] = {}
     for family in FAMILIES:
         keys = sorted(logic.family_store(loaded, family)) if family != "suport" else []
         if not keys:
@@ -224,8 +225,9 @@ def test_save_as_new_for_every_family_the_deck_has(tmp_path):
              and b.form_id == f"auth_form_{family}").click()
         at.run()
         assert not at.exception and not at.error, (family, [e.value for e in at.error])
-        new_key = max(logic.family_store(at.session_state["bulk_data"], family))
-        assert new_key not in keys
+        added = set(logic.family_store(at.session_state["bulk_data"], family)) - set(keys)
+        assert len(added) == 1, (family, added)
+        new_key = added.pop()
         made[family] = new_key
         # the copy equals the original apart from its ID
         original = copy.deepcopy(logic.family_store(loaded, family)[keys[0]])

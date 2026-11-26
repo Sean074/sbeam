@@ -32,6 +32,7 @@ sbeam_tools/viewer/
 ├── sol144_authoring_ui.py  # P12 Aeroelastic Authoring tab: per-family card editors, driver/snippet export
 ├── session_deck.py     # The session's deck as text; commit(): every card edit is written into the text and re-parsed (#113)
 ├── widget_keys.py      # wk(): widget keys that carry the deck's number in the session (#123)
+├── monitor_view.py     # Monitors drawn on the model from the solver's plans: reference points, members, cut planes (#116)
 └── format_utils.py     # Shared 5-sig-fig number formatting for tables/metrics (fmt / fmt_mass / style_numeric) (A-GUI4)
 ```
 
@@ -510,11 +511,12 @@ The AESURF form carries both hinge halves — `CID1`/`ALID1` and `CID2`/`ALID2` 
 pair is one label; charter §6) — and refuses a half-specified second pair; before #9 it
 dropped `CID2`/`ALID2` on re-save.
 
-**Layout:** six sub-tabs — *Surfaces & States* (AESTAT/AESURF/AELIST/SUPORT), *Trim
+**Layout:** seven sub-tabs — *Surfaces & States* (AESTAT/AESURF/AELIST/SUPORT), *Trim
 Conditions* (presets + TRIM/TRIMVAR/TRIMWGT/TRIMINEQ/DIVERG), *Mass cases (MASSCASE)* (mass
-and C.G. by case + MASSCASE, #115), *Gust (GUSTLF)* (gust-case generator + GUSTLF, #117), *Maneuver (MANVR)* (two-pass command builder +
+and C.G. by case + MASSCASE, #115), *Gust (GUSTLF)* (gust-case generator + GUSTLF, #117), *Monitors* (the monitors drawn on the
+model + AECOMP/MONPNT1/MONSECT, #116), *Maneuver (MANVR)* (two-pass command builder +
 MANTRIM/MANTIME/MANCMD/MANPRNT/MANVR), *Tables* (shape generator + TABLED1 point editor).
-All 17 card families of `card_writers.FAMILIES` have an editor. Each family gets an expander with a selectbox
+All 21 card families of `card_writers.FAMILIES` have an editor. Each family gets an expander with a selectbox
 ("— new —" or an existing ID, outside the form so switching pre-fills) and one
 `st.form`; dynamic rows (TRIM vars, MANCMD pairs, TABLED1 points) use `st.data_editor`
 with `num_rows="dynamic"`. All widget keys are `auth_`-prefixed.
@@ -582,6 +584,29 @@ and each lateral preset states the `SUPORT` DOF it needs (#24, #10). The load fa
 defaults to 1.0, level flight: the limit load factor of a case is the user's input, and no
 regulatory number is a default. **Known defect:** the pull-up recipe prescribes `PITCH = 0`
 at every load factor, where a steady pull-up carries `(n − 1)·g·c_ref/(2V²)` (#127).
+
+**Monitors (#116).** Four editors: AECOMP, MONPNT1 with an AELIST component (aerodynamic),
+MONPNT1 with a SET1 component (structural), and MONSECT. The two MONPNT1 editors are one
+card: MSC's MONPNT1 is aerodynamic or structural by its COMP (#86), the parser files the
+structural ones in `bulk.monpnt3s`, and each form offers only the AECOMPs of its kind, so a
+card lands in the store its family tracks. `write_aecomp`, `write_monpnt1` (MSC's two-line
+layout, the first line in small field so a 56-character label survives) and `write_monsect`
+are the writers. These families are keyed by NAME, not a number
+(`sol144_authoring.NAMED_FAMILIES`): a new card's default name and "Save as new" take the
+first free `COMPn` / `MONn` / `SECn`. MSC's MONPNT3 has no form, and the tab says why.
+
+**The monitors are drawn on the model** (`monitor_view.py`, behind a checkbox): every
+reference point as a marker, and for the monitor chosen, the grids or boxes it sums and,
+for a MONSECT, a line in each station's cut plane, with a table of the reference points in
+basic axes and the members beyond each cut. All of it is read from the solver's own plans
+(`prepare_monitor_point`, `prepare_section_cut`), so the picture is the geometry the run
+uses; the viewer places nothing itself. A monitor on the wrong side of a wing, or a cut that
+does not follow the elastic axis, is visible here and not in the card. Gates
+(`tests/viewer/test_monitor_authoring.py`): with every monitor card removed from
+`ha144a_fullspan_sbeam.bdf` and typed back through the forms, the export has the deck's
+cards and the run its monitor and section loads; SECRW's reference points on the flagship
+equal the CORD2R 991 origin plus each station along its axis 2, computed in the test from
+the card's three points.
 
 **Mass cases (#115).** The sub-tab opens with **Mass and C.G. by case**: the baseline and
 every mass case, from `compute_gpwg(bulk, sid)`, with the card that defines each. The

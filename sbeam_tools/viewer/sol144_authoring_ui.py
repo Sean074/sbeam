@@ -18,7 +18,10 @@ import pandas as pd
 import streamlit as st
 from sbeam_tools.viewer.widget_keys import wk
 
+from sbeam.aero.aero_model import AeroModel, build_aero_model
+from sbeam.assembly.load_vector import build_grid_index
 from sbeam.model.aero import (
+    Aecomp, Monpnt1, Monpnt3, Monsect,
     Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
 )
 from sbeam.model.bulk_data import BulkData
@@ -31,6 +34,8 @@ from sbeam.gpwg import compute_gpwg
 from sbeam.model.gust import Gustlf
 from sbeam.model.mass import Massset
 from sbeam_tools.viewer.format_utils import style_numeric
+from sbeam_tools.viewer.geometry import build_model_figure, model_span
+from sbeam_tools.viewer.monitor_view import add_monitor_traces, monitor_geometry
 from sbeam_tools.cases import gust, maneuver
 from sbeam_tools.common.deck import airplane_from_model
 from sbeam_tools.viewer import session_deck
@@ -808,6 +813,201 @@ def _commit_resolution(bulk: BulkData, cc: CaseControl,
 
 
 # ---------------------------------------------------------------------------
+# Monitors (#116): AECOMP, MONPNT1 (aerodynamic and structural), MONSECT.
+# Field layouts and rules are the card reference's and the parser's
+# (docs/10_standard/02_card_reference.md, Monitor Points); nothing is restated.
+# ---------------------------------------------------------------------------
+
+def _name_input(label: str, card_name: Optional[str], default: Any, key: str) -> str:
+    return st.text_input(label, value=(card_name if card_name is not None else str(default)),
+                         max_chars=8, key=_k(key)).strip()
+
+
+def _cid_options(bulk: BulkData) -> list[int]:
+    return [0, *sorted(bulk.cord2rs)]
+
+
+def _aecomp_form(bulk: BulkData, card: Optional[Aecomp], default_id: Any):
+    col1, col2 = st.columns(2)
+    name = _name_input("NAME (up to 8 characters)", card.name if card else None,
+                       default_id, "auth_aecomp_name")
+    types = ["AELIST", "SET1"]
+    listtype = cast(str, col2.selectbox(
+        "LISTTYPE", types, index=types.index(card.listtype) if card else 0,
+        key=_k("auth_aecomp_type"),
+        help="AELIST: aero boxes, for an aerodynamic monitor. SET1: structural grids, "
+             "for a structural monitor (aero + inertia + applied load + reaction)."))
+    del col1
+    lists = {"AELIST": sorted(bulk.aelists), "SET1": sorted(bulk.set1s)}
+    picked = {
+        kind: st.multiselect(
+            f"{kind} IDs (used when LISTTYPE is {kind})", lists[kind],
+            default=[i for i in (card.list_ids if card and card.listtype == kind else [])
+                     if i in lists[kind]],
+            key=_k(f"auth_aecomp_{kind.lower()}"))
+        for kind in types
+    }
+    if not name:
+        st.warning("AECOMP needs a name.")
+        return None
+    if not picked[listtype]:
+        st.warning(f"Choose at least one {listtype}.")
+        return None
+    return Aecomp(name=name, listtype=listtype, list_ids=[int(i) for i in picked[listtype]])
+
+
+def _monpnt_form(listtype: str):
+    """The MONPNT1 form for one kind of component: AELIST (aerodynamic) or SET1 (structural)."""
+    family = "monpnt1" if listtype == "AELIST" else "monpnt3"
+    build = Monpnt1 if listtype == "AELIST" else Monpnt3
+
+    def form(bulk: BulkData, card: Any, default_id: Any):
+        comps = sorted(n for n, c in bulk.aecomps.items() if c.listtype == listtype)
+        cids = _cid_options(bulk)
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            name = _name_input("NAME", card.name if card else None, default_id,
+                               f"auth_{family}_name")
+        label = col2.text_input("LABEL (up to 56 characters)",
+                                value=(card.label if card else ""), max_chars=56,
+                                key=_k(f"auth_{family}_label")).strip()
+        col3, col4, col5 = st.columns(3)
+        axes = col3.text_input("AXES (component digits, e.g. 123456)",
+                               value=(str(card.axes) if card else "123456"),
+                               key=_k(f"auth_{family}_axes")).strip()
+        comp = col4.selectbox(
+            f"COMP ({listtype}-type AECOMP)", comps,
+            index=comps.index(card.comp) if card and card.comp in comps else 0,
+            key=_k(f"auth_{family}_comp")) if comps else None
+        cp = cast(int, col5.selectbox(
+            "CP (frame of X, Y, Z and of the output)", cids,
+            index=cids.index(card.cp) if card and card.cp in cids else 0,
+            key=_k(f"auth_{family}_cp")))
+        xyz = st.columns(3)
+        x, y, z = (
+            xyz[i].number_input(f"{axis} of the reference point",
+                                value=(getattr(card, axis.lower()) if card else 0.0),
+                                key=_k(f"auth_{family}_{axis.lower()}"), format="%.6g")
+            for i, axis in enumerate("XYZ"))
+        if comp is None:
+            st.warning(f"Define an AECOMP of type {listtype} first.")
+            return None
+        if not name or not axes.isdigit():
+            st.warning("MONPNT1 needs a name, and AXES as digits.")
+            return None
+        return build(name=name, label=label, axes=int(axes), comp=str(comp), cp=int(cp),
+                     x=float(x), y=float(y), z=float(z))
+    return form
+
+
+def _monsect_form(bulk: BulkData, card: Optional[Monsect], default_id: Any):
+    comps = sorted(bulk.aecomps)
+    cids = _cid_options(bulk)
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        name = _name_input("NAME", card.name if card else None, default_id,
+                           "auth_monsect_name")
+    label = col2.text_input("LABEL", value=(card.label if card else ""),
+                            key=_k("auth_monsect_label")).strip()
+    col3, col4, col5, col6 = st.columns(4)
+    comp = col3.selectbox(
+        "COMP (AECOMP)", comps,
+        index=comps.index(card.comp) if card and card.comp in comps else 0,
+        key=_k("auth_monsect_comp"),
+        help="SET1 type: aero + inertia + reaction. AELIST type: aero only.") if comps else None
+    cid = cast(int, col4.selectbox(
+        "CID (cut frame)", cids,
+        index=cids.index(card.cid) if card and card.cid in cids else 0,
+        key=_k("auth_monsect_cid"),
+        help="Stations and reported components are in this frame. The surface's SPLINE2 "
+             "frame puts the stations along the elastic axis."))
+    axis = cast(int, col5.selectbox(
+        "AXIS (station axis)", [1, 2, 3], index=(card.axis - 1 if card else 1),
+        format_func=lambda a: f"{a} ({'xyz'[a - 1]})", key=_k("auth_monsect_axis")))
+    side = cast(str, col6.selectbox(
+        "SIDE", ["POS", "NEG"], index=(["POS", "NEG"].index(card.side) if card else 0),
+        key=_k("auth_monsect_side"),
+        help="POS sums the members with station coordinate greater than the cut."))
+    stations_text = st.text_input(
+        "Stations along AXIS, in the CID frame (increasing; space or comma separated)",
+        value=(" ".join(repr(float(v)) for v in card.stations) if card else ""),
+        key=_k("auth_monsect_stations"))
+    col7, col8 = st.columns(2)
+    tol_text = col7.text_input(
+        "TOL (blank = automatic)",
+        value=("" if card is None or card.tol is None else repr(float(card.tol))),
+        key=_k("auth_monsect_tol")).strip()
+    normal_text = col8.text_input(
+        "NORMAL nx ny nz in the CID frame (blank = the station axis)",
+        value=("" if card is None or card.normal is None
+               else " ".join(repr(float(v)) for v in card.normal)),
+        key=_k("auth_monsect_normal")).strip()
+    if comp is None:
+        st.warning("Define an AECOMP first.")
+        return None
+    try:
+        stations = logic.parse_float_list(stations_text)
+        tol = float(tol_text) if tol_text else None
+        normal_values = logic.parse_float_list(normal_text) if normal_text else []
+    except ValueError:
+        st.warning("Stations, TOL and NORMAL must be numbers.")
+        return None
+    if not name or not stations or len(normal_values) not in (0, 3):
+        st.warning("MONSECT needs a name, at least one station, and NORMAL as three "
+                   "numbers or blank.")
+        return None
+    normal = (normal_values[0], normal_values[1], normal_values[2]) if normal_values else None
+    return Monsect(name=name, label=label, comp=str(comp), cid=int(cid), axis=int(axis),
+                   side=side, tol=tol, stations=stations, normal=normal)
+
+
+def _render_monitor_figure(bulk: BulkData) -> None:
+    """The monitors on the model, drawn from the solver's own plans (monitor_view)."""
+    names = sorted([*bulk.monpnt1s, *bulk.monpnt3s, *bulk.monsects])
+    if not names:
+        st.info("No monitor in the deck yet. A MONPNT1 or MONSECT needs an AECOMP, and an "
+                "AECOMP needs an AELIST (boxes) or a SET1 (grids).")
+        return
+    if not st.checkbox("Draw the monitors on the model", value=False,
+                       key=wk("auth_mon_draw")):
+        return
+    aero = _monitor_aero(bulk)
+    geometry = monitor_geometry(bulk, aero)
+    missing = sorted(set(names) - set(geometry))
+    if missing:
+        st.warning(f"Not drawn (no aerodynamic model could be built): {', '.join(missing)}")
+    highlight = st.selectbox(
+        "Show the members and cut planes of", sorted(geometry), key=wk("auth_mon_highlight"))
+    fig = build_model_figure(bulk)
+    add_monitor_traces(fig, geometry, highlight, model_span(bulk))
+    st.plotly_chart(fig, width="stretch", key=wk("auth_mon_fig"))
+    chosen = geometry.get(highlight) if highlight else None
+    if chosen is not None:
+        what = "boxes" if chosen.kind == "aerodynamic" else "grids"
+        rows = [{"Station": (chosen.stations[i] if chosen.stations else None),
+                 "Ref X": ref[0], "Ref Y": ref[1], "Ref Z": ref[2],
+                 f"{what.capitalize()} summed": (chosen.on_side[i] if chosen.on_side
+                                                 else len(chosen.members))}
+                for i, ref in enumerate(chosen.refs)]
+        st.caption(f"{chosen.card} {chosen.name}: {chosen.kind}, {len(chosen.members)} "
+                   f"{what} in its component. Reference points in basic axes:")
+        st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
+
+
+def _monitor_aero(bulk: BulkData) -> Optional[AeroModel]:
+    """The aero model for drawing box members; rebuilt when the session model changes."""
+    cached = st.session_state.get("_auth_mon_aero")
+    if cached is not None and cached[0] is bulk:
+        return cached[1]
+    try:
+        aero: Optional[AeroModel] = build_aero_model(bulk, grid_index=build_grid_index(bulk))
+    except Exception:                 # no usable aero: structural monitors are still drawn
+        aero = None
+    st.session_state["_auth_mon_aero"] = (bulk, aero)
+    return aero
+
+
+# ---------------------------------------------------------------------------
 # Mass cases (#115)
 # ---------------------------------------------------------------------------
 
@@ -1055,10 +1255,26 @@ def render_sol144_authoring(bulk: BulkData) -> None:
         "edit under a new SID."
     )
     session_deck.show_flash()
-    tab_surf, tab_trim, tab_mass, tab_gust, tab_mloads, tab_tables = st.tabs(
+    (tab_surf, tab_trim, tab_mass, tab_gust, tab_mloads, tab_tables,
+     tab_monitors) = st.tabs(
         ["Surfaces & States", "Trim Conditions", "Mass cases (MASSCASE)", "Gust (GUSTLF)",
-         "Maneuver (MANVR)", "Tables"]
+         "Maneuver (MANVR)", "Tables", "Monitors"]
     )
+    with tab_monitors:
+        st.caption(
+            "An AECOMP names a collection of aero boxes (AELIST) or structural grids "
+            "(SET1). A MONPNT1 gives one resultant of it about a reference point; a "
+            "MONSECT gives one per cut station. MSC's MONPNT3 sums grid point forces, "
+            "which sbeam does not compute, so it has no form here (#86, #103): a "
+            "structural sum is a MONPNT1 whose component is a SET1-type AECOMP."
+        )
+        _render_monitor_figure(bulk)
+        _family_editor(bulk, "aecomp", "AECOMP — named box or grid collection", _aecomp_form)
+        _family_editor(bulk, "monpnt1", "MONPNT1 — aerodynamic monitor (AELIST component)",
+                       _monpnt_form("AELIST"))
+        _family_editor(bulk, "monpnt3", "MONPNT1 — structural monitor (SET1 component)",
+                       _monpnt_form("SET1"))
+        _family_editor(bulk, "monsect", "MONSECT — section-cut running loads", _monsect_form)
     with tab_mass:
         _render_mass_summary(bulk)
         _family_editor(bulk, "masscase", "MASSCASE — payload / mass case", _masscase_form)

@@ -17,7 +17,8 @@ MANTRIM, MANTIME, MANCMD, MANPRNT, TABLED1.
 from typing import TYPE_CHECKING, Sequence, Union
 
 from sbeam.model.aero import (
-    Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
+    Aecomp, Aestat, Aesurf, Aelist, Diverg, Monpnt1, Monpnt3, Monsect, Trim, Trimcon,
+    Trimobj, Trimvar,
 )
 from sbeam.model.constraint import Suport
 from sbeam.model.gust import Gustlf
@@ -124,6 +125,42 @@ def write_gustlf(gu: Gustlf) -> list[str]:
     return write_card("GUSTLF", fields)
 
 
+def write_aecomp(a: Aecomp) -> list[str]:
+    """AECOMP — NAME, LISTTYPE, then the AELIST or SET1 IDs."""
+    return write_card("AECOMP", [a.name, a.listtype, *a.list_ids])
+
+
+def write_monpnt1(m: "Monpnt1 | Monpnt3") -> list[str]:
+    """MONPNT1 in MSC's two-line layout (QRG 2024.1 PDF p.2303; card reference, #86).
+
+    The first line is written in small field with LABEL in fields 3-9: a free-field
+    token is limited to 8 characters, and a label is up to 56.  The second line is
+    ``AXES, COMP, CP, X, Y, Z``; CD is left blank (output is in CP, MSC's default).
+    One card serves both kinds: a structural monitor (held as ``Monpnt3``, the name of
+    sbeam's card before #86) is a MONPNT1 whose COMP is a SET1-type AECOMP.
+    """
+    if len(m.name) > 8 or len(m.label) > 56:
+        raise ValueError(
+            f"MONPNT1 {m.name}: NAME takes 8 characters and LABEL 56 "
+            f"(got {len(m.name)} and {len(m.label)})")
+    return [
+        f"{'MONPNT1':<8}{m.name:<8}{m.label}".rstrip(),
+        ", ".join(["+", _fld(m.axes), m.comp, _fld(m.cp), _fld(m.x), _fld(m.y), _fld(m.z)]),
+    ]
+
+
+def write_monsect(m: Monsect) -> list[str]:
+    """MONSECT — header, station rows of 8, then an optional NORMAL row (card reference)."""
+    lines = [", ".join([
+        "MONSECT", m.name, m.label, m.comp, _fld(m.cid), _fld(m.axis), m.side,
+        "" if m.tol is None else _fld(m.tol)])]
+    for i in range(0, len(m.stations), _FIELDS_PER_LINE):
+        lines.append(", ".join(["+"] + [_fld(v) for v in m.stations[i:i + _FIELDS_PER_LINE]]))
+    if m.normal is not None:
+        lines.append(", ".join(["+", "NORMAL"] + [_fld(v) for v in m.normal]))
+    return lines
+
+
 def write_masscase(m: Massset) -> list[str]:
     """MASSCASE — the header, then ADD / REPLACE / DELETE rows of CONM2 EIDs.
 
@@ -212,6 +249,12 @@ FAMILIES = {
     "diverg":  ("divergs",  write_diverg),
     "gustlf":  ("gustlfs",  write_gustlf),
     "masscase": ("masssets", write_masscase),
+    # Monitors.  AECOMP first: MONPNT1 and MONSECT name one.  "monpnt3" is the store of
+    # the structural MONPNT1s (SET1 component); both stores are written as MONPNT1.
+    "aecomp":  ("aecomps",  write_aecomp),
+    "monpnt1": ("monpnt1s", write_monpnt1),
+    "monpnt3": ("monpnt3s", write_monpnt1),
+    "monsect": ("monsects", write_monsect),
     "tabled1": ("tabled1s", write_tabled1),
     "mldtrim": ("mldtrims", write_mldtrim),
     "mldtime": ("mldtimes", write_mldtime),

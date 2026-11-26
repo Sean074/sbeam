@@ -33,6 +33,13 @@ CARD_NAMES: dict[str, str] = {
     "diverg": "DIVERG", "gustlf": "GUSTLF", "masscase": "MASSCASE", "tabled1": "TABLED1",
     "mldtrim": "MANTRIM", "mldtime": "MANTIME", "mldcomd": "MANCMD",
     "mldprnt": "MANPRNT", "mloads": "MANVR",
+    "aecomp": "AECOMP", "monpnt1": "MONPNT1", "monpnt3": "MONPNT1", "monsect": "MONSECT",
+}
+
+# Families whose cards are identified by a NAME (a string of up to 8 characters), not
+# a number, with the prefix a new card's default name takes.
+NAMED_FAMILIES: dict[str, str] = {
+    "aecomp": "COMP", "monpnt1": "MON", "monpnt3": "MON", "monsect": "SEC",
 }
 assert set(CARD_NAMES) == set(FAMILIES)
 
@@ -47,20 +54,32 @@ def key_attr(family: str, card: Any) -> str:
     """The name of the field that identifies a card: GID for SUPORT, else SID/ID/TID."""
     if family == "suport":
         return "gid"
+    if family in NAMED_FAMILIES:
+        return "name"
     for name in ("sid", "id", "tid"):
         if hasattr(card, name):
             return name
     raise AttributeError(f"{type(card).__name__} has no SID, ID or TID field")
 
 
-def card_key(family: str, card: Any) -> int:
-    """The tracking key for a card: its SID/ID/TID (GID for SUPORT)."""
+def card_key(family: str, card: Any) -> Any:
+    """The tracking key for a card: its SID/ID/TID, GID for SUPORT, NAME for a monitor."""
     return getattr(card, key_attr(family, card))
 
 
-def next_free_sid(bulk: BulkData, family: str) -> int:
-    """Default ID for a new card: max(existing) + 1, or 1 on an empty family."""
+def next_free_sid(bulk: BulkData, family: str) -> Any:
+    """Default ID for a new card: max(existing) + 1, or 1 on an empty family.
+
+    A monitor family is keyed by name: the default is its prefix and the first number
+    that no monitor uses (monitor names are unique across MONPNT1 and MONSECT).
+    """
     store = family_store(bulk, family)
+    if family in NAMED_FAMILIES:
+        taken = (set(bulk.aecomps) if family == "aecomp"
+                 else set(bulk.monpnt1s) | set(bulk.monpnt3s) | set(bulk.monsects))
+        prefix = NAMED_FAMILIES[family]
+        return next(f"{prefix}{n}" for n in range(1, len(taken) + 2)
+                    if f"{prefix}{n}" not in taken)
     if family == "suport":
         ids = [s.gid for s in store]
     else:

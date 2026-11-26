@@ -10,6 +10,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Monitors can be placed in the viewer (#116).** A new *Monitors* sub-tab has forms for
+  AECOMP, MONPNT1 (aerodynamic and structural) and MONSECT, and draws the monitors on the
+  3D model: each reference point, the grids or boxes a monitor sums, and a line in each
+  cut plane. The drawing is read from the solver's own monitor and cut plans.
+  `write_aecomp`, `write_monpnt1` and `write_monsect` are the writers. With every monitor
+  card removed from `ha144a_fullspan_sbeam.bdf` and typed back through the forms, the
+  exported deck has the original's cards and the run gives its monitor and section loads.
+  Every one of the 21 authorable card families now has an editor.
 - **Mass cases can be authored in the viewer (#115).** A new *Mass cases (MASSCASE)* sub-tab
   shows mass and C.G. for the baseline and every mass case, and has a MASSCASE form: label,
   SCALE, CONM2 pickers for ADD and DELETE, and a table of REPLACE pairs. `write_masscase`

@@ -12,14 +12,13 @@ import pytest
 
 from sbeam.model.card_writers import FAMILIES
 from sbeam.parser.bdf_reader import parse_bdf
-from sbeam_tools.viewer.sol144_authoring import snapshot_family_ids
+from sbeam_tools.viewer.sol144_authoring import CARD_NAMES, snapshot_family_ids
 from sbeam_tools.viewer.sol144_authoring_ui import export_sol144_bdf
 from tests.samples import sample_path
 
 
 # The card each family writes (family keys are internal names; #87 renamed the cards)
-_CARD_NAMES = {fam.upper() for fam in FAMILIES} | {
-    "MANTRIM", "MANTIME", "MANCMD", "MANPRNT", "MANVR", "TRIMWGT", "TRIMINEQ"}
+_CARD_NAMES = set(CARD_NAMES.values())
 
 
 def _split_sample(deck_path: Path) -> tuple[str, str]:
@@ -39,7 +38,8 @@ def _split_sample(deck_path: Path) -> tuple[str, str]:
         stripped = ln.strip()
         if stripped.upper().startswith("ENDDATA"):
             break
-        first = stripped.split(",", 1)[0].strip().upper()
+        # the card name ends at a comma (free field) or a blank (small field: MONPNT1)
+        first = stripped.replace(",", " ").split()[0].upper() if stripped else ""
         if stripped.startswith("+"):
             if skipping:
                 continue

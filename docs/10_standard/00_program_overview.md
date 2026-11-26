@@ -198,6 +198,7 @@ sbeam_tools/
     ├── sol144_authoring.py / sol144_authoring_ui.py # SOL 144 / MANVR card authoring (logic / UI)
     ├── session_deck.py   # The session's deck as text; every card edit is written into it and re-parsed (#113)
     ├── widget_keys.py    # Widget keys that carry the deck's number in the session (#123)
+    ├── monitor_view.py   # Monitors drawn on the model from the solver's plans (#116)
     └── format_utils.py   # Shared 5-sig-fig table/metric formatting (fmt / fmt_mass / style_numeric)
 ```
 
