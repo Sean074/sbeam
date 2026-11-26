@@ -61,9 +61,8 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   SID**, which adds the edit as a new card, then select that card in the case control.
   Before, the edit was applied in memory and could be run, but the export was blocked until
   the card was saved under a new SID; what ran and what exported could differ. A card
-  authored in the session is edited and deleted as before. The two-pass command builder
-  rewrites the MANCMD and MANVR that own a command, so it now works on session-authored
-  ones only (#114).
+  authored in the session is edited and deleted as before. For a loaded MANCMD or MANVR the
+  two-pass command builder writes new cards and selects the new MANVR in the subcase (#114).
 - **sbeam's ZAERO-named cards are renamed; ZAERO's and MSC's cards keep their vendor
   layouts** (#87; pre-1.0 MINOR break). sbeam had borrowed ZAERO card names with its own
   layouts and meanings. ZAERO's MLOADS family, for example, drives an aeroservoelastic
@@ -236,6 +235,19 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   slope with `STRIPK`. `CPINJ` already refused strip panels. No repo deck is affected.
 
 ### Changed
+- **Maneuver case construction moved from the viewer to `sbeam_tools/cases/maneuver.py`
+  (#114).** The trim recipes (`MANEUVER_PRESETS`), the command-history shapes (`gen_*`) and
+  the two-pass command builder (`resolve_increment_tables`) are now a tool a script can call;
+  the viewer keeps the widgets. Two behaviour changes:
+  - The builder returns a `Resolution` and no longer rewrites a card of the loaded deck. For
+    a loaded MANCMD or MANVR it writes new ones and reports which subcases must select the
+    new MANVR; the viewer applies that. Run from a script on `ha144a_mloads_massset.bdf`
+    it reproduces the deck's hand-written command table from the solved trim.
+  - The pull-up recipe's load factor defaults to 1.0 (level flight), not 2.5: the limit load
+    factor is the user's input.
+
+  Not changed, and wrong: the pull-up recipe prescribes `PITCH = 0` at every load factor
+  (#127).
 - **The viewer re-parses the deck after every card edit (#113).** The session model is the
   parser's reading of one text: the loaded deck's bulk section, the authored cards, and the
   aero-correction cards. An edit is written into that text and parsed; if the parser refuses,

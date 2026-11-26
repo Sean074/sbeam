@@ -300,3 +300,47 @@ def test_the_parsers_refusal_reaches_the_form():
                for e in at.error)
     assert at.session_state["bulk_data"] is before
     assert not any(at.session_state["authored_cards"].values())
+
+
+def test_two_pass_builder_on_a_loaded_manvr_writes_new_cards_and_repoints_the_subcase():
+    """#114: MANVR 10 and its MANCMD are cards of the loaded deck, so the second pass
+    adds a new TABLED1, MANCMD and MANVR and selects the new MANVR in subcase 1."""
+    at = _open("ha144a/ha144a_mloads_massset.bdf")
+    loaded = copy.deepcopy(at.session_state["bulk_data"])
+    next(b for b in at.button if b.label == "Run Analysis").click()
+    at.run()
+    assert at.session_state["maneuver_result"], [e.value for e in at.error]
+
+    at.selectbox(key="auth_inc_mloads").set_value(10)
+    at.run()
+    at.button(key="auth_inc_add").click()
+    at.run()
+    assert list(at.session_state["mldcomd_increments"]) == [(10, "ELEV")]
+    at.button(key="auth_inc_resolve").click()
+    at.run()
+    assert not at.exception and not at.error, [e.value for e in at.error]
+
+    bulk = at.session_state["bulk_data"]
+    cc = at.session_state["case_control"]
+    new_manvr = cc.subcases[0].mloads_sid
+    assert new_manvr not in loaded.mloads and new_manvr in bulk.mloads
+    assert [sc.mloads_sid for sc in cc.subcases[1:]] == [20, 30]
+    assert differences(loaded.mloads[10], bulk.mloads[10]) == []          # untouched
+    assert differences(loaded.mldcomds[11], bulk.mldcomds[11]) == []
+    command = dict(bulk.mldcomds[bulk.mloads[new_manvr].mldcomd].commands)
+    table = bulk.tabled1s[command["ELEV"]]
+    assert command["ELEV"] not in loaded.tabled1s
+    # the table starts at the trim elevator the run just solved for subcase 1
+    assert table.ys[0] == pytest.approx(loaded.tabled1s[310].ys[0], abs=1e-6)
+    assert at.session_state["mldcomd_increments"] == {}
+    assert at.session_state["authored_cards"] == {
+        "tabled1": {command["ELEV"]}, "mldcomd": {bulk.mloads[new_manvr].mldcomd},
+        "mloads": {new_manvr}}
+    assert any(f"MANVR {new_manvr}" in s.value for s in at.success)
+    at.checkbox(key="cc_show_editor").check()
+    at.run()
+    text = [c.value for c in at.code if "BEGIN BULK" in c.value][-1]
+    cc_out, bulk_out = parse_bdf(sample_path("ha144a_mloads_massset.bdf").with_name("x.bdf"),
+                                 text=text)
+    assert cc_out.subcases[0].mloads_sid == new_manvr
+    assert differences(bulk, bulk_out, "bulk") == []

@@ -1,14 +1,17 @@
 """Aeroelastic Authoring tab — SOL 144 / MANVR bulk-card editors (P12).
 
 Each card family gets a top-level expander holding a selectbox ("— new —" or
-an existing ID, outside the form so switching reruns and pre-fills) and one
-``st.form`` with the family's fields.  Applying builds the dataclass, checks
-SID clashes (clone-as-new policy for INCLUDE-sourced cards), injects it into
-the in-session ``BulkData`` and invalidates solver results.  All widget keys
-are ``auth_``-prefixed; ``st.session_state.authored_cards`` tracks what this
-session created, which is exactly the card set the driver export inlines.
+an existing ID, outside the form) and one ``st.form`` with the family's fields.
+Applying builds the dataclass and hands it to ``session_deck.commit``, which
+writes it into the deck text and re-parses the deck (#113).  A form field's key
+carries the card being edited (``_k``, #123).  ``st.session_state.authored_cards``
+tracks what this session created, which is the card set the export writes after
+the loaded deck's own bulk section.  What a maneuver case *is* (trim recipes,
+command shapes, the two-pass builder) lives in ``sbeam_tools.cases.maneuver``
+(#114); this module holds its widgets.
 """
 
+import dataclasses
 from typing import Any, Callable, Optional, cast
 
 import pandas as pd
@@ -24,6 +27,7 @@ from sbeam.model.maneuver import (
     Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads,
 )
 from sbeam.model.card_writers import write_authored_block
+from sbeam_tools.cases import maneuver
 from sbeam_tools.viewer import session_deck
 from sbeam_tools.viewer import sol144_authoring as logic
 from sbeam.parser.case_control import CaseControl
@@ -605,9 +609,9 @@ def _tabled1_form(bulk: BulkData, card: Optional[Tabled1], default_id: int):
 
 def _render_preset_panel(bulk: BulkData) -> None:
     with st.expander("Preset maneuvers — pre-fill the TRIM form", expanded=False):
-        names = [p.name for p in logic.MANEUVER_PRESETS]
+        names = [p.name for p in maneuver.MANEUVER_PRESETS]
         sel = st.selectbox("Maneuver", names, key=wk("auth_preset_sel"))
-        preset = next(p for p in logic.MANEUVER_PRESETS if p.name == sel)
+        preset = next(p for p in maneuver.MANEUVER_PRESETS if p.name == sel)
         st.caption(preset.description)
         col1, col2 = st.columns(2)
         param = col1.number_input(preset.param_label, value=preset.param_default,
@@ -624,7 +628,7 @@ def _render_preset_panel(bulk: BulkData) -> None:
                 f"Gravity g ({units.length_unit}/s², {units.name})", value=units.g,
                 key=wk(f"auth_preset_g_{units.name}"), format="%.6g",
             )
-        missing = logic.missing_preset_labels(bulk, preset)
+        missing = maneuver.missing_preset_labels(bulk, preset)
         if missing:
             st.warning(f"Missing AESTAT labels: {', '.join(missing)}")
             if st.button("Create missing AESTATs", key=wk("auth_preset_mkstat")):
@@ -672,12 +676,12 @@ def _generator_points(shape: str, key_prefix: str,
                                key=wk(f"{key_prefix}_y1"), format="%.6g")
     try:
         if shape == "Step":
-            return logic.gen_step(t1, y0, y1)
+            return maneuver.gen_step(t1, y0, y1)
         if shape == "Linear ramp":
-            return logic.gen_ramp(t1, t2, y0, y1)
+            return maneuver.gen_ramp(t1, t2, y0, y1)
         if shape == "Doublet":
-            return logic.gen_doublet(t1, t2, amp, y0)
-        return logic.gen_cosine_ramp(t1, t2, y0, y1)
+            return maneuver.gen_doublet(t1, t2, amp, y0)
+        return maneuver.gen_cosine_ramp(t1, t2, y0, y1)
     except ValueError as exc:
         st.warning(str(exc))
         return None
@@ -712,7 +716,7 @@ def _render_increment_builder(bulk: BulkData) -> None:
             "here; after running the analysis, one click offsets it by the "
             "solved trim value per mass case and writes the absolute TABLED1."
         )
-        specs: dict[tuple[int, str], logic.IncrementSpec] = (
+        specs: dict[tuple[int, str], maneuver.IncrementSpec] = (
             st.session_state.setdefault("mldcomd_increments", {}))
         mloads_sids = sorted(bulk.mloads.keys())
         surf_labels = logic.label_options(bulk, modal_only=True)
@@ -729,7 +733,7 @@ def _render_increment_builder(bulk: BulkData) -> None:
                                    y0_label="Start Δ", y1_label="End Δ")
         if points is not None and st.button("Add increment command",
                                             key=wk("auth_inc_add")):
-            specs[(msid, label)] = logic.IncrementSpec(
+            specs[(msid, label)] = maneuver.IncrementSpec(
                 mloads_sid=msid, label=label, points=points)
             st.rerun()
 
@@ -760,22 +764,37 @@ def _render_increment_builder(bulk: BulkData) -> None:
                     st.error("Load or author SOL 144 case control before "
                              "resolving increment commands.")
                     return
-                cards, report, errors, resolved = logic.resolve_increment_tables(
+                res = maneuver.resolve_increment_tables(
                     bulk, cc, list(specs.values()),
                     trim_results=trim_results,
                     maneuver_results=maneuver_results,
+                    loaded=st.session_state.get("file_card_sids"),
                 )
-                for err in errors:
+                for err in res.errors:
                     st.error(err)
-                if cards:
-                    # commit restarts the run on success; it returns only when the
-                    # deck refused the cards, and the specs are then put back.
-                    for spec in resolved:
-                        specs.pop((spec.mloads_sid, spec.label), None)
-                    if not session_deck.commit(bulk, changes=cards,
-                                               done="  \n".join(report)):
-                        for spec in resolved:
-                            specs[(spec.mloads_sid, spec.label)] = spec
+                if res.cards:
+                    _commit_resolution(bulk, cc, specs, res)
+
+
+def _commit_resolution(bulk: BulkData, cc: CaseControl,
+                       specs: dict[tuple[int, str], maneuver.IncrementSpec],
+                       res: maneuver.Resolution) -> None:
+    """Put the second pass's cards into the deck, and select any new MANVR.
+
+    ``commit`` restarts the run on success.  It returns only when the deck refused the
+    cards; the specs and the case control are then put back as they were.
+    """
+    for spec in res.resolved:
+        specs.pop((spec.mloads_sid, spec.label), None)
+    if res.selectors:
+        st.session_state.case_control = dataclasses.replace(cc, subcases=[
+            dataclasses.replace(sc, mloads_sid=res.selectors.get(sc.subcase_id, sc.mloads_sid))
+            for sc in cc.subcases])
+        st.session_state.cc_subcases = None          # the subcase editor rebuilds from it
+    if not session_deck.commit(bulk, changes=res.cards, done="  \n".join(res.report)):
+        for spec in res.resolved:
+            specs[(spec.mloads_sid, spec.label)] = spec
+        st.session_state.case_control = cc
 
 
 # ---------------------------------------------------------------------------

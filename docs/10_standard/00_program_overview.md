@@ -182,6 +182,7 @@ sbeam_tools/
 │   └── mirror.py         # mirror_halfspan(): half-span (SYMXZ) deck → full-span unfold
 ├── cases/                # Case construction — what the solver never decides
 │   ├── gust.py           # FAR/CS 23.341 Pratt gust family + 23.333(c) U_de schedule (#1)
+│   ├── maneuver.py       # Trim recipes, command-history shapes, two-pass command builder (#114; from the viewer)
 │   └── cli.py            # `sbeam-cases` entry point
 ├── corrections/          # External CFD/test data → aero correction cards
 │   └── section_data.py   # Section-coefficient CSV: schema, validation, deg↔rad, TOTAL block

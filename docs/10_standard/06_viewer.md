@@ -28,7 +28,7 @@ sbeam_tools/viewer/
 ├── case_control_ui.py  # Case control form and BDF export
 ├── aero_view.py        # Aero box mesh + cp colour map (S44); spline-deflected box overlay (S57); per-surface span-loading figure + rigid S&C derivative table (A-GUI2); cp corrected/uncorrected/Δ views + dihedral helper (A-GUI4); corrected/uncorrected/Δ rigid-derivative table (A-GUI5); body-panel colour/legend split (AC5)
 ├── aero_correction_view.py  # Aero Correction tab: CFD/test section data → W2GJ+AECORR(WT2) cards, injected into the model + full corrected-BDF export (A-GUI3/A-GUI4); Stage 6 = cruciform body-panel total-moment match (A9)
-├── sol144_authoring.py     # P12 pure logic: SID allocation, presets, TABLED1 generators, two-pass increment resolution, the candidate model of a card edit, check_case_control (Streamlit-free)
+├── sol144_authoring.py     # P12 pure logic: SID allocation, the candidate model of a card edit, the loaded-card rule, check_case_control (Streamlit-free). What a maneuver case is lives in sbeam_tools/cases/maneuver.py (#114)
 ├── sol144_authoring_ui.py  # P12 Aeroelastic Authoring tab: per-family card editors, driver/snippet export
 ├── session_deck.py     # The session's deck as text; commit(): every card edit is written into the text and re-parsed (#113)
 ├── widget_keys.py      # wk(): widget keys that carry the deck's number in the session (#123)
@@ -564,26 +564,44 @@ refuses it for every family (the parser refuses most duplicates, but not a secon
 one grid, #125) and the form says to use **Save as new SID**, which adds the edit under
 `max(existing) + 1`; the user then selects the new card in the case control.
 `snapshot_family_ids` at load (`file_card_sids`) is the list of loaded IDs. A card authored
-in the session is edited and deleted freely. The two-pass command builder rewrites the
-MANCMD and MANVR that own a command, so it works on session-authored ones only (#114).
+in the session is edited and deleted freely. The two-pass command builder follows the
+same rule: for a loaded MANCMD or MANVR it writes new cards (#114, below).
 
-**Presets:** (gravity is prefilled from a "Deck unit system" selector — `SI` / `IMPERIAL` from `sbeam_tools.common.units` — and stays editable; the solver itself never knows units, #30) the three balanced-maneuver recipes from `model/maneuver_presets.py` (the steady-roll parameter is the reduced rate `pb/2V`, not rad/s, and each lateral preset states the `SUPORT` DOF it needs — #24, #10)
-(symmetric pull-up via `load_factor_to_urdd3`, steady roll, steady sideslip) pre-fill the
-TRIM form and offer one-click creation of missing AESTAT labels.
+**What a maneuver case is lives in the tools, not here (#114).** The three trim recipes,
+the command-history shapes and the two-pass builder are `sbeam_tools/cases/maneuver.py`; a
+script calls them with no viewer (`tests/tools/test_maneuver_cases.py`). This tab holds
+their widgets.
 
-**TABLED1 generators:** cosine ramp (default — clamped-linear slope jumps ring the
-highest retained mode under the modal solver), linear ramp, step, smooth sine doublet.
-Each generated table ends with a hold point (two end points of equal y), because TABLED1
-extrapolates linearly beyond its last point (#70).
+**Presets:** `maneuver.MANEUVER_PRESETS` (symmetric pull-up via `load_factor_to_urdd3`,
+steady roll, steady sideslip) pre-fill the TRIM form and offer one-click creation of missing
+AESTAT labels. Gravity is prefilled from a "Deck unit system" selector (`SI` / `IMPERIAL`
+from `sbeam_tools.common.units`) and stays editable; the recipe itself takes g as a number
+and knows no unit (#30). The steady-roll parameter is the reduced rate `pb/2V`, not rad/s,
+and each lateral preset states the `SUPORT` DOF it needs (#24, #10). The load factor
+defaults to 1.0, level flight: the limit load factor of a case is the user's input, and no
+regulatory number is a default. **Known defect:** the pull-up recipe prescribes `PITCH = 0`
+at every load factor, where a steady pull-up carries `(n − 1)·g·c_ref/(2V²)` (#127).
 
-**Two-pass command builder:** MANCMD tables are absolute and mass-case specific, so the
-builder authors them as *increments from trim* (`IncrementSpec` per MANVR/label pair,
-held in `st.session_state.mldcomd_increments`). After a solve, **Resolve → absolute
-TABLED1s** reads the solved trim control value per mass case (`Sol144TrimResult.trim_vars`
-or `ManeuverResult.steps[0].trim_vars`), writes one absolute TABLED1 per pair, and
-rewrites the owning MANCMD (allocating one when the MANVR had none). Unresolved
-increments block export. An MANVR shared by subcases with different MASSCASEs is refused
-(give each mass case its own MANVR — the sample-deck convention).
+**TABLED1 generators:** `maneuver.gen_cosine_ramp` (default — clamped-linear slope jumps
+ring the highest retained mode under the modal solver), `gen_ramp`, `gen_step`,
+`gen_doublet`. Each generated table ends with a hold point (two end points of equal y),
+because TABLED1 extrapolates linearly beyond its last point (#70).
+
+**Two-pass command builder:** MANCMD tables are absolute and mass-case specific, so a
+command is first written as an *increment from trim* (`maneuver.IncrementSpec` per
+MANVR/label pair, held in `st.session_state.mldcomd_increments`). After a solve, **Resolve →
+absolute TABLED1s** calls `maneuver.resolve_increment_tables`, which reads the solved trim
+control value per mass case (`Sol144TrimResult.trim_vars` or
+`ManeuverResult.steps[0].trim_vars`) and returns a `Resolution`: one absolute TABLED1 per
+pair, the MANCMD that names it, and the MANVR that names the MANCMD. A MANCMD or MANVR of
+the loaded deck is not rewritten: a new MANCMD and a new MANVR are written, and
+`Resolution.selectors` names the subcases that must select the new MANVR; the viewer applies
+those to the case control in the same commit. Cards authored in the session are rewritten
+under their own IDs. Unresolved increments block export. An MANVR shared by subcases with
+different MASSCASEs is refused (give each mass case its own MANVR — the sample-deck
+convention). Gate: run from a script on `ha144a_mloads_massset.bdf`, the builder reproduces
+the deck's hand-written TABLED1 310 from the solved trim elevator (0.4917114 against the
+deck's 0.491711).
 
 **Pre-launch check:** `check_case_control(bulk, cc, …) -> (errors, warnings)` checks the
 case control against the model: exactly one driver per subcase (TRIM, DIVERG, MANVR or
