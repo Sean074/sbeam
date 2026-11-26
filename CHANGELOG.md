@@ -10,6 +10,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Viewer journey test (#112).** `tests/viewer/test_journey.py` takes every sample deck
+  that opens on its own (34) through the viewer: open from the picker, every tab drawn, the
+  case-control editor and one card per card-family editor submitted unchanged, the export
+  parsed and compared with the deck on disk field by field, then the run. It found the
+  defects of #123 and #122. It drives widgets, not a browser.
 - **The viewer opens a deck from disk (#111).** A new "Open from disk" panel in the sidebar
   lists every deck under `sample/` and takes a typed path. A deck opened this way is parsed
   where it stands, so a relative `INCLUDE` resolves. Before this the only route was upload,

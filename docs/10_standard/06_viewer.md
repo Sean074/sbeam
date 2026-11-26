@@ -806,6 +806,18 @@ They call `_get_pre_solve_warnings` directly (no Streamlit session required) and
 five checks: zero-length CBAR, SPC coverage, unsupported load cards, zero density, E-value
 range heuristic.
 
+**The journey test** (`tests/viewer/test_journey.py`, #112) is the viewer's production
+gate. For every deck under `sample/` that opens on its own (34 of 37) it: opens the deck
+from the sample picker and checks every tab is drawn; submits the case-control editor
+unchanged; opens one loaded card in every card-family editor and submits it unchanged;
+parses the export the viewer offers and compares it with the deck on disk, case control and
+bulk data, field by field; runs the analysis. "Project unchanged" is scored on the re-parsed
+export, so it covers the writers as well as the editors. A card family with no editor is
+listed in `NO_EDITOR` with its issue number, and the test fails when the editor appears, so
+the list cannot go stale. `tests/viewer/test_noop_edits.py` names each defect the journey
+found (#123). The run takes about 80 s. It drives widgets, not a browser: a page that
+renders wrongly without raising is seen only in the hand walk (#121).
+
 **Integration tests** for the viewer live in `tests/viewer/test_apptest_integration.py` and use Streamlit's `AppTest` framework.
 
 **Covered flows:**
