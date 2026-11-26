@@ -17,6 +17,7 @@ from sbeam.results.results import (
     Sol103Result, Sol144DivergResult, Sol144TrimResult, peak_grid_force,
 )
 from sbeam.assembly.load_vector import build_grid_index
+from sbeam.results.f06_writer import applied_load_resultant, coefficient_frame
 from sbeam.results.section_cuts import component_legend, component_names, labelled
 from sbeam_tools.viewer.geometry import build_deformed_figure, build_mode_figure
 from sbeam_tools.viewer.aero_view import build_aero_box_figure
@@ -409,6 +410,9 @@ def _render_sol144_trim(bulk: BulkData, result: Sol144TrimResult) -> None:
     st.markdown("**Trim variables**")
     st.dataframe(style_numeric(pd.DataFrame(tv_rows)), width="stretch")
 
+    _render_injected_operating_point(result)
+    _render_injected_aero_loads(result)
+
     # ---- Stability & control derivatives (rigid + restrained + unrestrained) ----
     unrest_all = getattr(result, "unrestrained_derivs", None) or {}
     deriv_rows = []
@@ -435,7 +439,10 @@ def _render_sol144_trim(bulk: BulkData, result: Sol144TrimResult) -> None:
         })
     st.markdown("**Stability & control derivatives** (rigid vs elastic-restrained "
                 "vs elastic-unrestrained/mean-axis)")
+    _render_coefficient_frame(bulk)
     st.dataframe(style_numeric(pd.DataFrame(deriv_rows)), width="stretch")
+
+    _render_applied_load(bulk, result)
 
     # ---- Divergence readout ----
     st.markdown("**Aerodynamic divergence**")
@@ -500,6 +507,90 @@ def _render_sol144_trim(bulk: BulkData, result: Sol144TrimResult) -> None:
 
     # ---- Deflected shape + canted box cp ----
     _render_sol144_deflected(bulk, result)
+
+
+# ---------------------------------------------------------------------------
+# Blocks the f06 prints that change how the numbers above are read (#118).
+# Each shows the result fields, or the solver-package function, that the f06
+# writer prints; nothing is computed here.
+# ---------------------------------------------------------------------------
+
+_SIX = ("FX", "FY", "FZ", "MX", "MY", "MZ")
+
+
+def _render_coefficient_frame(bulk: BulkData) -> None:
+    """The frame of the coefficients, and MSC's transformation (#82)."""
+    rcsid, t_mat, offset = coefficient_frame(bulk)
+    st.caption(
+        "Force and moment coefficients here are in **basic axes** (CX, CY, CZ along "
+        f"basic +X, +Y, +Z). MSC NASTRAN prints them in the AEROS reference frame "
+        f"(RCSID = {rcsid}): {{C}}ref = [T] {{C}}bas. URDD rows are per unit of the URDD "
+        "trim variable, which is a reference-frame component."
+    )
+    with st.expander("Transformation from basic to reference coordinates [T]",
+                     expanded=bool(rcsid)):
+        frame = pd.DataFrame(
+            [[*row, off] for row, off in zip(t_mat + 0.0, offset + 0.0)],
+            index=pd.Index(["X ref", "Y ref", "Z ref"]),
+            columns=pd.Index(["X bas", "Y bas", "Z bas", "offset"]),
+        )
+        st.dataframe(style_numeric(frame), width="stretch")
+
+
+def _render_injected_operating_point(result: Sol144TrimResult) -> None:
+    """CPINJ: the mean flow injected in place of the program's own (Step 54)."""
+    echo = result.chordcp_echo
+    if not echo:
+        return
+    a_rad = float(echo["alpha_ref"])
+    machs = echo["data_machs"]
+    st.markdown("**Injected operating point** (CPINJ)")
+    cols = st.columns(3)
+    cols[0].metric("ALPHREF (rad)", fmt(a_rad))
+    cols[1].metric("ALPHREF (deg)", fmt(float(np.degrees(a_rad))))
+    cols[2].metric("Data Mach", ", ".join(f"{m:.4f}" for m in machs) if machs else "not stated")
+    rows = [{"CAERO1": eid, "FZ/q injected": s["FZ_Q"], "MY/q injected": s["MY_Q"],
+             "FZ/q VLM flat-plate": s["FZ_Q_VLM"]}
+            for eid, s in sorted(echo["surfaces"].items())]
+    rows.append({"CAERO1": "TOTAL",
+                 "FZ/q injected": sum(r["FZ/q injected"] for r in rows),
+                 "MY/q injected": sum(r["MY/q injected"] for r in rows),
+                 "FZ/q VLM flat-plate": sum(r["FZ/q VLM flat-plate"] for r in rows)})
+    table = pd.DataFrame(rows)
+    table["CAERO1"] = table["CAERO1"].astype(str)
+    st.dataframe(style_numeric(table), width="stretch")
+
+
+def _render_injected_aero_loads(result: Sol144TrimResult) -> None:
+    """LOADINJ / un-splined boxes: their load reaches the structure at a master grid."""
+    if not result.load_injection_echo:
+        return
+    st.markdown("**Injected aero loads** (LOADINJ / un-splined)")
+    rows = []
+    for inj in result.load_injection_echo:
+        row = {"Source": str(inj["source"]), "Master grid": inj["master_grid"],
+               "Boxes": inj["n_boxes"]}
+        row.update(zip(_SIX, (*inj["force"], *inj["moment"])))
+        rows.append(row)
+    st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
+    st.caption("Resultants about the moment reference; included in the trim balance and "
+               "the load export.")
+
+
+def _render_applied_load(bulk: BulkData, result: Sol144TrimResult) -> None:
+    """The LOAD set of a trim subcase as one resultant (#6)."""
+    applied = getattr(result, "applied_loads", None)
+    if applied is None:
+        return
+    ref, res6 = applied_load_resultant(bulk, applied, build_grid_index(bulk))
+    st.markdown(f"**Applied structural load** (LOAD = {result.load_sid})")
+    st.dataframe(style_numeric(pd.DataFrame([dict(zip(_SIX, res6 + 0.0))])), width="stretch")
+    st.caption(
+        "Resultant about the reference point (basic): "
+        f"X = {fmt(float(ref[0]))}, Y = {fmt(float(ref[1]))}, Z = {fmt(float(ref[2]))}. "
+        "It enters the trim balance beside the aerodynamic and inertial loads (not scaled "
+        "by q) and is included in the net loads and the applied column."
+    )
 
 
 def _render_section_cuts(

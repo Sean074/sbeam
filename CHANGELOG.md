@@ -10,6 +10,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **The SOL 144 results page shows four f06 blocks it left out (#118).** Above the
+  derivative table it now says that coefficients are in basic axes and shows MSC's
+  transformation to the AEROS reference frame; on HA144A that frame has z down, so MSC's CZ
+  has the opposite sign. It also shows the injected operating point (CPINJ), the injected
+  aero loads (LOADINJ and un-splined boxes) and the applied structural load as one
+  resultant, each only when the result has it. The numbers come from the result and from
+  `coefficient_frame` and `applied_load_resultant`, two functions in
+  `sbeam/results/f06_writer.py` now shared with the f06 writer; the f06 text is unchanged.
 - **Viewer journey test (#112).** `tests/viewer/test_journey.py` takes every sample deck
   that opens on its own (34) through the viewer: open from the picker, every tab drawn, the
   case-control editor and one card per card-family editor submitted unchanged, the export

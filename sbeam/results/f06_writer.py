@@ -32,16 +32,15 @@ def _fmt(val: float) -> str:
     return f"{val:{_FIELD_W}.6E}"
 
 
-def _applied_load_block(
-    lines: list[str], bulk: BulkData, result: Sol144TrimResult,
-    applied: FloatArray, grid_index: dict[int, int],
-) -> None:
-    """Append the APPLIED STRUCTURAL LOAD block of a trim subcase (#6).
+def applied_load_resultant(
+    bulk: BulkData, applied: FloatArray, grid_index: dict[int, int],
+) -> tuple[FloatArray, FloatArray]:
+    """The applied structural load of a trim subcase as one resultant (#6).
 
-    The six-component resultant of the subcase's LOAD set about the trim
-    reference point (the RCSID origin — the same point the moment coefficients
-    and the maneuver closure use), so a reader sees at once what the trim
-    balanced beside the aerodynamic and inertial loads.  Not scaled by q.
+    Returns ``(ref, res6)``: the trim reference point in basic axes (the RCSID origin,
+    the point the moment coefficients and the maneuver closure use) and the six
+    components ``[FX, FY, FZ, MX, MY, MZ]`` of the subcase's LOAD set about it, in
+    basic axes.  Not scaled by q.  The f06 block and the viewer both print this.
     """
     from sbeam.assembly.coord_transform import get_transform
     from sbeam.results.monitor_points import grid_resultant
@@ -50,6 +49,19 @@ def _applied_load_block(
     ref = (np.asarray(get_transform(rcsid, bulk.cord2rs)[0], dtype=float)
            if rcsid else np.zeros(3))
     res6 = grid_resultant(applied, sorted(bulk.grids.keys()), bulk, grid_index, ref)
+    return ref, np.asarray(res6, dtype=float)
+
+
+def _applied_load_block(
+    lines: list[str], bulk: BulkData, result: Sol144TrimResult,
+    applied: FloatArray, grid_index: dict[int, int],
+) -> None:
+    """Append the APPLIED STRUCTURAL LOAD block of a trim subcase (#6).
+
+    The resultant of ``applied_load_resultant``, so a reader sees at once what the
+    trim balanced beside the aerodynamic and inertial loads.
+    """
+    ref, res6 = applied_load_resultant(bulk, applied, grid_index)
     lines.append("                               A P P L I E D   S T R U C T U R A L   L O A D")
     lines.append("")
     lines.append(
@@ -91,6 +103,24 @@ def _transform_to_cd(t: FloatArray, r: FloatArray, gid: int, bulk: BulkData):
     return t, r
 
 
+def coefficient_frame(bulk: BulkData) -> tuple[int, FloatArray, FloatArray]:
+    """The transformation from basic to the AEROS reference frame (#82).
+
+    Returns ``(rcsid, T, offset)`` with ``{x}ref = [T]{x}bas + offset``.  sbeam prints
+    force and moment coefficients in basic axes; MSC prints them in the reference
+    frame, so a coefficient triple there is ``[T]`` times sbeam's.  ``T`` is the
+    identity when RCSID is 0.  The f06 block and the viewer both print this.
+    """
+    aeros = bulk.aeros
+    rcsid = aeros.rcsid if aeros is not None else 0
+    origin, rot = (np.zeros(3), np.eye(3))
+    if rcsid:
+        origin, rot = get_transform(rcsid, bulk.cord2rs)
+    t_mat = np.asarray(rot, dtype=float).T        # basic -> reference
+    offset = -t_mat @ np.asarray(origin, dtype=float)
+    return rcsid, t_mat, offset
+
+
 def _coefficient_frame_block(lines: list[str], bulk: BulkData) -> None:
     """State the frame of every force and moment coefficient in the trim block (#82).
 
@@ -101,13 +131,7 @@ def _coefficient_frame_block(lines: list[str], bulk: BulkData) -> None:
     The header used to say just "CZ".  This prints MSC's transformation so a comparison
     can convert: a coefficient triple in the reference frame is [T] times the basic one.
     """
-    aeros = bulk.aeros
-    rcsid = aeros.rcsid if aeros is not None else 0
-    origin, rot = (np.zeros(3), np.eye(3))
-    if rcsid:
-        origin, rot = get_transform(rcsid, bulk.cord2rs)
-    t_mat = np.asarray(rot).T                     # basic -> reference
-    offset = -t_mat @ np.asarray(origin, dtype=float)
+    rcsid, t_mat, offset = coefficient_frame(bulk)
     lines.append("      FORCE AND MOMENT COEFFICIENTS IN THIS BLOCK ARE IN BASIC AXES (CX, CY, CZ ALONG BASIC +X, +Y, +Z).")
     lines.append(f"      MSC NASTRAN PRINTS THEM IN THE AEROS REFERENCE FRAME (RCSID = {rcsid}): "
                  "{C}REF = [T] {C}BAS, WITH [T] BELOW.")

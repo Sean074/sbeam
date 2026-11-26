@@ -681,7 +681,19 @@ renders whichever result types it produced:
   `aero_moment_resultant` about the RCSID origin, ≈0 for a symmetric model at a symmetric
   trim); trim-variable table (FREE/PRESCRIBED, value); stability-derivative table with
   rigid, elastic-restrained, and elastic-unrestrained (mean-axis, AE8b) columns
-  (CZ/CMY/CX/CY/CMX/CMZ; unrestrained CZ/CMY blank on URDD rows); `q_div` readout with q/q_div ratio
+  (CZ/CMY/CX/CY/CMX/CMZ; unrestrained CZ/CMY blank on URDD rows), headed by the
+  **coefficient-frame statement** (#118, #82): coefficients are in basic axes, MSC prints
+  them in the AEROS reference frame, and the transformation `[T]` with its offset is shown
+  (`coefficient_frame`, the function the f06 block prints; open by default when RCSID ≠ 0);
+  three blocks the f06 also prints, each shown only when the result carries it (#118):
+  **Injected operating point** (CPINJ: ALPHREF, data Mach, per-CAERO1 `FZ/q` and `MY/q`
+  injected against the VLM flat-plate value, from `chordcp_echo`), **Injected aero loads**
+  (LOADINJ and un-splined boxes: source, master grid, box count, six resultants, from
+  `load_injection_echo`) and **Applied structural load** (the subcase's LOAD set as one
+  resultant about the reference point, `applied_load_resultant`, #6). The viewer computes
+  none of these: it shows result fields and two solver-package functions shared with the
+  f06 writer, and `tests/viewer/test_results_f06_blocks.py` compares each with the f06
+  text; `q_div` readout with q/q_div ratio
   ("No divergence found" when `None`); per-AESURF hinge-moment table (rigid and elastic-restrained derivatives, and the trimmed moment on its own row group, #82); monitor-point integrated
   loads (Fx…Mz, from `MonitorLoad.totals`); **section-cut running loads**
   (`_render_section_cuts`, Monitor Phase 2) — one expander per `MONSECT` with the
