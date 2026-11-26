@@ -394,38 +394,53 @@ module skips itself; locally, run it from a venv built from that file
 
 Tests mirror the `sbeam/` module structure under `tests/`. Each assembly, solver, parser and results sub-package has a corresponding test module; the viewer (`sbeam_tools/viewer/`) is tested under `tests/viewer/`.
 
+### External reference column (#95)
+
+Each row of the three tables below says where its expected number comes from:
+
+- **MSC / ZAERO / NASTRAN-95** — a number the vendor printed, with the manual and PDF page.
+- **Closed-form** — a textbook formula. It is independent of sbeam's code, but it does not show
+  that sbeam reads a card the way MSC does.
+- **Another program** — named, with its version (Flaps, pyNastran, a regulation's constant).
+- **None** — the gate compares sbeam with itself: closure, a repeat by a second route, or a
+  stored regression value. Such a gate passes while sbeam differs from MSC (audit
+  `2026-11-16_nastran_zaero_audit.md` cause C6).
+
+No row of the V-suite or the gust table is checked against an MSC or ZAERO number. A new row
+states its reference in this column; "None" is allowed but must be written.
+
 ### Integration tests — verification suite
 
 `tests/integration/test_verification.py` exercises the full pipeline (`parse_bdf → run_sol101/103 → results`) against closed-form analytical values. BDF input files live in `tests/integration/bdf/`.
 
-| ID | BDF file | SOL | Check | Tolerance |
-|----|----------|-----|-------|-----------|
-| V1 | `v1_v2_cantilever.bdf` | 101 | Tip deflection = PL³/3EI | < 0.1% |
-| V2 | `v1_v2_cantilever.bdf` | 101 | Fixed-end moment = PL | < 0.1% |
-| V3 | `v3_simply_supported.bdf` | 101 | Mid-span deflection = PL³/48EI | < 0.1% |
-| V4 | `v4_fixed_fixed_udl.bdf` | 101 | Reactions sum to total load | < 0.1% |
-| V5 | `v5_cantilever_modal.bdf` | 103 | f₁ = (1.8751²/2π)√(EI/ρAL⁴) | < 1% |
-| V6 | `v6_free_free_modal.bdf` | 103 | First 6 modes < 0.1 Hz (rigid body) | — |
-| V7 | `v7_simply_supported_modal.bdf` | 103 | f₁ = (π²/2πL²)√(EI/ρA) | < 1% |
-| V8 | `v8_conm2_torsional_inertia.bdf` | 103 | f = √(GJ/L·I₁₁)/(2π) | < 1% |
-| V9 | `v9_conm2_offset_bending.bdf` | 103 | Coupled 2-DOF f₁, f₂ (CONM2 axial offset) | < 1% |
-| V10 | `v10_conm2_zero_density.bdf` | 103 | f = √(3EI/mL³)/(2π) (tip mass, zero density) | < 1% |
-| V11 | `v11_cantilever_torsion_sol101.bdf` | 101 | θ_x = T·L/(G·J) | < 0.1% |
-| V12 | `v12_conm2_offset_torsion_sol103.bdf` | 103 | f = √(GJ/L·m·d²)/(2π) (transverse offset) | < 1% |
-| V13 | `v13_rbe2_rigid_coupling.bdf` | 101 | Tip deflection = PL³/3EI via RBE2 coupling | < 0.1% |
-| V14 | `v14_rbar_zero_offset.bdf` | 101 | Tip deflection = PL³/3EI via RBAR (zero-offset, R=identity) | < 0.1% |
-| V15 | `v15_grav_simply_supported.bdf` | 101 | Reactions sum to ρALg (CBAR mass only under GRAV) | < 0.01% |
-| V16 | `v16_grav_with_conm2.bdf` | 101 | Reactions sum to (ρAL + m_conm2)·g (CBAR mass + CONM2 under GRAV) | < 0.01% |
-| V17 | `v17_grav_plus_force.bdf` | 101 | Reactions sum to net load (GRAV + upward FORCE combined via LOAD card) | < 0.01% |
-| V18 | `v18_rbe2_offset.bdf` | 101 | u_y at GN/GM satisfy cantilever formula with eccentric load; u_GM = R·u_GN (RBE2 lever-arm) | < 0.1% |
-| V20 | `v20_cbush_grounded_spring.bdf` | 101 | u = F/K; CBUSH force = K·u | < 0.01% |
-| V21 | `v21_fixed_pinned_tip_load.bdf` | 101 | Pin release `PB=6`: δ = PL³/3EI, root moment = −PL, released end-B moment exactly 0 (DEF-M17 G1) | 1e-10 rel; 0 abs |
-| V22 | `v22_clamped_pinned_modal_n20.bdf` | 103 | 20 elements, grid ends clamped, last element `PB=56`: f₁ = (3.92660²/2π)√(EI/ρAL⁴) = 11.30667 Hz, double root (DEF-M17 G2) | < 0.01% |
-| V23 | `v23_clamped_pinned_modal_n4.bdf` | 103 | Same at N=4: 11.31450 Hz regression value pinning the congruent mass condensation (DEF-M17 G2b) | 1e-6 rel |
-| V24 | `v24_rod_axial_torsion.bdf` | 101 | Single CROD, clamped at GA: δ = PL/EA = 1.0e-4, θ = TL/GJ = 1.25e-2, AXIAL = +P, TORQUE = +T, σ = P/A, τ = TC/J (#38 G1) | 1e-10 rel |
-| V25 | `v25_strut_pylon_statics.bdf` | 101 | Planar two-strut pylon (CROD + CONROD) under Px = 500, Pz = −1000: N1 = 750√2, N2 = 250√2 by joint equilibrium; reactions balance (#38 G2) | 1e-9 rel |
-| V26 | `v26_engine_on_struts_modes.bdf` | 103 | CONM2 100 kg on two massless struts at ±30°: f_x = 35.588127 Hz, f_z = 61.640444 Hz exact 2-DOF closed form; ρ > 0 lowers the pair by < 1 % (#38 G3) | 1e-8 rel |
-| V27 | `v27_crod_vs_cbar56.bdf` | 101 | CROD vs CBAR `PA=PB=56` with the same A, J: identical δ, θ, AXIAL, TORQUE; CBAR bending/shear columns 0 (#38 G4) | 1e-12 rel |
+| ID | BDF file | SOL | Check | Tolerance | External reference |
+|----|----------|-----|-------|-----------|--------------------|
+| V1 | `v1_v2_cantilever.bdf` | 101 | Tip deflection = PL³/3EI | < 0.1% | Closed-form |
+| V2 | `v1_v2_cantilever.bdf` | 101 | Fixed-end moment = PL | < 0.1% | Closed-form |
+| V3 | `v3_simply_supported.bdf` | 101 | Mid-span deflection = PL³/48EI | < 0.1% | Closed-form |
+| V4 | `v4_fixed_fixed_udl.bdf` | 101 | Reactions sum to total load | < 0.1% | Closed-form (equilibrium only) |
+| V5 | `v5_cantilever_modal.bdf` | 103 | f₁ = (1.8751²/2π)√(EI/ρAL⁴) | < 1% | Closed-form |
+| V6 | `v6_free_free_modal.bdf` | 103 | First 6 modes < 0.1 Hz (rigid body) | — | Closed-form |
+| V7 | `v7_simply_supported_modal.bdf` | 103 | f₁ = (π²/2πL²)√(EI/ρA) | < 1% | Closed-form |
+| V8 | `v8_conm2_torsional_inertia.bdf` | 103 | f = √(GJ/L·I₁₁)/(2π) | < 1% | Closed-form |
+| V9 | `v9_conm2_offset_bending.bdf` | 103 | Coupled 2-DOF f₁, f₂ (CONM2 axial offset) | < 1% | Closed-form |
+| V10 | `v10_conm2_zero_density.bdf` | 103 | f = √(3EI/mL³)/(2π) (tip mass, zero density) | < 1% | Closed-form |
+| V11 | `v11_cantilever_torsion_sol101.bdf` | 101 | θ_x = T·L/(G·J) | < 0.1% | Closed-form |
+| V12 | `v12_conm2_offset_torsion_sol103.bdf` | 103 | f = √(GJ/L·m·d²)/(2π) (transverse offset) | < 1% | Closed-form |
+| V13 | `v13_rbe2_rigid_coupling.bdf` | 101 | Tip deflection = PL³/3EI via RBE2 coupling | < 0.1% | Closed-form |
+| V14 | `v14_rbar_zero_offset.bdf` | 101 | Tip deflection = PL³/3EI via RBAR (zero-offset, R=identity) | < 0.1% | Closed-form |
+| V15 | `v15_grav_simply_supported.bdf` | 101 | Reactions sum to ρALg (CBAR mass only under GRAV) | < 0.01% | Closed-form (equilibrium only) |
+| V16 | `v16_grav_with_conm2.bdf` | 101 | Reactions sum to (ρAL + m_conm2)·g (CBAR mass + CONM2 under GRAV) | < 0.01% | Closed-form (equilibrium only) |
+| V17 | `v17_grav_plus_force.bdf` | 101 | Reactions sum to net load (GRAV + upward FORCE combined via LOAD card) | < 0.01% | Closed-form (equilibrium only) |
+| V18 | `v18_rbe2_offset.bdf` | 101 | u_y at GN/GM satisfy cantilever formula with eccentric load; u_GM = R·u_GN (RBE2 lever-arm) | < 0.1% | Closed-form |
+| V20 | `v20_cbush_grounded_spring.bdf` | 101 | u = F/K; CBUSH force = K·u | < 0.01% | Closed-form |
+| V21 | `v21_fixed_pinned_tip_load.bdf` | 101 | Pin release `PB=6`: δ = PL³/3EI, root moment = −PL, released end-B moment exactly 0 (DEF-M17 G1) | 1e-10 rel; 0 abs | Closed-form |
+| V22 | `v22_clamped_pinned_modal_n20.bdf` | 103 | 20 elements, grid ends clamped, last element `PB=56`: f₁ = (3.92660²/2π)√(EI/ρAL⁴) = 11.30667 Hz, double root (DEF-M17 G2) | < 0.01% | Closed-form |
+| V23 | `v23_clamped_pinned_modal_n4.bdf` | 103 | Same at N=4: 11.31450 Hz regression value pinning the congruent mass condensation (DEF-M17 G2b) | 1e-6 rel | **None** — sbeam's own value at N = 4, kept as a regression number; V22 carries the closed form |
+| V24 | `v24_rod_axial_torsion.bdf` | 101 | Single CROD, clamped at GA: δ = PL/EA = 1.0e-4, θ = TL/GJ = 1.25e-2, AXIAL = +P, TORQUE = +T, σ = P/A, τ = TC/J (#38 G1) | 1e-10 rel | Closed-form |
+| V25 | `v25_strut_pylon_statics.bdf` | 101 | Planar two-strut pylon (CROD + CONROD) under Px = 500, Pz = −1000: N1 = 750√2, N2 = 250√2 by joint equilibrium; reactions balance (#38 G2) | 1e-9 rel | Closed-form |
+| V26 | `v26_engine_on_struts_modes.bdf` | 103 | CONM2 100 kg on two massless struts at ±30°: f_x = 35.588127 Hz, f_z = 61.640444 Hz exact 2-DOF closed form; ρ > 0 lowers the pair by < 1 % (#38 G3) | 1e-8 rel | Closed-form |
+| V27 | `v27_crod_vs_cbar56.bdf` | 101 | CROD vs CBAR `PA=PB=56` with the same A, J: identical δ, θ, AXIAL, TORQUE; CBAR bending/shear columns 0 (#38 G4) | 1e-12 rel | **None** — two sbeam elements compared with each other; V24 carries the closed form |
 
 V1–V7 use: E=2.0×10¹¹ Pa, ρ=7850 kg/m³, A=0.05 m², I=8.333×10⁻⁴ m⁴, L=1.0 m, 10 CBAR elements. V8–V27 use parameters defined in their BDF files; see `tests/integration/test_verification.py` for exact values.
 
@@ -433,18 +448,18 @@ V1–V7 use: E=2.0×10¹¹ Pa, ρ=7850 kg/m³, A=0.05 m², I=8.333×10⁻⁴ m�
 
 The V-suite above gates its own decks under `tests/integration/bdf/` (L = 1 m, A = 0.05 m²). `tests/integration/test_sample_verification.py` separately gates the **shipped** closed-form decks — the four named in `CLAUDE.md` "Verification Test Cases" (L = 10 m, A = 0.1 m², 10 CBAR elements), plus the offset-tip-mass coupled bending-torsion deck added 2026-08-01:
 
-| Deck (under `sample/`; folders and purposes: [`sample/README.md`](../../sample/README.md)) | SOL | Checks | Tolerance |
-|------------------|-----|--------|-----------|
-| `val_cantilever_static.bdf` | 101 | Tip Tz = PL³/3EI; tip Ry = PL²/2EI; root reactions Fz = P, My = −P·L | rel 1e-9 |
-| `val_ss_static.bdf` | 101 | Mid-span Tz = PL³/48EI; P/2 at each support | rel 1e-9 |
-| `val_cantilever_modes.bdf` | 103 | f₁ (β₁ = 1.875104) ≈ 2.578 Hz; f₂ (β₂ = 4.694091) ≈ 16.159 Hz; ascending order | rel 1e-5 / 2e-4 |
-| `goland_wing_modes.bdf` | 103 | Flaps demo Goland wing with a massless RBE2 + PLOTEL outline (#107: frequencies and PHIX unchanged, outline follows u + θ × r, tip chord twists in mode 5); flap / torsion 7.370 / 14.119 Hz (Flaps 2.3.4). Tributary, cg = 0 variant: 49.48 / 87.10 rad/s closed form. MODEXP export read back by pyNastran | rel 5e-3; OP4 1e-12 |
-| `val_free_free_modes.bdf` | 103 | Six rigid-body modes < 1e-3 Hz; mode 7 elastic (>1e3 separation); f₇ (β = 4.730041) ≈ 16.407 Hz | 1e-3 Hz / rel 2e-4 |
-| `val_cantilever_offset_mass_modes.bdf` | 103 | Coupled bending-torsion pair from a transverse-offset tip CONM2: f₁ ≈ 0.1489 Hz, f₂ ≈ 0.7466 Hz vs the tip-dominant 2-DOF closed form (Rayleigh beam-mass corrections); twist participation Rx·d/Tz ≈ +0.10 / −0.99; zeroing the offset decouples the families | rel 2e-3 |
-| `val_lateral_aileron_rudder.bdf` | 144 | **V-LAT2** (gate `tests/aero/test_lateral_cases.py`, #10): AR 8 wing + fin, aileron pair (one AESURF, CID1/CID2) + rudder, `SUPORT 46`, steady roll and steady sideslip. Rudder `CY_δr > 0`, `CMZ_δr > 0`, `CMZ/CY` = force-centroid arm; `CY_δr/CY_β,fin` within ±15 % of the thin-airfoil flap factor τ(E = 0.25) = 0.609; aileron `C_lδa` in the strip-theory band [0.6, 1.0]; pair hinge moment = 2 × one half; both trims equal the 2×2 solve of the solver's restrained derivatives, `AIL < 0` for `ROLL > 0`, `RUD < 0` for `SIDES > 0`; monitors carry Fy/Mx/Mz; CLI writes f06 + both CSVs. `SUBCASE 3` (#6): engine-torque `MOMENT` (+Mx, clockwise propeller) trims `AIL < 0` equal to the 2×2 restrained solve against `−[Q/(qSb), 0]` — the handedness gate | 1e-10 / band / 1e-8 rel |
-| `val_thrust_trim.bdf` | 144 | **V-THR** (gate `tests/aero/test_thrust_trim.py`, #6): AR 8 wing + horizontal tail with elevator, engine grid 0.5 below the nose on an `RBAR` pylon, `SUPORT 135` (surge free), one `TRIM` in three subcases (no load / `LOAD` combination / direct `FORCE`). Trim shift = the solver's own Schur reduction of the applied load alone; rigid 2×2 closed form on a stiffened copy with `ΔCm = T·(z_cg − z_T)/(qSc)` (surge free) and `T·(z_ref − z_T)/(qSc)` (`SUPORT 35` variant); direct set ≡ combination bit for bit, doubling `T` doubles every shift; closure ≈ 0 in all six components, `m·URDD1 = T + Fx_aero`; nose `MONSECT` carries `c1_applied = −T`, `c5_applied = 0.5·T`; derivatives untouched; `GRAV` / `MANVR`+`LOAD` / `DIVERG`+`LOAD` refused; CLI writes the f06 `APPLIED STRUCTURAL LOAD` block, both CSVs and `maneuver_loads.bdf` | 1e-10 / 1e-6 rel / 1e-9 |
-| `ha144a_fullspan_dmij.bdf` | 144 | **#104** (gate `tests/aero/test_aero_matrices.py`): the full-span HA144A deck with its 0.1° wing incidence as MSC's `DMIJ W2GJ` and its identity WKK as `DMIK WKK`; both subcases (q = 40, 1200 psf) trim to `ha144a_fullspan_sbeam.bdf` (native `W2GJ`), trim variables and displacements; a non-uniform `DMIK WKK` gives the same corrected operator as the native `WKK` bit for bit; pyNastran reads all 224 terms to the same values | rel 1e-12 / exact |
-| `pylon_strut_engine.bdf` | 101 | Strut-braced engine pylon (CBAR wing + spine, CROD + CONROD struts, CONM2 engine; 1g + thrust and 1g): free body of the engine grid closes to 1e-9 (rod forces + spine end-B force + applied load = 0), root reactions = GPWG weight and thrust, CONROD stress = P/A like the CROD, both rod f06 blocks present (#38) | 1e-9 rel |
+| Deck (under `sample/`; folders and purposes: [`sample/README.md`](../../sample/README.md)) | SOL | Checks | Tolerance | External reference |
+|------------------|-----|--------|-----------|--------------------|
+| `val_cantilever_static.bdf` | 101 | Tip Tz = PL³/3EI; tip Ry = PL²/2EI; root reactions Fz = P, My = −P·L | rel 1e-9 | Closed-form |
+| `val_ss_static.bdf` | 101 | Mid-span Tz = PL³/48EI; P/2 at each support | rel 1e-9 | Closed-form |
+| `val_cantilever_modes.bdf` | 103 | f₁ (β₁ = 1.875104) ≈ 2.578 Hz; f₂ (β₂ = 4.694091) ≈ 16.159 Hz; ascending order | rel 1e-5 / 2e-4 | Closed-form |
+| `goland_wing_modes.bdf` | 103 | Flaps demo Goland wing with a massless RBE2 + PLOTEL outline (#107: frequencies and PHIX unchanged, outline follows u + θ × r, tip chord twists in mode 5); flap / torsion 7.370 / 14.119 Hz (Flaps 2.3.4). Tributary, cg = 0 variant: 49.48 / 87.10 rad/s closed form. MODEXP export read back by pyNastran | rel 5e-3; OP4 1e-12 | Flaps 2.3.4 (`flaps_env/docs/demo_results.md`) for 7.370 / 14.119 Hz; closed-form for the cg = 0 variant; pyNastran for the OP4 read-back. Gate: `tests/results/test_modal_export.py` |
+| `val_free_free_modes.bdf` | 103 | Six rigid-body modes < 1e-3 Hz; mode 7 elastic (>1e3 separation); f₇ (β = 4.730041) ≈ 16.407 Hz | 1e-3 Hz / rel 2e-4 | Closed-form |
+| `val_cantilever_offset_mass_modes.bdf` | 103 | Coupled bending-torsion pair from a transverse-offset tip CONM2: f₁ ≈ 0.1489 Hz, f₂ ≈ 0.7466 Hz vs the tip-dominant 2-DOF closed form (Rayleigh beam-mass corrections); twist participation Rx·d/Tz ≈ +0.10 / −0.99; zeroing the offset decouples the families | rel 2e-3 | Closed-form (2-DOF, with Rayleigh corrections) |
+| `val_lateral_aileron_rudder.bdf` | 144 | **V-LAT2** (gate `tests/aero/test_lateral_cases.py`, #10): AR 8 wing + fin, aileron pair (one AESURF, CID1/CID2) + rudder, `SUPORT 46`, steady roll and steady sideslip. Rudder `CY_δr > 0`, `CMZ_δr > 0`, `CMZ/CY` = force-centroid arm; `CY_δr/CY_β,fin` within ±15 % of the thin-airfoil flap factor τ(E = 0.25) = 0.609; aileron `C_lδa` in the strip-theory band [0.6, 1.0]; pair hinge moment = 2 × one half; both trims equal the 2×2 solve of the solver's restrained derivatives, `AIL < 0` for `ROLL > 0`, `RUD < 0` for `SIDES > 0`; monitors carry Fy/Mx/Mz; CLI writes f06 + both CSVs. `SUBCASE 3` (#6): engine-torque `MOMENT` (+Mx, clockwise propeller) trims `AIL < 0` equal to the 2×2 restrained solve against `−[Q/(qSb), 0]` — the handedness gate | 1e-10 / band / 1e-8 rel | Closed-form bands for two numbers only: rudder effectiveness (thin-airfoil τ) and aileron rolling power (strip theory). **None** for the trims, signs, hinge moments and monitors, which are compared with the solver's own derivatives. No MSC or ZAERO number |
+| `val_thrust_trim.bdf` | 144 | **V-THR** (gate `tests/aero/test_thrust_trim.py`, #6): AR 8 wing + horizontal tail with elevator, engine grid 0.5 below the nose on an `RBAR` pylon, `SUPORT 135` (surge free), one `TRIM` in three subcases (no load / `LOAD` combination / direct `FORCE`). Trim shift = the solver's own Schur reduction of the applied load alone; rigid 2×2 closed form on a stiffened copy with `ΔCm = T·(z_cg − z_T)/(qSc)` (surge free) and `T·(z_ref − z_T)/(qSc)` (`SUPORT 35` variant); direct set ≡ combination bit for bit, doubling `T` doubles every shift; closure ≈ 0 in all six components, `m·URDD1 = T + Fx_aero`; nose `MONSECT` carries `c1_applied = −T`, `c5_applied = 0.5·T`; derivatives untouched; `GRAV` / `MANVR`+`LOAD` / `DIVERG`+`LOAD` refused; CLI writes the f06 `APPLIED STRUCTURAL LOAD` block, both CSVs and `maneuver_loads.bdf` | 1e-10 / 1e-6 rel / 1e-9 | Closed-form for the rigid 2×2 trim shift on a stiffened copy. **None** for the rest (the solver's own Schur reduction, closure, bit-for-bit repeats). No MSC or ZAERO number |
+| `ha144a_fullspan_dmij.bdf` | 144 | **#104** (gate `tests/aero/test_aero_matrices.py`): the full-span HA144A deck with its 0.1° wing incidence as MSC's `DMIJ W2GJ` and its identity WKK as `DMIK WKK`; both subcases (q = 40, 1200 psf) trim to `ha144a_fullspan_sbeam.bdf` (native `W2GJ`), trim variables and displacements; a non-uniform `DMIK WKK` gives the same corrected operator as the native `WKK` bit for bit; pyNastran reads all 224 terms to the same values | rel 1e-12 / exact | **None** for the trim: it is compared with sbeam's native-card deck. pyNastran for the 224 matrix terms. The native deck is gated on MSC's printed HA144A output (AAUG 2023.1 PDF p.233–237) and on the ASTROS*/ZAERO Applications Manual Table 3.1.1 — see the SOL 144 note below |
+| `pylon_strut_engine.bdf` | 101 | Strut-braced engine pylon (CBAR wing + spine, CROD + CONROD struts, CONM2 engine; 1g + thrust and 1g): free body of the engine grid closes to 1e-9 (rod forces + spine end-B force + applied load = 0), root reactions = GPWG weight and thrust, CONROD stress = P/A like the CROD, both rod f06 blocks present (#38) | 1e-9 rel | Closed-form (equilibrium only) |
 
 Two conventions differ from the V-suite and matter when reading the module:
 
@@ -453,28 +468,41 @@ Two conventions differ from the V-suite and matter when reading the module:
 
 The sample decks load in **−Z** (the V-suite loads −Y), and the gates assert signs, not magnitudes — a convention flip fails.
 
+**SOL 144 gates with an external number.** The table above lists the decks under VAL2 only.
+These gates sit in `tests/aero/` and `tests/results/` and have no row here:
+
+| Deck | Gate | External reference |
+|------|------|--------------------|
+| `ha144a_fullspan_sbeam.bdf` | `tests/results/test_f06_sol144_labels.py` — derivative frame, restrained derivatives, hinge moments, box pressures and forces | MSC HA144A output, AAUG 2023.1 Listing 7-2, PDF p.233–237 |
+| `ha144a_fullspan_sbeam.bdf` | `tests/aero/test_ha144a_rigid_derivs.py` — six rigid longitudinal derivatives | ASTROS*/ZAERO Applications Manual (DTIC ADA370433) Table 3.1.1, which tabulates MSC's values |
+| `val_vlm_byu_wing.bdf` | `tests/aero/test_val_byu_wing.py` — rigid CL, CM | VortexLattice.jl example, itself checked against AVL |
+| — | `tests/results/test_gpwg_print.py` — GPWG print layout | MSC HA144B output, AAUG 2023.1 PDF p.269 |
+
+The per-step gate tables in `05c_sol144_maneuver.md` (V-C3, V-SEC, V-TSEC, V-TMON) do not carry
+this column yet.
+
 ### Gust load cases — S-GUST / V-GUST / P-GUST (issue #1)
 
 FAR/CS 23.341 quasi-static gust cases split across the preprocessing tool and the
 solver (`05c_sol144_maneuver.md`). The tool's gates live in `tests/tools/`, the
 solver's in `tests/aero/` and `tests/parser/`.
 
-| ID | Case | Gate |
-|----|------|------|
-| S-GUST1 | Imperial identity | consistent-units `Δn` reproduces the regulation's own `498` constant within 0.2 % (`498 ≡ 2/(ρ₀·1.6878)`) — the external, non-circular anchor |
-| S-GUST2 | ISA atmosphere | `ρ` at 0 / 20,000 / 50,000 ft vs published tables, 0.5 % |
-| S-GUST3 | `U_de` schedule | 50/25/66 fps below 20,000 ft, tapering to 25/12.5/38 at 50,000 ft; both unit systems; above the schedule raises |
-| S-GUST4 | Bounds & trends | `0 < K_g < 0.88`; `Δn` rises with `V`, falls with `W/S` |
-| S-GUST5 | Flagship end-to-end | μ, `K_g`, `n` recomputed from the **parsed deck** (VAL2 discipline), matching the design note |
-| S-GUST6a | Generated deck | parses; TRIMs carry the right `q` and leave `URDD3` for `GUSTLF` |
-| V-GUST1 | Trim closes | `lift == n·W` (rel 1e-6); `URDD3` is the card's `−n·g`; trim stays determined |
-| V-GUST2 | The ± pair | straddles 1 g; incidence and elevator ordered **relative to each other**, never absolutely |
-| V-GUST3 | Down-gust | the `n < 0` case solves, with positive `URDD3` and negative incidence |
-| V-GUST4 | Loads flow through | monitor and section-cut loads produced as for any maneuver |
-| V-GUST5 | f06 block | present and correct; recorded sea level prints as a value, not "NOT RECORDED"; `URDD3` reported PRESCRIBED |
-| V-GUST6 | Non-regression | a deck without `GUSTLF` emits no gust block |
-| V-GUST7 | **DEF-M20 guard** | negative `URDD3` against an absent/z-up RCSID warns; the z-down flagship stays silent |
-| P-GUST1–6 | Parse rejections | unknown TRIMID; TRIM also prescribing `URDD3`; `G ≤ 0`; bad `ASRC`; `KG` outside `(0, 0.88)`; negative recorded provenance |
+| ID | Case | Gate | External reference |
+|----|------|------|--------------------|
+| S-GUST1 | Imperial identity | consistent-units `Δn` reproduces the regulation's own `498` constant within 0.2 % (`498 ≡ 2/(ρ₀·1.6878)`) — the external, non-circular anchor | FAR/CS 23.341 — the regulation's own `498` constant |
+| S-GUST2 | ISA atmosphere | `ρ` at 0 / 20,000 / 50,000 ft vs published tables, 0.5 % | ISA table values; the test does not name the table it took them from (*unverified* source) |
+| S-GUST3 | `U_de` schedule | 50/25/66 fps below 20,000 ft, tapering to 25/12.5/38 at 50,000 ft; both unit systems; above the schedule raises | FAR/CS 23.333(c) `U_de` schedule, as transcribed in the design note |
+| S-GUST4 | Bounds & trends | `0 < K_g < 0.88`; `Δn` rises with `V`, falls with `W/S` | **None** — bounds and trends |
+| S-GUST5 | Flagship end-to-end | μ, `K_g`, `n` recomputed from the **parsed deck** (VAL2 discipline), matching the design note | **None** — recomputed from the deck with the same formula; matches the design note's own worked table |
+| S-GUST6a | Generated deck | parses; TRIMs carry the right `q` and leave `URDD3` for `GUSTLF` | **None** |
+| V-GUST1 | Trim closes | `lift == n·W` (rel 1e-6); `URDD3` is the card's `−n·g`; trim stays determined | **None** — closure |
+| V-GUST2 | The ± pair | straddles 1 g; incidence and elevator ordered **relative to each other**, never absolutely | **None** |
+| V-GUST3 | Down-gust | the `n < 0` case solves, with positive `URDD3` and negative incidence | **None** |
+| V-GUST4 | Loads flow through | monitor and section-cut loads produced as for any maneuver | **None** |
+| V-GUST5 | f06 block | present and correct; recorded sea level prints as a value, not "NOT RECORDED"; `URDD3` reported PRESCRIBED | **None** |
+| V-GUST6 | Non-regression | a deck without `GUSTLF` emits no gust block | **None** |
+| V-GUST7 | **DEF-M20 guard** | negative `URDD3` against an absent/z-up RCSID warns; the z-down flagship stays silent | **None** |
+| P-GUST1–6 | Parse rejections | unknown TRIMID; TRIM also prescribing `URDD3`; `G ≤ 0`; bad `ASRC`; `KG` outside `(0, 0.88)`; negative recorded provenance | **None** — `GUSTLF` is an sbeam card; no vendor defines it |
 
 `sample/cessna210_flagship/cessna210_flagship_gust.bdf` is generated output, committed with its
 generating command in the header — regenerate it rather than hand-editing.

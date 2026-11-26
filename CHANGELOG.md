@@ -125,6 +125,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   PLOTEL, PBAR, CBUSH, CONM2, SPC, FORCE, MOMENT, GRAV, PAERO1, SPLINE2, AESTAT, MONPNT1).
   Newly documented as ignored: PAERO1 `B1`–`B6`, GRAV `MB`. Corrected: RBAR `TREF` is
   refused as an unread line, not ignored.
+- **"External reference" column on the verification tables (#95, part D3).** Every row of the
+  V-suite, VAL2 and gust tables in `00_program_overview.md` now says where its expected number
+  comes from: a vendor's printed number with its page, a closed form, another named program, or
+  **None** when the gate compares sbeam with itself. No V-suite or gust row is checked against
+  an MSC or ZAERO number. A short table lists the SOL 144 gates that do carry one (HA144A,
+  AAUG 2023.1 PDF p.233–237).
 - **`sample/` is one folder per model family, with a README** (#108, Tier S). The 38 sample
   files move, names unchanged, into `sample/beam/`, `sample/validation/`,
   `sample/goland_wing/`, `sample/ha144a/` and `sample/cessna210_flagship/`. The new
