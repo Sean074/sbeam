@@ -510,10 +510,11 @@ The AESURF form carries both hinge halves — `CID1`/`ALID1` and `CID2`/`ALID2` 
 pair is one label; charter §6) — and refuses a half-specified second pair; before #9 it
 dropped `CID2`/`ALID2` on re-save.
 
-**Layout:** four sub-tabs — *Surfaces & States* (AESTAT/AESURF/AELIST/SUPORT), *Trim
-Conditions* (presets + TRIM/TRIMVAR/TRIMWGT/TRIMINEQ/DIVERG), *Maneuver (MANVR)*
-(two-pass command builder + MANTRIM/MANTIME/MANCMD/MANPRNT/MANVR), *Tables* (shape
-generator + TABLED1 point editor). Each family gets an expander with a selectbox
+**Layout:** five sub-tabs — *Surfaces & States* (AESTAT/AESURF/AELIST/SUPORT), *Trim
+Conditions* (presets + TRIM/TRIMVAR/TRIMWGT/TRIMINEQ/DIVERG), *Gust (GUSTLF)* (gust-case
+generator + GUSTLF, #117), *Maneuver (MANVR)* (two-pass command builder +
+MANTRIM/MANTIME/MANCMD/MANPRNT/MANVR), *Tables* (shape generator + TABLED1 point editor).
+All 16 card families of `card_writers.FAMILIES` have an editor. Each family gets an expander with a selectbox
 ("— new —" or an existing ID, outside the form so switching pre-fills) and one
 `st.form`; dynamic rows (TRIM vars, MANCMD pairs, TABLED1 points) use `st.data_editor`
 with `num_rows="dynamic"`. All widget keys are `auth_`-prefixed.
@@ -581,6 +582,27 @@ and each lateral preset states the `SUPORT` DOF it needs (#24, #10). The load fa
 defaults to 1.0, level flight: the limit load factor of a case is the user's input, and no
 regulatory number is a default. **Known defect:** the pull-up recipe prescribes `PITCH = 0`
 at every load factor, where a steady pull-up carries `(n − 1)·g·c_ref/(2V²)` (#127).
+
+**Gust cases (#117).** Two routes, kept apart because they sit on opposite sides of the
+architecture boundary:
+
+- **GUSTLF card form** — unit-neutral, like every card: SID, the TRIM it rides on, the load
+  factor N and gravity G (the two fields the solver uses, `URDD3 = −N·G`), then the recorded
+  derivation (U_de, V, K_g, μ, slope and its source, altitude) which the solver only echoes.
+  Altitude is a text box: blank is "not recorded", `0` is sea level, and the form keeps
+  them apart. The parser's rules arrive through the re-parse: one gust case per TRIM, K_g
+  inside (0, 0.88).
+- **Generate gust cases** — collects what `sbeam-cases` takes on the command line (unit
+  system, TRIM template, g, V_C / V_D / V_B as equivalent airspeeds, altitudes, mass cases,
+  first SID) and calls `sbeam_tools.cases.gust`: `airplane_from_model` on the session model
+  (so cards authored in the session count), `generate_cases`, then `trim_card`,
+  `gustlf_card` and `gust_subcase` per case. The TRIM and GUSTLF cards go into the deck in
+  one commit and the subcases are appended to the case control; the tool's summary table is
+  shown. The viewer computes nothing: the Pratt formula, the ISA atmosphere and the
+  regulation's constants stay in the tool. Gate: opened on `cessna210_flagship_trim.bdf`
+  with the inputs recorded in the gust deck's header, the panel produces the twelve TRIM and
+  GUSTLF cards and the twelve subcases of `cessna210_flagship_gust.bdf`, value for value and
+  as identical card text.
 
 **TABLED1 generators:** `maneuver.gen_cosine_ramp` (default — clamped-linear slope jumps
 ring the highest retained mode under the modal solver), `gen_ramp`, `gen_step`,

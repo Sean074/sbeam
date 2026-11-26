@@ -36,7 +36,7 @@ DECKS = sorted(set(SAMPLES) - set(NOT_STANDALONE))
 
 # Card families with no editor yet.  Each entry names the issue that adds one; the test
 # fails if a family is listed here and an editor exists, so the list cannot go stale.
-NO_EDITOR = {"gustlf": "#117"}
+NO_EDITOR: dict[str, str] = {}
 
 
 def _card(bulk: Any, family: str, key: int) -> Any:

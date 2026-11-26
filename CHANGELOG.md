@@ -10,6 +10,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Gust cases can be authored in the viewer (#117).** A new *Gust (GUSTLF)* sub-tab on the
+  authoring tab has a GUSTLF card form and a **Generate gust cases** panel. The panel takes
+  the inputs `sbeam-cases` takes (unit system, TRIM template, g, V_C / V_D / V_B, altitudes,
+  mass cases, first SID) and calls `sbeam_tools.cases.gust`; it adds the TRIM and GUSTLF
+  cards and the subcases to the open deck. From the inputs recorded in
+  `cessna210_flagship_gust.bdf` it writes that deck's cards, identical as text. Every card
+  family now has an editor. For this the gust tool gained `airplane_from_model` (build the
+  cases from a model in memory), `trim_card`, `gustlf_card` and `gust_subcase`.
 - **The SOL 144 results page shows four f06 blocks it left out (#118).** Above the
   derivative table it now says that coefficients are in basic axes and shows MSC's
   transformation to the AEROS reference frame; on HA144A that frame has z down, so MSC's CZ
@@ -204,6 +212,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - dataset 82 has 49 segments.
 
 ### Fixed
+- **`cessna210_flagship_gust.bdf` was not what its generator writes (#117).** The deck is
+  marked "GENERATED, do not hand-edit; regenerate", but twelve comment lines lacked the
+  `rho = …` the emitter prints. It is regenerated, and a test now regenerates it from the
+  command in its header and compares every line. No card changed.
 - **An interaction that should change nothing changed the deck in the viewer (#123).** Found
   by the journey test (#112); none raised an error.
   - **Case-control Apply dropped the applied load of every SOL 144 trim subcase**, so

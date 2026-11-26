@@ -14,7 +14,10 @@ from .gust import (
     format_summary,
     generate_cases,
     gust_increment,
+    gust_subcase,
+    gustlf_card,
     mass_ratio,
+    trim_card,
     write_gustlf_card,
 )
 
@@ -26,6 +29,9 @@ __all__ = [
     "format_summary",
     "generate_cases",
     "gust_increment",
+    "gust_subcase",
+    "gustlf_card",
     "mass_ratio",
+    "trim_card",
     "write_gustlf_card",
 ]

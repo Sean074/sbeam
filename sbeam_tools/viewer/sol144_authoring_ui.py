@@ -27,7 +27,9 @@ from sbeam.model.maneuver import (
     Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads,
 )
 from sbeam.model.card_writers import write_authored_block
-from sbeam_tools.cases import maneuver
+from sbeam.model.gust import Gustlf
+from sbeam_tools.cases import gust, maneuver
+from sbeam_tools.common.deck import airplane_from_model
 from sbeam_tools.viewer import session_deck
 from sbeam_tools.viewer import sol144_authoring as logic
 from sbeam.parser.case_control import CaseControl
@@ -798,6 +800,171 @@ def _commit_resolution(bulk: BulkData, cc: CaseControl,
 
 
 # ---------------------------------------------------------------------------
+# Gust cases (#117).  Two routes on opposite sides of the architecture boundary:
+# the GUSTLF card form is unit-neutral, like every card; the generator panel
+# collects speeds, altitudes and a unit system and hands them to
+# sbeam_tools.cases.gust, which owns the formula, the atmosphere and the
+# regulation's constants.  Nothing is computed here.
+# ---------------------------------------------------------------------------
+
+def _gustlf_form(bulk: BulkData, card: Optional[Gustlf], default_id: int):
+    trims = sorted(bulk.trims)
+    col1, col2 = st.columns(2)
+    sid = col1.number_input("SID", min_value=1, value=(card.sid if card else default_id),
+                            key=_k("auth_gustlf_sid"))
+    trimid = col2.selectbox(
+        "TRIM it rides on (TRIMID)", trims,
+        index=trims.index(card.trimid) if card and card.trimid in trims else 0,
+        key=_k("auth_gustlf_trimid"),
+        help="Supplies Q, Mach and every prescribed label except URDD3. One gust "
+             "case per TRIM.",
+    ) if trims else None
+    col3, col4 = st.columns(2)
+    n = col3.number_input("Load factor N (used: URDD3 = −N·G)",
+                          value=(card.n if card else 1.0),
+                          key=_k("auth_gustlf_n"), format="%.6g")
+    g = col4.number_input("Gravity G (used; model units)",
+                          value=(card.g if card else 0.0), min_value=0.0,
+                          key=_k("auth_gustlf_g"), format="%.6g")
+    st.caption("Recorded only — echoed to the f06, never used in the solution. "
+               "0 means not recorded.")
+    r1 = st.columns(4)
+    ude = r1[0].number_input("U_de", value=(card.ude if card else 0.0),
+                             key=_k("auth_gustlf_ude"), format="%.6g")
+    veas = r1[1].number_input("V (EAS)", value=(card.veas if card else 0.0),
+                              key=_k("auth_gustlf_veas"), format="%.6g")
+    kg = r1[2].number_input("K_g", value=(card.kg if card else 0.0),
+                            key=_k("auth_gustlf_kg"), format="%.6g")
+    mu = r1[3].number_input("μ", value=(card.mu if card else 0.0),
+                            key=_k("auth_gustlf_mu"), format="%.6g")
+    r2 = st.columns(3)
+    a = r2[0].number_input("Normal-force slope a (/rad)", value=(card.a if card else 0.0),
+                           key=_k("auth_gustlf_a"), format="%.6g")
+    asrc = r2[1].selectbox("Slope source", _ASRC,
+                           index=_ASRC.index(card.asrc) if card and card.asrc in _ASRC else 0,
+                           key=_k("auth_gustlf_asrc"))
+    alt_text = r2[2].text_input(
+        "Altitude (blank = not recorded)",
+        value=("" if card is None or card.alt is None else repr(float(card.alt))),
+        key=_k("auth_gustlf_alt"),
+        help="Sea level is a real altitude, so 0 is a reading and blank is its absence.",
+    ).strip()
+    if trimid is None:
+        st.warning("Define a TRIM condition first.")
+        return None
+    try:
+        alt = float(alt_text) if alt_text else None
+    except ValueError:
+        st.warning("Altitude must be a number or blank.")
+        return None
+    return Gustlf(sid=int(sid), trimid=int(trimid), n=float(n), g=float(g),
+                  ude=float(ude), veas=float(veas), kg=float(kg), mu=float(mu),
+                  a=float(a), asrc=str(asrc), alt=alt)
+
+
+_ASRC = ["RIGID", "RESTRAINED"]
+_BASELINE = "Baseline mass"
+
+
+def _render_gust_panel(bulk: BulkData) -> None:
+    """Generate FAR/CS 23.341 gust cases with sbeam_tools.cases.gust and add them."""
+    with st.expander("Generate gust cases (FAR/CS 23.341, Pratt formula)", expanded=False):
+        st.caption(
+            "Speeds are **equivalent** airspeeds and altitudes are in the deck's own "
+            "units; the unit system supplies sea-level density, g and the ISA "
+            "atmosphere. The cases, the load factors and the cards come from "
+            "`sbeam_tools.cases.gust`, the same code `sbeam-cases` runs."
+        )
+        cc: Optional[CaseControl] = st.session_state.get("case_control")
+        if cc is None or cc.sol != 144:
+            st.info("Gust cases need a SOL 144 case control.")
+            return
+        if not bulk.trims:
+            st.info("Define a TRIM first: the cases inherit its prescribed labels.")
+            return
+        col1, col2, col3 = st.columns(3)
+        units = UNIT_SYSTEMS[cast(str, col1.selectbox(
+            "Deck unit system", list(UNIT_SYSTEMS), key=wk("auth_gust_units")))]
+        template = cast(int, col2.selectbox(
+            "TRIM template", sorted(bulk.trims), key=wk("auth_gust_template"),
+            help="The cases inherit every prescribed label of this TRIM except URDD3."))
+        g = col3.number_input(
+            f"Gravity g ({units.length_unit}/s²)", value=units.g, min_value=0.0,
+            key=wk(f"auth_gust_g_{units.name}"), format="%.6g")
+        sp = st.columns(3)
+        speeds = {
+            name: sp[i].number_input(
+                f"{label} ({units.speed_unit} EAS; 0 = not used)", value=0.0, min_value=0.0,
+                key=wk(f"auth_gust_{name.lower()}"), format="%.6g")
+            for i, (name, label) in enumerate(
+                (("VC", "V_C design cruise"), ("VD", "V_D design dive"),
+                 ("VB", "V_B rough air")))
+        }
+        col4, col5, col6 = st.columns(3)
+        alt_text = col4.text_input(
+            f"Altitudes ({units.length_unit}, space or comma separated)", value="0",
+            key=wk("auth_gust_alts"))
+        mass_options: list[Any] = [_BASELINE] + sorted(bulk.masssets)
+        picked = col5.multiselect(
+            "Mass cases", mass_options, default=[_BASELINE], key=wk("auth_gust_mass"),
+            format_func=lambda v: v if v == _BASELINE else f"{v} {bulk.masssets[v].label}")
+        sid_base = col6.number_input(
+            "First SID", min_value=1, value=9000, key=wk("auth_gust_sid_base"),
+            help="Each case takes one SID for its TRIM, its GUSTLF and its subcase.")
+
+        if not st.button("Generate and add to the deck", type="primary",
+                         key=wk("auth_gust_add")):
+            return
+        try:
+            altitudes = logic.parse_float_list(alt_text) or [0.0]
+            used = {name: float(v) for name, v in speeds.items() if v > 0.0}
+            if not used:
+                raise ValueError("give at least one of V_C, V_D and V_B")
+            if not picked:
+                raise ValueError("choose at least one mass case")
+            massets = [None if m == _BASELINE else int(m) for m in picked]
+            airplane = airplane_from_model(
+                cc, bulk, int(template), massets,
+                where=st.session_state.get("_uploaded_filename") or "the deck")
+            cases = gust.generate_cases(airplane, units, used, altitudes,
+                                        float(g), int(sid_base))
+        except (ValueError, KeyError) as exc:
+            st.error(f"No case was added: {exc}")
+            return
+        taken = sorted({sc.subcase_id for sc in cc.subcases} & {c.sid for c in cases})
+        if taken:
+            st.error(f"No case was added: subcase(s) {taken} already exist. "
+                     "Choose another first SID.")
+            return
+        changes: list[tuple[str, Any]] = []
+        subcases = list(cc.subcases)
+        for case in cases:
+            changes += [("trim", gust.trim_card(case, airplane)),
+                        ("gustlf", gust.gustlf_card(case))]
+            mass = bulk.masssets.get(case.mass_case.sid) if case.mass_case.sid else None
+            subcases.append(gust.gust_subcase(
+                case, airplane, "MASSSET" if mass is not None and mass.msc else "MASSCASE"))
+        # The subcases go in with the cards: commit restarts the run on success and
+        # returns only when the deck refused, and the case control is then put back.
+        st.session_state.case_control = dataclasses.replace(cc, subcases=subcases)
+        st.session_state.cc_subcases = None
+        st.session_state["_auth_gust_summary"] = gust.format_summary(cases, units)
+        if not session_deck.commit(
+                bulk, changes=changes,
+                done=f"{len(cases)} gust case(s) added: TRIM, GUSTLF and subcase "
+                     f"{cases[0].sid} to {cases[-1].sid}."):
+            st.session_state.case_control = cc
+            st.session_state.pop("_auth_gust_summary", None)
+
+
+def _show_gust_summary() -> None:
+    summary = st.session_state.get("_auth_gust_summary")
+    if summary:
+        st.markdown("**Gust cases last generated** (the table `sbeam-cases` prints)")
+        st.code(summary, language="text")
+
+
+# ---------------------------------------------------------------------------
 # Tab entry point
 # ---------------------------------------------------------------------------
 
@@ -811,9 +978,14 @@ def render_sol144_authoring(bulk: BulkData) -> None:
         "edit under a new SID."
     )
     session_deck.show_flash()
-    tab_surf, tab_trim, tab_mloads, tab_tables = st.tabs(
-        ["Surfaces & States", "Trim Conditions", "Maneuver (MANVR)", "Tables"]
+    tab_surf, tab_trim, tab_gust, tab_mloads, tab_tables = st.tabs(
+        ["Surfaces & States", "Trim Conditions", "Gust (GUSTLF)", "Maneuver (MANVR)",
+         "Tables"]
     )
+    with tab_gust:
+        _render_gust_panel(bulk)
+        _show_gust_summary()
+        _family_editor(bulk, "gustlf", "GUSTLF — quasi-static gust load case", _gustlf_form)
     with tab_surf:
         _family_editor(bulk, "aestat", "AESTAT — rigid-body trim variable", _aestat_form)
         _family_editor(bulk, "aesurf", "AESURF — control surface", _aesurf_form)
