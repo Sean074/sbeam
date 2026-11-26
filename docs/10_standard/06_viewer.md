@@ -510,11 +510,11 @@ The AESURF form carries both hinge halves — `CID1`/`ALID1` and `CID2`/`ALID2` 
 pair is one label; charter §6) — and refuses a half-specified second pair; before #9 it
 dropped `CID2`/`ALID2` on re-save.
 
-**Layout:** five sub-tabs — *Surfaces & States* (AESTAT/AESURF/AELIST/SUPORT), *Trim
-Conditions* (presets + TRIM/TRIMVAR/TRIMWGT/TRIMINEQ/DIVERG), *Gust (GUSTLF)* (gust-case
-generator + GUSTLF, #117), *Maneuver (MANVR)* (two-pass command builder +
+**Layout:** six sub-tabs — *Surfaces & States* (AESTAT/AESURF/AELIST/SUPORT), *Trim
+Conditions* (presets + TRIM/TRIMVAR/TRIMWGT/TRIMINEQ/DIVERG), *Mass cases (MASSCASE)* (mass
+and C.G. by case + MASSCASE, #115), *Gust (GUSTLF)* (gust-case generator + GUSTLF, #117), *Maneuver (MANVR)* (two-pass command builder +
 MANTRIM/MANTIME/MANCMD/MANPRNT/MANVR), *Tables* (shape generator + TABLED1 point editor).
-All 16 card families of `card_writers.FAMILIES` have an editor. Each family gets an expander with a selectbox
+All 17 card families of `card_writers.FAMILIES` have an editor. Each family gets an expander with a selectbox
 ("— new —" or an existing ID, outside the form so switching pre-fills) and one
 `st.form`; dynamic rows (TRIM vars, MANCMD pairs, TABLED1 points) use `st.data_editor`
 with `num_rows="dynamic"`. All widget keys are `auth_`-prefixed.
@@ -582,6 +582,20 @@ and each lateral preset states the `SUPORT` DOF it needs (#24, #10). The load fa
 defaults to 1.0, level flight: the limit load factor of a case is the user's input, and no
 regulatory number is a default. **Known defect:** the pull-up recipe prescribes `PITCH = 0`
 at every load factor, where a steady pull-up carries `(n − 1)·g·c_ref/(2V²)` (#127).
+
+**Mass cases (#115).** The sub-tab opens with **Mass and C.G. by case**: the baseline and
+every mass case, from `compute_gpwg(bulk, sid)`, with the card that defines each. The
+MASSCASE form has SID, label (blank gives `MASSCASE <sid>`), SCALE, two CONM2 pickers (ADD,
+DELETE) that show each CONM2's grid and mass, and a two-column table of REPLACE pairs.
+`write_masscase` writes the card (one row per up to 7 EIDs; a REPLACE row holds whole
+pairs). Field layout and rules are the card reference's and the parser's: a CONM2 used as
+both baseline and overlay, an EID named twice, an unknown CONM2 and a negative SCALE are
+refused with the parser's message through the re-parse. A case built from an MSC `MASSSET`
+entry (#102) is another card: it is listed in the summary and not opened in the form, and
+the viewer does not write `MASSSET`. Gate: `tests/viewer/test_masscase_authoring.py` —
+with MASSCASE 10 and 20 removed from `ha144a_massset_sweep.bdf` and authored through the
+form, the export has the original's cards and overlay set, and the three trims equal the
+original deck's.
 
 **Gust cases (#117).** Two routes, kept apart because they sit on opposite sides of the
 architecture boundary:

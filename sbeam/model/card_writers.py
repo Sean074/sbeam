@@ -21,6 +21,7 @@ from sbeam.model.aero import (
 )
 from sbeam.model.constraint import Suport
 from sbeam.model.gust import Gustlf
+from sbeam.model.mass import Massset
 from sbeam.model.maneuver import (
     Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads,
 )
@@ -123,6 +124,29 @@ def write_gustlf(gu: Gustlf) -> list[str]:
     return write_card("GUSTLF", fields)
 
 
+def write_masscase(m: Massset) -> list[str]:
+    """MASSCASE — the header, then ADD / REPLACE / DELETE rows of CONM2 EIDs.
+
+    Layout: ``docs/10_standard/02_card_reference.md`` (MASSCASE, an sbeam card).  A row
+    holds up to 7 EIDs; a REPLACE row holds whole (baseline, overlay) pairs, so 6.  The
+    default label ``MASSCASE <sid>`` is written as a blank field, which reads back as
+    the same default.  A mass case built from an MSC ``MASSSET`` entry (#102) is a
+    different card and is refused here.
+    """
+    if m.msc:
+        raise ValueError(
+            f"mass case {m.sid} is an MSC MASSSET combination; it is not written as MASSCASE")
+    label = "" if m.label == f"MASSCASE {m.sid}" else m.label
+    lines = [", ".join(["MASSCASE", _fld(m.sid), label, _fld(m.scale)])]
+    rows = (("ADD", list(m.add), 7),
+            ("REPLACE", [eid for pair in m.replace for eid in pair], 6),
+            ("DELETE", list(m.delete), 7))
+    for op, eids, per_row in rows:
+        for i in range(0, len(eids), per_row):
+            lines.append(", ".join(["+", op] + [_fld(e) for e in eids[i:i + per_row]]))
+    return lines
+
+
 def write_mloads(m: Mloads) -> list[str]:
     fields: list[Field] = [m.sid, m.mldtrim, m.mldtime,
                            m.mldcomd, m.mldprnt, m.nmodes, m.method, m.zeta]
@@ -187,6 +211,7 @@ FAMILIES = {
     "trimcon": ("trimcons", write_trimcon),
     "diverg":  ("divergs",  write_diverg),
     "gustlf":  ("gustlfs",  write_gustlf),
+    "masscase": ("masssets", write_masscase),
     "tabled1": ("tabled1s", write_tabled1),
     "mldtrim": ("mldtrims", write_mldtrim),
     "mldtime": ("mldtimes", write_mldtime),

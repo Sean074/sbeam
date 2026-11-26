@@ -27,7 +27,10 @@ from sbeam.model.maneuver import (
     Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads,
 )
 from sbeam.model.card_writers import write_authored_block
+from sbeam.gpwg import compute_gpwg
 from sbeam.model.gust import Gustlf
+from sbeam.model.mass import Massset
+from sbeam_tools.viewer.format_utils import style_numeric
 from sbeam_tools.cases import gust, maneuver
 from sbeam_tools.common.deck import airplane_from_model
 from sbeam_tools.viewer import session_deck
@@ -64,9 +67,14 @@ def _authored() -> dict[str, set[int]]:
 
 
 def _family_ids(bulk: BulkData, family: str) -> list[int]:
+    """The cards of a family the editor can open."""
     store = logic.family_store(bulk, family)
     if family == "suport":
         return sorted(s.gid for s in store)
+    if family == "masscase":
+        # bulk.masssets also holds the cases built from MSC MASSSET entries (#102).
+        # Those are another card; they are listed read-only, not opened in this form.
+        return sorted(sid for sid, case in store.items() if not case.msc)
     return sorted(store.keys())
 
 
@@ -800,6 +808,75 @@ def _commit_resolution(bulk: BulkData, cc: CaseControl,
 
 
 # ---------------------------------------------------------------------------
+# Mass cases (#115)
+# ---------------------------------------------------------------------------
+
+def _masscase_form(bulk: BulkData, card: Optional[Massset], default_id: int):
+    eids = sorted(bulk.conm2s)
+
+    def describe(eid: int) -> str:
+        c = bulk.conm2s[eid]
+        return f"{eid} — grid {c.gid}, m = {c.m:g}"
+
+    col1, col2, col3 = st.columns(3)
+    sid = col1.number_input("SID", min_value=1, value=(card.sid if card else default_id),
+                            key=_k("auth_masscase_sid"))
+    label = col2.text_input("Label (blank = MASSCASE <sid>)",
+                            value=(card.label if card else ""),
+                            key=_k("auth_masscase_label")).strip()
+    scale = col3.number_input("SCALE (multiplies the baseline mass)",
+                              value=(card.scale if card else 1.0), min_value=0.0,
+                              key=_k("auth_masscase_scale"), format="%.6g")
+    add = st.multiselect(
+        "ADD — overlay CONM2s layered on the baseline", eids,
+        default=[e for e in (card.add if card else []) if e in eids],
+        format_func=describe, key=_k("auth_masscase_add"))
+    delete = st.multiselect(
+        "DELETE — baseline CONM2s removed from this case", eids,
+        default=[e for e in (card.delete if card else []) if e in eids],
+        format_func=describe, key=_k("auth_masscase_delete"))
+    st.caption("REPLACE — a baseline CONM2 dropped and an overlay CONM2 put in its place")
+    df = _pairs_editor(
+        "auth_masscase_replace",
+        {"baseline": st.column_config.SelectboxColumn("Baseline CONM2", options=eids),
+         "overlay": st.column_config.SelectboxColumn("Overlay CONM2", options=eids)},
+        [{"baseline": old, "overlay": new} for old, new in (card.replace if card else [])],
+    )
+    replace: list[tuple[int, int]] = []
+    for old, new in df[["baseline", "overlay"]].dropna().itertuples(index=False, name=None):
+        replace.append((int(old), int(new)))
+    st.caption(
+        "A CONM2 named by ADD, or as the overlay of a REPLACE, becomes overlay-only: it "
+        "leaves the baseline mass of **every** case and enters only the cases that name "
+        "it. SCALE applies to the baseline before the operations; overlays enter unscaled."
+    )
+    if not eids:
+        st.warning("The model has no CONM2 to add, replace or delete.")
+    return Massset(sid=int(sid), label=label or f"MASSCASE {int(sid)}", scale=float(scale),
+                   add=[int(e) for e in add], replace=replace,
+                   delete=[int(e) for e in delete])
+
+
+def _render_mass_summary(bulk: BulkData) -> None:
+    """Mass and C.G. of the baseline and of every mass case (the GPWG summary)."""
+    rows = []
+    for sid in [None, *sorted(bulk.masssets)]:
+        gp = compute_gpwg(bulk, sid)
+        case = bulk.masssets.get(sid) if sid is not None else None
+        rows.append({
+            "Case": "baseline" if sid is None else str(sid),
+            "Card": "—" if case is None else ("MASSSET (MSC)" if case.msc else "MASSCASE"),
+            "Label": gp.massset_label, "Mass": gp.total_mass,
+            "CG x": gp.cg_x, "CG y": gp.cg_y, "CG z": gp.cg_z,
+        })
+    st.markdown("**Mass and C.G. by case**")
+    st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
+    if any(case.msc for case in bulk.masssets.values()):
+        st.caption("A case built from an MSC MASSSET entry is read from the deck and "
+                   "shown here; it is not opened in the MASSCASE form.")
+
+
+# ---------------------------------------------------------------------------
 # Gust cases (#117).  Two routes on opposite sides of the architecture boundary:
 # the GUSTLF card form is unit-neutral, like every card; the generator panel
 # collects speeds, altitudes and a unit system and hands them to
@@ -978,10 +1055,13 @@ def render_sol144_authoring(bulk: BulkData) -> None:
         "edit under a new SID."
     )
     session_deck.show_flash()
-    tab_surf, tab_trim, tab_gust, tab_mloads, tab_tables = st.tabs(
-        ["Surfaces & States", "Trim Conditions", "Gust (GUSTLF)", "Maneuver (MANVR)",
-         "Tables"]
+    tab_surf, tab_trim, tab_mass, tab_gust, tab_mloads, tab_tables = st.tabs(
+        ["Surfaces & States", "Trim Conditions", "Mass cases (MASSCASE)", "Gust (GUSTLF)",
+         "Maneuver (MANVR)", "Tables"]
     )
+    with tab_mass:
+        _render_mass_summary(bulk)
+        _family_editor(bulk, "masscase", "MASSCASE — payload / mass case", _masscase_form)
     with tab_gust:
         _render_gust_panel(bulk)
         _show_gust_summary()

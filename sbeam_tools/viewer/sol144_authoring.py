@@ -30,7 +30,7 @@ FAMILY_ATTRS: dict[str, str] = {fam: attr for fam, (attr, _) in FAMILIES.items()
 CARD_NAMES: dict[str, str] = {
     "aestat": "AESTAT", "aesurf": "AESURF", "aelist": "AELIST", "suport": "SUPORT",
     "trim": "TRIM", "trimvar": "TRIMVAR", "trimobj": "TRIMWGT", "trimcon": "TRIMINEQ",
-    "diverg": "DIVERG", "gustlf": "GUSTLF", "tabled1": "TABLED1",
+    "diverg": "DIVERG", "gustlf": "GUSTLF", "masscase": "MASSCASE", "tabled1": "TABLED1",
     "mldtrim": "MANTRIM", "mldtime": "MANTIME", "mldcomd": "MANCMD",
     "mldprnt": "MANPRNT", "mloads": "MANVR",
 }

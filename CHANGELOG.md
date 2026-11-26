@@ -10,6 +10,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Mass cases can be authored in the viewer (#115).** A new *Mass cases (MASSCASE)* sub-tab
+  shows mass and C.G. for the baseline and every mass case, and has a MASSCASE form: label,
+  SCALE, CONM2 pickers for ADD and DELETE, and a table of REPLACE pairs. `write_masscase`
+  is the card's writer. With two of the three mass cases of `ha144a_massset_sweep.bdf`
+  removed and authored through the form, the exported deck has the original's cards and the
+  run gives the original's trims. A case from an MSC `MASSSET` entry is listed, not edited.
 - **Gust cases can be authored in the viewer (#117).** A new *Gust (GUSTLF)* sub-tab on the
   authoring tab has a GUSTLF card form and a **Generate gust cases** panel. The panel takes
   the inputs `sbeam-cases` takes (unit system, TRIM template, g, V_C / V_D / V_B, altitudes,

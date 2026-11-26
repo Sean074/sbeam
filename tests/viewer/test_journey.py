@@ -28,6 +28,7 @@ from sbeam.model.card_writers import FAMILIES
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam_tools.viewer import sol144_authoring as logic
 from sbeam_tools.viewer.app import list_sample_decks
+from sbeam_tools.viewer.sol144_authoring_ui import _family_ids
 from tests.viewer.journey_helpers import _assert_clean, _open, _submit, differences
 from tests.viewer.test_open_deck import NOT_STANDALONE
 
@@ -47,8 +48,8 @@ def _card(bulk: Any, family: str, key: int) -> Any:
 
 
 def _family_keys(bulk: Any, family: str) -> list[int]:
-    store = logic.family_store(bulk, family)
-    return sorted(s.gid for s in store) if family == "suport" else sorted(store)
+    """The cards the family's editor offers (it leaves out MSC MASSSET mass cases)."""
+    return _family_ids(bulk, family)
 
 
 def _exported_text(at: Any) -> str:
