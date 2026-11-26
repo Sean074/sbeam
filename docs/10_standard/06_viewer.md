@@ -39,7 +39,29 @@ sbeam_tools/viewer/
 
 ### 1. Model Load
 
-The viewer accepts two file types via the file uploader (`*.bdf` or `*.dat`). File type is detected automatically by scanning for a `SOL` statement before the first `BEGIN BULK` line (`_has_case_control(content: str) -> bool` in `app.py`).
+A deck is opened in one of three ways, all from the sidebar and all through one loader
+(`_load_deck` in `app.py`, #111):
+
+| Route | How | `INCLUDE` |
+|---|---|---|
+| **Sample deck** | "Open from disk" → pick from the list of every `*.bdf` / `*.dat` under `sample/` (`list_sample_decks`) → **Open**. The list is shown only when the `sample/` folder exists beside the packages (a source checkout; a wheel does not ship it) | Resolves |
+| **Path** | "Open from disk" → type the path of a deck → **Open**. A typed path wins over a picked sample | Resolves |
+| **Upload** | The file uploader | **Does not resolve** |
+
+A deck opened from disk is parsed where it stands, so a relative `INCLUDE` is found in the
+deck's own folder. An upload has no folder: its text is parsed from a temporary file, and a
+deck that uses `INCLUDE` fails with "INCLUDE file not found" and a line saying to open it by
+path. The six `cessna210_flagship` drivers are decks of this kind.
+
+Three files under `sample/` are listed but are not decks to open alone (`sample/README.md`):
+the two body-panel overlays and the MSC archive listing `HA144A.bdf`. Opening one shows the
+parser's reason.
+
+Opening a deck by any route first puts every model-dependent session key back to its
+default (`_session_defaults`), so no result, authored card, correction or selection of the
+previous deck survives. A file that cannot be read or parsed leaves no model loaded.
+
+The viewer accepts two file types (`*.bdf` or `*.dat`). File type is detected automatically by scanning for a `SOL` statement before the first `BEGIN BULK` line (`_has_case_control(content: str) -> bool` in `app.py`).
 
 | File type | Parser called | Session state result |
 |-----------|--------------|---------------------|
@@ -657,6 +679,7 @@ Streamlit session state keys used:
 | `aero_body_eids` | `set[int]` | CAERO1 EIDs selected as body panels when the Aero Correction tab's **Build body correction** succeeds; colours the body panels in the Aero-tab / SOL 144 3D mesh (AC5) |
 | `selected_gid` | `int \| None` | Currently selected grid (from sidebar inspector) |
 | `selected_eid` | `int \| None` | Currently selected element (from sidebar inspector) |
+| `_deck_path` | `str \| None` | Absolute path of a deck opened from disk; `None` for an upload (#111) |
 | `_parse_warnings` | `list[str]` | Warnings from last file upload |
 | `_parse_error` | `str \| None` | Error message from last failed upload |
 | `sol101_deform_scale` | `float` | SOL 101 deformation scale slider value (widget key) |

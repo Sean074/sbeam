@@ -10,6 +10,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **The viewer opens a deck from disk (#111).** A new "Open from disk" panel in the sidebar
+  lists every deck under `sample/` and takes a typed path. A deck opened this way is parsed
+  where it stands, so a relative `INCLUDE` resolves. Before this the only route was upload,
+  which parses from a temporary file: none of the six `cessna210_flagship` drivers could be
+  opened. An uploaded deck with an `INCLUDE` now says to open it by path. All routes share
+  one loader that puts every model-dependent session key back to its default, so nothing of
+  the previous deck survives. The sample list appears only in a source checkout (a wheel does
+  not ship `sample/`).
 - **Reduced modal model export, `MODEXP`** (#100, Tier L). In a SOL 103 subcase,
   `MODEXP(OP4,UF) = n` writes `<deck>.op4` and `<deck>_dofmap.csv`, which give each PHIA and
   PHIX row's grid and component, plus `<deck>.uf`. sgear and Flaps read these files.

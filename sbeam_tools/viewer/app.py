@@ -37,8 +37,9 @@ from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.vlm import solve_rigid_cl
 
 
-def _init_session_state() -> None:
-    defaults: dict[str, Any] = {
+def _session_defaults() -> dict[str, Any]:
+    """A fresh copy of every session key's starting value."""
+    return {
         "bulk_data": None,
         "case_control": None,
         "_loaded_from_file_cc": None,
@@ -71,8 +72,12 @@ def _init_session_state() -> None:
         "_uploaded_file_id": None,
         "_uploaded_filename": None,
         "_uploaded_source_text": None,
+        "_deck_path": None,
     }
-    for key, value in defaults.items():
+
+
+def _init_session_state() -> None:
+    for key, value in _session_defaults().items():
         if key not in st.session_state:
             st.session_state[key] = value
 
@@ -89,66 +94,100 @@ def _has_case_control(content: str) -> bool:
     return False
 
 
-def _handle_upload(uploaded: Any) -> None:
-    suffix = os.path.splitext(uploaded.name)[-1] or ".bdf"
+# The bundled sample decks sit beside the packages in a source checkout; a wheel does not
+# ship them, and the picker is then hidden (#111).
+SAMPLE_ROOT = Path(__file__).resolve().parents[2] / "sample"
+
+# Session keys that survive a new deck: the uploader's own bookkeeping.
+_KEPT_ON_LOAD = {"_uploaded_file_id"}
+
+
+def list_sample_decks(root: Path = SAMPLE_ROOT) -> dict[str, Path]:
+    """``{"family/name.bdf": path}`` for every deck under ``root``; empty if it is absent."""
+    if not root.is_dir():
+        return {}
+    return {
+        path.relative_to(root).as_posix(): path
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and path.suffix.lower() in (".bdf", ".dat")
+    }
+
+
+def _load_deck(name: str, content: str, path: Optional[Path]) -> None:
+    """Parse a deck and make it the session's model: the one loader for every route (#111).
+
+    ``path`` is the deck's place on disk, so a relative ``INCLUDE`` resolves against the
+    deck's own folder.  An upload has no folder (``path=None``): its text is parsed from a
+    temporary file, and a deck that uses ``INCLUDE`` cannot load that way.
+
+    Every model-dependent session key goes back to its default first, so nothing of the
+    previous deck (results, authored cards, corrections, selections) survives.
+    """
+    for key, value in _session_defaults().items():
+        if key not in _KEPT_ON_LOAD:
+            st.session_state[key] = value
     tmp_path: Optional[str] = None
     try:
-        content = uploaded.read().decode("utf-8", errors="replace")
-        with tempfile.NamedTemporaryFile(
-            delete=False, suffix=suffix, mode="w", encoding="utf-8"
-        ) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
+        if path is None:
+            suffix = os.path.splitext(name)[-1] or ".bdf"
+            with tempfile.NamedTemporaryFile(
+                delete=False, suffix=suffix, mode="w", encoding="utf-8"
+            ) as tmp:
+                tmp.write(content)
+                tmp_path = tmp.name
+        parse_from = str(path) if path is not None else tmp_path
+        assert parse_from is not None
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             if _has_case_control(content):
-                cc, bulk = parse_bdf(tmp_path)
+                cc, bulk = parse_bdf(parse_from)
             else:
-                bulk = parse_bulk_file(tmp_path)
+                bulk = parse_bulk_file(parse_from)
                 cc = None
 
         st.session_state.bulk_data = bulk
         st.session_state.case_control = cc
         st.session_state._loaded_from_file_cc = cc
-        st.session_state._uploaded_filename = uploaded.name
+        st.session_state._uploaded_filename = name
         st.session_state._uploaded_source_text = content
-        st.session_state.cc_subcases = None   # reset subcase editor
-        st.session_state.sol101_result = None
-        st.session_state.sol103_result = None
-        st.session_state.sol144_result = None
-        st.session_state.sol144_diverg_result = None
-        st.session_state.maneuver_result = None
-        st.session_state.aero_model_144 = None
-        st.session_state.aero_model = None
-        st.session_state.aero_result = None
-        st.session_state.aero_result_unc = None
-        st.session_state.aero_corr_model = None
-        st.session_state.aero_corr_df = None
-        st.session_state.aero_corr_result = None
-        st.session_state.aero_corr_sids = set()
-        st.session_state.authored_cards = {}
-        st.session_state.mldcomd_increments = {}
-        st.session_state.auth_trim_prefill = None
+        st.session_state._deck_path = str(path) if path is not None else None
         st.session_state.file_card_sids = snapshot_family_ids(bulk)
-        st.session_state.aero_corr_upload_id = None
-        st.session_state.aero_corr_csv_name = None
-        st.session_state.aero_corr_cond = None
-        st.session_state.selected_gid = None
-        st.session_state.selected_eid = None
         st.session_state.selected_subcase_id = cc.subcases[0].subcase_id if cc and cc.subcases else None
         st.session_state._parse_warnings = [str(w.message) for w in caught]
-        st.session_state._parse_error = None
     except Exception as exc:
-        st.session_state.bulk_data = None
-        st.session_state.case_control = None
-        st.session_state._parse_error = str(exc)
+        message = str(exc)
+        if path is None and "INCLUDE file not found" in message:
+            message += (
+                "  An uploaded deck has no folder, so its INCLUDE files cannot be found: "
+                "open the deck by its path on disk instead (sidebar, 'Open from disk')."
+            )
+        st.session_state._parse_error = message
     finally:
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.unlink(tmp_path)
             except OSError:
                 pass
+
+
+def _handle_upload(uploaded: Any) -> None:
+    content = uploaded.read().decode("utf-8", errors="replace")
+    _load_deck(uploaded.name, content, None)
+
+
+def _open_path(path_text: str) -> None:
+    """Open the deck at ``path_text`` from where it stands, so its INCLUDEs resolve."""
+    path = Path(path_text.strip().strip('"\'')).expanduser()
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        for key, value in _session_defaults().items():
+            if key not in _KEPT_ON_LOAD:
+                st.session_state[key] = value
+        st.session_state._parse_error = f"Cannot read {path}: {exc.strerror or exc}"
+        return
+    _load_deck(path.name, content, path.resolve())
 
 
 def _show_parse_summary(bulk: BulkData) -> None:
@@ -966,6 +1005,32 @@ def main() -> None:
             if file_id != st.session_state._uploaded_file_id:
                 _handle_upload(uploaded)
                 st.session_state._uploaded_file_id = file_id
+        else:
+            st.session_state._uploaded_file_id = None   # the same file may be uploaded again
+
+        # Open from disk (#111): the deck is parsed where it stands, so INCLUDE resolves.
+        with st.expander("Open from disk", expanded=st.session_state.bulk_data is None):
+            samples = list_sample_decks()
+            picked = None
+            if samples:
+                picked = st.selectbox(
+                    "Sample deck", list(samples), index=None, key="sample_pick",
+                    placeholder="Choose a bundled sample…",
+                )
+            typed = st.text_input(
+                "Path to a deck" if not samples else "…or a path to a deck",
+                key="deck_path_input",
+                help="A deck that uses INCLUDE must be opened this way, not uploaded.",
+            )
+            if st.button("Open", key="open_deck"):
+                if typed.strip():
+                    _open_path(typed)
+                elif picked is not None:
+                    _open_path(str(samples[picked]))
+                else:
+                    st.warning("Choose a sample or type a path first.")
+        if st.session_state._deck_path:
+            st.caption(f"Open: `{st.session_state._deck_path}`")
 
         bulk: Optional[BulkData] = st.session_state.bulk_data
         if bulk is not None:
