@@ -89,21 +89,32 @@ visits every step, and none asserts the project unchanged after a no-op interact
 
 ## 5. Child issues, in order
 
-Sizes are rough: S under a day, M a few days, L a week or more. All are on milestone v0.4.1.
+All are on milestone v0.4.1. The sizes were estimates made before the work.
 
-| Order | Issue | Size | Depends on |
+| Order | Issue | Size | State (2026-11-26) |
 |---|---|---|---|
-| 1 | #111 — open a deck from a path or the bundled samples, so INCLUDE drivers load | S | — |
-| 2 | #112 — journey test: every sample deck, every tab, one no-op interaction per editable block, project unchanged | M | #111 |
-| 3 | #113 — re-parse after every authored card; delete `validate_sol144_authoring` (C2) | M | — |
-| 4 | #114 — move maneuver presets and the two-pass increment builder to `sbeam_tools/cases` (C1, C3) | M | — |
-| 5 | #115 — MASSCASE authoring form | M | #113 |
-| 6 | #116 — monitor placement: AECOMP / MONPNT1 / MONSECT forms, drawn on the model | L | #113 |
-| 7 | #117 — GUSTLF card form and a gust-case button over `sbeam_tools/cases/gust.py` | M | #113, #114 |
-| 8 | #118 — results page: coefficient frame, injected operating point, injected loads, applied-load block | S | — |
-| 9 | #119 — CPINJ form, after a consumer is named; parked if there is none (CLAUDE.md rule 5) | M | #113 |
-| 10 | #120 — per-subcase and per-time-step progress, after timing a long run. **Closed 2026-11-26 without code:** the longest sample run is 1.4 s | S | — |
-| 11 | #121 — hand walk and v0.4.1 release cut | S | all |
+| 1 | #111 — open a deck from a path or the bundled samples, so INCLUDE drivers load | S | Closed |
+| 2 | #112 — journey test: every sample deck, every tab, one no-op interaction per editable block, project unchanged | M | Closed. It found #122 and #123 |
+| 3 | #113 — re-parse after every authored card; delete `validate_sol144_authoring` (C2) | M | Closed. Loaded cards are not edited in place: Save as new SID |
+| 4 | #114 — move maneuver presets and the two-pass increment builder to `sbeam_tools/cases` (C1, C3) | M | Closed |
+| 5 | #115 — MASSCASE authoring form | M | Closed |
+| 6 | #116 — monitor placement: AECOMP / MONPNT1 / MONSECT forms, drawn on the model | L | Closed |
+| 7 | #117 — GUSTLF card form and a gust-case panel over `sbeam_tools/cases/gust.py` | M | Closed |
+| 8 | #118 — results page: coefficient frame, injected operating point, injected loads, applied-load block | S | Closed |
+| 9 | #119 — CPINJ form, after a consumer is named; parked if there is none (CLAUDE.md rule 5) | M | **Open: needs the owner to name a consumer, or park it** |
+| 10 | #120 — per-subcase and per-time-step progress | S | Closed without code: the longest sample run is 1.4 s |
+| 11 | #121 — hand walk and v0.4.1 release cut | S | **Open: needs a person at the running viewer** |
+
+Found while working these, all filed with bodies:
+
+| Issue | What | State |
+|---|---|---|
+| #122 | The viewer refused to run a GUSTLF subcase | Closed |
+| #123 | A no-op in the viewer changed the deck (case-control Apply, export, card forms, second deck) | Closed |
+| #124 | Case control is not checked against the model before a run; the viewer keeps its own copy of 12 solver rules | Open, v0.4.1 |
+| #125 | Two SUPORT cards on one grid are accepted without a message | Open, opportunistic |
+| #126 | `test_run_reproducibility` fails intermittently on round-off in near-zero outputs | Open |
+| #127 | The pull-up trim recipe prescribes PITCH = 0 at every load factor | Open, v0.4.1 |
 
 Already done from the draft's list: #98 (GUSTLF carried through case-control export, with
 the gust condition block on the results page), closed 2026-11-18.
