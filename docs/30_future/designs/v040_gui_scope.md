@@ -102,7 +102,7 @@ Sizes are rough: S under a day, M a few days, L a week or more. All are on miles
 | 7 | #117 — GUSTLF card form and a gust-case button over `sbeam_tools/cases/gust.py` | M | #113, #114 |
 | 8 | #118 — results page: coefficient frame, injected operating point, injected loads, applied-load block | S | — |
 | 9 | #119 — CPINJ form, after a consumer is named; parked if there is none (CLAUDE.md rule 5) | M | #113 |
-| 10 | #120 — per-subcase and per-time-step progress, after timing a long run | S | — |
+| 10 | #120 — per-subcase and per-time-step progress, after timing a long run. **Closed 2026-11-26 without code:** the longest sample run is 1.4 s | S | — |
 | 11 | #121 — hand walk and v0.4.1 release cut | S | all |
 
 Already done from the draft's list: #98 (GUSTLF carried through case-control export, with

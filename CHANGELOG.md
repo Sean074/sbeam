@@ -167,6 +167,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deck. Two tests hold the tags, one against sbeam's list of sbeam-only names and one against
   the cards pyNastran does not know. No sample deck has been run in MSC. `CEND` being optional
   in MSC is now cited (QRG 2024.1 PDF p.150).
+- **Run progress in the viewer is not built (#120, closed with the measurement).** The
+  issue's first task was to time a long run. The Run button was timed on all 32 sample decks
+  that have a case control: the longest is 1.4 s (`cessna210_flagship_gust.bdf`, 12
+  subcases), the next 0.8 s, the median 0.2 s, all 32 together 9.4 s. A progress bar for a
+  run of about a second has no user. It is worth reopening when a deck runs for more than
+  about ten seconds, which the v0.7.0 design-case matrix may produce.
 - **Viewer scope for v0.4.1 agreed (#11).** `docs/30_future/designs/v040_gui_scope.md` is no
   longer a draft. Decided: the viewer authors cases on a model loaded from a BDF, not the
   model; it becomes a thin UI over `sbeam_tools/cases` before any new form is built; the
