@@ -55,6 +55,7 @@ Manual; COSMIC = NASTRAN-93 `um/BULK.TXT`.
 | `THRU` in an ID list | Read on AELIST. Refused on SET1, SPC1 and RBE2 with a Python `int()` message | Read on all four | QRG p.2813 (SET1), p.2835 remark 5 (SPC1) | defect | #89 |
 | AELIST `a THRU b` with b < a | Accepted, giving `[a]` only, no message | Not stated | *unverified* | defect | #89 |
 | Unknown `PARAM` | Skipped with a warning | Read | — | warned | — |
+| Data in a field the vendor layout leaves blank | Accepted and dropped with no message on 15 cards (the "Not checked" rows of the Vendor fields tables in `02_card_reference.md`) | Not read for this case | *unverified* | defect | #109 |
 
 ## 2. Case control
 
@@ -113,6 +114,7 @@ Full command tables: `02_card_reference.md`, "Case Control Keywords".
 |---|---|---|---|---|---|
 | SPC `D` | Non-zero refused | Enforced displacement | `02_card_reference.md` SPC (#68) | refused | — |
 | GRAV `CID` | Non-zero refused | Any coordinate system | `02_card_reference.md` GRAV | refused | — |
+| GRAV `MB` | Ignored: it says where a superelement run finds CID | Superelement control | QRG p.1941 | ignored | — |
 | Nested `LOAD` | A LOAD naming another LOAD is refused | Permitted | QRG p.2008 remark 5 | defect | #89 |
 | `LOAD` SID equal to a `FORCE` SID | Accepted; the LOAD is used alone | Not stated in the text read | *unverified* (audit §4) | by design | — |
 | `GRAV` in a SOL 144 trim `LOAD` | Refused: gravity enters a trim through `URDD3` | Not read for this case | *unverified* (#6) | refused | — |
@@ -136,6 +138,7 @@ Full command tables: `02_card_reference.md`, "Case Control Keywords".
 | CAERO1 `IGID` | More than one value in a deck refused: one AIC over every panel | Groups with different IGIDs are uncoupled | QRG p.1343 (#76) | refused | — |
 | CAERO1 `NSPAN` and `LSPAN` both given | Refused (same for `NCHORD`/`LCHORD`) | LSPAN used "only if NSPAN is zero or blank" | QRG p.1343 | defect | #89 |
 | Panel normal | Solved on a normal forced to +z or +y; signed card data and the printed `DELTA-CP` are along MSC's element normal, so the cards read as MSC's | Element normal from the point order | `09_conventions.md` §2–§3 (#84) | by design (no difference at the card) | — |
+| PAERO1 `B1`–`B6` | Ignored: sbeam has no CAERO2, and a deck holding one is refused | IDs of the CAERO2 bodies associated with the panel | QRG p.2413 | ignored | — |
 | AEFACT end points | Not checked | End points other than 0.0 and 1.0 allowed | QRG p.1344 (CAERO1 remark 2) | by design | — |
 | `W2GJ`, `WKK` as cards | sbeam-only cards | Matrices by `DMI`, `DMIJ`, `DMIK` | AAUG p.144 | by design | — |
 | `DMI` W2GJ / WKK | Refused: the row numbers need the j-set order of the CAERO1 entries, which the manuals do not state. `sample/ha144a/HA144A.bdf` does not run | Read | AAUG p.134–136 (#104) | refused | — |
@@ -151,6 +154,7 @@ Full command tables: `02_card_reference.md`, "Case Control Keywords".
 | TRIMVAR (ZAERO) | `TRIMLNK`, `DMI` and `DCD`–`DCN` refused unless blank. `SYM` ignored: sbeam prints longitudinal and lateral derivatives in every run. `LABEL` is an sbeam AESTAT/AESURF label | Linked variables, user derivatives, ZAERO's labels | ZUM p.511 (#87) | refused / ignored | — |
 | MSC `MASSSET` increment sections | CONM2 only; every other card refused. `BEGIN SUPER=n MASSID=m` refused | Element mass properties and materials are also taken; grids and parameters are ignored | QRG p.482 remark 2 (#102) | refused | — |
 | TABLED1 `XAXIS`/`YAXIS` | `LINEAR` only; `LOG` refused | Linear or log | `02_card_reference.md` TABLED1 (#70) | refused | — |
+| TABLED1 `ENDT` | A table that does not end in `ENDT` is accepted | The layout ends the table with `ENDT` | QRG p.2896 | by design (lenient) | — |
 
 ## 6. Monitor points and output
 
@@ -172,5 +176,6 @@ Full command tables: `02_card_reference.md`, "Case Control Keywords".
 - A **defect** row names its issue and is deleted by the commit that fixes it. A
   **refused** row whose capability is later implemented is deleted the same way.
 - Field-by-field dispositions of each vendor card (read / refused / ignored) are in the
-  card's section of `02_card_reference.md`; this register carries only the fields where
+  "Vendor fields" table of the card's section of `02_card_reference.md`, gated by
+  `tests/docs/test_field_dispositions.py`; this register carries only the fields where
   the difference matters to a result or to whether a vendor deck runs.

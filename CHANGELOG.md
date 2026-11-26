@@ -114,6 +114,17 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   default now cites QRG p.859, large-field cards are read (the Unsupported-cards section
   said they were not), and SPLINE2 `DZ < 0` / `DTOR ≤ 0` are refused (the limitations table
   said warned).
+- **Vendor fields tables for every MSC card** (#95, part D2). Each of the 39 MSC card
+  sections in `02_card_reference.md` now ends with a table of MSC's fields (with the QRG
+  page), sorted into read, refused, ignored with the reason, and not checked. The tables
+  are generated from `tests/docs/test_field_dispositions.py`, a new gate that changes one
+  field at a time on a valid card (326 probes) and fails if the parser stops doing what a
+  table says, if a table in the document drifts from the data, or if a card in "Supported
+  cards at a glance" has no table. Found on the way and filed as #109: data in a field MSC
+  leaves blank is accepted and dropped with no message on 15 cards (CORD2R, CROD, PROD,
+  PLOTEL, PBAR, CBUSH, CONM2, SPC, FORCE, MOMENT, GRAV, PAERO1, SPLINE2, AESTAT, MONPNT1).
+  Newly documented as ignored: PAERO1 `B1`–`B6`, GRAV `MB`. Corrected: RBAR `TREF` is
+  refused as an unread line, not ignored.
 - **`sample/` is one folder per model family, with a README** (#108, Tier S). The 38 sample
   files move, names unchanged, into `sample/beam/`, `sample/validation/`,
   `sample/goland_wing/`, `sample/ha144a/` and `sample/cessna210_flagship/`. The new

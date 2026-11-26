@@ -96,6 +96,19 @@ their first line (or one continuation); cards that take more say so in their sec
 continuation lines are harmless. Before #63 such lines were dropped without a message (LOAD
 components past the second line, AESURF limits, EIGRL options, MSC's second MONPNT1 line).
 
+**Vendor fields tables (#95).** Each MSC card's section ends with a table of the fields in
+MSC's layout, sorted by what sbeam does with them (CLAUDE.md rule 7):
+
+- **Read** — the value enters the model. A note in brackets gives a limit on the value.
+- **Refused** — a non-blank value (or the value named) refuses the deck.
+- **Ignored** — accepted with no effect, for the reason given.
+- **Not checked** — data in a field MSC's layout leaves blank is accepted and dropped
+  without a message. That is a defect (#109), listed so the tables hide nothing.
+
+The tables are generated from `tests/docs/test_field_dispositions.py`, which also probes
+the parser one field at a time and fails if it stops doing what a table says. `DMIJ`/`DMIK`
+and `TRIMVAR` carry their own per-field tables; `SPLINE1` and `MONPNT3` are refused whole.
+
 **Real number fields.** A NASTRAN data field is **8 characters wide**, in free field as well as
 fixed field — MSC rounds a longer free-field real to 8 characters (`1.2345678+2` becomes
 `123.4568`, QRG p.1048), and other readers may truncate it. sbeam's own reader keeps full
@@ -321,6 +334,17 @@ CORD2R, 1, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0
 +,      1.0, 0.0, 0.0
 ```
 
+<!-- vendor-fields:CORD2R -->
+**Vendor fields** (MSC QRG p.1469; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | CID, RID, A1–A3, B1–B3, C1–C3 |
+| Refused | — |
+| Ignored | — |
+| Not checked | Data in fields 5–9 of line 2, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
+
 ---
 
 ### GRID — Grid Point (Node)
@@ -374,6 +398,16 @@ $ GID=6 at x=10, CD=1 (results in user coordinate system 1)
 GRID, 6, , 10.0, 0.0, 0.0, 1
 ```
 
+<!-- vendor-fields:GRID -->
+**Vendor fields** (MSC QRG p.1944; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | ID, CP, X1–X3, CD (prints results in that frame; see CD ≠ 0 above), PS |
+| Refused | SEID (non-zero: no superelements); a second line |
+| Ignored | — |
+<!-- /vendor-fields -->
+
 ---
 
 ### MAT1 — Isotropic Material
@@ -418,6 +452,16 @@ $ Steel: E=200 GPa, G=76.9 GPa, nu=0.3, rho=7850 kg/m³
 MAT1, 1, 2.0e11, 7.692e10, 0.3, 7850.0
 ```
 
+<!-- vendor-fields:MAT1 -->
+**Vendor fields** (MSC QRG p.2020; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | MID, E, G, NU, RHO |
+| Refused | the second line (ST, SC, SS, MCSID): an unread line |
+| Ignored | A, TREF (no thermal loads); GE (no supported solution uses structural damping) |
+<!-- /vendor-fields -->
+
 ---
 
 ### PBAR — Beam Cross-Section Property
@@ -461,6 +505,17 @@ $ Stress recovery at corners (y=±0.158, z=±0.158)
 +,    0.15811, 0.15811, -0.15811, 0.15811, -0.15811, -0.15811, 0.15811, -0.15811
 ```
 
+<!-- vendor-fields:PBAR -->
+**Vendor fields** (MSC QRG p.2431; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | PID, MID, A, I1, I2, J, NSM, C1–F2 |
+| Refused | K1, K2 (non-blank: no shear flexibility); I12 (non-zero: uncoupled bending planes); a fourth line |
+| Ignored | — |
+| Not checked | Data in field 9 of line 1, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
+
 ---
 
 ### PROD — Rod Property
@@ -492,6 +547,17 @@ read, in any card order (see Format Rules, "Card order and cross-references").
 $ Strut: A = 5 cm², J = 1e-7, tau = T * 5e-3 / J
 PROD, 3, 1, 5.0e-4, 1.0e-7, 5.0e-3
 ```
+
+<!-- vendor-fields:PROD -->
+**Vendor fields** (MSC QRG p.2622; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | PID, MID, A, J, C, NSM |
+| Refused | — |
+| Ignored | — |
+| Not checked | Data in fields 8–9, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
 
 ---
 
@@ -538,6 +604,16 @@ PBUSH, 10, K, 5000.0
 $ Full 6-DOF spring
 PBUSH, 20, K, 1.0e6, 1.0e6, 1.0e6, 1.0e3, 1.0e3, 1.0e3
 ```
+
+<!-- vendor-fields:PBUSH -->
+**Vendor fields** (MSC QRG p.2493; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | PID, the `K` line (K1–K6) |
+| Refused | the `B`, `GE`, `M` and `T` lines, unless every value is blank or zero (damping, mass and thermal data are not used) |
+| Ignored | the `RCV` line (stress recovery coefficients: output only); a `B`, `GE`, `M` or `T` line of zeros |
+<!-- /vendor-fields -->
 
 ---
 
@@ -594,6 +670,16 @@ CBAR, 5, 1, 5, 6, 0.0, 1.0, 0.0
 +,    56, 56
 ```
 
+<!-- vendor-fields:CBAR -->
+**Vendor fields** (MSC QRG p.1360; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, PID, GA, GB, X1–X3, OFFT (one of the eight legal words; the offset letters have no effect), PA, PB |
+| Refused | G0 (an integer in field 6); W1A–W3B (non-zero: offsets are not supported); a third line |
+| Ignored | — |
+<!-- /vendor-fields -->
+
 ---
 
 ### CROD — Rod Element (axial + torsion)
@@ -643,6 +729,17 @@ $ Pylon strut from wing grid 2 to engine grid 20
 CROD, 21, 3, 2, 20
 ```
 
+<!-- vendor-fields:CROD -->
+**Vendor fields** (MSC QRG p.1522; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, PID, G1, G2 |
+| Refused | — |
+| Ignored | — |
+| Not checked | Data in fields 6–9, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
+
 ---
 
 ### CONROD — Rod Element with Inline Properties
@@ -677,6 +774,16 @@ All `CROD` rules apply (axis, mass, rod-only grids, output). Validation adds `A 
 $ Same strut as the CROD above, section inline
 CONROD, 22, 4, 20, 1, 5.0e-4, 1.0e-7, 5.0e-3
 ```
+
+<!-- vendor-fields:CONROD -->
+**Vendor fields** (MSC QRG p.1452; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, G1, G2, MID, A, J, C, NSM |
+| Refused | — |
+| Ignored | — |
+<!-- /vendor-fields -->
 
 ---
 
@@ -751,6 +858,17 @@ $ Grounded spring at grid 4 with its axes in CORD2R 7
 CBUSH, 4, 11, 4, , , , , 7
 ```
 
+<!-- vendor-fields:CBUSH -->
+**Vendor fields** (MSC QRG p.1378–1379; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, PID, GA, GB, X1–X3, CID, S |
+| Refused | GO (an integer in field 6); OCID other than blank or −1 (the S1–S3 offset is not supported) |
+| Ignored | OCID = −1; S1–S3 (MSC reads them only "if OCID > 0", p.1379, and such an OCID is refused) |
+| Not checked | Data in fields 7–9 of line 2, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
+
 ---
 
 ### PLOTEL — Plot-Only Element
@@ -775,6 +893,17 @@ PLOTEL, EID, G1, G2
 $ Visualisation line from node 5 to node 7 (e.g. sensor arm)
 PLOTEL, 10, 5, 7
 ```
+
+<!-- vendor-fields:PLOTEL -->
+**Vendor fields** (MSC QRG p.2594; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, G1, G2 |
+| Refused | — |
+| Ignored | — |
+| Not checked | Data in fields 5–9, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
 
 ---
 
@@ -833,6 +962,16 @@ RBE2, 20, 7, 123456, 6
 CONM2, 30, 7, 0, 100000.0
 ```
 
+<!-- vendor-fields:RBE2 -->
+**Vendor fields** (MSC QRG p.2699; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, GN, CM, GMi |
+| Refused | ALPHA, TREF (a real after the grid list stops with a Python `int()` message, #89) |
+| Ignored | — |
+<!-- /vendor-fields -->
+
 ---
 
 ### RBAR — Rigid Bar Element
@@ -860,7 +999,8 @@ RBAR, EID, GA, GB, CNA, CNB, CMA, CMB
 sbeam makes all six DOFs of GB dependent, which is NASTRAN's rule only "if both CMA and CMB
 are zero or blank" (QRG 2024.1 PDF p.2692, remark 4). A partial set such as `CMB = 123` makes
 only those DOFs dependent in NASTRAN; it was ignored and is now refused (#68) — use an RBE2
-with `CM` for a partial set. Fields 9–10 (`ALPHA`, `TREF`) are thermal and ignored.
+with `CM` for a partial set. `ALPHA` (field 9) is thermal and ignored; `TREF` is field 2 of
+a second line in MSC's layout (QRG p.2691) and is refused as an unread line (#63).
 
 **Constraint equations:**
 
@@ -882,6 +1022,16 @@ RBAR, 1, 2, 3
 $ Same, with explicit default fields
 RBAR, 1, 2, 3, 123456, , ,
 ```
+
+<!-- vendor-fields:RBAR -->
+**Vendor fields** (MSC QRG p.2691–2692; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, GA, GB |
+| Refused | CNA other than 123456; CNB non-blank; CMA non-blank; CMB other than blank, 0 or 123456 (only the all-six-dependent bar of remark 4 is built); TREF (field 2 of line 2: an unread line) |
+| Ignored | CMB = 123456 (the default set); ALPHA (no thermal loads) |
+<!-- /vendor-fields -->
 
 ---
 
@@ -960,6 +1110,16 @@ $ Two groups with different weights
 RBE3, 30, , 10, 123, 2.0, 123, 1, 2, 1.0, 123, 3
 ```
 
+<!-- vendor-fields:RBE3 -->
+**Vendor fields** (MSC QRG p.2704; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, REFGRID, REFC, WTi, Ci, Gi,j |
+| Refused | field 3 (blank in MSC's layout); the `UM` section |
+| Ignored | the `ALPHA` section (ALPHA, TREF), with a warning: no thermal loads |
+<!-- /vendor-fields -->
+
 ---
 
 ### CONM2 — Concentrated Mass Element
@@ -1035,6 +1195,17 @@ CONM2, 2, 5, 0, 50.0, 0.1, 0.0, 0.0
 +,     1.5, 0.0, 2.0, 0.0, 0.0, 3.0
 ```
 
+<!-- vendor-fields:CONM2 -->
+**Vendor fields** (MSC QRG p.1449; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, G, CID (0 or a CORD2R), M, X1–X3, I11–I33 |
+| Refused | CID = −1 (X1–X3 as the C.G. in basic; refused with a misleading message, #89); field 9 of line 1 (blank in MSC's layout) |
+| Ignored | — |
+| Not checked | Data in fields 8–9 of line 2, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
+
 ---
 
 ### MASSSET — MSC mass combination (#102)
@@ -1082,6 +1253,16 @@ compat job sets) and the case-control `MASSSET`; it stores the bulk `MASSSET` un
 
 **Example:** `sample/ha144a/ha144a_mass_combination_sweep.bdf`, the MSC twin of
 `ha144a_massset_sweep.bdf`.
+
+<!-- vendor-fields:MASSSET -->
+**Vendor fields** (MSC QRG p.2018; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | ID, S0, Si, IDi |
+| Refused | — |
+| Ignored | — |
+<!-- /vendor-fields -->
 
 ### MASSCASE — Payload / Mass Case (sbeam extension; Step 60)
 
@@ -1202,6 +1383,17 @@ $ Fix Tx and Tz at GID 1; fix Ty at GID 2
 SPC, 1, 1, 13, 0.0, 2, 2, 0.0
 ```
 
+<!-- vendor-fields:SPC -->
+**Vendor fields** (MSC QRG p.2833; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, G1, C1, G2, C2 |
+| Refused | D1, D2 (non-zero: no enforced displacement) |
+| Ignored | — |
+| Not checked | Data in field 9, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
+
 ---
 
 ### SPC1 — Single-Point Constraint (Grid List)
@@ -1231,6 +1423,16 @@ SPC1, 1, 123456, 1
 $ Pin support: fix translations at GIDs 1 and 10
 SPC1, 2, 123, 1, 10
 ```
+
+<!-- vendor-fields:SPC1 -->
+**Vendor fields** (MSC QRG p.2835; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, C, Gi |
+| Refused | `THRU` (stops with a Python `int()` message, #89) |
+| Ignored | — |
+<!-- /vendor-fields -->
 
 ---
 
@@ -1271,6 +1473,17 @@ $ 500 N in +X at GID 3, user coordinate system 2
 FORCE, 10, 3, 2, 500.0, 1.0, 0.0, 0.0
 ```
 
+<!-- vendor-fields:FORCE -->
+**Vendor fields** (MSC QRG p.1868; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, G, CID, F, N1–N3 |
+| Refused | — |
+| Ignored | — |
+| Not checked | Data in field 9, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
+
 ---
 
 ### MOMENT — Concentrated Moment
@@ -1305,6 +1518,17 @@ behind, `−Mx` for counter-clockwise — charter §10.
 $ 200 N·m about +Z at GID 6
 MOMENT, 10, 6, 0, 200.0, 0.0, 0.0, 1.0
 ```
+
+<!-- vendor-fields:MOMENT -->
+**Vendor fields** (MSC QRG p.2294; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, G, CID, M, N1–N3 |
+| Refused | — |
+| Ignored | — |
+| Not checked | Data in field 9, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
 
 ---
 
@@ -1341,6 +1565,16 @@ In a SOL 144 **trim** subcase the combination may reference `FORCE`/`MOMENT` set
 $ Combine load sets 10 and 20 with factors 1.0 and 2.0, overall scale 1.0
 LOAD, 100, 1.0, 1.0, 10, 2.0, 20
 ```
+
+<!-- vendor-fields:LOAD -->
+**Vendor fields** (MSC QRG p.2008; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, S, Si, Li (a FORCE, MOMENT or GRAV set; a LOAD set is refused, #89) |
+| Refused | — |
+| Ignored | — |
+<!-- /vendor-fields -->
 
 ---
 
@@ -1384,6 +1618,17 @@ GRAV, 1, 0, 9.81, 0.0, -1.0, 0.0
 $ Reference GRAV via LOAD card (combined with a point force)
 LOAD, 100, 1.0, 1.0, 1, 1.0, 10
 ```
+
+<!-- vendor-fields:GRAV -->
+**Vendor fields** (MSC QRG p.1941; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, A, N1–N3 |
+| Refused | CID (non-zero: gravity is given in basic) |
+| Ignored | MB (it says where a superelement run finds CID; sbeam has no superelements) |
+| Not checked | Data in field 9, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
 
 ---
 
@@ -1430,6 +1675,16 @@ $ Extract 6 modes, MAX normalisation
 EIGRL, 30, , , 6, , , , MAX
 ```
 
+<!-- vendor-fields:EIGRL -->
+**Vendor fields** (MSC QRG p.1801–1802; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, ND, NORM (field 9: `MASS` or `MAX`) |
+| Refused | V1, V2 (the lowest ND roots are returned; no frequency range); the option line (`NORM=MAX` …): an unread line |
+| Ignored | MSGLVL, MAXSET, SHFSCL (they steer MSC's Lanczos solver, not which roots are found) |
+<!-- /vendor-fields -->
+
 ---
 
 ## Phase A — Aerodynamics
@@ -1472,11 +1727,23 @@ $ Full-span wing: chord=2.0, span=10.0, area=20.0 (the Mach goes on TRIM)
 AEROS, 0, 0, 2.0, 10.0, 20.0, 0, 0
 ```
 
+<!-- vendor-fields:AEROS -->
+**Vendor fields** (MSC QRG p.1151; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | ACSID (0 or a CORD2R parallel to basic), RCSID, REFC, REFB, REFS, SYMXZ, SYMXY (both read here; a non-zero value is refused when the aero model is built) |
+| Refused | field 9 (blank in MSC's layout; sbeam's MACH until v0.4.1) |
+| Ignored | — |
+<!-- /vendor-fields -->
+
 ---
 
 ### PAERO1 — Aerodynamic Panel Properties (Phase A stub)
 
-Referenced by CAERO1. Phase A carries no body elements; the card is a placeholder.
+Referenced by CAERO1. Phase A carries no body elements; the card is a placeholder. MSC's
+`B1`–`B6` (the CAERO2 bodies associated with the panel, QRG p.2413) are accepted and
+ignored: sbeam has no CAERO2, and a deck that holds one is refused.
 
 **Format:**
 ```
@@ -1493,6 +1760,17 @@ PAERO1  PID
 ```
 PAERO1, 1
 ```
+
+<!-- vendor-fields:PAERO1 -->
+**Vendor fields** (MSC QRG p.2413; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | PID |
+| Refused | — |
+| Ignored | B1–B6 (IDs of associated CAERO2 bodies; sbeam has no CAERO2, and a deck holding one is refused) |
+| Not checked | Data in field 9, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
 
 ---
 
@@ -1561,6 +1839,16 @@ $ Clustered leading-edge panels (8 chordwise breakpoints)
 AEFACT, 20, 0.0, 0.05, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0
 ```
 
+<!-- vendor-fields:AEFACT -->
+**Vendor fields** (MSC QRG p.1141; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, Di |
+| Refused | — |
+| Ignored | — |
+<!-- /vendor-fields -->
+
 ---
 
 ### CAERO1 — Aerodynamic Panel Macroelement
@@ -1612,6 +1900,16 @@ $ 4×10 wing: root LE at origin, tip LE at y=5, chord=2
 CAERO1, 100, 1, 0, 4, 10, 0, 0, 0
 +,      0.0, 0.0, 0.0, 2.0, 0.0, 5.0, 0.0, 2.0
 ```
+
+<!-- vendor-fields:CAERO1 -->
+**Vendor fields** (MSC QRG p.1343; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, PID, CP, NSPAN, NCHORD, LSPAN, LCHORD, IGID, X1, Y1, Z1, X12, X4, Y4, Z4, X43 |
+| Refused | LSPAN with NSPAN, LCHORD with NCHORD (MSC uses the list only when the count is zero or blank, #89); an IGID that differs from another CAERO1's (one AIC over every panel) |
+| Ignored | — |
+<!-- /vendor-fields -->
 
 ---
 
@@ -1939,6 +2237,16 @@ $ Wing elastic-axis grids for the beam spline
 SET1, 1100, 10, 11, 12, 13, 14, 15
 ```
 
+<!-- vendor-fields:SET1 -->
+**Vendor fields** (MSC QRG p.2813; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, IDi |
+| Refused | `THRU` (stops with a Python `int()` message, #89) |
+| Ignored | — |
+<!-- /vendor-fields -->
+
 ---
 
 ### SPLINE2 — Beam Spline (NASTRAN infinite beam spline)
@@ -1986,6 +2294,17 @@ $ Wing boxes 1100-1131 to SET1 1100 (root grids + LE/TE stringers); axis = CORD2
 SPLINE2, 1601, 1100, 1100, 1131, 1100, 0.0, 1.0, 2
 +,       -1.0, -1.0
 ```
+
+<!-- vendor-fields:SPLINE2 -->
+**Vendor fields** (MSC QRG p.2849; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, CAERO, ID1, ID2, SETG, DZ (≥ 0), DTOR (> 0), CID, DTHX, DTHY |
+| Refused | USAGE other than `BOTH` or blank (`FORCE`, `DISP`: every spline is used for both transforms); field 4 of line 2 (blank in MSC's layout) |
+| Ignored | USAGE = `BOTH` (the default) |
+| Not checked | Data in fields 6–9 of line 2, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
 
 ---
 
@@ -2141,6 +2460,17 @@ AESTAT, 100, ANGLEA
 AESTAT, 101, PITCH
 ```
 
+<!-- vendor-fields:AESTAT -->
+**Vendor fields** (MSC QRG p.1153; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | ID, LABEL (one of MSC's standard labels) |
+| Refused | any other LABEL (MSC needs AELINK or DMI data for it, p.1154 remark 3) |
+| Ignored | — |
+| Not checked | Data in fields 4–9, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
+
 ---
 
 ### AESURF — Aerodynamic control surface
@@ -2194,6 +2524,16 @@ AESURF, 602, RUD, 13, 303                        $ rudder: CID 13 +y DOWN ⇒ po
 0); `CID2` and `ALID2` are given together or not at all, and when given must exist likewise;
 no box may appear in both `ALID1` and `ALID2` of one surface.
 
+<!-- vendor-fields:AESURF -->
+**Vendor fields** (MSC QRG p.1155; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | ID, LABEL, CID1, ALID1, CID2, ALID2 (the last two together), EFF |
+| Refused | LDW = `NOLDW`; the second line (CREFC, CREFS, PLLIM, PULIM, HMLLIM, HMULIM, TQLLIM, TQULIM): limits and reference values are not used (#44) |
+| Ignored | LDW = `LDW` (the default) |
+<!-- /vendor-fields -->
+
 ---
 
 ### AELIST — Aerodynamic box ID list
@@ -2217,6 +2557,16 @@ AELIST, 50, 1001, 1002, 1003, 1004
 ```
 
 **Validation:** Every box ID must fall within the range `[CAERO1.EID, CAERO1.EID + NSPAN×NCHORD − 1]` of at least one CAERO1. An intervening blank field is refused (QRG 2024.1 p.1145 remark 3; #73 — it used to be skipped); trailing blanks are harmless.
+
+<!-- vendor-fields:AELIST -->
+**Vendor fields** (MSC QRG p.1145; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, Ei, `THRU` |
+| Refused | — |
+| Ignored | — |
+<!-- /vendor-fields -->
 
 ---
 
@@ -2265,6 +2615,16 @@ TRIM, 11, 0.3, 1500.0, PITCH, 0.0, URDD3, -1.0
   #6): `FORCE`/`MOMENT` sets and `LOAD` combinations of them; `GRAV` raises. An `MANVR`
   subcase or a `DIVERG`-only subcase carrying `LOAD` raises (the load would be dropped).
 
+<!-- vendor-fields:TRIM -->
+**Vendor fields** (MSC QRG p.2992; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, MACH, Q, LABELi, UXi |
+| Refused | AEQR other than blank or 1.0 (the rigid and scaled-feedback trims, #88) |
+| Ignored | AEQR = 1.0 (the default: elastic trim) |
+<!-- /vendor-fields -->
+
 ---
 
 ### DIVERG — Divergence analysis data
@@ -2306,6 +2666,16 @@ DIVERG     100      5       0.0    $ AAUG 2023.1 p.148: incompressible, five roo
 > now reads its density as a Mach number; remove it. A DIVERG subcase does not require a TRIM
 > card: divergence depends only on `K_aa` and `Q_aa`, not on the trim right-hand side.
 
+<!-- vendor-fields:DIVERG -->
+**Vendor fields** (MSC QRG p.1603; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, NROOT, Mi |
+| Refused | — |
+| Ignored | — |
+<!-- /vendor-fields -->
+
 ---
 
 ### SUPORT — Free-Body Support DOFs
@@ -2342,6 +2712,16 @@ $ so an applied thrust accelerates the aircraft and its pitch moment is taken ab
 $ the CG; with SUPORT 35 the thrust x-component is reacted at the SPC instead (#6)
 SUPORT, 90, 135
 ```
+
+<!-- vendor-fields:SUPORT -->
+**Vendor fields** (MSC QRG p.2870; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | IDi, Ci |
+| Refused | — |
+| Ignored | — |
+<!-- /vendor-fields -->
 
 ---
 
@@ -2565,6 +2945,16 @@ AECOMP  NAME  LISTTYPE  LISTID1  LISTID2  ...
 
 **Cross-reference:** every list ID must exist in the matching AELIST/SET1 table.
 
+<!-- vendor-fields:AECOMP -->
+**Vendor fields** (MSC QRG p.1138; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | NAME, LISTTYPE (`AELIST` or `SET1`), LISTIDi |
+| Refused | LISTTYPE = `CAERO` or `CMPID` (#89) |
+| Ignored | — |
+<!-- /vendor-fields -->
+
 ### MONPNT1 — Integrated load monitor point (MSC layout, #86)
 
 MSC's layout and meaning (MSC Nastran 2024.1 QRG PDF p.2303–2304). The card is
@@ -2617,6 +3007,17 @@ MONPNT1 MWINGEA RIGHT WING
 > and write a `MONPNT3` as a `MONPNT1` (its SET1 AECOMP makes it structural). A one-line
 > MONPNT1 is refused with that advice; the repo decks are converted and give identical
 > results.
+
+<!-- vendor-fields:MONPNT1 -->
+**Vendor fields** (MSC QRG p.2303–2304; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | NAME, LABEL, AXES, COMP, CP, X, Y, Z |
+| Refused | CD other than blank or CP (output is in CP, MSC's default) |
+| Ignored | CD = CP |
+| Not checked | Data in field 9 of line 2, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
 
 ### MONPNT3 — refused (#86)
 
@@ -2937,6 +3338,16 @@ $ 1-degree elevator ramp over 0.5 s, then hold
 TABLED1, 500
 +,       0.0, 0.0, 0.5, 0.01745, 2.0, 0.01745, ENDT
 ```
+
+<!-- vendor-fields:TABLED1 -->
+**Vendor fields** (MSC QRG p.2896; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | TID, xi, yi |
+| Refused | XAXIS, YAXIS = `LOG` (linear interpolation only) |
+| Ignored | XAXIS, YAXIS = `LINEAR` (the default); `ENDT` (a table without it is accepted) |
+<!-- /vendor-fields -->
 
 ---
 
