@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from sbeam_tools.viewer.widget_keys import wk
 
 from typing import Optional
 
@@ -259,10 +260,10 @@ def _render_body_stage(
     # tuned jointly; the auto-guess pre-selects the largest-chord +Z / +Y surface.
     h_sel = c1.multiselect("Horizontal body panel(s) — match Cm", opts,
                            default=[str(gh)] if gh is not None else [],
-                           key="aero_body_horiz")
+                           key=wk("aero_body_horiz"))
     v_sel = c2.multiselect("Vertical body panel(s) — match Cn, Cl", opts,
                            default=[str(gv)] if gv is not None else [],
-                           key="aero_body_vert")
+                           key=wk("aero_body_vert"))
     horiz = [int(e) for e in h_sel]
     vert = [int(e) for e in v_sel]
 
@@ -287,24 +288,24 @@ def _render_body_stage(
     # Columns group the targets by plane: pitch (horizontal panel) / yaw + roll (vertical).
     g_pitch, g_yaw, g_roll = st.columns(3)
     t_cma = g_pitch.number_input("Cm_α target", value=float(seed.cm_alpha),
-                                 format="%.4f", key="aero_body_cma")
+                                 format="%.4f", key=wk("aero_body_cma"))
     t_cm0 = g_pitch.number_input("Cm0 target", value=float(seed.cm0),
-                                 format="%.4f", key="aero_body_cm0")
+                                 format="%.4f", key=wk("aero_body_cm0"))
     t_cnb = g_yaw.number_input("Cn_β target", value=float(seed.cn_beta),
-                               format="%.4f", key="aero_body_cnb")
+                               format="%.4f", key=wk("aero_body_cnb"))
     t_cn0 = g_yaw.number_input("Cn0 target", value=float(seed.cn0),
-                               format="%.5f", key="aero_body_cn0")
+                               format="%.5f", key=wk("aero_body_cn0"))
     t_clb = g_roll.number_input("Cl_β target", value=float(seed.cl_beta),
-                                format="%.4f", key="aero_body_clb")
+                                format="%.4f", key=wk("aero_body_clb"))
     t_cl0 = g_roll.number_input("Cl0 target", value=float(seed.cl0),
-                                format="%.5f", key="aero_body_cl0")
+                                format="%.5f", key=wk("aero_body_cl0"))
     st.caption("Targets seed from the CSV `TOTAL` block at this Mach when present; edit "
                "to match your CFD/WT total. Pitch (Cm) → horizontal panel(s); yaw+roll "
                "(Cn, Cl, both sideslip) → vertical panel(s). A plane may be split across "
                "several panels (tuned jointly). Keep panels clear of the wing/tail — an "
                "overlapping panel contaminates them, it does not model interference.")
 
-    if st.button("Build body correction", key="aero_body_build", disabled=body_mixed):
+    if st.button("Build body correction", key=wk("aero_body_build"), disabled=body_mixed):
         if not horiz and not vert:
             st.error("Select at least one body panel (horizontal and/or vertical).")
         else:
@@ -373,7 +374,7 @@ def _render_body_stage(
                        "enlarge the panels (that lowers the ratio but raises the spurious tail load).")
 
     cba, cbb = st.columns(2)
-    if cba.button("Apply body panels to model", type="primary", key="aero_body_apply"):
+    if cba.button("Apply body panels to model", type="primary", key=wk("aero_body_apply")):
         n = _apply_body_cards(bulk, res, bres)
         st.success(f"Injected the flying pairs + {n} body card pair(s). Open the **Aero** "
                    "tab and press Compute Aero to run the fully corrected solve.")
@@ -381,7 +382,7 @@ def _render_body_stage(
                 else bc.body_cards_to_bdf(bres))
     cbb.download_button(
         "Download body cards (.bdf)", data=body_bdf,
-        file_name="body_correction.bdf", mime="text/plain", key="aero_body_download")
+        file_name="body_correction.bdf", mime="text/plain", key=wk("aero_body_download"))
 
 
 def render_aero_correction_tab(bulk: BulkData) -> None:
@@ -418,12 +419,12 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
         data=_template_csv(aero_model),
         file_name="section_data_template.csv",
         mime="text/csv",
-        key="aero_corr_template",
+        key=wk("aero_corr_template"),
     )
     with st.expander("CSV column reference", expanded=False):
         st.markdown(_SCHEMA_HELP)
 
-    up = st.file_uploader("Upload section-data CSV", type=["csv"], key="aero_corr_upload")
+    up = st.file_uploader("Upload section-data CSV", type=["csv"], key=wk("aero_corr_upload"))
     if up is not None:
         # st.file_uploader returns the same file on every rerun; only re-parse when the
         # file actually changes, otherwise an unrelated rerun (e.g. changing the preview
@@ -472,9 +473,9 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
     )
     machs = sorted({c.mach for c in conds})
     col1, col2, col3 = st.columns(3)
-    mach = col1.selectbox("Mach", machs, format_func=lambda m: f"{m:g}", key="aero_corr_mach")
-    alpha = col2.number_input("Operating α (°)", value=2.0, step=0.5, key="aero_corr_alpha")
-    beta = col3.number_input("Operating β (°)", value=0.0, step=0.5, key="aero_corr_beta")
+    mach = col1.selectbox("Mach", machs, format_func=lambda m: f"{m:g}", key=wk("aero_corr_mach"))
+    alpha = col2.number_input("Operating α (°)", value=2.0, step=0.5, key=wk("aero_corr_alpha"))
+    beta = col3.number_input("Operating β (°)", value=0.0, step=0.5, key=wk("aero_corr_beta"))
 
     table_caeros = sorted({c.caero for c in conds if c.mach == mach})
     status_rows, canted = [], []
@@ -505,7 +506,7 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
             "correction blends both responses on this surface; interpret with care."
         )
 
-    if st.button("Build correction cards", type="primary", key="aero_corr_build"):
+    if st.button("Build correction cards", type="primary", key=wk("aero_corr_build")):
         try:
             ajj = build_aero_model(bulk, mach=mach).ajj
             st.session_state.aero_corr_result = sd.build_from_section_data_multi(
@@ -542,12 +543,12 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
         return
     st.success(f"Built {len(built_eids)} surface card pair(s): CAERO {built_eids}")
 
-    sel = st.selectbox("Preview surface", built_eids, key="aero_corr_preview")
+    sel = st.selectbox("Preview surface", built_eids, key=wk("aero_corr_preview"))
     if sel is None:
         return
     st.plotly_chart(
         build_section_correction_figure(aero_model.boxes, df, res, sel),
-        use_container_width=True, key="aero_corr_preview_fig",
+        use_container_width=True, key=wk("aero_corr_preview_fig"),
     )
     diag = res.correction.per_surface[sel]
     st.caption("Achieved per-strip targets (force/q and moment/q per rad; offsets at α=0):")
@@ -563,7 +564,7 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
     st.markdown("#### 5 · Apply / export")
     _warn_conflicts(bulk, built_eids)
     cda, cdb = st.columns(2)
-    if cda.button("Apply to model", type="primary", key="aero_corr_apply"):
+    if cda.button("Apply to model", type="primary", key=wk("aero_corr_apply")):
         n = _apply_cards(bulk, res)
         st.success(
             f"Injected {n} card pair(s) into the model. Open the **Aero** tab and press "
@@ -574,7 +575,7 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
         data=cards_to_bdf(res.correction),
         file_name="section_correction.bdf",
         mime="text/plain",
-        key="aero_corr_download",
+        key=wk("aero_corr_download"),
     )
 
     # ---- Full corrected BDF (loaded model + correction cards) ----------------
@@ -586,7 +587,7 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
     mach_c, alpha_c, beta_c = st.session_state.get("aero_corr_cond") or (0.0, 0.0, 0.0)
     stem = Path(st.session_state.get("_uploaded_filename") or "model.bdf").stem
     default_name = suggest_corrected_name(stem, mach_c, alpha_c, beta_c)
-    out_name = st.text_input("Output filename", value=default_name, key="aero_corr_bdf_name")
+    out_name = st.text_input("Output filename", value=default_name, key=wk("aero_corr_bdf_name"))
     src = st.session_state.get("_uploaded_source_text")
     if src is None:
         st.info(
@@ -604,7 +605,7 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
             data=corrected,
             file_name=out_name,
             mime="text/plain",
-            key="aero_corr_bdf_download",
+            key=wk("aero_corr_bdf_download"),
         )
 
     # ---- 6 · Body panels — total-aircraft moment match -----------------------

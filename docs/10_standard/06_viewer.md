@@ -417,9 +417,17 @@ Output request checkboxes per SOL:
 - **SOL 103:** No checkboxes — info message: "All modal results … output automatically."
 - **SOL 144:** SOL 101 set plus AEROF and APRES.
 
-**Advanced expander (collapsed by default):** Contains the INCLUDE paths text area, one
-bulk-data file per line (multi-INCLUDE, Step 66). Defaults to `model.dat` or the paths
-parsed from the loaded run file (`CaseControl.includes` — all of them, not just the first).
+**Advanced expander (collapsed by default):** For a deck that has its own bulk section it
+only states that the section is exported unchanged. For a bulk-data-only file it holds the
+INCLUDE paths text area, one bulk-data file per line, defaulting to the loaded file's name:
+the export is then a driver that INCLUDEs that file.
+
+**Apply edits the loaded case control; it does not rebuild it (#123).** Each subcase is the
+loaded `SubcaseControl` with the widget-backed fields replaced (`dataclasses.replace`), and
+the same holds for the `CaseControl`. What the editor has no widget for is carried through:
+subcase `SUBTITLE` and `LABEL`, `SET`, `MODEXP`, deck-level `SUBTITLE` / `LABEL` / `SET` and
+`PARAM,GRDPNT`. An Apply with nothing changed leaves the case control equal to the loaded
+one. The LOAD picker lists every set a LOAD selector may name: FORCE, MOMENT, LOAD and GRAV.
 
 **Action row (bottom of form):**
 ```
@@ -438,10 +446,21 @@ reruns. Add/Remove handlers run after the form closes and call `st.rerun()`.
 ### BDF export
 
 `export_bdf_text(cc: CaseControl, include_paths: list[str] | None = None,
-authored_block: str = "") -> str` in `case_control_ui.py` serialises a `CaseControl` to a
-parseable driver BDF: full SOL 144 keyword surface (TRIM/TRIMWGT/DIVERG/MANVR/MASSCASE +
-AEROF/APRES), `BEGIN BULK`, one `INCLUDE` per entry (an INCLUDE inserts its file where it
-stands, so bulk INCLUDEs sit below `BEGIN BULK`, #81), and any viewer-authored bulk cards.
+authored_block: str = "", bulk_section: str | None = None) -> str` in `case_control_ui.py`
+serialises a `CaseControl` to a parseable BDF: full SOL 144 keyword surface
+(TRIM/TRIMWGT/DIVERG/MANVR/MASSCASE/GUSTLF + AEROF/APRES), `BEGIN BULK`, the bulk data, and
+any viewer-authored bulk cards. The bulk data is one of two things:
+
+- **`bulk_section` given (the viewer always passes it when the loaded deck has one, #123):**
+  the loaded deck's own bulk section, the lines between `BEGIN BULK` and `ENDDATA` as
+  written (`deck_bulk_section`), with its INCLUDE lines, inline cards and comments. A
+  single-file deck exports as a single file; a driver keeps the cards that follow its
+  INCLUDE. The export of an unedited deck parses to the same case control and bulk data as
+  the deck on disk; `tests/viewer/test_journey.py` holds that for every sample deck.
+- **otherwise:** one generated `INCLUDE` per entry of `include_paths` (an INCLUDE inserts
+  its file where it stands, so bulk INCLUDEs sit below `BEGIN BULK`, #81). This is the
+  route for a bulk-data-only file given a case control in the viewer.
+
 Example output:
 
 ```
@@ -495,7 +514,23 @@ Conditions* (presets + TRIM/TRIMVAR/TRIMWGT/TRIMINEQ/DIVERG), *Maneuver (MANVR)*
 generator + TABLED1 point editor). Each family gets an expander with a selectbox
 ("— new —" or an existing ID, outside the form so switching pre-fills) and one
 `st.form`; dynamic rows (TRIM vars, MANCMD pairs, TABLED1 points) use `st.data_editor`
-with `num_rows="dynamic"`. All widget keys are `auth_`-prefixed and reset on upload.
+with `num_rows="dynamic"`. All widget keys are `auth_`-prefixed.
+
+**Widget keys carry the card and the deck (#123).** Streamlit identifies a keyed widget by
+its key alone and ignores a new `value=` default once the key holds a value (checked on
+1.50.0 and 1.66.1). Two rules follow, and a new widget must obey both:
+
+- A form field's key goes through `_k`, which appends the card being edited:
+  `auth_trim_q` for a new card, `auth_trim_q@7` for TRIM 7. Each card has its own widgets,
+  initialised from that card. With one fixed key the form kept the previous values and
+  Apply wrote them over the chosen card.
+- Every widget whose value depends on the model takes its key through
+  `widget_keys.wk`, which appends the number of the deck opened in the session
+  (`sc_trim_sid_1`, then `sc_trim_sid_1#2` for the second deck). Only the four widgets that
+  open a deck keep a plain key. Session-state reads of a widget value use the same call.
+
+A loaded card submitted unchanged reports "No change." and stays the file's card; it is not
+marked as authored, so it is not written inline a second time.
 
 **Apply-to-session:** submitting builds the dataclass and injects it into the in-session
 `BulkData` (`apply_card`), records the ID in `st.session_state.authored_cards`

@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 import pandas as pd
 import streamlit as st
+from sbeam_tools.viewer.widget_keys import DECK_GENERATION, wk
 
 import numpy as np
 
@@ -98,8 +99,34 @@ def _has_case_control(content: str) -> bool:
 # ship them, and the picker is then hidden (#111).
 SAMPLE_ROOT = Path(__file__).resolve().parents[2] / "sample"
 
-# Session keys that survive a new deck: the uploader's own bookkeeping.
-_KEPT_ON_LOAD = {"_uploaded_file_id"}
+# Session keys that survive a new deck: the widgets that open one, the uploader's own
+# bookkeeping, and the count of decks opened (it makes every model widget's key, wk()).
+_KEPT_ON_LOAD = {
+    "file_uploader", "sample_pick", "deck_path_input", "open_deck",
+    "_uploaded_file_id", DECK_GENERATION,
+}
+
+
+def _reset_session_for_new_deck() -> None:
+    """Leave nothing of the previous deck in the session (#111, #123).
+
+    Every key with a default goes back to it; every other key is removed, which takes
+    the data that panels stash under their own names and the previous deck's widget
+    values.  The deck count goes up, so the model widgets get new keys and start from
+    the new deck's values (``widget_keys.wk``).
+    """
+    defaults = _session_defaults()
+    for key in list(st.session_state.keys()):
+        if key in _KEPT_ON_LOAD:
+            continue
+        if key in defaults:
+            st.session_state[key] = defaults.pop(key)
+        else:
+            del st.session_state[key]
+    for key, value in defaults.items():
+        if key not in _KEPT_ON_LOAD:
+            st.session_state[key] = value
+    st.session_state[DECK_GENERATION] = st.session_state.get(DECK_GENERATION, 0) + 1
 
 
 def list_sample_decks(root: Path = SAMPLE_ROOT) -> dict[str, Path]:
@@ -120,12 +147,11 @@ def _load_deck(name: str, content: str, path: Optional[Path]) -> None:
     deck's own folder.  An upload has no folder (``path=None``): its text is parsed from a
     temporary file, and a deck that uses ``INCLUDE`` cannot load that way.
 
-    Every model-dependent session key goes back to its default first, so nothing of the
-    previous deck (results, authored cards, corrections, selections) survives.
+    The session is reset first (``_reset_session_for_new_deck``), so nothing of the
+    previous deck (results, authored cards, corrections, selections, widget values)
+    survives.
     """
-    for key, value in _session_defaults().items():
-        if key not in _KEPT_ON_LOAD:
-            st.session_state[key] = value
+    _reset_session_for_new_deck()
     tmp_path: Optional[str] = None
     try:
         if path is None:
@@ -182,9 +208,7 @@ def _open_path(path_text: str) -> None:
     try:
         content = path.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
-        for key, value in _session_defaults().items():
-            if key not in _KEPT_ON_LOAD:
-                st.session_state[key] = value
+        _reset_session_for_new_deck()
         st.session_state._parse_error = f"Cannot read {path}: {exc.strerror or exc}"
         return
     _load_deck(path.name, content, path.resolve())
@@ -246,7 +270,7 @@ def _show_gpwg(bulk: BulkData) -> None:
                 "— baseline —" if s is None
                 else f"{s} — {bulk.masssets[s].label}"
             ),
-            key="sel_massset_gpwg",
+            key=wk("sel_massset_gpwg"),
         )
     gpwg = compute_gpwg(bulk, massset_sid)
     st.metric("Total mass", fmt_mass(gpwg.total_mass))
@@ -263,7 +287,7 @@ def _show_item_inspector(bulk: BulkData) -> None:
         "Inspect GRID",
         gid_opts,
         format_func=lambda g: "— none —" if g is None else f"GID {g}",
-        key="sel_gid_box",
+        key=wk("sel_gid_box"),
     )
     st.session_state.selected_gid = selected_gid
 
@@ -280,7 +304,7 @@ def _show_item_inspector(bulk: BulkData) -> None:
         "Inspect CBAR",
         eid_opts,
         format_func=lambda e: "— none —" if e is None else f"EID {e}",
-        key="sel_eid_box",
+        key=wk("sel_eid_box"),
     )
     st.session_state.selected_eid = selected_eid
 
@@ -305,7 +329,7 @@ def _show_item_inspector(bulk: BulkData) -> None:
             "Inspect RBE3",
             rbe3_opts,
             format_func=lambda e: "— none —" if e is None else f"EID {e}",
-            key="sel_rbe3_eid_box",
+            key=wk("sel_rbe3_eid_box"),
         )
         if selected_rbe3_eid is not None and selected_rbe3_eid in bulk.rbe3s:
             rbe3 = bulk.rbe3s[selected_rbe3_eid]
@@ -320,7 +344,7 @@ def _show_item_inspector(bulk: BulkData) -> None:
             "Inspect RBE2",
             rbe2_opts,
             format_func=lambda e: "— none —" if e is None else f"EID {e}",
-            key="sel_rbe2_eid_box",
+            key=wk("sel_rbe2_eid_box"),
         )
         if selected_rbe2_eid is not None and selected_rbe2_eid in bulk.rbe2s:
             rbe2 = bulk.rbe2s[selected_rbe2_eid]
@@ -765,10 +789,10 @@ def _render_f06_export(bulk: BulkData) -> None:
 
     col1, col2 = st.columns([3, 1])
     with col1:
-        out_path = st.text_input("Output path", value=default_path, key="f06_out_path")
+        out_path = st.text_input("Output path", value=default_path, key=wk("f06_out_path"))
     with col2:
         st.markdown("&nbsp;", unsafe_allow_html=True)
-        if st.button("Write F06", key="write_f06_btn"):
+        if st.button("Write F06", key=wk("write_f06_btn")):
             try:
                 Path(out_path).write_text(f06_text, encoding="utf-8")
                 st.success(f"Written: {out_path}")
@@ -781,7 +805,7 @@ def _render_f06_export(bulk: BulkData) -> None:
         data=f06_text,
         file_name=stem,
         mime="text/plain",
-        key="download_f06_btn",
+        key=wk("download_f06_btn"),
     )
 
 
@@ -789,12 +813,12 @@ def _render_aero_tab(bulk: BulkData) -> None:
     col_ctrl, col_fig = st.columns([1, 3])
 
     with col_ctrl:
-        alpha_deg = st.number_input("AoA α (°)", value=3.0, step=0.5, key="aero_alpha")
-        beta_deg  = st.number_input("Sideslip β (°)", value=0.0, step=0.5, key="aero_beta")
+        alpha_deg = st.number_input("AoA α (°)", value=3.0, step=0.5, key=wk("aero_alpha"))
+        beta_deg  = st.number_input("Sideslip β (°)", value=0.0, step=0.5, key=wk("aero_beta"))
         # AEROS carries no Mach in MSC's layout (#87): the flight Mach is entered here
         mach = st.number_input("Mach", value=0.0, min_value=0.0, max_value=0.99, step=0.05,
-                               key="aero_mach")
-        compute_btn = st.button("Compute Aero", type="primary", key="aero_compute")
+                               key=wk("aero_mach"))
+        compute_btn = st.button("Compute Aero", type="primary", key=wk("aero_compute"))
 
     if compute_btn:
         with st.spinner("Building AIC and solving…"):
@@ -838,14 +862,14 @@ def _render_aero_tab(bulk: BulkData) -> None:
 
     with col_ctrl:
         show_normals = st.checkbox(
-            "Show surface normals", value=False, key="aero_show_normals"
+            "Show surface normals", value=False, key=wk("aero_show_normals")
         )
         # Cp view toggle — only meaningful when an uncorrected baseline exists.
         cp_view = "Corrected"
         if aero_result is not None and aero_result_unc is not None:
             cp_view = st.radio(
                 "Cp view", ["Corrected", "Uncorrected", "Δ (corr − uncorr)"],
-                key="aero_cp_view",
+                key=wk("aero_cp_view"),
                 help="Switch the 3D box pressure and the span-load curves between the "
                      "corrected solve, the uncorrected baseline, and their difference.",
             )
@@ -923,7 +947,7 @@ def _render_aero_tab(bulk: BulkData) -> None:
         if len(surf_eids) > 1:
             picked = st.multiselect(
                 "Show surfaces", surf_eids, default=surf_eids,
-                format_func=lambda e: f"CAERO {e}", key="aero_span_surfaces",
+                format_func=lambda e: f"CAERO {e}", key=wk("aero_span_surfaces"),
             )
             selected = [e for e in surf_eids if e in picked]
         if not selected:
@@ -947,7 +971,7 @@ def _render_aero_tab(bulk: BulkData) -> None:
                 state_label = st.radio(
                     "Values",
                     ["Corrected", "Uncorrected", "Δ (corr − uncorr)"],
-                    horizontal=True, key="aero_deriv_state",
+                    horizontal=True, key=wk("aero_deriv_state"),
                     help="Rigid derivatives from the corrected AIC operator, the "
                          "uncorrected VLM baseline (same Mach), or their difference.",
                 )
@@ -1044,7 +1068,7 @@ def main() -> None:
                 sel_label = st.selectbox(
                     "Active subcase",
                     list(sc_options.keys()),
-                    key="subcase_selectbox",
+                    key=wk("subcase_selectbox"),
                 )
                 st.session_state.selected_subcase_id = sc_options[sel_label].subcase_id
             st.divider()
@@ -1079,7 +1103,7 @@ def main() -> None:
     with tab_model:
         _show_parse_summary(bulk)
         _show_warnings()
-        show_forces = st.checkbox("Show applied forces", value=True, key="model_show_forces")
+        show_forces = st.checkbox("Show applied forces", value=True, key=wk("model_show_forces"))
         fig = build_model_figure(
             bulk,
             selected_gid=st.session_state.selected_gid,

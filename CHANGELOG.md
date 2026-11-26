@@ -178,6 +178,27 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - dataset 82 has 49 segments.
 
 ### Fixed
+- **An interaction that should change nothing changed the deck in the viewer (#123).** Found
+  by the journey test (#112); none raised an error.
+  - **Case-control Apply dropped the applied load of every SOL 144 trim subcase**, so
+    pressing Apply on `val_thrust_trim.bdf` removed the thrust. It also dropped everything
+    the editor has no widget for: `LABEL`, `SUBTITLE`, `SET`, `MODEXP`, `PARAM,GRDPNT`. A
+    GRAV-only LOAD set could not stay selected. Apply now edits the loaded case control
+    instead of rebuilding it.
+  - **The export left out the deck's own bulk cards.** A single-file deck exported as
+    `INCLUDE 'model.dat'`, a file that does not exist; the gust driver exported without its
+    TRIM and GUSTLF cards. The export now carries the loaded deck's bulk section unchanged.
+  - **"Edit existing" in the card editors did not show the selected card.** The form kept
+    its previous values and Apply wrote them: choosing SUPORT 90 and pressing Apply changed
+    its DOFs from `3` to `35`. Each card now has its own form widgets. A loaded card
+    submitted unchanged is no longer marked as authored (which blocked the export with a
+    duplicate SID). TABLED1 could not be applied at all (`AttributeError`).
+  - **A second deck inherited the first deck's widget values**: with the subcase editor
+    open, opening another deck and pressing Apply wrote the first deck's TRIM selections
+    into it. Every model widget's key now carries the deck's number in the session.
+
+  **Check any deck exported from the viewer before this change**: a SOL 144 deck with a LOAD
+  on a trim subcase lost it, and a deck with cards after an INCLUDE lost those cards.
 - **The viewer refused to run a gust subcase (#122).** Its pre-launch check counted only
   TRIM, DIVERG and MANVR as subcase drivers, so every subcase of
   `cessna210_flagship_gust.bdf` was blocked with "needs a driver", though `GUSTLF` names its

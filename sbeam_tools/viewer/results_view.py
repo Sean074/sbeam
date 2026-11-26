@@ -8,6 +8,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 import streamlit as st
+from sbeam_tools.viewer.widget_keys import wk
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.types import FloatArray
@@ -30,7 +31,7 @@ def render_sol101_results(bulk: BulkData, results: dict[int, Sol101Result]) -> N
     """Display deformed shape, scale slider, and results tables for SOL 101."""
     subcase_ids = sorted(results.keys())
     if len(subcase_ids) > 1:
-        sel_id = st.selectbox("Subcase", subcase_ids, key="results_sc_sel")
+        sel_id = st.selectbox("Subcase", subcase_ids, key=wk("results_sc_sel"))
     else:
         sel_id = subcase_ids[0]
     result = results[sel_id]
@@ -69,10 +70,10 @@ def render_sol101_results(bulk: BulkData, results: dict[int, Sol101Result]) -> N
         max_value=float(suggested * 10),
         value=float(suggested),
         format="%.2g",
-        key="sol101_deform_scale",
+        key=wk("sol101_deform_scale"),
     )
 
-    show_forces = st.checkbox("Show applied forces", value=True, key="sol101_show_forces")
+    show_forces = st.checkbox("Show applied forces", value=True, key=wk("sol101_show_forces"))
     fig = build_deformed_figure(bulk, result.displacements, grid_index, scale, load_sid=load_sid if show_forces else None)
     st.plotly_chart(fig, use_container_width=True)
 
@@ -194,7 +195,7 @@ def render_sol103_results(bulk: BulkData, results: dict[int, Sol103Result]) -> N
     """Display mode shapes and frequency table for SOL 103."""
     subcase_ids = sorted(results.keys())
     if len(subcase_ids) > 1:
-        sel_id = st.selectbox("Subcase", subcase_ids, key="results_sc_sel")
+        sel_id = st.selectbox("Subcase", subcase_ids, key=wk("results_sc_sel"))
     else:
         sel_id = subcase_ids[0]
     result = results[sel_id]
@@ -220,7 +221,7 @@ def render_sol103_results(bulk: BulkData, results: dict[int, Sol103Result]) -> N
         st.subheader("Mode shape")
 
         mode_labels = [f"Mode {i + 1}  —  {result.frequencies_hz[i]:.4g} Hz" for i in range(n_modes)]
-        mode_sel = st.selectbox("Select mode", range(n_modes), format_func=lambda i: mode_labels[i], key="mode_sel")
+        mode_sel = st.selectbox("Select mode", range(n_modes), format_func=lambda i: mode_labels[i], key=wk("mode_sel"))
 
         freq = result.frequencies_hz[mode_sel]
         phi = result.mode_shapes[:, mode_sel]
@@ -245,19 +246,19 @@ def render_sol103_results(bulk: BulkData, results: dict[int, Sol103Result]) -> N
             max_value=float(suggested * 10),
             value=float(suggested),
             format="%.2g",
-            key="mode_scale",
+            key=wk("mode_scale"),
         )
         phase_pct = st.slider(
             "Phase (°)  (90°=+max, 270°=−max)",
             min_value=0,
             max_value=360,
             value=90,
-            key="mode_phase",
+            key=wk("mode_phase"),
         )
         view_sel = st.selectbox(
             "Camera",
             list(_CAMERA_PRESETS.keys()),
-            key="mode_camera_preset",
+            key=wk("mode_camera_preset"),
         )
         chart_height = st.slider(
             "Height (px)",
@@ -265,7 +266,7 @@ def render_sol103_results(bulk: BulkData, results: dict[int, Sol103Result]) -> N
             max_value=1400,
             value=580,
             step=50,
-            key="mode_chart_height",
+            key=wk("mode_chart_height"),
         )
 
         # Frequency table in collapsible section
@@ -364,7 +365,7 @@ def render_sol144_results(
         return
 
     if len(sc_ids) > 1:
-        sel_id = st.selectbox("Subcase", sc_ids, key="sol144_sc_sel")
+        sel_id = st.selectbox("Subcase", sc_ids, key=wk("sol144_sc_sel"))
     else:
         sel_id = sc_ids[0]
 
@@ -546,7 +547,7 @@ def _render_section_cuts(
             which = st.multiselect(
                 "Plot components", list(names),
                 default=[names[2], names[4], names[3]],
-                key=f"{key_prefix}_{name}_comps",
+                key=wk(f"{key_prefix}_{name}_comps"),
             )
             choices = ["Total", "Aero", "Inertia", "Reaction"]
             attrs = {"Total": "totals", "Aero": "aero",
@@ -560,7 +561,7 @@ def _render_section_cuts(
                 attrs["Applied"] = "applied"
             source = st.radio(
                 "Contribution", choices,
-                horizontal=True, key=f"{key_prefix}_{name}_src",
+                horizontal=True, key=wk(f"{key_prefix}_{name}_src"),
             )
             attr = attrs[source]
             if which:
@@ -586,14 +587,14 @@ def _render_section_time_history(result: ManeuverResult, step: ManeuverStep) -> 
         return
     names_by_cut = sorted(step.section_loads)
     with st.expander("Section-cut time history", expanded=False):
-        cut_name = st.selectbox("Cut", names_by_cut, key="man_tsec_cut")
+        cut_name = st.selectbox("Cut", names_by_cut, key=wk("man_tsec_cut"))
         sc = step.section_loads[cut_name]
         names = component_names(sc.axis)
         stations = [s.station for s in sc.stations]
         c1, c2 = st.columns(2)
-        station = c1.selectbox("Station", stations, key="man_tsec_station")
+        station = c1.selectbox("Station", stations, key=wk("man_tsec_station"))
         comp = c2.selectbox("Component", list(names), index=2,
-                            key="man_tsec_comp")
+                            key=wk("man_tsec_comp"))
         j = stations.index(station)
         i = names.index(comp)
 
@@ -731,7 +732,7 @@ def _render_sol144_deflected(bulk: BulkData, result: Sol144TrimResult) -> None:
         max_value=float(suggested * 10),
         value=float(suggested),
         format="%.2g",
-        key="sol144_deform_scale",
+        key=wk("sol144_deform_scale"),
     )
 
     # Deformed structure
@@ -767,7 +768,7 @@ def _render_sol144_diverg(result: Sol144DivergResult) -> None:
     # is the user's flight condition: V = sqrt(2 q / rho) in the deck's units.
     rho = st.number_input(
         "Density for V-div (deck units; 0 = omit)", min_value=0.0, value=0.0,
-        format="%.6g", key=f"diverg_rho_{result.subcase_id}")
+        format="%.6g", key=wk(f"diverg_rho_{result.subcase_id}"))
     for mr in result.mach_results:
         st.markdown(f"**Mach {mr.mach:.4g}**")
         if not mr.roots:
@@ -816,7 +817,7 @@ def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
     # 1-based to match the metric above and the f06 (DEF-M5).
     sample = st.slider(
         "Sample", min_value=1, max_value=max(n, 1),
-        value=int(result.crit_index) + 1 if n else 1, key="sol144_man_step",
+        value=int(result.crit_index) + 1 if n else 1, key=wk("sol144_man_step"),
     )
     step = result.steps[sample - 1]
     grid_index = build_grid_index(bulk)
@@ -826,7 +827,7 @@ def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
     suggested = _model_span(bulk) * 0.1 / max_disp
     scale = st.slider(
         "Deflection scale", min_value=0.0, max_value=float(suggested * 10),
-        value=float(suggested), format="%.2g", key="sol144_man_scale",
+        value=float(suggested), format="%.2g", key=wk("sol144_man_scale"),
     )
     fig_struct = build_deformed_figure(bulk, step.displacements, grid_index, scale)
     st.plotly_chart(fig_struct, use_container_width=True)
@@ -867,7 +868,7 @@ def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
         data=build_maneuver_time_history_text(result),
         file_name=f"{stem}.mldprnt.txt",
         mime="text/plain",
-        key=f"dl_mldprnt_{result.subcase_id}",
+        key=wk(f"dl_mldprnt_{result.subcase_id}"),
     )
     if result.steps:
         ec2.download_button(
@@ -875,7 +876,7 @@ def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
             data=build_maneuver_critical_load_cards_text(bulk, result),
             file_name=f"{stem}.maneuver_qs_loads.bdf",
             mime="text/plain",
-            key=f"dl_qs_loads_{result.subcase_id}",
+            key=wk(f"dl_qs_loads_{result.subcase_id}"),
         )
     # #2: the per-sample monitor table and its envelope — the CLI's files.
     if any(s.monitor_loads for s in result.steps):
@@ -885,7 +886,7 @@ def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
             data=build_maneuver_monitor_csv_text({result.subcase_id: result}),
             file_name=f"{stem}.maneuver_monitor_loads.csv",
             mime="text/csv",
-            key=f"dl_tmon_{result.subcase_id}",
+            key=wk(f"dl_tmon_{result.subcase_id}"),
         )
     if result.monitor_envelope:
         from sbeam.results.load_export import (
@@ -896,7 +897,7 @@ def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
                 {result.subcase_id: result}),
             file_name=f"{stem}.maneuver_monitor_envelope.csv",
             mime="text/csv",
-            key=f"dl_tmonenv_{result.subcase_id}",
+            key=wk(f"dl_tmonenv_{result.subcase_id}"),
         )
     # Step 68: the full per-sample MONSECT table — the same file the CLI writes.
     if any(s.section_loads for s in result.steps):
@@ -908,7 +909,7 @@ def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
             data=csv_text,
             file_name=f"{stem}.maneuver_section_loads.csv",
             mime="text/csv",
-            key=f"dl_tsec_{result.subcase_id}",
+            key=wk(f"dl_tsec_{result.subcase_id}"),
         )
     if result.section_envelope:
         from sbeam.results.load_export import (
@@ -919,5 +920,5 @@ def _render_sol144_maneuver(bulk: BulkData, result: ManeuverResult) -> None:
                 {result.subcase_id: result}),
             file_name=f"{stem}.maneuver_section_envelope.csv",
             mime="text/csv",
-            key=f"dl_tsecenv_{result.subcase_id}",
+            key=wk(f"dl_tsecenv_{result.subcase_id}"),
         )

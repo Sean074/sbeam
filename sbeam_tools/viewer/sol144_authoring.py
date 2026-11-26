@@ -33,11 +33,19 @@ def family_store(bulk: BulkData, family: str) -> Any:
     return getattr(bulk, FAMILY_ATTRS[family])
 
 
-def card_key(family: str, card: Any) -> int:
-    """The tracking key for a card: its SID/ID (GID for SUPORT)."""
+def key_attr(family: str, card: Any) -> str:
+    """The name of the field that identifies a card: GID for SUPORT, else SID/ID/TID."""
     if family == "suport":
-        return card.gid
-    return card.sid if hasattr(card, "sid") else card.id
+        return "gid"
+    for name in ("sid", "id", "tid"):
+        if hasattr(card, name):
+            return name
+    raise AttributeError(f"{type(card).__name__} has no SID, ID or TID field")
+
+
+def card_key(family: str, card: Any) -> int:
+    """The tracking key for a card: its SID/ID/TID (GID for SUPORT)."""
+    return getattr(card, key_attr(family, card))
 
 
 def next_free_sid(bulk: BulkData, family: str) -> int:
