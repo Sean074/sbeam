@@ -21,7 +21,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - **Case-control `SET`** is MSC's own (QRG p.625: THRU, EXCEPT, ALL; run- or
     subcase-scoped). `MODEXP` is sbeam-only.
   - **Gates:**
-    - the new `sample/goland_wing_modes.bdf` (the Flaps demo Goland wing) gives Flaps
+    - the new `sample/goland_wing/goland_wing_modes.bdf` (the Flaps demo Goland wing) gives Flaps
       2.3.4's 7.370 / 14.119 Hz to 4 figures;
     - a tributary-lumped variant gives the closed form's 49.48 / 87.10 rad/s within 0.3 %;
     - on a free-free beam, MHH = I and KHH = diag(ω²) to 1e-8;
@@ -36,9 +36,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     differ; a term on a DOF the box does not have (MSC drops it silently); a deck giving
     both the matrix and native cards; a DMIK WKK in a model with PSTRIP panels.
   - **`DMI` stays refused.** Its row numbers need the order of the CAERO1 entries in the
-    j-set, which the manuals do not state. `sample/HA144A.bdf` therefore still does not run.
+    j-set, which the manuals do not state. `sample/ha144a/HA144A.bdf` therefore still does not run.
   - Real fields now accept the double-precision `D` exponent (`1.0D0`, QRG p.1619 remark 9).
-  - **Gates:** the new `sample/ha144a_fullspan_dmij.bdf` trims to `ha144a_fullspan_sbeam.bdf`'s
+  - **Gates:** the new `sample/ha144a/ha144a_fullspan_dmij.bdf` trims to `ha144a_fullspan_sbeam.bdf`'s
     numbers (rel 1e-12; f06 and load BDF identical). A non-uniform DMIK WKK gives the native
     WKK's operator bit for bit. pyNastran reads all 224 terms to the same values.
 
@@ -103,9 +103,19 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   solver feature (`docs/30_future/02_parked.md`).
 
 ### Documentation
+- **`sample/` is one folder per model family, with a README** (#108, Tier S). The 38 sample
+  files move, names unchanged, into `sample/beam/`, `sample/validation/`,
+  `sample/goland_wing/`, `sample/ha144a/` and `sample/cessna210_flagship/`. The new
+  `sample/README.md` gives each file's purpose and marks the ones that are not decks to run
+  on their own (bulk-only, overlay, archive listing, generated). **A path such as
+  `sample/simple_beam.bdf` is now `sample/beam/simple_beam.bdf`**; `INCLUDE`s are unaffected
+  because each family moved whole. Tests find a deck by file name through
+  `tests/samples.py`, the deck-sweeping gates collect recursively and refuse an empty
+  sweep, and `tests/docs/test_sample_readme.py` fails when the README and the folders
+  disagree. Entries below this one keep the paths that were true when they were written.
 - **Stick models carry a visualisation outline for mode animation** (#107, from the Flaps
   hand check). Flaps `amviz` draws translations only, so the Goland torsion mode animated
-  as bending. `sample/goland_wing_modes.bdf` now ends with massless LE/TE grids on RBE2s
+  as bending. `sample/goland_wing/goland_wing_modes.bdf` now ends with massless LE/TE grids on RBE2s
   and 37 PLOTELs. They are outside the MODEXP SET, so frequencies and PHIX are unchanged,
   and its mode 5 now visibly twists the tip chord. The idiom (standard cards, no export
   option) and the patched-Flaps requirement for real-mode dataset 55 are in `04` and `10`.

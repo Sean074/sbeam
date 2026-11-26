@@ -432,7 +432,7 @@ V1–V7 use: E=2.0×10¹¹ Pa, ρ=7850 kg/m³, A=0.05 m², I=8.333×10⁻⁴ m�
 
 The V-suite above gates its own decks under `tests/integration/bdf/` (L = 1 m, A = 0.05 m²). `tests/integration/test_sample_verification.py` separately gates the **shipped** closed-form decks — the four named in `CLAUDE.md` "Verification Test Cases" (L = 10 m, A = 0.1 m², 10 CBAR elements), plus the offset-tip-mass coupled bending-torsion deck added 2026-08-01:
 
-| Deck (`sample/`) | SOL | Checks | Tolerance |
+| Deck (under `sample/`; folders and purposes: [`sample/README.md`](../../sample/README.md)) | SOL | Checks | Tolerance |
 |------------------|-----|--------|-----------|
 | `val_cantilever_static.bdf` | 101 | Tip Tz = PL³/3EI; tip Ry = PL²/2EI; root reactions Fz = P, My = −P·L | rel 1e-9 |
 | `val_ss_static.bdf` | 101 | Mid-span Tz = PL³/48EI; P/2 at each support | rel 1e-9 |
@@ -475,7 +475,7 @@ solver's in `tests/aero/` and `tests/parser/`.
 | V-GUST7 | **DEF-M20 guard** | negative `URDD3` against an absent/z-up RCSID warns; the z-down flagship stays silent |
 | P-GUST1–6 | Parse rejections | unknown TRIMID; TRIM also prescribing `URDD3`; `G ≤ 0`; bad `ASRC`; `KG` outside `(0, 0.88)`; negative recorded provenance |
 
-`sample/cessna210_flagship_gust.bdf` is generated output, committed with its
+`sample/cessna210_flagship/cessna210_flagship_gust.bdf` is generated output, committed with its
 generating command in the header — regenerate it rather than hand-editing.
 
 ### Coverage

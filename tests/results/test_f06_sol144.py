@@ -9,7 +9,6 @@ AERODYNAMIC BOX PRESSURES AND FORCES block.
 import re
 
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -19,8 +18,9 @@ from sbeam.aero.aero_model import build_aero_model
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.solver.sol144 import run_sol144_trim
 from sbeam.results.f06_writer import build_f06_sol144_text
+from tests.samples import sample_path
 
-BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+BDF_PATH = sample_path("ha144a_fullspan_sbeam.bdf")
 
 
 @pytest.fixture(scope="module")

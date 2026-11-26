@@ -1,7 +1,7 @@
 """Cessna 210 worked example — multi-surface section correction + viewer aero tab.
 
-Points at the flagship family (`sample/cessna210_flagship_bulk.bdf` +
-`sample/cessna210_flagship_section_data.csv`), which replaced the standalone
+Points at the flagship family (`sample/cessna210_flagship/cessna210_flagship_bulk.bdf` +
+`sample/cessna210_flagship/cessna210_flagship_section_data.csv`), which replaced the standalone
 `cessna210_aero.bdf` / `cessna210_section_data.csv` pair at Step 65.
 
 Scope here is the CORRECTION SYNTHESISER and the VIEWER surfaces that render it; the
@@ -16,7 +16,6 @@ import math
 import warnings
 from collections import defaultdict
 from copy import deepcopy
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -27,10 +26,10 @@ from sbeam.aero.aero_model import build_aero_model
 from sbeam_tools.corrections import split_total_rows
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.parser.bdf_reader import parse_bdf
+from tests.samples import sample_path
 
-_ROOT = Path(__file__).parent.parent.parent / "sample"
-BDF_PATH = _ROOT / "cessna210_flagship_trim.bdf"
-CSV_PATH = _ROOT / "cessna210_flagship_section_data.csv"
+BDF_PATH = sample_path("cessna210_flagship_trim.bdf")
+CSV_PATH = sample_path("cessna210_flagship_section_data.csv")
 _RAD2DEG = 180.0 / math.pi
 _ALPHA_REF = 2.3904          # the incidence the committed correction is baked about
 

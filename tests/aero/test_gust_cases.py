@@ -16,12 +16,11 @@ V-GUST7    DEF-M20 (#23): a negative URDD3 against an absent or z-up RCSID
            warns rather than silently trimming inverted lift.
 =========  ================================================================
 
-Runs the shipped ``sample/cessna210_flagship_gust.bdf``, which the generator
+Runs the shipped ``sample/cessna210_flagship/cessna210_flagship_gust.bdf``, which the generator
 script produced — so these gates also prove the script's output is solvable.
 """
 
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -31,10 +30,10 @@ from sbeam.gpwg import compute_gpwg
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.results.f06_writer import build_f06_sol144_text
 from sbeam.solver.sol144 import AeroCache, run_sol144_trim
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
-GUST_DECK = SAMPLE / "cessna210_flagship_gust.bdf"
-TRIM_DECK = SAMPLE / "cessna210_flagship_trim.bdf"
+GUST_DECK = sample_path("cessna210_flagship_gust.bdf")
+TRIM_DECK = sample_path("cessna210_flagship_trim.bdf")
 
 # SUBCASE 9000/9001 are the +/- pair at V_C for the FERRY mass case.
 _UP, _DOWN = 0, 1
@@ -190,8 +189,8 @@ class TestVGust7DefM20Guard:
     """DEF-M20 (#23) — the RCSID orientation guard for the load-factor sign."""
 
     def test_absent_rcsid_with_negative_urdd3_warns(self):
-        """sample/val_dihedral_trim.bdf has RCSID 0 and URDD3 = -9.81, deliberately."""
-        deck = SAMPLE / "val_dihedral_trim.bdf"
+        """sample/validation/val_dihedral_trim.bdf has RCSID 0 and URDD3 = -9.81, deliberately."""
+        deck = sample_path("val_dihedral_trim.bdf")
         cc, bulk = parse_bdf(str(deck))
         gi = build_grid_index(bulk)
         with warnings.catch_warnings(record=True) as caught:

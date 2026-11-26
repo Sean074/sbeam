@@ -25,9 +25,10 @@ import pytest
 from sbeam.parser import bdf_reader
 from sbeam.parser.bdf_reader import parse_bdf, parse_bulk_data
 from sbeam.parser.bulk_fields import is_continuation, split_line
+from tests.samples import sample_decks
 
 REPO = Path(__file__).resolve().parents[2]
-DECKS = sorted([*(REPO / "sample").glob("*.bdf"), *(REPO / "tests/integration/bdf").glob("*.bdf")])
+DECKS = sorted([*sample_decks(), *(REPO / "tests/integration/bdf").glob("*.bdf")])
 SEEDS = (0, 1, 2)
 
 
@@ -225,7 +226,7 @@ def test_dangling_structural_reference_is_refused(cards, match):
 
 def _aero_deck(old: str, new: str) -> list[str]:
     """The dihedral trim deck's bulk with card ``old`` (and its continuations) replaced."""
-    lines = _bulk_lines(REPO / "sample/val_dihedral_trim.bdf")
+    lines = _bulk_lines(REPO / "sample/validation/val_dihedral_trim.bdf")
     head, *cards = _cards(lines)
     hits = [k for k, card in enumerate(cards) if card[0].strip() == old]
     assert len(hits) == 1, old
@@ -272,7 +273,7 @@ def test_ha144a_is_past_the_card_order_error():
     """The issue's reproduction: HA144A puts its CBARs before their PBAR.  It now gets
     past that and stops at its next real limitation, the weight-unit PARAM,WTMASS (#39)."""
     with pytest.raises(ValueError, match=r"PARAM,WTMASS,0.031081 is not supported"):
-        parse_bdf(REPO / "sample/HA144A.bdf")
+        parse_bdf(REPO / "sample/ha144a/HA144A.bdf")
 
 
 # --------------------------------------------------------------------------------------
@@ -308,7 +309,7 @@ def test_shuffled_flagship_trim_solves_identically():
         return {sc.subcase_id: run_sol144_trim(bulk, sc, aero, aero_cache=cache)
                 for sc in cc.subcases}
 
-    path = REPO / "sample/cessna210_flagship_trim.bdf"
+    path = REPO / "sample/cessna210_flagship/cessna210_flagship_trim.bdf"
     cc, bulk = parse_bdf(path)
     _, shuffled = _parse_reordered(path, "2")
     ref, got = trims(bulk, cc), trims(shuffled, cc)

@@ -16,7 +16,6 @@ Three defects in the lateral/control columns of `build_djx`
 """
 
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -31,8 +30,8 @@ from sbeam.solver.sol144 import _compute_hinge_moments
 from sbeam.assembly.coord_transform import get_transform
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.assembly.load_vector import build_grid_index
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
 
 
 def _box_nastran_ids(bulk, boxes):
@@ -130,7 +129,7 @@ class TestAesurfHingeAxis:
     def test_ha144a_spanwise_hinge_no_regression(self):
         """HA144A ELEV hinge (CORD2R 1) is spanwise → new column == old −n_z·eff
         to machine precision."""
-        _cc, bulk = parse_bdf(str(SAMPLE / "ha144a_fullspan_sbeam.bdf"))
+        _cc, bulk = parse_bdf(str(sample_path("ha144a_fullspan_sbeam.bdf")))
         gi = build_grid_index(bulk)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")

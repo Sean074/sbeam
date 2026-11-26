@@ -500,7 +500,7 @@ def _stage_resolve_ref_geometry(st: _TrimState) -> None:
     # genuinely downward acceleration and the deck trims INVERTED lift, with
     # nothing to say so.  Gust cases (issue #1) make this reachable in normal
     # work because a down-gust prescribes a positive URDD3, so the guard lands
-    # with them.  `sample/val_dihedral_trim.bdf` does this deliberately and is
+    # with them.  `sample/validation/val_dihedral_trim.bdf` does this deliberately and is
     # expected to warn.
     urdd3 = st.prescribed_dict.get("URDD3")
     if urdd3 is not None and urdd3 < 0.0:

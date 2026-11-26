@@ -167,7 +167,7 @@ term exists or is needed.
     +CMZ basic (lateral note D2) — the familiar left-turning tendency. Counter-clockwise
     flips every sign. The per-strip `a0`/`W2GJ` signs of a powered correction follow from
     this and the W2GJ sign rule of charter §3.
-- **D7 Validation deck:** new `sample/val_thrust_trim.bdf` (§5); the flagship bulk and
+- **D7 Validation deck:** new `sample/validation/val_thrust_trim.bdf` (§5); the flagship bulk and
   drivers are untouched. Theory §7.2 is rewritten to point at the capability.
 - **D8 Tier L** — full step format in `40_history/06`.
 
@@ -184,7 +184,7 @@ term exists or is needed.
 
 ## 5. Validation (benchmark-first) — gates G1–G10
 
-**Deck `sample/val_thrust_trim.bdf`** (V-THR). AR 8 rectangular wing (b = 8, c = 1, S = 8,
+**Deck `sample/validation/val_thrust_trim.bdf`** (V-THR). AR 8 rectangular wing (b = 8, c = 1, S = 8,
 20 × 8 boxes per half) + horizontal tail (span ±1.5, chord 1, z = 0.5, 6 × 8 per half)
 with an elevator on the aft two rows; stiff CBAR spine; nose grid 10 at x = −1.5; **engine
 grid 70 at (−1.5, 0, −0.5) on `RBAR 70`**; reference grid 90 at (0.25, 0, 0) = RCSID origin
@@ -195,7 +195,7 @@ URDD3 −9.81, URDD5 0) shared by three subcases: 1 no load; 2 `LOAD 710 = 1.0 �
 every-grid `MONPNT3 MALL`, nose free-body `MONSECT SECNOSE` (axis x, SIDE NEG, members
 grids 10 + 70), wing `MONSECT SECRW`.
 
-**Lateral deck `sample/val_lateral_aileron_rudder.bdf`** gains `MOMENT 701 90 0 35 1 0 0`
+**Lateral deck `sample/validation/val_lateral_aileron_rudder.bdf`** gains `MOMENT 701 90 0 35 1 0 0`
 (clockwise-propeller torque reaction) and `TRIM 3` / `SUBCASE 3` (ROLL = SIDES = YAW = 0,
 URDD4 = URDD6 = 0, `LOAD 701`; AIL and RUD free).
 
@@ -210,7 +210,7 @@ URDD4 = URDD6 = 0, `LOAD 701`; AIL and RUD free).
 | **G7** refusals | `GRAV` direct and via `LOAD` → `ValueError` naming URDD3; `MANVR` + `LOAD` → `ValueError` (direct and modal); `DIVERG`-only + `LOAD` → `ValueError`; the no-LOAD trim is unaffected | — |
 | **G8** torque / handedness | lateral SC3: AIL, RUD equal the 2 × 2 solve of the restrained derivatives against `−[Q/(qSb), 0]`; **AIL < 0**; closure in Mx, Mz ≈ 0 | rel 1e-8 |
 | **G9** bit-identity | every shipped SOL 144 f06 / `aero_loads.bdf` / `maneuver_loads.bdf` byte-identical to the pre-change run; flagship pins unchanged; only the two CSV headers differ (zero-filled new columns) | diff |
-| **G10** CLI | `python -m sbeam.main sample/val_thrust_trim.bdf` writes the f06 with the APPLIED block, both CSVs and `maneuver_loads.bdf`; import-boundary gate green | — |
+| **G10** CLI | `python -m sbeam.main sample/validation/val_thrust_trim.bdf` writes the f06 with the APPLIED block, both CSVs and `maneuver_loads.bdf`; import-boundary gate green | — |
 
 ## 6. Prototype (2026-10-24, `release/0.3.0` @ `1287ff7`, RHS stage wrapped in a scratch script)
 

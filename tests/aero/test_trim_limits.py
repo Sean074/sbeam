@@ -4,7 +4,6 @@ Audit findings P6, A11, A12, M10 (2026-11-16).  These are sbeam-defined cards, s
 rules here are sbeam's own.
 """
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -14,8 +13,9 @@ from sbeam.model.aero import Trim, Trimcon, Trimobj, Trimvar
 from sbeam.parser.bdf_reader import parse_bdf, parse_bulk_data
 from sbeam.parser.case_control import SubcaseControl
 from sbeam.solver.sol144 import run_sol144_trim
+from tests.samples import sample_path
 
-HA144A = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+HA144A = sample_path("ha144a_fullspan_sbeam.bdf")
 _LABELS = ["AESTAT, 501, ANGLEA", "AESTAT, 502, PITCH", "AESURF, 505, ELEV, 1, 1"]
 
 

@@ -19,15 +19,15 @@ Reference (VortexLattice.jl / AVL):
 """
 
 from math import radians
-from pathlib import Path
 
 import pytest
 
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.vlm import solve_rigid_cl
+from tests.samples import sample_path
 
-_BDF = Path(__file__).resolve().parents[2] / "sample" / "val_vlm_byu_wing.bdf"
+_BDF = sample_path("val_vlm_byu_wing.bdf")
 
 # Reference values (VortexLattice.jl, which matches AVL to < 0.1%)
 CL_REF = 0.24437

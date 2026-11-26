@@ -19,7 +19,6 @@ rescaling identity they must satisfy with respect to Q_hx.
 """
 
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -37,9 +36,9 @@ from sbeam.solver.modal_basis import (
     build_hset_gafs,
 )
 from sbeam.solver.sol144 import _solve_rom
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
-BDF_PATH = SAMPLE / "ha144a_fullspan_mloads.bdf"
+BDF_PATH = sample_path("ha144a_fullspan_mloads.bdf")
 
 
 def _model(path=BDF_PATH, spc_sid=1, trim_sid=1):
@@ -178,7 +177,7 @@ def test_m_ax_identity_exact_with_consistent_cbar_mass():
     regression to any second mass model shows up on the rotational rows first,
     so those are asserted separately rather than being folded into a norm.
     """
-    _cc, bulk = parse_bdf(str(SAMPLE / "val_dihedral_trim.bdf"))
+    _cc, bulk = parse_bdf(str(sample_path("val_dihedral_trim.bdf")))
     for mat in bulk.mat1s.values():
         mat.rho = 2700.0                       # give the CBARs distributed mass
     gi = build_grid_index(bulk)
@@ -365,7 +364,7 @@ def test_b_hh_rigid_rate_diagonal_is_damping_for_every_free_flight_dof():
     made a free lateral rate anti-damped — the flagship fin makes all three
     lateral entries non-zero, so the sign is observable here."""
     from sbeam.model.constraint import Suport
-    _cc, bulk = parse_bdf(str(SAMPLE / "cessna210_flagship_mloads.bdf"))
+    _cc, bulk = parse_bdf(str(sample_path("cessna210_flagship_mloads.bdf")))
     for spc1 in bulk.spc1s[1]:
         if 900 in spc1.grids:
             spc1.c = "1"                 # keep only surge pinned

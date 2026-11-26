@@ -1,12 +1,12 @@
 """Tests for Step 19: Case Control UI — BDF export round-trip."""
 
-from pathlib import Path
 
 import pytest
 
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.parser.case_control import CaseControl, SubcaseControl, parse_case_control
 from sbeam_tools.viewer.case_control_ui import export_bdf_text
+from tests.samples import sample_decks, sample_path
 
 
 def _make_sol101_cc() -> CaseControl:
@@ -217,7 +217,6 @@ class TestMultiSubcaseRoundTrip:
 # P12 S2 — SOL 144 case-control export + round-trip
 # ---------------------------------------------------------------------------
 
-_SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
 
 
 def _make_sol144_cc() -> CaseControl:
@@ -275,7 +274,7 @@ class TestSampleDeckCaseControlRoundTrip:
     def test_sample_decks_round_trip(self):
         """The two MANVR sample decks' case control survives export → parse."""
         for deck in ("ha144a_fullspan_mloads.bdf", "ha144a_mloads_massset.bdf"):
-            cc, _ = parse_bdf(_SAMPLE_DIR / deck)
+            cc, _ = parse_bdf(sample_path(deck))
             cc2 = parse_case_control(export_bdf_text(cc).splitlines())
             assert cc2.sol == cc.sol, deck
             assert cc2.subcases == cc.subcases, deck
@@ -323,7 +322,7 @@ def test_export_round_trips_every_subcase_field():
 
 
 @pytest.mark.parametrize("deck", sorted(
-    p for p in (Path(__file__).parent.parent.parent / "sample").glob("*.bdf")
+    p for p in sample_decks()
     if "\nSOL " in "\n" + p.read_text()), ids=lambda p: p.name)
 def test_export_round_trips_every_repo_driver(deck):
     """`cessna210_flagship_gust.bdf` came back with no GUSTLF, so with no driver."""

@@ -32,7 +32,7 @@ The single function serves SOL 101, both SOL 144 paths (`sol144.py:753`,
 recover stresses (`maneuver_qs.py` calls only `recover_bar_forces`).
 
 **Reproduction** (`release/0.3.0` @ `4964788`):
-- **Deck:** `sample/val_cantilever_static.bdf` (10 × 1 m, A = 0.1, I1 = I2 = 8.333e-4,
+- **Deck:** `sample/validation/val_cantilever_static.bdf` (10 × 1 m, A = 0.1, I1 = I2 = 8.333e-4,
   C = (+0.158, +0.158), E = (−0.158, −0.158)).
 - **Tip loads:** Py = +1000, Pz = +2000, Px = +5000 (tension).
 - **Closed form:** `σ(x) = Px/A − Py(L−x)·y/I1 − Pz(L−x)·z/I2`.

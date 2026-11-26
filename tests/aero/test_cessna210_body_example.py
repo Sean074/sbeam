@@ -1,7 +1,7 @@
 """Cessna 210 worked example — cruciform body panels (Step A9, re-pointed at Step 66).
 
-Validates that ``sample/cessna210_flagship_body.bdf`` (the flagship bulk plus the
-cruciform overlay) + ``sample/cessna210_flagship_section_data.csv``:
+Validates that ``sample/cessna210_flagship/cessna210_flagship_body.bdf`` (the flagship bulk plus the
+cruciform overlay) + ``sample/cessna210_flagship/cessna210_flagship_section_data.csv``:
   - parse and mesh into a 7-surface, full-span VLM model (wing/HTP/VTP + body cruciform);
   - orient the body panels as a cruciform (horizontal normal +Z, vertical normal +Y);
   - hold both panels clear of the empennage, so they cannot spuriously load the tail;
@@ -14,7 +14,6 @@ trim-side gates live in `test_cessna210_flagship_body.py`.
 """
 
 import dataclasses
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -23,10 +22,10 @@ import pytest
 from sbeam_tools.corrections import section_data as sd
 from sbeam.aero.body_correction import build_body_correction, RATIO_WARN
 from sbeam_tools.corrections import parse_body_targets, split_total_rows
+from tests.samples import sample_path
 
-_ROOT = Path(__file__).parent.parent.parent / "sample"
-BDF_PATH = _ROOT / "cessna210_flagship_body.bdf"
-CSV_PATH = _ROOT / "cessna210_flagship_section_data.csv"
+BDF_PATH = sample_path("cessna210_flagship_body.bdf")
+CSV_PATH = sample_path("cessna210_flagship_section_data.csv")
 
 
 @pytest.fixture(scope="module")

@@ -8,7 +8,6 @@ the f06 AERODYNAMIC DIVERGENCE sweep block.
 """
 
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -22,8 +21,9 @@ from sbeam.solver.sol144 import (
     run_sol144_trim, run_sol144_diverg, _divergence_roots,
 )
 from sbeam.results.f06_writer import build_f06_sol144_diverg_text
+from tests.samples import sample_path
 
-BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+BDF_PATH = sample_path("ha144a_fullspan_sbeam.bdf")
 
 
 # --------------------------------------------------------------------------- #

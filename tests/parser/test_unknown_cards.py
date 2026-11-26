@@ -23,7 +23,7 @@ from sbeam.parser.bdf_reader import parse_bdf, parse_bulk_data
 REPO = Path(__file__).resolve().parents[2]
 _GRIDS = ["GRID, 1, , 0.0, 0.0, 0.0", "GRID, 2, , 1.0, 0.0, 0.0"]
 
-# HA144A's own DMI cards (sample/HA144A.bdf, MSC listing 7-1)
+# HA144A's own DMI cards (sample/ha144a/HA144A.bdf, MSC listing 7-1)
 _HA144A_DMI = ["DMI, W2GJ, 0, 2, 1, , 40, 1", "DMI, W2GJ, 1, 9, .0017453, THRU, 40"]
 
 
@@ -100,4 +100,4 @@ def test_ha144a_archive_still_stops_at_wtmass_first():
     """The archive listing carries WTMASS, AUNITS and three DMIs; WTMASS comes first in
     the deck and is raised as it is read."""
     with pytest.raises(ValueError, match=r"PARAM,WTMASS,0.031081 is not supported"):
-        parse_bdf(REPO / "sample/HA144A.bdf")
+        parse_bdf(REPO / "sample/ha144a/HA144A.bdf")

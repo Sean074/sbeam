@@ -19,8 +19,8 @@ from sbeam.model.maneuver import (
 )
 from sbeam.model import card_writers as cw
 from sbeam.parser.bdf_reader import _read_cards, parse_bulk_data, parse_bdf
+from tests.samples import sample_path
 
-SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
 
 # Scaffolding so cross-reference validation passes when parsing writer output.
 _SCAFFOLD = [
@@ -203,8 +203,8 @@ _FAMILY_ATTRS = [a for a, _ in cw.FAMILIES.values()]
 @pytest.mark.parametrize("deck", ["ha144a_fullspan_mloads.bdf",
                                   "ha144a_mloads_massset.bdf"])
 def test_sample_deck_golden_roundtrip(deck):
-    _, bulk = parse_bdf(SAMPLE_DIR / deck)
-    lines: list[str] = _cord2r_lines(SAMPLE_DIR / deck)
+    _, bulk = parse_bdf(sample_path(deck))
+    lines: list[str] = _cord2r_lines(sample_path(deck))
     for family, (attr, writer) in cw.FAMILIES.items():
         store = getattr(bulk, attr)
         if family == "suport":

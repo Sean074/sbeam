@@ -17,7 +17,6 @@ this class rather than add a parallel gate.
 """
 
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -27,8 +26,9 @@ from sbeam.aero.integration import build_djx
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.assembly.coord_transform import get_transform
 from sbeam.solver.sol144 import pitch_moment
+from tests.samples import sample_path
 
-BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+BDF_PATH = sample_path("ha144a_fullspan_sbeam.bdf")
 
 
 @pytest.fixture(scope="module")

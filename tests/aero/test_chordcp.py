@@ -18,7 +18,6 @@ warnings) and strip-body coexistence.
 
 import math
 import warnings
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -32,8 +31,9 @@ from sbeam_tools.common.mirror import mirror_halfspan
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.model.aero import Chordcp
 from sbeam.solver.sol144 import run_sol144_trim
+from tests.samples import sample_path
 
-BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+BDF_PATH = sample_path("ha144a_fullspan_sbeam.bdf")
 _MACH = 0.9   # the deck's TRIM Mach (AEROS carried it too until #87)
 
 

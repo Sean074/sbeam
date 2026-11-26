@@ -22,7 +22,6 @@ gates and the reusable ``aero_moment_resultant`` helper.
 
 import math
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -34,8 +33,8 @@ from sbeam.aero.vlm import solve_rigid_cl, build_ajj
 from sbeam.aero.integration import build_skj
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.solver.sol144 import run_sol144_trim, aero_moment_resultant
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
 GAMMA = math.radians(10.0)
 COS, SIN = math.cos(GAMMA), math.sin(GAMMA)
 ALPHA = math.radians(1.0)
@@ -45,7 +44,7 @@ DECKS = {"val_vlm_dihedral.bdf": +1.0, "val_vlm_anhedral.bdf": -1.0}
 
 
 def _rigid_aero(deck):
-    _cc, bulk = parse_bdf(str(SAMPLE / deck))
+    _cc, bulk = parse_bdf(str(sample_path(deck)))
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         am = build_aero_model(bulk)
@@ -127,7 +126,7 @@ def test_rigid_cl_cos_gamma():
 # 4. Structured determined trim closes out of plane (spline + force + trim).
 # --------------------------------------------------------------------------- #
 def test_dihedral_trim_closes_out_of_plane():
-    _cc, bulk = parse_bdf(str(SAMPLE / "val_dihedral_trim.bdf"))
+    _cc, bulk = parse_bdf(str(sample_path("val_dihedral_trim.bdf")))
     gi = build_grid_index(bulk)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

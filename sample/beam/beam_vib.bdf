@@ -1,6 +1,6 @@
 
 $ Cantilever beam — SOL 103 normal modes, tip-mass dominated (zero beam density)
-$ Based on sample/simple_beam.bdf (10 m, 5 CBAR elements, 6 nodes)
+$ Based on sample/beam/simple_beam.bdf (10 m, 5 CBAR elements, 6 nodes)
 $ Steel stiffness, solid square cross-section, A = 0.1 m^2 (side = 0.31623 m)
 $ Fixed (encastre) at node 1 (x=0), free at node 6 (x=10)
 $ CONM2: 100 000 kg point mass directly on node 6 (the tip) — no RBE3, no node 7

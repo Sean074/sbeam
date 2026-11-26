@@ -60,7 +60,7 @@ def _trim(bulk):
 def test_ha144a_translated_acsid_equals_basic():
     """The validation benchmark keeps MSC's AEROS, 1, 100: its ACSID is basic moved to
     x = 12.5, and the trim must not depend on it."""
-    _cc, bulk = parse_bdf(str(REPO / "sample/ha144a_fullspan_sbeam.bdf"))
+    _cc, bulk = parse_bdf(str(REPO / "sample/ha144a/ha144a_fullspan_sbeam.bdf"))
     assert bulk.aeros.acsid == 1
     with_acsid = _trim(bulk)
     bulk.aeros.acsid = 0

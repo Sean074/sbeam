@@ -1,6 +1,6 @@
 
 $ Cantilever beam — SOL 103 normal modes, offset point mass carried through an RBAR
-$ Based on sample/simple_beam.bdf (10 m, 5 CBAR elements, 6 nodes + node 7)
+$ Based on sample/beam/simple_beam.bdf (10 m, 5 CBAR elements, 6 nodes + node 7)
 $ Steel, solid square cross-section, A = 0.1 m^2 (side = 0.31623 m), RHO = 7850
 $ Fixed (encastre) at node 1 (x=0), free at node 6 (x=10)
 $ CONM2: 10 000 kg point mass at node 7 (10.0, 1.0, 0.0), tied to node 6 by RBAR 20

@@ -30,7 +30,6 @@ Design note: ``docs/30_future/designs/transient_net_loads_elastic_inertia.md``.
 
 import copy
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -48,9 +47,9 @@ from sbeam.solver.sol144_util import load_resultant
 
 from tests.aero.test_section_cuts_transient import (
     _elevator_step, _maneuver, _modal_run)
+from tests.samples import sample_path
 
-_SAMPLE = Path(__file__).parent.parent.parent / "sample"
-FLAGSHIP_MLOADS = _SAMPLE / "cessna210_flagship_mloads.bdf"
+FLAGSHIP_MLOADS = sample_path("cessna210_flagship_mloads.bdf")
 
 LOAD_SID = 9301          # any sid the sample decks do not use
 _BAR_FIELDS = ("m1_a", "m2_a", "m1_b", "m2_b",

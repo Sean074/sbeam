@@ -7,7 +7,6 @@ runs ``ha144a_fullspan_sbeam.bdf`` (both sides, so hinge moments are doubled) an
 basic axes.  ``G`` converts MSC's per-g URDD values to per unit acceleration.
 """
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -19,8 +18,8 @@ from sbeam.parser.case_control import CaseControl, SubcaseControl
 from sbeam.results.f06_writer import write_f06_sol144
 from sbeam.solver.sol144 import run_sol144_trim
 from sbeam.solver.sol144_util import urdd_derivs_to_label_frame
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
 G = 32.174
 
 
@@ -28,7 +27,7 @@ G = 32.174
 def ha144a():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        cc, bulk = parse_bdf(str(SAMPLE / "ha144a_fullspan_sbeam.bdf"))
+        cc, bulk = parse_bdf(str(sample_path("ha144a_fullspan_sbeam.bdf")))
         gi = build_grid_index(bulk)
         aero = build_aero_model(bulk, grid_index=gi)
         result = run_sol144_trim(bulk, cc.subcases[0], aero)

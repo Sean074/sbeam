@@ -12,7 +12,6 @@ Validates the new strip panel type and ``build_strip_body_correction``:
 """
 
 import dataclasses
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -31,9 +30,9 @@ from sbeam.aero.body_correction import (
 )
 from sbeam.model.aero import Stripk, W2gj
 from sbeam.parser.bdf_field import FIELD_WIDTH
+from tests.samples import sample_path
 
-_ROOT = Path(__file__).parent.parent.parent / "sample"
-CRUCIFORM_BDF = _ROOT / "cessna210_flagship_body.bdf"
+CRUCIFORM_BDF = sample_path("cessna210_flagship_body.bdf")
 
 # The deck-backed tests run on the flagship's STRIP body overlay with its committed
 # STRIPK stripped out (fixture `flagship_strip_uncorrected`), so the operator

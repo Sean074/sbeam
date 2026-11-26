@@ -33,7 +33,7 @@ Boxes with no structural coupling — `LOADINJ`-declared body panels and boxes n
 card covers — still generate aerodynamic force. Before Step 64 that force was multiplied
 by zero `g_disp` rows: it appeared in the printed totals, the rigid derivatives and
 MONPNT1, but never in the trim force balance or the load export, so a body-panel trim was
-silently *not closed* (measured 31 % lift error on `sample/ha144a_body_trim.bdf`).
+silently *not closed* (measured 31 % lift error on `sample/ha144a/ha144a_body_trim.bdf`).
 
 `g_load` adds, for each such box `k` with master grid `m` at `p` and lever
 `r_k = force_point_k − p`:
@@ -58,7 +58,7 @@ Master-grid resolution: `LOADINJ` field 5 (`GRID`) if given, else the first SUPO
 With neither, a `UserWarning` reports the dropped load and the rows stay zero
 (`tests/integration/test_sol144_body_injection.py::TestNoSuportDecksStillBuild`).
 
-The flagship body overlays (`sample/cessna210_flagship_body_cruciform.bdf`,
+The flagship body overlays (`sample/cessna210_flagship/cessna210_flagship_body_cruciform.bdf`,
 `..._strip.bdf`) name the grid explicitly — `LOADINJ, 9400, 6000, 6000, 6015, 900` — even
 though GRID 900 is also the SUPORT grid, so the intent is on the card rather than implied.
 Two conditions on that grid: it must be in the structural load path (GRID 900 is spliced
@@ -212,7 +212,7 @@ ranges, DTOR ≤ 0, or DZ < 0.
 
 ### BODYATT — Rigid Attachment (Step 47)
 
-**Sample deck (Step 65).** `sample/cessna210_flagship_bulk.bdf` slaves all 36 vertical-fin
+**Sample deck (Step 65).** `sample/cessna210_flagship/cessna210_flagship_bulk.bdf` slaves all 36 vertical-fin
 boxes to the fin-root grid with `BODYATT, 1005, 5000, 5000, 5035, 30, 0` — the first (and
 currently only) `BODYATT` card in any `.bdf`/`.dat` in the repo, so the card now has
 file → parse → solve coverage rather than only Python-built fixtures. It is also the

@@ -32,7 +32,6 @@ ABSOLUTE, so ELEV command tables are authored as trim value + increment
 
 import warnings
 from dataclasses import replace
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -50,8 +49,9 @@ from sbeam.solver.maneuver_modal import (
     run_maneuver_modal,
 )
 from sbeam.solver.sol144 import run_sol144_trim
+from tests.samples import sample_path
 
-BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+BDF_PATH = sample_path("ha144a_fullspan_sbeam.bdf")
 G = 32.174  # ft/s²
 RHOREF = 0.002377  # slug/ft³ — free flight needs V = sqrt(2q/rho)
 

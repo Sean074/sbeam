@@ -15,7 +15,6 @@ is exactly how the defect reached production unnoticed.
 
 import re
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -25,8 +24,8 @@ from sbeam.aero.aero_model import build_aero_model
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.solver.sol144 import run_sol144_trim
 from sbeam.results.f06_writer import build_f06_sol144_text, _FIELD_W
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
 
 # Column labels whose data cells are plain _fmt floats.  Deliberately not every
 # label in the listing — metadata rows (LABEL:, CID =, SOURCE:) are prose, and
@@ -45,7 +44,7 @@ _NUMERIC_LABELS = {
 @pytest.fixture(scope="module")
 def f06_text():
     """Full-span HA144A trim with AEROF/APRES on — the widest block coverage."""
-    _cc, bulk = parse_bdf(str(SAMPLE / "ha144a_fullspan_sbeam.bdf"))
+    _cc, bulk = parse_bdf(str(sample_path("ha144a_fullspan_sbeam.bdf")))
     gi = build_grid_index(bulk)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

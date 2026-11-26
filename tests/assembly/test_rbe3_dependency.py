@@ -12,7 +12,7 @@ Before #60, ``_build_rigid_transform`` skipped four cases without a word:
 All four now refuse. An RBE3 whose independent grids are offset from REFGRID warns: sbeam
 has no lever arm there, NASTRAN does.
 
-The physics gate: sample/beam_vib1.bdf (RBAR since #60) carries a 10 000 kg mass 1.0 m off
+The physics gate: sample/beam/beam_vib1.bdf (RBAR since #60) carries a 10 000 kg mass 1.0 m off
 the tip. A rigid link with a point mass is exactly the mass at the tip with CONM2 X2 = 1.0
 (the offset-CONM2 path is verified by val_cantilever_offset_mass_modes), so the two
 spectra must agree to round-off.
@@ -117,7 +117,7 @@ def _frequencies(cc, bulk) -> np.ndarray:
 
 
 def test_beam_vib1_rbar_matches_offset_conm2():
-    cc, bulk = parse_bdf(str(REPO / "sample/beam_vib1.bdf"))
+    cc, bulk = parse_bdf(str(REPO / "sample/beam/beam_vib1.bdf"))
     f_rbar = _frequencies(cc, bulk)
 
     # Same mass at the tip with the offset in the CONM2; node 7 clamped and unloaded

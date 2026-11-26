@@ -5,7 +5,6 @@ unrestrained columns tend to the rigid one, which was always computed for CX and
 fin of the lateral deck gives a non-zero CY for SIDES and RUD.
 """
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -13,8 +12,9 @@ from sbeam.aero.aero_model import build_aero_model
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.solver.sol144 import run_sol144_trim
+from tests.samples import sample_path
 
-DECK = Path(__file__).resolve().parents[2] / "sample" / "val_lateral_aileron_rudder.bdf"
+DECK = sample_path("val_lateral_aileron_rudder.bdf")
 
 
 def _trim(stiffen: float):

@@ -8,9 +8,9 @@ from sbeam.model.grid import Grid
 from sbeam.model.material import Mat1
 from sbeam.model.property import Pbar
 from sbeam.parser.bdf_reader import parse_bdf
+from tests.samples import sample_path
 
 _BDF_DIR = Path(__file__).parent.parent / "integration" / "bdf"
-_SAMPLE_DIR = Path(__file__).parent.parent.parent / "sample"
 
 
 @pytest.fixture
@@ -54,4 +54,4 @@ def dihedral_sol144_parsed():
     import warnings
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        return parse_bdf(_SAMPLE_DIR / "val_dihedral_trim.bdf")
+        return parse_bdf(sample_path("val_dihedral_trim.bdf"))

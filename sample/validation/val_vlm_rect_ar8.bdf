@@ -29,7 +29,7 @@ $   boxes per chord — far more than the steady minimum.
 $
 $ This file has NO structural model and NO splines: it exercises the rigid
 $ VLM only.  Run via the viewer Aerodynamics panel, or programmatically:
-$     cc, bulk = parse_bdf("sample/val_vlm_rect_ar8.bdf")
+$     cc, bulk = parse_bdf("sample/validation/val_vlm_rect_ar8.bdf")
 $     am = build_aero_model(bulk, parity=bulk.aeros.symxz or 0)
 $     r  = solve_rigid_cl(am.boxes, radians(1.0), parity=0)
 $     CL_alpha = r["CL"] / radians(1.0)

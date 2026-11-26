@@ -3,7 +3,7 @@ $ cessna210_flagship_body_strip.bdf — Step 66 body-panel OVERLAY for the
 $ Cessna 210 flagship SOL 144 family.
 $
 $ NOT A STANDALONE DECK.  This file carries only the fuselage aerodynamics; it
-$ is INCLUDEd *after* sample/cessna210_flagship_bulk.bdf by a driver deck:
+$ is INCLUDEd *after* sample/cessna210_flagship/cessna210_flagship_bulk.bdf by a driver deck:
 $
 $     SOL 144
 $     ...case control...

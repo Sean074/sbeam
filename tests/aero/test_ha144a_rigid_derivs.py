@@ -28,7 +28,6 @@ Scope notes:
 """
 
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -37,8 +36,9 @@ from sbeam.parser.case_control import SubcaseControl
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.solver.sol144 import run_sol144_trim
+from tests.samples import sample_path
 
-BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+BDF_PATH = sample_path("ha144a_fullspan_sbeam.bdf")
 
 # ADA370433 Table 3.1.1, MSC/NASTRAN "Value for Rigid Airplane" column (M=0.9).
 # {sbeam label: {component: target}} — components are CZ (force) and CMY (moment).

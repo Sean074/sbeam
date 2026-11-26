@@ -46,7 +46,7 @@ be. They are written for a planar horizontal wing:
 | ROLL | `−(2/b)·y` | no `n_z` projection (dihedral), no `z`-offset term (fin above the roll axis sees sidewash), hard-coded `y_ref = 0` |
 | YAW | `−(2/b)(x − x_ref)·n_y` | correct form |
 
-Measured 2026-10-24 on `sample/cessna210_flagship_trim.bdf` (rigid derivatives per unit
+Measured 2026-10-24 on `sample/cessna210_flagship/cessna210_flagship_trim.bdf` (rigid derivatives per unit
 label, `compute_rigid_derivs`, no structure):
 
 | Label | Coefficient | Today | Kinematic form | Comment |
@@ -194,7 +194,7 @@ table is what the solver actually uses (G12 compares against the solver's own
 | **D1** | Aileron: lift-increasing rule per half; CID1 starboard, CID2 port, both +y outboard; positive = port roll | "Positive AIL = right-roll command" (issue #9 candidate) | Extends the one rule the charter already has; NASTRAN and ZAERO practice; textbook δa; no second sign rule to teach |
 | **D2** | Rudder: lift-increasing = TE-port = nose-port; authored with hinge +y **down** (−z) | — (follows from the same rule) | Textbook δr; the #10 candidate's "+y up" geometry was wrong, its sign outcome is kept |
 | **D3** | ROLL about the RCSID origin's y (`suport_pos[1]`) | keep `y = 0` and document | Same point as PITCH and the yaw term; what `Φ_r` rotates about, so the kinematic gate is exact; bit-identical on every shipped deck |
-| **D4** | Dedicated `sample/val_lateral_aileron_rudder.bdf`; flagship untouched | add AIL/RUD to the flagship bulk | Eight driver decks and many pinned tests share the bulk; a flagship lateral family arrives with the v0.7.0 case matrix that consumes it (rule 5) |
+| **D4** | Dedicated `sample/validation/val_lateral_aileron_rudder.bdf`; flagship untouched | add AIL/RUD to the flagship bulk | Eight driver decks and many pinned tests share the bulk; a flagship lateral family arrives with the v0.7.0 case matrix that consumes it (rule 5) |
 | **D5** | Fold all four #24 items; close #24 with #10 | leave #24 open | Two of the four live in code this chain edits |
 | **D6** | All three rate columns move to the kinematic form (§2.1) under generalize-on-first-find | fix the scales only | The scales' gate *is* the kinematic identity; the PITCH column was loading the flagship fin |
 
@@ -271,7 +271,7 @@ CHANGELOG **Fixed**; `40_history/06` one-liner; #24 item 4 ticked.
 captions; tests G6–G9; `02_card_reference.md` AESURF; `05c:243`; charter §6/§8;
 `06_viewer.md`; CHANGELOG **Fixed**; history one-liner.
 
-**#10 (Tier L):** `sample/val_lateral_aileron_rudder.bdf`; `tests/aero/test_lateral_cases.py`
+**#10 (Tier L):** `sample/validation/val_lateral_aileron_rudder.bdf`; `tests/aero/test_lateral_cases.py`
 (G10–G12) + VAL2 entry in `tests/integration/test_sample_verification.py`;
 `viewer/sol144_authoring.py` preset label (#24-2), `model/maneuver_presets.py` docstring
 (#24-3), flagship bulk comments `:404`, `:465` + test echo (#24-1); charter §5 recipes

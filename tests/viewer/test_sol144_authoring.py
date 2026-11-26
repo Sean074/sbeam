@@ -1,6 +1,5 @@
 """P12 S3 — SOL 144 authoring logic (pure) + AppTest render smoke."""
 
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -10,13 +9,13 @@ from sbeam.model.constraint import Suport
 from sbeam.model.maneuver_presets import load_factor_to_urdd3
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam_tools.viewer import sol144_authoring as logic
+from tests.samples import sample_path
 
-SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
 
 
 @pytest.fixture(scope="module")
 def mloads_bulk():
-    _, bulk = parse_bdf(SAMPLE_DIR / "ha144a_fullspan_mloads.bdf")
+    _, bulk = parse_bdf(sample_path("ha144a_fullspan_mloads.bdf"))
     return bulk
 
 
@@ -122,7 +121,7 @@ def _sbeam_app():
 def test_authoring_tab_renders(mloads_bulk):
     from streamlit.testing.v1 import AppTest
 
-    cc, bulk = parse_bdf(SAMPLE_DIR / "ha144a_fullspan_mloads.bdf")
+    cc, bulk = parse_bdf(sample_path("ha144a_fullspan_mloads.bdf"))
     at = AppTest.from_function(_sbeam_app, default_timeout=30)
     at.run()
     at.session_state["bulk_data"] = bulk
@@ -205,7 +204,7 @@ class TestGenerators:
 
 @pytest.fixture()
 def massset_deck():
-    cc, bulk = parse_bdf(SAMPLE_DIR / "ha144a_mloads_massset.bdf")
+    cc, bulk = parse_bdf(sample_path("ha144a_mloads_massset.bdf"))
     return cc, bulk
 
 

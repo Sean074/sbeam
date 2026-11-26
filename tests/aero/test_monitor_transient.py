@@ -21,7 +21,6 @@ routes:
 """
 
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -39,6 +38,7 @@ from sbeam.solver.sol144 import run_sol144_trim
 from tests.aero.test_section_cuts_transient import (
     CUT, _deck, _dynamic_sample, _elevator_step, _maneuver, _modal_run,
 )
+from tests.samples import sample_path
 
 MONITORS = {"MWINGRT", "MWINGEA", "MALLEA", "MALLAR"}
 SUPORT_POS = np.array([15.0, 0.0, 0.0])     # GRID 90 — also every monitor's ref
@@ -340,7 +340,7 @@ def test_envelope_is_produced_and_bounds_every_sample(runner):
 # Shipped flagship deck — the whole-aircraft monitor closes on every sample
 # --------------------------------------------------------------------------- #
 
-FLAGSHIP = Path(__file__).parent.parent.parent / "sample" / "cessna210_flagship_mloads.bdf"
+FLAGSHIP = sample_path("cessna210_flagship_mloads.bdf")
 
 
 def test_flagship_whole_aircraft_monitor_closes_at_every_sample():

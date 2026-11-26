@@ -28,7 +28,6 @@ card through ``write_card`` today so the two agree by construction.
 import math
 import shutil
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -41,9 +40,9 @@ from sbeam_tools.cases.gust import (
     mass_ratio,
 )
 from sbeam_tools.common import UNIT_SYSTEMS, isa_density, read_airplane
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
-FLAGSHIP = SAMPLE / "cessna210_flagship_trim.bdf"
+FLAGSHIP = sample_path("cessna210_flagship_trim.bdf")
 
 SI = UNIT_SYSTEMS["SI"]
 IMPERIAL = UNIT_SYSTEMS["IMPERIAL"]
@@ -295,7 +294,7 @@ class TestSGust6GeneratedDeck:
     @pytest.fixture(scope="class")
     def generated(self, tmp_path_factory, flagship, flagship_cases):
         out = tmp_path_factory.mktemp("gust")
-        shutil.copy(SAMPLE / "cessna210_flagship_bulk.bdf", out)
+        shutil.copy(sample_path("cessna210_flagship_bulk.bdf"), out)
         lines = emit_deck(flagship_cases, flagship, SI, "test", "S-GUST6a")
         deck = out / "gust_cases.bdf"
         deck.write_text("\n".join(lines) + "\n")

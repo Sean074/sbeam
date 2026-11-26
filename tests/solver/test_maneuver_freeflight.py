@@ -27,7 +27,6 @@ increment (two-pass), matching the documented deck-authoring practice.
 """
 
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -54,8 +53,9 @@ from tests.solver.test_maneuver_modal import (
     _load_scale,
     _max_closure,
 )
+from tests.samples import sample_path
 
-SAMPLE_DECK = Path(__file__).parent.parent.parent / "sample" / "ha144a_mloads_massset.bdf"
+SAMPLE_DECK = sample_path("ha144a_mloads_massset.bdf")
 ELEV_RAMP = ([0.0, 0.1, 60.0], [0.0, 0.05, 0.05])   # ramp-and-hold increment
 
 
@@ -319,7 +319,7 @@ def test_missing_rho_raises():
 # ---------------------------------------------------------------------------
 
 def test_sample_deck_free_flight_massset_sweep():
-    """sample/ha144a_mloads_massset.bdf: three free-flight mass cases through
+    """sample/ha144a/ha144a_mloads_massset.bdf: three free-flight mass cases through
     the main-loop dispatch — closure ≈ 0 everywhere, NZ_REL strictly
     decreasing with mass at the end of the hold, f06 FREE FLIGHT block."""
     from sbeam.parser.case_control import CaseControl

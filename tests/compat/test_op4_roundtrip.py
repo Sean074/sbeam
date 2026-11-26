@@ -5,7 +5,6 @@ MHH and KHH rebuilt from the PHIA read back, with sbeam's assembled a-set matric
 match the MHH and KHH in the file.
 """
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -16,14 +15,14 @@ from pyNastran.op4.op4 import read_op4  # noqa: E402
 from sbeam.parser.bdf_reader import parse_bdf  # noqa: E402
 from sbeam.results.modal_export import build_modal_model, export_modal_model  # noqa: E402
 from sbeam.solver.sol103 import run_sol103  # noqa: E402
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).resolve().parents[2] / "sample"
 
 
 def _case(deck, set_grids=None):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        cc, bulk = parse_bdf(SAMPLE / deck)
+        cc, bulk = parse_bdf(sample_path(deck))
         sc = cc.subcases[0]
         if set_grids is not None:
             sc.modexp_set, sc.sets = 1, {1: set_grids}

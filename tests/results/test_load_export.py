@@ -6,7 +6,6 @@ as valid NASTRAN bulk data.
 """
 
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -16,8 +15,9 @@ from sbeam.aero.aero_model import build_aero_model
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.solver.sol144 import run_sol144_trim
 from sbeam.results.load_export import build_aero_load_cards_text, write_aero_load_cards
+from tests.samples import sample_path
 
-BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+BDF_PATH = sample_path("ha144a_fullspan_sbeam.bdf")
 
 
 @pytest.fixture(scope="module")

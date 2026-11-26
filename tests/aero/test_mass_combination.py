@@ -6,7 +6,7 @@ defines ``M_ID = S0 · Σ Si·M_IDi`` with ``IDi = 0`` the base (p.2018); the ca
 ``MASSSET = n`` selects it per subcase, and a subcase without one runs at the base mass
 (p.482).
 
-Gates on ``sample/ha144a_mass_combination_sweep.bdf``, the MSC twin of the MASSCASE sweep:
+Gates on ``sample/ha144a/ha144a_mass_combination_sweep.bdf``, the MSC twin of the MASSCASE sweep:
 
   * **twin** — MASSSET 10/20/30 reproduce MASSCASE 10/20/30 of
     ``ha144a_massset_sweep.bdf``: the same CONM2 set in the same order, so GPWG, M_gg and
@@ -15,7 +15,6 @@ Gates on ``sample/ha144a_mass_combination_sweep.bdf``, the MSC twin of the MASSC
     half the half-fuel load, 16000 + 1000 lb, with the CG worked from the grid positions.
 """
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -28,13 +27,13 @@ from sbeam.model.mass_overlay import resolve_mass_case
 from sbeam.parser.bdf_reader import parse_bdf, parse_bulk_data
 from sbeam.parser.case_control import parse_case_control
 from sbeam.solver.sol144 import AeroCache, run_sol144_trim
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
 G = 32.174
 
 
 def _run(deck):
-    cc, bulk = parse_bdf(str(SAMPLE / deck))
+    cc, bulk = parse_bdf(str(sample_path(deck)))
     gi = build_grid_index(bulk)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

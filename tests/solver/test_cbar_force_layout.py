@@ -3,7 +3,7 @@
 Gates G1–G5 and G7 of ``docs/30_future/designs/cbar_force_stress_output_layout.md``
 (G6, the f06 header text and column positions, is in
 ``tests/results/test_f06_sol101.py`` and ``tests/results/test_f06_column_alignment.py``).
-The beam is the ``sample/val_cantilever_static.bdf`` geometry built in
+The beam is the ``sample/validation/val_cantilever_static.bdf`` geometry built in
 ``test_cbar_stress_sign.py`` (10 × 1 m, A = 0.1, I1 = I2 = 8.333e-4,
 C = (+c, +c), D = (−c, +c), E = (−c, −c), F = (+c, −c)), tip loads
 Px = 5000 (tension), Py = 1000, Pz = 2000.

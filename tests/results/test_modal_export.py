@@ -3,7 +3,7 @@
 Gates agreed in the #100 design note (2026-11-22):
   G1  Goland, cg = 0, tributary lumping: flap and torsion 49.48 / 87.10 rad/s within 0.5 %
       (closed form, Goland 1945 / Bisplinghoff et al. 1955 §9.3).
-  G2  Goland as Flaps builds it (sample/goland_wing_modes.bdf): 7.370 / 14.119 Hz within
+  G2  Goland as Flaps builds it (sample/goland_wing/goland_wing_modes.bdf): 7.370 / 14.119 Hz within
       0.5 % (Flaps 2.3.4, flaps_env/docs/demo_results.md).
   G3  Free-free: MHH = I, KHH = diag(ω²) to 1e-8, six rigid modes that are geometric rigid
       motions, PHIX = the g-set rows of the SET grids.
@@ -22,8 +22,8 @@ from sbeam.parser.bdf_reader import parse_bdf, parse_bulk_data
 from sbeam.parser.case_control import CaseControl, SubcaseControl, parse_case_control
 from sbeam.results.modal_export import build_modal_model, export_modal_model
 from sbeam.solver.sol103 import run_sol103
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).resolve().parents[2] / "sample"
 
 
 def _quiet(fn, *a, **k):
@@ -68,14 +68,14 @@ class TestGoland:
         assert w[_mode_by_shape(r, 4)] == pytest.approx(tors, rel=5e-3)
 
     def test_g2_flaps_coupled_modes(self):
-        cc, bulk = _quiet(parse_bdf, SAMPLE / "goland_wing_modes.bdf")
+        cc, bulk = _quiet(parse_bdf, sample_path("goland_wing_modes.bdf"))
         r = run_sol103(bulk, cc.subcases[0])
         f = r.frequencies_hz
         assert f[_mode_by_shape(r, 2)] == pytest.approx(7.370, rel=5e-3)
         assert f[_mode_by_shape(r, 4)] == pytest.approx(14.119, rel=5e-3)
 
     def test_export_writes_three_files(self, tmp_path):
-        cc, bulk = _quiet(parse_bdf, SAMPLE / "goland_wing_modes.bdf")
+        cc, bulk = _quiet(parse_bdf, sample_path("goland_wing_modes.bdf"))
         sc = cc.subcases[0]
         paths = export_modal_model(str(tmp_path / "g"), cc, bulk, sc, run_sol103(bulk, sc))
         assert [Path(p).name for p in paths] == ["g.op4", "g_dofmap.csv", "g.uf"]
@@ -90,7 +90,7 @@ class TestGoland:
 class TestFreeFree:
     @pytest.fixture(scope="class")
     def model(self):
-        cc, bulk = _quiet(parse_bdf, SAMPLE / "val_free_free_modes.bdf")
+        cc, bulk = _quiet(parse_bdf, sample_path("val_free_free_modes.bdf"))
         sc = cc.subcases[0]
         sc.modexp_set, sc.sets = 1, {1: [1, 6, 11]}
         r = run_sol103(bulk, sc)
@@ -141,7 +141,7 @@ class TestCaseControl:
             parse_case_control(["SOL 103", "SET 1 = ALL", "SUBCASE 1", "  MODEXP(OP2) = 1"])
 
     def test_norm_max_is_refused(self):
-        cc, bulk = _quiet(parse_bdf, SAMPLE / "goland_wing_modes.bdf")
+        cc, bulk = _quiet(parse_bdf, sample_path("goland_wing_modes.bdf"))
         sc = cc.subcases[0]
         bulk.eigrls[1].norm = "MAX"
         r = run_sol103(bulk, sc)
@@ -150,7 +150,7 @@ class TestCaseControl:
 
     def test_missing_set_is_refused(self):
         cc = CaseControl(sol=103, subcases=[SubcaseControl(subcase_id=1, modexp_set=9)])
-        _cc, bulk = _quiet(parse_bdf, SAMPLE / "goland_wing_modes.bdf")
+        _cc, bulk = _quiet(parse_bdf, sample_path("goland_wing_modes.bdf"))
         r = run_sol103(bulk, _cc.subcases[0])
         with pytest.raises(ValueError, match="names no SET 9"):
             build_modal_model(cc, bulk, cc.subcases[0], r)
@@ -219,7 +219,7 @@ class TestVisualisationOutline:
     @pytest.fixture(scope="class")
     def pair(self, tmp_path_factory):
         tmp = tmp_path_factory.mktemp("viz")
-        text = (SAMPLE / "goland_wing_modes.bdf").read_text()
+        text = (sample_path("goland_wing_modes.bdf")).read_text()
         start = text.index("$ ---- VISUALISATION OUTLINE")
         end = text.index("$ ---- END VISUALISATION OUTLINE ----\n") + len(
             "$ ---- END VISUALISATION OUTLINE ----\n")

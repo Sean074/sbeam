@@ -35,9 +35,10 @@ from sbeam.parser import bdf_reader  # noqa: E402
 from sbeam.parser.bdf_reader import (  # noqa: E402
     _read_cards, _read_mass_increments, _split_mass_increments, parse_bdf)
 from sbeam.parser.bulk_fields import is_continuation, split_line  # noqa: E402
+from tests.samples import sample_decks, sample_path
 
 REPO = Path(__file__).resolve().parents[2]
-DECKS = sorted([*(REPO / "sample").glob("*.bdf"), *(REPO / "sample").glob("*.dat"),
+DECKS = sorted([*sample_decks("*.bdf"), *sample_decks("*.dat"),
                 *(REPO / "tests/integration/bdf").glob("*.bdf")])
 
 #: Cards whose sbeam form puts an sbeam-only value in a field MSC defines, so pyNastran
@@ -573,7 +574,7 @@ def test_mass_combination_deck_reads_the_same_sections_and_selectors(tmp_path):
     1.4.1), so S0/Si/IDi have no independent reader: they are gated by the GPWG hand
     check in ``tests/aero/test_mass_combination.py``.
     """
-    deck = REPO / "sample" / "ha144a_mass_combination_sweep.bdf"
+    deck = sample_path("ha144a_mass_combination_sweep.bdf")
     cc, bulk = parse_bdf(deck)
     # pyNastran finds the case control after CEND, which sbeam decks do not carry
     (tmp_path / deck.name).write_text(deck.read_text().replace("\nSOL 144\n", "\nSOL 144\nCEND\n", 1))

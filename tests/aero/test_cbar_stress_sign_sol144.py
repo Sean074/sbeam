@@ -13,7 +13,6 @@ twice the end moment; on an unloaded node the jump is zero and G3 is recovered.
 """
 
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -24,8 +23,9 @@ from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.parser.case_control import SubcaseControl
 from sbeam.solver.sol101 import _element_local_forces
 from sbeam.solver.sol144 import run_sol144_trim
+from tests.samples import sample_path
 
-BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+BDF_PATH = sample_path("ha144a_fullspan_sbeam.bdf")
 # Bending-only fields in the NASTRAN layout (#21); the jump is taken on the total = axial + bending.
 PAIRS = {"C": ("sa1", "sb1"), "D": ("sa2", "sb2"), "E": ("sa3", "sb3"), "F": ("sa4", "sb4")}
 

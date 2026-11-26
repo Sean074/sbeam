@@ -1,6 +1,6 @@
 """V-C5 — balanced maneuver loads & inertia relief (Step 53).
 
-The full-span HA144A deck (`sample/ha144a_fullspan_sbeam.bdf`) pins only the
+The full-span HA144A deck (`sample/ha144a/ha144a_fullspan_sbeam.bdf`) pins only the
 antisymmetric DOFs (SPC1 1246 on GRID 90) and SUPORTs the symmetric trim DOFs
 (35).  For a symmetric pull-up the symmetric net load (Fz, My) must therefore
 balance to ~0 through inertia relief — exactly the KC9 closure the trim must
@@ -13,7 +13,6 @@ guarantee.  These tests gate:
 """
 
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -25,8 +24,9 @@ from sbeam.assembly.load_vector import build_grid_index
 from sbeam.solver.sol144 import run_sol144_trim, load_resultant
 from sbeam.results.load_export import build_maneuver_load_cards_text
 from sbeam.model.maneuver_presets import load_factor_to_urdd3
+from tests.samples import sample_path
 
-BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+BDF_PATH = sample_path("ha144a_fullspan_sbeam.bdf")
 G = 32.174  # ft/s², the deck's gravity (URDD3 = -32.174 for 1g)
 
 

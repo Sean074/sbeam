@@ -1,6 +1,6 @@
 """V-SEC6 — MONSECT section cuts across MASSCASE payload cases (Step 60 + Phase 2).
 
-`sample/cessna210_flagship_massset.bdf` runs one TRIM at three payload
+`sample/cessna210_flagship/cessna210_flagship_massset.bdf` runs one TRIM at three payload
 conditions whose difference is **wing fuel** (CONM2 overlays on the wing EA
 grids 11/12/111/112).  A right-wing section cut therefore shows the effect a
 loads engineer actually cares about, and it needs no extra cards: the inertia
@@ -13,7 +13,6 @@ alone.  A cut that silently ignored the mass case, or got the inertia sign
 wrong, could not reproduce that ordering.
 """
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -23,9 +22,9 @@ from sbeam.assembly.load_vector import build_grid_index
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.results.section_cuts import labelled
 from sbeam.solver.sol144 import AeroCache, run_sol144_trim
+from tests.samples import sample_path
 
-BDF_PATH = (Path(__file__).parent.parent.parent / "sample"
-            / "cessna210_flagship_massset.bdf")
+BDF_PATH = sample_path("cessna210_flagship_massset.bdf")
 
 # Subcase -> mass case, lightest first (the deck documents these weights).
 CASES = [(1, "FERRY"), (2, "CRUISE"), (3, "MTOW")]

@@ -6,7 +6,7 @@ from sbeam.parser.bdf_reader import parse_bulk_data
 # Test data
 # ---------------------------------------------------------------------------
 
-# 5-element cantilever — mirrors the sample/simple_beam.bdf layout
+# 5-element cantilever — mirrors the sample/beam/simple_beam.bdf layout
 _CANTILEVER = """\
 $ 5-element cantilever, 6 nodes at 2 m spacing
 GRID, 1, ,  0.0, 0.0, 0.0

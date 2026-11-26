@@ -210,7 +210,7 @@ Cost: two trim solves per GUSTHT subcase; the aero cache is shared.
   `SHT` from the CAERO1 geometry of the named AELIST; `DLHT = q·DALPHA·AHTE·SHT`.
 - Emits `TRIM` + `GUSTHT` pairs, one per (speed × altitude × mass case × sense).
 
-**Sample:** `sample/cessna210_flagship_tailgust.bdf` — V_C/V_D × ± × three MASSCASE cases, sea
+**Sample:** `sample/cessna210_flagship/cessna210_flagship_tailgust.bdf` — V_C/V_D × ± × three MASSCASE cases, sea
 level, generated output with the generating command in its header. An HT `AECOMP`/`MONPNT1`
 (`MHTAERO`, boxes 3000–3047 and 4000–4047) is added to the shared flagship bulk (D7).
 
@@ -232,7 +232,7 @@ level, generated output with the generating command in its header. An HT `AECOMP
 
 ### 8.1 Expected numbers (prototype, 2026-10-25)
 
-In-memory runs of the current solver on `sample/cessna210_flagship_gust.bdf` SUBCASE 9004
+In-memory runs of the current solver on `sample/cessna210_flagship/cessna210_flagship_gust.bdf` SUBCASE 9004
 (V_C = 86.0 m/s EAS, sea level, MTOW): `q = 4530.05`, `m = 1560.03 kg`, `g = 9.81`,
 `U_de = 15.24`, `K_g = 0.69631`, Pratt `n = 4.148473`.
 *Recomputed 2026-10-25 after the #52 WT2 correction fix (the first draft's numbers were

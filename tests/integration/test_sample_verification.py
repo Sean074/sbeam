@@ -3,14 +3,14 @@
 CLAUDE.md ("Verification Test Cases") declares four closed-form results that every
 solver must reproduce, and ``sample/`` ships the four decks that embody them:
 
-    sample/val_cantilever_static.bdf   SOL 101   delta_tip = P*L^3 / (3*E*I)
-    sample/val_ss_static.bdf           SOL 101   delta_mid = P*L^3 / (48*E*I)
-    sample/val_cantilever_modes.bdf    SOL 103   f1 = (beta1^2 / 2*pi) * sqrt(E*I / rho*A*L^4)
-    sample/val_free_free_modes.bdf     SOL 103   first 6 modes ~ 0 Hz
+    sample/validation/val_cantilever_static.bdf   SOL 101   delta_tip = P*L^3 / (3*E*I)
+    sample/validation/val_ss_static.bdf           SOL 101   delta_mid = P*L^3 / (48*E*I)
+    sample/validation/val_cantilever_modes.bdf    SOL 103   f1 = (beta1^2 / 2*pi) * sqrt(E*I / rho*A*L^4)
+    sample/validation/val_free_free_modes.bdf     SOL 103   first 6 modes ~ 0 Hz
 
 A fifth shipped deck added 2026-08-01 is gated here in the same style:
 
-    sample/val_cantilever_offset_mass_modes.bdf   SOL 103   coupled bending-torsion
+    sample/validation/val_cantilever_offset_mass_modes.bdf   SOL 103   coupled bending-torsion
         pair from a transverse-offset tip CONM2 (2-DOF closed form, see class)
 
 Until this module existed the shipped decks were exercised only by
@@ -30,7 +30,6 @@ belongs to the sample-hygiene batch in docs/30_future/00_backlog.md.
 """
 
 import math
-from pathlib import Path
 from typing import NamedTuple
 
 import pytest
@@ -48,8 +47,8 @@ from sbeam.results.results import Sol101Result, Sol103Result
 from sbeam.solver.sol101 import run_sol101
 from sbeam.solver.sol103 import run_sol103
 from sbeam.types import FloatArray
+from tests.samples import sample_path
 
-SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
 
 #: (result, grid_index, bulk) — the bulk is carried so gates can read the deck's
 #: own properties back out rather than trust a module constant.
@@ -102,13 +101,13 @@ def _point_load_z(bulk: BulkData, sid: int) -> float:
 
 
 def _run_static(name: str) -> StaticFixture:
-    cc, bulk = parse_bdf(str(SAMPLE_DIR / name))
+    cc, bulk = parse_bdf(str(sample_path(name)))
     assert cc.sol == 101
     return run_sol101(bulk, cc.subcases[0]), build_grid_index(bulk), bulk
 
 
 def _run_modal(name: str) -> ModalFixture:
-    cc, bulk = parse_bdf(str(SAMPLE_DIR / name))
+    cc, bulk = parse_bdf(str(sample_path(name)))
     assert cc.sol == 103
     return run_sol103(bulk, cc.subcases[0]), bulk
 
@@ -139,7 +138,7 @@ def offset_mass_modes() -> ModalFixture:
 
 
 class TestValCantileverStatic:
-    """sample/val_cantilever_static.bdf — delta_tip = P*L^3 / (3*E*I)."""
+    """sample/validation/val_cantilever_static.bdf — delta_tip = P*L^3 / (3*E*I)."""
 
     def test_tip_deflection(self, cantilever_static: StaticFixture) -> None:
         result, grid_index, bulk = cantilever_static
@@ -171,7 +170,7 @@ class TestValCantileverStatic:
 
 
 class TestValSsStatic:
-    """sample/val_ss_static.bdf — delta_mid = P*L^3 / (48*E*I)."""
+    """sample/validation/val_ss_static.bdf — delta_mid = P*L^3 / (48*E*I)."""
 
     def test_midspan_deflection(self, ss_static: StaticFixture) -> None:
         result, grid_index, bulk = ss_static
@@ -194,7 +193,7 @@ class TestValSsStatic:
 
 
 class TestValCantileverModes:
-    """sample/val_cantilever_modes.bdf — f_n = (beta_n^2 / 2*pi) * sqrt(E*I / rho*A*L^4)."""
+    """sample/validation/val_cantilever_modes.bdf — f_n = (beta_n^2 / 2*pi) * sqrt(E*I / rho*A*L^4)."""
 
     def test_frequencies_ascending(self, cantilever_modes: ModalFixture) -> None:
         result, _bulk = cantilever_modes
@@ -217,7 +216,7 @@ class TestValCantileverModes:
 
 
 class TestValFreeFreeModes:
-    """sample/val_free_free_modes.bdf — exactly six rigid-body modes, then elastic."""
+    """sample/validation/val_free_free_modes.bdf — exactly six rigid-body modes, then elastic."""
 
     def test_six_rigid_body_modes(self, free_free_modes: ModalFixture) -> None:
         """3 translations + 3 rotations at ~0 Hz; measured max is ~4.6e-5 Hz."""
@@ -240,7 +239,7 @@ class TestValFreeFreeModes:
 
 
 class TestValCantileverOffsetMassModes:
-    """sample/val_cantilever_offset_mass_modes.bdf — coupled bending-torsion pair.
+    """sample/validation/val_cantilever_offset_mass_modes.bdf — coupled bending-torsion pair.
 
     A tip CONM2 whose CG sits d off the elastic axis couples Z-bending with
     torsion through the offset mass block. Tip-dominant 2-DOF closed form with
@@ -295,7 +294,7 @@ class TestValCantileverOffsetMassModes:
     def test_offset_removal_decouples(self) -> None:
         """With the CONM2 offset zeroed the families separate: mode 1 is pure
         bending at sqrt(k_w/m_eff)/2pi and the torsion mode is Rx-only."""
-        cc, bulk = parse_bdf(str(SAMPLE_DIR / "val_cantilever_offset_mass_modes.bdf"))
+        cc, bulk = parse_bdf(str(sample_path("val_cantilever_offset_mass_modes.bdf")))
         conm2 = next(iter(bulk.conm2s.values()))
         conm2.x2 = 0.0
         result = run_sol103(bulk, cc.subcases[0])
@@ -313,7 +312,7 @@ class TestValCantileverOffsetMassModes:
 
 
 # ---------------------------------------------------------------------------
-# sample/pylon_strut_engine.bdf — strut-braced engine pylon (#38, Tier L deliverable 6)
+# sample/beam/pylon_strut_engine.bdf — strut-braced engine pylon (#38, Tier L deliverable 6)
 # ---------------------------------------------------------------------------
 
 PylonFixture = tuple[CaseControl, BulkData, dict[int, Sol101Result]]
@@ -321,7 +320,7 @@ PylonFixture = tuple[CaseControl, BulkData, dict[int, Sol101Result]]
 
 @pytest.fixture(scope="module")
 def pylon() -> PylonFixture:
-    cc, bulk = parse_bdf(str(SAMPLE_DIR / "pylon_strut_engine.bdf"))
+    cc, bulk = parse_bdf(str(sample_path("pylon_strut_engine.bdf")))
     assert cc.sol == 101
     return cc, bulk, {sc.subcase_id: run_sol101(bulk, sc) for sc in cc.subcases}
 

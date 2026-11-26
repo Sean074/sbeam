@@ -200,13 +200,13 @@ airframe) and Flaps read; files and layouts in `10_export_schemas.md` §7.
   - `PLOTEL`s along the LE and TE lines and across each chord.
 
   Leave the outline grids out of the MODEXP SET and PHIX is unchanged; so are the
-  frequencies, since the grids carry no mass. `sample/goland_wing_modes.bdf` carries one:
+  frequencies, since the grids carry no mass. `sample/goland_wing/goland_wing_modes.bdf` carries one:
   its torsion mode 5 twists the tip chord (LE +0.182, TE −0.172 against beam T3 0.065).
 - **Flaps import.** Upstream Flaps 2.3.4 reads the `.op4` but rejects a real-mode
   dataset 55 (it takes complex modes only). The `.uf` imports and animates on flaps_env's
   patched `flaps:2.3.4-local` image (I/O and `amviz` fixes only; Sean074/flaps_env#1).
 
-Benchmark: `sample/goland_wing_modes.bdf` is the Flaps demo Goland wing (equal lumping
+Benchmark: `sample/goland_wing/goland_wing_modes.bdf` is the Flaps demo Goland wing (equal lumping
 over grids 1–13, inertia about the C.G.: inferred from the match). Its flap and torsion
 modes are 7.370 / 14.119 Hz, Flaps 2.3.4's printout, to 4 figures, with or without its
 visualisation outline. The same wing with
@@ -270,7 +270,7 @@ check is manual.
   `M = [[m + (33/140)·ρAL, m·d], [m·d, m·d² + i11 + ρ·Ip·L/3]]`, `K = diag(3EI/L³, GJ/L)`
   → f₁ ≈ 0.1489 Hz (bending-dominant, tip Rx·d/Tz ≈ +0.10), f₂ ≈ 0.7466 Hz
   (torsion-dominant, Rx·d/Tz ≈ −0.99). Measured FE error 1.4e-5 / 9.6e-4 relative.
-- BDF: `sample/val_cantilever_offset_mass_modes.bdf` (user-facing; header carries the full
+- BDF: `sample/validation/val_cantilever_offset_mass_modes.bdf` (user-facing; header carries the full
   derivation). CI gate: `tests/integration/test_sample_verification.py`
   (`TestValCantileverOffsetMassModes`), including a decoupling check with the offset zeroed.
 
@@ -285,7 +285,7 @@ CONM2, 30, 7, 0, 100000.0   $ mass on node 7 = independent node ✓
 ```
 
 > **No shipped deck currently uses this pattern.** This snippet cited
-> `sample/beam_vib.bdf` until 2026-08-03; that deck carried the two cards above only
+> `sample/beam/beam_vib.bdf` until 2026-08-03; that deck carried the two cards above only
 > between commits `b0d81b5` and `516016a`, and `516016a` removed its `GRID 7`, `PLOTEL`
 > and `RBE2` without updating the doc. `beam_vib.bdf` today places its `CONM2` directly
 > on the tip node with no rigid element at all. The RBE2 kinematics themselves are gated
@@ -300,7 +300,7 @@ Placing a CONM2 on an RBE2 **dependent (GM) node** is implicitly handled by the 
 
 Placing a CONM2 at an RBE3-dependent node does **not** correctly transfer torsional inertia from an offset mass. The RBE3 transformation in sbeam uses DOF-by-DOF interpolation (`u_dep = u_indep` for each DOF independently) and does not include rigid-body offset kinematics. As a result, the translational mass at the dependent node maps only to the same translational DOFs on the independent node, with no torsional coupling.
 
-**Correct approach for offset mass:** specify the CG offset directly in the CONM2 `X1/X2/X3` fields at the beam-tip node. The CONM2 assembly applies the parallel-axis theorem automatically, giving `M[Rx,Rx] += m·(X2²+X3²)` torsional inertia. Alternatively, put the mass on the offset node and tie it to the tip with an RBAR, which is an exact rigid link. `sample/beam_vib1.bdf` does this, and its spectrum equals the offset-CONM2 one to round-off (gate `tests/assembly/test_rbe3_dependency.py`).
+**Correct approach for offset mass:** specify the CG offset directly in the CONM2 `X1/X2/X3` fields at the beam-tip node. The CONM2 assembly applies the parallel-axis theorem automatically, giving `M[Rx,Rx] += m·(X2²+X3²)` torsional inertia. Alternatively, put the mass on the offset node and tie it to the tip with an RBAR, which is an exact rigid link. `sample/beam/beam_vib1.bdf` does this, and its spectrum equals the offset-CONM2 one to round-off (gate `tests/assembly/test_rbe3_dependency.py`).
 
 Since #60 an RBE3 whose independent grids are offset from REFGRID **warns**. Until then `beam_vib1.bdf` carried its mass through an RBE3 and gave 1.0334 / 11.80 / 37.28 Hz with no torsional inertia from the offset. With the RBAR it gives 1.0168 / 1.0239 / 9.1735 / 9.5743 / 20.861 Hz.
 

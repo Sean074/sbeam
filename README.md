@@ -42,7 +42,7 @@ sbeam-view
 
 The viewer opens in your browser. Upload a `*.dat` bulk data file to inspect model geometry, define case control, and launch analyses.
 
-A sample model is provided at `sample/simple_beam.dat` — a 10 m steel cantilever beam (5 CBAR elements, SI units).
+A sample model is provided at `sample/beam/simple_beam.dat` — a 10 m steel cantilever beam (5 CBAR elements, SI units). The sample decks are grouped by model family; [`sample/README.md`](sample/README.md) says what each one is for.
 
 ## Running the Solver
 
@@ -62,7 +62,7 @@ standard atmospheres and regulatory constants.
 Generate the FAR/CS 23.341 quasi-static gust design cases for a deck:
 
 ```bash
-sbeam-cases sample/cessna210_flagship_trim.bdf --units SI --trim-template 1 --vc 86.0 --vd 105.0 --massset 10,20,30 -o gust_cases.bdf
+sbeam-cases sample/cessna210_flagship/cessna210_flagship_trim.bdf --units SI --trim-template 1 --vc 86.0 --vd 105.0 --massset 10,20,30 -o gust_cases.bdf
 ```
 
 It reads the reference geometry, the weight of each mass case and the rigid lift-curve

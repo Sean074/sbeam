@@ -10,6 +10,7 @@ to avoid temp-file creation inside the Streamlit runtime.
 from __future__ import annotations
 
 from streamlit.testing.v1 import AppTest
+from tests.samples import sample_path
 
 
 def _sbeam_app():
@@ -140,10 +141,9 @@ def test_flow_d_sol144_mloads_render_and_run():
     buttons without exception; the f06 export path includes the maneuver block.
     """
     import warnings
-    from pathlib import Path
     from sbeam.parser.bdf_reader import parse_bdf
 
-    sample = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_mloads.bdf"
+    sample = sample_path("ha144a_fullspan_mloads.bdf")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         cc, bulk = parse_bdf(sample)
@@ -187,10 +187,9 @@ def test_flow_e_sol144_free_flight_modal_dispatch():
     (n_modes_used set, basis_info['free_flight']) and the UI renders.
     """
     import warnings
-    from pathlib import Path
     from sbeam.parser.bdf_reader import parse_bdf
 
-    sample = Path(__file__).parent.parent.parent / "sample" / "ha144a_mloads_massset.bdf"
+    sample = sample_path("ha144a_mloads_massset.bdf")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         cc, bulk = parse_bdf(sample)

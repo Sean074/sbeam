@@ -164,7 +164,7 @@ Reads a bulk-data-only file. Behaviour:
 4. Sets `CaseControl.includes` to the files the main deck INCLUDEs below `BEGIN BULK`, in order; `CaseControl.include` is the first, for callers that expect a single path.
 5. Returns `(CaseControl, BulkData)`.
 
-**Several `INCLUDE`s are allowed** (Step 66), which is how a driver deck composes a shared bulk with an overlay without duplicating the shared part — see `sample/cessna210_flagship_body.bdf`. The included bulk files carry no `ENDDATA`. File-structure rules and QRG citations: `02_card_reference.md` (File Structure).
+**Several `INCLUDE`s are allowed** (Step 66), which is how a driver deck composes a shared bulk with an overlay without duplicating the shared part — see `sample/cessna210_flagship/cessna210_flagship_body.bdf`. The included bulk files carry no `ENDDATA`. File-structure rules and QRG citations: `02_card_reference.md` (File Structure).
 
 Raises `FileNotFoundError` if any INCLUDE file does not exist.
 

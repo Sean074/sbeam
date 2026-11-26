@@ -14,7 +14,6 @@ different way:
   * **V-SEC5** — that whole-aircraft cut's net load is the maneuver closure (≈0).
 """
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -29,8 +28,9 @@ from sbeam.parser.case_control import SubcaseControl
 from sbeam.results.section_cuts import component_names, labelled
 from sbeam.solver.sol101 import _element_local_forces
 from sbeam.solver.sol144 import run_sol144_trim
+from tests.samples import sample_path
 
-BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+BDF_PATH = sample_path("ha144a_fullspan_sbeam.bdf")
 
 
 def _run(bulk, aero):

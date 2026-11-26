@@ -43,7 +43,7 @@ from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.results.f06_writer import build_f06_sol101_text
 from sbeam.solver.sol101 import run_sol101
 
-case_control, bulk = parse_bdf("sample/simple_beam.bdf")      # 1. parse
+case_control, bulk = parse_bdf("sample/beam/simple_beam.bdf")      # 1. parse
 subcase = case_control.subcases[0]
 result = run_sol101(bulk, subcase)                            # 2. run
 

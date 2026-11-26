@@ -1,7 +1,7 @@
 """V-THR — applied structural load in the SOL 144 trim RHS (#6, gates G1–G7, G10).
 
 Design note ``docs/30_future/designs/thrust_in_trim_applied_load.md``.  The deck
-``sample/val_thrust_trim.bdf`` is the AR 8 wing + a horizontal tail with an elevator on a
+``sample/validation/val_thrust_trim.bdf`` is the AR 8 wing + a horizontal tail with an elevator on a
 stiff spine, an engine grid 0.5 below the nose on an RBAR pylon, ``SUPORT 135`` (surge,
 plunge, pitch free) and one trim card shared by three subcases: no load, thrust through a
 ``LOAD`` combination, thrust as a direct ``FORCE`` set.
@@ -37,7 +37,7 @@ from sbeam.solver.sol144_trim_solve import build_trim_schur, recover_u_a
 from sbeam.solver.sol144_util import load_resultant
 
 REPO = Path(__file__).parent.parent.parent
-DECK = REPO / "sample/val_thrust_trim.bdf"
+DECK = REPO / "sample/validation/val_thrust_trim.bdf"
 THRUST = 40.0          # FORCE 701 magnitude, along -x (forward)
 ARM = 0.5              # engine grid 0.5 below the reference line
 ARM_CG = 0.45          # engine grid 0.45 below the CG (z_cg = -0.05)

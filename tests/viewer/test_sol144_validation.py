@@ -1,6 +1,5 @@
 """P12 S5 — pre-launch/pre-export validation of SOL 144 authoring."""
 
-from pathlib import Path
 
 import pytest
 
@@ -10,18 +9,18 @@ from sbeam.parser.case_control import CaseControl, SubcaseControl
 from sbeam_tools.viewer.sol144_authoring import (
     IncrementSpec, snapshot_family_ids, validate_sol144_authoring,
 )
+from tests.samples import sample_path
 
-SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
 
 
 @pytest.fixture()
 def fullspan():
-    return parse_bdf(SAMPLE_DIR / "ha144a_fullspan_mloads.bdf")
+    return parse_bdf(sample_path("ha144a_fullspan_mloads.bdf"))
 
 
 @pytest.fixture()
 def massset():
-    return parse_bdf(SAMPLE_DIR / "ha144a_mloads_massset.bdf")
+    return parse_bdf(sample_path("ha144a_mloads_massset.bdf"))
 
 
 def _errors(bulk, cc, **kw):

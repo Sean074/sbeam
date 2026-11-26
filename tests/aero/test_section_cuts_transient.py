@@ -17,7 +17,6 @@ equal.  That is V-TSEC3.
 """
 
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -35,8 +34,9 @@ from sbeam.results.section_cuts import labelled
 from sbeam.solver.maneuver_qs import run_maneuver_qs
 from sbeam.solver.sol101 import _element_local_forces
 from sbeam.solver.sol144 import run_sol144_trim
+from tests.samples import sample_path
 
-BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+BDF_PATH = sample_path("ha144a_fullspan_sbeam.bdf")
 G = 32.174  # ft/s²
 CUT = "SECRW"
 

@@ -37,7 +37,7 @@ $   from math import radians
 $   from sbeam.parser.bdf_reader import parse_bdf
 $   from sbeam.aero.aero_model import build_aero_model
 $   from sbeam.aero.vlm import solve_rigid_cl
-$   cc, bulk = parse_bdf("sample/val_vlm_byu_wing.bdf")
+$   cc, bulk = parse_bdf("sample/validation/val_vlm_byu_wing.bdf")
 $   am = build_aero_model(bulk, parity=0)
 $   r  = solve_rigid_cl(am.boxes, radians(3.0), parity=0,
 $                       aeros=bulk.aeros, xref=0.5)

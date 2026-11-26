@@ -24,7 +24,6 @@ resultant in sbeam's z-up / y-starboard aero frame.
 """
 
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -38,14 +37,14 @@ from sbeam.aero.vlm import (
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.model.aero import Aestat, require_aeros
 from sbeam.solver.sol144 import compute_rigid_derivs, run_sol144_trim
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
 LABELS = ["ANGLEA", "ROLL", "YAW", "SIDES"]
 
 
 @pytest.fixture(scope="module")
 def rect():
-    bulk = parse_bulk_file(str(SAMPLE / "val_vlm_rect_ar8.bdf"))
+    bulk = parse_bulk_file(str(sample_path("val_vlm_rect_ar8.bdf")))
     grid_index = build_grid_index(bulk)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -78,7 +77,7 @@ def _yaw_derivs(bulk, aero, cp):
 def test_box_drag_sums_to_cdi(deck):
     """Σ F_x,drag ≡ CDi·S_ref — the per-box field IS the Trefftz integrand, so
     the total and its distribution cannot drift apart."""
-    bulk = parse_bulk_file(str(SAMPLE / f"{deck}.bdf"))
+    bulk = parse_bulk_file(str(sample_path(f"{deck}.bdf")))
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         aero = build_aero_model(bulk, grid_index=build_grid_index(bulk))
@@ -195,7 +194,7 @@ def test_wing_drag_c_nr_has_the_same_sign_as_the_fin():
     absolute sign: sbeam's z-up / y-starboard frame is not the textbook z-down
     body axis (the fin's C_nr comes out POSITIVE here), so a bare sign assertion
     would be testing the frame convention instead of the physics."""
-    bulk = parse_bulk_file(str(SAMPLE / "cessna210_flagship_bulk.bdf"))
+    bulk = parse_bulk_file(str(sample_path("cessna210_flagship_bulk.bdf")))
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         aero = build_aero_model(bulk, grid_index=build_grid_index(bulk))
@@ -231,7 +230,7 @@ def test_c_nr_survives_a_negative_lift_trim(rect):
 # ---------------------------------------------------------------------------
 
 def _ha144a():
-    return parse_bdf(str(SAMPLE / "ha144a_fullspan_sbeam.bdf"))
+    return parse_bdf(str(sample_path("ha144a_fullspan_sbeam.bdf")))
 
 
 def _trim(bulk, subcase):

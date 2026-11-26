@@ -36,7 +36,6 @@ test_trim_urdd.py.)
 """
 
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -47,19 +46,19 @@ from sbeam.aero.vlm import solve_rigid_cl
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.assembly.coord_transform import get_transform
 from sbeam.solver.sol144 import pitch_moment
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
 
 DECKS = {
-    "ha144a": SAMPLE / "ha144a_fullspan_sbeam.bdf",   # M=0.9, has W2GJ (excluded)
-    "rect_ar8": SAMPLE / "val_vlm_rect_ar8.bdf",      # M=0.0, planar, no W2GJ
+    "ha144a": sample_path("ha144a_fullspan_sbeam.bdf"),   # M=0.9, has W2GJ (excluded)
+    "rect_ar8": sample_path("val_vlm_rect_ar8.bdf"),      # M=0.0, planar, no W2GJ
     # Canted decks (DEF-M2).  Until 2026-08-01 solve_rigid_cl reported the
     # panel-normal force magnitude rather than its body-axis projection, so it
     # disagreed with the skj path by 1/cos Γ on exactly these decks — the two
     # planar decks above could never have caught it.
-    "dihedral": SAMPLE / "val_vlm_dihedral.bdf",      # M=0.0, Γ = +10°
-    "anhedral": SAMPLE / "val_vlm_anhedral.bdf",      # M=0.0, Γ = −10°
-    "taper_dih": SAMPLE / "val_wing_taper_dihedral.bdf",   # Γ = +5°, tapered
+    "dihedral": sample_path("val_vlm_dihedral.bdf"),      # M=0.0, Γ = +10°
+    "anhedral": sample_path("val_vlm_anhedral.bdf"),      # M=0.0, Γ = −10°
+    "taper_dih": sample_path("val_wing_taper_dihedral.bdf"),   # Γ = +5°, tapered
 }
 
 

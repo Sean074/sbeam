@@ -31,7 +31,6 @@ Gate map (B-numbers as in the Step 66 plan):
   B9  the airplane is still statically stable and still far from divergence
 """
 
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -45,12 +44,12 @@ from sbeam.gpwg import compute_gpwg
 from sbeam.results.f06_writer import _build_f06_sol144_text
 from sbeam.results.load_export import build_aero_load_cards_text
 from sbeam.solver.sol144 import run_sol144_trim
+from tests.samples import sample_path
 
-_SAMPLE = Path(__file__).parent.parent.parent / "sample"
-BARE_PATH = _SAMPLE / "cessna210_flagship_trim.bdf"
-CRUCIFORM_PATH = _SAMPLE / "cessna210_flagship_body.bdf"
-STRIP_PATH = _SAMPLE / "cessna210_flagship_body_strip_drv.bdf"
-CSV_PATH = _SAMPLE / "cessna210_flagship_section_data.csv"
+BARE_PATH = sample_path("cessna210_flagship_trim.bdf")
+CRUCIFORM_PATH = sample_path("cessna210_flagship_body.bdf")
+STRIP_PATH = sample_path("cessna210_flagship_body_strip_drv.bdf")
+CSV_PATH = sample_path("cessna210_flagship_section_data.csv")
 
 N_BOXES = 372            # 324 flying + 16 horizontal body + 32 vertical body
 N_BODY_BOXES = 48

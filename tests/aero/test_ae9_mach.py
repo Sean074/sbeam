@@ -14,7 +14,6 @@ supersonic Mach was silently clamped to 0.99.  These tests lock the fix:
 """
 
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -24,8 +23,9 @@ from sbeam.parser.case_control import SubcaseControl
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.solver.sol144 import run_sol144_trim, AeroCache
+from tests.samples import sample_path
 
-BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+BDF_PATH = sample_path("ha144a_fullspan_sbeam.bdf")
 
 
 def _load():

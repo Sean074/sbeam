@@ -414,7 +414,7 @@ byte-identical f06 — asserted explicitly against the HA144A and flagship golde
 
 ### 6.2 Sample deck
 
-`sample/cessna210_flagship_body.bdf` gains a right-wing `MONSECT` with 6 stations on the
+`sample/cessna210_flagship/cessna210_flagship_body.bdf` gains a right-wing `MONSECT` with 6 stations on the
 existing wing spline CID, so the CI verification deck exercises the card end-to-end and the
 shipped sample demonstrates the intended usage (including the CID-shared-with-`SPLINE2`
 idiom).
@@ -510,7 +510,7 @@ post-processing tail of `run_sol144`.
 - The full existing suite passes unchanged. **Met: 1551 passed / 6 xfailed, no regressions.**
 - A `MONSECT` referencing a missing `AECOMP`, `CID`, or a non-monotone station list raises
   `ValueError` at parse time, never produces a silently wrong table.
-- Sample decks demonstrate the card and are exercised in CI. **Met:** `sample/ha144a_fullspan_sbeam.bdf` (`SECRW`) and `sample/cessna210_flagship_bulk.bdf` (`SECRW` + `SECRWA`), both reusing the wing's `SPLINE2` CID as the cut frame.
+- Sample decks demonstrate the card and are exercised in CI. **Met:** `sample/ha144a/ha144a_fullspan_sbeam.bdf` (`SECRW`) and `sample/cessna210_flagship/cessna210_flagship_bulk.bdf` (`SECRW` + `SECRWA`), both reusing the wing's `SPLINE2` CID as the cut frame.
 - `pytest --cov` shows ≥ 90 % coverage on `sbeam/results/section_cuts.py`. **Met: 92 %** (the uncovered lines are error branches — unknown SET1 grid, missing aero model, unmeshed AELIST box ID).
 - Documentation updated per the project's Step Completion Requirement:
   - `docs/10_standard/05c_sol144_maneuver.md` — new "Section-Cut Running Loads (Phase 2)"

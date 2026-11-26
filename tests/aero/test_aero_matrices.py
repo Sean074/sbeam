@@ -1,7 +1,7 @@
 """#104 — MSC's DMIJ W2GJ / DMIK WKK read onto the native per-CAERO1 corrections.
 
 MSC enters W2GJ and WKK as matrices on aero box IDs (AAUG 2023.1 PDF p.144; QRG 2024.1
-PDF p.1617 DMIJ, p.1623 DMIK).  Benchmark: ``sample/ha144a_fullspan_dmij.bdf`` (the
+PDF p.1617 DMIJ, p.1623 DMIK).  Benchmark: ``sample/ha144a/ha144a_fullspan_dmij.bdf`` (the
 full-span HA144A deck with its corrections in MSC's form) trims to the native deck's
 numbers to round-off.  Everything the mapping cannot represent is refused.
 """
@@ -17,9 +17,9 @@ from sbeam.parser.bdf_field import parse_real
 from sbeam.parser.bdf_reader import parse_bdf, parse_bulk_data
 from sbeam.parser.case_control import SubcaseControl
 from sbeam.solver.sol144 import run_sol144_trim
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).resolve().parents[2] / "sample"
-NATIVE, MATRIX = SAMPLE / "ha144a_fullspan_sbeam.bdf", SAMPLE / "ha144a_fullspan_dmij.bdf"
+NATIVE, MATRIX = sample_path("ha144a_fullspan_sbeam.bdf"), sample_path("ha144a_fullspan_dmij.bdf")
 
 
 def _trim(deck: Path, subcase_id: int):

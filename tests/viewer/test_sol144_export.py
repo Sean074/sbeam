@@ -14,8 +14,8 @@ from sbeam.model.card_writers import FAMILIES
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam_tools.viewer.sol144_authoring import snapshot_family_ids
 from sbeam_tools.viewer.sol144_authoring_ui import export_sol144_bdf
+from tests.samples import sample_path
 
-SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
 
 # The card each family writes (family keys are internal names; #87 renamed the cards)
 _CARD_NAMES = {fam.upper() for fam in FAMILIES} | {
@@ -60,8 +60,8 @@ def _families_equal(a, b) -> None:
 @pytest.mark.parametrize("deck", ["ha144a_fullspan_mloads.bdf",
                                   "ha144a_mloads_massset.bdf"])
 def test_driver_export_roundtrip_zero_loss(deck, tmp_path):
-    cc, bulk = parse_bdf(SAMPLE_DIR / deck)
-    model_text, _ = _split_sample(SAMPLE_DIR / deck)
+    cc, bulk = parse_bdf(sample_path(deck))
+    model_text, _ = _split_sample(sample_path(deck))
     (tmp_path / "model.dat").write_text(model_text)
 
     authored = snapshot_family_ids(bulk)   # every condition card is "authored"
@@ -87,8 +87,8 @@ def test_exported_driver_solves_trim(tmp_path):
     from sbeam.solver.sol144 import AeroCache, run_sol144_trim
 
     deck = "ha144a_fullspan_mloads.bdf"
-    cc, bulk = parse_bdf(SAMPLE_DIR / deck)
-    model_text, _ = _split_sample(SAMPLE_DIR / deck)
+    cc, bulk = parse_bdf(sample_path(deck))
+    model_text, _ = _split_sample(sample_path(deck))
     (tmp_path / "model.dat").write_text(model_text)
     driver = tmp_path / "run.bdf"
     driver.write_text(export_sol144_bdf(cc, bulk, snapshot_family_ids(bulk),
@@ -112,7 +112,7 @@ def test_authoring_form_applies_card_through_ui():
         from sbeam_tools.viewer.app import main
         main()
 
-    cc, bulk = parse_bdf(SAMPLE_DIR / "ha144a_fullspan_mloads.bdf")
+    cc, bulk = parse_bdf(sample_path("ha144a_fullspan_mloads.bdf"))
     at = AppTest.from_function(_app, default_timeout=30)
     at.run()
     at.session_state["bulk_data"] = bulk
@@ -147,7 +147,7 @@ def test_aesurf_form_keeps_the_second_hinge_half():
         from sbeam_tools.viewer.app import main
         main()
 
-    cc, bulk = parse_bdf(SAMPLE_DIR / "ha144a_fullspan_mloads.bdf")
+    cc, bulk = parse_bdf(sample_path("ha144a_fullspan_mloads.bdf"))
     at = AppTest.from_function(_app, default_timeout=30)
     at.run()
     at.session_state["bulk_data"] = bulk

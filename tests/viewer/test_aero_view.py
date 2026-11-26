@@ -5,7 +5,6 @@ BulkData; no numerical values asserted.
 """
 from __future__ import annotations
 
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -21,8 +20,8 @@ from sbeam.parser.bdf_reader import parse_bdf
 from sbeam_tools.viewer.aero_view import (
     build_aero_box_figure, build_span_loading_figure, rigid_derivative_table,
 )
+from tests.samples import sample_path
 
-_SAMPLE = Path(__file__).parent.parent.parent / "sample"
 
 
 @pytest.fixture
@@ -128,7 +127,7 @@ def test_rigid_derivative_table_none_without_aeros(aero_bulk):
 
 def test_rigid_derivative_table_includes_aesurf_rows():
     """AESURF control labels appear as rows below the rigid-body labels."""
-    _cc, bulk = parse_bdf(str(_SAMPLE / "ha144a_fullspan_sbeam.bdf"))
+    _cc, bulk = parse_bdf(str(sample_path("ha144a_fullspan_sbeam.bdf")))
     aero_model = build_aero_model(bulk)
     df = rigid_derivative_table(aero_model, bulk, naming="raw")
     assert df.index[:5].tolist() == ["ANGLEA", "SIDES", "ROLL", "PITCH", "YAW"]
@@ -191,7 +190,7 @@ def test_build_span_loading_figure_single_surface(aero_bulk):
 
 def test_build_span_loading_figure_multi_surface():
     """Each CAERO1 surface gets its own line in both subplots (no i_span merge)."""
-    _cc, bulk = parse_bdf(str(_SAMPLE / "ha144a_fullspan_sbeam.bdf"))
+    _cc, bulk = parse_bdf(str(sample_path("ha144a_fullspan_sbeam.bdf")))
     aero_model = build_aero_model(bulk)
     res = solve_rigid_cl(
         aero_model.boxes, np.radians(3.0), aeros=aero_model.aeros,
@@ -204,7 +203,7 @@ def test_build_span_loading_figure_multi_surface():
 
 def test_build_span_loading_figure_surface_filter():
     """`surfaces=` thins the plot to a subset; per-surface colours stay fixed."""
-    _cc, bulk = parse_bdf(str(_SAMPLE / "ha144a_fullspan_sbeam.bdf"))
+    _cc, bulk = parse_bdf(str(sample_path("ha144a_fullspan_sbeam.bdf")))
     aero_model = build_aero_model(bulk)
     res = solve_rigid_cl(
         aero_model.boxes, np.radians(3.0), aeros=aero_model.aeros,

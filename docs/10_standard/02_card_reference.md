@@ -42,7 +42,7 @@ The file is read as NASTRAN reads it (#81). Page numbers are PDF pages of the MS
 - **`INCLUDE 'file'` inserts the file's text where the statement stands**, anywhere in the
   input (QRG p.465, p.1984). A bulk data file is therefore INCLUDEd **below** `BEGIN BULK`
   (the QRG's own example, p.1984); a driver composes a shared bulk with an overlay by
-  INCLUDEing both there (`sample/cessna210_flagship_body.bdf`). A file INCLUDEd above
+  INCLUDEing both there (`sample/cessna210_flagship/cessna210_flagship_body.bdf`). A file INCLUDEd above
   `BEGIN BULK` is case control: a case-control fragment works, and a file holding bulk cards
   there is refused, naming the file. (The case-control INCLUDE page, p.465, captions its
   example "obtain the Bulk Data" with the INCLUDE above `BEGIN BULK`; the File Management
@@ -1080,7 +1080,7 @@ CSV `mass_case` column.
 compat job sets) and the case-control `MASSSET`; it stores the bulk `MASSSET` unread
 (`MISSING_CARDS`), so S0/Si/IDi are gated by sbeam's own GPWG hand check.
 
-**Example:** `sample/ha144a_mass_combination_sweep.bdf`, the MSC twin of
+**Example:** `sample/ha144a/ha144a_mass_combination_sweep.bdf`, the MSC twin of
 `ha144a_massset_sweep.bdf`.
 
 ### MASSCASE — Payload / Mass Case (sbeam extension; Step 60)
@@ -1154,7 +1154,7 @@ duplicate MASSCASE SID; a case-control `MASSCASE` selecting an undefined SID.
 **Not supported (v1):** MAT1 `rho` overlays (structural-density cases) — use `SCALE`,
 or author a separate deck.
 
-**Example** (from `sample/ha144a_massset_sweep.bdf`):
+**Example** (from `sample/ha144a/ha144a_massset_sweep.bdf`):
 ```
 $ Baseline includes the 500 lb baggage CONM2 5000; 6001-6004, 6011-6014
 $ and 6020 are overlay-only and enter only where named.
@@ -1739,7 +1739,7 @@ EID, consecutively, chordwise fastest (AAUG p.28), which is the native cards' or
   the j- and k-sets, which the manuals give only within one ACPT record (AAUG p.134–136,
   Figures 3-7 and 3-8). Rewrite `DMI` rows as `DMIJ`/`DMIK` terms on box IDs.
 - Each surface gets one native entry with SID = its CAERO1 EID.
-- Gate: `sample/ha144a_fullspan_dmij.bdf` trims to `ha144a_fullspan_sbeam.bdf`'s numbers
+- Gate: `sample/ha144a/ha144a_fullspan_dmij.bdf` trims to `ha144a_fullspan_sbeam.bdf`'s numbers
   to round-off (`tests/aero/test_aero_matrices.py`); pyNastran reads every term to the
   same value (`tests/compat`).
 
@@ -2686,7 +2686,7 @@ CORD2R; stations must be strictly increasing; `NORMAL` must not be near-perpendi
 the station axis (`|n̂·â| ≥ 0.1`), or the plane has no usable intercept with the
 reference line.
 
-**Example** (right wing of `sample/cessna210_flagship_bulk.bdf`, reusing the wing's
+**Example** (right wing of `sample/cessna210_flagship/cessna210_flagship_bulk.bdf`, reusing the wing's
 `SPLINE2` CID 991 as the cut frame):
 ```
 SET1,    1300, 11, 12

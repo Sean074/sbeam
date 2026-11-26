@@ -14,15 +14,15 @@ building and reading a **model**.*
 
 | File | What it is |
 |------|-----------|
-| `sample/cessna210_flagship_bulk.bdf` | the whole bulk model — no case control |
-| `sample/cessna210_flagship_trim.bdf` | SC1 1g cruise, SC2 2.5g pull-up |
-| `sample/cessna210_flagship_massset.bdf` | one TRIM × three payload cases |
-| `sample/cessna210_flagship_mloads.bdf` | trim + elevator-ramp transient |
-| `sample/cessna210_flagship_section_data.csv` | spanwise section coefficients + the body `TOTAL` block |
-| `sample/cessna210_flagship_body.bdf` | §6 — trim with cruciform body panels |
-| `sample/cessna210_flagship_body_strip_drv.bdf` | §6 — the decoupled-strip contrast |
-| `sample/cessna210_flagship_body_cruciform.bdf` | body-panel overlay (not standalone) |
-| `sample/cessna210_flagship_body_strip.bdf` | body-panel overlay (not standalone) |
+| `sample/cessna210_flagship/cessna210_flagship_bulk.bdf` | the whole bulk model — no case control |
+| `sample/cessna210_flagship/cessna210_flagship_trim.bdf` | SC1 1g cruise, SC2 2.5g pull-up |
+| `sample/cessna210_flagship/cessna210_flagship_massset.bdf` | one TRIM × three payload cases |
+| `sample/cessna210_flagship/cessna210_flagship_mloads.bdf` | trim + elevator-ramp transient |
+| `sample/cessna210_flagship/cessna210_flagship_section_data.csv` | spanwise section coefficients + the body `TOTAL` block |
+| `sample/cessna210_flagship/cessna210_flagship_body.bdf` | §6 — trim with cruciform body panels |
+| `sample/cessna210_flagship/cessna210_flagship_body_strip_drv.bdf` | §6 — the decoupled-strip contrast |
+| `sample/cessna210_flagship/cessna210_flagship_body_cruciform.bdf` | body-panel overlay (not standalone) |
+| `sample/cessna210_flagship/cessna210_flagship_body_strip.bdf` | body-panel overlay (not standalone) |
 
 The drivers are thin: a `SOL 144` line, a `TITLE`, their subcases, and below `BEGIN BULK`
 one or more `INCLUDE`s of the shared bulk (plus, in §6, a body overlay). Everything physical
@@ -301,7 +301,7 @@ integration from the 1g trim and ramps the elevator +2° over 0.3 s, then holds.
 
 ## 3. Reading the `.f06`
 
-Run `sbeam sample/cessna210_flagship_trim.bdf`.
+Run `sbeam sample/cessna210_flagship/cessna210_flagship_trim.bdf`.
 
 ### 3.1 Trim variables
 
@@ -383,7 +383,7 @@ raises the elastic lift slope in §3.2.
 
 ## 4. The mass sweep, and inertia relief
 
-Run `sbeam sample/cessna210_flagship_massset.bdf`.
+Run `sbeam sample/cessna210_flagship/cessna210_flagship_massset.bdf`.
 
 | Case | Mass (kg) | ANGLEA | MONPNT1 Fz (N) | n·W (N) | Root Mx / W |
 |---|---|---|---|---|---|
@@ -409,7 +409,7 @@ setting the trim elevator.
 
 ## 5. The transient
 
-Run `sbeam sample/cessna210_flagship_mloads.bdf`. Outputs: the f06 transient block, a
+Run `sbeam sample/cessna210_flagship/cessna210_flagship_mloads.bdf`. Outputs: the f06 transient block, a
 `.mldprnt.txt` time history, and `.maneuver_qs_loads.bdf` FORCE/MOMENT cards for the
 critical sample.
 
@@ -448,8 +448,8 @@ fuselage is represented by flat VLM panels: a **cruciform** of two crossing surf
 horizontal (body lift and pitching moment) and one vertical (side force and yaw).
 
 ```
-sbeam sample/cessna210_flagship_body.bdf            # cruciform  (PAERO1)
-sbeam sample/cessna210_flagship_body_strip_drv.bdf  # strip      (PSTRIP)
+sbeam sample/cessna210_flagship/cessna210_flagship_body.bdf            # cruciform  (PAERO1)
+sbeam sample/cessna210_flagship/cessna210_flagship_body_strip_drv.bdf  # strip      (PSTRIP)
 ```
 
 Both drivers are three lines of aerodynamics on top of the deck you already have:

@@ -19,13 +19,14 @@ from sbeam.aero.spline import _covered_gk_for_range
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.solver.sol144 import run_sol144_trim
+from tests.samples import sample_decks, sample_path
 
 REPO = Path(__file__).parent.parent.parent
-DIHEDRAL = REPO / "sample" / "val_dihedral_trim.bdf"
+DIHEDRAL = sample_path("val_dihedral_trim.bdf")
 
 # Every repo deck that runs a SPLINE2: the rigid-body gate below covers them all
 _SPLINE2_DECKS = sorted(
-    p for folder in ("sample", "tests/integration/bdf") for p in (REPO / folder).glob("*.bdf")
+    p for p in [*sample_decks(), *(REPO / "tests/integration/bdf").glob("*.bdf")]
     if "\nSPLINE2" in p.read_text() or "INCLUDE" in p.read_text()
 )
 

@@ -17,7 +17,6 @@ use.  Gates:
 """
 
 import warnings
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -37,8 +36,9 @@ from sbeam.results.maneuver_output import (
 )
 from sbeam.results.results import peak_grid_force
 from sbeam.results.f06_writer import build_f06_sol144_maneuver_text
+from tests.samples import sample_path
 
-BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+BDF_PATH = sample_path("ha144a_fullspan_sbeam.bdf")
 G = 32.174  # ft/s²
 
 

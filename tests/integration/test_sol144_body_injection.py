@@ -1,6 +1,6 @@
 """V-M1 — LOADINJ / un-splined box loads in the SOL 144 trim (Step 64 / DEF-M1).
 
-`sample/ha144a_body_trim.bdf` is the full-span HA144A deck plus a cruciform pair
+`sample/ha144a/ha144a_body_trim.bdf` is the full-span HA144A deck plus a cruciform pair
 of decoupled strip body panels (PSTRIP) carried by LOADINJ — boxes with no
 structural spline.  Their aerodynamic force reaches the structure only through
 the Step 64 rigid load injection at the LOADINJ master grid.
@@ -14,7 +14,6 @@ the structurally-uncoupled boxes.
 """
 
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -27,10 +26,10 @@ from sbeam.gpwg import compute_gpwg
 from sbeam.results.f06_writer import _build_f06_sol144_text
 from sbeam.results.load_export import build_aero_load_cards_text
 from sbeam.solver.sol144 import run_sol144_trim, aero_moment_resultant, load_resultant
+from tests.samples import sample_path
 
-_SAMPLE = Path(__file__).parent.parent.parent / "sample"
-BODY_BDF = _SAMPLE / "ha144a_body_trim.bdf"
-BASE_BDF = _SAMPLE / "ha144a_fullspan_sbeam.bdf"
+BODY_BDF = sample_path("ha144a_body_trim.bdf")
+BASE_BDF = sample_path("ha144a_fullspan_sbeam.bdf")
 G = 32.174   # ft/s², the deck's gravity (URDD3 = −32.174 for 1g)
 
 

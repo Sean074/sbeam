@@ -198,7 +198,7 @@ MANEUVER_PRESETS: list[ManeuverPreset] = [
         description="Prescribe ROLL = pb/2V (reduced rate; positive = starboard wing down) "
                     "and URDD4 = 0; the aileron trims free. Needs SUPORT 4 (or 46 with the "
                     "rudder free and SIDES = YAW = URDD6 = 0 prescribed) — see "
-                    "sample/val_lateral_aileron_rudder.bdf.",
+                    "sample/validation/val_lateral_aileron_rudder.bdf.",
         param_label="Reduced roll rate pb/2V (–)",
         param_default=0.05,
         required_labels=["ROLL", "URDD4"],

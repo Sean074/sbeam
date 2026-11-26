@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from sbeam_tools.viewer.case_control_ui import summarize_case_control
+from tests.samples import sample_path
 
 
 def test_summary_sol101(cantilever_sol101_parsed):
@@ -29,10 +30,9 @@ def test_summary_sol144_trim(dihedral_sol144_parsed):
 def test_summary_sol144_advertises_hinge_and_monitor_outputs():
     """AC5: trim summary lists hinge moments (AESURF) and monitor loads (MONPNT)."""
     import warnings
-    from pathlib import Path
     from sbeam.parser.bdf_reader import parse_bdf
 
-    sample = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_mloads.bdf"
+    sample = sample_path("ha144a_fullspan_mloads.bdf")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         cc, bulk = parse_bdf(sample)
@@ -46,10 +46,9 @@ def test_summary_sol144_advertises_hinge_and_monitor_outputs():
 def test_summary_sol144_maneuver_advertises_exports():
     """AC5: MANVR summary lists the time-history and critical-load exports."""
     import warnings
-    from pathlib import Path
     from sbeam.parser.bdf_reader import parse_bdf
 
-    sample = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_mloads.bdf"
+    sample = sample_path("ha144a_fullspan_mloads.bdf")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         cc, bulk = parse_bdf(sample)

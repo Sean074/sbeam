@@ -1,6 +1,6 @@
 """Flagship realistic-airplane SOL 144 sample family (Step 65).
 
-Gates `sample/cessna210_flagship_bulk.bdf` and its three thin case-control drivers —
+Gates `sample/cessna210_flagship/cessna210_flagship_bulk.bdf` and its three thin case-control drivers —
 the only decks in the repo that combine corrected aerodynamics, multi-subcase static
 trim, mass cases, monitor points and a transient maneuver on one realistic airplane.
 
@@ -26,7 +26,6 @@ import math
 import warnings
 from copy import deepcopy
 from dataclasses import replace
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -42,13 +41,13 @@ from sbeam.gpwg import compute_gpwg
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.solver.maneuver_qs import run_maneuver_qs
 from sbeam.solver.sol144 import run_sol144_trim
+from tests.samples import sample_path
 
-_SAMPLE = Path(__file__).parent.parent.parent / "sample"
-BULK_PATH = _SAMPLE / "cessna210_flagship_bulk.bdf"
-TRIM_PATH = _SAMPLE / "cessna210_flagship_trim.bdf"
-MASSCASE_PATH = _SAMPLE / "cessna210_flagship_massset.bdf"
-MLOADS_PATH = _SAMPLE / "cessna210_flagship_mloads.bdf"
-CSV_PATH = _SAMPLE / "cessna210_flagship_section_data.csv"
+BULK_PATH = sample_path("cessna210_flagship_bulk.bdf")
+TRIM_PATH = sample_path("cessna210_flagship_trim.bdf")
+MASSCASE_PATH = sample_path("cessna210_flagship_massset.bdf")
+MLOADS_PATH = sample_path("cessna210_flagship_mloads.bdf")
+CSV_PATH = sample_path("cessna210_flagship_section_data.csv")
 
 N_BOXES = 324
 G = 9.81

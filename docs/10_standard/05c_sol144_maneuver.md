@@ -361,7 +361,7 @@ derivative work is the unrestrained (mean-axis) column, tracked as **AE8b** in t
 
 ### Trim acceptance gates — V-AE1f and V-AE1d (`tests/aero/test_ae1_fullspan.py`)
 
-The HA144A trim is gated on the full-span deck (`sample/ha144a_fullspan_sbeam.bdf`,
+The HA144A trim is gated on the full-span deck (`sample/ha144a/ha144a_fullspan_sbeam.bdf`,
 SYMXZ=0, whole-airplane = 16000 lb) — the parity ground truth since half-span support
 was removed (AE1 Step D).
 
@@ -440,7 +440,7 @@ and the `C_lβ` sign-flip between `val_vlm_dihedral`/`val_vlm_anhedral` (zero on
 ### Lateral trim cases — steady roll and steady sideslip (V-LAT2, #10)
 
 A lateral case is an ordinary determined trim: one free label per `SUPORT` DOF, the other
-lateral labels prescribed. The shipped validation deck `sample/val_lateral_aileron_rudder.bdf`
+lateral labels prescribed. The shipped validation deck `sample/validation/val_lateral_aileron_rudder.bdf`
 (AR 8 wing + vertical fin on a stiff spine; aileron pair as **one** `AESURF` with
 `CID1`/`ALID1` starboard and `CID2`/`ALID2` port, both hinge +y outboard; rudder with hinge
 +y **down**; `SUPORT 90, 46`; RCSID z-down at the root) runs both:
@@ -498,7 +498,7 @@ statements of different problems; the deck below gates both. Engine torque is a 
 about `x` at the mount, with the sign fixed by the propeller handedness rule (charter §10):
 a clockwise-seen-from-behind propeller puts `+Mx` basic on the airframe.
 
-The shipped deck `sample/val_thrust_trim.bdf` (AR 8 wing + horizontal tail with elevator on
+The shipped deck `sample/validation/val_thrust_trim.bdf` (AR 8 wing + horizontal tail with elevator on
 a stiff spine; engine grid 0.5 below the nose on an `RBAR` pylon; `SUPORT 90, 135`,
 `SPC1 1 246 90`, RCSID z-down at the reference; total mass 10, CG 0.05 below the reference;
 one `TRIM` shared by three subcases — no load, `LOAD 710 = 1.0 × FORCE 701`, `LOAD 701`
@@ -520,7 +520,7 @@ doubles every shift; closure ≈ 0 in all six components and `m·URDD1 = T + Fx_
 closes with the applied column in the sum; derivatives identical across the subcases; `GRAV`,
 `MANVR` + `LOAD` and `DIVERG`-only + `LOAD` raise; the CLI writes the f06 block, both CSVs
 (with the `applied` columns) and `maneuver_loads.bdf`. The torque case lives on the lateral
-deck: `sample/val_lateral_aileron_rudder.bdf` `SUBCASE 3` applies `MOMENT 701` (`+Mx = 35`,
+deck: `sample/validation/val_lateral_aileron_rudder.bdf` `SUBCASE 3` applies `MOMENT 701` (`+Mx = 35`,
 a clockwise propeller) with all lateral labels zero and trims `AIL = −0.0351` (−2.01°),
 `RUD = +0.0022` — the 2×2 solve of the restrained table against `−[Q/(qSb), 0]` (rel 1e-8),
 with `AIL < 0` the charter gate.
@@ -711,8 +711,8 @@ the Mach-correct AIC was built twice.
   critical-sample marker, critical-sample closure/displacement/CBAR detail). Header and data cells
   of the time-history table share one column width (`f06_writer._FIELD_W`, DEF-M7). The viewer offers
   the two ASCII/BDF exports as download buttons on the maneuver results view. Sample decks:
-  `sample/ha144a_fullspan_mloads.bdf` (ELEV ramp pitch-up on the HA144A full-span model) and
-  `sample/cessna210_flagship_mloads.bdf` (Step 65 — the same maneuver on the corrected,
+  `sample/ha144a/ha144a_fullspan_mloads.bdf` (ELEV ramp pitch-up on the HA144A full-span model) and
+  `sample/cessna210_flagship/cessna210_flagship_mloads.bdf` (Step 65 — the same maneuver on the corrected,
   splined, monitored realistic-airplane flagship).
 - **Gates (`tests/aero/test_maneuver_cards.py`, `tests/aero/test_maneuver_qs.py`):** card round-trip +
   validation; G0→Step 53 machine-precision identity; quasi-static settling to the new balanced trim
@@ -825,7 +825,7 @@ restrained decomposition, reused per-step in recovery) of
   `FREE FLIGHT: V = …  RIGID STATES = … (OUTPUTS)` line, and per-step
   `ManeuverStep.xi_r/xi_r_dot/xi_r_ddot` (mean-axis rigid states) / `nz_rel`;
   `modal_coords` holds the full Δξ (n_h). Sample deck:
-  `sample/ha144a_mloads_massset.bdf` — the free-flight elevator maneuver × 3-MASSCASE payload
+  `sample/ha144a/ha144a_mloads_massset.bdf` — the free-flight elevator maneuver × 3-MASSCASE payload
   sweep (heavier ⇒ lower settled NZ_REL; CG-balanced fuel tanks so the sweep is a pure mass
   effect).
 - **Scope limits (documented):** linear inertial-frame rigid coordinates at fixed V — the steady
@@ -925,7 +925,7 @@ Step 62; see the Step 62 section above.
 
 ### Sample deck and gates
 
-`sample/ha144a_massset_sweep.bdf` — the full-span HA144A with one TRIM card and three
+`sample/ha144a/ha144a_massset_sweep.bdf` — the full-span HA144A with one TRIM card and three
 payload conditions (EMPTY 16000 lb / HALFFUEL 18500 lb / FULLFUEL 21000 lb), exercising all
 three ops. Gated by `tests/parser/test_massset.py` (card round-trip, overlay marking, SCALE,
 negative cases) and `tests/aero/test_massset_sweep.py`:
@@ -1403,9 +1403,9 @@ which must lie strictly inside `(0, 0.88)`.
 ### Generating a case set
 
 ```bash
-sbeam-cases sample/cessna210_flagship_trim.bdf \
+sbeam-cases sample/cessna210_flagship/cessna210_flagship_trim.bdf \
     --units SI --trim-template 1 --vc 86.0 --vd 105.0 --altitude 0 \
-    --massset 10,20,30 --g 9.81 -o sample/cessna210_flagship_gust.bdf
+    --massset 10,20,30 --g 9.81 -o sample/cessna210_flagship/cessna210_flagship_gust.bdf
 ```
 
 The tool reads reference area and mean chord from `AEROS`, the weight from GPWG for
@@ -1441,7 +1441,7 @@ absent from the TRIM card — it came from the gust card, and it is not a solved
 
 ### What to expect
 
-On `sample/cessna210_flagship_gust.bdf` the gust cases run from `n = +5.43 / −3.43`
+On `sample/cessna210_flagship/cessna210_flagship_gust.bdf` the gust cases run from `n = +5.43 / −3.43`
 (FERRY at V_C) to `n = +2.93 / −0.93` (MTOW at V_D). Two results worth recognising:
 
 - **Gust load factor is highest at the lightest weight** — `μ` falls with wing loading,
