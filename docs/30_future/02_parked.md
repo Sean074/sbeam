@@ -294,3 +294,32 @@ biconvex section: 36 CSHEAR, 48 CROD/CONROD, 17 membranes, with reference output
 - **Constrained-grid-mass CI deck.** The Step 68 reaction recovery uses the full applied
   load, which only differs from `net_loads` when a constrained grid carries mass; no sample
   deck has that. A deck that does would be cheap CI insurance.
+
+---
+
+## Viewer
+
+### CPINJ form (parked 2026-11-26; was issue #119)
+
+**What:** a viewer form for `CPINJ`, the injected steady-pressure distribution card
+(`docs/10_standard/02_card_reference.md`, CPINJ). It would take a chordwise pressure table
+(typed, or a CSV like the Aero Correction tab's section data), the panel it applies to and
+the reference angle, plot the injected distribution over the panel's boxes, and write the
+card through `session_deck.commit` like every other authored card. It needs `write_cpinj`
+in `sbeam/model/card_writers.py`, added to `FAMILIES`.
+
+**Why parked:** no load case consumes it. No deck under `sample/` uses CPINJ (checked
+2026-11-26), and the owner named no case that needs it authored from the GUI. CLAUDE.md
+rule 5: nothing is built without a named validation target or a named load case.
+
+**State of CPINJ in the viewer today:** the card is read and solved. The model page reports
+that injection is active, the Aero Correction tab refuses to derive corrections on an
+injected model, and the SOL 144 results page shows the injected operating point block
+(#118; drawn in its test from a hand-built echo, since no sample deck has the card). Every
+other authorable card family has a form; CPINJ is typed into the deck.
+
+**To activate:** name the load case and the deck that will gate it (for example a
+wind-tunnel or CFD chordwise pressure table on the flagship wing), add that deck to
+`sample/`, then open an issue with this write-up. The journey test
+(`tests/viewer/test_journey.py`) and the results-block test then have a deck to run on.
+

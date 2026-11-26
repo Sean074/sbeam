@@ -101,7 +101,7 @@ All are on milestone v0.4.1. The sizes were estimates made before the work.
 | 6 | #116 — monitor placement: AECOMP / MONPNT1 / MONSECT forms, drawn on the model | L | Closed |
 | 7 | #117 — GUSTLF card form and a gust-case panel over `sbeam_tools/cases/gust.py` | M | Closed |
 | 8 | #118 — results page: coefficient frame, injected operating point, injected loads, applied-load block | S | Closed |
-| 9 | #119 — CPINJ form, after a consumer is named; parked if there is none (CLAUDE.md rule 5) | M | **Open: needs the owner to name a consumer, or park it** |
+| 9 | #119 — CPINJ form, after a consumer is named; parked if there is none (CLAUDE.md rule 5) | M | Parked by the owner 2026-11-26 (`02_parked.md`, Viewer) |
 | 10 | #120 — per-subcase and per-time-step progress | S | Closed without code: the longest sample run is 1.4 s |
 | 11 | #121 — hand walk and v0.4.1 release cut | S | **Open: needs a person at the running viewer** |
 

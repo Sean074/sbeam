@@ -189,6 +189,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deck. Two tests hold the tags, one against sbeam's list of sbeam-only names and one against
   the cards pyNastran does not know. No sample deck has been run in MSC. `CEND` being optional
   in MSC is now cited (QRG 2024.1 PDF p.150).
+- **The CPINJ form is parked (#119).** No sample deck uses CPINJ and no load case needs it
+  authored from the viewer, so it is written up in `docs/30_future/02_parked.md` and the
+  issue is closed. CPINJ is still read and solved, and typed into the deck by hand.
 - **Run progress in the viewer is not built (#120, closed with the measurement).** The
   issue's first task was to time a long run. The Run button was timed on all 32 sample decks
   that have a case control: the longest is 1.4 s (`cessna210_flagship_gust.bdf`, 12
