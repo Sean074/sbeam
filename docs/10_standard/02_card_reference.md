@@ -4,7 +4,7 @@ All BDF cards supported in Phases 1–2 (structures), Phases A–C (aeroelastics
 
 ## Supported cards at a glance
 
-Every card and case-control keyword sbeam reads; the sections below give each card's fields. Cards named by neither MSC nor ZAERO are listed with their nearest vendor card under [sbeam-only cards](#sbeam-only-cards). Gate: `tests/parser/test_unsupported_cards.py` asserts no card listed here is in the refused set (moved here from `CLAUDE.md`, 2026-10-25).
+Every card and case-control keyword sbeam reads; the sections below give each card's fields. Where sbeam differs from MSC NASTRAN or ZAERO, the difference is listed once in the [deviation register](12_deviation_register.md). Cards named by neither MSC nor ZAERO are listed with their nearest vendor card under [sbeam-only cards](#sbeam-only-cards). Gate: `tests/parser/test_unsupported_cards.py` asserts no card listed here is in the refused set (moved here from `CLAUDE.md`, 2026-10-25).
 
 - **Structure:** CORD2R, GRID, CBAR, CROD, CONROD, PLOTEL, RBE3, RBE2, RBAR, CBUSH, PBAR, PROD,
   PBUSH, MAT1
@@ -3001,7 +3001,7 @@ supported cards (02_card_reference.md, 'Unsupported cards').
 
 Until #55 such cards were skipped with a warning, so a typo silently dropped a load and
 an MSC `DMI,W2GJ` silently dropped the wing incidence. Large-field keywords (`GRID*`)
-are unknown, as large-field format is not supported.
+are read as their small-field card (#64; see Format Rules).
 
 **Ignored with a `UserWarning`** (they control listing only and never change an answer):
 `ECHOON`, `ECHOOFF` (`_HARMLESS_CARDS` in `bdf_reader.py`; add a keyword only with that
@@ -3016,7 +3016,7 @@ of the MSC Nastran 2024.1 QRG):
 |---|---|---|
 | `WTMASS` | value ≠ 1 | sbeam never scales mass (charter §7, #39) |
 | `AUNITS` | value ≠ 1 | MSC reads TRIM URDD* in g with it; sbeam never converts accelerations (charter §7, #55) |
-| `COUPMASS` | value ≤ 0 or blank (NASTRAN's default −1 is lumped mass) | sbeam always uses the consistent mass matrix; `COUPMASS > 0` asks for that and is accepted (#55) |
+| `COUPMASS` | value ≤ 0 or blank (MSC's default −1 is lumped mass, p.859) | sbeam always uses the consistent mass matrix; `COUPMASS > 0` asks for that and is accepted (#55) |
 | `INREL` | value ≠ 0 | −1, −2, −4 request inertia relief in static analysis (p.888); sbeam's SOL 101 has none, so the deck would run constrained or singular (#69) |
 | `G` | value ≠ 0 | uniform structural damping coefficient (p.884); sbeam has no structural damping (#69) |
 | `W3`, `W4` | value ≠ 0 | convert structural damping to viscous damping in transient analysis (p.956) (#69) |
@@ -3043,9 +3043,11 @@ the inertias include each CBAR's distributed rotary inertia, where MSC's default
 would not; mass and C.G. are the same either way. The reduction to C.G. and inertias is
 gated on MSC's HA144B printout (`tests/results/test_gpwg_print.py`).
 
-A NASTRAN deck *without* `PARAM,COUPMASS` uses lumped mass in NASTRAN and consistent mass
-in sbeam. That is a modelling difference, not a dropped card, so it is not refused; it
-shows up in modal results.
+A NASTRAN deck *without* `PARAM,COUPMASS` uses lumped mass in MSC ("Default = -1 …
+COUPMASS < 0 (Default) causes the generation of lumped mass matrices", QRG p.859) and
+consistent mass in sbeam. That is a modelling difference, not a dropped card, so it is not
+refused; it shows up in modal results and is listed in the
+[deviation register](12_deviation_register.md) (§3).
 
 The CLI prints each warning as `Parser warning: ...` on stderr, and the viewer lists them
 under "Parser warnings" and in the pre-solve checks.
@@ -3086,7 +3088,7 @@ under "Parser warnings" and in the pre-solve checks.
 | AESURF | ALID1 (and ALID2 if non-zero) must exist in AELIST |
 | AELIST | All box IDs must fall within at least one CAERO1 range |
 | SET1 | Every grid ID must exist in GRID; a spline-referenced SET1 needs ≥ 2 grids |
-| SPLINE2 | SETG must exist in SET1; CAERO must exist in CAERO1; DTOR ≤ 0 and DZ < 0 warn (fall back to 1.0 / rigid); a singular spline system (no twist information) raises `ValueError` |
+| SPLINE2 | SETG must exist in SET1; CAERO must exist in CAERO1; DTOR ≤ 0 and DZ < 0 are refused (#75); a singular spline system (no twist information) raises `ValueError` |
 | SPLINE1 | Not implemented (Step 48 deferred) — handler raises `NotImplementedError`; use SPLINE2 or BODYATT |
 | BODYATT | CID must be `0`; CID ≠ 0 raises `NotImplementedError` at spline build |
 | SUPORT | Blank DOF string after a GID raises `ValueError` |

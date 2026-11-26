@@ -67,7 +67,8 @@ and the import gate asserts all three. *(2026-10-25, #34):* the viewer moved to
 `sbeam_tools/viewer/` as a mechanical import-path change, ahead of #11 rewriting its
 authoring layer, and the import gate now covers all of `sbeam/` with no exclusion.
 
-**Why.** sbeam declares NASTRAN BDF compatibility, so adopting NASTRAN's own
+**Why.** sbeam reads a documented subset of the NASTRAN and ZAERO bulk data and refuses
+the rest (differences: [`12_deviation_register.md`](12_deviation_register.md)), so adopting NASTRAN's own
 decomposition (solver + pre/post) keeps generated decks portable and keeps the solver's
 card surface finite. It was validated by issue #1: the FAR/CS 23.341 gust calculation is
 irreducibly dimensional, and moving it out dissolved a charter §7 conflict instead of
@@ -504,7 +505,9 @@ Limitations" table of
 [`02_card_reference.md`](02_card_reference.md#constraints-and-limitations), and the
 aeroelastic ones in
 [`05_aeroelastics.md`](05_aeroelastics.md#validation-status--known-limitations). Add new
-restrictions there first, then link them here.
+restrictions there first, then link them here. Where a restriction is a difference from MSC
+NASTRAN or ZAERO, its row in [`12_deviation_register.md`](12_deviation_register.md) gives
+the vendor's behaviour and the manual page.
 
 **Theory**
 

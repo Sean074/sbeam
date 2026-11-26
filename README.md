@@ -1,6 +1,6 @@
 # sbeam — Simple Beam FEA
 
-A Python finite element analysis tool for beam structures using NASTRAN BDF input format. Supports static analysis (SOL 101) and normal modes (SOL 103) via Euler-Bernoulli beam theory, plus static aeroelastics (SOL 144): steady vortex-lattice aerodynamics, flexible trim, stability derivatives, divergence, monitor-point section loads, and DLM-free quasi-steady transient maneuver loads (sbeam's `MANVR` card set).
+A Python finite element analysis tool for beam structures. It reads a documented subset of the NASTRAN BDF input format (MSC NASTRAN and ZAERO card layouts) and refuses the rest; the known differences are listed in [`docs/10_standard/12_deviation_register.md`](docs/10_standard/12_deviation_register.md). Supports static analysis (SOL 101) and normal modes (SOL 103) via Euler-Bernoulli beam theory, plus static aeroelastics (SOL 144): steady vortex-lattice aerodynamics, flexible trim, stability derivatives, divergence, monitor-point section loads, and DLM-free quasi-steady transient maneuver loads (sbeam's `MANVR` card set).
 
 **License:** MIT (see [LICENSE](LICENSE)) — free to use, modify, and redistribute, including commercially.
 

@@ -103,6 +103,17 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   solver feature (`docs/30_future/02_parked.md`).
 
 ### Documentation
+- **Deviation register** (#95, part D1). The new `docs/10_standard/12_deviation_register.md`
+  lists every known difference between sbeam and MSC NASTRAN / ZAERO in one place: sbeam's
+  behaviour, the vendor's, the manual and PDF page, and a disposition (refused, warned,
+  ignored, by design, defect with its issue). It is seeded from the 2026-11-16 audit and
+  checked against the parser as it stands; a known difference missing from it is a defect.
+  It is a single source in `CLAUDE.md` and `docs/00_INDEX.md`, and the README and the
+  overview now say sbeam reads a documented subset and refuses the rest. Three statements
+  in `02_card_reference.md` are corrected on the way: `PARAM,COUPMASS`'s lumped-mass
+  default now cites QRG p.859, large-field cards are read (the Unsupported-cards section
+  said they were not), and SPLINE2 `DZ < 0` / `DTOR ≤ 0` are refused (the limitations table
+  said warned).
 - **`sample/` is one folder per model family, with a README** (#108, Tier S). The 38 sample
   files move, names unchanged, into `sample/beam/`, `sample/validation/`,
   `sample/goland_wing/`, `sample/ha144a/` and `sample/cessna210_flagship/`. The new

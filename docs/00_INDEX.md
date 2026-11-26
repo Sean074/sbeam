@@ -32,6 +32,7 @@ are the day-to-day references; higher numbers are planning and historical record
 | [`09_conventions.md`](10_standard/09_conventions.md) | **Conventions charter** — signs, axes, frames, reference points, units; cite before writing physics code |
 | [`10_export_schemas.md`](10_standard/10_export_schemas.md) | **Export contract** — exact headers, types, sentinels and ordering of every exported CSV and load BDF (#31); gated by `tests/results/test_export_schema.py` |
 | [`11_python_api.md`](10_standard/11_python_api.md) | **Python API** — the public entry points for calling sbeam from code (parse → run → results → write), what is internal, the SOL 144 orchestration pattern (#47); gated by `tests/docs/test_python_api_guide.py` |
+| [`12_deviation_register.md`](10_standard/12_deviation_register.md) | **Deviation register** — every known difference between sbeam and MSC NASTRAN / ZAERO: sbeam's behaviour, the vendor's, the manual page, and the disposition (refused / warned / ignored / by design / defect). A known difference missing from it is a defect (#95) |
 
 ## 20_theory — Theory, test cases & worked examples
 
