@@ -139,6 +139,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deck. Two tests hold the tags, one against sbeam's list of sbeam-only names and one against
   the cards pyNastran does not know. No sample deck has been run in MSC. `CEND` being optional
   in MSC is now cited (QRG 2024.1 PDF p.150).
+- **Viewer scope for v0.4.1 agreed (#11).** `docs/30_future/designs/v040_gui_scope.md` is no
+  longer a draft. Decided: the viewer authors cases on a model loaded from a BDF, not the
+  model; it becomes a thin UI over `sbeam_tools/cases` before any new form is built; the
+  journey-test bar of #11 stands. The work is eleven issues on v0.4.1, #111 to #121, and the
+  production-ready definition of done moves to the hand-walk issue #121. No viewer code
+  changed. The survey was re-checked against the code: the GUSTLF selector and gust results
+  block are present since #98, and a deck that uses `INCLUDE` cannot be opened by upload
+  (#111).
 - **`sample/` is one folder per model family, with a README** (#108, Tier S). The 38 sample
   files move, names unchanged, into `sample/beam/`, `sample/validation/`,
   `sample/goland_wing/`, `sample/ha144a/` and `sample/cessna210_flagship/`. The new
