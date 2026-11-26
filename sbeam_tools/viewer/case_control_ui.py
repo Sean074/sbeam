@@ -13,7 +13,7 @@ from streamlit.delta_generator import DeltaGenerator
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.parser.case_control import CaseControl, SubcaseControl
-from sbeam_tools.viewer.sol144_authoring import validate_sol144_authoring
+from sbeam_tools.viewer.sol144_authoring import cards_text, check_case_control
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +314,7 @@ def render_case_control_panel(
             st.caption(cc.title)
         for line in summarize_case_control(cc, bulk):
             st.markdown(f"- {line}")
-        errors, _ = validate_sol144_authoring(bulk, cc)
+        errors, _ = check_case_control(bulk, cc)
         for err in errors:
             st.error(err)
         if on_launch is not None and st.button(
@@ -583,21 +583,17 @@ def _render_case_control_editor(
     # ------------------------------------------------------------------ export
     cc_current: Optional[CaseControl] = st.session_state.get("case_control")
     if cc_current is not None:
-        # Full export gate: unresolved increment commands and authored-SID
-        # duplicates against the loaded file block the download (the parser
-        # raises on duplicate SIDs, so such a deck would not read back).
-        export_errors, _ = validate_sol144_authoring(
+        # Export gate: the case control must make runnable cases, and no command may
+        # still be an unresolved increment.  Card rules need no gate here: every
+        # authored card has already been through the parser (#113).
+        export_errors, _ = check_case_control(
             bulk, cc_current,
             unresolved_increments=list(
                 st.session_state.get("mldcomd_increments", {}).values()),
-            file_sids=st.session_state.get("file_card_sids"),
-            authored=st.session_state.get("authored_cards"),
         )
-        from sbeam.model.card_writers import write_authored_block
-        authored_block = write_authored_block(
+        authored_block = cards_text(
             bulk, st.session_state.get("authored_cards") or {},
-            "Authored in the sbeam viewer (SOL 144 / MANVR authoring tab)",
-        )
+            st.session_state.get("deck_blocks") or {})
         bdf_text = export_bdf_text(cc_current, include_paths=include_paths,
                                    authored_block=authored_block,
                                    bulk_section=bulk_section)

@@ -203,22 +203,24 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
     return bulk
 
 
-def parse_bulk_file(filepath: StrPath) -> BulkData:
+def parse_bulk_file(filepath: StrPath, text: Optional[str] = None) -> BulkData:
     """Parse a bulk-data-only file and return a BulkData object.
 
     Handles files with or without a BEGIN BULK header line; INCLUDEs are expanded as in
     ``parse_bdf``.  Does not require or parse any case control section — useful for
     loading model geometry into the viewer before case control has been defined.
 
+    ``text`` is as in ``parse_bdf``.
+
     Raises FileNotFoundError if the file or an INCLUDE file does not exist.
     """
-    lines, origins, _ = _read_input(filepath)
+    lines, origins, _ = _read_input(filepath, text)
     begin = _begin_bulk_index(lines)
     start = 0 if begin is None else begin + 1
     return parse_bulk_data(_bulk_section(lines[start:], origins[start:]))
 
 
-def parse_bdf(filepath: StrPath) -> tuple[CaseControl, BulkData]:
+def parse_bdf(filepath: StrPath, text: Optional[str] = None) -> tuple[CaseControl, BulkData]:
     """Read a BDF file and return (CaseControl, BulkData).
 
     The file is read as NASTRAN reads it (#81): every INCLUDE is replaced by the text of
@@ -228,12 +230,17 @@ def parse_bdf(filepath: StrPath) -> tuple[CaseControl, BulkData]:
     BULK (e.g. the Cessna 210 flagship bulk plus its body-panel overlay); the files
     those INCLUDEs name are ``CaseControl.includes``.
 
+    ``text``, when given, is read in place of the file at ``filepath``, which then need not
+    exist: it only names the deck in messages and gives the folder that the deck's own
+    relative INCLUDEs are resolved against.  A tool that has edited a deck in memory parses
+    the result this way without writing it beside the original (#113).
+
     Raises FileNotFoundError if the main file or an INCLUDE file does not exist.
     Raises ValueError for bulk data INCLUDEd above BEGIN BULK, a BEGIN line other than
     BEGIN BULK, data after ENDDATA, and everything ``parse_case_control`` and
     ``parse_bulk_data`` refuse.
     """
-    lines, origins, includes = _read_input(filepath)
+    lines, origins, includes = _read_input(filepath, text)
     begin = _begin_bulk_index(lines)
     if begin is None:
         begin = len(lines)
@@ -372,7 +379,8 @@ def _refuse_partitioned_bulk(line: str) -> None:
             "MODULE, ...; QRG p.286–287) are not supported")
 
 
-def _read_input(filepath: StrPath) -> tuple[list[str], list[str], list[tuple[int, str]]]:
+def _read_input(filepath: StrPath, text: Optional[str] = None,
+                ) -> tuple[list[str], list[str], list[tuple[int, str]]]:
     """Return a file's lines with every INCLUDE expanded, as NASTRAN reads it.
 
     Returns ``(lines, origins, includes)``: the expanded lines, the file each came from,
@@ -380,19 +388,22 @@ def _read_input(filepath: StrPath) -> tuple[list[str], list[str], list[tuple[int
     the index its file's text starts at.  An INCLUDE may appear anywhere and may nest up
     to 10 deep (QRG p.465, p.1984).  A relative filename is resolved against the directory
     of the file holding the INCLUDE — sbeam's rule: the QRG leaves filenames to the
-    installation (p.1984).
+    installation (p.1984).  ``text`` replaces the content of the main file (``parse_bdf``).
     """
     lines: list[str] = []
     origins: list[str] = []
     includes: list[tuple[int, str]] = []
-    _expand(os.fspath(filepath), (), lines, origins, includes)
+    _expand(os.fspath(filepath), (), lines, origins, includes, text)
     return lines, origins, includes
 
 
 def _expand(path: str, chain: tuple[str, ...], lines: list[str], origins: list[str],
-            includes: Optional[list[tuple[int, str]]]) -> None:
-    with open(path, "r") as fh:
-        raw = [line.rstrip("\n") for line in fh]
+            includes: Optional[list[tuple[int, str]]], text: Optional[str] = None) -> None:
+    if text is not None:
+        raw = text.splitlines()
+    else:
+        with open(path, "r") as fh:
+            raw = [line.rstrip("\n") for line in fh]
     chain = (*chain, os.path.abspath(path))
     i = 0
     while i < len(raw):

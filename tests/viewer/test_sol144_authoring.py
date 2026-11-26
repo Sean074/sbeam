@@ -32,18 +32,47 @@ class TestSidAllocation:
         assert logic.next_free_sid(mloads_bulk, "suport") == max(gids) + 1
 
 
-class TestConflicts:
-    def test_file_sourced_sid_conflicts(self, mloads_bulk):
-        sid = next(iter(mloads_bulk.trims))
-        msgs = logic.find_sid_conflicts(mloads_bulk, "trim", sid, {})
-        assert msgs and "already exists" in msgs[0]
+class TestLoadedCards:
+    """A card of the loaded deck is not changed in place (#113)."""
 
-    def test_authored_sid_does_not_conflict(self, mloads_bulk):
+    def test_change_to_a_loaded_card_is_refused(self, mloads_bulk):
+        file_sids = logic.snapshot_family_ids(mloads_bulk)
         sid = next(iter(mloads_bulk.trims))
-        assert logic.find_sid_conflicts(mloads_bulk, "trim", sid, {"trim": {sid}}) == []
+        msgs = logic.loaded_card_edits(file_sids, changes=[("trim", mloads_bulk.trims[sid])])
+        assert len(msgs) == 1 and f"TRIM {sid} comes from the loaded deck" in msgs[0]
+        assert "Save as new SID" in msgs[0]
 
-    def test_fresh_sid_does_not_conflict(self, mloads_bulk):
-        assert logic.find_sid_conflicts(mloads_bulk, "trim", 99999, {}) == []
+    def test_delete_of_a_loaded_card_is_refused(self, mloads_bulk):
+        file_sids = logic.snapshot_family_ids(mloads_bulk)
+        gid = mloads_bulk.supports[0].gid
+        assert logic.loaded_card_edits(file_sids, deletes=[("suport", gid)])
+
+    def test_a_new_id_is_free(self, mloads_bulk):
+        file_sids = logic.snapshot_family_ids(mloads_bulk)
+        card = Trim(sid=99999, mach=0.0, q=1.0, vars={})
+        assert logic.loaded_card_edits(file_sids, changes=[("trim", card)]) == []
+
+    def test_messages_use_the_card_name_not_the_family_key(self, mloads_bulk):
+        file_sids = logic.snapshot_family_ids(mloads_bulk)
+        sid = next(iter(mloads_bulk.mloads))
+        msgs = logic.loaded_card_edits(file_sids, changes=[("mloads", mloads_bulk.mloads[sid])])
+        assert msgs[0].startswith(f"MANVR {sid} ")
+
+
+class TestCandidate:
+    def test_candidate_leaves_the_session_model_alone(self, mloads_bulk):
+        before = dict(mloads_bulk.trims)
+        trial, record = logic.candidate(
+            mloads_bulk, {}, changes=[("trim", Trim(sid=77, mach=0.0, q=5.0, vars={}))])
+        assert 77 in trial.trims and record == {"trim": {77}}
+        assert mloads_bulk.trims == before and 77 not in mloads_bulk.trims
+        assert trial.grids is mloads_bulk.grids            # only the card stores are copied
+
+    def test_candidate_deletes(self, mloads_bulk):
+        trial, record = logic.candidate(
+            mloads_bulk, {}, changes=[("trim", Trim(sid=77, mach=0.0, q=5.0, vars={}))])
+        again, record2 = logic.candidate(trial, record, deletes=[("trim", 77)])
+        assert 77 not in again.trims and not record2.get("trim")
 
 
 class TestApplyDelete:

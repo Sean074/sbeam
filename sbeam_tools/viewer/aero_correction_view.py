@@ -39,6 +39,7 @@ from sbeam.aero.section_correction import cards_to_bdf
 from sbeam.aero.strip import is_strip_caero
 from sbeam_tools.viewer.aero_view import build_section_correction_figure, surface_dihedral_deg
 from sbeam_tools.viewer.format_utils import style_numeric
+from sbeam_tools.viewer import session_deck
 
 # Reserved SID range for tool-generated cards (kept clear of typical user SIDs so the
 # Apply step can find and replace its own cards on a rebuild).
@@ -104,26 +105,27 @@ def _warn_conflicts(bulk: BulkData, eids: list[int]) -> None:
             )
 
 
-def _apply_cards(bulk: BulkData, res: MultiSectionDataBuildResult) -> int:
-    """Inject the generated W2GJ/AECORR pairs into the in-session model.
+# Named blocks of card text this tab adds to the session deck (session_deck.commit).
+_FLYING_BLOCK = "aero_correction"
+_BODY_BLOCK = "aero_correction_body"
 
-    Removes any cards this tool injected on a previous build (tracked SIDs), adds the new
-    pairs, and clears the Aero-tab results so the corrected solve recomputes.
+
+def _apply_cards(bulk: BulkData, res: MultiSectionDataBuildResult) -> bool:
+    """Put the generated W2GJ/AECORR pairs into the session deck.
+
+    The cards are written as text and the deck is re-parsed (#113), so they are in the
+    model the viewer runs and in the deck it exports.  A second build replaces the
+    block, so the cards of the previous build are gone.  Returns False when the deck
+    refuses the cards (the reason is shown); on success the run restarts.
     """
-    for sid in st.session_state.get("aero_corr_sids", set()):
-        bulk.w2gjs.pop(sid, None)
-        bulk.aecorrs.pop(sid, None)
-    new_sids: set[int] = set()
-    for _eid, (w2, ac) in res.correction.cards.items():
-        bulk.w2gjs[w2.sid] = w2
-        bulk.aecorrs[ac.sid] = ac
-        new_sids.update((w2.sid, ac.sid))
-    st.session_state.aero_corr_sids = new_sids
-    # Force the Aero tab to rebuild the operator with the new cards.
-    st.session_state.aero_model = None
-    st.session_state.aero_result = None
-    st.session_state.aero_result_unc = None
-    return len(res.correction.cards)
+    st.session_state.aero_corr_sids = {
+        card.sid for pair in res.correction.cards.values() for card in pair}
+    n = len(res.correction.cards)
+    return session_deck.commit(
+        bulk, blocks={_FLYING_BLOCK: cards_to_bdf(res.correction)},
+        panel="aero_correction",
+        done=f"Put {n} card pair(s) into the deck. Open the **Aero** tab and press "
+             "Compute Aero to run the corrected solve.")
 
 
 def _tok(v: float, prec: int) -> str:
@@ -204,34 +206,25 @@ def _guess_body_panels(
 
 def _apply_body_cards(
     bulk: BulkData, res: Optional[MultiSectionDataBuildResult],
-    bres: BodyCorrectionResult,
-) -> int:
-    """Inject the flying-surface pairs (idempotent) and the body-panel pairs.
+    bres: BodyCorrectionResult, body_bdf: str,
+) -> bool:
+    """Put the flying-surface pairs and the body-panel pairs into the session deck.
 
     The body card pair is (W2GJ, AECORR-WT2) for a cruciform VLM panel or
-    (W2GJ, STRIPK) for a decoupled strip panel; the second card is routed to
-    ``bulk.aecorrs`` or ``bulk.stripks`` by type.
+    (W2GJ, STRIPK) for a decoupled strip panel; ``body_bdf`` is that block as text.
     """
-    from sbeam.model.aero import Stripk
+    blocks: dict[str, Optional[str]] = {_BODY_BLOCK: body_bdf}
     if res is not None:
-        _apply_cards(bulk, res)   # flying cards + clears the Aero-tab cache
-    for sid in st.session_state.get("aero_body_sids", set()):
-        bulk.w2gjs.pop(sid, None)
-        bulk.aecorrs.pop(sid, None)
-        bulk.stripks.pop(sid, None)
-    new_sids: set[int] = set()
-    for _eid, (w2, second) in bres.cards.items():
-        bulk.w2gjs[w2.sid] = w2
-        if isinstance(second, Stripk):
-            bulk.stripks[second.sid] = second
-        else:
-            bulk.aecorrs[second.sid] = second
-        new_sids.update((w2.sid, second.sid))
-    st.session_state.aero_body_sids = new_sids
-    st.session_state.aero_model = None
-    st.session_state.aero_result = None
-    st.session_state.aero_result_unc = None
-    return len(bres.cards)
+        blocks[_FLYING_BLOCK] = cards_to_bdf(res.correction)
+        st.session_state.aero_corr_sids = {
+            card.sid for pair in res.correction.cards.values() for card in pair}
+    st.session_state.aero_body_sids = {
+        card.sid for pair in bres.cards.values() for card in pair}
+    n = len(bres.cards)
+    return session_deck.commit(
+        bulk, blocks=blocks, panel="aero_correction",
+        done=f"Put the flying pairs and {n} body card pair(s) into the deck. Open the "
+             "**Aero** tab and press Compute Aero to run the fully corrected solve.")
 
 
 def _render_body_stage(
@@ -374,12 +367,10 @@ def _render_body_stage(
                        "enlarge the panels (that lowers the ratio but raises the spurious tail load).")
 
     cba, cbb = st.columns(2)
-    if cba.button("Apply body panels to model", type="primary", key=wk("aero_body_apply")):
-        n = _apply_body_cards(bulk, res, bres)
-        st.success(f"Injected the flying pairs + {n} body card pair(s). Open the **Aero** "
-                   "tab and press Compute Aero to run the fully corrected solve.")
     body_bdf = (bc.strip_body_cards_to_bdf(bres) if res_is_strip
                 else bc.body_cards_to_bdf(bres))
+    if cba.button("Apply body panels to model", type="primary", key=wk("aero_body_apply")):
+        _apply_body_cards(bulk, res, bres, body_bdf)
     cbb.download_button(
         "Download body cards (.bdf)", data=body_bdf,
         file_name="body_correction.bdf", mime="text/plain", key=wk("aero_body_download"))
@@ -392,6 +383,7 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
         "from a table of section coefficients for one flight condition (Mach + α/β), "
         "then add them to the model so the **Aero** tab runs the corrected solve."
     )
+    session_deck.show_flash("aero_correction")
 
     if not bulk.caero1s:
         st.info("No CAERO1 surfaces in this model.")
@@ -565,11 +557,7 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
     _warn_conflicts(bulk, built_eids)
     cda, cdb = st.columns(2)
     if cda.button("Apply to model", type="primary", key=wk("aero_corr_apply")):
-        n = _apply_cards(bulk, res)
-        st.success(
-            f"Injected {n} card pair(s) into the model. Open the **Aero** tab and press "
-            "Compute Aero to run the corrected solve."
-        )
+        _apply_cards(bulk, res)
     cdb.download_button(
         "Download cards (.bdf)",
         data=cards_to_bdf(res.correction),

@@ -31,7 +31,7 @@ from sbeam_tools.viewer.aero_view import (
 from sbeam_tools.viewer.aero_correction_view import render_aero_correction_tab
 from sbeam_tools.viewer.sol144_authoring_ui import render_sol144_authoring
 from sbeam_tools.viewer.sol144_authoring import (
-    snapshot_family_ids, validate_sol144_authoring,
+    check_case_control, snapshot_family_ids,
 )
 from sbeam_tools.viewer.format_utils import fmt, fmt_mass, style_numeric
 from sbeam.aero.aero_model import build_aero_model
@@ -58,6 +58,7 @@ def _session_defaults() -> dict[str, Any]:
         "aero_corr_result": None,
         "aero_corr_sids": set(),
         "authored_cards": {},
+        "deck_blocks": {},
         "mldcomd_increments": {},
         "auth_trim_prefill": None,
         "file_card_sids": None,
@@ -636,7 +637,7 @@ def _get_pre_solve_warnings(
     # 6. SOL 144 authoring validation (P12) — warnings only here; the
     #    blocking errors are surfaced next to Launch/export in the CC panel.
     if cc is not None and cc.sol == 144:
-        _, auth_warns = validate_sol144_authoring(bulk, cc)
+        _, auth_warns = check_case_control(bulk, cc)
         msgs.extend(auth_warns)
 
     return msgs

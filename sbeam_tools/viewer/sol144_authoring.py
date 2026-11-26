@@ -1,17 +1,18 @@
 """Streamlit-free logic for the viewer's SOL 144 / MANVR authoring tab (P12).
 
-Everything here is plain-Python and unit-testable: SID allocation and clash
-detection, CAERO1 box-range bounds for AELIST authoring, THRU-aware integer
-list parsing, and the apply/delete card operations on the in-session BulkData.
-The Streamlit layer lives in ``sol144_authoring_ui.py``.
+Everything here is plain-Python and unit-testable: SID allocation, CAERO1
+box-range bounds for AELIST authoring, THRU-aware integer list parsing, and the
+candidate model a card edit is tried on before the deck is re-parsed (#113).
+The Streamlit layer lives in ``sol144_authoring_ui.py`` and ``session_deck.py``.
 """
 
+import copy
 import math
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 from sbeam.model.bulk_data import BulkData
-from sbeam.model.card_writers import FAMILIES
+from sbeam.model.card_writers import FAMILIES, write_authored_block
 from sbeam.model.maneuver import Mldcomd, Mloads, Tabled1
 from sbeam.model.maneuver_presets import load_factor_to_urdd3
 from sbeam.parser.bulk_fields import expand_int_list_with_thru
@@ -27,6 +28,19 @@ AESTAT_LABELS = [
 # family key -> BulkData attribute (shared with the card writers so the two
 # can never disagree about where a family lives).
 FAMILY_ATTRS: dict[str, str] = {fam: attr for fam, (attr, _) in FAMILIES.items()}
+
+
+# family key -> the card's name in a deck and in every message to the user.
+CARD_NAMES: dict[str, str] = {
+    "aestat": "AESTAT", "aesurf": "AESURF", "aelist": "AELIST", "suport": "SUPORT",
+    "trim": "TRIM", "trimvar": "TRIMVAR", "trimobj": "TRIMWGT", "trimcon": "TRIMINEQ",
+    "diverg": "DIVERG", "gustlf": "GUSTLF", "tabled1": "TABLED1",
+    "mldtrim": "MANTRIM", "mldtime": "MANTIME", "mldcomd": "MANCMD",
+    "mldprnt": "MANPRNT", "mloads": "MANVR",
+}
+assert set(CARD_NAMES) == set(FAMILIES)
+
+AUTHORED_HEADER = "Authored in the sbeam viewer (SOL 144 / MANVR authoring tab)"
 
 
 def family_store(bulk: BulkData, family: str) -> Any:
@@ -58,28 +72,6 @@ def next_free_sid(bulk: BulkData, family: str) -> int:
     return (max(ids) + 1) if ids else 1
 
 
-def find_sid_conflicts(
-    bulk: BulkData, family: str, sid: int, authored: dict[str, set[int]]
-) -> list[str]:
-    """Messages when ``sid`` collides with a card NOT authored this session.
-
-    The parser raises on duplicate SIDs, so a driver deck that inlines an
-    authored card whose SID also lives in an INCLUDE file is unparseable —
-    the fix is to save under a new SID (clone-as-new).
-    """
-    store = family_store(bulk, family)
-    exists = (any(s.gid == sid for s in store) if family == "suport"
-              else sid in store)
-    if exists and sid not in authored.get(family, set()):
-        return [
-            f"{family.upper()} {sid} already exists in the loaded bulk data — "
-            "applying will edit it in-session, but the driver export would "
-            "duplicate the SID against the INCLUDE file.  Save under a new "
-            "SID to export."
-        ]
-    return []
-
-
 def apply_card(bulk: BulkData, family: str, card: Any,
                authored: dict[str, set[int]]) -> int:
     """Insert/replace ``card`` in the session model and track it as authored.
@@ -101,6 +93,64 @@ def apply_card(bulk: BulkData, family: str, card: Any,
         family_store(bulk, family)[key] = card
     authored.setdefault(family, set()).add(key)
     return key
+
+
+def candidate(
+    bulk: BulkData,
+    authored: dict[str, set[int]],
+    changes: Sequence[tuple[str, Any]] = (),
+    deletes: Sequence[tuple[str, int]] = (),
+) -> tuple[BulkData, dict[str, set[int]]]:
+    """The model and the authored-card record as they would be after an edit.
+
+    The session model is not touched: the result is a shallow copy whose card-family
+    stores are new containers.  It exists only to write the authored cards as text;
+    the model the session keeps is the one the parser returns for that text (#113).
+    """
+    trial = copy.copy(bulk)
+    for attr in FAMILY_ATTRS.values():
+        setattr(trial, attr, copy.copy(getattr(bulk, attr)))
+    record = {family: set(keys) for family, keys in authored.items()}
+    for family, key in deletes:
+        delete_card(trial, family, key, record)
+    for family, card in changes:
+        apply_card(trial, family, card, record)
+    return trial, record
+
+
+def loaded_card_edits(
+    file_sids: Optional[dict[str, set[int]]],
+    changes: Sequence[tuple[str, Any]] = (),
+    deletes: Sequence[tuple[str, int]] = (),
+) -> list[str]:
+    """A message for each edit that would change or remove a card of the loaded deck.
+
+    A loaded card is not changed in place.  The deck text the viewer runs and exports
+    is the loaded deck plus the authored cards; an edited copy of a loaded card would
+    be a second card with the same ID beside the original.  The edit is saved under a
+    new ID instead ("Save as new SID").  The parser refuses most such duplicates, but
+    not a second SUPORT on one grid, so the rule is checked here for every family.
+    """
+    file_sids = file_sids or {}
+    touched = [(family, card_key(family, card[0] if isinstance(card, list) else card))
+               for family, card in changes]
+    touched += list(deletes)
+    return [
+        f"{CARD_NAMES[family]} {key} comes from the loaded deck and is not changed "
+        "here: the deck would then hold two cards with that ID. Use 'Save as new "
+        "SID', then select the new card where the old one was used."
+        for family, key in dict.fromkeys(touched)
+        if key in file_sids.get(family, set())
+    ]
+
+
+def cards_text(bulk: BulkData, authored: dict[str, set[int]],
+               blocks: Optional[dict[str, str]] = None) -> str:
+    """The bulk text the viewer adds to the loaded deck: authored cards, then each
+    named block another panel contributes (the aero-correction cards)."""
+    parts = [write_authored_block(bulk, authored, AUTHORED_HEADER)]
+    parts += [text for _, text in sorted((blocks or {}).items()) if text]
+    return "".join(part if part.endswith("\n") else part + "\n" for part in parts if part)
 
 
 def delete_card(bulk: BulkData, family: str, key: int,
@@ -441,14 +491,20 @@ def resolve_increment_tables(
 
 
 # ---------------------------------------------------------------------------
-# Validation (S5) — parser-rule parity so authored cards fail in the UI, not
-# at parse/solve time.  Cards injected by ``apply_card`` bypass the parser's
-# deck-time cross-reference pass, so these checks re-implement it (plus the
-# solver preconditions) as a pure pre-launch/pre-export gate.
+# Pre-launch check of the case control against the model.
+#
+# Card rules are the parser's: every card the viewer authors is written as text and
+# the deck is re-parsed (#113), so a label that no AESTAT defines, a MANVR that names
+# a missing MANTIME, a TABLED1 out of order, an AELIST box outside every CAERO1 and a
+# duplicate ID are all refused with the parser's own message.  What is left here is
+# what the parser does not look at: whether each subcase's selectors name cards that
+# exist and make one runnable case.  The solver raises on these at run time; the
+# viewer reports them before Launch.  (They are solver rules restated, the class of
+# #122; #124 moves them into the solver package so there is one statement.)
 # ---------------------------------------------------------------------------
 
 def snapshot_family_ids(bulk: BulkData) -> dict[str, set[int]]:
-    """IDs per family as loaded from file — the clone-as-new baseline."""
+    """IDs per family as loaded from the deck: the cards that are not changed in place."""
     out: dict[str, set[int]] = {}
     for family in FAMILY_ATTRS:
         store = family_store(bulk, family)
@@ -459,27 +515,20 @@ def snapshot_family_ids(bulk: BulkData) -> dict[str, set[int]]:
     return out
 
 
-def validate_sol144_authoring(
+def check_case_control(
     bulk: BulkData,
     cc: Optional[CaseControl],
     unresolved_increments: Optional[list["IncrementSpec"]] = None,
-    file_sids: Optional[dict[str, set[int]]] = None,
-    authored: Optional[dict[str, set[int]]] = None,
 ) -> tuple[list[str], list[str]]:
-    """Return ``(errors, warnings)`` for a SOL 144 case-control + card set.
+    """Return ``(errors, warnings)`` for a SOL 144 case control against its model.
 
-    Errors block Launch and export; warnings inform.  ``file_sids`` (the
-    upload-time :func:`snapshot_family_ids`) with ``authored`` enables the
-    clone-as-new duplicate-SID export check.
+    Errors block Launch and export; warnings inform.  Card-level rules are not
+    checked here: they are the parser's, applied when the deck is re-parsed.
     """
     errors: list[str] = []
     warns: list[str] = []
     if cc is None or cc.sol != 144:
         return errors, warns
-
-    all_labels = ({a.label for a in bulk.aestats.values()}
-                  | {s.label for s in bulk.aesurfs.values()})
-    aesurf_labels = {s.label for s in bulk.aesurfs.values()}
 
     # --- per-subcase driver / reference checks ---
     for sc in cc.subcases:
@@ -536,12 +585,10 @@ def validate_sol144_authoring(
             errors.append(f"{tag}: MASSCASE {sc.massset_sid} not found in the "
                           "bulk data.")
 
-    # --- TRIM cards (parser parity: labels, DOF-count warnings) ---
+    # --- trim determinacy: information, not a rule ---
+    all_labels = ({a.label for a in bulk.aestats.values()}
+                  | {s.label for s in bulk.aesurfs.values()})
     for sid, trim in bulk.trims.items():
-        for lbl in trim.vars:
-            if lbl not in all_labels:
-                errors.append(f"TRIM {sid}: label '{lbl}' not defined in any "
-                              "AESTAT or AESURF card.")
         prescribed = set(trim.vars.keys()) & all_labels
         free = all_labels - prescribed
         if all_labels and not free:
@@ -551,70 +598,30 @@ def validate_sol144_authoring(
             warns.append(f"TRIM {sid}: over-determined ({len(free)} free vs "
                          f"{len(prescribed)} prescribed) with no TRIMWGT card.")
 
-    # --- MANVR family cross-references + solver preconditions ---
+    # --- MANVR subcases: what the solver needs that no card rule states ---
     mloads_selected = [sc.mloads_sid for sc in cc.subcases
                        if sc.mloads_sid is not None]
     if mloads_selected and not bulk.supports:
         errors.append("An MANVR subcase needs a SUPORT card (free-flight "
                       "r-set) — none is defined.")
-    for sid in mloads_selected:
+    for sid in dict.fromkeys(mloads_selected):
         ml = bulk.mloads.get(sid)
         if ml is None:
             continue
         mldtrim = bulk.mldtrims.get(ml.mldtrim)
-        if mldtrim is None:
-            errors.append(f"MANVR {sid}: MANTRIM {ml.mldtrim} not found.")
-        elif mldtrim.trim_sid not in bulk.trims:
-            errors.append(f"MANTRIM {mldtrim.sid}: TRIM {mldtrim.trim_sid} "
-                          "not found.")
-        elif ml.selects_modal and mldtrim.rho <= 0.0:
+        if mldtrim is not None and ml.selects_modal and mldtrim.rho <= 0.0:
             errors.append(
                 f"MANVR {sid}: the modal (free-flight) solver needs RHO "
                 f"on MANTRIM {mldtrim.sid} (V = sqrt(2q/rho)).")
-        mldtime = bulk.mldtimes.get(ml.mldtime)
-        if mldtime is None:
-            errors.append(f"MANVR {sid}: MANTIME {ml.mldtime} not found.")
-        elif mldtime.dt <= 0.0 or mldtime.tend <= mldtime.t0:
-            errors.append(f"MANTIME {mldtime.sid}: needs DT > 0 and TEND > T0.")
-        if ml.mldprnt and ml.mldprnt not in bulk.mldprnts:
-            errors.append(f"MANVR {sid}: MANPRNT {ml.mldprnt} not found.")
-        if ml.method > 0 and ml.method not in bulk.eigrls:
-            errors.append(f"MANVR {sid}: METHOD {ml.method} is not an EIGRL "
-                          "SID.")
-        if ml.mldcomd:
-            comd = bulk.mldcomds.get(ml.mldcomd)
-            if comd is None:
-                errors.append(f"MANVR {sid}: MANCMD {ml.mldcomd} not found.")
-            else:
-                for label, tabid in comd.commands:
-                    if label not in all_labels:
-                        errors.append(f"MANCMD {comd.sid}: label '{label}' "
-                                      "not defined in any AESTAT or AESURF "
-                                      "card.")
-                    elif ml.selects_modal and label not in aesurf_labels:
-                        errors.append(
-                            f"MANVR {sid}: MANCMD {comd.sid} commands "
-                            f"rigid-state label '{label}' — under the modal "
-                            "solver rigid states are outputs; command AESURF "
-                            "controls only.")
-                    table = bulk.tabled1s.get(tabid)
-                    if table is None:
-                        errors.append(f"MANCMD {comd.sid}: TABLED1 {tabid} "
-                                      "not found.")
-                    else:
-                        if len(table.xs) < 2:
-                            errors.append(f"TABLED1 {tabid}: needs at least "
-                                          "two points.")
-                        elif any(table.xs[i + 1] <= table.xs[i]
-                                 for i in range(len(table.xs) - 1)):
-                            errors.append(f"TABLED1 {tabid}: abscissae must "
-                                          "be strictly increasing.")
-                        elif ml.selects_modal and len(table.xs) < 5:
-                            warns.append(
-                                f"TABLED1 {tabid} (modal MANVR {sid}): "
-                                "sparse clamped-linear table — slope jumps "
-                                "ring the highest retained mode; consider a "
-                                "densely-sampled cosine ramp.")
+        comd = bulk.mldcomds.get(ml.mldcomd) if ml.mldcomd else None
+        for _label, tabid in (comd.commands if comd is not None else []):
+            table = bulk.tabled1s.get(tabid)
+            if table is not None and ml.selects_modal and len(table.xs) < 5:
+                warns.append(
+                    f"TABLED1 {tabid} (modal MANVR {sid}): "
+                    "sparse clamped-linear table — slope jumps "
+                    "ring the highest retained mode; consider a "
+                    "densely-sampled cosine ramp.")
         for sc in cc.subcases:
             if sc.mloads_sid == sid and sc.massset_sid is not None \
                     and ml.selects_modal:
@@ -624,28 +631,12 @@ def validate_sol144_authoring(
                     "the solver warns if the case CG shifts more than 5% of "
                     "c_ref.")
 
-    # --- AELIST box ranges ---
-    ranges = caero_box_ranges(bulk)
-    for sid, ael in bulk.aelists.items():
-        outside = boxes_outside_ranges(ael.elements, ranges)
-        if outside:
-            errors.append(f"AELIST {sid}: boxes outside every CAERO1 range: "
-                          f"{outside}.")
-
-    # --- export-only gates ---
+    # --- viewer state: a command still written as an increment from trim ---
     for key in (unresolved_increments or []):
         msid, label = key.mloads_sid, key.label
         errors.append(
             f"MANVR {msid} {label}: unresolved increment command — resolve "
             "to absolute TABLED1s (after a solve) before exporting.")
-    if file_sids and authored:
-        for family, ids in authored.items():
-            dups = sorted(ids & file_sids.get(family, set()))
-            for sid in dups:
-                errors.append(
-                    f"{family.upper()} {sid} is authored but its SID is also "
-                    "defined in the loaded file — the driver export would "
-                    "duplicate it against the INCLUDE.  Save it as a new SID.")
 
     return errors, warns
 

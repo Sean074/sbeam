@@ -85,10 +85,12 @@ Three rules that apply to every result:
 
 | Name | Import | Signature | Notes |
 |---|---|---|---|
-| `parse_bdf` | `from sbeam.parser.bdf_reader import parse_bdf` | `(filepath) -> (CaseControl, BulkData)` | Run file: case control + bulk, inline or via one or more `INCLUDE`s. Rejects unsupported cards (#45). |
-| `parse_bulk_file` | `from sbeam.parser.bdf_reader import parse_bulk_file` | `(filepath) -> BulkData` | Bulk-data-only file, no case control required (the viewer's upload path). |
+| `parse_bdf` | `from sbeam.parser.bdf_reader import parse_bdf` | `(filepath, text=None) -> (CaseControl, BulkData)` | Run file: case control + bulk, inline or via one or more `INCLUDE`s. Rejects unsupported cards (#45). |
+| `parse_bulk_file` | `from sbeam.parser.bdf_reader import parse_bulk_file` | `(filepath, text=None) -> BulkData` | Bulk-data-only file, no case control required (the viewer's upload path). |
 | `parse_bulk_data` | `from sbeam.parser.bdf_reader import parse_bulk_data` | `(lines: list[str]) -> BulkData` | Bulk lines already in memory. |
 | `parse_case_control` | `from sbeam.parser.case_control import parse_case_control` | `(lines: list[str]) -> CaseControl` | Case-control lines already in memory. |
+
+**`text=`** (both file readers, #113): the deck's content when it is not on disk. `filepath` then need not exist; it names the deck in messages and gives the folder that the deck's own relative `INCLUDE`s are resolved against. A tool that edits a deck in memory parses the result this way without writing a file beside the original.
 
 Parser behaviour (formats, ordering rules, cross-reference validation): `01_beam_model.md`.
 

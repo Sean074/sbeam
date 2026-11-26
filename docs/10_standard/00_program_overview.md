@@ -195,6 +195,8 @@ sbeam_tools/
     ├── aero_view.py      # Aero box mesh + cp colour maps, span loading, S&C derivative tables
     ├── aero_correction_view.py # Aero Correction tab: CFD/test section data → correction cards + corrected-BDF export
     ├── sol144_authoring.py / sol144_authoring_ui.py # SOL 144 / MANVR card authoring (logic / UI)
+    ├── session_deck.py   # The session's deck as text; every card edit is written into it and re-parsed (#113)
+    ├── widget_keys.py    # Widget keys that carry the deck's number in the session (#123)
     └── format_utils.py   # Shared 5-sig-fig table/metric formatting (fmt / fmt_mass / style_numeric)
 ```
 

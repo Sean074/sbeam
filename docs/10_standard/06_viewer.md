@@ -28,8 +28,10 @@ sbeam_tools/viewer/
 ├── case_control_ui.py  # Case control form and BDF export
 ├── aero_view.py        # Aero box mesh + cp colour map (S44); spline-deflected box overlay (S57); per-surface span-loading figure + rigid S&C derivative table (A-GUI2); cp corrected/uncorrected/Δ views + dihedral helper (A-GUI4); corrected/uncorrected/Δ rigid-derivative table (A-GUI5); body-panel colour/legend split (AC5)
 ├── aero_correction_view.py  # Aero Correction tab: CFD/test section data → W2GJ+AECORR(WT2) cards, injected into the model + full corrected-BDF export (A-GUI3/A-GUI4); Stage 6 = cruciform body-panel total-moment match (A9)
-├── sol144_authoring.py     # P12 pure logic: SID allocation/clash checks, presets, TABLED1 generators, two-pass increment resolution, validate_sol144_authoring
-├── sol144_authoring_ui.py  # P12 Aeroelastic Authoring tab: per-family card editors, apply-to-session, driver/snippet export
+├── sol144_authoring.py     # P12 pure logic: SID allocation, presets, TABLED1 generators, two-pass increment resolution, the candidate model of a card edit, check_case_control (Streamlit-free)
+├── sol144_authoring_ui.py  # P12 Aeroelastic Authoring tab: per-family card editors, driver/snippet export
+├── session_deck.py     # The session's deck as text; commit(): every card edit is written into the text and re-parsed (#113)
+├── widget_keys.py      # wk(): widget keys that carry the deck's number in the session (#123)
 └── format_utils.py     # Shared 5-sig-fig number formatting for tables/metrics (fmt / fmt_mass / style_numeric) (A-GUI4)
 ```
 
@@ -257,10 +259,10 @@ solve, and/or exports a self-contained corrected BDF.
    chart carries a stable `key` and the upload is re-parsed only on change, so switching surfaces no
    longer wipes the build), and a 5-sig-fig per-strip achieved-targets `st.dataframe`
    (`moment_ref_x, f_slope, m_slope, f0, m0`).
-5. **Apply / export** — **Apply to model** (`_apply_cards`) injects each `(W2gj, Aecorr)` into
-   `bulk.w2gjs` / `bulk.aecorrs`, **clearing any cards this tool injected on a prior build** (tracked
-   in `aero_corr_sids`) so re-applies replace rather than stack, then nulls `aero_model` /
-   `aero_result` / `aero_result_unc` so the Aero tab recomputes. `_warn_conflicts` flags a
+5. **Apply / export** — **Apply to model** (`_apply_cards`) puts the generated cards into the
+   session deck as the named block `aero_correction` (`session_deck.commit`, #113): the deck is
+   re-parsed with them, so they are in the model the viewer runs and in the Case Control tab's
+   export, and a second build replaces the block rather than stacking. `_warn_conflicts` flags a
    pre-existing **WKK** on a corrected surface or a non-generated WT2 on the same surface, both of
    which the solver refuses (#96). **Download cards (.bdf)** emits the bulk-data snippet via
    `section_correction.cards_to_bdf`. **Full corrected BDF** (`build_corrected_bdf`) splices those
@@ -282,7 +284,7 @@ solve, and/or exports a self-contained corrected BDF.
    WT2 ratio** (a *conditioning* gauge, not a contamination metric — WT2 scales body boxes only;
    warned past `RATIO_WARN`=200, the point where targets exceed a flat-plate cruciform and a
    slender-body element is needed, or if it could not converge). **Apply body
-   panels to model** (`_apply_body_cards`) injects the flying pairs (idempotent) and the body
+   panels to model** (`_apply_body_cards`) commits the flying pairs and, as the block `aero_correction_body`, the body
    `(W2gj, Aecorr)` pairs at reserved SIDs (`_BODY_W2GJ_BASE = 9301`, `_BODY_AECORR_BASE = 9401`),
    then nulls the Aero-tab cache; **Download body cards (.bdf)** emits them
    (`body_correction.body_cards_to_bdf`). The body panels carry `LOADINJ` (zero structural
@@ -306,7 +308,7 @@ surface. Body correction is moment-primary (body lift/side-force is a minimum-no
 | `aero_corr_model` | `AeroModel \| None` | Cached `build_aero_model(bulk)` for template strips / box list |
 | `aero_corr_df` | `DataFrame \| None` | Validated section-data table from the CSV upload |
 | `aero_corr_result` | `MultiSectionDataBuildResult \| None` | Last build (cards + diagnostics) |
-| `aero_corr_sids` | `set[int]` | SIDs this tool last injected, so Apply can replace them |
+| `aero_corr_sids` | `set[int]` | SIDs of the cards this tool last applied (`_warn_conflicts` tells them from a hand-written WT2) |
 | `aero_corr_upload_id` | `tuple \| None` | `(name, size)` of the parsed CSV — re-parse only on change |
 | `aero_corr_csv_name` | `str \| None` | Source CSV filename, for the export provenance header |
 | `aero_corr_cond` | `tuple \| None` | `(mach, alpha, beta)` of the last build, for naming / provenance |
@@ -532,17 +534,38 @@ its key alone and ignores a new `value=` default once the key holds a value (che
 A loaded card submitted unchanged reports "No change." and stays the file's card; it is not
 marked as authored, so it is not written inline a second time.
 
-**Apply-to-session:** submitting builds the dataclass and injects it into the in-session
-`BulkData` (`apply_card`), records the ID in `st.session_state.authored_cards`
-(`{family: set[int]}`), and nulls the SOL 144 result/aero-model caches. The authored set
-is exactly what the driver export emits inline.
+**Every card edit goes through the deck text and the parser (#113).** The session's model is
+always the parser's reading of one text: the loaded deck's bulk section, then the cards
+authored in the viewer (`write_authored_block`), then any block another panel contributes
+(the aero-correction cards). `session_deck.commit(bulk, changes=…, deletes=…, blocks=…)` is
+the only way a card changes:
 
-**SID policy (clone-as-new):** SIDs are user-chosen, defaulting to `max(existing) + 1`
-per family. Editing a card that came from the loaded file is allowed in-session (and
-immediately launchable), but the driver export blocks until it is saved under a new SID —
-the parser raises on duplicate SIDs, so an inline card duplicating an INCLUDE-defined SID
-would make the exported deck unparseable. The form shows a **Save as new SID** button for
-file-sourced cards; `snapshot_family_ids` at upload (`file_card_sids`) backs the check.
+1. It builds a candidate (`sol144_authoring.candidate`, a shallow copy; the session model is
+   not touched) and writes the session deck with the candidate's cards
+   (`session_deck.deck_text`).
+2. It parses that text (`parse_bdf(path, text=…)`, so the deck's own INCLUDEs resolve).
+3. If the parser refuses, the form shows `Not applied. The deck would not parse: <the
+   parser's message>` and nothing changes.
+4. Otherwise the parsed model replaces `bulk_data`, the authored record and the parser's
+   warnings are updated, every result and aero cache is cleared, and the run restarts
+   (`st.rerun()`) with a one-line confirmation.
+
+Three consequences. A rule the parser makes for a card holds for a card typed into a form,
+with no copy of the rule in the viewer. The deck the Run button solves is the deck the
+export writes. And a re-parse costs about 5 ms on the flagship deck, so there is no
+in-memory shortcut.
+
+The card editors, the preset's "Create missing AESTATs", the TABLED1 generator, the two-pass
+command builder and the Aero Correction tab's two Apply buttons all call `commit`.
+
+**A card of the loaded deck is not changed in place (owner's decision, 2026-11-26).** The
+edit would be a second card with the same ID beside the deck's own. `loaded_card_edits`
+refuses it for every family (the parser refuses most duplicates, but not a second SUPORT on
+one grid, #125) and the form says to use **Save as new SID**, which adds the edit under
+`max(existing) + 1`; the user then selects the new card in the case control.
+`snapshot_family_ids` at load (`file_card_sids`) is the list of loaded IDs. A card authored
+in the session is edited and deleted freely. The two-pass command builder rewrites the
+MANCMD and MANVR that own a command, so it works on session-authored ones only (#114).
 
 **Presets:** (gravity is prefilled from a "Deck unit system" selector — `SI` / `IMPERIAL` from `sbeam_tools.common.units` — and stays editable; the solver itself never knows units, #30) the three balanced-maneuver recipes from `model/maneuver_presets.py` (the steady-roll parameter is the reduced rate `pb/2V`, not rad/s, and each lateral preset states the `SUPORT` DOF it needs — #24, #10)
 (symmetric pull-up via `load_factor_to_urdd3`, steady roll, steady sideslip) pre-fill the
@@ -562,19 +585,25 @@ rewrites the owning MANCMD (allocating one when the MANVR had none). Unresolved
 increments block export. An MANVR shared by subcases with different MASSCASEs is refused
 (give each mass case its own MANVR — the sample-deck convention).
 
-**Validation:** `validate_sol144_authoring(bulk, cc, …) -> (errors, warnings)` re-implements
-the parser's deck-time cross-reference pass (authored cards bypass it) plus the solver
-preconditions: exactly one driver per subcase (TRIM, DIVERG, MANVR or GUSTLF; a GUSTLF
-subcase is a trim subcase whose TRIM the card names, #122), LOAD only with a trim subcase,
-dangling SID references, modal
-MANCMD labels AESURF-only, RHO required on the MANTRIM of a modal MANVR, SUPORT required with
-MANVR, MANTIME/TABLED1 well-formedness, AELIST boxes inside CAERO1 ranges. Errors
-disable ▶ Launch Analysis and the BDF downloads; warnings (over-/fully-determined trim,
-fixed-Φ MASSCASE note, sparse modal command tables) surface with the pre-solve warnings.
+**Pre-launch check:** `check_case_control(bulk, cc, …) -> (errors, warnings)` checks the
+case control against the model: exactly one driver per subcase (TRIM, DIVERG, MANVR or
+GUSTLF; a GUSTLF subcase is a trim subcase whose TRIM the card names, #122), LOAD only with
+a trim subcase and naming a set that exists with no GRAV in it, every selector naming a card
+that exists, a SUPORT in the deck for a MANVR subcase, RHO on the MANTRIM of a modal MANVR,
+and no command left as an unresolved increment. Errors disable ▶ Launch Analysis and the
+BDF downloads; warnings (over-/fully-determined trim, fixed-Φ MASSCASE note, sparse modal
+command tables) surface with the pre-solve warnings.
+
+It holds no card rule. Those are the parser's and are applied by the re-parse above; the
+function that restated them, `validate_sol144_authoring`, is deleted.
+`tests/viewer/test_reparse_authoring.py` records the split rule by rule: 18 card rules the
+parser refuses (`PARSER_OWNS`), and 12 case-control rules the parser does not look at
+(`VIEWER_KEEPS`). The 12 are solver rules restated in the viewer; #124 moves them into the
+solver package so the command line reports them before a run too.
 
 **Export:** two buttons at the tab foot — *Download run BDF (driver + INCLUDEs)*
-(`export_sol144_bdf`: provenance header + case control + authored cards inline +
-untouched INCLUDEs; filename via `suggest_run_name`) and *Download authored cards only*
+(case control, the loaded deck's bulk section unchanged, then the authored cards and any
+aero-correction block; filename via `suggest_run_name`) and *Download authored cards only*
 (the `write_authored_block` snippet). The Case Control editor's Download BDF emits the
 same driver.
 
@@ -714,6 +743,7 @@ Streamlit session state keys used:
 | `aero_body_eids` | `set[int]` | CAERO1 EIDs selected as body panels when the Aero Correction tab's **Build body correction** succeeds; colours the body panels in the Aero-tab / SOL 144 3D mesh (AC5) |
 | `selected_gid` | `int \| None` | Currently selected grid (from sidebar inspector) |
 | `selected_eid` | `int \| None` | Currently selected element (from sidebar inspector) |
+| `deck_blocks` | `dict[str, str]` | Named blocks of card text other panels add to the session deck (`aero_correction`, `aero_correction_body`), #113 |
 | `_deck_path` | `str \| None` | Absolute path of a deck opened from disk; `None` for an upload (#111) |
 | `_parse_warnings` | `list[str]` | Warnings from last file upload |
 | `_parse_error` | `str \| None` | Error message from last failed upload |

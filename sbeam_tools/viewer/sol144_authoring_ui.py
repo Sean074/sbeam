@@ -24,6 +24,7 @@ from sbeam.model.maneuver import (
     Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads,
 )
 from sbeam.model.card_writers import write_authored_block
+from sbeam_tools.viewer import session_deck
 from sbeam_tools.viewer import sol144_authoring as logic
 from sbeam.parser.case_control import CaseControl
 from sbeam_tools.viewer.case_control_ui import deck_bulk_section, export_bdf_text
@@ -37,7 +38,7 @@ def export_sol144_bdf(cc: CaseControl, bulk: BulkData,
                       bulk_section: Optional[str] = None) -> str:
     """Full driver deck: provenance header + case control + authored cards
     inline + every INCLUDE.  Pure — reused by the export tests."""
-    header = "Authored in the sbeam viewer (SOL 144 / MANVR authoring tab)"
+    header = logic.AUTHORED_HEADER
     if title_comment:
         header += f"\n{title_comment}"
     block = write_authored_block(bulk, authored, header)
@@ -50,13 +51,6 @@ def export_sol144_bdf(cc: CaseControl, bulk: BulkData,
 # ---------------------------------------------------------------------------
 
 _NEW = "— new —"
-
-
-def _invalidate_results() -> None:
-    """Authored cards changed — solved results and the aero cache are stale."""
-    for key in ("sol144_result", "sol144_diverg_result", "maneuver_result",
-                "aero_model_144"):
-        st.session_state[key] = None
 
 
 def _authored() -> dict[str, set[int]]:
@@ -134,15 +128,14 @@ def _family_editor(
             if editing and sel not in _authored().get(family, set()):
                 save_new = col_new.form_submit_button(
                     "Save as new SID",
-                    help="This card came from the loaded file; re-exporting "
-                         "it inline would duplicate its SID against the "
-                         "INCLUDE.  Saving as a new SID keeps the deck "
-                         "parseable.",
+                    help="This card comes from the loaded deck and is not "
+                         "changed in place: the deck would hold two cards "
+                         "with its ID.  Saving as a new SID adds your edit "
+                         "as a new card.",
                 )
 
-        # A loaded card submitted unchanged is not an edit: it stays the file's card.
-        # Marking it authored would write it inline as well as through the deck's own
-        # bulk section, a duplicate SID that blocks the export (#123).
+        # A loaded card submitted unchanged is not an edit: it stays the file's card
+        # (#123).  Any other Apply goes through the deck text and the parser (#113).
         unchanged = (applied and not save_new and editing and card is not None
                      and _same_card(card, existing))
         if unchanged:
@@ -153,18 +146,15 @@ def _family_editor(
                 for one in (card if isinstance(card, list) else [card]):
                     setattr(one, logic.key_attr(family, one), new_key)
             key = logic.card_key(family, card[0] if isinstance(card, list) else card)
-            conflicts = logic.find_sid_conflicts(bulk, family, key, _authored())
-            for msg in conflicts:
-                st.warning(msg)
-            logic.apply_card(bulk, family, card, _authored())
-            _invalidate_results()
-            st.success(f"{family.upper()} {logic.card_key(family, card[0] if isinstance(card, list) else card)} applied to the session model.")
+            session_deck.commit(
+                bulk, changes=[(family, card)],
+                done=f"{logic.CARD_NAMES[family]} {key} applied to the deck.")
 
         if editing and sel in _authored().get(family, set()):
             if st.button("Delete", key=wk(f"auth_del_{family}")):
-                logic.delete_card(bulk, family, sel, _authored())
-                _invalidate_results()
-                st.rerun()
+                session_deck.commit(
+                    bulk, deletes=[(family, cast(int, sel))],
+                    done=f"{logic.CARD_NAMES[family]} {sel} deleted.")
 
 
 def _pairs_editor(key: str, columns: dict[str, Any],
@@ -638,12 +628,12 @@ def _render_preset_panel(bulk: BulkData) -> None:
         if missing:
             st.warning(f"Missing AESTAT labels: {', '.join(missing)}")
             if st.button("Create missing AESTATs", key=wk("auth_preset_mkstat")):
-                for label in missing:
-                    aid = logic.next_free_sid(bulk, "aestat")
-                    logic.apply_card(bulk, "aestat", Aestat(id=aid, label=label),
-                                     _authored())
-                _invalidate_results()
-                st.rerun()
+                first = logic.next_free_sid(bulk, "aestat")
+                session_deck.commit(
+                    bulk,
+                    changes=[("aestat", Aestat(id=first + i, label=label))
+                             for i, label in enumerate(missing)],
+                    done=f"AESTAT created for {', '.join(missing)}.")
         if not any(s for s in bulk.aesurfs.values()):
             st.warning(f"The {preset.surface_role} (an AESURF) must exist and "
                        "stay un-prescribed so it can trim free.")
@@ -707,11 +697,8 @@ def _render_table_generator(bulk: BulkData) -> None:
         if points is not None and st.button("Create TABLED1", key=wk("auth_gen_apply")):
             table = Tabled1(tid=int(tid),
                             xs=[p[0] for p in points], ys=[p[1] for p in points])
-            for msg in logic.find_sid_conflicts(bulk, "tabled1", table.tid, _authored()):
-                st.warning(msg)
-            logic.apply_card(bulk, "tabled1", table, _authored())
-            _invalidate_results()
-            st.success(f"TABLED1 {table.tid} applied to the session model.")
+            session_deck.commit(bulk, changes=[("tabled1", table)],
+                                done=f"TABLED1 {table.tid} applied to the deck.")
 
 
 def _render_increment_builder(bulk: BulkData) -> None:
@@ -778,16 +765,17 @@ def _render_increment_builder(bulk: BulkData) -> None:
                     trim_results=trim_results,
                     maneuver_results=maneuver_results,
                 )
-                for family, card in cards:
-                    logic.apply_card(bulk, family, card, _authored())
-                if cards:
-                    _invalidate_results()
-                for line in report:
-                    st.success(line)
                 for err in errors:
                     st.error(err)
-                for spec in resolved:
-                    specs.pop((spec.mloads_sid, spec.label), None)
+                if cards:
+                    # commit restarts the run on success; it returns only when the
+                    # deck refused the cards, and the specs are then put back.
+                    for spec in resolved:
+                        specs.pop((spec.mloads_sid, spec.label), None)
+                    if not session_deck.commit(bulk, changes=cards,
+                                               done="  \n".join(report)):
+                        for spec in resolved:
+                            specs[(spec.mloads_sid, spec.label)] = spec
 
 
 # ---------------------------------------------------------------------------
@@ -797,10 +785,13 @@ def _render_increment_builder(bulk: BulkData) -> None:
 def render_sol144_authoring(bulk: BulkData) -> None:
     st.subheader("Aeroelastic Authoring")
     st.caption(
-        "Author the SOL 144 / MANVR condition cards, apply them to the "
-        "in-session model, then reference them from the Case Control tab.  "
-        "Applied cards are exported inline in the driver BDF."
+        "Author the SOL 144 / MANVR condition cards, then reference them from the "
+        "Case Control tab.  Each Apply writes the card into the deck and reads the "
+        "deck again, so the parser's rules apply to it; the same deck is run and "
+        "exported.  A card of the loaded deck is not changed in place: save your "
+        "edit under a new SID."
     )
+    session_deck.show_flash()
     tab_surf, tab_trim, tab_mloads, tab_tables = st.tabs(
         ["Surfaces & States", "Trim Conditions", "Maneuver (MANVR)", "Tables"]
     )
@@ -840,12 +831,10 @@ def _render_authoring_export(bulk: BulkData) -> None:
     cc = st.session_state.get("case_control")
     errors: list[str] = []
     if cc is not None and cc.sol == 144:
-        errors, _ = logic.validate_sol144_authoring(
+        errors, _ = logic.check_case_control(
             bulk, cc,
             unresolved_increments=list(
                 st.session_state.get("mldcomd_increments", {}).values()),
-            file_sids=st.session_state.get("file_card_sids"),
-            authored=authored,
         )
         for err in errors:
             st.error(err)
@@ -854,8 +843,8 @@ def _render_authoring_export(bulk: BulkData) -> None:
     if cc is not None:
         col1.download_button(
             "Download run BDF (driver + INCLUDEs)",
-            data=export_sol144_bdf(
-                cc, bulk, authored,
+            data=export_bdf_text(
+                cc, authored_block=session_deck.session_cards_text(bulk),
                 bulk_section=deck_bulk_section(
                     st.session_state.get("_uploaded_source_text"))),
             file_name=logic.suggest_run_name(stem, cc),
@@ -867,9 +856,7 @@ def _render_authoring_export(bulk: BulkData) -> None:
         col1.caption("Define a case control to export a run deck.")
     col2.download_button(
         "Download authored cards only (.bdf snippet)",
-        data=write_authored_block(
-            bulk, authored,
-            "Authored in the sbeam viewer (SOL 144 / MANVR authoring tab)"),
+        data=write_authored_block(bulk, authored, logic.AUTHORED_HEADER),
         file_name=f"{stem}_authored_cards.bdf",
         mime="text/plain",
         key=wk("auth_export_cards"),

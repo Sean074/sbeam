@@ -120,14 +120,16 @@ def test_edit_existing_shows_the_selected_card():
     assert not any(at.session_state["authored_cards"].values())
 
 
-def test_an_edit_to_a_loaded_card_is_applied_and_tracked():
+def test_a_loaded_card_is_not_changed_in_place():
+    """#113: the edit would be a second SUPORT 90 beside the deck's own."""
     at = _open("validation/val_dihedral_trim.bdf")
     at.selectbox(key="auth_sel_suport").set_value(90)
     at.run()
     at.text_input(key="auth_suport_dofs@90").set_value("35")
     _submit(at, "auth_form_suport")
-    assert at.session_state["bulk_data"].supports[0].dofs == "35"
-    assert at.session_state["authored_cards"] == {"suport": {90}}
+    assert any("SUPORT 90 comes from the loaded deck" in e.value for e in at.error)
+    assert at.session_state["bulk_data"].supports[0].dofs == "3"
+    assert not any(at.session_state["authored_cards"].values())
 
 
 def test_choosing_another_card_shows_that_card():

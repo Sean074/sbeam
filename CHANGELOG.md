@@ -56,6 +56,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     WKK's operator bit for bit. pyNastran reads all 224 terms to the same values.
 
 ### Breaking changes
+- **Viewer: a card of the loaded deck is no longer edited in place (#113).** Choosing a loaded
+  card, changing a field and pressing Apply is refused with a message. Use **Save as new
+  SID**, which adds the edit as a new card, then select that card in the case control.
+  Before, the edit was applied in memory and could be run, but the export was blocked until
+  the card was saved under a new SID; what ran and what exported could differ. A card
+  authored in the session is edited and deleted as before. The two-pass command builder
+  rewrites the MANCMD and MANVR that own a command, so it now works on session-authored
+  ones only (#114).
 - **sbeam's ZAERO-named cards are renamed; ZAERO's and MSC's cards keep their vendor
   layouts** (#87; pre-1.0 MINOR break). sbeam had borrowed ZAERO card names with its own
   layouts and meanings. ZAERO's MLOADS family, for example, drives an aeroservoelastic
@@ -228,6 +236,23 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   slope with `STRIPK`. `CPINJ` already refused strip panels. No repo deck is affected.
 
 ### Changed
+- **The viewer re-parses the deck after every card edit (#113).** The session model is the
+  parser's reading of one text: the loaded deck's bulk section, the authored cards, and the
+  aero-correction cards. An edit is written into that text and parsed; if the parser refuses,
+  the form shows the parser's message and nothing changes. So a parser rule holds for a card
+  typed into a form, and the deck the Run button solves is the deck the export writes.
+  - `validate_sol144_authoring`, about 180 lines restating the parser's cross-reference pass,
+    is deleted. `tests/viewer/test_reparse_authoring.py` lists the 18 card rules it held and
+    shows the parser refuses each. What remains, `check_case_control`, checks the case
+    control against the model: 12 rules the parser does not look at (#124).
+  - Cards the old path accepted and the parser refuses are now refused in the form. Found so
+    far: an AESURF whose two box lists share boxes, and a SUPORT on a grid that does not
+    exist.
+  - The Aero Correction tab's **Apply to model** puts its cards into the same text. They
+    were in the viewer's model but not in the Case Control tab's export.
+  - `parse_bdf` and `parse_bulk_file` take `text=`: the deck's content when it is not on
+    disk, with the path used for messages and to resolve the deck's own INCLUDEs.
+  - A re-parse of the flagship deck takes about 5 ms.
 - **The f06 follows MSC's layouts where a consumer can compare it** (#90; audit O5–O8,
   C11). All numbers are unchanged; only the presentation moves. Every sample deck's
   CSV and load-BDF output is identical to before.
