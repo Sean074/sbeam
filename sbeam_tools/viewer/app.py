@@ -22,7 +22,9 @@ from sbeam.results.results import (
 from sbeam.gpwg import compute_gpwg
 from sbeam_tools.viewer.geometry import build_model_figure
 from sbeam_tools.viewer.case_control_ui import render_case_control_panel
-from sbeam_tools.viewer.docs_view import PAGE_KEY as DOCS_PAGE_KEY, render_documentation
+from sbeam_tools.viewer.docs_view import (
+    PAGE_KEY as DOCS_PAGE_KEY, SEARCH_KEY as DOCS_SEARCH_KEY, render_documentation,
+)
 from sbeam_tools.viewer.results_view import (
     render_sol101_results, render_sol103_results, render_sol144_results,
 )
@@ -105,7 +107,7 @@ SAMPLE_ROOT = Path(__file__).resolve().parents[2] / "sample"
 # bookkeeping, and the count of decks opened (it makes every model widget's key, wk()).
 _KEPT_ON_LOAD = {
     "file_uploader", "sample_pick", "deck_path_input", "open_deck",
-    "_uploaded_file_id", DECK_GENERATION, DOCS_PAGE_KEY,
+    "_uploaded_file_id", DECK_GENERATION, DOCS_PAGE_KEY, DOCS_SEARCH_KEY,
 }
 
 

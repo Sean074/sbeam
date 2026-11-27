@@ -27,6 +27,11 @@ from sbeam_tools.common import user_docs
 
 #: Session key of the page shown.  It is not a model widget: it survives a new deck.
 PAGE_KEY = "docs_page"
+#: Session key of the search box, and of the heading to scroll to on the next run.
+SEARCH_KEY = "docs_search"
+SCROLL_KEY = "_docs_scroll_to"
+#: Search results drawn; the rest are counted.
+MAX_RESULTS = 20
 
 
 def installed_version() -> str:
@@ -53,6 +58,45 @@ def _labels(root: str) -> dict[str, str]:
     return out
 
 
+def _open_result(page: str, anchor: str) -> None:
+    """Button callback: show ``page`` and scroll to ``anchor`` on the run that follows."""
+    st.session_state[PAGE_KEY] = page
+    st.session_state[SCROLL_KEY] = anchor
+
+
+def _render_search(root: Path, labels: dict[str, str]) -> None:
+    query = st.text_input(
+        "Search the documentation", key=SEARCH_KEY,
+        placeholder="A card name, a keyword or a phrase",
+        help="Not case-sensitive. A single word is matched as a whole word: "
+             "TRIM does not find TRIMVAR.")
+    if not query.strip():
+        return
+    hits = user_docs.search(query, root)
+    if not hits:
+        st.info(f"Nothing in the documentation matches “{query.strip()}”.")
+        return
+    with st.expander(f"{len(hits)} section(s) match “{query.strip()}”", expanded=True):
+        for i, hit in enumerate(hits[:MAX_RESULTS]):
+            title = labels[hit.page].split(" — ", 1)[1]
+            heading = user_docs.plain_title(hit.heading) or "(top of the page)"
+            st.button(f"{title} › {heading}", key=f"docs_hit_{i}", on_click=_open_result,
+                      args=(hit.page, hit.anchor),
+                      help=f"{hit.count} matching line(s). First: {hit.context}")
+        if len(hits) > MAX_RESULTS:
+            st.caption(f"{len(hits) - MAX_RESULTS} more section(s) are not listed; "
+                       "narrow the search.")
+
+
+def _scroll_to(anchor: str) -> None:
+    """Scroll the browser to a heading of the page just drawn.  Streamlit has no call
+    for this; a zero-height component runs one line of script in the page."""
+    import json
+    from streamlit.components.v1 import html
+    html("<script>const e = window.parent.document.getElementById("
+         f"{json.dumps(anchor)}); if (e) e.scrollIntoView();</script>", height=0)
+
+
 def render_documentation() -> None:
     """Draw the page list, the chosen page's contents list and the page."""
     try:
@@ -70,6 +114,7 @@ def render_documentation() -> None:
     elif st.session_state[PAGE_KEY] not in labels:
         st.session_state[PAGE_KEY] = pages[0]
 
+    _render_search(root, labels)
     page = st.selectbox("Page", pages, format_func=labels.__getitem__, key=PAGE_KEY)
     version = installed_version()
     blocks = _blocks(page, str(root), version)
@@ -90,3 +135,7 @@ def render_documentation() -> None:
             st.header(block.text, anchor=block.anchor)
         else:
             st.subheader(block.text, anchor=block.anchor)
+
+    pending = st.session_state.pop(SCROLL_KEY, None)
+    if pending:
+        _scroll_to(pending)

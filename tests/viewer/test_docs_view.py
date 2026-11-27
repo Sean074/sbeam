@@ -83,3 +83,32 @@ def test_the_page_shown_survives_a_new_deck() -> None:
     at.run()
     _assert_clean(at, "second deck")
     assert at.session_state[PAGE_KEY] == "docs/10_standard/09_conventions.md"
+
+
+# --- Search (#130) -------------------------------------------------------------------
+
+def test_a_search_result_opens_its_page_at_its_heading() -> None:
+    from sbeam_tools.viewer.docs_view import SCROLL_KEY, SEARCH_KEY
+    at = _fresh()
+    at.run()
+    at.text_input(key=SEARCH_KEY).set_value("MASSCASE")
+    at.run()
+    _assert_clean(at, "search")
+    first = at.button(key="docs_hit_0")
+    assert first.label.endswith("MASSCASE — Payload / Mass Case (sbeam extension; Step 60)")
+    first.click()
+    at.run()
+    _assert_clean(at, "result")
+    assert at.session_state[PAGE_KEY] == user_docs.CARD_REFERENCE
+    assert SCROLL_KEY not in at.session_state          # consumed: the page scrolled once
+
+
+def test_a_search_with_no_match_says_so() -> None:
+    from sbeam_tools.viewer.docs_view import SEARCH_KEY
+    at = _fresh()
+    at.run()
+    at.text_input(key=SEARCH_KEY).set_value("zzzz-no-such-term")
+    at.run()
+    _assert_clean(at, "search")
+    assert any("Nothing in the documentation matches" in i.value for i in at.info)
+    assert not [b for b in at.button if (b.key or "").startswith("docs_hit_")]

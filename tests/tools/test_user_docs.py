@@ -277,3 +277,60 @@ def test_the_pages_use_only_latex_that_was_seen_to_render() -> None:
                 used.setdefault(name, page)
     assert len(used) > 80, "the extraction found too little: has the page format changed?"
     assert {n: p for n, p in used.items() if n not in _SEEN_TO_RENDER} == {}
+
+
+# ---------------------------------------------------------------------------
+# Search (#130)
+# ---------------------------------------------------------------------------
+
+def test_a_card_name_returns_its_section_of_the_card_reference_first() -> None:
+    for card in ("TRIM", "SUPORT", "MASSCASE", "MONPNT1", "GUSTLF", "CBAR"):
+        first = user_docs.search(card, REPO)[0]
+        assert first.page == user_docs.CARD_REFERENCE, card
+        assert first.heading.upper().startswith(card), (card, first.heading)
+
+
+def test_a_single_word_is_matched_as_a_whole_word_whatever_its_case() -> None:
+    hits = user_docs.search("trim", REPO)
+    assert hits == user_docs.search("TRIM", REPO)
+    assert not any(h.heading.startswith("TRIMVAR") for h in hits[:1])
+    lone = [h for h in user_docs.search("TRIMVAR", REPO)]
+    assert lone and lone[0].heading.startswith("TRIMVAR")
+    assert len(hits) > len(lone)
+
+
+def test_a_phrase_in_several_pages_returns_each_of_them() -> None:
+    found = {h.page for h in user_docs.search("hinge moment", REPO)}
+    assert user_docs.CARD_REFERENCE in found
+    assert "docs/10_standard/05c_sol144_maneuver.md" in found
+    assert len(found) >= 3
+
+
+def test_nothing_found_is_an_empty_list() -> None:
+    assert user_docs.search("zzzz-no-such-term", REPO) == []
+    assert user_docs.search("   ", REPO) == []
+
+
+def test_every_result_points_at_a_heading_the_viewer_anchors() -> None:
+    for query in ("TRIM", "the", "MANVR", "hinge moment", "$"):
+        hits = user_docs.search(query, REPO)
+        assert hits, query
+        for hit in hits:
+            anchored = {b.anchor for b in user_docs.page_blocks(hit.page, REPO, "0") if b.level}
+            assert hit.anchor == "" or hit.anchor in anchored, (query, hit)
+            assert hit.count >= 1 and hit.context
+
+
+def test_search_reads_code_blocks_and_reports_the_section(tmp_path, monkeypatch) -> None:
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "a.md").write_text(
+        "intro FOO\n# A\n## First\ntext\n```\n# FOO, 1, 2\n```\n#### Deep FOO\n## FOO card\nbody\n",
+        encoding="utf-8")
+    monkeypatch.setattr(user_docs, "SECTIONS", (("S", ("docs/a.md",)),))
+    hits = user_docs.search("foo", tmp_path)
+    assert [(h.heading, h.anchor, h.count) for h in hits] == [
+        ("FOO card", "foo-card", 1),         # the heading starts with the term
+        ("First", "first", 2),                # the code line and the level-4 heading
+        ("", "", 1),                          # before the first heading; fewer lines
+    ]
+    assert hits[0].context == "FOO card" and hits[1].context == "# FOO, 1, 2"

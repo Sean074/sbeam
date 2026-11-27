@@ -709,6 +709,7 @@ other tabs.
 
 | Element | Behaviour |
 |---|---|
+| **Search the documentation** (#130) | A term typed here is looked for in every shipped page, code blocks included (`user_docs.search`). Not case-sensitive. A single word matches as a whole word, so `TRIM` does not find `TRIMVAR`; anything else matches as typed. Each result is a section: "page title › heading", with the number of matching lines and the first of them in its tooltip. Sections whose heading starts with the term come first, then those whose heading holds it, then the rest; on a tie the card reference comes first, then the section with more matching lines. The first 20 are listed. Choosing one shows that page and scrolls to the heading, in the same session. No index is kept: the pages are read on each search (about 50 ms) |
 | **Page** list | Every shipped page as "Section — page title", in the order of `user_docs.SECTIONS`. The choice is kept in `st.session_state.docs_page` and survives opening another deck |
 | **On this page** | The page's level 2 and level 3 headings, each a link to its place on the page |
 | Caption | The installed version and the page's path in the repository |
@@ -741,8 +742,10 @@ a new session. To change page without leaving the session, use the **Page** list
 
 Gates: `tests/viewer/test_docs_view.py` (every page opens with no deck; a `?doc=` address opens
 its page; reading the documentation leaves the deck, the case control and the authored cards
-unchanged; the page shown survives a new deck) and `tests/tools/test_user_docs.py` (the cut,
-the links, the two math rules). AppTest drives widgets, not a browser: figures, math and the
+unchanged; the page shown survives a new deck; a search result opens its page; a search with
+no match says so) and `tests/tools/test_user_docs.py` (the cut,
+the links, the two math rules, the search order and that every result names an anchored
+heading). AppTest drives widgets, not a browser: figures, math and the
 scroll to a heading are checked by eye at each release (#133).
 
 ---

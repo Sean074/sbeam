@@ -27,6 +27,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deck; a link to a file that is not shipped opens GitHub at the installed version's tag.
   Checked in a browser: every expression of the three pages with math renders. Guide:
   `06_viewer.md`, Documentation Page.
+- **The Documentation page has a search box (#130).** It looks for a term in every shipped
+  page and lists the sections that hold it, the card's own section of the card reference
+  first. A single word is matched as a whole word (`TRIM` does not find `TRIMVAR`).
+  Choosing a result opens the page at that heading without leaving the session. No index
+  is built: the pages are read on each search, about 50 ms.
 
 ### Fixed
 - **Two heading links in the maneuver guide went nowhere (#128).** The links to the mass

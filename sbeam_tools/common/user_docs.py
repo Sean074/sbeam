@@ -387,3 +387,81 @@ def page_blocks(page: str, root: Path, version: str) -> list[Block]:
         body.append(line)
     flush()
     return blocks
+
+
+# ---------------------------------------------------------------------------
+# Search (#130)
+# ---------------------------------------------------------------------------
+
+#: The page that owns card fields; on a tie its sections come first.
+CARD_REFERENCE = "docs/10_standard/02_card_reference.md"
+
+
+@dataclass(frozen=True)
+class Hit:
+    """One section of one page that holds the search term.
+
+    ``heading`` and ``anchor`` are those of the nearest level 1 to 3 heading above the
+    first matching line (empty for text before a page's first heading), ``context`` is
+    that line (the heading itself if only the heading matches), and ``count`` the number
+    of matching lines in the section.
+    """
+    page: str
+    heading: str
+    anchor: str
+    context: str
+    count: int
+
+
+def _term_pattern(query: str) -> "re.Pattern[str]":
+    """Case-insensitive.  A single word (a card name, a keyword) matches as a whole
+    word, so ``TRIM`` does not find ``TRIMVAR``; anything else matches as written."""
+    text = re.escape(query)
+    if re.fullmatch(r"\w+", query):
+        text = rf"(?<![A-Za-z0-9_]){text}(?![A-Za-z0-9_])"
+    return re.compile(text, re.IGNORECASE)
+
+
+def search(query: str, root: Path) -> list[Hit]:
+    """Every section of the shipped pages that holds ``query``, best first.
+
+    Order: sections whose heading starts with the term, then sections whose heading
+    holds it, then the rest; within each, the card reference first, then more matching
+    lines first, then reading order.  Code blocks are searched too (card layouts and
+    messages live there).  No index is kept: the whole set is read on each call.
+    """
+    query = query.strip()
+    if not query:
+        return []
+    term = _term_pattern(query)
+    found: list[tuple[tuple[int, int, int, int], Hit]] = []
+    order = 0
+    for page in pages(root):
+        text = (root / page).read_text(encoding="utf-8")
+        anchors = iter(headings(text))
+        sections_: list[tuple[str, str, list[str]]] = [("", "", [])]   # heading, anchor, matching lines
+        fence = None
+        for line in text.splitlines():
+            mark = _FENCE.match(line)
+            if mark and fence is None:
+                fence = mark.group(1)
+            elif mark and mark.group(1) == fence:
+                fence = None
+            elif fence is None and _HEADING.match(line):
+                level, title, anchor = next(anchors)
+                if level <= ANCHORED_LEVELS:
+                    sections_.append((title, anchor, []))
+                    continue
+            if term.search(line):
+                sections_[-1][2].append(line.strip())
+        for title, anchor, lines in sections_:
+            in_title = term.search(plain_title(title))
+            if not lines and not in_title:
+                continue
+            lines = lines or [plain_title(title)]
+            rank = 2 if not in_title else (0 if in_title.start() <= 1 else 1)
+            order += 1
+            context = lines[0] if len(lines[0]) <= 160 else lines[0][:157] + "…"
+            found.append(((rank, 0 if page == CARD_REFERENCE else 1, -len(lines), order),
+                          Hit(page, title, anchor, context, len(lines))))
+    return [hit for _, hit in sorted(found, key=lambda item: item[0])]
