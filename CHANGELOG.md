@@ -163,6 +163,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   solver feature (`docs/30_future/02_parked.md`).
 
 ### Documentation
+- **Deviation register reviewed for the v0.4.1 release gate (2026-11-28).** The cards and commands
+  touched by the milestone's closed issues were probed against the parser, the pre-run check
+  and one end-to-end run; every existing row states what the code does, and every *defect*
+  row names an open issue. Three rows were missing and are added: a SOL 144 subcase with
+  neither `TRIM` nor `DIVERG` is refused; `LOAD` on a `DIVERG`-only subcase is refused; two
+  `SUPORT` entries on one grid are accepted with no message (defect, #125). The QRG pages
+  read for them do not state MSC's behaviour, and the rows say so.
 - **README brought up to date.** It listed `MONPNT3` as supported (refused since #86), said
   PBAR K1/K2 are silently ignored (refused), said CBUSH needs CID = 0 (a CORD2R is read,
   #62), said unrestrained derivatives are not computed (AE8b, 2026-07-05), and said SOL 144

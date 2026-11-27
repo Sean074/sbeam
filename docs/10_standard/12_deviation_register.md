@@ -4,7 +4,7 @@
 per difference: what sbeam does, what the vendor does, where the vendor says so, and how
 sbeam handles it. Started from the 2026-11-16 compatibility audit
 (`docs/50_reviews/2026-11-16_nastran_zaero_audit.md` §3–§4) and brought up to the code as
-of 2026-11-26 (#95, D1). Differences the audit found that have since been fixed are not
+of 2026-11-26 (#95, D1). Last reviewed at a release gate: 2026-11-28, for v0.4.1. Differences the audit found that have since been fixed are not
 listed; they are in `docs/40_history/`.
 
 ## Rules
@@ -77,6 +77,8 @@ Full command tables: `02_card_reference.md`, "Case Control Keywords".
 | `AESYMXZ`, `AESYMXY` | Refused; symmetry is read from `AEROS` only | Override the `AEROS` symmetry | QRG p.251, p.252 remark 1 | refused | — |
 | `SUBCOM`, `SYMCOM`, `SYM`, `REPCASE`, `SUBSEQ`, `SYMSEQ` | Refused | Subcase combinations | QRG p.210, p.654, p.667 | refused | — |
 | `GUST` | Refused, so it is not read as an abbreviation of sbeam's `GUSTLF` | SOL 146 gust selector | QRG p.452 | refused | — |
+| SOL 144 subcase with neither `TRIM` nor `DIVERG` | Refused before the run: sbeam has no case to solve for it | Not stated on the command pages | QRG p.682 (TRIM), p.316 (DIVERG) (#124) | refused | — |
+| `LOAD` in a SOL 144 subcase with `DIVERG` and no `TRIM` | Refused before the run: the divergence eigenproblem takes no applied load | Not stated | QRG p.316 (#6, #124) | refused | — |
 | `COMPILE`, `ALTER`, `MALTER`, `ENDALTER` | Refused | DMAP | — | refused | — |
 | Any other MSC command (`MPC`, `STRAIN`, …) | Refused as unknown | Read | — | refused | — |
 | `MODEXP`, `MASSCASE`, `GUSTLF`, `MANVR`, `TRIMWGT` | sbeam-only selectors | None of these names | [sbeam-only cards](02_card_reference.md#sbeam-only-cards) | by design | — |
@@ -145,6 +147,7 @@ Full command tables: `02_card_reference.md`, "Case Control Keywords".
 | `DMIJ` / `DMIK` | Read for `W2GJ` / `WKK` only. Refused: other names (FA2J, WTFACT), complex terms, more than one W2GJ column, a WKK off the diagonal or with unequal force and moment terms | Any matrix | QRG p.1617–1619, p.1623–1625 (#104) | refused | — |
 | DMIJ/DMIK term on a component MSC does not use | Refused | Dropped without a warning | QRG p.1617–1619, p.1623–1625 (remark 2) | by design (stricter) | — |
 | AESTAT labels | MSC's standard labels only; any other refused | A user label needs AELINK or DMI data | QRG p.1153 Table 1, p.1154 remark 3 | refused | — |
+| `SUPORT` naming one grid twice | Accepted with no message; both entries are kept | Not stated. One entry may hold several grid/component pairs, and r-set degrees of freedom "may not be specified on other entries that define mutually exclusive sets" | QRG p.2870 remarks 4–5 | defect | #125 |
 | AESURF `NOLDW` and continuation (`CREFC`, `CREFS`, limits) | Refused | Read | #63 | refused | #44 |
 | AECOMP `LISTTYPE` | `AELIST` and `SET1`. `CAERO` and `CMPID` refused; `AECOMPL` not supported | All list types | QRG p.1138 | defect | #89 |
 | `SPLINE1` | Not implemented; the card is refused | Infinite-plate spline | QRG p.2847 | refused | parked |
