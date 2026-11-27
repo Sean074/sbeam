@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sbeam"
 version = "0.4.0"
-description = "Simple beam finite element analysis (SOL 101 / SOL 103) with NASTRAN BDF input."
+description = "Simple beam finite element analysis (SOL 101 / SOL 103 / SOL 144) with NASTRAN-like BDF input."
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
 authors = [
     {name = "Sean O'Meara", email = "sean.c.omeara74@gmail.com"},
 ]
-keywords = ["fea", "beam", "nastran", "structural-analysis", "modal-analysis"]
+keywords = ["fea", "beam", "nastran", "structural-analysis", "modal-analysis", "aeroelastics", "gust"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
