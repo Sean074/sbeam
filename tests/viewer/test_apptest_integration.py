@@ -10,6 +10,7 @@ to avoid temp-file creation inside the Streamlit runtime.
 from __future__ import annotations
 
 from streamlit.testing.v1 import AppTest
+from tests.samples import sample_path
 
 
 def _sbeam_app():
@@ -133,17 +134,16 @@ def test_flow_b_sol103_render_and_run(cantilever_sol103_parsed):
 
 
 def test_flow_d_sol144_mloads_render_and_run():
-    """Flow D (AC5): MLOADS sample deck → trim + maneuver run → results UI renders.
+    """Flow D (AC5): MANVR sample deck → trim + maneuver run → results UI renders.
 
     Acceptance: six trim totals visible on the trim subcase; switching to the
     maneuver subcase renders the time-history view, sample slider, and export
     buttons without exception; the f06 export path includes the maneuver block.
     """
     import warnings
-    from pathlib import Path
     from sbeam.parser.bdf_reader import parse_bdf
 
-    sample = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_mloads.bdf"
+    sample = sample_path("ha144a_fullspan_mloads.bdf")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         cc, bulk = parse_bdf(sample)
@@ -160,7 +160,7 @@ def test_flow_d_sol144_mloads_render_and_run():
     assert not at.exception, [str(e) for e in at.exception]
     assert not at.error, [e.value for e in at.error]
     assert isinstance(at.session_state["sol144_result"], dict)      # trim (subcase 1)
-    assert isinstance(at.session_state["maneuver_result"], dict)    # MLOADS (subcase 2)
+    assert isinstance(at.session_state["maneuver_result"], dict)    # MANVR (subcase 2)
 
     # Trim subcase (default selection) shows all six aero totals (AC5).
     labels = [m.label for m in at.metric]
@@ -179,7 +179,7 @@ def test_flow_d_sol144_mloads_render_and_run():
 
 
 def test_flow_e_sol144_free_flight_modal_dispatch():
-    """Flow E (Step 63): a modal MLOADS deck routes to the FREE-FLIGHT modal
+    """Flow E (Step 63): a modal MANVR deck routes to the FREE-FLIGHT modal
     solver in the viewer (not the direct solver, which would silently run the
     prescribed-rigid physics).
 
@@ -187,10 +187,9 @@ def test_flow_e_sol144_free_flight_modal_dispatch():
     (n_modes_used set, basis_info['free_flight']) and the UI renders.
     """
     import warnings
-    from pathlib import Path
     from sbeam.parser.bdf_reader import parse_bdf
 
-    sample = Path(__file__).parent.parent.parent / "sample" / "ha144a_mloads_massset.bdf"
+    sample = sample_path("ha144a_mloads_massset.bdf")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         cc, bulk = parse_bdf(sample)

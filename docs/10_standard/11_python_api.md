@@ -43,7 +43,7 @@ from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.results.f06_writer import build_f06_sol101_text
 from sbeam.solver.sol101 import run_sol101
 
-case_control, bulk = parse_bdf("sample/simple_beam.bdf")      # 1. parse
+case_control, bulk = parse_bdf("sample/beam/simple_beam.bdf")      # 1. parse
 subcase = case_control.subcases[0]
 result = run_sol101(bulk, subcase)                            # 2. run
 
@@ -85,10 +85,12 @@ Three rules that apply to every result:
 
 | Name | Import | Signature | Notes |
 |---|---|---|---|
-| `parse_bdf` | `from sbeam.parser.bdf_reader import parse_bdf` | `(filepath) -> (CaseControl, BulkData)` | Run file: case control + bulk, inline or via one or more `INCLUDE`s. Rejects unsupported cards (#45). |
-| `parse_bulk_file` | `from sbeam.parser.bdf_reader import parse_bulk_file` | `(filepath) -> BulkData` | Bulk-data-only file, no case control required (the viewer's upload path). |
+| `parse_bdf` | `from sbeam.parser.bdf_reader import parse_bdf` | `(filepath, text=None) -> (CaseControl, BulkData)` | Run file: case control + bulk, inline or via one or more `INCLUDE`s. Rejects unsupported cards (#45). |
+| `parse_bulk_file` | `from sbeam.parser.bdf_reader import parse_bulk_file` | `(filepath, text=None) -> BulkData` | Bulk-data-only file, no case control required (the viewer's upload path). |
 | `parse_bulk_data` | `from sbeam.parser.bdf_reader import parse_bulk_data` | `(lines: list[str]) -> BulkData` | Bulk lines already in memory. |
 | `parse_case_control` | `from sbeam.parser.case_control import parse_case_control` | `(lines: list[str]) -> CaseControl` | Case-control lines already in memory. |
+
+**`text=`** (both file readers, #113): the deck's content when it is not on disk. `filepath` then need not exist; it names the deck in messages and gives the folder that the deck's own relative `INCLUDE`s are resolved against. A tool that edits a deck in memory parses the result this way without writing a file beside the original.
 
 Parser behaviour (formats, ordering rules, cross-reference validation): `01_beam_model.md`.
 
@@ -110,11 +112,13 @@ Parser behaviour (formats, ordering rules, cross-reference validation): `01_beam
 | `run_sol103` | `from sbeam.solver.sol103 import run_sol103` | `(bulk, subcase)` | `Sol103Result` |
 | `build_aero_model` | `from sbeam.aero.aero_model import build_aero_model` | `(bulk, grid_index=None, mach=None)` | `AeroModel` — the VLM mesh, AIC and splines; built once per deck. |
 | `AeroCache` | `from sbeam.solver.sol144 import AeroCache` | `(bulk, grid_index, seed=aero)`; `.get(mach)` | Mach-keyed store of `AeroModel`s so a multi-Mach deck builds each AIC once. Pass the same instance to every SOL 144 call. |
+| `flight_mach` | `from sbeam.solver.sol144_util import flight_mach` | `(cc, bulk)` → float | The first subcase's flight Mach (its TRIM, via MANTRIM for a maneuver, or its DIVERG list). Build the seed `AeroModel` at it so a single-Mach job builds one AIC: AEROS carries no Mach (#87). The seed Mach changes no result. |
+| `require_runnable` | `from sbeam.solver.precheck import require_runnable` | `(cc, bulk)`; raises `ValueError` | Checks the case control against the model before any solve (#124): a selector that names no card, a subcase with no driver, MANVR with TRIM, and the like. The message lists every fault. SOL 144 only. Not part of `parse_bdf`, so call it before the first `run_*`, as the command line does. `check_case_control(cc, bulk) -> (errors, warnings)` in the same module returns the lists without raising. |
 | `run_sol144_trim` | `from sbeam.solver.sol144 import run_sol144_trim` | `(bulk, subcase, aero, aero_cache=None)` | `Sol144TrimResult`; `hinge_moments` / `hinge_moments_restrained {surface: {label: dHM/dδ per q}}` and `box_ids` (NASTRAN box ID of each `box_cp` / `box_forces` row) (#82) |
 | `run_sol144_diverg` | `from sbeam.solver.sol144 import run_sol144_diverg` | `(bulk, subcase, aero, aero_cache=None)` | `Sol144DivergResult` |
 | `run_maneuver_qs` | `from sbeam.solver.maneuver_qs import run_maneuver_qs` | `(bulk, subcase, aero, aero_cache=None)` | `ManeuverResult` — direct l-set transient solver. |
 | `run_maneuver_modal` | `from sbeam.solver.maneuver_modal import run_maneuver_modal` | `(bulk, subcase, aero, aero_cache=None, basis_cache=None)` | `ManeuverResult` — modal transient solver. |
-| `ManeuverBasisCache` | `from sbeam.solver.maneuver_modal import ManeuverBasisCache` | `(bulk, aero)` | One free-free modal basis per job, shared across modal `MLOADS` subcases. |
+| `ManeuverBasisCache` | `from sbeam.solver.maneuver_modal import ManeuverBasisCache` | `(bulk, aero)` | One free-free modal basis per job, shared across modal `MANVR` subcases. |
 
 A SOL 144 subcase is routed by its case-control requests, exactly as the CLI does it:
 `mloads_sid` set → a maneuver solver (`bulk.mloads[sid].selects_modal` picks modal over
@@ -147,6 +151,8 @@ commented at its definition, and the ones below are the ones consumers read.
 | Name | Import | Signature |
 |---|---|---|
 | `build_f06_sol101_text`, `build_f06_sol103_text`, `build_f06_sol144_text`, `build_f06_sol144_diverg_text`, `build_f06_sol144_maneuver_text` | `from sbeam.results.f06_writer import …` | `(case_control, bulk, result, subcase_id) -> str`, one f06 block per subcase; concatenate for a multi-subcase file as the CLI does. |
+| `build_f06_gpwg_text` | `from sbeam.results.f06_writer import build_f06_gpwg_text` | `(bulk, case_control=None) -> str` | MSC's grid point weight generator block for `PARAM,GRDPNT` (#90), `""` when GRDPNT is unset; the CLI writes it once, ahead of the subcase blocks. |
+| `export_modal_model` | `from sbeam.results.modal_export import export_modal_model` | `(stem, cc, bulk, subcase, result, formats=None) -> list[str]` | The MODEXP files for one SOL 103 subcase (#100): `<stem>.op4` (MHH, KHH, PHIA, PHIX), `<stem>_dofmap.csv`, `<stem>.uf`. `build_modal_model` returns the matrices without writing. |
 | `write_f06_sol101`, `write_f06_sol103`, `write_f06_sol144` | `from sbeam.results.f06_writer import …` | `(filepath, case_control, bulk, result, subcase_id=1) -> None`, single-subcase convenience wrappers. |
 | `write_aero_load_cards`, `write_maneuver_load_cards` | `from sbeam.results.load_export import …` | `(filepath, bulk, results: dict[int, Sol144TrimResult]) -> None` |
 | `write_monitor_csv`, `write_section_loads_csv` | `from sbeam.results.load_export import …` | `(filepath, results: dict[int, Sol144TrimResult]) -> None` |
@@ -171,10 +177,11 @@ from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.solver.maneuver_modal import ManeuverBasisCache, run_maneuver_modal
 from sbeam.solver.maneuver_qs import run_maneuver_qs
 from sbeam.solver.sol144 import AeroCache, run_sol144_diverg, run_sol144_trim
+from sbeam.solver.sol144_util import flight_mach
 
 case_control, bulk = parse_bdf(deck_path)
 grid_index = build_grid_index(bulk)
-aero = build_aero_model(bulk, grid_index=grid_index)
+aero = build_aero_model(bulk, grid_index=grid_index, mach=flight_mach(case_control, bulk))
 cache = AeroCache(bulk, grid_index, seed=aero)
 basis_cache = ManeuverBasisCache(bulk, aero)
 

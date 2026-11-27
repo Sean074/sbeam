@@ -61,6 +61,18 @@ def build_model_figure(
     return fig
 
 
+def model_span(bulk: BulkData) -> float:
+    """Largest model extent across X/Y/Z (scales deflection sliders and cut lines)."""
+    if not bulk.grids:
+        return 1.0
+    coords = [(g.x, g.y, g.z) for g in bulk.grids.values()]
+    span = max(
+        max(c[i] for c in coords) - min(c[i] for c in coords)
+        for i in range(3)
+    )
+    return span if span > 0 else 1.0
+
+
 def build_deformed_figure(
     bulk: BulkData,
     displacements: FloatArray,

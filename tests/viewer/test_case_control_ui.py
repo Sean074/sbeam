@@ -1,12 +1,12 @@
 """Tests for Step 19: Case Control UI — BDF export round-trip."""
 
-from pathlib import Path
 
 import pytest
 
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.parser.case_control import CaseControl, SubcaseControl, parse_case_control
 from sbeam_tools.viewer.case_control_ui import export_bdf_text
+from tests.samples import sample_decks, sample_path
 
 
 def _make_sol101_cc() -> CaseControl:
@@ -217,7 +217,6 @@ class TestMultiSubcaseRoundTrip:
 # P12 S2 — SOL 144 case-control export + round-trip
 # ---------------------------------------------------------------------------
 
-_SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
 
 
 def _make_sol144_cc() -> CaseControl:
@@ -239,8 +238,8 @@ def _make_sol144_cc() -> CaseControl:
 class TestSol144Export:
     def test_all_keywords_emitted(self):
         text = export_bdf_text(_make_sol144_cc())
-        for expected in ["SOL 144", "TRIM = 10", "TRIMOBJ = 11", "DIVERG = 12",
-                         "MLOADS = 30", "MASSCASE = 20", "MASSCASE = 21",
+        for expected in ["SOL 144", "TRIM = 10", "TRIMWGT = 11", "DIVERG = 12",
+                         "MANVR = 30", "MASSCASE = 20", "MASSCASE = 21",
                          "AEROF = ALL", "APRES = ALL"]:
             assert expected in text, expected
 
@@ -273,9 +272,9 @@ class TestSol144Export:
 
 class TestSampleDeckCaseControlRoundTrip:
     def test_sample_decks_round_trip(self):
-        """The two MLOADS sample decks' case control survives export → parse."""
+        """The two MANVR sample decks' case control survives export → parse."""
         for deck in ("ha144a_fullspan_mloads.bdf", "ha144a_mloads_massset.bdf"):
-            cc, _ = parse_bdf(_SAMPLE_DIR / deck)
+            cc, _ = parse_bdf(sample_path(deck))
             cc2 = parse_case_control(export_bdf_text(cc).splitlines())
             assert cc2.sol == cc.sol, deck
             assert cc2.subcases == cc.subcases, deck
@@ -296,10 +295,14 @@ def _every_field_set() -> SubcaseControl:
     for k, f in enumerate(dataclasses.fields(SubcaseControl)):
         if f.name == "subcase_id":
             values[f.name] = 7
-        elif f.name == "title":
-            values[f.name] = "every field"
+        elif f.name in ("title", "subtitle", "label"):
+            values[f.name] = f"every field {f.name}"
         elif f.name == "mass_card":
             values[f.name] = "MASSSET"            # the non-default command (#102)
+        elif f.name == "modexp_formats":
+            values[f.name] = ("UF",)              # not the default pair (#100)
+        elif f.name == "sets":
+            values[f.name] = {5: [1, 2, 3, 7], 6: None}
         elif f.type in (bool, "bool"):
             values[f.name] = True
         else:
@@ -313,12 +316,13 @@ def test_export_round_trips_every_subcase_field():
     added to the parser later fails here until the export carries it."""
     from sbeam.parser.case_control import parse_case_control
     subcase = _every_field_set()
-    text = export_bdf_text(CaseControl(sol=144, subcases=[subcase]))
+    # SOL 103: MODEXP is refused in any other solution (#100)
+    text = export_bdf_text(CaseControl(sol=103, subcases=[subcase]))
     assert parse_case_control(_case_control_lines(text)).subcases == [subcase]
 
 
 @pytest.mark.parametrize("deck", sorted(
-    p for p in (Path(__file__).parent.parent.parent / "sample").glob("*.bdf")
+    p for p in sample_decks()
     if "\nSOL " in "\n" + p.read_text()), ids=lambda p: p.name)
 def test_export_round_trips_every_repo_driver(deck):
     """`cessna210_flagship_gust.bdf` came back with no GUSTLF, so with no driver."""

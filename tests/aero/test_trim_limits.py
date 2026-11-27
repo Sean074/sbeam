@@ -1,10 +1,9 @@
-"""TRIMVAR / TRIMOBJ / TRIMCON are checked and acted on, or refused (#77).
+"""TRIMVAR / TRIMWGT / TRIMINEQ are checked and acted on, or refused (#77).
 
 Audit findings P6, A11, A12, M10 (2026-11-16).  These are sbeam-defined cards, so the
 rules here are sbeam's own.
 """
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -14,8 +13,9 @@ from sbeam.model.aero import Trim, Trimcon, Trimobj, Trimvar
 from sbeam.parser.bdf_reader import parse_bdf, parse_bulk_data
 from sbeam.parser.case_control import SubcaseControl
 from sbeam.solver.sol144 import run_sol144_trim
+from tests.samples import sample_path
 
-HA144A = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+HA144A = sample_path("ha144a_fullspan_sbeam.bdf")
 _LABELS = ["AESTAT, 501, ANGLEA", "AESTAT, 502, PITCH", "AESURF, 505, ELEV, 1, 1"]
 
 
@@ -27,7 +27,8 @@ def _parse(*cards):
 
 class TestTrimvarCard:
     @pytest.mark.parametrize("card", [
-        "TRIMVAR 1       ANGLEA  0.0", "TRIMVAR,1,ANGLEA,0.0", "TRIMVAR,1,ANGLEA,0.0,,",
+        "TRIMVAR 1       ANGLEA                                          0.0",
+        "TRIMVAR,1,ANGLEA", "TRIMVAR,1,ANGLEA,,,,,,0.0",
     ], ids=["fixed", "free-short", "free-blank"])
     def test_blank_bounds_are_unbounded(self, card):
         """Fixed-field pads to nine fields; a blank bound read as 0.0 pinned the variable."""
@@ -37,58 +38,70 @@ class TestTrimvarCard:
     @pytest.mark.parametrize("bounds", ["0.3, -0.3", "0.1, 0.1"])
     def test_lower_bound_must_be_below_upper(self, bounds):
         with pytest.raises(ValueError, match=r"TRIMVAR 1 \(ANGLEA\): LB=.* must be less than UB"):
-            _parse(f"TRIMVAR, 1, ANGLEA, 0.0, {bounds}")
+            _parse(f"TRIMVAR, 1, ANGLEA, {bounds}")
 
-    def test_zaero_field_order_is_refused(self):
-        """ZAERO's TRIMVAR is IDVAR LABEL LOWER UPPER TRIMLNK (ZUM 9.2 PDF p.511).  Read
-        as sbeam's INIT LB UB, a card with a TRIMLNK gives lb = 0.3 > ub = 0 and is
-        caught here.  Without one (lb = 0.3, ub blank) it is a legal sbeam card; the
-        layout clash itself is #87's decision."""
-        with pytest.raises(ValueError, match="must be less than UB"):
-            _parse("TRIMVAR, 1, ANGLEA, -0.3, 0.3, 0")
+    def test_zaero_layout_is_read(self):
+        """#87: ZAERO's IDVAR LABEL LOWER UPPER TRIMLNK DMI SYM INITIAL (ZUM 9.2 PDF p.511),
+        the manual's own example less the TRIMLNK and DMI sbeam refuses."""
+        tv = _parse("TRIMVAR, 100, ANGLEA, -50.0, 50.0, , , SYM, 0.1",
+                    "+, NONE, NONE, NONE, NONE, NONE, NONE").trimvars[100]
+        assert (tv.lb, tv.ub, tv.init) == (-50.0, 50.0, 0.1)
+
+    @pytest.mark.parametrize("card, match", [
+        ("TRIMVAR, 1, ANGLEA, -1., 1., 10", "TRIMLNK"),
+        ("TRIMVAR, 1, ANGLEA, -1., 1., , AFORCE", "DMI"),
+        ("TRIMVAR, 1, ANGLEA, -1., 1., , , BOTH", "SYM"),
+    ])
+    def test_unsupported_zaero_fields_are_refused(self, card, match):
+        with pytest.raises(ValueError, match=match):
+            _parse(card)
+
+    def test_user_derivatives_are_refused(self):
+        with pytest.raises(ValueError, match="user-input stability derivatives"):
+            _parse("TRIMVAR, 1, ANGLEA, -1., 1.", "+, 0.01")
 
     def test_two_cards_on_one_label_are_refused(self):
         with pytest.raises(ValueError, match="TRIMVAR 2: label 'ANGLEA' already has bounds "
                                              "on TRIMVAR 1"):
-            _parse("TRIMVAR, 1, ANGLEA, 0.0, -1., 1.", "TRIMVAR, 2, ANGLEA, 0.0, -2., 2.")
+            _parse("TRIMVAR, 1, ANGLEA, -1., 1.", "TRIMVAR, 2, ANGLEA, -2., 2.")
 
 
 class TestLabelsAreCrossReferenced:
     """The card reference's own examples used CL and CM, which the solver dropped."""
 
     @pytest.mark.parametrize("card, name", [
-        ("TRIMVAR, 1, ANGLA, 0.0, -1., 1.", "TRIMVAR 1: label 'ANGLA'"),
-        ("TRIMOBJ, 20, ANGLEA, 1.0, CL, 0.5", "TRIMOBJ 20: label 'CL'"),
-        ("TRIMCON, 30, CM, LE, 0.02", "TRIMCON 30: label 'CM'"),
+        ("TRIMVAR, 1, ANGLA, -1., 1.", "TRIMVAR 1: label 'ANGLA'"),
+        ("TRIMWGT, 20, ANGLEA, 1.0, CL, 0.5", "TRIMWGT 20: label 'CL'"),
+        ("TRIMINEQ, 30, CM, LE, 0.02", "TRIMINEQ 30: label 'CM'"),
     ])
     def test_unknown_label_is_refused(self, card, name):
         with pytest.raises(ValueError, match=f"{name} not defined in any AESTAT or AESURF"):
             _parse(card)
 
     def test_known_labels_are_accepted(self):
-        bulk = _parse("TRIMVAR, 1, ANGLEA, 0.0, -1., 1.", "TRIMOBJ, 20, ANGLEA, 1.0, PITCH, 0.5",
-                      "TRIMCON, 30, PITCH, LE, 0.02", "TRIMCON, 30, PITCH, GE, -0.02")
+        bulk = _parse("TRIMVAR, 1, ANGLEA, -1., 1.", "TRIMWGT, 20, ANGLEA, 1.0, PITCH, 0.5",
+                      "TRIMINEQ, 30, PITCH, LE, 0.02", "TRIMINEQ, 30, PITCH, GE, -0.02")
         assert bulk.trimobjs[20].labels == ["ANGLEA", "PITCH"]
         assert len(bulk.trimcons[30]) == 2
 
     def test_trimcon_under_two_sids_is_refused(self):
-        """No command selects a TRIMCON set: both were applied to every trim."""
-        with pytest.raises(ValueError, match=r"TRIMCON cards use 2 different SIDs \(30, 31\)"):
-            _parse("TRIMCON, 30, PITCH, LE, 0.02", "TRIMCON, 31, ANGLEA, GE, 0.0")
+        """No command selects a TRIMINEQ set: both were applied to every trim."""
+        with pytest.raises(ValueError, match=r"TRIMINEQ cards use 2 different SIDs \(30, 31\)"):
+            _parse("TRIMINEQ, 30, PITCH, LE, 0.02", "TRIMINEQ, 31, ANGLEA, GE, 0.0")
 
 
 class TestTrimobjCard:
     def test_empty_objective_is_refused(self):
-        with pytest.raises(ValueError, match="TRIMOBJ 20: no LABEL/WEIGHT pair"):
-            _parse("TRIMOBJ, 20")
+        with pytest.raises(ValueError, match="TRIMWGT 20: no LABEL/WEIGHT pair"):
+            _parse("TRIMWGT, 20")
 
     def test_repeated_label_is_refused(self):
-        with pytest.raises(ValueError, match="TRIMOBJ 20: label 'PITCH' is listed twice"):
-            _parse("TRIMOBJ, 20, PITCH, 1.0, PITCH, 2.0")
+        with pytest.raises(ValueError, match="TRIMWGT 20: label 'PITCH' is listed twice"):
+            _parse("TRIMWGT, 20, PITCH, 1.0, PITCH, 2.0")
 
     def test_negative_weight_is_refused(self):
         with pytest.raises(ValueError, match="weight -1 on 'PITCH' must be >= 0"):
-            _parse("TRIMOBJ, 20, PITCH, -1.0")
+            _parse("TRIMWGT, 20, PITCH, -1.0")
 
 
 def _ha144a():
@@ -131,7 +144,7 @@ class TestLimitsHoldOnEveryTrim:
         bulk, aero = _ha144a()
         bulk.trimcons[5] = [Trimcon(sid=5, label="ANGLEA", sense="LE",
                                     rhs=determined["ANGLEA"] - 0.01)]
-        with pytest.raises(ValueError, match=r"TRIM 1: ANGLEA = .* violates TRIMCON 5 "
+        with pytest.raises(ValueError, match=r"TRIM 1: ANGLEA = .* violates TRIMINEQ 5 "
                                              r"\(ANGLEA LE"):
             _trim(bulk, aero, trim_sid=1)
 
@@ -152,7 +165,7 @@ class TestObjectiveMustDetermineTheTrim:
     def test_objective_on_prescribed_labels_only_is_refused(self):
         """It used to fall back, silently, to unit weights on every free variable."""
         bulk, aero = self._over_determined(["URDD3"])
-        with pytest.raises(ValueError, match=r"TRIMOBJ 99 \(URDD3\) does not determine the "
+        with pytest.raises(ValueError, match=r"TRIMWGT 99 \(URDD3\) does not determine the "
                                              "over-determined trim"):
             _trim(bulk, aero, trim_sid=99, trimobj_sid=99)
 

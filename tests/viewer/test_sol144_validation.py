@@ -1,36 +1,37 @@
-"""P12 S5 — pre-launch/pre-export validation of SOL 144 authoring."""
+"""Pre-launch check of a SOL 144 case control against its model (``check_case_control``).
 
-from pathlib import Path
+Card rules are not here: they are the parser's (``test_reparse_authoring.py``, #113).
+"""
+
 
 import pytest
 
-from sbeam.model.maneuver import Mloads
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.parser.case_control import CaseControl, SubcaseControl
 from sbeam_tools.viewer.sol144_authoring import (
-    IncrementSpec, snapshot_family_ids, validate_sol144_authoring,
+    IncrementSpec, check_case_control,
 )
+from tests.samples import sample_path
 
-SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
 
 
 @pytest.fixture()
 def fullspan():
-    return parse_bdf(SAMPLE_DIR / "ha144a_fullspan_mloads.bdf")
+    return parse_bdf(sample_path("ha144a_fullspan_mloads.bdf"))
 
 
 @pytest.fixture()
 def massset():
-    return parse_bdf(SAMPLE_DIR / "ha144a_mloads_massset.bdf")
+    return parse_bdf(sample_path("ha144a_mloads_massset.bdf"))
 
 
 def _errors(bulk, cc, **kw):
-    errors, _ = validate_sol144_authoring(bulk, cc, **kw)
+    errors, _ = check_case_control(bulk, cc, **kw)
     return errors
 
 
 def _warnings(bulk, cc, **kw):
-    _, warns = validate_sol144_authoring(bulk, cc, **kw)
+    _, warns = check_case_control(bulk, cc, **kw)
     return warns
 
 
@@ -47,7 +48,7 @@ def test_clean_modal_deck_has_no_errors(massset):
 def test_non_sol144_is_ignored(fullspan):
     _, bulk = fullspan
     cc = CaseControl(sol=101, subcases=[SubcaseControl(subcase_id=1)])
-    assert validate_sol144_authoring(bulk, cc) == ([], [])
+    assert check_case_control(bulk, cc) == ([], [])
 
 
 def test_subcase_without_driver(fullspan):
@@ -83,7 +84,7 @@ def test_load_refused_on_mloads_and_diverg_only(fullspan):
     from sbeam.model.load import Force
     cc, bulk = fullspan
     bulk.forces[5] = [Force(sid=5, gid=90, cid=0, f=100.0, n1=-1.0, n2=0.0, n3=0.0)]
-    cc.subcases[1].load_sid = 5                      # the MLOADS subcase
+    cc.subcases[1].load_sid = 5                      # the MANVR subcase
     assert any("LOAD combines only with a TRIM subcase" in e for e in _errors(bulk, cc))
 
 
@@ -109,12 +110,6 @@ def test_dangling_massset_reference(massset):
     assert any("MASSCASE 999" in e for e in _errors(bulk, cc))
 
 
-def test_trim_label_not_defined(fullspan):
-    cc, bulk = fullspan
-    bulk.trims[1].vars["NOPE"] = 1.0
-    assert any("label 'NOPE'" in e for e in _errors(bulk, cc))
-
-
 def test_fully_prescribed_trim_warns(fullspan):
     cc, bulk = fullspan
     trim = bulk.trims[1]
@@ -124,39 +119,16 @@ def test_fully_prescribed_trim_warns(fullspan):
                for w in _warnings(bulk, cc))
 
 
-def test_modal_needs_rhoref(massset):
+def test_modal_needs_mantrim_rho(massset):
     cc, bulk = massset
-    bulk.trims[1].rhoref = 0.0
-    assert any("needs RHOREF" in e for e in _errors(bulk, cc))
+    bulk.mldtrims[1].rho = 0.0
+    assert any("needs RHO on MANTRIM 1" in e for e in _errors(bulk, cc))
 
 
 def test_mloads_needs_suport(massset):
     cc, bulk = massset
     bulk.supports.clear()
     assert any("SUPORT" in e for e in _errors(bulk, cc))
-
-
-def test_modal_rejects_rigid_command_label(massset):
-    cc, bulk = massset
-    comd = bulk.mldcomds[11]
-    comd.commands[0] = ("ANGLEA", comd.commands[0][1])
-    errs = _errors(bulk, cc)
-    assert any("rigid-state label 'ANGLEA'" in e for e in errs)
-
-
-def test_method_must_be_eigrl(massset):
-    cc, bulk = massset
-    ml = bulk.mloads[10]
-    bulk.mloads[10] = Mloads(sid=10, mldtrim=ml.mldtrim, mldtime=ml.mldtime,
-                             mldcomd=ml.mldcomd, mldprnt=ml.mldprnt,
-                             method=777)
-    assert any("METHOD 777" in e for e in _errors(bulk, cc))
-
-
-def test_mldtime_window_checked(massset):
-    cc, bulk = massset
-    bulk.mldtimes[1].tend = bulk.mldtimes[1].t0
-    assert any("TEND > T0" in e for e in _errors(bulk, cc))
 
 
 def test_sparse_modal_table_warns(massset):
@@ -171,13 +143,6 @@ def test_fixed_phi_massset_note(massset):
     assert any("fixed-Φ" in w for w in _warnings(bulk, cc))
 
 
-def test_aelist_outside_caero_range(fullspan):
-    cc, bulk = fullspan
-    sid = next(iter(bulk.aelists))
-    bulk.aelists[sid].elements.append(999999)
-    assert any("outside every CAERO1 range" in e for e in _errors(bulk, cc))
-
-
 def test_unresolved_increments_block_export(fullspan):
     cc, bulk = fullspan
     spec = IncrementSpec(mloads_sid=1, label="ELEV",
@@ -186,10 +151,29 @@ def test_unresolved_increments_block_export(fullspan):
     assert any("unresolved increment command" in e for e in errs)
 
 
-def test_authored_duplicate_of_file_sid_blocks_export(fullspan):
-    cc, bulk = fullspan
-    file_sids = snapshot_family_ids(bulk)
-    errs = _errors(bulk, cc, file_sids=file_sids, authored={"trim": {1}})
-    assert any("Save it as a new SID" in e for e in errs)
-    # A genuinely new SID does not trip the gate.
-    assert _errors(bulk, cc, file_sids=file_sids, authored={"trim": {50}}) == []
+# --- GUSTLF subcases (found by #111) ---------------------------------------
+
+@pytest.fixture()
+def gust():
+    return parse_bdf(sample_path("cessna210_flagship_gust.bdf"))
+
+
+def test_a_gustlf_subcase_is_a_driven_trim_subcase(gust):
+    """GUSTLF names its own TRIM, so a subcase with only GUSTLF is complete."""
+    cc, bulk = gust
+    assert all(sc.trim_sid is None and sc.gustlf_sid is not None for sc in cc.subcases)
+    assert _errors(bulk, cc) == []
+
+
+def test_gustlf_selector_errors(gust):
+    cc, bulk = gust
+    sc = cc.subcases[0]
+    right_trim = bulk.gustlfs[sc.gustlf_sid].trimid
+    other_trim = next(t for t in bulk.trims if t != right_trim)
+
+    sc.trim_sid = other_trim                       # disagrees with the card's TRIM
+    assert any("names TRIM" in e for e in _errors(bulk, cc))
+    sc.trim_sid = right_trim                       # agreeing is allowed (solver rule)
+    assert _errors(bulk, cc) == []
+    sc.trim_sid, sc.gustlf_sid = None, 987654      # dangling selector
+    assert any("GUSTLF 987654 not found" in e for e in _errors(bulk, cc))

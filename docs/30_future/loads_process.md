@@ -233,7 +233,7 @@ states it.
 ### 6.3 Sequencing consequences
 
 - **#2 (`MONPNT1`/`MONPNT3` on transient maneuvers) blocks every transient delivery.** If the
-  LRA is monitor points and monitors do not exist on transient maneuvers, no MLOADS case can
+  LRA is monitor points and monitors do not exist on transient maneuvers, no MANVR case can
   be handed over at all. Filed as a ~0.5 d output-surface gap; it is on the critical path.
 - **#3 (transient `net_loads` elastic-inertia decision) blocks the package contents.** What is
   *in* a delivered transient case is undecided until it lands.

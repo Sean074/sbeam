@@ -1,0 +1,129 @@
+$ COMPAT: sbeam-extension
+$ =========================================================================
+$ cessna210_flagship_body_strip.bdf — Step 66 body-panel OVERLAY for the
+$ Cessna 210 flagship SOL 144 family.
+$
+$ NOT A STANDALONE DECK.  This file carries only the fuselage aerodynamics; it
+$ is INCLUDEd *after* sample/cessna210_flagship/cessna210_flagship_bulk.bdf by a driver deck:
+$
+$     SOL 144
+$     ...case control...
+$     INCLUDE 'cessna210_flagship_bulk.bdf'
+$     INCLUDE 'cessna210_flagship_body_strip.bdf'
+$
+$ The flagship bulk is left BYTE-IDENTICAL by design: every Step 65 anchor
+$ (CL, CZa, Cma, elevator deg/g, divergence margin, MONPNT1 = n*W) stays valid
+$ and this overlay is purely additive.  The bulk reserves CAERO1 EIDs 6000/7000
+$ for exactly this purpose.
+$
+$ STRIP variant: the panels carry PSTRIP 20, so each box is an independent 2-D
+$ section with its own dCp/dalpha curve — no horseshoe vortex, no wake, and a
+$ DIAGONAL block of the influence operator.  Consequences: the strip body CANNOT
+$ contaminate the wing/HTP/VTP (their loads are bit-identical to the bare
+$ flagship, whatever the panel does), and it carries no interference effect
+$ either.  It is a pure load device tuned to the total-aircraft targets.
+$
+$ Coordinate system: X = freestream (forward), Y = starboard, Z = up; origin at
+$ the nose.  Units: SI (m, N, kg, Pa).  Full-span model.
+$ =========================================================================
+$
+$
+$ ------------------------------------------------- STRIP BODY-PANEL PROPERTY
+$ Field 3 is the nominal per-box slope dDCp/dalpha_local.  Left blank it defaults
+$ to pi (the "50% of the 2-pi flat plate" body fudge); STRIPK then overrides it
+$ box-by-box when the correction is applied.
+$
+$ WHY 0.35 AND NOT THE DEFAULT.  The body correction matches MOMENTS only —
+$ Cm_alpha, Cm0, Cn_beta, Cl_beta — and leaves the body's LIFT entirely free.
+$ At the default slope this panel trims out carrying 1168 N, 11 % of the
+$ airplane weight, on the fuselage: a GA fuselage does no such thing, and for a
+$ loads deck that is 11 % of the weight taken off the wing and put somewhere it
+$ does not belong.  0.35 makes the strip body carry 237 N (2.2 % of weight),
+$ matching the cruciform's 216 N (2.0 %).
+$
+$ That is what makes the two variants a CONTROLLED comparison: same geometry,
+$ same targets, same body lift share, same trim to within 0.003 deg of alpha.
+$ The only thing left different is the AIC coupling — which is the point.
+PSTRIP, 20, 0.35
+$ ------------------------------------------------------- BODY PANEL GEOMETRY
+$ sbeam has no slender-body element, so the fuselage is a CRUCIFORM of two
+$ crossing flat surfaces:
+$   * horizontal panel (CAERO1 6000, XY plane, normal +Z) — body lift / pitch;
+$   * vertical   panel (CAERO1 7000, XZ plane, normal +Y) — body sideforce / yaw.
+$
+$ PLACEMENT.  Both panels terminate at x=5.00, well ahead of the VTP LE (6.60)
+$ and HTP LE (6.90), and both sit low — the horizontal at z=0.30 (below the HTP
+$ at 0.70), the vertical wholly below the VTP root (z<0.60, in the same y=0
+$ plane as the fin).  So no body box, and no +X trailing leg, reaches the
+$ empennage station.  For the strip that placement is not
+$ strictly necessary — a decoupled box cannot contaminate anything — but it is
+$ kept identical to the cruciform so the two variants differ in ONE thing only.
+$
+$ MESH.  Both panels are 16/32 boxes with box aspect ratios inside the VLM's
+$ [0.5, 2.0] band (0.73 each).  The vertical panel is 2 spanwise x 16 chordwise
+$ rather than the 4x8 of the retired cessna210_body.bdf: 4 boxes up a 0.40 m
+$ height gave AR 0.17 and tripped the high-AR kernel warning.  Two z-stations
+$ still give the arm spread needed to separate roll from yaw.
+$
+$ ID NOTE: box IDs run 6000-6015 and 7000-7031.  Those numerically overlap the
+$ flagship's overlay CONM2 EIDs (6001-6014, 6020) — different namespaces, no
+$ conflict, but do not read one for the other.
+$
+CAERO1, 6000, 20, 0, 2, 8, 0, 0, 1
++, 0.30, -0.40, 0.30, 4.70, 0.30, 0.40, 0.30, 4.70
+CAERO1, 7000, 20, 0, 2, 16, 0, 0, 1
++, 0.30, 0.0, 0.05, 4.70, 0.30, 0.0, 0.45, 4.70
+$
+$ ------------------------------------------------------------------ SPLINING
+$ LOADINJ = no structural coupling: body elasticity is negligible, so the
+$ panels add no deformation.  Field 5 names the master GRID that carries their
+$ resultant into the structure (Step 64).  GRID 900 is the trim reference,
+$ spliced into the fuselage CBAR chain and already listed in SET1 1310, so the
+$ injected body load lands inside the whole-aircraft MONPNT3 cut.  Naming it
+$ explicitly rather than defaulting to the SUPORT grid documents the intent
+$ (here they are the same grid).
+LOADINJ, 9400, 6000, 6000, 6015, 900
+LOADINJ, 9500, 7000, 7000, 7031, 900
+$
+$ ------------------------------------------------------- MONITOR (ALL 372 BOXES)
+$ The bulk's AELIST 1400 covers the 324 FLYING boxes only.  With body panels
+$ active that monitor no longer returns n*W — it falls short by exactly the body
+$ resultant.  This adds the whole-airplane collection so the aero-only = n*W
+$ identity still holds; keeping BOTH makes the shortfall measurable.
+AELIST, 1401, 1000, THRU, 1095, 2000, THRU, 2095, 3000
++, 3001, THRU, 3047, 4000, THRU, 4047, 5000, 5001
++, 5002, THRU, 5035, 6000, THRU, 6015, 7000, 7001
++, 7002, THRU, 7031
+AECOMP, ALLAERB, AELIST, 1401
+MONPNT1 MALLARB AIRCRAFT AERO INC BODY
++, 35, ALLAERB, 0, 2.4375, 0.0, 0.60
+$
+$ --------------------------------------------------------------------
+$ sbeam body-panel correction  —  strip
+$ source section data : cessna210_flagship_section_data.csv  (TOTAL block)
+$ generated           : 2026-10-25  (regenerated after #52)
+$ condition           : Mach 0
+$ reference            : AEROS RCSID 990 origin (2.4375, 0.0, 0.60), basic axes
+$ targets              : Cma -1.4087  Cm0 -0.0404  Cnb +0.0772  Clb -0.0367
+$ achieved             : Cma -1.4087  Cm0 -0.0404  Cnb +0.0772  Clb -0.0367
+$ baseline (uncorrected panels present): Cma -1.6123  Cm0 -0.0504
+$ max |WT2 ratio|      : 10.083   (warn threshold 200)
+$ --------------------------------------------------------------------
+$ Decoupled strip body-panel total-aircraft moment match (W2GJ Δα + STRIPK slope)
+W2GJ, 9301, 6000, 7.415629E-02, 3.989900E-02, 1.600164E-02, 2.464187E-03, -7.133468E-04, 6.469036E-03
++, 2.401134E-02, 5.191355E-02, 7.415629E-02, 3.989900E-02, 1.600164E-02, 2.464187E-03, -7.133468E-04, 6.469036E-03
++, 2.401134E-02, 5.191355E-02
+STRIPK, 9501, 6000, 1.767134E+00, 1.348891E+00, 9.306468E-01, 5.124031E-01, 9.415944E-02, -3.240842E-01
++, -7.423279E-01, -1.160572E+00, 1.767134E+00, 1.348891E+00, 9.306468E-01, 5.124031E-01, 9.415944E-02, -3.240842E-01
++, -7.423279E-01, -1.160572E+00
+W2GJ, 9302, 7000, 2.360416E-15, 2.029340E-15, 1.702436E-15, 1.379704E-15, 1.061143E-15, 7.467541E-16
++, 4.365370E-16, 1.304915E-16, -1.713823E-16, -4.690843E-16, -7.626146E-16, -1.051973E-15, -1.337160E-15, -1.618175E-15
++, -1.895019E-15, -2.167690E-15, 1.388070E-15, 1.191341E-15, 9.987832E-16, 8.103974E-16, 6.261832E-16, 4.461408E-16
++, 2.702701E-16, 9.857112E-17, -6.895615E-17, -2.323117E-16, -3.914956E-16, -5.465077E-16, -6.973481E-16, -8.440168E-16
++, -9.865138E-16, -1.124839E-15
+STRIPK, 9502, 7000, 3.457199E+00, 2.991933E+00, 2.526666E+00, 2.061400E+00, 1.596133E+00, 1.130867E+00
++, 6.656000E-01, 2.003334E-01, -2.649332E-01, -7.301998E-01, -1.195466E+00, -1.660733E+00, -2.126000E+00, -2.591266E+00
++, -3.056533E+00, -3.521799E+00, 3.529218E+00, 3.063951E+00, 2.598684E+00, 2.133418E+00, 1.668151E+00, 1.202885E+00
++, 7.376181E-01, 2.723515E-01, -1.929151E-01, -6.581817E-01, -1.123448E+00, -1.588715E+00, -2.053981E+00, -2.519248E+00
++, -2.984515E+00, -3.449781E+00
+$ --------------------------------------------------------------------

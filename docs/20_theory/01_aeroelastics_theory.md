@@ -9,7 +9,7 @@ covers **maneuver aerodynamics** to the extent that needs no unsteady solver: th
 rate-induced incidence (damping derivatives, balanced maneuver loads) and the analytic
 quasi-unsteady corrections (apparent mass, Theodorsen/Wagner strip-lag) — the basis for the
 DLM-free maneuver-load path (Phase G0). The fully **3-D unsteady** methods (Doublet Lattice,
-flutter, gust, and full transient MLOADS — Phases D–G) are **out of scope** here and are noted
+flutter, gust, and full transient MANVR — Phases D–G) are **out of scope** here and are noted
 only where the steady/quasi-steady theory feeds them.
 
 It is written to the level and in the notation of the *MSC/NX NASTRAN Aeroelastic Analysis
@@ -392,15 +392,13 @@ the deflection–downwash matrix $[D_{jk}]$ are built from the **physical** (uns
 boxes — the correction affects only the AIC, not the structural coupling geometry.
 
 **Validity.** The rule is linear and subsonic: $M < 1$ strictly, and accuracy
-degrades as $M \to 1$ where non-linear transonic effects dominate. sbeam caps
-the input at $M = 0.99$ ($\beta_{PG} \ge 0.14$) and does not apply any transonic
-or supersonic correction. For $M < 0.3$ the correction is $< 5\%$ (less than
+degrades as $M \to 1$ where non-linear transonic effects dominate. sbeam
+refuses $M \ge 1$ and does not apply any transonic or supersonic correction. For $M < 0.3$ the correction is $< 5\%$ (less than
 typical VLM modelling error) and can be omitted.
 
-**Input.** Mach is supplied via field 8 of the `AEROS` bulk-data card — an
-sbeam extension not present in NASTRAN (where Mach lives on the `TRIM` card).
-Default is $M = 0$ (incompressible, $\beta_{PG} = 1$), giving identical results
-to the uncorrected solver.
+**Input.** Mach is read from the `TRIM` card, as in NASTRAN. When the TRIM Mach is
+blank, $M = 0$ (incompressible, $\beta_{PG} = 1$), giving identical results to the
+uncorrected solver.
 
 ---
 
@@ -600,12 +598,12 @@ downwash-side $W_{T2}$.
 
 A correction extracted at a reference angle of attack $\alpha_\text{ref}$ implicitly carries the
 mean-flow state at that incidence. When CFD/WT pressures are injected as the trim mean-flow
-(§5.3, the `CHORDCP` path), the trim solution becomes a **perturbation about
+(§5.3, the `CPINJ` path), the trim solution becomes a **perturbation about
 $\alpha_\text{ref}$**, not about the inviscid flat-plate state — the correct way to honour
 high-fidelity data end-to-end. The reference incidence must therefore travel with the
 correction data.
 
-**The `CHORDCP` equivalent-normalwash substitution (Step 54).** The baseline load enters
+**The `CPINJ` equivalent-normalwash substitution (Step 54).** The baseline load enters
 every consumer of the assembled model through one object only: the baseline normalwash
 $w_g$, applied as $\Delta c_p = \left[A^{*}\right]^{-1} w_g$, where $\left[A^{*}\right]^{-1}$
 is the stored corrected operator (it already carries the $2/c$ circulation→pressure
@@ -754,7 +752,7 @@ slope metric is $w_g$-free), the build is **exact and non-iterative**.
 
 The result is ordinary $W_{2GJ}$ + $W_{T2}$ cards on the body CAERO1s (so `build_aero_model` is
 unchanged). Implemented in `sbeam/aero/body_correction.py` (`build_body_correction`); the body panels
-carry **`SPLINE0`** (zero structural coupling) so the fictitious tuning load is not smeared onto the
+carry **`LOADINJ`** (zero structural coupling) so the fictitious tuning load is not smeared onto the
 fuselage beam — yet they still drive the total/trim $C_m,C_n,C_l$ and all rigid + restrained
 derivatives, which integrate every box directly (independent of the spline; §4.4, §5), *and* the
 trim force balance, into which their resultant is injected rigidly at a master grid (§4.4).
@@ -901,7 +899,7 @@ The polynomial part carries rigid translation and the two rigid rotations; the $
 kernel carries the elastic deformation. It is heavier than the beam spline and is included only
 where a single beam axis is a poor fit.
 
-### 4.4 Rigid-body attachment (ATTACH) and zero-displacement (SPLINE0)
+### 4.4 Rigid-body attachment (BODYATT) and zero-displacement (LOADINJ)
 
 Box groups with no local structural grid — control surfaces, tips, nacelles/pylons — are tied
 **rigidly** to a master grid: the box motion is the master-grid rigid-body motion evaluated at
@@ -909,7 +907,7 @@ the box (a lever-arm transform). In `sbeam` this is a standalone lever-arm imple
 `aero/spline.py` (`_build_attach_rows`) — it does *not* go through the `RBE2`/`RBE3` machinery.
 The slope rows follow §4.5 directly: for a rigid rotation $\omega$,
 $\alpha = -(\omega \times \hat{x})\cdot\hat{n} = \omega_y n_z - \omega_z n_y$, so roll
-contributes nothing and pitch contributes $+n_z$. Pinned boxes (`SPLINE0`) simply have a
+contributes nothing and pitch contributes $+n_z$. Pinned boxes (`LOADINJ`) simply have a
 zero row in $G_{kg}$.
 
 **Load injection for uncoupled boxes (Step 64).** A zero row in $G_{kg}$ means the box takes no
@@ -928,7 +926,7 @@ $$
 i.e. the exact 6-component resultant applied at the master grid, in all three force components.
 Read forward these are the rigid-body interpolation $\mathbf{u}_k = \mathbf{u}_m + \theta_m \times \mathbf{r}_k$,
 so injection and transfer remain a virtual-work pair. $G_{slope}$ stays zero on those boxes: they
-load the structure but take no downwash from it (the `SPLINE0` contract). The asymmetry is
+load the structure but take no downwash from it (the `LOADINJ` contract). The asymmetry is
 deliberate — $Q_{aa} = G_{load}^T S_{kj} A^{*-1} D_{jk} G_{slope}$ gains rows at the master grid but
 no columns, so the already-unsymmetric $Q_{aa}$ becomes more so; nothing downstream assumes
 symmetry.
@@ -1005,14 +1003,15 @@ $$
   with bounds and an initial guess on each variable. The square case is the special case with no
   free objective. (This is the ZAERO formulation: `TRIMOBJ` and `TRIMCON` build the
   objective and the constraints from trim *functions* defined on `TRIMFNC` cards, ZAERO 9.2
-  User's Manual PDF p.510, p.501, p.504.) **sbeam's cards share the three names but not the
-  formulation or the layouts** (#77): its objective is a weighted sum of squares of the trim
-  *variables* themselves, its TRIMCON is a bound on one variable, and its TRIMVAR fields
-  are in a different order (p.511). *sbeam
+  User's Manual PDF p.510, p.501, p.504.) **sbeam does not use that formulation** (#77, #87):
+  its objective (`TRIMWGT`) is a weighted sum of squares of the trim *variables* themselves
+  and its `TRIMINEQ` is a bound on one variable. Both are sbeam-only cards; until v0.4.1 they
+  were named after ZAERO's `TRIMOBJ`/`TRIMCON`, which are now refused. `TRIMVAR` keeps
+  ZAERO's name and is read in ZAERO's layout (p.511). *sbeam
   implementation:* the equilibrium equations are eliminated by a null-space reduction
   $\delta=\delta_p + N z$ ($N=\operatorname{null}(\text{schur}_A)$, so equilibrium holds for any
   $z$); the redundancy coordinate $z$ then minimises the convex weighted-L2 objective
-  $J=\sum_i w_i\,\delta_i^2$ subject to the TRIMCON/TRIMVAR bounds (small, well-scaled SLSQP).
+  $J=\sum_i w_i\,\delta_i^2$ subject to the TRIMINEQ/TRIMVAR bounds (small, well-scaled SLSQP).
   The null-space form keeps the stiff $O(10^3)$ structural-force equilibrium rows out of the
   optimiser; convexity makes the optimum initial-guess insensitive.
 
@@ -1703,7 +1702,7 @@ represent is **3-D unsteady interference** (the spanwise/chordwise coupling of t
 wake) and the frequencies of flutter, control-surface buzz, and sharp-edged gusts. For those,
 the complex $A_{jj}(k,M)$ of the Doublet-Lattice Method (Phase D) is unavoidable. In the
 development plan these methods correspond to the static maneuver loads of Phase C and the
-DLM-free quasi-steady transient maneuver loads of Phase G0, with the full unsteady MLOADS
+DLM-free quasi-steady transient maneuver loads of Phase G0, with the full unsteady MANVR
 reserved for Phase G.
 
 ### 7.8 The free-free maneuver modal basis (Step 61)
@@ -1784,8 +1783,8 @@ unit *physical* rigid-body rate, whereas the steady trim columns $D_{jx}$ of §7
 nondimensional. Each rate column is the corresponding steady column rescaled — pitch rate by
 $c_{\text{ref}}/2V$, roll/yaw by $b_{\text{ref}}/2V$ — and plunge rate enters through
 $\alpha = \theta - \dot h / V$, i.e. as $-1/V$ times the ANGLEA column. This is the only place a
-true airspeed is required, which is why the TRIM card carries the sbeam `RHOREF` pseudo-label
-($V = \sqrt{2q/\rho}$). Elastic-rate columns are zero at Level 1 — the hook where the
+true airspeed is required, which is why the sbeam-only `MANTRIM` card carries the freestream
+density ($V = \sqrt{2q/\rho}$; a `RHOREF` pseudo-label on TRIM until #87). Elastic-rate columns are zero at Level 1 — the hook where the
 apparent-mass and lag corrections of §7.4–7.6 attach.
 
 **The h-set operators and the modal equation.** With $\Phi$ fixed, the projections
@@ -1940,7 +1939,7 @@ eigensolve, same span, still fixed-$\Phi$) that restores the identity exactly of
 reachable ($\alpha = \theta - \dot h/V$ settles at constant $\dot\theta$, giving the kinematic
 identity $\Delta\ddot h = V\Delta\dot\theta$, tested); no phugoid/speed DOF, no large-attitude
 kinematics. Elastic-rate downwash is zero at Level 1 (G0-d hook), so the elastic modes are
-aerodynamically undamped — use the MLOADS ZETA field. The short-period eigenpair of the
+aerodynamically undamped — use the MANVR ZETA field. The short-period eigenpair of the
 assembled system matches a rigid two-DOF hand calculation from the §5 unrestrained (mean-axis)
 derivatives to $\sim 10^{-5}$ relative (HA144A, measured) — the AE8b cross-check.
 
@@ -1960,7 +1959,7 @@ beam-element stiffness and mass derivations are in `docs/20_theory/00_beam_metho
 
 - **Subsonic, inviscid, linear** potential flow; no transonic shocks, no viscous/separated
   flow except as captured through the CFD/WT correction. Prandtl–Glauert / Göthert
-  compressibility correction is applied for $0 \le M < 1$ via the `AEROS MACH` field (§2.8);
+  compressibility correction is applied for $0 \le M < 1$ at the TRIM Mach (§2.8);
   transonic and supersonic corrections are not implemented.
 - **Flat lifting surfaces only**; camber/twist/incidence enter through the $w_g$ boundary
   condition, not panel geometry. No interference/slender bodies.

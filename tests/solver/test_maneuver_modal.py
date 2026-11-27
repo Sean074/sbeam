@@ -25,14 +25,13 @@ references:
 Fixture family: the full-span HA144A deck in two mass configurations — the
 ``rho`` variant (CBAR distributed mass; nothing condensed) and the CONM2-only
 variant (18 massless rotational DOFs condensed).  Free flight needs the true
-airspeed, so ``_build`` stamps RHOREF onto TRIM 1; and MLDCOMD tables are
+airspeed, so ``_build`` gives MANTRIM 1 its RHO; and MANCMD tables are
 ABSOLUTE, so ELEV command tables are authored as trim value + increment
 (two-pass, mirroring the documented deck-authoring practice).
 """
 
 import warnings
 from dataclasses import replace
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -50,8 +49,9 @@ from sbeam.solver.maneuver_modal import (
     run_maneuver_modal,
 )
 from sbeam.solver.sol144 import run_sol144_trim
+from tests.samples import sample_path
 
-BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+BDF_PATH = sample_path("ha144a_fullspan_sbeam.bdf")
 G = 32.174  # ft/s²
 RHOREF = 0.002377  # slug/ft³ — free flight needs V = sqrt(2q/rho)
 
@@ -62,19 +62,18 @@ RHO = 0.05
 
 def _build(n_z=2.0, rho=None, tend=0.3, dt=0.01, tout=0.05,
            nmodes=0, method=-1, zeta=0.0):
-    """Parse the deck and register the MLOADS card set programmatically.
+    """Parse the deck and register the MANVR card set programmatically.
 
-    No MLDCOMD yet — command tables are absolute, so they are registered by
+    No MANCMD yet — command tables are absolute, so they are registered by
     ``_command_elev`` after the trim ELEV value is known (two-pass authoring).
     """
     _cc, bulk = parse_bdf(str(BDF_PATH))
     bulk.trims[1].vars["URDD3"] = load_factor_to_urdd3(n_z, G)
-    bulk.trims[1].rhoref = RHOREF
     if rho:
         for mat in bulk.mat1s.values():
             mat.rho = rho
     gi = build_grid_index(bulk)
-    bulk.mldtrims[1] = Mldtrim(sid=1, trim_sid=1)
+    bulk.mldtrims[1] = Mldtrim(sid=1, trim_sid=1, rho=RHOREF)
     bulk.mldtimes[1] = Mldtime(sid=1, t0=0.0, tend=tend, dt=dt, tout=tout)
     bulk.mloads[1] = Mloads(
         sid=1, mldtrim=1, mldtime=1, mldcomd=0, mldprnt=0,
@@ -397,12 +396,12 @@ def test_parser_method_sentinel():
     from sbeam.model.bulk_data import BulkData
 
     bulk = BulkData()
-    _handle_mloads(["MLOADS", "1", "10", "20", "0", "0", "0", "-1"], bulk)
+    _handle_mloads(["MANVR", "1", "10", "20", "0", "0", "0", "-1"], bulk)
     assert bulk.mloads[1].method == -1
     assert bulk.mloads[1].selects_modal
     with pytest.raises(ValueError, match="METHOD"):
-        _handle_mloads(["MLOADS", "2", "10", "20", "0", "0", "0", "-2"], bulk)
-    _handle_mloads(["MLOADS", "3", "10", "20"], bulk)
+        _handle_mloads(["MANVR", "2", "10", "20", "0", "0", "0", "-2"], bulk)
+    _handle_mloads(["MANVR", "3", "10", "20"], bulk)
     assert not bulk.mloads[3].selects_modal
 
 

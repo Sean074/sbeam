@@ -260,7 +260,7 @@ A @ Γ = rhs
   *negative* — the same single sign the trim solver uses (`sol144.py` `w_total = w_trim +
   wg`) and the end-to-end `tests/integration/test_wg_sign_convention.py` pins. The viewer
   Aero tab passes `aero_model.wg`, so a W2GJ twist deck (e.g.
-  `sample/val_wing_taper_dihedral_twist.bdf`) reads a lower CL than its un-twisted twin. The
+  `sample/validation/val_wing_taper_dihedral_twist.bdf`) reads a lower CL than its un-twisted twin. The
   AoA-equivalence identity `solve_rigid_cl(α, wg=0) ≡ solve_rigid_cl(0, wg=−α·n_z)` pins the
   rigid-path sign (`TestBaselineNormalwashWg`).
 
@@ -348,7 +348,7 @@ comes straight from the z-bearing corner geometry in `mesh_caero1` (canted `(0, 
 a symmetric full-span build the `Fy` cancels. The whole VLM → spline → force → trim chain is gated
 out of the xy-plane for Γ = ±10° by **V-C-DIH** (`tests/aero/test_dihedral.py`): geometric normal,
 rigid `CL ≈ CL_planar·cosΓ`, symmetric `Fy`/roll/yaw cancellation, and a structured determined trim
-(`sample/val_dihedral_trim.bdf`). The full 3-component aerodynamic moment (roll/pitch/yaw) is
+(`sample/validation/val_dihedral_trim.bdf`). The full 3-component aerodynamic moment (roll/pitch/yaw) is
 available via `sol144.aero_moment_resultant`.
 
 ### `build_djk(boxes) -> np.ndarray`  — shape (n, n)
@@ -434,7 +434,7 @@ W2GJ  SID  CAERO_EID  D1  D2  D3  D4  D5  D6
 |-------|-------------|
 | SID | Set ID |
 | CAERO_EID | EID of the CAERO1 this normalwash applies to |
-| D1–DN | Built-in incidence/camber angles (rad), one per box in row-major order, **NASTRAN convention: positive = leading-edge-up incidence → more lift** (HA144A wing incidence is `+1.745e-3` = +0.1°); a washout twist is **negative** (e.g. linear washout root 0° → tip −2° runs from ~0 at the root to −0.035 rad at the tip — see `sample/val_wing_taper_dihedral_twist.bdf`). `build_wg` negates card data into the internal washout-positive normalwash. |
+| D1–DN | Built-in incidence/camber angles (rad), one per box in row-major order, **NASTRAN convention: positive = leading-edge-up incidence → more lift** (HA144A wing incidence is `+1.745e-3` = +0.1°); a washout twist is **negative** (e.g. linear washout root 0° → tip −2° runs from ~0 at the root to −0.035 rad at the tip — see `sample/validation/val_wing_taper_dihedral_twist.bdf`). `build_wg` negates card data into the internal washout-positive normalwash. |
 
 ---
 
@@ -458,7 +458,7 @@ scaling a WT2 surface would move it off its target. **Before #96** the code read
 
 A correction card that cannot be applied is an error, never a silent no-op — the builder
 reporting "converged" while production never sees the card was the defect class this
-closes. All checks are card-labelled (`CARDNAME sid: …`, the CHORDCP house style):
+closes. All checks are card-labelled (`CARDNAME sid: …`, the CPINJ house style):
 
 | Card | Rejected |
 |------|----------|
@@ -533,8 +533,9 @@ its condition estimate exceeds 1e10) and passes the inverse in.
 **Before #71** `apply_wkk` returned `diag(w) @ AJJ` for the caller to invert, which applied
 `1/w` on the downwash side: a uniform 1.1 gave 0.909× the lift, and a non-uniform weight
 redistributed load to the neighbouring boxes. No repo deck used WKK. sbeam's `WKK` card is
-an sbeam extension: MSC enters WKK as a DMI matrix on the k-set with separate force and
-moment terms (AAUG PDF p.144); sbeam takes one weight per box.
+an sbeam extension: MSC enters WKK as a matrix on the k-set with separate force and
+moment terms (AAUG PDF p.144); sbeam takes one weight per box, and reads MSC's `DMIK WKK`
+form when the two are equal (#104, `02_card_reference.md` DMIJ / DMIK).
 
 ### `apply_wt2(ajj, cp_target, ajj_inv=None, cp_ref=None) -> np.ndarray`
 
@@ -582,9 +583,9 @@ a lift-curve-slope quantity, **not** an absolute force at an operating incidence
 produces zero load at α=0 (built-in incidence/camber must come from `W2GJ`). To match a
 section *moment* (a.c.) as well, use the section-correction synthesiser below.
 
-## CHORDCP — CFD/WT steady-pressure injection (Step 54)
+## CPINJ — CFD/WT steady-pressure injection (Step 54)
 
-The corrections above **rescale** the VLM operator toward measured data; `CHORDCP`
+The corrections above **rescale** the VLM operator toward measured data; `CPINJ`
 goes one step further and **replaces the mean flow entirely**: the per-box physical
 steady Cp distribution of every VLM lifting surface, measured (CFD or wind tunnel)
 at a stated reference angle of attack `ALPHREF`, becomes the SOL 144 baseline load,
@@ -619,7 +620,7 @@ wg_eff = lstsq(ajj_inv_corr_vlm_block, Cp_inj) + n_z·α_ref
 
 ### Usage rules (v1)
 
-- **Full coverage:** when any CHORDCP is present, every VLM CAERO1 must carry exactly
+- **Full coverage:** when any CPINJ is present, every VLM CAERO1 must carry exactly
   one card and all cards must state the same ALPHREF (degrees on the card, stored in
   radians). Partial per-surface injection is a deferred follow-on (mixed operating
   points have ambiguous interference bookkeeping).
@@ -627,8 +628,8 @@ wg_eff = lstsq(ajj_inv_corr_vlm_block, Cp_inj) + n_z·α_ref
   contain the camber/incidence — and any body-correction-derived W2GJ offsets — that
   W2GJ would have supplied.
 - A nonzero ALPHREF requires an `ANGLEA` AESTAT label (error otherwise).
-- `mirror_halfspan` rejects CHORDCP decks (box data is not auto-mirrored).
-- Deriving new correction cards (Aero Correction viewer tab) on a CHORDCP deck is
+- `mirror_halfspan` rejects CPINJ decks (box data is not auto-mirrored).
+- Deriving new correction cards (Aero Correction viewer tab) on a CPINJ deck is
   blocked — the derivation baselines would read the injected wash and change meaning.
 
 ### Operating-point bookkeeping & KC7 warnings
@@ -710,7 +711,7 @@ sbeam has **no propulsion model**: no thrust, no propeller, no actuator disc, no
 The VLM solves one freestream over the whole model. Powered aerodynamics therefore enter
 through **this** machinery and nowhere else — a section table built from *powered* CFD or
 flight test, synthesised into the ordinary `W2GJ` + `WT2` pair (or injected wholesale with
-`CHORDCP`). No card, solver path or option is specific to propellers, and none is needed.
+`CPINJ`). No card, solver path or option is specific to propellers, and none is needed.
 
 What lands where:
 
@@ -788,8 +789,8 @@ incidence falls outside `[a_lo, a_hi]`. Pass `ajj` as the **raw** PG AIC at the 
 (`build_aero_model(bulk, mach).ajj`); the Prandtl–Glauert 1/β factor is applied internally
 from `mach`.
 
-**Worked example.** `sample/cessna210_flagship_bulk.bdf` +
-`sample/cessna210_flagship_section_data.csv` are a full-span 5-surface Cessna 210-like model
+**Worked example.** `sample/cessna210_flagship/cessna210_flagship_bulk.bdf` +
+`sample/cessna210_flagship/cessna210_flagship_section_data.csv` are a full-span 5-surface Cessna 210-like model
 (wing + HTP + VTP) with per-surface section data — a cambered, washed-out, two-α-region wing,
 symmetric HTP, and a `BETA` VTP — exercised end-to-end by
 `tests/aero/test_cessna210_example.py`. Unlike the standalone `cessna210_aero.bdf` it replaced
@@ -895,7 +896,7 @@ The body panels must be held **clear of the lifting surfaces**. A VLM box loads 
 lies in its neighbourhood **or that its semi-infinite +X trailing legs pass through**, so a body box
 overlapping — or trailing its wake into — the HTP/VTP injects a purely numerical interaction onto the
 real surfaces (exactly what the cruciform is meant to *stand in for*, not corrupt). Guidance, as
-applied in `sample/cessna210_flagship_body_cruciform.bdf`:
+applied in `sample/cessna210_flagship/cessna210_flagship_body_cruciform.bdf`:
 
 * **Terminate ahead of the empennage** (deck: body chord ends at x=5.0, ahead of the VTP LE x=6.6 and
   HTP LE x=6.9) so no body box *and no trailing leg* reaches the tail x-station.
@@ -912,14 +913,14 @@ the moment reference makes a *stabilising* (nose-down) bare pitch — the wrong 
 a large destabilising target is only reachable by immersing the panels in the tail (the spurious
 overlap above) or with an extreme, ill-conditioned correction. The cruciform is therefore a tuning
 device for a **mild** dCm/dα and dCn/dβ with **~0 roll** (a slender body adds negligible Cl_β); the
-`sample/cessna210_flagship_section_data.csv` `TOTAL` row is the flying-surface totals **plus a
+`sample/cessna210_flagship/cessna210_flagship_section_data.csv` `TOTAL` row is the flying-surface totals **plus a
 realistic fuselage increment** of that size (+0.20 /rad in Cm_α, ~12 % of the flagship's pitch
 stiffness). Large body effects — a several-MAC neutral-point shift, genuine wing-body
 interference — need a true **slender-body element** (see `docs/30_future/02_parked.md`, "Body
 aerodynamic panels (slender body)"); the `Cl_β` match capability remains in the code but a clean
 cruciform is expected to drive it to ≈0.
 
-**SPLINE0 for body panels.** Body panels carry zero structural coupling (`SPLINE0`): body elastic
+**LOADINJ for body panels.** Body panels carry zero structural coupling (`LOADINJ`): body elastic
 aero effects are negligible, and a flexible spline would smear the *fictitious* correction load onto
 the fuselage beam as spurious bending. The body still drives the **total / trim Cm,Cn and all rigid
 + restrained derivatives**, because those integrate every box directly via `skj·(A⁻¹·w)` —
@@ -929,7 +930,7 @@ does not distribute along the fuselage beam, so it produces no local bending the
 **The body load is in the trim balance (Step 64, 2026-07-31).** Until Step 64 the body force was
 *only* in those direct integrals — it never entered the trim force balance or the `FORCE`/`MOMENT`
 export, so a body-panel trim was silently not closed (the printed totals and the load path disagreed;
-31 % lift error measured on `sample/ha144a_body_trim.bdf`). `SPLINE0` field 5 now names a master
+31 % lift error measured on `sample/ha144a/ha144a_body_trim.bdf`). `LOADINJ` field 5 now names a master
 `GRID` (default: the SUPORT grid) at which the panel's 6-component resultant is injected as a rigid
 load, and every force transfer runs through `g_load` instead of `g_disp`. The f06 `INJECTED AERO
 LOADS` block echoes each panel's resultant. See `05b_splining.md` "Load injection".
@@ -947,8 +948,8 @@ present). `_guess_body_panels` pre-selects the largest-chord +Z / +Y surfaces; t
 merged in) and shows a baseline / target / achieved / residual table plus `ratio_max`. **Apply body
 panels to model** injects the flying pairs (idempotent) and the body `(W2gj, Aecorr)` pairs at reserved
 SIDs (`_BODY_W2GJ_BASE = 9301`, `_BODY_AECORR_BASE = 9401`); **Download body cards (.bdf)** emits them.
-Worked example: `sample/cessna210_flagship_body.bdf` (flagship bulk + cruciform overlay) +
-the `TOTAL` row of `sample/cessna210_flagship_section_data.csv`
+Worked example: `sample/cessna210_flagship/cessna210_flagship_body.bdf` (flagship bulk + cruciform overlay) +
+the `TOTAL` row of `sample/cessna210_flagship/cessna210_flagship_section_data.csv`
 (`tests/aero/test_cessna210_body_example.py`, `tests/aero/test_cessna210_flagship_body.py`).
 
 ## Decoupled strip body panels (`strip.py` + `build_strip_body_correction`)
@@ -973,7 +974,7 @@ lifting-surface-only inverse). Two consequences, both verified in
 * **Zero contamination.** There is no wing↔body coupling block, so adding — or moving, or
   even overlapping — a strip body changes the wing/HTP/VTP loads by *exactly* zero. The
   lifting-surface inverse is bit-identical with or without the strip present. Placement is
-  therefore free; in `sample/cessna210_flagship_body_strip.bdf` it is held identical to the
+  therefore free; in `sample/cessna210_flagship/cessna210_flagship_body_strip.bdf` it is held identical to the
   cruciform overlay only so the two variants differ in one thing (the coupling) and the
   comparison is controlled.
 * **No interference either.** A decoupled element is transparent to the wing's flow, so a
@@ -1001,8 +1002,8 @@ There is no WT2 ratio and no `ratio_max` conditioning concern (a large slope sca
 benign — the panel cannot contaminate). Emits one `(W2gj, Stripk)` pair per panel;
 `strip_body_cards_to_bdf` formats them. `build_strip_body_correction` raises if a named panel
 is not a strip (PSTRIP-backed) CAERO1. Worked example:
-`sample/cessna210_flagship_body_strip_drv.bdf` + the `TOTAL` row of
-`sample/cessna210_flagship_section_data.csv`, exercised together by
+`sample/cessna210_flagship/cessna210_flagship_body_strip_drv.bdf` + the `TOTAL` row of
+`sample/cessna210_flagship/cessna210_flagship_section_data.csv`, exercised together by
 `tests/aero/test_body_correction.py` and `tests/aero/test_cessna210_flagship_body.py`.
 (`tests/aero/test_strip_body.py` gates the builder itself — it constructs `BodyTargets`
 programmatically and reads no CSV.)
@@ -1011,7 +1012,7 @@ programmatically and reads no CSV.)
 > Cl_β/Cl0 and leaves the body's own normal force to fall out of whatever slope the panel has.
 > At the `PSTRIP` default `slope0` = π the flagship strip body trims out carrying **11 % of the
 > airplane weight** on the fuselage — every total exact, the trim closed, and 11 % of the lift
-> taken off the wing. `sample/cessna210_flagship_body_strip.bdf` therefore sets
+> taken off the wing. `sample/cessna210_flagship/cessna210_flagship_body_strip.bdf` therefore sets
 > `PSTRIP, 20, 0.35`, giving 2.2 % of weight against the cruciform's 2.0 %. Check what your
 > body panels *carry*, not only what they correct.
 
@@ -1057,11 +1058,11 @@ Ajj_pg⁻¹ = (1/β) · Ajj(β · geometry)⁻¹
 ```
 
 **Input:** the flight Mach is a property of the **flight condition** — the `TRIM`
-card (AE9). `AEROS` field 8 still carries a Mach, used as the **default/fallback**
-when a TRIM card omits it; a genuine TRIM-vs-AEROS disagreement is warned about.
+card (AE9), as in MSC. Until #87 an sbeam-only Mach in `AEROS` field 9 was the fallback;
+that field is now refused, so `build_aero_model` without a `mach=` builds at M = 0.
 
 ```
-AEROS, 0, 0, 2.0, 10.0, 20.0, 1, 0, 0.6   $ AEROS Mach 0.6 (fallback)
+AEROS, 0, 0, 2.0, 10.0, 20.0, 1, 0         $ no Mach on AEROS (MSC layout)
 TRIM,  1, 0.9, 40.0, ...                    $ this subcase flies at Mach 0.9
 ```
 
@@ -1071,8 +1072,8 @@ mach=…)` takes a Mach override, and `sbeam.solver.sol144.AeroCache` memoizes o
 AeroModel per Mach so the build-once pattern still holds across subcases.
 `run_sol144_trim(bulk, subcase, aero, aero_cache=None)` resolves the TRIM Mach,
 seeds the cache with the prebuilt `aero`, and fetches/builds the AIC for that Mach
-(existing 3-arg callers are unchanged — their TRIM Mach matches AEROS, so no
-rebuild). Multiple subsonic subcases at different Mach therefore trim correctly.
+(the `sbeam` command seeds it at the first subcase's flight Mach, so a single-Mach deck
+builds one AIC). Multiple subsonic subcases at different Mach therefore trim correctly.
 
 **Key design decisions:**
 - `skj`, `djk`, and `wg` are built from the **physical** (unscaled) boxes — only
@@ -1099,7 +1100,7 @@ The Aero tab's **Compute Aero** button solves
 the **corrected** operator: both the **W2GJ baseline incidence** (camber/twist/built-in incidence)
 and any **AIC correction (WKK / WT2)** are reflected in CL/CM/cp/section loads, matching the
 SOL 144 path. Two decks that differ only by a W2GJ twist produce different loads (e.g. the
-`sample/val_wing_taper_dihedral*.bdf` pair: a 0→−2° washout drops CL from 0.2669 to 0.1851
+`sample/validation/val_wing_taper_dihedral*.bdf` pair: a 0→−2° washout drops CL from 0.2669 to 0.1851
 at α = 3°; both decks record the figure in their headers); a section force+moment correction likewise changes the lift-curve slope and a.c. Captions
 appear when a non-zero `wg` and/or a correction method are active. The mesh *geometry* is unchanged
 by twist/correction (incidence and pressure, not shape), so the visible difference is in the cp

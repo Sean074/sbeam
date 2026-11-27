@@ -11,7 +11,7 @@ released local stiffness, its transform, its mass and its section data
   condensed local stiffness + transform) used by stiffness assembly and by
   ``K·T·u`` force recovery.
 - :func:`line_element_mass_global` / :func:`line_element_mass_per_length` are
-  the mass side, kept separate so recovery (called per MLOADS time step) never
+  the mass side, kept separate so recovery (called per MANVR time step) never
   builds a mass matrix.
 
 The CBAR entry wraps ``released_local_stiffness``, ``transform_matrix`` and

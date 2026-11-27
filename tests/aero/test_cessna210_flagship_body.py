@@ -18,7 +18,7 @@ pre-P9 pure-Python AIC build, ~11 s at 372 boxes; the vectorized build is ~100×
 
 Gate map (B-numbers as in the Step 66 plan):
   B1  both drivers parse through the double INCLUDE; 372 boxes; no ID collision;
-      the 48 body boxes are SPLINE0-covered and no warning is raised
+      the 48 body boxes are LOADINJ-covered and no warning is raised
   B2  the committed body cards regenerate from the CSV TOTAL block
   B3  Step 64 closure: trimmed ALL-box lift = n*W at 1g and 2.5g
   B4  contamination contrast — strip ~ 0, cruciform O(0.1)
@@ -27,11 +27,10 @@ Gate map (B-numbers as in the Step 66 plan):
       direction, by much more than solver noise
   B7  MONPNT1 over all 372 boxes = n*W, while the flying-only monitor falls short
       by exactly the injected body resultant
-  B8  the body load reaches the structure at the SPLINE0 master grid
+  B8  the body load reaches the structure at the LOADINJ master grid
   B9  the airplane is still statically stable and still far from divergence
 """
 
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -45,17 +44,17 @@ from sbeam.gpwg import compute_gpwg
 from sbeam.results.f06_writer import _build_f06_sol144_text
 from sbeam.results.load_export import build_aero_load_cards_text
 from sbeam.solver.sol144 import run_sol144_trim
+from tests.samples import sample_path
 
-_SAMPLE = Path(__file__).parent.parent.parent / "sample"
-BARE_PATH = _SAMPLE / "cessna210_flagship_trim.bdf"
-CRUCIFORM_PATH = _SAMPLE / "cessna210_flagship_body.bdf"
-STRIP_PATH = _SAMPLE / "cessna210_flagship_body_strip_drv.bdf"
-CSV_PATH = _SAMPLE / "cessna210_flagship_section_data.csv"
+BARE_PATH = sample_path("cessna210_flagship_trim.bdf")
+CRUCIFORM_PATH = sample_path("cessna210_flagship_body.bdf")
+STRIP_PATH = sample_path("cessna210_flagship_body_strip_drv.bdf")
+CSV_PATH = sample_path("cessna210_flagship_section_data.csv")
 
 N_BOXES = 372            # 324 flying + 16 horizontal body + 32 vertical body
 N_BODY_BOXES = 48
 BODY_EIDS = [6000, 7000]
-MASTER_GRID = 900        # SPLINE0 field 5 — the trim reference
+MASTER_GRID = 900        # LOADINJ field 5 — the trim reference
 G = 9.81
 Q_CRUISE = 2334.0
 
@@ -170,7 +169,7 @@ def test_b1_builds_without_warnings(name, request):
 
 @pytest.mark.parametrize("name", ["cruciform", "strip"])
 def test_b1_body_boxes_are_spline0_covered(name, request):
-    """Every body box reaches the structure through a SPLINE0 master grid."""
+    """Every body box reaches the structure through a LOADINJ master grid."""
     _cc, bulk, aero, _gi, _w = request.getfixturevalue(name)
     assert sorted(bulk.spline0s) == [9400, 9500]
     injected = {k for inj in aero.load_injections for k in inj.boxes}
@@ -434,7 +433,7 @@ def test_b7_balanced_monpnt3_still_nets_to_zero(cruciform_trims, weight):
 # --------------------------------------------------------------------------- #
 def test_b8_injection_echo_reports_both_panels(cruciform_trims):
     echo = cruciform_trims[0].load_injection_echo
-    assert [e["source"] for e in echo] == ["SPLINE0 9400", "SPLINE0 9500"]
+    assert [e["source"] for e in echo] == ["LOADINJ 9400", "LOADINJ 9500"]
     assert all(e["master_grid"] == MASTER_GRID for e in echo)
     assert [e["n_boxes"] for e in echo] == [16, 32]
 
@@ -443,7 +442,7 @@ def test_b8_f06_carries_the_injected_loads_block(cruciform, cruciform_trims):
     cc, bulk, _aero, _gi, _w = cruciform
     text = _build_f06_sol144_text(cc, bulk, cruciform_trims[0], subcase_id=1)
     assert "I N J E C T E D   A E R O   L O A D S" in text
-    assert "SPLINE0 9400" in text
+    assert "LOADINJ 9400" in text
 
 
 def test_b8_export_carries_the_master_grid_load(cruciform, cruciform_trims):

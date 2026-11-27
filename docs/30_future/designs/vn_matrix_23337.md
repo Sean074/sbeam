@@ -229,7 +229,7 @@ tolerances:
 
 ### 6.2 The in-repo end-to-end anchor
 
-`sample/cessna210_flagship_bulk.bdf:438` carries a **hand-authored** 2.5 g pull-up:
+`sample/cessna210_flagship/cessna210_flagship_bulk.bdf:438` carries a **hand-authored** 2.5 g pull-up:
 
 ```
 TRIM, 2, 0.0, 2334.0, RHOREF, 1.225, PITCH, 2.8402-3
@@ -263,7 +263,7 @@ test can see it.
 
 ### 6.4 Sample deck
 
-`sample/cessna210_flagship_vn.bdf`, FAR23 normal, V_A 60 / V_C 86 / V_D 105 m/s, three
+`sample/cessna210_flagship/cessna210_flagship_vn.bdf`, FAR23 normal, V_A 60 / V_C 86 / V_D 105 m/s, three
 MASSCASEs, sea level. V_A is illustrative for a sample — it follows from a stated
 `V_S1 ≈ 30.9 m/s` as `30.9·√3.8 = 60.2`, and is not a measured certification number.
 

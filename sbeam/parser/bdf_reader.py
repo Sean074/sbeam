@@ -13,7 +13,7 @@ from collections import Counter
 from typing import Optional
 
 from sbeam.model.bulk_data import BulkData
-from sbeam.parser import bulk_aero, bulk_structural, bulk_trim
+from sbeam.parser import bulk_aero, bulk_dmi, bulk_structural, bulk_trim
 from sbeam.parser.bulk_fields import ContHandler, FieldHandler, MultiHandler, iter_cards, split_line
 from sbeam.parser.bulk_xref import check_frame_orientations, cross_reference
 from sbeam.types import StrPath
@@ -57,13 +57,26 @@ _UNSUPPORTED_CARDS: dict[str, str] = {
     "MPC": "multipoint constraint", "MPCADD": "constraint set", "SPCADD": "constraint set",
     "RBE1": "rigid element",
     # direct matrix input (#55): MSC decks carry aero corrections this way
-    "DMI": "direct matrix input (for W2GJ/WKK aero corrections use the native W2GJ/WKK cards)",
+    # (#104: DMIJ W2GJ and DMIK WKK are read, bulk_dmi).  DMI's row numbers need the
+    # order of the CAERO1 entries in the j/k-set, which the manuals do not state
+    "DMI": "direct matrix input (for W2GJ/WKK give the box-ID forms DMIJ W2GJ / DMIK WKK, "
+           "or the native W2GJ/WKK cards)",
     "DMIG": "direct matrix input at grid points", "DMIAX": "direct matrix input",
-    "DMIJ": "aero direct matrix input (use the native W2GJ/WKK cards)",
-    "DMIJI": "aero direct matrix input (use the native W2GJ/WKK cards)",
-    "DMIK": "aero direct matrix input (use the native W2GJ/WKK cards)",
+    "DMIJI": "aero direct matrix input on interference bodies (sbeam has no CAERO2)",
     # damping
-    "TABDMP1": "modal damping table (the MLOADS transient takes its damping from ZETA)",
+    "TABDMP1": "modal damping table (the MANVR transient takes its damping from ZETA)",
+    # ZAERO cards whose names sbeam borrowed with its own layout until v0.4.1 (#87).  ZAERO's
+    # meaning is not implemented; sbeam's cards now carry names no vendor defines
+    "MLOADS": "ZAERO maneuver loads (ASE state space); sbeam's transient driver is now MANVR (#87)",
+    "MLDTRIM": "ZAERO maneuver trim state; sbeam's initial-condition card is now MANTRIM (#87)",
+    "MLDTIME": "ZAERO maneuver time window; sbeam's is now MANTIME (#87)",
+    "MLDCOMD": "ZAERO pilot command via EXTINP; sbeam's command card is now MANCMD (#87)",
+    "MLDPRNT": "ZAERO maneuver output; sbeam's output request is now MANPRNT (#87)",
+    "CHORDCP": "ZAERO thickness Cp for ZTAIC; sbeam's pressure injection is now CPINJ (#87)",
+    "SPLINE0": "ZAERO zero-displacement spline on a PANLST; sbeam's card is now LOADINJ (#87)",
+    "ATTACH": "ZAERO panel attachment on a PANLST; sbeam's rigid attachment is now BODYATT (#87)",
+    "TRIMOBJ": "ZAERO objective on TRIMFNC functions; sbeam's variable weights are now TRIMWGT (#87)",
+    "TRIMCON": "ZAERO constraint on TRIMFNC functions; sbeam's variable bound is now TRIMINEQ (#87)",
 }
 
 #: Bulk keywords that only control listing or output and never change an answer: these
@@ -73,7 +86,7 @@ _HARMLESS_CARDS: dict[str, str] = {
     "ECHOON": "bulk-data echo control", "ECHOOFF": "bulk-data echo control",
 }
 
-_FAMILIES = (bulk_structural, bulk_aero, bulk_trim)
+_FAMILIES = (bulk_structural, bulk_aero, bulk_trim, bulk_dmi)
 _FIELD_HANDLERS: dict[str, FieldHandler] = {}
 _CONT_HANDLERS: dict[str, ContHandler] = {}
 _MULTI_HANDLERS: dict[str, MultiHandler] = {}
@@ -178,6 +191,8 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
     bulk = _read_cards(main)
     _read_mass_increments(bulk, increments)
     cross_reference(bulk)
+    # DMIJ W2GJ / DMIK WKK onto the native per-CAERO1 data: needs every CAERO1 and AEFACT
+    bulk_dmi.map_aero_matrices(bulk)
 
     # Resolve all grid positions from their CP system into global CID 0; frame checks
     # that need a resolved CORD2R chain run here too (the parser's one assembly import)
@@ -188,22 +203,24 @@ def parse_bulk_data(lines: list[str]) -> BulkData:
     return bulk
 
 
-def parse_bulk_file(filepath: StrPath) -> BulkData:
+def parse_bulk_file(filepath: StrPath, text: Optional[str] = None) -> BulkData:
     """Parse a bulk-data-only file and return a BulkData object.
 
     Handles files with or without a BEGIN BULK header line; INCLUDEs are expanded as in
     ``parse_bdf``.  Does not require or parse any case control section — useful for
     loading model geometry into the viewer before case control has been defined.
 
+    ``text`` is as in ``parse_bdf``.
+
     Raises FileNotFoundError if the file or an INCLUDE file does not exist.
     """
-    lines, origins, _ = _read_input(filepath)
+    lines, origins, _ = _read_input(filepath, text)
     begin = _begin_bulk_index(lines)
     start = 0 if begin is None else begin + 1
     return parse_bulk_data(_bulk_section(lines[start:], origins[start:]))
 
 
-def parse_bdf(filepath: StrPath) -> tuple[CaseControl, BulkData]:
+def parse_bdf(filepath: StrPath, text: Optional[str] = None) -> tuple[CaseControl, BulkData]:
     """Read a BDF file and return (CaseControl, BulkData).
 
     The file is read as NASTRAN reads it (#81): every INCLUDE is replaced by the text of
@@ -213,12 +230,17 @@ def parse_bdf(filepath: StrPath) -> tuple[CaseControl, BulkData]:
     BULK (e.g. the Cessna 210 flagship bulk plus its body-panel overlay); the files
     those INCLUDEs name are ``CaseControl.includes``.
 
+    ``text``, when given, is read in place of the file at ``filepath``, which then need not
+    exist: it only names the deck in messages and gives the folder that the deck's own
+    relative INCLUDEs are resolved against.  A tool that has edited a deck in memory parses
+    the result this way without writing it beside the original (#113).
+
     Raises FileNotFoundError if the main file or an INCLUDE file does not exist.
     Raises ValueError for bulk data INCLUDEd above BEGIN BULK, a BEGIN line other than
     BEGIN BULK, data after ENDDATA, and everything ``parse_case_control`` and
     ``parse_bulk_data`` refuse.
     """
-    lines, origins, includes = _read_input(filepath)
+    lines, origins, includes = _read_input(filepath, text)
     begin = _begin_bulk_index(lines)
     if begin is None:
         begin = len(lines)
@@ -228,7 +250,22 @@ def parse_bdf(filepath: StrPath) -> tuple[CaseControl, BulkData]:
     cc.include = cc.includes[0] if cc.includes else None
     bulk = parse_bulk_data(_bulk_section(lines[begin + 1:], origins[begin + 1:]))
     _check_mass_case_selectors(cc, bulk)
+    _merge_grdpnt(cc, bulk)
     return cc, bulk
+
+
+def _merge_grdpnt(cc: CaseControl, bulk: BulkData) -> None:
+    """One PARAM,GRDPNT for the run: the case-control one, the bulk one, or both if equal (#90).
+
+    The QRG states no precedence between a case-control and a bulk PARAM (p.570), so two
+    different values are refused rather than one chosen.
+    """
+    if cc.grdpnt is None:
+        return
+    if bulk.grdpnt != -1 and bulk.grdpnt != cc.grdpnt:
+        raise ValueError(f"PARAM,GRDPNT is {cc.grdpnt} in case control and {bulk.grdpnt} in "
+                         "the bulk data; give it once (the QRG states no precedence, p.570)")
+    bulk.grdpnt = cc.grdpnt
 
 
 def _check_mass_case_selectors(cc: CaseControl, bulk: BulkData) -> None:
@@ -342,7 +379,8 @@ def _refuse_partitioned_bulk(line: str) -> None:
             "MODULE, ...; QRG p.286–287) are not supported")
 
 
-def _read_input(filepath: StrPath) -> tuple[list[str], list[str], list[tuple[int, str]]]:
+def _read_input(filepath: StrPath, text: Optional[str] = None,
+                ) -> tuple[list[str], list[str], list[tuple[int, str]]]:
     """Return a file's lines with every INCLUDE expanded, as NASTRAN reads it.
 
     Returns ``(lines, origins, includes)``: the expanded lines, the file each came from,
@@ -350,19 +388,22 @@ def _read_input(filepath: StrPath) -> tuple[list[str], list[str], list[tuple[int
     the index its file's text starts at.  An INCLUDE may appear anywhere and may nest up
     to 10 deep (QRG p.465, p.1984).  A relative filename is resolved against the directory
     of the file holding the INCLUDE — sbeam's rule: the QRG leaves filenames to the
-    installation (p.1984).
+    installation (p.1984).  ``text`` replaces the content of the main file (``parse_bdf``).
     """
     lines: list[str] = []
     origins: list[str] = []
     includes: list[tuple[int, str]] = []
-    _expand(os.fspath(filepath), (), lines, origins, includes)
+    _expand(os.fspath(filepath), (), lines, origins, includes, text)
     return lines, origins, includes
 
 
 def _expand(path: str, chain: tuple[str, ...], lines: list[str], origins: list[str],
-            includes: Optional[list[tuple[int, str]]]) -> None:
-    with open(path, "r") as fh:
-        raw = [line.rstrip("\n") for line in fh]
+            includes: Optional[list[tuple[int, str]]], text: Optional[str] = None) -> None:
+    if text is not None:
+        raw = text.splitlines()
+    else:
+        with open(path, "r") as fh:
+            raw = [line.rstrip("\n") for line in fh]
     chain = (*chain, os.path.abspath(path))
     i = 0
     while i < len(raw):

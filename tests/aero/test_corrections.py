@@ -26,6 +26,7 @@ from pathlib import Path
 
 from sbeam.aero.corrections import apply_wkk, apply_wt2, wt2_reference_cp
 from sbeam.aero.aero_model import build_aero_model
+from tests.samples import sample_path
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -422,7 +423,6 @@ class TestWkkSurfaceBinding:
 # WT2 per-axis reference (#52)
 # ---------------------------------------------------------------------------
 
-_SAMPLE = Path(__file__).parent.parent.parent / "sample"
 
 
 class TestWt2PerAxisReference:
@@ -440,7 +440,7 @@ class TestWt2PerAxisReference:
         from sbeam.assembly.load_vector import build_grid_index
         from sbeam.parser.bdf_reader import parse_bdf
 
-        _cc, bulk = parse_bdf(str(_SAMPLE / deck))
+        _cc, bulk = parse_bdf(str(sample_path(deck)))
         assert bulk.aecorrs, "deck must carry WT2 cards for this gate to mean anything"
         aero = build_aero_model(bulk, grid_index=build_grid_index(bulk))
         eid = np.array([b.caero_eid for b in aero.boxes])
@@ -504,7 +504,7 @@ class TestWkkAtTheOperatingPoint:
 
     def test_uniform_wkk_equals_scaled_dynamic_pressure(self):
         from sbeam.parser.bdf_reader import parse_bdf
-        deck = Path(__file__).resolve().parents[2] / "sample/ha144a_fullspan_sbeam.bdf"
+        deck = Path(__file__).resolve().parents[2] / "sample/ha144a/ha144a_fullspan_sbeam.bdf"
         cc, bulk = parse_bdf(deck)
         sc = cc.subcases[0]
         q = bulk.trims[sc.trim_sid].q

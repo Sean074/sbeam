@@ -117,7 +117,7 @@ def test_sol101_example_runs_and_prints_the_quoted_line(capsys, monkeypatch) -> 
 
 
 def test_sol144_example_runs_on_the_flagship_trim_deck(capsys) -> None:
-    ns: dict = {"deck_path": str(REPO / "sample/cessna210_flagship_trim.bdf")}
+    ns: dict = {"deck_path": str(REPO / "sample/cessna210_flagship/cessna210_flagship_trim.bdf")}
     exec(compile(_example("example_sol144"), str(GUIDE), "exec"), ns)
     assert ns["trim"], "the flagship trim deck should produce at least one trim result"
     assert all(hasattr(r, "trim_vars") for r in ns["trim"].values())
@@ -129,7 +129,7 @@ def test_subcase_by_hand_example_runs() -> None:
     from sbeam.parser.bdf_reader import parse_bdf
     from sbeam.parser.case_control import SubcaseControl
     from sbeam.solver.sol101 import run_sol101
-    _, bulk = parse_bdf(str(REPO / "sample/simple_beam.bdf"))
+    _, bulk = parse_bdf(str(REPO / "sample/beam/simple_beam.bdf"))
     sc = SubcaseControl(subcase_id=99, spc_sid=1, load_sid=10, displacement=True)
     result = run_sol101(bulk, sc)
     assert result.displacements.shape[0] == 6 * len(bulk.grids)

@@ -267,6 +267,8 @@ def compute_restrained_derivs(
             'CMY': pitch_moment(df_box, boxes, x_ref) / (sref * cref),
             'CMX': Mx / (sref * bref) if bref > 0 else 0.0,
             'CMZ': Mz / (sref * bref) if bref > 0 else 0.0,
+            'CX':  df_box[0::3].sum() / sref,      # all six components, as MSC (#90)
+            'CY':  df_box[1::3].sum() / sref,
         }
 
     return rest_derivs
@@ -434,6 +436,8 @@ def compute_unrestrained_derivs(
             'CMY': R6[4, j] / (qS * cref),
             'CMX': R6[3, j] / (qS * bref) if bref > 0 else 0.0,
             'CMZ': R6[5, j] / (qS * bref) if bref > 0 else 0.0,
+            'CX':  R6[0, j] / qS,                  # all six components, as MSC (#90)
+            'CY':  R6[1, j] / qS,
         }
     unrest_intercepts = {
         'CZ0':  R60[2] / qS,

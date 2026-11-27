@@ -4,7 +4,7 @@ MSC's CAERO1 element system is right-handed with x along the airstream and y fro
 toward P4 (QRG 2024.1 PDF p.1344, remark 4, Figure 9-5), so its normal z = x × y depends
 on the point order: a port wing or a fin drawn root to tip has the normal −z or −y.
 The downwash w_j is the "normal velocity" of each box (AAUG 2023.1 PDF p.30, eq 2-1/2-2)
-and W2GJ is its static part (p.144), so W2GJ, AECORR/CHORDCP targets and the printed
+and W2GJ is its static part (p.144), so W2GJ, AECORR/CPINJ targets and the printed
 ΔCp are signed along that normal.  sbeam solves with a normal whose dominant component
 is positive; before #84 it also read the cards along it, so the same W2GJ on a port wing
 gave the same lift whichever way the wing was drawn.

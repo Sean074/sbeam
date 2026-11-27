@@ -1,6 +1,6 @@
 """Free-free maneuver modal basis and the one-time h-set operator set (Step 61).
 
-This is the basis layer of the ZAERO-style transient maneuver architecture
+This is the basis layer of the transient maneuver architecture (MANVR cards)
 (Phase G0 Steps 61-63).  It builds, once per job, everything that depends only on
 geometry, the baseline mass case and Mach:
 
@@ -506,7 +506,7 @@ def build_maneuver_basis(
     if nmodes:
         if nmodes > n_available:
             warnings.warn(
-                f"build_maneuver_basis: MLOADS NMODES={nmodes} exceeds the "
+                f"build_maneuver_basis: MANVR NMODES={nmodes} exceeds the "
                 f"{n_available} elastic modes available from the basis solve; "
                 "retaining all of them.",
                 UserWarning, stacklevel=2,
@@ -567,14 +567,14 @@ def truncate_basis(basis: ManeuverBasis, nmodes: int) -> ManeuverBasis:
     """Return a copy of ``basis`` retaining the first ``nmodes`` elastic modes.
 
     Rigid modes are always all retained.  ``nmodes`` <= 0 returns the basis
-    unchanged.  This is how a per-subcase MLOADS NMODES is applied to the shared
+    unchanged.  This is how a per-subcase MANVR NMODES is applied to the shared
     (untruncated) job-level basis: a column slice, never a re-solve — the basis
     object stays the single eigensolve of ``build_maneuver_basis`` (risk item 9).
     """
     if nmodes <= 0 or nmodes >= basis.n_e:
         if nmodes > basis.n_e:
             warnings.warn(
-                f"truncate_basis: MLOADS NMODES={nmodes} exceeds the "
+                f"truncate_basis: MANVR NMODES={nmodes} exceeds the "
                 f"{basis.n_e} elastic modes available from the basis solve; "
                 "retaining all of them.",
                 UserWarning, stacklevel=2,

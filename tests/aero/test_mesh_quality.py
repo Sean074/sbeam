@@ -20,7 +20,7 @@ from sbeam.aero.aero_model import build_aero_model
 
 def _bulk(caero_lines: str, prop: str = "PAERO1, 10\n"):
     text = (
-        "AEROS, 0, 0, 1.0, 8.0, 8.0, 0, 0, 0.0\n"
+        "AEROS, 0, 0, 1.0, 8.0, 8.0, 0, 0\n"
         + prop
         + caero_lines
     )

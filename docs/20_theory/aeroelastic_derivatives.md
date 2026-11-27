@@ -59,7 +59,7 @@ example prints both, and so does sbeam.
 ### The running example — HA144A
 
 Everything below is illustrated with NASTRAN's classic **HA144A** forward-swept-wing
-airplane (`sample/ha144a_fullspan_sbeam.bdf`), at Mach 0.9 and two dynamic pressures:
+airplane (`sample/ha144a/ha144a_fullspan_sbeam.bdf`), at Mach 0.9 and two dynamic pressures:
 q = 40 psf (barely flexible) and q = 1200 psf (30 % of the divergence q). The reference
 values are MSC Aeroelastic Analysis User's Guide **Table 7-1**
 (`.refs/MSC_Nastran_2021.3_Aeroelastic_Analysis_User_Guide.pdf`, PDF p. 230):

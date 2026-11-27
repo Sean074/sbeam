@@ -11,7 +11,6 @@ compose with `dataclasses.replace` (as the existing body/strip tests do) instead
 """
 
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -21,15 +20,15 @@ from sbeam.model.bulk_data import BulkData
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.parser.case_control import CaseControl
 from sbeam.types import StrPath
+from tests.samples import sample_path
 
 # (case control, bulk, aero model, g-set grid index, warnings raised during the build)
 Deck = tuple[CaseControl, BulkData, AeroModel, dict[int, int], list[str]]
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
-FLAGSHIP_CRUCIFORM = SAMPLE / "cessna210_flagship_body.bdf"
-FLAGSHIP_STRIP = SAMPLE / "cessna210_flagship_body_strip_drv.bdf"
-FLAGSHIP_BARE = SAMPLE / "cessna210_flagship_trim.bdf"
-FLAGSHIP_CSV = SAMPLE / "cessna210_flagship_section_data.csv"
+FLAGSHIP_CRUCIFORM = sample_path("cessna210_flagship_body.bdf")
+FLAGSHIP_STRIP = sample_path("cessna210_flagship_body_strip_drv.bdf")
+FLAGSHIP_BARE = sample_path("cessna210_flagship_trim.bdf")
+FLAGSHIP_CSV = sample_path("cessna210_flagship_section_data.csv")
 
 BODY_EIDS = (6000, 7000)
 

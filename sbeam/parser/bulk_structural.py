@@ -555,7 +555,7 @@ def _handle_spc(fields: list[str], bulk: BulkData) -> None:
         validate_dof(c2, f"SPC {sid}")
     d2  = to_float(fields[7]) if len(fields) > 7 else 0.0
     # No solver applies an enforced displacement.  SOL 101 and 103 refused it at run
-    # time; SOL 144 and MLOADS took D = 0 without a message (#68)
+    # time; SOL 144 and MANVR took D = 0 without a message (#68)
     for gid, d in ((g1, d1), (g2, d2)):
         if d != 0.0:
             raise ValueError(
@@ -786,16 +786,22 @@ def _handle_eigrl(fields: list[str], bulk: BulkData) -> None:
 
 
 def _handle_param(fields: list[str], bulk: BulkData) -> None:
-    check_param(fields)
+    grdpnt = check_param(fields)
+    if grdpnt is not None:
+        bulk.grdpnt = grdpnt
 
 
-def check_param(fields: list[str]) -> None:
-    """Refuse or warn about one PARAM; nothing is stored.
+def check_param(fields: list[str]) -> Optional[int]:
+    """Refuse or warn about one PARAM; return GRDPNT's value when it is GRDPNT.
 
     Shared by the bulk card and the case-control PARAM command (#80), so both
-    places apply the same rules.
+    places apply the same rules.  GRDPNT is the only PARAM that is stored: it asks
+    for the grid point weight generator printout (QRG p.885; #90).
     """
     name = fields[1].strip().upper() if len(fields) > 1 else ""
+    if name == "GRDPNT":
+        # -1 (default) suppresses the printout; 0 or an undefined grid is the basic origin
+        return to_int(fields[2]) if len(fields) > 2 and fields[2].strip() else -1
     if name == "WTMASS":
         # WTMASS scales the mass matrix in Nastran; sbeam never converts units (charter §7)
         value = to_float(fields[2]) if fields[2].strip() else 1.0
@@ -867,8 +873,6 @@ _REFUSED_PARAMS: dict[str, tuple[float, str]] = {
 _IGNORED_PARAMS: dict[str, str] = {
     "POST": "post-processor output files, QRG p.922; sbeam writes its own f06, CSV and BDF",
     "PRTMAXIM": "printout of maximum loads and displacements, QRG p.929",
-    "GRDPNT": "grid point weight generator request, QRG p.885; sbeam always prints its "
-              "mass and CG summary",
     "AUTOSPC": "automatic constraint of singular DOFs, QRG p.850; sbeam has none and "
                "reports a singular stiffness",
     "MAXRATIO": "singularity threshold of the stiffness factor, QRG p.897; sbeam uses its "

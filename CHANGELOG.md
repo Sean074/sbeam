@@ -9,7 +9,419 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-11-28
+
+Milestone v0.4.1, **viewer authoring and reduced-model export**. An engineer authors, runs
+and reviews every case capability from the viewer without editing a BDF by hand (scope
+agreed in #11; #111–#118, #120, #122–#124, #127; the CPINJ form #119 is parked). The SOL 103
+free-free modal model is written as OP4 + Universal file by `MODEXP` (#100, #106, #107). The
+audit follow-ons close with it: vendor layouts for the ZAERO-named cards (#87), the f06 in
+MSC's layouts (#90), docs that contradicted the code (#91), MSC's DMIJ/DMIK corrections
+(#104) and the deviation register with its release gate (#95). Some entries change what a
+deck means or refuse a deck that ran: see Breaking changes.
+
+### Added
+- **Monitors can be placed in the viewer (#116).** A new *Monitors* sub-tab has forms for
+  AECOMP, MONPNT1 (aerodynamic and structural) and MONSECT, and draws the monitors on the
+  3D model: each reference point, the grids or boxes a monitor sums, and a line in each
+  cut plane. The drawing is read from the solver's own monitor and cut plans.
+  `write_aecomp`, `write_monpnt1` and `write_monsect` are the writers. With every monitor
+  card removed from `ha144a_fullspan_sbeam.bdf` and typed back through the forms, the
+  exported deck has the original's cards and the run gives its monitor and section loads.
+  Every one of the 21 authorable card families now has an editor.
+- **Mass cases can be authored in the viewer (#115).** A new *Mass cases (MASSCASE)* sub-tab
+  shows mass and C.G. for the baseline and every mass case, and has a MASSCASE form: label,
+  SCALE, CONM2 pickers for ADD and DELETE, and a table of REPLACE pairs. `write_masscase`
+  is the card's writer. With two of the three mass cases of `ha144a_massset_sweep.bdf`
+  removed and authored through the form, the exported deck has the original's cards and the
+  run gives the original's trims. A case from an MSC `MASSSET` entry is listed, not edited.
+- **Gust cases can be authored in the viewer (#117).** A new *Gust (GUSTLF)* sub-tab on the
+  authoring tab has a GUSTLF card form and a **Generate gust cases** panel. The panel takes
+  the inputs `sbeam-cases` takes (unit system, TRIM template, g, V_C / V_D / V_B, altitudes,
+  mass cases, first SID) and calls `sbeam_tools.cases.gust`; it adds the TRIM and GUSTLF
+  cards and the subcases to the open deck. From the inputs recorded in
+  `cessna210_flagship_gust.bdf` it writes that deck's cards, identical as text. Every card
+  family now has an editor. For this the gust tool gained `airplane_from_model` (build the
+  cases from a model in memory), `trim_card`, `gustlf_card` and `gust_subcase`.
+- **The SOL 144 results page shows four f06 blocks it left out (#118).** Above the
+  derivative table it now says that coefficients are in basic axes and shows MSC's
+  transformation to the AEROS reference frame; on HA144A that frame has z down, so MSC's CZ
+  has the opposite sign. It also shows the injected operating point (CPINJ), the injected
+  aero loads (LOADINJ and un-splined boxes) and the applied structural load as one
+  resultant, each only when the result has it. The numbers come from the result and from
+  `coefficient_frame` and `applied_load_resultant`, two functions in
+  `sbeam/results/f06_writer.py` now shared with the f06 writer; the f06 text is unchanged.
+- **Viewer journey test (#112).** `tests/viewer/test_journey.py` takes every sample deck
+  that opens on its own (34) through the viewer: open from the picker, every tab drawn, the
+  case-control editor and one card per card-family editor submitted unchanged, the export
+  parsed and compared with the deck on disk field by field, then the run. It found the
+  defects of #123 and #122. It drives widgets, not a browser.
+- **The viewer opens a deck from disk (#111).** A new "Open from disk" panel in the sidebar
+  lists every deck under `sample/` and takes a typed path. A deck opened this way is parsed
+  where it stands, so a relative `INCLUDE` resolves. Before this the only route was upload,
+  which parses from a temporary file: none of the six `cessna210_flagship` drivers could be
+  opened. An uploaded deck with an `INCLUDE` now says to open it by path. All routes share
+  one loader that puts every model-dependent session key back to its default, so nothing of
+  the previous deck survives. The sample list appears only in a source checkout (a wheel does
+  not ship `sample/`).
+- **Reduced modal model export, `MODEXP`** (#100, Tier L). In a SOL 103 subcase,
+  `MODEXP(OP4,UF) = n` writes `<deck>.op4` and `<deck>_dofmap.csv`, which give each PHIA and
+  PHIX row's grid and component, plus `<deck>.uf`. sgear and Flaps read these files.
+  - **`.op4`** is MSC OUTPUT4 ASCII in double precision. It holds MHH = ΦᵀMΦ,
+    KHH = ΦᵀKΦ, PHIA (the a-set modes) and PHIX (the modes at the grids of SET n).
+  - **`.uf`** is a Universal file with datasets 15, 82 and 55.
+  - **Free-free models** have their rigid modes replaced by geometric motions about the
+    C.G., mass-orthonormalised. Mass normalisation is required.
+  - **Case-control `SET`** is MSC's own (QRG p.625: THRU, EXCEPT, ALL; run- or
+    subcase-scoped). `MODEXP` is sbeam-only.
+  - **Gates:**
+    - the new `sample/goland_wing/goland_wing_modes.bdf` (the Flaps demo Goland wing) gives Flaps
+      2.3.4's 7.370 / 14.119 Hz to 4 figures;
+    - a tributary-lumped variant gives the closed form's 49.48 / 87.10 rad/s within 0.3 %;
+    - on a free-free beam, MHH = I and KHH = diag(ω²) to 1e-8;
+    - pyNastran reads the OP4 back to 1e-12 with no warnings.
+  - The Flaps `import` / `amviz` check is manual.
+- **MSC's aero correction matrices `DMIJ W2GJ` and `DMIK WKK` are read** (#104, Tier M).
+  MSC has no W2GJ or WKK card; it enters them as matrices on aero box IDs (AAUG 2023.1
+  p.144; QRG 2024.1 p.1617, p.1623). sbeam maps them onto its native per-CAERO1 W2GJ / WKK
+  data. A term not entered is zero, as in MSC, so a WKK box with no term has no lift.
+  - **Refused:** any other matrix name (FA2J, WTFACT, …); complex terms; a W2GJ with more
+    than one column; a WKK term off the diagonal; a box whose force and moment weights
+    differ; a term on a DOF the box does not have (MSC drops it silently); a deck giving
+    both the matrix and native cards; a DMIK WKK in a model with PSTRIP panels.
+  - **`DMI` stays refused.** Its row numbers need the order of the CAERO1 entries in the
+    j-set, which the manuals do not state. `sample/ha144a/HA144A.bdf` therefore still does not run.
+  - Real fields now accept the double-precision `D` exponent (`1.0D0`, QRG p.1619 remark 9).
+  - **Gates:** the new `sample/ha144a/ha144a_fullspan_dmij.bdf` trims to `ha144a_fullspan_sbeam.bdf`'s
+    numbers (rel 1e-12; f06 and load BDF identical). A non-uniform DMIK WKK gives the native
+    WKK's operator bit for bit. pyNastran reads all 224 terms to the same values.
+
+### Breaking changes
+> **Version exception (owner's decision, 2026-11-27).** `08_release_process.md` §1 puts a
+> breaking change in the next MINOR release. These ship in 0.4.1, as the milestone plan
+> names it: sbeam has no outside users yet. The rule is unchanged and this is not a
+> precedent.
+
+- **Two SOL 144 decks that ran are now refused (#124).** A subcase with both `MANVR` and
+  `TRIM` (or `GUSTLF`, or `DIVERG`) ran the maneuver and ignored the rest; a `TRIMWGT = n`
+  naming no TRIMWGT card ran the trim with no objective. Neither gave a message. Both now
+  stop before the run. **Fix a deck:** keep one driver per subcase, and delete a `TRIMWGT`
+  selector that names no card.
+- **Viewer: a card of the loaded deck is no longer edited in place (#113).** Choosing a loaded
+  card, changing a field and pressing Apply is refused with a message. Use **Save as new
+  SID**, which adds the edit as a new card, then select that card in the case control.
+  Before, the edit was applied in memory and could be run, but the export was blocked until
+  the card was saved under a new SID; what ran and what exported could differ. A card
+  authored in the session is edited and deleted as before. For a loaded MANCMD or MANVR the
+  two-pass command builder writes new cards and selects the new MANVR in the subcase (#114).
+- **sbeam's ZAERO-named cards are renamed; ZAERO's and MSC's cards keep their vendor
+  layouts** (#87; pre-1.0 MINOR break). sbeam had borrowed ZAERO card names with its own
+  layouts and meanings. ZAERO's MLOADS family, for example, drives an aeroservoelastic
+  state-space run (ZAERO 9.2 UM PDF p.383–400), so a ZAERO deck was refused with confusing
+  messages or misread (MLDTIME field 6). CLAUDE.md rule 7: a vendor name keeps the vendor
+  layout, and an sbeam extension takes a name no vendor defines. None of the new names
+  appears in the MSC 2024.1 QRG or the ZAERO 9.2 UM.
+
+  | Old | New |
+  |---|---|
+  | `MLOADS` (bulk and case control) | `MANVR` |
+  | `MLDTRIM` | `MANTRIM` |
+  | `MLDTIME` | `MANTIME` |
+  | `MLDCOMD` | `MANCMD` |
+  | `MLDPRNT` | `MANPRNT` |
+  | `CHORDCP` | `CPINJ` |
+  | `SPLINE0` | `LOADINJ` |
+  | `ATTACH` | `BODYATT` |
+  | `TRIMOBJ` (bulk and case control) | `TRIMWGT` |
+  | `TRIMCON` | `TRIMINEQ` |
+
+  The old names are refused, with a message naming the new card. A new "sbeam-only
+  cards" table in `02_card_reference.md` lists every card no vendor defines, its nearest
+  vendor card and why that card is not used. Each card's own section is headed
+  **sbeam-only card**.
+
+  Vendor layouts now read as the vendor writes them:
+  - **TRIMVAR** is read in ZAERO's layout, `IDVAR LABEL LOWER UPPER TRIMLNK DMI SYM
+    INITIAL` (PDF p.511). TRIMLNK, DMI and user-input derivatives are refused; SYM is
+    ignored.
+  - **TRIM** is read in MSC's layout (QRG PDF p.2992): two pairs on line 1, **AEQR** in
+    field 9 (blank or 1.0; any other value is refused), then the pairs continue.
+  - **The `RHOREF` pseudo-label is refused.** The density moves to a new field 4, `RHO`,
+    on `MANTRIM`; the modal maneuver solver needs it.
+  - **AEROS field 9 (sbeam's MACH) is refused** (MSC's AEROS ends at SYMXY, QRG p.1151).
+    The Mach is TRIM's. `build_aero_model` without `mach=` builds at M = 0. The `sbeam`
+    command and the viewer build the seed model at the first subcase's flight Mach, through
+    the new `sbeam.solver.sol144_util.flight_mach`, so a one-Mach job still builds one AIC.
+    The seed Mach changes no result; a modal maneuver run was checked to be bit-identical
+    with seeds at M = 0 and M = 0.9.
+  - **DIVERG without a Mach is refused.** It used to run at the AEROS Mach.
+
+  Unread fields are now refused on MANTIME (fields 7–9), MANTRIM (5–9), BODYATT (8–9),
+  LOADINJ (7–9) and TRIMINEQ (6–9).
+
+  pyNastran now reads AEROS and TRIM in every repo deck and agrees field by field, so
+  both left the compat suite's allowance list. Every sample deck's f06/CSV output is
+  identical apart from the card names printed.
+
+  **Migrate a deck:**
+  - rename the cards above;
+  - move `RHOREF, ρ` from the TRIM to field 4 of its MANTRIM;
+  - put a third TRIM pair on the continuation;
+  - delete AEROS field 9 and give the Mach on TRIM;
+  - write TRIMVAR as `ID, LABEL, LB, UB, , , , INIT`.
+
+  sbeam→MSC conversion is recorded as a parked command-line tool in `sbeam_tools/`, not a
+  solver feature (`docs/30_future/02_parked.md`).
+
+### Documentation
+- **Deviation register reviewed for the v0.4.1 release gate (2026-11-28).** The cards and commands
+  touched by the milestone's closed issues were probed against the parser, the pre-run check
+  and one end-to-end run; every existing row states what the code does, and every *defect*
+  row names an open issue. Three rows were missing and are added: a SOL 144 subcase with
+  neither `TRIM` nor `DIVERG` is refused; `LOAD` on a `DIVERG`-only subcase is refused; two
+  `SUPORT` entries on one grid are accepted with no message (defect, #125). The QRG pages
+  read for them do not state MSC's behaviour, and the rows say so.
+- **README brought up to date.** It listed `MONPNT3` as supported (refused since #86), said
+  PBAR K1/K2 are silently ignored (refused), said CBUSH needs CID = 0 (a CORD2R is read,
+  #62), said unrestrained derivatives are not computed (AE8b, 2026-07-05), and said SOL 144
+  cases are authored in the BDF and decks are opened by upload only (#111 to #117). Added:
+  `MASSSET`, `DMIJ`/`DMIK`, `MODEXP`, the `[dev]` extra the tests need, the `sbeam`
+  command, and the check before a SOL 144 run (#124). One stale sentence on AE8b in
+  `05c_sol144_maneuver.md` is corrected, and `MASSSET` joins the "at a glance" list in
+  `02_card_reference.md`.
+- **Deviation register** (#95, part D1). The new `docs/10_standard/12_deviation_register.md`
+  lists every known difference between sbeam and MSC NASTRAN / ZAERO in one place: sbeam's
+  behaviour, the vendor's, the manual and PDF page, and a disposition (refused, warned,
+  ignored, by design, defect with its issue). It is seeded from the 2026-11-16 audit and
+  checked against the parser as it stands; a known difference missing from it is a defect.
+  It is a single source in `CLAUDE.md` and `docs/00_INDEX.md`, and the README and the
+  overview now say sbeam reads a documented subset and refuses the rest. Three statements
+  in `02_card_reference.md` are corrected on the way: `PARAM,COUPMASS`'s lumped-mass
+  default now cites QRG p.859, large-field cards are read (the Unsupported-cards section
+  said they were not), and SPLINE2 `DZ < 0` / `DTOR ≤ 0` are refused (the limitations table
+  said warned).
+- **Vendor fields tables for every MSC card** (#95, part D2). Each of the 39 MSC card
+  sections in `02_card_reference.md` now ends with a table of MSC's fields (with the QRG
+  page), sorted into read, refused, ignored with the reason, and not checked. The tables
+  are generated from `tests/docs/test_field_dispositions.py`, a new gate that changes one
+  field at a time on a valid card (326 probes) and fails if the parser stops doing what a
+  table says, if a table in the document drifts from the data, or if a card in "Supported
+  cards at a glance" has no table. Found on the way and filed as #109: data in a field MSC
+  leaves blank is accepted and dropped with no message on 15 cards (CORD2R, CROD, PROD,
+  PLOTEL, PBAR, CBUSH, CONM2, SPC, FORCE, MOMENT, GRAV, PAERO1, SPLINE2, AESTAT, MONPNT1).
+  Newly documented as ignored: PAERO1 `B1`–`B6`, GRAV `MB`. Corrected: RBAR `TREF` is
+  refused as an unread line, not ignored.
+- **"External reference" column on the verification tables (#95, part D3).** Every row of the
+  V-suite, VAL2 and gust tables in `00_program_overview.md` now says where its expected number
+  comes from: a vendor's printed number with its page, a closed form, another named program, or
+  **None** when the gate compares sbeam with itself. No V-suite or gust row is checked against
+  an MSC or ZAERO number. A short table lists the SOL 144 gates that do carry one (HA144A,
+  AAUG 2023.1 PDF p.233–237).
+- **Release gate item and sample-deck compatibility tags (#95, part D4; closes #95).** The
+  pre-release gate (`08_release_process.md` §3) now requires the deviation register to be
+  reviewed for every card touched in the milestone. The first line of every sample deck is
+  `$ COMPAT: MSC-runnable` (17 files: only cards and commands MSC defines) or
+  `$ COMPAT: sbeam-extension` (20 files); `sbeam-cases` writes the tag on a generated gust
+  deck. Two tests hold the tags, one against sbeam's list of sbeam-only names and one against
+  the cards pyNastran does not know. No sample deck has been run in MSC. `CEND` being optional
+  in MSC is now cited (QRG 2024.1 PDF p.150).
+- **The CPINJ form is parked (#119).** No sample deck uses CPINJ and no load case needs it
+  authored from the viewer, so it is written up in `docs/30_future/02_parked.md` and the
+  issue is closed. CPINJ is still read and solved, and typed into the deck by hand.
+- **Run progress in the viewer is not built (#120, closed with the measurement).** The
+  issue's first task was to time a long run. The Run button was timed on all 32 sample decks
+  that have a case control: the longest is 1.4 s (`cessna210_flagship_gust.bdf`, 12
+  subcases), the next 0.8 s, the median 0.2 s, all 32 together 9.4 s. A progress bar for a
+  run of about a second has no user. It is worth reopening when a deck runs for more than
+  about ten seconds, which the v0.7.0 design-case matrix may produce.
+- **Viewer scope for v0.4.1 agreed (#11).** `docs/30_future/designs/v040_gui_scope.md` is no
+  longer a draft. Decided: the viewer authors cases on a model loaded from a BDF, not the
+  model; it becomes a thin UI over `sbeam_tools/cases` before any new form is built; the
+  journey-test bar of #11 stands. The work is eleven issues on v0.4.1, #111 to #121, and the
+  production-ready definition of done moves to the hand-walk issue #121. No viewer code
+  changed. The survey was re-checked against the code: the GUSTLF selector and gust results
+  block are present since #98, and a deck that uses `INCLUDE` cannot be opened by upload
+  (#111).
+- **`sample/` is one folder per model family, with a README** (#108, Tier S). The 38 sample
+  files move, names unchanged, into `sample/beam/`, `sample/validation/`,
+  `sample/goland_wing/`, `sample/ha144a/` and `sample/cessna210_flagship/`. The new
+  `sample/README.md` gives each file's purpose and marks the ones that are not decks to run
+  on their own (bulk-only, overlay, archive listing, generated). **A path such as
+  `sample/simple_beam.bdf` is now `sample/beam/simple_beam.bdf`**; `INCLUDE`s are unaffected
+  because each family moved whole. Tests find a deck by file name through
+  `tests/samples.py`, the deck-sweeping gates collect recursively and refuse an empty
+  sweep, and `tests/docs/test_sample_readme.py` fails when the README and the folders
+  disagree. Entries below this one keep the paths that were true when they were written.
+- **Stick models carry a visualisation outline for mode animation** (#107, from the Flaps
+  hand check). Flaps `amviz` draws translations only, so the Goland torsion mode animated
+  as bending. `sample/goland_wing/goland_wing_modes.bdf` now ends with massless LE/TE grids on RBE2s
+  and 37 PLOTELs. They are outside the MODEXP SET, so frequencies and PHIX are unchanged,
+  and its mode 5 now visibly twists the tip chord. The idiom (standard cards, no export
+  option) and the patched-Flaps requirement for real-mode dataset 55 are in `04` and `10`.
+  Gates check four things:
+  - frequencies and PHIX match the deck without the outline;
+  - every outline T3 equals T3 − R2·x;
+  - the tip LE and TE move in opposite senses in torsion and together in flap;
+  - dataset 82 has 49 segments.
+- **Docs that contradicted the code or MSC corrected** (#91, audit S19/A19/M14/C12/M11).
+  `02_card_reference.md`:
+  - the case-control table now says that DISPLACEMENT, SPCFORCES, FORCE and STRESS are
+    accepted but always printed, and it lists GUSTLF;
+  - AEFACT endpoints are not constrained, as in MSC (CAERO1 remark 2);
+  - URDD1 was added to the AESTAT labels;
+  - the stale "trim cards not yet consumed" wording is gone;
+  - the SPLINE1 field list is MSC's;
+  - the constraints table says CBAR offsets and EIGRL V1/V2 are refused;
+  - the MLOADS family is marked as sbeam's own layout, not ZAERO's.
+
+  Theory §2.8: Mach comes from TRIM, with AEROS as the fallback, and M ≥ 1 is refused (not
+  capped at 0.99). The SOL 101/103 output lists in `03` and `04` drop a case-control echo
+  that is never written, and give the SPC-force layout and the eigenvalue columns actually
+  printed. The `05c` SOL 144 f06 table lists every block. Items the audit raised that v0.4.0
+  had already fixed: the PARAM list, the EIGRL example, GRID CD, the order-sensitivity claim,
+  the keyword list in `01`, and the `bdf_field.py` docstring.
+
 ---
+
+### Fixed
+- **CI was red from the #117 push on (2026-11-26).** Eight `cast()` calls round
+  `st.selectbox` in `sol144_authoring_ui.py` are needed by the type stubs of a newer
+  streamlit and are refused as unnecessary by pyright on the pinned one (1.50.0,
+  `requirements-ci.txt`). pyright failed, so pytest did not run in CI for five pushes. The
+  casts are removed. One test, `test_an_uploaded_include_driver_says_to_open_it_by_path`,
+  then failed on the pinned streamlit only: it passed AppTest's session state to the
+  loader, and that object has no `keys()` there. The test now uses a plain mapping. No
+  viewer behaviour changes. Both were found by running the three gates in an environment
+  built from `requirements-ci.txt`; the local `.venv` has newer packages and hid both.
+- **The pull-up preset prescribed no pitch rate (#127).** The "Symmetric pull-up" recipe
+  wrote `PITCH = 0` at every load factor. An airplane holding n g on a curved path is
+  rotating at q = (n − 1)·g/V, so the TRIM carries `PITCH = (n − 1)·g·c_ref/(2V²)`; this is
+  the repo's own standard (`05c_sol144_maneuver.md`, the flagship's `TRIM 2`) and ZAERO's
+  stated value for `QRATE` (User's Manual PDF p.512). The recipe now writes it, and the
+  viewer panel asks for the true airspeed, which has no default. On the flagship at 2.5 g
+  the old value trimmed with 1.35° too little elevator and a hinge moment 12% low; wing
+  root bending moved 0.1%. **A TRIM pre-filled from this preset before this change at
+  n ≠ 1 has `PITCH = 0` and should be corrected.** Decks are not changed; the zero-rate
+  case is not kept as a recipe.
+- **`cessna210_flagship_gust.bdf` was not what its generator writes (#117).** The deck is
+  marked "GENERATED, do not hand-edit; regenerate", but twelve comment lines lacked the
+  `rho = …` the emitter prints. It is regenerated, and a test now regenerates it from the
+  command in its header and compares every line. No card changed.
+- **An interaction that should change nothing changed the deck in the viewer (#123).** Found
+  by the journey test (#112); none raised an error.
+  - **Case-control Apply dropped the applied load of every SOL 144 trim subcase**, so
+    pressing Apply on `val_thrust_trim.bdf` removed the thrust. It also dropped everything
+    the editor has no widget for: `LABEL`, `SUBTITLE`, `SET`, `MODEXP`, `PARAM,GRDPNT`. A
+    GRAV-only LOAD set could not stay selected. Apply now edits the loaded case control
+    instead of rebuilding it.
+  - **The export left out the deck's own bulk cards.** A single-file deck exported as
+    `INCLUDE 'model.dat'`, a file that does not exist; the gust driver exported without its
+    TRIM and GUSTLF cards. The export now carries the loaded deck's bulk section unchanged.
+  - **"Edit existing" in the card editors did not show the selected card.** The form kept
+    its previous values and Apply wrote them: choosing SUPORT 90 and pressing Apply changed
+    its DOFs from `3` to `35`. Each card now has its own form widgets. A loaded card
+    submitted unchanged is no longer marked as authored (which blocked the export with a
+    duplicate SID). TABLED1 could not be applied at all (`AttributeError`).
+  - **A second deck inherited the first deck's widget values**: with the subcase editor
+    open, opening another deck and pressing Apply wrote the first deck's TRIM selections
+    into it. Every model widget's key now carries the deck's number in the session.
+
+  **Check any deck exported from the viewer before this change**: a SOL 144 deck with a LOAD
+  on a trim subcase lost it, and a deck with cards after an INCLUDE lost those cards.
+- **The viewer refused to run a gust subcase (#122).** Its pre-launch check counted only
+  TRIM, DIVERG and MANVR as subcase drivers, so every subcase of
+  `cessna210_flagship_gust.bdf` was blocked with "needs a driver", though `GUSTLF` names its
+  own TRIM and the command line runs the deck. A GUSTLF subcase is now a trim subcase in the
+  viewer's checks, a missing GUSTLF or a TRIM selector that disagrees with the card is
+  reported, and a gust run's suggested file name ends `_gust`. Found by #111's test that
+  opens every sample deck.
+- **MODEXP's Universal file drew no PLOTEL** (#106, found by the Flaps hand check,
+  flaps_env#1). The trace builder read every element's grids as GA/GB with a default of
+  None; PLOTEL names them G1/G2, so each PLOTEL was skipped with no message. Each family
+  now has an explicit accessor. Trace lines are also split into datasets 82 of at most 250
+  entries, the limit other UFF readers apply (*unverified*; Flaps ignores it).
+- **CI type check red since #90** (follow-up to #90). `gpwg.py` and the f06 GPWG matrix
+  printer annotated arrays as bare `np.ndarray`, which strict pyright rejects under CI's
+  pinned numpy 2.0.2 (13 errors). pytest was skipped as a result, so the #90/#100/#106/#107
+  tests had not run in CI. They now use `sbeam.types.FloatArray`. `.gitignore` now also
+  covers every output `sbeam <deck>` writes; #100's `.op4`, `.uf` and `_dofmap.csv`
+  showed as untracked files.
+- **A WKK or WT2 `AECORR` on a PSTRIP strip panel did nothing** (#104). Both scale the VLM
+  operator, which strip panels are not part of, so the card was dropped with no message
+  (WKK = 0 left the operator unchanged). Both are now refused; correct a strip panel's
+  slope with `STRIPK`. `CPINJ` already refused strip panels. No repo deck is affected.
+
+### Changed
+- **The case control is checked against the model before any subcase is solved (#124).**
+  `sbeam.solver.precheck.check_case_control` holds the rules once: a selector that names no
+  card, a subcase with no driver, MANVR combined with TRIM, a LOAD on a subcase that drops
+  it, a MANVR subcase with no SUPORT, a modal MANVR without RHO. The command line stops with
+  every fault listed. Before, most of these failed from inside the solver when the subcase
+  was reached, one at a time, after the earlier subcases had been solved. The viewer shows
+  the same list before Launch and no longer holds its own copy of these rules. `parse_bdf`
+  is unchanged: a deck that cannot yet run can still be read.
+- **Maneuver case construction moved from the viewer to `sbeam_tools/cases/maneuver.py`
+  (#114).** The trim recipes (`MANEUVER_PRESETS`), the command-history shapes (`gen_*`) and
+  the two-pass command builder (`resolve_increment_tables`) are now a tool a script can call;
+  the viewer keeps the widgets. Two behaviour changes:
+  - The builder returns a `Resolution` and no longer rewrites a card of the loaded deck. For
+    a loaded MANCMD or MANVR it writes new ones and reports which subcases must select the
+    new MANVR; the viewer applies that. Run from a script on `ha144a_mloads_massset.bdf`
+    it reproduces the deck's hand-written command table from the solved trim.
+  - The pull-up recipe's load factor defaults to 1.0 (level flight), not 2.5: the limit load
+    factor is the user's input.
+
+  The pull-up recipe's `PITCH = 0` was moved as it was and is fixed under #127.
+- **The viewer re-parses the deck after every card edit (#113).** The session model is the
+  parser's reading of one text: the loaded deck's bulk section, the authored cards, and the
+  aero-correction cards. An edit is written into that text and parsed; if the parser refuses,
+  the form shows the parser's message and nothing changes. So a parser rule holds for a card
+  typed into a form, and the deck the Run button solves is the deck the export writes.
+  - `validate_sol144_authoring`, about 180 lines restating the parser's cross-reference pass,
+    is deleted. `tests/viewer/test_reparse_authoring.py` lists the 18 card rules it held and
+    shows the parser refuses each. What remains, `check_case_control`, checks the case
+    control against the model: 12 rules the parser does not look at (#124).
+  - Cards the old path accepted and the parser refuses are now refused in the form. Found so
+    far: an AESURF whose two box lists share boxes, and a SUPORT on a grid that does not
+    exist.
+  - The Aero Correction tab's **Apply to model** puts its cards into the same text. They
+    were in the viewer's model but not in the Case Control tab's export.
+  - `parse_bdf` and `parse_bulk_file` take `text=`: the deck's content when it is not on
+    disk, with the path used for messages and to resolve the deck's own INCLUDEs.
+  - A re-parse of the flagship deck takes about 5 ms.
+- **The f06 follows MSC's layouts where a consumer can compare it** (#90; audit O5–O8,
+  C11). All numbers are unchanged; only the presentation moves. Every sample deck's
+  CSV and load-BDF output is identical to before.
+  - **SOL 103.** The real-eigenvalue table gains MSC's EXTRACTION ORDER and GENERALIZED
+    STIFFNESS columns (φᵀKφ), and each eigenvector carries MSC's `EIGENVALUE =` /
+    `CYCLES = … R E A L   E I G E N V E C T O R   N O .` heading (AAUG 2023.1 PDF p.437).
+    **Breaks text parsers of the old table:** Sean074/smodal#12 is filed for smodal's
+    `parse_f06`, which would otherwise read RADIANS as Hz.
+  - **PARAM,GRDPNT** now prints MSC's GRID POINT WEIGHT GENERATOR block once per run
+    (QRG p.885). It shows MO = DᵀMD about the reference point, S, the mass and C.G. per
+    direction, I(S), I(Q) and Q. The reduction reproduces MSC's HA144B printout
+    (AAUG p.269). It used to be ignored with a warning. GRDPNT may be given in bulk data
+    or case control; two different values are refused.
+  - **Page headings.** A subcase's own TITLE, plus SUBTITLE and LABEL, reach the f06,
+    following MSC's rules (QRG p.679, p.658, p.471). The subcase TITLE used to be stored
+    and dropped, and SUBTITLE and LABEL were ignored. The viewer's case-control export
+    writes all three.
+  - **Trim variables** print MSC's ID, TYPE (RIGID BODY / CONTROL SURFACE), TRIM STATUS
+    (FIXED / FREE), value and units, with MSC's INTERCEPT row (AAUG p.235). This replaces
+    PRESCRIBED / FREE.
+  - **Stability derivatives.** One table, in MSC's layout (AAUG p.233): six coefficients
+    per trim variable, with RIGID, ELASTIC RESTRAINED and ELASTIC UNRESTRAINED columns.
+    The elastic columns now carry CX and CY (new in `restrained_derivs` and
+    `unrestrained_derivs`). The separate LATERAL/DIRECTIONAL block is gone.
+  - **Static-trim monitors** print the AERO / INERTIA / APPLIED / REACTION breakdown
+    under each structural monitor's total, as the transient blocks did.
+  - TRIMF stays accepted with a warning: its describers, SET and rigid load sets need
+    #85, #100 and #103 (filed as #105).
+- **AESTAT refuses a label that is not one of MSC's standard rigid-body labels** (#91).
+  MSC reads ANGLEA, SIDES, ROLL, PITCH, YAW and URDD1–URDD6 (QRG 2024.1 PDF p.1153, Table 1)
+  and gives any other label its forces through AELINK or DMI (p.1154 remark 3), which sbeam
+  does not read. Before, a label such as `THRUST` got a zero aerodynamic column with no
+  message. No repo deck uses one.
 
 ## [0.4.0] — 2026-11-22
 

@@ -46,8 +46,8 @@ them instead:
 - **Sign/axis/frame/reference-point conventions:** `docs/10_standard/09_conventions.md`
 - **Solver behavior and outputs:** the per-solver guides `03`/`04`/`05a`–`05c`
 - **Known limitations:** index in `00_program_overview.md`
-- **Export schemas (CSV / load BDF):** `docs/10_standard/10_export_schemas.md`
-- **Public Python entry points (public vs internal):** `docs/10_standard/11_python_api.md`
+- **Export schemas / public Python entry points:** `10_export_schemas.md` / `11_python_api.md`
+- **Known differences from MSC NASTRAN / ZAERO:** `docs/10_standard/12_deviation_register.md`
 
 ## Step Completion Requirement (tiered)
 

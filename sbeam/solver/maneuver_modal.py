@@ -4,7 +4,7 @@ The self-balancing maneuver: the rigid modal coordinates ξ_r are states of the
 coupled h-set Newmark system, so the net (aero + inertial) load closes to ≈ 0
 for an arbitrary commanded *control* history — no per-step trim solve.  The
 prescribed-rigid physics of increment 1 remains available through the direct
-solver (`maneuver_qs.run_maneuver_qs`, selected by an all-zeros MLOADS card).
+solver (`maneuver_qs.run_maneuver_qs`, selected by an all-zeros MANVR card).
 
 Coupled free-flight equation of motion (perturbation about the IC trim)
 -----------------------------------------------------------------------
@@ -29,7 +29,7 @@ The Δ-form keeps gravity and the trim forcing implicit: at Δδ_c = 0 the trim
 IS the equilibrium, so the run starts exactly at rest (Δξ = Δξ̇ = 0) and a
 zero-command free response stays there to round-off.  Rigid trim labels
 (ANGLEA/PITCH/URDD…) are **outputs** computed from Δξ_r/Δξ̇_r/Δξ̈_r; commanding
-one in MLDCOMD under this solver is a hard error.
+one in MANCMD under this solver is a hard error.
 
 Scope (documented limits): linear inertial-frame rigid coordinates at fixed V
 (the steady pull-up is reachable since α = θ − ḣ/V settles); no phugoid/speed
@@ -198,11 +198,11 @@ def _check_commanded_labels(
     for label, _tabid in commands:
         if label not in aesurf_labels:
             raise ValueError(
-                f"run_maneuver_modal: MLDCOMD {mldcomd_sid} commands "
+                f"run_maneuver_modal: MANCMD {mldcomd_sid} commands "
                 f"rigid-state label '{label}' — under the free-flight modal "
                 "solver ANGLEA/PITCH/URDD/... are outputs computed from the "
                 "rigid states, not inputs.  Command AESURF controls only, or "
-                "use the direct solver (all-zeros MLOADS NMODES/METHOD/ZETA) "
+                "use the direct solver (all-zeros MANVR NMODES/METHOD/ZETA) "
                 "for prescribed-rigid studies."
             )
 
@@ -243,14 +243,14 @@ def run_maneuver_modal(
 ) -> ManeuverResult:
     """Step 63 free-flight modal transient maneuver-loads solve.
 
-    Selected by ``main.py`` when the MLOADS card requests it
+    Selected by ``main.py`` when the MANVR card requests it
     (``Mloads.selects_modal``: any of NMODES/METHOD/ZETA nonzero, METHOD=-1
-    for the all-defaults-modal sentinel).  Requires RHOREF on the IC TRIM card
+    for the all-defaults-modal sentinel).  Requires RHO on the MANTRIM card
     (the rigid-rate aerodynamics B_hh need the true airspeed V = sqrt(2q/ρ)).
 
     Args:
         bulk:        Parsed BulkData — same requirements as ``run_maneuver_qs``,
-                     plus RHOREF on the MLDTRIM-referenced TRIM.
+                     plus RHO on the MANTRIM card.
         subcase:     SubcaseControl — uses ``mloads_sid``, ``spc_sid`` and
                      ``massset_sid`` (Step 60 mass case).
         aero:        AeroModel (seeds the AeroCache; rebuilt at the TRIM Mach).
@@ -274,7 +274,7 @@ def run_maneuver_modal(
     refuse_load_in_mloads("run_maneuver_modal", subcase)
     if subcase.mloads_sid is None or subcase.mloads_sid not in bulk.mloads:
         raise ValueError(
-            f"run_maneuver_modal: MLOADS SID {subcase.mloads_sid} not found")
+            f"run_maneuver_modal: MANVR SID {subcase.mloads_sid} not found")
     mload = bulk.mloads[subcase.mloads_sid]
     mldtrim = bulk.mldtrims[mload.mldtrim]
     mldtime = bulk.mldtimes[mload.mldtime]
@@ -285,16 +285,15 @@ def run_maneuver_modal(
     if mldcomd is not None:
         _check_commanded_labels(bulk, mldcomd.sid, commands)
 
-    # True airspeed for the rigid-rate aerodynamics (B_hh): RHOREF mandatory.
+    # True airspeed for the rigid-rate aerodynamics (B_hh): MANTRIM RHO mandatory.
     trim_card = bulk.trims[mldtrim.trim_sid]
     try:
-        v_inf = trim_card.velocity()
+        v_inf = mldtrim.velocity(trim_card.q)
     except ValueError as exc:
         raise ValueError(
             "run_maneuver_modal: the free-flight maneuver needs the true "
             "airspeed V = sqrt(2q/rho) for the rigid-rate aerodynamics "
-            f"(B_hh) — add the RHOREF pseudo-label to TRIM {mldtrim.trim_sid}."
-            f"  ({exc})"
+            f"(B_hh) — give RHO on MANTRIM {mldtrim.sid}.  ({exc})"
         ) from exc
 
     if subcase.massset_sid is not None:

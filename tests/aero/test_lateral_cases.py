@@ -1,4 +1,4 @@
-"""V-LAT2 — lateral trim cases on `sample/val_lateral_aileron_rudder.bdf` (#10, G10–G12).
+"""V-LAT2 — lateral trim cases on `sample/validation/val_lateral_aileron_rudder.bdf` (#10, G10–G12).
 
 Design note ``docs/30_future/designs/lateral_cases_aileron_rudder.md`` §2.3–2.4, §5.
 The deck is the AR 8 rectangular wing + a vertical fin on a stiff spine, with an
@@ -32,7 +32,7 @@ from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.solver.sol144 import AeroCache, compute_hinge_moments, compute_rigid_derivs, run_sol144_trim
 
 REPO = Path(__file__).parent.parent.parent
-DECK = REPO / "sample/val_lateral_aileron_rudder.bdf"
+DECK = REPO / "sample/validation/val_lateral_aileron_rudder.bdf"
 LABELS = ["AIL", "RUD", "ROLL", "SIDES", "YAW", "ANGLEA"]
 
 

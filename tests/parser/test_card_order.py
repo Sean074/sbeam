@@ -25,9 +25,10 @@ import pytest
 from sbeam.parser import bdf_reader
 from sbeam.parser.bdf_reader import parse_bdf, parse_bulk_data
 from sbeam.parser.bulk_fields import is_continuation, split_line
+from tests.samples import sample_decks
 
 REPO = Path(__file__).resolve().parents[2]
-DECKS = sorted([*(REPO / "sample").glob("*.bdf"), *(REPO / "tests/integration/bdf").glob("*.bdf")])
+DECKS = sorted([*sample_decks(), *(REPO / "tests/integration/bdf").glob("*.bdf")])
 SEEDS = (0, 1, 2)
 
 
@@ -83,7 +84,7 @@ def _reordered(lines: list[str], order: str) -> list[str]:
 
 def _canonical(bulk) -> dict:
     """BulkData with card order removed: dicts compare unordered already; the lists of
-    whole cards (SUPORT, and the per-SID FORCE/MOMENT/SPC/SPC1/TRIMCON lists) are sorted."""
+    whole cards (SUPORT, and the per-SID FORCE/MOMENT/SPC/SPC1/TRIMINEQ lists) are sorted."""
     out = {}
     for f in fields(bulk):
         value = getattr(bulk, f.name)
@@ -225,7 +226,7 @@ def test_dangling_structural_reference_is_refused(cards, match):
 
 def _aero_deck(old: str, new: str) -> list[str]:
     """The dihedral trim deck's bulk with card ``old`` (and its continuations) replaced."""
-    lines = _bulk_lines(REPO / "sample/val_dihedral_trim.bdf")
+    lines = _bulk_lines(REPO / "sample/validation/val_dihedral_trim.bdf")
     head, *cards = _cards(lines)
     hits = [k for k, card in enumerate(cards) if card[0].strip() == old]
     assert len(hits) == 1, old
@@ -246,23 +247,23 @@ _SPLINE = "SPLINE2, 1601, 1100, 1100, 1131, 1100, 0.0, 1.0, 2"
      "CAERO1 1100: CP=7 not found in CORD2R"),
     (_SPLINE, "SPLINE2, 1601, 1100, 1100, 1131, 1100, 0.0, 1.0, 7",
      "SPLINE2 1601: CID=7 not found in CORD2R"),
-    (_SPLINE, "SPLINE0, 1601, 1199, 1100, 1131, 90",
-     "SPLINE0 1601: CAERO=1199 not found in CAERO1"),
-    (_SPLINE, "SPLINE0, 1601, 1100, 1100, 1131, 99", "SPLINE0 1601: grid GRID=99 not found"),
-    (_SPLINE, "ATTACH, 1601, 1199, 1100, 1131, 90", "ATTACH 1601: CAERO=1199 not found in CAERO1"),
-    (_SPLINE, "ATTACH, 1601, 1100, 1100, 1131, 99", "ATTACH 1601: grid GRID=99 not found"),
-    (_SPLINE, "ATTACH, 1601, 1100, 1100, 1131, 90, 7", "ATTACH 1601: CID=7 not found in CORD2R"),
+    (_SPLINE, "LOADINJ, 1601, 1199, 1100, 1131, 90",
+     "LOADINJ 1601: CAERO=1199 not found in CAERO1"),
+    (_SPLINE, "LOADINJ, 1601, 1100, 1100, 1131, 99", "LOADINJ 1601: grid GRID=99 not found"),
+    (_SPLINE, "BODYATT, 1601, 1199, 1100, 1131, 90", "BODYATT 1601: CAERO=1199 not found in CAERO1"),
+    (_SPLINE, "BODYATT, 1601, 1100, 1100, 1131, 99", "BODYATT 1601: grid GRID=99 not found"),
+    (_SPLINE, "BODYATT, 1601, 1100, 1100, 1131, 90, 7", "BODYATT 1601: CID=7 not found in CORD2R"),
     ("SET1, 1100, 90, 110, 120", "SET1, 1100, 90, 110, 120\nW2GJ, 1, 1199, 0.0",
      "W2GJ 1: CAERO1 1199 not found"),
     ("SET1, 1100, 90, 110, 120", "SET1, 1100, 90, 110, 120\nWKK, 1, 1199, 1.0",
      "WKK 1: CAERO1 1199 not found"),
     ("SET1, 1100, 90, 110, 120", "SET1, 1100, 90, 110, 120\nAECORR, 1, WT2, 1199, 0.0, 6.0",
      "AECORR 1: CAERO1 1199 not found"),
-    ("SET1, 1100, 90, 110, 120", "SET1, 1100, 90, 110, 120\nCHORDCP, 1, 1199, 2.0, 0.0, 0.1",
-     "CHORDCP 1: CAERO1 1199 not found"),
-], ids=["AEROS-ACSID", "AEROS-RCSID", "CAERO1-CP", "SPLINE2-CID", "SPLINE0-CAERO",
-        "SPLINE0-GRID", "ATTACH-CAERO", "ATTACH-GRID", "ATTACH-CID", "W2GJ-CAERO",
-        "WKK-CAERO", "AECORR-CAERO", "CHORDCP-CAERO"])
+    ("SET1, 1100, 90, 110, 120", "SET1, 1100, 90, 110, 120\nCPINJ, 1, 1199, 2.0, 0.0, 0.1",
+     "CPINJ 1: CAERO1 1199 not found"),
+], ids=["AEROS-ACSID", "AEROS-RCSID", "CAERO1-CP", "SPLINE2-CID", "LOADINJ-CAERO",
+        "LOADINJ-GRID", "BODYATT-CAERO", "BODYATT-GRID", "BODYATT-CID", "W2GJ-CAERO",
+        "WKK-CAERO", "AECORR-CAERO", "CPINJ-CAERO"])
 def test_dangling_aero_reference_is_refused(old, new, match):
     with pytest.raises(ValueError, match=match):
         parse_bulk_data(_aero_deck(old, new))
@@ -272,7 +273,7 @@ def test_ha144a_is_past_the_card_order_error():
     """The issue's reproduction: HA144A puts its CBARs before their PBAR.  It now gets
     past that and stops at its next real limitation, the weight-unit PARAM,WTMASS (#39)."""
     with pytest.raises(ValueError, match=r"PARAM,WTMASS,0.031081 is not supported"):
-        parse_bdf(REPO / "sample/HA144A.bdf")
+        parse_bdf(REPO / "sample/ha144a/HA144A.bdf")
 
 
 # --------------------------------------------------------------------------------------
@@ -308,7 +309,7 @@ def test_shuffled_flagship_trim_solves_identically():
         return {sc.subcase_id: run_sol144_trim(bulk, sc, aero, aero_cache=cache)
                 for sc in cc.subcases}
 
-    path = REPO / "sample/cessna210_flagship_trim.bdf"
+    path = REPO / "sample/cessna210_flagship/cessna210_flagship_trim.bdf"
     cc, bulk = parse_bdf(path)
     _, shuffled = _parse_reordered(path, "2")
     ref, got = trims(bulk, cc), trims(shuffled, cc)

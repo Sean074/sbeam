@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 import pandas as pd
 import streamlit as st
+from sbeam_tools.viewer.widget_keys import DECK_GENERATION, wk
 
 import numpy as np
 
@@ -30,15 +31,16 @@ from sbeam_tools.viewer.aero_view import (
 from sbeam_tools.viewer.aero_correction_view import render_aero_correction_tab
 from sbeam_tools.viewer.sol144_authoring_ui import render_sol144_authoring
 from sbeam_tools.viewer.sol144_authoring import (
-    snapshot_family_ids, validate_sol144_authoring,
+    check_case_control, snapshot_family_ids,
 )
 from sbeam_tools.viewer.format_utils import fmt, fmt_mass, style_numeric
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.vlm import solve_rigid_cl
 
 
-def _init_session_state() -> None:
-    defaults: dict[str, Any] = {
+def _session_defaults() -> dict[str, Any]:
+    """A fresh copy of every session key's starting value."""
+    return {
         "bulk_data": None,
         "case_control": None,
         "_loaded_from_file_cc": None,
@@ -56,6 +58,7 @@ def _init_session_state() -> None:
         "aero_corr_result": None,
         "aero_corr_sids": set(),
         "authored_cards": {},
+        "deck_blocks": {},
         "mldcomd_increments": {},
         "auth_trim_prefill": None,
         "file_card_sids": None,
@@ -71,8 +74,12 @@ def _init_session_state() -> None:
         "_uploaded_file_id": None,
         "_uploaded_filename": None,
         "_uploaded_source_text": None,
+        "_deck_path": None,
     }
-    for key, value in defaults.items():
+
+
+def _init_session_state() -> None:
+    for key, value in _session_defaults().items():
         if key not in st.session_state:
             st.session_state[key] = value
 
@@ -89,66 +96,123 @@ def _has_case_control(content: str) -> bool:
     return False
 
 
-def _handle_upload(uploaded: Any) -> None:
-    suffix = os.path.splitext(uploaded.name)[-1] or ".bdf"
+# The bundled sample decks sit beside the packages in a source checkout; a wheel does not
+# ship them, and the picker is then hidden (#111).
+SAMPLE_ROOT = Path(__file__).resolve().parents[2] / "sample"
+
+# Session keys that survive a new deck: the widgets that open one, the uploader's own
+# bookkeeping, and the count of decks opened (it makes every model widget's key, wk()).
+_KEPT_ON_LOAD = {
+    "file_uploader", "sample_pick", "deck_path_input", "open_deck",
+    "_uploaded_file_id", DECK_GENERATION,
+}
+
+
+def _reset_session_for_new_deck() -> None:
+    """Leave nothing of the previous deck in the session (#111, #123).
+
+    Every key with a default goes back to it; every other key is removed, which takes
+    the data that panels stash under their own names and the previous deck's widget
+    values.  The deck count goes up, so the model widgets get new keys and start from
+    the new deck's values (``widget_keys.wk``).
+    """
+    defaults = _session_defaults()
+    for key in list(st.session_state.keys()):
+        if key in _KEPT_ON_LOAD:
+            continue
+        if key in defaults:
+            st.session_state[key] = defaults.pop(key)
+        else:
+            del st.session_state[key]
+    for key, value in defaults.items():
+        if key not in _KEPT_ON_LOAD:
+            st.session_state[key] = value
+    st.session_state[DECK_GENERATION] = st.session_state.get(DECK_GENERATION, 0) + 1
+
+
+def list_sample_decks(root: Path = SAMPLE_ROOT) -> dict[str, Path]:
+    """``{"family/name.bdf": path}`` for every deck under ``root``; empty if it is absent."""
+    if not root.is_dir():
+        return {}
+    return {
+        path.relative_to(root).as_posix(): path
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and path.suffix.lower() in (".bdf", ".dat")
+    }
+
+
+def _load_deck(name: str, content: str, path: Optional[Path]) -> None:
+    """Parse a deck and make it the session's model: the one loader for every route (#111).
+
+    ``path`` is the deck's place on disk, so a relative ``INCLUDE`` resolves against the
+    deck's own folder.  An upload has no folder (``path=None``): its text is parsed from a
+    temporary file, and a deck that uses ``INCLUDE`` cannot load that way.
+
+    The session is reset first (``_reset_session_for_new_deck``), so nothing of the
+    previous deck (results, authored cards, corrections, selections, widget values)
+    survives.
+    """
+    _reset_session_for_new_deck()
     tmp_path: Optional[str] = None
     try:
-        content = uploaded.read().decode("utf-8", errors="replace")
-        with tempfile.NamedTemporaryFile(
-            delete=False, suffix=suffix, mode="w", encoding="utf-8"
-        ) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
+        if path is None:
+            suffix = os.path.splitext(name)[-1] or ".bdf"
+            with tempfile.NamedTemporaryFile(
+                delete=False, suffix=suffix, mode="w", encoding="utf-8"
+            ) as tmp:
+                tmp.write(content)
+                tmp_path = tmp.name
+        parse_from = str(path) if path is not None else tmp_path
+        assert parse_from is not None
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             if _has_case_control(content):
-                cc, bulk = parse_bdf(tmp_path)
+                cc, bulk = parse_bdf(parse_from)
             else:
-                bulk = parse_bulk_file(tmp_path)
+                bulk = parse_bulk_file(parse_from)
                 cc = None
 
         st.session_state.bulk_data = bulk
         st.session_state.case_control = cc
         st.session_state._loaded_from_file_cc = cc
-        st.session_state._uploaded_filename = uploaded.name
+        st.session_state._uploaded_filename = name
         st.session_state._uploaded_source_text = content
-        st.session_state.cc_subcases = None   # reset subcase editor
-        st.session_state.sol101_result = None
-        st.session_state.sol103_result = None
-        st.session_state.sol144_result = None
-        st.session_state.sol144_diverg_result = None
-        st.session_state.maneuver_result = None
-        st.session_state.aero_model_144 = None
-        st.session_state.aero_model = None
-        st.session_state.aero_result = None
-        st.session_state.aero_result_unc = None
-        st.session_state.aero_corr_model = None
-        st.session_state.aero_corr_df = None
-        st.session_state.aero_corr_result = None
-        st.session_state.aero_corr_sids = set()
-        st.session_state.authored_cards = {}
-        st.session_state.mldcomd_increments = {}
-        st.session_state.auth_trim_prefill = None
+        st.session_state._deck_path = str(path) if path is not None else None
         st.session_state.file_card_sids = snapshot_family_ids(bulk)
-        st.session_state.aero_corr_upload_id = None
-        st.session_state.aero_corr_csv_name = None
-        st.session_state.aero_corr_cond = None
-        st.session_state.selected_gid = None
-        st.session_state.selected_eid = None
         st.session_state.selected_subcase_id = cc.subcases[0].subcase_id if cc and cc.subcases else None
         st.session_state._parse_warnings = [str(w.message) for w in caught]
-        st.session_state._parse_error = None
     except Exception as exc:
-        st.session_state.bulk_data = None
-        st.session_state.case_control = None
-        st.session_state._parse_error = str(exc)
+        message = str(exc)
+        if path is None and "INCLUDE file not found" in message:
+            message += (
+                "  An uploaded deck has no folder, so its INCLUDE files cannot be found: "
+                "open the deck by its path on disk instead (sidebar, 'Open from disk')."
+            )
+        st.session_state._parse_error = message
     finally:
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.unlink(tmp_path)
             except OSError:
                 pass
+
+
+def _handle_upload(uploaded: Any) -> None:
+    content = uploaded.read().decode("utf-8", errors="replace")
+    _load_deck(uploaded.name, content, None)
+
+
+def _open_path(path_text: str) -> None:
+    """Open the deck at ``path_text`` from where it stands, so its INCLUDEs resolve."""
+    path = Path(path_text.strip().strip('"\'')).expanduser()
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        _reset_session_for_new_deck()
+        st.session_state._parse_error = f"Cannot read {path}: {exc.strerror or exc}"
+        return
+    _load_deck(path.name, content, path.resolve())
 
 
 def _show_parse_summary(bulk: BulkData) -> None:
@@ -181,7 +245,7 @@ def _show_parse_summary(bulk: BulkData) -> None:
         st.caption("No case control loaded — define analysis via Case Control tab.")
     if bulk.chordcps:
         st.caption(
-            f"ℹ️ CHORDCP steady-pressure injection active ({len(bulk.chordcps)} "
+            f"ℹ️ CPINJ steady-pressure injection active ({len(bulk.chordcps)} "
             "card(s)) — the SOL 144 mean flow is supplied from CFD/test data."
         )
 
@@ -207,7 +271,7 @@ def _show_gpwg(bulk: BulkData) -> None:
                 "— baseline —" if s is None
                 else f"{s} — {bulk.masssets[s].label}"
             ),
-            key="sel_massset_gpwg",
+            key=wk("sel_massset_gpwg"),
         )
     gpwg = compute_gpwg(bulk, massset_sid)
     st.metric("Total mass", fmt_mass(gpwg.total_mass))
@@ -224,7 +288,7 @@ def _show_item_inspector(bulk: BulkData) -> None:
         "Inspect GRID",
         gid_opts,
         format_func=lambda g: "— none —" if g is None else f"GID {g}",
-        key="sel_gid_box",
+        key=wk("sel_gid_box"),
     )
     st.session_state.selected_gid = selected_gid
 
@@ -241,7 +305,7 @@ def _show_item_inspector(bulk: BulkData) -> None:
         "Inspect CBAR",
         eid_opts,
         format_func=lambda e: "— none —" if e is None else f"EID {e}",
-        key="sel_eid_box",
+        key=wk("sel_eid_box"),
     )
     st.session_state.selected_eid = selected_eid
 
@@ -266,7 +330,7 @@ def _show_item_inspector(bulk: BulkData) -> None:
             "Inspect RBE3",
             rbe3_opts,
             format_func=lambda e: "— none —" if e is None else f"EID {e}",
-            key="sel_rbe3_eid_box",
+            key=wk("sel_rbe3_eid_box"),
         )
         if selected_rbe3_eid is not None and selected_rbe3_eid in bulk.rbe3s:
             rbe3 = bulk.rbe3s[selected_rbe3_eid]
@@ -281,7 +345,7 @@ def _show_item_inspector(bulk: BulkData) -> None:
             "Inspect RBE2",
             rbe2_opts,
             format_func=lambda e: "— none —" if e is None else f"EID {e}",
-            key="sel_rbe2_eid_box",
+            key=wk("sel_rbe2_eid_box"),
         )
         if selected_rbe2_eid is not None and selected_rbe2_eid in bulk.rbe2s:
             rbe2 = bulk.rbe2s[selected_rbe2_eid]
@@ -573,7 +637,7 @@ def _get_pre_solve_warnings(
     # 6. SOL 144 authoring validation (P12) — warnings only here; the
     #    blocking errors are surfaced next to Launch/export in the CC panel.
     if cc is not None and cc.sol == 144:
-        _, auth_warns = validate_sol144_authoring(bulk, cc)
+        _, auth_warns = check_case_control(bulk, cc)
         msgs.extend(auth_warns)
 
     return msgs
@@ -638,6 +702,7 @@ def _run_sol144(bulk: BulkData, cc: CaseControl) -> None:
     from sbeam.aero.aero_model import build_aero_model
     from sbeam.assembly.load_vector import build_grid_index
     from sbeam.solver.sol144 import run_sol144_trim, run_sol144_diverg, AeroCache
+    from sbeam.solver.sol144_util import flight_mach
     from sbeam.solver.maneuver_qs import run_maneuver_qs
     from sbeam.solver.maneuver_modal import run_maneuver_modal, ManeuverBasisCache
 
@@ -646,10 +711,10 @@ def _run_sol144(bulk: BulkData, cc: CaseControl) -> None:
     maneuver_results: dict[int, ManeuverResult] = {}
     with st.spinner("Running SOL 144…"):
         grid_index = build_grid_index(bulk)
-        aero = build_aero_model(bulk, grid_index=grid_index)
+        aero = build_aero_model(bulk, grid_index=grid_index, mach=flight_mach(cc, bulk))
         cache = AeroCache(bulk, grid_index, seed=aero)
         # Step 62/63 (D3): one free-free basis per job, shared across every
-        # modal MLOADS subcase (MASSCASE sweeps swap M only, never Phi).
+        # modal MANVR subcase (MASSCASE sweeps swap M only, never Phi).
         basis_cache = ManeuverBasisCache(bulk, aero)
         for sc in cc.subcases:
             if sc.mloads_sid is not None:
@@ -684,7 +749,7 @@ def _run_sol144(bulk: BulkData, cc: CaseControl) -> None:
 def _render_f06_export(bulk: BulkData) -> None:
     """Show f06 export controls after a successful analysis."""
     from sbeam.results.f06_writer import (
-        build_f06_sol101_text, build_f06_sol103_text,
+        build_f06_gpwg_text, build_f06_sol101_text, build_f06_sol103_text,
         build_f06_sol144_text, build_f06_sol144_diverg_text,
         build_f06_sol144_maneuver_text,
     )
@@ -706,8 +771,8 @@ def _render_f06_export(bulk: BulkData) -> None:
     st.divider()
     st.subheader("Export F06")
 
-    # Build combined f06 text for all subcases
-    parts = []
+    # Build combined f06 text for all subcases, after the GPWG block (PARAM,GRDPNT; #90)
+    parts = [build_f06_gpwg_text(bulk, cc)]
     if sol101 is not None:
         for sc_id, result in sorted(sol101.items()):
             parts.append(build_f06_sol101_text(cc, bulk, result, sc_id))
@@ -725,10 +790,10 @@ def _render_f06_export(bulk: BulkData) -> None:
 
     col1, col2 = st.columns([3, 1])
     with col1:
-        out_path = st.text_input("Output path", value=default_path, key="f06_out_path")
+        out_path = st.text_input("Output path", value=default_path, key=wk("f06_out_path"))
     with col2:
         st.markdown("&nbsp;", unsafe_allow_html=True)
-        if st.button("Write F06", key="write_f06_btn"):
+        if st.button("Write F06", key=wk("write_f06_btn")):
             try:
                 Path(out_path).write_text(f06_text, encoding="utf-8")
                 st.success(f"Written: {out_path}")
@@ -741,7 +806,7 @@ def _render_f06_export(bulk: BulkData) -> None:
         data=f06_text,
         file_name=stem,
         mime="text/plain",
-        key="download_f06_btn",
+        key=wk("download_f06_btn"),
     )
 
 
@@ -749,13 +814,16 @@ def _render_aero_tab(bulk: BulkData) -> None:
     col_ctrl, col_fig = st.columns([1, 3])
 
     with col_ctrl:
-        alpha_deg = st.number_input("AoA α (°)", value=3.0, step=0.5, key="aero_alpha")
-        beta_deg  = st.number_input("Sideslip β (°)", value=0.0, step=0.5, key="aero_beta")
-        compute_btn = st.button("Compute Aero", type="primary", key="aero_compute")
+        alpha_deg = st.number_input("AoA α (°)", value=3.0, step=0.5, key=wk("aero_alpha"))
+        beta_deg  = st.number_input("Sideslip β (°)", value=0.0, step=0.5, key=wk("aero_beta"))
+        # AEROS carries no Mach in MSC's layout (#87): the flight Mach is entered here
+        mach = st.number_input("Mach", value=0.0, min_value=0.0, max_value=0.99, step=0.05,
+                               key=wk("aero_mach"))
+        compute_btn = st.button("Compute Aero", type="primary", key=wk("aero_compute"))
 
     if compute_btn:
         with st.spinner("Building AIC and solving…"):
-            aero_model = build_aero_model(bulk)
+            aero_model = build_aero_model(bulk, mach=float(mach))
             alpha_rad = np.radians(alpha_deg)
             beta_rad  = np.radians(beta_deg)
             # Corrected solve on aero_model.ajj_inv_corr — any AIC correction
@@ -795,14 +863,14 @@ def _render_aero_tab(bulk: BulkData) -> None:
 
     with col_ctrl:
         show_normals = st.checkbox(
-            "Show surface normals", value=False, key="aero_show_normals"
+            "Show surface normals", value=False, key=wk("aero_show_normals")
         )
         # Cp view toggle — only meaningful when an uncorrected baseline exists.
         cp_view = "Corrected"
         if aero_result is not None and aero_result_unc is not None:
             cp_view = st.radio(
                 "Cp view", ["Corrected", "Uncorrected", "Δ (corr − uncorr)"],
-                key="aero_cp_view",
+                key=wk("aero_cp_view"),
                 help="Switch the 3D box pressure and the span-load curves between the "
                      "corrected solve, the uncorrected baseline, and their difference.",
             )
@@ -821,7 +889,7 @@ def _render_aero_tab(bulk: BulkData) -> None:
             )
             if aero_model.chordcp_alpha_ref is not None:
                 st.caption(
-                    "ℹ️ CHORDCP steady-pressure injection active — the mean flow "
+                    "ℹ️ CPINJ steady-pressure injection active — the mean flow "
                     "is the injected CFD/test Cp distribution (reference AOA "
                     f"{np.degrees(aero_model.chordcp_alpha_ref):.3f}°), not the "
                     "program-computed W2GJ baseline."
@@ -880,7 +948,7 @@ def _render_aero_tab(bulk: BulkData) -> None:
         if len(surf_eids) > 1:
             picked = st.multiselect(
                 "Show surfaces", surf_eids, default=surf_eids,
-                format_func=lambda e: f"CAERO {e}", key="aero_span_surfaces",
+                format_func=lambda e: f"CAERO {e}", key=wk("aero_span_surfaces"),
             )
             selected = [e for e in surf_eids if e in picked]
         if not selected:
@@ -904,7 +972,7 @@ def _render_aero_tab(bulk: BulkData) -> None:
                 state_label = st.radio(
                     "Values",
                     ["Corrected", "Uncorrected", "Δ (corr − uncorr)"],
-                    horizontal=True, key="aero_deriv_state",
+                    horizontal=True, key=wk("aero_deriv_state"),
                     help="Rigid derivatives from the corrected AIC operator, the "
                          "uncorrected VLM baseline (same Mach), or their difference.",
                 )
@@ -962,6 +1030,32 @@ def main() -> None:
             if file_id != st.session_state._uploaded_file_id:
                 _handle_upload(uploaded)
                 st.session_state._uploaded_file_id = file_id
+        else:
+            st.session_state._uploaded_file_id = None   # the same file may be uploaded again
+
+        # Open from disk (#111): the deck is parsed where it stands, so INCLUDE resolves.
+        with st.expander("Open from disk", expanded=st.session_state.bulk_data is None):
+            samples = list_sample_decks()
+            picked = None
+            if samples:
+                picked = st.selectbox(
+                    "Sample deck", list(samples), index=None, key="sample_pick",
+                    placeholder="Choose a bundled sample…",
+                )
+            typed = st.text_input(
+                "Path to a deck" if not samples else "…or a path to a deck",
+                key="deck_path_input",
+                help="A deck that uses INCLUDE must be opened this way, not uploaded.",
+            )
+            if st.button("Open", key="open_deck"):
+                if typed.strip():
+                    _open_path(typed)
+                elif picked is not None:
+                    _open_path(str(samples[picked]))
+                else:
+                    st.warning("Choose a sample or type a path first.")
+        if st.session_state._deck_path:
+            st.caption(f"Open: `{st.session_state._deck_path}`")
 
         bulk: Optional[BulkData] = st.session_state.bulk_data
         if bulk is not None:
@@ -975,7 +1069,7 @@ def main() -> None:
                 sel_label = st.selectbox(
                     "Active subcase",
                     list(sc_options.keys()),
-                    key="subcase_selectbox",
+                    key=wk("subcase_selectbox"),
                 )
                 st.session_state.selected_subcase_id = sc_options[sel_label].subcase_id
             st.divider()
@@ -1010,7 +1104,7 @@ def main() -> None:
     with tab_model:
         _show_parse_summary(bulk)
         _show_warnings()
-        show_forces = st.checkbox("Show applied forces", value=True, key="model_show_forces")
+        show_forces = st.checkbox("Show applied forces", value=True, key=wk("model_show_forces"))
         fig = build_model_figure(
             bulk,
             selected_gid=st.session_state.selected_gid,

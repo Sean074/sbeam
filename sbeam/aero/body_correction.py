@@ -404,7 +404,7 @@ def build_body_correction(
                      yaw/roll match. All listed panels (both planes) are tuned **jointly**
                      by one min-norm solve over all their boxes.
         targets:     total-aircraft :class:`BodyTargets` (about the AEROS RCSID ref).
-        mach:        Mach override (default: AEROS field-8 Mach), for PG consistency.
+        mach:        Mach override (default: incompressible), for PG consistency.
         aero:        optional pre-built flying-corrected AeroModel for ``bulk`` (avoids
                      an AIC rebuild); must be consistent with ``bulk``/``mach``.
         sid_w2gj_base / sid_aecorr_base: SID bases for the emitted body cards; each panel
@@ -423,7 +423,7 @@ def build_body_correction(
     # The cruciform builder tunes VLM body panels through the shared AIC.  A
     # PSTRIP panel carries no AIC coupling at all, so it would be accepted
     # here and then never actually corrected — use build_strip_body_correction
-    # for those (DEF-L1; mirrors the CHORDCP guard in aero_model).
+    # for those (DEF-L1; mirrors the CPINJ guard in aero_model).
     # Horizontal panels first, then vertical, preserving the caller's order.
     panel_eids = horiz_eids + vert_eids
     for eid in panel_eids:

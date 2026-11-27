@@ -10,18 +10,17 @@ V-GUST2    The +/- pair straddles 1 g, with incidence ordered by n —
            signs relative to each other, never absolute (charter §6).
 V-GUST3    The negative-n (down-gust) case solves and its URDD3 is positive.
 V-GUST4    Monitor and section-cut loads flow through unchanged.
-V-GUST5    The f06 provenance block, and URDD3 reported as PRESCRIBED.
+V-GUST5    The f06 provenance block, and URDD3 reported as FIXED (prescribed).
 V-GUST6    A deck without GUSTLF emits no gust block.
 V-GUST7    DEF-M20 (#23): a negative URDD3 against an absent or z-up RCSID
            warns rather than silently trimming inverted lift.
 =========  ================================================================
 
-Runs the shipped ``sample/cessna210_flagship_gust.bdf``, which the generator
+Runs the shipped ``sample/cessna210_flagship/cessna210_flagship_gust.bdf``, which the generator
 script produced — so these gates also prove the script's output is solvable.
 """
 
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -31,10 +30,10 @@ from sbeam.gpwg import compute_gpwg
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.results.f06_writer import build_f06_sol144_text
 from sbeam.solver.sol144 import AeroCache, run_sol144_trim
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
-GUST_DECK = SAMPLE / "cessna210_flagship_gust.bdf"
-TRIM_DECK = SAMPLE / "cessna210_flagship_trim.bdf"
+GUST_DECK = sample_path("cessna210_flagship_gust.bdf")
+TRIM_DECK = sample_path("cessna210_flagship_trim.bdf")
 
 # SUBCASE 9000/9001 are the +/- pair at V_C for the FERRY mass case.
 _UP, _DOWN = 0, 1
@@ -162,9 +161,9 @@ class TestVGust5F06Block:
 
     def test_urdd3_is_reported_prescribed(self, f06):
         """It comes from GUSTLF, not the TRIM card — but it is not a solved unknown."""
-        urdd3_rows = [ln for ln in f06.splitlines() if ln.strip().startswith("URDD3 ")]
+        urdd3_rows = [ln for ln in f06.splitlines() if " URDD3 " in ln and "RIGID BODY" in ln]
         assert urdd3_rows, "no URDD3 row in the trim-variable table"
-        assert "PRESCRIBED" in urdd3_rows[0], urdd3_rows[0]
+        assert " FIXED " in urdd3_rows[0], urdd3_rows[0]        # MSC's TRIM STATUS (#90)
 
     def test_delta_n_is_n_minus_one(self, model, f06):
         _cc, bulk, _aero, _cache = model
@@ -190,8 +189,8 @@ class TestVGust7DefM20Guard:
     """DEF-M20 (#23) — the RCSID orientation guard for the load-factor sign."""
 
     def test_absent_rcsid_with_negative_urdd3_warns(self):
-        """sample/val_dihedral_trim.bdf has RCSID 0 and URDD3 = -9.81, deliberately."""
-        deck = SAMPLE / "val_dihedral_trim.bdf"
+        """sample/validation/val_dihedral_trim.bdf has RCSID 0 and URDD3 = -9.81, deliberately."""
+        deck = sample_path("val_dihedral_trim.bdf")
         cc, bulk = parse_bdf(str(deck))
         gi = build_grid_index(bulk)
         with warnings.catch_warnings(record=True) as caught:

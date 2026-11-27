@@ -352,20 +352,29 @@ def _check_aero_references(bulk: BulkData) -> None:
         _check_frame("SPLINE2", eid, "CID", sp.cid, bulk)
     for eid, sp0 in bulk.spline0s.items():
         if sp0.caero not in bulk.caero1s:
-            raise ValueError(f"SPLINE0 {eid}: CAERO={sp0.caero} not found in CAERO1")
+            raise ValueError(f"LOADINJ {eid}: CAERO={sp0.caero} not found in CAERO1")
         if sp0.grid:   # 0 = the SUPORT grid
-            _check_grid("SPLINE0", eid, "GRID", sp0.grid, bulk)
+            _check_grid("LOADINJ", eid, "GRID", sp0.grid, bulk)
     for eid, att in bulk.attaches.items():
         if att.caero not in bulk.caero1s:
-            raise ValueError(f"ATTACH {eid}: CAERO={att.caero} not found in CAERO1")
-        _check_grid("ATTACH", eid, "GRID", att.grid, bulk)
-        _check_frame("ATTACH", eid, "CID", att.cid, bulk)
+            raise ValueError(f"BODYATT {eid}: CAERO={att.caero} not found in CAERO1")
+        _check_grid("BODYATT", eid, "GRID", att.grid, bulk)
+        _check_frame("BODYATT", eid, "CID", att.cid, bulk)
     # Per-panel cards are applied by matching CAERO1 EID; an unknown EID was dropped
     for card, coll in (("W2GJ", bulk.w2gjs), ("WKK", bulk.wkks),
-                       ("AECORR", bulk.aecorrs), ("CHORDCP", bulk.chordcps)):
+                       ("AECORR", bulk.aecorrs), ("CPINJ", bulk.chordcps)):
         for sid, entry in coll.items():
             if entry.caero_eid not in bulk.caero1s:
                 raise ValueError(f"{card} {sid}: CAERO1 {entry.caero_eid} not found")
+    # WKK and WT2 scale the VLM operator, which strip panels are not in: on a PSTRIP
+    # panel they changed nothing and said nothing (#104; CPINJ already refused)
+    for card, coll in (("WKK", bulk.wkks), ("AECORR", bulk.aecorrs)):
+        for sid, entry in coll.items():
+            if bulk.caero1s[entry.caero_eid].pid in bulk.pstrips:
+                raise ValueError(
+                    f"{card} {sid}: CAERO1 {entry.caero_eid} is a PSTRIP strip panel; "
+                    f"{card} corrects VLM lifting surfaces only. Correct a strip panel's "
+                    "slope with STRIPK")
 
 
 def _check_load_combinations(bulk: BulkData) -> None:
@@ -472,7 +481,7 @@ def _check_monitors(bulk: BulkData) -> None:
 
 
 def _check_trim_optimisation(bulk: BulkData, all_trim_labels: set[str]) -> None:
-    """TRIMVAR / TRIMOBJ / TRIMCON labels and sets (#77).
+    """TRIMVAR / TRIMWGT / TRIMINEQ labels and sets (#77).
 
     The solver used to skip any of these whose label was not a trim variable, so a
     misspelt label, or the card reference's own ``CL`` / ``CM`` examples, dropped the
@@ -493,17 +502,17 @@ def _check_trim_optimisation(bulk: BulkData, all_trim_labels: set[str]) -> None:
         bounded[tv.label] = vid
     for sid, obj in bulk.trimobjs.items():
         for label in obj.labels:
-            _known(f"TRIMOBJ {sid}", label)
+            _known(f"TRIMWGT {sid}", label)
     for sid, cons in bulk.trimcons.items():
         for con in cons:
-            _known(f"TRIMCON {sid}", con.label)
+            _known(f"TRIMINEQ {sid}", con.label)
     if len(bulk.trimcons) > 1:
-        # No command selects a TRIMCON set, so every card was applied to every
+        # No command selects a TRIMINEQ set, so every card was applied to every
         # over-determined trim whatever its SID.  One set per deck is what is acted on.
         raise ValueError(
-            f"TRIMCON cards use {len(bulk.trimcons)} different SIDs "
+            f"TRIMINEQ cards use {len(bulk.trimcons)} different SIDs "
             f"({', '.join(str(s) for s in sorted(bulk.trimcons))}): sbeam has no command "
-            "that selects a TRIMCON set, so all TRIMCON cards must share one SID")
+            "that selects a TRIMINEQ set, so all TRIMINEQ cards must share one SID")
 
 
 def _check_trim(bulk: BulkData) -> set[str]:
@@ -517,8 +526,8 @@ def _check_trim(bulk: BulkData) -> set[str]:
         | {s.label for s in bulk.aesurfs.values()}
     )
     if "RHOREF" in all_trim_labels:
-        # RHOREF is reserved as the TRIM density pseudo-label (Step 61); an
-        # AESTAT/AESURF of that name could never be prescribed on a TRIM card.
+        # RHOREF was the TRIM density pseudo-label (Step 61; MANTRIM RHO since #87) and
+        # a TRIM still refuses it by name, so a label of that name could never be prescribed.
         raise ValueError(
             "AESTAT/AESURF label 'RHOREF' collides with the reserved TRIM "
             "density pseudo-label — rename the trim variable"
@@ -573,7 +582,7 @@ def _check_trim(bulk: BulkData) -> set[str]:
             if not obj_sids:
                 warnings.warn(
                     f"TRIM {sid}: over-determined ({len(free)} free vs {len(prescribed)} "
-                    "equations) but no TRIMOBJ card present — add TRIMOBJ to specify the "
+                    "equations) but no TRIMWGT card present — add TRIMWGT to specify the "
                     "weighted objective",
                     UserWarning, stacklevel=4,
                 )
@@ -581,31 +590,31 @@ def _check_trim(bulk: BulkData) -> set[str]:
 
 
 def _check_maneuver_loads(bulk: BulkData, all_trim_labels: set[str]) -> None:
-    """MLDCOMD/MLDTRIM/MLOADS references (Phase G0 transient maneuver loads)."""
+    """MANCMD/MANTRIM/MANVR references (Phase G0 transient maneuver loads)."""
     # Validate ZAERO transient maneuver-loads (Phase G0) cross-references
     for sid, mc in bulk.mldcomds.items():
         for label, tabid in mc.commands:
             if label not in all_trim_labels:
                 raise ValueError(
-                    f"MLDCOMD {sid}: command label '{label}' not defined in any "
+                    f"MANCMD {sid}: command label '{label}' not defined in any "
                     "AESTAT or AESURF card"
                 )
             if tabid not in bulk.tabled1s:
-                raise ValueError(f"MLDCOMD {sid}: TABID {tabid} not found in TABLED1")
+                raise ValueError(f"MANCMD {sid}: TABID {tabid} not found in TABLED1")
     for sid, mt in bulk.mldtrims.items():
         if mt.trim_sid not in bulk.trims:
-            raise ValueError(f"MLDTRIM {sid}: TRIMID {mt.trim_sid} not found in TRIM")
+            raise ValueError(f"MANTRIM {sid}: TRIMID {mt.trim_sid} not found in TRIM")
     for sid, ml in bulk.mloads.items():
         if ml.mldtrim not in bulk.mldtrims:
-            raise ValueError(f"MLOADS {sid}: MLDTRIM {ml.mldtrim} not found")
+            raise ValueError(f"MANVR {sid}: MANTRIM {ml.mldtrim} not found")
         if ml.mldtime not in bulk.mldtimes:
-            raise ValueError(f"MLOADS {sid}: MLDTIME {ml.mldtime} not found")
+            raise ValueError(f"MANVR {sid}: MANTIME {ml.mldtime} not found")
         if ml.mldcomd and ml.mldcomd not in bulk.mldcomds:
-            raise ValueError(f"MLOADS {sid}: MLDCOMD {ml.mldcomd} not found")
+            raise ValueError(f"MANVR {sid}: MANCMD {ml.mldcomd} not found")
         if ml.mldprnt and ml.mldprnt not in bulk.mldprnts:
-            raise ValueError(f"MLOADS {sid}: MLDPRNT {ml.mldprnt} not found")
+            raise ValueError(f"MANVR {sid}: MANPRNT {ml.mldprnt} not found")
         if ml.method > 0 and ml.method not in bulk.eigrls:
-            raise ValueError(f"MLOADS {sid}: METHOD {ml.method} not found in EIGRL")
+            raise ValueError(f"MANVR {sid}: METHOD {ml.method} not found in EIGRL")
         # Step 63: under the free-flight modal solver the rigid-state labels
         # (ANGLEA/PITCH/URDD...) are outputs — only AESURF controls may be
         # commanded.  Deck-time mirror of the run_maneuver_modal check.
@@ -614,11 +623,11 @@ def _check_maneuver_loads(bulk: BulkData, all_trim_labels: set[str]) -> None:
             for label, _tabid in bulk.mldcomds[ml.mldcomd].commands:
                 if label not in aesurf_labels:
                     raise ValueError(
-                        f"MLOADS {sid}: MLDCOMD {ml.mldcomd} commands "
+                        f"MANVR {sid}: MANCMD {ml.mldcomd} commands "
                         f"rigid-state label '{label}' — under the free-flight "
                         "modal solver (NMODES/METHOD/ZETA set) rigid states "
                         "are outputs; command AESURF controls only, or use "
-                        "the direct solver (all-zeros MLOADS fields 7-9) for "
+                        "the direct solver (all-zeros MANVR fields 7-9) for "
                         "prescribed-rigid studies"
                     )
 

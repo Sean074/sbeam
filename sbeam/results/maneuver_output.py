@@ -1,7 +1,7 @@
 """Phase G0 transient maneuver-loads output — ASCII time histories + critical
 critical-step FORCE/MOMENT export.
 
-``MLDPRNT`` requests an ASCII time-history dump of the maneuver states and
+``MANPRNT`` requests an ASCII time-history dump of the maneuver states and
 recovered loads.  In addition, the single critical sample is exported as
 NASTRAN ``FORCE``/``MOMENT`` cards — the same loads-team deliverable as the
 Step 53 balanced-maneuver export, reusing ``emit_force_moment_cards`` so the
@@ -24,12 +24,12 @@ from sbeam.results.load_export import emit_force_moment_cards, massset_comment
 
 
 def build_maneuver_time_history_text(result: ManeuverResult) -> str:
-    """Return an ASCII time-history table for an MLDPRNT request.
+    """Return an ASCII time-history table for an MANPRNT request.
 
     Columns: time, each trim-variable command δ(t), instantaneous aero lift Fz
     and pitch moment My, the net force/moment closure norms (the aero/inertia
     balance residual — a solution-quality diagnostic), and ``PEAK_GRID_F``, the
-    severity metric that selects the critical sample.  The ``MLDPRNT`` item
+    severity metric that selects the critical sample.  The ``MANPRNT`` item
     keywords are reserved for column selection in a later increment; increment 1
     prints the full set.
     """
@@ -44,7 +44,7 @@ def build_maneuver_time_history_text(result: ManeuverResult) -> str:
     )
     lines = [
         f"$ Phase G0 transient maneuver loads — subcase {result.subcase_id}, "
-        f"MLOADS {result.mloads_sid}",
+        f"MANVR {result.mloads_sid}",
         # 1-based, matching the f06 SAMPLE column (DEF-M5).
         f"$ IC TRIM={result.trim_sid}  Q={result.q:g}  MACH={result.mach:g}  "
         f"critical sample={result.crit_index + 1} of {len(result.steps)} "
@@ -82,7 +82,7 @@ def build_maneuver_critical_load_cards_text(
         f"$ Phase G0 critical maneuver loads (aero + inertia + elastic inertia"
         f" + damping) — subcase "
         f"{result.subcase_id}, SID {sid}",
-        f"$ MLOADS={result.mloads_sid}  IC TRIM={result.trim_sid}  Q={result.q:g}  "
+        f"$ MANVR={result.mloads_sid}  IC TRIM={result.trim_sid}  Q={result.q:g}  "
         f"MACH={result.mach:g}  t={step.t:g}",
         f"$ Full applied load at the peak |net grid force| sample "
         f"({result.crit_index + 1} of {len(result.steps)}).",

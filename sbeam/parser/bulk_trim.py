@@ -1,22 +1,36 @@
 """Trim, divergence, gust and transient maneuver-loads bulk-card handlers (#48)."""
 import math
+from typing import Optional
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.aero import Aestat, Aesurf, Trim, Diverg, Trimvar, Trimobj, Trimcon
 from sbeam.model.gust import Gustlf, KG_MAX
 from sbeam.model.maneuver import Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads
-from sbeam.parser.bulk_fields import FieldHandler, ContHandler, MultiHandler, to_float, to_int, to_int_opt, to_float_or_none, list_fields
+from sbeam.parser.bulk_fields import FieldHandler, ContHandler, MultiHandler, to_float, to_int, to_int_opt, to_float_or_none, list_fields, refuse_after
 
 
 # ---------------------------------------------------------------------------
 # Trim card set handlers (Step 51)
 # ---------------------------------------------------------------------------
 
+# MSC's standard rigid-body labels (QRG 2024.1 PDF p.1153, AESTAT remark 1, Table 1)
+AESTAT_STANDARD_LABELS = frozenset((
+    "ANGLEA", "SIDES", "ROLL", "PITCH", "YAW",
+    "URDD1", "URDD2", "URDD3", "URDD4", "URDD5", "URDD6"))
+
+
 def _handle_aestat(fields: list[str], bulk: BulkData) -> None:
     aid   = to_int(fields[1])
     label = fields[2].strip().upper() if len(fields) > 2 else ""
     if not label:
         raise ValueError(f"AESTAT {aid}: LABEL must not be blank")
+    # MSC gives any other label its forces through AELINK or DMI (PDF p.1154 remark 3);
+    # sbeam reads neither, and before #91 such a label got a silent zero aero column
+    if label not in AESTAT_STANDARD_LABELS:
+        raise ValueError(
+            f"AESTAT {aid}: LABEL {label!r} is not a standard rigid-body label "
+            f"({', '.join(sorted(AESTAT_STANDARD_LABELS))}); MSC needs AELINK or DMI "
+            "data for any other label (QRG p.1154 remark 3), and sbeam reads neither")
     if aid in bulk.aestats:
         raise ValueError(f"Duplicate AESTAT ID {aid}")
     bulk.aestats[aid] = Aestat(id=aid, label=label)
@@ -50,33 +64,40 @@ def _handle_trim(fields: list[str], conts: list[list[str]], bulk: BulkData) -> N
         raise ValueError(f"Duplicate TRIM SID {sid}")
     if mach < 0.0:  # β = √(1−M²) would silently run |M| (#58 sweep)
         raise ValueError(f"TRIM {sid}: MACH={mach} must be non-negative")
-    # Collect alternating LABEL/VALUE pairs from remainder of base line + continuations
-    raw_pairs: list[str] = list(fields[4:])
+    # MSC's layout (QRG 2024.1 PDF p.2992): two LABEL/UX pairs in fields 5-8, AEQR in
+    # field 9, then four pairs per continuation.  Before #87 field 9 was read as a label.
+    if any(f.strip().upper() == "RHOREF" for f in [*fields[4:], *(g for c in conts for g in c[1:])]):
+        raise ValueError(
+            f"TRIM {sid}: RHOREF is not a TRIM label — MSC's TRIM has no density. "
+            "sbeam read it as a pseudo-label until v0.4.1 (#87); give the density "
+            "in field 4 (RHO) of the MANTRIM card that references this TRIM")
+    aeqr = fields[8].strip() if len(fields) > 8 else ""
+    if aeqr:
+        try:
+            aeqr_value = to_float(aeqr)
+        except ValueError:
+            raise ValueError(
+                f"TRIM {sid}: field 9 is AEQR in MSC's layout (QRG p.2992), not a label "
+                f"({aeqr!r}); put the third LABEL/UX pair on the continuation line. "
+                "sbeam read label pairs there until v0.4.1 (#87)") from None
+        if aeqr_value != 1.0:
+            raise ValueError(
+                f"TRIM {sid}: AEQR = {aeqr} (field 9) is not supported — sbeam runs the "
+                "elastic trim only (AEQR = 1.0, the default; QRG p.2992 remark 5)")
+    raw_pairs: list[str] = list(fields[4:8])
     for cont in conts:
         raw_pairs += list(cont[1:])
     vars_: dict[str, float] = {}
-    rhoref = 0.0
     raw_pairs = [f for f in raw_pairs if f.strip()]
     if len(raw_pairs) % 2 != 0:
         raise ValueError(f"TRIM {sid}: odd number of LABEL/VALUE tokens — must be paired")
     for i in range(0, len(raw_pairs), 2):
         lbl = raw_pairs[i].strip().upper()
         val = to_float(raw_pairs[i + 1])
-        # RHOREF is an sbeam extension (Step 61): a pseudo-label carrying the
-        # freestream density so V = sqrt(2q/rho) is available to the transient
-        # maneuver rate terms.  It is not a trim variable and never enters vars_.
-        if lbl == "RHOREF":
-            if rhoref:
-                raise ValueError(f"TRIM {sid}: duplicate label 'RHOREF'")
-            if val <= 0.0:
-                raise ValueError(
-                    f"TRIM {sid}: RHOREF must be positive; got {val}")
-            rhoref = val
-            continue
         if lbl in vars_:
             raise ValueError(f"TRIM {sid}: duplicate label '{lbl}'")
         vars_[lbl] = val
-    bulk.trims[sid] = Trim(sid=sid, mach=mach, q=q, vars=vars_, rhoref=rhoref)
+    bulk.trims[sid] = Trim(sid=sid, mach=mach, q=q, vars=vars_)
 
 
 def _handle_diverg(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
@@ -95,6 +116,11 @@ def _handle_diverg(fields: list[str], conts: list[list[str]], bulk: BulkData) ->
         raise ValueError(f"Duplicate DIVERG SID {sid}")
     # QRG p.1603 says Mi > 0.0, but MSC's own divergence example (AAUG 2023.1 p.148)
     # enters 0.0 for incompressible aerodynamics, so 0.0 is accepted.
+    if not machs:
+        # The card exists to list Mach numbers (QRG p.1603).  Before #87 an empty list ran
+        # at the sbeam-only AEROS Mach, which is gone
+        raise ValueError(f"DIVERG {sid}: no Mach number given; list at least one in "
+                         "field 4 (M1) (QRG p.1603)")
     if any(m < 0.0 for m in machs):
         raise ValueError(f"DIVERG {sid}: every Mach must be non-negative (got {machs})")
     if len(set(machs)) != len(machs):
@@ -103,7 +129,7 @@ def _handle_diverg(fields: list[str], conts: list[list[str]], bulk: BulkData) ->
     bulk.divergs[sid] = Diverg(sid=sid, nroots=nroots, machs=machs)
 
 # ---------------------------------------------------------------------------
-# Phase G0 — ZAERO-style transient maneuver-loads cards
+# Phase G0 — sbeam-only transient maneuver-loads cards (MANVR family; #87)
 # ---------------------------------------------------------------------------
 
 def _handle_tabled1(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
@@ -145,32 +171,33 @@ def _handle_tabled1(fields: list[str], conts: list[list[str]], bulk: BulkData) -
 
 
 def _handle_mldtime(fields: list[str], bulk: BulkData) -> None:
-    """MLDTIME — integration window: SID T0 TEND DT [TOUT]."""
+    """MANTIME — integration window: SID T0 TEND DT [TOUT] (TOUT in seconds)."""
     sid  = to_int(fields[1])
     t0   = to_float(fields[2]) if len(fields) > 2 else 0.0
     tend = to_float(fields[3]) if len(fields) > 3 else 0.0
     dt   = to_float(fields[4]) if len(fields) > 4 else 0.0
     tout = to_float(fields[5]) if len(fields) > 5 and fields[5].strip() else 0.0
+    refuse_after(fields, 6, f"MANTIME {sid}")
     if dt <= 0.0:
-        raise ValueError(f"MLDTIME {sid}: DT must be positive")
+        raise ValueError(f"MANTIME {sid}: DT must be positive")
     if tend <= t0:
-        raise ValueError(f"MLDTIME {sid}: TEND must exceed T0")
+        raise ValueError(f"MANTIME {sid}: TEND must exceed T0")
     if sid in bulk.mldtimes:
-        raise ValueError(f"Duplicate MLDTIME SID {sid}")
+        raise ValueError(f"Duplicate MANTIME SID {sid}")
     bulk.mldtimes[sid] = Mldtime(sid=sid, t0=t0, tend=tend, dt=dt, tout=tout)
 
 
 def _handle_mldcomd(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
-    """MLDCOMD — pilot commands: SID then (LABEL, TABID) pairs."""
+    """MANCMD — pilot commands: SID then (LABEL, TABID) pairs."""
     sid = to_int(fields[1])
     if sid in bulk.mldcomds:
-        raise ValueError(f"Duplicate MLDCOMD SID {sid}")
+        raise ValueError(f"Duplicate MANCMD SID {sid}")
     tokens: list[str] = list(fields[2:])
     for cont in conts:
         tokens += list(cont[1:])
     tokens = [t for t in tokens if t.strip()]
     if len(tokens) % 2 != 0:
-        raise ValueError(f"MLDCOMD {sid}: odd number of LABEL/TABID tokens — must be paired")
+        raise ValueError(f"MANCMD {sid}: odd number of LABEL/TABID tokens — must be paired")
     commands: list[tuple[str, int]] = []
     for i in range(0, len(tokens), 2):
         label = tokens[i].strip().upper()
@@ -180,10 +207,10 @@ def _handle_mldcomd(fields: list[str], conts: list[list[str]], bulk: BulkData) -
 
 
 def _handle_mldprnt(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
-    """MLDPRNT — ASCII time-history output request: SID then optional item keywords."""
+    """MANPRNT — ASCII time-history output request: SID then optional item keywords."""
     sid = to_int(fields[1])
     if sid in bulk.mldprnts:
-        raise ValueError(f"Duplicate MLDPRNT SID {sid}")
+        raise ValueError(f"Duplicate MANPRNT SID {sid}")
     items: list[str] = [f.strip().upper() for f in fields[2:] if f.strip()]
     for cont in conts:
         items += [f.strip().upper() for f in cont[1:] if f.strip()]
@@ -191,18 +218,22 @@ def _handle_mldprnt(fields: list[str], conts: list[list[str]], bulk: BulkData) -
 
 
 def _handle_mldtrim(fields: list[str], bulk: BulkData) -> None:
-    """MLDTRIM — initial steady-state condition: SID TRIMID (a static TRIM sid)."""
+    """MANTRIM — initial steady-state condition: SID TRIMID [RHO] (a static TRIM sid)."""
     sid      = to_int(fields[1])
     trim_sid = to_int(fields[2])
+    rho      = to_float(fields[3]) if len(fields) > 3 and fields[3].strip() else 0.0
+    refuse_after(fields, 4, f"MANTRIM {sid}")
+    if rho < 0.0:
+        raise ValueError(f"MANTRIM {sid}: RHO must be positive or blank; got {rho}")
     if sid in bulk.mldtrims:
-        raise ValueError(f"Duplicate MLDTRIM SID {sid}")
-    bulk.mldtrims[sid] = Mldtrim(sid=sid, trim_sid=trim_sid)
+        raise ValueError(f"Duplicate MANTRIM SID {sid}")
+    bulk.mldtrims[sid] = Mldtrim(sid=sid, trim_sid=trim_sid, rho=rho)
 
 
 def _handle_mloads(fields: list[str], bulk: BulkData) -> None:
-    """MLOADS — transient driver.
+    """MANVR — transient driver.
 
-    SID MLDTRIM MLDTIME [MLDCOMD] [MLDPRNT] [NMODES] [METHOD] [ZETA]
+    SID MANTRIM MANTIME [MANCMD] [MANPRNT] [NMODES] [METHOD] [ZETA]
 
     NMODES/METHOD/ZETA configure the free-free modal basis (retained ELASTIC
     mode count, EIGRL sid for the basis solve, uniform elastic damping ratio).
@@ -221,15 +252,15 @@ def _handle_mloads(fields: list[str], bulk: BulkData) -> None:
     method  = to_int(fields[7]) if len(fields) > 7 and fields[7].strip() else 0
     zeta    = to_float(fields[8]) if len(fields) > 8 and fields[8].strip() else 0.0
     if sid in bulk.mloads:
-        raise ValueError(f"Duplicate MLOADS SID {sid}")
+        raise ValueError(f"Duplicate MANVR SID {sid}")
     if nmodes < 0:
-        raise ValueError(f"MLOADS {sid}: NMODES must be >= 0; got {nmodes}")
+        raise ValueError(f"MANVR {sid}: NMODES must be >= 0; got {nmodes}")
     if method < -1:
         raise ValueError(
-            f"MLOADS {sid}: METHOD must be an EIGRL sid, 0 (default) or -1 "
+            f"MANVR {sid}: METHOD must be an EIGRL sid, 0 (default) or -1 "
             f"(modal solver, internal all-modes default); got {method}")
     if zeta < 0.0:
-        raise ValueError(f"MLOADS {sid}: ZETA must be >= 0; got {zeta}")
+        raise ValueError(f"MANVR {sid}: ZETA must be >= 0; got {zeta}")
     bulk.mloads[sid] = Mloads(
         sid=sid, mldtrim=mldtrim, mldtime=mldtime,
         mldcomd=mldcomd, mldprnt=mldprnt, nmodes=nmodes,
@@ -297,14 +328,35 @@ def _handle_gustlf(fields: list[str], conts: list[list[str]], bulk: BulkData) ->
         kg=kg, mu=mu, a=a, asrc=asrc, alt=alt,
     )
 
-def _handle_trimvar(fields: list[str], bulk: BulkData) -> None:
+_TRIMVAR_SYM = ("", "SYM", "ANTI", "ASYM")
+
+
+def _handle_trimvar(fields: list[str], cont: Optional[list[str]], bulk: BulkData) -> None:
+    """TRIMVAR in ZAERO's layout (ZAERO 9.2 UM PDF p.511; #87).
+
+    IDVAR LABEL LOWER UPPER TRIMLNK DMI SYM INITIAL / DCD DCY DCL DCR DCM DCN.  Before
+    #87 sbeam read its own order (ID LABEL INIT LB UB), so a ZAERO card was misread.
+    """
     vid   = to_int(fields[1])
     label = fields[2].strip().upper() if len(fields) > 2 else ""
-    init  = to_float(fields[3]) if len(fields) > 3 else 0.0
     # Blank, not absent: every line arrives padded to 9 fields (#64), and a blank bound
-    # read as 0.0 would pin the variable (#77)
-    lb    = to_float(fields[4]) if fields[4].strip() else -1.0e30
-    ub    = to_float(fields[5]) if fields[5].strip() else  1.0e30
+    # read as 0.0 would pin the variable (#77).  ZAERO's defaults are ∓1.0E30.
+    lb    = to_float(fields[3]) if fields[3].strip() else -1.0e30
+    ub    = to_float(fields[4]) if fields[4].strip() else  1.0e30
+    if to_int_opt(fields[5]):
+        raise ValueError(f"TRIMVAR {vid}: TRIMLNK (field 6) is not supported — sbeam "
+                         "does not link trim variables")
+    if fields[6].strip():
+        raise ValueError(f"TRIMVAR {vid}: DMI (field 7) is not supported — sbeam "
+                         "computes the pressure derivatives itself")
+    # SYM only chooses which stability derivatives ZAERO prints (remark 6); sbeam prints
+    # the longitudinal and lateral ones in every run, so it is read and ignored
+    if fields[7].strip().upper() not in _TRIMVAR_SYM:
+        raise ValueError(f"TRIMVAR {vid}: SYM (field 8) must be SYM, ANTI, ASYM or blank")
+    init  = to_float(fields[8]) if fields[8].strip() else 0.0
+    if cont is not None and any(f.strip().upper() not in ("", "NONE") for f in cont[1:]):
+        raise ValueError(f"TRIMVAR {vid}: user-input stability derivatives (continuation, "
+                         "DCD-DCN) are not supported — leave them blank or NONE")
     if not label:
         raise ValueError(f"TRIMVAR {vid}: LABEL must not be blank")
     if not lb < ub:
@@ -319,25 +371,25 @@ def _handle_trimvar(fields: list[str], bulk: BulkData) -> None:
 def _handle_trimobj(fields: list[str], conts: list[list[str]], bulk: BulkData) -> None:
     sid = to_int(fields[1])
     if sid in bulk.trimobjs:
-        raise ValueError(f"Duplicate TRIMOBJ SID {sid}")
+        raise ValueError(f"Duplicate TRIMWGT SID {sid}")
     raw_pairs: list[str] = list(fields[2:])
     for cont in conts:
         raw_pairs += list(cont[1:])
     raw_pairs = [f for f in raw_pairs if f.strip()]
     if len(raw_pairs) % 2 != 0:
-        raise ValueError(f"TRIMOBJ {sid}: odd number of LABEL/WEIGHT tokens — must be paired")
+        raise ValueError(f"TRIMWGT {sid}: odd number of LABEL/WEIGHT tokens — must be paired")
     if not raw_pairs:
-        raise ValueError(f"TRIMOBJ {sid}: no LABEL/WEIGHT pair — the objective is empty")
+        raise ValueError(f"TRIMWGT {sid}: no LABEL/WEIGHT pair — the objective is empty")
     labels:  list[str] = []
     weights: list[float] = []
     for i in range(0, len(raw_pairs), 2):
         label = raw_pairs[i].strip().upper()
         weight = to_float(raw_pairs[i + 1])
         if label in labels:
-            raise ValueError(f"TRIMOBJ {sid}: label '{label}' is listed twice")
+            raise ValueError(f"TRIMWGT {sid}: label '{label}' is listed twice")
         if weight < 0.0:
             # A negative weight makes the objective non-convex: no unique minimum (#77)
-            raise ValueError(f"TRIMOBJ {sid}: weight {weight:g} on '{label}' must be >= 0")
+            raise ValueError(f"TRIMWGT {sid}: weight {weight:g} on '{label}' must be >= 0")
         labels.append(label)
         weights.append(weight)
     bulk.trimobjs[sid] = Trimobj(sid=sid, labels=labels, weights=weights)
@@ -348,9 +400,10 @@ def _handle_trimcon(fields: list[str], bulk: BulkData) -> None:
     label = fields[2].strip().upper() if len(fields) > 2 else ""
     sense = fields[3].strip().upper() if len(fields) > 3 else ""
     rhs   = to_float(fields[4]) if len(fields) > 4 else 0.0
+    refuse_after(fields, 5, f"TRIMINEQ {sid}")
     if sense not in ("LE", "GE"):
-        raise ValueError(f"TRIMCON {sid}: SENSE must be LE or GE, got '{sense}'")
-    # Multiple TRIMCON cards share a SID — collect as list
+        raise ValueError(f"TRIMINEQ {sid}: SENSE must be LE or GE, got '{sense}'")
+    # Multiple TRIMINEQ cards share a SID — collect as list
     bulk.trimcons.setdefault(sid, []).append(Trimcon(sid=sid, label=label, sense=sense, rhs=rhs))
 
 
@@ -358,19 +411,20 @@ def _handle_trimcon(fields: list[str], bulk: BulkData) -> None:
 FIELD_HANDLERS: dict[str, FieldHandler] = {
     "AESTAT": _handle_aestat,
     "AESURF": _handle_aesurf,
-    "TRIMVAR": _handle_trimvar,
-    "TRIMCON": _handle_trimcon,
-    "MLDTIME": _handle_mldtime,
-    "MLDTRIM": _handle_mldtrim,
-    "MLOADS": _handle_mloads,
+    "TRIMINEQ": _handle_trimcon,
+    "MANTIME": _handle_mldtime,
+    "MANTRIM": _handle_mldtrim,
+    "MANVR": _handle_mloads,
 }
-CONT_HANDLERS: dict[str, ContHandler] = {}
+CONT_HANDLERS: dict[str, ContHandler] = {
+    "TRIMVAR": _handle_trimvar,
+}
 MULTI_HANDLERS: dict[str, MultiHandler] = {
     "TRIM": _handle_trim,
     "GUSTLF": _handle_gustlf,
     "DIVERG": _handle_diverg,
-    "TRIMOBJ": _handle_trimobj,
+    "TRIMWGT": _handle_trimobj,
     "TABLED1": _handle_tabled1,
-    "MLDCOMD": _handle_mldcomd,
-    "MLDPRNT": _handle_mldprnt,
+    "MANCMD": _handle_mldcomd,
+    "MANPRNT": _handle_mldprnt,
 }

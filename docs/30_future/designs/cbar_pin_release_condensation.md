@@ -44,7 +44,7 @@ E = 2e11, A = 0.1, I = 8.333e-4, ρ = 7850.
   shear". A pinned truss member transmits axial force only.
 
 **Blast radius:** wrong displacements, modes, trim and load paths on every deck with PA/PB:
-SOL 101, 103, 144 and MLOADS. No `sample/` or `tests/` deck uses pin flags (checked
+SOL 101, 103, 144 and MANVR. No `sample/` or `tests/` deck uses pin flags (checked
 2026-10-02 by parsing every deck), so no shipped result changes.
 
 ## 2. Theory
@@ -97,7 +97,7 @@ NASTRAN-95 form, simple and order-independent) inside one helper.
 
 - **Assembly** (`element_stiffness_global`, `element_mass_global`) and **recovery**
   (`_element_local_forces`) both call it. `_element_local_forces` serves SOL 101, both SOL 144
-  paths and MLOADS.
+  paths and MANVR.
 - `apply_pin_releases` is deleted rather than left as a trap.
 - This sweeps the defect class (rule 3). After the change, the only call site of the
   unreleased `local_stiffness` is the helper itself; a test asserts this.

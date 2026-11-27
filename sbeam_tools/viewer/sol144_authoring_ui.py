@@ -1,20 +1,27 @@
-"""Aeroelastic Authoring tab — SOL 144 / MLOADS bulk-card editors (P12).
+"""Aeroelastic Authoring tab — SOL 144 / MANVR bulk-card editors (P12).
 
 Each card family gets a top-level expander holding a selectbox ("— new —" or
-an existing ID, outside the form so switching reruns and pre-fills) and one
-``st.form`` with the family's fields.  Applying builds the dataclass, checks
-SID clashes (clone-as-new policy for INCLUDE-sourced cards), injects it into
-the in-session ``BulkData`` and invalidates solver results.  All widget keys
-are ``auth_``-prefixed; ``st.session_state.authored_cards`` tracks what this
-session created, which is exactly the card set the driver export inlines.
+an existing ID, outside the form) and one ``st.form`` with the family's fields.
+Applying builds the dataclass and hands it to ``session_deck.commit``, which
+writes it into the deck text and re-parses the deck (#113).  A form field's key
+carries the card being edited (``_k``, #123).  ``st.session_state.authored_cards``
+tracks what this session created, which is the card set the export writes after
+the loaded deck's own bulk section.  What a maneuver case *is* (trim recipes,
+command shapes, the two-pass builder) lives in ``sbeam_tools.cases.maneuver``
+(#114); this module holds its widgets.
 """
 
+import dataclasses
 from typing import Any, Callable, Optional, cast
 
 import pandas as pd
 import streamlit as st
+from sbeam_tools.viewer.widget_keys import wk
 
+from sbeam.aero.aero_model import AeroModel, build_aero_model
+from sbeam.assembly.load_vector import build_grid_index
 from sbeam.model.aero import (
+    Aecomp, Monpnt1, Monpnt3, Monsect,
     Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
 )
 from sbeam.model.bulk_data import BulkData
@@ -23,24 +30,34 @@ from sbeam.model.maneuver import (
     Tabled1, Mldtime, Mldcomd, Mldprnt, Mldtrim, Mloads,
 )
 from sbeam.model.card_writers import write_authored_block
+from sbeam.gpwg import compute_gpwg
+from sbeam.model.gust import Gustlf
+from sbeam.model.mass import Massset
+from sbeam_tools.viewer.format_utils import style_numeric
+from sbeam_tools.viewer.geometry import build_model_figure, model_span
+from sbeam_tools.viewer.monitor_view import add_monitor_traces, monitor_geometry
+from sbeam_tools.cases import gust, maneuver
+from sbeam_tools.common.deck import airplane_from_model
+from sbeam_tools.viewer import session_deck
 from sbeam_tools.viewer import sol144_authoring as logic
 from sbeam.parser.case_control import CaseControl
-from sbeam_tools.viewer.case_control_ui import export_bdf_text
+from sbeam_tools.viewer.case_control_ui import deck_bulk_section, export_bdf_text
 from sbeam_tools.common.units import UNIT_SYSTEMS
 
 
 def export_sol144_bdf(cc: CaseControl, bulk: BulkData,
                       authored: dict[str, set[int]],
                       include_paths: Optional[list[str]] = None,
-                      title_comment: str = "") -> str:
+                      title_comment: str = "",
+                      bulk_section: Optional[str] = None) -> str:
     """Full driver deck: provenance header + case control + authored cards
     inline + every INCLUDE.  Pure — reused by the export tests."""
-    header = "Authored in the sbeam viewer (SOL 144 / MLOADS authoring tab)"
+    header = logic.AUTHORED_HEADER
     if title_comment:
         header += f"\n{title_comment}"
     block = write_authored_block(bulk, authored, header)
     return export_bdf_text(cc, include_paths=include_paths,
-                           authored_block=block)
+                           authored_block=block, bulk_section=bulk_section)
 
 
 # ---------------------------------------------------------------------------
@@ -50,22 +67,44 @@ def export_sol144_bdf(cc: CaseControl, bulk: BulkData,
 _NEW = "— new —"
 
 
-def _invalidate_results() -> None:
-    """Authored cards changed — solved results and the aero cache are stale."""
-    for key in ("sol144_result", "sol144_diverg_result", "maneuver_result",
-                "aero_model_144"):
-        st.session_state[key] = None
-
-
 def _authored() -> dict[str, set[int]]:
     return st.session_state.setdefault("authored_cards", {})
 
 
 def _family_ids(bulk: BulkData, family: str) -> list[int]:
+    """The cards of a family the editor can open."""
     store = logic.family_store(bulk, family)
     if family == "suport":
         return sorted(s.gid for s in store)
+    if family == "masscase":
+        # bulk.masssets also holds the cases built from MSC MASSSET entries (#102).
+        # Those are another card; they are listed read-only, not opened in this form.
+        return sorted(sid for sid, case in store.items() if not case.msc)
     return sorted(store.keys())
+
+
+_EDIT_SUFFIX = "_auth_edit_suffix"
+
+
+def _k(key: str) -> str:
+    """The widget key of a card-form field, distinct for each card being edited.
+
+    Streamlit identifies a keyed widget by its key alone: a new ``value=`` default
+    is ignored once the key holds a value.  With one fixed key per field, choosing
+    another card under "Edit existing" left the form showing the previous values,
+    and Apply wrote those over the chosen card (#123).  The key therefore carries
+    the selection (``auth_trim_q`` for a new card, ``auth_trim_q@7`` for TRIM 7),
+    so each card gets its own widgets, initialised from that card.
+    """
+    return wk(key) + st.session_state.get(_EDIT_SUFFIX, "")
+
+
+def _same_card(card: Any, existing: Any) -> bool:
+    """True when the form rebuilt exactly the card it was opened on."""
+    try:
+        return bool(card == existing)
+    except ValueError:          # an array-valued field: not comparable, treat as edited
+        return False
 
 
 def _family_editor(
@@ -84,7 +123,7 @@ def _family_editor(
         ids = _family_ids(bulk, family)
         sel = st.selectbox(
             "Edit existing or create new", [_NEW] + ids,
-            key=f"auth_sel_{family}",
+            key=wk(f"auth_sel_{family}"),
         )
         editing = sel != _NEW
         existing = None
@@ -97,37 +136,44 @@ def _family_editor(
         default_id = cast(int, sel) if editing else logic.next_free_sid(bulk, family)
 
         with st.form(f"auth_form_{family}"):
-            card = render_form(bulk, existing, default_id)
+            st.session_state[_EDIT_SUFFIX] = f"@{sel}" if editing else ""
+            try:
+                card = render_form(bulk, existing, default_id)
+            finally:
+                st.session_state[_EDIT_SUFFIX] = ""
             col_apply, col_new = st.columns([1, 2])
             applied = col_apply.form_submit_button("Apply", type="primary")
             save_new = False
             if editing and sel not in _authored().get(family, set()):
                 save_new = col_new.form_submit_button(
                     "Save as new SID",
-                    help="This card came from the loaded file; re-exporting "
-                         "it inline would duplicate its SID against the "
-                         "INCLUDE.  Saving as a new SID keeps the deck "
-                         "parseable.",
+                    help="This card comes from the loaded deck and is not "
+                         "changed in place: the deck would hold two cards "
+                         "with its ID.  Saving as a new SID adds your edit "
+                         "as a new card.",
                 )
 
-        if (applied or save_new) and card is not None:
+        # A loaded card submitted unchanged is not an edit: it stays the file's card
+        # (#123).  Any other Apply goes through the deck text and the parser (#113).
+        unchanged = (applied and not save_new and editing and card is not None
+                     and _same_card(card, existing))
+        if unchanged:
+            st.info("No change.")
+        elif (applied or save_new) and card is not None:
             if save_new:
-                key_attr = "gid" if family == "suport" else (
-                    "sid" if hasattr(card, "sid") else "id")
-                setattr(card, key_attr, logic.next_free_sid(bulk, family))
+                new_key = logic.next_free_sid(bulk, family)
+                for one in (card if isinstance(card, list) else [card]):
+                    setattr(one, logic.key_attr(family, one), new_key)
             key = logic.card_key(family, card[0] if isinstance(card, list) else card)
-            conflicts = logic.find_sid_conflicts(bulk, family, key, _authored())
-            for msg in conflicts:
-                st.warning(msg)
-            logic.apply_card(bulk, family, card, _authored())
-            _invalidate_results()
-            st.success(f"{family.upper()} {logic.card_key(family, card[0] if isinstance(card, list) else card)} applied to the session model.")
+            session_deck.commit(
+                bulk, changes=[(family, card)],
+                done=f"{logic.CARD_NAMES[family]} {key} applied to the deck.")
 
         if editing and sel in _authored().get(family, set()):
-            if st.button("Delete", key=f"auth_del_{family}"):
-                logic.delete_card(bulk, family, sel, _authored())
-                _invalidate_results()
-                st.rerun()
+            if st.button("Delete", key=wk(f"auth_del_{family}")):
+                session_deck.commit(
+                    bulk, deletes=[(family, sel)],
+                    done=f"{logic.CARD_NAMES[family]} {sel} deleted.")
 
 
 def _pairs_editor(key: str, columns: dict[str, Any],
@@ -135,7 +181,7 @@ def _pairs_editor(key: str, columns: dict[str, Any],
     """A dynamic-row data editor (allowed inside forms; commits on submit)."""
     df = pd.DataFrame(rows, columns=pd.Index(list(columns)))
     return st.data_editor(
-        df, key=key, num_rows="dynamic", column_config=columns,
+        df, key=_k(key), num_rows="dynamic", column_config=columns,
         use_container_width=True, hide_index=True,
     )
 
@@ -146,12 +192,12 @@ def _pairs_editor(key: str, columns: dict[str, Any],
 
 def _aestat_form(bulk: BulkData, card: Optional[Aestat], default_id: int):
     aid = st.number_input("ID", min_value=1, value=(card.id if card else default_id),
-                          key="auth_aestat_id")
+                          key=_k("auth_aestat_id"))
     label = st.selectbox(
         "Label", logic.AESTAT_LABELS,
         index=(logic.AESTAT_LABELS.index(card.label)
                if card and card.label in logic.AESTAT_LABELS else 0),
-        key="auth_aestat_label",
+        key=_k("auth_aestat_label"),
         help="Canonical rigid-body trim-variable labels.",
     )
     return Aestat(id=int(aid), label=label)
@@ -159,22 +205,22 @@ def _aestat_form(bulk: BulkData, card: Optional[Aestat], default_id: int):
 
 def _aesurf_form(bulk: BulkData, card: Optional[Aesurf], default_id: int):
     aid = st.number_input("ID", min_value=1, value=(card.id if card else default_id),
-                          key="auth_aesurf_id")
+                          key=_k("auth_aesurf_id"))
     label = st.text_input("Label", value=(card.label if card else ""),
-                          key="auth_aesurf_label").strip().upper()
+                          key=_k("auth_aesurf_label")).strip().upper()
     cids = [0] + sorted(bulk.cord2rs.keys())
     alids = sorted(bulk.aelists.keys())
     col1, col2 = st.columns(2)
     cid1 = col1.selectbox(
         "Hinge CID (CID1)", cids,
         index=cids.index(card.cid1) if card and card.cid1 in cids else 0,
-        key="auth_aesurf_cid1",
+        key=_k("auth_aesurf_cid1"),
         help="The CID's y-axis is the hinge line.",
     )
     alid1 = col2.selectbox(
         "Box list (ALID1, an AELIST SID)", alids,
         index=alids.index(card.alid1) if card and card.alid1 in alids else 0,
-        key="auth_aesurf_alid1",
+        key=_k("auth_aesurf_alid1"),
     ) if alids else None
     # Second hinge half (#9): an antisymmetric aileron pair is ONE label with
     # CID1 = starboard half, CID2 = port half, both hinge +y pointing outboard.
@@ -182,17 +228,17 @@ def _aesurf_form(bulk: BulkData, card: Optional[Aesurf], default_id: int):
     cid2 = col3.selectbox(
         "Second hinge CID (CID2, 0 = none)", cids,
         index=cids.index(card.cid2) if card and card.cid2 in cids else 0,
-        key="auth_aesurf_cid2",
+        key=_k("auth_aesurf_cid2"),
         help="Port half of an aileron pair: its own CORD2R with +y outboard (charter §6).",
     )
     alid2_opts = [0] + alids
     alid2 = col4.selectbox(
         "Second box list (ALID2, 0 = none)", alid2_opts,
         index=alid2_opts.index(card.alid2) if card and card.alid2 in alid2_opts else 0,
-        key="auth_aesurf_alid2",
+        key=_k("auth_aesurf_alid2"),
     )
     eff = st.number_input("Effectiveness (EFF)", value=(card.eff if card else 1.0),
-                          key="auth_aesurf_eff")
+                          key=_k("auth_aesurf_eff"))
     if not label:
         st.warning("AESURF needs a label.")
         return None
@@ -208,14 +254,14 @@ def _aesurf_form(bulk: BulkData, card: Optional[Aesurf], default_id: int):
 
 def _aelist_form(bulk: BulkData, card: Optional[Aelist], default_id: int):
     sid = st.number_input("SID", min_value=1, value=(card.sid if card else default_id),
-                          key="auth_aelist_sid")
+                          key=_k("auth_aelist_sid"))
     ranges = logic.caero_box_ranges(bulk)
     if ranges:
         st.caption("Valid box IDs: " +
                    ", ".join(f"{lo}–{hi}" for lo, hi in ranges))
     default_text = " ".join(str(e) for e in card.elements) if card else ""
     text = st.text_input("Box IDs (THRU allowed, e.g. '1101 THRU 1112')",
-                         value=default_text, key="auth_aelist_boxes")
+                         value=default_text, key=_k("auth_aelist_boxes"))
     try:
         elements = logic.expand_int_tokens(text)
     except ValueError:
@@ -236,11 +282,11 @@ def _suport_form(bulk: BulkData, card: Optional[Suport], default_id: int):
     gid = st.selectbox(
         "Grid (GID)", gids,
         index=gids.index(card.gid) if card and card.gid in gids else 0,
-        key="auth_suport_gid",
+        key=_k("auth_suport_gid"),
     ) if gids else None
     dofs = st.text_input("DOF components (e.g. '35' = Tz + Ry)",
                          value=(card.dofs if card else "35"),
-                         key="auth_suport_dofs").strip()
+                         key=_k("auth_suport_dofs")).strip()
     if gid is None or not dofs or not dofs.isdigit():
         st.warning("SUPORT needs a grid and a digit-string DOF list.")
         return None
@@ -252,20 +298,14 @@ def _suport_form(bulk: BulkData, card: Optional[Suport], default_id: int):
 # ---------------------------------------------------------------------------
 
 def _trim_form(bulk: BulkData, card: Optional[Trim], default_id: int):
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     sid = col1.number_input("SID", min_value=1,
                             value=(card.sid if card else default_id),
-                            key="auth_trim_sid")
+                            key=_k("auth_trim_sid"))
     mach = col2.number_input("Mach", value=(card.mach if card else 0.0),
-                             key="auth_trim_mach", format="%.4f")
+                             key=_k("auth_trim_mach"), format="%.4f")
     q = col3.number_input("Dynamic pressure Q", value=(card.q if card else 0.0),
-                          key="auth_trim_q", format="%.6g")
-    rhoref = col4.number_input(
-        "RHOREF (0 = unset)", value=(card.rhoref if card else 0.0),
-        key="auth_trim_rhoref", format="%.6g", min_value=0.0,
-        help="Freestream density; required for the modal MLOADS initial "
-             "condition (V = sqrt(2q/rho)).",
-    )
+                          key=_k("auth_trim_q"), format="%.6g")
     labels = logic.label_options(bulk)
     prefill: Optional[dict[str, float]] = st.session_state.get("auth_trim_prefill")
     if card is not None:
@@ -291,8 +331,7 @@ def _trim_form(bulk: BulkData, card: Optional[Trim], default_id: int):
     if not labels:
         st.warning("Define AESTAT/AESURF labels first.")
         return None
-    return Trim(sid=int(sid), mach=float(mach), q=float(q), vars=vars_,
-                rhoref=float(rhoref))
+    return Trim(sid=int(sid), mach=float(mach), q=float(q), vars=vars_)
 
 
 def _trimvar_form(bulk: BulkData, card: Optional[Trimvar], default_id: int):
@@ -300,19 +339,19 @@ def _trimvar_form(bulk: BulkData, card: Optional[Trimvar], default_id: int):
     col1, col2 = st.columns(2)
     vid = col1.number_input("ID", min_value=1,
                             value=(card.id if card else default_id),
-                            key="auth_trimvar_id")
+                            key=_k("auth_trimvar_id"))
     label = col2.selectbox(
         "Label", labels,
         index=labels.index(card.label) if card and card.label in labels else 0,
-        key="auth_trimvar_label",
+        key=_k("auth_trimvar_label"),
     ) if labels else None
     col3, col4, col5 = st.columns(3)
     init = col3.number_input("Initial", value=(card.init if card else 0.0),
-                             key="auth_trimvar_init", format="%.6g")
+                             key=_k("auth_trimvar_init"), format="%.6g")
     lb = col4.number_input("Lower bound", value=(card.lb if card else -1.0),
-                           key="auth_trimvar_lb", format="%.6g")
+                           key=_k("auth_trimvar_lb"), format="%.6g")
     ub = col5.number_input("Upper bound", value=(card.ub if card else 1.0),
-                           key="auth_trimvar_ub", format="%.6g")
+                           key=_k("auth_trimvar_ub"), format="%.6g")
     if label is None:
         st.warning("Define AESTAT/AESURF labels first.")
         return None
@@ -326,7 +365,7 @@ def _trimvar_form(bulk: BulkData, card: Optional[Trimvar], default_id: int):
 def _trimobj_form(bulk: BulkData, card: Optional[Trimobj], default_id: int):
     sid = st.number_input("SID", min_value=1,
                           value=(card.sid if card else default_id),
-                          key="auth_trimobj_sid")
+                          key=_k("auth_trimobj_sid"))
     labels = logic.label_options(bulk)
     rows = ([{"label": l, "weight": w} for l, w in zip(card.labels, card.weights)]
             if card else [{"label": labels[0] if labels else "", "weight": 1.0}])
@@ -344,7 +383,7 @@ def _trimobj_form(bulk: BulkData, card: Optional[Trimobj], default_id: int):
             out_labels.append(label.strip().upper())
             weights.append(float(row["weight"] or 0.0))
     if not out_labels:
-        st.warning("TRIMOBJ needs at least one label/weight pair.")
+        st.warning("TRIMWGT needs at least one label/weight pair.")
         return None
     return Trimobj(sid=int(sid), labels=out_labels, weights=weights)
 
@@ -353,7 +392,7 @@ def _trimcon_form(bulk: BulkData, cards: Optional[list[Trimcon]],
                   default_id: int) -> Optional[list[Trimcon]]:
     sid = st.number_input("SID", min_value=1,
                           value=(cards[0].sid if cards else default_id),
-                          key="auth_trimcon_sid")
+                          key=_k("auth_trimcon_sid"))
     labels = logic.label_options(bulk)
     rows = ([{"label": c.label, "sense": c.sense, "rhs": c.rhs} for c in cards]
             if cards else
@@ -372,7 +411,7 @@ def _trimcon_form(bulk: BulkData, cards: Optional[list[Trimcon]],
             cons.append(Trimcon(sid=int(sid), label=label.strip().upper(),
                                 sense=str(row["sense"]), rhs=float(row["rhs"] or 0.0)))
     if not cons:
-        st.warning("TRIMCON needs at least one constraint row.")
+        st.warning("TRIMINEQ needs at least one constraint row.")
         return None
     return cons
 
@@ -381,13 +420,13 @@ def _diverg_form(bulk: BulkData, card: Optional[Diverg], default_id: int):
     col1, col2 = st.columns(2)
     sid = col1.number_input("SID", min_value=1,
                             value=(card.sid if card else default_id),
-                            key="auth_diverg_sid")
+                            key=_k("auth_diverg_sid"))
     nroots = col2.number_input("Roots (NROOTS)", min_value=1,
                                value=(card.nroots if card else 1),
-                               key="auth_diverg_nroots")
+                               key=_k("auth_diverg_nroots"))
     machs_text = st.text_input(
         "Mach list", value=(" ".join(f"{m:g}" for m in card.machs) if card else "0.0"),
-        key="auth_diverg_machs",
+        key=_k("auth_diverg_machs"),
     )
     try:
         machs = logic.parse_float_list(machs_text)
@@ -404,59 +443,59 @@ def _diverg_form(bulk: BulkData, card: Optional[Diverg], default_id: int):
 
 
 # ---------------------------------------------------------------------------
-# Panel 3 — Maneuver (MLOADS family)
+# Panel 3 — Maneuver (MANVR family)
 # ---------------------------------------------------------------------------
 
 def _mloads_form(bulk: BulkData, card: Optional[Mloads], default_id: int):
     sid = st.number_input("SID", min_value=1,
                           value=(card.sid if card else default_id),
-                          key="auth_mloads_sid")
+                          key=_k("auth_mloads_sid"))
     trims = sorted(bulk.mldtrims.keys())
     times = sorted(bulk.mldtimes.keys())
     comds = [0] + sorted(bulk.mldcomds.keys())
     prnts = [0] + sorted(bulk.mldprnts.keys())
     col1, col2 = st.columns(2)
     mldtrim = col1.selectbox(
-        "MLDTRIM (initial condition)", trims,
+        "MANTRIM (initial condition)", trims,
         index=trims.index(card.mldtrim) if card and card.mldtrim in trims else 0,
-        key="auth_mloads_mldtrim") if trims else None
+        key=_k("auth_mloads_mldtrim")) if trims else None
     mldtime = col2.selectbox(
-        "MLDTIME (integration window)", times,
+        "MANTIME (integration window)", times,
         index=times.index(card.mldtime) if card and card.mldtime in times else 0,
-        key="auth_mloads_mldtime") if times else None
+        key=_k("auth_mloads_mldtime")) if times else None
     col3, col4 = st.columns(2)
     mldcomd = col3.selectbox(
-        "MLDCOMD (0 = hold trim)", comds,
+        "MANCMD (0 = hold trim)", comds,
         index=comds.index(card.mldcomd) if card and card.mldcomd in comds else 0,
         format_func=lambda v: "— none (hold trim) —" if v == 0 else str(v),
-        key="auth_mloads_mldcomd")
+        key=_k("auth_mloads_mldcomd"))
     mldprnt = col4.selectbox(
-        "MLDPRNT (0 = no ASCII print)", prnts,
+        "MANPRNT (0 = no ASCII print)", prnts,
         index=prnts.index(card.mldprnt) if card and card.mldprnt in prnts else 0,
         format_func=lambda v: "— none —" if v == 0 else str(v),
-        key="auth_mloads_mldprnt")
+        key=_k("auth_mloads_mldprnt"))
     st.caption(
         "Solver selection: any of NMODES/METHOD/ZETA nonzero runs the "
         "free-flight modal solver (METHOD = −1 is the all-defaults-modal "
         "sentinel); all zeros runs the direct restrained l-set solver.  The "
-        "modal solver only accepts AESURF labels in MLDCOMD and needs RHOREF "
-        "on the IC TRIM."
+        "modal solver only accepts AESURF labels in MANCMD and needs RHO "
+        "on the MANTRIM."
     )
     col5, col6, col7 = st.columns(3)
     nmodes = col5.number_input("NMODES (0 = all elastic)", min_value=0,
                                value=(card.nmodes if card else 0),
-                               key="auth_mloads_nmodes")
+                               key=_k("auth_mloads_nmodes"))
     methods = [-1, 0] + sorted(bulk.eigrls.keys())
     method = col6.selectbox(
         "METHOD", methods,
         index=methods.index(card.method) if card and card.method in methods else 1,
         format_func=lambda v: {-1: "−1 — all-defaults modal", 0: "0 — default"}.get(v, f"EIGRL {v}"),
-        key="auth_mloads_method")
+        key=_k("auth_mloads_method"))
     zeta = col7.number_input("ZETA (elastic damping)", min_value=0.0,
                              value=(card.zeta if card else 0.0),
-                             key="auth_mloads_zeta", format="%.4f")
+                             key=_k("auth_mloads_zeta"), format="%.4f")
     if mldtrim is None or mldtime is None:
-        st.warning("Define an MLDTRIM and an MLDTIME first.")
+        st.warning("Define an MANTRIM and an MANTIME first.")
         return None
     return Mloads(sid=int(sid), mldtrim=int(mldtrim), mldtime=int(mldtime),
                   mldcomd=int(mldcomd), mldprnt=int(mldprnt),
@@ -466,37 +505,40 @@ def _mloads_form(bulk: BulkData, card: Optional[Mloads], default_id: int):
 def _mldtrim_form(bulk: BulkData, card: Optional[Mldtrim], default_id: int):
     sid = st.number_input("SID", min_value=1,
                           value=(card.sid if card else default_id),
-                          key="auth_mldtrim_sid")
+                          key=_k("auth_mldtrim_sid"))
     trims = sorted(bulk.trims.keys())
     trim_sid = st.selectbox(
         "TRIM SID (steady initial condition)", trims,
         index=trims.index(card.trim_sid) if card and card.trim_sid in trims else 0,
-        format_func=lambda v: (
-            f"{v} (q={bulk.trims[v].q:g}, M={bulk.trims[v].mach:g}"
-            + ("" if bulk.trims[v].rhoref else ", no RHOREF") + ")"),
-        key="auth_mldtrim_trim") if trims else None
+        format_func=lambda v: f"{v} (q={bulk.trims[v].q:g}, M={bulk.trims[v].mach:g})",
+        key=_k("auth_mldtrim_trim")) if trims else None
+    rho = st.number_input(
+        "RHO (0 = unset)", value=(card.rho if card else 0.0),
+        key=_k("auth_mldtrim_rho"), format="%.6g", min_value=0.0,
+        help="Freestream density; required by the modal (free-flight) MANVR "
+             "solver for V = sqrt(2q/rho).")
     if trim_sid is None:
         st.warning("Define a TRIM condition first.")
         return None
-    return Mldtrim(sid=int(sid), trim_sid=int(trim_sid))
+    return Mldtrim(sid=int(sid), trim_sid=int(trim_sid), rho=float(rho))
 
 
 def _mldtime_form(bulk: BulkData, card: Optional[Mldtime], default_id: int):
     col1, col2, col3, col4, col5 = st.columns(5)
     sid = col1.number_input("SID", min_value=1,
                             value=(card.sid if card else default_id),
-                            key="auth_mldtime_sid")
+                            key=_k("auth_mldtime_sid"))
     t0 = col2.number_input("T0", value=(card.t0 if card else 0.0),
-                           key="auth_mldtime_t0", format="%.4g")
+                           key=_k("auth_mldtime_t0"), format="%.4g")
     tend = col3.number_input("TEND", value=(card.tend if card else 1.0),
-                             key="auth_mldtime_tend", format="%.4g")
+                             key=_k("auth_mldtime_tend"), format="%.4g")
     dt = col4.number_input("DT", value=(card.dt if card else 0.01),
-                           key="auth_mldtime_dt", format="%.4g")
+                           key=_k("auth_mldtime_dt"), format="%.4g")
     tout = col5.number_input("TOUT (0 = every step)", min_value=0.0,
                              value=(card.tout if card else 0.0),
-                             key="auth_mldtime_tout", format="%.4g")
+                             key=_k("auth_mldtime_tout"), format="%.4g")
     if dt <= 0.0 or tend <= t0:
-        st.warning("MLDTIME needs DT > 0 and TEND > T0.")
+        st.warning("MANTIME needs DT > 0 and TEND > T0.")
         return None
     return Mldtime(sid=int(sid), t0=float(t0), tend=float(tend),
                    dt=float(dt), tout=float(tout))
@@ -505,14 +547,14 @@ def _mldtime_form(bulk: BulkData, card: Optional[Mldtime], default_id: int):
 def _mldcomd_form(bulk: BulkData, card: Optional[Mldcomd], default_id: int):
     sid = st.number_input("SID", min_value=1,
                           value=(card.sid if card else default_id),
-                          key="auth_mldcomd_sid")
-    # Restrict to AESURF labels when any modal MLOADS references this card —
+                          key=_k("auth_mldcomd_sid"))
+    # Restrict to AESURF labels when any modal MANVR references this card —
     # rigid-state commands under the modal solver are a hard parse error.
     modal_owner = any(m.mldcomd == (card.sid if card else 0) and m.selects_modal
                       for m in bulk.mloads.values())
     labels = logic.label_options(bulk, modal_only=modal_owner)
     if modal_owner:
-        st.caption("A modal MLOADS references this card — AESURF labels only.")
+        st.caption("A modal MANVR references this card — AESURF labels only.")
     tabids = sorted(bulk.tabled1s.keys())
     rows = ([{"label": l, "tabid": t} for l, t in card.commands]
             if card else
@@ -532,7 +574,7 @@ def _mldcomd_form(bulk: BulkData, card: Optional[Mldcomd], default_id: int):
         st.warning("Define AESURF/AESTAT labels and at least one TABLED1 first.")
         return None
     if not commands:
-        st.warning("MLDCOMD needs at least one label/table pair.")
+        st.warning("MANCMD needs at least one label/table pair.")
         return None
     return Mldcomd(sid=int(sid), commands=commands)
 
@@ -540,7 +582,7 @@ def _mldcomd_form(bulk: BulkData, card: Optional[Mldcomd], default_id: int):
 def _mldprnt_form(bulk: BulkData, card: Optional[Mldprnt], default_id: int):
     sid = st.number_input("SID", min_value=1,
                           value=(card.sid if card else default_id),
-                          key="auth_mldprnt_sid")
+                          key=_k("auth_mldprnt_sid"))
     st.caption("Item keywords are recorded on the card but do not filter the "
                "ASCII output — the full column set is always printed.")
     return Mldprnt(sid=int(sid), items=list(card.items) if card else [])
@@ -553,7 +595,7 @@ def _mldprnt_form(bulk: BulkData, card: Optional[Mldprnt], default_id: int):
 def _tabled1_form(bulk: BulkData, card: Optional[Tabled1], default_id: int):
     tid = st.number_input("TID", min_value=1,
                           value=(card.tid if card else default_id),
-                          key="auth_tabled1_tid")
+                          key=_k("auth_tabled1_tid"))
     rows = ([{"x": x, "y": y} for x, y in zip(card.xs, card.ys)]
             if card else [{"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 0.0}])
     df = _pairs_editor(
@@ -582,13 +624,13 @@ def _tabled1_form(bulk: BulkData, card: Optional[Tabled1], default_id: int):
 
 def _render_preset_panel(bulk: BulkData) -> None:
     with st.expander("Preset maneuvers — pre-fill the TRIM form", expanded=False):
-        names = [p.name for p in logic.MANEUVER_PRESETS]
-        sel = st.selectbox("Maneuver", names, key="auth_preset_sel")
-        preset = next(p for p in logic.MANEUVER_PRESETS if p.name == sel)
+        names = [p.name for p in maneuver.MANEUVER_PRESETS]
+        sel = st.selectbox("Maneuver", names, key=wk("auth_preset_sel"))
+        preset = next(p for p in maneuver.MANEUVER_PRESETS if p.name == sel)
         st.caption(preset.description)
         col1, col2 = st.columns(2)
         param = col1.number_input(preset.param_label, value=preset.param_default,
-                                  key="auth_preset_param", format="%.4g")
+                                  key=wk("auth_preset_param"), format="%.4g")
         g = 0.0
         if preset.uses_g:
             # #30: the solver is unit-neutral (charter §7), so the deck's unit
@@ -596,29 +638,43 @@ def _render_preset_panel(bulk: BulkData) -> None:
             # Keyed per system so switching re-prefills instead of keeping the
             # previous system's number under a new label.
             units = UNIT_SYSTEMS[col2.selectbox(
-                "Deck unit system", list(UNIT_SYSTEMS), key="auth_preset_units")]
+                "Deck unit system", list(UNIT_SYSTEMS), key=wk("auth_preset_units"))]
             g = col2.number_input(
                 f"Gravity g ({units.length_unit}/s², {units.name})", value=units.g,
-                key=f"auth_preset_g_{units.name}", format="%.6g",
+                key=wk(f"auth_preset_g_{units.name}"), format="%.6g",
             )
-        missing = logic.missing_preset_labels(bulk, preset)
+        v_true: Optional[float] = None
+        c_ref = bulk.aeros.cref if bulk.aeros is not None else None
+        if preset.uses_speed:
+            # #127: a steady pull-up has a pitch rate, which needs V and c_ref.
+            v_true = st.number_input(
+                "True airspeed V (deck units; V = sqrt(2q/ρ) for the TRIM's Q)",
+                value=0.0, min_value=0.0, key=wk("auth_preset_v"), format="%.6g")
+            st.caption(f"Reference chord c_ref = {c_ref if c_ref is not None else 'none'} "
+                       "(AEROS). PITCH = (n_z − 1)·g·c_ref/(2V²).")
+        missing = maneuver.missing_preset_labels(bulk, preset)
         if missing:
             st.warning(f"Missing AESTAT labels: {', '.join(missing)}")
-            if st.button("Create missing AESTATs", key="auth_preset_mkstat"):
-                for label in missing:
-                    aid = logic.next_free_sid(bulk, "aestat")
-                    logic.apply_card(bulk, "aestat", Aestat(id=aid, label=label),
-                                     _authored())
-                _invalidate_results()
-                st.rerun()
+            if st.button("Create missing AESTATs", key=wk("auth_preset_mkstat")):
+                first = logic.next_free_sid(bulk, "aestat")
+                session_deck.commit(
+                    bulk,
+                    changes=[("aestat", Aestat(id=first + i, label=label))
+                             for i, label in enumerate(missing)],
+                    done=f"AESTAT created for {', '.join(missing)}.")
         if not any(s for s in bulk.aesurfs.values()):
             st.warning(f"The {preset.surface_role} (an AESURF) must exist and "
                        "stay un-prescribed so it can trim free.")
-        if st.button("Pre-fill TRIM form", key="auth_preset_fill"):
-            st.session_state["auth_trim_prefill"] = preset.prescribed_vars(param, g)
+        if st.button("Pre-fill TRIM form", key=wk("auth_preset_fill")):
+            try:
+                prefill = preset.prescribed_vars(param, g, v_true=v_true, c_ref=c_ref)
+            except ValueError as exc:
+                st.error(f"Not pre-filled: {exc}")
+                return
+            st.session_state["auth_trim_prefill"] = prefill
             st.session_state["auth_trim_vars_ver"] = \
                 st.session_state.get("auth_trim_vars_ver", 0) + 1
-            st.session_state["auth_sel_trim"] = _NEW
+            st.session_state[wk("auth_sel_trim")] = _NEW
             st.rerun()
 
 
@@ -632,29 +688,29 @@ def _generator_points(shape: str, key_prefix: str,
     """Shared generator parameter widgets; returns (x, y) points or None."""
     col1, col2 = st.columns(2)
     t1 = col1.number_input("t1 (shape start)", min_value=0.0, value=0.0,
-                           key=f"{key_prefix}_t1", format="%.4g")
+                           key=wk(f"{key_prefix}_t1"), format="%.4g")
     t2 = col2.number_input("t2 (shape end)", min_value=0.0, value=0.2,
-                           key=f"{key_prefix}_t2", format="%.4g")
+                           key=wk(f"{key_prefix}_t2"), format="%.4g")
     col3, col4 = st.columns(2)
     y1 = amp = 0.0  # each branch overwrites the values its shapes consume
     if shape == "Doublet":
         y0 = col3.number_input("Baseline y0", value=0.0,
-                               key=f"{key_prefix}_y0", format="%.6g")
+                               key=wk(f"{key_prefix}_y0"), format="%.6g")
         amp = col4.number_input("Amplitude", value=0.1,
-                                key=f"{key_prefix}_amp", format="%.6g")
+                                key=wk(f"{key_prefix}_amp"), format="%.6g")
     else:
         y0 = col3.number_input(y0_label, value=0.0,
-                               key=f"{key_prefix}_y0", format="%.6g")
+                               key=wk(f"{key_prefix}_y0"), format="%.6g")
         y1 = col4.number_input(y1_label, value=0.1,
-                               key=f"{key_prefix}_y1", format="%.6g")
+                               key=wk(f"{key_prefix}_y1"), format="%.6g")
     try:
         if shape == "Step":
-            return logic.gen_step(t1, y0, y1)
+            return maneuver.gen_step(t1, y0, y1)
         if shape == "Linear ramp":
-            return logic.gen_ramp(t1, t2, y0, y1)
+            return maneuver.gen_ramp(t1, t2, y0, y1)
         if shape == "Doublet":
-            return logic.gen_doublet(t1, t2, amp, y0)
-        return logic.gen_cosine_ramp(t1, t2, y0, y1)
+            return maneuver.gen_doublet(t1, t2, amp, y0)
+        return maneuver.gen_cosine_ramp(t1, t2, y0, y1)
     except ValueError as exc:
         st.warning(str(exc))
         return None
@@ -666,23 +722,20 @@ def _render_table_generator(bulk: BulkData) -> None:
             "Cosine ramps are the recommended default — clamped-linear slope "
             "jumps ring the highest retained mode under the modal solver."
         )
-        shape = st.selectbox("Shape", _GENERATORS, key="auth_gen_shape")
+        shape = st.selectbox("Shape", _GENERATORS, key=wk("auth_gen_shape"))
         tid = st.number_input("TID", min_value=1,
                               value=logic.next_free_sid(bulk, "tabled1"),
-                              key="auth_gen_tid")
+                              key=wk("auth_gen_tid"))
         points = _generator_points(shape, "auth_gen")
-        if points is not None and st.button("Create TABLED1", key="auth_gen_apply"):
+        if points is not None and st.button("Create TABLED1", key=wk("auth_gen_apply")):
             table = Tabled1(tid=int(tid),
                             xs=[p[0] for p in points], ys=[p[1] for p in points])
-            for msg in logic.find_sid_conflicts(bulk, "tabled1", table.tid, _authored()):
-                st.warning(msg)
-            logic.apply_card(bulk, "tabled1", table, _authored())
-            _invalidate_results()
-            st.success(f"TABLED1 {table.tid} applied to the session model.")
+            session_deck.commit(bulk, changes=[("tabled1", table)],
+                                done=f"TABLED1 {table.tid} applied to the deck.")
 
 
 def _render_increment_builder(bulk: BulkData) -> None:
-    """Two-pass MLDCOMD authoring: increments now, absolute tables post-solve."""
+    """Two-pass MANCMD authoring: increments now, absolute tables post-solve."""
     with st.expander("Two-pass command builder (increments from trim)",
                      expanded=False):
         st.caption(
@@ -692,24 +745,24 @@ def _render_increment_builder(bulk: BulkData) -> None:
             "here; after running the analysis, one click offsets it by the "
             "solved trim value per mass case and writes the absolute TABLED1."
         )
-        specs: dict[tuple[int, str], logic.IncrementSpec] = (
+        specs: dict[tuple[int, str], maneuver.IncrementSpec] = (
             st.session_state.setdefault("mldcomd_increments", {}))
         mloads_sids = sorted(bulk.mloads.keys())
         surf_labels = logic.label_options(bulk, modal_only=True)
         if not mloads_sids or not surf_labels:
-            st.info("Define an MLOADS driver and at least one AESURF first.")
+            st.info("Define an MANVR driver and at least one AESURF first.")
             return
         col1, col2 = st.columns(2)
-        msid = col1.selectbox("MLOADS", mloads_sids, key="auth_inc_mloads")
+        msid = col1.selectbox("MANVR", mloads_sids, key=wk("auth_inc_mloads"))
         label = col2.selectbox("Control (AESURF label)", surf_labels,
-                               key="auth_inc_label")
+                               key=wk("auth_inc_label"))
         shape = st.selectbox("Increment shape (Δ from trim)", _GENERATORS,
-                             key="auth_inc_shape")
+                             key=wk("auth_inc_shape"))
         points = _generator_points(shape, "auth_inc",
                                    y0_label="Start Δ", y1_label="End Δ")
         if points is not None and st.button("Add increment command",
-                                            key="auth_inc_add"):
-            specs[(msid, label)] = logic.IncrementSpec(
+                                            key=wk("auth_inc_add")):
+            specs[(msid, label)] = maneuver.IncrementSpec(
                 mloads_sid=msid, label=label, points=points)
             st.rerun()
 
@@ -719,9 +772,9 @@ def _render_increment_builder(bulk: BulkData) -> None:
                 col_a, col_b = st.columns([4, 1])
                 dys = [dy for _, dy in spec.points]
                 col_a.markdown(
-                    f"- MLOADS {m} · {l}: {len(spec.points)} points, "
+                    f"- MANVR {m} · {l}: {len(spec.points)} points, "
                     f"Δ ∈ [{min(dys):g}, {max(dys):g}]")
-                if col_b.button("Remove", key=f"auth_inc_rm_{m}_{l}"):
+                if col_b.button("Remove", key=wk(f"auth_inc_rm_{m}_{l}")):
                     del specs[(m, l)]
                     st.rerun()
 
@@ -730,31 +783,476 @@ def _render_increment_builder(bulk: BulkData) -> None:
             have_solve = bool(trim_results or maneuver_results)
             if not have_solve:
                 st.button("Resolve → absolute TABLED1s", disabled=True,
-                          key="auth_inc_resolve",
+                          key=wk("auth_inc_resolve"),
                           help="Run the trim/maneuver solve first (or author "
                                "the table as absolute values).")
             elif st.button("Resolve → absolute TABLED1s", type="primary",
-                           key="auth_inc_resolve"):
+                           key=wk("auth_inc_resolve")):
                 cc = st.session_state.get("case_control")
                 if cc is None:
                     st.error("Load or author SOL 144 case control before "
                              "resolving increment commands.")
                     return
-                cards, report, errors, resolved = logic.resolve_increment_tables(
+                res = maneuver.resolve_increment_tables(
                     bulk, cc, list(specs.values()),
                     trim_results=trim_results,
                     maneuver_results=maneuver_results,
+                    loaded=st.session_state.get("file_card_sids"),
                 )
-                for family, card in cards:
-                    logic.apply_card(bulk, family, card, _authored())
-                if cards:
-                    _invalidate_results()
-                for line in report:
-                    st.success(line)
-                for err in errors:
+                for err in res.errors:
                     st.error(err)
-                for spec in resolved:
-                    specs.pop((spec.mloads_sid, spec.label), None)
+                if res.cards:
+                    _commit_resolution(bulk, cc, specs, res)
+
+
+def _commit_resolution(bulk: BulkData, cc: CaseControl,
+                       specs: dict[tuple[int, str], maneuver.IncrementSpec],
+                       res: maneuver.Resolution) -> None:
+    """Put the second pass's cards into the deck, and select any new MANVR.
+
+    ``commit`` restarts the run on success.  It returns only when the deck refused the
+    cards; the specs and the case control are then put back as they were.
+    """
+    for spec in res.resolved:
+        specs.pop((spec.mloads_sid, spec.label), None)
+    if res.selectors:
+        st.session_state.case_control = dataclasses.replace(cc, subcases=[
+            dataclasses.replace(sc, mloads_sid=res.selectors.get(sc.subcase_id, sc.mloads_sid))
+            for sc in cc.subcases])
+        st.session_state.cc_subcases = None          # the subcase editor rebuilds from it
+    if not session_deck.commit(bulk, changes=res.cards, done="  \n".join(res.report)):
+        for spec in res.resolved:
+            specs[(spec.mloads_sid, spec.label)] = spec
+        st.session_state.case_control = cc
+
+
+# ---------------------------------------------------------------------------
+# Monitors (#116): AECOMP, MONPNT1 (aerodynamic and structural), MONSECT.
+# Field layouts and rules are the card reference's and the parser's
+# (docs/10_standard/02_card_reference.md, Monitor Points); nothing is restated.
+# ---------------------------------------------------------------------------
+
+def _name_input(label: str, card_name: Optional[str], default: Any, key: str) -> str:
+    return st.text_input(label, value=(card_name if card_name is not None else str(default)),
+                         max_chars=8, key=_k(key)).strip()
+
+
+def _cid_options(bulk: BulkData) -> list[int]:
+    return [0, *sorted(bulk.cord2rs)]
+
+
+def _aecomp_form(bulk: BulkData, card: Optional[Aecomp], default_id: Any):
+    col1, col2 = st.columns(2)
+    name = _name_input("NAME (up to 8 characters)", card.name if card else None,
+                       default_id, "auth_aecomp_name")
+    types = ["AELIST", "SET1"]
+    listtype = col2.selectbox(
+        "LISTTYPE", types, index=types.index(card.listtype) if card else 0,
+        key=_k("auth_aecomp_type"),
+        help="AELIST: aero boxes, for an aerodynamic monitor. SET1: structural grids, "
+             "for a structural monitor (aero + inertia + applied load + reaction).")
+    del col1
+    lists = {"AELIST": sorted(bulk.aelists), "SET1": sorted(bulk.set1s)}
+    picked = {
+        kind: st.multiselect(
+            f"{kind} IDs (used when LISTTYPE is {kind})", lists[kind],
+            default=[i for i in (card.list_ids if card and card.listtype == kind else [])
+                     if i in lists[kind]],
+            key=_k(f"auth_aecomp_{kind.lower()}"))
+        for kind in types
+    }
+    if not name:
+        st.warning("AECOMP needs a name.")
+        return None
+    if not picked[listtype]:
+        st.warning(f"Choose at least one {listtype}.")
+        return None
+    return Aecomp(name=name, listtype=listtype, list_ids=[int(i) for i in picked[listtype]])
+
+
+def _monpnt_form(listtype: str):
+    """The MONPNT1 form for one kind of component: AELIST (aerodynamic) or SET1 (structural)."""
+    family = "monpnt1" if listtype == "AELIST" else "monpnt3"
+    build = Monpnt1 if listtype == "AELIST" else Monpnt3
+
+    def form(bulk: BulkData, card: Any, default_id: Any):
+        comps = sorted(n for n, c in bulk.aecomps.items() if c.listtype == listtype)
+        cids = _cid_options(bulk)
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            name = _name_input("NAME", card.name if card else None, default_id,
+                               f"auth_{family}_name")
+        label = col2.text_input("LABEL (up to 56 characters)",
+                                value=(card.label if card else ""), max_chars=56,
+                                key=_k(f"auth_{family}_label")).strip()
+        col3, col4, col5 = st.columns(3)
+        axes = col3.text_input("AXES (component digits, e.g. 123456)",
+                               value=(str(card.axes) if card else "123456"),
+                               key=_k(f"auth_{family}_axes")).strip()
+        comp = col4.selectbox(
+            f"COMP ({listtype}-type AECOMP)", comps,
+            index=comps.index(card.comp) if card and card.comp in comps else 0,
+            key=_k(f"auth_{family}_comp")) if comps else None
+        cp = col5.selectbox(
+            "CP (frame of X, Y, Z and of the output)", cids,
+            index=cids.index(card.cp) if card and card.cp in cids else 0,
+            key=_k(f"auth_{family}_cp"))
+        xyz = st.columns(3)
+        x, y, z = (
+            xyz[i].number_input(f"{axis} of the reference point",
+                                value=(getattr(card, axis.lower()) if card else 0.0),
+                                key=_k(f"auth_{family}_{axis.lower()}"), format="%.6g")
+            for i, axis in enumerate("XYZ"))
+        if comp is None:
+            st.warning(f"Define an AECOMP of type {listtype} first.")
+            return None
+        if not name or not axes.isdigit():
+            st.warning("MONPNT1 needs a name, and AXES as digits.")
+            return None
+        return build(name=name, label=label, axes=int(axes), comp=str(comp), cp=int(cp),
+                     x=float(x), y=float(y), z=float(z))
+    return form
+
+
+def _monsect_form(bulk: BulkData, card: Optional[Monsect], default_id: Any):
+    comps = sorted(bulk.aecomps)
+    cids = _cid_options(bulk)
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        name = _name_input("NAME", card.name if card else None, default_id,
+                           "auth_monsect_name")
+    label = col2.text_input("LABEL", value=(card.label if card else ""),
+                            key=_k("auth_monsect_label")).strip()
+    col3, col4, col5, col6 = st.columns(4)
+    comp = col3.selectbox(
+        "COMP (AECOMP)", comps,
+        index=comps.index(card.comp) if card and card.comp in comps else 0,
+        key=_k("auth_monsect_comp"),
+        help="SET1 type: aero + inertia + reaction. AELIST type: aero only.") if comps else None
+    cid = col4.selectbox(
+        "CID (cut frame)", cids,
+        index=cids.index(card.cid) if card and card.cid in cids else 0,
+        key=_k("auth_monsect_cid"),
+        help="Stations and reported components are in this frame. The surface's SPLINE2 "
+             "frame puts the stations along the elastic axis.")
+    axis = col5.selectbox(
+        "AXIS (station axis)", [1, 2, 3], index=(card.axis - 1 if card else 1),
+        format_func=lambda a: f"{a} ({'xyz'[a - 1]})", key=_k("auth_monsect_axis"))
+    side = col6.selectbox(
+        "SIDE", ["POS", "NEG"], index=(["POS", "NEG"].index(card.side) if card else 0),
+        key=_k("auth_monsect_side"),
+        help="POS sums the members with station coordinate greater than the cut.")
+    stations_text = st.text_input(
+        "Stations along AXIS, in the CID frame (increasing; space or comma separated)",
+        value=(" ".join(repr(float(v)) for v in card.stations) if card else ""),
+        key=_k("auth_monsect_stations"))
+    col7, col8 = st.columns(2)
+    tol_text = col7.text_input(
+        "TOL (blank = automatic)",
+        value=("" if card is None or card.tol is None else repr(float(card.tol))),
+        key=_k("auth_monsect_tol")).strip()
+    normal_text = col8.text_input(
+        "NORMAL nx ny nz in the CID frame (blank = the station axis)",
+        value=("" if card is None or card.normal is None
+               else " ".join(repr(float(v)) for v in card.normal)),
+        key=_k("auth_monsect_normal")).strip()
+    if comp is None:
+        st.warning("Define an AECOMP first.")
+        return None
+    try:
+        stations = logic.parse_float_list(stations_text)
+        tol = float(tol_text) if tol_text else None
+        normal_values = logic.parse_float_list(normal_text) if normal_text else []
+    except ValueError:
+        st.warning("Stations, TOL and NORMAL must be numbers.")
+        return None
+    if not name or not stations or len(normal_values) not in (0, 3):
+        st.warning("MONSECT needs a name, at least one station, and NORMAL as three "
+                   "numbers or blank.")
+        return None
+    normal = (normal_values[0], normal_values[1], normal_values[2]) if normal_values else None
+    return Monsect(name=name, label=label, comp=str(comp), cid=int(cid), axis=int(axis),
+                   side=side, tol=tol, stations=stations, normal=normal)
+
+
+def _render_monitor_figure(bulk: BulkData) -> None:
+    """The monitors on the model, drawn from the solver's own plans (monitor_view)."""
+    names = sorted([*bulk.monpnt1s, *bulk.monpnt3s, *bulk.monsects])
+    if not names:
+        st.info("No monitor in the deck yet. A MONPNT1 or MONSECT needs an AECOMP, and an "
+                "AECOMP needs an AELIST (boxes) or a SET1 (grids).")
+        return
+    if not st.checkbox("Draw the monitors on the model", value=False,
+                       key=wk("auth_mon_draw")):
+        return
+    aero = _monitor_aero(bulk)
+    geometry = monitor_geometry(bulk, aero)
+    missing = sorted(set(names) - set(geometry))
+    if missing:
+        st.warning(f"Not drawn (no aerodynamic model could be built): {', '.join(missing)}")
+    highlight = st.selectbox(
+        "Show the members and cut planes of", sorted(geometry), key=wk("auth_mon_highlight"))
+    fig = build_model_figure(bulk)
+    add_monitor_traces(fig, geometry, highlight, model_span(bulk))
+    st.plotly_chart(fig, width="stretch", key=wk("auth_mon_fig"))
+    chosen = geometry.get(highlight) if highlight else None
+    if chosen is not None:
+        what = "boxes" if chosen.kind == "aerodynamic" else "grids"
+        rows = [{"Station": (chosen.stations[i] if chosen.stations else None),
+                 "Ref X": ref[0], "Ref Y": ref[1], "Ref Z": ref[2],
+                 f"{what.capitalize()} summed": (chosen.on_side[i] if chosen.on_side
+                                                 else len(chosen.members))}
+                for i, ref in enumerate(chosen.refs)]
+        st.caption(f"{chosen.card} {chosen.name}: {chosen.kind}, {len(chosen.members)} "
+                   f"{what} in its component. Reference points in basic axes:")
+        st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
+
+
+def _monitor_aero(bulk: BulkData) -> Optional[AeroModel]:
+    """The aero model for drawing box members; rebuilt when the session model changes."""
+    cached = st.session_state.get("_auth_mon_aero")
+    if cached is not None and cached[0] is bulk:
+        return cached[1]
+    try:
+        aero: Optional[AeroModel] = build_aero_model(bulk, grid_index=build_grid_index(bulk))
+    except Exception:                 # no usable aero: structural monitors are still drawn
+        aero = None
+    st.session_state["_auth_mon_aero"] = (bulk, aero)
+    return aero
+
+
+# ---------------------------------------------------------------------------
+# Mass cases (#115)
+# ---------------------------------------------------------------------------
+
+def _masscase_form(bulk: BulkData, card: Optional[Massset], default_id: int):
+    eids = sorted(bulk.conm2s)
+
+    def describe(eid: int) -> str:
+        c = bulk.conm2s[eid]
+        return f"{eid} — grid {c.gid}, m = {c.m:g}"
+
+    col1, col2, col3 = st.columns(3)
+    sid = col1.number_input("SID", min_value=1, value=(card.sid if card else default_id),
+                            key=_k("auth_masscase_sid"))
+    label = col2.text_input("Label (blank = MASSCASE <sid>)",
+                            value=(card.label if card else ""),
+                            key=_k("auth_masscase_label")).strip()
+    scale = col3.number_input("SCALE (multiplies the baseline mass)",
+                              value=(card.scale if card else 1.0), min_value=0.0,
+                              key=_k("auth_masscase_scale"), format="%.6g")
+    add = st.multiselect(
+        "ADD — overlay CONM2s layered on the baseline", eids,
+        default=[e for e in (card.add if card else []) if e in eids],
+        format_func=describe, key=_k("auth_masscase_add"))
+    delete = st.multiselect(
+        "DELETE — baseline CONM2s removed from this case", eids,
+        default=[e for e in (card.delete if card else []) if e in eids],
+        format_func=describe, key=_k("auth_masscase_delete"))
+    st.caption("REPLACE — a baseline CONM2 dropped and an overlay CONM2 put in its place")
+    df = _pairs_editor(
+        "auth_masscase_replace",
+        {"baseline": st.column_config.SelectboxColumn("Baseline CONM2", options=eids),
+         "overlay": st.column_config.SelectboxColumn("Overlay CONM2", options=eids)},
+        [{"baseline": old, "overlay": new} for old, new in (card.replace if card else [])],
+    )
+    replace: list[tuple[int, int]] = []
+    for old, new in df[["baseline", "overlay"]].dropna().itertuples(index=False, name=None):
+        replace.append((int(old), int(new)))
+    st.caption(
+        "A CONM2 named by ADD, or as the overlay of a REPLACE, becomes overlay-only: it "
+        "leaves the baseline mass of **every** case and enters only the cases that name "
+        "it. SCALE applies to the baseline before the operations; overlays enter unscaled."
+    )
+    if not eids:
+        st.warning("The model has no CONM2 to add, replace or delete.")
+    return Massset(sid=int(sid), label=label or f"MASSCASE {int(sid)}", scale=float(scale),
+                   add=[int(e) for e in add], replace=replace,
+                   delete=[int(e) for e in delete])
+
+
+def _render_mass_summary(bulk: BulkData) -> None:
+    """Mass and C.G. of the baseline and of every mass case (the GPWG summary)."""
+    rows = []
+    for sid in [None, *sorted(bulk.masssets)]:
+        gp = compute_gpwg(bulk, sid)
+        case = bulk.masssets.get(sid) if sid is not None else None
+        rows.append({
+            "Case": "baseline" if sid is None else str(sid),
+            "Card": "—" if case is None else ("MASSSET (MSC)" if case.msc else "MASSCASE"),
+            "Label": gp.massset_label, "Mass": gp.total_mass,
+            "CG x": gp.cg_x, "CG y": gp.cg_y, "CG z": gp.cg_z,
+        })
+    st.markdown("**Mass and C.G. by case**")
+    st.dataframe(style_numeric(pd.DataFrame(rows)), width="stretch")
+    if any(case.msc for case in bulk.masssets.values()):
+        st.caption("A case built from an MSC MASSSET entry is read from the deck and "
+                   "shown here; it is not opened in the MASSCASE form.")
+
+
+# ---------------------------------------------------------------------------
+# Gust cases (#117).  Two routes on opposite sides of the architecture boundary:
+# the GUSTLF card form is unit-neutral, like every card; the generator panel
+# collects speeds, altitudes and a unit system and hands them to
+# sbeam_tools.cases.gust, which owns the formula, the atmosphere and the
+# regulation's constants.  Nothing is computed here.
+# ---------------------------------------------------------------------------
+
+def _gustlf_form(bulk: BulkData, card: Optional[Gustlf], default_id: int):
+    trims = sorted(bulk.trims)
+    col1, col2 = st.columns(2)
+    sid = col1.number_input("SID", min_value=1, value=(card.sid if card else default_id),
+                            key=_k("auth_gustlf_sid"))
+    trimid = col2.selectbox(
+        "TRIM it rides on (TRIMID)", trims,
+        index=trims.index(card.trimid) if card and card.trimid in trims else 0,
+        key=_k("auth_gustlf_trimid"),
+        help="Supplies Q, Mach and every prescribed label except URDD3. One gust "
+             "case per TRIM.",
+    ) if trims else None
+    col3, col4 = st.columns(2)
+    n = col3.number_input("Load factor N (used: URDD3 = −N·G)",
+                          value=(card.n if card else 1.0),
+                          key=_k("auth_gustlf_n"), format="%.6g")
+    g = col4.number_input("Gravity G (used; model units)",
+                          value=(card.g if card else 0.0), min_value=0.0,
+                          key=_k("auth_gustlf_g"), format="%.6g")
+    st.caption("Recorded only — echoed to the f06, never used in the solution. "
+               "0 means not recorded.")
+    r1 = st.columns(4)
+    ude = r1[0].number_input("U_de", value=(card.ude if card else 0.0),
+                             key=_k("auth_gustlf_ude"), format="%.6g")
+    veas = r1[1].number_input("V (EAS)", value=(card.veas if card else 0.0),
+                              key=_k("auth_gustlf_veas"), format="%.6g")
+    kg = r1[2].number_input("K_g", value=(card.kg if card else 0.0),
+                            key=_k("auth_gustlf_kg"), format="%.6g")
+    mu = r1[3].number_input("μ", value=(card.mu if card else 0.0),
+                            key=_k("auth_gustlf_mu"), format="%.6g")
+    r2 = st.columns(3)
+    a = r2[0].number_input("Normal-force slope a (/rad)", value=(card.a if card else 0.0),
+                           key=_k("auth_gustlf_a"), format="%.6g")
+    asrc = r2[1].selectbox("Slope source", _ASRC,
+                           index=_ASRC.index(card.asrc) if card and card.asrc in _ASRC else 0,
+                           key=_k("auth_gustlf_asrc"))
+    alt_text = r2[2].text_input(
+        "Altitude (blank = not recorded)",
+        value=("" if card is None or card.alt is None else repr(float(card.alt))),
+        key=_k("auth_gustlf_alt"),
+        help="Sea level is a real altitude, so 0 is a reading and blank is its absence.",
+    ).strip()
+    if trimid is None:
+        st.warning("Define a TRIM condition first.")
+        return None
+    try:
+        alt = float(alt_text) if alt_text else None
+    except ValueError:
+        st.warning("Altitude must be a number or blank.")
+        return None
+    return Gustlf(sid=int(sid), trimid=int(trimid), n=float(n), g=float(g),
+                  ude=float(ude), veas=float(veas), kg=float(kg), mu=float(mu),
+                  a=float(a), asrc=str(asrc), alt=alt)
+
+
+_ASRC = ["RIGID", "RESTRAINED"]
+_BASELINE = "Baseline mass"
+
+
+def _render_gust_panel(bulk: BulkData) -> None:
+    """Generate FAR/CS 23.341 gust cases with sbeam_tools.cases.gust and add them."""
+    with st.expander("Generate gust cases (FAR/CS 23.341, Pratt formula)", expanded=False):
+        st.caption(
+            "Speeds are **equivalent** airspeeds and altitudes are in the deck's own "
+            "units; the unit system supplies sea-level density, g and the ISA "
+            "atmosphere. The cases, the load factors and the cards come from "
+            "`sbeam_tools.cases.gust`, the same code `sbeam-cases` runs."
+        )
+        cc: Optional[CaseControl] = st.session_state.get("case_control")
+        if cc is None or cc.sol != 144:
+            st.info("Gust cases need a SOL 144 case control.")
+            return
+        if not bulk.trims:
+            st.info("Define a TRIM first: the cases inherit its prescribed labels.")
+            return
+        col1, col2, col3 = st.columns(3)
+        units = UNIT_SYSTEMS[col1.selectbox(
+            "Deck unit system", list(UNIT_SYSTEMS), key=wk("auth_gust_units"))]
+        template = col2.selectbox(
+            "TRIM template", sorted(bulk.trims), key=wk("auth_gust_template"),
+            help="The cases inherit every prescribed label of this TRIM except URDD3.")
+        g = col3.number_input(
+            f"Gravity g ({units.length_unit}/s²)", value=units.g, min_value=0.0,
+            key=wk(f"auth_gust_g_{units.name}"), format="%.6g")
+        sp = st.columns(3)
+        speeds = {
+            name: sp[i].number_input(
+                f"{label} ({units.speed_unit} EAS; 0 = not used)", value=0.0, min_value=0.0,
+                key=wk(f"auth_gust_{name.lower()}"), format="%.6g")
+            for i, (name, label) in enumerate(
+                (("VC", "V_C design cruise"), ("VD", "V_D design dive"),
+                 ("VB", "V_B rough air")))
+        }
+        col4, col5, col6 = st.columns(3)
+        alt_text = col4.text_input(
+            f"Altitudes ({units.length_unit}, space or comma separated)", value="0",
+            key=wk("auth_gust_alts"))
+        mass_options: list[Any] = [_BASELINE] + sorted(bulk.masssets)
+        picked = col5.multiselect(
+            "Mass cases", mass_options, default=[_BASELINE], key=wk("auth_gust_mass"),
+            format_func=lambda v: v if v == _BASELINE else f"{v} {bulk.masssets[v].label}")
+        sid_base = col6.number_input(
+            "First SID", min_value=1, value=9000, key=wk("auth_gust_sid_base"),
+            help="Each case takes one SID for its TRIM, its GUSTLF and its subcase.")
+
+        if not st.button("Generate and add to the deck", type="primary",
+                         key=wk("auth_gust_add")):
+            return
+        try:
+            altitudes = logic.parse_float_list(alt_text) or [0.0]
+            used = {name: float(v) for name, v in speeds.items() if v > 0.0}
+            if not used:
+                raise ValueError("give at least one of V_C, V_D and V_B")
+            if not picked:
+                raise ValueError("choose at least one mass case")
+            massets = [None if m == _BASELINE else int(m) for m in picked]
+            airplane = airplane_from_model(
+                cc, bulk, int(template), massets,
+                where=st.session_state.get("_uploaded_filename") or "the deck")
+            cases = gust.generate_cases(airplane, units, used, altitudes,
+                                        float(g), int(sid_base))
+        except (ValueError, KeyError) as exc:
+            st.error(f"No case was added: {exc}")
+            return
+        taken = sorted({sc.subcase_id for sc in cc.subcases} & {c.sid for c in cases})
+        if taken:
+            st.error(f"No case was added: subcase(s) {taken} already exist. "
+                     "Choose another first SID.")
+            return
+        changes: list[tuple[str, Any]] = []
+        subcases = list(cc.subcases)
+        for case in cases:
+            changes += [("trim", gust.trim_card(case, airplane)),
+                        ("gustlf", gust.gustlf_card(case))]
+            mass = bulk.masssets.get(case.mass_case.sid) if case.mass_case.sid else None
+            subcases.append(gust.gust_subcase(
+                case, airplane, "MASSSET" if mass is not None and mass.msc else "MASSCASE"))
+        # The subcases go in with the cards: commit restarts the run on success and
+        # returns only when the deck refused, and the case control is then put back.
+        st.session_state.case_control = dataclasses.replace(cc, subcases=subcases)
+        st.session_state.cc_subcases = None
+        st.session_state["_auth_gust_summary"] = gust.format_summary(cases, units)
+        if not session_deck.commit(
+                bulk, changes=changes,
+                done=f"{len(cases)} gust case(s) added: TRIM, GUSTLF and subcase "
+                     f"{cases[0].sid} to {cases[-1].sid}."):
+            st.session_state.case_control = cc
+            st.session_state.pop("_auth_gust_summary", None)
+
+
+def _show_gust_summary() -> None:
+    summary = st.session_state.get("_auth_gust_summary")
+    if summary:
+        st.markdown("**Gust cases last generated** (the table `sbeam-cases` prints)")
+        st.code(summary, language="text")
 
 
 # ---------------------------------------------------------------------------
@@ -764,13 +1262,40 @@ def _render_increment_builder(bulk: BulkData) -> None:
 def render_sol144_authoring(bulk: BulkData) -> None:
     st.subheader("Aeroelastic Authoring")
     st.caption(
-        "Author the SOL 144 / MLOADS condition cards, apply them to the "
-        "in-session model, then reference them from the Case Control tab.  "
-        "Applied cards are exported inline in the driver BDF."
+        "Author the SOL 144 / MANVR condition cards, then reference them from the "
+        "Case Control tab.  Each Apply writes the card into the deck and reads the "
+        "deck again, so the parser's rules apply to it; the same deck is run and "
+        "exported.  A card of the loaded deck is not changed in place: save your "
+        "edit under a new SID."
     )
-    tab_surf, tab_trim, tab_mloads, tab_tables = st.tabs(
-        ["Surfaces & States", "Trim Conditions", "Maneuver (MLOADS)", "Tables"]
+    session_deck.show_flash()
+    (tab_surf, tab_trim, tab_mass, tab_gust, tab_mloads, tab_tables,
+     tab_monitors) = st.tabs(
+        ["Surfaces & States", "Trim Conditions", "Mass cases (MASSCASE)", "Gust (GUSTLF)",
+         "Maneuver (MANVR)", "Tables", "Monitors"]
     )
+    with tab_monitors:
+        st.caption(
+            "An AECOMP names a collection of aero boxes (AELIST) or structural grids "
+            "(SET1). A MONPNT1 gives one resultant of it about a reference point; a "
+            "MONSECT gives one per cut station. MSC's MONPNT3 sums grid point forces, "
+            "which sbeam does not compute, so it has no form here (#86, #103): a "
+            "structural sum is a MONPNT1 whose component is a SET1-type AECOMP."
+        )
+        _render_monitor_figure(bulk)
+        _family_editor(bulk, "aecomp", "AECOMP — named box or grid collection", _aecomp_form)
+        _family_editor(bulk, "monpnt1", "MONPNT1 — aerodynamic monitor (AELIST component)",
+                       _monpnt_form("AELIST"))
+        _family_editor(bulk, "monpnt3", "MONPNT1 — structural monitor (SET1 component)",
+                       _monpnt_form("SET1"))
+        _family_editor(bulk, "monsect", "MONSECT — section-cut running loads", _monsect_form)
+    with tab_mass:
+        _render_mass_summary(bulk)
+        _family_editor(bulk, "masscase", "MASSCASE — payload / mass case", _masscase_form)
+    with tab_gust:
+        _render_gust_panel(bulk)
+        _show_gust_summary()
+        _family_editor(bulk, "gustlf", "GUSTLF — quasi-static gust load case", _gustlf_form)
     with tab_surf:
         _family_editor(bulk, "aestat", "AESTAT — rigid-body trim variable", _aestat_form)
         _family_editor(bulk, "aesurf", "AESURF — control surface", _aesurf_form)
@@ -780,16 +1305,16 @@ def render_sol144_authoring(bulk: BulkData) -> None:
         _render_preset_panel(bulk)
         _family_editor(bulk, "trim", "TRIM — static trim condition", _trim_form)
         _family_editor(bulk, "trimvar", "TRIMVAR — variable bounds (over-determined)", _trimvar_form)
-        _family_editor(bulk, "trimobj", "TRIMOBJ — weighted objective (over-determined)", _trimobj_form)
-        _family_editor(bulk, "trimcon", "TRIMCON — inequality constraints (over-determined)", _trimcon_form)
+        _family_editor(bulk, "trimobj", "TRIMWGT — weighted objective (over-determined)", _trimobj_form)
+        _family_editor(bulk, "trimcon", "TRIMINEQ — inequality constraints (over-determined)", _trimcon_form)
         _family_editor(bulk, "diverg", "DIVERG — divergence sweep", _diverg_form)
     with tab_mloads:
         _render_increment_builder(bulk)
-        _family_editor(bulk, "mldtrim", "MLDTRIM — initial-condition trim", _mldtrim_form)
-        _family_editor(bulk, "mldtime", "MLDTIME — integration window", _mldtime_form)
-        _family_editor(bulk, "mldcomd", "MLDCOMD — pilot command histories", _mldcomd_form)
-        _family_editor(bulk, "mldprnt", "MLDPRNT — ASCII time-history output", _mldprnt_form)
-        _family_editor(bulk, "mloads", "MLOADS — transient maneuver driver", _mloads_form)
+        _family_editor(bulk, "mldtrim", "MANTRIM — initial-condition trim", _mldtrim_form)
+        _family_editor(bulk, "mldtime", "MANTIME — integration window", _mldtime_form)
+        _family_editor(bulk, "mldcomd", "MANCMD — pilot command histories", _mldcomd_form)
+        _family_editor(bulk, "mldprnt", "MANPRNT — ASCII time-history output", _mldprnt_form)
+        _family_editor(bulk, "mloads", "MANVR — transient maneuver driver", _mloads_form)
     with tab_tables:
         _render_table_generator(bulk)
         _family_editor(bulk, "tabled1", "TABLED1 — tabular time function", _tabled1_form)
@@ -807,12 +1332,10 @@ def _render_authoring_export(bulk: BulkData) -> None:
     cc = st.session_state.get("case_control")
     errors: list[str] = []
     if cc is not None and cc.sol == 144:
-        errors, _ = logic.validate_sol144_authoring(
+        errors, _ = logic.check_case_control(
             bulk, cc,
             unresolved_increments=list(
                 st.session_state.get("mldcomd_increments", {}).values()),
-            file_sids=st.session_state.get("file_card_sids"),
-            authored=authored,
         )
         for err in errors:
             st.error(err)
@@ -821,20 +1344,21 @@ def _render_authoring_export(bulk: BulkData) -> None:
     if cc is not None:
         col1.download_button(
             "Download run BDF (driver + INCLUDEs)",
-            data=export_sol144_bdf(cc, bulk, authored),
+            data=export_bdf_text(
+                cc, authored_block=session_deck.session_cards_text(bulk),
+                bulk_section=deck_bulk_section(
+                    st.session_state.get("_uploaded_source_text"))),
             file_name=logic.suggest_run_name(stem, cc),
             mime="text/plain",
             disabled=bool(errors),
-            key="auth_export_driver",
+            key=wk("auth_export_driver"),
         )
     else:
         col1.caption("Define a case control to export a run deck.")
     col2.download_button(
         "Download authored cards only (.bdf snippet)",
-        data=write_authored_block(
-            bulk, authored,
-            "Authored in the sbeam viewer (SOL 144 / MLOADS authoring tab)"),
+        data=write_authored_block(bulk, authored, logic.AUTHORED_HEADER),
         file_name=f"{stem}_authored_cards.bdf",
         mime="text/plain",
-        key="auth_export_cards",
+        key=wk("auth_export_cards"),
     )

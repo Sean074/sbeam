@@ -17,7 +17,7 @@ S-GUST4      K_g strictly in (0, 0.88); dn monotone in V and in W/S.
 S-GUST5      Flagship end-to-end, every expected value recomputed from the
              parsed deck (the VAL2 discipline) — never module constants.
 S-GUST6a     The generated deck parses; its TRIM cards carry the expected
-             q / RHOREF / labels and leave URDD3 unprescribed for GUSTLF.
+             q / labels and leave URDD3 unprescribed for GUSTLF (the density is in the deck comment; #87).
 ===========  =============================================================
 
 S-GUST6b (GUSTLF cards re-emit byte-identically through ``card_writers``)
@@ -28,7 +28,6 @@ card through ``write_card`` today so the two agree by construction.
 import math
 import shutil
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -41,9 +40,9 @@ from sbeam_tools.cases.gust import (
     mass_ratio,
 )
 from sbeam_tools.common import UNIT_SYSTEMS, isa_density, read_airplane
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
-FLAGSHIP = SAMPLE / "cessna210_flagship_trim.bdf"
+FLAGSHIP = sample_path("cessna210_flagship_trim.bdf")
 
 SI = UNIT_SYSTEMS["SI"]
 IMPERIAL = UNIT_SYSTEMS["IMPERIAL"]
@@ -295,7 +294,7 @@ class TestSGust6GeneratedDeck:
     @pytest.fixture(scope="class")
     def generated(self, tmp_path_factory, flagship, flagship_cases):
         out = tmp_path_factory.mktemp("gust")
-        shutil.copy(SAMPLE / "cessna210_flagship_bulk.bdf", out)
+        shutil.copy(sample_path("cessna210_flagship_bulk.bdf"), out)
         lines = emit_deck(flagship_cases, flagship, SI, "test", "S-GUST6a")
         deck = out / "gust_cases.bdf"
         deck.write_text("\n".join(lines) + "\n")
@@ -321,7 +320,6 @@ class TestSGust6GeneratedDeck:
         for case in flagship_cases:
             trim = bulk.trims[case.sid]
             assert trim.q == pytest.approx(case.q, rel=1e-6)
-            assert trim.rhoref == pytest.approx(case.rho, rel=1e-6)
             # URDD3 is GUSTLF's to supply — never authored on the TRIM (DEF-M4).
             assert "URDD3" not in trim.vars
             assert trim.vars == {"PITCH": 0.0, "URDD5": 0.0}

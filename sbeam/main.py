@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Any, Callable, Dict
 
 from sbeam.parser.bdf_reader import parse_bdf
+from sbeam.solver.precheck import require_runnable
 from sbeam.results.f06_writer import (
+    build_f06_gpwg_text,
     build_f06_sol101_text,
     build_f06_sol103_text,
     build_f06_sol144_text,
@@ -46,6 +48,13 @@ def main() -> None:
         sys.exit("Error: the case control defines nothing to run "
                  "(no SUBCASE and no selector or output request)")
 
+    # Every fault of the case control against the model is reported before any
+    # subcase is solved (#124), not one at a time from inside the solver.
+    try:
+        require_runnable(cc, bulk)
+    except ValueError as exc:
+        sys.exit(f"Error: {exc}")
+
     sol144_results = None
     maneuver_results: Dict[int, Any] = {}
     diverg_results: Dict[int, Any] = {}
@@ -61,6 +70,16 @@ def main() -> None:
             from sbeam.solver.sol103 import run_sol103
             results = {sc.subcase_id: run_sol103(bulk, sc) for sc in cc.subcases}
             build_text = build_f06_sol103_text
+            # MODEXP (#100): the reduced modal model for sgear / Flaps
+            exports = [sc for sc in cc.subcases if sc.modexp_set is not None]
+            if exports:
+                from sbeam.results.modal_export import export_modal_model
+                for sc in exports:
+                    stem = str(bdf_path.with_suffix("")) + (
+                        f"_sc{sc.subcase_id}" if len(exports) > 1 else "")
+                    for path in export_modal_model(stem, cc, bulk, sc,
+                                                   results[sc.subcase_id]):
+                        print(f"Written: {path}")
         elif cc.sol == 144:
             # SOL 144 needs a prebuilt AeroModel + grid_index (not the two-arg
             # solver pattern of 101/103). Build the aero model once, share an
@@ -70,17 +89,19 @@ def main() -> None:
             from sbeam.solver.sol144 import (
                 run_sol144_trim, run_sol144_diverg, AeroCache,
             )
+            from sbeam.solver.sol144_util import flight_mach
             from sbeam.solver.maneuver_qs import run_maneuver_qs
             from sbeam.solver.maneuver_modal import (
                 run_maneuver_modal, ManeuverBasisCache,
             )
             grid_index = build_grid_index(bulk)
-            aero = build_aero_model(bulk, grid_index=grid_index)
+            aero = build_aero_model(bulk, grid_index=grid_index,
+                                    mach=flight_mach(cc, bulk))
             cache = AeroCache(bulk, grid_index, seed=aero)
             # Step 62 (D3): one free-free basis per job, shared across every
-            # modal MLOADS subcase (MASSCASE sweeps swap M only, never Phi).
+            # modal MANVR subcase (MASSCASE sweeps swap M only, never Phi).
             basis_cache = ManeuverBasisCache(bulk, aero)
-            # An MLOADS subcase runs the Phase G0 transient maneuver-loads solver
+            # An MANVR subcase runs the Phase G0 transient maneuver-loads solver
             # (the Step 62 modal solver when the card requests it via
             # NMODES/METHOD/ZETA, the increment-1 direct l-set solver otherwise);
             # a DIVERG subcase runs the Step 55 divergence sweep (no TRIM needed);
@@ -113,6 +134,7 @@ def main() -> None:
         sys.exit(f"Solver error: {exc}")
 
     with open(f06_path, "w") as fh:
+        fh.write(build_f06_gpwg_text(bulk, cc))       # PARAM,GRDPNT (#90); "" when not set
         for sc_id, result in results.items():
             fh.write(build_text(cc, bulk, result, sc_id))
         if cc.sol == 144:
@@ -148,7 +170,7 @@ def main() -> None:
             write_section_loads_csv(str(sec_path), sol144_results)
             print(f"Written: {sec_path}")
 
-    # Phase G0: transient maneuver-loads time histories (MLDPRNT) + critical-step
+    # Phase G0: transient maneuver-loads time histories (MANPRNT) + critical-step
     # net (aero + inertial) FORCE/MOMENT export.
     if maneuver_results:
         from sbeam.results.maneuver_output import write_maneuver_outputs

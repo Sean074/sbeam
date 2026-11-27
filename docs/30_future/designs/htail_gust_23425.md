@@ -9,7 +9,7 @@ No code until they are agreed in chat.
 - **Owner:** Sean O'Meara
 - **Related:** #1 (`GUSTLF`, the Pratt helpers in `sbeam_tools/cases/gust.py`, design note
   `gust_pratt_23341.md` D2, which split this item out); #4 / v0.7.0 (systematic case-family
-  generation); MLOADS `NZ_REL` (charter §5 — same defect class as finding F1, D5).
+  generation); MANVR `NZ_REL` (charter §5 — same defect class as finding F1, D5).
 
 ---
 
@@ -145,7 +145,7 @@ prescribe `URDD3` (the card supplies it, DEF-M4 single-source rule); the TRIM pr
 `{ANGLEA} ∪ {≥ 1 AESURF label}` and nothing else; SUPORT is exactly the symmetric pair
 (3, 5); `G > 0`; `DALPHA` finite and nonzero (**warn** when `|DALPHA| > 0.35 rad`, the
 linear-VLM range); `KG`, when recorded, in `(0, 0.88)`; `HTMON`, when given, names an
-existing MONPNT1. The parse-time "over-determined but no TRIMOBJ" diagnostic is taught about
+existing MONPNT1. The parse-time "over-determined but no TRIMWGT" diagnostic is taught about
 GUSTHT exactly as it was about GUSTLF (#1 §6.1a), and a gate asserts the generated deck parses
 clean.
 
@@ -210,7 +210,7 @@ Cost: two trim solves per GUSTHT subcase; the aero cache is shared.
   `SHT` from the CAERO1 geometry of the named AELIST; `DLHT = q·DALPHA·AHTE·SHT`.
 - Emits `TRIM` + `GUSTHT` pairs, one per (speed × altitude × mass case × sense).
 
-**Sample:** `sample/cessna210_flagship_tailgust.bdf` — V_C/V_D × ± × three MASSCASE cases, sea
+**Sample:** `sample/cessna210_flagship/cessna210_flagship_tailgust.bdf` — V_C/V_D × ± × three MASSCASE cases, sea
 level, generated output with the generating command in its header. An HT `AECOMP`/`MONPNT1`
 (`MHTAERO`, boxes 3000–3047 and 4000–4047) is added to the shared flagship bulk (D7).
 
@@ -232,7 +232,7 @@ level, generated output with the generating command in its header. An HT `AECOMP
 
 ### 8.1 Expected numbers (prototype, 2026-10-25)
 
-In-memory runs of the current solver on `sample/cessna210_flagship_gust.bdf` SUBCASE 9004
+In-memory runs of the current solver on `sample/cessna210_flagship/cessna210_flagship_gust.bdf` SUBCASE 9004
 (V_C = 86.0 m/s EAS, sea level, MTOW): `q = 4530.05`, `m = 1560.03 kg`, `g = 9.81`,
 `U_de = 15.24`, `K_g = 0.69631`, Pratt `n = 4.148473`.
 *Recomputed 2026-10-25 after the #52 WT2 correction fix (the first draft's numbers were

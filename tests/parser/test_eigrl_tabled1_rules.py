@@ -4,16 +4,15 @@ Audit findings S12, S13, A14, P13 (2026-11-16).  Page numbers are PDF pages of t
 Nastran 2024.1 Quick Reference Guide: EIGRL p.1801-1803, TABLED1 p.2896-2897.
 """
 import warnings
-from pathlib import Path
 
 import pytest
 
 from sbeam.model.maneuver import Tabled1
 from sbeam.parser.bdf_reader import parse_bdf, parse_bulk_data
 from sbeam.solver.maneuver_qs import warn_extrapolated_commands
-from sbeam_tools.viewer import sol144_authoring as logic
+from sbeam_tools.cases import maneuver
+from tests.samples import sample_decks
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
 
 
 class TestEigrl:
@@ -99,7 +98,7 @@ class TestExtrapolationIsAnnounced:
             warnings.simplefilter("error")
             warn_extrapolated_commands([("ELEV", 7)], {7: Tabled1(tid=7, xs=xs, ys=ys)}, 0.0, 2.0)
 
-    @pytest.mark.parametrize("deck", sorted(SAMPLE.glob("*mloads*.bdf")), ids=lambda p: p.name)
+    @pytest.mark.parametrize("deck", sample_decks("*mloads*.bdf"), ids=lambda p: p.name)
     def test_no_repo_command_table_is_extrapolated_on_a_slope(self, deck):
         """So no shipped transient result moved with #70."""
         with warnings.catch_warnings():
@@ -114,11 +113,11 @@ class TestExtrapolationIsAnnounced:
 
 
 @pytest.mark.parametrize("points", [
-    logic.gen_step(0.1, 0.0, 0.5), logic.gen_ramp(0.1, 0.3, 0.0, 0.5),
-    logic.gen_cosine_ramp(0.0, 1.0, 0.0, 1.0), logic.gen_doublet(0.1, 0.5, 0.2, 1.0),
+    maneuver.gen_step(0.1, 0.0, 0.5), maneuver.gen_ramp(0.1, 0.3, 0.0, 0.5),
+    maneuver.gen_cosine_ramp(0.0, 1.0, 0.0, 1.0), maneuver.gen_doublet(0.1, 0.5, 0.2, 1.0),
 ], ids=["step", "ramp", "cosine", "doublet"])
 def test_generated_shapes_hold_their_last_value(points):
-    """Each viewer generator ends with two points of equal y, so the table is flat
+    """Each command-shape generator ends with two points of equal y, so the table is flat
     beyond its end under linear extrapolation."""
     table = Tabled1(tid=1, xs=[p[0] for p in points], ys=[p[1] for p in points])
     assert table.end_slopes()[1] == 0.0

@@ -11,7 +11,6 @@ any of those cannot pass by agreeing with itself (the pre-#8 failure mode).
 """
 
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -25,14 +24,14 @@ from sbeam.model.aero import require_aeros
 from sbeam.model.bulk_data import BulkData
 from sbeam.model.grid import Grid
 from sbeam.parser.bdf_reader import parse_bdf, parse_bulk_file
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
 V = 70.0
 DOFS = [2, 3, 4, 5, 6]
 
 
 def _load(name, run_file):
-    path = SAMPLE / name
+    path = sample_path(name)
     if run_file:
         _cc, bulk = parse_bdf(str(path))
     else:
@@ -89,7 +88,7 @@ def test_surge_column_is_zero(deck):
 
 def test_scales_follow_from_the_identity_not_the_other_way_round():
     """The sign table is a consequence: DOFs 2/4/6 negative, 3 negative, 5 positive."""
-    bulk = parse_bulk_file(str(SAMPLE / "val_vlm_rect_ar8.bdf"))
+    bulk = parse_bulk_file(str(sample_path("val_vlm_rect_ar8.bdf")))
     s = rigid_rate_scales(bulk, V)
     a = require_aeros(bulk)
     assert s == {1: 0.0, 2: -1 / V, 3: -1 / V, 4: -a.bref / (2 * V),
@@ -114,7 +113,7 @@ def test_vertical_fin_sees_no_pitch_rate_and_sees_roll_rate_through_its_height()
 
 def test_roll_column_is_about_the_rcsid_origin_not_y_zero():
     """D3: shift the RCSID origin sideways and the ROLL column shifts with it."""
-    bulk = parse_bulk_file(str(SAMPLE / "val_vlm_rect_ar8.bdf"))
+    bulk = parse_bulk_file(str(sample_path("val_vlm_rect_ar8.bdf")))
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         aero = build_aero_model(bulk, grid_index=build_grid_index(bulk))

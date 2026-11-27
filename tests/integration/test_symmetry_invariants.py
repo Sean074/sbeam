@@ -46,8 +46,8 @@ from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.solver.maneuver_modal import ManeuverBasisCache, run_maneuver_modal
 from sbeam.solver.maneuver_qs import run_maneuver_qs
 from sbeam.solver.sol144 import AeroCache, run_sol144_trim
+from tests.samples import sample_decks, sample_path
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
 REL_TOL = 1e-9          # fixed code sits at <= 1e-13 (prototyped 2026-10-25)
 PAIR_TOL = 1e-6         # geometric matching, relative to the semispan
 
@@ -215,7 +215,7 @@ def mirror_residual(vec: np.ndarray, gi: dict[int, int], m: Mirror) -> float:
 # --------------------------------------------------------------------------- #
 def _sol144_decks() -> list[Path]:
     out = []
-    for p in sorted(SAMPLE.glob("*.bdf")):
+    for p in sample_decks():
         text = p.read_text()
         if any(ln.split("$")[0].split() == ["SOL", "144"] for ln in text.splitlines()):
             out.append(p)
@@ -248,7 +248,7 @@ _DECKS: dict[str, Deck] = {}
 
 def _deck(name: str) -> Deck:
     if name not in _DECKS:
-        _DECKS[name] = Deck(SAMPLE / name)
+        _DECKS[name] = Deck(sample_path(name))
     return _DECKS[name]
 
 
@@ -375,7 +375,7 @@ def test_symmetric_maneuvers_have_no_lateral_load(name):
         pytest.skip("not mirror-symmetric")
     subcases = list(symmetric_mloads_subcases(d))
     if not subcases:
-        pytest.skip("no symmetric MLOADS subcase")
+        pytest.skip("no symmetric MANVR subcase")
     basis = None
     fails = []
     for sc in subcases:
@@ -411,7 +411,7 @@ def test_gate_catches_the_52_defect(monkeypatch):
 
     monkeypatch.setattr(am, "wt2_reference_cp",
                         lambda boxes, ajj_inv: ajj_inv @ -np.ones(len(boxes)))
-    d = Deck(SAMPLE / "cessna210_flagship_trim.bdf")
+    d = Deck(sample_path("cessna210_flagship_trim.bdf"))
     assert d.mirror is not None
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

@@ -1,0 +1,590 @@
+$ COMPAT: sbeam-extension
+$ =========================================================================
+$ cessna210_flagship_bulk.bdf — FLAGSHIP realistic-airplane SOL 144 bulk model
+$ (Step 65).  Bulk data ONLY — no case control.  Pulled in by the three thin
+$ drivers via a case-control INCLUDE:
+$
+$   cessna210_flagship_trim.bdf     SC1 1g cruise + SC2 2.5g pull-up
+$   cessna210_flagship_massset.bdf  one TRIM x three MASSCASE payload cases
+$   cessna210_flagship_mloads.bdf   trim + elevator-ramp transient (MANVR)
+$
+$ Companion section-coefficient table: cessna210_flagship_section_data.csv.
+$ Tutorial walk-through: docs/20_theory/02_realistic_airplane_sol144.md.
+$
+$ Coordinate system: X = aft along the fuselage, Y = starboard, Z = up;
+$ origin ahead of the spinner.  Units: SI (m, N, kg, Pa, s).
+$
+$ Full-span model (SYMXZ = 0): both wing halves and both HTP halves are
+$ modelled explicitly; the VTP lies in the XZ plane (y = 0) as one CAERO1.
+$ sbeam has no half-span/symmetry support — see AEROS below.
+$
+$ -------------------------------------------------------------------------
+$ AIRCRAFT GEOMETRY (Cessna 210-like, cantilever high wing)
+$ -------------------------------------------------------------------------
+$   Wing:  span 11.20, root chord 1.75, tip chord 1.15, area 16.24,
+$          MAC 1.4707, AR 7.723, 1.5 deg dihedral, high wing at z = 1.25.
+$          Root LE at (2.00, 0, 1.25); tip LE at (2.15, 5.60, 1.397).
+$          The QUARTER-CHORD LINE IS STRAIGHT at x = 2.4375 (root
+$          2.00 + 0.4375, tip 2.15 + 0.2875), so the quarter-MAC is at
+$          x = 2.4375 exactly.  y_MAC = 2.607, LE of the MAC at x = 2.0698.
+$          (An earlier revision of this model quoted "quarter-MAC near
+$          x = 2.55" — that was wrong by 0.11 m; the value above is exact.)
+$   HTP:   span 3.46, root chord 1.05, tip chord 0.75, at z = 0.70.
+$          Root LE at (6.90, 0, 0.70); tip LE at (7.10, 1.73, 0.70).
+$          The TWO-THIRDS-CHORD LINE IS ALSO STRAIGHT, at x = 7.60
+$          (root 6.90 + 0.70, tip 7.10 + 0.50) — this is the elevator hinge.
+$          Area 3.114, quarter-MAC at x = 7.2216, tail arm 4.784,
+$          tail volume V_H = 3.114 x 4.784 / (16.24 x 1.4707) = 0.6237.
+$   VTP:   height 1.50, root chord 1.50, tip chord 0.85.
+$          Root LE at (6.60, 0, 0.80), tip LE at (7.10, 0, 2.30).
+$ =========================================================================
+$
+$ ----------------------------------------------------------------- MATERIAL
+$ Aluminium alloy (2024-T3 representative): E = 70 GPa, G = 26.9 GPa,
+$ nu = 0.3, rho = 2700.  The MAT1 density is live: CBAR distributed mass
+$ (rho*A) carries the primary STRUCTURE and the CONM2s carry the powerplant,
+$ systems, furnishing and payload.  See the mass budget below.
+MAT1, 1, 7.0e10, 2.69e10, 0.3, 2700.0
+$
+$ ---------------------------------------------------------------- PROPERTIES
+$ Cross-section areas are sized as a MASS model as well as a stiffness model:
+$ rho*A*L over each group must land on a believable structural weight.  (The
+$ pre-flagship revision of this deck used A = 0.020 on the fuselage, which is
+$ a ~54 kg/m spine — 564 kg of structure at CG x = 4.06.  That is a stiffness
+$ placeholder, not an airframe, and it made the target CG unreachable.)
+$
+$ PID 1 — forward fuselage (x 0.50 -> 5.00)   A=0.0100  m_struct = 121.5 kg
+PBAR, 1, 1, 0.0100, 0.010, 0.010, 0.015
+$ PID 4 — aft fuselage / tailcone (x 5.00 -> 8.00), tapered  A=0.0040
+PBAR, 4, 1, 0.0040, 0.0040, 0.0040, 0.0060
+$ PID 2 — wing spar box.  MIND THE PBAR PLANES: I1 is about the element
+$ y-axis and I2 about the element z-axis, so for a wing CBAR running along
+$ global Y with orientation vector (1,0,0) it is I2 that resists FLAPWISE
+$ (vertical) bending and I1 that resists CHORDWISE bending — the opposite of
+$ what the pre-flagship revision of this deck claimed in its comment.
+$ Verified directly: dividing I2 by 10 multiplies the 1g wing-tip deflection
+$ by 10 (13.5 -> 134.7 mm); dividing I1 by 10 changes it by 0.15%.
+$
+$ I2 and J are CALIBRATED, not inherited.  With the pre-flagship values
+$ (I2=8.0e-5, J=3.0e-4) the wing is effectively rigid: the elastic-restrained
+$ CZ_alpha sits +0.44% off rigid and divergence is 175x the trim q, so there
+$ is no aeroelasticity left to demonstrate.  The values below put the
+$ elastic-restrained CZ_alpha +4.1% above rigid with divergence still 19.8x
+$ the cruise q, and give wing-tip deflections of 109 mm at 1g / 272 mm at
+$ 2.5g (2.0% / 4.9% of the 5.6 m semispan) — a believable GA wing.
+$   A=0.0050, I1 (chordwise), I2 (flapwise), J (torsion)
+PBAR, 2, 1, 0.0050, 8.0e-4, 1.0e-5, 3.0e-5
+$ PID 3 — empennage box (HTP/VTP)   A=0.00225
+PBAR, 3, 1, 0.00225, 2.0e-4, 2.0e-5, 1.0e-4
+$
+$ ------------------------------------------------------------ COORD SYSTEMS
+$ CID 990 — stability axis referenced by AEROS RCSID: origin at the trim
+$ reference point GRID 900 (the quarter-MAC), z DOWN.  This is the HA144A
+$ convention, and it is what makes URDD3 = -g a 1g pull (see the TRIM cards).
+CORD2R, 990, 0, 2.4375, 0.0, 0.60, 2.4375, 0.0, -9.40
++, 12.4375, 0.0, 0.60
+$
+$ CIDs 991-994 — SPLINE2 axis systems.  MSC convention (QRG SPLINE2 remark
+$ 2): the spline axis is the CID *y*-axis projected onto the plane of the
+$ panel; the deflection direction is the panel normal.  Only the y-axis and
+$ the origin of each CID are read (#74).  Each is built from the elastic
+$ axis it serves: y = unit(root EA -> tip EA), z = global +Z made orthogonal
+$ to y, x = y cross z.
+$ CID 991 — RIGHT wing spline axis, y = (-0.016064, 0.999527, 0.026238)
+CORD2R, 991, 0, 2.70000, 0.00000, 1.25000, 2.70422, -0.26234, 11.24656
++, 12.69871, 0.16069, 1.25000
+$ CID 992 — LEFT wing spline axis (mirror), y = (-0.016064, -0.999527, 0.026238)
+CORD2R, 992, 0, 2.70000, 0.00000, 1.25000, 2.70422, 0.26234, 11.24656
++, -7.29871, 0.16069, 1.25000
+$ CID 993 — RIGHT HTP spline axis, y = (0.046193, 0.998933, 0.0)
+CORD2R, 993, 0, 7.32000, 0.00000, 0.70000, 7.32000, 0.00000, 10.70000
++, 17.30933, -0.46193, 0.70000
+$ CID 994 — LEFT HTP spline axis, y = (0.046193, -0.998933, 0.0)
+CORD2R, 994, 0, 7.32000, 0.00000, 0.70000, 7.32000, 0.00000, 10.70000
++, -2.66933, -0.46193, 0.70000
+$
+$ CID 995 — ELEVATOR hinge axis.  AESURF takes the hinge as the CID *y*-axis
+$ (same convention as the SPLINE2 spline axis, and as HA144A's canard CID 1),
+$ so y must run spanwise along the straight two-thirds-chord line x = 7.60.
+$ Built as z = +Z, x = +X, hence y = z cross x = +Y.  Getting this wrong is
+$ silent: the ELEV column of D_jx comes out identically zero and the trim
+$ Schur system goes singular with nothing to say why.
+CORD2R, 995, 0, 7.60, 0.0, 0.70, 7.60, 0.0, 10.70
++, 17.60, 0.0, 0.70
+$
+$ --------------------------------------------------------------------- NODES
+$ Fuselage spine (y = 0, z = 0.60 cabin centreline).  GRID 900 is the trim
+$ reference / SUPORT point and sits IN the spine load path at the quarter-MAC
+$ (x = 2.4375) — it is a real structural node between GRID 1 and GRID 2, not
+$ a grid hung off an RBE2.
+GRID, 1, , 0.50, 0.0, 0.60
+GRID, 900, , 2.4375, 0.0, 0.60
+GRID, 2, , 2.70, 0.0, 0.60
+GRID, 3, , 5.00, 0.0, 0.60
+GRID, 4, , 6.90, 0.0, 0.60
+GRID, 5, , 8.00, 0.0, 0.60
+$
+$ Wing elastic axis (~40% chord, z follows the 1.5 deg dihedral)
+GRID, 10, , 2.70, 0.0,  1.250
+GRID, 11, , 2.655, 2.80, 1.323
+GRID, 12, , 2.610, 5.60, 1.397
+GRID, 111, , 2.655, -2.80, 1.323
+GRID, 112, , 2.610, -5.60, 1.397
+$
+$ HTP elastic axis (z = 0.70)
+GRID, 20, , 7.32, 0.0,   0.70
+GRID, 21, , 7.36, 0.865, 0.70
+GRID, 22, , 7.40, 1.73,  0.70
+GRID, 121, , 7.36, -0.865, 0.70
+GRID, 122, , 7.40, -1.73,  0.70
+$
+$ VTP elastic axis (vertical)
+GRID, 30, , 7.20, 0.0, 0.80
+GRID, 31, , 7.36, 0.0, 1.55
+GRID, 32, , 7.525, 0.0, 2.30
+$
+$ ------------------------------------------------------------------ ELEMENTS
+$ Fuselage CBARs (along X) — orientation vec (0,1,0).  PID 1 forward of
+$ GRID 3, PID 4 aft of it (the tapered tailcone).
+CBAR, 1, 1, 1, 900, 0.0, 1.0, 0.0
+CBAR, 2, 1, 900, 2, 0.0, 1.0, 0.0
+CBAR, 3, 1, 2, 3, 0.0, 1.0, 0.0
+CBAR, 4, 4, 3, 4, 0.0, 1.0, 0.0
+CBAR, 5, 4, 4, 5, 0.0, 1.0, 0.0
+$ Wing root strut (fuselage up to wing EA) — orientation vec (1,0,0)
+CBAR, 10, 2, 2, 10, 1.0, 0.0, 0.0
+$ Wing CBARs (along Y) — orientation vec (1,0,0)
+CBAR, 11, 2, 10, 11, 1.0, 0.0, 0.0
+CBAR, 12, 2, 11, 12, 1.0, 0.0, 0.0
+CBAR, 111, 2, 10, 111, 1.0, 0.0, 0.0
+CBAR, 112, 2, 111, 112, 1.0, 0.0, 0.0
+$ Tail struts (fuselage to HTP / VTP roots) — orientation vec (0,1,0)
+CBAR, 20, 3, 4, 20, 0.0, 1.0, 0.0
+CBAR, 30, 3, 4, 30, 0.0, 1.0, 0.0
+$ HTP CBARs (along Y) — orientation vec (1,0,0)
+CBAR, 21, 3, 20, 21, 1.0, 0.0, 0.0
+CBAR, 22, 3, 21, 22, 1.0, 0.0, 0.0
+CBAR, 121, 3, 20, 121, 1.0, 0.0, 0.0
+CBAR, 122, 3, 121, 122, 1.0, 0.0, 0.0
+$ VTP CBARs (along Z) — orientation vec (0,1,0)
+CBAR, 31, 3, 30, 31, 0.0, 1.0, 0.0
+CBAR, 32, 3, 31, 32, 0.0, 1.0, 0.0
+$
+$ ============================================================== POINT MASSES
+$ 19 CONM2s carrying powerplant, systems, furnishing and payload.  Together
+$ with ~349 kg of CBAR structural mass the baseline aircraft is 1081 kg with
+$ the CG at 22% MAC (x = 2.3934) — 31 points of static margin against a
+$ neutral point near 53% MAC, i.e. a conventionally stable GA airplane.
+$
+$ THIS IS A LUMPED STICK IDEALISATION.  GRID 1 is the engine-mount station
+$ and its 313 kg stands for the whole powerplant installation (engine,
+$ propeller, spinner, cowling, nose gear, firewall accessories) — ~29% of
+$ the aircraft mass on the nose, which is what puts the CG at 22% MAC on
+$ this airframe.  The MASSCASE cases below move the payload, not this group.
+$
+$ Fuselage
+CONM2, 1, 1, 0, 312.8
+CONM2, 2, 900, 0, 203.6
+CONM2, 3, 2, 0, 45.0
+$ CONM2 7 — rear-seat occupants + baggage.  Split out of the GRID 2 lump so
+$ the MASSCASE cases have a payload card to DELETE / REPLACE; 45 + 85 = the
+$ 130 kg this station carries in the baseline, so the baseline is unchanged.
+CONM2, 7, 2, 0, 85.0
+CONM2, 4, 3, 0, 8.0
+CONM2, 5, 4, 0, 5.0
+CONM2, 6, 5, 0, 3.0
+$ Wing — centre section + per-station equipment (both halves)
+CONM2, 10, 10, 0, 20.0
+CONM2, 11, 11, 0, 12.0
+CONM2, 12, 12, 0, 5.0
+CONM2, 111, 111, 0, 12.0
+CONM2, 112, 112, 0, 5.0
+$ HTP
+CONM2, 20, 20, 0, 4.0
+CONM2, 21, 21, 0, 2.0
+CONM2, 22, 22, 0, 1.0
+CONM2, 121, 121, 0, 2.0
+CONM2, 122, 122, 0, 1.0
+$ VTP
+CONM2, 30, 30, 0, 3.0
+CONM2, 31, 31, 0, 1.5
+CONM2, 32, 32, 0, 1.0
+$
+$ ------------------------------------------------------ OVERLAY POINT MASSES
+$ Referenced by a MASSCASE ADD or by the overlay slot of a REPLACE, so they are
+$ EXCLUDED from the baseline mass and enter only the cases that name them.
+$ Ordinary CONM2 cards in every other respect.
+$
+$ Wing fuel, half tanks (MASSCASE 20 CRUISE) — 120 kg at the wing EA stations
+CONM2, 6001, 11, 0, 40.0
+CONM2, 6002, 111, 0, 40.0
+CONM2, 6003, 12, 0, 20.0
+CONM2, 6004, 112, 0, 20.0
+$ Wing fuel, full tanks (MASSCASE 30 MTOW) — 240 kg
+CONM2, 6011, 11, 0, 80.0
+CONM2, 6012, 111, 0, 80.0
+CONM2, 6013, 12, 0, 40.0
+CONM2, 6014, 112, 0, 40.0
+$ Full cabin (MASSCASE 30 MTOW) — four occupants + baggage, REPLACING the
+$ 85 kg baseline card 7.  This one carries an OFFSET: its CG sits 0.35 m aft
+$ of and 0.10 m below GRID 2, so the deck exercises the CONM2 offset path
+$ (translation-rotation coupling and the parallel-axis transfer) inside a
+$ mass case rather than only at the baseline.
+CONM2, 6020, 2, 0, 324.0, 0.35, 0.0, -0.10
+$
+$ ============================================================== MASS CASES
+$ Three payload conditions over one airframe.  Stiffness, splines and the
+$ whole VLM AeroCache are geometry/Mach-only and are built ONCE and shared;
+$ only M_gg, M_ax, GPWG and the trim solve are rebuilt per case.
+$
+$   MASSCASE 10  FERRY    996.0 kg   baseline less the rear-seat payload
+$   MASSCASE 20  CRUISE  1201.0 kg   baseline + 120 kg half wing fuel
+$   MASSCASE 30  MTOW    1560.0 kg   baseline + 240 kg full wing fuel
+$                                   + rear-seat payload 85 -> 324 kg
+$
+$ The bare deck (no MASSCASE selected) is the 1081.0 kg baseline.  All three
+$ ops are exercised: DELETE by 10, ADD by 20 and 30, REPLACE by 30.
+$
+$ Physics the sweep demonstrates: heavier cases must trim to a larger ANGLEA
+$ at the same q, AND the wing-root bending per unit aircraft weight must FALL
+$ as fuel goes into the wing — inertia relief, because wing fuel is carried
+$ outboard of the root cut and its weight cancels part of the lift there.
+MASSCASE, 10, FERRY, 1.0
++, DELETE, 7
+MASSCASE, 20, CRUISE, 1.0
++, ADD, 6001, 6002, 6003, 6004
+MASSCASE, 30, MTOW, 1.0
++, ADD, 6011, 6012, 6013, 6014
++, REPLACE, 7, 6020
+$
+$ --------------------------------------------------------------- CONSTRAINTS
+$ Full-span free-flight support, NOT a ground mount.  Pin the four non-trim
+$ rigid-body modes (Tx, Ty, Rx, Rz) at the single reference point GRID 900;
+$ SUPORT carries the two symmetric trim DOFs (Tz, Ry).  Under symmetric loads
+$ the antisymmetric DOFs come out ~0 with no SPC needed, so the airframe
+$ deforms freely and both wings react through the fuselage.  That "~0" is
+$ asserted, not assumed: tests/integration/test_symmetry_invariants.py (#53)
+$ fails if these pins react any Fy/Mx/Mz in a symmetric case (before #52 they
+$ silently reacted up to 171 N.m of spurious aero roll).
+SPC1, 1, 1246, 900
+SUPORT, 900, 35
+$
+$ ============================================================== AERODYNAMICS
+$ Reference geometry (full-span): CREF = wing MAC, BREF = wing span,
+$ SREF = wing area.  RCSID = 990 puts the rigid-body motion and the reported
+$ moments in the z-down stability axis at the quarter-MAC.
+$ Field 8 (sbeam extension) is the default Mach for Prandtl-Glauert.
+AEROS, 0, 990, 1.4707, 11.20, 16.24, 0, 0
+$
+$ Aerodynamic panel property
+PAERO1, 10
+$
+$ MESH SIZING.  NCHORD = 6 chordwise on every surface: >= 2 is required for
+$ the section-moment correction at all, and >= 4 is needed before the
+$ pitching moment converges; 6 leaves margin at the 2.5g operating point.
+$ NSPAN is then chosen per surface to keep the box aspect ratio near 1, which
+$ is what the VLM's horseshoe-vortex kernel is best conditioned for.
+$ CAERO1 EIDs are 1000-spaced so every box ID (EID + i_span*NCHORD + j_chord)
+$ stays inside its own decade: 1000-1095, 2000-2095, 3000-3047, 4000-4047,
+$ 5000-5035.  6000/7000 are RESERVED for the Step 66 body panels.
+$
+$ ---- Wing starboard: 16 x 6 = 96 boxes (1000-1095)
+CAERO1, 1000, 10, 0, 16, 6, 0, 0, 1
++, 2.00, 0.0, 1.250, 1.75, 2.15, 5.60, 1.397, 1.15
+$ ---- Wing port: 16 x 6 = 96 boxes (2000-2095)
+CAERO1, 2000, 10, 0, 16, 6, 0, 0, 1
++, 2.00, 0.0, 1.250, 1.75, 2.15, -5.60, 1.397, 1.15
+$
+$ ---- HTP starboard: 8 x 6 = 48 boxes (3000-3047)
+CAERO1, 3000, 10, 0, 8, 6, 0, 0, 1
++, 6.90, 0.0, 0.70, 1.05, 7.10, 1.73, 0.70, 0.75
+$ ---- HTP port: 8 x 6 = 48 boxes (4000-4047)
+CAERO1, 4000, 10, 0, 8, 6, 0, 0, 1
++, 6.90, 0.0, 0.70, 1.05, 7.10, -1.73, 0.70, 0.75
+$
+$ ---- VTP (single surface, "span" is Z): 6 x 6 = 36 boxes (5000-5035)
+CAERO1, 5000, 10, 0, 6, 6, 0, 0, 1
++, 6.60, 0.0, 0.80, 1.50, 7.10, 0.0, 2.30, 0.85
+$
+$ ================================================================== SPLINES
+$ Four SPLINE2 beam splines (wing L/R, HTP L/R) plus one BODYATT (fin).
+$
+$ DTHY MUST BE 0.0 ON EVERY SPLINE2 HERE.  Each SET1 lists elastic-axis grids
+$ only, and those are collinear along the spline axis, so the beam spline has
+$ NO twist information of its own: detaching torsion (DTHY = -1, the HA144A
+$ setting, which works there because its SET1s carry LE/TE stringer PAIRS)
+$ leaves the spline system singular and the operator build raises ValueError.
+$ DTHY = 0.0 attaches torsion rigidly to the EA rotation, which is exactly
+$ right for a stick model whose only twist DOF is the beam's own Rx/Ry.
+$ DTHX is left at its 0.0 default for the same reason.
+$
+$ ---- RIGHT wing: boxes 1000-1095 to the starboard EA, axis CID 991
+SET1, 1010, 10, 11, 12
+SPLINE2, 1001, 1000, 1000, 1095, 1010, 0.0, 1.0, 991
+$ ---- LEFT wing: boxes 2000-2095 to the port EA, axis CID 992
+SET1, 1020, 10, 111, 112
+SPLINE2, 1002, 2000, 2000, 2095, 1020, 0.0, 1.0, 992
+$ ---- RIGHT HTP: boxes 3000-3047 to the starboard HTP EA, axis CID 993
+SET1, 1030, 20, 21, 22
+SPLINE2, 1003, 3000, 3000, 3047, 1030, 0.0, 1.0, 993
+$ ---- LEFT HTP: boxes 4000-4047 to the port HTP EA, axis CID 994
+SET1, 1040, 20, 121, 122
+SPLINE2, 1004, 4000, 4000, 4047, 1040, 0.0, 1.0, 994
+$
+$ ---- VTP: BODYATT, not SPLINE2.
+$ The fin is short, stiff and vertical.  Two reasons it gets the rigid
+$ attachment instead of a beam spline: (a) a SPLINE2 would need a spline-axis
+$ CORD2R whose y-axis runs along global Z, the awkward case; (b) the fin's
+$ own bending is negligible next to the tailcone bending that carries it, so
+$ rigidly slaving all 36 fin boxes to the fin-root grid is the physically
+$ honest idealisation.  BODYATT requires CID = 0.
+BODYATT, 1005, 5000, 5000, 5035, 30, 0
+$
+$ ============================================================ MONITOR POINTS
+$ Integrated section loads for the structures/loads handoff.  Two flavours:
+$   MONPNT1 = AERO ONLY, summed over a box collection (AELIST);
+$   MONPNT3 = AERO + INERTIA + REACTION, summed over structural grids (SET1).
+$ On a balanced maneuver the whole-aircraft MONPNT1 returns n*W while the
+$ whole-aircraft MONPNT3 returns ~0 — that contrast is the point of having
+$ both, and it is the cheapest end-to-end check that the trim really balanced.
+$
+$ ---- Right wing outboard of the root cut.
+$ Deliberately EXCLUDES the shared root grid 10: taken about the root station
+$ (2.70, 0, 1.25), the resultant of grids 11 and 12 IS the starboard
+$ wing-root shear and bending moment.
+SET1, 1300, 11, 12
+AECOMP, RWINGEA, SET1, 1300
+MONPNT1 MWROOT  RIGHT WING ROOT
++, 35, RWINGEA, 0, 2.70, 0.0, 1.25
+$
+$ ---- Whole aircraft.
+$ DEF-M10 RULE: this SET1 must list EVERY spline-load grid AND EVERY
+$ CONM2-bearing grid.  Grids 1, 900, 3, 5, 31 and 32 carry mass but take no
+$ spline load; leaving any of them out silently drops that share of the
+$ inertia and the "MONPNT3 ~ 0" balance check stops meaning anything.
+$ Overlay (MASSCASE) CONM2s live on grids 2, 11, 12, 111, 112 — already here.
+SET1, 1310, 1, 900, 2, 3, 4, 5, 10
++, 11, 12, 111, 112, 20, 21, 22, 121
++, 122, 30, 31, 32
+AECOMP, ALLGRID, SET1, 1310
+MONPNT1 MALLEA  WHOLE AIRCRAFT
++, 35, ALLGRID, 0, 2.4375, 0.0, 0.60
+$
+$ ---- Whole-aircraft aero, and starboard-wing aero (aero-only).
+AELIST, 1400, 1000, THRU, 1095, 2000, THRU, 2095, 3000
++, 3001, THRU, 3047, 4000, THRU, 4047, 5000, 5001
++, 5002, THRU, 5035
+AECOMP, ALLAERO, AELIST, 1400
+MONPNT1 MALLAR  AIRCRAFT AERO
++, 35, ALLAERO, 0, 2.4375, 0.0, 0.60
+AELIST, 1410, 1000, THRU, 1095
+AECOMP, RWAERO, AELIST, 1410
+MONPNT1 MRWAER  RIGHT WING AERO
++, 35, RWAERO, 0, 2.70, 0.0, 1.25
+$
+$ ---- Section-cut running loads (MONSECT, Monitor Phase 2).
+$ Where a MONPNT3 gives ONE resultant, a MONSECT sweeps the same sum over a
+$ list of cut planes and returns the per-station {shear, bending, torque} table
+$ the stress group sizes the wing from.
+$ CID 991 is the right wing's SPLINE2 axis, reused verbatim as the cut frame:
+$ its y-axis is the elastic axis, so the default AXIS=2 measures stations along
+$ the EA and every cut's moment reference lands on it.  Stations are chosen
+$ clear of the EA grids (11 at 2.801, 12 at 5.603) so no cut lands on a grid;
+$ 6.50 is outboard of the tip and must return exactly zero.
+$ Under a MASSCASE case the wing-fuel CONM2s on grids 11/12 enter the inertia
+$ column automatically, so the table is per mass case with no extra cards.
+MONSECT, SECRW, RIGHT WING LOADS, RWINGEA, 991
++, 0.30, 1.50, 4.20, 6.50
+$ The same stations taken aero-only (an AELIST-type AECOMP), for the airload
+$ distribution without the inertia relief.
+MONSECT, SECRWA, RIGHT WING AIRLOAD, RWAERO, 991
++, 0.30, 1.50, 4.20, 6.50
+$
+$ ======================================================= TRIM VARIABLE SET
+$ Symmetric longitudinal trim: two free variables (ANGLEA and the elevator)
+$ against the two SUPORT equations (Tz and Ry) — a determined trim.
+AESTAT, 501, ANGLEA
+AESTAT, 502, PITCH
+AESTAT, 503, URDD3
+AESTAT, 504, URDD5
+$
+$ --------------------------------------------------------- CONTROL SURFACE
+$ ELEV is a PART-CHORD elevator: the aft two of the six chordwise box rows on
+$ each HTP panel, i.e. the aft third of the chord, hinged on the straight
+$ two-thirds-chord line x = 7.60 (CID 995 y-axis — the AESURF hinge is the CID
+$ y-axis, see CID 995 above).  Box IDs are
+$ EID + i_span*NCHORD + j_chord with NCHORD = 6, so the hinged rows are
+$ j_chord = 4 and 5: 3000+6s+{4,5} and 4000+6s+{4,5} for s = 0..7.
+AESURF, 505, ELEV, 995, 3100
+AELIST, 3100, 3004, 3005, 3010, 3011, 3016, 3017, 3022
++, 3023, 3028, 3029, 3034, 3035, 3040, 3041, 3046
++, 3047, 4004, 4005, 4010, 4011, 4016, 4017, 4022
++, 4023, 4028, 4029, 4034, 4035, 4040, 4041, 4046
++, 4047
+$
+$ ================================================================ TRIM CARDS
+$ Cruise condition: q = 2334 Pa at sea level (rho = 1.225) gives
+$ V = sqrt(2q/rho) = 61.7 m/s = 120 kt.  M = 0.18 in reality; the deck runs
+$ M = 0.0 (incompressible) because the section data below is tabulated there
+$ and the Prandtl-Glauert factor at M = 0.18 is 1.016 — inside the noise.
+$
+$ URDD3 = -g is the HA144A sign convention: RCSID 990 is z-DOWN, so a 1g
+$ level pull is a -9.81 vertical acceleration in that frame.
+$
+$ RHOREF (sbeam extension) is the freestream density.  It takes no part in
+$ the static trim; it exists only so V = sqrt(2q/rho) is available to the
+$ transient maneuver rate terms in the MANVR driver.
+$
+$ TRIM 1 — 1g cruise.  Expected CL = W/(q*S) = 1081*9.81/(2334*16.24) = 0.280.
+TRIM, 1, 0.0, 2334.0, PITCH, 0.0, URDD3, -9.81
++, URDD5, 0.0
+$
+$ TRIM 2 — 2.5g symmetric pull-up at the same q.  A steady pull-up is a
+$ constant pitch RATE as well as a load factor: the nondimensional rate is
+$ PITCH = q_pitch*c/(2V) with q_pitch = (n-1)*g/V, i.e.
+$   PITCH = (n-1)*g*c/(2V^2) = 1.5*9.81*1.4707/(2*3810.2) = 2.8402e-3.
+$ Leaving PITCH at 0 would trim a 2.5g *pull* with no *rotation* — a
+$ different (and unphysical) manoeuvre, and it would drop the tail damping
+$ contribution that sets the real elevator-per-g gradient.
+TRIM, 2, 0.0, 2334.0, PITCH, 2.8402-3, URDD3, -24.525
++, URDD5, 0.0
+$
+$ ============================================ TRANSIENT MANEUVER (MANVR)
+$ Phase G0 quasi-steady, open-loop, restrained-l-set Newmark-beta run.  Used
+$ by cessna210_flagship_mloads.bdf; inert in the other two drivers.
+$
+$ Driver: IC = MANTRIM 1, window = MANTIME 1, commands = MANCMD 1,
+$ ASCII print = MANPRNT 1.
+MANVR, 1, 1, 1, 1, 1
+$ Initial condition = the static 1g cruise trim (TRIM 1).
+MANTRIM, 1, 1, 1.225
+$ Integrate 0 -> 1.0 s at dt = 0.005 s, output every 0.05 s (21 samples).
+MANTIME, 1, 0.0, 1.0, 0.005, 0.05
+$ Pilot command: ELEV follows TABLED1 300.  Labels not listed hold trim.
+MANCMD, 1, ELEV, 300
+$ ASCII time-history print.
+MANPRNT, 1
+$
+$ MANCMD TABLES ARE ABSOLUTE, NOT INCREMENTAL.  The table below therefore
+$ STARTS at the trimmed elevator angle and ramps up from there — it is not a
+$ perturbation about the trim.  That makes the deck a TWO-PASS authoring job:
+$ run cessna210_flagship_trim.bdf first, read the trimmed ELEV out of the
+$ SUBCASE 1 f06 block, then write it in here.  Start the table at 0.0 instead
+$ and the airplane takes a 3.8 deg step elevator input at t = 0.
+$
+$ Trimmed 1g ELEV = -0.06796414 rad (-3.89406 deg).  Elevator TE-DOWN step: ramp
+$ +2 deg (+0.03490659 rad) over 0.3 s to -0.03305755 rad, then hold to 1.0 s.
+$ On this aft tail +ELEV is NOSE-DOWN (the 2.5g trim needs MORE TE-up, T3 gate);
+$ the restrained l-set transient sees only the tail-lift increase, so Fz rises.
+$ Carried to 8 decimals deliberately: the transient reads t = 0 straight off
+$ this table, so the authored precision here IS the precision to which the
+$ initial condition reproduces the trim.  Test T5 re-solves the trim and
+$ compares, so a stale number fails the suite rather than quietly producing a
+$ slightly-wrong transient.
+$
+$ CASE-SPECIFIC.  Because the table is absolute it is also tied to the mass
+$ case it was authored for.  Selecting a MASSCASE alongside MANVR shifts the
+$ trimmed elevator, so this first point is no longer that case's equilibrium
+$ and the run starts with a step input (see test T6).
+TABLED1, 300
++, 0.0, -0.06796414, 0.3, -0.03305755, 1.0, -0.03305755, ENDT
+$
+$ --------------------------------------------------------------------
+$ sbeam aero correction  —  cessna210_flagship_bulk.bdf
+$ source section data : cessna210_flagship_section_data.csv
+$ generated           : 2026-10-25  (regenerated after #52)
+$ condition           : Mach 0  alpha 2.3904 deg  beta 0 deg
+$ corrected surfaces  : CAERO [1000, 2000, 3000, 4000, 5000]
+$ --------------------------------------------------------------------
+$ Section force+moment correction (W2GJ camber offset + WT2 slope/a.c.)
+W2GJ, 9100, 1000, -2.584671E-02, -2.931399E-03, 1.998391E-02, 4.289922E-02, 6.581452E-02, 8.872983E-02
++, -3.582177E-02, -1.429360E-02, 7.234574E-03, 2.876274E-02, 5.029091E-02, 7.181908E-02, -4.120271E-02, -2.016973E-02
++, 8.632507E-04, 2.189623E-02, 4.292921E-02, 6.396220E-02, -4.545191E-02, -2.476612E-02, -4.080333E-03, 1.660545E-02
++, 3.729124E-02, 5.797703E-02, -4.874633E-02, -2.841692E-02, -8.087514E-03, 1.224190E-02, 3.257131E-02, 5.290072E-02
++, -5.322935E-02, -3.301389E-02, -1.279844E-02, 7.417009E-03, 2.763246E-02, 4.784791E-02, -5.767340E-02, -3.753593E-02
++, -1.739845E-02, 2.739023E-03, 2.287650E-02, 4.301397E-02, -6.153190E-02, -4.154607E-02, -2.156024E-02, -1.574411E-03
++, 1.841142E-02, 3.839725E-02, -6.489328E-02, -4.513781E-02, -2.538235E-02, -5.626877E-03, 1.412859E-02, 3.388406E-02
++, -6.689678E-02, -4.755902E-02, -2.822126E-02, -8.883495E-03, 1.045427E-02, 2.979203E-02, -7.285856E-02, -5.337074E-02
++, -3.388291E-02, -1.439509E-02, 5.092740E-03, 2.458057E-02, -7.765942E-02, -5.823621E-02, -3.881300E-02, -1.938979E-02
++, 3.342424E-05, 1.945664E-02, -7.988483E-02, -6.097431E-02, -4.206379E-02, -2.315327E-02, -4.242745E-03, 1.466778E-02
++, -8.767639E-02, -6.877705E-02, -4.987771E-02, -3.097837E-02, -1.207904E-02, 6.820303E-03, -9.687769E-02, -7.860148E-02
++, -6.032528E-02, -4.204907E-02, -2.377287E-02, -5.496660E-03, -1.206769E-01, -1.045820E-01, -8.848709E-02, -7.239219E-02
++, -5.629729E-02, -4.020239E-02
+AECORR, 9200, WT2, 1000, 0.0, 1.744427E+00, 9.546172E-01, 6.642033E-01, 4.774419E-01
++, 3.283556E-01, 1.885076E-01, 1.726944E+00, 9.389410E-01, 6.523072E-01, 4.695275E-01, 3.241002E-01, 1.872314E-01
++, 1.706414E+00, 9.245114E-01, 6.417089E-01, 4.620444E-01, 3.193796E-01, 1.849030E-01, 1.684599E+00, 9.100388E-01
++, 6.313512E-01, 4.546302E-01, 3.144374E-01, 1.822256E-01, 1.661736E+00, 8.954828E-01, 6.209731E-01, 4.471364E-01
++, 3.093263E-01, 1.793586E-01, 1.621212E+00, 8.734062E-01, 6.055882E-01, 4.360145E-01, 3.016130E-01, 1.748827E-01
++, 1.573445E+00, 8.485821E-01, 5.883299E-01, 4.234672E-01, 2.928262E-01, 1.697125E-01, 1.525667E+00, 8.243582E-01
++, 5.713960E-01, 4.110318E-01, 2.840229E-01, 1.644736E-01, 1.477775E+00, 8.008346E-01, 5.548301E-01, 3.987089E-01
++, 2.751832E-01, 1.591439E-01, 1.429587E+00, 7.781910E-01, 5.387087E-01, 3.864992E-01, 2.662721E-01, 1.536848E-01
++, 1.339460E+00, 7.379513E-01, 5.107771E-01, 3.656748E-01, 2.512070E-01, 1.444705E-01, 1.246123E+00, 6.983338E-01
++, 4.829056E-01, 3.444799E-01, 2.356253E-01, 1.348228E-01, 1.153396E+00, 6.624658E-01, 4.567969E-01, 3.238361E-01
++, 2.200469E-01, 1.250168E-01, 1.004294E+00, 6.061410E-01, 4.157490E-01, 2.916770E-01, 1.961738E-01, 1.102414E-01
++, 8.278878E-01, 5.458558E-01, 3.684119E-01, 2.537625E-01, 1.683329E-01, 9.334800E-02, 6.107417E-01, 4.719394E-01
++, 3.046549E-01, 2.052910E-01, 1.352459E-01, 7.470513E-02
+W2GJ, 9101, 2000, 2.584671E-02, 2.931399E-03, -1.998391E-02, -4.289922E-02, -6.581452E-02, -8.872983E-02
++, 3.582177E-02, 1.429360E-02, -7.234574E-03, -2.876274E-02, -5.029091E-02, -7.181908E-02, 4.120271E-02, 2.016973E-02
++, -8.632507E-04, -2.189623E-02, -4.292921E-02, -6.396220E-02, 4.545191E-02, 2.476612E-02, 4.080333E-03, -1.660545E-02
++, -3.729124E-02, -5.797703E-02, 4.874633E-02, 2.841692E-02, 8.087514E-03, -1.224190E-02, -3.257131E-02, -5.290072E-02
++, 5.322935E-02, 3.301389E-02, 1.279844E-02, -7.417009E-03, -2.763246E-02, -4.784791E-02, 5.767340E-02, 3.753593E-02
++, 1.739845E-02, -2.739023E-03, -2.287650E-02, -4.301397E-02, 6.153190E-02, 4.154607E-02, 2.156024E-02, 1.574411E-03
++, -1.841142E-02, -3.839725E-02, 6.489328E-02, 4.513781E-02, 2.538235E-02, 5.626877E-03, -1.412859E-02, -3.388406E-02
++, 6.689678E-02, 4.755902E-02, 2.822126E-02, 8.883495E-03, -1.045427E-02, -2.979203E-02, 7.285856E-02, 5.337074E-02
++, 3.388291E-02, 1.439509E-02, -5.092740E-03, -2.458057E-02, 7.765942E-02, 5.823621E-02, 3.881300E-02, 1.938979E-02
++, -3.342424E-05, -1.945664E-02, 7.988483E-02, 6.097431E-02, 4.206379E-02, 2.315327E-02, 4.242745E-03, -1.466778E-02
++, 8.767639E-02, 6.877705E-02, 4.987771E-02, 3.097837E-02, 1.207904E-02, -6.820303E-03, 9.687769E-02, 7.860148E-02
++, 6.032528E-02, 4.204907E-02, 2.377287E-02, 5.496660E-03, 1.206769E-01, 1.045820E-01, 8.848709E-02, 7.239219E-02
++, 5.629729E-02, 4.020239E-02
+AECORR, 9201, WT2, 2000, 0.0, -1.744427E+00, -9.546172E-01, -6.642033E-01, -4.774419E-01
++, -3.283556E-01, -1.885076E-01, -1.726944E+00, -9.389410E-01, -6.523072E-01, -4.695275E-01, -3.241002E-01, -1.872314E-01
++, -1.706414E+00, -9.245114E-01, -6.417089E-01, -4.620444E-01, -3.193796E-01, -1.849030E-01, -1.684599E+00, -9.100388E-01
++, -6.313512E-01, -4.546302E-01, -3.144374E-01, -1.822256E-01, -1.661736E+00, -8.954828E-01, -6.209731E-01, -4.471364E-01
++, -3.093263E-01, -1.793586E-01, -1.621212E+00, -8.734062E-01, -6.055882E-01, -4.360145E-01, -3.016130E-01, -1.748827E-01
++, -1.573445E+00, -8.485821E-01, -5.883299E-01, -4.234672E-01, -2.928262E-01, -1.697125E-01, -1.525667E+00, -8.243582E-01
++, -5.713960E-01, -4.110318E-01, -2.840229E-01, -1.644736E-01, -1.477775E+00, -8.008346E-01, -5.548301E-01, -3.987089E-01
++, -2.751832E-01, -1.591439E-01, -1.429587E+00, -7.781910E-01, -5.387087E-01, -3.864992E-01, -2.662721E-01, -1.536848E-01
++, -1.339460E+00, -7.379513E-01, -5.107771E-01, -3.656748E-01, -2.512070E-01, -1.444705E-01, -1.246123E+00, -6.983338E-01
++, -4.829056E-01, -3.444799E-01, -2.356253E-01, -1.348228E-01, -1.153396E+00, -6.624658E-01, -4.567969E-01, -3.238361E-01
++, -2.200469E-01, -1.250168E-01, -1.004294E+00, -6.061410E-01, -4.157490E-01, -2.916770E-01, -1.961738E-01, -1.102414E-01
++, -8.278878E-01, -5.458558E-01, -3.684119E-01, -2.537625E-01, -1.683329E-01, -9.334800E-02, -6.107417E-01, -4.719394E-01
++, -3.046549E-01, -2.052910E-01, -1.352459E-01, -7.470513E-02
+W2GJ, 9102, 3000, 2.748445E-02, 2.740406E-02, 2.732368E-02, 2.724329E-02, 2.716291E-02, 2.708252E-02
++, 2.596565E-02, 2.588855E-02, 2.581144E-02, 2.573434E-02, 2.565723E-02, 2.558013E-02, 2.351583E-02, 2.344226E-02
++, 2.336869E-02, 2.329512E-02, 2.322155E-02, 2.314798E-02, 2.084357E-02, 2.077374E-02, 2.070391E-02, 2.063408E-02
++, 2.056424E-02, 2.049441E-02, 1.828150E-02, 1.821556E-02, 1.814963E-02, 1.808369E-02, 1.801776E-02, 1.795182E-02
++, 1.590568E-02, 1.584376E-02, 1.578184E-02, 1.571992E-02, 1.565800E-02, 1.559609E-02, 1.372036E-02, 1.366254E-02
++, 1.360473E-02, 1.354691E-02, 1.348909E-02, 1.343127E-02, 1.168734E-02, 1.163367E-02, 1.157999E-02, 1.152632E-02
++, 1.147264E-02, 1.141897E-02
+AECORR, 9202, WT2, 3000, 0.0, 5.561006E-01, 2.824674E-01, 1.928019E-01, 1.372095E-01
++, 9.406070E-02, 5.435598E-02, 5.448277E-01, 2.768795E-01, 1.878918E-01, 1.333983E-01, 9.141308E-02, 5.284382E-02
++, 5.302237E-01, 2.710158E-01, 1.829880E-01, 1.292370E-01, 8.821586E-02, 5.084380E-02, 4.999951E-01, 2.586767E-01
++, 1.740438E-01, 1.222073E-01, 8.294462E-02, 4.755260E-02, 4.697083E-01, 2.473859E-01, 1.655640E-01, 1.152991E-01
++, 7.764052E-02, 4.418639E-02, 4.152857E-01, 2.278698E-01, 1.512317E-01, 1.039663E-01, 6.919033E-02, 3.893375E-02
++, 3.461005E-01, 2.054683E-01, 1.335712E-01, 8.986826E-02, 5.889288E-02, 3.268297E-02, 2.477512E-01, 1.714981E-01
++, 1.060291E-01, 6.967708E-02, 4.530701E-02, 2.499929E-02
+W2GJ, 9103, 4000, -2.748445E-02, -2.740406E-02, -2.732368E-02, -2.724329E-02, -2.716291E-02, -2.708252E-02
++, -2.596565E-02, -2.588855E-02, -2.581144E-02, -2.573434E-02, -2.565723E-02, -2.558013E-02, -2.351583E-02, -2.344226E-02
++, -2.336869E-02, -2.329512E-02, -2.322155E-02, -2.314798E-02, -2.084357E-02, -2.077374E-02, -2.070391E-02, -2.063408E-02
++, -2.056424E-02, -2.049441E-02, -1.828150E-02, -1.821556E-02, -1.814963E-02, -1.808369E-02, -1.801776E-02, -1.795182E-02
++, -1.590568E-02, -1.584376E-02, -1.578184E-02, -1.571992E-02, -1.565800E-02, -1.559609E-02, -1.372036E-02, -1.366254E-02
++, -1.360473E-02, -1.354691E-02, -1.348909E-02, -1.343127E-02, -1.168734E-02, -1.163367E-02, -1.157999E-02, -1.152632E-02
++, -1.147264E-02, -1.141897E-02
+AECORR, 9203, WT2, 4000, 0.0, -5.561006E-01, -2.824674E-01, -1.928019E-01, -1.372095E-01
++, -9.406070E-02, -5.435598E-02, -5.448277E-01, -2.768795E-01, -1.878918E-01, -1.333983E-01, -9.141308E-02, -5.284382E-02
++, -5.302237E-01, -2.710158E-01, -1.829880E-01, -1.292370E-01, -8.821586E-02, -5.084380E-02, -4.999951E-01, -2.586767E-01
++, -1.740438E-01, -1.222073E-01, -8.294462E-02, -4.755260E-02, -4.697083E-01, -2.473859E-01, -1.655640E-01, -1.152991E-01
++, -7.764052E-02, -4.418639E-02, -4.152857E-01, -2.278698E-01, -1.512317E-01, -1.039663E-01, -6.919033E-02, -3.893375E-02
++, -3.461005E-01, -2.054683E-01, -1.335712E-01, -8.986826E-02, -5.889288E-02, -3.268297E-02, -2.477512E-01, -1.714981E-01
++, -1.060291E-01, -6.967708E-02, -4.530701E-02, -2.499929E-02
+W2GJ, 9104, 5000, -4.149548E-17, -4.138120E-17, -4.126692E-17, -4.115264E-17, -4.103835E-17, -4.092407E-17
++, -1.140359E-16, -1.222935E-16, -1.305511E-16, -1.388087E-16, -1.470664E-16, -1.553240E-16, 7.821541E-17, 7.873775E-17
++, 7.926009E-17, 7.978243E-17, 8.030477E-17, 8.082712E-17, -1.624384E-17, -1.378416E-17, -1.132447E-17, -8.864792E-18
++, -6.405110E-18, -3.945428E-18, 3.174662E-17, 3.105488E-17, 3.036314E-17, 2.967141E-17, 2.897967E-17, 2.828794E-17
++, -1.080683E-17, -9.391630E-18, -7.976426E-18, -6.561222E-18, -5.146018E-18, -3.730814E-18
+AECORR, 9204, WT2, 5000, 0.0, -5.823513E-01, -3.197432E-01, -2.192219E-01, -1.421164E-01
++, -8.672834E-02, -4.367039E-02, -6.705877E-01, -3.490792E-01, -2.253851E-01, -1.483640E-01, -9.298607E-02, -4.906986E-02
++, -6.924946E-01, -3.526616E-01, -2.216872E-01, -1.441384E-01, -9.063478E-02, -4.853935E-02, -6.842049E-01, -3.448885E-01
++, -2.120547E-01, -1.353609E-01, -8.445268E-02, -4.533113E-02, -5.839736E-01, -3.061566E-01, -1.817653E-01, -1.126153E-01
++, -6.915579E-02, -3.688231E-02, -4.370184E-01, -2.553520E-01, -1.397466E-01, -8.337678E-02, -5.063523E-02, -2.692842E-02
+$ --------------------------------------------------------------------

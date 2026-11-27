@@ -12,7 +12,7 @@ from sbeam.solver.sol144 import run_sol144_trim
 
 np.set_printoptions(precision=5, suppress=True, linewidth=160)
 
-cc, bulk = parse_bdf("sample/ha144a_fullspan_sbeam.bdf")
+cc, bulk = parse_bdf("sample/ha144a/ha144a_fullspan_sbeam.bdf")
 grid_index = build_grid_index(bulk)
 
 print("=== Parse check ===")

@@ -21,7 +21,7 @@ them separate so the virtual-work pairing (theory §4.1) and rigid-body exactnes
 (§4.5) both hold.
 
 ``G_load`` is ``G_disp`` (the kinematic ¼-chord displacement interpolation) plus
-rigid-load rows for boxes with no structural coupling — SPLINE0 body panels and
+rigid-load rows for boxes with no structural coupling — LOADINJ body panels and
 un-splined boxes, whose force is injected at a master grid instead of being dropped
 (Step 64 / DEF-M1).  Those boxes keep zero ``G_slope`` rows, so they load the
 structure without taking downwash from it; ``Q_aa`` therefore gains rows at the

@@ -68,7 +68,7 @@ is already implemented end-to-end for real k = 0 matrices. Phase D replaces exac
 - **Bodies / slender-body interference** (CAERO2, PAERO1 body fields parse-and-ignore with warning). Lifting surfaces only.
 - **Supersonic Mach** (ZONA51-class). `M < 1` enforced; MKAERO1 validation per `matrix_gaf_export.md` §3.2 relaxed to `0 ≤ M < 1` with any `k ≥ 0`.
 - **K-method flutter** (needs user-selected complex eigensolver, adds nothing over KE for sbeam's purposes [AAUG p.75–78]).
-- **SPLINE1 surface splines** — beam structures spline naturally with SPLINE2/ATTACH; SPLINE1 remains `NotImplementedError`.
+- **SPLINE1 surface splines** — beam structures spline naturally with SPLINE2/BODYATT; SPLINE1 remains `NotImplementedError`.
 - **Control-surface unsteady aero / AESURF in flutter** (Q_hc columns) — design leaves the column slot (§8.3) but Phase D fits and flies only Q_hh and Q_hg.
 - **Aeroservoelastic closed-loop analysis** — the D4 state-space export is the enabler; control-law coupling is downstream-tool territory (FLAPS et al.).
 - **Mission-analysis / phased-loads gust criteria** (design-ellipse correlation, exceedance curves) — Ā and N₀ outputs give the user the inputs; the criteria arithmetic stays outside sbeam.
@@ -320,7 +320,7 @@ w_j = D¹_jk·u_k + ik·D²_jk·u_k,   ik·D² ≡ (iω/V)·h_normal
 ```
 
 - `D¹` = streamwise slope at the collocation point = the existing `g_slope` chain (unchanged).
-- `D²` = `(2/c̄)·h_n`, the **normal displacement at the ¾-chord collocation point**. The existing `g_disp` evaluates at the ¼-chord `force_point` (AE6, virtual-work-correct for forces) — D2 of the substantial derivative needs a *second* displacement evaluation at `colloc`. **New spline output `g_disp_colloc`** (same SPLINE2/ATTACH/SPLINE0 machinery, evaluation abscissa moved) listed as a D0 prerequisite. Force transfer continues to use `g_disp` at the ¼-chord (unchanged virtual-work pairing).
+- `D²` = `(2/c̄)·h_n`, the **normal displacement at the ¾-chord collocation point**. The existing `g_disp` evaluates at the ¼-chord `force_point` (AE6, virtual-work-correct for forces) — D2 of the substantial derivative needs a *second* displacement evaluation at `colloc`. **New spline output `g_disp_colloc`** (same SPLINE2/BODYATT/LOADINJ machinery, evaluation abscissa moved) listed as a D0 prerequisite. Force transfer continues to use `g_disp` at the ¼-chord (unchanged virtual-work pairing).
 - Gust baseline `w_g` (W2GJ) participates at k = 0 only (static incidence — not part of the oscillatory problem).
 
 ### 5.7 Box-sizing rules (documented + warned, not enforced) [AAUG pp.106–107; RTM]

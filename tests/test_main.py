@@ -13,9 +13,9 @@ from pathlib import Path
 import pytest
 
 import sbeam.main as main_mod
+from tests.samples import sample_path
 
 BDF_DIR = Path(__file__).parent / "integration" / "bdf"
-SAMPLE_DIR = Path(__file__).parent.parent / "sample"
 
 
 class TestMainCLI:
@@ -47,7 +47,7 @@ class TestMainCLI:
         """SOL 144 end-to-end (AE10): the HA144A trim deck runs through main.main()
         and writes both a non-empty .f06 and an .aero_loads.bdf FORCE/MOMENT export."""
         bdf = tmp_path / "ha144a.bdf"
-        shutil.copy(SAMPLE_DIR / "ha144a_fullspan_sbeam.bdf", bdf)
+        shutil.copy(sample_path("ha144a_fullspan_sbeam.bdf"), bdf)
 
         monkeypatch.setattr(sys, "argv", ["sbeam", str(bdf)])
         with warnings.catch_warnings():

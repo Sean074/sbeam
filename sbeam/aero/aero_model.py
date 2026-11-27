@@ -45,7 +45,7 @@ class AeroModel:
     g_slope:      Optional[FloatArray] = None  # slope spline, shape (n, 6*n_g)
     g_disp:       Optional[FloatArray] = None  # displacement spline, shape (3n, 6*n_g)
     g_load:       Optional[FloatArray] = None  # force-transfer spline, shape (3n, 6*n_g)
-    chordcp_alpha_ref: Optional[float] = None  # CHORDCP reference AOA [rad]; None = no injection
+    chordcp_alpha_ref: Optional[float] = None  # CPINJ reference AOA [rad]; None = no injection
     load_injections: list[LoadInjection] = field(default_factory=list)
     box_id_to_k: Optional[dict[int, int]] = None   # {NASTRAN box ID: k}; set by build_aero_model
 
@@ -66,7 +66,7 @@ class AeroModel:
         """``g_load``, raising if the model was built without splines.
 
         The force-transfer operator: ``g_disp`` plus rigid-load rows for boxes
-        with no structural coupling (SPLINE0 / unsplined), so their aerodynamic
+        with no structural coupling (LOADINJ / unsplined), so their aerodynamic
         force reaches the structure at a master grid instead of vanishing
         (Step 64 / DEF-M1).  Every ``gᵀ·f`` transfer uses this; ``g_disp``
         stays the pure kinematic operator for displacement recovery.
@@ -219,7 +219,7 @@ def _apply_chordcp_injection(
     ajj_inv_corr: FloatArray,
     wg: FloatArray,
 ) -> Optional[float]:
-    """CHORDCP steady-pressure injection (Step 54) — mutates ``wg`` in place.
+    """CPINJ steady-pressure injection (Step 54) — mutates ``wg`` in place.
 
     Replaces the program-computed baseline normalwash of every VLM lifting-surface
     box with the equivalent wash of the injected Cp distribution (see
@@ -227,10 +227,10 @@ def _apply_chordcp_injection(
     the strip block of ``ajj_inv_corr`` is diagonal with zero coupling, so the
     VLM sub-block solve is exact.
 
-    v1 rules: every VLM CAERO1 must be covered by exactly one CHORDCP card, all
+    v1 rules: every VLM CAERO1 must be covered by exactly one CPINJ card, all
     cards must share the same ALPHREF, and strip CAERO1s may not be targeted.
 
-    Returns the common reference AOA (radians), or None when no CHORDCP cards
+    Returns the common reference AOA (radians), or None when no CPINJ cards
     are present.
     """
     if not bulk.chordcps:
@@ -242,32 +242,32 @@ def _apply_chordcp_injection(
     for card in bulk.chordcps.values():
         if card.caero_eid not in bulk.caero1s:
             raise ValueError(
-                f"CHORDCP {card.sid}: CAERO1 {card.caero_eid} not found in bulk data"
+                f"CPINJ {card.sid}: CAERO1 {card.caero_eid} not found in bulk data"
             )
         if is_strip_caero(bulk, card.caero_eid):
             raise ValueError(
-                f"CHORDCP {card.sid}: CAERO1 {card.caero_eid} is a PSTRIP body panel; "
+                f"CPINJ {card.sid}: CAERO1 {card.caero_eid} is a PSTRIP body panel; "
                 "steady-pressure injection applies to VLM lifting surfaces only"
             )
         if card.caero_eid in cards_by_eid:
             raise ValueError(
-                f"CHORDCP {card.sid}: CAERO1 {card.caero_eid} already covered by "
-                f"CHORDCP {cards_by_eid[card.caero_eid].sid}"
+                f"CPINJ {card.sid}: CAERO1 {card.caero_eid} already covered by "
+                f"CPINJ {cards_by_eid[card.caero_eid].sid}"
             )
         cards_by_eid[card.caero_eid] = card
 
     missing = [eid for eid in vlm_eids if eid not in cards_by_eid]
     if missing:
         raise ValueError(
-            "CHORDCP injection requires full coverage of all VLM lifting surfaces; "
-            f"missing CHORDCP card(s) for CAERO1 {missing}"
+            "CPINJ injection requires full coverage of all VLM lifting surfaces; "
+            f"missing CPINJ card(s) for CAERO1 {missing}"
         )
 
     alpha_refs = {eid: c.alpha_ref for eid, c in cards_by_eid.items()}
     alpha_ref = next(iter(alpha_refs.values()))
     if any(abs(a - alpha_ref) > 1e-12 for a in alpha_refs.values()):
         raise ValueError(
-            "CHORDCP cards disagree on ALPHREF (all injected surfaces must share "
+            "CPINJ cards disagree on ALPHREF (all injected surfaces must share "
             f"one reference AOA): {{eid: rad}} = {alpha_refs}"
         )
 
@@ -279,7 +279,7 @@ def _apply_chordcp_injection(
     })
     if discarded:
         warnings.warn(
-            f"CHORDCP injection replaces the W2GJ baseline on CAERO1 {discarded}; "
+            f"CPINJ injection replaces the W2GJ baseline on CAERO1 {discarded}; "
             "the W2GJ camber/incidence (and any body-correction offsets) on those "
             "surfaces is discarded — the injected Cp must already contain it.",
             UserWarning,
@@ -294,7 +294,7 @@ def _apply_chordcp_injection(
         local = [k for k, b in enumerate(vlm_boxes) if b.caero_eid == eid]
         if len(card.data) != len(local):
             raise ValueError(
-                f"CHORDCP {card.sid}: data length {len(card.data)} != "
+                f"CPINJ {card.sid}: data length {len(card.data)} != "
                 f"{len(local)} boxes on CAERO1 {eid} (NSPAN×NCHORD)"
             )
         # Card Cp is along MSC's element normal (#84)
@@ -372,8 +372,8 @@ def build_aero_model(
     SYMXY non-zero) is rejected here — mirror it to a full-span deck first
     (see sbeam_tools.common.mirror.mirror_halfspan).
 
-    Mach (AE9): the effective Mach is ``mach`` if given, otherwise ``AEROS.mach``
-    (field 9, an sbeam extension).  Callers running SOL 144 at a per-TRIM Mach
+    Mach (AE9): the effective Mach is ``mach`` if given, otherwise 0.0 (AEROS has no
+    Mach in MSC; sbeam's field-9 extension was removed under #87).  Callers running SOL 144 at a per-TRIM Mach
     pass it explicitly so a single deck can be built at several flight Machs (see
     ``sbeam.solver.sol144.AeroCache``).  The steady subsonic VLM cannot solve the
     transonic/supersonic regime, so an effective Mach ≥ 1 is rejected here rather
@@ -434,14 +434,14 @@ def build_aero_model(
 
     # Validate the NASTRAN box-ID space before anything consumes it (F1).  This
     # is deliberately the first check after meshing: a collision makes SPLINE2 /
-    # ATTACH / AELIST / MONPNT1 box ranges resolve to the wrong box, so it must
+    # BODYATT / AELIST / MONPNT1 box ranges resolve to the wrong box, so it must
     # be fatal before any correction, spline or integration work is done.
     box_id_to_k = build_box_id_map(boxes)
 
     # Prandtl–Glauert / Göthert compressibility correction (§2.8 Eq. 14):
     # compress box y,z by β = √(1-M²) before building AIC; scale AIC⁻¹ by 1/β.
-    # AE9: effective Mach = explicit override (per-TRIM) or AEROS.mach fallback.
-    mach = mach if mach is not None else (require_aeros(bulk).mach if bulk.aeros else 0.0)
+    # AE9: effective Mach = explicit override (per-TRIM), else incompressible.
+    mach = mach if mach is not None else 0.0
     if mach >= 1.0:
         raise ValueError(
             f"build_aero_model: effective Mach {mach} ≥ 1.0; the steady subsonic "
@@ -490,7 +490,7 @@ def build_aero_model(
     # reported rather than silently never visited (DEF-M8a).
     wg = build_wg_all(boxes, bulk.w2gjs)
 
-    # CHORDCP steady-pressure injection (Step 54): replace the VLM boxes'
+    # CPINJ steady-pressure injection (Step 54): replace the VLM boxes'
     # baseline wash with the equivalent wash of the injected Cp distribution.
     chordcp_alpha_ref = _apply_chordcp_injection(bulk, boxes, strip_mask, ajj_inv_corr, wg)
 

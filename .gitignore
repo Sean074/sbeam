@@ -37,9 +37,20 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Project outputs
+# Project outputs — every file `sbeam <deck>` writes beside the deck (sbeam/main.py)
 *.f06
 *.op2
+*.aero_loads.bdf
+*.maneuver_loads.bdf
+*.maneuver_qs_loads.bdf
+*.monitor_loads.csv
+*.section_loads.csv
+*.maneuver_*.csv
+*.mldprnt.txt
+# MODEXP (#100): <deck>.op4, <deck>.uf, <deck>_dofmap.csv
+*.op4
+*.uf
+*_dofmap.csv
 
 # Distribution
 *.whl

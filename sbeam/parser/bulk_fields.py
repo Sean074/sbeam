@@ -110,6 +110,18 @@ def expand_int_list_with_thru(tokens: list[str]) -> list[int]:
     return result
 
 
+def refuse_after(fields: list[str], n: int, card: str) -> None:
+    """Refuse a non-blank field beyond the ``n`` a handler reads on the first line (#87).
+
+    ``fields`` is ``[KEYWORD, field 2 … field 9]``; a value in ``fields[n:]`` would be
+    dropped without a message (CLAUDE.md rule 7).
+    """
+    for k in range(n, len(fields)):
+        if fields[k].strip():
+            raise ValueError(f"{card}: field {k + 1} ({fields[k].strip()!r}) is not read "
+                             "by sbeam and must be blank (02_card_reference.md)")
+
+
 def list_fields(first: list[str], conts: list[list[str]], card: str, rule: str) -> list[str]:
     """The values of a list card (``first`` then each continuation's data fields).
 

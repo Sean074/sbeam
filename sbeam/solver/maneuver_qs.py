@@ -1,7 +1,7 @@
 """Phase G0 — DLM-free quasi-steady transient maneuver-loads solver.
 
 This is increment 1 of Phase G0 (the realistic, DLM-free path to a ZAERO
-``MLOADS``-style transient maneuver capability).  It time-integrates the elastic
+``MANVR``-style transient maneuver capability).  It time-integrates the elastic
 response of the airframe to a prescribed (open-loop) pilot-command history,
 starting from a Step 53 static balanced-trim initial condition, and recovers the
 net applied maneuver loads (aero + rigid inertia + elastic inertia + damping, #3)
@@ -399,7 +399,7 @@ def recover_step(
 
 
 def refuse_load_in_mloads(where: str, subcase: SubcaseControl) -> None:
-    """Refuse a LOAD request in an MLOADS subcase (#6, decision D1).
+    """Refuse a LOAD request in an MANVR subcase (#6, decision D1).
 
     An applied structural load enters a SOL 144 TRIM subcase, but the transient
     solvers rebuild their initial-condition subcase without it and carry no
@@ -410,11 +410,11 @@ def refuse_load_in_mloads(where: str, subcase: SubcaseControl) -> None:
     if subcase.load_sid is not None:
         raise ValueError(
             f"{where}: subcase {subcase.subcase_id} requests both "
-            f"MLOADS={subcase.mloads_sid} and LOAD={subcase.load_sid}.  An applied "
+            f"MANVR={subcase.mloads_sid} and LOAD={subcase.load_sid}.  An applied "
             "structural load is supported in a SOL 144 TRIM subcase (#6) but is not "
             "carried through the transient maneuver, so it would be silently "
             "dropped from the time history.  Remove the LOAD request from the "
-            "MLOADS subcase."
+            "MANVR subcase."
         )
 
 
@@ -428,9 +428,9 @@ def run_maneuver_qs(
     """Phase G0 quasi-steady transient maneuver-loads solve.
 
     Args:
-        bulk:          Parsed BulkData — must include SUPORT, the MLOADS card set
+        bulk:          Parsed BulkData — must include SUPORT, the MANVR card set
                        referenced by ``subcase.mloads_sid``, and the TRIM the
-                       MLDTRIM points to.
+                       MANTRIM points to.
         subcase:       SubcaseControl — uses ``mloads_sid`` and ``spc_sid``.
         aero:          AeroModel (seeds the AeroCache; rebuilt at the TRIM Mach).
         aero_cache:    Optional shared AeroCache.
@@ -444,7 +444,7 @@ def run_maneuver_qs(
     refuse_load_in_mloads("run_maneuver_qs", subcase)
     if subcase.mloads_sid is None or subcase.mloads_sid not in bulk.mloads:
         raise ValueError(
-            f"run_maneuver_qs: MLOADS SID {subcase.mloads_sid} not found")
+            f"run_maneuver_qs: MANVR SID {subcase.mloads_sid} not found")
     mload = bulk.mloads[subcase.mloads_sid]
     mldtrim = bulk.mldtrims[mload.mldtrim]
     mldtime = bulk.mldtimes[mload.mldtime]
@@ -511,7 +511,7 @@ def run_maneuver_qs(
     K_hat_lu = scipy.linalg.lu_factor(K_hat)
 
     # Initial state: start from the static l-set solution for δ(t0) so the run
-    # begins at equilibrium (MLDTRIM = steady-state initial condition).  At
+    # begins at equilibrium (MANTRIM = steady-state initial condition).  At
     # equilibrium K·u = F and v = 0, so the initial acceleration is exactly zero
     # (M·a = F − K·u = 0) — no M⁻¹ needed.
     warn_extrapolated_commands(commands, bulk.tabled1s, t0, tend)
@@ -561,7 +561,7 @@ def run_maneuver_qs(
             _emit(t, u, delta, a, v)
 
     # Critical sample = peak per-grid net force (DEF-M5).  One metric, shared with
-    # the f06 table, the MLDPRNT column and the critical-sample export.
+    # the f06 table, the MANPRNT column and the critical-sample export.
     crit_index = int(np.argmax([peak_grid_force(s) for s in steps])) if steps else 0
 
     result = ManeuverResult(

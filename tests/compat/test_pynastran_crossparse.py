@@ -35,18 +35,20 @@ from sbeam.parser import bdf_reader  # noqa: E402
 from sbeam.parser.bdf_reader import (  # noqa: E402
     _read_cards, _read_mass_increments, _split_mass_increments, parse_bdf)
 from sbeam.parser.bulk_fields import is_continuation, split_line  # noqa: E402
+from tests.samples import (
+    MSC_RUNNABLE, SBEAM_EXTENSION, SBEAM_ONLY_COMMANDS, compat_tags, deck_names, sample_decks,
+    sample_path,
+)
 
 REPO = Path(__file__).resolve().parents[2]
-DECKS = sorted([*(REPO / "sample").glob("*.bdf"), *(REPO / "sample").glob("*.dat"),
+DECKS = sorted([*sample_decks("*.bdf"), *sample_decks("*.dat"),
                 *(REPO / "tests/integration/bdf").glob("*.bdf")])
 
 #: Cards whose sbeam form puts an sbeam-only value in a field MSC defines, so pyNastran
 #: rightly rejects them.  Tracked for alignment or renaming.
 _SBEAM_EXTENSIONS = {
-    "AEROS": "#87: sbeam reads MACH from field 9, blank in MSC",
-    "TRIM": "#87/#88: sbeam's RHOREF pseudo-label and label pairs in field 9 (MSC AEQR)",
     "MASSCASE": "sbeam extension (named MASSSET, MSC's name, until #78)",
-}
+}   # AEROS (field-9 MACH) and TRIM (RHOREF, a label in AEQR) left with #87
 
 #: sbeam cards pyNastran cannot read at all (it raises instead of storing an error): they
 #: are removed before pyNastran reads the deck.
@@ -226,6 +228,12 @@ def _sbeam_view(b: BulkData) -> dict[str, dict[Any, dict[str, Any]]]:
                             xyz=[mp.x, mp.y, mp.z], cd=mp.cp)
                     for k, mp in {**b.monpnt1s, **b.monpnt3s}.items()},
     }
+    # #104: MSC's DMIJ W2GJ / DMIK WKK, header and every term (TOUT is precision only)
+    for card in ("DMIJ", "DMIK"):
+        v[card] = {m.name: dict(form=(m.header or (None,) * 3)[0], tin=(m.header or (None,) * 3)[1],
+                                ncol=(m.header or (None,) * 3)[2],
+                                terms=sorted([*key, a] for key, a in m.terms.items()))
+                   for m in b.aero_matrices.values() if m.card == card}
     return v
 
 
@@ -317,9 +325,7 @@ def _pyn_view(m: Any) -> dict[str, dict[Any, dict[str, Any]]]:
     v["AESTAT"] = {k: dict(label=a.label) for k, a in m.aestats.items()}
     v["AESURF"] = {k: dict(label=a.label, cid1=a.cid1, alid1=a.aelist_id1, cid2=a.cid2,
                            alid2=a.aelist_id2, eff=a.eff) for k, a in m.aesurf.items()}
-    # RHOREF is sbeam's pseudo-label, not a trim variable (#87)
-    v["TRIM"] = {k: dict(mach=t.mach, q=t.q, vars=sorted(
-        (lbl, ux) for lbl, ux in zip(t.labels, _f(t.uxs)) if lbl != "RHOREF"))
+    v["TRIM"] = {k: dict(mach=t.mach, q=t.q, vars=sorted(zip(t.labels, _f(t.uxs))))
                  for k, t in m.trims.items()}
     v["TABLED1"] = {k: dict(x=_f(t.x), y=_f(t.y))
                     for k, t in m.tables_d.items() if t.type == "TABLED1"}
@@ -339,6 +345,11 @@ def _pyn_view(m: Any) -> dict[str, dict[Any, dict[str, Any]]]:
                                   cp=mp.cp,
                                   xyz=_f(mp.xyz), cd=mp.cd)
                     for mp in m.monitor_points if mp.type == "MONPNT1"}
+    for card, mats in (("DMIJ", m.dmij), ("DMIK", m.dmik)):
+        v[card] = {k: dict(form=d.matrix_form, tin=d.tin, ncol=d.ncols,
+                           terms=sorted([int(cj[0]), int(cj[1]), int(ci[0]), int(ci[1]), float(a)]
+                                        for cj, ci, a in zip(d.GCj, d.GCi, d.Real)))
+                   for k, d in mats.items()}
     return v
 
 
@@ -566,7 +577,7 @@ def test_mass_combination_deck_reads_the_same_sections_and_selectors(tmp_path):
     1.4.1), so S0/Si/IDi have no independent reader: they are gated by the GPWG hand
     check in ``tests/aero/test_mass_combination.py``.
     """
-    deck = REPO / "sample" / "ha144a_mass_combination_sweep.bdf"
+    deck = sample_path("ha144a_mass_combination_sweep.bdf")
     cc, bulk = parse_bdf(deck)
     # pyNastran finds the case control after CEND, which sbeam decks do not carry
     (tmp_path / deck.name).write_text(deck.read_text().replace("\nSOL 144\n", "\nSOL 144\nCEND\n", 1))
@@ -582,3 +593,52 @@ def test_mass_combination_deck_reads_the_same_sections_and_selectors(tmp_path):
               if "MASSSET" in v.params}
     assert pyn_cc == {sc.subcase_id: sc.massset_sid for sc in cc.subcases}
     assert model.card_count["MASSSET"] == len(bulk.mass_combinations)
+
+
+# ---------------------------------------------------------------------------
+# $ COMPAT: header tag of each sample deck (#95 D4)
+# ---------------------------------------------------------------------------
+
+SAMPLES = [*sample_decks("*.bdf"), *sample_decks("*.dat")]
+
+#: MSC cards pyNastran 1.4.1 raises on, removed before it reads a sample: the archived
+#: HA144A.bdf enters DMI columns as "1.0, THRU, 80" (KeyError in pyNastran's DMI reader).
+_MSC_CARDS_PYNASTRAN_RAISES_ON = {"DMI"}
+
+#: MSC cards pyNastran 1.4.1 does not know (its ``MISSING_CARDS``): a rejection of one of
+#: these says nothing about the deck.  MASSSET: QRG 2024.1 PDF p.2018 (#102).
+_MSC_CARDS_PYNASTRAN_LACKS = {"MASSSET"}
+
+
+def _sample_bulk(path: Path) -> list[str]:
+    """Bulk lines of a sample and its INCLUDEs, parsed by sbeam or not (HA144A.bdf is not)."""
+    text = path.read_text().splitlines()
+    in_bulk = not any(ln.split("$", 1)[0].strip().upper() == "BEGIN BULK" for ln in text)
+    out: list[str] = []
+    skip = False
+    for line in text:
+        body = line.split("$", 1)[0].strip()
+        if body.upper() == "BEGIN BULK":
+            in_bulk = True
+        elif body.upper().startswith("INCLUDE"):
+            out += _sample_bulk(path.parent / body.split(None, 1)[1].strip().strip("'\""))
+        elif in_bulk:
+            fields = split_line(line.split("$", 1)[0]) if body else []
+            if fields and not is_continuation(fields):
+                skip = fields[0].strip().upper() in _MSC_CARDS_PYNASTRAN_RAISES_ON
+            if not skip:
+                out.append(line)
+    return out
+
+
+@pytest.mark.parametrize("deck", SAMPLES, ids=lambda p: p.name)
+def test_sample_compat_tag_agrees_with_pynastran(deck, tmp_path):
+    """MSC-runnable: pyNastran knows every bulk card.  sbeam-extension: it rejects one, or
+    the deck uses an sbeam-only case-control command (pyNastran does not check those)."""
+    model, failed = _pynastran(_sample_bulk(deck), tmp_path)
+    unknown = (set(model.reject_count) | failed) - _MSC_CARDS_PYNASTRAN_LACKS
+    own_commands = deck_names(deck)[0] & SBEAM_ONLY_COMMANDS
+    expected = SBEAM_EXTENSION if unknown or own_commands else MSC_RUNNABLE
+    assert compat_tags(deck) == [expected], (
+        f"{deck.name}: pyNastran rejects {sorted(unknown)}, sbeam-only commands "
+        f"{sorted(own_commands)}")

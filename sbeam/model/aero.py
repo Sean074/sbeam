@@ -15,7 +15,6 @@ class Aeros:
     sref:  float  # reference area
     symxz: int    # +1 = symmetric about XZ plane, -1 = antisymmetric, 0 = none
     symxy: int    # +1 = symmetric about XY plane, -1 = antisymmetric, 0 = none
-    mach:  float = 0.0  # sbeam extension: Mach for Prandtl–Glauert correction (field 8)
 
 
 @dataclass
@@ -100,6 +99,22 @@ class Wkk:
     sid:       int
     caero_eid: int           # which CAERO1 element this applies to
     data: list[float] = field(default_factory=list)   # per-box diagonal weights (nspan × nchord)
+
+
+@dataclass
+class AeroMatrix:
+    """MSC's DMIJ (W2GJ) or DMIK (WKK) direct matrix input, as read (#104).
+
+    QRG 2024.1 PDF p.1617–1619 (DMIJ), p.1623–1625 (DMIK).  ``header`` is None until the
+    header entry is read (the deck is order-independent).  ``terms`` maps
+    (GJ, CJ, Gi, Ci) — column grid and component, row grid and component, the grids
+    being aero box IDs — to the real term Ai.  ``map_aero_matrices`` turns it into the
+    native per-CAERO1 W2GJ / WKK data once every card is read.
+    """
+    card: str                # "DMIJ" or "DMIK"
+    name: str                # "W2GJ" or "WKK"
+    header: Optional[tuple[int, int, Optional[int]]] = None   # (IFO, TIN, NCOL)
+    terms: dict[tuple[int, int, int, int], float] = field(default_factory=dict)
 
 
 @dataclass
@@ -231,36 +246,14 @@ class Aelist:
 class Trim:
     """Static trim condition — prescribed values for a subset of trim variables.
 
-    ``rhoref`` is an sbeam extension (Step 61) entered as a pseudo-label in the
-    LABEL/VALUE pair list (``TRIM, 1, 0.9, 1200.0, RHOREF, <rho>, ...``, ``<rho>``
-    in the deck's own consistent units — charter §7).  It
-    is the freestream density for this flight condition and exists solely to map
-    the dynamic pressure to a true airspeed ``V = sqrt(2q/rho)``; the static trim
-    (Step 52/53) never needs it.  ``0.0`` means "not supplied".
+    MSC's layout (QRG 2024.1 PDF p.2992): ``SID MACH Q LABEL1 UX1 LABEL2 UX2 AEQR`` /
+    ``LABEL3 UX3 …``.  AEQR is always 1.0 (elastic trim): the parser refuses any other
+    value.
     """
     sid:  int
     mach: float
     q:    float          # dynamic pressure
     vars: dict[str, float] = field(default_factory=dict)   # {label: prescribed_value}
-    rhoref: float = 0.0  # sbeam extension: freestream density (0.0 ⇒ not supplied)
-
-    def velocity(self) -> float:
-        """True airspeed V = sqrt(2q/rho) from the RHOREF pseudo-label.
-
-        Raises:
-            ValueError if RHOREF was not supplied on the card — the transient
-            maneuver rate terms (Step 61 ``build_dj_rigidrate``) are undefined
-            without a physical velocity.
-        """
-        if self.rhoref <= 0.0:
-            raise ValueError(
-                f"TRIM {self.sid}: a freestream velocity is required but RHOREF "
-                "is not set on the card.  Add the RHOREF pseudo-label "
-                "(e.g. 'TRIM, {sid}, MACH, Q, RHOREF, <rho>, ...', with <rho> the "
-                "freestream density in the deck's own consistent units) so "
-                "V = sqrt(2q/rho) can be formed.".replace("{sid}", str(self.sid))
-            )
-        return float(math.sqrt(2.0 * self.q / self.rhoref))
 
 
 @dataclass
@@ -277,7 +270,11 @@ class Diverg:
 
 @dataclass
 class Trimvar:
-    """Per-variable bounds and initial guess for over-determined trim optimisation."""
+    """Per-variable bounds and initial guess for over-determined trim optimisation.
+
+    ZAERO's layout (ZAERO 9.2 UM PDF p.511): ``IDVAR LABEL LOWER UPPER TRIMLNK DMI SYM
+    INITIAL`` (#87); TRIMLNK, DMI and user-input derivatives are refused, SYM is ignored.
+    """
     id:    int
     label: str    # matching AESTAT or AESURF label
     init:  float  # initial guess

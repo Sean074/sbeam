@@ -1,7 +1,7 @@
 # Aeroelastics Phases C + G0 — SOL 144 Static Aeroelastics & Maneuver Loads
 
 Phase C + G0 code standard: the SOL 144 trim solve, stability derivatives, divergence,
-output/exports, transient maneuver loads (MLOADS), and monitor points. Part of the
+output/exports, transient maneuver loads (MANVR), and monitor points. Part of the
 aeroelastics guide — see [`05_aeroelastics.md`](05_aeroelastics.md) for the architecture
 overview, validation status, and supported-card table; [`05a_aero_vlm.md`](05a_aero_vlm.md)
 for the Phase A aerodynamics; [`05b_splining.md`](05b_splining.md) for the Phase B splines.
@@ -33,7 +33,7 @@ parsing and the full SOL 144 solve with `Q_ax·δ_x`).
 > `LOAD` set enters the trim RHS beside the aerodynamic and inertial loads, un-scaled by
 > `q`, and flows into `net_loads`, the closure, the monitor/section `applied` column and
 > the `maneuver_loads.bdf` export. `GRAV` is refused in a trim `LOAD` set (gravity enters
-> through `URDD3`). The DEF-M4 refusal of `TRIM` + `LOAD` is retired; an `MLOADS` or
+> through `URDD3`). The DEF-M4 refusal of `TRIM` + `LOAD` is retired; an `MANVR` or
 > `DIVERG`-only subcase carrying `LOAD` raises instead of dropping it. See "Applied
 > structural load in a trim" under Step 52.
 
@@ -57,7 +57,7 @@ Q_aa = G_load^T  S_kj  (A_jj*)^-1  D_jk  G_slope    shape (n_g, n_g)
 | `g_slope` | (n_box, n_g) | Slope spline from `build_spline_operators` |
 
 Every `gᵀ·f` transfer in the SOL 144 / maneuver chain — `Q_aa`, `f_g`, `Q_ax`,
-`grid_loads`, the modal GAFs — uses `g_load`, so `SPLINE0` body-panel and
+`grid_loads`, the modal GAFs — uses `g_load`, so `LOADINJ` body-panel and
 un-splined-box forces reach the force balance and the exports (Step 64 / DEF-M1).
 `g_disp` remains the kinematic operator used for displacement recovery only.
 
@@ -221,9 +221,9 @@ All tests in `tests/aero/test_step50_qaa.py`:
 
 ## Step 51 — Trim Card Set Parsing
 
-Step 51 adds BDF-parsing support for the static aeroelastic trim card set. No solver is
-added; these cards are parsed, stored in `BulkData`, and cross-referenced so that the
-Step 52+ trim solver can consume them directly.
+Step 51 added BDF-parsing support for the static aeroelastic trim card set: the cards are
+parsed, stored in `BulkData`, and cross-referenced. The trim solver that consumes them
+arrived in Step 52 (below).
 
 ### Data model
 
@@ -256,8 +256,8 @@ trim conditions:
 
 - **Fully prescribed** (`len(free) == 0`): all trim variables have prescribed values — no
   DOFs remain for the solver.
-- **Over-determined without objective** (`len(free) > len(prescribed)` and no TRIMOBJ
-  present): the system cannot be solved as a square system; a TRIMOBJ card is required to
+- **Over-determined without objective** (`len(free) > len(prescribed)` and no TRIMWGT
+  present): the system cannot be solved as a square system; a TRIMWGT card is required to
   specify the weighted least-squares objective.
 
 ### Case control
@@ -278,6 +278,31 @@ plus `massset_sid` for the Step 60 payload / mass case (see
 mass combination into the same field (#102; `mass_card` records which command was used;
 card reference "MASSSET — MSC mass combination").
 
+**The case control is checked against the model before any subcase is solved (#124).**
+`sbeam.solver.precheck.check_case_control(cc, bulk)` returns every fault, and the command
+line (`require_runnable`) stops with the whole list:
+
+| Fault | Message |
+|---|---|
+| A subcase selects no TRIM, DIVERG, MANVR or GUSTLF | "needs a driver" |
+| `TRIM`, `TRIMWGT`, `DIVERG`, `MANVR`, `GUSTLF`, `MASSCASE` = n with no such card | "… n not found in the bulk data" |
+| `MANVR` with `TRIM`, `GUSTLF` or `DIVERG` in one subcase | "MANVR cannot combine with …" |
+| `LOAD` on a MANVR or divergence-only subcase | "LOAD combines only with a TRIM subcase" |
+| `LOAD` = n with no such set, or a set that holds a GRAV | "LOAD n not found" / "references GRAV" |
+| `TRIM` = n beside a `GUSTLF` whose card names another TRIM | "names TRIM m" |
+| A MANVR subcase and no SUPORT in the deck | "needs a SUPORT card" |
+| A modal MANVR whose MANTRIM has no RHO | "needs RHO on MANTRIM" |
+
+The parser does not make these checks: it checks cards against cards, and such a deck
+parses. Before #124 most of them stopped the run from inside the solver when the subcase
+was reached, with the earlier subcases' work lost. Two did not stop it at all: `MANVR` with
+`TRIM` in one subcase ran the maneuver and ignored the TRIM, and `TRIMWGT = n` naming no
+card ran the trim with no objective. Both are now refused (input that is not acted on is
+refused, CLAUDE.md rule 7). The check is not part of `parse_bdf`, so a deck that cannot yet
+run can still be read, which is how the viewer opens one to complete it. These are sbeam's
+own consistency rules; no MSC rule is claimed for them. Only SOL 144 is checked: SOL 101
+and 103 report a missing LOAD, SPC or METHOD from the solver.
+
 ### Over-determined trim (sbeam-defined cards)
 
 When the number of free trim variables exceeds the number of equilibrium equations,
@@ -286,21 +311,21 @@ the problem is over-determined. sbeam uses three sbeam-defined cards to handle t
 | Card | Role |
 |------|------|
 | `TRIMVAR` | Per-variable initial guess and bounds (`lb < ub`) |
-| `TRIMOBJ` | Weighted-L2 objective `J = Σ wᵢ·δᵢ²` over the listed trim-variable labels |
-| `TRIMCON` | Inequality on one trim variable (`LE` or `GE`); one set (one SID) per deck |
+| `TRIMWGT` | Weighted-L2 objective `J = Σ wᵢ·δᵢ²` over the listed trim-variable labels |
+| `TRIMINEQ` | Inequality on one trim variable (`LE` or `GE`); one set (one SID) per deck |
 
 The optimiser uses these cards when `n_free > n_suport` — see **Over-determined trim
-solve** below. The case-control `TRIMOBJ = sid` selects the objective for a subcase
-(`SubcaseControl.trimobj_sid`); a single defined `TRIMOBJ` is used by default.
+solve** below. The case-control `TRIMWGT = sid` selects the objective for a subcase
+(`SubcaseControl.trimobj_sid`); a single defined `TRIMWGT` is used by default.
 
 Since #77 none of the three is skipped without a message:
 
 - Every label must be an AESTAT or AESURF label (checked after the read). Coefficient
   names such as `CL` are not labels.
-- **Every trim is checked against the TRIMVAR bounds and the TRIMCON set**
+- **Every trim is checked against the TRIMVAR bounds and the TRIMINEQ set**
   (`check_trim_limits`), including a determined trim, an over-determined trim with no
   redundancy left, and a value the TRIM card prescribes. A violation refuses the run.
-- A TRIMOBJ whose weighted labels do not fix the redundancy is refused. It used to fall
+- A TRIMWGT whose weighted labels do not fix the redundancy is refused. It used to fall
   back to unit weights on every free variable.
 
 ---
@@ -309,10 +334,10 @@ Since #77 none of the three is skipped without a message:
 
 `solver/sol144.py:run_sol144_trim(bulk, subcase, aero)` implements the **determined** trim
 case (`n_free_labels == n_SUPORT_DOFs`) and the **over-determined** (redundant-control) case
-(null-space reduction + weighted-L2 `TRIMOBJ`/`TRIMCON`/`TRIMVAR`, gate V-C4).
+(null-space reduction + weighted-L2 `TRIMWGT`/`TRIMINEQ`/`TRIMVAR`, gate V-C4).
 Since P13 (DEF-R1) the function is a short orchestrator over private `_stage_*`
 helpers threaded through a `_TrimState` dataflow context (validate → mass case/Mach →
-labels → reference geometry → CHORDCP echo → downwash + a-set reduction → Schur solve →
+labels → reference geometry → CPINJ echo → downwash + a-set reduction → Schur solve →
 displacement recovery → derivatives → totals → flight/net loads → monitor outputs →
 result packing); the Schur machinery itself lives in `sol144_trim_solve.py` and the
 derivative blocks in `sol144_derivs.py` (see the module map in `05_aeroelastics.md`):
@@ -356,12 +381,12 @@ The Schur partition structure is equivalent to the MSC r-set/l-set method. The r
 defects (AE1–AE7, AE9, AE10) are all resolved; the HA144A benchmark passes on both subcases
 within the ≤1%-full-scale gate (measured ≤0.4% FS — see "Validation status & known
 limitations" at the top of this document). Step 52 closed 2026-06-14 with the
-over-determined trim and the lateral rate derivatives (`C_lp`/`C_nr`/`C_lβ`); the only open
-derivative work is the unrestrained (mean-axis) column, tracked as **AE8b** in the backlog.
+over-determined trim and the lateral rate derivatives (`C_lp`/`C_nr`/`C_lβ`). The
+unrestrained (mean-axis) column, **AE8b**, closed on 2026-07-05 (`05_aeroelastics.md`).
 
 ### Trim acceptance gates — V-AE1f and V-AE1d (`tests/aero/test_ae1_fullspan.py`)
 
-The HA144A trim is gated on the full-span deck (`sample/ha144a_fullspan_sbeam.bdf`,
+The HA144A trim is gated on the full-span deck (`sample/ha144a/ha144a_fullspan_sbeam.bdf`,
 SYMXZ=0, whole-airplane = 16000 lb) — the parity ground truth since half-span support
 was removed (AE1 Step D).
 
@@ -395,7 +420,7 @@ parity bug would pass). The box force/moment is built two ways on the same model
   `My = CM·S_ref·c_ref`.
 
 Both paths are driven with the SAME alpha-only normalwash (W2GJ baseline `wg` excluded so the
-excitations match) and the SAME effective Mach (`bulk.aeros.mach`). On HA144A (full-span, M=0.9)
+excitations match) and the SAME effective Mach (`aero.mach`, the deck's TRIM Mach). On HA144A (full-span, M=0.9)
 and `val_vlm_rect_ar8` (planar, M=0) the Path-A totals match the `solve_rigid_cl` resultants to
 machine precision; a parity proxy (halving `f_box`) fails the 1% gate by ~2×, confirming the gate
 discriminates — unlike `test_phase_b.py::test_tz_sum_vs_cl_magnitude`'s
@@ -440,7 +465,7 @@ and the `C_lβ` sign-flip between `val_vlm_dihedral`/`val_vlm_anhedral` (zero on
 ### Lateral trim cases — steady roll and steady sideslip (V-LAT2, #10)
 
 A lateral case is an ordinary determined trim: one free label per `SUPORT` DOF, the other
-lateral labels prescribed. The shipped validation deck `sample/val_lateral_aileron_rudder.bdf`
+lateral labels prescribed. The shipped validation deck `sample/validation/val_lateral_aileron_rudder.bdf`
 (AR 8 wing + vertical fin on a stiff spine; aileron pair as **one** `AESURF` with
 `CID1`/`ALID1` starboard and `CID2`/`ALID2` port, both hinge +y outboard; rudder with hinge
 +y **down**; `SUPORT 90, 46`; RCSID z-down at the root) runs both:
@@ -498,7 +523,7 @@ statements of different problems; the deck below gates both. Engine torque is a 
 about `x` at the mount, with the sign fixed by the propeller handedness rule (charter §10):
 a clockwise-seen-from-behind propeller puts `+Mx` basic on the airframe.
 
-The shipped deck `sample/val_thrust_trim.bdf` (AR 8 wing + horizontal tail with elevator on
+The shipped deck `sample/validation/val_thrust_trim.bdf` (AR 8 wing + horizontal tail with elevator on
 a stiff spine; engine grid 0.5 below the nose on an `RBAR` pylon; `SUPORT 90, 135`,
 `SPC1 1 246 90`, RCSID z-down at the reference; total mass 10, CG 0.05 below the reference;
 one `TRIM` shared by three subcases — no load, `LOAD 710 = 1.0 × FORCE 701`, `LOAD 701`
@@ -518,14 +543,14 @@ of the applied load alone (rel 1e-10) and, on a stiffened copy, the rigid 2×2 s
 doubles every shift; closure ≈ 0 in all six components and `m·URDD1 = T + Fx_aero`; the nose
 `MONSECT` carries `c1_applied = −T`, `c5_applied = +0.5·T` and the every-grid `MONPNT3`
 closes with the applied column in the sum; derivatives identical across the subcases; `GRAV`,
-`MLOADS` + `LOAD` and `DIVERG`-only + `LOAD` raise; the CLI writes the f06 block, both CSVs
+`MANVR` + `LOAD` and `DIVERG`-only + `LOAD` raise; the CLI writes the f06 block, both CSVs
 (with the `applied` columns) and `maneuver_loads.bdf`. The torque case lives on the lateral
-deck: `sample/val_lateral_aileron_rudder.bdf` `SUBCASE 3` applies `MOMENT 701` (`+Mx = 35`,
+deck: `sample/validation/val_lateral_aileron_rudder.bdf` `SUBCASE 3` applies `MOMENT 701` (`+Mx = 35`,
 a clockwise propeller) with all lateral labels zero and trims `AIL = −0.0351` (−2.01°),
 `RUD = +0.0022` — the 2×2 solve of the restrained table against `−[Q/(qSb), 0]` (rel 1e-8),
 with `AIL < 0` the charter gate.
 
-Not carried through the transient: an `MLOADS` subcase with `LOAD` raises (the
+Not carried through the transient: an `MANVR` subcase with `LOAD` raises (the
 initial-condition trim would take it and the time history would drop it); constant-load
 carry-through is filed as #50.
 
@@ -535,15 +560,15 @@ When `n_free > n_suport` (more free trim variables than equilibrium equations, e
 control effectors), `run_sol144_trim` dispatches to `_solve_trim_overdetermined`. The trim
 equilibrium `schur_A·δ = schur_b` (n_suport equations) is satisfied **by construction** through a
 null-space reduction `δ = δ_p + N·z` (δ_p = least-norm equilibrium solution, `N = null(schur_A)`);
-the redundancy coordinate `z` is then chosen by minimising the convex weighted-L2 TRIMOBJ
-objective `Σ wᵢ·δᵢ²` subject to the TRIMCON inequalities and TRIMVAR bounds (SLSQP on the small,
+the redundancy coordinate `z` is then chosen by minimising the convex weighted-L2 TRIMWGT
+objective `Σ wᵢ·δᵢ²` subject to the TRIMINEQ inequalities and TRIMVAR bounds (SLSQP on the small,
 well-scaled reduced problem). The null-space form avoids handing the optimiser the stiff
 equilibrium equality (whose rows carry structural-force magnitudes O(10³) that swamp the O(0.1)
 trim variables). Because the objective is convex the optimum is initial-guess insensitive (KC6);
 TRIMVAR `init` only seeds the warm start. `Sol144TrimResult.trim_mode` reports `"determined"` or
 `"over-determined"` and is echoed in the f06 TRIM VARIABLES block. Gate: V-C4
 (`tests/aero/test_trim_overdetermined.py`) — `min(PITCH²)` reproduces the determined ANGLEA/ELEV,
-a TRIMCON forces its bound active, and the result is start-point independent.
+a TRIMINEQ forces its bound active, and the result is start-point independent.
 
 
 ---
@@ -567,13 +592,18 @@ half-span decks), seeds an `AeroCache` shared across subcases, and calls
 
 | Block | Source |
 |-------|--------|
-| TRIM VARIABLES (free vs prescribed) | `result.trim_vars` + the TRIM card |
-| STABILITY DERIVATIVES (rigid + elastic restrained + unrestrained) | `result.rigid_derivs`, `result.restrained_derivs`, `result.unrestrained_derivs`. The block opens by stating the frame: coefficients are in **basic axes**, and MSC's "TRANSFORMATION FROM BASIC TO REFERENCE COORDINATES" (`[T]` and offset) is printed so a comparison can convert, `{C}REF = [T]{C}BAS` (#82; MSC prints the RCSID frame, AAUG 2023.1 PDF p.233). URDD rows are per unit of the URDD trim variable, an RCSID component |
+| Subcase header (TITLE, SUBTITLE, LABEL per QRG p.679/658/471; SUBCASE, TRIM, MACH, Q; MASSCASE label, mass and CG when a mass case is selected) | the case control and `result.massset_*` |
+| GUST LOAD CONDITION — only for a `GUSTLF` subcase | `result.gust_echo` |
+| TRIM VARIABLES — MSC's columns (AAUG 2023.1 PDF p.235; #90): ID, LABEL, TYPE (RIGID BODY / CONTROL SURFACE), TRIM STATUS (FIXED / FREE), VALUE OF UX and units, with MSC's INTERCEPT row. URDD units are the deck's (sbeam has no AUNITS) | `result.trim_vars` + the TRIM card |
+| INJECTED OPERATING POINT (CPINJ) / INJECTED AERO LOADS (LOADINJ) — only when present | the CPINJ and LOADINJ cards |
+| STABILITY DERIVATIVES — MSC's layout (AAUG 2023.1 PDF p.233; #90): per trim variable, six rows CX CY CZ CMX CMY CMZ, columns RIGID (MSC's RIGID UNSPLINED; there is no SPLINED column), ELASTIC RESTRAINED, ELASTIC UNRESTRAINED. The unrestrained values are the SUPORT reactions (AAUG eq. 2-122), so a component with no SUPORT DOF is 0; URDD variables print N/A there. Until #90 the elastic columns carried CZ/CMY only and the roll/yaw moments sat in a separate LATERAL/DIRECTIONAL block | `result.rigid_derivs`, `result.restrained_derivs`, `result.unrestrained_derivs`. The block opens by stating the frame: coefficients are in **basic axes**, and MSC's "TRANSFORMATION FROM BASIC TO REFERENCE COORDINATES" (`[T]` and offset) is printed so a comparison can convert, `{C}REF = [T]{C}BAS` (#82; MSC prints the RCSID frame, AAUG 2023.1 PDF p.233). URDD rows are per unit of the URDD trim variable, an RCSID component |
 | HINGE MOMENT DERIVATIVES (RIGID and RESTRAINED columns per AESURF) | `result.hinge_moments[surf][label]` (rigid) and `result.hinge_moments_restrained[surf][label]` (elastic restrained), both × q. Dimensional: q × MSC's coefficient for CREFC = CREFS = 1 (AAUG p.234) |
 | CONTROL SURFACE POSITION AND HINGE MOMENT (trimmed) | `result.trim_vars[surf]` and `q × result.hinge_moments[surf]['total']`, the hinge moment of the elastic trim loads. Until #82 this was a "TOTAL (TRIM)" row under the rigid derivatives (AAUG p.235) |
 | AERODYNAMIC TOTALS (CZ body / CL wind / CMY) | `result.total_cl` (body CZ), `result.total_cl_wind` (wind CL = CZ·cosα − CX·sinα at trim α), `result.total_cm` |
+| APPLIED STRUCTURAL LOAD — only when the TRIM subcase carries a `LOAD` | the subcase LOAD set |
 | AERODYNAMIC DIVERGENCE (`q_div`, `q/q_div`) | `result.q_div` (restrained l-set; see below) |
-| DISPLACEMENT / BAR FORCES / BAR STRESSES | shared helpers, reused from the SOL 101 writer |
+| MONITOR POINT INTEGRATED LOADS / SECTION CUT RUNNING LOADS — when MONPNT1 / MONSECT are defined. A structural monitor prints its TOTAL with the AERO, INERTIA (RIGID), APPLIED and REACTION rows under it, as the transient blocks do (#90); MSC's RIGID AIR / ELASTIC columns are #103 | `result.monitor_loads`, `result.section_loads` |
+| DISPLACEMENT / BAR FORCES / BAR STRESSES / ROD FORCES / ROD STRESSES | shared helpers, reused from the SOL 101 writer |
 | AERODYNAMIC BOX PRESSURES AND FORCES | `result.box_cp`, `result.box_forces`, keyed by `result.box_ids` — **only when the subcase requests `AEROF` or `APRES`**. `BOX ID` is the NASTRAN box ID (1000, 1001 …), as in MSC's force listing (AAUG p.237); until #82 it was a running index. `DELTA-CP` is along MSC's element normal, `result.box_msc_sign · result.box_cp` (#84; CAERO1 Figure 9-5): a port wing or fin drawn root to tip prints the opposite sign to `result.box_cp`, which stays along sbeam's +z/+y normal. FX/FY/FZ are basic and unaffected |
 
 **Divergence diagnostic.** `sol144_diverg.divergence_dynamic_pressure(K_ll, Q_ll)` returns the
@@ -639,14 +669,16 @@ applied); for a free aircraft (SUPORT, no SPC) it must balance to ≈ 0 (a non-z
 warns — gravity/mass-model guard, KC9), and in an SPC'd direction it equals minus the
 reaction. Recipes: symmetric pull-up/push-over (prescribe `URDD3`, `PITCH`, `URDD5 = 0`; ANGLEA and the
 elevator free; a steady pull-up carries `PITCH = (n − 1)·g·c_ref/(2V²)`, not 0 — see the
-flagship `TRIM 2`), gated by **V-C5** (`tests/aero/test_maneuver_loads.py`); steady roll and
+flagship `TRIM 2`; ZAERO gives the same value for its `QRATE`, ZAERO 9.2 User's Manual,
+TRIMVAR, PDF p.512; `sbeam_tools.cases.maneuver.steady_pull_up_pitch_rate` computes it and
+the viewer's pull-up preset writes it, #127), gated by **V-C5** (`tests/aero/test_maneuver_loads.py`); steady roll and
 steady sideslip as in "Lateral trim cases" below, gated by **V-LAT2**
 (`tests/aero/test_lateral_cases.py`); thrust and engine torque as applied `LOAD` sets as in
 "Applied structural load in a trim" below, gated by **V-THR** (`tests/aero/test_thrust_trim.py`).
 
 **Transient maneuver loads — Phase G0 increment 1 (DLM-free quasi-steady).** A SOL 144 subcase that
-carries an `MLOADS = sid` request runs a transient maneuver solve instead of the static trim:
-`solver/maneuver_modal.py` when the MLOADS card's NMODES/METHOD/ZETA select the modal solver —
+carries an `MANVR = sid` request runs a transient maneuver solve instead of the static trim:
+`solver/maneuver_modal.py` when the MANVR card's NMODES/METHOD/ZETA select the modal solver —
 since Step 63 the **free-flight** solver (see the Steps 62–63 section below) — otherwise the
 direct l-set solver `solver/maneuver_qs.py`
 described here (kept permanently as the prescribed-rigid reference). The direct solver
@@ -657,10 +689,10 @@ one **before** the IC trim and passes it in (DEF-R6, 2026-08-02): the trim popul
 at the flight Mach, so the solver's own `aero_cache.get(ic.mach)` is a cache hit — previously
 the Mach-correct AIC was built twice.
 
-- **Cards (ZAERO `MLOADS` family, `sbeam/model/maneuver.py`):** `MLOADS` is the driver and
-  references `MLDTRIM` (the initial-condition `TRIM` sid), `MLDTIME` (`t0/tend/dt/tout`), `MLDCOMD`
+- **Cards (sbeam's `MANVR` family, `sbeam/model/maneuver.py`; formerly ZAERO's names, #87):** `MANVR` is the driver and
+  references `MANTRIM` (the initial-condition `TRIM` sid), `MANTIME` (`t0/tend/dt/tout`), `MANCMD`
   (one or more `(label, TABLED1)` command pairs — any AESTAT/AESURF label; uncommanded labels hold
-  their trim value), and `MLDPRNT` (ASCII output request). `TABLED1` is the general tabular
+  their trim value), and `MANPRNT` (ASCII output request). `TABLED1` is the general tabular
   time→value function (linear interpolation; **linear extrapolation beyond the table from its
   end points**, MSC QRG 2024.1 PDF p.2897 remark 6, #70 — end a table with two points of equal y
   to hold a command; the solvers warn when a table is extrapolated at a non-zero slope inside the
@@ -692,26 +724,26 @@ the Mach-correct AIC was built twice.
   the direct solver it is what the SUPORT reacts.
 - **Critical sample (DEF-M5):** one severity metric, `results.peak_grid_force` — the maximum over
   grids of the net applied **translational force magnitude** at that grid. It selects the
-  critical sample, fills the f06 `PEAK GRID F` and MLDPRNT `PEAK_GRID_F` columns, and labels the f06
-  header (`PEAK |NET GRID FORCE|`); sample numbering is **1-based** everywhere, including MLDPRNT.
+  critical sample, fills the f06 `PEAK GRID F` and MANPRNT `PEAK_GRID_F` columns, and labels the f06
+  header (`PEAK |NET GRID FORCE|`); sample numbering is **1-based** everywhere, including MANPRNT.
   It is deliberately neither the load-closure resultant (`closure`, the aero/inertia balance
   residual — ~0 on a balanced maneuver, so ranking by it ranks numerical noise) nor
   `max|net_loads|` over all six DOFs (which mixes force and moment units). `CLOSURE_F`/`CLOSURE_M`
-  remain in the MLDPRNT table as the balance diagnostic they are.
-- **Output (`results/maneuver_output.py`):** an MLDPRNT ASCII time-history table
+  remain in the MANPRNT table as the balance diagnostic they are.
+- **Output (`results/maneuver_output.py`):** an MANPRNT ASCII time-history table
   (`<stem>.mldprnt.txt`: time, commands, aero `Fz`/`My`, closure norms, peak grid force) and the
   critical-sample net-load `FORCE`/`MOMENT` export (`<stem>.maneuver_qs_loads.bdf`).
-  The f06 gains a transient-maneuver block per MLOADS subcase
+  The f06 gains a transient-maneuver block per MANVR subcase
   (`f06_writer.py::build_f06_sol144_maneuver_text`, AC5: run summary, time-history table with
   critical-sample marker, critical-sample closure/displacement/CBAR detail). Header and data cells
   of the time-history table share one column width (`f06_writer._FIELD_W`, DEF-M7). The viewer offers
   the two ASCII/BDF exports as download buttons on the maneuver results view. Sample decks:
-  `sample/ha144a_fullspan_mloads.bdf` (ELEV ramp pitch-up on the HA144A full-span model) and
-  `sample/cessna210_flagship_mloads.bdf` (Step 65 — the same maneuver on the corrected,
+  `sample/ha144a/ha144a_fullspan_mloads.bdf` (ELEV ramp pitch-up on the HA144A full-span model) and
+  `sample/cessna210_flagship/cessna210_flagship_mloads.bdf` (Step 65 — the same maneuver on the corrected,
   splined, monitored realistic-airplane flagship).
 - **Gates (`tests/aero/test_maneuver_cards.py`, `tests/aero/test_maneuver_qs.py`):** card round-trip +
   validation; G0→Step 53 machine-precision identity; quasi-static settling to the new balanced trim
-  (closure → 0, lift = `n_z·W`); per-step closure bounded; MLDPRNT + critical-load export round-trips.
+  (closure → 0, lift = `n_z·W`); per-step closure bounded; MANPRNT + critical-load export round-trips.
 - **Validity:** low reduced frequency `k = ω·c_ref/2V ≲ 0.05–0.1` (slow maneuvers); higher-rate inputs
   need the Phase G0 unsteady corrections or the Phase D DLM.
 
@@ -722,12 +754,12 @@ once per job, the free-free basis `Φ = [Φ_r | Φ_e]` and every h-set operator 
 geometry, Mach and the baseline mass case. The free-flight modal transient solver (next section)
 consumes the basis and, since Step 63, the h-set GAF operators (`Q_hh`/`Q_hc`/`B_hh`).
 
-- **Deck input:** `MLOADS ... NMODES METHOD ZETA` (fields 7–9) selects the retained *elastic* mode
+- **Deck input:** `MANVR ... NMODES METHOD ZETA` (fields 7–9) selects the retained *elastic* mode
   count (rigid modes are always all retained), the EIGRL for the basis eigensolve (`0` = internal
-  all-modes default), and a uniform elastic modal damping ratio. The `TRIM` card that seeds the run
-  must carry the `RHOREF` pseudo-label — it is the only source of the true airspeed `V = √(2q/ρ)`
-  the rate terms need. Example:
-  `TRIM, 1, 0.9, 40.0, RHOREF, 2.3769-3, PITCH, 0.0` and `MLOADS, 1, 1, 1, 1, 1, 12, 900, 0.02`.
+  all-modes default), and a uniform elastic modal damping ratio. The `MANTRIM` that seeds the run
+  must carry the freestream density `RHO` (field 4) — it is the only source of the true airspeed
+  `V = √(2q/ρ)` the rate terms need (a `RHOREF` pseudo-label on TRIM until #87). Example:
+  `MANTRIM, 1, 1, 2.3769-3` and `MANVR, 1, 1, 1, 1, 1, 12, 900, 0.02`.
 - **What is built:** `build_rigid_modes` (the single owner of the geometric rigid-body basis —
   `designs/rbmref_card.md` reuses it), `build_maneuver_basis → ManeuverBasis` (`Φ`, `M_hh`, `K_hh`,
   `M_rr`, elastic frequencies, the rigid→trim-label map, diagnostics), and
@@ -767,11 +799,11 @@ covers prescribed-rigid studies). Theory: §7.8 Eq. 40 (the free-flight system) 
 restrained decomposition, reused per-step in recovery) of
 `docs/20_theory/01_aeroelastics_theory.md`.
 
-- **Selection (decision D1):** any of the MLOADS NMODES/METHOD/ZETA fields nonzero routes the
+- **Selection (decision D1):** any of the MANVR NMODES/METHOD/ZETA fields nonzero routes the
   subcase here; `METHOD=-1` is the "modal solver, all modes, defaults" sentinel; an all-zeros card
   keeps the direct solver. `Mloads.selects_modal` is the single predicate `main.py` **and the
   viewer** dispatch on (the viewer gained the same dispatch + shared `ManeuverBasisCache` at
-  Step 63 — it previously ran every MLOADS deck through the direct solver silently).
+  Step 63 — it previously ran every MANVR deck through the direct solver silently).
 - **Coupled EOM (perturbation about the IC trim):**
   `M_hh Δξ̈ + (C_s − q·B_hh) Δξ̇ + (K_hh − q·Q_hh) Δξ = q·Q_hc·Δδ_c(t)` — dense n_h, Newmark-β
   (¼, ½), one unsymmetric `K̂` LU (`K̂_rr = a0·M_rr − q(Q_rr + a1·B_rr)`; `M_rr ≻ 0` keeps it
@@ -779,11 +811,11 @@ restrained decomposition, reused per-step in recovery) of
   The Δ-form keeps gravity and the trim forcing implicit: a zero-command free response stays at
   the trim equilibrium to round-off. `C_s` is built from the case `M_hh` columns
   (`M_hh[:,e]·2ζω`), not `HsetGafs.C_hh`, so the damping force is exact under a MASSCASE.
-- **δ bookkeeping:** commanded **AESURF controls are the only inputs** (`MLDCOMD`); the rigid
+- **δ bookkeeping:** commanded **AESURF controls are the only inputs** (`MANCMD`); the rigid
   trim labels (ANGLEA/PITCH/URDD…) are **outputs** computed from the rigid states. Commanding a
   rigid-state label under this solver is a hard `ValueError` naming the label — at parse time
-  and at solve time. `RHOREF` on the IC `TRIM` is **mandatory** (the rigid-rate aero `B_hh`
-  needs `V = √(2q/ρ)`); missing ⇒ `ValueError` naming the TRIM sid.
+  and at solve time. `RHO` on the `MANTRIM` is **mandatory** (the rigid-rate aero `B_hh`
+  needs `V = √(2q/ρ)`); missing ⇒ `ValueError` naming the MANTRIM sid.
 - **Recovery — the label-fill consistency identity:** per output step the TOTAL δ(t) is
   reconstructed and fed to the unchanged shared `maneuver_qs.recover_step`: attitude labels
   carry the SUPORT-frame attitude `η_r = Δξ_r + (Φ_rr⁻¹Φ_e,r)Δξ_e` (the §7.9 re-split applied
@@ -805,7 +837,7 @@ restrained decomposition, reused per-step in recovery) of
   under the CASE mass (`Φ_e ← Φ_e − Φ_r·M_rr,case⁻¹(Φ_rᵀM_caseΦ_e)` — a cheap projection, same
   eigensolve, still fixed-Φ) so the closure identity holds exactly off-baseline. **D4:** warn
   when an overlay moves the CG by more than 5 % of `c_ref`.
-- **Deck-authoring practice:** MLDCOMD tables are ABSOLUTE and mass-case-specific — author them
+- **Deck-authoring practice:** MANCMD tables are ABSOLUTE and mass-case-specific — author them
   two-pass (trim first, table = trim value + increment; a table that starts off the trim value
   is a step input at t0). Clamped-linear ramps ring the highest retained modes (risk item 3);
   use densely-sampled smooth (cosine) tables for truncated bases — NMODES and dt convergence are
@@ -813,14 +845,14 @@ restrained decomposition, reused per-step in recovery) of
   `docs/10_standard/06_viewer.md`) automates both: its two-pass command builder authors
   increments and resolves them to absolute per-mass-case TABLED1s from the solved trim value,
   and its shape generator defaults to densely-sampled cosine ramps.
-- **Output:** same f06/MLDPRNT/export surface as the direct solver, plus: live ANGLEA/PITCH/URDD
-  history columns (they ride the δ fill), the MLDPRNT `NZ_REL` column
+- **Output:** same f06/MANPRNT/export surface as the direct solver, plus: live ANGLEA/PITCH/URDD
+  history columns (they ride the δ fill), the MANPRNT `NZ_REL` column
   (`URDD3_basic(t)/URDD3_basic(t0)` — unit-free load-factor ratio, = n_z in g for a 1g IC,
   decision D3), the f06 `MODAL SOLVER` basis block extended with a
   `FREE FLIGHT: V = …  RIGID STATES = … (OUTPUTS)` line, and per-step
   `ManeuverStep.xi_r/xi_r_dot/xi_r_ddot` (mean-axis rigid states) / `nz_rel`;
   `modal_coords` holds the full Δξ (n_h). Sample deck:
-  `sample/ha144a_mloads_massset.bdf` — the free-flight elevator maneuver × 3-MASSCASE payload
+  `sample/ha144a/ha144a_mloads_massset.bdf` — the free-flight elevator maneuver × 3-MASSCASE payload
   sweep (heavier ⇒ lower settled NZ_REL; CG-balanced fuel tanks so the sweep is a pure mass
   effect).
 - **Scope limits (documented):** linear inertial-frame rigid coordinates at fixed V — the steady
@@ -834,7 +866,7 @@ restrained decomposition, reused per-step in recovery) of
   ANGLEA/URDD3 free ≤ 1e−6, plus the pull-up identity ΔURDD3 = V·Δθ̇; short-period eigenpair vs
   a rigid 2-DOF hand calc from the AE8b unrestrained derivatives (measured ~2e−5, 5 % gate);
   uniform-SCALE mass sweep ⇒ strictly decreasing settled |Δn_z|, one basis build; rigid-label
-  and RHOREF errors; sample-deck end-to-end sweep. `tests/solver/test_maneuver_modal.py`
+  and missing-RHO errors; sample-deck end-to-end sweep. `tests/solver/test_maneuver_modal.py`
   (mechanics): free-flight closure on both mass variants; NMODES convergence and
   mode-acceleration ≥ 10× vs mode-displacement against the full-basis free-flight reference;
   hold-at-trim = Step 53; ζ decays the elastic tail (second-difference metric); fixed-Φ MASSCASE
@@ -858,7 +890,7 @@ The `MASSCASE` bulk card (fields and ops in
 a mass configuration built from the baseline model mass: `SCALE` multiplies the baseline,
 then `ADD` / `REPLACE` / `DELETE` overlay, swap, or drop CONM2 cards. A subcase selects it
 with a case-control `MASSCASE = sid` request (like `SPC`/`METHOD`) — deliberately
-*not* a TRIM or MLDTRIM field, so the static and transient solvers share one mechanism.
+*not* a TRIM or MANTRIM field, so the static and transient solvers share one mechanism.
 
 ### Resolution — `model/mass_overlay.py`
 
@@ -903,16 +935,16 @@ analysis-plan summary names the case per subcase.
 ### Transient maneuvers
 
 Both maneuver solvers thread `subcase.massset_sid` into their `M_gg`/`M_ax` build **and**
-into the initial-condition trim, so an `MLOADS` subcase carrying a `MASSCASE` runs the whole
+into the initial-condition trim, so an `MANVR` subcase carrying a `MASSCASE` runs the whole
 maneuver at that payload condition. The fixed-Φ modal interaction (swap the mass side only,
 reuse the basis — with exactness/approximation gates and the D4 CG-shift warning) landed with
 Step 62; see the Step 62 section above.
 
-> **The command table is mass-case-specific.** `MLDCOMD` tables are **absolute**, not
+> **The command table is mass-case-specific.** `MANCMD` tables are **absolute**, not
 > incremental, so a `TABLED1` authored to start at one case's trimmed control angle is not
 > that angle in another case: the trim shifts with the payload, and the run then begins with
 > a step input instead of at equilibrium. This is a deck-authoring property, not a solver
-> defect — pairing `MASSCASE` with `MLOADS` means re-running the trim for that mass case and
+> defect — pairing `MASSCASE` with `MANVR` means re-running the trim for that mass case and
 > re-baking the table's first point. First covered at Step 65 by
 > `tests/aero/test_cessna210_flagship.py::test_t6_mloads_with_massset_is_exact_when_the_table_matches_the_case`,
 > which pins down both halves: stale table ⇒ the initial condition is not the trim;
@@ -920,7 +952,7 @@ Step 62; see the Step 62 section above.
 
 ### Sample deck and gates
 
-`sample/ha144a_massset_sweep.bdf` — the full-span HA144A with one TRIM card and three
+`sample/ha144a/ha144a_massset_sweep.bdf` — the full-span HA144A with one TRIM card and three
 payload conditions (EMPTY 16000 lb / HALFFUEL 18500 lb / FULLFUEL 21000 lb), exercising all
 three ops. Gated by `tests/parser/test_massset.py` (card round-trip, overlay marking, SCALE,
 negative cases) and `tests/aero/test_massset_sweep.py`:
@@ -1001,7 +1033,7 @@ The results are attached as `Sol144TrimResult.monitor_loads = {name: MonitorLoad
 (and `applied` when the subcase selected a `LOAD`, #6).
 The integrator is split into a state-free `MonitorPlan` (`prepare_monitor_points`, once per
 run) and `evaluate_monitor_point` (per load state); `compute_monitor_loads` is the two in
-sequence. On a transient (`MLOADS`) subcase the same monitors are taken at **every output
+sequence. On a transient (`MANVR`) subcase the same monitors are taken at **every output
 sample** and carry two further columns — see *Monitor points on transient maneuvers (#2)*
 under Step 68.
 
@@ -1205,7 +1237,7 @@ mass case, or got the inertia sign wrong, could not reproduce that.
 
 ## Section Cuts on Transient Maneuvers (Step 68)
 
-A deck carrying `MONSECT` cards and an `MLOADS` subcase produces the running-load table at
+A deck carrying `MONSECT` cards and an `MANVR` subcase produces the running-load table at
 **every output sample**, on both transient solvers. No new card and no new field: the
 presence of the cards is the request, exactly as for a static trim.
 
@@ -1293,7 +1325,7 @@ that. Ties resolve to the earliest sample.
 | V-TSEC9 | The `prepare`/`evaluate` split is **bitwise** identical to the one-shot call; on-plane warning fires once per plan | `tests/results/test_section_cuts.py` |
 | V-TSEC10 | Cuts do not dominate runtime (no per-sample geometry rebuild) | `tests/aero/test_section_cuts_transient.py` |
 | V-TSEC11 | Both solvers produce cuts; the two modal recovery modes give an identical elastic column | same |
-| **G1** (#3) | **Static re-apply** — a sample's `net_loads` applied as SOL 101 (SPC + SUPORT DOFs fixed) reproduces its CBAR forces: 1.6e-14 direct and modal (mode-acceleration recovery); 4.6e-7 through the exported cards (DEF-M6 field floor, gate 1e-5), 3.2e-7 on the shipped C210 MLOADS deck; companion asserting it **fails** (1.5 %) without the elastic + damping terms; modal `displacement` recovery exact at all modes, 1.49 % at `NMODES=2` (the measured truncation error) | `tests/aero/test_maneuver_reapply.py` |
+| **G1** (#3) | **Static re-apply** — a sample's `net_loads` applied as SOL 101 (SPC + SUPORT DOFs fixed) reproduces its CBAR forces: 1.6e-14 direct and modal (mode-acceleration recovery); 4.6e-7 through the exported cards (DEF-M6 field floor, gate 1e-5), 3.2e-7 on the shipped C210 MANVR deck; companion asserting it **fails** (1.5 %) without the elastic + damping terms; modal `displacement` recovery exact at all modes, 1.49 % at `NMODES=2` (the measured truncation error) | `tests/aero/test_maneuver_reapply.py` |
 | G2 / G3 (#3) | Free-flight closure unchanged by the transient terms (resultant < 1e-12·lift); direct closure shifts by exactly their resultant; commands held at trim reproduce the static `net_loads` to 1e-8 | same |
 
 > **V-TSEC5 is not `closure ≈ 0`.** Under the direct (prescribed-rigid) solver the closure
@@ -1306,7 +1338,7 @@ that. Ties resolve to the earliest sample.
 ### Monitor points on transient maneuvers (#2)
 
 The same `MONPNT1`/`MONPNT3` cards a static trim reports are evaluated at every output
-sample of an `MLOADS` subcase (`ManeuverStep.monitor_loads = {name: MonitorLoad}`), by the
+sample of an `MANVR` subcase (`ManeuverStep.monitor_loads = {name: MonitorLoad}`), by the
 same prepare/evaluate split the section cuts use: `MonitorPlan`s are resolved once in
 `build_operators`, and `recover_step` sums them against the sample's load state. A
 `MONPNT3` on a transient sample carries the two Step 68 columns as its own fields —
@@ -1325,7 +1357,7 @@ Consequences a reader should expect, all gated below:
   sample's `closure` (all six components when the monitor reference is the SUPORT
   point) and the reaction brings it to zero — provided the collection includes the SUPORT
   grid (the V-TSEC5 lesson; the HA144A deck's own `ALLGRID` omits GRID 90). In free flight
-  nothing is reacted and the monitor itself is ≈ 0 (V-TMON2). On the shipped C210 MLOADS
+  nothing is reacted and the monitor itself is ≈ 0 (V-TMON2). On the shipped C210 MANVR
   deck `MALLEA` closes to ~1e-10 against a 1e4 lift at every sample.
 - **A monitor over the members outboard of a cut station, referenced at that station,
   *is* the section-cut row** — column by column, including the elastic and damping
@@ -1398,9 +1430,9 @@ which must lie strictly inside `(0, 0.88)`.
 ### Generating a case set
 
 ```bash
-sbeam-cases sample/cessna210_flagship_trim.bdf \
+sbeam-cases sample/cessna210_flagship/cessna210_flagship_trim.bdf \
     --units SI --trim-template 1 --vc 86.0 --vd 105.0 --altitude 0 \
-    --massset 10,20,30 --g 9.81 -o sample/cessna210_flagship_gust.bdf
+    --massset 10,20,30 --g 9.81 -o sample/cessna210_flagship/cessna210_flagship_gust.bdf
 ```
 
 The tool reads reference area and mean chord from `AEROS`, the weight from GPWG for
@@ -1411,8 +1443,9 @@ emits one `TRIM` + `GUSTLF` pair and one subcase per
 list and SPC. Speeds and altitudes are in the model's own units; `--units` tells the
 tool which system that is, and is echoed into the generated deck's header.
 
-`q = ½·ρ₀·V_EAS²` and `RHOREF = ρ(h)`, so the solver's `Trim.velocity()` returns true
-airspeed while Pratt uses equivalent airspeed — the two densities never meet.
+`q = ½·ρ₀·V_EAS²` and `ρ(h)` is the true-airspeed density (echoed in the deck comment; a
+maneuver would carry it as MANTRIM RHO, #87), while Pratt uses equivalent airspeed — the two
+densities never meet.
 
 ### Reading the output
 
@@ -1435,7 +1468,7 @@ absent from the TRIM card — it came from the gust card, and it is not a solved
 
 ### What to expect
 
-On `sample/cessna210_flagship_gust.bdf` the gust cases run from `n = +5.43 / −3.43`
+On `sample/cessna210_flagship/cessna210_flagship_gust.bdf` the gust cases run from `n = +5.43 / −3.43`
 (FERRY at V_C) to `n = +2.93 / −0.93` (MTOW at V_D). Two results worth recognising:
 
 - **Gust load factor is highest at the lightest weight** — `μ` falls with wing loading,

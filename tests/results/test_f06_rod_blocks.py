@@ -4,7 +4,6 @@ note D6), sit on their data (DEF-M13 invariant), and are absent from a rodless
 listing."""
 
 import re
-from pathlib import Path
 
 import pytest
 
@@ -12,8 +11,8 @@ from sbeam.parser.bdf_reader import parse_bdf
 from sbeam.results.f06_writer import _FIELD_W, build_f06_sol101_text
 from sbeam.solver.sol101 import run_sol101
 from tests.assembly.test_rod_element import MIXED_DECK
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).resolve().parents[2] / "sample"
 
 
 @pytest.fixture(scope="module")
@@ -73,6 +72,6 @@ class TestRodBlocks:
         assert i_bar < i_rod
 
     def test_rodless_listing_has_no_rod_block(self):
-        cc, bulk = parse_bdf(str(SAMPLE / "val_cantilever_static.bdf"))
+        cc, bulk = parse_bdf(str(sample_path("val_cantilever_static.bdf")))
         text = build_f06_sol101_text(cc, bulk, run_sol101(bulk, cc.subcases[0]), 1)
         assert "R O D   E L E M E N T S" not in text

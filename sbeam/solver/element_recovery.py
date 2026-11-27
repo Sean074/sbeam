@@ -1,6 +1,6 @@
 """Element force / stress recovery through the line-element registry (#38).
 
-One loop serves SOL 101, SOL 144 (trim and static) and MLOADS; before #38 each
+One loop serves SOL 101, SOL 144 (trim and static) and MANVR; before #38 each
 solver carried its own copy of the CBAR loop. CBAR recovery is unchanged and
 still lives in ``sol101.py`` (``recover_bar_forces``, ``recover_bar_stresses``);
 this module adds the rod and the aggregate.
@@ -55,7 +55,7 @@ def recover_line_elements(
 ) -> ElementResults:
     """Recover forces (and stresses) for every registered line element.
 
-    ``stresses=False`` is the MLOADS per-sample path, which keeps forces only.
+    ``stresses=False`` is the MANVR per-sample path, which keeps forces only.
     """
     from sbeam.solver.sol101 import recover_bar_forces, recover_bar_stresses
 

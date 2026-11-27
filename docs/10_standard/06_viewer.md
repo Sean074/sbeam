@@ -28,8 +28,11 @@ sbeam_tools/viewer/
 ├── case_control_ui.py  # Case control form and BDF export
 ├── aero_view.py        # Aero box mesh + cp colour map (S44); spline-deflected box overlay (S57); per-surface span-loading figure + rigid S&C derivative table (A-GUI2); cp corrected/uncorrected/Δ views + dihedral helper (A-GUI4); corrected/uncorrected/Δ rigid-derivative table (A-GUI5); body-panel colour/legend split (AC5)
 ├── aero_correction_view.py  # Aero Correction tab: CFD/test section data → W2GJ+AECORR(WT2) cards, injected into the model + full corrected-BDF export (A-GUI3/A-GUI4); Stage 6 = cruciform body-panel total-moment match (A9)
-├── sol144_authoring.py     # P12 pure logic: SID allocation/clash checks, presets, TABLED1 generators, two-pass increment resolution, validate_sol144_authoring
-├── sol144_authoring_ui.py  # P12 Aeroelastic Authoring tab: per-family card editors, apply-to-session, driver/snippet export
+├── sol144_authoring.py     # P12 pure logic: SID allocation, the candidate model of a card edit, the loaded-card rule, check_case_control (Streamlit-free). What a maneuver case is lives in sbeam_tools/cases/maneuver.py (#114)
+├── sol144_authoring_ui.py  # P12 Aeroelastic Authoring tab: per-family card editors, driver/snippet export
+├── session_deck.py     # The session's deck as text; commit(): every card edit is written into the text and re-parsed (#113)
+├── widget_keys.py      # wk(): widget keys that carry the deck's number in the session (#123)
+├── monitor_view.py     # Monitors drawn on the model from the solver's plans: reference points, members, cut planes (#116)
 └── format_utils.py     # Shared 5-sig-fig number formatting for tables/metrics (fmt / fmt_mass / style_numeric) (A-GUI4)
 ```
 
@@ -39,7 +42,29 @@ sbeam_tools/viewer/
 
 ### 1. Model Load
 
-The viewer accepts two file types via the file uploader (`*.bdf` or `*.dat`). File type is detected automatically by scanning for a `SOL` statement before the first `BEGIN BULK` line (`_has_case_control(content: str) -> bool` in `app.py`).
+A deck is opened in one of three ways, all from the sidebar and all through one loader
+(`_load_deck` in `app.py`, #111):
+
+| Route | How | `INCLUDE` |
+|---|---|---|
+| **Sample deck** | "Open from disk" → pick from the list of every `*.bdf` / `*.dat` under `sample/` (`list_sample_decks`) → **Open**. The list is shown only when the `sample/` folder exists beside the packages (a source checkout; a wheel does not ship it) | Resolves |
+| **Path** | "Open from disk" → type the path of a deck → **Open**. A typed path wins over a picked sample | Resolves |
+| **Upload** | The file uploader | **Does not resolve** |
+
+A deck opened from disk is parsed where it stands, so a relative `INCLUDE` is found in the
+deck's own folder. An upload has no folder: its text is parsed from a temporary file, and a
+deck that uses `INCLUDE` fails with "INCLUDE file not found" and a line saying to open it by
+path. The six `cessna210_flagship` drivers are decks of this kind.
+
+Three files under `sample/` are listed but are not decks to open alone (`sample/README.md`):
+the two body-panel overlays and the MSC archive listing `HA144A.bdf`. Opening one shows the
+parser's reason.
+
+Opening a deck by any route first puts every model-dependent session key back to its
+default (`_session_defaults`), so no result, authored card, correction or selection of the
+previous deck survives. A file that cannot be read or parsed leaves no model loaded.
+
+The viewer accepts two file types (`*.bdf` or `*.dat`). File type is detected automatically by scanning for a `SOL` statement before the first `BEGIN BULK` line (`_has_case_control(content: str) -> bool` in `app.py`).
 
 | File type | Parser called | Session state result |
 |-----------|--------------|---------------------|
@@ -121,6 +146,7 @@ a rigid steady-state solve at a user-specified angle of attack.
 
 **Controls (left column):**
 - **AoA α (°)** / **Sideslip β (°)** — `st.number_input`, defaults 3° / 0°, step 0.5°.
+- **Mach** — `st.number_input`, default 0, 0–0.99; the AIC is built at it (AEROS has no Mach since #87).
 - **Compute Aero** — builds `AeroModel` (AIC matrix) and calls
   `solve_rigid_cl(..., wg=aero_model.wg, cp_operator=aero_model.ajj_inv_corr)` (the **corrected**
   solve, stored in `aero_result`). When the deck carries a correction card (`bulk.wkks` or
@@ -234,10 +260,10 @@ solve, and/or exports a self-contained corrected BDF.
    chart carries a stable `key` and the upload is re-parsed only on change, so switching surfaces no
    longer wipes the build), and a 5-sig-fig per-strip achieved-targets `st.dataframe`
    (`moment_ref_x, f_slope, m_slope, f0, m0`).
-5. **Apply / export** — **Apply to model** (`_apply_cards`) injects each `(W2gj, Aecorr)` into
-   `bulk.w2gjs` / `bulk.aecorrs`, **clearing any cards this tool injected on a prior build** (tracked
-   in `aero_corr_sids`) so re-applies replace rather than stack, then nulls `aero_model` /
-   `aero_result` / `aero_result_unc` so the Aero tab recomputes. `_warn_conflicts` flags a
+5. **Apply / export** — **Apply to model** (`_apply_cards`) puts the generated cards into the
+   session deck as the named block `aero_correction` (`session_deck.commit`, #113): the deck is
+   re-parsed with them, so they are in the model the viewer runs and in the Case Control tab's
+   export, and a second build replaces the block rather than stacking. `_warn_conflicts` flags a
    pre-existing **WKK** on a corrected surface or a non-generated WT2 on the same surface, both of
    which the solver refuses (#96). **Download cards (.bdf)** emits the bulk-data snippet via
    `section_correction.cards_to_bdf`. **Full corrected BDF** (`build_corrected_bdf`) splices those
@@ -259,10 +285,10 @@ solve, and/or exports a self-contained corrected BDF.
    WT2 ratio** (a *conditioning* gauge, not a contamination metric — WT2 scales body boxes only;
    warned past `RATIO_WARN`=200, the point where targets exceed a flat-plate cruciform and a
    slender-body element is needed, or if it could not converge). **Apply body
-   panels to model** (`_apply_body_cards`) injects the flying pairs (idempotent) and the body
+   panels to model** (`_apply_body_cards`) commits the flying pairs and, as the block `aero_correction_body`, the body
    `(W2gj, Aecorr)` pairs at reserved SIDs (`_BODY_W2GJ_BASE = 9301`, `_BODY_AECORR_BASE = 9401`),
    then nulls the Aero-tab cache; **Download body cards (.bdf)** emits them
-   (`body_correction.body_cards_to_bdf`). The body panels carry `SPLINE0` (zero structural
+   (`body_correction.body_cards_to_bdf`). The body panels carry `LOADINJ` (zero structural
    coupling); they drive the total/trim Cm/Cn but inject no fictitious load into the fuselage beam.
 
    **Panel kind is auto-detected from the deck (Step A10).** If the selected body panels are
@@ -283,7 +309,7 @@ surface. Body correction is moment-primary (body lift/side-force is a minimum-no
 | `aero_corr_model` | `AeroModel \| None` | Cached `build_aero_model(bulk)` for template strips / box list |
 | `aero_corr_df` | `DataFrame \| None` | Validated section-data table from the CSV upload |
 | `aero_corr_result` | `MultiSectionDataBuildResult \| None` | Last build (cards + diagnostics) |
-| `aero_corr_sids` | `set[int]` | SIDs this tool last injected, so Apply can replace them |
+| `aero_corr_sids` | `set[int]` | SIDs of the cards this tool last applied (`_warn_conflicts` tells them from a hand-written WT2) |
 | `aero_corr_upload_id` | `tuple \| None` | `(name, size)` of the parsed CSV — re-parse only on change |
 | `aero_corr_csv_name` | `str \| None` | Source CSV filename, for the export provenance header |
 | `aero_corr_cond` | `tuple \| None` | `(mach, alpha, beta)` of the last build, for naming / provenance |
@@ -330,8 +356,8 @@ describing what runs and what is output (e.g. "Subcase 1 — Aeroelastic trim @ 
 displacements"). The SOL 144 summary is bulk-aware (AC5): it appends "hinge moments" when
 AESURF cards are present, "monitor loads" when MONPNT1/MONPNT3 cards are present,
 "section-cut running loads" when MONSECT cards are present, and "box
-ΔCp/forces" on an AEROF/APRES request; an MLOADS subcase reads "Transient maneuver loads
-(MLOADS n); outputs time histories, MLDPRNT export, critical-sample loads[, monitor loads]".
+ΔCp/forces" on an AEROF/APRES request; an MANVR subcase reads "Transient maneuver loads
+(MANVR n); outputs time histories, MANPRNT export, critical-sample loads[, monitor loads]".
 Built by
 `summarize_case_control(cc, bulk)` via the `_SOL_SUMMARY` registry (`{101, 103, 144}` with a
 generic field-dump fallback for unknown SOLs — new solutions slot in by adding a registry
@@ -363,7 +389,7 @@ Extending to Phase 2 SOLs (108, 109, 111, 112) requires only adding entries to `
 and `_SOL_OUTPUT_FIELDS` in `case_control_ui.py`.
 
 **SOL 144 is fully editor-authored since P12** (this supersedes the Step 57/AC5 "BDF-authored
-only" convention): the editor authors the SOL 144 case control (TRIM/TRIMOBJ/DIVERG/MLOADS/
+only" convention): the editor authors the SOL 144 case control (TRIM/TRIMWGT/DIVERG/MANVR/
 MASSCASE selection per subcase plus AEROF/APRES output requests), and the **Aeroelastic
 Authoring** tab (below) authors the condition bulk cards themselves. The run path is
 unchanged — `app.py::_run_sol144`; see [Run Analysis from Viewer](#run-analysis-from-viewer)
@@ -375,10 +401,10 @@ and [SOL 144 — Static Aeroelastic Results](#sol-144--static-aeroelastic-result
 | Field | Layout | Condition |
 |-------|--------|-----------|
 | Subcase title | Full-width text input | Always |
-| LOAD SID | Left column selectbox | Always. In SOL 144 it is the applied structural load of a **Trim** subcase (thrust, engine torque; #6) — `_apply_sol144_kind` clears it for the Maneuver (MLOADS) and Divergence-only kinds, and `validate_sol144_authoring` flags a LOAD on those, a dangling LOAD SID, or a GRAV in the trim LOAD set |
+| LOAD SID | Left column selectbox | Always. In SOL 144 it is the applied structural load of a **Trim** subcase (thrust, engine torque; #6) — `_apply_sol144_kind` clears it for the Maneuver (MANVR) and Divergence-only kinds, and `validate_sol144_authoring` flags a LOAD on those, a dangling LOAD SID, or a GRAV in the trim LOAD set |
 | SPC SID | Right column selectbox | Always |
-| Analysis kind radio (Trim / Divergence only / Maneuver (MLOADS)) | Horizontal radio | SOL 144 only |
-| TRIM / TRIMOBJ / DIVERG / MLOADS / MASSCASE / GUSTLF SIDs | Selectboxes, three-up | SOL 144 only. GUSTLF (a static gust case, which names its own TRIM) is kept for a Trim subcase and cleared for MLOADS and DIVERG kinds (#98) |
+| Analysis kind radio (Trim / Divergence only / Maneuver (MANVR)) | Horizontal radio | SOL 144 only |
+| TRIM / TRIMWGT / DIVERG / MANVR / MASSCASE / GUSTLF SIDs | Selectboxes, three-up | SOL 144 only. GUSTLF (a static gust case, which names its own TRIM) is kept for a Trim subcase and cleared for MANVR and DIVERG kinds (#98) |
 | METHOD (EIGRL) SID | Full-width selectbox | SOL 103 only |
 | Output requests | One checkbox per field, equal columns | SOL defined in `_SOL_OUTPUT_FIELDS` |
 | Auto-output info | Info banner | SOLs not in `_SOL_OUTPUT_FIELDS` (e.g. SOL 103) |
@@ -386,7 +412,7 @@ and [SOL 144 — Static Aeroelastic Results](#sol-144--static-aeroelastic-result
 All five SOL 144 SID pickers stay visible regardless of the kind radio (widgets inside a
 form do not rerun on interaction, so hiding them would leave stale UI); the Apply handler
 keeps only the fields consistent with the selected kind (`_apply_sol144_kind`) — exactly one
-driver per subcase, matching the `_run_sol144` routing (MLOADS wins; DIVERG-without-TRIM =
+driver per subcase, matching the `_run_sol144` routing (MANVR wins; DIVERG-without-TRIM =
 divergence-only; TRIM otherwise, with DIVERG as an optional add-on sweep).
 
 Output request checkboxes per SOL:
@@ -394,9 +420,17 @@ Output request checkboxes per SOL:
 - **SOL 103:** No checkboxes — info message: "All modal results … output automatically."
 - **SOL 144:** SOL 101 set plus AEROF and APRES.
 
-**Advanced expander (collapsed by default):** Contains the INCLUDE paths text area, one
-bulk-data file per line (multi-INCLUDE, Step 66). Defaults to `model.dat` or the paths
-parsed from the loaded run file (`CaseControl.includes` — all of them, not just the first).
+**Advanced expander (collapsed by default):** For a deck that has its own bulk section it
+only states that the section is exported unchanged. For a bulk-data-only file it holds the
+INCLUDE paths text area, one bulk-data file per line, defaulting to the loaded file's name:
+the export is then a driver that INCLUDEs that file.
+
+**Apply edits the loaded case control; it does not rebuild it (#123).** Each subcase is the
+loaded `SubcaseControl` with the widget-backed fields replaced (`dataclasses.replace`), and
+the same holds for the `CaseControl`. What the editor has no widget for is carried through:
+subcase `SUBTITLE` and `LABEL`, `SET`, `MODEXP`, deck-level `SUBTITLE` / `LABEL` / `SET` and
+`PARAM,GRDPNT`. An Apply with nothing changed leaves the case control equal to the loaded
+one. The LOAD picker lists every set a LOAD selector may name: FORCE, MOMENT, LOAD and GRAV.
 
 **Action row (bottom of form):**
 ```
@@ -415,10 +449,21 @@ reruns. Add/Remove handlers run after the form closes and call `st.rerun()`.
 ### BDF export
 
 `export_bdf_text(cc: CaseControl, include_paths: list[str] | None = None,
-authored_block: str = "") -> str` in `case_control_ui.py` serialises a `CaseControl` to a
-parseable driver BDF: full SOL 144 keyword surface (TRIM/TRIMOBJ/DIVERG/MLOADS/MASSCASE +
-AEROF/APRES), `BEGIN BULK`, one `INCLUDE` per entry (an INCLUDE inserts its file where it
-stands, so bulk INCLUDEs sit below `BEGIN BULK`, #81), and any viewer-authored bulk cards.
+authored_block: str = "", bulk_section: str | None = None) -> str` in `case_control_ui.py`
+serialises a `CaseControl` to a parseable BDF: full SOL 144 keyword surface
+(TRIM/TRIMWGT/DIVERG/MANVR/MASSCASE/GUSTLF + AEROF/APRES), `BEGIN BULK`, the bulk data, and
+any viewer-authored bulk cards. The bulk data is one of two things:
+
+- **`bulk_section` given (the viewer always passes it when the loaded deck has one, #123):**
+  the loaded deck's own bulk section, the lines between `BEGIN BULK` and `ENDDATA` as
+  written (`deck_bulk_section`), with its INCLUDE lines, inline cards and comments. A
+  single-file deck exports as a single file; a driver keeps the cards that follow its
+  INCLUDE. The export of an unedited deck parses to the same case control and bulk data as
+  the deck on disk; `tests/viewer/test_journey.py` holds that for every sample deck.
+- **otherwise:** one generated `INCLUDE` per entry of `include_paths` (an INCLUDE inserts
+  its file where it stands, so bulk INCLUDEs sit below `BEGIN BULK`, #81). This is the
+  route for a bulk-data-only file given a case control in the viewer.
+
 Example output:
 
 ```
@@ -430,8 +475,8 @@ SUBCASE 1
   DISPLACEMENT = ALL
 BEGIN BULK
 INCLUDE 'model.dat'
-$ Authored in the sbeam viewer (SOL 144 / MLOADS authoring tab)
-TRIM, 1, 0.9, 40.0, RHOREF, 2.3769-3, PITCH, 0.0
+$ Authored in the sbeam viewer (SOL 144 / MANVR authoring tab)
+TRIM, 1, 0.9, 40.0, PITCH, 0.0
 ENDDATA
 ```
 
@@ -450,9 +495,9 @@ data, so the user can click Apply immediately without any manual selection.
 ## Aeroelastic Authoring Tab (P12)
 
 Shown when the model has CAERO1 panels (same gate as the Aero tabs). Authors the full
-SOL 144 / MLOADS condition-card surface in the browser: **AESTAT, AESURF, AELIST, SUPORT,
-TRIM (incl. the RHOREF pseudo-label), TRIMVAR, TRIMOBJ, TRIMCON, DIVERG, MLOADS, MLDTRIM,
-MLDTIME, MLDCOMD, MLDPRNT, TABLED1**. MASSCASE remains select-only (chosen per subcase in
+SOL 144 / MANVR condition-card surface in the browser: **AESTAT, AESURF, AELIST, SUPORT,
+TRIM, TRIMVAR, TRIMWGT, TRIMINEQ, DIVERG, MANVR, MANTRIM (incl. the RHO density),
+MANTIME, MANCMD, MANPRNT, TABLED1**. MASSCASE remains select-only (chosen per subcase in
 the Case Control editor; mass cases themselves stay BDF-authored).
 
 Modules: `viewer/sol144_authoring.py` (pure logic — SID allocation, clash detection,
@@ -466,55 +511,181 @@ The AESURF form carries both hinge halves — `CID1`/`ALID1` and `CID2`/`ALID2` 
 pair is one label; charter §6) — and refuses a half-specified second pair; before #9 it
 dropped `CID2`/`ALID2` on re-save.
 
-**Layout:** four sub-tabs — *Surfaces & States* (AESTAT/AESURF/AELIST/SUPORT), *Trim
-Conditions* (presets + TRIM/TRIMVAR/TRIMOBJ/TRIMCON/DIVERG), *Maneuver (MLOADS)*
-(two-pass command builder + MLDTRIM/MLDTIME/MLDCOMD/MLDPRNT/MLOADS), *Tables* (shape
-generator + TABLED1 point editor). Each family gets an expander with a selectbox
+**Layout:** seven sub-tabs — *Surfaces & States* (AESTAT/AESURF/AELIST/SUPORT), *Trim
+Conditions* (presets + TRIM/TRIMVAR/TRIMWGT/TRIMINEQ/DIVERG), *Mass cases (MASSCASE)* (mass
+and C.G. by case + MASSCASE, #115), *Gust (GUSTLF)* (gust-case generator + GUSTLF, #117), *Monitors* (the monitors drawn on the
+model + AECOMP/MONPNT1/MONSECT, #116), *Maneuver (MANVR)* (two-pass command builder +
+MANTRIM/MANTIME/MANCMD/MANPRNT/MANVR), *Tables* (shape generator + TABLED1 point editor).
+All 21 card families of `card_writers.FAMILIES` have an editor. Each family gets an expander with a selectbox
 ("— new —" or an existing ID, outside the form so switching pre-fills) and one
-`st.form`; dynamic rows (TRIM vars, MLDCOMD pairs, TABLED1 points) use `st.data_editor`
-with `num_rows="dynamic"`. All widget keys are `auth_`-prefixed and reset on upload.
+`st.form`; dynamic rows (TRIM vars, MANCMD pairs, TABLED1 points) use `st.data_editor`
+with `num_rows="dynamic"`. All widget keys are `auth_`-prefixed.
 
-**Apply-to-session:** submitting builds the dataclass and injects it into the in-session
-`BulkData` (`apply_card`), records the ID in `st.session_state.authored_cards`
-(`{family: set[int]}`), and nulls the SOL 144 result/aero-model caches. The authored set
-is exactly what the driver export emits inline.
+**Widget keys carry the card and the deck (#123).** Streamlit identifies a keyed widget by
+its key alone and ignores a new `value=` default once the key holds a value (checked on
+1.50.0 and 1.66.1). Two rules follow, and a new widget must obey both:
 
-**SID policy (clone-as-new):** SIDs are user-chosen, defaulting to `max(existing) + 1`
-per family. Editing a card that came from the loaded file is allowed in-session (and
-immediately launchable), but the driver export blocks until it is saved under a new SID —
-the parser raises on duplicate SIDs, so an inline card duplicating an INCLUDE-defined SID
-would make the exported deck unparseable. The form shows a **Save as new SID** button for
-file-sourced cards; `snapshot_family_ids` at upload (`file_card_sids`) backs the check.
+- A form field's key goes through `_k`, which appends the card being edited:
+  `auth_trim_q` for a new card, `auth_trim_q@7` for TRIM 7. Each card has its own widgets,
+  initialised from that card. With one fixed key the form kept the previous values and
+  Apply wrote them over the chosen card.
+- Every widget whose value depends on the model takes its key through
+  `widget_keys.wk`, which appends the number of the deck opened in the session
+  (`sc_trim_sid_1`, then `sc_trim_sid_1#2` for the second deck). Only the four widgets that
+  open a deck keep a plain key. Session-state reads of a widget value use the same call.
 
-**Presets:** (gravity is prefilled from a "Deck unit system" selector — `SI` / `IMPERIAL` from `sbeam_tools.common.units` — and stays editable; the solver itself never knows units, #30) the three balanced-maneuver recipes from `model/maneuver_presets.py` (the steady-roll parameter is the reduced rate `pb/2V`, not rad/s, and each lateral preset states the `SUPORT` DOF it needs — #24, #10)
-(symmetric pull-up via `load_factor_to_urdd3`, steady roll, steady sideslip) pre-fill the
-TRIM form and offer one-click creation of missing AESTAT labels.
+A loaded card submitted unchanged reports "No change." and stays the file's card; it is not
+marked as authored, so it is not written inline a second time.
 
-**TABLED1 generators:** cosine ramp (default — clamped-linear slope jumps ring the
-highest retained mode under the modal solver), linear ramp, step, smooth sine doublet.
-Each generated table ends with a hold point (two end points of equal y), because TABLED1
-extrapolates linearly beyond its last point (#70).
+**Every card edit goes through the deck text and the parser (#113).** The session's model is
+always the parser's reading of one text: the loaded deck's bulk section, then the cards
+authored in the viewer (`write_authored_block`), then any block another panel contributes
+(the aero-correction cards). `session_deck.commit(bulk, changes=…, deletes=…, blocks=…)` is
+the only way a card changes:
 
-**Two-pass command builder:** MLDCOMD tables are absolute and mass-case specific, so the
-builder authors them as *increments from trim* (`IncrementSpec` per MLOADS/label pair,
-held in `st.session_state.mldcomd_increments`). After a solve, **Resolve → absolute
-TABLED1s** reads the solved trim control value per mass case (`Sol144TrimResult.trim_vars`
-or `ManeuverResult.steps[0].trim_vars`), writes one absolute TABLED1 per pair, and
-rewrites the owning MLDCOMD (allocating one when the MLOADS had none). Unresolved
-increments block export. An MLOADS shared by subcases with different MASSCASEs is refused
-(give each mass case its own MLOADS — the sample-deck convention).
+1. It builds a candidate (`sol144_authoring.candidate`, a shallow copy; the session model is
+   not touched) and writes the session deck with the candidate's cards
+   (`session_deck.deck_text`).
+2. It parses that text (`parse_bdf(path, text=…)`, so the deck's own INCLUDEs resolve).
+3. If the parser refuses, the form shows `Not applied. The deck would not parse: <the
+   parser's message>` and nothing changes.
+4. Otherwise the parsed model replaces `bulk_data`, the authored record and the parser's
+   warnings are updated, every result and aero cache is cleared, and the run restarts
+   (`st.rerun()`) with a one-line confirmation.
 
-**Validation:** `validate_sol144_authoring(bulk, cc, …) -> (errors, warnings)` re-implements
-the parser's deck-time cross-reference pass (authored cards bypass it) plus the solver
-preconditions: exactly one driver per subcase, no LOAD, dangling SID references, modal
-MLDCOMD labels AESURF-only, RHOREF required on a modal IC TRIM, SUPORT required with
-MLOADS, MLDTIME/TABLED1 well-formedness, AELIST boxes inside CAERO1 ranges. Errors
-disable ▶ Launch Analysis and the BDF downloads; warnings (over-/fully-determined trim,
-fixed-Φ MASSCASE note, sparse modal command tables) surface with the pre-solve warnings.
+Three consequences. A rule the parser makes for a card holds for a card typed into a form,
+with no copy of the rule in the viewer. The deck the Run button solves is the deck the
+export writes. And a re-parse costs about 5 ms on the flagship deck, so there is no
+in-memory shortcut.
+
+The card editors, the preset's "Create missing AESTATs", the TABLED1 generator, the two-pass
+command builder and the Aero Correction tab's two Apply buttons all call `commit`.
+
+**A card of the loaded deck is not changed in place (owner's decision, 2026-11-26).** The
+edit would be a second card with the same ID beside the deck's own. `loaded_card_edits`
+refuses it for every family (the parser refuses most duplicates, but not a second SUPORT on
+one grid, #125) and the form says to use **Save as new SID**, which adds the edit under
+`max(existing) + 1`; the user then selects the new card in the case control.
+`snapshot_family_ids` at load (`file_card_sids`) is the list of loaded IDs. A card authored
+in the session is edited and deleted freely. The two-pass command builder follows the
+same rule: for a loaded MANCMD or MANVR it writes new cards (#114, below).
+
+**What a maneuver case is lives in the tools, not here (#114).** The three trim recipes,
+the command-history shapes and the two-pass builder are `sbeam_tools/cases/maneuver.py`; a
+script calls them with no viewer (`tests/tools/test_maneuver_cases.py`). This tab holds
+their widgets.
+
+**Presets:** `maneuver.MANEUVER_PRESETS` (symmetric pull-up via `load_factor_to_urdd3`,
+steady roll, steady sideslip) pre-fill the TRIM form and offer one-click creation of missing
+AESTAT labels. Gravity is prefilled from a "Deck unit system" selector (`SI` / `IMPERIAL`
+from `sbeam_tools.common.units`) and stays editable; the recipe itself takes g as a number
+and knows no unit (#30). The steady-roll parameter is the reduced rate `pb/2V`, not rad/s,
+and each lateral preset states the `SUPORT` DOF it needs (#24, #10). The load factor
+defaults to 1.0, level flight: the limit load factor of a case is the user's input, and no
+regulatory number is a default. **The pull-up is the steady pull-up (#127):** it prescribes
+`PITCH = (n − 1)·g·c_ref/(2V²)`, the pitch rate of the curved path as `qc/2V`
+(`maneuver.steady_pull_up_pitch_rate`), so the panel asks for the true airspeed V and reads
+`c_ref` from AEROS. V has no default: without it the form is not pre-filled. Until #127 the
+recipe wrote `PITCH = 0` at every load factor. There is no zero-rate recipe.
+
+**Monitors (#116).** Four editors: AECOMP, MONPNT1 with an AELIST component (aerodynamic),
+MONPNT1 with a SET1 component (structural), and MONSECT. The two MONPNT1 editors are one
+card: MSC's MONPNT1 is aerodynamic or structural by its COMP (#86), the parser files the
+structural ones in `bulk.monpnt3s`, and each form offers only the AECOMPs of its kind, so a
+card lands in the store its family tracks. `write_aecomp`, `write_monpnt1` (MSC's two-line
+layout, the first line in small field so a 56-character label survives) and `write_monsect`
+are the writers. These families are keyed by NAME, not a number
+(`sol144_authoring.NAMED_FAMILIES`): a new card's default name and "Save as new" take the
+first free `COMPn` / `MONn` / `SECn`. MSC's MONPNT3 has no form, and the tab says why.
+
+**The monitors are drawn on the model** (`monitor_view.py`, behind a checkbox): every
+reference point as a marker, and for the monitor chosen, the grids or boxes it sums and,
+for a MONSECT, a line in each station's cut plane, with a table of the reference points in
+basic axes and the members beyond each cut. All of it is read from the solver's own plans
+(`prepare_monitor_point`, `prepare_section_cut`), so the picture is the geometry the run
+uses; the viewer places nothing itself. A monitor on the wrong side of a wing, or a cut that
+does not follow the elastic axis, is visible here and not in the card. Gates
+(`tests/viewer/test_monitor_authoring.py`): with every monitor card removed from
+`ha144a_fullspan_sbeam.bdf` and typed back through the forms, the export has the deck's
+cards and the run its monitor and section loads; SECRW's reference points on the flagship
+equal the CORD2R 991 origin plus each station along its axis 2, computed in the test from
+the card's three points.
+
+**Mass cases (#115).** The sub-tab opens with **Mass and C.G. by case**: the baseline and
+every mass case, from `compute_gpwg(bulk, sid)`, with the card that defines each. The
+MASSCASE form has SID, label (blank gives `MASSCASE <sid>`), SCALE, two CONM2 pickers (ADD,
+DELETE) that show each CONM2's grid and mass, and a two-column table of REPLACE pairs.
+`write_masscase` writes the card (one row per up to 7 EIDs; a REPLACE row holds whole
+pairs). Field layout and rules are the card reference's and the parser's: a CONM2 used as
+both baseline and overlay, an EID named twice, an unknown CONM2 and a negative SCALE are
+refused with the parser's message through the re-parse. A case built from an MSC `MASSSET`
+entry (#102) is another card: it is listed in the summary and not opened in the form, and
+the viewer does not write `MASSSET`. Gate: `tests/viewer/test_masscase_authoring.py` —
+with MASSCASE 10 and 20 removed from `ha144a_massset_sweep.bdf` and authored through the
+form, the export has the original's cards and overlay set, and the three trims equal the
+original deck's.
+
+**Gust cases (#117).** Two routes, kept apart because they sit on opposite sides of the
+architecture boundary:
+
+- **GUSTLF card form** — unit-neutral, like every card: SID, the TRIM it rides on, the load
+  factor N and gravity G (the two fields the solver uses, `URDD3 = −N·G`), then the recorded
+  derivation (U_de, V, K_g, μ, slope and its source, altitude) which the solver only echoes.
+  Altitude is a text box: blank is "not recorded", `0` is sea level, and the form keeps
+  them apart. The parser's rules arrive through the re-parse: one gust case per TRIM, K_g
+  inside (0, 0.88).
+- **Generate gust cases** — collects what `sbeam-cases` takes on the command line (unit
+  system, TRIM template, g, V_C / V_D / V_B as equivalent airspeeds, altitudes, mass cases,
+  first SID) and calls `sbeam_tools.cases.gust`: `airplane_from_model` on the session model
+  (so cards authored in the session count), `generate_cases`, then `trim_card`,
+  `gustlf_card` and `gust_subcase` per case. The TRIM and GUSTLF cards go into the deck in
+  one commit and the subcases are appended to the case control; the tool's summary table is
+  shown. The viewer computes nothing: the Pratt formula, the ISA atmosphere and the
+  regulation's constants stay in the tool. Gate: opened on `cessna210_flagship_trim.bdf`
+  with the inputs recorded in the gust deck's header, the panel produces the twelve TRIM and
+  GUSTLF cards and the twelve subcases of `cessna210_flagship_gust.bdf`, value for value and
+  as identical card text.
+
+**TABLED1 generators:** `maneuver.gen_cosine_ramp` (default — clamped-linear slope jumps
+ring the highest retained mode under the modal solver), `gen_ramp`, `gen_step`,
+`gen_doublet`. Each generated table ends with a hold point (two end points of equal y),
+because TABLED1 extrapolates linearly beyond its last point (#70).
+
+**Two-pass command builder:** MANCMD tables are absolute and mass-case specific, so a
+command is first written as an *increment from trim* (`maneuver.IncrementSpec` per
+MANVR/label pair, held in `st.session_state.mldcomd_increments`). After a solve, **Resolve →
+absolute TABLED1s** calls `maneuver.resolve_increment_tables`, which reads the solved trim
+control value per mass case (`Sol144TrimResult.trim_vars` or
+`ManeuverResult.steps[0].trim_vars`) and returns a `Resolution`: one absolute TABLED1 per
+pair, the MANCMD that names it, and the MANVR that names the MANCMD. A MANCMD or MANVR of
+the loaded deck is not rewritten: a new MANCMD and a new MANVR are written, and
+`Resolution.selectors` names the subcases that must select the new MANVR; the viewer applies
+those to the case control in the same commit. Cards authored in the session are rewritten
+under their own IDs. Unresolved increments block export. An MANVR shared by subcases with
+different MASSCASEs is refused (give each mass case its own MANVR — the sample-deck
+convention). Gate: run from a script on `ha144a_mloads_massset.bdf`, the builder reproduces
+the deck's hand-written TABLED1 310 from the solved trim elevator (0.4917114 against the
+deck's 0.491711).
+
+**Pre-launch check:** the viewer shows the solver package's own list,
+`sbeam.solver.precheck.check_case_control(cc, bulk)` (#124), the one the command line
+applies before a run: exactly one driver per subcase (TRIM, DIVERG, MANVR or GUSTLF; a
+GUSTLF subcase is a trim subcase whose TRIM the card names, #122), LOAD only with a trim
+subcase and naming a set that exists with no GRAV in it, every selector naming a card that
+exists, a SUPORT in the deck for a MANVR subcase, and RHO on the MANTRIM of a modal MANVR.
+The viewer's `check_case_control(bulk, cc, …)` adds one check of its own state: a command
+left as an unresolved increment. Errors disable ▶ Launch Analysis and the BDF downloads;
+warnings (over-/fully-determined trim, fixed-Φ MASSCASE note, sparse modal command tables)
+surface with the pre-solve warnings.
+
+The viewer states no rule of its own. Card rules are the parser's, applied by the re-parse
+above (`validate_sol144_authoring`, which restated them, is deleted, #113); case-control
+rules are the solver package's (#124). `tests/viewer/test_reparse_authoring.py` lists the 18
+card rules the parser refuses, and `tests/solver/test_precheck.py` the case-control faults.
 
 **Export:** two buttons at the tab foot — *Download run BDF (driver + INCLUDEs)*
-(`export_sol144_bdf`: provenance header + case control + authored cards inline +
-untouched INCLUDEs; filename via `suggest_run_name`) and *Download authored cards only*
+(case control, the loaded deck's bulk section unchanged, then the authored cards and any
+aero-correction block; filename via `suggest_run_name`) and *Download authored cards only*
 (the `write_authored_block` snippet). The Case Control editor's Download BDF emits the
 same driver.
 
@@ -574,7 +745,19 @@ renders whichever result types it produced:
   `aero_moment_resultant` about the RCSID origin, ≈0 for a symmetric model at a symmetric
   trim); trim-variable table (FREE/PRESCRIBED, value); stability-derivative table with
   rigid, elastic-restrained, and elastic-unrestrained (mean-axis, AE8b) columns
-  (CZ/CMY/CX/CY/CMX/CMZ; unrestrained CZ/CMY blank on URDD rows); `q_div` readout with q/q_div ratio
+  (CZ/CMY/CX/CY/CMX/CMZ; unrestrained CZ/CMY blank on URDD rows), headed by the
+  **coefficient-frame statement** (#118, #82): coefficients are in basic axes, MSC prints
+  them in the AEROS reference frame, and the transformation `[T]` with its offset is shown
+  (`coefficient_frame`, the function the f06 block prints; open by default when RCSID ≠ 0);
+  three blocks the f06 also prints, each shown only when the result carries it (#118):
+  **Injected operating point** (CPINJ: ALPHREF, data Mach, per-CAERO1 `FZ/q` and `MY/q`
+  injected against the VLM flat-plate value, from `chordcp_echo`), **Injected aero loads**
+  (LOADINJ and un-splined boxes: source, master grid, box count, six resultants, from
+  `load_injection_echo`) and **Applied structural load** (the subcase's LOAD set as one
+  resultant about the reference point, `applied_load_resultant`, #6). The viewer computes
+  none of these: it shows result fields and two solver-package functions shared with the
+  f06 writer, and `tests/viewer/test_results_f06_blocks.py` compares each with the f06
+  text; `q_div` readout with q/q_div ratio
   ("No divergence found" when `None`); per-AESURF hinge-moment table (rigid and elastic-restrained derivatives, and the trimmed moment on its own row group, #82); monitor-point integrated
   loads (Fx…Mz, from `MonitorLoad.totals`); **section-cut running loads**
   (`_render_section_cuts`, Monitor Phase 2) — one expander per `MONSECT` with the
@@ -598,7 +781,7 @@ renders whichever result types it produced:
 - **Transient maneuver** (`ManeuverResult`, `_render_sol144_maneuver`): time histories of
   Fz_aero, My_aero, and peak grid force (`results.peak_grid_force`, the DEF-M5 severity metric) with the critical sample marked; a 1-based sample slider scrubs
   the per-step deflected shape. An **Exports** row (AC5) offers two download buttons built
-  in-memory from `results/maneuver_output.py` — **Download MLDPRNT time history**
+  in-memory from `results/maneuver_output.py` — **Download MANPRNT time history**
   (`build_maneuver_time_history_text`, `<stem>.mldprnt.txt`) and **Download critical-sample
   loads (BDF)** (`build_maneuver_critical_load_cards_text`, `<stem>.maneuver_qs_loads.bdf`) —
   the same builders the CLI's `write_maneuver_outputs` uses, so the content matches the CLI
@@ -654,6 +837,8 @@ Streamlit session state keys used:
 | `aero_body_eids` | `set[int]` | CAERO1 EIDs selected as body panels when the Aero Correction tab's **Build body correction** succeeds; colours the body panels in the Aero-tab / SOL 144 3D mesh (AC5) |
 | `selected_gid` | `int \| None` | Currently selected grid (from sidebar inspector) |
 | `selected_eid` | `int \| None` | Currently selected element (from sidebar inspector) |
+| `deck_blocks` | `dict[str, str]` | Named blocks of card text other panels add to the session deck (`aero_correction`, `aero_correction_body`), #113 |
+| `_deck_path` | `str \| None` | Absolute path of a deck opened from disk; `None` for an upload (#111) |
 | `_parse_warnings` | `list[str]` | Warnings from last file upload |
 | `_parse_error` | `str \| None` | Error message from last failed upload |
 | `sol101_deform_scale` | `float` | SOL 101 deformation scale slider value (widget key) |
@@ -699,7 +884,7 @@ A **Run Analysis** button in the Results tab:
 2. Calls `run_sol101(bulk, cc)` or `run_sol103(bulk, cc)` directly in-process. For SOL 144,
    `app.py::_run_sol144` mirrors the `main.py` routing: it builds one shared `AeroModel` +
    `AeroCache`, then dispatches each subcase to `run_sol144_trim` (TRIM), `run_sol144_diverg`
-   (DIVERG), or `run_maneuver_qs` (MLOADS).
+   (DIVERG), or `run_maneuver_qs` (MANVR).
 3. Stores the result in `st.session_state.sol101_result` or `sol103_result`. SOL 144 fills
    `sol144_result` / `sol144_diverg_result` / `maneuver_result` (per-subcase dicts, `None` when
    empty) plus `aero_model_144`, and clears the SOL 101/103 keys (and vice versa).
@@ -717,7 +902,7 @@ After a successful analysis run, an **Export F06** section appears below the res
 
 2. **Download F06** — triggers a browser download of the `.f06` content as a text file named `<uploaded-stem>.f06`.
 
-Multiple subcases are written sequentially into a single `.f06` file. The f06 text is generated by `build_f06_sol101_text` / `build_f06_sol103_text` in `sbeam/results/f06_writer.py`; for SOL 144 runs, `build_f06_sol144_text` (trim blocks), `build_f06_sol144_diverg_text` (divergence-sweep blocks), and `build_f06_sol144_maneuver_text` (Phase G0 transient maneuver blocks, AC5) are used instead. The maneuver block carries the run summary, a per-output-time MANEUVER TIME HISTORY table with the critical sample marked, and the critical-sample detail (closure resultant + displacement/bar-force blocks); the full per-sample field data stays in the MLDPRNT ASCII export. The same three SOL 144 builders feed the CLI f06 (`main.py`), so viewer and CLI f06 files match. The public `write_f06_sol101` / `write_f06_sol103` functions remain available as thin wrappers for programmatic use.
+Multiple subcases are written sequentially into a single `.f06` file. The f06 text is generated by `build_f06_sol101_text` / `build_f06_sol103_text` in `sbeam/results/f06_writer.py`; for SOL 144 runs, `build_f06_sol144_text` (trim blocks), `build_f06_sol144_diverg_text` (divergence-sweep blocks), and `build_f06_sol144_maneuver_text` (Phase G0 transient maneuver blocks, AC5) are used instead. The maneuver block carries the run summary, a per-output-time MANEUVER TIME HISTORY table with the critical sample marked, and the critical-sample detail (closure resultant + displacement/bar-force blocks); the full per-sample field data stays in the MANPRNT ASCII export. The same three SOL 144 builders feed the CLI f06 (`main.py`), so viewer and CLI f06 files match. The public `write_f06_sol101` / `write_f06_sol103` functions remain available as thin wrappers for programmatic use.
 
 **In-viewer vs CLI-only exports:** the viewer f06 export covers SOL 101/103 and SOL 144 trim +
 divergence + transient maneuver. The Phase G0 maneuver time-history / critical-load exports
@@ -745,6 +930,18 @@ They call `_get_pre_solve_warnings` directly (no Streamlit session required) and
 five checks: zero-length CBAR, SPC coverage, unsupported load cards, zero density, E-value
 range heuristic.
 
+**The journey test** (`tests/viewer/test_journey.py`, #112) is the viewer's production
+gate. For every deck under `sample/` that opens on its own (34 of 37) it: opens the deck
+from the sample picker and checks every tab is drawn; submits the case-control editor
+unchanged; opens one loaded card in every card-family editor and submits it unchanged;
+parses the export the viewer offers and compares it with the deck on disk, case control and
+bulk data, field by field; runs the analysis. "Project unchanged" is scored on the re-parsed
+export, so it covers the writers as well as the editors. A card family with no editor is
+listed in `NO_EDITOR` with its issue number, and the test fails when the editor appears, so
+the list cannot go stale. `tests/viewer/test_noop_edits.py` names each defect the journey
+found (#123). The run takes about 80 s. It drives widgets, not a browser: a page that
+renders wrongly without raising is seen only in the hand walk (#121).
+
 **Integration tests** for the viewer live in `tests/viewer/test_apptest_integration.py` and use Streamlit's `AppTest` framework.
 
 **Covered flows:**
@@ -754,7 +951,7 @@ range heuristic.
 | `test_flow_a_sol101_render_and_run` | Injected geometry → GPWG sidebar → SOL 101 run → deformed-shape UI |
 | `test_flow_b_sol103_render_and_run` | Injected geometry → SOL 103 run → mode-shape UI |
 | `test_flow_c_sol144_render_and_run` | Injected ±Γ dihedral SOL 144 deck → trim run → canted deflected-mesh UI |
-| `test_flow_d_sol144_mloads_render_and_run` | Injected MLOADS sample deck → trim + maneuver run → six trim totals visible; maneuver subcase renders time history, sample slider, exports (AC5) |
+| `test_flow_d_sol144_mloads_render_and_run` | Injected MANVR sample deck → trim + maneuver run → six trim totals visible; maneuver subcase renders time history, sample slider, exports (AC5) |
 | `test_body_eids_split_mesh_traces` / `test_strip_boxes_marked_body_without_eids` / `test_no_body_trace_without_bodies` | Body-panel trace split in `build_aero_box_figure` (AC5) |
 | `test_summary_sol144_advertises_hinge_and_monitor_outputs` / `test_summary_sol144_maneuver_advertises_exports` | Bulk-aware SOL 144 run summary (AC5) |
 | `test_apptest_aero_tab_no_exception` | Injected aero bulk → Aero tab renders without exception |

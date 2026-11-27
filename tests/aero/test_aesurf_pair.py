@@ -9,7 +9,6 @@ b = 8, c = 1, CAERO1 1000 starboard / 2000 port, 20 × 8 boxes each).
 """
 
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -21,8 +20,8 @@ from sbeam.model.aero import Aelist, Aesurf
 from sbeam.model.coordinate_system import Cord2r
 from sbeam.parser.bdf_reader import parse_bulk_file
 from sbeam.solver.sol144 import compute_hinge_moments, compute_rigid_derivs
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
 X_HINGE = 0.75                      # aft 2 of 8 chord rows: flap chord ratio E = 0.25
 OUTER = range(12, 20)               # outer 8 of 20 strips on each half (η 0.6 … 1.0)
 AFT = (6, 7)
@@ -43,7 +42,7 @@ def _hinges(bulk):
 
 @pytest.fixture(scope="module")
 def wing():
-    bulk = parse_bulk_file(str(SAMPLE / "val_vlm_rect_ar8.bdf"))
+    bulk = parse_bulk_file(str(sample_path("val_vlm_rect_ar8.bdf")))
     _hinges(bulk)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -138,7 +137,7 @@ def test_positive_aileron_rolls_toward_port_and_nothing_else(wing):
 # G8 — parser cross-checks
 # ---------------------------------------------------------------------------
 
-_BASE = (SAMPLE / "val_vlm_rect_ar8.bdf").read_text()
+_BASE = (sample_path("val_vlm_rect_ar8.bdf")).read_text()
 _CARDS = """
 CORD2R, 11, 0, 0.75, 0.0, 0.0, 0.75, 0.0, 1.0
 +, 1.75, 0.0, 0.0

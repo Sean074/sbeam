@@ -20,7 +20,6 @@ Decks (full-span rectangular AR=8, S_ref=b_ref=8, c_ref=1):
 """
 
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -30,13 +29,13 @@ from sbeam.aero.aero_model import build_aero_model
 from sbeam.aero.integration import build_djx
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.solver.sol144 import compute_rigid_derivs
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
 LABELS = ["ANGLEA", "ROLL", "YAW", "SIDES"]
 
 
 def _derivs(name):
-    bulk = parse_bulk_file(str(SAMPLE / f"{name}.bdf"))
+    bulk = parse_bulk_file(str(sample_path(f"{name}.bdf")))
     grid_index = build_grid_index(bulk)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

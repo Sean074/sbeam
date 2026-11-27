@@ -164,7 +164,7 @@ Reads a bulk-data-only file. Behaviour:
 4. Sets `CaseControl.includes` to the files the main deck INCLUDEs below `BEGIN BULK`, in order; `CaseControl.include` is the first, for callers that expect a single path.
 5. Returns `(CaseControl, BulkData)`.
 
-**Several `INCLUDE`s are allowed** (Step 66), which is how a driver deck composes a shared bulk with an overlay without duplicating the shared part — see `sample/cessna210_flagship_body.bdf`. The included bulk files carry no `ENDDATA`. File-structure rules and QRG citations: `02_card_reference.md` (File Structure).
+**Several `INCLUDE`s are allowed** (Step 66), which is how a driver deck composes a shared bulk with an overlay without duplicating the shared part — see `sample/cessna210_flagship/cessna210_flagship_body.bdf`. The included bulk files carry no `ENDDATA`. File-structure rules and QRG citations: `02_card_reference.md` (File Structure).
 
 Raises `FileNotFoundError` if any INCLUDE file does not exist.
 
@@ -183,7 +183,7 @@ Accepts a list of BDF text lines (bulk data section only). Supports:
 - **Inline `$` comments** — everything from `$` to end of line is ignored
 - **Continuation lines** — lines whose first field starts with `+`; consumed by the preceding card handler (e.g. PBAR recovery points, SPC1 with >6 grids)
 
-Cards recognised: `CORD2R`, `GRID`, `PBAR`, `PROD`, `PBUSH`, `MAT1`, `CBAR`, `CROD`, `CONROD`, `CBUSH`, `PLOTEL`, `CONM2`, `MASSCASE`, `RBE3`, `RBE2`, `RBAR`, `SPC`, `SPC1`, `FORCE`, `MOMENT`, `LOAD`, `GRAV`, `EIGRL`, `SUPORT`, plus the aero/trim/monitor/maneuver families: `AEROS`, `AEFACT`, `PAERO1`, `PSTRIP`, `STRIPK`, `CAERO1`, `W2GJ`, `WKK`, `AECORR`, `SET1`, `SPLINE0`, `SPLINE1`, `SPLINE2`, `ATTACH`, `AESTAT`, `AESURF`, `AELIST`, `TRIM`, `DIVERG`, `TRIMVAR`, `TRIMOBJ`, `TRIMCON`, `AECOMP`, `MONPNT1`, `MONPNT3`, `MLOADS`, `MLDTRIM`, `MLDTIME`, `MLDCOMD`, `MLDPRNT`, `TABLED1` (full list with fields in `02_card_reference.md`).
+Cards recognised: `CORD2R`, `GRID`, `PBAR`, `PROD`, `PBUSH`, `MAT1`, `CBAR`, `CROD`, `CONROD`, `CBUSH`, `PLOTEL`, `CONM2`, `MASSCASE`, `RBE3`, `RBE2`, `RBAR`, `SPC`, `SPC1`, `FORCE`, `MOMENT`, `LOAD`, `GRAV`, `EIGRL`, `SUPORT`, plus the aero/trim/monitor/maneuver families: `AEROS`, `AEFACT`, `PAERO1`, `PSTRIP`, `STRIPK`, `CAERO1`, `W2GJ`, `WKK`, `AECORR`, `SET1`, `LOADINJ`, `SPLINE1`, `SPLINE2`, `BODYATT`, `AESTAT`, `AESURF`, `AELIST`, `TRIM`, `DIVERG`, `TRIMVAR`, `TRIMWGT`, `TRIMINEQ`, `AECOMP`, `MONPNT1`, `MONPNT3`, `MANVR`, `MANTRIM`, `MANTIME`, `MANCMD`, `MANPRNT`, `TABLED1` (full list with fields in `02_card_reference.md`).
 Structural markers `BEGIN BULK` / `ENDDATA` are silently skipped.
 Known-but-unsupported NASTRAN cards (`PLOAD1`, `CBEAM`, `CORD2C`, `MPC`, … — the `_UNSUPPORTED_CARDS` set) **refuse the deck** with one counted `ValueError` (#45; table in `02_card_reference.md` "Unsupported cards").
 Any other unknown keyword refuses the deck in the same `ValueError`, with the nearest supported keyword suggested (#55). Only the listing-only cards `ECHOON`/`ECHOOFF`, and PARAMs sbeam does not read, are skipped with a `UserWarning` (the CLI echoes them as `Parser warning:` on stderr). `PARAM,WTMASS`/`AUNITS` ≠ 1 and `PARAM,COUPMASS` ≤ 0 are refused.

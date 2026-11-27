@@ -161,3 +161,35 @@ class TestBeginBulk:
     def test_spacing_and_case_of_begin_bulk(self, tmp_path):
         deck = _deck(tmp_path, _CC + "begin   bulk  $ model\n" + _MODEL + _FORCE)
         assert 10 in parse_bdf(deck)[1].forces
+
+
+# --- text= : a deck that is not on disk (#113) --------------------------------------------
+
+def test_text_is_read_in_place_of_the_file(tmp_path):
+    """The path need not exist; the text is the deck."""
+    text = _CC + "BEGIN BULK\n" + _MODEL + _FORCE + "ENDDATA\n"
+    cc, bulk = parse_bdf(tmp_path / "not_written.bdf", text=text)
+    assert cc.sol == 101 and sorted(bulk.grids) == [1, 2] and 10 in bulk.forces
+    assert not (tmp_path / "not_written.bdf").exists()
+
+
+def test_text_resolves_its_includes_against_the_paths_folder(tmp_path):
+    (tmp_path / "model.dat").write_text(_MODEL)
+    text = _CC + "BEGIN BULK\nINCLUDE 'model.dat'\n" + _FORCE + "ENDDATA\n"
+    cc, bulk = parse_bdf(tmp_path / "edited_in_memory.bdf", text=text)
+    assert sorted(bulk.grids) == [1, 2] and cc.includes == ["model.dat"]
+    with pytest.raises(FileNotFoundError, match="INCLUDE file not found: 'model.dat'"):
+        parse_bdf(tmp_path / "elsewhere" / "deck.bdf", text=text)
+
+
+def test_text_and_file_give_the_same_parse(tmp_path):
+    text = _CC + "BEGIN BULK\n" + _MODEL + _FORCE + "ENDDATA\n"
+    path = tmp_path / "deck.bdf"
+    path.write_text(text)
+    assert parse_bdf(path)[0] == parse_bdf(path, text=text)[0]
+    assert parse_bdf(path)[1].grids == parse_bdf(path, text=text)[1].grids
+
+
+def test_bulk_file_text(tmp_path):
+    bulk = parse_bulk_file(tmp_path / "bulk_only.dat", text=_MODEL + "ENDDATA\n")
+    assert sorted(bulk.grids) == [1, 2]

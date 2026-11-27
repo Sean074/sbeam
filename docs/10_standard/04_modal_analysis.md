@@ -162,12 +162,59 @@ Effective mass output is optional in phase 1.
 
 Output sections written to `results.f06`:
 
-1. **NASTRAN Executive and Case Control echo** (abbreviated)
-2. **Real Eigenvalue Table** — mode number, eigenvalue (rad²/s²), frequency (Hz), generalised mass, generalised stiffness
-3. **Mode Shape Table** — for each mode: GID, T1, T2, T3, R1, R2, R3 (normalised per NORM setting)
-4. **Effective Mass Fractions** (optional) — per mode and per direction
+0. **Grid Point Weight Generator** — only with `PARAM,GRDPNT` (#90; see `02_card_reference.md`, PARAM)
+1. **Real Eigenvalue Table** — MSC's columns (AAUG 2023.1 PDF p.437; #90): MODE NO., EXTRACTION
+   ORDER (equal to the mode number: the modes are extracted in ascending order), EIGENVALUE
+   (rad²/s²), RADIANS, CYCLES (Hz), GENERALIZED MASS, GENERALIZED STIFFNESS (φᵀKφ from the
+   a-set matrices)
+2. **Mode Shape Table** — per mode, MSC's heading `EIGENVALUE = …` / `CYCLES = …   R E A L   E I G E N
+   V E C T O R   N O .   n`, then GID, T1, T2, T3, R1, R2, R3 (normalised per NORM setting).
+   Before v0.4.1 the heading was `E I G E N V E C T O R   NO. n   FREQ = … Hz` and the table had
+   no EXTRACTION ORDER or GENERALIZED STIFFNESS; Sean074/smodal#12 tracks its parser
+
+No effective-mass table is written.
 
 ---
+
+## Reduced Modal Model Export (MODEXP, #100)
+
+`MODEXP(OP4,UF) = n` in a SOL 103 subcase writes the modal model sgear (C-1 flexible
+airframe) and Flaps read; files and layouts in `10_export_schemas.md` §7.
+
+- **MHH = ΦᵀMΦ, KHH = ΦᵀKΦ** on the a-set, formed explicitly (never assumed to be I and
+  diag(ω²)). The modes must be mass-normalised: EIGRL NORM = MAX is refused.
+- **PHIA** is the a-set modes (MSC's meaning). **PHIX** is the modes at the grids of SET n,
+  six rows per grid in SET order, basic axes. A SET member that is not a grid is skipped
+  with a warning, as MSC ignores it (QRG p.625).
+- **Free-free models** (no SPC, six zero-frequency modes) have the eigensolver's rigid
+  modes, an arbitrary mixture, replaced by the geometric rigid motions about the C.G.
+  (from the GPWG MO, #90), mass-orthonormalised (Löwdin). They stay M-orthogonal to the
+  elastic modes; MHH = I and the rigid KHH block is zero. A partly restrained model keeps
+  the eigensolver's zero-frequency modes, with a warning.
+- **Units** are the deck's own; nothing is converted.
+- **Animating a stick model (#107).** The `.uf` carries every grid, with its full g-set
+  shape. Flaps `amviz` draws translations only, so on beam-axis grids a torsion mode
+  animates as bending. Give the deck a massless outline with standard cards:
+  - leading- and trailing-edge grids on `RBE2 … 123456` to the beam grids, so they move as
+    u + θ × r;
+  - `PLOTEL`s along the LE and TE lines and across each chord.
+
+  Leave the outline grids out of the MODEXP SET and PHIX is unchanged; so are the
+  frequencies, since the grids carry no mass. `sample/goland_wing/goland_wing_modes.bdf` carries one:
+  its torsion mode 5 twists the tip chord (LE +0.182, TE −0.172 against beam T3 0.065).
+- **Flaps import.** Upstream Flaps 2.3.4 reads the `.op4` but rejects a real-mode
+  dataset 55 (it takes complex modes only). The `.uf` imports and animates on flaps_env's
+  patched `flaps:2.3.4-local` image (I/O and `amviz` fixes only; Sean074/flaps_env#1).
+
+Benchmark: `sample/goland_wing/goland_wing_modes.bdf` is the Flaps demo Goland wing (equal lumping
+over grids 1–13, inertia about the C.G.: inferred from the match). Its flap and torsion
+modes are 7.370 / 14.119 Hz, Flaps 2.3.4's printout, to 4 figures, with or without its
+visualisation outline. The same wing with
+tributary lumping and cg = 0 gives 49.32 / 87.05 rad/s against the closed form's
+49.48 / 87.10 (`tests/results/test_modal_export.py`, 0.5 %). goland.fp's EA = 2.0e5 N
+puts an axial mode near 3 Hz, so modes are picked by shape. pyNastran reads the OP4 back
+to 1e-12 (`tests/compat/test_op4_roundtrip.py`). The Flaps `import` and `amviz` animation
+check is manual.
 
 ## Verification Cases
 
@@ -223,7 +270,7 @@ Output sections written to `results.f06`:
   `M = [[m + (33/140)·ρAL, m·d], [m·d, m·d² + i11 + ρ·Ip·L/3]]`, `K = diag(3EI/L³, GJ/L)`
   → f₁ ≈ 0.1489 Hz (bending-dominant, tip Rx·d/Tz ≈ +0.10), f₂ ≈ 0.7466 Hz
   (torsion-dominant, Rx·d/Tz ≈ −0.99). Measured FE error 1.4e-5 / 9.6e-4 relative.
-- BDF: `sample/val_cantilever_offset_mass_modes.bdf` (user-facing; header carries the full
+- BDF: `sample/validation/val_cantilever_offset_mass_modes.bdf` (user-facing; header carries the full
   derivation). CI gate: `tests/integration/test_sample_verification.py`
   (`TestValCantileverOffsetMassModes`), including a decoupling check with the offset zeroed.
 
@@ -238,7 +285,7 @@ CONM2, 30, 7, 0, 100000.0   $ mass on node 7 = independent node ✓
 ```
 
 > **No shipped deck currently uses this pattern.** This snippet cited
-> `sample/beam_vib.bdf` until 2026-08-03; that deck carried the two cards above only
+> `sample/beam/beam_vib.bdf` until 2026-08-03; that deck carried the two cards above only
 > between commits `b0d81b5` and `516016a`, and `516016a` removed its `GRID 7`, `PLOTEL`
 > and `RBE2` without updating the doc. `beam_vib.bdf` today places its `CONM2` directly
 > on the tip node with no rigid element at all. The RBE2 kinematics themselves are gated
@@ -253,7 +300,7 @@ Placing a CONM2 on an RBE2 **dependent (GM) node** is implicitly handled by the 
 
 Placing a CONM2 at an RBE3-dependent node does **not** correctly transfer torsional inertia from an offset mass. The RBE3 transformation in sbeam uses DOF-by-DOF interpolation (`u_dep = u_indep` for each DOF independently) and does not include rigid-body offset kinematics. As a result, the translational mass at the dependent node maps only to the same translational DOFs on the independent node, with no torsional coupling.
 
-**Correct approach for offset mass:** specify the CG offset directly in the CONM2 `X1/X2/X3` fields at the beam-tip node. The CONM2 assembly applies the parallel-axis theorem automatically, giving `M[Rx,Rx] += m·(X2²+X3²)` torsional inertia. Alternatively, put the mass on the offset node and tie it to the tip with an RBAR, which is an exact rigid link. `sample/beam_vib1.bdf` does this, and its spectrum equals the offset-CONM2 one to round-off (gate `tests/assembly/test_rbe3_dependency.py`).
+**Correct approach for offset mass:** specify the CG offset directly in the CONM2 `X1/X2/X3` fields at the beam-tip node. The CONM2 assembly applies the parallel-axis theorem automatically, giving `M[Rx,Rx] += m·(X2²+X3²)` torsional inertia. Alternatively, put the mass on the offset node and tie it to the tip with an RBAR, which is an exact rigid link. `sample/beam/beam_vib1.bdf` does this, and its spectrum equals the offset-CONM2 one to round-off (gate `tests/assembly/test_rbe3_dependency.py`).
 
 Since #60 an RBE3 whose independent grids are offset from REFGRID **warns**. Until then `beam_vib1.bdf` carried its mass through an RBE3 and gave 1.0334 / 11.80 / 37.28 Hz with no torsional inertia from the offset. With the RBAR it gives 1.0168 / 1.0239 / 9.1735 / 9.5743 / 20.861 Hz.
 

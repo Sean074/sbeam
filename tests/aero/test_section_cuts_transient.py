@@ -1,4 +1,4 @@
-"""V-TSEC — MONSECT section cuts on transient (MLOADS) maneuvers (Step 68).
+"""V-TSEC — MONSECT section cuts on transient (MANVR) maneuvers (Step 68).
 
 Fixture: the full-span HA144A deck, which already carries the Monitor Phase 2
 ``MONSECT SECRW`` right-wing cut (CID 2 = the wing SPLINE2 axis, stations
@@ -17,7 +17,6 @@ equal.  That is V-TSEC3.
 """
 
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -35,8 +34,9 @@ from sbeam.results.section_cuts import labelled
 from sbeam.solver.maneuver_qs import run_maneuver_qs
 from sbeam.solver.sol101 import _element_local_forces
 from sbeam.solver.sol144 import run_sol144_trim
+from tests.samples import sample_path
 
-BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+BDF_PATH = sample_path("ha144a_fullspan_sbeam.bdf")
 G = 32.174  # ft/s²
 CUT = "SECRW"
 
@@ -62,7 +62,7 @@ def _static(n_z=2.0):
 
 def _maneuver(n_z=2.0, commands_builder=None, tend=0.4, dt=0.005, tout=0.02,
               damping_alpha=0.0):
-    """Run an MLOADS transient on the n_z trim IC (direct l-set solver)."""
+    """Run an MANVR transient on the n_z trim IC (direct l-set solver)."""
     bulk, gi, aero = _deck(n_z)
     labels = sorted([a.label for a in bulk.aestats.values()]
                     + [s.label for s in bulk.aesurfs.values()])

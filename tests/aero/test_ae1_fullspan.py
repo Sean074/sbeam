@@ -1,6 +1,6 @@
 """V-AE1f gate — full-span HA144A static-trim acceptance.
 
-`sample/ha144a_fullspan_sbeam.bdf` is the HA144A trim model: an explicit
+`sample/ha144a/ha144a_fullspan_sbeam.bdf` is the HA144A trim model: an explicit
 full-span deck (SYMXZ=0) with both wings and both canards meshed, the structure
 mirrored, and the fuselage mass doubled so the whole airplane = 16000 lb. It is
 the sole HA144A trim gate since half-span support was removed (the old half-span
@@ -25,7 +25,6 @@ relative gate (already green); SC2 is now a live %FS gate (no longer xfail).
 """
 
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -35,8 +34,9 @@ from sbeam.parser.case_control import SubcaseControl
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.solver.sol144 import run_sol144_trim
+from tests.samples import sample_path
 
-BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+BDF_PATH = sample_path("ha144a_fullspan_sbeam.bdf")
 
 # NASTRAN Listing 7-2 SC1 (q=40) reference — same airplane the half-span trims.
 SC1_ANGLEA = 0.169191   # rad

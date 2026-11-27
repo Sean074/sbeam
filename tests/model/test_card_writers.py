@@ -3,10 +3,12 @@
 Every writer in ``sbeam/model/card_writers.py`` must produce text the parser
 reads back into an equal dataclass (dataclass -> text -> parse -> ==), for
 each of the 15 authoring families and for every family instance in the two
-MLOADS sample decks.
+MANVR sample decks.
 """
 
 from pathlib import Path
+
+import dataclasses
 
 import pytest
 
@@ -19,8 +21,8 @@ from sbeam.model.maneuver import (
 )
 from sbeam.model import card_writers as cw
 from sbeam.parser.bdf_reader import _read_cards, parse_bulk_data, parse_bdf
+from tests.samples import sample_path
 
-SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
 
 # Scaffolding so cross-reference validation passes when parsing writer output.
 _SCAFFOLD = [
@@ -91,17 +93,24 @@ def test_suport_roundtrip():
     assert _reparse(cw.write_suport(s)).supports == [s]
 
 
-def test_trim_roundtrip_rhoref_and_negatives():
+def test_trim_roundtrip_three_pairs_and_negatives():
+    """MSC's layout: the third pair goes on the continuation, field 9 is AEQR (#87)."""
     t = Trim(sid=1, mach=0.9, q=40.0,
-             vars={"PITCH": 0.0, "URDD3": -32.174, "URDD5": 0.0},
-             rhoref=2.3769e-3)
-    got = _reparse(cw.write_trim(t)).trims[1]
+             vars={"PITCH": 0.0, "URDD3": -32.174, "URDD5": 0.0})
+    lines = cw.write_trim(t)
+    assert len(lines) == 2 and "URDD5" in lines[1]
+    got = _reparse(lines).trims[1]
     assert got.vars == t.vars
-    assert got.rhoref == pytest.approx(t.rhoref)
     assert (got.mach, got.q) == (t.mach, t.q)
 
 
-def test_trim_roundtrip_no_rhoref():
+def test_mantrim_roundtrip_rho():
+    got = _reparse(cw.write_trim(Trim(sid=50, mach=0.5, q=1.5, vars={"PITCH": 0.0}))
+                   + cw.write_mldtrim(Mldtrim(sid=600, trim_sid=50, rho=1.1e-3))).mldtrims[600]
+    assert got.rho == pytest.approx(1.1e-3)
+
+
+def test_trim_roundtrip_one_pair():
     t = Trim(sid=2, mach=0.3, q=100.0, vars={"ANGLEA": 0.05})
     got = _reparse(cw.write_trim(t)).trims[2]
     assert got == t
@@ -150,20 +159,20 @@ def test_tabled1_long_table_continuations():
 
 def _maneuver_scaffold():
     return _SCAFFOLD + [
-        "TRIM,50,0.5,1.5,RHOREF,1.1-3,URDD3,-80.435,PITCH,0.0",
+        "TRIM,50,0.5,1.5,URDD3,-80.435,PITCH,0.0",
         "TABLED1,200",
         "+,0.0,0.0,0.5,0.1,1.0,0.1,ENDT",
-        "MLDTRIM,600,50",
-        "MLDTIME,300,0.0,1.0,0.01,0.05",
-        "MLDCOMD,400,ELEV,200",
-        "MLDPRNT,500",
+        "MANTRIM,600,50,1.1-3",
+        "MANTIME,300,0.0,1.0,0.01,0.05",
+        "MANCMD,400,ELEV,200",
+        "MANPRNT,500",
     ]
 
 
 def test_mloads_roundtrip_trailing_defaults():
     m = Mloads(sid=700, mldtrim=600, mldtime=300)
     lines = cw.write_mloads(m)
-    assert lines == ["MLOADS, 700, 600, 300"]
+    assert lines == ["MANVR, 700, 600, 300"]
     got = parse_bulk_data(_maneuver_scaffold() + lines).mloads[700]
     assert got == m
 
@@ -187,7 +196,7 @@ def test_mldtrim_mldtime_mldcomd_mldprnt_roundtrip():
 
 
 # ---------------------------------------------------------------------------
-# Golden round-trips: every family instance in the two MLOADS sample decks
+# Golden round-trips: every family instance in the two MANVR sample decks
 # ---------------------------------------------------------------------------
 
 _FAMILY_ATTRS = [a for a, _ in cw.FAMILIES.values()]
@@ -196,8 +205,8 @@ _FAMILY_ATTRS = [a for a, _ in cw.FAMILIES.values()]
 @pytest.mark.parametrize("deck", ["ha144a_fullspan_mloads.bdf",
                                   "ha144a_mloads_massset.bdf"])
 def test_sample_deck_golden_roundtrip(deck):
-    _, bulk = parse_bdf(SAMPLE_DIR / deck)
-    lines: list[str] = _cord2r_lines(SAMPLE_DIR / deck)
+    _, bulk = parse_bdf(sample_path(deck))
+    lines: list[str] = _cord2r_lines(sample_path(deck))
     for family, (attr, writer) in cw.FAMILIES.items():
         store = getattr(bulk, attr)
         if family == "suport":
@@ -209,14 +218,24 @@ def test_sample_deck_golden_roundtrip(deck):
     # The writer families carry no GRIDs or panels: read the cards, skip the model checks
     reparsed = _read_cards(lines)
     for attr in _FAMILY_ATTRS:
+        if attr in ("monpnt1s", "monpnt3s"):
+            continue
         assert getattr(reparsed, attr) == getattr(bulk, attr), attr
+    # A structural MONPNT1 is filed apart from an aerodynamic one by the cross-reference
+    # pass (by its AECOMP's type, #86), which ``_read_cards`` does not run.  Both kinds are
+    # written as MONPNT1, so compare the two stores together, card for card.
+    def monitors(model):
+        both = {**model.monpnt1s, **model.monpnt3s}
+        return {name: dataclasses.astuple(card) for name, card in both.items()}
+    assert monitors(reparsed) == monitors(bulk)
+    assert monitors(bulk), "the sample deck has monitors, so the comparison is not empty"
 
 
 def test_write_authored_block_header_and_specials():
     bulk = parse_bulk_data(_maneuver_scaffold() + [
         "SUPORT,90,35",
-        "TRIMCON,5,ELEV,LE,0.4",
-        "TRIMCON,5,ELEV,GE,-0.4",
+        "TRIMINEQ,5,ELEV,LE,0.4",
+        "TRIMINEQ,5,ELEV,GE,-0.4",
     ])
     authored = {"trim": {50}, "suport": {90}, "trimcon": {5}, "tabled1": {200}}
     block = cw.write_authored_block(bulk, authored, "authored by viewer\nP12")

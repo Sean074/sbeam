@@ -247,7 +247,7 @@ def build_dj_rigidrate(
         boxes:      aero boxes.
         rigid_dofs: list[int] of rigid-body DOF components (1-6), one per column.
         bulk:       BulkData (AEROS reference geometry, as for build_djx).
-        v_inf:      true airspeed, from ``Trim.velocity()``.
+        v_inf:      true airspeed, from ``Mldtrim.velocity(q)`` (MANTRIM RHO).
 
     Returns:
         (n_box, n_rigid) physical-rate normalwash matrix.

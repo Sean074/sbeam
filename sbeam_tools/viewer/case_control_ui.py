@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import dataclasses
+import re
+
 from typing import Any, Callable, Dict, Optional, cast
 
 import streamlit as st
+from sbeam_tools.viewer.widget_keys import wk
 from streamlit.delta_generator import DeltaGenerator
 
 from sbeam.model.bulk_data import BulkData
 from sbeam.parser.case_control import CaseControl, SubcaseControl
-from sbeam_tools.viewer.sol144_authoring import validate_sol144_authoring
+from sbeam_tools.viewer.sol144_authoring import cards_text, check_case_control
 
 
 # ---------------------------------------------------------------------------
@@ -41,11 +45,11 @@ _OUTPUT_LABELS: dict[str, str] = {
 }
 
 # SOL 144 subcase driver kinds — each subcase selects exactly one, matching the
-# solver routing (MLOADS wins; DIVERG without TRIM = divergence-only; else TRIM,
+# solver routing (MANVR wins; DIVERG without TRIM = divergence-only; else TRIM,
 # with DIVERG as an optional add-on sweep).
 _SC_KIND_TRIM   = "Trim"
 _SC_KIND_DIVERG = "Divergence only"
-_SC_KIND_MLOADS = "Maneuver (MLOADS)"
+_SC_KIND_MLOADS = "Maneuver (MANVR)"
 _SC_KINDS = [_SC_KIND_TRIM, _SC_KIND_DIVERG, _SC_KIND_MLOADS]
 
 
@@ -62,10 +66,51 @@ def _subcase_kind(sc_data: dict[str, Any]) -> str:
 # BDF export
 # ---------------------------------------------------------------------------
 
+
+def _set_line(n: int, members: Optional[list[int]]) -> str:
+    """A case-control SET (QRG p.625), wrapped so no line grows past 72 characters."""
+    if members is None:
+        return f"SET {n} = ALL"
+    items = [str(m) for m in members]
+    rows, row = [], f"SET {n} ="
+    for k, item in enumerate(items):
+        piece = f" {item}" + ("," if k < len(items) - 1 else "")
+        if len(row) + len(piece) > 72:
+            rows.append(row)
+            row = "   "
+        row += piece
+    rows.append(row)
+    return "\n".join(rows)
+
+def deck_bulk_section(source_text: Optional[str]) -> Optional[str]:
+    """The loaded deck's own bulk section: the lines between BEGIN BULK and ENDDATA.
+
+    ``None`` when the text has no BEGIN BULK (a bulk-data-only file, or no file).  The
+    section is returned as written, INCLUDE lines and comments included, so an export
+    that carries it loses no card of the loaded deck (#123).
+    """
+    if not source_text:
+        return None
+    lines = source_text.splitlines()
+    start = end = None
+    for i, line in enumerate(lines):
+        clean = line.split("$", 1)[0].strip().upper()
+        if start is None:
+            if re.match(r"BEGIN\b", clean):
+                start = i + 1
+        elif clean.startswith("ENDDATA"):
+            end = i
+            break
+    if start is None:
+        return None
+    return "\n".join(lines[start:end])
+
+
 def export_bdf_text(
     cc: CaseControl,
     include_paths: Optional[list[str]] = None,
     authored_block: str = "",
+    bulk_section: Optional[str] = None,
 ) -> str:
     """Return a BDF driver file as a string, parseable by parse_bdf.
 
@@ -78,9 +123,15 @@ def export_bdf_text(
         include_paths:  Bulk-data file paths; defaults to ``cc.includes`` (or
                         ``['model.dat']`` when the deck names none).
         authored_block: Optional bulk-card text emitted inline after BEGIN BULK
-                        (the viewer-authored TRIM/MLOADS/… card block).
+                        (the viewer-authored TRIM/MANVR/… card block).
+        bulk_section:   The loaded deck's own bulk section (``deck_bulk_section``).
+                        When given it is written unchanged in place of the generated
+                        INCLUDE lines, so inline cards and the deck's own INCLUDEs
+                        survive; ``include_paths`` is then not used.
     """
-    if include_paths is None:
+    if bulk_section is not None:
+        include_paths = []
+    elif include_paths is None:
         if cc.includes:
             include_paths = list(cc.includes)
         elif cc.include:
@@ -89,16 +140,22 @@ def export_bdf_text(
             include_paths = ["model.dat"]
     lines: list[str] = []
     lines.append(f"SOL {cc.sol}")
-    if cc.title:
-        lines.append(f"TITLE = {cc.title}")
+    for command in ("TITLE", "SUBTITLE", "LABEL"):          # page headings (#90)
+        if getattr(cc, command.lower()):
+            lines.append(f"{command} = {getattr(cc, command.lower())}")
+    lines += [_set_line(n, members) for n, members in getattr(cc, "sets", {}).items()]
     for sc in cc.subcases:
         lines.append(f"SUBCASE {sc.subcase_id}")
-        if sc.title:
-            lines.append(f"  TITLE = {sc.title}")
+        for command in ("TITLE", "SUBTITLE", "LABEL"):
+            if getattr(sc, command.lower()):
+                lines.append(f"  {command} = {getattr(sc, command.lower())}")
+        lines += [f"  {_set_line(n, members)}" for n, members in sc.sets.items()]
+        if sc.modexp_set is not None:                       # #100
+            lines.append(f"  MODEXP({','.join(sc.modexp_formats)}) = {sc.modexp_set}")
         for sid, keyword in [
             (sc.load_sid, "LOAD"), (sc.spc_sid, "SPC"), (sc.method_sid, "METHOD"),
-            (sc.trim_sid, "TRIM"), (sc.trimobj_sid, "TRIMOBJ"),
-            (sc.diverg_sid, "DIVERG"), (sc.mloads_sid, "MLOADS"),
+            (sc.trim_sid, "TRIM"), (sc.trimobj_sid, "TRIMWGT"),
+            (sc.diverg_sid, "DIVERG"), (sc.mloads_sid, "MANVR"),
             (sc.gustlf_sid, "GUSTLF"), (sc.massset_sid, sc.mass_card),
         ]:
             if sid is not None:
@@ -113,6 +170,8 @@ def export_bdf_text(
     lines.append("BEGIN BULK")
     for path in include_paths:
         lines.append(f"INCLUDE '{path}'")
+    if bulk_section is not None:
+        lines.extend(bulk_section.splitlines())
     if authored_block:
         lines.extend(authored_block.rstrip("\n").splitlines())
     lines.append("ENDDATA")
@@ -163,10 +222,10 @@ def _summarize_sol144(sc: SubcaseControl, bulk: BulkData) -> str:
         label = f" {ms.label}" if ms is not None else ""
         mass_case = f" [mass case {sc.mass_card} {sc.massset_sid}{label}]"
     if sc.mloads_sid is not None:
-        outputs = "time histories, MLDPRNT export, critical-sample loads"
+        outputs = "time histories, MANPRNT export, critical-sample loads"
         if has_monitors:
             outputs += ", monitor loads"
-        return (f"Transient maneuver loads (MLOADS {sc.mloads_sid}){mass_case}; "
+        return (f"Transient maneuver loads (MANVR {sc.mloads_sid}){mass_case}; "
                 f"outputs {outputs}")
     parts: list[str] = []
     if sc.trim_sid is not None:
@@ -176,7 +235,7 @@ def _summarize_sol144(sc: SubcaseControl, bulk: BulkData) -> str:
         else:
             parts.append(f"trim (TRIM {sc.trim_sid})")
         if sc.trimobj_sid is not None:
-            parts.append(f"over-determined (TRIMOBJ {sc.trimobj_sid})")
+            parts.append(f"over-determined (TRIMWGT {sc.trimobj_sid})")
     if sc.gustlf_sid is not None:
         gust = bulk.gustlfs.get(sc.gustlf_sid)
         detail = f", n = {gust.n:g} on TRIM {gust.trimid}" if gust is not None else ""
@@ -255,11 +314,11 @@ def render_case_control_panel(
             st.caption(cc.title)
         for line in summarize_case_control(cc, bulk):
             st.markdown(f"- {line}")
-        errors, _ = validate_sol144_authoring(bulk, cc)
+        errors, _ = check_case_control(bulk, cc)
         for err in errors:
             st.error(err)
         if on_launch is not None and st.button(
-            "▶ Launch Analysis", type="primary", key="cc_launch",
+            "▶ Launch Analysis", type="primary", key=wk("cc_launch"),
             disabled=bool(errors),
             help="Fix the errors above first." if errors else None,
         ):
@@ -270,7 +329,7 @@ def render_case_control_panel(
     # A checkbox (not an expander) demotes the editor — the editor itself nests
     # expanders, and Streamlit forbids expander-in-expander.
     show_editor = st.checkbox(
-        "Edit case control", value=(cc is None), key="cc_show_editor"
+        "Edit case control", value=(cc is None), key=wk("cc_show_editor")
     )
     if show_editor:
         _render_case_control_editor(bulk, cc, loaded_cc)
@@ -296,7 +355,8 @@ def _render_case_control_editor(
         )
 
     # Available SIDs from bulk data
-    load_sids = sorted(set(list(bulk.forces.keys()) + list(bulk.moments.keys()) + list(bulk.loads.keys())))
+    # Every set a LOAD selector may name: a GRAV-only set is one of them (#123).
+    load_sids = sorted(set(bulk.forces) | set(bulk.moments) | set(bulk.loads) | set(bulk.gravs))
     spc_sids  = sorted(set(list(bulk.spcs.keys()) + list(bulk.spc1s.keys())))
     eigrl_sids = sorted(bulk.eigrls.keys())
     trim_sids    = sorted(bulk.trims.keys())
@@ -364,7 +424,7 @@ def _render_case_control_editor(
                 expander_label += f" — {sc_data['title']}"
             with st.expander(expander_label, expanded=True):
                 sc_data["title"] = st.text_input(
-                    "Subcase title", value=sc_data["title"], key=f"sc_title_{idx}"
+                    "Subcase title", value=sc_data["title"], key=wk(f"sc_title_{idx}")
                 )
 
                 col_load, col_spc = st.columns(2)
@@ -375,13 +435,13 @@ def _render_case_control_editor(
                     load_opts,
                     index=load_idx,
                     format_func=lambda v: "— none —" if v is None else str(v),
-                    key=f"sc_load_{idx}",
+                    key=wk(f"sc_load_{idx}"),
                     # #6: in SOL 144 the LOAD set is an applied structural load
                     # (thrust, engine torque) in the TRIM balance; the Trim kind
-                    # keeps it, MLOADS / Divergence-only drop it (_apply_sol144_kind).
+                    # keeps it, MANVR / Divergence-only drop it (_apply_sol144_kind).
                     help=("SOL 144: applied structural load (FORCE/MOMENT) added to the "
                           "TRIM balance — thrust, engine torque; GRAV is refused. Not "
-                          "available for MLOADS or divergence-only subcases.")
+                          "available for MANVR or divergence-only subcases.")
                     if sol == 144 else None,
                 )
                 spc_opts: list[Optional[int]] = [None] + spc_sids
@@ -391,7 +451,7 @@ def _render_case_control_editor(
                     spc_opts,
                     index=spc_idx,
                     format_func=lambda v: "— none —" if v is None else str(v),
-                    key=f"sc_spc_{idx}",
+                    key=wk(f"sc_spc_{idx}"),
                 )
 
                 if sol == 144:
@@ -408,7 +468,7 @@ def _render_case_control_editor(
                         eigrl_opts,
                         index=e_idx,
                         format_func=lambda v: "— none —" if v is None else str(v),
-                        key=f"sc_method_{idx}",
+                        key=wk(f"sc_method_{idx}"),
                     )
                 else:
                     sc_data["method_sid"] = None
@@ -421,7 +481,7 @@ def _render_case_control_editor(
                         sc_data[field] = out_cols[i].checkbox(
                             _OUTPUT_LABELS[field],
                             value=sc_data[field],
-                            key=f"sc_{field}_{idx}",
+                            key=wk(f"sc_{field}_{idx}"),
                         )
                 else:
                     st.info("All modal results (frequencies and mode shapes) are output automatically.")
@@ -430,13 +490,24 @@ def _render_case_control_editor(
 
         # Advanced (INCLUDE paths) — collapsed.  One path per line; a deck may
         # compose several bulk files (multi-INCLUDE, Step 66).
+        bulk_section = deck_bulk_section(st.session_state.get("_uploaded_source_text"))
         with st.expander("Advanced", expanded=False):
-            include_text = st.text_area(
-                "INCLUDE paths (bulk data files, one per line)",
-                value="\n".join(cc.includes) if (cc and cc.includes) else "model.dat",
-                key="cc_includes",
-            )
-        include_paths = [p.strip() for p in include_text.splitlines() if p.strip()]
+            if bulk_section is not None:
+                st.caption(
+                    "The loaded deck's bulk section, with its INCLUDE lines, is written "
+                    "to the export unchanged."
+                )
+                include_paths = list(cc.includes) if cc else []
+            else:
+                # A bulk-data-only file: the export is a driver that INCLUDEs it.
+                default_include = (st.session_state.get("_uploaded_filename")
+                                   or "model.dat")
+                include_text = st.text_area(
+                    "INCLUDE paths (bulk data files, one per line)",
+                    value="\n".join(cc.includes) if (cc and cc.includes) else default_include,
+                    key=wk("cc_includes"),
+                )
+                include_paths = [p.strip() for p in include_text.splitlines() if p.strip()]
 
         # Action row
         col_add, col_rem, _, col_apply = st.columns([1, 1, 2, 2])
@@ -456,26 +527,32 @@ def _render_case_control_editor(
 
     if submitted:
         # Read committed values from widget session state keys
+        # Each subcase is the loaded one with the edited fields replaced, so what the
+        # editor has no widget for (SUBTITLE, LABEL, SET, MODEXP) is carried, not
+        # dropped (#123).  The same holds for the deck-level fields below.
+        loaded = {sc.subcase_id: sc for sc in cc.subcases} if cc else {}
         subcases = []
         for idx, s in enumerate(st.session_state.cc_subcases):
             fields = dict(s)
+            fields["load_sid"] = st.session_state.get(wk(f"sc_load_{idx}"), s["load_sid"])
             if sol == 144:
                 for key in ("trim_sid", "trimobj_sid", "diverg_sid",
                             "mloads_sid", "gustlf_sid", "massset_sid"):
-                    fields[key] = st.session_state.get(f"sc_{key}_{idx}", s.get(key))
-                kind = st.session_state.get(f"sc_kind_{idx}", _subcase_kind(fields))
+                    fields[key] = st.session_state.get(wk(f"sc_{key}_{idx}"), s.get(key))
+                kind = st.session_state.get(wk(f"sc_kind_{idx}"), _subcase_kind(fields))
                 fields = _apply_sol144_kind(fields, kind)
             else:
                 for key in ("trim_sid", "trimobj_sid", "diverg_sid",
                             "mloads_sid", "gustlf_sid", "massset_sid"):
                     fields[key] = None
-            subcases.append(SubcaseControl(
-                subcase_id=s["id"],
-                title=st.session_state.get(f"sc_title_{idx}", s["title"]),
-                load_sid=(st.session_state.get(f"sc_load_{idx}", s["load_sid"])
-                          if sol != 144 else None),
-                spc_sid=st.session_state.get(f"sc_spc_{idx}", s["spc_sid"]),
-                method_sid=st.session_state.get(f"sc_method_{idx}") if sol == 103 else None,
+            subcases.append(dataclasses.replace(
+                loaded.get(s["id"]) or SubcaseControl(subcase_id=s["id"]),
+                title=st.session_state.get(wk(f"sc_title_{idx}"), s["title"]),
+                # SOL 144: kept for a Trim subcase (applied load in the trim balance,
+                # #6), dropped for MANVR / divergence-only by _apply_sol144_kind.
+                load_sid=fields["load_sid"],
+                spc_sid=st.session_state.get(wk(f"sc_spc_{idx}"), s["spc_sid"]),
+                method_sid=st.session_state.get(wk(f"sc_method_{idx}")) if sol == 103 else None,
                 trim_sid=fields["trim_sid"],
                 trimobj_sid=fields["trimobj_sid"],
                 diverg_sid=fields["diverg_sid"],
@@ -485,15 +562,16 @@ def _render_case_control_editor(
                 # #102: an MSC mass combination is selected with MASSSET
                 mass_card=("MASSSET" if fields["massset_sid"] in bulk.masssets
                            and bulk.masssets[fields["massset_sid"]].msc else "MASSCASE"),
-                displacement=st.session_state.get(f"sc_displacement_{idx}", s["displacement"]),
-                spcforce=st.session_state.get(f"sc_spcforce_{idx}", s["spcforce"]),
-                oload=st.session_state.get(f"sc_oload_{idx}", s["oload"]),
-                force=st.session_state.get(f"sc_force_{idx}", s["force"]),
-                stress=st.session_state.get(f"sc_stress_{idx}", s["stress"]),
-                aerof=st.session_state.get(f"sc_aerof_{idx}", s.get("aerof", False)) if sol == 144 else False,
-                apres=st.session_state.get(f"sc_apres_{idx}", s.get("apres", False)) if sol == 144 else False,
+                displacement=st.session_state.get(wk(f"sc_displacement_{idx}"), s["displacement"]),
+                spcforce=st.session_state.get(wk(f"sc_spcforce_{idx}"), s["spcforce"]),
+                oload=st.session_state.get(wk(f"sc_oload_{idx}"), s["oload"]),
+                force=st.session_state.get(wk(f"sc_force_{idx}"), s["force"]),
+                stress=st.session_state.get(wk(f"sc_stress_{idx}"), s["stress"]),
+                aerof=st.session_state.get(wk(f"sc_aerof_{idx}"), s.get("aerof", False)) if sol == 144 else False,
+                apres=st.session_state.get(wk(f"sc_apres_{idx}"), s.get("apres", False)) if sol == 144 else False,
             ))
-        st.session_state.case_control = CaseControl(
+        st.session_state.case_control = dataclasses.replace(
+            cc if cc is not None else CaseControl(sol=sol),
             sol=sol,
             title=title,
             subcases=subcases,
@@ -505,23 +583,20 @@ def _render_case_control_editor(
     # ------------------------------------------------------------------ export
     cc_current: Optional[CaseControl] = st.session_state.get("case_control")
     if cc_current is not None:
-        # Full export gate: unresolved increment commands and authored-SID
-        # duplicates against the loaded file block the download (the parser
-        # raises on duplicate SIDs, so such a deck would not read back).
-        export_errors, _ = validate_sol144_authoring(
+        # Export gate: the case control must make runnable cases, and no command may
+        # still be an unresolved increment.  Card rules need no gate here: every
+        # authored card has already been through the parser (#113).
+        export_errors, _ = check_case_control(
             bulk, cc_current,
             unresolved_increments=list(
                 st.session_state.get("mldcomd_increments", {}).values()),
-            file_sids=st.session_state.get("file_card_sids"),
-            authored=st.session_state.get("authored_cards"),
         )
-        from sbeam.model.card_writers import write_authored_block
-        authored_block = write_authored_block(
+        authored_block = cards_text(
             bulk, st.session_state.get("authored_cards") or {},
-            "Authored in the sbeam viewer (SOL 144 / MLOADS authoring tab)",
-        )
+            st.session_state.get("deck_blocks") or {})
         bdf_text = export_bdf_text(cc_current, include_paths=include_paths,
-                                   authored_block=authored_block)
+                                   authored_block=authored_block,
+                                   bulk_section=bulk_section)
         for err in export_errors:
             st.error(err)
         st.download_button(
@@ -558,7 +633,7 @@ def _render_sol144_subcase_fields(
         _SC_KINDS,
         index=_SC_KINDS.index(kind),
         horizontal=True,
-        key=f"sc_kind_{idx}",
+        key=wk(f"sc_kind_{idx}"),
         help="Only the SIDs matching the selected kind are kept on Apply "
              "(DIVERG also combines with Trim as an add-on sweep).",
     )
@@ -571,19 +646,19 @@ def _render_sol144_subcase_fields(
             label, opts,
             index=opts.index(cur) if cur in opts else 0,
             format_func=lambda v: "— none —" if v is None else str(v),
-            key=f"sc_{field}_{idx}",
+            key=wk(f"sc_{field}_{idx}"),
             help=help_ or None,
         )
 
     col1, col2, col3 = st.columns(3)
     _sid_box(col1, "TRIM SID", "trim_sid", trim_sids)
-    _sid_box(col2, "TRIMOBJ SID", "trimobj_sid", trimobj_sids,
+    _sid_box(col2, "TRIMWGT SID", "trimobj_sid", trimobj_sids,
              "Over-determined trim objective (optional).")
     _sid_box(col3, "DIVERG SID", "diverg_sid", diverg_sids,
              "Sole driver for a divergence-only subcase, or an add-on sweep "
              "after a trim.")
     col4, col5, col6 = st.columns(3)
-    _sid_box(col4, "MLOADS SID", "mloads_sid", mloads_sids,
+    _sid_box(col4, "MANVR SID", "mloads_sid", mloads_sids,
              "Transient maneuver driver (Phase G0).")
     _sid_box(col5, "MASSCASE SID", "massset_sid", massset_sids,
              "Payload / mass case (baseline when none).")

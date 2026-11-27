@@ -12,12 +12,13 @@ import pytest
 
 from sbeam.model.card_writers import FAMILIES
 from sbeam.parser.bdf_reader import parse_bdf
-from sbeam_tools.viewer.sol144_authoring import snapshot_family_ids
+from sbeam_tools.viewer.sol144_authoring import CARD_NAMES, snapshot_family_ids
 from sbeam_tools.viewer.sol144_authoring_ui import export_sol144_bdf
+from tests.samples import sample_path
 
-SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
 
-_CARD_NAMES = {fam.upper() for fam in FAMILIES}
+# The card each family writes (family keys are internal names; #87 renamed the cards)
+_CARD_NAMES = set(CARD_NAMES.values())
 
 
 def _split_sample(deck_path: Path) -> tuple[str, str]:
@@ -37,7 +38,8 @@ def _split_sample(deck_path: Path) -> tuple[str, str]:
         stripped = ln.strip()
         if stripped.upper().startswith("ENDDATA"):
             break
-        first = stripped.split(",", 1)[0].strip().upper()
+        # the card name ends at a comma (free field) or a blank (small field: MONPNT1)
+        first = stripped.replace(",", " ").split()[0].upper() if stripped else ""
         if stripped.startswith("+"):
             if skipping:
                 continue
@@ -58,8 +60,8 @@ def _families_equal(a, b) -> None:
 @pytest.mark.parametrize("deck", ["ha144a_fullspan_mloads.bdf",
                                   "ha144a_mloads_massset.bdf"])
 def test_driver_export_roundtrip_zero_loss(deck, tmp_path):
-    cc, bulk = parse_bdf(SAMPLE_DIR / deck)
-    model_text, _ = _split_sample(SAMPLE_DIR / deck)
+    cc, bulk = parse_bdf(sample_path(deck))
+    model_text, _ = _split_sample(sample_path(deck))
     (tmp_path / "model.dat").write_text(model_text)
 
     authored = snapshot_family_ids(bulk)   # every condition card is "authored"
@@ -85,8 +87,8 @@ def test_exported_driver_solves_trim(tmp_path):
     from sbeam.solver.sol144 import AeroCache, run_sol144_trim
 
     deck = "ha144a_fullspan_mloads.bdf"
-    cc, bulk = parse_bdf(SAMPLE_DIR / deck)
-    model_text, _ = _split_sample(SAMPLE_DIR / deck)
+    cc, bulk = parse_bdf(sample_path(deck))
+    model_text, _ = _split_sample(sample_path(deck))
     (tmp_path / "model.dat").write_text(model_text)
     driver = tmp_path / "run.bdf"
     driver.write_text(export_sol144_bdf(cc, bulk, snapshot_family_ids(bulk),
@@ -104,22 +106,9 @@ def test_exported_driver_solves_trim(tmp_path):
 
 def test_authoring_form_applies_card_through_ui():
     """AppTest: an AESTAT authored through the actual form lands in the model."""
-    from streamlit.testing.v1 import AppTest
+    from tests.viewer.journey_helpers import _open
 
-    def _app():
-        from sbeam_tools.viewer.app import main
-        main()
-
-    cc, bulk = parse_bdf(SAMPLE_DIR / "ha144a_fullspan_mloads.bdf")
-    at = AppTest.from_function(_app, default_timeout=30)
-    at.run()
-    at.session_state["bulk_data"] = bulk
-    at.session_state["case_control"] = cc
-    at.session_state["_loaded_from_file_cc"] = cc
-    at.session_state["cc_subcases"] = None
-    at.session_state["selected_subcase_id"] = cc.subcases[0].subcase_id
-    at.session_state["_uploaded_filename"] = "ha144a_fullspan_mloads.bdf"
-    at.run()
+    at = _open("ha144a/ha144a_fullspan_mloads.bdf")
     assert not at.exception, [str(e) for e in at.exception]
 
     at.number_input(key="auth_aestat_id").set_value(901)
@@ -135,38 +124,55 @@ def test_authoring_form_applies_card_through_ui():
     assert 901 in at.session_state["authored_cards"]["aestat"]
 
 
+def _apply(at, form: str):
+    next(b for b in at.button
+         if getattr(b, "key", "") == f"FormSubmitter:auth_form_{form}-Apply").click()
+    at.run()
+    assert not at.exception, [str(e) for e in at.exception]
+
+
+def _author_aelist(at, sid: int, boxes: str) -> None:
+    at.number_input(key="auth_aelist_sid").set_value(sid)
+    at.text_input(key="auth_aelist_boxes").set_value(boxes)
+    _apply(at, "aelist")
+    assert sid in at.session_state["bulk_data"].aelists, [e.value for e in at.error]
+
+
+def _fill_aesurf(at, alid1: int, alid2: int) -> None:
+    at.number_input(key="auth_aesurf_id").set_value(506)
+    at.text_input(key="auth_aesurf_label").set_value("AILT")
+    at.selectbox(key="auth_aesurf_cid1").select(1)
+    at.selectbox(key="auth_aesurf_alid1").select(alid1)
+    at.selectbox(key="auth_aesurf_cid2").select(2)
+    at.selectbox(key="auth_aesurf_alid2").select(alid2)
+
+
 def test_aesurf_form_keeps_the_second_hinge_half():
     """G9 (#9): CID2/ALID2 authored through the AESURF form land on the card — the
     form used to rebuild the Aesurf without them, so re-saving an aileron pair
     silently dropped its port half."""
-    from streamlit.testing.v1 import AppTest
+    from tests.viewer.journey_helpers import _open
 
-    def _app():
-        from sbeam_tools.viewer.app import main
-        main()
-
-    cc, bulk = parse_bdf(SAMPLE_DIR / "ha144a_fullspan_mloads.bdf")
-    at = AppTest.from_function(_app, default_timeout=30)
-    at.run()
-    at.session_state["bulk_data"] = bulk
-    at.session_state["case_control"] = cc
-    at.session_state["_loaded_from_file_cc"] = cc
-    at.session_state["cc_subcases"] = None
-    at.session_state["selected_subcase_id"] = cc.subcases[0].subcase_id
-    at.session_state["_uploaded_filename"] = "ha144a_fullspan_mloads.bdf"
-    at.run()
-    assert not at.exception, [str(e) for e in at.exception]
-
-    at.number_input(key="auth_aesurf_id").set_value(506)
-    at.text_input(key="auth_aesurf_label").set_value("AILT")
-    at.selectbox(key="auth_aesurf_cid1").select(1)
-    at.selectbox(key="auth_aesurf_alid1").select(1000)
-    at.selectbox(key="auth_aesurf_cid2").select(2)
-    at.selectbox(key="auth_aesurf_alid2").select(1400)
-    apply_btn = next(b for b in at.button
-                     if getattr(b, "key", "") == "FormSubmitter:auth_form_aesurf-Apply")
-    apply_btn.click()
-    at.run()
-    assert not at.exception, [str(e) for e in at.exception]
+    at = _open("ha144a/ha144a_fullspan_mloads.bdf")
+    _author_aelist(at, 1500, "1100 THRU 1103")
+    _author_aelist(at, 1501, "2100 THRU 2103")
+    _fill_aesurf(at, 1500, 1501)
+    _apply(at, "aesurf")
+    assert not at.error, [e.value for e in at.error]
     card = at.session_state["bulk_data"].aesurfs[506]
-    assert (card.cid1, card.alid1, card.cid2, card.alid2) == (1, 1000, 2, 1400)
+    assert (card.cid1, card.alid1, card.cid2, card.alid2) == (1, 1500, 2, 1501)
+
+
+def test_the_form_refuses_what_the_parser_refuses():
+    """#113: a card typed into a form goes through the parser.  This AESURF names two
+    box lists that share boxes; the parser refuses it, and until #113 the viewer's
+    in-memory edit accepted it and ran it."""
+    from tests.viewer.journey_helpers import _open
+
+    at = _open("ha144a/ha144a_fullspan_mloads.bdf")
+    before = dict(at.session_state["bulk_data"].aesurfs)
+    _fill_aesurf(at, 1000, 1400)
+    _apply(at, "aesurf")
+    assert any("appear in both ALID1=1000 and ALID2=1400" in e.value for e in at.error)
+    assert at.session_state["bulk_data"].aesurfs == before
+    assert not any(at.session_state["authored_cards"].values())

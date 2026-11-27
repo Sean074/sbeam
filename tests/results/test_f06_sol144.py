@@ -6,9 +6,9 @@ restrained), AERODYNAMIC TOTALS (CL/CMY), AERODYNAMIC DIVERGENCE, the shared
 DISPLACEMENT / BAR FORCE / BAR STRESS blocks, and the AEROF/APRES-gated
 AERODYNAMIC BOX PRESSURES AND FORCES block.
 """
+import re
 
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -18,8 +18,9 @@ from sbeam.aero.aero_model import build_aero_model
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.solver.sol144 import run_sol144_trim
 from sbeam.results.f06_writer import build_f06_sol144_text
+from tests.samples import sample_path
 
-BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+BDF_PATH = sample_path("ha144a_fullspan_sbeam.bdf")
 
 
 @pytest.fixture(scope="module")
@@ -49,14 +50,25 @@ class TestSol144F06Blocks:
     def test_trim_variables_block(self, trim):
         txt = _text(*trim)
         assert "T R I M   V A R I A B L E S" in txt
-        # Free vs prescribed labelling.
-        assert "ANGLEA" in txt and "FREE" in txt
-        assert "URDD3" in txt and "PRESCRIBED" in txt
+        # MSC's columns (AAUG 2023.1 PDF p.235; #90): TYPE and TRIM STATUS FIXED / FREE
+        rows = {ln.split()[1]: ln for ln in txt.splitlines()
+                if len(ln.split()) > 4 and ln.split()[1] in ("ANGLEA", "URDD3", "INTERCEPT")}
+        assert "RIGID BODY" in rows["ANGLEA"] and " FREE " in rows["ANGLEA"]
+        assert " FIXED " in rows["URDD3"] and "LENGTH/TIME**2" in rows["URDD3"]
+        assert "INTERCEPT" in txt and "TRIM STATUS" in txt
 
     def test_stability_derivatives_block(self, trim):
         txt = _text(*trim)
         assert "S T A B I L I T Y   D E R I V A T I V E S" in txt
-        assert "RIGID" in txt and "ELASTIC RESTRAINED" in txt
+        # MSC's layout (AAUG 2023.1 PDF p.233; #90): six coefficient rows per variable,
+        # RIGID / ELASTIC RESTRAINED / ELASTIC UNRESTRAINED columns
+        assert "RESTRAINED" in txt and "UNRESTRAINED" in txt
+        lines = txt.splitlines()
+        start = next(i for i, ln in enumerate(lines) if ln.split()[:2] == ["ANGLEA", "CX"])
+        rows = lines[start:start + 6]
+        assert [ln.split()[1] if k == 0 else ln.split()[0] for k, ln in enumerate(rows)] \
+            == ["CX", "CY", "CZ", "CMX", "CMY", "CMZ"]
+        assert all(len(re.findall(r"-?\d\.\d{6}E[+-]\d\d", ln)) == 3 for ln in rows)
 
     def test_totals_block(self, trim):
         _bulk, result = trim

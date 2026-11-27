@@ -182,7 +182,7 @@ element over-stiff (DEF-M17: a fixed–pinned element came out 4× too stiff). D
   `assembly/mass_matrix.py`; see `04_modal_analysis.md`), and any future fixed-end load
   vector must be condensed as `f' = Tᵀf`.
 - The **same `K'`** is used for assembly and for every force-recovery path
-  (`_element_local_forces` in `solver/sol101.py`, serving SOL 101, SOL 144 and MLOADS).
+  (`_element_local_forces` in `solver/sol101.py`, serving SOL 101, SOL 144 and MANVR).
   Released rows of `K'` are zero, so the recovered force at a released DOF is **exactly
   zero** by construction. A test asserts that nothing else in `sbeam/` builds the
   unreleased CBAR matrices.
@@ -321,7 +321,7 @@ displacements this is `P = A·(E/L)·n·(u_B − u_A)` and `T = (GJ/L)·n·(θ_B
 (`srod2.f`), gated term by term in `tests/solver/test_rod_recovery.py`. Rods never
 populate `bar_forces`/`bar_stresses`; they fill `rod_forces`/`rod_stresses` on
 `Sol101Result`, `Sol144Result`, `Sol144TrimResult`, and `rod_forces` on `ManeuverStep`.
-One function, `recover_line_elements`, serves SOL 101, both SOL 144 paths and MLOADS.
+One function, `recover_line_elements`, serves SOL 101, both SOL 144 paths and MANVR.
 
 ---
 
@@ -329,11 +329,13 @@ One function, `recover_line_elements`, serves SOL 101, both SOL 144 paths and ML
 
 Output sections written to `results.f06`:
 
-1. **NASTRAN Executive and Case Control echo** (abbreviated)
-2. **Applied Load Vector (OLOAD)** — echo of assembled load vector
-3. **Nodal Displacements** — GID, T1, T2, T3, R1, R2, R3 per subcase
-4. **SPC Reaction Forces** — GID, DOF, value per constrained DOF
-5. **CBAR Forces** — the NASTRAN/MSC `FORCES IN BAR ELEMENTS (CBAR)` block, one row per
+0. **Grid Point Weight Generator** — only with `PARAM,GRDPNT` (#90; see `02_card_reference.md`, PARAM)
+1. **Applied Load Vector (OLOAD)** — echo of assembled load vector, only when the subcase
+   requests `OLOAD` (GRAV loads print as an APPLIED GRAVITY LOADS block)
+2. **Nodal Displacements** — GID, T1, T2, T3, R1, R2, R3 per subcase
+3. **SPC Reaction Forces** — one row per constrained grid, T1, T2, T3, R1, R2, R3
+   (`FORCES OF SINGLE-POINT CONSTRAINT`)
+4. **CBAR Forces** — the NASTRAN/MSC `FORCES IN BAR ELEMENTS (CBAR)` block, one row per
    element (DEF-M18 #21; values per "CBAR End Forces and Moments" above):
 
    ```
@@ -354,7 +356,7 @@ Output sections written to `results.f06`:
                    -5.122969E+06-1.707656E+06 5.122969E+06 1.707656E+06              5.172969E+06-5.072969E+06
    ```
 
-   Both blocks are shared verbatim by SOL 144 (trim) and the MLOADS critical-sample f06.
+   Both blocks are shared verbatim by SOL 144 (trim) and the MANVR critical-sample f06.
 
 7. **Rod Forces** — only when the deck has rods (#38): the NASTRAN `FORCES IN ROD ELEMENTS`
    block, one row per element, first `( C R O D )` then `( C O N R O D )`. Values per "Rod
@@ -377,7 +379,7 @@ Output sections written to `results.f06`:
    ```
 
    The rod blocks follow the CBAR blocks under the same `FORCE`/`STRESS` requests in SOL
-   101, SOL 144 (trim and static) and the MLOADS critical-sample f06 (forces only there).
+   101, SOL 144 (trim and static) and the MANVR critical-sample f06 (forces only there).
 
 ---
 

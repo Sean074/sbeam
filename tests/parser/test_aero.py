@@ -338,14 +338,14 @@ W2GJ, 3, 100, 0.2, 0.2, 0.2, 0.2
 
 
 # ---------------------------------------------------------------------------
-# CHORDCP — injected steady-pressure distribution (Step 54)
+# CPINJ — injected steady-pressure distribution (Step 54)
 # ---------------------------------------------------------------------------
 
 
 class TestChordcpParser:
     def test_round_trip_and_degrees_to_radians(self):
         lines = _W2GJ_BASE + """\
-CHORDCP, 1, 100, 2.0, 0.6
+CPINJ, 1, 100, 2.0, 0.6
 +, 0.5, 0.4, 0.3, 0.2
 """.splitlines()
         bulk = parse_bulk_data(lines)
@@ -358,7 +358,7 @@ CHORDCP, 1, 100, 2.0, 0.6
 
     def test_data_on_parent_line_and_continuation(self):
         lines = _W2GJ_BASE + """\
-CHORDCP, 2, 100, 0.0, , 0.5, 0.4
+CPINJ, 2, 100, 0.0, , 0.5, 0.4
 +, 0.3, 0.2
 """.splitlines()
         bulk = parse_bulk_data(lines)
@@ -369,48 +369,65 @@ CHORDCP, 2, 100, 0.0, , 0.5, 0.4
 
     def test_missing_alphref_raises(self):
         lines = _W2GJ_BASE + """\
-CHORDCP, 3, 100
+CPINJ, 3, 100
 +, 0.5, 0.4, 0.3, 0.2
 """.splitlines()
         with pytest.raises(ValueError, match="ALPHREF.*required"):
             parse_bulk_data(lines)
 
     def test_missing_data_raises(self):
-        lines = _W2GJ_BASE + "CHORDCP, 4, 100, 1.0".splitlines()
+        lines = _W2GJ_BASE + "CPINJ, 4, 100, 1.0".splitlines()
         with pytest.raises(ValueError, match="no Cp data"):
             parse_bulk_data(lines)
 
     def test_duplicate_sid_raises(self):
         lines = _W2GJ_BASE + """\
-CHORDCP, 5, 100, 1.0, , 0.5, 0.4, 0.3, 0.2
-CHORDCP, 5, 100, 1.0, , 0.5, 0.4, 0.3, 0.2
+CPINJ, 5, 100, 1.0, , 0.5, 0.4, 0.3, 0.2
+CPINJ, 5, 100, 1.0, , 0.5, 0.4, 0.3, 0.2
 """.splitlines()
-        with pytest.raises(ValueError, match="Duplicate CHORDCP SID"):
+        with pytest.raises(ValueError, match="Duplicate CPINJ SID"):
             parse_bulk_data(lines)
 
 
 # ---------------------------------------------------------------------------
-# SPLINE0 — optional master GRID field (Step 64 load injection)
+# LOADINJ — optional master GRID field (Step 64 load injection)
 # ---------------------------------------------------------------------------
 
 class TestSpline0Parser:
 
     def test_explicit_master_grid(self):
-        bulk = _read_cards("SPLINE0, 9400, 400, 400, 415, 98".splitlines())
+        bulk = _read_cards("LOADINJ, 9400, 400, 400, 415, 98".splitlines())
         sp = bulk.spline0s[9400]
         assert (sp.caero, sp.id1, sp.id2, sp.grid) == (400, 400, 415, 98)
 
     def test_blank_master_grid_defaults_to_zero(self):
         """Blank/absent field 5 = 0 = 'default to the SUPORT grid'."""
-        for line in ("SPLINE0, 9500, 500, 500, 531",
-                     "SPLINE0, 9600, 500, 500, 531, "):
+        for line in ("LOADINJ, 9500, 500, 500, 531",
+                     "LOADINJ, 9600, 500, 500, 531, "):
             bulk = _read_cards([line])
             assert next(iter(bulk.spline0s.values())).grid == 0
 
     def test_duplicate_eid_raises(self):
         lines = """\
-SPLINE0, 9400, 400, 400, 415
-SPLINE0, 9400, 400, 400, 415
+LOADINJ, 9400, 400, 400, 415
+LOADINJ, 9400, 400, 400, 415
 """.splitlines()
-        with pytest.raises(ValueError, match="Duplicate SPLINE0 EID"):
+        with pytest.raises(ValueError, match="Duplicate LOADINJ EID"):
             parse_bulk_data(lines)
+
+
+# ---------------------------------------------------------------------------
+# AESTAT labels (#91): MSC's standard set only (QRG 2024.1 PDF p.1153-1154)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("label", ["ANGLEA", "SIDES", "ROLL", "PITCH", "YAW",
+                                   "URDD1", "URDD2", "URDD3", "URDD4", "URDD5", "URDD6"])
+def test_aestat_standard_labels_are_read(label):
+    bulk = parse_bulk_data([f"AESTAT, 1, {label}"])
+    assert bulk.aestats[1].label == label
+
+
+def test_aestat_nonstandard_label_is_refused():
+    """Before #91 a label such as THRUST got a zero aero column with no message."""
+    with pytest.raises(ValueError, match=r"AESTAT 7: LABEL 'THRUST' is not a standard"):
+        parse_bulk_data(["AESTAT, 7, THRUST"])

@@ -23,17 +23,18 @@ from sbeam.parser.bdf_reader import parse_bdf, parse_bulk_data
 REPO = Path(__file__).resolve().parents[2]
 _GRIDS = ["GRID, 1, , 0.0, 0.0, 0.0", "GRID, 2, , 1.0, 0.0, 0.0"]
 
-# HA144A's own DMI cards (sample/HA144A.bdf, MSC listing 7-1)
+# HA144A's own DMI cards (sample/ha144a/HA144A.bdf, MSC listing 7-1)
 _HA144A_DMI = ["DMI, W2GJ, 0, 2, 1, , 40, 1", "DMI, W2GJ, 1, 9, .0017453, THRU, 40"]
 
 
 @pytest.mark.parametrize("cards, match", [
-    (_HA144A_DMI, r"DMI x2 \(direct matrix input \(for W2GJ/WKK aero corrections use the "
-                  r"native W2GJ/WKK cards\)\)"),
+    # DMI's row numbers need the CAERO1 order in the j-set, which no manual states (#104)
+    (_HA144A_DMI, r"DMI x2 \(direct matrix input \(for W2GJ/WKK give the box-ID forms "
+                  r"DMIJ W2GJ / DMIK WKK"),
     (["DMIG, K2GG, 0, 6, 1, 0"], r"DMIG x1"),
-    (["DMIJ, FA2J, 0, 2, 1"], r"DMIJ x1 \(aero direct matrix input"),
+    (["DMIJI, W2GJ, 0, 2, 1"], r"DMIJI x1 \(aero direct matrix input on interference"),
     (["TABDMP1, 1, CRIT", "+, 0.0, 0.02, 100.0, 0.02, ENDT"], r"TABDMP1 x1 \(modal damping"),
-], ids=["DMI-W2GJ", "DMIG", "DMIJ", "TABDMP1"])
+], ids=["DMI-W2GJ", "DMIG", "DMIJI", "TABDMP1"])
 def test_matrix_and_damping_cards_are_refused(cards, match):
     with pytest.raises(ValueError, match=r"Unsupported bulk data card\(s\): .*" + match):
         parse_bulk_data(_GRIDS + cards)
@@ -99,4 +100,4 @@ def test_ha144a_archive_still_stops_at_wtmass_first():
     """The archive listing carries WTMASS, AUNITS and three DMIs; WTMASS comes first in
     the deck and is raised as it is read."""
     with pytest.raises(ValueError, match=r"PARAM,WTMASS,0.031081 is not supported"):
-        parse_bdf(REPO / "sample/HA144A.bdf")
+        parse_bdf(REPO / "sample/ha144a/HA144A.bdf")

@@ -4,18 +4,18 @@ All BDF cards supported in Phases 1–2 (structures), Phases A–C (aeroelastics
 
 ## Supported cards at a glance
 
-Every card and case-control keyword sbeam reads; the sections below give each card's fields. Gate: `tests/parser/test_unsupported_cards.py` asserts no card listed here is in the refused set (moved here from `CLAUDE.md`, 2026-10-25).
+Every card and case-control keyword sbeam reads; the sections below give each card's fields. Where sbeam differs from MSC NASTRAN or ZAERO, the difference is listed once in the [deviation register](12_deviation_register.md). Cards named by neither MSC nor ZAERO are listed with their nearest vendor card under [sbeam-only cards](#sbeam-only-cards). Gate: `tests/parser/test_unsupported_cards.py` asserts no card listed here is in the refused set (moved here from `CLAUDE.md`, 2026-10-25).
 
 - **Structure:** CORD2R, GRID, CBAR, CROD, CONROD, PLOTEL, RBE3, RBE2, RBAR, CBUSH, PBAR, PROD,
   PBUSH, MAT1
-- **Mass:** CONM2, MASSCASE
+- **Mass:** CONM2, MASSCASE, MASSSET (MSC)
 - **Constraints/loads:** SPC, SPC1, FORCE, MOMENT, LOAD, GRAV
 - **Eigenvalue:** EIGRL
-- **Aero (Phase A/C):** AEROS, CAERO1, PAERO1, AEFACT, W2GJ, WKK, AECORR, CHORDCP,
-  PSTRIP, STRIPK, SPLINE0/2 (+ ATTACH), SET1, AELIST, AESTAT, AESURF, TRIM, TRIMVAR,
-  TRIMCON, TRIMOBJ, SUPORT, DIVERG, MONPNT1, MONSECT, AECOMP, GUSTLF
-- **Transient maneuver (G0):** MLOADS, MLDTRIM, MLDCOMD, MLDTIME, MLDPRNT, TABLED1
-- **Case control:** SOL, SUBCASE, LOAD, SPC, METHOD, TRIM, MLOADS, MASSCASE, GUSTLF,
+- **Aero (Phase A/C):** AEROS, CAERO1, PAERO1, AEFACT, W2GJ, WKK, DMIJ (W2GJ), DMIK (WKK), AECORR, CPINJ,
+  PSTRIP, STRIPK, SPLINE2, LOADINJ, BODYATT, SET1, AELIST, AESTAT, AESURF, TRIM, TRIMVAR,
+  TRIMINEQ, TRIMWGT, SUPORT, DIVERG, MONPNT1, MONSECT, AECOMP, GUSTLF
+- **Transient maneuver (G0):** MANVR, MANTRIM, MANCMD, MANTIME, MANPRNT, TABLED1
+- **Case control:** SOL, SUBCASE, LOAD, SPC, METHOD, TRIM, MANVR, MASSCASE, GUSTLF,
   DISPLACEMENT, SPCFORCE, OLOAD, FORCE, STRESS, BEGIN BULK, ENDDATA
 
 ---
@@ -42,7 +42,7 @@ The file is read as NASTRAN reads it (#81). Page numbers are PDF pages of the MS
 - **`INCLUDE 'file'` inserts the file's text where the statement stands**, anywhere in the
   input (QRG p.465, p.1984). A bulk data file is therefore INCLUDEd **below** `BEGIN BULK`
   (the QRG's own example, p.1984); a driver composes a shared bulk with an overlay by
-  INCLUDEing both there (`sample/cessna210_flagship_body.bdf`). A file INCLUDEd above
+  INCLUDEing both there (`sample/cessna210_flagship/cessna210_flagship_body.bdf`). A file INCLUDEd above
   `BEGIN BULK` is case control: a case-control fragment works, and a file holding bulk cards
   there is refused, naming the file. (The case-control INCLUDE page, p.465, captions its
   example "obtain the Bulk Data" with the INCLUDE above `BEGIN BULK`; the File Management
@@ -96,6 +96,19 @@ their first line (or one continuation); cards that take more say so in their sec
 continuation lines are harmless. Before #63 such lines were dropped without a message (LOAD
 components past the second line, AESURF limits, EIGRL options, MSC's second MONPNT1 line).
 
+**Vendor fields tables (#95).** Each MSC card's section ends with a table of the fields in
+MSC's layout, sorted by what sbeam does with them (CLAUDE.md rule 7):
+
+- **Read** — the value enters the model. A note in brackets gives a limit on the value.
+- **Refused** — a non-blank value (or the value named) refuses the deck.
+- **Ignored** — accepted with no effect, for the reason given.
+- **Not checked** — data in a field MSC's layout leaves blank is accepted and dropped
+  without a message. That is a defect (#109), listed so the tables hide nothing.
+
+The tables are generated from `tests/docs/test_field_dispositions.py`, which also probes
+the parser one field at a time and fails if it stops doing what a table says. `DMIJ`/`DMIK`
+and `TRIMVAR` carry their own per-field tables; `SPLINE1` and `MONPNT3` are refused whole.
+
 **Real number fields.** A NASTRAN data field is **8 characters wide**, in free field as well as
 fixed field — MSC rounds a longer free-field real to 8 characters (`1.2345678+2` becomes
 `123.4568`, QRG p.1048), and other readers may truncate it. sbeam's own reader keeps full
@@ -144,7 +157,7 @@ Names and IDs that must be unique **across** card types are also checked after t
 
 Every other ID-keyed card is unique within its own card type only, and a second card with
 an ID already in use refuses the deck (#57); cards that share a SID by design (FORCE,
-MOMENT, SPC, SPC1, SUPORT, TRIMCON) accumulate. CONM2 EIDs are their own space: MSC's
+MOMENT, SPC, SPC1, SUPORT, TRIMINEQ) accumulate. CONM2 EIDs are their own space: MSC's
 HA144A gives CONM2 100 and CBAR 100 the same EID. RBAR, RBE2, RBE3 and PLOTEL also keep
 their own spaces. This is more lenient than the documented NASTRAN rule: the COSMIC
 manual's CONM2, CRBAR, CRBE2 and CRBE3 entries all say "Each element identification
@@ -158,44 +171,83 @@ but the deck is refused either way.
 
 ---
 
+## sbeam-only cards
+
+sbeam reads MSC NASTRAN cards in MSC's layout and ZAERO cards in ZAERO's layout (#99). The
+cards below are **sbeam's own**: no MSC or ZAERO card has their name, so a deck that uses
+them is an sbeam deck and will not run in MSC or ZAERO (CLAUDE.md rule 7: a vendor card
+name keeps the vendor layout; an sbeam extension takes a name no vendor defines). The
+names were checked against the MSC 2024.1 QRG and the ZAERO 9.2 User's Manual. Converting
+an sbeam deck for MSC is a job for a command-line tool outside the solver, not for these
+cards (parked: `docs/30_future/02_parked.md`).
+
+| sbeam card | What it does | Nearest vendor card, and why it is not used | Old name (refused since v0.4.1, #87) |
+|---|---|---|---|
+| `MANVR` | Transient maneuver driver (quasi-steady VLM, modal or direct) | ZAERO `MLOADS`: an aeroservoelastic state-space run on FLUTTER, MINSTAT, ASECONT and MLDSTAT cards sbeam does not have (ZAERO 9.2 UM PDF p.398) | `MLOADS` |
+| `MANTRIM` | Maneuver initial condition: a TRIM SID and the freestream density | ZAERO `MLDTRIM`: carries the trim values itself and is referenced from MLDSTAT (p.396) | `MLDTRIM` |
+| `MANTIME` | Integration window; output interval in seconds | ZAERO `MLDTIME`: field 6 is an integer skip factor (p.395) | `MLDTIME` |
+| `MANCMD` | Pilot command time histories by trim label | ZAERO `MLDCOMD`: commands through EXTINP actuator IDs (p.383) | `MLDCOMD` |
+| `MANPRNT` | ASCII time-history output request | ZAERO `MLDPRNT`: a file and format layout (p.384) | `MLDPRNT` |
+| `CPINJ` | Injected per-box steady pressure (CFD / wind tunnel) | ZAERO `CHORDCP`: thickness Cp for ZTAIC (p.226) | `CHORDCP` |
+| `LOADINJ` | Panels that do not move, with their loads sent to one grid | ZAERO `SPLINE0`: no load-transfer grid, panels named by PANLST (p.478) | `SPLINE0` |
+| `BODYATT` | Panels rigidly attached to one grid | ZAERO `ATTACH`: the same intent, panels named by PANLST (p.207) | `ATTACH` |
+| `TRIMWGT` | Weighted least-squares objective on trim variables | ZAERO `TRIMOBJ`: an objective on TRIMFNC trim functions (p.510) | `TRIMOBJ` |
+| `TRIMINEQ` | Inequality bound on one trim variable | ZAERO `TRIMCON`: constraints on TRIMFNC trim functions (p.501) | `TRIMCON` |
+| `MASSCASE` | Payload / mass case with label, scale and operations | MSC `MASSSET` (also read, #102) | — (renamed from `MASSSET`, #78) |
+| `GUSTLF` | FAR/CS 23.341 quasi-static gust case on a TRIM | MSC `GUST` is a SOL 146 dynamic gust | — |
+| `MONSECT` | Section-cut running loads | MSC `MONPNT1` gives one point, not a cut | — |
+| `PSTRIP`, `STRIPK` | Decoupled strip body panels and their slopes | MSC `PAERO2` slender bodies | — |
+| `AECORR` | Force/pressure AIC correction to a target | MSC `WKK`/`FA2J` matrices via DMI | — |
+| `MODEXP` (case control) | Reduced modal model export (OP4 + Universal file) for sgear and Flaps | MSC writes such matrices by DMAP `OUTPUT4` / `PARAM,EXTOUT`, not by one command | — |
+| `W2GJ`, `WKK` | Baseline downwash and diagonal AIC weights as cards | MSC enters the same data as matrices named W2GJ and WKK: `DMIJ`/`DMIK` (read, #104 — [DMIJ / DMIK](#dmij--dmik--msc-aero-correction-matrices-w2gj-wkk)) or `DMI` (refused) | — |
+
+`TRIMVAR` is not in this table: it is ZAERO's card and is read in ZAERO's layout (#87).
+
+---
+
 ## Case Control Keywords
 
 Case control appears between the `SOL` line and `BEGIN BULK`. `SUBCASE` groups the lines that follow it; the rules for lines outside a subcase are (#79):
 
-- **Defaults above the first `SUBCASE`.** A selector (`LOAD`, `SPC`, `METHOD`, `TRIM`, `TRIMOBJ`, `DIVERG`, `MLOADS`, `GUSTLF`, `MASSCASE`) or output request above the first `SUBCASE` applies to every subcase. The same keyword inside a subcase overrides it for that subcase only. MSC: such requests "apply to all the subcases until they are cancelled" (AAUG 2023.1, PDF p.752).
+- **Defaults above the first `SUBCASE`.** A selector (`LOAD`, `SPC`, `METHOD`, `TRIM`, `TRIMWGT`, `DIVERG`, `MANVR`, `GUSTLF`, `MASSCASE`) or output request above the first `SUBCASE` applies to every subcase. The same keyword inside a subcase overrides it for that subcase only. MSC: such requests "apply to all the subcases until they are cancelled" (AAUG 2023.1, PDF p.752).
 - **`= NONE` cancels an output request**, so a subcase can switch a default off (`DISPLACEMENT = NONE`). Any other value turns the request on.
 - **No `SUBCASE`.** The commands run as one subcase. sbeam numbers it 1; that number is sbeam's choice, not a cited MSC rule. The deck shape is MSC's own (QRG 2024.1, PDF p.465, INCLUDE example).
 - **Nothing to run.** A deck with no `SUBCASE`, no selector and no output request still parses, so it can be read for its bulk data. The `sbeam` command refuses to run it and writes no f06.
 - **`SUBCASE` IDs** are positive integers, each greater than every earlier one (QRG 2024.1, PDF p.651, SUBCASE remark 1). A repeated or descending ID is refused.
-- **`TITLE`** above the first `SUBCASE` is the run title; inside a subcase it is that subcase's title. It is not inherited.
+- **`TITLE`, `SUBTITLE`, `LABEL`** (#90). Under a `SUBCASE` each is that subcase's page heading. Above every `SUBCASE`, `TITLE` and `SUBTITLE` head every subcase that gives none (QRG p.679, p.658 remarks 1–2), while `LABEL` heads only output that is not tied to a subcase — the GPWG block (p.471 remark 2). An absent `SUBTITLE` or `LABEL` prints no line.
 
 Every line above `BEGIN BULK` must be a command in the tables below; any other line is refused (#80). Page numbers are PDF pages of the MSC Nastran 2024.1 Quick Reference Guide (QRG).
 
 - **Line format.** The command name ends at the first blank, `=`, `,` or `(`. A line ending in a comma continues on the next line (QRG p.209); `TITLE`, `SUBTITLE` and `LABEL` are never continued, which is sbeam's choice (*unverified* against MSC).
 - **Abbreviations.** A command may be shortened to its first four or more characters when that is unique (QRG p.209): `DISP`, `SPCF`, `METH`, `SUBT`. Uniqueness is checked against the commands in these tables, not MSC's full list. `SUBC` is refused as ambiguous (`SUBCASE`, `SUBCOM`).
 - **Describers.** A selector or output request with describers in parentheses (`DISPLACEMENT(PRINT,PUNCH) = ALL`) is refused; #85 will decide which describers are read.
-- **`CEND`** is accepted and not required. sbeam does not separate the executive section from case control.
+- **`CEND`** is accepted and not required (it is optional in MSC too: QRG 2024.1 PDF p.150, remark 1). sbeam does not separate the executive section from case control.
 
 | Keyword | Type | Description |
 |---------|------|-------------|
 | `SOL` | int or name | Solution type. `101` = static, `103` = normal modes, `144` = static aeroelastic trim. MSC's names `SESTATIC`, `SEMODES` and `AESTAT` are read as 101, 103 and 144 (QRG p.186–187); any other solution is refused |
-| `TITLE` | str | Analysis title — echoed to `.f06` output |
+| `TITLE` | str | First page-heading line of the `.f06` (QRG p.679) |
+| `SUBTITLE` | str | Second heading line (QRG p.658) |
+| `LABEL` | str | Third heading line (QRG p.471) |
 | `SUBCASE` | int | Opens a subcase block, starting from the defaults above the first `SUBCASE`; all lines until the next `SUBCASE` belong to it. The ID must be greater than every earlier one |
 | `LOAD` | int | Load set ID (references `FORCE`/`MOMENT`/`LOAD` bulk cards) |
 | `SPC` | int | Constraint set ID (references `SPC`/`SPC1` bulk cards) |
 | `METHOD` | int | Eigenvalue method SID (references `EIGRL` bulk card; SOL 103 only) |
 | `TRIM` | int | Trim condition SID (references `TRIM` bulk card; SOL 144 only) |
-| `TRIMOBJ` | int | Trim objective SID (references `TRIMOBJ` bulk card; over-determined SOL 144 trim) |
+| `TRIMWGT` | int | Trim objective SID (references `TRIMWGT` bulk card; over-determined SOL 144 trim) |
 | `DIVERG` | int | Divergence condition SID (references `DIVERG` bulk card; SOL 144 only) |
-| `MLOADS` | int | Transient maneuver-loads SID (references `MLOADS` bulk card; runs the Step 63 free-flight modal solver `solver/maneuver_modal.py` when the card's NMODES/METHOD/ZETA select it, else the prescribed-rigid direct solver `solver/maneuver_qs.py`; SOL 144, Phase G0) |
+| `MANVR` | int | Transient maneuver-loads SID (references `MANVR` bulk card; runs the Step 63 free-flight modal solver `solver/maneuver_modal.py` when the card's NMODES/METHOD/ZETA select it, else the prescribed-rigid direct solver `solver/maneuver_qs.py`; SOL 144, Phase G0) |
+| `GUSTLF` | int | Gust load-factor case SID (references `GUSTLF` bulk card; FAR/CS 23.341 gust case run as a SOL 144 trim; sbeam extension) |
+| `SET` | list | `SET n = i1, i2, i3 THRU i4 EXCEPT i5 …` or `SET n = ALL` (QRG p.625; #100). Integer lists only, used by `MODEXP`; a SET under a `SUBCASE` is that subcase's. EXCEPT drops numbers inside the preceding THRU range; numbers outside it are members (remark 3). Real, `101/T1` and literal forms are refused. A SET may be redefined |
+| `MODEXP` | int | **sbeam-only command** (#100): `MODEXP(OP4,UF) = n` writes the reduced modal model of a SOL 103 subcase at the grids of SET n — `<deck>.op4` (MHH, KHH, PHIA, PHIX), `<deck>_dofmap.csv`, `<deck>.uf`; schema in `10_export_schemas.md` §7. Describers `OP4`, `UF` choose the files (both when none). Refused outside SOL 103, with EIGRL NORM = MAX, or naming no SET |
 | `MASSCASE` | int | Payload / mass case SID (references `MASSCASE` bulk card, Step 60); the subcase runs at the resolved mass configuration — baseline when absent |
 | `MASSSET` | int | MSC mass combination ID (references an MSC `MASSSET` bulk entry; QRG p.482; #102). One of `MASSCASE`/`MASSSET` per subcase; each must select its own kind of card. `MASS` is not a usable abbreviation |
-| `DISPLACEMENT` | — | Request nodal displacement output (`= ALL` or `= PRINT`; `= NONE` cancels, as for every output request below) |
-| `SPCFORCES` | — | Request SPC reaction force output (MSC's full name, QRG p.634; `SPCFORCE` and `SPCF` are abbreviations) |
-| `OLOAD` | — | Request applied load echo output |
-| `FORCE` | — | Request CBAR/CBUSH element force output. `ELFORCE` is equivalent (QRG p.413) |
-| `STRESS` | — | Request CBAR stress output at recovery points. `ELSTRESS` is equivalent (QRG p.646) |
-| `AEROF` | — | Request per-box aerodynamic force output (SOL 144; emits the AERODYNAMIC BOX PRESSURES AND FORCES block) |
+| `DISPLACEMENT` | — | Accepted; displacements are **always printed** whatever its value (`= NONE` included). sbeam reads the request but no output depends on it (#91) |
+| `SPCFORCES` | — | Accepted; SPC reactions are **always printed** (#91). MSC's full name, QRG p.634; `SPCFORCE` and `SPCF` are abbreviations |
+| `OLOAD` | — | Request applied load echo output (SOL 101; printed only when requested; `= NONE` cancels) |
+| `FORCE` | — | Accepted; CBAR/CBUSH element forces are **always printed** (#91). `ELFORCE` is equivalent (QRG p.413) |
+| `STRESS` | — | Accepted; CBAR stresses at recovery points are **always printed** (#91). `ELSTRESS` is equivalent (QRG p.646) |
+| `AEROF` | — | Request per-box aerodynamic force output (SOL 144; printed only when requested; emits the AERODYNAMIC BOX PRESSURES AND FORCES block) |
 | `APRESSURE` | — | Request per-box aerodynamic pressure (ΔCp) output (SOL 144; same output block as `AEROF`). Usually written `APRES` (QRG p.263) |
 | `INCLUDE` | str | Inserts a file where it stands (see File Structure). Above `BEGIN BULK` it may bring in case control; a bulk data file is INCLUDEd below `BEGIN BULK` (#81) |
 | `PARAM` | — | `PARAM,name,value` (QRG p.570). Follows the bulk `PARAM` rules: the same refusals (`WTMASS`, `AUNITS`, `COUPMASS`, `INREL`, `G`, `W3`, `W4`, `LMODES`) and the same warnings for a PARAM sbeam does not read |
@@ -207,11 +259,10 @@ Every line above `BEGIN BULK` must be a command in the tables below; any other l
 | `ID`, `TIME`, `DIAG`, `CEND`, `NASTRAN` | Executive statements with no effect on sbeam's results |
 | `ASSIGN` | File assignment; sbeam names its own output files |
 | `ECHO`, `ECHOON`, `ECHOOFF` | Listing control |
-| `SUBTITLE`, `LABEL` | Page headings; sbeam prints `TITLE` only |
 | `LINE`, `MAXLINES` | Page length and output line limit |
 | `MONITOR` | sbeam prints monitor results in every run that defines monitor points. MSC itself ignores `MONITOR` in SOL 144 (QRG p.524 remark 2) |
 
-**Accepted with a warning** (the output is not written): `GPFORCE` (QRG p.434), `TRIMF` (QRG p.683).
+**Accepted with a warning** (the output is not written): `GPFORCE` (QRG p.434), `TRIMF` (QRG p.683; its describers, SET and rigid load sets are #105).
 
 **Refused by name:**
 
@@ -222,8 +273,9 @@ Every line above `BEGIN BULK` must be a command in the tables below; any other l
 | `SUBSEQ`, `SYMSEQ` | Subcase combination coefficients (QRG p.654, p.667) |
 | `COMPILE`, `ALTER`, `MALTER`, `ENDALTER` | DMAP |
 | `GUST` | MSC's SOL 146 gust selector (QRG p.452); refused so that it is not read as an abbreviation of sbeam's `GUSTLF` |
+| `MLOADS`, `TRIMOBJ` | sbeam's selectors until v0.4.1, renamed with their cards to `MANVR` and `TRIMWGT` (#87); the message names the new command |
 
-Any other command, including every MSC command not listed here (`MPC`, `SET`, `STRAIN`, …), is refused as unknown.
+Any other command, including every MSC command not listed here (`MPC`, `STRAIN`, …), is refused as unknown.
 
 **Example case control section:**
 
@@ -282,6 +334,17 @@ CORD2R, 1, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0
 +,      1.0, 0.0, 0.0
 ```
 
+<!-- vendor-fields:CORD2R -->
+**Vendor fields** (MSC QRG p.1469; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | CID, RID, A1–A3, B1–B3, C1–C3 |
+| Refused | — |
+| Ignored | — |
+| Not checked | Data in fields 5–9 of line 2, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
+
 ---
 
 ### GRID — Grid Point (Node)
@@ -335,6 +398,16 @@ $ GID=6 at x=10, CD=1 (results in user coordinate system 1)
 GRID, 6, , 10.0, 0.0, 0.0, 1
 ```
 
+<!-- vendor-fields:GRID -->
+**Vendor fields** (MSC QRG p.1944; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | ID, CP, X1–X3, CD (prints results in that frame; see CD ≠ 0 above), PS |
+| Refused | SEID (non-zero: no superelements); a second line |
+| Ignored | — |
+<!-- /vendor-fields -->
+
 ---
 
 ### MAT1 — Isotropic Material
@@ -379,6 +452,16 @@ $ Steel: E=200 GPa, G=76.9 GPa, nu=0.3, rho=7850 kg/m³
 MAT1, 1, 2.0e11, 7.692e10, 0.3, 7850.0
 ```
 
+<!-- vendor-fields:MAT1 -->
+**Vendor fields** (MSC QRG p.2020; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | MID, E, G, NU, RHO |
+| Refused | the second line (ST, SC, SS, MCSID): an unread line |
+| Ignored | A, TREF (no thermal loads); GE (no supported solution uses structural damping) |
+<!-- /vendor-fields -->
+
 ---
 
 ### PBAR — Beam Cross-Section Property
@@ -422,6 +505,17 @@ $ Stress recovery at corners (y=±0.158, z=±0.158)
 +,    0.15811, 0.15811, -0.15811, 0.15811, -0.15811, -0.15811, 0.15811, -0.15811
 ```
 
+<!-- vendor-fields:PBAR -->
+**Vendor fields** (MSC QRG p.2431; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | PID, MID, A, I1, I2, J, NSM, C1–F2 |
+| Refused | K1, K2 (non-blank: no shear flexibility); I12 (non-zero: uncoupled bending planes); a fourth line |
+| Ignored | — |
+| Not checked | Data in field 9 of line 1, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
+
 ---
 
 ### PROD — Rod Property
@@ -453,6 +547,17 @@ read, in any card order (see Format Rules, "Card order and cross-references").
 $ Strut: A = 5 cm², J = 1e-7, tau = T * 5e-3 / J
 PROD, 3, 1, 5.0e-4, 1.0e-7, 5.0e-3
 ```
+
+<!-- vendor-fields:PROD -->
+**Vendor fields** (MSC QRG p.2622; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | PID, MID, A, J, C, NSM |
+| Refused | — |
+| Ignored | — |
+| Not checked | Data in fields 8–9, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
 
 ---
 
@@ -499,6 +604,16 @@ PBUSH, 10, K, 5000.0
 $ Full 6-DOF spring
 PBUSH, 20, K, 1.0e6, 1.0e6, 1.0e6, 1.0e3, 1.0e3, 1.0e3
 ```
+
+<!-- vendor-fields:PBUSH -->
+**Vendor fields** (MSC QRG p.2493; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | PID, the `K` line (K1–K6) |
+| Refused | the `B`, `GE`, `M` and `T` lines, unless every value is blank or zero (damping, mass and thermal data are not used) |
+| Ignored | the `RCV` line (stress recovery coefficients: output only); a `B`, `GE`, `M` or `T` line of zeros |
+<!-- /vendor-fields -->
 
 ---
 
@@ -555,6 +670,16 @@ CBAR, 5, 1, 5, 6, 0.0, 1.0, 0.0
 +,    56, 56
 ```
 
+<!-- vendor-fields:CBAR -->
+**Vendor fields** (MSC QRG p.1360; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, PID, GA, GB, X1–X3, OFFT (one of the eight legal words; the offset letters have no effect), PA, PB |
+| Refused | G0 (an integer in field 6); W1A–W3B (non-zero: offsets are not supported); a third line |
+| Ignored | — |
+<!-- /vendor-fields -->
+
 ---
 
 ### CROD — Rod Element (axial + torsion)
@@ -604,6 +729,17 @@ $ Pylon strut from wing grid 2 to engine grid 20
 CROD, 21, 3, 2, 20
 ```
 
+<!-- vendor-fields:CROD -->
+**Vendor fields** (MSC QRG p.1522; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, PID, G1, G2 |
+| Refused | — |
+| Ignored | — |
+| Not checked | Data in fields 6–9, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
+
 ---
 
 ### CONROD — Rod Element with Inline Properties
@@ -638,6 +774,16 @@ All `CROD` rules apply (axis, mass, rod-only grids, output). Validation adds `A 
 $ Same strut as the CROD above, section inline
 CONROD, 22, 4, 20, 1, 5.0e-4, 1.0e-7, 5.0e-3
 ```
+
+<!-- vendor-fields:CONROD -->
+**Vendor fields** (MSC QRG p.1452; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, G1, G2, MID, A, J, C, NSM |
+| Refused | — |
+| Ignored | — |
+<!-- /vendor-fields -->
 
 ---
 
@@ -712,6 +858,17 @@ $ Grounded spring at grid 4 with its axes in CORD2R 7
 CBUSH, 4, 11, 4, , , , , 7
 ```
 
+<!-- vendor-fields:CBUSH -->
+**Vendor fields** (MSC QRG p.1378–1379; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, PID, GA, GB, X1–X3, CID, S |
+| Refused | GO (an integer in field 6); OCID other than blank or −1 (the S1–S3 offset is not supported) |
+| Ignored | OCID = −1; S1–S3 (MSC reads them only "if OCID > 0", p.1379, and such an OCID is refused) |
+| Not checked | Data in fields 7–9 of line 2, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
+
 ---
 
 ### PLOTEL — Plot-Only Element
@@ -736,6 +893,17 @@ PLOTEL, EID, G1, G2
 $ Visualisation line from node 5 to node 7 (e.g. sensor arm)
 PLOTEL, 10, 5, 7
 ```
+
+<!-- vendor-fields:PLOTEL -->
+**Vendor fields** (MSC QRG p.2594; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, G1, G2 |
+| Refused | — |
+| Ignored | — |
+| Not checked | Data in fields 5–9, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
 
 ---
 
@@ -794,6 +962,16 @@ RBE2, 20, 7, 123456, 6
 CONM2, 30, 7, 0, 100000.0
 ```
 
+<!-- vendor-fields:RBE2 -->
+**Vendor fields** (MSC QRG p.2699; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, GN, CM, GMi |
+| Refused | ALPHA, TREF (a real after the grid list stops with a Python `int()` message, #89) |
+| Ignored | — |
+<!-- /vendor-fields -->
+
 ---
 
 ### RBAR — Rigid Bar Element
@@ -821,7 +999,8 @@ RBAR, EID, GA, GB, CNA, CNB, CMA, CMB
 sbeam makes all six DOFs of GB dependent, which is NASTRAN's rule only "if both CMA and CMB
 are zero or blank" (QRG 2024.1 PDF p.2692, remark 4). A partial set such as `CMB = 123` makes
 only those DOFs dependent in NASTRAN; it was ignored and is now refused (#68) — use an RBE2
-with `CM` for a partial set. Fields 9–10 (`ALPHA`, `TREF`) are thermal and ignored.
+with `CM` for a partial set. `ALPHA` (field 9) is thermal and ignored; `TREF` is field 2 of
+a second line in MSC's layout (QRG p.2691) and is refused as an unread line (#63).
 
 **Constraint equations:**
 
@@ -843,6 +1022,16 @@ RBAR, 1, 2, 3
 $ Same, with explicit default fields
 RBAR, 1, 2, 3, 123456, , ,
 ```
+
+<!-- vendor-fields:RBAR -->
+**Vendor fields** (MSC QRG p.2691–2692; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, GA, GB |
+| Refused | CNA other than 123456; CNB non-blank; CMA non-blank; CMB other than blank, 0 or 123456 (only the all-six-dependent bar of remark 4 is built); TREF (field 2 of line 2: an unread line) |
+| Ignored | CMB = 123456 (the default set); ALPHA (no thermal loads) |
+<!-- /vendor-fields -->
 
 ---
 
@@ -921,6 +1110,16 @@ $ Two groups with different weights
 RBE3, 30, , 10, 123, 2.0, 123, 1, 2, 1.0, 123, 3
 ```
 
+<!-- vendor-fields:RBE3 -->
+**Vendor fields** (MSC QRG p.2704; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, REFGRID, REFC, WTi, Ci, Gi,j |
+| Refused | field 3 (blank in MSC's layout); the `UM` section |
+| Ignored | the `ALPHA` section (ALPHA, TREF), with a warning: no thermal loads |
+<!-- /vendor-fields -->
+
 ---
 
 ### CONM2 — Concentrated Mass Element
@@ -996,6 +1195,17 @@ CONM2, 2, 5, 0, 50.0, 0.1, 0.0, 0.0
 +,     1.5, 0.0, 2.0, 0.0, 0.0, 3.0
 ```
 
+<!-- vendor-fields:CONM2 -->
+**Vendor fields** (MSC QRG p.1449; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, G, CID (0 or a CORD2R), M, X1–X3, I11–I33 |
+| Refused | CID = −1 (X1–X3 as the C.G. in basic; refused with a misleading message, #89); field 9 of line 1 (blank in MSC's layout) |
+| Ignored | — |
+| Not checked | Data in fields 8–9 of line 2, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
+
 ---
 
 ### MASSSET — MSC mass combination (#102)
@@ -1041,8 +1251,18 @@ CSV `mass_case` column.
 compat job sets) and the case-control `MASSSET`; it stores the bulk `MASSSET` unread
 (`MISSING_CARDS`), so S0/Si/IDi are gated by sbeam's own GPWG hand check.
 
-**Example:** `sample/ha144a_mass_combination_sweep.bdf`, the MSC twin of
+**Example:** `sample/ha144a/ha144a_mass_combination_sweep.bdf`, the MSC twin of
 `ha144a_massset_sweep.bdf`.
+
+<!-- vendor-fields:MASSSET -->
+**Vendor fields** (MSC QRG p.2018; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | ID, S0, Si, IDi |
+| Refused | — |
+| Ignored | — |
+<!-- /vendor-fields -->
 
 ### MASSCASE — Payload / Mass Case (sbeam extension; Step 60)
 
@@ -1115,7 +1335,7 @@ duplicate MASSCASE SID; a case-control `MASSCASE` selecting an undefined SID.
 **Not supported (v1):** MAT1 `rho` overlays (structural-density cases) — use `SCALE`,
 or author a separate deck.
 
-**Example** (from `sample/ha144a_massset_sweep.bdf`):
+**Example** (from `sample/ha144a/ha144a_massset_sweep.bdf`):
 ```
 $ Baseline includes the 500 lb baggage CONM2 5000; 6001-6004, 6011-6014
 $ and 6020 are overlay-only and enter only where named.
@@ -1150,7 +1370,7 @@ SPC, SID, G1, C1, D1, G2, C2, D2
 | SID | `sid` | int | Constraint set ID (referenced in case control) | required |
 | G1 | `g1` | int | Grid ID 1 | required |
 | C1 | `c1` | str | DOF string for G1 (e.g., `"13"`, `"123456"`) | required |
-| D1 | `d1` | float | Enforced displacement for G1 — must be `0.0` or blank; any other value is **refused at parse** (#68; SOL 144 and MLOADS used to take it as zero without a message) | `0.0` |
+| D1 | `d1` | float | Enforced displacement for G1 — must be `0.0` or blank; any other value is **refused at parse** (#68; SOL 144 and MANVR used to take it as zero without a message) | `0.0` |
 | G2 | `g2` | int or None | Grid ID 2 (optional) | `None` |
 | C2 | `c2` | str or None | DOF string for G2 | `None` |
 | D2 | `d2` | float | Enforced displacement for G2 — must be `0.0` or blank | `0.0` |
@@ -1162,6 +1382,17 @@ DOF digits: `1`=Tx, `2`=Ty, `3`=Tz, `4`=Rx, `5`=Ry, `6`=Rz. Multiple SPC cards w
 $ Fix Tx and Tz at GID 1; fix Ty at GID 2
 SPC, 1, 1, 13, 0.0, 2, 2, 0.0
 ```
+
+<!-- vendor-fields:SPC -->
+**Vendor fields** (MSC QRG p.2833; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, G1, C1, G2, C2 |
+| Refused | D1, D2 (non-zero: no enforced displacement) |
+| Ignored | — |
+| Not checked | Data in field 9, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
 
 ---
 
@@ -1192,6 +1423,16 @@ SPC1, 1, 123456, 1
 $ Pin support: fix translations at GIDs 1 and 10
 SPC1, 2, 123, 1, 10
 ```
+
+<!-- vendor-fields:SPC1 -->
+**Vendor fields** (MSC QRG p.2835; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, C, Gi |
+| Refused | `THRU` (stops with a Python `int()` message, #89) |
+| Ignored | — |
+<!-- /vendor-fields -->
 
 ---
 
@@ -1232,6 +1473,17 @@ $ 500 N in +X at GID 3, user coordinate system 2
 FORCE, 10, 3, 2, 500.0, 1.0, 0.0, 0.0
 ```
 
+<!-- vendor-fields:FORCE -->
+**Vendor fields** (MSC QRG p.1868; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, G, CID, F, N1–N3 |
+| Refused | — |
+| Ignored | — |
+| Not checked | Data in field 9, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
+
 ---
 
 ### MOMENT — Concentrated Moment
@@ -1266,6 +1518,17 @@ behind, `−Mx` for counter-clockwise — charter §10.
 $ 200 N·m about +Z at GID 6
 MOMENT, 10, 6, 0, 200.0, 0.0, 0.0, 1.0
 ```
+
+<!-- vendor-fields:MOMENT -->
+**Vendor fields** (MSC QRG p.2294; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, G, CID, M, N1–N3 |
+| Refused | — |
+| Ignored | — |
+| Not checked | Data in field 9, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
 
 ---
 
@@ -1302,6 +1565,16 @@ In a SOL 144 **trim** subcase the combination may reference `FORCE`/`MOMENT` set
 $ Combine load sets 10 and 20 with factors 1.0 and 2.0, overall scale 1.0
 LOAD, 100, 1.0, 1.0, 10, 2.0, 20
 ```
+
+<!-- vendor-fields:LOAD -->
+**Vendor fields** (MSC QRG p.2008; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, S, Si, Li (a FORCE, MOMENT or GRAV set; a LOAD set is refused, #89) |
+| Refused | — |
+| Ignored | — |
+<!-- /vendor-fields -->
 
 ---
 
@@ -1345,6 +1618,17 @@ GRAV, 1, 0, 9.81, 0.0, -1.0, 0.0
 $ Reference GRAV via LOAD card (combined with a point force)
 LOAD, 100, 1.0, 1.0, 1, 1.0, 10
 ```
+
+<!-- vendor-fields:GRAV -->
+**Vendor fields** (MSC QRG p.1941; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, A, N1–N3 |
+| Refused | CID (non-zero: gravity is given in basic) |
+| Ignored | MB (it says where a superelement run finds CID; sbeam has no superelements) |
+| Not checked | Data in field 9, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
 
 ---
 
@@ -1391,6 +1675,16 @@ $ Extract 6 modes, MAX normalisation
 EIGRL, 30, , , 6, , , , MAX
 ```
 
+<!-- vendor-fields:EIGRL -->
+**Vendor fields** (MSC QRG p.1801–1802; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, ND, NORM (field 9: `MASS` or `MAX`) |
+| Refused | V1, V2 (the lowest ND roots are returned; no frequency range); the option line (`NORM=MAX` …): an unread line |
+| Ignored | MSGLVL, MAXSET, SHFSCL (they steer MSC's Lanczos solver, not which roots are found) |
+<!-- /vendor-fields -->
+
 ---
 
 ## Phase A — Aerodynamics
@@ -1402,7 +1696,7 @@ coefficients, and the symmetry condition for the VLM.
 
 **Format:**
 ```
-AEROS  ACSID  RCSID  CREF  BREF  SREF  SYMXZ  SYMXY  [MACH]
+AEROS  ACSID  RCSID  CREF  BREF  SREF  SYMXZ  SYMXY
 ```
 
 **Fields:**
@@ -1416,9 +1710,9 @@ AEROS  ACSID  RCSID  CREF  BREF  SREF  SYMXZ  SYMXY  [MACH]
 | SREF | `sref` | float | Reference area — full area | required |
 | SYMXZ | `symxz` | int | Parsed for NASTRAN compatibility; **must be 0** — `build_aero_model` rejects non-zero (half-span) | `0` |
 | SYMXY | `symxy` | int | Parsed for NASTRAN compatibility; **must be 0** — `build_aero_model` rejects non-zero (half-span) | `0` |
-| MACH | `mach` | float | **sbeam extension** — freestream Mach number for Prandtl–Glauert / Göthert compressibility correction (§2.8 of theory doc). Omit or set to 0.0 for incompressible. Must be in [0, 1): a negative value is refused at parse (#58), and M ≥ 1 when the aero model is built. | `0.0` |
-
-> **Note:** The MACH field (field 8) is an sbeam extension. The NASTRAN AEROS card has no MACH field; in MSC Nastran, Mach appears on the TRIM card (Phase C).
+MSC's AEROS ends at SYMXY (QRG 2024.1 PDF p.1151), and so does sbeam's: **field 9 must be
+blank**. Until v0.4.1 sbeam read an sbeam-only MACH there; it is now refused (#87). The Mach
+is the TRIM card's (the DIVERG Mach list for a divergence subcase), as in MSC.
 
 > **Full-span only:** sbeam does not support half-span / symmetry models. `SYMXZ`/`SYMXY` are
 > parsed so legacy decks load, but `build_aero_model` raises `ValueError` for any non-zero
@@ -1429,17 +1723,27 @@ CAERO1 cards without an AEROS card raise `ValueError("CAERO1 card(s) present but
 
 **Examples:**
 ```
-$ Full-span wing: chord=2.0, span=10.0, area=20.0 — incompressible
+$ Full-span wing: chord=2.0, span=10.0, area=20.0 (the Mach goes on TRIM)
 AEROS, 0, 0, 2.0, 10.0, 20.0, 0, 0
-$ Same wing at M=0.6 (Prandtl–Glauert correction active)
-AEROS, 0, 0, 2.0, 10.0, 20.0, 0, 0, 0.6
 ```
+
+<!-- vendor-fields:AEROS -->
+**Vendor fields** (MSC QRG p.1151; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | ACSID (0 or a CORD2R parallel to basic), RCSID, REFC, REFB, REFS, SYMXZ, SYMXY (both read here; a non-zero value is refused when the aero model is built) |
+| Refused | field 9 (blank in MSC's layout; sbeam's MACH until v0.4.1) |
+| Ignored | — |
+<!-- /vendor-fields -->
 
 ---
 
 ### PAERO1 — Aerodynamic Panel Properties (Phase A stub)
 
-Referenced by CAERO1. Phase A carries no body elements; the card is a placeholder.
+Referenced by CAERO1. Phase A carries no body elements; the card is a placeholder. MSC's
+`B1`–`B6` (the CAERO2 bodies associated with the panel, QRG p.2413) are accepted and
+ignored: sbeam has no CAERO2, and a deck that holds one is refused.
 
 **Format:**
 ```
@@ -1456,6 +1760,17 @@ PAERO1  PID
 ```
 PAERO1, 1
 ```
+
+<!-- vendor-fields:PAERO1 -->
+**Vendor fields** (MSC QRG p.2413; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | PID |
+| Refused | — |
+| Ignored | B1–B6 (IDs of associated CAERO2 bodies; sbeam has no CAERO2, and a deck holding one is refused) |
+| Not checked | Data in field 9, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
 
 ---
 
@@ -1510,7 +1825,7 @@ AEFACT  SID  D1  D2  D3  D4  D5  D6  D7
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
 | SID | `sid` | int | Set ID (unique; referenced by CAERO1 LSPAN or LCHORD) | required |
-| D1–DN | `data` | list[float] | Decimal fractions 0.0–1.0; must start at 0.0 and end at 1.0 | required |
+| D1–DN | `data` | list[float] | Division points as fractions of the span or chord, used as given. MSC allows endpoints other than 0.0 and 1.0 (QRG 2024.1 p.1344, CAERO1 remark 2); sbeam does not check them (#91) | required |
 
 Multiple continuation lines are supported. The list must have NSPAN+1 or NCHORD+1 values.
 An embedded blank field is refused (QRG 2024.1 p.1141 remark 2; #73 — it used to be
@@ -1523,6 +1838,16 @@ AEFACT, 10, 0.0, 0.333, 0.667, 1.0
 $ Clustered leading-edge panels (8 chordwise breakpoints)
 AEFACT, 20, 0.0, 0.05, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0
 ```
+
+<!-- vendor-fields:AEFACT -->
+**Vendor fields** (MSC QRG p.1141; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, Di |
+| Refused | — |
+| Ignored | — |
+<!-- /vendor-fields -->
 
 ---
 
@@ -1560,7 +1885,7 @@ non-zero; exactly one of NCHORD/LCHORD must be non-zero.
 Cross-reference validation (post-parse): PID not in `bulk.paero1s` → `ValueError`;
 LSPAN/LCHORD not in `bulk.aefacts` → `ValueError`; CP (if non-zero) not in CORD2R →
 `ValueError`; CAERO1 present, no AEROS → `ValueError`. Every `W2GJ`, `WKK`, `AECORR` and
-`CHORDCP` must name an existing CAERO1 (#51). Before #51 a `WKK` or `AECORR` on an unknown
+`CPINJ` must name an existing CAERO1 (#51). Before #51 a `WKK` or `AECORR` on an unknown
 CAERO1 was silently not applied.
 
 Mesh-quality warnings (A7/A8, pre-solve in `build_aero_model`, VLM panels only): fewer
@@ -1576,12 +1901,24 @@ CAERO1, 100, 1, 0, 4, 10, 0, 0, 0
 +,      0.0, 0.0, 0.0, 2.0, 0.0, 5.0, 0.0, 2.0
 ```
 
+<!-- vendor-fields:CAERO1 -->
+**Vendor fields** (MSC QRG p.1343; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, PID, CP, NSPAN, NCHORD, LSPAN, LCHORD, IGID, X1, Y1, Z1, X12, X4, Y4, Z4, X43 |
+| Refused | LSPAN with NSPAN, LCHORD with NCHORD (MSC uses the list only when the count is zero or blank, #89); an IGID that differs from another CAERO1's (one AIC over every panel) |
+| Ignored | — |
+<!-- /vendor-fields -->
+
 ---
 
 ### W2GJ — Baseline Incidence / Camber (initial downwash)
 
 Per-box built-in incidence/camber angles (rad) representing geometry not captured by
 the VLM angle of attack (wing incidence, twist, camber line, CFD/WT Δα corrections).
+MSC has no W2GJ bulk card; its `DMIJ W2GJ` matrix is also read, with the same sign
+(see [DMIJ / DMIK](#dmij--dmik--msc-aero-correction-matrices-w2gj-wkk), #104).
 **NASTRAN sign convention** (MSC Aeroelastic UG Eq. 2-104; HA144A example): **positive
 = leading-edge-up incidence → more lift**, the same nose-up-positive sense as ANGLEA.
 `build_wg` negates card data into sbeam's internal washout-positive normalwash.
@@ -1591,9 +1928,9 @@ normal, z_elem = x_aero × (P4 − P1) (QRG 2024.1 PDF p.1344, CAERO1 Figure 9-5
 MSC's downwash (AAUG 2023.1 PDF p.30, p.144). A starboard wing drawn root to tip has
 +z; a **port wing drawn root to tip has −z and a fin drawn root to tip has −y**, so on
 those surfaces positive W2GJ is leading-edge-*down* relative to +z / +y. The same sign
-rule applies to AECORR targets and CHORDCP Cp, and to the f06 `DELTA-CP` column.
+rule applies to AECORR targets and CPINJ Cp, and to the f06 `DELTA-CP` column.
 **Before #84** the data was read along sbeam's +z/+y normal on every surface. **Migrate
-a deck:** negate the W2GJ, AECORR and CHORDCP data of every CAERO1 whose MSC normal is
+a deck:** negate the W2GJ, AECORR and CPINJ data of every CAERO1 whose MSC normal is
 opposite (port surfaces and fins drawn root to tip); the repo decks are converted and
 give identical results.
 (Convention corrected 2026-07-05 — AE8a root cause.)
@@ -1632,9 +1969,12 @@ weight after the pressure solve, `AJJ*⁻¹ = diag(w) @ AJJ⁻¹` — MSC's plac
 Nastran identical). A weight of 1.1 is 10% more lift on that box; 0 removes it. **Before #71
 the weight acted as its reciprocal** (1.1 gave 0.909× the lift); see `05a_aero_vlm.md`.
 
-**An sbeam extension.** MSC has no WKK bulk card: it enters WKK as a DMI matrix on the k-set
-with separate force and moment terms (AAUG PDF p.144), and sbeam refuses DMI (#55). sbeam's
-card takes one weight per box of one CAERO1; unlisted surfaces take weight 1.
+**An sbeam extension.** MSC has no WKK bulk card: it enters WKK as a matrix on the k-set
+with separate force and moment terms (AAUG PDF p.144). sbeam reads MSC's `DMIK WKK` form
+(see [DMIJ / DMIK](#dmij--dmik--msc-aero-correction-matrices-w2gj-wkk), #104) and refuses
+`DMI`. sbeam's card takes one weight per box of one CAERO1; unlisted surfaces take weight 1.
+A WKK (or a WT2 `AECORR`) on a PSTRIP strip panel is refused: it scales the VLM operator,
+which strip panels are not in, and before #104 it changed nothing (use `STRIPK`).
 
 **Format:**
 ```
@@ -1656,6 +1996,50 @@ $ Uniform 10% uplift on a 4×2 panel (8 boxes)
 WKK, 10, 100, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1
 +,   1.1, 1.1
 ```
+
+---
+
+### DMIJ / DMIK — MSC aero correction matrices (W2GJ, WKK)
+
+MSC's own way to enter the W2GJ downwash and the WKK weights (AAUG 2023.1 PDF p.144):
+matrices with those reserved names on aero box IDs (#104). sbeam maps them onto the
+native per-CAERO1 `W2GJ` / `WKK` data above, so a deck may use either form, not both for
+the same matrix. Layout as MSC (QRG 2024.1 PDF p.1617–1619 DMIJ, p.1623–1625 DMIK):
+
+```
+DMIJ  NAME  "0"  IFO  TIN  TOUT  POLAR        NCOL     header
+DMIJ  NAME  GJ   CJ        G1    C1     A1    B1       column entry
++     G2    C2   A2   B2   G3    C3     A3    B3       ...
+```
+
+`DMIK` has the same layout. Gi is an aero box ID: a CAERO1's boxes are numbered from its
+EID, consecutively, chordwise fastest (AAUG p.28), which is the native cards' order.
+
+| Field | Read as | Rule |
+|-------|---------|------|
+| NAME | `W2GJ` on DMIJ, `WKK` on DMIK | Any other name refused (FA2J, WTFACT, AEDW/AEPRESS/AEFORCE inputs are not implemented) |
+| IFO | W2GJ: 9 or 2 (one column); WKK: 1 or 6 (square) | Others refused |
+| TIN | 1 or 2 (real) | 3, 4 (complex) refused; TIN 2 terms take a `D` exponent (`1.0D0`, remark 9) |
+| TOUT | ignored | Output precision only; sbeam computes in double |
+| POLAR | blank or 0 | Non-zero refused (complex only) |
+| field 8 | blank | Non-blank refused |
+| NCOL | W2GJ: blank or 1 | Other values, or more than one column, refused |
+| GJ, CJ | W2GJ: the one column; WKK: must equal the row | A WKK term off the diagonal refused |
+| Gi, Ci | box ID; W2GJ C = 3, WKK C = 3 (force) and 5 (moment) | Box on no CAERO1 refused. A non-zero term on another component is refused: MSC drops it without a warning (remark 2) |
+| Ai | the value | Required; a term given twice refused (remark 3) |
+| Bi | blank | Non-blank refused (real matrix) |
+
+- **A term not entered is zero, as in MSC.** A W2GJ box with no term has no downwash, and
+  a **WKK box with no term has weight 0 — no lift**; give `1.0` for an uncorrected box.
+- **WKK force and moment weights must be equal** per box: sbeam applies one weight to a
+  box's force and moment. A DMIK WKK in a model with PSTRIP strip panels is refused.
+- **DMI is refused** for W2GJ/WKK: its row numbers need the order of the CAERO1 entries in
+  the j- and k-sets, which the manuals give only within one ACPT record (AAUG p.134–136,
+  Figures 3-7 and 3-8). Rewrite `DMI` rows as `DMIJ`/`DMIK` terms on box IDs.
+- Each surface gets one native entry with SID = its CAERO1 EID.
+- Gate: `sample/ha144a/ha144a_fullspan_dmij.bdf` trims to `ha144a_fullspan_sbeam.bdf`'s numbers
+  to round-off (`tests/aero/test_aero_matrices.py`); pyNastran reads every term to the
+  same value (`tests/compat`).
 
 ---
 
@@ -1731,7 +2115,9 @@ Strip body panels (CAERO1 PID → PSTRIP) bypass this entirely — see `STRIPK`.
 
 ---
 
-### CHORDCP — Injected Steady-Pressure Distribution (sbeam extension, Step 54)
+### CPINJ — Injected Steady-Pressure Distribution (Step 54)
+
+**sbeam-only card** (not MSC, not ZAERO; named CHORDCP until v0.4.1, #87 — see [sbeam-only cards](#sbeam-only-cards)). ZAERO's CHORDCP is a different card: upper and lower thickness Cp vs % chord for its ZTAIC transonic method (ZAERO 9.2 UM PDF p.226).
 
 Supplies the per-box **physical steady Cp** of one CAERO1 surface, measured (CFD or
 wind tunnel) at a stated reference angle of attack. At assembly the injected pressures
@@ -1743,7 +2129,7 @@ a perturbation about the measured operating point. See
 
 **Format:**
 ```
-CHORDCP  SID  CAERO_EID  ALPHREF  MACH
+CPINJ  SID  CAERO_EID  ALPHREF  MACH
 +        CP1  CP2  CP3  ...
 ```
 
@@ -1757,7 +2143,7 @@ CHORDCP  SID  CAERO_EID  ALPHREF  MACH
 | MACH | `mach` | float | Mach the data was measured at; validation only (warned against the TRIM Mach) | blank = not stated |
 | CP1–CPN | `data` | list[float] | Physical steady ΔCp per box along MSC's element normal (#84; see W2GJ), row-major (span slowest, chord fastest — same ordering as W2GJ) | required |
 
-**Coverage rule (v1):** when any CHORDCP card is present, **every** VLM CAERO1 must
+**Coverage rule (v1):** when any CPINJ card is present, **every** VLM CAERO1 must
 carry exactly one, and all cards must state the same ALPHREF. PSTRIP strip body panels
 are excluded (they keep their W2GJ/Δα wash) and may not be targeted. The W2GJ baseline
 on injected surfaces is discarded (warned) — the injected Cp must already contain the
@@ -1766,7 +2152,7 @@ camber/incidence content.
 **Example:**
 ```
 $ Wing pressures from CFD at alpha = 2.0 deg, Mach 0.9 (8 boxes)
-CHORDCP, 40, 100, 2.0, 0.9, 0.52, 0.31, 0.21, 0.14
+CPINJ, 40, 100, 2.0, 0.9, 0.52, 0.31, 0.21, 0.14
 +,       0.52, 0.31, 0.21, 0.14
 ```
 
@@ -1815,7 +2201,7 @@ NASTRAN box ID convention (row-major, matching `mesh_caero1()`):
 **CAERO1 EID spacing is a hard constraint.** A CAERO1 therefore occupies the
 `NSPAN × NCHORD` consecutive box IDs starting at its EID, so **each CAERO1 must be
 numbered at least `NSPAN × NCHORD` above the previous one**. Overlapping ranges make
-`SPLINE2`/`ATTACH`/`SPLINE0` box ranges, `AELIST` control-surface boxes and `MONPNT1`
+`SPLINE2`/`BODYATT`/`LOADINJ` box ranges, `AELIST` control-surface boxes and `MONPNT1`
 integration resolve to the wrong box — `build_aero_model` raises naming both CAERO1s
 and the required renumbering (defect F1). The shipped sample decks use `EID = 1000 × k`
 in declaration order, which is the recommended convention.
@@ -1850,6 +2236,16 @@ Cross-reference validation (post-parse): every grid ID must exist in GRID, else
 $ Wing elastic-axis grids for the beam spline
 SET1, 1100, 10, 11, 12, 13, 14, 15
 ```
+
+<!-- vendor-fields:SET1 -->
+**Vendor fields** (MSC QRG p.2813; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, IDi |
+| Refused | `THRU` (stops with a Python `int()` message, #89) |
+| Ignored | — |
+<!-- /vendor-fields -->
 
 ---
 
@@ -1899,17 +2295,30 @@ SPLINE2, 1601, 1100, 1100, 1131, 1100, 0.0, 1.0, 2
 +,       -1.0, -1.0
 ```
 
+<!-- vendor-fields:SPLINE2 -->
+**Vendor fields** (MSC QRG p.2849; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | EID, CAERO, ID1, ID2, SETG, DZ (≥ 0), DTOR (> 0), CID, DTHX, DTHY |
+| Refused | USAGE other than `BOTH` or blank (`FORCE`, `DISP`: every spline is used for both transforms); field 4 of line 2 (blank in MSC's layout) |
+| Ignored | USAGE = `BOTH` (the default) |
+| Not checked | Data in fields 6–9 of line 2, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
+
 ---
 
-### ATTACH — Rigid Attachment (sbeam extension)
+### BODYATT — Rigid Attachment
+
+**sbeam-only card** (not MSC, not ZAERO; named ATTACH until v0.4.1, #87 — see [sbeam-only cards](#sbeam-only-cards)). ZAERO's ATTACH (`EID MODEL SETK REFGRID`, PDF p.207) has the same intent but names its boxes through a PANLST card sbeam does not have.
 
 Rigidly couples a group of aero boxes to a single master structural grid. All boxes
 in the covered range move as a rigid body with the master grid (lever-arm kinematics
-about the box ¼-chord force point). ZAERO-inspired sbeam extension.
+about the box ¼-chord force point).
 
 **Format:**
 ```
-ATTACH, EID, CAERO, ID1, ID2, GRID, CID
+BODYATT, EID, CAERO, ID1, ID2, GRID, CID
 ```
 
 **Fields:**
@@ -1926,7 +2335,7 @@ ATTACH, EID, CAERO, ID1, ID2, GRID, CID
 **Example:**
 ```
 $ Rigidly attach fuselage boxes 2001-2016 to grid 50
-ATTACH, 300, 2001, 2001, 2016, 50
+BODYATT, 300, 2001, 2001, 2016, 50
 ```
 
 **Sign convention:** a nose-up (+Ry) rotation of the master grid produces nose-up
@@ -1935,7 +2344,9 @@ incidence `+n_z` on the covered boxes; roll (+Rx) produces none. See
 
 ---
 
-### SPLINE0 — Zero-Displacement Constraint (sbeam extension)
+### LOADINJ — Zero-Displacement Constraint
+
+**sbeam-only card** (not MSC, not ZAERO; named SPLINE0 until v0.4.1, #87 — see [sbeam-only cards](#sbeam-only-cards)). ZAERO's SPLINE0 (`EID MODEL CP SETK`, a PANLST, PDF p.478) keeps the panels still but has no load-transfer grid.
 
 Registers a box range as "covered" without adding any structural coupling: the
 `g_slope` / `g_disp` rows of the covered boxes remain zero, so the boxes neither
@@ -1951,7 +2362,7 @@ and the maneuver solvers. Leave the field blank to use the SUPORT grid.
 
 **Format:**
 ```
-SPLINE0, EID, CAERO, ID1, ID2, GRID
+LOADINJ, EID, CAERO, ID1, ID2, GRID
 ```
 
 **Fields:**
@@ -1980,7 +2391,7 @@ grid and its 6-component resultant so a misplaced choice is visible.
 ```
 $ Boxes 3001-3008 carry aero load but do not deflect structurally;
 $ their resultant is applied at fuselage GRID 98
-SPLINE0, 400, 3001, 3001, 3008, 98
+LOADINJ, 400, 3001, 3001, 3008, 98
 ```
 
 ---
@@ -1993,26 +2404,29 @@ deferred). The keyword is recognised by the dispatch table, but the handler rais
 
 ```
 SPLINE1 (Harder–Desmarais infinite-plate spline) is not yet implemented;
-use SPLINE2 or ATTACH instead
+use SPLINE2 or BODYATT instead
 ```
 
-The `Spline1` dataclass (EID, CAERO, ID1, ID2, SETG, DZ, CID) exists in
-`sbeam/model/aero.py` as a placeholder for the future implementation.
+The `Spline1` dataclass in `sbeam/model/aero.py` is a placeholder for a future
+implementation. MSC's layout is `SPLINE1 EID CAERO BOX1 BOX2 SETG DZ METH USAGE` /
+`NELEM MELEM` (QRG 2024.1 PDF p.2847); the whole card is refused today.
 
 ---
 
 ## Trim Card Set (SOL 144)
 
-The following cards define the static aeroelastic trim problem. They are parsed and
-cross-referenced by the BDF reader but are not yet consumed by a solver (solver deferred
-to Step 52+).
+The following cards define the static aeroelastic trim problem. They are parsed,
+cross-referenced, and solved by SOL 144 (`05c_sol144_maneuver.md`).
 
 ---
 
 ### AESTAT — Rigid-body aerodynamic extra point
 
 Defines a rigid-body trim DOF label. Each AESTAT card declares one label that can be
-prescribed or solved in a TRIM condition.
+prescribed or solved in a TRIM condition. Only MSC's standard labels below are read
+(QRG 2024.1 PDF p.1153, Table 1). Any other label is refused: MSC needs AELINK or DMI
+data to give it forces (p.1154 remark 3), and sbeam reads neither. Before #91 such a
+label (e.g. `THRUST`) got a zero aerodynamic column with no message.
 
 **Standard labels:**
 
@@ -2023,6 +2437,7 @@ prescribed or solved in a TRIM condition.
 | `ROLL` | Roll rate p |
 | `PITCH` | Pitch rate q |
 | `YAW` | Yaw rate r |
+| `URDD1` | Longitudinal acceleration ẍ |
 | `URDD2` | Lateral acceleration ÿ |
 | `URDD3` | Normal acceleration z̈ |
 | `URDD4` | Roll angular acceleration |
@@ -2044,6 +2459,17 @@ AESTAT  ID  LABEL
 AESTAT, 100, ANGLEA
 AESTAT, 101, PITCH
 ```
+
+<!-- vendor-fields:AESTAT -->
+**Vendor fields** (MSC QRG p.1153; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | ID, LABEL (one of MSC's standard labels) |
+| Refused | any other LABEL (MSC needs AELINK or DMI data for it, p.1154 remark 3) |
+| Ignored | — |
+| Not checked | Data in fields 4–9, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
 
 ---
 
@@ -2098,6 +2524,16 @@ AESURF, 602, RUD, 13, 303                        $ rudder: CID 13 +y DOWN ⇒ po
 0); `CID2` and `ALID2` are given together or not at all, and when given must exist likewise;
 no box may appear in both `ALID1` and `ALID2` of one surface.
 
+<!-- vendor-fields:AESURF -->
+**Vendor fields** (MSC QRG p.1155; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | ID, LABEL, CID1, ALID1, CID2, ALID2 (the last two together), EFF |
+| Refused | LDW = `NOLDW`; the second line (CREFC, CREFS, PLLIM, PULIM, HMLLIM, HMULIM, TQLLIM, TQULIM): limits and reference values are not used (#44) |
+| Ignored | LDW = `LDW` (the default) |
+<!-- /vendor-fields -->
+
 ---
 
 ### AELIST — Aerodynamic box ID list
@@ -2122,6 +2558,16 @@ AELIST, 50, 1001, 1002, 1003, 1004
 
 **Validation:** Every box ID must fall within the range `[CAERO1.EID, CAERO1.EID + NSPAN×NCHORD − 1]` of at least one CAERO1. An intervening blank field is refused (QRG 2024.1 p.1145 remark 3; #73 — it used to be skipped); trailing blanks are harmless.
 
+<!-- vendor-fields:AELIST -->
+**Vendor fields** (MSC QRG p.1145; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, Ei, `THRU` |
+| Refused | — |
+| Ignored | — |
+<!-- /vendor-fields -->
+
 ---
 
 ### TRIM — Static trim condition
@@ -2130,38 +2576,54 @@ Specifies the Mach number, dynamic pressure, and prescribed values for a subset 
 variables. All remaining variables (AESTAT + AESURF labels not listed here) are free DOFs
 for the trim solver.
 
+MSC's layout (QRG 2024.1 PDF p.2992; #87):
+
 **Format:**
 ```
-TRIM  SID  MACH  Q  L1  UX1  L2  UX2  L3  UX3
-+     L4   UX4   ...
+TRIM  SID  MACH  Q  L1  UX1  L2  UX2  AEQR
++     L3   UX3   L4  UX4  ...
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
 | SID | int | Unique identifier (referenced by case control `TRIM=`) |
-| MACH | float | Mach number |
+| MACH | float | Mach number — the flight Mach of the subcase (the AIC is built at it) |
 | Q | float | Dynamic pressure |
-| L1, UX1, … | str, float | Label/value pairs for prescribed variables (continuation OK) |
-| `RHOREF`, ρ | str, float | **sbeam extension** (Step 61): reserved pseudo-label carrying the freestream density for this flight condition. Not a trim variable — it never enters the trim solve. Its only use is `V = √(2·Q/ρ)`, the true airspeed the transient maneuver rate terms need (`build_dj_rigidrate`). Omit it and `Trim.velocity()` raises. |
+| L1, UX1, L2, UX2 | str, float | The first two label/value pairs |
+| AEQR | float | Field 9. Blank or `1.0` (elastic trim, MSC's default). Any other value (MSC's rigid trim) is refused |
+| L3, UX3, … | str, float | Further pairs, four per continuation line |
+
+Until v0.4.1 sbeam read label pairs through field 9 and took a reserved `RHOREF`
+pseudo-label as the freestream density. Both are refused now (#87): a label in field 9 is
+refused with a message to move the pair to the continuation, and `RHOREF` with a message
+naming MANTRIM field 4, where the density now lives.
 
 **Example:**
 ```
 TRIM, 10, 0.3, 1500.0, PITCH, 0.0, URDD3, -1.0
-$ with the density needed by transient maneuver runs (V = sqrt(2*1500/0.002377))
-TRIM, 11, 0.3, 1500.0, RHOREF, 2.377-3, PITCH, 0.0
-+,    URDD3, -1.0
+TRIM, 11, 0.3, 1500.0, PITCH, 0.0, URDD3, -1.0
++,    URDD5, 0.0
 ```
 
 **Validation:**
 - Every label must be defined by an AESTAT or AESURF card.
 - Duplicate labels within one TRIM card raise `ValueError`.
-- `RHOREF` must be positive; an AESTAT/AESURF label named `RHOREF` is rejected
-  (it would collide with the reserved pseudo-label).
+- A label named `RHOREF` is refused (the pre-v0.4.1 density pseudo-label).
 - DOF-count diagnostic: warns if all labels are prescribed (nothing to solve) or if the
-  system is over-determined and no TRIMOBJ card is present.
+  system is over-determined and no TRIMWGT card is present.
 - A `TRIM` subcase may also select `LOAD = sid` (applied structural load in the trim RHS,
-  #6): `FORCE`/`MOMENT` sets and `LOAD` combinations of them; `GRAV` raises. An `MLOADS`
+  #6): `FORCE`/`MOMENT` sets and `LOAD` combinations of them; `GRAV` raises. An `MANVR`
   subcase or a `DIVERG`-only subcase carrying `LOAD` raises (the load would be dropped).
+
+<!-- vendor-fields:TRIM -->
+**Vendor fields** (MSC QRG p.2992; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, MACH, Q, LABELi, UXi |
+| Refused | AEQR other than blank or 1.0 (the rigid and scaled-feedback trims, #88) |
+| Ignored | AEQR = 1.0 (the default: elastic trim) |
+<!-- /vendor-fields -->
 
 ---
 
@@ -2184,7 +2646,7 @@ DIVERG  SID  NROOT  M1  M2  M3  M4  M5  M6
 |-------|------|-------------|
 | SID | int | Unique identifier (referenced by case control `DIVERG=`) |
 | NROOT | int | Number of divergence roots to output, ≥ 1. Default 1 |
-| M1, M2, … | float | Mach numbers, field 4 onward and on continuation lines. ≥ 0.0 and distinct (remark 3). A blank field ends the list (remark 4). With no Mach number the AEROS Mach is used as a single point (sbeam behaviour; what MSC does is *unverified*) |
+| M1, M2, … | float | Mach numbers, field 4 onward and on continuation lines. ≥ 0.0 and distinct (remark 3). A blank field ends the list (remark 4). At least one is required: the card exists to list Mach numbers (QRG p.1603). Until #87 an empty list ran at the sbeam-only AEROS Mach |
 
 **Examples** (MSC's own):
 ```
@@ -2203,6 +2665,16 @@ DIVERG     100      5       0.0    $ AAUG 2023.1 p.148: incompressible, five roo
 > Mach list in field 5, so MSC decks lost their first Mach. A deck written for the old layout
 > now reads its density as a Mach number; remove it. A DIVERG subcase does not require a TRIM
 > card: divergence depends only on `K_aa` and `Q_aa`, not on the trim right-hand side.
+
+<!-- vendor-fields:DIVERG -->
+**Vendor fields** (MSC QRG p.1603; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | SID, NROOT, Mi |
+| Refused | — |
+| Ignored | — |
+<!-- /vendor-fields -->
 
 ---
 
@@ -2241,55 +2713,74 @@ $ the CG; with SUPORT 35 the thrust x-component is reacted at the SPC instead (#
 SUPORT, 90, 135
 ```
 
+<!-- vendor-fields:SUPORT -->
+**Vendor fields** (MSC QRG p.2870; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | IDi, Ci |
+| Refused | — |
+| Ignored | — |
+<!-- /vendor-fields -->
+
 ---
 
-### TRIMVAR — Per-variable bounds (sbeam-defined)
+### TRIMVAR — Per-variable bounds (ZAERO layout)
+
+**ZAERO's card, read in ZAERO's layout** (ZAERO 9.2 User's Manual PDF p.511; #87). Until
+v0.4.1 sbeam read its own order `ID LABEL INIT LB UB`, so a ZAERO card was misread; an
+old-order sbeam card is now read as ZAERO's (its INIT lands in LOWER), so migrate it.
 
 TRIMVAR bounds one trim variable. In an over-determined trim (more free variables than
 equilibrium equations) the optimiser keeps the variable inside the bounds and starts from
-`INIT`. **Every trim is checked against the bounds** (#77): a determined trim, or a value
+`INITIAL`. **Every trim is checked against the bounds** (#77): a determined trim, or a value
 the TRIM card prescribes, that lies outside them refuses the run naming the TRIM, the
 variable and the TRIMVAR.
 
-> **Not ZAERO's layout.** ZAERO's TRIMVAR is `IDVAR LABEL LOWER UPPER TRIMLNK DMI SYM
-> INITIAL` (ZAERO 9.2 User's Manual, PDF p.511). sbeam's is `ID LABEL INIT LB UB`, so a
-> ZAERO card is misread: `TRIMVAR,1,ANGLEA,-0.3,0.3` gives INIT = −0.3, LB = 0.3 and no
-> upper bound. Whether sbeam adopts ZAERO's order or renames the card is open in #87.
-
 **Format:**
 ```
-TRIMVAR  ID  LABEL  INIT  LB  UB
+TRIMVAR  IDVAR  LABEL  LOWER  UPPER  TRIMLNK  DMI  SYM  INITIAL
++        DCD    DCY    DCL    DCR    DCM      DCN
 ```
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| ID | int | — | Unique identifier |
-| LABEL | str | — | AESTAT or AESURF label this bound applies to |
-| INIT | float | 0.0 | Initial guess |
-| LB | float | −1×10³⁰ | Lower bound. Blank = unbounded, in fixed-field as in free-field |
-| UB | float | +1×10³⁰ | Upper bound. Blank = unbounded |
+| Field | Type | Default | sbeam |
+|-------|------|---------|-------|
+| IDVAR | int | — | Read: unique identifier |
+| LABEL | str | — | Read: the AESTAT or AESURF label this bound applies to (sbeam's labels, not ZAERO's) |
+| LOWER | float | −1×10³⁰ | Read: lower bound. Blank = unbounded, in fixed-field as in free-field |
+| UPPER | float | +1×10³⁰ | Read: upper bound. Blank = unbounded |
+| TRIMLNK | int | 0 | Refused if non-zero: sbeam does not link trim variables |
+| DMI | str | blank | Refused if non-blank: sbeam computes the pressure derivatives itself |
+| SYM | str | — | Ignored (SYM, ANTI, ASYM or blank): it only chooses which derivatives ZAERO prints (remark 6); sbeam prints the longitudinal and lateral ones in every run. Any other value is refused |
+| INITIAL | float | 0.0 | Read: initial guess for the over-determined solve |
+| DCD…DCN | str/float | NONE | Refused unless blank or `NONE`: sbeam does not take user-input stability derivatives |
 
-**Validation:** `LB` must be less than `UB` (equal bounds would pin the variable, which a
-TRIM value does). `LABEL` must be an AESTAT or AESURF label. One TRIMVAR per label.
+ZAERO applies the bounds only in an over-determined trim; sbeam also checks every
+determined trim against them (below).
+
+**Validation:** `LOWER` must be less than `UPPER` (equal bounds would pin the variable,
+which a TRIM value does). `LABEL` must be an AESTAT or AESURF label. One TRIMVAR per label.
 
 **Example:**
 ```
-TRIMVAR, 10, ANGLEA, 0.05, -0.3, 0.3
-TRIMVAR, 11, AILERON, 0.0, -0.5, 0.5
+TRIMVAR, 10, ANGLEA, -0.3, 0.3, , , SYM, 0.05
+TRIMVAR, 11, AILERON, -0.5, 0.5
 ```
 
 ---
 
-### TRIMOBJ — Weighted objective function (sbeam-defined, over-determined trim)
+### TRIMWGT — Weighted objective function (over-determined trim)
+
+**sbeam-only card** (not MSC, not ZAERO; named TRIMOBJ until v0.4.1, #87 — see [sbeam-only cards](#sbeam-only-cards)). ZAERO's TRIMOBJ builds its objective from TRIMFNC trim functions (ZAERO 9.2 UM PDF p.510), not from the variables.
 
 Defines the weighted least-squares objective for the over-determined trim solve,
 `J = Σ wᵢ·δᵢ²` over the listed **trim variables** δᵢ (AESTAT / AESURF labels). It is not
 an objective on coefficients: `CL` or `CM` are not labels and are refused. Selected by
-case control `TRIMOBJ = sid`; a single defined TRIMOBJ is used when none is named.
+case control `TRIMWGT = sid`; a single defined TRIMWGT is used when none is named.
 
 **Format:**
 ```
-TRIMOBJ  SID  L1  W1  L2  W2  L3  W3  L4  W4
+TRIMWGT  SID  L1  W1  L2  W2  L3  W3  L4  W4
 +        L5   W5  ...
 ```
 
@@ -2308,24 +2799,26 @@ variable.)
 
 **Example:**
 ```
-TRIMOBJ, 20, ELEV, 1.0, CANARD, 0.5
+TRIMWGT, 20, ELEV, 1.0, CANARD, 0.5
 +,       FLAP, 0.1
 ```
 
 ---
 
-### TRIMCON — Inequality constraint (sbeam-defined, over-determined trim)
+### TRIMINEQ — Inequality constraint (over-determined trim)
+
+**sbeam-only card** (not MSC, not ZAERO; named TRIMCON until v0.4.1, #87 — see [sbeam-only cards](#sbeam-only-cards)). ZAERO's TRIMCON constrains TRIMFNC trim functions (PDF p.501), not one variable.
 
 Adds an inequality on one **trim variable** (an AESTAT / AESURF label; `CL` or `CM` are
-not labels and are refused). All TRIMCON cards of a deck form one set and must share one
-SID: no command selects a TRIMCON set, so a second SID is refused (#77; before, cards of
+not labels and are refused). All TRIMINEQ cards of a deck form one set and must share one
+SID: no command selects a TRIMINEQ set, so a second SID is refused (#77; before, cards of
 every SID were applied to every trim). The optimiser enforces the set in an
 over-determined trim, and **every trim is checked against it**: a determined trim that
-violates a TRIMCON refuses the run.
+violates a TRIMINEQ refuses the run.
 
 **Format:**
 ```
-TRIMCON  SID  LABEL  SENSE  RHS
+TRIMINEQ  SID  LABEL  SENSE  RHS
 ```
 
 | Field | Type | Description |
@@ -2337,8 +2830,8 @@ TRIMCON  SID  LABEL  SENSE  RHS
 
 **Example:**
 ```
-TRIMCON, 30, ELEV, GE, -0.3
-TRIMCON, 30, ELEV, LE, 0.3
+TRIMINEQ, 30, ELEV, GE, -0.3
+TRIMINEQ, 30, ELEV, LE, 0.3
 ```
 
 ---
@@ -2452,6 +2945,16 @@ AECOMP  NAME  LISTTYPE  LISTID1  LISTID2  ...
 
 **Cross-reference:** every list ID must exist in the matching AELIST/SET1 table.
 
+<!-- vendor-fields:AECOMP -->
+**Vendor fields** (MSC QRG p.1138; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | NAME, LISTTYPE (`AELIST` or `SET1`), LISTIDi |
+| Refused | LISTTYPE = `CAERO` or `CMPID` (#89) |
+| Ignored | — |
+<!-- /vendor-fields -->
+
 ### MONPNT1 — Integrated load monitor point (MSC layout, #86)
 
 MSC's layout and meaning (MSC Nastran 2024.1 QRG PDF p.2303–2304). The card is
@@ -2504,6 +3007,17 @@ MONPNT1 MWINGEA RIGHT WING
 > and write a `MONPNT3` as a `MONPNT1` (its SET1 AECOMP makes it structural). A one-line
 > MONPNT1 is refused with that advice; the repo decks are converted and give identical
 > results.
+
+<!-- vendor-fields:MONPNT1 -->
+**Vendor fields** (MSC QRG p.2303–2304; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | NAME, LABEL, AXES, COMP, CP, X, Y, Z |
+| Refused | CD other than blank or CP (output is in CP, MSC's default) |
+| Ignored | CD = CP |
+| Not checked | Data in field 9 of line 2, blank in the vendor layout, is not refused (#109) |
+<!-- /vendor-fields -->
 
 ### MONPNT3 — refused (#86)
 
@@ -2573,7 +3087,7 @@ CORD2R; stations must be strictly increasing; `NORMAL` must not be near-perpendi
 the station axis (`|n̂·â| ≥ 0.1`), or the plane has no usable intercept with the
 reference line.
 
-**Example** (right wing of `sample/cessna210_flagship_bulk.bdf`, reusing the wing's
+**Example** (right wing of `sample/cessna210_flagship/cessna210_flagship_bulk.bdf`, reusing the wing's
 `SPLINE2` CID 991 as the cut frame):
 ```
 SET1,    1300, 11, 12
@@ -2586,15 +3100,18 @@ MONSECT, SECRW, RIGHT WING LOADS, RWINGEA, 991
 
 ## Transient Maneuver Loads (Phase G0)
 
-ZAERO-style card set for the DLM-free quasi-steady transient maneuver-loads solver
-(`solver/maneuver_qs.py`). A SOL 144 subcase requests a run with `MLOADS = sid` in
+**sbeam-only cards** (not MSC, not ZAERO). Until v0.4.1 they were named MLOADS, MLDTRIM,
+MLDTIME, MLDCOMD and MLDPRNT after ZAERO's family, which drives an aeroservoelastic
+state-space model with a different layout (ZAERO 9.2 UM PDF p.383–400); the old names are
+refused (#87). Card set for the DLM-free quasi-steady transient maneuver-loads solver
+(`solver/maneuver_qs.py`). A SOL 144 subcase requests a run with `MANVR = sid` in
 case control. Card orchestration:
 
 ```
-MLOADS ──references──▶ MLDTRIM (initial condition = a static TRIM sid)
-    │                  MLDTIME (integration window t0/tend/dt/tout)
-    │                  MLDCOMD (pilot command label → TABLED1 time history)
-    └────────────────▶ MLDPRNT (ASCII output request)
+MANVR ──references──▶ MANTRIM (initial condition = a static TRIM sid)
+    │                  MANTIME (integration window t0/tend/dt/tout)
+    │                  MANCMD (pilot command label → TABLED1 time history)
+    └────────────────▶ MANPRNT (ASCII output request)
 ```
 
 See `docs/10_standard/05c_sol144_maneuver.md` for the solver semantics (Level-1
@@ -2602,24 +3119,26 @@ quasi-steady, open-loop, restrained l-set Newmark-β).
 
 ---
 
-### MLOADS — Transient Maneuver Driver
+### MANVR — Transient Maneuver Driver
+
+**sbeam-only card** (not MSC, not ZAERO; named MLOADS until v0.4.1, #87 — see [sbeam-only cards](#sbeam-only-cards)).
 
 Top-level driver referencing the sub-cards of one transient maneuver run.
 
 **Format:**
 ```
-MLOADS, SID, MLDTRIM, MLDTIME, MLDCOMD, MLDPRNT, NMODES, METHOD, ZETA
+MANVR, SID, MANTRIM, MANTIME, MANCMD, MANPRNT, NMODES, METHOD, ZETA
 ```
 
 **Fields:**
 
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
-| SID | `sid` | int | Set ID (unique; referenced by case control `MLOADS =`) | required |
-| MLDTRIM | `mldtrim` | int | MLDTRIM SID (initial steady-state condition) | required |
-| MLDTIME | `mldtime` | int | MLDTIME SID (integration window) | required |
-| MLDCOMD | `mldcomd` | int | MLDCOMD SID (`0` = no commands; hold trim) | `0` |
-| MLDPRNT | `mldprnt` | int | MLDPRNT SID (`0` = no ASCII print) | `0` |
+| SID | `sid` | int | Set ID (unique; referenced by case control `MANVR =`) | required |
+| MANTRIM | `mldtrim` | int | MANTRIM SID (initial steady-state condition) | required |
+| MANTIME | `mldtime` | int | MANTIME SID (integration window) | required |
+| MANCMD | `mldcomd` | int | MANCMD SID (`0` = no commands; hold trim) | `0` |
+| MANPRNT | `mldprnt` | int | MANPRNT SID (`0` = no ASCII print) | `0` |
 | NMODES | `nmodes` | int | Retained **elastic** modes of the free-free basis (`0` = all). Rigid modes are always all retained. | `0` |
 | METHOD | `method` | int | EIGRL SID for the basis eigensolve (`0` = internal all-modes default; `-1` = internal default **and** selects the modal solver — the all-defaults-modal sentinel) | `0` |
 | ZETA | `zeta` | float | Uniform elastic modal damping ratio | `0.0` |
@@ -2633,91 +3152,99 @@ the direct l-set solver (`solver/maneuver_qs.py`, the increment-1
 prescribed-rigid path, kept permanently as the regression anchor).
 `METHOD=-1` requests the modal solver with all modes, default EIGRL and no
 damping — the case the trio-nonzero rule could not otherwise express.
-Free-flight requirements: the IC `TRIM` must carry `RHOREF`, and the MLDCOMD
+Free-flight requirements: the `MANTRIM` must carry `RHO` (field 4), and the MANCMD
 may command **AESURF controls only** (a rigid-state AESTAT label under the
 modal solver is a `ValueError` at parse and at solve).
 
-Cross-reference validation (post-parse): MLDTRIM/MLDTIME must exist; MLDCOMD and
-MLDPRNT (if non-zero) must exist; METHOD (if > 0) must name an EIGRL;
-NMODES ≥ 0, METHOD ≥ -1 and ZETA ≥ 0; a modal (`selects_modal`) MLOADS whose
-MLDCOMD commands a non-AESURF label — else `ValueError`.
+Cross-reference validation (post-parse): MANTRIM/MANTIME must exist; MANCMD and
+MANPRNT (if non-zero) must exist; METHOD (if > 0) must name an EIGRL;
+NMODES ≥ 0, METHOD ≥ -1 and ZETA ≥ 0; a modal (`selects_modal`) MANVR whose
+MANCMD commands a non-AESURF label — else `ValueError`.
 
 **Example:**
 ```
 $ Full transient run: trim IC 100, window 200, commands 300, print 400
 $ (all-zeros trailing fields: direct l-set solver)
-MLOADS, 10, 100, 200, 300, 400
+MANVR, 10, 100, 200, 300, 400
 $ ... modal solver with a 12-elastic-mode basis from EIGRL 900, 2% damping
-MLOADS, 11, 100, 200, 300, 400, 12, 900, 0.02
+MANVR, 11, 100, 200, 300, 400, 12, 900, 0.02
 $ ... modal solver, all modes, defaults (the METHOD=-1 sentinel)
-MLOADS, 12, 100, 200, 300, 400, , -1
+MANVR, 12, 100, 200, 300, 400, , -1
 ```
 
 ---
 
-### MLDTRIM — Initial Steady-State Condition
+### MANTRIM — Initial Steady-State Condition
 
+**sbeam-only card** (not MSC, not ZAERO; it was named MLDTRIM until v0.4.1, #87).
 References the static TRIM card (Step 53 balanced maneuver) that seeds the transient
-integration.
+integration, and carries the freestream density.
 
 **Format:**
 ```
-MLDTRIM, SID, TRIMID
+MANTRIM, SID, TRIMID, RHO
 ```
 
 **Fields:**
 
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
-| SID | `sid` | int | Set ID (unique; referenced by MLOADS) | required |
+| SID | `sid` | int | Set ID (unique; referenced by MANVR) | required |
 | TRIMID | `trim_sid` | int | SID of the static TRIM card giving the initial condition | required |
+| RHO | `rho` | float | Freestream density, in the deck's consistent units (charter §7). Its only use is `V = √(2·Q/ρ)` with the TRIM's Q, the true airspeed the free-flight (modal) solver's rate terms need; that solver refuses a blank RHO. It was a `RHOREF` pseudo-label on TRIM until v0.4.1 (#87) | blank |
 
-Cross-reference validation (post-parse): TRIMID not in TRIM → `ValueError`.
+Cross-reference validation (post-parse): TRIMID not in TRIM → `ValueError`. Fields 5–9
+must be blank.
 
 **Example:**
 ```
-MLDTRIM, 100, 10
+MANTRIM, 100, 10, 2.377-3
 ```
 
 ---
 
-### MLDTIME — Integration Window
+### MANTIME — Integration Window
+
+**sbeam-only card** (not MSC, not ZAERO; named MLDTIME until v0.4.1, #87 — see [sbeam-only cards](#sbeam-only-cards)).
 
 Defines the time-integration window and step sizes for the Newmark-β integration.
 
 **Format:**
 ```
-MLDTIME, SID, T0, TEND, DT, TOUT
+MANTIME, SID, T0, TEND, DT, TOUT
 ```
 
 **Fields:**
 
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
-| SID | `sid` | int | Set ID (unique; referenced by MLOADS) | required |
+| SID | `sid` | int | Set ID (unique; referenced by MANVR) | required |
 | T0 | `t0` | float | Start time | `0.0` |
 | TEND | `tend` | float | End time — must exceed T0 | `0.0` |
 | DT | `dt` | float | Integration time step — must be positive | `0.0` |
 | TOUT | `tout` | float | Output sampling interval (`0.0` = every step, = DT) | `0.0` |
 
-DT ≤ 0 or TEND ≤ T0 raise `ValueError` at parse time.
+DT ≤ 0 or TEND ≤ T0 raise `ValueError` at parse time. TOUT is in **seconds**, unlike field 6
+of ZAERO's MLDTIME (an integer skip factor); fields 7–9 must be blank (#87).
 
 **Example:**
 ```
 $ 2-second run, 1 ms steps, output every 10 ms
-MLDTIME, 200, 0.0, 2.0, 0.001, 0.01
+MANTIME, 200, 0.0, 2.0, 0.001, 0.01
 ```
 
 ---
 
-### MLDCOMD — Pilot Command Time Histories
+### MANCMD — Pilot Command Time Histories
+
+**sbeam-only card** (not MSC, not ZAERO; named MLDCOMD until v0.4.1, #87 — see [sbeam-only cards](#sbeam-only-cards)).
 
 Pairs a trim-variable label (AESTAT or AESURF label) with the TABLED1 giving its
 commanded value versus time. Labels not commanded here hold their initial-trim value.
 
 **Format:**
 ```
-MLDCOMD, SID, L1, TABID1, L2, TABID2, ...
+MANCMD, SID, L1, TABID1, L2, TABID2, ...
 +,       L3, TABID3, ...
 ```
 
@@ -2727,7 +3254,7 @@ Label/TABID pairs may span continuation lines.
 
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
-| SID | `sid` | int | Set ID (unique; referenced by MLOADS) | required |
+| SID | `sid` | int | Set ID (unique; referenced by MANVR) | required |
 | L1, L2, … | (in `commands`) | str | AESTAT or AESURF label (e.g. `ELEV`, `ANGLEA`) | required |
 | TABID1, … | (in `commands`) | int | TABLED1 TID giving the commanded value vs time | required |
 
@@ -2738,25 +3265,27 @@ defined by an AESTAT or AESURF card; every TABID must exist in TABLED1.
 **Example:**
 ```
 $ Elevator step commanded by TABLED1 500
-MLDCOMD, 300, ELEV, 500
+MANCMD, 300, ELEV, 500
 ```
 
 ---
 
-### MLDPRNT — ASCII Time-History Output Request
+### MANPRNT — ASCII Time-History Output Request
 
-Requests the MLDPRNT ASCII time-history file (`<stem>.mldprnt.txt`).
+**sbeam-only card** (not MSC, not ZAERO; named MLDPRNT until v0.4.1, #87 — see [sbeam-only cards](#sbeam-only-cards)).
+
+Requests the MANPRNT ASCII time-history file (`<stem>.mldprnt.txt`).
 
 **Format:**
 ```
-MLDPRNT, SID, ITEM1, ITEM2, ...
+MANPRNT, SID, ITEM1, ITEM2, ...
 ```
 
 **Fields:**
 
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
-| SID | `sid` | int | Set ID (unique; referenced by MLOADS) | required |
+| SID | `sid` | int | Set ID (unique; referenced by MANVR) | required |
 | ITEM1, … | `items` | list[str] | Optional quantity keywords to print (e.g. `STATE`, `CONTROL`, `LOADS`); empty = print all available time histories | `[]` |
 
 Item keywords may span continuation lines and are upper-cased on parse.
@@ -2764,14 +3293,14 @@ Item keywords may span continuation lines and are upper-cased on parse.
 **Example:**
 ```
 $ Print everything
-MLDPRNT, 400
+MANPRNT, 400
 ```
 
 ---
 
 ### TABLED1 — Tabular Function
 
-General tabular function y(x) with linear interpolation, referenced by MLDCOMD for
+General tabular function y(x) with linear interpolation, referenced by MANCMD for
 pilot-command time histories (x = time, y = commanded value).
 
 **Outside the table the value is extrapolated linearly from the two end points**, as in
@@ -2795,7 +3324,7 @@ line are reserved/blank in the NASTRAN layout. The list is terminated by `ENDT`.
 
 | Field | Variable | Type | Description | Default |
 |-------|----------|------|-------------|---------|
-| TID | `tid` | int | Table ID (unique; referenced by MLDCOMD TABID) | required |
+| TID | `tid` | int | Table ID (unique; referenced by MANCMD TABID) | required |
 | XAXIS | `xaxis` | str | `LINEAR` or blank. `LOG` is refused: it was accepted and evaluated linearly (#70) | `"LINEAR"` |
 | YAXIS | `yaxis` | str | `LINEAR` or blank. `LOG` is refused | `"LINEAR"` |
 | X1, Y1, … | `xs`, `ys` | float pairs | (x, y) data points; at least two pairs; abscissae strictly increasing | required |
@@ -2809,6 +3338,16 @@ $ 1-degree elevator ramp over 0.5 s, then hold
 TABLED1, 500
 +,       0.0, 0.0, 0.5, 0.01745, 2.0, 0.01745, ENDT
 ```
+
+<!-- vendor-fields:TABLED1 -->
+**Vendor fields** (MSC QRG p.2896; gate `tests/docs/test_field_dispositions.py`):
+
+| Disposition | Fields |
+|---|---|
+| Read | TID, xi, yi |
+| Refused | XAXIS, YAXIS = `LOG` (linear interpolation only) |
+| Ignored | XAXIS, YAXIS = `LINEAR` (the default); `ENDT` (a table without it is accepted) |
+<!-- /vendor-fields -->
 
 ---
 
@@ -2853,12 +3392,13 @@ under "Supported cards at a glance" (top of this file) is refused.
 |-------|---------------|-----------------------|
 | Distributed / element loads | `PLOAD`, `PLOAD1`, `PLOAD2`, `PLOAD4` | Equivalent nodal `FORCE`/`MOMENT` at the grids (PLOAD1 support is parked: `docs/30_future/02_parked.md`) |
 | Other static loads | `RFORCE`, `SLOAD`, `ACCEL`, `ACCEL1`, `TEMP`, `TEMPD`, `DEFORM`, `SPCD` | `GRAV` for a uniform body acceleration; `FORCE`/`MOMENT` otherwise |
-| Dynamic loads | `DLOAD`, `DAREA`, `TLOAD1`, `TLOAD2`, `RLOAD1`, `RLOAD2` | Transient maneuvers use the `MLOADS` family; no SOL 109/111 |
+| Dynamic loads | `DLOAD`, `DAREA`, `TLOAD1`, `TLOAD2`, `RLOAD1`, `RLOAD2` | Transient maneuvers use the `MANVR` family; no SOL 109/111 |
 | Elements / properties / materials | `CBEAM`, `PBEAM`, `PBEAML`, `PBARL`, `CTUBE`, `PTUBE`, `CELAS1`, `CELAS2`, `PELAS`, `CONM1`, `CQUAD4`, `CTRIA3`, `PSHELL`, `MAT2`, `MAT8` | `CBAR`/`PBAR` (explicit A, I1, I2, J), `CROD`/`PROD`, `CBUSH`/`PBUSH`, `CONM2`, `MAT1` |
 | Coordinate systems | `CORD1R`, `CORD1C`, `CORD1S`, `CORD2C`, `CORD2S` | `CORD2R` |
 | Constraints | `MPC`, `MPCADD`, `SPCADD`, `RBE1` | `RBE2`, `RBAR`, `RBE3`; one `SPC`/`SPC1` set per subcase |
-| Direct matrix input (#55) | `DMI`, `DMIG`, `DMIAX`, `DMIJ`, `DMIJI`, `DMIK` | For aero corrections (MSC's `DMI,W2GJ` / `DMI,WKK`), the native `W2GJ` / `WKK` cards |
-| Damping (#55) | `TABDMP1` | The MLOADS transient's `ZETA`; no SDAMP |
+| Direct matrix input (#55) | `DMI`, `DMIG`, `DMIAX`, `DMIJI`; `DMIJ`/`DMIK` with any name but W2GJ/WKK | For W2GJ/WKK: `DMIJ W2GJ` / `DMIK WKK` on box IDs (#104) or the native `W2GJ` / `WKK` cards. `DMI` rows need a CAERO1 order the manuals do not state |
+| Damping (#55) | `TABDMP1` | The MANVR transient's `ZETA`; no SDAMP |
+| ZAERO cards sbeam once borrowed (#87) | `MLOADS`, `MLDTRIM`, `MLDTIME`, `MLDCOMD`, `MLDPRNT`, `CHORDCP`, `SPLINE0`, `ATTACH`, `TRIMOBJ`, `TRIMCON` | sbeam's own cards, renamed in v0.4.1 — see [sbeam-only cards](#sbeam-only-cards). ZAERO's meaning of these names is not implemented |
 
 **Unknown keywords are refused too** (#55, 2026-11-15). A keyword that is neither
 implemented, nor in this table, nor a listing-only card below refuses the deck in the
@@ -2872,7 +3412,7 @@ supported cards (02_card_reference.md, 'Unsupported cards').
 
 Until #55 such cards were skipped with a warning, so a typo silently dropped a load and
 an MSC `DMI,W2GJ` silently dropped the wing incidence. Large-field keywords (`GRID*`)
-are unknown, as large-field format is not supported.
+are read as their small-field card (#64; see Format Rules).
 
 **Ignored with a `UserWarning`** (they control listing only and never change an answer):
 `ECHOON`, `ECHOOFF` (`_HARMLESS_CARDS` in `bdf_reader.py`; add a keyword only with that
@@ -2887,7 +3427,7 @@ of the MSC Nastran 2024.1 QRG):
 |---|---|---|
 | `WTMASS` | value ≠ 1 | sbeam never scales mass (charter §7, #39) |
 | `AUNITS` | value ≠ 1 | MSC reads TRIM URDD* in g with it; sbeam never converts accelerations (charter §7, #55) |
-| `COUPMASS` | value ≤ 0 or blank (NASTRAN's default −1 is lumped mass) | sbeam always uses the consistent mass matrix; `COUPMASS > 0` asks for that and is accepted (#55) |
+| `COUPMASS` | value ≤ 0 or blank (MSC's default −1 is lumped mass, p.859) | sbeam always uses the consistent mass matrix; `COUPMASS > 0` asks for that and is accepted (#55) |
 | `INREL` | value ≠ 0 | −1, −2, −4 request inertia relief in static analysis (p.888); sbeam's SOL 101 has none, so the deck would run constrained or singular (#69) |
 | `G` | value ≠ 0 | uniform structural damping coefficient (p.884); sbeam has no structural damping (#69) |
 | `W3`, `W4` | value ≠ 0 | convert structural damping to viscous damping in transient analysis (p.956) (#69) |
@@ -2900,13 +3440,25 @@ These PARAMs change no result sbeam computes and are accepted with the warning
 |---|---|
 | `POST` | post-processor output files (p.922); sbeam writes its own f06, CSV and BDF |
 | `PRTMAXIM` | printout of maximum loads and displacements (p.929) |
-| `GRDPNT` | grid point weight generator request (p.885); sbeam always prints its mass and CG summary |
 | `AUTOSPC` | automatic constraint of singular DOFs (p.850); sbeam has none and reports a singular stiffness |
 | `MAXRATIO`, `BAILOUT` | singularity threshold and continue-on-singularity (p.897, p.851); sbeam uses its own conditioning check |
 
-A NASTRAN deck *without* `PARAM,COUPMASS` uses lumped mass in NASTRAN and consistent mass
-in sbeam. That is a modelling difference, not a dropped card, so it is not refused; it
-shows up in modal results.
+**`GRDPNT` is read** (#90). `PARAM,GRDPNT,n` with n > −1 prints MSC's GRID POINT WEIGHT
+GENERATOR block once, ahead of the subcase output (QRG p.885; layout after AAUG 2023.1 PDF
+p.269): the reference point, MO = DᵀMD about it in basic axes, S, the mass and C.G. per
+direction, I(S), I(Q) and Q. n = 0, or an n that is not a grid, is the basic origin; −1 (the
+default) prints nothing. It may be given in the bulk data or in case control; two different
+values are refused, since the QRG states no precedence (p.570). S is the identity, as every
+sbeam mass is the same in each translation. MO comes from the consistent mass matrix, so
+the inertias include each CBAR's distributed rotary inertia, where MSC's default lumped mass
+would not; mass and C.G. are the same either way. The reduction to C.G. and inertias is
+gated on MSC's HA144B printout (`tests/results/test_gpwg_print.py`).
+
+A NASTRAN deck *without* `PARAM,COUPMASS` uses lumped mass in MSC ("Default = -1 …
+COUPMASS < 0 (Default) causes the generation of lumped mass matrices", QRG p.859) and
+consistent mass in sbeam. That is a modelling difference, not a dropped card, so it is not
+refused; it shows up in modal results and is listed in the
+[deviation register](12_deviation_register.md) (§3).
 
 The CLI prints each warning as `Parser warning: ...` on stderr, and the viewer lists them
 under "Parser warnings" and in the pre-solve checks.
@@ -2923,7 +3475,7 @@ under "Parser warnings" and in the pre-solve checks.
 | CAERO1 | Exactly one of NSPAN/LSPAN must be non-zero |
 | CAERO1 | Exactly one of NCHORD/LCHORD must be non-zero |
 | CAERO1 | Requires PAERO1 reference; PID not in `bulk.paero1s` raises `ValueError` |
-| CBAR | Offsets (W1A/W2A) not supported |
+| CBAR | Non-zero offsets (W1A–W3B) are refused (#67) |
 | CBAR | Orientation must be the X1–X3 vector form; the G0 form (integer X1, X2/X3 blank) is refused |
 | CBAR | Pin-release digits (PA/PB) are in element local axes |
 | CROD / CONROD | A grid touched only by rods has free rotations (no bending stiffness; no AUTOSPC): SPC them, e.g. `SPC1, sid, 456, grid`, or the stiffness matrix is singular. Rod mass carries no torsional inertia |
@@ -2935,7 +3487,7 @@ under "Parser warnings" and in the pre-solve checks.
 | CORD2R | Points A, B, C must be non-collinear (checked when the transform is resolved) |
 | RBE2 | GN must not be a dependent DOF of another constraint element |
 | CORD2R | CORD2C/CORD2S/CORD1R not supported |
-| EIGRL | V1/V2 filtering applied in Hz |
+| EIGRL | V1/V2 frequency limits are refused (#70); use ND |
 | GRAV | CID must be `0` (global frame only) in Phase 1–2 |
 | MAT1 | Thermal fields (A, TREF, GE) parsed but ignored in Phase 1–2 |
 | PAERO1 | Phase A stub only; body interference support deferred |
@@ -2943,22 +3495,22 @@ under "Parser warnings" and in the pre-solve checks.
 | SPC | Enforced displacement D must be `0.0` in Phase 1–2 |
 | W2GJ | Data length must equal NSPAN×NCHORD for the referenced CAERO1 |
 | WKK | Data length must equal NSPAN×NCHORD for the referenced CAERO1 |
-| CHORDCP | ALPHREF required (degrees); data length must equal NSPAN×NCHORD; every VLM CAERO1 must be covered by exactly one card, all sharing one ALPHREF; PSTRIP surfaces may not be targeted; injected Cp must be reproducible by the corrected AIC (no nonzero Cp on WT2 dead rows); half-span mirroring (`mirror_halfspan`) rejects it |
+| CPINJ | ALPHREF required (degrees); data length must equal NSPAN×NCHORD; every VLM CAERO1 must be covered by exactly one card, all sharing one ALPHREF; PSTRIP surfaces may not be targeted; injected Cp must be reproducible by the corrected AIC (no nonzero Cp on WT2 dead rows); half-span mirroring (`mirror_halfspan`) rejects it |
 | AESURF | ALID1 (and ALID2 if non-zero) must exist in AELIST |
 | AELIST | All box IDs must fall within at least one CAERO1 range |
 | SET1 | Every grid ID must exist in GRID; a spline-referenced SET1 needs ≥ 2 grids |
-| SPLINE2 | SETG must exist in SET1; CAERO must exist in CAERO1; DTOR ≤ 0 and DZ < 0 warn (fall back to 1.0 / rigid); a singular spline system (no twist information) raises `ValueError` |
-| SPLINE1 | Not implemented (Step 48 deferred) — handler raises `NotImplementedError`; use SPLINE2 or ATTACH |
-| ATTACH | CID must be `0`; CID ≠ 0 raises `NotImplementedError` at spline build |
+| SPLINE2 | SETG must exist in SET1; CAERO must exist in CAERO1; DTOR ≤ 0 and DZ < 0 are refused (#75); a singular spline system (no twist information) raises `ValueError` |
+| SPLINE1 | Not implemented (Step 48 deferred) — handler raises `NotImplementedError`; use SPLINE2 or BODYATT |
+| BODYATT | CID must be `0`; CID ≠ 0 raises `NotImplementedError` at spline build |
 | SUPORT | Blank DOF string after a GID raises `ValueError` |
-| TRIM | Every label must be defined by AESTAT or AESURF; duplicate labels raise `ValueError`; `RHOREF` is a reserved pseudo-label (must be positive; no AESTAT/AESURF may use the name) |
-| TRIMCON | SENSE must be `LE` or `GE`; any other value raises `ValueError` |
+| TRIM | MSC layout (two pairs, AEQR in field 9 blank or 1.0); every label must be defined by AESTAT or AESURF; duplicate labels raise `ValueError`; `RHOREF` is refused (the density is on MANTRIM since #87) |
+| TRIMINEQ | SENSE must be `LE` or `GE`; any other value raises `ValueError` |
 | AECOMP | LISTTYPE must be `AELIST` or `SET1`; every list ID must exist in that table |
 | MONPNT1 | Two-line MSC layout; COMP must exist in AECOMP (AELIST: aerodynamic, SET1: structural); CP (if non-zero) must exist in CORD2R; CD blank or = CP; an aerodynamic and a structural MONPNT1 may not share a NAME |
 | MONPNT3 | Refused: MSC's grid-point-force monitor is not implemented (#103) |
 | MONSECT | COMP must exist in AECOMP (either list type); CID (if non-zero) must exist in CORD2R; AXIS ∈ {1,2,3}; SIDE ∈ {POS,NEG}; ≥ 1 strictly increasing station; NAME unique across all monitor cards; NORMAL (if given) non-degenerate against the station axis |
 | TABLED1 | At least two (x, y) points; abscissae strictly increasing; only `LINEAR` axes honoured |
-| MLDTIME | DT must be positive; TEND must exceed T0 |
-| MLDCOMD | Every label must be defined by AESTAT or AESURF; every TABID must exist in TABLED1 |
-| MLDTRIM | TRIMID must exist in TRIM |
-| MLOADS | MLDTRIM/MLDTIME must exist; MLDCOMD/MLDPRNT/METHOD (if non-zero) must exist; NMODES ≥ 0, ZETA ≥ 0 |
+| MANTIME | DT must be positive; TEND must exceed T0 |
+| MANCMD | Every label must be defined by AESTAT or AESURF; every TABID must exist in TABLED1 |
+| MANTRIM | TRIMID must exist in TRIM |
+| MANVR | MANTRIM/MANTIME must exist; MANCMD/MANPRNT/METHOD (if non-zero) must exist; NMODES ≥ 0, ZETA ≥ 0 |

@@ -24,13 +24,16 @@ All files are written next to the input by `sbeam/main.py`, as `<stem>.<name>`.
 | `maneuver_loads.bdf` | `load_export.write_maneuver_load_cards` | any `TRIM` subcase |
 | `monitor_loads.csv` | `load_export.write_monitor_csv` | a `TRIM` subcase has `MONPNT1`/`MONPNT3` |
 | `section_loads.csv` | `load_export.write_section_loads_csv` | a `TRIM` subcase has `MONSECT` |
-| `mldprnt.txt` | `maneuver_output.write_maneuver_outputs` | any `MLOADS` subcase (fixed-width text, not a CSV; columns in `05c` §MLDPRNT) |
-| `maneuver_qs_loads.bdf` | `maneuver_output.write_maneuver_outputs` | any `MLOADS` subcase |
-| `maneuver_monitor_loads.csv`, `maneuver_monitor_envelope.csv` | `load_export.write_maneuver_monitor_csv`, `..._envelope_csv` | an `MLOADS` subcase has monitor points |
-| `maneuver_section_loads.csv`, `maneuver_section_envelope.csv` | `load_export.write_maneuver_section_loads_csv`, `..._envelope_csv` | an `MLOADS` subcase has `MONSECT` |
+| `mldprnt.txt` | `maneuver_output.write_maneuver_outputs` | any `MANVR` subcase (fixed-width text, not a CSV; columns in `05c` §MANPRNT) |
+| `maneuver_qs_loads.bdf` | `maneuver_output.write_maneuver_outputs` | any `MANVR` subcase |
+| `maneuver_monitor_loads.csv`, `maneuver_monitor_envelope.csv` | `load_export.write_maneuver_monitor_csv`, `..._envelope_csv` | an `MANVR` subcase has monitor points |
+| `maneuver_section_loads.csv`, `maneuver_section_envelope.csv` | `load_export.write_maneuver_section_loads_csv`, `..._envelope_csv` | an `MANVR` subcase has `MONSECT` |
+
+| `<stem>.op4`, `<stem>_dofmap.csv`, `<stem>.uf` | `modal_export.export_modal_model` | a SOL 103 subcase has `MODEXP` (§7). With MODEXP in several subcases the stem gains `_sc<id>` |
 
 The viewer's download buttons call the `build_*_text` twin of each maneuver writer, so a
-downloaded file is byte-identical to the CLI's. SOL 101/103 write the f06 only.
+downloaded file is byte-identical to the CLI's. SOL 101/103 write the f06 only, unless a
+SOL 103 subcase asks for MODEXP.
 
 ---
 
@@ -40,7 +43,7 @@ downloaded file is byte-identical to the CLI's. SOL 101/103 write the f06 only.
 |------|----------|
 | Encoding / dialect | `csv.writer` defaults: comma, `\n` line ends, no quoting unless a label needs it, UTF-8 |
 | Header | Exactly one header row, the lists in §3; no comment lines, no units row |
-| **Identity block** | Every file starts `case, massset, mass_case` (static) or `case, mloads, massset, mass_case` (transient). `case` is the subcase id, `mloads` the `MLOADS` SID |
+| **Identity block** | Every file starts `case, massset, mass_case` (static) or `case, mloads, massset, mass_case` (transient). `case` is the subcase id, `mloads` the `MANVR` SID |
 | **`massset`** | **Always an integer.** `0` = the subcase selects no mass case (baseline); otherwise the `MASSCASE` SID or the MSC `MASSSET` ID (#102; the two share one ID space). Never empty, so the column keeps one dtype whether or not a run (or a concatenation of runs) contains a baseline case. Constant `BASELINE_MASSCASE` in `load_export.py` |
 | `mass_case` | The mass-case label: `BASELINE` for `massset = 0`, else the `MASSCASE` label, or `MASSSET <ID>` for an MSC combination |
 | Reals | `%.6E` (e.g. `-1.234567E+03`); the `parity` column is `%g` |
@@ -102,7 +105,7 @@ station. Physics: `05c` "Output" (MONSECT).
 
 One row per cut per station per output sample. A reader of `section_loads.csv` reads this
 file: same names, same order, with the sample identity in front and the two transient
-contributions behind (the `_applied` block is carried and is always `0.0`: an `MLOADS`
+contributions behind (the `_applied` block is carried and is always `0.0`: an `MANVR`
 subcase cannot select a `LOAD`, #6). `critical = 1` marks the run's critical sample (DEF-M5).
 
 ### 3.4 `maneuver_monitor_loads.csv` — `_MANEUVER_MONITOR_CSV_HEADER`
@@ -150,7 +153,7 @@ separated by a blank line, each block a fixed comment header followed by
 | Cards | `FORCE, SID, GID, 0, 1.0, Fx, Fy, Fz` and `MOMENT, SID, GID, 0, 1.0, Mx, My, Mz`; `SID` = subcase id (the `sid=` argument); CID `0`; unit scale factor so the components carry the load |
 | Grid order | Ascending GID; a card is omitted when all three components are below `1e-9` |
 | Reals | `parser/bdf_field.fmt_real8` — fits the NASTRAN 8-character field (DEF-M6; precision note in `05c` "Field format") |
-| Comment header | Exactly four `$` lines for the trim exports, four for the MLOADS export (below). Line 4 is **always** `$ MASSCASE=<int> (<label>)` — `$ MASSCASE=0 (BASELINE)` for a baseline subcase — so a reader can key the block to the CSV identity without special-casing the baseline |
+| Comment header | Exactly four `$` lines for the trim exports, four for the MANVR export (below). Line 4 is **always** `$ MASSCASE=<int> (<label>)` — `$ MASSCASE=0 (BASELINE)` for a baseline subcase — so a reader can key the block to the CSV identity without special-casing the baseline |
 
 ```
 $ SOL 144 trimmed aerodynamic flight loads — subcase <case>, SID <sid>          (aero_loads.bdf)
@@ -164,7 +167,7 @@ $ FORCE/MOMENT set is the net (aero + inertial) maneuver load for stress (Step 5
 $ MASSCASE=<massset> (<mass_case>)  MASS=<total mass>
 
 $ Phase G0 critical maneuver loads (aero + inertia + elastic inertia + damping) — subcase <case>, SID <sid>   (maneuver_qs_loads.bdf)
-$ MLOADS=<mloads>  IC TRIM=<trim_sid>  Q=<q>  MACH=<mach>  t=<time>
+$ MANVR=<mloads>  IC TRIM=<trim_sid>  Q=<q>  MACH=<mach>  t=<time>
 $ Full applied load at the peak |net grid force| sample (<critical_sample> of <n_samples>).
 $ MASSCASE=<massset> (<mass_case>)
 ```
@@ -194,6 +197,47 @@ subcase when the static path adopts it):
   `iter_line_elements` (CBARs, then CRODs, then CONRODs, deck order).
 
 ---
+
+## 7. Reduced modal model (MODEXP, #100)
+
+**`<stem>.op4`** — MSC OUTPUT4, ASCII, real double precision. Per matrix, a header
+`NCOL NROW FORM TYPE NAME FORMAT` written `(4I8, A8, A)` with TYPE 2 and FORMAT
+`1P,3E23.16`; then, per column with a non-zero entry, `ICOL IROW NW` `(3I8)` with IROW the
+first non-zero row and NW the count to the last non-zero row, and the NW values three per
+line (`E23.16`); then a terminator `NCOL+1 1 1` and one value. The layout follows the
+MSC-written `flaps_env/work/demo/ha145b.op4`, at higher precision.
+
+| Matrix | Shape | FORM | Content |
+|---|---|---|---|
+| `MHH` | n × n | 6 (symmetric) | ΦᵀMΦ — the identity for mass-normalised modes |
+| `KHH` | n × n | 6 | ΦᵀKΦ — diag(ω²), rigid block zero |
+| `PHIA` | n_a × n | 2 (1 if square) | a-set modes; rows in `dofmap.csv` |
+| `PHIX` | 6·n_grids × n | 2 (1 if square) | modes at the SET n grids, SET order, T1 T2 T3 R1 R2 R3, basic |
+
+**`<stem>_dofmap.csv`** — three `#` header lines (normalisation, units = the deck's, whether
+rigid modes were replaced), then `matrix,row,grid,component` for every PHIA and PHIX row
+(rows from 1).
+
+**`<stem>.uf`** — Universal file, fixed width, `-1` delimited datasets:
+- 15 (grids): `node, 0, 0, 1` `(4I10)` then x, y, z `(3E13.5)`, basic.
+- 82 (trace lines): `line, n_entries, 1` `(3I10)`, a title line, then grid pairs of every
+  CBAR, CROD, CONROD, PLOTEL and two-grid CBUSH, in that order and by element ID, each pair
+  followed by 0 (pen up), `(8I10)`. A trace line holds at most 250 entries, so a large
+  model writes several datasets 82, numbered from 1. The 250 is other UFF readers' limit as
+  flaps_env reports it (*unverified*: no UFF specification in the library); Flaps ignores
+  it. Until #106 every PLOTEL was dropped and all segments went into one line.
+- 55 (one per mode): five title lines; `1, 2, 3, 8, 2, 6` (structural, normal mode, 6 DOF,
+  displacement, real single, NDV 6); `2, 4, 1, mode` `(4I10)`; frequency (Hz), modal mass,
+  0, 0 `(4E13.5)`; then per grid its ID `(I10)` and T1…R3 `(6E13.5)`.
+
+The `.uf` holds every grid of the model, not only the SET grids. A stick model meant for
+animation should carry a massless RBE2 + PLOTEL outline (`04_modal_analysis.md`, MODEXP;
+#107), because Flaps `amviz` draws translations only. Upstream Flaps 2.3.4 rejects a
+real-mode dataset 55; flaps_env's `flaps:2.3.4-local` image reads it (flaps_env#1).
+
+The dataset-55 normal-mode records are *unverified* against a UF specification (none in
+the library). They follow the Flaps-written `fma.nodal.uf` (complex modes, analysis type 3);
+the manual Flaps `import` is the check.
 
 ## 6. Changing a schema
 

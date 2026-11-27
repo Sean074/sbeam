@@ -1,7 +1,7 @@
 """DEF-M21 (#37): CBAR fibre stress from +x-face internal resultants.
 
 Gates G1–G5 of ``docs/30_future/designs/cbar_stress_recovery_sign.md``.
-Geometry is the ``sample/val_cantilever_static.bdf`` beam (10 × 1 m, solid
+Geometry is the ``sample/validation/val_cantilever_static.bdf`` beam (10 × 1 m, solid
 square section) built in code so the loads can be varied per gate.
 """
 

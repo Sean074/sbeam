@@ -146,8 +146,30 @@ def _sbeam_app():
     main()
 
 
+def _deck_text(bulk: BulkData) -> str:
+    """The fixture model as bulk-data text.
+
+    The viewer keeps a deck as text and puts correction cards into it by re-parsing
+    (#113), so a model built in code needs its text.  Checked against the fixture.
+    """
+    a = bulk.aeros
+    lines = [f"AEROS, {a.acsid}, {a.rcsid}, {a.cref}, {a.bref}, {a.sref}, {a.symxz}, {a.symxy}"]
+    lines += [f"PAERO1, {pid}" for pid in bulk.paero1s]
+    lines += [f"PSTRIP, {pid}" for pid in bulk.pstrips]
+    for c in bulk.caero1s.values():
+        lines.append(f"CAERO1, {c.eid}, {c.pid}, {c.cp}, {c.nspan}, {c.nchord}, , , {c.igid}")
+        lines.append("+, " + ", ".join(str(v) for v in (*c.p1, c.x12, *c.p4, c.x43)))
+    text = "\n".join(lines) + "\nENDDATA\n"
+    parsed = _read_cards(_bulk_section(text.splitlines()))
+    assert parsed.caero1s == bulk.caero1s and parsed.aeros == bulk.aeros
+    assert parsed.paero1s == bulk.paero1s and parsed.pstrips == bulk.pstrips
+    return text
+
+
 def _inject_bulk(at: AppTest, bulk: BulkData) -> None:
     at.session_state["bulk_data"] = bulk
+    at.session_state["_uploaded_source_text"] = _deck_text(bulk)
+    at.session_state["file_card_sids"] = {}
     at.session_state["case_control"] = None
     at.session_state["_loaded_from_file_cc"] = None
     at.session_state["_parse_warnings"] = []

@@ -1,7 +1,7 @@
 """Structure-to-aero spline operators — Phase B.
 
 Builds g_slope (n_box × n_g) and g_disp (3·n_box × n_g) from the BDF spline
-cards SPLINE2, ATTACH (Step 47), and SPLINE0 (Step 47).  These operators feed
+cards SPLINE2, BODYATT (Step 47), and LOADINJ (Step 47).  These operators feed
 directly into coupling.build_qaa and coupling.build_fg.
 
 SPLINE2 — NASTRAN infinite beam (linear) spline (AC7/AE14 rewrite, 2026-07-05)
@@ -374,7 +374,7 @@ def _register_spline0(
     id_to_k: dict[int, int],
     covered: list[bool],
 ) -> list[int]:
-    """Mark SPLINE0 boxes as covered (displacement/slope rows stay zero).
+    """Mark LOADINJ boxes as covered (displacement/slope rows stay zero).
 
     Returns the covered box indices so the caller can inject their aerodynamic
     force at the card's master grid (Step 64); an empty list means the card
@@ -383,7 +383,7 @@ def _register_spline0(
     covered_gk = _covered_gk_for_range(sp.caero, sp.id1, sp.id2, boxes, id_to_k)
     if not covered_gk:
         warnings.warn(
-            f"SPLINE0 {sp.eid}: no boxes found in ID range "
+            f"LOADINJ {sp.eid}: no boxes found in ID range "
             f"[{sp.id1}, {sp.id2}] for CAERO1 {sp.caero}",
             UserWarning,
             stacklevel=3,
@@ -392,7 +392,7 @@ def _register_spline0(
     for gk in covered_gk:
         if covered[gk]:
             raise ValueError(
-                f"SPLINE0 {sp.eid}: box k={gk} is already covered by another spline"
+                f"LOADINJ {sp.eid}: box k={gk} is already covered by another spline"
             )
         covered[gk] = True
     return covered_gk
@@ -443,17 +443,17 @@ def _build_attach_rows(
     """
     if attach.cid != 0:
         raise NotImplementedError(
-            f"ATTACH {attach.eid}: CID={attach.cid} != 0 not supported; use CID=0"
+            f"BODYATT {attach.eid}: CID={attach.cid} != 0 not supported; use CID=0"
         )
     if attach.grid not in bulk.grids or attach.grid not in grid_index:
         raise ValueError(
-            f"ATTACH {attach.eid}: master GRID {attach.grid} not found in structural model"
+            f"BODYATT {attach.eid}: master GRID {attach.grid} not found in structural model"
         )
 
     covered_gk = _covered_gk_for_range(attach.caero, attach.id1, attach.id2, boxes, id_to_k)
     if not covered_gk:
         warnings.warn(
-            f"ATTACH {attach.eid}: no boxes found in ID range "
+            f"BODYATT {attach.eid}: no boxes found in ID range "
             f"[{attach.id1}, {attach.id2}] for CAERO1 {attach.caero}",
             UserWarning,
             stacklevel=3,
@@ -463,7 +463,7 @@ def _build_attach_rows(
     for gk in covered_gk:
         if covered[gk]:
             raise ValueError(
-                f"ATTACH {attach.eid}: box k={gk} is already covered by another spline"
+                f"BODYATT {attach.eid}: box k={gk} is already covered by another spline"
             )
         covered[gk] = True
 
@@ -514,7 +514,7 @@ class LoadInjection:
     """
     master_grid: int        # structural GRID ID carrying the injected load
     boxes:       list[int]  # global box indices (k)
-    source:      str        # 'SPLINE0 <eid>' or 'UNSPLINED'
+    source:      str        # 'LOADINJ <eid>' or 'UNSPLINED'
 
 
 def _resolve_default_master(
@@ -535,7 +535,7 @@ def _resolve_default_master(
         warnings.warn(
             f"Aero load injection: several SUPORT grids "
             f"({sorted({s.gid for s in bulk.supports})}); using GRID {usable[0]}. "
-            "Name the intended grid in the SPLINE0 GRID field to be explicit.",
+            "Name the intended grid in the LOADINJ GRID field to be explicit.",
             UserWarning,
             stacklevel=3,
         )
@@ -617,15 +617,15 @@ def build_spline_operators(
     """Build g_slope / g_disp / g_load from the BDF spline cards.
 
     ``g_disp`` is the pure kinematic interpolation: boxes with no structural
-    coupling (SPLINE0-declared or uncovered) keep zero rows, so displacement
+    coupling (LOADINJ-declared or uncovered) keep zero rows, so displacement
     recovery never invents motion the deck did not declare.  ``g_load`` is the
     operator every force transfer uses; it adds rigid-load rows for exactly
-    those boxes at a master grid (SPLINE0 field 5, else the SUPORT grid), so
+    those boxes at a master grid (LOADINJ field 5, else the SUPORT grid), so
     their aerodynamic force reaches the trim force balance and the load export
     instead of vanishing (Step 64 / DEF-M1).
 
     ``g_slope`` deliberately stays zero for injected boxes: they load the
-    structure but take no downwash from it — the SPLINE0 contract.
+    structure but take no downwash from it — the LOADINJ contract.
 
     Returns None when no spline cards are present.
 
@@ -636,9 +636,9 @@ def build_spline_operators(
         normal to the panel, or its boxes are not in one plane (#74)
       - A named injection master GRID is not in the structural model
     Issues UserWarning if:
-      - A SPLINE2 / SPLINE0 / ATTACH box range contains no boxes
+      - A SPLINE2 / LOADINJ / BODYATT box range contains no boxes
       - Any box has no spline coverage (g_slope / g_disp rows will be zero)
-      - Injection has no master grid (no SPLINE0 GRID field and no SUPORT) —
+      - Injection has no master grid (no LOADINJ GRID field and no SUPORT) —
         those box forces stay dropped
       - The model has several SUPORT grids (the first is used)
       - A box collocation point extrapolates >10% beyond the SET1 span range
@@ -664,12 +664,12 @@ def build_spline_operators(
     for attach in bulk.attaches.values():
         _build_attach_rows(attach, bulk, boxes, grid_index, id_to_k, covered, g_slope, g_disp)
 
-    # SPLINE0 boxes, grouped by the master grid that carries their load
+    # LOADINJ boxes, grouped by the master grid that carries their load
     pending: list[tuple[list[int], int, str]] = []   # (box_ks, requested_gid, source)
     for sp0 in bulk.spline0s.values():
         gks = _register_spline0(sp0, boxes, id_to_k, covered)
         if gks:
-            pending.append((gks, sp0.grid, f"SPLINE0 {sp0.eid}"))
+            pending.append((gks, sp0.grid, f"LOADINJ {sp0.eid}"))
 
     # Warn on un-splined boxes; they are injected on the default master too
     unsplined = [gk for gk, is_covered in enumerate(covered) if not is_covered]
@@ -701,7 +701,7 @@ def build_spline_operators(
                     f"{source}: no master grid for load injection (no GRID field "
                     "and no SUPORT grid) — the aerodynamic force of "
                     f"{len(box_ks)} box(es) is dropped from the structural load "
-                    "path.  Name a GRID on the SPLINE0 card or add a SUPORT.",
+                    "path.  Name a GRID on the LOADINJ card or add a SUPORT.",
                     UserWarning,
                     stacklevel=2,
                 )

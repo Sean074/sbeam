@@ -23,8 +23,10 @@ from sbeam.aero.integration import build_djx
 from sbeam.assembly.coord_transform import get_transform
 from sbeam.gpwg import compute_gpwg
 from sbeam.model.aero import require_aeros
+from sbeam.model.bulk_data import BulkData
 from sbeam.model.mass_overlay import resolve_mass_case
 from sbeam.parser.bdf_reader import parse_bdf
+from sbeam.parser.case_control import CaseControl
 from sbeam.solver.sol144 import compute_rigid_derivs
 
 
@@ -59,12 +61,25 @@ def read_airplane(
     supplies.
     """
     cc, bulk = parse_bdf(str(deck))
+    return airplane_from_model(cc, bulk, trim_template, massets, where=str(deck))
+
+
+def airplane_from_model(
+    cc: CaseControl, bulk: BulkData, trim_template: int,
+    massets: Sequence[Optional[int]], where: str = "the deck",
+) -> Airplane:
+    """``read_airplane`` on a deck that is already parsed.
+
+    A tool that holds a model in memory (the viewer, with cards authored in the
+    session) builds its cases from that model, not from the file it was loaded from.
+    ``where`` names the deck in messages.
+    """
     aeros = require_aeros(bulk)
 
     template = bulk.trims.get(trim_template)
     if template is None:
         raise ValueError(
-            f"--trim-template {trim_template} names no TRIM card in {deck} "
+            f"--trim-template {trim_template} names no TRIM card in {where} "
             f"(found: {sorted(bulk.trims)})"
         )
     template_vars = {k: v for k, v in template.vars.items() if k.upper() != "URDD3"}
@@ -74,7 +89,8 @@ def read_airplane(
         None,
     )
 
-    aero = build_aero_model(bulk)
+    # CZ_alpha at the template TRIM's Mach (the AEROS Mach until #87)
+    aero = build_aero_model(bulk, mach=template.mach)
     djx = build_djx(aero.boxes, ["ANGLEA"], bulk, id_to_k=aero.require_box_id_to_k())
     if aeros.rcsid:
         ref_pt, _r = get_transform(aeros.rcsid, bulk.cord2rs)

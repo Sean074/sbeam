@@ -12,7 +12,6 @@ and reused via the ``aero=`` argument of ``build_body_correction``.
 """
 
 import dataclasses
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -32,11 +31,11 @@ from sbeam_tools.corrections import parse_body_targets, split_total_rows
 from sbeam.aero.integration import build_djx
 from sbeam.model.aero import Aecorr, W2gj
 from sbeam.solver.sol144 import pitch_moment
+from tests.samples import sample_path
 
-_ROOT = Path(__file__).parent.parent.parent / "sample"
-BDF_PATH = _ROOT / "cessna210_flagship_body.bdf"
-STRIP_BDF_PATH = _ROOT / "cessna210_flagship_body_strip_drv.bdf"
-CSV_PATH = _ROOT / "cessna210_flagship_section_data.csv"
+BDF_PATH = sample_path("cessna210_flagship_body.bdf")
+STRIP_BDF_PATH = sample_path("cessna210_flagship_body_strip_drv.bdf")
+CSV_PATH = sample_path("cessna210_flagship_section_data.csv")
 
 _HORIZ, _VERT = 6000, 7000
 

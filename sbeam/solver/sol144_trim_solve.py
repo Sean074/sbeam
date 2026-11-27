@@ -2,7 +2,7 @@
 
 The SUPORT Schur partition shared by both trim solves, a-set displacement
 recovery from the trimmed free variables, and the determined and
-over-determined (TRIMOBJ/TRIMCON null-space weighted-L2) trim solvers.
+over-determined (TRIMWGT/TRIMINEQ null-space weighted-L2) trim solvers.
 All names remain importable from ``sbeam.solver.sol144`` (facade).
 """
 
@@ -116,7 +116,7 @@ def check_trim_limits(
     trimcons: list[Trimcon],
     trim_sid: int,
 ) -> None:
-    """Refuse a trim whose solution lies outside a TRIMVAR bound or a TRIMCON (#77).
+    """Refuse a trim whose solution lies outside a TRIMVAR bound or a TRIMINEQ (#77).
 
     Applied to every trim.  The optimiser enforces the limits only while it has a
     redundancy to spend; a determined trim, an over-determined one whose null space
@@ -140,7 +140,7 @@ def check_trim_limits(
         low = tc.sense == "GE"
         if (low and value < tc.rhs - _tol(tc.rhs)) or (not low and value > tc.rhs + _tol(tc.rhs)):
             raise ValueError(
-                f"TRIM {trim_sid}: {tc.label} = {value:.6g} violates TRIMCON {tc.sid} "
+                f"TRIM {trim_sid}: {tc.label} = {value:.6g} violates TRIMINEQ {tc.sid} "
                 f"({tc.label} {tc.sense} {tc.rhs:g})")
 
 
@@ -162,13 +162,13 @@ def solve_trim_overdetermined(
 
     The trim equilibrium ``schur_A @ δ = schur_b`` is ``n_suport`` equations in
     ``n_free`` unknowns (under-determined as an equality system).  The solution is
-    made unique by minimising the weighted-L2 ``TRIMOBJ`` objective
+    made unique by minimising the weighted-L2 ``TRIMWGT`` objective
 
-        min_δ  Σ_k  w_k · δ_k²        (k over TRIMOBJ labels; w_k its weight)
+        min_δ  Σ_k  w_k · δ_k²        (k over TRIMWGT labels; w_k its weight)
 
     subject to
         * equality:   schur_A @ δ = schur_b          (trim equilibrium),
-        * inequality: TRIMCON  (δ_label ≤ rhs  or  δ_label ≥ rhs),
+        * inequality: TRIMINEQ  (δ_label ≤ rhs  or  δ_label ≥ rhs),
         * bounds:     TRIMVAR  lb ≤ δ_label ≤ ub.
 
     The equilibrium equality is eliminated by a **null-space reduction** rather
@@ -180,7 +180,7 @@ def solve_trim_overdetermined(
                                   N = null(schur_A), so schur_A·δ ≡ schur_b)
 
     turns the problem into a small, well-scaled convex QP in the redundancy
-    coordinate ``z`` with only the TRIMCON/TRIMVAR bounds (now linear in ``z``).
+    coordinate ``z`` with only the TRIMINEQ/TRIMVAR bounds (now linear in ``z``).
     The convex objective makes the optimum initial-guess insensitive (KC6); the
     TRIMVAR ``init`` only seeds the warm start.
 
@@ -196,7 +196,7 @@ def solve_trim_overdetermined(
 
     label_to_idx = {lbl: i for i, lbl in enumerate(free_labels)}
 
-    # Weighted-L2 objective from TRIMOBJ.  A label this TRIM prescribes adds a constant
+    # Weighted-L2 objective from TRIMWGT.  A label this TRIM prescribes adds a constant
     # to the objective and is left out; a free variable not listed has weight 0.
     weights = np.zeros(n_free)
     if trimobj is not None:
@@ -225,7 +225,7 @@ def solve_trim_overdetermined(
 
     if nz == 0:
         # No redundancy left after the equilibrium constraint — δ is determined.
-        # The caller checks the TRIMVAR / TRIMCON limits (check_trim_limits).
+        # The caller checks the TRIMVAR / TRIMINEQ limits (check_trim_limits).
         delta_free_arr = delta_p
     else:
         # The objective must fix the redundancy: its Hessian on the null space,
@@ -237,7 +237,7 @@ def solve_trim_overdetermined(
             sid = trimobj.sid if trimobj is not None else "(none)"
             listed = ", ".join(trimobj.labels) if trimobj is not None else ""
             raise ValueError(
-                f"TRIMOBJ {sid} ({listed}) does not determine the over-determined trim: "
+                f"TRIMWGT {sid} ({listed}) does not determine the over-determined trim: "
                 f"the free variables are {', '.join(free_labels)}, and the weighted ones "
                 "leave a combination of them unrestrained. Give a positive weight to "
                 "more of the free variables.")
@@ -251,7 +251,7 @@ def solve_trim_overdetermined(
             return 2.0 * (N.T @ (weights * d))
 
         constraints = []
-        # TRIMCON inequalities (linear in z).
+        # TRIMINEQ inequalities (linear in z).
         for tc in (trimcons or []):
             if tc.label not in label_to_idx:
                 continue
@@ -291,7 +291,7 @@ def solve_trim_overdetermined(
         )
         if not res.success:
             raise ValueError(
-                "Over-determined trim could not satisfy the TRIMCON/TRIMVAR "
+                "Over-determined trim could not satisfy the TRIMINEQ/TRIMVAR "
                 f"bounds: {res.message}")
         delta_free_arr = delta_p + N @ res.x
 

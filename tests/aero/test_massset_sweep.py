@@ -1,6 +1,6 @@
 """Step 60 — MASSCASE payload / mass-case sweep for static SOL 144.
 
-Gates, on `sample/ha144a_massset_sweep.bdf` (one deck, one TRIM, three payload
+Gates, on `sample/ha144a/ha144a_massset_sweep.bdf` (one deck, one TRIM, three payload
 conditions):
 
   * **equivalence** — a MASSCASE case is identical to a hand-edited deck carrying
@@ -16,7 +16,6 @@ conditions):
 
 import copy
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -29,10 +28,10 @@ from sbeam.assembly.mass_matrix import assemble_global_mass
 from sbeam.gpwg import compute_gpwg
 from sbeam.model.mass_overlay import resolve_mass_case
 from sbeam.solver.sol144 import run_sol144_trim, AeroCache
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
-SWEEP_BDF = SAMPLE / "ha144a_massset_sweep.bdf"
-FULLSPAN_BDF = SAMPLE / "ha144a_fullspan_sbeam.bdf"
+SWEEP_BDF = sample_path("ha144a_massset_sweep.bdf")
+FULLSPAN_BDF = sample_path("ha144a_fullspan_sbeam.bdf")
 
 G = 32.174  # ft/s²
 # Case weights the deck documents, in lb.
@@ -46,7 +45,7 @@ def sweep():
     grid_index = build_grid_index(bulk)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        aero = build_aero_model(bulk, grid_index=grid_index)
+        aero = build_aero_model(bulk, grid_index=grid_index, mach=bulk.trims[1].mach)
         cache = AeroCache(bulk, grid_index, seed=aero)
         results = {
             sc.subcase_id: run_sol144_trim(bulk, sc, aero, aero_cache=cache)

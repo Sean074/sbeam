@@ -26,7 +26,7 @@ CID by hand. Where it fails:
 - `g_slope` is built from the same `w`, so the normalwash is that of a deflection along
   ẑ_CID, not along the normal.
 
-DEF-M11 removed the same assumption from ATTACH; SPLINE2 was not swept then.
+DEF-M11 removed the same assumption from BODYATT; SPLINE2 was not swept then.
 
 ## Change
 
@@ -64,7 +64,7 @@ FX = 1.48 N, and reads 0 after the change. Flagship numbers that move:
 | Q-DIV | 5.373047E+04 | 5.373092E+04 |
 | MWROOT FX / MX / MZ at 1g | 1.48 / 8355.9 / −6.19 | 0.00 / 8356.7 / −1.57 |
 
-Rigid and restrained derivatives are unchanged to six figures. The MLOADS deck's absolute
+Rigid and restrained derivatives are unchanged to six figures. The MANVR deck's absolute
 elevator table (`TABLED1 300`) starts at the 1g trim and was re-baked to −0.06796414.
 
 ## Gates
@@ -83,7 +83,7 @@ elevator table (`TABLED1 300`) starts at the 1g trim and was re-baked to −0.06
 
 Every use of a card CID in `sbeam/aero/` and `sbeam/solver/sol144*.py` was read:
 
-- ATTACH: general in the box normal since DEF-M11 / DEF-H1.
+- BODYATT: general in the box normal since DEF-M11 / DEF-H1.
 - AESURF hinge (`integration.aesurf_hinges`): reads CID y as the hinge axis and takes the
   normalwash from `−(ĥ × n)·x̂` with the box normal. No CID-z assumption.
 - AEROS RCSID, CAERO1 CP: frames for reference axes and point input, not normals.

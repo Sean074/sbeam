@@ -133,7 +133,7 @@ def _build_injection_echo(
 ) -> list[dict[str, Any]]:
     """Summarise the Step 64 load injections for the f06 (and warn on dead ends).
 
-    For each group of structurally-uncoupled boxes (SPLINE0 body panels,
+    For each group of structurally-uncoupled boxes (LOADINJ body panels,
     un-splined boxes) report the master grid, the box count and the physical
     6-component resultant about ``ref_point`` that the injection puts into the
     trim balance and the load export.
@@ -173,7 +173,7 @@ def _build_injection_echo(
 
 
 
-# KC7: the injected CHORDCP mean flow is only valid as a perturbation base near
+# KC7: the injected CPINJ mean flow is only valid as a perturbation base near
 # its reference AOA — the trim warns when the trimmed AOA strays further than
 # this from it (~2 degrees).
 _CHORDCP_ALPHA_TOL = 0.035  # rad
@@ -406,17 +406,10 @@ def _stage_resolve_massset_and_mach(st: _TrimState) -> None:
     # Resolve the flight Mach for this subcase (AE9)
     # ------------------------------------------------------------------ #
     # The AIC is Mach-dependent (Prandtl–Glauert β scaling), so the flight Mach
-    # comes from the TRIM card.  AEROS.mach is the fallback when the TRIM field is
-    # unset (0.0); a genuine disagreement is warned about.  A supersonic Mach is
-    # rejected by build_aero_model / AeroCache (steady subsonic VLM only).
-    aeros_mach = require_aeros(bulk).mach if bulk.aeros else 0.0
-    mach = trim_card.mach if trim_card.mach else aeros_mach
-    if trim_card.mach and aeros_mach and abs(trim_card.mach - aeros_mach) > 1e-9:
-        warnings.warn(
-            f"run_sol144_trim: TRIM Mach {trim_card.mach} disagrees with AEROS "
-            f"Mach {aeros_mach}; using the TRIM Mach {trim_card.mach} for the AIC.",
-            UserWarning,
-        )
+    # comes from the TRIM card, as in MSC (#87 removed the AEROS fallback).  A
+    # supersonic Mach is rejected by build_aero_model / AeroCache (steady subsonic
+    # VLM only).
+    mach = trim_card.mach
 
     if aero_cache is None:
         aero_cache = AeroCache(bulk, grid_index, seed=aero)
@@ -429,7 +422,7 @@ def _stage_resolve_massset_and_mach(st: _TrimState) -> None:
 
 
 def _stage_build_labels(st: _TrimState) -> None:
-    """AESTAT+AESURF label assembly, CHORDCP validation (KC7), free/prescribed split."""
+    """AESTAT+AESURF label assembly, CPINJ validation (KC7), free/prescribed split."""
     bulk, aero, mach, trim_card = st.bulk, st.aero, st.mach, st.trim_card
 
     # ------------------------------------------------------------------ #
@@ -441,20 +434,20 @@ def _stage_build_labels(st: _TrimState) -> None:
     )
 
     # ------------------------------------------------------------------ #
-    # CHORDCP injection validation (Step 54, KC7)
+    # CPINJ injection validation (Step 54, KC7)
     # ------------------------------------------------------------------ #
     chordcp_alpha_ref = aero.chordcp_alpha_ref
     if chordcp_alpha_ref is not None:
         if abs(chordcp_alpha_ref) > 0.0 and "ANGLEA" not in all_labels:
             raise ValueError(
-                "CHORDCP injection with a nonzero ALPHREF requires an ANGLEA "
+                "CPINJ injection with a nonzero ALPHREF requires an ANGLEA "
                 "AESTAT label (the injected operating point is re-referenced "
                 "through the angle-of-attack normalwash column)."
             )
         card_machs = sorted({c.mach for c in bulk.chordcps.values() if c.mach})
         if card_machs and any(abs(m - mach) > 1e-9 for m in card_machs):
             warnings.warn(
-                f"run_sol144_trim: CHORDCP data Mach {card_machs} disagrees with "
+                f"run_sol144_trim: CPINJ data Mach {card_machs} disagrees with "
                 f"the flight Mach {mach}; the injected pressures were measured at "
                 "a different operating point (KC7).",
                 UserWarning,
@@ -507,7 +500,7 @@ def _stage_resolve_ref_geometry(st: _TrimState) -> None:
     # genuinely downward acceleration and the deck trims INVERTED lift, with
     # nothing to say so.  Gust cases (issue #1) make this reachable in normal
     # work because a down-gust prescribes a positive URDD3, so the guard lands
-    # with them.  `sample/val_dihedral_trim.bdf` does this deliberately and is
+    # with them.  `sample/validation/val_dihedral_trim.bdf` does this deliberately and is
     # expected to warn.
     urdd3 = st.prescribed_dict.get("URDD3")
     if urdd3 is not None and urdd3 < 0.0:
@@ -529,12 +522,12 @@ def _stage_resolve_ref_geometry(st: _TrimState) -> None:
 
 
 def _stage_echo_chordcp(st: _TrimState) -> None:
-    """CHORDCP injected-operating-point echo (Step 54, KC7 visibility)."""
+    """CPINJ injected-operating-point echo (Step 54, KC7 visibility)."""
     bulk, aero = st.bulk, st.aero
     chordcp_alpha_ref, x_ref = st.chordcp_alpha_ref, st.x_ref
 
     # ------------------------------------------------------------------ #
-    # CHORDCP injected-operating-point echo (Step 54) — per-surface integrals
+    # CPINJ injected-operating-point echo (Step 54) — per-surface integrals
     # of the supplied Cp, plus the VLM flat-plate lift at the same ALPHREF as
     # a plausibility reference for the f06 block (KC7 visibility).
     # ------------------------------------------------------------------ #
@@ -695,18 +688,18 @@ def _stage_solve_trim(st: _TrimState) -> None:
     # ------------------------------------------------------------------ #
     # Schur-complement trim solve (determined or over-determined)
     # ------------------------------------------------------------------ #
-    # One TRIMCON set per deck (the cross-reference pass refuses a second SID, #77)
+    # One TRIMINEQ set per deck (the cross-reference pass refuses a second SID, #77)
     trimcons = [con for cons in bulk.trimcons.values() for con in cons]
     if over_determined:
-        # Resolve the TRIMOBJ/TRIMCON/TRIMVAR sets referenced by this subcase.
+        # Resolve the TRIMWGT/TRIMINEQ/TRIMVAR sets referenced by this subcase.
         trimobj = bulk.trimobjs.get(subcase.trimobj_sid) if subcase.trimobj_sid else None
         if trimobj is None and bulk.trimobjs:
-            # Fall back to a single defined TRIMOBJ when the subcase did not name one.
+            # Fall back to a single defined TRIMWGT when the subcase did not name one.
             trimobj = next(iter(bulk.trimobjs.values())) if len(bulk.trimobjs) == 1 else None
         if trimobj is None:
             raise ValueError(
                 f"Over-determined trim (n_free={n_free} > n_suport={n_suport}) "
-                "requires a TRIMOBJ card to specify the weighted objective."
+                "requires a TRIMWGT card to specify the weighted objective."
             )
         u_a, delta_free_arr, K_ll_lu, l_idx, r_idx = solve_trim_overdetermined(
             K_aa, Q_aa, Q_ax_a, M_ax_a, f_rhs_a, q_dyn, suport_local,
@@ -758,7 +751,7 @@ def _stage_solve_trim(st: _TrimState) -> None:
         if alpha_err > _CHORDCP_ALPHA_TOL:
             warnings.warn(
                 f"run_sol144_trim: trimmed ANGLEA {trim_vars['ANGLEA']:.4f} rad is "
-                f"{alpha_err:.4f} rad from the CHORDCP reference AOA "
+                f"{alpha_err:.4f} rad from the CPINJ reference AOA "
                 f"{chordcp_alpha_ref:.4f} rad (> {_CHORDCP_ALPHA_TOL} rad ≈ 2°); "
                 "the trim perturbs about the injected operating point and its "
                 "validity degrades with distance (KC7).",
@@ -1043,7 +1036,7 @@ def _stage_flight_and_net_loads(st: _TrimState) -> None:
     grid_loads = aero.require_g_load().T @ (q_dyn * f_box_vec)
 
     # Step 64 / DEF-M1 — echo what the load injection contributed.  Boxes with
-    # no structural coupling (SPLINE0 body panels, un-splined boxes) enter the
+    # no structural coupling (LOADINJ body panels, un-splined boxes) enter the
     # trim balance and the load export as a rigid load at their master grid;
     # report each group's 6-component resultant about the moment reference so a
     # mis-placed master grid is visible.  Empty on decks with none, so their f06
@@ -1242,7 +1235,7 @@ def run_sol144_trim(
     complement method.  Handles both the determined case
     (n_free == n_suport) and the over-determined (redundant-control) case —
     the latter via null-space reduction with a weighted-L2 objective from
-    the TRIMOBJ/TRIMCON/TRIMVAR cards.
+    the TRIMWGT/TRIMINEQ/TRIMVAR cards.
 
     Args:
         bulk:       Parsed BulkData — must include SUPORT and TRIM cards.
@@ -1263,7 +1256,7 @@ def run_sol144_trim(
     Raises:
         ValueError  if no SUPORT card, TRIM card, a LOAD request the trim
                     cannot honour, or the trim is over-determined without a
-                    TRIMOBJ objective.
+                    TRIMWGT objective.
     """
     st = _TrimState(bulk=bulk, subcase=subcase, aero=aero, aero_cache=aero_cache)
     _stage_validate_inputs(st)

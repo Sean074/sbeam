@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from .aero import (
-    Aeros, Caero1, Paero1, Pstrip, Stripk, Aefact, W2gj, Wkk, Chordcp, Aecorr, Set1,
+    Aeros, Caero1, Paero1, Pstrip, Stripk, Aefact, W2gj, Wkk, AeroMatrix, Chordcp, Aecorr, Set1,
     Spline2, Attach, Spline0, Spline1,
     Aestat, Aesurf, Aelist, Trim, Diverg, Trimvar, Trimobj, Trimcon,
     Aecomp, Monpnt1, Monpnt3, Monsect,
@@ -21,6 +21,8 @@ from .property import Pbar, Pbush, Prod
 
 @dataclass
 class BulkData:
+    # PARAM,GRDPNT (QRG p.885; #90): -1 = no GPWG printout, 0 = basic origin, > 0 = grid
+    grdpnt: int = -1
     grids: dict[int, Grid] = field(default_factory=dict)
     cbars: dict[int, Cbar] = field(default_factory=dict)
     crods: dict[int, Crod] = field(default_factory=dict)       # #38 rod elements
@@ -60,6 +62,8 @@ class BulkData:
     aefacts: dict[int, Aefact] = field(default_factory=dict)
     w2gjs:   dict[int, W2gj] = field(default_factory=dict)
     wkks:    dict[int, Wkk] = field(default_factory=dict)
+    # MSC DMIJ W2GJ / DMIK WKK as read, keyed by NAME; mapped onto w2gjs / wkks (#104)
+    aero_matrices: dict[str, AeroMatrix] = field(default_factory=dict)
     aecorrs:  dict[int, Aecorr] = field(default_factory=dict)
     chordcps: dict[int, Chordcp] = field(default_factory=dict)  # injected steady Cp
     set1s:    dict[int, Set1] = field(default_factory=dict)
@@ -81,7 +85,7 @@ class BulkData:
     monpnt3s: dict[str, Monpnt3] = field(default_factory=dict)
     monsects: dict[str, Monsect] = field(default_factory=dict)
     supports: list[Suport] = field(default_factory=list)
-    # Phase G0 — ZAERO-style transient maneuver-loads cards
+    # Phase G0 — sbeam-only transient maneuver-loads cards (MANVR family; #87)
     tabled1s: dict[int, Tabled1] = field(default_factory=dict)
     mldtimes: dict[int, Mldtime] = field(default_factory=dict)
     mldcomds: dict[int, Mldcomd] = field(default_factory=dict)

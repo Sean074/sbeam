@@ -12,7 +12,7 @@ RCSID frame (z-down), so the inertia-relief load ``-M*a`` carries the full
 
 Recipes (prescribe these labels on the TRIM card; leave the rest free; one free
 label per SUPORT DOF for a determined trim — ``docs/10_standard/05c_sol144_maneuver.md``
-"Lateral trim cases", ``sample/val_lateral_aileron_rudder.bdf``):
+"Lateral trim cases", ``sample/validation/val_lateral_aileron_rudder.bdf``):
 
   * Symmetric pull-up / push-over (SUPORT 35):  URDD3 = load_factor_to_urdd3(n_z, g),
     URDD5 = 0, and PITCH = (n_z − 1)·g·c_ref/(2V²) — the steady pitch rate of the

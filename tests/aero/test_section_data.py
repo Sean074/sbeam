@@ -6,7 +6,6 @@ Mach/region selection (v1), and the operating-region helper.
 """
 
 import math
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -18,6 +17,7 @@ from sbeam.aero.panel import mesh_caero1
 from sbeam.aero.vlm import build_ajj
 from sbeam.aero.aero_model import build_aero_model
 from sbeam_tools.corrections import section_data as sd
+from tests.samples import sample_path
 
 PAERO = Paero1(pid=1)
 CAERO_EID = 1
@@ -326,8 +326,7 @@ class TestValidationBindings:
         carries both the flying rows and the body-panel TOTAL block.
         """
         from sbeam_tools.corrections import split_total_rows
-        root = Path(__file__).parent.parent.parent / "sample"
         flying, totals = split_total_rows(
-            pd.read_csv(root / "cessna210_flagship_section_data.csv"))
+            pd.read_csv(sample_path("cessna210_flagship_section_data.csv")))
         assert len(totals) == 1
         sd.validate_section_data(flying)          # must not raise

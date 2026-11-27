@@ -17,15 +17,15 @@ import sys
 from pathlib import Path
 
 import pytest
+from tests.samples import sample_path
 
-SAMPLE_DIR = Path(__file__).parent.parent.parent / "sample"
 DECKS = ["cessna210_flagship_gust.bdf", "cessna210_flagship_mloads.bdf"]
 # Run stamps: the f06 DATE line and the date-time on the transient subcase headers
 _STAMP = re.compile(r"DATE.*|\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
 
 
 def _run(deck: str, workdir: Path, hashseed: str) -> dict[str, list[str]]:
-    shutil.copytree(SAMPLE_DIR, workdir)
+    shutil.copytree(sample_path(deck).parent, workdir)   # the deck with its family (INCLUDEs)
     env = dict(os.environ, PYTHONHASHSEED=hashseed)
     subprocess.run([sys.executable, "-m", "sbeam.main", deck], cwd=workdir, env=env,
                    check=True, capture_output=True)

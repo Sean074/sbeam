@@ -79,10 +79,10 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
   ANGLEA). `build_wg` negates on assembly; the card writers negate on emission so decks
   round-trip (AE8a, fixed 2026-07-05; `aero/integration.py:61-68,104`,
   `model/aero.py:88-93`). **Never hand-add a sign between card and assembly.**
-- CHORDCP: `data` = signed per-box dΔCp/dα_local; `alpha_ref` is **degrees on the card,
+- CPINJ: `data` = signed per-box dΔCp/dα_local; `alpha_ref` is **degrees on the card,
   radians in storage** (`model/aero.py:119`).
 - **Signed per-box card data is along MSC's element normal, not the solve normal**
-  (#84): W2GJ, AECORR WT2 targets and CHORDCP Cp are read as `msc_sign · value`, and
+  (#84): W2GJ, AECORR WT2 targets and CPINJ Cp are read as `msc_sign · value`, and
   the f06 `DELTA-CP` column prints `msc_sign · ΔCp`. The downwash is the box's "normal
   velocity" (AAUG 2023.1 PDF p.30, eq 2-1/2-2) and W2GJ its static part (p.144), so the
   card's sign follows the element normal of Figure 9-5. `result.box_cp` stays along the
@@ -138,11 +138,11 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
 - **Load factor: `URDD3 = −n_z·g` authored in the RCSID frame** (1g level flight = −g;
   2.5g pull-up = −2.5g); gravity is folded into the load factor
   (`model/maneuver_presets.py:24-38`). **This presumes a z-DOWN (stability-axes) RCSID**,
-  which every shipped aircraft deck uses (`sample/HA144A.bdf:187-188`,
-  `sample/cessna210_flagship_bulk.bdf:80-82`) — the URDD rotation to basic z-up turns −g
+  which every shipped aircraft deck uses (`sample/ha144a/HA144A.bdf:187-188`,
+  `sample/cessna210_flagship/cessna210_flagship_bulk.bdf:80-82`) — the URDD rotation to basic z-up turns −g
   into an upward +g reaction and positive trimmed lift. With RCSID absent or z-up, the
   same value is a genuinely downward acceleration and trims **inverted lift**
-  (`sample/val_dihedral_trim.bdf` does exactly this, deliberately — see its
+  (`sample/validation/val_dihedral_trim.bdf` does exactly this, deliberately — see its
   header). *A 2026-08-04 charter note claiming the `maneuver_presets.py:25` "(RCSID
   z-down)" docstring was misleading was itself wrong and is retracted (2026-08-09); the
   docstring is correct.* **DEF-M20 closed 2026-09-05 (issue #23, with #1):**
@@ -209,8 +209,8 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
   #10 issue candidate "+y up ⇒ TE-port" was wrong about the geometry.) Positive `RUD` =
   TE-port = `+Fy` at the tail = nose-to-port = `+CMZ` in basic = a negative `YAW` label.
   Textbook δr. Gate: `tests/aero/test_lateral_cases.py` G10 (`CY_δr > 0`, `CMZ_δr > 0`,
-  hinge axis asserted `(0, 0, −1)` on `sample/val_lateral_aileron_rudder.bdf`).
-- **Lateral trim recipes** (V-LAT2, `sample/val_lateral_aileron_rudder.bdf`; one free label
+  hinge axis asserted `(0, 0, −1)` on `sample/validation/val_lateral_aileron_rudder.bdf`).
+- **Lateral trim recipes** (V-LAT2, `sample/validation/val_lateral_aileron_rudder.bdf`; one free label
   per SUPORT DOF): steady roll — `SUPORT 4`, prescribe `ROLL = pb/2V`, `URDD4 = 0`, free
   `AIL`; steady sideslip — `SUPORT 6`, prescribe `SIDES`, `YAW = 0`, free `RUD`; both at
   once — `SUPORT 46`, prescribe one of `ROLL`/`SIDES` and zero the other lateral labels
@@ -239,7 +239,7 @@ Deeper derivations: `docs/20_theory/01_aeroelastics_theory.md` §2.9.
   dimensionless load factor on a `GUSTLF` card. Nothing dimensional crosses the
   boundary. Prefer this split to adding a unit-aware field.
 - **User-defined consistent units throughout** — sbeam never converts. The two deliberate
-  exceptions (card-field degrees → stored radians): the CHORDCP `ALPHREF` conversion
+  exceptions (card-field degrees → stored radians): the CPINJ `ALPHREF` conversion
   `math.radians(...)` in `parser/bulk_aero.py::_handle_chordcp` (stored as
   `Chordcp.alpha_ref`, `model/aero.py`) and its tolerance constant
   `_CHORDCP_ALPHA_TOL = 0.035 rad` (`solver/sol144.py`, cited by name — line numbers
@@ -353,7 +353,7 @@ Figure: `../figures/sign_conventions_internal_loads.svg`; cut geometry:
 
 - **There is no propulsion *model*** — no actuator disc, slipstream or gyroscopic term
   exists in code (Known Limitations, `00_program_overview.md`). Powered **aero** enters
-  **only** through the ordinary correction cards (W2GJ/WT2/CHORDCP + body TOTAL rows)
+  **only** through the ordinary correction cards (W2GJ/WT2/CPINJ + body TOTAL rows)
   built from powered data — the "corrections position", theory
   `02_realistic_airplane_sol144.md` §7.
 - **Thrust and engine torque enter a SOL 144 trim as applied structural loads** (#6,
@@ -364,9 +364,9 @@ Figure: `../figures/sign_conventions_internal_loads.svg`; cut geometry:
   reacted at the SPC and the pitch trim sees `T·(z_ref − z_T)`; with `SUPORT 135` and a
   free `URDD1` the surge is trimmed (`m·URDD1 = T + Fx_aero`) and the pitch trim sees the
   thrust moment **about the CG**, `T·(z_cg − z_T)`. Gates: `tests/aero/test_thrust_trim.py`
-  (V-THR, `sample/val_thrust_trim.bdf`). A thrust moment is never folded into a `cm0`.
+  (V-THR, `sample/validation/val_thrust_trim.bdf`). A thrust moment is never folded into a `cm0`.
 - **Propeller handedness** (decided 2026-10-24 with #6, consumed by the torque trim on
-  `sample/val_lateral_aileron_rudder.bdf` `SUBCASE 3`): a propeller is **clockwise** when it
+  `sample/validation/val_lateral_aileron_rudder.bdf` `SUBCASE 3`): a propeller is **clockwise** when it
   turns clockwise as seen **from behind** (the pilot's view; Lycoming, Continental, PT6) —
   its rotation vector is along basic **−x** (forward). Consequences, all for clockwise
   (counter-clockwise flips every sign):

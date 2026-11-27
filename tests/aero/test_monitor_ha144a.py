@@ -1,7 +1,7 @@
 """V-MON1 — HA144A monitor-point cross-check (closing gate for MON1–MON4).
 
 The full-span HA144A deck carries four monitor cards (see the MONITOR POINTS
-block in ``sample/ha144a_fullspan_sbeam.bdf``):
+block in ``sample/ha144a/ha144a_fullspan_sbeam.bdf``):
 
   * MWINGRT — MONPNT3 wing-root cut, SET1 = {100}
   * MWINGEA — MONPNT3 right-wing EA, SET1 = {100, 110, 120}
@@ -15,7 +15,6 @@ Gates:
   * section cuts return finite, sign-correct loads (regression lock).
 """
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -25,8 +24,9 @@ from sbeam.parser.case_control import SubcaseControl
 from sbeam.aero.aero_model import build_aero_model
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.solver.sol144 import run_sol144_trim
+from tests.samples import sample_path
 
-BDF_PATH = Path(__file__).parent.parent.parent / "sample" / "ha144a_fullspan_sbeam.bdf"
+BDF_PATH = sample_path("ha144a_fullspan_sbeam.bdf")
 G = 32.174  # ft/s², deck gravity
 
 

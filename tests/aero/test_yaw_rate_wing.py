@@ -28,7 +28,6 @@ is the magnitude, the antisymmetry, and the CL proportionality.
 """
 
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -42,8 +41,8 @@ from sbeam.aero.integration import (
 from sbeam.assembly.load_vector import build_grid_index
 from sbeam.model.aero import Aestat, require_aeros
 from sbeam.solver.sol144 import compute_rigid_derivs, run_sol144_trim
+from tests.samples import sample_path
 
-SAMPLE = Path(__file__).parent.parent.parent / "sample"
 LABELS = ["ANGLEA", "ROLL", "YAW", "SIDES"]
 
 
@@ -54,7 +53,7 @@ LABELS = ["ANGLEA", "ROLL", "YAW", "SIDES"]
 @pytest.fixture(scope="module")
 def rect():
     """(bulk, aero) for the full-span rectangular AR=8 validation wing."""
-    bulk = parse_bulk_file(str(SAMPLE / "val_vlm_rect_ar8.bdf"))
+    bulk = parse_bulk_file(str(sample_path("val_vlm_rect_ar8.bdf")))
     grid_index = build_grid_index(bulk)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -236,7 +235,7 @@ def test_none_reference_reproduces_the_pre_step67_derivatives(rect):
 
 def _ha144a():
     """Case control + bulk for the full-span HA144A trim deck."""
-    return parse_bdf(str(SAMPLE / "ha144a_fullspan_sbeam.bdf"))
+    return parse_bdf(str(sample_path("ha144a_fullspan_sbeam.bdf")))
 
 
 def _trim(bulk, subcase):

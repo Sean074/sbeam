@@ -1,22 +1,19 @@
 """P12 S3 — SOL 144 authoring logic (pure) + AppTest render smoke."""
 
-from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 from sbeam.model.aero import Trim, Trimcon
 from sbeam.model.constraint import Suport
-from sbeam.model.maneuver_presets import load_factor_to_urdd3
 from sbeam.parser.bdf_reader import parse_bdf
 from sbeam_tools.viewer import sol144_authoring as logic
+from tests.samples import sample_path
 
-SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample"
 
 
 @pytest.fixture(scope="module")
 def mloads_bulk():
-    _, bulk = parse_bdf(SAMPLE_DIR / "ha144a_fullspan_mloads.bdf")
+    _, bulk = parse_bdf(sample_path("ha144a_fullspan_mloads.bdf"))
     return bulk
 
 
@@ -33,18 +30,47 @@ class TestSidAllocation:
         assert logic.next_free_sid(mloads_bulk, "suport") == max(gids) + 1
 
 
-class TestConflicts:
-    def test_file_sourced_sid_conflicts(self, mloads_bulk):
-        sid = next(iter(mloads_bulk.trims))
-        msgs = logic.find_sid_conflicts(mloads_bulk, "trim", sid, {})
-        assert msgs and "already exists" in msgs[0]
+class TestLoadedCards:
+    """A card of the loaded deck is not changed in place (#113)."""
 
-    def test_authored_sid_does_not_conflict(self, mloads_bulk):
+    def test_change_to_a_loaded_card_is_refused(self, mloads_bulk):
+        file_sids = logic.snapshot_family_ids(mloads_bulk)
         sid = next(iter(mloads_bulk.trims))
-        assert logic.find_sid_conflicts(mloads_bulk, "trim", sid, {"trim": {sid}}) == []
+        msgs = logic.loaded_card_edits(file_sids, changes=[("trim", mloads_bulk.trims[sid])])
+        assert len(msgs) == 1 and f"TRIM {sid} comes from the loaded deck" in msgs[0]
+        assert "Save as new SID" in msgs[0]
 
-    def test_fresh_sid_does_not_conflict(self, mloads_bulk):
-        assert logic.find_sid_conflicts(mloads_bulk, "trim", 99999, {}) == []
+    def test_delete_of_a_loaded_card_is_refused(self, mloads_bulk):
+        file_sids = logic.snapshot_family_ids(mloads_bulk)
+        gid = mloads_bulk.supports[0].gid
+        assert logic.loaded_card_edits(file_sids, deletes=[("suport", gid)])
+
+    def test_a_new_id_is_free(self, mloads_bulk):
+        file_sids = logic.snapshot_family_ids(mloads_bulk)
+        card = Trim(sid=99999, mach=0.0, q=1.0, vars={})
+        assert logic.loaded_card_edits(file_sids, changes=[("trim", card)]) == []
+
+    def test_messages_use_the_card_name_not_the_family_key(self, mloads_bulk):
+        file_sids = logic.snapshot_family_ids(mloads_bulk)
+        sid = next(iter(mloads_bulk.mloads))
+        msgs = logic.loaded_card_edits(file_sids, changes=[("mloads", mloads_bulk.mloads[sid])])
+        assert msgs[0].startswith(f"MANVR {sid} ")
+
+
+class TestCandidate:
+    def test_candidate_leaves_the_session_model_alone(self, mloads_bulk):
+        before = dict(mloads_bulk.trims)
+        trial, record = logic.candidate(
+            mloads_bulk, {}, changes=[("trim", Trim(sid=77, mach=0.0, q=5.0, vars={}))])
+        assert 77 in trial.trims and record == {"trim": {77}}
+        assert mloads_bulk.trims == before and 77 not in mloads_bulk.trims
+        assert trial.grids is mloads_bulk.grids            # only the card stores are copied
+
+    def test_candidate_deletes(self, mloads_bulk):
+        trial, record = logic.candidate(
+            mloads_bulk, {}, changes=[("trim", Trim(sid=77, mach=0.0, q=5.0, vars={}))])
+        again, record2 = logic.candidate(trial, record, deletes=[("trim", 77)])
+        assert 77 not in again.trims and not record2.get("trim")
 
 
 class TestApplyDelete:
@@ -122,7 +148,7 @@ def _sbeam_app():
 def test_authoring_tab_renders(mloads_bulk):
     from streamlit.testing.v1 import AppTest
 
-    cc, bulk = parse_bdf(SAMPLE_DIR / "ha144a_fullspan_mloads.bdf")
+    cc, bulk = parse_bdf(sample_path("ha144a_fullspan_mloads.bdf"))
     at = AppTest.from_function(_sbeam_app, default_timeout=30)
     at.run()
     at.session_state["bulk_data"] = bulk
@@ -141,142 +167,27 @@ def test_authoring_tab_renders(mloads_bulk):
     assert at.selectbox(key="auth_sel_tabled1") is not None
 
 
-# ---------------------------------------------------------------------------
-# P12 S4 — presets, TABLED1 generators, two-pass increment resolution
-# ---------------------------------------------------------------------------
+def test_pull_up_preset_prefills_the_steady_pitch_rate():
+    """#127: the preset asks for the true airspeed and writes (n − 1)·g·c_ref/(2V²)."""
+    from tests.viewer.journey_helpers import _open
 
+    at = _open("cessna210_flagship/cessna210_flagship_trim.bdf")
+    c_ref = at.session_state["bulk_data"].aeros.cref
+    at.number_input(key="auth_preset_param").set_value(2.5)
+    at.number_input(key="auth_preset_g_SI").set_value(9.81)
+    at.button(key="auth_preset_fill").click()
+    at.run()
+    assert any("needs the true airspeed" in e.value for e in at.error)   # no V: refused
+    assert at.session_state["auth_trim_prefill"] is None
 
-class TestPresets:
-    def test_pullup_matches_load_factor_helper(self):
-        preset = logic.MANEUVER_PRESETS[0]
-        vars_ = preset.prescribed_vars(2.5, g=32.174)
-        assert vars_["URDD3"] == load_factor_to_urdd3(2.5, 32.174)
-        assert vars_["PITCH"] == 0.0 and vars_["URDD5"] == 0.0
+    at.number_input(key="auth_preset_v").set_value(61.73)
+    at.button(key="auth_preset_fill").click()
+    at.run()
+    assert not at.error, [e.value for e in at.error]
+    prefill = at.session_state["auth_trim_prefill"]
+    assert prefill["URDD3"] == pytest.approx(-2.5 * 9.81) and prefill["URDD5"] == 0.0
+    assert prefill["PITCH"] == pytest.approx(1.5 * 9.81 * c_ref / (2 * 61.73 ** 2))
+    # the deck's hand-written TRIM 2 is this case
+    assert prefill["PITCH"] == pytest.approx(
+        at.session_state["bulk_data"].trims[2].vars["PITCH"], rel=3e-4)
 
-    def test_roll_and_sideslip(self):
-        roll = next(p for p in logic.MANEUVER_PRESETS if p.name == "Steady roll")
-        assert roll.prescribed_vars(1.5) == {"ROLL": 1.5, "URDD4": 0.0}
-        slip = next(p for p in logic.MANEUVER_PRESETS if p.name == "Steady sideslip")
-        assert slip.prescribed_vars(0.05) == {"SIDES": 0.05, "YAW": 0.0}
-
-    def test_missing_preset_labels(self, mloads_bulk):
-        pullup = logic.MANEUVER_PRESETS[0]
-        assert logic.missing_preset_labels(mloads_bulk, pullup) == []
-        roll = next(p for p in logic.MANEUVER_PRESETS if p.name == "Steady roll")
-        assert logic.missing_preset_labels(mloads_bulk, roll) == ["ROLL", "URDD4"]
-
-
-class TestGenerators:
-    @staticmethod
-    def _check_monotone(pts):
-        xs = [x for x, _ in pts]
-        assert all(xs[i + 1] > xs[i] for i in range(len(xs) - 1))
-
-    def test_step(self):
-        pts = logic.gen_step(0.1, 0.0, 0.5)
-        self._check_monotone(pts)
-        assert pts[0] == (0.0, 0.0) and pts[-1][1] == 0.5
-
-    def test_ramp(self):
-        pts = logic.gen_ramp(0.1, 0.3, 0.0, 0.5)
-        self._check_monotone(pts)
-        # the ramp ends at (0.3, 0.5) and a hold point keeps it there (#70)
-        assert pts[-2] == (0.3, 0.5) and pts[-1] == (0.6, 0.5)
-        with pytest.raises(ValueError):
-            logic.gen_ramp(0.3, 0.1, 0.0, 0.5)
-
-    def test_cosine_ramp_smooth_endpoints(self):
-        pts = logic.gen_cosine_ramp(0.0, 1.0, 0.0, 1.0, n=21)
-        self._check_monotone(pts)
-        assert pts[0] == (0.0, 0.0) and pts[-1][1] == pytest.approx(1.0)
-        mid = pts[10]
-        assert mid[1] == pytest.approx(0.5)
-        # Half-cosine: near-zero slope at both ends (smoother than linear).
-        assert (pts[1][1] - pts[0][1]) < (mid[1] - pts[9][1])
-
-    def test_doublet(self):
-        pts = logic.gen_doublet(0.1, 0.5, 0.2, 1.0, n=41)
-        self._check_monotone(pts)
-        ys = [y for _, y in pts]
-        assert max(ys) == pytest.approx(1.2, abs=1e-3)
-        assert min(ys) == pytest.approx(0.8, abs=1e-3)
-        assert ys[-1] == pytest.approx(1.0, abs=1e-9)
-
-
-@pytest.fixture()
-def massset_deck():
-    cc, bulk = parse_bdf(SAMPLE_DIR / "ha144a_mloads_massset.bdf")
-    return cc, bulk
-
-
-def _fake_maneuver(elev):
-    return SimpleNamespace(steps=[SimpleNamespace(trim_vars={"ELEV": elev})])
-
-
-class TestResolveIncrementTables:
-    def test_resolves_from_maneuver_result(self, massset_deck):
-        cc, bulk = massset_deck
-        spec = logic.IncrementSpec(mloads_sid=10, label="ELEV",
-                                   points=[(0.0, 0.0), (0.2, 0.1), (2.0, 0.1)])
-        cards, report, errors, resolved = logic.resolve_increment_tables(
-            bulk, cc, [spec], maneuver_results={1: _fake_maneuver(0.491711)})
-        assert not errors and len(resolved) == 1 and len(report) == 1
-        families = [f for f, _ in cards]
-        assert families == ["tabled1", "mldcomd"]
-        table = cards[0][1]
-        assert table.ys == pytest.approx([0.491711, 0.591711, 0.591711])
-        comd = cards[1][1]
-        assert comd.sid == bulk.mloads[10].mldcomd     # existing MLDCOMD reused
-        assert ("ELEV", table.tid) in comd.commands
-
-    def test_resolves_from_trim_result_matching_massset(self, massset_deck):
-        cc, bulk = massset_deck
-        ic_trim = bulk.mldtrims[bulk.mloads[10].mldtrim].trim_sid
-        fake_trim = SimpleNamespace(trim_sid=ic_trim, massset_sid=10,
-                                    trim_vars={"ELEV": 0.5})
-        spec = logic.IncrementSpec(mloads_sid=10, label="ELEV",
-                                   points=[(0.0, 0.0), (1.0, 0.1)])
-        cards, report, errors, resolved = logic.resolve_increment_tables(
-            bulk, cc, [spec], trim_results={99: fake_trim})
-        assert not errors and cards[0][1].ys == pytest.approx([0.5, 0.6])
-
-    def test_no_solve_errors(self, massset_deck):
-        cc, bulk = massset_deck
-        spec = logic.IncrementSpec(mloads_sid=10, label="ELEV",
-                                   points=[(0.0, 0.0), (1.0, 0.1)])
-        cards, report, errors, resolved = logic.resolve_increment_tables(
-            bulk, cc, [spec])
-        assert not cards and not resolved
-        assert errors and "run the trim/maneuver solve first" in errors[0]
-
-    def test_unknown_mloads_errors(self, massset_deck):
-        cc, bulk = massset_deck
-        spec = logic.IncrementSpec(mloads_sid=999, label="ELEV",
-                                   points=[(0.0, 0.0), (1.0, 0.1)])
-        _, _, errors, _ = logic.resolve_increment_tables(bulk, cc, [spec])
-        assert errors == ["MLOADS 999 not found."]
-
-    def test_shared_mloads_across_mass_cases_errors(self, massset_deck):
-        cc, bulk = massset_deck
-        # Point two subcases with different MASSCASEs at the same MLOADS.
-        cc.subcases[1].mloads_sid = 10
-        spec = logic.IncrementSpec(mloads_sid=10, label="ELEV",
-                                   points=[(0.0, 0.0), (1.0, 0.1)])
-        _, _, errors, _ = logic.resolve_increment_tables(
-            bulk, cc, [spec], maneuver_results={1: _fake_maneuver(0.49)})
-        assert errors and "mass-case specific" in errors[0]
-
-    def test_mloads_without_mldcomd_gets_new_one(self, massset_deck):
-        cc, bulk = massset_deck
-        from sbeam.model.maneuver import Mloads
-        bulk.mloads[10] = Mloads(sid=10, mldtrim=1, mldtime=1,
-                                 mldcomd=0, mldprnt=1, method=-1, zeta=0.02)
-        spec = logic.IncrementSpec(mloads_sid=10, label="ELEV",
-                                   points=[(0.0, 0.0), (1.0, 0.1)])
-        cards, _, errors, _ = logic.resolve_increment_tables(
-            bulk, cc, [spec], maneuver_results={1: _fake_maneuver(0.49)})
-        assert not errors
-        families = [f for f, _ in cards]
-        assert families == ["tabled1", "mldcomd", "mloads"]
-        new_mloads = cards[2][1]
-        assert new_mloads.mldcomd == cards[1][1].sid

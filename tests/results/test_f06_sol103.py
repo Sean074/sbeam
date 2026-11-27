@@ -19,6 +19,16 @@ from sbeam.solver.sol103 import run_sol103
 from sbeam.results.f06_writer import write_f06_sol103
 
 
+_NUM = r"([-+]?[0-9.]+E[-+][0-9]+)"
+
+
+def _eigen_rows(text):
+    """Rows of MSC's REAL EIGENVALUES table: MODE, EXTRACTION ORDER, EIGENVALUE, RADIANS,
+    CYCLES, GENERALIZED MASS, GENERALIZED STIFFNESS (AAUG 2023.1 PDF p.437; #90)."""
+    return re.findall(r"^\s+(\d+)\s+(\d+)" + r"\s*" + r"\s*".join([_NUM] * 5) + r"\s*$",
+                      text, re.MULTILINE)
+
+
 @pytest.fixture(scope="module")
 def cantilever_result():
     bulk = BulkData()
@@ -77,9 +87,9 @@ class TestF06Sol103Values:
     def test_first_frequency_roundtrip(self, f06_text):
         """First frequency in file matches result within 1e-4 relative."""
         text, result = f06_text
-        # Find a floating-point number in scientific notation after "FREQ"
-        match = re.search(r"FREQ\s*=\s*([0-9Ee.+\-]+)", text)
-        assert match is not None, "Could not find FREQ = ... in f06 output"
+        # MSC's eigenvector heading: "CYCLES = <Hz>" (AAUG 2023.1 PDF p.437; #90)
+        match = re.search(r"CYCLES\s*=\s*([0-9Ee.+\-]+)", text)
+        assert match is not None, "Could not find CYCLES = ... in f06 output"
         freq_from_file = float(match.group(1))
         assert freq_from_file == pytest.approx(result.frequencies_hz[0], rel=1e-4)
 
@@ -133,18 +143,11 @@ class TestGeneralizedMass:
     def test_f06_gen_mass_column_norm_mass(self, f06_text):
         """norm=MASS f06 GENERALIZED MASS column values are all ≈ 1.0."""
         text, result = f06_text
-        # Extract lines from the eigenvalue table (between the header and blank line)
-        # Header: "   MODE NO.      EIGENVALUE  ..."
-        # Data lines: "         1  <val>  <val>  <val>  <val>"
-        data_lines = re.findall(
-            r"^\s+(\d+)\s+([0-9Ee.+\-]+)\s+([0-9Ee.+\-]+)\s+([0-9Ee.+\-]+)\s+([0-9Ee.+\-]+)",
-            text,
-            re.MULTILINE,
-        )
+        data_lines = _eigen_rows(text)
         assert len(data_lines) == len(result.frequencies_hz), \
             "Could not parse all eigenvalue table rows"
         for row in data_lines:
-            gm = float(row[4])
+            gm = float(row[5])
             assert gm == pytest.approx(1.0, abs=1e-4)
 
     def test_f06_gen_mass_column_norm_max(self, max_norm_result):
@@ -175,12 +178,28 @@ class TestGeneralizedMass:
                 text = f.read()
         finally:
             os.unlink(path)
-        data_lines = re.findall(
-            r"^\s+(\d+)\s+([0-9Ee.+\-]+)\s+([0-9Ee.+\-]+)\s+([0-9Ee.+\-]+)\s+([0-9Ee.+\-]+)",
-            text,
-            re.MULTILINE,
-        )
+        data_lines = _eigen_rows(text)
         assert len(data_lines) == len(max_norm_result.frequencies_hz)
         for j, row in enumerate(data_lines):
-            gm = float(row[4])
+            gm = float(row[5])
             assert gm == pytest.approx(max_norm_result.generalized_masses[j], rel=1e-5)
+
+
+class TestF06Sol103MscColumns:
+    """#90: MSC's eigenvalue table and eigenvector heading (AAUG 2023.1 PDF p.437)."""
+
+    def test_headings_are_msc(self, f06_text):
+        text, _ = f06_text
+        assert "EXTRACTION" in text and "STIFFNESS" in text
+        assert "R E A L   E I G E N V E C T O R   N O ." in text
+
+    def test_rows_carry_order_and_generalized_stiffness(self, f06_text):
+        text, result = f06_text
+        rows = _eigen_rows(text)
+        assert len(rows) == len(result.frequencies_hz)
+        for j, row in enumerate(rows):
+            assert int(row[0]) == int(row[1]) == j + 1
+            lam, rad, cyc, gm, gk = (float(x) for x in row[2:])
+            assert rad == pytest.approx(2.0 * np.pi * cyc, rel=1e-6)
+            # phi^T K phi = lambda * phi^T M phi for an exact eigenpair
+            assert gk == pytest.approx(lam * gm, rel=1e-5, abs=1e-6 * abs(lam) + 1e-9)
