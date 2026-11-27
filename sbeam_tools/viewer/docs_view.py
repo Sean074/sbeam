@@ -58,6 +58,28 @@ def _labels(root: str) -> dict[str, str]:
     return out
 
 
+@st.cache_data(show_spinner=False)
+def _reference_anchor(heading_start: str, root: str) -> str:
+    return user_docs.reference_anchor(heading_start, Path(root))
+
+
+def reference_link(heading_start: str, label: str | None = None) -> None:
+    """A one-line link to a section of the card reference, for a form (#131).
+
+    ``heading_start`` is how the section's heading starts: a card name, or a section
+    title.  The link opens the Documentation page in a second browser tab, so the form
+    and everything typed into it stay as they are.  The form states no field rule of
+    its own; the card reference is the one place they are written.
+    """
+    try:
+        root = user_docs.docs_root()
+    except FileNotFoundError:
+        return                                   # no documentation in this installation
+    anchor = _reference_anchor(heading_start, str(root))
+    url = user_docs.page_url(user_docs.CARD_REFERENCE, anchor)
+    st.caption(f"Fields, defaults and rules: [{label or heading_start} in the card reference]({url})")
+
+
 def _open_result(page: str, anchor: str) -> None:
     """Button callback: show ``page`` and scroll to ``anchor`` on the run that follows."""
     st.session_state[PAGE_KEY] = page

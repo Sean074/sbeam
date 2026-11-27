@@ -724,6 +724,14 @@ other tabs.
 | To a repository file that is not shipped (a sample deck, a test, the backlog) | Opens it on GitHub at the tag of the installed version |
 | To anywhere else | Opens it |
 
+**Links from the forms (#131).** Each card form of the Aeroelastic Authoring tab opens with one
+line, "Fields, defaults and rules: *CARD* in the card reference", which opens that card's
+section of `02_card_reference.md` in a second viewer tab. The case-control editor links to
+"Case Control Keywords", and the Aero Correction tab to W2GJ and AECORR. The forms state no
+field rule of their own. The section is found by how its heading starts
+(`user_docs.reference_anchor`; for a form, the family's name in `CARD_NAMES`), and exactly one
+heading must match: a renamed heading fails `tests/tools/test_user_docs.py`.
+
 Streamlit opens every Markdown link to another address in a new browser tab, and a new tab is
 a new session. To change page without leaving the session, use the **Page** list.
 
@@ -743,7 +751,7 @@ a new session. To change page without leaving the session, use the **Page** list
 Gates: `tests/viewer/test_docs_view.py` (every page opens with no deck; a `?doc=` address opens
 its page; reading the documentation leaves the deck, the case control and the authored cards
 unchanged; the page shown survives a new deck; a search result opens its page; a search with
-no match says so) and `tests/tools/test_user_docs.py` (the cut,
+no match says so; every form draws its link) and `tests/tools/test_user_docs.py` (the cut,
 the links, the two math rules, the search order and that every result names an anchored
 heading). AppTest drives widgets, not a browser: figures, math and the
 scroll to a heading are checked by eye at each release (#133).

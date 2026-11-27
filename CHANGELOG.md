@@ -32,6 +32,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   first. A single word is matched as a whole word (`TRIM` does not find `TRIMVAR`).
   Choosing a result opens the page at that heading without leaving the session. No index
   is built: the pages are read on each search, about 50 ms.
+- **Each authoring form links to its card's documentation (#131).** Every card form of the
+  Aeroelastic Authoring tab, the case-control editor and the Aero Correction tab carry a
+  one-line link that opens the card's section of the card reference in a second viewer
+  tab, so the form keeps what was typed. The forms restate no field rule.
 
 ### Fixed
 - **Two heading links in the maneuver guide went nowhere (#128).** The links to the mass

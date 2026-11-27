@@ -397,6 +397,23 @@ def page_blocks(page: str, root: Path, version: str) -> list[Block]:
 CARD_REFERENCE = "docs/10_standard/02_card_reference.md"
 
 
+def reference_anchor(heading_start: str, root: Path) -> str:
+    """The anchor of the card reference's section whose heading starts with
+    ``heading_start`` as a whole word (a card name, or a section title).
+
+    Raises ``KeyError`` unless exactly one level 1 to 3 heading does: the forms of the
+    viewer link to these sections (#131), and a renamed heading has to fail a test, not
+    send the user to the top of the page.
+    """
+    text = (root / CARD_REFERENCE).read_text(encoding="utf-8")
+    start = re.compile(re.escape(heading_start) + r"(?![A-Za-z0-9_])")
+    found = [anchor for level, title, anchor in headings(text)
+             if level <= ANCHORED_LEVELS and start.match(plain_title(title))]
+    if len(found) != 1:
+        raise KeyError(f"{len(found)} headings of {CARD_REFERENCE} start with {heading_start!r}")
+    return found[0]
+
+
 @dataclass(frozen=True)
 class Hit:
     """One section of one page that holds the search term.

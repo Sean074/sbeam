@@ -112,3 +112,27 @@ def test_a_search_with_no_match_says_so() -> None:
     _assert_clean(at, "search")
     assert any("Nothing in the documentation matches" in i.value for i in at.info)
     assert not [b for b in at.button if (b.key or "").startswith("docs_hit_")]
+
+
+# --- Links from the forms to the card reference (#131) -------------------------------
+
+def test_every_form_links_to_its_section_of_the_card_reference() -> None:
+    from sbeam_tools.viewer.sol144_authoring import CARD_NAMES
+    at = _open("ha144a/ha144a_fullspan_sbeam.bdf")
+    captions = "\n".join(c.value for c in at.caption)
+    wanted = set(CARD_NAMES.values()) | {"Case Control Keywords", "W2GJ", "AECORR"}
+    for start in sorted(wanted):
+        url = user_docs.page_url(user_docs.CARD_REFERENCE, user_docs.reference_anchor(start, REPO))
+        assert f"]({url})" in captions, start
+    # 21 families (MONPNT1 has two forms), the case-control editor, two on Aero Correction
+    assert captions.count("in the card reference](") == len(CARD_NAMES) + 3
+
+
+def test_a_form_link_opens_the_card_reference() -> None:
+    """The link is an address: a second browser tab, so the first session is untouched."""
+    at = _fresh()
+    at.query_params[user_docs.PAGE_PARAMETER] = user_docs.CARD_REFERENCE
+    at.run()
+    _assert_clean(at, "card reference")
+    assert at.session_state[PAGE_KEY] == user_docs.CARD_REFERENCE
+    assert "TRIM — Static trim condition" in _headings(at)

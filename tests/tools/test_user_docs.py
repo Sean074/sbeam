@@ -334,3 +334,29 @@ def test_search_reads_code_blocks_and_reports_the_section(tmp_path, monkeypatch)
         ("", "", 1),                          # before the first heading; fewer lines
     ]
     assert hits[0].context == "FOO card" and hits[1].context == "# FOO, 1, 2"
+
+
+# ---------------------------------------------------------------------------
+# The sections the viewer's forms link to (#131)
+# ---------------------------------------------------------------------------
+
+def test_every_card_family_of_the_authoring_forms_has_one_section_of_the_card_reference() -> None:
+    from sbeam.model.card_writers import FAMILIES
+    from sbeam_tools.viewer.sol144_authoring import CARD_NAMES
+    anchored = {b.anchor for b in user_docs.page_blocks(user_docs.CARD_REFERENCE, REPO, "0")
+                if b.level}
+    assert set(CARD_NAMES) == set(FAMILIES)
+    for family, card in CARD_NAMES.items():
+        anchor = user_docs.reference_anchor(card, REPO)          # KeyError unless exactly one
+        assert anchor in anchored and anchor.startswith(card.lower()), family
+    for section in ("Case Control Keywords", "W2GJ", "AECORR"):
+        assert user_docs.reference_anchor(section, REPO) in anchored
+
+
+def test_a_card_name_is_matched_as_a_whole_word_and_must_be_unique() -> None:
+    assert user_docs.reference_anchor("TRIM", REPO) == "trim--static-trim-condition"
+    assert user_docs.reference_anchor("MONPNT1", REPO).startswith("monpnt1--")
+    with pytest.raises(KeyError, match="0 headings"):
+        user_docs.reference_anchor("NOSUCHCARD", REPO)
+    with pytest.raises(KeyError, match="headings"):
+        user_docs.reference_anchor("M", REPO)

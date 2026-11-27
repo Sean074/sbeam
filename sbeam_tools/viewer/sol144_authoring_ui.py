@@ -17,6 +17,7 @@ from typing import Any, Callable, Optional, cast
 import pandas as pd
 import streamlit as st
 from sbeam_tools.viewer.widget_keys import wk
+from sbeam_tools.viewer.docs_view import reference_link
 
 from sbeam.aero.aero_model import AeroModel, build_aero_model
 from sbeam.assembly.load_vector import build_grid_index
@@ -120,6 +121,7 @@ def _family_editor(
     inputs are incomplete (it should st.warning the reason).
     """
     with st.expander(title, expanded=False):
+        reference_link(logic.CARD_NAMES[family])
         ids = _family_ids(bulk, family)
         sel = st.selectbox(
             "Edit existing or create new", [_NEW] + ids,

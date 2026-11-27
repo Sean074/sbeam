@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, Optional, cast
 
 import streamlit as st
 from sbeam_tools.viewer.widget_keys import wk
+from sbeam_tools.viewer.docs_view import reference_link
 from streamlit.delta_generator import DeltaGenerator
 
 from sbeam.model.bulk_data import BulkData
@@ -298,6 +299,7 @@ def render_case_control_panel(
     demoted to a collapsed expander.  Updates ``st.session_state.case_control``.
     """
     st.subheader("Case Control")
+    reference_link("Case Control Keywords", "Case control keywords")
 
     if bulk is None:
         st.info("Upload a model file first.")
