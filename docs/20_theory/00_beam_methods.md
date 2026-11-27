@@ -24,16 +24,22 @@ numpy matrices are gone: the checks below run the solver.
 
 With no load between the grids, the four motions of a straight uniform bar separate:
 
-$$EA\,u'' = 0, \qquad GJ\,\theta_x'' = 0, \qquad EI_1\,v'''' = 0, \qquad EI_2\,w'''' = 0$$
+$$
+EA\,u'' = 0, \qquad GJ\,\theta_x'' = 0, \qquad EI_1\,v'''' = 0, \qquad EI_2\,w'''' = 0
+$$
 
 Here $u$ is the axial displacement, $\theta_x$ the twist, and $v$, $w$ the transverse
 displacements along local $y$ and $z$. The strain energy and the kinetic energy of one
 element of length $L$ are
 
-$$U = \tfrac12\int_0^L \left( EA\,u'^2 + EI_1\,v''^2 + EI_2\,w''^2 + GJ\,\theta_x'^2 \right) dx$$
+$$
+U = \tfrac12\int_0^L \left( EA\,u'^2 + EI_1\,v''^2 + EI_2\,w''^2 + GJ\,\theta_x'^2 \right) dx
+$$
 
-$$T = \tfrac12\int_0^L \left( m\,(\dot u^2 + \dot v^2 + \dot w^2) + \rho\,(I_1 + I_2)\,\dot\theta_x^2 \right) dx,
-\qquad m = \rho A + \mathrm{NSM}$$
+$$
+T = \tfrac12\int_0^L \left( m\,(\dot u^2 + \dot v^2 + \dot w^2) + \rho\,(I_1 + I_2)\,\dot\theta_x^2 \right) dx,
+\qquad m = \rho A + \mathrm{NSM}
+$$
 
 The rotary inertia of the section in bending ($\rho I\,\dot\theta_y^2$, $\rho I\,\dot\theta_z^2$)
 is not in $T$. The torsional inertia uses the polar area moment $I_1 + I_2$, not the torsion
@@ -43,15 +49,19 @@ constant $J$, and the non-structural mass NSM adds to the translations only.
 
 A `CBAR` has 12 degrees of freedom, six at end A then six at end B:
 
-$$\mathbf{u}_e = [\,u_A,\; v_A,\; w_A,\; \theta_{xA},\; \theta_{yA},\; \theta_{zA},\;
-                  u_B,\; v_B,\; w_B,\; \theta_{xB},\; \theta_{yB},\; \theta_{zB}\,]^T$$
+$$
+\mathbf{u}_e = [\,u_A,\; v_A,\; w_A,\; \theta_{xA},\; \theta_{yA},\; \theta_{zA},\;
+                  u_B,\; v_B,\; w_B,\; \theta_{xB},\; \theta_{yB},\; \theta_{zB}\,]^T
+$$
 
 In the code these are indices 0 to 11. The local axes come from the two grids and the
 orientation vector $\mathbf{v}$ of the `CBAR` card:
 
-$$\hat{e}_x = \frac{\mathbf{x}_B - \mathbf{x}_A}{L}, \qquad
+$$
+\hat{e}_x = \frac{\mathbf{x}_B - \mathbf{x}_A}{L}, \qquad
 \hat{e}_y = \frac{\mathbf{v} - (\mathbf{v}\cdot\hat{e}_x)\,\hat{e}_x}{|\mathbf{v} - (\mathbf{v}\cdot\hat{e}_x)\,\hat{e}_x|}, \qquad
-\hat{e}_z = \hat{e}_x \times \hat{e}_y$$
+\hat{e}_z = \hat{e}_x \times \hat{e}_y
+$$
 
 So the orientation vector lies in the local $x$–$y$ plane, which NASTRAN calls plane 1. An
 orientation vector parallel to the element axis is refused.
@@ -67,25 +77,39 @@ beam in $z$ as $x$ increases.
 With $[R]$ the 3×3 matrix whose rows are $\hat{e}_x$, $\hat{e}_y$, $\hat{e}_z$ in basic
 coordinates, the element transformation is
 
-$$[T] = \mathrm{blkdiag}([R], [R], [R], [R]), \qquad \mathbf{u}_{local} = [T]\,\mathbf{u}_{global}$$
+$$
+[T] = \mathrm{blkdiag}([R], [R], [R], [R]), \qquad \mathbf{u}_{local} = [T]\,\mathbf{u}_{global}
+$$
 
-$$[K_e]_{global} = [T]^T [k_e] [T], \qquad [M_e]_{global} = [T]^T [m_e] [T]$$
+$$
+[K_e]_{global} = [T]^T [k_e] [T], \qquad [M_e]_{global} = [T]^T [m_e] [T]
+$$
 
 ## 3. Shape functions
 
 With $\xi = x/L$, the axial displacement and the twist are linear between the grids:
 
-$$N_1 = 1 - \xi, \qquad N_2 = \xi$$
+$$
+N_1 = 1 - \xi, \qquad N_2 = \xi
+$$
 
 The transverse displacements are cubic (Hermite):
 
-$$H_1 = 1 - 3\xi^2 + 2\xi^3, \qquad H_2 = L\,(\xi - 2\xi^2 + \xi^3)$$
+$$
+H_1 = 1 - 3\xi^2 + 2\xi^3, \qquad H_2 = L\,(\xi - 2\xi^2 + \xi^3)
+$$
 
-$$H_3 = 3\xi^2 - 2\xi^3, \qquad H_4 = L\,(-\xi^2 + \xi^3)$$
+$$
+H_3 = 3\xi^2 - 2\xi^3, \qquad H_4 = L\,(-\xi^2 + \xi^3)
+$$
 
-$$v(x) = H_1 v_A + H_2\,\theta_{zA} + H_3 v_B + H_4\,\theta_{zB}$$
+$$
+v(x) = H_1 v_A + H_2\,\theta_{zA} + H_3 v_B + H_4\,\theta_{zB}
+$$
 
-$$w(x) = H_1 w_A - H_2\,\theta_{yA} + H_3 w_B - H_4\,\theta_{yB}$$
+$$
+w(x) = H_1 w_A - H_2\,\theta_{yA} + H_3 w_B - H_4\,\theta_{yB}
+$$
 
 A linear $u$ and a cubic $v$ are the exact solutions of the equations of section 1. For a
 static problem loaded only at grids the element is therefore exact at any mesh size, and
@@ -99,28 +123,34 @@ blocks that do not couple.
 
 **Axial** ($u_A$, $u_B$) and **torsion** ($\theta_{xA}$, $\theta_{xB}$):
 
-$$[k_{ax}] = \frac{EA}{L} \begin{bmatrix} 1 & -1 \\ -1 & 1 \end{bmatrix}, \qquad
-[k_{tor}] = \frac{GJ}{L} \begin{bmatrix} 1 & -1 \\ -1 & 1 \end{bmatrix}$$
+$$
+[k_{ax}] = \frac{EA}{L} \begin{bmatrix} 1 & -1 \\ -1 & 1 \end{bmatrix}, \qquad
+[k_{tor}] = \frac{GJ}{L} \begin{bmatrix} 1 & -1 \\ -1 & 1 \end{bmatrix}
+$$
 
 **Bending in plane 1** ($v_A$, $\theta_{zA}$, $v_B$, $\theta_{zB}$):
 
-$$[k_{1}] = \frac{EI_1}{L^3}
+$$
+[k_{1}] = \frac{EI_1}{L^3}
 \begin{bmatrix}
  12 &  6L & -12 &  6L \\
  6L &  4L^2 & -6L &  2L^2 \\
 -12 & -6L &  12 & -6L \\
  6L &  2L^2 & -6L &  4L^2
-\end{bmatrix}$$
+\end{bmatrix}
+$$
 
 **Bending in plane 2** ($w_A$, $\theta_{yA}$, $w_B$, $\theta_{yB}$):
 
-$$[k_{2}] = \frac{EI_2}{L^3}
+$$
+[k_{2}] = \frac{EI_2}{L^3}
 \begin{bmatrix}
  12 & -6L & -12 & -6L \\
 -6L &  4L^2 & 6L &  2L^2 \\
 -12 &  6L &  12 &  6L \\
 -6L &  2L^2 & 6L &  4L^2
-\end{bmatrix}$$
+\end{bmatrix}
+$$
 
 The code is `local_stiffness` in `sbeam/assembly/stiffness.py`.
 
@@ -131,28 +161,34 @@ consistent mass matrix, with $m = \rho A + \mathrm{NSM}$.
 
 **Axial** and **torsion**:
 
-$$[m_{ax}] = \frac{mL}{6} \begin{bmatrix} 2 & 1 \\ 1 & 2 \end{bmatrix}, \qquad
-[m_{tor}] = \frac{\rho\,(I_1 + I_2)\,L}{6} \begin{bmatrix} 2 & 1 \\ 1 & 2 \end{bmatrix}$$
+$$
+[m_{ax}] = \frac{mL}{6} \begin{bmatrix} 2 & 1 \\ 1 & 2 \end{bmatrix}, \qquad
+[m_{tor}] = \frac{\rho\,(I_1 + I_2)\,L}{6} \begin{bmatrix} 2 & 1 \\ 1 & 2 \end{bmatrix}
+$$
 
 **Bending in plane 1** ($v_A$, $\theta_{zA}$, $v_B$, $\theta_{zB}$):
 
-$$[m_{1}] = \frac{mL}{420}
+$$
+[m_{1}] = \frac{mL}{420}
 \begin{bmatrix}
  156 &  22L &  54 & -13L \\
  22L &  4L^2 &  13L & -3L^2 \\
   54 &  13L & 156 & -22L \\
 -13L & -3L^2 & -22L &  4L^2
-\end{bmatrix}$$
+\end{bmatrix}
+$$
 
 **Bending in plane 2** ($w_A$, $\theta_{yA}$, $w_B$, $\theta_{yB}$):
 
-$$[m_{2}] = \frac{mL}{420}
+$$
+[m_{2}] = \frac{mL}{420}
 \begin{bmatrix}
  156 & -22L &  54 &  13L \\
 -22L &  4L^2 & -13L & -3L^2 \\
   54 & -13L & 156 &  22L \\
  13L & -3L^2 &  22L &  4L^2
-\end{bmatrix}$$
+\end{bmatrix}
+$$
 
 The code is `local_mass` in `sbeam/assembly/mass_matrix.py`.
 
@@ -160,7 +196,9 @@ The code is `local_mass` in `sbeam/assembly/mass_matrix.py`.
 
 The first bending frequency of a cantilever is
 
-$$f_1 = \frac{(\beta_1 L)^2}{2\pi}\sqrt{\frac{EI}{\rho A L^4}}, \qquad \beta_1 L = 1.87510407$$
+$$
+f_1 = \frac{(\beta_1 L)^2}{2\pi}\sqrt{\frac{EI}{\rho A L^4}}, \qquad \beta_1 L = 1.87510407
+$$
 
 Two things are predicted before any run. The element is a Rayleigh-Ritz method (the shape
 functions satisfy continuity and the mass is consistent), so the computed frequency is never

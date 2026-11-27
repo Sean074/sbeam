@@ -15,6 +15,7 @@ file by path in a build environment that has nothing else installed.
 
 from __future__ import annotations
 
+import base64
 import posixpath
 import re
 from dataclasses import dataclass
@@ -76,6 +77,15 @@ FIGURES_FOLDER = "docs/figures"
 
 #: Folder inside the installed package that holds the copy.
 PACKAGED_FOLDER = "_docs"
+
+#: Query parameter of the viewer that names the page to show.
+PAGE_PARAMETER = "doc"
+
+#: Heading levels the viewer gives an anchor of its own (GitHub's anchor for the heading).
+#: A link may name a heading of these levels only (a gate): the viewer's toolkit derives
+#: the anchor of any other heading from the rendered text, which is not predictable where
+#: the heading holds math or non-ASCII letters (checked in a browser 2026-11-27, #129).
+ANCHORED_LEVELS = 3
 
 
 def _expand(entry: str, root: Path) -> list[str]:
@@ -165,6 +175,12 @@ def _prose_lines(text: str) -> list[str]:
         elif fence is None:
             out.append(line)
     return out
+
+
+def plain_title(heading: str) -> str:
+    """A heading's text with any link reduced to its text (for a contents list, where
+    the whole entry is itself a link)."""
+    return re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", heading)
 
 
 def anchor_of(heading: str) -> str:
@@ -259,11 +275,12 @@ def check_links(checkout: Path, version: str = "0.0.0") -> list[str]:
     and the link.  Run against a source checkout: a ``"repository"`` link is checked
     against the files there, and an anchor against the headings of its page."""
     problems = []
-    anchors: dict[str, set[str]] = {}
+    anchors: dict[str, dict[str, int]] = {}
 
-    def anchors_of(page: str) -> set[str]:
+    def anchors_of(page: str) -> dict[str, int]:
         if page not in anchors:
-            anchors[page] = {a for _, _, a in headings((checkout / page).read_text(encoding="utf-8"))}
+            anchors[page] = {a: level for level, _, a
+                             in headings((checkout / page).read_text(encoding="utf-8"))}
         return anchors[page]
 
     for page in pages(checkout):
@@ -274,7 +291,99 @@ def check_links(checkout: Path, version: str = "0.0.0") -> list[str]:
                     problems.append(f"{page}: link ({target}) names {link.target}, "
                                     "which does not exist in the repository")
             elif link.kind in ("page", "anchor") and link.anchor:
-                if link.anchor not in anchors_of(link.target):
+                level = anchors_of(link.target).get(link.anchor)
+                if level is None:
                     problems.append(f"{page}: link ({target}) names the heading "
                                     f"#{link.anchor}, which {link.target} does not have")
+                elif level > ANCHORED_LEVELS:
+                    problems.append(f"{page}: link ({target}) names a level-{level} heading; "
+                                    f"the viewer anchors levels 1 to {ANCHORED_LEVELS} only")
     return problems
+
+
+# ---------------------------------------------------------------------------
+# A page as the viewer shows it
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Block:
+    """One piece of a page, in order: a heading (``level`` 1 to 3, with its ``anchor``)
+    or the Markdown between two headings (``level`` 0)."""
+    level: int
+    text: str
+    anchor: str = ""
+
+
+def _data_uri(path: Path) -> str:
+    kind = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg"}[path.suffix.lower()]
+    return f"data:{kind};base64,{base64.b64encode(path.read_bytes()).decode('ascii')}"
+
+
+def page_url(page: str, anchor: str = "") -> str:
+    """The viewer address of a shipped page, relative to the viewer's own."""
+    return f"?{PAGE_PARAMETER}={page}" + (f"#{anchor}" if anchor else "")
+
+
+def page_blocks(page: str, root: Path, version: str) -> list[Block]:
+    """The page cut at its level 1 to 3 headings, with every link pointed where the
+    viewer needs it.
+
+    - a link to a shipped page becomes ``?doc=<page>#<anchor>``, which the viewer opens;
+    - a link to a heading of the same page is left as written (the viewer gives each
+      heading block the anchor GitHub gives it);
+    - a figure is inlined as a data address (the viewer cannot load a relative path);
+    - a link to a repository file becomes its GitHub address at the installed tag;
+    - an external link is left as written.
+
+    Text inside code is not touched.
+    """
+    def rewrite(match: "re.Match[str]") -> str:
+        link = resolve_link(page, match.group(2), root, version)
+        if link.kind in ("external", "anchor"):
+            return match.group(0)
+        if link.kind == "page":
+            new = page_url(link.target, link.anchor)
+        elif link.kind == "figure":
+            new = _data_uri(root / link.target)
+        else:
+            new = link.url
+        start, end = (i - match.start() for i in match.span(2))
+        return match.group(0)[:start] + new + match.group(0)[end:]
+
+    def rewrite_line(line: str) -> str:
+        # A link that starts inside inline code is text, not a link.  (A link whose own
+        # text is inline code starts outside it and is rewritten.)
+        code = [m.span() for m in _INLINE_CODE.finditer(line)]
+        return _LINK.sub(
+            lambda m: m.group(0) if any(a <= m.start() < b for a, b in code) else rewrite(m),
+            line)
+
+    text = (root / page).read_text(encoding="utf-8")
+    anchors = iter(headings(text))
+    blocks: list[Block] = []
+    body: list[str] = []
+
+    def flush() -> None:
+        if any(line.strip() for line in body):
+            blocks.append(Block(0, "\n".join(body).strip("\n") + "\n"))
+        body.clear()
+
+    fence = None
+    for line in text.splitlines():
+        mark = _FENCE.match(line)
+        if mark and fence is None:
+            fence = mark.group(1)
+        elif mark and mark.group(1) == fence:
+            fence = None
+        elif fence is None:
+            found = _HEADING.match(line)
+            if found:
+                level, title, anchor = next(anchors)
+                if level <= ANCHORED_LEVELS:
+                    flush()
+                    blocks.append(Block(level, rewrite_line(title), anchor))
+                    continue
+            line = rewrite_line(line)
+        body.append(line)
+    flush()
+    return blocks

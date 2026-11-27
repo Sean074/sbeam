@@ -181,7 +181,9 @@ stays inside the documentation; a link to any other repository file becomes its 
 at the installed version's tag (`resolve_link`). Gates, in `tests/tools/test_user_docs.py`:
 every page of the three folders is listed or named as not shipped; every link and every
 heading anchor of every shipped page resolves; a wheel built from the tree and installed
-outside the checkout carries exactly the listed files and reads its own copy.
+outside the checkout carries exactly the listed files and reads its own copy. The same module
+cuts a page into heading blocks for the viewer's Documentation page (`page_blocks`, #129;
+`06_viewer.md`, Documentation Page).
 
 The **pre/post toolchain** is a sibling package, not part of the solver core (see
 Architecture above). `sbeam/` must never import it — `tests/tools/test_import_boundary.py`
@@ -214,6 +216,7 @@ sbeam_tools/
     ├── session_deck.py   # The session's deck as text; every card edit is written into it and re-parsed (#113)
     ├── widget_keys.py    # Widget keys that carry the deck's number in the session (#123)
     ├── monitor_view.py   # Monitors drawn on the model from the solver's plans (#116)
+    ├── docs_view.py      # Documentation page: draws the shipped pages (#129)
     └── format_utils.py   # Shared 5-sig-fig table/metric formatting (fmt / fmt_mass / style_numeric)
 ```
 

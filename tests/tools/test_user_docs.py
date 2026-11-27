@@ -65,7 +65,7 @@ def test_the_module_imports_the_standard_library_only() -> None:
     imported = {node.module if isinstance(node, ast.ImportFrom) else alias.name
                 for node in ast.walk(tree) if isinstance(node, (ast.Import, ast.ImportFrom))
                 for alias in node.names}
-    assert imported <= {"__future__", "posixpath", "re", "dataclasses", "pathlib", "typing"}
+    assert imported <= {"__future__", "base64", "posixpath", "re", "dataclasses", "pathlib", "typing"}
 
 
 # ---------------------------------------------------------------------------
@@ -188,3 +188,92 @@ def test_an_installed_wheel_reads_its_own_copy(wheel: Path, tmp_path: Path) -> N
     root, *names = done.stdout.split()
     assert Path(root) == (site / "sbeam_tools" / user_docs.PACKAGED_FOLDER).resolve()
     assert names == user_docs.shipped_files(REPO)
+
+
+# ---------------------------------------------------------------------------
+# A page as the viewer shows it (#129)
+# ---------------------------------------------------------------------------
+
+def test_a_page_is_cut_at_its_level_1_to_3_headings_with_githubs_anchors() -> None:
+    for page in user_docs.pages(REPO):
+        text = (REPO / page).read_text(encoding="utf-8")
+        cut = [(b.level, b.anchor) for b in user_docs.page_blocks(page, REPO, "1.2.3") if b.level]
+        assert cut == [(level, anchor) for level, _, anchor in user_docs.headings(text)
+                       if level <= user_docs.ANCHORED_LEVELS], page
+
+
+def test_links_are_pointed_where_the_viewer_needs_them(tmp_path, monkeypatch) -> None:
+    (tmp_path / "docs" / "figures").mkdir(parents=True)
+    (tmp_path / "docs" / "figures" / "f.svg").write_text("<svg/>", encoding="utf-8")
+    (tmp_path / "docs" / "b.md").write_text("# B\n## Real\n", encoding="utf-8")
+    (tmp_path / "docs" / "a.md").write_text(
+        "# A [`b`](b.md)\n"
+        "Go to [`b`](b.md#real), [here](#a-b), [repo](../tests/x.py), [out](https://x.org/).\n"
+        "![fig](figures/f.svg)\n"
+        "`[code](b.md)` stays.\n"
+        "```\n# not a heading [x](b.md)\n```\n"
+        "#### Deep\nend\n", encoding="utf-8")
+    monkeypatch.setattr(user_docs, "SECTIONS", (("S", ("docs/a.md", "docs/b.md")),))
+    head, body = user_docs.page_blocks("docs/a.md", tmp_path, "1.2.3")
+    assert head == user_docs.Block(1, "A [`b`](?doc=docs/b.md)", "a-b")
+    assert user_docs.plain_title(head.text) == "A `b`"
+    assert "[`b`](?doc=docs/b.md#real), [here](#a-b)" in body.text
+    assert "[repo](https://github.com/Sean074/sbeam/blob/v1.2.3/tests/x.py)" in body.text
+    assert "[out](https://x.org/)" in body.text
+    assert "![fig](data:image/svg+xml;base64,PHN2Zy8+)" in body.text
+    assert "`[code](b.md)` stays." in body.text
+    assert "# not a heading [x](b.md)" in body.text
+    assert "#### Deep\nend" in body.text                 # level 4 stays in the body
+
+
+def test_a_link_to_a_heading_the_viewer_does_not_anchor_is_reported(tmp_path, monkeypatch) -> None:
+    (tmp_path / "docs" / "figures").mkdir(parents=True)
+    (tmp_path / "docs" / "a.md").write_text("# A\n#### Deep\n[x](#deep)\n", encoding="utf-8")
+    monkeypatch.setattr(user_docs, "SECTIONS", (("S", ("docs/a.md",)),))
+    (problem,) = user_docs.check_links(tmp_path)
+    assert "level-4 heading" in problem
+
+
+# Math.  Streamlit 1.50 rendered every expression of every shipped page in a browser on
+# 2026-11-27 (no KaTeX error, no dollar sign left as text).  Two rules keep it so.
+
+def _math_lines(page: str) -> list[str]:
+    text = (REPO / page).read_text(encoding="utf-8")
+    return [user_docs._INLINE_CODE.sub("", line) for line in user_docs._prose_lines(text)]
+
+
+def test_every_display_math_fence_stands_on_a_line_of_its_own() -> None:
+    """``$$x$$`` on one line is drawn inline, and a multi-line equation whose ``$$`` shares
+    a line with the formula is not drawn at all and breaks the rest of the page."""
+    bad = [f"{page}: {line.strip()[:60]}" for page in user_docs.pages(REPO)
+           for line in _math_lines(page) if "$$" in line and line.strip() != "$$"]
+    assert bad == []
+
+
+#: Every LaTeX command and environment the shipped pages used when they were checked in
+#: the browser.  A new one fails here until it has been seen to render.
+_SEEN_TO_RENDER = set("""
+    Big Bigl Bigr Delta Gamma Longrightarrow Omega Phi Psi alpha approx ast bar begin beta
+    big bigg boldsymbol boxed cdot chi cos ddot delta det dot dots ell end equiv eta frac
+    gamma ge gg hat in infty int lVert lambda le left leftarrow lessgtr lesssim ln mathbf
+    mathrm mathsf mp nabla neq odot omega operatorname partial perp phi pi pm propto psi
+    qquad quad rVert rho right sigma sim sin sqrt succ sum tag tan tau text textstyle
+    texttt tfrac theta times to underbrace varepsilon vec xi xrightarrow zeta
+    bmatrix Bmatrix aligned
+""".split())
+
+
+def test_the_pages_use_only_latex_that_was_seen_to_render() -> None:
+    import re
+    used: dict[str, str] = {}
+    for page in user_docs.pages(REPO):
+        text = "\n".join(_math_lines(page))
+        display = re.findall(r"^\$\$\n(.+?)\n\$\$$", text, re.S | re.M)
+        rest = re.sub(r"^\$\$\n(.+?)\n\$\$$", "", text, flags=re.S | re.M)
+        inline = re.findall(r"(?<!\\)\$(.+?)(?<!\\)\$", rest)
+        for expression in display + inline:
+            for name in re.findall(r"\\([a-zA-Z]+)", expression) + \
+                    re.findall(r"\\begin\{(\w+)\*?\}", expression):
+                used.setdefault(name, page)
+    assert len(used) > 80, "the extraction found too little: has the page format changed?"
+    assert {n: p for n, p in used.items() if n not in _SEEN_TO_RENDER} == {}

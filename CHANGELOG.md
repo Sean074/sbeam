@@ -18,12 +18,24 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pages are read from (the wheel's copy, or the repository in a checkout or an editable
   install) and where each link goes (another page, a figure, or the file's GitHub address
   at the installed version's tag). `setup.py` is new and does the copy; `MANIFEST.in` puts
-  the pages in a source distribution. Nothing reads the pages yet: the viewer page is #129.
+  the pages in a source distribution.
+- **The viewer has a Documentation page (#129).** It shows the pages shipped in the wheel:
+  below the start message when no deck is open, and as the last tab when one is. A **Page**
+  list changes page inside the session; **On this page** lists the headings. Tables, code,
+  math and the nine figures are drawn in place. A link to another page opens a second
+  viewer tab on that page and heading (`?doc=<page>#<anchor>`), so the first tab keeps its
+  deck; a link to a file that is not shipped opens GitHub at the installed version's tag.
+  Checked in a browser: every expression of the three pages with math renders. Guide:
+  `06_viewer.md`, Documentation Page.
 
 ### Fixed
 - **Two heading links in the maneuver guide went nowhere (#128).** The links to the mass
   case sections in `05c_sol144_maneuver.md` used anchors that no heading has. Found by the
   new link gate, which checks every link and heading anchor of every shipped page.
+- **Display equations in `00_beam_methods.md` did not render in the viewer (#129).** The
+  page written for #132 put `$$` on the same line as the formula, which GitHub accepts and
+  Streamlit does not. Every `$$` now stands on a line of its own, and a gate holds every
+  shipped page to that.
 
 ### Changed
 - **The beam-methods notebook is now a page whose claims are tested (#132).**
