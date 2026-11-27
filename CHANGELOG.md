@@ -9,6 +9,19 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **The beam-methods notebook is now a page whose claims are tested (#132).**
+  `docs/20_theory/00_beam_methods.ipynb` is replaced by `00_beam_methods.md`. The notebook
+  had no saved outputs, CI never ran it, and most of its cells checked numpy matrices of
+  their own, not the solver. Its text also disagreed with the code: `I1` and `I2` were on
+  the wrong bending planes, the torsional inertia used `J` where the code uses `I1 + I2`,
+  and the stress formula was not the one the code applies. The page derives the CBAR
+  stiffness and mass matrices with the code's signs and links to the solver guides for the
+  rest. `tests/docs/test_beam_methods.py` gates it: the element matrices equal the
+  integrals of the shape functions entry by entry, the mesh-convergence table and the
+  sample-deck table are recomputed with the solver, and the frequency error falls by 16
+  when the element count doubles. No solver change.
+
 ## [0.4.1] — 2026-11-28
 
 Milestone v0.4.1, **viewer authoring and reduced-model export**. An engineer authors, runs

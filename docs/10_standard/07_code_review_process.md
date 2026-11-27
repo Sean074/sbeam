@@ -84,7 +84,7 @@ Check:
 - `docs/10_standard/03_static_analysis.md` — any change to SOL 101 assembly, load application, SPC enforcement, or results output must be reflected.
 - `docs/10_standard/04_modal_analysis.md` — any change to SOL 103 mass assembly, eigensolver call, or mode normalisation must be reflected.
 - `docs/10_standard/06_viewer.md` — any UI control added, removed, or renamed must be reflected.
-- `docs/20_theory/00_beam_methods.ipynb` — algorithm derivations must stay consistent with implemented formulations.
+- `docs/20_theory/00_beam_methods.md` — algorithm derivations must stay consistent with implemented formulations.
 - `docs/40_history/00_completed_development.md` — updated if a development step is completed.
 - The GitHub issue — explicitly closed if a bug is resolved or a step is closed
   (`08_release_process.md` §2a).
@@ -122,13 +122,13 @@ Assembly errors in `assembly/stiffness.py` and `assembly/mass_matrix.py` are the
 
 **Element Stiffness (CBAR / `assembly/stiffness.py`)**
 
-- [ ] The 12×12 local stiffness matrix follows Euler-Bernoulli beam theory (no shear terms). Verify against `docs/20_theory/00_beam_methods.ipynb` for A, I1, I2, J coupling.
+- [ ] The 12×12 local stiffness matrix follows Euler-Bernoulli beam theory (no shear terms). Verify against `docs/20_theory/00_beam_methods.md` for A, I1, I2, J coupling.
 - [ ] The transformation matrix T is 12×12 (block-diagonal of two 6×6 rotation matrices). Verify `K_global = T.T @ K_local @ T`.
 - [ ] Element length `L` is computed from grid coordinates **after** CORD2R transformation to CID 0 — not from raw BDF coordinates when `CP != 0`.
 
 **Consistent Mass Matrix (`assembly/mass_matrix.py`)**
 
-- [ ] Consistent mass uses the same shape functions as the stiffness. Verify the 12×12 element mass entries against the analytical form in `docs/20_theory/00_beam_methods.ipynb`.
+- [ ] Consistent mass uses the same shape functions as the stiffness. Verify the 12×12 element mass entries against the analytical form in `docs/20_theory/00_beam_methods.md`.
 - [ ] CONM2 offset vector must be expressed in CID 0 before adding the 6×6 offset inertia contribution. Verify the parallel-axis theorem application.
 - [ ] RBE3 does not add mass — it only distributes loads/DOFs. Confirm `mass_matrix.py` makes no mass contribution for RBE3 elements.
 
@@ -313,7 +313,7 @@ A PR may be approved **only** when:
 | `docs/10_standard/03_static_analysis.md` | SOL 101 assembly, load application, and results |
 | `docs/10_standard/04_modal_analysis.md` | SOL 103 eigensolver and mode shape output |
 | `docs/10_standard/06_viewer.md` | Streamlit viewer architecture |
-| `docs/20_theory/00_beam_methods.ipynb` | Euler-Bernoulli stiffness and mass matrix derivations |
+| `docs/20_theory/00_beam_methods.md` | Euler-Bernoulli stiffness and mass matrix derivations |
 | `docs/40_history/00_completed_development.md` | Record of completed steps and key decisions |
 | GitHub issues (map: `docs/30_future/00_backlog.md`) | Open bugs and backlog |
 | `CLAUDE.md` | Project conventions and documentation requirement |

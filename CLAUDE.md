@@ -113,7 +113,7 @@ Run everything with the repo venv: `.venv/bin/python` (plain `python` is not on 
 ## Structural Theory
 
 Euler-Bernoulli beam theory (no shear deformation); 12 DOFs per CBAR; consistent mass
-matrix; uniform torsion GJ/L. Derivations: `docs/20_theory/00_beam_methods.ipynb`.
+matrix; uniform torsion GJ/L. Derivations: `docs/20_theory/00_beam_methods.md`.
 
 ## Input / Output
 

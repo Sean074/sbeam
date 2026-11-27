@@ -15,7 +15,7 @@ only where the steady/quasi-steady theory feeds them.
 It is written to the level and in the notation of the *MSC/NX NASTRAN Aeroelastic Analysis
 User's Guide* (Rodden & Johnson) and the *ZAERO Theoretical Manual*, so that the symbols used
 in code and in `docs/30_future/01_static_aero_plan.md` cross-reference directly. The structural theory
-(Euler–Bernoulli CBAR, consistent mass) is covered in `docs/20_theory/00_beam_methods.ipynb` and only recapped
+(Euler–Bernoulli CBAR, consistent mass) is covered in `docs/20_theory/00_beam_methods.md` and only recapped
 here where the coupling needs it.
 
 **Conventions.** All aerodynamic geometry is resolved to the global basic coordinate system
@@ -1951,7 +1951,7 @@ The structure is the existing `sbeam` Euler–Bernoulli model: CBAR elements wit
 node), a consistent mass matrix, and the constraint/rigid-element transforms (`SPC`/`SPC1`,
 `RBE2`/`RBE3`/`RBAR`, `CBUSH`) already validated in Phase 1. The aeroelastic layer **does not
 modify** $K_{aa}$ or $M_{aa}$ — it only adds the $q\,Q_{aa}$ term and the aero forcing. The full
-beam-element stiffness and mass derivations are in `docs/20_theory/00_beam_methods.ipynb`.
+beam-element stiffness and mass derivations are in `docs/20_theory/00_beam_methods.md`.
 
 ---
 
