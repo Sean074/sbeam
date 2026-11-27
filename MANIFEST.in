@@ -1,0 +1,4 @@
+# The wheel is built with the user documentation inside it (setup.py, #128), so a source
+# distribution has to carry the pages the build copies.
+include CHANGELOG.md
+recursive-include docs *.md *.svg

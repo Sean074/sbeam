@@ -170,6 +170,19 @@ sbeam/
     └── aero_model.py     # AeroModel dataclass + build_aero_model() factory
 ```
 
+**User documentation in the wheel (#128).** `sbeam_tools/common/user_docs.py` lists the
+pages a user needs: the guides of `10_standard/` except the two process guides (`07`, `08`),
+all of `20_theory/`, the figures, the verification records and `CHANGELOG.md`. The backlog,
+history and review folders are not listed. `setup.py` copies the listed files into a built
+wheel under `sbeam_tools/_docs`, at their repository paths, so relative links hold; nothing
+under `docs/` moves and no copy is committed. A source checkout or an editable install has no
+copy and reads the pages from the repository (`docs_root`). A link to a shipped page or figure
+stays inside the documentation; a link to any other repository file becomes its GitHub address
+at the installed version's tag (`resolve_link`). Gates, in `tests/tools/test_user_docs.py`:
+every page of the three folders is listed or named as not shipped; every link and every
+heading anchor of every shipped page resolves; a wheel built from the tree and installed
+outside the checkout carries exactly the listed files and reads its own copy.
+
 The **pre/post toolchain** is a sibling package, not part of the solver core (see
 Architecture above). `sbeam/` must never import it — `tests/tools/test_import_boundary.py`
 asserts that.
@@ -180,7 +193,8 @@ sbeam_tools/
 │   ├── atmosphere.py     # ISA standard atmosphere, SI (no dependency on units — one-way)
 │   ├── units.py          # UnitSystem / UNIT_SYSTEMS; isa_density in model units
 │   ├── deck.py           # Read S, cbar, W per MASSCASE and rigid CZ_alpha out of a deck
-│   └── mirror.py         # mirror_halfspan(): half-span (SYMXZ) deck → full-span unfold
+│   ├── mirror.py         # mirror_halfspan(): half-span (SYMXZ) deck → full-span unfold
+│   └── user_docs.py      # The user documentation: the one page list, where the pages are read from, where each link goes (#128)
 ├── cases/                # Case construction — what the solver never decides
 │   ├── gust.py           # FAR/CS 23.341 Pratt gust family + 23.333(c) U_de schedule (#1); per-case card and subcase builders used by the viewer (#117)
 │   ├── maneuver.py       # Trim recipes, command-history shapes, two-pass command builder (#114; from the viewer)

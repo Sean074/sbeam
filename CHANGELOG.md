@@ -9,6 +9,22 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **The user documentation ships in the wheel (#128).** A built wheel now carries the
+  guides, the theory pages and tutorials, the figures, the verification records and this
+  changelog under `sbeam_tools/_docs` (26 pages and 9 figures; the wheel grows from 459 kB
+  to 958 kB). The two process guides, the backlog, the history and the reviews are not
+  shipped. `sbeam_tools/common/user_docs.py` is the one list of pages: it says where the
+  pages are read from (the wheel's copy, or the repository in a checkout or an editable
+  install) and where each link goes (another page, a figure, or the file's GitHub address
+  at the installed version's tag). `setup.py` is new and does the copy; `MANIFEST.in` puts
+  the pages in a source distribution. Nothing reads the pages yet: the viewer page is #129.
+
+### Fixed
+- **Two heading links in the maneuver guide went nowhere (#128).** The links to the mass
+  case sections in `05c_sol144_maneuver.md` used anchors that no heading has. Found by the
+  new link gate, which checks every link and heading anchor of every shipped page.
+
 ### Changed
 - **The beam-methods notebook is now a page whose claims are tested (#132).**
   `docs/20_theory/00_beam_methods.ipynb` is replaced by `00_beam_methods.md`. The notebook
