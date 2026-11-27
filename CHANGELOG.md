@@ -9,6 +9,17 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-11-28
+
+Milestone v0.4.1, **viewer authoring and reduced-model export**. An engineer authors, runs
+and reviews every case capability from the viewer without editing a BDF by hand (scope
+agreed in #11; #111–#118, #120, #122–#124, #127; the CPINJ form #119 is parked). The SOL 103
+free-free modal model is written as OP4 + Universal file by `MODEXP` (#100, #106, #107). The
+audit follow-ons close with it: vendor layouts for the ZAERO-named cards (#87), the f06 in
+MSC's layouts (#90), docs that contradicted the code (#91), MSC's DMIJ/DMIK corrections
+(#104) and the deviation register with its release gate (#95). Some entries change what a
+deck means or refuse a deck that ran: see Breaking changes.
+
 ### Added
 - **Monitors can be placed in the viewer (#116).** A new *Monitors* sub-tab has forms for
   AECOMP, MONPNT1 (aerodynamic and structural) and MONSECT, and draws the monitors on the
