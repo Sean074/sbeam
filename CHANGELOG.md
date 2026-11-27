@@ -242,6 +242,15 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - dataset 82 has 49 segments.
 
 ### Fixed
+- **CI was red from the #117 push on (2026-11-26).** Eight `cast()` calls round
+  `st.selectbox` in `sol144_authoring_ui.py` are needed by the type stubs of a newer
+  streamlit and are refused as unnecessary by pyright on the pinned one (1.50.0,
+  `requirements-ci.txt`). pyright failed, so pytest did not run in CI for five pushes. The
+  casts are removed. One test, `test_an_uploaded_include_driver_says_to_open_it_by_path`,
+  then failed on the pinned streamlit only: it passed AppTest's session state to the
+  loader, and that object has no `keys()` there. The test now uses a plain mapping. No
+  viewer behaviour changes. Both were found by running the three gates in an environment
+  built from `requirements-ci.txt`; the local `.venv` has newer packages and hid both.
 - **The pull-up preset prescribed no pitch rate (#127).** The "Symmetric pull-up" recipe
   wrote `PITCH = 0` at every load factor. An airplane holding n g on a curved path is
   rotating at q = (n − 1)·g/V, so the TRIM carries `PITCH = (n − 1)·g·c_ref/(2V²)`; this is

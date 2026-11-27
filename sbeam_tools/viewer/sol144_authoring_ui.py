@@ -172,7 +172,7 @@ def _family_editor(
         if editing and sel in _authored().get(family, set()):
             if st.button("Delete", key=wk(f"auth_del_{family}")):
                 session_deck.commit(
-                    bulk, deletes=[(family, cast(int, sel))],
+                    bulk, deletes=[(family, sel)],
                     done=f"{logic.CARD_NAMES[family]} {sel} deleted.")
 
 
@@ -846,11 +846,11 @@ def _aecomp_form(bulk: BulkData, card: Optional[Aecomp], default_id: Any):
     name = _name_input("NAME (up to 8 characters)", card.name if card else None,
                        default_id, "auth_aecomp_name")
     types = ["AELIST", "SET1"]
-    listtype = cast(str, col2.selectbox(
+    listtype = col2.selectbox(
         "LISTTYPE", types, index=types.index(card.listtype) if card else 0,
         key=_k("auth_aecomp_type"),
         help="AELIST: aero boxes, for an aerodynamic monitor. SET1: structural grids, "
-             "for a structural monitor (aero + inertia + applied load + reaction)."))
+             "for a structural monitor (aero + inertia + applied load + reaction).")
     del col1
     lists = {"AELIST": sorted(bulk.aelists), "SET1": sorted(bulk.set1s)}
     picked = {
@@ -893,10 +893,10 @@ def _monpnt_form(listtype: str):
             f"COMP ({listtype}-type AECOMP)", comps,
             index=comps.index(card.comp) if card and card.comp in comps else 0,
             key=_k(f"auth_{family}_comp")) if comps else None
-        cp = cast(int, col5.selectbox(
+        cp = col5.selectbox(
             "CP (frame of X, Y, Z and of the output)", cids,
             index=cids.index(card.cp) if card and card.cp in cids else 0,
-            key=_k(f"auth_{family}_cp")))
+            key=_k(f"auth_{family}_cp"))
         xyz = st.columns(3)
         x, y, z = (
             xyz[i].number_input(f"{axis} of the reference point",
@@ -929,19 +929,19 @@ def _monsect_form(bulk: BulkData, card: Optional[Monsect], default_id: Any):
         index=comps.index(card.comp) if card and card.comp in comps else 0,
         key=_k("auth_monsect_comp"),
         help="SET1 type: aero + inertia + reaction. AELIST type: aero only.") if comps else None
-    cid = cast(int, col4.selectbox(
+    cid = col4.selectbox(
         "CID (cut frame)", cids,
         index=cids.index(card.cid) if card and card.cid in cids else 0,
         key=_k("auth_monsect_cid"),
         help="Stations and reported components are in this frame. The surface's SPLINE2 "
-             "frame puts the stations along the elastic axis."))
-    axis = cast(int, col5.selectbox(
+             "frame puts the stations along the elastic axis.")
+    axis = col5.selectbox(
         "AXIS (station axis)", [1, 2, 3], index=(card.axis - 1 if card else 1),
-        format_func=lambda a: f"{a} ({'xyz'[a - 1]})", key=_k("auth_monsect_axis")))
-    side = cast(str, col6.selectbox(
+        format_func=lambda a: f"{a} ({'xyz'[a - 1]})", key=_k("auth_monsect_axis"))
+    side = col6.selectbox(
         "SIDE", ["POS", "NEG"], index=(["POS", "NEG"].index(card.side) if card else 0),
         key=_k("auth_monsect_side"),
-        help="POS sums the members with station coordinate greater than the cut."))
+        help="POS sums the members with station coordinate greater than the cut.")
     stations_text = st.text_input(
         "Stations along AXIS, in the CID frame (increasing; space or comma separated)",
         value=(" ".join(repr(float(v)) for v in card.stations) if card else ""),
@@ -1174,11 +1174,11 @@ def _render_gust_panel(bulk: BulkData) -> None:
             st.info("Define a TRIM first: the cases inherit its prescribed labels.")
             return
         col1, col2, col3 = st.columns(3)
-        units = UNIT_SYSTEMS[cast(str, col1.selectbox(
-            "Deck unit system", list(UNIT_SYSTEMS), key=wk("auth_gust_units")))]
-        template = cast(int, col2.selectbox(
+        units = UNIT_SYSTEMS[col1.selectbox(
+            "Deck unit system", list(UNIT_SYSTEMS), key=wk("auth_gust_units"))]
+        template = col2.selectbox(
             "TRIM template", sorted(bulk.trims), key=wk("auth_gust_template"),
-            help="The cases inherit every prescribed label of this TRIM except URDD3."))
+            help="The cases inherit every prescribed label of this TRIM except URDD3.")
         g = col3.number_input(
             f"Gravity g ({units.length_unit}/s²)", value=units.g, min_value=0.0,
             key=wk(f"auth_gust_g_{units.name}"), format="%.6g")

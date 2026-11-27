@@ -142,8 +142,13 @@ def test_an_uploaded_include_driver_says_to_open_it_by_path():
         def read(self) -> bytes:
             return (SAMPLE_ROOT / "cessna210_flagship" / self.name).read_bytes()
 
-    at = _fresh()
-    script_state = at.session_state
+    class _State(dict):
+        """A stand-in for ``st.session_state``: a mapping that also takes attributes.
+        (AppTest's own state object has no ``keys()`` on streamlit 1.50, the CI pin.)"""
+        __getattr__ = dict.__getitem__
+        __setattr__ = dict.__setitem__
+
+    script_state = _State(app._session_defaults())
 
     class _St:
         session_state = script_state
