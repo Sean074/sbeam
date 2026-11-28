@@ -9,6 +9,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-11-28
+
+Milestone v0.4.2, **documentation in the viewer**. The user documentation ships in the
+wheel and is read, navigated and searched from a Documentation page of the viewer, so it
+matches the installed version and needs no network (#128–#131). The beam-methods notebook
+is replaced by a page whose claims are tested (#132). No solver change: no file under
+`sbeam/` or `sample/` differs from v0.4.1.
+
 ### Added
 - **The user documentation ships in the wheel (#128).** A built wheel now carries the
   guides, the theory pages and tutorials, the figures, the verification records and this
@@ -58,6 +66,16 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   integrals of the shape functions entry by entry, the mesh-convergence table and the
   sample-deck table are recomputed with the solver, and the frequency error falls by 16
   when the element count doubles. No solver change.
+
+### Documentation
+- **Deviation register reviewed for the v0.4.2 release gate (2026-11-28, #133).** The
+  milestone's closed issues (#128–#132) touch no card and no case-control command: no file
+  under `sbeam/` or `sample/` differs from v0.4.1, so no row changes. Every *defect* row
+  names an open issue (#22, #85, #89, #103, #109, #125).
+- **Hand walk of the Documentation page (2026-11-28, #133).** Walked by a person at the
+  running viewer, from the editable install and from a wheel installed in a clean
+  environment: the page with no deck loaded, display math, a figure, links to shipped and
+  unshipped pages, search, and an authoring form's link.
 
 ## [0.4.1] — 2026-11-28
 
