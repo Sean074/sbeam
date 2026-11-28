@@ -9,7 +9,8 @@ matching area file** (and this index's list is updated), per the step-completion
 
 **Releases:** `v0.2.0` (2026-09-05), `v0.3.0` (2026-10-25, milestone v0.3.0 — solver
 capability mature), `v0.4.0` (2026-11-22, milestone v0.4.0 — faithful NASTRAN input, #99),
-`v0.4.1` (2026-11-28, milestone v0.4.1 — viewer authoring and reduced-model export, #121). Per-release contents: `CHANGELOG.md`; numerical baselines:
+`v0.4.1` (2026-11-28, milestone v0.4.1 — viewer authoring and reduced-model export, #121),
+`v0.4.2` (2026-11-28, milestone v0.4.2 — documentation in the viewer, #133). Per-release contents: `CHANGELOG.md`; numerical baselines:
 `docs/verification/`.
 
 ## File map
