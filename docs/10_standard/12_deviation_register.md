@@ -4,7 +4,7 @@
 per difference: what sbeam does, what the vendor does, where the vendor says so, and how
 sbeam handles it. Started from the 2026-11-16 compatibility audit
 (`docs/50_reviews/2026-11-16_nastran_zaero_audit.md` §3–§4) and brought up to the code as
-of 2026-11-26 (#95, D1). Last reviewed at a release gate: 2026-11-28, for v0.4.1. Differences the audit found that have since been fixed are not
+of 2026-11-26 (#95, D1). Last reviewed at a release gate: 2026-11-28, for v0.4.2. Differences the audit found that have since been fixed are not
 listed; they are in `docs/40_history/`.
 
 ## Rules
