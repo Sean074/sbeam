@@ -216,10 +216,14 @@ elements. The error is $(f_1 - f_{exact})/f_{exact}$.
 | 3 | 2.578670 | 1.013e-04 |
 | 5 | 2.578443 | 1.352e-05 |
 | 10 | 2.578411 | 8.537e-07 |
-| 20 | 2.578409 | 5.200e-08 |
+| 20 | 2.578409 | 5.2e-08 |
 
 Every error is positive. From 5 to 10 elements the error falls by a factor of 15.8, and from
-10 to 20 by 16.4. One element is already within 0.5 %.
+10 to 20 by about 16. One element is already within 0.5 %.
+
+The 20-element error is given to two figures because the third moves with the machine: the
+eigenvalue solve gives $f_1$ to a few parts in $10^{10}$, and two machines differed by
+2.6e-10 of $f_1$ on this row. The other rows are far above that.
 
 ## 7. The code against the closed forms
 

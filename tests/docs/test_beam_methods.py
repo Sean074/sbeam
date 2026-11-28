@@ -194,6 +194,13 @@ def _closed_form_hz(props, beta: float) -> float:
     return (beta**2 / (2 * math.pi)) * math.sqrt(mat.E * pbar.I1 / (mat.rho * pbar.A * length**4))
 
 
+#: Round-off of the eigenvalue solve in f1, as a fraction of f1.  Two runs of one commit
+#: on different CI runners gave 5.2004e-8 and 5.2263e-8 for the 20-element error, a
+#: scatter of 2.6e-10 of f1 (#134).  The floor is about eight times that, and still 400
+#: times below the 10-element error, so only the 20-element row is loosened (to 4 %).
+F1_ROUNDOFF = 2e-9
+
+
 def test_convergence_table_is_what_the_solver_gives(tmp_path, deck_props) -> None:
     exact = _closed_form_hz(deck_props, BETA1)
     rows = _table_after("## 6. Mesh convergence")
@@ -201,7 +208,8 @@ def test_convergence_table_is_what_the_solver_gives(tmp_path, deck_props) -> Non
     for n_text, f_text, err_text in rows:
         f1 = _f1(tmp_path, int(n_text), deck_props)
         assert f1 == pytest.approx(float(f_text), abs=6e-7), f"n = {n_text}"
-        assert (f1 - exact) / exact == pytest.approx(float(err_text), rel=5e-3), f"n = {n_text}"
+        assert (f1 - exact) / exact == pytest.approx(
+            float(err_text), rel=5e-3, abs=F1_ROUNDOFF), f"n = {n_text}"
 
 
 def test_frequency_converges_from_above_at_fourth_order(tmp_path, deck_props) -> None:

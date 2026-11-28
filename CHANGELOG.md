@@ -9,6 +9,16 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **The beam-methods convergence gate asked for more digits than the solver gives (#134).**
+  `test_convergence_table_is_what_the_solver_gives` held the 20-element frequency error
+  (5.2e-8) to 0.5 %, which is 2.6e-10 of the frequency. Two CI runs of one commit differed
+  by that much in the eigenvalue solve, so the Python 3.11 job of the first `release/0.5.0`
+  run failed. The comparison now has a round-off floor of 2e-9 of the frequency; only the
+  20-element row is loosened. `00_beam_methods.md` prints that error to two figures, says
+  why, and gives the 10-to-20 ratio as "about 16". No other test puts a tight relative
+  tolerance on so small a difference. No solver change.
+
 ## [0.4.2] — 2026-11-28
 
 Milestone v0.4.2, **documentation in the viewer**. The user documentation ships in the
