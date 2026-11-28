@@ -38,6 +38,7 @@ htmlcov/
 Thumbs.db
 
 # Project outputs — every file `sbeam <deck>` writes beside the deck (sbeam/main.py)
+Projects
 *.f06
 *.op2
 *.aero_loads.bdf
