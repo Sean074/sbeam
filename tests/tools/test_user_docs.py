@@ -1,0 +1,362 @@
+"""The user documentation's page list, its links and the wheel that carries it (#128).
+
+``sbeam_tools/common/user_docs.py`` is the one owner of the page list.  These gates hold
+the repository, the links and a built wheel to it:
+
+- every page of the documented folders is listed, or listed as not shipped;
+- every link of every shipped page goes somewhere (a renamed page or heading fails here,
+  not in front of a user);
+- a wheel built from the tree and installed outside the checkout carries exactly the
+  listed pages and figures, and reads them from its own copy.
+"""
+
+import ast
+import shutil
+import subprocess
+import sys
+import zipfile
+from pathlib import Path
+
+import pytest
+
+from sbeam_tools.common import user_docs
+
+REPO = Path(__file__).resolve().parents[2]
+
+
+# ---------------------------------------------------------------------------
+# The page list
+# ---------------------------------------------------------------------------
+
+def test_every_page_of_the_documented_folders_is_listed_or_excluded() -> None:
+    on_disk = {p.relative_to(REPO).as_posix()
+               for folder in user_docs.DOCUMENTED_FOLDERS
+               for p in (REPO / folder).rglob("*.md")}
+    listed = set(user_docs.pages(REPO)) | set(user_docs.NOT_SHIPPED)
+    assert on_disk - listed == set(), "add the page to SECTIONS or to NOT_SHIPPED"
+    assert set(user_docs.NOT_SHIPPED) <= on_disk, "NOT_SHIPPED names a page that is gone"
+
+
+def test_listed_pages_exist_once_and_figures_are_found() -> None:
+    pages = user_docs.pages(REPO)
+    assert len(pages) == len(set(pages))
+    assert not set(pages) & set(user_docs.NOT_SHIPPED)
+    assert all((REPO / page).is_file() for page in pages)
+    assert "CHANGELOG.md" in pages
+    assert len(user_docs.figures(REPO)) >= 9
+
+
+def test_verification_records_are_listed_newest_first() -> None:
+    records = dict(user_docs.sections(REPO))["Verification records"]
+    assert records == sorted(records, reverse=True) and len(records) >= 4
+
+
+def test_a_checkout_reads_the_pages_from_the_repository() -> None:
+    assert user_docs.docs_root() == REPO
+    text = user_docs.read_page("docs/10_standard/02_card_reference.md")
+    assert user_docs.page_title(text, "x.md").startswith("sbeam")
+    with pytest.raises(KeyError, match="not a page"):
+        user_docs.read_page("docs/10_standard/08_release_process.md")
+
+
+def test_the_module_imports_the_standard_library_only() -> None:
+    """``setup.py`` loads it by path in a build environment with nothing installed."""
+    tree = ast.parse(Path(user_docs.__file__).read_text(encoding="utf-8"))
+    imported = {node.module if isinstance(node, ast.ImportFrom) else alias.name
+                for node in ast.walk(tree) if isinstance(node, (ast.Import, ast.ImportFrom))
+                for alias in node.names}
+    assert imported <= {"__future__", "base64", "posixpath", "re", "dataclasses", "pathlib", "typing"}
+
+
+# ---------------------------------------------------------------------------
+# Headings and links
+# ---------------------------------------------------------------------------
+
+def test_anchors_follow_githubs_rule() -> None:
+    text = ("# Title\n\n## Mass cases — MASSCASE payload (Step 60)\n\n```\n# not a heading\n```\n"
+            "## `TRIM` card\n## `TRIM` card\n")
+    assert [a for _, _, a in user_docs.headings(text)] == [
+        "title", "mass-cases--masscase-payload-step-60", "trim-card", "trim-card-1"]
+
+
+def test_link_targets_skip_code() -> None:
+    text = ("See [a](one.md) and ![fig](../figures/f.svg \"t\").\n"
+            "`[not](code.md)` and [b](two.md#h).\n```\n[not](fenced.md)\n```\n")
+    assert user_docs.link_targets(text) == ["one.md", "../figures/f.svg", "two.md#h"]
+
+
+@pytest.mark.parametrize("target, expected", [
+    ("02_card_reference.md#trim",
+     user_docs.Link("page", target="docs/10_standard/02_card_reference.md", anchor="trim")),
+    ("../20_theory/00_beam_methods.md",
+     user_docs.Link("page", target="docs/20_theory/00_beam_methods.md")),
+    ("#frames", user_docs.Link("anchor", target="docs/10_standard/09_conventions.md", anchor="frames")),
+    ("../figures/section_cut.svg", user_docs.Link("figure", target="docs/figures/section_cut.svg")),
+    ("../30_future/00_backlog.md", user_docs.Link(
+        "repository", target="docs/30_future/00_backlog.md",
+        url="https://github.com/Sean074/sbeam/blob/v1.2.3/docs/30_future/00_backlog.md")),
+    ("08_release_process.md#tag", user_docs.Link(
+        "repository", target="docs/10_standard/08_release_process.md", anchor="tag",
+        url="https://github.com/Sean074/sbeam/blob/v1.2.3/docs/10_standard/08_release_process.md#tag")),
+    ("../../sample/", user_docs.Link(
+        "repository", target="sample", url="https://github.com/Sean074/sbeam/tree/v1.2.3/sample")),
+    ("https://semver.org/", user_docs.Link("external", url="https://semver.org/")),
+    ("mailto:someone@example.com", user_docs.Link("external", url="mailto:someone@example.com")),
+])
+def test_a_link_is_classified_by_where_it_goes(target, expected) -> None:
+    link = user_docs.resolve_link("docs/10_standard/09_conventions.md", target, REPO, "1.2.3")
+    assert link == expected
+
+
+def test_every_link_of_every_shipped_page_goes_somewhere() -> None:
+    assert user_docs.check_links(REPO) == []
+
+
+def test_a_dead_link_and_a_dead_heading_are_reported(tmp_path, monkeypatch) -> None:
+    (tmp_path / "docs" / "figures").mkdir(parents=True)
+    (tmp_path / "docs" / "a.md").write_text(
+        "# A\n[ok](b.md#real) [gone](c.md) [bad](b.md#missing) [here](#nowhere) [up](../../x.md)\n",
+        encoding="utf-8")
+    (tmp_path / "docs" / "b.md").write_text("# B\n## Real\n", encoding="utf-8")
+    monkeypatch.setattr(user_docs, "SECTIONS", (("S", ("docs/a.md", "docs/b.md")),))
+    problems = user_docs.check_links(tmp_path)
+    assert len(problems) == 4
+    assert "docs/a.md: link (c.md) names docs/c.md, which does not exist" in problems[0]
+    assert "#missing, which docs/b.md does not have" in problems[1]
+    assert "#nowhere, which docs/a.md does not have" in problems[2]
+    assert "(../../x.md)" in problems[3]
+
+
+# ---------------------------------------------------------------------------
+# The wheel
+# ---------------------------------------------------------------------------
+
+_BUILD_INPUTS = ("pyproject.toml", "setup.py", "MANIFEST.in", "README.md", "CHANGELOG.md",
+                 "LICENSE", "sbeam", "sbeam_tools", "docs")
+
+_INSTALLED_CHECK = """
+import sys
+sys.path.insert(0, sys.argv[1])
+from sbeam_tools.common import user_docs
+root = user_docs.docs_root()
+print(root)
+for name in user_docs.shipped_files(root):
+    print(name)
+user_docs.read_page("CHANGELOG.md")
+"""
+
+
+@pytest.fixture(scope="module")
+def wheel(tmp_path_factory) -> Path:
+    """A wheel built from a copy of the tree (the build writes ``build/`` beside its
+    input).  pip builds in an isolated environment and fetches setuptools for it."""
+    work = tmp_path_factory.mktemp("wheel")
+    source = work / "src"
+    source.mkdir()
+    for name in _BUILD_INPUTS:
+        if (REPO / name).is_dir():
+            shutil.copytree(REPO / name, source / name,
+                            ignore=shutil.ignore_patterns("__pycache__", "_docs"))
+        else:
+            shutil.copy2(REPO / name, source / name)
+    done = subprocess.run(
+        [sys.executable, "-m", "pip", "wheel", str(source), "--no-deps", "-w", str(work / "dist")],
+        capture_output=True, text=True)
+    assert done.returncode == 0, done.stdout + done.stderr
+    (built,) = (work / "dist").glob("sbeam-*.whl")
+    return built
+
+
+def test_the_wheel_carries_exactly_the_listed_pages_and_figures(wheel: Path) -> None:
+    prefix = f"sbeam_tools/{user_docs.PACKAGED_FOLDER}/"
+    with zipfile.ZipFile(wheel) as archive:
+        carried = {n[len(prefix):] for n in archive.namelist() if n.startswith(prefix)}
+    assert carried == set(user_docs.shipped_files(REPO))
+
+
+def test_an_installed_wheel_reads_its_own_copy(wheel: Path, tmp_path: Path) -> None:
+    """Installed outside the checkout, the package finds the pages inside itself."""
+    site = tmp_path / "site"
+    done = subprocess.run(
+        [sys.executable, "-m", "pip", "install", str(wheel), "--no-deps", "--target", str(site)],
+        capture_output=True, text=True)
+    assert done.returncode == 0, done.stdout + done.stderr
+    # -I: neither the working directory nor PYTHONPATH can supply the checkout's package
+    done = subprocess.run([sys.executable, "-I", "-c", _INSTALLED_CHECK, str(site)],
+                          capture_output=True, text=True, cwd=tmp_path)
+    assert done.returncode == 0, done.stderr
+    root, *names = done.stdout.split()
+    assert Path(root) == (site / "sbeam_tools" / user_docs.PACKAGED_FOLDER).resolve()
+    assert names == user_docs.shipped_files(REPO)
+
+
+# ---------------------------------------------------------------------------
+# A page as the viewer shows it (#129)
+# ---------------------------------------------------------------------------
+
+def test_a_page_is_cut_at_its_level_1_to_3_headings_with_githubs_anchors() -> None:
+    for page in user_docs.pages(REPO):
+        text = (REPO / page).read_text(encoding="utf-8")
+        cut = [(b.level, b.anchor) for b in user_docs.page_blocks(page, REPO, "1.2.3") if b.level]
+        assert cut == [(level, anchor) for level, _, anchor in user_docs.headings(text)
+                       if level <= user_docs.ANCHORED_LEVELS], page
+
+
+def test_links_are_pointed_where_the_viewer_needs_them(tmp_path, monkeypatch) -> None:
+    (tmp_path / "docs" / "figures").mkdir(parents=True)
+    (tmp_path / "docs" / "figures" / "f.svg").write_text("<svg/>", encoding="utf-8")
+    (tmp_path / "docs" / "b.md").write_text("# B\n## Real\n", encoding="utf-8")
+    (tmp_path / "docs" / "a.md").write_text(
+        "# A [`b`](b.md)\n"
+        "Go to [`b`](b.md#real), [here](#a-b), [repo](../tests/x.py), [out](https://x.org/).\n"
+        "![fig](figures/f.svg)\n"
+        "`[code](b.md)` stays.\n"
+        "```\n# not a heading [x](b.md)\n```\n"
+        "#### Deep\nend\n", encoding="utf-8")
+    monkeypatch.setattr(user_docs, "SECTIONS", (("S", ("docs/a.md", "docs/b.md")),))
+    head, body = user_docs.page_blocks("docs/a.md", tmp_path, "1.2.3")
+    assert head == user_docs.Block(1, "A [`b`](?doc=docs/b.md)", "a-b")
+    assert user_docs.plain_title(head.text) == "A `b`"
+    assert "[`b`](?doc=docs/b.md#real), [here](#a-b)" in body.text
+    assert "[repo](https://github.com/Sean074/sbeam/blob/v1.2.3/tests/x.py)" in body.text
+    assert "[out](https://x.org/)" in body.text
+    assert "![fig](data:image/svg+xml;base64,PHN2Zy8+)" in body.text
+    assert "`[code](b.md)` stays." in body.text
+    assert "# not a heading [x](b.md)" in body.text
+    assert "#### Deep\nend" in body.text                 # level 4 stays in the body
+
+
+def test_a_link_to_a_heading_the_viewer_does_not_anchor_is_reported(tmp_path, monkeypatch) -> None:
+    (tmp_path / "docs" / "figures").mkdir(parents=True)
+    (tmp_path / "docs" / "a.md").write_text("# A\n#### Deep\n[x](#deep)\n", encoding="utf-8")
+    monkeypatch.setattr(user_docs, "SECTIONS", (("S", ("docs/a.md",)),))
+    (problem,) = user_docs.check_links(tmp_path)
+    assert "level-4 heading" in problem
+
+
+# Math.  Streamlit 1.50 rendered every expression of every shipped page in a browser on
+# 2026-11-27 (no KaTeX error, no dollar sign left as text).  Two rules keep it so.
+
+def _math_lines(page: str) -> list[str]:
+    text = (REPO / page).read_text(encoding="utf-8")
+    return [user_docs._INLINE_CODE.sub("", line) for line in user_docs._prose_lines(text)]
+
+
+def test_every_display_math_fence_stands_on_a_line_of_its_own() -> None:
+    """``$$x$$`` on one line is drawn inline, and a multi-line equation whose ``$$`` shares
+    a line with the formula is not drawn at all and breaks the rest of the page."""
+    bad = [f"{page}: {line.strip()[:60]}" for page in user_docs.pages(REPO)
+           for line in _math_lines(page) if "$$" in line and line.strip() != "$$"]
+    assert bad == []
+
+
+#: Every LaTeX command and environment the shipped pages used when they were checked in
+#: the browser.  A new one fails here until it has been seen to render.
+_SEEN_TO_RENDER = set("""
+    Big Bigl Bigr Delta Gamma Longrightarrow Omega Phi Psi alpha approx ast bar begin beta
+    big bigg boldsymbol boxed cdot chi cos ddot delta det dot dots ell end equiv eta frac
+    gamma ge gg hat in infty int lVert lambda le left leftarrow lessgtr lesssim ln mathbf
+    mathrm mathsf mp nabla neq odot omega operatorname partial perp phi pi pm propto psi
+    qquad quad rVert rho right sigma sim sin sqrt succ sum tag tan tau text textstyle
+    texttt tfrac theta times to underbrace varepsilon vec xi xrightarrow zeta
+    bmatrix Bmatrix aligned
+""".split())
+
+
+def test_the_pages_use_only_latex_that_was_seen_to_render() -> None:
+    import re
+    used: dict[str, str] = {}
+    for page in user_docs.pages(REPO):
+        text = "\n".join(_math_lines(page))
+        display = re.findall(r"^\$\$\n(.+?)\n\$\$$", text, re.S | re.M)
+        rest = re.sub(r"^\$\$\n(.+?)\n\$\$$", "", text, flags=re.S | re.M)
+        inline = re.findall(r"(?<!\\)\$(.+?)(?<!\\)\$", rest)
+        for expression in display + inline:
+            for name in re.findall(r"\\([a-zA-Z]+)", expression) + \
+                    re.findall(r"\\begin\{(\w+)\*?\}", expression):
+                used.setdefault(name, page)
+    assert len(used) > 80, "the extraction found too little: has the page format changed?"
+    assert {n: p for n, p in used.items() if n not in _SEEN_TO_RENDER} == {}
+
+
+# ---------------------------------------------------------------------------
+# Search (#130)
+# ---------------------------------------------------------------------------
+
+def test_a_card_name_returns_its_section_of_the_card_reference_first() -> None:
+    for card in ("TRIM", "SUPORT", "MASSCASE", "MONPNT1", "GUSTLF", "CBAR"):
+        first = user_docs.search(card, REPO)[0]
+        assert first.page == user_docs.CARD_REFERENCE, card
+        assert first.heading.upper().startswith(card), (card, first.heading)
+
+
+def test_a_single_word_is_matched_as_a_whole_word_whatever_its_case() -> None:
+    hits = user_docs.search("trim", REPO)
+    assert hits == user_docs.search("TRIM", REPO)
+    assert not any(h.heading.startswith("TRIMVAR") for h in hits[:1])
+    lone = [h for h in user_docs.search("TRIMVAR", REPO)]
+    assert lone and lone[0].heading.startswith("TRIMVAR")
+    assert len(hits) > len(lone)
+
+
+def test_a_phrase_in_several_pages_returns_each_of_them() -> None:
+    found = {h.page for h in user_docs.search("hinge moment", REPO)}
+    assert user_docs.CARD_REFERENCE in found
+    assert "docs/10_standard/05c_sol144_maneuver.md" in found
+    assert len(found) >= 3
+
+
+def test_nothing_found_is_an_empty_list() -> None:
+    assert user_docs.search("zzzz-no-such-term", REPO) == []
+    assert user_docs.search("   ", REPO) == []
+
+
+def test_every_result_points_at_a_heading_the_viewer_anchors() -> None:
+    for query in ("TRIM", "the", "MANVR", "hinge moment", "$"):
+        hits = user_docs.search(query, REPO)
+        assert hits, query
+        for hit in hits:
+            anchored = {b.anchor for b in user_docs.page_blocks(hit.page, REPO, "0") if b.level}
+            assert hit.anchor == "" or hit.anchor in anchored, (query, hit)
+            assert hit.count >= 1 and hit.context
+
+
+def test_search_reads_code_blocks_and_reports_the_section(tmp_path, monkeypatch) -> None:
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "a.md").write_text(
+        "intro FOO\n# A\n## First\ntext\n```\n# FOO, 1, 2\n```\n#### Deep FOO\n## FOO card\nbody\n",
+        encoding="utf-8")
+    monkeypatch.setattr(user_docs, "SECTIONS", (("S", ("docs/a.md",)),))
+    hits = user_docs.search("foo", tmp_path)
+    assert [(h.heading, h.anchor, h.count) for h in hits] == [
+        ("FOO card", "foo-card", 1),         # the heading starts with the term
+        ("First", "first", 2),                # the code line and the level-4 heading
+        ("", "", 1),                          # before the first heading; fewer lines
+    ]
+    assert hits[0].context == "FOO card" and hits[1].context == "# FOO, 1, 2"
+
+
+# ---------------------------------------------------------------------------
+# The sections the viewer's forms link to (#131)
+# ---------------------------------------------------------------------------
+
+def test_every_card_family_of_the_authoring_forms_has_one_section_of_the_card_reference() -> None:
+    from sbeam.model.card_writers import FAMILIES
+    from sbeam_tools.viewer.sol144_authoring import CARD_NAMES
+    anchored = {b.anchor for b in user_docs.page_blocks(user_docs.CARD_REFERENCE, REPO, "0")
+                if b.level}
+    assert set(CARD_NAMES) == set(FAMILIES)
+    for family, card in CARD_NAMES.items():
+        anchor = user_docs.reference_anchor(card, REPO)          # KeyError unless exactly one
+        assert anchor in anchored and anchor.startswith(card.lower()), family
+    for section in ("Case Control Keywords", "W2GJ", "AECORR"):
+        assert user_docs.reference_anchor(section, REPO) in anchored
+
+
+def test_a_card_name_is_matched_as_a_whole_word_and_must_be_unique() -> None:
+    assert user_docs.reference_anchor("TRIM", REPO) == "trim--static-trim-condition"
+    assert user_docs.reference_anchor("MONPNT1", REPO).startswith("monpnt1--")
+    with pytest.raises(KeyError, match="0 headings"):
+        user_docs.reference_anchor("NOSUCHCARD", REPO)
+    with pytest.raises(KeyError, match="headings"):
+        user_docs.reference_anchor("M", REPO)

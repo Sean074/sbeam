@@ -274,7 +274,7 @@ SUBCASE 1
 
 `SubcaseControl` gains `trim_sid` and `diverg_sid` fields (both `Optional[int]`, default `None`),
 plus `massset_sid` for the Step 60 payload / mass case (see
-[Mass cases](#mass-cases--masset-payload-conditions-step-60)). `MASSSET = n` selects an MSC
+[Mass cases](#mass-cases--masscase-payload-conditions-step-60)). `MASSSET = n` selects an MSC
 mass combination into the same field (#102; `mass_card` records which command was used;
 card reference "MASSSET — MSC mass combination").
 
@@ -886,7 +886,7 @@ duplicating the model.
 ### Card and selection
 
 The `MASSCASE` bulk card (fields and ops in
-[`02_card_reference.md`](02_card_reference.md#masscase--payload--mass-case-step-60)) names
+[`02_card_reference.md`](02_card_reference.md#masscase--payload--mass-case-sbeam-extension-step-60)) names
 a mass configuration built from the baseline model mass: `SCALE` multiplies the baseline,
 then `ADD` / `REPLACE` / `DELETE` overlay, swap, or drop CONM2 cards. A subcase selects it
 with a case-control `MASSCASE = sid` request (like `SPC`/`METHOD`) — deliberately

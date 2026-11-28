@@ -33,6 +33,7 @@ sbeam_tools/viewer/
 ├── session_deck.py     # The session's deck as text; commit(): every card edit is written into the text and re-parsed (#113)
 ├── widget_keys.py      # wk(): widget keys that carry the deck's number in the session (#123)
 ├── monitor_view.py     # Monitors drawn on the model from the solver's plans: reference points, members, cut planes (#116)
+├── docs_view.py        # Documentation page: draws the pages shipped with the package (#129); the logic is in sbeam_tools/common/user_docs.py
 └── format_utils.py     # Shared 5-sig-fig number formatting for tables/metrics (fmt / fmt_mass / style_numeric) (A-GUI4)
 ```
 
@@ -688,6 +689,72 @@ card rules the parser refuses, and `tests/solver/test_precheck.py` the case-cont
 aero-correction block; filename via `suggest_run_name`) and *Download authored cards only*
 (the `write_authored_block` snippet). The Case Control editor's Download BDF emits the
 same driver.
+
+---
+
+## Documentation Page (#129)
+
+The viewer shows the documentation that came with the installed package, so it matches the
+installed version and needs no network. The pages are the ones listed in
+`sbeam_tools/common/user_docs.py` (`00_program_overview.md`, "User documentation in the
+wheel"): the guides, the theory pages and tutorials, the verification records and the
+changelog.
+
+**Where it is.** With no deck open, and after a parse error, the documentation is drawn below
+the message in the main area. With a deck open it is the last tab, **Documentation**. Every
+tab is drawn on every run, so going to the documentation and back changes nothing in the
+other tabs.
+
+**What is drawn** (`render_documentation` in `docs_view.py`):
+
+| Element | Behaviour |
+|---|---|
+| **Search the documentation** (#130) | A term typed here is looked for in every shipped page, code blocks included (`user_docs.search`). Not case-sensitive. A single word matches as a whole word, so `TRIM` does not find `TRIMVAR`; anything else matches as typed. Each result is a section: "page title › heading", with the number of matching lines and the first of them in its tooltip. Sections whose heading starts with the term come first, then those whose heading holds it, then the rest; on a tie the card reference comes first, then the section with more matching lines. The first 20 are listed. Choosing one shows that page and scrolls to the heading, in the same session. No index is kept: the pages are read on each search (about 50 ms) |
+| **Page** list | Every shipped page as "Section — page title", in the order of `user_docs.SECTIONS`. The choice is kept in `st.session_state.docs_page` and survives opening another deck |
+| **On this page** | The page's level 2 and level 3 headings, each a link to its place on the page |
+| Caption | The installed version and the page's path in the repository |
+| The page | As written: tables, code blocks, math and figures |
+
+**Links.**
+
+| Link on a page | What happens |
+|---|---|
+| To a heading of the same page | Scrolls to it |
+| To another shipped page | Opens a second viewer tab in the browser on that page, at the heading if one is named (`?doc=<page>#<anchor>`). The first tab keeps its deck. The second has no deck |
+| To a repository file that is not shipped (a sample deck, a test, the backlog) | Opens it on GitHub at the tag of the installed version |
+| To anywhere else | Opens it |
+
+**Links from the forms (#131).** Each card form of the Aeroelastic Authoring tab opens with one
+line, "Fields, defaults and rules: *CARD* in the card reference", which opens that card's
+section of `02_card_reference.md` in a second viewer tab. The case-control editor links to
+"Case Control Keywords", and the Aero Correction tab to W2GJ and AECORR. The forms state no
+field rule of their own. The section is found by how its heading starts
+(`user_docs.reference_anchor`; for a form, the family's name in `CARD_NAMES`), and exactly one
+heading must match: a renamed heading fails `tests/tools/test_user_docs.py`.
+
+Streamlit opens every Markdown link to another address in a new browser tab, and a new tab is
+a new session. To change page without leaving the session, use the **Page** list.
+
+**How a page is drawn**, and why (each point was seen in a browser on 2026-11-27, Streamlit
+1.50):
+
+- The page is cut at its level 1 to 3 headings (`user_docs.page_blocks`). Each heading is drawn
+  with the anchor GitHub gives it, because Streamlit's own anchors are not predictable where a
+  heading holds math or non-ASCII letters. A link may therefore name a level 1 to 3 heading
+  only; `check_links` reports any other.
+- A figure is inlined as a data address: Streamlit does not load an image from a relative path.
+- Math is drawn by KaTeX. A display equation needs its `$$` fences on lines of their own:
+  `$$x$$` on one line is drawn inline, and a multi-line equation with `$$` on the formula's
+  line breaks the rest of the page. A gate holds every shipped page to this, and a second gate
+  fails on a LaTeX command that was not in the pages when they were checked.
+
+Gates: `tests/viewer/test_docs_view.py` (every page opens with no deck; a `?doc=` address opens
+its page; reading the documentation leaves the deck, the case control and the authored cards
+unchanged; the page shown survives a new deck; a search result opens its page; a search with
+no match says so; every form draws its link) and `tests/tools/test_user_docs.py` (the cut,
+the links, the two math rules, the search order and that every result names an anchored
+heading). AppTest drives widgets, not a browser: figures, math and the
+scroll to a heading are checked by eye at each release (#133).
 
 ---
 

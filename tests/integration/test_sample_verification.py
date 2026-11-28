@@ -14,7 +14,8 @@ A fifth shipped deck added 2026-08-01 is gated here in the same style:
         pair from a transverse-offset tip CONM2 (2-DOF closed form, see class)
 
 Until this module existed the shipped decks were exercised only by
-``docs/20_theory/00_beam_methods.ipynb``, which CI never runs — the V1-V20 suite in
+a notebook in ``docs/20_theory``, which CI never ran (replaced by
+``00_beam_methods.md`` in #132) — the V1-V20 suite in
 ``test_verification.py`` gates its own private decks in ``tests/integration/bdf/``
 (L = 1 m, A = 0.05), not these. Any regression in the decks users actually copy
 reached a release silently.

@@ -38,7 +38,7 @@ are the day-to-day references; higher numbers are planning and historical record
 
 | File | Scope |
 |------|-------|
-| [`00_beam_methods.ipynb`](20_theory/00_beam_methods.ipynb) | Euler-Bernoulli theory; stiffness/mass matrix derivations; worked example |
+| [`00_beam_methods.md`](20_theory/00_beam_methods.md) | Euler-Bernoulli theory; the CBAR stiffness and mass matrices derived with the code's signs; mesh convergence; the code against the closed forms (#132); gated by `tests/docs/test_beam_methods.py` |
 | [`01_aeroelastics_theory.md`](20_theory/01_aeroelastics_theory.md) | VLM, AIC corrections, splining, SOL 144 theory |
 | [`03_first_analysis_tutorial.md`](20_theory/03_first_analysis_tutorial.md) | **Start here** — ten-minute first analysis: a six-grid cantilever deck typed by hand, one SOL 101 run, the f06 read block by block against PL³/3EI and Mc/I, the deflected shape plotted in the viewer and from Python (#46); gated by `tests/docs/test_first_analysis_tutorial.py` |
 | [`02_realistic_airplane_sol144.md`](20_theory/02_realistic_airplane_sol144.md) | Tutorial: the Cessna 210 flagship SOL 144 sample family — the deck layer by layer (structure, mass, mesh, splines, corrections, trim, monitors, mass cases, transient, body panels), then the f06 read block by block against hand-check anchors |

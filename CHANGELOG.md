@@ -9,6 +9,74 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-11-28
+
+Milestone v0.4.2, **documentation in the viewer**. The user documentation ships in the
+wheel and is read, navigated and searched from a Documentation page of the viewer, so it
+matches the installed version and needs no network (#128–#131). The beam-methods notebook
+is replaced by a page whose claims are tested (#132). No solver change: no file under
+`sbeam/` or `sample/` differs from v0.4.1.
+
+### Added
+- **The user documentation ships in the wheel (#128).** A built wheel now carries the
+  guides, the theory pages and tutorials, the figures, the verification records and this
+  changelog under `sbeam_tools/_docs` (26 pages and 9 figures; the wheel grows from 459 kB
+  to 958 kB). The two process guides, the backlog, the history and the reviews are not
+  shipped. `sbeam_tools/common/user_docs.py` is the one list of pages: it says where the
+  pages are read from (the wheel's copy, or the repository in a checkout or an editable
+  install) and where each link goes (another page, a figure, or the file's GitHub address
+  at the installed version's tag). `setup.py` is new and does the copy; `MANIFEST.in` puts
+  the pages in a source distribution.
+- **The viewer has a Documentation page (#129).** It shows the pages shipped in the wheel:
+  below the start message when no deck is open, and as the last tab when one is. A **Page**
+  list changes page inside the session; **On this page** lists the headings. Tables, code,
+  math and the nine figures are drawn in place. A link to another page opens a second
+  viewer tab on that page and heading (`?doc=<page>#<anchor>`), so the first tab keeps its
+  deck; a link to a file that is not shipped opens GitHub at the installed version's tag.
+  Checked in a browser: every expression of the three pages with math renders. Guide:
+  `06_viewer.md`, Documentation Page.
+- **The Documentation page has a search box (#130).** It looks for a term in every shipped
+  page and lists the sections that hold it, the card's own section of the card reference
+  first. A single word is matched as a whole word (`TRIM` does not find `TRIMVAR`).
+  Choosing a result opens the page at that heading without leaving the session. No index
+  is built: the pages are read on each search, about 50 ms.
+- **Each authoring form links to its card's documentation (#131).** Every card form of the
+  Aeroelastic Authoring tab, the case-control editor and the Aero Correction tab carry a
+  one-line link that opens the card's section of the card reference in a second viewer
+  tab, so the form keeps what was typed. The forms restate no field rule.
+
+### Fixed
+- **Two heading links in the maneuver guide went nowhere (#128).** The links to the mass
+  case sections in `05c_sol144_maneuver.md` used anchors that no heading has. Found by the
+  new link gate, which checks every link and heading anchor of every shipped page.
+- **Display equations in `00_beam_methods.md` did not render in the viewer (#129).** The
+  page written for #132 put `$$` on the same line as the formula, which GitHub accepts and
+  Streamlit does not. Every `$$` now stands on a line of its own, and a gate holds every
+  shipped page to that.
+
+### Changed
+- **The beam-methods notebook is now a page whose claims are tested (#132).**
+  `docs/20_theory/00_beam_methods.ipynb` is replaced by `00_beam_methods.md`. The notebook
+  had no saved outputs, CI never ran it, and most of its cells checked numpy matrices of
+  their own, not the solver. Its text also disagreed with the code: `I1` and `I2` were on
+  the wrong bending planes, the torsional inertia used `J` where the code uses `I1 + I2`,
+  and the stress formula was not the one the code applies. The page derives the CBAR
+  stiffness and mass matrices with the code's signs and links to the solver guides for the
+  rest. `tests/docs/test_beam_methods.py` gates it: the element matrices equal the
+  integrals of the shape functions entry by entry, the mesh-convergence table and the
+  sample-deck table are recomputed with the solver, and the frequency error falls by 16
+  when the element count doubles. No solver change.
+
+### Documentation
+- **Deviation register reviewed for the v0.4.2 release gate (2026-11-28, #133).** The
+  milestone's closed issues (#128–#132) touch no card and no case-control command: no file
+  under `sbeam/` or `sample/` differs from v0.4.1, so no row changes. Every *defect* row
+  names an open issue (#22, #85, #89, #103, #109, #125).
+- **Hand walk of the Documentation page (2026-11-28, #133).** Walked by a person at the
+  running viewer, from the editable install and from a wheel installed in a clean
+  environment: the page with no deck loaded, display math, a figure, links to shipped and
+  unshipped pages, search, and an authoring form's link.
+
 ## [0.4.1] — 2026-11-28
 
 Milestone v0.4.1, **viewer authoring and reduced-model export**. An engineer authors, runs

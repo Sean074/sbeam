@@ -27,7 +27,9 @@ AESTAT_LABELS = [
 FAMILY_ATTRS: dict[str, str] = {fam: attr for fam, (attr, _) in FAMILIES.items()}
 
 
-# family key -> the card's name in a deck and in every message to the user.
+# family key -> the card's name in a deck and in every message to the user.  It is also
+# the family's place in the documentation: each form links to the section of the card
+# reference whose heading starts with this name (``user_docs.reference_anchor``, #131).
 CARD_NAMES: dict[str, str] = {
     "aestat": "AESTAT", "aesurf": "AESURF", "aelist": "AELIST", "suport": "SUPORT",
     "trim": "TRIM", "trimvar": "TRIMVAR", "trimobj": "TRIMWGT", "trimcon": "TRIMINEQ",

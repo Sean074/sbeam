@@ -22,6 +22,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 from sbeam_tools.viewer.widget_keys import wk
+from sbeam_tools.viewer.docs_view import reference_link
 
 from typing import Optional
 
@@ -383,6 +384,8 @@ def render_aero_correction_tab(bulk: BulkData) -> None:
         "from a table of section coefficients for one flight condition (Mach + α/β), "
         "then add them to the model so the **Aero** tab runs the corrected solve."
     )
+    reference_link("W2GJ")
+    reference_link("AECORR")
     session_deck.show_flash("aero_correction")
 
     if not bulk.caero1s:
